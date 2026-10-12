@@ -809,7 +809,9 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         minzoom: 14,
         paint: {
           "fill-pattern": "bw-grain-setts",
-          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15.5, 0.75] as never,
+          // a pattern is drawn at a fixed screen size, so it comes in only
+          // where a stone is about stone-sized on screen
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 15, 0, 16.5, 0.75] as never,
         },
       },
       {
@@ -1153,7 +1155,7 @@ export function groundGrain(kind: "asphalt" | "yard" | "setts", size = 256): { w
       for (let x = 0; x < size; x++) put(x, row * fh, 0, 0.18);
       for (let x0 = -fw; x0 < size; x0 += fw) for (let y = 0; y < fh; y++) put(x0 + off, row * fh + y, 0, 0.16);
     }
-    for (let y = 0; y < size; y += 128) for (let x = 0; x < size; x++) { put(x, y, 0, 0.28); put(x, y + 1, 1, 0.12); }
+    for (let y = 0; y < size; y += 128) for (let x = 0; x < size; x++) { put(x, y, 0, 0.12); put(x, y + 1, 1, 0.06); }
   } else {
     for (let i = 0; i < 40; i++) blob(rnd() * size, rnd() * size, 6 + rnd() * 18, rnd() < 0.6 ? 0 : 1, 0.06 + rnd() * 0.05);
     for (let i = 0; i < size * size * 0.06; i++) put(rnd() * size, rnd() * size, rnd() < 0.7 ? 0 : 1, 0.04 + rnd() * 0.05);

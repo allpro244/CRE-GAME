@@ -1,8 +1,7 @@
 # Competitors — design for approval
 
-**Status:** design only. No competitor code is written until the owner approves
-this document. (The staff / principal removal it depends on is already approved
-and is a separate change.)
+**Status:** approved by the owner, holder section included. Being built in the
+phase order of §9. (The staff / principal removal it depends on landed first.)
 
 **Vocabulary.** The other AI firms are **competitors**. "Rival" and "the Street"
 leave every player-facing string: page titles, news copy, tooltips, glossary.
@@ -173,13 +172,13 @@ Key traits only. Unlisted traits centre at 50.
 | 9 | Adaptive-Reuse Converter | Office 85, Renovation 95, Distress 60, Cycle timing 30 | — |
 | 10 | Pension / Core | Office 70, Residential 70, Quality 75, Leverage 30, Hold 85, Price discipline 80 | NEVER above 50% LTV |
 | 11a–c | Sector REIT (office / retail / residential) | that class 95, Capacity 80, Hold 75 | ONLY that class |
-| 12 | Old Family Dynasty | Hold 98, Leverage 15, Quality 70, Home-turf 75, Secrecy 85 | NEVER sells (most rolls) |
+| 12 | Old Family Dynasty (the version that still buys) | Hold 98, Leverage 15, Quality 70, Home-turf 75, Secrecy 85 | NEVER sells (most rolls) |
 | 13 | Foreign Trophy Buyer | Quality 95, Prime 95, Price discipline 10, Build 5, Leverage 25 | ONLY trophy |
 | 14 | Owner-User Corporation | Office 80, Industrial 50, Hold 100, Build 30 | NEVER sells |
 | 15 | High-Street Retail Landlord | Retail 98, Prime 80, Hold 70 | ONLY retail |
 | 16 | Net-Lease Buyer | Quality 60, Hold 80, Price discipline 40, Renovation 5 | — |
 | 17 | Neighbourhood Operator | Residential 85, Scale 15, Home-turf 95, Capacity 75, Upkeep 60 | ONLY its home district |
-| 18 | Institutional Expander | Home-turf 100, Price discipline 10, Hold 100 | ONLY its home district, NEVER sells |
+| 18 | Institutional Expander (buys next to itself) | Home-turf 100, Price discipline 10, Hold 100 | ONLY its home district, NEVER sells |
 | 19 | Vulture | Distress 98, Cycle timing 5, Underwriting 80, Hold 50 | ALWAYS buys at the courthouse steps |
 | 20 | Loan-to-Own Lender | Distress 90, Reach 70, Underwriting 85 | (needs notes, phase 3) |
 | 21 | Hot-Money Flipper | Leverage 95, Cycle timing 98, Hold 10, Underwriting 30, Panic 20 | — |
@@ -188,7 +187,7 @@ Key traits only. Unlisted traits centre at 50.
 | 24 | Land Banker | Land 98, Build 0, Edge 70, Hold 60, Leverage 15 | NEVER builds |
 | 25 | Corporate Raider | Distress 70, Capacity 90, Reach 85 | (takeovers, phase 3) |
 | 26 | Slumlord | Quality 5, Upkeep 3, Residential 70, Cash-out 70 | — |
-| 27 | Preservationist | Hold 98, Renovation 70, Build 0 | NEVER builds, NEVER sells |
+| 27 | Preservationist (buys landmarks) | Hold 98, Renovation 70, Build 0 | NEVER builds, NEVER sells |
 | 28 | Spinout Upstart | copies its parent firm's profile, Capacity 30, Grudge memory 90 (at its parent) | — |
 
 ### 3.2 The roster
@@ -208,6 +207,10 @@ trait maps to the old parameter as an **offset from the style's centre**, so a
 trait at its centre reproduces the old number exactly. The baseline must then
 be **bit-identical**. Only after that do new traits and profiles switch on,
 each one measured.
+
+Profiles 12, 18 and 27 are competitors only in the version that bids. The
+passive versions (the family that never buys, the hospital that only sits) are
+**holders** (§5a).
 
 ---
 
@@ -249,6 +252,64 @@ consequences are real decisions, kept inside the firm's own limits:
 
 The player never manages this. It shows up as one line where it matters:
 "Lost to Kestrel — they have bid against you since the Pearl St holdout."
+
+---
+
+## 5a. Holders: the owners who are not competitors
+
+`owners.ts` keeps a register of named holders: families, estates, partnerships,
+institutions and original builders. They own most of the city's ~900 other
+buildings, on a power law. Keeping them apart from competitors is right and
+stays. Most property in a real city belongs to people who are not in your
+business, and making them bidders would put hundreds more firms in every auction.
+
+**The rule:** if it ever bids against you, it is a competitor. If it only
+sells, refuses or sits, it is a holder.
+
+| | Holders | Competitors |
+|---|---|---|
+| Number | hundreds (power law) | 35 |
+| Buys? | never | yes |
+| Balance sheet | none (derived from the deeds by hash) | real |
+| Personality | kind (estate, local family, institution, partnership, original builder), plus the mini-sheet below | full trait sheet |
+| Why it sells | life events (`EXIT_HAZARD` by kind), whole book at once | hold clocks, distress, raising cash |
+| Memory of you | yes, across all its buildings (`offend`, `isCold`) | relationship ledger (§5) |
+
+### What changes for holders
+
+1. **A mini-sheet: four numbers, not 22.** They refine the existing kind; they do
+   not replace it.
+   - **Attachment**: how unwilling it is to sell at all. It scales the walk-away
+     odds on an approach.
+   - **Ask premium**: how far above value it prices.
+   - **Memory**: how long a lowball keeps its doors shut. It scales the
+     `offend` window.
+   - **Readiness** *(hidden until a tell)*: how close it is to a sale event.
+     It scales its exit hazard.
+
+   All four are seed-hashed like the register itself (no RNG stream), and use
+   the same estimate rules as §2.4.
+2. **Holders are the stage competitors act on.**
+   - **Foreshadowing**: "The Calloway estate is in probate — 4 buildings likely
+     to market within 2 years." Readiness crossing a line produces the tell and
+     a watch item.
+   - Vultures and distress buyers weight estate and partnership books.
+     Assemblers target holder lots, and a holder can be the holdout.
+   - Working a holder relationship can get you a building before it lists. That
+     path exists today (approaches), and now it is visible.
+3. **The bridge runs both ways.** Heirs becoming a competitor already exists.
+   New: a competitor that winds down solvent can leave a few buildings with its
+   founders' family as a **holder**. This keeps the register alive over a
+   century instead of only shrinking.
+4. **Names are entities.** "Ainsworth Family Holdings", "the Calloway estate".
+   No individual people (firms only).
+5. **Clean up the overlap.** The holder kind "developer" reads as **original
+   builder**: someone holding what it built long ago. It never builds, so it is
+   not confused with competitor developers.
+6. **Screens.** Research → Owners stays the home. The Owners lens shows
+   competitors in colour, holders muted, and a flag on holders with a sale
+   event coming. Estate settlements and partnership splits go through the same
+   headline-beat budget as competitors (§6.4).
 
 ---
 
@@ -348,6 +409,7 @@ Coming: tops out at 1 Front St in 8 months — 410k sf of trophy office
 | **2** | Estimates and hidden traits; firm card; Competitors page with headliners, race chart and merged Jev table; map pulse | No (display only) |
 | **3** | Story director, arcs, what's coming, spectator stops, year-review lines | No |
 | **4** | Relationship ledger consequences; drift | Yes — measured |
+| **4h** | Holders (§5a): mini-sheet, foreshadowing, competitor → holder bridge, "original builder" label, lens flag | Yes (Readiness/Attachment) — measured |
 | **5** | New mechanics: conversions (9), loan-to-own (20), build-to-suit tenant poaching (8), raider takeovers (25), firm-vs-firm feuds | Yes — each measured on its own |
 
 Phases 2 and 3 can ship before 1b if we want the spectator payoff first; they
@@ -392,10 +454,8 @@ Suggestions, not part of the approved scope until picked:
 
 ---
 
-## 11. Decisions for the owner
+## 11. Owner decisions
 
-1. Approve the trait list (§2.1), or add, cut or rename traits.
-2. Approve the profile list (§3.1) and the roster balance check (§3.2).
-3. Phase order: economy-first (1a → 1b → 2 → 3) or spectator-first
-   (1a → 2 → 3 → 1b)?
-4. Which of the §10 ideas to take into scope.
+Approved: the plan as written, the trait list (§2.1), the profiles (§3.1), the
+holder section (§5a). Build order: §9 as listed. §10 ideas stay out of scope
+until picked.

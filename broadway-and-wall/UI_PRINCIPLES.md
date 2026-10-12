@@ -161,3 +161,19 @@ business that runs on letters. The toast lane was the noisy channel:
 - **The same standing condition rode the toast every month** ("covenant
   breach — cash flow swept" three months running; one note sale four). The
   toast now names only what is new this month; the docket keeps the rest.
+
+## Fourth batch — things that were never visible
+
+- **Every "bad" value printed in ordinary ink.** `Row` marks a value bad
+  (`v-bad`) in about 185 places — a bid 29% under the whisper, a negative
+  yield, a short cheque — and `.app .grid .v` (specificity 0,3,0) outranked
+  `.app .v-bad` (0,2,0) in every key/value grid. They are red again.
+- **Entrance animations faded from opacity 0.** Under a slow compositor the
+  card animation was measured sitting at t = 0 for 300ms+, leaving a decision
+  card invisible behind its scrim (and the desks half-transparent). Cards and
+  desks now arrive by motion only, from 85% opacity — never invisible.
+- **A number means an answer is owed.** The City desk's rail badge counted
+  this month's news and was lit on nearly every screen — the way a player
+  learns that badges are wallpaper. News is unread, not waiting: City gets a
+  dot, the count stays on the News tab inside, and numbered badges are left
+  for things that want a decision.

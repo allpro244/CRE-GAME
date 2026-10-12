@@ -78,8 +78,11 @@
    as new rather than as the screen flickering. */
 .app .modal-backdrop > .modal,
 .app .delivery-ceremony > .delivery-stamp { animation: card-arrive 0.2s var(--ease, ease-out); }
+/* Motion only, never a fade from zero: under a slow compositor the animation
+   was measured sitting at t=0 for 300ms+, and a decision card must never be
+   invisible while it holds the screen. */
 @keyframes card-arrive {
-  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  from { opacity: 0.85; transform: translateY(10px) scale(0.985); }
   to { opacity: 1; transform: none; }
 }
 .app .card-nudge { animation: card-nudge 0.32s ease-in-out; }
@@ -344,3 +347,28 @@
 .app .docket-nudge .docket-title { font-weight: 600; }
 /* Section heads are flex rows, so text-align alone never centred them. */
 .app .gameover-page .page-section { justify-content: center; text-align: center; }
+
+/* Same rule for the desk rooms: index.css faded them in from opacity 0, and a
+   stalled compositor showed a half-transparent desk over the map for most of
+   a second. Redefined here (the later @keyframes of a name wins). */
+@keyframes page-arrive {
+  from { opacity: 0.85; transform: translateY(7px) scale(0.995); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- bad values are red, in every grid ---------------------------
+   `.app .grid .v` (0,3,0) outranked `.app .v-bad` (0,2,0), so every Row
+   flagged bad — a bid 29% under the whisper, a negative going-in yield, a
+   short cheque — printed in ordinary ink across every desk and card. */
+.app .grid .v.v-bad { color: var(--neg); font-weight: 650; }
+/* Stat tiles too: `.app .big-value` is declared after `.app .v-bad` at the
+   same specificity, so a tile flagged bad (occupancy 15.8%, a −49% mark)
+   printed in ordinary ink. */
+.app .big-value.v-bad { color: var(--neg); }
+
+/* Unread, not waiting: a dot. */
+.app .rail-dot {
+  flex: none; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%;
+  background: var(--text-3);
+}
+.app .siderail-compact .rail-dot { position: absolute; top: 5px; right: 8px; margin: 0; }

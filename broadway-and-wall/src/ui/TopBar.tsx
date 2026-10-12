@@ -631,7 +631,12 @@ export default function TopBar() {
                 >
                   <span className="rail-ico" aria-hidden="true">{d.icon}</span>
                   <span className="rail-label">{d.label}</span>
-                  {n > 0 ? <span className="rail-badge" aria-label={`${n} waiting`}>{n}</span>
+                  {/* A NUMBER MEANS AN ANSWER IS OWED. City's count was this
+                      month's news — lit on nearly every screen, which teaches a
+                      player that badges are wallpaper. News is unread, not
+                      waiting: a dot here, the count on the News tab inside. */}
+                  {n > 0 && d.id === "city" ? <span className="rail-dot" aria-label="new on the tape" />
+                    : n > 0 ? <span className="rail-badge" aria-label={`${n} waiting`}>{n}</span>
                     : warn ? <span className="rail-badge rail-badge-warn" aria-label={warn === "swept" ? "cash sweep on" : "maturity wall"}>{warn === "swept" ? "⚠" : "!"}</span>
                     : <kbd className="rail-key" aria-hidden="true">{d.key}</kbd>}
                 </button>

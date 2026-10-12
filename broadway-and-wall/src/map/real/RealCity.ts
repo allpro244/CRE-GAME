@@ -1565,7 +1565,7 @@ export class RealCityLayer {
     }
     this.renderer.render(this.scene, this.camera);
     // the finishing pass over the whole frame: grade, bloom, tilt-shift (post.ts)
-    this.post.apply(this.renderer, pitch, distM, smooth(0.35, 0.95, this.dusk));
+    this.post.apply(this.renderer, pitch, distM, smooth(0.35, 0.95, this.dusk), this.scene, this.camera, [this.hazeSheet, this.veilMesh, this.precip]);
     if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
   }
 
@@ -1576,6 +1576,7 @@ export class RealCityLayer {
   private hazeSheet: THREE.Mesh | null = null;
   private skyEnv: THREE.Texture | null = null;
   private post = new PostFX();
+  private veilMesh: THREE.Mesh | null = null;
   /**
    * WHAT THE GLASS TOWERS SEE (SKYLINE_LOOK_PLAN step 5). The curtain walls
    * reflected a painted sky and nothing else. Once the city is built, a
@@ -4126,6 +4127,7 @@ export class RealCityLayer {
       }
     }
     const veil = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.veil);
+    this.veilMesh = veil;
     veil.position.z = 0.03; veil.renderOrder = -2;
     this.scene.add(veil);
   }

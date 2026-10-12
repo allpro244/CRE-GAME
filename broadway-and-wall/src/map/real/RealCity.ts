@@ -5521,7 +5521,8 @@ export class RealCityLayer {
     if (ring.length !== 4 || h > 26) return false;
     if (ringArea(ring) < 0) ring = ring.slice().reverse();
     const yr = it.year && it.year > 1800 ? it.year : 2000;
-    const len = (i: number) => Math.hypot(ring[(i + 1) % 4][0] - ring[i][0], ring[(i + 1) % 4][1] - ring[i][1]);
+    // edge i of the four, wrapping: li + 3 runs past the end of the ring
+    const len = (i: number) => { const a = ring[i % 4], b = ring[(i + 1) % 4]; return Math.hypot(b[0] - a[0], b[1] - a[1]); };
     const li = len(0) + len(2) >= len(1) + len(3) ? 0 : 1;
     const L = (len(li) + len(li + 2)) / 2, S = (len(li + 1) + len(li + 3)) / 2;
     const style = styleOf(fam, yr, h);

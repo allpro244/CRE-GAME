@@ -17,7 +17,7 @@ export function HousePolicy() {
   // and disable whole-book exclusives on a developer portfolio.
   const parcels = useStore.getState().parcels;
   const built = Object.values(game.holdings).filter((h) => {
-    if (h.groundLeased) return false;
+    if (h.groundLeased || game.merged?.[h.bbl]) return false;
     const rec = parcels ? resolveRec(parcels, game, h.bbl) : null;
     return rec && rec.class !== "land" && (rec.bldgArea ?? 0) > 0;
   });

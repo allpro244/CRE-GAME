@@ -2041,7 +2041,11 @@ function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl
   // value, what a lender will lend on — reads this without knowing it exists.
   const m = s.merged;
   if (m) {
-    if (m[bbl]) return { ...rec, lotArea: 0, farMaxComm: 0, farMaxRes: 0 };
+    // The child keeps whatever STANDS on it — and only that. This returned the
+    // static parcel, so a lot you demolished and then folded into a site came
+    // back as its original building: the Leasing desk listed a 79,000 sf
+    // office that had been knocked down. Resolve through `built` like any lot.
+    if (m[bbl]) return { ...(resolveBase(s, rec) ?? rec), lotArea: 0, farMaxComm: 0, farMaxRes: 0 };
     // A MERGED SITE'S DIRT IS THE DIRT THAT WENT INTO IT. This used to take
     // the sum of the areas and keep the PARENT'S landPsf — and the parent is
     // the biggest lot, which this generator prices cheapest per foot. So

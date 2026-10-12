@@ -394,7 +394,9 @@ export function portfolioOccupancy(
 ): { leasedSf: number; lettableSf: number; occ: number } | null {
   let leased = 0, lettable = 0;
   for (const h of Object.values(s.holdings)) {
-    if (isLeasedFee(h)) continue;
+    // An assembled child lot is part of the site's deed; its old building is
+    // gone and must not dilute the book's occupancy.
+    if (isLeasedFee(h) || s.merged?.[h.bbl]) continue;
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
     const or = occupancyRead(rec, h);

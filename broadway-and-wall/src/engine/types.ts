@@ -758,6 +758,13 @@ export interface BuildingDesign {
   /** index into the renderer's trim paints (stone, green, black, terracotta, grey) */
   trim?: number;
   roof?: "flat" | "gable" | "hip" | "mansard";
+  /**
+   * the ground storey: a double-height glass lobby, a rusticated stone base,
+   * columns (pilotis) with the lobby set back, an arcade, or the facade run
+   * to the pavement. Shops at grade are the Programme's call (groundRetail),
+   * so a trading ground floor keeps its shopfronts or goes behind an arcade.
+   */
+  base?: "lobby" | "stone" | "columns" | "arcade" | "plain";
   /** how a tall building finishes */
   crown?: "none" | "setback" | "spire" | "mast" | "cake";
   /** a landmark form for a tower (a key of src/map/real/signature.ts SIGNATURE_FORMS); it replaces the massing and the crown */

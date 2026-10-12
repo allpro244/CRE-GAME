@@ -202,21 +202,104 @@ tenant pool channels are right and the level still is not.
   forma read; layout is theirs.
 - **Graphics** — optional: tier as a material/finish cue on the building.
 
-## 7. Order of work
+## 7. Order of work — execution spec
 
-0. **Measure.** Promote `test/build-spec-arms.mjs` to cover 4 tiers × location
-   tercile × hold (7 / 15 / 30 y) × unlevered/levered, **real development cost**
-   (hard + soft + contingency, not hard alone — the current probe understates
-   the cheap side's advantage), paired seeds, per-seed differences. Report only.
-1. **Bones** — tier snap, wear-rate by spec, value opens "standard", gut capped
-   at one tier. Smallest change; it alone closes "fix it later". Re-measure.
-2. **Tenant pool** — class into `rollCredit`. Re-measure.
-3. **Flight to quality** — class-weighted arrival/renewal tilt, zero-sum across
-   the city. With the Market agent. Re-measure.
-4. **Exit and debt** — buyer pool and life-company gate by class.
-5. **Class label** in the engine API; hand to UI.
-6. After each: `pnpm conserve`, `pnpm gate`, `pnpm baseline:check`; regenerate
-   BASELINE with the reason in the commit.
+**Status: planned, not started.** Owner's call (2026-10): execute after the UI,
+Market/Economics and Graphics agents land. Before starting, merge their tips
+and re-read the files named below — line numbers here are from
+`claude/build-class-plan` at the commit that added this file and will drift.
+
+Each step is one commit, measured before and after with step 0's harness.
+After every step: `pnpm engine`, `pnpm conserve`, `pnpm gate`,
+`pnpm baseline:check`; regenerate BASELINE only with the reason in the commit.
+
+### Step 0 — the harness (report, no engine change)
+
+`test/build-class-arms.mjs`, script `pnpm class-arms`. Grow it out of
+`test/build-spec-arms.mjs`:
+- arms: the four tiers (0.15 / 0.50 / 0.75 / 0.95), plus "Value + every
+  programme" and "Value + gut when eligible" (the fix-it-later strategies);
+- cells: location tercile (demand score) × hold 7 / 15 / 30 y × unlevered /
+  levered at the desk's own max advance;
+- cost: `planDevelopment(...).costTotal` per arm — hard + soft + contingency +
+  lease-up, not hard × spec alone (the existing probe understates the cheap
+  side's edge);
+- columns: PV(NOI − capex + exit) − cost at 7%, occupancy mean and its
+  standard deviation across the cycle, mean tenant credit, WALT, exit cap;
+- per-seed paired differences against Standard; a tier "wins" a cell only on
+  5 of 6 seeds;
+- print the §5 acceptance line: best tier per cell, and whether it rises with
+  demand and with hold.
+
+### Step 1 — bones (engine only; closes "fix it later" by itself)
+
+| change | where |
+|---|---|
+| `BUILD_TIERS` table {key, label, spec, blurb}; `buildTier(spec)` reader (nearest tier, so saved odd specs still read) | new, `src/engine/value.ts` beside `specRentMult` |
+| wear by bones: `wear *= specWearMult(spec)`, shape parameter, Value ≈ 1.3×, Trophy ≈ 0.85×, calibrated on component-life tables and stated as such | `leasing.ts` monthly decay (`COND_DECAY[...] * ...`, ~line 1307); the plan bill reads `wear`, so capex follows with no second edit |
+| opening condition: `min(ceiling, openIdx(spec))` where Value opens at a "standard" index and Premium+ at "good" | `dev.ts` delivery (~line 2139) and the same line in `test/build-spec-arms.mjs` |
+| gut lifts bones at most one tier: `spec = min(nextTierSpec(spec0), 0.75)`, replacing `spec0 + 0.4 × (0.75 − spec0)` | `sim.ts` renovation completion (~line 714) |
+| gut cost rises with the bones it lifts: retrofit share on `RENO_COST_PSF` when the step changes tier | `value.ts` reno cost (~line 3474) and `actions.ts startRenovation` quote |
+
+Not touched: `specCostMult`, `specRentMult`, `CONDITION_RENT_MULT`,
+`condCeiling` shape, programme costs and lifts.
+
+### Step 2 — tenant pool
+
+- `classIdx(rec, h, s)` — bones and condition blended, read against the
+  sf-weighted spec/condition of the city's stock in that use (relative). Grade
+  `classGrade(idx)` → "Trophy" | "A" | "B" | "C". Pure function, `value.ts`.
+- `rollCredit(s, demand, classIdx)` — class shifts the draw the way location
+  already does (`r + demand/250`). All three call sites in `leasing.ts`
+  (~lines 750, 758, 2057).
+- **Bug to fix on the way:** line 758 draws a *second* `rollCredit` for the
+  deposit, so a tenant's deposit is sized on a different covenant than the
+  tenant has. Draw once, use it for both.
+- Term follows for free through `termBandM(credit)`.
+
+### Step 3 — flight to quality (with the Market agent)
+
+- `leaseFactors` (`absorption.ts` ~line 346) gains a "Building class" row:
+  `mult = exp(β · (classIdx − cityMeanClass) · slack)`, `slack` = city vacancy
+  over natural for that use (negative when tight, so the tilt reverses in a
+  boom — tenants settle for B when A is full).
+- `renewalIntent` (`leasing.ts` ~line 1020) gains the matching `fClass` and a
+  `why` line ("a better building made them an offer in a soft market").
+- **Zero-sum rule:** normalise so the sf-weighted mean multiplier across the
+  city's stock is 1.0 each month. It moves who wins a lease, never how many
+  leases the city signs. Agree this with the Market agent before editing
+  absorption.ts; it is their file.
+- β is a shape parameter; calibrate to the trophy vs B/C vacancy gaps in §3
+  (DC ~16pp, Houston ~6pp at ~25% overall vacancy) and say so in the comment.
+
+### Step 4 — exit and debt
+
+- `capRateFor` (`value.ts` ~line 2243): replace `specSpread` (±15bp, bones
+  only) with a class spread. C carries the value-add spread (~150bp over
+  stabilised A, Chicago H1 2026), so condition's `qualSpread` and the class
+  spread must be checked for double counting the same way QUALITY_BALANCE_PLAN
+  §2 checked programmes. Instrument first.
+- Life company (`debt.ts` `minCondition` ~line 58/288): gate on class ≥ A
+  instead of condition alone.
+- Months-to-sell by class, if the Market agent's sale-timing model has a hook;
+  otherwise leave to them.
+
+### Step 5 — the API for UI
+
+Export `BUILD_TIERS`, `buildTier`, `classIdx`, `classGrade`, and a
+`tierCompare(s, parcels, bbl, use, floors, coverage)` that returns the four
+tiers' pro formas side by side (cost, stabilised NOI, value ÷ cost, opening
+grade, plant wear). The UI agent owns the DevelopDesk tier buttons
+(`DevelopDesk.tsx` ~line 698 slider and ~line 716 presets) and the Class label
+on the holding card.
+
+## 8. Open questions for the owner
+
+1. Four fixed tiers, or keep a slider that snaps to them? (Plan assumes fixed.)
+2. Should rival developers pick tiers (a real competitive set) in this pass or
+   the Market agent's next one?
+3. Saves: buildings already built at an odd spec read as the nearest tier for
+   labels but keep their exact number for maths. OK?
 
 ## Do not
 

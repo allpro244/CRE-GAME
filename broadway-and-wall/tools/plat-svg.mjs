@@ -5,7 +5,7 @@
 // page. No browser, no game, ~1s per island; this is the instrument the
 // gallery and every citygen change review through.
 //
-//   node tools/plat-svg.mjs <seed> [out.svg] [--size city] [--dev village]
+//   node tools/plat-svg.mjs <seed> [out.svg] [--city somewhere] [--size city] [--dev village]
 import { writeFileSync } from "node:fs";
 import { makeCity } from "../src/citygen/index.mjs";
 import { makeProjection } from "../src/citygen/geom.mjs";
@@ -96,10 +96,10 @@ export function renderPlatSVG(city, { w = 640 } = {}) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
   const seed = Number(args[0]);
-  if (!seed) { console.error("usage: node tools/plat-svg.mjs <seed> [out.svg] [--size city] [--dev village]"); process.exit(1); }
+  if (!seed) { console.error("usage: node tools/plat-svg.mjs <seed> [out.svg] [--city somewhere] [--size city] [--dev village]"); process.exit(1); }
   const out = args[1] && !args[1].startsWith("--") ? args[1] : `plat-${seed}.svg`;
   const flag = (n, d) => { const i = args.indexOf("--" + n); return i >= 0 ? args[i + 1] : d; };
-  const city = makeCity("somewhere", seed, { size: flag("size", "city"), density: flag("dev", "village"), planV: Number(flag("plan", "1")) });
+  const city = makeCity(flag("city", "somewhere"), seed, { size: flag("size", undefined), density: flag("dev", "village"), planV: Number(flag("plan", "1")) });
   const { svg, metrics } = renderPlatSVG(city);
   writeFileSync(out, svg);
   console.log(out, "·", metrics.lots, "lots · sliver", metrics.sliverPct + "%");

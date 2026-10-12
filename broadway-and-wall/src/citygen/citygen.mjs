@@ -83,6 +83,27 @@ export function inRing(p, ring) {
   return inside;
 }
 
+/**
+ * A point-in-any-of-these-rings test with a bounding-box reject in front of
+ * each ring. Same answer as `rings.some((r) => inRing(p, r))` — a point
+ * outside a ring's box cannot be inside the ring — but a long river ribbon
+ * has hundreds of vertices and the coverage pass and the crossing finder ask
+ * this of every point on a 10 m lattice. Measured on Aurelmere (a river and
+ * two canals over 11.7 km2): 66 s of generation, 90% of it in inRing, before
+ * this; the generated island's parcel table is byte-identical after it.
+ */
+export function anyRing(rings) {
+  const boxes = rings.map((r) => bboxOfRing(r));
+  return (p) => {
+    for (let i = 0; i < rings.length; i++) {
+      const b = boxes[i];
+      if (p[0] < b[0] || p[0] > b[2] || p[1] < b[1] || p[1] > b[3]) continue;
+      if (inRing(p, rings[i])) return true;
+    }
+    return false;
+  };
+}
+
 /** True when two rings share a point or one sits inside the other. */
 function ringsOverlap(a, b) {
   if (!a || !b || a.length < 3 || b.length < 3) return false;
@@ -508,7 +529,7 @@ export function generateCity(cfg) {
   const WATER_M = (cfg.streams ?? [])
     .filter((st) => !st.cut)
     .map((st) => st.ring).filter((r) => r && r.length >= 3);
-  const inWater = (p) => WATER_M.some((r) => inRing(p, r));
+  const inWater = anyRing(WATER_M);
   const inPark = (p) => PARKS_M.some((r) => inRing(p, r));
   /** Shortest distance from a point to a closed ring's boundary, in metres. */
   const ringDist = (p, ring) => {
@@ -2443,7 +2464,7 @@ export function generateCity(cfg) {
   const CH_M = (cfg.streams ?? [])
     .filter((st) => !st.cut && st.paint !== false && st.kind !== "pond" && st.ring && st.ring.length >= 3)
     .map((st) => st.ring);
-  const inChannel = (p) => CH_M.some((r) => inRing(p, r));
+  const inChannel = anyRing(CH_M);
   // the clearance the lots were cut back to either side of a channel — drawn
   // as the creek's own green bank instead of left as bare paved ground
   const CUT_M = (cfg.streams ?? [])
@@ -3135,17 +3156,19 @@ export function generateCity(cfg) {
     return "beach";
   };
   const shoreBands = [];
+  const coastWind = ringArea(COAST_M) >= 0 ? 1 : -1;
   const quayLine = [];
   for (let i = 0; i < COAST_M.length; i++) {
     const a = COAST_M[i], b = COAST_M[(i + 1) % COAST_M.length];
     const kind = shoreKindAt(a);
-    const midp = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     const dx = b[0] - a[0], dy = b[1] - a[1];
     const L = Math.hypot(dx, dy) || 1;
-    let nx = dy / L, ny = -dx / L;
-    const c0 = centroid(COAST_M);
-    if ((midp[0] - c0[0]) * nx + (midp[1] - c0[1]) * ny > 0) { nx = -nx; ny = -ny; }
-    // nx,ny now point seaward
+    // SEAWARD IS A FACT ABOUT THE RING'S WINDING, not about the centroid. The
+    // test this replaces pointed the band away from the island's middle, which
+    // is right on a convex shore and backwards on both flanks of a deep bay —
+    // the band was painted onto the land. A counterclockwise ring has the land
+    // on its left, so the right-hand normal is the sea, on any shape.
+    const nx = (dy / L) * coastWind, ny = (-dx / L) * coastWind;
     const inland = 6, out = kind === "marsh" ? 28 : kind === "rock" ? 14 : 8;
     const ring = [
       [a[0] - nx * inland, a[1] - ny * inland],
@@ -3158,14 +3181,33 @@ export function generateCity(cfg) {
       geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
       properties: { kind },
     });
-    if (kind === "seawall") quayLine.push(proj.toLL(a));
+    quayLine.push(kind === "seawall" ? proj.toLL(a) : null);
   }
-  if (quayLine.length > 1) quayLine.push(quayLine[0]);
-  const quayFeat = quayLine.length > 2 ? [{
+  // THE QUAY IS A RUN OF SHORE, NOT A LOOP. It used to be every seawall
+  // vertex in one LineString closed back on its first point, which on a bay
+  // drew a straight wall across the open water from one quay end to the
+  // other. One line per unbroken run of seawall, joined across the ring's
+  // index seam, and never closed.
+  const quayRuns = [];
+  {
+    const n = quayLine.length;
+    const start = quayLine.findIndex((q) => q === null);
+    if (start < 0 && n > 2) quayRuns.push([...quayLine, quayLine[0]]);
+    else if (start >= 0) {
+      let run = [];
+      for (let k = 1; k <= n; k++) {
+        const q = quayLine[(start + k) % n];
+        if (q) run.push(q);
+        else { if (run.length > 2) quayRuns.push(run); run = []; }
+      }
+      if (run.length > 2) quayRuns.push(run);
+    }
+  }
+  const quayFeat = quayRuns.map((coordinates) => ({
     type: "Feature",
-    geometry: { type: "LineString", coordinates: quayLine },
+    geometry: { type: "LineString", coordinates },
     properties: { kind: "quay" },
-  }] : [];
+  }));
 
   const stations = {
     type: "FeatureCollection",
@@ -3437,7 +3479,8 @@ export function generateCity(cfg) {
             cw: (() => {
               const t = ((br.deg ?? 0) * Math.PI) / 180;
               const ux = Math.cos(t), uy = Math.sin(t);
-              const inCut = (p) => CUT_M.some((r) => inRing(p, r)) || inChannel(p);
+              const inCutM = anyRing(CUT_M);
+              const inCut = (p) => inCutM(p) || inChannel(p);
               let lo = 0, hi = 0;
               while (lo < 60 && inCut([br.cx - uy * lo, br.cy + ux * lo])) lo += 0.5;
               while (hi < 60 && inCut([br.cx + uy * hi, br.cy - ux * hi])) hi += 0.5;
@@ -3636,6 +3679,7 @@ export function generateCity(cfg) {
         }
       }
     }
+    const inStreamM = anyRing(STREAMS_M);
     let land = 0, covered = 0;
     const voids = [];
     for (let x = minX; x <= maxX; x += STEP) {
@@ -3646,7 +3690,7 @@ export function generateCity(cfg) {
         const near = buckets.get(key(Math.floor(x / GRID), Math.floor(y / GRID))) ?? [];
         if (near.some((r) => inRing(p, r))) { covered++; continue; }
         if (APRONS.some((r) => inRing(p, r))) { covered++; continue; }
-        if (STREAMS_M.some((r) => inRing(p, r))) { covered++; continue; }
+        if (inStreamM(p)) { covered++; continue; }
         voids.push(p);
       }
     }

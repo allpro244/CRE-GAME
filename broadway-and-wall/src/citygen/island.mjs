@@ -139,7 +139,7 @@ function discRing(cx, cy, r, n = 20) {
   return hull.length >= 8 ? hull : ring;
 }
 
-function ellipseRing(cx, cy, rx, ry, n = 64) {
+export function ellipseRing(cx, cy, rx, ry, n = 64) {
   const ring = [];
   for (let k = 0; k < n; k++) {
     const t = (k / n) * Math.PI * 2;
@@ -150,7 +150,7 @@ function ellipseRing(cx, cy, rx, ry, n = 64) {
 }
 
 /** Chaikin on an OPEN polyline. The closed-ring Chaikin would join the mouth to the pond. */
-function chaikinOpen(path, iterations) {
+export function chaikinOpen(path, iterations) {
   let r = path;
   for (let it = 0; it < iterations; it++) {
     if (r.length < 3) break;
@@ -217,7 +217,7 @@ function ringSelfIntersects(ring) {
  * A single offset polygon is what a creek looks like, provided the centreline
  * does not U-turn tighter than the width.
  */
-function strokeRibbon(path, width) {
+export function strokeRibbon(path, width) {
   if (!path || path.length < 2) return null;
   const hw = width / 2;
   const pts = resampleOpen(path, Math.max(10, hw * 0.85));
@@ -297,7 +297,7 @@ function strokeRibbon(path, width) {
  * Convex stadiums for LOT CUTTING only. The map never paints these — a stack
  * of capsules is what made the park look like paving slabs.
  */
-function bufferAsCapsules(path, width) {
+export function bufferAsCapsules(path, width) {
   if (!path || path.length < 2) return [];
   const hw = width / 2;
   const rings = [];

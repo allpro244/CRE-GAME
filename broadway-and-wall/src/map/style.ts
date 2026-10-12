@@ -800,6 +800,19 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         },
       },
       {
+        // the paving of a market square or a battery: stone in courses, so a
+        // big square reads as laid stone rather than one flat field
+        id: "park-setts",
+        type: "fill",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "park"], ["in", ["coalesce", ["get", "flavour"], "park"], ["literal", ["market", "battery"]]]],
+        minzoom: 14,
+        paint: {
+          "fill-pattern": "bw-grain-setts",
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15.5, 0.75] as never,
+        },
+      },
+      {
         // Kerbed edge of the painted green. Was a soft tint-on-tint outline
         // that disappeared against the lawn; without a hard stop the turf and
         // the flanking lots read as one field across the frontage road.
@@ -1101,7 +1114,7 @@ export function composeStyle(base: StyleSpecification, city?: {
  * lighter mottling. Each pixel is black or white at low alpha, so it shades
  * whatever colour the layer below already painted (season, snow, district).
  */
-export function groundGrain(kind: "asphalt" | "yard", size = 256): { width: number; height: number; data: Uint8Array } {
+export function groundGrain(kind: "asphalt" | "yard" | "setts", size = 256): { width: number; height: number; data: Uint8Array } {
   const data = new Uint8Array(size * size * 4);
   let s = kind === "asphalt" ? 1234567 : 7654321;
   const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
@@ -1126,6 +1139,21 @@ export function groundGrain(kind: "asphalt" | "yard", size = 256): { width: numb
       let x = rnd() * size, y = rnd() * size, a = rnd() * 6.28;
       for (let k = 0; k < 60; k++) { put(x, y, 0, 0.22); a += (rnd() - 0.5) * 0.6; x += Math.cos(a); y += Math.sin(a); }
     }
+  } else if (kind === "setts") {
+    // A PAVED SQUARE: stone flags in courses, every other course offset by
+    // half a stone, dark joints and each flag a shade of its own; a border
+    // course of larger slabs every 64 px so the pattern reads at a distance
+    const fw = 16, fh = 8;
+    for (let row = 0; row * fh < size; row++) {
+      const off = (row % 2) * (fw / 2);
+      for (let x0 = -fw; x0 < size; x0 += fw) {
+        const v = rnd() < 0.5 ? 1 : 0, a = 0.03 + rnd() * 0.05;
+        for (let y = 1; y < fh - 1; y++) for (let x = 1; x < fw - 1; x++) put(x0 + off + x, row * fh + y, v, a);
+      }
+      for (let x = 0; x < size; x++) put(x, row * fh, 0, 0.18);
+      for (let x0 = -fw; x0 < size; x0 += fw) for (let y = 0; y < fh; y++) put(x0 + off, row * fh + y, 0, 0.16);
+    }
+    for (let y = 0; y < size; y += 128) for (let x = 0; x < size; x++) { put(x, y, 0, 0.28); put(x, y + 1, 1, 0.12); }
   } else {
     for (let i = 0; i < 40; i++) blob(rnd() * size, rnd() * size, 6 + rnd() * 18, rnd() < 0.6 ? 0 : 1, 0.06 + rnd() * 0.05);
     for (let i = 0; i < size * size * 0.06; i++) put(rnd() * size, rnd() * size, rnd() < 0.7 ? 0 : 1, 0.04 + rnd() * 0.05);

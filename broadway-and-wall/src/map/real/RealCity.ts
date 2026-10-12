@@ -115,7 +115,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -4019,6 +4019,51 @@ export class RealCityLayer {
     l.push({ x, y, z, s, r, bbl, col, sz });
   }
 
+  /**
+   * AN EMPTY LOT IN TOWN (SKYLINE_LOOK_PLAN round 20). It was MapLibre's
+   * lawn and nothing else: a flat green card the size of the lot. A city lot
+   * left empty grows scrub along its edges, where the mower does not reach,
+   * and a self-seeded tree or two. Hung on the deed, so it clears on building.
+   */
+  private dressLawnLot(ring0: P2[], bbl: string) {
+    if (ring0.length < 3) return;
+    const ring = ringArea(ring0) < 0 ? ring0.slice().reverse() : ring0;
+    const area = Math.abs(ringArea(ring));
+    if (area < 80) return;
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
+    let rs = (keyOf(bbl || `${ring[0][0]},${ring[0][1]}`) * 2654435761) % 2147483646 + 1;
+    const rnd = () => (rs = (rs * 16807) % 2147483647) / 2147483647;
+    const inP = (x: number, y: number) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
+    // scrub along the edges: a point on the boundary, pulled a metre or three in
+    const nb = Math.min(14, 2 + Math.floor(area / 110));
+    for (let k = 0; k < nb; k++) {
+      const i = (rnd() * ring.length) | 0, a = ring[i], b = ring[(i + 1) % ring.length], t = rnd();
+      const ex = a[0] + (b[0] - a[0]) * t, ey = a[1] + (b[1] - a[1]) * t;
+      const dx = cx - ex, dy = cy - ey, dl = Math.hypot(dx, dy) || 1, d = 1.2 + rnd() * 2.2;
+      const x = ex + (dx / dl) * d, y = ey + (dy / dl) * d;
+      if (!inP(x, y) || !this.clearOfBuildings(x, y, 1.2)) continue;
+      // a clump: two or three bushes together
+      const nc = 1 + (rnd() < 0.6 ? 1 : 0) + (rnd() < 0.3 ? 1 : 0);
+      for (let c = 0; c < nc; c++) {
+        const bx = x + (rnd() - 0.5) * 2.2, by = y + (rnd() - 0.5) * 2.2;
+        if (!inP(bx, by)) continue;
+        this.putInst("bush", bx, by, 0, 0.8 + rnd() * 0.7, rnd() * 6.28, bbl, [0.3, 0.45, 0.2], 0.8 + rnd() * 0.5);
+      }
+    }
+    // a self-seeded tree or two on a lot of any size
+    const nt = area > 900 ? 2 + (rnd() < 0.5 ? 1 : 0) : area > 300 ? 1 + (rnd() < 0.4 ? 1 : 0) : rnd() < 0.4 ? 1 : 0;
+    for (let k = 0, tries = 0; k < nt && tries < 12; tries++) {
+      const x = cx + (rnd() - 0.5) * Math.sqrt(area) * 0.8, y = cy + (rnd() - 0.5) * Math.sqrt(area) * 0.8;
+      const sz = 0.65 + rnd() * 0.5;
+      if (!inP(x, y) || !this.clearOfBuildings(x, y, 2.6 * sz)) continue;
+      this.putInst("trunk", x, y, 0, sz, rnd() * 6.28, bbl);
+      this.putInst("crown", x, y, 0, sz, rnd() * 6.28, bbl, [0.3, 0.45, 0.2]);
+      k++;
+    }
+  }
+
   private async buildCity() {
     // the top volume per deed takes the cornice and the plant
     const topZ = new Map<string, number>();
@@ -4034,7 +4079,8 @@ export class RealCityLayer {
     for (const v of this.volumes) {
       await this.breathe();
       // a residential lot in town stays MapLibre's lawn; out on the fringe it is country like the rest
-      if (!v.k || (v.zn === 1 && (v.ds ?? 50) < 62 && (v.ds ?? 50) >= 38)) continue;
+      if (!v.k) continue;
+      if (v.zn === 1 && (v.ds ?? 50) < 62 && (v.ds ?? 50) >= 38) { this.dressLawnLot(v.r.map((p) => this.project(p)), v.b || ""); continue; }
       let ring = v.r.map((p) => this.project(p));
       if (ring.length < 3) continue;
       if (ringArea(ring) < 0) ring = ring.slice().reverse();
@@ -4453,20 +4499,24 @@ export class RealCityLayer {
       case "trunk": return { g: merge([cyl(0.22, 3.4, 0, 6),
         new THREE.CylinderGeometry(0.07, 0.12, 1.8, 5).rotateX(Math.PI / 2).rotateY(0.55).translate(0.45, 0.1, 3.7),
         new THREE.CylinderGeometry(0.07, 0.12, 1.6, 5).rotateX(Math.PI / 2).rotateY(-0.6).rotateZ(1.9).translate(-0.35, 0.3, 3.6)]), mat: this.barkMat };
+      case "bush":
       case "crown": {
         // two lumps at one subdivision: 160 triangles a tree, which is the
         // budget a city of twenty thousand of them can afford
         // Shaded as soft lumps, not facets: each vertex's normal leans out from
         // its lump's centre, and the foliage darkens toward the underside where
         // the canopy shades itself — what turns crumpled paper into a tree.
-        const pos: number[] = [], nrm: number[] = [], col: number[] = [];
+        const pos: number[] = [], nrm: number[] = [], col: number[] = [], uvs: number[] = [];
         // A CANOPY OF CLUSTERS. Two big masses and five smaller clusters set
         // round and above them, so the crown has a broken, leafy outline with
         // sky through it rather than one blob; each vertex carries a little
         // dapple of light and shade, and the crown's top a warmer, lighter
         // green where the sun comes through. ~260 triangles.
         let dap = 0;
-        for (const [r, det, cx, cy, cz] of [[2.2, 1, 0, 0, 4.6], [1.7, 1, 0.7, 0.5, 5.9], [1.15, 0, -1.5, -0.4, 4.9], [1.05, 0, 1.6, -0.7, 4.5], [1.0, 0, -0.6, 1.5, 5.0], [0.95, 0, 0.3, -1.6, 5.6], [0.9, 0, -0.9, -0.9, 6.3]] as number[][]) {
+        // a bush: the same foliage in three low clusters sitting on the ground
+        const CL = kind === "bush" ? [[0.85, 1, 0, 0, 0.55], [0.65, 0, 0.6, 0.35, 0.75], [0.6, 0, -0.55, -0.3, 0.6]]
+          : [[2.2, 1, 0, 0, 4.6], [1.7, 1, 0.7, 0.5, 5.9], [1.15, 0, -1.5, -0.4, 4.9], [1.05, 0, 1.6, -0.7, 4.5], [1.0, 0, -0.6, 1.5, 5.0], [0.95, 0, 0.3, -1.6, 5.6], [0.9, 0, -0.9, -0.9, 6.3]];
+        for (const [r, det, cx, cy, cz] of CL as number[][]) {
           const g = new THREE.IcosahedronGeometry(r, det);   // already one vertex per corner
           // each cluster its own light: one dapple per cluster, so the surface stays smooth
           const d = 0.86 + 0.28 * (((Math.sin(++dap * 12.9898) * 43758.5453) % 1 + 1) % 1);
@@ -4478,6 +4528,8 @@ export class RealCityLayer {
             const l = Math.hypot(x, y, z) || 1;
             pos.push(x + cx, y + cy, z + cz);
             nrm.push(x / l, y / l, z / l);
+            // for the winter twig mask: wrapped round each cluster, twice
+            uvs.push((Math.atan2(y, x) / (2 * Math.PI) + 0.5) * 2 + dap * 0.37, (Math.acos(Math.max(-1, Math.min(1, z / l))) / Math.PI) * 2);
             const up = Math.max(0, Math.min(1, (z / r + 1) / 2));   // 0 underneath, 1 on top
             const k = (0.46 + 0.54 * up) * d;
             // the sunlit top runs a touch warmer and lighter
@@ -4488,6 +4540,7 @@ export class RealCityLayer {
         g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
         g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
         g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+        g.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
         return { g, mat: this.leafMat, colored: true };
       }
       // REAL CARS. A shaped body (bonnet, windscreen, roof, boot) in the
@@ -5049,6 +5102,31 @@ export class RealCityLayer {
     return t;
   }
 
+  /** A winter crown's mask: branching twigs, white on black (the alpha is the green channel). */
+  private twigTexC: THREE.CanvasTexture | null = null;
+  private twigTex(): THREE.CanvasTexture {
+    if (this.twigTexC) return this.twigTexC;
+    const N = 256;
+    const { c, g } = makeCanvas(N, N);
+    let s = 4111; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    g.fillStyle = "#000"; g.fillRect(0, 0, N, N);
+    g.strokeStyle = "#fff"; g.lineCap = "round";
+    // limbs that fork and thin as they go, drawn three times across the
+    // wrap so a branch leaving one edge comes back on the other
+    const limb = (x: number, y: number, a: number, len: number, w: number, depth: number) => {
+      if (depth === 0 || len < 3) return;
+      const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
+      g.lineWidth = w;
+      for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) { g.beginPath(); g.moveTo(x + dx, y + dy); g.lineTo(x2 + dx, y2 + dy); g.stroke(); }
+      const n = rnd() < 0.7 ? 2 : 3;
+      for (let i = 0; i < n; i++) limb(x2, y2, a + (rnd() - 0.5) * 1.3, len * (0.62 + rnd() * 0.18), Math.max(1, w * 0.7), depth - 1);
+    };
+    for (let i = 0; i < 26; i++) limb(rnd() * N, rnd() * N, rnd() * 6.28, 22 + rnd() * 18, 3.2, 5);
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
+    this.twigTexC = t;
+    return t;
+  }
+
   /** Concrete flags with a joint every 1.5 m and a little staining. */
   private pavingTex(): THREE.CanvasTexture {
     const { c, g } = makeCanvas(128, 128);
@@ -5220,10 +5298,11 @@ export class RealCityLayer {
         // smaller tree, one under a metre and a half none
         if (w >= 1.5) {
           const off = Math.min(1.1, w * 0.3);
-          const big = w >= 3 ? 1.22 : w >= 2 ? 1.05 : 0.82;
+          // mature street trees are 10-15 m: a wide footway grows a big one
+          const big = w >= 3 ? 1.4 : w >= 2 ? 1.12 : 0.85;
           for (let t = 5 + rnd() * 3; t < L - 5; t += 8 + rnd() * 1.5) {
             const [x, y] = at(t, off);
-            const sz = big * (0.72 + rnd() * 0.3);
+            const sz = big * (0.7 + rnd() * 0.42);
             const col = rnd() < 0.33;
             if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz)) continue;
             this.putInst("trunk", x, y, 0.15, sz, rnd() * 6.28);
@@ -6196,7 +6275,7 @@ export class RealCityLayer {
     this.cropMat.color.setRGB(0.9 + vig * 0.1 + ripe * 0.35, 0.82 + vig * 0.18 + ripe * 0.15, 0.78 + vig * 0.05 - ripe * 0.3);
     this.meadowMat.color.setRGB(0.98 - vig * 0.22, 0.95 + vig * 0.1, 0.84 - vig * 0.14);
     // the canopy: green in summer, turning in autumn, bare grey in winter
-    const leaf = this.inst.get("crown");
+    for (const leaf of [this.inst.get("crown"), this.inst.get("bush")]) {
     if (leaf) {
       const turn = [0, 0, 0, 0, 0, 0, 0, 0.05, 0.3, 0.85, 0.9, 0.2][this.month];
       const bare = [1, 1, 0.85, 0.4, 0.02, 0, 0, 0, 0, 0.1, 0.6, 0.95][this.month];
@@ -6209,11 +6288,25 @@ export class RealCityLayer {
         const pc = PAL[h < 0.04 ? 5 : Math.floor(hash01(i, 91) * 5)];
         let c = new THREE.Color(pc[0] * (0.92 + h * 0.16), pc[1] * (0.92 + h * 0.16), pc[2]);
         if (turn > 0) { const a = autumn[Math.floor(h * 4)]; c.lerp(new THREE.Color(c.r * a[0], c.g * a[1], c.b * a[2]), turn); }
-        if (bare > 0) c = c.lerp(new THREE.Color(0.30, 0.27, 0.24), bare * 0.85);
+        // bark and twigs: a dark grey-brown, a little different tree to tree
+        if (bare > 0) c = c.lerp(new THREE.Color(0.15 + h * 0.05, 0.12 + h * 0.04, 0.1 + h * 0.03), bare * 0.95);
         leaf.setColorAt(i, c);
       }
       if (leaf.instanceColor) leaf.instanceColor.needsUpdate = true;
       leaf.scale.set(1, 1, 1);
+      // BARE BRANCHES. A deciduous tree out of leaf was a full summer crown
+      // painted grey: a field of khaki blobs down every street from November
+      // to March, the months the game opens in. Out of leaf the crown is cut
+      // to a lattice of twigs (an alpha mask), so the sky and the street show
+      // through and the shadow on the pavement is a tracery, not a disc.
+      const twig = bare >= 0.5;
+      if (twig !== !!this.leafMat.alphaMap) {
+        this.leafMat.alphaMap = twig ? this.twigTex() : null;
+        this.leafMat.alphaTest = twig ? 0.5 : 0;
+        this.leafMat.side = twig ? THREE.DoubleSide : THREE.FrontSide;
+        this.leafMat.needsUpdate = true;
+      }
+    }
     }
     // the beds are bare earth November to March
     const beds = this.inst.get("flowerbed");

@@ -4,7 +4,7 @@
 // Historical name `advanceQuarter` is kept as an alias: the tick has always
 // been monthly; the name was a lie that trained the wrong instinct.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { Exit, GameState, Listing } from "./types";
+import type { BuiltClass, Exit, GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleHot, cycleDown } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
@@ -680,6 +680,7 @@ function tickMonth(
   // into the queue and out of stock — same identity as city funding slips.
   clawbackSlippedDeliveries(s);
   tickConstructionLeasing(s, parcels);
+  if (!s.stockVintage || s.month % 12 === 0) stampStockVintage(s, parcels);
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
   applyReliefRule(s, parcels);
@@ -2334,3 +2335,24 @@ export function firstListings(s: GameState, parcels: ParcelTable, bbls: string[]
 }
 
 export type { ParcelRecord };
+
+/**
+ * THE CITY'S STOCK BY VINTAGE, once a year: the sf-weighted mean year built
+ * of every standing building, per use, with the deliveries on `s.built`
+ * read over the static table. What the building score's competitiveness is
+ * measured against — Class A is relative, and a new tower next door moves
+ * everybody else down. BUILD_CLASS_PLAN.md.
+ */
+export function stampStockVintage(s: GameState, parcels: ParcelTable) {
+  const sum: Partial<Record<BuiltClass, number>> = {}, w: Partial<Record<BuiltClass, number>> = {};
+  for (const bbl in parcels) {
+    const r = (s.built?.[bbl] as { class?: string; bldgArea?: number; yearBuilt?: number } | undefined) ?? parcels[bbl];
+    if (!r || r.class === "land" || !r.bldgArea || !r.yearBuilt) continue;
+    const c = r.class as BuiltClass;
+    sum[c] = (sum[c] ?? 0) + r.yearBuilt * r.bldgArea;
+    w[c] = (w[c] ?? 0) + r.bldgArea;
+  }
+  const out: Partial<Record<BuiltClass, number>> = {};
+  for (const c in w) out[c as BuiltClass] = +((sum[c as BuiltClass] ?? 0) / (w[c as BuiltClass] || 1)).toFixed(1);
+  s.stockVintage = out;
+}

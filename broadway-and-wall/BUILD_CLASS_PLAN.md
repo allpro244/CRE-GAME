@@ -1,6 +1,6 @@
 # BUILD CLASS — WHY "BUILD CHEAP, FIX IT LATER" WINS, AND THE REVAMP
 
-**Generated city, not Manhattan.** Every number here is from a generated city,
+**Status (2026-10): built — see §8 and §9.** **Generated city, not Manhattan.** Every number here is from a generated city,
 like every other harness in this repo.
 
 Owner's ask (2026-10): *"Currently I think it's best to build as cheap quality as
@@ -52,6 +52,9 @@ stock all build at 0.5, so there is no competitive set to be above or below.
 Total cost spans 1.76×; NOI spans 1.24×. Probe: `test/_spec-pf.mjs` (scratch).
 
 ### The hold — `test/build-spec-arms.mjs` widened to spec 0 and 1
+
+(Measured on the base BEFORE main's `7cdaf00`, which widened spec rent and cap
+and added the static tours-first factor; §9 is the current comparison.)
 
 4 seeds × 30 y × 6 new offices, unlevered, Fund plan, every letter signed at
 asking, PV at 7%. Cost is **hard cost × spec only**, so it understates the
@@ -230,104 +233,64 @@ tenant pool channels are right and the level still is not.
   forma read; layout is theirs.
 - **Graphics** — optional: tier as a material/finish cue on the building.
 
-## 7. Order of work — execution spec
+## 7. Owner's decisions (2026-10)
 
-**Status: planned, not started.** Owner's call (2026-10): execute after the UI,
-Market/Economics and Graphics agents land. Before starting, merge their tips
-and re-read the files named below — line numbers here are from
-`claude/build-class-plan` at the commit that added this file and will drift.
+- **A score, with the letter read off it.** 0-100, shown with its breakdown;
+  the letter (Trophy / A / B / C) is the street's word for it. Everything
+  that should slide reads the score; only yes/no gates read the letter or tier.
+- **The score is the building only.** Structure 40 (the bones you built),
+  condition 35 (the plant today), competitiveness 25 (age against the city's
+  own stock in that use). Location stays out — it is already priced on its own
+  and folding it in would count it twice. Service stays out — it is how the
+  building is run, and renewals already read it.
+- **No facade choice for now.** Taste, and the game already has many looks.
+- **A second construction lever later: systems / energy performance.** Code
+  minimum / efficient / high performance — the one place opex belongs (energy
+  is ~a quarter to a third of office opex; Eichholtz, Kok & Quigley 2010 found
+  ~3% rent and ~16% price premia for energy-rated offices), with exposure to
+  energy prices and carbon rules as the long-hold risk. Its own phase, after
+  this one is measured; touches the Market agent if energy prices exist.
+- **The thing to close: build cheap, collect good rents, sell at a profit.**
+  The flip should still exist — into a hot market it is a real timing bet —
+  but it must not be a free mechanism. The fix is that **the buyer prices what
+  the seller is walking away from.**
 
-Each step is one commit, measured before and after with step 0's harness.
-After every step: `pnpm engine`, `pnpm conserve`, `pnpm gate`,
-`pnpm baseline:check`; regenerate BASELINE only with the reason in the commit.
+## 8. What was built (branch `claude/build-class-plan`)
 
-### Step 0 — the harness (report, no engine change)
+Built on top of main's `7cdaf00` ("Build spec earns what better buildings
+earn"), whose rent (±15%), cap (±40bp) and static "tours first" factor stay.
+Nothing calibrated was retuned: `specCostMult`, `specRentMult`,
+`CONDITION_RENT_MULT`, the location tables, programme costs and lifts are
+untouched.
 
-`test/build-class-arms.mjs`, script `pnpm class-arms`. Grow it out of
-`test/build-spec-arms.mjs`:
-- arms: the four tiers (0.15 / 0.50 / 0.75 / 0.95), plus "Value + every
-  programme" and "Value + gut when eligible" (the fix-it-later strategies);
-- cells: location tercile (demand score) × hold 7 / 15 / 30 y × unlevered /
-  levered at the desk's own max advance;
-- cost: `planDevelopment(...).costTotal` per arm — hard + soft + contingency +
-  lease-up, not hard × spec alone (the existing probe understates the cheap
-  side's edge);
-- columns: PV(NOI − capex + exit) − cost at 7%, occupancy mean and its
-  standard deviation across the cycle, mean tenant credit, WALT, exit cap;
-- per-seed paired differences against Standard; a tier "wins" a cell only on
-  5 of 6 seeds;
-- print the §5 acceptance line: best tier per cell, and whether it rises with
-  demand and with hold.
+| piece | where | what |
+|---|---|---|
+| four tiers | `value.ts` `BUILD_TIERS`, `buildTier` | Value 0.15 / Standard 0.5 / Premium 0.75 / Trophy 0.95 on the existing 0..1 spec |
+| cheap plant wears out sooner | `value.ts` `specWearMult`, applied in `leasing.ts` monthly decay | ×1.21 Value, ×1.0 Standard, ×0.85 Premium, ×0.75 Trophy; the plan bill scales with it |
+| new is not good | `value.ts` `openingCondIdx`, used at delivery in `dev.ts` | below market spec opens lower in the "good" band; Standard and above open where they always did |
+| building score | `value.ts` `buildingScore`, `buildingGrade`; `sim.ts` `stampStockVintage` → `s.stockVintage` (yearly) | 0-100, Trophy ≥ 90, A ≥ 72, B ≥ 50, C below |
+| tenant pool | `leasing.ts` `rollCredit(…, score)` | score shifts the covenant draw, centred on 55 (ordinary standing stock), so a typical building draws as before; term follows credit |
+| deposit bug | `leasing.ts` rent-roll seeding | the deposit was sized on a second, independent credit draw; now one covenant per tenant |
+| flight to quality is a beta | `absorption.ts` "Specification" row × `qualityCycle` | 1.0 at natural vacancy, up to 1.9× in a glut, down to 0.6× when tight |
+| …on the way out too | `leasing.ts` `renewalIntent` `fClass` | soft market: budget-building tenants trade up at the roll |
+| buyer prices the reserve | `value.ts` `capRateFor` `reserveSpread` | the extra plan reserve a building needs over market-spec plant, capitalised (on a new office ~+5bp Value, ~−6bp Trophy) |
+| life company | `debt.ts` `conditionOk(…, spec)`, `originate(…, spec)` | will not lend on Value bones, however new |
+| desk | `DevelopDesk.tsx` | four tier buttons with cost / rent / wear per tier; presets snap to tiers |
+| card | `PortfolioPage.tsx` ops row | "Building score 78 · Class A — Standard bones 20/40 · condition 33/35 · against the city's stock 24/25" |
+| harness | `test/build-class-arms.mjs`, `pnpm class-arms` | tiers × flip at 36/48/60 months × 25-year hold, real budget (hard × spec + soft + contingency), paired seeds, phase at each sale |
 
-### Step 1 — bones (engine only; closes "fix it later" by itself)
+Not built here, on purpose:
+- **Gut renovation cap.** Main's step (`0.4 × (0.75 − spec)`) already lifts less
+  than one tier from every starting point, which is what §4 asked.
+- **Rivals choosing a tier.** Supply side; the Market agent's to schedule. Until
+  then all city stock reads spec 0.5, which is why the score's tenant-pool
+  centre (55) and the cap reserve (difference from market spec) are both set
+  so ordinary stock is unchanged.
+- **Months-to-sell by class.** No hook in the sale-timing model yet.
 
-| change | where |
-|---|---|
-| `BUILD_TIERS` table {key, label, spec, blurb}; `buildTier(spec)` reader (nearest tier, so saved odd specs still read) | new, `src/engine/value.ts` beside `specRentMult` |
-| wear by bones: `wear *= specWearMult(spec)`, shape parameter, Value ≈ 1.3×, Trophy ≈ 0.85×, calibrated on component-life tables and stated as such | `leasing.ts` monthly decay (`COND_DECAY[...] * ...`, ~line 1307); the plan bill reads `wear`, so capex follows with no second edit |
-| opening condition: `min(ceiling, openIdx(spec))` where Value opens at a "standard" index and Premium+ at "good" | `dev.ts` delivery (~line 2139) and the same line in `test/build-spec-arms.mjs` |
-| gut lifts bones at most one tier: `spec = min(nextTierSpec(spec0), 0.75)`, replacing `spec0 + 0.4 × (0.75 − spec0)` | `sim.ts` renovation completion (~line 714) |
-| gut cost rises with the bones it lifts: retrofit share on `RENO_COST_PSF` when the step changes tier | `value.ts` reno cost (~line 3474) and `actions.ts startRenovation` quote |
+## 9. Measured after the build
 
-Not touched: `specCostMult`, `specRentMult`, `CONDITION_RENT_MULT`,
-`condCeiling` shape, programme costs and lifts.
-
-### Step 2 — tenant pool
-
-- `classIdx(rec, h, s)` — bones and condition blended, read against the
-  sf-weighted spec/condition of the city's stock in that use (relative). Grade
-  `classGrade(idx)` → "Trophy" | "A" | "B" | "C". Pure function, `value.ts`.
-- `rollCredit(s, demand, classIdx)` — class shifts the draw the way location
-  already does (`r + demand/250`). All three call sites in `leasing.ts`
-  (~lines 750, 758, 2057).
-- **Bug to fix on the way:** line 758 draws a *second* `rollCredit` for the
-  deposit, so a tenant's deposit is sized on a different covenant than the
-  tenant has. Draw once, use it for both.
-- Term follows for free through `termBandM(credit)`.
-
-### Step 3 — flight to quality (with the Market agent)
-
-- `leaseFactors` (`absorption.ts` ~line 346) gains a "Building class" row:
-  `mult = exp(β · (classIdx − cityMeanClass) · slack)`, `slack` = city vacancy
-  over natural for that use (negative when tight, so the tilt reverses in a
-  boom — tenants settle for B when A is full).
-- `renewalIntent` (`leasing.ts` ~line 1020) gains the matching `fClass` and a
-  `why` line ("a better building made them an offer in a soft market").
-- **Zero-sum rule:** normalise so the sf-weighted mean multiplier across the
-  city's stock is 1.0 each month. It moves who wins a lease, never how many
-  leases the city signs. Agree this with the Market agent before editing
-  absorption.ts; it is their file.
-- β is a shape parameter; calibrate to the trophy vs B/C vacancy gaps in §3
-  (DC ~16pp, Houston ~6pp at ~25% overall vacancy) and say so in the comment.
-
-### Step 4 — exit and debt
-
-- `capRateFor` (`value.ts` ~line 2243): replace `specSpread` (±15bp, bones
-  only) with a class spread. C carries the value-add spread (~150bp over
-  stabilised A, Chicago H1 2026), so condition's `qualSpread` and the class
-  spread must be checked for double counting the same way QUALITY_BALANCE_PLAN
-  §2 checked programmes. Instrument first.
-- Life company (`debt.ts` `minCondition` ~line 58/288): gate on class ≥ A
-  instead of condition alone.
-- Months-to-sell by class, if the Market agent's sale-timing model has a hook;
-  otherwise leave to them.
-
-### Step 5 — the API for UI
-
-Export `BUILD_TIERS`, `buildTier`, `classIdx`, `classGrade`, and a
-`tierCompare(s, parcels, bbl, use, floors, coverage)` that returns the four
-tiers' pro formas side by side (cost, stabilised NOI, value ÷ cost, opening
-grade, plant wear). The UI agent owns the DevelopDesk tier buttons
-(`DevelopDesk.tsx` ~line 698 slider and ~line 716 presets) and the Class label
-on the holding card.
-
-## 8. Open questions for the owner
-
-1. Four fixed tiers, or keep a slider that snaps to them? (Plan assumes fixed.)
-2. Should rival developers pick tiers (a real competitive set) in this pass or
-   the Market agent's next one?
-3. Saves: buildings already built at an odd spec read as the nearest tier for
-   labels but keep their exact number for maths. OK?
+_Filled in from `pnpm class-arms`, before (main) and after (this branch)._
 
 ## Do not
 

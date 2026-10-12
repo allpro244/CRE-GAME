@@ -6,7 +6,7 @@ import { useStore } from "@/state/store";
 import { monthLabel, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, SVC_START } from "@/engine/types";
 import type { BuiltClass, GameState } from "@/engine/types";
 import { deedMark } from "@/ui/deedMarks";
-import { managedRentPsfYr, resolveRec, isLeasedFee } from "@/engine/value";
+import { managedRentPsfYr, resolveRec, isLeasedFee, buildingScore, buildTier } from "@/engine/value";
 import { portfolioPropertyMonthlyCF } from "@/engine/sim";
 import { unitStatus, avgUnitSf, portfolioOccupancy } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
@@ -756,6 +756,14 @@ export function PortfolioPage() {
                   <div className="grid">
                     <Row k="Service" v={`${serviceSpec(h.service).label} · tenants read it as ${Math.round(100 * (h.svcIdx ?? SVC_START))} of 100`} />
                     <Row k="Capital plan" v={`${planSpec(h.plan).label} · condition ${Math.round(100 * (h.condIdx ?? 0.6))} of 100 (${h.condition})`} />
+                    {(() => {
+                      // THE BUILDING SCORE (BUILD_CLASS_PLAN.md): the building
+                      // only — location is priced on its own.
+                      const r0 = resolveRec(parcels, game, h.bbl);
+                      if (!r0 || !r0.bldgArea) return null;
+                      const sc = buildingScore(r0, h, game);
+                      return <Row k="Building score" v={`${sc.score} · ${sc.grade === "Trophy" ? "Trophy" : `Class ${sc.grade}`} — ${buildTier(r0.buildSpec).label} bones ${sc.structure}/40 · condition ${sc.condition}/35 · against the city's stock ${sc.competitiveness}/25`} />;
+                    })()}
                   </div>
                   <div className="btn-row">
                     {OPS_SERVICE.map((o) => (

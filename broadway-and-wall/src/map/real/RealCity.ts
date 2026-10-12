@@ -94,6 +94,8 @@ interface Family {
 }
 
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
+/** Families whose apartment fronts carry balconies (by the original family they behave like). */
+const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", "precast", "stackbrick", "rainscreen", "timber", "newstone"]);
 const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
@@ -3509,9 +3511,13 @@ export class RealCityLayer {
         for (let fl = 1; fl < floors; fl++) {
           this.putInst("fesc", A[0] + ux * t + nx * 0.6, A[1] + uy * t + ny * 0.6, z0 + fl * f.floorH + 0.05, 1, rot + (fl % 2 ? Math.PI : 0), bbl, undefined, f.floorH / 3.2);
         }
-      } else if ((famKey === "modern" || famKey === "fibercement" || famKey === "metalpanel" || famKey === "whitebrick" || famKey === "precast") && z1 < 48 && ll > 9 && roll < 0.65) {
+      } else if ((BALC_FAMS.has(baseOf(famKey)) && z1 < 48 && ll > 9 && roll < 0.65)
+        // the post-1990 glass apartment tower carries its balconies all the
+        // way up, in alternate stacks (SKYLINE_LOOK_PLAN round 13)
+        || (GLASSY.has(famKey) && year >= 1990 && z1 >= 30 && z1 < 200 && ll > 12 && roll < 0.55)) {
         const bays = Math.max(1, Math.round(ll / f.bayW));
-        for (let bi = 1; bi < bays; bi += 2) {
+        const step = GLASSY.has(famKey) ? 3 : 2;
+        for (let bi = 1; bi < bays; bi += step) {
           const t = (bi + 0.5) * (ll / bays);
           for (let fl = 1; fl < floors; fl++) {
             this.putInst("balc", A[0] + ux * t, A[1] + uy * t, z0 + fl * f.floorH, 1, rot, bbl);

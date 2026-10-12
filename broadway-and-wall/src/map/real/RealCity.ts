@@ -1621,8 +1621,11 @@ export class RealCityLayer {
     return t;
   }
   private hazeFor(distM: number) {
-    HAZE.hazeNear.value = distM * 0.35;
-    HAZE.hazeFar.value = distM * 2.6 + 400;
+    // clear air over what the camera is looking at; the fade starts past the
+    // focus and takes the far city (SKYLINE_LOOK_PLAN round 6 — the near
+    // start had been washing the very block in view)
+    HAZE.hazeNear.value = distM * 0.85;
+    HAZE.hazeFar.value = distM * 3.4 + 600;
     if (!this.hazeSheet) {
       // MapLibre's ground is not ours to shade: a sheet over it carries the
       // same fade, so a far street hazes with the buildings standing on it
@@ -5917,7 +5920,7 @@ export class RealCityLayer {
     const day = [0.742 + (0.643 - 0.742) * oc + golden * 0.1, 0.818 + (0.694 - 0.818) * oc + golden * 0.02, 0.9 + (0.722 - 0.9) * oc - golden * 0.08];
     const nightC = [0.08, 0.1, 0.16];
     HAZE.hazeCol.value.setRGB(day[0] + (nightC[0] - day[0]) * night, day[1] + (nightC[1] - day[1]) * night, day[2] + (nightC[2] - day[2]) * night);
-    HAZE.hazeCap.value = (0.55 + oc * 0.2) * (1 - night * 0.35);
+    HAZE.hazeCap.value = (0.48 + oc * 0.25) * (1 - night * 0.35);
     this.map?.triggerRepaint();
   }
 

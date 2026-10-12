@@ -3015,6 +3015,8 @@ export interface GameState {
   // building went up" and "Alden Development Co. got to that corner first".
   cityJobs?: {
     bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number;
+    /** The spec the developer built to (0..1, 0.5 = market) — see `developerLook`. */
+    spec?: number;
     /**
      * The programme, settled at groundbreak. Shops at grade depend on the final
      * floor count and on the demand score of the day, and the pipeline books

@@ -927,6 +927,44 @@ export function frictionFloor(k: BuiltClass): number {
 }
 
 /**
+ * VACANCY AT DELIVERY — what a building started today leases into: today's
+ * vacancy, plus everything already in the ground, plus `extraSf` (the
+ * developer's own building), less what the market absorbs meanwhile (the
+ * unhoused queue and the tenant base's trend growth over a typical 18-month
+ * build). A developer's market study counts the competing pipeline and the
+ * project itself; so does every reader of this — the class pencil, the site
+ * pro forma and the land residual (2026-10-12).
+ */
+export function forwardVacancy(e: Econ, k: BuiltClass, extraSf = 0): number {
+  const nat = NATURAL_VAC[k];
+  const vacNow = e.cityVac?.[k] ?? nat;
+  if (!e.stock?.[k]) return vacNow;
+  const stkNow = Math.max(1, e.stock[k]);
+  const pipe = Math.max(0, e.pipeline?.[k] ?? 0) + Math.max(0, extraSf);
+  const occNow = stkNow * (1 - vacNow);
+  const queue = Math.max(0, e.structTight?.[k] ?? 0) * stkNow;
+  const trendGrowth = Math.max(0, (e.classDrvTrend?.[k] ?? 0) * 18) * occNow;
+  return clamp((stkNow + pipe - occNow - queue - trendGrowth) / (stkNow + pipe), 0, 1);
+}
+
+/**
+ * WHERE RENT IS HEADING AT A GIVEN VACANCY, per month — the market's own
+ * rent rule (`vacTerm` in the tick) without its cycle-phase dressing: the
+ * shortage slope below natural, the glut curve above it, approaching the
+ * Houston 1983-87 rate deep in a glut. A developer's market study reads it at
+ * the vacancy the building will deliver into, so the forecast and the market
+ * that will actually happen are one rule (2026-10-12).
+ */
+export function rentDriftAt(k: BuiltClass, gap: number): number {
+  if (gap <= 0) return -gap * 0.070 * SHORT_SENS[k];
+  const FIT_MAX = 0.09, DEEP_RATE = 0.0155;
+  const glut = (gp: number) => gp * 0.070 + gp * gp * 0.85;
+  if (gap <= FIT_MAX) return -glut(gap);
+  const atFit = glut(FIT_MAX), span = DEEP_RATE - atFit, slope = 0.070 + 2 * 0.85 * FIT_MAX;
+  return -(atFit + span * (1 - Math.exp(-slope * (gap - FIT_MAX) / span)));
+}
+
+/**
  * MONTHS A SUITE SITS BETWEEN TENANTS IN AN ORDINARY MARKET. Same clock the
  * player's make-ready uses in leasing.ts — a shop relets faster than a floor,
  * a shed faster than either. The city stock sits on this clock too, or

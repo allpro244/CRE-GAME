@@ -48,8 +48,8 @@ export const FAR_FLOOR = 0.72;
 // is the same number with three answers; there is one now, and it lives here
 // with the process that enforces it.
 export const FAR_CEIL = 3.8;
-/** The town is unzoned (see tickZoning); the variance desk has nothing to hear. */
-const UNZONED = true;
+/** No use districts, but a density limit (2026-10-12): the variance desk hears applications for more FAR. */
+const UNZONED = false;
 
 // ------------------------------------------------------------------ rezoning
 

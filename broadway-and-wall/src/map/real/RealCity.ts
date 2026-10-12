@@ -4265,10 +4265,32 @@ export class RealCityLayer {
       if (area < 40) continue;
       const k = keyOf(bbl), h = top.get(bbl) ?? v.z1, yr = v.y || 1950, cls = v.c;
       const j = 0.94 + 0.12 * hash01(k ^ 0x6f1, 3);
+      // THE FRONT AND THE BACK (round 26). The whole lot in one surface paved
+      // the middle of every downtown block. The front, between the street and
+      // the building, takes the hard surface of the use; the rest of the lot,
+      // behind and beside it, is mostly grass: back gardens and courtyards,
+      // with a third of the commercial lots keeping a paved service yard.
       const kind = cls === "industrial" ? "work" : cls === "office" || cls === "retail" ? "plaza" : yr < 1940 ? "pave" : "lawn";
-      const name = "lot:" + kind, B = this.buf(name), b0 = B.count;
-      lay(B, ring, kind === "lawn" ? 0.022 : 0.02, [j, j, j]);
-      this.note(bbl, name, b0);
+      // no paved square dropped in the middle of a lawn (it read as a checkerboard)
+      const back = kind === "work" ? "work" : "lawn";
+      { const bn = "lot:" + back, BB = this.buf(bn), b0 = BB.count; lay(BB, ring, back === "lawn" ? 0.022 : 0.02, [j, j, j]); this.note(bbl, bn, b0); }
+      if (kind !== back) {
+        // a strip along every street front, as deep as the building stands back (capped)
+        const FB = this.buf("lot:" + kind), f0 = FB.count;
+        for (const e of this.streetEdges(ring, 3)) {
+          const ix = -e.uy, iy = e.ux;
+          const mx = e.a[0] + e.ux * e.L / 2, my = e.a[1] + e.uy * e.L / 2;
+          let d = 0.5;
+          while (d < 14 && this.groundAt(mx + ix * d, my + iy * d) !== "bld") d += 0.5;
+          d = Math.min(d + 0.3, kind === "pave" ? 4 : 14);
+          const A: P2 = [e.a[0], e.a[1]], Bp: P2 = [e.a[0] + e.ux * e.L, e.a[1] + e.uy * e.L];
+          const C: P2 = [Bp[0] + ix * d, Bp[1] + iy * d], D: P2 = [A[0] + ix * d, A[1] + iy * d];
+          if (!PolyGrid.inRing(ring, (C[0] + D[0]) / 2, (C[1] + D[1]) / 2)) continue;
+          FB.quad([A[0], A[1], 0.024], [Bp[0], Bp[1], 0.024], [C[0], C[1], 0.024], [D[0], D[1], 0.024], [0, 0, 1],
+            [[A[0] / 4, A[1] / 4], [Bp[0] / 4, Bp[1] / 4], [C[0] / 4, C[1] / 4], [D[0] / 4, D[1] / 4]], [j, j, j]);
+        }
+        this.note(bbl, "lot:" + kind, f0);
+      }
       // the street front: the longest wall that faces a street
       const front = this.streetEdges(ring, 6).sort((a, b) => b.L - a.L)[0];
       let cx = 0, cy = 0;
@@ -4317,7 +4339,7 @@ export class RealCityLayer {
     // metres, so a repeat of 4 / m makes a texture one tile per m metres
     if (!this.lotLawnMat.map) {
       const tex = (t: THREE.Texture, m: number) => { t.repeat.set(4 / m, 4 / m); return t; };
-      this.lotLawnMat.map = tex(this.lawnTex(), 5); this.lotPlazaMat.map = tex(this.plazaTex(), 6);
+      this.lotLawnMat.map = tex(this.lawnTex(), 12); this.lotPlazaMat.map = tex(this.plazaTex(), 6);
       this.lotPaveMat.map = tex(this.pavingTex(), 1.5); this.lotWorkMat.map = tex(this.parkingTex(), 5);
     }
   }
@@ -5467,13 +5489,27 @@ export class RealCityLayer {
     return t;
   }
 
-  /** A mown lawn: fine light-and-dark mottling and faint mower stripes, white so the material colour carries the season (5 m tile). */
+  /**
+   * A city lawn (round 27): not a mown pitch. Soft clumps of darker and
+   * lighter green at two scales, a few worn patches, a fine grain of blades;
+   * white-based so the material colour carries the season. 256 px over 12 m.
+   */
   private lawnTex(): THREE.CanvasTexture {
-    const { c, g } = makeCanvas(128, 128);
+    const N = 256;
+    const { c, g } = makeCanvas(N, N);
     let s = 2111; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    g.fillStyle = "#ffffff"; g.fillRect(0, 0, 128, 128);
-    for (let i = 1; i < 4; i += 2) { g.fillStyle = "rgba(0,0,0,0.05)"; g.fillRect(0, i * 32, 128, 32); }
-    for (let i = 0; i < 1600; i++) { const d = rnd() < 0.5; g.fillStyle = d ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.08)"; g.fillRect(rnd() * 128, rnd() * 128, 1.5, 2); }
+    g.fillStyle = "#ffffff"; g.fillRect(0, 0, N, N);
+    const blob = (x: number, y: number, r: number, col: string) => {
+      for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) {
+        const gr = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+        gr.addColorStop(0, col); gr.addColorStop(1, "rgba(255,255,255,0)");
+        g.fillStyle = gr; g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+      }
+    };
+    for (let i = 0; i < 26; i++) blob(rnd() * N, rnd() * N, 30 + rnd() * 50, rnd() < 0.55 ? "rgba(70,80,50,0.22)" : "rgba(255,255,240,0.22)");
+    for (let i = 0; i < 70; i++) blob(rnd() * N, rnd() * N, 6 + rnd() * 14, rnd() < 0.6 ? "rgba(60,75,40,0.25)" : "rgba(255,255,235,0.2)");
+    for (let i = 0; i < 5; i++) blob(rnd() * N, rnd() * N, 10 + rnd() * 16, "rgba(235,210,150,0.35)");
+    for (let i = 0; i < 9000; i++) { const d = rnd() < 0.5; g.fillStyle = d ? "rgba(40,50,25,0.12)" : "rgba(255,255,230,0.1)"; g.fillRect(rnd() * N, rnd() * N, 1, 1.5 + rnd()); }
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     return t;
   }
@@ -6642,7 +6678,7 @@ export class RealCityLayer {
     this.meadowMat.color.setRGB(0.98 - vig * 0.22, 0.95 + vig * 0.1, 0.84 - vig * 0.14);
     // a mown lawn: dormant straw-green in winter, full green in summer
     // (lit by the sun, unlike the flat park fill, so it is set darker to read a step below a park)
-    this.lotLawnMat.color.setRGB(0.26 - vig * 0.1, 0.25 + vig * 0.05, 0.16 - vig * 0.08);
+    this.lotLawnMat.color.setRGB(0.27 - vig * 0.07, 0.26 + vig * 0.03, 0.17 - vig * 0.05);
     // the canopy: green in summer, turning in autumn, bare grey in winter
     for (const leaf of [this.inst.get("crown"), this.inst.get("bush")]) {
     if (leaf) {

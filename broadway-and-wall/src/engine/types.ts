@@ -1938,6 +1938,10 @@ export interface Econ {
   costIdx: number; // construction & operating cost inflation
   /** This town's dollars against the reference table, drawn per seed at the opening (market.ts). */
   priceLevel?: number;
+  /** Real construction cost at the opening — the mainland's real rent anchor (`locEff`). */
+  costAnchorReal?: number;
+  /** Island-vs-mainland location choice per class, smoothed at lease rollover (market.ts). */
+  locEff?: Record<BuiltClass, number>;
   // Sectors do not move together. Each class carries its own momentum, so
   // office can be in a bear market while sheds are the best trade in town —
   // which is the whole reason to hold more than one kind of building.

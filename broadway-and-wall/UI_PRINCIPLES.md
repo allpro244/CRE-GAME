@@ -243,3 +243,15 @@ Asked plainly: what does a principal need without opening a desk?
 | Occupancy | keep, **only once you operate a building**, shed early | it read "—" on every new player's first screen, and moves slowly |
 | Market · rate · phase · Δbp | keep, shed first | the weather every price is read against; one click from Economy |
 | Book | keep, only in trouble | an alarm, not a readout |
+
+## Sixth batch
+
+- **Nothing arrives invisible.** Every other entrance in the app (the ⌘K
+  palette, the parcel card, the AT RISK banner, toasts, deal stages) still
+  faded in from opacity 0; measured headless, the palette's backdrop showed
+  and the palette did not. All entrances now arrive by motion from 85%.
+- **⌘K opens on what is waiting.** Up to five items from the desk sit between
+  the clock and the desks, every waiting item is searchable by name ("letter",
+  "balloon", a tenant) and Enter opens it, and your buildings carry their debt
+  on their row, so "debt" or "loan" finds them. It used to find the Debt desk
+  and a lender.

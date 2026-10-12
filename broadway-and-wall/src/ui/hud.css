@@ -417,3 +417,22 @@
 .app .modal > .modal-actions { position: sticky; bottom: calc(-1 * var(--sp-5, 20px)); z-index: 2; }
 .app .modal > .modal-actions:not(:last-child) { bottom: 0; }
 .app .tstat-of.neg { color: var(--neg); font-weight: 600; }
+
+/* ---------- nothing arrives invisible -----------------------------------
+   Every entrance in the app faded in from opacity 0. When the compositor is
+   busy (the city renderer on a slower machine) an animation can sit at its
+   first frame for a beat, and the thing the player just opened — the ⌘K
+   palette, the parcel card, a toast, the AT RISK banner, a deal stage — is
+   not there. Redefined here (the last @keyframes of a name wins) to arrive
+   by motion from a visible state. */
+@keyframes panel-arrive { from { opacity: 0.85; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+@keyframes dock-arrive { from { opacity: 0.85; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@keyframes rail-arrive { from { opacity: 0.85; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes stage-fade { from { opacity: 0.85; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes palette-arrive { from { opacity: 0.85; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes at-risk-arrive { from { opacity: 0.85; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes stamp {
+  0% { transform: translateX(-50%) scale(1.12) rotate(-1deg); opacity: 0.85; }
+  55% { transform: translateX(-50%) scale(0.99) rotate(0.3deg); opacity: 1; }
+  100% { transform: translateX(-50%) scale(1) rotate(0deg); opacity: 1; }
+}

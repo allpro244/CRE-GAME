@@ -40,7 +40,8 @@ judged by screenshot. This file is the queue and the rules.
 
 ## Not in scope
 
-Weathering and ageing (declined by the owner). Engine changes of any kind.
+Weathering and ageing (declined by the owner). Night or dusk visuals (the game
+has no night mode). Engine changes of any kind.
 
 ## Progress
 
@@ -110,3 +111,49 @@ frame; in play it is cached while the camera holds still. A quality ×
 time-of-day sweep (seeds 101, 2024, 31337, 777; High and Medium; day and
 night) found one crash — `lotMassing` reading past the end of a lot outline —
 fixed in #231; the sweep is clean since.
+- **Round 15** — canal and slip water a stained teal (`CANAL_WATER`) with a
+  weaker sky reflection: at full strength every canal read flat royal blue
+  beside a turquoise sea. Judged on a default-size town (seed 101), the city
+  most players start in.
+- **Round 16** — golden hour: the finishing pass takes the low sun's warmth
+  (`uGolden`, from the same dusk curve as the sun's colour): lit surfaces go
+  amber, shadows a little violet. Noon and night unchanged.
+- **Rounds 10, 11, 14 and 16 removed.** The game has no night mode: the hour
+  is locked to afternoon (`MapView.tsx`, owner: "we don't need a night mode,
+  that's pointless"), so per-room night windows, street-light pools,
+  moonlight and the golden-hour grade were dead weight (the light pools cost
+  an instance per lamp by day). Do not add night or dusk visuals.
+- **Round 18** — road paint. The streets were bare asphalt (MapLibre's
+  10 cm centre lines were under a pixel from every camera, and most streets
+  had none). The 3D city now paints them (`buildMarkings`), by the carriageway
+  measured kerb to kerb on the ground polygons: a dashed yellow centre line
+  from 8 m, a double yellow with white lane lines from 15 m, and a stop bar
+  before every junction. No paint inside a junction (a disc sized to the
+  crossing streets, and wherever road continues past either kerb). The old
+  MapLibre lane layers are hidden once the 3D city is up.
+- **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
+  only from the island view. Dropped: a flat sprite cannot be a volumetric
+  cloud, and a lone hard-edged one read as an object, not weather. Branch
+  `claude/skyline-r17` kept for reference.
+
+## Where it stands, and what is left
+
+Rounds 1–16 are on `main`, less the four night rounds. Against the session's starting point (same town,
+same cameras): a graded, tilt-shifted frame; warm sun with blue-filled
+shadows; ambient occlusion; tree-lined streets and wooded parks; recessed
+windows that catch the sky; glass towers that reflect the city; patchwork
+roofs; paved squares; balconies; livelier streets.
+
+What still separates it from a city-builder's look is mostly **geometry**:
+those games use hand-modelled buildings (real recesses, ledges, rooftop
+equipment, signage), where ours are extruded footprints in painted elevations.
+The next tier of work, in order of payoff:
+
+1. Parallax windows proper (the reveal shader fakes the jamb; a parallax
+   interior would give depth to every pane).
+2. Rooftop equipment as a richer kit (stair towers, louvred plant rooms,
+   antennas) placed by building type and size.
+3. Ground-floor geometry: recessed shop bays and entrance canopies for every
+   style, not only the ones that have them now.
+4. Volumetric clouds for the island view (raymarched, High only), if wanted —
+   flat sprites were tried and dropped (round 17).

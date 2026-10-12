@@ -834,16 +834,46 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
   if (e.landMkt !== undefined) {
     e.landBelief = (e.landBelief ?? e.landMkt) + BELIEF_MONTHLY * (e.landMkt - (e.landBelief ?? e.landMkt));
   }
-  if (e.landQueue && s.month % 12 !== 0) return;
   const h = e.history ?? [];
   const L = Math.min(60, h.length - 1);
   if (L < 12) return;
+  // THE TAKE-UP IS READ EVERY MONTH, THE RANKING ONCE A YEAR (2026-10-12).
+  // Absorption and the yield are off the tape, which is published monthly and
+  // costs nothing to read; only the site ranking needs the expensive survey.
+  // Read yearly, a bust's collapse in take-up reached every site's wait on one
+  // January morning: a prime lot's dirt fell 68% in a month (developer run,
+  // month 875) while the absorption behind it had been sliding all year.
+  const absYrOf = (use: BuiltClass): number => {
+    const now = h[h.length - 1], then = h[h.length - 1 - L];
+    let netAbs = 0, comp = 0;
+    for (let i = h.length - L; i < h.length; i++) { netAbs += h[i].abs?.[use] ?? 0; comp += h[i].comp?.[use] ?? 0; }
+    const lost = comp - ((now.stock?.[use] ?? 0) - (then.stock?.[use] ?? 0));
+    return (Math.max(0, netAbs) + Math.max(0, lost)) * 12 / L;
+  };
+  const rOf = (use: BuiltClass): number => (e.capExp?.[use] ?? e.capRate[use]) / 100;
+  if (e.landQueue && s.month % 12 !== 0) {
+    const q: NonNullable<Econ["landQueue"]> = {};
+    for (const use of BUILT_CLASSES) {
+      const old = e.landQueue[use];
+      if (old) q[use] = { ...old, absYr: Math.round(absYrOf(use)), r: rOf(use) };
+    }
+    e.landQueue = q;
+    return;
+  }
   const bare = { ...e, landQueue: undefined } as Econ;
   const n = bbls.length;
   const take = Math.min(n, LAND_QUEUE_SAMPLE);
   const step = n / take;
-  // A fixed stride with a monthly offset: deterministic, and never the RNG.
-  const off = ((s.month * 2654435761) >>> 0) % Math.max(1, Math.floor(step));
+  // A FIXED PANEL, the same lots every year (2026-10-12). The offset used to
+  // move with the month, so each refresh surveyed a different 400 lots, and
+  // at the top of the market — where one sampled lot stands for `step` real
+  // ones — the queue ahead of a prime site was mostly which lots happened to
+  // be drawn. Measured on a developer's 100-year run: one prime lot's land
+  // value went $93M, $42M, $109M, $136M, $21M on five consecutive January
+  // refreshes with rents and rates moving smoothly. A survey that changes its
+  // sample every wave reports its sampling error as a market; a panel moves
+  // only when the lots in it do. Deterministic per city, and never the RNG.
+  const off = ((s.seed ^ 0x9e3779b1) >>> 0) % Math.max(1, Math.floor(step));
   const rows: Record<BuiltClass, { psf: number; sf: number }[]> = { office: [], retail: [], multifamily: [], industrial: [] };
   let mktSum = 0, mktN = 0;
   for (let j = 0; j < take; j++) {
@@ -861,19 +891,15 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     }
     if (sf > 0) rows[sch.use].push({ psf: sch.psf, sf: sf * step });
   }
-  const now = h[h.length - 1], then = h[h.length - 1 - L];
   const q: NonNullable<Econ["landQueue"]> = {};
   for (const use of BUILT_CLASSES) {
-    let netAbs = 0, comp = 0;
-    for (let i = h.length - L; i < h.length; i++) { netAbs += h[i].abs?.[use] ?? 0; comp += h[i].comp?.[use] ?? 0; }
-    const lost = comp - ((now.stock?.[use] ?? 0) - (then.stock?.[use] ?? 0));
-    const absYr = (Math.max(0, netAbs) + Math.max(0, lost)) * 12 / L;
+    const absYr = absYrOf(use);
     const xs = rows[use].sort((a, b) => b.psf - a.psf);
     const psf: number[] = [], ahead: number[] = [];
     let cum = 0;
     const every = Math.max(1, Math.ceil(xs.length / 48));
     xs.forEach((x, i) => { if (i % every === 0) { psf.push(+x.psf.toFixed(2)); ahead.push(Math.round(cum)); } cum += x.sf; });
-    q[use] = { psf, ahead, total: Math.round(cum), absYr: Math.round(absYr), r: (e.capExp?.[use] ?? e.capRate[use]) / 100 };
+    q[use] = { psf, ahead, total: Math.round(cum), absYr: Math.round(absYr), r: rOf(use) };
   }
   e.landQueue = q;
   if (mktN > 0) {
@@ -913,8 +939,13 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
 const BELIEF_MONTHLY = 1 - Math.pow(0.6, 1 / 12);
 const OWNER_ERR_SIGMA = 0.15;
 function ownerErr(bbl: string): number {
-  // Two independent uniform hashes off the parcel id -> one standard normal
+  return hashNormal(bbl);
+}
+/** A standard normal hashed off a key: deterministic, persistent, never the RNG. */
+export function hashNormal(key: string): number {
+  // Two independent uniform hashes off the key -> one standard normal
   // (Box-Muller). Persistent: the same owner, the same misread, every month.
+  const bbl = key;
   let h1 = 2166136261, h2 = 5381;
   for (let i = 0; i < bbl.length; i++) {
     const c = bbl.charCodeAt(i);

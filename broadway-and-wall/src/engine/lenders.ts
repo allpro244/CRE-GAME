@@ -180,19 +180,19 @@ const BOOK_SHARE: Record<LenderKind | "firstharbor", number> = {
  * rate. It is an order-of-magnitude figure and it only ever has to be one:
  * nothing is priced off it, it only sets how big the banks are.
  */
-function cityPropertyValue(stock: Record<string, number>): number {
+function cityPropertyValue(stock: Record<string, number>, priceLevel = 1): number {
   let v = 0;
   for (const k of BUILT_CLASSES) {
     const sf = stock[k] ?? 0;
     if (sf <= 0) continue;
     // ~35% of gross goes out as opex and non-recovered costs across classes.
-    const noiPsf = RENT_BASE[k] * (1 - NATURAL_VAC[k]) * 0.65;
+    const noiPsf = RENT_BASE[k] * priceLevel * (1 - NATURAL_VAC[k]) * 0.65;
     v += (sf * noiPsf) / (CAP_BASE[k] / 100);
   }
   return v;
 }
 
-export function initLenders(stock?: Record<string, number>): Lender[] {
+export function initLenders(stock?: Record<string, number>, priceLevel = 1): Lender[] {
   // A CITY'S BANKS ARE THE SIZE OF THE CITY, AND THEY DERIVE IT.
   //
   // These five books were absolute numbers, which was fine while there was one
@@ -218,7 +218,7 @@ export function initLenders(stock?: Record<string, number>): Lender[] {
   // a few per cent, which is the check that it is a restatement and not a
   // rebalance.
   const SYSTEM_LTV = 0.55;
-  const total = stock ? cityPropertyValue(stock) * SYSTEM_LTV : 2_410_000_000;
+  const total = stock ? cityPropertyValue(stock, priceLevel) * SYSTEM_LTV : 2_410_000_000 * priceLevel;
   return lenderNames().map((name, i) => {
     const k = KIND[name] ?? { kind: "bank" as LenderKind, capitalRatio: 0.10, brittle: 1 };
     const share = name === "First Harbor Bank" ? BOOK_SHARE.firstharbor : BOOK_SHARE[k.kind];
@@ -588,7 +588,7 @@ export function tickLenders(s: GameState) {
   // A save from before banks were sized to the city, or a state built without
   // parcels: the econ already knows the stock, so use it.
   if (!s.lenders?.length) {
-    s.lenders = initLenders(s.econ?.stock);
+    s.lenders = initLenders(s.econ?.stock, s.econ?.priceLevel ?? 1);
   }
   recountYours(s);
   const e = s.econ;

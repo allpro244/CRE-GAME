@@ -15,7 +15,7 @@ import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
-  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf } from "./value";
+  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal } from "./value";
 export { zoneUseBar };
 export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -509,6 +509,8 @@ export function planDevelopment(
     vested?: boolean;
     /** The massing is a structure already standing: no new-build coverage limit (MAX_COVERAGE). */
     shell?: boolean;
+    /** This project's hard cost against the market index (`projectCostMult`). */
+    costMult?: number;
   },
   lender?: string,
   spec = 0.5,
@@ -833,13 +835,50 @@ export function startAdaptiveReuse(
  * builders may not: they require both the common economic hurdle and an open
  * construction desk.
  */
+/**
+ * NOT EVERY BUILDER GETS THE SAME PRICE (2026-10-12).
+ *
+ * The street's pro forma priced every project in town at the market's cost
+ * index, so every site with the same rent crossed its hurdle on the same
+ * month: in a 100-year developer run the city built no office for sixty years
+ * (89 of 99 years with nothing delivered), then a quarter of the office stock
+ * in two decades — peak year 19x the average, against roughly 2-3x in the
+ * US completions record (CBRE-EA office completions, 1980s peak to mean). A
+ * class sat at 1.3% vacancy for twelve years with no crane, because there was
+ * no builder in town for whom the deal penciled until there was one for whom
+ * it penciled everywhere at once.
+ *
+ * Real construction cost is not one number. Comparable buildings of the same
+ * type in the same city spread about +/-15% around the median between the
+ * quartiles (RSMeans square-foot costs, 25th/75th percentile), i.e. a log
+ * spread near 0.2, some of which is specification this engine already models
+ * separately — so each project here draws its own hard cost, lognormal with
+ * sigma 0.15, a shape parameter set from that spread and stated as such. It
+ * is a property of the site and of whoever controls it (ground conditions,
+ * assemblage, the builder's own crews and subs), so it persists, and it turns
+ * over with control of the site, about every five years, staggered by lot.
+ * It is a real cost, not a belief: the job is booked at it, and a project
+ * that pencils because it really is cheap really costs less.
+ *
+ * The player's desk is not drawn — the player gets the desk's real quotes.
+ */
+const PROJECT_COST_SIGMA = 0.15;
+const PROJECT_TERM_M = 60;
+export function projectCostMult(s: GameState, bbl: string, use: DevUse): number {
+  let h = 2166136261;
+  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const phase = (h >>> 0) % PROJECT_TERM_M;
+  const epoch = Math.floor((s.month + phase) / PROJECT_TERM_M);
+  return Math.exp(PROJECT_COST_SIGMA * hashNormal(`${bbl}|${use}|${epoch}|${s.seed}`));
+}
+
 export function underwriteDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.62, landBasisOverride?: number,
 ): DevelopmentUnderwriting | null {
   const plan = planDevelopment(
     s, parcels, bbl, use, floors, coverage, "gmp",
-    undefined, undefined, undefined, 0.5, landBasisOverride,
+    undefined, { costMult: projectCostMult(s, bbl, use) }, undefined, 0.5, landBasisOverride,
   );
   if (!plan) return null;
   const financeable = plan.ltcMax > 0 && plan.commitment > 0;
@@ -2696,7 +2735,7 @@ export function entitlementPremium(
 ): number {
   if (!(floorsWanted > byRight) || !(byRight > 0) || !(gsf > 0)) return 0;
   const reach = Math.min(2, (floorsWanted - byRight) / byRight);
-  const direct = gsf * ENTITLE_PSF * Math.max(0.2, costIdx) * (1 + 1.2 * reach);
+  const direct = gsf * ENTITLE_PSF * Math.max(0.05, costIdx) * (1 + 1.2 * reach);
   const months = 12 + 9 * reach;
   const carry = (Math.max(0, landBasis) + direct)
     * landCarryFactor(months);
@@ -3064,7 +3103,7 @@ const CREW_MAX = 3.0;
 function tickCrews(s: GameState, bbls: string[]) {
   const e = s.econ;
   const owed = e.startOwed ? Object.values(e.startOwed).reduce((a, v) => a + Math.max(0, v), 0) : 0;
-  const live = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
+  const live = jobLoad(s);
   const capacity = crewCapacity(bbls, e);
   // Everything the town is trying to have built — the jobs running plus the
   // floor area ordered and not yet broken ground on — against what it can
@@ -3119,6 +3158,24 @@ function tickCrews(s: GameState, bbls: string[]) {
  * now — which is what a low town growing visibly looks like.
  */
 const TYPICAL_SF = 26_000;
+
+/**
+ * THE CREWS A TOWN HAS IN THE GROUND, IN TYPICAL BUILDINGS (2026-10-12).
+ *
+ * Capacity is sized in floor area — the share of the stock a town carries
+ * under construction, divided by a typical building — and it was SPENT in
+ * job counts: a 26,000 sf shed and an 800,000 sf tower each took one slot. So
+ * the moment office pencilled, a handful of slots went to towers and a
+ * quarter of the office stock went up in a few years (developer run, years
+ * 61-80), while the shed that needed a twentieth of the crews waited behind
+ * them for the same slot. A tower takes more crews, steel and cranes than a
+ * shed in proportion to what it puts up; the load is the floor area.
+ */
+function jobLoad(s: GameState): number {
+  let load = 0;
+  for (const j of s.cityJobs ?? []) if (!j.orphaned) load += Math.max(0, j.sf ?? 0) / TYPICAL_SF;
+  return load;
+}
 
 /**
  * The market still wants floor of this class, on the frictional rail.
@@ -3218,9 +3275,13 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // starts stop being a relay pinned at hard zero (45.2% of months -> 12.7%).
   // Office sd(log) of real effective rent moves 0.356 -> 0.263 with it, and
   // retail 0.497 -> 0.259.
-  const liveJobs = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
-  const crewRoom = crewCapacity(bbls, s.econ) - liveJobs;
-  if (crewRoom <= 0) return;
+  // No crew wall on teardowns (2026-10-12): busy trades price the job through
+  // the cost index (`heat`, market.ts), which the redevelopment test reads.
+  // How MANY go in a month is the order book's, the same rule as new starts:
+  // the floor ordered, in typical buildings, and at least one when called.
+  const owedAllT = s.econ.startOwed
+    ? Object.values(s.econ.startOwed).reduce((a, v) => a + Math.max(0, v), 0) : 0;
+  const crewRoom = Math.max(1, Math.ceil(owedAllT / TYPICAL_SF));
   // Score by DENSIFICATION SURPLUS, not land/building alone. A cash-flowing
   // worn walk-up on a FAR-rich corner is the real redevelopment candidate in
   // a shortage; the old land/built ratio only found husks, and century nulls
@@ -3868,14 +3929,24 @@ export function tickCityGrowth(
   //
   // Scaled to the size of the place, so a bigger city carries more of them.
   const capacity = crewCapacity(bbls, s.econ);
-  const live = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
   // No phase metronome and no second replacement-cost brake. The order book
   // was written by the shared pro forma; actual sites are checked against the
   // full parcel pro forma below. Physical crew capacity is the only separate
   // quantity constraint. Named rival starts already occupy a live crew slot,
   // so `startDebt` would subtract them twice.
-  let n = Math.min(wanted, Math.max(0, capacity - live));
-  n = Math.floor(n) + (rng(s, "dev") < n % 1 ? 1 : 0);
+  // NO WALL ON QUANTITY (2026-10-12). Crews are regional, not local: when a
+  // town's contractors are booked, general contractors bring trades in from
+  // the next metro and charge for it — travel, per diem, premium wages. Real
+  // booms show up as cost escalation, not as a cap on starts, and the spread
+  // of construction cost across US metros is narrow (RSMeans city cost
+  // index ~0.8-1.3), which a hard local labour wall would not produce. This
+  // used to stop starting jobs once the live ones filled `capacity`; now the
+  // load is only MEASURED — `tickCrews` turns it into utilisation and the
+  // cost index's `heat` (market.ts, ENR/Turner escalation) prices it, so a
+  // booked town builds dearer and the pro forma decides how much still
+  // pencils.
+  void capacity;
+  let n = Math.floor(wanted) + (rng(s, "dev") < wanted % 1 ? 1 : 0);
   // the town matures: later buildings are bigger than the first ones
   const maturity = Math.min(1, s.month / 780);
 
@@ -3890,9 +3961,28 @@ export function tickCityGrowth(
   // most C dirt; a shed can only be built on the M the board just
   // mapped. Leaving those lots empty while office takes every crew
   // slot is how stock stayed frozen after the map existed.
-  const owedBook = s.econ.startOwed;
-
-  while (n-- > 0) startCityJob(s, parcels, bbls, adjacency, owedBook, maturity);
+  //
+  // EACH SEGMENT WORKS ITS OWN BOOK (2026-10-12). Every attempt here used to
+  // read the whole book and go to the class owed most, so a class only got a
+  // crane in the months its order was the largest: on map 202 industrial sat
+  // at its 0.3% vacancy floor for forty years with sites clearing at 1.3-1.5x
+  // and 11-26k sf ordered, while office's 48-68k sf book took every attempt.
+  // Shed developers build sheds and apartment builders build apartments; with
+  // no crew wall there is nothing for the segments to share but the cost
+  // index, which prices them all. So each class makes its own attempts, as
+  // many as its own order holds typical buildings, against its own book.
+  void n;
+  for (const k of BUILT_CLASSES) {
+    const owedK = Math.max(0, s.econ.startOwed?.[k] ?? 0);
+    const wantK = owedK / TYPICAL_SF;
+    let nk = Math.floor(wantK) + (rng(s, "dev") < wantK % 1 ? 1 : 0);
+    while (nk-- > 0) {
+      const left = Math.max(0, s.econ.startOwed?.[k] ?? 0);
+      if (!(left > 0)) break;
+      const book = { office: 0, retail: 0, multifamily: 0, industrial: 0, [k]: left } as NonNullable<GameState["econ"]["startOwed"]>;
+      startCityJob(s, parcels, bbls, adjacency, book, maturity);
+    }
+  }
 }
 
 /**

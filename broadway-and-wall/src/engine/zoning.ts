@@ -26,7 +26,7 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState, VarianceApplication } from "./types";
 import { monthLabel, cloneState} from "./types";
 import { rng } from "./market";
-import { resolveRec, landValue, demandLinear, FAR_CEILING } from "./value";
+import { resolveRec, landValue, demandLinear } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
 import { money } from "./money";
@@ -86,7 +86,7 @@ export function varianceQuote(
   if (s.landmarks?.[bbl] !== undefined) return null;
   const land = landValue(rec, s.econ);
   const current = Math.max(rec.farMaxComm, rec.farMaxRes, 2);
-  const maxTarget = Math.min(FAR_CEILING, current * 3);
+  const maxTarget = current * 3;
   if (maxTarget <= current + 0.05) return null;
   const target = clamp(
     Number.isFinite(targetFar as number) ? (targetFar as number) : current * 1.34,
@@ -149,10 +149,6 @@ export function fileVariance(
           : `${rec.address} has no lot area on record, so there is no site to grant relief on. `
             + "That is a fault rather than a rule — please report the address.",
       };
-    }
-    const current = Math.max(rec.farMaxComm, rec.farMaxRes, 2);
-    if (current >= FAR_CEILING - 0.05) {
-      return { s, err: `The envelope is already at the city ceiling (${FAR_CEILING} FAR). There is nothing more to ask for.` };
     }
     return { s, err: "Nothing to apply for here." };
   }

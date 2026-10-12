@@ -14,9 +14,6 @@ import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEc
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-/** The most envelope any ground in this city will ever carry, however it is
- *  rezoned and whatever the board grants. The generator's own maximum is 37. */
-export const FAR_CEILING = 40;
 
 /**
  * WHAT A LOT MAY HOST: ANYTHING (2026-10-10). This town has no zoning, like
@@ -2114,8 +2111,15 @@ function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
     // the resolved envelope means upzoning is worth a great deal where there
     // is room for it and nothing at all downtown — which is exactly how a real
     // rezoning works, and why the fights are always about the fringe.
-    out.farMaxComm = +Math.min(FAR_CEILING, rec.farMaxComm * zx + vr).toFixed(2);
-    out.farMaxRes = +Math.min(FAR_CEILING, rec.farMaxRes * zx + vr).toFixed(2);
+    // NO CEILING ON THE ENVELOPE (2026-10-12). This capped a rezoned or
+    // varied lot at 40 FAR. No city zones that high — New York's as-of-right
+    // commercial maximum is 15, about 18 with bonuses and 27-33 in special
+    // districts through bonuses and transferred air rights — but the owner's
+    // rule is that density is a zoning decision and height an engineering one:
+    // what stops a tower is `physicalMaxFloors` (1:12 across the narrow side,
+    // the core ramp, ABS_MAX_FLOORS_V) and what it costs to go up.
+    out.farMaxComm = +(rec.farMaxComm * zx + vr).toFixed(2);
+    out.farMaxRes = +(rec.farMaxRes * zx + vr).toFixed(2);
   }
   if (adj) out.landPsf = rec.landPsf * adj;
   // THE WIRE FROM DEMAND TO DIRT, WHICH WAS CUT.

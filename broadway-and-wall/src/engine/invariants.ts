@@ -19,7 +19,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, DevUse, GameState } from "./types";
 import { START_YEAR } from "./types";
-import { resolveRec, ownedHoldingValue, ownedHoldingNoiYr, netWorth, FAR_CEILING, useRentableSf } from "./value";
+import { resolveRec, ownedHoldingValue, ownedHoldingNoiYr, netWorth, useRentableSf } from "./value";
 // ONE FUNCTION, ONE MEANING. Every price in the game now appraises at the grade
 // the building is actually IN — its year, moved by whoever has been running it —
 // so an invariant that appraises at its BIRTH grade is measuring a different
@@ -76,7 +76,7 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     }
   }
   for (const [bbl, x] of Object.entries(s.variance ?? {})) {
-    if (!fin(x) || x < 0 || x > FAR_CEILING) bad("zoning", `variance ${bbl}`, `granted ${x} FAR`);
+    if (!fin(x) || x < 0) bad("zoning", `variance ${bbl}`, `granted ${x} FAR`);
   }
   const pendingVariance = s.varianceApps
     ?? (s.varianceApp ? { [s.varianceApp.bbl]: s.varianceApp } : {});

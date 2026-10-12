@@ -1380,9 +1380,9 @@ export class RealCityLayer {
     this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
     this.renderer.autoClear = false;
     this.renderer.shadowMap.enabled = true;
-    // soft-filtered: a hard 2x2 filter turned every tower's shadow across a
-    // roof into a staircase at the default camera (SKYLINE_LOOK_PLAN round 2)
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // PCF with a wide radius (setupLights): three r185 retired PCFSoftShadowMap
+    // and falls back to this with a console error on every load
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.82;

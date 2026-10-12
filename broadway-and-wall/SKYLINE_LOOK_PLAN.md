@@ -41,3 +41,21 @@ judged by screenshot. This file is the queue and the rules.
 ## Not in scope
 
 Weathering and ageing (declined by the owner). Engine changes of any kind.
+
+## Progress
+
+Reference set: Metropolis development, seed 4242, July (the game opens in
+January: bare trees and winter yards are not the target look), shot only once
+the city is fully built (`__three.live`) — earlier shots caught MapLibre's
+placeholder extrusions.
+
+- **Round 1** — post pass, lighting, greenery, window reveals, reflection
+  probe. First Metropolis shots: tilt-shift and bloom far too strong, a yellow
+  cast; toned down.
+- **Round 2** — lawn-green yards and parks; soft-filtered shadows and a
+  tighter shadow box (the rooftop "staircases" were shadow aliasing).
+- **Round 3** — a patchwork of roof tones (black tar to white coat); stair
+  bulkheads in the building's own material (the instance kind had not been
+  flagged colourable, so every one was the same tan).
+- **Round 4** — curtain walls reflect the probe brighter and stay glassy
+  further off: blue glass rather than near-black stripes.

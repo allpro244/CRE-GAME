@@ -23,7 +23,7 @@ export function nextDue(g: GameState, parcels: ParcelTable | null): NextDue | nu
   const out: NextDue[] = [];
   for (const t of Object.values(g.talks ?? {})) {
     if (t.agreed && t.closeByM !== undefined) {
-      out.push({ m: t.closeByM, what: "Fund", title: `Fund the purchase of ${addr(t.bbl)} — the deposit is lost after ${monthLabel(t.closeByM)}`, key: `contract:${t.bbl}`, bbl: t.bbl });
+      out.push({ m: t.closeByM - 1, what: "Fund", title: `Fund the purchase of ${addr(t.bbl)} by ${monthLabel(t.closeByM - 1)} — the deposit is lost the month after`, key: `contract:${t.bbl}`, bbl: t.bbl });
     }
   }
   for (const l of g.lois) {

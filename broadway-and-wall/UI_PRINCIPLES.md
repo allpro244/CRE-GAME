@@ -290,3 +290,8 @@ Asked plainly: what does a principal need without opening a desk?
   card, Deals and the map badge said a month too late; the new Next due tile,
   reading the engine's own `lastM`, said "now", and the two disagreed on the
   same screen. Every one now prints the last month the letter is on the desk.
+- **The same for contracts, where it costs the deposit.** The tick increments
+  the month and then forfeits any contract with `month >= closeByM`
+  (acquire.ts), so "fund it by Apr 2000" meant fund in March. The docket, the
+  buy desk, the card footer, Deals, the map badge, the news line and Next due
+  now all print `closeByM − 1`.

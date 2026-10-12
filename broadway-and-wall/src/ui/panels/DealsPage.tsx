@@ -496,7 +496,7 @@ export function DealsPage() {
                     <strong>{parcels[t.bbl]?.address ?? t.bbl}</strong>
                     {t.agreed ? (
                       <> — agreed at <b className="mono">{usd(t.agreedPrice ?? t.theirPrice)}</b> with {t.sellerName},{" "}
-                        {usd(t.deposit ?? 0)} down. Fund it by <b>{monthLabel(t.closeByM ?? game.month)}</b> or the deposit is theirs.</>
+                        {usd(t.deposit ?? 0)} down. Fund it by <b>{monthLabel((t.closeByM ?? game.month + 1) - 1)}</b> or the deposit is theirs.</>
                     ) : (
                       <> — {t.sellerName} is at <b className="mono">{usd(t.theirPrice)}</b>, you are at {usd(t.yourPrice)}.{" "}
                         {t.final ? "Their final word." : `Round ${t.round} of ${t.maxRounds}.`}</>

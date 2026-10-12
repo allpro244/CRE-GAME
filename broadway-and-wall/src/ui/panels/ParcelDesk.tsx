@@ -897,7 +897,7 @@ function ParcelPanelInner({
                       <Row k="Loan basis" v={usd(listing.loanBasis)} title="Outstanding debt the lender is clearing — the ask is anchored here, not appraisal." />
                     )}
                   </>}
-              {contract && <Row k="Must fund by" v={monthLabel(contract.closeByM ?? game.month + 3)} bad />}
+              {contract && <Row k="Must fund by" v={monthLabel((contract.closeByM ?? game.month + 3) - 1)} bad />}
               {contract && <Row k="Deposit posted" v={usd(contract.deposit ?? 0)} />}
               {/* THE NUMBERS YOU BID ON ARE THE NUMBERS YOU CLOSE ON. Priced
                   off the disclosed rent roll where there is one, so the cap
@@ -959,7 +959,7 @@ function ParcelPanelInner({
               <div className="hint">{offContract.note}</div>
               <div className="grid">
                 <Row k="Agreed price" v={usd(offContract.agreedPrice ?? offContract.theirPrice)} strong />
-                <Row k="Close by" v={monthLabel(offContract.closeByM ?? game.month)} bad />
+                <Row k="Close by" v={monthLabel((offContract.closeByM ?? game.month + 1) - 1)} bad />
                 <Row k="Earnest money" v={usd(offContract.deposit ?? 0)} />
               </div>
               <BuyButtons
@@ -1344,7 +1344,7 @@ function BuyCta({ bbl, ask, built }: { bbl: string; ask: number; built: boolean 
     <div ref={ref} className={"panel-cta" + (hidden ? " panel-cta-hidden" : "")} aria-hidden={hidden}>
       <div className="panel-cta-txt">
         <span className="panel-cta-price mono">{usd(contract ? (contract.agreedPrice ?? contract.theirPrice) : ask)}</span>
-        <span className="panel-cta-sub">{contract ? `under contract · fund by ${monthLabel(contract.closeByM ?? game.month + 3)}` : `ask · ${yieldTxt}`}</span>
+        <span className="panel-cta-sub">{contract ? `under contract · fund by ${monthLabel((contract.closeByM ?? game.month + 3) - 1)}` : `ask · ${yieldTxt}`}</span>
       </div>
       <button type="button" className="btn btn-buy" tabIndex={hidden ? -1 : 0} onClick={go}>
         {contract ? "Fund the close ↓" : t ? "Back to the table ↓" : "Make an offer ↓"}

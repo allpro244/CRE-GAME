@@ -1378,7 +1378,9 @@ export class RealCityLayer {
     this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
     this.renderer.autoClear = false;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // soft-filtered: a hard 2x2 filter turned every tower's shadow across a
+    // roof into a staircase at the default camera (SKYLINE_LOOK_PLAN round 2)
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.82;
@@ -1662,7 +1664,9 @@ export class RealCityLayer {
   // the box is moved in whole texels of the light's own view, so a pan
   // re-renders the same edges onto the same pixels.
   private fitShadow(fx: number, fy: number, distM: number) {
-    const raw = Math.max(260, Math.min(2600, distM * 1.6));
+    // the box covers what the camera frames, not a margin round it: half
+    // the old texel size at the default camera
+    const raw = Math.max(220, Math.min(2400, distM * 1.15));
     const span = 260 * Math.pow(2, Math.ceil(Math.log2(raw / 260) * 4) / 4);
     const moved = Math.hypot(fx - this.shadowFocus.x, fy - this.shadowFocus.y);
     if (moved < span * 0.12 && span === this.shadowSpan) return;

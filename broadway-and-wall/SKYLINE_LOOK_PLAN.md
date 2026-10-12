@@ -200,6 +200,14 @@ fixed in #231; the sweep is clean since.
   big lawn; industry an asphalt work yard. Hung on the deed and collapsed
   away on demolition. The block fill itself now only reaches four tenths of
   the way to lawn green in summer.
+- **Round 27** — behind the building (`backLot`). A back wall is one whose
+  ground runs on as lot for 4 m or more. Pre-1940 walk-ups get fenced back
+  gardens a house wide, each with a patio by the back door, a tree or shrubs,
+  a flower bed and sometimes a shed; post-war apartments a parking lot in
+  bays where the depth allows, else a lawn with benches and trees; offices
+  and shops a service yard (asphalt, cars, dumpsters, a condenser); industry
+  trailers and pallets. The lawn texture is mottled instead of striped, and
+  no paved squares are dropped into lawns.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

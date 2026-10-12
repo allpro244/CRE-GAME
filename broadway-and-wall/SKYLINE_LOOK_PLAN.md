@@ -84,3 +84,6 @@ placeholder extrusions.
   from its cell hash (about half dark; warm tungsten, a few cool
   fluorescent), so a tower at night is a field of rooms rather than one lit
   slab. `shoot-design.mjs` gained `dusk=` for night review shots.
+- **Round 11** — night streets: every street lamp throws a soft warm pool on
+  the carriageway (an additive `glow` instance per lamp, opacity following the
+  hour; nothing by day).

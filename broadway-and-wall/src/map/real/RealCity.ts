@@ -22,7 +22,7 @@ import { siteOutline, ringCentroid } from "./siteRing";
 import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
 import { BOOK_PICKER } from "./patternbook/register";
 import type { FacadeGroup } from "./patternbook/types";
-import { TILE, TOWER_FAMS, FAMILY_SPECS, VARIANTS, TINTS, familyFor, roofTone, shade, pick, liveryFor, baseOf, FLAT_ROOFED, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER, RUSTIC_BASE, BAY_P, QUOIN_P, styleOf, type ArchStyle, NO_PAINT, type FamilySpec, type Livery } from "./facades";
+import { TILE, TOWER_FAMS, FAMILY_SPECS, VARIANTS, TINTS, familyFor, roofTone, shade, pick, liveryFor, baseOf, FLAT_ROOFED, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER, RUSTIC_BASE, BAY_P, QUOIN_P, styleOf, type ArchStyle, NO_PAINT, type FamilySpec, type Painter, type Livery } from "./facades";
 export type { CityCtx, PlayerItem };
 
 type Ctx = CityCtx;
@@ -440,6 +440,44 @@ function meanLum(alb: CanvasRenderingContext2D, msk: CanvasRenderingContext2D | 
   return n ? s / n : 0.3;
 }
 
+/**
+ * WHAT A FACADE LOOKS LIKE FROM ACROSS TOWN. The texture holds two bays by
+ * two floors, and the GPU's own mipmaps average it down a box at a time: by
+ * the time a floor is three pixels tall the dark windows and the light
+ * piers have met in the middle as one flat tone, and a Beaux-Arts front, a
+ * ribbon-window slab and a brise-soleil read alike. This chain averages the
+ * same way, then gives each small level back the contrast the averaging
+ * took — around the level's own mean, so the colour from a distance is
+ * unchanged — so piers, bands and spandrels keep reading as the building
+ * shrinks. The gain rises as the level shrinks and stops short of making the
+ * far city shimmer. (Shape parameters, set by eye on the contact sheets and
+ * the 3D city at the default camera.)
+ */
+function farMips(c: HTMLCanvasElement): HTMLCanvasElement[] {
+  const out: HTMLCanvasElement[] = [c];
+  let prev = c;
+  for (let size = c.width / 2; size >= 1; size /= 2) {
+    const { c: lc, g } = makeCanvas(size, size);
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+    g.drawImage(prev, 0, 0, prev.width, prev.height, 0, 0, size, size);
+    // the next level averages this one before its contrast is given back,
+    // so the gains do not compound down the chain
+    const plain = makeCanvas(size, size); plain.g.drawImage(lc, 0, 0);
+    const gain = size >= 128 ? 1 : size === 64 ? 1.18 : size === 32 ? 1.38 : size === 16 ? 1.55 : size >= 4 ? 1.6 : 1;
+    if (gain > 1) {
+      const im = g.getImageData(0, 0, size, size), d = im.data;
+      const m = [0, 0, 0];
+      for (let i = 0; i < d.length; i += 4) { m[0] += d[i]; m[1] += d[i + 1]; m[2] += d[i + 2]; }
+      const n = d.length / 4; m[0] /= n; m[1] /= n; m[2] /= n;
+      for (let i = 0; i < d.length; i += 4) for (let ch = 0; ch < 3; ch++) d[i + ch] = Math.max(0, Math.min(255, m[ch] + (d[i + ch] - m[ch]) * gain));
+      g.putImageData(im, 0, 0);
+    }
+    out.push(lc);
+    prev = plain.c;
+  }
+  return out;
+}
+
 function buildFamily(spec: FamilySpec, seed: number): Family {
   let s = seed;
   const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
@@ -561,6 +599,7 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   const tex = (c: HTMLCanvasElement, srgb: boolean) => {
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    if (srgb) { t.mipmaps = farMips(c); t.generateMipmaps = false; t.minFilter = THREE.LinearMipmapLinearFilter; }
     // the tile holds two bays by two floors
     t.repeat.set(0.5, 0.5);
     return t;
@@ -620,25 +659,69 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
  * canvases, textures and material are made the first time a building asks
  * for it, and only then cost memory on the GPU.
  */
+/**
+ * THE TOP OF A BUILDING, from its own elevation (addVolume, mainWalls). A
+ * masonry front finishes in an ATTIC: the last storey under the cornice with
+ * short, square windows in the same wall, the way every Beaux-Arts, Chicago
+ * and deco front ends. A curtain wall or a modern slab finishes in a SCREEN:
+ * a storey of louvres hiding the plant, in the cladding's own metal. Both
+ * are derived, so every family in the book has one: "brick#2@attic".
+ */
+function topSpec(f: FamilySpec, mod: string): FamilySpec | null {
+  if (mod === "attic") {
+    const cx = (f.win.x0 + f.win.x1) / 2, hw = Math.min((f.win.x1 - f.win.x0) / 2, 0.24);
+    return { ...f, win: { x0: cx - hw, x1: cx + hw, y0: 0.36, y1: 0.7 }, winStyle: f.winStyle === "pair" || f.winStyle === "triple" ? f.winStyle : "rect",
+      lintel: "none", shutter: undefined, mullions: [1, 1], winJitter: 0 };
+  }
+  if (mod === "screen") return { ...f, noWin: true, wall: louvreWall(f.frameCol), over: undefined, reveal: 2.4, wallRough: 0.5 };
+  return null;
+}
+/** Horizontal louvres: blades with a lit top edge and a dark gap under, every 9 px, in a frame every bay. */
+function louvreWall(frame: string): Painter {
+  return (g, w, h) => {
+    const base = shade(frame, 1.25);
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 9) {
+      g.fillStyle = shade(frame, 0.7); g.fillRect(0, y + 5, w, 4);
+      g.fillStyle = shade(frame, 1.55); g.fillRect(0, y, w, 1.5);
+    }
+    g.fillStyle = shade(frame, 0.85);
+    for (let x = 0; x < w; x += w / 2) g.fillRect(x, 0, 4, h);
+  };
+}
+
 function makeFamilies(seed: number, onBuild?: (f: Family) => void): Record<string, Family> {
   const specs = new Map<string, () => Family>();
+  const specOf = new Map<string, FamilySpec>();
   FAMILY_SPECS.forEach((f, i) => {
     specs.set(f.key, () => buildFamily(f, (seed * 31 + i * 977) % 2147483646 + 1));
+    specOf.set(f.key, f);
     // the family's other elevations, keyed "brick#1", "brick#2"...
     (VARIANTS[f.key] ?? []).forEach((v, j) => {
       const key = `${f.key}#${j + 1}`;
+      specOf.set(key, { ...f, ...v, key });
       specs.set(key, () => ({ ...buildFamily({ ...f, ...v, key }, (seed * 31 + i * 977 + (j + 1) * 7919) % 2147483646 + 1), key: f.key }));
     });
   });
+  // the derived tops, on demand: "brick#2@attic", "glass@screen"
+  const derive = (k: string) => {
+    const [base, mod] = k.split("@");
+    const f = specOf.get(base), t = f && topSpec(f, mod);
+    if (!f || !t) return null;
+    let hsh = 7; for (let i = 0; i < k.length; i++) hsh = (hsh * 31 + k.charCodeAt(i)) % 2147483646;
+    const mk = () => ({ ...buildFamily({ ...t, key: k }, ((seed * 131 + hsh) % 2147483646) + 1), key: f.key.split("#")[0] });
+    specs.set(k, mk);
+    return mk;
+  };
   const built: Record<string, Family> = {};
   return new Proxy(built, {
     get(t, k) {
       if (typeof k !== "string") return undefined;
       let f = t[k];
-      if (!f) { const mk = specs.get(k); if (!mk) return undefined; f = t[k] = mk(); onBuild?.(f); }
+      if (!f) { const mk = specs.get(k) ?? (k.includes("@") ? derive(k) : null); if (!mk) return undefined; f = t[k] = mk(); onBuild?.(f); }
       return f;
     },
-    has: (_t, k) => typeof k === "string" && specs.has(k),
+    has: (_t, k) => typeof k === "string" && (specs.has(k) || (k.includes("@") && !!derive(k))),
   });
 }
 
@@ -3256,11 +3339,30 @@ export class RealCityLayer {
     const livery = ov ? null : liveryFor(famKey, seedK);
     if (bbl && z0 < 0.5 && !this.sandbox) this.looks.set(bbl, `${ov?.variant ?? this.variantOf(famKey, seedK)}|${tint.join(",")}|${livery?.key ?? "-"}`);
     const walls = (fk0: string, za: number, zb: number, vOff: number, tn: number[], rr: P2[] = ring) => {
-      const fk = fk0.includes("#") ? fk0 : fk0 === famKey && ov?.variant ? ov.variant : this.variantOf(fk0, seedK);
+      const fk = fk0.includes("#") || fk0.includes("@") ? fk0 : fk0 === famKey && ov?.variant ? ov.variant : this.variantOf(fk0, seedK);
       const f = this.families[fk];
       const wallName = "w:" + fk;
       const W = this.buf(wallName);
-      W.painted(fk0 === famKey ? livery : null, () => wallsOf(wallName, f, W, za, zb, vOff, tn, rr));
+      // the derived top wears the building's own paint
+      W.painted(fk0 === famKey || fk0.split("#")[0].split("@")[0] === famKey ? livery : null, () => wallsOf(wallName, f, W, za, zb, vOff, tn, rr));
+    };
+    // THE BODY AND ITS TOP (topSpec). From lo to the wall head, ending in an
+    // attic storey on a masonry front of four floors or more, or a louvred
+    // plant screen on a curtain wall or modern slab over 30 m. The top
+    // storey keeps the body's floor grid, so its windows stand over the
+    // windows below.
+    const mainWalls = (lo: number, vOff = lo, rr: P2[] = ring) => {
+      const n = Math.round((zw - vOff) / fh);
+      const glassTop = fam.glass || style === "modernist" || style === "futurist" || style === "brutalist";
+      const zt = vOff + (n - 1) * fh;
+      const top = !crown || pitched || mans || n < 4 || zt - lo < 3 * fh || zw - zt < 0.6 * fh ? null
+        : glassTop ? (zw > 30 ? "screen" : null)
+        : fam.masonry && (style === "classical" || style === "chicago" || style === "deco" || style === "victorian" || style === "vernacular") ? "attic" : null;
+      if (!top) { walls(famKey, lo, zw, vOff, tint, rr); return; }
+      const main = ov?.variant ?? this.variantOf(famKey, seedK);
+      walls(famKey, lo, zt, vOff, tint, rr);
+      walls(`${main}@${top}`, zt, zw, vOff, tint, rr);
+      this.feat(top, bbl);
     };
     const wallsOf = (wallName: string, f: Family, W: Buf, za: number, zb: number, vOff: number, tn: number[], rr: P2[]) => {
       const w0 = W.count;
@@ -3330,23 +3432,23 @@ export class RealCityLayer {
     if (pil && Math.abs(ringArea(pil)) > 0.35 * Math.abs(ringArea(ring)) && pil.every(([x, y]) => PolyGrid.inRing(ring, x, y))) {
       const lh = zw > 36 ? this.families.lobby.floorH : Math.min(6, fam.floorH * 1.5);
       walls("lobby", z0, lh, 0, [1, 1, 1], pil);
-      walls(famKey, lh, zw, lh, tint);
+      mainWalls(lh);
       this.soffit(ring, pil, lh, bbl, [0.86, 0.86, 0.84]); this.feat("pilotis", bbl);
       this.colonnade(ring, 0.55, 6.5, lh, "piloti", bbl);
     } else if (style === "spanish" && shop && z0 < 0.5 && zw > 7.5) {
       // the Spanish Revival shop row trades behind an arcade
       const ah = this.families.arcade.floorH;
       walls("arcade", z0, ah, 0, [1, 1, 1]); this.feat("arcade", bbl);
-      walls(famKey, ah, zw, ah, tint);
+      mainWalls(ah);
     } else if (shop && z0 < 0.5 && zw > shopH + 2.5) {
       walls("shop", z0, shopH, 0, [1, 1, 1]);
-      walls(famKey, shopH, zw, shopH, tint);
+      mainWalls(shopH);
       if (bbl) this.shopBays(ring, bbl, seedK, shopH, famKey);
     } else if (TOWER_FAMS.has(famKey) && z0 < 0.5 && zw > 36) {
       // a tower stands on a double-height glass lobby
       const lh = this.families.lobby.floorH;
       walls("lobby", z0, lh, 0, [1, 1, 1]);
-      walls(famKey, lh, zw, lh, tint);
+      mainWalls(lh);
       if (bbl) this.entrance(ring, bbl, famKey, cls, seedK, z1, true);
     } else if (z0 < 0.5 && zw > 16 && !ov && hash01(seedK ^ 0x5b5, 3) < (RUSTIC_BASE[famKey] ?? 0)) {
       // A STONE FRONT STANDS ON A RUSTICATED BASE: the ground storey in long
@@ -3355,10 +3457,10 @@ export class RealCityLayer {
       const rv = famKey === "romanesque" ? "rustic#2" : famKey === "deco" || famKey === "decobrick" ? "rustic#1" : this.variantOf("rustic", seedK);
       baseH = this.families.rustic.floorH;
       walls(rv, z0, baseH, 0, tint);
-      walls(famKey, baseH, zw, baseH, tint);
+      mainWalls(baseH);
       if (bbl) this.entrance(ring, bbl, famKey, cls, seedK, z1, false);
     } else {
-      walls(famKey, z0, zw, 0, tint);
+      mainWalls(z0, 0);
       if (bbl && z0 < 0.5) this.streetDress(ring, bbl, famKey, cls, seedK, z1);
       if (bbl && z0 < 0.5) this.entrance(ring, bbl, famKey, cls, seedK, z1, false);
       // BAY WINDOWS. A row house's front is not a flat wall: the brownstone
@@ -3656,7 +3758,41 @@ export class RealCityLayer {
         for (let i = 0; i < n; i++) { const q = spot(0.2, 0.75); if (q) this.putInst("solar", q[0], q[1], z1, 1, rot, bbl); }
       }
       if (oldWalk && cls === "multifamily" && z1 < 30 && rnd() < 0.18) { const q = spot(0.6, 0.85); if (q) this.putInst("dish", q[0], q[1], z1, 1, rnd() * 6.28, bbl); }
-      if ((TOWER_FAMS.has(famKey) || famKey === "plain" || cls === "retail") && area > 200) {
+      // A FLAT ROOF IS A PATCHWORK. Seen from the street-view camera the deck
+      // is the biggest thing on a low building, and one flat tone made every
+      // block a sheet of grey card. A roof is re-covered a section at a time,
+      // so its membrane is lighter here and darker there; walkway pads and
+      // ballast lie in strips along the long side; and a new building is as
+      // likely as not to plant part of its roof (the green roofs of the 2000s
+      // codes). Patches sit a hand above the deck so they hold at a distance.
+      if (area > 220 && !GLASSY.has(famKey)) {
+        let li = 0, ll = -1;
+        for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
+        const ux = (ring[(li + 1) % ring.length][0] - ring[li][0]) / ll, uy = (ring[(li + 1) % ring.length][1] - ring[li][1]) / ll;
+        const zp = z1 + 0.12, p0 = R.count;
+        const patch = (q: P2, a: number, b: number, col: number[]) => {
+          const c = [[-a, -b], [a, -b], [a, b], [-a, b]].map(([u, v]) => [q[0] + ux * u - uy * v, q[1] + uy * u + ux * v, zp]);
+          if (!c.every(([x, y]) => inside(x, y))) return false;
+          R.quad(c[0], c[1], c[2], c[3], [0, 0, 1], c.map((p) => [p[0] * 0.25, p[1] * 0.25]), col);
+          return true;
+        };
+        const green = !oldWalk && cls !== "industrial" && year >= 2006 && z1 < 70 && rnd() < 0.3;
+        if (green) {
+          // most of the deck planted, in two or three beds with paths between
+          const beds = 2 + (rnd() < 0.5 ? 1 : 0);
+          for (let i = 0; i < beds; i++) { const q = spot(0.05, 0.45); if (q) patch(q, 3 + rnd() * Math.min(10, ll * 0.22), 2.5 + rnd() * 5, [0.5 + rnd() * 0.12, 0.72 + rnd() * 0.12, 0.38]); }
+          this.feat("greenroof", bbl);
+        }
+        const n = Math.min(5, 1 + Math.floor(area / 500));
+        for (let i = 0; i < n; i++) {
+          const q = spot(0.05, 0.7), j = 0.84 + rnd() * 0.3;
+          if (q) patch(q, 2.5 + rnd() * Math.min(12, ll * 0.3), 2 + rnd() * 6, [rc[0] * j, rc[1] * j, rc[2] * j]);
+        }
+        this.note(bbl, "roof", p0);
+      }
+      // condensers on anything post-war with a flat roof of any size, not
+      // only the towers; an office block carries a row of them
+      if ((TOWER_FAMS.has(famKey) || famKey === "plain" || cls === "retail" || cls === "office" || (year >= 1950 && area > 300)) && area > 200) {
         const n = Math.min(7, 1 + Math.floor(area / 650));
         for (let i = 0; i < n; i++) { const q = spot(0.15, 0.7); if (q) this.putInst("hvac", q[0], q[1], z1, 0.8 + rnd() * 0.4, rot + (rnd() < 0.5 ? 0 : Math.PI / 2), bbl); }
       }
@@ -5182,6 +5318,8 @@ export class RealCityLayer {
       this.addVolume(at(0.84), h1, h2, fam, tint, it.bbl, true, false, k, false, false, "", 0, ov);
       topRing = at(0.68);
       this.addVolume(topRing, h2, h, fam, tint, it.bbl, true, true, k, false, false, it.cls, 0, ov);
+    } else if (!d?.crown && this.lotMassing(ring, h, fam, tint, it, k, shop, pitched, ov, !!d?.facade)) {
+      // a low building on a wide lot: a row of houses or a block round a court
     } else {
       const yr = it.year && it.year > 1800 ? it.year : 2000;
       // a tower nobody designed takes its period's massing, as the
@@ -5200,6 +5338,57 @@ export class RealCityLayer {
     // empty lot under it
     for (const b of this.siteOf(it.bbl)) this.dynHeight.set(b, h);
     if (it.construction) craneAt.push({ x: ring[0][0] * 0.7 + cx * 0.3, y: ring[0][1] * 0.7 + cy * 0.3, r: hash01(k, 31) * 6.28 });
+  }
+
+  /**
+   * A LOW BUILDING ON A WIDE LOT IS NOT ONE BOX. Seven storeys of walk-up
+   * across a 60 m frontage were never built as one slab under one roof: a
+   * street style goes up as a ROW of houses, each its own frontage, paint
+   * and roofline; a big apartment or office block as a PERIMETER BLOCK, four
+   * wings round a light court. Four-sided footprints only; returns false
+   * where the building stays one volume.
+   */
+  private lotMassing(ring: P2[], h: number, fam: string, tint: number[], it: PlayerItem, k: number, shop: boolean, pitched: boolean, ov: VolumeOv | undefined, chose: boolean): boolean {
+    if (ring.length !== 4 || h > 26) return false;
+    if (ringArea(ring) < 0) ring = ring.slice().reverse();
+    const yr = it.year && it.year > 1800 ? it.year : 2000;
+    const len = (i: number) => Math.hypot(ring[(i + 1) % 4][0] - ring[i][0], ring[(i + 1) % 4][1] - ring[i][1]);
+    const li = len(0) + len(2) >= len(1) + len(3) ? 0 : 1;
+    const L = (len(li) + len(li + 2)) / 2, S = (len(li + 1) + len(li + 3)) / 2;
+    const style = styleOf(fam, yr, h);
+    const housing = it.cls === "multifamily" || it.cls === "retail" || it.cls === "mixed";
+    const rowStyle = (style === "victorian" || style === "vernacular" || style === "tudor" || style === "spanish") && !GLASSY.has(fam) && !TOWER_FAMS.has(fam) && h <= 19;
+    const lerp = (a: P2, b: P2, t: number): P2 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    if (rowStyle && housing && L > 24 && S < 40) {
+      // the row: frontages of 6-9 m along the long side (a brownstone is 6,
+      // a walk-up 7.5, a two-flat 9), each house its own deed-seed, so its
+      // elevation, paint and roofline are its own unless the player chose one
+      const A = ring[li], B = ring[(li + 1) % 4], C = ring[(li + 2) % 4], D = ring[(li + 3) % 4];
+      const want = 6 + 3 * hash01(k ^ 0x40e1, this.seed);
+      const n = Math.max(2, Math.min(12, Math.round(L / want)));
+      for (let j = 0; j < n; j++) {
+        const t0 = j / n, t1 = (j + 1) / n, kj = (k * 31 + j * 7919) >>> 0;
+        const r: P2[] = [lerp(A, B, t0), lerp(A, B, t1), lerp(D, C, t1), lerp(D, C, t0)];
+        const tn = chose ? tint : (TINTS[fam] ?? [[1, 1, 1]])[Math.floor(hash01(kj, this.seed) * (TINTS[fam]?.length ?? 1))];
+        this.addVolume(r, 0, h, fam, tn, it.bbl, true, true, kj, shop, pitched, it.cls, yr, ov);
+      }
+      this.feat("row", it.bbl);
+      return true;
+    }
+    if (S > 34 && L > 34 && it.cls !== "industrial" && it.cls !== "retail") {
+      // the perimeter block: wings 11-14 m deep, the depth a floor can be
+      // lit from both faces, round an open court
+      const dw = Math.min(14, Math.max(11, S * 0.26));
+      const inner = insetRing(ring, dw);
+      if (!inner || inner.length !== 4 || ringArea(inner) < 0.12 * ringArea(ring)) return false;
+      for (let i = 0; i < 4; i++) {
+        const r: P2[] = [ring[i], ring[(i + 1) % 4], inner[(i + 1) % 4], inner[i]];
+        this.addVolume(r, 0, h, fam, tint, it.bbl, true, i === li, k, shop && (i === li || i === (li + 2) % 4), pitched, it.cls, yr, ov);
+      }
+      this.feat("court", it.bbl);
+      return true;
+    }
+    return false;
   }
 
   setPlayerBuildings(items0: PlayerItem[], force = false) {

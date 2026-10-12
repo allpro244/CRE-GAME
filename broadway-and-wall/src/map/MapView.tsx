@@ -416,6 +416,9 @@ export default function MapView() {
                 }),
               kerbs: linesOf("curb"),
               zebras: linesOf("zebra"),
+              centerlines: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "centerline" && f.geometry.type === "LineString")
+                .map((f) => ({ pts: (f.geometry as GeoJSON.LineString).coordinates as [number, number][], w: Number(f.properties?.w ?? 0) })),
               quays: linesOf("quay"),
               // open ground that is neither footway, park nor carriageway: the
               // boulevard malls and the esplanade
@@ -514,6 +517,8 @@ export default function MapView() {
             layer.onReady = () => {
               if (disposed) return;
               map.setLayoutProperty("bw-bldg-3d", "visibility", "none");
+              // the 3D city paints its own lane markings (RealCity.buildMarkings)
+              for (const id of ["lane-divider", "lane-double-a", "lane-double-b"]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
               setThreeReady(true);
             };
             map.addLayer(layer);

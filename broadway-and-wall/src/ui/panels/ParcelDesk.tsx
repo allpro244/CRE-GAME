@@ -8,7 +8,8 @@ import { memo, useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
-import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, START_YEAR } from "@/engine/types";
+import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
+import { OpsChoices } from "@/ui/panels/OpsChoices";
 import type { BuiltClass } from "@/engine/types";
 import { initialCondition, recoveryOf, marketRentPsfYr, managedRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
@@ -1165,36 +1166,7 @@ function ParcelPanelInner({
               <div className="hint" style={{ fontSize: 11 }}>{autoLeaseRule(game, holding)}</div>
             </>
           )}
-          <div className="ops-choice">
-            <span className="ops-choice-k">Service</span>
-            <span className="seg" role="group" aria-label="Service level">
-            {OPS_SERVICE.map((o) => (
-              <button
-                key={o.key}
-                className={"btn" + ((holding.service ?? 0) === o.key ? " btn-on" : "")}
-                aria-pressed={(holding.service ?? 0) === o.key}
-                title={o.blurb + " — three years to matter, three years to undo"}
-                onClick={() => useStore.getState().ops(selectedBBL, { service: o.key })}
-              >{o.label}</button>
-            ))}
-            </span>
-            <span className="ops-choice-read">tenants read it as {Math.round(100 * (holding.svcIdx ?? 0.55))} of 100</span>
-          </div>
-          <div className="ops-choice">
-            <span className="ops-choice-k">Capital plan</span>
-            <span className="seg" role="group" aria-label="Capital plan">
-            {OPS_PLAN.map((o) => (
-              <button
-                key={o.key}
-                className={"btn" + ((holding.plan ?? 1) === o.key ? " btn-on" : "")}
-                aria-pressed={(holding.plan ?? 1) === o.key}
-                title={o.blurb}
-                onClick={() => useStore.getState().ops(selectedBBL, { plan: o.key })}
-              >{o.label}</button>
-            ))}
-            </span>
-            <span className="ops-choice-read">condition {Math.round(100 * (holding.condIdx ?? 0.6))} of 100</span>
-          </div>
+          <OpsChoices bbl={selectedBBL} h={holding} />
           <div className="ops-choice-k" style={{ marginTop: 10 }}>One-off programmes</div>
           <div className="btn-row">
             {PROGRAMS.map((p) => {

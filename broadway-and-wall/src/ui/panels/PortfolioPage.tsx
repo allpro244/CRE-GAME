@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { returnsToDate } from "@/engine/standing";
 import { useStore } from "@/state/store";
-import { monthLabel, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, SVC_START } from "@/engine/types";
+import { monthLabel, serviceSpec, planSpec, SVC_START } from "@/engine/types";
+import { OpsChoices } from "@/ui/panels/OpsChoices";
 import type { BuiltClass, GameState } from "@/engine/types";
 import { deedMark } from "@/ui/deedMarks";
 import { managedRentPsfYr, resolveRec, isLeasedFee } from "@/engine/value";
@@ -694,7 +695,8 @@ export function PortfolioPage() {
                       onClick={(ev) => { ev.stopPropagation(); setOpsRow(opsRow === h.bbl ? null : h.bbl); }}
                       title={`Service ${serviceSpec(h.service).label} (tenants read it as ${Math.round(100 * (h.svcIdx ?? SVC_START))} of 100) · capital plan ${planSpec(h.plan).label} (condition ${Math.round(100 * (h.condIdx ?? 0.6))} of 100)`}
                     >
-                      {serviceSpec(h.service).label} · {planSpec(h.plan).label}
+                      {/* It read "Market · Fund" — two settings, no verb. */}
+                      Run {opsRow === h.bbl ? "▴" : "▾"}
                     </button>
                   )}
                   <button
@@ -753,27 +755,7 @@ export function PortfolioPage() {
             {opsRow === h.bbl && (
               <tr>
                 <td colSpan={bookCols} style={{ background: "rgba(43,37,26,0.035)" }}>
-                  <div className="grid">
-                    <Row k="Service" v={`${serviceSpec(h.service).label} · tenants read it as ${Math.round(100 * (h.svcIdx ?? SVC_START))} of 100`} />
-                    <Row k="Capital plan" v={`${planSpec(h.plan).label} · condition ${Math.round(100 * (h.condIdx ?? 0.6))} of 100 (${h.condition})`} />
-                  </div>
-                  <div className="btn-row">
-                    {OPS_SERVICE.map((o) => (
-                      <button key={o.key} type="button"
-                        className={"btn btn-sm" + ((h.service ?? 0) === o.key ? " btn-on" : "")}
-                        title={o.blurb + " — three years to matter, three years to undo"}
-                        onClick={() => useStore.getState().ops(h.bbl, { service: o.key })}
-                      >{o.label}</button>
-                    ))}
-                    <span className="dim" style={{ margin: "0 6px" }}>|</span>
-                    {OPS_PLAN.map((o) => (
-                      <button key={o.key} type="button"
-                        className={"btn btn-sm" + ((h.plan ?? 1) === o.key ? " btn-on" : "")}
-                        title={o.blurb}
-                        onClick={() => useStore.getState().ops(h.bbl, { plan: o.key })}
-                      >{o.label}</button>
-                    ))}
-                  </div>
+                  <OpsChoices bbl={h.bbl} h={h} />
                 </td>
               </tr>
             )}

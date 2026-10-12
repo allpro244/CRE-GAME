@@ -4,11 +4,12 @@
 //   RefiDesk      permanent debt on a deed
 //   DevelopDesk   ground-up + adaptive reuse (Programme · Design · Financing)
 import { marketAppraisal } from "@/engine/value";
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
-import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
+import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
+import { OpsChoices } from "@/ui/panels/OpsChoices";
 import type { BuiltClass } from "@/engine/types";
 import { initialCondition, recoveryOf, marketRentPsfYr, managedRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
@@ -65,7 +66,11 @@ function ParcelPanelShell({ embedded = false, tab }: { embedded?: boolean; tab?:
   // to rebuild this whole file for a panel that was not on screen.
   const selectedBBL = useStore((s) => s.selectedBBL);
   if (!selectedBBL) return null;
-  return <ParcelPanelInner embedded={embedded} tab={tab} selectedBBL={selectedBBL} />;
+  // Keyed on the deed: a new building is a new card. The card kept the last
+  // one's scroll offset, so clicking a second building after reading the foot
+  // of the first opened it at "Adjoining lots", and per-building drafts (an
+  // offer half typed) could carry across.
+  return <ParcelPanelInner key={selectedBBL} embedded={embedded} tab={tab} selectedBBL={selectedBBL} />;
 }
 
 function ParcelPanelInner({
@@ -115,6 +120,7 @@ function ParcelPanelInner({
   // header above it by the premium on every corner, waterfront and high street
   // lot, and the sale desk below priced your listing against it.
   const value = marketAppraisal(game, rec, selectedBBL, cond);
+  const dupe = embedded && !!holding;
   const builtFar = rec.lotArea > 0 ? rec.bldgArea / rec.lotArea : 0;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
   // A ground lessee's building stands on your deed — it is not yours to let.
@@ -163,9 +169,9 @@ function ParcelPanelInner({
       )}
 
       {on("summary") && <div className="chip-row">
-        <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{useLabel(rec)}</span>
-        <span className="chip chip-zone mono">{rec.zoneDist}</span>
-        {holding && <span className="chip chip-owned">OWNED</span>}
+        {!dupe && <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{useLabel(rec)}</span>}
+        {!dupe && <span className="chip chip-zone mono">{rec.zoneDist}</span>}
+        {holding && !dupe && <span className="chip chip-owned">OWNED</span>}
         {holding?.groundLeased && game.groundLeases?.[selectedBBL] && (game.built?.[selectedBBL]?.bldgArea || game.groundLeases[selectedBBL].builtM !== undefined) && (
           <span className="chip">LESSEE BUILT</span>
         )}
@@ -232,6 +238,13 @@ function ParcelPanelInner({
         // $238 against $464, neither of which was the building.
         const standingPsf = dirt ? 0 : value / Math.max(1, rec.lotArea);
         const pencils = read.winner === "builder" && read.builder > 0 && (dirt || read.builder > standingPsf);
+        // THE MAP CARD IS A GLANCE. Most standing buildings in town leave a
+        // quarter of their envelope unused, so "Underbuilt · a rebuild does
+        // not pencil" headed nearly every owned building's card — a
+        // non-action in the slot where the card's first fact belongs. On the
+        // docked card it shows when there is something to do (dirt, or a
+        // rebuild that pencils); the full read stays on the property file.
+        if (tab === undefined && !dirt && !pencils) return null;
         // A STANDING BUILDING IS NOT DIRT. This card headed every owned
         // building that used under three quarters of its envelope "Dirt —
         // nothing pencils today · Holder bid $0/sf wins the auction — wait for
@@ -348,8 +361,13 @@ function ParcelPanelInner({
         );
       })()}
 
+      {/* ONE FACT, ONE PLACE. Inside the property file (embedded, on your own
+          building) the stat tiles and the header grid already print the
+          appraisal, occupancy, NOI, gross area, FAR and demand; this grid
+          printed each of them a second time underneath. `dupe` drops them
+          there and only there — the map card has no tiles. */}
       {on("summary") && <div className="grid">
-        <Row k="Appraisal" v={band(selectedBBL, value)} strong />
+        {!dupe && <Row k="Appraisal" v={band(selectedBBL, value)} strong />}
         {(() => {
           const prem = rec.locPremium ?? 1;
           const tags: string[] = [];
@@ -446,7 +464,7 @@ function ParcelPanelInner({
             `rentableSf`. Quoting gross as leasable would be the lie that row
             was written to prevent. The owned-building remainder (demises too
             small to let) is still a real deduction, on rentable feet. */}
-        {isBuilt && rec.bldgArea > 0 && (
+        {isBuilt && rec.bldgArea > 0 && !dupe && (
           <Row
             k="Gross area"
             v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`}
@@ -490,7 +508,7 @@ function ParcelPanelInner({
             in a percentage. The appraisal's number — feet let over feet built —
             is still what the value and the buyer's quote above are struck on;
             see occRead for why those are two questions and not two answers. */}
-        {holding && isBuilt && (() => {
+        {holding && isBuilt && !dupe && (() => {
           const or = occRead(rec, holding);
           return <Row k="Occupancy" v={occLabel(or)} title={occTitle(or)} />;
         })()}
@@ -529,12 +547,12 @@ function ParcelPanelInner({
           const abate = holding && omFull ? remainingAbatement(holding, game.month) : 0;
           return (
             <>
-              <Row
+              {!dupe && <Row
                 k={ip.disclosed
                   ? <><Gloss term="NOI">In-place NOI</Gloss> / yr</>
                   : <><Gloss term="NOI">NOI</Gloss> / yr (mkt est.)</>}
                 v={usd(ip.noi)}
-              />
+              />}
               {os && os.freeRent > 0 && (
                 <Row
                   k="Scheduled rent (abated)"
@@ -552,8 +570,8 @@ function ParcelPanelInner({
         {omFull && holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
         {omFull && <Row k="Lot area" v={sf(rec.lotArea)} />}
         {omFull && isBuilt && isMixedUse(rec) && <Row k="The stack" v={mixLabel(rec)} />}
-        <Row k={<span><Gloss term="FAR">FAR</Gloss> built / max</span>} v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
-        <Row k="Demand" v={String(Math.round(demandNow(game, rec))) + " / 100"} />
+        {!dupe && <Row k={<span><Gloss term="FAR">FAR</Gloss> built / max</span>} v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />}
+        {!dupe && <Row k="Demand" v={String(Math.round(demandNow(game, rec))) + " / 100"} />}
       </div>}
 
       {/* the builder's read on vacant dirt, owned or not — see ResidualRead */}
@@ -868,7 +886,7 @@ function ParcelPanelInner({
         const t0 = game.talks?.[selectedBBL];
         const contract = t0?.agreed ? t0 : null;
         return (
-          <div className="deal">
+          <div className="deal" data-buy-desk>
             <div className="deal-head">{contract ? "Under contract" : "On the market"}</div>
             <div className="grid">
               {contract
@@ -879,7 +897,7 @@ function ParcelPanelInner({
                       <Row k="Loan basis" v={usd(listing.loanBasis)} title="Outstanding debt the lender is clearing — the ask is anchored here, not appraisal." />
                     )}
                   </>}
-              {contract && <Row k="Must fund by" v={monthLabel(contract.closeByM ?? game.month + 3)} bad />}
+              {contract && <Row k="Must fund by" v={monthLabel((contract.closeByM ?? game.month + 3) - 1)} bad />}
               {contract && <Row k="Deposit posted" v={usd(contract.deposit ?? 0)} />}
               {/* THE NUMBERS YOU BID ON ARE THE NUMBERS YOU CLOSE ON. Priced
                   off the disclosed rent roll where there is one, so the cap
@@ -941,7 +959,7 @@ function ParcelPanelInner({
               <div className="hint">{offContract.note}</div>
               <div className="grid">
                 <Row k="Agreed price" v={usd(offContract.agreedPrice ?? offContract.theirPrice)} strong />
-                <Row k="Close by" v={monthLabel(offContract.closeByM ?? game.month)} bad />
+                <Row k="Close by" v={monthLabel((offContract.closeByM ?? game.month + 1) - 1)} bad />
                 <Row k="Earnest money" v={usd(offContract.deposit ?? 0)} />
               </div>
               <BuyButtons
@@ -1112,19 +1130,25 @@ function ParcelPanelInner({
               />
             ))}
           </div>
-          <div className="btn-row">
+          {/* EACH CHOICE UNDER ITS OWN NAME. The three settings were two
+              labels stacked together and then three unlabeled rows of
+              buttons, so which three set the service and which the capital
+              plan was a guess. Now: a name, a segmented control, its read. */}
+          <div className="ops-choice">
+            <span className="ops-choice-k">Asking</span>
+            <span className="seg" role="group" aria-label="Asking rents">
             {([-1, 0, 1] as const).map((v) => (
               <button
                 key={v}
                 className={"btn" + ((holding.stance ?? 0) === v ? " btn-on" : "")}
+                aria-pressed={(holding.stance ?? 0) === v}
                 title={v === 1 ? "+8% asking rents, fewer LOIs" : v === -1 ? "−8% rents, faster lease-up" : "market rents"}
                 onClick={() => useStore.getState().stance(selectedBBL, v)}
               >
-                {v === 1 ? "Push rents" : v === -1 ? "Fill space" : "Market"}
+                {v === 1 ? "Push +8%" : v === -1 ? "Fill −8%" : "Market"}
               </button>
             ))}
-          </div>
-          <div className="btn-row">
+            </span>
             <button
               type="button"
               className={"btn" + (holding.autoLease ? " btn-on" : "")}
@@ -1133,7 +1157,7 @@ function ParcelPanelInner({
                 ? "Answering every letter here by the rent posture above. Click to take the letters back."
                 : "Let this building answer its own letters by the rent posture above — no pop-ups. Same commission and tenant reactions as signing yourself."}
             >
-              {holding.autoLease ? "Auto-lease on ✓" : "Auto-lease"}
+              {holding.autoLease ? "Auto-answer ✓" : "Auto-answer"}
             </button>
           </div>
           {holding.autoLease && (
@@ -1142,30 +1166,8 @@ function ParcelPanelInner({
               <div className="hint" style={{ fontSize: 11 }}>{autoLeaseRule(game, holding)}</div>
             </>
           )}
-          <div className="grid">
-            <Row k="Service" v={`${serviceSpec(holding.service).label} · tenants read it as ${Math.round(100 * (holding.svcIdx ?? 0.55))} of 100`} />
-            <Row k="Capital plan" v={`${planSpec(holding.plan).label} · condition ${Math.round(100 * (holding.condIdx ?? 0.6))} of 100`} />
-          </div>
-          <div className="btn-row">
-            {OPS_SERVICE.map((o) => (
-              <button
-                key={o.key}
-                className={"btn" + ((holding.service ?? 0) === o.key ? " btn-on" : "")}
-                title={o.blurb + " — three years to matter, three years to undo"}
-                onClick={() => useStore.getState().ops(selectedBBL, { service: o.key })}
-              >{o.label}</button>
-            ))}
-          </div>
-          <div className="btn-row">
-            {OPS_PLAN.map((o) => (
-              <button
-                key={o.key}
-                className={"btn" + ((holding.plan ?? 1) === o.key ? " btn-on" : "")}
-                title={o.blurb}
-                onClick={() => useStore.getState().ops(selectedBBL, { plan: o.key })}
-              >{o.label}</button>
-            ))}
-          </div>
+          <OpsChoices bbl={selectedBBL} h={holding} />
+          <div className="ops-choice-k" style={{ marginTop: 10 }}>One-off programmes</div>
           <div className="btn-row">
             {PROGRAMS.map((p) => {
               const done = holding.programsDone?.[p.id] !== undefined;
@@ -1239,7 +1241,7 @@ function ParcelPanelInner({
                 >
                   Take it down · {usd(demoCost)}
                 </button>
-                <button className="btn" onClick={() => setRazeAsk(null)}>Leave it</button>
+                <button className="btn" data-esc onClick={() => setRazeAsk(null)}>Leave it</button>
               </div>
               <div className="modal-queue">Wreckers work fast — the lot is clean dirt the same month.</div>
             </div>
@@ -1304,6 +1306,49 @@ function ParcelPanelInner({
           {neighbors.length === 0 && <div className="neighbor-none">No shared lot lines on record.</div>}
         </div>
       </div>}
+      {!embedded && tab === undefined && !holding && listing && (
+        <BuyCta bbl={selectedBBL} ask={listing.ask} built={isBuilt} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * THE VERB STAYS IN REACH.
+ *
+ * Clicking a building that is for sale is a question about buying it, and the
+ * card answered with the owner, the appraisal, the neighbourhood and the jobs
+ * within a five-minute walk — the Offer button sat about 1,100px down a
+ * 2,400px card, under all of it. This footer pins the ask and the yield to the
+ * bottom of the card and takes you to the offer desk; it steps aside once the
+ * desk itself is on screen, so the price is never shown twice at once.
+ */
+function BuyCta({ bbl, ask, built }: { bbl: string; ask: number; built: boolean }) {
+  const game = useStore((s) => s.game)!;
+  const [hidden, setHidden] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const panel = ref.current?.closest(".panel");
+    const desk = panel?.querySelector("[data-buy-desk]");
+    if (!panel || !desk) return;
+    const io = new IntersectionObserver(([e]) => setHidden(e.isIntersecting), { root: panel, threshold: 0, rootMargin: "0px 0px -40px 0px" });
+    io.observe(desk);
+    return () => io.disconnect();
+  }, [bbl]);
+  const t = game.talks?.[bbl];
+  const contract = t?.agreed ? t : null;
+  const ip = built ? goingIn(game, bbl, contract?.agreedPrice ?? ask) : null;
+  const yieldTxt = ip && ip.noi > 0 ? `${((ip.noi / Math.max(1, contract?.agreedPrice ?? ask)) * 100).toFixed(1)}% going-in` : built ? "no income in place" : "land";
+  const go = () => ref.current?.closest(".panel")?.querySelector("[data-buy-desk]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  return (
+    <div ref={ref} className={"panel-cta" + (hidden ? " panel-cta-hidden" : "")} aria-hidden={hidden}>
+      <div className="panel-cta-txt">
+        <span className="panel-cta-price mono">{usd(contract ? (contract.agreedPrice ?? contract.theirPrice) : ask)}</span>
+        <span className="panel-cta-sub">{contract ? `under contract · fund by ${monthLabel((contract.closeByM ?? game.month + 3) - 1)}` : `ask · ${yieldTxt}`}</span>
+      </div>
+      <button type="button" className="btn btn-buy" tabIndex={hidden ? -1 : 0} onClick={go}>
+        {contract ? "Fund the close ↓" : t ? "Back to the table ↓" : "Make an offer ↓"}
+      </button>
     </div>
   );
 }

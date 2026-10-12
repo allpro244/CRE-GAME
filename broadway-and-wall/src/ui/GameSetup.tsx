@@ -186,7 +186,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
         <nav className="setup-rail" aria-label="Setup sections" ref={railRef}>
           {SECTIONS.map((s, i) => (
             <button key={s.id} type="button" className={"setup-rail-item" + (active === s.id ? " on" : "")} onClick={() => go(s.id)}>
-              <span className="setup-rail-n">{i === 0 ? "★" : i}</span>{s.label}
+              <span className="setup-rail-n">{i + 1}</span>{s.label}
             </button>
           ))}
         </nav>

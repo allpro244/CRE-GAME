@@ -1477,7 +1477,7 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
     + ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + 4)) / 100 / 12;
   if (monthlyDebt > 0 && s.cash < monthlyDebt * 3) {
     return {
-      label: "thin",
+      label: "thin cash",
       bad: true,
       title: `Cash covers less than three months of debt service. City phase: ${s.econ.phase}.`,
     };
@@ -1514,7 +1514,9 @@ export function monthCashBit(dCash: number): string {
   if (!Number.isFinite(dCash)) return "";
   const absM = Math.abs(dCash) / 1e6;
   if (absM < 0.01) return "";
-  return dCash > 0 ? ` · +$${absM.toFixed(2)}M` : ` · −$${absM.toFixed(2)}M`;
+  // Same grain as every other figure on screen: "$25K", not "$0.03M".
+  const amt = absM < 1 ? `$${Math.round(Math.abs(dCash) / 1000)}K` : `$${absM.toFixed(2)}M`;
+  return dCash > 0 ? ` · +${amt}` : ` · −${amt}`;
 }
 
 /**
@@ -1559,11 +1561,14 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   // why Year/Skip kept stopping for paper somebody else was hired to handle.
   for (const l of s.lois) {
     if (!loiNeedsPrincipal(s, l)) continue;
+    // "Answer by" is the last month the letter is still on the desk: the
+    // tick into expiresM drops it (leasing.ts), so expiresM itself is a month
+    // too late — the docket said "by Feb" over a letter gone in February.
     const label = l.kind === "expansion"
-      ? `${l.name} wants to expand — answer by ${monthLabel(l.expiresM)}`
+      ? `${l.name} wants to expand — answer by ${monthLabel(l.expiresM - 1)}`
       : l.kind === "renewal"
-        ? `Renewal from ${l.name} — answer by ${monthLabel(l.expiresM)}`
-        : `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}`;
+        ? `Renewal from ${l.name} — answer by ${monthLabel(l.expiresM - 1)}`
+        : `LOI from ${l.name} — answer by ${monthLabel(l.expiresM - 1)}`;
     out.push({ key: `loi:${l.id}`, label, lastM: l.expiresM - 1 });
   }
   // Tenant-relief letters expire in three months and a lapse is a refusal.
@@ -1573,8 +1578,8 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   for (const a of s.asks ?? []) {
     if (s.holdings[a.bbl]?.groundLeased) continue;
     const label = a.kind === "giveback"
-      ? `${a.name} wants to hand space back — answer by ${monthLabel(a.expiresM)}`
-      : `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM)}`;
+      ? `${a.name} wants to hand space back — answer by ${monthLabel(a.expiresM - 1)}`
+      : `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM - 1)}`;
     out.push({ key: `tenant-ask:${a.id}`, label, lastM: a.expiresM - 1 });
   }
   // A building the player starred reaching the tape: they asked to be told,
@@ -1892,11 +1897,11 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     out.push(t.agreed
       ? {
         key: `contract:${t.bbl}`,
-        label: `Under contract at ${money((t.agreedPrice ?? t.theirPrice))} — fund it by ${monthLabel(t.closeByM ?? s.month)} (${idle})`,
+        label: `${addr(t.bbl)}: under contract at ${money((t.agreedPrice ?? t.theirPrice))} — fund it by ${monthLabel((t.closeByM ?? s.month + 1) - 1)} (${idle})`,
       }
       : {
         key: `talks:${t.bbl}:${t.theirPrice}`,
-        label: `${t.sellerName} is at ${money(t.theirPrice)}${t.final ? " — their final word" : ""} · ${idle}`,
+        label: `${addr(t.bbl)}: ${t.sellerName} is at ${money(t.theirPrice)}${t.final ? " — their final word" : ""} · ${idle}`,
       });
   }
   if (s.exchange && s.exchange.deadlineM - s.month <= 2) {

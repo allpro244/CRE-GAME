@@ -163,3 +163,4 @@
   .palette-backdrop { padding-left: 8px; padding-right: 8px; }
   .palette-row-label { max-width: 52vw; }
 }
+.palette-tag-todo { color: var(--danger, #a8402e); }

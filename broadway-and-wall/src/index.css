@@ -1108,7 +1108,11 @@ html, body, #root { overflow-x: hidden; }
 /* numeric columns were set edge to edge ("DEBT CF / MO"); the row's action
    buttons stay on one line rather than stacking Pay off under Delist */
 .tbl-book th + th, .tbl-book td + td { padding-left: 12px; }
-.tbl-book td:last-child .btn-row { flex-wrap: nowrap; }
+/* Row actions wrap into a tidy block rather than pushing the table past the
+   page: at 1280px the fourth button (Refi / Pay off) used to sit off-screen,
+   and the owner's rule is no horizontal scroll anywhere. */
+.tbl-book td:last-child { width: 1%; }
+.tbl-book td:last-child .btn-row { display: grid; grid-template-columns: repeat(2, max-content); justify-content: end; margin-left: auto; }
 /* The address column was the narrowest in the table ("75 South / Ingram St")
    while "fully let · 1,221 sf unlettable" ran one line across two columns. */
 .tbl-book td.book-prop { min-width: 150px; }

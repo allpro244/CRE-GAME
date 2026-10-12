@@ -204,3 +204,10 @@ business that runs on letters. The toast lane was the noisy channel:
   the stack with the reason four sections down. A one-line callout now leads
   the desk ("100% of what you owe matures inside three years") with a jump to
   the wall.
+- **A decision is asked once.** Taking a bid from the bid-list card puts the
+  building under contract — it closes itself in two months. The decision card
+  then woke on that contract and asked "Offer in hand: Accept / Counter /
+  Decline" about the sale accepted one click earlier. The card now skips a
+  papered contract (the engine already files it as a soft docket row), and the
+  toast says what happens next: "Under contract with … at $1.61M — it closes
+  Sep 2008 on its own."

@@ -2737,7 +2737,7 @@ export function acceptBid(s: GameState, parcels: ParcelTable, bbl: string, index
     q: next.month, kind: "deal",
     text: `${b.name} is under contract at ${rec?.address ?? bbl} for ${money(b.price)}, clean. It closes ${monthLabel(next.month + 2)} — nothing for you to do unless you want to close early or roll it into a 1031.`,
   });
-  return { s: next, msg: "Under contract." };
+  return { s: next, msg: `Under contract with ${b.name} at ${money(b.price)} — it closes ${monthLabel(next.month + 2)} on its own.` };
 }
 
 /**

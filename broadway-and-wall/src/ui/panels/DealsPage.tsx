@@ -332,7 +332,17 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
               </div>
             ) : null;
           })()}
-          {!countering && (
+          {/* A PAPERED CONTRACT IS NOT AN OFFER. It closes itself on its
+              date (sim.ts files it as a soft docket row); Decline and Counter
+              on a deal you already signed were controls for a decision that
+              no longer exists. Closing early is the one real choice. */}
+          {offer.contract && !offer.held && (
+            <div className="btn-row">
+              <span className="loi-line dim" style={{ margin: 0 }}>Under contract — it closes {monthLabel(offer.expiresM)} on its own.</span>
+              <button className="btn" onClick={() => setAcceptConfirm({})}>Close now · net {usd(closeNet(offer.price))}</button>
+            </div>
+          )}
+          {!countering && !(offer.contract && !offer.held) && (
             <div className="btn-row">
               <button className="btn btn-buy" onClick={() => setAcceptConfirm({})}>Accept {usd(offer.price)}</button>
               <button className="btn" onClick={() => declineOffer(bbl)}>Decline</button>

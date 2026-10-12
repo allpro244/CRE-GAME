@@ -591,6 +591,15 @@ function AlertBody() {
 // Some decisions don't wait their turn. A letter of intent and a live offer
 // on your building both take the screen until you answer — they expire, and
 // finding out later that one lapsed while you clicked past it is no fun.
+/** A papered contract closes itself (sim.ts attentionItems files it as a soft
+ *  docket row); only one held for the owner's signature wants an answer. The
+ *  card used to wake on every contract, so taking a bid put a second card in
+ *  front of the player — "Offer in hand: Accept / Counter / Decline" — for the
+ *  sale they had accepted one click earlier. */
+function offerWantsAnswer(o: { contract?: boolean; held?: boolean } | undefined): boolean {
+  return !!o && !(o.contract && !o.held);
+}
+
 function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOff: boolean): boolean {
   if (!g || g.gameOver || popupsOff) return false;
   // Somebody ringing about deeds you never put up is an opportunity: it waits
@@ -602,7 +611,7 @@ function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOf
   // A live plan works exceptions on the docket, not a per-letter modal stream.
   if (g.lois.some((l) => loiNeedsPrincipal(g, l)) && !planIsLive(g)) return true;
   for (const h of Object.values(g.holdings)) {
-    if (h.sale?.offer && (opp || !h.sale.unsolicited)) return true;
+    if (offerWantsAnswer(h.sale?.offer) && (opp || !h.sale!.unsolicited)) return true;
     // Live bids only — a best-and-final where everyone walked left bids.length
     // > 0 with every row dropped, so the modal still woke and Take errored.
     if ((h.sale?.bids ?? []).some((b) => !b.dropped)) return true;
@@ -783,7 +792,7 @@ function DecisionBody({
   const loiOnDesk = (l: (typeof game.lois)[number]) =>
     !deferred.has(l.id) && loiNeedsPrincipal(game, l);
   const loi = game.lois.find(loiOnDesk);
-  const offerBbl = deferred.has(-1) ? undefined : Object.keys(game.holdings).find((b) => game.holdings[b].sale?.offer);
+  const offerBbl = deferred.has(-1) ? undefined : Object.keys(game.holdings).find((b) => offerWantsAnswer(game.holdings[b].sale?.offer));
   if (!loi && !offerBbl) return null;
 
   // THE BROKER'S CALL IS NOT A CARD ANY MORE — it is a row on Marketplace.

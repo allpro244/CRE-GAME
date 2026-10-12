@@ -12,7 +12,6 @@ import { rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack
 import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake } from "./rivals";
-import { firmBook, snap } from "./aibooks";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
@@ -308,7 +307,6 @@ export function executePurchase(
   {
     const seller = ownerOf(next, bbl);
     if (seller) {
-      const snap0 = snap(seller);
       seller.bbls = seller.bbls.filter((b) => b !== bbl);
       const jv = seller.jvs?.[bbl];
       forgetDeed(seller, bbl);
@@ -319,10 +317,6 @@ export function executePurchase(
       // jvLpTake (rivals.ts).
       const partnersOut = jvLpTake(jv, price - relief, next.month);
       seller.cash -= partnersOut;
-      firmBook(next, seller, {
-        kind: "sale", bbl, amount: price, tax: 0, with: firmShort(next), partners: -partnersOut,
-        cashDelta: seller.cash - snap0.cash, debtDelta: seller.debt - snap0.debt,
-      });
     }
   }
   clearRivalClaims(next, bbl);

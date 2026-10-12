@@ -6,7 +6,6 @@ import { usd } from "@/ui/format";
 import { soundOn, setSoundOn, play } from "@/ui/Sounds";
 import { pendingTerm, glossId, glossaryEntries } from "@/ui/Glossary";
 import { Row } from "@/ui/panels/shared";
-import { JevSettings } from "@/ui/panels/JevPanel";
 import { themePref, setThemePref, type ThemePref } from "@/ui/theme";
 import { CLOCK_OPTIONS, describeSetup } from "@/engine/setup";
 
@@ -310,8 +309,6 @@ export function SettingsPage() {
         Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction
         switches are decisions of this firm and travel with the save.
       </div>
-      <div className="page-section" style={{ marginTop: 18 }}>Jev</div>
-      <JevSettings />
       <div className="page-section" style={{ marginTop: 18 }}>Keyboard</div>
       <div className="grid">
         <Row k="Space / G" v="Play / pause — the clock runs a month a second and pauses when something needs you" />

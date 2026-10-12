@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 
@@ -1044,16 +1044,7 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // demand elasticity.
   const nat = NATURAL_VAC[k];
   const vacNow = e.cityVac?.[k] ?? nat;
-  const stkNow = Math.max(1, e.stock?.[k] ?? 0);
-  const pipe = Math.max(0, e.pipeline?.[k] ?? 0);
-  // Occupancy as the market publishes it — the vacancy every other line of
-  // this pro forma reads — not a second, separately-kept quantity.
-  const occNow = stkNow * (1 - vacNow);
-  const queue = Math.max(0, e.structTight?.[k] ?? 0) * stkNow;
-  const trendGrowth = Math.max(0, (e.classDrvTrend?.[k] ?? 0) * 18) * occNow;
-  const vac = e.stock?.[k]
-    ? clamp((stkNow + pipe - occNow - queue - trendGrowth) / (stkNow + pipe), 0, 1)
-    : vacNow;
+  const vac = forwardVacancy(e, k);
   // ...and the concession package that vacancy will command, against the one
   // today's vacancy commands. Both read off the same schedule, so with
   // nothing in the pipeline and nothing to absorb the rent is untouched.
@@ -1149,7 +1140,7 @@ const LAND_MEMO = new Map<string, LandMemoEntry>();
 /** The market fields landRead reads, flattened, as of the entries in LAND_MEMO. */
 let LAND_MKT: unknown[] | null = null;
 const LAND_DICTS = [
-  "locIdxMeanBy", "cityVac", "structTight", "sublet", "stock",
+  "locIdxMeanBy", "cityVac", "structTight", "sublet", "stock", "pipeline", "classDrvTrend", "landQueue",
   "rentIdx", "effRentIdx", "rentExp", "capRate", "capExp",
 ] as const;
 const LAND_SCALARS = [

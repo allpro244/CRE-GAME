@@ -2287,9 +2287,8 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const hbu = !redev ? landRead(rec, s.econ).scheme : null;
   if (hbu && hbu.psf > 0) use = hbu.use;
   const lead = dominantOf(devMix(use));
-  // Owning the dirt does not manufacture tenant demand. A named start drains
-  // the same class order book as an anonymous one and cannot precede it.
-  if ((s.econ.startOwed?.[lead] ?? 0) <= 0) return;
+  // Demand is in the pro forma below: rent and lease-up at delivery
+  // vacancy, the pipeline and this building included (`forwardVacancy`).
   // Preserve the draw order; apply it after this actual site has gone through
   // the shared parcel pro forma.
   const startsRoll = rng(s, "rivals");

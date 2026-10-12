@@ -34,8 +34,12 @@ const EMPTY = { type: "FeatureCollection" as const, features: [] };
  * half paved.
  */
 const YARD_WINTER = { org: [0xc9, 0xbf, 0xa8], t: [[0xc4, 0xc0, 0xb2], [0xbf, 0xc1, 0xb4], [0xc8, 0xbf, 0xae], [0xbd, 0xc2, 0xb3], [0xc6, 0xbc, 0xb2]] };
-// SKYLINE_LOOK_PLAN round 2: a summer yard is lawn, and reads as lawn
-const YARD_SUMMER = { org: [0xa4, 0xbc, 0x84], t: [[0x9e, 0xbc, 0x80], [0x97, 0xb8, 0x7c], [0xa6, 0xbb, 0x82], [0x93, 0xb6, 0x7e], [0xa2, 0xb8, 0x84]] };
+// SKYLINE_LOOK_PLAN round 2 made a summer yard lawn green. Round 25: a
+// built lot now lays its own ground (lawn, plaza, paving, work yard:
+// RealCity.lotGrounds), so the block fill under it is only what lies between
+// lots, which is walked on and paved as often as grown: a dusty, part-green
+// summer tone (four tenths of the way to lawn), not a lawn.
+const YARD_SUMMER = { org: [0xba, 0xbe, 0x9a], t: [[0xb5, 0xbe, 0x9e], [0xaf, 0xbd, 0x9e], [0xba, 0xbd, 0x9c], [0xac, 0xbd, 0x9e], [0xb8, 0xba, 0xa0]] };
 // lying snow: the yards and lawns go white, the asphalt stays dark
 const SNOW = [234, 238, 241];
 export function blocksPaint(leaf: number, snow = 0): unknown {

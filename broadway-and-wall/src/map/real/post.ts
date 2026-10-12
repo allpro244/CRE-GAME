@@ -51,7 +51,7 @@ void main() {
 
   // tilt-shift: blur grows smoothly past the band's edge
   float off = max(0.0, abs(vUv.y - uFocus) - uBand);
-  float r = uTilt * smoothstep(0.0, 0.32, off);
+  float r = uTilt * smoothstep(0.0, 0.42, off);
   if (r > 0.35) {
     vec3 acc = c; float w = 1.0;
     for (int i = 0; i < 12; i++) { acc += tap(vUv + disc(i) * r * uTexel); w += 1.0; }
@@ -63,7 +63,7 @@ void main() {
     vec3 b = vec3(0.0);
     for (int i = 0; i < 12; i++) {
       vec3 s = tap(vUv + disc(i) * 7.0 * uTexel);
-      b += max(s - vec3(0.72 - 0.3 * uNight), 0.0);
+      b += max(s - vec3(0.9 - 0.35 * uNight), 0.0);
     }
     c += b / 12.0 * uBloom * (1.0 + 1.6 * uNight);
   }
@@ -72,18 +72,18 @@ void main() {
     vec3 g = c;
     float l = dot(g, vec3(0.2126, 0.7152, 0.0722));
     // saturation
-    g = mix(vec3(l), g, 1.0 + 0.14 * uGrade);
+    g = mix(vec3(l), g, 1.0 + 0.22 * uGrade);
     // warm highlights, a little blue in the shadows (less warmth at night)
-    vec3 warm = vec3(1.045, 1.0, 0.93), cool = vec3(0.95, 0.985, 1.05);
+    vec3 warm = vec3(1.025, 1.0, 0.965), cool = vec3(0.96, 0.99, 1.04);
     g *= mix(cool, mix(warm, vec3(1.0), uNight * 0.7), smoothstep(0.15, 0.75, l));
     // a gentle S-curve about the middle grey
-    g = mix(g, g * g * (3.0 - 2.0 * g), 0.22 * uGrade);
+    g = mix(g, g * g * (3.0 - 2.0 * g), 0.34 * uGrade);
     c = mix(c, g, uGrade);
   }
 
   // vignette
   vec2 q = vUv - 0.5;
-  c *= 1.0 - 0.22 * uGrade * smoothstep(0.32, 0.95, dot(q, q) * 2.2);
+  c *= 1.0 - 0.16 * uGrade * smoothstep(0.4, 1.0, dot(q, q) * 2.2);
 
   gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
@@ -136,10 +136,12 @@ export class PostFX {
     const steep = Math.min(1, Math.max(0, (pitch - 0.35) / 0.6));
     const close = Math.min(1, Math.max(0, (2600 - distM) / 2000));
     const u = this.mat.uniforms;
-    u.uTilt.value = full ? 9 * (h / 1000) * steep * close : 0;
-    u.uFocus.value = 0.42 + 0.06 * (1 - steep);
-    u.uBand.value = 0.1 + 0.08 * (1 - close);
-    u.uBloom.value = full ? 0.55 : 0;
+    // a gentle model look: the band covers the middle third, and only the
+    // top of the frame (the far city) and the very bottom soften
+    u.uTilt.value = full ? 4.5 * (h / 1000) * steep * close : 0;
+    u.uFocus.value = 0.44 + 0.06 * (1 - steep);
+    u.uBand.value = 0.2 + 0.08 * (1 - close);
+    u.uBloom.value = full ? 0.35 : 0;
     u.uGrade.value = 1;
     u.uNight.value = night;
     const auto = renderer.autoClear;

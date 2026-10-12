@@ -446,3 +446,5 @@
 }
 .app .ops-choice-read { font-size: var(--fs-xs); color: var(--text-3); }
 .app .news-repeat { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
+.app .docket-more-btn { appearance: none; background: none; border: 0; text-align: left; cursor: pointer; padding: 2px 0 0; font: inherit; font-size: 11.5px; color: var(--accent, #9a6a12); }
+.app .docket-more-btn:hover { text-decoration: underline; }

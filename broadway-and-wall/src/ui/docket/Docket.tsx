@@ -33,12 +33,14 @@ export default function Docket() {
   });
   // The month whose arrivals the header should pulse for, or null when quiet.
   const [pulseM, setPulseM] = useState<number | null>(null);
+  // "+N more" was dead text; it opens the rest now (the list scrolls).
+  const [showAll, setShowAll] = useState(false);
   const prevRef = useRef<{ month: number; keys: Set<string> } | null>(null);
 
   const items = useMemo<DocketItem[]>(() => {
     if (!game || game.gameOver) return [];
-    return buildDocket(game, parcels, snooze);
-  }, [game, parcels, snooze]);
+    return buildDocket(game, parcels, snooze, showAll);
+  }, [game, parcels, snooze, showAll]);
 
   // Pulse the header once when an advance lands a month that brought
   // something new — a snooze expiring or a re-render does not qualify.
@@ -98,7 +100,7 @@ export default function Docket() {
         <div className="docket-list">
           {items.map((it) =>
             it.more !== undefined ? (
-              <div key={it.key} className="docket-row docket-more">{it.title}</div>
+              <button key={it.key} type="button" className="docket-row docket-more docket-more-btn" onClick={() => setShowAll(true)}>{it.title}</button>
             ) : (
               <div key={it.key} className={"docket-row" + (it.urgent ? " docket-urgent" : "") + (it.nudge ? " docket-nudge" : "")}>
                 <span className={"docket-tag docket-tag-" + (it.nudge ? "next" : it.cat)} title={it.nudge ? "Your next step" : CAT_TITLE[it.cat]}>

@@ -99,6 +99,8 @@ export function buildDocket(
   game: GameState,
   parcels: ParcelTable | null,
   snooze: Record<string, number>,
+  /** The tail row expands the docket: nothing is capped once asked for. */
+  all = false,
 ): DocketItem[] {
   const items: DocketItem[] = [];
   const month = game.month;
@@ -416,13 +418,13 @@ export function buildDocket(
   // last, under a CITY tag, below the weather.
   live.sort((a, b) => (b.nudge ? 1 : 0) - (a.nudge ? 1 : 0) || CAT_ORDER[a.cat] - CAT_ORDER[b.cat]);
 
-  if (live.length > DOCKET_CAP) {
+  if (!all && live.length > DOCKET_CAP) {
     const folded = live.length - DOCKET_CAP;
     const shown = live.slice(0, DOCKET_CAP);
     shown.push({
       key: "docket-more",
       cat: "world",
-      title: `+${folded} more on the desks`,
+      title: `+${folded} more — show all`,
       more: folded,
     });
     return shown;

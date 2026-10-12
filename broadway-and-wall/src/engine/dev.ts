@@ -3103,7 +3103,7 @@ const CREW_MAX = 3.0;
 function tickCrews(s: GameState, bbls: string[]) {
   const e = s.econ;
   const owed = e.startOwed ? Object.values(e.startOwed).reduce((a, v) => a + Math.max(0, v), 0) : 0;
-  const live = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
+  const live = jobLoad(s);
   const capacity = crewCapacity(bbls, e);
   // Everything the town is trying to have built — the jobs running plus the
   // floor area ordered and not yet broken ground on — against what it can
@@ -3158,6 +3158,24 @@ function tickCrews(s: GameState, bbls: string[]) {
  * now — which is what a low town growing visibly looks like.
  */
 const TYPICAL_SF = 26_000;
+
+/**
+ * THE CREWS A TOWN HAS IN THE GROUND, IN TYPICAL BUILDINGS (2026-10-12).
+ *
+ * Capacity is sized in floor area — the share of the stock a town carries
+ * under construction, divided by a typical building — and it was SPENT in
+ * job counts: a 26,000 sf shed and an 800,000 sf tower each took one slot. So
+ * the moment office pencilled, a handful of slots went to towers and a
+ * quarter of the office stock went up in a few years (developer run, years
+ * 61-80), while the shed that needed a twentieth of the crews waited behind
+ * them for the same slot. A tower takes more crews, steel and cranes than a
+ * shed in proportion to what it puts up; the load is the floor area.
+ */
+function jobLoad(s: GameState): number {
+  let load = 0;
+  for (const j of s.cityJobs ?? []) if (!j.orphaned) load += Math.max(0, j.sf ?? 0) / TYPICAL_SF;
+  return load;
+}
 
 /**
  * The market still wants floor of this class, on the frictional rail.
@@ -3257,9 +3275,13 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // starts stop being a relay pinned at hard zero (45.2% of months -> 12.7%).
   // Office sd(log) of real effective rent moves 0.356 -> 0.263 with it, and
   // retail 0.497 -> 0.259.
-  const liveJobs = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
-  const crewRoom = crewCapacity(bbls, s.econ) - liveJobs;
-  if (crewRoom <= 0) return;
+  // No crew wall on teardowns (2026-10-12): busy trades price the job through
+  // the cost index (`heat`, market.ts), which the redevelopment test reads.
+  // How MANY go in a month is the order book's, the same rule as new starts:
+  // the floor ordered, in typical buildings, and at least one when called.
+  const owedAllT = s.econ.startOwed
+    ? Object.values(s.econ.startOwed).reduce((a, v) => a + Math.max(0, v), 0) : 0;
+  const crewRoom = Math.max(1, Math.ceil(owedAllT / TYPICAL_SF));
   // Score by DENSIFICATION SURPLUS, not land/building alone. A cash-flowing
   // worn walk-up on a FAR-rich corner is the real redevelopment candidate in
   // a shortage; the old land/built ratio only found husks, and century nulls
@@ -3907,14 +3929,24 @@ export function tickCityGrowth(
   //
   // Scaled to the size of the place, so a bigger city carries more of them.
   const capacity = crewCapacity(bbls, s.econ);
-  const live = (s.cityJobs ?? []).filter((j) => !j.orphaned).length;
   // No phase metronome and no second replacement-cost brake. The order book
   // was written by the shared pro forma; actual sites are checked against the
   // full parcel pro forma below. Physical crew capacity is the only separate
   // quantity constraint. Named rival starts already occupy a live crew slot,
   // so `startDebt` would subtract them twice.
-  let n = Math.min(wanted, Math.max(0, capacity - live));
-  n = Math.floor(n) + (rng(s, "dev") < n % 1 ? 1 : 0);
+  // NO WALL ON QUANTITY (2026-10-12). Crews are regional, not local: when a
+  // town's contractors are booked, general contractors bring trades in from
+  // the next metro and charge for it — travel, per diem, premium wages. Real
+  // booms show up as cost escalation, not as a cap on starts, and the spread
+  // of construction cost across US metros is narrow (RSMeans city cost
+  // index ~0.8-1.3), which a hard local labour wall would not produce. This
+  // used to stop starting jobs once the live ones filled `capacity`; now the
+  // load is only MEASURED — `tickCrews` turns it into utilisation and the
+  // cost index's `heat` (market.ts, ENR/Turner escalation) prices it, so a
+  // booked town builds dearer and the pro forma decides how much still
+  // pencils.
+  void capacity;
+  let n = Math.floor(wanted) + (rng(s, "dev") < wanted % 1 ? 1 : 0);
   // the town matures: later buildings are bigger than the first ones
   const maturity = Math.min(1, s.month / 780);
 

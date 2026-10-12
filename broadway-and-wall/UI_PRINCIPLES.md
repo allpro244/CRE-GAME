@@ -216,3 +216,13 @@ business that runs on letters. The toast lane was the noisy channel:
   Every card's action band is now sticky at its foot, the counter's Send /
   Best & final / Back included (Esc = Back while countering), and tall cards
   start below the queue pill instead of under it.
+- **Your building opening is never silent.** The delivery card is reserved for
+  the five largest buildings on the map (a deliberate call), and a player's
+  own smaller job fell through that gate with no toast at all — two years of
+  building ended in a news line. It now toasts with the fact the card would
+  have led with: "◆ Delivered — 268 W 13th St: worth $5.4M against $4.6M
+  all-in."
+- **You are the row you came for.** Clicking the top bar's Street readout
+  opened the league table at the leaders; the player's own row was twenty-odd
+  firms down, below the fold. The table now opens on your row, with the firms
+  you are trying to pass directly above it.

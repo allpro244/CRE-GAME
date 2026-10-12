@@ -40,7 +40,7 @@ import {
 } from "@/engine/staff";
 import { netWorth, resolveRec, ownedHoldingValue } from "@/engine/value";
 import { leasingOdds } from "@/engine/absorption";
-import { usdSigned } from "@/ui/format";
+import { usd as usdShort, usdSigned } from "@/ui/format";
 import { periodRecap, firmTier, yearReview } from "@/engine/standing";
 import { generateFirmName } from "@/engine/firm";
 import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
@@ -547,14 +547,23 @@ function queueDeliveryCeremony(
 ) {
   const player = deliveriesThisMonth(prev, next);
   const rival = cityDeliveriesThisMonth(prev, next);
-  // YOUR OWN BUILDING ALWAYS GETS ITS MOMENT. The top-1% gate is for the
-  // street's towers — a popup on every rival delivery would be noise — but it
-  // was also silencing the player's own: three years of building ended in a
-  // toast the month-close toast overwrote on the same tick.
-  // yours or the street's, only one of the five largest buildings on the map
+  // THE CARD IS FOR THE SKYLINE: yours or the street's, only one of the five
+  // largest buildings on the map takes the screen (deliveryNotice.ts, a
+  // deliberate call in f4214ba). Your own smaller job still gets its moment
+  // in the toast lane — with the one fact the card would have led with, what
+  // it is worth against what it cost, rather than a bare address.
   const candidates = [...player, ...rival].filter((b) => parcels && deliveryWorthCeremony(next, parcels, b));
   const bbl = candidates[0];
-  if (!bbl) return;
+  if (!bbl) {
+    const own = player[0];
+    const oh = own ? next.holdings[own] : undefined;
+    if (own && oh && parcels) {
+      const v = ownedHoldingValue(next, parcels, oh);
+      const addr = resolveRec(parcels, next, own)?.address ?? own;
+      toast(`◆ Delivered — ${addr}: worth ${usdShort(v)} against ${usdShort(oh.costBasis)} all-in.`, "ok");
+    }
+    return;
+  }
   const rec = parcels ? resolveRec(parcels, next, bbl) : null;
   const built = next.built?.[bbl];
   const mine = player.includes(bbl);

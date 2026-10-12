@@ -372,6 +372,15 @@ export function LeasingPage() {
                       {r.h.broker ? " · broker" : ""}
                       {r.notReady ? " · turning" : ""}
                       {r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? " · lease-up" : ""}
+                    </div>
+                    {/* THE CONTROLS GET NAMES. Six bare chips — "Fill Market
+                        Push auto I sign here list" — ran on from the status
+                        line as if they were more of it. The three rent
+                        postures are one choice, so they are one segmented
+                        control with a label; the switches say what they do. */}
+                    <div className="lease-ctl" onClick={(e) => e.stopPropagation()}>
+                      <span className="lease-ctl-label">Asking</span>
+                      <span className="seg" role="group" aria-label={`Asking rents at ${r.rec.address}`}>
                       {([-1, 0, 1] as const).map((v) => (
                         <button
                           key={v}
@@ -379,14 +388,17 @@ export function LeasingPage() {
                           className={"btn btn-mini" + ((r.h.stance ?? 0) === v ? " btn-on" : "")}
                           title={v === 1 ? "Push rents: ask 8% over the market, fewer prospects" : v === -1 ? "Fill space: ask 8% under the market, faster lease-up" : "Market rents"}
                           onClick={(e) => { e.stopPropagation(); useStore.getState().stance(r.h.bbl, v); }}
-                        >{v === 1 ? "Push" : v === -1 ? "Fill" : "Market"}</button>
+                          aria-pressed={(r.h.stance ?? 0) === v}
+                        >{v === 1 ? "Push +8%" : v === -1 ? "Fill −8%" : "Market"}</button>
                       ))}
+                      </span>
                       <button
                         type="button"
                         className={"btn btn-mini" + (r.h.autoLease ? " btn-on" : "")}
                         title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to take the letters back. Set the fit-out cap on the building.` : "Let this building answer its own letters by its rent posture and fit-out cap — no pop-ups."}
                         onClick={(e) => { e.stopPropagation(); useStore.getState().autoLease(r.h.bbl, !r.h.autoLease); }}
-                      >{r.h.autoLease ? "auto ✓" : "auto"}</button>
+                        aria-pressed={!!r.h.autoLease}
+                      >{r.h.autoLease ? "Auto-answer ✓" : "Auto-answer"}</button>
                       {r.commercial && (
                         <button
                           className={"btn btn-mini" + (r.h.principalSigns ? " btn-on" : "")}
@@ -397,7 +409,7 @@ export function LeasingPage() {
                         >{r.h.principalSigns ? "I sign here ✓" : "I sign here"}</button>
                       )}
                       {r.commercial && !r.h.broker && r.rec.bldgArea - r.leased > 500 && (
-                        <button className="btn btn-mini" title="Listing exclusive — they work the phones; you still take every letter" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>list</button>
+                        <button className="btn btn-mini" title="Listing exclusive — they work the phones; you still take every letter" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>Hire a broker</button>
                       )}
                     </div>
                   </td>
@@ -526,8 +538,13 @@ export function LeasingPage() {
                   </tr>
                   );
                 })}
+              {/* "Nothing under lease yet" sat under a 96%-let apartment
+                  building: flats are let unit by unit and carry no named
+                  lease, so this table is empty while the rent is real. */}
               {!rows.some((r) => r.h.tenants.length) && (
-                <tr><td colSpan={5} className="dim">Nothing under lease yet.</td></tr>
+                <tr><td colSpan={5} className="dim">{totLeased > 0
+                  ? `No named leases — ${sf(totLeased)} is let unit by unit (flats carry no lease of their own here). Occupancy and rent are in the table above.`
+                  : "Nothing under lease yet."}</td></tr>
               )}
             </tbody>
           </table>

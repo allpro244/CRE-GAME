@@ -14,6 +14,7 @@ import { Big, Row } from "@/ui/panels/shared";
 import { FundDesk } from "@/ui/panels/FundDesk";
 import { CreditLine } from "@/ui/panels/CreditLineDesk";
 import { MaturityWall } from "@/ui/rollups/MaturityWall";
+import { tabCounts } from "@/ui/desks";
 
 export { TheBanks } from "@/ui/panels/BanksDesk";
 export { SponsorRecord } from "@/ui/panels/SponsorRecord";
@@ -234,8 +235,28 @@ export function DebtPage() {
     ?? facQuotes.find((x) => x.available)
     ?? facQuotes[0];
 
+  // WHY THE BADGE IS LIT, BEFORE ANYTHING ELSE. The rail's red "!" on
+  // Capital is a maturity wall or a swept facility; the desk opened on six
+  // tiles and the stack, with the reason four sections down.
+  const counts = tabCounts(game);
+  const warnLine = counts.debtWarn === "swept"
+    ? "The facility is in covenant breach — its cash flow is being swept to the lender."
+    : counts.debtWarn === "wall"
+      ? (game.privateBorrowQuotes?.length
+        ? "A private lender has quoted you — the banks would not refinance on their terms."
+        : `${Math.round(((counts.debtWall ?? 0) / Math.max(1, counts.debtBal ?? 1)) * 100)}% of what you owe matures inside three years.`)
+      : null;
   return (
     <div>
+      {warnLine && (
+        <div className="desk-alarm" role="status">
+          <span className="desk-alarm-mark" aria-hidden="true">!</span>
+          <span>{warnLine}</span>
+          <button type="button" className="btn btn-sm" onClick={() => useStore.setState({ pageJump: counts.debtWarn === "wall" ? "The maturity wall" : "Where the risk is" })}>
+            Show me ↓
+          </button>
+        </div>
+      )}
       <div className="stat-strip">
         <Big label="Total debt" value={usd(agg.total)} />
         <Big label="Weighted coupon" value={agg.rate > 0 ? agg.rate.toFixed(2) + "%" : "—"} />

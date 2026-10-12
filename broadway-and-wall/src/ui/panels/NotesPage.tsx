@@ -160,6 +160,49 @@ export function NotesPage() {
   const sleeve = privateSleeveCapacity(game, parcels);
   const bookFace = privateBookFace(game);
 
+  const sleeveBlock = (
+    <>
+        <div className="page-section">Private asks · your sleeve</div>
+        <div className="hint" style={{ marginBottom: 8 }}>
+          Sleeve capacity {usd(sleeve)} more face · book outstanding {usd(bookFace)}.
+          Funded from cash only; leave a reserve. Expensive, short, enforceable — Cordage with your name on it.
+        </div>
+        {asks.length === 0 && (
+          <div className="hint" style={{ marginBottom: 10 }}>
+            No rival is asking you for money this month. Asks appear when somebody is stressed, dry, or staring
+            at a balloon the cheap desks will not re-paper — and they lapse in two months.
+          </div>
+        )}
+        {asks.map((a) => (
+          <div key={a.id} className="hint" style={{ marginBottom: 10 }}>
+            <div style={{ cursor: "pointer" }} onClick={() => focus(a.bbl, true)}>
+              <strong>{a.address}</strong> · {a.rivalName} wants{" "}
+              <b className="mono">{usd(a.face)}</b> at <b className="mono">{a.ratePct.toFixed(2)}%</b>,{" "}
+              {(a.points * 100).toFixed(1)} points, {a.termM} months · {(100 * a.ltv).toFixed(0)}% of as-is {usd(a.asIs)}
+            </div>
+            <div className="dim" style={{ marginTop: 4 }}>{a.why}</div>
+            <div className="btn-row" style={{ marginTop: 6 }}>
+              <button
+                className="btn"
+                disabled={a.face > sleeve || game.cash < a.face + PRIVATE_CASH_RESERVE}
+                onClick={() => fundPrivateAsk(a.id)}
+              >
+                Fund · {usd(a.face)}
+              </button>
+              <button className="btn-mini" onClick={() => declinePrivateAsk(a.id)}>Pass</button>
+              <span className="dim">Lapses {monthLabel(a.expiresM)}.</span>
+            </div>
+          </div>
+        ))}
+        {privateNotes.length > 0 && (
+          <div className="hint" style={{ marginBottom: 10 }}>
+            Your originated book: {privateNotes.map((n) => `${n.address} (${usd(n.face)})`).join(" · ")}.
+          </div>
+        )}
+
+    </>
+  );
+
   return (
     <div>
       <div className="hint">
@@ -178,44 +221,11 @@ export function NotesPage() {
         .
       </div>
 
-      <div className="page-section">Private asks · your sleeve</div>
-      <div className="hint" style={{ marginBottom: 8 }}>
-        Sleeve capacity {usd(sleeve)} more face · book outstanding {usd(bookFace)}.
-        Funded from cash only; leave a reserve. Expensive, short, enforceable — Cordage with your name on it.
-      </div>
-      {asks.length === 0 && (
-        <div className="hint" style={{ marginBottom: 10 }}>
-          No rival is asking you for money this month. Asks appear when somebody is stressed, dry, or staring
-          at a balloon the cheap desks will not re-paper — and they lapse in two months.
-        </div>
-      )}
-      {asks.map((a) => (
-        <div key={a.id} className="hint" style={{ marginBottom: 10 }}>
-          <div style={{ cursor: "pointer" }} onClick={() => focus(a.bbl, true)}>
-            <strong>{a.address}</strong> · {a.rivalName} wants{" "}
-            <b className="mono">{usd(a.face)}</b> at <b className="mono">{a.ratePct.toFixed(2)}%</b>,{" "}
-            {(a.points * 100).toFixed(1)} points, {a.termM} months · {(100 * a.ltv).toFixed(0)}% of as-is {usd(a.asIs)}
-          </div>
-          <div className="dim" style={{ marginTop: 4 }}>{a.why}</div>
-          <div className="btn-row" style={{ marginTop: 6 }}>
-            <button
-              className="btn"
-              disabled={a.face > sleeve || game.cash < a.face + PRIVATE_CASH_RESERVE}
-              onClick={() => fundPrivateAsk(a.id)}
-            >
-              Fund · {usd(a.face)}
-            </button>
-            <button className="btn-mini" onClick={() => declinePrivateAsk(a.id)}>Pass</button>
-            <span className="dim">Lapses {monthLabel(a.expiresM)}.</span>
-          </div>
-        </div>
-      ))}
-      {privateNotes.length > 0 && (
-        <div className="hint" style={{ marginBottom: 10 }}>
-          Your originated book: {privateNotes.map((n) => `${n.address} (${usd(n.face)})`).join(" · ")}.
-        </div>
-      )}
-
+      {/* WHAT THE BADGE COUNTED, FIRST. An offer on the block was the last
+          thing on the page — under an empty "Private asks" section and the
+          table of which banks are under pressure. Asks lead when there are
+          any; empty, they follow the paper for sale. */}
+      {asks.length > 0 && sleeveBlock}
       <div className="page-section">On the block · bank paper</div>
       {offers.length === 0 && (
         <div className="hint">
@@ -232,7 +242,6 @@ export function NotesPage() {
           silent is indistinguishable from a market that is broken. This is the
           pressure the offer generator itself reads, so the player is watching
           the same gauge the engine is. */}
-      <NoteSellers />
       {offers.map((o) => {
         const r = game.rivals?.find((x) => x.id === o.obligorId);
         const px = Math.round(o.face * o.askPct);
@@ -276,6 +285,9 @@ export function NotesPage() {
           </div>
         );
       })}
+
+      <NoteSellers />
+      {asks.length === 0 && sleeveBlock}
 
       <div className="page-section">Your book</div>
       {notes.length === 0 && <div className="hint">You hold no paper.</div>}

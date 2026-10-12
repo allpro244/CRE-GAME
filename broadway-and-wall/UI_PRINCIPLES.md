@@ -269,3 +269,8 @@ Asked plainly: what does a principal need without opening a desk?
   re-wrote themselves into the news every month ("2 parties are chasing the
   same 1.8k sf at 146 E 15th St"). The News desk keeps the newest copy and
   notes "also 6 earlier times"; on a measured save, 120 lines became 97.
+- **Deals says what it holds.** The live tab read "Letters · 4" over four
+  purchase negotiations, and under them the empty letters section said "No
+  live negotiations" with a primary "Browse buildings" button. The tab is
+  "Open deals", the empty section says no tenant has written, its button goes
+  when anything is on the table, and the desk uses the full width.

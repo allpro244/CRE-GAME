@@ -439,7 +439,9 @@ export function DealsPage() {
         <button type="button" role="tab" aria-selected={desk === "live"}
           className={"btn" + (desk === "live" ? " btn-on" : "")}
           onClick={() => setDesk("live")}>
-          Letters · {liveCount}
+          {/* It said "Letters" over purchase negotiations, counter-asks and
+              contracts as well as tenants' letters. */}
+          Open deals · {liveCount}
         </button>
         <button type="button" role="tab" aria-selected={desk === "sales"}
           className={"btn" + (desk === "sales" ? " btn-on" : "")}
@@ -447,7 +449,9 @@ export function DealsPage() {
           Your sales · {saleCount}
         </button>
       </div>
-      <div className={"deals-grid" + (desk !== "live" ? " deals-one" : "")}>
+      {/* One column: the live desk is a single <section>, and the two-column
+          grid left the right half of the room empty. */}
+      <div className="deals-grid deals-one">
 
       {/* AN EMPTY DESK IS ONE CARD, NOT THREE EMPTY HEADINGS. With nothing
           live the room printed "On the table · 0", "Letters of intent · 0" and
@@ -583,9 +587,9 @@ export function DealsPage() {
                 ? (tally
                   ? `Your desk has the book — this month ${tally.signed} signed, ${tally.passed} passed, ${tally.referred} referred, ${tally.walked} walked. Nothing waiting on you right now.`
                   : "Your desk has the book — nothing referred back right now. They work the posted plan on Leasing; the quarterly digest lives there too.")
-                : "No live negotiations. Vacant space in high-demand buildings draws tenants."}
+                : "No tenant has written this month. Vacant space in high-demand buildings draws them."}
             </div>
-            {Object.keys(game.holdings).length === 0 ? (
+            {Object.keys(game.talks ?? {}).length > 0 ? null : Object.keys(game.holdings).length === 0 ? (
               <button className="btn btn-buy" onClick={() => useStore.getState().setPage("market")}>
                 Browse buildings in Marketplace →
               </button>

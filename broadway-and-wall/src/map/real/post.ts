@@ -32,7 +32,14 @@ uniform float uBand;       // the sharp band's half-height, in uv
 uniform float uBloom;      // bloom strength (0: none)
 uniform float uGrade;      // grade strength (0: none)
 uniform float uNight;      // 0 day .. 1 night: less warmth, more glow
+uniform sampler2D tDist;   // distance to the eye, packed (aoPass); none when uAO is 0
+uniform vec2 uDistTexel;
+uniform float uAO;         // ambient-occlusion strength (0: none)
+uniform float uAOView;     // 1: show the occlusion term alone (review)
 varying vec2 vUv;
+
+#include <packing>
+float distAt(vec2 uv) { return unpackRGBAToDepth(texture2D(tDist, uv)) * 6000.0; }
 
 vec3 tap(vec2 uv) { return texture2D(tFrame, clamp(uv, uTexel, 1.0 - uTexel)).rgb; }
 
@@ -48,6 +55,35 @@ vec2 disc(int i) {
 
 void main() {
   vec3 c = tap(vUv);
+
+  // AMBIENT OCCLUSION. Where a neighbour a few pixels off stands nearer the
+  // eye than this pixel — a wall rising from the pavement, the far side of a
+  // street canyon, a parapet over its roof — this pixel is in a crease and
+  // gets less sky. The range check stops a tower in front of a far block
+  // from darkening the whole block.
+  if (uAO > 0.0) {
+    float d0 = distAt(vUv);
+    if (uAOView > 0.5 && d0 >= 5900.0) { gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0); return; }
+    if (d0 < 5900.0) {
+      // a crease is where the neighbours on BOTH sides of a pixel average
+      // nearer than it (a wall rising from the pavement, a parapet over its
+      // roof). A flat plane seen at a grazing angle has one side nearer and
+      // the other farther by the same amount, so it never reads as one.
+      float occ = 0.0;
+      float rad = clamp(4200.0 / d0, 3.0, 14.0);
+      for (int i = 0; i < 12; i += 2) {
+        vec2 o = disc(i) * rad * uDistTexel;
+        // BOTH sides nearer: a silhouette has one side far nearer and the
+        // other level or behind, so the smaller of the two rejects it
+        float cav = min(d0 - distAt(vUv + o), d0 - distAt(vUv - o));
+        // a contact crease is shallow; a building's edge against the ground
+        // far behind it is a big step, and must not draw a halo
+        occ += 2.0 * smoothstep(0.001 * d0, 0.006 * d0, cav) * (1.0 - smoothstep(0.03 * d0, 0.06 * d0, cav));
+      }
+      c *= 1.0 - uAO * clamp(occ / 12.0, 0.0, 1.0);
+      if (uAOView > 0.5) { gl_FragColor = vec4(vec3(1.0 - clamp(occ / 12.0, 0.0, 1.0)) * vec3(1.0, 0.9 + 0.1 * fract(d0 / 50.0), 1.0), 1.0); return; }
+    }
+  }
 
   // tilt-shift: blur grows smoothly past the band's edge
   float off = max(0.0, abs(vUv.y - uFocus) - uBand);
@@ -88,14 +124,34 @@ void main() {
   gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 
+// the view-space position is interpolated and its length taken per pixel:
+// a distance interpolated across a big triangle (the ground) is far too long
+const DIST_VERT = `
+varying vec3 vP;
+void main() {
+  #include <begin_vertex>
+  #include <project_vertex>
+  vP = mvPosition.xyz;
+}`;
+const DIST_FRAG = `
+#include <packing>
+varying vec3 vP;
+void main() { gl_FragColor = packDepthToRGBA(clamp(length(vP) / 6000.0, 0.0, 0.9999)); }`;
+
 export class PostFX {
   private tex: THREE.FramebufferTexture | null = null;
+  private distRT: THREE.WebGLRenderTarget | null = null;
+  private readonly distMat = new THREE.ShaderMaterial({ vertexShader: DIST_VERT, fragmentShader: DIST_FRAG, side: THREE.DoubleSide });
+  // the ground is MapLibre's, not ours: the distance pass stands its own
+  // street-level plane under the city, or nothing would meet the pavement
+  private readonly ground = (() => { const m = new THREE.Mesh(new THREE.PlaneGeometry(60000, 60000), this.distMat); m.frustumCulled = false; return m; })();
   private size = new THREE.Vector2();
   private readonly scene = new THREE.Scene();
   private readonly cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly mat: THREE.ShaderMaterial;
   level: PostLevel = "full";
   /** ?post=off in the address turns the pass off whatever the setting (before/after review shots) */
+  private readonly aoView = typeof location !== "undefined" && new URLSearchParams(location.search).get("post") === "aoview";
   private readonly forcedOff = typeof location !== "undefined" && new URLSearchParams(location.search).get("post") === "off";
 
   constructor() {
@@ -104,6 +160,7 @@ export class PostFX {
         tFrame: { value: null }, uTexel: { value: new THREE.Vector2() },
         uTilt: { value: 0 }, uFocus: { value: 0.45 }, uBand: { value: 0.12 },
         uBloom: { value: 0 }, uGrade: { value: 1 }, uNight: { value: 0 },
+        tDist: { value: null }, uDistTexel: { value: new THREE.Vector2() }, uAO: { value: 0 }, uAOView: { value: 0 },
       },
       vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
       fragmentShader: FRAG,
@@ -118,8 +175,11 @@ export class PostFX {
    * Run the pass over what is on the canvas now. pitch in radians, distM the
    * camera's distance to its focus in metres, night 0..1.
    */
-  apply(renderer: THREE.WebGLRenderer, pitch: number, distM: number, night: number) {
+  apply(renderer: THREE.WebGLRenderer, pitch: number, distM: number, night: number, scene?: THREE.Scene, camera?: THREE.Camera, hide: (THREE.Object3D | null)[] = []) {
     if (this.level === "off" || this.forcedOff) return;
+    // the distance pass for ambient occlusion, High only, at half resolution
+    const ao = this.level === "full" && !!scene && !!camera;
+    if (ao) this.distPass(renderer, scene!, camera!, hide);
     renderer.getDrawingBufferSize(this.size);
     const w = Math.floor(this.size.x), h = Math.floor(this.size.y);
     if (w < 2 || h < 2) return;
@@ -144,11 +204,42 @@ export class PostFX {
     u.uBloom.value = full ? 0.35 : 0;
     u.uGrade.value = 1;
     u.uNight.value = night;
+    u.uAO.value = ao ? 0.65 * (1 - night * 0.6) : 0;
+    u.uAOView.value = this.aoView ? 1 : 0;
     const auto = renderer.autoClear;
     renderer.autoClear = false;
     renderer.render(this.scene, this.cam);
     renderer.autoClear = auto;
   }
 
-  dispose() { this.tex?.dispose(); this.mat.dispose(); }
+  /** Distance to the eye of everything the city draws, into a half-size target (see the AO block in FRAG). */
+  private distPass(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, hide: (THREE.Object3D | null)[]) {
+    renderer.getDrawingBufferSize(this.size);
+    const w = Math.max(2, Math.floor(this.size.x / 2)), h = Math.max(2, Math.floor(this.size.y / 2));
+    if (!this.distRT || this.distRT.width !== w || this.distRT.height !== h) {
+      this.distRT?.dispose();
+      this.distRT = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true });
+      this.mat.uniforms.tDist.value = this.distRT.texture;
+      this.mat.uniforms.uDistTexel.value.set(1 / w, 1 / h);
+    }
+    const was = hide.map((o) => o?.visible ?? false);
+    hide.forEach((o) => { if (o) o.visible = false; });
+    const prevOverride = scene.overrideMaterial, prevClear = renderer.getClearAlpha(), prevCol = renderer.getClearColor(new THREE.Color());
+    const prevTarget = renderer.getRenderTarget(), prevShadow = renderer.shadowMap.enabled;
+    scene.overrideMaterial = this.distMat;
+    scene.add(this.ground);
+    renderer.shadowMap.enabled = false;
+    renderer.setRenderTarget(this.distRT);
+    renderer.setClearColor(0xffffff, 1);
+    renderer.clear(true, true, false);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(prevTarget);
+    renderer.setClearColor(prevCol, prevClear);
+    renderer.shadowMap.enabled = prevShadow;
+    scene.overrideMaterial = prevOverride;
+    scene.remove(this.ground);
+    hide.forEach((o, i) => { if (o) o.visible = was[i]; });
+  }
+
+  dispose() { this.tex?.dispose(); this.distRT?.dispose(); this.distMat.dispose(); this.mat.dispose(); }
 }

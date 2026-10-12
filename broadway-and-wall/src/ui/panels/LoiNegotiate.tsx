@@ -261,7 +261,9 @@ export function LoiCounterDraft({
           ? ` (was ${usd(loiSigningCost(loi, feeRate))} on their letter)`
           : ""}
       </div>
-      <div className="btn-row">
+      {/* Sticky inside a card: the draft runs to ~970px, and Send sat below
+          the card's fold behind five sliders. */}
+      <div className="btn-row counter-actions">
         <button
           type="button"
           className="btn btn-buy"
@@ -277,7 +279,7 @@ export function LoiCounterDraft({
         >
           Best &amp; final
         </button>
-        <button type="button" className="btn" onClick={onBack}>Back</button>
+        <button type="button" className="btn" data-esc onClick={onBack}>Back</button>
       </div>
       {fundShort && (
         <div className="hint dim">Signing still draws the shortfall on the line if cash is short.</div>
@@ -304,6 +306,7 @@ export function LoiTermsGrid({
   const theirNe = openingNe(loi);
   const nowNe = netEffectivePsf(loi, loi.rentPsf, loi.tiPsf, loi.freeM, bumpOf(loi));
   const bump = bumpOf(loi);
+  const recov = loi.recovery ?? (loi.net ? "nnn" : "gross");
 
   return (
     <div className="grid">
@@ -352,45 +355,65 @@ export function LoiTermsGrid({
           />
         </>
       )}
+      {/* THE DECISION FIRST, THE TERMS FOLDED. This is the card the game shows
+          most — 29 of 34 cards in a measured eight-year run — and it printed
+          nine rows of terms every time. What decides a letter is the rent,
+          what it nets against the market, the cheque, and the clock; those
+          lead. The rest folds under a line that still says the gist, and a
+          gross lease — every expense yours — never folds. */}
       {!isFinal && <Row k="Rent" v={`$${loi.rentPsf.toFixed(2)}/sf`} strong />}
-      {!isFinal && (
-        <Row
-          k="Annual bump"
-          v={`${bump.toFixed(2)}%/yr${Math.abs(bump - DEFAULT_BUMP_PCT) < 0.01 ? " · market standard" : bump > DEFAULT_BUMP_PCT ? " · steeper than standard" : " · flatter than standard"}`}
-        />
-      )}
-      <Row
-        k="Recovery"
-        v={(loi.recovery ?? (loi.net ? "nnn" : "gross")) === "nnn" ? "triple net — they pay opex and taxes"
-          : (loi.recovery ?? "gross") === "base" ? "base-year stop — you keep today's expense level"
-          : "full gross — every expense is yours"}
-        bad={(loi.recovery ?? (loi.net ? "nnn" : "gross")) === "gross"}
-      />
       <Row
         k={<Gloss term="net effective">Net effective</Gloss>}
         v={`$${nowNe.toFixed(2)}/sf · ${pctSigned(nowNe / market - 1, 0)} vs market asking ~$${market.toFixed(2)}`}
         strong
         bad={nowNe < market * 0.9}
       />
-      {!isFinal && Math.abs(theirNe - nowNe) > 0.01 && (
-        <Row k="Opening NE" v={`$${theirNe.toFixed(2)}/sf`} />
-      )}
-      <Row k="vs. face market" v={`${pctSigned(loi.rentPsf / market - 1)} on face rent`} bad={loi.rentPsf < market * 0.9} />
-      <Row k={<Gloss term="TI">TI allowance</Gloss>} v={loi.tiPsf > 0 ? `$${loi.tiPsf}/sf · ${usd(loi.tiPsf * loi.sf)}` : "none"} />
-      <Row k="Free rent" v={loi.freeM > 0 ? `${loi.freeM} months` : "none"} />
       <Row k="Cash to sign" v={usd(cost)} bad={cost > game.cash} strong />
-      {h?.broker && (
+      <Row k="Answer by" v={monthLabel(loi.expiresM - 1)} />
+      {recov === "gross" && <Row k="Recovery" v="full gross — every expense is yours" bad />}
+      <details className="loi-terms-fold">
+        <summary>
+          <span className="loi-terms-label">Terms</span>
+          <span className="mono">{[
+            !isFinal ? `${bump.toFixed(2)}%/yr bump` : null,
+            recov === "nnn" ? "triple net" : recov === "base" ? "base-year stop" : "gross",
+            loi.tiPsf > 0 ? `TI $${loi.tiPsf}/sf` : "no TI",
+            loi.freeM > 0 ? `${loi.freeM} mo free` : "no free rent",
+          ].filter(Boolean).join(" · ")}</span>
+        </summary>
+        <div className="grid">
+        {!isFinal && (
+          <Row
+            k="Annual bump"
+            v={`${bump.toFixed(2)}%/yr${Math.abs(bump - DEFAULT_BUMP_PCT) < 0.01 ? " · market standard" : bump > DEFAULT_BUMP_PCT ? " · steeper than standard" : " · flatter than standard"}`}
+          />
+        )}
         <Row
-          k="Your exclusive"
-          v={`6% of ${usd(annual * (loi.termM / 12))} of base rent over the term — ${usd(Math.round(annual * (loi.termM / 12) * 0.06))}, inside the number above`}
-          /* An exclusive right to lease is paid on every lease signed while it
-             holds the file. Taking the pen back on one letter — because it is
-             over your desk's signing authority, or because you sign the whole
-             book yourself — moves who decides, not who is paid. */
-          title="Owed whoever signs: the house holds the file on this building, and the exclusive replaces the 4%/2% an in-house deal costs."
+          k="Recovery"
+          v={(loi.recovery ?? (loi.net ? "nnn" : "gross")) === "nnn" ? "triple net — they pay opex and taxes"
+            : (loi.recovery ?? "gross") === "base" ? "base-year stop — you keep today's expense level"
+            : "full gross — every expense is yours"}
+          bad={(loi.recovery ?? (loi.net ? "nnn" : "gross")) === "gross"}
         />
-      )}
-      <Row k="Answer by" v={monthLabel(loi.expiresM)} />
+        {!isFinal && Math.abs(theirNe - nowNe) > 0.01 && (
+          <Row k="Opening NE" v={`$${theirNe.toFixed(2)}/sf`} />
+        )}
+        <Row k="vs. face market" v={`${pctSigned(loi.rentPsf / market - 1)} on face rent`} bad={loi.rentPsf < market * 0.9} />
+        <Row k={<Gloss term="TI">TI allowance</Gloss>} v={loi.tiPsf > 0 ? `$${loi.tiPsf}/sf · ${usd(loi.tiPsf * loi.sf)}` : "none"} />
+        <Row k="Free rent" v={loi.freeM > 0 ? `${loi.freeM} months` : "none"} />
+        {h?.broker && (
+          <Row
+            k="Your exclusive"
+            v={`6% of ${usd(annual * (loi.termM / 12))} of base rent over the term — ${usd(Math.round(annual * (loi.termM / 12) * 0.06))}, inside the number above`}
+            /* An exclusive right to lease is paid on every lease signed while it
+               holds the file. Taking the pen back on one letter — because it is
+               over your desk's signing authority, or because you sign the whole
+               book yourself — moves who decides, not who is paid. */
+            title="Owed whoever signs: the house holds the file on this building, and the exclusive replaces the 4%/2% an in-house deal costs."
+          />
+        )}
+        </div>
+      </details>
     </div>
   );
 }

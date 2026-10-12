@@ -461,7 +461,7 @@ pass(`played ${g.month} months · holdings ${Object.keys(g.holdings).length} · 
   for (const [k, v] of samples) {
     if (!Number.isFinite(v)) fail(`HUD ${k} is ${v}`);
   }
-  if (E.monthCashBit(4_999) !== "" || E.monthCashBit(10_000) !== " · +$0.01M") {
+  if (E.monthCashBit(4_999) !== "" || E.monthCashBit(10_000) !== " · +$10K") {
     fail(`monthCashBit contract ${JSON.stringify({ a: E.monthCashBit(4999), b: E.monthCashBit(10000) })}`);
   }
 }

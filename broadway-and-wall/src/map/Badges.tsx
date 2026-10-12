@@ -162,7 +162,7 @@ function calloutFor(g: GameState, bbl: string | null, parcels: ParcelTable): Cal
   const t = g.talks?.[bbl];
   if (t) {
     if (t.agreed) {
-      return { bbl, text: `under contract at ${usd(t.agreedPrice ?? t.theirPrice)} · fund by ${monthLabel(t.closeByM ?? g.month)}` };
+      return { bbl, text: `under contract at ${usd(t.agreedPrice ?? t.theirPrice)} · fund by ${monthLabel((t.closeByM ?? g.month + 1) - 1)}` };
     }
     return { bbl, text: `round ${t.round} of ${t.maxRounds} · their ${usd(t.theirPrice)}` };
   }
@@ -180,8 +180,8 @@ function calloutFor(g: GameState, bbl: string | null, parcels: ParcelTable): Cal
     return {
       bbl,
       text: onIt.length === 1
-        ? `letter — answer by ${monthLabel(first.expiresM)}`
-        : `${onIt.length} letters — first dies ${monthLabel(first.expiresM)}`,
+        ? `letter — answer by ${monthLabel(first.expiresM - 1)}`
+        : `${onIt.length} letters — answer the first by ${monthLabel(first.expiresM - 1)}`,
     };
   }
   return null;

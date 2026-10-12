@@ -817,12 +817,12 @@ export function strikeDeal(
     agreed: true, agreedPrice: px, closeByM: next.month + CLOSE_WINDOW_M, deposit: dep,
     ...(opts?.offMarket ? { offMarket: true } : {}),
     note: `Agreed at ${fmtM(px)} with ${seller.name}${seller.name.endsWith(".") ? "" : "."} ${fmtM(dep)} of earnest money is posted and hard. `
-      + `Place the debt and fund it by ${monthLabel(next.month + CLOSE_WINDOW_M)} or the deposit is theirs.`,
+      + `Place the debt and fund it by ${monthLabel(next.month + CLOSE_WINDOW_M - 1)} or the deposit is theirs.`,
   };
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Under contract at ${address}: ${fmtM(px)} agreed with ${seller.name}, ${fmtM(dep)} down. `
-      + `The rest is due by ${monthLabel(next.month + CLOSE_WINDOW_M)}.`,
+      + `The rest is due by ${monthLabel(next.month + CLOSE_WINDOW_M - 1)}.`,
   });
   return { s: next };
 }

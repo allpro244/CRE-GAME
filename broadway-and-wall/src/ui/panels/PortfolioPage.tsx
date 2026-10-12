@@ -3,10 +3,11 @@ import type { ReactNode } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { returnsToDate } from "@/engine/standing";
 import { useStore } from "@/state/store";
-import { monthLabel, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, SVC_START } from "@/engine/types";
+import { monthLabel, serviceSpec, planSpec, SVC_START } from "@/engine/types";
+import { OpsChoices } from "@/ui/panels/OpsChoices";
 import type { BuiltClass, GameState } from "@/engine/types";
-import { deedMark } from "@/ui/deedMarks";
-import { managedRentPsfYr, resolveRec, isLeasedFee, buildingScore, buildTier } from "@/engine/value";
+import { deedMark, deedDebtService } from "@/ui/deedMarks";
+import { managedRentPsfYr, resolveRec, isLeasedFee } from "@/engine/value";
 import { portfolioPropertyMonthlyCF } from "@/engine/sim";
 import { unitStatus, avgUnitSf, portfolioOccupancy } from "@/engine/leasing";
 import { payoffQuote } from "@/engine/notes";
@@ -15,7 +16,7 @@ import { payOffDue } from "@/engine/debt";
 import { portfolioQuote, portfolioSettlement, onFundBook } from "@/engine/portfolio";
 import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote, PortfolioSettlement } from "@/engine/portfolio";
-import { allocatedAmount, FACILITY_MIN_ASSETS } from "@/engine/facility";
+import { FACILITY_MIN_ASSETS } from "@/engine/facility";
 import { usd, sf, usdSigned, pctSigned } from "@/ui/format";
 import { ListSection, GroundLeaseSection, describeInstructions } from "@/ui/panels/AcquireDesk";
 import { RefiSection } from "@/ui/panels/RefiDesk";
@@ -86,17 +87,9 @@ export function PortfolioPage() {
     const noi = mark.noi;
     // Facility replaces the deed mortgage — allocated share is the lien that
     // still sits on this row once the pool is papered.
-    const facBal = allocatedAmount(game, parcels, h.bbl);
-    const debt = (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0) + facBal;
-    // Same walk as portfolioPropertyMonthlyCF, plus this row's share of a
-    // facility payment. The header CF / yr also subtracts construction
-    // interest, the whole facility and the revolver — those are firm lines,
-    // not a deed's. A row that skipped mezz or a pooled facility printed
-    // NOI as cash flow on the buildings that actually carry that paper.
-    const facPmt = game.facility && game.facility.balance > 0
-      ? game.facility.monthlyPmt * (facBal / game.facility.balance)
-      : 0;
-    const dsMo = (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0) + facPmt;
+    // Mortgage, mezz and this row's share of a pooled facility — the same
+    // walk the map's hover card reads (deedDebtService).
+    const { debt, dsMo } = deedDebtService(game, parcels, h.bbl);
     const cf = noi / 12 - dsMo;
     // Lessee's tower is not your occupancy — do not paint 0% on a coupon bond.
     //
@@ -694,7 +687,8 @@ export function PortfolioPage() {
                       onClick={(ev) => { ev.stopPropagation(); setOpsRow(opsRow === h.bbl ? null : h.bbl); }}
                       title={`Service ${serviceSpec(h.service).label} (tenants read it as ${Math.round(100 * (h.svcIdx ?? SVC_START))} of 100) · capital plan ${planSpec(h.plan).label} (condition ${Math.round(100 * (h.condIdx ?? 0.6))} of 100)`}
                     >
-                      {serviceSpec(h.service).label} · {planSpec(h.plan).label}
+                      {/* It read "Market · Fund" — two settings, no verb. */}
+                      Run {opsRow === h.bbl ? "▴" : "▾"}
                     </button>
                   )}
                   <button
@@ -753,35 +747,7 @@ export function PortfolioPage() {
             {opsRow === h.bbl && (
               <tr>
                 <td colSpan={bookCols} style={{ background: "rgba(43,37,26,0.035)" }}>
-                  <div className="grid">
-                    <Row k="Service" v={`${serviceSpec(h.service).label} · tenants read it as ${Math.round(100 * (h.svcIdx ?? SVC_START))} of 100`} />
-                    <Row k="Capital plan" v={`${planSpec(h.plan).label} · condition ${Math.round(100 * (h.condIdx ?? 0.6))} of 100 (${h.condition})`} />
-                    {(() => {
-                      // THE BUILDING SCORE (BUILD_CLASS_PLAN.md): the building
-                      // only — location is priced on its own.
-                      const r0 = resolveRec(parcels, game, h.bbl);
-                      if (!r0 || !r0.bldgArea) return null;
-                      const sc = buildingScore(r0, h, game);
-                      return <Row k="Building score" v={`${sc.score} · ${sc.grade === "Trophy" ? "Trophy" : `Class ${sc.grade}`} — ${buildTier(r0.buildSpec).label} bones ${sc.structure}/40 · condition ${sc.condition}/35 · against the city's stock ${sc.competitiveness}/25`} />;
-                    })()}
-                  </div>
-                  <div className="btn-row">
-                    {OPS_SERVICE.map((o) => (
-                      <button key={o.key} type="button"
-                        className={"btn btn-sm" + ((h.service ?? 0) === o.key ? " btn-on" : "")}
-                        title={o.blurb + " — three years to matter, three years to undo"}
-                        onClick={() => useStore.getState().ops(h.bbl, { service: o.key })}
-                      >{o.label}</button>
-                    ))}
-                    <span className="dim" style={{ margin: "0 6px" }}>|</span>
-                    {OPS_PLAN.map((o) => (
-                      <button key={o.key} type="button"
-                        className={"btn btn-sm" + ((h.plan ?? 1) === o.key ? " btn-on" : "")}
-                        title={o.blurb}
-                        onClick={() => useStore.getState().ops(h.bbl, { plan: o.key })}
-                      >{o.label}</button>
-                    ))}
-                  </div>
+                  <OpsChoices bbl={h.bbl} h={h} />
                 </td>
               </tr>
             )}

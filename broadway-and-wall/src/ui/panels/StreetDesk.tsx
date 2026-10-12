@@ -1,4 +1,4 @@
-import { useMemo, useState, Fragment } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec, netWorth, portfolioMark } from "@/engine/value";
@@ -33,6 +33,11 @@ export function TheStreet() {
   const parcels = useStore((s) => s.parcels)!;
   const focus = useStore((s) => s.focus);
   const [open, setOpen] = useState<string | null>(null);
+  // YOU ARE THE ROW YOU CAME FOR. The top bar's Street readout opens this
+  // table, and in most of a career your row is twenty-odd firms down — below
+  // the fold, under the leaders. Bring it into view once, on open.
+  const youRef = useRef<HTMLTableRowElement>(null);
+  useEffect(() => { youRef.current?.scrollIntoView({ block: "center" }); }, []);
   const rivals = game.rivals ?? [];
   // Marked once per month, not once per click: opening a firm's card used to
   // re-mark every rival's whole book and the player's own.
@@ -158,7 +163,7 @@ export function TheStreet() {
               ...marked.slice(at < 0 ? marked.length : at).map((x) => ({ x }))];
           })().map((row) => {
             if ("you" in row) return (
-              <tr key="__you" style={{ cursor: "pointer", background: "var(--accent-soft, rgba(138,109,31,0.12))", fontWeight: 600 }}
+              <tr key="__you" ref={youRef} style={{ cursor: "pointer", background: "var(--accent-soft, rgba(138,109,31,0.12))", fontWeight: 600 }}
                 title="Your firm, marked the same way as theirs. Click for your Books."
                 onClick={() => useStore.getState().setPage("books")}>
                 <td>★ {firmName(game)} <span className="dim" style={{ fontWeight: 400 }}>· you</span></td>

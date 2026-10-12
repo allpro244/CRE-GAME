@@ -40,7 +40,7 @@ import {
 } from "@/engine/staff";
 import { netWorth, resolveRec, ownedHoldingValue } from "@/engine/value";
 import { leasingOdds } from "@/engine/absorption";
-import { usdSigned } from "@/ui/format";
+import { usd as usdShort, usdSigned } from "@/ui/format";
 import { periodRecap, firmTier, yearReview } from "@/engine/standing";
 import { generateFirmName } from "@/engine/firm";
 import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
@@ -546,14 +546,23 @@ function queueDeliveryCeremony(
 ) {
   const player = deliveriesThisMonth(prev, next);
   const rival = cityDeliveriesThisMonth(prev, next);
-  // YOUR OWN BUILDING ALWAYS GETS ITS MOMENT. The top-1% gate is for the
-  // street's towers — a popup on every rival delivery would be noise — but it
-  // was also silencing the player's own: three years of building ended in a
-  // toast the month-close toast overwrote on the same tick.
-  // yours or the street's, only one of the five largest buildings on the map
+  // THE CARD IS FOR THE SKYLINE: yours or the street's, only one of the five
+  // largest buildings on the map takes the screen (deliveryNotice.ts, a
+  // deliberate call in f4214ba). Your own smaller job still gets its moment
+  // in the toast lane — with the one fact the card would have led with, what
+  // it is worth against what it cost, rather than a bare address.
   const candidates = [...player, ...rival].filter((b) => parcels && deliveryWorthCeremony(next, parcels, b));
   const bbl = candidates[0];
-  if (!bbl) return;
+  if (!bbl) {
+    const own = player[0];
+    const oh = own ? next.holdings[own] : undefined;
+    if (own && oh && parcels) {
+      const v = ownedHoldingValue(next, parcels, oh);
+      const addr = resolveRec(parcels, next, own)?.address ?? own;
+      toast(`◆ Delivered — ${addr}: worth ${usdShort(v)} against ${usdShort(oh.costBasis)} all-in.`, "ok");
+    }
+    return;
+  }
   const rec = parcels ? resolveRec(parcels, next, bbl) : null;
   const built = next.built?.[bbl];
   const mine = player.includes(bbl);
@@ -647,8 +656,20 @@ async function advanceOne(opts?: { quiet?: boolean }): Promise<void> {
   // Yr/Skip felt like the only clock that answered. Stamp the new month,
   // cash movement, and the first thing waiting — short enough to read once.
   const dCash = next.cash - cash0;
-  const attn = attentionItems(next, parcels)[0];
-  if (!opts?.quiet) toast(`${monthLabel(next.month)}${monthCashBit(dCash)}${attn ? ` · ${attn.label}` : ""}`, "ok", attn?.key);
+  // Only what is NEW this month. The first standing item used to ride every
+  // month's toast — a covenant sweep announced three months running, a note
+  // sale four — while the docket already holds it. The clock's own stop
+  // rule keys on new items the same way.
+  // (Continuous play is quiet and skips the toast, so it skips the walk too.)
+  const before = opts?.quiet ? null : new Set(attentionItems(game, parcels).map((a) => a.key));
+  const attn = before ? attentionItems(next, parcels).find((a) => !before.has(a.key)) : undefined;
+  // A QUIET MONTH ANSWERS IN THE HUD, NOT THE TOAST LANE. Measured over an
+  // eight-year run, most month-close toasts read only "Feb 2000": a
+  // notification whose whole content is the date the top bar already shows.
+  // The date tile flashes on every turn now (TopBar), so the toast is kept
+  // for months that carry news — cash that moved, or something waiting.
+  const cashBit = monthCashBit(dCash);
+  if (!opts?.quiet && (cashBit || attn)) toast(`${monthLabel(next.month)}${cashBit}${attn ? ` · ${attn.label}` : ""}`, "ok", attn?.key);
   void persist(next);
 }
 

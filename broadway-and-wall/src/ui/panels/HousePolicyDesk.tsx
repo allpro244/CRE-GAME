@@ -34,14 +34,19 @@ export function HousePolicy() {
     { label: string; value: T; set: (v: T) => void; opts: { k: T; label: string; title: string }[]; hint: string },
   ) => (
     <>
-      <div className="grid"><Row k={label} v={opts.find((o) => o.k === value)?.label ?? "—"} /></div>
-      <div className="btn-row">
-        {opts.map((o) => (
-          <button key={String(o.k)} className={"btn" + (value === o.k ? " btn-on" : "")}
-            title={o.title} onClick={() => set(o.k)}>{o.label}</button>
-        ))}
+      {/* Same shape as the building's own settings (OpsChoices): the name,
+          the choice as one control — the value no longer printed twice, as
+          a row and as the lit button under it. */}
+      <div className="ops-choice">
+        <span className="ops-choice-k">{label}</span>
+        <span className="seg" role="group" aria-label={label}>
+          {opts.map((o) => (
+            <button key={String(o.k)} type="button" className={"btn btn-sm" + (value === o.k ? " btn-on" : "")}
+              aria-pressed={value === o.k} title={o.title} onClick={() => set(o.k)}>{o.label}</button>
+          ))}
+        </span>
       </div>
-      <div className="hint">{hint}</div>
+      <div className="hint" style={{ marginTop: 0 }}>{hint}</div>
     </>
   );
   return (

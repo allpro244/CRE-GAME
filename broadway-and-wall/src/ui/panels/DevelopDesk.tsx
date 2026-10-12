@@ -433,19 +433,27 @@ export function DevelopSection({ bbl }: { bbl: string }) {
         }}
       />
 
-      <div className="btn-row" style={{ marginBottom: 8 }} role="tablist" aria-label="Build desk">
-        {BUILD_TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            className={"btn" + (tab === t.id ? " btn-on" : "")}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* THREE STEPS, DRAWN AS STEPS. They were three buttons indistinguishable
+          from every other button on the desk, so nothing said they were an
+          order, which one you were on, or that there was a third. Numbered,
+          joined, the current one lit and the ones behind you ticked. */}
+      <div className="stepper" role="tablist" aria-label="Build desk">
+        {BUILD_TABS.map((t, i) => {
+          const at = BUILD_TABS.findIndex((x) => x.id === tab);
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              className={"stepper-step" + (tab === t.id ? " on" : i < at ? " done" : "")}
+              onClick={() => setTab(t.id)}
+            >
+              <span className="stepper-n" aria-hidden="true">{i < at ? "✓" : i + 1}</span>
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {tab === "programme" && (

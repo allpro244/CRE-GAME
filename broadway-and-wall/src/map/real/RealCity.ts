@@ -117,7 +117,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail", "grate", "planter"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail", "grate", "planter", "patio", "shed", "dumpster", "trailer", "pallets"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -965,6 +965,9 @@ export function facadeSwatches(keys: string[]): Record<string, string> {
 // ---- geometry accumulation -------------------------------------------------
 
 /** Parts with fixed vertex colours, merged into one non-indexed geometry. */
+/** Lawn tones, multiplying the season's grass colour: lush, two ordinary, dry, yellowing, blue-green, sun-bleached, patchy dark. */
+const LAWN_TONES = [[0.92, 1.06, 0.88], [1, 1, 1], [1.02, 0.99, 0.95], [1.14, 1.06, 0.82], [1.22, 1.1, 0.74], [0.86, 0.98, 1.06], [1.16, 1.14, 1.0], [0.84, 0.9, 0.82]];
+
 function mergeColored(parts: [THREE.BufferGeometry, number[]][]): THREE.BufferGeometry {
   const pos: number[] = [], nrm: number[] = [], col: number[] = [];
   for (const [g0, c] of parts) {
@@ -1358,7 +1361,25 @@ export class RealCityLayer {
   private bedMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
   private meadowMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
   /** The open ground of a built lot (round 25): a mown lawn, plaza paving, a paved yard, an asphalt work yard. */
-  private lotLawnMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
+  private lotLawnMat = (() => {
+    const m = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
+    // GROUND THAT VARIES LIKE GROUND (round 28): two octaves of soft value
+    // noise in world space, tens of metres across, lighten and darken the
+    // grass across lot lines, the way sun, soil and wear vary a real city's
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vGw;")
+        .replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvGw = (modelMatrix * vec4(transformed, 1.0)).xy;");
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>
+varying vec2 vGw;
+float gH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(gH(i), gH(i + vec2(1.0, 0.0)), f.x), mix(gH(i + vec2(0.0, 1.0)), gH(i + vec2(1.0, 1.0)), f.x), f.y); }`)
+        .replace("#include <color_fragment>", `#include <color_fragment>
+{ float n = gN(vGw / 38.0) * 0.65 + gN(vGw / 11.0) * 0.35;
+  diffuseColor.rgb *= mix(vec3(0.84, 0.86, 0.9), vec3(1.12, 1.1, 0.94), n); }`);
+    };
+    return m;
+  })();
   private lotPlazaMat = new THREE.MeshStandardMaterial({ roughness: 0.8, envMapIntensity: 0.25, vertexColors: true });
   private lotPaveMat = new THREE.MeshStandardMaterial({ roughness: 0.9, envMapIntensity: 0.2, vertexColors: true });
   private lotWorkMat = new THREE.MeshStandardMaterial({ roughness: 0.95, envMapIntensity: 0.15, vertexColors: true });
@@ -4244,14 +4265,23 @@ export class RealCityLayer {
       if (!base.has(v.b) || v.z0 < base.get(v.b)!.z0) base.set(v.b, v);
       top.set(v.b, Math.max(top.get(v.b) ?? 0, v.z1));
     }
-    const lay = (B: Buf, ring: P2[], z: number, col: number[]) => {
+    // each building's ground-floor outlines, projected, counter-clockwise
+    const outlines = new Map<string, P2[][]>();
+    for (const v of this.volumes) {
+      if (!v.b || v.k || v.d || v.z0 > 0.5) continue;
+      let r = v.r.map((q) => this.project(q));
+      if (ringArea(r) < 0) r = r.slice().reverse();
+      const l = outlines.get(v.b); if (l) l.push(r); else outlines.set(v.b, [r]);
+    }
+    const lay = (B: Buf, ring: P2[], z: number, col: number[], uvOf?: (p: number[]) => number[]) => {
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { return; }
       for (const t of tris) {
         const p = t.map((i) => ring[i]);
         const cr = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
         const q = cr >= 0 ? p : [p[0], p[2], p[1]];
-        B.tri([q[0][0], q[0][1], z], [q[1][0], q[1][1], z], [q[2][0], q[2][1], z], [0, 0, 1], col);
+        if (uvOf) B.face([[q[0][0], q[0][1], z], [q[1][0], q[1][1], z], [q[2][0], q[2][1], z]], [0, 0, 1], col, uvOf);
+        else B.tri([q[0][0], q[0][1], z], [q[1][0], q[1][1], z], [q[2][0], q[2][1], z], [0, 0, 1], col);
       }
     };
     let n = 0;
@@ -4273,7 +4303,18 @@ export class RealCityLayer {
       const kind = cls === "industrial" ? "work" : cls === "office" || cls === "retail" ? "plaza" : yr < 1940 ? "pave" : "lawn";
       // no paved square dropped in the middle of a lawn (it read as a checkerboard)
       const back = kind === "work" ? "work" : "lawn";
-      { const bn = "lot:" + back, BB = this.buf(bn), b0 = BB.count; lay(BB, ring, back === "lawn" ? 0.022 : 0.02, [j, j, j]); this.note(bbl, bn, b0); }
+      {
+        const bn = "lot:" + back, BB = this.buf(bn), b0 = BB.count;
+        if (back === "lawn") {
+          // NO TWO LAWNS ALIKE (round 28): each lot its own grass, from lush to
+          // dry, blue-green to sun-bleached, and its texture turned and shifted
+          // so the pattern never lines up with the neighbour's
+          const tone = LAWN_TONES[Math.floor(hash01(k ^ 0x1a3d, 5) * LAWN_TONES.length)];
+          const a = hash01(k ^ 0x1a3e, 5) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), ox = hash01(k ^ 0x1a3f, 5) * 3, oy = hash01(k ^ 0x1a40, 5) * 3;
+          lay(BB, ring, 0.022, [tone[0] * j, tone[1] * j, tone[2] * j], (q) => [(q[0] * ca - q[1] * sa) * 0.25 + ox, (q[0] * sa + q[1] * ca) * 0.25 + oy]);
+        } else lay(BB, ring, 0.02, [j, j, j]);
+        this.note(bbl, bn, b0);
+      }
       if (kind !== back) {
         // a strip along every street front, as deep as the building stands back (capped)
         const FB = this.buf("lot:" + kind), f0 = FB.count;
@@ -4334,6 +4375,7 @@ export class RealCityLayer {
           } else this.putInst("planter", x, y, 0.02, 1, front.r, bbl);
         }
       }
+      this.backLot(bbl, ring, outlines.get(bbl) ?? [], cls, yr, k, j);
     }
     // the surfaces' textures, made once. tri() lays uv at one unit per four
     // metres, so a repeat of 4 / m makes a texture one tile per m metres
@@ -4341,6 +4383,100 @@ export class RealCityLayer {
       const tex = (t: THREE.Texture, m: number) => { t.repeat.set(4 / m, 4 / m); return t; };
       this.lotLawnMat.map = tex(this.lawnTex(), 12); this.lotPlazaMat.map = tex(this.plazaTex(), 6);
       this.lotPaveMat.map = tex(this.pavingTex(), 1.5); this.lotWorkMat.map = tex(this.parkingTex(), 5);
+    }
+  }
+
+  /**
+   * BEHIND THE BUILDING (SKYLINE_LOOK_PLAN round 27). The open ground behind a
+   * building, away from the street, was one plain surface. A real block's
+   * interior is full of what its buildings need:
+   *  - a pre-war walk-up or row house: fenced back gardens, one per house
+   *    width, each with a paved patio by the back door, a tree or shrubs, a
+   *    flower bed, now and then a shed at the bottom;
+   *  - a post-war apartment house: a parking lot behind it in marked bays
+   *    where there is the depth, else a lawn with benches under trees;
+   *  - an office or a shop: a service yard, asphalt, dumpsters by the back
+   *    door, a couple of cars, condensers on pads;
+   *  - industry: trailers and stacked pallets in the work yard.
+   * A back wall is one whose ground runs on as lot (no footway or road) for
+   * at least four metres; everything is laid in that band, square to the
+   * wall, inside the lot and clear of buildings. All of it hangs on the deed.
+   */
+  private backLot(bbl: string, lot: P2[], walls: P2[][], cls: string, yr: number, k: number, j: number) {
+    let rs = (k * 48271) % 2147483646 + 1;
+    const rnd = () => (rs = (rs * 16807) % 2147483647) / 2147483647;
+    const CARC = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34]];
+    const inLot = (x: number, y: number) => PolyGrid.inRing(lot, x, y);
+    const free = (x: number, y: number, r: number) => inLot(x, y) && this.clearOfBuildings(x, y, r);
+    const walkup = cls === "multifamily" && yr < 1940;
+    const postwar = cls === "multifamily" && yr >= 1940;
+    for (const ring of walls) for (let i = 0; i < ring.length; i++) {
+      const A = ring[i], B = ring[(i + 1) % ring.length], L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+      if (L < 6) continue;
+      const ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L, nx = uy, ny = -ux;
+      const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+      // how deep the open ground behind this wall runs, and that it is a back
+      let D = 0.5, street = false;
+      while (D < 30) { const g = this.groundAt(mx + nx * D, my + ny * D); if (g === "walk" || g === "road") { street = true; break; } if (g !== "lot" || !inLot(mx + nx * D, my + ny * D)) break; D += 0.5; }
+      if (street || D < 4) continue;
+      const at = (t: number, o: number): P2 => [A[0] + ux * t + nx * o, A[1] + uy * t + ny * o];
+      const along = Math.atan2(uy, ux);
+      if (walkup) {
+        // gardens a house wide (6-7.5 m), fenced from each other and at the bottom
+        const w = 6 + rnd() * 1.5, n = Math.max(1, Math.floor(L / w)), ww = L / n, depth = Math.min(D - 0.6, 14);
+        for (let g = 0; g <= n; g++) {
+          // the party fences, running out from the wall
+          for (let o = 1.5; o < depth - 1; o += 3) { const [x, y] = at(g * ww, o + 1.5); if (inLot(x, y)) this.putInst("fence", x, y, 0, 1, along + Math.PI / 2, bbl); }
+        }
+        for (let g = 0; g < n; g++) {
+          // the back fence
+          for (let t = g * ww + 1.5; t < (g + 1) * ww - 1; t += 3) { const [x, y] = at(t, depth); if (inLot(x, y)) this.putInst("fence", x, y, 0, 1, along, bbl); }
+          const tc = (g + 0.5) * ww;
+          // the patio by the back door
+          { const [x, y] = at(tc, 1.4); if (inLot(x, y)) this.putInst("patio", x, y, 0.02, 1, along, bbl, [0.46 + rnd() * 0.1, 0.43 + rnd() * 0.08, 0.38 + rnd() * 0.06]); }
+          const r = rnd();
+          if (r < 0.55 && depth > 6) { const [x, y] = at(tc + (rnd() - 0.5) * ww * 0.4, depth * (0.55 + rnd() * 0.25)); const sz = 0.65 + rnd() * 0.4; if (free(x, y, 2 * sz)) { this.putInst("trunk", x, y, 0, sz, rnd() * 6.28, bbl); this.putInst("crown", x, y, 0, sz, rnd() * 6.28, bbl, [0.3, 0.45, 0.2]); } }
+          else for (let b = 0; b < 2; b++) { const [x, y] = at(g * ww + 1 + rnd() * (ww - 2), depth - 1); if (free(x, y, 0.8)) this.putInst("bush", x, y, 0, 0.6 + rnd() * 0.4, rnd() * 6.28, bbl, [0.3, 0.45, 0.2], 0.8); }
+          if (rnd() < 0.5) { const [x, y] = at(tc + (rnd() < 0.5 ? -1 : 1) * ww * 0.25, depth * 0.5); if (free(x, y, 1)) this.putInst("flowerbed", x, y, 0, 0.55, 0, bbl, [0.85, 0.45 + rnd() * 0.3, 0.5]); }
+          if (rnd() < 0.3 && depth > 7) { const [x, y] = at(g * ww + 1.6, depth - 1.6); if (free(x, y, 1.4)) this.putInst("shed", x, y, 0, 1, along, bbl, [0.55 + rnd() * 0.3, 0.5 + rnd() * 0.25, 0.4 + rnd() * 0.2]); }
+        }
+      } else if (postwar || cls === "office" || cls === "retail") {
+        const service = !postwar;
+        // parking where the depth takes a row of bays (5 m) and an aisle
+        if (D >= (service ? 9 : 12) && L >= 12 && (service || rnd() < 0.7)) {
+          const P = this.buf("lot:work"), p0 = P.count, dd = Math.min(D - 0.5, service ? 14 : 20);
+          const q = (t: number, o: number) => { const [x, y] = at(t, o); return [x, y, 0.028]; };
+          P.quad(q(0.5, 0.5), q(L - 0.5, 0.5), q(L - 0.5, dd), q(0.5, dd), [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]], [j, j, j]);
+          this.note(bbl, "lot:work", p0);
+          // a row of bays at the far side, cars nose-in
+          for (let t = 2; t < L - 2; t += 2.6) {
+            if (rnd() < (service ? 0.6 : 0.3)) continue;
+            const [x, y] = at(t, dd - 2.6);
+            if (free(x, y, 1.3)) this.putInst(rnd() < 0.62 ? "lotcar" : "lotsuv", x, y, 0.03, 1, along + Math.PI / 2, bbl, CARC[(rnd() * CARC.length) | 0]);
+          }
+        } else if (postwar) {
+          // a lawn with benches under trees
+          for (let t = 4; t < L - 3; t += 9 + rnd() * 4) {
+            const [x, y] = at(t, Math.min(D * 0.5, 6)), sz = 0.8 + rnd() * 0.4;
+            if (free(x, y, 2.4 * sz)) { this.putInst("trunk", x, y, 0, sz, rnd() * 6.28, bbl); this.putInst("crown", x, y, 0, sz, rnd() * 6.28, bbl, [0.3, 0.45, 0.2]); }
+            const [bx, by] = at(t + 2.5, 1.6); if (free(bx, by, 1)) this.putInst("bench", bx, by, 0, 1, along + Math.PI, bbl);
+          }
+        }
+        if (service) {
+          // dumpsters by the back door, condensers on pads
+          const t0 = 1.5 + rnd() * Math.max(0, L - 6);
+          for (let d = 0; d < 1 + (rnd() < 0.5 ? 1 : 0); d++) { const [x, y] = at(t0 + d * 2.3, 1.3); if (free(x, y, 1)) this.putInst("dumpster", x, y, 0.02, 1, along, bbl, rnd() < 0.5 ? [0.18, 0.32, 0.2] : [0.2, 0.26, 0.42]); }
+          if (rnd() < 0.6) { const [x, y] = at(Math.min(L - 2, t0 + 6), 1.5); if (free(x, y, 1.2)) this.putInst("hvac", x, y, 0.02, 0.55, along, bbl); }
+        }
+      } else if (cls === "industrial" && D >= 8) {
+        // trailers against the wall and stacked pallets
+        for (let t = 3; t < L - 3; t += 4.5) {
+          if (rnd() < 0.45) continue;
+          const [x, y] = at(t, 7.5);
+          if (free(x, y, 1.6)) this.putInst("trailer", x, y, 0.02, 1, along + Math.PI / 2, bbl, rnd() < 0.5 ? [0.85, 0.85, 0.83] : [0.6, 0.2, 0.15]);
+        }
+        for (let p = 0; p < 3; p++) { const [x, y] = at(1 + rnd() * (L - 2), 1.6 + rnd()); if (free(x, y, 0.8)) this.putInst("pallets", x, y, 0.02, 1, along + rnd() * 0.3, bbl); }
+      }
     }
   }
 
@@ -4812,6 +4948,20 @@ export class RealCityLayer {
       case "trunk": return { g: merge([cyl(0.22, 3.4, 0, 6),
         new THREE.CylinderGeometry(0.07, 0.12, 1.8, 5).rotateX(Math.PI / 2).rotateY(0.55).translate(0.45, 0.1, 3.7),
         new THREE.CylinderGeometry(0.07, 0.12, 1.6, 5).rotateX(Math.PI / 2).rotateY(-0.6).rotateZ(1.9).translate(-0.35, 0.3, 3.6)]), mat: this.barkMat };
+      // BEHIND THE BUILDING (round 27): a back garden's patio of flags, a
+      // garden shed, a dumpster, a box trailer, stacked pallets
+      case "patio": return { g: merge([box(3.4, 2.6, 0.05)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), colored: true };
+      case "shed": return { g: mergeColored([[box(2.2, 1.8, 2.0), [0.62, 0.55, 0.45]],
+        [new THREE.ConeGeometry(1.75, 0.7, 4).rotateX(Math.PI / 2).rotateZ(Math.PI / 4).scale(1.0, 0.82, 1).translate(0, 0, 2.35), [0.32, 0.3, 0.3]],
+        [box(0.8, 0.05, 1.7, 0, -0.92, 0), [0.3, 0.24, 0.18]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true }), colored: true };
+      case "dumpster": return { g: mergeColored([[box(1.9, 1.2, 1.15), [0.6, 0.6, 0.6]], [box(2.0, 1.35, 0.08, 0, 0, 1.15), [0.15, 0.15, 0.15]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3, vertexColors: true }), colored: true };
+      case "trailer": return { g: mergeColored([[box(13.5, 2.55, 2.7, 0, 0, 1.2), [1, 1, 1]], [box(12, 2.3, 0.3, 0.6, 0, 0.9), [0.1, 0.1, 0.1]],
+        [new THREE.CylinderGeometry(0.5, 0.5, 2.4, 8).translate(-4.6, 0, 0.5), [0.05, 0.05, 0.05]], [new THREE.CylinderGeometry(0.5, 0.5, 2.4, 8).translate(-5.8, 0, 0.5), [0.05, 0.05, 0.05]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.2, vertexColors: true }), colored: true };
+      case "pallets": return { g: mergeColored([[box(1.2, 1.0, 0.15), [0.55, 0.42, 0.28]], [box(1.2, 1.0, 0.15, 0, 0, 0.2), [0.55, 0.42, 0.28]], [box(1.1, 0.9, 0.7, 0, 0, 0.35), [0.68, 0.6, 0.45]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true }) };
       // a tree pit in a plaza: a square iron grate in a granite kerb (round 25)
       case "grate": return { g: mergeColored([[box(1.6, 1.6, 0.06), [0.42, 0.41, 0.39]], [box(1.2, 1.2, 0.02, 0, 0, 0.06), [0.12, 0.12, 0.12]]]),
         mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, vertexColors: true }) };

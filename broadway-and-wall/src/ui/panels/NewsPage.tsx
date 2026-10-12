@@ -1,7 +1,13 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { NewsText } from "@/ui/panels/MarketPage";
+import { CompsSheet } from "@/ui/panels/CompsSheet";
+import { ViewSwitch, useDeskView } from "@/ui/panels/shared";
+
+type TapeView = "headlines" | "prints";
+const TAPE_VIEWS: readonly TapeView[] = ["headlines", "prints"];
 
 export const NEWS_KINDS = [
   { k: "all", label: "Everything" },
@@ -14,7 +20,31 @@ export const NEWS_KINDS = [
   { k: "mine", label: "Your book" },
 ] as const;
 
+/**
+ * THE TAPE — what happened. The wire's headlines and the closed sales are the
+ * same kind of thing, the record rather than the model, so they share a tab:
+ * the prints came over from Research, where they were the eighth sub-tab.
+ */
 export function NewsPage() {
+  const game = useStore((s) => s.game)!;
+  const [view, setView] = useDeskView<TapeView>("news", "headlines", TAPE_VIEWS);
+  const prints = (game.comps ?? []).length;
+  const switcher = (
+    <ViewSwitch<TapeView>
+      label="Tape"
+      on={view}
+      set={setView}
+      views={[
+        { id: "headlines", label: "Headlines", n: (game.news ?? []).length },
+        { id: "prints", label: "Prints", n: prints, title: "Closed sales — the price paid, the cap rate it implies, and who was on each side" },
+      ]}
+    />
+  );
+  if (view === "prints") return <div>{switcher}<CompsSheet /></div>;
+  return <Headlines switcher={switcher} />;
+}
+
+function Headlines({ switcher }: { switcher: ReactNode }) {
   const game = useStore((s) => s.game)!;
   const [kind, setKind] = useState<string>("all");
   // A deed you hold now, or sold — the story of your book includes its exits.
@@ -50,6 +80,7 @@ export function NewsPage() {
 
   return (
     <div>
+      {switcher}
       <div className="hint">
         The last {(game.news ?? []).length} items off the wire, newest first. Anything marked ✈ is about a
         specific place — a building, or a civic work. Click it and the camera goes there.

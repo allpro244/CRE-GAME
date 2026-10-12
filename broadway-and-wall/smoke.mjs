@@ -21,7 +21,7 @@ await page.waitForTimeout(600);
 
 const report = {};
 for (const [tab, needles] of Object.entries({
-  Research: ["The banks", "Cap ratio", "Appetite", "Standing"],
+  City: ["The four markets", "Value against replacement cost", "On the tape"],
   Books: ["Income statement", "Property cash flow", "Cash flow after debt", "Change in cash"],
   Portfolio: ["Assets"],
 })) {

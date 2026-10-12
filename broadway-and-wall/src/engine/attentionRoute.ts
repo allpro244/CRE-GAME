@@ -5,7 +5,7 @@
 import type { GameState } from "./types";
 
 export type AttentionPage =
-  | "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books"
+  | "none" | "portfolio" | "deals" | "market" | "players" | "economy" | "books"
   | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings"
   | "staff" | "primer";
 
@@ -14,8 +14,8 @@ export type AttentionRoute = {
   bbl?: string;
   /** Open the July auction card. */
   auction?: boolean;
-  /** Which Research tab to land on. */
-  rtab?: string;
+  /** Which view of the page to land on (e.g. Players → "street"). */
+  view?: string;
 };
 
 export function routeAttention(key: string, game: GameState | null): AttentionRoute {
@@ -75,8 +75,8 @@ export function routeAttention(key: string, game: GameState | null): AttentionRo
     return { page: "notes" };
   }
   if (head === "street-book") return { page: "market" };
-  // The entity desk lives in the rival's drawer on the Street table (Research).
-  if (head === "take-private") return { page: "research", rtab: "street" };
+  // The entity desk lives in the rival's drawer on the Street table (City → Players).
+  if (head === "take-private") return { page: "players", view: "street" };
   if (head === "auction") return { page: "market", auction: true };
   if (head === "line-over" || head === "cash-runway") return { page: "debt" };
   if (head === "cash") return { page: "books" };

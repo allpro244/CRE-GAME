@@ -14,7 +14,7 @@ import {
 import { taxAppealQuote, INCOME_TAX_RATE, NOL_SHELTER_CAP } from "@/engine/tax";
 import { compFlows } from "@/engine/comps";
 import { usd, pct } from "@/ui/format";
-import { NWChart, Big } from "@/ui/panels/shared";
+import { NWChart, Big, openViewOn } from "@/ui/panels/shared";
 import Waterfall from "@/ui/vitals/Waterfall";
 
 type BooksTab = "balance" | "pnl" | "cash";
@@ -183,7 +183,7 @@ export function BooksPage() {
                 ))}
               </div>
             )}
-            <button className="btn" onClick={() => setPage("research")}>Open Research for the full prints →</button>
+            <button className="btn" onClick={() => { openViewOn("news", "prints"); setPage("news"); }}>Open the Tape for the full prints →</button>
           </Fold>
         );
       })()}

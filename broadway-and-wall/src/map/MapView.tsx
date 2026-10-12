@@ -349,6 +349,7 @@ export default function MapView() {
       map.on("styleimagemissing", (e: { id: string }) => {
         if (e.id === "bw-grain-asphalt" && !map.hasImage(e.id)) map.addImage(e.id, groundGrain("asphalt"));
         if (e.id === "bw-grain-yard" && !map.hasImage(e.id)) map.addImage(e.id, groundGrain("yard"));
+        if (e.id === "bw-grain-setts" && !map.hasImage(e.id)) map.addImage(e.id, groundGrain("setts"));
       });
       // handle for automated playtests and screenshots
       (window as unknown as { __map?: maplibregl.Map }).__map = map;

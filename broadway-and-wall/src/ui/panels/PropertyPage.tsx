@@ -11,7 +11,7 @@ import { describePropertyEvent, propertyTimeline } from "@/engine/history";
 import { usd, sf, pctSigned } from "@/ui/format";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { AssetHistory, WorkoutDesk } from "@/ui/panels/PropertyDesks";
-import { useLabel, band, PropTab, Big, Row, occRead, occLabel, occTitle } from "@/ui/panels/shared";
+import { useLabel, band, PropTab, Big, Row, occRead, occLabel, occTitle, ShortBy } from "@/ui/panels/shared";
 
 /**
  * WHAT CAN ACTUALLY STAND ON THE LOT. Zoning's envelope is lot x FAR, but a
@@ -289,6 +289,7 @@ export function PropertyPage() {
             onClick={() => useStore.getState().appealTax(bbl)}>
             Appeal the assessment · {usd(taxAppeal.fee)}
           </button>
+          <ShortBy need={taxAppeal.fee} have={game.cash} cash />
           <div className="hint">
             The assessor follows markets up quickly and down slowly. You are paying for independent evidence;
             losing leaves the roll unchanged, and another challenge must wait three years.

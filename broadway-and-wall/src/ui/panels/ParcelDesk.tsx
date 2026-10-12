@@ -33,7 +33,7 @@ import { LettingOdds, MinDealSize, LeasingDesk, ResidualRead, LandDesk, Assemble
 import { VacantPossession, DisclosedRoll, SaleSection, OffMarketCounter, BlindBidDesk, OfferDesk, BuyButtons } from "@/ui/panels/AcquireDesk";
 import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
 import { DevelopSection, DevelopGlance, ReuseSection } from "@/ui/panels/DevelopDesk";
-import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openResearchOn, Neighbourhood, Row, STYLE_WORD } from "@/ui/panels/shared";
+import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openResearchOn, Neighbourhood, Row, STYLE_WORD, ShortBy } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
@@ -864,6 +864,13 @@ function ParcelPanelInner({
                 </button>
               );
             })()}
+            {(() => {
+              // A greyed button with its reason in a tooltip is a question
+              // the player has to hover to ask. Say it beside the button.
+              const due = payOffDue(holding.loan, game.month, game.econ);
+              if (game.facility?.bbls?.includes(selectedBBL)) return <span className="hint">Pledged to the facility — release it there first.</span>;
+              return <ShortBy need={due.due} have={fundableNow(game, parcels)} />;
+            })()}
             {(holding.loan.floating ?? holding.loan.product === "float") && !holding.loan.cap && (
               <button
                 className="btn"
@@ -1250,6 +1257,7 @@ function ParcelPanelInner({
                   Take it down · {usd(demoCost)}
                 </button>
                 <button className="btn" data-esc onClick={() => setRazeAsk(null)}>Leave it</button>
+                <ShortBy need={demoCost} have={fundableNow(game, parcels)} />
               </div>
               <div className="modal-queue">Wreckers work fast — the lot is clean dirt the same month.</div>
             </div>
@@ -1294,6 +1302,7 @@ function ParcelPanelInner({
           >
             Appeal assessment · {usd(taxAppeal.fee)}
           </button>
+          <ShortBy need={taxAppeal.fee} have={game.cash} cash />
         </div>
       )}
 
@@ -1437,6 +1446,7 @@ function LeaseholdSection({ bbl }: { bbl: string }) {
           <button className="btn" disabled={fundableNow(game, parcels) < cost} onClick={() => useStore.getState().buyLandBack(bbl)}>
             Buy the land back · {usd(cost)}
           </button>
+          <ShortBy need={cost} have={fundableNow(game, parcels)} />
         </div>
       </div>
     );
@@ -1501,6 +1511,7 @@ function StakeSection({ bbl }: { bbl: string }) {
           <button className="btn" disabled={fundableNow(game, parcels) < cost} onClick={() => useStore.getState().buyOutPartner(bbl)}>
             Buy them out · {usd(cost)}
           </button>
+          <ShortBy need={cost} have={fundableNow(game, parcels)} />
         </div>
       </div>
     );

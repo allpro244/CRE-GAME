@@ -525,3 +525,4 @@
 .app .deal .page-section { margin-top: 14px; }
 .app .topbar-vital.tstat-tight .tstat-delta,
 .app .topbar-vital.tstat-tight .tstat-of { display: none; }
+.app .hint.short-by { color: var(--text-2); align-self: center; }

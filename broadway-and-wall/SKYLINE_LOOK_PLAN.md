@@ -131,6 +131,25 @@ fixed in #231; the sweep is clean since.
   before every junction. No paint inside a junction (a disc sized to the
   crossing streets, and wherever road continues past either kerb). The old
   MapLibre lane layers are hidden once the 3D city is up.
+- **Round 19** — the roof kit. Roof plant was dropped at random spots at a
+  random angle, plain tan or orange boxes and condensers with three studs
+  (read as toy bricks). Now laid out square to the building's long wall with a
+  clear margin and no overlaps: a stair bulkhead (door, hood, vent, dark
+  membrane top in a light coping; brick-toned on brick) near the middle, a
+  lift overrun beside it from ~6 storeys, a second stair on a big floor plate,
+  a louvred plant room on an office or tower floor plate; packaged units with
+  louvred coils and flush fan grilles in a row on one side, exhaust fans on
+  the other; split condensers along a parapet; brick chimney stacks on
+  pre-war masonry; New York tanks with hoops on a braced steel deck.
+- **Round 20** — greenery. Out of leaf (November to March, and the game
+  opens in January) a tree was its summer crown painted grey: khaki blobs
+  down every street. Now the crown is cut to a lattice of twigs (an alpha
+  mask over UVs wrapped round each foliage cluster) in dark bark tones, so
+  the street shows through and the shadows are a tracery. Street trees run
+  larger and more varied (mature 10-15 m on a wide footway). An in-town empty
+  lot, MapLibre's flat lawn before, grows clumps of scrub along its edges and
+  a self-seeded tree or two (a new `bush`, the same foliage and seasons),
+  hung on the deed so they clear when it is built on.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

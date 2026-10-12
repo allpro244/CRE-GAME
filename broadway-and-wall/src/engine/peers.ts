@@ -153,7 +153,7 @@ export function cityRankings(s: GameState, townName: string): { year: number; re
   const e = s.econ;
   const pop = e.population ?? 0;
   const ago = townPopAgo(s, 120);
-  const natRentPsf = RENT_BASE.multifamily * ((e.natWageIdx ?? e.wageIdx ?? 1) / Math.max(1e-6, e.wage0 ?? e.wageIdx ?? 1));
+  const natRentPsf = RENT_BASE.multifamily * (e.priceLevel ?? 1) * ((e.natWageIdx ?? e.wageIdx ?? 1) / Math.max(1e-6, e.wage0 ?? e.wageIdx ?? 1));
   rows.push({
     name: townName, state: "", you: true,
     pop: Math.round(pop),

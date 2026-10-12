@@ -427,7 +427,7 @@ export function streetHurdle(s: GameState, plan: { yieldOnCost: number; exitCap:
     // a decade on one Frontier town, each a month's start slot spent. claimJob
     // still runs every other test (size fit, cash for the cheque, appetite).
     if (r.stressMs || !(r.cash > 0)) continue;
-    if ((s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length >= maxLiveJobs(r.style)) continue;
+    if (!canCarryAnother(s, r)) continue;
     best = Math.max(best, firmHurdle(s, r, plan, use, withOutlook));
   }
   return best;
@@ -523,11 +523,33 @@ export function jvLpTake(jv: { lp: number; gp: number; m: number } | undefined, 
   return Math.round(pref * lpFrac + (net - pref) * lpFrac * (1 - FUND_PROMOTE));
 }
 
-/** Concurrent live frames a style will carry. Developers/merchants are shops. */
-function maxLiveJobs(style: RivalStyle): number {
-  if (style === "developer" || style === "merchant") return 3;
-  if (style === "pe" || style === "opportunistic") return 2;
-  return 1;
+/**
+ * WHAT A FIRM HAS ALREADY PROMISED ITS LIVE JOBS — the equity still to be paid
+ * in on frames it has started (2026-10-12).
+ *
+ * This replaced a flat count of concurrent jobs per style (three for a
+ * developer, one for a family office, whatever its size). A real developer
+ * runs as many projects as its equity and its lenders will carry — a large
+ * shop dozens, a small one one — and nobody waits in a queue for permission.
+ * The count was standing in for a balance-sheet test the cheque checks did
+ * not make: they asked whether the firm could write the NEXT job's first
+ * draw, not whether that cash was already spoken for. So the test is now the
+ * real one: what the firm has, net of what it owes the frames it has going.
+ */
+function committedEquity(s: GameState, r: Rival): number {
+  let owed = 0;
+  for (const j of s.cityJobs ?? []) {
+    if (j.firmId === r.id && !j.orphaned) owed += Math.max(0, j.equityLeft ?? 0);
+  }
+  return owed;
+}
+/** Cash the firm can put into a new job: what it holds, less what its live jobs still need. */
+export function freeCash(s: GameState, r: Rival): number {
+  return r.cash - committedEquity(s, r);
+}
+/** Whether the firm's balance sheet can take another frame at all. */
+export function canCarryAnother(s: GameState, r: Rival): boolean {
+  return freeCash(s, r) + (r.uncalled ?? 0) > 0;
 }
 
 /**
@@ -695,8 +717,7 @@ export function claimJob(
     if (!firmWouldBuild(s, r, plan, use, financeable)) return false;
     // Jev said no to city work this period.
     if (r.jev && jevHolds(s, r, "claim")) return false;
-    const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
-    if (live >= maxLiveJobs(r.style)) return false;
+    if (!canCarryAnother(s, r)) return false;
     // A JOB HAS TO FIT THE FIRM. Nobody with twelve million of equity starts a
     // sixty-million-dollar tower, and a shop that does it anyway is not a
     // developer, it is a casualty.
@@ -705,7 +726,7 @@ export function claimJob(
     // sponsor's co-invest (sponsorShare) with the deal's investors writing the
     // rest.
     const need = Math.round(dayOneOf(r) * sponsorShare(r.style)) + Math.max(400_000, r.cash * 0.04);
-    if (r.cash + lineDrawFor(s, parcels, r, need) < need) return false;
+    if (freeCash(s, r) + lineDrawFor(s, parcels, r, need) < need) return false;
     // A firm building mostly with its own money has to HAVE it: the whole of
     // its equity, called or callable, not only the first draw.
     if (ltcOf(r) < ltc && r.cash + (r.uncalled ?? 0) < equityOf(r) * sponsorShare(r.style)) return false;
@@ -794,7 +815,7 @@ function replenishCityBuildPool(s: GameState) {
   // anything: median scheduled build 77 months for walk-ups the schedule
   // says take 22-34. Capacity is a real quantity of work per employed
   // resident, so it is priced at what work costs.
-  const costLevel = Math.max(0.35, s.econ.costIdx ?? 1);
+  const costLevel = Math.max(0.35 * (s.econ.priceLevel ?? 1), s.econ.costIdx ?? 1);
   let monthly = Math.round(Math.max(8_000_000, jobs * 90 * credit) * costLevel);
   // SUPPLY MUST ANSWER EMPLOYMENT (ECONOMY.md §F #2). When office vacancy is
   // already on the frictional rail, the space market has asked for more stock.
@@ -2210,8 +2231,7 @@ function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
  */
 function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (BUILD_APPETITE[r.style] <= 0) return;
-  const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
-  if (live >= maxLiveJobs(r.style)) return;
+  if (!canCarryAnother(s, r)) return;
   // Vacant land first; when housable floor lags employment, densify worn or
   // obsolete stock they already own — same underwrite and order book as the
   // city's teardown desk (ECONOMY.md §F #2 / CENTURY OPEN #6).
@@ -4319,7 +4339,7 @@ function disposalNet(s: GameState, r: Rival, bbl: string, px: number): number {
 
 /** The build appetite of a style (0 = never takes construction risk). */
 export const buildAppetite = (style: RivalStyle) => BUILD_APPETITE[style];
-export const liveJobCap = (style: RivalStyle) => maxLiveJobs(style);
+
 
 /** A standing building's basis to its own redeveloper — startOwnJob's opportunity cost. */
 export function redevBasis(s: GameState, r: Rival, rec: ParcelRecord): number {
@@ -4391,8 +4411,7 @@ function jevStartJob(s: GameState, parcels: ParcelTable, r: Rival): void {
   const rec = resolveRec(parcels, s, o.bbl);
   if (!rec || !r.bbls.includes(o.bbl) || s.holdings[o.bbl] || s.developments[o.bbl]
     || (s.cityJobs ?? []).some((j) => j.bbl === o.bbl) || s.listings.some((l) => l.bbl === o.bbl)) { no("the site is no longer free"); return; }
-  const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
-  if (live >= maxLiveJobs(r.style)) { no("already at the style's live-job limit"); return; }
+  if (!canCarryAnother(s, r)) { no("the firm's cash is already committed to the jobs it has going"); return; }
   const use = o.use as DevUse;
   const lead = dominantOf(devMix(use));
   if ((s.econ.startOwed?.[lead] ?? 0) <= 0) { no(`no ${lead} demand is waiting any more`); return; }

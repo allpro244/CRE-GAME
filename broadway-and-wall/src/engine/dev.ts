@@ -2735,7 +2735,7 @@ export function entitlementPremium(
 ): number {
   if (!(floorsWanted > byRight) || !(byRight > 0) || !(gsf > 0)) return 0;
   const reach = Math.min(2, (floorsWanted - byRight) / byRight);
-  const direct = gsf * ENTITLE_PSF * Math.max(0.2, costIdx) * (1 + 1.2 * reach);
+  const direct = gsf * ENTITLE_PSF * Math.max(0.05, costIdx) * (1 + 1.2 * reach);
   const months = 12 + 9 * reach;
   const carry = (Math.max(0, landBasis) + direct)
     * landCarryFactor(months);

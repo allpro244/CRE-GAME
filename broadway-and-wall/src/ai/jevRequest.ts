@@ -14,7 +14,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, DevUse, GameState } from "@/engine/types";
 import { cloneState, START_YEAR } from "@/engine/types";
 import {
-  assetGrade, buildAppetite, duressNet, gradeOf, holdClockM, lineRoom, listingOpenTo, liveJobCap,
+  assetGrade, buildAppetite, duressNet, gradeOf, holdClockM, lineRoom, listingOpenTo, canCarryAnother, freeCash,
   markAsset, markRival, redevBasis, rivalCanClose, STYLE_OF, streetDebtRatePct,
 } from "@/engine/rivals";
 import { assetValue, inPlace, landRead, occupancy, resolveRec, zoneUseBar } from "@/engine/value";
@@ -201,7 +201,7 @@ export function buildJevRequest(s0: GameState, parcels: ParcelTable, firmId: str
   }
 
   // ---------------------------------------------------------------- BUILD
-  if (jobs.length < liveJobCap(r.style) && buildAppetite(r.style) > 0) {
+  if (canCarryAnother(s, r) && buildAppetite(r.style) > 0) {
     const opts: Record<string, Text> = {};
     let sites = 0;
     const siteList = [...r.bbls].map((b) => ({ b, rec: resolveRec(parcels, s, b) }))
@@ -263,7 +263,7 @@ export function buildJevRequest(s0: GameState, parcels: ParcelTable, firmId: str
     const waiting = (["office", "retail", "multifamily", "industrial"] as BuiltClass[])
       .filter((c) => (e.startOwed?.[c] ?? 0) > 0).map((c) => USE_WORD[c]);
     questions[QID.claim] = qClaim({
-      projects_building: `${jobs.length} of at most ${liveJobCap(r.style)}`,
+      projects_building: `${jobs.length}, with ${B.money(Math.max(0, freeCash(s, r)))} of cash not already committed to them`,
       cash: B.money(r.cash),
       demand_for_new_space: waiting.length ? `tenants are waiting for new ${waiting.join(", ")}` : "no use has tenants waiting for new space",
     });

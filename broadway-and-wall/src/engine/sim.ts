@@ -213,6 +213,9 @@ export function newGame(
   if (setup?.clock === "everything" || setup?.clock === "opportunities") s.clockStops = setup.clock;
   if (setup?.brokerStops === "never") s.brokerStops = "never";
   s.econ = initEcon(s, parcels);
+  // ...and the banks are sized in this town's own dollars, which the opening
+  // only knows once the economy has drawn its price level.
+  if (parcels) s.lenders = initLenders(stockFromParcels(parcels), s.econ.priceLevel ?? 1);
   // Player principal BEFORE rivals so the principal's draws do not depend on
   // roster size — peopleRng only; s.rng untouched.
   s.principal = makePlayerPrincipal(s);

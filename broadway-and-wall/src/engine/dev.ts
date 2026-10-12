@@ -10,7 +10,7 @@ import type { BtsCommitment, BuildingDesign, BuiltClass, Contract, DevUse, Devel
 import { BUILT_CLASSES, cloneState} from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, NATURAL_VAC, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
+import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
@@ -23,7 +23,7 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, useVacantSf } from "./leasing";
-import { claimJob, jobDelivered, ownerOf, gradeOf, streetHurdle, streetHasOwnMoney, anonHurdle } from "./rivals";
+import { claimJob, jobDelivered, ownerOf, gradeOf, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
@@ -3964,15 +3964,27 @@ function developerLook(
       const top = Math.max(1, Math.min(env, dev.maxFloors));
       for (const fl of schemeFloorLadder(lead, top)) {
         const u = underwriteDevelopment(s, parcels, bbl, use, fl, plate, undefined, dev.spec, dev.ltc);
-        if (!u || (!u.financeable && !ownMoney)) continue;
-        const h = streetHurdle(s, u.plan, use, u.financeable);
+        // A developer writing most of the cheque from its own money does not
+        // need the construction desk open: when the banks will not lend, the
+        // cash-heavy ones still build what pencils.
+        if (!u || (!u.financeable && !ownMoney && dev.ltc > CASH_BUILDER_LTC)) continue;
+        // SIZE AGAINST THE MARKET: no bigger than the share of the class's
+        // stock this shop will put into one building.
+        const ownSf = u.plan.sf * (u.plan.mix?.[lead] ?? 1);
+        if (ownSf > dev.maxShare * Math.max(1, s.econ.stock?.[lead] ?? 0) && fl > 1) continue;
+        // VACANCY AT DELIVERY THIS SHOP WILL LEASE INTO, its own building
+        // and everything already in the ground included.
+        if (forwardVacancy(s.econ, lead, ownSf) > NATURAL_VAC[lead] + dev.vacTol) continue;
+        // THEIR OWN READ: yield on cost over the exit cap at the trade margin,
+        // through their rent outlook and how they read the market's direction.
+        const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum);
         if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h };
       }
     }
   }
   // Built only if the deal clears THIS developer's bar.
   if (!best || best.h < dev.bar) return false;
-  return breakCityGround(s, parcels, adjacency, best.bbl, best.rec, best.use, best.floors, best.plate, { ...opts, spec: dev.spec, ltc: dev.ltc });
+  return breakCityGround(s, parcels, adjacency, best.bbl, best.rec, best.use, best.floors, best.plate, { ...opts, spec: dev.spec, ltc: dev.ltc, decided: true });
 }
 
 /**
@@ -3999,32 +4011,75 @@ function developerLook(
  * as such; the pro forma — rent, vacancy now and at delivery, land at the
  * owner's ask, debt, cost — decides every deal.
  */
-type DeveloperProfile = { bar: number; minDemand: number; spec: number; maxFloors: number; ltc: number; uses: DevUse[] };
+type DeveloperProfile = {
+  bar: number; minDemand: number; spec: number; maxFloors: number; ltc: number; uses: DevUse[];
+  outlook: number; momentum: number; vacTol: number; maxShare: number;
+};
 function drawDeveloper(s: GameState): DeveloperProfile {
   const u = () => rng(s, "dev");
   const nrm = () => Math.sqrt(-2 * Math.log(Math.max(1e-9, u()))) * Math.cos(2 * Math.PI * u());
-  // Every trait a sliding scale; traits that travel together in the real
-  // industry are correlated through one "ambition" draw (prime ground, high
-  // spec, tall buildings), each with its own independent noise.
+  const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+  // Every trait a sliding scale. Traits that travel together in the real
+  // industry (prime ground, high spec, tall buildings, big projects) are
+  // correlated through one "ambition" draw, each with its own noise; the
+  // rest are independent, so two shops that agree on where can disagree on
+  // when.
   const ambition = u();
-  const bar = Math.exp(0.08 + 0.25 * nrm());                          // return over cost they need
-  const pref = Math.max(0, ambition + 0.25 * nrm() - 0.25);          // 0 = any lot
-  const minDemand = Math.min(0.8, pref * 0.9);                        // site quality floor (demandIdx)
+  // HOW MUCH THEY BORROW: all cash (a family office, a REIT building to hold)
+  // to a merchant builder's 75% construction loan.
+  const ltc = 0.75 * u();
+  // BAR: the margin over the trade spread they need. The hurdle already
+  // carries the trade margin (DEV_MARGIN), so 1.0 is the standard shop.
+  // Patient cash builds to a thinner spread over the cap rate than a levered
+  // merchant who must also carry the construction loan's risk (~100bp vs
+  // ~150-200bp over a ~7% cap: 0.92x to 1.07x the trade margin).
+  const bar = (0.92 + 0.2 * ltc) * Math.exp(0.20 * nrm());
+  // WHERE: a minimum site quality; ~4 in 10 take any lot.
+  const pref = Math.max(0, ambition + 0.25 * nrm() - 0.25);
+  const minDemand = Math.min(0.8, pref * 0.9);
+  // QUALITY on the build-tier scale (Value 0.15 .. Trophy 0.95).
   const spec = Math.min(0.95, Math.max(0.15, 0.15 + 0.8 * (0.6 * ambition + 0.4 * u())));
-  const maxFloors = Math.max(1, Math.round(Math.exp(Math.log(2) + Math.log(40) * Math.min(1, Math.max(0, 0.7 * ambition + 0.3 * u())))));
-  const ltc = 0.45 + 0.30 * u();                                      // how much they borrow; the rest is their cash
-  // What they build: random weights over the four types, keeping those that
-  // carry real weight — most shops do one or two things.
+  // HEIGHT: two storeys to forty.
+  const maxFloors = Math.max(1, Math.round(Math.exp(Math.log(2) + Math.log(40) * clamp01(0.7 * ambition + 0.3 * u()))));
+  // SIZE AGAINST THE MARKET: the largest share of the class's standing stock
+  // one project may be — 0.5% for a small shop to ~8% for a big one's tower.
+  const maxShare = Math.exp(Math.log(0.005) + Math.log(16) * clamp01(0.6 * ambition + 0.4 * u()));
+  // RENT OUTLOOK: the same rent read +/-10% (heterogeneous beliefs — Miller
+  // 1977; Harrison & Kreps 1978). Optimists move first, pessimists wait.
+  const outlook = Math.exp(0.10 * nrm());
+  // MOMENTUM: -1 a contrarian (builds into a falling market, when land and
+  // trades are cheap and it will deliver into the recovery) .. +1 a trend
+  // follower (extrapolates where rent is heading).
+  const momentum = 2 * u() - 1;
+  // VACANCY TOLERANCE: how far over the class's natural vacancy at delivery
+  // they will still lease into — from needing a tight market to not caring.
+  const vacTol = -0.03 + 0.18 * u();
+  // WHAT: random weights over the four types, keeping those that carry real
+  // weight — most shops do one or two things.
   const types: DevUse[] = ["multifamily", "office", "industrial", "retail"];
   const base = [0.40, 0.22, 0.20, 0.18];
   const w = types.map((_, i) => base[i] * -Math.log(Math.max(1e-9, u())));
   const top = Math.max(...w);
   const uses = types.filter((_, i) => w[i] >= 0.45 * top);
-  return { bar, minDemand, spec, maxFloors, ltc, uses };
+  return { bar, minDemand, spec, maxFloors, ltc, uses, outlook, momentum, vacTol, maxShare };
+}
+
+/**
+ * HOW A SHOP READS WHERE RENT IS HEADING: the market's own rent rule at
+ * today's vacancy (`rentDriftAt`), over the two years to delivery, weighted
+ * by their momentum — a trend follower adds it, a contrarian leans against
+ * it. Capped at +/-25% so a belief is never larger than a cycle.
+ */
+function momentumRead(s: GameState, k: BuiltClass, momentum: number): number {
+  const gap = (s.econ.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+  const drift = Math.max(-0.25, Math.min(0.25, rentDriftAt(k, gap) * 24));
+  return Math.exp(momentum * drift);
 }
 
 /** Developers SITES_PER_LOOK examines in one look — a broker's shortlist. */
 const SITES_PER_LOOK = 24;
+/** At or below this loan-to-cost a developer funds the job without the construction desk. */
+const CASH_BUILDER_LTC = 0.25;
 /**
  * HOW MANY DEVELOPERS ARE LOOKING THIS MONTH. A growing US metro delivers
  * about 1.8% of its stock a year (see `crewCapacity`), in buildings of about
@@ -4036,13 +4091,13 @@ const SITES_PER_LOOK = 24;
 function developerLooksPerMonth(e: Econ): number {
   let stock = 0;
   for (const k of BUILT_CLASSES) stock += e.stock?.[k] ?? 0;
-  return Math.max(0.5, (stock * 0.018 / 12 / TYPICAL_SF) * 4);
+  return Math.max(0.5, (stock * 0.018 / 12 / TYPICAL_SF) * 32);
 }
 
 function breakCityGround(
   s: GameState, parcels: ParcelTable, adjacency: Record<string, string[]> | null,
   bbl: string, rec: NonNullable<ParcelTable[string]>, use: DevUse, floors: number, plate: number,
-  opts?: { backdate?: number; quiet?: boolean; spec?: number; ltc?: number },
+  opts?: { backdate?: number; quiet?: boolean; spec?: number; ltc?: number; decided?: boolean },
 ): boolean {
   let sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   const lead = dominantOf(devMix(use));
@@ -4051,7 +4106,9 @@ function breakCityGround(
   // of rent (`anonHurdle`). Below that, the job goes ahead only if a named
   // firm that would build it takes it (`firmWouldBuild` in rivals.ts) —
   // otherwise it is unwound below.
-  const merchantOk = !!underwriting && anonHurdle(s, underwriting.plan, use, underwriting.financeable) >= 1;
+  // A developer who drew this deal in `developerLook` has already run it
+  // against their own bar and their own money; it is theirs to build.
+  const merchantOk = !!underwriting && (!!opts?.decided || anonHurdle(s, underwriting.plan, use, underwriting.financeable) >= 1);
   // A plan the desk will not lend on can still be built by a firm with its
   // own money; claimJob decides who, and the start unwinds if nobody does.
   if (!underwriting) return false;

@@ -181,6 +181,14 @@ fixed in #231; the sweep is clean since.
   100 m rarely go up as a plain prism (2% from 10%; tiers more likely).
   A building the player designs keeps the player's choice: the design tab's
   Crown (Setback, Wedding cake) still decides it.
+- **Round 24** — windows with real depth. The opening stopped at the
+  pane: a dark rectangle with a painted jamb. Now an unshaded pane on a
+  punched window (not curtain walls, not blinds or curtains) shows a room
+  behind it by interior mapping: each pixel follows the eye's ray into a
+  room the size of its bay and storey, 4 m deep, and takes the colour of
+  the back wall, a side wall, the floor (wood or carpet) or the ceiling,
+  dimmer with depth. It moves with the camera, so the window reads as an
+  opening. Shader only, fades out past ~320 m with the other relief.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

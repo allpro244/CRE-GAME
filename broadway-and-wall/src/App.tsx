@@ -42,6 +42,15 @@ export default function App() {
       : s.deliveryCeremony ? "delivery"
       : null;
   });
+  // How many moments wait behind the one on screen: the pill counts mounted
+  // cards, and only one moment is ever mounted.
+  const momentsWaiting = useStore((s) => {
+    if (s.popupsOff) return 0;
+    const over = !!s.game?.gameOver;
+    const n = [s.yearReviewY !== null && s.yearReviewOpen && !over, !!(s.goalCard && s.game?.goal),
+      !!(s.exitCard && !over), !!s.deliveryCeremony].filter(Boolean).length;
+    return Math.max(0, n - 1);
+  });
   useEffect(() => {
     void bootMenu();
   }, []);
@@ -77,7 +86,7 @@ export default function App() {
       {playing && <Sounds />}
       {playing && <RunRecorder />}
       {playing && !photoFrame && <PrimerOffer />}
-      {playing && !photoFrame && <CardQueue />}
+      {playing && !photoFrame && <CardQueue extra={momentsWaiting} />}
       {photoFrame && <PhotoFrameHint />}
       <Toast />
       {!playing && <StartMenu />}

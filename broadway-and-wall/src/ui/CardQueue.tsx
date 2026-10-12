@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
  * a short stack of mail. It counts the cards actually mounted on the shell,
  * so it can never disagree with what is behind the one you are reading.
  */
-export default function CardQueue() {
+export default function CardQueue({ extra = 0 }: { extra?: number }) {
   const [n, setN] = useState(0);
   useEffect(() => {
     const app = document.querySelector(".app");
@@ -42,11 +42,12 @@ export default function CardQueue() {
     mo.observe(app, { childList: true });
     return () => { mo.disconnect(); mo2.disconnect(); };
   }, []);
-  if (n < 2) return null;
+  const total = n + (n > 0 ? extra : 0);
+  if (total < 2) return null;
   return (
     <div className="card-queue" role="status" aria-live="polite">
       <span className="card-queue-dot" aria-hidden="true" />
-      {n - 1} more {n - 1 === 1 ? "card" : "cards"} after this one
+      {total - 1} more {total - 1 === 1 ? "card" : "cards"} after this one
       <span className="card-queue-key"><kbd>Esc</kbd> not now</span>
     </div>
   );

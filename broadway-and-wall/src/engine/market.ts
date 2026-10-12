@@ -2360,6 +2360,7 @@ const MOM_UNITS = 4;
 const REGION_YOUTH_SLOPE = 0.03;      // per unit of vacant-lot share over 0.2
 const REGION_SD = 0.008;              // per year, across towns
 const LOCATION_PULL = 0.04;           // per year, per unit of log cost gap
+const REGION_TREND_DECAY = Math.exp(-Math.LN2 / 240);   // the town's edge, 20-year half-life
 const AGGLOM = 0.04;                  // output elasticity to employment
 const WAGE_CURVE = -0.10;             // pay level to local unemployment (Blanchflower & Oswald 1994)
 const WAGE_GAP_HALF_M = 24;           // months for the town's pay to close half its gap to the wage-curve level
@@ -2432,6 +2433,18 @@ export function tickIndustryCycle(s: GameState) {
   if (!e.industryMom) e.industryMom = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
   if (!e.industryPhase) e.industryPhase = Object.fromEntries(SECTORS.map((k) => [k, "steady"])) as Record<Sector, "boom" | "steady" | "bust">;
   const decay = Math.exp(-Math.LN2 / IND_SHOCK_HALF_M);
+  // THE EDGE FADES (2026-10-12). A town's regional trend was drawn once at
+  // founding and ran for the whole game, so a +1.1%/yr young town was still
+  // +1.1%/yr young at year 100 and the only brake on a century of compounding
+  // growth was its own rent: measured on seed 209, regional jobs x6, and
+  // every attempt to cheapen the island (more supply, firms to the mainland)
+  // bought faster growth (x8-9) at the same real rent. Growth differentials
+  // across US states and metros persist for decades and then fade toward the
+  // nation (Blanchard & Katz 1992; Glaeser, Scheinkman & Shleifer 1995) — the
+  // West and South grew while young and slowed as they filled. A twenty-year
+  // half-life is a shape parameter from that persistence, stated as such: a
+  // boom town is a boom town for a generation.
+  if (e.regionTrend) e.regionTrend *= REGION_TREND_DECAY;
   const pull = clamp(regionalPull(e), -0.03, 0.05);
   e.regionPull = pull;
   let base = 0, wsum = 0;

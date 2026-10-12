@@ -4202,6 +4202,67 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
    * left empty grows scrub along its edges, where the mower does not reach,
    * and a self-seeded tree or two. Hung on the deed, so it clears on building.
    */
+  /**
+   * THE EDGE OF TOWN, DRESSED (round 29). An overgrown field: scrub clumps
+   * all through it, thicker toward the boundary, young self-seeded trees, a
+   * broken fence along part of the street side. An old parking lot: weeds
+   * pushing through, an abandoned car or two, a broken fence, the odd young
+   * tree at a corner. `scruff` (0 at demand 38, 1 by 8) thickens all of it.
+   */
+  private dressEdge(ring0: P2[], kind: string, k: number, bbl: string, scruff: number) {
+    const ring = ringArea(ring0) < 0 ? ring0.slice().reverse() : ring0;
+    const area = Math.abs(ringArea(ring));
+    if (area < 60) return;
+    let rs = (k * 1597334677) % 2147483646 + 1;
+    const rnd = () => (rs = (rs * 16807) % 2147483647) / 2147483647;
+    let cx = 0, cy = 0; for (const [x, y] of ring) { cx += x; cy += y; } cx /= ring.length; cy /= ring.length;
+    const R = Math.sqrt(area);
+    const inP = (x: number, y: number) => PolyGrid.inRing(ring, x, y);
+    // the broken fence along the edges: runs with gaps, now and then leaning (a twist)
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 4 || rnd() < 0.45) continue;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      for (let t = 1.5; t < L - 1.5; t += 3) {
+        if (rnd() < 0.3 + 0.2 * scruff) continue;
+        this.putInst("fence", a[0] + ux * t - uy * 0.8, a[1] + uy * t + ux * 0.8, 0.03, 1, Math.atan2(uy, ux) + (rnd() - 0.5) * 0.25 * scruff, bbl);
+      }
+    }
+    const green: number[] = [0.3, 0.45, 0.2];
+    if (kind === "field") {
+      const nb = Math.min(60, Math.floor(area / (110 - 50 * scruff)));
+      for (let i = 0; i < nb; i++) {
+        const r = ring[(rnd() * ring.length) | 0], f = rnd() < 0.55 ? 0.7 + rnd() * 0.28 : rnd();
+        const x = cx + (r[0] - cx) * f + (rnd() - 0.5) * 4, y = cy + (r[1] - cy) * f + (rnd() - 0.5) * 4;
+        if (!inP(x, y) || !this.clearOfBuildings(x, y, 1)) continue;
+        this.putInst("bush", x, y, 0, 0.8 + rnd() * 0.8, rnd() * 6.28, bbl, green, 0.8 + rnd() * 0.6);
+      }
+      const nt = Math.min(10, Math.floor(area / 600) + (rnd() < 0.5 + 0.3 * scruff ? 1 : 0));
+      for (let i = 0; i < nt; i++) {
+        const x = cx + (rnd() - 0.5) * R * 0.85, y = cy + (rnd() - 0.5) * R * 0.85, sz = 0.5 + rnd() * 0.5;
+        if (!inP(x, y) || !this.clearOfBuildings(x, y, 2.4 * sz)) continue;
+        this.putInst("trunk", x, y, 0, sz, rnd() * 6.28, bbl); this.putInst("crown", x, y, 0, sz, rnd() * 6.28, bbl, green);
+      }
+    } else {
+      // weeds through the cracks, a few cars left to rot, a young tree in a corner
+      const nw = Math.min(40, Math.floor(area / (160 - 80 * scruff)));
+      for (let i = 0; i < nw; i++) {
+        const x = cx + (rnd() - 0.5) * R, y = cy + (rnd() - 0.5) * R;
+        if (inP(x, y)) this.putInst("bush", x, y, 0.03, 0.35 + rnd() * 0.35, rnd() * 6.28, bbl, green, 0.5 + rnd() * 0.4);
+      }
+      const DULL = [[0.42, 0.4, 0.37], [0.35, 0.3, 0.26], [0.5, 0.46, 0.4], [0.3, 0.32, 0.33]];
+      const nc = rnd() < 0.6 ? 1 + Math.floor(rnd() * 3) : 0;
+      for (let i = 0; i < nc; i++) {
+        const x = cx + (rnd() - 0.5) * R * 0.7, y = cy + (rnd() - 0.5) * R * 0.7;
+        if (inP(x, y) && this.clearOfBuildings(x, y, 2.6)) this.putInst("lotcar", x, y, 0.03, 1, rnd() * 6.28, bbl, DULL[(rnd() * DULL.length) | 0]);
+      }
+      if (rnd() < 0.5 + 0.4 * scruff) {
+        const r = ring[(rnd() * ring.length) | 0], x = cx + (r[0] - cx) * 0.8, y = cy + (r[1] - cy) * 0.8, sz = 0.5 + rnd() * 0.4;
+        if (inP(x, y) && this.clearOfBuildings(x, y, 2)) { this.putInst("trunk", x, y, 0, sz, rnd() * 6.28, bbl); this.putInst("crown", x, y, 0, sz, rnd() * 6.28, bbl, green); }
+      }
+    }
+  }
+
   private dressLawnLot(ring0: P2[], bbl: string) {
     if (ring0.length < 3) return;
     const ring = ringArea(ring0) < 0 ? ring0.slice().reverse() : ring0;
@@ -4488,7 +4549,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const sigOf = this.planSignatures(topZ);
     // VACANT LOTS. Downtown a hole in the street wall is a surface car park;
     // elsewhere it is a gravel yard. Residential lots stay as MapLibre's lawn.
-    const lotPark = new Buf(), lotGravel = new Buf(), lotMeadow = new Buf(), lotCrop = new Buf();
+    const lotPark = new Buf(), lotGravel = new Buf(), lotMeadow = new Buf(), lotCrop = new Buf(), lotOld = new Buf();
     let ls = (this.seed * 4421) % 2147483646 + 1;
     const lrnd = () => (ls = (ls * 16807) % 2147483647) / 2147483647;
     const CARC = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34]];
@@ -4512,8 +4573,18 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       // cleared the day somebody builds there.
       const kk = keyOf(v.b || `${v.r[0][0]},${v.r[0][1]}`);
       const roll = hash01(kk ^ 0xfa12, this.seed);
-      const farmKind = !outskirts ? "" : roll < 0.35 ? "crop" : roll < 0.75 ? "pasture" : "scrub";
-      const B = downtown ? lotPark : farmKind === "crop" ? lotCrop : outskirts ? lotMeadow : lotGravel;
+      // THE EDGE OF TOWN (round 29). Out where demand is thin an empty lot is
+      // not a farm: it is an overgrown field, or a parking lot nobody has
+      // resurfaced in decades. The poorer the ground, the more of the lots
+      // are the old asphalt, and the rougher the grass.
+      const ds = v.ds ?? 50;
+      // (and in the working middle of town, where an empty lot used to be a
+      // bare gravel yard, it is a surface lot as often as a field)
+      const edge = downtown ? "" : roll < (ds < 22 ? 0.4 : outskirts ? 0.2 : 0.45) ? "old" : "field";
+      const farmKind = "" as string;   // (the farms went with round 29; dressFarm is kept for the fringe it may come back to)
+      // how far gone it is: tidy at demand 60, rough below 30, derelict below 22
+      const scruff = Math.max(0, Math.min(1, (60 - ds) / 45));
+      const B = downtown ? lotPark : edge === "old" ? lotOld : edge === "field" ? lotMeadow : lotGravel;
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
       // crops run in rows along the lot's long side
@@ -4526,10 +4597,12 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         for (const i of t) {
           const [x, y] = ring[i];
           const uv = farmKind === "crop" ? [(x * ld[0] + y * ld[1]) / 16, (-x * ld[1] + y * ld[0]) / 3.2] : [x / 5, y / 5];
-          B.pos.push(x, y, 0.03); B.nrm.push(0, 0, 1); B.uv.push(uv[0], uv[1]); B.col.push(1, 1, 1);
+          const fc = edge === "field" ? [1 + 0.16 * scruff, 1 + 0.04 * scruff, 1 - 0.2 * scruff] : [1, 1, 1];
+          B.pos.push(x, y, 0.03); B.nrm.push(0, 0, 1); B.uv.push(uv[0] + (kk % 97) * 0.13, uv[1] + (kk % 89) * 0.17); B.col.push(fc[0], fc[1], fc[2]);
         }
       }
       if (farmKind) this.dressFarm(ring, farmKind, kk, v.b || "", lotGravel);
+      if (edge) this.dressEdge(ring, edge, kk, v.b || "", scruff);
       if (downtown) {
         // rows of parked cars squared to the longest side
         let li = 0, ll = -1;
@@ -4547,6 +4620,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     if (lotPark.count) {
       const m = new THREE.Mesh(lotPark.geometry(), new THREE.MeshStandardMaterial({ map: this.parkingTex(), roughness: 0.9, envMapIntensity: 0.2 }));
+      m.receiveShadow = true; this.scene.add(m);
+    }
+    if (lotOld.count) {
+      const m = new THREE.Mesh(lotOld.geometry(), new THREE.MeshStandardMaterial({ map: this.oldLotTex(), roughness: 0.95, envMapIntensity: 0.12, vertexColors: true }));
       m.receiveShadow = true; this.scene.add(m);
     }
     if (lotMeadow.count) {
@@ -5604,12 +5681,46 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   }
 
   /** Rough grass on unbuilt land: tussocks, a worn path, the odd bare patch. */
+  /** Overgrown grass (round 29): green with straw, clumps of taller tussock, seed heads, bare patches (5 m tile). */
   private meadowTex(): THREE.CanvasTexture {
-    const { c, g } = makeCanvas(128, 128);
+    const N = 256;
+    const { c, g } = makeCanvas(N, N);
     let s = 613; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    g.fillStyle = "#9a9c78"; g.fillRect(0, 0, 128, 128);
-    for (let i = 0; i < 40; i++) { const v = rnd(); g.fillStyle = `rgba(${150 + v * 30 | 0},${140 + v * 20 | 0},${100},0.35)`; g.beginPath(); g.arc(rnd() * 128, rnd() * 128, 4 + rnd() * 10, 0, 6.28); g.fill(); }
-    for (let i = 0; i < 1800; i++) { const v = rnd(); g.fillStyle = `rgba(${90 + v * 50 | 0},${105 + v * 45 | 0},${60 + v * 20 | 0},0.55)`; g.fillRect(rnd() * 128, rnd() * 128, 1.5, 2.5); }
+    g.fillStyle = "#7d9358"; g.fillRect(0, 0, N, N);
+    const blob = (x: number, y: number, r: number, col: string) => {
+      for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) {
+        const gr = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+        gr.addColorStop(0, col); gr.addColorStop(1, "rgba(0,0,0,0)");
+        g.fillStyle = gr; g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+      }
+    };
+    for (let i = 0; i < 30; i++) blob(rnd() * N, rnd() * N, 20 + rnd() * 40, rnd() < 0.5 ? "rgba(170,160,95,0.35)" : "rgba(70,95,45,0.35)");
+    for (let i = 0; i < 6; i++) blob(rnd() * N, rnd() * N, 8 + rnd() * 12, "rgba(140,120,85,0.45)");
+    // tussocks: tight dark clumps with a lit top
+    for (let i = 0; i < 220; i++) { const x = rnd() * N, y = rnd() * N, r = 2 + rnd() * 4; blob(x, y, r, "rgba(55,75,35,0.55)"); blob(x - r * 0.3, y - r * 0.3, r * 0.5, "rgba(170,175,110,0.35)"); }
+    // blades and seed heads
+    for (let i = 0; i < 9000; i++) { const v = rnd(); g.fillStyle = v < 0.45 ? "rgba(50,70,30,0.3)" : v < 0.85 ? "rgba(175,180,115,0.25)" : "rgba(210,195,140,0.4)"; g.fillRect(rnd() * N, rnd() * N, 1, 2 + rnd() * 2); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    return t;
+  }
+  /** A parking lot gone to seed (round 29): faded, patched asphalt, cracks, weeds in them, ghost bay lines (5 m tile). */
+  private oldLotTex(): THREE.CanvasTexture {
+    const N = 256;
+    const { c, g } = makeCanvas(N, N);
+    let s = 9173; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    g.fillStyle = "#6e6c68"; g.fillRect(0, 0, N, N);
+    for (let i = 0; i < 18; i++) { const v = 90 + rnd() * 40 | 0; g.fillStyle = `rgba(${v},${v - 2},${v - 6},0.5)`; g.fillRect(rnd() * N, rnd() * N, 20 + rnd() * 60, 15 + rnd() * 40); }
+    for (let i = 0; i < 4000; i++) { const v = 70 + rnd() * 80 | 0; g.fillStyle = `rgba(${v},${v},${v - 4},0.35)`; g.fillRect(rnd() * N, rnd() * N, 1.5, 1.5); }
+    // ghost bay lines, broken
+    g.strokeStyle = "rgba(205,200,180,0.28)"; g.lineWidth = 2;
+    for (let x = 12; x < N; x += 26) { g.beginPath(); g.moveTo(x, 8 + rnd() * 10); g.lineTo(x, 110 - rnd() * 30); g.stroke(); g.beginPath(); g.moveTo(x, 140 + rnd() * 20); g.lineTo(x, 248 - rnd() * 20); g.stroke(); }
+    // cracks, and weeds along them
+    for (let i = 0; i < 22; i++) {
+      let x = rnd() * N, y = rnd() * N; g.strokeStyle = "rgba(35,33,30,0.7)"; g.lineWidth = 1; g.beginPath(); g.moveTo(x, y);
+      for (let k = 0; k < 8; k++) { x += (rnd() - 0.5) * 22; y += (rnd() - 0.5) * 22; g.lineTo(x, y); if (rnd() < 0.5) { g.fillStyle = "rgba(95,120,55,0.75)"; g.fillRect(x - 1.5, y - 1.5, 3 + rnd() * 3, 3 + rnd() * 3); } }
+      g.stroke();
+    }
+    for (let i = 0; i < 14; i++) { const x = rnd() * N, y = rnd() * N; g.fillStyle = "rgba(100,125,60,0.55)"; g.beginPath(); g.arc(x, y, 3 + rnd() * 7, 0, 6.28); g.fill(); }
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     return t;
   }
@@ -6825,7 +6936,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // the gardens: bare soil in winter, green rows through summer, gold at harvest
     const ripe = [0, 0, 0, 0, 0, 0, 0.1, 0.45, 0.85, 0.3, 0, 0][this.month];
     this.cropMat.color.setRGB(0.9 + vig * 0.1 + ripe * 0.35, 0.82 + vig * 0.18 + ripe * 0.15, 0.78 + vig * 0.05 - ripe * 0.3);
-    this.meadowMat.color.setRGB(0.98 - vig * 0.22, 0.95 + vig * 0.1, 0.84 - vig * 0.14);
+    // overgrown grass: straw-brown in winter, a rough green in summer
+    this.meadowMat.color.setRGB(1.2 - vig * 0.22, 1.05 - vig * 0.09, 0.8 - vig * 0.12);
     // a mown lawn: dormant straw-green in winter, full green in summer
     // (lit by the sun, unlike the flat park fill, so it is set darker to read a step below a park)
     this.lotLawnMat.color.setRGB(0.27 - vig * 0.07, 0.26 + vig * 0.03, 0.17 - vig * 0.05);

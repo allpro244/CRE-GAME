@@ -296,6 +296,60 @@ function StockVsLeased({ tail, live, xFrom, xTo, spanYrs }: {
   );
 }
 
+/**
+ * THE REST OF THE STAT STRIP, WITH ITS HISTORY. The credit window, employment,
+ * build costs and land index were printed as today's number only, though
+ * recordHistory has been writing every one of them monthly. Each chart is
+ * drawn on the strip's own scale (x100, or % for the window), so the number in
+ * the tile is the last point on the line. creditIdx, employIdx and costIdx are
+ * optional on old saves, so each series starts at its first recorded month
+ * instead of drawing a fake level before it existed.
+ */
+function MacroCharts({ hist }: { hist: EconHistoryPoint[] }) {
+  const cell = (
+    title: string,
+    color: string,
+    get: (p: EconHistoryPoint) => number | undefined,
+    note: string,
+    fmt: (v: number) => string = (v) => v.toFixed(0),
+    bands: { at: number; label?: string }[] = [],
+  ) => {
+    const start = hist.findIndex((p) => get(p) !== undefined);
+    const pts = start < 0 ? [] : hist.slice(start);
+    return (
+      <div className="chart-cell">
+        <div className="chart-title">{title}</div>
+        {pts.length < 2 ? (
+          <div className="hint">Not enough history yet — advance a few quarters.</div>
+        ) : (
+          <LineChart
+            height={108}
+            series={[{ label: title, color, pts: pts.map((p) => (get(p) ?? 0) * 100) }]}
+            bands={bands}
+            yFmt={fmt}
+            xLabels={[monthLabel(pts[0].q), monthLabel(pts[pts.length - 1].q)]}
+            xAt={(i) => monthLabel(pts[i]?.q ?? 0)}
+          />
+        )}
+        <div className="chart-note">{note}</div>
+      </div>
+    );
+  };
+  return (
+    <div className="chart-grid">
+      {cell("Credit window", "#5a4f8a", (p) => p.creditIdx,
+        "How far the banks are open. Below 70% is a shut window: fewer quotes, lower proceeds and wider spreads on whatever does get written.",
+        (v) => `${v.toFixed(0)}%`, [{ at: 70, label: "tight" }])}
+      {cell("Employment", "#2f6f7a", (p) => p.employIdx,
+        "How many workers the city's firms want, 100 at the start — the driver behind leasing velocity. Occupied space chases it with a lag.")}
+      {cell("Build costs", "#8a5620", (p) => p.costIdx,
+        "Construction and operating cost index. A development budget is struck at this level, and salaries are billed at it.")}
+      {cell("Land index", "#7a5c1e", (p) => p.landIdx,
+        "Land values. The level is the town's own; the moves are what matter, because every site you price and every appraisal leans on them.")}
+    </div>
+  );
+}
+
 export function EconomyPage() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -444,6 +498,27 @@ export function EconomyPage() {
     depression: "Empty space is still winning. This is not healing — it is a glut that has not cleared.",
   }[e.phase];
 
+  // THE WINDOW SWITCH, and it only exists when it can do something.
+  // Below month 240 the whole record IS the last twenty years, and a
+  // control that redraws the identical chart is worse than no control —
+  // it teaches the player that the button does nothing. It is drawn twice,
+  // over the money charts at the top and over the market charts below, and
+  // both copies drive the one `span`: the reader should not have to scroll
+  // past the space market to find the control for the chart they are on.
+  const spanSwitch = (lead: string) => hist.length > SPAN_M && (
+    <div className="btn-row" style={{ marginTop: 10, alignItems: "baseline" }}>
+      <span className="hint" style={{ marginRight: 4 }}>{lead}</span>
+      <button className={"btn" + (span === "20y" ? " btn-on" : "")} onClick={() => setSpan("20y")}
+        title="The last twenty years — about one and a half cycles.">
+        the last 20 years
+      </button>
+      <button className={"btn" + (span === "all" ? " btn-on" : "")} onClick={() => setSpan("all")}
+        title="Every month since the game began.">
+        all {Math.round((hist.length - 1) / 12)} years
+      </button>
+    </div>
+  );
+
   const pctFmt = (v: number) => `${v.toFixed(1)}%`;
   // square feet at whatever magnitude the data actually is — a 40,000 sf
   // pipeline printed as "0.0M" four times is not a chart, it is a blank
@@ -491,24 +566,26 @@ export function EconomyPage() {
       {hist.length > 8 && (
         <div className="page-section" style={{ marginTop: 12 }}>
           <div className="page-section-head">What money has cost</div>
+          {spanSwitch("These charts show")}
           <LineChart
             height={132}
             series={[
-              { label: "Base rate %", color: "#8a4b2a", pts: hist.map((p) => p.indexRate) },
-              ...(hist.some((p) => p.rateRegime !== undefined)
+              { label: "Base rate %", color: "#8a4b2a", pts: tail.map((p) => p.indexRate) },
+              ...(tail.some((p) => p.rateRegime !== undefined)
                 ? [{ label: "Long-run rate %", color: "#8b8370", dashed: true,
-                     pts: hist.map((p) => p.rateRegime ?? p.indexRate) }]
+                     pts: tail.map((p) => p.rateRegime ?? p.indexRate) }]
                 : []),
             ]}
             yFmt={(v) => v.toFixed(1) + "%"}
-            xLabels={[monthLabel(hist[0].q), monthLabel(hist[hist.length - 1].q)]}
-            xAt={(i) => monthLabel(hist[i]?.q ?? 0)}
+            xLabels={[monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)]}
+            xAt={(i) => monthLabel(tail[i]?.q ?? 0)}
           />
           <div className="hint">
             Every loan in town prices off the solid line. Where it sits against the dashed one is
             whether today is a cheap-money year inside a dear-money era, or the other way round —
             and that is the difference between fixing and floating.
           </div>
+          <MacroCharts hist={tail} />
         </div>
       )}
 
@@ -644,23 +721,7 @@ export function EconomyPage() {
         })()}
       </div>
 
-      {/* THE WINDOW SWITCH, and it only exists when it can do something.
-          Below month 240 the whole record IS the last twenty years, and a
-          control that redraws the identical chart is worse than no control —
-          it teaches the player that the button does nothing. */}
-      {hist.length > SPAN_M && (
-        <div className="btn-row" style={{ marginTop: 10, alignItems: "baseline" }}>
-          <span className="hint" style={{ marginRight: 4 }}>Every chart below shows</span>
-          <button className={"btn" + (span === "20y" ? " btn-on" : "")} onClick={() => setSpan("20y")}
-            title="The last twenty years — about one and a half cycles.">
-            the last 20 years
-          </button>
-          <button className={"btn" + (span === "all" ? " btn-on" : "")} onClick={() => setSpan("all")}
-            title="Every month since the game began.">
-            all {Math.round((hist.length - 1) / 12)} years
-          </button>
-        </div>
-      )}
+      {spanSwitch("Every chart below shows")}
 
       {/* ---- the general view: the city's six series, or one class in depth ---- */}
       {(sel === "general" || isClass) && (

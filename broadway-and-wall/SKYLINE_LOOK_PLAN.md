@@ -110,3 +110,7 @@ frame; in play it is cached while the camera holds still. A quality ×
 time-of-day sweep (seeds 101, 2024, 31337, 777; High and Medium; day and
 night) found one crash — `lotMassing` reading past the end of a lot outline —
 fixed in #231; the sweep is clean since.
+- **Round 15** — canal and slip water a stained teal (`CANAL_WATER`) with a
+  weaker sky reflection: at full strength every canal read flat royal blue
+  beside a turquoise sea. Judged on a default-size town (seed 101), the city
+  most players start in.

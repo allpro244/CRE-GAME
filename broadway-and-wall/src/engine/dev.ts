@@ -3448,9 +3448,16 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // fabric around the towers (141-168 buildings in the ring 300-450 m out,
     // on land at $1,700-15,000/sf) stood for a century. Ten candidates a
     // pass, in the order of the teardown score above.
-    if (examinedRedev++ >= 10) break;
+    void examinedRedev;
     const opportunityCost = redevelopmentBasis(rec, e, gradeOf(s, rec));
+    // THE SAME DEVELOPERS AS ON VACANT DIRT (2026-10-12): each candidate is
+    // looked at by one shop drawn from the same population (`drawDeveloper`),
+    // on its own spec, leverage, outlook and bar. A built-out city grows
+    // through this path, so it cannot answer to one fixed hurdle while the
+    // vacant lots answer to the whole spread of appetites.
+    const rdev = drawDeveloper(s);
     let bestU: ReturnType<typeof underwriteDevelopment> = null;
+    let bestH = -Infinity;
     for (const k of BUILT_CLASSES) {
       if (!zonePermits(rec.zoneDist, k, rec.demandScore, e)) continue;
       const plate = cityCoverage(k);
@@ -3468,9 +3475,12 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
       for (const fl of schemeFloorLadder(k, env)) {
         if (rec.lotArea * plate * fl < oldSf * 1.08) continue;
         if (fl > 1 && rec.lotArea * plate * fl - standsAsK > Math.max(owedK, rec.lotArea * plate)) continue;
-        const u = underwriteDevelopment(s, parcels, bbl, k, fl, plate, opportunityCost);
-        if (!u?.clears) continue;
-        if (!bestU || u.plan.hurdleRatio > bestU.plan.hurdleRatio) { bestU = u; nextUse = k; lead = k; }
+        const u = underwriteDevelopment(s, parcels, bbl, k, fl, plate, opportunityCost, rdev.spec, rdev.ltc);
+        if (!u || (!u.financeable && rdev.ltc > CASH_BUILDER_LTC)) continue;
+        if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1)) > NATURAL_VAC[k] + rdev.vacTol) continue;
+        const h = hurdleAt(u.plan, DEV_MARGIN) * rdev.outlook * momentumRead(s, k, rdev.momentum) / rdev.bar;
+        if (h < 1) continue;
+        if (!bestU || h > bestH) { bestU = u; bestH = h; nextUse = k; lead = k; }
       }
     }
     if (!bestU) continue;
@@ -3504,7 +3514,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     outcome: `${rec.yearBuilt || "Older"} building cleared for ${nextUse}`,
   });
 
-  (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog });
+  (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog, spec: plan.spec });
   recordPropertyEvent(s, bbl, {
     kind: "build-start",
     use: nextUse,

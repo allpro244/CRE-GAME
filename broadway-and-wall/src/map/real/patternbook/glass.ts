@@ -82,47 +82,7 @@ const dsOver = (skin: RGB, a: number, walk: RGB, frit = false): Painter => (g, w
   shimmer(g, w, h, (x, y) => 1 + 0.1 * Math.sin(TAU * (x + y) / 256));
 };
 
-/** Dichroic glass (over the panes and spandrels alike): laminated panels whose colour slides from one hue to the next across the panel. */
-const dichroOver = (cols: RGB[], a: number): Painter => (g, _w, _h) => {
-  const n = cols.length, pw = T / 2;
-  g.globalCompositeOperation = "color";
-  for (const [bx, by] of CELLS) for (let i = 0; i < 2; i++) {
-    const ox = bx * T + i * pw, oy = by * T, ph = (bx * 2 + i + by * 3) % n;
-    const gr = g.createLinearGradient(ox, oy, ox + pw * 1.6, oy + T);
-    gr.addColorStop(0, rgba(cols[ph], a)); gr.addColorStop(0.5, rgba(cols[(ph + 1) % n], a)); gr.addColorStop(1, rgba(cols[(ph + 2) % n], a));
-    g.fillStyle = gr; g.fillRect(ox, oy, pw, T);
-  }
-  g.globalCompositeOperation = "screen";
-  for (const [bx, by] of CELLS) for (let i = 0; i < 2; i++) {
-    const ox = bx * T + i * pw, oy = by * T, ph = (bx * 2 + i + by * 3 + 1) % n;
-    const gr = g.createLinearGradient(ox + pw, oy, ox, oy + T);
-    gr.addColorStop(0, rgba(cols[ph], 0.2)); gr.addColorStop(0.6, rgba(cols[ph], 0)); gr.addColorStop(1, rgba(cols[(ph + 1) % n], 0.18));
-    g.fillStyle = gr; g.fillRect(ox, oy, pw, T);
-  }
-  g.globalCompositeOperation = "source-over";
-  // each panel's lit edge and shadowed edge, and the slab joint
-  for (const [bx, by] of CELLS) {
-    for (let i = 0; i < 2; i++) { const x = bx * T + i * pw; g.fillStyle = "rgba(255,255,255,0.45)"; g.fillRect(x, by * T, 1, T); g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(x + pw - 1.5, by * T, 1.5, T); }
-    g.fillStyle = "rgba(0,0,0,0.4)"; g.fillRect(bx * T, by * T + T * 0.9, T, 2);
-  }
-};
 
-/** Structural silicone glazing (after the glass): no caps, only hairline joints, and the sky broken in long ripples across the sheet. */
-const flushOver = (w0: Win): Painter => (g, w, h) => {
-  for (const [bx, by] of CELLS) {
-    const r = winAt(w0, bx, by);
-    g.fillStyle = "rgba(12,16,20,0.5)";
-    g.fillRect(bx * T, by * T, 1.2, T); g.fillRect(bx * T, by * T, T, 1.2); g.fillRect(bx * T, r.y1, T, 1.2);
-  }
-  shimmer(g, w, h, (x, y) => 1 + 0.16 * Math.sin(TAU * (x + 2 * y) / 256) + 0.07 * Math.sin(TAU * (3 * x - y) / 256));
-};
-/** The spandrel of a flush wall: a shadow box behind the same glass, barely darker than the vision panes. */
-const shadowBox = (c: RGB): Painter => (g, w, h) => {
-  const gr = g.createLinearGradient(0, 0, 0, T);
-  gr.addColorStop(0, rgb(c, 0.9)); gr.addColorStop(1, rgb(c, 0.72));
-  for (let by = 0; by < 2; by++) { g.save(); g.translate(0, by * T); g.fillStyle = gr; g.fillRect(0, 0, w, T); g.restore(); }
-  void h;
-};
 
 /** Gold reflective glass (after the glass): a metallic warm sheen with a hard sun glint running across the tower. */
 const goldOver = (glint: number): Painter => (g, w, h) => {
@@ -235,52 +195,6 @@ const stripWall = (spand: RGB, band: RGB): Painter => (g, w, h, _rnd, pc) => {
   void h;
 };
 
-/** A thin pale slab edge between storey-high panes of low-iron glass. */
-const slabEdge = (c: RGB): Painter => (g, w, h) => {
-  g.fillStyle = rgb(c); g.fillRect(0, 0, w, h);
-  for (let by = 0; by < 2; by++) { g.fillStyle = rgb(c, 0.55); g.fillRect(0, by * T + T - 2, w, 2); }
-};
-/**
- * The rooms behind ultra-clear glass (after the glass): the ceiling and its
- * lights, the back wall, a column, the floor and what stands on it — an
- * office, a flat, a gallery — at the low opacity a clear pane shows them.
- */
-const roomsOver = (w0: Win, kind: "office" | "flat" | "gallery" | "dusk"): Painter => (g, _w, _h, rnd) => {
-  const warm = kind === "dusk" || kind === "flat";
-  for (const [bx, by] of CELLS) {
-    const r = winAt(w0, bx, by), ww = r.x1 - r.x0, wh = r.y1 - r.y0, cy = r.y0 + wh * 0.16, fy = r.y0 + wh * 0.84;
-    // ceiling plane, back wall, floor
-    g.fillStyle = kind === "gallery" ? "rgba(250,250,248,0.5)" : warm ? "rgba(236,214,180,0.32)" : "rgba(226,232,236,0.36)";
-    g.fillRect(r.x0, r.y0, ww, cy - r.y0);
-    g.fillStyle = kind === "gallery" ? "rgba(244,244,240,0.42)" : kind === "dusk" ? "rgba(200,150,96,0.3)" : warm ? "rgba(216,196,170,0.28)" : "rgba(170,182,190,0.24)";
-    g.fillRect(r.x0, cy + wh * 0.08, ww, fy - cy - wh * 0.08);
-    g.fillStyle = kind === "flat" ? "rgba(120,86,60,0.4)" : "rgba(150,150,146,0.4)"; g.fillRect(r.x0, fy, ww, r.y1 - fy);
-    g.fillStyle = "rgba(0,0,0,0.3)"; g.fillRect(r.x0, fy, ww, 1.5); g.fillRect(r.x0, cy, ww, 1);
-    // the lights
-    if (kind === "office" || kind === "gallery") for (const k of [0.35, 0.75]) { g.fillStyle = "rgba(255,255,246,0.85)"; g.fillRect(r.x0 + 6, r.y0 + (cy - r.y0) * k, ww - 12, 2); }
-    else for (let i = 0; i < 2; i++) { g.fillStyle = "rgba(255,214,150,0.85)"; g.beginPath(); g.arc(r.x0 + ww * (0.3 + 0.4 * i), cy + 6, 2.5, 0, TAU); g.fill(); }
-    // a column somewhere in the bay
-    const colX = r.x0 + ww * (0.15 + 0.7 * rnd());
-    g.fillStyle = kind === "gallery" ? "rgba(255,255,255,0.4)" : "rgba(214,216,214,0.36)"; g.fillRect(colX, cy, 7, fy - cy);
-    g.fillStyle = "rgba(0,0,0,0.12)"; g.fillRect(colX + 5, cy, 2, fy - cy);
-    // what is in the room
-    if (kind === "office") {
-      for (let x = r.x0 + 6; x < r.x1 - 26; x += 34) {
-        g.fillStyle = "rgba(230,230,226,0.55)"; g.fillRect(x, fy - 16, 26, 3);
-        g.fillStyle = "rgba(40,44,50,0.55)"; g.fillRect(x + 8, fy - 25, 10, 8); g.fillRect(x + 4, fy - 13, 2, 13); g.fillRect(x + 21, fy - 13, 2, 13);
-      }
-    } else if (kind === "gallery") {
-      for (let i = 0; i < 2; i++) { const c = [[180, 60, 50], [40, 80, 140], [220, 180, 60], [30, 30, 30]][(i + bx + 2 * by) % 4] as RGB; g.fillStyle = rgba(c, 0.55); g.fillRect(r.x0 + ww * (0.15 + 0.45 * i), cy + wh * 0.22, ww * 0.22, wh * 0.26); }
-      g.fillStyle = "rgba(40,40,44,0.45)"; g.fillRect(r.x0 + ww * 0.55, fy - 22, 4, 22); g.beginPath(); g.arc(r.x0 + ww * 0.55 + 2, fy - 25, 3.5, 0, TAU); g.fill();
-    } else {
-      // a sofa, a plant, a curtain drawn to one side
-      g.fillStyle = kind === "dusk" ? "rgba(90,60,44,0.55)" : "rgba(110,110,104,0.5)"; g.fillRect(r.x0 + ww * 0.2, fy - 14, ww * 0.38, 14);
-      g.fillStyle = "rgba(50,96,52,0.6)"; g.beginPath(); g.arc(r.x0 + ww * 0.78, fy - 18, 8, 0, TAU); g.fill();
-      g.fillStyle = "rgba(90,60,40,0.6)"; g.fillRect(r.x0 + ww * 0.78 - 4, fy - 10, 8, 10);
-      g.fillStyle = "rgba(244,238,224,0.6)"; g.fillRect(bx % 2 ? r.x1 - 12 : r.x0, r.y0, 12, wh);
-    }
-  }
-};
 
 /**
  * Terra-cotta baguettes over glass (after the glass): ceramic rods on steel
@@ -358,62 +272,7 @@ const boxOver = (w0: Win, c: RGB, d: number, grain = false): Painter => (g, _w, 
   }
 };
 
-/**
- * A perforated metal screen (after the glass): sliding panels two to a bay,
- * some slid open, punched with holes whose size draws a pattern across the
- * whole elevation. The screen is the accent; the holes show the dark behind.
- */
-const perfOver = (c: RGB, square: boolean, pat: number, open: number[], pitch = 6): Painter => (g, _w, _h, _rnd, pc) => {
-  const size = (x: number, y: number) => {
-    if (pat === 0) return 0.5 + 0.5 * Math.sin(TAU * (y / 128 + x / 256));
-    if (pat === 1) { const t = ((x + y) / 256) % 1; return 1 - Math.abs(t * 2 - 1); }
-    if (pat === 2) return 0.5 + 0.25 * Math.sin(TAU * x / 128) + 0.25 * Math.sin(TAU * y / 64);
-    const dx = (x % 128) - 64, dy = (y % 128) - 64; return Math.max(0, 1 - Math.hypot(dx, dy) / 80);
-  };
-  for (const [bx, by] of CELLS) for (let i = 0; i < 2; i++) {
-    const p = bx * 2 + i + by * 4;
-    if (open.includes(p)) continue;
-    const px = bx * T + i * 64, oy = by * T;
-    g.fillStyle = "rgba(0,0,0,0.3)"; g.fillRect(px + 3, oy + 2, 64, T - 2);
-    fillBoth(g, pc, rgb(c), MK_ACC, px + 1, oy + 1, 62, T - 2);
-    g.fillStyle = rgb(c, 1.15); g.fillRect(px + 1, oy + 1, 1.2, T - 2);
-    g.fillStyle = rgb(c, 0.75); g.fillRect(px + 62, oy + 1, 1, T - 2);
-    relief(pc, "#ffffff", px + 1, oy + 1, 62, T - 2);
-    for (let y = oy + 4; y < oy + T - 3; y += pitch) for (let x = px + 4; x < px + 61; x += pitch) {
-      const r = 0.35 + (pitch * 0.42) * size(x, y);
-      for (const gg of pc ? [g, pc.m] : [g]) {
-        gg.fillStyle = gg === g ? "rgba(16,20,24,0.88)" : "#000000";
-        if (square) gg.fillRect(x - r, y - r, 2 * r, 2 * r); else { gg.beginPath(); gg.arc(x, y, r, 0, TAU); gg.fill(); }
-      }
-    }
-  }
-};
 
-/** Open-weave brick: a screen of bricks with every other one left out, the dark (and a lamp or two) behind it; a solid soldier course at each floor (trim). */
-const weaveWall = (base: RGB, mortar: RGB, diag: boolean): Painter => (g, w, h, rnd, pc) => {
-  g.fillStyle = "#1e1b19"; g.fillRect(0, 0, w, h);
-  for (let i = 0; i < 6; i++) {
-    const x = rnd() * w, y = rnd() * h, gr = g.createRadialGradient(x, y, 0, x, y, 30);
-    gr.addColorStop(0, "rgba(255,196,120,0.22)"); gr.addColorStop(1, "rgba(255,196,120,0)"); g.fillStyle = gr; g.fillRect(x - 30, y - 30, 60, 60);
-  }
-  if (pc) { pc.hg.fillStyle = "#303030"; pc.hg.fillRect(0, 0, w, h); }
-  for (let y = 0, r = 0; y < h; y += 6, r++) {
-    const solid = y % T >= T - 12;
-    if (solid) {
-      for (let x = 0; x < w; x += 6) { const v = 0.88 + rnd() * 0.16; fillBoth(g, pc, rgb(base, v * 0.95), MK_TRIM, x + 0.5, y, 5, 6); }
-      relief(pc, "#ffffff", 0, y, w, 6);
-      continue;
-    }
-    const off = diag ? (r * 6) % 24 : (r % 2) * 12;
-    for (let x = off - 24; x < w; x += 24) {
-      const v = 0.86 + rnd() * 0.22;
-      g.fillStyle = rgb(mortar); g.fillRect(x - 1, y + 5, 18, 1);
-      g.fillStyle = rgb(base, v); g.fillRect(x, y, 16, 5);
-      g.fillStyle = rgb(base, v * 1.15); g.fillRect(x, y, 16, 1);
-      relief(pc, "#ffffff", x, y, 16, 5);
-    }
-  }
-};
 
 /** Glazed ceramic tile: small glossy tiles in a mix of one colour's glazes, each with its own sheen. */
 const tileWall = (cols: RGB[], tw: number, th: number, joint = "#d6d4ce", sparse = 0): Painter => (g, w, h, rnd) => {
@@ -647,10 +506,8 @@ const copperWall = (c: RGB, patina: RGB | null, amt: number, seam: boolean): Pai
 const MULLION = ["#c4c8cc", "#3a3c3e", "#222324", "#5a4630", "#f1ede4", "#8c9298"];
 
 const W_DS: Win = { x0: 0.02, x1: 0.98, y0: 0.13, y1: 0.99 };
-const W_FLUSH: Win = { x0: 0.004, x1: 0.996, y0: 0.24, y1: 0.996 };
 const W_SAW: Win = { x0: 0.01, x1: 0.99, y0: 0.1, y1: 0.99 };
 const W_SUN: Win = { x0: 0.03, x1: 0.97, y0: 0.12, y1: 0.99 };
-const W_LOW: Win = { x0: 0.006, x1: 0.994, y0: 0.05, y1: 0.995 };
 const W_COR: Win = { x0: 0.32, x1: 0.68, y0: 0.14, y1: 0.86 };
 const W_COR2: Win = { x0: 0.16, x1: 0.84, y0: 0.2, y1: 0.82 };
 const W_CHAR: Win = { x0: 0.26, x1: 0.74, y0: 0.22, y1: 0.84 };
@@ -677,42 +534,6 @@ export const BOOK_GLASS: BookEntry[] = [
     style: "futurist",
     picker: { group: "glass", name: "Double-skin glass", era: "2000-today", maxFloors: 99, variants: ["Clear, steel catwalks", "Green-edged skin", "Fritted skin", "Bronze catwalks"] },
     city: [{ share: 0.12, from: 2000, minH: 50, cls: ["office"] }],
-  },
-  // DICHROIC GLASS, 2010-today: laminated panels whose film throws back one
-  // colour and lets through another, so the wall turns cyan, violet and gold
-  // as the sun and the passer-by move — the art-wall tower of the 2010s.
-  {
-    key: "dichroic", like: "blueglass",
-    spec: { bayW: 1.5, floorH: 4.0, masonry: false, glass: true, win: { x0: 0.02, x1: 0.98, y0: 0.12, y1: 0.99 }, wall: tintedGlassFlat([40, 52, 70]),
-      over: dichroOver([[40, 210, 230], [210, 60, 200], [240, 200, 60]], 0.48),
-      glassCol: "#7aa0c0", frameCol: "#cfd6dc", wallRough: 0.25, glassRough: 0.04, glassMetal: 0.55, reveal: 1.0 },
-    variants: [
-      { over: dichroOver([[140, 70, 220], [240, 180, 50], [40, 190, 170]], 0.48) },
-      { over: dichroOver([[40, 200, 110], [40, 110, 230], [150, 60, 210]], 0.48), glassCol: "#6a9ab0" },
-      { over: dichroOver([[250, 120, 40], [240, 80, 140], [250, 200, 80]], 0.45), glassCol: "#a0a8b8", frameCol: "#e2e2e0" },
-    ],
-    tints: [[1, 1, 1], [0.96, 1.0, 1.04], [1.04, 1.0, 0.96]],
-    palette: P(0, [], 0, [], 0.35, ["#c4c8cc", "#3a3c3e", "#f1ede4"]),
-    style: "futurist",
-    picker: { group: "glass", name: "Dichroic glass", era: "2010-today", maxFloors: 99, variants: ["Cyan, magenta, gold", "Violet and gold", "Green to blue", "Sunset"] },
-    city: [{ share: 0.08, from: 2010, minH: 40, cls: ["office", "multifamily"] }],
-  },
-  // FLUSH STRUCTURAL GLAZING, 1990-today: the glass silicone-bonded to the
-  // frame from behind, no caps, no visible mullion — only hairline joints and
-  // the sky running across the tower unbroken.
-  {
-    key: "flushglass", like: "silverglass",
-    spec: { bayW: 1.6, floorH: 4.0, masonry: false, glass: true, win: W_FLUSH, wall: shadowBox([96, 118, 134]), over: flushOver(W_FLUSH),
-      glassCol: "#8eaabb", frameCol: "#6e8698", wallRough: 0.2, glassRough: 0.03, glassMetal: 0.95, reveal: 0.6 },
-    variants: [
-      { wall: shadowBox([74, 80, 86]), glassCol: "#6c757e", frameCol: "#565e66" },
-      { wall: shadowBox([70, 118, 110]), glassCol: "#78aca2", frameCol: "#5e8c84" },
-      { wall: shadowBox([130, 128, 120]), glassCol: "#c2c0b6", frameCol: "#a09e96" },
-    ],
-    tints: [[1, 1, 1], [0.95, 0.97, 1.02], [1.02, 1.0, 0.97]],
-    palette: P(0.12, ["#5e7484", "#4a545c", "#56706a"], 0, [], 0, []),
-    picker: { group: "glass", name: "Flush glazing", era: "1990-today", maxFloors: 99, variants: ["Silver-blue", "Graphite", "Sea green", "Warm silver"] },
-    city: [{ share: 0.16, from: 1990, minH: 40 }],
   },
   // GOLD REFLECTIVE GLASS, 1975-1992: a film of real gold in the glass, the
   // bank tower of the oil-boom downtown blazing yellow at sunset.
@@ -797,23 +618,6 @@ export const BOOK_GLASS: BookEntry[] = [
     picker: { group: "glass", name: "Strip glazing", era: "1958-1980", maxFloors: 40, variants: ["Black, white bands", "White, black bands", "Charcoal and aluminium", "Navy and white"] },
     city: [{ share: 0.18, from: 1958, to: 1980, maxH: 150 }],
   },
-  // LOW-IRON GLASS, 2015-today: ultra-clear, storey-high and barely framed,
-  // so the tower shows its rooms — ceilings, columns, desks — and every slab
-  // edge reads as a thin pale line.
-  {
-    key: "lowiron", like: "glass",
-    spec: { bayW: 1.6, floorH: 4.0, masonry: false, glass: true, win: W_LOW, wall: slabEdge([222, 224, 222]), over: roomsOver(W_LOW, "office"),
-      glassCol: "#a8bcc4", frameCol: "#d4d8da", wallRough: 0.5, glassRough: 0.02, glassMetal: 0.4, reveal: 0.8 },
-    variants: [
-      { over: roomsOver(W_LOW, "flat"), glassCol: "#b0bcbe" },
-      { over: roomsOver(W_LOW, "gallery"), glassCol: "#c0ccd0", frameCol: "#f0f0ee" },
-      { over: roomsOver(W_LOW, "dusk"), glassCol: "#8a9ca6", frameCol: "#2a2c2e", wall: slabEdge([60, 62, 64]) },
-    ],
-    tints: [[1, 1, 1], [0.98, 1.0, 1.0]],
-    palette: P(0, [], 0, [], 0.45, ["#f1ede4", "#c4c8cc", "#3a3c3e", "#222324"]),
-    picker: { group: "glass", name: "Low-iron glass", era: "2015-today", maxFloors: 99, variants: ["Offices", "Apartments", "Gallery white", "Black frame, dusk"] },
-    city: [{ share: 0.1, from: 2015 }],
-  },
   // TERRA-COTTA BAGUETTES OVER GLASS, 2010-today: ceramic rods on steel
   // outriggers a hand's breadth in front of a glass wall, the eye-level band
   // left clear — the screen of the 2007 newspaper tower and its followers.
@@ -849,40 +653,6 @@ export const BOOK_GLASS: BookEntry[] = [
     picker: { group: "new", name: "Weathering steel", era: "2005-today", maxFloors: 12, variants: ["Fresh rust", "Aged, plate bands", "Orange, wide windows", "Timber window boxes"] },
     city: [{ share: 0.1, from: 2005, maxH: 45, cls: ["office", "retail", "multifamily", "industrial"] }],
   },
-  // PERFORATED METAL SCREEN, 2008-today: sliding aluminium panels punched
-  // with holes whose size draws a picture across the front — the parking
-  // deck, the lab, the apartment block with its shutters half open.
-  {
-    key: "perforated", like: "metalpanel",
-    spec: { bayW: 3.0, floorH: 3.6, masonry: false, glass: false, win: { x0: 0.06, x1: 0.94, y0: 0.08, y1: 0.94 }, wall: gfrcWall([60, 64, 68]), over: perfOver([196, 200, 202], false, 0, [1, 6]),
-      glassCol: "#46606e", frameCol: "#2a2e32", wallRough: 0.45, glassRough: 0.05, glassMetal: 0.5, mullions: [2, 1], reveal: 2.4 },
-    variants: [
-      { over: perfOver([150, 112, 70], false, 1, [3]) },
-      { over: perfOver([236, 236, 232], true, 2, [0, 5], 7) },
-      { over: perfOver([88, 80, 70], false, 3, [2, 3, 4], 5) },
-    ],
-    tints: [[1, 1, 1], [0.96, 0.96, 0.96]],
-    palette: P(0, [], 0, [], 0.45, ["#c4c8cc", "#8a6a44", "#222324", "#f1ede4", "#c8b694", "#3a3c3e"]),
-    picker: { group: "new", name: "Perforated screen", era: "2008-today", maxFloors: 20, variants: ["Aluminium, wave", "Bronze, gradient", "White, square holes", "Dark bronze, sunbursts"] },
-    city: [{ share: 0.1, from: 2008, maxH: 75 }],
-  },
-  // OPEN-WEAVE BRICK, 2010-today: a brick screen with every other brick
-  // left out, light and air through the holes — the infill library, the
-  // small apartment house, the courtyard wall.
-  {
-    key: "brickweave", like: "stackbrick",
-    spec: { bayW: 3.4, floorH: 3.5, masonry: false, glass: false, win: { x0: 0.33, x1: 0.67, y0: 0.14, y1: 0.86 }, wall: weaveWall([168, 82, 60], [120, 110, 100], false),
-      glassCol: "#3a4c58", frameCol: "#1e1e1e", wallRough: 0.88, glassRough: 0.05, glassMetal: 0.35, mullions: [1, 2], reveal: 3.4 },
-    variants: [
-      { wall: weaveWall([214, 196, 160], [170, 160, 146], false), frameCol: "#3a3430" },
-      { wall: weaveWall([226, 226, 220], [190, 190, 184], true), frameCol: "#2a2c2e" },
-      { wall: weaveWall([96, 64, 52], [70, 62, 56], true), frameCol: "#1a1a1a", win: { x0: 0.28, x1: 0.72, y0: 0.14, y1: 0.86 } },
-    ],
-    tints: [[1, 1, 1], [0.92, 0.9, 0.9], [1.04, 1.0, 0.94]],
-    palette: P(0.06, ["#f1ede4", "#3a3c3e"], 0, [], 0.55, ["#222324", "#3a3c3e", "#5a4630"]),
-    picker: { group: "new", name: "Open-weave brick", era: "2010-today", maxFloors: 14, variants: ["Red", "Buff", "White, diagonal", "Dark brown, diagonal"] },
-    city: [{ share: 0.1, from: 2010, maxH: 52 }],
-  },
   // GLAZED CERAMIC TILE, 2010-today: a rainscreen of small glossy tiles in a
   // mix of one colour's glazes — the teal hospital, the cobalt school, the
   // yellow housing block.
@@ -892,13 +662,11 @@ export const BOOK_GLASS: BookEntry[] = [
       wall: tileWall([[40, 120, 112], [70, 150, 130], [30, 92, 96], [110, 176, 150]], 16, 16),
       glassCol: "#3e5664", frameCol: "#e8e8e4", wallRough: 0.22, glassRough: 0.05, glassMetal: 0.45, mullions: [2, 1], reveal: 1.6 },
     variants: [
-      { wall: tileWall([[34, 70, 150], [60, 100, 180], [24, 48, 110], [110, 150, 210]], 8, 24), frameCol: "#2a2c2e" },
       { wall: tileWall([[236, 186, 50], [230, 140, 40], [244, 214, 100], [214, 110, 40]], 16, 16), frameCol: "#3a3c3e" },
-      { wall: tileWall([[234, 234, 228], [210, 70, 60], [40, 110, 170], [240, 190, 60]], 12, 12, "#c8c6c0", 0.07), frameCol: "#222324" },
     ],
     tints: [[1, 1, 1], [0.96, 0.98, 1.0], [1.02, 1.0, 0.97]],
     palette: P(0, [], 0, [], 0.45, ["#f1ede4", "#3a3c3e", "#222324", "#c4c8cc"]),
-    picker: { group: "new", name: "Glazed tile", era: "2010-today", maxFloors: 30, variants: ["Teal mix", "Cobalt, upright", "Saffron", "White, scattered colour"] },
+    picker: { group: "new", name: "Glazed tile", era: "2010-today", maxFloors: 30, variants: ["Teal mix", "Saffron"] },
     city: [{ share: 0.14, from: 2010, maxH: 112 }],
   },
   // THE LIVING FACADE, 2012-today: climbers on stainless cables and a
@@ -910,13 +678,12 @@ export const BOOK_GLASS: BookEntry[] = [
       wall: greenWall([[52, 100, 46], [70, 124, 52], [36, 80, 40], [100, 140, 60]], 1, [140, 142, 138], [96, 98, 96]), over: plantsOver([[52, 100, 46], [80, 132, 56], [36, 80, 40]], false, true),
       glassCol: "#3e5260", frameCol: "#2a2a2a", wallRough: 0.9, glassRough: 0.05, glassMetal: 0.4, mullions: [2, 1], reveal: 3.2 },
     variants: [
-      { wall: greenWall([[150, 60, 40], [196, 120, 44], [90, 110, 46], [214, 170, 60]], 1, [140, 142, 138], [120, 68, 40]), over: plantsOver([[170, 70, 44], [200, 140, 50], [90, 110, 46]], false, true) },
       { wall: greenWall([[80, 136, 60], [110, 160, 70]], 0.3, [196, 196, 190], [70, 72, 74]), over: plantsOver([[80, 136, 60], [110, 160, 70]], false, false) },
       { wall: greenWall([[60, 110, 50]], 0, [228, 226, 218], [208, 206, 198]), over: plantsOver([[46, 96, 44], [70, 124, 52], [100, 150, 64]], true, true), frameCol: "#4a4e52" },
     ],
     tints: [[1, 1, 1], [0.94, 0.98, 0.94], [1.02, 1.02, 0.96]],
     palette: P(0, [], 0, [], 0.45, ["#3a3c3e", "#94502e", "#b8b4aa", "#222324"]),
-    picker: { group: "new", name: "Living green wall", era: "2012-today", maxFloors: 30, variants: ["Lush", "Autumn", "Young, cables showing", "Planted balconies"] },
+    picker: { group: "new", name: "Living green wall", era: "2012-today", maxFloors: 30, variants: ["Lush", "Young, cables showing", "Planted balconies"] },
     city: [{ share: 0.15, from: 2016, maxH: 112 }, { parent: "metalpanel", share: 0.04, from: 2012, maxH: 112, cls: ["office", "multifamily"] }],
   },
   // CHARRED TIMBER, 2015-today: shou sugi ban — boards scorched black, the
@@ -998,12 +765,11 @@ export const BOOK_GLASS: BookEntry[] = [
       glassCol: "#3e5260", frameCol: "#2a2420", wallRough: 0.38, glassRough: 0.05, glassMetal: 0.5, mullions: [1, 1], reveal: 2.2, winJitter: 0.12 },
     variants: [
       { wall: copperWall([128, 74, 50], [70, 50, 40], 0.6, false) },
-      { wall: copperWall([118, 76, 54], [96, 168, 140], 1, false), frameCol: "#1e2420" },
       { wall: copperWall([92, 150, 132], [130, 190, 168], 0.8, true), frameCol: "#2a2e2c" },
     ],
     tints: [[1, 1, 1], [0.95, 0.94, 0.94]],
     palette: null,
-    picker: { group: "new", name: "Copper", era: "2000-today", maxFloors: 20, variants: ["New copper", "Statuary brown", "Greening", "Verdigris seam"] },
+    picker: { group: "new", name: "Copper", era: "2000-today", maxFloors: 20, variants: ["New copper", "Statuary brown", "Verdigris seam"] },
     city: [{ share: 0.08, from: 2003, maxH: 75 }],
   },
 ];

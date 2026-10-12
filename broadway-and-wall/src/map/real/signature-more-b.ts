@@ -52,7 +52,6 @@ function member(k: FormKit, u0: number, v0: number, z0: number, u1: number, v1: 
 
 const GREENS = [[0.22, 0.36, 0.17], [0.29, 0.44, 0.2], [0.18, 0.31, 0.16], [0.36, 0.45, 0.2], [0.5, 0.44, 0.19]];
 const SLAB = [0.86, 0.86, 0.83];
-const POOL = [0.28, 0.6, 0.82];
 
 export const MORE_FORMS_B: MoreForm[] = [
   {
@@ -327,35 +326,6 @@ export const MORE_FORMS_B: MoreForm[] = [
     },
   },
   {
-    form: { key: "skypark", name: "Skypark", blurb: "Three splay-legged slabs carrying one long deck that cantilevers off the end", from: 2009, minFloors: 50, long: 1.6, fams: ["glass", "silverglass", "blueglass"] },
-    build(k) {
-      // three slabs in a row, each a straight leg and a leaning one meeting
-      // halfway up, and across all three tops a ship-long deck of gardens and
-      // a pool that runs out over the end: Safdie's Marina Bay Sands (2010)
-      const { A, B, H, fh } = k;
-      const dir = k.turnDir, U = (r: P2[]) => (dir > 0 ? r : flipU(r));
-      const tw = A * 0.12, dk = Math.max(5, fh * 2), zT = H - dk, zj = zT * 0.45;
-      for (const f of [-0.6, -0.11, 0.38]) {
-        const uc = f * A;
-        k.vol(U(rect(tw, B * 0.2, uc, -0.7 * B)), 0, zj);
-        const secs: { r: P2[]; z: number }[] = [];
-        for (let i = 0; i <= 6; i++) { const t = i / 6; secs.push({ z: zj * t, r: U(rect(tw, B * 0.2, uc, lerp(0.7, -0.3, Math.pow(t, 1.6)) * B)) }); }
-        k.loft(secs, false);
-        k.vol(U(rect(tw, B * 0.4, uc, -0.5 * B)), zj, zT, false);
-      }
-      // the deck, its bow out over the end
-      const u0 = -0.8 * A, u1 = 0.97 * A, w = B * 0.42, vc = -0.5 * B;
-      const deck = U([[u0 + w * 0.4, vc - w], [u1 - w * 1.6, vc - w], [u1, vc], [u1 - w * 1.6, vc + w], [u0 + w * 0.4, vc + w], [u0, vc + w * 0.5], [u0, vc - w * 0.5]]);
-      k.bridge(deck, zT, H);
-      // the pool along one edge, a planted strip along the other
-      k.loft([{ r: U(rect((u1 - u0) * 0.3, w * 0.2, lerp(u0, u1, 0.42), vc - w * 0.62)), z: H }, { r: U(rect((u1 - u0) * 0.3, w * 0.2, lerp(u0, u1, 0.42), vc - w * 0.62)), z: H + 0.3 }], true, k.fam, POOL);
-      for (let i = 0; i < 6; i++) {
-        const uu = lerp(u0 + w, u1 - w * 2, i / 5), r = U(turn(chamfered(w * 0.18, w * 0.18, w * 0.08), 0, 1, uu, vc + w * 0.55));
-        k.loft([{ r, z: H }, { r: U(turn(chamfered(w * 0.12, w * 0.12, w * 0.05), 0, 1, uu, vc + w * 0.55)), z: H + 3 }], true, k.fam, GREENS[i % 3]);
-      }
-    },
-  },
-  {
     form: { key: "notched", name: "Notched tower", blurb: "Dark glass in groups of floors, the corners notched deeper as it climbs", from: 1990, minFloors: 40, fams: ["blackglass", "silverglass", "blueglass"] },
     build(k) {
       // a square of dark glass whose corners are cut back in re-entrant
@@ -460,25 +430,6 @@ export const MORE_FORMS_B: MoreForm[] = [
           }
         }
       }
-    },
-  },
-  {
-    form: { key: "cantilever", name: "Top cantilever", blurb: "A slender shaft with a heavy block thrust out sideways near the top", from: 2014, minFloors: 40, fams: ["glass", "metalpanel", "silverglass"] },
-    build(k) {
-      // a slender shaft standing to one side of its lot and, high up, a
-      // heavy block of floors thrust out sideways over the empty part of the
-      // lot — Nouvel's One Central Park (Sydney, 2014) hung its sky garden
-      // and heliostat this way
-      const { A, B, H, fh } = k;
-      const dir = k.turnDir, U = (r: P2[]) => (dir > 0 ? r : flipU(r));
-      const su = Math.min(A * 0.3, B * 0.75), sv = B * 0.68, uc = -(A * 0.95 - su);
-      const zb0 = H * 0.66, zb1 = Math.min(H * 0.8, zb0 + Math.max(fh * 7, H * 0.12));
-      k.vol(U(rect(su, sv, uc)), 0, zb0, false);
-      const u0 = uc - su, u1 = Math.min(A * 0.95, uc + su + 2.9 * su);
-      k.bridge(U(rect((u1 - u0) / 2, B * 0.9, (u0 + u1) / 2)), zb0, zb1);
-      // and the shaft on past it to the top
-      k.vol(U(rect(su, sv, uc)), zb1, H, true, true);
-      k.mast(H, H * 0.06, 0.5, dir * uc, 0);
     },
   },
   {

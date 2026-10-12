@@ -1074,7 +1074,6 @@ Object.assign(VARIANTS, {
     { wall: enamelPanel([196, 200, 202], [160, 56, 46]) },
   ],
   fibercement: [
-    { wall: fiberCement([62, 64, 66], [176, 116, 70], 1) },
     { wall: fiberCement([196, 192, 184], [94, 112, 128], 2) },
     { wall: fiberCement([232, 230, 224], [150, 72, 50], 0), winJitter: 0.2 },
     { wall: fiberCement([120, 126, 118], [226, 222, 214], 1) },
@@ -1135,8 +1134,6 @@ Object.assign(VARIANTS, {
   ],
   pixel: [
     { over: pixelOver([200, 204, 206], 11), glassCol: "#6e8ea0" },
-    { over: pixelOver([62, 66, 70], 23), glassCol: "#90aab8", wall: tintedGlassWall("#2a3238") },
-    { over: pixelOver([214, 196, 160], 31), glassCol: "#7a9aa8" },
     { over: pixelOver([170, 196, 204], 5), glassCol: "#a0bcc8" },
   ],
 } as Record<string, Partial<FamilySpec>[]>);

@@ -23,8 +23,8 @@ for (const e of BOOK) {
   if (!/^[a-z][a-z0-9]*$/.test(e.key)) bad("key must be lowercase letters and digits");
   if (originals.has(e.key) || seen.has(e.key)) bad("duplicate key");
   if (!originals.has(e.like)) bad(`like "${e.like}" is not an original family`);
-  if (e.variants.length !== 3) bad("needs exactly three variants");
-  if (e.picker.variants.length !== 4) bad("needs four elevation names");
+  if (e.variants.length < 1 || e.variants.length > 3) bad("needs one to three variants");
+  if (e.picker.variants.length !== e.variants.length + 1) bad("needs a name for the base and each variant");
   if (!e.tints.length) bad("needs at least one tint");
   if (!e.city.length) bad("never stands in town: give it a city entry");
   seen.add(e.key);

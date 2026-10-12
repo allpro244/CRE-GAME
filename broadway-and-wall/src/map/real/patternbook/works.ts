@@ -75,41 +75,6 @@ const powerWall = (brick: RGB, pier: RGB, stone: RGB, win: Win): Painter => (g, 
   grime(g, w, h, rnd, 500, 0.08);
 };
 
-/** Cold storage, 1890-1940: insulated brick with almost no openings, pilasters and sunk panels, and a painted sign band. */
-const coldWall = (brick: RGB, band: RGB, ink: RGB, door: boolean): Painter => (g, w, h, rnd, pc) => {
-  relief(pc, 190, 0, 0, w, h);
-  bricks(g, rnd, brick, 0, 0, w, h, { spread: 0.2 });
-  for (const [ox, oy] of CELLS) {
-    for (const px of [ox, ox + T - 14]) { bricks(g, rnd, brick.map((c) => c * 1.06) as RGB, px, oy, 14, T); relief(pc, 255, px, oy, 14, T); }
-    g.fillStyle = "rgba(0,0,0,0.22)"; g.fillRect(ox + 14, oy, 2, T); g.fillRect(ox + 14, oy + T - 10, T - 28, 2);
-    // the panel's corbelled head
-    g.fillStyle = rgb(brick, 1.08); g.fillRect(ox + 14, oy + T - 8, T - 28, 8); relief(pc, 255, ox, oy + T - 8, T, 8);
-    if (door && ox === T && oy === T) {
-      // the one opening: an iron-clad loading door on a stone sill
-      fillBoth(g, pc, "#3e403c", MK_ACC, ox + 50, oy + 52, 28, 50);
-      g.fillStyle = "rgba(255,255,255,0.12)"; for (let y = oy + 56; y < oy + 100; y += 8) g.fillRect(ox + 51, y, 26, 1);
-      g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(ox + 63, oy + 52, 2, 50);
-      relief(pc, 120, ox + 50, oy + 52, 28, 50);
-      fillBoth(g, pc, "#cfc6b4", MK_TRIM, ox + 46, oy + 102, 36, 5);
-    }
-  }
-  // the sign: a whitewashed band across both bays with the firm's name in block capitals, faded
-  fillBoth(g, pc, rgb(band), MK_ACC, 0, 12, w, 46);
-  g.fillStyle = rgb(band, 0.86); g.fillRect(0, 12, w, 3); g.fillRect(0, 55, w, 3);
-  for (let x = 12; x < w - 16; x += 21) {
-    if (rnd() < 0.12) continue;                                          // a word space
-    const strokes = 2 + ((rnd() * 3) | 0);
-    for (let s = 0; s < strokes; s++) {
-      const vert = rnd() < 0.55;
-      const sx = x + (vert ? (rnd() < 0.5 ? 0 : 11) : 0), sy = 19 + (vert ? 0 : ((rnd() * 3) | 0) * 13);
-      fillBoth(g, pc, rgb(ink, 0.9 + rnd() * 0.2), MK_TRIM, sx, sy, vert ? 4 : 15, vert ? 30 : 4);
-    }
-  }
-  // the brick showing through the worn paint
-  for (let i = 0; i < 260; i++) { g.fillStyle = rgb(brick, 0.9 + rnd() * 0.2); g.globalAlpha = 0.25 + rnd() * 0.4; g.fillRect(rnd() * w, 12 + rnd() * 46, 3 + rnd() * 6, 2); }
-  g.globalAlpha = 1;
-  grime(g, w, h, rnd, 600, 0.08);
-};
 
 /** Brewery, 1860-1915: German Romanesque in brick — pilaster strips, an arched corbel table at every floor, a dogtooth course. */
 const breweryWall = (brick: RGB, dress: RGB): Painter => (g, w, h, rnd, pc) => {
@@ -392,53 +357,6 @@ const storageOver = (win: Win): Painter => (g) => {
 // THE POST-WAR CITY
 // ---------------------------------------------------------------------------
 
-/** Googie, 1950-1965: the roadside — a bold fascia with starbursts, flagstone piers, plate glass leaning out. */
-const googieWall = (c: RGB, fascia: RGB, stone: RGB, win: Win): Painter => (g, w, h, rnd, pc) => {
-  stuccoWall(c)(g, w, h, rnd);
-  const flag = (x: number, y: number, ww: number, hh: number) => {
-    g.fillStyle = rgb(stone, 0.55); g.fillRect(x, y, ww, hh);
-    relief(pc, 160, x, y, ww, hh);
-    for (let k = 0; k < (ww * hh) / 90; k++) {
-      const px = x + rnd() * ww, py = y + rnd() * hh, r = 5 + rnd() * 5, v = 0.9 + rnd() * 0.18;
-      g.fillStyle = rgb([stone[0] * (0.9 + rnd() * 0.2), stone[1], stone[2] * (0.9 + rnd() * 0.15)], v);
-      g.beginPath(); for (let a = 0; a < 6; a++) { const t = (a / 6) * 6.283 + rnd() * 0.5, rr = r * (0.7 + rnd() * 0.5); g.lineTo(px + Math.cos(t) * rr * 1.4, py + Math.sin(t) * rr); } g.fill();
-      if (pc) { pc.hg.fillStyle = "#f0f0f0"; pc.hg.fillRect(px - r * 0.6, py - r * 0.5, r * 1.2, r); }
-    }
-  };
-  for (const [ox, oy] of CELLS) {
-    const wp = winPx(win, ox, oy);
-    g.save(); g.beginPath(); g.rect(ox, oy, wp.x0 - ox, T); g.rect(ox, wp.y1, T, oy + T - wp.y1); g.clip();
-    flag(ox, oy, T, T); g.restore();
-    // the fascia: a bold band, a boomerang and an atomic starburst
-    fillBoth(g, pc, rgb(fascia), MK_ACC, ox, oy, T, wp.y0 - oy);
-    g.fillStyle = "rgba(255,255,255,0.18)"; g.fillRect(ox, oy, T, 2); g.fillStyle = "rgba(0,0,0,0.3)"; g.fillRect(ox, wp.y0 - 2, T, 2);
-    relief(pc, 255, ox, oy, T, wp.y0 - oy);
-    const sx = ox + 30 + (ox ? 52 : 0), sy = oy + (wp.y0 - oy) / 2;
-    for (const gg of pc ? [g, pc.m] : [g]) {
-      gg.strokeStyle = gg === g ? "#f6f2e6" : MK_TRIM; gg.lineWidth = 1.6;
-      gg.beginPath();
-      for (let a = 0; a < 8; a++) { const t = (a / 8) * 6.283, L = a % 2 ? 5 : 8.5; gg.moveTo(sx, sy); gg.lineTo(sx + Math.cos(t) * L, sy + Math.sin(t) * L); }
-      gg.stroke();
-      gg.fillStyle = gg === g ? "#f6f2e6" : MK_TRIM;
-      gg.beginPath(); gg.moveTo(sx + 16, sy + 4); gg.quadraticCurveTo(sx + 30, sy - 9, sx + 46, sy + 3); gg.quadraticCurveTo(sx + 30, sy - 4, sx + 16, sy + 4); gg.fill();
-    }
-  }
-};
-/** The googie storefront's glazing: mullions raked forward, a sloping transom. */
-const googieOver = (chrome: string, win: Win): Painter => (g, _w, _h, _rnd, pc) => {
-  for (const [ox, oy] of CELLS) {
-    const wp = winPx(win, ox, oy), ww = wp.x1 - wp.x0;
-    for (const gg of pc ? [g, pc.m] : [g]) {
-      gg.strokeStyle = gg === g ? chrome : MK_NONE; gg.lineWidth = 3;
-      gg.beginPath();
-      gg.moveTo(wp.x0, wp.y0 + 18); gg.lineTo(wp.x1, wp.y0 + 6);                         // the raked transom
-      for (const f of [0.38, 0.72]) { gg.moveTo(wp.x0 + ww * f + 7, wp.y0 + 18 - 12 * f); gg.lineTo(wp.x0 + ww * f - 7, wp.y1); }
-      gg.stroke();
-    }
-    g.fillStyle = "rgba(255,255,255,0.12)";
-    g.beginPath(); g.moveTo(wp.x0, wp.y0); g.lineTo(wp.x1, wp.y0); g.lineTo(wp.x1, wp.y0 + 6); g.lineTo(wp.x0, wp.y0 + 18); g.fill();
-  }
-};
 
 /** Brise-soleil, 1950-1975: a deep concrete sunscreen standing in front of the glass — an egg-crate of fins and shelves, or blades, or louvres. */
 const briseOver = (c: RGB, mode: "grid" | "blade" | "shelf"): Painter => (g, w, h, _rnd, pc) => {
@@ -618,14 +536,13 @@ const techOver = (steel: RGB): Painter => (g, w, h, _rnd, pc) => {
 // paints, by name
 const WHITE = "#f1ede4", CREAM = "#e8dcc2", GREY = "#9a9c98", PEWTER = "#6c7072", CHARCOAL = "#3a3c3e", BLACK = "#222324",
   BARN = "#8e3b2e", OXBLOOD = "#5c2622", FOREST = "#2f4a3a", TAN = "#c4ad88", TEAL = "#4f7f7c", STONE = "#d6ccb6",
-  TURQ = "#4fa3a0", ORANGE = "#d47a34", SALMON = "#e0a68a", BUTTER = "#efd68e", POWDER = "#a9c2d2", PINK = "#e6c0b8",
+  ORANGE = "#d47a34",
   SIGNAL = "#c8302a", BLUE = "#2c5aa0", YELLOW = "#e8b830", SILVER = "#c4c8cc", GREEN = "#3a8a4a";
 
 // the window rectangles the painters line up with
 const W_POWER: Win = { x0: 0.22, x1: 0.78, y0: 0.1, y1: 0.86 };
 const W_FLEX: Win = { x0: 0, x1: 1, y0: 0.42, y1: 0.86 };
 const W_STORE: Win = { x0: 0.24, x1: 0.76, y0: 0.32, y1: 0.76 };
-const W_GOOG: Win = { x0: 0.16, x1: 0.96, y0: 0.1, y1: 0.86 };
 const W_PROJ: Win = { x0: 0.22, x1: 0.78, y0: 0.3, y1: 0.8 };
 const W_GOLD: Win = { x0: 0, x1: 1, y0: 0.36, y1: 0.96 };
 const W_EGG: Win = { x0: 0.24, x1: 0.76, y0: 0.2, y1: 0.8 };
@@ -647,24 +564,6 @@ export const BOOK_WORKS: BookEntry[] = [
     tints: [[1, 1, 1], [0.9, 0.86, 0.84], [1.05, 0.98, 0.92]],
     picker: { group: "works", name: "Power station", era: "1890-1935", maxFloors: 10, variants: ["Red brick, stone arches", "Buff, terra cotta trim", "Sooted brick", "Segmental sash"] },
     city: [{ share: 0.06, from: 1890, to: 1935, minH: 12, maxH: 45, cls: ["industrial"] }],
-  },
-  // COLD STORAGE. The refrigerated warehouse by the market and the rail
-  // yard, 1890-1940: walls of brick and cork with next to no openings,
-  // pilasters and sunk panels, the firm's name painted across the top.
-  {
-    key: "coldstore", like: "industrial",
-    spec: { bayW: 4.4, floorH: 4.6, masonry: true, glass: false, noWin: true, win: { x0: 0, x1: 0, y0: 0, y1: 0 },
-      wall: coldWall([150, 80, 60], [232, 226, 210], [40, 38, 36], true),
-      glassCol: "#4a565c", frameCol: "#2c2c2a", wallRough: 0.9, glassRough: 0.3, glassMetal: 0.1, reveal: 3.0 },
-    variants: [
-      { wall: coldWall([196, 172, 130], [44, 46, 44], [226, 220, 204], true) },
-      { wall: coldWall([128, 66, 52], [210, 196, 150], [120, 40, 32], false), noWin: false, win: { x0: 0.44, x1: 0.56, y0: 0.46, y1: 0.62 }, mullions: [1, 1], trim: "#cfc6b4" },
-      { wall: coldWall([226, 222, 212], [56, 74, 62], [236, 230, 214], true) },
-    ],
-    tints: [[1, 1, 1], [0.92, 0.88, 0.86], [1.04, 1.0, 0.95]],
-    palette: P(0.08, [WHITE, CREAM], 0, [], 0.6, [WHITE, CREAM, "#e8d8a8", BLACK, OXBLOOD, FOREST]),
-    picker: { group: "works", name: "Cold storage", era: "1890-1940", maxFloors: 12, variants: ["Red, white sign", "Buff, black sign", "Dark red, small sash", "Whitewashed, green sign"] },
-    city: [{ share: 0.06, from: 1890, to: 1940, minH: 14, maxH: 50, cls: ["industrial"] }],
   },
   // BREWERY. The lager breweries of the German wards, 1860-1915: brick
   // Rundbogenstil with pilaster strips, an arched corbel table at every
@@ -843,26 +742,6 @@ export const BOOK_WORKS: BookEntry[] = [
     city: [
       { parent: "metalpanel", share: 0.1, from: 1975, maxH: 18, cls: ["industrial"] },
       { parent: "metalpanel", share: 0.06, from: 2005, maxH: 18, cls: ["retail"] },
-    ],
-  },
-  // GOOGIE. The roadside of 1950-1965 — the coffee shop, the car wash, the
-  // motel office: a bold fascia with a starburst and a boomerang, flagstone
-  // piers, plate glass on raked mullions.
-  {
-    key: "googie", like: "midcentury",
-    spec: { bayW: 3.6, floorH: 4.2, masonry: false, glass: false, win: W_GOOG, wall: googieWall([238, 232, 216], [64, 160, 156], [186, 160, 126], W_GOOG), over: googieOver("#d8dcdc", W_GOOG),
-      glassCol: "#5a7c88", frameCol: "#d8dcdc", wallRough: 0.6, glassRough: 0.05, glassMetal: 0.5, mullions: [1, 1], reveal: 2.0 },
-    variants: [
-      { wall: googieWall([236, 224, 196], [210, 110, 50], [160, 150, 140], W_GOOG), over: googieOver("#e6e6e2", W_GOOG) },
-      { wall: googieWall([226, 230, 232], [196, 52, 70], [190, 170, 140], W_GOOG), over: googieOver("#c8ccd0", W_GOOG), glassCol: "#4a6a7a" },
-      { wall: googieWall([244, 226, 160], [44, 66, 120], [150, 130, 110], W_GOOG), over: googieOver("#2a2c2e", W_GOOG), frameCol: "#2a2c2e" },
-    ],
-    tints: [[1, 1, 1]],
-    palette: P(0.6, [WHITE, TURQ, SALMON, BUTTER, POWDER, PINK, "#cfe2cc"], 0.5, [WHITE, BLACK], 0.9, [ORANGE, TURQ, SIGNAL, YELLOW, "#3e5a90", "#e66a8a", CHARCOAL]),
-    picker: { group: "postwar", name: "Googie", era: "1950-1965", maxFloors: 3, variants: ["Turquoise fascia", "Orange fascia", "Red and white", "Navy on yellow"] },
-    city: [
-      { parent: "midcentury", share: 0.2, from: 1950, to: 1965, maxH: 10, cls: ["retail"] },
-      { parent: "midcentury", share: 0.06, from: 1950, to: 1965, maxH: 10, cls: ["office"] },
     ],
   },
   // BRISE-SOLEIL. Le Corbusier's sunscreen as built across the Americas,

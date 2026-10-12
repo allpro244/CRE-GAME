@@ -967,11 +967,10 @@ export const BOOK_ORNAMENT: BookEntry[] = [
     variants: [
       { over: arcade([242, 240, 236], "pointed"), glassCol: "#34404a" },
       { over: arcade([228, 220, 200], "square"), frameCol: "#5a4630" },
-      { over: arcade([240, 238, 232], "grille"), glassCol: "#3a4650" },
     ],
     tints: [[1, 1, 1], [0.98, 0.97, 0.95], [1.0, 0.98, 0.94]],
     palette: null,
-    picker: { group: "civic", name: "New Formalism", era: "1958-1975", maxFloors: 20, variants: ["White round arcade", "Pointed, Yamasaki", "Travertine colonnade", "Pierced screen"] },
+    picker: { group: "civic", name: "New Formalism", era: "1958-1975", maxFloors: 20, variants: ["White round arcade", "Pointed, Yamasaki", "Travertine colonnade"] },
     city: [
       { share: 0.18, from: 1958, to: 1975, maxH: 72 },
       { parent: "modern", share: 0.04, from: 1958, to: 1975, maxH: 30, cls: ["office"] },
@@ -984,11 +983,10 @@ export const BOOK_ORNAMENT: BookEntry[] = [
     variants: [
       { wall: edwardian([128, 66, 52], [226, 220, 204]), frameCol: "#2a2a28" },
       { wall: edwardian([196, 104, 64], [218, 196, 152]) },
-      { wall: edwardian([228, 222, 208], [166, 70, 54]), frameCol: "#2a2a28" },
     ],
     tints: [[1, 1, 1], [0.94, 0.9, 0.88], [1.04, 0.99, 0.95]],
     palette: P(0, [], 0.1, [WHITE, STONE], 0.7, [WHITE, BLACK, FOREST, OXBLOOD]),
-    picker: { group: "civic", name: "Edwardian baroque", era: "1895-1915", maxFloors: 10, variants: ["Red brick, Portland bands", "Brown brick", "Orange, buff bands", "Stone, red bands"] },
+    picker: { group: "civic", name: "Edwardian baroque", era: "1895-1915", maxFloors: 10, variants: ["Red brick, Portland bands", "Brown brick", "Orange, buff bands"] },
     city: [
       { share: 0.1, from: 1895, to: 1915, minH: 14, maxH: 36, cls: ["office"] },
       { parent: "brick", share: 0.05, from: 1895, to: 1915, minH: 9, maxH: 22, cls: ["office", "retail"] },

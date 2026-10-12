@@ -743,13 +743,13 @@ export const FACADE_STYLES: FacadeStyle[] = [
   { key: "midcentury", group: "postwar", name: "Enamel panel", era: "1950-1972", maxFloors: 12, variants: ["Turquoise", "Orange", "Blue", "Yellow"] },
   { key: "brutalist", group: "postwar", name: "Board-formed concrete", era: "1962-1980", maxFloors: 40, variants: ["Concrete", "Dark, small lights", "Warm", "Grey, tall lights"] },
   { key: "newstone", group: "new", name: "New limestone", era: "2000-today", maxFloors: 70, variants: ["Limestone", "Keystoned", "Pale, paired", "Warm"] },
-  { key: "fibercement", group: "new", name: "Two-tone panel", era: "2003-today", maxFloors: 7, variants: ["White and charcoal", "Charcoal and wood", "Grey and blue", "White and rust"] },
+  { key: "fibercement", group: "new", name: "Two-tone panel", era: "2003-today", maxFloors: 7, variants: ["White and charcoal", "Grey and blue", "White and rust", "Sage and white"] },
   { key: "metalpanel", group: "new", name: "Metal panel", era: "2005-today", maxFloors: 30, variants: ["Zinc", "Black", "Champagne", "Weathered bronze"] },
   { key: "stackbrick", group: "new", name: "Stack-bond brick", era: "2008-today", maxFloors: 14, variants: ["Charcoal", "White", "Red", "Grey"] },
   { key: "rainscreen", group: "new", name: "Terracotta rainscreen", era: "2010-today", maxFloors: 40, variants: ["Terracotta", "Buff", "Grey", "Orange"] },
   { key: "timber", group: "new", name: "Mass timber", era: "2016-today", maxFloors: 18, variants: ["Cedar", "Light", "Dark", "Silvered"] },
   { key: "diagrid", group: "glass", name: "Diagrid", era: "2005-today", maxFloors: 99, variants: ["Blue, silver steel", "White steel", "Green, dark steel", "Silver"] },
-  { key: "pixel", group: "glass", name: "Fritted glass", era: "2010-today", maxFloors: 99, variants: ["White frit", "Grey", "Charcoal", "Champagne"] },
+  { key: "pixel", group: "glass", name: "Fritted glass", era: "2010-today", maxFloors: 99, variants: ["White frit", "Grey", "Pale blue"] },
   ...BOOK_PICKER,
 ];
 export const ROOF_CHOICES: { key: NonNullable<BuildingDesign["roof"]>; name: string; maxFloors: number }[] = [

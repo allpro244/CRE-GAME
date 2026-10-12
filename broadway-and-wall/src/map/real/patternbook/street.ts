@@ -487,46 +487,6 @@ const beachWall = (c: RGB, fin: RGB, wn: Win, port = true): Painter => (g, w, h,
   }
 };
 
-/** MIAMI MODERN: smooth painted concrete, a thin cantilevered slab at each floor and a fascia pierced with cheese-holes. */
-const mimoWall = (c: RGB, fascia: RGB, wn: Win): Painter => (g, w, h, rnd, pc) => {
-  g.fillStyle = rgb(c); g.fillRect(0, 0, w, h);
-  specks(g, rnd, w, h, 800, 0.035, 1);
-  const holes: [number, number, number][] = [];
-  for (let i = 0; i < 16; i++) holes.push([8 + i * 16, i % 2 ? 0.25 : 0.75, i % 4 === 0 ? 7 : 4.5]);
-  for (let by = 0; by < 2; by++) {
-    const oy = by * T, y0 = winBox(wn, 0, by).y1 + 3, y1 = oy + T - 3;
-    fillBoth(g, pc, rgb(fascia), MK_TRIM, 0, y0, w, y1 - y0);
-    g.fillStyle = "rgba(255,255,255,0.3)"; g.fillRect(0, y0, w, 1.5);
-    relief(pc, "#ffffff", 0, y0, w, y1 - y0);
-    for (const [x, fy, r] of holes) {
-      const y = y0 + r + 2 + fy * (y1 - y0 - 2 * r - 4);
-      const hg2 = g.createRadialGradient(x - 1, y - 1, 0, x, y, r); hg2.addColorStop(0, "#2a2c2e"); hg2.addColorStop(1, "#4a4c4e");
-      g.fillStyle = hg2; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
-      if (pc) { pc.hg.fillStyle = "#383838"; pc.hg.beginPath(); pc.hg.arc(x, y, r, 0, 6.283); pc.hg.fill(); }
-    }
-    // the floor slab's thin white edge, its shadow under it
-    fillBoth(g, pc, "rgb(246,246,242)", MK_TRIM, 0, oy, w, 4);
-    g.fillStyle = "rgba(0,0,0,0.3)"; g.fillRect(0, oy + 4, w, 3);
-    relief(pc, "#ffffff", 0, oy, w, 4);
-  }
-};
-/** The breeze-block screen, drawn in front of the glass of the bays given: blocks pierced with a circle and four petals. */
-const screenOver = (col: RGB, bays: number[], wn: Win): Painter => (g, _w, _h, _rnd, pc) => {
-  for (const bx of bays) for (let by = 0; by < 2; by++) {
-    const x0 = bx * T + 6, x1 = bx * T + T - 6, y0 = by * T + 5, y1 = winBox(wn, bx, by).y1 + 1, s = 13;
-    const nx = Math.floor((x1 - x0) / s), ox = (x0 + x1) / 2 - (nx * s) / 2, ny = Math.floor((y1 - y0) / s), oy = y1 - ny * s;
-    g.fillStyle = "rgba(0,0,0,0.25)"; g.fillRect(ox + 2, oy + 2, nx * s, ny * s);
-    pathBoth(g, pc, rgb(col), MK_ACC, (gg) => {
-      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
-        const x = ox + i * s, y = oy + j * s, cx = x + s / 2, cy = y + s / 2;
-        gg.rect(x, y, s, s);
-        gg.moveTo(cx + 3.6, cy); gg.arc(cx, cy, 3.6, 0, 6.283);
-        for (const [dx, dy] of [[0, 0], [s, 0], [0, s], [s, s]]) { gg.moveTo(x + dx + (dx ? -2.6 : 2.6), y + dy); gg.arc(x + dx, y + dy, 2.6, dx ? Math.PI : 0, dx ? Math.PI * 1.5 : Math.PI * 0.5, !!dx !== !!dy); }
-      }
-    }, "evenodd");
-    if (pc) { pc.hg.fillStyle = "#ffffff"; pc.hg.fillRect(ox, oy, nx * s, ny * s); }
-  }
-};
 
 /** DUTCH COLONIAL: even painted shingle above a flared skirt; clapboard, red sandstone or brick below. */
 const dutchWall = (upper: RGB, lower: RGB, kind: "clap" | "stone" | "brick", trim: RGB): Painter => (g, w, _h, rnd, pc) => {
@@ -648,7 +608,6 @@ const W_MISSION: Win = { x0: 0.31, x1: 0.69, y0: 0.18, y1: 0.8 };
 const W_MISSION2: Win = { x0: 0.2, x1: 0.8, y0: 0.18, y1: 0.78 };
 const W_MED: Win = { x0: 0.3, x1: 0.7, y0: 0.32, y1: 0.86 };
 const W_BEACH: Win = { x0: 0.2, x1: 0.8, y0: 0.3, y1: 0.72 };
-const W_MIMO: Win = { x0: 0.06, x1: 0.94, y0: 0.36, y1: 0.93 };
 const W_SC: Win = { x0: 0.33, x1: 0.67, y0: 0.3, y1: 0.74 };
 const W_SC2: Win = { x0: 0.3, x1: 0.7, y0: 0.24, y1: 0.8 };
 const W_CHAS: Win = { x0: 0.31, x1: 0.69, y0: 0.12, y1: 0.86 };
@@ -939,26 +898,6 @@ export const BOOK_STREET: BookEntry[] = [
     style: (year) => (year < 1937 ? "deco" : "moderne"),
     picker: { group: "regional", name: "Tropical deco", era: "1930-1948", maxFloors: 8, variants: ["Pink, eyebrows", "Aqua, coral fins", "Lemon, porthole", "White, lavender fins"] },
     city: [{ parent: "moderne", share: 0.2, from: 1933, to: 1948, maxH: 27 }],
-  },
-  // MIAMI MODERN, 1945-1968: the post-war resort hotels and motels of Miami
-  // Beach and the 79th Street causeway — thin cantilevered slabs, fascias
-  // pierced with cheese-holes, breeze-block screens, pastel and white.
-  {
-    key: "mimo", like: "midcentury",
-    spec: { bayW: 3.0, floorH: 3.0, masonry: false, glass: false, win: W_MIMO, wall: mimoWall([236, 236, 230], [244, 244, 240], W_MIMO), over: screenOver([246, 246, 242], [1], W_MIMO),
-      glassCol: "#2e4652", frameCol: "#c4c8cc", wallRough: 0.7, glassRough: 0.06, glassMetal: 0.3, mullions: [3, 1], reveal: 2.0 },
-    variants: [
-      { wall: mimoWall([170, 214, 210], [244, 244, 240], W_MIMO), over: screenOver([244, 244, 240], [1], W_MIMO), frameCol: "#e2e4e4" },
-      { wall: mimoWall([238, 200, 196], [214, 186, 120], W_MIMO), over: screenOver([214, 186, 120], [0], W_MIMO), frameCol: "#c8b694" },
-      { wall: mimoWall([226, 226, 220], [92, 160, 170], W_MIMO), over: screenOver([240, 240, 236], [0, 1], W_MIMO), frameCol: "#3a3c3e" },
-    ],
-    tints: [[1, 1, 1], [0.98, 0.99, 1.0]],
-    palette: P(0.6, [WHITE, "#f4f2ec", "#c4e4dc", "#f2d4cc", "#f4e8c0", "#d4e4ec", "#e8e4dc"], 0.6, [WHITE, "#5cb4b0", "#d8b878", "#e8908a", "#4a7aa8"], 0.7, [WHITE, SILVER, "#c8b694", CHARCOAL, "#5cb4b0"]),
-    picker: { group: "regional", name: "Miami Modern", era: "1945-1968", maxFloors: 16, variants: ["White, cheese-holes", "Aqua, white screen", "Pink and gold", "Teal fascia, full screen"] },
-    city: [
-      { parent: "midcentury", share: 0.15, from: 1948, to: 1968, maxH: 55 },
-      { parent: "modern", share: 0.05, from: 1948, to: 1968, maxH: 55, cls: ["multifamily"] },
-    ],
   },
   // DUTCH COLONIAL REVIVAL, 1900-1940: the gambrel-roofed suburban house
   // of the Sears catalogue and the Hudson Valley's own memory of it — even

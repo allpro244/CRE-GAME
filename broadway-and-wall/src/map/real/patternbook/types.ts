@@ -31,8 +31,8 @@ export interface BookEntry {
   like: string;
   /** the texture: everything FamilySpec has but the key */
   spec: Omit<FamilySpec, "key">;
-  /** exactly three more elevations, drawn as `${key}#1..#3` */
-  variants: [Partial<FamilySpec>, Partial<FamilySpec>, Partial<FamilySpec>];
+  /** one to three more elevations, drawn as `${key}#1..#3` */
+  variants: Partial<FamilySpec>[];
   /** per-building tints of the wall texture, [1,1,1] first */
   tints: [number, number, number][];
   /** the owners' paint schemes; absent = the `like` family's; null = never repainted */
@@ -49,8 +49,8 @@ export interface BookEntry {
     era: string;
     /** the tallest building this skin was really put on, in floors (99 = any) */
     maxFloors: number;
-    /** names of the four elevations: the base, then variants #1-#3 */
-    variants: [string, string, string, string];
+    /** names of the elevations: the base, then each variant in order */
+    variants: string[];
   };
   /**
    * Where the generated city puts it: a share of a parent family's draws

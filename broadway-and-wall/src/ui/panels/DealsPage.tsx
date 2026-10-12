@@ -143,7 +143,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
       <div className="loi-line mono">
         ${loi.rentPsf.toFixed(2)}/sf {recoveryOf(loi) === "nnn" ? "NNN" : recoveryOf(loi) === "base" ? "base-year" : "gross"} · {bump.toFixed(2)}%/yr
         {loi.tiPsf > 0 ? ` · TI $${loi.tiPsf}` : " · no TI"}
-        {` · ${loi.freeM > 0 ? `${loi.freeM}mo free` : "no free rent"}`}
+        {` · ${loi.freeM > 0 ? `${loi.freeM}\u00a0mo\u00a0free` : "no free rent"}`}
       </div>
       {prevRent !== undefined && (
         <div className="loi-line mono" style={{ color: (loi.openRentPsf ?? loi.rentPsf) >= prevRent ? "#3a7d46" : "#a8402e" }}>
@@ -158,12 +158,12 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         <div className="loi-line mono" style={{ color: "#7a5c1e" }}>
           you asked ${loi.askedRentPsf.toFixed(2)}
           {loi.askedTiPsf !== undefined ? ` · TI $${loi.askedTiPsf}` : ""}
-          {loi.askedFreeM ? ` · ${loi.askedFreeM}mo free` : ""}
+          {loi.askedFreeM ? ` · ${loi.askedFreeM}\u00a0mo\u00a0free` : ""}
           {loi.askedBumpPct !== undefined ? ` · ${loi.askedBumpPct.toFixed(2)}%/yr` : ""}
           {loi.openRentPsf !== undefined ? ` (opened $${loi.openRentPsf.toFixed(2)})` : ""}
           {" "}→ their final ${(loi.counterRentPsf ?? loi.rentPsf).toFixed(2)}/sf
           {loi.counterTiPsf !== undefined ? ` · TI $${loi.counterTiPsf}` : ""}
-          {(loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}mo free` : ""}
+          {(loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}\u00a0mo\u00a0free` : ""}
           {loi.counterBumpPct !== undefined ? ` · ${loi.counterBumpPct.toFixed(2)}%/yr` : ""}
         </div>
       )}
@@ -208,7 +208,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
           )}
           {!loi.countered && !final && (
             <button className="btn" title="Open the counter at your own terms — the tenant's package, at the rent that reaches your number. Signs as written if it already does." onClick={myTerms}>
-              Counter to my terms
+              My terms
             </button>
           )}
           <button className="btn" onClick={() => respondLoi(loi.id, "decline")}>Pass</button>
@@ -633,7 +633,7 @@ export function DealsPage() {
                     </span>
                     <span className="neighbor-meta mono">
                       {r.outcome === "took"
-                        ? `took your $${r.askedRentPsf.toFixed(2)}/sf${r.askedFreeM ? ` / ${r.askedFreeM}mo free` : ""} — ${usd(r.askedRentPsf * r.sf)} a year on ${sf(r.sf)}`
+                        ? `took your $${r.askedRentPsf.toFixed(2)}/sf${r.askedFreeM ? ` / ${r.askedFreeM}\u00a0mo\u00a0free` : ""} — ${usd(r.askedRentPsf * r.sf)} a year on ${sf(r.sf)}`
                         : r.outcome === "walked"
                           ? `walked. You asked $${r.askedRentPsf.toFixed(2)} into a $${r.marketPsf.toFixed(2)} market — ${sf(r.sf)} still empty`
                           : `came back at $${r.theirRentPsf.toFixed(2)} against your $${r.askedRentPsf.toFixed(2)}${freeBit(r.askedFreeM, r.theirFreeM)} · ${delta >= 0 ? "+" : "−"}${usd(Math.abs(delta))} a year`}
@@ -684,12 +684,8 @@ export function DealsPage() {
         <div className="page-section">
           Sales in progress · {sales.length + (game.portfolioSale ? 1 : 0)}
         </div>
-        <div className="hint">
-          Offers on your own book live here, full width — not next to inbound letters.
-          One card at a time: accept, decline, or counter.
-        </div>
         {sales.length === 0 && !game.portfolioSale
-          && <div className="hint">Nothing listed. Sell from any owned building's card.</div>}
+          && <div className="hint">Nothing listed. Sell from any building's Sell tab; buyers' offers land here to accept, counter or decline.</div>}
         {game.portfolioSale && <PortfolioSaleDesk bundle={[]} clear={() => { /* nothing to clear: not bundling here */ }} />}
         {sales.map((sl) => <SaleOfferCard key={sl.bbl} bbl={sl.bbl} ask={sl.ask} go={go} />)}
       </section>}

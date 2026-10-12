@@ -59,6 +59,10 @@ console.log("balloons");
   const it2 = E.attentionItems(s, parcels).find((x) => x.key.startsWith(`balloon:${a.bbl}`));
   ok(it2 && !it2.soft && it2.key.endsWith(":gap"), `a 140% LTV balloon nobody renews is a hard stop (${it2?.key})`);
   ok(stop(s)?.key.startsWith("balloon"), "and it stops the clock");
+  // Seen on a card and put off: the same item does not stop the clock again
+  // (critical items excepted — see stopRule's `seen`).
+  const seenStop = E.stopRule(structuredClone(g), parcels, [it2.key]);
+  ok(it2.critical || !seenStop(s) || seenStop(s).key !== it2.key, "an item already seen and put off does not stop it twice");
 }
 
 // ---------------------------------------------------------------- 2. contracts

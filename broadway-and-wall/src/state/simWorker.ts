@@ -21,7 +21,7 @@ type Town = { id: number; parcels: ParcelTable; bbls: string[]; adjacency: Recor
 export type SimRequest =
   | { type: "town"; town: Town }
   | { type: "month"; id: number; town: number; s: GameState }
-  | { type: "span"; id: number; town: number; s: GameState; cap: number };
+  | { type: "span"; id: number; town: number; s: GameState; cap: number; seen?: string[] };
 export type SimReply = { id: number; s?: GameState; span?: ReturnType<typeof advanceUntilAttention>; err?: string };
 
 let town: Town | null = null;
@@ -33,7 +33,7 @@ self.onmessage = (e: MessageEvent<SimRequest>) => {
   if (!town || town.id !== m.town) { post({ id: m.id, err: "town not loaded" }); return; }
   try {
     if (m.type === "month") post({ id: m.id, s: advanceMonth(m.s, town.parcels, town.bbls, town.adjacency) });
-    else post({ id: m.id, span: advanceUntilAttention(m.s, town.parcels, town.bbls, town.adjacency, m.cap) });
+    else post({ id: m.id, span: advanceUntilAttention(m.s, town.parcels, town.bbls, town.adjacency, m.cap, m.seen) });
   } catch (err) {
     post({ id: m.id, err: String((err as Error)?.stack ?? err) });
   }

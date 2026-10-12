@@ -279,10 +279,18 @@ export default function TopBar() {
     if (!box || !row) return;
     const tiles = Array.from(row.querySelectorAll<HTMLElement>("[data-drop]"));
     tiles.forEach((t) => t.classList.remove("tstat-shed"));
+    row.classList.remove("tstat-tight");
     for (const rank of ["1", "2", "3"]) {
       if (row.scrollWidth <= box.clientWidth) break;
       tiles.filter((t) => t.dataset.drop === rank).forEach((t) => t.classList.add("tstat-shed"));
     }
+    // Every tile left is one the bar keeps. Before one is clipped (Book read
+    // "thin ca" at 1100px once Line left joined), the small deltas beside the
+    // labels go — the numbers stay, the month-on-month chips wait for width.
+    if (row.scrollWidth > box.clientWidth) row.classList.add("tstat-tight");
+    // Last resort, below ~1050px: Book. It is a warning the Cash and Next due
+    // tiles are already giving in their own numbers.
+    if (row.scrollWidth > box.clientWidth) tiles.filter((t) => t.dataset.drop === "4").forEach((t) => t.classList.add("tstat-shed"));
   };
   useLayoutEffect(fitVitals);
   useEffect(() => {
@@ -363,16 +371,24 @@ export default function TopBar() {
               w={92}
               keep
             />
-            {/* CASH AND THE LINE ARE ONE QUESTION — how much can I spend — so
-                they are one tile. The line used to be its own tile that only
-                appeared once drawn; undrawn, it lived in a tooltip. Now the
-                label says which: "+$1.3M line" free, or "$829K drawn" owed. */}
+            {/* CASH, THEN WHAT IS LEFT ON THE LINE. The line rode on the Cash
+                tile as a small "+$1.3M line" / "line $829K drawn" label, and
+                drawn it said what was OWED, not what was LEFT — the owner asked
+                for the second, in plain sight. Two tiles, one question each:
+                what do I have, and what more can I borrow tonight. */}
             <Stat label="Cash" value={usd(game.cash)} n={game.cash} bad={game.cash < 0} w={72} keep
-              delta={(game.loc?.balance ?? 0) > 0
-                ? <span className={"tstat-of" + (line <= 0 || game.loc!.balance > 0.6 * line ? " neg" : "")}>line {usd(game.loc!.balance)} drawn</span>
-                : line > 0 ? <span className="tstat-of">+{usd(line)} line</span> : null}
-              onClick={(game.loc?.balance ?? 0) > 0 || line > 0 ? () => setPage("debt", "Line of credit") : undefined}
-              title={`GP liquidity — the firm's own cash. Vehicle cash, if any, is separate.${(game.loc?.balance ?? 0) > 0 ? ` Revolver drawn ${usd(game.loc!.balance)} of ${usd(line)} available against net worth.` : line > 0 ? ` Undrawn credit line ${usd(line)} on top.` : ""} Click for the line on Capital → Debt.`} />
+              title="GP liquidity — the firm's own cash. Vehicle cash, if any, is separate." />
+            {(line > 0 || (game.loc?.balance ?? 0) > 0) && (() => {
+              const drawn = game.loc?.balance ?? 0;
+              const left = Math.max(0, line - drawn);
+              const tight = line <= 0 || drawn > 0.6 * line;
+              return (
+                <Stat label="Line left" value={usd(left)} n={left} bad={tight} w={72} keep
+                  delta={drawn > 0 ? <span className={"tstat-of" + (tight ? " neg" : "")}>{usd(drawn)} drawn</span> : null}
+                  onClick={() => setPage("debt", "Line of credit")}
+                  title={`Undrawn revolver: ${usd(left)} of a ${usd(line)} line sized against net worth${drawn > 0 ? `; ${usd(drawn)} drawn` : ""}. It draws on its own when cash runs short. Click for the line on Capital → Debt.`} />
+              );
+            })()}
             {game.fund && !game.fund.settled && (
               <Stat
                 label="Vehicle"
@@ -531,7 +547,7 @@ export default function TopBar() {
             {/* The firm's own trouble, only when there is some. */}
             {(() => {
               const book = firmBookStress(game);
-              return book.bad ? <Stat label="Book" value={book.label} bad keep w={64} title={book.title} onClick={() => setPage("debt")} /> : null;
+              return book.bad ? <Stat label="Book" value={book.label} bad drop={4} w={64} title={book.title} onClick={() => setPage("debt")} /> : null;
             })()}
           </div>
           </div>
@@ -762,7 +778,7 @@ export default function TopBar() {
  * longest phase word, and a negative nine-figure number with a suffix.
  */
 function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded, n, delta }: {
-  label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 1 | 2 | 3; w?: number; keep?: boolean;
+  label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 1 | 2 | 3 | 4; w?: number; keep?: boolean;
   /** Which way it moved, set in the label row. It used to be a chip BESIDE the
    *  tile, which made every pair twice as wide and wrapped the bar onto a
    *  second, ragged row at 1600px. In the label row it costs no width. */

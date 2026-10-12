@@ -1029,10 +1029,7 @@ body {
 .panel-embed .deal { border-top: 1px solid rgba(146,110,40,0.22); }
 /* Two columns only inside a real room — not a 560px dock pretending to be wide
    because the viewport was ≥900px. */
-@media (min-width: 900px) {
-  .page-backdrop .panel-embed { columns: 2; column-gap: 28px; }
-  .page-backdrop .panel-embed > * { break-inside: avoid; }
-}
+/* Masonry, not CSS columns — see ui/useMasonry.ts and the rules in hud.css. */
 
 /* a selected toggle is a state, not the primary action — only btn-buy spends money */
 .btn.btn-on {

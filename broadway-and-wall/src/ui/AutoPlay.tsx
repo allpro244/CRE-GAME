@@ -31,12 +31,17 @@ export default function AutoPlay() {
       if (st.advancing || st.paletteOpen || blocking) {
         // A card on the desk: wait for it rather than stop, unless it is a
         // decision — those stop the clock like they stop Yr.
-        if (document.querySelector(".modal-backdrop")) { pause("a card on your desk needs an answer"); return; }
+        if (document.querySelector(".modal-backdrop")) {
+          // Name the card: "a card on your desk" said nothing the card did not.
+          const t = document.querySelector(".app > .modal-backdrop .modal-title")?.textContent?.trim();
+          pause(t ? `${t} is waiting on your answer` : "a card on your desk needs an answer");
+          return;
+        }
         timer = setTimeout(step, 400);
         return;
       }
       const prev = st.game;
-      const stop = stopRule(prev, st.parcels);
+      const stop = stopRule(prev, st.parcels, st.cardSeen);
       // The month closes in the sim worker; the map keeps drawing meanwhile.
       // The pace runs from the moment the month is on screen, so a slow tick
       // shortens the wait rather than stacking on top of it.

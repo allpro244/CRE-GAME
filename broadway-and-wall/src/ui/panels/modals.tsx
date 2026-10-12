@@ -881,8 +881,12 @@ function DecisionBody({
               <button
                 className="btn"
                 data-esc
-                title="Leave it on the desk and get back to it — it stays on the Deals page until it expires."
-                onClick={() => setDeferred((d) => new Set(d).add(loi.id))}
+                title="Leave it on the desk — it stays on Deals and the docket until it expires, and the clock will not stop for it again."
+                onClick={() => {
+                  setDeferred((d) => new Set(d).add(loi.id));
+                  // Seen and put off: the deadline does not stop the clock again.
+                  useStore.getState().markCardSeen(`loi:${loi.id}`);
+                }}
               >
                 Decide later
               </button>

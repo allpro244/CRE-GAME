@@ -1573,15 +1573,19 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     out.push({ key: `loi:${l.id}`, label, lastM: l.expiresM - 1 });
   }
   // Tenant-relief letters expire in three months and a lapse is a refusal.
-  // They lived on Deals but not in the attention list, so Year/Skip could run
-  // straight past a decision the player had explicitly asked the game to stop
-  // for. Each letter gets its own key because several tenants can ask together.
+  // They are on the docket so they are seen; each letter gets its own key
+  // because several tenants can ask together.
   for (const a of s.asks ?? []) {
     if (s.holdings[a.bbl]?.groundLeased) continue;
     const label = a.kind === "giveback"
       ? `${a.name} wants to hand space back — answer by ${monthLabel(a.expiresM - 1)}`
       : `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM - 1)}`;
-    out.push({ key: `tenant-ask:${a.id}`, label, lastM: a.expiresM - 1 });
+    // On the docket, never a stop (the owner's call): a relief or give-back
+    // letter is the tenant's problem arriving at your desk, and the clock
+    // halting for every one of them was the interruption, not the decision.
+    // Unanswered, it lapses as a refusal — the Leasing desk's relief rule
+    // answers them automatically for a player who would rather not read them.
+    out.push({ soft: true, key: `tenant-ask:${a.id}`, label, lastM: a.expiresM - 1 });
   }
   // A building the player starred reaching the tape: they asked to be told,
   // so Yr / Skip / Play stop on it like any other thing that needs them. The
@@ -2184,7 +2188,15 @@ export function opportunitiesStop(s: GameState): boolean {
   return s.clockStops === "everything" || s.clockStops === "opportunities";
 }
 
-export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) => AttentionItem | undefined {
+/**
+ * `seen`: attention keys the player has already been shown on a card and put
+ * off ("Not now" on a tenant's letter). The card was the interruption; the
+ * clock does not stop a second time for the same letter at its deadline. The
+ * item stays on the docket, in Next due and on the map. Critical items stop
+ * regardless.
+ */
+export function stopRule(s: GameState, parcels: ParcelTable, seen?: ReadonlySet<string> | readonly string[]): (cur: GameState) => AttentionItem | undefined {
+  const seenSet = seen ? new Set(seen) : null;
   const start = attentionItems(s, parcels);
   const before = new Set(start.map((a) => a.key));
   const dueAtStart = new Set(start.filter((a) => a.lastM !== undefined && s.month >= a.lastM).map((a) => a.key));
@@ -2197,7 +2209,9 @@ export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) =
   // the stops that did. "opportunities" lets those stop it too; "everything"
   // adds the soft notices. A critical item stops it in every mode.
   const mode = s.clockStops;
-  const counts = (a: AttentionItem) => a.critical || mode === "everything" ? true
+  const counts = (a: AttentionItem) => a.critical ? true
+    : seenSet?.has(a.key) ? false
+    : mode === "everything" ? true
     : mode === "opportunities" ? !a.soft
     : !a.soft && !OPPORTUNITY_KEYS.has(a.key.split(":")[0]);
   // Critical first: if a foreclosure and a broker's call land the same month,
@@ -2219,9 +2233,10 @@ export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) =
 // caller's state is untouched until they adopt the returned one.
 export function advanceUntilAttention(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
+  seen?: readonly string[],
 ): { s: GameState; months: number; reason: string | null; key?: string; critical?: boolean } {
   if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
-  const stop = stopRule(s, parcels);
+  const stop = stopRule(s, parcels, seen);
   const cur = cloneState(s);
   for (let i = 1; i <= cap; i++) {
     tickMonth(cur, parcels, bbls, adjacency);

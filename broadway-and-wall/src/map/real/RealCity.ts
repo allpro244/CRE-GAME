@@ -405,6 +405,11 @@ const REVEAL_FRAG = `
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.45 + vec3(0.05), jamb * rk);
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.6, 0.56), sill * rk * (1.0 - jamb));
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.5, head * rk);
+  // a punched window catches some of the sky, more looking down at it, so
+  // the old city's openings read as glass rather than holes (round 7); the
+  // blinds and curtains stay as drawn
+  float sky = winM * step(0.001, uReveal) * (1.0 - winShade) * (1.0 - jamb) * (0.16 + 0.12 * clamp(vv, 0.0, 1.0));
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.52, 0.62, 0.72), sky);
 }
 `;
 

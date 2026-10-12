@@ -68,3 +68,7 @@ placeholder extrusions.
 - **Round 6** — clear air over the view: the haze now starts past the camera's
   focus (0.85× its distance, was 0.35×) and takes only the far city; a lower
   cap. The skyline keeps its colour instead of fading to milk.
+- **Round 7** — punched windows (masonry and panel fronts, not curtain walls)
+  take a modest sky tint, stronger looking down; blinds and curtains as drawn.
+  The old city's windows read as glass rather than black holes, without the
+  washed-out look of the parked glass prototype.

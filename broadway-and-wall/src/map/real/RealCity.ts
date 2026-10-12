@@ -91,6 +91,8 @@ interface Family {
   mat: THREE.MeshStandardMaterial;
   masonry: boolean;  // gets a cornice and a string course
   glass: boolean;    // gets a dark lobby base and a parapet cap
+  /** the painted window within one bay and storey, and how it is dressed (real sills and lintels, round 21) */
+  win: FamilySpec["win"]; lintel?: FamilySpec["lintel"]; winStyle?: FamilySpec["winStyle"]; punched: boolean;
 }
 
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
@@ -115,7 +117,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -699,7 +701,10 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));");
   };
   mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint-reveal";
-  return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass };
+  return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass,
+    win: spec.win, lintel: spec.lintel, winStyle: spec.winStyle,
+    // a window in a wall, not a wall of glass: what can carry a sill
+    punched: !spec.glass && !spec.noWin && !spec.winJitter && spec.win.y1 - spec.win.y0 < 0.8 && spec.win.x1 - spec.win.x0 < 0.86 };
 }
 
 
@@ -2760,6 +2765,12 @@ export class RealCityLayer {
     const uptown = famKey === "stone" || famKey === "modern" || famKey === "deco" || famKey === "castiron" || famKey === "terracotta" || famKey === "newstone" || GLASSY.has(famKey);
     const trades = uptown ? SHOP_TRADES_UPTOWN : SHOP_TRADES_STREET;
     const sz = shopH / 4.4;
+    // THE SHOPFRONT'S OWN FRAME (SKYLINE_LOOK_PLAN round 21): a pier between
+    // every bay and a fascia under a projecting cornice the length of the
+    // frontage, painted as one; the brick streets in a shopkeeper's dark
+    // green, black, oxblood or cream, uptown in bronze or dark aluminium
+    const FRAME = uptown ? [[0.16, 0.13, 0.1], [0.19, 0.2, 0.21], [0.12, 0.12, 0.13]] : [[0.1, 0.2, 0.14], [0.08, 0.08, 0.09], [0.32, 0.1, 0.09], [0.7, 0.64, 0.52], [0.14, 0.17, 0.26]];
+    const frame = FRAME[Math.floor(hash01(seedK ^ 0x5f3a, 11) * FRAME.length)];
     let bayN = 0;
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i], b = ring[(i + 1) % ring.length];
@@ -2771,6 +2782,14 @@ export class RealCityLayer {
       const mx = (a[0] + b[0]) / 2 + nx * 6, my = (a[1] + b[1]) / 2 + ny * 6;
       if (this.lotAt2D(mx, my)) continue;
       const n = Math.floor(L / BAY), r = Math.atan2(uy, ux);
+      for (let k = 0; k <= n; k++) {
+        const t = Math.min(L - 0.3, Math.max(0.3, k * (L / n)));
+        this.putInst("shoppier", a[0] + ux * t, a[1] + uy * t, 0, 1, r, bbl, frame, sz);
+      }
+      for (let t = 1.4; t < L - 0.2; t += 2.7) {
+        const tt = Math.min(t, L - 1.4);
+        this.putInst("shopcorn", a[0] + ux * tt, a[1] + uy * tt, 0, 1, r, bbl, frame, sz);
+      }
       for (let k = 0; k < n; k++) {
         const t = (k + 0.5) * (L / n);
         const x = a[0] + ux * t, y = a[1] + uy * t;
@@ -2786,6 +2805,70 @@ export class RealCityLayer {
       }
     }
   }
+  /**
+   * BALCONIES, AS THE BUILDING WOULD HAVE THEM (SKYLINE_LOOK_PLAN round 22).
+   * They were one grey box, on modern families only, on the longest wall
+   * only, and built toward the inside of the wall, so most stood hidden in
+   * their own building. Now by type and era, on every street front, centred
+   * on the windows of the building's own floor grid:
+   *  - a post-war apartment slab (and a modern family over five storeys):
+   *    stacks of projecting slabs, in alternate bays, in pairs or in every
+   *    bay; a solid concrete parapet before about 1985, a steel rail, or a
+   *    glass rail after;
+   *  - a glass apartment tower after 1990: glass-railed stacks all the way up;
+   *  - a pre-war classical stone apartment house: a balustraded stone balcony
+   *    the length of the floor over the base and the floor under the cornice;
+   *  - a lower classical or Victorian front: iron Juliet rails at the
+   *    principal floors on some.
+   * The walk-ups keep their fire escapes.
+   */
+  private balconies(ring: P2[], famKey: string, style: ArchStyle, year: number, lo: number, vOff: number, zw: number, seedK: number, bbl: string) {
+    const f = this.families[famKey];
+    if (!f) return;
+    const fh = f.floorH, wc = (f.win.x0 + f.win.x1) / 2;
+    const roll = hash01(seedK ^ 0xba1c, 7), roll2 = hash01(seedK ^ 0xba1d, 7);
+    // the storeys whose floor is above the ground floor and below the roof
+    const levels: number[] = [];
+    for (let m = 1; vOff + m * fh < zw - fh * 0.6; m++) if (vOff + m * fh >= lo + 0.5 && vOff + m * fh > 2.5) levels.push(vOff + m * fh);
+    if (!levels.length) return;
+    const edges = this.streetEdges(ring, 8).sort((a, b) => b.L - a.L).slice(0, 3);
+    if (!edges.length) return;
+    const lay = (kind: string, want: (k: number, bays: number) => boolean, zs: number[], col?: number[]) => {
+      for (const e of edges) {
+        const bays = Math.max(1, Math.round(e.L / f.bayW)), bw = e.L / bays;
+        if (bays < 3) continue;
+        for (let k = 1; k < bays - 1; k++) {
+          if (!want(k, bays)) continue;
+          const t = (k + wc) * bw, x = e.a[0] + e.ux * t, y = e.a[1] + e.uy * t;
+          for (const z of zs) this.putInst(kind, x, y, z, Math.min(1.15, bw / 2.9), e.r, bbl, col);
+        }
+      }
+    };
+    const base = baseOf(famKey);
+    if (GLASSY.has(famKey)) {
+      if (year >= 1990 && zw >= 30 && roll < 0.55) lay("balcglass", (k) => k % 3 === 1, levels);
+      return;
+    }
+    if (BALC_FAMS.has(base) || (TOWER_FAMS.has(famKey) && !f.masonry && year >= 1950)) {
+      if (year < 1950 || zw > 90 || roll > 0.8) return;
+      const pat = Math.floor(roll2 * 3);
+      const want = pat === 0 ? (k: number) => k % 2 === 1 : pat === 1 ? (k: number) => k % 3 !== 0 : () => true;
+      const r3 = hash01(seedK ^ 0xba1e, 7);
+      const kind = year < 1985 ? (r3 < 0.6 ? "balcslab" : "balcrail") : (r3 < 0.6 ? "balcglass" : "balcrail");
+      lay(kind, want, levels);
+      return;
+    }
+    if (style === "classical" && f.masonry && zw >= 15 && zw <= 80 && roll < 0.6) {
+      const zs = [levels[Math.min(levels.length - 1, levels.length >= 6 ? 1 : 0)]];
+      if (levels.length >= 7) zs.push(levels[levels.length - 1]);
+      lay("balcstone", () => true, zs);
+      return;
+    }
+    if ((style === "classical" || style === "victorian") && zw < 30 && roll < 0.35) {
+      lay("juliet", (k) => k % 2 === 0 || roll2 < 0.5, levels.slice(0, 2));
+    }
+  }
+
   /** The walls of a ring that front a street: six metres out is nobody's lot. */
   private streetEdges(ring: P2[], minL: number) {
     const out: { a: P2; ux: number; uy: number; L: number; r: number }[] = [];
@@ -3436,7 +3519,13 @@ export class RealCityLayer {
     // design the player chose from a swatch
     const livery = ov ? null : liveryFor(famKey, seedK);
     if (bbl && z0 < 0.5 && !this.sandbox) this.looks.set(bbl, `${ov?.variant ?? this.variantOf(famKey, seedK)}|${tint.join(",")}|${livery?.key ?? "-"}`);
-    const walls = (fk0: string, za: number, zb: number, vOff: number, tn: number[], rr: P2[] = ring) => {
+    // THE WINDOWS' OWN STONE (SKYLINE_LOOK_PLAN round 21): every punched
+    // window gets a real sill under it, and on a masonry front a lintel or a
+    // hood over it, standing proud of the wall where the texture paints the
+    // opening, so each storey throws a row of little shadows. Collected while
+    // the walls are laid and drawn with the trim once its paint is chosen.
+    const relief: { a: P2; u: P2; n: P2; t0: number; t1: number; z: number; h: number; out: number }[] = [];
+        const walls = (fk0: string, za: number, zb: number, vOff: number, tn: number[], rr: P2[] = ring) => {
       const fk = fk0.includes("#") || fk0.includes("@") ? fk0 : fk0 === famKey && ov?.variant ? ov.variant : this.variantOf(fk0, seedK);
       const f = this.families[fk];
       const wallName = "w:" + fk;
@@ -3449,7 +3538,9 @@ export class RealCityLayer {
     // plant screen on a curtain wall or modern slab over 30 m. The top
     // storey keeps the body's floor grid, so its windows stand over the
     // windows below.
+    let mainV = { lo: 0, vOff: 0 };
     const mainWalls = (lo: number, vOff = lo, rr: P2[] = ring) => {
+      if (rr === ring) mainV = { lo, vOff };
       const n = Math.round((zw - vOff) / fh);
       const glassTop = fam.glass || style === "modernist" || style === "futurist" || style === "brutalist";
       const zt = vOff + (n - 1) * fh;
@@ -3484,14 +3575,33 @@ export class RealCityLayer {
         const v0 = (za - vOff) / f.floorH, v1 = (zb - vOff) / f.floorH;
         W.quad([a[0], a[1], za], [b[0], b[1], za], [b[0], b[1], zb], [a[0], a[1], zb], n,
           [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], tE);
+        // the sills and lintels of this run, a storey at a time, only for
+        // whole windows inside it; up to 60 m, past which they are too small
+        // to see from any camera the game uses
+        if (f.punched && zw <= 60 && L >= 1.5) {
+          const bw = L / bays, ww = (f.win.x1 - f.win.x0) * bw;
+          const u: P2 = [dx / L, dy / L];
+          const arch = f.winStyle === "arch" || f.winStyle === "segment" || f.winStyle === "pointed";
+          const lin = f.masonry && !arch && f.lintel !== "none" && f.lintel !== undefined;
+          const hood = f.lintel === "hood" || f.lintel === "pediment";
+          for (let m = Math.floor(v0); m < v1; m++) {
+            const zs = vOff + (m + 1 - f.win.y1) * f.floorH, zt = vOff + (m + 1 - f.win.y0) * f.floorH;
+            if (zs < za + 0.2 || zt > zb - 0.1) continue;
+            for (let k = 0; k < bays; k++) {
+              const tc = (k + (f.win.x0 + f.win.x1) / 2) * bw;
+              relief.push({ a, u, n: [n[0], n[1]], t0: tc - ww / 2 - 0.12, t1: tc + ww / 2 + 0.12, z: zs - 0.09, h: 0.09, out: f.masonry ? 0.11 : 0.07 });
+              if (lin) relief.push({ a, u, n: [n[0], n[1]], t0: tc - ww / 2 - (hood ? 0.2 : 0.1), t1: tc + ww / 2 + (hood ? 0.2 : 0.1), z: zt, h: hood ? 0.24 : 0.18, out: hood ? 0.15 : 0.07 });
+            }
+          }
+        }
       }
       W.aoH = 3.5;
       this.note(bbl, wallName, w0);
     };
     // ---- what hangs on the street front ------------------------------------
-    // Fire escapes zig-zag down the old brick walk-ups; balconies stack up
-    // the modern apartment slabs. Both on the longest wall, which is the
-    // street front far more often than not.
+    // Fire escapes zig-zag down the old brick walk-ups, on the longest wall,
+    // which is the street front far more often than not. (Balconies are laid
+    // with the trim, once the floor grid is known: this.balconies.)
     if (cls === "multifamily" && z0 < 0.5 && plant) {
       let li = 0, ll = -1;
       for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
@@ -3505,18 +3615,6 @@ export class RealCityLayer {
         const t = ll * (0.3 + 0.4 * ((seedK >> 3) % 100) / 100);
         for (let fl = 1; fl < floors; fl++) {
           this.putInst("fesc", A[0] + ux * t + nx * 0.6, A[1] + uy * t + ny * 0.6, z0 + fl * f.floorH + 0.05, 1, rot + (fl % 2 ? Math.PI : 0), bbl, undefined, f.floorH / 3.2);
-        }
-      } else if ((BALC_FAMS.has(baseOf(famKey)) && z1 < 48 && ll > 9 && roll < 0.65)
-        // the post-1990 glass apartment tower carries its balconies all the
-        // way up, in alternate stacks (SKYLINE_LOOK_PLAN round 13)
-        || (GLASSY.has(famKey) && year >= 1990 && z1 >= 30 && z1 < 200 && ll > 12 && roll < 0.55)) {
-        const bays = Math.max(1, Math.round(ll / f.bayW));
-        const step = GLASSY.has(famKey) ? 3 : 2;
-        for (let bi = 1; bi < bays; bi += step) {
-          const t = (bi + 0.5) * (ll / bays);
-          for (let fl = 1; fl < floors; fl++) {
-            this.putInst("balc", A[0] + ux * t, A[1] + uy * t, z0 + fl * f.floorH, 1, rot, bbl);
-          }
         }
       }
     }
@@ -3708,6 +3806,24 @@ export class RealCityLayer {
     // the Chicago school always crowns its block with a deep projecting
     // cornice; the rest draw one of four
     const corn = style === "chicago" ? 1 : Math.floor(hash01(seedK ^ 0xc0e, 9) * 4);   // 0 standard, 1 deep, 2 stripped, 3 double
+    // the sills and lintels gathered from the walls (round 21): a front and
+    // a top each. The camera always looks down on the city, so an underside
+    // is never seen, and an end is ten centimetres square; the back sits on
+    // the wall. Two quads a window keeps a city of them affordable.
+    {
+      const q = [[0, 0], [1, 0], [1, 1], [0, 1]];
+      // their own mesh, so Low can leave them out (setQuality)
+      const RB = this.buf("relief"), r0 = RB.count;
+      const col = fam.masonry || famKey === "clapboard" ? white : [0.92, 0.92, 0.92];
+      for (const r of relief) {
+        const P = (t: number, o: number, z: number) => [r.a[0] + r.u[0] * t + r.n[0] * o, r.a[1] + r.u[1] * t + r.n[1] * o, z];
+        const z0r = r.z, z1r = r.z + r.h, o = r.out;
+        RB.quad(P(r.t0, o, z0r), P(r.t1, o, z0r), P(r.t1, o, z1r), P(r.t0, o, z1r), [r.n[0], r.n[1], 0], q, col);
+        RB.quad(P(r.t0, o, z1r), P(r.t1, o, z1r), P(r.t1, 0, z1r), P(r.t0, 0, z1r), [0, 0, 1], q, col);
+      }
+      this.note(bbl, "relief", r0);
+    }
+    if (cls === "multifamily" && z0 < 0.5 && plant && bbl && !(WALKUP.has(famKey) && z1 < 34)) this.balconies(ring, famKey, style, year, mainV.lo, mainV.vOff, zw, seedK, bbl);
     if (fam.masonry) {
       if (crown && zw - z0 > 4 && !pitched) {
         if (corn === 1 || mans) {
@@ -4305,6 +4421,7 @@ export class RealCityLayer {
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = name !== "contact"; mesh.receiveShadow = name !== "contact"; mesh.frustumCulled = false;
       if (name === "contact") { mesh.renderOrder = 2; mesh.visible = this.quality !== "low"; }
+      if (name === "relief") mesh.visible = this.quality !== "low";
       this.scene.add(mesh); this.meshes.set(name, mesh);
     }
     // the buffers are spent (Buf.geometry); a later build starts on fresh ones
@@ -4347,6 +4464,9 @@ export class RealCityLayer {
     const box = (w: number, d: number, h: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
+      // a shopfront pier, and a length of its fascia and cornice (round 21)
+      case "shoppier": return { g: merge([box(0.5, 0.22, 4.1, 0, -0.11, 0), box(0.62, 0.3, 0.2, 0, -0.15, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 }), colored: true };
+      case "shopcorn": return { g: merge([box(2.8, 0.1, 0.8, 0, -0.05, 3.35), box(2.8, 0.36, 0.22, 0, -0.18, 4.15)]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 }), colored: true };
       // the shop bay, facing local -y (out of a counter-clockwise wall)
       case "awning": {
         const canopy = new THREE.BoxGeometry(4.6, 1.5, 0.07).rotateX(0.42).translate(0, -0.72, 3.05);
@@ -4573,6 +4693,48 @@ export class RealCityLayer {
         const stair = new THREE.BoxGeometry(3.6, 0.7, 0.08).rotateY(-Math.atan2(3.2, 3.0)).translate(0, 0.45, -1.6);
         return { g: merge([box(3.4, 1.0, 0.08, 0, 0.5, 0), box(3.4, 0.05, 0.9, 0, 1.0, 0.08), box(0.05, 1.0, 0.9, -1.7, 0.5, 0.08), box(0.05, 1.0, 0.9, 1.7, 0.5, 0.08), stair]),
           mat: new THREE.MeshStandardMaterial({ color: 0x1e2022, roughness: 0.6, metalness: 0.5 }) };
+      }
+      // BALCONIES (round 22): local +x along the wall, out toward local -y,
+      // standing on the floor level; one bay wide (scaled to the bay)
+      case "balcslab": {
+        const C = [0.56, 0.55, 0.52];
+        return { g: mergeColored([[box(2.6, 1.4, 0.2, 0, -0.7, -0.2), C], [box(2.6, 0.12, 1.0, 0, -1.34, 0), C],
+          [box(0.12, 1.28, 1.0, -1.24, -0.64, 0), C], [box(0.12, 1.28, 1.0, 1.24, -0.64, 0), C], [box(2.64, 0.16, 0.06, 0, -1.34, 1.0), [0.66, 0.65, 0.62]]]),
+          mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, vertexColors: true }) };
+      }
+      case "balcrail": {
+        const C = [0.56, 0.55, 0.52], M = [0.09, 0.09, 0.1];
+        const parts: [THREE.BufferGeometry, number[]][] = [[box(2.6, 1.4, 0.2, 0, -0.7, -0.2), C],
+          [box(2.6, 0.05, 0.05, 0, -1.37, 1.0), M], [box(2.6, 0.03, 0.03, 0, -1.37, 0.12), M],
+          [box(0.05, 1.4, 0.05, -1.27, -0.7, 1.0), M], [box(0.05, 1.4, 0.05, 1.27, -0.7, 1.0), M]];
+        for (const x of [-1.27, -0.42, 0.42, 1.27]) parts.push([box(0.04, 0.04, 1.0, x, -1.37, 0), M]);
+        // the pickets read as a grey screen at any distance the game is seen from
+        parts.push([box(2.5, 0.01, 0.85, 0, -1.37, 0.14), [0.2, 0.2, 0.21]]);
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.2, vertexColors: true }) };
+      }
+      case "balcglass": {
+        const C = [0.6, 0.6, 0.6], G = [0.3, 0.4, 0.44], M = [0.5, 0.52, 0.54];
+        return { g: mergeColored([[box(2.6, 1.4, 0.18, 0, -0.7, -0.18), C], [box(2.6, 0.03, 1.0, 0, -1.37, 0), G],
+          [box(0.03, 1.36, 1.0, -1.28, -0.68, 0), G], [box(0.03, 1.36, 1.0, 1.28, -0.68, 0), G], [box(2.62, 0.06, 0.05, 0, -1.37, 1.0), M]]),
+          mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.35, vertexColors: true, envMapIntensity: 1.0 }) };
+      }
+      case "balcstone": {
+        // a stone balcony: a moulded slab, a plinth, turned balusters, a rail
+        const S = [0.62, 0.58, 0.5];
+        const parts: [THREE.BufferGeometry, number[]][] = [[box(3.0, 1.05, 0.3, 0, -0.52, -0.3), S], [box(3.0, 0.14, 0.12, 0, -1.0, -0.42), [0.5, 0.47, 0.41]],
+          [box(3.0, 0.22, 0.12, 0, -0.95, 0), S], [box(3.0, 0.26, 0.12, 0, -0.95, 0.78), S],
+          [box(0.24, 0.24, 0.9, -1.38, -0.95, 0), S], [box(0.24, 0.24, 0.9, 1.38, -0.95, 0), S]];
+        for (let x = -1.1; x <= 1.11; x += 0.31) parts.push([cyl(0.06, 0.66, 0.12, 5).translate(x, -0.95, 0), S]);
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }) };
+      }
+      case "juliet": {
+        // a Juliet balcony: a shallow stone ledge and an iron rail across the opening
+        const S = [0.6, 0.57, 0.5], M = [0.06, 0.06, 0.07];
+        const parts: [THREE.BufferGeometry, number[]][] = [[box(1.6, 0.4, 0.12, 0, -0.2, -0.12), S],
+          [box(1.6, 0.04, 0.04, 0, -0.38, 0.95), M], [box(1.6, 0.03, 0.03, 0, -0.38, 0.1), M]];
+        for (let x = -0.78; x <= 0.79; x += 0.26) parts.push([box(0.025, 0.025, 0.95, x, -0.38, 0), M]);
+        parts.push([box(0.03, 0.4, 0.04, -0.79, -0.2, 0.95), M], [box(0.03, 0.4, 0.04, 0.79, -0.2, 0.95), M]);
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3, vertexColors: true }) };
       }
       case "balc": return { g: merge([box(2.2, 1.3, 0.16, 0, 0.65, 0), box(2.2, 0.04, 1.0, 0, 1.28, 0.16), box(0.04, 1.3, 1.0, -1.1, 0.65, 0.16), box(0.04, 1.3, 1.0, 1.1, 0.65, 0.16)]),
         mat: new THREE.MeshStandardMaterial({ color: 0xc9c6bf, roughness: 0.6, metalness: 0.1 }) };
@@ -6527,6 +6689,8 @@ export class RealCityLayer {
     if (this.catcher) this.catcher.visible = q !== "low";
     // the ground contact shade is transparent overdraw under every building
     const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";
+    // the window sills and lintels (round 21): High and Medium
+    const rm = this.meshes.get("relief"); if (rm) rm.visible = q !== "low";
     if (this.precip) this.precip.visible = q !== "low";
     if (this.fleets.length) this.applyCrowd();
     this.map?.triggerRepaint();

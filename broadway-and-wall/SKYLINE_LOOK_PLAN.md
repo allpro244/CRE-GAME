@@ -150,6 +150,28 @@ fixed in #231; the sweep is clean since.
   lot, MapLibre's flat lawn before, grows clumps of scrub along its edges and
   a self-seeded tree or two (a new `bush`, the same foliage and seasons),
   hung on the deed so they clear when it is built on.
+- **Round 21** — relief on the fronts (option B of the owner's choice: real
+  geometry on our own buildings rather than a bought model kit). Every
+  punched window on a building up to 60 m gets a real sill under it, and on
+  a masonry front a lintel or a hood over it, placed from the family's own
+  painted window rectangle so it sits exactly under and over the opening;
+  front and top faces only (the camera looks down), in their own mesh that
+  Low leaves out. Shop fronts get a pier between every bay and a fascia
+  under a projecting cornice, painted as one (shopkeeper green, black,
+  oxblood, cream; bronze or dark aluminium uptown). Cost on High: 8.5M to
+  9.9M triangles a frame, software renderer 8.2 s to 9.2 s.
+- **Round 22** — balconies as the building would have them. They were one
+  grey box on a few modern families, on the longest wall only, and built
+  toward the inside of the wall (local +y), so most stood hidden in their own
+  building. Now (`balconies`) on every street front, centred on the windows
+  of the building's own floor grid (above a shop or a stone base too): a
+  post-war slab carries stacks in alternate bays, in pairs or in every bay,
+  with a concrete parapet before ~1985, a steel rail, or a glass rail after;
+  a glass apartment tower after 1990 glass-railed stacks; a pre-war
+  classical stone apartment house a balustraded stone balcony along the
+  floor over the base and the floor under the cornice; a lower classical or
+  Victorian front iron Juliet rails on its principal floors. Walk-ups keep
+  their fire escapes. ~2,000 in Metropolis.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

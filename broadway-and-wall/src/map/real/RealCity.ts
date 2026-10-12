@@ -3825,7 +3825,11 @@ export class RealCityLayer {
       };
       const rot = (seedK % 360) * Math.PI / 180;
       const oldWalk = TANK_FAMS.has(famKey);
-      if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst("bulk", q[0], q[1], z1, 1, rot, bbl); }
+      // the stair bulkhead is built of what the building is: brick on a
+      // brick front, pale render or panel on a modern one, dark on glass
+      // (SKYLINE_LOOK_PLAN round 3: no field of identical tan boxes)
+      const bulkCol = fam.glass ? [0.62, 0.64, 0.68] : fam.masonry ? (rnd() < 0.6 ? [1.22, 0.78, 0.66] : [1.08, 1.0, 0.9]) : [1.22, 1.22, 1.24];
+      if (area > 160 && rnd() < 0.7) { const q = spot(0, 0.3); if (q) this.putInst("bulk", q[0], q[1], z1, 0.8 + rnd() * 0.5, rot, bbl, bulkCol); }
       if (oldWalk && z1 > 17 && z1 < 95 && area > 120 && rnd() < 0.62) {
         const n = area > 900 && rnd() < 0.5 ? 2 : 1;
         for (let i = 0; i < n; i++) { const q = spot(0.45, 0.75); if (q) this.putInst("tank", q[0], q[1], z1, 0.9 + rnd() * 0.3, rnd() * 6.28, bbl); }

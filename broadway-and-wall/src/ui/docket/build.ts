@@ -42,6 +42,8 @@ export interface DocketItem {
   more?: number;
   /** Plan-desk exception — Sign / Counter / Decline on the rail. */
   leaseId?: number;
+  /** The year-one nudge: the next rung, first on the desk under its own tag. */
+  nudge?: boolean;
   /** A one-click fix the row offers — the rail's Apply button. */
   apply?: { label: string; buyBox?: import("@/engine/buybox").BuyBox; planRows?: { use: import("@/engine/types").BuiltClass; targetNePct: number }[] };
 }
@@ -318,6 +320,7 @@ export function buildDocket(
         live.push({
           key: `milestone:${next.id}`,
           cat: "world",
+          nudge: true,
           title: `Start here: ${addr(pick.bbl)} — ${pick.cap.toFixed(1)}% going-in, ${Math.round(pick.occ * 100)}% let`,
           sub: `${usd(pick.cash)} to buy outright, closing included · the best yield on the tape you can afford · ${12 - month} mo of year one left`,
           bbl: pick.bbl,
@@ -326,6 +329,7 @@ export function buildDocket(
       } else live.push({
         key: `milestone:${next.id}`,
         cat: "world",
+        nudge: true,
         title: next.label,
         sub: `${h.how ? `${h.how} · ` : ""}${12 - month} mo of year one left`,
         page: h.page,
@@ -407,7 +411,10 @@ export function buildDocket(
   // Causality order: capital decides deals, deals decide assets, assets are
   // what the city sees. Stable within a category, so the engine's own order
   // (which puts the letters before the gossip) survives.
-  live.sort((a, b) => CAT_ORDER[a.cat] - CAT_ORDER[b.cat]);
+  // The year-one nudge leads: it is only offered when nothing is urgent, and
+  // for a first-time player it is the one row that says what to do. It sat
+  // last, under a CITY tag, below the weather.
+  live.sort((a, b) => (b.nudge ? 1 : 0) - (a.nudge ? 1 : 0) || CAT_ORDER[a.cat] - CAT_ORDER[b.cat]);
 
   if (live.length > DOCKET_CAP) {
     const folded = live.length - DOCKET_CAP;

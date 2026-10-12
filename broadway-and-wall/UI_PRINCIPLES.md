@@ -147,3 +147,17 @@ snoozable row a line taller than its words. The AT RISK banner, once raised
 above the desks, covered their tables — it stays on the map now. Toasts keep
 clear of the parcel card. Portfolio row actions sit in a 2×2 block instead of
 a four-high column.
+
+## Third batch — measured on an eight-year run
+
+A scripted principal played eight years (two buildings, cards on, every card
+answered "Not now") with every card and toast logged. 34 cards arrived — 29
+of them tenant letters, about four a year — which is a fair cadence for a
+business that runs on letters. The toast lane was the noisy channel:
+
+- **Most month-close toasts said only the month** ("Feb 2000"). A quiet month
+  now answers in the HUD — the date tile flashes as the month turns — and the
+  toast is kept for months that carry news.
+- **The same standing condition rode the toast every month** ("covenant
+  breach — cash flow swept" three months running; one note sale four). The
+  toast now names only what is new this month; the docket keeps the rest.

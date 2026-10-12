@@ -356,6 +356,7 @@ export default function TopBar() {
             <Stat
               label={monthLabel(game.month)}
               value={`Yr ${Math.floor(game.month / 12) + 1}`}
+              n={game.month}
               wide
               w={92}
               keep
@@ -772,16 +773,17 @@ function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded
   // the digits; one short tint says which way it went. Remounting the span
   // (keyed on the tick) replays the animation on every move.
   const prevN = useRef(n);
-  const [tick, setTick] = useState<{ k: number; dir: "up" | "down" } | null>(null);
+  const [tick, setTick] = useState<{ k: number; dir: "up" | "down" | "turn" } | null>(null);
   useEffect(() => {
     const p = prevN.current;
     prevN.current = n;
     if (n === undefined || p === undefined || Math.abs(n - p) < 1) return;
-    setTick((t) => ({ k: (t?.k ?? 0) + 1, dir: n > p ? "up" : "down" }));
+    // The clock is not a gain or a loss: the date tile flashes neutral.
+    setTick((t) => ({ k: (t?.k ?? 0) + 1, dir: wide ? "turn" : n > p ? "up" : "down" }));
   }, [n]);
   const body = (
     <>
-      <span className="tstat-label">{label}{delta ? <span className="tstat-delta">{delta}</span> : null}</span>
+      <span key={wide ? `l${tick?.k ?? 0}` : undefined} className={"tstat-label" + (wide && tick ? " tstat-tick-turn" : "")}>{label}{delta ? <span className="tstat-delta">{delta}</span> : null}</span>
       {value && <span key={tick?.k ?? 0} className={"tstat-value mono" + (bad ? " neg" : "") + (tick ? ` tstat-tick-${tick.dir}` : "")}>{value}</span>}
     </>
   );

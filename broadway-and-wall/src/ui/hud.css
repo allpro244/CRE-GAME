@@ -332,3 +332,15 @@
 /* The lobby's content hung in the middle of the window with a 260px hole
    under the title; it reads as one page when it sits under its heading. */
 .app .start-inner { margin: 4vh 0 auto; }
+
+/* The month turning, shown where the month is. */
+.app .tstat-tick-turn { animation: tstat-turn 0.9s var(--ease, ease-out); border-radius: 4px; }
+@keyframes tstat-turn {
+  0% { background: color-mix(in srgb, var(--accent-bright, #d19a32) 35%, transparent); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .app .tstat-tick-turn { animation: none; } }
+.app .docket-tag-next { color: #fff; background: var(--accent-bright, #d19a32); border-color: transparent; }
+.app .docket-nudge .docket-title { font-weight: 600; }
+/* Section heads are flex rows, so text-align alone never centred them. */
+.app .gameover-page .page-section { justify-content: center; text-align: center; }

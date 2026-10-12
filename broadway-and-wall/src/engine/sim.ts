@@ -1511,7 +1511,9 @@ export function monthCashBit(dCash: number): string {
   if (!Number.isFinite(dCash)) return "";
   const absM = Math.abs(dCash) / 1e6;
   if (absM < 0.01) return "";
-  return dCash > 0 ? ` · +$${absM.toFixed(2)}M` : ` · −$${absM.toFixed(2)}M`;
+  // Same grain as every other figure on screen: "$25K", not "$0.03M".
+  const amt = absM < 1 ? `$${Math.round(Math.abs(dCash) / 1000)}K` : `$${absM.toFixed(2)}M`;
+  return dCash > 0 ? ` · +${amt}` : ` · −${amt}`;
 }
 
 /**

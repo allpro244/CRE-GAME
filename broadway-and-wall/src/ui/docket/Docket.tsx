@@ -100,10 +100,10 @@ export default function Docket() {
             it.more !== undefined ? (
               <div key={it.key} className="docket-row docket-more">{it.title}</div>
             ) : (
-              <div key={it.key} className={"docket-row" + (it.urgent ? " docket-urgent" : "")}>
-                <span className={"docket-tag docket-tag-" + it.cat} title={CAT_TITLE[it.cat]}>
+              <div key={it.key} className={"docket-row" + (it.urgent ? " docket-urgent" : "") + (it.nudge ? " docket-nudge" : "")}>
+                <span className={"docket-tag docket-tag-" + (it.nudge ? "next" : it.cat)} title={it.nudge ? "Your next step" : CAT_TITLE[it.cat]}>
                   {/* the triangle carries urgency alongside the red, never instead of it */}
-                  {it.urgent ? "▲ " : ""}{CAT_TAG[it.cat]}
+                  {it.urgent ? "▲ " : ""}{it.nudge ? "NEXT" : CAT_TAG[it.cat]}
                 </span>
                 {/* The words are the link. Every row used to carry an Open button
                     as well — two buttons a row, twelve on a busy month, every one

@@ -32,7 +32,6 @@ uniform float uBand;       // the sharp band's half-height, in uv
 uniform float uBloom;      // bloom strength (0: none)
 uniform float uGrade;      // grade strength (0: none)
 uniform float uNight;      // 0 day .. 1 night: less warmth, more glow
-uniform float uGolden;     // 0 .. 1 the low sun of late afternoon: a warm cast
 uniform sampler2D tDist;   // distance to the eye, packed (aoPass); none when uAO is 0
 uniform vec2 uDistTexel;
 uniform float uAO;         // ambient-occlusion strength (0: none)
@@ -113,9 +112,6 @@ void main() {
     // warm highlights, a little blue in the shadows (less warmth at night)
     vec3 warm = vec3(1.025, 1.0, 0.965), cool = vec3(0.96, 0.99, 1.04);
     g *= mix(cool, mix(warm, vec3(1.0), uNight * 0.7), smoothstep(0.15, 0.75, l));
-    // the hour before sunset: everything the light touches goes amber, the
-    // shadows a little violet (round 16)
-    g *= mix(vec3(1.0), mix(vec3(0.94, 0.92, 1.04), vec3(1.14, 0.97, 0.78), smoothstep(0.1, 0.6, l)), uGolden * 0.8);
     // a gentle S-curve about the middle grey
     g = mix(g, g * g * (3.0 - 2.0 * g), 0.34 * uGrade);
     c = mix(c, g, uGrade);
@@ -165,7 +161,7 @@ export class PostFX {
       uniforms: {
         tFrame: { value: null }, uTexel: { value: new THREE.Vector2() },
         uTilt: { value: 0 }, uFocus: { value: 0.45 }, uBand: { value: 0.12 },
-        uBloom: { value: 0 }, uGrade: { value: 1 }, uNight: { value: 0 }, uGolden: { value: 0 },
+        uBloom: { value: 0 }, uGrade: { value: 1 }, uNight: { value: 0 },
         tDist: { value: null }, uDistTexel: { value: new THREE.Vector2() }, uAO: { value: 0 }, uAOView: { value: 0 },
       },
       vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
@@ -181,7 +177,7 @@ export class PostFX {
    * Run the pass over what is on the canvas now. pitch in radians, distM the
    * camera's distance to its focus in metres, night 0..1.
    */
-  apply(renderer: THREE.WebGLRenderer, pitch: number, distM: number, night: number, golden: number, scene?: THREE.Scene, camera?: THREE.Camera, hide: (THREE.Object3D | null)[] = []) {
+  apply(renderer: THREE.WebGLRenderer, pitch: number, distM: number, night: number, scene?: THREE.Scene, camera?: THREE.Camera, hide: (THREE.Object3D | null)[] = []) {
     if (this.level === "off" || this.forcedOff) return;
     // the distance pass for ambient occlusion, High only, at half resolution
     const ao = this.level === "full" && !!scene && !!camera;
@@ -224,7 +220,6 @@ export class PostFX {
     u.uBloom.value = full ? 0.35 : 0;
     u.uGrade.value = 1;
     u.uNight.value = night;
-    u.uGolden.value = golden;
     u.uAO.value = ao ? 0.65 * (1 - night * 0.6) : 0;
     u.uAOView.value = this.aoView ? 1 : 0;
     const auto = renderer.autoClear;

@@ -40,7 +40,8 @@ judged by screenshot. This file is the queue and the rules.
 
 ## Not in scope
 
-Weathering and ageing (declined by the owner). Engine changes of any kind.
+Weathering and ageing (declined by the owner). Night or dusk visuals (the game
+has no night mode). Engine changes of any kind.
 
 ## Progress
 
@@ -117,6 +118,19 @@ fixed in #231; the sweep is clean since.
 - **Round 16** — golden hour: the finishing pass takes the low sun's warmth
   (`uGolden`, from the same dusk curve as the sun's colour): lit surfaces go
   amber, shadows a little violet. Noon and night unchanged.
+- **Rounds 10, 11, 14 and 16 removed.** The game has no night mode: the hour
+  is locked to afternoon (`MapView.tsx`, owner: "we don't need a night mode,
+  that's pointless"), so per-room night windows, street-light pools,
+  moonlight and the golden-hour grade were dead weight (the light pools cost
+  an instance per lamp by day). Do not add night or dusk visuals.
+- **Round 18** — road paint. The streets were bare asphalt (MapLibre's
+  10 cm centre lines were under a pixel from every camera, and most streets
+  had none). The 3D city now paints them (`buildMarkings`), by the carriageway
+  measured kerb to kerb on the ground polygons: a dashed yellow centre line
+  from 8 m, a double yellow with white lane lines from 15 m, and a stop bar
+  before every junction. No paint inside a junction (a disc sized to the
+  crossing streets, and wherever road continues past either kerb). The old
+  MapLibre lane layers are hidden once the 3D city is up.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch
@@ -124,12 +138,11 @@ fixed in #231; the sweep is clean since.
 
 ## Where it stands, and what is left
 
-Rounds 1–16 are on `main`. Against the session's starting point (same town,
+Rounds 1–16 are on `main`, less the four night rounds. Against the session's starting point (same town,
 same cameras): a graded, tilt-shifted frame; warm sun with blue-filled
 shadows; ambient occlusion; tree-lined streets and wooded parks; recessed
 windows that catch the sky; glass towers that reflect the city; patchwork
-roofs; paved squares; balconies; livelier streets; and a night city lit room
-by room under moonlight, with street-light pools, and a golden hour.
+roofs; paved squares; balconies; livelier streets.
 
 What still separates it from a city-builder's look is mostly **geometry**:
 those games use hand-modelled buildings (real recesses, ledges, rooftop

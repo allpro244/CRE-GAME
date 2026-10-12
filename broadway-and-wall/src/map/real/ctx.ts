@@ -13,6 +13,8 @@ export interface CityCtx {
   sidewalks?: { ring: [number, number][]; holes: [number, number][][] }[];
   kerbs?: [number, number][][];
   zebras?: [number, number][][];
+  /** Street centre lines, node to node, with the carriageway width citygen measured (m). */
+  centerlines?: { pts: [number, number][]; w: number }[];
   /** The harbour's working edge, where the piers go out. */
   quays?: [number, number][][];
   /** Open ground — boulevard malls and the esplanade — where a tree or a bench may stand but no car parks. */

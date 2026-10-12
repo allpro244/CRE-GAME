@@ -96,6 +96,13 @@ interface Family {
 /** Props too small to read from far off; Low and Medium drop the garden-scale ones too. */
 /** Families whose apartment fronts carry balconies (by the original family they behave like). */
 const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", "precast", "stackbrick", "rainscreen", "timber", "newstone"]);
+/**
+ * Canal and slip water: shallow, enclosed, stained green by the walls and the
+ * silt — a darker teal than the open sea beside it, not the sky's own blue
+ * (SKYLINE_LOOK_PLAN round 15: the sky reflection at full strength turned
+ * every canal a flat royal blue next to a turquoise sea).
+ */
+const CANAL_WATER = 0x2c5f5c;
 const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
@@ -4780,7 +4787,7 @@ export class RealCityLayer {
         B.quad([b[0], b[1], BED], [a[0], a[1], BED], [a[0], a[1], TOP], [b[0], b[1], TOP], [nx, ny, 0], [[L, 0], [0, 0], [0, 1.7], [L, 1.7]], one);
       }
     }
-    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
+    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: CANAL_WATER, roughness: 0.16, metalness: 0.05, envMapIntensity: 0.75, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
     wm.receiveShadow = true; wm.renderOrder = -4;
     this.scene.add(wm);
     for (const [buf, col, rough] of [[stone, 0xa69d8b, 0.75], [rubble, 0x7d776c, 0.95]] as [Buf, number, number][]) {
@@ -4838,7 +4845,7 @@ export class RealCityLayer {
         }
       }
     }
-    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, vertexColors: true, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
+    const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: CANAL_WATER, roughness: 0.16, metalness: 0.05, vertexColors: true, envMapIntensity: 0.75, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
     wm.receiveShadow = true; wm.renderOrder = -4;
     const sm = new THREE.Mesh(stone.geometry(), new THREE.MeshStandardMaterial({ color: 0xb5ab98, roughness: 0.8, vertexColors: true, envMapIntensity: 0.3 }));
     sm.castShadow = sm.receiveShadow = true;

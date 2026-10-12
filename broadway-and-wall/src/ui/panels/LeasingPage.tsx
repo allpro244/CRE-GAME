@@ -39,7 +39,9 @@ export function LeasingPage() {
   });
 
   const rows = Object.values(game.holdings).flatMap((h) => {
-    if (isLeasedFee(h)) return [];
+    // A lot folded into an assemblage is part of the site's deed now — its
+    // building was demolished; listing it showed buildings that no longer exist.
+    if (isLeasedFee(h) || game.merged?.[h.bbl]) return [];
     const rec = resolveRec(parcels, game, h.bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) return [];
     const commercial = isCommercial(rec);

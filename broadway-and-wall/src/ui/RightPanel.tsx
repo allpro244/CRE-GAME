@@ -337,7 +337,12 @@ type Sec = { el: HTMLElement; label: string };
 function secLabel(el: HTMLElement): string | null {
   // A `.page-section` is usually a container; only the bare-text ones are heads.
   if (el.classList.contains("page-section") && !el.classList.contains("page-section-head") && el.children.length > 0) return null;
-  const raw = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+  // A heading can carry its section's controls (Leasing's "By building" holds
+  // the min-lease field and the auto-lease switch); their text is not the
+  // heading's name — the chip read "By buildingMin. new lease, al…".
+  const head0 = el.cloneNode(true) as HTMLElement;
+  head0.querySelectorAll("label, input, button, select, .btn, .seg, .switch, .chip").forEach((n) => n.remove());
+  const raw = (head0.textContent ?? "").replace(/\s+/g, " ").trim();
   if (!raw || raw.length > 72) return null;
   // "On the market · 7 · 2 of them yours" → "On the market"; "Milestones · 3 of 12" → "Milestones".
   // A numbered head ("1 · NOI — what the building earns") keeps its number:

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useMasonry } from "@/ui/useMasonry";
 import type { Econ } from "@/engine/types";
 import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
@@ -404,6 +405,11 @@ export function EconomyPage() {
   // the rent and vacancy they move, not a desk away. The stance can be asked
   // for from outside (Pulse's rows, its Employers and Board cards).
   const [sel, setSel] = useDeskView<Stance>("economy", "general", STANCES);
+  // The class charts are of very different heights (a chart plus three
+  // paragraphs beside a chart and a line), and a plain two-column grid left a
+  // screen of blank beside the tall ones. Masonry drops each into whichever
+  // column frees up first — see ui/useMasonry.
+  const masonry = useMasonry();
   const isClass = (CLASSES_ALL as readonly string[]).includes(sel);
   // Every per-class computation below still wants a concrete class, and the
   // cheapest way to keep the non-class stances from breaking marketBalance(e,
@@ -886,7 +892,7 @@ export function EconomyPage() {
         })()}
       </div>
 
-      <div className="chart-grid">
+      <div className="chart-grid chart-masonry" ref={masonry}>
         <div className="chart-cell">
           <div className="chart-title">Vacancy — {spanYrs} year{spanYrs === 1 ? "" : "s"} back, three forward</div>
           {/* The projection is appended to whatever history is selected, and
@@ -977,8 +983,9 @@ export function EconomyPage() {
             are most of what makes or loses money here.
           </div>
         </div>
-        <div className="chart-cell">
-          {/* TWO CHARTS, TWO CAPTIONS.
+        <>
+          {/* TWO CHARTS, TWO CAPTIONS — and now two cells, so the masonry can
+              put the concession gap in whichever column has room for it.
               This cell had one title and one note covering both, and the note
               gave the bottom chart a single compressed sentence. The owner
               screenshotted the cell asking what it was — and what they had
@@ -986,7 +993,6 @@ export function EconomyPage() {
               collapses to nothing for twenty years and climbs back. Nothing on
               the page said what a concession gap is. Each chart now carries its
               own heading and its own note, directly above and below itself. */}
-          <div className="chart-title">Demand met vs supply built</div>
           {(() => {
             // The annual bars in the cell to the left show the FLOWS; this
             // pair shows the stocks. Running totals of the same abs/comp
@@ -1008,6 +1014,8 @@ export function EconomyPage() {
             });
             const xl: [string, string] = [xFrom, xTo];
             return (<>
+              <div className="chart-cell">
+              <div className="chart-title">Demand met vs supply built</div>
               <LineChart height={92} series={[
                 { label: "absorbed", color: "#4a7d5a", pts: absCum },
                 { label: "delivered", color: "#a8562e", pts: compCum, dashed: true },
@@ -1022,7 +1030,9 @@ export function EconomyPage() {
                 rents can move. Solid above dashed is the opposite — demand arrived and nobody built for it,
                 which is how a shortage, and the rent spike that follows one, is made.
               </div>
-              <div className="chart-title" style={{ marginTop: 12 }}>The concession gap</div>
+              </div>
+              <div className="chart-cell">
+              <div className="chart-title">The concession gap</div>
               <LineChart height={92} series={[{ label: "concession gap", color: "#7d8a96", pts: gap }]}
                 yFmt={pctFmt} zeroBase xLabels={xl} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
               {/* WHAT THE OWNER WAS LOOKING AT. This is the line that opens to
@@ -1053,9 +1063,10 @@ export function EconomyPage() {
                 within months of the market turning while asking sits still for half a year or more. Watch
                 this one; the rent chart is the confirmation, not the signal.
               </div>
+              </div>
             </>);
           })()}
-        </div>
+        </>
       </div>
 
       {/* ---- submarkets ---- */}

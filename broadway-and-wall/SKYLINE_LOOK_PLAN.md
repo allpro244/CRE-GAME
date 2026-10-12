@@ -76,3 +76,7 @@ placeholder extrusions.
   generated `bw-grain-setts` pattern at double pixel density, so a flag is a
   flag and not a car-length slab); the centre of the reference view was one
   flat beige field.
+- **Round 9** — cost: the occlusion distance pass is redrawn only when the
+  camera moves (or every half second for the traffic), not on every one of
+  the ~30 repaints a second the cars cause; and the paving fades in only at
+  street zoom, where a pattern drawn at a fixed screen size reads as stone.

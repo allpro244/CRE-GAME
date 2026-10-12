@@ -141,6 +141,8 @@ void main() { gl_FragColor = packDepthToRGBA(clamp(length(vP) / 6000.0, 0.0, 0.9
 export class PostFX {
   private tex: THREE.FramebufferTexture | null = null;
   private distRT: THREE.WebGLRenderTarget | null = null;
+  private lastProj: number[] = [];
+  private lastDist = 0;
   private readonly distMat = new THREE.ShaderMaterial({ vertexShader: DIST_VERT, fragmentShader: DIST_FRAG, side: THREE.DoubleSide });
   // the ground is MapLibre's, not ours: the distance pass stands its own
   // street-level plane under the city, or nothing would meet the pavement
@@ -179,7 +181,21 @@ export class PostFX {
     if (this.level === "off" || this.forcedOff) return;
     // the distance pass for ambient occlusion, High only, at half resolution
     const ao = this.level === "full" && !!scene && !!camera;
-    if (ao) this.distPass(renderer, scene!, camera!, hide);
+    // the city does not move: while the camera holds still (the traffic keeps
+    // repainting at ~30 fps) the last distance pass still stands, so it is
+    // only redrawn when the view changes — or every half second, for the
+    // cars and the odd rebuilt deed
+    if (ao) {
+      const e = (camera as THREE.Camera).projectionMatrix.elements;
+      let same = !!this.distRT && this.lastProj.length === 16;
+      for (let i = 0; same && i < 16; i++) if (Math.abs(e[i] - this.lastProj[i]) > 1e-9) same = false;
+      const now = performance.now();
+      if (!same || now - this.lastDist > 500) {
+        this.distPass(renderer, scene!, camera!, hide);
+        this.lastProj = Array.from(e);
+        this.lastDist = now;
+      }
+    }
     renderer.getDrawingBufferSize(this.size);
     const w = Math.floor(this.size.x), h = Math.floor(this.size.y);
     if (w < 2 || h < 2) return;

@@ -261,7 +261,9 @@ export function LoiCounterDraft({
           ? ` (was ${usd(loiSigningCost(loi, feeRate))} on their letter)`
           : ""}
       </div>
-      <div className="btn-row">
+      {/* Sticky inside a card: the draft runs to ~970px, and Send sat below
+          the card's fold behind five sliders. */}
+      <div className="btn-row counter-actions">
         <button
           type="button"
           className="btn btn-buy"
@@ -277,7 +279,7 @@ export function LoiCounterDraft({
         >
           Best &amp; final
         </button>
-        <button type="button" className="btn" onClick={onBack}>Back</button>
+        <button type="button" className="btn" data-esc onClick={onBack}>Back</button>
       </div>
       {fundShort && (
         <div className="hint dim">Signing still draws the shortfall on the line if cash is short.</div>

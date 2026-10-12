@@ -211,3 +211,8 @@ business that runs on letters. The toast lane was the noisy channel:
   papered contract (the engine already files it as a soft docket row), and the
   toast says what happens next: "Under contract with … at $1.61M — it closes
   Sep 2008 on its own."
+- **A long card keeps its verbs on screen.** Countering a letter opens five
+  sliders and the card runs to ~970px; Send sat below the card's own fold.
+  Every card's action band is now sticky at its foot, the counter's Send /
+  Best & final / Back included (Esc = Back while countering), and tall cards
+  start below the queue pill instead of under it.

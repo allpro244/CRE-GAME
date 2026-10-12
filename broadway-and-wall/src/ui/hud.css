@@ -404,3 +404,15 @@
   display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none;
   border-radius: 50%; background: var(--neg); color: #fff; font: 700 11px/1 var(--font-mono);
 }
+
+/* A long card keeps its verbs on screen. */
+.app .modal .counter-actions {
+  position: sticky; bottom: calc(-1 * var(--sp-5, 20px)); z-index: 2;
+  margin: 12px calc(-1 * var(--sp-6, 24px)) 0; padding: 10px var(--sp-6, 24px);
+  background: var(--surface-2); border-top: 1px solid var(--border);
+}
+/* Tall cards start below the queue pill rather than under it. */
+.app:has(.card-queue) > .modal-backdrop { padding-top: 56px; }
+.app:has(.card-queue) > .modal-backdrop > .modal { max-height: calc(100vh - 84px); }
+.app .modal > .modal-actions { position: sticky; bottom: calc(-1 * var(--sp-5, 20px)); z-index: 2; }
+.app .modal > .modal-actions:not(:last-child) { bottom: 0; }

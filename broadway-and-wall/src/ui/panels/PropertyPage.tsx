@@ -109,7 +109,7 @@ export function PropertyPage() {
   // goes with it. Fall back rather than render a page with nothing on it.
   const active = shown.some((t) => t.key === tab) ? tab : "summary";
   return (
-    <div>
+    <div className="prop-page">
       <div className="stat-strip">
         <Big label="Appraisal" value={band(bbl, value)} />
         <Big

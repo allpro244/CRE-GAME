@@ -684,12 +684,8 @@ export function DealsPage() {
         <div className="page-section">
           Sales in progress · {sales.length + (game.portfolioSale ? 1 : 0)}
         </div>
-        <div className="hint">
-          Offers on your own book live here, full width — not next to inbound letters.
-          One card at a time: accept, decline, or counter.
-        </div>
         {sales.length === 0 && !game.portfolioSale
-          && <div className="hint">Nothing listed. Sell from any owned building's card.</div>}
+          && <div className="hint">Nothing listed. Sell from any building's Sell tab; buyers' offers land here to accept, counter or decline.</div>}
         {game.portfolioSale && <PortfolioSaleDesk bundle={[]} clear={() => { /* nothing to clear: not bundling here */ }} />}
         {sales.map((sl) => <SaleOfferCard key={sl.bbl} bbl={sl.bbl} ask={sl.ask} go={go} />)}
       </section>}

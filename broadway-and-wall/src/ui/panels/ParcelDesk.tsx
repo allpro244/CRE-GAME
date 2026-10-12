@@ -7,6 +7,7 @@ import { marketAppraisal } from "@/engine/value";
 import { memo, useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
+import { useMasonry } from "@/ui/useMasonry";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { OpsChoices } from "@/ui/panels/OpsChoices";
@@ -85,6 +86,7 @@ function ParcelPanelInner({
   // rather than a bare boolean so selecting a different building simply
   // dismisses the question instead of asking it about the wrong address.
   const [razeAsk, setRazeAsk] = useState<string | null>(null);
+  const masonry = useMasonry();
   // SUMMARY UNTIL ASKED. This flipped to the full offering memorandum —
   // seventy-odd rows — once the campaign passed month 12, on the theory that a
   // veteran wants everything. A veteran who does picks Full OM once and the
@@ -154,7 +156,7 @@ function ParcelPanelInner({
   );
 
   return (
-    <div className={embedded ? "panel-embed" : "panel"}>
+    <div className={embedded ? "panel-embed" : "panel"} ref={embedded ? masonry : undefined}>
       {!embedded && (
         <div className="panel-head">
           <div>
@@ -878,8 +880,14 @@ function ParcelPanelInner({
           {/* The docked card gets the answer and a door; the desk itself —
               four lenders, a dial and a before/after sheet — is a room's
               worth of reading and opens as one. */}
-          {tab === undefined ? <RefiGlance bbl={selectedBBL} /> : <RefiSection bbl={selectedBBL} />}
+          {tab === undefined && <RefiGlance bbl={selectedBBL} />}
         </div>
+      )}
+      {/* The full refinance desk is its own full-width section on the page,
+          not the tail of the Debt column — tucked inside Debt it made one
+          column 1,400px tall beside a 270px cash statement. */}
+      {on("money") && holding?.loan && tab !== undefined && (
+        <div className="deal deal-wide"><RefiSection bbl={selectedBBL} /></div>
       )}
 
       {on("deal") && listing && !holding && (() => {

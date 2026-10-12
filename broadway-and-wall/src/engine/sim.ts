@@ -1573,15 +1573,19 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     out.push({ key: `loi:${l.id}`, label, lastM: l.expiresM - 1 });
   }
   // Tenant-relief letters expire in three months and a lapse is a refusal.
-  // They lived on Deals but not in the attention list, so Year/Skip could run
-  // straight past a decision the player had explicitly asked the game to stop
-  // for. Each letter gets its own key because several tenants can ask together.
+  // They are on the docket so they are seen; each letter gets its own key
+  // because several tenants can ask together.
   for (const a of s.asks ?? []) {
     if (s.holdings[a.bbl]?.groundLeased) continue;
     const label = a.kind === "giveback"
       ? `${a.name} wants to hand space back — answer by ${monthLabel(a.expiresM - 1)}`
       : `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM - 1)}`;
-    out.push({ key: `tenant-ask:${a.id}`, label, lastM: a.expiresM - 1 });
+    // On the docket, never a stop (the owner's call): a relief or give-back
+    // letter is the tenant's problem arriving at your desk, and the clock
+    // halting for every one of them was the interruption, not the decision.
+    // Unanswered, it lapses as a refusal — the Leasing desk's relief rule
+    // answers them automatically for a player who would rather not read them.
+    out.push({ soft: true, key: `tenant-ask:${a.id}`, label, lastM: a.expiresM - 1 });
   }
   // A building the player starred reaching the tape: they asked to be told,
   // so Yr / Skip / Play stop on it like any other thing that needs them. The

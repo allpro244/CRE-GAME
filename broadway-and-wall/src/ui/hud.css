@@ -448,3 +448,66 @@
 .app .news-repeat { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
 .app .docket-more-btn { appearance: none; background: none; border: 0; text-align: left; cursor: pointer; padding: 2px 0 0; font: inherit; font-size: 11.5px; color: var(--accent, #9a6a12); }
 .app .docket-more-btn:hover { text-decoration: underline; }
+
+/* ---------- no half-empty pages -------------------------------------------
+   The property page is CSS columns with unbreakable sections, so one tall
+   section (the refinance desk was 1,400px) took a whole column and left the
+   other blank below a 270px cash statement. A wide section now spans both
+   columns and lays itself out across the room instead. */
+@media (min-width: 900px) {
+  .app .page-backdrop .refi-split {
+    display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 0 32px; align-items: start; border-top: 0; margin-top: 0; padding-top: 0;
+  }
+  .app .page-backdrop .refi-split > .deal-head,
+  .app .page-backdrop .refi-split > .refi-intro { grid-column: 1 / -1; }
+  .app .page-backdrop .refi-split > .refi-terms { position: sticky; top: 8px; }
+}
+.app .refi-intro { display: flex; flex-wrap: wrap; gap: 2px 18px; align-items: baseline; margin-bottom: 6px; }
+.app .refi-intro > .hint { margin: 0 !important; }
+.app .refi-pick .tbl tbody tr[tabindex="0"]:focus-visible { outline: 2px solid var(--accent, #9a6a12); outline-offset: -2px; }
+/* A folded hint showed a sliver of its third line: the clamp hides overflow
+   below the box's content edge, and the 6px bottom padding sat under it. */
+.app .page .hint.hint-fold { padding-bottom: 0; margin-bottom: 6px; }
+@media (min-width: 900px) {
+  .app .page-backdrop .panel-embed {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-auto-rows: 4px; column-gap: 28px; row-gap: 0; align-items: start;
+  }
+  .app .page-backdrop .panel-embed > .deal-wide,
+  .app .page-backdrop .panel-embed > .chip-row,
+  .app .page-backdrop .panel-embed > .solo { grid-column: 1 / -1; }
+  /* the one section on a tab: across the room, its parts in two columns */
+  .app .page-backdrop .panel-embed > .solo { columns: 2; column-gap: 28px; }
+  .app .page-backdrop .panel-embed > .solo > * { break-inside: avoid; }
+  .app .page-backdrop .panel-embed > .solo > .deal-head { column-span: all; }
+}
+/* `.app .hint` (padding 4px 0) out-ranked `.alarm`'s padding, so every
+   "hint alarm" — the red why-not under a desk — sat flush on its rule. */
+.app .hint.alarm, .app .alarm { padding: 8px 12px; }
+
+/* A key/value block alone across a 1,100px page put each label a thousand
+   pixels from its number. On the property page such a block takes the left
+   half; its button and note sit beside it on the right. */
+@media (min-width: 900px) {
+  .app .page-backdrop .prop-page > .page-section:has(> .grid) {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 28px; align-items: start;
+  }
+  .app .page-backdrop .prop-page > .page-section:has(> .grid) > * { grid-column: 2; justify-self: start; }
+  .app .page-backdrop .prop-page > .page-section:has(> .grid) > .hint { justify-self: stretch; }
+  .app .page-backdrop .prop-page > .page-section:has(> .grid) > .page-section-head { grid-column: 1 / -1; }
+  .app .page-backdrop .prop-page > .page-section:has(> .grid) > .grid { grid-column: 1; grid-row: span 6; justify-self: stretch; }
+}
+
+/* A label/value list across a full page put each label 1,000px from its
+   number ("Mortgages ............ $680K"). A pure list — nothing in it but
+   label and value cells — takes as many label/value pairs per row as fit:
+   two across a page, one in a half-width card or a dock. A list with a
+   sentence or a chart cell in it keeps its single column. */
+@media (min-width: 900px) {
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) {
+    grid-template-columns: repeat(auto-fill, minmax(140px, max-content) minmax(220px, 1fr));
+    column-gap: 24px;
+  }
+}

@@ -8,7 +8,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
-import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, serviceSpec, planSpec, START_YEAR } from "@/engine/types";
+import { monthLabel, CREDIT_LABEL, OPS_SERVICE, OPS_PLAN, START_YEAR } from "@/engine/types";
 import type { BuiltClass } from "@/engine/types";
 import { initialCondition, recoveryOf, marketRentPsfYr, managedRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
@@ -119,6 +119,7 @@ function ParcelPanelInner({
   // header above it by the premium on every corner, waterfront and high street
   // lot, and the sale desk below priced your listing against it.
   const value = marketAppraisal(game, rec, selectedBBL, cond);
+  const dupe = embedded && !!holding;
   const builtFar = rec.lotArea > 0 ? rec.bldgArea / rec.lotArea : 0;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
   // A ground lessee's building stands on your deed — it is not yours to let.
@@ -167,9 +168,9 @@ function ParcelPanelInner({
       )}
 
       {on("summary") && <div className="chip-row">
-        <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{useLabel(rec)}</span>
-        <span className="chip chip-zone mono">{rec.zoneDist}</span>
-        {holding && <span className="chip chip-owned">OWNED</span>}
+        {!dupe && <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{useLabel(rec)}</span>}
+        {!dupe && <span className="chip chip-zone mono">{rec.zoneDist}</span>}
+        {holding && !dupe && <span className="chip chip-owned">OWNED</span>}
         {holding?.groundLeased && game.groundLeases?.[selectedBBL] && (game.built?.[selectedBBL]?.bldgArea || game.groundLeases[selectedBBL].builtM !== undefined) && (
           <span className="chip">LESSEE BUILT</span>
         )}
@@ -359,8 +360,13 @@ function ParcelPanelInner({
         );
       })()}
 
+      {/* ONE FACT, ONE PLACE. Inside the property file (embedded, on your own
+          building) the stat tiles and the header grid already print the
+          appraisal, occupancy, NOI, gross area, FAR and demand; this grid
+          printed each of them a second time underneath. `dupe` drops them
+          there and only there — the map card has no tiles. */}
       {on("summary") && <div className="grid">
-        <Row k="Appraisal" v={band(selectedBBL, value)} strong />
+        {!dupe && <Row k="Appraisal" v={band(selectedBBL, value)} strong />}
         {(() => {
           const prem = rec.locPremium ?? 1;
           const tags: string[] = [];
@@ -457,7 +463,7 @@ function ParcelPanelInner({
             `rentableSf`. Quoting gross as leasable would be the lie that row
             was written to prevent. The owned-building remainder (demises too
             small to let) is still a real deduction, on rentable feet. */}
-        {isBuilt && rec.bldgArea > 0 && (
+        {isBuilt && rec.bldgArea > 0 && !dupe && (
           <Row
             k="Gross area"
             v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`}
@@ -501,7 +507,7 @@ function ParcelPanelInner({
             in a percentage. The appraisal's number — feet let over feet built —
             is still what the value and the buyer's quote above are struck on;
             see occRead for why those are two questions and not two answers. */}
-        {holding && isBuilt && (() => {
+        {holding && isBuilt && !dupe && (() => {
           const or = occRead(rec, holding);
           return <Row k="Occupancy" v={occLabel(or)} title={occTitle(or)} />;
         })()}
@@ -540,12 +546,12 @@ function ParcelPanelInner({
           const abate = holding && omFull ? remainingAbatement(holding, game.month) : 0;
           return (
             <>
-              <Row
+              {!dupe && <Row
                 k={ip.disclosed
                   ? <><Gloss term="NOI">In-place NOI</Gloss> / yr</>
                   : <><Gloss term="NOI">NOI</Gloss> / yr (mkt est.)</>}
                 v={usd(ip.noi)}
-              />
+              />}
               {os && os.freeRent > 0 && (
                 <Row
                   k="Scheduled rent (abated)"
@@ -563,8 +569,8 @@ function ParcelPanelInner({
         {omFull && holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
         {omFull && <Row k="Lot area" v={sf(rec.lotArea)} />}
         {omFull && isBuilt && isMixedUse(rec) && <Row k="The stack" v={mixLabel(rec)} />}
-        <Row k={<span><Gloss term="FAR">FAR</Gloss> built / max</span>} v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />
-        <Row k="Demand" v={String(Math.round(demandNow(game, rec))) + " / 100"} />
+        {!dupe && <Row k={<span><Gloss term="FAR">FAR</Gloss> built / max</span>} v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />}
+        {!dupe && <Row k="Demand" v={String(Math.round(demandNow(game, rec))) + " / 100"} />}
       </div>}
 
       {/* the builder's read on vacant dirt, owned or not — see ResidualRead */}
@@ -1123,19 +1129,25 @@ function ParcelPanelInner({
               />
             ))}
           </div>
-          <div className="btn-row">
+          {/* EACH CHOICE UNDER ITS OWN NAME. The three settings were two
+              labels stacked together and then three unlabeled rows of
+              buttons, so which three set the service and which the capital
+              plan was a guess. Now: a name, a segmented control, its read. */}
+          <div className="ops-choice">
+            <span className="ops-choice-k">Asking</span>
+            <span className="seg" role="group" aria-label="Asking rents">
             {([-1, 0, 1] as const).map((v) => (
               <button
                 key={v}
                 className={"btn" + ((holding.stance ?? 0) === v ? " btn-on" : "")}
+                aria-pressed={(holding.stance ?? 0) === v}
                 title={v === 1 ? "+8% asking rents, fewer LOIs" : v === -1 ? "−8% rents, faster lease-up" : "market rents"}
                 onClick={() => useStore.getState().stance(selectedBBL, v)}
               >
-                {v === 1 ? "Push rents" : v === -1 ? "Fill space" : "Market"}
+                {v === 1 ? "Push +8%" : v === -1 ? "Fill −8%" : "Market"}
               </button>
             ))}
-          </div>
-          <div className="btn-row">
+            </span>
             <button
               type="button"
               className={"btn" + (holding.autoLease ? " btn-on" : "")}
@@ -1144,7 +1156,7 @@ function ParcelPanelInner({
                 ? "Answering every letter here by the rent posture above. Click to take the letters back."
                 : "Let this building answer its own letters by the rent posture above — no pop-ups. Same commission and tenant reactions as signing yourself."}
             >
-              {holding.autoLease ? "Auto-lease on ✓" : "Auto-lease"}
+              {holding.autoLease ? "Auto-answer ✓" : "Auto-answer"}
             </button>
           </div>
           {holding.autoLease && (
@@ -1153,30 +1165,37 @@ function ParcelPanelInner({
               <div className="hint" style={{ fontSize: 11 }}>{autoLeaseRule(game, holding)}</div>
             </>
           )}
-          <div className="grid">
-            <Row k="Service" v={`${serviceSpec(holding.service).label} · tenants read it as ${Math.round(100 * (holding.svcIdx ?? 0.55))} of 100`} />
-            <Row k="Capital plan" v={`${planSpec(holding.plan).label} · condition ${Math.round(100 * (holding.condIdx ?? 0.6))} of 100`} />
-          </div>
-          <div className="btn-row">
+          <div className="ops-choice">
+            <span className="ops-choice-k">Service</span>
+            <span className="seg" role="group" aria-label="Service level">
             {OPS_SERVICE.map((o) => (
               <button
                 key={o.key}
                 className={"btn" + ((holding.service ?? 0) === o.key ? " btn-on" : "")}
+                aria-pressed={(holding.service ?? 0) === o.key}
                 title={o.blurb + " — three years to matter, three years to undo"}
                 onClick={() => useStore.getState().ops(selectedBBL, { service: o.key })}
               >{o.label}</button>
             ))}
+            </span>
+            <span className="ops-choice-read">tenants read it as {Math.round(100 * (holding.svcIdx ?? 0.55))} of 100</span>
           </div>
-          <div className="btn-row">
+          <div className="ops-choice">
+            <span className="ops-choice-k">Capital plan</span>
+            <span className="seg" role="group" aria-label="Capital plan">
             {OPS_PLAN.map((o) => (
               <button
                 key={o.key}
                 className={"btn" + ((holding.plan ?? 1) === o.key ? " btn-on" : "")}
+                aria-pressed={(holding.plan ?? 1) === o.key}
                 title={o.blurb}
                 onClick={() => useStore.getState().ops(selectedBBL, { plan: o.key })}
               >{o.label}</button>
             ))}
+            </span>
+            <span className="ops-choice-read">condition {Math.round(100 * (holding.condIdx ?? 0.6))} of 100</span>
           </div>
+          <div className="ops-choice-k" style={{ marginTop: 10 }}>One-off programmes</div>
           <div className="btn-row">
             {PROGRAMS.map((p) => {
               const done = holding.programsDone?.[p.id] !== undefined;

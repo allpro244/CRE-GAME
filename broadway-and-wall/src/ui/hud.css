@@ -436,3 +436,12 @@
   55% { transform: translateX(-50%) scale(0.99) rotate(0.3deg); opacity: 1; }
   100% { transform: translateX(-50%) scale(1) rotate(0deg); opacity: 1; }
 }
+
+/* A setting: its name, the choice, and what it reads as today. */
+.app .ops-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 8px 0; }
+.app .ops-choice-k {
+  min-width: 92px;
+  font: 600 10px/1.2 var(--font-ui); letter-spacing: var(--tracking-caps, 0.06em);
+  text-transform: uppercase; color: var(--text-3);
+}
+.app .ops-choice-read { font-size: var(--fs-xs); color: var(--text-3); }

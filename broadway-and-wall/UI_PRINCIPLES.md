@@ -255,3 +255,13 @@ Asked plainly: what does a principal need without opening a desk?
   "balloon", a tenant) and Enter opens it, and your buildings carry their debt
   on their row, so "debt" or "loan" finds them. It used to find the Debt desk
   and a lender.
+- **The property file says each fact once.** Its Overview printed the
+  appraisal, occupancy, NOI, gross area, FAR, demand and year built two or
+  three times — in the tiles, the header grid, and again in the Overview grid
+  under them — plus "Office · C-8 · OWNED" chips under a header that already
+  said all three. Inside the file those rows and chips are dropped; the map
+  card, which has no tiles, keeps them.
+- **Operations names each setting.** Asking rent, Service and Capital plan
+  were two stacked labels and three unlabeled rows of buttons. Each is now a
+  line: its name, a segmented control, and what it reads as today
+  ("tenants read it as 55 of 100", "condition 92 of 100").

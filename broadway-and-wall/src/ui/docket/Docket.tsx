@@ -154,7 +154,20 @@ export default function Docket() {
                 ) : <span />}
                 {/* urgent items get no Later — a balloon inside six months
                     does not go away because you asked */}
-                {!it.urgent ? (
+                {/* A tape line is this month's news and leaves the docket next
+                    month on its own, so "Later" (three months) meant nothing on
+                    it: the honest control is dismiss. */}
+                {it.urgent ? <span /> : it.key.startsWith("news:") ? (
+                  <button
+                    type="button"
+                    className="year-rail-go docket-later docket-dismiss"
+                    onClick={() => later(it)}
+                    title="Dismiss — it is on the News desk either way"
+                    aria-label="Dismiss"
+                  >
+                    ×
+                  </button>
+                ) : (
                   <button
                     type="button"
                     className="year-rail-go docket-later"
@@ -163,7 +176,7 @@ export default function Docket() {
                   >
                     Later
                   </button>
-                ) : <span />}
+                )}
               </div>
             ),
           )}

@@ -236,6 +236,13 @@ function ParcelPanelInner({
         // $238 against $464, neither of which was the building.
         const standingPsf = dirt ? 0 : value / Math.max(1, rec.lotArea);
         const pencils = read.winner === "builder" && read.builder > 0 && (dirt || read.builder > standingPsf);
+        // THE MAP CARD IS A GLANCE. Most standing buildings in town leave a
+        // quarter of their envelope unused, so "Underbuilt · a rebuild does
+        // not pencil" headed nearly every owned building's card — a
+        // non-action in the slot where the card's first fact belongs. On the
+        // docked card it shows when there is something to do (dirt, or a
+        // rebuild that pencils); the full read stays on the property file.
+        if (tab === undefined && !dirt && !pencils) return null;
         // A STANDING BUILDING IS NOT DIRT. This card headed every owned
         // building that used under three quarters of its envelope "Dirt —
         // nothing pencils today · Holder bid $0/sf wins the auction — wait for

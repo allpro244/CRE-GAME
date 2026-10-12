@@ -177,3 +177,30 @@ business that runs on letters. The toast lane was the noisy channel:
   learns that badges are wallpaper. News is unread, not waiting: City gets a
   dot, the count stays on the News tab inside, and numbered badges are left
   for things that want a decision.
+
+## Fifth batch — the card the game shows most
+
+- **The tenant letter leads with its decision.** It is 29 of every 34 cards
+  in the measured run, and it printed nine rows of terms each time. Now: rent,
+  net effective against the market, cash to sign, answer-by — then one folded
+  line that still carries the gist ("TERMS 1.75%/yr bump · triple net · no TI ·
+  3 mo free"). A gross lease, which puts every expense on you, never folds.
+- **Tape rows on the docket dismiss instead of snoozing.** A news line leaves
+  the docket next month on its own; "Later — back in three months" meant
+  nothing on it. It has a ×.
+- **The map card leads with the building, not a non-action.** Most standing
+  buildings leave a quarter of their envelope unused, so "Underbuilt · a
+  rebuild does not pencil" headed nearly every owned building's card. On the
+  map card it now shows only when there is something to do — bare dirt, or a
+  rebuild that pencils. The property file's Overview still carries the full
+  read.
+- **Notes leads with the paper for sale.** The badge on the Notes tab counts
+  offers on the block, and the offer was the last thing on the page — under an
+  empty "Private asks" section and the table of which banks are under
+  pressure. Offers come first now; the pressure table follows them, and the
+  private sleeve moves below when nobody is asking.
+- **A lit badge explains itself where it leads.** Capital's red "!" means a
+  maturity wall or a swept facility, and the Debt desk opened on six tiles and
+  the stack with the reason four sections down. A one-line callout now leads
+  the desk ("100% of what you owe matures inside three years") with a jump to
+  the wall.

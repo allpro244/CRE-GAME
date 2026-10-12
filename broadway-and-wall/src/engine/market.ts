@@ -1166,7 +1166,18 @@ export const REF_PIPE_SHARE = 0.045;
 // is the lag that makes the cycle a cycle: the decision to start is taken in
 // one market and the building arrives in a different one, and nobody can undo
 // a start once the hole is dug.
-export const BUILD_MONTHS = { office: [30, 44], retail: [18, 28], multifamily: [22, 34], industrial: [12, 20] } as const;
+//
+// OFFICE IS BUILT AS A SHELL, FLATS ARE BUILT FINISHED (2026-10-12). A spec
+// office building delivers core and shell — structure, skin, lobby, core and
+// base-building systems — and each floor is fitted out for its tenant after a
+// lease is signed (that cost and time live in TI and lease-up, proforma.ts).
+// An apartment building delivers every unit finished: kitchens, baths, floors,
+// unit MEP. So at the same size the flats take longer. Census Survey of
+// Construction: buildings of 5+ units average ~15-20 months start to
+// completion, longer for large high-rise; core-and-shell office runs ~12-18
+// months low-rise to ~24-30 for a tower. The old office [30, 44] had no
+// source and made office the slowest class, which is backwards.
+export const BUILD_MONTHS = { office: [12, 30], retail: [18, 28], multifamily: [15, 34], industrial: [12, 20] } as const;
 // And how long it takes to be ALLOWED to dig, which is a different clock and
 // was missing entirely. Site control, design, entitlement and a construction
 // lender run six to eighteen months on a by-right commercial project in the

@@ -1116,11 +1116,32 @@ export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   // developmentProForma, underwritingEcon, noiYr, capRateFor, useOccupancy,
   // marketConstructionQuote...) read a NEW field of the market or the lot,
   // add it to the matching list below or this memo will serve a stale price.
-  if (!landMarketMatches(econ)) { LAND_MEMO.clear(); LAND_CTX = null; }
+  // LAND IS APPRAISED QUARTERLY (2026-10-12). Dirt is priced off the
+  // quarter's comps, not re-struck every month: once the month loop stamps
+  // the quarter (`landMarkQ`), a lot's price holds until the quarter turns
+  // or the lot itself changes (landLotMatches). It was re-running ~1,000
+  // full residuals a month — 46% of the engine's time. A market without the
+  // stamp (tests, tools) keeps the exact read-set test below. priceLevel is
+  // per seed, so two towns in one process never share a price.
+  const q = econ.landMarkQ;
+  const stale = q === undefined
+    ? !landMarketMatches(econ)
+    : q !== LAND_Q || !Object.is(econ.priceLevel, LAND_PL);
+  if (stale) {
+    LAND_MEMO.clear(); LAND_CTX = null; LAND_Q = q; LAND_PL = econ.priceLevel;
+    if (q !== undefined) LAND_MKT = null;
+  }
   if (LAND_CTX?.econ !== econ) LAND_CTX = { econ, uw: new Map(), quotes: [] };
   const hit = LAND_MEMO.get(rec.bbl);
   const heat = econ.districtHeat?.[rec.district ?? "—"];
-  if (hit && landLotMatches(hit, rec, heat)) return hit.psf;
+  // Within an appraised quarter, location, comps and the district's
+  // construction heat are the quarter's too; only a physical change to the
+  // lot (assembled, rezoned, rebuilt) re-strikes its price.
+  if (hit && (q === undefined
+    ? landLotMatches(hit, rec, heat)
+    : hit.lotArea === rec.lotArea && hit.farMaxComm === rec.farMaxComm && hit.farMaxRes === rec.farMaxRes
+      && Object.is(hit.zoneDist, rec.zoneDist) && hit.yearBuilt === rec.yearBuilt
+      && Object.is(hit.district, rec.district) && Object.is(hit.cornice, rec.cornice))) return hit.psf;
   const psf = readLand(rec, econ, false, LAND_CTX).psf;
   LAND_MEMO.set(rec.bbl, {
     lotArea: rec.lotArea, farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
@@ -1192,6 +1213,8 @@ type LandCtx = {
   quotes: { o: number; r: number; m: number; i: number; q: ConstructionQuote }[];
 };
 let LAND_CTX: LandCtx | null = null;
+let LAND_Q: number | undefined;
+let LAND_PL: number | undefined;
 function ctxUnderwriting(ctx: LandCtx, econ: Econ, rentMult: number): Econ {
   let uw = ctx.uw.get(rentMult);
   if (!uw) { uw = underwritingEcon(econ, rentMult); ctx.uw.set(rentMult, uw); }

@@ -635,6 +635,7 @@ function tickMonth(
   refreshDevelopmentFeasibility(s, parcels, bbls);
   refreshLandQueue(s, parcels, bbls);
   tickEcon(s);
+  s.econ.landMarkQ = Math.floor(s.month / 3);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.

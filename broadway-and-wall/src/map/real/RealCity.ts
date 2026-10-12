@@ -644,7 +644,9 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     emissiveIntensity: 0, vertexColors: true,
     // the studio environment is for the glass to reflect; on matte walls its
     // diffuse share only washes them out
-    envMapIntensity: spec.glassMetal > 0.5 ? 0.8 : 0.3,
+    // a curtain wall shows the sky and the city round it (the reflection
+    // probe, step 5), bright enough to read as glass rather than dark paint
+    envMapIntensity: spec.glassMetal > 0.5 ? 1.2 : 0.3,
   });
   // The window glow is the mask's red, shared by every building in the
   // family; the per-vertex `lit` scales it, so an empty building goes dark at
@@ -678,7 +680,7 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       // and its relief and mirror-glass reflection alias into shimmering
       // stripes. Fade the normal map out and rough the glass up with
       // distance — what a camera sees of a far tower anyway.
-      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.62), farK);\n" + WINDOW_VARIATION + REVEAL_FRAG)
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.5), farK);\n" + WINDOW_VARIATION + REVEAL_FRAG)
       .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - farK * 0.6;\nmetalnessFactor *= 1.0 - winShade * winM;")
       .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));");
   };

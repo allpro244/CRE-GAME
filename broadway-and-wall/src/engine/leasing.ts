@@ -19,7 +19,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
   return Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
 }
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
-  condGrade, initialCondIdx, condCeiling, COND_DECAY, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
+  condGrade, initialCondIdx, condCeiling, COND_DECAY, specWearMult, buildingScore, qualityCycle, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
@@ -113,8 +113,14 @@ function pickName(s: GameState, sector: Sector): string {
   const arr = POOL[sector];
   return arr[Math.floor(rng(s, "leasing") * arr.length) % arr.length];
 }
-function rollCredit(s: GameState, demand: number): Credit {
-  const r = rng(s, "leasing") + demand / 250;
+// THE TENANT POOL FOLLOWS THE BUILDING. A bank does not sign fifteen years in
+// a building that leaks: credit tenants gather in good space, and lesser
+// space lets to smaller, weaker, shorter covenants — and the term follows the
+// covenant (termBandM). The score enters the draw the way location already
+// does, centred on 55, about where the city's ordinary standing stock reads,
+// so a typical building draws exactly what it drew before. BUILD_CLASS_PLAN.md.
+function rollCredit(s: GameState, demand: number, score = 55): Credit {
+  const r = rng(s, "leasing") + demand / 250 + (score - 55) / 250;
   return r > 0.95 ? 2 : r > 0.55 ? 1 : 0;
 }
 
@@ -749,11 +755,15 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
       const endM = rng(s, "leasing") < 0.6
         ? anchors[Math.floor(rng(s, "leasing") * anchors.length) % anchors.length] + Math.round(rrange(s, -3, 3, "leasing"))
         : s.month + Math.round(rrange(s, 6, 96, "leasing"));
+      // One covenant per tenant: the deposit used to be sized on a second,
+      // independent draw, so a tenant could post a weak name's deposit while
+      // signing as a strong one.
+      const credit = rollCredit(s, demandLinear(rec.demandScore), buildingScore(rec, holding, s).score);
       holding.tenants.push({
         name: pickName(s, sector),
         use,
         sector,
-        credit: rollCredit(s, demandLinear(rec.demandScore)),
+        credit,
         sf,
         rentPsf: +(market * rrange(s, 0.82, 1.04, "leasing")).toFixed(2),
         net: use === "office" ? rng(s, "leasing") < 0.75 : rng(s, "leasing") < 0.4,
@@ -761,7 +771,7 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
         baseStopPsf: +(stopPsfNow(rec, s.econ, holding, use) * rrange(s, 0.72, 0.98, "leasing")).toFixed(2),
         startM: s.month - Math.round(rrange(s, 0, 48, "leasing")),
         endM: Math.max(s.month + 1, endM),
-        deposit: depositFor(s, market, sf, rollCredit(s, demandLinear(rec.demandScore))),
+        deposit: depositFor(s, market, sf, credit),
       });
       if (settle) moveDeposit(s, holding, holding.tenants[holding.tenants.length - 1].deposit ?? 0);
       leased += sf;
@@ -1039,6 +1049,12 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   const fFit = need > t.sf * 1.30 ? (free > COMMERCIAL_SUITE_MIN ? 0.86 : 0.55)
     : need < t.sf * 0.78 ? 0.88 : 1;
   const fCred = t.credit === 2 ? 1.06 : t.credit === 0 ? 0.94 : 1;
+  // FLIGHT TO QUALITY ON THE WAY OUT. In a soft market a tenant in a budget
+  // building gets shown better space at a price it can now afford, and goes;
+  // in a tight one there is nowhere better to go. The cyclical half only — the
+  // level is in the arrival factor (absorption.ts "Specification"). Shape
+  // parameter on qualityCycle; see there.
+  const fClass = Math.exp(0.3 * ((rec.buildSpec ?? 0.5) - 0.5) * (qualityCycle(s.econ, use) - 1));
   const fTen = 1 + 0.05 * Math.min(2, (s.month - t.startM) / 120);
   // Location works on the way OUT as well as the way in. A tenant in a prime
   // building has nowhere better to go; a tenant on the fringe is one broker
@@ -1077,8 +1093,9 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   if (fInd < 0.95) why.push({ s: `${INDUSTRY_LABEL[t.sector].toLowerCase()} is contracting`, w: 1 - fInd });
   if (fFit < 0.95) why.push({ s: need > t.sf ? "they have outgrown the space and there is nothing to give them" : "they are paying for space they no longer use", w: 1 - fFit });
   if (fLoc < 0.97) why.push({ s: "a better building across town made them an offer", w: 1 - fLoc });
+  if (fClass < 0.98) why.push({ s: "the market is soft and better-built space came within their budget", w: 1 - fClass });
   why.sort((a, b) => b.w - a.w);
-  let p = clampL(0.94 * fSvc * fCond * fRent * fInd * fFit * fCred * fTen * fLoc, 0.10, 0.96);
+  let p = clampL(0.94 * fSvc * fCond * fRent * fInd * fFit * fCred * fTen * fLoc * fClass, 0.10, 0.96);
   const pBefore = p;
   const renewMult = s.holdings[rec.bbl]?.pmRenewalMult ?? s.pmRenewalMult ?? 1;
   const careMult = pmTenantCareMult(s, rec.bbl);
@@ -1327,8 +1344,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // dollar of plan buys less on a 1928 building than on a 2015 one, which
       // is the whole reason a city has to keep rebuilding itself.
       const age = START_YEAR + Math.floor(q / 12) - rec.yearBuilt;
+      // ...and cheap plant faster still — see specWearMult. The plan bill
+      // below scales with this, so a value building's reserve is bigger.
       const wear = (COND_DECAY[rec.class as BuiltClass] ?? 0.0024)
         * (1 + Math.min(0.50, age / 220))
+        * specWearMult(rec.buildSpec)
         // (a recession-label 1.2x on wear is gone: deferred maintenance is
         // an owner's capex decision, which is modelled where it is taken)
         ;
@@ -2084,7 +2104,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // a mark on the building tomorrow. Both of those are already priced by
         // rollQualitySpread. The choice was simply never offered.
         const sector = pickSector(s, use);
-        const drawnCredit = rollCredit(s, demandLinear(rec.demandScore));
+        const drawnCredit = rollCredit(s, demandLinear(rec.demandScore), buildingScore(rec, h, s).score);
         const credit: Credit = k === 1 ? (Math.min(2, drawnCredit + 1) as Credit)
           : k === 2 ? 0 : drawnCredit;
         const rentBias = k === 1 ? rrange(s, 0.86, 0.95, "leasing") : k === 2 ? rrange(s, 1.04, 1.16, "leasing") : 1;

@@ -127,7 +127,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   if (!productOpen(s, prod) || !windowOpen(s, prod)) return noLoan("closed");
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
-  if (!conditionOk(prod, grade)) return noLoan("condition");
+  if (!conditionOk(prod, grade, rec.buildSpec)) return noLoan("condition");
   // THE LESSER OF COST OR VALUE — the single most important rule in
   // acquisition underwriting, and it was entirely absent.
   //
@@ -371,7 +371,7 @@ export function executePurchase(
     // quoted $100,570 and closed at $99,724).
     holding.loan = originate(
       next, prod, uwBasis, inPlace(rec, next, bbl, uwBasis).noi, lev,
-      grade, rec.class, stab, { nw: netWorth(s, parcels) },
+      grade, rec.class, stab, { nw: netWorth(s, parcels) }, rec.buildSpec,
     );
     // NO LOAN, NO CLOSING. The cheque above was the EQUITY on a quoted
     // principal; if the desk will not write that principal, closing anyway

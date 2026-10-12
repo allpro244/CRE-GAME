@@ -13,9 +13,9 @@ import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand"
 import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
-  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx } from "./value";
+  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier } from "./value";
 export { zoneUseBar };
 export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -2236,7 +2236,9 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // bones' year on purpose (see condCeiling — no capital makes 1930 new).
   const bones = d.mode === "reuse" ? (built ?? { yearBuilt: START_YEAR }) : (s.built[d.bbl] as { yearBuilt: number });
   s.built[d.bbl].buildSpec = d.spec ?? 0.5;
-  h.condIdx = Math.min(condCeiling({ yearBuilt: bones.yearBuilt, buildSpec: d.spec ?? 0.5 }, s.month), 0.90 + 0.09 * ((d.spec ?? 0.5)));
+  // Where it opens is the bones' call too — see openingCondIdx: a value box
+  // is new and ordinary, not new and good.
+  h.condIdx = Math.min(condCeiling({ yearBuilt: bones.yearBuilt, buildSpec: d.spec ?? 0.5 }, s.month), openingCondIdx(d.spec ?? 0.5));
   h.service = s.opsPolicy?.service ?? 0;
   h.stance = s.opsPolicy?.stance ?? 0;
   h.plan = s.opsPolicy?.plan ?? 1;
@@ -4047,8 +4049,11 @@ function drawDeveloper(s: GameState): DeveloperProfile {
   // WHERE: a minimum site quality; ~4 in 10 take any lot.
   const pref = Math.max(0, ambition + 0.25 * nrm() - 0.25);
   const minDemand = Math.min(0.8, pref * 0.9);
-  // QUALITY on the build-tier scale (Value 0.15 .. Trophy 0.95).
-  const spec = Math.min(0.95, Math.max(0.15, 0.15 + 0.8 * (0.6 * ambition + 0.4 * u())));
+  // QUALITY: one of the build tiers (`BUILD_TIERS`: Value, Standard, Premium,
+  // Trophy). Prime-ground shops build up; so does patient money — a levered
+  // merchant builder value-engineers to the exit, a cash-heavy core or
+  // institutional builder builds the plant it will own for decades.
+  const spec = buildTier(0.15 + 0.8 * clamp01(0.5 * ambition + 0.3 * (1 - ltc / 0.75) + 0.2 * u())).spec;
   // HEIGHT: two storeys to forty.
   const maxFloors = Math.max(1, Math.round(Math.exp(Math.log(2) + Math.log(40) * clamp01(0.7 * ambition + 0.3 * u()))));
   // SIZE AGAINST THE MARKET: the largest share of the class's standing stock

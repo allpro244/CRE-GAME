@@ -25,6 +25,7 @@ import {
   devFundingNeed, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, TAKEOUT_HEDGE_LTC,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
+import { BUILD_TIERS, buildTier, specRentMult, specWearMult } from "@/engine/value";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { spendable } from "@/engine/credit";
 import { USE_WORD } from "@/engine/mix";
@@ -654,24 +655,34 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               </div>
             );
           })()}
-          <Slider
-            label="Build quality"
-            value={spec}
-            min={0}
-            max={1}
-            step={0.05}
-            onChange={setSpec}
-            format={(v) => v < 0.35 ? "Value" : v < 0.65 ? "Standard" : v < 0.85 ? "Premium" : "Trophy"}
-            marks={[{ at: 0.25, label: "value" }, { at: 0.5, label: "standard" }, { at: 0.75, label: "premium" }, { at: 1, label: "trophy" }]}
-            hint={`Hard cost ×${specCostMult(spec).toFixed(2)} today and a higher condition ceiling forever. Trophy costs more to build but holds rent longer.`}
-          />
+          {/* FOUR WAYS TO BUILD (BUILD_CLASS_PLAN.md). The engine still reads a
+              0..1 spec; the desk offers the four named points on it, each
+              with what it buys and what it costs to keep. */}
+          <div className="page-section" style={{ marginTop: 6 }}>Build tier</div>
+          <div className="btn-row">
+            {BUILD_TIERS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                className={"btn" + (buildTier(spec).key === t.key ? " btn-on" : "")}
+                title={t.blurb}
+                onClick={() => setSpec(t.spec)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="hint">
+            {buildTier(spec).label}: hard cost ×{specCostMult(spec).toFixed(2)} · rent ×{specRentMult(spec).toFixed(2)} · plant wears ×{specWearMult(spec).toFixed(2)}
+            {buildTier(spec).key === "value" ? " · no life-company loans" : ""}. {buildTier(spec).blurb[0].toUpperCase() + buildTier(spec).blurb.slice(1)}.
+          </div>
           <div className="page-section" style={{ marginTop: 6 }}>Preset</div>
           <div className="btn-row">
             {([
-              { label: "Box", cov: 0.78, spec: 0.28 },
+              { label: "Box", cov: 0.78, spec: 0.15 },
               { label: "Standard", cov: 0.6, spec: 0.5 },
-              { label: "Tower", cov: 0.32, spec: 0.55 },
-              { label: "Signature", cov: 0.48, spec: 0.88 },
+              { label: "Tower", cov: 0.32, spec: 0.5 },
+              { label: "Signature", cov: 0.48, spec: 0.95 },
             ] as const).map((p0) => ({ ...p0, cov: Math.min(p0.cov, covCap) })).map((p) => (
               <button
                 key={p.label}

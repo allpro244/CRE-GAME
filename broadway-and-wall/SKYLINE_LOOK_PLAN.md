@@ -213,6 +213,13 @@ fixed in #231; the sweep is clean since.
   sun-bleached, dark) and has its texture rotated and shifted; over all of
   it, two octaves of world-space noise (11 m and 38 m) lighten and darken
   the grass across lot lines. Shader and vertex colour only.
+- **Round 29** — the edge of town. Empty lots outside downtown were tan
+  gravel yards, hedged pastures and market gardens. Now each is an overgrown
+  field (rough tussocky grass, scrub clumps thick toward the edges, young
+  self-seeded trees, a broken fence) or an old surface lot (faded, patched,
+  cracked asphalt with weeds in the cracks and ghost bay lines, an abandoned
+  car or two). How far gone (`scruff`) follows demand: tidy at 60, rough
+  below 30, derelict below 22, where four lots in ten are the old asphalt.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

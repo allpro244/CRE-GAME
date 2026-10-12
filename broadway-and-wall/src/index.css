@@ -2558,17 +2558,17 @@ html, body, #root { overflow-x: hidden; }
 .view-switch {
   display: inline-flex; flex-wrap: wrap; gap: 2px;
   padding: 3px; margin: 0 0 12px;
-  border: 1px solid rgba(146, 110, 40, 0.22); border-radius: 9px;
-  background: rgba(255, 253, 246, 0.6);
+  border: 1px solid var(--border); border-radius: 9px;
+  background: var(--surface-1);
 }
 .view-chip {
-  font: inherit; font-size: 12.5px; color: var(--ink-dim);
+  font: inherit; font-size: 12.5px; color: var(--text-3);
   padding: 5px 12px; border: 0; border-radius: 7px; background: transparent; cursor: pointer;
   transition: color 0.12s var(--ease), background 0.12s var(--ease);
 }
-.view-chip:hover { color: var(--ink); }
-.view-chip.on { color: var(--ink); background: var(--gold-soft); box-shadow: inset 0 0 0 1px rgba(176, 127, 30, 0.45); }
-.view-n { font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); margin-left: 6px; }
+.view-chip:hover { color: var(--text); }
+.view-chip.on { color: var(--text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.view-n { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); margin-left: 6px; }
 
 .players-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .players-bar .view-switch { margin-bottom: 10px; }
@@ -2582,45 +2582,55 @@ html, body, #root { overflow-x: hidden; }
 .pulse-hero { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 2px 0 12px; }
 .pulse-hero-cell {
   padding: 12px 14px; border-radius: var(--r-md);
-  border: 1px solid rgba(146, 110, 40, 0.22);
-  background: linear-gradient(to bottom, rgba(255, 253, 245, 0.85), rgba(243, 237, 220, 0.6));
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-1);
 }
-.pulse-kicker { font-size: 10px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 1.2px; }
-.pulse-big { font-family: var(--serif); font-size: 28px; line-height: 1.15; margin: 2px 0 4px; text-transform: capitalize; }
+.pulse-kicker { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 1.2px; }
+.pulse-big { font-family: var(--serif); font-size: 28px; line-height: 1.15; margin: 2px 0 4px; text-transform: capitalize; color: var(--text); }
 .pulse-hero .pulse-big.mono { font-family: var(--mono); font-size: 28px; text-transform: none; }
-.pulse-big.neg { color: #a8402e; }
-.pulse-line { font-size: 12.5px; color: var(--ink-dim); line-height: 1.45; }
-.pulse-line strong { color: var(--ink); }
+.pulse-big.neg { color: var(--neg); }
+.pulse-line { font-size: 12.5px; color: var(--text-2); line-height: 1.45; }
+.pulse-line strong { color: var(--text); }
 .pulse-head {
   display: flex; justify-content: space-between; align-items: baseline;
-  font-family: var(--serif); font-size: 15px; color: var(--ink); margin: 14px 0 6px;
+  font-family: var(--serif); font-size: 15px; color: var(--text); margin: 14px 0 6px;
 }
 .pulse-card .pulse-head { margin-top: 0; font-size: 14px; }
 .pulse-link {
   font: inherit; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.3px;
-  color: var(--gold); background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap;
+  color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap;
 }
 .pulse-link:hover { text-decoration: underline; }
 .pulse-foot { display: block; margin-top: 8px; }
 .pulse-row { cursor: pointer; }
-.pulse-row:hover td { background: var(--gold-soft); }
+.pulse-row:hover td { background: var(--accent-soft); }
 .pulse-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
 .pulse-card {
   padding: 11px 13px; border-radius: var(--r-md); min-width: 0;
-  border: 1px solid rgba(146, 110, 40, 0.18); background: rgba(255, 253, 246, 0.55);
+  border: 1px solid var(--border); background: var(--surface-1);
+  box-shadow: var(--shadow-1);
 }
 .pulse-list { display: flex; flex-direction: column; gap: 5px; margin: 4px 0 6px; }
-.pulse-item { font-size: 12.5px; line-height: 1.4; }
+.pulse-item { font-size: 12.5px; line-height: 1.4; color: var(--text); }
 /* A wire item can run to a paragraph; on Pulse it is a headline. */
 .pulse-card .pulse-item:not(.pulse-item-btn) {
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
-.pulse-item-btn { font: inherit; font-size: 12.5px; text-align: left; background: none; border: 0; padding: 0; color: var(--ink); cursor: pointer; }
-.pulse-item-btn:hover { color: var(--gold); }
+.pulse-item-btn { font: inherit; font-size: 12.5px; text-align: left; background: none; border: 0; padding: 0; color: var(--text); cursor: pointer; }
+.pulse-item-btn:hover { color: var(--accent); }
 @media (max-width: 1100px) {
   .pulse-grid { grid-template-columns: minmax(0, 1fr); }
   .mkt-cards-aux { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 700px) {
   .pulse-hero { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Markets → one class: the charts packed by useMasonry (4px rows, each cell
+   spanning its own height) so a tall cell does not leave its neighbour's
+   column blank. Only while the grid is two-wide. */
+@media (min-width: 1101px) {
+  .chart-grid.chart-masonry { grid-auto-rows: 4px; row-gap: 0; align-items: start; }
+  .chart-grid.chart-masonry > .chart-cell { margin-bottom: 16px; }
 }

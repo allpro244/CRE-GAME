@@ -131,10 +131,13 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
   const g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
   const built = g.listings.filter((li) => { const r = E.resolveRec(parcels, g, li.bbl); return r && r.class !== "land" && r.bldgArea > 0 && !li.halfBuilt; });
   const quotes = (id) => built.filter((li) => E.buyQuote(g, parcels, li.bbl, li.ask, id, 1).principal > 0).length / Math.max(1, built.length);
-  ok(g.loanScale !== undefined && g.loanScale > 0.2 && g.loanScale < 1, `this town's loan scale is ${g.loanScale} (median built value over a $4M reference)`);
+  // The floors are reference dollars in this town's money (debt.ts, loanMin):
+  // asserting $500K flat here was asserting the unit error round 25 left in.
+  const lvl = g.econ.priceLevel ?? 1;
+  ok(g.loanScale !== undefined && g.loanScale >= 0.25 * lvl && g.loanScale < 1, `this town's loan scale is ${g.loanScale} (median built value over a $4M reference; price level ${lvl.toFixed(2)})`);
   const sv = E.productById("savings"), cd = E.productById("conduit"), pl = E.productById("pelican");
-  ok(E.loanMin(g, sv) < sv.minLoan && E.loanMin(g, sv) >= 500_000, `the regional's minimum cheque here is $${(E.loanMin(g, sv) / 1e6).toFixed(2)}M, not $2.5M`);
-  ok(E.loanMin(g, cd) >= 1_000_000 && E.loanMin(g, cd) < cd.minLoan, `the conduit's is $${(E.loanMin(g, cd) / 1e6).toFixed(2)}M, floored at $1M`);
+  ok(E.loanMin(g, sv) < sv.minLoan && E.loanMin(g, sv) >= 500_000 * lvl, `the regional's minimum cheque here is $${(E.loanMin(g, sv) / 1e6).toFixed(2)}M, not $2.5M`);
+  ok(E.loanMin(g, cd) >= 1_000_000 * lvl && E.loanMin(g, cd) < cd.minLoan, `the conduit's is $${(E.loanMin(g, cd) / 1e6).toFixed(2)}M, floored at $${(lvl).toFixed(2)}M`);
   // ONE TOWN'S OPENING TAPE IS A HANDFUL OF BUILDINGS (8-9 on the reference
   // town), so the share swung 44% -> 25% when street plan 8 re-dealt which
   // ones list, with the buildings themselves the same size. Pooled over

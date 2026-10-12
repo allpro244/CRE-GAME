@@ -1577,7 +1577,7 @@ export class RealCityLayer {
     this.sun.shadow.mapSize.set(sz, sz);
     this.sun.shadow.bias = -0.0003;
     this.sun.shadow.normalBias = 0.6;
-    this.sun.shadow.radius = 2.5;
+    this.sun.shadow.radius = 3.6;
     this.scene.add(this.sun, this.sun.target, this.hemi);
     this.applyMonth();
   }
@@ -5700,7 +5700,9 @@ export class RealCityLayer {
 
   private applyMonth() {
     const w2 = Math.cos((2 * Math.PI * (this.month - 6)) / 12);     // 1 in June, -1 in December
-    const el = ((35 + 11 * w2) * Math.PI) / 180;
+    // a city-builder's afternoon: the sun a few degrees lower than noon would
+    // put it, so every block throws a shadow long enough to model it
+    const el = ((30 + 10 * w2) * Math.PI) / 180;
     const az = ((200 - 12 * w2) * Math.PI) / 180;
     // the vector points from the ground toward the sun (x east, y north)
     this.sunDir.set(Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)).normalize();
@@ -5770,10 +5772,14 @@ export class RealCityLayer {
     const night = smooth(0.35, 0.95, this.dusk);
     const golden = smooth(0.0, 0.5, this.dusk) * (1 - night);
     const sunK = (1 - night * 0.97) * (1 - this.overcast * 0.6);
-    this.sun.intensity = 3.4 * sunK;
-    this.sun.color.setRGB(1, 0.9 - golden * 0.25, 0.78 - golden * 0.4);
-    this.hemi.intensity = 0.6 * (1 - night * 0.8) + this.overcast * 0.25;
-    this.hemi.color.setRGB(0.78 - night * 0.45, 0.85 - night * 0.45, 0.93 - night * 0.3);
+    // SKYLINE_LOOK_PLAN step 2. A warm sun and a shadow side filled by the
+    // blue of the open sky rather than left grey: what makes a sunny city
+    // read as sunny. The ground bounce is warm (pavement and brick).
+    this.sun.intensity = 3.25 * sunK;
+    this.sun.color.setRGB(1, 0.88 - golden * 0.24, 0.72 - golden * 0.38);
+    this.hemi.intensity = 0.74 * (1 - night * 0.8) + this.overcast * 0.25;
+    this.hemi.color.setRGB(0.66 - night * 0.36, 0.78 - night * 0.42, 0.98 - night * 0.32);
+    this.hemi.groundColor.setRGB(0.6, 0.5, 0.38);
     this.scene.environmentIntensity = 0.5 * (1 - night * 0.85);
     // lit rooms after dark
     for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.4;

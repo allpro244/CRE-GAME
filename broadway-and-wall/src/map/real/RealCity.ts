@@ -5932,9 +5932,12 @@ export class RealCityLayer {
     // SKYLINE_LOOK_PLAN step 2. A warm sun and a shadow side filled by the
     // blue of the open sky rather than left grey: what makes a sunny city
     // read as sunny. The ground bounce is warm (pavement and brick).
-    this.sun.intensity = 3.25 * sunK;
-    this.sun.color.setRGB(1, 0.88 - golden * 0.24, 0.72 - golden * 0.38);
-    this.hemi.intensity = 0.74 * (1 - night * 0.8) + this.overcast * 0.25;
+    // after dark the key light is the moon: weak and cool, so roofs and
+    // streets keep their shape under the lit windows (round 14)
+    this.sun.intensity = 3.25 * sunK + 0.55 * night;
+    const sr = 1, sg = 0.88 - golden * 0.24, sb = 0.72 - golden * 0.38;
+    this.sun.color.setRGB(sr + (0.62 - sr) * night, sg + (0.72 - sg) * night, sb + (1.0 - sb) * night);
+    this.hemi.intensity = 0.74 * (1 - night * 0.62) + this.overcast * 0.25;
     this.hemi.color.setRGB(0.66 - night * 0.36, 0.78 - night * 0.42, 0.98 - night * 0.32);
     this.hemi.groundColor.setRGB(0.6, 0.5, 0.38);
     this.scene.environmentIntensity = 0.5 * (1 - night * 0.85);

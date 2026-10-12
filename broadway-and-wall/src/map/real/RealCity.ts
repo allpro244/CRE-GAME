@@ -4271,7 +4271,8 @@ export class RealCityLayer {
       // behind and beside it, is mostly grass: back gardens and courtyards,
       // with a third of the commercial lots keeping a paved service yard.
       const kind = cls === "industrial" ? "work" : cls === "office" || cls === "retail" ? "plaza" : yr < 1940 ? "pave" : "lawn";
-      const back = kind === "work" ? "work" : kind === "plaza" && hash01(k ^ 0x5b1, 3) < 0.35 ? "pave" : "lawn";
+      // no paved square dropped in the middle of a lawn (it read as a checkerboard)
+      const back = kind === "work" ? "work" : "lawn";
       { const bn = "lot:" + back, BB = this.buf(bn), b0 = BB.count; lay(BB, ring, back === "lawn" ? 0.022 : 0.02, [j, j, j]); this.note(bbl, bn, b0); }
       if (kind !== back) {
         // a strip along every street front, as deep as the building stands back (capped)
@@ -4338,7 +4339,7 @@ export class RealCityLayer {
     // metres, so a repeat of 4 / m makes a texture one tile per m metres
     if (!this.lotLawnMat.map) {
       const tex = (t: THREE.Texture, m: number) => { t.repeat.set(4 / m, 4 / m); return t; };
-      this.lotLawnMat.map = tex(this.lawnTex(), 5); this.lotPlazaMat.map = tex(this.plazaTex(), 6);
+      this.lotLawnMat.map = tex(this.lawnTex(), 12); this.lotPlazaMat.map = tex(this.plazaTex(), 6);
       this.lotPaveMat.map = tex(this.pavingTex(), 1.5); this.lotWorkMat.map = tex(this.parkingTex(), 5);
     }
   }
@@ -5488,13 +5489,27 @@ export class RealCityLayer {
     return t;
   }
 
-  /** A mown lawn: fine light-and-dark mottling and faint mower stripes, white so the material colour carries the season (5 m tile). */
+  /**
+   * A city lawn (round 27): not a mown pitch. Soft clumps of darker and
+   * lighter green at two scales, a few worn patches, a fine grain of blades;
+   * white-based so the material colour carries the season. 256 px over 12 m.
+   */
   private lawnTex(): THREE.CanvasTexture {
-    const { c, g } = makeCanvas(128, 128);
+    const N = 256;
+    const { c, g } = makeCanvas(N, N);
     let s = 2111; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    g.fillStyle = "#ffffff"; g.fillRect(0, 0, 128, 128);
-    for (let i = 1; i < 4; i += 2) { g.fillStyle = "rgba(0,0,0,0.05)"; g.fillRect(0, i * 32, 128, 32); }
-    for (let i = 0; i < 1600; i++) { const d = rnd() < 0.5; g.fillStyle = d ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.08)"; g.fillRect(rnd() * 128, rnd() * 128, 1.5, 2); }
+    g.fillStyle = "#ffffff"; g.fillRect(0, 0, N, N);
+    const blob = (x: number, y: number, r: number, col: string) => {
+      for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) {
+        const gr = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+        gr.addColorStop(0, col); gr.addColorStop(1, "rgba(255,255,255,0)");
+        g.fillStyle = gr; g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+      }
+    };
+    for (let i = 0; i < 26; i++) blob(rnd() * N, rnd() * N, 30 + rnd() * 50, rnd() < 0.55 ? "rgba(70,80,50,0.22)" : "rgba(255,255,240,0.22)");
+    for (let i = 0; i < 70; i++) blob(rnd() * N, rnd() * N, 6 + rnd() * 14, rnd() < 0.6 ? "rgba(60,75,40,0.25)" : "rgba(255,255,235,0.2)");
+    for (let i = 0; i < 5; i++) blob(rnd() * N, rnd() * N, 10 + rnd() * 16, "rgba(235,210,150,0.35)");
+    for (let i = 0; i < 9000; i++) { const d = rnd() < 0.5; g.fillStyle = d ? "rgba(40,50,25,0.12)" : "rgba(255,255,230,0.1)"; g.fillRect(rnd() * N, rnd() * N, 1, 1.5 + rnd()); }
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     return t;
   }
@@ -6663,7 +6678,7 @@ export class RealCityLayer {
     this.meadowMat.color.setRGB(0.98 - vig * 0.22, 0.95 + vig * 0.1, 0.84 - vig * 0.14);
     // a mown lawn: dormant straw-green in winter, full green in summer
     // (lit by the sun, unlike the flat park fill, so it is set darker to read a step below a park)
-    this.lotLawnMat.color.setRGB(0.26 - vig * 0.1, 0.25 + vig * 0.05, 0.16 - vig * 0.08);
+    this.lotLawnMat.color.setRGB(0.27 - vig * 0.07, 0.26 + vig * 0.03, 0.17 - vig * 0.05);
     // the canopy: green in summer, turning in autumn, bare grey in winter
     for (const leaf of [this.inst.get("crown"), this.inst.get("bush")]) {
     if (leaf) {

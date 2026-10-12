@@ -967,7 +967,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           {/* Stabilised beside it and never instead of it. If this line is far
               above the one at the top, you are buying a leasing job. */}
           <Row k={<Gloss term="stabilised pro-forma">Stabilised pro-forma</Gloss>} v={`${usd(stab)} · ${offerPrice > 0 ? ((stab / offerPrice) * 100).toFixed(2) : "—"}%`} />
-          {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
+          {/* Occupancy is not a function of price — the block above already prints it. */}
           {/* IS THE PRICE A PRICE — the buy side of the line the sell desk has
               always printed. The market's cap for the class is the econ's own
               index, the same one every appraisal reads. */}

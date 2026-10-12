@@ -38,6 +38,11 @@ export default function GamePanels() {
   const page = useStore((s) => s.page);
   const mapOnly = useStore((s) => s.mapOnly);
   const setPage = useStore((s) => s.setPage);
+  // THE ROOM IS NAMED FOR THE BUILDING. The property file was titled
+  // "Property" — the one word that is true of every page it can show — with
+  // the address below seven stat tiles.
+  const propAddr = useStore((s) => (s.page === "property" && s.selectedBBL ? s.parcels?.[s.selectedBBL]?.address ?? null : null));
+  const propOwned = useStore((s) => (s.page === "property" && s.selectedBBL ? !!s.game?.holdings[s.selectedBBL] : false));
   const pageRef = useRef<HTMLDivElement>(null);
   useHintFolds(pageRef, page);
   useEffect(() => { rememberTab(page); }, [page]);
@@ -134,7 +139,7 @@ export default function GamePanels() {
     : page === "news" ? "The Tape"
     : page === "leasing" ? "Leasing & Occupancy"
     : page === "debt" ? "Debt"
-    : page === "property" ? "Property"
+    : page === "property" ? (propAddr ?? "Property")
     : page === "saves" ? "Saved Games"
     : page === "economy" ? "Economy"
     : page === "rankings" ? "Rankings"
@@ -147,7 +152,8 @@ export default function GamePanels() {
     : page === "match" ? "The Jev Match"
     : "The Marketplace";
   const desk = deskOf(page);
-  const kicker = desk ? desk.label
+  const kicker = page === "property" ? (propOwned ? "Portfolio · your building" : "Property file")
+    : desk ? desk.label
     : page === "saves" ? "Campaign"
     : page === "settings" ? "Preferences"
     : page === "primer" ? "Primer"

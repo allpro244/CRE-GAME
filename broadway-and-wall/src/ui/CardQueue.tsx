@@ -17,8 +17,23 @@ export default function CardQueue() {
     if (!app) return;
     // A card that holds a queue of its own (four letters, three workouts)
     // says how many with data-queue; anything else counts as one.
-    const count = () => setN(Array.from(app.querySelectorAll<HTMLElement>(":scope > .modal-backdrop, :scope > .delivery-ceremony"))
-      .reduce((a, el) => a + Math.max(1, Number(el.dataset.queue) || 1), 0));
+    let shown: HTMLElement | null = null;
+    const count = () => {
+      const cards = Array.from(app.querySelectorAll<HTMLElement>(":scope > .modal-backdrop, :scope > .delivery-ceremony"));
+      setN(cards.reduce((a, el) => a + Math.max(1, Number(el.dataset.queue) || 1), 0));
+      // FOCUS GOES WITH THE CARD. A card that takes the screen left keyboard
+      // focus on whatever was clicked behind it, so Tab walked the hidden
+      // page. The card itself takes focus (not its first button — Enter must
+      // never sign a lease by accident); Tab moves into its buttons from there.
+      const top = cards.find((el) => el.getClientRects().length > 0) ?? null;
+      const inner = top?.querySelector<HTMLElement>(".modal, .delivery-stamp") ?? null;
+      if (inner && inner !== shown) {
+        shown = inner;
+        if (!inner.hasAttribute("tabindex")) inner.setAttribute("tabindex", "-1");
+        if (!inner.contains(document.activeElement)) inner.focus({ preventScroll: true });
+      }
+      if (!inner) shown = null;
+    };
     // The queue inside a card changes without the card remounting.
     const mo2 = new MutationObserver(count);
     mo2.observe(app, { subtree: true, attributes: true, attributeFilter: ["data-queue"] });

@@ -413,6 +413,7 @@ export function DealsPage() {
   const liveCount = Object.keys(game.talks ?? {}).length
     + (game.asks ?? []).filter((a) => !game.holdings[a.bbl]?.groundLeased).length
     + game.lois.filter((l) => loiNeedsPrincipal(game, l)).length;
+  const quietDesk = liveCount === 0 && calls.length === 0 && inbound.length === 0;
   const [desk, setDesk] = useState<"live" | "sales">(
     saleCount > 0 ? "sales" : "live",
   );
@@ -438,7 +439,30 @@ export function DealsPage() {
       </div>
       <div className={"deals-grid" + (desk !== "live" ? " deals-one" : "")}>
 
-      {desk === "live" && <section>
+      {/* AN EMPTY DESK IS ONE CARD, NOT THREE EMPTY HEADINGS. With nothing
+          live the room printed "On the table · 0", "Letters of intent · 0" and
+          "Doors you knocked on · 0", each with its own sentence, and the
+          section rail above made chips for all three. One card says where
+          deals come from and offers the two doors that start one. */}
+      {desk === "live" && quietDesk && (
+        <section className="empty-desk">
+          <div className="empty-desk-title">Nothing on the desk</div>
+          <div className="empty-desk-lines">
+            <div><b>You start a deal</b> by offering on a listing, or by asking the owner of any building you do not own — up to {MAX_TALKS} at once.</div>
+            <div><b>Tenants start one</b> by writing for vacant space in buildings you own. Their letters land here.</div>
+            <div><b>Brokers start one</b> by ringing with off-market files, once you have closed with them. Those sit on Marketplace.</div>
+            {deskHoldsPen(game) && (() => {
+              const t = deskMonthNow(game);
+              return <div className="dim">Your leasing desk holds the pen{t ? ` — this month ${t.signed} signed, ${t.passed} passed, ${t.referred} referred, ${t.walked} walked` : ""}. Nothing is waiting on you.</div>;
+            })()}
+          </div>
+          <div className="btn-row">
+            <button className="btn btn-buy" onClick={() => setPage("market")}>Browse Marketplace →</button>
+            {Object.keys(game.holdings).length > 0 && <button className="btn" onClick={() => setPage("leasing")}>Leasing plan →</button>}
+          </div>
+        </section>
+      )}
+      {desk === "live" && !quietDesk && <section>
         {/* EVERYTHING ON THE TABLE, contracts first — because a contract has
             a clock on it and a conversation does not. This used to be able to
             show exactly one row, since the game could only hold one. */}

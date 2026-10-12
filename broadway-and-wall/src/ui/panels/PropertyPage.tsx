@@ -195,7 +195,7 @@ export function PropertyPage() {
       </div>
       <div className="prop-head">
         <div>
-          <div className="page-title" style={{ fontSize: 22 }}>{rec.address}</div>
+          {/* The address is the room's title now (RightPanel); this line is the deed. */}
           <div className="panel-bbl mono">Parcel {rec.bbl} · {useLabel(rec)} · {rec.zoneDist}</div>
           {/* Every building in this game is somewhere. Closing the page and
               putting the camera on it is one click, not a hunt.

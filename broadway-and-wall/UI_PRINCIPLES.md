@@ -108,3 +108,42 @@ whose long side was edge 1; the throw happened in the map's commit, and with
 no error boundary React unmounted the entire app. The index is fixed, and the
 map now sits in an error boundary that keeps every desk alive and offers to
 draw the city again.
+
+## Second batch
+
+**3 · The verb in reach, again.** Market led with an empty "Brokers on the
+phone · 0", the buy-box form and the site list; the listings started a screen
+and a half down. With no broker call live, the tape now comes first (calls,
+which expire, still lead when there are any). The develop flow's Programme /
+Design / Financing tabs are now a numbered stepper — ① ② ③, the current step
+lit, the steps behind you ticked — instead of three buttons that looked like
+every other button.
+
+**6 · One fact, one row.** Contract and negotiation rows on the docket now
+name the building ("390 E 16th St: under contract at $483K…" rather than
+"Under contract at $483K…"), and the tape's line about the same contract
+yields to it. The offer desk no longer prints occupancy twice (it does not
+depend on price). The property page is titled with the building's address
+instead of the word "Property", and the duplicate address below the tiles is
+gone.
+
+**7 · Depth by disclosure.** Leasing rows label their controls: an "Asking"
+segmented control (Fill −8% · Market · Push +8% — the engine's own ±8%,
+`value.ts`), then "Auto-answer", "I sign here", "Hire a broker". The Deals desk
+with nothing live is one card that says how deals arrive, not three empty
+headings. Long stat strips split into even rows instead of seven tiles and an
+orphan.
+
+**8 · Consistency.** Settings switches are switches (track, knob, state word),
+not buttons reading "Off" — which could be the state or the action. Setup's
+section rail is numbered 1–7 like the headings it points at (it read ★, 1–6).
+Focus moves into each card as it takes the screen, so the keyboard is where
+the eyes are.
+
+**Bugs fixed along the way.** Selecting a second building opened its card at
+the previous card's scroll offset (the card is now keyed per deed). The hidden
+hover arrow on docket rows wrapped onto an invisible third line, making every
+snoozable row a line taller than its words. The AT RISK banner, once raised
+above the desks, covered their tables — it stays on the map now. Toasts keep
+clear of the parcel card. Portfolio row actions sit in a 2×2 block instead of
+a four-high column.

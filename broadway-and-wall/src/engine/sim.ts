@@ -1889,11 +1889,11 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     out.push(t.agreed
       ? {
         key: `contract:${t.bbl}`,
-        label: `Under contract at ${money((t.agreedPrice ?? t.theirPrice))} — fund it by ${monthLabel(t.closeByM ?? s.month)} (${idle})`,
+        label: `${addr(t.bbl)}: under contract at ${money((t.agreedPrice ?? t.theirPrice))} — fund it by ${monthLabel(t.closeByM ?? s.month)} (${idle})`,
       }
       : {
         key: `talks:${t.bbl}:${t.theirPrice}`,
-        label: `${t.sellerName} is at ${money(t.theirPrice)}${t.final ? " — their final word" : ""} · ${idle}`,
+        label: `${addr(t.bbl)}: ${t.sellerName} is at ${money(t.theirPrice)}${t.final ? " — their final word" : ""} · ${idle}`,
       });
   }
   if (s.exchange && s.exchange.deadlineM - s.month <= 2) {

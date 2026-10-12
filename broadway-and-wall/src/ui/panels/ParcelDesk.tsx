@@ -65,7 +65,11 @@ function ParcelPanelShell({ embedded = false, tab }: { embedded?: boolean; tab?:
   // to rebuild this whole file for a panel that was not on screen.
   const selectedBBL = useStore((s) => s.selectedBBL);
   if (!selectedBBL) return null;
-  return <ParcelPanelInner embedded={embedded} tab={tab} selectedBBL={selectedBBL} />;
+  // Keyed on the deed: a new building is a new card. The card kept the last
+  // one's scroll offset, so clicking a second building after reading the foot
+  // of the first opened it at "Adjoining lots", and per-building drafts (an
+  // offer half typed) could carry across.
+  return <ParcelPanelInner key={selectedBBL} embedded={embedded} tab={tab} selectedBBL={selectedBBL} />;
 }
 
 function ParcelPanelInner({
@@ -1329,7 +1333,7 @@ function BuyCta({ bbl, ask, built }: { bbl: string; ask: number; built: boolean 
     const panel = ref.current?.closest(".panel");
     const desk = panel?.querySelector("[data-buy-desk]");
     if (!panel || !desk) return;
-    const io = new IntersectionObserver(([e]) => setHidden(e.isIntersecting), { root: panel, threshold: 0.15 });
+    const io = new IntersectionObserver(([e]) => setHidden(e.isIntersecting), { root: panel, threshold: 0, rootMargin: "0px 0px -40px 0px" });
     io.observe(desk);
     return () => io.disconnect();
   }, [bbl]);

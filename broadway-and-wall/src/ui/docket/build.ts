@@ -254,7 +254,10 @@ export function buildDocket(
   // Most tape lines carry no parcel id ("Covenant breach at 222 E 10th St
   // (DSCR 0.16)…"), so the building is found by its address in the text —
   // bounded on the left, so 22 E 10th St does not match 222 E 10th St.
-  const ownedAddr = Object.keys(game.holdings)
+  // Owned buildings, and any building a standing row is already about (a
+  // contract's tape line names a deed that is not yours yet).
+  const subjectBbls = new Set([...Object.keys(game.holdings), ...items.map((it) => it.bbl ?? it.attnKey?.split(":")[1]).filter((b): b is string => !!b && /^\d{6,}$/.test(b))]);
+  const ownedAddr = [...subjectBbls]
     .map((b) => ({ b, a: parcels?.[b]?.address }))
     .filter((x): x is { b: string; a: string } => !!x.a)
     .sort((x, y) => y.a.length - x.a.length);

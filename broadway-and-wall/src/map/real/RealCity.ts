@@ -1592,7 +1592,8 @@ export class RealCityLayer {
     }
     this.renderer.render(this.scene, this.camera);
     // the finishing pass over the whole frame: grade, bloom, tilt-shift (post.ts)
-    this.post.apply(this.renderer, pitch, distM, smooth(0.35, 0.95, this.dusk), this.scene, this.camera, [this.hazeSheet, this.veilMesh, this.precip]);
+    const nightK = smooth(0.35, 0.95, this.dusk);
+    this.post.apply(this.renderer, pitch, distM, nightK, smooth(0.0, 0.5, this.dusk) * (1 - nightK), this.scene, this.camera, [this.hazeSheet, this.veilMesh, this.precip]);
     if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
   }
 

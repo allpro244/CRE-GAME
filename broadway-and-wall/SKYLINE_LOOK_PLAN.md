@@ -114,3 +114,6 @@ fixed in #231; the sweep is clean since.
   weaker sky reflection: at full strength every canal read flat royal blue
   beside a turquoise sea. Judged on a default-size town (seed 101), the city
   most players start in.
+- **Round 16** — golden hour: the finishing pass takes the low sun's warmth
+  (`uGolden`, from the same dusk curve as the sun's colour): lit surfaces go
+  amber, shadows a little violet. Noon and night unchanged.

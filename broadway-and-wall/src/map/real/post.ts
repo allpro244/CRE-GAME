@@ -204,7 +204,7 @@ export class PostFX {
     u.uBloom.value = full ? 0.35 : 0;
     u.uGrade.value = 1;
     u.uNight.value = night;
-    u.uAO.value = ao ? 0.8 * (1 - night * 0.6) : 0;
+    u.uAO.value = ao ? 0.65 * (1 - night * 0.6) : 0;
     u.uAOView.value = this.aoView ? 1 : 0;
     const auto = renderer.autoClear;
     renderer.autoClear = false;

@@ -4870,9 +4870,9 @@ export class RealCityLayer {
         const at = (t: number, off: number): P2 => [a[0] + ux * t + ix * off, a[1] + uy * t + iy * off];
         // people, a few per block face, at a walking pace along the middle of the footway
         if (w >= 1.5) {
-          // a living street (SKYLINE_LOOK_PLAN round 12): a walker every ~9 m
+          // a living street (SKYLINE_LOOK_PLAN round 12): a walker every ~12 m
           // of footway, thinned by the street's demand and the hour (applyCrowd)
-          const n = Math.max(1, Math.round(L / 9));
+          const n = Math.max(1, Math.round(L / 12));
           for (let k = 0; k < n; k++) {
             const fwd = rnd() < 0.5;
             const [sx, sy] = at(fwd ? 0 : L, w * (0.3 + rnd() * 0.4));

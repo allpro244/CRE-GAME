@@ -1320,6 +1320,14 @@ export class RealCityLayer {
   private pineMat = new THREE.MeshStandardMaterial({ color: 0x2e4a32, roughness: 1, flatShading: true, envMapIntensity: 0.08 });
   private bedMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
   private meadowMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
+  private glowMat = (() => {
+    const { c, g } = makeCanvas(64, 64);
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, "rgba(255,190,110,1)"); gr.addColorStop(0.45, "rgba(255,170,90,0.45)"); gr.addColorStop(1, "rgba(255,150,70,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshBasicMaterial({ map: t, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  })();
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
   private bufs = new Map<string, Buf>();
@@ -4208,6 +4216,10 @@ export class RealCityLayer {
     const box = (w: number, d: number, h: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
     const cyl = (r: number, h: number, z = 0, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
     switch (kind) {
+      // a street lamp's pool of light on the carriageway after dark: a flat
+      // disc with a soft falloff, added to what is under it (SKYLINE_LOOK_PLAN
+      // round 11); invisible by day (glowMat opacity follows the hour)
+      case "glow": return { g: new THREE.CircleGeometry(9, 20), mat: this.glowMat };
       // the shop bay, facing local -y (out of a counter-clockwise wall)
       case "awning": {
         const canopy = new THREE.BoxGeometry(4.6, 1.5, 0.07).rotateX(0.42).translate(0, -0.72, 3.05);
@@ -4389,7 +4401,8 @@ export class RealCityLayer {
         if (colored) mesh.setColorAt(i, new THREE.Color(...(it.col ?? [1, 1, 1]) as [number, number, number]));
         if (it.bbl) this.deedOf(it.bbl).inst.push({ mesh: kind, i });
       });
-      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.castShadow = kind !== "glow"; mesh.receiveShadow = kind !== "glow";
+      if (kind === "glow") mesh.renderOrder = 2;          // over the night veil on the ground
       mesh.frustumCulled = false;
       this.scene.add(mesh); this.inst.set(kind, mesh);
     }
@@ -4897,7 +4910,12 @@ export class RealCityLayer {
         // lamps at the kerb, between the trees
         for (let t = 12; t < L - 6; t += 27) {
           const [x, y] = at(t, 0.45);
-          if (this.groundAt(x, y) === "walk") this.putInst("lamp", x, y, 0.15, 1, rot + Math.PI / 2);
+          if (this.groundAt(x, y) === "walk") {
+            this.putInst("lamp", x, y, 0.15, 1, rot + Math.PI / 2);
+            // the pool falls on the carriageway, a few metres off the kerb
+            const [gx, gy] = at(t, -3.2);
+            this.putInst("glow", gx, gy, 0.2, 0.9 + rnd() * 0.25, 0);
+          }
         }
         // moving traffic in the lane outside the parked row, kerb on its right
         // (the footway is left of this edge, so the kerb lane runs against it)
@@ -5914,6 +5932,7 @@ export class RealCityLayer {
     // lit rooms after dark
     for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.15;
     this.lampMat.emissiveIntensity = night * 2.2;
+    this.glowMat.opacity = night * 0.62;
     // snow lies on the roofs
     // tar and gravel is dark (albedo ~0.2); snow lifts it toward white
     // a dusting, not a blanket: January opens every campaign

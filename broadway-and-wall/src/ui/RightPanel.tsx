@@ -18,7 +18,6 @@ import { RankingsPage } from "@/ui/panels/RankingsPage";
 import { BooksPage } from "@/ui/panels/BooksPage";
 import { NewsPage } from "@/ui/panels/NewsPage";
 import { SavesPage, SettingsPage, PrimerPage } from "@/ui/panels/MiscPages";
-import { MatchPage } from "@/ui/panels/JevPanel";
 import { LeasingPage } from "@/ui/panels/LeasingPage";
 import { DebtPage } from "@/ui/panels/DebtPage";
 import { PropertyPage } from "@/ui/panels/PropertyPage";
@@ -139,14 +138,12 @@ export default function GamePanels() {
     : page === "firm" ? "The Record"
     : page === "settings" ? "Settings"
     : page === "primer" ? "How this business works"
-    : page === "match" ? "The Jev Match"
     : "The Marketplace";
   const desk = deskOf(page);
   const kicker = desk ? desk.label
     : page === "saves" ? "Campaign"
     : page === "settings" ? "Preferences"
     : page === "primer" ? "Primer"
-    : page === "match" ? "Street"
     : "";
   const subtitle = page === "portfolio" ? "Value, income, concentration and the shape of what you own."
     : page === "deals" ? "Every live negotiation, bid, contract and clock on your desk."
@@ -164,7 +161,6 @@ export default function GamePanels() {
     : page === "firm" ? "Every deed, delivery, exit and refinancing since founding — the campaign on one strip."
     : page === "settings" ? "Display, interruption and simulation controls."
     : page === "primer" ? "The quantities this game expects you to reason with."
-    : page === "match" ? "Firms whose judgement Jev informs: how they are doing, what Jev said, and what code did with it."
     : "On-market listings, off-market calls and motivated sellers.";
   // The map card is a glance. Firm desks open as rooms (~1100px parchment)
   // so a rent roll, deal stage or debt book is readable — the narrow right
@@ -217,7 +213,6 @@ export default function GamePanels() {
             {page === "firm" && <FirmTimeline />}
             {page === "settings" && <SettingsPage />}
             {page === "primer" && <PrimerPage />}
-            {page === "match" && <MatchPage />}
           </div>
         </div>
       )}

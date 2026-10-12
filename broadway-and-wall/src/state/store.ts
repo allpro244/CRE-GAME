@@ -48,10 +48,9 @@ import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
-import { jevDueNow, runDueJev, advanceSpanWithJev, seedRunWithJev, prefetchJev } from "@/state/jevStore";
 import { cutTownOffThread } from "@/state/townClient";
 import type { TownRequest } from "@/state/townWorker";
-import { monthOffThread } from "@/state/simClient";
+import { monthOffThread, spanOffThread } from "@/state/simClient";
 
 export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "reset";
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "pencils" | "listings";
@@ -67,7 +66,7 @@ export interface DesignPreview {
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer" | "firm" | "match" | "rankings";
+export type Page = "none" | "portfolio" | "deals" | "market" | "research" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer" | "firm" | "rankings";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -627,15 +626,6 @@ async function advanceOne(opts?: { quiet?: boolean }): Promise<void> {
   const { parcels, bbls, adjacency } = st;
   let game = st.game;
   if (!game || !parcels || game.gameOver) return;
-  // JEV'S ANSWERS FIRST, when a decision period is due: the Jev-run firms'
-  // questions were (usually) sent while the last month closed, and are filed
-  // on the state before the tick reads them. Play waits only if they are
-  // still in flight — see state/jevStore.ts.
-  if (jevDueNow(game)) {
-    if (!(await runDueJev())) return;
-    game = useStore.getState().game;
-    if (!game || game.gameOver) return;
-  }
   let ticked: GameState;
   for (;;) {
     ticked = await monthOffThread(game, parcels, bbls, adjacency);
@@ -650,8 +640,6 @@ async function advanceOne(opts?: { quiet?: boolean }): Promise<void> {
   // A spectator's principal can die; nobody is at the desk, the match goes on.
   const next = game.spectator && ticked.gameOver ? { ...ticked, gameOver: null } : ticked;
   set({ game: next, prevForDigest: game });
-  // Ask Jev about the next period while this month is on screen.
-  prefetchJev(next);
   // A spectator is not at the desk: no cards about the player's own firm.
   if (!next.spectator) queueDeliveryCeremony(game, next, parcels, set);
   if (!next.spectator) queueYearReview(game, next, set);
@@ -1056,7 +1044,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
       try {
-        const r = await advanceSpanWithJev(game, parcels, bbls, adjacency, 12);
+        const r = await spanOffThread(game, parcels, bbls, adjacency, 12);
         // The async tick yields between months. If the player acted while it
         // was yielding, the store now holds a different state descended from
         // the same starting snapshot. Never overwrite that real action with
@@ -1084,7 +1072,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
       try {
-        const r = await advanceSpanWithJev(game, parcels, bbls, adjacency, 36);
+        const r = await spanOffThread(game, parcels, bbls, adjacency, 36);
         if (get().game !== game) {
           toast("Skip stopped because you made another decision.");
           return;
@@ -2530,7 +2518,6 @@ export const useStore = create<AppState>((set, get) => ({
       // draws. Absent, a fresh one is rolled exactly as before.
       const seed = seedIn && seedIn >>> 0 ? seedIn >>> 0 : rerollCity();
       if (seedIn && seedIn >>> 0) setSeed(seed, island);
-      // Jev-run firms and spectator mode, if the start screen asked for them.
       // THE SETUP IS RECORDED ON THE SAVE, including the parts the store
       // applies itself (town, cash, goal), so Saves and the run record can say
       // which world this was. A default setup is bit-identical to none.
@@ -2555,7 +2542,7 @@ export const useStore = create<AppState>((set, get) => ({
         manifest: built.manifest as DataManifest,
         city: built,
       });
-      const g = seedRunWithJev(dealt!, parcels);
+      const g = dealt!;
       g.cityIsland = island;
       g.citySeed = seed;
       g.citySize = size;

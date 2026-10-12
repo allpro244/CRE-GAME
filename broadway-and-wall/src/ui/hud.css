@@ -529,3 +529,4 @@
 /* Four answers on a letter card wrapped "Pass" onto a line of its own at
    1440px ("Counter to my terms" is now "My terms", its tooltip says the rest). */
 .app .loi-grid .btn-row { gap: 6px; }
+.app :not(.btn-row) > .hint.short-by { display: block; margin-top: 4px; }

@@ -3585,7 +3585,9 @@ export function tickEcon(s: GameState) {
         // the telework shock stacked a level drop on top. The deep era below
         // is that record, not a balance choice; office demand per job has
         // spent more of the modern record shrinking than growing.
-        [-0.024, 2],   // densification + telework era
+        // NO TELEWORK ERA (owner, 2026-10-12): offices keep the demand they
+        // had before the 2020s work-from-home shift. The -2.4%/yr era carried
+        // that shift; the pre-2020 slow compression stays.
         [-0.009, 3],   // slow space-per-worker compression
         [0.0, 2],      // steady state
         [0.008, 2],    // services boom pulls desks

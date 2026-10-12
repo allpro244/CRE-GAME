@@ -265,3 +265,7 @@ Asked plainly: what does a principal need without opening a desk?
   were two stacked labels and three unlabeled rows of buttons. Each is now a
   line: its name, a segmented control, and what it reads as today
   ("tenants read it as 55 of 100", "condition 92 of 100").
+- **The tape says a standing fact once.** Conditions that hold for months
+  re-wrote themselves into the news every month ("2 parties are chasing the
+  same 1.8k sf at 146 E 15th St"). The News desk keeps the newest copy and
+  notes "also 6 earlier times"; on a measured save, 120 lines became 97.

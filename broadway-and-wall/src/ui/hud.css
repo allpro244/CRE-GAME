@@ -445,3 +445,4 @@
   text-transform: uppercase; color: var(--text-3);
 }
 .app .ops-choice-read { font-size: var(--fs-xs); color: var(--text-3); }
+.app .news-repeat { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }

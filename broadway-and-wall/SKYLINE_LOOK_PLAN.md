@@ -189,6 +189,17 @@ fixed in #231; the sweep is clean since.
   the back wall, a side wall, the floor (wood or carpet) or the ceiling,
   dimmer with depth. It moves with the camera, so the window reads as an
   opening. Shader only, fades out past ~320 m with the other relief.
+- **Round 25** — the ground round a building. About a third of every built
+  lot is open (offices 40%, shops 37%, apartments 34%, industry 19%) and it
+  showed the block fill, which went lawn-green in summer whatever stood
+  there: a bank tower in a front lawn. Each built lot now lays its own ground
+  (`lotGrounds`) by use and era: offices and shops a granite-flag plaza with
+  trees in grates or planters along the front; apartment houses before 1940
+  paved areaways and yards; from 1940 on mown lawn (seasonal, takes snow)
+  with a paved walk from the street to the building and a tree or two on a
+  big lawn; industry an asphalt work yard. Hung on the deed and collapsed
+  away on demolition. The block fill itself now only reaches four tenths of
+  the way to lawn green in summer.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

@@ -92,3 +92,9 @@ placeholder extrusions.
   demand, the hour and the graphics setting (applyCrowd). Walkers were held
   short of the first try's 9 m: a figure is a pixel at the default camera and
   every one is stepped each frame.
+- **Round 13** — balconies on every apartment front whose original family
+  carries them (via `baseOf`, so the pattern book's later families count),
+  now including stack-bond brick, rainscreen, timber and new limestone; and
+  up post-1990 glass apartment towers in alternate stacks. Review shots now
+  use exact cameras (`z=`, `pitch=`, `bear=` in `shoot-design.mjs`), so two
+  builds frame identically.

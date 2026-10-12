@@ -279,3 +279,8 @@ Asked plainly: what does a principal need without opening a desk?
   when its loan balloons (red inside a year). The cash-flow walk moved into
   `deedDebtService` (ui/deedMarks.ts), shared with the Portfolio row so the
   two cannot disagree. "+N more" on the docket expands the list.
+- **No false empty states.** The Leasing desk's rent roll said "Nothing under
+  lease yet" under a 96%-let apartment building — flats are let unit by unit
+  and carry no named lease, so the table was empty while the rent was real.
+  It now says so, with the let footage. House-wide policy uses the same
+  labelled segmented controls as a single building.

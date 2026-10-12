@@ -538,8 +538,13 @@ export function LeasingPage() {
                   </tr>
                   );
                 })}
+              {/* "Nothing under lease yet" sat under a 96%-let apartment
+                  building: flats are let unit by unit and carry no named
+                  lease, so this table is empty while the rent is real. */}
               {!rows.some((r) => r.h.tenants.length) && (
-                <tr><td colSpan={5} className="dim">Nothing under lease yet.</td></tr>
+                <tr><td colSpan={5} className="dim">{totLeased > 0
+                  ? `No named leases — ${sf(totLeased)} is let unit by unit (flats carry no lease of their own here). Occupancy and rent are in the table above.`
+                  : "Nothing under lease yet."}</td></tr>
               )}
             </tbody>
           </table>

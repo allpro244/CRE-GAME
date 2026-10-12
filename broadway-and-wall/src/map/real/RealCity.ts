@@ -3783,11 +3783,14 @@ export class RealCityLayer {
           for (let i = 0; i < beds; i++) { const q = spot(0.05, 0.45); if (q) patch(q, 3 + rnd() * Math.min(10, ll * 0.22), 2.5 + rnd() * 5, [0.5 + rnd() * 0.12, 0.72 + rnd() * 0.12, 0.38]); }
           this.feat("greenroof", bbl);
         }
-        const n = Math.min(5, 1 + Math.floor(area / 500));
+        // re-covered sections, dark tar or pale new membrane, big enough to
+        // read from the street-view camera; walkway pads in pale strips
+        const n = Math.min(6, 2 + Math.floor(area / 450));
         for (let i = 0; i < n; i++) {
-          const q = spot(0.05, 0.7), j = 0.84 + rnd() * 0.3;
-          if (q) patch(q, 2.5 + rnd() * Math.min(12, ll * 0.3), 2 + rnd() * 6, [rc[0] * j, rc[1] * j, rc[2] * j]);
+          const q = spot(0.05, 0.7), j = rnd() < 0.5 ? 0.62 + rnd() * 0.14 : 1.18 + rnd() * 0.16;
+          if (q) patch(q, 3 + rnd() * Math.min(14, ll * 0.32), 2.5 + rnd() * 7, [rc[0] * j, rc[1] * j, rc[2] * j]);
         }
+        for (let i = 0; i < 2; i++) { const q = spot(0.1, 0.55); if (q) patch(q, Math.min(ll * 0.35, 12), 0.5, [rc[0] * 1.35, rc[1] * 1.35, rc[2] * 1.32]); }
         this.note(bbl, "roof", p0);
       }
       // condensers on anything post-war with a flat roof of any size, not

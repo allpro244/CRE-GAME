@@ -4265,10 +4265,31 @@ export class RealCityLayer {
       if (area < 40) continue;
       const k = keyOf(bbl), h = top.get(bbl) ?? v.z1, yr = v.y || 1950, cls = v.c;
       const j = 0.94 + 0.12 * hash01(k ^ 0x6f1, 3);
+      // THE FRONT AND THE BACK (round 26). The whole lot in one surface paved
+      // the middle of every downtown block. The front, between the street and
+      // the building, takes the hard surface of the use; the rest of the lot,
+      // behind and beside it, is mostly grass: back gardens and courtyards,
+      // with a third of the commercial lots keeping a paved service yard.
       const kind = cls === "industrial" ? "work" : cls === "office" || cls === "retail" ? "plaza" : yr < 1940 ? "pave" : "lawn";
-      const name = "lot:" + kind, B = this.buf(name), b0 = B.count;
-      lay(B, ring, kind === "lawn" ? 0.022 : 0.02, [j, j, j]);
-      this.note(bbl, name, b0);
+      const back = kind === "work" ? "work" : kind === "plaza" && hash01(k ^ 0x5b1, 3) < 0.35 ? "pave" : "lawn";
+      { const bn = "lot:" + back, BB = this.buf(bn), b0 = BB.count; lay(BB, ring, back === "lawn" ? 0.022 : 0.02, [j, j, j]); this.note(bbl, bn, b0); }
+      if (kind !== back) {
+        // a strip along every street front, as deep as the building stands back (capped)
+        const FB = this.buf("lot:" + kind), f0 = FB.count;
+        for (const e of this.streetEdges(ring, 3)) {
+          const ix = -e.uy, iy = e.ux;
+          const mx = e.a[0] + e.ux * e.L / 2, my = e.a[1] + e.uy * e.L / 2;
+          let d = 0.5;
+          while (d < 14 && this.groundAt(mx + ix * d, my + iy * d) !== "bld") d += 0.5;
+          d = Math.min(d + 0.3, kind === "pave" ? 4 : 14);
+          const A: P2 = [e.a[0], e.a[1]], Bp: P2 = [e.a[0] + e.ux * e.L, e.a[1] + e.uy * e.L];
+          const C: P2 = [Bp[0] + ix * d, Bp[1] + iy * d], D: P2 = [A[0] + ix * d, A[1] + iy * d];
+          if (!PolyGrid.inRing(ring, (C[0] + D[0]) / 2, (C[1] + D[1]) / 2)) continue;
+          FB.quad([A[0], A[1], 0.024], [Bp[0], Bp[1], 0.024], [C[0], C[1], 0.024], [D[0], D[1], 0.024], [0, 0, 1],
+            [[A[0] / 4, A[1] / 4], [Bp[0] / 4, Bp[1] / 4], [C[0] / 4, C[1] / 4], [D[0] / 4, D[1] / 4]], [j, j, j]);
+        }
+        this.note(bbl, "lot:" + kind, f0);
+      }
       // the street front: the longest wall that faces a street
       const front = this.streetEdges(ring, 6).sort((a, b) => b.L - a.L)[0];
       let cx = 0, cy = 0;

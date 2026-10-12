@@ -290,6 +290,60 @@ function StockVsLeased({ tail, live, xFrom, xTo, spanYrs }: {
   );
 }
 
+/**
+ * THE REST OF THE STAT STRIP, WITH ITS HISTORY. The credit window, employment,
+ * build costs and land index were printed as today's number only, though
+ * recordHistory has been writing every one of them monthly. Each chart is
+ * drawn on the strip's own scale (x100, or % for the window), so the number in
+ * the tile is the last point on the line. creditIdx, employIdx and costIdx are
+ * optional on old saves, so each series starts at its first recorded month
+ * instead of drawing a fake level before it existed.
+ */
+function MacroCharts({ hist }: { hist: EconHistoryPoint[] }) {
+  const cell = (
+    title: string,
+    color: string,
+    get: (p: EconHistoryPoint) => number | undefined,
+    note: string,
+    fmt: (v: number) => string = (v) => v.toFixed(0),
+    bands: { at: number; label?: string }[] = [],
+  ) => {
+    const start = hist.findIndex((p) => get(p) !== undefined);
+    const pts = start < 0 ? [] : hist.slice(start);
+    return (
+      <div className="chart-cell">
+        <div className="chart-title">{title}</div>
+        {pts.length < 2 ? (
+          <div className="hint">Not enough history yet — advance a few quarters.</div>
+        ) : (
+          <LineChart
+            height={108}
+            series={[{ label: title, color, pts: pts.map((p) => (get(p) ?? 0) * 100) }]}
+            bands={bands}
+            yFmt={fmt}
+            xLabels={[monthLabel(pts[0].q), monthLabel(pts[pts.length - 1].q)]}
+            xAt={(i) => monthLabel(pts[i]?.q ?? 0)}
+          />
+        )}
+        <div className="chart-note">{note}</div>
+      </div>
+    );
+  };
+  return (
+    <div className="chart-grid">
+      {cell("Credit window", "#5a4f8a", (p) => p.creditIdx,
+        "How far the banks are open. Below 70% is a shut window: fewer quotes, lower proceeds and wider spreads on whatever does get written.",
+        (v) => `${v.toFixed(0)}%`, [{ at: 70, label: "tight" }])}
+      {cell("Employment", "#2f6f7a", (p) => p.employIdx,
+        "How many workers the city's firms want, 100 at the start — the driver behind leasing velocity. Occupied space chases it with a lag.")}
+      {cell("Build costs", "#8a5620", (p) => p.costIdx,
+        "Construction and operating cost index. A development budget is struck at this level, and salaries are billed at it.")}
+      {cell("Land index", "#7a5c1e", (p) => p.landIdx,
+        "Land values. The level is the town's own; the moves are what matter, because every site you price and every appraisal leans on them.")}
+    </div>
+  );
+}
+
 export function EconomyPage() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
@@ -503,6 +557,7 @@ export function EconomyPage() {
             whether today is a cheap-money year inside a dear-money era, or the other way round —
             and that is the difference between fixing and floating.
           </div>
+          <MacroCharts hist={hist} />
         </div>
       )}
 

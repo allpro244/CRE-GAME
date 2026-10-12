@@ -19,6 +19,7 @@ import type { BuildingVolume } from "../volume";
 import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
 import { siteOutline, ringCentroid } from "./siteRing";
+import { PostFX } from "./post";
 import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
 import { BOOK_PICKER } from "./patternbook/register";
 import type { FacadeGroup } from "./patternbook/types";
@@ -1523,6 +1524,8 @@ export class RealCityLayer {
       SEA.seaTime.value = tt % 3600;
     }
     this.renderer.render(this.scene, this.camera);
+    // the finishing pass over the whole frame: grade, bloom, tilt-shift (post.ts)
+    this.post.apply(this.renderer, pitch, distM, smooth(0.35, 0.95, this.dusk));
     if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
   }
 
@@ -1532,6 +1535,7 @@ export class RealCityLayer {
   // skyline and the island view keeps its far shore readable.
   private hazeSheet: THREE.Mesh | null = null;
   private skyEnv: THREE.Texture | null = null;
+  private post = new PostFX();
   // the water's ripple maps, drifting downwind (UV units per tile differ by mesh)
   private waves: { tex: THREE.Texture; tile: number }[] = [];
   private waveTex(uvPerMetre: number): THREE.Texture {
@@ -5936,6 +5940,8 @@ export class RealCityLayer {
     this.crowdK = q === "high" ? 1 : q === "medium" ? 0.6 : 0.3;
     this.cullM = q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
     this.sun.castShadow = q !== "low";
+    // the finishing pass: all of it on High, the grade alone on Medium, none on Low
+    this.post.level = q === "high" ? "full" : q === "medium" ? "grade" : "off";
     if (this.catcher) this.catcher.visible = q !== "low";
     // the ground contact shade is transparent overdraw under every building
     const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";

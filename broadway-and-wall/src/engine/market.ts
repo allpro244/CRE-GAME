@@ -1425,6 +1425,94 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
       ? Math.max(3, n.recM ?? 0)
       : Math.max(3, Math.round(u * (lo + (hi - lo) * 0.5)));
   }
+  // EVERY TOWN OPENS ON ITS OWN SUPPLY PRICE (2026-10-12).
+  //
+  // The rent table is 2024 secondary-market money and the cost table is 2024
+  // RSMeans money, so every town in every seed opened with office at roughly
+  // half the rent it takes to build (a 2024 post-pandemic overhang) — in a
+  // game that opens in 2000, when construction cost was about 2.4x lower
+  // against office rents that rose roughly with prices (ENR BCI 3,539 in 2000
+  // against ~8,500 in 2024). The consequence was the same in every town: no
+  // office for decades while rent climbed to the supply price, then a boom
+  // that overshot. No year's prices need to be the model's (owner,
+  // 2026-10-12: "each city and seed can have its unique system"). What a
+  // town needs is an opening that is SOMEWHERE in the range real cities
+  // occupy. So each class opens at its own Tobin's q — what a new building
+  // is worth against what it costs at the sites developers actually pursue
+  // (`devPencils`, the P90 location) — centred on 1, the margin a growing
+  // city's supply sits at in the long run, with a seeded spread: one town
+  // opens with an office glut, the next short of sheds. Only the rent LEVEL
+  // moves; the history above still sets where in the cycle the town is.
+  // OPEN_Q_SIGMA is a shape parameter (the cross-town spread of the opening),
+  // stated as such, not a fit to any outcome.
+  {
+    const OPEN_Q_SIGMA = 0.15;
+    for (const k of BUILT_CLASSES) {
+      const u1 = Math.max(1e-6, mulberry32Step(((s.seed ^ (0x51ed27 * (BUILT_CLASSES.indexOf(k) + 3))) >>> 0) || 7).value);
+      const u2 = mulberry32Step(((s.seed ^ (0x2545f491 + BUILT_CLASSES.indexOf(k) * 977)) >>> 0) || 11).value;
+      const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      const target = Math.exp(OPEN_Q_SIGMA * z);
+      const qAt = (): number => {
+        const gap = (econ.cityVac[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+        econ.effRentIdx = econ.effRentIdx ?? { ...econ.rentIdx };
+        econ.effRentIdx[k] = econ.rentIdx[k] * (1 - CONC_DEPTH * concessionTarget(gap, econ.phase));
+        const a = devPencils(econ, k);
+        return a > 0 ? Math.pow(a, 1 / 1.2) : 0;
+      };
+      // Secant on log rent: q rises with rent but not proportionally (opex,
+      // recoveries), so solve rather than scale once. A class whose pencil
+      // reads zero (no rent covers opex) is left as the table drew it.
+      let q = qAt();
+      if (!(q > 0) || q >= 3 ** (1 / 1.2) - 1e-6) continue;
+      for (let it = 0; it < 8 && Math.abs(Math.log(q / target)) > 0.005; it++) {
+        const r0 = econ.rentIdx[k];
+        econ.rentIdx[k] = r0 * 1.05;
+        const q1 = qAt();
+        const slope = Math.log(Math.max(1e-6, q1) / q) / Math.log(1.05);
+        econ.rentIdx[k] = r0 * Math.exp(clamp(Math.log(target / q) / Math.max(0.3, slope), -1.5, 1.5));
+        q = qAt();
+        if (!(q > 0)) { econ.rentIdx[k] = r0; break; }
+      }
+    }
+  }
+  // EVERY TOWN HAS ITS OWN DOLLARS, AND ITS OWN DEARNESS (2026-10-12).
+  //
+  // Owner: "you should be able to get a game where office rents are at $10
+  // one time and $35 another time ... based on the seed, how built up the
+  // city is maybe, and unique to the seed." Two draws, per seed:
+  //
+  //   PRICE LEVEL  what a dollar buys in this town — rents, construction,
+  //                operating cost and pay all move together, so a $12 office
+  //                town and a $35 one can run the same economics in different
+  //                money (as two eras would). Median 0.45 of the reference
+  //                table, which puts a typical town's office in the low $20s.
+  //   DEARNESS     how expensive space is against what it costs to build and
+  //                what people earn. Rents take all of it, pay about half and
+  //                construction about four tenths: construction cost varies
+  //                across US metros far less than rent does (RSMeans city
+  //                index ~0.8-1.3 against several-fold office rent spreads).
+  //                A dear town opens with building that pays; a cheap one
+  //                opens where nothing new pencils for years.
+  //
+  // How built up the city is already moves the level (`densityPriceScales`).
+  // Both sigmas are shape parameters for the cross-town spread, stated as
+  // such: 0.35 on the price level, 0.20 on dearness.
+  {
+    const nrm = (salt: number): number => {
+      const u1 = Math.max(1e-6, mulberry32Step(((s.seed ^ salt) >>> 0) || 13).value);
+      const u2 = mulberry32Step(((s.seed ^ (salt * 7 + 0x9e37)) >>> 0) || 17).value;
+      return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    };
+    const P = 0.45 * Math.exp(0.35 * nrm(0x6a09e667));
+    const R = Math.exp(0.20 * nrm(0x3c6ef372 ^ 0x5be0cd19));
+    econ.priceLevel = P;
+    for (const k of BUILT_CLASSES) econ.rentIdx[k] = +(econ.rentIdx[k] * P * R).toFixed(4);
+    econ.costIdx = econ.costIdx * P * Math.pow(R, 0.4);
+    const w = P * Math.pow(R, 0.5);
+    econ.wageIdx = (econ.wageIdx ?? 1) * w;
+    econ.outputIdx = (econ.outputIdx ?? 1) * w;
+    econ.wage0 = (econ.wage0 ?? 1) * w;
+  }
   // THE TOWN OPENS MID-CYCLE, SO ITS CONCESSIONS DO TOO.
   //
   // The dial used to open at zero — effective rent equal to face in every
@@ -1446,7 +1534,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // density scale alone — same identity the monthly landIdx step chases.
   {
     const rentLevel = (econ.effRentIdx?.office ?? econ.rentIdx.office) / RENT_BASE.office;
-    const costLevel = Math.max(0.35, econ.costIdx ?? 1);
+    const costLevel = Math.max(0.35 * (econ.priceLevel ?? 1), econ.costIdx ?? 1);
     econ.landIdx = clamp(
       Math.pow(rentLevel / costLevel, 1.15),
       0.05, 80,
@@ -3303,12 +3391,12 @@ export function tickEcon(s: GameState) {
     if (e.wageDebt === undefined) e.wageDebt = 0;
     if (growth < 0) {
       e.wageDebt -= growth;          // the cut nobody took, owed
-      e.wageIdx = clamp(e.wageIdx!, 0.7, 400);   // frozen: no cut, no rise
+      e.wageIdx = clamp(e.wageIdx!, 0.7 * (e.priceLevel ?? 1), 400 * (e.priceLevel ?? 1));   // frozen: no cut, no rise
     } else {
       // Later raises are thinned until the debt is worked off.
       const repay = Math.min(e.wageDebt, growth * 0.12 + 0.00008);
       e.wageDebt -= repay;
-      e.wageIdx = clamp(e.wageIdx! * (1 + growth - repay), 0.7, 400);
+      e.wageIdx = clamp(e.wageIdx! * (1 + growth - repay), 0.7 * (e.priceLevel ?? 1), 400 * (e.priceLevel ?? 1));
     }
     e.wageDebt = clamp(e.wageDebt, 0, 0.25);
     // What the same worker earns elsewhere: the national path, expectations
@@ -4985,7 +5073,7 @@ export function tickEcon(s: GameState) {
     // and deleting it entirely reproduces every statistic in this file to the
     // digit. Left in place because a guard that never fires is a guard.
     const beforeRent = e.rentIdx[k];
-    e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5, e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
+    e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5 * (e.priceLevel ?? 1), e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
     if (!e.rentPath) e.rentPath = {} as NonNullable<Econ["rentPath"]>;
     e.rentPath[k] = {
       gap, vacTerm, instant, pressEma, pressClamped: press, clampBound,
@@ -5135,7 +5223,7 @@ export function tickEcon(s: GameState) {
   // dirt. EFFECTIVE rents, because a builder underwrites what deals sign at,
   // not what landlords quote.
   const rentLevel = (e.effRentIdx?.office ?? e.rentIdx.office) / RENT_BASE.office;
-  const costLevel = Math.max(0.35, e.costIdx ?? 1);
+  const costLevel = Math.max(0.35 * (e.priceLevel ?? 1), e.costIdx ?? 1);
   const vacDisc = 1 - 1.2 * Math.max(0, (e.cityVac?.office ?? NATURAL_VAC.office) - NATURAL_VAC.office);
   // Homogeneous of degree 0 under a pure nominal scale: rent and cost both ×λ
   // leave the ratio unchanged. The old cost^0.35 form grew as λ^0.75 under
@@ -5357,9 +5445,13 @@ export function tickEcon(s: GameState) {
     // was dragging down. Cost is now its inputs (CPI and wages, at the labour
     // share) plus how booked the trades are, and nothing else.
     const realPull = 0;
+    // The guards are in this town's dollars (`priceLevel`, drawn at the
+    // opening): an absolute 0.6 floor lifted a cheap town's construction to
+    // twice its own price level on the first tick (2026-10-12).
+    const pl = e.priceLevel ?? 1;
     e.costIdx = clamp(
       e.costIdx * (1 + costDrift + catchUp + realPull + rrange(s, -0.0012, 0.0012)),
-      0.6, 400,
+      0.6 * pl, 400 * pl,
     );
   }
 

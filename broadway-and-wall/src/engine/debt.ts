@@ -3,7 +3,7 @@
 // quarter, and cash sweeps on breach. Proceeds gate on DSCR at underwriting,
 // not just LTV — a lender lends against income, not hope.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import { resolveRec, concentration, industryConcentration, netWorth } from "./value";
+import { resolveRec, concentration, industryConcentration, netWorth, buildTier } from "./value";
 import { commercialShare } from "./mix";
 import type { Condition, Econ, GameState, Holding, Loan } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
@@ -284,8 +284,16 @@ export function deskAdvice(
  * good; a gate of "standard" admits good and standard. Worn and obsolete
  * buildings go to the banks and the debt fund, as they do in life.
  */
-export function conditionOk(p: LoanProduct, condition: string | undefined): boolean {
-  if (!p.minCondition || condition === undefined) return true;
+export function conditionOk(p: LoanProduct, condition: string | undefined, spec?: number): boolean {
+  if (!p.minCondition) return true;
+  // ...NOR A VALUE-ENGINEERED ONE, however new. A life company is buying a
+  // fifteen-year stream and underwrites the building it will still be lending
+  // on in year fifteen: short-life plant and a weak tenant pool are exactly
+  // what it is paid not to hold. Value bones go to the banks, the conduit and
+  // the debt funds, as institutional-grade-only lending works in life.
+  // BUILD_CLASS_PLAN.md.
+  if (spec !== undefined && buildTier(spec).key === "value") return false;
+  if (condition === undefined) return true;
   if (p.minCondition === "good") return condition === "good";
   return condition === "good" || condition === "standard";
 }
@@ -1184,11 +1192,11 @@ const STAB_LTV = 0.65;
 // sizes without it writes a different coupon and principal than it quoted.
 export function originate(
   s: GameState, product: LoanProduct, price: number, noiYr: number, lev = 1,
-  condition?: string, klass?: string, stab?: StabView, guarantor?: Guarantor,
+  condition?: string, klass?: string, stab?: StabView, guarantor?: Guarantor, spec?: number,
 ): Loan | null {
   if (!productOpen(s, product)) return null;
   if (!windowOpen(s, product)) return null;
-  if (!conditionOk(product, condition)) return null;
+  if (!conditionOk(product, condition, spec)) return null;
   const full = quote(s, product, price, noiYr, klass, false, stab, condition, guarantor);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
@@ -1542,7 +1550,7 @@ export function tickLoan(
       // did: the deed came out free and clear, the 1% fee was paid anyway, and
       // the lender's paper simply evaporated. Guard it and walk the rest of the
       // ladder's answers — retire it, write the gap, or open a file.
-      const fresh = originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab);
+      const fresh = originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab, undefined, rec.buildSpec);
       if (fresh) {
         h.loan = fresh;
         fresh.balance = fresh.principal = rolled;
@@ -1606,7 +1614,7 @@ export function tickLoan(
         // lev=1 with no hair (and the wrong class on land) used to write a
         // bigger loan than "today's market only refinances $X" claimed.
         h.loan = qd.principal > 100_000
-          ? originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab)
+          ? originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab, undefined, rec.buildSpec)
           : null;
         if (h.loan && h.loan.balance !== qd.principal) {
           h.loan.balance = h.loan.principal = qd.principal;
@@ -2024,7 +2032,7 @@ export function balloonLadder(
         // A desk that cannot close on this building must not be chosen as its
         // renewal: the life company only writes well-kept product, and
         // `originate` refuses at the table after the ladder has already picked.
-        && conditionOk(p, h.condition));
+        && conditionOk(p, h.condition, rec.buildSpec));
     const fee = Math.round(balance * REFI_FEE);
     const sized = ladder.map((p) => {
       const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition);
@@ -2139,7 +2147,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       floating: p.floating,
       available: onFacility ? false
         : !productOpen(s, p) || !windowOpen(s, p) ? false
-        : !conditionOk(p, h.condition) ? false
+        : !conditionOk(p, h.condition, rec.buildSpec) ? false
         : p.mezz ? false
         : p.uwDscr <= 0 ? vacantDirt
         : !vacantDirt && q.principal > 0,
@@ -2149,8 +2157,8 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         ? `This desk won't look at you — ${sponsorStanding(s).label}. It recovers with clean payments; bridge money will still talk in the meantime.`
         : !windowOpen(s, p)
         ? "The securitization window is closed — nobody is buying the bonds until markets reopen. Nothing about this building will change that."
-        : !conditionOk(p, h.condition)
-        ? "Life-company money wants a well-kept building. Renovate first."
+        : !conditionOk(p, h.condition, rec.buildSpec)
+        ? (buildTier(rec.buildSpec).key === "value" ? "Life-company money does not lend on value-engineered buildings, however new." : "Life-company money wants a well-kept building. Renovate first.")
         : p.mezz
         ? "Mezzanine sits behind a senior — use Place mezz on the refinance desk, do not replace the first lien."
         : p.minLoan && q.principal === 0 && !vacantDirt
@@ -2229,7 +2237,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
           : "Proceeds don't cover the payoff — you're underwater on this refi.",
     };
   }
-  const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab);
+  const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab, undefined, rec.buildSpec);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
   // PRINCIPAL INTO CASH IS A LEDGER EVENT. Fees stay in debtSvc; net new
   // principal that lands in the operating account is `borrowed` — the bucket

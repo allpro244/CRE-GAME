@@ -3093,6 +3093,13 @@ export interface GameState {
    */
   specOf?: Record<string, number>;
   /**
+   * THE CITY'S STOCK BY VINTAGE — sf-weighted mean year built, per use.
+   * Restamped each January by sim.ts (stampStockVintage) so the building
+   * score can read "how new is this against what tenants could take instead"
+   * without being handed the parcel table. BUILD_CLASS_PLAN.md.
+   */
+  stockVintage?: Partial<Record<BuiltClass, number>>;
+  /**
    * WHAT THE BOARD SAID, and when.
    *
    * A hearing is a year of your life and several hundred thousand dollars, and

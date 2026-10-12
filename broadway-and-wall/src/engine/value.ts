@@ -3,7 +3,7 @@
 // the parcel record and the market state — no hidden multipliers.
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, Econ, GameState, Holding, Sector, Tenant } from "./types";
-import { serviceSpec, START_YEAR, fundDepositsHeld, BUILT_CLASSES } from "./types";
+import { serviceSpec, START_YEAR, fundDepositsHeld, BUILT_CLASSES, CAP_PLAN_RATE } from "./types";
 export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
@@ -1437,6 +1437,120 @@ export function specRentMult(spec = 0.5): number {
 }
 
 /**
+ * THE FOUR WAYS TO BUILD. The spec number stays 0..1 underneath — saves,
+ * gut renovations and every reader keep working on it — and the desk offers
+ * four named points on it. Cost is `specCostMult` at each point, untouched.
+ * BUILD_CLASS_PLAN.md.
+ */
+export const BUILD_TIERS = [
+  { key: "value" as const, label: "Value", spec: 0.15,
+    blurb: "value-engineered box — cheapest to build, short-life plant, the weakest covenants" },
+  { key: "standard" as const, label: "Standard", spec: 0.5,
+    blurb: "what the street builds" },
+  { key: "premium" as const, label: "Premium", spec: 0.75,
+    blurb: "institutional grade — better skin, plant and lobby; long paper and the life company" },
+  { key: "trophy" as const, label: "Trophy", spec: 0.95,
+    blurb: "name-on-the-building — holds its tenants when the rest of the street empties" },
+];
+export type BuildTierKey = (typeof BUILD_TIERS)[number]["key"];
+/** The tier a spec reads as — the nearest named point, so an odd saved spec still has a word. */
+export function buildTier(spec = 0.5): (typeof BUILD_TIERS)[number] {
+  let best = BUILD_TIERS[1];
+  for (const t of BUILD_TIERS) if (Math.abs(t.spec - spec) < Math.abs(best.spec - spec)) best = t;
+  return best;
+}
+
+/**
+ * CHEAP PLANT WEARS OUT SOONER. Value-engineered systems are the point of a
+ * value build: packaged rooftop units instead of a central plant, single-ply
+ * membrane instead of a long-life roof, a thinner skin. Their replacement
+ * cycles run roughly 15-20 years against 25-30 for institutional grade
+ * (BOMA / RSMeans life-cycle tables), i.e. about 1.3x the replacement
+ * frequency at the bottom of the scale and ~0.75x at the top. A shape
+ * parameter, set against those cycles, not tuned to an arm. The capital
+ * plan cheque already scales with wear, so this lands on the capex line by
+ * itself — and so does what a buyer pays for it (`capRateFor`).
+ */
+export function specWearMult(spec = 0.5): number {
+  return Math.max(0.75, Math.min(1.3, 1 + 0.6 * (0.5 - spec)));
+}
+
+/**
+ * WHERE A NEW BUILDING OPENS. New is not the same as good: a value box is new
+ * and ordinary on day one — basic finishes, a lobby that is a corridor — and
+ * it opens low in the "good" band rather than at the top of it. Standard opens
+ * where every delivery used to (0.945); trophy at the top. Capped by the
+ * ceiling the bones allow.
+ */
+export function openingCondIdx(spec = 0.5): number {
+  const x = Math.max(0, Math.min(1, spec));
+  // At and above market spec this is exactly the old 0.90 + 0.09 x spec.
+  return x >= 0.5 ? 0.90 + 0.09 * x : 0.80 + 0.29 * x;
+}
+
+/**
+ * HOW THE MARKET TREATS QUALITY RIGHT NOW. Flight to quality is not a level,
+ * it is a beta: when a market is soft, good space comes down to where tenants
+ * in lesser space can afford to trade up, and they do — lesser space empties
+ * first and refills last. When it is tight, the good space is full and
+ * tenants settle. Washington trophy office ~10% vacant against ~26% for B/C,
+ * Houston trophy 21% against 27.5% Class A (Q4 2024), both at ~25% overall;
+ * CBRE: Class A/trophy rents +3%/yr since 2021, everything else −1%/yr.
+ * 1.0 at the natural vacancy rate, so across a cycle the level the
+ * "Specification" factor was set at is kept; rising in a glut, falling below
+ * one when the market is tight. A shape parameter, stated as one.
+ */
+export function qualityCycle(econ: Econ, use: BuiltClass): number {
+  const nat = NATURAL_VAC[use] ?? 0.08;
+  const vac = econ.cityVac?.[use] ?? nat;
+  return Math.max(0.6, Math.min(1.9, 0.4 + 0.6 * (vac / Math.max(0.01, nat))));
+}
+
+/**
+ * THE BUILDING SCORE, 0-100, and the letter the street uses for it.
+ *
+ * The BUILDING only — location is priced on its own (`locationRentMult`,
+ * the credit draw, the cap spread), and folding it in here would count it
+ * twice. Three parts:
+ *   structure       40  the bones you built (spec) — permanent
+ *   condition       35  the plant and finishes today (condIdx)
+ *   competitiveness 25  how new it is against the city's own stock in that
+ *                       use — falls as the building ages and better space
+ *                       delivers around it, without the owner doing anything
+ * The letter is a reading of the score; anything that should slide reads the
+ * score, and only yes/no gates read the letter.
+ */
+export type BuildingGrade = "Trophy" | "A" | "B" | "C";
+export interface BuildingScore { score: number; structure: number; condition: number; competitiveness: number; grade: BuildingGrade }
+export function buildingScore(
+  rec: { yearBuilt: number; buildSpec?: number; class?: string },
+  h: { condIdx?: number } | null | undefined,
+  s: { month: number; stockVintage?: Partial<Record<BuiltClass, number>> },
+): BuildingScore {
+  const spec = rec.buildSpec ?? 0.5;
+  const structure = 40 * Math.max(0, Math.min(1, spec));
+  const idx = h?.condIdx ?? initialCondIdx(rec as ParcelRecord, s.month);
+  const condition = 35 * Math.max(0, Math.min(1, (idx - 0.20) / 0.77));
+  const year = START_YEAR + Math.floor(s.month / 12);
+  const age = year - (rec.yearBuilt || year);
+  const cls = (rec.class ?? "office") as BuiltClass;
+  const stockAge = year - (s.stockVintage?.[cls] ?? year - 40);
+  // A logistic on age against the stock: a delivery reads ~24, a building as
+  // old as the average reads 12.5, one a generation older than it ~3. The
+  // 10-year scale is how fast a new building stops being "the new one" in a
+  // broker's book — a shape parameter.
+  const competitiveness = 25 / (1 + Math.exp((age - stockAge) / 10));
+  const score = Math.round(structure + condition + competitiveness);
+  return {
+    score, grade: buildingGrade(score),
+    structure: Math.round(structure), condition: Math.round(condition), competitiveness: Math.round(competitiveness),
+  };
+}
+export function buildingGrade(score: number): BuildingGrade {
+  return score >= 90 ? "Trophy" : score >= 72 ? "A" : score >= 50 ? "B" : "C";
+}
+
+/**
  * HOW FAST THE PLANT GOES OFF, per month, on a building of no particular age.
  *
  * Offices are the worst of it: lifts, air handling, risers, and a floorplate
@@ -2497,7 +2611,20 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, 
   // market, Box ~18 bp wider). It was ±15 bp, which left a trophy trading
   // like a commodity building with a nicer lobby.
   const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.80;
-  return clamp(base + locSpread + qualSpread + specSpread, 3.2, 13);
+  // THE BUYER PRICES THE RESERVE THE BUILDING WILL NEED. A capital plan that
+  // holds the line costs CAP_PLAN_RATE of value a year scaled by wear (see
+  // tickLeasing), so a perpetual extra reserve of k of value a year is k on
+  // the cap — the buyer deducts replacement reserves before they pay, which is
+  // underwriting practice. Only the DIFFERENCE from market-spec plant is
+  // charged here: the market-spec reserve is already in the cap the street
+  // trades at, and charging it again would reprice every building in town.
+  // This is what stops a seller handing a value box's short-life plant to the
+  // next owner for free. BUILD_CLASS_PLAN.md.
+  const cls = (rec.class === "land" ? "office" : rec.class) as BuiltClass;
+  const age = Math.max(0, START_YEAR + Math.floor((econ.m ?? 0) / 12) - (rec.yearBuilt || START_YEAR));
+  const wearRatio = (COND_DECAY[cls] ?? 0.0024) * (1 + Math.min(0.50, age / 220)) / COND_WEAR_REF;
+  const reserveSpread = 100 * CAP_PLAN_RATE * (specWearMult(rec.buildSpec) - 1) * wearRatio;
+  return clamp(base + locSpread + qualSpread + specSpread + reserveSpread, 3.2, 13);
 }
 
 // Appraisals are opinions. Each parcel's appraisal carries a stable bias off

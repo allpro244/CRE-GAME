@@ -39,7 +39,7 @@ function stamp(g0, owned, spec) {
     g.built ??= {};
     g.built[b] = { class: "office", bldgArea: r.bldgArea, floors: r.floors, yearBuilt: yr, buildSpec: spec };
     const h = g.holdings[b];
-    h.condIdx = Math.min(E.condCeiling({ yearBuilt: yr, buildSpec: spec }, g.month), 0.90 + 0.09 * spec);
+    h.condIdx = Math.min(E.condCeiling({ yearBuilt: yr, buildSpec: spec }, g.month), E.openingCondIdx(spec));
     h.condition = E.condGrade(h.condIdx);
     h.lastCapM = g.month; h.deliveredM = g.month; h.programsDone = {};
   }

@@ -13,7 +13,7 @@ import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand"
 import { rng, rrange, NATURAL_VAC, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, classIsShort, housableStock, payrollGrowth12 } from "./market";
 import { coverRoleState, cmRiskMult, STAFF_CAPACITY_SHIPPED } from "./staff";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling,
+import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
   rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal } from "./value";
 export { zoneUseBar };
@@ -2236,7 +2236,9 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // bones' year on purpose (see condCeiling — no capital makes 1930 new).
   const bones = d.mode === "reuse" ? (built ?? { yearBuilt: START_YEAR }) : (s.built[d.bbl] as { yearBuilt: number });
   s.built[d.bbl].buildSpec = d.spec ?? 0.5;
-  h.condIdx = Math.min(condCeiling({ yearBuilt: bones.yearBuilt, buildSpec: d.spec ?? 0.5 }, s.month), 0.90 + 0.09 * ((d.spec ?? 0.5)));
+  // Where it opens is the bones' call too — see openingCondIdx: a value box
+  // is new and ordinary, not new and good.
+  h.condIdx = Math.min(condCeiling({ yearBuilt: bones.yearBuilt, buildSpec: d.spec ?? 0.5 }, s.month), openingCondIdx(d.spec ?? 0.5));
   h.service = s.opsPolicy?.service ?? 0;
   h.stance = s.opsPolicy?.stance ?? 0;
   h.plan = s.opsPolicy?.plan ?? 1;

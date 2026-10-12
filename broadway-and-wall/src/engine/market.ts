@@ -249,7 +249,9 @@ const SUBLET_BG: Record<BuiltClass, number> = {
  *  Shape parameters, from the length of the process; stated, not fitted. */
 /** Shortage-side rent sensitivity relative to office (see `vacTerm`). */
 /** Island-vs-mainland location elasticity of space demand (see `locEff`). Shape parameter. */
-const LOC_ELAST = 1.0;
+const LOC_ELAST = 0.5;
+/** Location re-sorting happens only as households move: about a 5-year half-life. Shape parameter. */
+const LOC_ROLL = Math.LN2 / 60;
 const SHORT_SENS: Record<BuiltClass, number> = { office: 1.0, retail: 1.0, industrial: 2.4, multifamily: 3.0 };
 const DEMAND_FORM_M: Record<BuiltClass, number> = { office: 9, retail: 6, industrial: 6, multifamily: 2 };
 /** MONTHS TO MOVE IN once searching: office tour-to-occupancy including
@@ -3942,10 +3944,15 @@ export function tickEcon(s: GameState) {
     // living or leasing across the water and commuting — the location margin
     // of the Alonso-Muth-Mills city, far more elastic than taking less space.
     // Without it a built-out island admitted the region's whole growth and
-    // compounded real rent 1.4%/yr for a century at normal vacancy. Unit
-    // elasticity — a 10% premium over the mainland sends a tenth of the
-    // island's would-be tenants there — is a shape parameter, stated as such.
-    // At the lease-rollover rate of the class, like `affordEff`.
+    // compounded real rent 1.4%/yr for a century at normal vacancy.
+    // HALF-ELASTIC AND SLOW (2026-10-12). The first cut was unit-elastic at
+    // lease-rollover speed, and it ran the wrong way just as hard: doubling
+    // the island's flats was absorbed in three years with rent down only 20%,
+    // the island's share of the region's households up 58% — the mainland
+    // emptying onto the island inside a lease cycle. Households re-sort between
+    // core and suburbs only as they move, over years, and only partly on
+    // price. Elasticity 0.5 and a five-year half-life are shape parameters,
+    // stated as such.
     if (e.costAnchorReal === undefined) e.costAnchorReal = (e.costIdx ?? 1) / cpiNow;
     const mainlandReal = ((e.costIdx ?? 1) / cpiNow) / Math.max(1e-6, e.costAnchorReal);
     // Households only: a firm's jobs are the island's jobs in this model (the
@@ -3956,7 +3963,7 @@ export function tickEcon(s: GameState) {
       ? Math.pow(Math.max(1e-6, relRent / Math.max(1e-6, mainlandReal)), -LOC_ELAST)
       : 1;
     if (!e.locEff) e.locEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
-    e.locEff[k] += AFFORD_ROLL[k] * (locRaw - e.locEff[k]);
+    e.locEff[k] += LOC_ROLL * (locRaw - e.locEff[k]);
 
     // THE INCOME ARGUMENT. A city that gets richer occupies more and better
     // space; a city that gets poorer gives it back. Real income per worker

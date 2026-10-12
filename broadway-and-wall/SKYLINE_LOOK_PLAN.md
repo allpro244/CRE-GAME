@@ -98,3 +98,15 @@ placeholder extrusions.
   up post-1990 glass apartment towers in alternate stacks. Review shots now
   use exact cameras (`z=`, `pitch=`, `bear=` in `shoot-design.mjs`), so two
   builds frame identically.
+- **Round 14** — moonlight: after dark the key light is weak and cool rather
+  than off, and the sky fill dims less, so roofs and walls keep their shape
+  under the lit windows.
+
+### Cost and robustness check (after round 13)
+Median frame time in the software renderer this work is reviewed in (no
+GPU, so only the ratios mean anything): session start, High 7.7 s; now, High
+10.1 s, Medium 5.5 s. The forced-repaint test redraws the occlusion pass every
+frame; in play it is cached while the camera holds still. A quality ×
+time-of-day sweep (seeds 101, 2024, 31337, 777; High and Medium; day and
+night) found one crash — `lotMassing` reading past the end of a lot outline —
+fixed in #231; the sweep is clean since.

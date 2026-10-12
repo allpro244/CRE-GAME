@@ -2188,7 +2188,15 @@ export function opportunitiesStop(s: GameState): boolean {
   return s.clockStops === "everything" || s.clockStops === "opportunities";
 }
 
-export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) => AttentionItem | undefined {
+/**
+ * `seen`: attention keys the player has already been shown on a card and put
+ * off ("Not now" on a tenant's letter). The card was the interruption; the
+ * clock does not stop a second time for the same letter at its deadline. The
+ * item stays on the docket, in Next due and on the map. Critical items stop
+ * regardless.
+ */
+export function stopRule(s: GameState, parcels: ParcelTable, seen?: ReadonlySet<string> | readonly string[]): (cur: GameState) => AttentionItem | undefined {
+  const seenSet = seen ? new Set(seen) : null;
   const start = attentionItems(s, parcels);
   const before = new Set(start.map((a) => a.key));
   const dueAtStart = new Set(start.filter((a) => a.lastM !== undefined && s.month >= a.lastM).map((a) => a.key));
@@ -2201,7 +2209,9 @@ export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) =
   // the stops that did. "opportunities" lets those stop it too; "everything"
   // adds the soft notices. A critical item stops it in every mode.
   const mode = s.clockStops;
-  const counts = (a: AttentionItem) => a.critical || mode === "everything" ? true
+  const counts = (a: AttentionItem) => a.critical ? true
+    : seenSet?.has(a.key) ? false
+    : mode === "everything" ? true
     : mode === "opportunities" ? !a.soft
     : !a.soft && !OPPORTUNITY_KEYS.has(a.key.split(":")[0]);
   // Critical first: if a foreclosure and a broker's call land the same month,
@@ -2223,9 +2233,10 @@ export function stopRule(s: GameState, parcels: ParcelTable): (cur: GameState) =
 // caller's state is untouched until they adopt the returned one.
 export function advanceUntilAttention(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, cap: number,
+  seen?: readonly string[],
 ): { s: GameState; months: number; reason: string | null; key?: string; critical?: boolean } {
   if (s.gameOver || cap <= 0) return { s, months: 0, reason: null };
-  const stop = stopRule(s, parcels);
+  const stop = stopRule(s, parcels, seen);
   const cur = cloneState(s);
   for (let i = 1; i <= cap; i++) {
     tickMonth(cur, parcels, bbls, adjacency);

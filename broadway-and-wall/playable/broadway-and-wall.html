@@ -5081,6 +5081,34 @@ roughnessFactor = mix(roughnessFactor, 0.85, seaFoam);`).replace(`#include <norm
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.45 + vec3(0.05), jamb * rk);
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.6, 0.56), sill * rk * (1.0 - jamb));
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.5, head * rk);
+  // A ROOM BEHIND THE GLASS (SKYLINE_LOOK_PLAN round 24). The opening
+  // used to stop at the pane: a flat dark rectangle with a painted jamb.
+  // Each pixel of an unshaded pane now follows the eye's ray into a room the
+  // size of its own bay and storey, 4 m deep, and takes the colour of what
+  // it meets first: the back wall, a side wall, the floor or the ceiling. As
+  // the camera moves the room moves with it, so a window reads as an
+  // opening with depth rather than a picture of one. No geometry; per room a
+  // wall paint and a lamp level from the pane's own hash.
+  {
+    float RW = uBay.x, RH = uBay.y, RD = 4.0;
+    float X0 = (fC.x - 0.5) * RW, Y0 = fC.y * RH;
+    float dB = RD;
+    float dS = abs(vu) > 0.001 ? (vu > 0.0 ? (X0 + RW * 0.5) / vu : (X0 - RW * 0.5) / vu) : 1e3;
+    float dF = vv > 0.001 ? Y0 / vv : 1e3;
+    float dC = vv < -0.001 ? (Y0 - RH) / vv : 1e3;
+    float dm = min(min(dB, dS), min(dF, dC));
+    vec3 wallP = mix(vec3(0.78, 0.72, 0.62), vec3(0.66, 0.7, 0.72), step(0.6, wh1));
+    vec3 room = wallP * 0.62;                                   // the back wall, lit from the window
+    if (dm == dS) room = wallP * 0.42;                           // a side wall, edge-on to the light
+    else if (dm == dF) room = mix(vec3(0.34, 0.24, 0.16), vec3(0.42, 0.4, 0.38), step(0.5, wh2)) * 0.55;   // wood or carpet
+    else if (dm == dC) room = vec3(0.8, 0.79, 0.76) * 0.5;       // the ceiling
+    // deeper is dimmer: the far wall is out of the daylight
+    // seen from the street by day a room is much darker than the wall
+    // round it: the light inside is a fraction of the sky's
+    room *= mix(0.62, 0.32, clamp(dm / RD, 0.0, 1.0)) * (0.8 + 0.4 * wh2);
+    float inK = winM * step(0.001, uReveal) * (1.0 - winShade) * (1.0 - jamb) * (1.0 - farK) * 0.8;
+    diffuseColor.rgb = mix(diffuseColor.rgb, room, inK);
+  }
   // a punched window catches some of the sky, more looking down at it, so
   // the old city's openings read as glass rather than holes (round 7); the
   // blinds and curtains stay as drawn

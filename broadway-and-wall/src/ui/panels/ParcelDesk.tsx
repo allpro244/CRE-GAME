@@ -4,7 +4,7 @@
 //   RefiDesk      permanent debt on a deed
 //   DevelopDesk   ground-up + adaptive reuse (Programme · Design · Financing)
 import { marketAppraisal } from "@/engine/value";
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
@@ -868,7 +868,7 @@ function ParcelPanelInner({
         const t0 = game.talks?.[selectedBBL];
         const contract = t0?.agreed ? t0 : null;
         return (
-          <div className="deal">
+          <div className="deal" data-buy-desk>
             <div className="deal-head">{contract ? "Under contract" : "On the market"}</div>
             <div className="grid">
               {contract
@@ -1239,7 +1239,7 @@ function ParcelPanelInner({
                 >
                   Take it down · {usd(demoCost)}
                 </button>
-                <button className="btn" onClick={() => setRazeAsk(null)}>Leave it</button>
+                <button className="btn" data-esc onClick={() => setRazeAsk(null)}>Leave it</button>
               </div>
               <div className="modal-queue">Wreckers work fast — the lot is clean dirt the same month.</div>
             </div>
@@ -1304,6 +1304,49 @@ function ParcelPanelInner({
           {neighbors.length === 0 && <div className="neighbor-none">No shared lot lines on record.</div>}
         </div>
       </div>}
+      {!embedded && tab === undefined && !holding && listing && (
+        <BuyCta bbl={selectedBBL} ask={listing.ask} built={isBuilt} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * THE VERB STAYS IN REACH.
+ *
+ * Clicking a building that is for sale is a question about buying it, and the
+ * card answered with the owner, the appraisal, the neighbourhood and the jobs
+ * within a five-minute walk — the Offer button sat about 1,100px down a
+ * 2,400px card, under all of it. This footer pins the ask and the yield to the
+ * bottom of the card and takes you to the offer desk; it steps aside once the
+ * desk itself is on screen, so the price is never shown twice at once.
+ */
+function BuyCta({ bbl, ask, built }: { bbl: string; ask: number; built: boolean }) {
+  const game = useStore((s) => s.game)!;
+  const [hidden, setHidden] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const panel = ref.current?.closest(".panel");
+    const desk = panel?.querySelector("[data-buy-desk]");
+    if (!panel || !desk) return;
+    const io = new IntersectionObserver(([e]) => setHidden(e.isIntersecting), { root: panel, threshold: 0.15 });
+    io.observe(desk);
+    return () => io.disconnect();
+  }, [bbl]);
+  const t = game.talks?.[bbl];
+  const contract = t?.agreed ? t : null;
+  const ip = built ? goingIn(game, bbl, contract?.agreedPrice ?? ask) : null;
+  const yieldTxt = ip && ip.noi > 0 ? `${((ip.noi / Math.max(1, contract?.agreedPrice ?? ask)) * 100).toFixed(1)}% going-in` : built ? "no income in place" : "land";
+  const go = () => ref.current?.closest(".panel")?.querySelector("[data-buy-desk]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  return (
+    <div ref={ref} className={"panel-cta" + (hidden ? " panel-cta-hidden" : "")} aria-hidden={hidden}>
+      <div className="panel-cta-txt">
+        <span className="panel-cta-price mono">{usd(contract ? (contract.agreedPrice ?? contract.theirPrice) : ask)}</span>
+        <span className="panel-cta-sub">{contract ? `under contract · fund by ${monthLabel(contract.closeByM ?? game.month + 3)}` : `ask · ${yieldTxt}`}</span>
+      </div>
+      <button type="button" className="btn btn-buy" tabIndex={hidden ? -1 : 0} onClick={go}>
+        {contract ? "Fund the close ↓" : t ? "Back to the table ↓" : "Make an offer ↓"}
+      </button>
     </div>
   );
 }

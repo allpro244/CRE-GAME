@@ -1474,7 +1474,7 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
     + ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + 4)) / 100 / 12;
   if (monthlyDebt > 0 && s.cash < monthlyDebt * 3) {
     return {
-      label: "thin",
+      label: "thin cash",
       bad: true,
       title: `Cash covers less than three months of debt service. City phase: ${s.econ.phase}.`,
     };

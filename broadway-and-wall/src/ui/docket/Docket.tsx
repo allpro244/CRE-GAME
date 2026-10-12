@@ -105,9 +105,11 @@ export default function Docket() {
                   {/* the triangle carries urgency alongside the red, never instead of it */}
                   {it.urgent ? "▲ " : ""}{CAT_TAG[it.cat]}
                 </span>
-                {/* The words are the link. A row about a building takes you to
-                    the building when you click the sentence, not only the small
-                    button beside it — the button stays as the visible affordance. */}
+                {/* The words are the link. Every row used to carry an Open button
+                    as well — two buttons a row, twelve on a busy month, every one
+                    of them saying the same thing. The sentence is the target now,
+                    with an arrow as its affordance; buttons are kept for rows
+                    whose action is something other than "go there". */}
                 {(it.attnKey || it.bbl || it.page) ? (
                   <button
                     type="button"
@@ -117,6 +119,7 @@ export default function Docket() {
                   >
                     {it.title}
                     {it.sub && <span className="docket-sub mono"> · {it.sub}</span>}
+                    <span className="docket-go" aria-hidden="true"> →</span>
                   </button>
                 ) : (
                   <span
@@ -147,10 +150,6 @@ export default function Docket() {
                       for (const r of it.apply?.planRows ?? []) useStore.getState().setPlanRow(r.use, { targetNePct: r.targetNePct });
                     }}>
                     {it.apply.label}
-                  </button>
-                ) : (it.attnKey || it.bbl || it.page) ? (
-                  <button type="button" className="year-rail-go" onClick={() => openItem(it)}>
-                    Open
                   </button>
                 ) : <span />}
                 {/* urgent items get no Later — a balloon inside six months

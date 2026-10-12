@@ -97,7 +97,10 @@ function DefaultNoticeBody({
   const dismiss = () => setSeen({ ...seen, [`${open.bbl}:${open.stage}`]: true });
 
   return (
-    <div className="modal-backdrop modal-layer-default">
+    <div
+      className="modal-backdrop modal-layer-default"
+      data-queue={Object.values(game.workouts ?? {}).filter((w) => !seen[`${w.bbl}:${w.stage}`]).length}
+    >
       <div className="modal" role="dialog" aria-modal="true" style={{ maxWidth: 660 }}>
         <div className="modal-kicker">{open.lender} · {monthLabel(game.month)}</div>
         <div className="modal-title">
@@ -147,14 +150,22 @@ function DefaultNoticeBody({
         })()}
         <div className="btn-row" style={{ marginTop: 12, flexWrap: "wrap" }}>
           {!filed && !open.servicing && (
-            <button className="btn btn-primary" onClick={() => { serviceWorkout(open.bbl, true); dismiss(); }}>
+            /* The card's primary used to be this button even when the advisor
+               line beneath it said the coupon was not fundable — the loudest
+               thing on the card was the one thing the firm could not do. */
+            <button
+              className={"btn" + (couponOk ? " btn-primary" : "")}
+              disabled={!couponOk}
+              title={couponOk ? undefined : `Not fundable today — the firm can find ${usd(fundableNow(game, parcels))} against ${usd(h.loan.monthlyPmt)} a month. Sell, or raise cash first.`}
+              onClick={() => { serviceWorkout(open.bbl, true); dismiss(); }}
+            >
               Keep it current · {usd(monthly)}/mo
             </button>
           )}
           <button className="btn" onClick={() => { select(open.bbl); focus(open.bbl, true); setPage("property"); dismiss(); }}>
             Open the file
           </button>
-          <button className="btn" onClick={dismiss}>Not now</button>
+          <button className="btn" data-esc onClick={dismiss}>Not now</button>
         </div>
       </div>
     </div>
@@ -244,7 +255,7 @@ function AuctionBody({
             <div key={r.bbl} className="hint" style={{ marginTop: 6 }}><b>{r.address}</b> — {r.note}</div>
           ))}
           <div className="modal-actions">
-            <button className="btn btn-buy" onClick={() => { setSeenResM(res.m); useStore.setState({ game: { ...game, auctionResults: undefined } }); }}>
+            <button className="btn btn-buy" data-esc onClick={() => { setSeenResM(res.m); useStore.setState({ game: { ...game, auctionResults: undefined } }); }}>
               Right
             </button>
           </div>
@@ -375,7 +386,7 @@ function AuctionBody({
             onClick={() => { bidAuction(parsed); setSeenM(a.m); setAuctionOpen(false); }}>
             Register bids{dep > 0 ? ` · ${usd(dep)} down` : ""}
           </button>
-          <button className="btn" onClick={() => { setSeenM(a.m); setAuctionOpen(false); }}>Watch from the back</button>
+          <button className="btn" data-esc onClick={() => { setSeenM(a.m); setAuctionOpen(false); }}>Watch from the back</button>
           {/* THE CARD IS NOT THE AUCTION. Turning this off stops the interruption
               and nothing else — so it has to say, in the same breath, where the
               docket went and how to get the card back. An opt-out that leaves
@@ -519,7 +530,7 @@ function AlertBody() {
   // to the list the body says is waiting.
   const goSale = a.kind === "sale" && !bad;
   return (
-    <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "")}>
+    <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "")} data-queue={queued + 1}>
       <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good")} role="dialog" aria-modal="true">
         <div className="alert-kicker">{kicker}</div>
         <div className="modal-title">{a.title}</div>
@@ -563,7 +574,7 @@ function AlertBody() {
               Open the bid list
             </button>
           )}
-          <button className={"btn" + (!goBooks && !goOwnBook && !goSale && !bad ? " btn-buy" : "")} onClick={dismissAlert}>
+          <button className={"btn" + (!goBooks && !goOwnBook && !goSale && !bad ? " btn-buy" : "")} data-esc onClick={dismissAlert}>
             {bad && !goBooks ? "Understood" : goBooks || goOwnBook || goSale ? "Later" : "Good."}
           </button>
         </div>
@@ -622,7 +633,7 @@ export function DecisionModal() {
           </div>
           <div className="modal-title" style={{ fontSize: 20, lineHeight: 1.35 }}>{outcome.text}</div>
           <div className="modal-actions">
-            <button className="btn btn-buy" onClick={() => setOutcome(null)}>Right</button>
+            <button className="btn btn-buy" data-esc onClick={() => setOutcome(null)}>Right</button>
           </div>
         </div>
       </div>
@@ -706,7 +717,7 @@ function DecisionBody({
             key={pKey}
             bid={pb} sumOfParts={q.sumOfParts} book={book} rowClass="modal-actions"
             trailing={
-              <button className="btn" onClick={() => setDeferred((d) => new Set(d).add(pKey))}>
+              <button className="btn" data-esc onClick={() => setDeferred((d) => new Set(d).add(pKey))}>
                 Decide later
               </button>
             }
@@ -761,7 +772,7 @@ function DecisionBody({
             }}>
               Open the list…
             </button>
-            <button className="btn" onClick={() => setDeferred((d) => new Set(d).add(-3))}>Decide later</button>
+            <button className="btn" data-esc onClick={() => setDeferred((d) => new Set(d).add(-3))}>Decide later</button>
           </div>
         </div>
       </div>
@@ -818,7 +829,7 @@ function DecisionBody({
     };
     const isFinal = loi.stage === "countered";
     return (
-      <div className="modal-backdrop modal-layer-decision">
+      <div className="modal-backdrop modal-layer-decision" data-queue={live.filter((l) => !deferred.has(l.id)).length}>
         <div className="modal" role="dialog" aria-modal="true">
           <div className="modal-kicker">
             {loi.referred ? "Referred by your desk · " : ""}
@@ -860,6 +871,7 @@ function DecisionBody({
               <button className="btn" onClick={() => act("decline")}>Pass</button>
               <button
                 className="btn"
+                data-esc
                 title="Leave it on the desk and get back to it — it stays on the Deals page until it expires."
                 onClick={() => setDeferred((d) => new Set(d).add(loi.id))}
               >
@@ -985,7 +997,7 @@ function DecisionBody({
             </button>
           )}
           <button className="btn" onClick={() => declineOffer(offerBbl!)}>Decline</button>
-          <button className="btn" title="Leave it — it stays live until it expires." onClick={() => setDeferred((d) => new Set(d).add(-1))}>
+          <button className="btn" data-esc title="Leave it — it stays live until it expires." onClick={() => setDeferred((d) => new Set(d).add(-1))}>
             Decide later
           </button>
         </div>

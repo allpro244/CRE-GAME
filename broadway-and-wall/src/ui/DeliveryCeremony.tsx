@@ -63,7 +63,7 @@ export default function DeliveryCeremony() {
               Lease it up
             </button>
           )}
-          <button type="button" className="btn" onClick={() => dismiss()}>
+          <button type="button" className="btn" data-esc onClick={() => dismiss()}>
             Not now
           </button>
         </div>

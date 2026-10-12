@@ -31,7 +31,7 @@ export function SaleAcceptConfirm({
           <button className="btn btn-buy" onClick={onConfirm}>
             {exchange ? "Yes — close into a 1031" : "Yes — close the sale"}
           </button>
-          <button className="btn" onClick={onCancel}>Not yet</button>
+          <button className="btn" data-esc onClick={onCancel}>Not yet</button>
         </div>
       </div>
     </div>

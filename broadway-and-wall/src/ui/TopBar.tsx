@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { headlineEpithet } from "@/engine/firm";
 import { useStore, type Page } from "@/state/store";
 import { monthLabel } from "@/engine/types";
@@ -13,7 +13,6 @@ import { portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { DESKS, deskOf, deskCount, deskLanding, tabCounts, tabLabel, visibleTabs } from "./desks";
 import DeltaChip from "@/ui/vitals/DeltaChip";
-import Spark from "@/ui/vitals/Spark";
 import Waterfall, { usablePrev } from "@/ui/vitals/Waterfall";
 
 /** What to call each room in the Back button. Built from the nav itself so a
@@ -90,7 +89,9 @@ function BackButton() {
 export default function TopBar() {
   const [armNewRun, setArmNewRun] = useState(false);
   // Icons-only rail. Until the player chooses, it follows the window: labels
-  // from 1200px up, icons below. A choice is remembered per viewer.
+  // from 1360px up, icons below (at 1280 the labelled rail took a sixth of
+  // the window and squeezed the status bar onto two rows). A choice is
+  // remembered per viewer.
   const [railPref, setRailPref] = useState<"auto" | "compact" | "full">(() => {
     try {
       const v = localStorage.getItem("bw:rail");
@@ -98,9 +99,9 @@ export default function TopBar() {
     } catch { /* storage blocked */ }
     return "auto";
   });
-  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 1200);
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 1360);
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 1199px)");
+    const mq = window.matchMedia("(max-width: 1359px)");
     const on = () => setNarrow(mq.matches);
     on();
     mq.addEventListener("change", on);
@@ -207,7 +208,7 @@ export default function TopBar() {
     };
   }, [deferredGame, deferredPrev]);
   const {
-    nw, cf, occ, vacDpp, line, counts, dNw, nwSpark, dCf, dCfSince, dRateBp, standing, dRank,
+    nw, cf, occ, vacDpp, line, counts, dNw, dCf, dCfSince, dRateBp, standing, dRank,
   } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
@@ -263,6 +264,33 @@ export default function TopBar() {
     return () => { ro.disconnect(); root.style.setProperty("--rail-w", "0px"); };
   }, [!!game]);
 
+  /* SHED BY MEASUREMENT, NOT BY GUESS. Readouts were dropped by media and
+     container queries — thresholds chosen by eye, and wrong as soon as a value
+     got wider, the firm took a line, or the Book tile appeared: at 1440 the
+     Market readout ran under the Play button. Now every render measures: if
+     the row is wider than its box, the lowest-ranked readouts go first
+     (data-drop 1, then 2, then 3) until it fits. Cheap — a handful of tiles. */
+  const gameBoxRef = useRef<HTMLDivElement>(null);
+  const fitVitals = () => {
+    const box = gameBoxRef.current;
+    const row = box?.querySelector<HTMLElement>(".topbar-vital");
+    if (!box || !row) return;
+    const tiles = Array.from(row.querySelectorAll<HTMLElement>("[data-drop]"));
+    tiles.forEach((t) => t.classList.remove("tstat-shed"));
+    for (const rank of ["1", "2", "3"]) {
+      if (row.scrollWidth <= box.clientWidth) break;
+      tiles.filter((t) => t.dataset.drop === rank).forEach((t) => t.classList.add("tstat-shed"));
+    }
+  };
+  useLayoutEffect(fitVitals);
+  useEffect(() => {
+    const box = gameBoxRef.current;
+    if (!box) return;
+    const ro = new ResizeObserver(() => fitVitals());
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [!!game]);
+
   // THE NET-WORTH POPOVER. Plain local state, same dismissal contract as the
   // job menus plus Escape — a glance card, not a mode. The card itself is
   // position:fixed (the stats box clips its children), so its left edge is
@@ -308,7 +336,7 @@ export default function TopBar() {
         {game && <BackButton />}
       </div>
       {game && (
-        <div className="topbar-game">
+        <div className="topbar-game" ref={gameBoxRef}>
           {/* THE READOUTS ARE THE ONLY THING ALLOWED TO SHRINK.
               This row was one flat nowrap flex line — eight readouts, six nav
               buttons, three lenses and three advance buttons — inside a bar
@@ -329,10 +357,10 @@ export default function TopBar() {
               label={monthLabel(game.month)}
               value={`Yr ${Math.floor(game.month / 12) + 1}`}
               wide
-              w={118}
+              w={92}
               keep
             />
-            <Stat label="Cash" value={usd(game.cash)} n={game.cash} bad={game.cash < 0} w={88} keep
+            <Stat label="Cash" value={usd(game.cash)} n={game.cash} bad={game.cash < 0} w={72} keep
               title={`GP liquidity — the firm's own cash. Vehicle cash, if any, is separate.${line > 0 && !(game.loc?.balance) ? ` Undrawn credit line ${usd(line)} on top — draw it on Capital → Debt.` : ""}`} />
             {game.fund && !game.fund.settled && (
               <Stat
@@ -349,11 +377,15 @@ export default function TopBar() {
                 that is worth a readout of its own. */}
             {(game.loc?.balance ?? 0) > 0 && (
               <Stat
-                label="Line drawn"
-                value={`${usd(game.loc!.balance)} / ${usd(line)}`}
-                bad
-                keep
-                w={148}
+                label="Line"
+                value={usd(game.loc!.balance)}
+                delta={<span className="tstat-of">of {usd(line)}</span>}
+                // A few thousand drawn against a seven-figure limit is the
+                // sweep doing its job, not an alarm; red is for a line that
+                // is mostly spent.
+                bad={line <= 0 || game.loc!.balance > 0.6 * line}
+                drop={2}
+                w={84}
                 title={`Revolver drawn ${usd(game.loc!.balance)} of ${usd(line)} available against net worth. Draw and repay on Capital → Debt.`}
                 onClick={() => setPage("debt", "Line of credit")}
               />
@@ -373,27 +405,20 @@ export default function TopBar() {
                 label="Net worth"
                 value={usd(nw)}
                 n={nw}
-                w={96}
+                w={80}
                 keep
                 title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; vehicle cash separate). Click for the waterfall — what moved it, and by how much.`}
                 onClick={toggleNwPop}
                 expanded={nwOpen}
-              />
-              {dNw !== null && (
-                <span className="vital-extra">
+                delta={dNw !== null ? (
                   <DeltaChip
                     value={dNw}
                     fmt={usd}
                     epsilon={10_000}
                     title="Net worth vs a month ago. Click the readout for the full waterfall."
                   />
-                </span>
-              )}
-              {nwSpark.length >= 2 && (
-                <span className="vital-extra">
-                  <Spark values={nwSpark} title="Net worth, the last 24 months" />
-                </span>
-              )}
+                ) : null}
+              />
               {nwOpen && (
                 <div
                   className="nw-pop"
@@ -416,9 +441,10 @@ export default function TopBar() {
             {standing && (
               <Stat
                 label="Street"
-                value={`${ordinal(standing.rank)} / ${standing.of}${dRank > 0 ? ` ▲${dRank}` : dRank < 0 ? ` ▼${-dRank}` : ""}`}
-                keep
-                w={96}
+                value={`${ordinal(standing.rank)} / ${standing.of}`}
+                delta={dRank !== 0 ? <span className={"tstat-rank " + (dRank > 0 ? "up" : "down")}>{dRank > 0 ? `▲${dRank}` : `▼${-dRank}`}</span> : null}
+                drop={3}
+                w={72}
                 bad={dRank < 0}
                 title={standing.above
                   ? `${ordinal(standing.rank)} of ${standing.of} firms by equity. Next up: ${standing.above.name} at ${usd(standing.above.eq)} — ${usd(standing.above.eq - standing.equity)} ahead. The biggest book is ${standing.leader.name} at ${usd(standing.leader.eq)}. Click for the league table.`
@@ -432,26 +458,24 @@ export default function TopBar() {
                 value={usd(cf * 12)}
                 bad={cf < 0}
                 keep
-                w={88}
+                w={72}
+                delta={dCf !== null ? (
+                  <DeltaChip
+                    value={dCf * 12}
+                    fmt={usd}
+                    epsilon={12_000}
+                    title={`Annualised cash flow vs ${dCfSince !== null ? monthLabel(dCfSince) : "last month"} — the same walk as the readout, run on the pre-advance book.`}
+                  />
+                ) : null}
                 title={`After debt service and overhead. Firm cash flow annualised: deed NOI (including ground rent) less mortgages, mezz, construction interest, facility, the revolver, and the firm's own G&A and payroll. ${usd(cf)} / mo. Reconciled 2026-08: this walk is net of every facility that actually charges. Portfolio rows now subtract mezz and a pooled facility share; their strip is still deeds-only (no construction / revolver).`}
               />
-              {dCf !== null && (
-                <span className="vital-extra">
-                  <DeltaChip
-                    value={dCf}
-                    fmt={(n) => usd(n) + " /mo"}
-                    epsilon={1_000}
-                    title={`Monthly cash flow vs ${dCfSince !== null ? monthLabel(dCfSince) : "last month"} — the same walk as the readout, run on the pre-advance book.`}
-                  />
-                </span>
-              )}
             </span>
             <Stat
               label="Occupancy"
               value={occ !== null ? (100 * occ).toFixed(1) + "%" : "—"}
               bad={occ !== null && occ < 0.8}
-              keep
-              w={80}
+              drop={2}
+              w={64}
               title={occ !== null
                 ? `Portfolio occupancy: ${(100 * occ).toFixed(1)}% of lettable feet leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
                 : "Portfolio occupancy — appears once you own an operated building."}
@@ -465,12 +489,20 @@ export default function TopBar() {
             <span className="vital-pair">
               <Stat
                 label="Market"
-                value={`${game.econ.phase} · ${pct(game.econ.indexRate)}`}
+                value={`${pct(game.econ.indexRate)} · ${game.econ.phase}`}
                 bad={vacDpp !== null && vacDpp >= 2}
-                drop={2}
-                keep
-                w={150}
+                drop={1}
+                w={128}
                 onClick={() => setPage("economy")}
+                delta={dRateBp !== null ? (
+                  <DeltaChip
+                    value={dRateBp}
+                    fmt={(n) => `${Math.round(n)}bp`}
+                    epsilon={4}
+                    goodWhenUp={false}
+                    title="Base rate vs twelve months ago. Dearer money reprices every floating loan and every new quote, so up reads as the bad direction."
+                  />
+                ) : null}
                 title={[
                   `City cycle: ${game.econ.phase}. Loan index ${pct(game.econ.indexRate)} — what fixed loans price off. Short index ${pct(game.econ.shortIndex ?? game.econ.indexRate)} — what floating loans price off and reprice to monthly (through the cap strike, if there is one). The gap is what the bond market expects policy to do over ten years plus the term premium, what certainty costs — and when cuts are expected the loan index sits under the short one.`,
                   vacDpp === null
@@ -481,21 +513,11 @@ export default function TopBar() {
                   "Click for the Economy.",
                 ].filter(Boolean).join(" ")}
               />
-              {dRateBp !== null && (
-                <span className="vital-extra">
-                  <DeltaChip
-                    value={dRateBp}
-                    fmt={(n) => `${Math.round(n)} bp`}
-                    goodWhenUp={false}
-                    title="Base rate vs twelve months ago. Dearer money reprices every floating loan and every new quote, so up reads as the bad direction."
-                  />
-                </span>
-              )}
             </span>
             {/* The firm's own trouble, only when there is some. */}
             {(() => {
               const book = firmBookStress(game);
-              return book.bad ? <Stat label="Book" value={book.label} bad keep w={88} title={book.title} /> : null;
+              return book.bad ? <Stat label="Book" value={book.label} bad keep w={64} title={book.title} onClick={() => setPage("debt")} /> : null;
             })()}
           </div>
           </div>
@@ -730,15 +752,22 @@ export default function TopBar() {
  * that reservation in pixels — wide enough for the longest month name, the
  * longest phase word, and a negative nine-figure number with a suffix.
  */
-function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded, n }: {
-  label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 2 | 3; w?: number; keep?: boolean;
+function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded, n, delta }: {
+  label: string; value: string; bad?: boolean; wide?: boolean; title?: string; drop?: 1 | 2 | 3; w?: number; keep?: boolean;
+  /** Which way it moved, set in the label row. It used to be a chip BESIDE the
+   *  tile, which made every pair twice as wide and wrapped the bar onto a
+   *  second, ragged row at 1600px. In the label row it costs no width. */
+  delta?: React.ReactNode;
   /** The raw figure behind `value`: when it moves, the readout ticks green or red once. */
   n?: number;
   /** With onClick the readout renders as a real button — the number is the control. */
   onClick?: () => void; expanded?: boolean;
 }) {
   const className = "tstat" + (wide ? " tstat-wide" : "") + (drop ? ` tstat-d${drop}` : "") + (keep ? " tstat-keep" : "");
-  const style = w ? { minWidth: w, maxWidth: keep ? undefined : w } : undefined;
+  // The reservation travels as a custom property: shell.css pins every tile's
+  // min-width to 0 with !important, which silently cancelled an inline
+  // min-width and let the labels run into each other. hud.css reads this.
+  const style = w ? ({ "--tw": `${w}px` } as React.CSSProperties) : undefined;
   // A MOVE YOU CAN SEE. The figure changed in place and the eye had to notice
   // the digits; one short tint says which way it went. Remounting the span
   // (keyed on the tick) replays the animation on every move.
@@ -752,7 +781,7 @@ function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded
   }, [n]);
   const body = (
     <>
-      <span className="tstat-label">{label}</span>
+      <span className="tstat-label">{label}{delta ? <span className="tstat-delta">{delta}</span> : null}</span>
       {value && <span key={tick?.k ?? 0} className={"tstat-value mono" + (bad ? " neg" : "") + (tick ? ` tstat-tick-${tick.dir}` : "")}>{value}</span>}
     </>
   );
@@ -763,6 +792,7 @@ function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded
         className={className + " tstat-btn"}
         title={title}
         style={style}
+        data-drop={drop}
         onClick={onClick}
         aria-expanded={expanded}
         aria-haspopup="dialog"
@@ -772,7 +802,7 @@ function Stat({ label, value, bad, wide, title, drop, w, keep, onClick, expanded
     );
   }
   return (
-    <div className={className} title={title} style={style}>
+    <div className={className} title={title} style={style} data-drop={drop}>
       {body}
     </div>
   );

@@ -13,6 +13,8 @@ import "./ui/system/setup.css";
 // Layout for the decluttered shell (desk tabs, the map control strip). Kept
 // apart from the design system so a restyle there does not collide with it.
 import "./ui/declutter.css";
+// Last: the status bar, the cards and the docket. See UI_PRINCIPLES.md.
+import "./ui/hud.css";
 import { applyTheme } from "./ui/theme";
 
 applyTheme();

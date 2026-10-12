@@ -251,16 +251,34 @@ export function buildDocket(
     .sort((a, b) => rank(a.kind) - rank(b.kind))
     .slice(0, 4);
   const used = new Set(items.map((i) => i.key));
+  // Most tape lines carry no parcel id ("Covenant breach at 222 E 10th St
+  // (DSCR 0.16)…"), so the building is found by its address in the text —
+  // bounded on the left, so 22 E 10th St does not match 222 E 10th St.
+  const ownedAddr = Object.keys(game.holdings)
+    .map((b) => ({ b, a: parcels?.[b]?.address }))
+    .filter((x): x is { b: string; a: string } => !!x.a)
+    .sort((x, y) => y.a.length - x.a.length);
+  const bblIn = (text: string): string | undefined => {
+    for (const { b, a } of ownedAddr) {
+      const i = text.indexOf(a);
+      if (i >= 0 && (i === 0 || !/[0-9A-Za-z-]/.test(text[i - 1]))) return b;
+    }
+    return undefined;
+  };
   tape.forEach((n, i) => {
     let key = `news:${n.q}:${n.text.replace(/\s+/g, " ").slice(0, 48)}`;
     if (used.has(key)) key = `${key}:${i}`;
     used.add(key);
+    // A line about YOUR building is about your book, not the city — it used
+    // to sit under a CITY tag beside the CAP row for the very same breach.
+    const subject = n.bbl ?? bblIn(n.text);
+    const mine = !!subject && !!game.holdings[subject];
     items.push({
       key,
-      cat: n.kind === "deal" ? "deals" : "world",
+      cat: n.kind === "deal" ? "deals" : mine ? "assets" : "world",
       title: n.text,
-      bbl: n.bbl,
-      ...(n.bbl ? {} : { page: "news" as Page }),
+      bbl: subject,
+      ...(subject ? {} : { page: "news" as Page }),
     });
   });
 
@@ -365,6 +383,22 @@ export function buildDocket(
       sub: "hand them the book on the Leasing desk",
       page: "leasing",
     });
+  }
+
+  // ONE ROW PER SUBJECT. The tape re-announced what a standing row already
+  // said: "222 E 10th St: covenant breach — cash flow swept" (the engine's
+  // condition) sat two rows above "Covenant breach at 222 E 10th St (DSCR
+  // 0.16)" (the news of it), and "Motivated seller: 390 E 16th St" above
+  // "Start here: 390 E 16th St". The standing row is the one with an action,
+  // so the tape's line about the same building yields to it.
+  const covered = new Set(live.filter((it) => !it.key.startsWith("news:") && it.bbl).map((it) => it.bbl!));
+  for (const it of live) if (!it.bbl && it.attnKey) {
+    const b = it.attnKey.split(":")[1];
+    if (b && /^\d{6,}$/.test(b)) covered.add(b);
+  }
+  for (let i = live.length - 1; i >= 0; i--) {
+    const it = live[i];
+    if (it.key.startsWith("news:") && it.bbl && covered.has(it.bbl)) live.splice(i, 1);
   }
 
   // Causality order: capital decides deals, deals decide assets, assets are

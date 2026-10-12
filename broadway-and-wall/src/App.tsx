@@ -15,6 +15,8 @@ import DeliveryCeremony from "@/ui/DeliveryCeremony";
 import PrimerOffer from "@/ui/PrimerOffer";
 import { bootMenu, useStore } from "@/state/store";
 import AtRiskBanner from "@/ui/AtRiskBanner";
+import CardQueue from "@/ui/CardQueue";
+import MapBoundary from "@/ui/MapBoundary";
 
 export default function App() {
   const loadError = useStore((s) => s.loadError);
@@ -59,7 +61,7 @@ export default function App() {
   }, [photoFrame]);
   return (
     <div className={"app" + (photoFrame ? " photo-frame" : "")}>
-      <MapView />
+      <MapBoundary><MapView /></MapBoundary>
       {playing && !photoFrame && <TopBar />}
       {playing && !photoFrame && <MapRail />}
       {playing && !photoFrame && <MapControls />}
@@ -75,6 +77,7 @@ export default function App() {
       {playing && <Sounds />}
       {playing && <RunRecorder />}
       {playing && !photoFrame && <PrimerOffer />}
+      {playing && !photoFrame && <CardQueue />}
       {photoFrame && <PhotoFrameHint />}
       <Toast />
       {!playing && <StartMenu />}
@@ -113,7 +116,10 @@ function Toast() {
   useEffect(() => {
     if (!toast) return;
     const id = ++toastSeq;
-    setItems((xs) => [...xs.filter((x) => x.text !== toast.text), { ...toast, id }].slice(-3));
+    // A line about the same thing replaces the older one: a balloon toasted
+    // in June ("7 months") and again in July ("6 months") used to sit stacked,
+    // the same sentence twice with one number changed.
+    setItems((xs) => [...xs.filter((x) => x.text !== toast.text && !(toast.attnKey && x.attnKey === toast.attnKey)), { ...toast, id }].slice(-3));
     // ~3s for a short line, longer for a long one; errors linger, and a stop
     // for something being taken from you lingers longest.
     const ms = Math.min(9000, 2600 + toast.text.length * 35)

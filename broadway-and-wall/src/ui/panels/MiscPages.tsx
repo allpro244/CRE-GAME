@@ -420,7 +420,7 @@ export function SaveSlots() {
                 </div>
                 <div className="modal-actions">
                   <button className="btn btn-sell" onClick={() => { setKillSlot(null); void dropSave(doomed.slot); }}>Delete it</button>
-                  <button className="btn" onClick={() => setKillSlot(null)}>Keep it</button>
+                  <button className="btn" data-esc onClick={() => setKillSlot(null)}>Keep it</button>
                 </div>
               </div>
             </div>

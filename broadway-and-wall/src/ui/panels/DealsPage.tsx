@@ -175,7 +175,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         {!final && Math.abs(theirNe - nowNe) > 0.05 ? ` · opened NE $${theirNe.toFixed(2)}` : ""}
       </div>
       <div className="loi-line mono dim">
-        signing costs {usd(cost)}{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM)}
+        signing costs {usd(cost)}{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM - 1)}
       </div>
       {(() => {
         // The desk's one line on the letter — same helpers as the lines

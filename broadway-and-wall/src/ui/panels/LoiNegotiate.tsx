@@ -369,7 +369,7 @@ export function LoiTermsGrid({
         bad={nowNe < market * 0.9}
       />
       <Row k="Cash to sign" v={usd(cost)} bad={cost > game.cash} strong />
-      <Row k="Answer by" v={monthLabel(loi.expiresM)} />
+      <Row k="Answer by" v={monthLabel(loi.expiresM - 1)} />
       {recov === "gross" && <Row k="Recovery" v="full gross — every expense is yours" bad />}
       <details className="loi-terms-fold">
         <summary>

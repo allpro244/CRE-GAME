@@ -180,8 +180,8 @@ function calloutFor(g: GameState, bbl: string | null, parcels: ParcelTable): Cal
     return {
       bbl,
       text: onIt.length === 1
-        ? `letter — answer by ${monthLabel(first.expiresM)}`
-        : `${onIt.length} letters — first dies ${monthLabel(first.expiresM)}`,
+        ? `letter — answer by ${monthLabel(first.expiresM - 1)}`
+        : `${onIt.length} letters — answer the first by ${monthLabel(first.expiresM - 1)}`,
     };
   }
   return null;

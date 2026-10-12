@@ -1558,11 +1558,14 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   // why Year/Skip kept stopping for paper somebody else was hired to handle.
   for (const l of s.lois) {
     if (!loiNeedsPrincipal(s, l)) continue;
+    // "Answer by" is the last month the letter is still on the desk: the
+    // tick into expiresM drops it (leasing.ts), so expiresM itself is a month
+    // too late — the docket said "by Feb" over a letter gone in February.
     const label = l.kind === "expansion"
-      ? `${l.name} wants to expand — answer by ${monthLabel(l.expiresM)}`
+      ? `${l.name} wants to expand — answer by ${monthLabel(l.expiresM - 1)}`
       : l.kind === "renewal"
-        ? `Renewal from ${l.name} — answer by ${monthLabel(l.expiresM)}`
-        : `LOI from ${l.name} — answer by ${monthLabel(l.expiresM)}`;
+        ? `Renewal from ${l.name} — answer by ${monthLabel(l.expiresM - 1)}`
+        : `LOI from ${l.name} — answer by ${monthLabel(l.expiresM - 1)}`;
     out.push({ key: `loi:${l.id}`, label, lastM: l.expiresM - 1 });
   }
   // Tenant-relief letters expire in three months and a lapse is a refusal.
@@ -1572,8 +1575,8 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   for (const a of s.asks ?? []) {
     if (s.holdings[a.bbl]?.groundLeased) continue;
     const label = a.kind === "giveback"
-      ? `${a.name} wants to hand space back — answer by ${monthLabel(a.expiresM)}`
-      : `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM)}`;
+      ? `${a.name} wants to hand space back — answer by ${monthLabel(a.expiresM - 1)}`
+      : `${a.name} is asking for rent relief — answer by ${monthLabel(a.expiresM - 1)}`;
     out.push({ key: `tenant-ask:${a.id}`, label, lastM: a.expiresM - 1 });
   }
   // A building the player starred reaching the tape: they asked to be told,

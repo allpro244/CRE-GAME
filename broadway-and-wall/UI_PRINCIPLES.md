@@ -284,3 +284,9 @@ Asked plainly: what does a principal need without opening a desk?
   and carry no named lease, so the table was empty while the rent was real.
   It now says so, with the let footage. House-wide policy uses the same
   labelled segmented controls as a single building.
+- **A deadline says the last month you can act.** Letters and tenant asks
+  read "answer by Feb 2008", but the tick into February removes them
+  (`leasing.ts`): the real last month was January. The docket, the letter
+  card, Deals and the map badge said a month too late; the new Next due tile,
+  reading the engine's own `lastM`, said "now", and the two disagreed on the
+  same screen. Every one now prints the last month the letter is on the desk.

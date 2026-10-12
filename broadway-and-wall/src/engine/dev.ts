@@ -3961,9 +3961,28 @@ export function tickCityGrowth(
   // most C dirt; a shed can only be built on the M the board just
   // mapped. Leaving those lots empty while office takes every crew
   // slot is how stock stayed frozen after the map existed.
-  const owedBook = s.econ.startOwed;
-
-  while (n-- > 0) startCityJob(s, parcels, bbls, adjacency, owedBook, maturity);
+  //
+  // EACH SEGMENT WORKS ITS OWN BOOK (2026-10-12). Every attempt here used to
+  // read the whole book and go to the class owed most, so a class only got a
+  // crane in the months its order was the largest: on map 202 industrial sat
+  // at its 0.3% vacancy floor for forty years with sites clearing at 1.3-1.5x
+  // and 11-26k sf ordered, while office's 48-68k sf book took every attempt.
+  // Shed developers build sheds and apartment builders build apartments; with
+  // no crew wall there is nothing for the segments to share but the cost
+  // index, which prices them all. So each class makes its own attempts, as
+  // many as its own order holds typical buildings, against its own book.
+  void n;
+  for (const k of BUILT_CLASSES) {
+    const owedK = Math.max(0, s.econ.startOwed?.[k] ?? 0);
+    const wantK = owedK / TYPICAL_SF;
+    let nk = Math.floor(wantK) + (rng(s, "dev") < wantK % 1 ? 1 : 0);
+    while (nk-- > 0) {
+      const left = Math.max(0, s.econ.startOwed?.[k] ?? 0);
+      if (!(left > 0)) break;
+      const book = { office: 0, retail: 0, multifamily: 0, industrial: 0, [k]: left } as NonNullable<GameState["econ"]["startOwed"]>;
+      startCityJob(s, parcels, bbls, adjacency, book, maturity);
+    }
+  }
 }
 
 /**

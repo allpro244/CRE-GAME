@@ -248,6 +248,8 @@ const SUBLET_BG: Record<BuiltClass, number> = {
  *  that arrives in town is looking the same month and has signed inside two.
  *  Shape parameters, from the length of the process; stated, not fitted. */
 /** Shortage-side rent sensitivity relative to office (see `vacTerm`). */
+/** Island-vs-mainland location elasticity of space demand (see `locEff`). Shape parameter. */
+const LOC_ELAST = 1.0;
 const SHORT_SENS: Record<BuiltClass, number> = { office: 1.0, retail: 1.0, industrial: 2.4, multifamily: 3.0 };
 const DEMAND_FORM_M: Record<BuiltClass, number> = { office: 9, retail: 6, industrial: 6, multifamily: 2 };
 /** MONTHS TO MOVE IN once searching: office tour-to-occupancy including
@@ -1603,6 +1605,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // Income-anchor parity is this opening print, not the global RENT_BASE table.
   econ.rentAnchor = { ...econ.rentIdx };
   econ.effAnchor = { ...econ.effRentIdx };
+  econ.costAnchorReal = (econ.costIdx ?? 1) / Math.max(0.35, econ.cpi ?? 1);
   econ.inPlaceReal = { ...econ.effRentIdx };
   recordHistory(econ, 0);
   return econ;
@@ -3929,6 +3932,32 @@ export function tickEcon(s: GameState) {
     // At the lease-rollover rate of THIS class, not of an office. See AFFORD_ROLL.
     e.affordEff[k] += AFFORD_ROLL[k] * (affordRaw - e.affordEff[k]);
 
+    // ...AND THE MAINLAND IS NEXT DOOR (2026-10-12). `affordEff` is how much
+    // space a tenant takes at a price; it is not WHERE they take it. The island
+    // keeps its share of the region's households only "at given
+    // relative prices" (above), and nothing let that share move when the
+    // island got dear: the mainland builds at cost on cheap ground, so its
+    // real rent tracks real construction cost, and every point the island
+    // rents over that is a point of premium a household or firm can avoid by
+    // living or leasing across the water and commuting — the location margin
+    // of the Alonso-Muth-Mills city, far more elastic than taking less space.
+    // Without it a built-out island admitted the region's whole growth and
+    // compounded real rent 1.4%/yr for a century at normal vacancy. Unit
+    // elasticity — a 10% premium over the mainland sends a tenth of the
+    // island's would-be tenants there — is a shape parameter, stated as such.
+    // At the lease-rollover rate of the class, like `affordEff`.
+    if (e.costAnchorReal === undefined) e.costAnchorReal = (e.costIdx ?? 1) / cpiNow;
+    const mainlandReal = ((e.costIdx ?? 1) / cpiNow) / Math.max(1e-6, e.costAnchorReal);
+    // Households only: a firm's jobs are the island's jobs in this model (the
+    // region's population is derived from them, and their location is the
+    // job-level `regionalPull`), so letting a firm's floor leave while its
+    // jobs stay would be the same tenant in two places.
+    const locRaw = k === "multifamily"
+      ? Math.pow(Math.max(1e-6, relRent / Math.max(1e-6, mainlandReal)), -LOC_ELAST)
+      : 1;
+    if (!e.locEff) e.locEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
+    e.locEff[k] += AFFORD_ROLL[k] * (locRaw - e.locEff[k]);
+
     // THE INCOME ARGUMENT. A city that gets richer occupies more and better
     // space; a city that gets poorer gives it back. Real income per worker
     // against the town's opening real income — the INTENSIVE margin only,
@@ -4222,6 +4251,7 @@ export function tickEcon(s: GameState) {
       * Math.pow(driver, elastic)
       * cycleTerm
       * e.affordEff[k]
+      * (e.locEff?.[k] ?? 1)      // island against mainland — see LOC_ELAST
       * (e.incomeEff?.[k] ?? 1)   // the income argument — see INCOME_ELAST
       * swanLvl;
     // THE POOL. Demand takes about a year to form or dissolve, and demand
@@ -4364,7 +4394,8 @@ export function tickEcon(s: GameState) {
       * Math.pow(driver, elastic)
       * cycleTerm
       * affordRaw
-      * incomeRaw   // the give-back reads the SAME two arguments targetRaw does
+      * locRaw      // ...and the same island-vs-mainland choice (`locEff`)
+      * incomeRaw   // the give-back reads the SAME arguments targetRaw does
       * swanLvl;
     const cyclical = Math.max(0, (e.occupied[k] - wantedNow) * DEMISABLE[k]);
     const background = e.occupied[k] * (SUBLET_BG[k] ?? 0);

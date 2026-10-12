@@ -290,7 +290,34 @@ Not built here, on purpose:
 
 ## 9. Measured after the build
 
-_Filled in from `pnpm class-arms`, before (main) and after (this branch)._
+`pnpm class-arms`, 4 seeds × 25 y × 6 offices, unlevered, Fund plan, PV at 7%,
+3% sale cost. **First run kept the bought buildings' rent rolls** (EMPTY=0):
+
+| | before (main) | after (this branch) |
+|---|---|---|
+| Value − Standard, sold at 36 m | ≈ +$5.9M | ≈ +$6.2M |
+| Value beats Standard on the flip | 4/4 seeds | 4/4 seeds |
+| Value − Standard, 25-year hold | ≈ +$5M | ≈ −$3M |
+| Value beats Standard on the hold | 2/4 | 2/4 |
+
+Read: the hold moved the right way; **the flip did not close**. The probe was
+the reason it could not: every arm collected the same in-place leases for
+years, so the sale priced those leases, not the tier. All twelve sales also
+landed in recovery or expansion, so "loses into a soft market" was never
+sampled. The harness now opens every delivery EMPTY (the default). One-seed
+smoke on the empty version: Value − Standard at 36 m fell to +$0.8M on a
+$12.5M Standard budget. **Open item: the full empty run, and a sale forced into
+a downturn**, before calling the flip closed.
+
+`pnpm check` on this branch: `conserve` reconciled every month (4,019).
+Two failures are also on main and not from this change —
+`advance.mjs` "regional quotes ≥ 30% of the opening tape" (main 27%, here 25%)
+and `delivered-condition.mjs` (the delivered holding is gone a year later,
+same crash on main). `invariant-play`-area "letters arrived on the desk" failed
+once here and was not re-checked on main. `baseline:check` reported 30 of 45
+metrics moved (rent indexes −55% to −63%) — far outside anything this change
+touches, and main's BASELINE.json predates ~300 commits; **not regenerated
+here**, left to the economy work.
 
 ## Do not
 

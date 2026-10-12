@@ -11,6 +11,7 @@ import { openResearchOn } from "@/ui/panels/shared";
 import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
 import { portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
+import { nextDue } from "./nextDue";
 import { DESKS, deskOf, deskCount, deskLanding, tabCounts, tabLabel, visibleTabs } from "./desks";
 import DeltaChip from "@/ui/vitals/DeltaChip";
 import Waterfall, { usablePrev } from "@/ui/vitals/Waterfall";
@@ -146,6 +147,7 @@ export default function TopBar() {
         dRateBp: null as number | null,
         standing: null as ReturnType<typeof streetStanding> | null,
         dRank: 0,
+        due: null as ReturnType<typeof nextDue>,
       };
     }
     const parcels = useStore.getState().parcels;
@@ -201,14 +203,15 @@ export default function TopBar() {
     // pre-advance snapshot the other deltas already read.
     const standPrev = standing && prevOk && parcels ? streetStanding(prevOk, parcels) : null;
     const dRank = standing && standPrev ? standPrev.rank - standing.rank : 0;
+    const due = nextDue(deferredGame, parcels);
     return {
-      standing, dRank,
+      standing, dRank, due,
       nw, cf, occ, vacDpp, line, counts,
       dNw, nwSpark, dCf, dCfSince, dRateBp,
     };
   }, [deferredGame, deferredPrev]);
   const {
-    nw, cf, occ, vacDpp, line, counts, dNw, dCf, dCfSince, dRateBp, standing, dRank,
+    nw, cf, occ, vacDpp, line, counts, dNw, dCf, dCfSince, dRateBp, standing, dRank, due,
   } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
@@ -361,8 +364,16 @@ export default function TopBar() {
               w={92}
               keep
             />
+            {/* CASH AND THE LINE ARE ONE QUESTION — how much can I spend — so
+                they are one tile. The line used to be its own tile that only
+                appeared once drawn; undrawn, it lived in a tooltip. Now the
+                label says which: "+$1.3M line" free, or "$829K drawn" owed. */}
             <Stat label="Cash" value={usd(game.cash)} n={game.cash} bad={game.cash < 0} w={72} keep
-              title={`GP liquidity — the firm's own cash. Vehicle cash, if any, is separate.${line > 0 && !(game.loc?.balance) ? ` Undrawn credit line ${usd(line)} on top — draw it on Capital → Debt.` : ""}`} />
+              delta={(game.loc?.balance ?? 0) > 0
+                ? <span className={"tstat-of" + (line <= 0 || game.loc!.balance > 0.6 * line ? " neg" : "")}>line {usd(game.loc!.balance)} drawn</span>
+                : line > 0 ? <span className="tstat-of">+{usd(line)} line</span> : null}
+              onClick={(game.loc?.balance ?? 0) > 0 || line > 0 ? () => setPage("debt", "Line of credit") : undefined}
+              title={`GP liquidity — the firm's own cash. Vehicle cash, if any, is separate.${(game.loc?.balance ?? 0) > 0 ? ` Revolver drawn ${usd(game.loc!.balance)} of ${usd(line)} available against net worth.` : line > 0 ? ` Undrawn credit line ${usd(line)} on top.` : ""} Click for the line on Capital → Debt.`} />
             {game.fund && !game.fund.settled && (
               <Stat
                 label="Vehicle"
@@ -370,25 +381,6 @@ export default function TopBar() {
                 w={88}
                 keep
                 title={`Fund vehicle cash (LP capital). Called ${(game.fund.called / 1e6).toFixed(1)}M; uncalled ${(game.fund.uncalled / 1e6).toFixed(1)}M. Not GP liquidity.`}
-              />
-            )}
-            {/* THE LINE SHOWS UP WHEN IT IS OWED. Undrawn capacity is a fact
-                about the bank's appetite, and it sits in the Cash tooltip and on
-                Debt; a drawn balance is money the firm owes at index + 400, and
-                that is worth a readout of its own. */}
-            {(game.loc?.balance ?? 0) > 0 && (
-              <Stat
-                label="Line"
-                value={usd(game.loc!.balance)}
-                delta={<span className="tstat-of">of {usd(line)}</span>}
-                // A few thousand drawn against a seven-figure limit is the
-                // sweep doing its job, not an alarm; red is for a line that
-                // is mostly spent.
-                bad={line <= 0 || game.loc!.balance > 0.6 * line}
-                drop={2}
-                w={84}
-                title={`Revolver drawn ${usd(game.loc!.balance)} of ${usd(line)} available against net worth. Draw and repay on Capital → Debt.`}
-                onClick={() => setPage("debt", "Line of credit")}
               />
             )}
             {/* THE NUMBER THAT ANSWERS A CLICK. Net worth moves every month for
@@ -471,9 +463,30 @@ export default function TopBar() {
                 title={`After debt service and overhead. Firm cash flow annualised: deed NOI (including ground rent) less mortgages, mezz, construction interest, facility, the revolver, and the firm's own G&A and payroll. ${usd(cf)} / mo. Reconciled 2026-08: this walk is net of every facility that actually charges. Portfolio rows now subtract mezz and a pooled facility share; their strip is still deeds-only (no construction / revolver).`}
               />
             </span>
+            {/* THE NEXT CLOCK — see ui/nextDue.ts. Never shed: in a game of
+                deadlines it is the readout most likely to cost money. */}
+            {due && (
+              <Stat
+                label="Next due"
+                value={`${due.what} · ${due.m - game.month <= 0 ? "now" : `${due.m - game.month} mo`}`}
+                bad={due.m - game.month <= 1}
+                keep
+                w={96}
+                title={`${due.title}. Click to open it.`}
+                onClick={() => {
+                  const st = useStore.getState();
+                  if (due.key) st.openAttention(due.key);
+                  else if (due.what === "Balloon") setPage("debt", "Loan by loan");
+                  else if (due.bbl) st.openProperty(due.bbl, "money");
+                }}
+              />
+            )}
+            {/* Occupancy once there is a building to occupy; "—" was the first
+                thing a new player read. */}
+            {occ !== null && (
             <Stat
               label="Occupancy"
-              value={occ !== null ? (100 * occ).toFixed(1) + "%" : "—"}
+              value={(100 * occ).toFixed(1) + "%"}
               bad={occ !== null && occ < 0.8}
               drop={2}
               w={64}
@@ -481,6 +494,7 @@ export default function TopBar() {
                 ? `Portfolio occupancy: ${(100 * occ).toFixed(1)}% of lettable feet leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
                 : "Portfolio occupancy — appears once you own an operated building."}
             />
+            )}
             {/* ONE READOUT FOR THE STREET. Base rate, vacancy change, the phase
                 and the era used to be four separate readouts across the bar and
                 the rail. They are one question — what is money and space doing

@@ -226,3 +226,20 @@ business that runs on letters. The toast lane was the noisy channel:
   opened the league table at the leaders; the player's own row was twenty-odd
   firms down, below the fold. The table now opens on your row, with the firms
   you are trying to pass directly above it.
+
+## What belongs on the top bar
+
+Asked plainly: what does a principal need without opening a desk?
+
+| readout | verdict | why |
+|---|---|---|
+| Date · year of run | keep | the clock |
+| Cash | keep, **absorbs Line** | "how much can I spend" was split across two tiles, and the line only showed once drawn. One tile now: cash, with "+$1.6M line" free or "line $829K drawn" (red past 60% of the limit) in its label; click opens the line |
+| Line | **removed** | folded into Cash |
+| Net worth · Δ | keep | the score |
+| Street rank · Δ | keep | the race; the owner asked for it in sight |
+| CF / yr · Δ | keep | the firm's burn or yield, after debt and overhead |
+| **Next due** | **added** | the nearest hard date — fund a contract, answer a letter, an offer lapsing, a balloon inside a year, a lender's filing — read off the same state the engine acts on (`ui/nextDue.ts`), red inside a month, click opens it. A game of deadlines had no clock in its HUD |
+| Occupancy | keep, **only once you operate a building**, shed early | it read "—" on every new player's first screen, and moves slowly |
+| Market · rate · phase · Δbp | keep, shed first | the weather every price is read against; one click from Economy |
+| Book | keep, only in trouble | an alarm, not a readout |

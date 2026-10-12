@@ -416,6 +416,34 @@ const REVEAL_FRAG = `
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.45 + vec3(0.05), jamb * rk);
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.6, 0.56), sill * rk * (1.0 - jamb));
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.5, head * rk);
+  // A ROOM BEHIND THE GLASS (SKYLINE_LOOK_PLAN round 24). The opening
+  // used to stop at the pane: a flat dark rectangle with a painted jamb.
+  // Each pixel of an unshaded pane now follows the eye's ray into a room the
+  // size of its own bay and storey, 4 m deep, and takes the colour of what
+  // it meets first: the back wall, a side wall, the floor or the ceiling. As
+  // the camera moves the room moves with it, so a window reads as an
+  // opening with depth rather than a picture of one. No geometry; per room a
+  // wall paint and a lamp level from the pane's own hash.
+  {
+    float RW = uBay.x, RH = uBay.y, RD = 4.0;
+    float X0 = (fC.x - 0.5) * RW, Y0 = fC.y * RH;
+    float dB = RD;
+    float dS = abs(vu) > 0.001 ? (vu > 0.0 ? (X0 + RW * 0.5) / vu : (X0 - RW * 0.5) / vu) : 1e3;
+    float dF = vv > 0.001 ? Y0 / vv : 1e3;
+    float dC = vv < -0.001 ? (Y0 - RH) / vv : 1e3;
+    float dm = min(min(dB, dS), min(dF, dC));
+    vec3 wallP = mix(vec3(0.78, 0.72, 0.62), vec3(0.66, 0.7, 0.72), step(0.6, wh1));
+    vec3 room = wallP * 0.62;                                   // the back wall, lit from the window
+    if (dm == dS) room = wallP * 0.42;                           // a side wall, edge-on to the light
+    else if (dm == dF) room = mix(vec3(0.34, 0.24, 0.16), vec3(0.42, 0.4, 0.38), step(0.5, wh2)) * 0.55;   // wood or carpet
+    else if (dm == dC) room = vec3(0.8, 0.79, 0.76) * 0.5;       // the ceiling
+    // deeper is dimmer: the far wall is out of the daylight
+    // seen from the street by day a room is much darker than the wall
+    // round it: the light inside is a fraction of the sky's
+    room *= mix(0.62, 0.32, clamp(dm / RD, 0.0, 1.0)) * (0.8 + 0.4 * wh2);
+    float inK = winM * step(0.001, uReveal) * (1.0 - winShade) * (1.0 - jamb) * (1.0 - farK) * 0.8;
+    diffuseColor.rgb = mix(diffuseColor.rgb, room, inK);
+  }
   // a punched window catches some of the sky, more looking down at it, so
   // the old city's openings read as glass rather than holes (round 7); the
   // blinds and curtains stay as drawn
@@ -1906,8 +1934,12 @@ export class RealCityLayer {
     const h = (n: number) => hash01(k ^ n, this.seed);
     type M = "straight" | "podium" | "tiers" | "taper" | "chamfer" | "round" | "notch" | "twin" | "podium+chamfer" | "podium+tiers" | "round+tiers" | "twist";
     const futurist = styleOf(fam, year, H) === "futurist";
+    // A TALL TOWER STEPS BACK. Past about 100 m almost no tower in a real
+    // skyline goes up as one prism: a podium, tiers, a taper or a twist. The
+    // plain shaft keeps a share only below that (SKYLINE_LOOK_PLAN round 23).
+    const straightW = H > 100 ? 0.02 : 0.1;
     const opts: [M, number][] = tall
-      ? [["straight", 0.1], ["podium", 0.15], ["tiers", 0.13], ["taper", simple ? 0.08 : 0], ["chamfer", simple ? 0.1 : 0], ["round", simple ? 0.08 : 0],
+      ? [["straight", straightW], ["podium", 0.15], ["tiers", H > 100 ? 0.2 : 0.13], ["taper", simple ? 0.08 : 0], ["chamfer", simple ? 0.1 : 0], ["round", simple ? 0.08 : 0],
          ["notch", quad ? 0.08 : 0], ["twin", quad && H > 70 ? 0.07 : 0], ["podium+chamfer", simple ? 0.08 : 0], ["podium+tiers", 0.08], ["round+tiers", simple ? 0.05 : 0],
          ["twist", futurist && simple && H > 80 ? 0.22 : 0], ["taper", futurist && simple ? 0.08 : 0]]
       : [["straight", 0.4], ["podium", 0.2], ["chamfer", simple ? 0.15 : 0], ["round", simple ? 0.1 : 0], ["notch", quad ? 0.08 : 0], ["tiers", 0.1]];
@@ -4315,7 +4347,18 @@ export class RealCityLayer {
       const preWarTower = isTop && v.z0 < 0.5 && top > 70 && (v.y || 1950) < 1946
         && (fb === "deco" || fb === "decobrick" || fb === "stone" || fb === "terracotta") && hash01(k ^ 0x1916, this.seed) < 0.75
         // the 2000s limestone apartment tower revived the setback on purpose
-        || isTop && v.z0 < 0.5 && top > 60 && fb === "newstone" && hash01(k ^ 0x1916, this.seed) < 0.7;
+        || isTop && v.z0 < 0.5 && top > 60 && fb === "newstone" && hash01(k ^ 0x1916, this.seed) < 0.7
+        // THE 1916 RESOLUTION'S WHOLE REACH (SKYLINE_LOOK_PLAN round 23). It
+        // was not only the towers: anything built from 1916 until the 1961
+        // code that rose past the height its street allowed (about one and a
+        // half to two and a half times the street's width: 40 m here) had to
+        // step back, so the mid-rise masonry of the 1920s and the white-brick
+        // apartment houses of the 1950s step too. Built before 1916, nothing did.
+        || isTop && v.z0 < 0.5 && top > 70 && (v.y || 0) >= 1946 && (v.y || 0) < 1962 && fb === "whitebrick" && hash01(k ^ 0x1916, this.seed) < 0.75;
+      // one step back for the mid-rise of the same years (40-70 m)
+      const zoned = !preWarTower && isTop && v.z0 < 0.5 && top > 40 && top <= 70 && (v.y || 0) >= 1916 && (v.y || 0) < 1962
+        && (fb === "deco" || fb === "decobrick" || fb === "stone" || fb === "terracotta" || fb === "whitebrick" || fb === "brick" || fb === "buff")
+        && v.r.length <= 12 && hash01(k ^ 0x1916, this.seed) < 0.6;
       let topRing = ring;
       let rowDone = false;
       if (preWarTower) {
@@ -4328,6 +4371,23 @@ export class RealCityLayer {
         this.addVolume(at(0.84), h1, h2, fam, t, v.b, true, false, k);
         topRing = at(0.68);
         this.addVolume(topRing, h2, v.z1, fam, t, v.b, true, true, k);
+      } else if (zoned) {
+        // a full-lot base to the street's height, a terrace with its own
+        // cornice, then the upper floors set three to five metres back
+        let cx = 0, cy = 0;
+        for (const [x, y] of ring) { cx += x; cy += y; }
+        cx /= ring.length; cy /= ring.length;
+        let rad = Infinity;
+        for (const [x, y] of ring) rad = Math.min(rad, Math.hypot(x - cx, y - cy));
+        const back = Math.min(3 + 2 * hash01(k ^ 0x1917, this.seed), rad * 0.3);
+        const ins = insetRing(ring, back);
+        const upper = ins && ringArea(ins) > 0 && ins.every(([x, y]) => PolyGrid.inRing(ring, x, y)) ? ins : ring.map(([x, y]) => [cx + (x - cx) * 0.8, cy + (y - cy) * 0.8] as P2);
+        const fhz = this.families[fam]?.floorH ?? 3.2;
+        const h1 = Math.max(fhz * 4, Math.round((v.z1 * (0.62 + 0.13 * hash01(k ^ 0x1918, this.seed))) / fhz) * fhz);
+        this.addVolume(ring, v.z0, h1, fam, t, v.b, true, false, k, shop, false, v.c, v.y || 0);
+        topRing = upper;
+        this.addVolume(upper, h1, v.z1, fam, t, v.b, true, true, k, false, false, v.c, v.y || 0);
+        this.feat("zoned", v.b);
       } else if (isTop && v.z0 < 0.5 && fb !== "industrial" && fb !== "daylight" && fb !== "plain" && (top < 40 ? !TOWER_FAMS.has(fam) : true) && this.rowOf(ring, v, fam, k, shop, top >= 40)) {
         // drawn as a row of houses (rowOf), each with its own top: the
         // building-wide crown below would float a footprint-long penthouse

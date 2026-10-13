@@ -574,6 +574,12 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
         why: `${l.name} is in receivership. This is not a desk pricing a loan — it is a receiver emptying `
           + `a filing cabinet, and the ask is what that always is: the number that makes it somebody else's file.`,
       });
+      const fail = [...(s.bankFails ?? [])].reverse().find((b) => b.lender === l.name && b.reopenedM === undefined);
+      if (fail) {
+        fail.sold = (fail.sold ?? 0) + 1;
+        fail.soldFace = (fail.soldFace ?? 0) + Math.round(x.balance);
+        fail.soldAsk = (fail.soldAsk ?? 0) + Math.round(x.balance * s.noteOffers![s.noteOffers!.length - 1].askPct);
+      }
       s.news.unshift({
         q: s.month, kind: "deal",
         text: `The receiver for ${l.name} is selling the loan on ${rec.address} — ${money(x.balance)} of face at `

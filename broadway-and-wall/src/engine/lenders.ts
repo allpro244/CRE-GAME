@@ -697,6 +697,8 @@ export function tickLenders(s: GameState) {
         l.delinquent = (l.anonBook * l.anonDelinq + (desks[l.name]?.defaulted ?? 0)) / Math.max(1, l.book);
         l.appetite = 0.75;
         l.chargeOffsYr = 0; l.netIncomeYr = 0;
+        const rec = [...(s.bankFails ?? [])].reverse().find((b) => b.lender === l.name && b.reopenedM === undefined);
+        if (rec) rec.reopenedM = s.month;
         delete l.failedM; delete l.reopenM;
         s.news.unshift({
           q: s.month, kind: "info",
@@ -894,6 +896,12 @@ export function tickLenders(s: GameState) {
       l.reopenM = Math.round(rrange(s, 12, 30, "lenders"));
       l.appetite = 0;
       if (wasOurs) seizeDeposits(s, l);
+      // The paper's memory of it (stories.ts) — a record, not a mechanism.
+      (s.bankFails ??= []).push({
+        lender: l.name, kind: l.kind, m: s.month, book: Math.round(l.book),
+        delinq: +l.delinquent.toFixed(4), yours: Math.round(l.yours ?? 0),
+      });
+      if (s.bankFails.length > 60) s.bankFails.shift();
       // And whether or not you banked with them, their cranes stop.
       repudiateCommitments(s, l);
       // A DESK GOING DOWN IS NOT A LINE IN THE PAPER. Whether or not the

@@ -78,5 +78,44 @@ for (const seed of SEEDS) {
     }
   }
 }
+// SCENARIOS — the stories that need a rare event, forced, so the plumbing
+// from the engine's record to the page is tested even in a run where the
+// event never happens on its own. Each starts from a thirty-year town.
+{
+  let g = E.firstListings(E.newGame(SEEDS[0], parcels, 30_000_000), parcels, bbls);
+  for (let m = 0; m < 360; m++) {
+    g = E.advanceMonth(g, parcels, bbls, adjacency);
+    if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
+  }
+  ok("tenant moves are recorded over thirty years", (g.tenantMoves ?? []).length > 0, `${(g.tenantMoves ?? []).length} moves`);
+  ok("rival firms have year-end equity marks", g.rivals.some((r) => (r.eqHist ?? []).length >= 5));
+
+  // A GLUT: a fifth of the office stock due inside a year, into this market.
+  const glut = JSON.parse(JSON.stringify(g));
+  const stock = glut.econ.history.at(-1).stock.office;
+  (glut.econ.deliveryQueue ??= []).push({
+    id: "test-glut", source: "city", startM: glut.month - 20, deliverM: glut.month + 6,
+    sfByUse: { office: Math.round(stock * 0.2) }, status: "active",
+  });
+  const gl = E.writePaper(glut, parcels).stories.find((x) => x.id.startsWith("glut:office"));
+  ok("a fifth of the office stock delivering makes a glut warning", !!gl, gl?.head ?? "no story");
+
+  // A BANK FAILURE: the biggest bank's capital forced below zero until the
+  // regulator closes it, then three years for the receiver and the reopening.
+  let b = JSON.parse(JSON.stringify(g));
+  const L = [...b.lenders].filter((l) => l.kind === "bank").sort((x, y) => y.book - x.book)[0];
+  for (let i = 0; i < 60 && !(b.bankFails ?? []).length; i++) {
+    b.lenders.find((l) => l.id === L.id).capital = -1e9;
+    b = E.advanceMonth(b, parcels, bbls, adjacency);
+  }
+  const f0 = (b.bankFails ?? [])[0];
+  ok("a closed bank is logged", !!f0 && f0.lender === L.name, JSON.stringify(f0 ?? null));
+  ok("its story runs the month after", E.writePaper({ ...b, month: b.month + 1 }, parcels).stories.some((x) => x.id === `bank:${L.name}:${f0?.m}`));
+  for (let i = 0; i < 36; i++) b = E.advanceMonth(b, parcels, bbls, adjacency);
+  const f1 = (b.bankFails ?? []).find((x) => x.lender === L.name);
+  ok("the reopening is stamped on the record", f1?.reopenedM !== undefined, JSON.stringify(f1 ?? null));
+  ok("and the failure log survives the reopening", !b.lenders.find((l) => l.id === L.id).failedM && !!f1);
+}
+
 console.log(fails ? `\n${fails} failure(s)` : "\nThe paper reads and does not write.");
 process.exit(fails ? 1 : 0);

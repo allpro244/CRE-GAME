@@ -27,7 +27,7 @@ import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingRe
 import { drawLeaseUpReserve, leaseUpRoom } from "./debt";
 import { fundReserve } from "./fund";
 import { partnerFunds } from "./jv";
-import { recordPropertyEvent } from "./history";
+import { recordPropertyEvent, noteTenantMove } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
 import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
@@ -1471,6 +1471,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           const dest = departureDestination(s, parcels, rec, notable.use ?? (rec.class as BuiltClass));
           gone = ` ${notable.name}${yrsIn >= 8 ? `, here ${yrsIn} years,` : ""} is gone`
             + (dest ? ` — to ${dest}.` : ".");
+          noteTenantMove(s, { kind: "leave", who: notable.name, sf: notable.sf, bbl: rec.bbl, ...(dest ? { to: dest } : {}) });
         }
       }
       s.news.unshift({
@@ -4485,6 +4486,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
       + `Building is ${occPct.toFixed(0)}% let. Upfront TI and commission: ${money(cost)}.${freeNote}`,
   });
   if (l.sf >= Math.max(25_000, rec.bldgArea * 0.15)) {
+    noteTenantMove(s, { kind: "sign", who: l.name, sf: l.sf, bbl: l.bbl });
     recordPropertyEvent(s, l.bbl, {
       kind: "major-lease",
       party: l.name,

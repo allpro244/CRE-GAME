@@ -3,7 +3,7 @@
 // News is intentionally a short rolling wire. Property history is sparse,
 // structured and permanent: the handful of events that changed what a site
 // was, who owned it, or who occupied a material share of it.
-import type { GameState, PropertyEvent } from "./types";
+import type { GameState, PropertyEvent, TenantMove } from "./types";
 import { monthLabel } from "./types";
 import { money } from "./money";
 
@@ -26,6 +26,16 @@ export function recordPropertyEvent(
   if (!duplicate) log.push(row);
   if (log.length > PROPERTY_HISTORY_CAP) log.splice(0, log.length - PROPERTY_HISTORY_CAP);
   s.propertyLog[bbl] = log;
+}
+
+/**
+ * A big tenant move, for the paper (stories.ts). Display only — a record of
+ * something the engine already decided, written after the fact, drawing no
+ * random numbers. Capped so a century of churn stays small.
+ */
+export function noteTenantMove(s: GameState, mv: Omit<TenantMove, "m">): void {
+  (s.tenantMoves ??= []).push({ m: s.month, ...mv });
+  if (s.tenantMoves.length > 80) s.tenantMoves.shift();
 }
 
 export function propertyTimeline(s: GameState, bbl: string): PropertyEvent[] {

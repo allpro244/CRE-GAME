@@ -17,13 +17,14 @@
 // every figure it prints is a figure the engine already recorded. A story is
 // selected by how surprising its facts are, never invented to fill a page.
 import type { ParcelRecord } from "@/data/types";
-import type { GameState, PropertyEvent } from "./types";
+import type { BuiltClass, GameState, PropertyEvent } from "./types";
 import { monthLabel, START_YEAR } from "./types";
 import { money } from "./money";
 import { firmShort } from "./firm";
 import { districtLabelOf } from "./mix";
+import { NATURAL_VAC } from "./market";
 
-export type StorySection = "yours" | "deeds" | "street" | "skyline" | "places";
+export type StorySection = "yours" | "market" | "deeds" | "street" | "skyline" | "places";
 
 export interface StoryBeat {
   m: number;
@@ -735,6 +736,313 @@ function numbers(g: GameState, hist: Map<string, PropertyEvent[]>): StoryStat[] 
   return out;
 }
 
+// ---------------------------------------------------------------- the market
+
+const CLASS_NOUN: Record<BuiltClass, string> = {
+  office: "office", retail: "shop", multifamily: "apartment", industrial: "warehouse",
+};
+const CLASS_PLURAL: Record<BuiltClass, string> = {
+  office: "offices", retail: "shops", multifamily: "apartments", industrial: "warehouses",
+};
+const CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
+
+const msf = (sf: number) => (Math.abs(sf) >= 1_000_000 ? `${(sf / 1_000_000).toFixed(1)}M sf` : `${Math.round(sf / 1000).toLocaleString()}k sf`);
+const pc = (x: number) => `${(x * 100).toFixed(1)}%`;
+
+/**
+ * THE LONG SHIFT. What the city actually occupies, a decade apart, class by
+ * class, against what happened to its jobs. A cycle moves every class
+ * together; a class that moved a long way from the rest — and from the jobs
+ * count — is the city changing what it is. Read off the month-end history the
+ * market already keeps; nothing here is modelled, only compared.
+ */
+function shiftStories(g: GameState): Story[] {
+  const h = g.econ.history ?? [];
+  const win = h.length > 120 ? 120 : h.length > 60 ? 60 : 0;
+  if (!win) return [];
+  const now = h[h.length - 1], then = h[h.length - 1 - win];
+  if (!now.occupied || !then.occupied || !now.stock || !then.stock) return [];
+  const years = win / 12;
+  const jobs = now.jobs && then.jobs ? now.jobs / then.jobs : 1;
+  const out: Story[] = [];
+  for (const c of CLASSES) {
+    const o0 = then.occupied[c], o1 = now.occupied[c];
+    if (!(o0 > 0) || !(o1 > 0)) continue;
+    const r = o1 / o0;
+    // A tenth or more either way, and at least ten points off the jobs
+    // count: the class did something the economy as a whole did not.
+    if (Math.abs(r - 1) < 0.1 || Math.abs(r - jobs) < 0.1) continue;
+    const gap = Math.round(Math.abs(r - jobs) * 100);
+    const up = r > 1;
+    const st = now.stock[c] / then.stock[c];
+    const vac0 = then.vac?.[c], vac1 = now.vac?.[c];
+    out.push({
+      id: `shift:${c}:${Math.floor(g.month / 12)}`, section: "market",
+      kicker: up ? "The long shift" : "The long retreat",
+      head: up
+        ? `This city occupies ${Math.round((r - 1) * 100)}% more ${CLASS_NOUN[c]} space than it did ${count(years)} years ago`
+        : `This city occupies ${Math.round((1 - r) * 100)}% less ${CLASS_NOUN[c]} space than it did ${count(years)} years ago`,
+      body: `${msf(o0)} of ${CLASS_PLURAL[c]} had a tenant in ${yr(then.q)}; ${msf(o1)} do now. `
+        + `Over the same years the city's jobs went ${jobs >= 1 ? "up" : "down"} ${Math.round(Math.abs(jobs - 1) * 100)}%`
+        + `${now.population && then.population ? ` and its population ${now.population >= then.population ? "grew" : "shrank"} ${Math.round(Math.abs(now.population / then.population - 1) * 100)}%` : ""}, `
+        + `so demand for ${CLASS_PLURAL[c]} ${r > jobs ? "outran" : "fell behind"} the economy that pays for it by ${gap} points. The stock ${st >= 1 ? "grew" : "shrank"} ${Math.round(Math.abs(st - 1) * 100)}% to meet it`
+        + (vac0 !== undefined && vac1 !== undefined ? `, and vacancy went from ${pc(vac0)} to ${pc(vac1)}. ` : ". ")
+        + (r > jobs ? `Whoever owns ${CLASS_PLURAL[c]} here has been riding a tide, not just the cycle.` : `Whoever owns ${CLASS_PLURAL[c]} here is standing in an outgoing tide.`),
+      m: g.month, score: 3 + Math.min(2.5, Math.abs(r - jobs) * 8),
+    });
+  }
+  // The black swans that started a shift, when they are running, get named.
+  for (const sw of g.swanLog ?? []) {
+    const ago = g.month - sw.m;
+    if (ago < 24 || ago > 120) continue;
+    out.push({
+      id: `swan-on:${sw.key}:${sw.m}`, section: "market",
+      kicker: `${cap(count(Math.round(ago / 12)))} years on`,
+      head: sw.title,
+      body: `It was announced in ${monthLabel(sw.m)}, and it was meant to take ${span(sw.glideM)} to land. `
+        + `${ago >= sw.glideM ? "It has landed." : `It is ${Math.round((ago / sw.glideM) * 100)}% of the way there.`} `
+        + `The leases signed before it are the last ones still priced as if it had not happened.`,
+      m: sw.m + Math.min(ago, sw.glideM), score: 3,
+    });
+  }
+  return out;
+}
+
+/**
+ * THE GLUT WARNING (and its opposite). Every project the market is building,
+ * from the one delivery queue, against what the city absorbed in the last
+ * twelve months and the vacancy it is already carrying. The projection is
+ * arithmetic, not a forecast: if demand keeps last year's pace, this is where
+ * vacancy lands when the cranes come down.
+ */
+function supplyStories(g: GameState): Story[] {
+  const h = g.econ.history ?? [];
+  const now = h[h.length - 1];
+  if (!now?.stock || !now.occupied || g.month < 24) return [];
+  const horizon = 18;
+  const out: Story[] = [];
+  for (const c of CLASSES) {
+    const rows = (g.econ.deliveryQueue ?? []).filter((p) => p.status === "active"
+      && p.deliverM > g.month && p.deliverM <= g.month + horizon && (p.sfByUse[c] ?? 0) > 0);
+    const coming = rows.reduce((a, p) => a + (p.sfByUse[c] ?? 0), 0);
+    const stock = now.stock[c], vacSf = Math.max(0, stock - now.occupied[c]);
+    const absorb = g.econ.absorb12?.[c] ?? 0;
+    if (!(stock > 0)) continue;
+    const vac = vacSf / stock, natural = NATURAL_VAC[c];
+    const after = Math.max(0, vacSf + coming - absorb * (horizon / 12)) / (stock + coming);
+    if (coming >= stock * 0.03 && after >= Math.max(vac + 0.02, natural * 1.25)) {
+      out.push({
+        id: `glut:${c}:${Math.floor(g.month / 6)}`, section: "market",
+        kicker: "Glut warning",
+        head: `${cap(count(rows.length))} ${CLASS_NOUN[c]} project${rows.length === 1 ? "" : "s"} open in the next ${horizon} months — into ${pc(vac)} vacancy`,
+        body: `${msf(coming)} of new ${CLASS_PLURAL[c]} is due by ${monthLabel(g.month + horizon)}. `
+          + `The city ${absorb >= 0 ? `took up ${msf(absorb)}` : `gave back ${msf(-absorb)}`} of ${CLASS_PLURAL[c]} in the last twelve months. `
+          + `If demand keeps that pace, vacancy is ${pc(after)} when the cranes come down — against the ${pc(natural)} a healthy ${CLASS_NOUN[c]} market runs at. `
+          + `Landlords with space to let will be competing with buildings that have never had a tenant.`,
+        m: g.month, score: 3.5 + Math.min(2, (after - natural) * 20),
+      });
+    } else if (vac < natural * 0.7 && absorb > 0 && coming < absorb * (horizon / 12) * 0.5) {
+      out.push({
+        id: `short:${c}:${Math.floor(g.month / 6)}`, section: "market",
+        kicker: "Running out of room",
+        head: `Only ${pc(vac)} of the city's ${CLASS_PLURAL[c]} are empty, and almost nothing is coming`,
+        body: `A healthy ${CLASS_NOUN[c]} market runs at ${pc(natural)}. The city absorbed ${msf(absorb)} last year, and only ${msf(coming)} opens in the next ${horizon} months. `
+          + `Tenants will pay up or go without; whoever has space has the leverage.`,
+        m: g.month, score: 3 + Math.min(2, (natural - vac) * 30),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * THE LEAGUE TABLE, YEAR ON YEAR. Every living firm's year-end equity (the
+ * race chart's own marks) and the player's net worth at the same month,
+ * ranked each year. The standings page shows today; the paper reports what
+ * changed.
+ */
+function leagueStories(g: GameState, me: string): Story[] {
+  const y = Math.floor(g.month / 12);
+  if (y < 2) return [];
+  const playerEq = (yy: number) => g.nwHistory?.[yy * 12];
+  const table = (yy: number) => {
+    const rows: { name: string; eq: number; me?: boolean; id?: string }[] = [];
+    for (const r of g.rivals) {
+      const e = r.eqHist?.find((p) => p[0] === yy);
+      if (e) rows.push({ name: r.name, eq: e[1], id: r.id });
+    }
+    const p = playerEq(yy);
+    if (p !== undefined) rows.push({ name: me, eq: p, me: true });
+    return rows.sort((a, b) => b.eq - a.eq);
+  };
+  const cur = table(y), prev = table(y - 1);
+  if (cur.length < 3 || prev.length < 3) return [];
+  const out: Story[] = [];
+  const at = (rows: typeof cur, name: string) => rows.findIndex((x) => x.name === name);
+  const m = y * 12;
+
+  // A NEW NUMBER ONE.
+  if (cur[0].name !== prev[0].name) {
+    const lead = cur[0], was = prev[0];
+    const wasNow = at(cur, was.name);
+    let reign = 0;
+    for (let yy = y - 1; yy >= 1 && table(yy)[0]?.name === was.name; yy--) reign++;
+    out.push({
+      id: `leader:${lead.name}:${y}`, section: "street", mine: !!lead.me || !!was.me,
+      kicker: "A new number one",
+      head: lead.me ? "Your firm is now the biggest on the street" : `${lead.name} is now the biggest firm on the street`,
+      body: `${money(lead.eq)} of equity at the turn of ${START_YEAR + y}. `
+        + `${was.me ? "You" : was.name} held the top spot for ${reign <= 1 ? "a year" : `${reign} years`}`
+        + (wasNow < 0 ? ` and is gone from the table now.`
+          : ` and ${was.me ? "are" : "is"} ${ordinalOf(wasNow + 1)} now, at ${money(cur[wasNow].eq)}`
+            + (cur[wasNow].eq < was.eq * 0.7 ? ` — down ${Math.round((1 - cur[wasNow].eq / was.eq) * 100)}% in a year.` : ".")),
+      m, score: 4.5,
+    });
+  }
+
+  // YOU MOVED.
+  const mi = at(cur, me), pi = at(prev, me);
+  if (mi >= 0 && pi >= 0 && mi !== pi && Math.abs(mi - pi) >= 2 && !(mi === 0 && cur[0].name !== prev[0].name)) {
+    const passed = prev.slice(mi, pi).filter((x) => at(cur, x.name) > mi).map((x) => x.name);
+    const passedBy = cur.slice(mi + 1 > pi ? pi : 0, mi).filter((x) => at(prev, x.name) > pi).map((x) => x.name);
+    out.push({
+      id: `you-rank:${y}`, section: "street", mine: true,
+      kicker: mi < pi ? "Up the table" : "Down the table",
+      head: mi < pi ? `You climbed from ${ordinalOf(pi + 1)} to ${ordinalOf(mi + 1)} on the street` : `You slipped from ${ordinalOf(pi + 1)} to ${ordinalOf(mi + 1)} on the street`,
+      body: mi < pi
+        ? `In a year you passed ${listOf(passed)}. ${mi > 0 ? `Next above you: ${cur[mi - 1].name}, ${money(cur[mi - 1].eq - cur[mi].eq)} ahead.` : "There is nobody above you."}`
+        : `${listOf(passedBy)} went past you this year. ${cur[mi - 1] ? `The gap to ${cur[mi - 1].name} is ${money(cur[mi - 1].eq - cur[mi].eq)}.` : ""}`,
+      m, score: 4,
+    });
+  }
+
+  // THE CLIMBER — the biggest rise over five years by a living firm.
+  const back = table(Math.max(1, y - 5));
+  let best: { name: string; from: number; to: number; eq0: number; eq1: number } | null = null;
+  for (const row of cur) {
+    if (row.me) continue;
+    const i0 = at(back, row.name), i1 = at(cur, row.name);
+    if (i0 < 0) continue;
+    if (!best || i0 - i1 > best.from - best.to) best = { name: row.name, from: i0, to: i1, eq0: back[i0].eq, eq1: row.eq };
+  }
+  // Shuffling in the bottom half is not news; climbing into the top ten is.
+  if (best && best.from - best.to >= 5 && best.to < 10) {
+    out.push({
+      id: `climber:${best.name}:${y}`, section: "street",
+      kicker: "The climber",
+      head: `${best.name} has gone from ${ordinalOf(best.from + 1)} to ${ordinalOf(best.to + 1)} in ${count(Math.min(5, y - 1))} years`,
+      body: `Equity of ${money(best.eq0)} then, ${money(best.eq1)} now. No firm on the street has moved further up the table in that time. `
+        + `Whatever they are doing, the rest of the street is about to start copying it.`,
+      m, score: 3.2 + (best.from - best.to) * 0.08,
+    });
+  }
+  return out;
+}
+
+function ordinalOf(n: number): string {
+  const s = n % 100 >= 11 && n % 100 <= 13 ? "th" : n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th";
+  return `${n}${s}`;
+}
+
+function listOf(names: string[]): string {
+  if (!names.length) return "nobody in particular";
+  if (names.length === 1) return names[0];
+  if (names.length <= 3) return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `${names.slice(0, 2).join(", ")} and ${names.length - 2} others`;
+}
+
+/**
+ * AFTER THE BANK. A closing is one alert on one afternoon; what a receiver
+ * then does to a town takes two years, and nothing else on any page adds it
+ * up. Read from the failure log the closing writes (lenders.ts) and the
+ * receiver's sales stamp onto it (notes.ts).
+ */
+function bankStories(g: GameState): Story[] {
+  const out: Story[] = [];
+  const fails = g.bankFails ?? [];
+  for (const f of fails) {
+    const last = f.reopenedM ?? g.month;
+    if (g.month - f.m > 120 || g.month - f.m < 1) continue;
+    const before = fails.filter((x) => x !== f && x.m < f.m && x.m >= f.m - 36).length;
+    const sold = f.sold ?? 0;
+    const cents = sold && f.soldFace ? Math.round((100 * (f.soldAsk ?? 0)) / f.soldFace) : 0;
+    const what = f.kind === "conduit" ? "conduit" : f.kind === "life" ? "life company" : "bank";
+    const open = f.reopenedM === undefined;
+    out.push({
+      id: `bank:${f.lender}:${f.m}`, section: "market", mine: f.yours > 0,
+      kicker: open ? "After the bank" : "Back from the dead",
+      head: open
+        ? `${span(g.month - f.m)} after ${f.lender} went down, the receiver is still emptying the cabinet`
+        : `${f.lender} is lending again, ${span(f.reopenedM! - f.m)} after it was closed`,
+      body: `The ${what} was closed in ${monthLabel(f.m)} holding ${money(f.book)} of loans, ${pc(f.delinq)} of them not paying`
+        + (before ? ` — the ${ordinalOf(before + 1)} lender to fail here in three years` : "") + `. `
+        + (sold
+          ? `Since then the receiver has put ${count(sold)} loan${sold === 1 ? "" : "s"} on the block, ${money(f.soldFace ?? 0)} of face, asking ${cents} cents on the dollar on average. `
+          : `The receiver has not had to sell a loan yet. `)
+        + (f.yours > 0 ? `It was lending you ${money(f.yours)} when it went. ` : "")
+        + (open ? "A receiver does not extend and does not haggle; every borrower it holds is refinancing somewhere else, or not at all."
+          : "The bad paper stayed with the receiver. The name on the door is the same; the credit committee is not."),
+      m: last, score: 3.5 + (open ? 0.8 : 0) + dollarPts(f.book) * 0.3 + (f.yours > 0 ? 1 : 0),
+    });
+  }
+  return out;
+}
+
+/**
+ * TENANTS ON THE MOVE. A year's biggest moves, from the record the engine
+ * writes when an anchor walks out on a firm (sized by that firm's own
+ * occupancy drop) and when a tenant leaves or signs in the player's
+ * buildings (named, because those rent rolls have names).
+ */
+function tenantStories(g: GameState, parcels: Parcels): Story[] {
+  const out: Story[] = [];
+  // A rival's "anchor" in a three-building book can be 4k sf; that is churn,
+  // not news. A move makes the roundup at 20k sf, and the roundup runs only
+  // when the year's biggest is 25k or more.
+  const moves = (g.tenantMoves ?? []).filter((x) => x.m > g.month - 12 && x.sf >= (x.kind === "walk" ? 20_000 : 8_000));
+  const where = (x: { bbl?: string }) => (x.bbl ? addressOf(parcels, x.bbl) : "");
+  const line = (x: (typeof moves)[number]) =>
+    x.kind === "walk" ? `an anchor walked out on ${x.who} — about ${msf(x.sf)}, ${x.pts ?? 0} points off its whole book (${monthLabel(x.m)})`
+      : x.kind === "leave" ? `${x.who} left your ${where(x)} — ${msf(x.sf)}${x.to ? `, to ${x.to}` : ""} (${monthLabel(x.m)})`
+        : `${x.who} signed ${msf(x.sf)} at your ${where(x)} (${monthLabel(x.m)})`;
+  const big = [...moves].sort((a, b) => b.sf - a.sf).slice(0, 3);
+  if (big.length >= 2 && big[0].sf >= 25_000) {
+    const gone = moves.filter((x) => x.kind !== "sign").reduce((a, x) => a + x.sf, 0);
+    out.push({
+      id: `tenants:${Math.floor(g.month / 3)}`, section: "market",
+      kicker: "Tenants on the move",
+      head: `${msf(big[0].sf)}: the biggest tenant move of the last twelve months`,
+      body: `${cap(big.map(line).join("; "))}. `
+        + (gone > 0 ? `${msf(gone)} went back on the market from big moves alone this year — every square foot of it competing with yours.` : ""),
+      m: big[0].m, score: 3 + dollarPts(big[0].sf * 30) * 0.4,
+    });
+  }
+  for (const x of moves) {
+    if (x.kind === "walk" || !x.bbl || !g.holdings[x.bbl]) continue;
+    if (x.kind === "leave" && x.sf >= 8000) {
+      out.push({
+        id: `leave:${x.bbl}:${x.m}`, section: "yours", bbl: x.bbl, mine: true,
+        kicker: "Moving out",
+        head: `${x.who} has left your ${where(x)}${x.to ? ` for ${x.to}` : ""}`,
+        body: `${msf(x.sf)} came back in ${monthLabel(x.m)}. Space that has been somebody's for years does not let itself; the market it goes back into is the one in the paper today.`,
+        m: x.m, score: 3.4 + x.sf / 50_000,
+      });
+    } else if (x.kind === "sign") {
+      const before = (g.tenantMoves ?? []).filter((y) => y.kind === "sign" && y.m < x.m && y.sf >= x.sf);
+      out.push({
+        id: `sign:${x.bbl}:${x.m}`, section: "yours", bbl: x.bbl, mine: true,
+        kicker: "Signed",
+        head: `${x.who} took ${msf(x.sf)} at your ${where(x)}`,
+        body: before.length
+          ? `A big lease, signed ${monthLabel(x.m)}: a tenant that size is a building's whole year.`
+          : `The biggest lease your firm has signed, in ${monthLabel(x.m)}. A tenant that size is a building's whole decade.`,
+        m: x.m, score: 3 + (before.length ? 0 : 1) + x.sf / 60_000,
+      });
+    }
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------- the lot
 
 export function writePaper(g: GameState, parcels: Parcels): Paper {
@@ -747,6 +1055,11 @@ export function writePaper(g: GameState, parcels: Parcels): Paper {
     ...streetStories(g, hist),
     ...sky.stories,
     ...placeStories(g, parcels, hist),
+    ...shiftStories(g),
+    ...supplyStories(g),
+    ...leagueStories(g, me),
+    ...bankStories(g),
+    ...tenantStories(g, parcels),
   ];
   // A deed story about the player's own building belongs in their corner.
   for (const s of stories) if (s.mine && s.section === "deeds") s.section = "yours";

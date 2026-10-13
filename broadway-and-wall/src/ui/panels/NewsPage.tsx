@@ -33,6 +33,7 @@ export const NEWS_KINDS = [
 
 const SECTIONS: { k: StorySection; head: string; blurb: string; max: number }[] = [
   { k: "yours", head: "Your corner", blurb: "Your block, your buildings' pasts, and what became of what you sold.", max: 4 },
+  { k: "market", head: "The market", blurb: "Where demand moved, which banks broke, which tenants walked, and what the cranes are about to do to rents.", max: 4 },
   { k: "deeds", head: "Deeds with a past", blurb: "The strangest histories in the land records.", max: 4 },
   { k: "street", head: "The street", blurb: "Who is buying, who left whom, and who is gone.", max: 3 },
   { k: "places", head: "Neighbourhoods", blurb: "What the cranes, the stations and the planners did.", max: 3 },

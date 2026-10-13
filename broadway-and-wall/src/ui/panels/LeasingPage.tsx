@@ -1,3 +1,4 @@
+import { OPS_SERVICE, OPS_PLAN } from "@/engine/types";
 import { useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec } from "@/engine/types";
@@ -413,6 +414,34 @@ export function LeasingPage() {
                       {r.commercial && !r.h.broker && r.rec.bldgArea - r.leased > 500 && (
                         <button className="btn btn-mini" title="Listing exclusive — they work the phones; you still take every letter" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>Hire a broker</button>
                       )}
+                    </div>
+                    {/* HOW IT IS RUN, FROM THE ROW. Service and the capital plan
+                        lived only on each building's Operations tab — a click
+                        into every deed to set the book. Same settings, same
+                        store action as the property page. */}
+                    <div className="lease-ctl" onClick={(e) => e.stopPropagation()}>
+                      <span className="lease-ctl-label">Service</span>
+                      <span className="seg" role="group" aria-label={`Service level at ${r.rec.address}`}>
+                        {OPS_SERVICE.map((o) => (
+                          <button key={o.key} type="button"
+                            className={"btn btn-mini" + ((r.h.service ?? 0) === o.key ? " btn-on" : "")}
+                            aria-pressed={(r.h.service ?? 0) === o.key}
+                            title={o.blurb + " — three years to matter, three years to undo"}
+                            onClick={(e) => { e.stopPropagation(); useStore.getState().ops(r.h.bbl, { service: o.key }); }}
+                          >{o.label}</button>
+                        ))}
+                      </span>
+                      <span className="lease-ctl-label">Capital</span>
+                      <span className="seg" role="group" aria-label={`Capital plan at ${r.rec.address}`}>
+                        {OPS_PLAN.map((o) => (
+                          <button key={o.key} type="button"
+                            className={"btn btn-mini" + ((r.h.plan ?? 1) === o.key ? " btn-on" : "")}
+                            aria-pressed={(r.h.plan ?? 1) === o.key}
+                            title={o.blurb}
+                            onClick={(e) => { e.stopPropagation(); useStore.getState().ops(r.h.bbl, { plan: o.key }); }}
+                          >{o.label}</button>
+                        ))}
+                      </span>
                     </div>
                   </td>
                   <td>{useLabel(r.rec)}</td>

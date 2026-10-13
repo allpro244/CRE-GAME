@@ -4,7 +4,7 @@ import type { GameState, Rival } from "@/engine/types";
 import { START_YEAR } from "@/engine/types";
 import { sheetOf } from "@/engine/rivals";
 import { TRAITS, QUIRK_LABEL, HIDDEN_QUIRKS, type TraitKey } from "@/engine/competitorTraits";
-import { readOf, bandText } from "@/engine/competitorReads";
+import { readOf, bandText, bandValue } from "@/engine/competitorReads";
 import { headliners, labelOf, shownRules, ARC_LABEL, ROLE_LABEL, type Arc } from "@/engine/storyline";
 import { LineChart } from "@/ui/Chart";
 import { thesisLabel } from "@/engine/strategy";
@@ -27,7 +27,28 @@ function definingTraits(game: GameState, r: Rival, n = 3): { key: TraitKey; labe
     .map((t) => ({ t, d: Math.abs(sheet[t.key] - 50) }))
     .sort((a, b) => b.d - a.d)
     .slice(0, n)
-    .map(({ t }) => ({ key: t.key, label: t.label, text: bandText(readOf(game, r, sheet, t.key)) }));
+    .map(({ t }) => ({ key: t.key, label: t.label, text: String(bandValue(readOf(game, r, sheet, t.key))?.v ?? "??") }));
+}
+
+/**
+ * ONE NUMBER, COLOURED LIKE A SCOUT'S REPORT: red at the bottom of the scale,
+ * through amber and yellow, to green at the top. A read you are unsure of is
+ * shown fainter; hover for the range it comes from.
+ */
+export function TraitRating({ band }: { band: [number, number] | null }) {
+  const x = bandValue(band);
+  if (!x) return <span className="mono dim" title="Nothing has given this away yet">??</span>;
+  // Five bands, the way a scouting screen reads at a glance.
+  const [bg, fg] = x.v <= 20 ? ["#c0392b", "#fff"] : x.v <= 40 ? ["#e07b24", "#fff"] : x.v <= 60 ? ["#e8c21c", "#2a2410"]
+    : x.v <= 80 ? ["#8cc04a", "#1e2a10"] : ["#2f9e44", "#fff"];
+  return (
+    <span className="mono" title={x.sure >= 0.95 ? "Known" : `Your read: ${bandText(band)} — it narrows as you watch them`}
+      style={{
+        display: "inline-block", minWidth: 26, textAlign: "center", fontWeight: 700, fontSize: 12,
+        padding: "0 4px", borderRadius: 3, color: fg, background: bg,
+        opacity: 0.7 + 0.3 * x.sure,
+      }}>{x.v}</span>
+  );
 }
 
 /** Quirks a viewer can see: everything but a hidden one not yet given away. */
@@ -147,22 +168,22 @@ export function FirmSheet({ r }: { r: Rival }) {
           {unseen > 0 && <span className="chip chip-zone" title="Something about this firm you have not seen yet">???</span>}
         </div>
       )}
-      <div className="hint" style={{ marginBottom: 6 }}>
-        What you know of them. A range narrows as you trade with them, lose to them and watch what they do on the tape;
-        a secretive firm stays hard to read. <span className="mono">??</span> is a trait nothing has given away yet.
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "2px 16px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "4px 14px", alignItems: "start" }}>
         {groups.map((g) => (
           <div key={g}>
-            <div className="dim" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, marginTop: 4 }}>{g}</div>
+            <div className="dim" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 0 3px" }}>{g}</div>
             {TRAITS.filter((t) => t.group === g).map((t) => (
-              <div key={t.key} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }} title={`1: ${t.lo} · 100: ${t.hi}`}>
+              <div key={t.key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, lineHeight: "20px" }}
+                title={`1: ${t.lo} · 100: ${t.hi}`}>
                 <span>{t.label}</span>
-                <span className="mono">{bandText(readOf(game, r, sheet, t.key))}</span>
+                <TraitRating band={readOf(game, r, sheet, t.key)} />
               </div>
             ))}
           </div>
         ))}
+      </div>
+      <div className="dim" style={{ fontSize: 11, marginTop: 6 }}>
+        Your read of them, 1–100. Faint numbers are guesses that sharpen as you trade with them and watch the tape; <span className="mono">??</span> has not shown yet.
       </div>
     </div>
   );

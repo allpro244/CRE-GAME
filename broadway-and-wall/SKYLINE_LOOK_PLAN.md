@@ -220,6 +220,29 @@ fixed in #231; the sweep is clean since.
   cracked asphalt with weeds in the cracks and ghost bay lines, an abandoned
   car or two). How far gone (`scruff`) follows demand: tidy at 60, rough
   below 30, derelict below 22, where four lots in ten are the old asphalt.
+- **Round 30** — always afternoon, cloud shadows. `setDayPhase` now pins
+  the hour to the calibrated day whatever it is passed (the owner: "absolutely
+  no nighttime in this game"), so no caller can bring the dusk machinery back.
+  Cloud shadows: what round 17 reached for, without drawing a cloud. A field
+  of cumulus cells (~420 m, four octaves of value noise) at a 1,400 m base,
+  sampled where each surface's line to the sun meets it, takes up to 55% of
+  the sun's direct light (the sky fill is untouched), drifting at ~8 m/s. It
+  rides the shared air hook (`addHaze`), so every lit material and the
+  shadow catcher over MapLibre's ground carry it; the sea takes most of its
+  shade from the catcher and gives up its glitter. Fair weather shades ~22%
+  of the ground, more as the sky fills, none under a full overcast (no
+  direct sun left to take); off on Low. Two faults found on the way: the
+  noise sum bunches round 0.5, so the coverage threshold is fitted to its
+  measured quantiles (a naive `1 - cover` shaded 7% for "34%"); and three
+  uploads `cameraPosition` only to some material kinds, not the shadow
+  catcher, which then painted the whole ground one shade — the field carries
+  its own `cloudEye`. Measured against main on the reference camera: 5-15%
+  darker in cloud-shaped patches over land and water.
+- **Round 31** — mechanical floors. A modern or glass tower over 100 m (28+
+  storeys) is broken every 16-24 storeys by a plant floor in its own louvred
+  `@screen` wall (two storeys over 220 m), on the body's floor grid, so a
+  tall slab reads as stacked blocks instead of one stripe. Masonry towers
+  keep their plant in the setbacks and crown, as they did.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

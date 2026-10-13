@@ -839,6 +839,44 @@ const HAZE = {
   hazeFar: { value: 4000 },
   hazeCap: { value: 0.5 },
 };
+// CLOUD SHADOWS. A fair-weather sky over a coastal town is never one even
+// sun: cumulus a few hundred metres across drift over it on the wind and each
+// one drops a soft-edged patch of shade that slides across roofs, streets and
+// water. The clouds themselves are not drawn (from the play camera they are
+// overhead, out of frame); only their shade is, as a field of cells at cloud
+// base, sampled where the line from each surface to the sun meets it, so a
+// tower and the pavement it shades agree. The sun's direct light is what a
+// cloud takes away; the sky fill is left alone. Shape parameters set by eye:
+// cells of ~400 m, a base at 1,400 m, an 8 m/s wind.
+const CLOUD = {
+  cloudSun: { value: new THREE.Vector3(0.45, -0.55, 0.7).normalize() },
+  // the eye in world metres: three uploads cameraPosition only to some
+  // material kinds (not the shadow catcher), so the field carries its own
+  cloudEye: { value: new THREE.Vector3() },
+  cloudOff: { value: new THREE.Vector2(0, 0) },
+  cloudCover: { value: 0.25 },  // share of the ground in a cloud's shade
+  cloudK: { value: 0.5 },       // how much of the sun a cloud takes
+};
+const CLOUD_GLSL = `
+uniform vec3 cloudSun, cloudEye;
+uniform vec2 cloudOff;
+uniform float cloudCover, cloudK;
+float cHash(vec2 p) { p = 50.0 * fract(p * 0.3183099 + vec2(0.71, 0.113)); return fract(p.x * p.y * (p.x + p.y)); }
+float cNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(cHash(i), cHash(i + vec2(1.0, 0.0)), u.x), mix(cHash(i + vec2(0.0, 1.0)), cHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float cloudSunlight(vec3 wp, float k) {
+  if (cloudK <= 0.0) return 1.0;
+  vec2 p = wp.xy + cloudSun.xy / max(cloudSun.z, 0.25) * (1400.0 - wp.z);
+  p = p / 420.0 + cloudOff;
+  // a cumulus field: clusters of cells with scalloped, billowed edges
+  float n = 0.5 * cNoise(p) + 0.25 * cNoise(p * 2.07 + vec2(5.2, 1.3)) + 0.15 * cNoise(p * 4.3 + vec2(1.7, 9.2)) + 0.1 * cNoise(p * 9.1 + vec2(3.3, 7.7));
+  // the sum bunches round 0.5 (sd ~0.1): the threshold that shades a share
+  // cloudCover of the ground, fitted to the field's measured quantiles
+  float edge = 0.5 + (0.5 - cloudCover) * 0.36;
+  return 1.0 - cloudK * k * smoothstep(edge - 0.02, edge + 0.035, n);
+}`;
 const hazed = new WeakSet<THREE.Material>();
 function addHaze(mat: THREE.Material) {
   if (hazed.has(mat)) return;
@@ -848,17 +886,24 @@ function addHaze(mat: THREE.Material) {
   const prev = mat.onBeforeCompile;
   // a shadow catcher is all alpha: its shadows thin out with distance instead
   const mix = m.isShadowMaterial ? "gl_FragColor.a *= 1.0 - hz;" : "gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeCol, hz);";
+  // the shadow catcher lies over the harbour too and already lays the
+  // cloud's shade on it; the sea's own sun only gives up its glitter
+  const ck = k0 === "bw-sea" ? "0.3" : "1.0";
   mat.onBeforeCompile = (sh, r) => {
     prev.call(mat, sh, r);
-    Object.assign(sh.uniforms, HAZE);
+    Object.assign(sh.uniforms, HAZE, CLOUD);
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vHazeP;")
       .replace("#include <project_vertex>", "#include <project_vertex>\nvHazeP = mvPosition.xyz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vHazeP;\nuniform vec3 hazeCol;\nuniform float hazeNear, hazeFar, hazeCap;")
+      .replace("#include <common>", "#include <common>\nvarying vec3 vHazeP;\nuniform vec3 hazeCol;\nuniform float hazeNear, hazeFar, hazeCap;" + CLOUD_GLSL)
+      // the view space is the world's, eye-centred and unrotated: the world
+      // point is the eye plus the view offset (cloudEye, not cameraPosition)
+      .replace("#include <lights_fragment_end>", "#include <lights_fragment_end>\n{ float cs = cloudSunlight(vHazeP + cloudEye, " + ck + "); reflectedLight.directDiffuse *= cs; reflectedLight.directSpecular *= cs; }")
+      .replace("gl_FragColor = vec4( color, opacity * ( 1.0 - getShadowMask() ) );", "gl_FragColor = vec4( color, opacity * ( 1.0 - getShadowMask() * cloudSunlight(vHazeP + cloudEye, 1.0) ) );")
       .replace("#include <fog_fragment>", `{ float hz = smoothstep(hazeNear, hazeFar, length(vHazeP)) * hazeCap; ${mix} }\n#include <fog_fragment>`);
   };
-  mat.customProgramCacheKey = () => k0 + "+haze" + (m.isShadowMaterial ? "s" : "");
+  mat.customProgramCacheKey = () => k0 + "+haze+cloud" + (m.isShadowMaterial ? "s" : "");
   mat.needsUpdate = true;
 }
 
@@ -1632,6 +1677,12 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       if (now - this.lastTick > 33) { this.lastTick = now; requestAnimationFrame(() => this.map?.triggerRepaint()); }
     }
     this.hazeFor(distM);
+    {
+      // the cloud field drifts downwind at ~8 m/s (cells are 420 m)
+      const tc = performance.now() / 1000;
+      CLOUD.cloudOff.value.set((tc * 7.4) / 420, (tc * 3.1) / 420);
+      CLOUD.cloudEye.value.copy(eye);
+    }
     if (this.probeDue) this.captureReflections();
     if (this.precip) this.stepPrecip(fx, fy, distM, performance.now() / 1000);
     if (this.waves.length) {
@@ -3608,9 +3659,39 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const top = !crown || pitched || mans || n < 4 || zt - lo < 3 * fh || zw - zt < 0.6 * fh ? null
         : glassTop ? (zw > 30 ? "screen" : null)
         : fam.masonry && (style === "classical" || style === "chicago" || style === "deco" || style === "victorian" || style === "vernacular") ? "attic" : null;
-      if (!top) { walls(famKey, lo, zw, vOff, tint, rr); return; }
       const main = ov?.variant ?? this.variantOf(famKey, seedK);
-      walls(famKey, lo, zt, vOff, tint, rr);
+      // MECHANICAL FLOORS. A post-war tower is not one shaft of identical
+      // storeys: every 15-25 floors the air handlers, water tanks and
+      // elevator machinery take a whole storey (two on a supertall), and the
+      // curtain wall there turns to louvres — the dark bands that divide a
+      // Midtown slab into stacked blocks. Modern and glass towers over 100 m
+      // only; a masonry tower hid its plant in the setbacks and the crown.
+      // The band keeps the body's floor grid, so the windows above it stand
+      // over the windows below. (Spacing per the usual service zoning of a
+      // high-rise core: one plant floor serves 15-25 floors.)
+      const head = top ? zt : zw;
+      const bands: number[] = [];
+      if (glassTop && crown && !pitched && zw > 100 && n >= 28) {
+        const every = 16 + Math.floor(hash01(seedK ^ 0x5eed, 11) * 9);   // 16-24 storeys
+        const tall = zw > 220 ? 2 : 1;
+        for (let m = every; vOff + (m + tall + 6) * fh <= head; m += every + tall) {
+          if (vOff + m * fh - lo < 4 * fh) continue;
+          bands.push(m);
+        }
+        if (bands.length) {
+          let z = lo;
+          for (const m of bands) {
+            const zb = vOff + m * fh, ze = zb + tall * fh;
+            walls(famKey, z, zb, vOff, tint, rr);
+            walls(`${main}@screen`, zb, ze, vOff, tint, rr);
+            z = ze;
+          }
+          walls(famKey, z, head, vOff, tint, rr);
+          this.feat("mechband", bbl);
+        }
+      }
+      if (!bands.length) walls(famKey, lo, head, vOff, tint, rr);
+      if (!top) return;
       walls(`${main}@${top}`, zt, zw, vOff, tint, rr);
       this.feat(top, bbl);
     };
@@ -6930,6 +7011,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const az = ((200 - 12 * w2) * Math.PI) / 180;
     // the vector points from the ground toward the sun (x east, y north)
     this.sunDir.set(Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)).normalize();
+    CLOUD.cloudSun.value.copy(this.sunDir);
     this.shadowSpan = 0;   // force a refit
     // the rough grass on unbuilt land: straw in winter, green by June
     const vig = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02][this.month];
@@ -6996,10 +7078,16 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   }
   private overcast = 0;
 
-  setDayPhase(target: number, instant = false) {
-    if (this.defer("setDayPhase", () => this.setDayPhase(target, instant))) return;
-    this.duskTarget = Math.max(0, Math.min(1, Number.isFinite(target) ? target : 0));
-    if (instant) this.dusk = this.duskTarget;
+  /**
+   * ALWAYS AFTERNOON. The game has no night and never will (the owner's
+   * standing call: "absolutely no nighttime in this game"). The renderer
+   * still carries its dusk machinery for the colour it was tuned under, but
+   * whatever a caller asks for, the hour is pinned to the calibrated day.
+   */
+  setDayPhase(_target: number, _instant = false) {
+    if (this.defer("setDayPhase", () => this.setDayPhase(0, true))) return;
+    this.duskTarget = 0;
+    this.dusk = 0;
     this.applyLight();
     this.map?.triggerRepaint();
   }
@@ -7043,6 +7131,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const nightC = [0.08, 0.1, 0.16];
     HAZE.hazeCol.value.setRGB(day[0] + (nightC[0] - day[0]) * night, day[1] + (nightC[1] - day[1]) * night, day[2] + (nightC[2] - day[2]) * night);
     HAZE.hazeCap.value = (0.48 + oc * 0.25) * (1 - night * 0.35);
+    // fair weather: a scatter of cumulus; as the sky fills in, more of it;
+    // under a full overcast there is no direct sun left for a cloud to take
+    CLOUD.cloudCover.value = 0.22 + 0.3 * smooth(0.0, 0.6, oc);
+    CLOUD.cloudK.value = this.quality === "low" ? 0 : 0.55 * (1 - smooth(0.45, 0.95, oc));
     this.map?.triggerRepaint();
   }
 
@@ -7198,7 +7290,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const rm = this.meshes.get("relief"); if (rm) rm.visible = q !== "low";
     if (this.precip) this.precip.visible = q !== "low";
     if (this.fleets.length) this.applyCrowd();
-    this.map?.triggerRepaint();
+    this.applyLight();   // the cloud shadows ride the catcher: off on Low
   }
   setPaused(on: boolean) { this.paused = on; if (!on) this.map?.triggerRepaint(); }
   setOpacity(o: number) {

@@ -36,7 +36,8 @@ export function cutTown(r: TownRequest): { built: GeneratedCity; game?: GameStat
   // plus an explicit mix, once, at the door. In place: built.parcels is the table.
   const parcels = normalizeParcels(built.parcels as ParcelTable);
   const game = r.deal
-    ? firstListings(newGame(r.deal.runSeed, parcels, r.deal.money, r.deal.setup), parcels, Object.keys(parcels))
+    ? firstListings(newGame(r.deal.runSeed, parcels, r.deal.money, r.deal.setup,
+        { citySize: r.size, cityLots: Object.keys(parcels).length }), parcels, Object.keys(parcels))
     : undefined;
   return { built, game };
 }

@@ -725,8 +725,8 @@ function painted(): Promise<void> {
  * dealt there too when `deal` asks for it: on a big map the two together held
  * the page for tens of seconds.
  */
-async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"]) {
-  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal });
+async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"], parks?: string) {
+  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal, parks: parks === "medium" ? undefined : parks });
   // normalised in the worker, in place: the table is built.parcels
   return { built, parcels: built.parcels as ParcelTable, game };
 }
@@ -2304,6 +2304,8 @@ export const useStore = create<AppState>((set, get) => ({
       || savedIsland !== hereIsland
       // the same seed cut with a different street plan is a different town
       || (saved.cityPlan ?? 1) !== (get().game?.cityPlan ?? 1)
+      // and so is the same seed with more or fewer parks
+      || (saved.cityParks ?? "medium") !== (get().game?.cityParks ?? "medium")
     ) {
       toast(`Loading "${slot}" — rebuilding the town it was played in.`);
       try {
@@ -2425,7 +2427,8 @@ export const useStore = create<AppState>((set, get) => ({
       if (!setup.firmName) setup.firmName = generateFirmName(seed).name;
       const runSeed = (crypto.getRandomValues(new Uint32Array(1))[0] || 1) >>> 0;
       // the town and its opening market, dealt together off the page's thread
-      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup });
+      const parks = setupIn?.parks && setupIn.parks !== "medium" ? setupIn.parks : undefined;
+      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup }, parks);
       get().setData({
         parcels,
         adjacency: built.adjacency as Adjacency,
@@ -2438,6 +2441,7 @@ export const useStore = create<AppState>((set, get) => ({
       g.citySize = size;
       g.cityDev = dev;
       g.cityPlan = CITY_PLAN;
+      if (parks) g.cityParks = parks;
       // HOW BIG THIS MARKET IS, counted rather than declared. A generated island
       // announces its scale through the size preset it was cut at; a
       // written-down city has no preset to read, so the economy sizes rivals
@@ -2477,7 +2481,7 @@ export const useStore = create<AppState>((set, get) => ({
       setSize(r.size, r.island);
       setDev(r.dev);
       // an old save is a plan-1 town: rebuild the streets it was played on
-      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1);
+      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1, undefined, saved.cityParks);
       // A save only fits if every deed in it exists in THIS town. It should,
       // because the town was rebuilt from the save's own three fields — this
       // catches a generator change that moved the lot lines under an old

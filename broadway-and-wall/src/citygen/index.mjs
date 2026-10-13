@@ -214,6 +214,20 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * towers PLUTO no longer carries); was 0 at 30+. Generated islands and
  * Midtown are unchanged.
  */
+/**
+ * HOW MUCH OF THE TOWN IS PARK, from the setup page. A generated town draws a
+ * park programme and a count (island.mjs WHAT KIND OF PARK CITY THIS IS);
+ * this moves the odds of the programmes and stretches or cuts the count. It
+ * is part of the town's identity like its size and build-out — a save stores
+ * it and rebuilds the same town. Manhattan's parks are real and ignore it.
+ */
+export const PARK_AMOUNTS = [
+  { id: "low", name: "Few", note: "A dense port that never set the ground aside: most often one or two greens, sometimes none worth the name." },
+  { id: "medium", name: "Usual", note: "The town as it comes: a great park, a set of squares, commons or a few greens, as the seed draws them." },
+  { id: "high", name: "Many", note: "A leafy town: squares, commons or a great park far more often, and half as many parks again." },
+];
+export const DEFAULT_PARKS = "medium";
+
 export const CITY_PLAN = 10;
 
 /**
@@ -237,7 +251,7 @@ export function makeCity(cityId, seed, opts) {
     : (opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE);
   const cfg = manhattan
     ? manhattanConfig(seed, { extent: sizeId, planV: opts?.planV ?? CITY_PLAN })
-    : scaleCity(islandConfig(seed, { planV: opts?.planV ?? CITY_PLAN }), SIZES[sizeId].k);
+    : scaleCity(islandConfig(seed, { planV: opts?.planV ?? CITY_PLAN, parks: opts?.parks }), SIZES[sizeId].k);
   // The street plan: the current one unless a save asks for the plan its
   // town was cut with (see CITY_PLAN and GameState.cityPlan).
   const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density, planV: opts?.planV ?? CITY_PLAN });

@@ -2337,12 +2337,24 @@ export function islandConfig(seed, opts = {}) {
   // but over 865 placements, 99.7% went down at full size, 0.3% shrank one
   // step, and none failed. Left alone deliberately; see the note in
   // GRAPHICS_HANDOFF.
+  // HOW MUCH GREEN THE PLAYER ASKED FOR (setup page, index.mjs PARK_AMOUNTS).
+  // Not a new kind of town: the same five programmes, drawn with the odds
+  // moved toward the leafy ones (squares, commons, a great park) or toward
+  // the dense port that never set the ground aside, and the count within the
+  // programme stretched or cut. The same draws in the same order, so
+  // "medium" is byte-identical to a town cut before the option existed.
+  const PARK_ODDS = {
+    low: { great: 0.5, squares: 0.3, commons: 0.5, greens: 1.0, sparse: 2.4, n: 0.6, plus: 0 },
+    high: { great: 1.4, squares: 1.8, commons: 1.6, greens: 0.9, sparse: 0.2, n: 1.5, plus: 1 },
+  }[opts.parks] ?? null;
+  const parkW = (p) => (PARK_ODDS ? p.w * PARK_ODDS[p.key] : p.w);
   const programme = (() => {
-    let r = Dp.rand() * PARK_PROGRAMMES.reduce((a, p) => a + p.w, 0);
-    for (const p of PARK_PROGRAMMES) { r -= p.w; if (r <= 0) return p; }
+    let r = Dp.rand() * PARK_PROGRAMMES.reduce((a, p) => a + parkW(p), 0);
+    for (const p of PARK_PROGRAMMES) { r -= parkW(p); if (r <= 0) return p; }
     return PARK_PROGRAMMES[PARK_PROGRAMMES.length - 1];
   })();
-  const nPark = Math.round(Dp.f(programme.n[0], programme.n[1]));
+  const nDrawn = Math.round(Dp.f(programme.n[0], programme.n[1]));
+  const nPark = PARK_ODDS ? Math.max(1, Math.min(16, Math.round(nDrawn * PARK_ODDS.n) + PARK_ODDS.plus)) : nDrawn;
   // THE NAMES HAVE TO STRETCH TO FOURTEEN. Three hardcoded names were enough
   // for three parks; a city of squares needs a supply of them, so they are
   // drawn from the island's own word list with the suffix that matches what

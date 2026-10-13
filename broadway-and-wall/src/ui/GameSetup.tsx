@@ -4,8 +4,8 @@ import { GOALS, type GoalId } from "@/engine/goals";
 import { START_CASH_CHOICES } from "@/engine/types";
 import { competitorOpeningRange } from "@/engine/rivals";
 import {
-  DEFAULT_SETUP, FIELDS, HOME_OPTIONS, CLOCK_OPTIONS, CASH_MIN, CASH_MAX, SANDBOX_CASH,
-  type GameSetup, type FieldChoice, type HomeChoice,
+  DEFAULT_SETUP, FIELDS, HOME_OPTIONS, RIVAL_CAPITAL, CLOCK_OPTIONS, CASH_MIN, CASH_MAX, SANDBOX_CASH,
+  type GameSetup, type FieldChoice, type HomeChoice, type RivalCapital,
 } from "@/engine/setup";
 import { generateFirmName } from "@/engine/firm";
 import { currentCity, currentSize, currentDev, currentCash0 } from "@/state/city";
@@ -37,7 +37,7 @@ const CASH_NOTE: Record<number, string> = {
 
 interface Draft {
   island: string; size: string; dev: string; cash0: number; goal: GoalId | null;
-  field: FieldChoice; inherit: 0 | 2 | 3 | 4; home: HomeChoice;
+  field: FieldChoice; inherit: 0 | 2 | 3 | 4; home: HomeChoice; rivalCapital: RivalCapital;
   firmName: string; sandbox: boolean; clock: NonNullable<GameSetup["clock"]>; brokerStops: boolean; seed: number;
 }
 
@@ -68,7 +68,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     const island = currentCity();
     return {
       island, size: currentSize(island), dev: currentDev(island), cash0: currentCash0(), goal: null,
-      field: DEFAULT_SETUP.field, inherit: 0, home: "any",
+      field: DEFAULT_SETUP.field, inherit: 0, home: "any", rivalCapital: "medium",
       firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(),
     };
   };
@@ -93,6 +93,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       dev: pick(devs).id,
       cash0: pick(START_CASH_CHOICES),
       field: pick(FIELDS).id,
+      rivalCapital: pick(RIVAL_CAPITAL).id,
       inherit: pick([0, 0, 2, 3, 4] as const),
       home: pick(HOME_OPTIONS).id,
       goal: pick([null, ...GOALS.map((g) => g.id)]),
@@ -146,14 +147,16 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     const bits = [
       d.field !== "standard" ? "before the opportunity funds" : null,
       d.inherit ? `${d.inherit} family buildings` : null,
+      d.rivalCapital !== "medium" ? `competitors' money: ${RIVAL_CAPITAL.find((c) => c.id === d.rivalCapital)?.label.toLowerCase()}` : null,
     ].filter(Boolean);
     return bits.join(" · ");
-  }, [d.field, d.inherit]);
+  }, [d.field, d.inherit, d.rivalCapital]);
 
   const breakGround = () => {
     pendingGoal.id = d.sandbox ? null : d.goal;
     const setup: Partial<GameSetup> = {
       field: d.field, inherit: d.inherit, home: d.home,
+      rivalCapital: d.rivalCapital === "medium" ? undefined : d.rivalCapital,
       firmName: d.firmName.trim() || undefined, sandbox: d.sandbox, clock: d.clock,
       brokerStops: d.brokerStops ? undefined : "never",
     };
@@ -239,7 +242,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                     size and field, not a setting: how much they bring is the
                     market's, not a difficulty dial. */}
                 {(() => {
-                  const cr = competitorOpeningRange(d.size, d.field);
+                  const cr = competitorOpeningRange(d.size, d.field, d.rivalCapital);
                   const cash = d.sandbox ? SANDBOX_CASH : d.cash0;
                   const rank = cr.rankOf(cash);
                   const nth = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th"}`;
@@ -290,6 +293,21 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
               <div className="start-col">
                 <div className="start-col-head">the incumbents</div>
                 {FIELDS.map((f) => opt(d.field === f.id, () => up({ field: f.id }), f.label, f.note, f.id))}
+                <div className="start-col-head" style={{ marginTop: 10 }}>how much they start with</div>
+                <div className="setup-seg" role="radiogroup" aria-label="How much money the competitors start with">
+                  {RIVAL_CAPITAL.map((c) => (
+                    <button key={c.id} type="button" role="radio" aria-checked={d.rivalCapital === c.id}
+                      className={"setup-seg-btn" + (d.rivalCapital === c.id ? " on" : "")} title={c.note}
+                      onClick={() => up({ rivalCapital: c.id })}>{c.label}</button>
+                  ))}
+                </div>
+                <div className="start-opt-note" style={{ padding: "4px 2px" }}>
+                  {(() => {
+                    const c = RIVAL_CAPITAL.find((x) => x.id === d.rivalCapital)!;
+                    const cr = competitorOpeningRange(d.size, d.field, d.rivalCapital);
+                    return `${c.note} Each opens with ${usd(cr.lo)}–${usd(cr.hi)}, about ${usd(cr.typical)} typical.`;
+                  })()}
+                </div>
               </div>
             </div>
           </section>

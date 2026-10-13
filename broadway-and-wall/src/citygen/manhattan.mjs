@@ -1,101 +1,95 @@
-// MANHATTAN — the first city in this game that was written down instead of
-// grown from a seed, and the only one that has any business being written down.
+// MANHATTAN — the one city in this game that is surveyed rather than grown
+// from a seed, and the only one that has any business being written down.
 //
 // WHY THIS IS NOT THE MISTAKE THAT WAS ALREADY MADE HERE. Two hand-authored
-// islands, New Alden and Kestrel Point, were deleted in `3dcd141`, and the
-// commit message is unambiguous about why: "being written down by hand is what
-// was wrong with them." Measured over five seeds each, every part of those
-// plans rerolled EXCEPT the parks, which were literals — so every campaign
-// anybody ever played on New Alden had the same three parks in the same three
-// places, the largest carrying 79% of the island's green, and the generator's
-// five park programmes existed to fix exactly that and a written config could
-// not reach one. They also used two of the six district kinds, so four street
-// grammars had never appeared in a game anybody played.
+// islands, New Alden and Kestrel Point, were deleted in `3dcd141` because
+// "being written down by hand is what was wrong with them": every campaign on
+// them had the same three parks in the same three places. That fault inverts
+// for a real city. Central Park is a literal because Central Park is in one
+// place; a player who wants to buy the block behind Grand Central has to find
+// the block behind Grand Central where it actually is. What a seed still moves
+// here is everything genuinely contingent — which lots are built on, how old
+// and how tall the buildings are, who owns what and what the market does —
+// because the plat is history and the stock is not.
 //
-// Every one of those faults is an argument about a FICTIONAL island, and it
-// inverts here. Central Park is a literal because Central Park is in one place.
-// The 1811 grid is the same every campaign because the Commissioners only drew
-// it once. The sameness that was pure loss for an invented harbour town is the
-// entire product for a real city: a player who wants to buy the block behind
-// Grand Central has to find the block behind Grand Central where it actually
-// is. What a seed still moves here is everything that is genuinely contingent —
-// which lots are built on, how old the buildings are, how tall they got inside
-// the same envelope, who owns what, and what the market does — because the plat
-// is history and the stock is not.
+// THE PLAT IS THE CITY'S OWN, NOT A DRAWING OF IT. The first cut of this file
+// laid the generator's lattices over a coastline traced from memory, at the
+// Commissioners' bearing and pitch: the right idea at the wrong resolution.
+// Fifth Avenue was wherever a 244 m pitch happened to put it, Broadway was a
+// straight reservation pasted across the grid, the parks were four-cornered
+// guesses with a pond dug in each (Washington Square has a fountain), the
+// colonial lanes below Chambers were a random tangle rather than Wall, Pearl
+// and Broad, and the island bulged where it should taper. The owner looked at
+// it and called it terrible, and measured against the record it was.
 //
-// The one fault that DOES transfer is the narrow-grammar one, and it is
-// answered rather than dodged: this config uses `organic` for the colonial
-// lanes below Chambers, `lattice` at three different bearings for the three
-// surveys that actually meet on this island, and `superblock` for the urban
-// renewal tracts — because that is what is really there, not to tick a box.
+// So the ground now comes from `data/manhattan-plat.json`, baked from public
+// city records by `pipeline/manhattan/bake.py` (read its header):
 //
-// SOURCES AND THEIR STATUS. General web egress was blocked when this was
-// written, so the geography is from knowledge plus the repo's own traced data,
-// and it is marked where it matters.
+//   * every BLOCK is the union of its real MapPLUTO tax lots, and every LOT is
+//     a real tax lot with its real BBL and street address — 10,041 below 14th
+//     Street, against the 12,800 the lattice cut, because the real city was
+//     assembled into bigger sites than a subdivider makes;
+//   * each block's STREET CELL is the Voronoi region of its kerb, so the
+//     streets are the ground no lot covers, at their real widths, and two
+//     kerbs meet on the street's real centre line;
+//   * the PARKS are the city's open-space lots, named from Parks Properties;
+//   * the COAST is the borough boundary at the bulkhead plus the piers;
+//   * the STATIONS are every subway complex, weighted by its measured
+//     ridership (one week of 2024, as a share of Times Square's) instead of a
+//     judgement of how much of the system meets there;
+//   * the retail CORRIDORS are the avenues, Broadway and the wide crosstown
+//     streets, at their real roadway widths.
 //
-// THE SHORELINE WAS RETRACED, and the reason is worth keeping. The first cut
-// reused the 41-vertex ring that has sat in `pipeline/synth.mjs` since the
-// synthetic-Manhattan pipeline was written — whose own header calls it
-// "real-ish (from memory)". Its AREA was fine (61.5 km2 against the real 59)
-// and its length was fine (21.2 km against 21.6), which is why it passed a
-// casual look. Its SHAPE was not: measured across the grid, it ran +44% at
-// Canal, +31% at Houston, +29% at 59th and +54% at 110th while coming out 6%
-// NARROW at 14th, which is the island's real widest point. In other words a fat
-// sausage rather than something that swells at 14th and tapers north. The owner
-// spotted it from one screenshot.
+// What stays judgement, and is marked as such where it is written: the value
+// cores (submarket centres a leasing agent would name, with reaches calibrated
+// to the generator's own convention) and the district partition, which now
+// carries only flavour, zoning and street-name pools — it no longer lays out
+// a single street.
 //
-// This ring is 100 vertices, traced west-shore-north then round Spuyten Duyvil
-// then south down the Harlem and East Rivers, and it is checked against ten
-// anchors by `tools/mh-shape.mjs`. The anchors are the island's well-known
-// dimensions — 21.6 km long, 3.7 km at its widest around 14th Street, 59 km2 —
-// plus river-to-river distances read off the street grid. The grid numbers are the ones
-// `island.mjs` already cites in its own comments: the Commissioners' plan of
-// 1811 meeting the West Village "at about twenty-nine degrees", and "Manhattan
-// is 200 x 800 ft — 61 x 244 m". Anything below marked (unverified) could not
-// be checked this session and must not be quoted as though it were.
+// THE DATA IS LOADED, NOT IMPORTED. It is 3.5 MB of geometry (0.9 MB gzipped),
+// and every player of a generated island would otherwise download it. Call
+// `loadManhattanPlat()` (index.mjs `preloadCity`) before `makeCity`.
 import { makeProjection, ringArea } from "./geom.mjs";
 
-// ---------------------------------------------------------------- the island
-//
-// Counterclockwise from the Battery, up the Hudson to Inwood, back down the
-// Harlem and East Rivers. Lifted from pipeline/synth.mjs so there is ONE traced
-// Manhattan in this repo rather than two that can drift apart.
-const COAST_LL = [
-  // --- the Hudson shore, north from the Battery -----------------------------
-  [-74.0165, 40.7030], [-74.0182, 40.7048], [-74.0192, 40.7070], [-74.0197, 40.7100],
-  [-74.0188, 40.7128], [-74.0155, 40.7148], [-74.0132, 40.7175], [-74.0115, 40.7196],
-  [-74.0104, 40.7228], [-74.0096, 40.7256], [-74.0100, 40.7292], [-74.0106, 40.7330],
-  [-74.0099, 40.7368], [-74.0092, 40.7402], [-74.0082, 40.7436], [-74.0072, 40.7468],
-  [-74.0060, 40.7502], [-74.0048, 40.7534], [-74.0035, 40.7570], [-74.0018, 40.7606],
-  [-73.9996, 40.7648], [-73.9970, 40.7686], [-73.9944, 40.7722], [-73.9914, 40.7760],
-  [-73.9884, 40.7794], [-73.9852, 40.7832], [-73.9820, 40.7870], [-73.9788, 40.7910],
-  [-73.9756, 40.7952], [-73.9720, 40.7998], [-73.9694, 40.8046], [-73.9658, 40.8098],
-  [-73.9620, 40.8152], [-73.9584, 40.8206], [-73.9550, 40.8258], [-73.9520, 40.8306],
-  [-73.9500, 40.8348], [-73.9480, 40.8392], [-73.9456, 40.8440], [-73.9430, 40.8492],
-  [-73.9400, 40.8544], [-73.9370, 40.8592], [-73.9336, 40.8642], [-73.9300, 40.8692],
-  [-73.9252, 40.8734], [-73.9228, 40.8762],
-  // --- the northern tip, round Spuyten Duyvil ------------------------------
-  [-73.9196, 40.8784], [-73.9160, 40.8778], [-73.9132, 40.8760],
-  // --- the Harlem River, coming back south ---------------------------------
-  [-73.9118, 40.8722], [-73.9146, 40.8686], [-73.9180, 40.8650], [-73.9214, 40.8606],
-  [-73.9226, 40.8560], [-73.9248, 40.8512], [-73.9266, 40.8462], [-73.9282, 40.8410],
-  [-73.9294, 40.8356], [-73.9302, 40.8300], [-73.9306, 40.8244], [-73.9308, 40.8188],
-  [-73.9308, 40.8132], [-73.9310, 40.8076], [-73.9318, 40.8020], [-73.9330, 40.7966],
-  // --- the East River --------------------------------------------------------
-  [-73.9356, 40.7910], [-73.9382, 40.7862], [-73.9412, 40.7818], [-73.9438, 40.7776],
-  [-73.9464, 40.7734], [-73.9494, 40.7694], [-73.9528, 40.7652], [-73.9566, 40.7610],
-  [-73.9604, 40.7568], [-73.9636, 40.7528], [-73.9664, 40.7492], [-73.9686, 40.7456],
-  [-73.9704, 40.7422], [-73.9718, 40.7388], [-73.9722, 40.7352], [-73.9716, 40.7316],
-  [-73.9714, 40.7280], [-73.9722, 40.7244], [-73.9736, 40.7206], [-73.9752, 40.7168],
-  [-73.9768, 40.7134], [-73.9800, 40.7112], [-73.9846, 40.7100], [-73.9898, 40.7094],
-  [-73.9948, 40.7086], [-73.9996, 40.7072], [-74.0038, 40.7058], [-74.0078, 40.7040],
-  [-74.0118, 40.7024], [-74.0146, 40.7016],
-];
-
-/** Midtown, so the metre frame's origin is somewhere a player will spend time. */
+/** Midtown, so the metre frame's origin is somewhere a player will spend time.
+ *  pipeline/manhattan/bake.py projects into this same frame. */
 const CENTER = [-73.9712, 40.7831];
 export const proj = makeProjection(CENTER[0], CENTER[1]);
 const xy = (ll) => proj.toXY(ll).map(Math.round);
+
+let PLAT = null;
+// An ASSET, not a module: Vite copies it into the build and the browser fetches
+// and parses it as JSON, which is several times faster than evaluating it as a
+// 3.5 MB JavaScript module. Under Node (harnesses, tools) the same URL is a
+// file: URL and is read off disk.
+// Made when asked for, not at load: inside a worker started from a blob (the
+// town worker, in the single-file build) this module's own URL is a blob: URL,
+// a relative URL against it throws, and the worker died before it could run.
+const platUrl = () => new URL("./data/manhattan-plat.json", import.meta.url);
+/** Fetch the baked plat once. Resolves immediately on every later call. */
+export async function loadManhattanPlat() {
+  if (!PLAT) {
+    if (globalThis.document?.getElementById?.("bw-manhattan-plat")) {
+      // The single-file playable (package/build-onefile.mjs) carries the plat
+      // inline, because a page opened from file:// cannot fetch a neighbour.
+      // Asked first: that page's URL is a file: URL too, and the Node branch
+      // below is no use to a browser (it refused Manhattan outright).
+      PLAT = JSON.parse(globalThis.document.getElementById("bw-manhattan-plat").textContent);
+    } else if (!globalThis.document && platUrl().protocol === "file:") {
+      const fsName = "node:fs/promises";   // a variable, so the browser build never resolves it
+      const { readFile } = await import(/* @vite-ignore */ fsName);
+      PLAT = JSON.parse(await readFile(platUrl(), "utf8"));
+    } else {
+      const r = await fetch(platUrl());
+      if (!r.ok) throw new Error(`Manhattan plat ${r.status}`);
+      PLAT = await r.json();
+    }
+  }
+  return PLAT;
+}
+/** For callers that already hold the JSON (a Node harness reading the file). */
+export function setManhattanPlat(data) { PLAT = data; }
+export const manhattanPlatLoaded = () => PLAT !== null;
 
 // ------------------------------------------------------- the grid, in numbers
 //
@@ -107,16 +101,11 @@ const xy = (ll) => proj.toXY(ll).map(Math.round);
 // the way it does: you cross a street every sixty metres walking uptown and
 // every quarter kilometre walking crosstown.
 const BEAR_GRID = 29;      // the Commissioners' survey
-const BEAR_SOHO = 26;      // SoHo and the Bowery, laid before 1811 and not quite square to it
-const BEAR_VILLAGE = 2;    // the West Village, on its OWN survey, near true north
-const ST_PITCH = 61;       // 200 ft between cross streets, measured along the avenues
-const AVE_PITCH = 244;     // 800 ft between avenues, measured across
 
 // The grid frame, used to write the district cuts through real places.
 const TH = (BEAR_GRID * Math.PI) / 180;
 /** Northward along the avenues. Uptown is positive. */
 const UP = [Math.sin(TH), Math.cos(TH)];
-const alongUp = (p) => p[0] * UP[0] + p[1] * UP[1];
 
 /**
  * A cut, with its sides resolved BY PROBE rather than by convention.
@@ -154,6 +143,7 @@ function band(at, deg, aSide, a, b) {
   const onNeg = aSide[0] * c[0] + aSide[1] * c[1] <= c[2];
   return { cut: c, neg: onNeg ? a : b, pos: onNeg ? b : a };
 }
+
 
 // ----------------------------------------------------------- the value surface
 //
@@ -236,102 +226,6 @@ const CORES_LL = [
   { ll: [-73.9760, 40.7420], w: 0.24, r: 280, role: "Kips Bay" },
 ];
 
-// ------------------------------------------------------------------- the parks
-//
-// Real rings, because a park's SHAPE is most of what it does to the land around
-// it: Central Park is 4 km long and 800 m wide and the rent difference between
-// a Fifth Avenue frontage and a block back is a fact about that rectangle.
-// `cx/cy/w/h` are written alongside the ring because the demand kernel sizes an
-// amenity off its bounding box and a park with only a ring is a park nobody
-// pays to overlook.
-const PARKS_LL = [
-  ["Central Park",      [[-73.9819, 40.7681], [-73.9732, 40.7644], [-73.9498, 40.7968], [-73.9585, 40.8003]]],
-  ["The Battery",       [[-74.0179, 40.7040], [-74.0170, 40.7011], [-74.0150, 40.7000], [-74.0128, 40.7003], [-74.0140, 40.7038], [-74.0160, 40.7046]]],
-  ["City Hall Park",    [[-74.0083, 40.7133], [-74.0064, 40.7118], [-74.0052, 40.7128], [-74.0075, 40.7146]]],
-  ["Bowling Green",     [[-74.0147, 40.7052], [-74.0139, 40.7043], [-74.0132, 40.7049], [-74.0141, 40.7056]]],
-  ["Washington Square", [[-74.0003, 40.7315], [-73.9993, 40.7295], [-73.9955, 40.7307], [-73.9965, 40.7327]]],
-  ["Union Square",      [[-73.9917, 40.7368], [-73.9910, 40.7347], [-73.9885, 40.7353], [-73.9895, 40.7374]]],
-  ["Madison Square",    [[-73.9890, 40.7430], [-73.9885, 40.7404], [-73.9856, 40.7412], [-73.9866, 40.7438]]],
-  ["Bryant Park",       [[-73.9850, 40.7546], [-73.9842, 40.7527], [-73.9812, 40.7536], [-73.9821, 40.7555]]],
-  ["Tompkins Square",   [[-73.9832, 40.7275], [-73.9825, 40.7250], [-73.9790, 40.7258], [-73.9798, 40.7284]]],
-  ["Gramercy Park",     [[-73.9866, 40.7378], [-73.9861, 40.7368], [-73.9848, 40.7372], [-73.9853, 40.7382]]],
-  ["Marcus Garvey Park",[[-73.9450, 40.8055], [-73.9440, 40.8025], [-73.9410, 40.8032], [-73.9422, 40.8062]]],
-  ["Morningside Park",  [[-73.9630, 40.8055], [-73.9590, 40.7995], [-73.9570, 40.8003], [-73.9610, 40.8065]]],
-  ["St Nicholas Park",  [[-73.9530, 40.8215], [-73.9500, 40.8160], [-73.9480, 40.8168], [-73.9510, 40.8225]]],
-  ["Riverside Park",    [[-73.9905, 40.7790], [-73.9630, 40.8225], [-73.9600, 40.8210], [-73.9875, 40.7778]]],
-  ["East River Park",   [[-73.9745, 40.7220], [-73.9718, 40.7135], [-73.9700, 40.7142], [-73.9728, 40.7228]]],
-  ["Inwood Hill Park",  [[-73.9320, 40.8710], [-73.9210, 40.8770], [-73.9150, 40.8715], [-73.9260, 40.8580], [-73.9330, 40.8620]]],
-  ["Fort Tryon Park",   [[-73.9370, 40.8640], [-73.9310, 40.8580], [-73.9285, 40.8595], [-73.9345, 40.8655]]],
-  ["Highbridge Park",   [[-73.9330, 40.8560], [-73.9255, 40.8440], [-73.9230, 40.8455], [-73.9310, 40.8575]]],
-];
-
-// -------------------------------------------------------------------- Broadway
-//
-// THE ONE PRE-GRID ROAD THAT SURVIVED, and the reason every square in Manhattan
-// is where it is. It was the Wickquasgeck trail before it was the Bloomingdale
-// Road before it was the Boulevard, and the Commissioners drew their grid
-// straight over the top of it without removing it — so it cuts the avenues at an
-// angle all the way up the island, and at every crossing it leaves a triangle.
-//
-// Written as one entry PER BEND rather than one for the whole avenue, because a
-// diagonal in this generator is a straight rectangular reservation. The bends
-// are at 10th, 23rd, 34th, 44th, 59th, 71st and 106th, and each crossing below
-// is a real square: Union at 14th-17th, Madison at 23rd (the Flatiron), Herald
-// at 34th, Times at 44th-45th, Columbus at 59th, Lincoln at 65th-66th, Verdi at
-// 70th-72nd, Straus at 106th.
-//
-// AND THE GORES COME FOR FREE. citygen's wedge rule classifies a stakeable
-// triangle from geometry alone, before any random draw — a lot is a flatiron if
-// it is at least 8 m wide, has no angle under 22 degrees, and is no longer than
-// 6.5 times its width. So writing Broadway down IS writing down the Flatiron
-// Building's site, deterministically, along with two dozen lesser gores that a
-// player can go and find.
-const BROADWAY_LL = [
-  [-74.0135, 40.7042], [-74.0092, 40.7107], [-74.0053, 40.7182], [-74.0021, 40.7255],
-  [-73.9968, 40.7292], [-73.9929, 40.7321], [-73.9898, 40.7416], [-73.9876, 40.7498],
-  [-73.9855, 40.7572], [-73.9812, 40.7677], [-73.9810, 40.7725], [-73.9808, 40.7774],
-  [-73.9748, 40.7885], [-73.9671, 40.8007], [-73.9584, 40.8140], [-73.9505, 40.8260],
-  [-73.9435, 40.8390], [-73.9370, 40.8520],
-];
-
-// ------------------------------------------------------------------ the transit
-//
-// The subway is why the land is worth what it is worth, and the generator reads
-// stations as a gravity kernel — `weight` is ridership and it sums with a 350 m
-// Gaussian out to about a kilometre. So this list is not decoration: leaving it
-// empty, as the first probe of this island did, builds a Manhattan with no
-// transit premium anywhere, which is a different city.
-//
-// The trunk lines and their interchanges, weighted by how much of the system
-// meets at each. Positions are the real corners (unverified individually).
-const STATIONS_LL = [
-  [[-73.9772, 40.7527], "Grand Central-42 St", "4 5 6 7 S", 1.00],
-  [[-73.9903, 40.7506], "34 St-Penn Station", "1 2 3 A C E", 0.94],
-  [[-73.9866, 40.7590], "Times Sq-42 St", "1 2 3 7 N Q R W S", 0.98],
-  [[-73.9903, 40.7352], "14 St-Union Sq", "4 5 6 L N Q R W", 0.86],
-  [[-74.0072, 40.7107], "Fulton St", "2 3 4 5 A C J Z", 0.78],
-  [[-74.0110, 40.7127], "World Trade Center", "1 E R", 0.70],
-  [[-74.0090, 40.7062], "Wall St", "4 5", 0.62],
-  [[-74.0139, 40.7049], "Bowling Green", "4 5", 0.44],
-  [[-74.0040, 40.7135], "Chambers St", "1 2 3 A C", 0.52],
-  [[-74.0003, 40.7188], "Canal St", "1 6 A C E J N Q R Z", 0.60],
-  [[-73.9986, 40.7255], "Spring St", "C E", 0.34],
-  [[-73.9962, 40.7255], "Houston St", "1", 0.30],
-  [[-73.9941, 40.7255], "Broadway-Lafayette", "B D F M 6", 0.56],
-  [[-73.9895, 40.7300], "Astor Place", "6", 0.36],
-  [[-74.0021, 40.7373], "14 St-Eighth Ave", "A C E L", 0.62],
-  [[-73.9967, 40.7377], "14 St-Sixth Ave", "1 2 3 F M L", 0.58],
-  [[-73.9880, 40.7411], "23 St-Park Ave S", "6", 0.34],
-  [[-73.9958, 40.7440], "23 St-Sixth Ave", "F M", 0.32],
-  [[-73.9938, 40.7509], "34 St-Herald Sq", "B D F M N Q R W", 0.90],
-  [[-73.9819, 40.7549], "5 Av-53 St", "E M", 0.44],
-  [[-73.9762, 40.7580], "51 St-Lexington", "6 E M", 0.50],
-  [[-73.9819, 40.7681], "59 St-Columbus Circle", "1 A B C D", 0.68],
-  [[-73.9720, 40.7644], "Lexington Av-59 St", "4 5 6 N R W", 0.66],
-  [[-73.9819, 40.7784], "72 St-Broadway", "1 2 3", 0.48],
-  [[-73.9558, 40.8043], "125 St-Lexington", "4 5 6", 0.46],
-  [[-73.9585, 40.8113], "125 St-Broadway", "1", 0.34],
-];
 
 // ------------------------------------------------------------- the street names
 //
@@ -378,164 +272,137 @@ const AVENUES = [
   "Second Ave", "First Ave", "York Ave",
 ];
 
+
 // ------------------------------------------------------------------ THE EXTENT
 //
 // HOW FAR UPTOWN THE MAP GOES, and this is a real choice rather than a size
-// dial. The generated islands take `SIZES`, which multiplies every position and
-// extent — and applying that to a traced Manhattan does not give a smaller
-// Manhattan, it gives a fictional island shaped like a shrunken one with
-// real-sized blocks in it, Central Park at a third of its acreage and the
-// avenues 55% as long. That is not this city at any scale.
+// dial: "Manhattan below 14th Street" is a real place at real scale, and a
+// SIZES multiplier on a surveyed city would only make a fictional island with
+// real-sized blocks in it. Each extent is cut along the real centre line of its
+// street in the bake — Houston bends, and the cut bends with it.
 //
-// What IS honest is to stop at a cross street, because "Manhattan below 14th
-// Street" is a real place at real scale and so is "below 59th". The whole island
-// at real lot grain is 73,705 lots and 33 seconds of generation, and it is
-// longer than four extents hardcoded in the renderer, so it is not offered.
-//
-// Every lot count below is measured, not estimated: `generateCity` at real
-// FLAVOR lot grain with the coast clipped at that street.
+// Every lot count below is the baked count of real tax lots (open space is
+// parks, not lots).
 export const EXTENTS = {
-  houston: { at: [-73.9920, 40.7255], name: "below Houston Street",
-    note: "The oldest city. Wall Street, the Seaport, City Hall, Tribeca, SoHo and the Bowery — about 9,100 lots, and every street below Chambers is a colonial lane." },
-  "14th": { at: [-73.9975, 40.7370], name: "below 14th Street",
-    note: "Adds Greenwich Village on its own survey, the Lower East Side and Union Square. About 12,800 lots — over twice the largest generated island." },
-  "23rd": { at: [-73.9890, 40.7410], name: "below 23rd Street",
-    note: "Adds Chelsea, Gramercy, Madison Square and the Flatiron gore. About 15,700 lots." },
-  "34th": { at: [-73.9857, 40.7484], name: "below 34th Street",
-    note: "Adds the Garment District, Herald Square, Penn Station and the Empire State Building's block. About 18,900 lots." },
-  "42nd": { at: [-73.9855, 40.7550], name: "below 42nd Street",
-    note: "Adds Times Square, Bryant Park, Grand Central and the Chrysler Building. About 21,500 lots — the Art Deco heartland." },
-  "59th": { at: [-73.9800, 40.7660], name: "below 59th Street",
-    note: "All of Midtown, the Plaza District, Rockefeller Center and the south edge of Central Park. About 25,500 lots, and a month takes noticeably longer to tick." },
+  houston: { name: "below Houston Street",
+    note: "The oldest city. Wall Street, the Seaport, City Hall, Tribeca, SoHo and the Lower East Side's southern blocks — about 4,800 real tax lots, and below Chambers the streets are the colonial lanes they always were." },
+  "14th": { name: "below 14th Street",
+    note: "Adds Greenwich Village on its own survey, the East Village, Stuyvesant Town and Union Square. About 10,000 real tax lots." },
+  "23rd": { name: "below 23rd Street",
+    note: "Adds Chelsea, Gramercy Park, Madison Square and the Flatiron Building's gore. About 12,300 lots." },
+  "34th": { name: "below 34th Street",
+    note: "Adds the Garment District, Herald Square, Penn Station and the Empire State Building's block. About 14,300 lots." },
+  "42nd": { name: "below 42nd Street",
+    note: "Adds Bryant Park, Murray Hill and the Hudson Yards. About 15,700 lots." },
+  "59th": { name: "below 59th Street",
+    note: "All of Midtown: Times Square, Grand Central, Rockefeller Center, the Plaza District and the south edge of Central Park. About 19,000 lots." },
 };
 export const DEFAULT_EXTENT = "14th";
 export function extentList() {
   return Object.entries(EXTENTS).map(([id, e]) => ({ id, name: e.name, note: e.note }));
 }
 
-/** Sutherland-Hodgman: keep the part of the ring at or below the cut. */
-function clipUptown(ring, limit) {
+const ring = (flat) => {
   const out = [];
-  for (let i = 0; i < ring.length; i++) {
-    const p = ring[i], q = ring[(i + 1) % ring.length];
-    const dp = alongUp(p) - limit, dq = alongUp(q) - limit;
-    if (dp <= 0) out.push(p);
-    if ((dp <= 0) !== (dq <= 0)) {
-      const t = dp / (dp - dq);
-      out.push([Math.round(p[0] + t * (q[0] - p[0])), Math.round(p[1] + t * (q[1] - p[1]))]);
-    }
-  }
+  for (let i = 0; i < flat.length; i += 2) out.push([flat[i] / 10, flat[i + 1] / 10]);
   return out;
+};
+function inside(p, r) {
+  let c = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    if ((r[i][1] > p[1]) !== (r[j][1] > p[1])
+      && p[0] < ((r[j][0] - r[i][0]) * (p[1] - r[i][1])) / (r[j][1] - r[i][1]) + r[i][0]) c = !c;
+  }
+  return c;
+}
+function bbox(r) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of r) { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
+  return [x0, y0, x1, y1];
 }
 
 // --------------------------------------------------------------- the config
 /**
- * Manhattan, at a chosen extent. A pure function of (extent, seed): the same
- * pair gives byte-identical output, which is what lets a save store the pair
- * instead of two megabytes of geometry.
- *
- * The SEED still does real work here even though the plat is fixed. It decides
- * which lots are built on and which are still dirt, how old each building is,
- * how tall it got inside the same envelope, what it is wearing, who owns it and
- * what the market does — everything that is contingent. What it no longer
- * decides is the geography, because the geography is history.
+ * Manhattan, at a chosen extent. A pure function of (extent, seed) and the
+ * baked plat: the same pair gives byte-identical output, which is what lets a
+ * save store the pair instead of the geometry.
  */
 export function manhattanConfig(seed = 1, opts = {}) {
+  if (!PLAT) throw new Error("Manhattan's plat is not loaded — await loadManhattanPlat() (index.mjs preloadCity) first");
   const extentId = EXTENTS[opts.extent] ? opts.extent : DEFAULT_EXTENT;
   const ext = EXTENTS[extentId];
-  const limit = alongUp(xy(ext.at));
-  const keep = (p) => alongUp(p) <= limit;
-
-  const coast = clipUptown(COAST_LL.map(xy), limit);
+  const ei = PLAT.extents.indexOf(extentId);
+  const coast = ring(PLAT.coast[extentId]);
+  const onLand = (p) => inside(p, coast);
 
   const cores = CORES_LL.map((c) => ({ xy: xy(c.ll), w: c.w, r: c.r, role: c.role }))
-    .filter((c) => keep(c.xy));
+    .filter((c) => onLand(c.xy));
 
-  const parks = PARKS_LL.map(([name, ll]) => {
-    const ring = ll.map(xy);
-    const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]);
-    const cx = Math.round((Math.min(...xs) + Math.max(...xs)) / 2);
-    const cy = Math.round((Math.min(...ys) + Math.max(...ys)) / 2);
-    return { name, ring, cx, cy,
-      w: Math.round(Math.max(...xs) - Math.min(...xs)),
-      h: Math.round(Math.max(...ys) - Math.min(...ys)), flavour: "park" };
-  }).filter((p) => keep([p.cx, p.cy]));
+  const blocks = PLAT.blocks.filter((b) => b.e <= ei).map((b) => ({
+    n: b.n, cell: ring(b.c), outline: ring(b.o),
+    lots: b.l.map(([r, bbl, address, landuse]) => ({ ring: ring(r), bbl, address, landuse })),
+  }));
+  const parkRecs = PLAT.parks.filter((p) => p.e <= ei);
+  const parks = parkRecs.map((p) => {
+    const r = ring(p.o);
+    const [x0, y0, x1, y1] = bbox(r);
+    return {
+      name: p.name, ring: r, real: true,
+      cx: Math.round((x0 + x1) / 2), cy: Math.round((y0 + y1) / 2),
+      w: Math.round(x1 - x0), h: Math.round(y1 - y0),
+      // The Battery is the battery the generator's flavour is named after:
+      // open lawn on the harbour and a flagstaff.
+      flavour: p.name === "The Battery" ? "battery" : "park",
+    };
+  });
 
-  // Broadway, one reservation per bend. `w` is the run along `deg`, `h` is the
-  // width of the reservation — 26 m, because Broadway is 80 to 100 feet and the
-  // generator adds a kerb and the crossing street's own width on top.
-  const bwXY = BROADWAY_LL.map(xy);
-  const diagonals = [];
-  for (let i = 0; i < bwXY.length - 1; i++) {
-    let a = bwXY[i], b = bwXY[i + 1];
-    if (!keep(a) && !keep(b)) continue;
-    // CLIP THE SEGMENT THAT STRADDLES THE CUT, do not keep it whole. Keeping any
-    // segment with one end inside left the run that crosses the extent line
-    // sticking out past the coast and drawn as a reservation into the river —
-    // visible as a lone dark stripe heading north out of the island on the first
-    // land-lens shot of this city.
-    if (!keep(b) || !keep(a)) {
-      const ua = alongUp(a) - limit, ub = alongUp(b) - limit;
-      const t = ua / (ua - ub);
-      const cutPt = [Math.round(a[0] + t * (b[0] - a[0])), Math.round(a[1] + t * (b[1] - a[1]))];
-      if (keep(a)) b = cutPt; else a = cutPt;
-    }
-    const dx = b[0] - a[0], dy = b[1] - a[1];
-    if (Math.hypot(dx, dy) < 60) continue;      // a stub is not a street
-    diagonals.push({
-      cx: Math.round((a[0] + b[0]) / 2), cy: Math.round((a[1] + b[1]) / 2),
-      w: Math.round(Math.hypot(dx, dy)), h: 26,
-      deg: +((Math.atan2(dy, dx) * 180) / Math.PI).toFixed(1),
-      name: "Broadway",
-    });
-  }
+  const stations = PLAT.stations.filter((s) => s.e <= ei).map((s) => ({
+    xy: [Math.round(s.x / 10), Math.round(s.y / 10)], name: s.name, lines: s.lines,
+    weight: Math.round(s.w * 1000),
+  }));
+  const corridors = PLAT.corridors.map((c) => ({ name: c.name, w: c.w, line: ring(c.p) }));
 
-  const stations = STATIONS_LL.map(([ll, name, lines, weight]) => ({
-    xy: xy(ll), name, lines, weight: Math.round(weight * 1000),
-  })).filter((s) => keep(s.xy));
-
+  // Label the parks a map would: the named ones big enough to read.
   const labels = [
     ...cores.map((c) => ({ xy: c.xy, name: c.role, labelKind: "district" })),
-    ...parks.map((p) => ({ xy: [p.cx, p.cy], name: p.name, labelKind: "park" })),
+    ...parks.filter((p) => p.name !== "Open space" && Math.abs(ringArea(p.ring)) > 4000)
+      .map((p) => ({ xy: [p.cx, p.cy], name: p.name, labelKind: "park" })),
   ];
 
-  // ---- the district plan -------------------------------------------------
+  // ---- the district partition ---------------------------------------------
   //
-  // FIVE SURVEYS AND A CLEARANCE PROGRAMME, which is what is really on this
-  // rock. Below Chambers the Dutch and colonial lanes were never straightened,
-  // so that district is `organic` and gets no numbered addresses. SoHo and the
-  // Bowery were laid out before 1811 on a bearing a few degrees off the
-  // Commissioners' and keep it. The West Village is on its OWN survey running
-  // near true north, which is the famous collision that makes West 4th Street
-  // cross West 10th — and it is the two-survey case `island.mjs` already cites
-  // as its canonical example. The Lower East Side is the Commissioners' grid
-  // with the blocks cut down by tenement-era subdivision. Everything from 14th
-  // up is the plan of 1811.
+  // FLAVOUR, ZONING AND NAMES — NOT STREETS. The bake hands over every block,
+  // so a district no longer lays out anything; what it still decides is what
+  // the ground is FOR (the engine reads that as office versus housing versus
+  // walk-up), how high the zoning lets it go, and which pool of street names a
+  // lot without a filed address draws from. The bands are written through real
+  // corners with the sides resolved by probe, exactly as before.
   //
-  // `superblock` is used for the Lower East Side's river edge rather than as
-  // decoration: the tracts between the grid and the FDR really were cleared and
-  // rebuilt as superblocks, and that is the only place on this island where the
-  // 1811 blocks were actually erased.
-  const grid = (flavor, bearingDeg, extra = {}) => ({
-    flavor, kind: "lattice", bearingDeg, stPitch: ST_PITCH, avePitch: AVE_PITCH,
-    streetW: 12, aveW: 31, warpAmp: 0, numbered: true, fullBlockP: 0.05, ...extra,
-  });
+  // `kind: "organic"` survives on the colonial quarter for one reason: it tells
+  // the renderer those are lanes nobody ever painted crossings on.
+  const district = (flavor, kind = "lattice", extra = {}) => ({ flavor, kind, bearingDeg: BEAR_GRID, numbered: false, fullBlockP: 0, ...extra });
+  // THE FINANCIAL DISTRICT IS A CBD, NOT AN OLD TOWN (plan 10). Everything
+  // below Chambers was "old", whose ceiling is 14 floors — so the second
+  // business district in the country, on Metropolis, topped out at 20 floors
+  // with a median of 4, the owner's "it looks tiny". In 2000, the year the
+  // game opens, that ground held the Twin Towers, 40 Wall (1930, 70 floors),
+  // the Woolworth (1913, 57), 60 Wall, One Chase Plaza, One Liberty Plaza and
+  // dozens more past forty. It takes the core preset — the same one Midtown
+  // has — and keeps `organic` so the colonial lanes still read as lanes.
+  // `assembled` turns on the tower roll calibrated to MapPLUTO below
+  // Chambers (citygen.mjs THE FINANCIAL DISTRICT IS ASSEMBLED FOR TOWERS).
+  // Older plans keep "old" so a saved downtown rebuilds as it was.
+  const plan10 = (opts.planV ?? 9) >= 10;
   const districts = {
-    // The colonial town. No pitch, no bearing, no numbers — a tangle by design.
-    battery: { flavor: "old", kind: "organic", bearingDeg: 12, jitterDeg: 17, streetW: 10,
-      cell: [Math.round(0.30 * ST_PITCH * AVE_PITCH), Math.round(0.70 * ST_PITCH * AVE_PITCH)],
-      fullBlockP: 0.03 },
-    soho: grid("old", BEAR_SOHO, { stPitch: 58, avePitch: 190, streetW: 11, aveW: 24, numbered: false }),
-    village: grid("old", BEAR_VILLAGE, { stPitch: 63, avePitch: 176, streetW: 11, aveW: 26, numbered: false }),
-    // NoHo, Washington Square and the East Village: laid out ON the 1811 grid
-    // but subdivided for tenements, so the avenue pitch is halved by the
-    // through-block lanes the Commissioners never drew and the market did.
-    noho: grid("old", BEAR_GRID, { stPitch: 61, avePitch: 168, streetW: 11, aveW: 26 }),
-    lowereast: grid("resi", BEAR_GRID, { stPitch: 61, avePitch: 152, streetW: 11, aveW: 26 }),
-    midtown: grid("core", BEAR_GRID),
-    upperwest: grid("resi", BEAR_GRID, { avePitch: 210 }),
-    uppereast: grid("resi", BEAR_GRID, { avePitch: 205 }),
-    harlem: grid("resi", BEAR_GRID, { avePitch: 214 }),
+    battery: district(plan10 ? "core" : "old", "organic", plan10 ? { assembled: true } : {}),
+    soho: district("old"),
+    village: district("old"),
+    noho: district("old"),
+    lowereast: district("resi"),
+    midtown: district("core"),
+    upperwest: district("resi"),
+    uppereast: district("resi"),
+    harlem: district("resi"),
   };
 
   // The bands, written through real corners with the sides resolved by probe.
@@ -573,14 +440,17 @@ export function manhattanConfig(seed = 1, opts = {}) {
   return {
     name: `Manhattan ${ext.name}`,
     district: "manhattan", abbr: "MN", seed: seed >>> 0, center: CENTER,
-    coast, coastAmp: 12, smooth: 1, esplanade: 24,
-    lighthouse: coast[0],
-    cores, partition, districts, parks, diagonals, streams: [], bridges: [],
+    // The bulkhead line as filed: not crinkled, not rounded (see cfg.plat in
+    // citygen.mjs), and only a kerb's width of esplanade, because the ground
+    // between the lots and the water is already the FDR and the West Side
+    // Highway, which the street cells pave.
+    coast, coastAmp: 0, smooth: 0, esplanade: 4,
+    lighthouse: false,
+    plat: { blocks, parkCells: parkRecs.map((p) => ring(p.c)) },
+    cores, partition, districts, parks, diagonals: [], corridors, streams: [], bridges: [],
     breakwaters: [], stations, labels,
     avenues: AVENUES, streets: STREETS,
-    // One seam, not a boulevard: Broadway is a street that predates the grid,
-    // not a Haussmann cut through it.
-    plan: { landmark: "college", harbour: coast[0], seams: diagonals.length },
+    plan: { landmark: "none", harbour: xy([-74.0110, 40.7040]), seams: 0 },
   };
 }
 
@@ -590,4 +460,4 @@ export function manhattanName(extent) {
   return `Manhattan ${e.name}`;
 }
 export const MANHATTAN = "manhattan";
-export { COAST_LL, ringArea };
+export { ringArea };

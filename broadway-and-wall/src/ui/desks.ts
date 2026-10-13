@@ -37,6 +37,10 @@ export const DESKS: readonly Desk[] = [
     note: "What is for sale — buildings, land and distressed paper",
     tabs: [
       { page: "market", label: "Marketplace", note: "Listings, receiver books, auctions and off-market calls" },
+      // Every standing building in town, sortable — the list you shop from
+      // when nothing on the tape fits. It sat on City → Research as
+      // "Properties", which is the reading desk, not the buying one.
+      { page: "buildings", label: "Buildings", note: "Every standing building — size, income, value and owner" },
       // Distressed paper exists only when a bank is selling it, a rival is
       // asking for a bridge, or you hold some. Until then the tab is noise —
       // ⌘K still finds the desk, and it appears the month there is a file.
@@ -61,11 +65,19 @@ export const DESKS: readonly Desk[] = [
   },
   {
     id: "city", label: "City", icon: "∿", key: "5",
-    note: "The cycle, the comps and the news",
+    note: "The cycle, the markets, the players and the tape",
+    // FOUR QUESTIONS, NOT THREE DRAWERS. City used to be Economy, Research and
+    // News, and Research was eight unrelated sub-tabs — half of them repeating
+    // Economy (sector rents, the cycle hinge), the rest reference lists. The
+    // tabs now follow what a principal asks of the city: how is it doing
+    // (Pulse), what is each market doing (Markets), who else is in it
+    // (Players), and what just happened (Tape).
     tabs: [
-      { page: "economy", label: "Economy", note: "Cycle, space markets and construction" },
-      { page: "research", label: "Research", note: "Comps, submarkets, rivals and owners" },
-      { page: "news", label: "News", note: "What the city wrote this month" },
+      { page: "pulse", label: "Pulse", note: "The city on one screen — cycle, markets, board and headlines" },
+      { page: "economy", label: "Markets", note: "Each space market, land, banks, employers and districts in depth" },
+      { page: "players", label: "Players", note: "Competing firms and every owner in town" },
+      { page: "news", label: "Tape", note: "Headlines and closed sales" },
+      { page: "rankings", label: "Rankings", note: "How this town ranks against real US cities" },
     ],
   },
   {

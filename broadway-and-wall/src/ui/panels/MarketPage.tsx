@@ -13,7 +13,7 @@ import { LineChart } from "@/ui/Chart";
 import { marketAppetite, gradeOf } from "@/engine/rivals";
 import { houseBrokerName, brokerScore, EARLY_FEES, EARLY_WINDOW_M } from "@/engine/broker";
 import { usd, sf, pct } from "@/ui/format";
-import { BrokerCalls } from "@/ui/panels/broker";
+import { BrokerCalls, liveBrokerCalls } from "@/ui/panels/broker";
 import { useLabel, Big, Row } from "@/ui/panels/shared";
 import { SiteFinder } from "@/ui/panels/SiteFinder";
 
@@ -27,6 +27,7 @@ export function BuildingDatabase() {
   const [dir, setDir] = useState<-1 | 1>(-1);
   const [cls, setCls] = useState<string>("all");
   const [q, setQ] = useState("");
+  const [pg, setPg] = useState(0);
   const rows = useMemo(() => {
     const out: { bbl: string; addr: string; cls: string; sf: number; fl: number; yr: number;
                  owner: string; occ: number; known: boolean; rent: number; noi: number; dmd: number; val: number; psf: number }[] = [];
@@ -84,22 +85,40 @@ export function BuildingDatabase() {
   }, [rows, sortK, dir, cls, q]);
   const H = ({ k, label, num }: { k: string; label: string; num?: boolean }) => (
     <th className={num ? "num" : undefined} style={{ cursor: "pointer", whiteSpace: "nowrap" }}
-        onClick={() => { if (sortK === k) setDir((d) => (d === 1 ? -1 : 1)); else { setSortK(k); setDir(-1); } }}>
+        onClick={() => { if (sortK === k) setDir((d) => (d === 1 ? -1 : 1)); else { setSortK(k); setDir(-1); } setPg(0); }}>
       {label}{sortK === k ? (dir === -1 ? " ▾" : " ▴") : ""}
     </th>
   );
-  const CAP = 250;
+  // PAGED, NOT CAPPED. The table used to print the first 250 rows of a
+  // sort — a page ten thousand pixels tall that still could not show the
+  // 251st building. Fifty a page, and the sort and filters run over all of it.
+  const PER = 50;
+  const pages = Math.max(1, Math.ceil(shown.length / PER));
+  const at = Math.min(pg, pages - 1);
+  const pager = pages > 1 && (
+    <div className="btn-row pager" style={{ margin: "8px 0", alignItems: "baseline" }}>
+      <button className="btn" disabled={at === 0} onClick={() => setPg(at - 1)}>← Prev</button>
+      <span className="hint" style={{ margin: 0 }}>
+        {(at * PER + 1).toLocaleString()}–{Math.min(shown.length, (at + 1) * PER).toLocaleString()} of {shown.length.toLocaleString()}
+      </span>
+      <button className="btn" disabled={at >= pages - 1} onClick={() => setPg(at + 1)}>Next →</button>
+    </div>
+  );
   return (
     <div>
+      <div className="hint">
+        Every standing building in town, whether or not it is for sale — sort by value against demand and the
+        mispriced corners fall out. Occupancy marked ~ is the class average: nobody has shown you that roll.
+      </div>
       <div className="btn-row" style={{ marginBottom: 6 }}>
         {["all", "office", "retail", "multifamily", "industrial"].map((c) => (
-          <button key={c} className={"btn" + (cls === c ? " btn-on" : "")} onClick={() => setCls(c)}>
+          <button key={c} className={"btn" + (cls === c ? " btn-on" : "")} onClick={() => { setCls(c); setPg(0); }}>
             {c === "all" ? `All · ${rows.length}` : c}
           </button>
         ))}
         <input
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => { setQ(e.target.value); setPg(0); }}
           placeholder="address or owner…"
           style={{ flex: 1, minWidth: 120, background: "transparent", border: "1px solid rgba(120,100,70,0.35)",
                    borderRadius: 4, padding: "4px 8px", font: "inherit", color: "inherit" }}
@@ -123,10 +142,10 @@ export function BuildingDatabase() {
           </tr>
         </thead>
         <tbody>
-          {shown.slice(0, CAP).map((r: (typeof rows)[number]) => (
+          {shown.slice(at * PER, (at + 1) * PER).map((r: (typeof rows)[number]) => (
             <tr key={r.bbl} onClick={() => open(r.bbl)} onKeyDown={(e) => { if (e.key === "Enter") open(r.bbl); }}
               tabIndex={0} title={`Open the property file for ${r.addr}`} style={{ cursor: "pointer" }}>
-              <td>{r.addr} <span className="dim">· Open →</span></td>
+              <td>{r.addr} <span className="dim row-open">· Open →</span></td>
               <td className="dim">{r.cls}</td>
               <td className="num">{Math.round(r.sf).toLocaleString()}</td>
               <td className="num">{r.fl}</td>
@@ -149,9 +168,7 @@ export function BuildingDatabase() {
           ))}
         </tbody>
       </table>
-      {shown.length > CAP && (
-        <div className="hint">Showing {CAP} of {shown.length.toLocaleString()} — narrow it with the class buttons or the search box.</div>
-      )}
+      {pager}
     </div>
   );
 }
@@ -222,6 +239,7 @@ export const MARKET_COLS: { key: string; label: string; num?: boolean; desc?: bo
 ];
 
 export function MarketPage() {
+  const phoneLive = useStore((s) => (s.game ? liveBrokerCalls(s.game).length > 0 : false));
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const lens = useStore((s) => s.lens);
@@ -286,7 +304,7 @@ export function MarketPage() {
       <div className="hint">
         Everything for sale in town — single buildings on the tape, receiver books and fund wind-downs as packages,
         foreclosure lots on the July docket, and distressed notes under Notes. A motivated seller is priced under
-        appraisal and will not last. What the market is DOING — cap rates, the trades, comps — is on Research.
+        appraisal and will not last. What the market is DOING — cap rates, the trades, comps — is on the City desk.
       </div>
 
       {/* BOOKS FOR SALE — the desk the seizure alert always pointed at and never reached.
@@ -592,10 +610,12 @@ export function MarketPage() {
       })()}
       {/* THE PHONE, ABOVE THE TAPE. An off-market file is the one thing on this
           page that nobody else can bid on and the one thing that disappears on
-          a schedule; the listings will still be there next month. */}
-      <BrokerCalls />
-      <BuyBoxEditor />
-      <SiteFinder />
+          a schedule; the listings will still be there next month.
+          AND THE TAPE ABOVE AN EMPTY PHONE. With no call live, this put a
+          section reading "Brokers on the phone · 0", the buy-box form and the
+          site list between the player and the listings they came for — the
+          tape started a screen and a half down. */}
+      {phoneLive && <><BrokerCalls /><BuyBoxEditor /><SiteFinder /></>}
       <div className="deals-grid">
         <section style={{ gridColumn: "1 / -1" }}>
           <div className="page-section" style={{ marginTop: 14 }}>On the market · {live}{mine.length ? ` · ${mine.length} of them yours` : ""}</div>
@@ -756,7 +776,7 @@ export function MarketPage() {
                           {" "}· {game.brokerRel?.[li.via ?? ""]?.name ?? "house"} · yours for {li.earlyUntilM - game.month} more month{li.earlyUntilM - game.month === 1 ? "" : "s"}
                         </span>
                       )}
-                      <span className="dim"> · Open →</span>
+                      <span className="dim row-open"> · Open →</span>
                       {yours && h?.sale?.bids && h.sale.bids.length > 0 && (
                         <span className="dim mono"> · {h.sale.bids.length} bid{h.sale.bids.length === 1 ? "" : "s"} · best {usd(h.sale.bids[0].price)}</span>
                       )}
@@ -819,6 +839,7 @@ export function MarketPage() {
           </table>
         </section>
       </div>
+      {!phoneLive && <><BrokerCalls /><BuyBoxEditor /><SiteFinder /></>}
       {/* THE SHOPS. Three house brokerages carry every mandate in this town,
           and each one keeps a ledger on you: fees earned, first looks you let
           lapse, how long since your last closing. That ledger decides whose

@@ -22,8 +22,19 @@ const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 
-const SEEDS = (process.env.SEEDS ?? "550991,12007").split(",").map(Number);
-const MONTHS = (process.env.MONTHS ?? "0,72").split(",").map(Number);
+// FOUR MARKETS AT THREE DATES. Housing wins the residual on nearly every
+// vacant lot that pencils, so two markets at two dates passed the "more than
+// one use" guard on a single retail lot (158 lots: 157 flats, 1 shop) and
+// failed it outright once street plan 4 recut the reference town (280 flats).
+// The identity is only worth asking of every use the residual can choose:
+// this sample reaches all four (764 lots, about a minute).
+// ...and it drifted back to one: by Oct 2026 the four markets at three dates
+// gave 827 flats and a single shop, and smoothing the height premium
+// (value.ts heightPremium) took the shop. Six markets at four dates reach
+// flats, offices and warehouses (1,514 lots, measured), so the identity is
+// asked of three uses again rather than of whichever lot happens to win.
+const SEEDS = (process.env.SEEDS ?? "550991,12007,11,7919,4242,9001").split(",").map(Number);
+const MONTHS = (process.env.MONTHS ?? "0,72,144,216").split(",").map(Number);
 const TOL = 0.03;
 
 console.log("\nRESIDUAL RECON — a lot bought at its builder residual plans at hurdle 1.0\n");
@@ -39,7 +50,17 @@ for (const seed of SEEDS) {
     for (const bbl of bbls) {
       const rec = E.resolveRec(parcels, g, bbl);
       if (!rec || rec.class !== "land" || !(rec.lotArea > 0) || g.developments?.[bbl]) continue;
-      const sc = E.landRead(rec, g.econ).scheme;
+      // THE BUILD-NOW RESIDUAL. Since round 13 the land market prices a lot's
+      // residual at the date its turn in the redevelopment queue comes
+      // (value.ts `queueFactor`), so the tape sits under the build-now
+      // residual on lots behind better sites — and a builder who CAN build
+      // today on that dirt clears above 1.0, which is the economics, not a
+      // disagreement. The identity this file protects is the pro forma
+      // algebra, so it is asked of the build-now residual: the queue's
+      // positions are emptied, its absorption rate (which the desk's lease-up
+      // also reads) is kept, and both ends run one pro forma.
+      const nowEcon = { ...g.econ, landQueue: Object.fromEntries(Object.entries(g.econ.landQueue ?? {}).map(([u, q]) => [u, { ...q, psf: [], ahead: [] }])) };
+      const sc = E.landRead(rec, nowEcon).scheme;
       if (!sc || !(sc.psf > 0)) continue;
       // The scheme is the desk's own dials. (`coverage` is new with the
       // reconciliation; before it the residual built at usable/floors.)

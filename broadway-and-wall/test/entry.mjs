@@ -60,6 +60,10 @@ export const MODULES = [
   // owners carries the register of named private holders: who owns what, what
   // they think of you, and when they leave the market.
   "owners",
+  // offmarket is the firms' acquisitions desks: the calls they make to holders who have not listed.
+  "offmarket",
+  // peers is the league table: real US cities, read relative to the US and laid on this game's nation.
+  "peers",
   // ownership is the merged view over both registers — every deed in town, its
   // owner, and that owner's balance sheet and income statement.
   "ownership",
@@ -77,14 +81,8 @@ export const MODULES = [
   "deliveryNotice",
   // takeprivate — buying a rival firm whole (test/take-private.mjs).
   "takeprivate",
-  // jev — Jev (TypeSafe) informing rival firms' decisions; jevmatch the setup
-  // and standings (test/jev.mjs, tools/ai-match.mjs). aibooks is their deal ledger.
-  "jev", "jevmatch", "aibooks",
 ];
 
 export function writeEntry(path) {
-  // The AI controller lives outside the engine (it is async and does I/O) but
-  // the headless match runner drives it with the same bundle.
-  return MODULES.map((m) => `export * from "../src/engine/${m}";`).join("\n")
-    + `\nexport * from "../src/ai/index";\n`;
+  return MODULES.map((m) => `export * from "../src/engine/${m}";`).join("\n") + "\n";
 }

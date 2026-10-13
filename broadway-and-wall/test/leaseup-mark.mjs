@@ -78,8 +78,20 @@ for (const seed of [12007, 550991, 11, 7919]) {
       const h = let_(0.3);
       const a = at(h, 2 * span - 2), b = at(h, 2 * span - 1), c = at(h, 2 * span), d = at(h, 2 * span + 1);
       const slice = b - a, last = c - b, after = d - c;
-      check(Math.abs(last - slice) <= Math.abs(slice) * 0.05 + 1 && Math.abs(after) <= 1,
-        `${tag}, 30% let: the fade's last month moves ${pc(c / b - 1)} against ${pc(b / a - 1)} the month before, and ${pc(d / c - 1)} after`);
+      // UNLESS THE DIRT IS UNDER IT. The mark never goes below the land
+      // appraisal floor, so a thinly let building on dear ground can meet the
+      // floor inside the fade and stop there — a floor, not a step. Then the
+      // claim is that it lands ON the floor and stays, not that it takes one
+      // more slice.
+      const floorAt = (m) => E.landAppraisalFloor(rec, g.econ, E.leaseUpWeight(rec, m));
+      const floored = [2 * span - 1, 2 * span, 2 * span + 1].some((m) => at(h, m) <= floorAt(m) + 1);
+      if (floored) {
+        check(Math.abs(c - floorAt(2 * span)) <= 1 && Math.abs(after) <= 1,
+          `${tag}, 30% let: the fade meets the land floor (${Math.round(floorAt(2 * span) / 1e3)}K) and holds it — ${pc(c / b - 1)}, then ${pc(d / c - 1)}`);
+      } else {
+        check(Math.abs(last - slice) <= Math.abs(slice) * 0.05 + 1 && Math.abs(after) <= 1,
+          `${tag}, 30% let: the fade's last month moves ${pc(c / b - 1)} against ${pc(b / a - 1)} the month before, and ${pc(d / c - 1)} after`);
+      }
     }
     // 3 · empty is not worth more for having been empty longer
     {

@@ -29,7 +29,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding } from "./types";
 import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
-import { rng, rrange } from "./market";
+import { rng, rrange, cycleHot, cycleDown } from "./market";
 import { openReoPortfolio } from "./portfoliosale";
 import { collateralAsIs, ownedHoldingValue, resolveRec } from "./value";
 import { lenderPressure, lenderByName, chargeLenderLoss } from "./lenders";
@@ -238,8 +238,8 @@ function buildDocket(s: GameState, parcels: ParcelTable) {
 /** Who shows up with money, and how hard they push. The room IS the cycle. */
 function roomBid(s: GameState, est: number): { px: number; heads: number } {
   const ci = s.econ.creditIdx ?? 1;
-  const hot = ci > 1.02 && (s.econ.phase === "expansion" || s.econ.phase === "peak");
-  const crunch = ci < 0.92 || s.econ.phase === "recession";
+  const hot = ci > 1.02 && cycleHot(s.econ) > 0.5;
+  const crunch = ci < 0.92 || cycleDown(s.econ) > 0.5;
   const heads = hot ? 2 + Math.floor(rng(s) * 4) : crunch ? Math.floor(rng(s) * 2) : 1 + Math.floor(rng(s) * 2);
   let best = 0;
   for (let i = 0; i < heads; i++) {

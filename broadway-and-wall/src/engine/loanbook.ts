@@ -86,8 +86,11 @@ export function cityLoanBook(s: GameState, parcels?: ParcelTable): BookLoan[] {
     if (h.loan && h.loan.balance > 0) {
       const holder = seniorLender(h.loan);
       if (holder) {
+        // Not paying is default; past maturity but still paying the coupon is
+        // a matured loan on watch — it earns its interest, which is why a desk
+        // would rather extend it than file on it.
         const defaulted = w?.stage === "foreclosure"
-          || (w && w.cause !== "covenant")
+          || w?.cause === "arrears"
           || (h.loan.arrearsMs ?? 0) >= 1;
         const status: BookLoanStatus = defaulted ? "default" : (h.loan.sweep || w) ? "watch" : "current";
         out.push({ holder, borrower: "player", kind: "senior", balance: h.loan.balance, status, bbl: h.bbl, klass: klassOf(h.bbl) });

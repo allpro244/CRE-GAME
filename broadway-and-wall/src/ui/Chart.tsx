@@ -25,7 +25,13 @@ function useWidth(fallback = 480): [(el: HTMLDivElement | null) => void, number]
   const setRef = useCallback((el: HTMLDivElement | null) => {
     ro.current?.disconnect();
     ro.current = null;
-    if (!el || typeof ResizeObserver === "undefined") return;
+    if (!el) return;
+    // Measure on attach: waiting for the observer's first callback drew a
+    // frame (or several, on a busy page) at the 480-unit fallback, so a chart
+    // opened as a small picture in the middle of the page and then jumped.
+    const w0 = Math.round(el.getBoundingClientRect().width);
+    if (w0 > 0) setW((prev) => (Math.abs(prev - w0) > 1 ? w0 : prev));
+    if (typeof ResizeObserver === "undefined") return;
     const obs = new ResizeObserver((es) => {
       const cw = Math.round(es[0]?.contentRect.width ?? 0);
       if (cw > 0) setW((prev) => (Math.abs(prev - cw) > 1 ? cw : prev));

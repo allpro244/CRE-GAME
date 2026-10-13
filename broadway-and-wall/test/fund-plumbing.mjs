@@ -165,7 +165,12 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
   // vehicle's cash moves by the ledger PLUS the change in deposits it holds.
   const fundDeps = (x) => fund.reduce((a, b) => a + (x.holdings[b]?.tenants ?? []).reduce((n, t) => n + (t.deposit ?? 0), 0), 0);
   let checked = 0, bad = 0, worst = 0, sponsorPaid = 0, depMonths = 0, januaries = 0;
-  for (let i = 0; i < 30; i++) {
+  // Thirty months, or on until a fund deed's roll has turned once (to 96,
+  // inside the vehicle's 120-month life): the deposit leg is only exercised
+  // when a commercial lease ends or starts, and when that first happens is the
+  // luck of which buildings the vehicle bought — flats hold no deposits, and
+  // on the plan-8 reference town the one office's lease runs to month 78.
+  for (let i = 0; i < 96 && (i < 30 || depMonths === 0); i++) {
     const f0 = { ...g.fund };
     const g1 = E.advanceMonth(g, parcels, bbls, adjacency);
     if (!fund.every((b) => g1.holdings[b]?.fundOwned) || g1.fund.settled) break;

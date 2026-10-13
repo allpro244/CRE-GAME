@@ -4,7 +4,7 @@ import { yearReview, ordinal, positiveLeverage } from "@/engine/standing";
 import { MILESTONES } from "@/engine/sim";
 import { goalProgress, goalDef, goalsOpen } from "@/engine/goals";
 import { START_YEAR, monthLabel } from "@/engine/types";
-import { openResearchOn } from "@/ui/panels/shared";
+import { openViewOn } from "@/ui/panels/shared";
 import { usd, pctSigned } from "@/ui/format";
 
 /**
@@ -26,8 +26,8 @@ export default function YearReview() {
   const moved = r.rank0 - r.rank1;
   const parcels = useStore.getState().parcels;
   const addr = (bbl: string) => parcels?.[bbl]?.address ?? bbl;
-  const go = (page: "research" | "books" | "market") => {
-    if (page === "research") openResearchOn("street");
+  const go = (page: "players" | "books" | "market") => {
+    if (page === "players") openViewOn("players", "street");
     useStore.getState().setPage(page);
     dismiss();
   };
@@ -101,8 +101,8 @@ export default function YearReview() {
           );
         })()}
         <div className="btn-row" style={{ marginTop: 14, justifyContent: "center", flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-primary" onClick={dismiss}>On to {r.year + 1}</button>
-          <button type="button" className="btn" onClick={() => go("research")}>The street</button>
+          <button type="button" className="btn btn-primary" data-esc onClick={dismiss}>On to {r.year + 1}</button>
+          <button type="button" className="btn" onClick={() => go("players")}>The street</button>
           <button type="button" className="btn" onClick={() => go("books")}>The books</button>
           <button type="button" className="btn" onClick={() => go("market")}>The tape</button>
         </div>
@@ -175,7 +175,7 @@ export function ExitCard() {
           {card.cash !== undefined && (<><span>Cash in at closing</span><span title="After the loan payoff, closing costs and any partner's share">{usd(card.cash)} net</span></>)}
         </div>
         <div className="btn-row" style={{ marginTop: 14, justifyContent: "center", flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-primary" onClick={dismiss}>Back to the desk</button>
+          <button type="button" className="btn btn-primary" data-esc onClick={dismiss}>Back to the desk</button>
           <button type="button" className="btn" onClick={() => { useStore.getState().setPage("market"); dismiss(); }}>Put it to work</button>
           <button type="button" className="btn" onClick={() => { useStore.getState().setPage("firm"); dismiss(); }}>The record</button>
         </div>
@@ -212,7 +212,7 @@ export function GoalCard() {
         </div>
         <NextGoals />
         <div className="btn-row" style={{ marginTop: 14, justifyContent: "center" }}>
-          <button type="button" className="btn btn-primary" onClick={close}>Carry on without one</button>
+          <button type="button" className="btn btn-primary" data-esc onClick={close}>Carry on without one</button>
         </div>
       </div>
     </div>

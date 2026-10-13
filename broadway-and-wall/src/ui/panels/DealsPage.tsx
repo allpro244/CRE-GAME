@@ -143,7 +143,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
       <div className="loi-line mono">
         ${loi.rentPsf.toFixed(2)}/sf {recoveryOf(loi) === "nnn" ? "NNN" : recoveryOf(loi) === "base" ? "base-year" : "gross"} · {bump.toFixed(2)}%/yr
         {loi.tiPsf > 0 ? ` · TI $${loi.tiPsf}` : " · no TI"}
-        {` · ${loi.freeM > 0 ? `${loi.freeM}mo free` : "no free rent"}`}
+        {` · ${loi.freeM > 0 ? `${loi.freeM}\u00a0mo\u00a0free` : "no free rent"}`}
       </div>
       {prevRent !== undefined && (
         <div className="loi-line mono" style={{ color: (loi.openRentPsf ?? loi.rentPsf) >= prevRent ? "#3a7d46" : "#a8402e" }}>
@@ -158,12 +158,12 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         <div className="loi-line mono" style={{ color: "#7a5c1e" }}>
           you asked ${loi.askedRentPsf.toFixed(2)}
           {loi.askedTiPsf !== undefined ? ` · TI $${loi.askedTiPsf}` : ""}
-          {loi.askedFreeM ? ` · ${loi.askedFreeM}mo free` : ""}
+          {loi.askedFreeM ? ` · ${loi.askedFreeM}\u00a0mo\u00a0free` : ""}
           {loi.askedBumpPct !== undefined ? ` · ${loi.askedBumpPct.toFixed(2)}%/yr` : ""}
           {loi.openRentPsf !== undefined ? ` (opened $${loi.openRentPsf.toFixed(2)})` : ""}
           {" "}→ their final ${(loi.counterRentPsf ?? loi.rentPsf).toFixed(2)}/sf
           {loi.counterTiPsf !== undefined ? ` · TI $${loi.counterTiPsf}` : ""}
-          {(loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}mo free` : ""}
+          {(loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}\u00a0mo\u00a0free` : ""}
           {loi.counterBumpPct !== undefined ? ` · ${loi.counterBumpPct.toFixed(2)}%/yr` : ""}
         </div>
       )}
@@ -175,7 +175,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         {!final && Math.abs(theirNe - nowNe) > 0.05 ? ` · opened NE $${theirNe.toFixed(2)}` : ""}
       </div>
       <div className="loi-line mono dim">
-        signing costs {usd(cost)}{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM)}
+        signing costs {usd(cost)}{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM - 1)}
       </div>
       {(() => {
         // The desk's one line on the letter — same helpers as the lines
@@ -208,7 +208,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
           )}
           {!loi.countered && !final && (
             <button className="btn" title="Open the counter at your own terms — the tenant's package, at the rent that reaches your number. Signs as written if it already does." onClick={myTerms}>
-              Counter to my terms
+              My terms
             </button>
           )}
           <button className="btn" onClick={() => respondLoi(loi.id, "decline")}>Pass</button>
@@ -332,7 +332,17 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
               </div>
             ) : null;
           })()}
-          {!countering && (
+          {/* A PAPERED CONTRACT IS NOT AN OFFER. It closes itself on its
+              date (sim.ts files it as a soft docket row); Decline and Counter
+              on a deal you already signed were controls for a decision that
+              no longer exists. Closing early is the one real choice. */}
+          {offer.contract && !offer.held && (
+            <div className="btn-row">
+              <span className="loi-line dim" style={{ margin: 0 }}>Under contract — it closes {monthLabel(offer.expiresM)} on its own.</span>
+              <button className="btn" onClick={() => setAcceptConfirm({})}>Close now · net {usd(closeNet(offer.price))}</button>
+            </div>
+          )}
+          {!countering && !(offer.contract && !offer.held) && (
             <div className="btn-row">
               <button className="btn btn-buy" onClick={() => setAcceptConfirm({})}>Accept {usd(offer.price)}</button>
               <button className="btn" onClick={() => declineOffer(bbl)}>Decline</button>
@@ -413,6 +423,7 @@ export function DealsPage() {
   const liveCount = Object.keys(game.talks ?? {}).length
     + (game.asks ?? []).filter((a) => !game.holdings[a.bbl]?.groundLeased).length
     + game.lois.filter((l) => loiNeedsPrincipal(game, l)).length;
+  const quietDesk = liveCount === 0 && calls.length === 0 && inbound.length === 0;
   const [desk, setDesk] = useState<"live" | "sales">(
     saleCount > 0 ? "sales" : "live",
   );
@@ -428,7 +439,9 @@ export function DealsPage() {
         <button type="button" role="tab" aria-selected={desk === "live"}
           className={"btn" + (desk === "live" ? " btn-on" : "")}
           onClick={() => setDesk("live")}>
-          Letters · {liveCount}
+          {/* It said "Letters" over purchase negotiations, counter-asks and
+              contracts as well as tenants' letters. */}
+          Open deals · {liveCount}
         </button>
         <button type="button" role="tab" aria-selected={desk === "sales"}
           className={"btn" + (desk === "sales" ? " btn-on" : "")}
@@ -436,9 +449,34 @@ export function DealsPage() {
           Your sales · {saleCount}
         </button>
       </div>
-      <div className={"deals-grid" + (desk !== "live" ? " deals-one" : "")}>
+      {/* One column: the live desk is a single <section>, and the two-column
+          grid left the right half of the room empty. */}
+      <div className="deals-grid deals-one">
 
-      {desk === "live" && <section>
+      {/* AN EMPTY DESK IS ONE CARD, NOT THREE EMPTY HEADINGS. With nothing
+          live the room printed "On the table · 0", "Letters of intent · 0" and
+          "Doors you knocked on · 0", each with its own sentence, and the
+          section rail above made chips for all three. One card says where
+          deals come from and offers the two doors that start one. */}
+      {desk === "live" && quietDesk && (
+        <section className="empty-desk">
+          <div className="empty-desk-title">Nothing on the desk</div>
+          <div className="empty-desk-lines">
+            <div><b>You start a deal</b> by offering on a listing, or by asking the owner of any building you do not own — up to {MAX_TALKS} at once.</div>
+            <div><b>Tenants start one</b> by writing for vacant space in buildings you own. Their letters land here.</div>
+            <div><b>Brokers start one</b> by ringing with off-market files, once you have closed with them. Those sit on Marketplace.</div>
+            {deskHoldsPen(game) && (() => {
+              const t = deskMonthNow(game);
+              return <div className="dim">Your leasing desk holds the pen{t ? ` — this month ${t.signed} signed, ${t.passed} passed, ${t.referred} referred, ${t.walked} walked` : ""}. Nothing is waiting on you.</div>;
+            })()}
+          </div>
+          <div className="btn-row">
+            <button className="btn btn-buy" onClick={() => setPage("market")}>Browse Marketplace →</button>
+            {Object.keys(game.holdings).length > 0 && <button className="btn" onClick={() => setPage("leasing")}>Leasing plan →</button>}
+          </div>
+        </section>
+      )}
+      {desk === "live" && !quietDesk && <section>
         {/* EVERYTHING ON THE TABLE, contracts first — because a contract has
             a clock on it and a conversation does not. This used to be able to
             show exactly one row, since the game could only hold one. */}
@@ -458,7 +496,7 @@ export function DealsPage() {
                     <strong>{parcels[t.bbl]?.address ?? t.bbl}</strong>
                     {t.agreed ? (
                       <> — agreed at <b className="mono">{usd(t.agreedPrice ?? t.theirPrice)}</b> with {t.sellerName},{" "}
-                        {usd(t.deposit ?? 0)} down. Fund it by <b>{monthLabel(t.closeByM ?? game.month)}</b> or the deposit is theirs.</>
+                        {usd(t.deposit ?? 0)} down. Fund it by <b>{monthLabel((t.closeByM ?? game.month + 1) - 1)}</b> or the deposit is theirs.</>
                     ) : (
                       <> — {t.sellerName} is at <b className="mono">{usd(t.theirPrice)}</b>, you are at {usd(t.yourPrice)}.{" "}
                         {t.final ? "Their final word." : `Round ${t.round} of ${t.maxRounds}.`}</>
@@ -549,9 +587,9 @@ export function DealsPage() {
                 ? (tally
                   ? `Your desk has the book — this month ${tally.signed} signed, ${tally.passed} passed, ${tally.referred} referred, ${tally.walked} walked. Nothing waiting on you right now.`
                   : "Your desk has the book — nothing referred back right now. They work the posted plan on Leasing; the quarterly digest lives there too.")
-                : "No live negotiations. Vacant space in high-demand buildings draws tenants."}
+                : "No tenant has written this month. Vacant space in high-demand buildings draws them."}
             </div>
-            {Object.keys(game.holdings).length === 0 ? (
+            {Object.keys(game.talks ?? {}).length > 0 ? null : Object.keys(game.holdings).length === 0 ? (
               <button className="btn btn-buy" onClick={() => useStore.getState().setPage("market")}>
                 Browse buildings in Marketplace →
               </button>
@@ -595,7 +633,7 @@ export function DealsPage() {
                     </span>
                     <span className="neighbor-meta mono">
                       {r.outcome === "took"
-                        ? `took your $${r.askedRentPsf.toFixed(2)}/sf${r.askedFreeM ? ` / ${r.askedFreeM}mo free` : ""} — ${usd(r.askedRentPsf * r.sf)} a year on ${sf(r.sf)}`
+                        ? `took your $${r.askedRentPsf.toFixed(2)}/sf${r.askedFreeM ? ` / ${r.askedFreeM}\u00a0mo\u00a0free` : ""} — ${usd(r.askedRentPsf * r.sf)} a year on ${sf(r.sf)}`
                         : r.outcome === "walked"
                           ? `walked. You asked $${r.askedRentPsf.toFixed(2)} into a $${r.marketPsf.toFixed(2)} market — ${sf(r.sf)} still empty`
                           : `came back at $${r.theirRentPsf.toFixed(2)} against your $${r.askedRentPsf.toFixed(2)}${freeBit(r.askedFreeM, r.theirFreeM)} · ${delta >= 0 ? "+" : "−"}${usd(Math.abs(delta))} a year`}
@@ -646,12 +684,8 @@ export function DealsPage() {
         <div className="page-section">
           Sales in progress · {sales.length + (game.portfolioSale ? 1 : 0)}
         </div>
-        <div className="hint">
-          Offers on your own book live here, full width — not next to inbound letters.
-          One card at a time: accept, decline, or counter.
-        </div>
         {sales.length === 0 && !game.portfolioSale
-          && <div className="hint">Nothing listed. Sell from any owned building's card.</div>}
+          && <div className="hint">Nothing listed. Sell from any building's Sell tab; buyers' offers land here to accept, counter or decline.</div>}
         {game.portfolioSale && <PortfolioSaleDesk bundle={[]} clear={() => { /* nothing to clear: not bundling here */ }} />}
         {sales.map((sl) => <SaleOfferCard key={sl.bbl} bbl={sl.bbl} ask={sl.ask} go={go} />)}
       </section>}

@@ -2204,14 +2204,17 @@ export function tickNation(s: GameState) {
   // or so of 1983 (Michigan 5-10yr expectations ~3% by the mid-1990s).
   const miss = n.infl - 0.02;
   const am = Math.abs(miss);
-  // NO STOPS (2026-10-13). This was clamped to 0.10-0.99 and sat on the
-  // ceiling 47% of months. Trust is earned with diminishing returns — the last
-  // points of belief are the hardest — and lost in proportion to what there is
-  // to lose, so the share stays inside 0-1 by its own arithmetic. Scaled so a
-  // half-believed bank moves at the old rates.
-  n.credibility += am < 0.010
-    ? 2 * (1 - n.credibility) * (0.0035 + (realPolicy > 0.03 ? 0.0022 : 0)) * (n.chair?.resolve ?? 1)
-    : -2 * n.credibility * (0.0018 + 0.110 * (am - 0.010));
+  // NO STOPS (2026-10-13). This was clamped to 0.10..0.99 and rested on the
+  // 0.99 stop 47% of months. The walk is unchanged wherever belief is more
+  // than a couple of points from certainty or collapse; within that, each
+  // step shrinks with the room that is left, so the share approaches 0 and 1
+  // and never reaches either. (A log-odds walk was tried first: a long calm
+  // then stockpiled so much belief that no inflation could spend it, and
+  // the Volcker episodes disappeared.)
+  const c = n.credibility;
+  n.credibility = c + (am < 0.010
+    ? (0.0035 + (realPolicy > 0.03 ? 0.0022 : 0)) * (n.chair?.resolve ?? 1) * (1 - c) / (1 - c + 0.02)
+    : -(0.0018 + 0.110 * (am - 0.010)) * c / (c + 0.02));
   // A believed bank's anchor beats the pass-through and expectations sit at
   // target; a disbelieved one's does not, and then last year's inflation
   // becomes next year's baseline. Those two regimes are the Great Moderation

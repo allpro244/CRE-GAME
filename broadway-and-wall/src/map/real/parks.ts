@@ -400,6 +400,45 @@ export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "
       parts.push([bx(0.12, 0.12, 1.55, -1.22, 0, 0.3), IRON]);
       return { g: mc(parts), mat: "vc" };
     }
+    // A FORMAL GARDEN: a gravel square inside a clipped box hedge open at
+    // each side, four hedged beds (their roses are flowerbed instances), a
+    // sundial at the crossing. 18 m square.
+    case "parterre": {
+      const BOX = [0.16, 0.3, 0.15], GRAV = [0.8, 0.74, 0.6];
+      const parts: [THREE.BufferGeometry, number[]][] = [[bx(18, 18, 0.03), GRAV]];
+      const hedge = (x0: number, y0: number, x1: number, y1: number) => {
+        const w = Math.abs(x1 - x0) || 0.4, d = Math.abs(y1 - y0) || 0.4;
+        parts.push([bx(w, d, 0.5, (x0 + x1) / 2, (y0 + y1) / 2, 0.03), BOX]);
+      };
+      // the outer hedge, with a 2.4 m opening mid-side
+      for (const sd of [-1, 1]) {
+        hedge(-8.8, sd * 8.8, -1.2, sd * 8.8); hedge(1.2, sd * 8.8, 8.8, sd * 8.8);
+        hedge(sd * 8.8, -8.8, sd * 8.8, -1.2); hedge(sd * 8.8, 1.2, sd * 8.8, 8.8);
+      }
+      // four beds: soil inside a low box edging
+      for (const qx of [-1, 1]) for (const qy of [-1, 1]) {
+        const cx = qx * 4.6, cy = qy * 4.6;
+        parts.push([bx(5.6, 5.6, 0.12, cx, cy, 0.03), [0.3, 0.22, 0.16]]);
+        for (const sd of [-1, 1]) {
+          parts.push([bx(6.0, 0.3, 0.32, cx, cy + sd * 2.95, 0.03), BOX]);
+          parts.push([bx(0.3, 6.0, 0.32, cx + sd * 2.95, cy, 0.03), BOX]);
+        }
+      }
+      parts.push([cy(0.45, 0.9, 0.03, 8), [0.72, 0.7, 0.66]], [cy(0.32, 0.06, 0.93, 12), [0.55, 0.45, 0.25]], [bx(0.04, 0.3, 0.2, 0, 0.05, 0.99), [0.55, 0.45, 0.25]]);
+      return { g: mc(parts), mat: "vc" };
+    }
+    // a stone cross over a grave, and a flat ledger stone
+    case "gcross": return { g: mc([[bx(0.5, 0.35, 0.3), [0.8, 0.8, 0.8]], [bx(0.14, 0.12, 1.25, 0, 0, 0.3), [1, 1, 1]], [bx(0.62, 0.12, 0.14, 0, 0, 1.15), [1, 1, 1]]]), mat: "vc", colored: true };
+    case "ledger": return { g: mc([[bx(0.95, 2.0, 0.22), [1, 1, 1]], [bx(0.85, 1.9, 0.04, 0, 0, 0.22), [0.92, 0.92, 0.92]]]), mat: "vc", colored: true };
+    // a rowing boat for hire, oars shipped
+    case "rowboat": return {
+      g: mc([[new THREE.CylinderGeometry(0.62, 0.42, 3.2, 8, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateX(Math.PI).scale(1, 1, 0.55).translate(0, 0, 0.3), [1, 1, 1]],
+        [bx(0.08, 1.1, 0.06, 0.2, 0, 0.22), [0.5, 0.36, 0.22]], [bx(0.08, 1.1, 0.06, -0.8, 0, 0.22), [0.5, 0.36, 0.22]],
+        [new THREE.BoxGeometry(0.05, 2.6, 0.04).rotateX(0.1).translate(0.1, 0, 0.32), [0.62, 0.48, 0.3]]]), mat: "vc", colored: true,
+    };
+    // a single jet in the middle of a big pond
+    case "pondjet": return { g: mc([[cy(0.12, 5.5, 0, 6, 0.05), [1, 1, 1]], [new THREE.SphereGeometry(0.9, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1, 0.5).translate(0, 0, 5.4), [1, 1, 1]],
+      [new THREE.CylinderGeometry(0.9, 2.6, 5.3, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, 2.75), [1, 1, 1]], [new THREE.CylinderGeometry(2.6, 3.1, 0.3, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.15), [1, 1, 1]]]), mat: "water" };
     case "flagpole": return { g: mc([[bx(1.6, 1.6, 0.5), STONE], [cy(0.09, 11, 0.5, 6, 0.05), WHITE], [new THREE.SphereGeometry(0.14, 6, 4).translate(0, 0, 11.6), [0.8, 0.65, 0.25]], [bx(0.02, 1.8, 1.1, 0, 0.95, 10.2), [0.7, 0.18, 0.16]]]), mat: "vc" };
   }
   return null;

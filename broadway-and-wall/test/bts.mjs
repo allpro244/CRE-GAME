@@ -127,6 +127,15 @@ const again = E.proposeBuildToSuit(g, parcels, bbl, use, floors, 0.62);
 check(!again.err && again.s.holdings[bbl].btsOffer.sinceM === g.holdings[bbl].btsOffer.sinceM,
   "re-listing the same programme keeps its place on the book");
 
+{
+  const fifty = E.proposeBuildToSuit(g, parcels, bbl, use, floors, 0.62, 50);
+  const long = E.proposeBuildToSuit(g, parcels, bbl, use, floors, 0.62, 80);
+  check(fifty.s.holdings[bbl].btsOffer.termY === 50 && long.s.holdings[bbl].btsOffer.termY === E.BTS_TERM_MAX_Y,
+    `the listing carries the term you offer (${E.BTS_TERM_MIN_Y}-${E.BTS_TERM_MAX_Y} years)`);
+  const r15 = E.btsRentRead(g, parcels, bbl, use, floors, 0.62, 2, 15), r50 = E.btsRentRead(g, parcels, bbl, use, floors, 0.62, 2, 50);
+  check(r50.need <= r15.need * 1.05, `fifty-year paper does not need much more rent than fifteen ($${r50.need} vs $${r15.need}) — the commission steps down`);
+}
+
 // ---- wait for an anchor, through tickBuildToSuit ----------------------------
 // Ten years is far past the odds on a small shed in a normal market (the
 // monthly hazard floors at 0.4% and runs to 9%); an anchor that never comes in
@@ -149,6 +158,10 @@ check(bts.startByM === bts.signedM + E.BTS_START_WINDOW_M, `the lease carries an
 
 const anchored = E.planDevelopment(g, parcels, bbl, use, floors, 0.62, "gmp",
   undefined, { bts });
+const readAtSign = E.btsRentRead(g, parcels, bbl, use, floors, 0.62, bts.credit, bts.termM / 12);
+check(bts.rentPsf >= readAtSign.market - 0.01 && bts.rentPsf <= readAtSign.ceiling + 0.01,
+  `a build-to-suit lets at market or better, within the anchor's ceiling ($${bts.rentPsf} against $${readAtSign.market.toFixed(2)} market, $${readAtSign.ceiling.toFixed(2)} ceiling)`);
+check(bts.termM === E.BTS_TERM_DEFAULT_Y * 12 && bts.bumpPct > 0, `they sign the listed term (${bts.termM / 12} yrs) with an annual bump (${bts.bumpPct}%)`);
 check(anchored.hurdleRatio >= 1, `the signed rent builds the building (anchored hurdle ${anchored.hurdleRatio.toFixed(3)}x the month they sign)`);
 // AGAINST THE SAME BUILDING, SPECULATIVE, THE SAME MONTH (2026-10-09). `spec`
 // was priced the month the site was listed and the anchor signs months later,
@@ -158,6 +171,7 @@ check(anchored.hurdleRatio >= 1, `the signed rent builds the building (anchored 
 // about the lease. The claim is about the lease, so both sides are priced now.
 const specNow = E.planDevelopment(g, parcels, bbl, use, floors, 0.62, "gmp");
 check(anchored.leaseUp < specNow.leaseUp, "anchor reduces speculative lease-up reserve");
+check(anchored.ratePct < specNow.ratePct, `a signed credit lease borrows cheaper (${anchored.ratePct.toFixed(2)}% vs ${specNow.ratePct.toFixed(2)}% spec)`);
 check(anchored.ltcMax >= specNow.ltcMax, `signed lease supports at least as much construction financing (LTC ${anchored.ltcMax.toFixed(3)} vs ${specNow.ltcMax.toFixed(3)} speculative, same month)`);
 
 // ---- the signature has an end, and it belongs to the site ---------------------
@@ -208,6 +222,7 @@ const tenant = g.holdings[bbl]?.tenants.find((t) => t.name === bts.name);
 check(!!tenant, "named tenant takes possession at delivery");
 check(tenant?.sf === bts.sf && tenant?.rentPsf === bts.rentPsf, "delivered lease matches signed BTS terms");
 check(tenant?.endM - tenant?.startM === bts.termM, "the lease runs the signed term from delivery");
+check(tenant?.bumpPct === bts.bumpPct, "the signed bump is on the delivered lease");
 check((tenant?.deposit ?? 0) > 0, "the anchor posts a security deposit at possession");
 
 // ---- and it pays --------------------------------------------------------------

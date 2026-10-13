@@ -23,7 +23,7 @@ import {
   farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed,
   specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE, maxCoverageFor, siteDebtAtGroundbreak,
   devFundingNeed, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, TAKEOUT_HEDGE_LTC,
-  btsRentRead, BTS_FIT_PREMIUM,
+  btsRentRead, BTS_FIT_PREMIUM, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
 import { BUILD_TIERS, buildTier, specRentMult, specWearMult } from "@/engine/value";
@@ -313,11 +313,12 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // its hurdle, against the most one pays for new space here. Twenty-odd
   // pro formas, so it is read on the month and the programme, not per render.
   const btsUse = use === "office" || use === "retail" || use === "industrial" ? use : null;
+  const [btsTermDial, setBtsTerm] = useState(() => btsTermY(btsOffer?.termY));
   const basisKey = game.holdings[bbl]?.costBasis;
   const btsRead = useMemo(
-    () => (btsUse && !prospect ? btsRentRead(game, parcels, bbl, btsUse, fl, cov) : null),
+    () => (btsUse && !prospect ? btsRentRead(game, parcels, bbl, btsUse, fl, cov, 2, btsTermDial) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [game.month, bbl, btsUse, fl, cov, basisKey, !!prospect],
+    [game.month, bbl, btsUse, fl, cov, basisKey, !!prospect, btsTermDial],
   );
   const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail }, bank, spec);
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
@@ -518,8 +519,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   <div className="grid">
                     <Row k="Build-to-suit tenant" v={`${prospect.name} · credit ${CREDIT_LABEL[prospect.credit]}`} strong />
                     <Row k="Their shell" v={`${prospect.floors !== undefined ? `${prospect.floors} fl of ` : ""}${prospect.use}${prospect.coverage !== undefined ? ` · ${Math.round(prospect.coverage * 100)}% of the lot` : ""}`} />
-                    <Row k="Commitment" v={`${sf(prospect.sf)} · ${(prospect.termM / 12).toFixed(0)} years`} />
-                    <Row k="Rent" v={`$${prospect.rentPsf.toFixed(2)}/sf · priced to build the shell`} />
+                    <Row k="Commitment" v={`${sf(prospect.sf)} · ${(prospect.termM / 12).toFixed(0)} years from delivery`} />
+                    <Row k="Rent" v={`$${prospect.rentPsf.toFixed(2)}/sf${prospect.bumpPct !== undefined ? `, +${prospect.bumpPct}% a year` : ""} · at or above market, priced to build the shell`} />
                     <Row k="Tenant work" v={`$${prospect.tiPsf}/sf · ${prospect.recovery.toUpperCase()}`} />
                     {prospect.startByM !== undefined && (
                       <Row
@@ -552,7 +553,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   <div className="grid">
                     <Row
                       k="On the BTS book"
-                      v={`${btsOffer.floors} fl of ${btsOffer.use} · since ${monthLabel(btsOffer.sinceM)}${
+                      v={`${btsOffer.floors} fl of ${btsOffer.use} · ${btsTermY(btsOffer.termY)} yrs · since ${monthLabel(btsOffer.sinceM)}${
                         game.month - btsOffer.sinceM > 0
                           ? ` · ${game.month - btsOffer.sinceM} month${game.month - btsOffer.sinceM === 1 ? "" : "s"} waiting`
                           : ""
@@ -575,10 +576,20 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                     the size of the shell say so, and sign only at a rent that builds it. Change the programme below and
                     re-list to update what you are shopping; pull the listing to go back to pure spec.
                   </div>
+                  <Slider
+                    label="Lease term offered"
+                    value={btsTermDial}
+                    min={BTS_TERM_MIN_Y}
+                    max={BTS_TERM_MAX_Y}
+                    step={1}
+                    onChange={setBtsTerm}
+                    format={(v) => `${v} years from delivery`}
+                    hint="The primary term an anchor signs for, from delivery, with a 2-2.5% annual bump. Longer paper is worth more to a buyer and a lender; the leasing commission stops at year twenty."
+                  />
                   <div className="btn-row">
-                    {(btsOffer.use !== use || btsOffer.floors !== fl || Math.abs(btsOffer.coverage - cov) > 0.001) && (
-                      <button className="btn" onClick={() => useStore.getState().proposeBts(bbl, use, fl, cov)}>
-                        Update listing · {fl} fl of {use}
+                    {(btsOffer.use !== use || btsOffer.floors !== fl || Math.abs(btsOffer.coverage - cov) > 0.001 || btsTermY(btsOffer.termY) !== btsTermDial) && (
+                      <button className="btn" onClick={() => useStore.getState().proposeBts(bbl, use, fl, cov, btsTermDial)}>
+                        Update listing · {fl} fl of {use}, {btsTermDial} yrs
                       </button>
                     )}
                     <button className="btn" onClick={() => useStore.getState().clearBts(bbl)}>Pull the listing</button>
@@ -589,13 +600,23 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   {btsRead && <div className="grid"><BtsRentRows read={btsRead} /></div>}
                   <div className="hint">
                     Build on spec for market rent and lease-up risk, or list the shell for a build-to-suit: one credit
-                    tenant before groundbreak, long term, day-one occupancy and stronger financing, at a rent set by what
-                    the building costs. An anchor pays up to {Math.round(BTS_FIT_PREMIUM * 100)}% over new space for a
+                    tenant before groundbreak on a 15-50 year lease from delivery, day-one occupancy and cheaper, deeper
+                    construction debt, at market rent or better — set by what the building costs. An anchor pays up to {Math.round(BTS_FIT_PREMIUM * 100)}% over new space for a
                     building drawn around it and no more — past that it leases something standing. An anchor arrives
                     when one arrives; this is a listing, not a desk that invents tenants on demand.
                   </div>
-                  <button className="btn" onClick={() => { dirty.current = true; useStore.getState().proposeBts(bbl, use, fl, cov); }}>
-                    List for build-to-suit
+                  <Slider
+                    label="Lease term offered"
+                    value={btsTermDial}
+                    min={BTS_TERM_MIN_Y}
+                    max={BTS_TERM_MAX_Y}
+                    step={1}
+                    onChange={setBtsTerm}
+                    format={(v) => `${v} years from delivery`}
+                    hint="The primary term an anchor signs for, from delivery, with a 2-2.5% annual bump. Longer paper is worth more to a buyer and a lender; the leasing commission stops at year twenty."
+                  />
+                  <button className="btn" onClick={() => { dirty.current = true; useStore.getState().proposeBts(bbl, use, fl, cov, btsTermDial); }}>
+                    List for build-to-suit · {btsTermDial} years
                   </button>
                 </>
               )}

@@ -561,6 +561,8 @@ export interface Holding {
    */
   btsOffer?: {
     use: BuiltClass; floors: number; coverage: number; sinceM: number;
+    /** The primary term you are offering, in years (BTS_TERM_MIN_Y..BTS_TERM_MAX_Y). Absent = 20. */
+    termY?: number;
     /** The last occupier that looked and passed: the rent the shell needed against what they would pay. */
     lastWalk?: { m: number; name: string; needPsf: number; ceilingPsf: number };
   };
@@ -810,6 +812,8 @@ export interface BtsCommitment {
   tiPsf: number;
   recovery: "nnn" | "base" | "gross";
   signedM: number;
+  /** Annual contractual bump on the lease, percent. Absent = the house default. */
+  bumpPct?: number;
   /** The shell they signed for — the listing's programme. Absent on old saves. */
   floors?: number;
   coverage?: number;

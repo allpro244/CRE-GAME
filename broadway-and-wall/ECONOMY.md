@@ -2862,9 +2862,21 @@ A build-to-suit is priced off cost. Now:
   hurdle the desk shows (same `planDevelopment`, same land basis), and the
   most an anchor pays: market for new space x (1 + `BTS_FIT_PREMIUM`, 10%,
   the middle of the 5-15% premium BTS deals are reported to carry).
-- An arriving anchor opens at its old discount; it signs at the larger of that
-  and the rent the shell needs, if that is within its ceiling, and otherwise
-  passes — with news naming both numbers — and the listing stays up.
+- An arriving anchor signs at the larger of market and the rent the shell
+  needs, if that is within its ceiling — a new building drawn around one
+  occupier lets at market or better, never at a discount — and otherwise
+  passes, with news naming both numbers, and the listing stays up.
+- The developer names the primary term on the listing, 15-50 years from
+  delivery, and the anchor signs for it with an annual bump (2% strong
+  covenant, 2.5% solid). The anchor's leasing commission steps down with term
+  (2% of rent on years 1-10, 1% on 11-20, none past 20) instead of 2% of every
+  year, which had charged a fifty-year lease a full year's rent.
+- Financing: the let share borrows at the credit-lease advance (68% / 58%)
+  and the rest at the desk's spec advance — the let share alone used to be
+  the whole loan, so a mostly-let office borrowed little more than spec — and
+  the construction coupon is 75bp (strong) / 50bp (solid) inside spec, scaled
+  by the let share (an estimate of the 50-100bp pre-leased credit deals price
+  inside spec).
 - The arrival hazard no longer multiplies by `buildClimate`: whether building
   pays is now asked of this shell at the table, so it is counted once.
 - Signed terms carry an outside date (`BTS_START_WINDOW_M`, 12 months) and

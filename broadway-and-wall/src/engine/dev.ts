@@ -1172,6 +1172,29 @@ export const BTS_FIT_PREMIUM = 0.10;
  * that clause; a signature held indefinitely is not one any tenant gives.
  */
 export const BTS_START_WINDOW_M = 12;
+/**
+ * THE TERM YOU SHOP. Build-to-suit paper runs long because the building is
+ * drawn around one occupier: 15 years is the short end a lender will treat as
+ * a credit lease, and 50 is the long end of ground-up net lease (big-box,
+ * distribution, headquarters with the options folded in). The developer names
+ * it on the listing; the anchor who signs, signs for it.
+ */
+export const BTS_TERM_MIN_Y = 15;
+export const BTS_TERM_MAX_Y = 50;
+export const BTS_TERM_DEFAULT_Y = 20;
+export function btsTermY(y: number | undefined): number {
+  const t = Math.round(Number.isFinite(y as number) ? (y as number) : BTS_TERM_DEFAULT_Y);
+  return Math.max(BTS_TERM_MIN_Y, Math.min(BTS_TERM_MAX_Y, t));
+}
+/**
+ * The annual bump on build-to-suit paper. Long net leases do not sit flat for
+ * decades: they step, usually ~10% every five years or 1.5-2.5% a year. A
+ * stronger covenant gets the lower step (the same split rollBumpPct uses for
+ * ordinary leases, without the slack term — this is fixed before the building exists).
+ */
+function btsBumpPct(credit: 1 | 2): number {
+  return credit === 2 ? 2.0 : 2.5;
+}
 
 function btsFitOut(use: BuiltClass): { tiPsf: number; recovery: "nnn" | "base" } {
   return {
@@ -1198,7 +1221,7 @@ function btsFitOut(use: BuiltClass): { tiPsf: number; recovery: "nnn" | "base" }
  */
 export function btsRentRead(
   s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass,
-  floors: number, coverage: number, credit: 1 | 2 = 2,
+  floors: number, coverage: number, credit: 1 | 2 = 2, termY = BTS_TERM_DEFAULT_Y,
 ): { market: number; ceiling: number; need: number; sf: number } | null {
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
   if (!plan) return null;
@@ -1213,7 +1236,7 @@ export function btsRentRead(
   const ceiling = market * (1 + BTS_FIT_PREMIUM);
   const fit = btsFitOut(use);
   const hurdleAt = (rentPsf: number) => planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp", undefined, {
-    bts: { name: "", sector: "tech", credit, use, sf, rentPsf, termM: credit === 2 ? 240 : 180,
+    bts: { name: "", sector: "tech", credit, use, sf, rentPsf, termM: btsTermY(termY) * 12,
       tiPsf: fit.tiPsf, recovery: fit.recovery, signedM: s.month },
   })?.hurdleRatio ?? 0;
   // Hurdle rises with the rent. Search a band wide enough to report how far
@@ -1238,8 +1261,9 @@ export function btsRentRead(
  */
 export function proposeBuildToSuit(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
-  floors: number, coverage = 0.62,
+  floors: number, coverage = 0.62, termYears = BTS_TERM_DEFAULT_Y,
 ): { s: GameState; err?: string; msg?: string } {
+  const termY = btsTermY(termYears);
   if (use !== "office" && use !== "retail" && use !== "industrial") {
     return { s, err: "Build-to-suit is for an office headquarters, anchor retail or an industrial user." };
   }
@@ -1263,16 +1287,17 @@ export function proposeBuildToSuit(
   const same = prev
     && prev.use === use
     && prev.floors === plan.floors
-    && Math.abs(prev.coverage - coverage) < 0.001;
+    && Math.abs(prev.coverage - coverage) < 0.001
+    && btsTermY(prev.termY) === termY;
   next.holdings[bbl].btsOffer = {
-    use, floors: plan.floors, coverage, sinceM: same ? prev!.sinceM : next.month,
+    use, floors: plan.floors, coverage, termY, sinceM: same ? prev!.sinceM : next.month,
     ...(same && prev!.lastWalk ? { lastWalk: prev!.lastWalk } : {}),
   };
   return {
     s: next,
     msg: same
       ? "Still on the book — an anchor comes when one comes."
-      : `Listed ${plan.floors} fl of ${use} (${Math.round(plan.sf).toLocaleString()} sf) for a build-to-suit. Now you wait.`,
+      : `Listed ${plan.floors} fl of ${use} (${Math.round(plan.sf).toLocaleString()} sf) for a ${termY}-year build-to-suit. Now you wait.`,
   };
 }
 
@@ -1294,29 +1319,27 @@ function dropBtsProspect(s: GameState, bbl: string) {
 }
 
 /**
- * An anchor at the table: who they are, what they open at, and whether the
- * shell's rent and theirs meet. The developer quotes the rent the job needs
- * (btsRentRead); the tenant pays its opening bid if that already builds it,
- * the developer's number if that is within its ceiling, and walks if not.
+ * An anchor at the table: who they are, and whether the shell's rent and
+ * theirs meet. A build-to-suit is priced off cost and the building is new
+ * and drawn around them, so it lets at market or better, never at a discount:
+ * the developer quotes the larger of market and the rent the job needs
+ * (btsRentRead), the anchor takes it if that is within its ceiling, and walks
+ * if not. It signs for the term on the listing, from delivery.
  */
 function mintBtsCommitment(
   s: GameState, parcels: ParcelTable, bbl: string,
-  use: BuiltClass, floors: number, coverage: number,
+  use: BuiltClass, floors: number, coverage: number, termYears: number,
 ): { bts: BtsCommitment } | { walked: { name: string; needPsf: number; ceilingPsf: number } } | null {
   const credit = (rng(s, "leasing") < 0.58 ? 2 : 1) as 1 | 2;
   const sector = pickSector(s, use);
   const name = pickName(s, sector);
-  const read = btsRentRead(s, parcels, bbl, use, floors, coverage, credit);
+  const termY = btsTermY(termYears);
+  const read = btsRentRead(s, parcels, bbl, use, floors, coverage, credit, termY);
   if (!read) return null;
-  // Their opening: a credit tenant committing for fifteen or twenty years
-  // asks for a discount for certainty, and gets it when the building does
-  // not need the money.
-  const discount = credit === 2 ? rrange(s, 0.82, 0.88, "leasing") : rrange(s, 0.78, 0.85, "leasing");
-  const opening = read.market * discount;
   if (read.need > read.ceiling) {
     return { walked: { name, needPsf: read.need, ceilingPsf: +read.ceiling.toFixed(2) } };
   }
-  const rentPsf = +Math.max(opening, read.need).toFixed(2);
+  const rentPsf = +Math.max(read.market, read.need).toFixed(2);
   // THE ANCHOR SIGNS FOR RENTABLE FEET. This used to be `plan.sf` — GROSS,
   // core and stairs included — so the news told the player "Alden Foods will
   // take 7,400 sf", planDevelopment clipped the commitment to the 6,200
@@ -1331,7 +1354,8 @@ function mintBtsCommitment(
       name, sector, credit, use,
       sf: read.sf,
       rentPsf,
-      termM: credit === 2 ? 240 : 180,
+      termM: termY * 12,
+      bumpPct: btsBumpPct(credit),
       tiPsf: fit.tiPsf,
       recovery: fit.recovery,
       signedM: s.month,
@@ -1393,7 +1417,7 @@ export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
     // mintBtsCommitment — the same fact counted once.
     const p = Math.min(0.09, (0.004 + 0.045 * demand) * phaseHit / sizeHard);
     if (rng(s, "leasing") >= p) continue;
-    const met = mintBtsCommitment(s, parcels, h.bbl, offer.use, offer.floors, offer.coverage);
+    const met = mintBtsCommitment(s, parcels, h.bbl, offer.use, offer.floors, offer.coverage, btsTermY(offer.termY));
     if (!met) continue;
     if ("walked" in met) {
       const w = met.walked;
@@ -1415,7 +1439,8 @@ export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: "deal",
       text: `Build-to-suit at last: ${bts.name} will take ${Math.round(bts.sf).toLocaleString()} sf `
-        + `of ${bts.use} at ${rec.address} for ${Math.round(bts.termM / 12)} years at $${bts.rentPsf.toFixed(2)}/sf `
+        + `of ${bts.use} at ${rec.address} for ${Math.round(bts.termM / 12)} years from delivery at $${bts.rentPsf.toFixed(2)}/sf, `
+        + `${bts.bumpPct}% a year `
         + `(credit ${bts.credit === 2 ? "strong" : "solid"}), after `
         + `${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`} on the book. `
         + `Break ground on their ${offer.floors}-storey shell by ${monthLabel(bts.startByM!)} or they walk — `
@@ -2400,6 +2425,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
       recovery: d.bts.recovery,
       startM: s.month,
       endM: s.month + d.bts.termM,
+      ...(d.bts.bumpPct !== undefined ? { bumpPct: d.bts.bumpPct } : {}),
       deposit,
       staff: 1,
     });

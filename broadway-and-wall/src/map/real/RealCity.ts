@@ -203,10 +203,19 @@ function rippleNormal(): THREE.CanvasTexture {
  * the swash at the waterline. A nearest-point sweep (two passes, eight
  * neighbours) rather than a blur, so the distance is metres, not a glow.
  *
- * Packed as RGBA8: r = sqrt(d / 400 m), which spends the precision at the
- * waterline where the foam needs it; g = 1 on a hard edge.
+ * Packed as RGBA8: r = sqrt((d + SHORE_BIAS_M) / 400 m), which spends the
+ * precision at the waterline where the foam needs it; g = 1 on a hard edge.
+ *
+ * THE WATERLINE IS EXACT, NOT A STAIRCASE. The sweep measures from texel to
+ * texel of a land mask rasterised at ~2.6 m, so the waterline it gave was that
+ * raster's stairs, a step every couple of metres: from the street, a sawtooth
+ * shore. Within a few texels of the shore every texel is now given its exact
+ * distance to the nearest edge of the real rings, signed (negative on the dry
+ * side, carried by a bias the shader takes off), so the filtered zero
+ * crossing lands on the true line between texels.
  */
 const SHORE_FAR_M = 400;
+const SHORE_BIAS_M = 6;
 function shoreField(land: P2[], dry: { ring: P2[]; hard: boolean }[]): { tex: THREE.DataTexture; box: THREE.Vector4 } {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [x, y] of land) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
@@ -247,10 +256,53 @@ function shoreField(land: P2[], dry: { ring: P2[]; hard: boolean }[]): { tex: TH
     if (b === 0) continue;
     b = relax(x, y, x + 1, y, b); b = relax(x, y, x + 1, y + 1, b); b = relax(x, y, x, y + 1, b); b = relax(x, y, x - 1, y + 1, b);
   }
+  // the rings' edges in texel units, bucketed 8 texels a cell, for the exact
+  // distance near the shore
+  const BK = 8, NB = Math.ceil(N / BK);
+  const buckets: number[][] = Array.from({ length: NB * NB }, () => []);
+  const segs: number[] = [];
+  for (const r of [land, ...dry.map((d) => d.ring)]) {
+    if (r.length < 3) continue;
+    for (let k = 0; k < r.length; k++) {
+      const a = r[k], b = r[(k + 1) % r.length];
+      const ax = (a[0] - x0) / px, ay = (a[1] - y0) / px, bx = (b[0] - x0) / px, by = (b[1] - y0) / px;
+      const si = segs.length / 4; segs.push(ax, ay, bx, by);
+      const c0 = Math.max(0, Math.floor(Math.min(ax, bx) / BK) - 1), c1 = Math.min(NB - 1, Math.floor(Math.max(ax, bx) / BK) + 1);
+      const r0 = Math.max(0, Math.floor(Math.min(ay, by) / BK) - 1), r1 = Math.min(NB - 1, Math.floor(Math.max(ay, by) / BK) + 1);
+      for (let rr = r0; rr <= r1; rr++) for (let cc = c0; cc <= c1; cc++) buckets[rr * NB + cc].push(si);
+    }
+  }
+  const exactAt = (x: number, y: number): number => {
+    const list = buckets[Math.min(NB - 1, (y / BK) | 0) * NB + Math.min(NB - 1, (x / BK) | 0)];
+    let best = Infinity;
+    for (const si of list) {
+      const ax = segs[si * 4], ay = segs[si * 4 + 1], bx = segs[si * 4 + 2], by = segs[si * 4 + 3];
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L2));
+      const ex = ax + dx * t - x, ey = ay + dy * t - y;
+      best = Math.min(best, ex * ex + ey * ey);
+    }
+    return Math.sqrt(best);
+  };
+  const NEAR = 4;   // texels: inside this the distance is measured exactly
   const out = new Uint8Array(N * N * 4);
   for (let i = 0; i < N * N; i++) {
     const x = i % N, y = (i / N) | 0;
-    const dm = sx[i] < 0 ? SHORE_FAR_M : Math.min(SHORE_FAR_M, Math.sqrt(dist2(i, x, y)) * px);
+    const isDry = src[i * 4] > 127;
+    let d: number;   // metres, signed: negative on the dry side
+    if (sx[i] < 0) d = SHORE_FAR_M;
+    else if (isDry) {
+      // dry: how far in from the water, near the edge; deep inland, just "in"
+      const wet = [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]].some(([ox, oy]) => {
+        const xx = x + ox, yy = y + oy;
+        return xx >= 0 && yy >= 0 && xx < N && yy < N && src[(yy * N + xx) * 4] <= 127;
+      });
+      d = wet ? -Math.min(SHORE_BIAS_M, exactAt(x + 0.5, y + 0.5) * px) : -SHORE_BIAS_M;
+    } else {
+      const dt = Math.sqrt(dist2(i, x, y));
+      d = dt < NEAR ? exactAt(x + 0.5, y + 0.5) * px : dt * px;
+    }
+    const dm = Math.max(0, Math.min(SHORE_FAR_M, d + SHORE_BIAS_M));
     out[i * 4] = Math.round(Math.sqrt(dm / SHORE_FAR_M) * 255);
     out[i * 4 + 1] = sx[i] >= 0 && src[(sy[i] * N + sx[i]) * 4 + 1] > 127 ? 255 : 0;
     out[i * 4 + 3] = 255;
@@ -315,7 +367,9 @@ float sFbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += 
       .replace("#include <color_fragment>", `#include <color_fragment>
 {
   vec4 sf = texture2D(seaShore, (vSeaW - seaBox.xy) * seaBox.zw);
-  seaD = sf.r * sf.r * ${SHORE_FAR_M.toFixed(1)};
+  // signed metres to the shore (negative on the dry side): the bias comes off
+  float seaDs = sf.r * sf.r * ${SHORE_FAR_M.toFixed(1)} - ${SHORE_BIAS_M.toFixed(1)};
+  seaD = max(seaDs, 0.0);
   seaHard = sf.g;
   float t = seaTime;
   float camD = length(vViewPosition);
@@ -354,7 +408,7 @@ float sFbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += 
   seaFoam = clamp(seaFoam, 0.0, 1.0);
   diffuseColor.rgb = mix(wc, vec3(0.9, 0.93, 0.94), seaFoam);
   // clear at the very edge, so the wet sand shows through, then deepening
-  float wet = smoothstep(0.0, 0.9, seaD);
+  float wet = smoothstep(0.0, 0.9, seaDs);
   float body = mix(0.72, 0.97, smoothstep(0.0, 30.0, seaD));
   diffuseColor.a = wet * max(body, seaFoam * 0.95);
 }`)
@@ -6380,7 +6434,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const [x, y] = at(t, -1.25);
           if (rnd() >= 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) continue;
           const [lx, ly] = at(t, -5.2);
-          if (!this.footprintOn(x, y, rot, 2.2, 5.2, ["road"]) || this.groundAt(lx, ly) !== "road") continue;
+          if (!this.footprintOn(x, y, rot, 2.2, 5.2, ["road"]) || this.groundAt(lx, ly) !== "road" || this.waterAt(x, y)) continue;
           const vk = rnd(), dt = this.demandAt(x, y);
           const kind = vk < 0.52 ? "car" : vk < 0.82 ? "suv" : vk < 0.93 ? "van" : dt > 0.55 ? "taxi" : "car";
           this.putInst(kind, x, y, 0.05, 1, rot + (rnd() < 0.5 ? 0 : Math.PI), "", kind === "taxi" ? TAXI : CAR[(rnd() * CAR.length) | 0]);
@@ -7057,7 +7111,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // THE MOVING TRAFFIC drives the measured street network (traffic.ts):
     // about one car every 30 m of lane, a bus now and then on the long runs
     if (this.netRaw) {
-      const tr = new Traffic(this.netRaw, (x, y) => this.groundAt(x, y) === "road", rnd);
+      const tr = new Traffic(this.netRaw, (x, y) => this.groundAt(x, y) === "road" && !this.waterAt(x, y), rnd);
       tr.populate(40, rnd, (c) => {
         const vk = rnd(), long = tr.segs[c.seg].L > 160;
         const kind = long && vk < 0.04 ? "bus" : vk < 0.45 ? "car" : vk < 0.7 ? "suv" : vk < 0.79 ? "van" : vk < 0.84 ? "truck" : vk < 0.95 ? "taxi" : "bike";
@@ -7884,6 +7938,23 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     this.groundIx = { bld, walk, park, open };
     return this.groundIx;
+  }
+  private waterIx: { water: PolyGrid; deck: PolyGrid } | null = null;
+  /**
+   * Is (x, y) on a creek, canal or pond, and not on a bridge over it?
+   * groundAt calls everything it does not know "road", water included, so
+   * the traffic and the parked cars ask this as well.
+   */
+  waterAt(x: number, y: number): boolean {
+    if (!this.waterIx) {
+      const water = new PolyGrid(60), deck = new PolyGrid(40);
+      const c = this.ctx as CityCtx;
+      for (const st of c.streams ?? []) if (st.ring.length >= 3) water.add(st.ring.map((q) => this.project(q)));
+      for (const pd of c.ponds ?? []) if (pd.length >= 3) water.add(pd.map((q) => this.project(q)));
+      for (const b of c.bridges ?? []) if (b.ring.length >= 3) deck.add(b.ring.map((q) => this.project(q)));
+      this.waterIx = { water, deck };
+    }
+    return this.waterIx.water.hit(x, y) && !this.waterIx.deck.hit(x, y);
   }
   /** building | walk | park | open | lot | road */
   groundAt(x: number, y: number): "bld" | "walk" | "park" | "open" | "lot" | "road" {

@@ -111,8 +111,20 @@ export class Traffic {
       if (!g || g.cw < 5 || g.cw > 44) return;
       const half = g.cw / 2;
       const a = g.mid;
-      // the lane must be road at its middle, or this is not a street we drive
-      if (!onRoad(a[0] + g.u[0] * g.L / 2, a[1] + g.u[1] * g.L / 2)) return;
+      // the street must be road along its length (every ~6 m, past the
+      // junction ends), or it is not a street we drive: a centre line laid
+      // over a creek or a mall is not a carriageway
+      {
+        const n = Math.max(2, Math.ceil(g.L / 6));
+        let bad = 0, tot = 0;
+        for (let k = 1; k < n; k++) {
+          const t = (k / n) * g.L;
+          if (t < 6 || t > g.L - 6) continue;
+          tot++;
+          if (!onRoad(a[0] + g.u[0] * t, a[1] + g.u[1] * t)) bad++;
+        }
+        if (!onRoad(a[0] + g.u[0] * g.L / 2, a[1] + g.u[1] * g.L / 2) || bad > tot * 0.1) return;
+      }
       const na = nodeAt(sg.a), nb = nodeAt(sg.b);
       if (na === nb) return;
       // lanes, right of travel. A narrow street runs one way down its middle;
@@ -249,14 +261,14 @@ export class Traffic {
     c.nextLane = ln[Math.min(Math.max(0, li), ln.length - 1)];
   }
 
-  /** Move the car onto its next street, turning in on a curve. */
-  private enterNext(c: Car, over: number) {
-    const s = this.segs[c.seg];
-    const p0 = this.lanePt(c.seg, c.dir, s.s1[c.dir], c.lane);
-    const h0 = this.heading(c.seg, c.dir);
-    const ns = this.segs[c.next];
-    const p2 = this.lanePt(c.next, c.nextDir, ns.s0[c.nextDir], c.nextLane);
-    const h2 = this.heading(c.next, c.nextDir);
+  /** The curve through a junction from one lane into another: a quadratic p0, p1, p2 and its length. */
+  private turnCurve(sa: number, da: 0 | 1, la: number, sb: number, db: 0 | 1, lb: number) {
+    const s = this.segs[sa];
+    const p0 = this.lanePt(sa, da, s.s1[da], la);
+    const h0 = this.heading(sa, da);
+    const ns = this.segs[sb];
+    const p2 = this.lanePt(sb, db, ns.s0[db], lb);
+    const h2 = this.heading(sb, db);
     // the control point: where the two lane lines cross, if they do sensibly
     const d0: P2 = [Math.cos(h0), Math.sin(h0)], d2: P2 = [Math.cos(h2), Math.sin(h2)];
     const den = d0[0] * d2[1] - d0[1] * d2[0];
@@ -267,10 +279,17 @@ export class Traffic {
       if (t > 0 && t < chord * 1.5) p1 = [p0[0] + d0[0] * t, p0[1] + d0[1] * t];
     } else if (d0[0] * d2[0] + d0[1] * d2[1] < 0) {
       // a U-turn: swing out past the node
-      const nd = this.nodes[this.endNode(c.seg, c.dir)].P;
+      const nd = this.nodes[this.endNode(sa, da)].P;
       p1 = [nd[0] + d0[0] * 4, nd[1] + d0[1] * 4];
     }
     const tl = Math.max(1, (Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) + Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) + chord) / 2);
+    return { p0, p1, p2, tl, h0, h2 };
+  }
+
+  /** Move the car onto its next street, turning in on a curve. */
+  private enterNext(c: Car, over: number) {
+    const ns = this.segs[c.next];
+    const { p0, p1, p2, tl, h0, h2 } = this.turnCurve(c.seg, c.dir, c.lane, c.next, c.nextDir, c.nextLane);
     let dh = h2 - h0;
     while (dh > Math.PI) dh -= 2 * Math.PI;
     while (dh < -Math.PI) dh += 2 * Math.PI;
@@ -427,11 +446,11 @@ export class Traffic {
           }
         }
         // the stop line, when the light is against us and we can still stop
-        let stopAt = Infinity;
+        let stopAt = Infinity, red = false;
         const ni = this.endNode(c.seg, c.dir);
         if (c.d <= s1 && !this.green(ni, c.seg, c.dir)) {
           const toLine = s1 - c.d;
-          if (toLine > (c.v * c.v) / (2 * DEC * 1.6) - 0.5) stopAt = toLine;
+          if (toLine > (c.v * c.v) / (2 * DEC * 1.6) - 0.5) { stopAt = toLine; red = true; }
         }
         if (c.next < 0) stopAt = Math.min(stopAt, s1 - c.d + 1.5);
         // THE BUS STOP, half way down a block of 70 m or more: stop, let
@@ -449,7 +468,10 @@ export class Traffic {
         // straight through from opposite sides pass each other; anything else
         // (a left turn across the oncoming stream, the cross street clearing
         // on the amber) waits at the line for its gap
-        if (c.next >= 0 && c.d <= s1 && s1 - c.d < 6 + c.v) {
+        // (a car held 15 s and more lets the junction courtesies go, so a ring
+        // of queues each waiting on the next cannot lock solid; it still
+        // never drives into the car ahead)
+        if (c.next >= 0 && c.d <= s1 && s1 - c.d < 6 + c.v && c.held < 15) {
           // DON'T BLOCK THE BOX: room for the whole car past the junction first
           const nl = lanes.get(lk(c.next, c.nextDir, c.nextLane));
           const ns = this.segs[c.next];
@@ -493,13 +515,12 @@ export class Traffic {
         const prev = c.v;
         c.v = Math.max(0, c.v + Math.max(-DEC * 2 * dt, Math.min(ACC * dt, dv)));
         c.brake += ((c.v < prev - 0.01 || c.v < 0.3 ? 1 : 0) - c.brake) * Math.min(1, dt * 6);
-        // gridlock breaker: a car held a long while with nothing red in front
-        // of it creeps on
-        if (c.v < 0.05 && stopAt === Infinity) {
+        // held: stopped with no red light in front of it (in a queue, or
+        // waiting on the box); a bus at its stop is not held
+        if (c.v < 0.05 && !red && !(c.bus && c.dwell)) {
           c.held += dt;
           // at the front of the queue and the street ahead is full: go another way
           if (i === 0 && c.held > 4 && c.held - dt <= 4) this.chooseNext(c);
-          if (c.held > 20) c.v = 2;
         }
         else c.held = 0;
         c.d += c.v * dt;

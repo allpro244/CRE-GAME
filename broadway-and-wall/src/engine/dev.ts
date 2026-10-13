@@ -2849,68 +2849,6 @@ export function cityInfillCap(
   return heightCapFloors(corniceDatum(s, parcels, rec.block), townMaturity(s), s.econ, rec, use);
 }
 
-/**
- * THE PRICE OF PERMISSION — what it costs to build above the cornice.
- *
- * `cityInfillCap` was a WALL. A scheme one floor over the block's datum-plus-
- * step was not expensive, it was impossible, and the pro forma never got to
- * judge it. That is the last rule standing where an economy belongs, and it
- * is the reason granting more envelope did nothing: after the planning board
- * was fixed the legal median went 11 floors to 14 and the cornice went from
- * binding 59.1% of lots to 74.8%, because paper the crane cannot reach is not
- * supply.
- *
- * In life the line is not "no", it is "not by right". Up to the cornice a
- * scheme is as-of-right: file, wait a few months, build. Above it you are in
- * discretionary review — a rezoning, a special permit, a variance — and that
- * is a real cost with three parts, all of which this charges:
- *
- *   DIRECT. Counsel, planners, traffic and environmental work, the exactions
- *   that buy the votes. US practice quotes this per BUILDABLE foot and it
- *   runs about $5-15/bsf for a straightforward rezoning, more where an EIS or
- *   a community-benefits package is involved. $6 is the low end of that band
- *   because most of what happens here is modest overage, and it scales with
- *   how far above context the scheme reaches.
- *
- *   TIME. NYC's ULURP is a statutory seven months AFTER certification and the
- *   pre-certification phase routinely runs a year or two; 12-30 months all in
- *   is the ordinary range. A site earns nothing while it waits, so the whole
- *   basis carries at the 12% the trade applies to land — the same rate
- *   `landCarryFactor` (proforma.ts) and `WAIT_DISCOUNT` in value.ts are struck at.
- *
- *   RISK. Applications fail, and the ones that fail have already spent the
- *   money. A developer who wins six of ten funds the four out of the six, so
- *   the honest charge is the cost DIVIDED BY the odds — which is how an
- *   entitlement business is actually underwritten, and it means no new rng()
- *   draw and no re-rolled century. Odds fall as the ask gets further from
- *   what is standing: routine overage is granted most of the time, a scheme
- *   at three times the datum is a fight.
- *
- * The premium lands on the LAND BASIS, which is where it belongs — you are
- * buying the right to build, and that is a cost of the dirt, not of the
- * concrete. The hurdle then decides, which is the entire point: height stops
- * being a rule and becomes a number the pro forma can argue with.
- *
- * NOT MODELLED HERE: the delivery-timing half. Real discretionary review also
- * makes the space ARRIVE later, which is part of why supply overshoots its
- * cycle. This charges the wait as carry and leaves the schedule alone.
- */
-const ENTITLE_PSF = 6;          // $/buildable sf, opening-year dollars
-// The land rate is LAND_CARRY_RATE (proforma.ts), through landCarryFactor — one rate for dirt that waits.
-
-export function entitlementPremium(
-  floorsWanted: number, byRight: number, gsf: number,
-  landBasis: number, costIdx: number,
-): number {
-  if (!(floorsWanted > byRight) || !(byRight > 0) || !(gsf > 0)) return 0;
-  const reach = Math.min(2, (floorsWanted - byRight) / byRight);
-  const direct = gsf * ENTITLE_PSF * Math.max(0.05, costIdx) * (1 + 1.2 * reach);
-  const months = 12 + 9 * reach;
-  const carry = (Math.max(0, landBasis) + direct)
-    * landCarryFactor(months);
-  const odds = clamp(0.88 - 0.30 * reach, 0.30, 0.88);
-  return (direct + carry) / odds;
-}
 
 /**
  * WHAT GETS BUILT HERE — AND THE CITY REZONES WHEN A SECTOR LEAVES.
@@ -3201,7 +3139,11 @@ function crewCapacity(bbls: string[], e?: Econ): number {
   // ...AND THE TRADES FOLLOW THE WORK — see `tickCrews`. `crewIdx` is how far
   // the town's construction workforce sits above or below ordinary because of
   // how busy it has been.
-  return Math.max(4, Math.round(base * clamp(e?.crewIdx ?? 1, CREW_MIN, CREW_MAX)));
+  // No floor of four crews and no bounds on the index (2026-10-13): the
+  // workforce follows its order book (tickCrews), and more crews means lower
+  // utilisation, so it settles on its own. One is arithmetic — a ratio's
+  // denominator.
+  return Math.max(1, Math.round(base * (e?.crewIdx ?? 1)));
 }
 
 /**
@@ -3225,15 +3167,11 @@ const NORMAL_PIPE_SHARE = REF_PIPE_SHARE;
  */
 const MAINTENANCE_SHARE = 0.45;
 
-// A town cannot lose its builders entirely and cannot conjure a boomtown's
-// worth of them overnight. These are guards on the workforce index, not
-// policy — `tickCrews` reports how often they bind and they are not meant to.
-// CREW_MIN was 0.5 and bound 21% of months in a quiet town; that was the
-// maintenance-load bug in `tickCrews`, not a real floor. With the load sized
-// by the stock, a town with no new build settles near 0.45 of its base crew
-// (the maintenance share), so the guard sits below that.
-const CREW_MIN = 0.3;
-const CREW_MAX = 3.0;
+// (CREW_MIN 0.3 / CREW_MAX 3.0 and a floor of four crews bounded the
+// workforce index until 2026-10-13. The maintenance load already holds a town
+// with no new build near 0.45 of its base crew, and a busy one grows its
+// trades until utilisation falls, so the bounds only ever described a
+// quantity that does not leave them by itself.)
 
 /**
  * THE BUILDING TRADES ARE A STOCK, AND IT ANSWERS THE ORDER BOOK.
@@ -3306,16 +3244,16 @@ function tickCrews(s: GameState, bbls: string[]) {
   // the order book against the trades actually present, and a town with no
   // new build sheds builders until the ones left are fully employed —
   // which is what US construction employment did in 2006-11.
-  const baseNew = capacity / clamp(e.crewIdx ?? 1, CREW_MIN, CREW_MAX);
+  const baseNew = capacity / Math.max(1e-6, e.crewIdx ?? 1);
   const steadyLoad = baseNew * (MAINTENANCE_SHARE / (1 - MAINTENANCE_SHARE));
-  const workforce = Math.max(1, capacity + steadyLoad * clamp(e.crewIdx ?? 1, CREW_MIN, CREW_MAX));
+  const workforce = Math.max(1, capacity + steadyLoad * (e.crewIdx ?? 1));
   const util = (live + owed / TYPICAL_SF + steadyLoad) / workforce;
   // A year's memory: a contractor hires on a book, not on a month.
   e.crewUtil = (e.crewUtil ?? util) + 0.08 * (util - (e.crewUtil ?? util));
   // The workforce that WOULD clear the book is the current one times how
   // oversubscribed it is; the industry walks toward it rather than jumping.
-  const idx = clamp(e.crewIdx ?? 1, CREW_MIN, CREW_MAX);
-  e.crewIdx = clamp(idx * (1 + 0.010 * ((e.crewUtil ?? 1) - 1)), CREW_MIN, CREW_MAX);
+  const idx = e.crewIdx ?? 1;
+  e.crewIdx = idx * (1 + 0.010 * ((e.crewUtil ?? 1) - 1));
 }
 
 /**

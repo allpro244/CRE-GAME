@@ -13,6 +13,7 @@
  * here writes state.
  */
 import * as THREE from "three";
+import { CLOUD, CLOUD_GLSL } from "./clouds";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import maplibregl from "maplibre-gl";
 import type { BuildingVolume } from "../volume";
@@ -839,44 +840,36 @@ const HAZE = {
   hazeFar: { value: 4000 },
   hazeCap: { value: 0.5 },
 };
-// CLOUD SHADOWS. A fair-weather sky over a coastal town is never one even
-// sun: cumulus a few hundred metres across drift over it on the wind and each
-// one drops a soft-edged patch of shade that slides across roofs, streets and
-// water. The clouds themselves are not drawn (from the play camera they are
-// overhead, out of frame); only their shade is, as a field of cells at cloud
-// base, sampled where the line from each surface to the sun meets it, so a
-// tower and the pavement it shades agree. The sun's direct light is what a
-// cloud takes away; the sky fill is left alone. Shape parameters set by eye:
-// cells of ~400 m, a base at 1,400 m, an 8 m/s wind.
-const CLOUD = {
-  cloudSun: { value: new THREE.Vector3(0.45, -0.55, 0.7).normalize() },
-  // the eye in world metres: three uploads cameraPosition only to some
-  // material kinds (not the shadow catcher), so the field carries its own
-  cloudEye: { value: new THREE.Vector3() },
-  cloudOff: { value: new THREE.Vector2(0, 0) },
-  cloudCover: { value: 0.25 },  // share of the ground in a cloud's shade
-  cloudK: { value: 0.5 },       // how much of the sun a cloud takes
-};
-const CLOUD_GLSL = `
-uniform vec3 cloudSun, cloudEye;
-uniform vec2 cloudOff;
-uniform float cloudCover, cloudK;
-float cHash(vec2 p) { p = 50.0 * fract(p * 0.3183099 + vec2(0.71, 0.113)); return fract(p.x * p.y * (p.x + p.y)); }
-float cNoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(cHash(i), cHash(i + vec2(1.0, 0.0)), u.x), mix(cHash(i + vec2(0.0, 1.0)), cHash(i + vec2(1.0, 1.0)), u.x), u.y);
+// THE WIND IN THE TREES. A breeze moves a street tree's crown a hand's
+// breadth at the top and not at all at the trunk: each crown leans downwind
+// with the square of its height above the fork, in two slow periods phased by
+// where the tree stands, so a row of trees ripples instead of nodding as one.
+// The downwind bearing is the cloud field's. (Shape parameters set by eye:
+// ~10 cm at the top of a 7 m crown, periods of ~6 s and ~2 s.)
+const WIND = { leafT: { value: 0 }, leafWind: { value: new THREE.Vector2(7.4, 3.1).normalize() } };
+function addSway(mat: THREE.Material) {
+  const prev = mat.onBeforeCompile;
+  const k0 = mat.customProgramCacheKey();
+  mat.onBeforeCompile = (sh, r) => {
+    prev.call(mat, sh, r);
+    Object.assign(sh.uniforms, WIND);
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nuniform float leafT;\nuniform vec2 leafWind;")
+      .replace("#include <project_vertex>", `#include <project_vertex>
+#ifdef USE_INSTANCING
+{
+  // the view space is the world's, eye-centred and unrotated: a world push is a view push
+  vec2 ip = instanceMatrix[3].xy;
+  float hz = max(transformed.z - 2.8, 0.0);
+  float ph = dot(ip, vec2(0.13, 0.09));
+  float s = 0.55 + 0.35 * sin(leafT * 1.05 + ph) + 0.2 * sin(leafT * 3.1 + ph * 1.7);
+  mvPosition.xy += leafWind * (s * hz * hz * 0.0055);
+  gl_Position = projectionMatrix * mvPosition;
 }
-float cloudSunlight(vec3 wp, float k) {
-  if (cloudK <= 0.0) return 1.0;
-  vec2 p = wp.xy + cloudSun.xy / max(cloudSun.z, 0.25) * (1400.0 - wp.z);
-  p = p / 420.0 + cloudOff;
-  // a cumulus field: clusters of cells with scalloped, billowed edges
-  float n = 0.5 * cNoise(p) + 0.25 * cNoise(p * 2.07 + vec2(5.2, 1.3)) + 0.15 * cNoise(p * 4.3 + vec2(1.7, 9.2)) + 0.1 * cNoise(p * 9.1 + vec2(3.3, 7.7));
-  // the sum bunches round 0.5 (sd ~0.1): the threshold that shades a share
-  // cloudCover of the ground, fitted to the field's measured quantiles
-  float edge = 0.5 + (0.5 - cloudCover) * 0.36;
-  return 1.0 - cloudK * k * smoothstep(edge - 0.02, edge + 0.035, n);
-}`;
+#endif`);
+  };
+  mat.customProgramCacheKey = () => k0 + "+sway";
+}
 const hazed = new WeakSet<THREE.Material>();
 function addHaze(mat: THREE.Material) {
   if (hazed.has(mat)) return;
@@ -1518,6 +1511,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     pm.dispose();
     this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv ?? this.skyEnv; });
     this.setupLights();
+    addSway(this.leafMat);
     this.dyn.add(this.dynDone.group, this.dynSite.group);
     this.scene.add(this.dyn);
     const measure = () => { this.viewH = map.getContainer().clientHeight || 900; };
@@ -1682,6 +1676,11 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const tc = performance.now() / 1000;
       CLOUD.cloudOff.value.set((tc * 7.4) / 420, (tc * 3.1) / 420);
       CLOUD.cloudEye.value.copy(eye);
+      WIND.leafT.value = tc;
+      // close in, a cloud's soft edge spans the whole frame and reads as a
+      // smudge (and a passing one dims the building being inspected): full
+      // shade from the district view out, a third of it at street level
+      CLOUD.cloudK.value = this.cloudK0 * (0.35 + 0.65 * smooth(450, 1500, distM));
     }
     if (this.probeDue) this.captureReflections();
     if (this.precip) this.stepPrecip(fx, fy, distM, performance.now() / 1000);
@@ -7077,6 +7076,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     this.applyMonth();   // which re-applies the weather on top of the season
   }
   private overcast = 0;
+  /** The cloud shade the weather allows, before the camera's distance trims it. */
+  private cloudK0 = 0.55;
 
   /**
    * ALWAYS AFTERNOON. The game has no night and never will (the owner's
@@ -7134,7 +7135,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // fair weather: a scatter of cumulus; as the sky fills in, more of it;
     // under a full overcast there is no direct sun left for a cloud to take
     CLOUD.cloudCover.value = 0.22 + 0.3 * smooth(0.0, 0.6, oc);
-    CLOUD.cloudK.value = this.quality === "low" ? 0 : 0.55 * (1 - smooth(0.45, 0.95, oc));
+    this.cloudK0 = this.quality === "low" ? 0 : 0.55 * (1 - smooth(0.45, 0.95, oc));
     this.map?.triggerRepaint();
   }
 

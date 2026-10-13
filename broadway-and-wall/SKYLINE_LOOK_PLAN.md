@@ -243,6 +243,28 @@ fixed in #231; the sweep is clean since.
   `@screen` wall (two storeys over 220 m), on the body's floor grid, so a
   tall slab reads as stacked blocks instead of one stripe. Masonry towers
   keep their plant in the setbacks and crown, as they did.
+- **Round 32** — the clouds, finished. Close in, a cloud's soft edge spans
+  the whole frame and reads as a smudge (and a passing one dims the building
+  being inspected): the shade is full from the district view out and a third
+  of it at street level. Far off, the air hides it as it hides everything
+  else: gone by ~7 km, so the horizon is haze and not grey smears. The field
+  moved to its own module (`clouds.ts`) so anything else that shows the sky
+  reads the same cells. Clouds drawn into the sky itself (the finishing pass,
+  where the distance pass shows no geometry above the horizon) were built and
+  dropped: at the 70° pitch limit the sky is a sliver at the top of the
+  frame even in a tall window, too little to judge or to be worth the pass.
+- **Round 33** — wind in the trees. Every street tree's crown leans downwind
+  with the square of its height above the fork (~10 cm at the top of a 7 m
+  crown), in two slow periods phased by where it stands, so a row ripples
+  instead of nodding as one. Vertex shader on the shared foliage material;
+  bushes, near the ground, barely move.
+- **Checked, not changed: the black towers.** The 1958 dark tower
+  (`blackglass`) reads near-black from the play camera, which looked like a
+  hole in the city. Tried as a dielectric (metalness 0.12, full sky probe):
+  no measurable change on the reference shot, because a wall seen from above
+  mirrors the street and the buildings opposite, not the sky, and 4% of a
+  dark street is dark. That is what smoked glass looks like from a roof
+  across the street; the look is right and stays.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

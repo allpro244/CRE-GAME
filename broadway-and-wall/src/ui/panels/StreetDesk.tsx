@@ -60,14 +60,13 @@ export function TheStreet() {
   return (
     <>
       <div className="page-section">
-        The street · competing money {appetite < 0.6 ? "has left the room" : appetite < 0.9 ? "is thin" : appetite > 1.15 ? "is everywhere" : "is normal"}
+        Competitors · competing money {appetite < 0.6 ? "has left the room" : appetite < 0.9 ? "is thin" : appetite > 1.15 ? "is everywhere" : "is normal"}
       </div>
       <div className="hint">
         These firms bid on the same tape you do, with their own money — a firm without the equity does not
         close, and one already at its covenant cannot borrow to. When their dry powder is high your lowballs
         get refused; when their leverage runs past their covenants they sell into whatever bid exists, and
-        that bid is you. The principal column is who runs the shop and how old they are — equity alone cannot
-        tell you the next thirty years. Click any firm for its balance sheet and what it owns.
+        that bid is you. Click any firm for its balance sheet and what it owns.
       </div>
       {/* THE DOOR TO THE STREET. How many firms this town carries is an output
           of two terms — whether buildings yield over the debt against them,
@@ -82,7 +81,7 @@ export function TheStreet() {
           ? ep.leverage <= 0
             ? "Nobody is raising a new fund into this street today: buildings yield less than the debt against them, and no allocator pays fees for negative leverage."
             : "Nobody is raising a new fund into this street today: nothing has traded in a year, so there is no product to pitch a first close on."
-          : `The street is open to a new raise — cap rates clear the cost of debt, and ${ep.traded} trade${ep.traded === 1 ? "" : "s"} went round ${ep.firms} firm${ep.firms === 1 ? "" : "s"} this past year`
+          : `The market is open to a new raise — cap rates clear the cost of debt, and ${ep.traded} trade${ep.traded === 1 ? "" : "s"} went round ${ep.firms} firm${ep.firms === 1 ? "" : "s"} this past year`
             + `${ep.thin > 1.15 ? ", with few bidders contesting them" : ""}. On these terms somebody will eventually clear a first close.`;
         const bids = game.founderBids ?? [];
         return (
@@ -96,7 +95,7 @@ export function TheStreet() {
                     k="Raising now"
                     v={`A team raising out of ${b.fromFirmName}`
                       + (b.readyM > game.month
-                        ? ` · on the street from ${monthLabel(b.readyM)}`
+                        ? ` · raising from ${monthLabel(b.readyM)}`
                         : ` · ${Math.max(0, FOUNDER_WINDOW_M - (b.openMs ?? 0))} open month${FOUNDER_WINDOW_M - (b.openMs ?? 0) === 1 ? "" : "s"} left to clear a first close`)}
                   />
                 ))}
@@ -127,7 +126,7 @@ export function TheStreet() {
           const rank = board.findIndex((b) => b.me) + 1;
           return (
             <>
-              <Row k="Your place on the street" v={`${rank} of ${board.length} by equity`} strong bad={rank > board.length / 2} />
+              <Row k="Your place among competitors" v={`${rank} of ${board.length} by equity`} strong bad={rank > board.length / 2} />
               <Row k="The biggest book in town" v={`${board[0].name} · ${usd(board[0].eq)}`} />
             </>
           );

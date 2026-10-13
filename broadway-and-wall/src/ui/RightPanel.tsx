@@ -143,7 +143,7 @@ export default function GamePanels() {
     : page === "saves" ? "Campaign"
     : page === "settings" ? "Preferences"
     : page === "primer" ? "Primer"
-    : page === "match" ? "Street"
+    : page === "match" ? "Competitors"
     : "";
   const subtitle = page === "portfolio" ? "Value, income, concentration and the shape of what you own."
     : page === "deals" ? "Every live negotiation, bid, contract and clock on your desk."

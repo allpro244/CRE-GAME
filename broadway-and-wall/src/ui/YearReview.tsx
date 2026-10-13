@@ -39,7 +39,7 @@ export default function YearReview() {
         <div className="year-review-grid mono">
           <span>Net worth</span>
           <span className={r.nwPct < 0 ? "neg" : ""}>{usd(r.nw0)} → {usd(r.nw1)} · {pct(r.nwPct)}</span>
-          <span>The street's median firm</span>
+          <span>The median competitor</span>
           <span>{pct(r.streetPct)}</span>
           <span>Your place</span>
           <span>
@@ -102,7 +102,7 @@ export default function YearReview() {
         })()}
         <div className="btn-row" style={{ marginTop: 14, justifyContent: "center", flexWrap: "wrap" }}>
           <button type="button" className="btn btn-primary" onClick={dismiss}>On to {r.year + 1}</button>
-          <button type="button" className="btn" onClick={() => go("research")}>The street</button>
+          <button type="button" className="btn" onClick={() => go("research")}>Competitors</button>
           <button type="button" className="btn" onClick={() => go("books")}>The books</button>
           <button type="button" className="btn" onClick={() => go("market")}>The tape</button>
         </div>

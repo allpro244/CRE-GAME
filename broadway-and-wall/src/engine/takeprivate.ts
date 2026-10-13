@@ -38,7 +38,7 @@ import type { GameState, Rival, RivalStyle, TakePrivateRecord } from "./types";
 import { cloneState, monthLabel } from "./types";
 import { resolveRec, holdingNOIYr, heldOccupancy } from "./value";
 import { conveyedDeed, depositsOn } from "./leasing";
-import { assetGrade, livingRivals, marketAppetite, markRival, STYLE_OF, tie } from "./rivals";
+import { assetGrade, livingRivals, marketAppetite, markRival, paramsOf, tie } from "./rivals";
 import { buyQuote, executePurchase, TRANSFER_TAX } from "./actions";
 import { fundableNow, fundAndBook } from "./credit";
 import { isCivicLand } from "./demand";
@@ -137,7 +137,7 @@ function situationOf(r: Rival, ltv: number): { sit: TakePrivateSituation; why: s
   if ((r.stressMs ?? 0) > 0) {
     return { sit: "distressed", why: `${r.name} is ${r.stressMs} month${r.stressMs === 1 ? "" : "s"} behind on debt service. The board would rather sell the company than hand the lenders the keys one building at a time.` };
   }
-  const st = STYLE_OF(r.style);
+  const st = paramsOf(r);
   if (ltv > st.maxLtv * 0.92) {
     return { sit: "strained", why: `${r.name} is at ${(ltv * 100).toFixed(0)}% leverage against a ${(st.maxLtv * 100).toFixed(0)}% ceiling — one bad year from being a forced seller, and the board knows it.` };
   }
@@ -592,6 +592,6 @@ export function tickTakePrivateApproach(s: GameState, parcels: ParcelTable) {
   s.news.unshift({
     q: s.month, kind: "deal",
     text: `${poss(r.name)} board has retained a banker, and the banker has called you. ${q.situationWhy} `
-      + `They will talk about ${money(q.ask)} for the company — ${q.deeds.length} buildings marked at ${money(q.gross)}, ${money(q.debt)} of debt, ${money(q.cash)} in the account. The Street desk has the book.`,
+      + `They will talk about ${money(q.ask)} for the company — ${q.deeds.length} buildings marked at ${money(q.gross)}, ${money(q.debt)} of debt, ${money(q.cash)} in the account. The Competitors page has the book.`,
   });
 }

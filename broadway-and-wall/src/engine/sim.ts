@@ -255,8 +255,8 @@ export function newGame(
       + (s.citySize === "hamlet" || s.citySize === "town"
         ? "This pond is small enough that one firm can matter."
         : s.citySize === "metro" || s.citySize === "giant"
-          ? "Same cheque, deeper pond — rivals and bank holds are sized to the map."
-          : "The standard island: banks and rivals sized to what stands here."),
+          ? "Same cheque, deeper pond — competitors and bank holds are sized to the map."
+          : "The standard island: banks and competitors sized to what stands here."),
   });
   // WHERE THE MONEY STANDS, SAID OUT LOUD. The pre-history (regime.ts) can
   // open the game at a 15% loan rate under a calendar that says January 2000,
@@ -1318,7 +1318,7 @@ export const MILESTONES: { id: string; label: string; test: (s: GameState, nw: n
   { id: "nw100", label: "Net worth $100M", test: (_s, nw) => nw >= 100e6 },
   { id: "fund1", label: "A fund raised and returned", test: (s) => !!(s.fund?.settled && !s.fund.failed && !s.fund.inKind) || (s.fundsRaised ?? 0) >= 2 },
   { id: "nw500", label: "Net worth $500M", test: (_s, nw) => nw >= 500e6 },
-  { id: "street1", label: "Top of the street", test: (s) => (s.yearMarks ?? []).some((m) => m.y >= 0 && m.rank === 1) },
+  { id: "street1", label: "Top of the league", test: (s) => (s.yearMarks ?? []).some((m) => m.y >= 0 && m.rank === 1) },
   { id: "nw1b", label: "The billion-dollar book", test: (_s, nw) => nw >= 1e9 },
   { id: "ten", label: "Ten buildings under management", test: (s) => Object.keys(s.holdings).length >= 10 },
   { id: "twentyfive", label: "A quarter-hundred holdings", test: (s) => Object.keys(s.holdings).length >= 25 },

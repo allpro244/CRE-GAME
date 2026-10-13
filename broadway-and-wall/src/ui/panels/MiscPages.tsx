@@ -260,10 +260,10 @@ export function SettingsPage() {
         set={(v) => setAlertsOff(!v)}
         label="Stop-everything cards"
         detail="Bids on a sale you listed, an indication on a book you put up, and your ground tenant's default take the screen. Off, you read them on Deals and News instead."
-        more={"Bank failures, economy-wide events and a rival's book taken back pass as a line at the top of the screen and do not stop play, "
+        more={"Bank failures, economy-wide events and a competitor's book taken back pass as a line at the top of the screen and do not stop play, "
           + "unless the clock is set to stop for opportunities too or for everything. "
           + "Each is written into the news feed the moment it fires, so turning this off loses the interruption and not the event. "
-          + "A lender taking a rival's whole book puts the package on Marketplace under Books for sale. "
+          + "A lender taking a competitor's whole book puts the package on Marketplace under Books for sale. "
           + "With both switches off a sale or portfolio bid still stops Year/Skip and badges Deals, but will not take the screen — "
           + "and a quiet offer lapses in two months, a bid list in fourteen, a portfolio indication in three, if you never open the desk."}
       />

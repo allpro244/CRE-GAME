@@ -528,7 +528,7 @@ function AlertBody() {
         {a.detail && <div className="alert-detail">{a.detail}</div>}
         <div className="alert-foot">
           {goBooks
-            ? "The book is for sale on Marketplace under Books for sale — one cash cheque for the whole package. Rivals are looking at it too."
+            ? "The book is for sale on Marketplace under Books for sale — one cash cheque for the whole package. Competitors are looking at it too."
             : goOwnBook
               ? game.portfolioSale?.unsolicited
                 ? "Nothing of yours has been listed. The deeds they asked for, what each one nets you, and the three "
@@ -1055,7 +1055,7 @@ export function GameOverPage() {
           <Big label="Exits" value={String(game.exits.length)} />
           <Big label="Taxes paid" value={usd(game.taxesPaid ?? 0)} />
           <Big label="Milestones" value={`${miles} / ${MILESTONES.length}`} />
-          {best && <Big label="Best place on the street" value={`${ordinal(best.rank)} of ${best.of} · ${START_YEAR + best.y}`} />}
+          {best && <Big label="Best place among competitors" value={`${ordinal(best.rank)} of ${best.of} · ${START_YEAR + best.y}`} />}
           <Big label="Years in town" value={String(years)} />
         </div>
         {/* THE RUN IS OVER IS NOT THE SAME AS THE CITY IS OVER.

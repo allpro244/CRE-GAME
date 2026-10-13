@@ -59,7 +59,7 @@ export function ResearchPage() {
   const [rtab, setRtab] = useState<string>(() => pendingRTab ?? "sectors");
   useEffect(() => { clearPendingRTab(); }, []);
   const RTABS: [string, string][] = [["sectors", "Sectors"], ["districts", "Districts"], ["trades", "Trades"],
-    ["street", "The street"], ["owners", "Owners"], ["stock", "Properties"], ["comps", "Prints"]];
+    ["street", "Competitors"], ["owners", "Owners"], ["stock", "Properties"], ["comps", "Prints"]];
   return (
     <div>
       {/* The nine-tile strip that opened this page — base rate, phase, caps,

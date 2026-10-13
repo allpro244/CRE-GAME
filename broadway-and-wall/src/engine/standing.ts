@@ -144,11 +144,11 @@ export function yearReview(
   const up = start.rank - end.rank;
   const beat = nwPct - streetPct;
   const verdict =
-    end.nw <= 0 ? "A year spent underwater. The street is watching to see whether you surface."
-    : up > 0 ? `${up === 1 ? "Up a place" : `Up ${up} places`} to ${ordinal(end.rank)} of ${end.of}. ${beat >= 0 ? "You outran the street" : "The street ran faster, and you still climbed"}.`
-    : up < 0 ? `${up === -1 ? "Down a place" : `Down ${-up} places`} to ${ordinal(end.rank)} of ${end.of}. ${beat >= 0 ? "You grew — somebody grew faster" : "The street outran you this year"}.`
+    end.nw <= 0 ? "A year spent underwater. The market is watching to see whether you surface."
+    : up > 0 ? `${up === 1 ? "Up a place" : `Up ${up} places`} to ${ordinal(end.rank)} of ${end.of}. ${beat >= 0 ? "You outran the competition" : "The competition ran faster, and you still climbed"}.`
+    : up < 0 ? `${up === -1 ? "Down a place" : `Down ${-up} places`} to ${ordinal(end.rank)} of ${end.of}. ${beat >= 0 ? "You grew — somebody grew faster" : "The competition outran you this year"}.`
     : end.rank === 1 ? `Still the biggest book in town. ${beat >= 0 ? "And pulling away" : "The pack gained on you"}.`
-    : `Holding ${ordinal(end.rank)} of ${end.of}. ${Math.abs(beat) < 2 ? "Level with the street" : beat > 0 ? "Gaining on the firms above" : "Losing ground to the street"}.`;
+    : `Holding ${ordinal(end.rank)} of ${end.of}. ${Math.abs(beat) < 2 ? "Level with the competition" : beat > 0 ? "Gaining on the firms above" : "Losing ground to the competition"}.`;
   return {
     y, year: startYear + y,
     nw0: start.nw, nw1: end.nw, nwPct,

@@ -60,7 +60,7 @@ export function TakePrivateDesk({ firmId }: { firmId: string }) {
             <Row k="Deeds, as they convey" v={`${q.deeds.length} · ${usd(q.gross)}`}
               title="Each building marked on the roll and grade the closing hands over — the same valuation the tape's own asks use." />
             {Math.abs(q.bookMark - q.gross) > q.gross * 0.01 && (
-              <Row k="The street table's mark" v={usd(q.bookMark)}
+              <Row k="The competitor table's mark" v={usd(q.bookMark)}
                 title="The league table marks their book at the firm's portfolio occupancy. Diligence reads each building's own roll, and that is what you would be buying." />
             )}
             <Row k="In-place NOI" v={`${usd(q.noi)} a year · ${q.gross > 0 ? ((q.noi / q.gross) * 100).toFixed(1) : "—"}% on the deeds`} />

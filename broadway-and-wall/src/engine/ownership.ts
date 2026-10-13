@@ -59,7 +59,7 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState, Rival, RivalStyle, SellerKind } from "./types";
 import { START_YEAR } from "./types";
 import { assetValue, noiAfterTaxYr, resolveRec } from "./value";
-import { CARE, gradeOf, markRival, ownerOf } from "./rivals";
+import { gradeOf, markRival, ownerOf, paramsOf } from "./rivals";
 import { isCivicLand } from "./demand";
 import type { Holder } from "./owners";
 import { holderOf, isCold, relOf, standingWith } from "./owners";
@@ -394,7 +394,7 @@ export function rivalAccounts(
   s: GameState, parcels: ParcelTable, r: Rival,
 ): { sheet: OwnerBalance; income: OwnerIncome } {
   const m = markRival(s, parcels, r);
-  const care = CARE[r.style];
+  const care = paramsOf(r).care;
   // A firm's debt service is the one line it does not derive: the balance and
   // the rate are on its own record. Priced the way the street table prices it
   // — index plus 1.9 on a thirty-year schedule — so the drawer and the

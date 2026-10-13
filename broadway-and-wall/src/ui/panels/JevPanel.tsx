@@ -48,7 +48,7 @@ export function JevSettings() {
   return (
     <div className="jev-settings">
       <div className="hint">
-        Let TypeSafe's <b>Jev</b> inform the judgement of rival firms. Jev is a fast "System One" model: it does no arithmetic and
+        Let TypeSafe's <b>Jev</b> inform the judgement of competitor firms. Jev is a fast "System One" model: it does no arithmetic and
         writes no orders. Each quarter the engine computes every number, turns them into plain phrases, and asks each Jev-run firm's
         questions in one call — which listing to buy, whether to sell a holding, whether to take equity out, which scheme to start.
         Code acts only when Jev is confident; otherwise the firm's own scripted rule decides. Without a key the game is exactly the
@@ -57,7 +57,7 @@ export function JevSettings() {
       <div className="grid" style={{ gridTemplateColumns: "180px 1fr", gap: "6px 10px", alignItems: "center" }}>
         <span>Status</span>
         <span className={j.status === "error" || j.status === "offline" ? "neg" : ""}>
-          {!jevConfigured() ? "not set up — the street runs on its scripted rules"
+          {!jevConfigured() ? "not set up — competitors run on their scripted rules"
             : j.status === "offline" ? "Jev offline — firms are on their scripted rules until it answers again"
               : j.status === "error" ? `last call failed: ${j.lastError.slice(0, 120)}`
                 : j.status === "ok" ? "connected" : "set up; no call yet"}

@@ -285,7 +285,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                     <select className="setup-input" value={j.startFirms} aria-label="How many firms Jev runs"
                       onChange={(e) => j.set({ startFirms: Number(e.target.value), ...(Number(e.target.value) ? {} : { startSpectator: false }) })}>
                       {[0, 1, 2, 3, 4, 6, 8, 12].map((k) => <option key={k} value={k}>{k === 0 ? "no" : k}</option>)}
-                    </select> rival firm{j.startFirms === 1 ? "" : "s"}
+                    </select> competitor firm{j.startFirms === 1 ? "" : "s"}
                   </label>
                   {j.startFirms > 0 && (
                     <label className="setup-label">as

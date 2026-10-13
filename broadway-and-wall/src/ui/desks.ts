@@ -64,7 +64,7 @@ export const DESKS: readonly Desk[] = [
     note: "The cycle, the comps and the news",
     tabs: [
       { page: "economy", label: "Economy", note: "Cycle, space markets and construction" },
-      { page: "research", label: "Research", note: "Comps, submarkets, rivals and owners" },
+      { page: "research", label: "Research", note: "Comps, submarkets, competitors and owners" },
       { page: "news", label: "News", note: "What the city wrote this month" },
     ],
   },

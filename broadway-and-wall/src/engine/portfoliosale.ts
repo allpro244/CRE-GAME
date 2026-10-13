@@ -25,7 +25,7 @@ import type { GameState, PortfolioListing } from "./types";
 import type { ParcelTable } from "../data/types";
 import { rng, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
-import { livingRivals, gradeOf, ownerOf, STYLE_OF, receiverDeskFor, forgetDeed } from "./rivals";
+import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed } from "./rivals";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
 import { acceptSaleOffer, executePurchase } from "./actions";
@@ -425,13 +425,13 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
       packageNoi += Math.max(0, inPlace(rec, s, b, share).noi);
     }
     const packageDebt = (r: ReturnType<typeof livingRivals>[number]) => {
-      const st = STYLE_OF(r.style);
+      const st = paramsOf(r);
       const cap = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
       return Math.min(p.ask, streetRefiProceeds(s, p.ask, packageNoi, cap).principal);
     };
     const buyers = livingRivals(s).filter((r) => {
       if (r.id === p.sellerId) return false;
-      const st = STYLE_OF(r.style);
+      const st = paramsOf(r);
       const debt = packageDebt(r);
       const equity = p.ask - debt;
       if (r.cash < equity + Math.max(1_000_000, r.cash * 0.05)) return false;
@@ -442,7 +442,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
     if (buyers.length) {
       // A rival buying a rival's book. Rare, and it is how the big get big.
       const hunger = buyers.map((r) => {
-        const st = STYLE_OF(r.style);
+        const st = paramsOf(r);
         return { r, w: st.appetite * (1 + st.contra * (1 - ci)) * (p.reo ? st.distressBias : 1) * (0.5 + rng(s)) };
       }).sort((a, b) => b.w - a.w);
       const under = p.ask / Math.max(1, p.gross);
@@ -659,7 +659,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
   // life would rather do one closing than eleven.
   if (s.portfolios.filter((p) => !p.player).length < 3 && rng(s) < 0.010) {
     const cands = livingRivals(s).filter((r) => r.bbls.length >= 4 && !r.stressMs
-      && STYLE_OF(r.style).holdM > 0 && s.month - (r.bornM ?? 0) > STYLE_OF(r.style).holdM);
+      && paramsOf(r).holdM > 0 && s.month - (r.bornM ?? 0) > paramsOf(r).holdM);
     if (cands.length) {
       const r = cands[Math.floor(rng(s) * cands.length)];
       const take = r.bbls.filter((b) => !s.holdings[b] && !s.listings.some((l) => l.bbl === b)).slice(0, 3 + Math.floor(rng(s) * 6));

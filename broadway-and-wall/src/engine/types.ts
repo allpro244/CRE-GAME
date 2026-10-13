@@ -2308,6 +2308,18 @@ export type RivalStyle =
  */
 export interface Rival {
   /**
+   * THE FIRM'S SHEET — COMPETITORS_PLAN.md §2. Absent on the legacy roster and
+   * on saves written before it: those firms act on their style row exactly as
+   * before (`paramsOf` in rivals.ts).
+   */
+  sheet?: import("./competitorTraits").Sheet;
+  rules?: import("./competitorTraits").Rule[];
+  quirks?: import("./competitorTraits").Quirk[];
+  /** The profile the firm was drawn from. What it reads as today is recomputed. */
+  profile?: import("./competitorTraits").ProfileId;
+  /** The district its book is thickest in — home turf. */
+  home?: string;
+  /**
    * LP CAPITAL COMMITTED AND NOT YET CALLED — the young fund's cushion.
    * Set once at the raise (30-50% of the first close, drawn per fund),
    * burned by capital calls, never refilled. Absent on the opening roster

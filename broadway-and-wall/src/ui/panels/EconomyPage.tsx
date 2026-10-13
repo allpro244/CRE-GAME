@@ -352,8 +352,8 @@ export function EconomyPage() {
       const d = game.developments[p.bbl];
       const j = (game.cityJobs ?? []).find((x) => x.bbl === p.bbl);
       const who = p.source === "player" || p.source === "reuse" ? "You"
-        : j?.firmId ? (game.rivals.find((r) => r.id === j.firmId)?.name ?? "A rival")
-        : p.source === "rival" ? "A rival"
+        : j?.firmId ? (game.rivals.find((r) => r.id === j.firmId)?.name ?? "A competitor")
+        : p.source === "rival" ? "A competitor"
         : "The city";
       const floors = d?.floors ?? j?.floors ?? 0;
       const legs = Object.values(p.sfByUse).filter((v) => (v ?? 0) > 0).length;

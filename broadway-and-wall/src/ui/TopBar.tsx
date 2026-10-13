@@ -415,7 +415,7 @@ export default function TopBar() {
                 normal screen. Vitals stay up. */}
             {standing && (
               <Stat
-                label="Street"
+                label="Rank"
                 value={`${ordinal(standing.rank)} / ${standing.of}${dRank > 0 ? ` ▲${dRank}` : dRank < 0 ? ` ▼${-dRank}` : ""}`}
                 keep
                 w={96}

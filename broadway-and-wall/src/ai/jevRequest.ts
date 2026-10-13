@@ -15,7 +15,7 @@ import type { BuiltClass, DevUse, GameState } from "@/engine/types";
 import { cloneState, START_YEAR } from "@/engine/types";
 import {
   assetGrade, buildAppetite, duressNet, gradeOf, holdClockM, lineRoom, listingOpenTo, liveJobCap,
-  markAsset, markRival, redevBasis, rivalCanClose, STYLE_OF, streetDebtRatePct,
+  markAsset, markRival, paramsOf, redevBasis, rivalCanClose, streetDebtRatePct,
 } from "@/engine/rivals";
 import { assetValue, inPlace, occupancy, resolveRec, zoneUseBar } from "@/engine/value";
 import { cityCoverage, cityInfillCap, MAX_FLOORS_BY_USE, underwriteDevelopment } from "@/engine/dev";
@@ -42,7 +42,7 @@ export function buildJevRequest(s0: GameState, parcels: ParcelTable, firmId: str
   const r = (s.rivals ?? []).find((x) => x.id === firmId);
   if (!r || !r.jev) throw new Error(`${firmId} is not a Jev-run firm`);
   const e = s.econ;
-  const st = STYLE_OF(r.style);
+  const st = paramsOf(r);
   const mk = markRival(s, parcels, r);
   const aum = mk.aum;
   const lev = aum > 0 ? r.debt / aum : r.debt > 0 ? 9 : 0;
@@ -154,7 +154,7 @@ export function buildJevRequest(s0: GameState, parcels: ParcelTable, firmId: str
 
   // ---------------------------------------------------------------- SELL
   if (!r.stressMs) {
-    const holdM = holdClockM(r.style);
+    const holdM = holdClockM(r);
     const rows: { bbl: string; y: number; obj: Record<string, unknown> }[] = [];
     for (const b of r.bbls) {
       if (s.holdings[b] || s.listings.some((l) => l.bbl === b) || (s.cityJobs ?? []).some((j) => j.bbl === b)
@@ -201,7 +201,7 @@ export function buildJevRequest(s0: GameState, parcels: ParcelTable, firmId: str
   }
 
   // ---------------------------------------------------------------- BUILD
-  if (jobs.length < liveJobCap(r.style) && buildAppetite(r.style) > 0) {
+  if (jobs.length < liveJobCap(r) && buildAppetite(r) > 0) {
     const opts: Record<string, Text> = {};
     let sites = 0;
     const siteList = [...r.bbls].map((b) => ({ b, rec: resolveRec(parcels, s, b) }))
@@ -247,11 +247,11 @@ export function buildJevRequest(s0: GameState, parcels: ParcelTable, firmId: str
   }
 
   // ---------------------------------------------------------------- CLAIM
-  if (buildAppetite(r.style) > 0) {
+  if (buildAppetite(r) > 0) {
     const waiting = (["office", "retail", "multifamily", "industrial"] as BuiltClass[])
       .filter((c) => (e.startOwed?.[c] ?? 0) > 0).map((c) => USE_WORD[c]);
     questions[QID.claim] = qClaim({
-      projects_building: `${jobs.length} of at most ${liveJobCap(r.style)}`,
+      projects_building: `${jobs.length} of at most ${liveJobCap(r)}`,
       cash: B.money(r.cash),
       demand_for_new_space: waiting.length ? `tenants are waiting for new ${waiting.join(", ")}` : "no use has tenants waiting for new space",
     });

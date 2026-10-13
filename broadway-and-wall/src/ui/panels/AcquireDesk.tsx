@@ -687,7 +687,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
         the extra buys: not a better building, a better-tested price. A quiet sale finds you one buyer at a time,
         whoever happens to ring, and you never learn what the best buyer in the city would have paid.
         {quietFeeRate(game) <= 0.0001
-          ? " It costs you nothing in fees today, because enough of the street has traded with you that you can find that buyer yourself."
+          ? " It costs you nothing in fees today, because enough of the competitors have traded with you that you can find that buyer yourself."
           : ` The quiet fee is ${(quietFeeRate(game) * 100).toFixed(2)}% and falls toward nothing as more of the named firms in town have actually dealt with you.`}
       </div>
     </div>
@@ -1588,7 +1588,7 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
       </div>
       <div className="hint">
         {quiet <= 0.0001
-          ? "Your name is worth the brokerage on this one: enough of the street has traded with you that you can sell it off-market yourself, and there is nobody in the room to pay."
+          ? "Your name is worth the brokerage on this one: enough of the competitors have traded with you that you can sell it off-market yourself, and there is nobody in the room to pay."
           : `A quiet sale costs ${(quiet * 100).toFixed(2)}% today. That falls as more of the named firms in town have actually traded with you — a building sold off-market is sold to somebody who already knew you had it — and it goes straight back up if the street decides you are a lowballer.`}
       </div>
     </div>

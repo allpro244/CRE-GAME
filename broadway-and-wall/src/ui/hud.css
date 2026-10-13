@@ -445,6 +445,11 @@
   text-transform: uppercase; color: var(--text-3);
 }
 .app .ops-choice-read { font-size: var(--fs-xs); color: var(--text-3); }
+/* What a choice costs against the one in force, under its label. */
+.app .ops-choice .seg .btn { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.app .ops-delta { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 2px; }
+.app .ops-delta.neg { color: var(--neg); }
+.app .ops-delta.pos { color: var(--pos); }
 .app .news-repeat { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
 .app .docket-more-btn { appearance: none; background: none; border: 0; text-align: left; cursor: pointer; padding: 2px 0 0; font: inherit; font-size: 11.5px; color: var(--accent, #9a6a12); }
 .app .docket-more-btn:hover { text-decoration: underline; }

@@ -1581,6 +1581,25 @@ export const COND_DECAY: Record<BuiltClass, number> = {
   office: 0.0029, retail: 0.0026, multifamily: 0.0023, industrial: 0.0016,
 };
 
+/**
+ * ONE MONTH OF WEAR on a building — the class's decay, faster on old bones
+ * (up to +50% at 110 years) and on cheap plant (specWearMult). The monthly
+ * tick in leasing.ts subtracts this from condIdx, and the capital plan bill
+ * scales with it, so the Operations panel can quote that bill per plan.
+ */
+export function condWear(rec: ParcelRecord, q: number): number {
+  const age = START_YEAR + Math.floor(q / 12) - rec.yearBuilt;
+  return (COND_DECAY[rec.class as BuiltClass] ?? 0.0024)
+    * (1 + Math.min(0.50, age / 220))
+    * specWearMult(rec.buildSpec);
+}
+
+/** The capital plan's monthly cheque: CAP_PLAN_RATE of gross value a year,
+ *  times the plan's multiplier, scaled by how fast this building wears. */
+export function capPlanBillMo(gav: number, wear: number, mult: number): number {
+  return Math.round((CAP_PLAN_RATE * mult * gav * (wear / COND_WEAR_REF)) / 12);
+}
+
 /** Where each grade begins. Condition is a READING of condIdx, not a state. */
 export const COND_BANDS: [Condition, number][] = [["good", 0.78], ["standard", 0.52], ["worn", 0.34], ["obsolete", 0]];
 export function condGrade(condIdx: number): Condition {

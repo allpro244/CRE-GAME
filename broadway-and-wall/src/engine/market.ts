@@ -1767,7 +1767,22 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
   // (Sivitanides, Southard, Torto & Wheaton 2001). The years it takes to fill
   // the empty floors are already in `vacRisk`. A falling trend still counts
   // while sites pencil — supply is still arriving and the fall can continue.
-  if (growth < 0 && siteH !== undefined && siteH > 0 && siteH < 1) growth = 0;
+  //
+  // ...EXCEPT THE PART OF THE FALL THAT IS STRUCTURAL (2026-10-13). Reversion
+  // to replacement cost is a fact about CYCLES: a glut ends because demand
+  // grows into it. A class whose demand itself is shrinking — shopfronts in
+  // an e-commerce era, sheds in a deindustrialisation — does not grow back
+  // to its supply price, and its buyers know it: malls traded at 7-10% caps
+  // through 2015-20 with Treasuries under 3%, retail at ~6.3% in 2021 against
+  // 1.5%. Zeroing every fall here priced retail as if it would recover, and
+  // its cap rode the rate down to 3% (measured; then crashed 70%). The
+  // class's secular drift is kept, discounted at the persistence of an era
+  // rather than a cycle: eras run one to two decades (see `secular`), so
+  // ~1/15 a year where cyclical growth decays at GROWTH_DECAY.
+  if (growth < 0 && siteH !== undefined && siteH > 0 && siteH < 1) {
+    const drift = Math.min(0, e.secular?.[k]?.drift ?? 0);
+    growth = (yNoGrowth / (yNoGrowth + 1 / 15)) * 100 * drift;
+  }
   return base - growth;
 }
 
@@ -2816,20 +2831,8 @@ export function tickEcon(s: GameState) {
   // balance sheet that has to absorb the loss is the same balance sheet in
   // every city at once.
   stepCredit(s);
-  // CLOSED IS A STATE OF THE DESKS, NOT A DICE ROLL (2026-10-13). This was a
-  // 2%-a-month roll whenever the credit window read under 0.66, and it ran
-  // while every desk in town was still writing paper. Now: at least half the
-  // town's loan book sits at desks too impaired to quote (appetite under
-  // 0.15, the same line at which a desk announces it has stopped) — reported
-  // once on the way in and once on the way out.
-  {
-    const live = (s.lenders ?? []).filter((l) => l.failedM === undefined);
-    const book = live.reduce((a, l) => a + l.book, 0);
-    const shut = book > 0 && live.filter((l) => l.appetite < 0.15).reduce((a, l) => a + l.book, 0) / book >= 0.5;
-    if (shut && !e.debtShut) pushNews(s, "warn", "The debt markets have effectively closed. Term sheets are being pulled mid-deal.");
-    if (!shut && e.debtShut) pushNews(s, "event", "The lenders are quoting again. Not cheaply, and not to everyone, but the phones are being answered.");
-    e.debtShut = shut;
-  }
+  // (Whether the debt markets are closed is read in tickLenders — lenders.ts —
+  // off the desks' own standards and the securitisation window.)
 
   // --- employment: the demand behind every lease -----------------------------
   // A LOCAL PROPERTY SLUMP IS NOT A LOCAL DEPRESSION. The phase machine is a

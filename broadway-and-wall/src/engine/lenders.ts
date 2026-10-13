@@ -18,7 +18,7 @@
 // decision. One that arrives as a number going down is weather.
 import type { GameState } from "./types";
 import { logBooks, BUILT_CLASSES } from "./types";
-import { PRODUCTS } from "./debt";
+import { PRODUCTS, underwritingStandards, windowOpen } from "./debt";
 import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE, labourSlack } from "./market";
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -642,6 +642,30 @@ export function lenderAppetite(s: GameState, name: string): number {
  * event with a cause instead of a slider.
  */
 export function tickLenders(s: GameState) {
+  // CLOSED IS WHAT LENDERS DO, NOT WHAT THEY HAVE LOST (2026-10-13). This
+  // fired when half the town's book sat at desks too impaired to quote, and
+  // across 75-year runs it never fired — because 2008-09 was not that. Most
+  // banks still had capital; what closed was the market. CMBS issuance went
+  // to nearly nothing, and loan officers tightened as hard as the Fed's
+  // survey has ever recorded (SLOOS net tightening on CRE ~80%, 2008Q4).
+  // So closed is the securitisation window shut AND bank standards on their
+  // "shut" reading (`underwritingStandards`, the same index the desks
+  // underwrite on); it reopens when the window does. Measured: 4-9 episodes
+  // per 75 years, against 1990-91, 2001, 2008-09 and 2020 in the survey's
+  // thirty-odd years.
+  {
+    const e = s.econ;
+    const conduit = PRODUCTS.find((p) => p.window);
+    const windowShut = conduit ? !windowOpen(s, conduit) : false;
+    // In at "shut" standards with the window closed; out when either the
+    // window reopens or standards are back to ordinary (standardsWord).
+    const st = underwritingStandards(s);
+    const shut = e.debtShut ? windowShut && st <= -0.15 : windowShut && st <= -0.5;
+    if (shut && !e.debtShut) s.news.unshift({ q: s.month, kind: "warn", text: "The debt markets have effectively closed. The bond buyers have gone, the banks are lending only to names they already know, and term sheets are being pulled mid-deal." });
+    if (!shut && e.debtShut) s.news.unshift({ q: s.month, kind: "event", text: "The lenders are quoting again. Not cheaply, and not to everyone, but the phones are being answered." });
+    e.debtShut = shut;
+  }
+
   // The receiver pays out on its own clock, whatever the banks are doing.
   tickReceivership(s);
   // A save from before banks were sized to the city, or a state built without

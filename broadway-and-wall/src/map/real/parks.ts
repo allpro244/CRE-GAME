@@ -214,7 +214,7 @@ const SOIL = [0.3, 0.22, 0.16], COPPER = [0.38, 0.6, 0.52];
  * vertex-coloured standard material, "lamp" the layer's lamp material (lit
  * after dark). `colored` means the instance colour multiplies it.
  */
-export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "lamp" | "water"; colored?: boolean } | null {
+export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "lamp" | "water" | "leaf"; colored?: boolean } | null {
   switch (kind) {
     // a Victorian park lamp: a fluted iron post on a plinth; the lantern is plhead
     case "plpost": return { g: mc([[cy(0.17, 0.55, 0, 8, 0.12), IRON], [cy(0.065, 3.1, 0.55, 6), IRON], [cy(0.12, 0.12, 3.6, 8), IRON], [bx(0.5, 0.05, 0.05, 0, 0, 3.3), IRON]]), mat: "vc" };
@@ -380,6 +380,26 @@ export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "
     case "gatepier": return { g: mc([[bx(0.75, 0.75, 2.0), [0.74, 0.71, 0.66]], [bx(0.95, 0.95, 0.18, 0, 0, 2.0), [0.66, 0.63, 0.58]], [new THREE.SphereGeometry(0.28, 10, 8).translate(0, 0, 2.45), [0.66, 0.63, 0.58]]]), mat: "vc" };
     // a mallard on the water: body, head, bill; the body is the instance colour
     case "duck": return { g: mc([[new THREE.SphereGeometry(0.18, 8, 6).scale(1.5, 0.9, 0.7).translate(0, 0, 0.05), [1, 1, 1]], [new THREE.SphereGeometry(0.09, 8, 6).translate(0.2, 0, 0.2), [0.16, 0.36, 0.2]], [bx(0.09, 0.05, 0.03, 0.31, 0, 0.17), [0.9, 0.72, 0.2]]]), mat: "vc", colored: true };
+    // a weeping willow's crown: a dome and a long skirt of hanging leaf down
+    // to head height, darker inside; the trunk is the ordinary trunk
+    case "willow": {
+      const parts: [THREE.BufferGeometry, number[]][] = [];
+      parts.push([new THREE.SphereGeometry(3.4, 12, 7, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1, 0.55).translate(0, 0, 6.6), [1.05, 1.08, 0.9]]);
+      let s2 = 71; const r = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2 + r() * 0.2, R = 2.9 + r() * 0.6, h = 3.6 + r() * 1.6;
+        parts.push([new THREE.CylinderGeometry(0.75, 0.35, h, 5, 1, false).rotateX(Math.PI / 2).translate(Math.cos(a) * R, Math.sin(a) * R, 6.7 - h / 2), [0.78 + r() * 0.2, 0.82 + r() * 0.2, 0.7]]);
+      }
+      parts.push([new THREE.SphereGeometry(2.6, 10, 6).scale(1, 1, 0.6).translate(0, 0, 5.8), [0.55, 0.58, 0.5]]);
+      return { g: mc(parts), mat: "leaf", colored: true };
+    }
+    // a section of square railing: spear-topped iron bars on a stone kerb, 2.5 m
+    case "parkrail": {
+      const parts: [THREE.BufferGeometry, number[]][] = [[bx(2.5, 0.36, 0.3), [0.66, 0.64, 0.6]], [bx(2.5, 0.05, 0.05, 0, 0, 0.42), IRON], [bx(2.5, 0.05, 0.05, 0, 0, 1.25), IRON]];
+      for (let x = -1.18; x < 1.2; x += 0.16) { parts.push([bx(0.025, 0.025, 1.2, x, 0, 0.3), IRON]); parts.push([cone(0.035, 0.12, 1.5, 4).translate(x, 0, 0), IRON]); }
+      parts.push([bx(0.12, 0.12, 1.55, -1.22, 0, 0.3), IRON]);
+      return { g: mc(parts), mat: "vc" };
+    }
     case "flagpole": return { g: mc([[bx(1.6, 1.6, 0.5), STONE], [cy(0.09, 11, 0.5, 6, 0.05), WHITE], [new THREE.SphereGeometry(0.14, 6, 4).translate(0, 0, 11.6), [0.8, 0.65, 0.25]], [bx(0.02, 1.8, 1.1, 0, 0.95, 10.2), [0.7, 0.18, 0.16]]]), mat: "vc" };
   }
   return null;

@@ -118,7 +118,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail", "grate", "planter", "patio", "shed", "dumpster", "trailer", "pallets", "plpost", "plhead", "bedsoil", "stall", "stallstripe", "playset", "kiosk", "cannon", "obelisk", "tennis", "gatepier"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail", "grate", "planter", "patio", "shed", "dumpster", "trailer", "pallets", "plpost", "plhead", "bedsoil", "stall", "stallstripe", "playset", "kiosk", "cannon", "obelisk", "tennis", "gatepier", "parkrail"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -5204,7 +5204,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       }
       default: {
         const pg = parkGeom(kind === "lawnsitter" ? "sitter" : kind);
-        if (pg) return { g: pg.g, mat: pg.mat === "lamp" ? this.lampMat : pg.mat === "water" ? this.sprayMat : this.parkVcMat, colored: pg.colored };
+        if (pg) return { g: pg.g, mat: pg.mat === "lamp" ? this.lampMat : pg.mat === "water" ? this.sprayMat : pg.mat === "leaf" ? this.leafMat : this.parkVcMat, colored: pg.colored };
         return { g: box(1, 1, 1), mat: this.trimMat };
       }
     }
@@ -6194,7 +6194,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const over = this.parkInfo().flatMap((p) => p.ponds);
     if (over.length) {
       const pm = new THREE.Mesh(new THREE.ShapeGeometry(over.map((r) => new THREE.Shape(r.map(([x, y]) => new THREE.Vector2(x, y))))), new THREE.MeshStandardMaterial({
-        color: 0x2f5552, roughness: 0.08, envMapIntensity: 1.4, normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.35, 0.35), envMap: this.skyEnv,
+        color: 0x27443f, roughness: 0.2, envMapIntensity: 0.55, normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.35, 0.35), envMap: this.skyEnv,
       }));
       pm.position.z = 0.055; pm.receiveShadow = true;
       this.scene.add(pm);
@@ -6325,7 +6325,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
             const side = k % 2 ? 1 : -1, off = w / 2 + 0.75;
             const x = a[0] + ux * t + nx * off * side, y = a[1] + uy * t + ny * off * side;
             if (nearEnd(x, y, 4.5) || !free(x, y, 0.45) || nearTree(x, y, 1.4)) continue;
-            const r = Math.atan2(nx * side, -ny * side);
+            // local -y (the way a bench faces) toward the walk
+            const r = Math.atan2(-nx * side, ny * side);
             this.putInst("pbench", x, y, 0.05, 1, r);
             if (rnd() < 0.32) this.putInst("sitter", x + ux * (rnd() - 0.5) * 1.1, y + uy * (rnd() - 0.5) * 1.1, 0.05, 1, r, "", COAT[(rnd() * COAT.length) | 0]);
             if (++nb % 3 === 0 && free(x + ux * 1.4, y + uy * 1.4, 0.3)) this.putInst("bin", x + ux * 1.4, y + uy * 1.4, 0.05, 0.85, 0);
@@ -6367,6 +6368,18 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
             else if (r < 0.37) this.putInst("rock", a[0] + ux * t + ox * 0.7, a[1] + uy * t + oy * 0.7, 0.05, 0.6 + rnd() * 0.6, rnd() * 6.28, "", [0.95 + rnd() * 0.1, 0.95, 0.92]);
           }
         }
+        // a weeping willow or two leaning over the bank
+        for (let j = 0, nw = 1 + Math.floor(rnd() * 3), tries = 0; j < nw && tries < 30; tries++) {
+          const i = Math.floor(rnd() * pd.length), a = pd[i], b = pd[(i + 1) % pd.length];
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 1) continue;
+          const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+          const x = (a[0] + b[0]) / 2 + uy * 3.2, y = (a[1] + b[1]) / 2 - ux * 3.2;
+          if (!free(x, y, 1) || nearTree(x, y, 5)) continue;
+          const sc = 0.85 + rnd() * 0.35;
+          this.putInst("trunk", x, y, 0.05, sc * 1.1, rnd() * 6.28);
+          this.putInst("willow", x, y, 0.05, sc, rnd() * 6.28, "", [0.42, 0.58, 0.24]);
+          j++;
+        }
         // ducks dabbling about the water
         for (let j = 0, nd = 3 + Math.floor(rnd() * 5); j < nd; j++) {
           const v = pd[Math.floor(rnd() * pd.length)], f = 0.2 + rnd() * 0.6;
@@ -6383,6 +6396,17 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       for (const f of p.features) this.putInst(f.kind, f.x, f.y, 0.05, 1, f.rot);
       for (const e of p.entrances) for (const sd of [-1, 1]) this.putInst("gatepier", e.at[0] + e.tx * sd * (w / 2 + 0.7), e.at[1] + e.ty * sd * (w / 2 + 0.7), 0.05, 1, Math.atan2(e.ty, e.tx));
       if (p.flavour === "park") {
+        // benches round the paved round, facing what the walks converge on
+        if (p.plazaR) {
+          for (let k = 0; k < 10; k++) {
+            const a = (k / 10) * Math.PI * 2 + 0.31, R = p.plazaR - 1.1;
+            const x = p.cx + Math.cos(a) * R, y = p.cy + Math.sin(a) * R;
+            if (onWalk(x, y, 0.6)) continue;
+            // local -y toward the centre
+            this.putInst("pbench", x, y, 0.086, 1, Math.atan2(-Math.cos(a), Math.sin(a)));
+            if (rnd() < 0.35) this.putInst("sitter", x, y, 0.086, 1, Math.atan2(-Math.cos(a), Math.sin(a)), "", COAT[(rnd() * COAT.length) | 0]);
+          }
+        }
         // a drinking fountain at the edge of the paved round
         if (p.plazaR) {
           for (let t = 0; t < 12; t++) {
@@ -6614,14 +6638,19 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       if (Math.abs(ringArea(ring)) < 900) continue;
       const inner = insetRing(ring, 3.6);
       if (!inner) continue;
-      for (let i = 0; i < inner.length; i++) {
-        const a = inner[i], b = inner[(i + 1) % inner.length];
+      // A GARDEN SQUARE IS RAILED: spear-topped iron on a stone kerb just
+      // inside the footway; a bigger park keeps its clipped hedge
+      const square = Math.abs(ringArea(ring)) < 9000 && pk.flavour === "park";
+      const edge = square ? insetRing(ring, 2.85) ?? inner : inner;
+      for (let i = 0; i < edge.length; i++) {
+        const a = edge[i], b = edge[(i + 1) % edge.length];
         const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
         if (L < 3) continue;
         const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
-        for (let t = 1.3; t < L - 1.3; t += 2.5) {
+        for (let t = 1.3; t < L - 1.2; t += 2.5) {
           const x = a[0] + ux * t, y = a[1] + uy * t;
           if (nearPath(x, y, 3.2) || this.parkInfo().some((q) => q.entrances.some((e) => Math.hypot(e.at[0] - x, e.at[1] - y) < 3.4))) continue;
+          if (square) { this.putInst("parkrail", x, y, 0.05, 1, Math.atan2(uy, ux)); continue; }
           this.putInst("parkhedge", x, y, 0.03, 0.75, Math.atan2(uy, ux));
         }
       }
@@ -7430,7 +7459,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const spray = this.inst.get("spray"); if (spray) spray.visible = this.month >= 3 && this.month <= 10;
     if (this.bloomMesh) this.bloomMesh.visible = this.month >= 4 && this.month <= 8;
     // the canopy: green in summer, turning in autumn, bare grey in winter
-    for (const leaf of [this.inst.get("crown"), this.inst.get("bush")]) {
+    for (const leaf of [this.inst.get("crown"), this.inst.get("bush"), this.inst.get("willow")]) {
     if (leaf) {
       const turn = [0, 0, 0, 0, 0, 0, 0, 0.05, 0.3, 0.85, 0.9, 0.2][this.month];
       const bare = [1, 1, 0.85, 0.4, 0.02, 0, 0, 0, 0, 0.1, 0.6, 0.95][this.month];

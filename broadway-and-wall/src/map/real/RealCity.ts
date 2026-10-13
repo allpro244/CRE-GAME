@@ -6900,12 +6900,13 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           for (const [u, v, z] of [[2.3, 2.0, 0.2], [4.1, 2.0, 0.2], [-0.5, -2.5, 1.62], [-3.2, 1.6, 0.17], [-4.0, 2.4, 0.17], [-4.8, -2.7, 0.65], [1.6, -2.4, 0.6]] as [number, number, number][]) {
             if (rnd() < 0.3) continue;
             const [x, y] = L(u, v);
-            this.putInst("child", x, y, 0.05 + z, PERSON_S * 0.62, rnd() * 6.28, "", RUN[(rnd() * RUN.length) | 0]);
+            this.putInst("child", x, y, 0.05 + z, PERSON_S * 0.7, rnd() * 6.28, "", RUN[(rnd() * RUN.length) | 0]);
           }
           // and the parents on a pair of benches watching
           for (const u of [-3, 3]) {
             const [x, y] = L(u, 6.6);
-            if (!free(x, y, 0.4)) continue;
+            // inside the playground's own reserve, so only the lawn and the walks are checked
+            if (!inRingPk(x, y, p.inner) || onWalk(x, y, 0.4) || inPond(x, y)) continue;
             this.putInst("pbench", x, y, 0.05, 1, f.rot);
             if (rnd() < 0.7) this.putInst("sitter", x, y, 0.05, PERSON_S, f.rot, "", COAT[(rnd() * COAT.length) | 0]);
           }

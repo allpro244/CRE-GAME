@@ -76,6 +76,10 @@ export function realRentYoy(e: Econ, k: BuiltClass): number {
  */
 
 export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; spanYrs: number }) {
+  // The wage and output indices open at the town's own dollars (`wage0` —
+  // density premium x price level, 0.26 on one measured town), not at 1, so
+  // "1.00 = year 2000" needs them divided by where they started (2026-10-13).
+  const w0 = useStore((s) => s.game?.econ.wage0) ?? 1;
   if (tail.length < 2) return <div className="hint">Not enough history yet — advance a few quarters.</div>;
   const x: [string, string] = [monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)];
   const kFmt = (v: number) => `${v.toFixed(0)}k`;
@@ -126,7 +130,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
               did not exist anywhere in the game — the line was dropped for a
               good reason and the number that was meant to replace it was never
               written — and it is true now. */}
-          <LineChart height={108} series={[{ label: "real wage", color: "#3a7d46", pts: tail.map((h) => real(h.wageIdx, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
+          <LineChart height={108} series={[{ label: "real wage", color: "#3a7d46", pts: tail.map((h) => real((h.wageIdx ?? w0) / w0, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
             What a paycheque buys, with inflation actually taken out. It gives ground about one year in six —
             firms freeze pay rather than cut it, so the cutting is done by the price-level chart below instead.
@@ -136,7 +140,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
         </div>
         <div className="chart-cell">
           <div className="chart-title">Real output — index, 1.00 = year 2000</div>
-          <LineChart height={108} series={[{ label: "real output", color: "#3d6f9e", pts: tail.map((h) => real(h.outputIdx, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
+          <LineChart height={108} series={[{ label: "real output", color: "#3d6f9e", pts: tail.map((h) => real((h.outputIdx ?? w0) / w0, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
             Jobs times productivity, in real terms — the city's whole product on one line. When it grows faster
             than the standing stock of space, somebody has to build; when it does not, somebody already did.
@@ -186,6 +190,34 @@ export function CityFigures() {
   // Twelve months back, on the same series the chart above draws — not a
   // separate estimate of the same growth rate.
   const jobsYr = n > 12 && h[n - 13].jobs ? (h[n - 1].jobs! / h[n - 13].jobs! - 1) * 100 : 0;
+  // THE WAGE AGAINST ITS OWN YEAR AND AGAINST THE COUNTRY (2026-10-13).
+  // Same series as the chart: the year-on-year change in what pay buys; then
+  // pay against the national pay path — what employers compare when they
+  // decide where to hire (`wageDemand`) — as a LEVEL, because the town opened
+  // at its density premium (`wage0`) over the national reference and the
+  // national path is carried in the town's own units from there; and real pay
+  // against real national pay — what movers compare (`realPremEma`) — as a
+  // change since the opening only, because the engine does not record the
+  // town's opening cost of living against the nation (cpi and natCpi both
+  // open at 1), so a level would be a guess.
+  // Every wage figure below is read against the opening (`wage0`), which is in
+  // the town's own dollars; the rows used to compare against 1.0 and printed
+  // "-74% against the year 2000" on a town whose real pay had grown.
+  const w0 = e.wage0 ?? 1;
+  const realYr = n > 12 && h[n - 13].wageIdx && h[n - 13].cpi
+    ? (real(h[n - 1].wageIdx, h[n - 1].cpi) / real(h[n - 13].wageIdx, h[n - 13].cpi) - 1) * 100 : 0;
+  const natW = e.natWageIdx ?? e.wageIdx ?? 1;
+  // The opening premium over national pay is wage0 net of the town's price
+  // level (density and dearness — what a dense, dear town pays above the
+  // reference); the national path then carries it forward in this town's units.
+  const payVsNation = (w0 / Math.max(1e-6, e.priceLevel ?? 1) * (e.wageIdx ?? w0) / Math.max(1e-6, natW) - 1) * 100;
+  const realVsNationChg = (real(e.wageIdx, e.cpi) / Math.max(1e-6, real(natW, e.natCpi)) - 1) * 100;
+  // ...and as a LEVEL where the save carries the opening cost of living
+  // against the nation (`col0`, struck at the opening with the CPI's own
+  // weights): cost of living today = col0 x local prices / national prices,
+  // and real pay against the nation = pay against the nation / that.
+  const col = e.col0 !== undefined ? e.col0 * (e.cpi ?? 1) / Math.max(1e-6, e.natCpi ?? e.cpi ?? 1) : undefined;
+  const realVsNation = col !== undefined ? ((1 + payVsNation / 100) / col - 1) * 100 : undefined;
   return (
     <>
       <div className="page-section" style={{ marginTop: 14 }}>Where the city stands today</div>
@@ -205,15 +237,31 @@ export function CityFigures() {
             missing, so eight and a half is about three points of slack above
             where this town sits when nothing is wrong. */}
         <Row k="Unemployment" v={`${((e.unemployment ?? 0) * 100).toFixed(1)}%`} bad={(e.unemployment ?? 0) > 0.085} />
-        <Row k="Real wage" v={`${((real(e.wageIdx, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
+        <Row k="Real wage" v={`${((real((e.wageIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
         {/* THE ROW THE CHART ABOVE PROMISED. Its own note records why the line
             was dropped — nominal measured at 4.5x over a campaign against
             real's 1.35x, so a shared axis flattens the series that matters —
             and that is exactly why the figure has to be said SOMEWHERE, or the
             player has no way to see the gap between what they are paid and
             what it buys. */}
-        <Row k="Nominal wage" v={`${(((e.wageIdx ?? 1) - 1) * 100).toFixed(0)}% against the year 2000`} />
-        <Row k="Real output" v={`${((real(e.outputIdx, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
+        <Row k="Nominal wage" v={`${(((e.wageIdx ?? w0) / w0 - 1) * 100).toFixed(0)}% against the year 2000`} />
+        <Row k="Real wage, last 12 months" v={pctSigned(realYr / 100, 1)} bad={realYr < 0}
+          title="What a paycheque buys now against a year ago — pay is rarely cut, so a fall here is prices outrunning pay." />
+        <Row k="Pay vs the nation" v={`${payVsNation >= 0 ? "+" : ""}${payVsNation.toFixed(0)}% ${payVsNation >= 0 ? "above" : "below"} national pay`}
+          title="What employers here pay against the national average. Dear labour trims hiring and pushes work to other cities; cheap labour draws it in." />
+        {col !== undefined && (
+          <Row k="Cost of living vs the nation" v={`${col >= 1 ? "+" : ""}${((col - 1) * 100).toFixed(0)}% ${col >= 1 ? "dearer" : "cheaper"}`}
+            title="Housing, local services and goods together, weighted as the local price index weights them, against the national average." />
+        )}
+        {realVsNation !== undefined ? (
+          <Row k="Real pay vs the nation" v={`${realVsNation >= 0 ? "+" : ""}${realVsNation.toFixed(0)}% (${realVsNationChg >= 0 ? "+" : ""}${realVsNationChg.toFixed(0)} pts since 2000)`}
+            bad={realVsNation < 0}
+            title="Pay here after the cost of living here, against the national average — what people deciding whether to move in or out compare." />
+        ) : (
+          <Row k="Real pay vs the nation" v={`${realVsNationChg >= 0 ? "+" : ""}${realVsNationChg.toFixed(0)}% since the year 2000`}
+            title="Local pay after local prices, against national pay after national prices. This save predates the opening cost-of-living record, so only the change since the opening is shown." />
+        )}
+        <Row k="Real output" v={`${((real((e.outputIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
         <Row k="Price level" v={`${(((e.cpi ?? 1) - 1) * 100).toFixed(0)}% of cumulative inflation`} />
       </div>
     </>

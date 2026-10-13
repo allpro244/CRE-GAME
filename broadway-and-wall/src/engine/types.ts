@@ -1647,6 +1647,8 @@ export interface Econ {
   incomeEff?: Record<BuiltClass, number>;
   /** Opening REAL income per worker, frozen at newGame, so the income argument is 1.0 at t=0. */
   wage0?: number;
+  /** Opening cost of living against the nation (1 = national), same weights as the local CPI. Display only. */
+  col0?: number;
   /**
    * Median buildable-over-legal envelope ratio, published annually by
    * refreshDevelopmentFeasibility. The land residual reads it so dirt is

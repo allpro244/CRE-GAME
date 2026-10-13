@@ -201,7 +201,14 @@ export const LEVERAGE_RANGE = R.maxLtv;
 /** holdM: 12 months at 0, 300 at 100. Forever is a rule (NEVER sells), not a number. */
 const holdOf = (t: number) => Math.round(12 + 2.88 * Math.max(0, Math.min(100, t)));
 /** contra: only the bottom of the cycle trait inverts the credit window. */
-const contraOf = (t: number) => (t < 30 ? -1.7 * (30 - t) / 29 : 0);
+// POSITIVE leans INTO a shut window (every reader is `+ contra × (1 − ci)`).
+// It was negative, carried over from the vulture style row, so a contrarian
+// bought less in a crunch and more in a boom — the opposite of its label.
+// Up to 3.4 at Cycle 0: in a crunch (credit index 0.8) a pure contrarian is
+// ~4.5x as keen as in a boom (1.2) — it does most of its buying when nobody
+// else can. (1.7 measured as barely visible: 15% of buys in tight credit
+// against 12-14% for everyone else, two towns x 50 years.)
+const contraOf = (t: number) => (t < 30 ? 3.4 * (30 - t) / 29 : 0);
 const jobsOf = (t: number, build: number) => (build <= 0 ? 0 : 1 + Math.floor(Math.max(0, Math.min(99, t)) / 25));
 
 const CLASS_TRAIT: Record<string, TraitKey> = {
@@ -219,8 +226,14 @@ export function paramsFrom(sheet: Sheet | undefined, rules: readonly Rule[] | un
   if (!sheet) return base;
   const has = (x: Rule) => !!rules?.includes(x);
   const build = has("neverBuilds") ? 0 : lin(sheet.build, R.build[0], R.build[1]);
-  const classes: string[] = [];
+  let classes: string[] = [];
   for (const [cls, k] of Object.entries(CLASS_TRAIT)) if (sheet[k] >= CLASS_FLOOR) classes.push(cls);
+  // AN "ONLY" RULE IS THE WHOLE LIST, whatever drift or jitter did to the
+  // other class numbers. A builder under ONLY industrial still buys the dirt it
+  // builds the warehouses on.
+  const only = has("onlyOffice") ? "office" : has("onlyResidential") ? "multifamily" : has("onlyRetail") ? "retail"
+    : has("onlyIndustrial") ? "industrial" : has("onlyLand") ? "land" : null;
+  if (only) classes = only === "land" || !(build > 0) ? [only] : [only, "land"];
   return {
     appetite: lin(sheet.capacity, R.appetite[0], R.appetite[1]),
     procyclical: lin(sheet.cycle, R.procyclical[0], R.procyclical[1]),
@@ -257,7 +270,7 @@ export function sheetFromStyle(base: Params): Sheet {
     distress: inv(base.distressBias, R.distressBias[0], R.distressBias[1]),
     assembly: 10,
     leverage: inv(base.maxLtv, R.maxLtv[0], R.maxLtv[1]),
-    cycle: base.contra < 0 ? inv(30 + base.contra / 1.7 * 29, 0, 100) : inv(base.procyclical, R.procyclical[0], R.procyclical[1]),
+    cycle: base.contra > 1 ? inv(30 - base.contra / 3.4 * 29, 0, 100) : inv(base.procyclical, R.procyclical[0], R.procyclical[1]),
     discipline: inv(base.patience, R.patience[0], R.patience[1]),
     cashOut: inv(base.cashOut, R.cashOut[0], R.cashOut[1]),
     upkeep: inv(base.care.capex, R.capex[0], R.capex[1]),
@@ -411,6 +424,16 @@ export const PROFILE_OF: Record<ProfileId, Profile> =
 
 /** Jitter around a profile's centre: ±JITTER, so two trophy builders still differ. */
 const JITTER = 12;
+/**
+ * WHAT A PROFILE DOES NOT SAY IS PERSONALITY, NOT AVERAGE. A trait the profile
+ * leaves unset used to sit at 50 ± 12, so across a town Distress, Reach,
+ * Cycle, Underwriting and the temperament all read 40-65 and every firm was
+ * the same firm on them. Unset, they are drawn ±40 — two neighbourhood
+ * landlords can be a careful one and a reckless one. Class traits keep the
+ * narrow band: a generalist stays a generalist.
+ */
+const WIDE = 40;
+const NARROW_UNSET = new Set<TraitKey>(["office", "residential", "retail", "industrial", "land"]);
 
 /**
  * DRAW A FIRM FROM A PROFILE, by hash. `key` is the run seed and the firm id;
@@ -419,10 +442,10 @@ const JITTER = 12;
 export function drawSheet(profile: Profile, key: string, parent?: Sheet): { sheet: Sheet; rules: Rule[]; quirks: Quirk[] } {
   const sheet = {} as Sheet;
   for (const t of TRAITS) {
-    const centre = profile.id === "spinout" && parent && t.key !== "capacity" && t.key !== "grudge"
-      ? parent[t.key]
-      : profile.centre[t.key] ?? 50;
-    const j = (hash01(`${key}:${t.key}`) * 2 - 1) * JITTER;
+    const inherited = profile.id === "spinout" && parent && t.key !== "capacity" && t.key !== "grudge";
+    const set = inherited || profile.centre[t.key] !== undefined;
+    const centre = inherited ? parent![t.key] : profile.centre[t.key] ?? 50;
+    const j = (hash01(`${key}:${t.key}`) * 2 - 1) * (set || NARROW_UNSET.has(t.key) ? JITTER : WIDE);
     sheet[t.key] = Math.round(Math.max(1, Math.min(100, centre + j)));
   }
   const rules = profile.rules.filter((r, i) => hash01(`${key}:rule:${i}`) < r.p).map((r) => r.rule).slice(0, 3);

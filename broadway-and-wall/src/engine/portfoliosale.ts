@@ -22,10 +22,10 @@
 // by which bad debt eventually finds a clearing price instead of sitting on the
 // tape at a number nobody will pay.
 import type { GameState, PortfolioListing } from "./types";
-import type { ParcelTable } from "../data/types";
+import type { ParcelRecord, ParcelTable } from "../data/types";
 import { dollarLevel, rng, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
-import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed } from "./rivals";
+import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed, fitOf } from "./rivals";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
 import { financePackage, settleSale } from "./rivalDebt";
@@ -451,8 +451,19 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
       const cap = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
       return Math.min(p.ask, streetRefiProceeds(s, p.ask, packageNoi, cap).principal);
     };
+    // A PACKAGE HAS TO SUIT THE BUYER, deed by deed: a firm whose sheet or
+    // rules would refuse any building in it does not bid for the lot, and
+    // among the rest the one the package fits best leans in.
+    const recs = p.bbls.map((b) => resolveRec(parcels, s, b)).filter(Boolean) as ParcelRecord[];
+    const fitPkg = (r: ReturnType<typeof livingRivals>[number]) => {
+      if (!r.sheet) return 1;
+      let tot = 0;
+      for (const rec of recs) { const f = fitOf(s, parcels, r, rec, !!p.reo); if (!(f > 0)) return 0; tot += f; }
+      return recs.length ? tot / recs.length : 0;
+    };
     const buyers = livingRivals(s).filter((r) => {
       if (r.id === p.sellerId) return false;
+      if (!(fitPkg(r) > 0)) return false;
       const st = paramsOf(r);
       const debt = packageDebt(r);
       const equity = p.ask - debt;
@@ -465,7 +476,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
       // A rival buying a rival's book. Rare, and it is how the big get big.
       const hunger = buyers.map((r) => {
         const st = paramsOf(r);
-        return { r, w: st.appetite * (1 + st.contra * (1 - ci)) * (p.reo ? st.distressBias : 1) * (0.5 + rng(s)) };
+        return { r, w: st.appetite * (1 + st.contra * (1 - ci)) * (p.reo ? st.distressBias : 1) * fitPkg(r) * (0.5 + rng(s)) };
       }).sort((a, b) => b.w - a.w);
       const under = p.ask / Math.max(1, p.gross);
       // they take it when it is cheap enough relative to the parts

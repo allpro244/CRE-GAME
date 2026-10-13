@@ -96,6 +96,11 @@ export function syncDebt(s: GameState, r: Rival) {
  * the stated books the city opened with, so a desk's named street paper only
  * has to stay within three quarters of that book.
  */
+/** Some live desk would take `amount` more against this name. */
+export function deskWithRoom(s: GameState, obligorId: string, amount: number): boolean {
+  return (s.lenders ?? []).some((l) => l.failedM === undefined && deskRoom(s, l, obligorId) >= amount);
+}
+
 export function deskRoom(s: GameState, l: Lender, obligorId: string, opening = false): number {
   if (l.failedM !== undefined) return 0;
   let exposure = 0, onDesk = 0;

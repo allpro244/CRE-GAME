@@ -100,7 +100,7 @@ const POOL: Record<Sector, string[]> = {
  * hiring — which is also how a landlord ends up concentrated without ever
  * deciding to be.
  */
-function pickSector(s: GameState, cls: string): Sector {
+export function pickSector(s: GameState, cls: string): Sector {
   // One partition, shared with the swan side — see SECTOR_CLASSES in types.ts.
   const arr = SECTOR_CLASSES[cls as BuiltClass] ?? SECTOR_CLASSES.office!;
   const w = arr.map((k) => industryPull(s.econ, k));
@@ -108,7 +108,7 @@ function pickSector(s: GameState, cls: string): Sector {
   for (let i = 0; i < arr.length; i++) { roll -= w[i]; if (roll <= 0) return arr[i]; }
   return arr[arr.length - 1];
 }
-function pickName(s: GameState, sector: Sector): string {
+export function pickName(s: GameState, sector: Sector): string {
   const arr = POOL[sector];
   return arr[Math.floor(rng(s, "leasing") * arr.length) % arr.length];
 }

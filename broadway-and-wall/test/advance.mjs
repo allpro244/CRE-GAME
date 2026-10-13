@@ -166,7 +166,12 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
       for (const li of g2.listings) { const r = E.resolveRec(parcels, g2, li.bbl); if (!r || r.class === "land" || !r.bldgArea || li.halfBuilt) continue; pn++; if (E.buyQuote(g2, parcels, li.bbl, li.ask, "pelican", 1).principal > 0) pq++; }
     }
   }
-  ok(pn > 25 && pq / pn >= 0.08, `the life company quotes ${(pq / pn * 100).toFixed(1)}% of ${pn} listings at months 20 and 36, ten towns — standard buildings at a quarter point more (was 0%)`);
+  // FLOOR 5%, NOT 8% (2026-10-13). The claim is that the pickiest desk quotes
+  // SOME standard buildings (it quoted none). With recessions at their US
+  // frequency (one in ~7 years, not one in ~25) a quarter of these twenty
+  // snapshots now land in a downturn or a credit squeeze, where a life
+  // company is the first desk to stop; measured 6.7% against 10.6% before.
+  ok(pn > 25 && pq / pn >= 0.05, `the life company quotes ${(pq / pn * 100).toFixed(1)}% of ${pn} listings at months 20 and 36, ten towns — standard buildings at a quarter point more (was 0%)`);
   const qGood = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "good"), qStd = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "standard"), qWorn = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "worn");
   ok(near(qStd.ratePct - qGood.ratePct, 0.25, 0.011) && E.conditionOk(pl, "standard") && !E.conditionOk(pl, "worn"), `Pelican: standard +${(qStd.ratePct - qGood.ratePct).toFixed(2)}% over good; worn refused${qWorn.principal > 0 ? " (quote path still sizes; originate refuses)" : ""}`);
 }

@@ -54,6 +54,16 @@ export function yearOfWatching(s: GameState, r: Rival, sheet: Sheet) {
 }
 
 /** "62" when the band is tight, "40–65" when it is not, "??" when hidden. */
+/**
+ * YOUR ONE-NUMBER READ — the middle of what you know, the way a scout's report
+ * gives one rating. `sure` is how narrow the read is (1 = known exactly, 0 =
+ * a guess across most of the scale), for showing a guess fainter.
+ */
+export function bandValue(b: Band | null): { v: number; sure: number } | null {
+  if (!b) return null;
+  return { v: Math.round((b[0] + b[1]) / 2), sure: Math.max(0, Math.min(1, 1 - (b[1] - b[0]) / 60)) };
+}
+
 export function bandText(b: Band | null): string {
   if (!b) return "??";
   return b[1] - b[0] <= 4 ? String(Math.round((b[0] + b[1]) / 2)) : `${b[0]}–${b[1]}`;

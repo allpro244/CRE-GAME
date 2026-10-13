@@ -3193,6 +3193,98 @@ export function generateCity(cfg) {
       }
     }
   }
+  // PLAN 11: A STREET THAT RUNS INTO THE WATER IS CARRIED OVER IT. The lots
+  // are cut back from every channel, so no cell edge spans one and the loop
+  // above found no crossings at all (0 in 18 watered Metropolis islands): the
+  // only bridges were the ones island.mjs stood in dry gaps by spacing, which
+  // rarely met a street. Now every street that runs up to a channel is
+  // followed straight across, and where the same street (or one in line with
+  // it) comes down to the far bank, the two ends are joined by a crossing —
+  // the bridge goes where the road actually is.
+  if (PLAN_V >= 11 && CH_M.length) {
+    const wetOrBank = (p) => inChannel(p) || CUT_M.some((r) => inRing(p, r));
+    // street ends that point into the water: the end of a street-middle edge
+    // whose continuation, a few metres on, is channel or its cleared bank
+    const ends = [];
+    const seenE = new Set();
+    for (const b of blocks) {
+      const r = b.ring;
+      if (!r || r.length < 3 || Math.abs(ringArea(r)) < 380) continue;
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], c = r[(i + 1) % r.length];
+        const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        if (len < 20) continue;
+        const k = edgeKey(a, c);
+        if (seenE.has(k)) continue;
+        seenE.add(k);
+        if (!edgeClear(a, c)) continue;
+        const ux = (c[0] - a[0]) / len, uy = (c[1] - a[1]) / len;
+        const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
+        const w = b.inset ? 2 * ringDist(mid, b.inset) : 12;
+        for (const [p, dx, dy] of [[c, ux, uy], [a, -ux, -uy]]) {
+          // the street stops at the cleared bank, which can be a block deep:
+          // it points at the water if the channel lies dead ahead within 40 m
+          let hit = false;
+          for (let t = 2; t <= 40 && !hit; t += 2) if (inChannel([p[0] + dx * t, p[1] + dy * t])) hit = true;
+          if (hit) ends.push({ p, dx, dy, w });
+        }
+      }
+    }
+    const used = new Set();
+    const laid = [];
+    // the kerbed ground of the blocks: where a bridge must not come down
+    const insets = blocks.filter((b) => b.inset && b.inset.length >= 3).map((b) => ({ r: b.inset, bb: bboxOfRing(b.inset) }));
+    const onLot = (q) => insets.some(({ r, bb }) => q[0] >= bb[0] && q[0] <= bb[2] && q[1] >= bb[1] && q[1] <= bb[3] && inRing(q, r));
+    for (let i = 0; i < ends.length; i++) {
+      if (used.has(i)) continue;
+      const e = ends[i];
+      // walk across: it must reach water, and come out dry within a span a bridge can make
+      let sawWater = false, out = -1;
+      for (let t = 2; t <= 110; t += 1) {
+        const q = [e.p[0] + e.dx * t, e.p[1] + e.dy * t];
+        if (inChannel(q)) sawWater = true;
+        else if (sawWater && !wetOrBank(q)) { out = t; break; }
+      }
+      if (out < 0) continue;
+      // the far bank's street end, in line and facing back
+      let best = -1, bestD = Infinity;
+      for (let j = 0; j < ends.length; j++) {
+        if (j === i || used.has(j)) continue;
+        const f = ends[j];
+        if (f.dx * e.dx + f.dy * e.dy > -0.94) continue;
+        const vx = f.p[0] - e.p[0], vy = f.p[1] - e.p[1];
+        const along = vx * e.dx + vy * e.dy, across = Math.abs(-vx * e.dy + vy * e.dx);
+        if (along < out - 8 || along > out + 45 || across > Math.max(6, Math.min(e.w, f.w) * 0.6)) continue;
+        if (across + Math.abs(along - out) < bestD) { bestD = across + Math.abs(along - out); best = j; }
+      }
+      let to = null, w = e.w;
+      if (best >= 0) {
+        const f = ends[best];
+        used.add(best);
+        to = f.p; w = Math.min(e.w, f.w);
+      } else {
+        // no street comes down to meet it: carry it over onto the far bank's
+        // road (a quay street along the water) — but never onto a lot
+        const land = [e.p[0] + e.dx * (out + 3), e.p[1] + e.dy * (out + 3)];
+        if (onLot(land) || onLot([e.p[0] + e.dx * (out + 8), e.p[1] + e.dy * (out + 8)])) continue;
+        to = land;
+      }
+      used.add(i);
+      // a street that meets the water at a glancing angle would need a skew
+      // bridge longer than the channel is wide several times over: it stops at the bank
+      if (Math.hypot(to[0] - e.p[0], to[1] - e.p[1]) > 90) continue;
+      if (inPark(e.p) || inPark(to)) continue;
+      // one bridge to a street: two in line within a few metres are the same crossing
+      const mx = (e.p[0] + to[0]) / 2, my = (e.p[1] + to[1]) / 2;
+      if (laid.some((q) => Math.hypot(q[0] - mx, q[1] - my) < 18)) continue;
+      laid.push([mx, my]);
+      crossingFeatures.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: [proj.toLL(e.p), proj.toLL(to)] },
+        properties: { kind: "crossing", w: Math.round(Math.max(7, Math.min(28, w)) * 10) / 10 },
+      });
+    }
+  }
   const shoreRoad = {
     type: "Feature",
     geometry: { type: "LineString", coordinates: [...innerRing.map(proj.toLL), proj.toLL(innerRing[0])] },

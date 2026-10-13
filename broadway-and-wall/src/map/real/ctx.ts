@@ -31,6 +31,8 @@ export interface CityCtx {
   streams?: { ring: [number, number][]; water: string }[];
   /** The generator's crossings: footprint, flow bearing, and the widths spanned. */
   bridges?: { ring: [number, number][]; deg: number; w: number; rw: number; cw: number }[];
+  /** Streets that cross a channel: the line runs bank to bank plus an abutment each side; w is the street's width. */
+  crossings?: { line: [number, number][]; w: number }[];
   paths?: [number, number][][];
   /** The parcel outlines, by BBL — a redevelopment stands on its lot, not on what was knocked down. */
   lots?: Record<string, [number, number][]>;

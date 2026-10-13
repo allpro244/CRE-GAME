@@ -1683,6 +1683,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       await this.breathe(true);
       this.buildChannels();
       this.buildBridges();
+      this.buildCrossings();
       await this.breathe(true);
       await this.buildStreetLife();
     } catch (e) {
@@ -6403,6 +6404,58 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const sm = new THREE.Mesh(stone.geometry(), new THREE.MeshStandardMaterial({ color: 0xb5ab98, roughness: 0.8, vertexColors: true, envMapIntensity: 0.3 }));
     sm.castShadow = sm.receiveShadow = true;
     this.scene.add(wm, sm);
+  }
+
+  /**
+   * THE STREET GOES OVER THE WATER. Where a street meets a creek or canal
+   * the generator records the crossing (citygen.mjs STREETS THAT MEET THE
+   * WATER CROSS IT), and nothing drew it: the asphalt ran to the bank, the
+   * water ran under where the road should be, and the asphalt carried on from
+   * the far bank. Each crossing is a deck the street's width, flush with the
+   * roadway, its asphalt carrying straight on, with a dressed stone fascia
+   * over the water, a footway strip each side and a stone parapet along both
+   * edges, ending a few metres onto each bank as an abutment would.
+   */
+  private buildCrossings() {
+    const list = (this.ctx as { crossings?: { line: P2[]; w: number }[] }).crossings ?? [];
+    if (!list.length) return;
+    const road = new Buf(), stone = new Buf(), walk = new Buf();
+    const one = [1, 1, 1];
+    const TOP = 0.07, FOOT = 0.2, SOFFIT = -0.75, PAR = 1.15;
+    // a box from a to b, `w` wide, between z0 and z1, offset `o` across
+    const slab = (B: Buf, A: P2, C: P2, o: number, w: number, z0: number, z1: number, sides = true) => {
+      const L = Math.hypot(C[0] - A[0], C[1] - A[1]); if (L < 0.1) return;
+      const ux = (C[0] - A[0]) / L, uy = (C[1] - A[1]) / L, nx = -uy, ny = ux;
+      const p = (t: number, s: number, z: number) => [A[0] + ux * t + nx * (o + s), A[1] + uy * t + ny * (o + s), z];
+      const h = w / 2;
+      B.quad(p(0, -h, z1), p(L, -h, z1), p(L, h, z1), p(0, h, z1), [0, 0, 1], [[0, 0], [L, 0], [L, w], [0, w]], one);
+      if (!sides) return;
+      B.quad(p(L, -h, z0), p(0, -h, z0), p(0, -h, z1), p(L, -h, z1), [-nx, -ny, 0], [[L, 0], [0, 0], [0, z1 - z0], [L, z1 - z0]], one);
+      B.quad(p(0, h, z0), p(L, h, z0), p(L, h, z1), p(0, h, z1), [nx, ny, 0], [[0, 0], [L, 0], [L, z1 - z0], [0, z1 - z0]], one);
+      B.quad(p(0, -h, z0), p(0, h, z0), p(0, h, z1), p(0, -h, z1), [-ux, -uy, 0], [[0, 0], [w, 0], [w, z1 - z0], [0, z1 - z0]], one);
+      B.quad(p(L, h, z0), p(L, -h, z0), p(L, -h, z1), p(L, h, z1), [ux, uy, 0], [[0, 0], [w, 0], [w, z1 - z0], [0, z1 - z0]], one);
+      B.quad(p(0, h, z0), p(0, -h, z0), p(L, -h, z0), p(L, h, z0), [0, 0, -1], [[0, 0], [w, 0], [w, L], [0, L]], one);
+    };
+    for (const cr of list) {
+      if (cr.line.length < 2) continue;
+      const A = this.project(cr.line[0]), C = this.project(cr.line[cr.line.length - 1]);
+      const W = Math.max(7, cr.w);
+      const fw = Math.min(2.4, W * 0.18);        // the footway each side
+      const cw = W - 2 * fw;                     // the carriageway
+      // the deck: stone fascia all round, asphalt carriageway flush with the street
+      slab(stone, A, C, 0, W + 0.6, SOFFIT, TOP - 0.02);
+      slab(road, A, C, 0, cw, TOP - 0.02, TOP, false);
+      // the footways, a kerb up, and a parapet on the outer edge of each
+      for (const sd of [-1, 1]) {
+        slab(walk, A, C, sd * (cw / 2 + fw / 2), fw, TOP - 0.02, FOOT);
+        slab(stone, A, C, sd * (W / 2 + 0.05), 0.4, FOOT, PAR);
+        slab(stone, A, C, sd * (W / 2 + 0.05), 0.55, PAR, PAR + 0.12);
+      }
+    }
+    const add = (b: Buf, mat: THREE.Material) => { if (!b.count) return; const m = new THREE.Mesh(b.geometry(), mat); m.castShadow = true; m.receiveShadow = true; this.scene.add(m); };
+    add(road, new THREE.MeshStandardMaterial({ color: 0x3e3f42, roughness: 0.9, envMapIntensity: 0.2 }));
+    add(walk, this.paveMat ?? new THREE.MeshStandardMaterial({ color: 0xa6a39c, roughness: 0.86 }));
+    add(stone, new THREE.MeshStandardMaterial({ color: 0xb2a690, roughness: 0.8, envMapIntensity: 0.3 }));
   }
 
   /**

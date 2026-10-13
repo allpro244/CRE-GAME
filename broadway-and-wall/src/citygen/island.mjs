@@ -2777,7 +2777,13 @@ export function islandConfig(seed, opts = {}) {
         continue;
       }
       flushCrossing();
-      if (inland && acc > nextGap && i > 2 && i < path.length - 3) {
+      // PLAN 11: NO BRIDGES TO NOWHERE. Plans 1-10 left a dry gap in the
+      // water every 150-270 m and stood a bridge in it, expecting the street
+      // grid to run through — it rarely lined up, and the gap read as a green
+      // islet across the channel with a walled box on it and no road. The
+      // streets that really meet the water are found where they meet it
+      // (citygen.mjs STREETS THAT MEET THE WATER CROSS IT) and bridged there.
+      if (!plan11 && inland && acc > nextGap && i > 2 && i < path.length - 3) {
         localBridges.push({
           cx: Math.round(cx), cy: Math.round(cy),
           // Street-width strip in the dry gap — not canal-width + 12. That

@@ -1152,7 +1152,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     if (!q) { q = buyQuote(game, parcels, bbl, offerPrice, id, 1); qCache.set(id, q); }
     return q;
   };
-  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land"))
+  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.uwDscr <= 0 : p.uwDscr > 0))
     .map((p) => ({ p, q: quoteOf(p.id) }))
     .sort((a, b) => (b.q.principal > 0 ? 1 : 0) - (a.q.principal > 0 ? 1 : 0) || a.q.allInPct - b.q.allInPct)
     .map((x) => x.p);

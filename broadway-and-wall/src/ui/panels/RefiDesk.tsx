@@ -6,7 +6,7 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel } from "@/engine/types";
 import { resolveRec, isVacantLandLoanCollateral, physicalOcc } from "@/engine/value";
-import { refiQuotes, prepayPenalty, mezzQuote, rateCapCost, deskAdvice } from "@/engine/debt";
+import { refiQuotes, prepayPenalty, mezzQuote, rateCapCost, deskAdvice, capPremiumOn } from "@/engine/debt";
 import { usd, pct } from "@/ui/format";
 import { annualPayment, Row, Verdict } from "@/ui/panels/shared";
 
@@ -96,7 +96,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
     ?? quotes[0];
   const picked = q.id;
   const proceeds = Math.round(q.maxProceeds * lev);
-  const capPremium = q.floating ? Math.round(proceeds * 0.0125) : 0;
+  const capPremium = q.floating ? capPremiumOn(proceeds) : 0;
   const fee = Math.round(Math.max(proceeds, payoff) * 0.01) + Math.round(proceeds * q.points) + existing + capPremium;
   const toYou = proceeds - payoff - fee;
   // real annuity, not "coupon times 1.28" — the old shortcut overstated a
@@ -208,7 +208,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
             {[...deskQuotes]
               .map((x) => {
                 const px = Math.round(x.maxProceeds);
-                const cap = x.floating ? Math.round(px * 0.0125) : 0;
+                const cap = x.floating ? capPremiumOn(px) : 0;
                 const f = Math.round(Math.max(px, payoff) * 0.01) + Math.round(px * x.points) + existing + cap;
                 return { x, px, net: px - payoff - f };
               })
@@ -503,7 +503,7 @@ export function RefiGlance({ bbl }: { bbl: string }) {
   }
   const net = (x: (typeof live)[number]) => {
     const px = Math.round(x.maxProceeds);
-    const cap = x.floating ? Math.round(px * 0.0125) : 0;
+    const cap = x.floating ? capPremiumOn(px) : 0;
     const f = Math.round(Math.max(px, payoff) * 0.01) + Math.round(px * x.points) + cap;
     return px - payoff - f;
   };

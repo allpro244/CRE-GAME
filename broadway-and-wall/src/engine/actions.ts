@@ -16,7 +16,7 @@ import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing"
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
 import { payOffDue, payOffLoan } from "./debt";
-import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen } from "./debt";
+import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
@@ -193,7 +193,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // Floating paper closes with a rate cap the lender insists on, and the
   // premium is part of the equity cheque — the cheaper coupon is not free.
   const prod2 = productById(product);
-  const capPremium = prod2.floating ? Math.round(principal * 0.0125) : 0;
+  const capPremium = prod2.floating ? capPremiumOn(principal) : 0;
   // Origination points — refi and facility already charge them; acquisition
   // used to leave 0.6–2% of principal uncharged at the table.
   const pointsFee = Math.round(principal * prod2.points);
@@ -386,9 +386,7 @@ export function executePurchase(
     // Belt: if float still drifts a dollar, the written balance is the quoted one.
     if (holding.loan && bq.principal > 0 && holding.loan.balance !== bq.principal) {
       holding.loan.balance = holding.loan.principal = bq.principal;
-      holding.loan.monthlyPmt = prod.ioM > 0
-        ? Math.round((bq.principal * holding.loan.ratePct) / 100 / 12)
-        : Math.round(monthlyPayment(bq.principal, holding.loan.ratePct, holding.loan.amortYears));
+      recastPayment(holding.loan, next.month);
     }
   }
   // a live 1031: this purchase completes the exchange if it's big enough

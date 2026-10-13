@@ -53,8 +53,25 @@ export interface Lender {
   id: string;
   name: string;
   kind: LenderKind;
-  /** Everything they have lent, to you and to everyone else. */
+  /**
+   * Everything they have lent, to you and to everyone else: the NAMED loans
+   * the engine runs (loanbook.ts — yours, the street's, the cranes) plus the
+   * anonymous book below. Recomputed every month as the sum of the two.
+   */
   book: number;
+  /**
+   * The paper written to borrowers this game does not run as firms — the
+   * owner-occupiers and small holders who own most of the deeds on the map.
+   * Modelled as a population: it grows with appetite, goes bad with the
+   * city's vacancy and the cycle (`anonDelinq`), and shrinks by what is
+   * charged off. Absent on old saves (seeded from `book` on the first tick).
+   */
+  anonBook?: number;
+  /** Share of the anonymous book not paying. The named book's is counted, not modelled. */
+  anonDelinq?: number;
+  /** Named dollars out, and of them not paying — last month's count, for the statement. */
+  namedBook?: number;
+  namedDefault?: number;
   /** The equity behind it. Losses come out of here. */
   capital: number;
   /** Share of the book that has stopped paying. */
@@ -147,6 +164,8 @@ const NORMAL_NIM: Record<LenderKind, number> = { bank: 4.1, life: 3.3, conduit: 
  * volume desk without pulling this module into its import cycle. */
 import { CONSTRUCTION_LENDER } from "./types";
 import { money } from "./money";
+import { cityLoanBook, deskTotals } from "./loanbook";
+import type { DeskTotals } from "./loanbook";
 export { CONSTRUCTION_LENDER };
 
 export function lenderBlurb(name: string): string {
@@ -289,11 +308,11 @@ export function reoAsk(s: GameState, mark: number, basis: number, lender: string
  * cleared. What you lose immediately is the USE of it, which for a developer
  * with a capital call due next month is frequently worse than the haircut.
  *
- * THE REWARD FOR SPREADING DEPOSITS IS AVOIDED LOSS, NEVER YIELD. sim.ts is
- * explicit that cash must not become a strategy — the deposit rate is a flat,
- * deliberately dull 1% — and that stands. Splitting your balance across desks
- * costs nothing and earns nothing; it only means a Friday afternoon does not
- * take all of it. That is exactly the trade a real treasurer makes, and it is
+ * THE REWARD FOR SPREADING DEPOSITS IS AVOIDED LOSS, NEVER YIELD. Every desk
+ * pays the same operating-account rate (`depositApy`: the policy rate less
+ * DEPOSIT_SPREAD_PCT, the earnings-credit gap commercial balances actually
+ * get), so splitting your balance across desks earns nothing extra; it only
+ * means a Friday afternoon does not take all of it. That is exactly the trade a real treasurer makes, and it is
  * free until the one week it is not.
  */
 export function insuredLimit(s: GameState): number {
@@ -503,20 +522,12 @@ const usdShort = (n: number) => (n >= 1e6 ? `${money(n)}` : `$${Math.round(n / 1
 /**
  * The receiver pays out, eventually. Called once a month from tickLenders.
  *
- * THE ENTRY IS THERE AND THE CATEGORY IS STILL WRONG, and that is worth saying
- * plainly rather than leaving as a comfortable silence. Conservation holds:
- * `seizeDeposits` books the WHOLE uninsured balance out as `ga` on the Friday
- * and this books the dividend back as `interest` when it arrives, so the net
- * expense across the episode is exactly the haircut and `pnpm conserve`
- * reconciles. What it is not is true bookkeeping. A bank failure is not
- * overhead and a receiver's dividend is not interest income; both are transfers
- * on the balance sheet, and a player reading their own P&L sees a year of
- * enormous G&A followed eighteen months later by a year of enormous interest.
- *
- * The honest fix is a ledger bucket for a balance-sheet movement — the same
- * treatment `s.loc.balance` and tenant deposits already get in the identity —
- * and that means a new key in `BooksYear`, which lives in types.ts. This change
- * does not own that file. Flagged, not fixed.
+ * The haircut was booked as `ga` on the Friday and the claim the receiver
+ * owes as `bought` (an asset exchanged for cash — see seizeDeposits), so the
+ * dividend arriving here is that claim redeemed: `sold`, a balance-sheet
+ * movement, not income. Claims from saves made before the claim was booked as
+ * an asset have no `seizedM` and still come back as `interest`, which is how
+ * they went out, so those books keep closing.
  */
 export function tickReceivership(s: GameState) {
   if (!s.receivership?.length) return;
@@ -590,7 +601,7 @@ export function tickLenders(s: GameState) {
   if (!s.lenders?.length) {
     s.lenders = initLenders(s.econ?.stock, s.econ?.priceLevel ?? 1);
   }
-  recountYours(s);
+  const desks = recountYours(s);
   const e = s.econ;
   const vac = e.cityVac ?? {};
   // The average excess vacancy across the city: the single best predictor of
@@ -654,12 +665,22 @@ export function tickLenders(s: GameState) {
     // Without this the city loses a desk permanently every crisis and by year
     // forty there is nobody left to borrow from, which is not a hard game, it
     // is a broken one.
+    // What the named borrowers owe this desk, counted every month whether it
+    // is lending or in receivership — the statement is true either way.
+    l.namedBook = Math.round(desks[l.name]?.named ?? 0);
+    l.namedDefault = Math.round(desks[l.name]?.defaulted ?? 0);
+    if (l.failedM !== undefined && l.anonBook !== undefined) l.book = Math.round(l.anonBook + l.namedBook);
     if (l.failedM !== undefined) {
       if (s.month - l.failedM >= (l.reopenM ?? 18)) {
         const k = KIND[l.name] ?? { capitalRatio: 0.1 };
-        l.book = Math.round(l.book * 0.55);
+        // The receiver sells the franchise and keeps the bad paper: the
+        // anonymous book comes back smaller, and the named loans that were
+        // on it are still the named loans (still paying, or still not).
+        l.anonBook = Math.round((l.anonBook ?? l.book) * 0.55);
+        l.anonDelinq = 0.004;                                     // the bad paper stayed with the receiver
+        l.book = l.anonBook + (desks[l.name]?.named ?? 0);
         l.capital = Math.round(l.book * k.capitalRatio * 1.15);   // a resolved bank opens overcapitalised
-        l.delinquent = 0.004;                                     // the bad paper stayed with the receiver
+        l.delinquent = (l.anonBook * l.anonDelinq + (desks[l.name]?.defaulted ?? 0)) / Math.max(1, l.book);
         l.appetite = 0.75;
         l.chargeOffsYr = 0; l.netIncomeYr = 0;
         delete l.failedM; delete l.reopenM;
@@ -673,6 +694,32 @@ export function tickLenders(s: GameState) {
       continue;
     }
     const k = KIND[l.name] ?? { capitalRatio: 0.1, brittle: 1, wholesale: 0.5 };
+    // --- THE BOOK IS THE LOANS ----------------------------------------------
+    // Named paper (loanbook.ts: yours, the street's, the cranes) plus the
+    // anonymous book of borrowers the game does not run as firms. A loan you
+    // close lands on this desk's balance sheet the month you close it, and
+    // takes capital ratio with it — the book used to be one number that grew
+    // by an appetite rule whatever anybody borrowed, so a desk could lend you
+    // half its capital and read exactly as healthy as before.
+    const named = desks[l.name] ?? { named: 0, defaulted: 0 };
+    // The anonymous book is carried in `anon` and written back at the end.
+    // Until the street's mortgage record exists (it is written after this
+    // tick in the opening month) the desk runs on its stated book alone.
+    let anon = l.anonBook ?? l.book;
+    if (l.anonBook === undefined && s.cityLoans) {
+      const before = l.book;
+      anon = Math.max(l.book * 0.25, l.book - named.named);
+      l.anonDelinq = l.delinquent;
+      // AND THE CAPITAL COMES WITH IT. The opening books are sized from the
+      // city's value (initLenders); the street's opening mortgages are part of
+      // that value and come out of the anonymous share, but where a desk's
+      // named paper is more than three quarters of its stated book the book
+      // grows instead, and a desk opens the game at its own capital target
+      // whatever its book turns out to contain. Once, not a running top-up.
+      const after = anon + named.named;
+      if (after > before && before > 0) l.capital = Math.round(l.capital * (after / before));
+    }
+    l.book = Math.round(anon + named.named);
     // A DESK'S BOOK EARNS THAT DESK'S SPREAD. Every lender in town earned
     // index + 1.9 on its book, which is a bank's number — and the debt fund
     // was FUNDED at index + 1.1, so its margin was eight tenths of a point
@@ -725,19 +772,33 @@ export function tickLenders(s: GameState) {
     const funding = (l.book * allIn) / 100 / 12;
 
     // --- and it goes bad -----------------------------------------------------
-    // Delinquency follows the property cycle with a lag: buildings empty, then
-    // owners burn reserves, then they stop paying. A recession alone is not
-    // enough — it is a recession with vacancy behind it that does this.
+    // THE ANONYMOUS BOOK is a population, and it goes bad the way a
+    // population does: it follows the property cycle with a lag — buildings
+    // empty, then owners burn reserves, then they stop paying. A recession
+    // alone is not enough; it is a recession with vacancy behind it.
     const badTarget = 0.006 + stress * 0.55 * k.brittle
       // borrowers whose tenants are laying off: 0.6 x slack reads 1.8% at a
       // three-point recession trough, as the old recession term did
       + 0.6 * Math.max(0, labourSlack(e)) * k.brittle
       + Math.max(0, 1 - (e.creditIdx ?? 1)) * 0.03 * k.brittle;
-    l.delinquent = Math.max(0.002, Math.min(0.35, l.delinquent + 0.10 * (badTarget - l.delinquent) + rrange(s, -0.0015, 0.0015, "lenders")));
+    const ad = l.anonDelinq ?? l.delinquent;
+    l.anonDelinq = Math.max(0.002, Math.min(0.35, ad + 0.10 * (badTarget - ad) + rrange(s, -0.0015, 0.0015, "lenders")));
+    // THE NAMED BOOK IS COUNTED. A loan the engine runs is either being paid
+    // or it is not, and the desk's delinquency line is what its own borrowers
+    // are actually doing: your arrears, your matured balloon with no takeout,
+    // the street firm whose whole book is in workout, the frame whose sponsor
+    // died. It used to be the city's vacancy for everyone, so a desk whose
+    // biggest borrower had stopped paying read exactly as healthy as one
+    // whose borrowers were all current.
+    l.delinquent = Math.min(0.4, (anon * l.anonDelinq + named.defaulted) / Math.max(1, l.book));
 
-    // A third of what is delinquent is eventually written off, spread over a
-    // year. That is the number that eats capital.
-    const chargeOff = Math.round(l.book * l.delinquent * 0.33 / 12);
+    // A third of what is delinquent in the anonymous book is eventually
+    // written off, spread over a year — and written-off paper leaves the book.
+    // Named losses are not estimated here: they are booked when they happen,
+    // at the deed in lieu or the auction (chargeLenderLoss), at the size the
+    // collateral actually fetched.
+    const chargeOff = Math.round(anon * l.anonDelinq * 0.33 / 12);
+    anon = Math.max(0, anon - chargeOff);
     l.chargeOffsYr += chargeOff;
     l.chargeOffsTotal += chargeOff;
     const net = Math.round(interest - funding - chargeOff);
@@ -788,7 +849,14 @@ export function tickLenders(s: GameState) {
     // Growth at 0.35%/mo compounded to an 8x book over fifty years while the
     // town's whole rival debt stayed under a quarter of one desk — the banks
     // outgrew the city they lend to. Half that pace keeps them in it.
-    l.book = Math.max(20_000_000, Math.round(l.book * (1 + (l.appetite > 0.8 ? 0.0017 : l.appetite > 0.4 ? 0 : -0.006))));
+    // The anonymous book is what grows or runs off with appetite; the named
+    // book is whatever the named borrowers have actually taken.
+    // The $20M floor is on the desk's whole book, as it always was — flooring
+    // the anonymous half alone re-inflated a small town's desk past the book
+    // its capital was sized for.
+    anon = Math.max(Math.max(0, 20_000_000 - named.named), Math.round(anon * (1 + (l.appetite > 0.8 ? 0.0017 : l.appetite > 0.4 ? 0 : -0.006))));
+    l.book = Math.round(anon + named.named);
+    if (s.cityLoans) l.anonBook = anon;
 
     if (s.month % 12 === 0 && s.month > 0) { l.chargeOffsYr = 0; l.netIncomeYr = 0; l.divYr = 0; }
 
@@ -887,21 +955,15 @@ export function tickLenders(s: GameState) {
  * cheap and cannot be wrong, and it is the number that tells you whether you
  * are a customer of this desk or a concentration on it.
  */
-function recountYours(s: GameState) {
-  const by: Record<string, number> = {};
-  for (const h of Object.values(s.holdings)) {
-    if (!h.loan) continue;
-    const lender = h.loan.holder ?? PRODUCTS.find((p) => p.id === h.loan!.product)?.lender;
-    if (lender) by[lender] = (by[lender] ?? 0) + h.loan.balance;
-  }
-  // Construction paper has never carried a product id, but somebody writes it,
-  // and in every city this size it is the regional bank — which is precisely
-  // why regionals are the ones that die in a development bust.
-  for (const d of Object.values(s.developments ?? {})) {
-    const name = d.lender ?? CONSTRUCTION_LENDER;
-    by[name] = (by[name] ?? 0) + d.loanBalance;
-  }
-  for (const l of s.lenders ?? []) l.yours = Math.round(by[l.name] ?? 0);
+function recountYours(s: GameState): Record<string, DeskTotals> {
+  // ONE COUNT, FROM THE LOAN BOOK. This walked first mortgages and
+  // construction only, so a borrower could put $40M on a desk through its
+  // portfolio facility, stack mezzanine behind every senior and draw the
+  // line, and still read as a stranger to the single-name test in
+  // `concentrationRoom` — the one test whose whole purpose is to see that.
+  const by = deskTotals(cityLoanBook(s));
+  for (const l of s.lenders ?? []) l.yours = Math.round(by[l.name]?.yours ?? 0);
+  return by;
 }
 
 /**
@@ -909,8 +971,13 @@ function recountYours(s: GameState) {
  *
  * Handing back a building is not a private event — it lands on a specific
  * desk, eats a specific pot of capital, and that desk remembers. A big enough
- * hole moves their delinquency, their appetite and, if you are large enough
+ * hole moves their capital, their appetite and, if you are large enough
  * relative to them, whether they are still in business.
+ *
+ * It no longer bumps the delinquency line: a named loan's delinquency is
+ * COUNTED off the loan book every month (loanbook.ts) — it was delinquent
+ * while it sat in workout, and once it is resolved it is a realised loss,
+ * not a delinquent loan. Adding a guessed share on top counted it twice.
  */
 export function chargeLenderLoss(s: GameState, lender: string, loss: number) {
   const l = lenderByName(s, lender);
@@ -919,5 +986,4 @@ export function chargeLenderLoss(s: GameState, lender: string, loss: number) {
   l.chargeOffsYr += loss;
   l.chargeOffsTotal += loss;
   l.yours = Math.max(0, l.yours - loss);
-  l.delinquent = Math.min(0.4, l.delinquent + loss / Math.max(1, l.book) * 0.6);
 }

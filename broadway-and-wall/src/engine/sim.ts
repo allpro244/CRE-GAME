@@ -1658,6 +1658,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
         : `${shop}'s first look lapses in ${left} months`,
     });
   }
+  const swept: string[] = [];
   for (const h of Object.values(s.holdings)) {
     // A papered contract closes itself (applySaleInstructions): on the
     // docket, not a stop — unless it was held for the owner's signature.
@@ -1748,6 +1749,19 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
         ? balloonLadder(s, parcels, h, rec, h.loan.balance)
         : null;
       const due = `${addr(h.bbl)}: balloon due ${monthLabel(h.loan.maturityM)} — ${mo} month${mo === 1 ? "" : "s"}`;
+      // THE STANDING INSTRUCTION'S ONE CONDITION (GameState.debtPolicy): a
+      // roll that clears but reprices the coupon past the treasury's limit is
+      // a decision after all. The jump is in the key, so it stops once per
+      // notice band, not every month.
+      const maxJump = s.debtPolicy?.rollMaxJumpBp;
+      const jumpBp = roll?.clears ? Math.round((roll.qd.ratePct - h.loan.ratePct) * 100) : 0;
+      if (roll?.clears && maxJump !== undefined && jumpBp > maxJump) {
+        out.push({
+          key: `balloon:${h.bbl}:${mo > 6 ? "far" : "near"}:jump`,
+          label: `${due}. It would renew with ${roll.product.lender} at ~${roll.qd.ratePct.toFixed(2)}% — `
+            + `${jumpBp}bp over today's coupon, past your ${maxJump}bp limit`,
+        });
+      } else
       out.push(roll?.clears
         ? {
           soft: true,
@@ -1763,7 +1777,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
             : due,
         });
     }
-    if (h.loan?.sweep) out.push({ key: `sweep:${h.bbl}`, label: `${addr(h.bbl)}: covenant breach — cash flow swept` });
+    if (h.loan?.sweep) swept.push(h.bbl);
     // MISSED PAYMENTS, FROM THE FIRST ONE. The arrears clock runs three months
     // before a lender opens a file and nothing on this list said so until the
     // file existed — so auto-advance walked straight through the only part of
@@ -1790,6 +1804,23 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
           + `${h.loan.ratePct.toFixed(2)}% — matures ${monthLabel(h.loan.maturityM)}`,
       });
     }
+  }
+  // SWEEPS FOLD INTO ONE LINE. A covenant sweep is a standing condition, not
+  // an event: one row per swept deed sat on the docket for years (1,454 rows
+  // seen at 65 stops in a fifty-year run) after the principal had already
+  // decided to ride them out. The key is the NEWEST sweep (fewest months in
+  // breach), so a new breach stops the clock once and a cleared one only
+  // shortens the line.
+  if (swept.length) {
+    swept.sort();
+    const newest = swept.reduce((a, b) =>
+      (s.holdings[b].loan?.breachMs ?? 0) < (s.holdings[a].loan?.breachMs ?? 0) ? b : a);
+    out.push({
+      key: `sweep:${newest}`,
+      label: swept.length === 1
+        ? `${addr(swept[0])}: covenant breach — cash flow swept`
+        : `${swept.length} buildings in covenant breach, cash flow swept: ${swept.slice(0, 4).map(addr).join(", ")}${swept.length > 4 ? ` and ${swept.length - 4} more` : ""}`,
+    });
   }
   // A portfolio facility is one loan against many deeds, so it never appears
   // in the holding loop above. Its balloon and covenant sweep are at least as

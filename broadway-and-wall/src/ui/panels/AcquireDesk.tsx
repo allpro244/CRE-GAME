@@ -18,6 +18,7 @@ import { sellerOf, sellerProfile, closingBand, phaseShift, MAX_TALKS, DEPOSIT_PC
 import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { PRODUCTS, deskAdvice } from "@/engine/debt";
+import { stayingPower, lenderByName } from "@/engine/lenders";
 import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
 import { uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
@@ -1152,7 +1153,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     if (!q) { q = buyQuote(game, parcels, bbl, offerPrice, id, 1); qCache.set(id, q); }
     return q;
   };
-  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land"))
+  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.uwDscr <= 0 : p.uwDscr > 0))
     .map((p) => ({ p, q: quoteOf(p.id) }))
     .sort((a, b) => (b.q.principal > 0 ? 1 : 0) - (a.q.principal > 0 ? 1 : 0) || a.q.allInPct - b.q.allInPct)
     .map((x) => x.p);
@@ -1280,6 +1281,8 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
           <div className="btn-row lender-list" style={{ marginTop: 4 }}>
             {productChoices.map((p) => {
               const pq = quoteOf(p.id);
+              const desk = lenderByName(game, p.lender);
+              const sp = desk ? stayingPower(game, desk) : null;
               return (
                 <button
                   key={p.id}
@@ -1288,10 +1291,11 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                   style={pq.principal <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
                   title={pq.principal <= 0
                     ? `${p.label} will not lend against this building today — ${p.blurb}`
-                    : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term`}
+                    : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term${sp ? `\nStaying power: ${sp.word}. ${sp.why}` : ""}`}
                   onClick={() => setProduct(p.id)}
                 >
                   {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% (${pq.allInPct.toFixed(2)}% all in) · ${(pq.ltvCap * 100).toFixed(0)}% sheet` : " · won't quote"}
+                  {sp && sp.word !== "solid" && pq.principal > 0 ? <span style={{ marginLeft: 6, color: sp.word === "at risk" ? "#c0563e" : "#b8962e" }}>· {sp.word}</span> : null}
                 </button>
               );
             })}

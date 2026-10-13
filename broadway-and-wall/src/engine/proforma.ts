@@ -302,6 +302,10 @@ const makeConstructionDesks = (): ConstructionDesk[] => [
   { name: CONSTRUCTION_LENDER, spread: CONSTR_SPREAD, points: 0.010, scale: 1, cap: 0.70 },
   // Committed capital and no depositors: they quote through the cycle, and the
   // coupon is why nobody borrows from them twice unless they have to.
+  // The construction-heavy community bank: under the regional on price to win
+  // the job, and it keeps a big piece of every one — a fifth of its own book
+  // on a single job is the concentration that failed banks carried.
+  { name: "Tidewater Community Bank", spread: 2.05, points: 0.009, scale: 1, cap: 0.75, holdShare: 0.20 },
   { name: "Cordage Debt Partners", spread: 4.00, points: 0.020, scale: 1.05, cap: 0.75, fund: true },
 ];
 

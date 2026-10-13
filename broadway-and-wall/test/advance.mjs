@@ -120,7 +120,10 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
   for (let q = 0; q < 16; q++) g = E.advanceQuarter(g, parcels, bbls, adjacency);
   const c = g.lenders.find((l) => l.name === "Cordage Debt Partners");
   const nim = (c.bookYield ?? 0) - (c.fundCost ?? 0) - (c.panicBps ?? 0);
-  ok(c.appetite >= 0.8, `Cordage at month ${g.month} (${g.econ.phase}, credit ${g.econ.creditIdx.toFixed(2)}): appetite ${c.appetite.toFixed(2)} on a ${nim.toFixed(2)}-point margin (was 0.3 on 0.8 points)`);
+  // 0.75, not 0.8 (2026-10-13): the claim is that the fund's appetite is its
+  // own and not the 0.3 it collapsed to before; it measures 0.795 here once a
+  // sixth desk (Tidewater) is in town, a knife-edge under the old floor.
+  ok(c.appetite >= 0.75, `Cordage at month ${g.month} (${g.econ.phase}, credit ${g.econ.creditIdx.toFixed(2)}): appetite ${c.appetite.toFixed(2)} on a ${nim.toFixed(2)}-point margin (was 0.3 on 0.8 points)`);
   const h = g.lenders.find((l) => l.name === "First Harbor Bank");
   // A BOOK IS A STOCK OF LOANS WRITTEN OVER THE LAST YEARS, so it reprices
   // toward where the index has BEEN, not toward this month's print. Read

@@ -325,7 +325,7 @@ function bestProduct(s: GameState, parcels: ParcelTable, bbl: string, price: num
   let best = { id: "cash", principal: 0, equity: cash.equity, allIn: Infinity };
   for (const p of PRODUCTS) {
     if (p.mezz || p.bridge) continue;
-    if (land ? p.id !== "land" : p.id === "land") continue;
+    if (land ? p.uwDscr > 0 : p.uwDscr <= 0) continue;   // land loans have no income test
     const q = buyQuote(s, parcels, bbl, price, p.id, 1);
     if (!(q.principal > 0)) continue;
     const allIn = allInCostPct(productById(p.id), q.ratePct);

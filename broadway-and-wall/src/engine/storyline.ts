@@ -9,6 +9,7 @@
 // except the annual equity mark the race chart needs (`markEquityYear`), so
 // choosing whom to SHOW can never move the economy.
 import type { ParcelTable } from "@/data/types";
+import { thesisLabel } from "./strategy";
 import type { GameState, Rival } from "./types";
 import { START_YEAR } from "./types";
 import { livingRivals, markRival, paramsOf, nextBalloonM, holdClockM, sheetOf } from "./rivals";
@@ -187,6 +188,8 @@ export function comingFor(s: GameState, parcels: ParcelTable, r: Rival, ltv: num
       : `Holds your defaulted loan on ${addr}, and wants the building`);
   }
   const yr = (m: number) => START_YEAR + Math.floor(m / 12);
+  // its plan for the next few years (strategy.ts)
+  if (r.thesis) out.push(thesisLabel(r.thesis));
   // hold clock
   const hold = holdClockM(r);
   if (hold > 0) {

@@ -7,6 +7,7 @@ import { TRAITS, QUIRK_LABEL, HIDDEN_QUIRKS, type TraitKey } from "@/engine/comp
 import { readOf, bandText } from "@/engine/competitorReads";
 import { headliners, labelOf, shownRules, ARC_LABEL, ROLE_LABEL, type Arc } from "@/engine/storyline";
 import { LineChart } from "@/ui/Chart";
+import { thesisLabel } from "@/engine/strategy";
 import { usd } from "@/ui/format";
 
 // THE CAST — COMPETITORS_PLAN.md §6–§7. Who matters right now, what each is in
@@ -129,6 +130,16 @@ export function FirmSheet({ r }: { r: Rival }) {
         {labelOf(r)}
         {!r.sheet && <span className="dim" style={{ fontWeight: 400 }}> · read off its style (an older firm)</span>}
       </div>
+      {r.thesis && (
+        <div style={{ margin: "2px 0 6px" }} title="What it has told its investors it is doing — it changes course when the plan stops working">
+          <span className="dim">The plan: </span>{thesisLabel(r.thesis)}
+        </div>
+      )}
+      {(r.lessons?.length ?? 0) > 0 && (
+        <div className="hint" style={{ margin: "0 0 6px" }} title="What happened to this firm that changed how it behaves">
+          {r.lessons!.slice(-3).map((l) => l.text).join(" · ")}
+        </div>
+      )}
       {(rules.length > 0 || quirks.length > 0 || unseen > 0) && (
         <div className="chip-row" style={{ margin: "4px 0 8px" }}>
           {rules.map((x) => <span key={x} className="chip chip-zone">{x}</span>)}

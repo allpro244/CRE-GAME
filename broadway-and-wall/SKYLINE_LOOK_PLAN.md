@@ -301,6 +301,16 @@ fixed in #231; the sweep is clean since.
   - *A winter harbour*: from December to February the sea's sand, shelf and
     deep colours, and MapLibre's shoal fill under the clear waterline, turn
     slate and steel-green, snow or not.
+- **Round 37** — the waterline is a line. From the street the shore was a
+  sawtooth: the sea's distance-to-shore field is a sweep over a land mask
+  rasterised at ~2.6 m, so the waterline followed that raster's stairs (a
+  step every 15-20 px at street zoom). Within four texels of the shore each
+  texel now holds its exact signed distance to the nearest edge of the real
+  rings (negative on the dry side, carried by a 6 m bias the shader takes
+  off), so the filtered zero crossing falls on the true line. (Mitring the
+  shore band corners in citygen was tried first, on the guess that the bands
+  were the teeth: parcels hashed identically on six towns, and the teeth
+  stayed — reverted.)
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

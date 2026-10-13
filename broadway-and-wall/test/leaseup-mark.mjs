@@ -45,7 +45,12 @@ for (const seed of [12007, 550991, 11, 7919]) {
   const g = E.firstListings(E.newGame(seed, parcels, 400_000_000), parcels, bbls);
   const picks = g.listings
     .map((li) => ({ li, rec: E.resolveRec(parcels, g, li.bbl) }))
-    .filter((x) => x.rec && x.rec.bldgArea > 4000 && (x.rec.class === "office" || x.rec.class === "multifamily") && !x.li.halfBuilt && !x.li.distress);
+    .filter((x) => x.rec && x.rec.bldgArea > 4000 && (x.rec.class === "office" || x.rec.class === "multifamily") && !x.li.halfBuilt && !x.li.distress)
+    // One use only. The fixtures below let ONE leg (the flats' occupancy, or
+    // one office lease); on a mixed building the other legs stand empty and
+    // the building is honestly not let to its stabilised level — every leg
+    // counts toward occupancy and income now (value.ts operatingStatement).
+    .filter((x) => E.uses(x.rec).length === 1);
   const seen = new Set();
   for (const { li, rec } of picks) {
     if (seen.has(rec.class)) continue;

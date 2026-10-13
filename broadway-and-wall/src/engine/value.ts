@@ -2235,6 +2235,22 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?
   return m;
 }
 
+/**
+ * WHERE THE FLATS' ROLL IS HEADED: their own market, your asking posture and
+ * the landmark premium — the same number the flats' lease-up is scored
+ * against (leasing.ts), net of the concession gross-up because a flat's roll
+ * is what it collects. The roll walked toward the BUILDING's blended market
+ * rent with no posture in it, so Push +8% on flats slowed the letting and
+ * collected nothing more, and flats over shops re-let at the shop rent.
+ */
+export function flatsMarkPsf(rec: ParcelRecord, econ: Econ, h: Holding): number {
+  return managedRentPsfYr(rec, econ, h, "multifamily") / faceGrossUp(econ, "multifamily");
+}
+/** What the flats pay now: the roll in place (Holding.resRentPsf), at the mark until one is written. */
+export function flatsRollPsf(rec: ParcelRecord, econ: Econ, h: Holding): number {
+  return h.resRentPsf ?? flatsMarkPsf(rec, econ, h);
+}
+
 // OCCUPANCY IS A DISTRIBUTION, NOT A NUMBER.
 //
 // Every building in the city used to sit within a few points of its class
@@ -3062,51 +3078,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   // putting every one of them on the lessee.
   if (h.groundLeased) return 0;
   if (rec.class === "land" || !rec.bldgArea) return -landValue(rec, econ) * 0.012;
-  const cls = rec.class as BuiltClass;
-  if (cls === "multifamily") {
-    // units turn over and things break: a 7% reserve off collections for
-    // turns, appliances, roofs. Appraisers skip it; owners never get to.
-    const occ = h.occ ?? occupancy(rec, econ);
-    // the roll in place, not the spot market — see Holding.resRentPsf
-    const egi = rentableSf(rec) * (h.resRentPsf ?? marketRentPsfYr(rec, econ, h.condition, h.condIdx)) * occ;
-    // ONE OPERATING-COST MODEL, AND APARTMENTS ARE NOT AN EXCEPTION. This read
-    // the legacy flat table at $10.00/sf while planDevelopment, the land
-    // residual and every other class read opexPsf() at $8.22 — so a block of
-    // flats was UNDERWRITTEN at one operating cost and OPERATED at another 22%
-    // higher. It also skipped the two things opexPsf carries and a flat number
-    // cannot: the service policy moving the CONTROLLABLE half only (a manager
-    // cannot economise on insurance), and the systems programme.
-    const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = rentableSf(rec) * managedOpexPsf(cls, econ, systemsDone, h.service) * locOpexMult(rec, econ, cls);
-    return egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - propertyTaxYr(rec, h) - (h.groundRentOut?.rentYr ?? 0);
-  }
-  // Rent first, then the expense stack, then what comes back through the
-  // recovery clauses. Vacant space reimburses nothing and still costs money —
-  // that gap is the whole reason occupancy matters more than headline rent.
-  const systemsDone = h.programsDone?.systems !== undefined;
-  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service) * locOpexMult(rec, econ, cls);
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service)) * locOpexMult(rec, econ, cls);
-  const taxBill = grossTaxYr(rec, h);
-  const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
-
-  let baseRent = 0, leasedSf = 0, recoveredOpex = 0, recoveredTax = 0;
-  for (const t of h.tenants) {
-    leasedSf += t.sf;
-    // Recoveries keep running through a free-rent period — free rent is a
-    // concession on BASE rent, not on the tenant's share of the boiler.
-    const r = recoveryFor(t, opexRecoverPsf, taxNowPsf);
-    recoveredOpex += r.opex;
-    recoveredTax += r.tax;
-    if (t.freeUntilM !== undefined && currentQ < t.freeUntilM) continue;
-    baseRent += t.rentPsf * t.sf;
-  }
-  const egi = baseRent + recoveredOpex + recoveredTax;
-  const opexBill = opexNowPsf * rentableSf(rec);               // the owner pays it all, then bills it out
-  const mgmt = egi * MGMT_FEE;
-  // A LEASEHOLD PAYS ITS GROUND RENT BEFORE ANYTHING ELSE. It is an operating
-  // cost of the building, not a financing cost, so every reader of NOI — the
-  // month's cash, the DSCR test, the lender's sizing — sees it.
-  return egi - opexBill - mgmt - taxBill - (h.groundRentOut?.rentYr ?? 0);
+  return operatingStatement(rec, econ, h, currentQ).noi;
 }
 
 /**
@@ -3127,9 +3099,12 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
  * one read the same. One accessor, one answer, both classes.
  */
 export function heldOccupancy(rec: ParcelRecord, econ: Econ, h: Holding): number {
-  if (rec.class === "multifamily") return clamp(h.occ ?? occupancy(rec, econ), 0, 1);
   if (!rec.bldgArea) return 0;
-  let leased = 0;
+  // Every leg: the flats at their occupancy, the commercial legs at their
+  // leases. (Flats used to answer for the whole building whenever they were
+  // the biggest use, and count for nothing when they were not.)
+  const resSf = useRentableSf(rec, "multifamily");
+  let leased = resSf > 0 ? resSf * (h.occ ?? occupancy(rec, econ)) : 0;
   for (const t of h.tenants ?? []) leased += t.sf;
   return clamp(leased / Math.max(1, rentableSf(rec)), 0, 1);
 }
@@ -3145,59 +3120,55 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
       leasedSf: 0, vacantSf: 0, leakage: 0, opexPsf: 0, taxPsf: 0,
     };
   }
-  // Apartments never ran this statement honestly: the machinery below walks a
-  // rent roll, and a residential building does not keep one — its roll is an
-  // occupancy (see holdingNOIYr), every lease is gross, and nothing is ever
-  // recovered. So the statement is assembled from the same lines that
-  // function nets — collections, the flat opex load, the 7% reserve for turns
-  // and roofs, the full tax bill — and the two can never quote different NOIs
-  // for one building.
+  // ONE STATEMENT FOR EVERY BUILDING, BY LEG (2026-10-13). This was two: a
+  // flats statement (all rentable feet x the flats' rent x the flats'
+  // occupancy) whenever flats were the biggest use, and a rent-roll statement
+  // otherwise. So a tower of flats over a shop booked the shop floor as flats
+  // and never counted the shop's lease, and an office over flats collected
+  // nothing from the flats. Each leg now earns what it earns: flats their roll
+  // at their occupancy (gross leases, a 7% reserve for turns and roofs), the
+  // commercial legs their leases and recoveries. Expenses run per leg at that
+  // use's cost. A single-use building reads exactly as before.
   const groundRent = h.groundRentOut?.rentYr ?? 0;
-  if (rec.class === "multifamily") {
-    const occ = h.occ ?? occupancy(rec, econ);
-    const letSf = rentableSf(rec);
-    const egi = letSf * (h.resRentPsf ?? marketRentPsfYr(rec, econ, h.condition, h.condIdx)) * occ;
-    // The same opexPsf every other class reads — see holdingNOIYr, where the
-    // flat legacy table used to disagree with it by 22%.
-    const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = letSf * managedOpexPsf("multifamily", econ, systemsDone, h.service) * locOpexMult(rec, econ, "multifamily");
-    const taxBill = grossTaxYr(rec, h);
-    return {
-      baseRent: egi, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi,
-      opex: opexBill, mgmt: egi * MGMT_FEE, reserve: egi * APT_RESERVE, tax: taxBill,
-      noi: egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - taxBill - groundRent, groundRent,
-      leasedSf: Math.round(letSf * occ), vacantSf: Math.round(letSf * (1 - occ)),
-      // gross leases bill nothing back; the whole expense stack is the owner's
-      leakage: opexBill + taxBill > 0 ? 1 : 0,
-      opexPsf: opexBill / Math.max(1, letSf), taxPsf: taxBill / Math.max(1, letSf),
-    };
-  }
   const cls = rec.class as BuiltClass;
   const systemsDone = h.programsDone?.systems !== undefined;
-  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service) * locOpexMult(rec, econ, cls);
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service)) * locOpexMult(rec, econ, cls);
+  const opexAt = (u: BuiltClass, svc?: -1 | 0 | 1) => managedOpexPsf(u, econ, systemsDone, svc) * locOpexMult(rec, econ, u);
+  const legs = uses(rec);
+  const resSf = useRentableSf(rec, "multifamily");
+  const occ = resSf > 0 ? (h.occ ?? occupancy(rec, econ)) : 0;
+  const resEgi = resSf * occ * (resSf > 0 ? flatsRollPsf(rec, econ, h) : 0);
+  let opexBill = 0;
+  for (const u of legs) opexBill += useRentableSf(rec, u) * opexAt(u, h.service);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;
   for (const t of h.tenants) {
     leasedSf += t.sf;
-    const r = recoveryFor(t, opexRecoverPsf, taxNowPsf);
+    // Recoveries keep running through a free-rent period — free rent is a
+    // concession on BASE rent, not on the tenant's share of the boiler.
+    const r = recoveryFor(t, opexAt(t.use ?? cls, recoverableService(h.service)), taxNowPsf);
     recOpex += r.opex; recTax += r.tax;
     if (t.freeUntilM !== undefined && month < t.freeUntilM) { free += t.rentPsf * t.sf; continue; }
     baseRent += t.rentPsf * t.sf;
   }
-  const opexBill = opexNowPsf * rentableSf(rec);
-  const egi = baseRent + recOpex + recTax;
+  const egi = resEgi + baseRent + recOpex + recTax;
   const mgmt = egi * MGMT_FEE;
-  const noi = egi - opexBill - mgmt - taxBill - groundRent;
+  const reserve = resEgi * APT_RESERVE;
+  // A LEASEHOLD PAYS ITS GROUND RENT BEFORE ANYTHING ELSE. It is an operating
+  // cost of the building, not a financing cost, so every reader of NOI — the
+  // month's cash, the DSCR test, the lender's sizing — sees it.
+  const noi = egi - opexBill - mgmt - reserve - taxBill - groundRent;
   const billed = opexBill + taxBill;
+  const letSf = rentableSf(rec);
+  const resLet = resSf * occ;
   return {
-    baseRent, freeRent: free, recoveredOpex: recOpex, recoveredTax: recTax, egi,
-    opex: opexBill, mgmt, tax: taxBill, noi, groundRent,
-    leasedSf, vacantSf: Math.max(0, rentableSf(rec) - leasedSf),
+    baseRent: baseRent + resEgi, freeRent: free, recoveredOpex: recOpex, recoveredTax: recTax, egi,
+    opex: opexBill, mgmt, reserve, tax: taxBill, noi, groundRent,
+    leasedSf: Math.round(leasedSf + resLet), vacantSf: Math.max(0, Math.round(letSf - leasedSf - resLet)),
     // what you pay and never bill back, as a share of the whole expense stack
+    // (flats' leases are gross: they bill nothing back)
     leakage: billed > 0 ? Math.max(0, billed - recOpex - recTax) / billed : 0,
-    opexPsf: opexNowPsf, taxPsf: taxNowPsf,
+    opexPsf: opexBill / Math.max(1, letSf), taxPsf: resSf >= letSf - 1 ? taxBill / Math.max(1, letSf) : taxNowPsf,
   };
 }
 

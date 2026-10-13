@@ -118,7 +118,7 @@ const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", 
 const CANAL_WATER = 0x2c5f5c;
 /** the footway band inside a park's street edge (m); its hedge stands at 3.6 */
 const PARK_WALK = 3.0;
-const FAR_PROPS = ["tactile", "streetsign", "meter", "bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "statue", "duck", "gcross", "ledger", "rowboat", "bandsman", "skater", "rower", "child", "parksign"];
+const FAR_PROPS = ["pickup", "tactile", "streetsign", "meter", "bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "statue", "duck", "gcross", "ledger", "rowboat", "bandsman", "skater", "rower", "child", "parksign"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 // what a crowd wears: mostly neutrals (navy, charcoal, camel, white,
@@ -1107,7 +1107,7 @@ function profile(pts: [number, number][], w: number): THREE.BufferGeometry {
 }
 const SHADE = [0.015, 0.016, 0.02];
 const PAINT = [1, 1, 1], GLASS = [0.07, 0.08, 0.1], TYRE = [0.04, 0.04, 0.04], HEAD = [2.2, 2.2, 2.0], TAIL = [1.6, 0.12, 0.1], TRIMC = [0.12, 0.12, 0.13];
-function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck"): THREE.BufferGeometry {
+function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck" | "pickup"): THREE.BufferGeometry {
   const parts: [THREE.BufferGeometry, number[]][] = [];
   const wheel = (x: number, y: number, r: number) => parts.push([new THREE.CylinderGeometry(r, r, 0.24, 8).translate(x, y, r), TYRE]);
   const box = (w: number, d: number, h: number, x: number, y: number, z: number, c: number[]) => parts.push([new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2), c]);
@@ -1137,6 +1137,19 @@ function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck"): THRE
     for (const x of [1.75, -1.7]) for (const y of [-0.9, 0.9]) wheel(x, y, 0.36);
     box(0.06, 0.4, 0.16, L + 0.02, -0.66, 0.85, HEAD); box(0.06, 0.4, 0.16, L + 0.02, 0.66, 0.85, HEAD);
     box(0.06, 0.18, 0.4, -L - 0.02, -0.86, 0.9, TAIL); box(0.06, 0.18, 0.4, -L - 0.02, 0.86, 0.9, TAIL);
+  } else if (kind === "pickup") {
+    // a pickup: a tall cab forward, an open bed behind with its tailgate
+    const L = 2.7;
+    parts.push([profile([[0.0, 0.45], [L, 0.45], [L, 1.05], [2.0, 1.15], [1.5, 1.85], [0.0, 1.9]], 1.9), PAINT]);
+    parts.push([profile([[1.95, 1.2], [1.5, 1.78], [0.75, 1.8], [0.75, 1.2]], 1.92), GLASS]);
+    box(2.6, 1.9, 0.12, -1.3, 0, 0.45, PAINT);
+    box(2.6, 0.08, 0.5, -1.3, -0.91, 0.57, PAINT); box(2.6, 0.08, 0.5, -1.3, 0.91, 0.57, PAINT);
+    box(0.08, 1.9, 0.5, -2.6, 0, 0.57, PAINT);
+    box(2.4, 1.72, 0.04, -1.3, 0, 0.58, [0.12, 0.12, 0.13]);
+    for (const x of [1.85, -1.7]) for (const y of [-0.9, 0.9]) wheel(x, y, 0.4);
+    box(0.06, 0.4, 0.16, L + 0.02, -0.65, 0.85, HEAD); box(0.06, 0.4, 0.16, L + 0.02, 0.65, 0.85, HEAD);
+    box(0.06, 0.18, 0.3, -2.66, -0.8, 0.7, TAIL); box(0.06, 0.18, 0.3, -2.66, 0.8, 0.7, TAIL);
+    box(0.14, 1.95, 0.22, L - 0.02, 0, 0.45, TRIMC);
   } else if (kind === "truck") {
     // a box truck on a delivery round: a cab in the paint, a pale box behind
     const L = 3.6;
@@ -1160,7 +1173,7 @@ function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck"): THRE
   // THE CAR'S OWN SHADE on the road: a dark pad a little larger than the
   // body, so a car sits on the asphalt rather than hovering over it (the
   // sun's shadow map is baked for the still city and cannot follow traffic)
-  const [hl, hw] = kind === "bus" ? [6.3, 1.45] : kind === "truck" ? [3.95, 1.4] : kind === "van" ? [2.8, 1.12] : kind === "suv" ? [2.6, 1.08] : [2.5, 1.02];
+  const [hl, hw] = kind === "bus" ? [6.3, 1.45] : kind === "truck" ? [3.95, 1.4] : kind === "pickup" ? [2.85, 1.1] : kind === "van" ? [2.8, 1.12] : kind === "suv" ? [2.6, 1.08] : [2.5, 1.02];
   parts.push([new THREE.PlaneGeometry(hl * 2, hw * 2).translate(0, 0, 0.012), SHADE]);
   return mergeColored(parts);
 }
@@ -5374,6 +5387,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       case "taxi": return { g: vehicle("taxi"), mat: this.vehicleMat(), colored: true };
       case "bus": return { g: vehicle("bus"), mat: this.vehicleMat(), colored: true };
       case "truck": return { g: vehicle("truck"), mat: this.vehicleMat(), colored: true };
+      case "lotpickup":
+      case "pickup": return { g: vehicle("pickup"), mat: this.vehicleMat(), colored: true };
       // A CYCLIST: wheels, frame, a rider in the instance colour, helmeted
       case "bike": {
         const DARK = [0.08, 0.08, 0.09], SKIN = [0.62, 0.48, 0.4], LEG = [0.25, 0.26, 0.3];
@@ -6369,14 +6384,24 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const off = Math.min(1.1, w * 0.3);
           // mature street trees are 10-15 m: a wide footway grows a big one
           const big = w >= 3 ? 1.4 : w >= 2 ? 1.12 : 0.85;
-          for (let t = 5 + rnd() * 3; t < L - 5; t += 8 + rnd() * 1.5) {
-            const [x, y] = at(t, off);
-            const sz = big * (0.7 + rnd() * 0.42);
-            const col = rnd() < 0.33;
+          // ONE PLANTING A BLOCK. A city plants a street with one species,
+          // all of an age, at an even spacing: the block face draws its
+          // species, its leaf, its size and its rhythm once, and each tree
+          // varies only a little from its neighbours
+          const col = rnd() < 0.33;
+          const leaf0 = leafCol();
+          const sz0 = big * (0.78 + rnd() * 0.32);
+          const step = 7.5 + rnd() * 2;
+          const n = Math.floor((L - 10) / step);
+          const t0 = (L - n * step) / 2;
+          for (let k = 0; k <= n; k++) {
+            const [x, y] = at(t0 + k * step, off);
+            const sz = sz0 * (0.93 + rnd() * 0.14);
             if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz)) continue;
+            const lc = leaf0.map((v) => v * (0.95 + rnd() * 0.1));
             this.putInst("treepit", x, y, 0.15, 1, rot);
             this.putInst("trunk", x, y, 0.15, sz, rnd() * 6.28);
-            this.putInst("crown", x, y, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
+            this.putInst("crown", x, y, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", lc, col ? 1.55 : 1);
           }
         }
         // THE KERB'S HARDWARE: a hydrant every ~77 m, a litter bin by the
@@ -6436,7 +6461,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const [lx, ly] = at(t, -5.2);
           if (!this.footprintOn(x, y, rot, 2.2, 5.2, ["road"]) || this.groundAt(lx, ly) !== "road" || this.waterAt(x, y)) continue;
           const vk = rnd(), dt = this.demandAt(x, y);
-          const kind = vk < 0.52 ? "car" : vk < 0.82 ? "suv" : vk < 0.93 ? "van" : dt > 0.55 ? "taxi" : "car";
+          const kind = vk < 0.5 ? "car" : vk < 0.78 ? "suv" : vk < 0.87 ? "van" : vk < 0.93 ? "pickup" : dt > 0.55 ? "taxi" : "car";
           this.putInst(kind, x, y, 0.05, 1, rot + (rnd() < 0.5 ? 0 : Math.PI), "", kind === "taxi" ? TAXI : CAR[(rnd() * CAR.length) | 0]);
           // a meter to pay at, where parking is worth charging for
           if (dt > 0.5) { const [px, py] = at(t + 2.2, 0.35); if (this.groundAt(px, py) === "walk") this.putInst("meter", px, py, 0.15, 1, rot); }
@@ -7114,7 +7139,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const tr = new Traffic(this.netRaw, (x, y) => this.groundAt(x, y) === "road" && !this.waterAt(x, y), rnd);
       tr.populate(40, rnd, (c) => {
         const vk = rnd(), long = tr.segs[c.seg].L > 160;
-        const kind = long && vk < 0.04 ? "bus" : vk < 0.45 ? "car" : vk < 0.7 ? "suv" : vk < 0.79 ? "van" : vk < 0.84 ? "truck" : vk < 0.95 ? "taxi" : "bike";
+        const kind = long && vk < 0.04 ? "bus" : vk < 0.45 ? "car" : vk < 0.7 ? "suv" : vk < 0.76 ? "van" : vk < 0.8 ? "pickup" : vk < 0.85 ? "truck" : vk < 0.95 ? "taxi" : "bike";
         const lc = c as LiveCar;
         lc.kind = kind;
         lc.col = kind === "taxi" ? TAXI : kind === "bus" ? BUS : kind === "bike" ? CROWD_COAT[(rnd() * CROWD_COAT.length) | 0] : CAR[(rnd() * CAR.length) | 0];
@@ -7122,7 +7147,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         lc.draw = rnd();
         // 25-40 km/h in town; the bus a little under
         c.vmax = kind === "bike" ? 4.2 + rnd() * 1.5 : (kind === "bus" || kind === "truck" ? 7 : 8) + rnd() * 3;
-        c.len = kind === "bus" ? 12 : kind === "truck" ? 7.4 : kind === "van" ? 5.2 : kind === "bike" ? 2 : 4.8;
+        c.len = kind === "bus" ? 12 : kind === "truck" ? 7.4 : kind === "van" || kind === "pickup" ? 5.4 : kind === "bike" ? 2 : 4.8;
       });
       this.traffic = tr;
       this.carList = tr.cars as LiveCar[];
@@ -7312,7 +7337,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       mesh.receiveShadow = true; mesh.frustumCulled = false;
       this.scene.add(mesh); this.fleets.push({ mesh, list, z, car });
     };
-    for (const kind of ["car", "suv", "van", "truck", "taxi", "bus", "bike"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
+    for (const kind of ["car", "suv", "van", "pickup", "truck", "taxi", "bus", "bike"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
     fleet("person", this.walkers, 0.15);
     fleet("dog", this.dogs, 0.08);
     // A WALKING GAIT for the people on the footways: legs swing from the hip

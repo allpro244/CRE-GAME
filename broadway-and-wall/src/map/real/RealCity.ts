@@ -20,7 +20,7 @@ import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
 import { siteOutline, ringCentroid } from "./siteRing";
 import { PostFX } from "./post";
-import { Traffic, type Car, type NetRaw } from "./traffic";
+import { Traffic, type Car, type Crosser, type NetRaw } from "./traffic";
 import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
 import { BOOK_PICKER } from "./patternbook/register";
 import type { FacadeGroup } from "./patternbook/types";
@@ -5398,19 +5398,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         if (this.groundAt(x, y) !== "walk") continue;
         this.putInst(arm ? "signal" : "sigpost", x, y, 0.15, 1, d < 0 ? r : r + Math.PI);
       }
-      // PEOPLE WAITING TO CROSS at either end, a few more where the street
-      // is busy, facing over the road and spread along the kerb
-      for (const [P, d] of [[A, -1], [B, 1]] as [P2, number][]) {
-        const dem = this.demandAt(P[0], P[1]);
-        const k = Math.floor(hash01(Math.round(P[0] * 13) ^ Math.round(P[1] * 7), this.seed) * (1 + 4 * dem));
-        for (let j = 0; j < k; j++) {
-          const h = hash01(j * 7919 + Math.round(P[0] * 31) ^ Math.round(P[1] * 17), this.seed + 3);
-          const back = 1.0 + 1.4 * ((h * 7.3) % 1), side = (((h * 13.7) % 1) - 0.5) * 3.2;
-          const x = P[0] + ux * d * back - uy * side, y = P[1] + uy * d * back + ux * side;
-          if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, 0.5)) continue;
-          this.putInst("person", x, y, 0.15, PERSON_S, (d < 0 ? r : r + Math.PI) + (((h * 29.1) % 1) - 0.5) * 0.8, "", CROWD_COAT[Math.floor(((h * 53.3) % 1) * CROWD_COAT.length)]);
-        }
-      }
       for (let t = 0.45; t < L - 0.2; t += 1.1) bars.push({ x: A[0] + ux * t, y: A[1] + uy * t, r });
     }
     if (bars.length) {
@@ -6313,6 +6300,15 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       this.traffic = tr;
       this.carList = tr.cars as LiveCar[];
       this.dressCarriageway(tr, rnd);
+      // PEOPLE CROSSING at the zebras, in step with the junction's lights:
+      // a few more where the street is busy
+      for (const z of (this.ctx as CityCtx).zebras ?? []) {
+        if (z.length < 2) continue;
+        const A = this.project(z[0]), B = this.project(z[z.length - 1]);
+        const dem = this.demandAt((A[0] + B[0]) / 2, (A[1] + B[1]) / 2);
+        tr.addCrossing(A, B, Math.floor(rnd() * (1 + 5 * dem)), rnd);
+      }
+      for (const c of tr.crossers) { const l = c as unknown as Lively; l.col = COAT[(rnd() * COAT.length) | 0]; l.draw = rnd(); }
     }
     // what the park walks converge on: a column in the big parks, a fountain
     // in the squares
@@ -6480,6 +6476,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     };
     for (const kind of ["car", "suv", "van", "truck", "taxi", "bus"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
     fleet("person", this.walkers, 0.15);
+    if (this.traffic) fleet("person", this.traffic.crossers as unknown as Lively[], 0.05, true);
     fleet("ferry", this.boats, 0.05);
     this.applyCrowd();
     this.applyMonth();
@@ -6498,12 +6495,15 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     for (const f of this.fleets) {
       if (f.car) {
+        const peds = f.list === (this.traffic?.crossers as unknown);
+        const sc = peds ? big : one;
         f.list.forEach((m, i) => {
           if (i >= f.mesh.count) return;
           const c = m as LiveCar;
-          p.set(c.x, c.y, f.z);
+          // a pedestrian waits up on the kerb and crosses down on the road
+          p.set(c.x, c.y, peds && !(m as unknown as Crosser).walking ? 0.15 : f.z);
           q.setFromEuler(e.set(0, 0, c.h));
-          f.mesh.setMatrixAt(i, m4.compose(p, q, one));
+          f.mesh.setMatrixAt(i, m4.compose(p, q, sc));
         });
         f.mesh.instanceMatrix.needsUpdate = true;
         continue;

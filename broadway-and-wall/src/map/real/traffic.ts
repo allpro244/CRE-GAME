@@ -67,6 +67,17 @@ export interface Car {
   sSeg?: number; sD?: number;
 }
 
+/** Someone on foot crossing at a zebra, in step with the junction's signal. */
+export interface Crosser {
+  a: P2; b: P2; ni: number;
+  /** unit vector a to b, and the sideways spread from the zebra's middle */
+  d: P2; lat: number;
+  /** 0 at a, 1 at b; going toward b when to is 1 */
+  s: number; to: 0 | 1; walking: boolean;
+  spd: number; len: number;
+  x: number; y: number; h: number;
+}
+
 const SIG_T = 22;      // seconds of green per axis
 const AMBER = 3;       // all-red clearance at each change
 const GAP = 2.2;       // standstill bumper gap (m)
@@ -78,6 +89,7 @@ export class Traffic {
   segs: Seg[] = [];
   nodes: Node[] = [];
   cars: Car[] = [];
+  crossers: Crosser[] = [];
   private t = 0;
 
   constructor(raw: NetRaw, onRoad: (x: number, y: number) => boolean, rnd: () => number) {
@@ -278,14 +290,71 @@ export class Traffic {
 
   /** Is the way through this node open to a car coming in on (si, dir)? */
   private green(ni: number, si: number, dir: 0 | 1): boolean {
+    const s = this.segs[si];
+    return this.greenAlong(ni, dir === 0 ? s.u : [-s.u[0], -s.u[1]]);
+  }
+
+  /** May traffic (or a pedestrian) moving along unit vector u go through node ni now, with at least `need` seconds of the phase left? */
+  private greenAlong(ni: number, u: P2, need = 0): boolean {
     const nd = this.nodes[ni];
     if (!nd.sig) return true;
-    const s = this.segs[si];
-    const u = dir === 0 ? s.u : [-s.u[0], -s.u[1]];
     const ax = Math.abs(u[0] * nd.axis[0] + u[1] * nd.axis[1]) > 0.6 ? 0 : 1;
     const c = (this.t + nd.ph) % (SIG_T * 2);
     const inPhase = c - ax * SIG_T;
-    return inPhase >= 0 && inPhase < SIG_T - AMBER;
+    return inPhase >= 0 && inPhase < SIG_T - AMBER - need;
+  }
+
+  /**
+   * A zebra from a to b, crossed by n people. It belongs to the nearest
+   * signalled junction within 30 m; walkers go when the traffic running the
+   * same way as the crossing has its green (so the street they cross is
+   * stopped), and only if there is time to get over.
+   */
+  addCrossing(a: P2, b: P2, n: number, rnd: () => number) {
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (L < 3 || n <= 0) return;
+    const m: P2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    let ni = -1, best = 30;
+    this.nodes.forEach((nd, i) => {
+      if (!nd.sig) return;
+      const dd = Math.hypot(nd.P[0] - m[0], nd.P[1] - m[1]);
+      if (dd < best) { best = dd; ni = i; }
+    });
+    if (ni < 0) return;
+    const d: P2 = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+    for (let k = 0; k < n; k++) {
+      const to: 0 | 1 = rnd() < 0.5 ? 0 : 1;
+      const c: Crosser = { a, b, ni, d, lat: (rnd() - 0.5) * 2.2, s: to === 1 ? 0 : 1, to, walking: false, spd: 1.2 + rnd() * 0.4, len: L, x: 0, y: 0, h: 0 };
+      this.posePed(c);
+      this.crossers.push(c);
+    }
+  }
+  private posePed(c: Crosser) {
+    // waiting, they stand back on the kerb; walking, on the zebra
+    const back = c.walking ? 0 : 0.9;
+    const s = c.s;
+    const along = -back + s * (c.len + 2 * back);
+    const px = -c.d[1], py = c.d[0];
+    c.x = c.a[0] + c.d[0] * along + px * c.lat;
+    c.y = c.a[1] + c.d[1] * along + py * c.lat;
+    c.h = Math.atan2(c.d[1], c.d[0]) + (c.to === 1 ? 0 : Math.PI);
+  }
+  private stepCrossers(dt: number) {
+    for (const c of this.crossers) {
+      if (!c.walking) {
+        const dir: P2 = c.to === 1 ? c.d : [-c.d[0], -c.d[1]];
+        if (this.greenAlong(c.ni, dir, c.len / c.spd * 0.6)) c.walking = true;
+        else { this.posePed(c); continue; }
+      }
+      c.s += ((c.to === 1 ? 1 : -1) * c.spd * dt) / c.len;
+      if (c.s >= 1 || c.s <= 0) {
+        // over: wait on this side for the next green back
+        c.s = c.s >= 1 ? 1 : 0;
+        c.to = c.s >= 1 ? 0 : 1;
+        c.walking = false;
+      }
+      this.posePed(c);
+    }
   }
 
   /**
@@ -296,6 +365,10 @@ export class Traffic {
   step(dt: number, live: (c: Car) => boolean) {
     if (dt <= 0) return;
     this.t += dt;
+    this.stepCrossers(dt);
+    // junctions with someone on a crossing: turning traffic waits for them
+    const onFoot = new Set<number>();
+    for (const c of this.crossers) if (c.walking && c.s > 0.02 && c.s < 0.98) onFoot.add(c.ni);
     // every lane's cars, front first
     const lanes = new Map<string, Car[]>();
     const lk = (si: number, dir: number, off: number) => `${si}:${dir}:${off}`;
@@ -343,6 +416,14 @@ export class Traffic {
           if (toLine > (c.v * c.v) / (2 * DEC * 1.6) - 0.5) stopAt = toLine;
         }
         if (c.next < 0) stopAt = Math.min(stopAt, s1 - c.d + 1.5);
+        // a turn across a crossing in use: hold at the line until it clears
+        if (c.d <= s1 && c.next >= 0 && onFoot.has(ni)) {
+          let dh = this.heading(c.next, c.nextDir) - this.heading(c.seg, c.dir);
+          while (dh > Math.PI) dh -= 2 * Math.PI;
+          while (dh < -Math.PI) dh += 2 * Math.PI;
+          const toLine = s1 - c.d;
+          if (Math.abs(dh) > 0.5 && toLine > (c.v * c.v) / (2 * DEC * 1.6) - 0.5) stopAt = Math.min(stopAt, toLine);
+        }
         const free = Math.min(gap - GAP - c.v * HEADWAY, stopAt - 0.3);
         // the speed at which we could still stop in the room we have
         const vSafe = free <= 0 ? 0 : Math.sqrt(2 * DEC * free);

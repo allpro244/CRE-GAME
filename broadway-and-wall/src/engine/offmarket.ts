@@ -23,6 +23,11 @@
  *    money fishes: when the number is far over its limit it counters low
  *    anyway, and an owner who is insulted does not take that firm's call
  *    again for years — the same memory the player is subject to.
+ *  - REACH (COMPETITORS_PLAN.md §1). How far a firm's network runs: a firm
+ *    with Reach 100 hears about owners nobody else does — it calls more
+ *    often (×1.6) and knows more doors per call (12 lots, not 8); Reach 0
+ *    only works the open tape (×0.4, 4 lots). Reach 50 is the old desk
+ *    exactly, so a firm with no sheet is unchanged.
  *  - WHO FINDS OUT. A building bought from under a conversation the player
  *    had open is news to the player, and goes on the beaten list, so the
  *    firm rings the player first when it sells (`s.beaten`).
@@ -71,9 +76,11 @@ export function tickOffMarketCalls(s: GameState, parcels: ParcelTable): void {
     if (r.stressMs) continue;
     const st = styleHunt(r);
     const cyc = Math.max(0.05, 1 + st.procyclical * (ci - 1) + st.contra * (1 - ci));
-    if (rng(s, "rivals") >= Math.min(0.9, CALLS_MO * st.appetite * cyc)) continue;
+    const reach = (r.sheet?.reach ?? 50) / 100;
+    if (rng(s, "rivals") >= Math.min(0.9, CALLS_MO * st.appetite * cyc * (0.4 + 1.2 * reach))) continue;
     let best: { rec: ParcelRecord; max: number; fit: number; held: NonNullable<ReturnType<typeof holderOf>> } | null = null;
-    for (let i = 0; i < SAMPLE; i++) {
+    const doors = Math.max(2, Math.round(SAMPLE * (0.5 + reach)));
+    for (let i = 0; i < doors; i++) {
       const bbl = keys[Math.floor(rng(s, "rivals") * keys.length)];
       if ((r.doors?.[bbl] ?? 0) > s.month) continue;
       if (s.holdings[bbl] || ownerOf(s, bbl) || isCivicLand(s, bbl)) continue;

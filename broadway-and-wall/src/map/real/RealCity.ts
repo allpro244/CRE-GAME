@@ -6194,7 +6194,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const over = this.parkInfo().flatMap((p) => p.ponds);
     if (over.length) {
       const pm = new THREE.Mesh(new THREE.ShapeGeometry(over.map((r) => new THREE.Shape(r.map(([x, y]) => new THREE.Vector2(x, y))))), new THREE.MeshStandardMaterial({
-        color: 0x27443f, roughness: 0.2, envMapIntensity: 0.55, normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.35, 0.35), envMap: this.skyEnv,
+        color: 0x30524d, roughness: 0.18, envMapIntensity: 0.7, normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.35, 0.35), envMap: this.skyEnv,
       }));
       pm.position.z = 0.055; pm.receiveShadow = true;
       this.scene.add(pm);

@@ -3202,6 +3202,12 @@ export function generateCity(cfg) {
   // it) comes down to the far bank, the two ends are joined by a crossing —
   // the bridge goes where the road actually is.
   if (PLAN_V >= 11 && CH_M.length) {
+    // creeks and canals only: a harbour slip is a dock, and a street does
+    // not cross a dock on a deck over the moored boats
+    const RUN_M = (cfg.streams ?? [])
+      .filter((st) => !st.cut && st.paint !== false && st.kind !== "pond" && st.kind !== "slip" && st.ring && st.ring.length >= 3)
+      .map((st) => st.ring);
+    const inRun = (p) => RUN_M.some((r) => inRing(p, r));
     const wetOrBank = (p) => inChannel(p) || CUT_M.some((r) => inRing(p, r));
     // street ends that point into the water: the end of a street-middle edge
     // whose continuation, a few metres on, is channel or its cleared bank
@@ -3225,7 +3231,7 @@ export function generateCity(cfg) {
           // the street stops at the cleared bank, which can be a block deep:
           // it points at the water if the channel lies dead ahead within 40 m
           let hit = false;
-          for (let t = 2; t <= 40 && !hit; t += 2) if (inChannel([p[0] + dx * t, p[1] + dy * t])) hit = true;
+          for (let t = 2; t <= 40 && !hit; t += 2) if (inRun([p[0] + dx * t, p[1] + dy * t])) hit = true;
           if (hit) ends.push({ p, dx, dy, w });
         }
       }
@@ -3239,13 +3245,16 @@ export function generateCity(cfg) {
       if (used.has(i)) continue;
       const e = ends[i];
       // walk across: it must reach water, and come out dry within a span a bridge can make
-      let sawWater = false, out = -1;
+      let sawWater = false, out = -1, wetRun = 0;
       for (let t = 2; t <= 110; t += 1) {
         const q = [e.p[0] + e.dx * t, e.p[1] + e.dy * t];
-        if (inChannel(q)) sawWater = true;
+        if (inChannel(q)) { sawWater = true; wetRun++; }
         else if (sawWater && !wetOrBank(q)) { out = t; break; }
       }
       if (out < 0) continue;
+      // over the water at most about twice a wide canal's width: past that it
+      // is a street meeting the channel at a glancing angle, which stops at the bank
+      if (wetRun > 70) continue;
       // the far bank's street end, in line and facing back
       let best = -1, bestD = Infinity;
       for (let j = 0; j < ends.length; j++) {
@@ -3276,8 +3285,13 @@ export function generateCity(cfg) {
       if (inPark(e.p) || inPark(to)) continue;
       // one bridge to a street: two in line within a few metres are the same crossing
       const mx = (e.p[0] + to[0]) / 2, my = (e.p[1] + to[1]) / 2;
-      if (laid.some((q) => Math.hypot(q[0] - mx, q[1] - my) < 18)) continue;
-      laid.push([mx, my]);
+      // and no two bridges cross each other over the water
+      const cross = (p1, p2, p3, p4) => {
+        const d = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+        return d(p1, p2, p3) * d(p1, p2, p4) < 0 && d(p3, p4, p1) * d(p3, p4, p2) < 0;
+      };
+      if (laid.some((q) => Math.hypot(q.m[0] - mx, q.m[1] - my) < 18 || cross(q.a, q.b, e.p, to))) continue;
+      laid.push({ m: [mx, my], a: e.p, b: to });
       crossingFeatures.push({
         type: "Feature",
         geometry: { type: "LineString", coordinates: [proj.toLL(e.p), proj.toLL(to)] },

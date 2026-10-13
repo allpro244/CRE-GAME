@@ -138,6 +138,7 @@ export function liveDemand(
   const start = Math.max(2, Math.min(100, base + anchor));
   const moved = drift - anchor;
   if (!moved) return start;
+  if (moved < 0) return Math.max(2, start + moved);
   const p = Math.max(0.005, Math.min(0.995, start / 100));
   const x = Math.log(p / (1 - p)) + moved * DRIFT_LOGIT_PER_PT;
   return Math.max(2, Math.min(100, 100 / (1 + Math.exp(-x))));

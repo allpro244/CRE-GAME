@@ -33,12 +33,14 @@ export default function Docket() {
   });
   // The month whose arrivals the header should pulse for, or null when quiet.
   const [pulseM, setPulseM] = useState<number | null>(null);
+  // "+N more" was dead text; it opens the rest now (the list scrolls).
+  const [showAll, setShowAll] = useState(false);
   const prevRef = useRef<{ month: number; keys: Set<string> } | null>(null);
 
   const items = useMemo<DocketItem[]>(() => {
     if (!game || game.gameOver) return [];
-    return buildDocket(game, parcels, snooze);
-  }, [game, parcels, snooze]);
+    return buildDocket(game, parcels, snooze, showAll);
+  }, [game, parcels, snooze, showAll]);
 
   // Pulse the header once when an advance lands a month that brought
   // something new — a snooze expiring or a re-render does not qualify.
@@ -98,16 +100,18 @@ export default function Docket() {
         <div className="docket-list">
           {items.map((it) =>
             it.more !== undefined ? (
-              <div key={it.key} className="docket-row docket-more">{it.title}</div>
+              <button key={it.key} type="button" className="docket-row docket-more docket-more-btn" onClick={() => setShowAll(true)}>{it.title}</button>
             ) : (
-              <div key={it.key} className={"docket-row" + (it.urgent ? " docket-urgent" : "")}>
-                <span className={"docket-tag docket-tag-" + it.cat} title={CAT_TITLE[it.cat]}>
+              <div key={it.key} className={"docket-row" + (it.urgent ? " docket-urgent" : "") + (it.nudge ? " docket-nudge" : "")}>
+                <span className={"docket-tag docket-tag-" + (it.nudge ? "next" : it.cat)} title={it.nudge ? "Your next step" : CAT_TITLE[it.cat]}>
                   {/* the triangle carries urgency alongside the red, never instead of it */}
-                  {it.urgent ? "▲ " : ""}{CAT_TAG[it.cat]}
+                  {it.urgent ? "▲ " : ""}{it.nudge ? "NEXT" : CAT_TAG[it.cat]}
                 </span>
-                {/* The words are the link. A row about a building takes you to
-                    the building when you click the sentence, not only the small
-                    button beside it — the button stays as the visible affordance. */}
+                {/* The words are the link. Every row used to carry an Open button
+                    as well — two buttons a row, twelve on a busy month, every one
+                    of them saying the same thing. The sentence is the target now,
+                    with an arrow as its affordance; buttons are kept for rows
+                    whose action is something other than "go there". */}
                 {(it.attnKey || it.bbl || it.page) ? (
                   <button
                     type="button"
@@ -117,6 +121,7 @@ export default function Docket() {
                   >
                     {it.title}
                     {it.sub && <span className="docket-sub mono"> · {it.sub}</span>}
+                    <span className="docket-go" aria-hidden="true"> →</span>
                   </button>
                 ) : (
                   <span
@@ -148,14 +153,23 @@ export default function Docket() {
                     }}>
                     {it.apply.label}
                   </button>
-                ) : (it.attnKey || it.bbl || it.page) ? (
-                  <button type="button" className="year-rail-go" onClick={() => openItem(it)}>
-                    Open
-                  </button>
                 ) : <span />}
                 {/* urgent items get no Later — a balloon inside six months
                     does not go away because you asked */}
-                {!it.urgent ? (
+                {/* A tape line is this month's news and leaves the docket next
+                    month on its own, so "Later" (three months) meant nothing on
+                    it: the honest control is dismiss. */}
+                {it.urgent ? <span /> : it.key.startsWith("news:") ? (
+                  <button
+                    type="button"
+                    className="year-rail-go docket-later docket-dismiss"
+                    onClick={() => later(it)}
+                    title="Dismiss — it is on the News desk either way"
+                    aria-label="Dismiss"
+                  >
+                    ×
+                  </button>
+                ) : (
                   <button
                     type="button"
                     className="year-rail-go docket-later"
@@ -164,7 +178,7 @@ export default function Docket() {
                   >
                     Later
                   </button>
-                ) : <span />}
+                )}
               </div>
             ),
           )}

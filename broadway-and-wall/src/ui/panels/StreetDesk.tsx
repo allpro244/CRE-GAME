@@ -1,4 +1,4 @@
-import { useMemo, useState, Fragment } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec, netWorth, portfolioMark } from "@/engine/value";
@@ -10,8 +10,6 @@ import { usd, sf } from "@/ui/format";
 import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
 import { TakePrivateDesk, TakenPrivateRecord } from "@/ui/panels/TakePrivateDesk";
 import { poss } from "@/engine/takeprivate";
-import { JevBadge, JevFirmCard, lastJevAct } from "@/ui/panels/JevPanel";
-import { CHARTERS } from "@/ai/jevQuestions";
 import { HeadlinerStrip, RaceChart, FirmSheet } from "@/ui/panels/CompetitorCards";
 import Fold from "@/ui/Fold";
 
@@ -30,11 +28,20 @@ import Fold from "@/ui/Fold";
 export { rivalEquity } from "@/engine/standing";
 import { rivalEquity } from "@/engine/standing";
 
-export function TheStreet() {
+/** `q` filters the table by firm or principal name (City → Players' search
+ *  box); the league-table summary above it always counts everyone. */
+export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou?: number } = {}) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const focus = useStore((s) => s.focus);
   const [open, setOpen] = useState<string | null>(null);
+  // YOU ARE THE ROW YOU CAME FOR. The top bar's Street readout opens this
+  // table, and in most of a career your row is twenty-odd firms down — below
+  // the fold, under the leaders. Bring it into view when a link brought you
+  // here (`scrollToYou` counts those) — not when you opened City → Players
+  // from its tab, where the filter strip and search box are what you came for.
+  const youRef = useRef<HTMLTableRowElement>(null);
+  useEffect(() => { if (scrollToYou > 0) youRef.current?.scrollIntoView({ block: "center" }); }, [scrollToYou]);
   const rivals = game.rivals ?? [];
   // Marked once per month, not once per click: opening a firm's card used to
   // re-mark every rival's whole book and the player's own.
@@ -57,6 +64,10 @@ export function TheStreet() {
     .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || rivalEquity(b.m, b.r) - rivalEquity(a.m, a.r)),
   [game, parcels, rivals]);
   if (!rivals.length) return null;
+  const needle = q.trim().toLowerCase();
+  // Firms only (ECONOMY.md "Firms only"): the search reads firm names.
+  const hit = (name: string) => !needle || name.toLowerCase().includes(needle);
+  const noHit = !!needle && !hit(firmName(game)) && !marked.some(({ r }) => hit(r.name));
   const appetite = marketAppetite(game);
   const approach = game.takePrivate?.offer && game.month <= game.takePrivate.offer.expiresM ? game.takePrivate.offer : null;
   return (
@@ -157,14 +168,18 @@ export function TheStreet() {
           </tr>
         </thead>
         <tbody>
+          {noHit && <tr><td colSpan={10} className="dim">No firm or principal by that name.</td></tr>}
           {(() => {
             // where your row stands: by net equity, as the firms are sorted
             const at = marked.findIndex(({ r, m }) => r.failedM !== undefined || rivalEquity(m, r) < playerEquity);
-            return [...marked.slice(0, at < 0 ? marked.length : at).map((x) => ({ x })), { you: true },
+            const all = [...marked.slice(0, at < 0 ? marked.length : at).map((x) => ({ x })), { you: true as const },
               ...marked.slice(at < 0 ? marked.length : at).map((x) => ({ x }))];
+            return all.filter((row) => "you" in row
+              ? hit(firmName(game))
+              : hit(row.x.r.name));
           })().map((row) => {
             if ("you" in row) return (
-              <tr key="__you" style={{ cursor: "pointer", background: "var(--accent-soft, rgba(138,109,31,0.12))", fontWeight: 600 }}
+              <tr key="__you" ref={youRef} style={{ cursor: "pointer", background: "var(--accent-soft, rgba(138,109,31,0.12))", fontWeight: 600 }}
                 title="Your firm, marked the same way as theirs. Click for your Books."
                 onClick={() => useStore.getState().setPage("books")}>
                 <td>★ {firmName(game)} <span className="dim" style={{ fontWeight: 400 }}>· you</span></td>
@@ -192,7 +207,6 @@ export function TheStreet() {
                 onClick={() => setOpen(isOpen ? null : r.id)}>
                 <td title={r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName}` : undefined}>
                   {isOpen ? "▾ " : "▸ "}{r.name}
-                  {r.jev ? <JevBadge /> : null}
                   {r.spawnedFrom ? <span className="dim"> · from {r.spawnedFrom.firmName}</span> : null}
                 </td>
                 <td className="dim">{STYLE_WORD[r.style]}</td>
@@ -215,14 +229,7 @@ export function TheStreet() {
                 </td>
                 <td className="num">{dead ? "—" : usd(Math.max(0, r.cash))}</td>
                 <td className="dim">
-                  {!dead && r.jev ? (() => {
-                    // A JEV-RUN FIRM'S READ: the last thing Jev's answers did.
-                    const l = lastJevAct(game, r.id);
-                    const who = `${CHARTERS[r.jev.charter].label} · Jev`;
-                    if (!l) return `${who} — no decision yet`;
-                    return `${who} · ${monthLabel(l.m)} ${l.point}: ${l.action ?? l.why}`;
-                  })()
-                  : dead ? (r.takenPrivateM !== undefined
+                  {dead ? (r.takenPrivateM !== undefined
                     ? `Taken private by you, ${monthLabel(r.takenPrivateM)}`
                     : r.bbls.length
                     ? `Failed ${monthLabel(r.failedM!)} — the receiver is still selling`
@@ -255,12 +262,6 @@ export function TheStreet() {
                       extra={
                         <>
                           <FirmSheet r={r} />
-                          {r.jev && (
-                            <div style={{ marginBottom: 8 }}>
-                              <div className="page-section" style={{ marginTop: 0 }}>Jev · {CHARTERS[r.jev.charter].label} · the latest period</div>
-                              <JevFirmCard firmId={r.id} />
-                            </div>
-                          )}
                         </>
                       }
                       extraLate={

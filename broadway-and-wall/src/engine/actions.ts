@@ -8,17 +8,16 @@ import { logBooks, moveDeposit, monthLabel, raiseAlert, SVC_START, START_YEAR, c
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
-import { rng, rrange, newsChance, BUILD_MONTHS } from "./market";
+import { rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
 import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake } from "./rivals";
-import { firmBook, snap } from "./aibooks";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
 import { payOffDue, payOffLoan } from "./debt";
-import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen } from "./debt";
+import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
@@ -129,7 +128,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   if (!productOpen(s, prod) || !windowOpen(s, prod)) return noLoan("closed");
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
-  if (!conditionOk(prod, grade)) return noLoan("condition");
+  if (!conditionOk(prod, grade, rec.buildSpec)) return noLoan("condition");
   // THE LESSER OF COST OR VALUE — the single most important rule in
   // acquisition underwriting, and it was entirely absent.
   //
@@ -195,7 +194,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // Floating paper closes with a rate cap the lender insists on, and the
   // premium is part of the equity cheque — the cheaper coupon is not free.
   const prod2 = productById(product);
-  const capPremium = prod2.floating ? Math.round(principal * 0.0125) : 0;
+  const capPremium = prod2.floating ? capPremiumOn(principal) : 0;
   // Origination points — refi and facility already charge them; acquisition
   // used to leave 0.6–2% of principal uncharged at the table.
   const pointsFee = Math.round(principal * prod2.points);
@@ -309,7 +308,6 @@ export function executePurchase(
   {
     const seller = ownerOf(next, bbl);
     if (seller) {
-      const snap0 = snap(seller);
       seller.bbls = seller.bbls.filter((b) => b !== bbl);
       const jv = seller.jvs?.[bbl];
       forgetDeed(seller, bbl);
@@ -320,10 +318,6 @@ export function executePurchase(
       // jvLpTake (rivals.ts).
       const partnersOut = jvLpTake(jv, price - relief, next.month);
       seller.cash -= partnersOut;
-      firmBook(next, seller, {
-        kind: "sale", bbl, amount: price, tax: 0, with: firmShort(next), partners: -partnersOut,
-        cashDelta: seller.cash - snap0.cash, debtDelta: seller.debt - snap0.debt,
-      });
     }
   }
   clearRivalClaims(next, bbl);
@@ -345,6 +339,8 @@ export function executePurchase(
     service: s.opsPolicy?.service ?? 0,
     stance: s.opsPolicy?.stance ?? 0,
     plan: s.opsPolicy?.plan ?? 1,
+    // ...and the house minimum new lease, when one is set
+    ...(s.minLeaseDefault ? { minLeaseSf: s.minLeaseDefault } : {}),
     svcIdx: SVC_START,
     tenants: [],
     cfHistory: [],
@@ -368,9 +364,15 @@ export function executePurchase(
     // desk underwrites the building it is actually lending on.
     const grade = conveyedGrade(s, rec, bbl);
     const stab = stabViewFor(rec, next.econ, grade, uwBasis);
+    // ...and the SAME SPONSOR. buyQuote struck the sheet on the buyer's net
+    // worth before the cheque left (a strong name is a tenth off on recourse
+    // paper, a thin one is capped); sizing the closing without it wrote a
+    // different coupon than the card and, on a loan near the $100K floor,
+    // refused one the desk had just quoted (test/levered-close: a $182K shop
+    // quoted $100,570 and closed at $99,724).
     holding.loan = originate(
       next, prod, uwBasis, inPlace(rec, next, bbl, uwBasis).noi, lev,
-      grade, rec.class, stab,
+      grade, rec.class, stab, { nw: netWorth(s, parcels) }, rec.buildSpec,
     );
     // NO LOAN, NO CLOSING. The cheque above was the EQUITY on a quoted
     // principal; if the desk will not write that principal, closing anyway
@@ -385,9 +387,7 @@ export function executePurchase(
     // Belt: if float still drifts a dollar, the written balance is the quoted one.
     if (holding.loan && bq.principal > 0 && holding.loan.balance !== bq.principal) {
       holding.loan.balance = holding.loan.principal = bq.principal;
-      holding.loan.monthlyPmt = prod.ioM > 0
-        ? Math.round((bq.principal * holding.loan.ratePct) / 100 / 12)
-        : Math.round(monthlyPayment(bq.principal, holding.loan.ratePct, holding.loan.amortYears));
+      recastPayment(holding.loan, next.month);
     }
   }
   // a live 1031: this purchase completes the exchange if it's big enough
@@ -1383,9 +1383,7 @@ function defaultCityGroundLease(s: GameState, bbl: string, gl: GroundLease): voi
 }
 
 function groundDefaultOdds(s: GameState, duringBuild: boolean): number {
-  const cycle = s.econ.phase === "recession" ? 3.5
-    : s.econ.phase === "recovery" ? 1.4
-      : s.econ.phase === "peak" ? 0.75 : 1;
+  const cycle = Math.max(0.5, Math.min(3.5, Math.exp(35 * labourSlack(s.econ))));
   const credit = Math.max(0.75, Math.min(2, 1 / Math.max(0.5, s.econ.creditIdx ?? 1)));
   // Construction is riskier than a stabilised leasehold; operating defaults
   // stay rare because losing the improvement is catastrophic for the lessee.
@@ -1634,17 +1632,17 @@ const VALUATION_AGE_M: Record<RivalStyle, number> = {
 const PRIVATE_VALUATION_AGE_M = 132;
 
 /** Box-Muller, the same way demand.ts draws its normals. */
-function gauss(s: GameState): number {
-  const u1 = Math.max(1e-9, rng(s, "sales"));
-  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * rng(s, "sales"));
+function gauss(s: GameState, ch: RngChannel = "sales"): number {
+  const u1 = Math.max(1e-9, rng(s, ch));
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * rng(s, ch));
 }
 
-function valuationAgeM(s: GameState, style: RivalStyle | null, stressed: boolean): number {
+function valuationAgeM(s: GameState, style: RivalStyle | null, stressed: boolean, ch: RngChannel = "sales"): number {
   // A firm in trouble has had a broker through the building THIS quarter,
   // because that is what being in trouble looks like from the inside: you are
   // getting opinions of value whether you want them or not.
   const mean = stressed ? 2 : (style ? VALUATION_AGE_M[style] : PRIVATE_VALUATION_AGE_M);
-  return -mean * Math.log(Math.max(1e-9, rng(s, "sales")));
+  return -mean * Math.log(Math.max(1e-9, rng(s, ch)));
 }
 
 /**
@@ -1722,10 +1720,10 @@ const ANCHOR_STICKY_DOWN = 0.38;   // of a stale HIGH view survives the news
 const ANCHOR_STICKY_UP = 0.25;     // of a stale LOW view does
 const OPINION_SD = 0.16;           // lognormal sigma, from the self-assessment spread
 
-function ownersView(s: GameState, rec: ParcelRecord, value: number, ageM: number): number {
+function ownersView(s: GameState, rec: ParcelRecord, value: number, ageM: number, ch: RngChannel = "sales"): number {
   const r = levelRatioSinceLooking(s.econ, rec, ageM);
   const anchored = value * Math.pow(r, r > 1 ? ANCHOR_STICKY_DOWN : ANCHOR_STICKY_UP);
-  return anchored * Math.exp(OPINION_SD * gauss(s));
+  return anchored * Math.exp(OPINION_SD * gauss(s, ch));
 }
 
 /**
@@ -1825,6 +1823,48 @@ function shutDoorWithOwner(
       parcels,
     );
   }
+}
+
+const REFUSE_BASE = 0.26;
+/** What a private holder of each kind wants on top for the trouble. See approachOwner. */
+const HOLDER_ASK: Record<string, number> = {
+  local: 0.13, estate: -0.08, institution: 0.05, partnership: 0.07, developer: 0.02, lender: -0.04,
+};
+
+/**
+ * THE SAME OWNER, RUNG BY A FIRM (2026-10-10).
+ *
+ * Firms bought only what was listed; the off-market call was the player's
+ * alone, though in a small or mid-sized market something like a third to a
+ * half of trades never reach a listing. A firm's acquisitions desk rings the
+ * same private holders, and the holder answers it the way it answers the
+ * player: the same refusal (less the player's own assemblage pressure and
+ * standing, which are the player's), the same stale private valuation, the
+ * same premium for a holder of that kind, the same chance of "make me an
+ * offer". Draws come from the stream the caller names, so the player's own
+ * conversations keep theirs.
+ */
+export function ownerAnswersCall(
+  s: GameState, rec: ParcelRecord, held: { kind: string } | null, ch: RngChannel,
+): { refused: true } | { refused: false; reserve: number; quotes: boolean; value: number } {
+  const refuseP = Math.min(0.92, Math.max(0.02,
+    REFUSE_BASE
+    * (rec.class === "land" ? 0.85 : 1)
+    * (1 - 0.13 * cycleDown(s.econ))
+    * (1 + (demandLinear(rec.demandScore) - 50) / 390),
+  ));
+  if (rng(s, ch) < refuseP) return { refused: true };
+  const value = assetValue(rec, s.econ, initialCondition(rec));
+  const ageM = valuationAgeM(s, null, false, ch);
+  const view = ownersView(s, rec, value, ageM, ch);
+  const styleAsk = held ? (HOLDER_ASK[held.kind] ?? 0) : 0;
+  const ripeLand = rec.class === "land" && landRead(rec, s.econ).winner === "builder";
+  const markup = (ripeLand ? 1.0 + 0.15 * Math.pow(rng(s, ch), 2) : 1.06 + 0.5 * Math.pow(rng(s, ch), 2)) + styleAsk;
+  const unadvised = 1 - 1 / (1 + ageM / 24);
+  const quotes = rng(s, ch) < 1 / (1 + Math.pow(ageM / QUOTE_HALF_M, 1.2));
+  const dream = 1 + DREAM_MAX * unadvised * (quotes ? 1 : 1 + BLIND_LICENCE) * Math.pow(rng(s, ch), 3);
+  const reserve = Math.round(Math.max(value * OWNER_FLOOR, view * markup * dream) / 1000) * 1000;
+  return { refused: false, reserve, quotes, value };
 }
 
 export function approachOwner(
@@ -1937,7 +1977,6 @@ export function approachOwner(
   // additive term expressed as what it did to the old base — stressed took
   // 0.78 to 0.36, so it is 0.46 — which preserves every modifier's meaning and
   // makes all of them matter more against a smaller base, not less.
-  const REFUSE_BASE = 0.26;
   const refuseP = Math.min(0.92, Math.max(0.02,
     REFUSE_BASE
     * (1 + 0.449 * pressure)                              // was +0.35 x pressure
@@ -1946,7 +1985,7 @@ export function approachOwner(
     * (stressed ? 0.46 : 1)                               // was -0.42
     * (owner && owner.cash < 0 ? 0.81 : 1)                // was -0.15
     * (rec.class === "land" ? 0.85 : 1)                   // was -0.12
-    * (next.econ.phase === "recession" ? 0.87 : 1)        // was -0.10
+    * (1 - 0.13 * cycleDown(next.econ))                   // was a recession-label 0.87
     * (1 + (demandLinear(rec.demandScore) - 50) / 390)    // was +(d-50)/500
     // ...and who you are to THEM. Above 1 is harder. See owners.relMult: it
     // takes several clean closings to undo one bad conversation, which is the
@@ -1991,9 +2030,6 @@ export function approachOwner(
   // the premium is theirs: a family that does not need the money asks for two
   // generations of not needing it, and an estate with executors and a clock
   // asks for less than the market because what they want is a closing date.
-  const HOLDER_ASK: Record<string, number> = {
-    local: 0.13, estate: -0.08, institution: 0.05, partnership: 0.07, developer: 0.02, lender: -0.04,
-  };
   const styleAsk = owner
     ? (owner.style === "family" ? 0.20 : owner.style === "core" ? 0.06 : owner.style === "opportunistic" ? 0.10 : 0.04)
     : held ? (HOLDER_ASK[held.kind] ?? 0)
@@ -2235,7 +2271,7 @@ export function buyOffMarket(
   // an owner who wasn't selling in the first place has no reason to bend:
   // off-market discounts come much harder than they do on the open tape
   const disc = 1 - price / Math.max(1, a.ask);
-  const p = Math.max(0.02, Math.min(0.9, 0.92 - disc * 11.0 + (next.econ.phase === "recession" ? 0.12 : 0)));
+  const p = Math.max(0.02, Math.min(0.9, 0.92 - disc * 11.0 + 0.12 * cycleDown(next.econ)));
   const roll = rng(next);
   if (roll < p) {
     const done = executePurchase(next, parcels, bbl, price, product, true, lev);
@@ -2299,8 +2335,8 @@ export function counterOffMarket(
     - (named ? 0.10 : 0)                                       // they know you want it
     - (cut - ref) * 2.6                                        // the reference cut
     - 0.35 * pressure                                          // holdouts don't blink
-    + (next.econ.phase === "recession" ? 0.18 : 0)             // fear is your friend
-    - (next.econ.phase === "expansion" ? 0.08 : 0),
+    + 0.18 * cycleDown(next.econ)                              // fear is your friend
+    - 0.08 * cycleHot(next.econ),
   ));
   // Split the old "hold firm" mass into a real soft counter and a true hold.
   // Owners who will not take your number still often move a little — that is
@@ -2512,8 +2548,8 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
   const value = ownedHoldingValue(s, parcels, h);
   const ratio = sale.ask / Math.max(1, value);
   const appetite = marketAppetite(s);
-  const phase = s.econ.phase === "peak" ? 1.5 : s.econ.phase === "expansion" ? 1.25
-    : s.econ.phase === "recovery" ? 0.8 : 0.35;
+  const hotA = cycleHot(s.econ), downA = cycleDown(s.econ);
+  const phase = 0.35 + 1.0 * hotA + 0.45 * (1 - hotA) * (1 - downA);
   // how many people actually turned up
   const expected = Math.max(0, 3.4 * phase * Math.max(0.3, appetite) * Math.max(0.25, 2.1 - ratio));
   let n = Math.floor(expected) + (rng(s, "sales") < expected % 1 ? 1 : 0);
@@ -2634,7 +2670,7 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
   let walked = 0, lifted = 0;
   for (const b of live) {
     // The ones who can afford to be patient are the ones who walk.
-    const pWalk = 0.30 * (1 - b.credibility) + (next.econ.phase === "recession" ? 0.18 : 0);
+    const pWalk = 0.30 * (1 - b.credibility) + 0.18 * cycleDown(next.econ);
     if (rng(next) < pWalk) { b.dropped = true; walked++; continue; }
     const bump = 1 + rrange(next, 0.005, 0.035) * b.credibility;
     const before = b.price;
@@ -2698,7 +2734,7 @@ export function acceptBid(s: GameState, parcels: ParcelTable, bbl: string, index
     q: next.month, kind: "deal",
     text: `${b.name} is under contract at ${rec?.address ?? bbl} for ${money(b.price)}, clean. It closes ${monthLabel(next.month + 2)} — nothing for you to do unless you want to close early or roll it into a 1031.`,
   });
-  return { s: next, msg: "Under contract." };
+  return { s: next, msg: `Under contract with ${b.name} at ${money(b.price)} — it closes ${monthLabel(next.month + 2)} on its own.` };
 }
 
 /**
@@ -3193,12 +3229,12 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // A broker's interest in you scales with what you already own — the first
   // deal is the hard one, and after that the phone does not stop.
   const owned = Object.keys(s.holdings).length;
-  const hot = s.econ.phase === "expansion" || s.econ.phase === "peak";
+  const hotB = cycleHot(s.econ);
   // A real broker with a real off-market file calls a few times a YEAR, not
   // most months. The old rate — up to 30% a month — meant the phone rang
   // thirty-odd times a decade and the calls stopped being events. A fifth of
   // that: an occasional knock, worth picking up.
-  const base = Math.min(0.06, (0.011 + 0.004 * Math.min(8, owned)) * (hot ? 1.25 : 0.7) * Math.max(0.5, s.econ.creditIdx ?? 1));
+  const base = Math.min(0.06, (0.011 + 0.004 * Math.min(8, owned)) * (0.7 + 0.55 * hotB) * Math.max(0.5, s.econ.creditIdx ?? 1));
   // ...AND HOW QUIET YOUR DESK IS.
   //
   // Every other inbound channel in this engine is gated on the size of your
@@ -3351,7 +3387,8 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     // the quiet-desk hazard would be a free seven-point discount handed to
     // whoever does the least.
     const idle = (s.quietMs ?? 0) > 2 ? 0.07 : 0;
-    const motivated = (s.econ.phase === "recession" ? rrange(s, 0.78, 0.90, "sales") : rrange(s, 0.84, 0.92, "sales")) + idle;
+    const dnM = cycleDown(s.econ);
+    const motivated = rrange(s, 0.84 - 0.06 * dnM, 0.92 - 0.02 * dnM, "sales") + idle;
     ask = Math.round(value * motivated / 1000) * 1000;
     who = held && (relOf(s, held.id).deals ?? 0) > 0
       ? `${held.name} gave your broker the first look because you have closed together before.`
@@ -3441,9 +3478,8 @@ export function counterSale(
   const value = ownedHoldingValue(next, parcels, h);
   // how far a buyer will stretch past appraisal: a boom with open credit buys
   // aggressively, a downturn with shut credit does not buy at all
-  const hot = next.econ.phase === "expansion" || next.econ.phase === "peak";
   const creditEase = Math.max(0.4, next.econ.creditIdx ?? 1);
-  const stretch = (hot ? 1.10 : 0.99) * (0.94 + 0.12 * creditEase);
+  const stretch = (0.99 + 0.11 * cycleHot(next.econ)) * (0.94 + 0.12 * creditEase);
   const reservation = Math.max(offer.price, Math.round(value * stretch * rrange(next, 0.97, 1.05)));
 
   if (px <= reservation) {
@@ -3527,9 +3563,8 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       }
       const quiet = s.month - (s.lastUnsolicitedM ?? -60) > 30;
       if (rec0 && s.month - h.boughtM > 18 && !anyLive && quiet) {
-        const hot = s.econ.phase === "expansion" || s.econ.phase === "peak";
         const creditEase = Math.max(0.4, s.econ.creditIdx ?? 1);
-        const p = (hot ? 0.0020 : 0.0006) * creditEase * (1 + rec0.demandScore / 140);
+        const p = (0.0006 + 0.0014 * cycleHot(s.econ)) * creditEase * (1 + rec0.demandScore / 140);
         if (rng(s, "sales") < p) {
           s.lastUnsolicitedM = s.month;
           const v = ownedHoldingValue(s, parcels, h);
@@ -3543,7 +3578,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
           // same number as a fund rebalancing into your asset class, because
           // they are not buying the same thing. They are buying the block.
           const bidder = unsolicitedBidder(s, parcels, adjacency, rec0, h);
-          const px = Math.round(v * bidder.mult * (hot ? rrange(s, 1.00, 1.10, "sales") : rrange(s, 0.86, 0.98, "sales")));
+          const px = Math.round(v * bidder.mult * (() => { const hw = cycleHot(s.econ); return rrange(s, 0.86 + 0.14 * hw, 0.98 + 0.12 * hw, "sales"); })());
           h.sale = { ask: px, listedM: s.month, unsolicited: true };
           h.sale.offer = { price: px, expiresM: s.month + 2, from: bidder.name };
           s.news.unshift({
@@ -3681,7 +3716,8 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
 export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
   // settle any private windows that closed with nothing to show for them
   tickEarlyLooks(s);
-  const base = s.econ.phase === "expansion" ? 0.10 : s.econ.phase === "peak" ? 0.07 : s.econ.phase === "recovery" ? 0.05 : 0.02;
+  const hotL = cycleHot(s.econ), downL = cycleDown(s.econ);
+  const base = 0.02 + 0.08 * hotL + 0.03 * (1 - hotL) * (1 - downL);
   const survivors: typeof s.listings = [];
   for (const li of s.listings) {
     const rec = resolveRec(parcels, s, li.bbl);
@@ -3973,8 +4009,7 @@ export function counterBid(
   // the institution that bid with a committee behind it has room, and the
   // syndicate that bid to be in the running does not.
   const value = ownedHoldingValue(next, parcels, next.holdings[bbl]!);
-  const hot = next.econ.phase === "expansion" || next.econ.phase === "peak";
-  const headroom = (0.02 + b0.credibility * 0.09) * (hot ? 1.25 : 0.85);
+  const headroom = (0.02 + b0.credibility * 0.09) * (0.85 + 0.40 * cycleHot(next.econ));
   const limit = Math.round(Math.max(b0.price, Math.min(value * 1.18, b0.price * (1 + headroom))));
 
   if (px <= limit) {

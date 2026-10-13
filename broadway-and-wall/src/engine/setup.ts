@@ -64,7 +64,6 @@ export interface GameSetup {
   clock?: "decisions" | "opportunities" | "everything";
   /** "never" keeps broker first looks off the clock (GameState.brokerStops). */
   brokerStops?: "affordable" | "never";
-  jevFirms?: number;
   spectator?: boolean;
 }
 

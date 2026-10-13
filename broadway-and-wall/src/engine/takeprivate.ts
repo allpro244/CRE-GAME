@@ -625,7 +625,7 @@ export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
     const rm = markRival(s, parcels, raider);
     let pick: { q: TakePrivateQuote; t: Rival; score: number } | null = null;
     for (const t of livingRivals(s)) {
-      if (t === raider || t.jev) continue;
+      if (t === raider) continue;
       const q = takePrivateQuote(s, parcels, t.id);
       if (!q?.available || q.ask <= 0) continue;
       const fees = Math.round(q.debt * 0.01 + q.gross * 0.02);

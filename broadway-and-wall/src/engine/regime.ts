@@ -69,7 +69,15 @@ function rrng(seed: number, step: number): number {
  * except at the top of an inflation, which is where 1981's transaction caps
  * actually sat.
  */
-export const CAP_RAIL = { lo: 3.4, hi: 11 } as const;
+//
+// WIDENED (2026-10-09) when caps began to carry expected growth (capTargetOf):
+// a class whose real rent has been falling for a decade is SUPPOSED to trade
+// wide, and at 11% the ceiling bound office 8.8% of months (8 worlds x 50y).
+// The bounds are now where real transactions have actually stopped: 15% at
+// the top (RTC liquidations 1991-92, distressed office 2023-24) and 2.75% at
+// the bottom (gateway apartments, 2021). Guards outside the record, not a
+// statement about where caps should be.
+export const CAP_RAIL = { lo: 2.75, hi: 15 } as const;
 
 const pick = (r: number, lo: number, hi: number) => lo + r * (hi - lo);
 

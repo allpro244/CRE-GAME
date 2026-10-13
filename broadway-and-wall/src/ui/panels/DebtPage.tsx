@@ -14,6 +14,7 @@ import { Big, Row } from "@/ui/panels/shared";
 import { FundDesk } from "@/ui/panels/FundDesk";
 import { CreditLine } from "@/ui/panels/CreditLineDesk";
 import { MaturityWall } from "@/ui/rollups/MaturityWall";
+import { tabCounts } from "@/ui/desks";
 
 export { TheBanks } from "@/ui/panels/BanksDesk";
 export { SponsorRecord } from "@/ui/panels/SponsorRecord";
@@ -234,8 +235,28 @@ export function DebtPage() {
     ?? facQuotes.find((x) => x.available)
     ?? facQuotes[0];
 
+  // WHY THE BADGE IS LIT, BEFORE ANYTHING ELSE. The rail's red "!" on
+  // Capital is a maturity wall or a swept facility; the desk opened on six
+  // tiles and the stack, with the reason four sections down.
+  const counts = tabCounts(game);
+  const warnLine = counts.debtWarn === "swept"
+    ? "The facility is in covenant breach — its cash flow is being swept to the lender."
+    : counts.debtWarn === "wall"
+      ? (game.privateBorrowQuotes?.length
+        ? "A private lender has quoted you — the banks would not refinance on their terms."
+        : `${Math.round(((counts.debtWall ?? 0) / Math.max(1, counts.debtBal ?? 1)) * 100)}% of what you owe matures inside three years.`)
+      : null;
   return (
     <div>
+      {warnLine && (
+        <div className="desk-alarm" role="status">
+          <span className="desk-alarm-mark" aria-hidden="true">!</span>
+          <span>{warnLine}</span>
+          <button type="button" className="btn btn-sm" onClick={() => useStore.setState({ pageJump: counts.debtWarn === "wall" ? "The maturity wall" : "Where the risk is" })}>
+            Show me ↓
+          </button>
+        </div>
+      )}
       <div className="stat-strip">
         <Big label="Total debt" value={usd(agg.total)} />
         <Big label="Weighted coupon" value={agg.rate > 0 ? agg.rate.toFixed(2) + "%" : "—"} />
@@ -327,6 +348,27 @@ export function DebtPage() {
         ? <MaturityWall />
         : <><div className="page-section">The maturity wall</div><div className="hint">Nothing borrowed yet.</div></>}
 
+      {/* THE STANDING INSTRUCTION. A balloon any desk will renew rolls on its
+          own at maturity; this is the one condition a treasurer attaches. */}
+      <div className="hint">
+        <b>At maturity:</b> a loan any desk will renew rolls on its own with the cheapest desk that clears it
+        (fee, points and a cap on floating paper, as a refinance you choose would pay). The clock stops only
+        when no desk will renew the whole balance{" "}
+        {(() => {
+          const cur = game.debtPolicy?.rollMaxJumpBp;
+          const opts: (number | undefined)[] = [undefined, 50, 100, 200];
+          return (
+            <>
+              — or when the new coupon jumps by more than{" "}
+              <select value={cur === undefined ? "" : String(cur)}
+                onChange={(e) => useStore.getState().setDebtPolicy({ rollMaxJumpBp: e.target.value === "" ? undefined : Number(e.target.value) })}>
+                {opts.map((o) => <option key={String(o)} value={o === undefined ? "" : String(o)}>{o === undefined ? "any amount (never stop)" : `${o}bp`}</option>)}
+              </select>.
+            </>
+          );
+        })()}
+      </div>
+
       {/* ---- the facility ---------------------------------------------- */}
       <div className="page-section">Borrowing against the whole book</div>
       {fac && !building ? (
@@ -401,6 +443,51 @@ export function DebtPage() {
                           <Row k="Closing costs" v={`${usd(fees)} of fee and points${paydown > 0 ? ` plus a ${usd(paydown)} paydown` : ""}`} bad={paydown > 0} />
                           <Row k="Cash out" v={out > 0 ? `${usd(out)} to the operating account` : "none — the same balance rolls"} />
                         </div>
+                        {/* WHAT YOU PAY NOW AGAINST WHAT YOU WOULD PAY. The single-asset
+                            desk pairs every number with today's; the pool desk quoted
+                            only the new paper, so a refinance that raised the cheque
+                            read the same as one that cut it. Both columns are struck
+                            on the same pool NOI and value the new quote underwrites. */}
+                        {(() => {
+                          const noi = rqt.quality.noi;
+                          const value = rqt.quality.value;
+                          const t = facilityDrawTerms(draw, rqt.ratePct, rqt.ioM, rqt.amortYears, noi, value);
+                          const curDs = fac.monthlyPmt * 12;
+                          const cfNow = noi - curDs;
+                          const cfAfter = noi - t.annualDs;
+                          const signed = (n: number) => `${n < 0 ? "−" : ""}${usd(Math.abs(Math.round(n)))}`;
+                          const pct = (n: number, d = 0) => `${(n * 100).toFixed(d)}%`;
+                          const cell = (k: string, now: string, after: string, bad?: boolean) => (
+                            <tr>
+                              <td>{k}</td>
+                              <td className="num dim">{now}</td>
+                              <td className={"num" + (bad ? " neg" : "")}><strong>{after}</strong></td>
+                            </tr>
+                          );
+                          return (
+                            <table className="tbl" style={{ marginTop: 6 }}>
+                              <thead>
+                                <tr><th>At {usd(draw)}</th><th className="num">Today</th><th className="num">After</th></tr>
+                              </thead>
+                              <tbody>
+                                {cell("Debt on the pool", usd(fac.balance), usd(draw))}
+                                {cell("Rate", `${fac.ratePct.toFixed(2)}%${fac.floating ? " fl" : ""}`,
+                                  `${rqt.ratePct.toFixed(2)}%${rqt.floating ? " fl" : ""}`, rqt.ratePct > fac.ratePct)}
+                                {cell("LTV", value > 0 ? pct(fac.balance / value) : "—", pct(t.ltv), t.ltv > rqt.advance)}
+                                {cell("Coverage (DSCR)", curDs > 0 ? `${(noi / curDs).toFixed(2)}x` : "—",
+                                  t.annualDs > 0 ? `${t.dscr.toFixed(2)}x` : "—", t.annualDs > 0 && t.dscr < rqt.minDSCR)}
+                                {cell("Debt yield", fac.balance > 0 ? pct(noi / fac.balance, 1) : "—",
+                                  draw > 0 ? pct(noi / draw, 1) : "—")}
+                                {cell("Debt service / mo", `−${usd(Math.round(fac.monthlyPmt))}`, `−${usd(t.monthlyPmt)}`,
+                                  t.monthlyPmt > fac.monthlyPmt)}
+                                {cell("Debt service / yr", `−${usd(Math.round(curDs))}`, `−${usd(Math.round(t.annualDs))}`,
+                                  t.annualDs > curDs)}
+                                {cell("Cash flow after debt / yr", signed(cfNow), signed(cfAfter), cfAfter < 0)}
+                                {cell("...per month", signed(cfNow / 12), signed(cfAfter / 12), cfAfter < 0)}
+                              </tbody>
+                            </table>
+                          );
+                        })()}
                         <Slider
                           label="New draw"
                           value={refiLev}

@@ -19,10 +19,24 @@
 // 29-degree cross-axis measurement UNDER-reads Washington Heights and Inwood.
 // The rows above 125th are reported for completeness and are not the yardstick.
 // No shipped extent reaches them.
-import { COAST_LL } from "/home/user/CRE-GAME/broadway-and-wall/src/citygen/manhattan.mjs";
-import { makeProjection, ringArea } from "/home/user/CRE-GAME/broadway-and-wall/src/citygen/geom.mjs";
-const proj = makeProjection(-73.9712, 40.7831);
-const R = COAST_LL.map(proj.toXY);
+//
+// THE COAST IS NOW SURVEYED (src/citygen/data/manhattan-plat.json, baked from
+// the borough boundary by pipeline/manhattan/bake.py), and it stops at 59th
+// Street, the largest extent offered. This still measures it, against the same
+// anchors, so a bad re-bake shows up here; rows above 59th read n/a, and the
+// area and length lines describe the extent, not the island. Piers count as
+// land, so a row through Chelsea Piers reads a little wide. Measured against the
+// city's own shoreline, the Canal and Houston anchors below read about 25%
+// narrow: a 29-degree cross-axis line there runs out to Corlears Hook, which
+// the from-memory anchors did not allow for. The surveyed coast is the
+// authority; the anchors are the check for a broken bake, not the reverse.
+import { readFileSync } from "node:fs";
+import { proj } from "../src/citygen/manhattan.mjs";
+import { ringArea } from "../src/citygen/geom.mjs";
+const PLAT = JSON.parse(readFileSync(new URL("../src/citygen/data/manhattan-plat.json", import.meta.url), "utf8"));
+const flat = PLAT.coast["59th"];
+const R = [];
+for (let i = 0; i < flat.length; i += 2) R.push([flat[i] / 10, flat[i + 1] / 10]);
 const TH = 29 * Math.PI / 180;
 const UP = [Math.sin(TH), Math.cos(TH)];         // along the avenues (uptown)
 const AC = [Math.cos(TH), -Math.sin(TH)];        // across, along the cross streets

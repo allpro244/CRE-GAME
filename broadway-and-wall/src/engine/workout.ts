@@ -31,8 +31,9 @@ import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeed
 import { firmShort } from "./firm";
 import { rrange } from "./market";
 import { ownedHoldingValue, resolveRec } from "./value";
-import { productById, bumpLenderRel, equityCureNeed, monthlyPayment } from "./debt";
-import { capitalRatio, chargeLenderLoss, lenderByName } from "./lenders";
+import { productById, bumpLenderRel, equityCureNeed, recastPayment } from "./debt";
+import { capitalRatio, chargeLenderLoss, lenderByName, targetCapital } from "./lenders";
+import type { Lender } from "./lenders";
 import { markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
 import { depositsOn } from "./leasing";
@@ -113,9 +114,61 @@ export function extensionMonths(s: GameState): number {
 export function deskWillExtend(s: GameState, lenderName: string, rel = 20): boolean {
   const l = lenderByName(s, lenderName);
   if (!l || l.failedM !== undefined) return false;   // a receiver liquidates; it does not extend
-  const cr = capitalRatio(l);
-  const healthy = cr > 0.075 && l.delinquent < 0.06;
-  return healthy || (cr > 0.05 && rel > 45);
+  const { healthy, stretched } = deskCondition(l);
+  // WHO IS ACROSS THE TABLE DECIDES WHAT THE FILE IS WORTH. A bank or a life
+  // company with capital extends; a stretched one does it for a borrower it
+  // knows. A conduit loan is run by a special servicer for the bondholders —
+  // it modifies when the trust can afford to wait and never for a
+  // relationship, because the bond has never met you. A fund extends whenever
+  // it has the capital to: it is paid for time, and it prices it.
+  if (l.kind === "conduit") return healthy;
+  if (l.kind === "fund") return stretched;
+  return healthy || (stretched && rel > 45);
+}
+
+/**
+ * THE TERMS OF TIME, BY WHO IS SELLING IT — fee, coupon bump and paydown, as
+ * shares of the balance (bump in points). Workout practice, not tuning:
+ *   bank     a point to re-paper for a healthy desk, two when stretched; a
+ *            default-rate bump; a few points of paydown to show good faith.
+ *   life     patient on the coupon, insistent on deleveraging — a life
+ *            company's problem is the LTV in its portfolio, not the yield.
+ *   conduit  the special servicer's modification: fees and a paydown to the
+ *            trust, a modest coupon change, no favours.
+ *   fund     no paydown asked; it charges for the months instead, at fund
+ *            prices.
+ */
+const EXT_TERMS: Record<string, { healthy: [number, number, number]; stretched: [number, number, number] }> = {
+  bank: { healthy: [0.01, 1.5, 0.03], stretched: [0.02, 3.0, 0.08] },
+  life: { healthy: [0.01, 1.0, 0.05], stretched: [0.02, 2.0, 0.10] },
+  conduit: { healthy: [0.01, 0.5, 0.05], stretched: [0.02, 1.5, 0.10] },
+  fund: { healthy: [0.02, 3.0, 0], stretched: [0.02, 3.0, 0] },
+};
+function extTerms(l: Lender | undefined): { feePct: number; bumpPct: number; paydownPct: number } {
+  const t = EXT_TERMS[l?.kind ?? "bank"] ?? EXT_TERMS.bank;
+  const [feePct, bumpPct, paydownPct] = l && deskCondition(l).healthy ? t.healthy : t.stretched;
+  return { feePct, bumpPct, paydownPct };
+}
+
+/**
+ * HEALTHY AND STRETCHED, AGAINST THIS DESK'S OWN TARGET.
+ *
+ * These were absolute capital ratios — healthy above 7.5%, stretched above 5% —
+ * while every other reading of a desk's health (`lenderHealth`,
+ * `lenderPressure`, the appetite curve) measures it against the ratio THAT KIND
+ * of institution runs at. The conduit's target is 4%, so it could never be
+ * "healthy" and never extended anybody even in its best year; the life company
+ * runs at 18%, so it was "healthy" at well under half its own target, when
+ * `lenderHealth` was already printing "impaired — rationing hard". Two answers
+ * to one question. The bands are now the ones the Banks page prints: healthy
+ * is anything not yet impaired (≥ 0.7× target), stretched is anything not yet
+ * undercapitalised (≥ 0.45× target). For the two banks this lands within a
+ * point of the old absolute numbers (First Harbor 7.7% / 5.0%, Alden 6.7% /
+ * 4.3%), which is where those numbers came from.
+ */
+export function deskCondition(l: Lender): { healthy: boolean; stretched: boolean } {
+  const rel = capitalRatio(l) / Math.max(0.01, targetCapital(l.name));
+  return { healthy: rel >= 0.7 && l.delinquent < 0.06, stretched: rel >= 0.45 };
 }
 
 /**
@@ -134,11 +187,16 @@ export function deskWillExtend(s: GameState, lenderName: string, rel = 20): bool
 export function extensionFeePct(s: GameState, lenderName: string): number {
   const l = lenderByName(s, lenderName);
   if (!l) return 0.02;
-  return capitalRatio(l) > 0.075 && l.delinquent < 0.06 ? 0.01 : 0.02;
+  return extTerms(l).feePct;
 }
 
-/** Is this lender in a mood to work with anybody? */
-export function workoutMood(s: GameState, lenderName: string): {
+/**
+ * Is this lender in a mood to work with anybody? `bbl` names the loan on the
+ * table: whether the holder bought THIS paper is a fact about this note, not
+ * about the desk — a fund that bought one of your loans at a discount did not
+ * buy the one it wrote you at par.
+ */
+export function workoutMood(s: GameState, lenderName: string, bbl?: string): {
   willExtend: boolean; why: string; feePct: number; bumpPct: number; paydownPct: number;
 } {
   const l = lenderByName(s, lenderName);
@@ -149,9 +207,13 @@ export function workoutMood(s: GameState, lenderName: string): {
   // whole reason forbearance exists. A fund that bought the paper at a discount
   // underwrote to OWNING the building, and every month it waits is a month off
   // its return. There is no conversation to have.
+  const loanHere = bbl ? s.holdings[bbl]?.loan : undefined;
+  // A fund that bought it — or a competitor that did (it wants the building).
   const bought = ((s.lenders ?? []).some((x) => x.name === lenderName && x.kind === "fund")
     || (s.rivals ?? []).some((r) => r.name === lenderName))
-    && Object.values(s.holdings).some((h) => h.loan?.holder === lenderName);
+    && (bbl
+      ? loanHere?.holder === lenderName && productById(loanHere.product).lender !== lenderName
+      : Object.values(s.holdings).some((h) => h.loan?.holder === lenderName));
   if (bought) {
     return {
       willExtend: false, feePct: 0, bumpPct: 0, paydownPct: 0,
@@ -165,25 +227,33 @@ export function workoutMood(s: GameState, lenderName: string): {
       why: "The lender is in receivership. A receiver does not grant extensions — they liquidate.",
     };
   }
-  const cr = capitalRatio(l);
-  const healthy = cr > 0.075 && l.delinquent < 0.06;
-  const stretched = cr > 0.05;
+  const { healthy, stretched } = deskCondition(l);
   // A bank with capital would far rather extend than own a building. One that
   // is impaired has a regulator reading the same balance sheet you are. The
   // test itself is `deskWillExtend` above — one answer, two borrowers.
   const willExtend = deskWillExtend(s, lenderName, rel);
+  const terms = extTerms(l);
+  const why = l.kind === "conduit"
+    ? (willExtend
+      ? `The loan is in a CMBS trust and the special servicer runs it now. The trust can afford to wait, so they will modify — for fees and a paydown to the bondholders. Your history with them counts for nothing.`
+      : `The special servicer answers to bondholders, and a trust this stretched wants the asset resolved, not extended. Your record does not enter into it.`)
+    : l.kind === "fund"
+      ? (willExtend
+        ? `${lenderName} sells time like anything else: no paydown, a fund's fee and a fund's coupon.`
+        : `${lenderName} is short of committed capital and is not carrying anything it does not have to.`)
+      : healthy
+        ? `${lenderName} has the capital to be patient. They would rather have a performing loan than your building.`
+        : stretched
+          ? `${lenderName} is stretched — ${(l.delinquent * 100).toFixed(1)}% of their book is not paying. `
+            + (rel > 45 ? "Your record with them is the only reason this is a conversation." : "They have no reason to carry you.")
+          : `${lenderName} is undercapitalised. They cannot carry a non-performing loan; the regulators are counting.`;
   return {
     willExtend,
-    why: healthy
-      ? `${lenderName} has the capital to be patient. They would rather have a performing loan than your building.`
-      : stretched
-        ? `${lenderName} is stretched — ${(l.delinquent * 100).toFixed(1)}% of their book is not paying. `
-          + (rel > 45 ? "Your record with them is the only reason this is a conversation." : "They have no reason to carry you.")
-        : `${lenderName} is undercapitalised. They cannot carry a non-performing loan; the regulators are counting.`,
-    // The price of time, and it is not small. See extensionFeePct above.
-    feePct: extensionFeePct(s, lenderName),
-    bumpPct: healthy ? 1.5 : 3.0,
-    paydownPct: healthy ? 0.03 : 0.08,
+    why,
+    // The price of time, and it is not small — and it depends on who is selling it. See EXT_TERMS.
+    feePct: terms.feePct,
+    bumpPct: terms.bumpPct,
+    paydownPct: terms.paydownPct,
   };
 }
 
@@ -254,11 +324,7 @@ function applyCurePayment(
     h.loan.balance = Math.max(0, h.loan.balance - paid);
     if (h.loan.balance <= 0) h.loan = null;
     else {
-      const io = s.month < h.loan.ioUntilM;
-      const yearsLeft = Math.max(1, h.loan.amortYears - (s.month - h.loan.originM) / 12);
-      h.loan.monthlyPmt = io
-        ? Math.ceil((h.loan.balance * h.loan.ratePct) / 100 / 12)
-        : Math.round(monthlyPayment(h.loan.balance, h.loan.ratePct, yearsLeft));
+      recastPayment(h.loan, s.month);
       h.loan.sweep = false;
       h.loan.cleanQs = 0;
       h.loan.breachMs = 0;
@@ -388,7 +454,7 @@ function autoCureIfFunded(s: GameState, parcels: ParcelTable, w: Workout): boole
 function holdoverSpentOnFiling(s: GameState, parcels: ParcelTable, w: Workout, address: string): boolean {
   const l = s.holdings[w.bbl]?.loan;
   if (!l || w.cause !== "balloon" || s.month - l.maturityM < 12) return false;
-  if ((l.extensions ?? 0) < 1 && workoutMood(s, w.lender).willExtend) holdoverDecision(s, parcels, w, address);
+  if ((l.extensions ?? 0) < 1 && workoutMood(s, w.lender, w.bbl).willExtend) holdoverDecision(s, parcels, w, address);
   return true;
 }
 
@@ -437,7 +503,7 @@ export function requestForbearance(
   if (w.asks >= 1 || (h.loan.extensions ?? 0) >= 1) return { s, err: "You have already been to them once on this building. Nobody extends twice." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  const mood = workoutMood(s, w.lender);
+  const mood = workoutMood(s, w.lender, bbl);
   const next = clone(s);
   const nw = next.workouts![bbl];
   nw.asks++;
@@ -475,11 +541,13 @@ export function requestForbearance(
   nh.loan!.sweep = true;                    // extended paper is swept paper
   nh.loan!.extensions = (nh.loan!.extensions ?? 0) + 1;
   // The coupon moved; the cheque has to cover it (the invariants test exactly that).
-  nh.loan!.monthlyPmt = Math.round(next.month < nh.loan!.ioUntilM
-    ? (nh.loan!.balance * nh.loan!.ratePct) / 100 / 12
-    : monthlyPayment(nh.loan!.balance, nh.loan!.ratePct, nh.loan!.amortYears));
+  recastPayment(nh.loan!, next.month);
   nw.stage = "forbearance";
   nw.decideM = nh.loan!.maturityM;
+  // Re-papered paper is current paper: the default-rate keep-alive ends with
+  // the extension, or it charges 15% over a coupon nobody is in default on
+  // and rolls the file's date back to next month.
+  nw.servicing = false;
   next.news.unshift({
     q: next.month, kind: "info",
     text: `${w.lender} extended at ${rec.address} to ${monthLabel(nh.loan!.maturityM)}: ${money(fee)} of fees, `
@@ -572,7 +640,7 @@ export function deedInLieu(
 function holdoverDecision(s: GameState, parcels: ParcelTable, w: Workout, address: string): void {
   const h = s.holdings[w.bbl];
   if (!h?.loan) return;
-  const mood = workoutMood(s, w.lender);
+  const mood = workoutMood(s, w.lender, w.bbl);
   const already = (h.loan.extensions ?? 0) >= 1;
   if (mood.willExtend && !already) {
     const l = h.loan;
@@ -587,13 +655,12 @@ function holdoverDecision(s: GameState, parcels: ParcelTable, w: Workout, addres
     l.maturityM = s.month + extensionMonths(s);
     l.sweep = true;
     l.extensions = (l.extensions ?? 0) + 1;
-    l.monthlyPmt = Math.round(s.month < l.ioUntilM
-      ? (l.balance * l.ratePct) / 100 / 12
-      : monthlyPayment(l.balance, l.ratePct, l.amortYears));
+    recastPayment(l, s.month);
     w.stage = "forbearance";
     w.decideM = l.maturityM;
     w.asks = Math.max(w.asks, 1);
     w.servicedMs = 0;
+    w.servicing = false;   // current again — see requestForbearance
     s.news.unshift({
       q: s.month, kind: "info",
       text: `${w.lender} documented an extension at ${address} to ${monthLabel(l.maturityM)}: a year of holdover on a `

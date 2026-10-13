@@ -7,13 +7,7 @@
 
 /* ---------- status bar: secondary readouts shed by the bar's own width ---- */
 .app .topbar-game { container: topvitals / inline-size; }
-.app .topbar .tstat-d2, .app .topbar .tstat-d3 { display: flex; }
-@container topvitals (max-width: 860px) {
-  .app .topbar .tstat-d2 { display: none; }
-}
-@container topvitals (max-width: 640px) {
-  .app .topbar .tstat-d3 { display: none; }
-}
+/* The shedding order itself lives in hud.css. */
 
 /* ---------- start screen ---------- */
 .app .start {

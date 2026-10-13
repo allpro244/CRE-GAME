@@ -191,36 +191,31 @@ export function workStage(
   return { word: "rumoured", priced: l.rumorM !== undefined && month >= l.rumorM ? 0.06 : 0 };
 }
 
+// Deep links into a desk's views (Players → The street, Markets → Office):
+// see ui/deskView.ts.
+export { openViewOn, useDeskView } from "@/ui/deskView";
+
 /**
- * WHICH RESEARCH TAB A LINK FROM SOMEWHERE ELSE WANTED.
- *
- * `rtab` is state inside `ResearchPage`, and `ResearchPage` does not exist
- * until `setPage("research")` mounts it — so a caller cannot set the tab
- * directly and there is nothing on the store to set either. This is the
- * handoff: the link drops a tab name, the page reads it in its `useState`
- * initialiser on the first render, and an effect clears it once that render has
- * committed.
- *
- * READING AND CLEARING ARE TWO STEPS FOR A REASON, and the reason is
- * StrictMode. `main.tsx` wraps the app in it, and StrictMode invokes a lazy
- * `useState` initialiser TWICE — so a `take()` that cleared as it read would
- * hand the tab to the first invocation and hand `null` to the second, which is
- * the one React keeps. The link would have worked in a production build and
- * silently done nothing in dev, which is the worst of the two directions.
- * Reading is idempotent; the clear is in the effect, where being run twice is
- * harmless.
- *
- * It clears at all because a deep link that permanently changes a page's home
- * is not a deep link: without this, closing Research and reopening it from the
- * nav would put you back on the street table for the rest of the session. One
- * shot, and if nobody follows a link the page opens exactly as it did before
- * this existed.
- *
- * Module scope for the same reason `brokerCallsSeen` above is: it is a fact
- * about the click you just made in this browser, and it has no business
- * travelling in a save.
+ * A PAGE'S OWN VIEWS, one row, directly under the desk tabs. Every City page
+ * that has more than one view uses this, so there is one second-level control
+ * in one place rather than button rows, pill rows and lens rows that each page
+ * styled for itself.
  */
-export { pendingRTab, openResearchOn, clearPendingRTab } from "@/ui/researchTab";
+export function ViewSwitch<T extends string>({ views, on, set, label }: {
+  views: readonly { id: T; label: string; n?: number; title?: string }[];
+  on: T; set: (v: T) => void; label: string;
+}) {
+  return (
+    <div className="view-switch" role="tablist" aria-label={label}>
+      {views.map((v) => (
+        <button key={v.id} type="button" role="tab" aria-selected={on === v.id} title={v.title}
+          className={"view-chip" + (on === v.id ? " on" : "")} onClick={() => set(v.id)}>
+          {v.label}{v.n ? <span className="view-n">{v.n}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function Big({ label, value, bad, title }: { label: string; value: string; bad?: boolean; title?: string }) {
   const gloss = title ? undefined : glossFor(label);
@@ -363,7 +358,7 @@ export function LocSplitHint({
   if (split.draw <= 0 && split.short <= 0) return null;
   const text = split.short > 0
     ? `${usd(split.cash)} cash · ${usd(split.draw)} on the line · short ${usd(split.short)}`
-    : `${usd(split.cash)} cash · ${usd(split.draw)} drawn on the line at ${split.rate.toFixed(2)}% (index + 400)`;
+    : `${usd(split.cash)} cash · ${usd(split.draw)} drawn on the line at ${split.rate.toFixed(2)}%`;
   return <div className="hint">{text}</div>;
 }
 
@@ -395,3 +390,19 @@ export const STYLE_WORD: Record<string, string> = {
   foreign: "offshore capital",
   slumlord: "milking the stock",
 };
+
+/**
+ * WHY THE BUTTON IS GREY, ON THE PAGE. A cash-gated action used to grey out
+ * with its reason in a tooltip (or none), so the player had to hover to ask.
+ * Renders nothing when the money is there.
+ */
+export function ShortBy({ need, have, cash = false }: { need: number; have: number; cash?: boolean }) {
+  if (have >= need) return null;
+  return (
+    <span className="hint short-by">
+      {cash
+        ? `You have ${usd(Math.max(0, have))} in cash; this takes ${usd(need)}.`
+        : `Cash and line together come to ${usd(Math.max(0, have))} of the ${usd(need)} this takes.`}
+    </span>
+  );
+}

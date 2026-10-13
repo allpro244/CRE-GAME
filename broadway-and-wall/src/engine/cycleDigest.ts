@@ -54,7 +54,8 @@ export function cycleDigest(game: GameState, prev: GameState | null = null): Cyc
   }
   const floatingShare = withLoan > 0 ? floating / withLoan : 0;
   const underConstruction = Object.keys(game.developments ?? {}).length
-    + (game.cityJobs ?? []).filter((j) => !game.built?.[j.bbl] && !game.developments?.[j.bbl]).length;
+    // a teardown's cleared-lot marker in game.built is not a building (dev.ts)
+    + (game.cityJobs ?? []).filter((j) => !((game.built?.[j.bbl]?.bldgArea ?? 0) > 0) && !game.developments?.[j.bbl]).length;
 
   return {
     month: game.month,

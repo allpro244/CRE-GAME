@@ -25,6 +25,7 @@ import {
   devFundingNeed, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, TAKEOUT_HEDGE_LTC,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
+import { BUILD_TIERS, buildTier, specRentMult, specWearMult } from "@/engine/value";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { spendable } from "@/engine/credit";
 import { USE_WORD } from "@/engine/mix";
@@ -432,19 +433,27 @@ export function DevelopSection({ bbl }: { bbl: string }) {
         }}
       />
 
-      <div className="btn-row" style={{ marginBottom: 8 }} role="tablist" aria-label="Build desk">
-        {BUILD_TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            className={"btn" + (tab === t.id ? " btn-on" : "")}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* THREE STEPS, DRAWN AS STEPS. They were three buttons indistinguishable
+          from every other button on the desk, so nothing said they were an
+          order, which one you were on, or that there was a third. Numbered,
+          joined, the current one lit and the ones behind you ticked. */}
+      <div className="stepper" role="tablist" aria-label="Build desk">
+        {BUILD_TABS.map((t, i) => {
+          const at = BUILD_TABS.findIndex((x) => x.id === tab);
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              className={"stepper-step" + (tab === t.id ? " on" : i < at ? " done" : "")}
+              onClick={() => setTab(t.id)}
+            >
+              <span className="stepper-n" aria-hidden="true">{i < at ? "✓" : i + 1}</span>
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {tab === "programme" && (
@@ -558,7 +567,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   // second copy of their arithmetic.
                   MAX_FLOORS_BY_USE[use] !== undefined && maxFl === MAX_FLOORS_BY_USE[use]
                     ? `The cap is the use: ${devUseLabel(use)} does not stack past ${maxFl}.`
-                    : maxFl === physicalMaxFloors(rec.lotArea * cov)
+                    : maxFl === physicalMaxFloors(rec.lotArea * cov, rec)
                       ? `The cap is STRUCTURE, not zoning: a ${sf(Math.round(rec.lotArea * cov))} plate cannot carry more than ${maxFl} floors of core and stair. Widen the footprint and the site carries more.`
                       : `The cap is ZONING: the envelope runs out at ${maxFl} floors on this footprint. Narrow the footprint and the same envelope goes higher.`
                 }`
@@ -646,6 +655,79 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               </div>
             );
           })()}
+          {/* FOUR WAYS TO BUILD (BUILD_CLASS_PLAN.md). The engine still reads a
+              0..1 spec; the desk offers the four named points on it, each
+              with what it buys and what it costs to keep. */}
+          <div className="page-section" style={{ marginTop: 6 }}>Build tier</div>
+          <div className="btn-row">
+            {BUILD_TIERS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                className={"btn" + (buildTier(spec).key === t.key ? " btn-on" : "")}
+                title={t.blurb}
+                onClick={() => setSpec(t.spec)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="hint">
+            {buildTier(spec).label}: hard cost ×{specCostMult(spec).toFixed(2)} · rent ×{specRentMult(spec).toFixed(2)} · plant wears ×{specWearMult(spec).toFixed(2)}
+            {buildTier(spec).key === "value" ? " · no life-company loans" : ""}. {buildTier(spec).blurb[0].toUpperCase() + buildTier(spec).blurb.slice(1)}.
+          </div>
+          <div className="page-section" style={{ marginTop: 6 }}>Preset</div>
+          <div className="btn-row">
+            {([
+              { label: "Box", cov: 0.78, spec: 0.15 },
+              { label: "Standard", cov: 0.6, spec: 0.5 },
+              { label: "Tower", cov: 0.32, spec: 0.5 },
+              { label: "Signature", cov: 0.48, spec: 0.95 },
+            ] as const).map((p0) => ({ ...p0, cov: Math.min(p0.cov, covCap) })).map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                className={"btn" + (Math.abs(cov - p.cov) < 0.02 && Math.abs(spec - p.spec) < 0.04 ? " btn-on" : "")}
+                // WHAT THE PRESET COSTS YOU IN STOREYS, ON THIS LOT. "Tower"
+                // narrows the footprint, which buys height only where zoning is
+                // the binding ceiling. On a small lot it is not — the plate
+                // stops carrying a core — and the preset makes the building
+                // SHORTER. Measured on the top demand decile: 9 floors at the
+                // 32% mark against 23 at 78%, on the same dirt.
+                title={`${Math.round(p.cov * 100)}% footprint · ${sf(Math.round(rec.lotArea * p.cov))} plate · carries ${maxFloorsFor(rec, p.cov, use)} floors here`}
+                onClick={() => {
+                  setCov(p.cov);
+                  setSpec(p.spec);
+                  setFloors((f) => Math.min(f, maxFloorsFor(rec, p.cov, use)));
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="hint">
+            Presets set footprint and quality together. Stories stay where they are — take them down if the plate no longer fits the envelope.
+          </div>
+          {plan && (
+            <div className="page-section" style={{ marginTop: 8 }}>
+              <div className="page-section-head">Costs</div>
+              <div className="grid">
+                {/* ONE FLOOR-TO-FLOOR. This said 3.4 m, which is neither the
+                    12.5 ft the storey ceiling is computed from nor the 3.55 m
+                    the map draws — a third answer to "how tall is it". The
+                    engine's constant is the one the slenderness cap is built
+                    on, so it is the one the desk quotes. */}
+                <Row k="Building" v={`${sf(plan.sf)} · ${plan.floors} fl · ${(plan.floors * FLOOR_HEIGHT_FT).toFixed(0)} ft tall`} strong />
+                <Row k="FAR used" v={`${plan.far} of ${plan.farMax.toFixed(1)}`} />
+                <Row k="Hard cost" v={`${usd(plan.hardCost)} · $${(plan.hardCost / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
+                <Row k="Soft cost" v={usd(plan.softCost)} />
+                {plan.demo > 0 && <Row k="Demolition" v={usd(plan.demo)} />}
+                <Row k="Contingency" v={`${usd(plan.contingency)} · yours if unspent`} />
+                <Row k="Lease-up reserve" v={`${usd(plan.leaseUp)} · fit-out and carry until full`} />
+                <Row k="Cost to build" v={`${usd(plan.costTotal)} · $${(plan.costTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
+              </div>
+            </div>
+          )}
           {use === "mixed" && (
             <>
               <div className="page-section" style={{ marginTop: 6 }}>What goes where</div>
@@ -697,50 +779,17 @@ export function DevelopSection({ bbl }: { bbl: string }) {
       {tab === "design" && (
         <>
           <SchemeViewer />
-          <DesignPicker design={design} onChange={setDesign} floors={fl} onPeek={peek} />
-          <Slider
-            label="Build quality"
-            value={spec}
-            min={0}
-            max={1}
-            step={0.05}
-            onChange={setSpec}
-            format={(v) => v < 0.35 ? "Value" : v < 0.65 ? "Standard" : v < 0.85 ? "Premium" : "Trophy"}
-            marks={[{ at: 0.25, label: "value" }, { at: 0.5, label: "standard" }, { at: 0.75, label: "premium" }, { at: 1, label: "trophy" }]}
-            hint={`Hard cost ×${specCostMult(spec).toFixed(2)} today and a higher condition ceiling forever. Trophy costs more to build but holds rent longer.`}
-          />
-          <div className="page-section" style={{ marginTop: 6 }}>Design preset</div>
-          <div className="btn-row">
-            {([
-              { label: "Box", cov: 0.78, spec: 0.28 },
-              { label: "Standard", cov: 0.6, spec: 0.5 },
-              { label: "Tower", cov: 0.32, spec: 0.55 },
-              { label: "Signature", cov: 0.48, spec: 0.88 },
-            ] as const).map((p0) => ({ ...p0, cov: Math.min(p0.cov, covCap) })).map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                className={"btn" + (Math.abs(cov - p.cov) < 0.02 && Math.abs(spec - p.spec) < 0.04 ? " btn-on" : "")}
-                // WHAT THE PRESET COSTS YOU IN STOREYS, ON THIS LOT. "Tower"
-                // narrows the footprint, which buys height only where zoning is
-                // the binding ceiling. On a small lot it is not — the plate
-                // stops carrying a core — and the preset makes the building
-                // SHORTER. Measured on the top demand decile: 9 floors at the
-                // 32% mark against 23 at 78%, on the same dirt.
-                title={`${Math.round(p.cov * 100)}% footprint · ${sf(Math.round(rec.lotArea * p.cov))} plate · carries ${maxFloorsFor(rec, p.cov, use)} floors here`}
-                onClick={() => {
-                  setCov(p.cov);
-                  setSpec(p.spec);
-                  setFloors((f) => Math.min(f, maxFloorsFor(rec, p.cov, use)));
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
+          <DesignPicker design={design} onChange={setDesign} floors={fl} shops={previewShops} onPeek={peek} />
+          <div className="btn-row" style={{ marginTop: 8 }}>
+            <button type="button" className="btn" onClick={() => setTab("programme")}>Back · Programme</button>
+            <button type="button" className="btn" onClick={() => setTab("financing")}>Next · Financing</button>
           </div>
-          <div className="hint">
-            Presets set footprint and quality together. Stories stay on Programme — change them there if the plate no longer fits the envelope.
-          </div>
+        </>
+      )}
+
+      {tab === "financing" && (
+        <>
+          <div className="page-section" style={{ marginTop: 6 }}>Building contract</div>
           <div className="btn-row">
             {/* The contract is the developer's real hedge and nobody ever shows it
                 to you. In a boom the guaranteed price is the cheapest money on the
@@ -760,35 +809,6 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               Cost-plus
             </button>
           </div>
-          {plan && (
-            <div className="page-section" style={{ marginTop: 8 }}>
-              <div className="page-section-head">Costs</div>
-              <div className="grid">
-                {/* ONE FLOOR-TO-FLOOR. This said 3.4 m, which is neither the
-                    12.5 ft the storey ceiling is computed from nor the 3.55 m
-                    the map draws — a third answer to "how tall is it". The
-                    engine's constant is the one the slenderness cap is built
-                    on, so it is the one the desk quotes. */}
-                <Row k="Building" v={`${sf(plan.sf)} · ${plan.floors} fl · ${(plan.floors * FLOOR_HEIGHT_FT).toFixed(0)} ft tall`} strong />
-                <Row k="FAR used" v={`${plan.far} of ${plan.farMax.toFixed(1)}`} />
-                <Row k="Hard cost" v={`${usd(plan.hardCost)} · $${(plan.hardCost / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
-                <Row k="Soft cost" v={usd(plan.softCost)} />
-                {plan.demo > 0 && <Row k="Demolition" v={usd(plan.demo)} />}
-                <Row k="Contingency" v={`${usd(plan.contingency)} · yours if unspent`} />
-                <Row k="Lease-up reserve" v={`${usd(plan.leaseUp)} · fit-out and carry until full`} />
-                <Row k="Cost to build" v={`${usd(plan.costTotal)} · $${(plan.costTotal / Math.max(1, plan.sf)).toFixed(0)}/sf`} />
-              </div>
-            </div>
-          )}
-          <div className="btn-row" style={{ marginTop: 8 }}>
-            <button type="button" className="btn" onClick={() => setTab("programme")}>Back · Programme</button>
-            <button type="button" className="btn" onClick={() => setTab("financing")}>Next · Financing</button>
-          </div>
-        </>
-      )}
-
-      {tab === "financing" && (
-        <>
           {plan && (
             <div className="btn-row" style={{ marginTop: 6 }}>
               {constructionQuotes(game, plan.mix, plan.costTotal).map((q) => (

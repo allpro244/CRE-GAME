@@ -46,7 +46,7 @@ for (const seed of seeds) {
         const rv = (g.rivals ?? []).find((x) => x.id === id);
         if (!rv || rv.failedM !== undefined) continue;
         firmCash.push(r.cash / 1e6); firmAum.push(r.aum / 1e6);
-        if (r.live >= E.liveJobCap(r.style)) { fail.jobs++; continue; }
+        if (!E.canCarryAnother(g, rv)) { fail.jobs++; continue; }
         if (projectCost > r.aum * 0.9 + r.cash * 5) { fail.size++; continue; }
         if (r.cash < dayOne + Math.max(400_000, r.cash * 0.04)) {
           fail.cash++;

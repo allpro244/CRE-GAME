@@ -94,7 +94,7 @@ function migrateFirmsOnly(state: GameState) {
   }
 }
 
-export const SAVE_VERSION = 39 as const;
+export const SAVE_VERSION = 40 as const;
 
 /**
  * THE VERSION AT WHICH THE GENERATED ISLAND'S GROUND MOVED.
@@ -161,7 +161,13 @@ const GROUND_MOVED_AT: Record<string, number> = {
   // bearing, a re-cut partition — bump SAVE_VERSION and set this to the new
   // number IN THE SAME COMMIT. That is the whole contract, and the reason this
   // table exists instead of one global constant.
-  manhattan: 39,
+  //
+  // v40: IT MOVED. Manhattan's plat is now the city's real cadastre (every
+  // block and lot from MapPLUTO, BBLs and addresses included) instead of
+  // lattices over a traced coast — see manhattan.mjs. No deed in a v39
+  // Manhattan campaign exists on the new ground. The generated island's plat
+  // is untouched, so its watermark stays at 39 and its saves still open.
+  manhattan: 40,
 };
 
 /**
@@ -266,6 +272,19 @@ function migrateLegacyMandateDials(state: GameState): void {
   delete raw.agentMaxSigningMonths;
 }
 
+/**
+ * The LLM decision layer for rival firms (Jev) was removed. Its state — the
+ * per-firm charter, the period answers, the firm books and the match history —
+ * is dropped; those firms carry on as the scripted firms they always fell back to.
+ */
+function migrateDropJev(state: GameState): void {
+  const raw = state as GameState & { jev?: unknown; jevBooks?: unknown; jevHistory?: unknown };
+  delete raw.jev;
+  delete raw.jevBooks;
+  delete raw.jevHistory;
+  for (const r of state.rivals ?? []) delete (r as typeof r & { jev?: unknown }).jev;
+}
+
 /** Did this save predate the plat its own island now stands on? */
 function groundMovedUnder(state: { v?: unknown; cityIsland?: string }): boolean {
   const mark = GROUND_MOVED_AT[state.cityIsland ?? PROCEDURAL_ISLAND];
@@ -291,6 +310,7 @@ export function migrateSaveState(state: GameState): GameState {
   migrateLegacyMandateDials(state);
   migratePlanRows(state);
   migrateFloatingBench(state);
+  migrateDropJev(state);
   if ((state.agent || state.renewalMgmt) && !state.leasingPlan) {
     ensureLeasingPlan(state);
   }

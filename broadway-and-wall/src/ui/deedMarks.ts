@@ -1,6 +1,7 @@
 import type { GameState } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { ownedHoldingValue, ownedContractNoiYr } from "@/engine/value";
+import { allocatedAmount } from "@/engine/facility";
 
 /**
  * ONE APPRAISAL PER DEED PER STATE. The Portfolio and Books tables re-ran a
@@ -22,4 +23,23 @@ export function deedMark(s: GameState, parcels: ParcelTable, bbl: string): { v: 
     m.set(bbl, r);
   }
   return r;
+}
+
+/**
+ * WHAT ONE DEED PUTS IN THE ACCOUNT EACH MONTH: its NOI less its own paper —
+ * the mortgage, any mezz, and its share of a pooled facility's payment. One
+ * function for the Portfolio row and the map's hover card, so the two cannot
+ * print different cash flows for the same building. (The top bar's CF / yr
+ * also carries the firm's own lines — construction interest, the revolver,
+ * overhead — which belong to no single deed.)
+ */
+export function deedDebtService(s: GameState, parcels: ParcelTable, bbl: string): { debt: number; dsMo: number } {
+  const h = s.holdings[bbl];
+  if (!h) return { debt: 0, dsMo: 0 };
+  const facBal = allocatedAmount(s, parcels, bbl);
+  const facPmt = s.facility && s.facility.balance > 0 ? s.facility.monthlyPmt * (facBal / s.facility.balance) : 0;
+  return {
+    debt: (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0) + facBal,
+    dsMo: (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0) + facPmt,
+  };
 }

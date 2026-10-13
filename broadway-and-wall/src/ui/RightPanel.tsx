@@ -10,14 +10,15 @@ import FirmTimeline from "@/ui/FirmTimeline";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { PortfolioPage } from "@/ui/panels/PortfolioPage";
 import { DealsPage } from "@/ui/panels/DealsPage";
-import { MarketPage } from "@/ui/panels/MarketPage";
-import { ResearchPage } from "@/ui/panels/ResearchPage";
+import { MarketPage, BuildingDatabase } from "@/ui/panels/MarketPage";
+import { PulsePage } from "@/ui/panels/PulsePage";
+import { PlayersPage } from "@/ui/panels/PlayersPage";
 import { NotesPage } from "@/ui/panels/NotesPage";
 import { EconomyPage } from "@/ui/panels/EconomyPage";
+import { RankingsPage } from "@/ui/panels/RankingsPage";
 import { BooksPage } from "@/ui/panels/BooksPage";
 import { NewsPage } from "@/ui/panels/NewsPage";
 import { SavesPage, SettingsPage, PrimerPage } from "@/ui/panels/MiscPages";
-import { MatchPage } from "@/ui/panels/JevPanel";
 import { LeasingPage } from "@/ui/panels/LeasingPage";
 import { DebtPage } from "@/ui/panels/DebtPage";
 import { PropertyPage } from "@/ui/panels/PropertyPage";
@@ -37,6 +38,11 @@ export default function GamePanels() {
   const page = useStore((s) => s.page);
   const mapOnly = useStore((s) => s.mapOnly);
   const setPage = useStore((s) => s.setPage);
+  // THE ROOM IS NAMED FOR THE BUILDING. The property file was titled
+  // "Property" — the one word that is true of every page it can show — with
+  // the address below seven stat tiles.
+  const propAddr = useStore((s) => (s.page === "property" && s.selectedBBL ? s.parcels?.[s.selectedBBL]?.address ?? null : null));
+  const propOwned = useStore((s) => (s.page === "property" && s.selectedBBL ? !!s.game?.holdings[s.selectedBBL] : false));
   const pageRef = useRef<HTMLDivElement>(null);
   useHintFolds(pageRef, page);
   useEffect(() => { rememberTab(page); }, [page]);
@@ -63,10 +69,15 @@ export default function GamePanels() {
           st0.setPhotoFrame(false);
           return;
         }
-        if (document.querySelector(".modal-backdrop")) {
-          useStore.setState({
-            toast: { text: "Use the card’s action or defer button before closing it.", kind: "err", at: Date.now() },
-          });
+        // ESCAPE ANSWERS THE CARD WITH ITS OWN "NOT NOW". It used to refuse
+        // with a toast; every card has a defer button (tagged data-esc), and
+        // pressing it is what the player meant. A card with no safe default
+        // (an LOI mid-counter) gives a small shake instead.
+        const card = topCard();
+        if (card) {
+          const esc = card.querySelector<HTMLButtonElement>("[data-esc]:not(:disabled)");
+          if (esc) esc.click();
+          else nudgeCard(card);
         } else if (page !== "none") setPage("none");
         else useStore.getState().select(null);
         return;
@@ -128,38 +139,42 @@ export default function GamePanels() {
     : page === "news" ? "The Tape"
     : page === "leasing" ? "Leasing & Occupancy"
     : page === "debt" ? "Debt"
-    : page === "property" ? "Property"
+    : page === "property" ? (propAddr ?? "Property")
     : page === "saves" ? "Saved Games"
-    : page === "economy" ? "Economy"
-    : page === "research" ? "Research"
+    : page === "economy" ? "Markets"
+    : page === "pulse" ? "The City"
+    : page === "players" ? "Players"
+    : page === "buildings" ? "Every Building"
+    : page === "rankings" ? "Rankings"
     : page === "notes" ? "The Note Desk"
     : page === "firm" ? "The Record"
     : page === "settings" ? "Settings"
     : page === "primer" ? "How this business works"
-    : page === "match" ? "The Jev Match"
     : "The Marketplace";
   const desk = deskOf(page);
-  const kicker = desk ? desk.label
+  const kicker = page === "property" ? (propOwned ? "Portfolio · your building" : "Property file")
+    : desk ? desk.label
     : page === "saves" ? "Campaign"
     : page === "settings" ? "Preferences"
     : page === "primer" ? "Primer"
-    : page === "match" ? "Competitors"
     : "";
   const subtitle = page === "portfolio" ? "Value, income, concentration and the shape of what you own."
     : page === "deals" ? "Every live negotiation, bid, contract and clock on your desk."
     : page === "books" ? "Cash movement, operating results and the record of the firm."
-    : page === "news" ? "What changed in the city, and what may change next."
+    : page === "news" ? "What happened — the wire's headlines and the closed sales."
     : page === "leasing" ? "Occupancy, expirations and the mandate you have delegated."
     : page === "debt" ? "Coverage, maturities, pricing and refinancing risk across the book."
     : page === "property" ? "The complete operating, financing and development record."
     : page === "saves" ? "Named snapshots you can return to. The live campaign autosaves on its own."
-    : page === "economy" ? "The real economy, space markets and construction cycle beneath every deal."
-    : page === "research" ? "Comparable evidence, submarkets and the assumptions behind value."
+    : page === "economy" ? "Each market in depth — space, land, credit, employers and the zoning board."
+    : page === "pulse" ? "How the city is doing and what changed, on one screen."
+    : page === "players" ? "Who else owns this town, how big they are, and how much rope they have left."
+    : page === "buildings" ? "Every standing building in town — size, income, value and owner."
+    : page === "rankings" ? "Size, growth, jobs, pay and rent against thirty-two real US cities."
     : page === "notes" ? "Buy bank paper, write private bridges, service what you hold."
     : page === "firm" ? "Every deed, delivery, exit and refinancing since founding — the campaign on one strip."
     : page === "settings" ? "Display, interruption and simulation controls."
     : page === "primer" ? "The quantities this game expects you to reason with."
-    : page === "match" ? "Firms whose judgement Jev informs: how they are doing, what Jev said, and what code did with it."
     : "On-market listings, off-market calls and motivated sellers.";
   // The map card is a glance. Firm desks open as rooms (~1100px parchment)
   // so a rent roll, deal stage or debt book is readable — the narrow right
@@ -194,13 +209,19 @@ export default function GamePanels() {
             {/* The property file has its own tabs; the desk's would be a
                 second row above them with neither lit. */}
             {desk && desk.tabs.length > 1 && page !== "property" && <DeskTabs desk={desk} page={page} />}
-            <SectionNav page={page} pageRef={pageRef} />
+            {/* Pages that carry their own view switch get no section rail —
+                two strips of chips stacked under the desk tabs read as one
+                cluttered control, and these pages are short enough per view. */}
+            {!OWN_VIEWS.has(page) && <SectionNav page={page} pageRef={pageRef} />}
             {page === "portfolio" && <PortfolioPage />}
             {page === "deals" && <DealsPage />}
             {page === "market" && <MarketPage />}
-            {page === "research" && <ResearchPage />}
+            {page === "pulse" && <PulsePage />}
+            {page === "players" && <PlayersPage />}
+            {page === "buildings" && <BuildingDatabase />}
             {page === "notes" && <NotesPage />}
             {page === "economy" && <EconomyPage />}
+            {page === "rankings" && <RankingsPage />}
             {page === "books" && <BooksPage />}
             {page === "news" && <NewsPage />}
             {page === "saves" && <SavesPage />}
@@ -210,24 +231,47 @@ export default function GamePanels() {
             {page === "firm" && <><FirmStanding /><FirmTimeline /></>}
             {page === "settings" && <SettingsPage />}
             {page === "primer" && <PrimerPage />}
-            {page === "match" && <MatchPage />}
           </div>
         </div>
       )}
-      {/* THE INTERRUPTIONS THE ENGINE RAISES, ABOVE THE ONES IT SCHEDULES. An
-          alert and a letter of intent can land in the same month, and the order
-          matters: the bank that failed is the reason you would answer the letter
-          differently. Both render at the same z-index, so the one written last
-          is the one on top. */}
-      <DecisionModal />
+      {/* THE INTERRUPTIONS THE ENGINE RAISES, ONE AT A TIME. An alert and a
+          letter of intent can land in the same month, and the order matters:
+          the bank that failed is the reason you would answer the letter
+          differently. They used to render together, so two or three cards sat
+          stacked with their backdrops' blur compounding. Now the FIRST card in
+          this order is the only one drawn (hud.css: `.app > .modal-backdrop ~
+          .modal-backdrop`), and the rest wait their turn behind it with a
+          count on screen (CardQueue). So: what happened, then what it does to
+          your own deed, then what wants an answer, then the auction. */}
       <AlertModal />
-      <AuctionModal />
       <DefaultNoticeModal />
+      <DecisionModal />
+      <AuctionModal />
       {/* yield to the saves page — this used to paint over it at the same
           z-index, leaving every control on it visible and dead */}
       {gameOver && page !== "saves" && <GameOverPage />}
     </>
   );
+}
+
+/** The card the player is looking at: the visible one highest in the stack.
+ *  A confirm inside a desk page sits in that page's layer (z 50). */
+export function topCard(): HTMLElement | null {
+  let best: HTMLElement | null = null;
+  let bestZ = -Infinity;
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>(".modal-backdrop, .delivery-ceremony"))) {
+    if (!el.getClientRects().length) continue;
+    const z = el.closest(".page-backdrop") ? 50 : parseInt(getComputedStyle(el).zIndex, 10) || 0;
+    if (z >= bestZ) { best = el; bestZ = z; }
+  }
+  return best;
+}
+
+function nudgeCard(card: HTMLElement) {
+  const inner = card.querySelector<HTMLElement>(".modal, .delivery-stamp") ?? card;
+  inner.classList.remove("card-nudge");
+  void inner.offsetWidth; // restart the animation
+  inner.classList.add("card-nudge");
 }
 
 /**
@@ -283,13 +327,19 @@ function DeskTabs({ desk, page }: { desk: Desk; page: Page }) {
  * Refinance entry opens Debt and lands on "Loan by loan" — and is consumed
  * here, once, after the first scan finds it.
  */
+const OWN_VIEWS = new Set<Page>(["pulse", "players", "news", "buildings"]);
 const HEAD_SEL = ".page-section-head, .deal-head, .page-section";
 type Sec = { el: HTMLElement; label: string };
 
 function secLabel(el: HTMLElement): string | null {
   // A `.page-section` is usually a container; only the bare-text ones are heads.
   if (el.classList.contains("page-section") && !el.classList.contains("page-section-head") && el.children.length > 0) return null;
-  const raw = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+  // A heading can carry its section's controls (Leasing's "By building" holds
+  // the min-lease field and the auto-lease switch); their text is not the
+  // heading's name — the chip read "By buildingMin. new lease, al…".
+  const head0 = el.cloneNode(true) as HTMLElement;
+  head0.querySelectorAll("label, input, button, select, .btn, .seg, .switch, .chip").forEach((n) => n.remove());
+  const raw = (head0.textContent ?? "").replace(/\s+/g, " ").trim();
   if (!raw || raw.length > 72) return null;
   // "On the market · 7 · 2 of them yours" → "On the market"; "Milestones · 3 of 12" → "Milestones".
   // A numbered head ("1 · NOI — what the building earns") keeps its number:

@@ -49,7 +49,7 @@ const LEGACY = [
 // Strings that must appear in a post-#82 bundle — if source has them but html
 // does not, someone merged code without `pnpm package:playable`.
 const REQUIRED = [
-  "Cycle, space markets and construction", // Economy tab (TopBar)
+  "The city on one screen", // City → Pulse tab (desks.ts)
   "Pay ask",                                  // distressed offer desk
 ];
 

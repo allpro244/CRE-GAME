@@ -1,7 +1,13 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { NewsText } from "@/ui/panels/MarketPage";
+import { CompsSheet } from "@/ui/panels/CompsSheet";
+import { ViewSwitch, useDeskView } from "@/ui/panels/shared";
+
+type TapeView = "headlines" | "prints";
+const TAPE_VIEWS: readonly TapeView[] = ["headlines", "prints"];
 
 export const NEWS_KINDS = [
   { k: "all", label: "Everything" },
@@ -14,13 +20,52 @@ export const NEWS_KINDS = [
   { k: "mine", label: "Your book" },
 ] as const;
 
+/**
+ * THE TAPE — what happened. The wire's headlines and the closed sales are the
+ * same kind of thing, the record rather than the model, so they share a tab:
+ * the prints came over from Research, where they were the eighth sub-tab.
+ */
 export function NewsPage() {
+  const game = useStore((s) => s.game)!;
+  const [view, setView] = useDeskView<TapeView>("news", "headlines", TAPE_VIEWS);
+  const prints = (game.comps ?? []).length;
+  const switcher = (
+    <ViewSwitch<TapeView>
+      label="Tape"
+      on={view}
+      set={setView}
+      views={[
+        { id: "headlines", label: "Headlines", n: (game.news ?? []).length },
+        { id: "prints", label: "Prints", n: prints, title: "Closed sales — the price paid, the cap rate it implies, and who was on each side" },
+      ]}
+    />
+  );
+  if (view === "prints") return <div>{switcher}<CompsSheet /></div>;
+  return <Headlines switcher={switcher} />;
+}
+
+function Headlines({ switcher }: { switcher: ReactNode }) {
   const game = useStore((s) => s.game)!;
   const [kind, setKind] = useState<string>("all");
   // A deed you hold now, or sold — the story of your book includes its exits.
   const mine = new Set([...Object.keys(game.holdings), ...(game.exits ?? []).map((e) => e.bbl), ...(game.watch ?? [])]);
   const isMine = (n: { bbl?: string }) => !!n.bbl && mine.has(n.bbl);
-  const items = (game.news ?? []).filter((n) => kind === "all" || (kind === "mine" ? isMine(n) : n.kind === kind));
+  // THE SAME LINE, ONCE. Standing conditions write themselves into the tape
+  // every month they hold — "2 parties are chasing the same 1.8k sf at …",
+  // "You have 11k sf waiting on leases and only $266K …" — so one fact filled
+  // a dozen months of the feed. The newest copy stays, with how many earlier
+  // months said the same thing (numbers aside); the older copies fold into it.
+  const shape = (t: string) => t.replace(/[−-]?\$?[\d.,]+[kKmM%]?/g, "#").replace(/\s+/g, " ").trim();
+  const keeperOf = new Map<string, object>();
+  const repeats = new Map<object, number>();
+  const filtered = (game.news ?? []).filter((n) => kind === "all" || (kind === "mine" ? isMine(n) : n.kind === kind));
+  const items = filtered.filter((n) => {
+    const k = `${n.kind}|${shape(n.text)}`;
+    const keeper = keeperOf.get(k);
+    if (!keeper) { keeperOf.set(k, n); return true; }
+    repeats.set(keeper, (repeats.get(keeper) ?? 0) + 1);
+    return false;
+  });
   const byMonth: { q: number; rows: typeof items }[] = [];
   for (const n of items) {
     const last = byMonth[byMonth.length - 1];
@@ -35,6 +80,7 @@ export function NewsPage() {
 
   return (
     <div>
+      {switcher}
       <div className="hint">
         The last {(game.news ?? []).length} items off the wire, newest first. Anything marked ✈ is about a
         specific place — a building, or a civic work. Click it and the camera goes there.
@@ -69,6 +115,11 @@ export function NewsPage() {
                 onClick={n.bbl ? () => { useStore.getState().focus(n.bbl!, true); } : undefined}
               >
                 <NewsText text={n.text} />{n.bbl ? " ✈" : ""}
+                {(repeats.get(n) ?? 0) > 0 && (
+                  <span className="news-repeat" title="The same line ran in earlier months too; only the newest is shown.">
+                    {" "}· also {repeats.get(n)} earlier {repeats.get(n) === 1 ? "time" : "times"}
+                  </span>
+                )}
               </div>
             ))}
           </div>

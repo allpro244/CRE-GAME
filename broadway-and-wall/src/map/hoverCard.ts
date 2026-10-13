@@ -13,6 +13,7 @@ import { initialCondition, marketAppraisal, marketRentPsfYr, resolveRec } from "
 import { ownerAt } from "@/engine/ownership";
 import { goingIn, occRead, useLabel } from "@/ui/panels/shared";
 import { usd } from "@/ui/format";
+import { deedMark, deedDebtService } from "@/ui/deedMarks";
 
 export const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
@@ -58,7 +59,7 @@ export function tipHtml(g: GameState, parcels: Record<string, ParcelRecord>, rec
     out.push(row("Value", usd(value)));
   } else {
     out.push(`<div class="ht-sub">${esc(useLabel(rec))} · ${rec.floors} fl · ${Math.round(rec.bldgArea).toLocaleString()} sf · ${rec.yearBuilt}</div>`);
-    out.push(row("Owner", owner));
+    if (!own) out.push(row("Owner", owner));
     let occ: number, occK: string;
     if (own) { occ = occRead(rec, own).lettableOcc; occK = "Occupancy"; }
     else {
@@ -67,7 +68,17 @@ export function tipHtml(g: GameState, parcels: Record<string, ParcelRecord>, rec
       occK = ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)";
     }
     out.push(row(occK, `${Math.round(occ * 100)}%`, occ < 0.75 ? "bad" : ""));
-    out.push(row("Market rent", `$${marketRentPsfYr(rec, g.econ, cond).toFixed(0)} /sf/yr`));
+    // YOUR OWN BUILDING ANSWERS A DIFFERENT QUESTION: not what the market
+    // pays here, but what this deed puts in your account and when its paper
+    // comes due. Same walk as the Portfolio row.
+    if (own) {
+      const { dsMo } = deedDebtService(g, parcels, bbl);
+      const cf = deedMark(g, parcels, bbl).noi / 12 - dsMo;
+      out.push(row("Cash flow", `${usd(cf)} /mo`, cf < 0 ? "bad" : ""));
+      if (own.loan) out.push(row("Balloon", monthLabel(own.loan.maturityM), own.loan.maturityM - g.month <= 12 ? "bad" : ""));
+    } else {
+      out.push(row("Market rent", `$${marketRentPsfYr(rec, g.econ, cond).toFixed(0)} /sf/yr`));
+    }
     out.push(row(own ? "Value (yours)" : "Value", usd(value)));
   }
   if (listing) out.push(row(listing.distress ? "For sale · motivated" : "For sale", usd(listing.ask), "sale"));

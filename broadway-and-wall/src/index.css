@@ -1029,10 +1029,7 @@ body {
 .panel-embed .deal { border-top: 1px solid rgba(146,110,40,0.22); }
 /* Two columns only inside a real room — not a 560px dock pretending to be wide
    because the viewport was ≥900px. */
-@media (min-width: 900px) {
-  .page-backdrop .panel-embed { columns: 2; column-gap: 28px; }
-  .page-backdrop .panel-embed > * { break-inside: avoid; }
-}
+/* Masonry, not CSS columns — see ui/useMasonry.ts and the rules in hud.css. */
 
 /* a selected toggle is a state, not the primary action — only btn-buy spends money */
 .btn.btn-on {
@@ -1108,7 +1105,11 @@ html, body, #root { overflow-x: hidden; }
 /* numeric columns were set edge to edge ("DEBT CF / MO"); the row's action
    buttons stay on one line rather than stacking Pay off under Delist */
 .tbl-book th + th, .tbl-book td + td { padding-left: 12px; }
-.tbl-book td:last-child .btn-row { flex-wrap: nowrap; }
+/* Row actions wrap into a tidy block rather than pushing the table past the
+   page: at 1280px the fourth button (Refi / Pay off) used to sit off-screen,
+   and the owner's rule is no horizontal scroll anywhere. */
+.tbl-book td:last-child { width: 1%; }
+.tbl-book td:last-child .btn-row { display: grid; grid-template-columns: repeat(2, max-content); justify-content: end; margin-left: auto; }
 /* The address column was the narrowest in the table ("75 South / Ingram St")
    while "fully let · 1,221 sf unlettable" ran one line across two columns. */
 .tbl-book td.book-prop { min-width: 150px; }
@@ -2549,4 +2550,87 @@ html, body, #root { overflow-x: hidden; }
 @keyframes at-risk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) {
   .at-risk, .at-risk-mark { animation: none; }
+}
+
+/* THE CITY DESK (ui/panels/PulsePage, PlayersPage, NewsPage). One view switch
+   per page, directly under the desk tabs, in place of the button rows, pill
+   rows and section rails each page used to style for itself. */
+.view-switch {
+  display: inline-flex; flex-wrap: wrap; gap: 2px;
+  padding: 3px; margin: 0 0 12px;
+  border: 1px solid var(--border); border-radius: 9px;
+  background: var(--surface-1);
+}
+.view-chip {
+  font: inherit; font-size: 12.5px; color: var(--text-3);
+  padding: 5px 12px; border: 0; border-radius: 7px; background: transparent; cursor: pointer;
+  transition: color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.view-chip:hover { color: var(--text); }
+.view-chip.on { color: var(--text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.view-n { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); margin-left: 6px; }
+
+.players-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.players-bar .view-switch { margin-bottom: 10px; }
+.players-search { flex: 1; min-width: 160px; max-width: 320px; }
+
+/* Markets: the four space markets (and the city) on the first row; land,
+   the banks, employers and districts — the markets that are not space — on
+   a second, four across. */
+.mkt-cards-aux { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+.pulse-hero { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 2px 0 12px; }
+.pulse-hero-cell {
+  padding: 12px 14px; border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-1);
+}
+.pulse-kicker { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 1.2px; }
+.pulse-big { font-family: var(--serif); font-size: 28px; line-height: 1.15; margin: 2px 0 4px; text-transform: capitalize; color: var(--text); }
+.pulse-hero .pulse-big.mono { font-family: var(--mono); font-size: 28px; text-transform: none; }
+.pulse-big.neg { color: var(--neg); }
+.pulse-line { font-size: 12.5px; color: var(--text-2); line-height: 1.45; }
+.pulse-line strong { color: var(--text); }
+.pulse-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-family: var(--serif); font-size: 15px; color: var(--text); margin: 14px 0 6px;
+}
+.pulse-card .pulse-head { margin-top: 0; font-size: 14px; }
+.pulse-link {
+  font: inherit; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.3px;
+  color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap;
+}
+.pulse-link:hover { text-decoration: underline; }
+.pulse-foot { display: block; margin-top: 8px; }
+.pulse-row { cursor: pointer; }
+.pulse-row:hover td { background: var(--accent-soft); }
+.pulse-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.pulse-card {
+  padding: 11px 13px; border-radius: var(--r-md); min-width: 0;
+  border: 1px solid var(--border); background: var(--surface-1);
+  box-shadow: var(--shadow-1);
+}
+.pulse-list { display: flex; flex-direction: column; gap: 5px; margin: 4px 0 6px; }
+.pulse-item { font-size: 12.5px; line-height: 1.4; color: var(--text); }
+/* A wire item can run to a paragraph; on Pulse it is a headline. */
+.pulse-card .pulse-item:not(.pulse-item-btn) {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.pulse-item-btn { font: inherit; font-size: 12.5px; text-align: left; background: none; border: 0; padding: 0; color: var(--text); cursor: pointer; }
+.pulse-item-btn:hover { color: var(--accent); }
+@media (max-width: 1100px) {
+  .pulse-grid { grid-template-columns: minmax(0, 1fr); }
+  .mkt-cards-aux { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .pulse-hero { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Markets → one class: the charts packed by useMasonry (4px rows, each cell
+   spanning its own height) so a tall cell does not leave its neighbour's
+   column blank. Only while the grid is two-wide. */
+@media (min-width: 1101px) {
+  .chart-grid.chart-masonry { grid-auto-rows: 4px; row-gap: 0; align-items: start; }
+  .chart-grid.chart-masonry > .chart-cell { margin-bottom: 16px; }
 }

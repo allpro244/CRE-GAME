@@ -34,7 +34,8 @@ const EMPTY = { type: "FeatureCollection" as const, features: [] };
  * half paved.
  */
 const YARD_WINTER = { org: [0xc9, 0xbf, 0xa8], t: [[0xc4, 0xc0, 0xb2], [0xbf, 0xc1, 0xb4], [0xc8, 0xbf, 0xae], [0xbd, 0xc2, 0xb3], [0xc6, 0xbc, 0xb2]] };
-const YARD_SUMMER = { org: [0xb7, 0xb9, 0x98], t: [[0xb2, 0xb9, 0x9c], [0xab, 0xb7, 0x9b], [0xb6, 0xb7, 0x98], [0xa9, 0xb8, 0x9a], [0xb4, 0xb5, 0x9b]] };
+// SKYLINE_LOOK_PLAN round 2: a summer yard is lawn, and reads as lawn (restored round 26)
+const YARD_SUMMER = { org: [0xa4, 0xbc, 0x84], t: [[0x9e, 0xbc, 0x80], [0x97, 0xb8, 0x7c], [0xa6, 0xbb, 0x82], [0x93, 0xb6, 0x7e], [0xa2, 0xb8, 0x84]] };
 // lying snow: the yards and lawns go white, the asphalt stays dark
 const SNOW = [234, 238, 241];
 export function blocksPaint(leaf: number, snow = 0): unknown {
@@ -53,7 +54,7 @@ export function blocksPaint(leaf: number, snow = 0): unknown {
 export function parksPaint(snow = 0): unknown {
   const w = Math.max(0, Math.min(1, snow));
   const c = (hex: string) => { const v = parseInt(hex.slice(1), 16); return "#" + [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((x, i) => Math.round(x + (SNOW[i] - x) * w).toString(16).padStart(2, "0")).join(""); };
-  return ["match", ["coalesce", ["get", "flavour"], "park"], "cemetery", c("#8fa37a"), "battery", c("#c5c4a4"), "market", c("#cfc6b0"), c("#b7d29f")];
+  return ["match", ["coalesce", ["get", "flavour"], "park"], "cemetery", c("#8fa37a"), "battery", c("#c5c4a4"), "market", c("#cfc6b0"), c("#9fcb78")];
 }
 
 export function metres(m: number, minPx = 0, sign = 1): unknown {
@@ -489,7 +490,7 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         type: "fill",
         source: "bw-context",
         filter: ["==", ["get", "kind"], "median"],
-        paint: { "fill-color": "#a8bd93" },
+        paint: { "fill-color": "#98bd7e" },
       },
       {
         // timber decking, with a shadowed edge so the pier stands proud of
@@ -624,6 +625,20 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: {
           "fill-pattern": "bw-grain-yard",
           "fill-opacity": ["interpolate", ["linear"], ["zoom"], 15, 0, 16.5, 0.8] as never,
+        },
+      },
+      {
+        // THE BACK ALLEY (street plan 4). A 16 ft service lane down the spine
+        // of an alley block: poured concrete gone grey, a step lighter than the
+        // carriageway and a step darker than the yards either side of it, so
+        // the two rows of lots read as backing onto something rather than
+        // onto each other.
+        id: "alley",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "alley"],
+        paint: {
+          "fill-color": "#6d6b66",
         },
       },
       {
@@ -782,6 +797,21 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         filter: ["==", ["get", "kind"], "park"],
         paint: {
           "fill-color": parksPaint(0) as never,
+        },
+      },
+      {
+        // the paving of a market square or a battery: stone in courses, so a
+        // big square reads as laid stone rather than one flat field
+        id: "park-setts",
+        type: "fill",
+        source: "bw-context",
+        filter: ["all", ["==", ["get", "kind"], "park"], ["in", ["coalesce", ["get", "flavour"], "park"], ["literal", ["market", "battery"]]]],
+        minzoom: 14,
+        paint: {
+          "fill-pattern": "bw-grain-setts",
+          // a pattern is drawn at a fixed screen size, so it comes in only
+          // where a stone is about stone-sized on screen
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 15, 0, 16.5, 0.75] as never,
         },
       },
       {
@@ -1086,7 +1116,7 @@ export function composeStyle(base: StyleSpecification, city?: {
  * lighter mottling. Each pixel is black or white at low alpha, so it shades
  * whatever colour the layer below already painted (season, snow, district).
  */
-export function groundGrain(kind: "asphalt" | "yard", size = 256): { width: number; height: number; data: Uint8Array } {
+export function groundGrain(kind: "asphalt" | "yard" | "setts", size = 256): { width: number; height: number; data: Uint8Array } {
   const data = new Uint8Array(size * size * 4);
   let s = kind === "asphalt" ? 1234567 : 7654321;
   const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
@@ -1111,6 +1141,21 @@ export function groundGrain(kind: "asphalt" | "yard", size = 256): { width: numb
       let x = rnd() * size, y = rnd() * size, a = rnd() * 6.28;
       for (let k = 0; k < 60; k++) { put(x, y, 0, 0.22); a += (rnd() - 0.5) * 0.6; x += Math.cos(a); y += Math.sin(a); }
     }
+  } else if (kind === "setts") {
+    // A PAVED SQUARE: stone flags in courses, every other course offset by
+    // half a stone, dark joints and each flag a shade of its own; a border
+    // course of larger slabs every 64 px so the pattern reads at a distance
+    const fw = 16, fh = 8;
+    for (let row = 0; row * fh < size; row++) {
+      const off = (row % 2) * (fw / 2);
+      for (let x0 = -fw; x0 < size; x0 += fw) {
+        const v = rnd() < 0.5 ? 1 : 0, a = 0.03 + rnd() * 0.05;
+        for (let y = 1; y < fh - 1; y++) for (let x = 1; x < fw - 1; x++) put(x0 + off + x, row * fh + y, v, a);
+      }
+      for (let x = 0; x < size; x++) put(x, row * fh, 0, 0.18);
+      for (let x0 = -fw; x0 < size; x0 += fw) for (let y = 0; y < fh; y++) put(x0 + off, row * fh + y, 0, 0.16);
+    }
+    for (let y = 0; y < size; y += 128) for (let x = 0; x < size; x++) { put(x, y, 0, 0.12); put(x, y + 1, 1, 0.06); }
   } else {
     for (let i = 0; i < 40; i++) blob(rnd() * size, rnd() * size, 6 + rnd() * 18, rnd() < 0.6 ? 0 : 1, 0.06 + rnd() * 0.05);
     for (let i = 0; i < size * size * 0.06; i++) put(rnd() * size, rnd() * size, rnd() < 0.7 ? 0 : 1, 0.04 + rnd() * 0.05);

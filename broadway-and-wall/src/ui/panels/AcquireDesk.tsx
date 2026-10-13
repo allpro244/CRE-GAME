@@ -450,7 +450,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
             <div className="hint">
               {sale.offer.retrade
                 ? <>{sale.offer.from ?? "The buyer"} has <b>retraded</b> you — {sale.offer.retrade}. They are at <b className="mono">{usd(sale.offer.price)}</b> now, good until {monthLabel(sale.offer.expiresM)}.</>
-                : <>Offer on the table{sale.offer.from ? ` from ${sale.offer.from}` : ""}: <b className="mono">{usd(sale.offer.price)}</b> — good until {monthLabel(sale.offer.expiresM)}.</>}
+                : sale.offer.contract && !sale.offer.held
+                  ? <>Under contract{sale.offer.from ? ` with ${sale.offer.from}` : ""} at <b className="mono">{usd(sale.offer.price)}</b> — it closes {monthLabel(sale.offer.expiresM)} on its own. Close early, or roll it into a 1031, only if you want to.</>
+                  : <>Offer on the table{sale.offer.from ? ` from ${sale.offer.from}` : ""}: <b className="mono">{usd(sale.offer.price)}</b> — good until {monthLabel(sale.offer.expiresM)}.</>}
               {tq.tax > 0 && <> Gain of {usd(tq.gain)} over depreciated basis owes <b className="mono">{usd(tq.tax)}</b> in tax.</>}
             </div>
             {/* WHAT THEY ARE ACTUALLY BUYING. A price is a price; the cap rate
@@ -486,7 +488,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
             })()}
             <div className="btn-row">
               <button className="btn btn-buy" onClick={() => setAcceptConfirm({})}>
-                Accept · net {usd(tq.net - (holding.loan?.balance ?? 0) - tq.tax)}
+                {sale.offer.contract && !sale.offer.held ? "Close now" : "Accept"} · net {usd(tq.net - (holding.loan?.balance ?? 0) - tq.tax)}
               </button>
               {tq.tax > 0 && !exchangeBusy && (
                 <button
@@ -497,9 +499,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                   1031 · defer {usd(tq.tax)}
                 </button>
               )}
-              <button className="btn" onClick={() => declineOffer(bbl)}>Decline</button>
+              {!(sale.offer.contract && !sale.offer.held) && <button className="btn" onClick={() => declineOffer(bbl)}>Decline</button>}
             </div>
-            {!sale.offer.countered && counterBounds && (
+            {!sale.offer.countered && !(sale.offer.contract && !sale.offer.held) && counterBounds && (
               <>
                 <Slider
                   label="Counter"
@@ -967,7 +969,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           {/* Stabilised beside it and never instead of it. If this line is far
               above the one at the top, you are buying a leasing job. */}
           <Row k={<Gloss term="stabilised pro-forma">Stabilised pro-forma</Gloss>} v={`${usd(stab)} · ${offerPrice > 0 ? ((stab / offerPrice) * 100).toFixed(2) : "—"}%`} />
-          {ip?.disclosed && <Row k="Occupancy (in place)" v={`${(ip.occ * 100).toFixed(0)}%`} bad={ip.occ < 0.75} />}
+          {/* Occupancy is not a function of price — the block above already prints it. */}
           {/* IS THE PRICE A PRICE — the buy side of the line the sell desk has
               always printed. The market's cap for the class is the econ's own
               index, the same one every appraisal reads. */}

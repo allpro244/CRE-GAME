@@ -27,11 +27,20 @@ const M = (x) => `$${(x / 1e6).toFixed(2)}M`;
 // negative cash behind the firm.
 function setUp(seed) {
   let g = E.firstListings(E.newGame(seed, parcels, 6_000_000), parcels, bbls);
-  for (let m = 0; m < 6; m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
-  const li = g.listings.map((l) => ({ l, rec: E.resolveRec(parcels, g, l.bbl) }))
+  // Six months in, or as long after as it takes for such an office to list
+  // (up to three years): which buildings come to market is the town's luck,
+  // and a re-cut plat re-deals it.
+  const pick = (gg) => gg.listings.map((l) => ({ l, rec: E.resolveRec(parcels, gg, l.bbl) }))
     .filter((x) => x.rec && x.rec.class === "office" && x.rec.bldgArea > 8000 && x.l.ask < 3_500_000)
+    // ...that a lender will actually put a note on. The premise is a building
+    // carrying debt; in a tight-money year (a 10-11% loan index) a thinly let
+    // office supports none at a 1.25x coverage, and closes all-cash.
+    .filter((x) => (E.buyQuote(gg, parcels, x.l.bbl, x.l.ask, "harbor", 1).principal ?? 0) > 0)
     .sort((a, b) => b.l.ask - a.l.ask)[0];
-  if (!li) throw new Error("no office on the tape");
+  let li;
+  for (let m = 0; m < 36 && !(m >= 6 && (li = pick(g))); m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
+  li ??= pick(g);
+  if (!li) throw new Error("no office on the tape in three years");
   const r = E.executePurchase(g, parcels, li.l.bbl, li.l.ask, "harbor", false, 1);
   if (r.err) throw new Error(r.err);
   g = JSON.parse(JSON.stringify(r.s));
@@ -76,8 +85,25 @@ console.log("\nINSOLVENCY SALE — a filed building is the last thing taken, not
   let g = JSON.parse(JSON.stringify(g0));
   g.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
   const lim = E.locLimit(g, parcels);
+  // THE PREMISE IS THAT THE LINE IS BIGGER THAN THE HOLE (2026-10-09). The
+  // hole was a fixed $150K while the line is sized off whatever office the
+  // town listed: on one world a $2.6M office with an $815K line, on another
+  // a $713K one with $259K, landing in tax season, where the line was
+  // drawn to exhaustion and the deed then went — which is the rule working.
+  // The hole is now half the undrawn line, so the case under test is the
+  // case being run.
+  // ...AND BIGGER THAN EVERYTHING ELSE THE MONTH BRINGS (2026-10-10). A
+  // month that lands in tax season adds the year's income tax to the hole;
+  // on one world $84K of tax on top of a $142K hole drew a $0.28M line to
+  // exhaustion and the deed went, which is the rule working. So the month is
+  // run once with no hole to see what it draws on its own, and the hole is
+  // half of what is left.
+  const dry = E.advanceMonth(JSON.parse(JSON.stringify({ ...g, cash: 0 })), parcels, bbls, adjacency);
+  const ownNeed = Math.max(0, dry.loc?.balance ?? 0) + Math.max(0, -(dry.cash ?? 0));
+  const hole = Math.round(Math.max(0, lim - ownNeed) * 0.5);
+  g.cash = -hole;
   g = E.advanceMonth(g, parcels, bbls, adjacency);
-  check(!!g.holdings[bbl], `with ${M(lim)} of line undrawn the deed is not touched`);
+  check(!!g.holdings[bbl], `with ${M(lim)} of line undrawn, ${M(ownNeed)} of it needed by the month itself, against a ${M(hole)} hole, the deed is not touched`);
   check(g.cash >= 0 || (g.loc?.balance ?? 0) > 0, `the line covered the hole first (cash ${M(g.cash)}, drawn ${M(g.loc?.balance ?? 0)})`);
   check(!g.gameOver, "the run continues");
 }

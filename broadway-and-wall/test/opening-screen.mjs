@@ -6,7 +6,7 @@
 // game and asserted in the markup, the way test/leasing-page.mjs does it:
 //   - the top bar and the Economy strip name the era the money behaves like,
 //     under a calendar that still says the founding year;
-//   - the Research page's "Under construction" column is not 0 sf in every
+//   - City → Pulse's "Under construction" column is not 0 sf in every
 //     row on a seed where the opening pipeline seeded jobs;
 //   - the Marketplace leads with the live tape: "On the market" comes before
 //     the shops ledger, and an empty books desk is one line;
@@ -31,7 +31,7 @@ import { renderToString } from "react-dom/server";
 import { useStore } from "@/state/store";
 import TopBar from "@/ui/TopBar";
 import { EconomyPage } from "@/ui/panels/EconomyPage";
-import { ResearchPage } from "@/ui/panels/ResearchPage";
+import { PulsePage } from "@/ui/panels/PulsePage";
 import { MarketPage } from "@/ui/panels/MarketPage";
 import { RefiSection } from "@/ui/panels/RefiDesk";
 import { sf } from "@/ui/format";
@@ -72,14 +72,14 @@ ok("the top bar carries the era label in a tooltip (" + g.econ.eraLabel + ")", t
 ok("the top bar has an Era tile", top.includes(">Era<"));
 const econ = render(g, <EconomyPage />);
 ok("the Economy strip prints the era label", econ.includes(esc(g.econ.eraLabel)));
-ok("the Economy strip still prints the base rate", econ.includes(g.econ.indexRate.toFixed(2) + "%"));
+ok("the Pulse strip prints the base rate", render(g, <PulsePage />).includes(g.econ.indexRate.toFixed(2) + "%"));
 
-// 2. THE CRANES ARE UP on Research · Sectors.
-const research = render(g, <ResearchPage />);
+// 2. THE CRANES ARE UP on City · Pulse.
+const research = render(g, <PulsePage />);
 const pipeSf = Object.values(g.econ.pipeline ?? {}).reduce((a: number, v: any) => a + (v ?? 0), 0) as number;
 ok("the economy's pipeline view carries the seeded jobs (" + sf(pipeSf) + ")", pipeSf > 0);
 const seededRow = (["office", "retail", "multifamily", "industrial"] as const).find((k) => (g.econ.pipeline?.[k] ?? 0) > 0);
-ok("Research prints a non-zero Under construction cell (" + (seededRow ? sf(Math.round(g.econ.pipeline[seededRow])) : "—") + ")",
+ok("Pulse prints a non-zero Under construction cell (" + (seededRow ? sf(Math.round(g.econ.pipeline[seededRow])) : "—") + ")",
   !!seededRow && research.includes(esc(sf(Math.round(g.econ.pipeline[seededRow])))));
 
 // 3. THE MARKETPLACE LEADS WITH THE TAPE.

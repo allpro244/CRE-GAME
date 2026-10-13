@@ -33,12 +33,16 @@ import { useLabel, Row, STYLE_WORD } from "@/ui/panels/shared";
  * what it always was. An operator works the tape and can fail; a holder owns.
  * Both of them now hand you the same two statements.
  */
-export function Owners() {
+/** `only` and `q`, when given, come from City → Players' own filter strip
+ *  and search box, and the register's buttons stand down. */
+export function Owners({ only: onlyIn, q = "" }: { only?: "all" | "firms" | "private"; q?: string } = {}) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const focus = useStore((s) => s.focus);
   const [open, setOpen] = useState<string | null>(null);
-  const [only, setOnly] = useState<"all" | "firms" | "private">("all");
+  const [onlyOwn, setOnly] = useState<"all" | "firms" | "private">("all");
+  const only = onlyIn ?? onlyOwn;
+  const needle = q.trim().toLowerCase();
 
   const rows = useMemo(() => {
     return allOwners(game, parcels).map((o) => {
@@ -48,7 +52,8 @@ export function Owners() {
     });
   }, [game, parcels]);
 
-  const shown = rows.filter((r) => only === "all" || (only === "firms" ? r.o.operator : !r.o.operator));
+  const shown = rows.filter((r) => (only === "all" || (only === "firms" ? r.o.operator : !r.o.operator))
+    && (!needle || r.o.name.toLowerCase().includes(needle)));
   const totAssets = rows.reduce((a, r) => a + r.o.sheet.assets, 0);
   const top10 = rows.slice(0, 10).reduce((a, r) => a + r.o.sheet.assets, 0);
   const firms = rows.filter((r) => r.o.operator).length;
@@ -75,11 +80,11 @@ export function Owners() {
           {likely.length > 5 ? ` and ${likely.length - 5} more` : ""}. When a holder goes, its whole book lists at once.
         </div>
       )}
-      <div className="row-btns" style={{ marginBottom: 8 }}>
+      {!onlyIn && <div className="row-btns" style={{ marginBottom: 8 }}>
         {([["all", "Everyone"], ["firms", "Operating firms"], ["private", "Private holders"]] as const).map(([k, label]) => (
           <button key={k} className={"btn" + (only === k ? " btn-on" : "")} onClick={() => setOnly(k)}>{label}</button>
         ))}
-      </div>
+      </div>}
       <table className="tbl">
         <thead>
           <tr>
@@ -92,6 +97,9 @@ export function Owners() {
           </tr>
         </thead>
         <tbody>
+          {shown.length === 0 && (
+            <tr><td colSpan={6} className="dim">No owner by that name.</td></tr>
+          )}
           {shown.map(({ o, sf: area }) => {
             const isOpen = open === o.id;
             const dead = o.failedM !== undefined;

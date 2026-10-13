@@ -1107,12 +1107,25 @@ export function refreshDevelopmentFeasibility(
       // The same height ladder as vacant dirt, among the heights that still
       // add floor over what stands.
       let best = 0;
+      let bestH = -Infinity;
       for (const fl of schemeFloorLadder(use, floors)) {
         if (rec.lotArea * plate * fl < rec.bldgArea * 1.08) continue;
         const u = underwriteDevelopment(s, parcels, bbl, use, fl, plate, opp);
         if (u?.clears && u.appetite > best) best = u.appetite;
+        if (u && (u.financeable || ownMoney)) bestH = Math.max(bestH, streetHurdle(s, u.plan, use, u.financeable, false));
       }
       if (best > 0) scores[use].push(best);
+      // A BUILT-OUT CITY'S SUPPLY PRICE IS ITS REBUILD COST (2026-10-13).
+      // `siteHurdle` — the rent at which new space comes, which caps rent in
+      // the rent rule (the equilibrium pull) — was read off vacant dirt only.
+      // When the dirt ran out the hurdle list went empty, the cap switched
+      // off, and a class held under natural vacancy compounded its shortage
+      // slope for decades: office at 5% vacancy rose ~5%/yr real with nothing
+      // to stop it (seed 1 Metropolis-Frontier, $36 -> $125 real by year 75).
+      // Where land is full, the next building is a replacement — bought at
+      // what stands there, knocked down, built bigger — so that is the price
+      // at which supply comes, and it is the anchor.
+      if (Number.isFinite(bestH)) hurdles[use].push(bestH);
     }
   }
   s.econ.sitePencil = { office: 0, retail: 0, multifamily: 0, industrial: 0 };

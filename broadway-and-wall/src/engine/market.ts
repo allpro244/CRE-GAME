@@ -3,7 +3,7 @@
 // Randomness creates situations, never verdicts.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
-import { BUILT_CLASSES, SECTOR_CLASSES } from "./types";
+import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { simulateHistory, driftInflTarget, CAP_RAIL, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { settleSupplyDeliveries } from "./supply";
@@ -272,6 +272,11 @@ const AFFORD_ROLL: Record<BuiltClass, number> = {
   industrial: 1 / LEASE_TERM_M.industrial,
   multifamily: 1 / LEASE_TERM_M.multifamily,
 };
+/** Households form and split over years, not at each lease: a two-year
+ *  half-life on flats' price response (see `affordRaw`). Shape parameter. */
+const HH_FORM_ROLL = Math.LN2 / 24;
+/** Renter households lost per unit of unemployment over the natural rate (see flats' `affordRaw`). */
+const HH_U_SENS = 1.2;
 
 /** HOW MUCH SPACE A SECTOR'S CYCLE ACTUALLY MOVES. Demand for space is
  *  headcount times feet per head, so this multiplier is sized to the
@@ -1900,6 +1905,47 @@ function bankStep(gap: number, restoring: boolean, pressured: boolean): number {
 // capitulation that changed no national quantity moved one seed's 33-month
 // deep national recession from absent to present. Every draw in this
 // function is on its own channel now; the town cannot re-roll the nation.
+const CHAIR_NAMES = [
+  "Hollis Carrow", "Margaret Venn", "Arthur Bellamy", "Ruth Okafor", "Daniel Prescott", "Elena Marsh",
+  "Walter Kincaid", "Frances Lowell", "Samuel Achterberg", "Clara Whitcomb", "Leonard Strand", "Ines Calloway",
+  "Theodore Haig", "Naomi Fairbanks", "Edwin Rourke", "Judith Selden",
+];
+/** How a chair reads to the market, from their resolve. */
+export function chairStance(resolve: number): "hawk" | "centrist" | "dove" {
+  return resolve > 1.25 ? "hawk" : resolve < 0.8 ? "dove" : "centrist";
+}
+/** The sitting chair of the central bank: a term and a resolve (see the reaction function). */
+function centralBankChair(s: GameState, n: NonNullable<Econ["nat"]>): { untilM: number; resolve: number } {
+  if (!n.chair || s.month >= n.chair.untilM) {
+    const first = !n.chair;
+    const u1 = Math.max(1e-9, rng(s, "nation")), u2 = rng(s, "nation");
+    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    const resolve = +Math.exp(0.30 * z).toFixed(3);
+    const term = 48 + Math.floor(rng(s, "nation") * 97);    // four to twelve years
+    const name = CHAIR_NAMES[Math.floor(rng(s, "nation") * CHAIR_NAMES.length)];
+    n.chair = { untilM: s.month + term, resolve, name, sinceM: s.month };
+    if (!first) {
+      // THE GAME STOPS FOR IT (owner, Oct 2026). A new chair is the one piece
+      // of national news that resets where money is going for years, so it
+      // takes the screen; `raiseAlert` also files it in the news.
+      const stance = chairStance(resolve);
+      const infl = ((n.infl ?? 0) * 100).toFixed(1), pol = (n.policy ?? 0).toFixed(2);
+      raiseAlert(s, {
+        kind: "fed",
+        tone: stance === "hawk" ? "bad" : "good",
+        title: `${name} takes the chair of the central bank`,
+        body: stance === "hawk"
+          ? `The market reads a hawk. Inflation is running ${infl}% and the policy rate is ${pol}%; expect it to be fought, whatever it costs — dearer money, wider cap rates, slower lending.`
+          : stance === "dove"
+            ? `The market reads a dove. Inflation is running ${infl}% and the policy rate is ${pol}%; expect growth first and inflation to be given room — cheaper money for now, and the risk that prices get away.`
+            : `The market reads a centrist. Inflation is running ${infl}% and the policy rate is ${pol}%; nobody expects the bank's course to change much.`,
+        detail: `The term runs to ${2000 + Math.floor((s.month + term) / 12)}. The bank's stance, the rate it is steering toward and how far the public believes it are on the Economy page under Central bank.`,
+      });
+    }
+  }
+  return n.chair;
+}
+
 export function tickNation(s: GameState) {
   const e = s.econ;
   if (!e.nat) {
@@ -2046,7 +2092,12 @@ export function tickNation(s: GameState) {
       // the Phillips term negative and the policy rate on the floor for a
       // quarter of the century. A downturn has a depth, and the labour market
       // approaches it and decelerates into it, the way a real one does.
-      n.uPeak = clamp(n.unemp + (n.deep ? rrange(s, 0.045, 0.135, "nation") : rrange(s, 0.016, 0.042, "nation")),
+      // A DEEP ONE IS 2008, NOT 1929 (2026-10-13). This drew +4.5 to +13.5
+      // points, so about one game in two saw national unemployment at 15-20%
+      // for years — Depression depth, every other century. The post-war
+      // deep recessions rose +5.6 points (2008, 4.4 -> 10.0) and +11 briefly
+      // (2020, 3.5 -> 14.7, gone in a year); 1982 was +3.6.
+      n.uPeak = clamp(n.unemp + (n.deep ? rrange(s, 0.045, 0.095, "nation") : rrange(s, 0.016, 0.042, "nation")),
         0.03, 0.26);
       pushNews(s, "warn", n.deep
         ? "The country has fallen off a cliff. This is not a soft patch — payrolls are "
@@ -2133,11 +2184,15 @@ export function tickNation(s: GameState) {
   // it is in a different job. It is earned back slowly, and faster when the
   // bank is visibly holding real rates high into a disinflation — that is the
   // whole of what Volcker actually bought with 10.8% unemployment.
+  // Earned back at 0.35 points a month on target (2026-10-13; was 0.20):
+  // from a collapse to a believed bank in about twenty years rather than
+  // thirty-five — the US re-anchored long-run expectations within a decade
+  // or so of 1983 (Michigan 5-10yr expectations ~3% by the mid-1990s).
   const miss = n.infl - 0.02;
   const am = Math.abs(miss);
   n.credibility = clamp(
     n.credibility + (am < 0.010
-      ? 0.0020 + (realPolicy > 0.03 ? 0.0022 : 0)
+      ? (0.0035 + (realPolicy > 0.03 ? 0.0022 : 0)) * (n.chair?.resolve ?? 1)
       : -0.0018 - 0.110 * (am - 0.010)),
     0.10, 0.99);
   // A believed bank's anchor beats the pass-through and expectations sit at
@@ -2200,8 +2255,25 @@ export function tickNation(s: GameState) {
   // unemployment for it, and that is the only reason the 1980s were not the
   // 1970s again. Without this term the model can enter a Great Inflation and
   // has no way out of one except waiting.
+  // THE CHAIR CHANGES HANDS (2026-10-13). One reaction function for a whole
+  // century made the bank a single mind: a regime that lost its nerve kept
+  // losing it until the credibility arithmetic alone turned it round. Real
+  // banks are run by people on terms — Martin, Burns, Miller, Volcker,
+  // Greenspan, Bernanke, Yellen, Powell, four to twelve years apiece — and
+  // the regime breaks line up with them: Burns let the 1970s run, Volcker
+  // broke them inside three years. Each chair draws a RESOLVE: the willingness
+  // to take the pain — how hard the Volcker restore term bites once
+  // credibility is gone, and how fast credibility is earned back on target.
+  // NOT the Taylor weight: scaling that made a hawk swing rates harder both
+  // ways, and with the channel sticky downward (easy money inflates more than
+  // tight money disinflates) the swings ratcheted prices UP — measured, a
+  // hawkish-skewed draw averaged 2.7%/yr against 2.2% on main. Most
+  // chairs are ordinary (resolve near 1); the lognormal's tails are the
+  // Burnses and the Volckers. Credibility carries over: a new chair inherits
+  // whatever the public believes. Term and spread are shape parameters.
+  const chair = centralBankChair(s, n);
   const restore = n.credibility < 0.55 && seen > 0.045
-    ? (0.55 - n.credibility) * 10.5 : 0;
+    ? (0.55 - n.credibility) * 10.5 * chair.resolve : 0;
   // ...against the target the bank actually holds, which drifts. See
   // regime.ts: 0.02 was written here as a constant and it is the reason a
   // century could not contain two different monetary worlds.
@@ -3937,15 +4009,34 @@ export function tickEcon(s: GameState) {
       const low = clamp(0.30 + (u - 0.05) * 1.5, 0.22, 0.48);
       const hi = clamp(0.28 - (u - 0.05) * 0.8, 0.15, 0.35);
       const mid = Math.max(0.15, 1 - low - hi);
-      affordRaw = low * clamp(Math.pow(burden, -0.70), AFFORD_BAND[0], AFFORD_BAND[1])
-        + mid * clamp(Math.pow(burden, -0.50), AFFORD_BAND[0], AFFORD_BAND[1])
-        + hi * clamp(Math.pow(burden, -0.35), AFFORD_BAND[0], AFFORD_BAND[1]);
+      // HOUSEHOLDS, NOT SQUARE FEET (2026-10-13). A flat is a fixed unit: a
+      // household cannot take 40% more floor without moving, and the stock's
+      // unit mix does not change. What cheap rent buys in housing is MORE
+      // HOUSEHOLDS — young adults moving out, roommates and doubled-up families
+      // splitting — and that margin is smaller and slower. Headship
+      // elasticities to rent run about -0.1 to -0.4 (Börsch-Supan 1986;
+      // Haurin, Hendershott & Kim 1993), highest for the young and the poor.
+      // These were -0.70/-0.50/-0.35 at lease-rollover speed — the space
+      // margin of a commercial tenant — and doubling the flats stock was
+      // absorbed in five years with each household renting 40% more.
+      affordRaw = low * clamp(Math.pow(burden, -0.35), AFFORD_BAND[0], AFFORD_BAND[1])
+        + mid * clamp(Math.pow(burden, -0.25), AFFORD_BAND[0], AFFORD_BAND[1])
+        + hi * clamp(Math.pow(burden, -0.15), AFFORD_BAND[0], AFFORD_BAND[1]);
+      // ...AND A JOB LOST IS A HOUSEHOLD UNFORMED (2026-10-13). People out of
+      // work double up, move back with parents and take roommates; flats
+      // demand read population and pay and never the jobless rate, so a
+      // depression left apartment vacancy at 2.8% while real rents rose. The
+      // US "lost" about 2.5 million households to 2008-11 (Paciorek 2013),
+      // mostly renters, on +5 points of unemployment — about 1.2% of renter
+      // households per point. Symmetric about the town's own natural rate,
+      // through the same household-formation clock.
+      affordRaw *= Math.max(0.5, 1 - HH_U_SENS * ((e.unemployment ?? OPENING_UNEMP) - OPENING_UNEMP));
     } else {
       affordRaw = clamp(Math.pow(burden, -0.40), AFFORD_BAND[0], AFFORD_BAND[1]);
     }
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
     // At the lease-rollover rate of THIS class, not of an office. See AFFORD_ROLL.
-    e.affordEff[k] += AFFORD_ROLL[k] * (affordRaw - e.affordEff[k]);
+    e.affordEff[k] += (k === "multifamily" ? HH_FORM_ROLL : AFFORD_ROLL[k]) * (affordRaw - e.affordEff[k]);
 
     // ...AND THE MAINLAND IS NEXT DOOR (2026-10-12). `affordEff` is how much
     // space a tenant takes at a price; it is not WHERE they take it. The island

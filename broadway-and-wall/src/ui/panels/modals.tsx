@@ -489,7 +489,8 @@ export function AlertModal() {
 type AlertRow = NonNullable<NonNullable<ReturnType<typeof useStore.getState>["game"]>["alerts"]>[number];
 function alertTakesScreen(g: NonNullable<ReturnType<typeof useStore.getState>["game"]>, a: AlertRow): boolean {
   if (opportunitiesStop(g)) return true;
-  if (a.kind === "ground" || a.kind === "sale") return true;
+  // A new central-bank chair stops the game (owner, Oct 2026).
+  if (a.kind === "ground" || a.kind === "sale" || a.kind === "fed") return true;
   return a.kind === "portfolio" && a.tone === "good" && !!g.portfolioSale && !g.portfolioSale.unsolicited;
 }
 
@@ -512,6 +513,7 @@ function AlertBody() {
     portfolio: ["The book has been taken", "Your portfolio"],
     ground: ["Ground-lease default", "Your leased fee"],
     sale: ["A sale fell apart", "Bids are in"],
+    fed: ["A new chair at the central bank", "A new chair at the central bank"],
   };
   let kicker = (KICKER[a.kind] ?? ["Something has happened", "Something has happened"])[bad ? 0 : 1];
   // "Your portfolio" over a call you did not make reads as though the game has
@@ -529,6 +531,7 @@ function AlertBody() {
   // for a white swan; on a bid list they read as scenery and offered no way
   // to the list the body says is waiting.
   const goSale = a.kind === "sale" && !bad;
+  const goFed = a.kind === "fed";
   return (
     <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "")} data-queue={queued + 1}>
       <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good")} role="dialog" aria-modal="true">
@@ -545,6 +548,8 @@ function AlertBody() {
                 ? "Nothing of yours has been listed. The deeds they asked for, what each one nets you, and the three "
                   + "answers — take it, counter it, tell them no — are on the Portfolio and Deals desks."
                 : "Open Portfolio or Deals to answer the indication. It will not wait forever."
+              : goFed
+                ? "Nothing to sign. The rate the bank steers to, how hard it leans on inflation and how far it is believed are what your lenders and buyers will price from here."
               : goSale
                 ? "These are bids on your building. Take the top name, go back for best-and-final, or work a lower one — on Deals, under Your sales."
               : bad
@@ -562,6 +567,11 @@ function AlertBody() {
           {goOwnBook && (
             <button className="btn btn-buy" onClick={() => { dismissAlert(); setPage("portfolio"); }}>
               {game.portfolioSale?.unsolicited ? "See which buildings" : "Open Portfolio"}
+            </button>
+          )}
+          {goFed && (
+            <button className="btn" onClick={() => { dismissAlert(); setPage("economy"); }}>
+              See the central bank
             </button>
           )}
           {goNotes && (

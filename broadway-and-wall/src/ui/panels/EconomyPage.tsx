@@ -5,7 +5,7 @@ import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
-import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock, islandResidents, PEOPLE_PER_HOME } from "@/engine/market";
+import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import type { BarGroup } from "@/ui/Chart";
@@ -152,6 +152,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
         </div>
       </div>
       <CityFigures />
+      <CentralBankBox />
     </>
   );
 }
@@ -216,6 +217,44 @@ export function CityFigures() {
         <Row k="Price level" v={`${(((e.cpi ?? 1) - 1) * 100).toFixed(0)}% of cumulative inflation`} />
       </div>
     </>
+  );
+}
+
+/**
+ * THE CENTRAL BANK, at a glance: who is in the chair and how the market reads
+ * them, where policy sits against what the rule asks, and whether the public
+ * believes the target. A chair change is also announced in the news.
+ */
+export function CentralBankBox() {
+  const game = useStore((s) => s.game)!;
+  const n = game.econ.nat;
+  if (!n) return null;
+  const pct = (x: number | undefined, d = 1) => `${((x ?? 0) * 100).toFixed(d)}%`;
+  const chair = n.chair;
+  const stance = chair ? chairStance(chair.resolve) : "centrist";
+  const yr = (m: number) => 2000 + Math.floor(m / 12);
+  const cred = n.credibility ?? 0.8;
+  const credLabel = cred > 0.8 ? "believed" : cred > 0.5 ? "doubted" : "lost";
+  return (
+    <details className="page-section" style={{ marginTop: 14 }}>
+      <summary style={{ cursor: "pointer" }}>
+        Central bank — {chair?.name ?? "the chair"} ({stance}) · policy {(n.policy ?? 0).toFixed(2)}% · inflation {pct(n.infl)}
+      </summary>
+      <div className="grid">
+        <Row k="Chair" v={`${chair?.name ?? "—"}${chair?.sinceM !== undefined ? `, since ${yr(chair.sinceM)}` : ""}`} strong
+          title="Chairs serve terms of four to twelve years. Each brings a stance: a hawk fights inflation hard, a dove puts growth first." />
+        <Row k="Stance" v={stance === "hawk" ? "Hawk — inflation is fought first" : stance === "dove" ? "Dove — growth first, inflation can wait" : "Centrist"} />
+        {chair && <Row k="Term ends" v={`${yr(chair.untilM)}`} />}
+        <Row k="Policy rate" v={`${(n.policy ?? 0).toFixed(2)}%`} strong />
+        <Row k="Where the rule puts it" v={`${(n.ruleRate ?? n.policy ?? 0).toFixed(2)}%`}
+          title="The rate the bank's reaction function asks for this month; it moves toward it in steps at its meetings." />
+        <Row k="Inflation target" v={pct(n.inflTarget ?? 0.02)} />
+        <Row k="Inflation, national" v={pct(n.infl)} bad={(n.infl ?? 0) > 0.04} />
+        <Row k="What the public expects" v={pct(n.inflExp)} />
+        <Row k="Credibility" v={`${Math.round(cred * 100)} — ${credLabel}`} bad={cred <= 0.5}
+          title="How far the public believes the target. A believed bank keeps expectations at 2% through a shock; a doubted one lets last year's inflation become next year's." />
+      </div>
+    </details>
   );
 }
 

@@ -130,9 +130,9 @@ export function holdingDeskSig(g: GameState | null | undefined, bbl: string): st
     varianceApp ? `${varianceApp.filedM}:${varianceApp.decideM}:${varianceApp.grant}:${varianceApp.odds}` : "",
     varianceLog ? `${varianceLog.m}:${varianceLog.granted ? 1 : 0}:${varianceLog.far}` : "",
     h?.groundOffer ? `${h.groundOffer.years}:${h.groundOffer.review ?? "fixed"}:${h.groundOffer.sinceM}` : "",
-    h?.btsOffer ? `${h.btsOffer.use}:${h.btsOffer.floors}:${h.btsOffer.coverage}:${h.btsOffer.sinceM}` : "",
+    h?.btsOffer ? `${h.btsOffer.use}:${h.btsOffer.floors}:${h.btsOffer.coverage}:${h.btsOffer.sinceM}:${h.btsOffer.lastWalk?.m ?? ""}` : "",
     g.btsProspects?.[bbl]
-      ? `${g.btsProspects[bbl]!.name}:${g.btsProspects[bbl]!.use}:${g.btsProspects[bbl]!.sf}:${g.btsProspects[bbl]!.signedM}`
+      ? `${g.btsProspects[bbl]!.name}:${g.btsProspects[bbl]!.use}:${g.btsProspects[bbl]!.sf}:${g.btsProspects[bbl]!.signedM}:${g.btsProspects[bbl]!.startByM ?? ""}`
       : "",
     g.merged?.[bbl] ?? "",
     g.built?.[bbl] ? 1 : 0,

@@ -265,7 +265,7 @@ export function initLenders(stock?: Record<string, number>, priceLevel = 1): Len
   return lenderNames().map((name, i) => {
     const k = KIND[name] ?? { kind: "bank" as LenderKind, capitalRatio: 0.10, brittle: 1 };
     const share = name === "First Harbor Bank" ? BOOK_SHARE.firstharbor : BOOK_SHARE[k.kind];
-    const book = Math.max(20_000_000, Math.round(total * share));
+    const book = Math.max(20_000_000 * priceLevel, Math.round(total * share));
     return {
       id: "L" + i, name, kind: k.kind,
       book, capital: Math.round(book * k.capitalRatio),

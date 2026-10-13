@@ -464,12 +464,10 @@ body {
   font-size: 13px; letter-spacing: 3px; font-weight: 600;
   color: #6e6858;
 }
-/* While the demand or land lens is up, the district names are most of the
-   point of looking — MapView puts .bw-lens-hoods on the map container, and
-   the labels come up bigger, darker, and at every zoom. The !important is
-   load-bearing: the zoom fade writes inline opacity on each label span, and this
-   is the one state that must win over it. */
-.bw-lens-hoods .map-label-district > span { opacity: 1 !important; }
+/* While a market lens is up the district names are most of the point of
+   looking — MapView puts .bw-lens-hoods on the map container and they come
+   up bigger and darker. Whether each one shows is MapView's label pass (the
+   Demand lens, and no two names printed over each other), not this sheet. */
 .bw-lens-hoods .map-label-district {
   font-size: 16px; letter-spacing: 4px;
   color: #443f33;
@@ -493,17 +491,6 @@ body {
   font-family: var(--serif); font-style: italic;
   font-size: 11px; font-weight: 600; color: #475636;
 }
-
-/* After dark the paper halo becomes a fog over the lit city: the names go
-   pale on a dark halo instead. ThreeBuildings sets .bw-night on the map
-   container as the hour passes dusk. */
-.bw-night .map-label {
-  text-shadow: 0 0 1px rgba(12, 16, 26, 1), 0 0 3px rgba(12, 16, 26, 0.9), 0 0 8px rgba(12, 16, 26, 0.6);
-}
-.bw-night .map-label-district { color: #d8cfb8; }
-.bw-night .map-label-park, .bw-night .map-label-civic { color: #b9d1a4; }
-.bw-night .map-label-water { color: #9fc0d6; }
-.bw-night .map-label-station { color: #e4e0d4; }
 
 /* ---- hover tooltip ---- */
 .hover-tip {

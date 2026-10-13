@@ -307,11 +307,11 @@ export const MORE_FORMS_B: MoreForm[] = [
     },
   },
   {
-    form: { key: "roundobelisk", name: "Rounded obelisk", blurb: "A rounded square tapering gently to a crown screen lit at night", from: 2015, minFloors: 50, fams: ["silverglass", "glass", "metalpanel"] },
+    form: { key: "roundobelisk", name: "Rounded obelisk", blurb: "A rounded square tapering gently to a pale crown screen", from: 2015, minFloors: 50, fams: ["silverglass", "glass", "metalpanel"] },
     build(k) {
       // a square with softly rounded corners leaning in a little all the way
       // up, the glass giving way at the top to a pale screen that rounds the
-      // shoulders and glows after dark: Pelli's Salesforce Tower (2018)
+      // shoulders: Pelli's Salesforce Tower (2018)
       const { H, zL, sq } = k;
       const s = sq * 0.96, zc = H * 0.9;
       const P = (f: number) => roundSquare(40, s * f, 5);

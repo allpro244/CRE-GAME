@@ -220,6 +220,87 @@ fixed in #231; the sweep is clean since.
   cracked asphalt with weeds in the cracks and ghost bay lines, an abandoned
   car or two). How far gone (`scruff`) follows demand: tidy at 60, rough
   below 30, derelict below 22, where four lots in ten are the old asphalt.
+- **Round 30** — always afternoon, cloud shadows. `setDayPhase` now pins
+  the hour to the calibrated day whatever it is passed (the owner: "absolutely
+  no nighttime in this game"), so no caller can bring the dusk machinery back.
+  Cloud shadows: what round 17 reached for, without drawing a cloud. A field
+  of cumulus cells (~420 m, four octaves of value noise) at a 1,400 m base,
+  sampled where each surface's line to the sun meets it, takes up to 55% (later 45%) of
+  the sun's direct light (the sky fill is untouched), drifting at ~8 m/s. It
+  rides the shared air hook (`addHaze`), so every lit material and the
+  shadow catcher over MapLibre's ground carry it; the sea takes most of its
+  shade from the catcher and gives up its glitter. Fair weather shades ~22%
+  of the ground, more as the sky fills, none under a full overcast (no
+  direct sun left to take); off on Low. Two faults found on the way: the
+  noise sum bunches round 0.5, so the coverage threshold is fitted to its
+  measured quantiles (a naive `1 - cover` shaded 7% for "34%"); and three
+  uploads `cameraPosition` only to some material kinds, not the shadow
+  catcher, which then painted the whole ground one shade — the field carries
+  its own `cloudEye`. Measured against main on the reference camera: 5-15%
+  darker in cloud-shaped patches over land and water.
+- **Round 31** — mechanical floors. A modern or glass tower over 100 m (28+
+  storeys) is broken every 16-24 storeys by a plant floor in its own louvred
+  `@screen` wall (two storeys over 220 m), on the body's floor grid, so a
+  tall slab reads as stacked blocks instead of one stripe. Masonry towers
+  keep their plant in the setbacks and crown, as they did.
+- **Round 32** — the clouds, finished. Close in, a cloud's soft edge spans
+  the whole frame and reads as a smudge (and a passing one dims the building
+  being inspected): the shade is full from the district view out and a third
+  of it at street level. Far off, the air hides it as it hides everything
+  else: gone by ~7 km, so the horizon is haze and not grey smears. The field
+  moved to its own module (`clouds.ts`) so anything else that shows the sky
+  reads the same cells. On the Metropolis default camera the open-water
+  patches read as ink blots: the edge is now a broad penumbra (a cumulus has
+  no hard edge and the sun is a disc) and the shade at most 45% of the sun.
+  Clouds drawn into the sky itself (the finishing pass,
+  where the distance pass shows no geometry above the horizon) were built and
+  dropped: at the 70° pitch limit the sky is a sliver at the top of the
+  frame even in a tall window, too little to judge or to be worth the pass.
+- **Round 33** — wind in the trees. Every street tree's crown leans downwind
+  with the square of its height above the fork (~10 cm at the top of a 7 m
+  crown), in two slow periods phased by where it stands, so a row ripples
+  instead of nodding as one. Vertex shader on the shared foliage material;
+  bushes, near the ground, barely move.
+- **Checked, not changed: the black towers.** The 1958 dark tower
+  (`blackglass`) reads near-black from the play camera, which looked like a
+  hole in the city. Tried as a dielectric (metalness 0.12, full sky probe):
+  no measurable change on the reference shot, because a wall seen from above
+  mirrors the street and the buildings opposite, not the sky, and 4% of a
+  dark street is dark. That is what smoked glass looks like from a roof
+  across the street; the look is right and stays.
+- **Round 34** — oil-canning. Close in, a curtain wall read as one smooth
+  mirror holding one smeared image of the city. No curtain wall is flat: each
+  pane is set a fraction of a degree off true, so the reflection breaks into
+  a faint grid of slightly different panes. Each glass pane's normal now
+  tilts by up to ~2.5° from its cell hash (glass fronts only, faded out past
+  ~320 m with the rest of the relief, where it would shimmer). Measured on a
+  street camera: brightness spread across a glass tower's panes +2.5 (sd
+  36.6 to 39.1) against +0.2 on a brick front used as the control.
+- **Round 35** — no night, and the names under the lens. Night is gone from
+  the code, not pinned off: the dusk state and setDayPhase, every night and
+  golden-hour term in the light, lit-window emission and the `lit` attribute
+  (occupancy was only ever shown as rooms lit after dark), the night veil
+  over the ground, lamp glow and the park lamps' light pools, the post pass's
+  uNight, the .bw-night label CSS. District and station names (the
+  neighbourhoods) show only while the Demand lens is up.
+- **Round 36** — winter. The owner: "winter used to be the prettiest part
+  about this game, now it's the ugliest by far". Measured: snow lay only in
+  a month the weather roll said it was snowing (~35% of winter months), so
+  most Januaries were a summer city with the leaves taken off, and even under
+  snow the roofs stayed grey (+0.2 albedo) and the harbour kept its summer
+  turquoise. Now:
+  - *A snowpack* (`cityVisuals snowCoverAt`): each snowfall adds to the
+    cover, each month keeps a share (most in deep winter, little in March,
+    none April-November). Lying snow in 36% of Decembers, 58% of Januaries
+    and Februaries, 33% of Marches over 300 seeds x 20 years: Boston's
+    winter. Flakes fall only in a snowing month.
+  - *Snow that is snow*: flat roofs to ~0.7 albedo under full cover against
+    the ploughed dark streets; gravel lots and yards under it, areaways and
+    plazas shovelled grey, work yards ploughed; bare crowns and pines
+    frosted.
+  - *A winter harbour*: from December to February the sea's sand, shelf and
+    deep colours, and MapLibre's shoal fill under the clear waterline, turn
+    slate and steel-green, snow or not.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

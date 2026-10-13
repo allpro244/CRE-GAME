@@ -1318,6 +1318,37 @@ export interface FirmIdentity {
   epithets: Epithet[];
 }
 
+export interface BankFailure {
+  lender: string;
+  /** bank, life company, conduit… — the Lender's kind. */
+  kind: string;
+  m: number;
+  /** The loan book at the closing, and the share of it not paying. */
+  book: number;
+  delinq: number;
+  /** What the desk was lending the player when it went. */
+  yours: number;
+  reopenedM?: number;
+  /** Loans the receiver put on the block, their face, and the summed ask (cents on the dollar × face). */
+  sold?: number;
+  soldFace?: number;
+  soldAsk?: number;
+}
+
+export interface TenantMove {
+  m: number;
+  /** walk: an anchor left a rival's book. leave: a tenant left one of yours. sign: a big lease signed in one of yours. */
+  kind: "walk" | "leave" | "sign";
+  sf: number;
+  /** The rival firm (walk), or the tenant's name (leave, sign). */
+  who: string;
+  bbl?: string;
+  /** Where a departing tenant went, as the engine wrote it. */
+  to?: string;
+  /** Occupancy points lost across the firm's book (walk). */
+  pts?: number;
+}
+
 export interface NewsItem {
   q: number;
   kind: "rumor" | "event" | "deal" | "info" | "warn";
@@ -3534,6 +3565,22 @@ export interface GameState {
   nextAlertId?: number;
   /** Every level event this city has had, oldest first. See SwanRecord. */
   swanLog?: SwanRecord[];
+  /**
+   * EVERY LENDER THAT WAS CLOSED, KEPT. A failed desk carries `failedM` only
+   * until the receiver sells the franchise, and then it is deleted — so the
+   * one fact the city should remember for decades was gone in eighteen
+   * months. Written at the closing (lenders.ts), stamped at the reopening,
+   * and counted as the receiver puts loans on the block (notes.ts). Display
+   * only: the paper reads it (stories.ts); nothing in the economy does.
+   */
+  bankFails?: BankFailure[];
+  /**
+   * BIG TENANT MOVES THE STREET KNOWS ABOUT. The player's buildings carry
+   * named tenants; a rival's book carries one occupancy figure, so a rival's
+   * anchor walking is recorded as the firm and the square feet its own
+   * occupancy drop implies — never a made-up name. Display only, capped.
+   */
+  tenantMoves?: TenantMove[];
   gameOver: { cause: string; complete?: boolean } | null;
   /** Each December close: net worth and your place on the street. See standing.ts. */
   yearMarks?: import("./standing").YearMark[];

@@ -2539,6 +2539,81 @@ html, body, #root { overflow-x: hidden; }
   .at-risk, .at-risk-mark { animation: none; }
 }
 
+/* THE PAPER. The News tab's front page is set like one: a masthead, a lead
+   story in display type, features in columns that fold to one on a phone,
+   and the numbers and almanac in ruled boxes at the foot. Built from the same
+   ink, gold and serif as every other desk so it reads as part of the firm. */
+.paper-mast {
+  text-align: center; border-top: 3px double var(--ink); border-bottom: 1px solid var(--ink);
+  padding: 8px 0 6px; margin-bottom: 14px;
+}
+.paper-mast-name {
+  font-family: var(--serif); font-size: 30px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.1;
+}
+.paper-mast-line {
+  display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 18px; margin-top: 4px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim);
+}
+.paper-grid {
+  display: grid; gap: 14px 22px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+.paper-blurb { margin: -2px 0 8px; }
+.paper-story { border-top: 1px solid var(--card-line); padding-top: 8px; min-width: 0; }
+.paper-story.paper-mine { border-top: 2px solid var(--gold); }
+.paper-kicker {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold);
+  display: flex; align-items: center; gap: 8px;
+}
+.paper-new {
+  font-size: 9px; letter-spacing: 0.08em; color: var(--paper); background: var(--danger);
+  border-radius: 3px; padding: 1px 5px;
+}
+.paper-head {
+  font-family: var(--serif); font-size: 17px; font-weight: 700; line-height: 1.25; margin: 4px 0 6px;
+  overflow-wrap: anywhere;
+}
+.paper-body { font-family: var(--serif); font-size: 13.5px; line-height: 1.5; margin: 0; color: var(--ink); }
+.paper-meta {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px;
+  font-size: 11px; color: var(--ink-dim);
+}
+.paper-lead { border-top: 0; padding: 0 0 14px; border-bottom: 1px solid var(--ink); margin-bottom: 14px; }
+.paper-lead .paper-head { font-size: 27px; line-height: 1.15; margin: 6px 0 10px; }
+.paper-lead .paper-body { font-size: 15px; max-width: 70ch; }
+.paper-beats {
+  list-style: none; margin: 8px 0 0; padding: 6px 0 0 10px; border-left: 2px solid var(--gold-soft);
+  font-size: 12px; line-height: 1.5;
+}
+.paper-beat-when { font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); display: inline-block; min-width: 64px; }
+.paper-beat-down { color: var(--danger); }
+.paper-beat-up { color: var(--success); }
+.paper-box {
+  border: 1px solid var(--card-line); border-radius: var(--r-sm); padding: 10px 12px;
+  background: var(--gold-soft); min-width: 0;
+}
+.paper-box-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-dim);
+}
+.paper-box-head .news-link { text-transform: none; letter-spacing: 0; font-size: 11px; color: var(--ink); }
+.paper-wire-box { margin-bottom: 4px; }
+.paper-wire-box .news-item { font-size: 12.5px; }
+.paper-foot { margin-top: 24px; }
+.paper-stats { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.paper-stats td { padding: 3px 6px 3px 0; vertical-align: baseline; }
+.paper-stats td.num { text-align: right; font-family: var(--mono); white-space: nowrap; padding-right: 12px; }
+.paper-dim { color: var(--ink-dim); font-size: 11.5px; }
+.paper-flag { color: var(--warning); font-weight: 600; font-size: 11.5px; }
+.paper-almanac { font-family: var(--serif); font-size: 13px; line-height: 1.5; padding: 3px 0; }
+.paper-repeat {
+  display: inline-block; margin-left: 6px; font-family: var(--mono); font-size: 10px; color: var(--ink-dim);
+  border: 1px solid var(--card-line); border-radius: 8px; padding: 0 5px;
+}
+@media (max-width: 600px) {
+  .paper-mast-name { font-size: 24px; }
+  .paper-lead .paper-head { font-size: 21px; }
+}
+
 /* THE CITY DESK (ui/panels/PulsePage, PlayersPage, NewsPage). One view switch
    per page, directly under the desk tabs, in place of the button rows, pill
    rows and section rails each page used to style for itself. */

@@ -44,7 +44,7 @@ import { stampApproach, conveyedValue } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
 import { programmeSf, queueSupplyProject, rescheduleSupplyProject, stallSupplyProject } from "./supply";
-import { recordPropertyEvent } from "./history";
+import { recordPropertyEvent, noteTenantMove } from "./history";
 import { sizeAreaScale } from "./cityscale";
 import { money } from "./money";
 import { FUND_INVEST_M, FUND_PREF, FUND_PROMOTE } from "./fund";
@@ -2079,11 +2079,12 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   if (!r.bbls.length) { r.occ = undefined; return; }
   const care = paramsOf(r).care;
   // where the market says their book should sit
-  let target = 0, n = 0;
+  let target = 0, n = 0, bookSf = 0;
   for (const bbl of r.bbls) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
     target += occupancy(rec, s.econ); n++;
+    bookSf += rec.bldgArea;
   }
   if (!n) { r.occ = undefined; return; }
   r.mktOcc = target / n;
@@ -2098,7 +2099,11 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   // AN ANCHOR WALKS. Rare, expensive, and the reason a portfolio occupancy is
   // a story rather than a number that tracks the index.
   if (rng(s, "rivals") < 0.006 / Math.max(1, Math.sqrt(r.bbls.length) / 2)) {
-    r.occ -= rrange(s, 0.05, 0.14, "rivals");
+    const drop = rrange(s, 0.05, 0.14, "rivals");
+    r.occ -= drop;
+    // The size is the book's own: the occupancy that left, times the floor
+    // area it left from. No name — a rival's book has none to give.
+    noteTenantMove(s, { kind: "walk", who: r.name, sf: Math.round(drop * bookSf), pts: +(drop * 100).toFixed(1) });
     if (newsChance(s, "tenant:" + r.id, 0.35)) {
       s.news.unshift({
         q: s.month, kind: "event",

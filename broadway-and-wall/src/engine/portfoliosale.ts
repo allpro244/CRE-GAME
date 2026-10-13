@@ -25,9 +25,10 @@ import type { GameState, PortfolioListing } from "./types";
 import type { ParcelTable } from "../data/types";
 import { rng, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
-import { livingRivals, gradeOf, ownerOf, STYLE_OF, receiverDeskFor, forgetDeed } from "./rivals";
+import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed } from "./rivals";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
+import { financePackage, settleSale } from "./rivalDebt";
 import { acceptSaleOffer, executePurchase } from "./actions";
 import { cloneState } from "./types";
 import { sweepLocIdleCash, fundableNow } from "./credit";
@@ -446,13 +447,13 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
       packageNoi += Math.max(0, inPlace(rec, s, b, share).noi);
     }
     const packageDebt = (r: ReturnType<typeof livingRivals>[number]) => {
-      const st = STYLE_OF(r.style);
+      const st = paramsOf(r);
       const cap = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
       return Math.min(p.ask, streetRefiProceeds(s, p.ask, packageNoi, cap).principal);
     };
     const buyers = livingRivals(s).filter((r) => {
       if (r.id === p.sellerId) return false;
-      const st = STYLE_OF(r.style);
+      const st = paramsOf(r);
       const debt = packageDebt(r);
       const equity = p.ask - debt;
       if (r.cash < equity + Math.max(1_000_000, r.cash * 0.05)) return false;
@@ -463,7 +464,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
     if (buyers.length) {
       // A rival buying a rival's book. Rare, and it is how the big get big.
       const hunger = buyers.map((r) => {
-        const st = STYLE_OF(r.style);
+        const st = paramsOf(r);
         return { r, w: st.appetite * (1 + st.contra * (1 - ci)) * (p.reo ? st.distressBias : 1) * (0.5 + rng(s)) };
       }).sort((a, b) => b.w - a.w);
       const under = p.ask / Math.max(1, p.gross);
@@ -514,6 +515,16 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
           toYou = Math.max(0, Math.round(s.cash - cash0));
           sweepLocIdleCash(s, { announce: true });
         }
+        // EACH DEED CLOSES ON ITS SHARE of the one cheque: the seller's
+        // mortgage on it is paid off out of that share (then its line), and
+        // the winner's debt is written deed by deed (rivalDebt).
+        const marks = p.bbls.map((b) => {
+          const rec = resolveRec(parcels, s, b);
+          const v = rec ? Math.max(1, assetValue(rec, s.econ, gradeOf(s, rec))) : 1;
+          return { bbl: b, v, noi: rec ? inPlace(rec, s, b, v).noi : 0, klass: rec?.class, condition: rec ? gradeOf(s, rec) : undefined };
+        });
+        const markV = marks.reduce((a, x) => a + x.v, 0) || 1;
+        const shareOf = (b: string) => Math.round(p.ask * ((marks.find((x) => x.bbl === b)?.v ?? 1) / markV));
         for (const b of p.bbls) {
           // Player deeds already left via acceptSaleOffer; rival-to-rival still
           // needs the register move below.
@@ -529,7 +540,13 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
           const rec = resolveRec(parcels, s, b);
           if (!rec) continue;
           const prev = ownerOf(s, b);
-          if (prev) { prev.bbls = prev.bbls.filter((x) => x !== b); forgetDeed(prev, b); }
+          if (prev) {
+            prev.bbls = prev.bbls.filter((x) => x !== b); forgetDeed(prev, b);
+            if (prev.failedM === undefined) {
+              const share = shareOf(b);
+              prev.cash += share - settleSale(s, prev, b, share);
+            }
+          }
           if (!winner.bbls.includes(b)) winner.bbls.push(b);
           (winner.heldSince ??= {})[b] = s.month;
           s.lastTradeM ??= {}; s.lastTradeM[b] = s.month;
@@ -541,23 +558,17 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
               + `${money(debtOff)} of debt retired out of the proceeds, ${money(toYou)} net cash movement. `
               + `You will not see those buildings on the tape again for a while.`,
           });
-          winner.cash -= winEq; winner.debt += winDebt;
+          winner.cash -= winEq;
+          financePackage(s, winner, winDebt, marks);
           winner.aum = Math.round((winner.aum ?? 0) + p.ask);
           s.portfolios = s.portfolios.filter((x) => x.id !== p.id);
           continue;
         }
-        winner.cash -= winEq; winner.debt += winDebt;
+        winner.cash -= winEq;
+        financePackage(s, winner, winDebt, marks);
         winner.aum = Math.round((winner.aum ?? 0) + p.ask);
+        // The seller was paid deed by deed above, net of the loans on them.
         const seller = p.sellerId ? (s.rivals ?? []).find((r) => r.id === p.sellerId) : null;
-        // Retire what the book was actually carrying, not personality LTV.
-        if (seller) {
-          const lev = (seller.aum ?? 0) > 0
-            ? Math.min(1, Math.max(0, seller.debt / (seller.aum as number)))
-            : seller.targetLtv;
-          const relief = Math.min(seller.debt, Math.round(p.ask * lev));
-          seller.debt -= relief;
-          seller.cash += p.ask - relief;
-        }
         s.portfolios = s.portfolios.filter((x) => x.id !== p.id);
         s.news.unshift({
           q: s.month, kind: "event",
@@ -680,7 +691,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
   // life would rather do one closing than eleven.
   if (s.portfolios.filter((p) => !p.player).length < 3 && rng(s) < 0.010) {
     const cands = livingRivals(s).filter((r) => r.bbls.length >= 4 && !r.stressMs
-      && STYLE_OF(r.style).holdM > 0 && s.month - (r.bornM ?? 0) > STYLE_OF(r.style).holdM);
+      && paramsOf(r).holdM > 0 && s.month - (r.bornM ?? 0) > paramsOf(r).holdM);
     if (cands.length) {
       const r = cands[Math.floor(rng(s) * cands.length)];
       const take = r.bbls.filter((b) => !s.holdings[b] && !s.listings.some((l) => l.bbl === b)).slice(0, 3 + Math.floor(rng(s) * 6));

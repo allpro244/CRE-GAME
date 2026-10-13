@@ -12,7 +12,7 @@ import { START_YEAR } from "@/engine/types";
 import type { BuildingDesign, GameState } from "@/engine/types";
 import { cityVisualState } from "./cityVisuals";
 import { ownerIndex } from "@/engine/ownership";
-import { holderOf } from "@/engine/owners";
+import { holderOf, holderSheet, READY_TELL } from "@/engine/owners";
 import { civicCollection, civicWorks3d } from "./civic";
 import { siteDeeds } from "@/engine/actions";
 import type { ParcelTable } from "@/data/types";
@@ -1303,12 +1303,21 @@ export default function MapView() {
       for (const [id, book] of idx.books) {
         const r = idx.rivals.get(id);
         if (r) {
-          const c = FIRM_TINT[(game.rivals ?? []).indexOf(r) % FIRM_TINT.length];
+          // A FIRM IN CRISIS reads red across its whole book (COMPETITORS_PLAN
+          // §7): six months behind on its debt, its buildings are the ones
+          // about to be cheap.
+          const c = (r.stressMs ?? 0) >= 6 && r.failedM === undefined
+            ? [1.38, 0.66, 0.62] as [number, number, number]
+            : FIRM_TINT[(game.rivals ?? []).indexOf(r) % FIRM_TINT.length];
           for (const b of book) tints.set(b, c);
           continue;
         }
         const h = holderOf(game, parcels, book[0]);
-        const c = h ? HOLDER_TINT[h.kind] : undefined;
+        // A holder showing the tell (§5a) is flagged gold: its book is
+        // likely to come to market.
+        const ready = h && h.tier !== "small" && game.holderExit?.[h.id] === undefined
+          && holderSheet(game, h).readiness >= READY_TELL;
+        const c = ready ? [1.42, 1.22, 0.55] as [number, number, number] : h ? HOLDER_TINT[h.kind] : undefined;
         if (c) for (const b of book) tints.set(b, c);
       }
     }

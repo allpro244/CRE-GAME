@@ -17,23 +17,16 @@ export const MODULES = [
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",
   "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market",
   "zoning", "lenders", "proforma", "workout", "portfolio", "portfoliosale", "auction", "notes",
-  "privateCredit", "broker", "loanbook", "amortize", "pricing",
+  "privateCredit", "broker", "loanbook", "amortize", "pricing", "ledger", "rivalDebt",
   // absorption carries staleDiscount and leasingOdds — how an owner's ask falls
   // on space that will not let, which the harness bots have to read rather than
   // guess at. space carries the submarket roll-up.
   "absorption", "space",
   // plates is floorplate inventory — stacks, vacant blocks, size draws.
   "plates",
-  // staff carries roleState and the role multipliers. Without it a harness
-  // cannot ask what a hire is worth and has to re-derive the band — the exact
-  // drift this file exists to prevent.
-  "staff",
   // regime is the pre-history: nationPhase and simulateHistory, so a harness
   // can replay the opening on the engine's own equations.
   "regime",
-  // people is the Person substrate (player, hires, rival principals). Missing
-  // from this list once made every harness re-derive a person — silent drift.
-  "people",
   // fund is the player vehicle — second cash account, raise, promote.
   "fund",
   // leasehold is the landlord sale-leaseback: sell the land, keep the building.
@@ -50,6 +43,11 @@ export const MODULES = [
   "setup",
   // firmCapital — institutional standing readout (ATTR_CONTRACT Phases 5–6).
   "firmCapital",
+  // competitorTraits — the competitor's sheet, rules, quirks and profiles.
+  "competitorTraits",
+  // competitorReads — what you know of each competitor's sheet; storyline —
+  // headliners, story stages and what's coming (display only).
+  "competitorReads", "storyline",
   // books carries the balance-sheet stamp and month→year view helpers the
   // Books page uses for monthly income and last year's close.
   "books",

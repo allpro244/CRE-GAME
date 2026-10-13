@@ -1766,7 +1766,13 @@ export function stepCredit(s: GameState) {
   // the 10th-percentile window at 0.90 — credit crunches had disappeared.
   // Lender capital (lenders.ts) still drags it as before.
   const g12 = clamp(payrollGrowth12(e), -0.08, 0.04);
-  const creditTarget = clamp(1.0 + 6 * g12 - 14 * Math.max(0, natUnempRise12(e)), 0.4, 1.25);
+  // ...and the bank's own margin (2026-10-13): lenders fund at the short rate
+  // and lend at the long one, so a flat or inverted curve is a thin margin
+  // on every new loan and loan officers tighten before the economy turns
+  // (Adrian, Estrella & Shin 2019; SLOOS tightening leads every post-war
+  // inversion). Centred on the US average ten-year-less-policy spread, ~1.2.
+  const curve = e.nat ? 0.04 * ((e.indexRate - e.nat.policy) - 1.2) : 0;
+  const creditTarget = clamp(1.0 + 6 * g12 - 14 * Math.max(0, natUnempRise12(e)) + curve, 0.4, 1.25);
   const creditSpeed = creditTarget < e.creditIdx ? 0.16 : 0.055;   // slams shut, reopens slowly
   e.creditIdx = clamp(e.creditIdx + creditSpeed * (creditTarget - e.creditIdx) + rrange(s, -0.012, 0.012), 0.4, 1.25);
 }
@@ -1815,7 +1821,9 @@ export function expectedPolicyAvg(
 ): number {
   const tgt = n.inflTarget ?? 0.02;
   const cred = n.credibility;
-  const longRun = 100 * (n.neutralReal + cred * tgt + (1 - cred) * n.inflExp);
+  // ...plus whatever the market has learned about where this bank actually
+  // rests (`endShift`, updated in tickNation).
+  const longRun = 100 * (n.neutralReal + cred * tgt + (1 - cred) * n.inflExp) + (n.endShift ?? 0);
   const gap0 = want - longRun;
   let p = n.policy, sum = 0, decay = 1;
   const pressure = n.pressureM ?? 0;
@@ -1823,7 +1831,11 @@ export function expectedPolicyAvg(
     decay *= RULE_GAP_RHO;
     if (isMeetingMonth(month + h)) {
       const gap = longRun + gap0 * decay - p;
-      p = Math.max(0.25, p + bankStep(gap, restoring && Math.abs(gap) > 3, h < pressure));
+      // The expected cut below zero is the cut times its odds (see the
+      // committee's own lower bound in tickNation) — no floor here either.
+      let st = bankStep(gap, restoring && Math.abs(gap) > 3, h < pressure);
+      if (st < 0 && p + st < 0) st *= Math.exp((p + st) / 0.35);
+      p += st;
     }
     sum += p;
   }
@@ -1843,7 +1855,12 @@ export function expectedPolicyAvg(
  * the premium a LOAN index carries widens even while policy is being cut.
  */
 export function termPremBase(credibility: number, creditIdx: number): number {
-  return 4.4 * (1 - credibility) - 0.05 + 1.85 * Math.max(0, 1 - creditIdx);
+  // RECALIBRATED 2026-10-13: the believed-bank end was the 2010s' ~0, which
+  // is what a decade of central-bank bond buying did to the premium — QE,
+  // which this game does not have. A believed bank WITHOUT it is 1995-2007:
+  // ACM ten-year premium about 1.0-1.5. With the premium at zero the curve
+  // sat inverted 28-78% of months against the US record of ~15%.
+  return 1.0 + 4.4 * (1 - credibility) + 1.85 * Math.max(0, 1 - creditIdx);
 }
 
 /**
@@ -2081,8 +2098,20 @@ export function tickNation(s: GameState) {
     // chance is 1 - exp(-intensity), which stays below one by arithmetic
     // rather than by a stop. Below neutral, money adds nothing (a hinge, not
     // a rail: cheap money does not prevent the other causes).
-    const intensity = 0.0095
-      + Math.max(0, (realPolicy - 0.022) * 0.70)
+    //
+    // THE CURVE, NOT A RULE OF THUMB ON REAL RATES (2026-10-13). Tight money
+    // enters through the yield curve: banks fund short and lend long, so an
+    // inverted curve squeezes the margin on every new loan and lending
+    // dries up (Adrian, Estrella & Shin 2019). The term spread is the best
+    // single recession predictor there is (Estrella & Mishkin 1998): about
+    // 10% odds of a recession within a year at a +1 point spread, about 45%
+    // at -1. As a monthly intensity that is 0.0088 x e^(-0.86 (spread - 1)),
+    // with no cap — a Volcker curve at -5 makes a recession all but certain
+    // within months, as 1980 and 1981 were. A steep curve makes one rare.
+    // (This replaces the real-policy-rate term, which never saw the curve:
+    // 9% against 7% on the ten-year for a decade read as neutral.)
+    const spread = (e.indexRate ?? 5.4) - n.policy;
+    const intensity = 0.0088 * Math.exp(-0.86 * (spread - 1))
       + (shock > 0.02 ? 0.010 : 0)
       + ((n.expM ?? 0) > 110 ? 0.004 : 0);
     if (rng(s, "nation") < 1 - Math.exp(-intensity)) {
@@ -2376,6 +2405,20 @@ export function tickNation(s: GameState) {
   const premBase = termPremBase(n.credibility, e.creditIdx ?? 1);
   if (n.termPrem === undefined) n.termPrem = premBase;
   n.termPrem = n.termPrem + 0.10 * (premBase - n.termPrem) + rrange(s, -0.30, 0.30, "nation");
+  // THE MARKET LEARNS WHERE THE BANK RESTS (2026-10-13). The forecast assumed
+  // the rule's gap always closes at the economy's cycle speed, so a bank that
+  // held three points over the model's long-run level for a decade left the
+  // ten-year under the short rate for that whole decade — a playthrough found
+  // the curve inverted 2002-2013 through an expansion. Real long rates move
+  // their endpoint when the short rate stays put (Kozicki & Tinsley 2001;
+  // Gurkaynak, Sack & Swanson 2005): the market's long-run level is learned
+  // from where policy has actually sat, at about the gain Kozicki-Tinsley
+  // estimate (~0.02 a quarter, here 1/144 a month — a twelve-year memory).
+  {
+    const cr = n.credibility, tg = n.inflTarget ?? 0.02;
+    const modelLR = 100 * (n.neutralReal + cr * tg + (1 - cr) * n.inflExp);
+    n.endShift = (n.endShift ?? 0) + (n.policy - modelLR - (n.endShift ?? 0)) / 144;
+  }
   const path = expectedPolicyAvg(n, want, restore > 0, s.month);
   e.indexRate = path + n.termPrem;
   e.shortIndex = shortIndexFor(n.policy, e.creditIdx ?? 1);

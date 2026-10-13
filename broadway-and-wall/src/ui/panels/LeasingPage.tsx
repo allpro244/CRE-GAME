@@ -5,7 +5,7 @@ import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec } from "@/engine/types"
 import { isLeasedFee, marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
 import {
   isCommercial, walt, notReadySf,
-  deskHoldsPen, deskMonthNow, loiNeedsPrincipal, hasLeasingTeam, portfolioOccupancy, autoTiCapToday, autoLeaseRule,
+  deskHoldsPen, deskMonthNow, loiNeedsPrincipal, portfolioOccupancy, autoTiCapToday, autoLeaseRule,
 } from "@/engine/leasing";
 import { PlanEditor, PlanDigest } from "@/ui/panels/PlanSheet";
 import { useSf } from "@/engine/mix";
@@ -24,7 +24,7 @@ export function LeasingPage() {
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
   const {
-    setAgent, setTeamLeasing, setRenewalMgmt, broker,
+    setAgent, setRenewalMgmt, broker,
   } = useStore.getState();
   const go = (bbl: string) => { setPage("none"); select(bbl); };
   const q = game.month;
@@ -129,19 +129,13 @@ export function LeasingPage() {
 
   function AgentBar() {
     const referred = (game.lois ?? []).filter((l) => loiNeedsPrincipal(game, l)).length;
-    const teamOn = !!game.teamLeasing && hasLeasingTeam(game);
-    const teamReady = hasLeasingTeam(game);
-    // Three covers, one question: who holds the pen?
+    // Two covers, one question: who holds the pen?
     const title = game.agent
       ? "Outside agent holds the pen."
-      : teamOn
-        ? "Your leasing desk holds the pen."
-        : "You hold the pen.";
+      : "You hold the pen.";
     const sub = game.agent
-      ? `Vendor coverage at 6% — mid competence, not your payroll's judgment. They work the posted plan: counter to the sheet, docket exceptions, decline junk. Scorecard below${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
-      : teamOn
-        ? `Staff coverage at 4%/2%. Unassigned leasing hires work the whole book; pinned hires only their buildings — anything left uncovered comes back to you. No LOI popups unless they refer${referred ? `. ${referred} on Deals.` : "."}`
-        : "Default. Every letter lands on you. A listing exclusive works the phones and does not sign. Hand renewals to management below, hire leasing on Staff and hand them the book, or hire outside coverage at 6% — nothing takes the pen unless you say so.";
+      ? `Vendor coverage at 6%. They work the posted plan: counter to the sheet, docket exceptions, decline junk. Scorecard below${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
+      : "Default. Every letter lands on you. A listing exclusive works the phones and does not sign. Hand renewals to management below, or hire outside coverage at 6% — nothing takes the pen unless you say so.";
     return (
       <div className="agent-bar">
         <div>
@@ -151,24 +145,10 @@ export function LeasingPage() {
         <div className="btn-row" style={{ flexShrink: 0 }}>
           {game.agent ? (
             <button className="btn" onClick={() => setAgent(false)}>Take the pen back</button>
-          ) : teamOn ? (
-            <button className="btn" onClick={() => setTeamLeasing(false)}>Take the pen back</button>
           ) : (
-            <>
-              <button
-                className="btn btn-on"
-                disabled={!teamReady}
-                title={teamReady
-                  ? "Hand the leasing desk to your hires — no LOI popups"
-                  : "Hire a leasing person on Staff first"}
-                onClick={() => setTeamLeasing(true)}
-              >
-                Hand desk to staff
-              </button>
-              <button className="btn" onClick={() => setAgent(true)}>
-                Outside coverage · 6%
-              </button>
-            </>
+            <button className="btn" onClick={() => setAgent(true)}>
+              Outside coverage · 6%
+            </button>
           )}
         </div>
       </div>
@@ -277,7 +257,7 @@ export function LeasingPage() {
    */
   function RenewalBar() {
     // Whole-book handoffs already cover renewals.
-    if (game.agent || game.teamLeasing) return null;
+    if (game.agent) return null;
     const on = !!game.renewalMgmt;
     return (
       <div className="agent-bar">
@@ -302,7 +282,6 @@ export function LeasingPage() {
   // letters), what the desk did, and then who holds the pen — a mandate set
   // once and revisited rarely, so it folds to the one line that says who.
   const penLine = game.agent ? "an outside agent holds the pen"
-    : game.teamLeasing && hasLeasingTeam(game) ? "your leasing desk holds the pen"
     : game.renewalMgmt ? "you hold the pen · management has the renewals"
     : "you hold the pen";
   return (

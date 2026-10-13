@@ -15,194 +15,70 @@
 // already exist on Holding/Development; together the three are a full
 // statement for every desk in town.
 //
-// IT IS A PROJECTION, NOT A SECOND SIMULATION. Rivals carry one aggregate
-// `debt` number, and that stays true: the record allocates the firm's TERM
-// debt (its construction balances sit on the record under their own desk)
-// across its financed buildings by value and reconciles every month, so it
-// can never disagree with the street table. Statuses come off the borrower —
-// a firm eight months into a squeeze has every loan on watch, which is what
-// cross-default means. Nothing here draws on the RNG stream.
+// THE ROWS ARE THE LOANS. They used to be a projection of one aggregate
+// `Rival.debt`, spread across a firm's deeds by value every month, with a
+// hashed desk, a hashed balloon and the borrower's squeeze copied onto every
+// row. Now a firm's mortgages are originated by the desk that wrote them, at
+// that desk's coupon and term, and `Rival.debt` is their sum plus the line and
+// the construction balances (rivalDebt.ts). Status comes off each loan's own
+// payments (rivalDebt.markPayments), so one bad building can default without
+// cross-defaulting the book.
 //
 // IT IS NO LONGER DECORATION. The desks' books are counted off this record
 // (loanbook.ts): a row's balance is on its lender's balance sheet, a row in
 // workout is on its lender's delinquency line, and a firm's failure is
-// charged to the desks its rows name. So the desk a row names is placed under
-// the two limits a real desk lends under — one borrower's share of the book,
-// and the capital to carry a bigger one (placeLoan) — and only the borrower's
-// first call among the desks is hashed. BANKING.md has the handoff for making
-// these rows originated rather than projected.
+// charged to the desks its rows name. Every row is placed under the two
+// limits a real desk lends under — one borrower's share of the book, and the
+// capital to carry a bigger one (rivalDebt.deskRoom).
 import type { ParcelTable } from "@/data/types";
-import type { CityLoan, GameState, Rival } from "./types";
-import { assetValue, resolveRec } from "./value";
-import { assetGrade } from "./rivals";
+import type { GameState, Rival } from "./types";
 import { cityLoanBook, deskTotals } from "./loanbook";
-import { singleNameCap } from "./debt";
-import { targetCapital } from "./lenders";
+import { addToLine, jobDebtOf, payDown, syncDebt, termDebtOf } from "./rivalDebt";
 
-/** Deterministic 0..1 from a string — the record must not perturb the RNG. */
-function hash01(str: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return ((h >>> 0) % 100000) / 100000;
+/** Who holds this deed's paper when it has left the banks — you, or a firm on the street. */
+function paperHeldBy(s: GameState, bbl: string): string | undefined {
+  if (s.notes?.some((n) => n.bbl === bbl)) return "player";
+  return (s.rivalNotes ?? []).find((x) => x.bbl === bbl)?.firmId;
 }
 
 /**
- * WHO WROTE THIS LOAN. The same logic a borrower uses, run backwards: small
- * checks go to the hometown bank, big well-kept buildings to the life company,
- * the biggest paper to the conduit, tired buildings to the fund, and the
- * regional takes the middle of everything — which is why the regional is the
- * one a property bust kills.
+ * WHAT DID NOT GO THROUGH THE LOANS. Every path that changes a firm's debt
+ * moves a row, the line or a job (rivalDebt.ts), and r.debt is re-summed from
+ * them. A path that still wrote r.debt directly would leave the two
+ * disagreeing; the difference is booked to the line (more owed) or paid down
+ * (less), and counted here so a test can hold the count at zero.
  */
-/** Every desk, in the order this deed's borrower would call them. */
-function lenderPreference(bbl: string, value: number, worn: boolean): string[] {
-  const h = hash01(bbl + ":led");
-  const first = worn && h < 0.45 ? "Cordage Debt Partners"
-    : value < 4_000_000 ? (h < 0.62 ? "First Harbor Bank" : "Alden Savings & Trust")
-    : value > 14_000_000
-      ? (h < 0.38 ? "Meridian Street Capital" : h < 0.72 ? "Pelican Life Insurance" : "Alden Savings & Trust")
-      : (h < 0.55 ? "Alden Savings & Trust" : h < 0.78 ? "Pelican Life Insurance" : "First Harbor Bank");
-  const rest = value > 14_000_000
-    ? ["Pelican Life Insurance", "Meridian Street Capital", "Alden Savings & Trust", "Cordage Debt Partners", "First Harbor Bank"]
-    : ["Alden Savings & Trust", "First Harbor Bank", "Pelican Life Insurance", "Cordage Debt Partners", "Meridian Street Capital"];
-  return [first, ...rest.filter((x) => x !== first)];
-}
-
-/**
- * THE DESK THAT WILL ACTUALLY TAKE THE LOAN. The borrower's first call is the
- * hashed preference above; a desk already holding its single-name limit
- * against this firm (`singleNameCap` — the same limit the player's quotes
- * face) passes, and the loan goes to the next desk with room. Without it the
- * record put a third of the regional's book on one street firm, and the day
- * that firm failed it took the regional with it — not because a bank made a
- * bad loan but because the record ignored the limit that stops a bank making
- * that one.
- *
- * AND A DESK THAT CANNOT GROW ITS BOOK DOES NOT WRITE THE LOAN. A new loan is
- * new book, and a desk's book can only be as big as its capital carries at its
- * own target (`capital / target`); a desk at its target with no headroom sends
- * the borrower down the street, which is how a crowded desk loses business in
- * life. The opening record is the exception — those mortgages already exist and
- * were inside the stated books the city opened with — and it only asks that a
- * desk's named paper stay within three quarters of that book. If no desk has
- * room the loan goes to whichever has the most, which is what a syndicate is.
- */
-function placeLoan(s: GameState, led: Record<string, CityLoan>, obligorId: string, bbl: string, value: number, worn: boolean, estBalance: number, opening: boolean,
-  /** New paper placed this tick, by desk — rows are written before their balances are reconciled. */
-  placedThisMonth: Record<string, number>): string {
-  const pref = lenderPreference(bbl, value, worn);
-  const exposure: Record<string, number> = {};
-  const onDesk: Record<string, number> = {};
-  for (const x of Object.values(led)) {
-    onDesk[x.lender] = (onDesk[x.lender] ?? 0) + x.balance;
-    if (x.obligorId === obligorId) exposure[x.lender] = (exposure[x.lender] ?? 0) + x.balance;
-  }
-  let best = pref[0], bestRoom = -Infinity;
-  for (const name of pref) {
-    const l = s.lenders?.find((x) => x.name === name);
-    if (!l) continue;
-    if (l.failedM !== undefined) continue;   // a receiver writes nothing
-    const nameRoom = l.book * singleNameCap(l.kind) - (exposure[name] ?? 0);
-    const deskRoom = opening
-      ? l.book * 0.75 - (onDesk[name] ?? 0) - (placedThisMonth[name] ?? 0)
-      : l.capital / Math.max(0.01, targetCapital(l.name)) - l.book - (placedThisMonth[name] ?? 0);
-    const room = Math.min(nameRoom, deskRoom);
-    if (room >= estBalance) { placedThisMonth[name] = (placedThisMonth[name] ?? 0) + estBalance; return name; }
-    if (room > bestRoom) { bestRoom = room; best = name; }
-  }
-  placedThisMonth[best] = (placedThisMonth[best] ?? 0) + estBalance;
-  return best;
-}
-
-
-/** Is this deed's paper already outside the banking system? */
-function paperElsewhere(s: GameState, bbl: string): boolean {
-  return !!s.notes?.some((n) => n.bbl === bbl)
-    || !!s.noteOffers?.some((o) => o.bbl === bbl)
-    || !!(s.rivalNotes ?? []).some((x) => x.bbl === bbl);
-}
+export const debtDrift = { n: 0, abs: 0 };
 
 /** One month of keeping the record true. Runs after the street, before the note desk. */
 export function tickLedger(s: GameState, parcels: ParcelTable) {
   if (!s.cityLoans) s.cityLoans = {};
-  const placed: Record<string, number> = {};
   const led = s.cityLoans;
-  const live = (s.rivals ?? []).filter((r) => r.failedM === undefined);
   const owner: Record<string, Rival> = {};
-  for (const r of live) for (const b of r.bbls) owner[b] = r;
+  for (const r of s.rivals ?? []) if (r.failedM === undefined) for (const b of r.bbls) owner[b] = r;
 
-  // A deed that changed hands, a borrower that died, or paper that left the
-  // banks for the note market comes off the record.
+  // A deed that changed hands or a borrower that died comes off the record —
+  // every settlement path retires its row as it goes; this is the backstop.
+  // Paper that left the banks for the note market stays: it is still owed.
   for (const bbl of Object.keys(led)) {
+    const x = led[bbl];
     const o = owner[bbl];
-    if (!o || o.id !== led[bbl].obligorId || paperElsewhere(s, bbl)) delete led[bbl];
+    if (!o || o.id !== x.obligorId) { delete led[bbl]; continue; }
+    const held = paperHeldBy(s, bbl);
+    if (held) x.heldBy = held; else delete x.heldBy;
   }
 
-  for (const r of live) {
-    // The record of this firm's mortgages, written where missing.
-    if (r.debt > 1000) {
-      for (const bbl of r.bbls) {
-        if (led[bbl] || paperElsewhere(s, bbl)) continue;
-        const rec = resolveRec(parcels, s, bbl);
-        if (!rec || rec.class === "land" || rec.bldgArea <= 0) continue;
-        const grade = assetGrade(r, rec);
-        const v = assetValue(rec, s.econ, grade);
-        if (v < 400_000) continue;
-        const h = hash01(bbl + ":" + r.id);
-        // At campaign start the record is backdated — the town did not take
-        // out all its mortgages the day you arrived.
-        const originM = s.month <= 1 ? -Math.round(h * 96) : s.month;
-        // What this deed will carry: the firm's leverage on its own book.
-        const est = (r.aum ?? 0) > 0 ? v * Math.min(0.9, r.debt / r.aum!) : v * 0.6;
-        led[bbl] = {
-          bbl,
-          lender: placeLoan(s, led, r.id, bbl, v, grade === "worn" || grade === "obsolete", est, s.month <= 1, placed),
-          obligorId: r.id,
-          balance: 0,   // reconciled below
-          ratePct: +(s.econ.indexRate + 1.6 + 1.6 * hash01(bbl + ":cpn")).toFixed(2),
-          originM,
-          maturityM: originM + 60 + Math.round(60 * hash01(bbl + ":mat")),
-          origValue: v,
-          klass: rec.class,
-          status: "current",
-        };
-      }
+  for (const r of s.rivals ?? []) {
+    if (r.failedM !== undefined) continue;
+    const before = r.debt;
+    const term = termDebtOf(s, r), jobs = jobDebtOf(s, r);
+    const drift = Math.round(before - (term + (r.lineBal ?? 0) + jobs));
+    if (Math.abs(drift) > 1) {
+      debtDrift.n++; debtDrift.abs += Math.abs(drift);
+      if (drift > 0) addToLine(s, r, drift);
+      else payDown(s, r, -drift);
     }
-    // RECONCILE: the rows always sum to the firm's actual debt, weighted by
-    // what each building appraised for at origination. The street table and
-    // the statement can never tell two stories.
-    const rows = r.bbls.map((b) => led[b]).filter(Boolean) as CityLoan[];
-    if (!rows.length) continue;
-    const wSum = rows.reduce((a, x) => a + x.origValue, 0);
-    // TERM DEBT, NOT ALL DEBT. A firm's `debt` includes the construction
-    // balances on its open jobs, and those already sit on the record under
-    // their own desk (`cityJobs[].lender`). Allocating the whole number across
-    // the mortgages counted every crane twice — once as construction paper and
-    // once spread over the firm's finished buildings — the moment anything
-    // summed the two (loanbook.ts does). `chargeSponsorFailure` has always
-    // split it this way; the record now agrees with it.
-    let jobDebt = 0;
-    for (const j of s.cityJobs ?? []) if (j.firmId === r.id) jobDebt += j.debt ?? 0;
-    const debt = Math.max(0, Math.round(r.debt - jobDebt));
-    for (const x of rows) x.balance = Math.round(debt * (x.origValue / Math.max(1, wSum)));
-
-    // Status is the borrower's, because that is what cross-default means.
-    const ltv = (r.aum ?? 0) > 0 ? r.debt / r.aum! : 0;
-    const status: CityLoan["status"] =
-      (r.stressMs ?? 0) >= 6 ? "workout"
-        : (r.stressMs ?? 0) > 0 || ltv > 0.85 ? "watch" : "current";
-    for (const x of rows) {
-      x.status = status;
-      // A balloon that comes due on a solvent borrower rolls at today's rate —
-      // which is why the record's coupons follow the rate era instead of
-      // fossilising at whatever 2000 looked like.
-      if (s.month >= x.maturityM && status === "current") {
-        const rec = resolveRec(parcels, s, x.bbl);
-        x.originM = s.month;
-        x.maturityM = s.month + 60 + Math.round(60 * hash01(x.bbl + ":m" + s.month));
-        x.ratePct = +(s.econ.indexRate + 1.6 + 1.6 * hash01(x.bbl + ":c" + s.month)).toFixed(2);
-        if (rec) x.origValue = assetValue(rec, s.econ, assetGrade(r, rec));
-      }
-    }
+    syncDebt(s, r);
   }
 
   // WHAT EACH DESK IS HOLDING IN THIS TOWN, BY CLASS — the number the quote

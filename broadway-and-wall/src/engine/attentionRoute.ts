@@ -7,7 +7,7 @@ import type { GameState } from "./types";
 export type AttentionPage =
   | "none" | "portfolio" | "deals" | "market" | "players" | "economy" | "books"
   | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings"
-  | "staff" | "primer";
+  | "primer";
 
 export type AttentionRoute = {
   page?: AttentionPage;

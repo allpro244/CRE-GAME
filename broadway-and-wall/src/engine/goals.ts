@@ -16,7 +16,7 @@ export const GOALS: readonly GoalDef[] = [
   { id: "landlord", label: "Landlord", detail: "Half a million square feet let across your book", years: 15 },
   { id: "builder", label: "Builder", detail: "Deliver five buildings of your own", years: 20 },
   { id: "nw100", label: "A hundred million", detail: "$100M of net worth", years: 25 },
-  { id: "street", label: "Top of the street", detail: "The largest firm on the street at a year's close", years: 30 },
+  { id: "street", label: "Top of the league", detail: "The largest firm in town at a year's close", years: 30 },
   // The later rungs: what a firm that has done the first four does next.
   { id: "manager", label: "Manager", detail: "Raise a fund, invest it, and return the LPs their capital and more", years: 15 },
   { id: "developer", label: "Developer", detail: "Deliver fifteen buildings of your own", years: 30 },

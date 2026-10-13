@@ -59,8 +59,7 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState, Rival, RivalStyle, SellerKind } from "./types";
 import { START_YEAR } from "./types";
 import { assetValue, noiAfterTaxYr, resolveRec } from "./value";
-import { CARE, gradeOf, markRival, ownerOf } from "./rivals";
-import { NON_PAYROLL_GA_SHARE } from "./staff";
+import { gradeOf, markRival, ownerOf, paramsOf } from "./rivals";
 import { isCivicLand } from "./demand";
 import type { Holder } from "./owners";
 import { holderOf, isCold, relOf, standingWith } from "./owners";
@@ -369,7 +368,7 @@ export function holderAccounts(
   // proportional half is the player's own rate, unchanged, because at scale
   // both kinds of owner are paying for the same thing.
   const ga = care.admin * Math.pow(Math.max(1, book.length), 0.7) * s.econ.costIdx
-    + 0.0028 * assets * NON_PAYROLL_GA_SHARE;
+    + 0.0028 * assets;
   // THE DIRT IS CARRIED SEPARATELY, for the reason `markRival` carries it
   // separately: there is no roof to replace on a vacant lot and no space in it
   // to let, so charging a capital plan and a leasing budget against a land
@@ -395,7 +394,7 @@ export function rivalAccounts(
   s: GameState, parcels: ParcelTable, r: Rival,
 ): { sheet: OwnerBalance; income: OwnerIncome } {
   const m = markRival(s, parcels, r);
-  const care = CARE[r.style];
+  const care = paramsOf(r).care;
   // A firm's debt service is the one line it does not derive: the balance and
   // the rate are on its own record. Priced the way the street table prices it
   // — index plus 1.9 on a thirty-year schedule — so the drawer and the
@@ -405,8 +404,9 @@ export function rivalAccounts(
   // A FIRM DOES HAVE AN OFFICE, so it pays the player's line as written: the
   // fixed base plus the proportional load, because that is what the player is
   // charged for running the same kind of shop and a league table only works if
-  // both sides are measured the same way.
-  const ga = 60_000 * s.econ.costIdx + 0.0028 * m.aum * NON_PAYROLL_GA_SHARE;
+  // both sides are measured the same way. It is also what the competitor's own
+  // tick charges (rivals.ts), so the statement and the cash agree.
+  const ga = 60_000 * s.econ.costIdx + 0.0028 * m.aum;
   const income = statement(m.aum, m.noiYr, { interest, amort },
     { lease: care.lease, capex: care.capex }, ga, m.landV);
   return {
@@ -504,7 +504,7 @@ function viewOfRival(s: GameState, parcels: ParcelTable, r: Rival, book: string[
     id: r.id, name: r.name, style: r.style, operator: true,
     kind: r.failedM !== undefined ? "lender"
       : r.style === "family" ? "local" : r.style === "developer" ? "developer" : "institution",
-    note: r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName} by ${r.spawnedFrom.personName}.` : "",
+    note: r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName}.` : "",
     since: START_YEAR + Math.floor(r.bornM / 12),
     book, sheet, income,
     standing: parts.length ? parts.join(" · ") : "You have never done business with them.",

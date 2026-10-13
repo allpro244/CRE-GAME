@@ -3,7 +3,7 @@
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import { districtLabel } from "./mix";
-import type { Bid, BuiltClass, Condition, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, RivalStyle, SaleInstructions } from "./types";
+import type { Bid, BuiltClass, Condition, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, Rival, RivalStyle, SaleInstructions } from "./types";
 import { logBooks, moveDeposit, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
@@ -11,11 +11,13 @@ import { firmShort, describeFirm } from "./firm";
 import { rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
 import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
+import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
-import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
+import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
 import { payOffDue, payOffLoan } from "./debt";
+import { settleSale } from "./rivalDebt";
 import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
@@ -310,8 +312,8 @@ export function executePurchase(
       seller.bbls = seller.bbls.filter((b) => b !== bbl);
       const jv = seller.jvs?.[bbl];
       forgetDeed(seller, bbl);
-      const relief = Math.min(seller.debt, Math.round(price * seller.targetLtv));
-      seller.debt -= relief;
+      // The mortgage on the building is paid at the closing, then their line.
+      const relief = settleSale(next, seller, bbl, price);
       seller.cash += price - relief;
       // A syndicated deed pays its deal investors out of the closing — see
       // jvLpTake (rivals.ts).
@@ -548,6 +550,8 @@ export function bidOdds(
   const room = (marketAppetite(s) - 1) * 0.05;
   mid += room;
   if (held) mid -= (relMult(s, held.id) - 1) * 0.04;
+  // ASK PREMIUM (§5a): some holders settle at the mark, some want more.
+  if (held) mid += (holderSheet(s, held).askPremium - 50) / 1000;
   mid = Math.max(0.70, Math.min(1.08, mid));
   // A forced sale is not just cheaper, it is less predictable: a receiver with
   // a deadline and an estate with a lawyer settle in very different places.
@@ -1987,7 +1991,9 @@ export function approachOwner(
     // ...and who you are to THEM. Above 1 is harder. See owners.relMult: it
     // takes several clean closings to undo one bad conversation, which is the
     // honest exchange rate and the reason the register has a memory at all.
-    * (held ? relMult(next, held.id) : 1),
+    * (held ? relMult(next, held.id) : 1)
+    // ATTACHMENT (§5a): how unwilling this holder is to sell at all.
+    * (held ? 0.6 + holderSheet(next, held).attachment / 125 : 1),
   ));
   if (rng(next) < refuseP) {
     next.approaches[bbl] = { q: next.month, refused: true };
@@ -2746,6 +2752,27 @@ export function acceptBid(s: GameState, parcels: ParcelTable, bbl: string, index
  * dearer since the first one, pointed back at you — which is exactly how it
  * works from the other side of the table.
  */
+/**
+ * WHO IS ASSEMBLING AROUND THIS DEED — a competitor with a real assembly drive
+ * (or the ONLY-assembles rule) that owns two or more of the lots touching it.
+ * The one holding the most of them.
+ */
+function holdoutAssembler(
+  s: GameState, adjacency: Adjacency | null, _rec: ParcelRecord, bbl: string,
+): { r: Rival; n: number } | null {
+  const nbrs = new Set(adjacency?.[bbl] ?? []);
+  let best: { r: Rival; n: number } | null = null;
+  for (const r of livingRivals(s)) {
+    if (!r.sheet || r.stressMs) continue;
+    if (r.sheet.assembly < 70 && !r.rules?.includes("onlyAssembles")) continue;
+    let n = 0;
+    for (const b of r.bbls) if (nbrs.has(b)) n++;
+    if (n < 2) continue;
+    if (!best || n > best.n) best = { r, n };
+  }
+  return best;
+}
+
 function unsolicitedBidder(
   s: GameState, parcels: ParcelTable, adjacency: Adjacency | null, rec: ParcelRecord, h: Holding,
 ): { name: string; why: string; mult: number } {
@@ -3510,6 +3537,31 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       // odds no longer scale with how much you own.
       const anyLive = Object.values(s.holdings).some((x) => x.sale?.unsolicited)
         || (s.portfolioSale?.bbls.includes(h.bbl) ?? false);
+      // THE HOLDOUT (COMPETITORS_PLAN.md §2.5). An assembler that owns lots
+      // around yours is not pricing your deed — it is pricing the SITE your
+      // deed completes, and it will pay up to what its own discipline allows
+      // to finish it: 15% over appraisal for the tightest committee, 65% for
+      // one that wants the block at any price. It rings on its own clock
+      // (hashed, so no other buyer's call is moved), and if you say no it
+      // builds around you.
+      if (rec0 && !anyLive && s.month - h.boughtM > 6) {
+        const asm = holdoutAssembler(s, adjacency, rec0, h.bbl);
+        if (asm && hash01(`${s.seed}:holdout:${h.bbl}:${s.month}`) < 0.05) {
+          s.lastUnsolicitedM = s.month;
+          const v = ownedHoldingValue(s, parcels, h);
+          const prem = 1.15 + 0.5 * (1 - asm.r.sheet!.discipline / 100);
+          const px = Math.round(v * prem);
+          h.sale = { ask: px, listedM: s.month, unsolicited: true };
+          h.sale.offer = { price: px, expiresM: s.month + 3, from: asm.r.name };
+          s.news.unshift({
+            q: s.month, kind: "deal",
+            text: `${asm.r.name} owns ${asm.n} of the lots around ${rec0.address} and yours is the piece they are missing. `
+              + `They are offering ${money(px)} — ${Math.round((prem - 1) * 100)}% over appraisal — for three months. `
+              + `Say no and they will build around you.`,
+          });
+          continue;
+        }
+      }
       const quiet = s.month - (s.lastUnsolicitedM ?? -60) > 30;
       if (rec0 && s.month - h.boughtM > 18 && !anyLive && quiet) {
         const creditEase = Math.max(0.4, s.econ.creditIdx ?? 1);
@@ -3728,13 +3780,19 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         s.beaten = s.beaten ?? [];
         s.beaten.unshift({ bbl: li.bbl, firmId: buyer.id, firm: buyer.name, m: s.month, yours: talk.yourPrice, theirs: px });
         if (s.beaten.length > 24) s.beaten.length = 24;
+        const beatBefore = (s.street?.[buyer.id]?.beats ?? 0);
         tie(s, buyer.id).beats++;
         s.lastTradeM = s.lastTradeM ?? {};
         s.lastTradeM[li.bbl] = s.month;
+        // The relationship, in one line where it matters (§5).
+        const lastBeat = (s.beaten ?? []).slice(1).find((b) => b.firmId === buyer.id);
+        const history = beatBefore > 0 && lastBeat
+          ? ` It is the ${["", "", "second", "third", "fourth", "fifth"][beatBefore + 1] ?? `${beatBefore + 1}th`} time — they have been bidding against you since ${lastBeat.bbl === li.bbl ? "this same corner" : "the last one they took off you"}.`
+          : "";
         s.news.unshift({
           q: s.month, kind: "warn",
           text: `${buyer.name} came over the top of you at ${rec.address} — ${money(px)} against your ${money(talk.yourPrice)}. `
-            + `Your number was on the street the day you made it. It is their corner now.`,
+            + `Your number was on the street the day you made it. It is their corner now.${history}`,
         });
         continue;
       }

@@ -108,7 +108,7 @@ const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", 
 const CANAL_WATER = 0x2c5f5c;
 /** the footway band inside a park's street edge (m); its hedge stands at 3.6 */
 const PARK_WALK = 3.0;
-const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "manhole", "drain", "treepit", "person"];
+const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 // what a crowd wears: mostly neutrals (navy, charcoal, camel, white,
@@ -5164,6 +5164,21 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       case "taxi": return { g: vehicle("taxi"), mat: this.vehicleMat(), colored: true };
       case "bus": return { g: vehicle("bus"), mat: this.vehicleMat(), colored: true };
       case "truck": return { g: vehicle("truck"), mat: this.vehicleMat(), colored: true };
+      // A CYCLIST: wheels, frame, a rider in the instance colour, helmeted
+      case "bike": {
+        const DARK = [0.08, 0.08, 0.09], SKIN = [0.62, 0.48, 0.4], LEG = [0.25, 0.26, 0.3];
+        const b = (w: number, d: number, h: number, x: number, y: number, z: number): THREE.BufferGeometry => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
+        const wheel = (x: number) => new THREE.TorusGeometry(0.33, 0.035, 5, 14).rotateX(Math.PI / 2).translate(x, 0, 0.35);
+        return { g: mergeColored([
+          [wheel(0.55), DARK], [wheel(-0.55), DARK],
+          [b(1.0, 0.05, 0.05, 0, 0, 0.62).rotateY(-0.12), DARK], [b(0.05, 0.05, 0.5, -0.2, 0, 0.35), DARK], [b(0.05, 0.05, 0.55, 0.45, 0, 0.4), DARK],
+          [b(0.14, 0.12, 0.62, -0.18, -0.1, 0.55), LEG], [b(0.14, 0.12, 0.62, -0.08, 0.1, 0.45), LEG],
+          [b(0.42, 0.36, 0.55, -0.05, 0, 1.12).rotateY(0.45).translate(0.25, 0, -0.05), PAINT],
+          [b(0.4, 0.08, 0.08, 0.3, -0.18, 1.2), PAINT], [b(0.4, 0.08, 0.08, 0.3, 0.18, 1.2), PAINT],
+          [new THREE.SphereGeometry(0.11, 8, 6).translate(0.38, 0, 1.58), SKIN],
+          [new THREE.SphereGeometry(0.13, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.5).translate(0.38, 0, 1.6), DARK],
+        ]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, vertexColors: true }), colored: true };
+      }
       // A PERSON: legs, coat, arms, head with hair — coat in the instance
       // colour, trousers and hair darker. 1.75 m.
       case "person": return { g: person(), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }), colored: true };
@@ -6288,14 +6303,15 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const tr = new Traffic(this.netRaw, (x, y) => this.groundAt(x, y) === "road", rnd);
       tr.populate(40, rnd, (c) => {
         const vk = rnd(), long = tr.segs[c.seg].L > 160;
-        const kind = long && vk < 0.04 ? "bus" : vk < 0.48 ? "car" : vk < 0.74 ? "suv" : vk < 0.83 ? "van" : vk < 0.88 ? "truck" : "taxi";
+        const kind = long && vk < 0.04 ? "bus" : vk < 0.45 ? "car" : vk < 0.7 ? "suv" : vk < 0.79 ? "van" : vk < 0.84 ? "truck" : vk < 0.95 ? "taxi" : "bike";
         const lc = c as LiveCar;
         lc.kind = kind;
-        lc.col = kind === "taxi" ? TAXI : kind === "bus" ? BUS : CAR[(rnd() * CAR.length) | 0];
+        lc.col = kind === "taxi" ? TAXI : kind === "bus" ? BUS : kind === "bike" ? CROWD_COAT[(rnd() * CROWD_COAT.length) | 0] : CAR[(rnd() * CAR.length) | 0];
+        c.bus = kind === "bus";
         lc.draw = rnd();
         // 25-40 km/h in town; the bus a little under
-        c.vmax = (kind === "bus" || kind === "truck" ? 7 : 8) + rnd() * 3;
-        c.len = kind === "bus" ? 12 : kind === "truck" ? 7.4 : kind === "van" ? 5.2 : 4.8;
+        c.vmax = kind === "bike" ? 4.2 + rnd() * 1.5 : (kind === "bus" || kind === "truck" ? 7 : 8) + rnd() * 3;
+        c.len = kind === "bus" ? 12 : kind === "truck" ? 7.4 : kind === "van" ? 5.2 : kind === "bike" ? 2 : 4.8;
       });
       this.traffic = tr;
       this.carList = tr.cars as LiveCar[];
@@ -6474,7 +6490,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       mesh.receiveShadow = true; mesh.frustumCulled = false;
       this.scene.add(mesh); this.fleets.push({ mesh, list, z, car });
     };
-    for (const kind of ["car", "suv", "van", "truck", "taxi", "bus"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
+    for (const kind of ["car", "suv", "van", "truck", "taxi", "bus", "bike"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
     fleet("person", this.walkers, 0.15);
     if (this.traffic) fleet("person", this.traffic.crossers as unknown as Lively[], 0.05, true);
     fleet("ferry", this.boats, 0.05);

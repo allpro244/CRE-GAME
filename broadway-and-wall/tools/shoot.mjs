@@ -36,7 +36,9 @@ if (!url || !out) { console.error("usage: shoot.mjs <url> <out.png> [--wait ms] 
 // the only thing that changed is the code.
 const keepProfile = flag("profile", null);
 const verbose = argv.includes("--verbose");
-const port = 9300 + Math.floor((Date.now() / 7) % 400);
+// the pid as well as the clock: two shots launched in the same millisecond
+// otherwise pick one port and drive the same browser
+const port = 9300 + Math.floor((Date.now() / 7 + process.pid * 37) % 600);
 const profile = keepProfile || mkdtempSync(join(tmpdir(), "shoot-"));
 // A killed run leaves its SingletonLock behind, and Chromium then REFUSES the
 // profile rather than reusing it — "Aborting now to avoid profile corruption",
@@ -98,8 +100,21 @@ await send("Page.navigate", { url });
 await sleep(wait);
 if (evalJs) {
   await send("Runtime.evaluate", { expression: evalJs, awaitPromise: true });
-  await sleep(Number(flag("settle", 2500)));
 }
+// --until <js>: poll an expression (every second, up to --max ms) and shoot
+// --settle ms after it first reads true. A big town on the software renderer
+// takes minutes to be ready, and a fixed wait is either too short or wasted.
+const until = flag("until", null);
+if (until) {
+  const t0 = Date.now(), max = Number(flag("max", 600000));
+  for (;;) {
+    const r = await send("Runtime.evaluate", { expression: `!!(${until})`, returnByValue: true });
+    if (r?.result?.value === true) break;
+    if (Date.now() - t0 > max) { errors.push(`--until never held after ${max} ms`); break; }
+    await sleep(1000);
+  }
+}
+if (evalJs || until) await sleep(Number(flag("settle", 2500)));
 const shot = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 if (!shot?.data) throw new Error("no screenshot data; console: " + errors.join(" | "));
 writeFileSync(out, Buffer.from(shot.data, "base64"));

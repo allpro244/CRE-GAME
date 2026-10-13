@@ -220,6 +220,54 @@ fixed in #231; the sweep is clean since.
   cracked asphalt with weeds in the cracks and ghost bay lines, an abandoned
   car or two). How far gone (`scruff`) follows demand: tidy at 60, rough
   below 30, derelict below 22, where four lots in ten are the old asphalt.
+- **Round 30** — always afternoon, cloud shadows. `setDayPhase` now pins
+  the hour to the calibrated day whatever it is passed (the owner: "absolutely
+  no nighttime in this game"), so no caller can bring the dusk machinery back.
+  Cloud shadows: what round 17 reached for, without drawing a cloud. A field
+  of cumulus cells (~420 m, four octaves of value noise) at a 1,400 m base,
+  sampled where each surface's line to the sun meets it, takes up to 55% (later 45%) of
+  the sun's direct light (the sky fill is untouched), drifting at ~8 m/s. It
+  rides the shared air hook (`addHaze`), so every lit material and the
+  shadow catcher over MapLibre's ground carry it; the sea takes most of its
+  shade from the catcher and gives up its glitter. Fair weather shades ~22%
+  of the ground, more as the sky fills, none under a full overcast (no
+  direct sun left to take); off on Low. Two faults found on the way: the
+  noise sum bunches round 0.5, so the coverage threshold is fitted to its
+  measured quantiles (a naive `1 - cover` shaded 7% for "34%"); and three
+  uploads `cameraPosition` only to some material kinds, not the shadow
+  catcher, which then painted the whole ground one shade — the field carries
+  its own `cloudEye`. Measured against main on the reference camera: 5-15%
+  darker in cloud-shaped patches over land and water.
+- **Round 31** — mechanical floors. A modern or glass tower over 100 m (28+
+  storeys) is broken every 16-24 storeys by a plant floor in its own louvred
+  `@screen` wall (two storeys over 220 m), on the body's floor grid, so a
+  tall slab reads as stacked blocks instead of one stripe. Masonry towers
+  keep their plant in the setbacks and crown, as they did.
+- **Round 32** — the clouds, finished. Close in, a cloud's soft edge spans
+  the whole frame and reads as a smudge (and a passing one dims the building
+  being inspected): the shade is full from the district view out and a third
+  of it at street level. Far off, the air hides it as it hides everything
+  else: gone by ~7 km, so the horizon is haze and not grey smears. The field
+  moved to its own module (`clouds.ts`) so anything else that shows the sky
+  reads the same cells. On the Metropolis default camera the open-water
+  patches read as ink blots: the edge is now a broad penumbra (a cumulus has
+  no hard edge and the sun is a disc) and the shade at most 45% of the sun.
+  Clouds drawn into the sky itself (the finishing pass,
+  where the distance pass shows no geometry above the horizon) were built and
+  dropped: at the 70° pitch limit the sky is a sliver at the top of the
+  frame even in a tall window, too little to judge or to be worth the pass.
+- **Round 33** — wind in the trees. Every street tree's crown leans downwind
+  with the square of its height above the fork (~10 cm at the top of a 7 m
+  crown), in two slow periods phased by where it stands, so a row ripples
+  instead of nodding as one. Vertex shader on the shared foliage material;
+  bushes, near the ground, barely move.
+- **Checked, not changed: the black towers.** The 1958 dark tower
+  (`blackglass`) reads near-black from the play camera, which looked like a
+  hole in the city. Tried as a dielectric (metalness 0.12, full sky probe):
+  no measurable change on the reference shot, because a wall seen from above
+  mirrors the street and the buildings opposite, not the sky, and 4% of a
+  dark street is dark. That is what smoked glass looks like from a roof
+  across the street; the look is right and stays.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

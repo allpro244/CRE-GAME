@@ -359,7 +359,9 @@ export function insuredLimit(s: GameState): number {
  */
 function maybeRaiseInsurance(s: GameState, failing: Lender) {
   if ((s.depositCover ?? 1) > 1 || failing.kind !== "bank") return;
-  const systemic = s.econ.phase === "recession" || s.econ.phase === "depression"
+  // A national recession, not the town's descriptive label (2026-10-13): the
+  // phase is dated from local payrolls for the reader and drives nothing.
+  const systemic = (s.econ.nat?.recM ?? 0) > 0
     || (s.lenders ?? []).some((x) => x !== failing && x.failedM !== undefined);
   if (!systemic) return;
   s.depositCover = 2.5;
@@ -607,7 +609,7 @@ export function lenderHealth(l: Lender, econ?: { creditIdx?: number; phase?: str
   }
   const cr = capitalRatio(l);
   const target = KIND[l.name]?.capitalRatio ?? 0.1;
-  if (l.kind === "conduit" && econ && ((econ.creditIdx ?? 1) < 0.78 || econ.phase === "recession")) return { word: "the bond window is shut — not writing", bad: true };
+  if (l.kind === "conduit" && econ && (econ.creditIdx ?? 1) < 0.78) return { word: "the bond window is shut — not writing", bad: true };
   if (cr < target * 0.45) return { word: "undercapitalised — not lending to anybody", bad: true };
   if (cr < target * 0.7) return { word: "impaired — rationing hard", bad: true };
   if (l.delinquent > 0.055) return { word: "working out problem loans", bad: true };
@@ -842,7 +844,7 @@ export function tickLenders(s: GameState) {
     // seizures in 360 city-years, 7 of them with delinquency under 5%. When
     // the window shuts the warehouse is stuck on repo and the old funding law
     // is exactly right.
-    const conduitOpen = l.kind === "conduit" && (e.creditIdx ?? 1) >= 0.78 && e.phase !== "recession";
+    const conduitOpen = l.kind === "conduit" && (e.creditIdx ?? 1) >= 0.78;   // = windowOpen (debt.ts): a national market
     const fundTarget = conduitOpen ? (l.bookYield ?? e.indexRate + spread) - (NORMAL_NIM.conduit ?? 1.6) : baseFund + hot * k.wholesale;
     if (l.fundCost === undefined) l.fundCost = baseFund;
     // AN INSURER'S MONEY IS AS LONG AS ITS LOANS. The general account is

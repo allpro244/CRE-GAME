@@ -4,7 +4,7 @@
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
-import { logBooks, moveDeposit, monthLabel, CAP_PLAN_RATE, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, START_YEAR, cloneState, CREDIT_LABEL } from "./types";
+import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, useGap } from "./market";
 
@@ -19,7 +19,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
   return Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
 }
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
-  condGrade, initialCondIdx, condCeiling, COND_DECAY, specWearMult, buildingScore, qualityCycle, COND_WEAR_REF, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
+  condGrade, initialCondIdx, condCeiling, buildingScore, qualityCycle, condWear, capPlanBillMo, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
@@ -1345,15 +1345,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // The bricks go down every month. Old bones go down faster: the same
       // dollar of plan buys less on a 1928 building than on a 2015 one, which
       // is the whole reason a city has to keep rebuilding itself.
-      const age = START_YEAR + Math.floor(q / 12) - rec.yearBuilt;
       // ...and cheap plant faster still — see specWearMult. The plan bill
       // below scales with this, so a value building's reserve is bigger.
-      const wear = (COND_DECAY[rec.class as BuiltClass] ?? 0.0024)
-        * (1 + Math.min(0.50, age / 220))
-        * specWearMult(rec.buildSpec)
-        // (a recession-label 1.2x on wear is gone: deferred maintenance is
-        // an owner's capex decision, which is modelled where it is taken)
-        ;
+      // (a recession-label 1.2x on wear is gone: deferred maintenance is an
+      // owner's capex decision, which is modelled where it is taken.)
+      // condWear in value.ts, so the Operations panel quotes the same bill.
+      const wear = condWear(rec, q);
       h.condIdx -= wear;
 
       // THE CAPITAL PLAN. 34bps of gross asset value a year, spent without being
@@ -1377,7 +1374,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // is about the second thing.
       const plan = planSpec(h.plan);
       const gav = ownedHoldingValue(s, parcels, h);
-      const want = Math.round((CAP_PLAN_RATE * plan.mult * gav * (wear / COND_WEAR_REF)) / 12);
+      const want = capPlanBillMo(gav, wear, plan.mult);
       // A SWEEP TRAPS PROPERTY CASH FLOW — it does not freeze the firm's
       // chequebook. Charging the plan from firm cash while a deed is swept used
       // to be refused outright, which printed "capital plan went unfunded" on a

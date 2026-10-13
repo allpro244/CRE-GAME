@@ -450,6 +450,8 @@ export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "
       parts.push([new THREE.SphereGeometry(0.6, 8, 4).scale(1, 1, 0.3).translate(0, 0, 0.05), [1, 1, 1]]);
       return { g: mc(parts), mat: "water" };
     }
+    // the park's notice board at a gate: a framed green board on two posts, facing local -y
+    case "parksign": return { g: mc([[bx(0.08, 0.08, 1.9, -0.65, 0, 0), IRON], [bx(0.08, 0.08, 1.9, 0.65, 0, 0), IRON], [bx(1.4, 0.07, 0.95, 0, 0, 0.85), [0.86, 0.82, 0.7]], [bx(1.28, 0.08, 0.83, 0, -0.01, 0.91), [0.13, 0.3, 0.2]], [bx(1.5, 0.2, 0.08, 0, 0, 1.82), IRON]]), mat: "vc" };
     case "flagpole": return { g: mc([[bx(1.6, 1.6, 0.5), STONE], [cy(0.09, 11, 0.5, 6, 0.05), WHITE], [new THREE.SphereGeometry(0.14, 6, 4).translate(0, 0, 11.6), [0.8, 0.65, 0.25]], [bx(0.02, 1.8, 1.1, 0, 0.95, 10.2), [0.7, 0.18, 0.16]]]), mat: "vc" };
   }
   return null;

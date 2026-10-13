@@ -1106,7 +1106,7 @@ function profile(pts: [number, number][], w: number): THREE.BufferGeometry {
   return new THREE.ExtrudeGeometry(sh, { depth: w, bevelEnabled: false }).rotateX(Math.PI / 2).translate(0, w / 2, 0);
 }
 const SHADE = [0.015, 0.016, 0.02];
-const PAINT = [1, 1, 1], GLASS = [0.07, 0.08, 0.1], TYRE = [0.04, 0.04, 0.04], HEAD = [2.2, 2.2, 2.0], TAIL = [1.6, 0.12, 0.1], TRIMC = [0.12, 0.12, 0.13];
+const PAINT = [1, 1, 1], GLASS = [0.07, 0.08, 0.1], TYRE = [0.04, 0.04, 0.04], HEAD = [2.2, 2.2, 2.0], TAIL = [0.55, 0.04, 0.035], TRIMC = [0.12, 0.12, 0.13];
 function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck" | "pickup"): THREE.BufferGeometry {
   const parts: [THREE.BufferGeometry, number[]][] = [];
   const wheel = (x: number, y: number, r: number) => parts.push([new THREE.CylinderGeometry(r, r, 0.24, 8).translate(x, y, r), TYRE]);
@@ -1169,13 +1169,20 @@ function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck" | "pic
     box(3, 2.2, 0.3, -2, 0, 3.1, [0.75, 0.75, 0.75]);
     for (const x of [4.3, -3.3]) for (const y of [-1.05, 1.05]) wheel(x, y, 0.5);
     box(0.06, 0.4, 0.2, L + 0.03, -0.9, 0.7, HEAD); box(0.06, 0.4, 0.2, L + 0.03, 0.9, 0.7, HEAD);
+    box(0.06, 0.3, 0.4, -L - 0.03, -1.0, 0.7, TAIL); box(0.06, 0.3, 0.4, -L - 0.03, 1.0, 0.7, TAIL);
   }
   // THE CAR'S OWN SHADE on the road: a dark pad a little larger than the
   // body, so a car sits on the asphalt rather than hovering over it (the
   // sun's shadow map is baked for the still city and cannot follow traffic)
   const [hl, hw] = kind === "bus" ? [6.3, 1.45] : kind === "truck" ? [3.95, 1.4] : kind === "pickup" ? [2.85, 1.1] : kind === "van" ? [2.8, 1.12] : kind === "suv" ? [2.6, 1.08] : [2.5, 1.02];
   parts.push([new THREE.PlaneGeometry(hl * 2, hw * 2).translate(0, 0, 0.012), SHADE]);
-  return mergeColored(parts);
+  const g = mergeColored(parts);
+  // which vertices are tail lamps, for the brake lights (vehicleMat)
+  const col = g.getAttribute("color").array as Float32Array;
+  const lamp = new Float32Array(col.length / 3);
+  for (let i = 0; i < lamp.length; i++) lamp[i] = col[i * 3] > 0.4 && col[i * 3 + 1] < 0.1 && col[i * 3 + 2] < 0.1 ? 1 : 0;
+  g.setAttribute("lamp", new THREE.Float32BufferAttribute(lamp, 1));
+  return g;
 }
 function person(): THREE.BufferGeometry {
   const SKIN = [0.62, 0.48, 0.4], HAIR = [0.22, 0.2, 0.2], LEG = [0.32, 0.33, 0.36], SHOE = [0.12, 0.12, 0.12];
@@ -3718,7 +3725,22 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   }
   private vehMat: THREE.MeshStandardMaterial | null = null;
   private vehicleMat() {
-    if (!this.vehMat) this.vehMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.35, roughness: 0.38, vertexColors: true, envMapIntensity: 0.9 });
+    if (!this.vehMat) {
+      const m = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.35, roughness: 0.38, vertexColors: true, envMapIntensity: 0.9 });
+      // BRAKE LIGHTS: the tail lamps glow red as a moving car slows or
+      // stands in a queue (aBrake, per instance, from the traffic; a parked
+      // car has none and stays dark)
+      m.onBeforeCompile = (sh) => {
+        sh.vertexShader = sh.vertexShader
+          .replace("#include <common>", "#include <common>\nattribute float lamp;\nattribute float aBrake;\nvarying float vTail;")
+          .replace("#include <begin_vertex>", "#include <begin_vertex>\nvTail = lamp * aBrake;");
+        sh.fragmentShader = sh.fragmentShader
+          .replace("#include <common>", "#include <common>\nvarying float vTail;")
+          .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.9, 0.03, 0.02) * vTail * 1.3;");
+      };
+      m.customProgramCacheKey = () => "bw-vehicle";
+      this.vehMat = m;
+    }
     return this.vehMat;
   }
   private contactMat = (() => {
@@ -7335,6 +7357,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const mesh = new THREE.InstancedMesh(g, mat, list.length);
       list.forEach((m, i) => mesh.setColorAt(i, new THREE.Color(m.col[0], m.col[1], m.col[2])));
       mesh.receiveShadow = true; mesh.frustumCulled = false;
+      if (car) g.setAttribute("aBrake", new THREE.InstancedBufferAttribute(new Float32Array(list.length), 1));
       this.scene.add(mesh); this.fleets.push({ mesh, list, z, car });
     };
     for (const kind of ["car", "suv", "van", "pickup", "truck", "taxi", "bus", "bike"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
@@ -7384,6 +7407,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     for (const f of this.fleets) {
       if (f.car) {
         const peds = f.list === (this.traffic?.crossers as unknown);
+        const brk = f.mesh.geometry.getAttribute("aBrake") as THREE.InstancedBufferAttribute | undefined;
         const sc = peds ? big : one;
         f.list.forEach((m, i) => {
           if (i >= f.mesh.count) return;
@@ -7392,7 +7416,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           p.set(c.x, c.y, peds && !(m as unknown as Crosser).walking ? 0.15 : f.z);
           q.setFromEuler(e.set(0, 0, c.h));
           f.mesh.setMatrixAt(i, m4.compose(p, q, sc));
+          if (brk) brk.array[i] = c.brake ?? 0;
         });
+        if (brk) brk.needsUpdate = true;
         f.mesh.instanceMatrix.needsUpdate = true;
         continue;
       }

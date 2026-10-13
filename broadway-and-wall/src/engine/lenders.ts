@@ -127,25 +127,47 @@ export interface Lender {
  * mechanism and the reason the regional dies in a hiking cycle while the
  * hometown bank merely has a bad year.
  */
-const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: number; wholesale: number; blurb: string }> = {
+/**
+ * `adc` is the share of the desk's book in acquisition, development and
+ * construction loans — land and buildings that do not yet earn. It is the
+ * book that went bad in 2008-10: noncurrent construction loans at US banks
+ * reached ~16% (FDIC QBP, 2009-10) as land values fell 20-30% a year, against
+ * ~4% on income property, and the banks that failed were the ones that held
+ * it at three to five times capital. A typical bank carried 5-10% of its
+ * book there; the 2008-10 failures carried 30-50%.
+ */
+const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: number; wholesale: number; adc: number; blurb: string }> = {
   "First Harbor Bank": {
-    kind: "bank", capitalRatio: 0.11, brittle: 0.5, wholesale: 0.2,
+    kind: "bank", capitalRatio: 0.11, brittle: 0.5, wholesale: 0.2, adc: 0.08,
     blurb: "Deposits fund the book, so the losses have to be very bad before the lights go out. Small, local, and they remember who paid them in the bad years.",
   },
   "Alden Savings & Trust": {
-    kind: "bank", capitalRatio: 0.095, brittle: 0.8, wholesale: 0.65,
+    kind: "bank", capitalRatio: 0.095, brittle: 0.8, wholesale: 0.65, adc: 0.15,
     blurb: "A regional with a regional's problem: big enough to have made every mistake in the cycle, small enough that three of them matter.",
   },
   "Pelican Life Insurance": {
-    kind: "life", capitalRatio: 0.18, brittle: 0.25, wholesale: 0.1,
+    kind: "life", capitalRatio: 0.18, brittle: 0.25, wholesale: 0.1, adc: 0,
     blurb: "Insurance float against long paper. The most patient money in the city and the most conservative — they are never the reason a crunch happens and never the ones who end it.",
   },
   "Meridian Street Capital": {
-    kind: "conduit", capitalRatio: 0.04, brittle: 2.4, wholesale: 1.0,
+    kind: "conduit", capitalRatio: 0.04, brittle: 2.4, wholesale: 1.0, adc: 0,
     blurb: "They do not hold the loan; they sell it. Which is fine until nobody is buying, and then this desk is not tightening — it is closed.",
   },
+  // THE BANK THAT GREW ON CRANES (2026-10-13). A small community bank whose
+  // book is mostly construction and land — the profile of the ~500 US banks
+  // that failed in 2008-12 (FDIC OIG material loss reviews: ADC loans at
+  // several times capital, growth funded with brokered deposits, capital
+  // managed to the regulatory line). It prices construction a shade under
+  // the regional to win the business, lends further on dirt than the
+  // hometown bank will, and holds a large share of each job. In a boom it is
+  // the cheapest crane in town; in a land-price collapse it is the first
+  // name on the receiver's list.
+  "Tidewater Community Bank": {
+    kind: "bank", capitalRatio: 0.09, brittle: 1.4, wholesale: 0.5, adc: 0.45,
+    blurb: "A small bank that grew fast on construction and land loans, funded by brokered deposits. The cheapest construction money in a boom — and the first desk the regulator visits when land stops selling.",
+  },
   "Cordage Debt Partners": {
-    kind: "fund", capitalRatio: 0.22, brittle: 1.1, wholesale: 0.3,
+    kind: "fund", capitalRatio: 0.22, brittle: 1.1, wholesale: 0.3, adc: 0.20,
     blurb: "A fund with committed capital and no depositors to answer to. They lend into a crisis at crisis prices, which is the entire business model.",
   },
 };
@@ -210,8 +232,13 @@ export function lenderNames(): string[] {
  * company, a regional, a small local, a fund — is a fact about the business.
  * What is no longer asserted is how big the market is; see initLenders.
  */
-const BOOK_SHARE: Record<LenderKind | "firstharbor", number> = {
-  conduit: 900 / 2410, life: 640 / 2410, fund: 310 / 2410, bank: 420 / 2410, firstharbor: 140 / 2410,
+const BOOK_SHARE: Record<LenderKind | "firstharbor" | "tidewater", number> = {
+  // Tidewater's book is ADDED (+70, ~3% more property debt), not carved out of
+  // the regional: shrinking the regional pushed the street's loans past its
+  // single-name limits onto the hometown bank, which then failed of
+  // concentration in two of four measured centuries — a side effect, not the
+  // mechanism this desk exists to add.
+  conduit: 900 / 2410, life: 640 / 2410, fund: 310 / 2410, bank: 420 / 2410, firstharbor: 140 / 2410, tidewater: 70 / 2410,
 };
 
 /**
@@ -263,8 +290,9 @@ export function initLenders(stock?: Record<string, number>, priceLevel = 1): Len
   const SYSTEM_LTV = 0.55;
   const total = stock ? cityPropertyValue(stock, priceLevel) * SYSTEM_LTV : 2_410_000_000 * priceLevel;
   return lenderNames().map((name, i) => {
-    const k = KIND[name] ?? { kind: "bank" as LenderKind, capitalRatio: 0.10, brittle: 1 };
-    const share = name === "First Harbor Bank" ? BOOK_SHARE.firstharbor : BOOK_SHARE[k.kind];
+    const k = KIND[name] ?? { kind: "bank" as LenderKind, capitalRatio: 0.10, brittle: 1, adc: 0.08 };
+    const share = name === "First Harbor Bank" ? BOOK_SHARE.firstharbor
+      : name === "Tidewater Community Bank" ? BOOK_SHARE.tidewater : BOOK_SHARE[k.kind];
     const book = Math.max(20_000_000 * priceLevel, Math.round(total * share));
     return {
       id: "L" + i, name, kind: k.kind,
@@ -729,6 +757,9 @@ export function tickLenders(s: GameState) {
     panic = Math.max(0.25, Math.exp(-since / PANIC_HALFLIFE)) * Math.min(1.6, 0.75 + 0.45 * down.length);
   }
   stress = n ? stress / n : 0;
+  // How far land has fallen over the trailing year (0 when it has risen).
+  const h13 = e.history?.[e.history.length - 13];
+  const landFall12 = h13?.landIdx ? Math.max(0, 1 - (e.landIdx ?? h13.landIdx) / h13.landIdx) : 0;
 
   for (const l of s.lenders) {
     // --- RESOLUTION ---------------------------------------------------------
@@ -769,7 +800,7 @@ export function tickLenders(s: GameState) {
       }
       continue;
     }
-    const k = KIND[l.name] ?? { capitalRatio: 0.1, brittle: 1, wholesale: 0.5 };
+    const k = KIND[l.name] ?? { capitalRatio: 0.1, brittle: 1, wholesale: 0.5, adc: 0.08 };
     // --- THE BOOK IS THE LOANS ----------------------------------------------
     // Named paper (loanbook.ts: yours, the street's, the cranes) plus the
     // anonymous book of borrowers the game does not run as firms. A loan you
@@ -877,7 +908,12 @@ export function tickLenders(s: GameState) {
       // borrowers whose tenants are laying off: 0.6 x slack reads 1.8% at a
       // three-point recession trough, as the old recession term did
       + 0.6 * Math.max(0, labourSlack(e)) * k.brittle
-      + Math.max(0, 1 - (e.creditIdx ?? 1)) * 0.03 * k.brittle;
+      + Math.max(0, 1 - (e.creditIdx ?? 1)) * 0.03 * k.brittle
+      // ...and the construction and land book goes bad with the price of dirt
+      // (2026-10-13): noncurrent ADC loans reached ~16% as land fell 20-30% a
+      // year (FDIC QBP 2009-10), so 0.65 per unit of the trailing year's land
+      // fall, on the desk's ADC share.
+      + k.adc * 0.65 * landFall12;
     const ad = l.anonDelinq ?? l.delinquent;
     l.anonDelinq = Math.max(0.002, Math.min(0.35, ad + 0.10 * (badTarget - ad) + rrange(s, -0.0015, 0.0015, "lenders")));
     // THE NAMED BOOK IS COUNTED. A loan the engine runs is either being paid

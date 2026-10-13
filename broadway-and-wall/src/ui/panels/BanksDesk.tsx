@@ -12,6 +12,7 @@ import { LineChart } from "@/ui/Chart";
 import { usd } from "@/ui/format";
 import { bankStatement, CapSpark } from "@/ui/panels/NotesPage";
 import { lineLender } from "@/engine/credit";
+import { BankLink } from "@/ui/panels/BankProfile";
 import { appetiteAdvance } from "@/engine/pricing";
 
 export function TheBanks() {
@@ -37,6 +38,11 @@ export function TheBanks() {
       <YourCash />
       <LenderCards />
       <div className="page-section">The banks</div>
+      <div className="hint">
+        <b><a className="lnk" onClick={() => useStore.getState().setPage("banks")}>Open every lender's full books →</a></b>{" "}
+        Capital → Banks has each desk's balance sheet, income statement, credit quality, terms today, limits, your
+        file with them and every loan on their book. Click a lender's name below to go straight to it.
+      </div>
       <div className="hint">
         <b>Underwriting standards today: {standardsWord(standards)}</b> ({standards >= 0 ? "+" : ""}{standards.toFixed(2)} on a −1 to +1 scale).
         {" "}The credit window and the desks' own appetite move every sheet in town, both ways: at the top of the
@@ -112,7 +118,7 @@ export function TheBanks() {
             return (
               <Fragment key={l.id}>
                 <tr onClick={() => setOpen(open === l.id ? null : l.id)} style={{ cursor: "pointer" }}>
-                  <td>{open === l.id ? "▾ " : "▸ "}{l.name}</td>
+                  <td>{open === l.id ? "▾ " : "▸ "}<BankLink name={l.name} /></td>
                   <td className="dim">
                     {l.kind === "bank" ? "deposits" : l.kind === "life" ? "insurance float"
                       : l.kind === "conduit" ? "selling the paper on" : "committed capital"}

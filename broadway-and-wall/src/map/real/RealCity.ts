@@ -1654,6 +1654,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     for (const k of this.quality === "high" ? FAR_PROPS : FAR_PROPS_LOW) { const m = this.inst.get(k); if (m) m.visible = !far; }
     const beds = this.inst.get("flowerbed");
     if (beds) beds.visible = this.month >= 3 && this.month <= 9 && !(far && this.quality !== "high");
+    // the terraces go out from spring to autumn, and only when you are close
+    const cafe = this.inst.get("cafe");
+    if (cafe) cafe.visible = this.month >= 3 && this.month <= 9 && !far;
     this.renderer.resetState();
     if ((this.fleets.length || this.cranes) && !this.paused && typeof document !== "undefined" && !document.hidden) {
       const now = performance.now();
@@ -2892,6 +2895,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         this.putInst("awning", x, y, 0, 1, r, bbl, tr.awn, sz);
         this.putInst("shopsign", x, y, 0, 1, r, bbl, tr.sign, sz);
         this.putInst("boards", x, y, 0, 1, r, bbl, undefined, sz);
+        // A CAFE TERRACE: where a cafe, diner or bakery fronts a footway wide
+        // enough to keep a walking path past the tables (4.5 m and more)
+        if ((tr === CAFE || tr === DINER || tr === BAKERY) && [2.4, 3.4, 4.5].every((o) => this.groundAt(x + nx * o, y + ny * o) === "walk"))
+          this.putInst("cafe", x, y, 0.15, 1, r, bbl, tr.awn);
         bayN++;
       }
     }
@@ -4938,6 +4945,22 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       // a street tree's pit: dark mulch in a granite-edged square, flush with the flags
       case "treepit": return { g: mergeColored([[box(1.5, 1.5, 0.012), [0.62, 0.6, 0.56]], [box(1.3, 1.3, 0.02), [0.2, 0.15, 0.11]]]),
         mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, vertexColors: true }) };
+      // two cafe tables out on the footway, two chairs each, under umbrellas
+      // in the house colour; local -y is out from the shopfront
+      case "cafe": {
+        const parts: [THREE.BufferGeometry, number[]][] = [];
+        const B = (w: number, d: number, h: number, x: number, y: number, z: number, c: number[]) => parts.push([new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2), c]);
+        const WOOD = [0.18, 0.15, 0.13], METAL = [0.12, 0.12, 0.13], CANVAS = [1, 1, 1];
+        for (const tx of [-1.25, 1.25]) {
+          const ty = -2.35;
+          B(0.75, 0.75, 0.04, tx, ty, 0.72, WOOD);
+          B(0.06, 0.06, 0.72, tx, ty, 0, METAL);
+          for (const cx of [-0.62, 0.62]) { B(0.42, 0.42, 0.04, tx + cx, ty, 0.44, METAL); B(0.04, 0.42, 0.42, tx + cx * 1.38, ty, 0.46, METAL); }
+          B(0.04, 0.04, 2.1, tx, ty, 0.76, METAL);
+          parts.push([new THREE.ConeGeometry(1.15, 0.45, 8).rotateX(Math.PI / 2).translate(tx, ty, 2.55), CANVAS]);
+        }
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }), colored: true };
+      }
       case "hydrant": return { g: merge([cyl(0.14, 0.55, 0, 10), cyl(0.18, 0.1, 0.5, 10), cyl(0.1, 0.12, 0.6, 8), box(0.4, 0.09, 0.09, 0, 0, 0.36)]), mat: new THREE.MeshStandardMaterial({ color: 0xa8392c, roughness: 0.55 }) };
       case "bin": return { g: merge([cyl(0.28, 0.95, 0, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0x2e4034, roughness: 0.7, metalness: 0.2 }) };
       case "shelter": return { g: mergeColored([[box(3.8, 1.5, 0.08, 0, 0, 2.45), [0.3, 0.32, 0.34]], [box(3.8, 0.04, 2.2, 0, 0.7, 0.25), [0.55, 0.65, 0.7]],
@@ -5584,6 +5607,26 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         const back = e === 0 ? t + 3 : t - 3;
         if (mouth(mid[0] + u[0] * t, mid[1] + u[1] * t) || mouth(mid[0] + u[0] * back, mid[1] + u[1] * back)) return;
         paint.quad(p(t - 0.25, lo), p(t + 0.25, lo), p(t + 0.25, hi), p(t - 0.25, hi), up, [[0, 0], [1, 0], [1, 1], [0, 1]], WHITE);
+        // LANE ARROWS on an avenue's approach, 7 m behind the bar: straight
+        // on in every lane, the inside lane turning left as well
+        if (cw < 15) return;
+        const nl = Math.max(1, Math.floor((half - 2.4) / 3.3));
+        const back2 = e === 0 ? 1 : -1;                    // away from the junction, along u
+        const fwd: P2 = [-u[0] * back2, -u[1] * back2];    // the way the traffic runs
+        const rgt: P2 = [nr[0] * sd, nr[1] * sd];
+        for (let k = 0; k < nl; k++) {
+          const c0 = p(t + back2 * 7.5, 1.65 + 3.3 * k);
+          if (!onRoad(c0[0], c0[1]) || inBox(c0[0], c0[1])) continue;
+          const at2 = (al: number, la: number) => [c0[0] + fwd[0] * al + rgt[0] * la, c0[1] + fwd[1] * al + rgt[1] * la, Z];
+          const shaft = (a0: number, a1: number) => paint.quad(at2(a0, -0.09), at2(a1, -0.09), at2(a1, 0.09), at2(a0, 0.09), up, [[0, 0], [1, 0], [1, 1], [0, 1]], WHITE);
+          shaft(-2.6, 1.1);
+          paint.tri(at2(1.1, -0.45), at2(2.6, 0), at2(1.1, 0.45), up, WHITE);
+          if (k === 0) {
+            // the left limb: off the shaft, out to the left, its own head
+            paint.quad(at2(-0.4, 0), at2(0.1, 0), at2(0.1, -1.0), at2(-0.4, -1.0), up, [[0, 0], [1, 0], [1, 1], [0, 1]], WHITE);
+            paint.tri(at2(0.35, -1.0), at2(-0.15, -1.75), at2(-0.65, -1.0), up, WHITE);
+          }
+        }
       });
     }
     if (!paint.count) return;
@@ -7260,6 +7303,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // the beds are bare earth November to March
     const beds = this.inst.get("flowerbed");
     if (beds) beds.visible = this.month >= 3 && this.month <= 9;
+    const cafe = this.inst.get("cafe");
+    if (cafe) cafe.visible = this.month >= 3 && this.month <= 9;
     // evergreens keep their needles; a dusting of snow lightens them
     this.pineMat.color.setRGB(0.1 + this.snow * 0.25, 0.2 + this.snow * 0.2, 0.12 + this.snow * 0.28);
     this.applyLight();

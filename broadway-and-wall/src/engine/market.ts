@@ -3,7 +3,7 @@
 // Randomness creates situations, never verdicts.
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
-import { BUILT_CLASSES, SECTOR_CLASSES } from "./types";
+import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { simulateHistory, driftInflTarget, CAP_RAIL, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { settleSupplyDeliveries } from "./supply";
@@ -1900,6 +1900,50 @@ function bankStep(gap: number, restoring: boolean, pressured: boolean): number {
 // capitulation that changed no national quantity moved one seed's 33-month
 // deep national recession from absent to present. Every draw in this
 // function is on its own channel now; the town cannot re-roll the nation.
+const CHAIR_NAMES = [
+  "Hollis Carrow", "Margaret Venn", "Arthur Bellamy", "Ruth Okafor", "Daniel Prescott", "Elena Marsh",
+  "Walter Kincaid", "Frances Lowell", "Samuel Achterberg", "Clara Whitcomb", "Leonard Strand", "Ines Calloway",
+  "Theodore Haig", "Naomi Fairbanks", "Edwin Rourke", "Judith Selden",
+];
+/** How a chair reads to the market, from their resolve. */
+export function chairStance(resolve: number): "hawk" | "centrist" | "dove" {
+  return resolve > 1.25 ? "hawk" : resolve < 0.8 ? "dove" : "centrist";
+}
+/** The sitting chair of the central bank: a term and a resolve (see the reaction function). */
+function centralBankChair(s: GameState, n: NonNullable<Econ["nat"]>): { untilM: number; resolve: number } {
+  if (!n.chair || s.month >= n.chair.untilM) {
+    const first = !n.chair;
+    const u1 = Math.max(1e-9, rng(s, "nation")), u2 = rng(s, "nation");
+    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    // Skewed a little hawkish: since independence most chairs have been
+    // inflation-averse and true doves are the exception — about one in ten
+    // draws here reads as a dove, one in four as a hawk. Shape parameters.
+    const resolve = +Math.exp(0.08 + 0.25 * z).toFixed(3);
+    const term = 48 + Math.floor(rng(s, "nation") * 97);    // four to twelve years
+    const name = CHAIR_NAMES[Math.floor(rng(s, "nation") * CHAIR_NAMES.length)];
+    n.chair = { untilM: s.month + term, resolve, name, sinceM: s.month };
+    if (!first) {
+      // THE GAME STOPS FOR IT (owner, Oct 2026). A new chair is the one piece
+      // of national news that resets where money is going for years, so it
+      // takes the screen; `raiseAlert` also files it in the news.
+      const stance = chairStance(resolve);
+      const infl = ((n.infl ?? 0) * 100).toFixed(1), pol = (n.policy ?? 0).toFixed(2);
+      raiseAlert(s, {
+        kind: "fed",
+        tone: stance === "hawk" ? "bad" : "good",
+        title: `${name} takes the chair of the central bank`,
+        body: stance === "hawk"
+          ? `The market reads a hawk. Inflation is running ${infl}% and the policy rate is ${pol}%; expect it to be fought, whatever it costs — dearer money, wider cap rates, slower lending.`
+          : stance === "dove"
+            ? `The market reads a dove. Inflation is running ${infl}% and the policy rate is ${pol}%; expect growth first and inflation to be given room — cheaper money for now, and the risk that prices get away.`
+            : `The market reads a centrist. Inflation is running ${infl}% and the policy rate is ${pol}%; nobody expects the bank's course to change much.`,
+        detail: `The term runs to ${2000 + Math.floor((s.month + term) / 12)}. The bank's stance, the rate it is steering toward and how far the public believes it are on the Economy page under Central bank.`,
+      });
+    }
+  }
+  return n.chair;
+}
+
 export function tickNation(s: GameState) {
   const e = s.econ;
   if (!e.nat) {
@@ -2133,11 +2177,15 @@ export function tickNation(s: GameState) {
   // it is in a different job. It is earned back slowly, and faster when the
   // bank is visibly holding real rates high into a disinflation — that is the
   // whole of what Volcker actually bought with 10.8% unemployment.
+  // Earned back at 0.35 points a month on target (2026-10-13; was 0.20):
+  // from a collapse to a believed bank in about twenty years rather than
+  // thirty-five — the US re-anchored long-run expectations within a decade
+  // or so of 1983 (Michigan 5-10yr expectations ~3% by the mid-1990s).
   const miss = n.infl - 0.02;
   const am = Math.abs(miss);
   n.credibility = clamp(
     n.credibility + (am < 0.010
-      ? 0.0020 + (realPolicy > 0.03 ? 0.0022 : 0)
+      ? (0.0035 + (realPolicy > 0.03 ? 0.0022 : 0)) * (n.chair?.resolve ?? 1)
       : -0.0018 - 0.110 * (am - 0.010)),
     0.10, 0.99);
   // A believed bank's anchor beats the pass-through and expectations sit at
@@ -2200,13 +2248,26 @@ export function tickNation(s: GameState) {
   // unemployment for it, and that is the only reason the 1980s were not the
   // 1970s again. Without this term the model can enter a Great Inflation and
   // has no way out of one except waiting.
+  // THE CHAIR CHANGES HANDS (2026-10-13). One reaction function for a whole
+  // century made the bank a single mind: a regime that lost its nerve kept
+  // losing it until the credibility arithmetic alone turned it round. Real
+  // banks are run by people on terms — Martin, Burns, Miller, Volcker,
+  // Greenspan, Bernanke, Yellen, Powell, four to twelve years apiece — and
+  // the regime breaks line up with them: Burns let the 1970s run, Volcker
+  // broke them inside three years. Each chair draws a RESOLVE that scales how
+  // hard the rule leans on inflation over target (the 0.5 Taylor weight), the
+  // Volcker restore term and how fast credibility is earned back. Most
+  // chairs are ordinary (resolve near 1); the lognormal's tails are the
+  // Burnses and the Volckers. Credibility carries over: a new chair inherits
+  // whatever the public believes. Term and spread are shape parameters.
+  const chair = centralBankChair(s, n);
   const restore = n.credibility < 0.55 && seen > 0.045
-    ? (0.55 - n.credibility) * 10.5 : 0;
+    ? (0.55 - n.credibility) * 10.5 * chair.resolve : 0;
   // ...against the target the bank actually holds, which drifts. See
   // regime.ts: 0.02 was written here as a constant and it is the reason a
   // century could not contain two different monetary worlds.
   const tgt = n.inflTarget ?? 0.02;
-  const want = 100 * (n.neutralReal + seen + 0.5 * (seen - tgt) + 0.5 * okunGap) + restore;
+  const want = 100 * (n.neutralReal + seen + 0.5 * chair.resolve * (seen - tgt) + 0.5 * okunGap) + restore;
   n.ruleRate = +want.toFixed(3);
   // Gradualism, except when it is not: a bank moves in quarter points at
   // eight meetings a year, and in three-quarter points when it is frightened.

@@ -34,7 +34,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
-import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
+import { dollarLevel, rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
 import { DEV_MARGIN, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
 import { cityCoverage, cityInfillCap, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar } from "./dev";
@@ -730,7 +730,7 @@ export function claimJob(
     // The firm's own cheque: all of the day-one equity, or a deal-by-deal
     // sponsor's co-invest (sponsorShare) with the deal's investors writing the
     // rest.
-    const need = Math.round(dayOneOf(r) * sponsorShare(r.style)) + Math.max(400_000, r.cash * 0.04);
+    const need = Math.round(dayOneOf(r) * sponsorShare(r.style)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.04);
     if (freeCash(s, r) + lineDrawFor(s, parcels, r, need) < need) return false;
     // A firm building mostly with its own money has to HAVE it: the whole of
     // its equity, called or callable, not only the first draw.
@@ -758,7 +758,7 @@ export function claimJob(
   observe(s, best, sheetOf(best), ["build", "scale", "quality"], 0.08);
   const dayOneEquity = dayOneOf(best);
   const bestLtc = ltcOf(best);
-  drawLine(s, best, lineDrawFor(s, parcels, best, Math.round(dayOneEquity * sponsorShare(best.style)) + Math.max(400_000, best.cash * 0.04)));
+  drawLine(s, best, lineDrawFor(s, parcels, best, Math.round(dayOneEquity * sponsorShare(best.style)) + Math.max(400_000 * dollarLevel(s.econ), best.cash * 0.04)));
   best.cash -= dayOneEquity - jvFund(s, best, bbl, dayOneEquity);
   best.basis = Math.round((best.basis ?? 0) + land);
   transferDeed(s, bbl, best, land);
@@ -1930,7 +1930,7 @@ export function tickRivalConversions(s: GameState, parcels: ParcelTable) {
       if (!pick || plan.hurdleRatio > pick.plan.hurdleRatio) pick = { bbl, rec, plan };
     }
     if (!pick) continue;
-    const need = Math.round(pick.plan.equity * 0.40 * sponsorShare(r.style)) + Math.max(400_000, r.cash * 0.03);
+    const need = Math.round(pick.plan.equity * 0.40 * sponsorShare(r.style)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
     const draw = lineDrawFor(s, parcels, r, need);
     if (r.cash + draw < need) continue;
     drawLine(s, r, draw);
@@ -2909,7 +2909,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (cost > (r.aum ?? 0) * 0.9 + r.cash * 5) return;
   // Dirt is already theirs — first equity draw only (loan follows over the job).
   const dayOneNeed = Math.round(plan.equity * 0.40);
-  const needWithReserve = Math.round(dayOneNeed * sponsorShare(r.style)) + Math.max(400_000, r.cash * 0.03);
+  const needWithReserve = Math.round(dayOneNeed * sponsorShare(r.style)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
   const draw = lineDrawFor(s, parcels, r, needWithReserve);
   if (r.cash + draw < needWithReserve) return;
   const formerDurationRoll = rng(s, "rivals");
@@ -3975,7 +3975,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // is a war chest nobody can outbid, which is not dry powder, it is a bug.
     const reserve = Math.min(
       r.style === "developer" ? 45_000_000 : 30_000_000,
-      Math.max(2_000_000, aum * (
+      Math.max(2_000_000 * dollarLevel(s.econ), aum * (
         r.style === "developer" ? 0.16 : r.style === "family" ? 0.09 : r.style === "core" ? 0.06 : 0.045)),
     );
     const building = (s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned);
@@ -4419,7 +4419,7 @@ export function qualifiedBuyers(s: GameState, rec: ParcelRecord, price: number):
     const st = paramsOf(r);
     if (st.classes && !st.classes.includes(rec.class)) continue;
     const equity = price - loan(r, ci);
-    if (r.cash < equity + Math.max(500_000, r.cash * 0.05)) continue;
+    if (r.cash < equity + Math.max(500_000 * dollarLevel(s.econ), r.cash * 0.05)) continue;
     const aumAfter = (r.aum ?? 0) + price;
     const debtAfter = r.debt + (price - equity);
     if (aumAfter > 0 && debtAfter / aumAfter > st.maxLtv) continue;
@@ -4534,7 +4534,7 @@ export function rivalBuys(
   const drawFor = (r: Rival) => {
     const debt = loan(r, ci);
     const equity = price - debt;
-    const reserve = Math.max(500_000, Math.max(0, r.cash) * 0.05);
+    const reserve = Math.max(500_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
     // Prefer this month's tickRivals mark. Remaking the whole book here was
     // the cost of every contested sale and the main spike inside a Year click.
     let aum = r.aum, noiYr = r.markNoi, landV = r.markLand;

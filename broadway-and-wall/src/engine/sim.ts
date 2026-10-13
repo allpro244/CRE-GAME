@@ -128,8 +128,15 @@ function targetListings(s: GameState, totalLots: number): number {
   // recession and peak), continuously in between.
   const base = 0.004 + 0.008 * cycleHot(s.econ) * (1 - 0.5 * cycleDown(s.econ));
   // and the credit window gates it further — no debt, no buyers, no listings
-  const ci = Math.max(0.4, Math.min(1.15, s.econ.creditIdx ?? 1));
-  return Math.max(4, Math.round(totalLots * base * (0.55 + 0.5 * ci)));
+  const ci = s.econ.creditIdx ?? 1;
+  // NO FLOOR OF FOUR (2026-10-13). The tape was never allowed under four
+  // listings, which bound 64% of months on a small town: the market stocked
+  // a shop window the town's owners had not filled. The expected count is
+  // drawn instead — rounded up with the odds of its fraction — so a quiet
+  // village can have one listing, or none, as one does.
+  const mean = totalLots * base * (0.55 + 0.5 * ci);
+  const whole = Math.floor(mean);
+  return whole + (rng(s) < mean - whole ? 1 : 0);
 }
 
 /**

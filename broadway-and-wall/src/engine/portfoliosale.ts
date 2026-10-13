@@ -23,7 +23,7 @@
 // tape at a number nobody will pay.
 import type { GameState, PortfolioListing } from "./types";
 import type { ParcelTable } from "../data/types";
-import { rng, rrange } from "./market";
+import { dollarLevel, rng, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
 import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed } from "./rivals";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
@@ -456,7 +456,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
       const st = paramsOf(r);
       const debt = packageDebt(r);
       const equity = p.ask - debt;
-      if (r.cash < equity + Math.max(1_000_000, r.cash * 0.05)) return false;
+      if (r.cash < equity + Math.max(1_000_000 * dollarLevel(s.econ), r.cash * 0.05)) return false;
       const aumAfter = (r.aum ?? 0) + p.ask;
       if (aumAfter > 0 && (r.debt + debt) / aumAfter > st.maxLtv) return false;
       return true;

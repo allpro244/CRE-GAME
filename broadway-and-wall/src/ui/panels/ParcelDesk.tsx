@@ -16,7 +16,7 @@ import { initialCondition, recoveryOf, marketRentPsfYr, managedRentPsfYr, renova
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
-import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, leasableUses, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive, autoLeaseRule, autoTiCapToday, marketTiPsfYr } from "@/engine/leasing";
+import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, leasableUses, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive, autoLeaseRule, autoTiCapToday } from "@/engine/leasing";
 import { StackingList } from "@/ui/panels/StackingList";
 import { stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
@@ -1177,8 +1177,10 @@ function ParcelPanelInner({
           </div>
           {holding.autoLease && (
             <>
-              <AutoTiCapRow bbl={selectedBBL} />
-              <div className="hint" style={{ fontSize: 11 }}>{autoLeaseRule(game, holding)}</div>
+              <LegacyTiCapRow bbl={selectedBBL} />
+              <div className="hint" style={{ fontSize: 11 }}>
+                {autoLeaseRule(game, holding)} The concession limit is the firm's, on the Leasing page.
+              </div>
             </>
           )}
           <OpsChoices bbl={selectedBBL} h={holding} />
@@ -1549,45 +1551,21 @@ function StakeSection({ bbl }: { bbl: string }) {
 }
 
 /**
- * THE AUTO-LEASE FIT-OUT CAP — the second of auto-lease's two instructions.
- * Three presets read off today's market band for the building's main use, a
- * box for your own number, and No cap. $/sf per year of term, the unit TI is
- * quoted and rolled in, so one number covers a ten-year lease and a renewal.
+ * A PER-BUILDING FIT-OUT CAP FROM BEFORE THE FIRM-WIDE LIMIT. Saves that set
+ * one keep it — it still binds, on top of the team's concession limit — and
+ * the row says so and offers to clear it. New buildings never show it: the
+ * firm's limit reads the market for each space, which a $/sf-per-lease-year
+ * figure typed into each deed could not.
  */
-function AutoTiCapRow({ bbl }: { bbl: string }) {
+function LegacyTiCapRow({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
-  const parcels = useStore((s) => s.parcels)!;
-  const [txt, setTxt] = useState("");
   const h = game.holdings[bbl];
-  const rec = resolveRec(parcels, game, bbl);
-  if (!h || !rec) return null;
-  const use = leasableUses(rec)[0] ?? "office";
-  const [lo, hi] = marketTiPsfYr(game, use, rec, h);
-  const cap = autoTiCapToday(game, h);
-  const set = (v: number | undefined) => useStore.getState().autoTiCap(bbl, v);
-  const near = (v: number) => cap !== undefined && Math.abs(cap - v) < 0.01;
-  const presets: [string, number, string][] = [
-    ["Lean", lo, "the bottom of what tenants ask — fewer deals, cheaper ones"],
-    ["Typical", (lo + hi) / 2, "the middle of the market band"],
-    ["Generous", hi, "the top of the band — most second-generation asks clear it"],
-  ];
-  const typed = Number(txt.replace(/[^0-9.]/g, ""));
+  const cap = h ? autoTiCapToday(game, h) : undefined;
+  if (cap === undefined) return null;
   return (
-    <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-      <span className="hint" title={`Most fit-out auto-lease will fund, per year of lease term. Tenants here ask about $${lo.toFixed(2)}–$${hi.toFixed(2)}/sf per year today, shell floors included.`}>TI cap</span>
-      <button className={"btn btn-mini" + (cap === undefined ? " btn-on" : "")} onClick={() => set(undefined)}>No cap</button>
-      {presets.map(([label, v, why]) => (
-        <button key={label} className={"btn btn-mini" + (near(v) ? " btn-on" : "")} title={`$${v.toFixed(2)}/sf per lease year — ${why}`} onClick={() => set(+v.toFixed(2))}>
-          {label} ${v.toFixed(2)}
-        </button>
-      ))}
-      <input
-        className="mono" style={{ width: 70 }} inputMode="decimal"
-        placeholder={cap !== undefined ? cap.toFixed(2) : "$/sf·yr"}
-        value={txt} onChange={(e) => setTxt(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && txt.trim() && Number.isFinite(typed)) { set(typed); setTxt(""); } }}
-      />
-      <button className="btn btn-mini" disabled={!txt.trim() || !Number.isFinite(typed)} onClick={() => { set(typed); setTxt(""); }}>Set</button>
+    <div className="btn-row" style={{ alignItems: "center" }}>
+      <span className="hint">Building fit-out cap ${cap.toFixed(2)}/sf per lease year (on top of the firm's limit)</span>
+      <button className="btn btn-mini" onClick={() => useStore.getState().autoTiCap(bbl, undefined)}>Clear</button>
     </div>
   );
 }

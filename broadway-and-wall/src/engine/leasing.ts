@@ -3,7 +3,7 @@
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { Approach, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
+import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
 import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, useGap } from "./market";
@@ -404,6 +404,29 @@ export function portfolioOccupancy(
   }
   if (lettable <= 0) return null;
   return { leasedSf: Math.round(leased), lettableSf: Math.round(lettable), occ: Math.min(1, leased / lettable) };
+}
+
+/**
+ * WHAT THE LEASED FEET PAY, ON AVERAGE — $/sf/yr of in-place rent over the same
+ * operated deeds `portfolioOccupancy` counts: commercial tenants at their
+ * contract rent, flats at the roll they hold (`resRentPsf`; at market where a
+ * deed has none yet). Leased feet only, so vacancy does not dilute it — the
+ * occupancy readout beside it carries that.
+ */
+export function portfolioRentPsf(s: GameState, parcels: ParcelTable): number | null {
+  let rent = 0, leased = 0;
+  for (const h of Object.values(s.holdings)) {
+    if (isLeasedFee(h) || s.merged?.[h.bbl]) continue;
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    for (const t of h.tenants) { rent += t.rentPsf * t.sf; leased += t.sf; }
+    const resSf = useRentableSf(rec, "multifamily") * (h.occ ?? 0);
+    if (resSf > 0) {
+      rent += resSf * (h.resRentPsf ?? marketRentPsfYr(rec, s.econ, h.condition, h.condIdx));
+      leased += resSf;
+    }
+  }
+  return leased > 0 ? rent / leased : null;
 }
 
 // In-place rent roll at acquisition. Expirations cluster around a couple of
@@ -2206,6 +2229,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const cover = s.agent
           ? { who: "Your agent" as const }
           : deskCoverage(s, h.bbl);
+        // On auto-lease the team's own line (signed / passed / walked) is
+        // the news; "check the Deals desk" there sent the owner to a desk
+        // the letter never reaches.
+        if (h.autoLease && !h.groundLeased) continue;
         s.news.unshift({
           q, kind: "info",
           text: nTour > 1
@@ -2233,25 +2260,31 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
  *
  * A big building drew a letter a month, and every one was a pop-up asking the
  * same question. On auto the building answers by the two instructions an owner
- * actually gives a leasing agent:
+ * actually gives a leasing team:
  *
- *   1. How hard to hold on rent: the stance. Fill / Market / Push sets the
- *      floor a letter must clear on net effective (after free rent, fit-out
- *      and bumps) against your current ask, which already sits 8% under the
- *      market on Fill and 8% over on Push.
+ *   1. How hard to hold on rent: the building's stance. Fill / Market / Push
+ *      sets the floor a letter must clear on net effective (after free rent,
+ *      fit-out and bumps) against the street's own deal for the space, and
+ *      the asking rent already sits 8% under the market on Fill and 8% over
+ *      on Push.
  *          Fill    no floor: sign what comes. Speed over price.
- *          Market  95% of the ask; counters go to the ask.
- *          Push    100% of the ask; counters go to 5% over it.
- *   2. How much fit-out you will fund: the TI cap, in $/sf per year of term
- *      (the unit broker surveys quote it in, and the one TI_ASK is rolled in,
- *      so a ten-year lease gets ten times the cap and a two-year renewal two).
- *      Stored in opening-year dollars and read through costIdx, because an
- *      allowance is construction and a cap that did not move with the cost of
- *      building would quietly fall to nothing over a long game.
+ *          Market  95% of a market deal; counters go to a market deal.
+ *          Push    a market deal or better; counters go to 5% over it.
+ *   2. How much the team may give away: ONE firm-wide concession limit
+ *      (GameState.autoConcessions), against the street's package for the
+ *      letter in hand (`streetPackage` — the allowance and free months a
+ *      tenant of this kind, on this term, in this space, in this market asks):
+ *          Lean      the typical package or less (the middle of the band)
+ *          Market    anything inside the range the market asks (the top)
+ *          Generous  whatever the tenant asks, priced through net effective
+ *      An owner of two hundred buildings does not set a fit-out number per
+ *      building; they tell the team "market packages, nothing silly", and
+ *      the team reads the market for each space. The old per-building cap
+ *      ($/sf per lease year) still binds where a save set one.
  *
- * MEASURED AGAINST THE MARKET'S OWN DEAL, NOT THE FACE RENT. "95% of the
- * ask" means 95% of what an ordinary market deal for THIS space nets — the
- * ask, the full allowance the space draws (first-generation on a shell), and
+ * MEASURED AGAINST THE MARKET'S OWN DEAL, NOT THE FACE RENT. "95% of a
+ * market deal" means 95% of what an ordinary market deal for THIS space nets
+ * — the ask, the allowance the space draws (first-generation on a shell), and
  * the free rent the concession market is giving for that term — built by the
  * same rules that roll the tenants' letters (`marketDealShare`). Scored
  * against face it was a different instruction from the one on the button: on
@@ -2261,13 +2294,21 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
  *
  * Every letter then goes through the same three steps:
  *   - inside the policy        → sign it.
- *   - outside it, first time   → counter ONCE: the allowance trimmed to the
- *                                cap, the rent raised (never lowered, at most
- *                                35%) until net effective reaches the target.
- *                                The tenant answers as they answer the Counter
- *                                button (`tenantCounterOutcome`).
+ *   - outside it, first time   → counter ONCE: the allowance and free months
+ *                                trimmed to the limit, the rent raised (never
+ *                                lowered) until net effective reaches the
+ *                                target. The tenant answers as they answer
+ *                                the Counter button (`tenantCounterOutcome`).
  *   - their answer             → took: sign. Walked: gone. Countered back:
  *                                sign if it is inside the policy, else pass.
+ *
+ * THE COUNTER ALWAYS ASKS FOR THE WHOLE TARGET. It used to stop at 35% over
+ * the tenant's rent and sign whatever the tenant took, unchecked — so a
+ * lowball at 40% of the market was countered to 55%, accepted, and signed
+ * under a Push building's 100% floor (tools/mdga/auto-lease-audit.mjs found
+ * leases at 36-43% of market on Market and Push). A counter far over the
+ * tenant's bid is answered by the tenant's own logistic, which walks it; the
+ * cap was a second, wrong answer to the same question.
  *
  * Nothing here is a new economic rule. The commission is the one you pay
  * signing yourself (in-house 4% / 2%, or the exclusive's 6%), and the cheque
@@ -2278,34 +2319,78 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
  * every tenant to their lease.
  */
 const AUTO_WHO = "Auto-lease";
-type AutoPolicy = { floor: number; target: number; tiCapPsfYr?: number };
+type AutoPolicy = { floor: number; target: number; tiCapPsfYr?: number; conc: AutoConcessions };
 function autoPolicy(s: GameState, h: Holding): AutoPolicy {
   const st = h.stance ?? 0;
-  // Fill's target is 0: it counters only to bring the allowance under the cap,
-  // and never asks for more rent while it does.
+  // Fill's target is 0: it counters only to bring the package inside the
+  // limit, and never asks for more rent while it does.
   const base = st < 0 ? { floor: 0, target: 0 } : st > 0 ? { floor: 1, target: 1.05 } : { floor: 0.95, target: 1 };
   const cap = h.autoTiCapPsfYr;
-  return cap === undefined ? base : { ...base, tiCapPsfYr: cap * (s.econ.costIdx ?? 1) };
+  const conc = autoConcessionsOf(s);
+  return cap === undefined ? { ...base, conc } : { ...base, conc, tiCapPsfYr: cap * (s.econ.costIdx ?? 1) };
 }
+
+/** The firm's concession limit for auto-lease; absent reads as "market". */
+export function autoConcessionsOf(s: GameState): AutoConcessions {
+  const c = s.autoConcessions;
+  return c === "lean" || c === "generous" ? c : "market";
+}
+
+/** The three limits in the player's words — one table, read by the panels and the rule line. */
+export const AUTO_CONCESSIONS: { key: AutoConcessions; label: string; blurb: string }[] = [
+  { key: "lean", label: "Lean", blurb: "the typical fit-out and free rent for the space or less — tenants who want more are countered, and some walk" },
+  { key: "market", label: "Market", blurb: "anything inside the range the market is giving for the space — only outsized asks are countered" },
+  { key: "generous", label: "Generous", blurb: "whatever the tenant asks, as long as the rent makes up for it — fastest lease-up, most cash out the door" },
+];
+
 /**
- * WHAT AN ORDINARY MARKET DEAL FOR THIS SPACE NETS, as a share of the ask.
- * The tenant-side rules of the letter roll, with every draw at its middle: a
- * bid at the ask (so the full allowance), TI at the middle of TI_ASK through
- * the concession market, the cost index and the shell premium on whatever
- * part of the space is shell, free rent at the middle of its band for this
- * letter's term. Nothing new is asserted — it is the street's own deal.
+ * THE STREET'S PACKAGE FOR THIS LETTER: the allowance ($/sf) and free months
+ * a tenant of this kind asks for here, at the middle and the top of the band
+ * the letters are rolled from. The same rules as the roll in `tickLeasing`,
+ * with the draws at their middle and top and the tenant bidding the ask (a
+ * lowball forfeits allowance, so the ask is where the package is fullest):
+ *
+ *   new        TI_ASK × term × fit-out market × covenant × cost index, with
+ *              the first-generation premium on the part of the space that is
+ *              still a shell; free rent 0.25-0.85 months a year × the
+ *              concession market.
+ *   expansion  the same allowance over the coterminous term; no free rent.
+ *   renewal    the refresh share of the allowance for the age of the fit-out
+ *              they sit in; free rent 1-3 months × the concession market.
+ *
+ * Nothing new is asserted. It is the market's own package, read back.
  */
-export function marketDealShare(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
+export function streetPackage(
+  s: GameState, rec: ParcelRecord, h: Holding, loi: LOI,
+): { tiMid: number; tiTop: number; freeMid: number; freeTop: number } {
   const use = loi.use ?? leasableUses(rec)[0] ?? "office";
   const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
   const concession = concessionPressure(s.econ, use);
   const years = Math.max(1, loi.termM / 12);
-  const shell = loi.kind === "new" ? shellShare(rec, h, use, s.month) : 0;
-  const tiPsf = ((lo + hi) / 2) * years * tiPressure(concession) * (s.econ.costIdx ?? 1)
-    * (1 + (FIRST_GEN_TI_MULT - 1) * shell);
-  const freeM = years * 0.55 * concession;
-  const ref = loiMandateScore({ ...loi, rentPsf: 1, tiPsf: 0, freeM, bumpPct: DEFAULT_BUMP_PCT }, 1)
-    - (TI_VALUE * tiPsf) / years / Math.max(1, loiMarket(s, rec, h, loi));
+  const base = years * tiPressure(concession) * tiCreditMult(loi.credit) * (s.econ.costIdx ?? 1);
+  let gen = 1;
+  if (loi.kind === "renewal") {
+    const t = h.tenants.find((x) => x.name === loi.name && (x.use ?? use) === use);
+    gen = t ? renewalRefreshShare((s.month - (t.fitM ?? t.startM)) / 12) : 0.5;
+  } else {
+    gen = 1 + (FIRST_GEN_TI_MULT - 1) * shellShare(rec, h, use, s.month);
+  }
+  const free = loi.kind === "expansion" ? [0, 0]
+    : loi.kind === "renewal" ? [2 * concession, 3 * concession]
+    : [years * 0.55 * concession, years * 0.85 * concession];
+  return { tiMid: ((lo + hi) / 2) * base * gen, tiTop: hi * base * gen, freeMid: free[0], freeTop: free[1] };
+}
+
+/**
+ * WHAT AN ORDINARY MARKET DEAL FOR THIS SPACE NETS, as a share of the ask.
+ * The street's package at its middle (`streetPackage`) on this letter's term,
+ * at the ask. Nothing new is asserted — it is the street's own deal.
+ */
+export function marketDealShare(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
+  const pkg = streetPackage(s, rec, h, loi);
+  const years = Math.max(1, loi.termM / 12);
+  const ref = loiMandateScore({ ...loi, rentPsf: 1, tiPsf: 0, freeM: pkg.freeMid, bumpPct: DEFAULT_BUMP_PCT }, 1)
+    - (LANDLORD_TI_COST * pkg.tiMid) / years / Math.max(1, loiMarket(s, rec, h, loi));
   // a guard, not a lever: a market so soft the standard deal nets under a
   // quarter of face is not a reference, it is a market with no price
   return Math.max(0.25, ref);
@@ -2314,30 +2399,47 @@ export function marketDealShare(s: GameState, rec: ParcelRecord, h: Holding, loi
 function autoScore(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
   return loiMandateScore(loi, loiMarket(s, rec, h, loi)) / marketDealShare(s, rec, h, loi);
 }
-/** The most allowance the policy funds on this letter, $/sf; Infinity when uncapped. */
-function autoTiLimit(p: AutoPolicy, loi: LOI): number {
-  return p.tiCapPsfYr === undefined ? Infinity : Math.round(p.tiCapPsfYr * Math.max(1, loi.termM / 12));
+/** The most fit-out ($/sf) and free rent (months) the team may give on this letter. */
+function autoLimits(s: GameState, rec: ParcelRecord, h: Holding, p: AutoPolicy, loi: LOI): { ti: number; free: number } {
+  let ti = Infinity, free = Infinity;
+  if (p.conc !== "generous") {
+    const pkg = streetPackage(s, rec, h, loi);
+    // whole dollars and whole months, as the letters are written — rounded
+    // up, so a letter at the edge of the band is inside it
+    ti = Math.ceil(p.conc === "lean" ? pkg.tiMid : pkg.tiTop);
+    free = Math.ceil((p.conc === "lean" ? pkg.freeMid : pkg.freeTop) - 1e-9);
+  }
+  if (p.tiCapPsfYr !== undefined) ti = Math.min(ti, Math.round(p.tiCapPsfYr * Math.max(1, loi.termM / 12)));
+  return { ti, free };
 }
 /** Why this letter is outside the policy, in words for the news; null when it may be signed. */
-function autoMiss(p: AutoPolicy, loi: LOI, score: number): string | null {
-  const lim = autoTiLimit(p, loi);
-  if ((loi.tiPsf ?? 0) > lim) return `they want $${Math.round(loi.tiPsf)}/sf of fit-out, over your $${lim}/sf cap on ${Math.round(loi.termM / 12)} years`;
+function autoMiss(p: AutoPolicy, lim: { ti: number; free: number }, loi: LOI, score: number): string | null {
+  const pkg = p.conc === "lean" ? "a lean package" : "the market's range";
+  if ((loi.tiPsf ?? 0) > lim.ti) return `they want $${Math.round(loi.tiPsf)}/sf of fit-out, over the $${lim.ti}/sf ${p.tiCapPsfYr !== undefined && lim.ti < Infinity ? "this building's cap" : pkg} allows`;
+  if ((loi.freeM ?? 0) > lim.free) return `they want ${loi.freeM} months free, over the ${lim.free} ${pkg} allows`;
   if (p.floor > 0 && score + 0.005 < p.floor) return `they net ${(score * 100).toFixed(0)}% of a market deal`;
   return null;
 }
 /**
  * The rent that brings this letter's net effective to `target` at the given
- * allowance. Net effective is linear in face rent (free rent and the bump
- * premium both scale with it), so two readings solve it exactly.
+ * package. Net effective is linear in face rent (free rent and the bump
+ * premium both scale with it), so two readings solve it exactly. Never lower
+ * than what they offered; NaN when no rent reaches it.
  */
-function autoCounterRent(loi: LOI, market: number, tiPsf: number, target: number): number {
-  const at = (r: number) => loiMandateScore({ ...loi, rentPsf: r, tiPsf }, market);
+function autoCounterRent(loi: LOI, market: number, tiPsf: number, freeM: number, target: number): number {
+  const at = (r: number) => loiMandateScore({ ...loi, rentPsf: r, tiPsf, freeM }, market);
   const r0 = loi.rentPsf;
   const s0 = at(r0);
   if (s0 >= target) return r0;
   const slope = at(r0 + 1) - s0;
-  const r = slope > 1e-9 ? r0 + (target - s0) / slope : r0 * 1.35;
-  return +Math.min(r0 * 1.35, Math.max(r0, r)).toFixed(2);
+  if (!(slope > 1e-9)) return NaN;
+  return Math.ceil((r0 + (target - s0) / slope) * 100) / 100;
+}
+/** One row on the team's scorecard; the log keeps a year. */
+function logAuto(s: GameState, e: AutoLeaseEntry) {
+  const keep = (s.autoLeaseLog ?? []).filter((x) => s.month - x.m < 12);
+  keep.push(e);
+  s.autoLeaseLog = keep.slice(-600);
 }
 function autoSign(s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Holding, loi: LOI): boolean {
   const fee = principalFee(h, loi);
@@ -2351,6 +2453,9 @@ function autoSign(s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Hold
     const short = Math.ceil(own - s.cash);
     if (short > 0) drawLineInPlace(s, parcels, short);
   }
+  // scored before signing: the signing uses up the shell the yardstick reads
+  const ne = loiMandateScore(loi, loiMarket(s, rec, h, loi));
+  const deal = autoScore(s, rec, h, loi);
   const before = h.tenants.length;
   delete (s as GameState & { _signFailed?: string })._signFailed;
   signLoi(s, rec, h, loi, fee);
@@ -2360,16 +2465,20 @@ function autoSign(s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Hold
   if (failed) return false;
   s.lois = s.lois.filter((l) => l.id !== loi.id);
   digestOf(s).signed += 1;
+  logAuto(s, { m: s.month, bbl: h.bbl, v: "signed", ne, deal, sf: loi.sf });
   s.news.unshift({
     q: s.month, kind: "deal",
     text: `${AUTO_WHO} signed ${loi.name} at ${rec.address}: ${Math.round(loi.sf).toLocaleString()} sf at $${loi.rentPsf.toFixed(2)}/sf`
       + `${(loi.tiPsf ?? 0) > 0 ? `, $${Math.round(loi.tiPsf)}/sf fit-out` : ""}`
-      + `${loi.kind === "renewal" ? " (renewal)" : loi.kind === "expansion" ? " (expansion)" : ""}.`,
+      + `${(loi.freeM ?? 0) > 0 ? `, ${loi.freeM} mo free` : ""}`
+      + `${loi.kind === "renewal" ? " (renewal)" : loi.kind === "expansion" ? " (expansion)" : ""}`
+      + ` — nets ${Math.round(deal * 100)}% of a market deal.`,
   });
   return true;
 }
 function autoPass(s: GameState, loi: LOI, rec: ParcelRecord, why: string) {
   digestOf(s).declined += 1;
+  logAuto(s, { m: s.month, bbl: loi.bbl, v: "passed", sf: loi.sf });
   s.lois = s.lois.filter((l) => l.id !== loi.id);
   s.news.unshift({ q: s.month, kind: "info", text: `${AUTO_WHO} passed on ${loi.name} at ${rec.address} — ${why}.` });
 }
@@ -2406,6 +2515,7 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
     if (mine.referred) continue;
     if (isMajorLease(rec, mine)) {
       mine.referred = true;
+      logAuto(s, { m: s.month, bbl: h.bbl, v: "referred", sf: mine.sf });
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `${AUTO_WHO} referred ${mine.name} at ${rec.address} to you — ${Math.round(mine.sf).toLocaleString()} sf is a major lease, and that is the owner's call.`,
@@ -2413,34 +2523,42 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
       continue;
     }
     const pol = autoPolicy(s, h);
-    const miss = () => autoMiss(pol, mine, autoScore(s, rec, h, mine));
+    const lim = autoLimits(s, rec, h, pol, mine);
+    const miss = () => autoMiss(pol, lim, mine, autoScore(s, rec, h, mine));
+    const cantFund = "the cash and the line cannot cover the fit-out and commission";
     // sign inside the policy, pass outside it — the end of every path below
     const settle = (prefix: string) => {
       const why = miss();
       if (why) autoPass(s, mine, rec, prefix + why);
-      else if (!autoSign(s, parcels, rec, h, mine)) autoPass(s, mine, rec, "the cash and the line cannot cover the fit-out and commission");
+      else if (!autoSign(s, parcels, rec, h, mine)) autoPass(s, mine, rec, cantFund);
     };
     // a letter inside the policy, or their final word: settle it now
     if (!miss() || mine.stage === "countered") { settle(mine.stage === "countered" ? "on their final, " : ""); continue; }
     if (mine.countered) continue;   // countered by hand before auto went on; they are deciding
-    // ONE counter: the allowance down to the cap, the rent up to the target
-    const tiPsf = Math.min(mine.tiPsf ?? 0, autoTiLimit(pol, mine));
-    const rentPsf = autoCounterRent(mine, loiMarket(s, rec, h, mine), tiPsf, pol.target * marketDealShare(s, rec, h, mine));
+    // ONE counter: the package down to the limit, the rent up to the target
+    const tiPsf = Math.min(mine.tiPsf ?? 0, lim.ti);
+    const freeM = Math.min(mine.freeM ?? 0, lim.free);
+    const market = loiMarket(s, rec, h, mine);
+    const rentPsf = autoCounterRent(mine, market, tiPsf, freeM, pol.target * marketDealShare(s, rec, h, mine));
+    if (!Number.isFinite(rentPsf)) { autoPass(s, mine, rec, miss() ?? "no rent reaches the policy"); continue; }
     const outcome = tenantCounterOutcome(s, rec, h, mine, {
-      rentPsf, tiPsf, freeM: mine.freeM ?? 0, bumpPct: bumpOf(mine),
+      rentPsf, tiPsf, freeM, bumpPct: bumpOf(mine),
     });
-    if (outcome === "took") {
-      if (!autoSign(s, parcels, rec, h, mine)) autoPass(s, mine, rec, "the cash and the line cannot cover the fit-out and commission");
-      continue;
-    }
     if (outcome === "walked") {
       digestOf(s).walked += 1;
+      logAuto(s, { m: s.month, bbl: h.bbl, v: "walked", sf: mine.sf });
       s.lois = s.lois.filter((l) => l.id !== mine.id);
-      s.news.unshift({ q: s.month, kind: "info", text: `${AUTO_WHO} countered ${mine.name} at ${rec.address} at $${rentPsf.toFixed(2)}/sf with $${tiPsf}/sf fit-out, and they walked.` });
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `${AUTO_WHO} countered ${mine.name} at ${rec.address} at $${rentPsf.toFixed(2)}/sf with $${tiPsf}/sf fit-out`
+          + `${freeM > 0 ? ` and ${freeM} mo free` : ""}, and they walked.`,
+      });
       continue;
     }
-    // their counter-back splits the difference; signed only if it still fits
-    settle("on their counter-back, ");
+    // took: the counter is inside the policy by construction, and settle
+    // checks it anyway. Countered back: they split the difference; signed
+    // only if it still fits.
+    settle(outcome === "took" ? "" : "on their counter-back, ");
   }
   // relief and give-back requests from sitting tenants
   for (const a of [...(s.asks ?? [])]) {
@@ -2468,6 +2586,15 @@ export function setAutoLease(s: GameState, parcels: ParcelTable, bbl: string, on
   return next;
 }
 
+/** Set the firm's concession limit for every building on auto; waiting letters are answered at once. */
+export function setAutoConcessions(s: GameState, parcels: ParcelTable, c: AutoConcessions): GameState {
+  if (autoConcessionsOf(s) === c && s.autoConcessions !== undefined) return s;
+  const next: GameState = cloneState(s);
+  next.autoConcessions = c;
+  autoLeaseDesk(next, parcels);
+  return next;
+}
+
 /**
  * Set the auto-lease fit-out cap, in TODAY'S $/sf per year of term; undefined
  * lifts it. Stored deflated by costIdx (see autoLeaseDesk), so the cap you set
@@ -2492,10 +2619,7 @@ export function autoTiCapToday(s: GameState, h: Holding): number | undefined {
  * What a tenant on this use asks for today, $/sf per year of term — the TI_ASK
  * band through the concession market and the cost index, as the letters roll
  * it (before credit). With a holding, the shell premium is blended in for the
- * part of the space still a shell: a new building's floors draw the
- * first-generation allowance, and presets read off the second-generation band
- * alone would cap away most of the market on exactly the building that needs
- * leasing. Shown beside the cap so the player sets it against the market.
+ * part of the space still a shell.
  */
 export function marketTiPsfYr(s: GameState, use: string, rec?: ParcelRecord, h?: Holding): [number, number] {
   const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
@@ -2509,10 +2633,39 @@ export function autoLeaseRule(s: GameState, h: Holding): string {
   const st = h.stance ?? 0;
   const rent = st < 0 ? "Fill: signs whatever rent comes"
     : st > 0 ? "Push: signs at a market deal or better, counters to 5% over it"
-    : "Market: signs at 95% of a market deal, counters to the market";
+    : "Market: signs at 95% of a market deal, counters to a market deal";
+  const c = autoConcessionsOf(s);
+  const conc = c === "lean" ? "typical fit-out and free rent or less"
+    : c === "market" ? "fit-out and free rent inside the market's range"
+    : "whatever fit-out and free rent the rent pays for";
   const cap = autoTiCapToday(s, h);
-  const ti = cap === undefined ? "any fit-out" : `fit-out up to $${cap.toFixed(2)}/sf per lease year ($${Math.round(cap * 10)}/sf on 10 years)`;
-  return `${rent}; ${ti}. One counter, then sign or pass.`;
+  const own = cap === undefined ? "" : `, and no more than $${cap.toFixed(2)}/sf of fit-out per lease year here`;
+  return `${rent}; ${conc}${own}. One counter, then sign or pass.`;
+}
+
+/**
+ * THE TEAM'S YEAR, for the Leasing page: what auto-lease signed, passed on,
+ * lost and sent up over the last twelve months, and what the signings net.
+ * `ne` is the owner's net effective over face market, `deal` over the
+ * street's own deal (1.0 = a market deal), both weighted by feet.
+ */
+export function autoLeaseYear(s: GameState): {
+  signed: number; passed: number; walked: number; referred: number;
+  ne: number; deal: number; under: number; worst: number;
+} {
+  const rows = (s.autoLeaseLog ?? []).filter((x) => s.month - x.m < 12);
+  const signed = rows.filter((x) => x.v === "signed" && Number.isFinite(x.ne));
+  const sf = signed.reduce((a, x) => a + (x.sf ?? 1), 0) || 1;
+  return {
+    signed: signed.length,
+    passed: rows.filter((x) => x.v === "passed").length,
+    walked: rows.filter((x) => x.v === "walked").length,
+    referred: rows.filter((x) => x.v === "referred").length,
+    ne: signed.reduce((a, x) => a + (x.ne ?? 0) * (x.sf ?? 1), 0) / sf,
+    deal: signed.reduce((a, x) => a + (x.deal ?? 0) * (x.sf ?? 1), 0) / sf,
+    under: signed.filter((x) => (x.deal ?? 1) < 0.9).length,
+    worst: signed.reduce((a, x) => Math.min(a, x.ne ?? 1), Infinity),
+  };
 }
 
 /**
@@ -3105,6 +3258,20 @@ export function agentCashReserve(s: GameState): number {
 }
 
 /**
+ * WHAT A DOLLAR OF FIT-OUT COSTS THE LANDLORD: a dollar. TI_VALUE is the
+ * TENANT'S half of the trade — the 75 cents of rent a tenant will give up for
+ * a dollar of allowance — and the landlord's score used to read it too, so
+ * every desk in the game believed a $40/sf allowance cost it $30. One
+ * quantity, two answers, and the wrong one on the side that writes the
+ * cheque: measured on auto-lease (tools/mdga/auto-lease-audit.mjs) the score
+ * overstated the owner's net effective by a median 3-6 points and 6-12 at the
+ * p90, and the error ran the same way every time — toward the fat package.
+ * The gap between the two is the reason "they build it" exists: an allowance
+ * is a lossy currency, and rent is the cheaper one to pay in.
+ */
+export const LANDLORD_TI_COST = 1;
+
+/**
  * Landlord-side score vs market: face after free rent, minus amortised TI.
  * Positive concessions pull the score down so a "market" face with a fat
  * allowance does not clear a tight mandate.
@@ -3113,7 +3280,7 @@ export function loiMandateScore(loi: LOI, market: number): number {
   const years = Math.max(1, loi.termM / 12);
   const paid = 1 - Math.min(0.45, (loi.freeM ?? 0) / Math.max(1, loi.termM));
   const ne = loi.rentPsf * paid
-    - (TI_VALUE * (loi.tiPsf ?? 0)) / years
+    - (LANDLORD_TI_COST * (loi.tiPsf ?? 0)) / years
     + bumpPremiumPsf(loi.rentPsf, bumpOf(loi), loi.termM);
   return ne / Math.max(1, market);
 }
@@ -3163,7 +3330,7 @@ export function blockPremAdj(tight: number, kind: "floors" | "remnant" | "partia
   return clamp(adj, -BLOCK_DISC_GUARD, BLOCK_PREM_GUARD);
 }
 
-function loiMarket(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
+export function loiMarket(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
   return currentAskPsfYr(rec, s.econ, h, loi.use ?? leasableUses(rec)[0]) * blockShapeMult(s, rec, h, loi);
 }
 

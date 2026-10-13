@@ -63,6 +63,8 @@ export interface Car {
   x: number; y: number; h: number;
   /** braking: the tail lamps brighten (0-1) */
   brake: number;
+  /** the driver's foot on the brake (latched; see step) */
+  brakeOn?: boolean;
   /** where it stood at the start of this step (what the cars behind it see) */
   sSeg?: number; sD?: number;
   /** a bus: pulls in at a stop half way down a long block and dwells */
@@ -514,7 +516,18 @@ export class Traffic {
         const dv = vT - c.v;
         const prev = c.v;
         c.v = Math.max(0, c.v + Math.max(-DEC * 2 * dt, Math.min(ACC * dt, dv)));
-        c.brake += ((c.v < prev - 0.01 || c.v < 0.3 ? 1 : 0) - c.brake) * Math.min(1, dt * 6);
+        // BRAKE LIGHTS THAT DO NOT FLICKER. The lamps came on at any slowing
+        // over 0.01 m/s in one step, and a car creeping in a queue slows and
+        // gains several times a second: every queue in town strobed red (the
+        // owner: "a flickering light, very annoying"). A driver's foot is on
+        // the pedal or it is not: the lamps come on for real braking (over
+        // ~1 m/s/s) or standing, stay on until the car is clearly pulling
+        // away again (over ~0.5 m/s/s, or moving freely), light at once and
+        // fade over a third of a second.
+        const acc = dt > 0 ? (c.v - prev) / dt : 0;
+        if (acc < -1 || c.v < 0.3) c.brakeOn = true;
+        else if (acc > 0.5 || c.v > vCap * 0.9) c.brakeOn = false;
+        c.brake += ((c.brakeOn ? 1 : 0) - c.brake) * Math.min(1, dt * (c.brakeOn ? 14 : 3));
         // held: stopped with no red light in front of it (in a queue, or
         // waiting on the box); a bus at its stop is not held
         if (c.v < 0.05 && !red && !(c.bus && c.dwell)) {

@@ -76,7 +76,12 @@ export function settsTex(): THREE.CanvasTexture {
  * long axis, read from the `stripe` attribute (metres across the stripes).
  */
 /** How much of the lawn is under fallen leaves (0-1), set by the season. */
-export const TURF_U = { uLeaves: { value: 0 } };
+export const TURF_U = {
+  uLeaves: { value: 0 },
+  /** the streams through the parks (RealCityLayer.buildWetMask): white is water, and the turf is cut away there */
+  uWet: { value: (() => { const t = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1); t.needsUpdate = true; return t as THREE.Texture; })() },
+  uWetBox: { value: new THREE.Vector4(0, 0, 1, 1) },
+};
 export function turfMaterial(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
   m.onBeforeCompile = (sh) => {
@@ -87,10 +92,13 @@ export function turfMaterial(): THREE.MeshStandardMaterial {
 varying float vStripe;
 varying vec2 vTw;
 uniform float uLeaves;
+uniform sampler2D uWet;
+uniform vec4 uWetBox;
 float tH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float tN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(tH(i), tH(i + vec2(1.0, 0.0)), f.x), mix(tH(i + vec2(0.0, 1.0)), tH(i + vec2(1.0, 1.0)), f.x), f.y); }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
+if (texture2D(uWet, (vTw - uWetBox.xy) / uWetBox.zw).r > 0.5) discard;
 { float n = tN(vTw / 46.0) * 0.6 + tN(vTw / 13.0) * 0.4;
   diffuseColor.rgb *= mix(vec3(0.82, 0.86, 0.9), vec3(1.14, 1.1, 0.92), n);
   // the mower's stripes, softened at their edges and fading where the grass is worn

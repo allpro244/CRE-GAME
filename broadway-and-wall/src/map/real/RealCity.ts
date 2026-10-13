@@ -1455,6 +1455,8 @@ export let activeCity: RealCityLayer | null = null;
 interface ParkInfo {
   ring: P2[]; inner: P2[]; holes: P2[][]; flavour: string; area: number; cx: number; cy: number; ux: number; uy: number;
   walks: [P2, P2][]; ponds: P2[][]; plazaR: number; pondOver?: boolean;
+  /** the creeks, canals and mill ponds that run through it */
+  wet: P2[][];
   entrances: { at: P2; tx: number; ty: number }[];
   features: { kind: string; x: number; y: number; rot: number }[];
 }
@@ -6691,6 +6693,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       for (let i = 0; i + 1 < q.length; i++) if (Math.hypot(q[i + 1][0] - q[i][0], q[i + 1][1] - q[i][1]) > 0.5) segs.push([q[i], q[i + 1]]);
     }
     const ponds = ((this.ctx as { ponds?: P2[][] }).ponds ?? []).map((r) => r.map((q) => this.project(q))).filter((r) => r.length >= 3);
+    const streamsP = ((this.ctx as { streams?: { ring: P2[] }[] }).streams ?? []).map((st) => st.ring.map((q) => this.project(q))).filter((r) => r.length >= 3);
     for (const pk of (this.ctx.parks ?? []) as ({ ring: P2[]; holes?: P2[][]; flavour?: string } | P2[])[]) {
       const ringLL = Array.isArray(pk) ? pk : pk.ring;
       if (!ringLL || ringLL.length < 3) continue;
@@ -6737,14 +6740,20 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           // out to the footway: the inner edge pushed back across the footway band (outward normal of a CCW ring)
           const out: P2 = [E[0] + ty * (PARK_WALK - 0.4), E[1] - tx * (PARK_WALK - 0.4)];
           const mid: P2 = [(N[0] + E[0]) / 2, (N[1] + E[1]) / 2];
-          if (pds.some((pd) => inRingPk(mid[0], mid[1], pd) || inRingPk(E[0], E[1], pd))) continue;
+          if ([...pds, ...streamsP].some((pd) => inRingPk(mid[0], mid[1], pd) || inRingPk(E[0], E[1], pd) || inRingPk(N[0], N[1], pd))) continue;
           walks.push([N, out]);
           entrances.push({ at: E, tx, ty });
         }
       }
       // the paved round where the walks meet: under the column of a big park, the fountain of a square
       const plazaR = flavour === "park" ? (area > 9000 ? 10 : area > 1800 ? 8 : 0) : 0;
-      out.push({ ring, inner, holes, flavour, area, cx, cy, ux, uy, walks, ponds: pds, plazaR, features: [], entrances });
+      // A CREEK THROUGH THE PARK. The generator lets a stream run through an
+      // ordinary park (and culverts it under a paved square); the turf, the
+      // walks' furniture and the trees all have to keep out of its channel
+      let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+      for (const [x, y] of ring) { bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x); by1 = Math.max(by1, y); }
+      const wet = streamsP.filter((r) => r.some(([x, y]) => x > bx0 && x < bx1 && y > by0 && y < by1) && r.some(([x, y]) => inRingPk(x, y, ring)));
+      out.push({ ring, inner, holes, flavour, area, cx, cy, ux, uy, walks, ponds: pds, plazaR, features: [], entrances, wet });
     }
     return (this.parkInfoC = out);
   }
@@ -6752,9 +6761,18 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private parkReserved(x: number, y: number, pad: number): boolean {
     for (const r of this.parkReserves) if (Math.hypot(x - r.x, y - r.y) < r.r + pad) return true;
     for (const p of this.parkInfoC ?? []) for (const pd of p.ponds) if (inRingPk(x, y, pd)) return true;
+    for (const p of this.parkInfoC ?? []) if (p.wet.length && this.nearWet(p, x, y, pad)) return true;
     return false;
   }
 
+  /** Whether a point is in (or within d metres of) a stream running through the park. */
+  private nearWet(p: ParkInfo, x: number, y: number, d: number): boolean {
+    for (const r of p.wet) {
+      if (inRingPk(x, y, r)) return true;
+      for (let i = 0; i < r.length; i++) if (segDist(x, y, r[i], r[(i + 1) % r.length]) < d) return true;
+    }
+    return false;
+  }
   /** The ground of the parks: turf (or a market's setts), the gravel walks and their edging, the paved round. */
   private async buildParkGround() {
     const turf = new FlatBuf(), walks = new FlatBuf(), plaza = new FlatBuf(), setts = new FlatBuf();
@@ -6773,9 +6791,13 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const tint = TINT[p.flavour] ?? TINT.park;
       const uvOf = (v: P2): [number, number] => [v[0] / 12, v[1] / 12];
       const stOf = p.flavour === "park" ? (v: P2) => v[0] * nx + v[1] * ny : () => 2;
-      if (!turf.poly(p.inner, [...p.holes, ...p.ponds], 0.05, tint, uvOf, stOf)) {
+      // The generator's holes are whole stream rings that cross the park's
+      // edge — not a polygon the triangulator can cut. Streams come out of
+      // the turf through the water mask (TURF_U.uWet) instead; ponds, which
+      // sit wholly inside, stay holes.
+      if (!turf.poly(p.inner, p.ponds, 0.05, tint, uvOf, stOf)) {
         // a pond touching the edge defeats the triangulator; the pond is drawn over the turf instead
-        turf.poly(p.inner, p.holes, 0.05, tint, uvOf, stOf);
+        turf.poly(p.inner, [], 0.05, tint, uvOf, stOf);
         p.pondOver = true;
       }
       const w = p.flavour === "cemetery" ? 2.4 : p.flavour === "battery" ? 3.6 : 3.2;
@@ -6789,6 +6811,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         walks.annulus([p.cx, p.cy], R, R + 0.5, 0.088, [0.66, 0.64, 0.6], 4, 40);
       }
     }
+    this.buildWetMask();
     if (!this.walkMat.map) {
       this.walkMat.map = walkTex();
       const pt = this.plazaTex(); this.parkPlazaMat.map = pt;
@@ -6814,6 +6837,35 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
   }
 
+  /**
+   * THE WATER MASK. Every stream that runs through a park, painted into one
+   * world-space texture (about a metre a pixel, a little proud of the bank so
+   * no blade of turf overhangs the wall), which the turf shader discards
+   * against. Cheaper and sturdier than clipping a lawn polygon by a creek
+   * that enters on one side and leaves by another.
+   */
+  private buildWetMask() {
+    const wet = this.parkInfo().flatMap((p) => p.wet);
+    if (!wet.length) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const r of wet) for (const [x, y] of r) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    x0 -= 4; y0 -= 4; x1 += 4; y1 += 4;
+    const N = Math.min(4096, Math.max(256, 2 ** Math.ceil(Math.log2(Math.max(x1 - x0, y1 - y0)))));
+    const { c, g } = makeCanvas(N, N);
+    const sx = N / (x1 - x0), sy = N / (y1 - y0);
+    g.fillStyle = "#000"; g.fillRect(0, 0, N, N);
+    g.fillStyle = "#fff"; g.strokeStyle = "#fff"; g.lineWidth = Math.max(1, 0.8 * sx); g.lineJoin = "round";
+    for (const r of wet) {
+      g.beginPath();
+      r.forEach(([x, y], i) => { const px = (x - x0) * sx, py = (y - y0) * sy; if (i) g.lineTo(px, py); else g.moveTo(px, py); });
+      g.closePath(); g.fill(); g.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.flipY = false; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false;
+    TURF_U.uWet.value = t;
+    TURF_U.uWetBox.value.set(x0, y0, x1 - x0, y1 - y0);
+  }
+
   /** Before the trees go in: where each park's bandstand, playground and kiosk will stand, so no tree is planted through them. */
   private async planParks(rnd: () => number) {
     this.parkReserves = [];
@@ -6833,7 +6885,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           for (let k = 0; k < 8 && ok; k++) {
             const rr = hw ? hw + 1 : r + 2;
             const qx = x + Math.cos(k * 0.785) * rr, qy = y + Math.sin(k * 0.785) * rr;
-            if (!inRingPk(qx, qy, p.inner) || p.ponds.some((pd) => inRingPk(qx, qy, pd))) ok = false;
+            if (!inRingPk(qx, qy, p.inner) || p.ponds.some((pd) => inRingPk(qx, qy, pd)) || (p.wet.length && this.nearWet(p, qx, qy, 2))) ok = false;
           }
           if (!ok || p.walks.some(([a, b]) => segDist(x, y, a, b) < (hw ? hw + 2.4 : r + 2.4))) continue;
           if (this.parkReserves.some((q) => Math.hypot(q.x - x, q.y - y) < q.r + r + 3)) continue;
@@ -6882,7 +6934,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
             const blob: P2[] = [];
             const ph = rnd() * 6.28, ph2 = rnd() * 6.28;
             for (let j = 0; j < 20; j++) { const a = (j / 20) * Math.PI * 2, rr = r * (1 + 0.22 * Math.sin(a * 2 + ph) + 0.12 * Math.sin(a * 5 + ph2)); blob.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr]); }
-            if (blob.some(([bx, by]) => !inRingPk(bx, by, insetRing(p.inner, 4) ?? p.inner) || p.ponds.some((pd) => inRingPk(bx, by, pd)) || p.walks.some(([a, b]) => segDist(bx, by, a, b) < 3)) || p.walks.some(([a, b]) => segDist(x, y, a, b) < r + 2)) continue;
+            if (blob.some(([bx, by]) => !inRingPk(bx, by, insetRing(p.inner, 4) ?? p.inner) || p.ponds.some((pd) => inRingPk(bx, by, pd)) || (p.wet.length > 0 && this.nearWet(p, bx, by, 2)) || p.walks.some(([a, b]) => segDist(bx, by, a, b) < 3)) || p.walks.some(([a, b]) => segDist(x, y, a, b) < r + 2)) continue;
             if (this.parkReserves.some((q) => blob.some(([bx, by]) => Math.hypot(bx - q.x, by - q.y) < q.r + 1))) continue;
             meadows.push(blob);
             break;
@@ -6923,7 +6975,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       await this.breathe();
       const w = p.flavour === "cemetery" ? 2.4 : p.flavour === "battery" ? 3.6 : 3.2;
       const onWalk = (x: number, y: number, pad: number) => p.walks.some(([a, b]) => segDist(x, y, a, b) < w / 2 + pad);
-      const inPond = (x: number, y: number) => p.ponds.some((pd) => inRingPk(x, y, pd));
+      const inPond = (x: number, y: number) => p.ponds.some((pd) => inRingPk(x, y, pd)) || (p.wet.length > 0 && this.nearWet(p, x, y, 1.2));
       const free = (x: number, y: number, r: number) => inRingPk(x, y, p.inner) && !onWalk(x, y, r) && !inPond(x, y) && !this.parkReserved(x, y, r);
       // ALONG THE WALKS: benches facing the walk, a lamp every 26 m on the
       // other side, a bin by every third bench, people sitting, people walking

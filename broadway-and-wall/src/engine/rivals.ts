@@ -3412,6 +3412,13 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
   const sell = pick ?? biggest;
   // A closing the sponsor has to fund is not a source of cash. See the header.
   if (!sell || sell.net <= 0) return false;
+  listUnderDuress(s, parcels, r, sell.bbl, sell.rec);
+  return true;
+}
+
+/** Put one named building on the tape at a motivated seller's price. */
+function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: string, rec: ParcelRecord) {
+  const sell = { bbl, rec };
   // PRICED ON THE DEED THAT CONVEYS, not the firm's class-model mark. The
   // duress discount is off what a buyer gets — this roll, this grade, less the
   // distress notch (conveyedValue) — and the class mark ran up to 2.6x the
@@ -3469,7 +3476,6 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
       ? `${r.name} is selling. ${sell.rec.address} hits the tape at ${money(px)} — ${Math.round((1 - px / Math.max(1, v)) * 100)}% under appraisal. They are short of cash and the market knows it.`
       : `${r.name}, again: ${sell.rec.address} at ${money(px)}. That is their ${r.dumped === 2 ? "second" : r.dumped === 3 ? "third" : `${r.dumped}th`} building on the tape this stretch.`,
   });
-  return true;
 }
 
 /**
@@ -3542,10 +3548,15 @@ function reoWindow(s: GameState, lender: string): number {
  * because the firm no longer owns it and negotiating with them for it would be
  * negotiating with somebody who has nothing to sell.
  */
-function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): boolean {
+function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, only?: string): boolean {
   const st = paramsOf(r);
   let worst: { bbl: string; rec: ParcelRecord; v: number; ratio: number } | null = null;
-  for (const bbl of r.bbls) {
+  // A MATURITY DEFAULT HANDS BACK THE BUILDING THAT DEFAULTED. The desk that
+  // will not renew a loan takes THAT deed; giving it the firm's least-liked
+  // building instead left the matured note outstanding and handed an unrelated
+  // lender a building it never asked for. `only` names it; a firm-wide
+  // squeeze (no single loan at issue) still picks the weakest.
+  for (const bbl of only ? [only] : r.bbls) {
     if (s.holdings[bbl]) continue;
     // Only a building with a mortgage on it can be handed to a lender.
     const row = rowOn(s, r, bbl);
@@ -3554,6 +3565,14 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): 
     if (!rec) continue;
     const { v, noi } = markAsset(s, r, rec);
     if (v <= 0) continue;
+    // ONLY A BUILDING UNDER WATER GOES BACK. A squeezed sponsor hands the keys
+    // over on a loan a forced sale would not cover; on one it would, the sale
+    // is worth more to him than the keys (in a foreclosure the surplus is the
+    // borrower's anyway), and that building is marketAssetToRaise's job. The
+    // squeeze path used to hand back the building the desks liked least
+    // whether or not it had equity in it — 20 of 27 handbacks in a thirty-
+    // year playthrough read "the $0 it is short is the bank's problem".
+    if (!only && row.balance < v * DURESS_MID) continue;
     const ratio = streetRefiProceeds(s, v, noi, st.maxLtv).principal / v;
     if (!worst || ratio < worst.ratio) worst = { bbl, rec, v, ratio };
   }
@@ -3764,11 +3783,27 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
       }
     }
 
-    // 5. HAND IT BACK. No buyer needed, no cash needed, and the shortfall is
+    // 5. SELL IT, if there is equity in it. A sponsor only hands back a
+    //    building that is worth less than its loan — that is the whole option
+    //    non-recourse buys. One worth more is sold, the loan is paid off at
+    //    the closing and the sponsor keeps the difference, and the desk gives
+    //    a covered loan the months a sale takes (a holdover pending sale is
+    //    the commonest maturity workout there is). Without this rung the
+    //    street handed lenders buildings with equity in them — "the $0 it is
+    //    short is the bank's problem" — dozens a month in a credit crunch.
+    const onTape = s.listings.some((l) => l.bbl === bbl);
+    if (onTape && (ext === undefined || s.month < ext + 8)) continue;   // on the market; the desk waits
+    if (!onTape && ext === undefined && disposalNet(s, r, bbl, v * DURESS_MID) > 0) {
+      listUnderDuress(s, parcels, r, bbl, rec);
+      setExtended(r, bbl, s.month + 6);
+      continue;
+    }
+
+    // 6. HAND IT BACK. No buyer needed, no cash needed, and the shortfall is
     //    the bank's — which is what non-recourse means.
     clearExtended(r, bbl);
     deedInLieu(s, parcels, r,
-      `The balloon came due and nobody would refinance it: ${money(refi.principal)} against ${money(due)} outstanding.`);
+      `The balloon came due and nobody would refinance it: ${money(refi.principal)} against ${money(due)} outstanding.`, bbl);
     return;   // one workout at a time; the rest of the ladder is next month's problem
   }
 }

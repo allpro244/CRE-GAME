@@ -56,7 +56,10 @@ const pc = (x) => `${(x * 100).toFixed(0)}%`;
 // --- 2. the window is one cut -----------------------------------------------
 {
   const g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
+  // shut: the window, the desks and the outlook all at their worst (unemployment
+  // up a point and a half in a year) — the standards index reads −1
   const shut = structuredClone(g); shut.econ.creditIdx = 0.5; shut.bankApp = 0.5;
+  if (shut.econ.nat) shut.econ.nat.uHist = [shut.econ.nat.unemp - 0.015, shut.econ.nat.unemp];
   const h = E.productById("harbor");
   const app = E.advanceFactor(shut, "First Harbor Bank");
   ok(near(app, Math.min(1.02, 0.55 + 0.45 * E.lenderAppetite(shut, "First Harbor Bank"))), `advanceFactor is the desk's appetite alone (${app.toFixed(3)}); the window moves the sheet`);

@@ -1250,7 +1250,17 @@ export default function MapView() {
     map.on("zoom", fade);
     map.on("moveend", fade);
     fade();
+    // THE LENS SETS THE TYPE SIZE. Under a market lens the names come up
+    // bigger (the .bw-lens-hoods CSS), but that class is toggled by a later
+    // effect in this same commit: measured now, every name would keep its
+    // small width and two neighbours would print over each other. One frame
+    // on, the new size is laid out: forget the widths and place again.
+    const remeasure = requestAnimationFrame(() => {
+      for (const m of live.values()) delete m.getElement().dataset.w;
+      fade();
+    });
     return () => {
+      cancelAnimationFrame(remeasure);
       // the zoom listener used to outlive its markers — every paintSig tick
       // left one more orphaned fade() walking a dead marker list
       map.off("zoom", fade);

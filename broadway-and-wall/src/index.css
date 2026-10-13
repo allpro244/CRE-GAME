@@ -464,12 +464,10 @@ body {
   font-size: 13px; letter-spacing: 3px; font-weight: 600;
   color: #6e6858;
 }
-/* While the demand or land lens is up, the district names are most of the
-   point of looking — MapView puts .bw-lens-hoods on the map container, and
-   the labels come up bigger, darker, and at every zoom. The !important is
-   load-bearing: the zoom fade writes inline opacity on each label span, and this
-   is the one state that must win over it. */
-.bw-lens-hoods .map-label-district > span { opacity: 1 !important; }
+/* While a market lens is up the district names are most of the point of
+   looking — MapView puts .bw-lens-hoods on the map container and they come
+   up bigger and darker. Whether each one shows is MapView's label pass (the
+   Demand lens, and no two names printed over each other), not this sheet. */
 .bw-lens-hoods .map-label-district {
   font-size: 16px; letter-spacing: 4px;
   color: #443f33;

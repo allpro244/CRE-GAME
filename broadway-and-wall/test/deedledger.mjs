@@ -61,6 +61,7 @@ const ALLOWED = {
     resolveAuction: "overbid on your own note's lot — the equity sits in the note",
     buyNote: "a mortgage note, not a deed",
     fundPrivateAsk: "a private loan, not a deed",
+    seizeDeposits: "a failed bank's frozen deposits, taken as a claim on its receiver — firm cash, not a deed's",
   },
   sold: {
     registerAuctionBids: "auction registration deposit returned on re-registration",
@@ -68,6 +69,7 @@ const ALLOWED = {
     acceptPortfolioBid: "the crossed facility repaid out of package proceeds — pool principal",
     accelerate: "a receiver's surplus on a crossed pool",
     serviceNotes: "note payoffs and sales", modifyNote: "note paydown", sellNote: "note sale",
+    tickReceivership: "the receiver's dividend on that claim, redeemed",
   },
   borrowed: {
     openFacility: "the crossed facility", takeFacilityRoll: "the crossed facility",

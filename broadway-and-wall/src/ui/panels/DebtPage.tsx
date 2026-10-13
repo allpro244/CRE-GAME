@@ -1,10 +1,11 @@
 import { useState, Fragment } from "react";
+import { BankLink } from "@/ui/panels/BankProfile";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import { ownedHoldingValue, resolveRec, ownedContractNoiYr } from "@/engine/value";
-import { PRODUCTS, productById, payOffDue, rateCapCost } from "@/engine/debt";
+import { PRODUCTS, productById, payOffDue, rateCapCost, loanLender } from "@/engine/debt";
 import { fundableNow, locRate } from "@/engine/credit";
 import type { FacilityQuote } from "@/engine/facility";
 import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, FACILITY_CURE_M, RELEASE_PREMIUM } from "@/engine/facility";
@@ -680,7 +681,7 @@ export function DebtPage() {
                     {pledged(game, h.bbl) ? <span className="dim"> · pledged</span> : null}
                   </td>
                   <td className="dim">
-                    {p.lender}
+                    <BankLink name={loanLender(l)} />
                     <div style={{ fontSize: 11 }}>
                       {[l.sweep ? "swept" : null, game.month < l.ioUntilM ? "IO" : null, p.recourse ? "recourse" : null,
                         l.prepay === "yieldmaint" ? "YM" : null].filter(Boolean).join(" · ")}
@@ -750,7 +751,7 @@ export function DebtPage() {
                     <div className="dim" style={{ fontSize: 11 }}>construction · {dv.use}</div>
                   </td>
                   <td className="dim">
-                    {dv.lender ?? "construction"}
+                    {dv.lender ? <BankLink name={dv.lender} /> : "construction"}
                     <div style={{ fontSize: 11 }}>
                       {[dv.contract === "gmp" ? "GMP" : "cost-plus", "IO", dv.repudiatedM !== undefined ? "repudiated" : null]
                         .filter(Boolean).join(" · ")}
@@ -773,7 +774,7 @@ export function DebtPage() {
               <tr>
                 <td><strong>The facility</strong> <span className="dim">· {fac.bbls.length} deeds crossed</span></td>
                 <td className="dim">
-                  {fac.lender}
+                  <BankLink name={fac.lender} />
                   <div style={{ fontSize: 11 }}>
                     {[fac.sweep ? "swept" : null, game.month < fac.ioUntilM ? "IO" : null, "recourse", "crossed"].filter(Boolean).join(" · ")}
                   </div>

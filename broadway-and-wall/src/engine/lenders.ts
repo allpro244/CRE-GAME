@@ -654,6 +654,31 @@ export function lenderHealth(l: Lender, econ?: { creditIdx?: number; phase?: str
  * at all. It is not a hidden index — you can read exactly this on Research a
  * quarter before it bites.
  */
+/**
+ * STAYING POWER, IN ONE WORD — will this desk still be there in a crunch, and
+ * still be funding your job when it is half built? Read off the same numbers
+ * as lenderHealth (capital against the desk's own target, the share of its
+ * book not paying, whether it is quoting at all), collapsed to four words a
+ * borrower can choose by. The point is the trade it exposes: the cheapest
+ * construction money in a boom often comes from the desk with the least
+ * behind it.
+ */
+export type StayingPower = "solid" | "stretched" | "at risk" | "closed";
+export function stayingPower(s: GameState, l: Lender): { word: StayingPower; why: string } {
+  if (l.failedM !== undefined) return { word: "closed", why: "In receivership." };
+  if (l.appetite < 0.12) return { word: "closed", why: "Not quoting — its capital will not carry new loans." };
+  if (l.kind === "conduit" && (s.econ.creditIdx ?? 1) < 0.78) return { word: "closed", why: "The bond market it sells into is shut." };
+  const mult = capitalRatio(l) / Math.max(0.01, KIND[l.name]?.capitalRatio ?? 0.1);
+  const adc = KIND[l.name]?.adc ?? 0;
+  const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+  const base = `Capital at ${mult.toFixed(2)}x its own target; ${pct(l.delinquent)} of its book not paying.`;
+  if (mult < 0.7 || l.delinquent > 0.10) return { word: "at risk", why: base + " Examiners close a bank near 0.22x." };
+  if (mult < 0.95 || l.delinquent > 0.04 || adc >= 0.3) {
+    return { word: "stretched", why: base + (adc >= 0.3 ? ` ${Math.round(adc * 100)}% of its book is construction and land — the first loans to go bad when land prices fall.` : "") };
+  }
+  return { word: "solid", why: base };
+}
+
 export function lenderAppetite(s: GameState, name: string): number {
   const l = lenderByName(s, name);
   if (!l) return 1;

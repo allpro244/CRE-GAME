@@ -145,7 +145,6 @@ export class PostFX {
   private tex: THREE.FramebufferTexture | null = null;
   private distRT: THREE.WebGLRenderTarget | null = null;
   private lastProj: number[] = [];
-  private lastDist = 0;
   private readonly distMat = new THREE.ShaderMaterial({ vertexShader: DIST_VERT, fragmentShader: DIST_FRAG, side: THREE.DoubleSide });
   // the ground is MapLibre's, not ours: the distance pass stands its own
   // street-level plane under the city, or nothing would meet the pavement
@@ -186,17 +185,18 @@ export class PostFX {
     const ao = this.level === "full" && !!scene && !!camera;
     // the city does not move: while the camera holds still (the traffic keeps
     // repainting at ~30 fps) the last distance pass still stands, so it is
-    // only redrawn when the view changes — or every half second, for the
-    // cars and the odd rebuilt deed
+    // only redrawn when the view changes. It used to be redrawn every half
+    // second as well, for the cars: that periodic pass is what the owner saw
+    // as a flicker, a pulse across the whole city twice a second (measured
+    // on their recording: brightness spikes 14-15 frames apart). A car's
+    // contact shade is a pixel or two; it waits for the next camera move.
     if (ao) {
       const e = (camera as THREE.Camera).projectionMatrix.elements;
       let same = !!this.distRT && this.lastProj.length === 16;
       for (let i = 0; same && i < 16; i++) if (Math.abs(e[i] - this.lastProj[i]) > 1e-9) same = false;
-      const now = performance.now();
-      if (!same || now - this.lastDist > 500) {
+      if (!same) {
         this.distPass(renderer, scene!, camera!, hide);
         this.lastProj = Array.from(e);
-        this.lastDist = now;
       }
     }
     renderer.getDrawingBufferSize(this.size);
@@ -249,17 +249,20 @@ export class PostFX {
     const was = hide.map((o) => o?.visible ?? false);
     hide.forEach((o) => { if (o) o.visible = false; });
     const prevOverride = scene.overrideMaterial, prevClear = renderer.getClearAlpha(), prevCol = renderer.getClearColor(new THREE.Color());
-    const prevTarget = renderer.getRenderTarget(), prevShadow = renderer.shadowMap.enabled;
+    // the shadow map stays ON: switching it off for this pass is a renderer
+    // state change three bakes into shader programs. A refresh that is due
+    // waits for the main frame instead of being spent on the distance pass.
+    const prevTarget = renderer.getRenderTarget(), prevShadowDue = renderer.shadowMap.needsUpdate;
     scene.overrideMaterial = this.distMat;
     scene.add(this.ground);
-    renderer.shadowMap.enabled = false;
+    renderer.shadowMap.needsUpdate = false;
     renderer.setRenderTarget(this.distRT);
     renderer.setClearColor(0xffffff, 1);
     renderer.clear(true, true, false);
     renderer.render(scene, camera);
     renderer.setRenderTarget(prevTarget);
     renderer.setClearColor(prevCol, prevClear);
-    renderer.shadowMap.enabled = prevShadow;
+    renderer.shadowMap.needsUpdate = prevShadowDue;
     scene.overrideMaterial = prevOverride;
     scene.remove(this.ground);
     hide.forEach((o, i) => { if (o) o.visible = was[i]; });

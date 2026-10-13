@@ -94,6 +94,55 @@ export function demandLinear(demandScore: number): number {
   return 100 * demandIdx(demandScore);
 }
 
+/**
+ * A PARCEL'S LIVE DEMAND: its generated score moved by its block's drift.
+ *
+ * THE TOP OF THE SCALE IS SCARCE, AND ADDING POINTS IGNORED THAT (2026-10-13).
+ * The drift used to be added in points and clamped at 100, so a corner that
+ * started at 85 and gained the same twenty points a dead block can gain sat on
+ * the rail at 105. Measured over fifty years on three seeds: day one has no
+ * parcel at 100 and 1.1% at 80 or better; from year twenty on, 1.0-1.4% of
+ * parcels are pinned at 100 with uncapped scores running to 114, 3.5% sit at
+ * 90+, and the share at 80+ has grown eightfold while the median has not
+ * moved. That is fake number five — a load-bearing rail — and it is also not
+ * how prime works. A prime address is defined by having nothing better
+ * nearby; a neighbourhood that doubles lifts an ordinary block into a good
+ * one, but it does not make the best block in town twice as much the best.
+ * Rent for the very best space is set by the few occupiers who will pay for
+ * it, and that bid does not scale with how much got built around them.
+ *
+ * So the drift moves the score's LOG-ODDS, which is how a bounded index takes
+ * a shift. The scale is fixed, not tuned: every drift term in engine/demand.ts
+ * was sized in points at an ordinary address ("a point is ~2.5% of rent at an
+ * ordinary address", the station premium, the doubled neighbourhood), and the
+ * log-odds slope at 50 is 4/100 — so at a mid-town address a point of drift
+ * is still a point of demand, and at the edges each point buys less. 45 + 20
+ * lands at 64.6 instead of 65; 80 + 20 lands at 89.9 instead of 100; 100 is
+ * approached and never reached. The floor is treated the same way, for the
+ * same reason.
+ *
+ * Only the EMERGENT part bends. `blockA` is the generator's permanent day-one
+ * reconciliation — part of where the parcel starts, not something that has
+ * happened to it — so it is added in points as before, and day one is
+ * bit-for-bit what it was. Measured after: parcels at 100 from ~1.2% to none,
+ * 90+ from ~3.5% to ~1.3%, the 99th percentile from ~97 to ~90, median
+ * unmoved (three seeds, years 20-50).
+ */
+const DRIFT_LOGIT_PER_PT = 4 / 100;
+export function liveDemand(
+  s: { blockD?: Record<string, number>; blockA?: Record<string, number> } | null | undefined,
+  base: number, block: string,
+): number {
+  const drift = s?.blockD?.[block] ?? 0;
+  const anchor = s?.blockA?.[block] ?? 0;
+  const start = Math.max(2, Math.min(100, base + anchor));
+  const moved = drift - anchor;
+  if (!moved) return start;
+  const p = Math.max(0.005, Math.min(0.995, start / 100));
+  const x = Math.log(p / (1 - p)) + moved * DRIFT_LOGIT_PER_PT;
+  return Math.max(2, Math.min(100, 100 / (1 + Math.exp(-x))));
+}
+
 // How hard a parcel's land value rides the cycle: prime demand swings harder.
 export function demandBeta(demandScore: number): number {
   return 0.25 + 0.9 * demandIdx(demandScore);
@@ -2168,7 +2217,7 @@ function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
   // reader of landPsfNow, landValue, the appraisal, the lender's sizing and the
   // rivals' land bids gets it without knowing it exists.
   if (dd) {
-    const d1 = clamp(rec.demandScore + dd, 2, 100);
+    const d1 = liveDemand(s, rec.demandScore, rec.block);
     out.demandScore = d1;
     out.landPsf *= (0.6 + 0.9 * d1 / 100) / (0.6 + 0.9 * rec.demandScore / 100);
   }

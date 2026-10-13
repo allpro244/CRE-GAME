@@ -51,7 +51,7 @@
 //   five-minute walk. None of the three asks the player for anything.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
-import { useOccupancy } from "./value";
+import { liveDemand, useOccupancy } from "./value";
 import { START_YEAR } from "./types";
 import { mixOf, type UseMix } from "./mix";
 import { SECTORS, INDUSTRY_LABEL } from "./market";
@@ -1250,11 +1250,11 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
 
 /**
  * A parcel's live demand: what the generator gave it, plus whatever its
- * neighbourhood has become since. Clamped, because nothing in Ashport is
- * worthless and nothing is perfect.
+ * neighbourhood has become since — on a bounded scale (see liveDemand),
+ * because nothing in Ashport is worthless and nothing is perfect.
  */
 export function demandNow(s: GameState, rec: ParcelRecord): number {
-  return clamp(rec.demandScore + (s.blockD?.[rec.block] ?? 0), 2, 100);
+  return liveDemand(s, rec.demandScore, rec.block);
 }
 
 /**

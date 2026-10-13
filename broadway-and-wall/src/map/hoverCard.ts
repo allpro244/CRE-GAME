@@ -9,7 +9,7 @@
 import type { GameState } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
 import type { ParcelRecord } from "@/data/types";
-import { initialCondition, marketAppraisal, marketRentPsfYr, resolveRec } from "@/engine/value";
+import { initialCondition, liveDemand, marketAppraisal, marketRentPsfYr, resolveRec } from "@/engine/value";
 import { ownerAt } from "@/engine/ownership";
 import { goingIn, occRead, useLabel } from "@/ui/panels/shared";
 import { usd } from "@/ui/format";
@@ -27,7 +27,8 @@ export function tipHtml(g: GameState, parcels: Record<string, ParcelRecord>, rec
   const own = g.holdings?.[bbl];
   const o = own ? null : ownerAt(g, parcels, bbl);
   const owner = own ? "You" : o ? o.name : "—";
-  const dmd = Math.round(Math.max(2, Math.min(100, rec.demandScore + (g.blockD?.[rec.block] ?? 0))));
+  // from the generated score: `rec` is resolved and already carries the drift
+  const dmd = Math.round(liveDemand(g, rec0.demandScore, rec0.block));
 
   // A SITE WITH A CRANE ON IT IS NOT A VACANT LOT: the parcel stays class
   // "land" until the day it delivers.

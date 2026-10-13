@@ -456,7 +456,9 @@ function streetStories(g: GameState, hist: Map<string, PropertyEvent[]>): Story[
   // THE STUDENT AND THE TEACHER — a spin-off measured against the firm it
   // walked out of.
   for (const r of g.rivals) {
-    if (!r.spawnedFrom || r.failedM !== undefined) continue;
+    // A spin-off a month old with nothing bought is a press release, not a
+    // story: two years on the street, or three buildings, before it runs.
+    if (!r.spawnedFrom || r.failedM !== undefined || (g.month - (r.bornM ?? 0) < 24 && r.bbls.length < 3)) continue;
     const parent = g.rivals.find((p) => p.id === r.spawnedFrom!.firmId);
     const mineN = r.bbls.length, theirs = parent && parent.failedM === undefined ? parent.bbls.length : 0;
     const passed = !parent || parent.failedM !== undefined || mineN > theirs;

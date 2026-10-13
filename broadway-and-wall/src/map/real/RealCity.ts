@@ -20,7 +20,7 @@ import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
 import { siteOutline, ringCentroid } from "./siteRing";
 import { PostFX } from "./post";
-import { FlatBuf, inRing as inRingPk, parkGeom, segDist, settsTex, turfMaterial, walkTex } from "./parks";
+import { FlatBuf, bloomTex, inRing as inRingPk, longGrassTex, parkGeom, segDist, settsTex, turfMaterial, walkTex } from "./parks";
 import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
 import { BOOK_PICKER } from "./patternbook/register";
 import type { FacadeGroup } from "./patternbook/types";
@@ -106,7 +106,7 @@ const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", 
  * every canal a flat royal blue next to a turquoise sea).
  */
 const CANAL_WATER = 0x2c5f5c;
-const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "person"];
+const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "person", "statue"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 /** Shop trades: canopy and fascia colours. Looks only. */
@@ -118,7 +118,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail", "grate", "planter", "patio", "shed", "dumpster", "trailer", "pallets", "plpost", "plhead", "bedsoil", "stall", "stallstripe", "playset", "kiosk", "cannon", "obelisk"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail", "grate", "planter", "patio", "shed", "dumpster", "trailer", "pallets", "plpost", "plhead", "bedsoil", "stall", "stallstripe", "playset", "kiosk", "cannon", "obelisk", "tennis"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -1399,6 +1399,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private parkPlazaMat = new THREE.MeshStandardMaterial({ roughness: 0.8, envMapIntensity: 0.25, vertexColors: true });
   private settsMat = new THREE.MeshStandardMaterial({ roughness: 0.85, envMapIntensity: 0.2, vertexColors: true });
   private parkVcMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true });
+  /** the unmown corners of a big common, and the wildflowers in them (May to September) */
+  private meadowParkMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
+  private bloomMat = new THREE.MeshStandardMaterial({ roughness: 0.9, transparent: true, alphaTest: 0.4, depthWrite: false });
+  private bloomMesh: THREE.Mesh | null = null;
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
   private bufs = new Map<string, Buf>();
@@ -5001,7 +5005,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         const cone = (r: number, h: number, z: number) => new THREE.ConeGeometry(r, h, 8).rotateX(Math.PI / 2).translate(0, 0, z + h / 2);
         return { g: merge([cyl(0.22, 1.6, 0, 6), cone(2.3, 3.4, 1.4), cone(1.8, 3.0, 3.3), cone(1.15, 2.6, 5.1)]), mat: this.pineMat };
       }
-      case "parkhedge": return { g: merge([box(2.6, 0.8, 0.85, 0, 0, 0)]), mat: new THREE.MeshStandardMaterial({ color: 0x46663a, roughness: 0.95 }) };
+      // a clipped box hedge with a rounded top, not a green brick
+      case "parkhedge": return { g: merge([box(2.6, 0.8, 0.6, 0, 0, 0), new THREE.CylinderGeometry(0.4, 0.4, 2.6, 8).rotateZ(Math.PI / 2).scale(1, 1, 0.7).translate(0, 0, 0.6)]), mat: new THREE.MeshStandardMaterial({ color: 0x41603a, roughness: 0.95 }) };
       case "flowerbed": {
         // A BED IN FLOWER: a low mound of leaf with clumps of bloom standing
         // out of it, so it catches the light like planting, not a painted disc
@@ -5666,6 +5671,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     this.meadowMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
     this.lotLawnMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
     this.turfMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
+    this.meadowParkMat.color.lerp(new THREE.Color(1.1, 1.12, 1.15), snowG * 0.75);
+    if (this.bloomMesh && snowG > 0) this.bloomMesh.visible = false;
     for (const m of [this.walkMat, this.parkPlazaMat, this.settsMat]) { m.color.lerp(new THREE.Color(1.25, 1.27, 1.32), snowG * 0.7); m.roughness = 0.9 - this.wet * 0.5; }
     this.cropMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
     this.map?.triggerRepaint();
@@ -6110,6 +6117,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const nx = -p.uy, ny = p.ux;
       if (p.flavour === "market") {
         setts.poly(p.inner, p.holes, 0.06, [1, 1, 1], (v) => [v[0] / 2, v[1] / 2]);
+        // the aisles between the stalls, laid in big flags
+        for (const [a, b] of p.walks) plaza.ribbon(a, b, 3.4, 0.068, [0.96, 0.95, 0.93], 6);
         continue;
       }
       const tint = TINT[p.flavour] ?? TINT.park;
@@ -6157,6 +6166,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   /** Before the trees go in: where each park's bandstand, playground and kiosk will stand, so no tree is planted through them. */
   private async planParks(rnd: () => number) {
     this.parkReserves = [];
+    const meadows: P2[][] = [];
     for (const p of this.parkInfo()) {
       await this.breathe();
       if (p.plazaR) this.parkReserves.push({ x: p.cx, y: p.cy, r: p.plazaR + 1 });
@@ -6187,9 +6197,41 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           return;
         }
       };
+      if (p.area > 26000) place("tennis", 19);
       if (p.area > 14000) place("bandstand", 7.5);
       if (p.area > 6000) place("playset", 9);
       if (p.area > 9000) place("kiosk", 3.5);
+      // a statue or two on the lawn by a walk, a memorial to somebody the town once thought mattered
+      for (let k = 0; k < Math.min(3, Math.floor(p.area / 9000)); k++) place("statue", 2.6);
+      // UNMOWN CORNERS: a big common leaves a drift or two of long grass and
+      // wildflowers for the bees, with a mown edge round it
+      if (p.area > 12000) {
+        for (let k = 0; k < Math.min(4, Math.floor(p.area / 12000)); k++) {
+          const r = 9 + rnd() * 8;
+          for (let t = 0; t < 60; t++) {
+            const x = x0 + rnd() * (x1 - x0), y = y0 + rnd() * (y1 - y0);
+            if (Math.hypot(x - p.cx, y - p.cy) < p.plazaR + r + 6) continue;
+            const blob: P2[] = [];
+            const ph = rnd() * 6.28, ph2 = rnd() * 6.28;
+            for (let j = 0; j < 20; j++) { const a = (j / 20) * Math.PI * 2, rr = r * (1 + 0.22 * Math.sin(a * 2 + ph) + 0.12 * Math.sin(a * 5 + ph2)); blob.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr]); }
+            if (blob.some(([bx, by]) => !inRingPk(bx, by, insetRing(p.inner, 4) ?? p.inner) || p.ponds.some((pd) => inRingPk(bx, by, pd)) || p.walks.some(([a, b]) => segDist(bx, by, a, b) < 3)) || p.walks.some(([a, b]) => segDist(x, y, a, b) < r + 2)) continue;
+            if (this.parkReserves.some((q) => blob.some(([bx, by]) => Math.hypot(bx - q.x, by - q.y) < q.r + 1))) continue;
+            meadows.push(blob);
+            break;
+          }
+        }
+      }
+    }
+    if (meadows.length) {
+      const grass = new FlatBuf(), bloom = new FlatBuf();
+      for (const m of meadows) {
+        grass.poly(m, [], 0.058, [1, 1, 1], (v) => [v[0] / 6, v[1] / 6]);
+        bloom.poly(m.map(([x, y]) => { let cx = 0, cy = 0; for (const q of m) { cx += q[0]; cy += q[1]; } cx /= m.length; cy /= m.length; return [cx + (x - cx) * 0.9, cy + (y - cy) * 0.9] as P2; }), [], 0.066, [1, 1, 1], (v) => [v[0] / 5, v[1] / 5]);
+      }
+      this.meadowParkMat.map = longGrassTex(); this.bloomMat.map = bloomTex();
+      const gm = new THREE.Mesh(grass.geometry(), this.meadowParkMat); gm.receiveShadow = true; this.scene.add(gm);
+      this.bloomMesh = new THREE.Mesh(bloom.geometry(), this.bloomMat); this.bloomMesh.receiveShadow = true; this.scene.add(this.bloomMesh);
+      this.applyMonth();
     }
   }
 
@@ -6207,6 +6249,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const GREENS = [[0.26, 0.42, 0.2], [0.3, 0.46, 0.18], [0.22, 0.38, 0.22], [0.34, 0.44, 0.24]];
     const STONES = [[0.72, 0.71, 0.68], [0.82, 0.81, 0.78], [0.55, 0.55, 0.54], [0.62, 0.6, 0.56], [0.4, 0.41, 0.42], [0.88, 0.87, 0.84]];
     const STRIPES = [[0.72, 0.16, 0.14], [0.16, 0.42, 0.24], [0.14, 0.28, 0.55], [0.86, 0.62, 0.14]];
+    const RUN = [[0.85, 0.22, 0.2], [0.15, 0.45, 0.75], [0.95, 0.85, 0.2], [0.92, 0.92, 0.9]];
+    const DOG = [[0.85, 0.7, 0.45], [0.2, 0.17, 0.15], [0.55, 0.36, 0.2], [0.92, 0.9, 0.86]];
     for (const p of this.parkInfo()) {
       await this.breathe();
       const w = p.flavour === "cemetery" ? 2.4 : p.flavour === "battery" ? 3.6 : 3.2;
@@ -6243,7 +6287,11 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         const n = Math.floor(L / 30) + (rnd() < 0.5 ? 1 : 0);
         for (let j = 0; j < n; j++) {
           const fwd = rnd() < 0.5, lane = (rnd() - 0.5) * w * 0.6;
-          this.walkers.push({ x: (fwd ? a[0] : b[0]) + nx * lane, y: (fwd ? a[1] : b[1]) + ny * lane, ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 0.8 + rnd() * 0.5, col: COAT[(rnd() * COAT.length) | 0], draw: rnd(), dem: 0.75 });
+          // most stroll; one in six is out running, one in five has a dog
+          const jog = rnd() < 0.16, draw = rnd(), ph = rnd() * L, spd = jog ? 2.6 + rnd() * 0.6 : 0.8 + rnd() * 0.5;
+          const m: Mover = { x: (fwd ? a[0] : b[0]) + nx * lane, y: (fwd ? a[1] : b[1]) + ny * lane, ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph, spd, col: jog ? RUN[(rnd() * RUN.length) | 0] : COAT[(rnd() * COAT.length) | 0], draw, dem: 0.75 };
+          this.walkers.push(m);
+          if (!jog && rnd() < 0.2 && L > 4) this.dogs.push({ ...m, x: m.x + (fwd ? -ny : ny) * 0.5, y: m.y + (fwd ? nx : -nx) * 0.5, ph: ph + 1.3, col: DOG[(rnd() * DOG.length) | 0] });
         }
       }
       // THE PONDS: a stone coping round the water, reeds in the shallows,
@@ -6542,6 +6590,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     };
     for (const kind of ["car", "suv", "van", "taxi", "bus"]) fleet(kind, this.movers.filter((m) => (m.kind ?? "car") === kind), 0.05);
     fleet("person", this.walkers, 0.15);
+    fleet("dog", this.dogs, 0.08);
     fleet("ferry", this.boats, 0.05);
     this.applyCrowd();
     this.applyMonth();
@@ -6573,6 +6622,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private cranes: { mesh: THREE.InstancedMesh; at: { x: number; y: number; r: number }[] } | null = null;
   private movers: Mover[] = [];
   private walkers: Mover[] = [];
+  /** dogs out with the park strollers, a lead's length ahead of them */
+  private dogs: Mover[] = [];
   private boats: Mover[] = [];
   private fleets: { mesh: THREE.InstancedMesh; list: Mover[]; z: number }[] = [];
   private paused = false;
@@ -7293,11 +7344,16 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // and a dull winter green rather than straw when it rests
     this.turfMat.color.setRGB(0.25 - vig * 0.065, 0.255 + vig * 0.04, 0.165 - vig * 0.05);
     for (const m of [this.walkMat, this.parkPlazaMat, this.settsMat]) m.color.setRGB(1, 1, 1);
+    // long grass: straw in winter, a deep summer green, seeding gold in August
+    const seed = [0, 0, 0, 0, 0, 0, 0.2, 0.55, 0.4, 0.1, 0, 0][this.month];
+    this.meadowParkMat.color.setRGB(0.4 - vig * 0.18 + seed * 0.12, 0.34 - vig * 0.04 + seed * 0.05, 0.2 - vig * 0.08);
+    if (this.bloomMesh) this.bloomMesh.visible = this.month >= 4 && this.month <= 8;
     // the canopy: green in summer, turning in autumn, bare grey in winter
     for (const leaf of [this.inst.get("crown"), this.inst.get("bush")]) {
     if (leaf) {
       const turn = [0, 0, 0, 0, 0, 0, 0, 0.05, 0.3, 0.85, 0.9, 0.2][this.month];
       const bare = [1, 1, 0.85, 0.4, 0.02, 0, 0, 0, 0, 0.1, 0.6, 0.95][this.month];
+      const blossom = [0, 0, 0.3, 0.9, 0.35, 0, 0, 0, 0, 0, 0, 0][this.month];
       this.leafMat.color.setRGB(1, 1, 1);
       const autumn = [[1.9, 0.62, 0.3], [1.8, 1.05, 0.36], [1.55, 1.25, 0.4], [0.9, 1.0, 0.8]];
       // five greens and the odd copper beech, by tree
@@ -7309,6 +7365,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         if (turn > 0) { const a = autumn[Math.floor(h * 4)]; c.lerp(new THREE.Color(c.r * a[0], c.g * a[1], c.b * a[2]), turn); }
         // bark and twigs: a dark grey-brown, a little different tree to tree
         if (bare > 0) c = c.lerp(new THREE.Color(0.15 + h * 0.05, 0.12 + h * 0.04, 0.1 + h * 0.03), bare * 0.95);
+        // SPRING BLOSSOM: about one tree in eleven is an ornamental cherry,
+        // crab apple or magnolia, in flower before it is in leaf
+        const hb = hash01(i, 13);
+        if (blossom > 0 && hb < 0.09) c = c.lerp(hb < 0.05 ? new THREE.Color(1.0, 0.68, 0.78) : new THREE.Color(0.98, 0.95, 0.92), blossom);
         leaf.setColorAt(i, c);
       }
       if (leaf.instanceColor) leaf.instanceColor.needsUpdate = true;

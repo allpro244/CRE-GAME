@@ -328,7 +328,69 @@ export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "
       g: mc([[cy(1.8, 2.6, 0, 6), [0.88, 0.84, 0.74]], [cy(1.85, 0.5, 1.0, 6), [0.18, 0.35, 0.26]], [cone(2.5, 1.5, 2.6, 6), [0.28, 0.3, 0.32]], [cy(0.06, 0.6, 4.1, 4), IRON],
         [new THREE.BoxGeometry(2.2, 0.9, 0.05).rotateX(0.5).translate(0, -1.95, 2.3), [0.75, 0.2, 0.18]]]), mat: "vc",
     };
+    // a doubles tennis court with its run-off, lines, net and a chain-link
+    // fence on posts: 17 x 35 m, the long axis along local y
+    case "tennis": {
+      const CRT = [0.22, 0.42, 0.34], RUN = [0.6, 0.32, 0.24], LINE = [0.95, 0.95, 0.93], FEN = [0.2, 0.26, 0.22];
+      const parts: [THREE.BufferGeometry, number[]][] = [[bx(17.4, 35.4, 0.05), RUN], [bx(10.97, 23.77, 0.02, 0, 0, 0.05), CRT]];
+      const ln = (w: number, d: number, x: number, y: number) => parts.push([bx(w, d, 0.01, x, y, 0.07), LINE]);
+      for (const y of [-11.835, 11.835]) ln(10.97, 0.1, 0, y);
+      for (const x of [-5.435, 5.435, -4.065, 4.065]) ln(0.1, 23.77, x, 0);
+      for (const y of [-6.4, 6.4]) ln(8.23, 0.08, 0, y);
+      ln(0.08, 12.8, 0, 0);
+      parts.push([bx(12.8, 0.04, 0.95, 0, 0, 0.05), [0.12, 0.12, 0.12]], [bx(12.8, 0.06, 0.07, 0, 0, 0.98), LINE]);
+      for (const x of [-6.4, 6.4]) parts.push([cy(0.05, 1.07, 0.05, 5).translate(x, 0, 0), [0.25, 0.3, 0.28]]);
+      // the fence: posts every 3.5 m, a top rail, a translucent-dark mesh panel low down
+      for (let x = -8.7; x <= 8.71; x += 3.48) for (const y of [-17.7, 17.7]) parts.push([cy(0.04, 3.2, 0, 4).translate(x, y, 0), FEN]);
+      for (let y = -17.7; y <= 17.71; y += 3.54) for (const x of [-8.7, 8.7]) parts.push([cy(0.04, 3.2, 0, 4).translate(x, y, 0), FEN]);
+      for (const y of [-17.7, 17.7]) { parts.push([bx(17.4, 0.04, 0.04, 0, y, 3.15), FEN]); parts.push([bx(17.4, 0.02, 1.0, 0, y, 0.05), [0.28, 0.33, 0.3]]); }
+      for (const x of [-8.7, 8.7]) { parts.push([bx(0.04, 35.4, 0.04, x, 0, 3.15), FEN]); parts.push([bx(0.02, 35.4, 1.0, x, 0, 0.05), [0.28, 0.33, 0.3]]); }
+      return { g: mc(parts), mat: "vc" };
+    }
+    // a bronze figure on a granite pedestal, facing local -y
+    case "statue": {
+      const BR = [0.26, 0.33, 0.28], GR = [0.62, 0.6, 0.57];
+      return {
+        g: mc([[bx(2.2, 2.2, 0.35), GR], [bx(1.5, 1.5, 1.7, 0, 0, 0.35), [0.7, 0.68, 0.64]], [bx(1.8, 1.8, 0.25, 0, 0, 2.05), GR],
+          [bx(0.32, 0.26, 0.9, -0.12, 0, 2.3), BR], [bx(0.32, 0.26, 0.9, 0.12, 0, 2.3), BR], [bx(0.62, 0.42, 0.95, 0, 0, 3.2), BR],
+          [bx(0.16, 0.18, 0.8, -0.38, 0, 3.3), BR], [new THREE.BoxGeometry(0.16, 0.7, 0.16).rotateX(0.9).translate(0.38, -0.25, 4.05), BR],
+          [new THREE.SphereGeometry(0.17, 8, 6).translate(0, 0, 4.36), BR]]), mat: "vc",
+      };
+    }
+    // a dog: body, head, legs, tail; the coat is the instance colour
+    case "dog": return {
+      g: mc([[bx(0.62, 0.22, 0.24, 0, 0, 0.3), [1, 1, 1]], [bx(0.22, 0.18, 0.2, 0.36, 0, 0.46), [1, 1, 1]], [bx(0.1, 0.1, 0.06, 0.5, 0, 0.5), [0.6, 0.6, 0.6]],
+        ...[[-0.24, -0.08], [-0.24, 0.08], [0.22, -0.08], [0.22, 0.08]].map(([x, y]) => [bx(0.06, 0.06, 0.3, x, y, 0), [0.9, 0.9, 0.9]] as [THREE.BufferGeometry, number[]]),
+        [new THREE.BoxGeometry(0.22, 0.04, 0.04).rotateY(-0.6).translate(-0.38, 0, 0.6), [1, 1, 1]]]), mat: "vc", colored: true,
+    };
     case "flagpole": return { g: mc([[bx(1.6, 1.6, 0.5), STONE], [cy(0.09, 11, 0.5, 6, 0.05), WHITE], [new THREE.SphereGeometry(0.14, 6, 4).translate(0, 0, 11.6), [0.8, 0.65, 0.25]], [bx(0.02, 1.8, 1.1, 0, 0.95, 10.2), [0.7, 0.18, 0.16]]]), mat: "vc" };
   }
   return null;
+}
+
+/** Long meadow grass, a few metres a tile: tussocks and seed heads, white-based so the season tints it. */
+export function longGrassTex(): THREE.CanvasTexture {
+  const N = 256;
+  const { c, g } = makeCanvas(N, N);
+  let s = 5113; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  g.fillStyle = "#e6ead2"; g.fillRect(0, 0, N, N);
+  for (let i = 0; i < 5000; i++) {
+    const x = rnd() * N, y = rnd() * N, l = 3 + rnd() * 6, d = rnd() < 0.55;
+    g.strokeStyle = d ? `rgba(${70 + rnd() * 30 | 0},${90 + rnd() * 30 | 0},${40},0.4)` : `rgba(255,250,215,0.35)`;
+    g.lineWidth = 1; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rnd() - 0.5) * 3, y - l); g.stroke();
+  }
+  return finish(c);
+}
+/** Wildflowers on a transparent ground: buttercup, ox-eye daisy, cornflower, clover, poppy. */
+export function bloomTex(): THREE.CanvasTexture {
+  const N = 256;
+  const { c, g } = makeCanvas(N, N);
+  let s = 6007; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const COLS = ["#f4d23a", "#f7f5ec", "#5c78d6", "#c56aa6", "#d8362c"];
+  for (let i = 0; i < 900; i++) {
+    const x = rnd() * N, y = rnd() * N, r = 1 + rnd() * 1.6;
+    g.fillStyle = COLS[(rnd() * rnd() * COLS.length) | 0];
+    g.beginPath(); g.arc(x, y, r, 0, 6.28); g.fill();
+  }
+  return finish(c);
 }

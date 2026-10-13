@@ -406,6 +406,29 @@ export function portfolioOccupancy(
   return { leasedSf: Math.round(leased), lettableSf: Math.round(lettable), occ: Math.min(1, leased / lettable) };
 }
 
+/**
+ * WHAT THE LEASED FEET PAY, ON AVERAGE — $/sf/yr of in-place rent over the same
+ * operated deeds `portfolioOccupancy` counts: commercial tenants at their
+ * contract rent, flats at the roll they hold (`resRentPsf`; at market where a
+ * deed has none yet). Leased feet only, so vacancy does not dilute it — the
+ * occupancy readout beside it carries that.
+ */
+export function portfolioRentPsf(s: GameState, parcels: ParcelTable): number | null {
+  let rent = 0, leased = 0;
+  for (const h of Object.values(s.holdings)) {
+    if (isLeasedFee(h) || s.merged?.[h.bbl]) continue;
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    for (const t of h.tenants) { rent += t.rentPsf * t.sf; leased += t.sf; }
+    const resSf = useRentableSf(rec, "multifamily") * (h.occ ?? 0);
+    if (resSf > 0) {
+      rent += resSf * (h.resRentPsf ?? marketRentPsfYr(rec, s.econ, h.condition, h.condIdx));
+      leased += resSf;
+    }
+  }
+  return leased > 0 ? rent / leased : null;
+}
+
 // In-place rent roll at acquisition. Expirations cluster around a couple of
 // anchor years — a building with everything rolling at once is a visibly
 // riskier asset, and that's the point.

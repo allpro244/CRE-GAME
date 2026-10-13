@@ -1014,6 +1014,11 @@ body {
 .prop-cols { margin-top: 6px; }
 .panel-embed { background: none; border: none; padding: 0; }
 .panel-embed .deal { border-top: 1px solid rgba(146,110,40,0.22); }
+/* The design step on the full property page takes the whole width: the model
+   on the left, held in view, and the facade / base / top choices beside it. */
+.panel-embed > .deal.dev-wide { grid-column: 1 / -1; }
+.panel-embed .dev-design { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.panel-embed .dev-design-model { position: sticky; top: 8px; }
 /* Two columns only inside a real room — not a 560px dock pretending to be wide
    because the viewport was ≥900px. */
 /* Masonry, not CSS columns — see ui/useMasonry.ts and the rules in hud.css. */

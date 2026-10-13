@@ -7564,7 +7564,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   }
   private overcast = 0;
   /** The cloud shade the weather allows, before the camera's distance trims it. */
-  private cloudK0 = 0.55;
+  private cloudK0 = 0.45;
 
   /**
    * ALWAYS AFTERNOON. The game has no night and never will (the owner's
@@ -7622,7 +7622,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // fair weather: a scatter of cumulus; as the sky fills in, more of it;
     // under a full overcast there is no direct sun left for a cloud to take
     CLOUD.cloudCover.value = 0.22 + 0.3 * smooth(0.0, 0.6, oc);
-    this.cloudK0 = this.quality === "low" ? 0 : 0.55 * (1 - smooth(0.45, 0.95, oc));
+    this.cloudK0 = this.quality === "low" ? 0 : 0.45 * (1 - smooth(0.45, 0.95, oc));
     this.map?.triggerRepaint();
   }
 

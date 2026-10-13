@@ -225,7 +225,7 @@ fixed in #231; the sweep is clean since.
   no nighttime in this game"), so no caller can bring the dusk machinery back.
   Cloud shadows: what round 17 reached for, without drawing a cloud. A field
   of cumulus cells (~420 m, four octaves of value noise) at a 1,400 m base,
-  sampled where each surface's line to the sun meets it, takes up to 55% of
+  sampled where each surface's line to the sun meets it, takes up to 55% (later 45%) of
   the sun's direct light (the sky fill is untouched), drifting at ~8 m/s. It
   rides the shared air hook (`addHaze`), so every lit material and the
   shadow catcher over MapLibre's ground carry it; the sea takes most of its
@@ -249,7 +249,10 @@ fixed in #231; the sweep is clean since.
   of it at street level. Far off, the air hides it as it hides everything
   else: gone by ~7 km, so the horizon is haze and not grey smears. The field
   moved to its own module (`clouds.ts`) so anything else that shows the sky
-  reads the same cells. Clouds drawn into the sky itself (the finishing pass,
+  reads the same cells. On the Metropolis default camera the open-water
+  patches read as ink blots: the edge is now a broad penumbra (a cumulus has
+  no hard edge and the sun is a disc) and the shade at most 45% of the sun.
+  Clouds drawn into the sky itself (the finishing pass,
   where the distance pass shows no geometry above the horizon) were built and
   dropped: at the 70° pitch limit the sky is a sliver at the top of the
   frame even in a tall window, too little to judge or to be worth the pass.

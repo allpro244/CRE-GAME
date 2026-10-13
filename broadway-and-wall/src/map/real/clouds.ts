@@ -52,5 +52,6 @@ float cloudSunlight(vec3 wp, float k) {
   // far off, the air between hides a cloud's shade as it hides everything
   // else: gone by ~7 km, so the horizon is haze and not grey smears
   float far = 1.0 - smoothstep(2000.0, 7000.0, length(wp - cloudEye));
-  return 1.0 - cloudK * k * far * smoothstep(e - 0.02, e + 0.035, cloudField(q));
+  // a broad penumbra: a cumulus has no hard edge and the sun is a disc
+  return 1.0 - cloudK * k * far * smoothstep(e - 0.045, e + 0.06, cloudField(q));
 }`;

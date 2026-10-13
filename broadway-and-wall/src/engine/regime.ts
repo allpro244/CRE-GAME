@@ -77,7 +77,6 @@ function rrng(seed: number, step: number): number {
 // the top (RTC liquidations 1991-92, distressed office 2023-24) and 2.75% at
 // the bottom (gateway apartments, 2021). Guards outside the record, not a
 // statement about where caps should be.
-export const CAP_RAIL = { lo: 2.75, hi: 15 } as const;
 
 const pick = (r: number, lo: number, hi: number) => lo + r * (hi - lo);
 
@@ -210,7 +209,7 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
     caps = Object.fromEntries(classes.map((c) => [c, base[c] + capFlowsOf(caps, c)])) as typeof econ.capRate;
   }
   for (const cls of classes) {
-    econ.capRate[cls] = +Math.max(CAP_RAIL.lo, Math.min(CAP_RAIL.hi, caps[cls] + d(-0.2, 0.2))).toFixed(2);
+    econ.capRate[cls] = +(caps[cls] + d(-0.2, 0.2)).toFixed(2);
   }
   return { months, uTrail };
 }

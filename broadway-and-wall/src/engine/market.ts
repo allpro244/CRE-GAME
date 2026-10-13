@@ -4,7 +4,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
-import { simulateHistory, driftInflTarget, CAP_RAIL, shortIndexFor } from "./regime";
+import { simulateHistory, driftInflTarget, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { settleSupplyDeliveries } from "./supply";
 
@@ -423,7 +423,6 @@ const INCOME_ELAST: Record<BuiltClass, number> = {
  */
 // INDUST_COMP_MONTH retired: the -1.72%/yr exodus rate lives on as one era in
 // the secular menu (see the SECULAR DEMAND ERAS block), no longer a constant.
-const INDUST_COMP_FLOOR = 0.50;
 
 /**
  * HOW HARD EACH TRADE SWINGS.
@@ -514,7 +513,6 @@ const PHASE_CFG: Record<MarketPhase, { rateGap: number; rentDrift: number; devDr
 // at twenty per cent. The old 1.9-15.5 band could represent neither end, which
 // meant the two most consequential rate environments in modern history were
 // both outside what this game could express.
-const RATE_FLOOR = 1.45, RATE_CEIL = 23.0;
 
 /** The short index, for a save that predates it. */
 export { shortIndexFor };
@@ -1668,7 +1666,9 @@ export function capFlowsOf(ret: Record<BuiltClass, number>, k: BuiltClass): numb
 export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0, flows = 0): number {
   const crunch = 1.6 * Math.max(0, 1 - e.creditIdx);
   const vacGap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
-  const vacRisk = clamp(CAP_VAC_BETA[k] * vacGap * 100, -0.6, 2.0);
+  // Unbounded (2026-10-13): vacancy cannot go below zero, so the compression
+  // side is bounded by physics; the widening side is how far a glut goes.
+  const vacRisk = CAP_VAC_BETA[k] * vacGap * 100;
   // THE GROWTH A BUYER EXPECTS (2026-10-09). A yield is a required return
   // less expected growth (Gordon; for property, Geltner et al. ch. 12), and
   // the only growth in this target was expected inflation above 2%, through
@@ -2076,11 +2076,16 @@ export function tickNation(s: GameState) {
     // rate is punitive. At Volcker's ten points of real money the hazard is
     // better than one in ten a month, which is why 1980 and 1981-82 were two
     // recessions inside three years.
-    const haz = 0.0095
-      + clamp((realPolicy - 0.022) * 0.70, 0, 0.09)
+    // A HAZARD, NOT A CAPPED PROBABILITY (2026-10-13). The punitive-money
+    // term was clamped at 0.09/month; it is now an intensity, and the monthly
+    // chance is 1 - exp(-intensity), which stays below one by arithmetic
+    // rather than by a stop. Below neutral, money adds nothing (a hinge, not
+    // a rail: cheap money does not prevent the other causes).
+    const intensity = 0.0095
+      + Math.max(0, (realPolicy - 0.022) * 0.70)
       + (shock > 0.02 ? 0.010 : 0)
       + ((n.expM ?? 0) > 110 ? 0.004 : 0);
-    if (rng(s, "nation") < haz) {
+    if (rng(s, "nation") < 1 - Math.exp(-intensity)) {
       // Most downturns are downturns. About one in fourteen is 1929 or 2008,
       // and those are the ones that redraw a career.
       n.deep = rng(s, "nation") < 0.07;
@@ -2097,8 +2102,14 @@ export function tickNation(s: GameState) {
       // for years — Depression depth, every other century. The post-war
       // deep recessions rose +5.6 points (2008, 4.4 -> 10.0) and +11 briefly
       // (2020, 3.5 -> 14.7, gone in a year); 1982 was +3.6.
-      n.uPeak = clamp(n.unemp + (n.deep ? rrange(s, 0.045, 0.095, "nation") : rrange(s, 0.016, 0.042, "nation")),
-        0.03, 0.26);
+      // DRAWN FROM A TAIL, NOT A BOX (2026-10-13). A uniform range is a cap
+      // in disguise: nothing past its top end can ever happen. Depth is
+      // lognormal instead — a deep recession's median is +6 points (2008:
+      // +5.6), 95% fall between +3 and +12, and a 1929 stays possible at about
+      // one deep recession in a thousand. Ordinary ones centre on +2.6 (1990:
+      // +1.9, 2001: +2.0, 1982: +3.6). Shape parameters from that record.
+      const zU = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
+      n.uPeak = n.unemp + (n.deep ? 0.060 * Math.exp(0.35 * zU) : 0.026 * Math.exp(0.30 * zU));
       pushNews(s, "warn", n.deep
         ? "The country has fallen off a cliff. This is not a soft patch — payrolls are "
           + "collapsing nationally and nobody can say where the bottom is."
@@ -2129,7 +2140,10 @@ export function tickNation(s: GameState) {
     : 0.025 * (0.035 - n.unemp);
   n.unemp = clamp(n.unemp + uMove
     + 0.004 * ((e.unemployment ?? 0.055) - n.unemp)   // one city, one per cent of a nation
-    + (shock > 0.02 ? 0.0006 : 0) + rrange(s, -0.0007, 0.0007, "nation"), 0.026, 0.26);
+    + (shock > 0.02 ? 0.0006 : 0) + rrange(s, -0.0007, 0.0007, "nation"), 0, 1);
+  // (No 2.6%/26% rails: the expansion pull aims at 3.5% and every recession
+  // is aimed at a drawn depth, so the series holds its range by its own
+  // dynamics. The 0-1 bound is what a rate is.)
 
   // National inflation: expectations, plus a Phillips term, plus the shock.
   // THE PHILLIPS CURVE IS CONVEX. Slack disinflates weakly — you cannot get
@@ -2190,11 +2204,14 @@ export function tickNation(s: GameState) {
   // or so of 1983 (Michigan 5-10yr expectations ~3% by the mid-1990s).
   const miss = n.infl - 0.02;
   const am = Math.abs(miss);
-  n.credibility = clamp(
-    n.credibility + (am < 0.010
-      ? (0.0035 + (realPolicy > 0.03 ? 0.0022 : 0)) * (n.chair?.resolve ?? 1)
-      : -0.0018 - 0.110 * (am - 0.010)),
-    0.10, 0.99);
+  // NO STOPS (2026-10-13). This was clamped to 0.10-0.99 and sat on the
+  // ceiling 47% of months. Trust is earned with diminishing returns — the last
+  // points of belief are the hardest — and lost in proportion to what there is
+  // to lose, so the share stays inside 0-1 by its own arithmetic. Scaled so a
+  // half-believed bank moves at the old rates.
+  n.credibility += am < 0.010
+    ? 2 * (1 - n.credibility) * (0.0035 + (realPolicy > 0.03 ? 0.0022 : 0)) * (n.chair?.resolve ?? 1)
+    : -2 * n.credibility * (0.0018 + 0.110 * (am - 0.010));
   // A believed bank's anchor beats the pass-through and expectations sit at
   // target; a disbelieved one's does not, and then last year's inflation
   // becomes next year's baseline. Those two regimes are the Great Moderation
@@ -2310,8 +2327,19 @@ export function tickNation(s: GameState) {
     }
   }
   if (meeting) {
-    const step = bankStep(want - n.policy, restore > 0, n.pressureM > 0);
-    n.policy = Math.max(0.25, n.policy + step);
+    let step = bankStep(want - n.policy, restore > 0, n.pressureM > 0);
+    // No floor (2026-10-13): the rule may take the rate below zero, as the
+    // ECB, the SNB and the Bank of Japan did — but each cut below zero is
+    // harder to make than the last, because cash pays zero. Past the cost of
+    // vaulting it, deposits leave the banks for currency and the cut stops
+    // transmitting (Rogoff 2016, "The Curse of Cash"; the deepest real rates
+    // were the SNB's -0.75% and the Danmarks Nationalbank's -0.75%). So a
+    // committee that wants to go lower makes the cut with odds that fall
+    // with the depth it would reach: about 50/50 at -0.25, one in nine at
+    // -0.75, one in eighteen at -1. A lower bound that emerges, not a stop.
+    if (step < 0 && n.policy + step < 0
+        && rng(s, "nation") > Math.exp((n.policy + step) / 0.35)) step = 0;
+    n.policy = n.policy + step;
   }
 
   // THE LOAN INDEX IS A FORECAST, PLUS A PRICE FOR BEING WRONG ABOUT IT.
@@ -2344,14 +2372,12 @@ export function tickNation(s: GameState) {
   // about 5 in 1981) — guards, not rails.
   const premBase = termPremBase(n.credibility, e.creditIdx ?? 1);
   if (n.termPrem === undefined) n.termPrem = premBase;
-  n.termPrem = clamp(
-    n.termPrem + 0.10 * (premBase - n.termPrem) + rrange(s, -0.30, 0.30, "nation"),
-    -1.5, 6.0);
+  n.termPrem = n.termPrem + 0.10 * (premBase - n.termPrem) + rrange(s, -0.30, 0.30, "nation");
   const path = expectedPolicyAvg(n, want, restore > 0, s.month);
-  e.indexRate = clamp(path + n.termPrem, RATE_FLOOR, RATE_CEIL);
+  e.indexRate = path + n.termPrem;
   e.shortIndex = shortIndexFor(n.policy, e.creditIdx ?? 1);
   // the era, for anything that still reads it — now an OUTPUT of the nation
-  e.rateRegime = clamp(path + premBase, RATE_FLOOR, RATE_CEIL);
+  e.rateRegime = path + premBase;
 }
 
 
@@ -3771,8 +3797,8 @@ export function tickEcon(s: GameState) {
                                : (2.2 - sec.idx) / (2.2 - 1);
       sec.idx = clamp(sec.idx * (1 + (coupled / 12) * Math.max(0, span)), 0.45, 2.2);
     }
-    // sheds keep their floor: last-mile and food distribution never leave
-    e.secular.industrial.idx = Math.max(INDUST_COMP_FLOOR, e.secular.industrial.idx);
+    // (The extra industrial stop at INDUST_COMP_FLOOR is gone, 2026-10-13: the
+    // `span` deceleration above already approaches the bound without reaching it.)
     // legacy mirror, for anything that still reads it
     e.industComp = e.secular.industrial.idx;
   }
@@ -4030,7 +4056,7 @@ export function tickEcon(s: GameState) {
       // mostly renters, on +5 points of unemployment — about 1.2% of renter
       // households per point. Symmetric about the town's own natural rate,
       // through the same household-formation clock.
-      affordRaw *= Math.max(0.5, 1 - HH_U_SENS * ((e.unemployment ?? OPENING_UNEMP) - OPENING_UNEMP));
+      affordRaw *= Math.exp(-HH_U_SENS * ((e.unemployment ?? OPENING_UNEMP) - OPENING_UNEMP));
     } else {
       affordRaw = clamp(Math.pow(burden, -0.40), AFFORD_BAND[0], AFFORD_BAND[1]);
     }
@@ -5393,7 +5419,7 @@ export function tickEcon(s: GameState) {
     // matches that without ever being the largest term in the sum.
     const flows = capFlowsOf(e.retExp!, k);
     const target = capTargetOf(e, k, capIndex, sector, flows);
-    e.capRate[k] = clamp(e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045), CAP_RAIL.lo, CAP_RAIL.hi);
+    e.capRate[k] = e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045);
     // THE EXIT CAP A DEVELOPER UNDERWRITES, which is not this month's.
     //
     // Land is bought against a sale three or four years out, so the yield that

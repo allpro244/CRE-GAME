@@ -759,7 +759,13 @@ function fireUse(s: GameState, yr: number) {
  * industry clock and before the demand block, so every reader downstream sees
  * the same level for the month.
  */
+/** Swans disabled until the revamp (owner, 2026-10-13). */
+const SWANS_OFF = true;
+
 export function tickSwans(s: GameState) {
+  // SWANS ARE OFF (owner, 2026-10-13) pending a revamp: no new events fire and
+  // the levels below read neutral, so a save carrying an old swan sheds it.
+  if (SWANS_OFF) { s.econ.swanJobDrift = 0; return; }
   const e = s.econ;
   ensure(e);
 
@@ -862,6 +868,7 @@ export function tickSwans(s: GameState) {
  * fix for the one measured fault this file had.
  */
 export function swanClassLevel(e: Econ, k: BuiltClass): number {
+  if (SWANS_OFF) return 1;
   const use = e.swanUse?.[k] ?? 1;
   const list = SECTOR_CLASSES[k];
   const w = TRADE_WEIGHT[k] ?? 1;
@@ -912,6 +919,7 @@ export function swanClassLevel(e: Econ, k: BuiltClass): number {
  * and for why the distress ends but the level does not.
  */
 export function swanTradeWave(e: Econ, k: Sector): number {
+  if (SWANS_OFF) return 0;
   const lvl = e.swanTrade?.[k];
   const ref = e.swanTradeRef?.[k];
   if (!lvl || !ref) return 0;

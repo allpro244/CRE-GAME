@@ -134,6 +134,11 @@ export interface Tenant {
   /** The principal economic reason given with that notice. */
   nonRenewWhy?: string;
   /**
+   * COMMITTED ELSEWHERE — a competitor's build-to-suit signed this tenant
+   * (COMPETITORS_PLAN.md #8). At renewal time it gives notice with this reason.
+   */
+  leavingFor?: string;
+  /**
    * THE MONTH YOU TURNED THEM DOWN. A tenant who asked for relief and did not
    * get it does not forget it: they run leaner, they fail more (see pFail),
    * and when the lease finally rolls they remember who held the paper over
@@ -1276,6 +1281,7 @@ export type PropertyEventKind =
   | "build-start"
   | "delivered"
   | "demolished"
+  | "converted"
   | "default"
   | "major-lease"
   | "planning";
@@ -2323,6 +2329,10 @@ export interface Rival {
   eqHist?: [number, number][];
   /** Month the hidden backer (quirk) committed equity; it does so once. */
   backerUsedM?: number;
+  /** Month the firm stopped being a firm and its family kept the buildings. */
+  retiredM?: number;
+  /** The competitor that bought this firm whole (COMPETITORS_PLAN.md #25). */
+  takenOverBy?: string;
   /** The competitor this firm is feuding with (quirk). */
   feud?: string;
   /**
@@ -2781,6 +2791,13 @@ export interface GameState {
    * — the raise can still refuse. See FounderBid.
    */
   founderBids?: FounderBid[];
+  /**
+   * THE BRIDGE (COMPETITORS_PLAN.md §5a): firms that wound up and left their
+   * buildings with the family, now holders that do not bid, and the deeds
+   * pinned to them (`m` is the month — a later trade on the deed releases it).
+   */
+  retiredHolders?: import("./owners").Holder[];
+  deedHolder?: Record<string, { id: string; m: number }>;
   /**
    * WHAT YOU KNOW ABOUT EACH COMPETITOR — a band per trait, by firm id
    * (engine/competitorReads.ts). Display only; nothing in the economy reads it.

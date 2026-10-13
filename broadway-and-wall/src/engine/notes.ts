@@ -50,6 +50,7 @@ import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
 import { assetGrade, clearRivalClaims, forgetDeed } from "./rivals";
+import { hash01 } from "./competitorTraits";
 import { genRentRoll } from "./leasing";
 import { recordComp } from "./comps";
 import { distressPrice, markSponsor } from "./sponsor";
@@ -172,6 +173,7 @@ export function tickNotes(s: GameState, parcels: ParcelTable) {
   if (!s.noteOffers) s.noteOffers = [];
   serviceNotes(s, parcels);
   takeRivalNotes(s, parcels);
+  loanToOwnBids(s);
   expireOffers(s, parcels);
   bringPaperToMarket(s, parcels);
 }
@@ -393,6 +395,45 @@ function wreckedRoll(s: GameState, rec: ParcelRecord, h: Holding, occ: number) {
 
 // -------------------------------------------------------------- the offer sheet
 
+/**
+ * LOAN-TO-OWN (COMPETITORS_PLAN.md §3.1 #20). A firm that hunts distress and
+ * hears about paper early does not wait for you to pass on it: it buys the
+ * non-performing loan while the offer is still open, on the same terms the
+ * tape is offering you, and files on the deed. You find out when the offer is
+ * gone. Each such firm looks at each open offer once a month, on a hashed
+ * clock (no RNG stream), and only when its book can carry the paper — the
+ * test the expiry buyer below already applies.
+ */
+function loanToOwnBids(s: GameState) {
+  if (!s.noteOffers?.length) return;
+  const hunters = (s.rivals ?? []).filter((r) =>
+    r.failedM === undefined && !r.stressMs && r.sheet && r.sheet.distress >= 85 && r.sheet.reach >= 60);
+  if (!hunters.length) return;
+  for (let i = s.noteOffers.length - 1; i >= 0; i--) {
+    const o = s.noteOffers[i];
+    if (o.perf === "performing") continue;
+    const px = Math.round(o.face * o.askPct);
+    const buyer = hunters.find((r) =>
+      r.id !== o.obligorId && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78
+      && hash01(`${s.seed}:lto:${r.id}:${o.id}:${s.month}`) < 0.08);
+    if (!buyer) continue;
+    s.noteOffers.splice(i, 1);
+    const equity = Math.min(Math.max(0, buyer.cash), Math.round(px * 0.35));
+    buyer.cash -= equity;
+    buyer.debt += px - equity;
+    if (s.cityLoans?.[o.bbl]) delete s.cityLoans[o.bbl];
+    (s.rivalNotes ??= []).push({
+      bbl: o.bbl, firmId: buyer.id, firm: buyer.name, face: o.face,
+      takeM: s.month + FILE_MIN_M + Math.floor(hash01(`${s.seed}:lto-file:${o.id}`) * (FILE_MAX_M - FILE_MIN_M + 1)),
+    });
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: `${buyer.name} bought the defaulted loan on ${o.address} off ${o.lender} at ${(100 * o.askPct).toFixed(0)} cents before anyone else moved. `
+        + `They want the building, not the coupon — ${o.obligor} has about a year.`,
+    });
+  }
+}
+
 function expireOffers(s: GameState, _parcels: ParcelTable) {
   for (let i = s.noteOffers!.length - 1; i >= 0; i--) {
     const o = s.noteOffers![i];
@@ -430,7 +471,9 @@ function expireOffers(s: GameState, _parcels: ParcelTable) {
     }
     const able = (s.rivals ?? []).filter((r) =>
       r.failedM === undefined && r.id !== o.obligorId
-      && (r.style === "opportunistic")
+      // A firm with a sheet is a paper buyer if it hunts distress; the legacy
+      // roster keeps its style test.
+      && (r.sheet ? r.sheet.distress >= 70 : r.style === "opportunistic")
       && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78);
     const buyer = able.length && rng(s) < 0.55 ? able[Math.floor(rng(s) * able.length)] : undefined;
     if (!buyer) continue;

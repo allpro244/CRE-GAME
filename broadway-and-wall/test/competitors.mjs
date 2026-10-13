@@ -110,5 +110,82 @@ console.log("\nTHE CAST\n");
   ok("two years of play with the cast: no game over, sheets kept", !s.gameOver && (s.rivals ?? []).every((r) => !!r.sheet || r.bornM > 0));
 }
 
+console.log("\nPHASE 5 — NEW MECHANICS\n");
+{
+  // A RAID: a raider with cash and a firm it can afford. The look is hashed,
+  // so walk the mid-years until it fires.
+  let g = E.newGame(12007, parcels);
+  const raider = g.rivals.find((r) => r.sheet) ;
+  E.seatProfile(g, raider, E.PROFILE_OF.raider);
+  raider.cash = 400_000_000;
+  raider.stressMs = 0;
+  let taken = null;
+  for (let y = 0; y < 40 && !taken; y++) {
+    g.month = 6 + 12 * y;
+    E.tickRivalTakeovers(g, parcels);
+    taken = g.rivals.find((r) => r.takenOverBy === raider.id);
+  }
+  ok("a raider buys a competitor whole", !!taken, taken ? `${raider.name} bought ${taken.name}` : "never fired");
+  if (taken) {
+    ok("the target is off the street with nothing left on it", taken.failedM !== undefined && !taken.bbls.length && taken.debt === 0 && taken.cash === 0);
+    ok("no deed is on two books after the raid", g.rivals.every((r) => r === raider || !r.bbls.some((b) => raider.bbls.includes(b))));
+  }
+}
+{
+  // THE BRIDGE: an old, unlevered family firm that has stopped buying.
+  let g = E.newGame(12007, parcels);
+  const fam = g.rivals.find((r) => r.bbls.length >= 2);
+  E.seatProfile(g, fam, E.PROFILE_OF.dynasty);
+  fam.sheet.hold = 96; fam.sheet.capacity = 20;
+  fam.bornM = -400; fam.debt = 0; fam.cash = 1_000_000; fam.stressMs = 0;
+  fam.heldSince = Object.fromEntries(fam.bbls.map((b) => [b, -200]));
+  const deeds = [...fam.bbls];
+  for (let y = 0; y < 60 && fam.failedM === undefined; y++) {
+    g.month = 9 + 12 * y;
+    E.tickRivalRetirements(g, parcels);
+  }
+  ok("an old family firm can wind up into a holder", fam.retiredM !== undefined);
+  if (fam.retiredM !== undefined) {
+    const h = E.holderOf(g, parcels, deeds[0]);
+    ok("its buildings are held by the family under its name", !!h && h.name.includes("Family Holdings") && deeds.every((b) => E.holderOf(g, parcels, b)?.id === h.id), h?.name ?? "no holder");
+    ok("the family is on the register", E.register(g, parcels).some((x) => x.id === h?.id));
+  }
+}
+{
+  // BUILD-TO-SUIT: a tenant of yours whose lease runs out around delivery signs elsewhere.
+  let g = E.newGame(12007, parcels);
+  const bbl = Object.keys(parcels).find((b) => parcels[b].class === "office" && parcels[b].bldgArea > 20_000);
+  const r = g.rivals[0];
+  E.seatProfile(g, r, E.PROFILE_OF.bts);
+  g.holdings[bbl] = { bbl, boughtM: 0, costBasis: 1, assessed: 1, loan: null, condition: "standard", tenants: [
+    { name: "Ledger & Quill LLP", sf: 12_000, rentPsf: 40, startM: -60, endM: 30, credit: 1, use: "office", sector: "law" },
+  ], cfHistory: [], occ: 0.6 };
+  let signed = false;
+  for (let m = 0; m < 40 && !signed; m++) {
+    g.month = m;
+    E.poachForBuildToSuit(g, parcels, r, parcels[bbl], "office", 60_000, 28);
+    signed = !!g.holdings[bbl].tenants[0].leavingFor;
+  }
+  ok("a build-to-suit shop signs your tenant for its new building", signed, g.holdings[bbl].tenants[0].leavingFor ?? "");
+}
+{
+  // Over a long run, how often each mechanic happens on its own (a report).
+  let g = E.newGame(550991, parcels);
+  const count = { raid: 0, convert: 0, retire: 0, lto: 0, backer: 0 };
+  for (let m = 0; m < 360; m++) {
+    g = E.advanceMonth(g, parcels, bbls, adjacency);
+    if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
+    for (const n of g.news.filter((x) => x.q === g.month)) {
+      if (/has bought .* outright/.test(n.text)) count.raid++;
+      if (/is converting/.test(n.text)) count.convert++;
+      if (/has wound itself up/.test(n.text)) count.retire++;
+      if (/before anyone else moved/.test(n.text)) count.lto++;
+      if (/somebody behind it wrote a cheque/.test(n.text)) count.backer++;
+    }
+  }
+  console.log(`  thirty years, seed 550991: ${count.raid} raids, ${count.convert} conversions, ${count.retire} retirements, ${count.lto} loan-to-own buys, ${count.backer} backer rescues`);
+  ok("thirty years run clean with every mechanic live", (g.rivals ?? []).length > 0);
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nall clear");
 process.exit(fails ? 1 : 0);

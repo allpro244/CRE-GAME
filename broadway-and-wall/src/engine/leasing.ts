@@ -1784,6 +1784,17 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // bearing on it. See renewalIntent: how it is run, what state it is in,
       // what you are charging, what their trade is doing, whether it still
       // fits them. And the notice says which of those it was.
+      // A tenant that has already signed for a competitor's build-to-suit
+      // does not write a renewal letter: its notice is the other building.
+      if (t.leavingFor) {
+        t.nonRenewM = q;
+        t.nonRenewWhy = t.leavingFor;
+        s.news.unshift({
+          q, kind: "warn",
+          text: `${t.name} is not renewing at ${rec.address} — ${t.leavingFor}. ${(t.sf / 1000).toFixed(1)}k sf comes available ${monthLabel(t.endM)}.`,
+        });
+        continue;
+      }
       const ri = renewalIntent(s, rec, h, t);
       if (rng(s, "leasing") > ri.p) {
         t.nonRenewM = q;

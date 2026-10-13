@@ -697,10 +697,25 @@ export function planAdaptiveReuse(
 ): DevPlan | null {
   const eligible = adaptiveReuseEligibility(s, parcels, bbl);
   if (!eligible.ok) return null;
-  const rec = resolveRec(parcels, s, bbl)!;
+  return planReuseAt(s, parcels, bbl, ownedHoldingValue(s, parcels, s.holdings[bbl]), target, customMix);
+}
+
+/**
+ * THE CONVERSION, PRICED — the desk's arithmetic without the player's
+ * eligibility gates, given the value of the shell being converted (its
+ * opportunity cost). `planAdaptiveReuse` calls it for your buildings; a
+ * converter competitor calls it for its own (COMPETITORS_PLAN.md #9), so both
+ * price a conversion on the same desk and the same exit.
+ */
+export function planReuseAt(
+  s: GameState, parcels: ParcelTable, bbl: string, opportunity: number,
+  target: "multifamily" | "mixed" = "multifamily",
+  customMix?: UseMix,
+): DevPlan | null {
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec || !rec.bldgArea) return null;
   const coverage = Math.max(0.08, Math.min(0.9,
     rec.bldgArea / Math.max(1, rec.lotArea * rec.floors)));
-  const opportunity = ownedHoldingValue(s, parcels, s.holdings[bbl]);
   // A housing conversion keeps a small active ground-floor allowance but does
   // not let the generic new-build rule turn a two-storey shell into mostly
   // shops (its 1.25-floor retail assumption is for ground-up podium design).

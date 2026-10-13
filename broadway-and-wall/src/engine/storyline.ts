@@ -44,7 +44,7 @@ export const ARC_LABEL: Record<Arc, string> = {
 
 /** Where a firm is in its story, from signals the engine already keeps. */
 export function arcOf(s: GameState, r: Rival, ltv: number): Arc {
-  if (r.failedM !== undefined) return r.takenPrivateM !== undefined ? "takenOver" : "foreclosed";
+  if (r.failedM !== undefined) return r.takenPrivateM !== undefined || r.takenOverBy ? "takenOver" : r.retiredM !== undefined ? "steady" : "foreclosed";
   const stress = r.stressMs ?? 0;
   if (stress >= 6) return "crisis";
   if (stress > 0) return r.backerUsedM !== undefined && s.month - r.backerUsedM < 12 ? "rescued" : "strained";
@@ -236,7 +236,12 @@ export function beatsBetween(prev: GameState, next: GameState): string[] {
   for (const r of next.rivals ?? []) {
     const p = before.get(r.id);
     if (!p) { out.push(`${r.name} has raised a fund and is buying`); continue; }
-    if (r.failedM !== undefined && p.failedM === undefined) out.push(`${r.name} has gone under — its book goes to the receivers`);
+    if (r.failedM !== undefined && p.failedM === undefined) {
+      const by = r.takenOverBy ? (next.rivals ?? []).find((x) => x.id === r.takenOverBy)?.name : undefined;
+      out.push(r.retiredM !== undefined ? `${r.name} has wound up and the family is keeping the buildings`
+        : by ? `${by} has bought ${r.name} outright`
+        : r.takenPrivateM !== undefined ? `${r.name} is yours` : `${r.name} has gone under — its book goes to the receivers`);
+    }
     else if ((r.stressMs ?? 0) >= 6 && (p.stressMs ?? 0) < 6) out.push(`${r.name} is six months behind on its debt`);
     if (r.backerUsedM !== undefined && p.backerUsedM === undefined) out.push(`A backer nobody knew about has rescued ${r.name}`);
   }

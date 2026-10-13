@@ -27,13 +27,13 @@ import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
-import { initRivals, tickRivals, fundJobs, gradeOf, ownerOf, settleOpeningLeverage } from "./rivals";
+import { initRivals, tickRivals, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy, capitalRatio, targetCapital } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts, couponFundable } from "./workout";
 import { tickPortfolios } from "./portfoliosale";
-import { tickTakePrivateApproach, poss } from "./takeprivate";
+import { tickTakePrivateApproach, tickRivalTakeovers, poss } from "./takeprivate";
 import { tickLedger } from "./ledger";
 import { tickNotes, maybeSellYourLoan } from "./notes";
 import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
@@ -628,6 +628,9 @@ function tickMonth(
   tickPortfolio(s, parcels);
   tickFirm(s, parcels);
   tickRivals(s, parcels);
+  tickRivalTakeovers(s, parcels);
+  tickRivalConversions(s, parcels);
+  tickRivalRetirements(s, parcels);
   // The mortgage record reconciles against the street the moment the street
   // has finished moving, so the statement the note desk sells out of below is
   // never a month stale.

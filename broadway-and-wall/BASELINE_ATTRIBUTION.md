@@ -7,6 +7,29 @@
 
 ---
 
+## Competitors phase 5: raids, holdouts, loan-to-own, build-to-suit, conversions, the bridge
+
+COMPETITORS_PLAN.md §12. Raids, conversions and retirements run in the
+no-player baseline; holdouts and build-to-suit poaching only touch a player's
+holdings, so the baseline cannot see them. Paired against the phase-4 engine
+(`94afb30`) over the same 16 seeds x 300 months:
+
+| Metric | Paired mean | t | Read |
+|---|---|---|---|
+| `rentIdx.multifamily` | +5.0% | 2.1 | Marginal; 9 of 16 seeds up |
+| `city.floorAreaM` | +0.8% | 2.0 | Marginal; 8 of 16 up |
+| everything else | | < 1.9 | Re-roll |
+
+With ~45 metrics, two or three at |t| near 2 is what chance gives; neither
+moves most seeds one way, so neither is called a level shift.
+
+`test/advance.mjs`: the life-company quote share is now measured over ten
+towns, not three. Three towns' tape (about 110 listings) put 8% of 114 against
+12% of 142 across a re-roll; ten towns read 8.7% before this change and 9.8%
+after. Floor and computation unchanged.
+
+---
+
 ## Competitors: live trait sheets, drift, holder mini-sheets (COMPETITORS_PLAN.md 1b, 4, 4h)
 
 Every competitor now opens from one of 28 profiles (sheet, rules, quirks),

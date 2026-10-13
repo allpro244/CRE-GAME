@@ -319,6 +319,14 @@ function tierOf(rec: ParcelRecord, r: number): HolderTier {
 const REGISTRY = new WeakMap<ParcelTable, Map<number, Holder[]>>();
 const TIER_POOLS = new WeakMap<Holder[], { all: Record<HolderTier, Holder[]>; dirt: Record<HolderTier, Holder[]> }>();
 export function register(s: GameState, parcels: ParcelTable): Holder[] {
+  const reg = baseRegister(s, parcels);
+  // FAMILIES THAT USED TO BE FIRMS (COMPETITORS_PLAN.md §5a, the bridge). Not
+  // hash-derived: their deeds are pinned to them by `deedHolder`.
+  return s.retiredHolders?.length ? [...reg, ...s.retiredHolders] : reg;
+}
+
+/** The hash-derived register alone — the pools every unpinned deed is drawn from. */
+function baseRegister(s: GameState, parcels: ParcelTable): Holder[] {
   let bySeed = REGISTRY.get(parcels);
   if (!bySeed) {
     bySeed = new Map<number, Holder[]>();
@@ -375,7 +383,13 @@ export function holderOf(s: GameState, parcels: ParcelTable, bbl: string): Holde
   if (!rec) return null;
   if (s.holdings[bbl] || ownerOf(s, bbl)) return null;
   if (isCivicLand(s, bbl)) return null;
-  const reg = register(s, parcels);
+  // A deed pinned to a retired firm's family stays theirs until it next trades.
+  const pin = s.deedHolder?.[bbl];
+  if (pin && (s.lastTradeM?.[bbl] ?? -1) <= pin.m) {
+    const h = s.retiredHolders?.find((x) => x.id === pin.id);
+    if (h) return h;
+  }
+  const reg = baseRegister(s, parcels);
   if (!reg.length) return null;
   const dirt = rec.class === "land" || !(rec.bldgArea > 0);
   // A deed the player sold to an anonymous buyer re-draws its holder: the

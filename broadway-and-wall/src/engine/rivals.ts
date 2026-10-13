@@ -37,7 +37,7 @@ import { isCivicLand } from "./demand";
 import { rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct } from "./market";
 import { assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
-import { cityCoverage, cityInfillCap, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks } from "./dev";
+import { cityCoverage, cityInfillCap, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, productById, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue } from "./leasing";
@@ -329,7 +329,7 @@ function maxLiveJobs(style: RivalStyle): number {
  * taken, a rescued frame added to the taker while the dead sponsor kept it.
  * Strip it from whoever has it, pay them if there is a price, then record it.
  */
-function transferDeed(s: GameState, bbl: string, to: Rival, price: number) {
+export function transferDeed(s: GameState, bbl: string, to: Rival, price: number) {
   for (const r of s.rivals ?? []) {
     if (r === to || !r.bbls.includes(bbl)) continue;
     r.bbls = r.bbls.filter((b) => b !== bbl);
@@ -529,6 +529,7 @@ export function claimJob(
     job.ratePct = plan.ratePct;
     job.lender = plan.lender;
   }
+  poachForBuildToSuit(s, parcels, best, rec, use === "mixed" ? "retail" : use, sf, deliverM);
   s.news.unshift({
     q: s.month, kind: "event",
     text: nearPlayer
@@ -1430,7 +1431,11 @@ export function fitOf(s: GameState, parcels: ParcelTable, r: Rival, rec: ParcelR
   // FEUDING (a quirk): it bids where the firm it is fighting already owns.
   const foe = r.feud ? (s.rivals ?? []).find((x) => x.id === r.feud && x.failedM === undefined) : undefined;
   const feud = foe && bookOf(s, parcels, foe).byDistrict.has(rec.district) ? 1.25 : 1;
-  return feud * siteFit(r.sheet, r.rules, r.quirks, {
+  // COPYCAT (a quirk): capital follows visible success. A copycat leans into
+  // the districts where your book is — two or more of your buildings, in a
+  // year your net worth rose — because that is where somebody is making money.
+  const copy = r.quirks?.includes("copycat") && playerHotDistricts(s, parcels).has(rec.district) ? 1.3 : 1;
+  return feud * copy * siteFit(r.sheet, r.rules, r.quirks, {
     cls: land ? "land" : rec.class,
     loc: Math.max(0, Math.min(1, demandLinear(rec.demandScore) / 100)),
     sf: land ? rec.lotArea : rec.bldgArea,
@@ -1510,6 +1515,154 @@ function driftYear(s: GameState, r: Rival) {
       text: ch < 0
         ? `${r.name} lost a third of its equity last year and is not the firm it was — the market now reads it as a ${after.toLowerCase()}.`
         : `${r.name} had the year of its life and is acting like it — the market now reads it as a ${after.toLowerCase()}.`,
+    });
+  }
+}
+
+/** Districts where you hold two or more buildings and your net worth rose last year. */
+const hotCache = new WeakMap<GameState, Set<string>>();
+function playerHotDistricts(s: GameState, parcels: ParcelTable): Set<string> {
+  const hit = hotCache.get(s);
+  if (hit) return hit;
+  const out = new Set<string>();
+  const marks = (s.yearMarks ?? []).filter((m) => m.y >= -1);
+  const rising = marks.length >= 2 && marks[marks.length - 1].nw > marks[marks.length - 2].nw;
+  if (rising) {
+    const n = new Map<string, number>();
+    for (const b of Object.keys(s.holdings)) {
+      const d = parcels[b]?.district;
+      if (d) n.set(d, (n.get(d) ?? 0) + 1);
+    }
+    for (const [d, k] of n) if (k >= 2) out.add(d);
+  }
+  hotCache.set(s, out);
+  return out;
+}
+
+/**
+ * BUILD-TO-SUIT TAKES A TENANT FROM SOMEBODY (COMPETITORS_PLAN.md §3.1 #8).
+ * A build-to-suit shop breaks ground with the lease already signed, and the
+ * tenant who signed it is usually leaving a building in town — sometimes
+ * yours. When one of these firms starts a job, the largest tenant of yours in
+ * that use whose lease runs out around delivery (from six months before to a
+ * year and a half after) has committed to the new building: it will not
+ * renew, and the notice will say where it is going. Half the time (hashed —
+ * no RNG stream); a tenant already leaving or already committed is skipped.
+ */
+export function poachForBuildToSuit(
+  s: GameState, parcels: ParcelTable, r: Rival, rec: ParcelRecord, use: string, sf: number, deliverM: number,
+) {
+  const bts = r.profile === "bts" || (!!r.sheet && r.sheet.reach >= 80 && r.sheet.build >= 70);
+  if (!bts || hash01(`${s.seed}:bts:${r.id}:${rec.bbl}:${s.month}`) >= 0.5) return;
+  let pick: { t: NonNullable<GameState["holdings"][string]["tenants"]>[number]; addr: string } | null = null;
+  for (const h of Object.values(s.holdings)) {
+    const hr = parcels[h.bbl];
+    if (!hr) continue;
+    for (const t of h.tenants ?? []) {
+      if ((t.use ?? hr.class) !== use || t.nonRenewM !== undefined || t.leavingFor) continue;
+      if (t.endM < deliverM - 6 || t.endM > deliverM + 18 || t.sf < 4000 || t.sf > sf * 1.1) continue;
+      if (!pick || t.sf > pick.t.sf) pick = { t, addr: hr.address ?? h.bbl };
+    }
+  }
+  if (!pick) return;
+  pick.t.leavingFor = `they have signed for ${r.name}'s new building at ${rec.address ?? rec.bbl}`;
+  s.news.unshift({
+    q: s.month, kind: "warn",
+    text: `${pick.t.name} has signed with ${r.name} for a build-to-suit at ${rec.address ?? rec.bbl}. `
+      + `Their lease at ${pick.addr} runs out ${monthLabel(pick.t.endM)}, and they will not be renewing it.`,
+  });
+}
+
+/**
+ * THE CONVERTER (COMPETITORS_PLAN.md §3.1 #9). Once a year a firm that buys
+ * tired office to fix looks at its own office book for a shell the market has
+ * given up on — under two-thirds let — that the zoning lets become housing,
+ * and prices the conversion on the same desk the player's reuse uses
+ * (`planReuseAt`), with the shell at its own mark as the opportunity cost. It
+ * converts only what clears the hurdle and what it can fund: the first equity
+ * draw out of cash and line, inside its own job limit. One a year at most.
+ */
+export function tickRivalConversions(s: GameState, parcels: ParcelTable) {
+  if (s.month % 12 !== 3) return;
+  for (const r of livingRivals(s)) {
+    const sh = r.sheet;
+    if (!sh || r.stressMs) continue;
+    if (r.profile !== "converter" && !(sh.renovation >= 85 && sh.office >= 70)) continue;
+    const live = (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
+    if (live >= Math.max(1, paramsOf(r).jobs)) continue;
+    let pick: { bbl: string; rec: ParcelRecord; plan: DevPlan } | null = null;
+    for (const bbl of r.bbls) {
+      if ((s.cityJobs ?? []).some((j) => j.bbl === bbl) || s.landmarks?.[bbl] !== undefined) continue;
+      const rec = resolveRec(parcels, s, bbl);
+      if (!rec || rec.class !== "office" || !rec.bldgArea) continue;
+      const m = markAsset(s, r, rec);
+      if ((m.occ ?? 1) >= 0.66) continue;
+      if (reuseZoneBar(s, parcels, bbl, "multifamily")) continue;
+      const plan = planReuseAt(s, parcels, bbl, m.v, "multifamily");
+      if (!plan || !(plan.hurdleRatio >= 1)) continue;
+      if (!pick || plan.hurdleRatio > pick.plan.hurdleRatio) pick = { bbl, rec, plan };
+    }
+    if (!pick) continue;
+    const need = Math.round(pick.plan.equity * 0.40 * sponsorShare(r.style)) + Math.max(400_000, r.cash * 0.03);
+    const draw = lineDrawFor(s, parcels, r, need);
+    if (r.cash + draw < need) continue;
+    drawLine(r, draw);
+    breakGround(s, parcels, r, pick.bbl, pick.rec, "multifamily", pick.plan, true, true);
+    observe(s, r, sheetOf(r), ["renovation", "office"], 0.15);
+  }
+}
+
+/**
+ * THE FAMILY KEEPS THE BUILDINGS (COMPETITORS_PLAN.md §5a, the bridge). An
+ * old, patient, lightly-levered firm that has stopped buying is a family
+ * office in all but name. Some of them stop pretending: the firm is wound up,
+ * the paper is paid off out of its own cash, and the deeds stay with the
+ * family — a holder now, with a name everybody knows, that sells on life
+ * events and never bids again. This keeps the register alive across a
+ * century; without it the private stock only ever shrinks into the firms.
+ *
+ * Gates, all of them facts about the firm: twenty years old, a sheet that
+ * holds (90+) at low capacity (35 or under), nothing bought in ten years,
+ * no live job, no arrears, and cash enough to clear every dollar it owes.
+ * Once a year, on a hashed one-in-seven.
+ */
+export function tickRivalRetirements(s: GameState, _parcels: ParcelTable) {
+  if (s.month % 12 !== 9) return;
+  for (const r of livingRivals(s)) {
+    const sh = r.sheet;
+    if (!sh || r.stressMs || r.jev || !r.bbls.length) continue;
+    if (sh.hold < 90 || sh.capacity > 35 || s.month - (r.bornM ?? 0) < 240) continue;
+    const lastBuy = Math.max(-1, ...Object.values(r.heldSince ?? {}));
+    if (s.month - lastBuy < 120) continue;
+    if ((s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) continue;
+    if (r.debt > r.cash) continue;
+    if (s.listings.some((l) => l.sellerId === r.id)) continue;
+    if (hash01(`${s.seed}:retire:${r.id}:${s.month}`) > 1 / 7) continue;
+    const id = `x${r.id}`;
+    const base = r.name.replace(/\s+(Co\.|Partners|Holdings|Capital|Group|Realty|Trust|Investments|Estate Co\.|Property Co\.|Development Co\.)$/i, "");
+    const holder = {
+      id, name: `${base} Family Holdings`, kind: "local" as const,
+      tier: r.bbls.length >= 4 ? "major" as const : "middle" as const,
+      since: START_YEAR + Math.floor(Math.max(0, r.bornM ?? 0) / 12),
+      note: `Ran as ${r.name} until ${START_YEAR + Math.floor(s.month / 12)}, then wound the firm up and kept the buildings. Family money now — it does not bid.`,
+    };
+    (s.retiredHolders ??= []).push(holder);
+    for (const b of r.bbls) {
+      (s.deedHolder ??= {})[b] = { id, m: s.month };
+      forgetDeed(r, b);
+    }
+    const n = r.bbls.length;
+    r.cash -= r.debt;
+    r.distributed = (r.distributed ?? 0) + Math.max(0, r.cash);
+    r.debt = 0; r.cash = 0; r.bbls = []; r.uncalled = 0; r.aum = 0;
+    r.heldSince = {};
+    r.failedM = s.month;
+    r.retiredM = s.month;
+    r.epilogueM = -1;
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: `${r.name} has wound itself up. The paper is paid off and the family is keeping all ${n} building${n === 1 ? "" : "s"} as ${holder.name} — `
+        + `one fewer bidder on the tape, and one more name that sells only when it has to.`,
     });
   }
 }
@@ -2413,6 +2566,8 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
 export function breakGround(
   s: GameState, parcels: ParcelTable, r: Rival, bbl: string, rec: ParcelRecord,
   use: DevUse, plan: DevPlan, redev: boolean,
+  /** A conversion of the standing shell (COMPETITORS_PLAN.md #9), not a teardown. */
+  reuse = false,
 ): void {
   const sf = plan.sf;
   const floors = plan.floors;
@@ -2431,12 +2586,15 @@ export function breakGround(
     if ((CITY_STOCK as Record<string, number>)[oldCls] !== undefined) {
       addStock(s.econ, oldCls as keyof typeof CITY_STOCK, -rentableSf(rec));
     }
-    s.demolished = (s.demolished ?? 0) + 1;
+    // The plot reads as a site while the job runs either way — the old use's
+    // stock is gone and the new one has not delivered, and the mark values
+    // what is there. A conversion keeps its shell, so it is not a demolition.
+    if (!reuse) s.demolished = (s.demolished ?? 0) + 1;
     recordPropertyEvent(s, bbl, {
-      kind: "demolished",
+      kind: reuse ? "converted" : "demolished",
       sf: oldSf,
       use: oldCls,
-      outcome: `${r.name} cleared for denser ${use}`,
+      outcome: reuse ? `${r.name} is converting it to ${use}` : `${r.name} cleared for denser ${use}`,
     });
   }
   // A NAMED FIRM BUILDS THE SAME BUILDING THE CITY DOES — shops at grade where
@@ -2485,9 +2643,13 @@ export function breakGround(
       s.econ.startOwed[u as BuiltClass] = Math.max(0, (s.econ.startOwed[u as BuiltClass] ?? 0) - usf);
     }
   }
+  poachForBuildToSuit(s, parcels, r, rec, lead, sf, deliverM);
   s.news.unshift({
     q: s.month, kind: "event",
-    text: redev
+    text: reuse
+      ? `${r.name} is converting ${rec.address} — ${(oldSf / 1000).toFixed(0)}k sf of tired ${rec.class} becoming ${(sf / 1000).toFixed(0)}k sf of ${use}. `
+        + `A building the office market gave up on is going back to work.`
+      : redev
       ? `${r.name} is tearing down ${rec.address} for ${(sf / 1000).toFixed(0)}k sf of ${use} `
         + `(was ${(oldSf / 1000).toFixed(0)}k). The book needed the floor area.`
       : `${r.name} is building on their own land at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `

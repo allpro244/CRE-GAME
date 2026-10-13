@@ -263,7 +263,10 @@ function shoreField(land: P2[], dry: { ring: P2[]; hard: boolean }[]): { tex: TH
 }
 
 // The sea's clock, advanced every frame in render().
-const SEA = { seaTime: { value: 0 } };
+// The sea's clock, and how far into winter the water is (0 summer .. 1 deep
+// winter): a cold north-eastern harbour is slate and steel-green, not the
+// turquoise of a summer shelf.
+const SEA = { seaTime: { value: 0 }, seaWinter: { value: 0 } };
 
 /**
  * THE HARBOUR. A stock physically based surface — so the sun lays a road on
@@ -301,7 +304,7 @@ function seaMaterial(field: { tex: THREE.DataTexture; box: THREE.Vector4 }, ripp
 varying vec2 vSeaW;
 uniform sampler2D seaShore, seaRipple;
 uniform vec4 seaBox;
-uniform float seaTime;
+uniform float seaTime, seaWinter;
 float seaD, seaHard, seaFoam;
 float sHash(vec2 p) { p = 50.0 * fract(p * 0.3183099 + vec2(0.71, 0.113)); return fract(p.x * p.y * (p.x + p.y)); }
 float sNoise(vec2 p) {
@@ -320,7 +323,9 @@ float sFbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += 
   // the bottom: sand at the waterline, the shelf, then deep water; sandbars and weed beds mottle it
   float mott = sFbm(vSeaW * 0.0045);
   float shelf = clamp((seaD + (mott - 0.5) * 120.0) / 300.0, 0.0, 1.0);
-  vec3 cSand = vec3(0.30, 0.56, 0.50), cShelf = vec3(0.07, 0.33, 0.40), cDeep = vec3(0.022, 0.12, 0.22);
+  vec3 cSand = mix(vec3(0.30, 0.56, 0.50), vec3(0.26, 0.36, 0.37), seaWinter);
+  vec3 cShelf = mix(vec3(0.07, 0.33, 0.40), vec3(0.09, 0.22, 0.26), seaWinter);
+  vec3 cDeep = mix(vec3(0.022, 0.12, 0.22), vec3(0.03, 0.085, 0.14), seaWinter);
   vec3 wc = mix(cSand, cShelf, smoothstep(0.0, 0.16, shelf));
   wc = mix(wc, cDeep, smoothstep(0.1, 0.85, shelf));
   wc *= 0.9 + 0.2 * sFbm(vSeaW * 0.02 + 3.0);
@@ -1467,6 +1472,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private lotPlazaMat = new THREE.MeshStandardMaterial({ roughness: 0.8, envMapIntensity: 0.25, vertexColors: true });
   private lotPaveMat = new THREE.MeshStandardMaterial({ roughness: 0.9, envMapIntensity: 0.2, vertexColors: true });
   private lotWorkMat = new THREE.MeshStandardMaterial({ roughness: 0.95, envMapIntensity: 0.15, vertexColors: true });
+  private gravelMat: THREE.MeshStandardMaterial | null = null;
   private lotMat(name: string): THREE.Material | undefined {
     return name === "lot:lawn" ? this.lotLawnMat : name === "lot:plaza" ? this.lotPlazaMat : name === "lot:pave" ? this.lotPaveMat : name === "lot:work" ? this.lotWorkMat : undefined;
   }
@@ -4777,7 +4783,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       m.receiveShadow = true; this.scene.add(m);
     }
     if (lotGravel.count) {
-      const m = new THREE.Mesh(lotGravel.geometry(), new THREE.MeshStandardMaterial({ map: this.gravelTex(), roughness: 1, envMapIntensity: 0.15 }));
+      this.gravelMat = new THREE.MeshStandardMaterial({ map: this.gravelTex(), roughness: 1, envMapIntensity: 0.15 });
+      const m = new THREE.Mesh(lotGravel.geometry(), this.gravelMat);
       m.receiveShadow = true; this.scene.add(m);
     }
     await this.lotGrounds();
@@ -5946,7 +5953,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     if (this.wetSheet) this.wetSheet.visible = this.wetMat.opacity > 0.001;
     // the falling stuff
-    const want = this.wet > 0 ? "rain" : snowG > 0 ? "snow" : "";
+    const want = this.wet > 0 ? "rain" : this.snowing ? "snow" : "";
     if (want !== this.precipKind) {
       if (this.precip) { this.scene.remove(this.precip); this.precip.geometry.dispose(); this.precip = null; }
       this.precipKind = want;
@@ -5976,9 +5983,18 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     if (this.bloomMesh && snowG > 0) this.bloomMesh.visible = false;
     for (const m of [this.walkMat, this.parkPlazaMat, this.settsMat]) { m.color.lerp(new THREE.Color(1.25, 1.27, 1.32), snowG * 0.7); m.roughness = 0.9 - this.wet * 0.5; }
     this.cropMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
+    // the lots round the buildings: a gravel lot or a yard lies under the
+    // snow; an areaway or a plaza is shovelled to a trodden grey; a work yard
+    // is ploughed into ridges. These carry their tone in vertex colour, so
+    // the material colour lifts it toward snow rather than replacing it.
+    const lift = (m: THREE.MeshStandardMaterial | null, k: number) => m?.color.setRGB(1 + snowG * k, 1 + snowG * k * 1.02, 1 + snowG * k * 1.06);
+    if (this.gravelMat) this.gravelMat.color.setRGB(1, 1, 1).lerp(new THREE.Color(1.5, 1.53, 1.58), snowG * 0.85);
+    lift(this.lotPaveMat, 0.7); lift(this.lotPlazaMat, 0.45); lift(this.lotWorkMat, 0.6);
     this.map?.triggerRepaint();
   }
   private snowGround = 0;
+  /** Flakes in the air this month (lying snow alone does not fall). */
+  private snowing = false;
   /** Each frame: the precipitation box follows the view and falls. */
   private stepPrecip(fx: number, fy: number, distM: number, t: number) {
     if (!this.precip) return;
@@ -8011,6 +8027,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         if (turn > 0) { const a = autumn[Math.floor(h * 4)]; c.lerp(new THREE.Color(c.r * a[0], c.g * a[1], c.b * a[2]), turn); }
         // bark and twigs: a dark grey-brown, a little different tree to tree
         if (bare > 0) c = c.lerp(new THREE.Color(0.15 + h * 0.05, 0.12 + h * 0.04, 0.1 + h * 0.03), bare * 0.95);
+        // snow caught along the twigs: a bare crown under cover reads frosted
+        if (bare > 0.5 && this.snow > 0) c = c.lerp(new THREE.Color(0.86, 0.88, 0.92), this.snow * 0.55);
         // SPRING BLOSSOM: about one tree in eleven is an ornamental cherry,
         // crab apple or magnolia, in flower before it is in leaf
         const hb = hash01(i, 13);
@@ -8041,18 +8059,27 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const cafe = this.inst.get("cafe");
     if (cafe) cafe.visible = this.month >= 3 && this.month <= 9;
     // evergreens keep their needles; a dusting of snow lightens them
-    this.pineMat.color.setRGB(0.1 + this.snow * 0.25, 0.2 + this.snow * 0.2, 0.12 + this.snow * 0.28);
+    this.pineMat.color.setRGB(0.1 + this.snow * 0.42, 0.2 + this.snow * 0.36, 0.12 + this.snow * 0.46);
+    // the harbour goes cold through the winter, snow or not
+    SEA.seaWinter.value = [1, 1, 0.65, 0.25, 0, 0, 0, 0, 0, 0.1, 0.45, 0.85][this.month];
     this.applyLight();
     this.applyWeather();
   }
 
-  setWeather(kind: "clear" | "overcast" | "rain" | "snow", precipitation: number, overcast: number) {
-    if (this.defer("setWeather", () => this.setWeather(kind, precipitation, overcast))) return;
-    this.snow = kind === "snow" ? 0.3 + Math.max(0, Math.min(1, precipitation)) * 0.5 : 0;
+  /**
+   * The month's weather, and the snow lying on the ground (`cover`, the
+   * snowpack: cityVisuals snowCoverAt). Flakes fall only in a snowing month;
+   * the roofs, yards and trees carry whatever cover there is.
+   */
+  setWeather(kind: "clear" | "overcast" | "rain" | "snow", precipitation: number, overcast: number, cover?: number) {
+    if (this.defer("setWeather", () => this.setWeather(kind, precipitation, overcast, cover))) return;
+    const lying = cover ?? (kind === "snow" ? 0.35 + Math.max(0, Math.min(1, precipitation)) * 0.55 : 0);
+    this.snowing = kind === "snow";
+    this.snow = Math.max(0, Math.min(1, lying));
     this.overcast = Math.max(0, Math.min(1, overcast || 0));
     const pr = Math.max(0, Math.min(1, precipitation || 0));
     this.wet = kind === "rain" ? 0.5 + pr * 0.5 : 0;
-    this.snowGround = kind === "snow" ? 0.35 + pr * 0.55 : 0;
+    this.snowGround = this.snow;
     this.applyLight();
     this.applyMonth();   // which re-applies the weather on top of the season
   }
@@ -8077,7 +8104,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // snow lies on the roofs
     // tar and gravel is dark (albedo ~0.2); snow lifts it toward white
     // a dusting, not a blanket: January opens every campaign
-    this.roofMat.color.setRGB(0.21 + this.snow * 0.22, 0.205 + this.snow * 0.23, 0.20 + this.snow * 0.26);
+    // snow lies on the flat roofs: tar and gravel is dark (albedo ~0.2) and
+    // settled snow ~0.75, a touch blue; a thin cover lets the roof show through
+    this.roofMat.color.setRGB(0.21 + this.snow * 0.5, 0.205 + this.snow * 0.53, 0.20 + this.snow * 0.58);
     for (const b of [...this.owned, ...this.selected]) this.refreshDeed(b);
     if (this.renderer) this.renderer.toneMappingExposure = 0.82;
     // the haze: sky blue, greyer under overcast

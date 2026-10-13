@@ -1547,7 +1547,7 @@ export default function MapView() {
   const visualGame = useStore.getState().game;
   const cityVisual = visualGame
     ? cityVisualState(visualGame)
-    : { weather: "clear" as const, precipitation: 0, overcast: 0, activity: 1 };
+    : { weather: "clear" as const, precipitation: 0, overcast: 0, activity: 1, snowCover: 0 };
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setMonth(gameMonth);
@@ -1556,14 +1556,22 @@ export default function MapView() {
     const LEAF = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02];
     const mo = ((Math.floor(gameMonth) % 12) + 12) % 12;
     const map = mapRef.current;
-    const snowLying = cityVisual.weather === "snow" ? 0.35 + cityVisual.precipitation * 0.55 : 0;
+    // the snowpack, not this month's flurry (cityVisuals snowCoverAt)
+    const snowLying = cityVisual.snowCover;
     if (map?.getLayer("blocks")) map.setPaintProperty("blocks", "fill-color", blocksPaint(LEAF[mo], snowLying) as never);
     if (map?.getLayer("parks")) map.setPaintProperty("parks", "fill-color", parksPaint(snowLying) as never);
+    // the shoal under the 3D sea's clear waterline: the same winter turn the
+    // sea shader takes (RealCity SEA.seaWinter), slate rather than turquoise
+    if (map?.getLayer("shallows")) {
+      const wk = [1, 1, 0.65, 0.25, 0, 0, 0, 0, 0, 0.1, 0.45, 0.85][mo];
+      const a = [0x5d, 0x99, 0xad], b = [0x5a, 0x7c, 0x86];
+      map.setPaintProperty("shallows", "fill-color", "#" + a.map((v, i) => Math.round(v + (b[i] - v) * wk).toString(16).padStart(2, "0")).join(""));
+    }
     if (map?.getLayer("median")) {
       const m0 = [0xa8, 0xbd, 0x93], sn = [234, 238, 241];
       map.setPaintProperty("median", "fill-color", "#" + m0.map((v, i) => Math.round(v + (sn[i] - v) * snowLying).toString(16).padStart(2, "0")).join(""));
     }
-  }, [gameMonth, mapReady, cityVisual.weather, cityVisual.precipitation]);
+  }, [gameMonth, mapReady, cityVisual.snowCover]);
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setActivity(cityVisual.activity);
@@ -1742,6 +1750,7 @@ export default function MapView() {
       cityVisual.weather,
       cityVisual.precipitation,
       cityVisual.overcast,
+      cityVisual.snowCover,
     );
     const map = mapRef.current;
     if (map) {
@@ -1751,7 +1760,7 @@ export default function MapView() {
       map.setSky(skySpec(cloud) as never);
       map.setLight(lightSpec(cloud) as never);
     }
-  }, [cityVisual.weather, cityVisual.precipitation, cityVisual.overcast, mapReady]);
+  }, [cityVisual.weather, cityVisual.precipitation, cityVisual.overcast, cityVisual.snowCover, mapReady]);
 
   // lenses — repaint when toggled and as the market moves
   //

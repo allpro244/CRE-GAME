@@ -43,7 +43,7 @@ console.log("\nCONTINUE PATH\n");
 
   const prepared = E.prepareSaveForResume(snap);
   check(prepared.ok === true, "v39 campaign prepares for resume after migration");
-  check(prepared.state?.v === 39, "prepare keeps save version at current");
+  check(prepared.state?.v === 40, "prepare stamps the save at the current version");
   check(!prepared.state?.varianceApp && prepared.state?.varianceApps, "prepare migrates singular variance");
 
   let resumed = prepared.state;
@@ -78,6 +78,15 @@ console.log("\nCONTINUE PATH\n");
   const now = structuredClone(base); now.cityIsland = "somewhere"; now.v = 39;
   check(E.prepareSaveForResume(now).ok === true,
     "a v39 campaign on a generated island opens normally");
+
+  // TWINMARCH's plat moved at 40 (shore road on the bay flanks, parish
+  // squares); a v39 Twinmarch campaign stood on the old ground.
+  const tm39 = structuredClone(base); tm39.cityIsland = "twinmarch"; tm39.citySize = "whole"; tm39.v = 39;
+  check(E.prepareSaveForResume(tm39).ok === false,
+    "a v39 Twinmarch campaign is refused — its plat moved at 40");
+  const tm40 = structuredClone(base); tm40.cityIsland = "twinmarch"; tm40.citySize = "whole"; tm40.v = 40;
+  check(E.prepareSaveForResume(tm40).ok === true,
+    "a v40 Twinmarch campaign opens normally");
 
   const old38 = structuredClone(base); old38.cityIsland = "somewhere"; old38.v = 38;
   check(E.prepareSaveForResume(old38).ok === false,

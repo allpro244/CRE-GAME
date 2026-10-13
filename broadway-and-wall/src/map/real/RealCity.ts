@@ -3817,6 +3817,68 @@ export class RealCityLayer {
           add("wood", new THREE.CylinderGeometry(4.5, 4.5, 1.6, 24).rotateZ(Math.PI / 2).translate(-8, 2, 4.6));
           break;
         }
+        case "church": {
+          // a parish church: nave and chancel, a west tower carrying a tall
+          // broach spire — the thing that marks each quarter on the skyline
+          add("stone", box(14, 34, 12, 0, -4));
+          add("slate", gable(15, 35, 7, 0, -4, 12));
+          add("stone", box(10, 10, 9, 0, -25));
+          add("slate", gable(11, 11, 4, 0, -25, 9));
+          add("stone", box(9, 9, 26, 0, 17));
+          add("stone", box(9.8, 9.8, 0.8, 0, 17, 26));
+          add("slate", cone(6.6, 24, 0, 17, 26.8, 8));
+          add("gold", box(0.3, 0.3, 2.6, 0, 17, 50.8));
+          add("dark", box(3, 0.3, 6, 0, 21.6, 0));
+          add("dark", new THREE.CylinderGeometry(1.6, 1.6, 0.3, 16).translate(0, 21.6, 9));
+          break;
+        }
+        case "arch": {
+          // a triumphal arch over the whole street: a broad central opening
+          // for the carriageways and median, a smaller one over each footway,
+          // an entablature and attic, and a bronze quadriga on top
+          const W = lm.len || 50, D = 10, H = 22;
+          // the piers stand on the footways, so the arch is no wider than
+          // the street it spans and never touches the frontage either side
+          const pier = 4.5, side = 0;
+          const half = W / 2;
+          for (const sx of [-1, 1]) {
+            add("stone", box(pier, D, H, sx * (half + pier / 2)));
+            for (const dy of [-D / 2 - 0.5, D / 2 + 0.5]) for (const dx of [-1.4, 1.4]) {
+              add("stone", cyl(0.5, H - 2, sx * (half + pier / 2) + dx, dy, 0, 12));
+            }
+          }
+          // the main span: a segmental vault face, built as voussoir blocks
+          const span = W, rise = 7, spring = H - rise - 3;
+          const R = (span * span / 4 + rise * rise) / (2 * rise), cyc = spring + rise - R;
+          const a0 = Math.asin(span / 2 / R);
+          for (let k = 0; k < 18; k++) {
+            const t0 = -a0 + (2 * a0 * k) / 18, t1 = -a0 + (2 * a0 * (k + 1)) / 18;
+            const xm = R * Math.sin((t0 + t1) / 2), zm = cyc + R * Math.cos((t0 + t1) / 2);
+            const len = R * (t1 - t0) + 0.2;
+            add("stone", box(len, D, 3, 0, 0, 0).translate(0, 0, -1.5).rotateY((t0 + t1) / 2).translate(xm, 0, zm));
+          }
+          for (const sx of [-1, 1]) add("stone", box(half * 0.62, D, rise + 3, sx * half * 0.69, 0, spring + 1.5));
+          const tot = W + 2 * (2 * pier + side);
+          add("stone", box(tot + 1.5, D + 1.5, 1.4, 0, 0, H));
+          add("stone", box(tot, D, 5, 0, 0, H + 1.4));
+          add("stone", box(tot + 1, D + 1, 0.8, 0, 0, H + 6.4));
+          add("gold", box(W * 0.55, 0.2, 2.2, 0, D / 2 + 0.15, H + 2.8));
+          add("gold", box(W * 0.55, 0.2, 2.2, 0, -D / 2 - 0.15, H + 2.8));
+          add("bronze", box(7, 4, 2.6, 0, 0, H + 7.2));
+          for (const dx of [-2.6, -0.9, 0.9, 2.6]) add("bronze", cyl(0.45, 3, dx, 1.2, H + 9.8, 8));
+          add("bronze", cyl(0.5, 3.6, 0, -1, H + 9.8, 8));
+          break;
+        }
+        case "markethall": {
+          // an open market hall: cast-iron columns under a glazed lantern roof
+          add("stone", box(44, 24, 0.6));
+          for (let x = -20; x <= 20.01; x += 5) for (const y of [-10.5, 10.5]) add("steel", cyl(0.25, 7, x, y, 0.6, 8));
+          add("slate", gable(26, 46, 5, 0, 0, 7.6).rotateZ(Math.PI / 2));
+          add("steel", box(46, 26, 0.5, 0, 0, 7.6));
+          add("glass", box(40, 5, 2.4, 0, 0, 12.6));
+          add("slate", gable(6, 41, 1.6, 0, 0, 15).rotateZ(Math.PI / 2));
+          break;
+        }
         case "fountain": {
           // a round basin with a stone kerb, and two tiered bowls on a
           // pedestal, the upper one spilling into the lower
@@ -4723,7 +4785,7 @@ export class RealCityLayer {
   private lmClear: number[][] | null = null;
   private nearLandmark(x: number, y: number) {
     if (!this.lmClear) {
-      const R: Record<string, number> = { fountain: 10, statue: 4, lamp: 1.5, obelisk: 5, bandstand: 9, column: 5, clocktower: 8, mill: 16, beacon: 5 };
+      const R: Record<string, number> = { fountain: 10, statue: 4, lamp: 1.5, obelisk: 5, bandstand: 9, column: 5, clocktower: 8, mill: 16, beacon: 5, church: 22, arch: 22, markethall: 24 };
       this.lmClear = ((this.ctx as { landmarks?: { p: P2; kind: string }[] }).landmarks ?? [])
         .filter((l) => R[l.kind]).map((l) => { const [lx, ly] = this.project(l.p); return [lx, ly, R[l.kind]]; });
     }

@@ -270,6 +270,13 @@ export function twinmarchConfig(seed = 1) {
     const t = (x - a[0]) / (b[0] - a[0] || 1);
     return { xy: [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])], deg: Math.atan2(b[1] - a[1], b[0] - a[0]) / D2R };
   };
+  const marketAt = (x) => round([x, along(MARKET, "x", x)]);
+  const marketDeg = (x) => {
+    let k = 0;
+    while (k < MARKET.length - 2 && MARKET[k + 1][0] < x) k++;
+    const a = MARKET[k], b = MARKET[k + 1];
+    return +(Math.atan2(b[1] - a[1], b[0] - a[0]) / D2R).toFixed(1);
+  };
   const st0 = railPt(1500);
   const sDeg = st0.deg, sR = sDeg * D2R;
   const south = [Math.sin(sR), -Math.cos(sR)];
@@ -287,6 +294,16 @@ export function twinmarchConfig(seed = 1) {
   // own avenue: the New Town's set piece.
   const OPERA = [1500, 640];
   plazas.push(plazaRect("Opera Square", OPERA, 130, 110, 0));
+  // A PARISH CHURCH IN EVERY QUARTER, each on its own small square: the
+  // spires are what mark one quarter from the next on the skyline.
+  const PARISHES = [
+    { name: "St Botolph, Northfield", c: [-150, 600], deg: 8 },
+    { name: "St Ann, Millbank", c: [740, 640], deg: -6 },
+    { name: "St Clement, Southfield", c: [-620, -380], deg: -10 },
+    { name: "St Nicholas, Ferrybank", c: [480, -650], deg: 12 },
+    { name: "Holy Trinity, New Town", c: [1230, 920], deg: 3 },
+  ];
+  for (const pr of PARISHES) plazas.push(plazaRect(`${pr.name.split(",")[0]}'s Yard`, pr.c, 74, 60, pr.deg));
   streams.push(...plazas);
   const landmarks = [
     { kind: "station", name: "Railhead Station", xy: round(stationAt.bldg), deg: sDeg - 90 },
@@ -295,10 +312,16 @@ export function twinmarchConfig(seed = 1) {
     { kind: "clocktower", name: "Halfway Clock", xy: [120, 170], deg: -90 },
     { kind: "minster", name: "Twinmarch Minster", xy: round([MINSTER.c[0] + 4, MINSTER.c[1] - 6]), deg: MINSTER.deg + 180 },
     { kind: "column", name: "Founders' Column", xy: [-1180, 140], deg: 0 },
-    { kind: "column", name: "Bend Column", xy: [-560, 210], deg: 0 },
     { kind: "mill", name: "Mere Mill", xy: [720, 1050], deg: 180 },
     { kind: "opera", name: "Grand Opera House", xy: [OPERA[0], OPERA[1] + 15], deg: -90 },
     { kind: "beacon", name: "North Mole Light", xy: [-2380, 92], deg: 0 },
+    // the churches face along their squares' long axis, tower to the west
+    ...PARISHES.map((pr) => ({ kind: "church", name: pr.name, xy: pr.c, deg: pr.deg + 180 })),
+    // the gates of the Long Market: where it leaves the harbour town, and
+    // where it enters the railhead town
+    { kind: "arch", name: "Harbour Gate", xy: marketAt(-1065), deg: marketDeg(-1065), len: 29 },
+    { kind: "arch", name: "Railhead Gate", xy: marketAt(1290), deg: marketDeg(1290), len: 29 },
+    { kind: "markethall", name: "Bend Market Hall", xy: [-560, 210], deg: 97 },
   ];
   // THE FURNITURE OF THE SQUARES: a fountain on each forecourt's axis,
   // statues flanking it, lamps round the edge; a monument in every park.

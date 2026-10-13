@@ -84,7 +84,7 @@ function migrateNoAge(state: GameState) {
   for (const b of state.founderBids ?? []) strip(b);
 }
 
-export const SAVE_VERSION = 39 as const;
+export const SAVE_VERSION = 40 as const;
 
 /**
  * THE VERSION AT WHICH THE GENERATED ISLAND'S GROUND MOVED.
@@ -154,7 +154,10 @@ const GROUND_MOVED_AT: Record<string, number> = {
   manhattan: 39,
   // TWINMARCH ARRIVES AT 39 on the same terms: additive, no save can predate
   // it. Same contract — move its plat, bump SAVE_VERSION and this row together.
-  twinmarch: 39,
+  // 40: the bay flanks got a shore road (cfg.windingOffset) and the parish
+  // squares were cut out of the quarters, so a v39 Twinmarch deed may stand
+  // on different ground. No other island's plat moved, and their rows stay.
+  twinmarch: 40,
 };
 
 /**

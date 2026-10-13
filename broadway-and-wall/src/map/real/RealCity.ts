@@ -1980,15 +1980,21 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
     };
     for (const nx of [-1, 0, 1]) for (const ny of [-1, 0, 1]) pt(nx, ny);
-    // the tallest towers throw their shadows a long way: a margin on all sides
-    const pad = 0.08 * Math.max(u1 - u0, v1 - v0) + 60;
+    // a wide margin, so a pan or a tilt stays inside the box and nothing is
+    // redrawn: every redraw moves every shadow edge, and a stream of them as
+    // the camera moved was the flicker the owner saw (gone with ?noshadows)
+    const pad = 0.25 * Math.max(u1 - u0, v1 - v0) + 80;
     u0 -= pad; u1 += pad; v0 -= pad; v1 += pad;
     const need = Math.max(u1 - u0, v1 - v0) / 2;
     // quarter-octave steps, so the texel size only changes on a real zoom
-    const span = 260 * Math.pow(2, Math.ceil(Math.log2(Math.max(220, Math.min(4200, need)) / 260) * 4) / 4);
+    let span = 260 * Math.pow(2, Math.ceil(Math.log2(Math.max(220, Math.min(4200, need)) / 260) * 4) / 4);
     const b = this.shadowBox;
+    // HYSTERESIS: the box grows the moment it must, but shrinks only once the
+    // view needs under ~55% of it, so a zoom does not step the shadow
+    // resolution (and redraw every edge) at each quarter-octave on the way
+    if (b.span && span < b.span && need > b.span * 0.55) span = b.span;
     const inside = u0 >= b.cx - b.span && u1 <= b.cx + b.span && v0 >= b.cy - b.span && v1 <= b.cy + b.span;
-    if (inside && span >= b.span && span === this.shadowSpan) return;
+    if (inside && span === b.span && span === this.shadowSpan) return;
     // centre on the footprint, moved in whole texels of the light's view
     const texel = (2 * span) / this.sun.shadow.mapSize.x;
     const cu = Math.round(((u0 + u1) / 2) / texel) * texel, cv = Math.round(((v0 + v1) / 2) / texel) * texel;

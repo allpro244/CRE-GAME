@@ -2,8 +2,7 @@
  * THE CITY — the game's 3D renderer.
  *
  * Builds the city as real geometry: walls with world-scale facade textures
- * (albedo, roughness/metalness, normal relief and lit-window emission per
- * family and elevation), real cornices, parapets, setbacks and crowns, roofs
+ * (albedo, roughness/metalness and normal relief per family and elevation), real cornices, parapets, setbacks and crowns, roofs
  * by material, roof plant, street trees, parked and moving cars, people,
  * water in channels and a rippled harbour, all lit by stock physically based
  * materials, a soft shadow map, aerial perspective and a sky for the glass to
@@ -268,8 +267,8 @@ const SEA = { seaTime: { value: 0 } };
 
 /**
  * THE HARBOUR. A stock physically based surface — so the sun lays a road on
- * it, the sky reflects at a low angle, the buildings shade it and the night
- * takes it like everything else — with four things the stock one cannot do:
+ * it, the sky reflects at a low angle and the buildings shade it — with four
+ * things the stock one cannot do:
  *
  * - **A bottom.** The colour is the floor seen through the water: pale
  *   turquoise over the sand at the waterline, green-blue over the shelf, a
@@ -587,7 +586,7 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   // as much as on a curtain wall, so every elevation's windows match; the
   // building-to-building difference comes from paint, style and family.
   const glassy = true;
-  // the paint mask: R lit room after dark, G trim, B accent (see PAINT_FRAG)
+  // the paint mask: G trim, B accent (see PAINT_FRAG)
   msk.g.fillStyle = "#000000"; msk.g.fillRect(0, 0, W, H);
   const pc = { m: msk.g, hg: hgt.g };
   spec.wall(alb.g, W, H, rnd, pc);
@@ -663,7 +662,7 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     const k = glassy ? 0.85 : 0.85 + rnd() * 0.3;
     const grad = alb.g.createLinearGradient(0, y0, 0, y1);
     grad.addColorStop(0, spec.glassCol); grad.addColorStop(1, shade(spec.glassCol, 0.62));
-    const lit = rnd() < 0.55, lum = 0.55 + rnd() * 0.45;
+    rnd(); rnd();   // two draws kept so every facade texture stays as it was
     for (const [a, b] of ops) {
       alb.g.globalAlpha = 1; alb.g.fillStyle = grad; shape(alb.g, a, b); alb.g.fill();
       alb.g.fillStyle = `rgba(255,255,255,${(k - 0.85) * 0.25})`; alb.g.fill();
@@ -684,8 +683,6 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       shape(orm.g, a, b, 2); orm.g.fill();
       // the reveal: glass sits back in the wall
       hgt.g.fillStyle = "#3a3a3a"; shape(hgt.g, a, b); hgt.g.fill();
-      // after dark about half the rooms are lit, warm and uneven
-      if (lit) { msk.g.fillStyle = `rgb(${255 * lum | 0},0,0)`; shape(msk.g, a, b, 3); msk.g.fill(); }
     }
   }
   // what stands in front of the glass: cast-iron columns, a diagrid, fins
@@ -705,6 +702,8 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   const mat = new THREE.MeshStandardMaterial({
     map: tex(alb.c, true), roughnessMap: ormT, metalnessMap: ormT, normalMap: nrm,
     roughness: 1, metalness: 1, emissiveMap: tex(msk.c, false), emissive: new THREE.Color(0xffffff),
+    // the emissive map carries the paint mask (PAINT_FRAG reads its G and B);
+    // nothing in this game is lit from within, so it never emits
     emissiveIntensity: 0, vertexColors: true,
     // the studio environment is for the glass to reflect; on matte walls its
     // diffuse share only washes them out
@@ -712,9 +711,6 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     // probe, step 5), bright enough to read as glass rather than dark paint
     envMapIntensity: spec.glassMetal > 0.5 ? 1.2 : 0.3,
   });
-  // The window glow is the mask's red, shared by every building in the
-  // family; the per-vertex `lit` scales it, so an empty building goes dark at
-  // night and a full one blazes.
   const winU = new THREE.Vector4(spec.win.x0, spec.win.x1, spec.win.y0, spec.win.y1);
   const seedU = new THREE.Vector2((seed % 997) / 7.3, (seed % 613) / 5.1);
   mat.onBeforeCompile = (sh) => {
@@ -728,18 +724,18 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     // a masonry wall is deep, a panel or a timber frame shallow
     sh.uniforms.uReveal = { value: spec.glass ? 0 : spec.masonry ? 0.24 : 0.12 };
     sh.vertexShader = sh.vertexShader
-      .replace("#include <common>", "#include <common>\nattribute float lit;\nattribute float aoh;\nattribute vec4 paint;\nattribute vec3 trimc;\nattribute vec3 accent;\nvarying float vLit;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;\nvGz = position.z;\nvAoH = aoh;\nvPaint = paint;\nvTrimC = trimc;\nvAccC = accent;")
-      .replace("varying float vLit;", "varying float vLit;\nvarying float vGz;");
+      .replace("#include <common>", "#include <common>\nattribute float aoh;\nattribute vec4 paint;\nattribute vec3 trimc;\nattribute vec3 accent;\nvarying float vLit;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGz = position.z;\nvAoH = aoh;\nvPaint = paint;\nvTrimC = trimc;\nvAccC = accent;")
+      .replace("attribute float aoh;", "attribute float aoh;\nvarying float vGz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vLit;\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum, uGlassy, uReveal;\nuniform vec2 uBay;")
+      .replace("#include <common>", "#include <common>\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum, uGlassy, uReveal;\nuniform vec2 uBay;")
       // the street darkens the foot of every wall: bounce light from the sky
       // is blocked by the pavement and the buildings across the way. How far
       // up it climbs is the street's own: a few metres on an open avenue,
       // most of the way up the lower floors in a canyon of towers (vAoH).
       // The first metre is darkest, where wall meets pavement.
       .replace("#include <color_fragment>", PAINT_FRAG + "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.6, 1.0, smoothstep(0.0, max(vAoH, 1.0), vGz)) * mix(0.82, 1.0, smoothstep(0.0, 1.2, vGz));")
-      .replace("#include <emissivemap_fragment>", "totalEmissiveRadiance *= vec3(1.0, 0.745, 0.43) * mskT.r * vLit;")
+      .replace("#include <emissivemap_fragment>", "")
       // FAR AWAY, CALM DOWN. Past a few hundred metres a window is a pixel,
       // and its relief and mirror-glass reflection alias into shimmering
       // stripes. Fade the normal map out and rough the glass up with
@@ -1331,8 +1327,6 @@ class Buf {
     g.setAttribute("paint", new THREE.BufferAttribute(yield* col(this.pt, NO_PAINT.wall), 4));
     g.setAttribute("trimc", new THREE.BufferAttribute(yield* col(this.tc, NO_PAINT.trim), 3));
     g.setAttribute("accent", new THREE.BufferAttribute(yield* col(this.ac, NO_PAINT.accent), 3));
-    // how many of this building's rooms are lit after dark (see setOccupancy)
-    g.setAttribute("lit", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1));
     // computeBoundingSphere's own two passes — the box's centre, then the
     // farthest vertex from it — walked a step at a time
     let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
@@ -1445,7 +1439,6 @@ export class RealCityLayer {
   private trimMat = new THREE.MeshStandardMaterial({ color: 0xd8d0be, roughness: 0.75, vertexColors: true, envMapIntensity: 0.3 });
   private darkMat = new THREE.MeshStandardMaterial({ color: 0x2a2d30, roughness: 0.5, metalness: 0.4, vertexColors: true });
   private roofMat = new THREE.MeshStandardMaterial({ color: 0x6b6862, roughness: 0.95, vertexColors: true, envMapIntensity: 0.15, map: roofTex() });
-  private veil = new THREE.MeshBasicMaterial({ color: 0x0b1020, transparent: true, opacity: 0, depthWrite: false });
   private leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true, envMapIntensity: 0.2 });
   private barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 1 });
   private pineMat = new THREE.MeshStandardMaterial({ color: 0x2e4a32, roughness: 1, flatShading: true, envMapIntensity: 0.08 });
@@ -1487,11 +1480,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private meadowParkMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
   private bloomMat = new THREE.MeshStandardMaterial({ roughness: 0.9, transparent: true, alphaTest: 0.4, depthWrite: false });
   private bloomMesh: THREE.Mesh | null = null;
-  /** the pools of light the park lamps throw on the walks after dark */
-  private lampPools: P2[] = [];
-  private poolMat: THREE.MeshBasicMaterial | null = null;
   private sprayMat = new THREE.MeshStandardMaterial({ color: 0xeaf4f8, roughness: 0.15, transparent: true, opacity: 0.55, depthWrite: false, envMapIntensity: 1.2 });
-  private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
+  private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4 });
   private meshes = new Map<string, THREE.Mesh>();
   private bufs = new Map<string, Buf>();
   private deeds = new Map<string, Deed>();
@@ -1518,8 +1508,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private shadowFocus = new THREE.Vector3(1e9, 0, 0);
   private shadowSpan = 0;
   private sunDir = new THREE.Vector3(0.45, -0.55, 0.7).normalize();
-  private dusk = 0;
-  private duskTarget = 0;
   private month = 0;
   private snow = 0;
   private owned = new Set<string>();
@@ -1720,7 +1708,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     this.camera.matrix.makeTranslation(eye.x, eye.y, eye.z);
     this.camera.matrixWorldNeedsUpdate = true;
 
-    this.stepDusk();
     this.fitShadow(fx, fy, distM);
     // from the whole-island camera a person, a lamp or a car is a fraction of
     // a pixel: stop drawing them there rather than paying for grain
@@ -1764,8 +1751,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     this.renderer.render(this.scene, this.camera);
     // the finishing pass over the whole frame: grade, bloom, tilt-shift (post.ts)
-    this.post.apply(this.renderer, pitch, distM, smooth(0.35, 0.95, this.dusk), this.scene, this.camera, [this.hazeSheet, this.veilMesh, this.precip]);
-    if (this.dusk !== this.duskTarget) this.map.triggerRepaint();
+    this.post.apply(this.renderer, pitch, distM, this.scene, this.camera, [this.hazeSheet, this.precip]);
   }
 
   // ---- aerial perspective ------------------------------------------------
@@ -1775,7 +1761,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private hazeSheet: THREE.Mesh | null = null;
   private skyEnv: THREE.Texture | null = null;
   private post = new PostFX();
-  private veilMesh: THREE.Mesh | null = null;
   /**
    * WHAT THE GLASS TOWERS SEE (SKYLINE_LOOK_PLAN step 5). The curtain walls
    * reflected a painted sky and nothing else. Once the city is built, a
@@ -1834,7 +1819,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         fragmentShader: "uniform vec3 hazeCol; uniform float hazeNear, hazeFar, hazeCap; varying vec3 vP; void main() { gl_FragColor = vec4(hazeCol, smoothstep(hazeNear, hazeFar, length(vP)) * hazeCap); }",
       });
       hazed.add(mat);
-      hazed.add(this.veil);
       this.hazeSheet = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000, 8, 8), mat);
       this.hazeSheet.position.z = 0.035; this.hazeSheet.renderOrder = -2; this.hazeSheet.frustumCulled = false;
       this.scene.add(this.hazeSheet);
@@ -4956,10 +4940,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         this.scene.add(pm);
       }
     }
-    const veil = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.veil);
-    this.veilMesh = veil;
-    veil.position.z = 0.03; veil.renderOrder = -2;
-    this.scene.add(veil);
   }
 
   private async flushBufs() {
@@ -4971,9 +4951,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const old = this.meshes.get(name);
       if (old) { this.scene.remove(old); old.geometry.dispose(); }
       const geo = await paceSteps(b.geometrySteps(), () => this.breathe());
-      // THE GPU KEEPS ITS OWN COPY. Position, colour and lit are rewritten
-      // after the build (a demolition flattens, a tint repaints, occupancy
-      // lights rooms); nothing reads the rest again, so their arrays are let
+      // THE GPU KEEPS ITS OWN COPY. Position and colour are rewritten
+      // after the build (a demolition flattens, a tint repaints); nothing reads the rest again, so their arrays are let
       // go once uploaded instead of sitting in the heap for the whole session.
       for (const k of ["normal", "uv", "aoh", "paint", "trimc", "accent"]) {
         (geo.getAttribute(k) as THREE.BufferAttribute).onUpload(function (this: THREE.BufferAttribute) {
@@ -6810,7 +6789,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const x = a[0] + ux * t + nx * off * side, y = a[1] + uy * t + ny * off * side;
           if (nearEnd(x, y, 2) || inPond(x, y) || !inRingPk(x, y, p.inner)) continue;
           this.putInst("plpost", x, y, 0.05, 1, Math.atan2(uy, ux)); this.putInst("plhead", x, y, 0.05, 1, 0);
-          this.lampPools.push([x, y]);
         }
         // strollers: a few per walk, slower than the street's commuters
         const n = Math.floor(L / 30) + (rnd() < 0.5 ? 1 : 0);
@@ -7172,21 +7150,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       }
     }
     await this.dressParks(rnd, COAT, BED);
-    if (this.lampPools.length) {
-      const { c, g } = makeCanvas(64, 64);
-      const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-      gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.35, "rgba(255,255,255,0.55)"); gr.addColorStop(1, "rgba(255,255,255,0)");
-      g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
-      const tex = new THREE.CanvasTexture(c);
-      this.poolMat = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(1.0, 0.72, 0.4), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
-      const pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(11, 11), this.poolMat, this.lampPools.length);
-      const m4 = new THREE.Matrix4();
-      this.lampPools.forEach(([x, y], i) => pools.setMatrixAt(i, m4.makeTranslation(x, y, 0.1)));
-      pools.frustumCulled = false; pools.renderOrder = 1;
-      hazed.add(this.poolMat);   // additive light: hazing it would add the haze colour, not fade it
-      this.scene.add(pools);
-      this.applyLight();
-    }
     this.flushInst();
     const fleet = (kind: string, list: Lively[], z: number, car = false) => {
       if (!list.length) return;
@@ -7718,7 +7681,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     this.dynHeight = new Map([...this.dynDone.heights, ...this.dynSite.heights]);
     this.cranes = this.dynSite.cranes ?? this.dynDone.cranes;
     this.pickGrid = null;
-    for (const l of rebuilt) for (const [b, d] of l.deeds) { this.refreshDeed(b); this.paintLit(b, d); }
+    for (const l of rebuilt) for (const [b] of l.deeds) this.refreshDeed(b);
     if (this.renderer) this.renderer.shadowMap.needsUpdate = true;
     this.map?.triggerRepaint();
   }
@@ -8097,60 +8060,30 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   /** The cloud shade the weather allows, before the camera's distance trims it. */
   private cloudK0 = 0.45;
 
-  /**
-   * ALWAYS AFTERNOON. The game has no night and never will (the owner's
-   * standing call: "absolutely no nighttime in this game"). The renderer
-   * still carries its dusk machinery for the colour it was tuned under, but
-   * whatever a caller asks for, the hour is pinned to the calibrated day.
-   */
-  setDayPhase(_target: number, _instant = false) {
-    if (this.defer("setDayPhase", () => this.setDayPhase(0, true))) return;
-    this.duskTarget = 0;
-    this.dusk = 0;
-    this.applyLight();
-    this.map?.triggerRepaint();
-  }
-  private stepDusk() {
-    if (this.dusk === this.duskTarget) return;
-    const d = this.duskTarget - this.dusk;
-    this.dusk = Math.abs(d) < 0.01 ? this.duskTarget : this.dusk + d * 0.08;
-    this.applyLight();
-  }
-
+  // ALWAYS AFTERNOON. The game has no night (the owner: "absolutely no
+  // nighttime in this game"): one calibrated hour, the month owning only the
+  // sun's angle and the season.
   private applyLight() {
-    const night = smooth(0.35, 0.95, this.dusk);
-    const golden = smooth(0.0, 0.5, this.dusk) * (1 - night);
-    const sunK = (1 - night * 0.97) * (1 - this.overcast * 0.6);
+    const sunK = 1 - this.overcast * 0.6;
     // SKYLINE_LOOK_PLAN step 2. A warm sun and a shadow side filled by the
     // blue of the open sky rather than left grey: what makes a sunny city
     // read as sunny. The ground bounce is warm (pavement and brick).
     this.sun.intensity = 3.25 * sunK;
-    this.sun.color.setRGB(1, 0.88 - golden * 0.24, 0.72 - golden * 0.38);
-    this.hemi.intensity = 0.74 * (1 - night * 0.8) + this.overcast * 0.25;
-    this.hemi.color.setRGB(0.66 - night * 0.36, 0.78 - night * 0.42, 0.98 - night * 0.32);
+    this.sun.color.setRGB(1, 0.88, 0.72);
+    this.hemi.intensity = 0.74 + this.overcast * 0.25;
+    this.hemi.color.setRGB(0.66, 0.78, 0.98);
     this.hemi.groundColor.setRGB(0.6, 0.5, 0.38);
-    this.scene.environmentIntensity = 0.5 * (1 - night * 0.85);
-    // lit rooms after dark
-    for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.4;
-    this.lampMat.emissiveIntensity = night * 2.2;
-    if (this.poolMat) { this.poolMat.opacity = night * 0.6; this.poolMat.visible = night > 0.02; }
+    this.scene.environmentIntensity = 0.5;
     // snow lies on the roofs
     // tar and gravel is dark (albedo ~0.2); snow lifts it toward white
     // a dusting, not a blanket: January opens every campaign
     this.roofMat.color.setRGB(0.21 + this.snow * 0.22, 0.205 + this.snow * 0.23, 0.20 + this.snow * 0.26);
     for (const b of [...this.owned, ...this.selected]) this.refreshDeed(b);
-    if (this.renderer) this.renderer.toneMappingExposure = 0.82 - night * 0.15;
-    // MapLibre's ground knows nothing of the hour: a blue-black veil over it
-    // after dusk, a warm one as the sun goes down
-    this.veil.color.setRGB(0.05 + golden * 0.35, 0.07 + golden * 0.16, 0.14);
-    this.veil.opacity = night * 0.62 + golden * 0.08;
-    // the haze: sky blue by day (greyer overcast, warmer at golden hour),
-    // a blue-black murk at night
+    if (this.renderer) this.renderer.toneMappingExposure = 0.82;
+    // the haze: sky blue, greyer under overcast
     const oc = this.overcast;
-    const day = [0.742 + (0.643 - 0.742) * oc + golden * 0.1, 0.818 + (0.694 - 0.818) * oc + golden * 0.02, 0.9 + (0.722 - 0.9) * oc - golden * 0.08];
-    const nightC = [0.08, 0.1, 0.16];
-    HAZE.hazeCol.value.setRGB(day[0] + (nightC[0] - day[0]) * night, day[1] + (nightC[1] - day[1]) * night, day[2] + (nightC[2] - day[2]) * night);
-    HAZE.hazeCap.value = (0.48 + oc * 0.25) * (1 - night * 0.35);
+    HAZE.hazeCol.value.setRGB(0.742 + (0.643 - 0.742) * oc, 0.818 + (0.694 - 0.818) * oc, 0.9 + (0.722 - 0.9) * oc);
+    HAZE.hazeCap.value = 0.48 + oc * 0.25;
     // fair weather: a scatter of cumulus; as the sky fills in, more of it;
     // under a full overcast there is no direct sun left for a cloud to take
     CLOUD.cloudCover.value = 0.22 + 0.3 * smooth(0.0, 0.6, oc);
@@ -8193,25 +8126,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     return touched;
   }
   private cond = new Map<string, number>();
-  /** Share of each building that is let (read only): sets how much of it is lit after dark. */
-  setOccupancy(o: Map<string, number>) {
-    if (this.defer("setOccupancy", () => this.setOccupancy(o))) return;
-    const touched = RealCityLayer.settle(this.occ, o, (a, b) => Math.abs(a - b) > OCC_EPS);
-    for (const bbl of touched) for (const d of [this.deeds.get(bbl), this.dynDeeds.get(bbl)]) if (d) this.paintLit(bbl, d);
-    if (touched.length) this.map?.triggerRepaint();
-  }
-  private occ = new Map<string, number>();
-  private paintLit(bbl: string, d: Deed) {
-    const o = this.occ.get(bbl);
-    // the tile itself is ~55% lit rooms; full let reads ~1.6x that, empty near dark
-    const k = o === undefined ? 1 : 0.08 + 1.5 * Math.max(0, Math.min(1, o));
-    for (const r of d.ranges) {
-      if (!r.mesh || !r.buf.startsWith("w:")) continue;
-      const a = r.mesh.geometry.getAttribute("lit") as THREE.BufferAttribute;
-      (a.array as Float32Array).fill(k, r.start, r.start + r.count);
-      a.addUpdateRange(r.start, r.count); a.needsUpdate = true;
-    }
-  }
   /** Let share of each building's shopfronts (read only): a dead frontage is papered over and dark. */
   setRetail(r: Map<string, number>) {
     if (this.defer("setRetail", () => this.setRetail(r))) return;

@@ -494,17 +494,6 @@ body {
   font-size: 11px; font-weight: 600; color: #475636;
 }
 
-/* After dark the paper halo becomes a fog over the lit city: the names go
-   pale on a dark halo instead. ThreeBuildings sets .bw-night on the map
-   container as the hour passes dusk. */
-.bw-night .map-label {
-  text-shadow: 0 0 1px rgba(12, 16, 26, 1), 0 0 3px rgba(12, 16, 26, 0.9), 0 0 8px rgba(12, 16, 26, 0.6);
-}
-.bw-night .map-label-district { color: #d8cfb8; }
-.bw-night .map-label-park, .bw-night .map-label-civic { color: #b9d1a4; }
-.bw-night .map-label-water { color: #9fc0d6; }
-.bw-night .map-label-station { color: #e4e0d4; }
-
 /* ---- hover tooltip ---- */
 .hover-tip {
   position: absolute; z-index: 15; pointer-events: none;

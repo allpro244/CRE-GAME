@@ -1214,13 +1214,18 @@ export default function MapView() {
         String(Math.max(0.85, Math.min(1.2, 0.85 + (z - 13.4) * 0.12))));
       const placed: { x0: number; y0: number; x1: number; y1: number; name: string; cx: number; cy: number }[] = [];
       const cand: { el: HTMLElement; rank: number; m: maplibregl.Marker }[] = [];
+      // THE NEIGHBOURHOOD NAMES ARE THE DEMAND LENS'S. On the plain city they
+      // were captions over a model (the owner: "only have them show up when
+      // you click demand"): the districts and the stations named for them
+      // stay hidden until the Demand lens is up, then come up at every zoom.
+      const hoodsOn = useStore.getState().lens === "demand";
       for (const m of live.values()) {
         const el = m.getElement();
         const kind = kindOf(el);
         const on =
-          kind === "district" ? z >= 12.2 && z <= 15.6 :
+          kind === "district" || kind === "station" ? hoodsOn :
           kind === "park" ? z >= 13.2 :
-          kind === "station" || kind === "civic" ? z >= 13.6 :
+          kind === "civic" ? z >= 13.6 :
           z <= 14.5;
         if (on) cand.push({ el, rank: RANK[kind], m });
         else setOp(el, "0");
@@ -1251,7 +1256,7 @@ export default function MapView() {
       map.off("zoom", fade);
       map.off("moveend", fade);
     };
-  }, [mapReady, city, paintSig, photoFrame]);
+  }, [mapReady, city, paintSig, photoFrame, lens]);
   // the markers themselves go only with the map
   useEffect(() => () => {
     for (const m of labelsRef.current.values()) m.remove();
@@ -1378,9 +1383,8 @@ export default function MapView() {
     const game = useStore.getState().game;
     const layer = threeRef.current;
     if (!layer || !mapReady || !game || !parcels) return;
-    const occ = new Map<string, number>();
-    // ...and the shops separately, because a full office tower can still have
-    // a dead ground floor, and the street knows the difference.
+    // the shops, because a full office tower can still have a dead ground
+    // floor, and the street knows the difference.
     const ret = new Map<string, number>();
     // ...and the condition index every price reader in the engine uses: the
     // holding's own where it is yours, the age-derived reading elsewhere.
@@ -1390,12 +1394,6 @@ export default function MapView() {
       const rec = resolveRec(parcels, game, bbl);
       if (!rec || rec.class === "land" || !rec.bldgArea) continue;
       cond.set(bbl, condIdxOf(rec, game.month, h?.condition, h));
-      if (h) {
-        const leased = h.tenants.reduce((n, t) => n + t.sf, 0);
-        occ.set(bbl, Math.max(0, Math.min(1, leased / Math.max(1, rec.bldgArea))));
-      } else {
-        occ.set(bbl, occupancy(rec, game.econ));
-      }
       const retailSf = useSf(rec, "retail");
       if (retailSf > 300) {
         if (h) {
@@ -1427,7 +1425,6 @@ export default function MapView() {
         for (const bbl of row.bbls) ret.set(bbl, mean);
       }
     }
-    layer.setOccupancy(occ);
     layer.setRetail(ret);
     layer.setCondition(cond);
     // the courthouse on the door: auction lots, noticed foreclosures, and
@@ -1718,15 +1715,6 @@ export default function MapView() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designPeek, schemeBbl, designOrbit]);
-  // THE HOUR. Always the calibrated afternoon every colour in the renderer
-  // was tuned under. There used to be a dusk cycle while Play ran and a
-  // blue-hour photo frame; the owner's call: "we don't need a night mode,
-  // that's pointless". Both renderers still accept setDayPhase; nothing
-  // drives it off zero. The month still owns the sun's angle and the season.
-  useEffect(() => {
-    if (!mapReady) return;
-    threeRef.current?.setDayPhase(0);
-  }, [mapReady]);
   const graphics = useStore((s) => s.graphics);
   useEffect(() => {
     if (!mapReady) return;

@@ -551,7 +551,13 @@ export interface Holding {
    * arrive through tickGroundLeases; the programme on the offer is the shell
    * you are selling them. See proposeBuildToSuit / BtsCommitment.
    */
-  btsOffer?: { use: BuiltClass; floors: number; coverage: number; sinceM: number };
+  btsOffer?: {
+    use: BuiltClass; floors: number; coverage: number; sinceM: number;
+    /** The primary term you are offering, in years (BTS_TERM_MIN_Y..BTS_TERM_MAX_Y). Absent = 20. */
+    termY?: number;
+    /** The last occupier that looked and passed: the rent the shell needed against what they would pay. */
+    lastWalk?: { m: number; name: string; needPsf: number; ceilingPsf: number };
+  };
   // Designated. No demolition, no bigger building, a rent premium forever.
   landmarked?: boolean;
   // PRE-BUILT SPACE. Suites fitted out speculatively, before anyone has signed
@@ -798,6 +804,16 @@ export interface BtsCommitment {
   tiPsf: number;
   recovery: "nnn" | "base" | "gross";
   signedM: number;
+  /** Annual contractual bump on the lease, percent. Absent = the house default. */
+  bumpPct?: number;
+  /** The shell they signed for — the listing's programme. Absent on old saves. */
+  floors?: number;
+  coverage?: number;
+  /**
+   * The outside date: a build-to-suit lease lets the tenant walk if
+   * construction has not started by this month. Absent on old saves (no date).
+   */
+  startByM?: number;
 }
 
 export interface Development {

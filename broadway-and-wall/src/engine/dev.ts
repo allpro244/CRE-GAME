@@ -21,7 +21,7 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // a lot can physically carry and value.ts cannot import this file. Re-exported
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
-import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, useVacantSf } from "./leasing";
+import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, pickName, pickSector, useVacantSf } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
@@ -1167,10 +1167,102 @@ export function refreshDevelopmentFeasibility(
   }
 }
 
-const BTS_NAMES = [
-  "Northstar Logistics", "Harbour Medical", "Alden Foods", "Copperline Data",
-  "Mariner Components", "Union Market", "Beacon Systems", "Drydock Supply",
-];
+/**
+ * WHAT AN ANCHOR WILL PAY FOR A BUILDING DESIGNED AROUND IT, over generic new
+ * space of the same use on the same corner. A build-to-suit is priced off
+ * the developer's cost — rent = what the shell needs to clear its hurdle —
+ * and the tenant takes it only while that stays near what the open market
+ * would charge it for new space: past that it leases something standing, or
+ * builds its own. The premium is the fit (a floor plate, a loading court, a
+ * data hall drawn to its operation) plus never moving twice. Estimate, not a
+ * fit to any test: BTS deals are widely reported to price at roughly 5-15%
+ * over comparable speculative space; this is the middle of that range.
+ */
+export const BTS_FIT_PREMIUM = 0.10;
+/**
+ * THE OUTSIDE DATE. A build-to-suit lease is signed before there is a
+ * building, so it carries a date by which construction has to start, and the
+ * tenant may terminate if it has not. Twelve months is the usual length of
+ * that clause; a signature held indefinitely is not one any tenant gives.
+ */
+export const BTS_START_WINDOW_M = 12;
+/**
+ * THE TERM YOU SHOP. Build-to-suit paper runs long because the building is
+ * drawn around one occupier: 15 years is the short end a lender will treat as
+ * a credit lease, and 50 is the long end of ground-up net lease (big-box,
+ * distribution, headquarters with the options folded in). The developer names
+ * it on the listing; the anchor who signs, signs for it.
+ */
+export const BTS_TERM_MIN_Y = 15;
+export const BTS_TERM_MAX_Y = 50;
+export const BTS_TERM_DEFAULT_Y = 20;
+export function btsTermY(y: number | undefined): number {
+  const t = Math.round(Number.isFinite(y as number) ? (y as number) : BTS_TERM_DEFAULT_Y);
+  return Math.max(BTS_TERM_MIN_Y, Math.min(BTS_TERM_MAX_Y, t));
+}
+/**
+ * The annual bump on build-to-suit paper. Long net leases do not sit flat for
+ * decades: they step, usually ~10% every five years or 1.5-2.5% a year. A
+ * stronger covenant gets the lower step (the same split rollBumpPct uses for
+ * ordinary leases, without the slack term — this is fixed before the building exists).
+ */
+function btsBumpPct(credit: 1 | 2): number {
+  return credit === 2 ? 2.0 : 2.5;
+}
+
+function btsFitOut(use: BuiltClass): { tiPsf: number; recovery: "nnn" | "base" } {
+  return {
+    tiPsf: use === "office" ? 35 : use === "retail" ? 24 : 8,
+    recovery: use === "office" ? "base" : "nnn",
+  };
+}
+
+/**
+ * THE RENT A BUILD-TO-SUIT HAS TO CARRY, on the listed shell, today.
+ *
+ *   market   effective rent for new space of this use on this corner
+ *   ceiling  what an anchor will pay at most (market x (1 + BTS_FIT_PREMIUM))
+ *   need     the rent at which the anchored scheme clears the development
+ *            hurdle on this desk — the same planDevelopment, the same land
+ *            basis, the same required yield. Infinity when no rent in reach
+ *            of the market does it.
+ *
+ * Anchors used to sign at 78-88% of market whatever the building cost, so a
+ * signed build-to-suit was a lower rent on a job that already did not
+ * pencil: measured on a live city, at recovery and at peak, zero of ~420
+ * vacant lots cleared the hurdle on those terms for any of the three uses.
+ * The listing filled and the deal it delivered was one no developer takes.
+ */
+export function btsRentRead(
+  s: GameState, parcels: ParcelTable, bbl: string, use: BuiltClass,
+  floors: number, coverage: number, credit: 1 | 2 = 2, termY = BTS_TERM_DEFAULT_Y,
+): { market: number; ceiling: number; need: number; sf: number } | null {
+  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
+  if (!plan) return null;
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return null;
+  const built = { ...rec, class: use, mix: { [use]: 1 }, bldgArea: plan.sf, floors: plan.floors } as never;
+  const market = marketRentPsfYr(built, s.econ, "good");
+  if (!(market > 0)) return null;
+  // THE ANCHOR SIGNS FOR RENTABLE FEET — see the note in mintBtsCommitment.
+  const sf = Math.floor(plan.rentable * (plan.mix[use] ?? 1));
+  if (sf <= 0) return null;
+  const ceiling = market * (1 + BTS_FIT_PREMIUM);
+  const fit = btsFitOut(use);
+  const hurdleAt = (rentPsf: number) => planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp", undefined, {
+    bts: { name: "", sector: "tech", credit, use, sf, rentPsf, termM: btsTermY(termY) * 12,
+      tiPsf: fit.tiPsf, recovery: fit.recovery, signedM: s.month },
+  })?.hurdleRatio ?? 0;
+  // Hurdle rises with the rent. Search a band wide enough to report how far
+  // off a hopeless shell is (up to four times market), to the cent.
+  let lo = 0, hi = market * 4;
+  if (hurdleAt(hi) < 1) return { market, ceiling, need: Infinity, sf };
+  for (let i = 0; i < 24 && hi - lo > 0.005; i++) {
+    const mid = (lo + hi) / 2;
+    if (hurdleAt(mid) >= 1) hi = mid; else lo = mid;
+  }
+  return { market, ceiling, need: Math.ceil(hi * 100) / 100, sf };
+}
 
 /**
  * LIST THE SITE FOR A BUILD-TO-SUIT OCCUPIER.
@@ -1178,13 +1270,14 @@ const BTS_NAMES = [
  * This used to mint a named tenant on the click — a headquarters for free, any
  * month you wanted one. Real BTS is a listing: you put a shell on the street
  * and wait for an anchor whose programme fits. The counterparty arrives
- * through tickBuildToSuit at odds set by demand, climate and how much space
- * you are asking someone to take.
+ * through tickBuildToSuit at odds set by demand, hiring and how much space
+ * you are asking someone to take, and signs only at a rent that builds it.
  */
 export function proposeBuildToSuit(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
-  floors: number, coverage = 0.62,
+  floors: number, coverage = 0.62, termYears = BTS_TERM_DEFAULT_Y,
 ): { s: GameState; err?: string; msg?: string } {
+  const termY = btsTermY(termYears);
   if (use !== "office" && use !== "retail" && use !== "industrial") {
     return { s, err: "Build-to-suit is for an office headquarters, anchor retail or an industrial user." };
   }
@@ -1208,15 +1301,17 @@ export function proposeBuildToSuit(
   const same = prev
     && prev.use === use
     && prev.floors === plan.floors
-    && Math.abs(prev.coverage - coverage) < 0.001;
+    && Math.abs(prev.coverage - coverage) < 0.001
+    && btsTermY(prev.termY) === termY;
   next.holdings[bbl].btsOffer = {
-    use, floors: plan.floors, coverage, sinceM: same ? prev!.sinceM : next.month,
+    use, floors: plan.floors, coverage, termY, sinceM: same ? prev!.sinceM : next.month,
+    ...(same && prev!.lastWalk ? { lastWalk: prev!.lastWalk } : {}),
   };
   return {
     s: next,
     msg: same
       ? "Still on the book — an anchor comes when one comes."
-      : `Listed ${plan.floors} fl of ${use} (${Math.round(plan.sf).toLocaleString()} sf) for a build-to-suit. Now you wait.`,
+      : `Listed ${plan.floors} fl of ${use} (${Math.round(plan.sf).toLocaleString()} sf) for a ${termY}-year build-to-suit. Now you wait.`,
   };
 }
 
@@ -1227,30 +1322,38 @@ export function clearBuildToSuit(s: GameState, bbl: string): GameState {
   if (!hadOffer && !hadProspect) return s;
   const next = clone(s);
   if (next.holdings[bbl]?.btsOffer) delete next.holdings[bbl].btsOffer;
-  if (next.btsProspects?.[bbl]) {
-    delete next.btsProspects[bbl];
-    if (!Object.keys(next.btsProspects).length) delete next.btsProspects;
-  }
+  dropBtsProspect(next, bbl);
   return next;
 }
 
+function dropBtsProspect(s: GameState, bbl: string) {
+  if (!s.btsProspects?.[bbl]) return;
+  delete s.btsProspects[bbl];
+  if (!Object.keys(s.btsProspects).length) delete s.btsProspects;
+}
+
+/**
+ * An anchor at the table: who they are, and whether the shell's rent and
+ * theirs meet. A build-to-suit is priced off cost and the building is new
+ * and drawn around them, so it lets at market or better, never at a discount:
+ * the developer quotes the larger of market and the rent the job needs
+ * (btsRentRead), the anchor takes it if that is within its ceiling, and walks
+ * if not. It signs for the term on the listing, from delivery.
+ */
 function mintBtsCommitment(
   s: GameState, parcels: ParcelTable, bbl: string,
-  use: BuiltClass, floors: number, coverage: number,
-): BtsCommitment | null {
-  const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
-  if (!plan) return null;
-  const rec = resolveRec(parcels, s, bbl);
-  if (!rec) return null;
+  use: BuiltClass, floors: number, coverage: number, termYears: number,
+): { bts: BtsCommitment } | { walked: { name: string; needPsf: number; ceilingPsf: number } } | null {
   const credit = (rng(s, "leasing") < 0.58 ? 2 : 1) as 1 | 2;
-  const sector = (use === "industrial" ? "logistics"
-    : use === "retail" ? "food" : rng(s, "leasing") < 0.5 ? "tech" : "finance") as import("./types").Sector;
-  const name = BTS_NAMES[Math.floor(rng(s, "leasing") * BTS_NAMES.length)];
-  const built = {
-    ...rec, class: use, mix: { [use]: 1 }, bldgArea: plan.sf, floors: plan.floors,
-  } as never;
-  const market = marketRentPsfYr(built, s.econ, "good");
-  const discount = credit === 2 ? rrange(s, 0.82, 0.88, "leasing") : rrange(s, 0.78, 0.85, "leasing");
+  const sector = pickSector(s, use);
+  const name = pickName(s, sector);
+  const termY = btsTermY(termYears);
+  const read = btsRentRead(s, parcels, bbl, use, floors, coverage, credit, termY);
+  if (!read) return null;
+  if (read.need > read.ceiling) {
+    return { walked: { name, needPsf: read.need, ceilingPsf: +read.ceiling.toFixed(2) } };
+  }
+  const rentPsf = +Math.max(read.market, read.need).toFixed(2);
   // THE ANCHOR SIGNS FOR RENTABLE FEET. This used to be `plan.sf` — GROSS,
   // core and stairs included — so the news told the player "Alden Foods will
   // take 7,400 sf", planDevelopment clipped the commitment to the 6,200
@@ -1259,18 +1362,20 @@ function mintBtsCommitment(
   // player was shown was 16% more than the one they got. A lease is measured
   // to the rentable standard (see rentableRatio); the proforma clip is now a
   // guard that does not bind. Floored so the clip cannot shave a rounding foot.
-  const useSfArea = Math.floor(plan.rentable * (plan.mix[use] ?? 1));
+  const fit = btsFitOut(use);
   return {
-    name,
-    sector,
-    credit,
-    use,
-    sf: useSfArea,
-    rentPsf: +(market * discount).toFixed(2),
-    termM: credit === 2 ? 240 : 180,
-    tiPsf: use === "office" ? 35 : use === "retail" ? 24 : 8,
-    recovery: use === "office" ? "base" : "nnn",
-    signedM: s.month,
+    bts: {
+      name, sector, credit, use,
+      sf: read.sf,
+      rentPsf,
+      termM: termY * 12,
+      bumpPct: btsBumpPct(credit),
+      tiPsf: fit.tiPsf,
+      recovery: fit.recovery,
+      signedM: s.month,
+      floors, coverage,
+      startByM: s.month + BTS_START_WINDOW_M,
+    },
   };
 }
 
@@ -1280,6 +1385,25 @@ function mintBtsCommitment(
  * and the button used to pretend otherwise.
  */
 export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
+  // SIGNED TERMS ARE A LEASE ON A SITE YOU HOLD, WITH A DATE ON IT. They used
+  // to outlive the site — sold, folded into an assemblage, ground-leased away
+  // — and to wait for a groundbreak forever.
+  for (const [bbl, bts] of Object.entries(s.btsProspects ?? {})) {
+    const h = s.holdings[bbl];
+    if (!h || s.merged?.[bbl] || s.groundLeases?.[bbl]) {
+      dropBtsProspect(s, bbl);
+      continue;
+    }
+    if (bts.startByM !== undefined && s.month > bts.startByM) {
+      dropBtsProspect(s, bbl);
+      const rec = resolveRec(parcels, s, bbl);
+      s.news.unshift({
+        q: s.month, kind: "deal",
+        text: `${bts.name} has walked from the build-to-suit at ${rec?.address ?? bbl}: the lease gave you until `
+          + `${monthLabel(bts.startByM)} to start construction and nothing is in the ground. The site is back on spec.`,
+      });
+    }
+  }
   for (const h of Object.values(s.holdings)) {
     const offer = h.btsOffer;
     if (!offer) continue;
@@ -1295,17 +1419,33 @@ export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
     }
     const plan = planDevelopment(s, parcels, h.bbl, offer.use, offer.floors, offer.coverage, "gmp");
     if (!plan) { delete h.btsOffer; continue; }
-    const climate = buildClimate(s);
     const demand = demandNow(s, rec) / 100;
     // Bigger shells need rarer anchors. A 40k pad turns over; a 250k HQ does not.
     const sizeHard = Math.max(0.55, Math.min(2.4, plan.sf / 90_000));
     // An anchor commits to a new building when it is hiring: exp(30 x payroll
     // growth) reads 0.55 at -2%/yr (the old recession) and tops out at 1.1.
     const phaseHit = Math.max(0.45, Math.min(1.1, Math.exp(30 * payrollGrowth12(s.econ))));
-    const p = Math.min(0.09, (0.004 + 0.045 * demand * climate) * phaseHit / sizeHard);
+    // How often an occupier of this size comes looking. Whether building for
+    // it pays is no longer folded in here as the city's value-to-replacement
+    // (buildClimate): it is asked of THIS shell, at the table, in
+    // mintBtsCommitment — the same fact counted once.
+    const p = Math.min(0.09, (0.004 + 0.045 * demand) * phaseHit / sizeHard);
     if (rng(s, "leasing") >= p) continue;
-    const bts = mintBtsCommitment(s, parcels, h.bbl, offer.use, offer.floors, offer.coverage);
-    if (!bts) continue;
+    const met = mintBtsCommitment(s, parcels, h.bbl, offer.use, offer.floors, offer.coverage, btsTermY(offer.termY));
+    if (!met) continue;
+    if ("walked" in met) {
+      const w = met.walked;
+      offer.lastWalk = { m: s.month, name: w.name, needPsf: w.needPsf, ceilingPsf: w.ceilingPsf };
+      s.news.unshift({
+        q: s.month, kind: "deal",
+        text: `${w.name} looked at your build-to-suit listing at ${rec.address} and passed. The shell needs `
+          + (Number.isFinite(w.needPsf) ? `$${w.needPsf.toFixed(2)}/sf` : "more rent than any tenant pays")
+          + ` to clear its hurdle; they will pay $${w.ceilingPsf.toFixed(2)}/sf at most for new ${offer.use} here. `
+          + `The listing stays up — a cheaper shell, or a better market, is what closes that gap.`,
+      });
+      continue;
+    }
+    const bts = met.bts;
     delete h.btsOffer;
     if (!s.btsProspects) s.btsProspects = {};
     s.btsProspects[h.bbl] = bts;
@@ -1313,10 +1453,12 @@ export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: "deal",
       text: `Build-to-suit at last: ${bts.name} will take ${Math.round(bts.sf).toLocaleString()} sf `
-        + `of ${bts.use} at ${rec.address} for ${Math.round(bts.termM / 12)} years at $${bts.rentPsf.toFixed(2)}/sf `
+        + `of ${bts.use} at ${rec.address} for ${Math.round(bts.termM / 12)} years from delivery at $${bts.rentPsf.toFixed(2)}/sf, `
+        + `${bts.bumpPct}% a year `
         + `(credit ${bts.credit === 2 ? "strong" : "solid"}), after `
         + `${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`} on the book. `
-        + `Break ground on their shell, or send them away and go back to spec.`,
+        + `Break ground on their ${offer.floors}-storey shell by ${monthLabel(bts.startByM!)} or they walk — `
+        + `or send them away and go back to spec.`,
     });
   }
 }
@@ -1467,6 +1609,13 @@ export function startDevelopment(
   const barred = zoneUseBar(rec, use, s.econ, devMix(use, custom?.mix),
     Math.min(Math.max(1, Math.round(floors)), maxFloorsFor(rec, coverage, use)));
   if (barred) return { s, err: barred };
+  // THE ANCHOR IS THE ONE ON THE BOOK. A commitment comes from the signed
+  // terms held against this site (tickBuildToSuit), not from whoever calls
+  // this: a caller's copy that is stale — or one nobody signed — builds spec.
+  if (custom?.bts) {
+    const signed = s.btsProspects?.[bbl];
+    custom = { ...custom, bts: signed && signed.name === custom.bts.name && signed.signedM === custom.bts.signedM ? signed : undefined };
+  }
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender, spec);
   if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
   // AND NOTHING UNPRICEABLE CLOSES. planDevelopment refuses a design it cannot
@@ -1612,7 +1761,7 @@ export function startDevelopment(
     // the look is the player's; nothing priced reads it
     ...(custom?.design ? { design: { ...custom.design } } : {}),
   } satisfies Development;
-  if (next.btsProspects?.[bbl]) delete next.btsProspects[bbl];
+  dropBtsProspect(next, bbl);
   if (next.holdings[bbl]?.btsOffer) delete next.holdings[bbl].btsOffer;
   recordPropertyEvent(next, bbl, {
     kind: "build-start",
@@ -2278,6 +2427,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
       recovery: d.bts.recovery,
       startM: s.month,
       endM: s.month + d.bts.termM,
+      ...(d.bts.bumpPct !== undefined ? { bumpPct: d.bts.bumpPct } : {}),
       deposit,
       staff: 1,
     });

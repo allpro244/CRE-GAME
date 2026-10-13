@@ -238,5 +238,61 @@ console.log("\nPHASE 5 — NEW MECHANICS\n");
   ok("thirty years run clean with every mechanic live", (g.rivals ?? []).length > 0);
 }
 
+console.log("\nPLANS, QUIET CALLS, FAMILIES\n");
+{
+  // EVERY FIRM OPENS WITH A PLAN, and the card can say it.
+  const g = E.newGame(12007, parcels);
+  const sheeted = g.rivals.filter((r) => r.sheet && r.bbls.length);
+  const planned = sheeted.filter((r) => r.thesis && E.thesisLabel(r.thesis).length > 10);
+  ok("every firm with a book opens the game with a plan", planned.length === sheeted.length, `${planned.length}/${sheeted.length} — e.g. "${planned[0] && E.thesisLabel(planned[0].thesis)}"`);
+}
+{
+  // A FIRM UNDER PRESSURE RINGS YOU BEFORE THE TAPE.
+  let g = E.firstListings(E.newGame(12007, parcels, 40_000_000), parcels, bbls);
+  for (const L of g.listings) {
+    const rec = E.resolveRec(parcels, g, L.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea || L.ask > 8_000_000) continue;
+    const r = E.executePurchase(g, parcels, L.bbl, L.ask, "savings", false, 1);
+    if (!r.err) { g = r.s; break; }
+  }
+  let quiet = null;
+  for (let m = 0; m < 24 && !quiet; m++) {
+    for (const r of g.rivals) {
+      if (r.failedM !== undefined || r.bbls.length < 2 || !r.sheet) continue;
+      r.sheet.secrecy = 100;
+      if (m % 3 === 0) { r.cash = -Math.max(2_000_000, (r.aum ?? 0) * 0.05); r.uncalled = 0; r.distributed = 0; }
+    }
+    g = E.advanceMonth(g, parcels, bbls, adjacency);
+    if (g.gameOver) g = { ...g, gameOver: null, cash: 40e6 };
+    quiet = g.listings.find((l) => l.quietFrom && l.earlyUntilM > g.month);
+  }
+  ok("a firm under pressure offers you a building privately, before the tape", !!quiet,
+    quiet ? `${quiet.quietFrom}, ${quiet.earlyUntilM - g.month} months to decide` : "no quiet call in two years of squeezed firms");
+  if (quiet) {
+    const rec = E.resolveRec(parcels, g, quiet.bbl);
+    const v = E.conveyedValue(g, rec, quiet.bbl, true);
+    ok("priced under what it would appraise at", quiet.ask < v * 1.0, `${Math.round(100 * quiet.ask / v)}% of the deed's value`);
+  }
+}
+{
+  // A FAMILY WITH A GRUDGE IN IT SPLITS THE BOOK — and the loans go with the buildings.
+  let g = E.newGame(12007, parcels);
+  const fam = g.rivals.filter((r) => r.sheet && r.bbls.length >= 4).sort((a, b) => b.bbls.length - a.bbls.length)[0];
+  fam.style = "family"; fam.profile = "dynasty"; fam.sheet.grudge = 95; fam.genM = -400; fam.stressMs = 0;
+  const n0 = g.rivals.length, b0 = fam.bbls.length;
+  for (let k = 0; k < 60 && g.rivals.length === n0; k++) {
+    g.month = 8 + 12 * k; fam.stressMs = 0;
+    E.tickCorporate(g, parcels);
+  }
+  const twin = g.rivals.length > n0 ? g.rivals[g.rivals.length - 1] : null;
+  ok("the heirs split the book", !!twin && twin.bbls.length + fam.bbls.length === b0, twin ? `${fam.name} ${fam.bbls.length} · ${twin.name} ${twin.bbls.length}` : "no split");
+  if (twin) {
+    const sum = (r) => Object.values(g.cityLoans ?? {}).filter((x) => x.obligorId === r.id).reduce((a, x) => a + x.balance, 0) + (r.lineBal ?? 0);
+    ok("each branch owes exactly its own loans", Math.abs(sum(twin) - twin.debt) <= 2 && Math.abs(sum(fam) - fam.debt) <= 2
+      && Object.values(g.cityLoans ?? {}).every((x) => x.obligorId !== twin.id || twin.bbls.includes(x.bbl)));
+    ok("and the two branches are feuding", twin.feud === fam.id && fam.feud === twin.id);
+  }
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nall clear");
 process.exit(fails ? 1 : 0);

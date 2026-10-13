@@ -310,6 +310,14 @@ export default function MapView() {
   const [mapReady, setMapReady] = useState(false);
   // the 3D city builds in slices after the map is up; the flat extrusions stand in until it is done
   const [threeReady, setThreeReady] = useState(false);
+  // AFTER A LOST GPU CONTEXT, A NEW MAP. When the browser takes the WebGL
+  // context away (a driver reset, a sleeping laptop, a GPU-memory squeeze),
+  // MapLibre restores its own style but cannot restore a custom layer: the 3D
+  // city was gone for good and the flat map was all that was left. The whole
+  // map is rebuilt instead — the path a new city takes — with the camera
+  // kept where the player had it. `glReset` re-runs the map effect.
+  const [glReset, setGlReset] = useState(0);
+  const resumeCamRef = useRef<{ center: maplibregl.LngLatLike; zoom: number; bearing: number; pitch: number } | null>(null);
   const hover = useStore((s) => s.hover);
   const setFps = useStore((s) => s.setFps);
 
@@ -345,6 +353,22 @@ export default function MapView() {
         pixelRatio: ratioFor(graphics, dpr),
       });
       mapRef.current = map;
+      // rebuild once, when the context comes back — or, if the browser never
+      // hands it back, after a few seconds on a fresh canvas of our own
+      {
+        let lostTimer: ReturnType<typeof setTimeout> | null = null;
+        let rebuilt = false;
+        const rebuild = () => {
+          if (rebuilt || disposed) return;
+          rebuilt = true;
+          if (lostTimer) clearTimeout(lostTimer);
+          const c = map.getCenter();
+          resumeCamRef.current = { center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
+          setGlReset((n) => n + 1);
+        };
+        map.on("webglcontextlost", () => { if (!lostTimer) lostTimer = setTimeout(rebuild, 3000); });
+        map.on("webglcontextrestored", rebuild);
+      }
       // the ground grain textures are made here, not fetched (see groundGrain)
       map.on("styleimagemissing", (e: { id: string }) => {
         if (e.id === "bw-grain-asphalt" && !map.hasImage(e.id)) map.addImage(e.id, groundGrain("asphalt"));
@@ -551,8 +575,11 @@ export default function MapView() {
             // no mesh feed — fall back to the flat extrusions
             map.setLayoutProperty("bw-bldg-3d", "visibility", "visible");
           });
-        // the cinematic fly-in
-        map.flyTo({ ...shot.core, duration: 5500, essential: true });
+        // the cinematic fly-in — or, rebuilding after a lost context, straight back where the camera was
+        const resume = resumeCamRef.current;
+        resumeCamRef.current = null;
+        if (resume) map.jumpTo(resume);
+        else map.flyTo({ ...shot.core, duration: 5500, essential: true });
 
         // WHAT IS UNDER THE POINTER. The 3D city answers first — from a
         // pitched camera the flat parcel under the cursor is the street behind
@@ -623,9 +650,10 @@ export default function MapView() {
       for (const m of labelsRef.current.values()) m.remove();
       labelsRef.current.clear();
       setMapReady(false);
+      setThreeReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city]);
+  }, [city, glReset]);
 
   // reflect selection + neighbor highlight into feature-state
   const selectedBBL = useStore((s) => s.selectedBBL);

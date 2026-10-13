@@ -33,5 +33,6 @@ Never probe with a stale `test/.engine.mjs`. `test/fresh.mjs` guards this.
 
 ## Ownership
 
-Cursor owns the working tree. Active work continues on
-`cursor/cre-game-handoff-462d` (or later `cursor/*` branches) cut from that tip.
+Work lands on `main` by pull request. Cut every branch from the latest
+`origin/main`; Cursor is no longer used, and the `cursor/*` branches are
+history rather than working tips.

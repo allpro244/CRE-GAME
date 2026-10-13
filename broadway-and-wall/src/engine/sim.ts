@@ -27,6 +27,7 @@ import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
+import { tickCorporate } from "./corporate";
 import { initRivals, tickRivals, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
@@ -662,6 +663,7 @@ function tickMonth(
   tickRivalTakeovers(s, parcels);
   tickRivalConversions(s, parcels);
   tickRivalRetirements(s, parcels);
+  tickCorporate(s, parcels);
   tickOffMarketCalls(s, parcels); // and their desks ring the owners who have not listed
   // The mortgage record reconciles against the street the moment the street
   // has finished moving, so the statement the note desk sells out of below is

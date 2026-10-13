@@ -41,6 +41,8 @@ const spearman = (xs, ys) => {
 };
 
 const all = [];
+const quiet = { n: 0 };
+const theses = {};
 for (const [ci, seed] of SEEDS.entries()) {
   const { parcels, adjacency, bbls } = loadCity(ci, E.normalizeParcels);
   let g = E.firstListings(E.newGame(seed, parcels, 6_000_000), parcels, bbls);
@@ -71,6 +73,7 @@ for (const [ci, seed] of SEEDS.entries()) {
       const now = new Set(r.bbls);
       if (r.failedM === undefined) {
         f.months++;
+        if ((g.econ.creditIdx ?? 1) > 1.03) f.hotMonths = (f.hotMonths ?? 0) + 1;
         f.peakAum = Math.max(f.peakAum, r.aum ?? 0);
         if ((r.aum ?? 0) > 0) f.ltv.push(r.debt / r.aum);
       } else if (f.failedM === undefined) {
@@ -120,12 +123,20 @@ for (const [ci, seed] of SEEDS.entries()) {
         const pl = prevListings.get(b);
         // a deed taken through a note somebody else held is not a sale
         const viaPaper = prevNotes.has(b);
-        const voluntary = !viaPaper && (pl ? (pl.sellerId === r.id && !pl.distress && pl.reason !== "receiver") : (!!owner[b] && owner[b] !== r.id && r.failedM === undefined && !r.stressMs));
-        if (voluntary) f.voluntarySells = (f.voluntarySells ?? 0) + 1;
+        // nor is a family halving its book between heirs (the new branch is born this month)
+        const newOwner = owner[b] ? g.rivals.find((x) => x.id === owner[b]) : undefined;
+        const split = !!newOwner && newOwner.bornM === g.month;
+        const voluntary = !viaPaper && !split && (pl ? (pl.sellerId === r.id && !pl.distress && pl.reason !== "receiver") : (!!owner[b] && owner[b] !== r.id && r.failedM === undefined && !r.stressMs));
+        if (voluntary) {
+          f.voluntarySells = (f.voluntarySells ?? 0) + 1;
+          if ((g.econ.creditIdx ?? 1) > 1.03) f.hotSells = (f.hotSells ?? 0) + 1;
+        }
         if (f.rules.includes("neverSells") && voluntary) f.rulesBroken.push("neverSells sold");
       }
       prevB[r.id] = now;
     }
+    for (const li of g.listings) if (li.quietFrom && li.listedM === g.month) quiet.n++;
+    for (const r of g.rivals) if (r.thesis && r.thesis.fromM === g.month && r.thesis.why !== "first") theses[r.thesis.why] = (theses[r.thesis.why] ?? 0) + 1;
     for (const j of g.cityJobs ?? []) {
       const k = j.bbl + ":" + j.startM;
       if (jobsSeen.has(k)) continue;
@@ -142,6 +153,13 @@ for (const [ci, seed] of SEEDS.entries()) {
       for (const b of r.bbls) if (f._held[b] === undefined) f._held[b] = g.month;
       for (const b of Object.keys(f._held)) if (!r.bbls.includes(b)) { f.holdM.push(g.month - f._held[b]); delete f._held[b]; }
     }
+  }
+  for (const r of g.rivals) {
+    const f = F[r.id];
+    if (!f) continue;
+    f.lessons = (r.lessons ?? []).map((l) => l.text);
+    f.thesis = r.thesis ? r.thesis.kind : null;
+    f.soldTo = r.soldToM !== undefined;
   }
   for (const f of Object.values(F)) {
     for (const b of Object.keys(f._held ?? {})) f.holdM.push(YEARS * 12 - f._held[b]);
@@ -189,6 +207,7 @@ const tests = [
   ["leverage", "average LTV", (f) => avg(f.ltv), withSheet],
   ["discipline", "did not fail (1) or failed (0)", (f) => (f.outcome === "failed" ? 0 : 1), withSheet],
   ["cycle", "share of buys while credit is tight (low = contrarian)", (f) => f.tight / f.buys],
+  ["discipline", "voluntary sales per year of hot market, per building", (f) => ((f.hotMonths ?? 0) >= 24 && f.buys >= 3 ? (f.hotSells ?? 0) / (f.hotMonths / 12) / Math.max(1, f.buys) : NaN)],
 ];
 console.log(`\nDOES EACH TRAIT MOVE ITS BEHAVIOUR? (Spearman rank correlation across firms with a sheet)\n`);
 for (const [t, label, fn, pool] of tests) {
@@ -208,4 +227,9 @@ console.log(`OUTCOMES: ${Object.entries(outcomes).map(([k, v]) => `${k} ${v}`).j
 const byProf = {};
 for (const f of all) (byProf[f.profile ?? f.style] ??= []).push(f);
 console.log(`PROFILES SEEN: ${Object.keys(byProf).length}`);
+const lessons = {};
+for (const f of all) for (const l of f.lessons ?? []) { const k = l.replace(/\d{4}/g, "Y").replace(/ — the other half is .*/, "").replace(/Merged with .* in Y/, "Merged").replace(/Sold to .* in Y.*/, "Sold to an institution"); lessons[k] = (lessons[k] ?? 0) + 1; }
+console.log(`QUIET OFFERS TO YOU: ${quiet.n}`);
+console.log(`PLAN CHANGES: ${Object.entries(theses).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}`);
+console.log(`HISTORIES: ${Object.entries(lessons).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} (${v})`).join("; ")}`);
 if (process.env.JSON) writeFileSync(process.env.JSON, JSON.stringify(all, null, 1));

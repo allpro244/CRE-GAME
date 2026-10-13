@@ -21,6 +21,7 @@ import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
 import { siteOutline, ringCentroid } from "./siteRing";
 import { PostFX } from "./post";
+import { Traffic, type Car, type Crosser, type NetRaw } from "./traffic";
 import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
 import { BOOK_PICKER } from "./patternbook/register";
 import type { FacadeGroup } from "./patternbook/types";
@@ -60,6 +61,15 @@ function insetRing(r: P2[], d: number): P2[] | null {
     out.push([c[0] + (mx / ml) * s, c[1] + (my / ml) * s]);
   }
   return ringArea(out) > 1 ? out : null;
+}
+/** Metres between two segments that do not cross (the least end-to-segment distance). */
+function segGap(a: P2, b: P2, c: P2, d: P2): number {
+  const pt = (p: P2, q: P2, r: P2) => {
+    const dx = r[0] - q[0], dy = r[1] - q[1], l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p[0] - q[0]) * dx + (p[1] - q[1]) * dy) / l2));
+    return Math.hypot(q[0] + dx * t - p[0], q[1] + dy * t - p[1]);
+  };
+  return Math.min(pt(a, c, d), pt(b, c, d), pt(c, a, b), pt(d, a, b));
 }
 /** Metres from (x, y) to the nearest edge of a ring. */
 function shoreGap(ring: P2[], x: number, y: number): number {
@@ -106,9 +116,17 @@ const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", 
  * every canal a flat royal blue next to a turquoise sea).
  */
 const CANAL_WATER = 0x2c5f5c;
-const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi"];
+/** the footway band inside a park's street edge (m); its hedge stands at 3.6 */
+const PARK_WALK = 3.0;
+const FAR_PROPS = ["tactile", "streetsign", "meter", "bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
+// what a crowd wears: mostly neutrals (navy, charcoal, camel, white,
+// denim), with one in four in a colour that catches the eye from above
+const CROWD_COAT = [[0.30, 0.32, 0.38], [0.62, 0.58, 0.52], [0.20, 0.24, 0.30], [0.52, 0.28, 0.24], [0.86, 0.84, 0.80], [0.28, 0.36, 0.32], [0.44, 0.40, 0.46], [0.70, 0.62, 0.44],
+  [0.93, 0.92, 0.88], [0.30, 0.42, 0.62], [0.78, 0.18, 0.16], [0.92, 0.70, 0.18], [0.16, 0.52, 0.56], [0.86, 0.46, 0.56], [0.95, 0.52, 0.18], [0.36, 0.56, 0.30]];
+/** People are drawn a touch over life size, so a figure still reads from the play camera. */
+const PERSON_S = 1.3;
 /** Shop trades: canopy and fascia colours. Looks only. */
 interface Trade { awn: number[]; sign: number[] }
 const T = (awn: number[], sign: number[]): Trade => ({ awn, sign });
@@ -1025,8 +1043,9 @@ function profile(pts: [number, number][], w: number): THREE.BufferGeometry {
   const sh = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, z)));
   return new THREE.ExtrudeGeometry(sh, { depth: w, bevelEnabled: false }).rotateX(Math.PI / 2).translate(0, w / 2, 0);
 }
+const SHADE = [0.015, 0.016, 0.02];
 const PAINT = [1, 1, 1], GLASS = [0.07, 0.08, 0.1], TYRE = [0.04, 0.04, 0.04], HEAD = [2.2, 2.2, 2.0], TAIL = [1.6, 0.12, 0.1], TRIMC = [0.12, 0.12, 0.13];
-function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus"): THREE.BufferGeometry {
+function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck"): THREE.BufferGeometry {
   const parts: [THREE.BufferGeometry, number[]][] = [];
   const wheel = (x: number, y: number, r: number) => parts.push([new THREE.CylinderGeometry(r, r, 0.24, 8).translate(x, y, r), TYRE]);
   const box = (w: number, d: number, h: number, x: number, y: number, z: number, c: number[]) => parts.push([new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2), c]);
@@ -1056,6 +1075,16 @@ function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus"): THREE.BufferGe
     for (const x of [1.75, -1.7]) for (const y of [-0.9, 0.9]) wheel(x, y, 0.36);
     box(0.06, 0.4, 0.16, L + 0.02, -0.66, 0.85, HEAD); box(0.06, 0.4, 0.16, L + 0.02, 0.66, 0.85, HEAD);
     box(0.06, 0.18, 0.4, -L - 0.02, -0.86, 0.9, TAIL); box(0.06, 0.18, 0.4, -L - 0.02, 0.86, 0.9, TAIL);
+  } else if (kind === "truck") {
+    // a box truck on a delivery round: a cab in the paint, a pale box behind
+    const L = 3.6;
+    parts.push([profile([[1.2, 0.45], [L, 0.45], [L, 1.25], [3.35, 1.45], [3.0, 2.45], [1.2, 2.5]], 2.2), PAINT]);
+    parts.push([profile([[3.32, 1.5], [3.0, 2.3], [2.4, 2.3], [2.4, 1.5]], 2.22), GLASS]);
+    box(4.9, 2.4, 2.65, -1.35, 0, 0.75, [0.93, 0.93, 0.9]);
+    box(5.0, 2.2, 0.3, -1.35, 0, 0.45, TRIMC);
+    for (const x of [2.6, -2.4, -3.3]) for (const y of [-0.95, 0.95]) wheel(x, y, 0.45);
+    box(0.06, 0.4, 0.18, L + 0.02, -0.75, 0.9, HEAD); box(0.06, 0.4, 0.18, L + 0.02, 0.75, 0.9, HEAD);
+    box(0.06, 0.2, 0.3, -3.81, -1.0, 0.9, TAIL); box(0.06, 0.2, 0.3, -3.81, 1.0, 0.9, TAIL);
   } else {
     // the city bus: a long box on small wheels, a band of glass down each side
     const L = 6;
@@ -1066,6 +1095,11 @@ function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus"): THREE.BufferGe
     for (const x of [4.3, -3.3]) for (const y of [-1.05, 1.05]) wheel(x, y, 0.5);
     box(0.06, 0.4, 0.2, L + 0.03, -0.9, 0.7, HEAD); box(0.06, 0.4, 0.2, L + 0.03, 0.9, 0.7, HEAD);
   }
+  // THE CAR'S OWN SHADE on the road: a dark pad a little larger than the
+  // body, so a car sits on the asphalt rather than hovering over it (the
+  // sun's shadow map is baked for the still city and cannot follow traffic)
+  const [hl, hw] = kind === "bus" ? [6.3, 1.45] : kind === "truck" ? [3.95, 1.4] : kind === "van" ? [2.8, 1.12] : kind === "suv" ? [2.6, 1.08] : [2.5, 1.02];
+  parts.push([new THREE.PlaneGeometry(hl * 2, hw * 2).translate(0, 0, 0.012), SHADE]);
   return mergeColored(parts);
 }
 function person(): THREE.BufferGeometry {
@@ -1337,7 +1371,12 @@ export interface SchemeModel {
 /** The city layer on the map now, for the Build desk's viewer (null when no map is up). */
 export let activeCity: RealCityLayer | null = null;
 
-interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number; kind?: string }
+interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number; kind?: string; path?: WalkPath }
+/** A closed walk round a block: points (x, y interleaved) and the distance to each. */
+interface WalkPath { pts: Float32Array; cum: Float32Array }
+/** Anything the crowd thins: a walker, a boat, a car. */
+interface Lively { x: number; y: number; col: number[]; draw?: number; dem?: number; kind?: string; on?: boolean }
+type LiveCar = Car & Lively;
 interface Range { buf: string; start: number; count: number; mesh?: THREE.Mesh; base?: Float32Array }
 interface Deed { ranges: Range[]; height: number; ring: P2[] | null; inst: { mesh: string; i: number }[] }
 /**
@@ -1663,6 +1702,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     for (const k of this.quality === "high" ? FAR_PROPS : FAR_PROPS_LOW) { const m = this.inst.get(k); if (m) m.visible = !far; }
     const beds = this.inst.get("flowerbed");
     if (beds) beds.visible = this.month >= 3 && this.month <= 9 && !(far && this.quality !== "high");
+    // the terraces go out from spring to autumn, and only when you are close
+    const cafe = this.inst.get("cafe");
+    if (cafe) cafe.visible = this.month >= 3 && this.month <= 9 && !far;
     this.renderer.resetState();
     if ((this.fleets.length || this.cranes) && !this.paused && typeof document !== "undefined" && !document.hidden) {
       const now = performance.now();
@@ -2912,6 +2954,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         this.putInst("awning", x, y, 0, 1, r, bbl, tr.awn, sz);
         this.putInst("shopsign", x, y, 0, 1, r, bbl, tr.sign, sz);
         this.putInst("boards", x, y, 0, 1, r, bbl, undefined, sz);
+        // A CAFE TERRACE: where a cafe, diner or bakery fronts a footway wide
+        // enough to keep a walking path past the tables (4.5 m and more)
+        if ((tr === CAFE || tr === DINER || tr === BAKERY) && [2.4, 3.4, 4.5].every((o) => this.groundAt(x + nx * o, y + ny * o) === "walk"))
+          this.putInst("cafe", x, y, 0.15, 1, r, bbl, tr.awn);
         bayN++;
       }
     }
@@ -4980,6 +5026,65 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.4, vertexColors: true }) };
       case "sigpost": return { g: mergeColored([[cyl(0.08, 3.2, 0, 8), [0.2, 0.22, 0.22]], [box(0.3, 0.32, 0.9, 0.18, 0, 2.3), [0.1, 0.1, 0.08]]]),
         mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.4, vertexColors: true }) };
+      // an iron manhole cover in a worn ring, and a kerb drain's grate
+      case "manhole": return { g: mergeColored([[cyl(0.42, 0.012, 0, 16), [0.42, 0.41, 0.39]], [cyl(0.34, 0.02, 0, 16), [0.2, 0.19, 0.18]]]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.5, vertexColors: true }) };
+      case "drain": return { g: mergeColored([[box(1.0, 0.46, 0.012), [0.46, 0.45, 0.43]], [box(0.86, 0.34, 0.02), [0.1, 0.1, 0.1]],
+        ...[-0.3, -0.15, 0, 0.15, 0.3].map((x) => [box(0.05, 0.34, 0.026, x), [0.3, 0.29, 0.28]] as [THREE.BufferGeometry, number[]])]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.45, vertexColors: true }) };
+      // a street tree's pit: dark mulch in a granite-edged square, flush with the flags
+      case "treepit": return { g: mergeColored([[box(1.5, 1.5, 0.012), [0.62, 0.6, 0.56]], [box(1.3, 1.3, 0.02), [0.2, 0.15, 0.11]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, vertexColors: true }) };
+      // two cafe tables out on the footway, two chairs each, under umbrellas
+      // in the house colour; local -y is out from the shopfront
+      case "cafe": {
+        const parts: [THREE.BufferGeometry, number[]][] = [];
+        const B = (w: number, d: number, h: number, x: number, y: number, z: number, c: number[]) => parts.push([new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2), c]);
+        const WOOD = [0.18, 0.15, 0.13], METAL = [0.12, 0.12, 0.13], CANVAS = [1, 1, 1];
+        for (const tx of [-1.25, 1.25]) {
+          const ty = -2.35;
+          B(0.75, 0.75, 0.04, tx, ty, 0.72, WOOD);
+          B(0.06, 0.06, 0.72, tx, ty, 0, METAL);
+          for (const cx of [-0.62, 0.62]) { B(0.42, 0.42, 0.04, tx + cx, ty, 0.44, METAL); B(0.04, 0.42, 0.42, tx + cx * 1.38, ty, 0.46, METAL); }
+          B(0.04, 0.04, 2.1, tx, ty, 0.76, METAL);
+          parts.push([new THREE.ConeGeometry(1.15, 0.45, 8).rotateX(Math.PI / 2).translate(tx, ty, 2.55), CANVAS]);
+        }
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }), colored: true };
+      }
+      // a row of three Sheffield hoops with two bikes locked to them, across the footway
+      case "bikerack": {
+        const parts: [THREE.BufferGeometry, number[]][] = [];
+        const STEEL = [0.32, 0.33, 0.35], TYRE2 = [0.06, 0.06, 0.07];
+        for (const x of [-0.9, 0, 0.9]) {
+          parts.push([box(0.05, 0.05, 0.8, x, -0.3, 0), STEEL], [box(0.05, 0.05, 0.8, x, 0.3, 0), STEEL], [box(0.05, 0.65, 0.05, x, 0, 0.78), STEEL]);
+        }
+        for (const [x, c] of [[-0.45, [0.62, 0.12, 0.1]], [0.45, [0.14, 0.28, 0.5]]] as [number, number[]][]) {
+          for (const y of [-0.55, 0.55]) parts.push([new THREE.TorusGeometry(0.33, 0.035, 5, 12).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).translate(x, y, 0.35), TYRE2]);
+          parts.push([box(0.05, 1.0, 0.05, x, 0, 0.62), c], [box(0.05, 0.05, 0.5, x, -0.15, 0.35), c], [box(0.22, 0.08, 0.05, x, -0.3, 0.9), [0.1, 0.1, 0.1]]);
+        }
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3, vertexColors: true }) };
+      }
+      // a utility trench in the parking lane: spoil and dark earth in a sawn
+      // edge of fresh asphalt; traffic cones; a striped barrier on two feet
+      case "roadpatch": return { g: mergeColored([[box(9.2, 2.3, 0.012), [0.22, 0.22, 0.23]], [box(7.6, 1.5, 0.02), [0.3, 0.22, 0.16]], [box(2.2, 1.0, 0.25, -1.8, 0.2, 0), [0.42, 0.34, 0.26]], [box(0.8, 0.6, 0.35, 2.4, -0.1, 0), [0.5, 0.48, 0.44]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, vertexColors: true }) };
+      case "cone": return { g: mergeColored([[box(0.38, 0.38, 0.04), [0.08, 0.08, 0.08]], [new THREE.ConeGeometry(0.15, 0.68, 10).rotateX(Math.PI / 2).translate(0, 0, 0.38), [0.98, 0.38, 0.06]], [new THREE.CylinderGeometry(0.085, 0.105, 0.1, 10).rotateX(Math.PI / 2).translate(0, 0, 0.42), [0.95, 0.95, 0.93]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, vertexColors: true }) };
+      case "barrier": {
+        const parts: [THREE.BufferGeometry, number[]][] = [[box(0.08, 0.5, 0.06, -1.1, 0, 0), [0.1, 0.1, 0.1]], [box(0.08, 0.5, 0.06, 1.1, 0, 0), [0.1, 0.1, 0.1]], [box(0.06, 0.06, 1.0, -1.1, 0, 0), [0.9, 0.9, 0.88]], [box(0.06, 0.06, 1.0, 1.1, 0, 0), [0.9, 0.9, 0.88]]];
+        for (let k = 0; k < 6; k++) parts.push([box(0.4, 0.06, 0.28, -1.0 + k * 0.4, 0, 0.62), k % 2 ? [0.95, 0.95, 0.93] : [0.85, 0.12, 0.1]]);
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, vertexColors: true }) };
+      }
+      // tactile paving: a buff pad of blister bumps, flush with the flags
+      case "tactile": {
+        const parts: [THREE.BufferGeometry, number[]][] = [[box(0.8, 2.4, 0.012), [0.86, 0.72, 0.4]]];
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 8; j++) parts.push([box(0.12, 0.12, 0.02, -0.26 + i * 0.26, -1.05 + j * 0.3, 0.012), [0.9, 0.77, 0.45]]);
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, vertexColors: true }) };
+      }
+      // a street-name sign: a grey post and two green blades at right angles
+      case "streetsign": return { g: mergeColored([[cyl(0.04, 2.9, 0, 8), [0.35, 0.36, 0.37]], [box(0.9, 0.03, 0.2, 0.3, 0, 2.62), [0.1, 0.38, 0.2]], [box(0.03, 0.9, 0.2, 0, 0.3, 2.38), [0.1, 0.38, 0.2]], [box(0.7, 0.035, 0.05, 0.3, 0, 2.7), [0.92, 0.92, 0.9]], [box(0.035, 0.7, 0.05, 0, 0.3, 2.46), [0.92, 0.92, 0.9]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.3, vertexColors: true }) };
+      case "meter": return { g: mergeColored([[cyl(0.035, 1.1, 0, 6), [0.3, 0.31, 0.33]], [box(0.2, 0.16, 0.32, 0, 0, 1.08), [0.16, 0.2, 0.26]], [box(0.14, 0.17, 0.1, 0, 0, 1.28), [0.7, 0.75, 0.75]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.4, vertexColors: true }) };
       case "hydrant": return { g: merge([cyl(0.14, 0.55, 0, 10), cyl(0.18, 0.1, 0.5, 10), cyl(0.1, 0.12, 0.6, 8), box(0.4, 0.09, 0.09, 0, 0, 0.36)]), mat: new THREE.MeshStandardMaterial({ color: 0xa8392c, roughness: 0.55 }) };
       case "bin": return { g: merge([cyl(0.28, 0.95, 0, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0x2e4034, roughness: 0.7, metalness: 0.2 }) };
       case "shelter": return { g: mergeColored([[box(3.8, 1.5, 0.08, 0, 0, 2.45), [0.3, 0.32, 0.34]], [box(3.8, 0.04, 2.2, 0, 0.7, 0.25), [0.55, 0.65, 0.7]],
@@ -5182,6 +5287,22 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       case "van": return { g: vehicle("van"), mat: this.vehicleMat(), colored: true };
       case "taxi": return { g: vehicle("taxi"), mat: this.vehicleMat(), colored: true };
       case "bus": return { g: vehicle("bus"), mat: this.vehicleMat(), colored: true };
+      case "truck": return { g: vehicle("truck"), mat: this.vehicleMat(), colored: true };
+      // A CYCLIST: wheels, frame, a rider in the instance colour, helmeted
+      case "bike": {
+        const DARK = [0.08, 0.08, 0.09], SKIN = [0.62, 0.48, 0.4], LEG = [0.25, 0.26, 0.3];
+        const b = (w: number, d: number, h: number, x: number, y: number, z: number): THREE.BufferGeometry => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
+        const wheel = (x: number) => new THREE.TorusGeometry(0.33, 0.035, 5, 14).rotateX(Math.PI / 2).translate(x, 0, 0.35);
+        return { g: mergeColored([
+          [wheel(0.55), DARK], [wheel(-0.55), DARK],
+          [b(1.0, 0.05, 0.05, 0, 0, 0.62).rotateY(-0.12), DARK], [b(0.05, 0.05, 0.5, -0.2, 0, 0.35), DARK], [b(0.05, 0.05, 0.55, 0.45, 0, 0.4), DARK],
+          [b(0.14, 0.12, 0.62, -0.18, -0.1, 0.55), LEG], [b(0.14, 0.12, 0.62, -0.08, 0.1, 0.45), LEG],
+          [b(0.42, 0.36, 0.55, -0.05, 0, 1.12).rotateY(0.45).translate(0.25, 0, -0.05), PAINT],
+          [b(0.4, 0.08, 0.08, 0.3, -0.18, 1.2), PAINT], [b(0.4, 0.08, 0.08, 0.3, 0.18, 1.2), PAINT],
+          [new THREE.SphereGeometry(0.11, 8, 6).translate(0.38, 0, 1.58), SKIN],
+          [new THREE.SphereGeometry(0.13, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.5).translate(0.38, 0, 1.6), DARK],
+        ]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, vertexColors: true }), colored: true };
+      }
       // A PERSON: legs, coat, arms, head with hair — coat in the instance
       // colour, trousers and hair darker. 1.75 m.
       case "person": return { g: person(), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }), colored: true };
@@ -5357,6 +5478,35 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         kerb.quad([a[0], a[1], -0.02], [b[0], b[1], -0.02], [b[0], b[1], H + 0.005], [a[0], a[1], H + 0.005], n, [[0, 0], [L, 0], [L, 1], [0, 1]], white);
       }
     }
+    // A PARK'S OWN PAVEMENT. The lawn ran straight to the asphalt; a city
+    // park is ringed by a footway like any other block. A 3 m band of the
+    // same flags inside every park edge that fronts a street, with a kerb,
+    // stopping short of the hedge line the park already plants 3.6 m in.
+    for (const ring of this.parkRings()) {
+      await this.breathe();
+      const inner = insetRing(ring, PARK_WALK);
+      if (!inner) continue;
+      const n = ring.length, front: boolean[] = [];
+      for (let i = 0; i < n; i++) {
+        const a = ring[i], b = ring[(i + 1) % n];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 0.5) { front.push(false); continue; }
+        const ox = (b[1] - a[1]) / L, oy = -(b[0] - a[0]) / L;   // outward of a counter-clockwise ring
+        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+        front.push(this.groundAt(mx + ox * 1.5, my + oy * 1.5) === "road");
+      }
+      this.parkFront.push({ ring, front });
+      for (let i = 0; i < n; i++) {
+        if (!front[i]) continue;
+        const j = (i + 1) % n, a = ring[i], b = ring[j], ia = inner[i], ib = inner[j];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        for (const v of [[a, 0], [b, L], [ib, L], [a, 0], [ib, L], [ia, 0]] as [P2, number][]) {
+          pave.pos.push(v[0][0], v[0][1], H); pave.nrm.push(0, 0, 1); pave.uv.push(v[0][0] / 1.5, v[0][1] / 1.5); pave.col.push(1, 1, 1);
+        }
+        const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L;
+        kerb.quad([a[0], a[1], -0.02], [b[0], b[1], -0.02], [b[0], b[1], H + 0.005], [a[0], a[1], H + 0.005], [nx, ny, 0], [[0, 0], [L, 0], [L, 1], [0, 1]], white);
+      }
+    }
     if (pave.count) {
       this.paveMat = new THREE.MeshStandardMaterial({ map: this.pavingTex(), roughness: 0.86, envMapIntensity: 0.25 });
       const m = new THREE.Mesh(pave.geometry(), this.paveMat);
@@ -5371,7 +5521,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // zebras: bars 0.5 m wide every 1.1 m along the crossing, each 3 m long
     // in the direction the traffic runs
     const bars: { x: number; y: number; r: number }[] = [];
-    for (const line of c.zebras ?? []) {
+    for (const line of this.zebraLines()) {
       await this.breathe();
       if (line.length < 2) continue;
       const A = this.project(line[0]), B = this.project(line[line.length - 1]);
@@ -5386,6 +5536,18 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         const x = P[0] + ux * d * 1.1, y = P[1] + uy * d * 1.1;
         if (this.groundAt(x, y) !== "walk") continue;
         this.putInst(arm ? "signal" : "sigpost", x, y, 0.15, 1, d < 0 ? r : r + Math.PI);
+      }
+      // THE DROPPED KERB at each end: a pad of buff tactile paving across
+      // the crossing's width, and at one corner in two a street-name sign
+      for (const [P, d] of [[A, -1], [B, 1]] as [P2, number][]) {
+        const x = P[0] + ux * d * 0.75, y = P[1] + uy * d * 0.75;
+        if (this.groundAt(x, y) !== "walk") continue;
+        this.putInst("tactile", x, y, 0.15, 1, r);
+        const h = hash01(Math.round(P[0] * 7) ^ Math.round(P[1] * 13), this.seed + 11);
+        if (h < 0.5) {
+          const sx = P[0] + ux * d * 1.4 - uy * 2.1, sy = P[1] + uy * d * 1.4 + ux * 2.1;
+          if (this.groundAt(sx, sy) === "walk" && this.clearOfBuildings(sx, sy, 0.6)) this.putInst("streetsign", sx, sy, 0.15, 1, r + (h < 0.25 ? 0 : Math.PI / 2));
+        }
       }
       for (let t = 0.45; t < L - 0.2; t += 1.1) bars.push({ x: A[0] + ux * t, y: A[1] + uy * t, r });
     }
@@ -5497,6 +5659,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       // the true middle of the carriageway, off the generator's line
       geo.push({ L, u, nr, cw, mid: [sg.a[0] + nr[0] * (hr - hl) / 2, sg.a[1] + nr[1] * (hr - hl) / 2] });
     }
+    // the same measured streets carry the moving traffic (buildTraffic)
+    this.netRaw = { segs, geo, nodes: [...nodes.values()] };
     // THE JUNCTION BOX. No paint inside a disc round every junction as wide
     // as the widest street crossing there (half its carriageway and a metre),
     // whichever line it belongs to: lines from an edge that runs past a
@@ -5581,6 +5745,26 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         const back = e === 0 ? t + 3 : t - 3;
         if (mouth(mid[0] + u[0] * t, mid[1] + u[1] * t) || mouth(mid[0] + u[0] * back, mid[1] + u[1] * back)) return;
         paint.quad(p(t - 0.25, lo), p(t + 0.25, lo), p(t + 0.25, hi), p(t - 0.25, hi), up, [[0, 0], [1, 0], [1, 1], [0, 1]], WHITE);
+        // LANE ARROWS on an avenue's approach, 7 m behind the bar: straight
+        // on in every lane, the inside lane turning left as well
+        if (cw < 15) return;
+        const nl = Math.max(1, Math.floor((half - 2.4) / 3.3));
+        const back2 = e === 0 ? 1 : -1;                    // away from the junction, along u
+        const fwd: P2 = [-u[0] * back2, -u[1] * back2];    // the way the traffic runs
+        const rgt: P2 = [nr[0] * sd, nr[1] * sd];
+        for (let k = 0; k < nl; k++) {
+          const c0 = p(t + back2 * 7.5, 1.65 + 3.3 * k);
+          if (!onRoad(c0[0], c0[1]) || inBox(c0[0], c0[1])) continue;
+          const at2 = (al: number, la: number) => [c0[0] + fwd[0] * al + rgt[0] * la, c0[1] + fwd[1] * al + rgt[1] * la, Z];
+          const shaft = (a0: number, a1: number) => paint.quad(at2(a0, -0.09), at2(a1, -0.09), at2(a1, 0.09), at2(a0, 0.09), up, [[0, 0], [1, 0], [1, 1], [0, 1]], WHITE);
+          shaft(-2.6, 1.1);
+          paint.tri(at2(1.1, -0.45), at2(2.6, 0), at2(1.1, 0.45), up, WHITE);
+          if (k === 0) {
+            // the left limb: off the shaft, out to the left, its own head
+            paint.quad(at2(-0.4, 0), at2(0.1, 0), at2(0.1, -1.0), at2(-0.4, -1.0), up, [[0, 0], [1, 0], [1, 1], [0, 1]], WHITE);
+            paint.tri(at2(0.35, -1.0), at2(-0.15, -1.75), at2(-0.65, -1.0), up, WHITE);
+          }
+        }
       });
     }
     if (!paint.count) return;
@@ -5662,6 +5846,53 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
 
   private cropMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
   private paveMat: THREE.MeshStandardMaterial | null = null;
+  private zebraKeep: [number, number][][] | null = null;
+  /**
+   * The crossings worth painting. At a skewed corner the generator can lay
+   * two zebras across each other, which paints a grid of bars no city has;
+   * of any two that cross, the shorter goes.
+   */
+  private zebraLines(): [number, number][][] {
+    if (this.zebraKeep) return this.zebraKeep;
+    const all = ((this.ctx as CityCtx).zebras ?? []).filter((z) => z.length >= 2);
+    const seg = all.map((z) => { const A = this.project(z[0]), B = this.project(z[z.length - 1]); return { A, B, L: Math.hypot(B[0] - A[0], B[1] - A[1]) }; });
+    const grid = new Map<string, number[]>();
+    seg.forEach((g, i) => { const k = `${Math.floor((g.A[0] + g.B[0]) / 80)},${Math.floor((g.A[1] + g.B[1]) / 80)}`; const l = grid.get(k); if (l) l.push(i); else grid.set(k, [i]); });
+    const cross = (p: P2, q: P2, r: P2, t: P2) => {
+      const o = (a: P2, b: P2, c: P2) => Math.sign((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+      return o(p, q, r) * o(p, q, t) < 0 && o(r, t, p) * o(r, t, q) < 0;
+    };
+    const drop = new Set<number>();
+    seg.forEach((g, i) => {
+      const gx = Math.floor((g.A[0] + g.B[0]) / 80), gy = Math.floor((g.A[1] + g.B[1]) / 80);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const j of grid.get(`${gx + a},${gy + b}`) ?? []) {
+        if (j <= i || drop.has(i) || drop.has(j)) continue;
+        const h = seg[j];
+        // the bars are 3 m long: two crossings at an angle whose centre
+        // lines come within 3 m of each other paint over one another
+        const par = Math.abs(((g.B[0] - g.A[0]) * (h.B[0] - h.A[0]) + (g.B[1] - g.A[1]) * (h.B[1] - h.A[1])) / ((g.L * h.L) || 1)) > 0.8;
+        if (cross(g.A, g.B, h.A, h.B) || (!par && segGap(g.A, g.B, h.A, h.B) < 3)) drop.add(g.L < h.L ? i : j);
+      }
+    });
+    this.zebraKeep = all.filter((_, i) => !drop.has(i));
+    return this.zebraKeep;
+  }
+  /** each park's ring (counter-clockwise, metres) and which of its edges front a street */
+  private parkFront: { ring: P2[]; front: boolean[] }[] = [];
+  /** The parks that get a street footway, projected and counter-clockwise. */
+  private parkRings(): P2[][] {
+    const out: P2[][] = [];
+    for (const pk of (this.ctx as { parks?: ({ ring: P2[]; flavour?: string } | P2[])[] }).parks ?? []) {
+      const ringLL = Array.isArray(pk) ? pk : pk.ring ?? [];
+      const fl = Array.isArray(pk) ? "park" : pk.flavour ?? "park";
+      if (fl === "cemetery" || fl === "battery" || fl === "market" || ringLL.length < 3) continue;
+      let r = ringLL.map((q) => this.project(q));
+      if (ringArea(r) < 0) r = r.slice().reverse();
+      if (Math.abs(ringArea(r)) < 900) continue;
+      out.push(r);
+    }
+    return out;
+  }
   private catcherMat = new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c2433 });
   private wetMat = new THREE.MeshStandardMaterial({ color: 0x1e2329, roughness: 0.12, metalness: 0, transparent: true, opacity: 0, depthWrite: false });
   private wetSheet: THREE.Mesh | null = null;
@@ -6012,6 +6243,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       let ring = sw.ring.map((q) => this.project(q));
       if (ring.length < 3) continue;
       if (ringArea(ring) < 0) ring = ring.slice().reverse();   // counter-clockwise: the band is on the left
+      const wEdge: number[] = new Array(ring.length).fill(-1);
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], b = ring[(i + 1) % ring.length];
         const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -6023,19 +6255,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
         let w = 0;
         while (w < 8 && this.groundAt(mx + ix * (w + 0.25), my + iy * (w + 0.25)) === "walk") w += 0.5;
+        wEdge[i] = w;
         if (w < 1) continue;                       // a sliver, or the band is on the other side
         const at = (t: number, off: number): P2 => [a[0] + ux * t + ix * off, a[1] + uy * t + iy * off];
-        // people, a few per block face, at a walking pace along the middle of the footway
-        if (w >= 1.5) {
-          // a living street (SKYLINE_LOOK_PLAN round 12): a walker every ~12 m
-          // of footway, thinned by the street's demand and the hour (applyCrowd)
-          const n = Math.max(1, Math.round(L / 12));
-          for (let k = 0; k < n; k++) {
-            const fwd = rnd() < 0.5;
-            const [sx, sy] = at(fwd ? 0 : L, w * (0.3 + rnd() * 0.4));
-            this.walkers.push({ x: sx, y: sy, ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 1.1 + rnd() * 0.5, col: COAT[(rnd() * COAT.length) | 0], draw: rnd() });
-          }
-        }
         // street trees in the kerb strip, every 8-9 m (a city that plants
         // its streets: SKYLINE_LOOK_PLAN step 3); a narrow footway takes a
         // smaller tree, one under a metre and a half none
@@ -6048,6 +6270,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
             const sz = big * (0.7 + rnd() * 0.42);
             const col = rnd() < 0.33;
             if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz)) continue;
+            this.putInst("treepit", x, y, 0.15, 1, rot);
             this.putInst("trunk", x, y, 0.15, sz, rnd() * 6.28);
             this.putInst("crown", x, y, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
           }
@@ -6072,21 +6295,38 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const [x, y] = at(t, 0.45);
           if (this.groundAt(x, y) === "walk") this.putInst("lamp", x, y, 0.15, 1, rot + Math.PI / 2);
         }
-        // moving traffic in the lane outside the parked row, kerb on its right
-        // (the footway is left of this edge, so the kerb lane runs against it)
-        if (L > 40) {
-          const n = Math.max(1, Math.round(L / 24));
-          for (let k = 0; k < n; k++) {
-            const [sx, sy] = at(L, -3.4), [ex, ey] = at(0, -3.4);
-            if (![0, 0.25, 0.5, 0.75, 1].every((f) => this.groundAt(sx + (ex - sx) * f, sy + (ey - sy) * f) === "road")) break;
-            const vk = rnd();
-            const kind = L > 160 && vk < 0.04 ? "bus" : vk < 0.5 ? "car" : vk < 0.78 ? "suv" : vk < 0.88 ? "van" : "taxi";
-            this.movers.push({ x: sx, y: sy, ux: -ux, uy: -uy, len: L, ph: rnd() * L, spd: (kind === "bus" ? 4.5 : 6) + rnd() * 5, col: kind === "taxi" ? TAXI : kind === "bus" ? BUS : CAR[(rnd() * CAR.length) | 0], draw: rnd(), kind });
+        // STREET FURNITURE at the back of a wide, busy footway: benches facing
+        // the street, planters, a bike rack with a couple of bikes locked up
+        if (w >= 3.5 && L > 30 && this.demandAt(mx, my) > 0.4) {
+          for (let t = 14 + rnd() * 6; t < L - 12; t += 20 + rnd() * 14) {
+            const [x, y] = at(t, w - 0.85);
+            if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, 1.0)) continue;
+            const k = rnd();
+            this.putInst(k < 0.45 ? "bench" : k < 0.8 ? "planter" : "bikerack", x, y, 0.15, k >= 0.45 && k < 0.8 ? 0.8 : 1, rot);
+          }
+        }
+        // ROAD WORKS, now and then: a trench in the parking lane fenced with
+        // cones and a barrier, a man in hi-vis standing over it
+        let works = -100;
+        if (L > 45 && rnd() < 0.05 && this.demandAt(mx, my) > 0.25) {
+          const t0 = L / 2, [px, py] = at(t0, -1.4);
+          if (this.footprintOn(px, py, rot, 2.4, 9.5, ["road"]) && this.groundAt(...at(t0, -5.2)) === "road") {
+            works = t0;
+            this.putInst("roadpatch", px, py, 0.045, 1, rot);
+            for (const [dt, off] of [[-5, -0.35], [5, -0.35], [-5, -2.55], [5, -2.55], [-2.5, -2.7], [2.5, -2.7]]) {
+              const [cx, cy] = at(t0 + dt, off);
+              this.putInst("cone", cx, cy, 0.05, 1, rnd() * 6.28);
+            }
+            const [bx, by] = at(t0, -2.75);
+            this.putInst("barrier", bx, by, 0.05, 1, rot);
+            const [wx, wy] = at(t0 + 1.5, -1.0);
+            this.putInst("person", wx, wy, 0.05, PERSON_S, rot + Math.PI / 2 + rnd(), "", [0.98, 0.55, 0.08]);
           }
         }
         // KERBSIDE PARKING where the demand is, wholly on the carriageway, and
         // only where a running lane is left beside it
         for (let t = 9; t < L - 9; t += 6.5) {
+          if (Math.abs(t - works) < 8) continue;
           const [x, y] = at(t, -1.25);
           if (rnd() >= 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) continue;
           const [lx, ly] = at(t, -5.2);
@@ -6094,8 +6334,155 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const vk = rnd(), dt = this.demandAt(x, y);
           const kind = vk < 0.52 ? "car" : vk < 0.82 ? "suv" : vk < 0.93 ? "van" : dt > 0.55 ? "taxi" : "car";
           this.putInst(kind, x, y, 0.05, 1, rot + (rnd() < 0.5 ? 0 : Math.PI), "", kind === "taxi" ? TAXI : CAR[(rnd() * CAR.length) | 0]);
+          // a meter to pay at, where parking is worth charging for
+          if (dt > 0.5) { const [px, py] = at(t + 2.2, 0.35); if (this.groundAt(px, py) === "walk") this.putInst("meter", px, py, 0.15, 1, rot); }
         }
       }
+      this.ringWalkers(ring, wEdge, rnd, COAT);
+    }
+    // and round the parks, on their street footway
+    for (const { ring, front } of this.parkFront) {
+      if (front.filter(Boolean).length < front.length * 0.7) continue;
+      this.ringWalkers(ring, front.map((f) => (f ? PARK_WALK : -1)), rnd, COAT, "park");
+    }
+  }
+
+  /**
+   * THE CARRIAGEWAY'S WEAR. Asphalt is not one flat grey: every lane carries
+   * two polished, darker wheel paths, and an oily stripe down its middle
+   * where engines stand waiting at the light — darkest in the last 25 m
+   * before the stop line. Iron manhole covers sit on the crown of the road
+   * every forty-odd metres, and a kerb drain grates the gutter just short of
+   * every corner. Laid from the same lanes the traffic drives (traffic.ts).
+   */
+  private dressCarriageway(tr: Traffic, rnd: () => number) {
+    const wear = new Buf(), polish = new Buf();
+    const Z = 0.042;
+    for (const sg of tr.segs) {
+      const at = (d: number, off: number, dir: 0 | 1): number[] => {
+        const along = dir === 0 ? d : sg.L - d, sgn = dir === 0 ? 1 : -1;
+        return [sg.a[0] + sg.u[0] * along + sg.nr[0] * off * sgn, sg.a[1] + sg.u[1] * along + sg.nr[1] * off * sgn, Z];
+      };
+      // a strip from d0 to d1 at offset off, width w, the shade's opacity a:
+      // feathered to nothing across its edges and over a couple of metres at
+      // each end, so it reads as wear and not as paint
+      const strip = (dir: 0 | 1, d0: number, d1: number, off: number, w: number, a: number, into = wear) => {
+        if (d1 - d0 < 1) return;
+        const fe = Math.min(2.5, (d1 - d0) / 3);
+        const ds = [d0, d0 + fe, d1 - fe, d1], os = [off + w / 2, off + w / 4, off - w / 4, off - w / 2];
+        const al = (i: number, j: number) => (i === 0 || i === 3 || j === 0 || j === 3 ? 0 : a);
+        const v = (i: number, j: number) => {
+          const p = at(ds[i], os[j], dir);
+          into.pos.push(p[0], p[1], p[2]); into.nrm.push(0, 0, 1); into.uv.push(0, 0); into.col.push(al(i, j), 0, 0);
+        };
+        // wound counter-clockwise from above (the right of travel is clockwise)
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { v(i, j); v(i + 1, j); v(i + 1, j + 1); v(i, j); v(i + 1, j + 1); v(i, j + 1); }
+      };
+      for (const dir of [0, 1] as const) {
+        const s0 = sg.s0[dir], s1 = sg.s1[dir];
+        for (const off of sg.lanes[dir]) {
+          // the wheel paths, in pieces so the polish is patchy
+          for (let d = s0; d < s1 - 2; d += 7) {
+            const e = Math.min(s1, d + 4 + rnd() * 3);
+            const a = 0.05 + rnd() * 0.06;
+            strip(dir, d, e, off - 0.78, 0.8, a, polish);
+            strip(dir, d, e, off + 0.78, 0.8, a, polish);
+          }
+          // the oil line, heaviest where the queue stands
+          strip(dir, s0, s1 - 18, off, 1.0, 0.1);
+          strip(dir, Math.max(s0, s1 - 30), s1 - 0.5, off, 1.2, 0.2);
+        }
+        // a kerb drain each side, a few metres short of the corner
+        if (sg.lanes[dir].length && s1 - s0 > 20) {
+          const p = at(s1 - 4.5, sg.half - 0.3, dir);
+          if (this.groundAt(p[0], p[1]) === "road") this.putInst("drain", p[0], p[1], 0.03, 1, Math.atan2(sg.u[1], sg.u[0]));
+        }
+      }
+      // manholes on the crown of the road, between the lanes
+      const span0 = Math.max(sg.s0[0], 4), span1 = Math.min(sg.s1[0], sg.L - 4);
+      for (let d = span0 + 8 + rnd() * 20; d < span1 - 6; d += 32 + rnd() * 30) {
+        const off = sg.lanes[0].length && sg.lanes[1].length ? (rnd() < 0.5 ? 0 : sg.lanes[0][0]) : (rnd() - 0.5) * 1.6;
+        const p = at(d, off, 0);
+        if (this.groundAt(p[0], p[1]) === "road") this.putInst("manhole", p[0], p[1], 0.03, 1, rnd() * 6.28);
+      }
+    }
+    if (wear.count) {
+      const m = new THREE.Mesh(wear.geometry(), this.contactMat);
+      m.renderOrder = -1; m.frustumCulled = false;
+      this.scene.add(m);
+    }
+    // the polished wheel paths are paler than the asphalt either side
+    if (polish.count) {
+      const mat = this.contactMat.clone();
+      mat.color.set(0xb4b1aa);
+      mat.onBeforeCompile = this.contactMat.onBeforeCompile;
+      mat.customProgramCacheKey = this.contactMat.customProgramCacheKey;
+      const m = new THREE.Mesh(polish.geometry(), mat);
+      m.renderOrder = -1; m.frustumCulled = false;
+      this.scene.add(m);
+    }
+  }
+
+  /**
+   * PEOPLE WALK ROUND THE BLOCK. A walker used to pace one block face and
+   * jump back to its start; now each walks the whole footway ring — a closed
+   * loop, so nobody pops in or out at a corner — on one of three paths
+   * across the pavement (kerb side, middle, shop side), either way round.
+   * About one person every 11 m of footway before the crowd thins them.
+   */
+  private ringWalkers(ring: P2[], wEdge: number[], rnd: () => number, COAT: number[][], ground: "walk" | "park" = "walk") {
+    const known = wEdge.filter((w) => w >= 0);
+    if (!known.length) return;
+    const wMed = known.slice().sort((a, b) => a - b)[known.length >> 1];
+    if (wMed < 1.5) return;
+    const n = ring.length;
+    let per0 = 0;
+    for (let i = 0; i < n; i++) per0 += Math.hypot(ring[(i + 1) % n][0] - ring[i][0], ring[(i + 1) % n][1] - ring[i][1]);
+    if (per0 < 30) return;
+    const paths: WalkPath[] = [];
+    for (const f of [0.28, 0.5, 0.72]) {
+      const off = Math.min(wMed * f, 4.5);
+      // the ring pushed inward by `off`, mitred at each corner (capped)
+      const pts: number[] = [];
+      for (let i = 0; i < n; i++) {
+        const p = ring[(i + n - 1) % n], c = ring[i], q = ring[(i + 1) % n];
+        const l1 = Math.hypot(c[0] - p[0], c[1] - p[1]) || 1, l2 = Math.hypot(q[0] - c[0], q[1] - c[1]) || 1;
+        const n1x = -(c[1] - p[1]) / l1, n1y = (c[0] - p[0]) / l1, n2x = -(q[1] - c[1]) / l2, n2y = (q[0] - c[0]) / l2;
+        let mx = n1x + n2x, my = n1y + n2y;
+        const ml = Math.hypot(mx, my);
+        if (ml < 1e-3) { mx = n2x; my = n2y; } else { mx /= ml; my /= ml; }
+        const k = Math.min(2.5, 1 / Math.max(0.4, mx * n2x + my * n2y));
+        pts.push(c[0] + mx * off * k, c[1] + my * off * k);
+      }
+      // keep the path only if it stays on the footway nearly all the way
+      let ok = 0, tot = 0;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        for (const t of [0.25, 0.5, 0.75]) {
+          tot++;
+          if (this.groundAt(pts[i * 2] + (pts[j * 2] - pts[i * 2]) * t, pts[i * 2 + 1] + (pts[j * 2 + 1] - pts[i * 2 + 1]) * t) === ground) ok++;
+        }
+      }
+      if (ok < tot * 0.85) continue;
+      const cum = new Float32Array(n + 1);
+      for (let i = 0; i < n; i++) { const j = (i + 1) % n; cum[i + 1] = cum[i] + Math.hypot(pts[j * 2] - pts[i * 2], pts[j * 2 + 1] - pts[i * 2 + 1]); }
+      paths.push({ pts: new Float32Array(pts), cum });
+    }
+    if (!paths.length) return;
+    // busier where the street is wanted: one every ~5 m of footway downtown,
+    // one every ~13 m on a quiet street (the crowd then thins with the hour)
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x / n; cy += y / n; }
+    const dem = this.demandAt(cx, cy);
+    const count = Math.max(1, Math.round(per0 / (13 - 8 * Math.min(1, dem * 1.3))));
+    for (let k = 0; k < count; k++) {
+      const path = paths[(rnd() * paths.length) | 0];
+      const per = path.cum[path.cum.length - 1];
+      this.walkers.push({
+        x: path.pts[0], y: path.pts[1], ux: 0, uy: 0, len: per, ph: rnd() * per,
+        spd: (1.05 + rnd() * 0.45) * (rnd() < 0.5 ? 1 : -1),
+        col: COAT[(rnd() * COAT.length) | 0], draw: rnd(), path,
+      });
     }
   }
 
@@ -6106,8 +6493,37 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const CAR = [[0.9, 0.9, 0.89], [0.62, 0.64, 0.67], [0.16, 0.18, 0.21], [0.16, 0.26, 0.45], [0.58, 0.16, 0.14], [0.36, 0.40, 0.34], [0.78, 0.72, 0.56], [0.75, 0.76, 0.78]];
     // a street tree is a deeper, cleaner green than the grey-olive it was
     const leafCol = () => [0.24 + rnd() * 0.08, 0.42 + rnd() * 0.1, 0.13 + rnd() * 0.05];
-    const COAT = [[0.30, 0.32, 0.38], [0.62, 0.58, 0.52], [0.20, 0.24, 0.30], [0.52, 0.28, 0.24], [0.86, 0.84, 0.80], [0.28, 0.36, 0.32], [0.44, 0.40, 0.46], [0.70, 0.62, 0.44]];
+    const COAT = CROWD_COAT;
     await this.dressFootways(rnd, leafCol, CAR, COAT);
+    // THE MOVING TRAFFIC drives the measured street network (traffic.ts):
+    // about one car every 30 m of lane, a bus now and then on the long runs
+    if (this.netRaw) {
+      const tr = new Traffic(this.netRaw, (x, y) => this.groundAt(x, y) === "road", rnd);
+      tr.populate(40, rnd, (c) => {
+        const vk = rnd(), long = tr.segs[c.seg].L > 160;
+        const kind = long && vk < 0.04 ? "bus" : vk < 0.45 ? "car" : vk < 0.7 ? "suv" : vk < 0.79 ? "van" : vk < 0.84 ? "truck" : vk < 0.95 ? "taxi" : "bike";
+        const lc = c as LiveCar;
+        lc.kind = kind;
+        lc.col = kind === "taxi" ? TAXI : kind === "bus" ? BUS : kind === "bike" ? CROWD_COAT[(rnd() * CROWD_COAT.length) | 0] : CAR[(rnd() * CAR.length) | 0];
+        c.bus = kind === "bus";
+        lc.draw = rnd();
+        // 25-40 km/h in town; the bus a little under
+        c.vmax = kind === "bike" ? 4.2 + rnd() * 1.5 : (kind === "bus" || kind === "truck" ? 7 : 8) + rnd() * 3;
+        c.len = kind === "bus" ? 12 : kind === "truck" ? 7.4 : kind === "van" ? 5.2 : kind === "bike" ? 2 : 4.8;
+      });
+      this.traffic = tr;
+      this.carList = tr.cars as LiveCar[];
+      this.dressCarriageway(tr, rnd);
+      // PEOPLE CROSSING at the zebras, in step with the junction's lights:
+      // a few more where the street is busy
+      for (const z of this.zebraLines()) {
+        if (z.length < 2) continue;
+        const A = this.project(z[0]), B = this.project(z[z.length - 1]);
+        const dem = this.demandAt((A[0] + B[0]) / 2, (A[1] + B[1]) / 2);
+        tr.addCrossing(A, B, Math.floor(rnd() * (1 + 5 * dem)), rnd);
+      }
+      for (const c of tr.crossers) { const l = c as unknown as Lively; l.col = COAT[(rnd() * COAT.length) | 0]; l.draw = rnd(); }
+    }
     // what the park walks converge on: a column in the big parks, a fountain
     // in the squares
     for (const pk of (this.ctx as { parks?: { ring: P2[]; flavour?: string }[] }).parks ?? []) {
@@ -6264,16 +6680,40 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       }
     }
     this.flushInst();
-    const fleet = (kind: string, list: Mover[], z: number) => {
+    const fleet = (kind: string, list: Lively[], z: number, car = false) => {
       if (!list.length) return;
       const { g, mat } = this.geomFor(kind);
       const mesh = new THREE.InstancedMesh(g, mat, list.length);
       list.forEach((m, i) => mesh.setColorAt(i, new THREE.Color(m.col[0], m.col[1], m.col[2])));
       mesh.receiveShadow = true; mesh.frustumCulled = false;
-      this.scene.add(mesh); this.fleets.push({ mesh, list, z });
+      this.scene.add(mesh); this.fleets.push({ mesh, list, z, car });
     };
-    for (const kind of ["car", "suv", "van", "taxi", "bus"]) fleet(kind, this.movers.filter((m) => (m.kind ?? "car") === kind), 0.05);
+    for (const kind of ["car", "suv", "van", "truck", "taxi", "bus", "bike"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
     fleet("person", this.walkers, 0.15);
+    // A WALKING GAIT for the people on the footways: legs swing from the hip
+    // and arms from the shoulder, opposite, two steps a second, each person
+    // on their own phase (from where the instance stands). Done in the
+    // vertex shader, so it costs nothing per frame but one uniform.
+    const wf = this.fleets.find((f) => f.list === this.walkers);
+    if (wf) {
+      const mat = wf.mesh.material as THREE.MeshStandardMaterial;
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uGait = this.gait;
+        sh.vertexShader = sh.vertexShader
+          .replace("#include <common>", "#include <common>\nuniform float uGait;")
+          .replace("#include <begin_vertex>", `#include <begin_vertex>
+#ifdef USE_INSTANCING
+{
+  float ph = uGait * 6.2 + fract(sin(dot(instanceMatrix[3].xy, vec2(12.9898, 78.233))) * 43758.5453) * 6.2832;
+  float sw = sin(ph), side = sign(position.y);
+  if (abs(position.y) < 0.2 && position.z < 0.9) transformed.x += (0.9 - position.z) * sw * side * 0.42;
+  else if (abs(position.y) > 0.2 && position.z > 0.8 && position.z < 1.5) transformed.x -= (1.46 - position.z) * sw * side * 0.45;
+}
+#endif`);
+      };
+      mat.customProgramCacheKey = () => "bw-gait";
+    }
+    if (this.traffic) fleet("person", this.traffic.crossers as unknown as Lively[], 0.05, true);
     fleet("ferry", this.boats, 0.05);
     this.applyCrowd();
     this.applyMonth();
@@ -6282,9 +6722,49 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   /** Move every car and walker to where it is at time t (seconds): a patrol along its own block face that wraps. */
   private stepTraffic(t: number) {
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+    const big = new THREE.Vector3(PERSON_S, PERSON_S, PERSON_S);
+    this.gait.value = t % 3600;
+    // the cars drive on simulated time: a frame's step, capped so a tab left
+    // in the background does not throw them a minute down the road
+    if (this.traffic) {
+      const dt = this.lastStep ? Math.min(0.1, Math.max(0, t - this.lastStep)) : 0;
+      this.lastStep = t;
+      this.traffic.step(dt, (c) => (c as LiveCar).on !== false);
+    }
     for (const f of this.fleets) {
-      f.list.forEach((m, i) => {
+      if (f.car) {
+        const peds = f.list === (this.traffic?.crossers as unknown);
+        const sc = peds ? big : one;
+        f.list.forEach((m, i) => {
+          if (i >= f.mesh.count) return;
+          const c = m as LiveCar;
+          // a pedestrian waits up on the kerb and crosses down on the road
+          p.set(c.x, c.y, peds && !(m as unknown as Crosser).walking ? 0.15 : f.z);
+          q.setFromEuler(e.set(0, 0, c.h));
+          f.mesh.setMatrixAt(i, m4.compose(p, q, sc));
+        });
+        f.mesh.instanceMatrix.needsUpdate = true;
+        continue;
+      }
+      (f.list as Mover[]).forEach((m, i) => {
         if (i >= f.mesh.count) return;
+        if (m.path) {
+          // round the block: find the leg by the distance walked
+          const { pts, cum } = m.path;
+          const per = m.len;
+          const d = (((m.ph + t * m.spd) % per) + per) % per;
+          let lo = 0, hi = cum.length - 2;
+          while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (cum[mid] <= d) lo = mid; else hi = mid - 1; }
+          const j = (lo + 1) % (cum.length - 1);
+          const seg = cum[lo + 1] - cum[lo] || 1, u = (d - cum[lo]) / seg;
+          const dx = pts[j * 2] - pts[lo * 2], dy = pts[j * 2 + 1] - pts[lo * 2 + 1];
+          // a step's bob, a couple of centimetres, two steps a second
+          const bob = 0.025 * Math.abs(Math.sin(t * 6.2 + m.ph));
+          p.set(pts[lo * 2] + dx * u, pts[lo * 2 + 1] + dy * u, f.z + bob);
+          q.setFromEuler(e.set(0, 0, Math.atan2(dy, dx) + (m.spd < 0 ? Math.PI : 0)));
+          f.mesh.setMatrixAt(i, m4.compose(p, q, big));
+          return;
+        }
         const d = (m.ph + t * m.spd) % m.len;
         p.set(m.x + m.ux * d, m.y + m.uy * d, f.z);
         q.setFromEuler(e.set(0, 0, Math.atan2(m.uy, m.ux)));
@@ -6303,10 +6783,15 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
   }
   private cranes: { mesh: THREE.InstancedMesh; at: { x: number; y: number; r: number }[] } | null = null;
-  private movers: Mover[] = [];
   private walkers: Mover[] = [];
   private boats: Mover[] = [];
-  private fleets: { mesh: THREE.InstancedMesh; list: Mover[]; z: number }[] = [];
+  private fleets: { mesh: THREE.InstancedMesh; list: Lively[]; z: number; car: boolean }[] = [];
+  private netRaw: NetRaw | null = null;
+  /** seconds, for the walkers' gait (see buildStreetLife) */
+  private gait = { value: 0 };
+  private traffic: Traffic | null = null;
+  private carList: LiveCar[] = [];
+  private lastStep = 0;
   private paused = false;
   private lastTick = 0;
 
@@ -7059,6 +7544,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // the beds are bare earth November to March
     const beds = this.inst.get("flowerbed");
     if (beds) beds.visible = this.month >= 3 && this.month <= 9;
+    const cafe = this.inst.get("cafe");
+    if (cafe) cafe.visible = this.month >= 3 && this.month <= 9;
     // evergreens keep their needles; a dusting of snow lightens them
     this.pineMat.color.setRGB(0.1 + this.snow * 0.25, 0.2 + this.snow * 0.2, 0.12 + this.snow * 0.28);
     this.applyLight();
@@ -7247,9 +7734,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     for (const f of this.fleets) {
       if (f.list === this.boats) continue;
       for (const m of f.list) if (m.dem === undefined) m.dem = this.demandAt(m.x, m.y);
-      const on = (m: Mover) => (m.draw ?? 0) < this.activity * (0.3 + 0.9 * (m.dem ?? 0.5)) * this.crowdK;
+      const on = (m: Lively) => (m.draw ?? 0) < this.activity * (0.3 + 0.9 * (m.dem ?? 0.5)) * this.crowdK;
+      for (const m of f.list) m.on = on(m);
       // the walkers on the street first, so the mesh can simply draw a prefix
-      f.list.sort((p, q) => Number(on(q)) - Number(on(p)));
+      f.list.sort((p, q) => Number(q.on) - Number(p.on));
       f.list.forEach((m, i) => f.mesh.setColorAt(i, new THREE.Color(m.col[0], m.col[1], m.col[2])));
       if (f.mesh.instanceColor) f.mesh.instanceColor.needsUpdate = true;
       f.mesh.count = f.list.filter(on).length;

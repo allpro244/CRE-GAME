@@ -867,6 +867,17 @@ export function concessionTarget(gap: number, _phase?: Econ["phase"]): number {
 // table put them — the magnitudes were calibrated, the steps were not.
 
 /** Filled payrolls, trailing twelve months, as a growth rate. */
+/**
+ * TODAY'S DOLLARS against the opening's (2026-10-13): the seed's opening price
+ * level times the town's CPI since. Fixed-dollar floors written in opening
+ * money ($500K reserves, $2M lines) bound in every month of play and meant
+ * a sixtieth as much by year 100; scaled by this they stay the same real
+ * amount.
+ */
+export function dollarLevel(e: Econ): number {
+  return (e.priceLevel ?? 1) * (e.cpi ?? 1);
+}
+
 export function payrollGrowth12(e: Econ): number {
   const h = e.history ?? [];
   const then = h.length >= 12 ? h[h.length - 12]?.jobs : undefined;
@@ -2164,7 +2175,16 @@ export function tickNation(s: GameState) {
   // 5.84% / p50 5.3% / p10 3.8% / 38% of months under 4.8%, against the US
   // 1948-2024 record of 5.7% / 5.5% / 3.9% / ~33%. Was 6.35% / 5.7% / 4.4%
   // / 25%, which held the nation 1.5 points over its natural rate on average.
-  const uMove = inRec
+  // THE LABOUR MARKET LAGS THE CYCLE (2026-10-13). Unemployment chased the
+  // drawn depth only while the recession was on and turned the month it
+  // ended, so a 7-19 month draw reached half its depth: mild recessions rose
+  // +1.1-1.4 points against +2.2-2.7 in every US one since 1970. Firms keep
+  // shedding after output turns — unemployment peaked 15 months after the
+  // 1991 trough and 19 after 2001's (BLS; NBER dates) — so the climb runs on
+  // until the depth is reached, then the feather-fall begins.
+  const chasing = inRec || (n.uPeak !== undefined && n.unemp < n.uPeak - 0.001);
+  if (!chasing) n.uPeak = undefined;
+  const uMove = chasing
     ? Math.max(0.0008, 0.115 * ((n.uPeak ?? n.unemp + 0.02) - n.unemp))
     : 0.025 * (0.035 - n.unemp);
   n.unemp = clamp(n.unemp + uMove
@@ -2460,6 +2480,17 @@ const INDUSTRY_BETA: Record<Sector, number> = {
 const LOCAL_MULT = 1.6;
 /** Months for local-serving employment to close half its gap to the base. */
 const LOCAL_HALF_M = 12;
+/**
+ * Local-serving payrolls' DIRECT swing per unit of the national swing. A
+ * national recession is consumers everywhere spending less, so the town's
+ * shops, restaurants and services lose work at once, not a year later via
+ * its export trades. BLS CES 2007-09 peak-to-trough by supersector against
+ * total nonfarm (-6.3%): retail 1.25x, leisure & hospitality 0.7x, other
+ * services 0.65x, health ~0, government ~0; weighted by local-serving
+ * employment, construction excluded (the game counts building trades from
+ * its own pipeline), about 0.45.
+ */
+const LOCAL_BETA = 0.45;
 /** A trade's own shocks: about one notable one a decade at unit volatility (more often for volatile trades), half-life 18 months. */
 const IND_SHOCK_HAZ = 1 / 120, IND_SHOCK_HALF_M = 18;
 /**
@@ -2622,7 +2653,11 @@ export function tickIndustryCycle(s: GameState) {
   const exportIdx = wsum > 0 ? base / wsum : 1;
   e.exportIdx = exportIdx;
   const local = e.localIdx ?? exportIdx;
-  e.localIdx = local + (exportIdx - local) * (1 - Math.exp(-Math.LN2 / LOCAL_HALF_M));
+  // (2026-10-13) ...and it takes the national swing directly too. Without
+  // this a national recession reached 62% of the town's jobs only through a
+  // one-year lag on its exports, and local payrolls fell year on year in 4
+  // of 15 national recessions measured — against ~9 metros in 10 in 2008-09.
+  e.localIdx = (local + (exportIdx - local) * (1 - Math.exp(-Math.LN2 / LOCAL_HALF_M))) * (1 + LOCAL_BETA * natDev);
   const comp = (exportIdx + LOCAL_MULT * e.localIdx) / (1 + LOCAL_MULT);
   const prevComp = e.cycIdx ?? comp;
   e.cycIdx = comp;
@@ -2643,6 +2678,11 @@ function derivePhase(s: GameState) {
   // Payrolls actually filled (last month's — the data a statistician has),
   // not employers' demand for staff: a boom short of workers is still a
   // boom, and a bust is jobs lost, not jobs no longer wanted.
+  // The opening's `jobs` is the size the town was drawn at, not a payroll the
+  // labour market has filled: the first month's solve moves it 3-5%, and
+  // dating that step read as a recession through most of year one (2026-10-13).
+  // Only the opening record is in `history` until the first month is filed.
+  if ((e.history?.length ?? 0) <= 1) return;
   const T = (e.jobs ?? e.jobs0 ?? 1) / Math.max(1, e.jobs0 ?? 1);
   const hist = (e.cycHist ??= []);
   hist.push(T);
@@ -2755,8 +2795,19 @@ export function tickEcon(s: GameState) {
   // balance sheet that has to absorb the loss is the same balance sheet in
   // every city at once.
   stepCredit(s);
-  if (e.creditIdx < 0.66 && rng(s) < 0.02) {
-    pushNews(s, "warn", "The debt markets have effectively closed. Term sheets are being pulled mid-deal.");
+  // CLOSED IS A STATE OF THE DESKS, NOT A DICE ROLL (2026-10-13). This was a
+  // 2%-a-month roll whenever the credit window read under 0.66, and it ran
+  // while every desk in town was still writing paper. Now: at least half the
+  // town's loan book sits at desks too impaired to quote (appetite under
+  // 0.15, the same line at which a desk announces it has stopped) — reported
+  // once on the way in and once on the way out.
+  {
+    const live = (s.lenders ?? []).filter((l) => l.failedM === undefined);
+    const book = live.reduce((a, l) => a + l.book, 0);
+    const shut = book > 0 && live.filter((l) => l.appetite < 0.15).reduce((a, l) => a + l.book, 0) / book >= 0.5;
+    if (shut && !e.debtShut) pushNews(s, "warn", "The debt markets have effectively closed. Term sheets are being pulled mid-deal.");
+    if (!shut && e.debtShut) pushNews(s, "event", "The lenders are quoting again. Not cheaply, and not to everyone, but the phones are being answered.");
+    e.debtShut = shut;
   }
 
   // --- employment: the demand behind every lease -----------------------------
@@ -3154,7 +3205,11 @@ export function tickEcon(s: GameState) {
     // largely by migration with a half-life of a few years, so the pull of
     // unfilled openings closes the gap at ln2/36 a month. It used to be a
     // tenth a year, which left the labour cap to do the work.
-    const vacPull = Math.min(0.04, (e.jobVac ?? 0)) * (Math.LN2 / 36);
+    // (2026-10-13) The shortage pulls workers in proportion to its size; it was
+    // capped at a 4% vacancy rate, and towns sat at 4-9% unfilled openings for
+    // decades with unemployment near 3% — a labour market so short that a
+    // national recession only trimmed vacancies and cost nobody a job.
+    const vacPull = (e.jobVac ?? 0) * (Math.LN2 / 36);
     // PEOPLE MOVE FOR REAL PAY (2026-10-09). Migration read jobs, unfilled
     // jobs and unemployment, and never the wage: measured over 4 worlds x 50
     // years the town's nominal pay ended 1.24-2.08x the nation's, with
@@ -3173,7 +3228,7 @@ export function tickEcon(s: GameState) {
       / Math.max(1e-6, (e.natWageIdx ?? e.wageIdx ?? 1) / Math.max(0.1, e.natCpi ?? e.cpi ?? 1));
     e.realPremEma = (e.realPremEma ?? realPrem) + (realPrem - (e.realPremEma ?? realPrem)) / 24;
     const premPull = 0.10 * Math.log(Math.max(0.2, e.realPremEma)) / 12;
-    let migration = jobGrowth * pull + vacPull + premPull - clamp(uGapPop * 0.020, -0.0010, 0.0030);
+    let migration = jobGrowth * pull + vacPull + premPull - uGapPop * 0.020;
 
     // ...AND PEOPLE CANNOT MOVE INTO HOUSING THAT DOES NOT EXIST.
     //
@@ -3324,7 +3379,8 @@ export function tickEcon(s: GameState) {
     // here because a tightness measure that can read 27% is not a measure of
     // anything, and because the term it feeds is multiplied by a coefficient
     // calibrated for a gap of a point or two.
-    const vacRate = Math.min(0.075, (e.jobVac ?? 0) / (1 + (e.jobVac ?? 0)));
+    // (Openings were capped here at 7.5% of the labour force — the US record,
+    // used as a ceiling. Removed 2026-10-13 with the dead read below.)
     // AGAINST THIS TOWN'S OWN NATURAL RATE (2026-10-09). The pivot was 0.055,
     // a third natural rate of unemployment in one engine: the nation reverts
     // to 4.2% in an expansion and prices off a 4.8% u*, and this town pivoted
@@ -3335,7 +3391,8 @@ export function tickEcon(s: GameState) {
     // nation then shows up as a wage premium, which is what moves hiring
     // (`wageDemand`) and movers (`wagePremEma`) — the loop that pulls a tight
     // town back.
-    const tight = Math.max(-0.06, Math.min(0.055, OPENING_UNEMP - e.unemployment! + vacRate));
+    // (A capped local `tight` lived here and nothing read it: pay runs off the
+    // wage curve below. Removed 2026-10-13.)
     // realised inflation over the trailing year, straight off the history the
     // engine already keeps — expectations chase THIS, not a constant
     const h12 = e.history.length >= 12 ? e.history[e.history.length - 12] : undefined;
@@ -3589,7 +3646,9 @@ export function tickEcon(s: GameState) {
     //
     // with a two-year half-life. Freezes and the owed raise below still apply.
     const n0 = e.nat;
-    const natTight0 = n0 ? Math.max(-0.06, Math.min(0.055, NAT_U_STAR - n0.unemp)) : 0;
+    // Unbounded (2026-10-13): national unemployment cannot leave 0-1, which
+    // bounds this; the clamp held pay growth flat past 5.5 points of slack.
+    const natTight0 = n0 ? NAT_U_STAR - n0.unemp : 0;
     const natGrowth0 = payExp / 12 + productivity / 12 + natTight0 * 0.012;
     const natW = Math.max(1e-6, e.natWageIdx ?? e.wageIdx!);
     const priceRatio = (e.cpi ?? 1) / Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
@@ -3597,7 +3656,6 @@ export function tickEcon(s: GameState) {
     const sizeRatio = Math.max(0.2, (e.jobs ?? 1) / Math.max(1, e.jobs0 ?? e.jobs ?? 1));
     const target = natW * priceRatio * Math.pow(uRatio, WAGE_CURVE) * Math.pow(sizeRatio, AGGLOM);
     const ecm = Math.log(target / Math.max(1e-6, e.wageIdx!)) * (1 - Math.exp(-Math.LN2 / WAGE_GAP_HALF_M));
-    void tight;
     const growth = natGrowth0 + ecm + rrange(s, -0.0004, 0.0004);
     if (e.wageDebt === undefined) e.wageDebt = 0;
     if (growth < 0) {
@@ -3905,7 +3963,15 @@ export function tickEcon(s: GameState) {
     // refresh has run — treat as unconstrained so the book can form.
     const rawSites = e.sitePencil?.[k];
     const sites = rawSites === undefined ? 1 : Math.max(0, rawSites);
-    const appetite = devPencils(e, k) * credit * sites;
+    // ONE ANSWER TO "DOES IT PAY" (2026-10-13). This multiplied two of them:
+    // `devPencils` (a generic scheme on a top-decile corner, no land, ~0.66 in
+    // an ordinary month) times `sites` (the best real sites' own
+    // hurdleRatio^1.2, already zero when none clears). The site read is the
+    // honest one — real lots, real basis — and the generic one cut every
+    // month's order by about a third on top of it. Measured over 75 years:
+    // sites cleared in 71-93% of months while office sat 3 points under
+    // natural vacancy and real rents outran real build cost by 0.4-0.8%/yr.
+    const appetite = credit * sites;
     // ONE DRAW, TWO JOBS. This month's noise sizes the order AND sets how long
     // it will take to entitle, below. Capturing it rather than calling `rng`
     // twice keeps the random stream byte-identical to before the entitlement
@@ -3920,8 +3986,8 @@ export function tickEcon(s: GameState) {
     // rise so densify/teardown/infill have a book to fill. Not a vac-floor
     // hike and not minting tenants — more floor ordered against a measured
     // capacity shortfall.
-    const catchUp = 1 + clamp(e.structTight?.[k] ?? 0, 0, 0.45) * 4.5;
-    const start = stk * 0.0016 * Math.min(2.4, appetite) * catchUp * (0.7 + 0.6 * jitter);
+    const catchUp = 1 + Math.max(0, e.structTight?.[k] ?? 0) * 4.5;
+    const start = stk * 0.0016 * appetite * catchUp * (0.7 + 0.6 * jitter);
     e.starts[k] = Math.round(start);
 
     // THE QUEUE. A start becomes a dated cohort; it delivers when its month
@@ -5101,9 +5167,10 @@ export function tickEcon(s: GameState) {
     // full rate; Landing/Village ration enough to clear without minting Midtown.
     const classF = cityClassFactor(e.cityIntensity ?? e.cityIntensity0 ?? 1);
     const onRailLevel = 0.0035 + 0.0065 * classF;
-    const scarcity = pinned
-      ? clamp(Math.max(0, dSt) * 1.8 + st * onRailLevel, 0, 0.0045)
-      : clamp(st * 0.045 * railSat + Math.max(0, dSt) * 1.8 * (1 - railSat), 0, 0.006);
+    // (The capped `scarcity` term computed here was dead — read by nothing
+    // since the queue moved into `effGap` — and showed up in the rails audit
+    // as a bound on rent growth that bound nothing. Removed 2026-10-13.)
+    void dSt; void onRailLevel; void pinned;
 
     // Lease-quote lag: market pressure (vacancy gap + unmet demand) forms this
     // month; landlords adjust asking rents only after it has sat on the quote
@@ -5115,7 +5182,6 @@ export function tickEcon(s: GameState) {
     };
     // `scarcity` (the on-rail level tax and the flow of new tightness) priced
     // the same queue a second time; the queue is in `effGap` now.
-    void scarcity;
     // ...AND THE GAP TO EQUILIBRIUM RENT (2026-10-11). The rent adjustment
     // literature this block cites has TWO terms, and only the first was here:
     //

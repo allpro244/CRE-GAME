@@ -6434,7 +6434,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const [x, y] = at(t, -1.25);
           if (rnd() >= 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) continue;
           const [lx, ly] = at(t, -5.2);
-          if (!this.footprintOn(x, y, rot, 2.2, 5.2, ["road"]) || this.groundAt(lx, ly) !== "road") continue;
+          if (!this.footprintOn(x, y, rot, 2.2, 5.2, ["road"]) || this.groundAt(lx, ly) !== "road" || this.waterAt(x, y)) continue;
           const vk = rnd(), dt = this.demandAt(x, y);
           const kind = vk < 0.52 ? "car" : vk < 0.82 ? "suv" : vk < 0.93 ? "van" : dt > 0.55 ? "taxi" : "car";
           this.putInst(kind, x, y, 0.05, 1, rot + (rnd() < 0.5 ? 0 : Math.PI), "", kind === "taxi" ? TAXI : CAR[(rnd() * CAR.length) | 0]);
@@ -7111,7 +7111,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // THE MOVING TRAFFIC drives the measured street network (traffic.ts):
     // about one car every 30 m of lane, a bus now and then on the long runs
     if (this.netRaw) {
-      const tr = new Traffic(this.netRaw, (x, y) => this.groundAt(x, y) === "road", rnd);
+      const tr = new Traffic(this.netRaw, (x, y) => this.groundAt(x, y) === "road" && !this.waterAt(x, y), rnd);
       tr.populate(40, rnd, (c) => {
         const vk = rnd(), long = tr.segs[c.seg].L > 160;
         const kind = long && vk < 0.04 ? "bus" : vk < 0.45 ? "car" : vk < 0.7 ? "suv" : vk < 0.79 ? "van" : vk < 0.84 ? "truck" : vk < 0.95 ? "taxi" : "bike";
@@ -7938,6 +7938,23 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     this.groundIx = { bld, walk, park, open };
     return this.groundIx;
+  }
+  private waterIx: { water: PolyGrid; deck: PolyGrid } | null = null;
+  /**
+   * Is (x, y) on a creek, canal or pond, and not on a bridge over it?
+   * groundAt calls everything it does not know "road", water included, so
+   * the traffic and the parked cars ask this as well.
+   */
+  waterAt(x: number, y: number): boolean {
+    if (!this.waterIx) {
+      const water = new PolyGrid(60), deck = new PolyGrid(40);
+      const c = this.ctx as CityCtx;
+      for (const st of c.streams ?? []) if (st.ring.length >= 3) water.add(st.ring.map((q) => this.project(q)));
+      for (const pd of c.ponds ?? []) if (pd.length >= 3) water.add(pd.map((q) => this.project(q)));
+      for (const b of c.bridges ?? []) if (b.ring.length >= 3) deck.add(b.ring.map((q) => this.project(q)));
+      this.waterIx = { water, deck };
+    }
+    return this.waterIx.water.hit(x, y) && !this.waterIx.deck.hit(x, y);
   }
   /** building | walk | park | open | lot | road */
   groundAt(x: number, y: number): "bld" | "walk" | "park" | "open" | "lot" | "road" {

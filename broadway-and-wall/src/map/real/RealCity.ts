@@ -61,6 +61,15 @@ function insetRing(r: P2[], d: number): P2[] | null {
   }
   return ringArea(out) > 1 ? out : null;
 }
+/** Metres between two segments that do not cross (the least end-to-segment distance). */
+function segGap(a: P2, b: P2, c: P2, d: P2): number {
+  const pt = (p: P2, q: P2, r: P2) => {
+    const dx = r[0] - q[0], dy = r[1] - q[1], l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p[0] - q[0]) * dx + (p[1] - q[1]) * dy) / l2));
+    return Math.hypot(q[0] + dx * t - p[0], q[1] + dy * t - p[1]);
+  };
+  return Math.min(pt(a, c, d), pt(b, c, d), pt(c, a, b), pt(d, a, b));
+}
 /** Metres from (x, y) to the nearest edge of a ring. */
 function shoreGap(ring: P2[], x: number, y: number): number {
   let best = Infinity;
@@ -108,7 +117,7 @@ const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", 
 const CANAL_WATER = 0x2c5f5c;
 /** the footway band inside a park's street edge (m); its hedge stands at 3.6 */
 const PARK_WALK = 3.0;
-const FAR_PROPS = ["bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person"];
+const FAR_PROPS = ["tactile", "streetsign", "meter", "bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 // what a crowd wears: mostly neutrals (navy, charcoal, camel, white,
@@ -4985,6 +4994,17 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         for (let k = 0; k < 6; k++) parts.push([box(0.4, 0.06, 0.28, -1.0 + k * 0.4, 0, 0.62), k % 2 ? [0.95, 0.95, 0.93] : [0.85, 0.12, 0.1]]);
         return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, vertexColors: true }) };
       }
+      // tactile paving: a buff pad of blister bumps, flush with the flags
+      case "tactile": {
+        const parts: [THREE.BufferGeometry, number[]][] = [[box(0.8, 2.4, 0.012), [0.86, 0.72, 0.4]]];
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 8; j++) parts.push([box(0.12, 0.12, 0.02, -0.26 + i * 0.26, -1.05 + j * 0.3, 0.012), [0.9, 0.77, 0.45]]);
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, vertexColors: true }) };
+      }
+      // a street-name sign: a grey post and two green blades at right angles
+      case "streetsign": return { g: mergeColored([[cyl(0.04, 2.9, 0, 8), [0.35, 0.36, 0.37]], [box(0.9, 0.03, 0.2, 0.3, 0, 2.62), [0.1, 0.38, 0.2]], [box(0.03, 0.9, 0.2, 0, 0.3, 2.38), [0.1, 0.38, 0.2]], [box(0.7, 0.035, 0.05, 0.3, 0, 2.7), [0.92, 0.92, 0.9]], [box(0.035, 0.7, 0.05, 0, 0.3, 2.46), [0.92, 0.92, 0.9]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.3, vertexColors: true }) };
+      case "meter": return { g: mergeColored([[cyl(0.035, 1.1, 0, 6), [0.3, 0.31, 0.33]], [box(0.2, 0.16, 0.32, 0, 0, 1.08), [0.16, 0.2, 0.26]], [box(0.14, 0.17, 0.1, 0, 0, 1.28), [0.7, 0.75, 0.75]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.4, vertexColors: true }) };
       case "hydrant": return { g: merge([cyl(0.14, 0.55, 0, 10), cyl(0.18, 0.1, 0.5, 10), cyl(0.1, 0.12, 0.6, 8), box(0.4, 0.09, 0.09, 0, 0, 0.36)]), mat: new THREE.MeshStandardMaterial({ color: 0xa8392c, roughness: 0.55 }) };
       case "bin": return { g: merge([cyl(0.28, 0.95, 0, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0x2e4034, roughness: 0.7, metalness: 0.2 }) };
       case "shelter": return { g: mergeColored([[box(3.8, 1.5, 0.08, 0, 0, 2.45), [0.3, 0.32, 0.34]], [box(3.8, 0.04, 2.2, 0, 0.7, 0.25), [0.55, 0.65, 0.7]],
@@ -5421,7 +5441,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // zebras: bars 0.5 m wide every 1.1 m along the crossing, each 3 m long
     // in the direction the traffic runs
     const bars: { x: number; y: number; r: number }[] = [];
-    for (const line of c.zebras ?? []) {
+    for (const line of this.zebraLines()) {
       await this.breathe();
       if (line.length < 2) continue;
       const A = this.project(line[0]), B = this.project(line[line.length - 1]);
@@ -5436,6 +5456,18 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         const x = P[0] + ux * d * 1.1, y = P[1] + uy * d * 1.1;
         if (this.groundAt(x, y) !== "walk") continue;
         this.putInst(arm ? "signal" : "sigpost", x, y, 0.15, 1, d < 0 ? r : r + Math.PI);
+      }
+      // THE DROPPED KERB at each end: a pad of buff tactile paving across
+      // the crossing's width, and at one corner in two a street-name sign
+      for (const [P, d] of [[A, -1], [B, 1]] as [P2, number][]) {
+        const x = P[0] + ux * d * 0.75, y = P[1] + uy * d * 0.75;
+        if (this.groundAt(x, y) !== "walk") continue;
+        this.putInst("tactile", x, y, 0.15, 1, r);
+        const h = hash01(Math.round(P[0] * 7) ^ Math.round(P[1] * 13), this.seed + 11);
+        if (h < 0.5) {
+          const sx = P[0] + ux * d * 1.4 - uy * 2.1, sy = P[1] + uy * d * 1.4 + ux * 2.1;
+          if (this.groundAt(sx, sy) === "walk" && this.clearOfBuildings(sx, sy, 0.6)) this.putInst("streetsign", sx, sy, 0.15, 1, r + (h < 0.25 ? 0 : Math.PI / 2));
+        }
       }
       for (let t = 0.45; t < L - 0.2; t += 1.1) bars.push({ x: A[0] + ux * t, y: A[1] + uy * t, r });
     }
@@ -5734,6 +5766,37 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
 
   private cropMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
   private paveMat: THREE.MeshStandardMaterial | null = null;
+  private zebraKeep: [number, number][][] | null = null;
+  /**
+   * The crossings worth painting. At a skewed corner the generator can lay
+   * two zebras across each other, which paints a grid of bars no city has;
+   * of any two that cross, the shorter goes.
+   */
+  private zebraLines(): [number, number][][] {
+    if (this.zebraKeep) return this.zebraKeep;
+    const all = ((this.ctx as CityCtx).zebras ?? []).filter((z) => z.length >= 2);
+    const seg = all.map((z) => { const A = this.project(z[0]), B = this.project(z[z.length - 1]); return { A, B, L: Math.hypot(B[0] - A[0], B[1] - A[1]) }; });
+    const grid = new Map<string, number[]>();
+    seg.forEach((g, i) => { const k = `${Math.floor((g.A[0] + g.B[0]) / 80)},${Math.floor((g.A[1] + g.B[1]) / 80)}`; const l = grid.get(k); if (l) l.push(i); else grid.set(k, [i]); });
+    const cross = (p: P2, q: P2, r: P2, t: P2) => {
+      const o = (a: P2, b: P2, c: P2) => Math.sign((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+      return o(p, q, r) * o(p, q, t) < 0 && o(r, t, p) * o(r, t, q) < 0;
+    };
+    const drop = new Set<number>();
+    seg.forEach((g, i) => {
+      const gx = Math.floor((g.A[0] + g.B[0]) / 80), gy = Math.floor((g.A[1] + g.B[1]) / 80);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const j of grid.get(`${gx + a},${gy + b}`) ?? []) {
+        if (j <= i || drop.has(i) || drop.has(j)) continue;
+        const h = seg[j];
+        // the bars are 3 m long: two crossings at an angle whose centre
+        // lines come within 3 m of each other paint over one another
+        const par = Math.abs(((g.B[0] - g.A[0]) * (h.B[0] - h.A[0]) + (g.B[1] - g.A[1]) * (h.B[1] - h.A[1])) / ((g.L * h.L) || 1)) > 0.8;
+        if (cross(g.A, g.B, h.A, h.B) || (!par && segGap(g.A, g.B, h.A, h.B) < 3)) drop.add(g.L < h.L ? i : j);
+      }
+    });
+    this.zebraKeep = all.filter((_, i) => !drop.has(i));
+    return this.zebraKeep;
+  }
   /** each park's ring (counter-clockwise, metres) and which of its edges front a street */
   private parkFront: { ring: P2[]; front: boolean[] }[] = [];
   /** The parks that get a street footway, projected and counter-clockwise. */
@@ -6191,6 +6254,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const vk = rnd(), dt = this.demandAt(x, y);
           const kind = vk < 0.52 ? "car" : vk < 0.82 ? "suv" : vk < 0.93 ? "van" : dt > 0.55 ? "taxi" : "car";
           this.putInst(kind, x, y, 0.05, 1, rot + (rnd() < 0.5 ? 0 : Math.PI), "", kind === "taxi" ? TAXI : CAR[(rnd() * CAR.length) | 0]);
+          // a meter to pay at, where parking is worth charging for
+          if (dt > 0.5) { const [px, py] = at(t + 2.2, 0.35); if (this.groundAt(px, py) === "walk") this.putInst("meter", px, py, 0.15, 1, rot); }
         }
       }
       this.ringWalkers(ring, wEdge, rnd, COAT);
@@ -6371,7 +6436,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       this.dressCarriageway(tr, rnd);
       // PEOPLE CROSSING at the zebras, in step with the junction's lights:
       // a few more where the street is busy
-      for (const z of (this.ctx as CityCtx).zebras ?? []) {
+      for (const z of this.zebraLines()) {
         if (z.length < 2) continue;
         const A = this.project(z[0]), B = this.project(z[z.length - 1]);
         const dem = this.demandAt((A[0] + B[0]) / 2, (A[1] + B[1]) / 2);

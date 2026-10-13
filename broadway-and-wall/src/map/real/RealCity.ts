@@ -950,6 +950,12 @@ function addSway(mat: THREE.Material) {
   };
   mat.customProgramCacheKey = () => k0 + "+sway";
 }
+// FLICKER PROBE. Address-bar switches that each take one suspect out of
+// the picture, for hunting a flicker on the owner's own machine:
+//   ?noclouds   no cloud shadows       ?noshadows  no sun shadows
+//   ?notraffic  cars and people still  (?post=off already drops the finishing pass)
+const PROBE = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
+const NO_CLOUDS = PROBE.has("noclouds"), NO_SHADOWS = PROBE.has("noshadows"), NO_TRAFFIC = PROBE.has("notraffic");
 const hazed = new WeakSet<THREE.Material>();
 function addHaze(mat: THREE.Material) {
   if (hazed.has(mat)) return;
@@ -1811,7 +1817,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const cafe = this.inst.get("cafe");
     if (cafe) cafe.visible = this.month >= 3 && this.month <= 9 && !far;
     this.renderer.resetState();
-    if ((this.fleets.length || this.cranes) && !this.paused && typeof document !== "undefined" && !document.hidden) {
+    if ((this.fleets.length || this.cranes) && !this.paused && !NO_TRAFFIC && typeof document !== "undefined" && !document.hidden) {
       const now = performance.now();
       this.stepTraffic(now / 1000);
       // ~30 fps for the traffic; MapLibre only paints on demand
@@ -1920,7 +1926,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
 
   // ---- lights & shadow ---------------------------------------------------
   private setupLights() {
-    this.sun.castShadow = this.quality !== "low";
+    this.sun.castShadow = this.quality !== "low" && !NO_SHADOWS;
     const sz = this.preferFps ? 2048 : 4096;
     this.sun.shadow.mapSize.set(sz, sz);
     this.sun.shadow.bias = -0.0003;
@@ -5042,7 +5048,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // building or a tree stands between it and the sun
     const catcher = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.catcherMat);
     catcher.position.z = 0.04; catcher.receiveShadow = true; catcher.renderOrder = -1;
-    catcher.visible = this.quality !== "low";
+    catcher.visible = this.quality !== "low" && !NO_SHADOWS;
     this.catcher = catcher;
     this.scene.add(catcher);
     // THE HARBOUR. MapLibre paints the water flat; over it, the land cut out,
@@ -8369,7 +8375,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // fair weather: a scatter of cumulus; as the sky fills in, more of it;
     // under a full overcast there is no direct sun left for a cloud to take
     CLOUD.cloudCover.value = 0.22 + 0.3 * smooth(0.0, 0.6, oc);
-    this.cloudK0 = this.quality === "low" ? 0 : 0.45 * (1 - smooth(0.45, 0.95, oc));
+    this.cloudK0 = this.quality === "low" || NO_CLOUDS ? 0 : 0.45 * (1 - smooth(0.45, 0.95, oc));
     this.map?.triggerRepaint();
   }
 
@@ -8496,11 +8502,11 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     this.setPreferFps(q !== "high");
     this.crowdK = q === "high" ? 1 : q === "medium" ? 0.6 : 0.3;
     this.cullM = q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
-    this.sun.castShadow = q !== "low";
+    this.sun.castShadow = q !== "low" && !NO_SHADOWS;
     // the finishing pass: all of it on High, the grade alone on Medium, none on Low
     this.post.level = q === "high" ? "full" : q === "medium" ? "grade" : "off";
     if (q === "high" && this.live && !this.reflEnv) this.probeDue = true;
-    if (this.catcher) this.catcher.visible = q !== "low";
+    if (this.catcher) this.catcher.visible = q !== "low" && !NO_SHADOWS;
     // the ground contact shade is transparent overdraw under every building
     const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";
     // the window sills and lintels (round 21): High and Medium

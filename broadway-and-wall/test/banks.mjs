@@ -20,6 +20,7 @@ const tally = {
   lenderFails: 0, rationingMonths: 0, shutMonths: 0,
   portfolioApproaches: 0, portfolioClosed: 0,
   minCapRatio: 1, maxDelinq: 0, nw: [],
+  namedShareSum: 0, namedShareN: 0, namedShareMax: 0, namedDefaultMax: 0,
 };
 
 for (let seed = 0; seed < SEEDS; seed++) {
@@ -81,6 +82,15 @@ for (let seed = 0; seed < SEEDS; seed++) {
       const cr = E.capitalRatio(l);
       if (cr < tally.minCapRatio) tally.minCapRatio = cr;
       if (l.delinquent > tally.maxDelinq) tally.maxDelinq = l.delinquent;
+      // the named book (loanbook.ts): how much of this desk is borrowers the
+      // engine actually runs, and how much of it has stopped paying
+      if (l.book > 0 && l.namedBook !== undefined) {
+        const sh = l.namedBook / l.book;
+        tally.namedShareSum += sh; tally.namedShareN++;
+        if (sh > tally.namedShareMax) tally.namedShareMax = sh;
+        const nd = (l.namedDefault ?? 0) / l.book;
+        if (nd > tally.namedDefaultMax) tally.namedDefaultMax = nd;
+      }
       if (l.failedM === m) tally.lenderFails++;
       if (l.appetite < 0.12) tally.shutMonths++;
       else if (l.appetite < 0.6) tally.rationingMonths++;
@@ -111,6 +121,10 @@ console.log(`  lender-months shut     ${tally.shutMonths}`);
 console.log(`  lender-months rationing ${tally.rationingMonths}`);
 console.log(`  worst capital ratio    ${(tally.minCapRatio * 100).toFixed(1)}%`);
 console.log(`  worst delinquency      ${(tally.maxDelinq * 100).toFixed(2)}%`);
+if (tally.namedShareN) {
+  console.log(`  named book, mean share ${(100 * tally.namedShareSum / tally.namedShareN).toFixed(1)}%  (peak ${(100 * tally.namedShareMax).toFixed(1)}%)`);
+  console.log(`  named default, peak    ${(100 * tally.namedDefaultMax).toFixed(2)}% of a desk's book`);
+}
 console.log(`  portfolio approaches   ${tally.portfolioApproaches}`);
 console.log(`  portfolios closed      ${tally.portfolioClosed}`);
 console.log(`\n  median net worth       ${M(med(tally.nw))}`);

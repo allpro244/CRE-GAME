@@ -327,6 +327,27 @@ export function DebtPage() {
         ? <MaturityWall />
         : <><div className="page-section">The maturity wall</div><div className="hint">Nothing borrowed yet.</div></>}
 
+      {/* THE STANDING INSTRUCTION. A balloon any desk will renew rolls on its
+          own at maturity; this is the one condition a treasurer attaches. */}
+      <div className="hint">
+        <b>At maturity:</b> a loan any desk will renew rolls on its own with the cheapest desk that clears it
+        (fee, points and a cap on floating paper, as a refinance you choose would pay). The clock stops only
+        when no desk will renew the whole balance{" "}
+        {(() => {
+          const cur = game.debtPolicy?.rollMaxJumpBp;
+          const opts: (number | undefined)[] = [undefined, 50, 100, 200];
+          return (
+            <>
+              — or when the new coupon jumps by more than{" "}
+              <select value={cur === undefined ? "" : String(cur)}
+                onChange={(e) => useStore.getState().setDebtPolicy({ rollMaxJumpBp: e.target.value === "" ? undefined : Number(e.target.value) })}>
+                {opts.map((o) => <option key={String(o)} value={o === undefined ? "" : String(o)}>{o === undefined ? "any amount (never stop)" : `${o}bp`}</option>)}
+              </select>.
+            </>
+          );
+        })()}
+      </div>
+
       {/* ---- the facility ---------------------------------------------- */}
       <div className="page-section">Borrowing against the whole book</div>
       {fac && !building ? (

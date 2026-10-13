@@ -21,6 +21,10 @@ import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash, spenda
 import { sizeAreaScale } from "./cityscale";
 import { JV_CONSENT } from "./jv";
 import { money } from "./money";
+import { monthlyPayment, scheduledPayment, recastPayment, CAP_PREMIUM_PCT, capPremiumOn } from "./amortize";
+import { deskRatePct, appetiteAdvance } from "./pricing";
+import { CONSTRUCTION_LENDER } from "./types";
+export { monthlyPayment, scheduledPayment, recastPayment, CAP_PREMIUM_PCT, capPremiumOn };
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -250,7 +254,7 @@ export const PRODUCTS: LoanProduct[] = [
  */
 export function allInCostPct(p: LoanProduct, ratePct: number): number {
   const holdYrs = Math.max(1, Math.min(7, p.termM / 12));
-  const capPrem = p.floating ? 0.0125 : 0;
+  const capPrem = p.floating ? CAP_PREMIUM_PCT : 0;
   return +(ratePct + (p.points + capPrem) * 100 / holdYrs).toFixed(2);
 }
 
@@ -347,10 +351,20 @@ export function lenderRelOf(s: GameState, lender: string): number {
 }
 export function relDiscount(s: GameState, p: LoanProduct): number {
   if (p.window || p.id === "cordage" || p.id === "mezz") return 0;
-  const kind = s.lenders?.find((l) => l.name === p.lender)?.kind ?? "bank";
+  return relCurve(s, p.lender);
+}
+/**
+ * THE FILE, IN BASIS POINTS, at a named desk — the convex curve above, for any
+ * paper that desk writes. The construction desks used to run their own linear
+ * version (half a basis point per point of file, to 40bp at any kind of desk),
+ * so the same relationship was worth a different amount on the land loan, the
+ * construction loan and the takeout from the same bank.
+ */
+export function relCurve(s: GameState, lender: string): number {
+  const kind = s.lenders?.find((l) => l.name === lender)?.kind ?? "bank";
   const max = REL_MAX[kind] ?? 0.30;
   if (max <= 0) return 0;
-  const t = Math.max(0, Math.min(1, (lenderRelOf(s, p.lender) - 20) / 80));
+  const t = Math.max(0, Math.min(1, (lenderRelOf(s, lender) - 20) / 80));
   return +(max * Math.pow(t, 1.35)).toFixed(4);
 }
 export function bumpLenderRel(s: GameState, lender: string | undefined, amt: number) {
@@ -371,10 +385,23 @@ export function bumpLenderRel(s: GameState, lender: string | undefined, amt: num
  * par, however good it is. Neither is a wall — proceeds taper, the quote says
  * why, and the answer is what it is in life: go to the desk that is NOT full.
  */
+/**
+ * THE SINGLE-NAME LIMIT, as a share of the desk's book — one borrower, every
+ * loan. A bank's house limit sits inside its legal lending limit; a life
+ * company's allocation committee is tighter still; a conduit sells the loans
+ * and a fund raised its money to make big bets. The same limit applies to
+ * every borrower the engine runs — the player's quotes (`concentrationRoom`)
+ * and the street's mortgage record (ledger.ts) — because a credit committee
+ * does not ask whose name it is before asking how much of the book it is.
+ */
+export function singleNameCap(kind: string | undefined): number {
+  return kind === "bank" ? 0.12 : kind === "life" ? 0.08 : kind === "conduit" ? 0.30 : 0.35;
+}
+
 export function concentrationRoom(s: GameState, p: LoanProduct, klass?: string): { mult: number; capRoom: number; why?: string } {
   const l = lenderByNameLocal(s, p.lender);
   if (!l || l.book <= 0) return { mult: 1, capRoom: Infinity };
-  const nameCap = l.kind === "bank" ? 0.12 : l.kind === "life" ? 0.08 : l.kind === "conduit" ? 0.30 : 0.35;
+  const nameCap = singleNameCap(l.kind);
   const capRoom = Math.max(0, l.book * nameCap - l.yours);
   let mult = 1; let why: string | undefined;
   if (klass && klass !== "land" && l.classBook) {
@@ -408,7 +435,41 @@ function lenderByNameLocal(s: GameState, name: string) {
   return s.lenders?.find((l) => l.name === name);
 }
 
-export const productById = (id: string): LoanProduct => PRODUCTS.find((p) => p.id === id) ?? PRODUCTS[0];
+/**
+ * PAPER NOBODY QUOTES YOU, BUT WHICH EXISTS. Two kinds of loan were written on
+ * the Cordage bridge sheet because there was nowhere else to put them: the
+ * construction lender's mini-perm at delivery, and private paper from a firm
+ * on the street. Both carried `product: "cordage"` with a different holder, so
+ * a mini-perm held by Alden read as "already on private paper" to the private
+ * borrow desk (and was never offered a private takeout), and every reader of
+ * the product's terms saw a 4.10 bridge spread on a loan written at 2.10.
+ * They are named for what they are now. Not on any desk's sheet — `PRODUCTS`
+ * is what a borrower can ask for — but `productById` knows them.
+ */
+export const INTERNAL_PRODUCTS: LoanProduct[] = [
+  {
+    id: "miniperm", label: "Construction takeout · 5 yr mini-perm", lender: CONSTRUCTION_LENDER,
+    blurb: "The construction lender rolling its own facility at delivery: interest-only while it fills, five years to stabilise it.",
+    ltv: 0.75, spread: 2.1, floating: true, ioM: 24, amortYears: 30, termM: 60,
+    uwDscr: 1.05, debtYield: 0.07, points: 0, recourse: false, prepay: "open", prepayM: 0,
+    minDSCR: 1.05, maxLTV: 0.9,
+  },
+  {
+    id: "private", label: "Private paper · a firm on the street", lender: "Cordage Debt Partners",
+    blurb: "Short, expensive, interest-only money from a named firm — the cheque that clears when the desks will not.",
+    ltv: 0.65, spread: 6.0, floating: true, ioM: 18, amortYears: 30, termM: 18,
+    uwDscr: 0.9, debtYield: 0.05, points: 0.02, recourse: false, prepay: "open", prepayM: 0,
+    minDSCR: 0.9, maxLTV: 0.92, bridge: true,
+  },
+];
+export const productById = (id: string): LoanProduct =>
+  PRODUCTS.find((p) => p.id === id) ?? INTERNAL_PRODUCTS.find((p) => p.id === id) ?? PRODUCTS[0];
+
+/** Paper written by a firm on the street rather than a desk — today's id, or the old Cordage-sheet form. */
+export function isPrivatePaper(l: { product: string; holder?: string }): boolean {
+  if (l.product === "private") return true;
+  return l.product === "cordage" && !!l.holder && !PRODUCTS.some((p) => p.lender === l.holder);
+}
 /**
  * WHO HOLDS THIS PAPER. A loan's product names a desk, but the balance can sit
  * elsewhere: a construction takeout is written on the "cordage" mini-perm
@@ -430,15 +491,12 @@ const REFI_FEE = 0.01;
  * `quote`; they are lifted out here because the street's refinancings have to
  * be underwritten by the same rule the player's are, and a second copy of this
  * arithmetic living in rivals.ts would be the same quantity with two answers.
- *
- * `ease` is the hometown bank cutting a friend slack in a crunch — see the
- * crunchEase term at the only call site that passes it.
  */
 function usdM(x: number): string {
   return x >= 1e6 ? `$${(x / 1e6).toFixed(x >= 1e7 ? 0 : 1)}M` : `$${Math.round(x / 1e3)}K`;
 }
 
-export function advanceFactor(s: GameState, lender: string, ease = 1): number {
+export function advanceFactor(s: GameState, lender: string): number {
   // THE WINDOW IS COUNTED ONCE. This carried `(1 − 0.30 × tight)` as well as
   // the desk's appetite, and when the standards band arrived (the same
   // credit index, moving the sheet itself) a shut window cut the hometown
@@ -448,9 +506,7 @@ export function advanceFactor(s: GameState, lender: string, ease = 1): number {
   // lives in `statedLtv` (with `ease` for the hometown bank's friends) and
   // this is what its name says: this desk's own balance sheet, as a
   // multiplier on whatever the sheet reads today.
-  void ease;
-  const app = lenderAppetite(s, lender);
-  return Math.min(1.02, 0.55 + 0.45 * app);
+  return appetiteAdvance(lenderAppetite(s, lender));
 }
 
 /**
@@ -819,11 +875,7 @@ export function paydownLoan(
   if (paid < due) return { s, err: `Could not raise the $${due.toLocaleString()} from cash.` };
   logBooks(next, "debtSvc", due, bbl);
   loan.balance = Math.max(0, loan.balance - amt);
-  const io = next.month < loan.ioUntilM;
-  const yearsLeft = Math.max(1, loan.amortYears - (next.month - loan.originM) / 12);
-  loan.monthlyPmt = io
-    ? Math.ceil((loan.balance * loan.ratePct) / 100 / 12)
-    : Math.round(monthlyPayment(loan.balance, loan.ratePct, yearsLeft));
+  recastPayment(loan, next.month);
   const lender = loan.holder ?? loanLender(loan);
   const addr = resolveRec(parcels, next, bbl)?.address ?? bbl;
   next.news.unshift({
@@ -836,12 +888,6 @@ export function paydownLoan(
     s: next,
     msg: `Paid down $${amt.toLocaleString()}${penalty > 0 ? ` (+$${penalty.toLocaleString()} prepayment)` : ""} — payment now $${loan.monthlyPmt.toLocaleString()}/mo.`,
   };
-}
-
-export function monthlyPayment(principal: number, ratePct: number, years: number): number {
-  const i = ratePct / 100 / 12;
-  const n = years * 12;
-  return (principal * i) / (1 - Math.pow(1 + i, -n));
 }
 
 /** What a desk will actually write, and — as of the hold-size fix — why not more. */
@@ -948,9 +994,10 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   const strongName = !street && guarantor && product.recourse && guarantor.nw >= 3 * product.ltv * price ? 0.10 : 0;
   // Fixed paper prices off the loan index; floating off the short index.
   const bench = product.floating ? shortIndexOf(s.econ) : s.econ.indexRate;
-  const ratePct = +(bench + product.spread * (1 + 1.1 * tight * crunchEase) + 0.9 * tight * crunchEase
-    + Math.max(0, 1 - app) * 0.8 + st.spreadAdd - rel + qualityAdd - strongName).toFixed(2);
-  const adv = advanceFactor(s, product.lender, crunchEase);
+  const ratePct = deskRatePct(bench, product.spread, {
+    ci, app, ease: crunchEase, standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongName,
+  });
+  const adv = advanceFactor(s, product.lender);
   // THE SHEET TODAY, not the sheet on the brochure — see statedLtv.
   const sheet = statedLtv(s, product, klass, condition, street, crunchEase);
   const byLtv = Math.min(conc.capRoom,
@@ -1152,9 +1199,7 @@ export function originate(
   const full = quote(s, product, price, noiYr, klass, false, stab, condition);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
-  const pmt = product.ioM > 0
-    ? Math.round((qd.principal * qd.ratePct) / 100 / 12)
-    : Math.round(monthlyPayment(qd.principal, qd.ratePct, product.amortYears));
+  const pmt = scheduledPayment(qd.principal, qd.ratePct, product.ioM > 0, product.amortYears);
   // No lender writes floating paper without a cap in place at closing. The
   // premium is a real cost of choosing the cheaper coupon, and it comes out of
   // the same equity cheque — which is the honest way to compare a floater to a
@@ -1165,7 +1210,7 @@ export function originate(
     floating: product.floating,
     ...(product.floating ? { bench: "short" as const } : {}),
     cap: capStrike !== undefined ? { strike: capStrike, expiresM: s.month + Math.min(product.termM, CAP_TERM_M) } : undefined,
-    capPremium: capStrike !== undefined ? Math.round(qd.principal * 0.0125) : undefined,
+    capPremium: capStrike !== undefined ? capPremiumOn(qd.principal) : undefined,
     points: product.points,
     recourse: product.recourse,
     prepay: product.prepay,
@@ -1276,12 +1321,7 @@ export function tickLoan(
   // reproduces the same schedule a level-payment loan would follow, and it
   // cannot drift below the interest.
   const io = q < loan.ioUntilM;
-  {
-    const yearsLeft = Math.max(1, loan.amortYears - (q - loan.originM) / 12);
-    loan.monthlyPmt = io
-      ? Math.ceil((loan.balance * loan.ratePct) / 100 / 12)
-      : Math.round(monthlyPayment(loan.balance, loan.ratePct, yearsLeft));
-  }
+  recastPayment(loan, q);
 
   const interest = (loan.balance * loan.ratePct) / 100 / 12;
   const principalPay = io ? 0 : Math.max(0, Math.min(loan.balance, loan.monthlyPmt - interest));
@@ -1347,10 +1387,7 @@ export function tickLoan(
     if (pay > 0) {
       loan.balance = Math.max(0, loan.balance - pay);
       logBooks(s, "debtSvc", pay, h.bbl);
-      const yearsLeft2 = Math.max(1, loan.amortYears - (q - loan.originM) / 12);
-      loan.monthlyPmt = io
-        ? Math.ceil((loan.balance * loan.ratePct) / 100 / 12)
-        : Math.round(monthlyPayment(loan.balance, loan.ratePct, yearsLeft2));
+      recastPayment(loan, q);
       // Re-test against the loan as it now stands. A cure that covered the
       // whole gap ends the breach this month; a partial one does not, and the
       // sweep and the clock go on exactly as they did.
@@ -1509,13 +1546,17 @@ export function tickLoan(
         // level annuity regardless of `product.ioM` overstated the payment for
         // the whole interest-only run — the same quantity the partial-refi
         // branch below already computes correctly, with two answers.
-        fresh.monthlyPmt = Math.round(
-          product.ioM > 0
-            ? (rolled * fresh.ratePct) / 100 / 12
-            : monthlyPayment(rolled, fresh.ratePct, fresh.amortYears),
-        );
         const feePaid = fundCashNeed(s, parcels, fee);
         logBooks(s, "debtSvc", feePaid, h.bbl);
+        // A FEE THE ACCOUNT CANNOT WRITE IS ADDED TO THE NOTE — the desk sized
+        // the balance plus the fee for exactly this (the test above), and it
+        // is what the holdover extension already does. Taking a partial
+        // payment and booking only what arrived let the rest of the fee
+        // simply not exist.
+        if (feePaid < fee) {
+          fresh.balance = fresh.principal = rolled + (fee - feePaid);
+        }
+        recastPayment(fresh, q);
         renewed = true;
         // THE DOCKET HAS TO SAY IT RENEWED. A balloon rolling onto new paper at
         // a new rate for a new term is one of the largest events in a levered
@@ -1569,11 +1610,7 @@ export function tickLoan(
           : null;
         if (h.loan && h.loan.balance !== qd.principal) {
           h.loan.balance = h.loan.principal = qd.principal;
-          h.loan.monthlyPmt = Math.round(
-            product.ioM > 0
-              ? (qd.principal * h.loan.ratePct) / 100 / 12
-              : monthlyPayment(qd.principal, h.loan.ratePct, h.loan.amortYears),
-          );
+          recastPayment(h.loan, q);
         }
         s.news.unshift({
           q, kind: "warn",
@@ -1708,7 +1745,16 @@ export function mezzQuote(s: GameState, parcels: ParcelTable, bbl: string): Mezz
   if (principal < 250_000) {
     return { ...empty, why: "No room behind the senior to the 85% stack — pay down the first lien or wait for value." };
   }
-  const ratePct = +(s.econ.indexRate + product.spread).toFixed(2);
+  // THE SAME PRICE LAW AS EVERY OTHER DESK. This was index + 8 in a boom and
+  // index + 8 in a panic, so in a crunch — when the senior desks widen by
+  // half again — the junior got relatively cheaper, which is backwards: mezz
+  // spreads roughly doubled in 2008-09 while senior spreads widened by half.
+  // A desk's spread widens in proportion to itself, so the junior moves most.
+  const ratePct = deskRatePct(s.econ.indexRate, product.spread, {
+    ci: s.econ.creditIdx ?? 1,
+    app: lenderAppetite(s, product.lender),
+    standingAdd: sponsorStanding(s).spreadAdd,
+  });
   return {
     available: true,
     principal,
@@ -1770,7 +1816,7 @@ export function placeMezz(
 }
 export const CAP_TERM_M = 36;
 export function rateCapCost(loan: Loan): number {
-  return Math.round(loan.balance * 0.0125);
+  return capPremiumOn(loan.balance);
 }
 
 export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
@@ -1984,7 +2030,6 @@ export function balloonLadder(
         // renewal: the life company only writes well-kept product, and
         // `originate` refuses at the table after the ladder has already picked.
         && conditionOk(p, h.condition));
-    const fee = Math.round(balance * REFI_FEE);
     const sized = ladder.map((p) => {
       const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition);
       return { p, qd: { ...raw, principal: Math.round(raw.principal * hair.mult) } };
@@ -2014,6 +2059,13 @@ export function balloonLadder(
     // straight into the gap-cheque and workout branches below.
     const product = pick?.p ?? PRODUCTS[0];
     const qd = pick?.qd ?? { ...quote(s, product, value, noi, quoteClass, false, stab, h.condition), principal: 0 };
+    // WHAT RENEWING COSTS AT THE TABLE — the same closing costs a refinance
+    // you choose pays (`refinance`): the 1% fee, the new desk's points, and a
+    // cap on floating paper, which no desk writes without. A renewal used to
+    // cost the fee alone, so letting a balloon roll was cheaper than choosing
+    // the same desk at the same rate on the Refi screen the month before.
+    const fee = Math.round(balance * (REFI_FEE + product.points))
+      + (product.floating ? capPremiumOn(balance) : 0);
   return { ladder, fee, pick, product, qd, clears: qd.principal >= balance + fee, value, noi, vacantDirt, quoteClass, hair, stab };
 }
 
@@ -2172,7 +2224,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const penalty = (h.loan ? prepayPenalty(h.loan, next.month, next.econ) : 0)
     + (h.mezz ? prepayPenalty(h.mezz, next.month, next.econ) : 0);
   const points = Math.round(qd.principal * product.points);
-  const capPremium = product.floating ? Math.round(qd.principal * 0.0125) : 0;
+  const capPremium = product.floating ? capPremiumOn(qd.principal) : 0;
   const fee = Math.round(Math.max(qd.principal, oldBal) * REFI_FEE) + points + penalty + capPremium;
   if (qd.principal < 100_000) return { s, err: "No lender will size a loan against this income." };
   // Cash-in (and fees) can draw the line the same way a balloon gap does — a

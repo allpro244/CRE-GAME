@@ -836,8 +836,20 @@ function chargeSponsorFailure(s: GameState, parcels: ParcelTable, r: Rival): { d
   }
   const term = Math.max(0, r.debt - known);
   const live = (s.lenders ?? []).filter((l) => l.failedM === undefined);
+  // THE TERM DEBT LANDS ON WHOEVER HOLDS IT. The mortgage record (ledger.ts)
+  // names a desk on every one of this firm's financed deeds; the loss follows
+  // those rows. Spreading it across every desk by book size made a failure
+  // nobody's problem in particular — the hometown bank ate a slice of a
+  // conduit borrower's collapse — and it is the same loan book the desk's
+  // delinquency line has been counting while the firm was in workout.
+  // Only a firm with no rows on the record (term debt and nothing financed)
+  // falls back to the market's shares.
+  const rows = Object.values(s.cityLoans ?? {}).filter((x) => x.obligorId === r.id && x.balance > 0);
+  const rowSum = rows.reduce((a, x) => a + x.balance, 0);
   const books = live.reduce((a, l) => a + l.book, 0);
-  if (term > 0 && books > 0) {
+  if (term > 0 && rowSum > 0) {
+    for (const x of rows) exposure[x.lender] = (exposure[x.lender] ?? 0) + term * (x.balance / rowSum);
+  } else if (term > 0 && books > 0) {
     for (const l of live) exposure[l.name] = (exposure[l.name] ?? 0) + term * (l.book / books);
   }
   const total = Object.values(exposure).reduce((a, x) => a + x, 0);

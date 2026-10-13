@@ -363,7 +363,7 @@ export function LocSplitHint({
   if (split.draw <= 0 && split.short <= 0) return null;
   const text = split.short > 0
     ? `${usd(split.cash)} cash · ${usd(split.draw)} on the line · short ${usd(split.short)}`
-    : `${usd(split.cash)} cash · ${usd(split.draw)} drawn on the line at ${split.rate.toFixed(2)}% (index + 400)`;
+    : `${usd(split.cash)} cash · ${usd(split.draw)} drawn on the line at ${split.rate.toFixed(2)}%`;
   return <div className="hint">{text}</div>;
 }
 

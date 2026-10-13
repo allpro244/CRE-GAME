@@ -345,7 +345,7 @@ export default function TopBar() {
             )}
             {/* THE LINE SHOWS UP WHEN IT IS OWED. Undrawn capacity is a fact
                 about the bank's appetite, and it sits in the Cash tooltip and on
-                Debt; a drawn balance is money the firm owes at index + 400, and
+                Debt; a drawn balance is money the firm owes its bank at the line rate, and
                 that is worth a readout of its own. */}
             {(game.loc?.balance ?? 0) > 0 && (
               <Stat

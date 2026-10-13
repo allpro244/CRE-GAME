@@ -2655,6 +2655,15 @@ export interface GameState {
    */
   cashMgmt?: { sweep?: boolean; keep?: number };
   /**
+   * THE TREASURY'S STANDING INSTRUCTIONS ON DEBT. A balloon any desk will
+   * renew rolls on its own at maturity (debt.ts tickLoan) and only sits on the
+   * docket; `rollMaxJumpBp` is the one condition a treasurer attaches to that
+   * instruction — "roll it, unless the coupon jumps more than this" — and a
+   * roll past it stops the clock so the principal can refinance, pay down or
+   * sell instead. Absent: every renewal that clears rolls without a stop.
+   */
+  debtPolicy?: { rollMaxJumpBp?: number };
+  /**
    * Money owed to you by the receiver of a failed bank — uninsured deposits
    * that will come back at 60-90c, in a year or two. It is not cash and it is
    * not net worth you can spend; it is a certificate and a wait.
@@ -3322,9 +3331,15 @@ export interface GameState {
   auctionQuiet?: boolean;
   /** Last docket's outcomes on lots you bid on. Cleared once read. */
   auctionResults?: { m: number; rows: AuctionResultRow[] };
-  // Revolving line against the portfolio: 35% of net worth at index + 400bps.
+  // Revolving line against the portfolio — see credit.ts for its size and price.
   loc: {
     balance: number; drawnTotal: number; interestPaid: number;
+    /**
+     * The bank that writes the line. A revolver is a bank's product, on a
+     * bank's balance sheet, and it carries that bank's appetite and fails with
+     * it. Absent on old saves: the firm's deposit bank (loanbook.lineHolder).
+     */
+    lender?: string;
     /**
      * The firm's own cash sitting on the line: every dollar repaid out of
      * cash, less every dollar drawn since, never more than the balance.

@@ -55,6 +55,7 @@
 // Everything below is the desk's pro forma, moved here so that value.ts can
 // solve it for land. There is no second copy. After: 1,095 lots on the same
 // probe, every one at hurdle 1.000; `test/residual-recon.mjs` holds it.
+import { deskRatePct } from "./pricing";
 import type { ParcelRecord } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "./types";
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
@@ -534,7 +535,14 @@ export function deskQuote(
   // The 1.1 approximates the interest-reserve gross-up, so the solved
   // commitment lands at the hold size rather than a tenth over it.
   const ltcMax = maxCommit && costTotal > 0 ? Math.min(uncapped, maxCommit / (costTotal * 1.1)) : uncapped;
-  const ratePct = +(e.indexRate + d.spread * (1 + (d.fund ? 0 : 0.9 * tight)) + Math.max(0, 1 - app) * (d.fund ? 0.3 : 0.8) - rel).toFixed(2);
+  // THE SAME PRICE LAW AS THE PERM DESKS (pricing.ts). The fund passes none
+  // of the window on — committed capital that prices the cycle into its
+  // spread instead of re-pricing with it, which is the whole reason a
+  // developer calls them in a crunch — and charges its own thin appetite like
+  // anybody else. This desk used to run a private version of the law with a
+  // smaller window term and a third of the appetite charge for the fund.
+  void tight;
+  const ratePct = deskRatePct(e.indexRate, d.spread, { ci: e.creditIdx ?? 1, app, ease: d.fund ? 0 : 1, rel });
   const open = app >= 0.12 && ltcMax > 0.02;
   return {
     lender: d.name, ratePct, ltcMax: +Math.max(0, ltcMax).toFixed(3), points: d.points, open,

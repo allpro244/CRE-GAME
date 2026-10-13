@@ -27,7 +27,7 @@ import { claimJob, jobDelivered, ownerOf, gradeOf } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
-import { lenderRelOf, bumpLenderRel, payOffDue, productById } from "./debt";
+import { relCurve, bumpLenderRel, payOffDue, productById } from "./debt";
 import {
   cancelSupplyProject,
   programmeSf,
@@ -161,7 +161,9 @@ export function constructionQuotes(s: GameState, mix: UseMix, costTotal: number)
     const app = lenderAppetite(s, d.name);
     const bank = lenderByName(s, d.name);
     const maxCommit = d.holdShare && bank ? bank.book * d.holdShare : undefined;
-    const rel = d.fund ? 0 : Math.min(0.4, Math.max(0, (lenderRelOf(s, d.name) - 20) * 0.005));
+    // The file at this desk, on the same convex curve every other loan it
+    // writes reads (relCurve) — not a private linear one.
+    const rel = d.fund ? 0 : relCurve(s, d.name);
     const q = deskQuote(s.econ, d, mix, costTotal, app, rel, maxCommit);
     const why = bank?.failedM !== undefined ? `${d.name} is in receivership — nobody is answering the phone.`
       : app < 0.12 ? `${d.name} has stopped writing new paper — their capital will not carry it.`
@@ -2268,7 +2270,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   }
 
   // THE TAKEOUT. The construction loan does not evaporate — it rolls into a
-  // mini-perm that is interest-only for a year and matures in three, and the
+  // mini-perm that is interest-only for two years and matures in five, and the
   // whole job now is to stabilise the building before that clock runs out.
   // A developer's real risk is not building it. It is owning it empty.
   // The hedge bought at the groundbreak (MDGA phase 5): a cap rides into the
@@ -2287,7 +2289,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   const carried = Math.max(0, Math.round((h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0)));
   if (h.mezz) h.mezz = null;
   h.loan = {
-    product: "cordage",
+    product: "miniperm",
     floating: !fixedTk,
     principal: d.loanBalance + carried,
     balance: d.loanBalance + carried,

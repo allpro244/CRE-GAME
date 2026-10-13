@@ -188,7 +188,7 @@ export function WorkoutDesk({ bbl }: { bbl: string }) {
   if (!w || !h?.loan) return null;
   const rec = resolveRec(parcels, game, bbl);
   if (!rec) return null;
-  const mood = workoutMood(game, w.lender);
+  const mood = workoutMood(game, w.lender, w.bbl);
   const value = ownedHoldingValue(game, parcels, h);
   const bal = h.loan.balance;
   const monthsLeft = Math.max(0, w.decideM - game.month);

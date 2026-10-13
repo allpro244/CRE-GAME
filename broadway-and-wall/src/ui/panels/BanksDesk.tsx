@@ -9,6 +9,8 @@ import { PRODUCTS, advanceFactor, statedLtv, underwritingStandards, standardsWor
 import { LineChart } from "@/ui/Chart";
 import { usd } from "@/ui/format";
 import { bankStatement, CapSpark } from "@/ui/panels/NotesPage";
+import { lineLender } from "@/engine/credit";
+import { appetiteAdvance } from "@/engine/pricing";
 
 export function TheBanks() {
   const game = useStore((s) => s.game)!;
@@ -154,13 +156,28 @@ export function TheBanks() {
                         {l.yours > 0 && <> · you are {(conc * 100).toFixed(2)}% of their book</>}
                         {conc > 0.06 && <span className="neg"> — big enough that your problems are theirs</span>}
                       </div>
+                      {/* WHAT THE BOOK IS MADE OF. The named loans are counted
+                          (engine/loanbook.ts) — yours, the street's, the cranes —
+                          and their delinquency is whether those borrowers are
+                          actually paying. The rest is the town's anonymous
+                          owners, whose losses are modelled as a population. */}
+                      {l.namedBook !== undefined && (
+                        <div style={{ marginTop: 6 }}>
+                          Book: {usd(l.namedBook)} to borrowers you can name ({usd(l.yours)} of it yours)
+                          {" "}and {usd(Math.max(0, l.book - l.namedBook))} to the town's other owners.
+                          {(l.namedDefault ?? 0) > 0
+                            ? <span className="neg"> {usd(l.namedDefault ?? 0)} of the named paper has stopped paying.</span>
+                            : " Every named loan is paying."}
+                          {lineLender(game)?.id === l.id && (game.loc?.balance ?? 0) > 0 && <> They write your line: {usd(game.loc.balance)} drawn.</>}
+                        </div>
+                      )}
                       <div style={{ marginTop: 6 }}>
                         {l.failedM !== undefined
                           ? "In receivership. Loans they wrote still have to be repaid; nothing new is being written, ever."
                           : l.appetite < 0.12
                             ? "Not quoting. Nothing you bring them gets underwritten until the capital comes back."
                             : l.appetite < 0.6
-                              ? `Rationing — the advance rate on anything they write is about ${(100 * Math.min(1.02, 0.55 + 0.45 * l.appetite)).toFixed(0)}% of their stated sheet, and the coupon carries about ${(Math.max(0, 1 - l.appetite) * 80).toFixed(0)}bps of extra spread.`
+                              ? `Rationing — the advance rate on anything they write is about ${(100 * appetiteAdvance(l.appetite)).toFixed(0)}% of their stated sheet, and the coupon carries about ${(Math.max(0, 1 - l.appetite) * 80).toFixed(0)}bps of extra spread.`
                               : "Writing at their stated terms."}
                       </div>
                       {(() => {

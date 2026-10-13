@@ -1,6 +1,6 @@
 // The revolving line of credit: the facility that keeps a good portfolio from
-// dying of a bad month. Sized at 35% of net worth, priced at the index plus
-// 400bps, drawn and repaid at will — and drawn automatically before cash goes
+// dying of a bad month. Sized at up to 60% of net worth (LOC_LTV, moved by
+// the credit cycle and your standing), priced at the index plus 400bps, drawn and repaid at will — and drawn automatically before cash goes
 // negative, because no real sponsor lets a rent cheque bounce while an
 // undrawn line sits on the desk.
 import type { ParcelTable } from "@/data/types";
@@ -9,6 +9,9 @@ import { logBooks, cloneState} from "./types";
 import { netWorth } from "./value";
 import { sponsorStanding } from "./sponsor";
 import { money } from "./money";
+import { deskRatePct, appetiteAdvance } from "./pricing";
+import { shortIndexOf } from "./market";
+import type { Lender } from "./lenders";
 
 /**
  * THE ADVANCE RATE, against net worth.
@@ -90,8 +93,47 @@ function locMoney(n: number): string {
   return `$${Math.round(n).toLocaleString()}`;
 }
 
+/**
+ * THE BANK THAT WRITES THE LINE.
+ *
+ * The revolver belonged to nobody: sized off net worth and the credit index,
+ * priced at a constant over the index, on no lender's book, untouched when the
+ * bank that would have written it was rationing or padlocked. A revolver is
+ * the most bank-shaped product there is, so it is a bank's now — the firm's
+ * operating bank by default (a life company, a conduit and a fund do not
+ * write corporate revolvers), pinned the first month it is drawn so that a
+ * line does not wander between desks with the deposit account. A line repaid
+ * to zero at a failed bank is released, and the next draw is written by
+ * whoever the firm banks with then.
+ */
+export function lineLender(s: GameState): Lender | undefined {
+  const banks = (s.lenders ?? []).filter((l) => l.kind === "bank");
+  if (s.loc?.lender) {
+    const pinned = banks.find((l) => l.name === s.loc.lender);
+    if (pinned) return pinned;
+  }
+  const live = banks.filter((l) => l.failedM === undefined);
+  return live.find((l) => l.id === s.bankId) ?? live[0];
+}
+
+/**
+ * THE LINE'S COUPON — the short index plus the line spread, through the one
+ * price law every desk reads (pricing.ts): wider when the credit window shuts,
+ * dearer at a bank short of capital, dearer for a sponsor with a record.
+ *
+ * It floats off the SHORT index: a revolver is SOFR/prime paper and has no
+ * term premium in it. It was priced off the loan index — the term rate fixed
+ * mortgages price off — and at a constant 400bp whatever its bank was doing,
+ * so the line cost the same at a flush bank in a boom and a broken one in a
+ * panic.
+ */
 export function locRate(s: GameState): number {
-  return +(s.econ.indexRate + LOC_SPREAD).toFixed(2);
+  const bank = lineLender(s);
+  return deskRatePct(shortIndexOf(s.econ), LOC_SPREAD, {
+    ci: s.econ.creditIdx ?? 1,
+    app: bank ? (bank.failedM !== undefined ? 0 : bank.appetite) : 1,
+    standingAdd: sponsorStanding(s).spreadAdd,
+  });
 }
 
 /**
@@ -159,7 +201,15 @@ export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): nu
   // sheet, so it is the first thing a bank pulls when your name goes bad —
   // and it is pulled at exactly the moment the rest of the stack needs it.
   const st = sponsorStanding(s);
-  const advance = LOC_LTV * Math.max(0.35, Math.min(1.15, ci)) * (1 - Math.min(0.6, 1.6 * st.advanceCut));
+  // AND THE BANK'S OWN BALANCE SHEET, the same multiplier every one of its
+  // term sheets carries (pricing.appetiteAdvance). A receiver does not
+  // advance: the commitment is repudiated, the drawn balance stands as it is
+  // (a receiver collects a performing loan, it does not call it), and there
+  // is no headroom until the line is repaid and rewritten elsewhere.
+  const bank = lineLender(s);
+  if (bank?.failedM !== undefined) return Math.max(0, Math.round(s.loc?.balance ?? 0));
+  const appFac = bank ? appetiteAdvance(bank.appetite) : 1;
+  const advance = LOC_LTV * Math.max(0.35, Math.min(1.15, ci)) * (1 - Math.min(0.6, 1.6 * st.advanceCut)) * appFac;
   return Math.max(0, Math.round(nw * advance));
 }
 
@@ -394,6 +444,9 @@ export function repayLoc(s: GameState, amount: number): { s: GameState; err?: st
 // shortfall automatically rather than letting the run die with credit unused.
 export function tickLoc(s: GameState, parcels: ParcelTable) {
   if (!s.loc) s.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
+  // Pin the line to its bank while it is drawn; release it once it is clear.
+  if (s.loc.balance > 0 && !s.loc.lender) s.loc.lender = lineLender(s)?.name;
+  else if (s.loc.balance <= 0 && s.loc.lender) delete s.loc.lender;
   const rate = locRate(s);
 
   if (s.loc.balance > 0) {

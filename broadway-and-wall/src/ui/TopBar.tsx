@@ -526,7 +526,8 @@ export default function TopBar() {
                 the rail. They are one question — what is money and space doing
                 — so they are one readout: the phase and the rate, with the
                 vacancy tell turning it red when the market is softening. The
-                full picture is a click away on City → Pulse. */}
+                full picture is a click away on City → Markets (the owner asked for Markets
+                to open, not Pulse). */}
             <span className="vital-pair">
               <Stat
                 label="Market"
@@ -534,7 +535,7 @@ export default function TopBar() {
                 bad={vacDpp !== null && vacDpp >= 2}
                 drop={1}
                 w={128}
-                onClick={() => setPage("pulse")}
+                onClick={() => setPage("economy")}
                 delta={dRateBp !== null ? (
                   <DeltaChip
                     value={dRateBp}

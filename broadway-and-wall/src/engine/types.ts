@@ -1745,6 +1745,12 @@ export interface Econ {
      */
     termPrem?: number;
     /**
+     * How far the bond market has learned that the bank's resting level is
+     * above (or below) where the model says it should be, in points — the
+     * shifting endpoint (Kozicki & Tinsley 2001). See `expectedPolicyAvg`.
+     */
+    endShift?: number;
+    /**
      * What the bank's own rule prescribes this month, before gradualism —
      * the rate it is walking toward. The bond market reads it to price the
      * path, the way a real one reads the dot plot and the data.

@@ -29,8 +29,14 @@ const ok = (cond, msg) => { console.log(`${cond ? "PASS" : "FAIL"}  ${msg}`); if
   const g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
   const at = (vac) => { const e = structuredClone(g.econ); e.cityVac.office = vac; return E.devPencils(e, "office"); };
   const nat = E.NATURAL_VAC.office;
-  const base = at(nat), mild = at(nat * 1.4), glut = at(nat * 3), worse = at(nat * 4);
-  ok(Math.abs(mild / base - 1) < 0.01, `up to 1.4× natural vacancy the pencil is untouched (${base.toFixed(3)} → ${mild.toFixed(3)})`);
+  // The pencil reads FORWARD vacancy (today's plus the pipeline), so "mild"
+  // is the highest of 1.4x/1.3x/1.2x today that keeps the forward read
+  // under 1.4x natural — the claim is about the forward, not the opening's
+  // particular pipeline.
+  const fwdAt = (vac) => { const e = structuredClone(g.econ); e.cityVac.office = vac; return E.forwardVacancy(e, "office"); };
+  const mildM = [1.4, 1.3, 1.2, 1.1].find((m) => fwdAt(nat * m) <= 1.4 * nat) ?? 1.0;
+  const base = at(nat), mild = at(nat * mildM), glut = at(nat * 3), worse = at(nat * 4);
+  ok(Math.abs(mild / base - 1) < 0.01, `up to 1.4× natural forward vacancy the pencil is untouched (${mildM}× today: ${base.toFixed(3)} → ${mild.toFixed(3)})`);
   ok(glut < base * 0.5 && worse <= glut, `at 3× natural it is under half (${glut.toFixed(3)}); at 4× no better (${worse.toFixed(3)})`);
 }
 

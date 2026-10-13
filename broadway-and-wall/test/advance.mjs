@@ -100,8 +100,8 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
     const q = E.buyQuote(g, parcels, L.bbl, L.ask, "harbor", 1);
     if (q.principal <= 0) continue;
-    const sheet = E.statedLtv(g, E.productById("harbor"), rec.class, E.gradeOf(g, rec)).ltv;
-    ok(near(q.ltvCap, sheet) && typeof q.sheetWhy === "string" && /sheet/.test(q.sheetWhy), `buyQuote.ltvCap ${pc(q.ltvCap)} is the sheet today (${q.sheetWhy})`);
+    const sheet = E.statedLtv(g, E.productById("harbor"), rec.class, E.conveyedGrade(g, rec, L.bbl)).ltv;
+    ok(near(q.ltvCap, sheet) && typeof q.sheetWhy === "string" && /sheet/.test(q.sheetWhy), `buyQuote.ltvCap ${pc(q.ltvCap)} is the sheet today ${pc(sheet)} (${q.sheetWhy})`);
     done = true; break;
   }
   ok(done, "found a financeable listing at the opening bell");

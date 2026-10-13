@@ -213,7 +213,7 @@ export function positiveLeverage(s: GameState, parcels: ParcelTable): { count: n
     const cap = (inPlace(rec, s, li.bbl, li.ask).noi / li.ask) * 100;
     let coupon = Infinity;
     for (const p of PRODUCTS) {
-      if (p.mezz || p.id === "land") continue;
+      if (p.mezz || p.uwDscr <= 0) continue;
       const q = buyQuote(s, parcels, li.bbl, li.ask, p.id, 1);
       if (q.principal > 0 && q.allInPct < coupon) coupon = q.allInPct;
     }

@@ -240,6 +240,15 @@ export const PRODUCTS: LoanProduct[] = [
     uwDscr: 0, debtYield: 0, points: 0.015, recourse: true, prepay: "open", prepayM: 0,
     minDSCR: 0, maxLTV: 0.70,
   },
+  {
+    // The community bank that grew on construction: further on dirt than the
+    // hometown bank, a shorter leash, and it wants to fund the building too.
+    id: "tideLand", label: "Tidewater land & development loan · 2 yr, recourse", lender: "Tidewater Community Bank",
+    blurb: "Further on dirt than anyone else in town, and cheaper than it should be. They want the construction loan next.",
+    ltv: 0.60, spread: 3.20, floating: true, ioM: 24, amortYears: 30, termM: 24,
+    uwDscr: 0, debtYield: 0, points: 0.012, recourse: true, prepay: "open", prepayM: 0,
+    minDSCR: 0, maxLTV: 0.75,
+  },
 ];
 
 /**
@@ -607,6 +616,7 @@ const ADVANCE_BAND: Record<string, { up: number; down: number }> = {
   cordage: { up: 0.05, down: 0.10 },
   mezz: { up: 0.05, down: 0.10 },
   land: { up: 0.10, down: 0.15 },
+  tideLand: { up: 0.10, down: 0.20 },
 };
 
 /**
@@ -729,7 +739,7 @@ export function streetRefiProceeds(
 export function productOpen(s: GameState, p: LoanProduct): boolean {
   if (sponsorStanding(s).institutional) return true;
   // hard money does not care about your history; it prices it
-  return p.id === "cordage" || p.id === "mezz" || p.id === "land";
+  return p.id === "cordage" || p.id === "mezz" || p.uwDscr <= 0;   // land money lends on the dirt, not the file
 }
 
 /**

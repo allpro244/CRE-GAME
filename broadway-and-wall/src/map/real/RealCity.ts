@@ -20,7 +20,7 @@ import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
 import { siteOutline, ringCentroid } from "./siteRing";
 import { PostFX } from "./post";
-import { FlatBuf, TURF_U, bloomTex, inRing as inRingPk, longGrassTex, parkGeom, segDist, settsTex, turfMaterial, walkTex } from "./parks";
+import { FlatBuf, GRASS_U, TURF_U, bloomTex, grassMaterial, inRing as inRingPk, longGrassTex, parkGeom, segDist, settsTex, turfMaterial, walkTex } from "./parks";
 import { Traffic, type Car, type Crosser, type NetRaw } from "./traffic";
 import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
 import { BOOK_PICKER } from "./patternbook/register";
@@ -1089,8 +1089,13 @@ export function facadeSwatches(keys: string[]): Record<string, string> {
 // ---- geometry accumulation -------------------------------------------------
 
 /** Parts with fixed vertex colours, merged into one non-indexed geometry. */
-/** Lawn tones, multiplying the season's grass colour: lush, two ordinary, dry, yellowing, blue-green, sun-bleached, patchy dark. */
-const LAWN_TONES = [[0.92, 1.06, 0.88], [1, 1, 1], [1.02, 0.99, 0.95], [1.14, 1.06, 0.82], [1.22, 1.1, 0.74], [0.86, 0.98, 1.06], [1.16, 1.14, 1.0], [0.84, 0.9, 0.82]];
+/**
+ * Lawn tones, multiplying the season's grass colour: one lot watered a little
+ * more than the next, one a little drier. They were a swing from lush to
+ * sun-bleached, and a block of them read as a patchwork of painted cards; the
+ * big variation is now the grass shader's, in world space, across lot lines.
+ */
+const LAWN_TONES = [[0.97, 1.02, 0.98], [1, 1, 1], [1.02, 1.0, 0.96], [1.04, 1.02, 0.92], [0.96, 0.99, 1.02], [1.01, 1.01, 0.98]];
 
 function mergeColored(parts: [THREE.BufferGeometry, number[]][]): THREE.BufferGeometry {
   const pos: number[] = [], nrm: number[] = [], col: number[] = [];
@@ -1530,27 +1535,9 @@ export class RealCityLayer {
   private barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 1 });
   private pineMat = new THREE.MeshStandardMaterial({ color: 0x2e4a32, roughness: 1, flatShading: true, envMapIntensity: 0.08 });
   private bedMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
-  private meadowMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
+  private meadowMat = grassMaterial("rough");
   /** The open ground of a built lot (round 25): a mown lawn, plaza paving, a paved yard, an asphalt work yard. */
-  private lotLawnMat = (() => {
-    const m = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
-    // GROUND THAT VARIES LIKE GROUND (round 28): two octaves of soft value
-    // noise in world space, tens of metres across, lighten and darken the
-    // grass across lot lines, the way sun, soil and wear vary a real city's
-    m.onBeforeCompile = (sh) => {
-      sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vGw;")
-        .replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvGw = (modelMatrix * vec4(transformed, 1.0)).xy;");
-      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>
-varying vec2 vGw;
-float gH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(gH(i), gH(i + vec2(1.0, 0.0)), f.x), mix(gH(i + vec2(0.0, 1.0)), gH(i + vec2(1.0, 1.0)), f.x), f.y); }`)
-        .replace("#include <color_fragment>", `#include <color_fragment>
-{ float n = gN(vGw / 38.0) * 0.65 + gN(vGw / 11.0) * 0.35;
-  diffuseColor.rgb *= mix(vec3(0.84, 0.86, 0.9), vec3(1.12, 1.1, 0.94), n); }`);
-    };
-    return m;
-  })();
+  private lotLawnMat = grassMaterial("lawn");
   private lotPlazaMat = new THREE.MeshStandardMaterial({ roughness: 0.8, envMapIntensity: 0.25, vertexColors: true });
   private lotPaveMat = new THREE.MeshStandardMaterial({ roughness: 0.9, envMapIntensity: 0.2, vertexColors: true });
   private lotWorkMat = new THREE.MeshStandardMaterial({ roughness: 0.95, envMapIntensity: 0.15, vertexColors: true });
@@ -1983,15 +1970,21 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
     };
     for (const nx of [-1, 0, 1]) for (const ny of [-1, 0, 1]) pt(nx, ny);
-    // the tallest towers throw their shadows a long way: a margin on all sides
-    const pad = 0.08 * Math.max(u1 - u0, v1 - v0) + 60;
+    // a wide margin, so a pan or a tilt stays inside the box and nothing is
+    // redrawn: every redraw moves every shadow edge, and a stream of them as
+    // the camera moved was the flicker the owner saw (gone with ?noshadows)
+    const pad = 0.25 * Math.max(u1 - u0, v1 - v0) + 80;
     u0 -= pad; u1 += pad; v0 -= pad; v1 += pad;
     const need = Math.max(u1 - u0, v1 - v0) / 2;
     // quarter-octave steps, so the texel size only changes on a real zoom
-    const span = 260 * Math.pow(2, Math.ceil(Math.log2(Math.max(220, Math.min(4200, need)) / 260) * 4) / 4);
+    let span = 260 * Math.pow(2, Math.ceil(Math.log2(Math.max(220, Math.min(4200, need)) / 260) * 4) / 4);
     const b = this.shadowBox;
+    // HYSTERESIS: the box grows the moment it must, but shrinks only once the
+    // view needs under ~55% of it, so a zoom does not step the shadow
+    // resolution (and redraw every edge) at each quarter-octave on the way
+    if (b.span && span < b.span && need > b.span * 0.55) span = b.span;
     const inside = u0 >= b.cx - b.span && u1 <= b.cx + b.span && v0 >= b.cy - b.span && v1 <= b.cy + b.span;
-    if (inside && span >= b.span && span === this.shadowSpan) return;
+    if (inside && span === b.span && span === this.shadowSpan) return;
     // centre on the footprint, moved in whole texels of the light's view
     const texel = (2 * span) / this.sun.shadow.mapSize.x;
     const cu = Math.round(((u0 + u1) / 2) / texel) * texel, cv = Math.round(((v0 + v1) / 2) / texel) * texel;
@@ -4654,12 +4647,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       {
         const bn = "lot:" + back, BB = this.buf(bn), b0 = BB.count;
         if (back === "lawn") {
-          // NO TWO LAWNS ALIKE (round 28): each lot its own grass, from lush to
-          // dry, blue-green to sun-bleached, and its texture turned and shifted
-          // so the pattern never lines up with the neighbour's
-          const tone = LAWN_TONES[Math.floor(hash01(k ^ 0x1a3d, 5) * LAWN_TONES.length)];
-          const a = hash01(k ^ 0x1a3e, 5) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), ox = hash01(k ^ 0x1a3f, 5) * 3, oy = hash01(k ^ 0x1a40, 5) * 3;
-          lay(BB, ring, 0.022, [tone[0] * j, tone[1] * j, tone[2] * j], (q) => [(q[0] * ca - q[1] * sa) * 0.25 + ox, (q[0] * sa + q[1] * ca) * 0.25 + oy]);
+          // NO TWO LAWNS ALIKE (round 28): each lot its own grass, a shade
+          // off its neighbour's (the grass shader carries the rest)
+          const tone = LAWN_TONES[Math.floor(hash01(k ^ 0x1a3d, 5) * LAWN_TONES.length)], jl = 0.98 + (j - 1) * 0.3;
+          lay(BB, ring, 0.022, [tone[0] * jl, tone[1] * jl, tone[2] * jl]);
         } else lay(BB, ring, 0.02, [j, j, j]);
         this.note(bbl, bn, b0);
       }
@@ -4727,9 +4718,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     // the surfaces' textures, made once. tri() lays uv at one unit per four
     // metres, so a repeat of 4 / m makes a texture one tile per m metres
-    if (!this.lotLawnMat.map) {
+    if (!this.lotPlazaMat.map) {
       const tex = (t: THREE.Texture, m: number) => { t.repeat.set(4 / m, 4 / m); return t; };
-      this.lotLawnMat.map = tex(this.lawnTex(), 12); this.lotPlazaMat.map = tex(this.plazaTex(), 6);
+      this.lotPlazaMat.map = tex(this.plazaTex(), 6);
       this.lotPaveMat.map = tex(this.pavingTex(), 1.5); this.lotWorkMat.map = tex(this.parkingTex(), 5);
     }
   }
@@ -4915,7 +4906,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     if (lotMeadow.count) {
       const m = new THREE.Mesh(lotMeadow.geometry(), this.meadowMat);
-      this.meadowMat.map = this.meadowTex();
       m.receiveShadow = true; this.scene.add(m);
     }
     if (lotCrop.count) {
@@ -6119,7 +6109,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         this.scene.add(this.precip);
       }
     }
-    // the fields and rough grass under snow
+    // the fields and rough grass under snow, which buries their variety too
+    GRASS_U.uSnow.value = snowG;
     this.meadowMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
     this.lotLawnMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
     this.turfMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
@@ -6176,29 +6167,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     return t;
   }
 
-  /** Rough grass on unbuilt land: tussocks, a worn path, the odd bare patch. */
-  /** Overgrown grass (round 29): green with straw, clumps of taller tussock, seed heads, bare patches (5 m tile). */
-  private meadowTex(): THREE.CanvasTexture {
-    const N = 256;
-    const { c, g } = makeCanvas(N, N);
-    let s = 613; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    g.fillStyle = "#7d9358"; g.fillRect(0, 0, N, N);
-    const blob = (x: number, y: number, r: number, col: string) => {
-      for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) {
-        const gr = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
-        gr.addColorStop(0, col); gr.addColorStop(1, "rgba(0,0,0,0)");
-        g.fillStyle = gr; g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
-      }
-    };
-    for (let i = 0; i < 30; i++) blob(rnd() * N, rnd() * N, 20 + rnd() * 40, rnd() < 0.5 ? "rgba(170,160,95,0.35)" : "rgba(70,95,45,0.35)");
-    for (let i = 0; i < 6; i++) blob(rnd() * N, rnd() * N, 8 + rnd() * 12, "rgba(140,120,85,0.45)");
-    // tussocks: tight dark clumps with a lit top
-    for (let i = 0; i < 220; i++) { const x = rnd() * N, y = rnd() * N, r = 2 + rnd() * 4; blob(x, y, r, "rgba(55,75,35,0.55)"); blob(x - r * 0.3, y - r * 0.3, r * 0.5, "rgba(170,175,110,0.35)"); }
-    // blades and seed heads
-    for (let i = 0; i < 9000; i++) { const v = rnd(); g.fillStyle = v < 0.45 ? "rgba(50,70,30,0.3)" : v < 0.85 ? "rgba(175,180,115,0.25)" : "rgba(210,195,140,0.4)"; g.fillRect(rnd() * N, rnd() * N, 1, 2 + rnd() * 2); }
-    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
-    return t;
-  }
   /** A parking lot gone to seed (round 29): faded, patched asphalt, cracks, weeds in them, ghost bay lines (5 m tile). */
   private oldLotTex(): THREE.CanvasTexture {
     const N = 256;
@@ -6246,30 +6214,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     return t;
   }
 
-  /**
-   * A city lawn (round 27): not a mown pitch. Soft clumps of darker and
-   * lighter green at two scales, a few worn patches, a fine grain of blades;
-   * white-based so the material colour carries the season. 256 px over 12 m.
-   */
-  private lawnTex(): THREE.CanvasTexture {
-    const N = 256;
-    const { c, g } = makeCanvas(N, N);
-    let s = 2111; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    g.fillStyle = "#ffffff"; g.fillRect(0, 0, N, N);
-    const blob = (x: number, y: number, r: number, col: string) => {
-      for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) {
-        const gr = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
-        gr.addColorStop(0, col); gr.addColorStop(1, "rgba(255,255,255,0)");
-        g.fillStyle = gr; g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
-      }
-    };
-    for (let i = 0; i < 26; i++) blob(rnd() * N, rnd() * N, 30 + rnd() * 50, rnd() < 0.55 ? "rgba(70,80,50,0.22)" : "rgba(255,255,240,0.22)");
-    for (let i = 0; i < 70; i++) blob(rnd() * N, rnd() * N, 6 + rnd() * 14, rnd() < 0.6 ? "rgba(60,75,40,0.25)" : "rgba(255,255,235,0.2)");
-    for (let i = 0; i < 5; i++) blob(rnd() * N, rnd() * N, 10 + rnd() * 16, "rgba(235,210,150,0.35)");
-    for (let i = 0; i < 9000; i++) { const d = rnd() < 0.5; g.fillStyle = d ? "rgba(40,50,25,0.12)" : "rgba(255,255,230,0.1)"; g.fillRect(rnd() * N, rnd() * N, 1, 1.5 + rnd()); }
-    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
-    return t;
-  }
   /** Plaza paving: large pale granite flags, 1.5 m by 3 m, in running bond (6 m tile). */
   private plazaTex(): THREE.CanvasTexture {
     const { c, g } = makeCanvas(128, 128);
@@ -6875,7 +6819,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       this.walkMat.map = walkTex();
       const pt = this.plazaTex(); this.parkPlazaMat.map = pt;
       this.settsMat.map = settsTex();
-      this.turfMat.map = this.lawnTex();
     }
     for (const [b, mat, st] of [[turf, this.turfMat, true], [walks, this.walkMat, false], [plaza, this.parkPlazaMat, false], [setts, this.settsMat, false]] as [FlatBuf, THREE.Material, boolean][]) {
       if (!b.count) continue;
@@ -8345,13 +8288,14 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const ripe = [0, 0, 0, 0, 0, 0, 0.1, 0.45, 0.85, 0.3, 0, 0][this.month];
     this.cropMat.color.setRGB(0.9 + vig * 0.1 + ripe * 0.35, 0.82 + vig * 0.18 + ripe * 0.15, 0.78 + vig * 0.05 - ripe * 0.3);
     // overgrown grass: straw-brown in winter, a rough green in summer
-    this.meadowMat.color.setRGB(1.2 - vig * 0.22, 1.05 - vig * 0.09, 0.8 - vig * 0.12);
+    // (the grass colours below are the albedo itself now; the grass shader varies it)
+    this.meadowMat.color.setRGB(0.36 - vig * 0.21, 0.31 - vig * 0.11, 0.16 - vig * 0.085);
     // a mown lawn: dormant straw-green in winter, full green in summer
     // (lit by the sun, unlike the flat park fill, so it is set darker to read a step below a park)
-    this.lotLawnMat.color.setRGB(0.27 - vig * 0.07, 0.26 + vig * 0.03, 0.17 - vig * 0.05);
+    this.lotLawnMat.color.setRGB(0.25 - vig * 0.085, 0.235 - vig * 0.01, 0.15 - vig * 0.065);
     // the park turf: kept and watered, so a step greener than a yard all season,
     // and a dull winter green rather than straw when it rests
-    this.turfMat.color.setRGB(0.25 - vig * 0.065, 0.255 + vig * 0.04, 0.165 - vig * 0.05);
+    this.turfMat.color.setRGB(0.22 - vig * 0.075, 0.235 + vig * 0.01, 0.14 - vig * 0.065);
     for (const m of [this.walkMat, this.parkPlazaMat, this.settsMat]) m.color.setRGB(1, 1, 1);
     // long grass: straw in winter, a deep summer green, seeding gold in August
     const seed = [0, 0, 0, 0, 0, 0, 0.2, 0.55, 0.4, 0.1, 0, 0][this.month];

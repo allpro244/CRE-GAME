@@ -35,20 +35,40 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 
 const { parcels, bbls, adjacency } = loadCity(0, E.normalizeParcels);
 let g = E.newGame(71191, parcels, 500_000_000);
-// A lot whose zoning hosts sheds — the engine's own rule (zoneUseBar).
-const bbl = bbls.find((b) => parcels[b]?.class === "land" && parcels[b]?.lotArea > 4_000
-  && !E.zoneUseBar(parcels[b], "industrial", g.econ));
-if (!bbl) throw new Error("No BTS site.");
-const rec = parcels[bbl];
-const basis = Math.round(E.landValue(rec, g.econ));
+// Bought at half the mark — dirt picked up in the opening depression, which
+// is what a developer who shops a build-to-suit has usually done: the land
+// basis is in the yield on cost, and the rent the shell needs follows it.
+const handOver = (b) => {
+  const basis = Math.round(E.landValue(parcels[b], g.econ) * 0.5);
+  g.holdings[b] = {
+    bbl: b, boughtM: 0, costBasis: basis, assessed: basis, loan: null,
+    condition: "average", condIdx: 0.55, svcIdx: 0.55,
+    service: 0, stance: 0, plan: 1, tenants: [], cfHistory: [],
+  };
+};
+// A SITE WHERE A BUILD-TO-SUIT CAN CLOSE. An anchor signs at the rent the
+// shell needs to clear its hurdle, and only up to what it would pay for new
+// space (btsRentRead) — so the flow is tested on a lot where those meet, the
+// lot a developer would actually shop. Most lots do not; that is tested below.
 // The site is handed over rather than bought: purchase is not what this file
 // tests, and the ledger reconciliation below starts after the hand-over.
-g.holdings[bbl] = {
-  bbl, boughtM: 0, costBasis: basis, assessed: basis, loan: null,
-  condition: "average", condIdx: 0.55, svcIdx: 0.55,
-  service: 0, stance: 0, plan: 1, tenants: [], cfHistory: [],
-};
-const floors = Math.min(4, E.maxFloorsFor(rec, 0.62, "industrial"));
+let bbl, use, floors, read0;
+const lots = bbls.filter((b) => parcels[b]?.class === "land" && parcels[b]?.lotArea > 4_000 && !parcels[b].bldgArea)
+  .sort((a, b) => (parcels[b].demandScore ?? 0) - (parcels[a].demandScore ?? 0));
+search: for (const b of lots.slice(0, 120)) {
+  for (const u of ["office", "retail", "industrial"]) {
+    if (E.zoneUseBar(parcels[b], u, g.econ)) continue;
+    handOver(b);
+    for (const fl of u === "retail" ? [2, 1] : [8, 6, 4, 2]) {
+      if (fl > E.maxFloorsFor(parcels[b], 0.62, u)) continue;
+      const rd = E.btsRentRead(g, parcels, b, u, fl, 0.62);
+      if (rd && rd.need <= rd.market) { bbl = b; use = u; floors = fl; read0 = rd; break search; }
+    }
+    delete g.holdings[b];
+  }
+}
+if (!bbl) throw new Error("No lot in the test city where a build-to-suit can close.");
+console.log(`       site ${bbl}: ${floors} fl of ${use}, needs $${read0.need}/sf against $${read0.market.toFixed(2)} market`);
 
 let bad = 0;
 const check = (ok, msg) => {
@@ -98,15 +118,23 @@ const step = () => {
 };
 
 console.log("\nBUILD-TO-SUIT DEVELOPMENT\n");
-const spec = E.planDevelopment(g, parcels, bbl, "industrial", floors, 0.62, "gmp");
-const proposed = E.proposeBuildToSuit(g, parcels, bbl, "industrial", floors, 0.62);
+const proposed = E.proposeBuildToSuit(g, parcels, bbl, use, floors, 0.62);
 if (proposed.err) die(`listing refused: ${proposed.err}`);
 g = proposed.s;
 check(!!g.holdings[bbl].btsOffer && !g.btsProspects?.[bbl],
   "proposing LISTS the site — nobody is signed on the click");
-const again = E.proposeBuildToSuit(g, parcels, bbl, "industrial", floors, 0.62);
+const again = E.proposeBuildToSuit(g, parcels, bbl, use, floors, 0.62);
 check(!again.err && again.s.holdings[bbl].btsOffer.sinceM === g.holdings[bbl].btsOffer.sinceM,
   "re-listing the same programme keeps its place on the book");
+
+{
+  const fifty = E.proposeBuildToSuit(g, parcels, bbl, use, floors, 0.62, 50);
+  const long = E.proposeBuildToSuit(g, parcels, bbl, use, floors, 0.62, 80);
+  check(fifty.s.holdings[bbl].btsOffer.termY === 50 && long.s.holdings[bbl].btsOffer.termY === E.BTS_TERM_MAX_Y,
+    `the listing carries the term you offer (${E.BTS_TERM_MIN_Y}-${E.BTS_TERM_MAX_Y} years)`);
+  const r15 = E.btsRentRead(g, parcels, bbl, use, floors, 0.62, 2, 15), r50 = E.btsRentRead(g, parcels, bbl, use, floors, 0.62, 2, 50);
+  check(r50.need <= r15.need * 1.05, `fifty-year paper does not need much more rent than fifteen ($${r50.need} vs $${r15.need}) — the commission steps down`);
+}
 
 // ---- wait for an anchor, through tickBuildToSuit ----------------------------
 // Ten years is far past the odds on a small shed in a normal market (the
@@ -125,23 +153,46 @@ console.log(`       ${bts.name} signed after ${g.month - listedM} month(s): ${bt
 check(!g.holdings[bbl].btsOffer, "the listing comes off the book when an anchor signs");
 check(bts.credit >= 1 && bts.termM >= 180, "bankable tenant signs long paper before groundbreak");
 check(bts.rentPsf > 0, "commitment carries fixed rent");
-check(bts.use === "industrial", "the anchor signs for the programme that was listed");
+check(bts.use === use && bts.floors === floors, "the anchor signs for the programme that was listed");
+check(bts.startByM === bts.signedM + E.BTS_START_WINDOW_M, `the lease carries an outside date for groundbreak (${E.BTS_START_WINDOW_M} months)`);
 
-const anchored = E.planDevelopment(g, parcels, bbl, "industrial", floors, 0.62, "gmp",
+const anchored = E.planDevelopment(g, parcels, bbl, use, floors, 0.62, "gmp",
   undefined, { bts });
+const readAtSign = E.btsRentRead(g, parcels, bbl, use, floors, 0.62, bts.credit, bts.termM / 12);
+check(bts.rentPsf >= readAtSign.market - 0.01 && bts.rentPsf <= readAtSign.ceiling + 0.01,
+  `a build-to-suit lets at market or better, within the anchor's ceiling ($${bts.rentPsf} against $${readAtSign.market.toFixed(2)} market, $${readAtSign.ceiling.toFixed(2)} ceiling)`);
+check(bts.termM === E.BTS_TERM_DEFAULT_Y * 12 && bts.bumpPct > 0, `they sign the listed term (${bts.termM / 12} yrs) with an annual bump (${bts.bumpPct}%)`);
+check(anchored.hurdleRatio >= 1, `the signed rent builds the building (anchored hurdle ${anchored.hurdleRatio.toFixed(3)}x the month they sign)`);
 // AGAINST THE SAME BUILDING, SPECULATIVE, THE SAME MONTH (2026-10-09). `spec`
 // was priced the month the site was listed and the anchor signs months later,
 // so this compared a signed lease against a credit market that had moved in
 // between. It passed while the credit window stepped with the phase label and
 // failed once credit followed national unemployment; neither said anything
 // about the lease. The claim is about the lease, so both sides are priced now.
-const specNow = E.planDevelopment(g, parcels, bbl, "industrial", floors, 0.62, "gmp");
+const specNow = E.planDevelopment(g, parcels, bbl, use, floors, 0.62, "gmp");
 check(anchored.leaseUp < specNow.leaseUp, "anchor reduces speculative lease-up reserve");
+check(anchored.ratePct < specNow.ratePct, `a signed credit lease borrows cheaper (${anchored.ratePct.toFixed(2)}% vs ${specNow.ratePct.toFixed(2)}% spec)`);
 check(anchored.ltcMax >= specNow.ltcMax, `signed lease supports at least as much construction financing (LTC ${anchored.ltcMax.toFixed(3)} vs ${specNow.ltcMax.toFixed(3)} speculative, same month)`);
+
+// ---- the signature has an end, and it belongs to the site ---------------------
+{
+  const late = structuredClone(g);
+  late.month = bts.startByM + 1;
+  E.tickBuildToSuit(late, parcels);
+  check(!late.btsProspects?.[bbl] && late.news.some((n) => n.text.includes(bts.name) && n.text.includes("walked")),
+    "past the outside date with nothing in the ground, the anchor walks and says so");
+  const sold = structuredClone(g);
+  delete sold.holdings[bbl];
+  E.tickBuildToSuit(sold, parcels);
+  check(!sold.btsProspects?.[bbl], "terms do not outlive the site they were signed on");
+  const forged = E.startDevelopment(structuredClone(g), parcels, bbl, use, floors, 0.62, "gmp",
+    undefined, { bts: { ...bts, name: "Nobody Signed Ltd" } });
+  check(!forged.err && !forged.s.developments[bbl]?.bts, "a commitment that is not on the book builds spec");
+}
 
 // ---- break ground -----------------------------------------------------------
 const devBefore = prev.books.dev;
-const started = E.startDevelopment(g, parcels, bbl, "industrial", floors, 0.62, "gmp",
+const started = E.startDevelopment(g, parcels, bbl, use, floors, 0.62, "gmp",
   anchored.ltcMax, { bts });
 if (started.err) die(`BTS project breaks ground: ${started.err}`);
 g = started.s;
@@ -171,6 +222,7 @@ const tenant = g.holdings[bbl]?.tenants.find((t) => t.name === bts.name);
 check(!!tenant, "named tenant takes possession at delivery");
 check(tenant?.sf === bts.sf && tenant?.rentPsf === bts.rentPsf, "delivered lease matches signed BTS terms");
 check(tenant?.endM - tenant?.startM === bts.termM, "the lease runs the signed term from delivery");
+check(tenant?.bumpPct === bts.bumpPct, "the signed bump is on the delivered lease");
 check((tenant?.deposit ?? 0) > 0, "the anchor posts a security deposit at possession");
 
 // ---- and it pays --------------------------------------------------------------

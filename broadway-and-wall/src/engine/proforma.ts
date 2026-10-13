@@ -907,8 +907,13 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // A bankable lease turns speculative construction into contracted credit.
   // The boost is bounded by anchor share and covenant; it cannot exceed an
   // ordinary senior construction advance.
+  // The let share borrows at the credit-lease advance; the rest of the
+  // building (shops at grade under an anchored office, say) at what the desk
+  // would lend on it spec. Taking the let share alone, as this used to, lent
+  // nothing at all against the unlet floors — so an 85%-let office borrowed
+  // less than the same building bare.
   if (bts && bts.credit >= 1) {
-    const btsAdvance = (bts.credit === 2 ? 0.68 : 0.58) * btsShare;
+    const btsAdvance = (bts.credit === 2 ? 0.68 : 0.58) * btsShare + ltcMax * (1 - btsShare);
     ltcMax = Math.max(ltcMax, btsAdvance);
   }
   // Math.min(x, undefined) is NaN, and a NaN here does not throw — it becomes
@@ -917,7 +922,13 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // that is not a real number is simply not a request.
   const wanted = Number.isFinite(o.ltcWanted as number) ? (o.ltcWanted as number) : ltcMax;
   const ltc = Math.max(0, Math.min(ltcMax, wanted));
-  const ratePct = cq.ratePct;
+  // ...AND IT PRICES TIGHTER. A construction loan against a signed credit
+  // lease is underwritten to the tenant, not to lease-up: pre-leased credit
+  // deals are commonly quoted 50-100bp inside spec. Estimate, scaled by how
+  // much of the building is let and how good the name is.
+  const ratePct = bts && bts.credit >= 1
+    ? +(cq.ratePct - (bts.credit === 2 ? 0.75 : 0.5) * btsShare).toFixed(3)
+    : cq.ratePct;
 
   // THE DEFICIT IS AN INTEGRAL, NOT AN AVERAGE.
   //
@@ -951,9 +962,15 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // even when stab NOI / build cost cleared the hurdle. Same split
   // `leaseUpValue` already uses for the vacant-building fill cheque.
   const specLeaseUp = Math.round(openSf * (tiPsf * econ.costIdx + lcPsf)) + carry + deficit;
+  // The commission on the anchor's lease steps down with the term, as
+  // landlord schedules do: the full 2% of rent on the first ten years, half
+  // that on the next ten, nothing past twenty. Charged flat on every year, a
+  // fifty-year lease paid a whole year's rent to the broker and the longest,
+  // best paper on the desk penciled worst.
+  const commissionYears = bts ? Math.min(bts.termM / 12, 10) + 0.5 * Math.max(0, Math.min(bts.termM / 12, 20) - 10) : 0;
   const anchorCost = bts
     ? Math.round(bts.sf * bts.tiPsf * econ.costIdx
-      + bts.rentPsf * bts.sf * (bts.termM / 12) * 0.02)
+      + bts.rentPsf * bts.sf * commissionYears * 0.02)
     : 0;
   const leaseUp = Math.round(specLeaseUp * (1 - btsShare));
   const costTotal = hardCost + softCost + demo + contingency + leaseUp + anchorCost;

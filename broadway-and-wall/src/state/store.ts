@@ -351,7 +351,7 @@ interface AppState {
   setDesignSpin: (v: boolean) => void;
   /** Persist an in-progress development scheme so leaving the lot does not wipe it. Pass null to clear. */
   setDevDraft: (bbl: string, draft: Partial<DevDraft> | null) => void;
-  proposeBts: (bbl: string, use: DevUse, floors: number, coverage: number) => void;
+  proposeBts: (bbl: string, use: DevUse, floors: number, coverage: number, termY?: number) => void;
   clearBts: (bbl: string) => void;
   convertUse: (bbl: string, target: "multifamily" | "mixed", mix?: UseMix) => void;
   offer: (bbl: string, price: number, finalOffer?: boolean) => void;
@@ -1412,10 +1412,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
 
-  proposeBts: (bbl, use, floors, coverage) => {
+  proposeBts: (bbl, use, floors, coverage, termY) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = proposeBuildToSuit(game, parcels, bbl, use, floors, coverage);
+    const r = proposeBuildToSuit(game, parcels, bbl, use, floors, coverage, termY);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Listed for build-to-suit.");

@@ -133,15 +133,27 @@ function waterHolesLL(outer, waters, toLL) {
 // dry ground" against THE SAME inset ring the generator builds its blocks from.
 // Answering it with a private copy of this would be a second opinion, and two
 // answers to one question is how a station ends up in the water.
-export function offsetInward(ring, d) {
+/**
+ * Offset a ring inward by d (outward when d < 0).
+ *
+ * `byWinding` picks "inward" from the ring's winding — the left-hand normal
+ * of a counterclockwise ring — which is right on any shape. Without it,
+ * inward is "toward the centroid", which is right on a convex coast and
+ * backwards along both flanks of a deep bay. The centroid rule is kept as
+ * the default because the generated islands' lot lines were cut against it:
+ * changing it under them would move their ground under every save.
+ */
+export function offsetInward(ring, d, byWinding = false) {
   const c = centroid(ring);
+  const wind = byWinding ? (ringArea(ring) >= 0 ? 1 : -1) : 0;
   return ring.map((p, i) => {
     const a = ring[(i - 1 + ring.length) % ring.length];
     const b = ring[(i + 1) % ring.length];
     const dx = b[0] - a[0], dy = b[1] - a[1];
     const len = Math.hypot(dx, dy) || 1;
     let nx = -dy / len, ny = dx / len;
-    if ((c[0] - p[0]) * nx + (c[1] - p[1]) * ny < 0) { nx = -nx; ny = -ny; }
+    if (wind) { nx *= wind; ny *= wind; }
+    else if ((c[0] - p[0]) * nx + (c[1] - p[1]) * ny < 0) { nx = -nx; ny = -ny; }
     return [p[0] + nx * d, p[1] + ny * d];
   });
 }
@@ -473,7 +485,9 @@ export function generateCity(cfg) {
   const COAST_M = chaikin(crinkle(cfg.coast, rand, cfg.coastAmp ?? 46), cfg.smooth ?? 1);
   const COAST = COAST_M.map(proj.toLL);
   const ESPLANADE_W = cfg.esplanade ?? 26;
-  const innerRing = offsetInward(COAST_M, ESPLANADE_W);
+  // A written-down city with a deep bay opts in to the winding rule (see
+  // offsetInward); the generated islands keep the ground they were cut on.
+  const innerRing = offsetInward(COAST_M, ESPLANADE_W, !!cfg.windingOffset);
 
   const landBox = bboxOfRing(COAST_M);
 
@@ -3218,7 +3232,9 @@ export function generateCity(cfg) {
   // A band of shallows follows the coast, and the waterline gets a foam
   // stroke — the two cheapest things that stop the sea reading as one flat
   // sheet of blue paint.
-  const shallowsRing = offsetInward(COAST_M, -34);
+  // paint only, so every city takes the winding rule: the centroid rule
+  // folded the band into a wedge across the sea off any deep bay
+  const shallowsRing = offsetInward(COAST_M, -34, true);
 
   // SHORE THAT IS NOT ONE MATERIAL. Paint, not obstacles: marsh in the cove,
   // beach on the open side, seawall downtown, rock under the light.

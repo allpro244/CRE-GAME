@@ -3695,7 +3695,7 @@ export class RealCityLayer {
     const list = (this.ctx as { landmarks?: { p: P2; kind: string; deg: number; len: number }[] }).landmarks ?? [];
     if (!list.length) return;
     type Part = THREE.BufferGeometry;
-    const groups: Record<string, Part[]> = { stone: [], dark: [], slate: [], copper: [], glass: [], gold: [], steel: [], brick: [], wood: [] };
+    const groups: Record<string, Part[]> = { stone: [], dark: [], slate: [], copper: [], glass: [], gold: [], steel: [], brick: [], wood: [], water: [], bronze: [], white: [], red: [] };
     const box = (w: number, d: number, h: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
     const cyl = (r: number, h: number, x = 0, y = 0, z = 0, seg = 16, r2 = r) => new THREE.CylinderGeometry(r2, r, h, seg).rotateX(Math.PI / 2).translate(x, y, z + h / 2);
     const cone = (r: number, h: number, x = 0, y = 0, z = 0, seg = 4) => new THREE.ConeGeometry(r, h, seg, 1).rotateX(Math.PI / 2).rotateZ(seg === 4 ? Math.PI / 4 : 0).translate(x, y, z + h / 2);
@@ -3817,6 +3817,88 @@ export class RealCityLayer {
           add("wood", new THREE.CylinderGeometry(4.5, 4.5, 1.6, 24).rotateZ(Math.PI / 2).translate(-8, 2, 4.6));
           break;
         }
+        case "fountain": {
+          // a round basin with a stone kerb, and two tiered bowls on a
+          // pedestal, the upper one spilling into the lower
+          add("stone", cyl(7.2, 0.7, 0, 0, 0, 40));
+          add("water", cyl(6.7, 0.1, 0, 0, 0.62, 40));
+          add("stone", cyl(0.9, 2.6, 0, 0, 0.6, 16));
+          add("stone", cyl(1.0, 0.55, 0, 0, 3.0, 24, 3.0));
+          add("water", cyl(2.8, 0.06, 0, 0, 3.5, 24));
+          add("stone", cyl(0.45, 1.6, 0, 0, 3.55, 12));
+          add("stone", cyl(0.5, 0.4, 0, 0, 5.1, 20, 1.5));
+          add("water", cyl(1.35, 0.05, 0, 0, 5.45, 20));
+          add("white", cone(0.35, 2.2, 0, 0, 5.4, 10));
+          for (let k = 0; k < 8; k++) {
+            const a = (k / 8) * Math.PI * 2;
+            add("white", cone(0.12, 1.1, Math.cos(a) * 5.4, Math.sin(a) * 5.4, 0.6, 6));
+          }
+          break;
+        }
+        case "statue": {
+          // a bronze figure on a dressed plinth
+          add("stone", box(3.6, 3.6, 0.6));
+          add("stone", box(2.6, 2.6, 2.8, 0, 0, 0.6));
+          add("stone", box(3.0, 3.0, 0.35, 0, 0, 3.4));
+          add("bronze", cyl(0.42, 1.25, 0, 0, 3.75, 10, 0.32));
+          add("bronze", cyl(0.36, 0.75, 0, 0, 5.0, 10, 0.42));
+          add("bronze", new THREE.SphereGeometry(0.27, 10, 8).translate(0, 0, 6.05));
+          add("bronze", cyl(0.1, 0.8, 0.45, 0.25, 5.35, 6).rotateY(-0.5).translate(0.25, 0, 0.2));
+          break;
+        }
+        case "obelisk": {
+          add("stone", box(5, 5, 1.2));
+          add("stone", box(3.4, 3.4, 2.2, 0, 0, 1.2));
+          add("stone", new THREE.CylinderGeometry(0.8, 1.25, 16, 4).rotateY(0).rotateX(Math.PI / 2).rotateZ(Math.PI / 4).translate(0, 0, 3.4 + 8));
+          add("gold", cone(0.85, 1.4, 0, 0, 19.4));
+          break;
+        }
+        case "bandstand": {
+          add("stone", cyl(6, 1.1, 0, 0, 0, 8));
+          for (let k = 0; k < 8; k++) {
+            const a = (k / 8) * Math.PI * 2 + Math.PI / 8;
+            add("steel", cyl(0.14, 3.2, Math.cos(a) * 5.3, Math.sin(a) * 5.3, 1.1, 6));
+          }
+          add("copper", cone(7, 2.8, 0, 0, 4.3, 8));
+          add("gold", cone(0.3, 1.2, 0, 0, 7.1, 6));
+          break;
+        }
+        case "lamp": {
+          add("steel", cyl(0.22, 0.6, 0, 0, 0, 8));
+          add("steel", cyl(0.09, 3.9, 0, 0, 0.6, 6));
+          add("gold", box(0.45, 0.45, 0.6, 0, 0, 4.5));
+          add("steel", cone(0.42, 0.35, 0, 0, 5.1, 4));
+          break;
+        }
+        case "beacon": {
+          // the harbour light at the end of the mole
+          add("stone", cyl(3.2, 1.2, 0, 0, 0, 16));
+          add("white", cyl(1.8, 9, 0, 0, 1.2, 16, 1.4));
+          add("red", cyl(1.62, 1.4, 0, 0, 5.6, 16));
+          add("steel", cyl(1.8, 0.3, 0, 0, 10.2, 16));
+          add("glass", cyl(1.1, 1.5, 0, 0, 10.5, 12));
+          add("red", cone(1.4, 1.2, 0, 0, 12, 12));
+          break;
+        }
+        case "opera": {
+          // the opera house: a raised loggia of paired columns, the
+          // auditorium under a copper dome, the fly tower behind, gilt
+          // figures on the parapet
+          add("stone", box(66, 58, 1.6, 0, 0));
+          add("stone", box(60, 40, 19, 0, -6, 1.6));
+          add("stone", box(62, 42, 1.4, 0, -6, 20.6));
+          add("stone", box(52, 10, 2, 0, 18, 1.6));
+          for (let i = 0; i < 11; i++) for (const dx of [-0.75, 0.75]) add("stone", cyl(0.55, 11, -22.5 + i * 4.5 + dx, 20.5, 3.6, 10));
+          add("stone", box(52, 8, 3, 0, 19, 14.6));
+          add("dark", box(46, 0.4, 9, 0, 14.05, 3.6));
+          add("stone", cyl(13, 6, 0, -4, 22, 28));
+          add("copper", dome(13.6, 0, -4, 28));
+          add("gold", cone(1.2, 4, 0, -4, 41.4, 10));
+          add("stone", box(34, 18, 34, 0, -24, 1.6));
+          add("slate", gable(34, 18, 4, 0, -24, 35.6));
+          for (const dx of [-24, -12, 12, 24]) add("gold", cyl(0.4, 2.4, dx, 21, 17.6, 8));
+          break;
+        }
         default: continue;
       }
       place(P, lm.p, lm.deg);
@@ -3831,6 +3913,10 @@ export class RealCityLayer {
       steel: new THREE.MeshStandardMaterial({ color: 0x3d4549, roughness: 0.5, metalness: 0.6 }),
       brick: new THREE.MeshStandardMaterial({ color: 0x8e4a37, roughness: 0.9 }),
       wood: new THREE.MeshStandardMaterial({ color: 0x5b4330, roughness: 0.9 }),
+      water: new THREE.MeshStandardMaterial({ color: 0x3f7f9a, roughness: 0.05, metalness: 0.1, envMap: this.skyEnv, envMapIntensity: 1.3 }),
+      bronze: new THREE.MeshStandardMaterial({ color: 0x5f7d68, roughness: 0.45, metalness: 0.7, envMap: this.skyEnv }),
+      white: new THREE.MeshStandardMaterial({ color: 0xf4f6f6, roughness: 0.4, transparent: true, opacity: 0.85 }),
+      red: new THREE.MeshStandardMaterial({ color: 0xb33a2e, roughness: 0.6 }),
     };
     for (const [g, parts] of Object.entries(groups)) {
       if (!parts.length) continue;
@@ -4006,7 +4092,7 @@ export class RealCityLayer {
             const [x, y] = at(t, off);
             const sz = 0.72 + rnd() * 0.3;
             const col = rnd() < 0.33;
-            if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz)) continue;
+            if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz) || this.nearLandmark(x, y)) continue;
             this.putInst("trunk", x, y, 0.15, sz, rnd() * 6.28);
             this.putInst("crown", x, y, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
           }
@@ -4131,6 +4217,7 @@ export class RealCityLayer {
     const inRingP = (x: number, y: number, ring: P2[]) => { let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; } return ins; };
     for (const p of (this.ctx as { trees?: P2[] }).trees ?? []) {
       const [x, y] = this.project(p);
+      if (this.nearLandmark(x, y)) continue;
       const pk = parksP.find((q) => inRingP(x, y, q.ring));
       const pineP = pk?.flavour === "cemetery" ? 0.5 : pk ? 0.2 : 0.08;
       const sz = 0.8 + rnd() * 1.0;
@@ -4631,6 +4718,16 @@ export class RealCityLayer {
     }
     this.groundIx = { bld, walk, park, open };
     return this.groundIx;
+  }
+  /** A tree keeps clear of the landmarks: no oak growing out of a fountain. */
+  private lmClear: number[][] | null = null;
+  private nearLandmark(x: number, y: number) {
+    if (!this.lmClear) {
+      const R: Record<string, number> = { fountain: 10, statue: 4, lamp: 1.5, obelisk: 5, bandstand: 9, column: 5, clocktower: 8, mill: 16, beacon: 5 };
+      this.lmClear = ((this.ctx as { landmarks?: { p: P2; kind: string }[] }).landmarks ?? [])
+        .filter((l) => R[l.kind]).map((l) => { const [lx, ly] = this.project(l.p); return [lx, ly, R[l.kind]]; });
+    }
+    return this.lmClear.some(([lx, ly, r]) => Math.hypot(x - lx, y - ly) < r + 3);
   }
   /** building | walk | park | open | lot | road */
   groundAt(x: number, y: number): "bld" | "walk" | "park" | "open" | "lot" | "road" {

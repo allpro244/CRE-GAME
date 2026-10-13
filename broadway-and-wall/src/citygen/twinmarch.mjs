@@ -283,6 +283,10 @@ export function twinmarchConfig(seed = 1) {
     plazaRect("Exchange Forecourt", [-1212, 20], 104, 84, 0),
     plazaRect("Minster Close", MINSTER.c, 160, 112, MINSTER.deg),
   ];
+  // THE OPERA HOUSE, across the tracks from the station at the head of its
+  // own avenue: the New Town's set piece.
+  const OPERA = [1500, 640];
+  plazas.push(plazaRect("Opera Square", OPERA, 130, 110, 0));
   streams.push(...plazas);
   const landmarks = [
     { kind: "station", name: "Railhead Station", xy: round(stationAt.bldg), deg: sDeg - 90 },
@@ -293,7 +297,61 @@ export function twinmarchConfig(seed = 1) {
     { kind: "column", name: "Founders' Column", xy: [-1180, 140], deg: 0 },
     { kind: "column", name: "Bend Column", xy: [-560, 210], deg: 0 },
     { kind: "mill", name: "Mere Mill", xy: [720, 1050], deg: 180 },
+    { kind: "opera", name: "Grand Opera House", xy: [OPERA[0], OPERA[1] + 15], deg: -90 },
+    { kind: "beacon", name: "North Mole Light", xy: [-2380, 92], deg: 0 },
   ];
+  // THE FURNITURE OF THE SQUARES: a fountain on each forecourt's axis,
+  // statues flanking it, lamps round the edge; a monument in every park.
+  // Points are written in each plaza's own frame (`a` along its axis, `b`
+  // to the left of it) so they stay square to the building they serve.
+  const frame = (c, deg) => (a, b) => {
+    const t = deg * D2R;
+    return round([c[0] + Math.cos(t) * a - Math.sin(t) * b, c[1] + Math.sin(t) * a + Math.cos(t) * b]);
+  };
+  const furnish = [];
+  const lamps = (F, a0, a1, b, step, gap = 0) => {
+    for (let a = a0; a <= a1 + 1e-6; a += step) if (Math.abs(a) >= gap) furnish.push({ kind: "lamp", xy: F(a, b), deg: 0 });
+  };
+  {
+    // Exchange Forecourt: its axis runs east from the portico down the Long Market
+    const F = frame([-1212, 20], 0);
+    furnish.push({ kind: "fountain", xy: F(28, 0), deg: 0 });
+    furnish.push({ kind: "statue", xy: F(14, 30), deg: 0 }, { kind: "statue", xy: F(14, -30), deg: 0 });
+    lamps(F, -40, 46, 39, 14.3); lamps(F, -40, 46, -39, 14.3);
+    lamps((a, b) => F(49, a), -36, 36, 0, 12, 10);
+  }
+  {
+    // Station Forecourt: across the front of the head building
+    const F = frame(stationAt.bldg, sDeg);
+    // b < 0 is south of the tracks, toward Station Parade
+    furnish.push({ kind: "fountain", xy: F(0, -34), deg: 0 });
+    furnish.push({ kind: "statue", xy: F(-36, -34), deg: sDeg - 90 }, { kind: "statue", xy: F(36, -34), deg: sDeg - 90 });
+    lamps(F, -63, 63, -52, 14, 12);
+    lamps((a, b) => F(-66, a), -46, -16, 0, 10); lamps((a, b) => F(66, a), -46, -16, 0, 10);
+  }
+  {
+    // Minster Close: the founder faces down Old North Road; lamps line the close
+    const F = frame(MINSTER.c, MINSTER.deg);
+    furnish.push({ kind: "statue", xy: F(-60, 0), deg: MINSTER.deg + 180 });
+    lamps(F, -70, 70, 48, 14); lamps(F, -70, 70, -48, 14);
+  }
+  {
+    // Opera Square
+    const F = frame(OPERA, -90);
+    furnish.push({ kind: "fountain", xy: F(36, 0), deg: 0 });
+    furnish.push({ kind: "statue", xy: F(40, 44), deg: -90 }, { kind: "statue", xy: F(40, -44), deg: -90 });
+    lamps((a, b) => F(52, a), -60, 60, 0, 13, 14);
+  }
+  // a monument in every park that has none
+  furnish.push(
+    { kind: "fountain", xy: [-150, -560], deg: 0 },
+    { kind: "bandstand", xy: [-350, 800], deg: 0 },
+    { kind: "obelisk", xy: [900, -650], deg: 0 },
+    { kind: "statue", xy: [1700, 820], deg: -90 },
+    { kind: "statue", xy: [1400, -150], deg: 90 },
+    { kind: "bandstand", xy: [-1450, 760], deg: 0 },
+  );
+  landmarks.push(...furnish);
 
   const diagonals = [];
   for (let i = 0; i < MARKET.length - 1; i++) diagonals.push(boulevard("The Long Market", MARKET[i], MARKET[i + 1], 28));
@@ -303,6 +361,8 @@ export function twinmarchConfig(seed = 1) {
   diagonals.push(boulevard("Old North Road", [-480, 100], [-830, 745], 22));
   diagonals.push(boulevard("Station Parade", [stationAt.front[0], -560], [stationAt.front[0], stationAt.front[1] - 30], 26));
   diagonals.push(boulevard("Ferry Road", [600, -20], [900, -900], 22));
+  // Opera Avenue runs north from the railway to the opera's front steps.
+  diagonals.push(boulevard("Opera Avenue", [1500, 140], [1500, 584], 24));
 
   // The decks over the Twinbourne, each squared to the road it carries:
   // `deg` is set so the deck's long axis runs along the road, `w` is the
@@ -365,7 +425,7 @@ export function twinmarchConfig(seed = 1) {
     { xy: [-1800, 0], name: "Exchange Bay", labelKind: "water" },
     { xy: [330, -300], name: "The Twinbourne", labelKind: "water" },
     { xy: [0, -1450], name: "The Narrow Sea", labelKind: "water" },
-    ...landmarks.filter((l) => l.kind !== "trainshed").map((l) => ({ xy: l.xy, name: l.name, labelKind: "civic" })),
+    ...landmarks.filter((l) => l.name && l.kind !== "trainshed").map((l) => ({ xy: l.xy, name: l.name, labelKind: "civic" })),
   ];
 
   return {
@@ -375,11 +435,17 @@ export function twinmarchConfig(seed = 1) {
     // nowhere anybody has drawn a city.
     center: [-69.4, 42.6],
     coast, coastAmp: 12, smooth: 1, esplanade: 18,
-    lighthouse: [-2500, -300],
+    // the bay is deep enough that "toward the centre" is the wrong way along
+    // its flanks; offset the shore road by the ring's winding instead
+    windingOffset: true,
+    lighthouse: [-2380, -290],
     cores, partition, districts, districtNames, parks, diagonals, streams, bridges,
     railways: [rail.line],
     landmarks,
-    piers: [], cranes: [], ships: [], breakwaters: [],
+    piers: [], cranes: [], ships: [],
+    // THE NORTH MOLE: a stone arm from the north point across the bay mouth,
+    // its light at the end. A wall in the water, not dock furniture.
+    breakwaters: [[-2410, 176], ].map(([x, y]) => [x, y, 182, 14, -70.6]),
     stations, labels,
     avenues: ["The Long Market", "Station Parade", "Quay Street", "Harbour Road", "Mere Road", "Railway Street"],
     streets: {
@@ -395,7 +461,7 @@ export function twinmarchConfig(seed = 1) {
       newtown: ["Union St", "Commerce St", "Progress St", "Liberty St", "Union Sq"],
       goodsyard: ["Siding Rd", "Freight St", "Turntable Ln", "Coal Drop Rd"],
     },
-    plan: { harbour: [-1360, 0], cove: [-2300, 330], headland: [-2500, -300], landmark: "roundhouse", seams: 0 },
+    plan: { harbour: [-1360, 0], cove: [-2300, 330], headland: [-2380, -290], landmark: "roundhouse", seams: 0 },
   };
 }
 

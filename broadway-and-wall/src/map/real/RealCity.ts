@@ -119,7 +119,7 @@ const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", 
 const CANAL_WATER = 0x2c5f5c;
 /** the footway band inside a park's street edge (m); its hedge stands at 3.6 */
 const PARK_WALK = 3.0;
-const FAR_PROPS = ["tactile", "streetsign", "meter", "bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "statue", "duck", "gcross", "ledger", "rowboat", "bandsman", "skater", "rower"];
+const FAR_PROPS = ["tactile", "streetsign", "meter", "bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "statue", "duck", "gcross", "ledger", "rowboat", "bandsman", "skater", "rower", "child", "parksign"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 // what a crowd wears: mostly neutrals (navy, charcoal, camel, white,
@@ -5412,7 +5412,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           mat: new THREE.MeshStandardMaterial({ color: 0xd9a821, roughness: 0.55, metalness: 0.3 }) };
       }
       default: {
-        if (kind === "bandsman" || kind === "skater") return this.geomFor("person");
+        if (kind === "bandsman" || kind === "skater" || kind === "child") return this.geomFor("person");
         const pg = parkGeom(kind === "lawnsitter" || kind === "rower" ? "sitter" : kind);
         if (pg) return { g: pg.g, mat: pg.mat === "lamp" ? this.lampMat : pg.mat === "water" ? this.sprayMat : pg.mat === "leaf" ? this.leafMat : this.parkVcMat, colored: pg.colored };
         return { g: box(1, 1, 1), mat: this.trimMat };
@@ -6894,13 +6894,41 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const rose = BED[(rnd() * BED.length) | 0];
           for (const qx of [-1, 1]) for (const qy of [-1, 1]) this.putInst("flowerbed", f.x + (qx * c - qy * sn) * 4.6, f.y + (qx * sn + qy * c) * 4.6, 0.1, 1.2, f.rot, "", rnd() < 0.5 ? rose : BED[(rnd() * BED.length) | 0]);
         }
+        const L = (u: number, v: number): P2 => [f.x + u * c - v * sn, f.y + u * sn + v * c];
+        if (f.kind === "playset") {
+          // children on the swings, the slide, in the sandpit and up the frame
+          for (const [u, v, z] of [[2.3, 2.0, 0.2], [4.1, 2.0, 0.2], [-0.5, -2.5, 1.62], [-3.2, 1.6, 0.17], [-4.0, 2.4, 0.17], [-4.8, -2.7, 0.65], [1.6, -2.4, 0.6]] as [number, number, number][]) {
+            if (rnd() < 0.3) continue;
+            const [x, y] = L(u, v);
+            this.putInst("child", x, y, 0.05 + z, PERSON_S * 0.62, rnd() * 6.28, "", RUN[(rnd() * RUN.length) | 0]);
+          }
+          // and the parents on a pair of benches watching
+          for (const u of [-3, 3]) {
+            const [x, y] = L(u, 6.6);
+            if (!free(x, y, 0.4)) continue;
+            this.putInst("pbench", x, y, 0.05, 1, f.rot);
+            if (rnd() < 0.7) this.putInst("sitter", x, y, 0.05, PERSON_S, f.rot, "", COAT[(rnd() * COAT.length) | 0]);
+          }
+        }
+        if (f.kind === "kiosk") { const [x, y] = L(3.6, 0.6); if (free(x, y, 0.5)) this.putInst("bikerack", x, y, 0.05, 1, f.rot + Math.PI / 2); }
         if (f.kind === "bandstand") {
+          // lanterns hung under the eaves, lit after dark
+          for (let k = 0; k < 8; k++) {
+            const a = (k / 8) * Math.PI * 2 + Math.PI / 8;
+            this.putInst("plhead", f.x + Math.cos(a) * 5.1, f.y + Math.sin(a) * 5.1, -0.2, 1, 0);
+          }
+          this.lampPools.push([f.x, f.y]);
           // a brass band on the deck on a summer afternoon, and people on the grass to hear it
           for (let k = 0; k < 7; k++) {
             const a = (k / 7) * Math.PI * 1.6 + 0.8 + f.rot, R = 2.6 + (k % 2) * 1.0;
             this.putInst("bandsman", f.x + Math.cos(a) * R, f.y + Math.sin(a) * R, 1.07, PERSON_S, a + Math.PI / 2, "", [0.14, 0.18, 0.32]);
           }
         }
+      }
+      for (const e of p.entrances) {
+        // the notice board just inside, beside the walk, facing the gate
+        const sx = e.at[0] + e.tx * (w / 2 + 1.6) - e.ty * 2.2, sy = e.at[1] + e.ty * (w / 2 + 1.6) + e.tx * 2.2;
+        if (free(sx, sy, 0.4)) this.putInst("parksign", sx, sy, 0.05, 1, Math.atan2(e.ty, e.tx));
       }
       for (const e of p.entrances) for (const sd of [-1, 1]) this.putInst("gatepier", e.at[0] + e.tx * sd * (w / 2 + 0.7), e.at[1] + e.ty * sd * (w / 2 + 0.7), 0.05, 1, Math.atan2(e.ty, e.tx));
       if (p.flavour === "park") {
@@ -8096,6 +8124,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const turn = [0, 0, 0, 0, 0, 0, 0, 0.05, 0.3, 0.85, 0.9, 0.2][this.month];
       const bare = [1, 1, 0.85, 0.4, 0.02, 0, 0, 0, 0, 0.1, 0.6, 0.95][this.month];
       const blossom = [0, 0, 0.3, 0.9, 0.35, 0, 0, 0, 0, 0, 0, 0][this.month];
+      const shrubs = leaf === this.inst.get("bush"), bloomS = [0, 0, 0, 0, 0.9, 0.6, 0.1, 0, 0, 0, 0, 0][this.month];
       this.leafMat.color.setRGB(1, 1, 1);
       const autumn = [[1.9, 0.62, 0.3], [1.8, 1.05, 0.36], [1.55, 1.25, 0.4], [0.9, 1.0, 0.8]];
       // five greens and the odd copper beech, by tree
@@ -8111,6 +8140,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         // crab apple or magnolia, in flower before it is in leaf
         const hb = hash01(i, 13);
         if (blossom > 0 && hb < 0.09) c = c.lerp(hb < 0.05 ? new THREE.Color(1.0, 0.68, 0.78) : new THREE.Color(0.98, 0.95, 0.92), blossom);
+        // the shrubberies flower in May and June: rhododendron, azalea, a white viburnum
+        if (shrubs && bloomS > 0) { const hs = hash01(i, 29); if (hs < 0.3) c = c.lerp(hs < 0.12 ? new THREE.Color(0.85, 0.22, 0.52) : hs < 0.22 ? new THREE.Color(0.62, 0.36, 0.78) : new THREE.Color(0.96, 0.95, 0.9), bloomS * 0.85); }
         leaf.setColorAt(i, c);
       }
       if (leaf.instanceColor) leaf.instanceColor.needsUpdate = true;

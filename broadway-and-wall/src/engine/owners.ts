@@ -87,7 +87,7 @@ export interface Holder {
 // holder is not a competitor — most property in any city is owned by somebody
 // who is not in your business at all, and conflating the two would put four
 // hundred more bidders in every auction.
-const SURNAMES = [
+export const SURNAMES = [
   "Ainsworth", "Battersby", "Calloway", "Devereaux", "Ellsworth", "Fairbairn",
   "Grantham", "Holloway", "Isherwood", "Jarrow", "Kestrel", "Lockridge",
   "Marchetti", "Nolan", "Ockenden", "Pemberly", "Quillan", "Radcliffe",

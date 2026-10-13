@@ -49,7 +49,7 @@ import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState} from "./t
 import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
-import { assetGrade, clearRivalClaims, forgetDeed } from "./rivals";
+import { assetGrade, clearRivalClaims, fitOf, forgetDeed } from "./rivals";
 import { addToLine, dropDeed, syncDebt } from "./rivalDebt";
 import { hash01 } from "./competitorTraits";
 import { genRentRoll } from "./leasing";
@@ -174,7 +174,7 @@ export function tickNotes(s: GameState, parcels: ParcelTable) {
   if (!s.noteOffers) s.noteOffers = [];
   serviceNotes(s, parcels);
   takeRivalNotes(s, parcels);
-  loanToOwnBids(s);
+  loanToOwnBids(s, parcels);
   expireOffers(s, parcels);
   bringPaperToMarket(s, parcels);
 }
@@ -403,7 +403,7 @@ function wreckedRoll(s: GameState, rec: ParcelRecord, h: Holding, occ: number) {
  * clock (no RNG stream), and only when its book can carry the paper — the
  * test the expiry buyer below already applies.
  */
-function loanToOwnBids(s: GameState) {
+function loanToOwnBids(s: GameState, parcels: ParcelTable) {
   if (!s.noteOffers?.length) return;
   const hunters = (s.rivals ?? []).filter((r) =>
     r.failedM === undefined && !r.stressMs && r.sheet && r.sheet.distress >= 85 && r.sheet.reach >= 60);
@@ -412,8 +412,11 @@ function loanToOwnBids(s: GameState) {
     const o = s.noteOffers[i];
     if (o.perf === "performing") continue;
     const px = Math.round(o.face * o.askPct);
+    // It buys the loan to own the building, so the building has to be one it
+    // would own (its sheet's fit, hard rules included).
+    const orec = resolveRec(parcels, s, o.bbl);
     const buyer = hunters.find((r) =>
-      r.id !== o.obligorId && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78
+      r.id !== o.obligorId && !!orec && fitOf(s, parcels, r, orec, true) > 0 && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78
       && hash01(`${s.seed}:lto:${r.id}:${o.id}:${s.month}`) < 0.08);
     if (!buyer) continue;
     s.noteOffers.splice(i, 1);
@@ -433,7 +436,7 @@ function loanToOwnBids(s: GameState) {
   }
 }
 
-function expireOffers(s: GameState, _parcels: ParcelTable) {
+function expireOffers(s: GameState, parcels: ParcelTable) {
   for (let i = s.noteOffers!.length - 1; i >= 0; i--) {
     const o = s.noteOffers![i];
     if (s.month < o.expiresM) continue;
@@ -473,6 +476,7 @@ function expireOffers(s: GameState, _parcels: ParcelTable) {
       // A firm with a sheet is a paper buyer if it hunts distress; the legacy
       // roster keeps its style test.
       && (r.sheet ? r.sheet.distress >= 70 : r.style === "opportunistic")
+      && (() => { const rec = resolveRec(parcels, s, o.bbl); return !!rec && fitOf(s, parcels, r, rec, true) > 0; })()
       && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78);
     const buyer = able.length && rng(s) < 0.55 ? able[Math.floor(rng(s) * able.length)] : undefined;
     if (!buyer) continue;

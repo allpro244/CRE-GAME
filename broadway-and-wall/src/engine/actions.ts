@@ -8,7 +8,7 @@ import { logBooks, moveDeposit, monthLabel, raiseAlert, SVC_START, START_YEAR, c
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
-import { rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
+import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
 import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
@@ -3352,7 +3352,7 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     // filters out the whole city early on.
     const nw = netWorthLike(s);
     const floor = Math.min(20_000_000, Math.max(0, nw * 0.05));
-    if (v <= 0 || v < floor || v > Math.max(6_000_000, nw * 1.6)) continue;
+    if (v <= 0 || v < floor || v > Math.max(6_000_000 * dollarLevel(s.econ), nw * 1.6)) continue;
     best = rec;
     break;
   }

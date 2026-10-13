@@ -13,7 +13,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Loan, Note, PrivateBorrowQuote, PrivateCreditAsk, Rival } from "./types";
 import { cloneState, logBooks, monthLabel } from "./types";
-import { rng, rrange } from "./market";
+import { dollarLevel, rng, rrange } from "./market";
 import { assetValue, collateralAsIs, netWorth, resolveRec } from "./value";
 import { assetGrade } from "./rivals";
 import { syncDebt } from "./rivalDebt";
@@ -154,7 +154,7 @@ function rivalNeedsPrivate(
 ): { face: number; why: string } | null {
   if (r.failedM !== undefined || !r.bbls.length) return null;
   const stressed = (r.stressMs ?? 0) >= 3;
-  const dry = r.cash < Math.max(200_000, 0.02 * Math.max(1, r.aum ?? 0));
+  const dry = r.cash < Math.max(200_000 * dollarLevel(s.econ), 0.02 * Math.max(1, r.aum ?? 0));
   const balloonSoon = Object.values(r.extendedTo ?? {}).some((m) => m - s.month <= 6 && m >= s.month);
   if (!stressed && !dry && !balloonSoon) return null;
 

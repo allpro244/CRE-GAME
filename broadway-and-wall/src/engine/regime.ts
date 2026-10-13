@@ -122,7 +122,13 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
   let k = 0;
   const d = (lo: number, hi: number) => pick(rrng(seed, k++), lo, hi);
   const anchor = d(0.004, 0.032);
-  const cred = d(0.45, 0.95);
+  // MOST TOWNS OPEN IN A BELIEVED REGIME (2026-10-13). This was even across
+  // 0.45-0.95, so half of all games opened with a shaky bank and a third of
+  // seeds spent decades in a Great-Inflation regime — 8-11x prices over 75
+  // years. That is a real century (US CPI ~13x over 1950-2025), but it is the
+  // exception a game should draw sometimes, not the median. The cube skews
+  // the draw toward 0.95: about one game in five opens below 0.7.
+  const cred = 0.95 - 0.50 * Math.pow(d(0, 1), 3);
   const months = Math.round(d(240, 720));
   const burnSeed = (seed ^ 0x6a09e667) >>> 0;
   const scratchEcon = {

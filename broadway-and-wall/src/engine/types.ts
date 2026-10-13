@@ -1354,7 +1354,7 @@ export interface PropertyEvent {
 export interface Alert {
   id: number;
   q: number;                 // the month it fired
-  kind: "swan" | "bank" | "portfolio" | "ground" | "sale";
+  kind: "swan" | "bank" | "portfolio" | "ground" | "sale" | "fed";
   tone: "bad" | "good";      // a black swan or a white one
   title: string;
   body: string;
@@ -1697,6 +1697,8 @@ export interface Econ {
      * economy to be taken seriously again. This is the Volcker mechanism.
      */
     credibility: number;
+    /** The sitting central-bank chair: term end (game month) and resolve (market.ts). */
+    chair?: { untilM: number; resolve: number; name?: string; sinceM?: number };
     /**
      * WHAT THE BANK IS AIMING AT, which is not a constant of nature. The
      * Taylor rule used a hardcoded 0.02 and so every century converged on the

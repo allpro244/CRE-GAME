@@ -167,7 +167,7 @@ const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: nu
     blurb: "A small bank that grew fast on construction and land loans, funded by brokered deposits. The cheapest construction money in a boom — and the first desk the regulator visits when land stops selling.",
   },
   "Cordage Debt Partners": {
-    kind: "fund", capitalRatio: 0.22, brittle: 1.1, wholesale: 0.3, adc: 0.20,
+    kind: "fund", capitalRatio: 0.22, brittle: 1.1, wholesale: 0.3, adc: 0,   // bridge and mezz; no sourced ADC share
     blurb: "A fund with committed capital and no depositors to answer to. They lend into a crisis at crisis prices, which is the entire business model.",
   },
 };

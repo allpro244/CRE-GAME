@@ -20,7 +20,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
 }
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, buildingScore, qualityCycle, condWear, capPlanBillMo, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
-  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader } from "./value";
+  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader, flatsMarkPsf, flatsRollPsf } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve, drawLineInPlace, parkedOnLine } from "./credit";
@@ -422,7 +422,7 @@ export function portfolioRentPsf(s: GameState, parcels: ParcelTable): number | n
     for (const t of h.tenants) { rent += t.rentPsf * t.sf; leased += t.sf; }
     const resSf = useRentableSf(rec, "multifamily") * (h.occ ?? 0);
     if (resSf > 0) {
-      rent += resSf * (h.resRentPsf ?? marketRentPsfYr(rec, s.econ, h.condition, h.condIdx));
+      rent += resSf * flatsRollPsf(rec, s.econ, h);
       leased += resSf;
     }
   }
@@ -1308,7 +1308,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         / Math.max(0.01, managedRentPsfYr(rec, e, { ...h, stance: 0 }, "multifamily"));
       const weight = quality * Math.pow(Math.max(0.5, askRatio), -3);
       const share = Math.min(1, (mine * weight) / Math.max(mine, vacantCity));
-      const won = Math.min(movers * share, resSf * MF_LEASEUP_MAX, mine);
+      // "Stop letting" stops the flats too: nobody new moves in, and the
+      // building empties at the turnover rate. (It held only the commercial
+      // legs, so a block of flats could never be emptied for a redevelopment.)
+      const won = h.leasingHold ? 0 : Math.min(movers * share, resSf * MF_LEASEUP_MAX, mine);
       const left = resSf * now * MF_TURNOVER / 12;
       h.occ = Math.min(0.99, Math.max(0, now + (won - left) / Math.max(1, resSf) + rrange(s, -0.002, 0.002, "leasing")));
       // AND THE RENT ROLL TURNS OVER. A twelfth of the leases reach the market
@@ -1316,7 +1319,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // twelfth of its gap to the market a month — loss-to-lease on the way
       // up, the lag that keeps a full building's NOI from tracking the spot
       // index on the way down.
-      const mkt = marketRentPsfYr(rec, s.econ, h.condition, h.condIdx);
+      const mkt = flatsMarkPsf(rec, s.econ, h);
       const inPlace = h.resRentPsf ?? mkt;
       h.resRentPsf = +(inPlace + (mkt - inPlace) / 12).toFixed(4);
     }

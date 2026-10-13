@@ -119,7 +119,7 @@ const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", 
 const CANAL_WATER = 0x2c5f5c;
 /** the footway band inside a park's street edge (m); its hedge stands at 3.6 */
 const PARK_WALK = 3.0;
-const FAR_PROPS = ["tactile", "streetsign", "meter", "bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "statue", "duck"];
+const FAR_PROPS = ["tactile", "streetsign", "meter", "bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "statue", "duck", "gcross", "ledger", "rowboat", "bandsman", "skater", "rower"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 // what a crowd wears: mostly neutrals (navy, charcoal, camel, white,
@@ -137,7 +137,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail", "grate", "planter", "patio", "shed", "dumpster", "trailer", "pallets", "plpost", "plhead", "bedsoil", "stall", "stallstripe", "playset", "kiosk", "cannon", "obelisk", "tennis", "gatepier", "parkrail"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail", "grate", "planter", "patio", "shed", "dumpster", "trailer", "pallets", "plpost", "plhead", "bedsoil", "stall", "stallstripe", "playset", "kiosk", "cannon", "obelisk", "tennis", "gatepier", "parkrail", "parterre"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -1483,6 +1483,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private bloomMesh: THREE.Mesh | null = null;
   /** the pools of light the park lamps throw on the walks after dark */
   private lampPools: P2[] = [];
+  /** the park ponds' water, which freezes over in a hard winter */
+  private pondMat: THREE.MeshStandardMaterial | null = null;
   private poolMat: THREE.MeshBasicMaterial | null = null;
   private sprayMat = new THREE.MeshStandardMaterial({ color: 0xeaf4f8, roughness: 0.15, transparent: true, opacity: 0.55, depthWrite: false, envMapIntensity: 1.2 });
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
@@ -1725,7 +1727,13 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     for (const k of this.quality === "high" ? FAR_PROPS : FAR_PROPS_LOW) { const m = this.inst.get(k); if (m) m.visible = !far; }
     const beds = this.inst.get("flowerbed");
     if (beds) beds.visible = this.month >= 3 && this.month <= 9 && !(far && this.quality !== "high");
-    for (const k of ["blanket", "lawnsitter"]) { const m = this.inst.get(k); if (m) m.visible = this.month >= 4 && this.month <= 8 && this.snowGround === 0 && !far; }
+    for (const k of ["blanket", "lawnsitter", "bandsman"]) { const m = this.inst.get(k); if (m) m.visible = this.month >= 4 && this.month <= 8 && this.snowGround === 0 && !far; }
+    {
+      // the pond's season, re-applied after the distance cull above
+      const frozen = this.month === 11 || this.month <= 1;
+      for (const k of ["rowboat", "rower", "duck", "lily"]) { const m = this.inst.get(k); if (m) m.visible = !frozen && !far; }
+      const sk = this.inst.get("skater"); if (sk) sk.visible = frozen && !far;
+    }
     // the terraces go out from spring to autumn, and only when you are close
     const cafe = this.inst.get("cafe");
     if (cafe) cafe.visible = this.month >= 3 && this.month <= 9 && !far;
@@ -5404,7 +5412,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           mat: new THREE.MeshStandardMaterial({ color: 0xd9a821, roughness: 0.55, metalness: 0.3 }) };
       }
       default: {
-        const pg = parkGeom(kind === "lawnsitter" ? "sitter" : kind);
+        if (kind === "bandsman" || kind === "skater") return this.geomFor("person");
+        const pg = parkGeom(kind === "lawnsitter" || kind === "rower" ? "sitter" : kind);
         if (pg) return { g: pg.g, mat: pg.mat === "lamp" ? this.lampMat : pg.mat === "water" ? this.sprayMat : pg.mat === "leaf" ? this.leafMat : this.parkVcMat, colored: pg.colored };
         return { g: box(1, 1, 1), mat: this.trimMat };
       }
@@ -6660,8 +6669,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // it, rather than the pale map fill showing through the turf's hole
     const over = this.parkInfo().flatMap((p) => p.ponds);
     if (over.length) {
-      const pm = new THREE.Mesh(new THREE.ShapeGeometry(over.map((r) => new THREE.Shape(r.map(([x, y]) => new THREE.Vector2(x, y))))), new THREE.MeshStandardMaterial({
-        color: 0x30524d, roughness: 0.18, envMapIntensity: 0.7, normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.35, 0.35), envMap: this.skyEnv,
+      const pm = new THREE.Mesh(new THREE.ShapeGeometry(over.map((r) => new THREE.Shape(r.map(([x, y]) => new THREE.Vector2(x, y))))), this.pondMat = new THREE.MeshStandardMaterial({
+        color: 0x30524d, roughness: 0.22, envMapIntensity: 0.6, normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.18, 0.18), envMap: this.skyEnv,
       }));
       pm.position.z = 0.055; pm.receiveShadow = true;
       this.scene.add(pm);
@@ -6722,6 +6731,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       else if (p.area > 14000) place("bandstand", 7.5);
       if (p.area > 6000) place("playset", 9);
       if (p.area > 9000) place("kiosk", 3.5);
+      if (p.area > 8000) place("parterre", 13.5);
       // a statue or two on the lawn by a walk, a memorial to somebody the town once thought mattered
       for (let k = 0; k < Math.min(3, Math.floor(p.area / 9000)); k++) place("statue", 2.6);
       // UNMOWN CORNERS: a big common leaves a drift or two of long grass and
@@ -6847,6 +6857,22 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           this.putInst("willow", x, y, 0.05, sc, rnd() * 6.28, "", [0.42, 0.58, 0.24]);
           j++;
         }
+        // rowing boats for hire on a pond big enough to row on, and a jet in the middle of a big one
+        const pa = Math.abs(ringArea(pd));
+        if (pa > 1400) for (let j = 0, nb2 = Math.min(3, Math.floor(pa / 1400)); j < nb2; j++) {
+          const v = pd[Math.floor(rnd() * pd.length)], f = 0.35 + rnd() * 0.4;
+          const x = v[0] + (px - v[0]) * f, y = v[1] + (py - v[1]) * f, r = rnd() * 6.28;
+          if (!inRingPk(x, y, pd)) continue;
+          this.putInst("rowboat", x, y, 0.04, 1, r, "", [[0.9, 0.9, 0.88], [0.2, 0.36, 0.55], [0.62, 0.18, 0.14]][j % 3]);
+          this.putInst("rower", x, y, -0.02, PERSON_S * 0.92, r + Math.PI / 2, "", COAT[(rnd() * COAT.length) | 0]);
+        }
+        if (pa > 2600 && inRingPk(px, py, pd)) this.putInst("pondjet", px, py, 0.05, 1, 0);
+        // and in a hard winter, skaters on the ice
+        for (let j = 0, nk = Math.min(10, 2 + Math.floor(pa / 500)); j < nk; j++) {
+          const v = pd[Math.floor(rnd() * pd.length)], f = 0.2 + rnd() * 0.7;
+          const x = v[0] + (px - v[0]) * f, y = v[1] + (py - v[1]) * f;
+          if (inRingPk(x, y, pd)) this.putInst("skater", x, y, 0.06, PERSON_S, rnd() * 6.28, "", COAT[(rnd() * COAT.length) | 0]);
+        }
         // ducks dabbling about the water
         for (let j = 0, nd = 3 + Math.floor(rnd() * 5); j < nd; j++) {
           const v = pd[Math.floor(rnd() * pd.length)], f = 0.2 + rnd() * 0.6;
@@ -6860,7 +6886,22 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           if (inRingPk(x, y, pd)) this.putInst("lily", x, y, 0.06, 0.9 + rnd() * 0.4, rnd() * 6.28);
         }
       }
-      for (const f of p.features) this.putInst(f.kind, f.x, f.y, 0.05, 1, f.rot);
+      for (const f of p.features) {
+        this.putInst(f.kind, f.x, f.y, 0.05, 1, f.rot);
+        const c = Math.cos(f.rot), sn = Math.sin(f.rot);
+        if (f.kind === "parterre") {
+          // the roses in the four beds, one colour to a bed
+          const rose = BED[(rnd() * BED.length) | 0];
+          for (const qx of [-1, 1]) for (const qy of [-1, 1]) this.putInst("flowerbed", f.x + (qx * c - qy * sn) * 4.6, f.y + (qx * sn + qy * c) * 4.6, 0.1, 1.2, f.rot, "", rnd() < 0.5 ? rose : BED[(rnd() * BED.length) | 0]);
+        }
+        if (f.kind === "bandstand") {
+          // a brass band on the deck on a summer afternoon, and people on the grass to hear it
+          for (let k = 0; k < 7; k++) {
+            const a = (k / 7) * Math.PI * 1.6 + 0.8 + f.rot, R = 2.6 + (k % 2) * 1.0;
+            this.putInst("bandsman", f.x + Math.cos(a) * R, f.y + Math.sin(a) * R, 1.07, PERSON_S, a + Math.PI / 2, "", [0.14, 0.18, 0.32]);
+          }
+        }
+      }
       for (const e of p.entrances) for (const sd of [-1, 1]) this.putInst("gatepier", e.at[0] + e.tx * sd * (w / 2 + 0.7), e.at[1] + e.ty * sd * (w / 2 + 0.7), 0.05, 1, Math.atan2(e.ty, e.tx));
       if (p.flavour === "park") {
         // benches round the paved round, facing what the walks converge on
@@ -6925,8 +6966,22 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           for (let u = u0 + 1; u < u1; u += 1.7 + rnd() * 0.4) {
             const x = u * p.ux + v * nx, y = u * p.uy + v * ny;
             if (!inRingPk(x, y, deep) || onWalk(x, y, 1.0) || Math.hypot(x - p.cx, y - p.cy) < 11 || nearTree(x, y, 1.1) || rnd() < 0.14) continue;
-            if (rnd() < 0.025) this.putInst("obelisk", x, y, 0.05, 0.8 + rnd() * 0.4, rot, "", STONES[(rnd() * STONES.length) | 0]);
+            const kind = rnd();
+            if (kind < 0.025) this.putInst("obelisk", x, y, 0.05, 0.8 + rnd() * 0.4, rot, "", STONES[(rnd() * STONES.length) | 0]);
+            else if (kind < 0.14) this.putInst("gcross", x, y, 0.05, 0.85 + rnd() * 0.3, rot, "", STONES[(rnd() * STONES.length) | 0]);
+            else if (kind < 0.24) this.putInst("ledger", x, y - 0.0, 0.05, 0.9, rot + Math.PI / 2, "", STONES[(rnd() * STONES.length) | 0]);
             else this.putInst("headstone", x + (rnd() - 0.5) * 0.15, y + (rnd() - 0.5) * 0.15, 0.05, 0.85 + rnd() * 0.4, rot + (rnd() - 0.5) * 0.12, "", STONES[(rnd() * STONES.length) | 0], 0.8 + rnd() * 0.6);
+          }
+        }
+      }
+      if (p.flavour === "cemetery") {
+        // clipped yews standing in pairs along the burying ground's walks
+        for (const [a, b] of p.walks) {
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 10) continue;
+          const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+          for (let t = 6; t < L - 4; t += 11) for (const sd of [-1, 1]) {
+            const x = a[0] + ux * t - uy * sd * (w / 2 + 1.1), y = a[1] + uy * t + ux * sd * (w / 2 + 1.1);
+            if (free(x, y, 0.6) && !nearTree(x, y, 2)) this.putInst("pine", x, y, 0.05, 0.42, rnd() * 6.28, "", undefined, 0.8);
           }
         }
       }
@@ -8023,7 +8078,17 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // fallen leaves lie on the lawns October and November, and are raked by December
     TURF_U.uLeaves.value = [0, 0, 0, 0, 0, 0, 0, 0, 0.15, 0.6, 0.85, 0.25][this.month];
     // the fountains are drained over the winter
-    const spray = this.inst.get("spray"); if (spray) spray.visible = this.month >= 3 && this.month <= 10;
+    for (const k of ["spray", "pondjet"]) { const m = this.inst.get(k); if (m) m.visible = this.month >= 3 && this.month <= 10; }
+    // THE PONDS FREEZE December to February: pale, matt ice with skaters on
+    // it; the boats are laid up, the ducks and the lilies gone
+    const frozen = this.month === 11 || this.month <= 1;
+    if (this.pondMat) {
+      this.pondMat.color.set(frozen ? 0xc9d8de : 0x30524d);
+      this.pondMat.roughness = frozen ? 0.45 : 0.22;
+      this.pondMat.normalScale.set(frozen ? 0.02 : 0.18, frozen ? 0.02 : 0.18);
+    }
+    for (const k of ["rowboat", "rower", "duck", "lily"]) { const m = this.inst.get(k); if (m) m.visible = !frozen; }
+    { const m = this.inst.get("skater"); if (m) m.visible = frozen; }
     if (this.bloomMesh) this.bloomMesh.visible = this.month >= 4 && this.month <= 8;
     // the canopy: green in summer, turning in autumn, bare grey in winter
     for (const leaf of [this.inst.get("crown"), this.inst.get("bush"), this.inst.get("willow")]) {
@@ -8068,7 +8133,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const beds = this.inst.get("flowerbed");
     if (beds) beds.visible = this.month >= 3 && this.month <= 9;
     // nobody picnics in the snow
-    for (const k of ["blanket", "lawnsitter"]) { const m = this.inst.get(k); if (m) m.visible = this.month >= 4 && this.month <= 8 && this.snowGround === 0; }
+    for (const k of ["blanket", "lawnsitter", "bandsman"]) { const m = this.inst.get(k); if (m) m.visible = this.month >= 4 && this.month <= 8 && this.snowGround === 0; }
     const cafe = this.inst.get("cafe");
     if (cafe) cafe.visible = this.month >= 3 && this.month <= 9;
     // evergreens keep their needles; a dusting of snow lightens them

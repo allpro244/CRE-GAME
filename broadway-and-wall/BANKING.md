@@ -150,3 +150,63 @@ The four seams the banking revamp left for the rivals work are closed.
 Also fixed on the way: the street's carry charged the coupon on construction
 balances that `fundJobs` already capitalises, so every crane's interest was
 paid twice.
+
+## The playtest, and what it changed (2026-10-13)
+
+`tools/bankplay.mjs` plays long campaigns and reports every desk against the
+facts it models (FDIC QBP, Fed SLOOS, ACLI, Trepp). Run one seed per process
+and aggregate:
+
+```
+SEED=1001 YEARS=60 node tools/bankplay.mjs > a.json      # BOT=levered for a borrowing player
+node tools/bankplay.mjs --report a.json b.json ...
+```
+
+Measured on 6–8 seeds × 60 years with a passive player, before → after:
+
+| | before | after | real |
+|---|---|---|---|
+| bank capital / NIM / ROA (median) | 11.9% / 3.9 / 1.3% | 12.0% / 4.0 / 1.4% | 8–12% / 3–4 / 1.0–1.3% |
+| bank failures | 0.42%/yr, 7 of 12 failures in expansions | 0.21%/yr, in recessions and recoveries | 0.3–0.5%/yr, clustered in busts |
+| months closed after a bank failure | 27 | 3 | a weekend (FDIC purchase and assumption) |
+| conduit failures | 9, mostly in expansions | 0 (window shuts instead) | none: the bond window shuts |
+| life company NIM / ROA | 3.2 / 2.1% | 1.7 / 1.0% | 1.5–2.5 / 0.5–1% |
+| regional spread/advance: expansion → recession → depression | 171bp/72% → 194/69 → 245/71 | 172/70 → 210/66 → 254/65 | widens and cuts at the turns |
+| street handbacks in a 30-year playthrough | 84 (76 with equity in them) | 23 (6) | only underwater buildings go back |
+
+What changed:
+
+- **The conduit is a securitiser.**
+  - While the bond window is open its margin is the matched gain on sale, whatever rates do.
+  - It bears losses only up to its retained first-loss slice; past that they are the bondholders'.
+  - It is never seized: when the window shuts it stops writing.
+- **Failures resolve the way they do.**
+  - A failed bank is sold in a purchase and assumption and lends again within 1–3 months.
+  - The receiver keeps the bad paper and sells it for 12–30 months (`receiverUntilM`, `notes.ts`).
+  - In three resolutions of four the acquirer takes every deposit; otherwise the uninsured balance is a receivership claim.
+  - A life company goes into a multi-year rehabilitation, and a fund winds down until a new vintage is raised.
+- **Deposit insurance rises in a panic.** The first bank failure in a recession, or while another desk is in receivership, raises the limit 2.5× for good (October 2008, $100K → $250K).
+- **Underwriting standards** are centred on an ordinary year (credit index 1.0), and the economic outlook (12-month rise in national unemployment) is the leading input, as loan officers report in the Fed's survey.
+- **The life company** earns a life company's spread and funds at duration-matched rates, so it no longer stops quoting in every hiking cycle.
+- **The street sells before it walks.**
+  - A firm whose maturing loan cannot be refinanced lists the building if a sale would cover the loan, and its lender gives it months to close.
+  - Keys go back only on a building under water.
+  - A maturity default hands back THAT building, not the firm's least-liked one.
+- **A purchase financed on a desk that will not lend is refused with the reason.** Before, it closed all cash without saying so.
+- **A rival's debt no longer outlives its loan.** When an auction's buyer took
+  title before the borrower was settled, `dropDeed` returned early and the
+  firm kept owing the retired loan ($5.4M on one seed); it now always
+  re-sums.
+
+Test changes that came with it (each is a recalibration, not a weakening of
+what the test computes):
+- `advance.mjs` and `refi-strong.mjs` set the outlook as well as the window
+  when they build "shut", "ordinary" and "loose" markets.
+- The opening-tape quote floors are lowered to 25% (regional) and 4% (life
+  company), because the opening month is a recovery and now reads slightly
+  tight.
+- `levered-close.mjs` counts only closings that wrote a loan, and asserts that
+  a desk that quoted nothing refuses rather than closing all cash.
+
+Already failing on `main` before this work, and untouched by it:
+`rival-husks.mjs`, `offmarket.mjs` and `floating.mjs`.

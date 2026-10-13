@@ -27,8 +27,13 @@ const near = (a, b, tol = 0.0051) => Math.abs(a - b) <= tol;
 const pc = (x) => `${(x * 100).toFixed(1)}%`;
 
 const base = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
-const at = (ci, app) => { const g = structuredClone(base); g.econ.creditIdx = ci; g.bankApp = app; return g; };
-const shut = at(0.5, 0.5), mid = at(0.9, 0.9), loose = at(1.2, 1.15);
+// THE THREE INPUTS TO STANDARDS (debt.ts underwritingStandards): the credit
+// window, the desks' appetite, and the outlook — national unemployment's
+// change over a year, set here through the survey history the outlook reads.
+// "mid" is an ordinary year: the window at 1.0, unemployment flat.
+const setOutlook = (g, rise) => { if (g.econ.nat) g.econ.nat.uHist = [g.econ.nat.unemp - rise, g.econ.nat.unemp]; };
+const at = (ci, app, rise = 0) => { const g = structuredClone(base); g.econ.creditIdx = ci; g.bankApp = app; setOutlook(g, rise); return g; };
+const shut = at(0.5, 0.5, 0.015), mid = at(1.0, 0.9), loose = at(1.2, 1.15, -0.02);
 
 // --- 1. the standards index spans the scale and the sheets follow it --------
 const stS = E.underwritingStandards(shut), stM = E.underwritingStandards(mid), stL = E.underwritingStandards(loose);
@@ -76,7 +81,9 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
   // the window fully open in both (tight = 0, same coupon); only the desks' appetite differs
   const a = at(1.0, 0.9), b = at(1.0, 1.15);
   const la = Math.max(0, E.underwritingStandards(a)), lb = Math.max(0, E.underwritingStandards(b));
-  ok(lb > la + 0.3, `standards ${la.toFixed(2)} → ${lb.toFixed(2)} on the street's appetite alone`);
+  // the desks' balance sheets are a quarter of the index (the outlook and the
+  // window are the rest), so the street flush moves it by its full weight
+  ok(lb > la + 0.2, `standards ${la.toFixed(2)} → ${lb.toFixed(2)} on the street's appetite alone`);
   const qa = E.quote(a, p, 10_000_000, 700_000, "office", false, undefined, "standard");
   const qb = E.quote(b, p, 10_000_000, 700_000, "office", false, undefined, "standard");
   ok(near(qa.ratePct, qb.ratePct, 0.011), `same coupon in both (${qa.ratePct}% / ${qb.ratePct}%)`);
@@ -87,7 +94,7 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
   ok(near(qb.byDebtYield / qa.byDebtYield, expDy, 0.003), `debt-yield leg: ${pc(qb.byDebtYield / qa.byDebtYield - 1)} more (expected ${pc(expDy - 1)})`);
   ok(!qa.holdCapped && !qb.holdCapped && near(qb.byLtv / qa.byLtv, expLtv, 0.003), `advance leg: ${pc(qb.byLtv / qa.byLtv - 1)} more (expected ${pc(expLtv - 1)})`);
   // and a shut window does what it always did — the tight terms are untouched
-  const c = at(0.5, 0.5);
+  const c = at(0.5, 0.5, 0.015);
   const qc = E.quote(c, p, 10_000_000, 700_000, "office", false, undefined, "standard");
   ok(qc.byDscr < qa.byDscr && qc.byDebtYield < qa.byDebtYield && qc.byLtv < qa.byLtv, `every leg is smaller with the window shut (advance ${pc(qc.byLtv / 1e7)} vs ${pc(qa.byLtv / 1e7)})`);
 }
@@ -146,7 +153,13 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
     qn += b.length;
     qk += b.filter((li) => E.buyQuote(gs, parcels, li.bbl, li.ask, "savings", 1).principal > 0).length;
   }
-  ok(qk / Math.max(1, qn) >= 0.3, `the regional quotes ${(qk / Math.max(1, qn) * 100).toFixed(0)}% of the opening tape across twelve markets (${qk} of ${qn}; was 9%)`);
+  // FLOOR 25%, NOT 30% (2026-10-13, BANKING.md "The playtest"). The opening
+  // month is a recovery with the credit index near 0.93, and standards are now
+  // centred on an ordinary year (1.0) with the outlook leading — so the
+  // opening sheet sits two to three points under the brochure, as it should
+  // coming out of a recession, and a few more of the smallest listings fall
+  // under the regional's minimum cheque. Measured 29% of 133 (main: 31%).
+  ok(qk / Math.max(1, qn) >= 0.25, `the regional quotes ${(qk / Math.max(1, qn) * 100).toFixed(0)}% of the opening tape across twelve markets (${qk} of ${qn}; was 9%)`);
   // the life company across three towns and two dates — it is the desk most sensitive to the window and the grade
   let pn = 0, pq = 0;
   // TEN TOWNS, NOT THREE. Three towns' tape at two dates is ~110 listings, and
@@ -171,7 +184,12 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
   // frequency (one in ~7 years, not one in ~25) a quarter of these twenty
   // snapshots now land in a downturn or a credit squeeze, where a life
   // company is the first desk to stop; measured 6.7% against 10.6% before.
-  ok(pn > 25 && pq / pn >= 0.05, `the life company quotes ${(pq / pn * 100).toFixed(1)}% of ${pn} listings at months 20 and 36, ten towns — standard buildings at a quarter point more (was 0%)`);
+  // AND 4%, NOT 5% (later the same day): the same recalibration of standards
+  // takes the life company's 58% sheet a point or two under the brochure at
+  // these dates, and its $1M-plus minimum cheque bites on the margin —
+  // measured 4.2% of 288 (main: 6.7%). The claim stays the same claim: the
+  // pickiest desk quotes a few per cent of a small town's tape, not none.
+  ok(pn > 25 && pq / pn >= 0.04, `the life company quotes ${(pq / pn * 100).toFixed(1)}% of ${pn} listings at months 20 and 36, ten towns — standard buildings at a quarter point more (was 0%)`);
   const qGood = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "good"), qStd = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "standard"), qWorn = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "worn");
   ok(near(qStd.ratePct - qGood.ratePct, 0.25, 0.011) && E.conditionOk(pl, "standard") && !E.conditionOk(pl, "worn"), `Pelican: standard +${(qStd.ratePct - qGood.ratePct).toFixed(2)}% over good; worn refused${qWorn.principal > 0 ? " (quote path still sizes; originate refuses)" : ""}`);
 }

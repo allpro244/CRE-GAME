@@ -302,7 +302,13 @@ export function payDown(s: GameState, r: Rival, amt: number): number {
 /** The deed leaves with its loan (a foreclosure, the keys, a deed through the paper). Returns what the row was. */
 export function dropDeed(s: GameState, r: Rival | undefined, bbl: string): number {
   const x = s.cityLoans?.[bbl];
-  if (!x || !r || x.obligorId !== r.id) return 0;
+  if (!r) return 0;
+  // RE-SUM EVEN WHEN THERE IS NOTHING TO DROP. A path that moved the deed
+  // first (the auction's third-party buyer takes title before the borrower is
+  // settled) has already retired the row, and returning early left the firm
+  // owing a loan that no longer existed — $5.4M on one seed until the ledger
+  // noticed, measured by test/rival-loans.mjs.
+  if (!x || x.obligorId !== r.id) { syncDebt(s, r); return 0; }
   delete s.cityLoans![bbl];
   syncDebt(s, r);
   return x.balance;

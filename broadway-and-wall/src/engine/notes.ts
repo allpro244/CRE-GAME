@@ -543,9 +543,15 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
     // whatever the paper fetches, which is where a note buyer's best decade
     // comes from. lenderPressure is already 1 for a failed desk, so the ask
     // arrives at full distress without a special price path.
-    if (l.failedM !== undefined) {
+    // The receiver keeps selling after the franchise has reopened under new
+    // owners — a P&A transfers the good book and leaves the bad one behind —
+    // so the filing cabinet empties for `receiverUntilM`, but only of paper
+    // that is not paying once the new owners hold the rest.
+    const receiving = l.failedM !== undefined || (l.receiverUntilM ?? -1) > s.month;
+    if (receiving) {
       if (rng(s) > 0.30) continue;
-      const rows = Object.values(s.cityLoans ?? {}).filter((x) => x.lender === l.name);
+      const rows = Object.values(s.cityLoans ?? {}).filter((x) => x.lender === l.name
+        && (l.failedM !== undefined || x.status !== "current"));
       const sale = rows.filter((x) => {
         const r = obligorOf(s, x.obligorId);
         return r && r.failedM === undefined && x.balance >= 750_000

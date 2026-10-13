@@ -252,7 +252,20 @@ const SUBLET_BG: Record<BuiltClass, number> = {
 const LOC_ELAST = 0.5;
 /** Location re-sorting happens only as households move: about a 5-year half-life. Shape parameter. */
 const LOC_ROLL = Math.LN2 / 60;
-const SHORT_SENS: Record<BuiltClass, number> = { office: 1.0, retail: 1.0, industrial: 2.4, multifamily: 3.0 };
+// OFFICE REPRICES AT THE DEAL MARKET'S SPEED, NOT THE LEASE ROLL'S (2026-10-13).
+// Office sat at 1.0 on the argument that eight-year leases move asking rent
+// slowly — but lease length sets how fast IN-PLACE rent rolls, and this index
+// is the rent new deals sign at, which reprices as fast as the deals do. The
+// record: Manhattan 1997-2000, vacancy ~5 points under natural, real asking
+// +~11%/yr (~2.2%/yr per point); San Francisco 1998-2000, vacancy 1-2%, rents
+// about doubled in two years (~5%/yr per point). At 1.0 (0.84%/yr per point)
+// a growing city could only raise office rent toward its supply price by
+// holding vacancy ~3 points under natural for decades — measured, office
+// averaged 8-10% against 11.5% natural and sat under it 65-82% of months, so
+// downturns started tight and rarely produced a real repricing. 3.0, as flats:
+// ~2.5%/yr per point, the low end of that record. Retail stays at 1.0 for
+// want of a comparable source.
+const SHORT_SENS: Record<BuiltClass, number> = { office: 3.0, retail: 1.0, industrial: 2.4, multifamily: 3.0 };
 const DEMAND_FORM_M: Record<BuiltClass, number> = { office: 9, retail: 6, industrial: 6, multifamily: 2 };
 /** MONTHS TO MOVE IN once searching: office tour-to-occupancy including
  *  fit-out ~6 months, a shop ~4, a shed ~3, a flat ~6 weeks. */
@@ -1754,7 +1767,22 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
   // (Sivitanides, Southard, Torto & Wheaton 2001). The years it takes to fill
   // the empty floors are already in `vacRisk`. A falling trend still counts
   // while sites pencil — supply is still arriving and the fall can continue.
-  if (growth < 0 && siteH !== undefined && siteH > 0 && siteH < 1) growth = 0;
+  //
+  // ...EXCEPT THE PART OF THE FALL THAT IS STRUCTURAL (2026-10-13). Reversion
+  // to replacement cost is a fact about CYCLES: a glut ends because demand
+  // grows into it. A class whose demand itself is shrinking — shopfronts in
+  // an e-commerce era, sheds in a deindustrialisation — does not grow back
+  // to its supply price, and its buyers know it: malls traded at 7-10% caps
+  // through 2015-20 with Treasuries under 3%, retail at ~6.3% in 2021 against
+  // 1.5%. Zeroing every fall here priced retail as if it would recover, and
+  // its cap rode the rate down to 3% (measured; then crashed 70%). The
+  // class's secular drift is kept, discounted at the persistence of an era
+  // rather than a cycle: eras run one to two decades (see `secular`), so
+  // ~1/15 a year where cyclical growth decays at GROWTH_DECAY.
+  if (growth < 0 && siteH !== undefined && siteH > 0 && siteH < 1) {
+    const drift = Math.min(0, e.secular?.[k]?.drift ?? 0);
+    growth = (yNoGrowth / (yNoGrowth + 1 / 15)) * 100 * drift;
+  }
   return base - growth;
 }
 
@@ -2126,30 +2154,27 @@ export function tickNation(s: GameState) {
       + (shock > 0.02 ? 0.010 : 0)
       + ((n.expM ?? 0) > 110 ? 0.004 : 0);
     if (rng(s, "nation") < 1 - Math.exp(-intensity)) {
-      // Most downturns are downturns. About one in fourteen is 1929 or 2008,
-      // and those are the ones that redraw a career.
-      n.deep = rng(s, "nation") < 0.07;
-      n.recM = Math.round(n.deep ? rrange(s, 26, 48, "nation") : rrange(s, 7, 19, "nation"));
-      // EVERY RECESSION IS AIMED, not integrated. A rate of rise applied for
-      // a drawn duration compounds two dice into a third, and a long draw and
-      // a fast draw together produced 27 points of unemployment — the model
-      // pinned against its own ceiling for years at a time, which then held
-      // the Phillips term negative and the policy rate on the floor for a
-      // quarter of the century. A downturn has a depth, and the labour market
-      // approaches it and decelerates into it, the way a real one does.
-      // A DEEP ONE IS 2008, NOT 1929 (2026-10-13). This drew +4.5 to +13.5
-      // points, so about one game in two saw national unemployment at 15-20%
-      // for years — Depression depth, every other century. The post-war
-      // deep recessions rose +5.6 points (2008, 4.4 -> 10.0) and +11 briefly
-      // (2020, 3.5 -> 14.7, gone in a year); 1982 was +3.6.
-      // DRAWN FROM A TAIL, NOT A BOX (2026-10-13). A uniform range is a cap
-      // in disguise: nothing past its top end can ever happen. Depth is
-      // lognormal instead — a deep recession's median is +6 points (2008:
-      // +5.6), 95% fall between +3 and +12, and a 1929 stays possible at about
-      // one deep recession in a thousand. Ordinary ones centre on +2.6 (1990:
-      // +1.9, 2001: +2.0, 1982: +3.6). Shape parameters from that record.
+      // ONE DISTRIBUTION, FITTED TO THE RECORD (2026-10-13). This was a 93/7
+      // mixture — ordinary recessions centred on +2.6 points, a 7% "deep"
+      // branch on +6 — shape parameters chosen from a few episodes. Against
+      // the whole post-war record it was too gentle: the twelve US recessions
+      // 1948-2020 raised unemployment by +4.1 (1949), +3.6 (1954), +3.8
+      // (1958), +2.3 (1961), +2.7 (1970), +4.4 (1975), +2.2 (1980), +3.6
+      // (1982), +2.8 (1991), +2.5 (2001), +5.6 (2009) and +11.3 (2020) points
+      // (BLS U-3, peak-to-trough). Their log has mean 1.29 and sd 0.45: a
+      // median of +3.6 points with a quarter of recessions at +4.4 or worse.
+      // The mixture drew a median near +2.6 and about one in ten that severe.
+      // Depth is drawn from that fit directly, with no cap; a "deep" recession
+      // is simply one that draws 2008's class, five points or more, and runs
+      // the longer 26-48 month course.
+      // EVERY RECESSION IS AIMED, not integrated: the labour market approaches
+      // the drawn depth and decelerates into it (see `uMove`), which is why a
+      // long draw and a fast draw no longer compound into a third die.
       const zU = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
-      n.uPeak = n.unemp + (n.deep ? 0.060 * Math.exp(0.35 * zU) : 0.026 * Math.exp(0.30 * zU));
+      const depth = 0.0364 * Math.exp(0.45 * zU);
+      n.deep = depth >= 0.05;
+      n.recM = Math.round(n.deep ? rrange(s, 26, 48, "nation") : rrange(s, 7, 19, "nation"));
+      n.uPeak = n.unemp + depth;
       pushNews(s, "warn", n.deep
         ? "The country has fallen off a cliff. This is not a soft patch — payrolls are "
           + "collapsing nationally and nobody can say where the bottom is."
@@ -2237,7 +2262,18 @@ export function tickNation(s: GameState) {
   // US since 1950: ~11%); the inflation side is untouched (months over 6%
   // 5.2% either way, median century peak 9.4 → 9.1%). A third (0.3) moved
   // the deflation share only another point.
-  const easy = 0.55 * (n.easeEma >= 0 ? Math.min(n.easeEma, 0.10) : 0.5 * Math.max(n.easeEma, -0.05));
+  // ...AND CHEAP MONEY ONLY INFLATES WHAT IT CAN FILL (2026-10-13). With slack
+  // in the labour market easy money mostly fills the slack: the US held
+  // policy at zero with real rates near -2% through 2009-15 and inflation ran
+  // ~1.5%; Japan held zero for fifteen years without inflating (the liquidity
+  // trap — Krugman 1998). At full strength this channel added ~+2 points
+  // DURING a deep recession, more than the slack took off, so prices rose
+  // through the worst slumps and median inflation drifted up with recession
+  // depth. Its pass-through now falls with slack: e^(-slack / 2 points),
+  // which leaves 2009-15 (about three points of slack) near target, and the
+  // 1970s and 2021 — easy money into a tight labour market — at full force.
+  const passThrough = Math.exp(-Math.max(0, n.unemp - NAT_U_STAR) / 0.02);
+  const easy = 0.55 * (n.easeEma >= 0 ? Math.min(n.easeEma, 0.10) * passThrough : 0.5 * Math.max(n.easeEma, -0.05));
   n.infl = clamp(n.inflExp + phillips + easy + shock + rrange(s, -0.004, 0.004, "nation"), -0.06, 0.22);
 
   // EXPECTATIONS UNANCHOR WHEN THE BANK IS NOT BELIEVED — and that is what
@@ -2795,20 +2831,8 @@ export function tickEcon(s: GameState) {
   // balance sheet that has to absorb the loss is the same balance sheet in
   // every city at once.
   stepCredit(s);
-  // CLOSED IS A STATE OF THE DESKS, NOT A DICE ROLL (2026-10-13). This was a
-  // 2%-a-month roll whenever the credit window read under 0.66, and it ran
-  // while every desk in town was still writing paper. Now: at least half the
-  // town's loan book sits at desks too impaired to quote (appetite under
-  // 0.15, the same line at which a desk announces it has stopped) — reported
-  // once on the way in and once on the way out.
-  {
-    const live = (s.lenders ?? []).filter((l) => l.failedM === undefined);
-    const book = live.reduce((a, l) => a + l.book, 0);
-    const shut = book > 0 && live.filter((l) => l.appetite < 0.15).reduce((a, l) => a + l.book, 0) / book >= 0.5;
-    if (shut && !e.debtShut) pushNews(s, "warn", "The debt markets have effectively closed. Term sheets are being pulled mid-deal.");
-    if (!shut && e.debtShut) pushNews(s, "event", "The lenders are quoting again. Not cheaply, and not to everyone, but the phones are being answered.");
-    e.debtShut = shut;
-  }
+  // (Whether the debt markets are closed is read in tickLenders — lenders.ts —
+  // off the desks' own standards and the securitisation window.)
 
   // --- employment: the demand behind every lease -----------------------------
   // A LOCAL PROPERTY SLUMP IS NOT A LOCAL DEPRESSION. The phase machine is a

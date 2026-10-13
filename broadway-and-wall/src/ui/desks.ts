@@ -21,7 +21,12 @@ export type DeskTab = {
   /** Shown only while this holds — a tab with nothing on it is not a room yet. */
   when?: (g: GameState) => boolean;
 };
-export type Desk = { id: DeskId; label: string; icon: string; key: string; note: string; tabs: readonly DeskTab[] };
+export type Desk = {
+  id: DeskId; label: string; icon: string; key: string; note: string; tabs: readonly DeskTab[];
+  /** Always open on the first tab — neither a badge elsewhere nor the tab
+   *  last visited moves it. City opens on Markets (owner, Oct 2026). */
+  home?: boolean;
+};
 
 export const DESKS: readonly Desk[] = [
   {
@@ -64,7 +69,7 @@ export const DESKS: readonly Desk[] = [
     ],
   },
   {
-    id: "city", label: "City", icon: "∿", key: "5",
+    id: "city", label: "City", icon: "∿", key: "5", home: true,
     note: "The cycle, the markets, the players and the tape",
     // FOUR QUESTIONS, NOT THREE DRAWERS. City used to be Economy, Research and
     // News, and Research was eight unrelated sub-tabs — half of them repeating
@@ -73,8 +78,8 @@ export const DESKS: readonly Desk[] = [
     // (Pulse), what is each market doing (Markets), who else is in it
     // (Players), and what just happened (Tape).
     tabs: [
-      { page: "pulse", label: "Pulse", note: "The city on one screen — cycle, markets, board and headlines" },
       { page: "economy", label: "Markets", note: "Each space market, land, banks, employers and districts in depth" },
+      { page: "pulse", label: "Pulse", note: "The city on one screen — cycle, markets, board and headlines" },
       { page: "players", label: "Players", note: "Competing firms and every owner in town" },
       { page: "news", label: "Tape", note: "Headlines and closed sales" },
       { page: "rankings", label: "Rankings", note: "How this town ranks against real US cities" },
@@ -114,6 +119,7 @@ export function rememberTab(page: Page) {
 }
 export function deskLanding(d: Desk, counts?: TabCounts, g?: GameState | null): Page {
   const tabs = visibleTabs(d, g ?? null);
+  if (d.home) return tabs[0].page;
   // Something waiting on a tab outranks habit — the badge is why they clicked.
   if (counts) {
     const hot = tabs.find((t) => (counts[t.page] ?? 0) > 0);

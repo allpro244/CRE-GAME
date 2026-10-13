@@ -404,7 +404,7 @@ export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "
     // each side, four hedged beds (their roses are flowerbed instances), a
     // sundial at the crossing. 18 m square.
     case "parterre": {
-      const BOX = [0.16, 0.3, 0.15], GRAV = [0.8, 0.74, 0.6];
+      const BOX = [0.16, 0.3, 0.15], GRAV = [1.2, 1.1, 0.88];
       const parts: [THREE.BufferGeometry, number[]][] = [[bx(18, 18, 0.03), GRAV]];
       const hedge = (x0: number, y0: number, x1: number, y1: number) => {
         const w = Math.abs(x1 - x0) || 0.4, d = Math.abs(y1 - y0) || 0.4;
@@ -437,8 +437,19 @@ export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "
         [new THREE.BoxGeometry(0.05, 2.6, 0.04).rotateX(0.1).translate(0.1, 0, 0.32), [0.62, 0.48, 0.3]]]), mat: "vc", colored: true,
     };
     // a single jet in the middle of a big pond
-    case "pondjet": return { g: mc([[cy(0.12, 5.5, 0, 6, 0.05), [1, 1, 1]], [new THREE.SphereGeometry(0.9, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1, 0.5).translate(0, 0, 5.4), [1, 1, 1]],
-      [new THREE.CylinderGeometry(0.9, 2.6, 5.3, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, 2.75), [1, 1, 1]], [new THREE.CylinderGeometry(2.6, 3.1, 0.3, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.15), [1, 1, 1]]]), mat: "water" };
+    // a single jet in the middle of a big pond: a slim plume, its crown, and
+    // a ring of thin streams falling back with a splash where they land
+    case "pondjet": {
+      const parts: [THREE.BufferGeometry, number[]][] = [[cy(0.1, 6.2, 0, 6, 0.04), [1, 1, 1]], [new THREE.SphereGeometry(0.45, 8, 6).scale(1, 1, 1.4).translate(0, 0, 6.2), [1, 1, 1]]];
+      for (let k = 0; k < 10; k++) {
+        const a = (k / 10) * Math.PI * 2;
+        const arc = new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, 0, 6.2), new THREE.Vector3(Math.cos(a) * 1.6, Math.sin(a) * 1.6, 6.6), new THREE.Vector3(Math.cos(a) * 2.4, Math.sin(a) * 2.4, 0)), 8, 0.06, 4, false);
+        parts.push([arc, [1, 1, 1]]);
+        parts.push([new THREE.SphereGeometry(0.28, 6, 4).scale(1, 1, 0.4).translate(Math.cos(a) * 2.4, Math.sin(a) * 2.4, 0.03), [1, 1, 1]]);
+      }
+      parts.push([new THREE.SphereGeometry(0.6, 8, 4).scale(1, 1, 0.3).translate(0, 0, 0.05), [1, 1, 1]]);
+      return { g: mc(parts), mat: "water" };
+    }
     case "flagpole": return { g: mc([[bx(1.6, 1.6, 0.5), STONE], [cy(0.09, 11, 0.5, 6, 0.05), WHITE], [new THREE.SphereGeometry(0.14, 6, 4).translate(0, 0, 11.6), [0.8, 0.65, 0.25]], [bx(0.02, 1.8, 1.1, 0, 0.95, 10.2), [0.7, 0.18, 0.16]]]), mat: "vc" };
   }
   return null;

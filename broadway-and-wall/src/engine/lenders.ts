@@ -49,6 +49,12 @@ export interface Deposits {
   uninsuredShare: number;
 }
 
+export interface LenderIncome {
+  interest: number; funding: number; losses: number; opex: number; tax: number;
+  /** Named loans resolved at a loss (a deed in lieu, the auction, a street failure) — straight to capital. */
+  writeOffs?: number;
+}
+
 export interface Lender {
   id: string;
   name: string;
@@ -104,6 +110,14 @@ export interface Lender {
   fundCost?: number;
   /** Capital returned to the owners this year — a bank manages to a ratio, not a pile. */
   divYr?: number;
+  /**
+   * THE INCOME STATEMENT, line by line, this calendar year and the last full
+   * one — what the Banks page prints. Net income alone said whether a desk
+   * was earning; these say why: interest on the performing book, what the
+   * money cost, the losses it booked, the cost of running it, and the tax.
+   */
+  incYr?: LenderIncome;
+  incPrevYr?: LenderIncome & { netIncome: number; dividends: number; chargeOffs: number };
   /** Capital ratio, sampled quarterly. The statement's history. */
   capHist?: number[];
   /** What this desk holds against this town, by asset class. Rebuilt monthly by ledger.ts. */
@@ -213,6 +227,23 @@ import { money } from "./money";
 import { cityLoanBook, deskTotals } from "./loanbook";
 import type { DeskTotals } from "./loanbook";
 export { CONSTRUCTION_LENDER };
+
+/**
+ * WHAT KIND OF INSTITUTION THIS IS — the constants behind its behaviour, for
+ * the Banks page: how it is funded, how much hot money it carries, what it
+ * runs at, what it costs to run, what it is taxed, and what it normally earns.
+ * Nothing here is new; it is the table every tick already reads, shown.
+ */
+export function lenderConstitution(l: Lender): {
+  target: number; wholesale: number; brittle: number; adc: number; opexPct: number; taxRate: number; bookSpread: number; normalNim: number;
+} {
+  const k = KIND[l.name] ?? { capitalRatio: 0.1, brittle: 1, wholesale: 0.5, adc: 0 };
+  return {
+    target: k.capitalRatio, wholesale: k.wholesale, brittle: k.brittle, adc: k.adc ?? 0,
+    opexPct: OPEX_PCT[l.kind] ?? 0, taxRate: TAX_RATE[l.kind] ?? 0,
+    bookSpread: BOOK_SPREAD[l.kind] ?? 1.9, normalNim: NORMAL_NIM[l.kind] ?? 4.1,
+  };
+}
 
 export function lenderBlurb(name: string): string {
   return KIND[name]?.blurb ?? "";
@@ -961,7 +992,14 @@ export function tickLenders(s: GameState) {
     l.chargeOffsTotal += chargeOff;
     const opex = (l.book * (OPEX_PCT[l.kind] ?? 0)) / 100 / 12;
     // Taxed symmetrically: a loss month books a tax asset (carrybacks).
-    const net = Math.round((interest - funding - borneLoss(l, chargeOff) - opex) * (1 - (TAX_RATE[l.kind] ?? 0)));
+    const pre = interest - funding - borneLoss(l, chargeOff) - opex;
+    const net = Math.round(pre * (1 - (TAX_RATE[l.kind] ?? 0)));
+    {
+      const y = (l.incYr ??= { interest: 0, funding: 0, losses: 0, opex: 0, tax: 0 });
+      y.interest += Math.round(interest); y.funding += Math.round(funding);
+      y.losses += Math.round(borneLoss(l, chargeOff)); y.opex += Math.round(opex);
+      y.tax += Math.round(pre - net);
+    }
     l.netIncomeYr += net;
     l.capital = Math.round(l.capital + net);
 
@@ -1018,7 +1056,11 @@ export function tickLenders(s: GameState) {
     l.book = Math.round(anon + named.named);
     if (s.cityLoans) l.anonBook = anon;
 
-    if (s.month % 12 === 0 && s.month > 0) { l.chargeOffsYr = 0; l.netIncomeYr = 0; l.divYr = 0; }
+    if (s.month % 12 === 0 && s.month > 0) {
+      if (l.incYr) l.incPrevYr = { ...l.incYr, netIncome: l.netIncomeYr, dividends: l.divYr ?? 0, chargeOffs: l.chargeOffsYr };
+      l.incYr = { interest: 0, funding: 0, losses: 0, opex: 0, tax: 0 };
+      l.chargeOffsYr = 0; l.netIncomeYr = 0; l.divYr = 0;
+    }
 
     // --- and sometimes it ends, ON A FRIDAY ----------------------------------
     // The regulator does not wait for zero. A desk critically under its own
@@ -1194,6 +1236,8 @@ export function chargeLenderLoss(s: GameState, lender: string, loss: number) {
   const l = lenderByName(s, lender);
   if (!l || loss <= 0) return;
   l.capital = Math.round(l.capital - borneLoss(l, loss));
+  const y = (l.incYr ??= { interest: 0, funding: 0, losses: 0, opex: 0, tax: 0 });
+  y.writeOffs = (y.writeOffs ?? 0) + Math.round(borneLoss(l, loss));
   l.chargeOffsYr += loss;
   l.chargeOffsTotal += loss;
   l.yours = Math.max(0, l.yours - loss);

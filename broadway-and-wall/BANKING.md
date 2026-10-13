@@ -210,3 +210,18 @@ what the test computes):
 
 Already failing on `main` before this work, and untouched by it:
 `rival-husks.mjs`, `offmarket.mjs` and `floating.mjs`.
+
+## Seeing it: Capital → Banks
+
+Every lender's books are open on one page (`src/ui/panels/BankProfile.tsx`,
+page `"banks"`, a tab on the Capital desk; the palette and every lender name in
+Debt and Markets link to it). Per desk: balance sheet (named book split into
+yours / street mortgages / street lines / construction, anonymous book, capital
+against target and seizure), an income statement this year against last
+(`Lender.incYr` / `incPrevYr`, accumulated in `tickLenders` from the same
+interest, funding, borne loss, opex and tax lines that move capital — nothing
+on the page is computed separately from the engine), credit quality, every
+product it will write today with live coupon, sizing and covenants, the
+single-name limit and its biggest borrowers, your file and workout mood, its
+named loan book, and its capital history and news. `lenderConstitution(l)`
+exposes the kind constants the page quotes.

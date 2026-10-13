@@ -465,6 +465,20 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         closeDeedLedger(s, ex);
         s.exits.push(ex);
       }
+      // A COMPETITOR HOLDING YOUR PAPER takes the deed on its credit bid, onto
+      // its own book; if the room outbid it, it is paid what the steps cleared.
+      const holderFirm = h.loan?.holderFirmId ? (s.rivals ?? []).find((r) => r.id === h.loan!.holderFirmId && r.failedM === undefined) : undefined;
+      if (holderFirm) {
+        const held = (s.firmHeldLoans ?? []).find((x) => x.bbl === lot.bbl && x.firmId === holderFirm.id);
+        if (toREO) {
+          holderFirm.bbls.push(lot.bbl);
+          (holderFirm.heldSince ??= {})[lot.bbl] = s.month;
+          holderFirm.basis = Math.round((holderFirm.basis ?? 0) + (held?.paid ?? gross));
+          if (held) held.payoff = 0;
+        } else if (held) {
+          held.payoff = Math.min(bal, net + (recourse ? shortfall : 0));
+        }
+      }
       recordComp(s, rec, gross, toREO ? lot.holder : "the courthouse steps", firmShort(s), true, h.condition);
       if (s.groundLeases?.[lot.bbl]) transferGroundLeaseOffBook(s, lot.bbl);
       moveDeposit(s, h, -depositsOn(h));

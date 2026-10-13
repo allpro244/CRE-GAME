@@ -169,6 +169,57 @@ console.log("\nPHASE 5 — NEW MECHANICS\n");
   ok("a build-to-suit shop signs your tenant for its new building", signed, g.holdings[bbl].tenants[0].leavingFor ?? "");
 }
 {
+  // YOUR LOAN, BOUGHT BY A COMPETITOR THAT WANTS THE BUILDING.
+  let g = E.firstListings(E.newGame(12007, parcels, 40_000_000), parcels, bbls);
+  let mine = null;
+  for (const L of g.listings) {
+    const rec = E.resolveRec(parcels, g, L.bbl);
+    if (!rec || rec.class === "land" || !rec.bldgArea || L.ask > 8_000_000) continue;
+    const r = E.executePurchase(g, parcels, L.bbl, L.ask, "savings", false, 1);
+    if (!r.err && r.s.holdings[L.bbl]?.loan) { g = r.s; mine = L.bbl; break; }
+  }
+  ok("bought a levered building to default on", !!mine);
+  const hunter = g.rivals.find((r) => r.failedM === undefined);
+  E.seatProfile(g, hunter, E.PROFILE_OF.loanToOwn);
+  hunter.sheet.distress = 95; hunter.sheet.reach = 80;
+  hunter.cash = 50_000_000; hunter.aum = 400_000_000; hunter.debt = 0; hunter.stressMs = 0;
+  E.openWorkout(g, mine, "arrears", 250_000);
+  g.workouts[mine].startM = g.month - 4;                 // three months in, no cure
+  for (let m = 0; m < 80 && !g.holdings[mine].loan.holderFirmId; m++) { g.month++; E.maybeSellYourLoan(g, parcels); }
+  const held = g.holdings[mine].loan.holderFirmId === hunter.id;
+  ok("a loan-to-own competitor buys your defaulted loan", held, held ? `${hunter.name} holds it` : "never sold");
+  if (held) {
+    const x = g.firmHeldLoans.find((y) => y.bbl === mine);
+    ok("it paid less than the balance, and the workout now names it", x.paid < x.bal && g.workouts[mine].lender === hunter.name,
+      `${(x.paid / x.bal * 100).toFixed(0)} cents`);
+    const fb = E.requestForbearance(g, parcels, mine);
+    ok("it will not extend", /said no/i.test(fb.msg ?? "") || !!fb.err, fb.msg ?? fb.err);
+    const q = E.payoffQuote(g, parcels, mine);
+    ok("a payoff costs you a profit over what it paid", q.open && q.px > x.paid && q.px <= x.bal, `${q.px} vs paid ${x.paid}`);
+    // to the July steps, with no money to cure: the credit bid takes it
+    const w = g.workouts[mine];
+    w.stage = "foreclosure";
+    g.cash = 0; if (g.loc) g.loc.limit = 0;
+    const h0 = g.holdings[mine];
+    h0.loan.balance = Math.round(E.ownedHoldingValue(g, parcels, h0) * 1.3);
+    // a payment the building and the firm cannot meet — so the coupon is not
+    // fundable and the file is not pulled back from the steps (the house rule)
+    h0.loan.monthlyPmt = 25_000_000;
+    // the county's first docket is month 30 (auction.ts FIRST_DOCKET_M), a July
+    while (g.month % 12 !== 5 || g.month < 29) g.month++;
+    w.saleM = g.month + 1; w.decideM = w.saleM;
+    let s2 = g;
+    for (let m = 0; m < 4 && s2.holdings[mine]; m++) {
+      s2 = { ...s2, cash: 0 };
+      s2 = E.advanceMonth(s2, parcels, bbls, adjacency);
+      if (s2.gameOver) s2 = { ...s2, gameOver: null };
+    }
+    const took = (s2.rivals.find((r) => r.id === hunter.id)?.bbls ?? []).includes(mine);
+    ok("its credit bid at the auction puts the building on its book", !s2.holdings[mine] && took,
+      s2.holdings[mine] ? "still yours" : took ? "theirs" : "went elsewhere");
+  }
+}
+{
   // Over a long run, how often each mechanic happens on its own (a report).
   let g = E.newGame(550991, parcels);
   const count = { raid: 0, convert: 0, retire: 0, lto: 0, backer: 0 };

@@ -149,7 +149,8 @@ export function workoutMood(s: GameState, lenderName: string): {
   // whole reason forbearance exists. A fund that bought the paper at a discount
   // underwrote to OWNING the building, and every month it waits is a month off
   // its return. There is no conversation to have.
-  const bought = (s.lenders ?? []).some((x) => x.name === lenderName && x.kind === "fund")
+  const bought = ((s.lenders ?? []).some((x) => x.name === lenderName && x.kind === "fund")
+    || (s.rivals ?? []).some((r) => r.name === lenderName))
     && Object.values(s.holdings).some((h) => h.loan?.holder === lenderName);
   if (bought) {
     return {

@@ -35,7 +35,7 @@ import { tickWorkouts, couponFundable } from "./workout";
 import { tickPortfolios } from "./portfoliosale";
 import { tickTakePrivateApproach, tickRivalTakeovers, poss } from "./takeprivate";
 import { tickLedger } from "./ledger";
-import { tickNotes, maybeSellYourLoan } from "./notes";
+import { tickNotes, maybeSellYourLoan, tickFirmHeldLoans } from "./notes";
 import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
@@ -649,6 +649,7 @@ function tickMonth(
   // from under whose mortgage. It cannot run before either of them.
   tickNotes(s, parcels);
   maybeSellYourLoan(s, parcels);
+  tickFirmHeldLoans(s);
   tickPlanning(s, parcels, bbls);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);

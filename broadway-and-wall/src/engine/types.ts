@@ -417,6 +417,8 @@ export interface Loan {
    * patient. Absent means the originator still has it. See engine/notes.ts.
    */
   holder?: string;
+  /** The competitor that holds this loan, when one bought it in default (`holder` is its name). */
+  holderFirmId?: string;
   cap?: { strike: number; expiresM: number }; // purchased rate cap: index capped at strike
 }
 
@@ -3161,6 +3163,13 @@ export interface GameState {
    * each end, and the expiry window on an offer suddenly means something.
    */
   rivalNotes?: { bbl: string; firmId: string; firm: string; takeM: number; face: number }[];
+  /**
+   * YOUR LOANS A COMPETITOR OWNS (COMPETITORS_PLAN.md, loan-to-own on you).
+   * `paid` is what it paid the bank; `bal` the balance it is owed, read each
+   * month; `payoff`, when set, is what the paper settled at (a discounted
+   * payoff, or the auction's net) — absent means par.
+   */
+  firmHeldLoans?: { bbl: string; firmId: string; paid: number; bal: number; m: number; payoff?: number }[];
   /**
    * THE JULY AUCTION. Docket published when the tick lands on July; the hammer
    * falls on the August tick, so the player holds the flyer for exactly one

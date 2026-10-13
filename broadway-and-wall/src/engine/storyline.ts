@@ -86,7 +86,9 @@ export function headliners(s: GameState, parcels: ParcelTable, max = 6): Headlin
   const score: Record<Role, (r: Rival) => number> = {
     nemesis: (r) => {
       const t = s.street?.[r.id];
-      return t ? t.beats * 2 + t.insults - t.deals * 0.5 : 0;
+      // holding your defaulted paper makes a firm your nemesis outright
+      const paper = (s.firmHeldLoans ?? []).filter((x) => x.firmId === r.id).length * 10;
+      return (t ? t.beats * 2 + t.insults - t.deals * 0.5 : 0) + paper;
     },
     neighbour: (r) => {
       let n = 0;
@@ -175,6 +177,15 @@ function whyLine(s: GameState, r: Rival, role: Role): string {
  */
 export function comingFor(s: GameState, parcels: ParcelTable, r: Rival, ltv: number): string[] {
   const out: string[] = [];
+  // YOUR PAPER IN THEIR HANDS — the line that matters most, first.
+  for (const x of s.firmHeldLoans ?? []) {
+    if (x.firmId !== r.id) continue;
+    const w = s.workouts?.[x.bbl];
+    const addr = parcels[x.bbl]?.address ?? x.bbl;
+    out.push(w?.stage === "foreclosure" && w.saleM !== undefined
+      ? `Has filed on your loan at ${addr} — the auction is ${START_YEAR + Math.floor(w.saleM / 12)}`
+      : `Holds your defaulted loan on ${addr}, and wants the building`);
+  }
   const yr = (m: number) => START_YEAR + Math.floor(m / 12);
   // hold clock
   const hold = holdClockM(r);

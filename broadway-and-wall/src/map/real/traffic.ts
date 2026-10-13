@@ -65,6 +65,10 @@ export interface Car {
   brake: number;
   /** where it stood at the start of this step (what the cars behind it see) */
   sSeg?: number; sD?: number;
+  /** a bus: pulls in at a stop half way down a long block and dwells */
+  bus?: boolean; dwell?: number; servedSeg?: number;
+  /** while in a junction box: the heading it came in on, and whether it goes straight on */
+  inH?: number; straight?: boolean;
 }
 
 /** Someone on foot crossing at a zebra, in step with the junction's signal. */
@@ -184,7 +188,9 @@ export class Traffic {
     this.segs.forEach((s, si) => {
       for (const dir of [0, 1] as const) {
         s.lanes[dir].forEach((off) => {
-          const span = s.s1[dir] - s.s0[dir];
+          // laid out back from the stop line, so nobody starts inside a junction
+          const span = s.s1[dir] - s.s0[dir] - 10;
+          if (span < 6) return;
           const n = Math.floor(span / spacing + rnd());
           for (let k = 0; k < n; k++) {
             const d = s.s0[dir] + ((k + 0.5) / n) * span + (rnd() - 0.5) * 2;
@@ -194,7 +200,7 @@ export class Traffic {
               x: 0, y: 0, h: 0, brake: 0,
             };
             make(c);
-            c.v = c.vmax * 0.8;
+            c.v = 0;
             this.chooseNext(c, rnd);
             this.pose(c);
             this.cars.push(c);
@@ -265,6 +271,10 @@ export class Traffic {
       p1 = [nd[0] + d0[0] * 4, nd[1] + d0[1] * 4];
     }
     const tl = Math.max(1, (Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) + Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) + chord) / 2);
+    let dh = h2 - h0;
+    while (dh > Math.PI) dh -= 2 * Math.PI;
+    while (dh < -Math.PI) dh += 2 * Math.PI;
+    c.inH = h0; c.straight = Math.abs(dh) < 0.5;
     c.seg = c.next; c.dir = c.nextDir; c.lane = c.nextLane;
     c.p0 = p0; c.p1 = p1; c.p2 = p2; c.tl = tl;
     c.d = ns.s0[c.dir] - tl + over;
@@ -369,6 +379,14 @@ export class Traffic {
     // junctions with someone on a crossing: turning traffic waits for them
     const onFoot = new Set<number>();
     for (const c of this.crossers) if (c.walking && c.s > 0.02 && c.s < 0.98) onFoot.add(c.ni);
+    // who is in each junction box now, and on what heading they came in
+    const inBox = new Map<number, Car[]>();
+    for (const c of this.cars) {
+      if (!live(c) || c.inH === undefined || c.d >= this.segs[c.seg].s0[c.dir]) continue;
+      const s = this.segs[c.seg], ni = c.dir === 0 ? s.na : s.nb;
+      const l = inBox.get(ni);
+      if (l) l.push(c); else inBox.set(ni, [c]);
+    }
     // every lane's cars, front first
     const lanes = new Map<string, Car[]>();
     const lk = (si: number, dir: number, off: number) => `${si}:${dir}:${off}`;
@@ -416,6 +434,46 @@ export class Traffic {
           if (toLine > (c.v * c.v) / (2 * DEC * 1.6) - 0.5) stopAt = toLine;
         }
         if (c.next < 0) stopAt = Math.min(stopAt, s1 - c.d + 1.5);
+        // THE BUS STOP, half way down a block of 70 m or more: stop, let
+        // people on and off for ten seconds, go on (the cars behind wait)
+        if (c.bus && c.servedSeg !== c.seg && s1 - s.s0[c.dir] >= 70) {
+          const at = (s.s0[c.dir] + s1) / 2;
+          if (c.d <= at) stopAt = Math.min(stopAt, at - c.d);
+          if (c.d >= at - 0.6 && c.v < 0.2) {
+            c.dwell = (c.dwell ?? 0) + dt;
+            if (c.dwell > 10) { c.servedSeg = c.seg; c.dwell = 0; }
+          }
+        }
+        // THE BOX. Into a junction only when nothing on a crossing path is in
+        // it: traffic off the same approach follows on, and two streams going
+        // straight through from opposite sides pass each other; anything else
+        // (a left turn across the oncoming stream, the cross street clearing
+        // on the amber) waits at the line for its gap
+        if (c.next >= 0 && c.d <= s1 && s1 - c.d < 6 + c.v) {
+          // DON'T BLOCK THE BOX: room for the whole car past the junction first
+          const nl = lanes.get(lk(c.next, c.nextDir, c.nextLane));
+          const ns = this.segs[c.next];
+          const last = nl && nl.length ? nl[nl.length - 1] : null;
+          const room = last ? was(last, c.next) - last.len - ns.s0[c.nextDir] : Infinity;
+          const toLine0 = s1 - c.d;
+          if (room < c.len + GAP + 1 && toLine0 > (c.v * c.v) / (2 * DEC * 1.6) - 0.5) stopAt = Math.min(stopAt, toLine0);
+          const occ = inBox.get(ni);
+          if (occ && occ.length) {
+            const hIn = this.heading(c.seg, c.dir);
+            let dh = this.heading(c.next, c.nextDir) - hIn;
+            while (dh > Math.PI) dh -= 2 * Math.PI;
+            while (dh < -Math.PI) dh += 2 * Math.PI;
+            const meStraight = Math.abs(dh) < 0.5;
+            const clash = occ.some((o) => {
+              const k = Math.cos(o.inH! - hIn);
+              if (k > 0.95) return false;                              // same approach
+              if (k < -0.95 && meStraight && o.straight) return false;   // opposite, both straight on
+              return true;
+            });
+            const toLine = s1 - c.d;
+            if (clash && toLine > (c.v * c.v) / (2 * DEC * 1.6) - 0.5) stopAt = Math.min(stopAt, toLine);
+          }
+        }
         // a turn across a crossing in use: hold at the line until it clears
         if (c.d <= s1 && c.next >= 0 && onFoot.has(ni)) {
           let dh = this.heading(c.next, c.nextDir) - this.heading(c.seg, c.dir);

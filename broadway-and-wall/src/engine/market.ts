@@ -3963,7 +3963,15 @@ export function tickEcon(s: GameState) {
     // refresh has run — treat as unconstrained so the book can form.
     const rawSites = e.sitePencil?.[k];
     const sites = rawSites === undefined ? 1 : Math.max(0, rawSites);
-    const appetite = devPencils(e, k) * credit * sites;
+    // ONE ANSWER TO "DOES IT PAY" (2026-10-13). This multiplied two of them:
+    // `devPencils` (a generic scheme on a top-decile corner, no land, ~0.66 in
+    // an ordinary month) times `sites` (the best real sites' own
+    // hurdleRatio^1.2, already zero when none clears). The site read is the
+    // honest one — real lots, real basis — and the generic one cut every
+    // month's order by about a third on top of it. Measured over 75 years:
+    // sites cleared in 71-93% of months while office sat 3 points under
+    // natural vacancy and real rents outran real build cost by 0.4-0.8%/yr.
+    const appetite = credit * sites;
     // ONE DRAW, TWO JOBS. This month's noise sizes the order AND sets how long
     // it will take to entitle, below. Capturing it rather than calling `rng`
     // twice keeps the random stream byte-identical to before the entitlement
@@ -3978,8 +3986,8 @@ export function tickEcon(s: GameState) {
     // rise so densify/teardown/infill have a book to fill. Not a vac-floor
     // hike and not minting tenants — more floor ordered against a measured
     // capacity shortfall.
-    const catchUp = 1 + clamp(e.structTight?.[k] ?? 0, 0, 0.45) * 4.5;
-    const start = stk * 0.0016 * Math.min(2.4, appetite) * catchUp * (0.7 + 0.6 * jitter);
+    const catchUp = 1 + Math.max(0, e.structTight?.[k] ?? 0) * 4.5;
+    const start = stk * 0.0016 * appetite * catchUp * (0.7 + 0.6 * jitter);
     e.starts[k] = Math.round(start);
 
     // THE QUEUE. A start becomes a dated cohort; it delivers when its month

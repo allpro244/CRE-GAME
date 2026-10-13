@@ -217,7 +217,7 @@ function buildIndex(game: GameState, parcels: ParcelTable): Entry[] {
     out.push(mk({
       id: `ln:${l.id}`, kind: "lender", label: l.name, tag: "lender",
       sub: l.failedM !== undefined ? `${word} — in receivership` : word,
-      run: () => st().setPage("debt"),
+      run: () => { openViewOn("banks", l.name); st().setPage("banks"); },
     }));
   }
 

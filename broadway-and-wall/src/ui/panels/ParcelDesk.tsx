@@ -12,11 +12,11 @@ import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { OpsChoices } from "@/ui/panels/OpsChoices";
 import type { BuiltClass } from "@/engine/types";
-import { initialCondition, recoveryOf, marketRentPsfYr, managedRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
+import { initialCondition, recoveryOf, marketRentPsfYr, flatsRollPsf, flatsMarkPsf, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
 import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
-import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, leasableUses, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive, autoLeaseRule, autoTiCapToday } from "@/engine/leasing";
+import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive, autoLeaseRule, autoTiCapToday } from "@/engine/leasing";
 import { StackingList } from "@/ui/panels/StackingList";
 import { stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
@@ -403,12 +403,19 @@ function ParcelPanelInner({
             that market's own rent, so a shop roll is never marked against an
             office number. */}
         {isBuilt && holding && (() => {
-          const legs = leasableUses(rec);
+          // EVERY USE, FLATS INCLUDED. This read `leasableUses`, which is the
+          // uses with named commercial leases and leaves flats out by design,
+          // so the flats branch below never ran: a 30-storey apartment tower
+          // with one empty shop said "no tenants" over 114 let flats.
+          const legs = usesOf(rec);
           const inPlace = (u: BuiltClass): number | null => {
+            if (u === "multifamily") {
+              // The roll the flats hold (Holding.resRentPsf), at market until one is written.
+              return (holding.occ ?? 0) > 0 ? flatsRollPsf(rec, game.econ, holding) : null;
+            }
             const ts = holding.tenants.filter((t) => (t.use ?? rec.class) === u);
             const sfLet = ts.reduce((a, t) => a + t.sf, 0);
             if (sfLet > 0) return ts.reduce((a, t) => a + t.rentPsf * t.sf, 0) / sfLet;
-            if (u === "multifamily" && (occRead(rec, holding)?.lettableOcc ?? 0) > 0) return managedRentPsfYr(rec, game.econ, holding, u);
             return null;
           };
           const rows = legs.map((u) => ({ u, ip: inPlace(u), mkt: legs.length <= 1 ? marketRentPsfYr(rec, game.econ, cond) : useRentPsfYr(rec, game.econ, cond, u) }));
@@ -429,7 +436,7 @@ function ParcelPanelInner({
           );
         })()}
         {isBuilt && (() => {
-          const legs = leasableUses(rec);
+          const legs = usesOf(rec);
           if (legs.length <= 1) {
             return <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />;
           }
@@ -1137,11 +1144,14 @@ function ParcelPanelInner({
                 this building at a time; this row averaged the legs together
                 and called the result the asking rent, so on a mixed building
                 the number on the screen was one nobody was ever quoted. */}
-            {leasableUses(rec).map((u) => (
+            {/* Flats too: the asking posture moves what they re-let at
+                (flatsMarkPsf), not only the shops' and offices' letters. */}
+            {usesOf(rec).map((u) => (
               <Row
                 key={u}
-                k={leasableUses(rec).length > 1 ? `Asking · ${CLASS_LABEL[u] ?? u}` : "Asking rent"}
-                v={"$" + currentAskPsfYr(rec, game.econ, holding, u).toFixed(2) + " /sf on new leases"}
+                k={usesOf(rec).length > 1 ? `Asking · ${CLASS_LABEL[u] ?? u}` : "Asking rent"}
+                v={"$" + (u === "multifamily" ? flatsMarkPsf(rec, game.econ, holding) : currentAskPsfYr(rec, game.econ, holding, u)).toFixed(2)
+                  + (u === "multifamily" ? " /sf as flats turn over" : " /sf on new leases")}
               />
             ))}
           </div>

@@ -21,6 +21,7 @@ import { NewsPage } from "@/ui/panels/NewsPage";
 import { SavesPage, SettingsPage, PrimerPage } from "@/ui/panels/MiscPages";
 import { LeasingPage } from "@/ui/panels/LeasingPage";
 import { DebtPage } from "@/ui/panels/DebtPage";
+import { BanksPage } from "@/ui/panels/BankProfile";
 import { PropertyPage } from "@/ui/panels/PropertyPage";
 import {
   DecisionModal, AlertModal, AuctionModal, DefaultNoticeModal, GameOverPage,
@@ -139,6 +140,7 @@ export default function GamePanels() {
     : page === "news" ? "News"
     : page === "leasing" ? "Leasing & Occupancy"
     : page === "debt" ? "Debt"
+    : page === "banks" ? "The Banks"
     : page === "property" ? (propAddr ?? "Property")
     : page === "saves" ? "Saved Games"
     : page === "economy" ? "Markets"
@@ -164,6 +166,7 @@ export default function GamePanels() {
     : page === "news" ? "The stories buried in the city's records, the wire's headlines and the closed sales."
     : page === "leasing" ? "Occupancy, expirations and the mandate you have delegated."
     : page === "debt" ? "Coverage, maturities, pricing and refinancing risk across the book."
+    : page === "banks" ? "Every lender in town, with its books open — capital, income, losses, terms, limits and every loan."
     : page === "property" ? "The complete operating, financing and development record."
     : page === "saves" ? "Named snapshots you can return to. The live campaign autosaves on its own."
     : page === "economy" ? "Each market in depth — space, land, credit, employers and the zoning board."
@@ -227,6 +230,7 @@ export default function GamePanels() {
             {page === "saves" && <SavesPage />}
             {page === "leasing" && <LeasingPage />}
             {page === "debt" && <DebtPage />}
+            {page === "banks" && <BanksPage />}
             {page === "property" && <PropertyPage />}
             {page === "firm" && <><FirmStanding /><FirmTimeline /></>}
             {page === "settings" && <SettingsPage />}

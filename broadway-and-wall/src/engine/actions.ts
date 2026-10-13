@@ -18,7 +18,7 @@ import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
 import { payOffDue, payOffLoan } from "./debt";
 import { settleSale } from "./rivalDebt";
-import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen } from "./debt";
+import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen, loanMin } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
@@ -271,6 +271,25 @@ export function executePurchase(
   // vehicle short of capital calls capital.
   // A vehicle short of capital calls capital — from the LPs' uncalled
   // commitment, as the deal closes.
+  // A DESK THAT WILL NOT LEND IS A REFUSAL, NOT AN ALL-CASH CLOSING. With a
+  // zero quote (under the desk's minimum cheque, a shut window, a coverage
+  // test the building cannot pass) the closing below skipped the loan and
+  // conveyed the building for the whole price out of the account — "Bought
+  // at $217K" on a deal the buyer had asked a bank to finance. A buyer who
+  // means all cash says so; anyone else is told why the desk said no.
+  if (product !== "cash" && !(bq.principal > 0)) {
+    const prod = productById(product);
+    const min = loanMin(s, prod);
+    return {
+      s,
+      err: `${prod.lender} will not write a loan on this. `
+        + (min > 0 && price * prod.ltv < min
+          ? `Their minimum cheque in this town is ${money(min)} — this building is too small for that desk. `
+          : !windowOpen(s, prod) ? `They are not writing anything this month. `
+          : `The building does not pass their underwriting today. `)
+        + `Close all cash, or try another desk.`,
+    };
+  }
   const purse = fromFund ? (s.fund?.cash ?? 0) + (s.fund?.uncalled ?? 0) : fundableNow(s, parcels);
   if (purse < bq.equity) {
     return {

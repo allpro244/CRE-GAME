@@ -15,7 +15,7 @@ import {
   isVacantLandLoanCollateral,
 } from "./value";
 import { walt } from "./leasing";
-import { INDUSTRY_LABEL, shortIndexOf } from "./market";
+import { INDUSTRY_LABEL, shortIndexOf, natUnempRise12 } from "./market";
 import { sponsorStanding } from "./sponsor";
 import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash, spendable, fundAndBook } from "./credit";
 import { sizeAreaScale } from "./cityscale";
@@ -552,11 +552,31 @@ export function advanceFactor(s: GameState, lender: string): number {
 const clampSigned = (x: number) => Math.max(-1, Math.min(1, x));
 export function underwritingStandards(s: GameState): number {
   const ci = s.econ.creditIdx ?? 1;
-  const window = clampSigned((ci - 0.90) / 0.22);
+  // CENTRED ON AN ORDINARY YEAR. The index means 1 = an ordinary year
+  // (pricing.ts), and in this economy it sits at ~1.06 through an expansion;
+  // centring the window at 0.90 read "loose" in three months of four and
+  // only got back to "ordinary" in a recession, so the quotes barely moved
+  // over the cycle (regional bank 171bp / 72% in expansions, 194bp / 69% in
+  // recessions, measured by tools/bankplay.mjs). The Fed's loan-officer
+  // survey reads near zero through an ordinary expansion and swings hard at
+  // the turns, and that is the shape this now has.
+  const window = clampSigned((ci - 1.0) / 0.22);
   // appetite runs 0-1.15: the whole street flush is +1, the street at 0.65 is −1
   const app = s.bankApp ?? 0.9;
   const balance = clampSigned((app - 0.90) / 0.25);
-  return clampSigned(0.65 * window + 0.35 * balance);
+  // AND THE OUTLOOK, which is the reason loan officers give most. Asked why
+  // they tightened, banks in the Fed's survey cite "a less favorable or more
+  // uncertain economic outlook" ahead of their own capital or the market's
+  // liquidity — standards tighten as unemployment starts rising, before the
+  // losses arrive. A recession here moved the credit window to ~0.95 and left
+  // standards at "ordinary" (measured: the regional's advance held at 71-74%
+  // through a whole recession). One point of national unemployment added in a
+  // year reads fully pessimistic; a falling rate eases, half as hard. The
+  // weights are a shape — the outlook leads, the window and the desks' own
+  // balance sheets follow — not fitted to a number.
+  const rise = natUnempRise12(s.econ);
+  const outlook = clampSigned(rise > 0 ? -rise / 0.01 : -rise / 0.02);
+  return clampSigned(0.45 * window + 0.25 * balance + 0.30 * outlook);
 }
 
 /** One word for the standards index, for a card or a docket. */

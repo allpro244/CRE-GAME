@@ -2784,6 +2784,8 @@ export interface GameState {
    * sell instead. Absent: every renewal that clears rolls without a stop.
    */
   debtPolicy?: { rollMaxJumpBp?: number };
+  /** The deposit insurance limit as a multiple of its opening $100K (lenders.ts maybeRaiseInsurance). */
+  depositCover?: number;
   /**
    * Money owed to you by the receiver of a failed bank — uninsured deposits
    * that will come back at 60-90c, in a year or two. It is not cash and it is

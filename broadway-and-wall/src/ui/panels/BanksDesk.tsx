@@ -103,7 +103,7 @@ export function TheBanks() {
         </thead>
         <tbody>
           {lenders.map((l) => {
-            const h = lenderHealth(l);
+            const h = lenderHealth(l, game.econ);
             const cr = capitalRatio(l);
             const conc = l.book > 0 ? l.yours / l.book : 0;
             return (

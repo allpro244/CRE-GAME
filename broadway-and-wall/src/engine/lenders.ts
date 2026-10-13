@@ -92,8 +92,10 @@ export interface Lender {
    */
   panicBps?: number;
   failedM?: number;
-  /** How many months the receiver takes to sell the franchise on. */
+  /** Months until the franchise lends again under new owners (a bank: a P&A, days to weeks). */
   reopenM?: number;
+  /** The receiver keeps the failed desk's bad paper and sells it down until this month (notes.ts). */
+  receiverUntilM?: number;
   /** What they have lent to YOU — the part of the book you are. */
   yours: number;
   /** What the standing book yields — written over years, repricing only as loans roll. */
@@ -151,13 +153,21 @@ const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: nu
 /**
  * What each kind's standing book is written at, over the index, and the
  * margin it ordinarily earns over its own funding (`baseFund` in
- * `tickLenders`: deposits at index − 2.2, float at index − 1.4, the bond
+ * `tickLenders`: deposits at index − 2.2, the general account at index − 0.3, the bond
  * market at index + 0.3, committed capital at index + 1.1). The banks and the
  * insurer keep the number every desk used to carry; the conduit's book is a
  * warehouse of the same paper; the fund's is bridge and mezz.
  */
-const BOOK_SPREAD: Record<LenderKind, number> = { bank: 1.9, life: 1.9, conduit: 1.9, fund: 4.5 };
-const NORMAL_NIM: Record<LenderKind, number> = { bank: 4.1, life: 3.3, conduit: 1.6, fund: 3.4 };
+// A LIFE COMPANY EARNS A LIFE COMPANY'S SPREAD. Its book was carried at a
+// bank's yield (index + 1.9, against Pelican's own 1.15 sheet) and funded at
+// index − 1.4 like deposits, so it earned 3.2 points and returned ~2% on
+// assets, twice what an insurer's mortgage portfolio does. Its sheet plus
+// points and the quarter it charges standard buildings is ~1.4 over; its
+// money is the general account, credited near the Treasury curve (annuity
+// and GIC crediting rates) — index − 0.3. A 1.7-point margin is the ACLI
+// portfolio-spread band (1.5-2.5).
+const BOOK_SPREAD: Record<LenderKind, number> = { bank: 1.9, life: 1.4, conduit: 1.9, fund: 4.5 };
+const NORMAL_NIM: Record<LenderKind, number> = { bank: 4.1, life: 1.7, conduit: 1.6, fund: 3.4 };
 /**
  * WHAT IT COSTS TO RUN THE DESK, % of book a year, and what the government
  * takes (2026-10-13). Net income was interest less funding less charge-offs,
@@ -335,7 +345,30 @@ export function insuredLimit(s: GameState): number {
   // $250,000 only in 2008), and every price in the engine is year-2000
   // dollars carried forward by costIdx. It used to be looked up by which of
   // five historical "eras" the seed drew; there are no eras now.
-  return 100_000 * (s.econ.costIdx ?? 1);
+  return 100_000 * (s.depositCover ?? 1) * (s.econ.costIdx ?? 1);
+}
+
+/**
+ * THE LIMIT MOVES IN A PANIC. The insurance limit was $100,000 from 1980 until
+ * a run on the banking system in October 2008, when Congress raised it to
+ * $250,000 in the same bill as the bank rescue (EESA, made permanent by
+ * Dodd-Frank in 2010) — because the uninsured balances of ordinary businesses
+ * were what was running. Here it is the same trigger: the first bank to fail
+ * while the economy is in recession, or while another desk is already in
+ * receivership, raises the limit two and a half times, once, for good.
+ */
+function maybeRaiseInsurance(s: GameState, failing: Lender) {
+  if ((s.depositCover ?? 1) > 1 || failing.kind !== "bank") return;
+  const systemic = s.econ.phase === "recession" || s.econ.phase === "depression"
+    || (s.lenders ?? []).some((x) => x !== failing && x.failedM !== undefined);
+  if (!systemic) return;
+  s.depositCover = 2.5;
+  s.news.unshift({
+    q: s.month, kind: "info",
+    text: `Washington has raised the deposit insurance limit to ${usdShort(insuredLimit(s))} a depositor, per bank — `
+      + `two and a half times what it was, and for good. A bank failing into a bad year did it: the money that runs `
+      + `is business operating accounts over the limit, and this is how a government stops a run.`,
+  });
 }
 
 // ---- where the firm's cash actually is -----------------------------------
@@ -566,14 +599,15 @@ export function capitalRatio(l: Lender): number {
   return l.book > 0 ? l.capital / l.book : 1;
 }
 
-/** In words, for the panel. */
-export function lenderHealth(l: Lender): { word: string; bad: boolean } {
+/** In words, for the panel. `econ` lets a conduit say its bond window is shut. */
+export function lenderHealth(l: Lender, econ?: { creditIdx?: number; phase?: string }): { word: string; bad: boolean } {
   if (l.failedM !== undefined) {
     const back = Math.max(0, (l.failedM + (l.reopenM ?? 18)));
     return { word: `in receivership — the franchise is being sold, back around month ${back}`, bad: true };
   }
   const cr = capitalRatio(l);
   const target = KIND[l.name]?.capitalRatio ?? 0.1;
+  if (l.kind === "conduit" && econ && ((econ.creditIdx ?? 1) < 0.78 || econ.phase === "recession")) return { word: "the bond window is shut — not writing", bad: true };
   if (cr < target * 0.45) return { word: "undercapitalised — not lending to anybody", bad: true };
   if (cr < target * 0.7) return { word: "impaired — rationing hard", bad: true };
   if (l.delinquent > 0.055) return { word: "working out problem loans", bad: true };
@@ -767,14 +801,35 @@ export function tickLenders(s: GameState) {
     // exposed to it. Funding reprices UP fast and DOWN slowly, because that
     // asymmetry is what depositors are like.
     const baseFund = l.kind === "bank" ? Math.max(0, e.indexRate - 2.2)
-      : l.kind === "life" ? Math.max(0, e.indexRate - 1.4)
+      : l.kind === "life" ? Math.max(0, e.indexRate - 0.3)
       : l.kind === "conduit" ? e.indexRate + 0.3
       : e.indexRate + 1.1;
     const then = e.history[e.history.length - 13]?.indexRate ?? e.indexRate;
     const hot = Math.max(0, e.indexRate - then - 0.6);
-    const fundTarget = baseFund + hot * k.wholesale;
+    // A CONDUIT DOES NOT CARRY A RATE BET. It writes a loan, warehouses it for
+    // a few weeks and sells it into a trust priced off the same index, so its
+    // margin is the gain on sale — fixed at the kind's normal margin, whatever
+    // the index does — for as long as the bond window is open (the same test
+    // `windowOpen` puts to the desk). It was funded like a regional, at the
+    // index plus a hot-money term against a book that repriced over thirty
+    // months, and it died of rate shocks in the middle of expansions: 9
+    // seizures in 360 city-years, 7 of them with delinquency under 5%. When
+    // the window shuts the warehouse is stuck on repo and the old funding law
+    // is exactly right.
+    const conduitOpen = l.kind === "conduit" && (e.creditIdx ?? 1) >= 0.78 && e.phase !== "recession";
+    const fundTarget = conduitOpen ? (l.bookYield ?? e.indexRate + spread) - (NORMAL_NIM.conduit ?? 1.6) : baseFund + hot * k.wholesale;
     if (l.fundCost === undefined) l.fundCost = baseFund;
-    l.fundCost = +(l.fundCost + (fundTarget > l.fundCost ? 0.22 : 0.07) * (fundTarget - l.fundCost)).toFixed(4);
+    // AN INSURER'S MONEY IS AS LONG AS ITS LOANS. The general account is
+    // annuity and policy reserves credited over years, and the life company
+    // matches the duration of its mortgages to them — so its funding reprices
+    // at the speed its book does (2.5% a month), both ways. Funded like a
+    // deposit bank, it lost its margin in every hiking cycle and stopped
+    // quoting for a year at a time (appetite 0.2 through two rate spikes in
+    // one thirty-year playthrough), which is the one thing a life company
+    // famously does not do.
+    l.fundCost = conduitOpen ? +fundTarget.toFixed(4)
+      : l.kind === "life" ? +(l.fundCost + 0.025 * (fundTarget - l.fundCost)).toFixed(4)
+      : +(l.fundCost + (fundTarget > l.fundCost ? 0.22 : 0.07) * (fundTarget - l.fundCost)).toFixed(4);
     // The panic surcharge, priced off how much this desk resembles the one in
     // receivership. A desk at its capital target pays the base share; one at
     // half its target pays nearly three times that. See the block above.
@@ -817,7 +872,7 @@ export function tickLenders(s: GameState) {
     l.chargeOffsTotal += chargeOff;
     const opex = (l.book * (OPEX_PCT[l.kind] ?? 0)) / 100 / 12;
     // Taxed symmetrically: a loss month books a tax asset (carrybacks).
-    const net = Math.round((interest - funding - chargeOff - opex) * (1 - (TAX_RATE[l.kind] ?? 0)));
+    const net = Math.round((interest - funding - borneLoss(l, chargeOff) - opex) * (1 - (TAX_RATE[l.kind] ?? 0)));
     l.netIncomeYr += net;
     l.capital = Math.round(l.capital + net);
 
@@ -882,8 +937,13 @@ export function tickLenders(s: GameState) {
     // one Friday afternoon the patience ends. This is what makes failure a
     // cliff you can watch a desk walking toward on Research rather than an
     // asymptote it can hug forever.
-    const seizable = l.kind === "bank" || l.kind === "life";   // the conduit dies by market, not by regulator
-    if ((l.capital <= 0 && rng(s, "lenders") < 0.35) || (seizable && cr < target * 0.22 && rng(s, "lenders") < 0.09)) {
+    // A CONDUIT IS NEVER SEIZED. It has no depositors and no regulator to
+    // close it: when the bonds will not sell it stops writing (windowOpen), and
+    // the losses past its retained first-loss piece are the bondholders'
+    // (borneLoss). The banks and the life company are closed by examiners; the
+    // fund by running out of committed capital.
+    const seizable = l.kind === "bank" || l.kind === "life";
+    if (l.kind !== "conduit" && ((l.capital <= 0 && rng(s, "lenders") < 0.35) || (seizable && cr < target * 0.22 && rng(s, "lenders") < 0.09))) {
       // ASK WHOSE BANK THIS IS BEFORE YOU CLOSE IT. bankOf() only considers
       // LIVE desks, so calling seizeDeposits after failedM was set meant the
       // failing bank had already been filtered out of its own question and the
@@ -891,9 +951,35 @@ export function tickLenders(s: GameState) {
       // runs and not one cut. Establish it first, then padlock the door.
       const wasOurs = bankOf(s)?.id === l.id;
       l.failedM = s.month;
-      l.reopenM = Math.round(rrange(s, 12, 30, "lenders"));
+      maybeRaiseInsurance(s, l);
+      // HOW LONG THE DOOR STAYS SHUT DEPENDS ON WHO CLOSED IT. A failed bank is
+      // resolved by the deposit insurer in a purchase-and-assumption: an
+      // acquirer is lined up before the Friday closing and the branches open
+      // under new ownership on Monday — FDIC practice for nearly every failure
+      // since the 1990s. The new owner writes loans again within a quarter
+      // (one to three months here, while it integrates the book); the BAD
+      // paper stays with the receiver, which sells it down over a year or two
+      // (receiverUntilM — notes.ts). A life company goes into state
+      // rehabilitation, which takes years, and a fund that has lost its
+      // committed capital winds down and is raised again as a new vintage.
+      l.reopenM = l.kind === "bank" ? Math.round(rrange(s, 1, 3, "lenders"))
+        : Math.round(rrange(s, 24, 48, "lenders"));
+      l.receiverUntilM = s.month + Math.round(rrange(s, 12, 30, "lenders"));
       l.appetite = 0;
-      if (wasOurs) seizeDeposits(s, l);
+      // In most resolutions the acquirer assumes every deposit and the
+      // uninsured are made whole; in the rest it takes only the insured ones
+      // and the remainder is a claim on the receiver. Three in four is the
+      // rough post-2008 share of whole-bank and all-deposit transactions — a
+      // shape, not a measured constant.
+      if (wasOurs) {
+        if (l.kind === "bank" && rng(s, "lenders") < 0.75) {
+          s.news.unshift({
+            q: s.month, kind: "info",
+            text: `${l.name} failed on Friday and was sold to an acquirer the same weekend. Every deposit moved with it, `
+              + `insured or not — the firm's account opens Monday under a new name with nothing missing.`,
+          });
+        } else seizeDeposits(s, l);
+      }
       // And whether or not you banked with them, their cranes stop.
       repudiateCommitments(s, l);
       // A DESK GOING DOWN IS NOT A LINE IN THE PAPER. Whether or not the
@@ -905,14 +991,16 @@ export function tickLenders(s: GameState) {
       raiseAlert(s, {
         kind: "bank", tone: "bad",
         title: `${l.name} has been closed`,
-        body: wasOurs
-          ? `The regulators walked in on a Friday and the firm's operating account is inside the padlock. `
-            + `Whatever was over the insurance limit is a claim on a receiver now, not money. `
-            + `Every loan they had outstanding went with them, and a receiver is not a lender.`
-          : `${l.kind === "conduit" ? "The securitisation market took them with it" : "The regulators walked in on a Friday afternoon"}. `
-            + `Every loan they had outstanding is with a receiver now, and a receiver does not extend, does not advance `
-            + `against work in place, and does not haggle when it sells. Watch the tape: the best buying in this business `
-            + `comes off a broken bank's books, and it is about to.`,
+        body: l.kind === "bank"
+          ? `The examiners closed them on Friday and the deposit insurer sold the franchise to an acquirer the same `
+            + `weekend. The branches open Monday under new owners, who will be writing loans again in a month or two. `
+            + `The bad paper stays with the receiver, which will be selling it for the next year or two — watch the tape. `
+            + `Undrawn construction commitments died with the old bank; a job that was drawing on them needs a new desk.`
+          : l.kind === "life"
+            ? `The insurance commissioner has taken them into rehabilitation. A rehabilitator collects what is owed and `
+              + `writes nothing new for years; the loans are with a receiver now, and a receiver does not extend or haggle.`
+            : `The fund has burned through its committed capital and is winding down. It will not write or extend a `
+              + `loan until a new vintage is raised, and what it holds will be sold as it can be.`,
         detail: l.yours > 0
           ? `They held ${usdShort(l.yours)} of your debt. ${(l.delinquent * 100).toFixed(1)}% of their book had stopped paying.`
           : `${(l.delinquent * 100).toFixed(1)}% of their book had stopped paying, against a ${(targetCapital(l.name) * 100).toFixed(1)}% capital target.`,
@@ -983,6 +1071,18 @@ function recountYours(s: GameState): Record<string, DeskTotals> {
 }
 
 /**
+ * WHAT A LOSS COSTS THE DESK THAT WROTE THE LOAN. Everyone but the conduit
+ * holds its loans and eats all of it. A conduit sold the loan into a trust and
+ * kept only the first-loss slice (the B-piece, and since 2016 the 5% risk
+ * retention): losses come out of its capital until that is gone, and past it
+ * they belong to the bondholders, not to the desk.
+ */
+function borneLoss(l: Lender, loss: number): number {
+  if (l.kind !== "conduit") return loss;
+  return Math.max(0, Math.min(loss, l.capital));
+}
+
+/**
  * YOUR DEFAULT IS THEIR LOSS.
  *
  * Handing back a building is not a private event — it lands on a specific
@@ -998,7 +1098,7 @@ function recountYours(s: GameState): Record<string, DeskTotals> {
 export function chargeLenderLoss(s: GameState, lender: string, loss: number) {
   const l = lenderByName(s, lender);
   if (!l || loss <= 0) return;
-  l.capital = Math.round(l.capital - loss);
+  l.capital = Math.round(l.capital - borneLoss(l, loss));
   l.chargeOffsYr += loss;
   l.chargeOffsTotal += loss;
   l.yours = Math.max(0, l.yours - loss);

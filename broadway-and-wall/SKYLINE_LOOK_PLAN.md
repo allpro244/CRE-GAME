@@ -268,6 +268,14 @@ fixed in #231; the sweep is clean since.
   mirrors the street and the buildings opposite, not the sky, and 4% of a
   dark street is dark. That is what smoked glass looks like from a roof
   across the street; the look is right and stays.
+- **Round 34** — oil-canning. Close in, a curtain wall read as one smooth
+  mirror holding one smeared image of the city. No curtain wall is flat: each
+  pane is set a fraction of a degree off true, so the reflection breaks into
+  a faint grid of slightly different panes. Each glass pane's normal now
+  tilts by up to ~2.5° from its cell hash (glass fronts only, faded out past
+  ~320 m with the rest of the relief, where it would shimmer). Measured on a
+  street camera: brightness spread across a glass tower's panes +2.5 (sd
+  36.6 to 39.1) against +0.2 on a brick front used as the control.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

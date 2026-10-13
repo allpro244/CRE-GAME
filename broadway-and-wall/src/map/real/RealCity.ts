@@ -746,9 +746,15 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       // distance — what a camera sees of a far tower anyway.
       .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nfloat farK = smoothstep(320.0, 1300.0, length(vViewPosition));\nroughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.5), farK);\n" + WINDOW_VARIATION + REVEAL_FRAG)
       .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - farK * 0.6;\nmetalnessFactor *= 1.0 - winShade * winM;")
-      .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));");
+      .replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, farK));\n" +
+        // OIL-CANNING. No curtain wall is one flat mirror: every pane is set
+        // a fraction of a degree off true, so the city it reflects breaks
+        // into a faint grid of slightly different images, pane by pane.
+        // Glass fronts only, on the panes, gone with the rest of the relief
+        // past ~320 m (where it would shimmer). ~2.5 degrees at most.
+        "normal = normalize(normal + vec3(wh1 - 0.5, wh2 - 0.5, fract(wh1 * 7.31) - 0.5) * 0.09 * uGlassy * winM * (1.0 - farK));");
   };
-  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint-reveal";
+  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint-reveal-oil";
   return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass,
     win: spec.win, lintel: spec.lintel, winStyle: spec.winStyle,
     // a window in a wall, not a wall of glass: what can carry a sill

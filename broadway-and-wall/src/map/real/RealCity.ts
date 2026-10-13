@@ -13,6 +13,7 @@
  * here writes state.
  */
 import * as THREE from "three";
+import { CLOUD, CLOUD_GLSL } from "./clouds";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import maplibregl from "maplibre-gl";
 import type { BuildingVolume } from "../volume";
@@ -858,6 +859,36 @@ const HAZE = {
   hazeFar: { value: 4000 },
   hazeCap: { value: 0.5 },
 };
+// THE WIND IN THE TREES. A breeze moves a street tree's crown a hand's
+// breadth at the top and not at all at the trunk: each crown leans downwind
+// with the square of its height above the fork, in two slow periods phased by
+// where the tree stands, so a row of trees ripples instead of nodding as one.
+// The downwind bearing is the cloud field's. (Shape parameters set by eye:
+// ~10 cm at the top of a 7 m crown, periods of ~6 s and ~2 s.)
+const WIND = { leafT: { value: 0 }, leafWind: { value: new THREE.Vector2(7.4, 3.1).normalize() } };
+function addSway(mat: THREE.Material) {
+  const prev = mat.onBeforeCompile;
+  const k0 = mat.customProgramCacheKey();
+  mat.onBeforeCompile = (sh, r) => {
+    prev.call(mat, sh, r);
+    Object.assign(sh.uniforms, WIND);
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nuniform float leafT;\nuniform vec2 leafWind;")
+      .replace("#include <project_vertex>", `#include <project_vertex>
+#ifdef USE_INSTANCING
+{
+  // the view space is the world's, eye-centred and unrotated: a world push is a view push
+  vec2 ip = instanceMatrix[3].xy;
+  float hz = max(transformed.z - 2.8, 0.0);
+  float ph = dot(ip, vec2(0.13, 0.09));
+  float s = 0.55 + 0.35 * sin(leafT * 1.05 + ph) + 0.2 * sin(leafT * 3.1 + ph * 1.7);
+  mvPosition.xy += leafWind * (s * hz * hz * 0.0055);
+  gl_Position = projectionMatrix * mvPosition;
+}
+#endif`);
+  };
+  mat.customProgramCacheKey = () => k0 + "+sway";
+}
 const hazed = new WeakSet<THREE.Material>();
 function addHaze(mat: THREE.Material) {
   if (hazed.has(mat)) return;
@@ -867,17 +898,24 @@ function addHaze(mat: THREE.Material) {
   const prev = mat.onBeforeCompile;
   // a shadow catcher is all alpha: its shadows thin out with distance instead
   const mix = m.isShadowMaterial ? "gl_FragColor.a *= 1.0 - hz;" : "gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeCol, hz);";
+  // the shadow catcher lies over the harbour too and already lays the
+  // cloud's shade on it; the sea's own sun only gives up its glitter
+  const ck = k0 === "bw-sea" ? "0.3" : "1.0";
   mat.onBeforeCompile = (sh, r) => {
     prev.call(mat, sh, r);
-    Object.assign(sh.uniforms, HAZE);
+    Object.assign(sh.uniforms, HAZE, CLOUD);
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vHazeP;")
       .replace("#include <project_vertex>", "#include <project_vertex>\nvHazeP = mvPosition.xyz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vHazeP;\nuniform vec3 hazeCol;\nuniform float hazeNear, hazeFar, hazeCap;")
+      .replace("#include <common>", "#include <common>\nvarying vec3 vHazeP;\nuniform vec3 hazeCol;\nuniform float hazeNear, hazeFar, hazeCap;" + CLOUD_GLSL)
+      // the view space is the world's, eye-centred and unrotated: the world
+      // point is the eye plus the view offset (cloudEye, not cameraPosition)
+      .replace("#include <lights_fragment_end>", "#include <lights_fragment_end>\n{ float cs = cloudSunlight(vHazeP + cloudEye, " + ck + "); reflectedLight.directDiffuse *= cs; reflectedLight.directSpecular *= cs; }")
+      .replace("gl_FragColor = vec4( color, opacity * ( 1.0 - getShadowMask() ) );", "gl_FragColor = vec4( color, opacity * ( 1.0 - getShadowMask() * cloudSunlight(vHazeP + cloudEye, 1.0) ) );")
       .replace("#include <fog_fragment>", `{ float hz = smoothstep(hazeNear, hazeFar, length(vHazeP)) * hazeCap; ${mix} }\n#include <fog_fragment>`);
   };
-  mat.customProgramCacheKey = () => k0 + "+haze" + (m.isShadowMaterial ? "s" : "");
+  mat.customProgramCacheKey = () => k0 + "+haze+cloud" + (m.isShadowMaterial ? "s" : "");
   mat.needsUpdate = true;
 }
 
@@ -1536,6 +1574,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     pm.dispose();
     this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv ?? this.skyEnv; });
     this.setupLights();
+    addSway(this.leafMat);
     this.dyn.add(this.dynDone.group, this.dynSite.group);
     this.scene.add(this.dyn);
     const measure = () => { this.viewH = map.getContainer().clientHeight || 900; };
@@ -1706,6 +1745,17 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       if (now - this.lastTick > 33) { this.lastTick = now; requestAnimationFrame(() => this.map?.triggerRepaint()); }
     }
     this.hazeFor(distM);
+    {
+      // the cloud field drifts downwind at ~8 m/s (cells are 420 m)
+      const tc = performance.now() / 1000;
+      CLOUD.cloudOff.value.set((tc * 7.4) / 420, (tc * 3.1) / 420);
+      CLOUD.cloudEye.value.copy(eye);
+      WIND.leafT.value = tc;
+      // close in, a cloud's soft edge spans the whole frame and reads as a
+      // smudge (and a passing one dims the building being inspected): full
+      // shade from the district view out, a third of it at street level
+      CLOUD.cloudK.value = this.cloudK0 * (0.35 + 0.65 * smooth(450, 1500, distM));
+    }
     if (this.probeDue) this.captureReflections();
     if (this.precip) this.stepPrecip(fx, fy, distM, performance.now() / 1000);
     if (this.waves.length) {
@@ -3686,9 +3736,39 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const top = !crown || pitched || mans || n < 4 || zt - lo < 3 * fh || zw - zt < 0.6 * fh ? null
         : glassTop ? (zw > 30 ? "screen" : null)
         : fam.masonry && (style === "classical" || style === "chicago" || style === "deco" || style === "victorian" || style === "vernacular") ? "attic" : null;
-      if (!top) { walls(famKey, lo, zw, vOff, tint, rr); return; }
       const main = ov?.variant ?? this.variantOf(famKey, seedK);
-      walls(famKey, lo, zt, vOff, tint, rr);
+      // MECHANICAL FLOORS. A post-war tower is not one shaft of identical
+      // storeys: every 15-25 floors the air handlers, water tanks and
+      // elevator machinery take a whole storey (two on a supertall), and the
+      // curtain wall there turns to louvres — the dark bands that divide a
+      // Midtown slab into stacked blocks. Modern and glass towers over 100 m
+      // only; a masonry tower hid its plant in the setbacks and the crown.
+      // The band keeps the body's floor grid, so the windows above it stand
+      // over the windows below. (Spacing per the usual service zoning of a
+      // high-rise core: one plant floor serves 15-25 floors.)
+      const head = top ? zt : zw;
+      const bands: number[] = [];
+      if (glassTop && crown && !pitched && zw > 100 && n >= 28) {
+        const every = 16 + Math.floor(hash01(seedK ^ 0x5eed, 11) * 9);   // 16-24 storeys
+        const tall = zw > 220 ? 2 : 1;
+        for (let m = every; vOff + (m + tall + 6) * fh <= head; m += every + tall) {
+          if (vOff + m * fh - lo < 4 * fh) continue;
+          bands.push(m);
+        }
+        if (bands.length) {
+          let z = lo;
+          for (const m of bands) {
+            const zb = vOff + m * fh, ze = zb + tall * fh;
+            walls(famKey, z, zb, vOff, tint, rr);
+            walls(`${main}@screen`, zb, ze, vOff, tint, rr);
+            z = ze;
+          }
+          walls(famKey, z, head, vOff, tint, rr);
+          this.feat("mechband", bbl);
+        }
+      }
+      if (!bands.length) walls(famKey, lo, head, vOff, tint, rr);
+      if (!top) return;
       walls(`${main}@${top}`, zt, zw, vOff, tint, rr);
       this.feat(top, bbl);
     };
@@ -7976,6 +8056,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const az = ((200 - 12 * w2) * Math.PI) / 180;
     // the vector points from the ground toward the sun (x east, y north)
     this.sunDir.set(Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)).normalize();
+    CLOUD.cloudSun.value.copy(this.sunDir);
     this.shadowSpan = 0;   // force a refit
     // the rough grass on unbuilt land: straw in winter, green by June
     const vig = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02][this.month];
@@ -8072,11 +8153,19 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     this.applyMonth();   // which re-applies the weather on top of the season
   }
   private overcast = 0;
+  /** The cloud shade the weather allows, before the camera's distance trims it. */
+  private cloudK0 = 0.45;
 
-  setDayPhase(target: number, instant = false) {
-    if (this.defer("setDayPhase", () => this.setDayPhase(target, instant))) return;
-    this.duskTarget = Math.max(0, Math.min(1, Number.isFinite(target) ? target : 0));
-    if (instant) this.dusk = this.duskTarget;
+  /**
+   * ALWAYS AFTERNOON. The game has no night and never will (the owner's
+   * standing call: "absolutely no nighttime in this game"). The renderer
+   * still carries its dusk machinery for the colour it was tuned under, but
+   * whatever a caller asks for, the hour is pinned to the calibrated day.
+   */
+  setDayPhase(_target: number, _instant = false) {
+    if (this.defer("setDayPhase", () => this.setDayPhase(0, true))) return;
+    this.duskTarget = 0;
+    this.dusk = 0;
     this.applyLight();
     this.map?.triggerRepaint();
   }
@@ -8121,6 +8210,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const nightC = [0.08, 0.1, 0.16];
     HAZE.hazeCol.value.setRGB(day[0] + (nightC[0] - day[0]) * night, day[1] + (nightC[1] - day[1]) * night, day[2] + (nightC[2] - day[2]) * night);
     HAZE.hazeCap.value = (0.48 + oc * 0.25) * (1 - night * 0.35);
+    // fair weather: a scatter of cumulus; as the sky fills in, more of it;
+    // under a full overcast there is no direct sun left for a cloud to take
+    CLOUD.cloudCover.value = 0.22 + 0.3 * smooth(0.0, 0.6, oc);
+    this.cloudK0 = this.quality === "low" ? 0 : 0.45 * (1 - smooth(0.45, 0.95, oc));
     this.map?.triggerRepaint();
   }
 
@@ -8277,7 +8370,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const rm = this.meshes.get("relief"); if (rm) rm.visible = q !== "low";
     if (this.precip) this.precip.visible = q !== "low";
     if (this.fleets.length) this.applyCrowd();
-    this.map?.triggerRepaint();
+    this.applyLight();   // the cloud shadows ride the catcher: off on Low
   }
   setPaused(on: boolean) { this.paused = on; if (!on) this.map?.triggerRepaint(); }
   setOpacity(o: number) {

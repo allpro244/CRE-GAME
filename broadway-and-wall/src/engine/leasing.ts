@@ -6,7 +6,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
-import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, useGap } from "./market";
+import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, useGap, RENT_BASE } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Bare clamp so tools/rails.mjs can see the block-premium guards. */
@@ -20,7 +20,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
 }
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, buildingScore, qualityCycle, condWear, capPlanBillMo, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
-  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader, flatsMarkPsf, flatsRollPsf } from "./value";
+  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve, drawLineInPlace, parkedOnLine } from "./credit";
@@ -928,6 +928,39 @@ export const TI_ASK: Record<string, [number, number]> = {
 };
 
 /**
+ * NO MORE FIT-OUT THAN THE RENT CAN PAY BACK.
+ *
+ * TI_ASK is dollars × the cost index, whatever the space lets for, and its
+ * own claim — "roughly 6-7% of lease value" — only holds near the rents it
+ * was measured on (RENT_BASE: office $35.50, where the band's top is 17% of a
+ * year's rent per year of term). On a $5-7 floor the same dollars are 40-80%
+ * of the rent a year, and by late game the cost index carries them further
+ * still: measured (tools/mdga/ti-vs-rent.mjs) the cheapest tenth of offices
+ * asked 37% of their rent per year of term at month 12 and 76% at month 600 —
+ * a ten-year lease asking seven years of rent in fit-out, and every one of
+ * the worst auto-lease deals in tools/mdga/auto-lease-audit.mjs was one.
+ *
+ * No landlord funds that, and no tenant on a cheap floor expects it: an
+ * allowance is paid back out of the rent, and a cheap floor gets a cheaper
+ * fit-out. So the band is capped at the same band read as a share of the
+ * space's own face rent — TI_ASK over RENT_BASE, office 7-17%, retail and
+ * industrial 4-11% a year — and is otherwise exactly what it was. A cap, not
+ * a re-pricing: it binds only where dollars outrun the rent, never raises an
+ * ask, and leaves every space at or above the base rents untouched. The
+ * development reserve, the appraisal's fill cost and build-to-suit keep their
+ * dollar figures; on the spaces the cap binds they now reserve more than the
+ * letters ask, which errs on the safe side.
+ */
+export function tiBandPsfYr(s: GameState, rec: ParcelRecord, h: Holding, use: string): [number, number] {
+  const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
+  const base = RENT_BASE[use as keyof typeof RENT_BASE] ?? RENT_BASE.office;
+  const rent = useRentPsfYr(rec, s.econ, h.condition, use as BuiltClass, h.condIdx) * faceGrossUp(s.econ, use as BuiltClass);
+  const c = s.econ.costIdx ?? 1;
+  if (!(rent > 0)) return [lo * c, hi * c];
+  return [Math.min(lo * c, (lo / base) * rent), Math.min(hi * c, (hi / base) * rent)];
+}
+
+/**
  * FIRST-GENERATION SPACE COSTS MORE TO FIT OUT THAN SECOND.
  *
  * TI_ASK is a SECOND-generation allowance: the space a tenant tours has a
@@ -1832,8 +1865,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // This was a flat $1-5/sf whatever the term, the generation of the
         // space or the cost of building anything, which made the expansion
         // the cheapest lease in the game to sign.
-        tiPsf: Math.round(rrange(s, (TI_ASK[use] ?? TI_ASK.office)[0], (TI_ASK[use] ?? TI_ASK.office)[1], "leasing") * (Math.max(24, t.endM - q) / 12)
-          * tiPressure(concessionPressure(s.econ, use)) * tiCreditMult(t.credit) * s.econ.costIdx
+        tiPsf: Math.round(rrange(s, tiBandPsfYr(s, rec, h, use)[0], tiBandPsfYr(s, rec, h, use)[1], "leasing") * (Math.max(24, t.endM - q) / 12)
+          * tiPressure(concessionPressure(s.econ, use)) * tiCreditMult(t.credit)
           * (1 + (FIRST_GEN_TI_MULT - 1) * shellShare(rec, h, use, q))),
         freeM: 0,
         // Coterminous paper keeps the escalator they already live under.
@@ -1964,9 +1997,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // it moves with the cost index and on the flatter fit-out curve rather
         // than the free-rent one — the same two facts every other allowance in
         // this file obeys.
-        tiPsf: Math.round(rrange(s, (TI_ASK[t.use ?? "office"] ?? TI_ASK.office)[0], (TI_ASK[t.use ?? "office"] ?? TI_ASK.office)[1], "leasing") * (renewTermM / 12)
+        tiPsf: Math.round(rrange(s, tiBandPsfYr(s, rec, h, t.use ?? "office")[0], tiBandPsfYr(s, rec, h, t.use ?? "office")[1], "leasing") * (renewTermM / 12)
           * renewalRefreshShare((q - (t.fitM ?? t.startM)) / 12)
-          * tiPressure(concessionPressure(s.econ, t.use ?? "office")) * tiCreditMult(t.credit) * s.econ.costIdx),
+          * tiPressure(concessionPressure(s.econ, t.use ?? "office")) * tiCreditMult(t.credit)),
         freeM: rng(s, "leasing") < 0.25 * concessionPressure(s.econ, t.use ?? "office")
           ? Math.round(rrange(s, 1, 3, "leasing") * concessionPressure(s.econ, t.use ?? "office")) : 0,
         // Renewals reopen the escalator a notch — incumbents usually ask to
@@ -2041,7 +2074,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (!odds) continue;
       const p = odds.loiOdds;
       if (rng(s, "leasing") < p) {
-        const [tiLo, tiHi] = TI_ASK[use] ?? TI_ASK.office;
+        const [tiLo, tiHi] = tiBandPsfYr(s, rec, h, use);
         const shell = specLive ? 0 : shellShare(rec, h, use, q);
         const concession = concessionPressure(s.econ, use);
         // ...and at the rent THAT market pays, not a blend of markets the
@@ -2213,7 +2246,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // across a long game the allowance shrank against rents for no
           // reason but inflation.
           tiPsf: Math.round(rrange(s, tiLo, tiHi, "leasing") * (termM / 12) * tiPressure(concession)
-            * tiCreditMult(credit) * (specLive ? 0.12 : 1) * s.econ.costIdx
+            * tiCreditMult(credit) * (specLive ? 0.12 : 1)
             * ((1 - shell) * clamp01((bid - 0.85) / 0.15)
               + shell * (1 + (FIRST_GEN_TI_MULT - 1) * clamp01((bid - 0.85) / 0.15)))),
           // Free rent scales with the LENGTH of the deal, the way it does in
@@ -2353,7 +2386,7 @@ export const AUTO_CONCESSIONS: { key: AutoConcessions; label: string; blurb: str
  * with the draws at their middle and top and the tenant bidding the ask (a
  * lowball forfeits allowance, so the ask is where the package is fullest):
  *
- *   new        TI_ASK × term × fit-out market × covenant × cost index, with
+ *   new        tiBandPsfYr (TI_ASK × cost index, capped by the rent) × term × fit-out market × covenant, with
  *              the first-generation premium on the part of the space that is
  *              still a shell; free rent 0.25-0.85 months a year × the
  *              concession market.
@@ -2367,10 +2400,10 @@ export function streetPackage(
   s: GameState, rec: ParcelRecord, h: Holding, loi: LOI,
 ): { tiMid: number; tiTop: number; freeMid: number; freeTop: number } {
   const use = loi.use ?? leasableUses(rec)[0] ?? "office";
-  const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
+  const [lo, hi] = tiBandPsfYr(s, rec, h, use);
   const concession = concessionPressure(s.econ, use);
   const years = Math.max(1, loi.termM / 12);
-  const base = years * tiPressure(concession) * tiCreditMult(loi.credit) * (s.econ.costIdx ?? 1);
+  const base = years * tiPressure(concession) * tiCreditMult(loi.credit);
   let gen = 1;
   if (loi.kind === "renewal") {
     const t = h.tenants.find((x) => x.name === loi.name && (x.use ?? use) === use);
@@ -2625,9 +2658,10 @@ export function autoTiCapToday(s: GameState, h: Holding): number | undefined {
  * part of the space still a shell.
  */
 export function marketTiPsfYr(s: GameState, use: string, rec?: ParcelRecord, h?: Holding): [number, number] {
-  const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
+  const [lo, hi] = rec && h ? tiBandPsfYr(s, rec, h, use)
+    : [(TI_ASK[use] ?? TI_ASK.office)[0] * (s.econ.costIdx ?? 1), (TI_ASK[use] ?? TI_ASK.office)[1] * (s.econ.costIdx ?? 1)];
   const shell = rec && h ? shellShare(rec, h, use, s.month) : 0;
-  const m = tiPressure(concessionPressure(s.econ, use)) * (s.econ.costIdx ?? 1) * (1 + (FIRST_GEN_TI_MULT - 1) * shell);
+  const m = tiPressure(concessionPressure(s.econ, use)) * (1 + (FIRST_GEN_TI_MULT - 1) * shell);
   return [lo * m, hi * m];
 }
 
@@ -4551,8 +4585,8 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     // will ask again next time.
     {
       const use = (t.use ?? dominantUse(rec)) as BuiltClass;
-      const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
-      const full = ((lo + hi) / 2) * 0.5 * (l.termM / 12) * s.econ.costIdx;
+      const [lo, hi] = tiBandPsfYr(s, rec, h, use);
+      const full = ((lo + hi) / 2) * 0.5 * (l.termM / 12);
       const share = full > 0 ? clamp01((l.tiPsf ?? 0) / full) : 0;
       const fit = t.fitM ?? t.startM;
       if (share > 0) t.fitM = Math.round(fit + (s.month - fit) * share);
@@ -5166,7 +5200,7 @@ export function rolloverReserve(s: GameState, rec: ParcelRecord, h: Holding): nu
     if (use === "multifamily") continue;
     const p = clamp(renewalIntent(s, rec, h, t).p, 0, 1);
     if (p >= 0.999) continue;
-    const [lo, hi] = TI_ASK[use] ?? TI_ASK.office;
+    const [lo, hi] = tiBandPsfYr(s, rec, h, use);
     const termYrs = 5;
     const rent = Math.max(t.rentPsf, managedRentPsfYr(rec, s.econ, h, use));
     const downtime = rent * t.sf * (reletMonths(use) / 12);
@@ -5175,7 +5209,7 @@ export function rolloverReserve(s: GameState, rec: ParcelRecord, h: Holding): nu
     // on the fit-out curve, at today's construction cost. This used the raw
     // band in base-year dollars at full pressure, a different number from the
     // one the letter would carry — two answers to one quantity.
-    const ti = ((lo + hi) / 2) * termYrs * t.sf * s.econ.costIdx
+    const ti = ((lo + hi) / 2) * termYrs * t.sf
       * tiPressure(concessionPressure(s.econ, use));
     const lc = rent * t.sf * termYrs * 0.045;
     const ramp = 0.35 + 0.65 * (1 - left / 12);

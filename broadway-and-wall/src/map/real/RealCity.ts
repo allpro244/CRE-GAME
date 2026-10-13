@@ -118,7 +118,7 @@ const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", 
 const CANAL_WATER = 0x2c5f5c;
 /** the footway band inside a park's street edge (m); its hedge stands at 3.6 */
 const PARK_WALK = 3.0;
-const FAR_PROPS = ["tactile", "streetsign", "meter", "bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "statue", "duck", "gcross", "ledger", "rowboat", "bandsman", "skater", "rower", "child", "parksign"];
+const FAR_PROPS = ["pickup", "tactile", "streetsign", "meter", "bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "statue", "duck", "gcross", "ledger", "rowboat", "bandsman", "skater", "rower", "child", "parksign"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 // what a crowd wears: mostly neutrals (navy, charcoal, camel, white,
@@ -203,10 +203,19 @@ function rippleNormal(): THREE.CanvasTexture {
  * the swash at the waterline. A nearest-point sweep (two passes, eight
  * neighbours) rather than a blur, so the distance is metres, not a glow.
  *
- * Packed as RGBA8: r = sqrt(d / 400 m), which spends the precision at the
- * waterline where the foam needs it; g = 1 on a hard edge.
+ * Packed as RGBA8: r = sqrt((d + SHORE_BIAS_M) / 400 m), which spends the
+ * precision at the waterline where the foam needs it; g = 1 on a hard edge.
+ *
+ * THE WATERLINE IS EXACT, NOT A STAIRCASE. The sweep measures from texel to
+ * texel of a land mask rasterised at ~2.6 m, so the waterline it gave was that
+ * raster's stairs, a step every couple of metres: from the street, a sawtooth
+ * shore. Within a few texels of the shore every texel is now given its exact
+ * distance to the nearest edge of the real rings, signed (negative on the dry
+ * side, carried by a bias the shader takes off), so the filtered zero
+ * crossing lands on the true line between texels.
  */
 const SHORE_FAR_M = 400;
+const SHORE_BIAS_M = 6;
 function shoreField(land: P2[], dry: { ring: P2[]; hard: boolean }[]): { tex: THREE.DataTexture; box: THREE.Vector4 } {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [x, y] of land) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
@@ -247,10 +256,53 @@ function shoreField(land: P2[], dry: { ring: P2[]; hard: boolean }[]): { tex: TH
     if (b === 0) continue;
     b = relax(x, y, x + 1, y, b); b = relax(x, y, x + 1, y + 1, b); b = relax(x, y, x, y + 1, b); b = relax(x, y, x - 1, y + 1, b);
   }
+  // the rings' edges in texel units, bucketed 8 texels a cell, for the exact
+  // distance near the shore
+  const BK = 8, NB = Math.ceil(N / BK);
+  const buckets: number[][] = Array.from({ length: NB * NB }, () => []);
+  const segs: number[] = [];
+  for (const r of [land, ...dry.map((d) => d.ring)]) {
+    if (r.length < 3) continue;
+    for (let k = 0; k < r.length; k++) {
+      const a = r[k], b = r[(k + 1) % r.length];
+      const ax = (a[0] - x0) / px, ay = (a[1] - y0) / px, bx = (b[0] - x0) / px, by = (b[1] - y0) / px;
+      const si = segs.length / 4; segs.push(ax, ay, bx, by);
+      const c0 = Math.max(0, Math.floor(Math.min(ax, bx) / BK) - 1), c1 = Math.min(NB - 1, Math.floor(Math.max(ax, bx) / BK) + 1);
+      const r0 = Math.max(0, Math.floor(Math.min(ay, by) / BK) - 1), r1 = Math.min(NB - 1, Math.floor(Math.max(ay, by) / BK) + 1);
+      for (let rr = r0; rr <= r1; rr++) for (let cc = c0; cc <= c1; cc++) buckets[rr * NB + cc].push(si);
+    }
+  }
+  const exactAt = (x: number, y: number): number => {
+    const list = buckets[Math.min(NB - 1, (y / BK) | 0) * NB + Math.min(NB - 1, (x / BK) | 0)];
+    let best = Infinity;
+    for (const si of list) {
+      const ax = segs[si * 4], ay = segs[si * 4 + 1], bx = segs[si * 4 + 2], by = segs[si * 4 + 3];
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L2));
+      const ex = ax + dx * t - x, ey = ay + dy * t - y;
+      best = Math.min(best, ex * ex + ey * ey);
+    }
+    return Math.sqrt(best);
+  };
+  const NEAR = 4;   // texels: inside this the distance is measured exactly
   const out = new Uint8Array(N * N * 4);
   for (let i = 0; i < N * N; i++) {
     const x = i % N, y = (i / N) | 0;
-    const dm = sx[i] < 0 ? SHORE_FAR_M : Math.min(SHORE_FAR_M, Math.sqrt(dist2(i, x, y)) * px);
+    const isDry = src[i * 4] > 127;
+    let d: number;   // metres, signed: negative on the dry side
+    if (sx[i] < 0) d = SHORE_FAR_M;
+    else if (isDry) {
+      // dry: how far in from the water, near the edge; deep inland, just "in"
+      const wet = [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]].some(([ox, oy]) => {
+        const xx = x + ox, yy = y + oy;
+        return xx >= 0 && yy >= 0 && xx < N && yy < N && src[(yy * N + xx) * 4] <= 127;
+      });
+      d = wet ? -Math.min(SHORE_BIAS_M, exactAt(x + 0.5, y + 0.5) * px) : -SHORE_BIAS_M;
+    } else {
+      const dt = Math.sqrt(dist2(i, x, y));
+      d = dt < NEAR ? exactAt(x + 0.5, y + 0.5) * px : dt * px;
+    }
+    const dm = Math.max(0, Math.min(SHORE_FAR_M, d + SHORE_BIAS_M));
     out[i * 4] = Math.round(Math.sqrt(dm / SHORE_FAR_M) * 255);
     out[i * 4 + 1] = sx[i] >= 0 && src[(sy[i] * N + sx[i]) * 4 + 1] > 127 ? 255 : 0;
     out[i * 4 + 3] = 255;
@@ -315,7 +367,9 @@ float sFbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += 
       .replace("#include <color_fragment>", `#include <color_fragment>
 {
   vec4 sf = texture2D(seaShore, (vSeaW - seaBox.xy) * seaBox.zw);
-  seaD = sf.r * sf.r * ${SHORE_FAR_M.toFixed(1)};
+  // signed metres to the shore (negative on the dry side): the bias comes off
+  float seaDs = sf.r * sf.r * ${SHORE_FAR_M.toFixed(1)} - ${SHORE_BIAS_M.toFixed(1)};
+  seaD = max(seaDs, 0.0);
   seaHard = sf.g;
   float t = seaTime;
   float camD = length(vViewPosition);
@@ -354,7 +408,7 @@ float sFbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += 
   seaFoam = clamp(seaFoam, 0.0, 1.0);
   diffuseColor.rgb = mix(wc, vec3(0.9, 0.93, 0.94), seaFoam);
   // clear at the very edge, so the wet sand shows through, then deepening
-  float wet = smoothstep(0.0, 0.9, seaD);
+  float wet = smoothstep(0.0, 0.9, seaDs);
   float body = mix(0.72, 0.97, smoothstep(0.0, 30.0, seaD));
   diffuseColor.a = wet * max(body, seaFoam * 0.95);
 }`)
@@ -1052,8 +1106,8 @@ function profile(pts: [number, number][], w: number): THREE.BufferGeometry {
   return new THREE.ExtrudeGeometry(sh, { depth: w, bevelEnabled: false }).rotateX(Math.PI / 2).translate(0, w / 2, 0);
 }
 const SHADE = [0.015, 0.016, 0.02];
-const PAINT = [1, 1, 1], GLASS = [0.07, 0.08, 0.1], TYRE = [0.04, 0.04, 0.04], HEAD = [2.2, 2.2, 2.0], TAIL = [1.6, 0.12, 0.1], TRIMC = [0.12, 0.12, 0.13];
-function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck"): THREE.BufferGeometry {
+const PAINT = [1, 1, 1], GLASS = [0.07, 0.08, 0.1], TYRE = [0.04, 0.04, 0.04], HEAD = [2.2, 2.2, 2.0], TAIL = [0.55, 0.04, 0.035], TRIMC = [0.12, 0.12, 0.13];
+function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck" | "pickup"): THREE.BufferGeometry {
   const parts: [THREE.BufferGeometry, number[]][] = [];
   const wheel = (x: number, y: number, r: number) => parts.push([new THREE.CylinderGeometry(r, r, 0.24, 8).translate(x, y, r), TYRE]);
   const box = (w: number, d: number, h: number, x: number, y: number, z: number, c: number[]) => parts.push([new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2), c]);
@@ -1083,6 +1137,19 @@ function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck"): THRE
     for (const x of [1.75, -1.7]) for (const y of [-0.9, 0.9]) wheel(x, y, 0.36);
     box(0.06, 0.4, 0.16, L + 0.02, -0.66, 0.85, HEAD); box(0.06, 0.4, 0.16, L + 0.02, 0.66, 0.85, HEAD);
     box(0.06, 0.18, 0.4, -L - 0.02, -0.86, 0.9, TAIL); box(0.06, 0.18, 0.4, -L - 0.02, 0.86, 0.9, TAIL);
+  } else if (kind === "pickup") {
+    // a pickup: a tall cab forward, an open bed behind with its tailgate
+    const L = 2.7;
+    parts.push([profile([[0.0, 0.45], [L, 0.45], [L, 1.05], [2.0, 1.15], [1.5, 1.85], [0.0, 1.9]], 1.9), PAINT]);
+    parts.push([profile([[1.95, 1.2], [1.5, 1.78], [0.75, 1.8], [0.75, 1.2]], 1.92), GLASS]);
+    box(2.6, 1.9, 0.12, -1.3, 0, 0.45, PAINT);
+    box(2.6, 0.08, 0.5, -1.3, -0.91, 0.57, PAINT); box(2.6, 0.08, 0.5, -1.3, 0.91, 0.57, PAINT);
+    box(0.08, 1.9, 0.5, -2.6, 0, 0.57, PAINT);
+    box(2.4, 1.72, 0.04, -1.3, 0, 0.58, [0.12, 0.12, 0.13]);
+    for (const x of [1.85, -1.7]) for (const y of [-0.9, 0.9]) wheel(x, y, 0.4);
+    box(0.06, 0.4, 0.16, L + 0.02, -0.65, 0.85, HEAD); box(0.06, 0.4, 0.16, L + 0.02, 0.65, 0.85, HEAD);
+    box(0.06, 0.18, 0.3, -2.66, -0.8, 0.7, TAIL); box(0.06, 0.18, 0.3, -2.66, 0.8, 0.7, TAIL);
+    box(0.14, 1.95, 0.22, L - 0.02, 0, 0.45, TRIMC);
   } else if (kind === "truck") {
     // a box truck on a delivery round: a cab in the paint, a pale box behind
     const L = 3.6;
@@ -1102,13 +1169,20 @@ function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck"): THRE
     box(3, 2.2, 0.3, -2, 0, 3.1, [0.75, 0.75, 0.75]);
     for (const x of [4.3, -3.3]) for (const y of [-1.05, 1.05]) wheel(x, y, 0.5);
     box(0.06, 0.4, 0.2, L + 0.03, -0.9, 0.7, HEAD); box(0.06, 0.4, 0.2, L + 0.03, 0.9, 0.7, HEAD);
+    box(0.06, 0.3, 0.4, -L - 0.03, -1.0, 0.7, TAIL); box(0.06, 0.3, 0.4, -L - 0.03, 1.0, 0.7, TAIL);
   }
   // THE CAR'S OWN SHADE on the road: a dark pad a little larger than the
   // body, so a car sits on the asphalt rather than hovering over it (the
   // sun's shadow map is baked for the still city and cannot follow traffic)
-  const [hl, hw] = kind === "bus" ? [6.3, 1.45] : kind === "truck" ? [3.95, 1.4] : kind === "van" ? [2.8, 1.12] : kind === "suv" ? [2.6, 1.08] : [2.5, 1.02];
+  const [hl, hw] = kind === "bus" ? [6.3, 1.45] : kind === "truck" ? [3.95, 1.4] : kind === "pickup" ? [2.85, 1.1] : kind === "van" ? [2.8, 1.12] : kind === "suv" ? [2.6, 1.08] : [2.5, 1.02];
   parts.push([new THREE.PlaneGeometry(hl * 2, hw * 2).translate(0, 0, 0.012), SHADE]);
-  return mergeColored(parts);
+  const g = mergeColored(parts);
+  // which vertices are tail lamps, for the brake lights (vehicleMat)
+  const col = g.getAttribute("color").array as Float32Array;
+  const lamp = new Float32Array(col.length / 3);
+  for (let i = 0; i < lamp.length; i++) lamp[i] = col[i * 3] > 0.4 && col[i * 3 + 1] < 0.1 && col[i * 3 + 2] < 0.1 ? 1 : 0;
+  g.setAttribute("lamp", new THREE.Float32BufferAttribute(lamp, 1));
+  return g;
 }
 function person(): THREE.BufferGeometry {
   const SKIN = [0.62, 0.48, 0.4], HAIR = [0.22, 0.2, 0.2], LEG = [0.32, 0.33, 0.36], SHOE = [0.12, 0.12, 0.12];
@@ -3651,7 +3725,22 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   }
   private vehMat: THREE.MeshStandardMaterial | null = null;
   private vehicleMat() {
-    if (!this.vehMat) this.vehMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.35, roughness: 0.38, vertexColors: true, envMapIntensity: 0.9 });
+    if (!this.vehMat) {
+      const m = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.35, roughness: 0.38, vertexColors: true, envMapIntensity: 0.9 });
+      // BRAKE LIGHTS: the tail lamps glow red as a moving car slows or
+      // stands in a queue (aBrake, per instance, from the traffic; a parked
+      // car has none and stays dark)
+      m.onBeforeCompile = (sh) => {
+        sh.vertexShader = sh.vertexShader
+          .replace("#include <common>", "#include <common>\nattribute float lamp;\nattribute float aBrake;\nvarying float vTail;")
+          .replace("#include <begin_vertex>", "#include <begin_vertex>\nvTail = lamp * aBrake;");
+        sh.fragmentShader = sh.fragmentShader
+          .replace("#include <common>", "#include <common>\nvarying float vTail;")
+          .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.9, 0.03, 0.02) * vTail * 1.3;");
+      };
+      m.customProgramCacheKey = () => "bw-vehicle";
+      this.vehMat = m;
+    }
     return this.vehMat;
   }
   private contactMat = (() => {
@@ -5320,6 +5409,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       case "taxi": return { g: vehicle("taxi"), mat: this.vehicleMat(), colored: true };
       case "bus": return { g: vehicle("bus"), mat: this.vehicleMat(), colored: true };
       case "truck": return { g: vehicle("truck"), mat: this.vehicleMat(), colored: true };
+      case "lotpickup":
+      case "pickup": return { g: vehicle("pickup"), mat: this.vehicleMat(), colored: true };
       // A CYCLIST: wheels, frame, a rider in the instance colour, helmeted
       case "bike": {
         const DARK = [0.08, 0.08, 0.09], SKIN = [0.62, 0.48, 0.4], LEG = [0.25, 0.26, 0.3];
@@ -6315,14 +6406,24 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const off = Math.min(1.1, w * 0.3);
           // mature street trees are 10-15 m: a wide footway grows a big one
           const big = w >= 3 ? 1.4 : w >= 2 ? 1.12 : 0.85;
-          for (let t = 5 + rnd() * 3; t < L - 5; t += 8 + rnd() * 1.5) {
-            const [x, y] = at(t, off);
-            const sz = big * (0.7 + rnd() * 0.42);
-            const col = rnd() < 0.33;
+          // ONE PLANTING A BLOCK. A city plants a street with one species,
+          // all of an age, at an even spacing: the block face draws its
+          // species, its leaf, its size and its rhythm once, and each tree
+          // varies only a little from its neighbours
+          const col = rnd() < 0.33;
+          const leaf0 = leafCol();
+          const sz0 = big * (0.78 + rnd() * 0.32);
+          const step = 7.5 + rnd() * 2;
+          const n = Math.floor((L - 10) / step);
+          const t0 = (L - n * step) / 2;
+          for (let k = 0; k <= n; k++) {
+            const [x, y] = at(t0 + k * step, off);
+            const sz = sz0 * (0.93 + rnd() * 0.14);
             if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz)) continue;
+            const lc = leaf0.map((v) => v * (0.95 + rnd() * 0.1));
             this.putInst("treepit", x, y, 0.15, 1, rot);
             this.putInst("trunk", x, y, 0.15, sz, rnd() * 6.28);
-            this.putInst("crown", x, y, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
+            this.putInst("crown", x, y, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", lc, col ? 1.55 : 1);
           }
         }
         // THE KERB'S HARDWARE: a hydrant every ~77 m, a litter bin by the
@@ -6380,9 +6481,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const [x, y] = at(t, -1.25);
           if (rnd() >= 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) continue;
           const [lx, ly] = at(t, -5.2);
-          if (!this.footprintOn(x, y, rot, 2.2, 5.2, ["road"]) || this.groundAt(lx, ly) !== "road") continue;
+          if (!this.footprintOn(x, y, rot, 2.2, 5.2, ["road"]) || this.groundAt(lx, ly) !== "road" || this.waterAt(x, y)) continue;
           const vk = rnd(), dt = this.demandAt(x, y);
-          const kind = vk < 0.52 ? "car" : vk < 0.82 ? "suv" : vk < 0.93 ? "van" : dt > 0.55 ? "taxi" : "car";
+          const kind = vk < 0.5 ? "car" : vk < 0.78 ? "suv" : vk < 0.87 ? "van" : vk < 0.93 ? "pickup" : dt > 0.55 ? "taxi" : "car";
           this.putInst(kind, x, y, 0.05, 1, rot + (rnd() < 0.5 ? 0 : Math.PI), "", kind === "taxi" ? TAXI : CAR[(rnd() * CAR.length) | 0]);
           // a meter to pay at, where parking is worth charging for
           if (dt > 0.5) { const [px, py] = at(t + 2.2, 0.35); if (this.groundAt(px, py) === "walk") this.putInst("meter", px, py, 0.15, 1, rot); }
@@ -7057,10 +7158,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // THE MOVING TRAFFIC drives the measured street network (traffic.ts):
     // about one car every 30 m of lane, a bus now and then on the long runs
     if (this.netRaw) {
-      const tr = new Traffic(this.netRaw, (x, y) => this.groundAt(x, y) === "road", rnd);
+      const tr = new Traffic(this.netRaw, (x, y) => this.groundAt(x, y) === "road" && !this.waterAt(x, y), rnd);
       tr.populate(40, rnd, (c) => {
         const vk = rnd(), long = tr.segs[c.seg].L > 160;
-        const kind = long && vk < 0.04 ? "bus" : vk < 0.45 ? "car" : vk < 0.7 ? "suv" : vk < 0.79 ? "van" : vk < 0.84 ? "truck" : vk < 0.95 ? "taxi" : "bike";
+        const kind = long && vk < 0.04 ? "bus" : vk < 0.45 ? "car" : vk < 0.7 ? "suv" : vk < 0.76 ? "van" : vk < 0.8 ? "pickup" : vk < 0.85 ? "truck" : vk < 0.95 ? "taxi" : "bike";
         const lc = c as LiveCar;
         lc.kind = kind;
         lc.col = kind === "taxi" ? TAXI : kind === "bus" ? BUS : kind === "bike" ? CROWD_COAT[(rnd() * CROWD_COAT.length) | 0] : CAR[(rnd() * CAR.length) | 0];
@@ -7068,7 +7169,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         lc.draw = rnd();
         // 25-40 km/h in town; the bus a little under
         c.vmax = kind === "bike" ? 4.2 + rnd() * 1.5 : (kind === "bus" || kind === "truck" ? 7 : 8) + rnd() * 3;
-        c.len = kind === "bus" ? 12 : kind === "truck" ? 7.4 : kind === "van" ? 5.2 : kind === "bike" ? 2 : 4.8;
+        c.len = kind === "bus" ? 12 : kind === "truck" ? 7.4 : kind === "van" || kind === "pickup" ? 5.4 : kind === "bike" ? 2 : 4.8;
       });
       this.traffic = tr;
       this.carList = tr.cars as LiveCar[];
@@ -7256,9 +7357,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const mesh = new THREE.InstancedMesh(g, mat, list.length);
       list.forEach((m, i) => mesh.setColorAt(i, new THREE.Color(m.col[0], m.col[1], m.col[2])));
       mesh.receiveShadow = true; mesh.frustumCulled = false;
+      if (car) g.setAttribute("aBrake", new THREE.InstancedBufferAttribute(new Float32Array(list.length), 1));
       this.scene.add(mesh); this.fleets.push({ mesh, list, z, car });
     };
-    for (const kind of ["car", "suv", "van", "truck", "taxi", "bus", "bike"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
+    for (const kind of ["car", "suv", "van", "pickup", "truck", "taxi", "bus", "bike"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
     fleet("person", this.walkers, 0.15);
     fleet("dog", this.dogs, 0.08);
     // A WALKING GAIT for the people on the footways: legs swing from the hip
@@ -7305,6 +7407,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     for (const f of this.fleets) {
       if (f.car) {
         const peds = f.list === (this.traffic?.crossers as unknown);
+        const brk = f.mesh.geometry.getAttribute("aBrake") as THREE.InstancedBufferAttribute | undefined;
         const sc = peds ? big : one;
         f.list.forEach((m, i) => {
           if (i >= f.mesh.count) return;
@@ -7313,7 +7416,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           p.set(c.x, c.y, peds && !(m as unknown as Crosser).walking ? 0.15 : f.z);
           q.setFromEuler(e.set(0, 0, c.h));
           f.mesh.setMatrixAt(i, m4.compose(p, q, sc));
+          if (brk) brk.array[i] = c.brake ?? 0;
         });
+        if (brk) brk.needsUpdate = true;
         f.mesh.instanceMatrix.needsUpdate = true;
         continue;
       }
@@ -7884,6 +7989,23 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     this.groundIx = { bld, walk, park, open };
     return this.groundIx;
+  }
+  private waterIx: { water: PolyGrid; deck: PolyGrid } | null = null;
+  /**
+   * Is (x, y) on a creek, canal or pond, and not on a bridge over it?
+   * groundAt calls everything it does not know "road", water included, so
+   * the traffic and the parked cars ask this as well.
+   */
+  waterAt(x: number, y: number): boolean {
+    if (!this.waterIx) {
+      const water = new PolyGrid(60), deck = new PolyGrid(40);
+      const c = this.ctx as CityCtx;
+      for (const st of c.streams ?? []) if (st.ring.length >= 3) water.add(st.ring.map((q) => this.project(q)));
+      for (const pd of c.ponds ?? []) if (pd.length >= 3) water.add(pd.map((q) => this.project(q)));
+      for (const b of c.bridges ?? []) if (b.ring.length >= 3) deck.add(b.ring.map((q) => this.project(q)));
+      this.waterIx = { water, deck };
+    }
+    return this.waterIx.water.hit(x, y) && !this.waterIx.deck.hit(x, y);
   }
   /** building | walk | park | open | lot | road */
   groundAt(x: number, y: number): "bld" | "walk" | "park" | "open" | "lot" | "road" {

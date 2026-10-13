@@ -69,15 +69,19 @@ void main() {
       // roof). A flat plane seen at a grazing angle has one side nearer and
       // the other farther by the same amount, so it never reads as one.
       float occ = 0.0;
-      float rad = clamp(4200.0 / d0, 3.0, 14.0);
-      for (int i = 0; i < 12; i += 2) {
+      // in distance texels (full resolution): the same reach on screen as before
+      float rad = clamp(8400.0 / d0, 6.0, 28.0);
+      // all twelve pairs: six quantised the shade into six hard steps, the
+      // stepped ring round every tree crown and kerb (a per-pixel turn of the
+      // pattern hid the steps but left a grain on every flat plaza)
+      for (int i = 0; i < 12; i++) {
         vec2 o = disc(i) * rad * uDistTexel;
         // BOTH sides nearer: a silhouette has one side far nearer and the
         // other level or behind, so the smaller of the two rejects it
         float cav = min(d0 - distAt(vUv + o), d0 - distAt(vUv - o));
         // a contact crease is shallow; a building's edge against the ground
         // far behind it is a big step, and must not draw a halo
-        occ += 2.0 * smoothstep(0.001 * d0, 0.006 * d0, cav) * (1.0 - smoothstep(0.03 * d0, 0.06 * d0, cav));
+        occ += smoothstep(0.001 * d0, 0.006 * d0, cav) * (1.0 - smoothstep(0.03 * d0, 0.06 * d0, cav));
       }
       c *= 1.0 - uAO * clamp(occ / 12.0, 0.0, 1.0);
       if (uAOView > 0.5) { gl_FragColor = vec4(vec3(1.0 - clamp(occ / 12.0, 0.0, 1.0)) * vec3(1.0, 0.9 + 0.1 * fract(d0 / 50.0), 1.0), 1.0); return; }
@@ -178,7 +182,7 @@ export class PostFX {
    */
   apply(renderer: THREE.WebGLRenderer, pitch: number, distM: number, scene?: THREE.Scene, camera?: THREE.Camera, hide: (THREE.Object3D | null)[] = []) {
     if (this.level === "off" || this.forcedOff) return;
-    // the distance pass for ambient occlusion, High only, at half resolution
+    // the distance pass for ambient occlusion, High only, at full resolution
     const ao = this.level === "full" && !!scene && !!camera;
     // the city does not move: while the camera holds still (the traffic keeps
     // repainting at ~30 fps) the last distance pass still stands, so it is
@@ -226,10 +230,16 @@ export class PostFX {
     renderer.autoClear = auto;
   }
 
-  /** Distance to the eye of everything the city draws, into a half-size target (see the AO block in FRAG). */
+  /**
+   * Distance to the eye of everything the city draws (see the AO block in
+   * FRAG), at the frame's own resolution. It was half-size: every frame pixel
+   * then read its distance from a 2x2 block, so along every silhouette the
+   * colour and the distance belonged to different surfaces and the occlusion
+   * drew a blocky ring round each tree crown and building edge.
+   */
   private distPass(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, hide: (THREE.Object3D | null)[]) {
     renderer.getDrawingBufferSize(this.size);
-    const w = Math.max(2, Math.floor(this.size.x / 2)), h = Math.max(2, Math.floor(this.size.y / 2));
+    const w = Math.max(2, Math.floor(this.size.x)), h = Math.max(2, Math.floor(this.size.y));
     if (!this.distRT || this.distRT.width !== w || this.distRT.height !== h) {
       this.distRT?.dispose();
       this.distRT = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true });

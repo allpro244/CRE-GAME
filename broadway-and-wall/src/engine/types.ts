@@ -976,6 +976,11 @@ export interface Listing {
   earlyUntilM?: number;
   /** which shop rang you — a brokerRel key, while the window is open */
   via?: string;
+  /**
+   * A FIRM UNDER PRESSURE RANG YOU DIRECTLY (its name), before the tape —
+   * the private window is `earlyUntilM`, the price set by how desperate it is.
+   */
+  quietFrom?: string;
   distress?: boolean;  // motivated seller — priced under appraisal, goes fast
   /** Why ordinary product reached the tape; makes turnover legible. */
   reason?: "fund-life" | "merchant" | "estate" | "voluntary" | "receiver";
@@ -2597,6 +2602,22 @@ export interface Rival {
    * lifetime tally of draws.
    */
   lineBal?: number;
+  /** The plan it is running (strategy.ts). Absent on firms without a sheet. */
+  thesis?: Thesis;
+  /** The loan index at its last annual review — a careful firm notices rates rising. */
+  rateYr?: number;
+  /** Buys this month (for the news line on a spree) and the year it last made the paper for one. */
+  buysM?: { m: number; n: number };
+  spreeY?: number;
+  /** This year's distress buys and its worst arrears run — what `driftYear` learns from. */
+  yrDistressBuys?: number;
+  yrStressMax?: number;
+  /** The month it sold itself to an institution (corporate.ts). */
+  soldToM?: number;
+  /** The month the current generation took over a family firm (corporate.ts). */
+  genM?: number;
+  /** What happened to it that changed it — its history, in its own lines. */
+  lessons?: { y: number; text: string }[];
   /** The bank that writes this firm's line. */
   lineBank?: string;
   /**
@@ -2831,6 +2852,8 @@ export interface GameState {
    * sell instead. Absent: every renewal that clears rolls without a stop.
    */
   debtPolicy?: { rollMaxJumpBp?: number };
+  /** The deposit insurance limit as a multiple of its opening $100K (lenders.ts maybeRaiseInsurance). */
+  depositCover?: number;
   /**
    * Money owed to you by the receiver of a failed bank — uninsured deposits
    * that will come back at 60-90c, in a year or two. It is not cash and it is
@@ -4352,6 +4375,22 @@ export interface PrivateBorrowQuote {
  * against the borrower's aggregate debt, so the record and the street table
  * cannot disagree. See engine/ledger.ts.
  */
+/** A firm's plan for the next few years (strategy.ts). */
+export interface Thesis {
+  kind: "accumulate" | "build" | "assemble" | "distress" | "harvest" | "deleverage" | "contrarian";
+  /** the class it is concentrating on (accumulate / build) */
+  cls?: string;
+  /** the district it is concentrating on, and its name for the card */
+  district?: string;
+  districtName?: string;
+  /** the block an assembler is buying toward */
+  block?: string;
+  fromM: number;
+  untilM: number;
+  /** why the last plan was replaced: "first", "ran its course", "not working", ... */
+  why: string;
+}
+
 export interface CityLoan {
   bbl: string;
   lender: string;

@@ -1790,7 +1790,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     this.camera.matrix.makeTranslation(eye.x, eye.y, eye.z);
     this.camera.matrixWorldNeedsUpdate = true;
 
-    this.fitShadow(fx, fy, distM);
+    this.fitShadow(fx, fy, distM, eye);
     // from the whole-island camera a person, a lamp or a car is a fraction of
     // a pixel: stop drawing them there rather than paying for grain
     // The graphics setting pulls that horizon in, and on Medium and Low takes
@@ -1940,22 +1940,57 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   // quarter-octave apart), so the texel size only changes on a real zoom; and
   // the box is moved in whole texels of the light's own view, so a pan
   // re-renders the same edges onto the same pixels.
-  private fitShadow(fx: number, fy: number, distM: number) {
-    // the box covers what the camera frames, not a margin round it: half
-    // the old texel size at the default camera
-    const raw = Math.max(220, Math.min(2400, distM * 1.15));
-    const span = 260 * Math.pow(2, Math.ceil(Math.log2(raw / 260) * 4) / 4);
-    const moved = Math.hypot(fx - this.shadowFocus.x, fy - this.shadowFocus.y);
-    if (moved < span * 0.12 && span === this.shadowSpan) return;
-    // the light's right and up axes, as the shadow camera will see them
-    const eye = new THREE.Vector3().copy(this.sunDir).multiplyScalar(2500);
-    const look = new THREE.Matrix4().lookAt(eye, new THREE.Vector3(), this.sun.shadow.camera.up);
+  //
+  // AND OVER EVERYTHING ON SCREEN. The box used to be a square round the
+  // focus, 1.15x the camera distance across, and refit only once the focus had
+  // moved an eighth of it. A pitched camera sees far past that — the top of
+  // the frame at 60 degrees lies ~1.6 camera-distances beyond the focus — and
+  // what falls outside the box has no shadow at all, so as the view panned or
+  // zoomed whole blocks lost their shadows and got them back each time the box
+  // jumped: the flicker the owner saw. Now the box is fitted to the ground the
+  // frame actually shows (its corners cast onto the street, capped where the
+  // haze has the city anyway), with a margin, and refit only when that ground
+  // leaves the box or the box could be a step smaller.
+  private shadowBox = { cx: 1e9, cy: 0, span: 0 };
+  private fitShadow(fx: number, fy: number, distM: number, eye: THREE.Vector3) {
+    const sunEye = new THREE.Vector3().copy(this.sunDir).multiplyScalar(2500);
+    const look = new THREE.Matrix4().lookAt(sunEye, new THREE.Vector3(), this.sun.shadow.camera.up);
     const right = new THREE.Vector3().setFromMatrixColumn(look, 0);
     const up = new THREE.Vector3().setFromMatrixColumn(look, 1);
+    // the frame's footprint on the ground, in the light's right/up axes
+    const cap = Math.min(5200, distM * 3.2);
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    const inv = this.camera.projectionMatrixInverse;
+    const pt = (nx: number, ny: number) => {
+      const a = new THREE.Vector3(nx, ny, -1).applyMatrix4(inv), b = new THREE.Vector3(nx, ny, 1).applyMatrix4(inv);
+      const d = b.sub(a).normalize();
+      let t = d.z < -1e-4 ? -(a.z + eye.z) / d.z : Infinity;
+      const g = new THREE.Vector3().copy(a).add(eye);
+      // past the cap (or above the horizon) the ground is taken at the cap
+      const flat = Math.hypot(d.x, d.y) || 1;
+      t = Math.min(t, cap / flat);
+      g.addScaledVector(d, t); g.z = 0;
+      const u = g.dot(right), v = g.dot(up);
+      u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+    };
+    for (const nx of [-1, 0, 1]) for (const ny of [-1, 0, 1]) pt(nx, ny);
+    // the tallest towers throw their shadows a long way: a margin on all sides
+    const pad = 0.08 * Math.max(u1 - u0, v1 - v0) + 60;
+    u0 -= pad; u1 += pad; v0 -= pad; v1 += pad;
+    const need = Math.max(u1 - u0, v1 - v0) / 2;
+    // quarter-octave steps, so the texel size only changes on a real zoom
+    const span = 260 * Math.pow(2, Math.ceil(Math.log2(Math.max(220, Math.min(4200, need)) / 260) * 4) / 4);
+    const b = this.shadowBox;
+    const inside = u0 >= b.cx - b.span && u1 <= b.cx + b.span && v0 >= b.cy - b.span && v1 <= b.cy + b.span;
+    if (inside && span >= b.span && span === this.shadowSpan) return;
+    // centre on the footprint, moved in whole texels of the light's view
     const texel = (2 * span) / this.sun.shadow.mapSize.x;
+    const cu = Math.round(((u0 + u1) / 2) / texel) * texel, cv = Math.round(((v0 + v1) / 2) / texel) * texel;
+    // the ground point at (cu, cv) in the light's frame: start from the
+    // focus and move it there along right and up
     const f = new THREE.Vector3(fx, fy, 0);
-    const x = f.dot(right), y = f.dot(up);
-    f.addScaledVector(right, Math.round(x / texel) * texel - x).addScaledVector(up, Math.round(y / texel) * texel - y);
+    f.addScaledVector(right, cu - f.dot(right)).addScaledVector(up, cv - f.dot(up));
+    this.shadowBox = { cx: cu, cy: cv, span };
     this.shadowFocus.set(fx, fy, 0);
     this.shadowSpan = span;
     const cam = this.sun.shadow.camera;
@@ -1963,7 +1998,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     cam.near = 10; cam.far = 6000;
     cam.updateProjectionMatrix();
     this.sun.target.position.copy(f);
-    this.sun.position.copy(f).add(eye);
+    this.sun.position.copy(f).add(sunEye);
     this.sun.target.updateMatrixWorld();
     this.renderer.shadowMap.needsUpdate = true;
   }

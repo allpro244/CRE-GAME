@@ -108,7 +108,7 @@ const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", 
 const CANAL_WATER = 0x2c5f5c;
 /** the footway band inside a park's street edge (m); its hedge stands at 3.6 */
 const PARK_WALK = 3.0;
-const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person"];
+const FAR_PROPS = ["bikerack", "cone", "barrier", "roadpatch", "lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "bike", "manhole", "drain", "treepit", "person"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 // what a crowd wears: mostly neutrals (navy, charcoal, camel, white,
@@ -4961,6 +4961,30 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         }
         return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }), colored: true };
       }
+      // a row of three Sheffield hoops with two bikes locked to them, across the footway
+      case "bikerack": {
+        const parts: [THREE.BufferGeometry, number[]][] = [];
+        const STEEL = [0.32, 0.33, 0.35], TYRE2 = [0.06, 0.06, 0.07];
+        for (const x of [-0.9, 0, 0.9]) {
+          parts.push([box(0.05, 0.05, 0.8, x, -0.3, 0), STEEL], [box(0.05, 0.05, 0.8, x, 0.3, 0), STEEL], [box(0.05, 0.65, 0.05, x, 0, 0.78), STEEL]);
+        }
+        for (const [x, c] of [[-0.45, [0.62, 0.12, 0.1]], [0.45, [0.14, 0.28, 0.5]]] as [number, number[]][]) {
+          for (const y of [-0.55, 0.55]) parts.push([new THREE.TorusGeometry(0.33, 0.035, 5, 12).rotateY(Math.PI / 2).rotateZ(Math.PI / 2).translate(x, y, 0.35), TYRE2]);
+          parts.push([box(0.05, 1.0, 0.05, x, 0, 0.62), c], [box(0.05, 0.05, 0.5, x, -0.15, 0.35), c], [box(0.22, 0.08, 0.05, x, -0.3, 0.9), [0.1, 0.1, 0.1]]);
+        }
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.3, vertexColors: true }) };
+      }
+      // a utility trench in the parking lane: spoil and dark earth in a sawn
+      // edge of fresh asphalt; traffic cones; a striped barrier on two feet
+      case "roadpatch": return { g: mergeColored([[box(9.2, 2.3, 0.012), [0.22, 0.22, 0.23]], [box(7.6, 1.5, 0.02), [0.3, 0.22, 0.16]], [box(2.2, 1.0, 0.25, -1.8, 0.2, 0), [0.42, 0.34, 0.26]], [box(0.8, 0.6, 0.35, 2.4, -0.1, 0), [0.5, 0.48, 0.44]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, vertexColors: true }) };
+      case "cone": return { g: mergeColored([[box(0.38, 0.38, 0.04), [0.08, 0.08, 0.08]], [new THREE.ConeGeometry(0.15, 0.68, 10).rotateX(Math.PI / 2).translate(0, 0, 0.38), [0.98, 0.38, 0.06]], [new THREE.CylinderGeometry(0.085, 0.105, 0.1, 10).rotateX(Math.PI / 2).translate(0, 0, 0.42), [0.95, 0.95, 0.93]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, vertexColors: true }) };
+      case "barrier": {
+        const parts: [THREE.BufferGeometry, number[]][] = [[box(0.08, 0.5, 0.06, -1.1, 0, 0), [0.1, 0.1, 0.1]], [box(0.08, 0.5, 0.06, 1.1, 0, 0), [0.1, 0.1, 0.1]], [box(0.06, 0.06, 1.0, -1.1, 0, 0), [0.9, 0.9, 0.88]], [box(0.06, 0.06, 1.0, 1.1, 0, 0), [0.9, 0.9, 0.88]]];
+        for (let k = 0; k < 6; k++) parts.push([box(0.4, 0.06, 0.28, -1.0 + k * 0.4, 0, 0.62), k % 2 ? [0.95, 0.95, 0.93] : [0.85, 0.12, 0.1]]);
+        return { g: mergeColored(parts), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, vertexColors: true }) };
+      }
       case "hydrant": return { g: merge([cyl(0.14, 0.55, 0, 10), cyl(0.18, 0.1, 0.5, 10), cyl(0.1, 0.12, 0.6, 8), box(0.4, 0.09, 0.09, 0, 0, 0.36)]), mat: new THREE.MeshStandardMaterial({ color: 0xa8392c, roughness: 0.55 }) };
       case "bin": return { g: merge([cyl(0.28, 0.95, 0, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0x2e4034, roughness: 0.7, metalness: 0.2 }) };
       case "shelter": return { g: mergeColored([[box(3.8, 1.5, 0.08, 0, 0, 2.45), [0.3, 0.32, 0.34]], [box(3.8, 0.04, 2.2, 0, 0.7, 0.25), [0.55, 0.65, 0.7]],
@@ -6128,9 +6152,38 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const [x, y] = at(t, 0.45);
           if (this.groundAt(x, y) === "walk") this.putInst("lamp", x, y, 0.15, 1, rot + Math.PI / 2);
         }
+        // STREET FURNITURE at the back of a wide, busy footway: benches facing
+        // the street, planters, a bike rack with a couple of bikes locked up
+        if (w >= 3.5 && L > 30 && this.demandAt(mx, my) > 0.4) {
+          for (let t = 14 + rnd() * 6; t < L - 12; t += 20 + rnd() * 14) {
+            const [x, y] = at(t, w - 0.85);
+            if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, 1.0)) continue;
+            const k = rnd();
+            this.putInst(k < 0.45 ? "bench" : k < 0.8 ? "planter" : "bikerack", x, y, 0.15, k >= 0.45 && k < 0.8 ? 0.8 : 1, rot);
+          }
+        }
+        // ROAD WORKS, now and then: a trench in the parking lane fenced with
+        // cones and a barrier, a man in hi-vis standing over it
+        let works = -100;
+        if (L > 45 && rnd() < 0.05 && this.demandAt(mx, my) > 0.25) {
+          const t0 = L / 2, [px, py] = at(t0, -1.4);
+          if (this.footprintOn(px, py, rot, 2.4, 9.5, ["road"]) && this.groundAt(...at(t0, -5.2)) === "road") {
+            works = t0;
+            this.putInst("roadpatch", px, py, 0.045, 1, rot);
+            for (const [dt, off] of [[-5, -0.35], [5, -0.35], [-5, -2.55], [5, -2.55], [-2.5, -2.7], [2.5, -2.7]]) {
+              const [cx, cy] = at(t0 + dt, off);
+              this.putInst("cone", cx, cy, 0.05, 1, rnd() * 6.28);
+            }
+            const [bx, by] = at(t0, -2.75);
+            this.putInst("barrier", bx, by, 0.05, 1, rot);
+            const [wx, wy] = at(t0 + 1.5, -1.0);
+            this.putInst("person", wx, wy, 0.05, PERSON_S, rot + Math.PI / 2 + rnd(), "", [0.98, 0.55, 0.08]);
+          }
+        }
         // KERBSIDE PARKING where the demand is, wholly on the carriageway, and
         // only where a running lane is left beside it
         for (let t = 9; t < L - 9; t += 6.5) {
+          if (Math.abs(t - works) < 8) continue;
           const [x, y] = at(t, -1.25);
           if (rnd() >= 0.62 * Math.min(1, 0.15 + 1.1 * this.demandAt(x, y))) continue;
           const [lx, ly] = at(t, -5.2);

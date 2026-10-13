@@ -331,7 +331,13 @@ export function windowOpen(s: GameState, p: LoanProduct): boolean {
   // happens AT a named institution you could have watched coming.
   if (lenderAppetite(s, p.lender) < 0.12) return false;
   if (!p.window) return true;
-  return (s.econ.creditIdx ?? 1) >= 0.78 && s.econ.phase !== "recession";
+  // A NATIONAL MARKET, NOT A LOCAL ONE (2026-10-13). This also shut whenever
+  // the town's own phase read "recession", so a city with a busy local cycle
+  // had no CMBS for 63% of a century — securitisation closed in 2008-09 and
+  // for a few months of 2020, not when one metro's payrolls dipped. The
+  // credit window already reads local payrolls and the national labour
+  // market; it alone decides.
+  return (s.econ.creditIdx ?? 1) >= 0.78;
 }
 
 // ------------------------------------------------------- lender relationships

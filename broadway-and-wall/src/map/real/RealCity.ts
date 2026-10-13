@@ -6610,6 +6610,29 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     };
     for (const kind of ["car", "suv", "van", "truck", "taxi", "bus", "bike"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
     fleet("person", this.walkers, 0.15);
+    // A WALKING GAIT for the people on the footways: legs swing from the hip
+    // and arms from the shoulder, opposite, two steps a second, each person
+    // on their own phase (from where the instance stands). Done in the
+    // vertex shader, so it costs nothing per frame but one uniform.
+    const wf = this.fleets.find((f) => f.list === this.walkers);
+    if (wf) {
+      const mat = wf.mesh.material as THREE.MeshStandardMaterial;
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uGait = this.gait;
+        sh.vertexShader = sh.vertexShader
+          .replace("#include <common>", "#include <common>\nuniform float uGait;")
+          .replace("#include <begin_vertex>", `#include <begin_vertex>
+#ifdef USE_INSTANCING
+{
+  float ph = uGait * 6.2 + fract(sin(dot(instanceMatrix[3].xy, vec2(12.9898, 78.233))) * 43758.5453) * 6.2832;
+  float sw = sin(ph), side = sign(position.y);
+  if (abs(position.y) < 0.2 && position.z < 0.9) transformed.x += (0.9 - position.z) * sw * side * 0.42;
+  else if (abs(position.y) > 0.2 && position.z > 0.8 && position.z < 1.5) transformed.x -= (1.46 - position.z) * sw * side * 0.45;
+}
+#endif`);
+      };
+      mat.customProgramCacheKey = () => "bw-gait";
+    }
     if (this.traffic) fleet("person", this.traffic.crossers as unknown as Lively[], 0.05, true);
     fleet("ferry", this.boats, 0.05);
     this.applyCrowd();
@@ -6620,6 +6643,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private stepTraffic(t: number) {
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
     const big = new THREE.Vector3(PERSON_S, PERSON_S, PERSON_S);
+    this.gait.value = t % 3600;
     // the cars drive on simulated time: a frame's step, capped so a tab left
     // in the background does not throw them a minute down the road
     if (this.traffic) {
@@ -6683,6 +6707,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private boats: Mover[] = [];
   private fleets: { mesh: THREE.InstancedMesh; list: Lively[]; z: number; car: boolean }[] = [];
   private netRaw: NetRaw | null = null;
+  /** seconds, for the walkers' gait (see buildStreetLife) */
+  private gait = { value: 0 };
   private traffic: Traffic | null = null;
   private carList: LiveCar[] = [];
   private lastStep = 0;

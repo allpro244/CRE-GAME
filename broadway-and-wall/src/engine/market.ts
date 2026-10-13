@@ -272,6 +272,9 @@ const AFFORD_ROLL: Record<BuiltClass, number> = {
   industrial: 1 / LEASE_TERM_M.industrial,
   multifamily: 1 / LEASE_TERM_M.multifamily,
 };
+/** Households form and split over years, not at each lease: a two-year
+ *  half-life on flats' price response (see `affordRaw`). Shape parameter. */
+const HH_FORM_ROLL = Math.LN2 / 24;
 
 /** HOW MUCH SPACE A SECTOR'S CYCLE ACTUALLY MOVES. Demand for space is
  *  headcount times feet per head, so this multiplier is sized to the
@@ -3999,15 +4002,25 @@ export function tickEcon(s: GameState) {
       const low = clamp(0.30 + (u - 0.05) * 1.5, 0.22, 0.48);
       const hi = clamp(0.28 - (u - 0.05) * 0.8, 0.15, 0.35);
       const mid = Math.max(0.15, 1 - low - hi);
-      affordRaw = low * clamp(Math.pow(burden, -0.70), AFFORD_BAND[0], AFFORD_BAND[1])
-        + mid * clamp(Math.pow(burden, -0.50), AFFORD_BAND[0], AFFORD_BAND[1])
-        + hi * clamp(Math.pow(burden, -0.35), AFFORD_BAND[0], AFFORD_BAND[1]);
+      // HOUSEHOLDS, NOT SQUARE FEET (2026-10-13). A flat is a fixed unit: a
+      // household cannot take 40% more floor without moving, and the stock's
+      // unit mix does not change. What cheap rent buys in housing is MORE
+      // HOUSEHOLDS — young adults moving out, roommates and doubled-up families
+      // splitting — and that margin is smaller and slower. Headship
+      // elasticities to rent run about -0.1 to -0.4 (Börsch-Supan 1986;
+      // Haurin, Hendershott & Kim 1993), highest for the young and the poor.
+      // These were -0.70/-0.50/-0.35 at lease-rollover speed — the space
+      // margin of a commercial tenant — and doubling the flats stock was
+      // absorbed in five years with each household renting 40% more.
+      affordRaw = low * clamp(Math.pow(burden, -0.35), AFFORD_BAND[0], AFFORD_BAND[1])
+        + mid * clamp(Math.pow(burden, -0.25), AFFORD_BAND[0], AFFORD_BAND[1])
+        + hi * clamp(Math.pow(burden, -0.15), AFFORD_BAND[0], AFFORD_BAND[1]);
     } else {
       affordRaw = clamp(Math.pow(burden, -0.40), AFFORD_BAND[0], AFFORD_BAND[1]);
     }
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
     // At the lease-rollover rate of THIS class, not of an office. See AFFORD_ROLL.
-    e.affordEff[k] += AFFORD_ROLL[k] * (affordRaw - e.affordEff[k]);
+    e.affordEff[k] += (k === "multifamily" ? HH_FORM_ROLL : AFFORD_ROLL[k]) * (affordRaw - e.affordEff[k]);
 
     // ...AND THE MAINLAND IS NEXT DOOR (2026-10-12). `affordEff` is how much
     // space a tenant takes at a price; it is not WHERE they take it. The island

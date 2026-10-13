@@ -20,7 +20,7 @@ import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
 import { siteOutline, ringCentroid } from "./siteRing";
 import { PostFX } from "./post";
-import { FlatBuf, bloomTex, inRing as inRingPk, longGrassTex, parkGeom, segDist, settsTex, turfMaterial, walkTex } from "./parks";
+import { FlatBuf, TURF_U, bloomTex, inRing as inRingPk, longGrassTex, parkGeom, segDist, settsTex, turfMaterial, walkTex } from "./parks";
 import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
 import { BOOK_PICKER } from "./patternbook/register";
 import type { FacadeGroup } from "./patternbook/types";
@@ -118,7 +118,7 @@ const PHARMACY = T([0.90, 0.90, 0.87], [0.10, 0.52, 0.34]), DINER = T([0.42, 0.1
 const HARDWARE = T([0.78, 0.44, 0.12], [0.16, 0.16, 0.16]), BAKERY = T([0.86, 0.76, 0.48], [0.38, 0.22, 0.12]);
 const SHOP_TRADES_UPTOWN = [BANK, BANK, APPAREL, APPAREL, CAFE, PHARMACY, DINER];
 const SHOP_TRADES_STREET = [CAFE, GROCER, GROCER, PHARMACY, DINER, HARDWARE, BAKERY, APPAREL];
-const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail", "grate", "planter", "patio", "shed", "dumpster", "trailer", "pallets", "plpost", "plhead", "bedsoil", "stall", "stallstripe", "playset", "kiosk", "cannon", "obelisk", "tennis"];
+const FAR_PROPS_LOW = [...FAR_PROPS, "hedge", "fence", "railing", "bench", "parkhedge", "awning", "shopsign", "boards", "stoop", "dock", "hydrant", "bin", "shelter", "sigpost", "door", "marquee", "entcanopy", "dish", "solar", "pile", "bulk", "hvac", "tank", "skyl", "lift", "plantroom", "hatch", "exfan", "vent", "chimney", "split", "bush", "shoppier", "shopcorn", "juliet", "balcrail", "grate", "planter", "patio", "shed", "dumpster", "trailer", "pallets", "plpost", "plhead", "bedsoil", "stall", "stallstripe", "playset", "kiosk", "cannon", "obelisk", "tennis", "gatepier"];
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -1304,6 +1304,7 @@ export let activeCity: RealCityLayer | null = null;
 interface ParkInfo {
   ring: P2[]; inner: P2[]; holes: P2[][]; flavour: string; area: number; cx: number; cy: number; ux: number; uy: number;
   walks: [P2, P2][]; ponds: P2[][]; plazaR: number; pondOver?: boolean;
+  entrances: { at: P2; tx: number; ty: number }[];
   features: { kind: string; x: number; y: number; rot: number }[];
 }
 interface Mover { x: number; y: number; ux: number; uy: number; len: number; ph: number; spd: number; col: number[]; draw?: number; dem?: number; kind?: string }
@@ -1403,6 +1404,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private meadowParkMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
   private bloomMat = new THREE.MeshStandardMaterial({ roughness: 0.9, transparent: true, alphaTest: 0.4, depthWrite: false });
   private bloomMesh: THREE.Mesh | null = null;
+  private sprayMat = new THREE.MeshStandardMaterial({ color: 0xeaf4f8, roughness: 0.15, transparent: true, opacity: 0.55, depthWrite: false, envMapIntensity: 1.2 });
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
   private bufs = new Map<string, Buf>();
@@ -5199,7 +5201,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       }
       default: {
         const pg = parkGeom(kind === "lawnsitter" ? "sitter" : kind);
-        if (pg) return { g: pg.g, mat: pg.mat === "lamp" ? this.lampMat : this.parkVcMat, colored: pg.colored };
+        if (pg) return { g: pg.g, mat: pg.mat === "lamp" ? this.lampMat : pg.mat === "water" ? this.sprayMat : this.parkVcMat, colored: pg.colored };
         return { g: box(1, 1, 1), mat: this.trimMat };
       }
     }
@@ -6093,9 +6095,40 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const walks = segs.filter(([a, b]) => inRingPk((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, ring));
       const pds = ponds.filter((r) => { let x = 0, y = 0; for (const v of r) { x += v[0]; y += v[1]; } return inRingPk(x / r.length, y / r.length, ring); })
         .map((r) => (ringArea(r) < 0 ? r.slice().reverse() : r));
+      // THE GATES. The generator's walks stop at the promenade, six metres
+      // in from the kerb, so a park had no way in from its own street. Four
+      // entrance walks, spaced round the edge, run from the nearest walk out
+      // to the footway, with a stone pier either side.
+      const entrances: { at: P2; tx: number; ty: number }[] = [];
+      if (flavour !== "market" && walks.length) {
+        let per = 0; const lens: number[] = [];
+        for (let i = 0; i < inner.length; i++) { const a = inner[i], b = inner[(i + 1) % inner.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); lens.push(L); per += L; }
+        const nE = per > 220 ? 4 : per > 90 ? 2 : 0;
+        for (let k = 0; k < nE; k++) {
+          let want = ((k / nE) + 1 / (2 * nE)) * per, i = 0;
+          while (i < inner.length - 1 && want > lens[i]) { want -= lens[i]; i++; }
+          const a = inner[i], b = inner[(i + 1) % inner.length], L = lens[i] || 1;
+          const tx = (b[0] - a[0]) / L, ty = (b[1] - a[1]) / L;
+          const E: P2 = [a[0] + tx * want, a[1] + ty * want];
+          let best = Infinity, N: P2 = E;
+          for (const [s0, s1] of walks) {
+            const vx = s1[0] - s0[0], vy = s1[1] - s0[1], l2 = vx * vx + vy * vy || 1;
+            const t = Math.max(0, Math.min(1, ((E[0] - s0[0]) * vx + (E[1] - s0[1]) * vy) / l2));
+            const q: P2 = [s0[0] + vx * t, s0[1] + vy * t], d = Math.hypot(q[0] - E[0], q[1] - E[1]);
+            if (d < best) { best = d; N = q; }
+          }
+          if (best < 2.5 || best > 32) continue;
+          // out to the footway: the inner edge pushed back across the 2.6 m band (outward normal of a CCW ring)
+          const out: P2 = [E[0] + ty * 2.2, E[1] - tx * 2.2];
+          const mid: P2 = [(N[0] + E[0]) / 2, (N[1] + E[1]) / 2];
+          if (pds.some((pd) => inRingPk(mid[0], mid[1], pd) || inRingPk(E[0], E[1], pd))) continue;
+          walks.push([N, out]);
+          entrances.push({ at: E, tx, ty });
+        }
+      }
       // the paved round where the walks meet: under the column of a big park, the fountain of a square
       const plazaR = flavour === "park" ? (area > 9000 ? 10 : area > 1800 ? 8 : 0) : 0;
-      out.push({ ring, inner, holes, flavour, area, cx, cy, ux, uy, walks, ponds: pds, plazaR, features: [] });
+      out.push({ ring, inner, holes, flavour, area, cx, cy, ux, uy, walks, ponds: pds, plazaR, features: [], entrances });
     }
     return (this.parkInfoC = out);
   }
@@ -6173,16 +6206,17 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       if (p.flavour !== "park") continue;
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const [x, y] of p.inner) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-      const place = (kind: string, r: number) => {
-        for (let t = 0; t < 160; t++) {
+      const place = (kind: string, r: number, hw = 0, hl = 0) => {
+        for (let t = 0; t < (hw ? 400 : 160); t++) {
           const x = x0 + rnd() * (x1 - x0), y = y0 + rnd() * (y1 - y0);
           if (Math.hypot(x - p.cx, y - p.cy) < p.plazaR + r + 4) continue;
           let ok = true;
           for (let k = 0; k < 8 && ok; k++) {
-            const qx = x + Math.cos(k * 0.785) * (r + 2), qy = y + Math.sin(k * 0.785) * (r + 2);
+            const rr = hw ? hw + 1 : r + 2;
+            const qx = x + Math.cos(k * 0.785) * rr, qy = y + Math.sin(k * 0.785) * rr;
             if (!inRingPk(qx, qy, p.inner) || p.ponds.some((pd) => inRingPk(qx, qy, pd))) ok = false;
           }
-          if (!ok || p.walks.some(([a, b]) => segDist(x, y, a, b) < r + 2.4)) continue;
+          if (!ok || p.walks.some(([a, b]) => segDist(x, y, a, b) < (hw ? hw + 2.4 : r + 2.4))) continue;
           if (this.parkReserves.some((q) => Math.hypot(q.x - x, q.y - y) < q.r + r + 3)) continue;
           // face the nearest walk
           let best = Infinity, fx = 0, fy = -1;
@@ -6192,12 +6226,24 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
             const qx = a[0] + vx * s - x, qy = a[1] + vy * s - y, d = Math.hypot(qx, qy);
             if (d < best) { best = d; fx = qx / d; fy = qy / d; }
           }
-          p.features.push({ kind, x, y, rot: Math.atan2(fx, -fy) });
+          let rot = Math.atan2(fx, -fy);
+          if (hw) {
+            // a court lies along the walk beside it; every point of its fence must be clear
+            rot += Math.PI / 2;
+            const c = Math.cos(rot), sn = Math.sin(rot);
+            let clear = true;
+            for (let u = -hw; u <= hw + 0.01 && clear; u += hw / 4) for (let v = -hl; v <= hl + 0.01 && clear; v += hl / 8) {
+              const qx = x + u * c - v * sn, qy = y + u * sn + v * c;
+              if (!inRingPk(qx, qy, p.inner) || p.ponds.some((pd) => inRingPk(qx, qy, pd)) || p.walks.some(([a, b]) => segDist(qx, qy, a, b) < 2.6)) clear = false;
+            }
+            if (!clear) continue;
+          }
+          p.features.push({ kind, x, y, rot });
           this.parkReserves.push({ x, y, r });
           return;
         }
       };
-      if (p.area > 26000) place("tennis", 19);
+      if (p.area > 20000) place("tennis", 19, 8.9, 17.9);
       if (p.area > 14000) place("bandstand", 7.5);
       if (p.area > 6000) place("playset", 9);
       if (p.area > 9000) place("kiosk", 3.5);
@@ -6320,6 +6366,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         }
       }
       for (const f of p.features) this.putInst(f.kind, f.x, f.y, 0.05, 1, f.rot);
+      for (const e of p.entrances) for (const sd of [-1, 1]) this.putInst("gatepier", e.at[0] + e.tx * sd * (w / 2 + 0.7), e.at[1] + e.ty * sd * (w / 2 + 0.7), 0.05, 1, Math.atan2(e.ty, e.tx));
       if (p.flavour === "park") {
         // a drinking fountain at the edge of the paved round
         if (p.plazaR) {
@@ -6431,7 +6478,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const area = Math.abs(a2) / 2;
       cx /= 3 * a2; cy /= 3 * a2;
       if (area > 9000) this.putInst("column", cx, cy, 0.07, 1, 0);
-      else if (area > 1800) { this.putInst("fountain", cx, cy, 0.07, 1, 0); this.putInst("basin", cx, cy, 0.07, 1, 0); }
+      else if (area > 1800) { this.putInst("fountain", cx, cy, 0.07, 1, 0); this.putInst("basin", cx, cy, 0.07, 1, 0); this.putInst("spray", cx, cy, 0.07, 1, 0); }
     }
     // launches tied up along canal and slip walls, every ~14 m with gaps
     const HULL = [[0.92, 0.92, 0.9], [0.86, 0.85, 0.8], [0.16, 0.22, 0.34], [0.2, 0.32, 0.26], [0.52, 0.2, 0.17], [0.3, 0.3, 0.31]];
@@ -6559,7 +6606,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
         for (let t = 1.3; t < L - 1.3; t += 2.5) {
           const x = a[0] + ux * t, y = a[1] + uy * t;
-          if (nearPath(x, y, 3.2)) continue;
+          if (nearPath(x, y, 3.2) || this.parkInfo().some((q) => q.entrances.some((e) => Math.hypot(e.at[0] - x, e.at[1] - y) < 3.4))) continue;
           this.putInst("parkhedge", x, y, 0.03, 0.75, Math.atan2(uy, ux));
         }
       }
@@ -7346,7 +7393,11 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     for (const m of [this.walkMat, this.parkPlazaMat, this.settsMat]) m.color.setRGB(1, 1, 1);
     // long grass: straw in winter, a deep summer green, seeding gold in August
     const seed = [0, 0, 0, 0, 0, 0, 0.2, 0.55, 0.4, 0.1, 0, 0][this.month];
-    this.meadowParkMat.color.setRGB(0.4 - vig * 0.18 + seed * 0.12, 0.34 - vig * 0.04 + seed * 0.05, 0.2 - vig * 0.08);
+    this.meadowParkMat.color.setRGB(0.36 - vig * 0.2 + seed * 0.1, 0.3 - vig * 0.06 + seed * 0.04, 0.19 - vig * 0.09);
+    // fallen leaves lie on the lawns October and November, and are raked by December
+    TURF_U.uLeaves.value = [0, 0, 0, 0, 0, 0, 0, 0, 0.15, 0.6, 0.85, 0.25][this.month];
+    // the fountains are drained over the winter
+    const spray = this.inst.get("spray"); if (spray) spray.visible = this.month >= 3 && this.month <= 10;
     if (this.bloomMesh) this.bloomMesh.visible = this.month >= 4 && this.month <= 8;
     // the canopy: green in summer, turning in autumn, bare grey in winter
     for (const leaf of [this.inst.get("crown"), this.inst.get("bush")]) {

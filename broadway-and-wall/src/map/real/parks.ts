@@ -75,14 +75,18 @@ export function settsTex(): THREE.CanvasTexture {
  * mower's stripes — light and dark bands 4 m wide laid along each park's own
  * long axis, read from the `stripe` attribute (metres across the stripes).
  */
+/** How much of the lawn is under fallen leaves (0-1), set by the season. */
+export const TURF_U = { uLeaves: { value: 0 } };
 export function turfMaterial(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
   m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, TURF_U);
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float stripe;\nvarying float vStripe;\nvarying vec2 vTw;")
       .replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvStripe = stripe;\nvTw = (modelMatrix * vec4(transformed, 1.0)).xy;");
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>
 varying float vStripe;
 varying vec2 vTw;
+uniform float uLeaves;
 float tH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float tN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(tH(i), tH(i + vec2(1.0, 0.0)), f.x), mix(tH(i + vec2(0.0, 1.0)), tH(i + vec2(1.0, 1.0)), f.x), f.y); }`)
@@ -91,7 +95,13 @@ float tN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   diffuseColor.rgb *= mix(vec3(0.82, 0.86, 0.9), vec3(1.14, 1.1, 0.92), n);
   // the mower's stripes, softened at their edges and fading where the grass is worn
   float st = smoothstep(-0.25, 0.25, sin(vStripe * 3.14159265 / 4.0));
-  diffuseColor.rgb *= mix(0.93, 1.05, st); }`);
+  diffuseColor.rgb *= mix(0.93, 1.05, st);
+  // fallen leaves: small drifts, thicker in hollows (the low-frequency noise), in three autumn colours
+  float lf = tH(floor(vTw * 5.0)), drift = tN(vTw / 9.0);
+  if (uLeaves > 0.0 && lf < uLeaves * (0.15 + 0.6 * drift)) {
+    float k = tH(floor(vTw * 5.0) + 7.0);
+    diffuseColor.rgb = k < 0.4 ? vec3(0.62, 0.32, 0.1) : k < 0.75 ? vec3(0.7, 0.5, 0.14) : vec3(0.42, 0.22, 0.1);
+  } }`);
   };
   m.customProgramCacheKey = () => "park-turf";
   return m;
@@ -204,7 +214,7 @@ const SOIL = [0.3, 0.22, 0.16], COPPER = [0.38, 0.6, 0.52];
  * vertex-coloured standard material, "lamp" the layer's lamp material (lit
  * after dark). `colored` means the instance colour multiplies it.
  */
-export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "lamp"; colored?: boolean } | null {
+export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "lamp" | "water"; colored?: boolean } | null {
   switch (kind) {
     // a Victorian park lamp: a fluted iron post on a plinth; the lantern is plhead
     case "plpost": return { g: mc([[cy(0.17, 0.55, 0, 8, 0.12), IRON], [cy(0.065, 3.1, 0.55, 6), IRON], [cy(0.12, 0.12, 3.6, 8), IRON], [bx(0.5, 0.05, 0.05, 0, 0, 3.3), IRON]]), mat: "vc" };
@@ -363,6 +373,11 @@ export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "
         ...[[-0.24, -0.08], [-0.24, 0.08], [0.22, -0.08], [0.22, 0.08]].map(([x, y]) => [bx(0.06, 0.06, 0.3, x, y, 0), [0.9, 0.9, 0.9]] as [THREE.BufferGeometry, number[]]),
         [new THREE.BoxGeometry(0.22, 0.04, 0.04).rotateY(-0.6).translate(-0.38, 0, 0.6), [1, 1, 1]]]), mat: "vc", colored: true,
     };
+    // a fountain's jet and the water falling back into its upper bowl
+    case "spray": return { g: mc([[cy(0.09, 1.9, 3.45, 6, 0.04), [1, 1, 1]], [new THREE.SphereGeometry(0.55, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1, 0.5).translate(0, 0, 5.2), [1, 1, 1]],
+      [new THREE.CylinderGeometry(0.55, 2.2, 2.75, 14, 1, true).rotateX(Math.PI / 2).translate(0, 0, 3.85), [1, 1, 1]], [new THREE.CylinderGeometry(2.3, 4.4, 1.7, 18, 1, true).rotateX(Math.PI / 2).translate(0, 0, 1.4), [1, 1, 1]]]), mat: "water" };
+    // a gate pier: a dressed stone pillar with a capstone and a ball finial
+    case "gatepier": return { g: mc([[bx(0.75, 0.75, 2.0), [0.74, 0.71, 0.66]], [bx(0.95, 0.95, 0.18, 0, 0, 2.0), [0.66, 0.63, 0.58]], [new THREE.SphereGeometry(0.28, 10, 8).translate(0, 0, 2.45), [0.66, 0.63, 0.58]]]), mat: "vc" };
     case "flagpole": return { g: mc([[bx(1.6, 1.6, 0.5), STONE], [cy(0.09, 11, 0.5, 6, 0.05), WHITE], [new THREE.SphereGeometry(0.14, 6, 4).translate(0, 0, 11.6), [0.8, 0.65, 0.25]], [bx(0.02, 1.8, 1.1, 0, 0.95, 10.2), [0.7, 0.18, 0.16]]]), mat: "vc" };
   }
   return null;
@@ -387,8 +402,8 @@ export function bloomTex(): THREE.CanvasTexture {
   const { c, g } = makeCanvas(N, N);
   let s = 6007; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
   const COLS = ["#f4d23a", "#f7f5ec", "#5c78d6", "#c56aa6", "#d8362c"];
-  for (let i = 0; i < 900; i++) {
-    const x = rnd() * N, y = rnd() * N, r = 1 + rnd() * 1.6;
+  for (let i = 0; i < 2400; i++) {
+    const x = rnd() * N, y = rnd() * N, r = 1.2 + rnd() * 2;
     g.fillStyle = COLS[(rnd() * rnd() * COLS.length) | 0];
     g.beginPath(); g.arc(x, y, r, 0, 6.28); g.fill();
   }

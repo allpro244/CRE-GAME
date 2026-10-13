@@ -275,6 +275,8 @@ const AFFORD_ROLL: Record<BuiltClass, number> = {
 /** Households form and split over years, not at each lease: a two-year
  *  half-life on flats' price response (see `affordRaw`). Shape parameter. */
 const HH_FORM_ROLL = Math.LN2 / 24;
+/** Renter households lost per unit of unemployment over the natural rate (see flats' `affordRaw`). */
+const HH_U_SENS = 1.2;
 
 /** HOW MUCH SPACE A SECTOR'S CYCLE ACTUALLY MOVES. Demand for space is
  *  headcount times feet per head, so this multiplier is sized to the
@@ -2090,7 +2092,12 @@ export function tickNation(s: GameState) {
       // the Phillips term negative and the policy rate on the floor for a
       // quarter of the century. A downturn has a depth, and the labour market
       // approaches it and decelerates into it, the way a real one does.
-      n.uPeak = clamp(n.unemp + (n.deep ? rrange(s, 0.045, 0.135, "nation") : rrange(s, 0.016, 0.042, "nation")),
+      // A DEEP ONE IS 2008, NOT 1929 (2026-10-13). This drew +4.5 to +13.5
+      // points, so about one game in two saw national unemployment at 15-20%
+      // for years — Depression depth, every other century. The post-war
+      // deep recessions rose +5.6 points (2008, 4.4 -> 10.0) and +11 briefly
+      // (2020, 3.5 -> 14.7, gone in a year); 1982 was +3.6.
+      n.uPeak = clamp(n.unemp + (n.deep ? rrange(s, 0.045, 0.095, "nation") : rrange(s, 0.016, 0.042, "nation")),
         0.03, 0.26);
       pushNews(s, "warn", n.deep
         ? "The country has fallen off a cliff. This is not a soft patch — payrolls are "
@@ -4015,6 +4022,15 @@ export function tickEcon(s: GameState) {
       affordRaw = low * clamp(Math.pow(burden, -0.35), AFFORD_BAND[0], AFFORD_BAND[1])
         + mid * clamp(Math.pow(burden, -0.25), AFFORD_BAND[0], AFFORD_BAND[1])
         + hi * clamp(Math.pow(burden, -0.15), AFFORD_BAND[0], AFFORD_BAND[1]);
+      // ...AND A JOB LOST IS A HOUSEHOLD UNFORMED (2026-10-13). People out of
+      // work double up, move back with parents and take roommates; flats
+      // demand read population and pay and never the jobless rate, so a
+      // depression left apartment vacancy at 2.8% while real rents rose. The
+      // US "lost" about 2.5 million households to 2008-11 (Paciorek 2013),
+      // mostly renters, on +5 points of unemployment — about 1.2% of renter
+      // households per point. Symmetric about the town's own natural rate,
+      // through the same household-formation clock.
+      affordRaw *= Math.max(0.5, 1 - HH_U_SENS * ((e.unemployment ?? OPENING_UNEMP) - OPENING_UNEMP));
     } else {
       affordRaw = clamp(Math.pow(burden, -0.40), AFFORD_BAND[0], AFFORD_BAND[1]);
     }

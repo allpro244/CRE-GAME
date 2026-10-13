@@ -1915,10 +1915,7 @@ function centralBankChair(s: GameState, n: NonNullable<Econ["nat"]>): { untilM: 
     const first = !n.chair;
     const u1 = Math.max(1e-9, rng(s, "nation")), u2 = rng(s, "nation");
     const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-    // Skewed a little hawkish: since independence most chairs have been
-    // inflation-averse and true doves are the exception — about one in ten
-    // draws here reads as a dove, one in four as a hawk. Shape parameters.
-    const resolve = +Math.exp(0.08 + 0.25 * z).toFixed(3);
+    const resolve = +Math.exp(0.30 * z).toFixed(3);
     const term = 48 + Math.floor(rng(s, "nation") * 97);    // four to twelve years
     const name = CHAIR_NAMES[Math.floor(rng(s, "nation") * CHAIR_NAMES.length)];
     n.chair = { untilM: s.month + term, resolve, name, sinceM: s.month };
@@ -2254,9 +2251,13 @@ export function tickNation(s: GameState) {
   // banks are run by people on terms — Martin, Burns, Miller, Volcker,
   // Greenspan, Bernanke, Yellen, Powell, four to twelve years apiece — and
   // the regime breaks line up with them: Burns let the 1970s run, Volcker
-  // broke them inside three years. Each chair draws a RESOLVE that scales how
-  // hard the rule leans on inflation over target (the 0.5 Taylor weight), the
-  // Volcker restore term and how fast credibility is earned back. Most
+  // broke them inside three years. Each chair draws a RESOLVE: the willingness
+  // to take the pain — how hard the Volcker restore term bites once
+  // credibility is gone, and how fast credibility is earned back on target.
+  // NOT the Taylor weight: scaling that made a hawk swing rates harder both
+  // ways, and with the channel sticky downward (easy money inflates more than
+  // tight money disinflates) the swings ratcheted prices UP — measured, a
+  // hawkish-skewed draw averaged 2.7%/yr against 2.2% on main. Most
   // chairs are ordinary (resolve near 1); the lognormal's tails are the
   // Burnses and the Volckers. Credibility carries over: a new chair inherits
   // whatever the public believes. Term and spread are shape parameters.
@@ -2267,7 +2268,7 @@ export function tickNation(s: GameState) {
   // regime.ts: 0.02 was written here as a constant and it is the reason a
   // century could not contain two different monetary worlds.
   const tgt = n.inflTarget ?? 0.02;
-  const want = 100 * (n.neutralReal + seen + 0.5 * chair.resolve * (seen - tgt) + 0.5 * okunGap) + restore;
+  const want = 100 * (n.neutralReal + seen + 0.5 * (seen - tgt) + 0.5 * okunGap) + restore;
   n.ruleRate = +want.toFixed(3);
   // Gradualism, except when it is not: a bank moves in quarter points at
   // eight meetings a year, and in three-quarter points when it is frightened.

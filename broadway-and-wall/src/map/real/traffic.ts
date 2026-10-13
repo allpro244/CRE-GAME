@@ -111,8 +111,20 @@ export class Traffic {
       if (!g || g.cw < 5 || g.cw > 44) return;
       const half = g.cw / 2;
       const a = g.mid;
-      // the lane must be road at its middle, or this is not a street we drive
-      if (!onRoad(a[0] + g.u[0] * g.L / 2, a[1] + g.u[1] * g.L / 2)) return;
+      // the street must be road along its length (every ~6 m, past the
+      // junction ends), or it is not a street we drive: a centre line laid
+      // over a creek or a mall is not a carriageway
+      {
+        const n = Math.max(2, Math.ceil(g.L / 6));
+        let bad = 0, tot = 0;
+        for (let k = 1; k < n; k++) {
+          const t = (k / n) * g.L;
+          if (t < 6 || t > g.L - 6) continue;
+          tot++;
+          if (!onRoad(a[0] + g.u[0] * t, a[1] + g.u[1] * t)) bad++;
+        }
+        if (!onRoad(a[0] + g.u[0] * g.L / 2, a[1] + g.u[1] * g.L / 2) || bad > tot * 0.1) return;
+      }
       const na = nodeAt(sg.a), nb = nodeAt(sg.b);
       if (na === nb) return;
       // lanes, right of travel. A narrow street runs one way down its middle;

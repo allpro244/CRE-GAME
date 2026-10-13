@@ -9,7 +9,7 @@ import { netWorth } from "@/engine/value";
 import { streetStanding, ordinal } from "@/engine/standing";
 import { openViewOn } from "@/ui/panels/shared";
 import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
-import { portfolioOccupancy } from "@/engine/leasing";
+import { portfolioOccupancy, portfolioRentPsf } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { nextDue } from "./nextDue";
 import { DESKS, deskOf, deskCount, deskLanding, tabCounts, tabLabel, visibleTabs } from "./desks";
@@ -139,7 +139,7 @@ export default function TopBar() {
   const vitals = useMemo(() => {
     if (!deferredGame) {
       return {
-        nw: 0, cf: 0, occ: null as number | null, vacDpp: null as number | null,
+        nw: 0, cf: 0, occ: null as number | null, rentPsf: null as number | null, vacDpp: null as number | null,
         line: 0, counts: {} as ReturnType<typeof tabCounts>,
         dNw: null as number | null, nwSpark: [] as number[],
         dCf: null as number | null, dCfSince: null as number | null,
@@ -176,6 +176,8 @@ export default function TopBar() {
     // here while Leasing called it full. One function now, shared with the
     // Leasing total: leased over lettable, operated deeds only.
     const occ = parcels ? (portfolioOccupancy(deferredGame, parcels)?.occ ?? null) : null;
+    // What the leased feet pay on average — same deeds as occupancy.
+    const rentPsf = parcels ? portfolioRentPsf(deferredGame, parcels) : null;
     // Badges: one counter shared with the desk tabs, so the rail and the
     // tab inside the desk cannot disagree about what is waiting.
     const counts = tabCounts(deferredGame);
@@ -205,12 +207,12 @@ export default function TopBar() {
     const due = nextDue(deferredGame, parcels);
     return {
       standing, dRank, due,
-      nw, cf, occ, vacDpp, line, counts,
+      nw, cf, occ, rentPsf, vacDpp, line, counts,
       dNw, nwSpark, dCf, dCfSince, dRateBp,
     };
   }, [deferredGame, deferredPrev]);
   const {
-    nw, cf, occ, vacDpp, line, counts, dNw, dCf, dCfSince, dRateBp, standing, dRank, due,
+    nw, cf, occ, rentPsf, vacDpp, line, counts, dNw, dCf, dCfSince, dRateBp, standing, dRank, due,
   } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
@@ -510,12 +512,22 @@ export default function TopBar() {
                 : "Portfolio occupancy — appears once you own an operated building."}
             />
             )}
+            {rentPsf !== null && (
+            <Stat
+              label="Avg $ psf"
+              value={`$${rentPsf.toFixed(2)}`}
+              drop={2}
+              w={64}
+              title={`Average in-place rent across your leased feet: $${rentPsf.toFixed(2)} per square foot a year. Commercial tenants at their contract rent, apartments at the rent their leases hold. Leased space only — the occupancy beside it carries the vacancy.`}
+            />
+            )}
             {/* ONE READOUT FOR THE STREET. Base rate, vacancy change, the phase
                 and the era used to be four separate readouts across the bar and
                 the rail. They are one question — what is money and space doing
                 — so they are one readout: the phase and the rate, with the
                 vacancy tell turning it red when the market is softening. The
-                full picture is a click away on City → Pulse. */}
+                full picture is a click away on City → Markets (the owner asked for Markets
+                to open, not Pulse). */}
             <span className="vital-pair">
               <Stat
                 label="Market"
@@ -523,7 +535,7 @@ export default function TopBar() {
                 bad={vacDpp !== null && vacDpp >= 2}
                 drop={1}
                 w={128}
-                onClick={() => setPage("pulse")}
+                onClick={() => setPage("economy")}
                 delta={dRateBp !== null ? (
                   <DeltaChip
                     value={dRateBp}

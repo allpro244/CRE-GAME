@@ -6,6 +6,7 @@ import { isLeasedFee, marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } fr
 import {
   isCommercial, walt, notReadySf,
   deskHoldsPen, deskMonthNow, loiNeedsPrincipal, portfolioOccupancy, autoTiCapToday, autoLeaseRule,
+  AUTO_CONCESSIONS, autoConcessionsOf, autoLeaseYear,
 } from "@/engine/leasing";
 import { PlanEditor, PlanDigest } from "@/ui/panels/PlanSheet";
 import { useSf } from "@/engine/mix";
@@ -203,6 +204,72 @@ export function LeasingPage() {
   }
 
   /**
+   * THE TEAM, IN ONE CARD. An owner of two hundred buildings does not set a
+   * fit-out number per building and does not read two hundred news lines;
+   * they set how much the team may give away, switch the book on, and look at
+   * a scorecard. Rent posture stays per building (Fill / Market / Push on the
+   * rows below) because how hard to hold is a question about one building's
+   * lease-up; the concession limit is the firm's.
+   */
+  function TeamLeasing() {
+    const book = rows.filter((r) => r.commercial);
+    if (!book.length) return null;
+    const on = book.filter((r) => r.h.autoLease).length;
+    const allOn = on === book.length;
+    const conc = autoConcessionsOf(game);
+    const yr = autoLeaseYear(game);
+    const settled = yr.signed + yr.passed + yr.walked + yr.referred;
+    const pctOf = (x: number) => `${Math.round(x * 100)}%`;
+    return (
+      <div className="agent-bar" style={{ display: "block" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div className="agent-title">
+            Auto-lease · your team answers the letters on {on} of {book.length} building{book.length === 1 ? "" : "s"}
+          </div>
+          <button
+            type="button"
+            className={"btn btn-mini" + (allOn ? " btn-on" : "")}
+            title={allOn
+              ? "Every building is answering its own letters. Click to take them all back."
+              : "Put every building on auto-lease: each answers its letters by its own Fill / Market / Push posture and the concession limit here, and none of them pop up."}
+            onClick={() => useStore.getState().autoLease(book.map((r) => r.h.bbl), !allOn)}
+          >{allOn ? "All on ✓" : "Auto-lease every building"}</button>
+        </div>
+        <div className="lease-ctl" style={{ marginTop: 6 }}>
+          <span className="lease-ctl-label">Concessions</span>
+          <span className="seg" role="group" aria-label="Most fit-out and free rent the team may give">
+            {AUTO_CONCESSIONS.map((o) => (
+              <button
+                key={o.key}
+                type="button"
+                className={"btn btn-mini" + (conc === o.key ? " btn-on" : "")}
+                aria-pressed={conc === o.key}
+                title={`${o.label}: ${o.blurb}.`}
+                onClick={() => useStore.getState().autoConcessions(o.key)}
+              >{o.label}</button>
+            ))}
+          </span>
+        </div>
+        <div className="agent-sub" style={{ marginTop: 4 }}>
+          Fit-out and free rent: {AUTO_CONCESSIONS.find((o) => o.key === conc)!.blurb}. Measured against the market's
+          package for each space, so it follows the cycle, the lease term and new shells on its own.
+          How hard to hold on rent is each building's Fill / Market / Push below. Leases of a quarter of a
+          building (10,000 sf and up) come to you.
+        </div>
+        <div className="hint" style={{ marginTop: 6 }}>
+          {!settled
+            ? "Nothing settled in the last twelve months yet — the team's record shows here as letters arrive."
+            : <>
+                Last 12 months: <b>{yr.signed} signed</b>
+                {yr.signed > 0 && <> at <b>{pctOf(yr.deal)} of a market deal</b> on average ({pctOf(yr.ne)} of market rent after fit-out and free rent{yr.under ? `; ${yr.under} under 90% of a market deal` : ""})</>}
+                {" · "}{yr.passed} passed · {yr.walked} walked after a counter · {yr.referred} sent to you
+              </>}
+        </div>
+      </div>
+    );
+  }
+
+  /**
    * THE LETTERS THEMSELVES, ON THE LEASING PAGE.
    *
    * An LOI or a renewal used to reach the player as an interrupt card and as a
@@ -305,25 +372,13 @@ export function LeasingPage() {
         />
       </div>
 
+      <TeamLeasing />
+
       <div className="page-section">
         <div className="page-section-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <span>By building</span>
           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <MinLeaseAll />
-          {(() => {
-            const all = rows.map((r) => r.h.bbl);
-            const allOn = all.length > 0 && rows.every((r) => r.h.autoLease);
-            return all.length > 0 && (
-              <button
-                type="button"
-                className={"btn btn-mini" + (allOn ? " btn-on" : "")}
-                title={allOn
-                  ? "Every building is answering its own letters by its rent posture. Click to take them all back."
-                  : "Put every building on auto-lease: each answers its letters by its own Fill / Market / Push posture, and none of them pop up."}
-                onClick={() => useStore.getState().autoLease(all, !allOn)}
-              >{allOn ? "Auto-lease: all on ✓" : "Auto-lease every building"}</button>
-            );
-          })()}
           </span>
         </div>
         <div>
@@ -377,7 +432,7 @@ export function LeasingPage() {
                       <button
                         type="button"
                         className={"btn btn-mini" + (r.h.autoLease ? " btn-on" : "")}
-                        title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to take the letters back. Set the fit-out cap on the building.` : "Let this building answer its own letters by its rent posture and fit-out cap — no pop-ups."}
+                        title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to take the letters back.` : "Let this building answer its own letters by its rent posture and the team's concession limit — no pop-ups."}
                         onClick={(e) => { e.stopPropagation(); useStore.getState().autoLease(r.h.bbl, !r.h.autoLease); }}
                         aria-pressed={!!r.h.autoLease}
                       >{r.h.autoLease ? "Auto-answer ✓" : "Auto-answer"}</button>

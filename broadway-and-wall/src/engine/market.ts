@@ -1592,6 +1592,16 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     econ.wageIdx = (econ.wageIdx ?? 1) * w;
     econ.outputIdx = (econ.outputIdx ?? 1) * w;
     econ.wage0 = (econ.wage0 ?? 1) * w;
+    // THE OPENING COST OF LIVING AGAINST THE NATION (2026-10-13), struck with
+    // the same weights the local CPI moves by (SHELTER_W 0.33 on housing,
+    // SERVICES_W 0.25 on local pay, the rest national goods): this town's
+    // opening flat rent and pay against the national reference, both net of
+    // the price level. Stored so real pay against the nation can be read as
+    // a level, not only as a change since the opening. Read by the display;
+    // nothing in the simulation uses it.
+    const shelterGap = econ.rentIdx.multifamily / Math.max(1e-6, RENT_BASE.multifamily * P) - 1;
+    const servicesGap = econ.wage0 / Math.max(1e-6, P) - 1;
+    econ.col0 = +(1 + 0.33 * shelterGap + 0.25 * servicesGap).toFixed(4);
   }
   // THE TOWN OPENS MID-CYCLE, SO ITS CONCESSIONS DO TOO.
   //
@@ -2274,7 +2284,22 @@ export function tickNation(s: GameState) {
   // 1970s and 2021 — easy money into a tight labour market — at full force.
   const passThrough = Math.exp(-Math.max(0, n.unemp - NAT_U_STAR) / 0.02);
   const easy = 0.55 * (n.easeEma >= 0 ? Math.min(n.easeEma, 0.10) * passThrough : 0.5 * Math.max(n.easeEma, -0.05));
-  n.infl = clamp(n.inflExp + phillips + easy + shock + rrange(s, -0.004, 0.004, "nation"), -0.06, 0.22);
+  // DOWNWARD NOMINAL RIGIDITY BENDS THE CURVE AT ZERO (2026-10-13). Pay and
+  // contract rents are rarely cut in nominal terms, so the forces pulling
+  // inflation DOWN — slack and dear money — lose their grip as inflation
+  // nears zero and past it (Akerlof, Dickens & Perry 1996; Daly & Hobijn
+  // 2014, "Downward nominal wage rigidities bend the Phillips curve"). The
+  // record: Volcker's disinflation landed at ~3%, not below zero; 2009 ran
+  // -0.4% at 10% unemployment; Japan's lost decades -0.3%/yr. Without the
+  // bend, a low-credibility disinflation overshot to -3% with unemployment
+  // at 4.3% (12 deflation years in one measured century against 3 in the US
+  // since 1945). The downward terms are scaled by e^((last inflation - 1%)
+  // / 1%) below 1%: whole at 1% and above, about a third at zero, a seventh
+  // at -1%. Deflation stays possible; a spiral at full employment does not.
+  const down = Math.min(0, phillips) + Math.min(0, easy);
+  const bend = n.infl >= 0.01 ? 1 : Math.exp((n.infl - 0.01) / 0.01);
+  n.infl = clamp(n.inflExp + (phillips - Math.min(0, phillips)) + (easy - Math.min(0, easy)) + down * bend
+    + shock + rrange(s, -0.004, 0.004, "nation"), -0.06, 0.22);
 
   // EXPECTATIONS UNANCHOR WHEN THE BANK IS NOT BELIEVED — and that is what
   // makes an inflation a decade rather than a year. Credibility is spent in
@@ -2806,7 +2831,6 @@ export function tickEcon(s: GameState) {
   // Great Moderation was thirty years of a central bank being believed.
   tickNation(s);
   tickIndustryCycle(s);
-  const c2 = PHASE_CFG[e.phase];
 
   // (retired) THE OLD CITY-LEVEL POLICY RATE read the CITY's unemployment, so
   // a player who wrecked his own city was handed a rate cut for it. The nation
@@ -2819,7 +2843,6 @@ export function tickEcon(s: GameState) {
   // same sentiment now builds at 1.8x trailing-year payroll growth, which is
   // those two numbers at +1.5%/yr and -3%/yr, continuously. It feeds cap
   // rates and land through `cycleDev`, so that channel is now caused.
-  void c2;
   const step = clamp(1.8 * payrollGrowth12(e), -0.08, 0.06) + rrange(s, -0.03, 0.03);
   const spring = -0.048 * e.cycleDev;
   e.cycleDev = clamp(e.cycleDev + step + spring, -1, 1);

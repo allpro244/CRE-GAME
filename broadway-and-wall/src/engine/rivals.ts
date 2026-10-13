@@ -29,7 +29,7 @@
 // now claims jobs out of the city's own pipeline: buys the dirt, writes the
 // equity, carries the loan through the cycle, and either owns a building at
 // the end of it or hands a frame to a receiver.
-import { fieldRoster } from "./setup";
+import { fieldRoster, rivalCapitalMult, type RivalCapital } from "./setup";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
@@ -1223,10 +1223,10 @@ function orphanToTape(s: GameState, parcels: ParcelTable) {
  * draw, the typical firm (the roster's median at the middle of the draw), and
  * roughly where a given bankroll would open on the league table.
  */
-export function competitorOpeningRange(citySize: string, field?: Parameters<typeof fieldRoster>[0]): {
+export function competitorOpeningRange(citySize: string, field?: Parameters<typeof fieldRoster>[0], capital?: RivalCapital): {
   lo: number; hi: number; typical: number; firms: number; rankOf: (cash: number) => number;
 } {
-  const area = sizeAreaScale({ citySize });
+  const area = sizeAreaScale({ citySize }) * rivalCapitalMult(capital);
   const pool = fieldRoster(field, FIRMS);
   const eq = pool.map((f) => f.equity * area).sort((a, b) => a - b);
   const round = (v: number) => Math.round(v / 100_000) * 100_000;
@@ -1244,7 +1244,10 @@ function rosterFor(s: GameState): typeof FIRMS {
   // Powder scales with the map's land area (k²). Same RNG draws as before —
   // only the multiply after the raise changes — so Hamlet / Great City do not
   // re-roll the field, they resize the cheques against a bigger or smaller pond.
-  const area = sizeAreaScale(s);
+  // ...and by how much the town's incumbents raised (the setup page's choice).
+  // `land` is the map alone: it sets how MANY firms; `area` sets their cheques.
+  const land = sizeAreaScale(s);
+  const area = land * rivalCapitalMult(s.setup?.rivalCapital);
   const out: typeof FIRMS = [];
   // WHO OWNS THIS TOWN, if the setup page said (setup.ts FIELDS). The default
   // field is the whole roster and takes exactly the draws it always took; a
@@ -1275,8 +1278,8 @@ function rosterFor(s: GameState): typeof FIRMS {
   // square root of the area, the rest of the gap left for entry to fill as
   // the tape shows it. Maps at or under the standard city draw nothing here
   // and open exactly as they did.
-  if (area > 1) {
-    const extra = Math.round(field.length * (Math.sqrt(area) - 1));
+  if (land > 1) {
+    const extra = Math.round(field.length * (Math.sqrt(land) - 1));
     const used = new Set(field.map((f) => f.name));
     for (let i = 0; i < extra; i++) {
       const fresh = NEW_FIRMS.filter((f) => !used.has(f.name));

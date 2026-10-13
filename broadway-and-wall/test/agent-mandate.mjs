@@ -124,7 +124,12 @@ console.log("\nLEASING PLAN\n");
     base.tiPsf = 0;
     base.freeM = 0;
     base.referred = false;
-    const rival = { ...structuredClone(base), id: Math.max(...choice.lois.map((l) => l.id)) + 1, name: "Competing Tenant" };
+    // An id the engine will not hand out again: max+1 collided with the next
+    // letter the quarter drew (nextLoiId), and removing that letter by id
+    // removed the rival with it.
+    const rivalId = Math.max(choice.nextLoiId ?? 0, ...choice.lois.map((l) => l.id)) + 1;
+    choice.nextLoiId = rivalId + 1;
+    const rival = { ...structuredClone(base), id: rivalId, name: "Competing Tenant" };
     choice.lois = [base, rival];
     choice.agent = true;
     choice.leasingPlan = E.starterPlan({ ...E.STARTER_PLAN_ROW, targetNePct: 0.70 });

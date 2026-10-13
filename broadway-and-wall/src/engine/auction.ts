@@ -27,7 +27,7 @@
 // can read or ignore — passing costs nothing but the bargain, and nothing
 // here ever asks for a second click.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding } from "./types";
+import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding, Rival } from "./types";
 import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
 import { rng, rrange, cycleHot, cycleDown } from "./market";
 import { openReoPortfolio } from "./portfoliosale";
@@ -40,7 +40,7 @@ import { genRentRoll, depositsOn } from "./leasing";
 import { bumpLenderRel } from "./debt";
 import { saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
-import { clearRivalClaims, forgetDeed } from "./rivals";
+import { clearRivalClaims, fitOf, forgetDeed } from "./rivals";
 import { dropDeed, originateRow } from "./rivalDebt";
 import { reinstateFundedForeclosures } from "./workout";
 import { spendable, fundAndBook } from "./credit";
@@ -253,11 +253,16 @@ function roomBid(s: GameState, est: number): { px: number; heads: number } {
 }
 
 /** A named buyer if one on the street can carry it; out-of-town money if not. */
-function thirdPartyTakes(s: GameState, rec: ParcelRecord, px: number): string {
-  const r = (s.rivals ?? []).filter((x) =>
-    x.failedM === undefined && x.cash > px * 0.3
-    && (x.style === "opportunistic" || x.style === "core"))
-    .sort((a, b) => b.cash - a.cash)[0];
+function thirdPartyTakes(s: GameState, parcels: ParcelTable, rec: ParcelRecord, px: number): string {
+  // WHO IS IN THE ROOM: firms whose sheet hunts distress (Distress 55+), the
+  // building fitting what they buy, and the keenest of them takes it — the
+  // ALWAYS-at-the-courthouse shop first. A firm with no sheet keeps its style.
+  const keen = (x: Rival) => x.sheet
+    ? (x.sheet.distress >= 55 ? (x.sheet.distress / 100) ** 2 * (x.rules?.includes("alwaysCourthouse") ? 2 : 1) * fitOf(s, parcels, x, rec, true) : 0)
+    : (x.style === "opportunistic" || x.style === "core" ? 0.5 : 0);
+  const r = (s.rivals ?? [])
+    .filter((x) => x.failedM === undefined && !x.stressMs && x.cash > px * 0.3 && keen(x) > 0)
+    .sort((a, b) => keen(b) * b.cash - keen(a) * a.cash)[0];
   if (r) {
     const equity = Math.min(r.cash, Math.round(px * 0.35));
     r.cash -= equity;
@@ -393,7 +398,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         const paid = Math.round(Math.max(room, lot.debt * 1.01));
         s.cash += lot.debt; logBooks(s, "sold", lot.debt);
         const surplus = Math.max(0, paid - lot.debt);
-        const buyer = thirdPartyTakes(s, rec, paid);
+        const buyer = thirdPartyTakes(s, parcels, rec, paid);
         if (r) {
           r.bbls = r.bbls.filter((b) => b !== n.bbl);
           forgetDeed(r, n.bbl);
@@ -540,7 +545,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     }
     if (room > protect && room >= lot.upset) {
       const paid = room;
-      const buyer = thirdPartyTakes(s, rec, paid);
+      const buyer = thirdPartyTakes(s, parcels, rec, paid);
       if (bid > 0) said(lot.bbl, lot.address, "outbid", bid, paid, buyer,
         `The room went past you. Your deposit came back.`);
       if (r) {

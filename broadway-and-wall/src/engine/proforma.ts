@@ -221,12 +221,20 @@ export function constructionLtc(mix: UseMix, phase: string, creditIdx: number, a
   // eating losses it does not tighten the market's terms — it tightens YOURS,
   // and a bank that has stopped lending stops financing buildings first,
   // because a half-built tower is the worst collateral there is.
-  const app = Math.min(1.05, 0.5 + 0.5 * appetite);
+  const app = 0.5 + 0.5 * appetite;
   // Space-market tightness (vacancy below natural / unmet structural demand)
   // is why banks fund into a shortage — same signal classAppetite already
   // reads. Caps keep this from becoming free leverage in a boom label alone.
-  const space = Math.max(0.9, Math.min(1.12, spaceTight));
-  return Math.max(0, Math.min(0.72, base * tight * app * space * Math.min(1.12, Math.max(0.55, creditIdx))));
+  // THE LEGAL CEILING, NOT A HOUSE ONE (2026-10-13). This stacked four caps
+  // (appetite 1.05, space 0.9-1.12, window 0.55-1.12, and 0.72 on the lot)
+  // and the 0.72 bound 41% of the time: construction leverage could not
+  // loosen in a boom, which is half of how real overbuilding happens. What
+  // actually stops a bank is the supervisory loan-to-value limit for
+  // construction — 80% for commercial and multifamily (Interagency
+  // Guidelines for Real Estate Lending Policies, 12 CFR 365 App. A) — so
+  // that is the ceiling, and the desk's balance sheet, the space market and
+  // the credit window move the advance freely underneath it.
+  return Math.max(0, Math.min(0.80, base * tight * app * spaceTight * creditIdx));
 }
 
 /** Mix-weighted construction advance boost from class vacancy / structural tightness. */

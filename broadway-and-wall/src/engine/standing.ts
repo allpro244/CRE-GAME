@@ -97,6 +97,11 @@ export interface YearReview {
   /** The building whose income grew most over the year, and the one that emptied most. */
   star: { bbl: string; noi0: number; noi1: number } | null;
   worry: { bbl: string; occ0: number; occ1: number } | null;
+  /**
+   * THE COMPETITORS' YEAR (COMPETITORS_PLAN.md §7): the biggest purchase a
+   * competitor made, the firms that went under, and the ones that raised.
+   */
+  street: { deal: { buyer: string; address: string; price: number } | null; failed: string[]; raised: string[] };
 }
 
 /**
@@ -168,7 +173,20 @@ export function yearReview(
     tier0: start.tier !== undefined ? TIER_LABEL[start.tier] ?? null : null,
     tier1: end.tier !== undefined ? TIER_LABEL[end.tier] ?? null : null,
     star, worry,
+    street: competitorYear(s, start.m, end.m),
   };
+}
+
+function competitorYear(s: GameState, m0: number, m1: number): YearReview["street"] {
+  const firms = new Set((s.rivals ?? []).map((r) => r.name));
+  let deal: YearReview["street"]["deal"] = null;
+  for (const c of s.comps ?? []) {
+    if (c.m <= m0 || c.m > m1 || !firms.has(c.buyer)) continue;
+    if (!deal || c.price > deal.price) deal = { buyer: c.buyer, address: c.address, price: c.price };
+  }
+  const failed = (s.rivals ?? []).filter((r) => r.failedM !== undefined && r.failedM > m0 && r.failedM <= m1).map((r) => r.name);
+  const raised = (s.rivals ?? []).filter((r) => r.bornM > m0 && r.bornM <= m1).map((r) => r.name);
+  return { deal, failed, raised };
 }
 
 

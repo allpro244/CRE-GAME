@@ -552,3 +552,19 @@ export const dealsPerYear = (sheet: Sheet) => 1 + Math.round(sheet.capacity / 13
  */
 export const misreadPp = (sheet: Sheet, key: string) =>
   (hash01(key) * 2 - 1) * 1.5 * (1 - sheet.underwriting / 100);
+
+/**
+ * THE FIRM IN WORDS — its most defining traits and its rules. Used where a
+ * sentence is wanted rather than a table: the Jev question state, the card's
+ * one-line read. `n` traits, furthest from the middle first.
+ */
+export function describeSheet(sheet: Sheet, rules: readonly Rule[] = [], n = 4, skip: ReadonlySet<TraitKey> = new Set()): string {
+  const top = TRAITS
+    .filter((t) => !t.hidden && !skip.has(t.key))
+    .map((t) => ({ t, d: sheet[t.key] - 50 }))
+    .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))
+    .slice(0, n)
+    .map(({ t, d }) => (d >= 0 ? t.hi : t.lo));
+  const r = rules.map((x) => RULE_LABEL[x]);
+  return [...top, ...r].join("; ");
+}

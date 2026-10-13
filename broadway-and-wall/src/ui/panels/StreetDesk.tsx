@@ -12,6 +12,8 @@ import { TakePrivateDesk, TakenPrivateRecord } from "@/ui/panels/TakePrivateDesk
 import { poss } from "@/engine/takeprivate";
 import { JevBadge, JevFirmCard, lastJevAct } from "@/ui/panels/JevPanel";
 import { CHARTERS } from "@/ai/jevQuestions";
+import { HeadlinerStrip, RaceChart, FirmSheet } from "@/ui/panels/CompetitorCards";
+import Fold from "@/ui/Fold";
 
 // THE STREET. Who else is buying, what they own, and how much rope they have
 // left. This is not decoration: the appetite number at the top is the same one
@@ -113,6 +115,10 @@ export function TheStreet() {
         </div>
       )}
       <TakenPrivateRecord />
+      {/* THE CAST FIRST (COMPETITORS_PLAN.md §6): who matters right now and
+          what is about to happen to them, then the race, then the full table. */}
+      <HeadlinerStrip onOpen={(id) => setOpen(id)} />
+      <RaceChart />
       {/* THE LEAGUE TABLE. They started where you started — five to eighteen
           million and a hundred years — so the only honest way to read your own
           number is against theirs. */}
@@ -132,6 +138,7 @@ export function TheStreet() {
           );
         })()}
       </div>
+      <Fold id="competitors:table" title="Every competitor" summary={`${marked.filter((x) => x.r.failedM === undefined).length} firms in business, ranked by net equity`} defaultOpen>
       <table className="tbl">
         <thead>
           <tr>
@@ -247,6 +254,7 @@ export function TheStreet() {
                       onFocus={(b) => focus(b, true)}
                       extra={
                         <>
+                          <FirmSheet r={r} />
                           {r.jev && (
                             <div style={{ marginBottom: 8 }}>
                               <div className="page-section" style={{ marginTop: 0 }}>Jev · {CHARTERS[r.jev.charter].label} · the latest period</div>
@@ -328,6 +336,7 @@ export function TheStreet() {
           })}
         </tbody>
       </table>
+      </Fold>
     </>
   );
 }

@@ -23,6 +23,7 @@ import { devMix, dominantOf, farMaxFor } from "@/engine/proforma";
 import { landPencils } from "@/engine/buybox";
 import { productById } from "@/engine/debt";
 import { NATURAL_VAC } from "@/engine/market";
+import { describeSheet } from "@/engine/competitorTraits";
 import type { JevCtx } from "@/engine/jev";
 import * as B from "./buckets";
 import {
@@ -73,6 +74,8 @@ export function buildJevRequest(s0: GameState, parcels: ParcelTable, firmId: str
       cash: B.money(r.cash),
       construction: jobs.length ? `${jobs.length} project${jobs.length === 1 ? "" : "s"} under construction` : "nothing under construction",
       payments: r.stressMs ? `behind on debt payments for ${r.stressMs} months` : "current on all debt payments",
+      // Its own temperament (COMPETITORS_PLAN.md §8.4), so answers stay in character.
+      temperament: r.sheet ? describeSheet(r.sheet, r.rules ?? [], 5) : "as its charter",
     },
     market: {
       cycle: B.phase(e.phase),

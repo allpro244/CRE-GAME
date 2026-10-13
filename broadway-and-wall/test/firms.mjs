@@ -126,7 +126,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
   // The street itself now produces genealogy — a number two leaving a thriving
   // shop — so this assert can actually fail on an unplayed century.
   ok("unplayed centuries produce spinouts", allSpinouts.length >= 1, `${allSpinouts.length} across ${SEEDS.length} seeds`);
-  ok("every spinout carries full genealogy", allSpinouts.every((r) => r.spawnedFrom.firmId && r.spawnedFrom.personName),
+  ok("every spinout carries full genealogy", allSpinouts.every((r) => r.spawnedFrom.firmId && r.spawnedFrom.firmName),
     `${allSpinouts.length} with lineage`);
 }
 

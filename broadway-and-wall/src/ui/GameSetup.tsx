@@ -5,6 +5,7 @@ import { JevSettings } from "@/ui/panels/JevPanel";
 import { CHARTERS, type CharterId } from "@/ai/jevQuestions";
 import { GOALS, type GoalId } from "@/engine/goals";
 import { START_CASH_CHOICES } from "@/engine/types";
+import { competitorOpeningRange } from "@/engine/rivals";
 import {
   DEFAULT_SETUP, FIELDS, HOME_OPTIONS, CLOCK_OPTIONS, CASH_MIN, CASH_MAX, SANDBOX_CASH,
   type GameSetup, type FieldChoice, type HomeChoice,
@@ -237,6 +238,22 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                     }} />
                   <span className="setup-dim">in $M{customCash ? ` → ${usd(d.cash0)}` : ""}</span>
                 </div>
+                {/* WHAT YOU ARE UP AGAINST. The competitors' cheques are drawn
+                    when the town is cut, so this is the range for this town
+                    size and field, not a setting: how much they bring is the
+                    market's, not a difficulty dial. */}
+                {(() => {
+                  const cr = competitorOpeningRange(d.size, d.field);
+                  const cash = d.sandbox ? SANDBOX_CASH : d.cash0;
+                  const rank = cr.rankOf(cash);
+                  const nth = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th"}`;
+                  return (
+                    <div className="setup-dim" style={{ padding: "6px 9px" }}>
+                      Competitors in a town this size open with {usd(cr.lo)}–{usd(cr.hi)} each, about {usd(cr.typical)} typical.
+                      {" "}{usd(cash)} would open around {nth(rank)} of {cr.firms + 1}.
+                    </div>
+                  );
+                })()}
               </div>
               <div className="start-col">
                 <div className="start-col-head">the opening book</div>

@@ -15,7 +15,7 @@ import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifi
 import { firmBook, snap } from "./aibooks";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
-import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg } from "./owners";
+import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
 import { payOffDue, payOffLoan } from "./debt";
 import { originate, quote, productById, stabViewFor, monthlyPayment, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
@@ -548,6 +548,8 @@ export function bidOdds(
   const room = (marketAppetite(s) - 1) * 0.05;
   mid += room;
   if (held) mid -= (relMult(s, held.id) - 1) * 0.04;
+  // ASK PREMIUM (§5a): some holders settle at the mark, some want more.
+  if (held) mid += (holderSheet(s, held).askPremium - 50) / 1000;
   mid = Math.max(0.70, Math.min(1.08, mid));
   // A forced sale is not just cheaper, it is less predictable: a receiver with
   // a deadline and an estate with a lawyer settle in very different places.
@@ -1948,7 +1950,9 @@ export function approachOwner(
     // ...and who you are to THEM. Above 1 is harder. See owners.relMult: it
     // takes several clean closings to undo one bad conversation, which is the
     // honest exchange rate and the reason the register has a memory at all.
-    * (held ? relMult(next, held.id) : 1),
+    * (held ? relMult(next, held.id) : 1)
+    // ATTACHMENT (§5a): how unwilling this holder is to sell at all.
+    * (held ? 0.6 + holderSheet(next, held).attachment / 125 : 1),
   ));
   if (rng(next) < refuseP) {
     next.approaches[bbl] = { q: next.month, refused: true };
@@ -3692,13 +3696,19 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         s.beaten = s.beaten ?? [];
         s.beaten.unshift({ bbl: li.bbl, firmId: buyer.id, firm: buyer.name, m: s.month, yours: talk.yourPrice, theirs: px });
         if (s.beaten.length > 24) s.beaten.length = 24;
+        const beatBefore = (s.street?.[buyer.id]?.beats ?? 0);
         tie(s, buyer.id).beats++;
         s.lastTradeM = s.lastTradeM ?? {};
         s.lastTradeM[li.bbl] = s.month;
+        // The relationship, in one line where it matters (§5).
+        const lastBeat = (s.beaten ?? []).slice(1).find((b) => b.firmId === buyer.id);
+        const history = beatBefore > 0 && lastBeat
+          ? ` It is the ${["", "", "second", "third", "fourth", "fifth"][beatBefore + 1] ?? `${beatBefore + 1}th`} time — they have been bidding against you since ${lastBeat.bbl === li.bbl ? "this same corner" : "the last one they took off you"}.`
+          : "";
         s.news.unshift({
           q: s.month, kind: "warn",
           text: `${buyer.name} came over the top of you at ${rec.address} — ${money(px)} against your ${money(talk.yourPrice)}. `
-            + `Your number was on the street the day you made it. It is their corner now.`,
+            + `Your number was on the street the day you made it. It is their corner now.${history}`,
         });
         continue;
       }

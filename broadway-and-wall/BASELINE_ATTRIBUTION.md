@@ -1,9 +1,55 @@
 # Baseline attribution — the rent level
 
-**Ruler commit:** regenerated after the city-generator overhaul (`SAVE_VERSION` 39).  
-**Previous ruler:** `dc6f0b5` (whole-suite pre-lets + last-suite tours, v38).
+**Ruler commit:** regenerated after the competitor system (COMPETITORS_PLAN.md) and the firms-only removal.  
+**Previous ruler:** `063055b` (rents escalate on realised CPI).
 
 `pnpm baseline:check` compares six seeds x 300 months. Movement is expected; this file says **why**.
+
+---
+
+## Competitors: live trait sheets, drift, holder mini-sheets (COMPETITORS_PLAN.md 1b, 4, 4h)
+
+Every competitor now opens from one of 28 profiles (sheet, rules, quirks),
+buys and builds through `fitOf`, drifts a year at a time, and holds grudges;
+holders carry a hashed mini-sheet whose Readiness scales the exit hazard (mean
+1). Paired against the bit-identical 1a engine (`f466438`) over the same 16
+seeds x 300 months:
+
+| Metric | Paired mean | t | Read |
+|---|---|---|---|
+| `dev.affordableLotShare` | -24% | -1.6 | Not resolved |
+| `land.p90` | +13% | 1.4 | Not resolved |
+| `rentIdx.*` | +3% to +6% | 0.8-1.2 | Not resolved; 11-12 of 16 seeds up |
+| everything else | | < 1.2 | Re-roll |
+
+No level shift resolved. Measured on 1b alone (before drift and holders),
+`city.floorAreaM` was +1.5% (t 2.6): builders whose sites suit them build a
+little more and the cast always carries four. With drift and holder
+readiness on top it no longer resolves (t < 1).
+
+---
+
+## Firms only: staff, principals and person traits removed (`345445f`)
+
+Owner decision (ECONOMY.md, "Firms only"). The baseline runs with no player,
+so the player-side changes (neutral management, full G&A) do not reach it. What
+does is the competitor bid weight `rivalTemperamentWeight` (Bandwidth x Access
+of a firm's principal), which decided who won contested tape sales; removing it
+re-rolls who buys what. Paired against `71bd446` over 16 seeds x 300 months
+(seeds 550991 12007 73303 4242 91117 20603 11 22 33 44 55 66 77 88 99 7777):
+
+| Metric | Paired mean | t | Read |
+|---|---|---|---|
+| `rail.occ.office.cap` 0.18 -> 0.24 | +33% | 2.1 | Marginal; 6 of 16 seeds up |
+| `city.buildings` | -0.7% | -2.0 | Marginal |
+| everything else | within +-11% | < 1.7 | Re-roll: seeds move both ways |
+
+No level shift resolved. The 6-seed `baseline:check` moved 26 of 45 metrics,
+which is the seed re-roll the header of `tools/baseline.mjs` warns about.
+
+Phase 1a of COMPETITORS_PLAN.md (`f466438`, every competitor decision reads
+`paramsOf(r)`) is required to be bit-identical to the removal: same 16 seeds,
+same numbers.
 
 ---
 

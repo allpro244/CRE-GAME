@@ -47,6 +47,9 @@ export default function YearReview() {
             {moved !== 0 && <span className={moved > 0 ? "pos" : "neg"}> {moved > 0 ? "▲" : "▼"}{Math.abs(moved)}</span>}
           </span>
           {r.tier1 && (<><span>Standing</span><span>{r.tier0 && r.tier0 !== r.tier1 ? <>{r.tier0} → <strong>{r.tier1}</strong></> : r.tier1}</span></>)}
+          {r.street.deal && (<><span>Competitors&rsquo; deal of the year</span><span>{r.street.deal.buyer} · {r.street.deal.address} · {usd(r.street.deal.price)}</span></>)}
+          {r.street.failed.length > 0 && (<><span>Went under</span><span className="neg">{r.street.failed.join(", ")}</span></>)}
+          {r.street.raised.length > 0 && (<><span>New competitors</span><span>{r.street.raised.join(", ")}</span></>)}
           <span>Buildings, after debt</span>
           <span className={r.cashFromBuildings < 0 ? "neg" : ""}>{usd(r.cashFromBuildings)}</span>
           <span>Office overhead</span>

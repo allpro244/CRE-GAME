@@ -43,6 +43,11 @@ export const MODULES = [
   "setup",
   // firmCapital — institutional standing readout (ATTR_CONTRACT Phases 5–6).
   "firmCapital",
+  // competitorTraits — the competitor's sheet, rules, quirks and profiles.
+  "competitorTraits",
+  // competitorReads — what you know of each competitor's sheet; storyline —
+  // headliners, story stages and what's coming (display only).
+  "competitorReads", "storyline",
   // books carries the balance-sheet stamp and month→year view helpers the
   // Books page uses for monthly income and last year's close.
   "books",

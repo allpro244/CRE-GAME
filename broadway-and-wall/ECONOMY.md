@@ -2381,6 +2381,39 @@ dev.affordableLotShare −9.8% ± 10.4%, land.p90 −9.9% ± 14.8% and land.med
 39 metrics moved by more than 0.5%) because the rivals stream now draws in
 months it used to skip. `BASELINE.json` is regenerated.
 
+# FIRMS ONLY — no people, by owner decision (supersedes the section below)
+
+The owner's call: there are no people in this game, only firms. The staff
+desk was a skeleton the owner did not want in the game yet, and the four
+person traits (Deal sense, Bandwidth, Rigor, Access) were the wrong base for a
+competitor. So:
+
+**Removed.** `staff.ts` (payroll, hiring pool, capacity, poaching, the leasing
+team handoff), `people.ts` (the player principal, competitor principals,
+careers, founder people), the Staff page, PersonCard and the People lookup.
+Spinouts stay, as firm events: a team leaves a competitor and raises.
+
+**What it costs and why that is honest.**
+- *Management.* Buildings run at the market's professionally-managed
+  standard: the stamps that moved controllable opex, renewals, leasing odds,
+  rent and tenant care, and the construction-manager factor on site risk, are
+  gone. Each was 1.0 at a mid principal; the spread around it came from a
+  person who no longer exists.
+- *Overhead.* The office is whole again in G&A: the fixed base plus 0.28% of
+  gross asset value. The staff split had cut the player's proportional rate to
+  55% on the promise that salaries would carry the rest; with no payroll that
+  was management for free. Competitors were already charged the full rate in
+  their own tick, so the league table now measures both sides one way, and the
+  owner and competitor statements (`ownership.ts`) print the same rate the
+  cash pays.
+- *Competitor bidding.* The principal temperament weight on contested tape
+  sales is gone. Firm-level differences come from the trait sheet instead
+  (COMPETITORS_PLAN.md).
+
+Old saves strip every removed field on load (`migrateFirmsOnly`).
+
+---
+
 # NO AGE, NO MORTALITY — removed by owner decision
 
 The owner's call, explicit and final: *"remove the age from everything … in

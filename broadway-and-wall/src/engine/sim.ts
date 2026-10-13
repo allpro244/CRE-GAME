@@ -27,7 +27,7 @@ import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
-import { initRivals, tickRivals, fundJobs, gradeOf, ownerOf } from "./rivals";
+import { initRivals, tickRivals, fundJobs, gradeOf, ownerOf, settleOpeningLeverage } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy, capitalRatio, targetCapital } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -214,6 +214,7 @@ export function newGame(
   // on a block is part of what makes that block valuable, and the generator's
   // gravity score did not know that. See reconcileDemand.
   if (parcels) reconcileDemand(s, parcels);
+  if (parcels) settleOpeningLeverage(s, parcels);
   // The family's buildings, if any, after the rivals have taken theirs.
   if (parcels && setup?.inherit) {
     inheritPortfolio(s, parcels);

@@ -1,6 +1,10 @@
 import { useEffect } from "react";
 import { useStore } from "@/state/store";
 import { stopRule } from "@/engine/sim";
+import { beatsBetween } from "@/engine/storyline";
+
+/** Headline stops spent this quarter — the pacing cap for a spectator. */
+const beatBudget = { q: -1, n: 0 };
 
 /** Milliseconds per month at each speed, start to start. The tick runs in the sim worker. */
 const PACE: Record<1 | 2, number> = { 1: 1000, 2: 330 };
@@ -48,6 +52,19 @@ export default function AutoPlay() {
           // A spectator is not at the desk: nothing of the player's stops the clock.
           const why = next.spectator ? undefined : stop(next);
           if (why) { pause(why.label, why.key, why.critical); return; }
+          // BUT THE CITY'S STORY DOES (COMPETITORS_PLAN.md §7): a spectator's
+          // clock stops on a headline beat — a firm going under, falling into
+          // crisis, a tower topping out — at most three a quarter.
+          if (next.spectator) {
+            const beats = beatsBetween(prev, next);
+            const q = Math.floor(next.month / 3);
+            if (beatBudget.q !== q) { beatBudget.q = q; beatBudget.n = 0; }
+            if (beats.length && beatBudget.n < 3) {
+              beatBudget.n++;
+              pause(`BREAKING: ${beats[0]}`);
+              return;
+            }
+          }
           if (next.gameOver) { useStore.setState({ autoplay: 0 }); return; }
         }
         const pace = PACE[useStore.getState().autoplay as 1 | 2] ?? PACE[1];

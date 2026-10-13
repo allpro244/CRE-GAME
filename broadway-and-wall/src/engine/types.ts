@@ -2319,6 +2319,12 @@ export interface Rival {
   profile?: import("./competitorTraits").ProfileId;
   /** The district its book is thickest in — home turf. */
   home?: string;
+  /** Year-end net equity, [year index, equity] — the race chart's line. */
+  eqHist?: [number, number][];
+  /** Month the hidden backer (quirk) committed equity; it does so once. */
+  backerUsedM?: number;
+  /** The competitor this firm is feuding with (quirk). */
+  feud?: string;
   /**
    * LP CAPITAL COMMITTED AND NOT YET CALLED — the young fund's cushion.
    * Set once at the raise (30-50% of the first close, drawn per fund),
@@ -2775,6 +2781,11 @@ export interface GameState {
    * — the raise can still refuse. See FounderBid.
    */
   founderBids?: FounderBid[];
+  /**
+   * WHAT YOU KNOW ABOUT EACH COMPETITOR — a band per trait, by firm id
+   * (engine/competitorReads.ts). Display only; nothing in the economy reads it.
+   */
+  reads?: Record<string, Partial<Record<import("./competitorTraits").TraitKey, [number, number]>>>;
   /**
    * HOW MANY MONTHS RUNNING NOBODY HAS BEEN AT THE DOOR.
    *

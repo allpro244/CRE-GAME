@@ -57,7 +57,8 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Rival, SellerKind } from "./types";
 import { START_YEAR } from "./types";
 import { resolveRec, holdingValue } from "./value";
-import { ownerOf } from "./rivals";
+import { ownerOf, seatProfile, grudgeOf, NEVER_SELLS_TO_YOU } from "./rivals";
+import { PROFILE_OF } from "./competitorTraits";
 import { isCivicLand } from "./demand";
 
 /** Deterministic 0..1 from a string. Never touches the RNG stream. */
@@ -444,6 +445,60 @@ export function relOf(s: GameState, id: string): HolderRel {
   return s.holderRel?.[id] ?? {};
 }
 
+// ------------------------------------------------------------ the mini-sheet
+//
+// COMPETITORS_PLAN.md §5a. A holder is not a competitor and never bids, but it
+// is not an archetype either: four numbers, drawn by hash off the run seed and
+// the holder (no RNG stream — the register's own discipline), refine its kind.
+//
+//   Attachment  how unwilling it is to sell at all — the approach odds
+//   Ask premium how far above value it prices — the reserve it settles at
+//   Memory      how long a lowball keeps its doors shut — the offend window
+//   Readiness   how close it is to a sale event — its exit hazard. Redrawn each
+//               decade, because a family's readiness to sell is a stage of its
+//               life, and shown as a tell when it runs high.
+
+export interface HolderSheet { attachment: number; askPremium: number; memory: number; readiness: number }
+
+const KIND_CENTRE: Record<string, Partial<HolderSheet>> = {
+  estate: { attachment: 35, readiness: 65, memory: 40 },
+  local: { attachment: 70, askPremium: 60, memory: 70 },
+  institution: { attachment: 35, askPremium: 45, memory: 35, readiness: 55 },
+  partnership: { attachment: 45, readiness: 55, memory: 55 },
+  developer: { attachment: 30, askPremium: 55, memory: 40, readiness: 60 },
+};
+
+export function holderSheet(s: GameState, h: Holder): HolderSheet {
+  const c = KIND_CENTRE[h.kind] ?? {};
+  const k = `${s.seed}:holder:${h.id}`;
+  const draw = (name: keyof HolderSheet, extra = "") =>
+    Math.round(Math.max(1, Math.min(100, (c[name] ?? 50) + (hash01(`${k}:${name}${extra}`) * 2 - 1) * 25)));
+  return {
+    attachment: draw("attachment"),
+    askPremium: draw("askPremium"),
+    memory: draw("memory"),
+    readiness: draw("readiness", `:${Math.floor(s.month / 120)}`),
+  };
+}
+
+/** Readiness at or over this is a tell the market can see. */
+export const READY_TELL = 78;
+
+/**
+ * THE HOLDERS LIKELY TO COME TO MARKET — the foreshadowing line (§5a). Major
+ * and middle holders, not yet through an exit, with readiness past the tell.
+ */
+export function holdersLikelyToSell(s: GameState, parcels: ParcelTable): { h: Holder; n: number }[] {
+  const out: { h: Holder; n: number }[] = [];
+  for (const h of register(s, parcels)) {
+    if (h.tier === "small" || s.holderExit?.[h.id] !== undefined) continue;
+    if (holderSheet(s, h).readiness < READY_TELL) continue;
+    const n = holdingsOf(s, parcels, h.id).length;
+    if (n) out.push({ h, n });
+  }
+  return out.sort((a, b) => b.n - a.n);
+}
+
 /** Shared copy for every acquire door that reads holder memory. */
 export function coldRefuseMsg(held: Holder): string {
   return `${held.name} will not sell to you. Whatever happened between you, they have not forgotten it. `
@@ -452,6 +507,12 @@ export function coldRefuseMsg(held: Holder): string {
 
 /** Named holder of this deed who is refusing you today, or null. */
 export function coldOnDeed(s: GameState, parcels: ParcelTable, bbl: string): Holder | null {
+  // A COMPETITOR CAN EARN "NEVER SELLS TO YOU" (COMPETITORS_PLAN.md §5): a
+  // grudge deep enough and the answer is no on every door, until it fades.
+  const firm = ownerOf(s, bbl);
+  if (firm && firm.failedM === undefined && grudgeOf(s, firm) >= NEVER_SELLS_TO_YOU) {
+    return { id: firm.id, name: firm.name, kind: "institution", tier: "major", since: 0, note: "" };
+  }
   const held = holderOf(s, parcels, bbl);
   if (held && isCold(s, held.id)) return held;
   return null;
@@ -501,7 +562,10 @@ export function offend(s: GameState, id: string, months: number, parcels?: Parce
   if (!s.holderRel) s.holderRel = {};
   const rel = s.holderRel[id] ?? {};
   const n = (rel.offences ?? 0) + 1;
-  const cold = Math.round(months * (1 + 0.5 * (n - 1)));
+  // MEMORY (§5a): a family with a long one keeps the door shut longer.
+  const held = parcels ? register(s, parcels).find((x) => x.id === id) : undefined;
+  const memory = held ? holderSheet(s, held).memory : 50;
+  const cold = Math.round(months * (1 + 0.5 * (n - 1)) * (0.5 + memory / 100));
   s.holderRel[id] = {
     ...rel,
     offences: n,
@@ -654,7 +718,11 @@ export function tickHolders(
   if (!h) return { bbls: [], distress: false };
   // A holder who has already been through this does not do it twice.
   if (s.holderExit?.[h.id] !== undefined) return { bbls: [], distress: false };
-  const hz = (EXIT_HAZARD[h.kind] ?? 0.03 / 12) * (h.tier === "major" ? 0.7 : 1) * reg.length;
+  // READINESS (§5a) scales the kind's hazard: 0.5x for a holder nowhere near
+  // it, 1.5x for one already showing the tell. Mean 1, so the demography's
+  // aggregate rate is the same; who goes first is not.
+  const hz = (EXIT_HAZARD[h.kind] ?? 0.03 / 12) * (h.tier === "major" ? 0.7 : 1) * reg.length
+    * (0.5 + holderSheet(s, h).readiness / 100);
   if (rng(s) > hz) return { bbls: [], distress: false };
   // BUILDINGS, NOT THE DIRT. The register covers vacant lots now — every deed
   // in town has a name on it — and an exit event must not silently start
@@ -723,6 +791,9 @@ export function tickHolders(
     };
     if (!s.rivals) s.rivals = [];
     s.rivals.push(firm);
+    // An estate kept is a dynasty; a partnership bought out is a value-add shop.
+    seatProfile(s, firm, PROFILE_OF[h.kind === "estate" ? "dynasty" : "valueAdd"]);
+    firm.style = heirStyle;
     // The draw stays (one step, so the stream is not re-rolled). It used to
     // seed the heir's career; there are no people now (ECONOMY.md "Firms only").
     void rng(s);

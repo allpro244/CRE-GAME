@@ -459,3 +459,22 @@ Suggestions, not part of the approved scope until picked:
 Approved: the plan as written, the trait list (§2.1), the profiles (§3.1), the
 holder section (§5a). Build order: §9 as listed. §10 ideas stay out of scope
 until picked.
+
+---
+
+## 12. Build status
+
+| Phase | State | Where |
+|---|---|---|
+| Firms-only removal | Done; paired 16 seeds: a re-roll, no level shift | `345445f`, BASELINE_ATTRIBUTION.md |
+| 0 · rename | Done | `f466438` |
+| 1a · sheets read everywhere | Done; **bit-identical** (720 of 720 values, 16 seeds) | `engine/competitorTraits.ts`, `paramsOf` |
+| 1b · live traits | Done: class/where/scale/quality/renovation/assembly fit in `rivalBuys` and builders' site choice; capacity (deals a year); underwriting misreads; reach (early looks); rules; 28 profiles; the cast with the city check; new firms by cycle; spinouts inherit and feud; heirs get profiles; Jev sees the temperament | `rivals.ts` (`fitOf`, `castRoster`, `seatProfile`) |
+| Quirks | Live: corner, champion, trophy hunter, landmark, feuding, backer (hidden until used), patient seller, late payer, loyal bank. **Label only so far:** copycat | `competitorTraits.ts` `siteFit`, `rivals.ts` |
+| 2 · estimates, card, page | Done: reads narrow on trades, prints, groundbreaks, duress sales and time; the firm sheet in the drawer; headliner strip; race chart; the table in a fold | `engine/competitorReads.ts`, `ui/panels/CompetitorCards.tsx` |
+| 3 · story layer | Done: roles, arcs, what's coming, spectator stops (three a quarter), map crisis tint, year-review lines | `engine/storyline.ts`, `AutoPlay.tsx`, `MapView.tsx` |
+| 4 · relationships, drift | Done: grudge with fading memory; a grudge leans into listings you are negotiating (inside its discipline); deep grudge = NEVER sells to you; the "since the last one" line; annual drift with relabel news | `grudgeOf`, `driftYear` |
+| 4h · holders | Done: mini-sheet (attachment, ask premium, memory, readiness), readiness scales exit hazard (mean 1), "likely to come to market" on Owners and gold on the lens, "original builder" wording. **Not built:** the competitor-to-holder bridge | `owners.ts` `holderSheet` |
+| Start menu | Competitors' opening range and your likely rank, by town size | `competitorOpeningRange`, `GameSetup.tsx` |
+| 5 · new mechanics | **Not built:** office-to-residential conversions (9), loan-to-own (20), build-to-suit tenant poaching (8), raider takeovers (25). Assembly is the weighting and ALWAYS-own-block only; holdout pricing on your lot is not built | — |
+| Jev leaderboard merge | **Kept separate, on purpose:** the match page's table reports Jev's decisions (charter, acted / passed / scripted, the decision log), not the league. The Competitors table already carries `JevBadge`, so there is one league table | `JevPanel.tsx` |

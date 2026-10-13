@@ -67,6 +67,8 @@ export const MODULES = [
   "ownership",
   // supply is the one project queue shared by map deliveries and the economy.
   "supply",
+  // stories is the paper: features mined from the deed histories, read-only.
+  "stories",
   // tax carries property-assessment appeals and board decisions.
   "tax",
   // history carries permanent sparse property chronicles.

@@ -136,7 +136,7 @@ export default function GamePanels() {
   const title = page === "portfolio" ? "Portfolio"
     : page === "deals" ? "The Deals Desk"
     : page === "books" ? "The Books"
-    : page === "news" ? "The Tape"
+    : page === "news" ? "News"
     : page === "leasing" ? "Leasing & Occupancy"
     : page === "debt" ? "Debt"
     : page === "property" ? (propAddr ?? "Property")
@@ -161,7 +161,7 @@ export default function GamePanels() {
   const subtitle = page === "portfolio" ? "Value, income, concentration and the shape of what you own."
     : page === "deals" ? "Every live negotiation, bid, contract and clock on your desk."
     : page === "books" ? "Cash movement, operating results and the record of the firm."
-    : page === "news" ? "What happened — the wire's headlines and the closed sales."
+    : page === "news" ? "The stories buried in the city's records, the wire's headlines and the closed sales."
     : page === "leasing" ? "Occupancy, expirations and the mandate you have delegated."
     : page === "debt" ? "Coverage, maturities, pricing and refinancing risk across the book."
     : page === "property" ? "The complete operating, financing and development record."

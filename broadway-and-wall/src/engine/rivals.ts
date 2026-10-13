@@ -49,6 +49,7 @@ import { sizeAreaScale } from "./cityscale";
 import { money } from "./money";
 import { FUND_INVEST_M, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { observe, yearOfWatching } from "./competitorReads";
+import { assembledBlock, reviewThesis, thesisFit, thesisSellMult } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
 import { deskWithRoom, renewRow, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
 import {
@@ -1453,9 +1454,17 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
        * player's side got in "devPencils must read what the desk reads".
        */
       const noi = noiAfterTaxYr(rec, s.econ, initialCondition(rec), v);
+      // AND STRESS-TESTED, the way a bank sizes a loan it will hold through a
+      // cycle: debt service at the street coupon plus 200bp, on a thirty-year
+      // schedule, covered 1.25x. The opening book is the town's existing paper
+      // and has to have survived the rates it was written in — measured, most
+      // firm deaths clustered in the first seven years of a town that opened
+      // into rising rates, on paper sized to the opening month's coupon alone.
+      const stressK = (() => { const i = (s.econ.indexRate + RATE_SPREAD + 2) / 100 / 12; return (i / (1 - Math.pow(1 + i, -360))) * 12; })();
       const sized = Math.min(
         Math.round(v * f.ltv),
         streetRefiProceeds(s, v, Math.max(0, noi), f.ltv).principal,
+        Math.round(Math.max(0, noi) / (1.25 * stressK)),
       );
       const equityIn = v - sized;
       if (equityIn > spend) { if (spend < f.equity * 0.08) break; else continue; }
@@ -1502,6 +1511,10 @@ export function settleOpeningLeverage(s: GameState, parcels: ParcelTable) {
     const ltv = m.aum > 0 ? r.debt / m.aum : 0;
     if (ltv + 0.05 > 0.5) r.rules = (r.rules ?? []).filter((x) => x !== "neverAbove50");
     r.sheet.leverage = Math.max(r.sheet.leverage, invTrait(Math.min(0.95, ltv + 0.05), LEVERAGE_RANGE[0], LEVERAGE_RANGE[1]) + 1);
+    // Every firm opens the game with a plan.
+    const pr = paramsOf(r);
+    reviewThesis(s, parcels, r, { maxLtv: pr.maxLtv, lev: ltv, classes: pr.classes, builds: pr.build > 0 });
+    r.rateYr = s.econ.indexRate;
   }
 }
 
@@ -1777,7 +1790,10 @@ export function fitOf(s: GameState, parcels: ParcelTable, r: Rival, rec: ParcelR
   // the districts where your book is — two or more of your buildings, in a
   // year your net worth rose — because that is where somebody is making money.
   const copy = r.quirks?.includes("copycat") && playerHotDistricts(s, parcels).has(rec.district) ? 1.3 : 1;
-  return feud * copy * siteFit(r.sheet, r.rules, r.quirks, {
+  // THE PLAN (strategy.ts): focus on its thesis's class and district, the
+  // block an assembler is buying toward, or nothing while it pays down debt.
+  const plan = thesisFit(r, { cls: land ? "land" : rec.class, district: rec.district, block: rec.block, distress });
+  return plan * feud * copy * siteFit(r.sheet, r.rules, r.quirks, {
     cls: land ? "land" : rec.class,
     loc: Math.max(0, Math.min(1, demandLinear(rec.demandScore) / 100)),
     sf: land ? rec.lotArea : rec.bldgArea,
@@ -1842,9 +1858,35 @@ function driftYear(s: GameState, r: Rival) {
     }
   };
   const before = nearestProfile(r.sheet).label;
-  if (ch < -0.33) move({ leverage: -12, panic: -8, discipline: 8, cycle: -6 });
-  else if (ch > 0.4) move({ leverage: 5, scale: 5, discipline: -5, capacity: 4 });
-  else return;
+  // LESSONS FROM WHAT ACTUALLY HAPPENED. Drift used to read one number — the
+  // year's equity change — and nudge the same traits whatever caused it. A
+  // firm learns from the cause: a squeeze it walked into on borrowed money
+  // makes it lever less and think harder; a year made on distress makes it
+  // hunt distress; a building that paid off makes it build. Each lesson goes
+  // on its record, so its character has a history you can read.
+  const y = START_YEAR + Math.floor(s.month / 12) - 1;
+  const lev = (r.aum ?? 0) > 0 ? r.debt / r.aum! : 0;
+  const learn = (text: string) => { (r.lessons ??= []).push({ y, text }); if (r.lessons.length > 6) r.lessons.shift(); };
+  const delivered = Object.values(r.deliveredM ?? {}).some((m) => m > s.month - 12);
+  const burned = (r.yrStressMax ?? 0) >= 3 || ch < -0.25;
+  const distressYear = (r.yrDistressBuys ?? 0) >= 2;
+  r.yrStressMax = 0; r.yrDistressBuys = 0;
+  if (burned && (r.sheet.leverage >= 55 || lev > 0.65)) {
+    move({ leverage: -10, discipline: 8, panic: -4 });
+    learn(`Burned by leverage in ${y} — has run lighter since`);
+  } else if (ch > 0.25 && distressYear) {
+    move({ distress: 8, cycle: -4 });
+    learn(`Made its year on distress in ${y} — hunts it harder now`);
+  } else if (ch > 0.2 && delivered) {
+    move({ build: 6, capacity: 2 });
+    learn(`A building it put up in ${y} paid off — it builds more`);
+  } else if (ch < -0.33) {
+    move({ leverage: -12, panic: -8, discipline: 8, cycle: -6 });
+    learn(`Lost a third of its equity in ${y}`);
+  } else if (ch > 0.4) {
+    move({ leverage: 5, scale: 5, discipline: -5, capacity: 4 });
+    learn(`Had the year of its life in ${y} — and is acting like it`);
+  } else return;
   const after = nearestProfile(r.sheet).label;
   if (after !== before) {
     s.news.unshift({
@@ -2100,7 +2142,12 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   }
   if (!n) { r.occ = undefined; return; }
   r.mktOcc = target / n;
-  target = r.mktOcc * (0.965 + 0.05 * care.lease);
+  // A BOOK BIGGER THAN THE FIRM CAN RUN. Capacity is people as well as
+  // deals: past `manageable` buildings (6 + 0.4 x Capacity — 26 at 50, 42 at
+  // 90) leasing slips half a point of occupancy a building, up to eight.
+  const manageable = r.sheet ? 6 + 0.4 * r.sheet.capacity : Infinity;
+  const stretched = Math.min(0.08, 0.005 * Math.max(0, r.bbls.length - manageable));
+  target = r.mktOcc * (0.965 + 0.05 * care.lease) - stretched;
   if (r.occ === undefined) r.occ = target;
   r.occ += (target - r.occ) * 0.055 + rrange(s, -0.004, 0.004, "rivals");
   // AN ANCHOR WALKS. Rare, expensive, and the reason a portfolio occupancy is
@@ -2776,6 +2823,7 @@ function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
  * sitting on and puts up the best of it.
  */
 function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
+  const assembled = assembledBlock(r, parcels);
   if (paramsOf(r).build <= 0) return;
   if (!canCarryAnother(s, r)) return;
   if (r.sheet && (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length >= paramsOf(r).jobs) return;
@@ -2802,7 +2850,9 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
       // the land's value; those go first.
       const read = landRead(rec, s.econ);
       const pencils = read.winner === "builder" && (read.scheme?.psf ?? 0) > 0;
-      const score = (pencils ? 1e6 : 0) + rec.demandScore + rng(s, "rivals") * 20;
+      // AN ASSEMBLER BUILDS ON THE BLOCK IT ASSEMBLED, first (strategy.ts).
+      const onBlock = assembled && rec.block === assembled ? 2e6 : 0;
+      const score = onBlock + (pencils ? 1e6 : 0) + rec.demandScore + rng(s, "rivals") * 20;
       if (!best || score > best.score) best = { bbl, rec, redev: false, score };
       continue;
     }
@@ -3443,6 +3493,37 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
   // over the tape (test/appraisal.mjs; the voluntary listing made this move
   // long ago, HANDOFF 0f).
   const v = conveyedValue(s, sell.rec, sell.bbl, true, assetGrade(r, sell.rec));
+  // THE QUIET CALL FIRST. A sponsor with a few weeks of road left would rather
+  // sell to one buyer it can name than put "motivated" on the tape and have
+  // every vulture in town price its failure. If you are a buyer it can name —
+  // you own buildings here, or you have traded with it — it rings you before
+  // the listing goes up, and you alone can take it for two months. How much it
+  // gives away is how desperate it is: months in arrears and how far over its
+  // own covenant it is take the price from 95 cents of the deed to 75. A
+  // secretive firm (Secrecy) is likelier to keep it off the tape; a firm you
+  // insulted is not calling you at all.
+  const t = s.street?.[r.id];
+  const credible = Object.keys(s.holdings).length > 0 || !!t?.deals;
+  const secrecy = (r.sheet?.secrecy ?? 50) / 100;
+  if (credible && !(t?.insults) && !r.rules?.includes("neverSellsToPlayer")
+    && rng(s, "rivals") < 0.25 + 0.45 * secrecy) {
+    const lev = (r.aum ?? 0) > 0 ? r.debt / r.aum! : 1;
+    const desperate = Math.max(0, Math.min(1, (r.stressMs ?? 0) / 8 + Math.max(0, lev - paramsOf(r).maxLtv) * 2));
+    const ask = Math.round(v * (0.95 - 0.20 * desperate) / 1000) * 1000;
+    r.dumped = (r.dumped ?? 0) + 1;
+    s.listings.push({
+      bbl: sell.bbl, ask, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id,
+      earlyUntilM: s.month + 2, quietFrom: r.name,
+    });
+    s.news.unshift({
+      q: s.month, kind: "deal", bbl: sell.bbl,
+      text: `${r.name} rang you directly. They need money and they would rather not say so on the tape: `
+        + `${sell.rec.address} is yours at ${money(ask)}, ${Math.round((1 - ask / Math.max(1, v)) * 100)}% under what it would appraise at, `
+        + `for two months before anybody else hears the address. `
+        + (desperate > 0.6 ? `They sounded like people with a date on the calendar.` : `They sounded tired, not desperate — yet.`),
+    });
+    return true;
+  }
   const px = Math.round(v * rrange(s, ...DURESS_BAND));
   r.dumped = (r.dumped ?? 0) + 1;
   // The deed stays with them until somebody buys it — a firm selling under
@@ -3884,6 +3965,18 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     startOwnJob(s, parcels, r, ci);
     const { aum, noiYr, landV, byBbl } = markRival(s, parcels, r);
     r.aum = Math.round(aum);
+    // A CONTRARIAN WATCHES THE WINDOW EVERY MONTH, not on the annual review:
+    // the moment credit shuts is the moment it has been waiting for, and the
+    // moment it reopens is the moment to stop (strategy.ts).
+    if (r.sheet && r.sheet.cycle < 35 && s.month % 12 !== 0) {
+      const ciNow = s.econ.creditIdx ?? 1;
+      const k = r.thesis?.kind;
+      if ((ciNow < 0.92 && k !== "contrarian" && k !== "deleverage") || (ciNow >= 1 && k === "contrarian")) {
+        const pr = paramsOf(r);
+        const line = reviewThesis(s, parcels, r, { maxLtv: pr.maxLtv, lev: aum > 0 ? r.debt / aum : 0, classes: pr.classes, builds: pr.build > 0 });
+        if (line) s.news.unshift({ q: s.month, kind: "info", text: line });
+      }
+    }
     // Absorption / rivalBuys used to call markRival again for every bidder on
     // every trade the same month — a second full walk of the street's book.
     // Publish the mark here; buyers read it off the firm.
@@ -3927,6 +4020,15 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       if (r.eqHist.length > 150) r.eqHist.shift();
       yearOfWatching(s, r, sheetOf(r));
       driftYear(s, r);
+      // THE PLAN, reviewed once a year (strategy.ts).
+      {
+        const pr = paramsOf(r);
+        const line = reviewThesis(s, parcels, r, {
+          maxLtv: pr.maxLtv, lev: aum > 0 ? r.debt / aum : 0, classes: pr.classes, builds: pr.build > 0,
+        });
+        if (line) s.news.unshift({ q: s.month, kind: "info", text: line });
+      }
+      r.rateYr = s.econ.indexRate;
       const depr = (r.basis ?? aum) * 0.7 / 33;
       const taxable = noiYr - interest * 12 - depr;
       if (taxable > 0) {
@@ -4168,9 +4270,21 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // until it is nearly there.
     const shS = r.sheet;
     const holdW = shS ? Math.max(0.15, 1.75 - 1.5 * shS.hold / 100) : (r.style === "family" || r.style === "owneruser" || r.style === "foreign" ? 0.25 : 1);
-    const prudent = shS && lev > st.maxLtv - 0.12 * (shS.discipline / 100) ? 1 + 4 * (shS.discipline / 100) : 1;
-    const trimBase = (0.018 + 0.052 * hotW) * (softBook ? 1.85 : 1) * holdW * prudent;
-    if (r.bbls.length > (prudent > 1 ? 1 : 4) && !r.stressMs && !r.rules?.includes("neverSells") && rng(s, "rivals") < trimBase) {
+    //
+    // RATES RISING ARE A WARNING A CAREFUL FIRM TAKES. When the index is a
+    // point or more above where it stood at the firm's last annual review,
+    // a disciplined shop doubles its cushion — the squeeze comes at the
+    // refinancing, and it would rather sell before it than at it.
+    const rising = (s.econ.indexRate - (r.rateYr ?? s.econ.indexRate)) >= 1;
+    const prudent = shS && lev > st.maxLtv - (rising ? 0.24 : 0.12) * (shS.discipline / 100) ? 1 + 4 * (shS.discipline / 100) : 1;
+    // SELLING INTO STRENGTH is a disciplined habit: a 90 reads a hot market
+    // twice as strongly as a 50, and a 10 barely reads it at all — it holds at
+    // the top. The plan bends it too: a harvester sells into the heat, a firm
+    // paying down debt sells its weakest (strategy.ts).
+    const heatW = shS ? 0.2 + 1.6 * shS.discipline / 100 : 1;
+    const trimBase = (0.018 + 0.052 * hotW * heatW) * (softBook ? 1.85 : 1) * holdW * prudent * thesisSellMult(r);
+    const mustSell = prudent > 1 || r.thesis?.kind === "deleverage";
+    if (r.bbls.length > (mustSell ? 1 : 4) && !r.stressMs && !r.rules?.includes("neverSells") && rng(s, "rivals") < trimBase) {
       // Sell the WEAKEST ticket, not a random one: lowest mark yield, and
       // off-mandate classes first. Random trim put good assets on the tape
       // while dogs stayed on the book.
@@ -4302,6 +4416,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     }
     // WHICH LOANS WENT UNPAID (rivalDebt.markPayments): what the account is
     // short after the line falls on the buildings that carry themselves least.
+    r.yrStressMax = Math.max(r.yrStressMax ?? 0, r.stressMs ?? 0);
     markPayments(s, r, Math.max(0, -r.cash), svc.byRow,
       (b) => byBbl[b]?.noi ?? 0, (b) => extendedTo(r, b) !== undefined);
     // A NEGATIVE BALANCE AFTER THE LINE IS A MISSED PAYMENT. Not a mark, not a
@@ -4695,7 +4810,11 @@ export function rivalBuys(
     // its committee will not buy somebody else's failure, at any price.
     if (isDistress && r.sheet && r.sheet.distress < 25) continue;
     // A sloppy committee misreads the yield, consistently, by firm and month.
-    let fitPp = spreadPp + (r.sheet ? misreadPp(r.sheet, `${r.id}:${rec.bbl}:${s.month}`) : 0);
+    // ITS OWN STREETS IT READS WELL (Home turf): in its home district the
+    // committee's error shrinks by up to four fifths, because it knows what the
+    // building next door actually lets for.
+    const local = r.sheet && r.home === rec.district ? 1 - 0.8 * r.sheet.homeTurf / 100 : 1;
+    let fitPp = spreadPp + (r.sheet ? misreadPp(r.sheet, `${r.id}:${rec.bbl}:${s.month}`) * local : 0);
     if (builds) {
       const d = dirtCase();
       if (!d?.clears && !isDistress) continue;
@@ -4731,6 +4850,24 @@ export function rivalBuys(
   // EVERY PRINT IS EVIDENCE. The tape shows what they bought and where.
   {
     const won = prefer ?? best;
+    // WHAT THEY JUST DID, IN A LINE. Three closings in a month is a firm
+    // acting on a plan, and the news says which one (once a year a firm).
+    won.buysM = won.buysM?.m === s.month ? { m: s.month, n: won.buysM.n + 1 } : { m: s.month, n: 1 };
+    if (isDistress) won.yrDistressBuys = (won.yrDistressBuys ?? 0) + 1;
+    if (won.buysM.n === 3 && (won.spreeY ?? -1) !== Math.floor(s.month / 12)) {
+      won.spreeY = Math.floor(s.month / 12);
+      const ciNow = s.econ.creditIdx ?? 1;
+      const t = won.thesis;
+      const what = t?.cls ? (t.cls === "multifamily" ? "apartment buildings" : `${t.cls} buildings`) : "buildings";
+      const text = won.sheet && won.sheet.cycle < 35 && ciNow < 0.92
+        ? `${won.name} sat on its cash through the good years and has just bought three ${what} in a month, with the credit window shut. This is what it was waiting for.`
+        : t?.kind === "distress"
+          ? `${won.name} has taken three buildings off the receivers' lists this month. It said it would work the distress while credit was shut; it is.`
+          : t?.kind === "assemble"
+            ? `${won.name} has bought three more lots around its block this month. Somebody is putting a site together.`
+            : `${won.name} closed on three ${what} this month${t?.districtName ? ` — ${t.districtName} again` : ""}. ${t ? "It is doing exactly what it told its investors it would." : ""}`;
+      s.news.unshift({ q: s.month, kind: "info", text: text.trim() });
+    }
     const loc = demandLinear(rec.demandScore) >= 50 ? "prime" : "edge";
     observe(s, won, sheetOf(won), [classTrait(rec.class === "land" || !rec.bldgArea ? "land" : rec.class), loc, "scale"], 0.05);
     if (isDistress) observe(s, won, sheetOf(won), ["distress"], 0.08);

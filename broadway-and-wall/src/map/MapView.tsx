@@ -397,6 +397,15 @@ export default function MapView() {
               trees: pointsOf("tree"),
               embankments: ringsOf("embankment"),
               railBeds: ringsOf("railbed"),
+              plazas: ringsOf("plaza"),
+              landmarks: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "landmark" && f.geometry.type === "Point")
+                .map((f) => ({
+                  p: (f.geometry as GeoJSON.Point).coordinates as [number, number],
+                  kind: String(f.properties?.lk ?? ""),
+                  deg: Number(f.properties?.deg ?? 0),
+                  len: Number(f.properties?.len ?? 0),
+                })),
               railTracks: linesOf("railtrack"),
               piles: pointsOf("pile"),
               benches: orientedOf("bench"),

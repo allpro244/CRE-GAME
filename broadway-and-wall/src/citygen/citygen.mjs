@@ -2476,8 +2476,10 @@ export function generateCity(cfg) {
   // is drawn from cfg.railways on top of it. It is not water, so it is kept
   // out of CUT_M and nothing downstream treats it as a bank.
   // An EMBANKED channel's clearance is a stone promenade, not rough grass.
+  // A PLAZA (cfg.plazas, handed in as cut-only "plaza" rings) is the same:
+  // civic ground the lots stop at, paved, carrying a landmark — not water.
   const CUT_ST = (cfg.streams ?? [])
-    .filter((st) => st.cut && st.kind !== "rail" && st.ring && st.ring.length >= 3);
+    .filter((st) => st.cut && st.kind !== "rail" && st.kind !== "plaza" && st.ring && st.ring.length >= 3);
   const CUT_M = CUT_ST.map((st) => st.ring);
   const bankFeatures = [
     ...CUT_ST.map((st) => ({
@@ -2485,12 +2487,20 @@ export function generateCity(cfg) {
       geometry: { type: "Polygon", coordinates: [[...st.ring.map(proj.toLL), proj.toLL(st.ring[0])]] },
       properties: { kind: st.embank ? "embankment" : "bank" },
     })),
-    ...(cfg.streams ?? []).filter((st) => st.kind === "rail" && st.ring && st.ring.length >= 3).map((st) => ({
+    ...(cfg.streams ?? []).filter((st) => (st.kind === "rail" || st.kind === "plaza") && st.ring && st.ring.length >= 3).map((st) => ({
       type: "Feature",
       geometry: { type: "Polygon", coordinates: [[...st.ring.map(proj.toLL), proj.toLL(st.ring[0])]] },
-      properties: { kind: "railverge" },
+      properties: { kind: st.kind === "rail" ? "railverge" : "plaza", ...(st.name ? { name: st.name } : {}) },
     })),
   ];
+  // THE LANDMARKS a written-down city names: one point each, with the kind
+  // the renderer models and the way it faces. They stand on plazas, parks
+  // or the railway, never on a deed.
+  const landmarkFeatures = (cfg.landmarks ?? []).map((lm) => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: proj.toLL(lm.xy) },
+    properties: { kind: "landmark", lk: lm.kind, name: lm.name, deg: lm.deg ?? 0, ...(lm.len ? { len: lm.len } : {}) },
+  }));
   const railFeaturesM = (cfg.railways ?? []).flatMap((rw) => [
     ...(rw.bed && rw.bed.length >= 3 ? [{
       type: "Feature",
@@ -3692,6 +3702,7 @@ export function generateCity(cfg) {
       ...crossingFeatures,
       ...bankFeatures,
       ...railFeaturesM,
+      ...landmarkFeatures,
       shoreRoad,
       ...pondFeatures.map((ring) => ({
         type: "Feature",

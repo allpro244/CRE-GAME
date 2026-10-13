@@ -132,6 +132,7 @@ function railway(name, path) {
   const p = densify(chaikinOpen(path, 3), 10);
   const bed = strokeRibbon(p, 11);
   return {
+    path: p,
     line: { name, bed: bed ? bed.map(round) : null, tracks: [offsetLine(p, 2.2), offsetLine(p, -2.2)] },
     cut: bufferAsCapsules(p, 20).map((ring) => ({ ring: ring.map(round), name, kind: "rail", paint: false, cut: true })),
   };
@@ -255,11 +256,52 @@ export function twinmarchConfig(seed = 1) {
     "goodsyard");
   const partition = band([-820, 0], 90, [-1500, 0], west, band([1060, 0], 90, [0, 0], mid, east));
 
+  // ------------------------------------------------------------ set pieces
+  // THE THINGS NOBODY WOULD GENERATE. A generated town is texture; a planned
+  // one is a set of decisions you can see — the great buildings, the paved
+  // forecourts in front of them, and streets that END on them. Each landmark
+  // stands on its own civic ground (a plaza the lots stop at, or a park), so
+  // no deed is touched and no demand term reads any of it.
+  const railPt = (x) => {
+    const P = rail.path;
+    let k = 0;
+    while (k < P.length - 2 && P[k + 1][0] < x) k++;
+    const a = P[k], b = P[k + 1];
+    const t = (x - a[0]) / (b[0] - a[0] || 1);
+    return { xy: [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])], deg: Math.atan2(b[1] - a[1], b[0] - a[0]) / D2R };
+  };
+  const st0 = railPt(1500);
+  const sDeg = st0.deg, sR = sDeg * D2R;
+  const south = [Math.sin(sR), -Math.cos(sR)];
+  // the head building on the south side of the tracks, facing Station Parade
+  const offs = (d) => [st0.xy[0] + south[0] * d, st0.xy[1] + south[1] * d];
+  const stationAt = { bldg: offs(10 + 3 + 10), front: offs(10 + 3 + 52) };
+  const plazaRect = (name, c, w, h, deg) => ({ ring: rectRing(c[0], c[1], w, h, deg), name, kind: "plaza", paint: false, cut: true });
+  const MINSTER = { c: [-880, 820], deg: 118.6 };
+  const plazas = [
+    plazaRect("Station Forecourt", offs(10 + 3 + 32), 140, 64, sDeg),
+    plazaRect("Exchange Forecourt", [-1212, 20], 104, 84, 0),
+    plazaRect("Minster Close", MINSTER.c, 160, 112, MINSTER.deg),
+  ];
+  streams.push(...plazas);
+  const landmarks = [
+    { kind: "station", name: "Railhead Station", xy: round(stationAt.bldg), deg: sDeg - 90 },
+    { kind: "trainshed", name: "Railhead Train Shed", xy: round(st0.xy), deg: sDeg + 90, len: 180 },
+    { kind: "exchange", name: "The Corn & Stock Exchange", xy: [-1232, 20], deg: 0 },
+    { kind: "clocktower", name: "Halfway Clock", xy: [120, 170], deg: -90 },
+    { kind: "minster", name: "Twinmarch Minster", xy: round([MINSTER.c[0] + 4, MINSTER.c[1] - 6]), deg: MINSTER.deg + 180 },
+    { kind: "column", name: "Founders' Column", xy: [-1180, 140], deg: 0 },
+    { kind: "column", name: "Bend Column", xy: [-560, 210], deg: 0 },
+    { kind: "mill", name: "Mere Mill", xy: [720, 1050], deg: 180 },
+  ];
+
   const diagonals = [];
   for (let i = 0; i < MARKET.length - 1; i++) diagonals.push(boulevard("The Long Market", MARKET[i], MARKET[i + 1], 28));
   diagonals.push(boulevard("Quay Street", [-1830, 520], [-1180, 380], 22));
-  diagonals.push(boulevard("Old North Road", [-480, 100], [-950, 950], 22));
-  diagonals.push(boulevard("Station Parade", [1500, -560], [1500, 680], 26));
+  // Old North Road runs up from Market Bend and ends ON the Minster's west
+  // front; Station Parade runs up from the south and ends ON the station.
+  diagonals.push(boulevard("Old North Road", [-480, 100], [-830, 745], 22));
+  diagonals.push(boulevard("Station Parade", [stationAt.front[0], -560], [stationAt.front[0], stationAt.front[1] - 30], 26));
   diagonals.push(boulevard("Ferry Road", [600, -20], [900, -900], 22));
 
   // The decks over the Twinbourne, each squared to the road it carries:
@@ -323,6 +365,7 @@ export function twinmarchConfig(seed = 1) {
     { xy: [-1800, 0], name: "Exchange Bay", labelKind: "water" },
     { xy: [330, -300], name: "The Twinbourne", labelKind: "water" },
     { xy: [0, -1450], name: "The Narrow Sea", labelKind: "water" },
+    ...landmarks.filter((l) => l.kind !== "trainshed").map((l) => ({ xy: l.xy, name: l.name, labelKind: "civic" })),
   ];
 
   return {
@@ -335,6 +378,7 @@ export function twinmarchConfig(seed = 1) {
     lighthouse: [-2500, -300],
     cores, partition, districts, districtNames, parks, diagonals, streams, bridges,
     railways: [rail.line],
+    landmarks,
     piers: [], cranes: [], ships: [], breakwaters: [],
     stations, labels,
     avenues: ["The Long Market", "Station Parade", "Quay Street", "Harbour Road", "Mere Road", "Railway Street"],

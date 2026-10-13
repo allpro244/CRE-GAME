@@ -19,7 +19,10 @@ export interface CityCtx {
   opens?: [number, number][][][];   // each: outer ring, then holes
   embankments?: [number, number][][];
   railBeds?: [number, number][][];      // ballast beds (outer rings)
-  railTracks?: [number, number][][];    // track centre lines   // promenade rings along embanked water (ground index only)
+  railTracks?: [number, number][][];    // track centre lines
+  plazas?: [number, number][][];        // civic forecourts (ground index only; MapLibre paints them)
+  /** named landmarks a written-down city places: kind, facing (maths deg), and a length where it has one */
+  landmarks?: { p: [number, number]; kind: string; deg: number; len: number }[];   // promenade rings along embanked water (ground index only)
   piles?: [number, number][];
   land?: [number, number][];
   benches?: Oriented[];

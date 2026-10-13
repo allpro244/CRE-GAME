@@ -879,6 +879,23 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
       {
         // THE RAILWAY: a ballast bed the lots stop at, painted after the water
         // so the line reads as crossing the river on its bridge.
+        id: "plaza",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "plaza"],
+        paint: { "fill-color": "#d6cdbb" },
+      },
+      {
+        id: "plaza-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "plaza"],
+        paint: {
+          "line-color": "#a99f8c",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.4, 17, 1.6] as never,
+        },
+      },
+      {
         id: "railverge",
         type: "fill",
         source: "bw-context",

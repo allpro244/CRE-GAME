@@ -939,6 +939,7 @@ export class RealCityLayer {
     this.buildChannels();
     this.buildBridges();
     this.buildRailway();
+    this.buildLandmarks();
     this.buildStreetLife();
     this.dyn.add(this.dynDone.group, this.dynSite.group);
     this.scene.add(this.dyn);
@@ -3683,6 +3684,172 @@ export class RealCityLayer {
     mk(steel, 0xffffff, 0.45, 0.55);
   }
 
+  // ---- the landmarks -------------------------------------------------------
+  // A WRITTEN-DOWN CITY HAS BUILDINGS NOBODY WOULD GENERATE: the railway
+  // terminus with its glazed train shed, the Exchange's portico and copper
+  // dome, the clock tower at the bridge, the minster with its two west
+  // spires, the column in the square, the mill on the mere. Each is placed by
+  // the city's config on civic ground and faces the street that leads to it.
+  // Local frame: +y is the front; `deg` is the maths bearing the front faces.
+  private buildLandmarks() {
+    const list = (this.ctx as { landmarks?: { p: P2; kind: string; deg: number; len: number }[] }).landmarks ?? [];
+    if (!list.length) return;
+    type Part = THREE.BufferGeometry;
+    const groups: Record<string, Part[]> = { stone: [], dark: [], slate: [], copper: [], glass: [], gold: [], steel: [], brick: [], wood: [] };
+    const box = (w: number, d: number, h: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2);
+    const cyl = (r: number, h: number, x = 0, y = 0, z = 0, seg = 16, r2 = r) => new THREE.CylinderGeometry(r2, r, h, seg).rotateX(Math.PI / 2).translate(x, y, z + h / 2);
+    const cone = (r: number, h: number, x = 0, y = 0, z = 0, seg = 4) => new THREE.ConeGeometry(r, h, seg, 1).rotateX(Math.PI / 2).rotateZ(seg === 4 ? Math.PI / 4 : 0).translate(x, y, z + h / 2);
+    const dome = (r: number, x = 0, y = 0, z = 0) => new THREE.SphereGeometry(r, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2).translate(x, y, z);
+    /** a gable roof over a w (x) by d (y) rectangle, ridge along y, eaves at z, rise h */
+    const gable = (w: number, d: number, h: number, x = 0, y = 0, z = 0) => {
+      const sh = new THREE.Shape([new THREE.Vector2(-w / 2, 0), new THREE.Vector2(w / 2, 0), new THREE.Vector2(0, h)]);
+      return new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: false }).rotateX(Math.PI / 2).translate(x, y + d / 2, z);
+    };
+    /** a barrel vault, axis along x, span s, length L, springing at z */
+    const vault = (s: number, L: number, z: number, x = 0, y = 0) =>
+      new THREE.CylinderGeometry(s / 2, s / 2, L, 24, 1, true, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).translate(x, y, z);
+    const put = (g: string, part: Part) => groups[g].push(part);
+    const place = (parts: [string, Part][], p: P2, deg: number) => {
+      const [x, y] = this.project(p);
+      const rot = ((deg - 90) * Math.PI) / 180;
+      for (const [g, part] of parts) put(g, part.rotateZ(rot).translate(x, y, 0));
+    };
+    for (const lm of list) {
+      const P: [string, Part][] = [];
+      const add = (g: string, part: Part) => P.push([g, part]);
+      switch (lm.kind) {
+        case "station": {
+          // the head building: two end pavilions, a long arcaded range, and a
+          // clock tower over the entrance
+          add("stone", box(96, 20, 15));
+          add("slate", box(94, 18, 3, 0, 0, 15));
+          for (const sx of [-41, 41]) {
+            add("stone", box(16, 24, 20, sx, 0));
+            add("copper", cone(12.5, 7, sx, 0, 20));
+          }
+          for (let i = -6; i <= 6; i++) if (Math.abs(i) > 1) add("dark", box(3.2, 0.4, 6.5, i * 5.4, 10.05, 1.5));
+          add("dark", box(9, 0.4, 9, 0, 10.05, 0));
+          add("stone", box(11, 11, 36, 0, 3));
+          add("gold", new THREE.CylinderGeometry(2.4, 2.4, 0.3, 20).translate(0, 8.6, 31));
+          add("copper", cone(8.5, 12, 0, 3, 36));
+          add("gold", box(0.5, 0.5, 4, 0, 3, 48));
+          break;
+        }
+        case "trainshed": {
+          // a glazed barrel vault over the platforms on cast-iron ribs
+          const L = lm.len || 170;
+          add("steel", box(L, 0.6, 7, 0, 13.2));
+          add("steel", box(L, 0.6, 7, 0, -13.2));
+          add("glass", vault(27, L, 7));
+          for (let x = -L / 2; x <= L / 2 + 0.1; x += 10) {
+            const rib = new THREE.TorusGeometry(13.6, 0.28, 4, 20, Math.PI).rotateX(Math.PI / 2).rotateZ(Math.PI / 2).translate(x, 0, 7);
+            add("steel", rib);
+            add("steel", box(0.6, 0.6, 7, x, 13.2));
+            add("steel", box(0.6, 0.6, 7, x, -13.2));
+          }
+          for (const sy of [-8.5, 8.5]) add("stone", box(L, 5, 0.9, 0, sy));
+          break;
+        }
+        case "exchange": {
+          // a temple of commerce: stepped podium, columned portico, pediment,
+          // and a copper dome on a drum
+          add("stone", box(36, 50, 1.2, 0, 0));
+          add("stone", box(34, 48, 1.2, 0, 0, 1.2));
+          add("stone", box(30, 34, 15, 0, -6, 2.4));
+          for (let i = 0; i < 8; i++) add("stone", cyl(0.85, 12, -12.25 + i * 3.5, 16, 2.4, 12));
+          add("stone", box(30, 10, 1.6, 0, 16, 14.4));
+          add("slate", gable(30, 44, 5, 0, -1, 16));
+          add("stone", gable(30, 0.6, 5, 0, 20.6, 16));
+          add("stone", cyl(8, 6, 0, -8, 17.4, 24));
+          add("copper", dome(8.6, 0, -8, 23.4));
+          add("stone", cyl(1.6, 3, 0, -8, 31.6, 12));
+          add("gold", cone(1.4, 2.5, 0, -8, 34.6, 12));
+          break;
+        }
+        case "clocktower": {
+          add("stone", box(9, 9, 6));
+          add("stone", box(7, 7, 26, 0, 0, 6));
+          add("stone", box(8.6, 8.6, 1, 0, 0, 30));
+          add("stone", box(8, 8, 6, 0, 0, 31));
+          for (const [dx, dy, rz] of [[0, 4.05, 0], [0, -4.05, 0], [4.05, 0, Math.PI / 2], [-4.05, 0, Math.PI / 2]]) {
+            add("gold", new THREE.CylinderGeometry(2.6, 2.6, 0.25, 20).rotateZ(rz).translate(dx, dy, 34));
+          }
+          add("stone", box(8.8, 8.8, 0.8, 0, 0, 37));
+          add("copper", cone(6.4, 14, 0, 0, 37.8));
+          add("gold", box(0.3, 0.3, 3, 0, 0, 51.5));
+          break;
+        }
+        case "minster": {
+          // nave and aisles, a transept, an apse, two west towers with spires
+          add("stone", box(18, 74, 24, 0, -6));
+          add("slate", gable(19, 74, 10, 0, -6, 24));
+          for (const sx of [-12.5, 12.5]) {
+            add("stone", box(8, 66, 13, sx, -10));
+            add("slate", box(8.4, 66, 1.2, sx, -10, 13));
+          }
+          add("stone", box(46, 16, 22, 0, -20));
+          add("slate", gable(16, 46, 9, 0, 0, 22).rotateZ(Math.PI / 2).translate(0, -20, 0));
+          add("stone", cyl(9, 20, 0, -43, 0, 20));
+          add("slate", cone(9.4, 9, 0, -43, 20, 20));
+          for (const sx of [-11, 11]) {
+            add("stone", box(10, 10, 48, sx, 31));
+            add("slate", cone(7, 26, sx, 31, 48, 8));
+            add("gold", box(0.4, 0.4, 3, sx, 31, 74));
+          }
+          add("dark", new THREE.CylinderGeometry(4.2, 4.2, 0.4, 20).translate(0, 31.2, 30));
+          add("dark", box(6, 0.4, 11, 0, 31.2, 0));
+          add("stone", box(10, 10, 6, 0, -20, 31));
+          add("copper", cone(5, 22, 0, -20, 37, 8));
+          break;
+        }
+        case "column": {
+          add("stone", box(7, 7, 1.2));
+          add("stone", box(5, 5, 3.4, 0, 0, 1.2));
+          add("stone", cyl(1.25, 24, 0, 0, 4.6, 16, 1.05));
+          add("stone", box(3.4, 3.4, 1.4, 0, 0, 28.6));
+          add("gold", cyl(0.55, 3.2, 0, 0, 30, 10));
+          break;
+        }
+        case "mill": {
+          add("brick", box(14, 22, 11));
+          add("slate", gable(15, 23, 6, 0, 0, 11));
+          add("brick", box(2.4, 2.4, 22, 4, -8));
+          add("wood", new THREE.CylinderGeometry(4.5, 4.5, 1.6, 24).rotateZ(Math.PI / 2).translate(-8, 2, 4.6));
+          break;
+        }
+        default: continue;
+      }
+      place(P, lm.p, lm.deg);
+    }
+    const mats: Record<string, THREE.Material> = {
+      stone: new THREE.MeshStandardMaterial({ color: 0xddd3bf, roughness: 0.85, envMapIntensity: 0.3 }),
+      dark: new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.6 }),
+      slate: new THREE.MeshStandardMaterial({ color: 0x4a5058, roughness: 0.75 }),
+      copper: new THREE.MeshStandardMaterial({ color: 0x6fae96, roughness: 0.55, metalness: 0.25, envMapIntensity: 0.5 }),
+      glass: new THREE.MeshStandardMaterial({ color: 0xa9c6d3, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.45, side: THREE.DoubleSide, envMap: this.skyEnv, envMapIntensity: 1.1 }),
+      gold: new THREE.MeshStandardMaterial({ color: 0xd8b04a, roughness: 0.3, metalness: 0.85, envMap: this.skyEnv }),
+      steel: new THREE.MeshStandardMaterial({ color: 0x3d4549, roughness: 0.5, metalness: 0.6 }),
+      brick: new THREE.MeshStandardMaterial({ color: 0x8e4a37, roughness: 0.9 }),
+      wood: new THREE.MeshStandardMaterial({ color: 0x5b4330, roughness: 0.9 }),
+    };
+    for (const [g, parts] of Object.entries(groups)) {
+      if (!parts.length) continue;
+      const pos: number[] = [], nrm: number[] = [];
+      for (const p of parts) {
+        const q = p.index ? p.toNonIndexed() : p;
+        q.computeVertexNormals();
+        pos.push(...(q.getAttribute("position").array as Float32Array));
+        nrm.push(...(q.getAttribute("normal").array as Float32Array));
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+      const m = new THREE.Mesh(geo, mats[g]);
+      m.castShadow = g !== "glass"; m.receiveShadow = true;
+      this.scene.add(m);
+    }
+  }
+
   private buildBridges() {
     const list = (this.ctx as { bridges?: { ring: P2[]; deg: number; type?: string }[] }).bridges ?? [];
     if (!list.length) return;
@@ -4449,7 +4616,7 @@ export class RealCityLayer {
     // an embanked river's promenade is open ground a tree may stand on; it is
     // only indexed, never drawn (MapLibre paints it, and its ring covers the
     // water too, which the channel draws on top)
-    for (const r of (this.ctx as { embankments?: P2[][] }).embankments ?? []) {
+    for (const r of [...((this.ctx as { embankments?: P2[][] }).embankments ?? []), ...((this.ctx as { plazas?: P2[][] }).plazas ?? [])]) {
       if (r.length >= 3) open.add(r.map((q) => this.project(q)), []);
     }
     for (const v of this.volumes) {

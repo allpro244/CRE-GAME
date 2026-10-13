@@ -106,7 +106,9 @@ const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", 
  * every canal a flat royal blue next to a turquoise sea).
  */
 const CANAL_WATER = 0x2c5f5c;
-const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi"];
+/** the footway band inside a park's street edge (m); its hedge stands at 3.6 */
+const PARK_WALK = 3.0;
+const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "manhole", "drain", "treepit", "person"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 // what a crowd wears: mostly neutrals (navy, charcoal, camel, white,
@@ -996,7 +998,7 @@ function profile(pts: [number, number][], w: number): THREE.BufferGeometry {
 }
 const SHADE = [0.015, 0.016, 0.02];
 const PAINT = [1, 1, 1], GLASS = [0.07, 0.08, 0.1], TYRE = [0.04, 0.04, 0.04], HEAD = [2.2, 2.2, 2.0], TAIL = [1.6, 0.12, 0.1], TRIMC = [0.12, 0.12, 0.13];
-function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus"): THREE.BufferGeometry {
+function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus" | "truck"): THREE.BufferGeometry {
   const parts: [THREE.BufferGeometry, number[]][] = [];
   const wheel = (x: number, y: number, r: number) => parts.push([new THREE.CylinderGeometry(r, r, 0.24, 8).translate(x, y, r), TYRE]);
   const box = (w: number, d: number, h: number, x: number, y: number, z: number, c: number[]) => parts.push([new THREE.BoxGeometry(w, d, h).translate(x, y, z + h / 2), c]);
@@ -1026,6 +1028,16 @@ function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus"): THREE.BufferGe
     for (const x of [1.75, -1.7]) for (const y of [-0.9, 0.9]) wheel(x, y, 0.36);
     box(0.06, 0.4, 0.16, L + 0.02, -0.66, 0.85, HEAD); box(0.06, 0.4, 0.16, L + 0.02, 0.66, 0.85, HEAD);
     box(0.06, 0.18, 0.4, -L - 0.02, -0.86, 0.9, TAIL); box(0.06, 0.18, 0.4, -L - 0.02, 0.86, 0.9, TAIL);
+  } else if (kind === "truck") {
+    // a box truck on a delivery round: a cab in the paint, a pale box behind
+    const L = 3.6;
+    parts.push([profile([[1.2, 0.45], [L, 0.45], [L, 1.25], [3.35, 1.45], [3.0, 2.45], [1.2, 2.5]], 2.2), PAINT]);
+    parts.push([profile([[3.32, 1.5], [3.0, 2.3], [2.4, 2.3], [2.4, 1.5]], 2.22), GLASS]);
+    box(4.9, 2.4, 2.65, -1.35, 0, 0.75, [0.93, 0.93, 0.9]);
+    box(5.0, 2.2, 0.3, -1.35, 0, 0.45, TRIMC);
+    for (const x of [2.6, -2.4, -3.3]) for (const y of [-0.95, 0.95]) wheel(x, y, 0.45);
+    box(0.06, 0.4, 0.18, L + 0.02, -0.75, 0.9, HEAD); box(0.06, 0.4, 0.18, L + 0.02, 0.75, 0.9, HEAD);
+    box(0.06, 0.2, 0.3, -3.81, -1.0, 0.9, TAIL); box(0.06, 0.2, 0.3, -3.81, 1.0, 0.9, TAIL);
   } else {
     // the city bus: a long box on small wheels, a band of glass down each side
     const L = 6;
@@ -1039,7 +1051,7 @@ function vehicle(kind: "sedan" | "suv" | "van" | "taxi" | "bus"): THREE.BufferGe
   // THE CAR'S OWN SHADE on the road: a dark pad a little larger than the
   // body, so a car sits on the asphalt rather than hovering over it (the
   // sun's shadow map is baked for the still city and cannot follow traffic)
-  const [hl, hw] = kind === "bus" ? [6.3, 1.45] : kind === "van" ? [2.8, 1.12] : kind === "suv" ? [2.6, 1.08] : [2.5, 1.02];
+  const [hl, hw] = kind === "bus" ? [6.3, 1.45] : kind === "truck" ? [3.95, 1.4] : kind === "van" ? [2.8, 1.12] : kind === "suv" ? [2.6, 1.08] : [2.5, 1.02];
   parts.push([new THREE.PlaneGeometry(hl * 2, hw * 2).translate(0, 0, 0.012), SHADE]);
   return mergeColored(parts);
 }
@@ -4918,6 +4930,14 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.4, vertexColors: true }) };
       case "sigpost": return { g: mergeColored([[cyl(0.08, 3.2, 0, 8), [0.2, 0.22, 0.22]], [box(0.3, 0.32, 0.9, 0.18, 0, 2.3), [0.1, 0.1, 0.08]]]),
         mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.4, vertexColors: true }) };
+      // an iron manhole cover in a worn ring, and a kerb drain's grate
+      case "manhole": return { g: mergeColored([[cyl(0.42, 0.012, 0, 16), [0.42, 0.41, 0.39]], [cyl(0.34, 0.02, 0, 16), [0.2, 0.19, 0.18]]]), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.5, vertexColors: true }) };
+      case "drain": return { g: mergeColored([[box(1.0, 0.46, 0.012), [0.46, 0.45, 0.43]], [box(0.86, 0.34, 0.02), [0.1, 0.1, 0.1]],
+        ...[-0.3, -0.15, 0, 0.15, 0.3].map((x) => [box(0.05, 0.34, 0.026, x), [0.3, 0.29, 0.28]] as [THREE.BufferGeometry, number[]])]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.45, vertexColors: true }) };
+      // a street tree's pit: dark mulch in a granite-edged square, flush with the flags
+      case "treepit": return { g: mergeColored([[box(1.5, 1.5, 0.012), [0.62, 0.6, 0.56]], [box(1.3, 1.3, 0.02), [0.2, 0.15, 0.11]]]),
+        mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, vertexColors: true }) };
       case "hydrant": return { g: merge([cyl(0.14, 0.55, 0, 10), cyl(0.18, 0.1, 0.5, 10), cyl(0.1, 0.12, 0.6, 8), box(0.4, 0.09, 0.09, 0, 0, 0.36)]), mat: new THREE.MeshStandardMaterial({ color: 0xa8392c, roughness: 0.55 }) };
       case "bin": return { g: merge([cyl(0.28, 0.95, 0, 10)]), mat: new THREE.MeshStandardMaterial({ color: 0x2e4034, roughness: 0.7, metalness: 0.2 }) };
       case "shelter": return { g: mergeColored([[box(3.8, 1.5, 0.08, 0, 0, 2.45), [0.3, 0.32, 0.34]], [box(3.8, 0.04, 2.2, 0, 0.7, 0.25), [0.55, 0.65, 0.7]],
@@ -5120,6 +5140,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       case "van": return { g: vehicle("van"), mat: this.vehicleMat(), colored: true };
       case "taxi": return { g: vehicle("taxi"), mat: this.vehicleMat(), colored: true };
       case "bus": return { g: vehicle("bus"), mat: this.vehicleMat(), colored: true };
+      case "truck": return { g: vehicle("truck"), mat: this.vehicleMat(), colored: true };
       // A PERSON: legs, coat, arms, head with hair — coat in the instance
       // colour, trousers and hair darker. 1.75 m.
       case "person": return { g: person(), mat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true }), colored: true };
@@ -5293,6 +5314,35 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         if (L < 0.05) continue;
         const n = [(b[1] - a[1]) / L, -(b[0] - a[0]) / L, 0];
         kerb.quad([a[0], a[1], -0.02], [b[0], b[1], -0.02], [b[0], b[1], H + 0.005], [a[0], a[1], H + 0.005], n, [[0, 0], [L, 0], [L, 1], [0, 1]], white);
+      }
+    }
+    // A PARK'S OWN PAVEMENT. The lawn ran straight to the asphalt; a city
+    // park is ringed by a footway like any other block. A 3 m band of the
+    // same flags inside every park edge that fronts a street, with a kerb,
+    // stopping short of the hedge line the park already plants 3.6 m in.
+    for (const ring of this.parkRings()) {
+      await this.breathe();
+      const inner = insetRing(ring, PARK_WALK);
+      if (!inner) continue;
+      const n = ring.length, front: boolean[] = [];
+      for (let i = 0; i < n; i++) {
+        const a = ring[i], b = ring[(i + 1) % n];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 0.5) { front.push(false); continue; }
+        const ox = (b[1] - a[1]) / L, oy = -(b[0] - a[0]) / L;   // outward of a counter-clockwise ring
+        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+        front.push(this.groundAt(mx + ox * 1.5, my + oy * 1.5) === "road");
+      }
+      this.parkFront.push({ ring, front });
+      for (let i = 0; i < n; i++) {
+        if (!front[i]) continue;
+        const j = (i + 1) % n, a = ring[i], b = ring[j], ia = inner[i], ib = inner[j];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        for (const v of [[a, 0], [b, L], [ib, L], [a, 0], [ib, L], [ia, 0]] as [P2, number][]) {
+          pave.pos.push(v[0][0], v[0][1], H); pave.nrm.push(0, 0, 1); pave.uv.push(v[0][0] / 1.5, v[0][1] / 1.5); pave.col.push(1, 1, 1);
+        }
+        const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L;
+        kerb.quad([a[0], a[1], -0.02], [b[0], b[1], -0.02], [b[0], b[1], H + 0.005], [a[0], a[1], H + 0.005], [nx, ny, 0], [[0, 0], [L, 0], [L, 1], [0, 1]], white);
       }
     }
     if (pave.count) {
@@ -5615,6 +5665,22 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
 
   private cropMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
   private paveMat: THREE.MeshStandardMaterial | null = null;
+  /** each park's ring (counter-clockwise, metres) and which of its edges front a street */
+  private parkFront: { ring: P2[]; front: boolean[] }[] = [];
+  /** The parks that get a street footway, projected and counter-clockwise. */
+  private parkRings(): P2[][] {
+    const out: P2[][] = [];
+    for (const pk of (this.ctx as { parks?: ({ ring: P2[]; flavour?: string } | P2[])[] }).parks ?? []) {
+      const ringLL = Array.isArray(pk) ? pk : pk.ring ?? [];
+      const fl = Array.isArray(pk) ? "park" : pk.flavour ?? "park";
+      if (fl === "cemetery" || fl === "battery" || fl === "market" || ringLL.length < 3) continue;
+      let r = ringLL.map((q) => this.project(q));
+      if (ringArea(r) < 0) r = r.slice().reverse();
+      if (Math.abs(ringArea(r)) < 900) continue;
+      out.push(r);
+    }
+    return out;
+  }
   private catcherMat = new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c2433 });
   private wetMat = new THREE.MeshStandardMaterial({ color: 0x1e2329, roughness: 0.12, metalness: 0, transparent: true, opacity: 0, depthWrite: false });
   private wetSheet: THREE.Mesh | null = null;
@@ -5992,6 +6058,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
             const sz = big * (0.7 + rnd() * 0.42);
             const col = rnd() < 0.33;
             if (this.groundAt(x, y) !== "walk" || !this.clearOfBuildings(x, y, (col ? 1.9 : 2.7) * sz)) continue;
+            this.putInst("treepit", x, y, 0.15, 1, rot);
             this.putInst("trunk", x, y, 0.15, sz, rnd() * 6.28);
             this.putInst("crown", x, y, 0.15, col ? sz * 0.75 : sz, rnd() * 6.28, "", leafCol(), col ? 1.55 : 1);
           }
@@ -6030,6 +6097,87 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       }
       this.ringWalkers(ring, wEdge, rnd, COAT);
     }
+    // and round the parks, on their street footway
+    for (const { ring, front } of this.parkFront) {
+      if (front.filter(Boolean).length < front.length * 0.7) continue;
+      this.ringWalkers(ring, front.map((f) => (f ? PARK_WALK : -1)), rnd, COAT, "park");
+    }
+  }
+
+  /**
+   * THE CARRIAGEWAY'S WEAR. Asphalt is not one flat grey: every lane carries
+   * two polished, darker wheel paths, and an oily stripe down its middle
+   * where engines stand waiting at the light — darkest in the last 25 m
+   * before the stop line. Iron manhole covers sit on the crown of the road
+   * every forty-odd metres, and a kerb drain grates the gutter just short of
+   * every corner. Laid from the same lanes the traffic drives (traffic.ts).
+   */
+  private dressCarriageway(tr: Traffic, rnd: () => number) {
+    const wear = new Buf(), polish = new Buf();
+    const Z = 0.042;
+    for (const sg of tr.segs) {
+      const at = (d: number, off: number, dir: 0 | 1): number[] => {
+        const along = dir === 0 ? d : sg.L - d, sgn = dir === 0 ? 1 : -1;
+        return [sg.a[0] + sg.u[0] * along + sg.nr[0] * off * sgn, sg.a[1] + sg.u[1] * along + sg.nr[1] * off * sgn, Z];
+      };
+      // a strip from d0 to d1 at offset off, width w, the shade's opacity a:
+      // feathered to nothing across its edges and over a couple of metres at
+      // each end, so it reads as wear and not as paint
+      const strip = (dir: 0 | 1, d0: number, d1: number, off: number, w: number, a: number, into = wear) => {
+        if (d1 - d0 < 1) return;
+        const fe = Math.min(2.5, (d1 - d0) / 3);
+        const ds = [d0, d0 + fe, d1 - fe, d1], os = [off + w / 2, off + w / 4, off - w / 4, off - w / 2];
+        const al = (i: number, j: number) => (i === 0 || i === 3 || j === 0 || j === 3 ? 0 : a);
+        const v = (i: number, j: number) => {
+          const p = at(ds[i], os[j], dir);
+          into.pos.push(p[0], p[1], p[2]); into.nrm.push(0, 0, 1); into.uv.push(0, 0); into.col.push(al(i, j), 0, 0);
+        };
+        // wound counter-clockwise from above (the right of travel is clockwise)
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { v(i, j); v(i + 1, j); v(i + 1, j + 1); v(i, j); v(i + 1, j + 1); v(i, j + 1); }
+      };
+      for (const dir of [0, 1] as const) {
+        const s0 = sg.s0[dir], s1 = sg.s1[dir];
+        for (const off of sg.lanes[dir]) {
+          // the wheel paths, in pieces so the polish is patchy
+          for (let d = s0; d < s1 - 2; d += 7) {
+            const e = Math.min(s1, d + 4 + rnd() * 3);
+            const a = 0.05 + rnd() * 0.06;
+            strip(dir, d, e, off - 0.78, 0.8, a, polish);
+            strip(dir, d, e, off + 0.78, 0.8, a, polish);
+          }
+          // the oil line, heaviest where the queue stands
+          strip(dir, s0, s1 - 18, off, 1.0, 0.1);
+          strip(dir, Math.max(s0, s1 - 30), s1 - 0.5, off, 1.2, 0.2);
+        }
+        // a kerb drain each side, a few metres short of the corner
+        if (sg.lanes[dir].length && s1 - s0 > 20) {
+          const p = at(s1 - 4.5, sg.half - 0.3, dir);
+          if (this.groundAt(p[0], p[1]) === "road") this.putInst("drain", p[0], p[1], 0.03, 1, Math.atan2(sg.u[1], sg.u[0]));
+        }
+      }
+      // manholes on the crown of the road, between the lanes
+      const span0 = Math.max(sg.s0[0], 4), span1 = Math.min(sg.s1[0], sg.L - 4);
+      for (let d = span0 + 8 + rnd() * 20; d < span1 - 6; d += 32 + rnd() * 30) {
+        const off = sg.lanes[0].length && sg.lanes[1].length ? (rnd() < 0.5 ? 0 : sg.lanes[0][0]) : (rnd() - 0.5) * 1.6;
+        const p = at(d, off, 0);
+        if (this.groundAt(p[0], p[1]) === "road") this.putInst("manhole", p[0], p[1], 0.03, 1, rnd() * 6.28);
+      }
+    }
+    if (wear.count) {
+      const m = new THREE.Mesh(wear.geometry(), this.contactMat);
+      m.renderOrder = -1; m.frustumCulled = false;
+      this.scene.add(m);
+    }
+    // the polished wheel paths are paler than the asphalt either side
+    if (polish.count) {
+      const mat = this.contactMat.clone();
+      mat.color.set(0xb4b1aa);
+      mat.onBeforeCompile = this.contactMat.onBeforeCompile;
+      mat.customProgramCacheKey = this.contactMat.customProgramCacheKey;
+      const m = new THREE.Mesh(polish.geometry(), mat);
+      m.renderOrder = -1; m.frustumCulled = false;
+      this.scene.add(m);
+    }
   }
 
   /**
@@ -6039,7 +6187,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
    * across the pavement (kerb side, middle, shop side), either way round.
    * About one person every 11 m of footway before the crowd thins them.
    */
-  private ringWalkers(ring: P2[], wEdge: number[], rnd: () => number, COAT: number[][]) {
+  private ringWalkers(ring: P2[], wEdge: number[], rnd: () => number, COAT: number[][], ground: "walk" | "park" = "walk") {
     const known = wEdge.filter((w) => w >= 0);
     if (!known.length) return;
     const wMed = known.slice().sort((a, b) => a - b)[known.length >> 1];
@@ -6069,7 +6217,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         const j = (i + 1) % n;
         for (const t of [0.25, 0.5, 0.75]) {
           tot++;
-          if (this.groundAt(pts[i * 2] + (pts[j * 2] - pts[i * 2]) * t, pts[i * 2 + 1] + (pts[j * 2 + 1] - pts[i * 2 + 1]) * t) === "walk") ok++;
+          if (this.groundAt(pts[i * 2] + (pts[j * 2] - pts[i * 2]) * t, pts[i * 2 + 1] + (pts[j * 2 + 1] - pts[i * 2 + 1]) * t) === ground) ok++;
         }
       }
       if (ok < tot * 0.85) continue;
@@ -6110,17 +6258,18 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const tr = new Traffic(this.netRaw, (x, y) => this.groundAt(x, y) === "road", rnd);
       tr.populate(40, rnd, (c) => {
         const vk = rnd(), long = tr.segs[c.seg].L > 160;
-        const kind = long && vk < 0.04 ? "bus" : vk < 0.5 ? "car" : vk < 0.78 ? "suv" : vk < 0.88 ? "van" : "taxi";
+        const kind = long && vk < 0.04 ? "bus" : vk < 0.48 ? "car" : vk < 0.74 ? "suv" : vk < 0.83 ? "van" : vk < 0.88 ? "truck" : "taxi";
         const lc = c as LiveCar;
         lc.kind = kind;
         lc.col = kind === "taxi" ? TAXI : kind === "bus" ? BUS : CAR[(rnd() * CAR.length) | 0];
         lc.draw = rnd();
         // 25-40 km/h in town; the bus a little under
-        c.vmax = (kind === "bus" ? 7 : 8) + rnd() * 3;
-        c.len = kind === "bus" ? 12 : kind === "van" ? 5.2 : 4.8;
+        c.vmax = (kind === "bus" || kind === "truck" ? 7 : 8) + rnd() * 3;
+        c.len = kind === "bus" ? 12 : kind === "truck" ? 7.4 : kind === "van" ? 5.2 : 4.8;
       });
       this.traffic = tr;
       this.carList = tr.cars as LiveCar[];
+      this.dressCarriageway(tr, rnd);
     }
     // what the park walks converge on: a column in the big parks, a fountain
     // in the squares
@@ -6286,7 +6435,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       mesh.receiveShadow = true; mesh.frustumCulled = false;
       this.scene.add(mesh); this.fleets.push({ mesh, list, z, car });
     };
-    for (const kind of ["car", "suv", "van", "taxi", "bus"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
+    for (const kind of ["car", "suv", "van", "truck", "taxi", "bus"]) fleet(kind, this.carList.filter((m) => (m.kind ?? "car") === kind), 0.05, true);
     fleet("person", this.walkers, 0.15);
     fleet("ferry", this.boats, 0.05);
     this.applyCrowd();

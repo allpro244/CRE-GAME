@@ -37,7 +37,7 @@ import { isCivicLand } from "./demand";
 import { dollarLevel, rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
 import { DEV_MARGIN, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
-import { cityCoverage, cityInfillCap, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar } from "./dev";
+import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue } from "./leasing";
@@ -814,43 +814,6 @@ export function claimJob(
  * towers at the peak is carrying three towers' worth of debt against three
  * pieces of dirt when the market turns.
  */
-/** Monthly capacity for anonymous merchant construction, from employment × credit. */
-function replenishCityBuildPool(s: GameState) {
-  const jobs = Math.max(20_000, s.econ.jobs ?? 100_000);
-  const credit = Math.max(0.35, s.econ.creditIdx ?? 1);
-  // ~$90 per employed resident per month of construction capacity. Generous
-  // enough that a normal pipeline finishes; tight enough that a credit crunch
-  // with many simultaneous frames can orphan work — the point of a pool.
-  // ...IN CONSTRUCTION DOLLARS OF THE DAY (2026-10-08). The $90 and the $8M
-  // floor were struck at year-0 prices and never carried the price level,
-  // while every job they fund is budgeted at `costIdx`. Measured on Manhattan
-  // below Houston, Young town, no player: by year 100 cost had run to 44x,
-  // the refill was still $15.9M a month, and 317 anonymous jobs carried
-  // $31.1B of unspent budget — 1,957 months of refill. Every frame slipped a
-  // month at a time forever, held its crew slot while it did, and the
-  // groundbreak path (capped at `crewCapacity` live jobs) stopped starting
-  // anything: median scheduled build 77 months for walk-ups the schedule
-  // says take 22-34. Capacity is a real quantity of work per employed
-  // resident, so it is priced at what work costs.
-  const costLevel = Math.max(0.35 * (s.econ.priceLevel ?? 1), s.econ.costIdx ?? 1);
-  let monthly = Math.round(Math.max(8_000_000, jobs * 90 * credit) * costLevel);
-  // SUPPLY MUST ANSWER EMPLOYMENT (ECONOMY.md §F #2). When office vacancy is
-  // already on the frictional rail, the space market has asked for more stock.
-  // Orphaning those frames because the pool was sized for a quiet year is how
-  // stock CAGR falls behind jobs — and how the rent rail stays permanently
-  // pinned. Service the live anonymous burn when the book is binding.
-  let anonBurn = 0;
-  for (const j of s.cityJobs ?? []) {
-    if (j.orphaned || j.firmId || !(j.cost ?? 0)) continue;
-    anonBurn += monthJobSpend(j, s.month);
-  }
-  const officeVac = s.econ.cityVac?.office ?? NATURAL_VAC.office;
-  const pinned = officeVac <= frictionFloor("office") + 1e-6;
-  if (pinned && anonBurn > monthly) monthly = anonBurn;
-  const cap = monthly * 48;
-  s.econ.cityBuildCash = Math.min(cap, (s.econ.cityBuildCash ?? monthly * 24) + monthly);
-}
-
 function monthJobSpend(
   j: { cost?: number; spent?: number; startM: number; deliverM: number },
   month: number,
@@ -869,11 +832,9 @@ function monthJobSpend(
 /** True when a thin pool should kill the job rather than slip the schedule. */
 function anonShouldOrphan(s: GameState, j: NonNullable<GameState["cityJobs"]>[number]): boolean {
   const progress = (j.spent ?? 0) / Math.max(1, j.cost ?? 1);
-  // A frame already in the air waits a month when the pool is thin — that is
-  // schedule slippage, and it is how real jobs survive a funding pinch. Only
-  // greenfield work with almost nothing spent orphans into a standing skeleton,
-  // and only when credit is already frightened. Otherwise the pool was merely
-  // short for a month and next month's replenishment covers the call.
+  // Only greenfield work with almost nothing spent orphans into a standing
+  // skeleton, and only when credit is already frightened; a frame already in
+  // the air gets finished.
   return progress < 0.12 && (s.econ.creditIdx ?? 1) < 0.70;
 }
 
@@ -889,7 +850,20 @@ function orphanCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]>[numbe
   if (j.bbl) stallSupplyProject(s, j.bbl);
 }
 
-/** Anonymous city jobs draw equity + capital calls from the city pool. */
+/**
+ * Anonymous city jobs: the sponsor's equity first, then the construction
+ * loan, interest capitalised while the commitment has room.
+ *
+ * NO CITY POOL (2026-10-13). This drew every call from a citywide fund that
+ * refilled at $90 per employed resident a month, floored at $8M and at
+ * 20,000 jobs — numbers with no source, both floors binding in every month
+ * measured, and the fund itself never short (it grew $99M -> $361M over 40
+ * years on the small map). Merchant equity is raised per deal from national
+ * money, not rationed by a town budget. What does stop a frame is real: a
+ * greenfield job with almost nothing spent, past its loan commitment, in a
+ * frightened credit window, is walked away from rather than funded out of
+ * the sponsor's pocket. Everything else pays its own way.
+ */
 function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]>[number]) {
   // Legacy unstamped jobs keep the old free path so old saves do not mass-orphan.
   if (!(j.cost ?? 0)) return;
@@ -900,56 +874,27 @@ function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]
   const commitment = Math.max(j.debt ?? 0, j.commitment ?? (j.cost ?? 0));
   const debtRoom = Math.max(0, commitment - (j.debt ?? 0));
   const fromDebt = Math.min(afterEquity, debtRoom);
-  const cashNeed = fromEquity + (afterEquity - fromDebt);
-  const pool = s.econ.cityBuildCash ?? 0;
-  if (pool < cashNeed) {
-    if (anonShouldOrphan(s, j)) {
-      orphanCityJob(s, j);
-      s.news.unshift({
-        q: s.month, kind: "event",
-        text: `Merchant builders have stopped work — the city's construction pool could not fund `
-          + `the remaining ${money(cashNeed)} call on an anonymous job.`,
-      });
-    } else {
-      // Schedule slips with the funding month — otherwise a deferred job would
-      // still "open" on the original deliverM with work unpaid, and the space
-      // market would book stock that never topped out.
-      j.deliverM = (j.deliverM ?? s.month) + 1;
-      if (j.bbl) rescheduleSupplyProject(s, j.bbl, j.deliverM);
-    }
+  const overrun = afterEquity - fromDebt;
+  if (overrun > 0 && anonShouldOrphan(s, j)) {
+    orphanCityJob(s, j);
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: `Merchant builders have stopped work on an anonymous job — the loan is drawn, ${money(overrun)} more is due, `
+        + `and nobody will put fresh equity into a hole in this credit market.`,
+    });
     return;
   }
-  s.econ.cityBuildCash = pool - cashNeed;
   j.equityLeft = Math.max(0, (j.equityLeft ?? 0) - fromEquity);
   j.debt = (j.debt ?? 0) + fromDebt;
   j.spent = (j.spent ?? 0) + spend;
   const cap = Math.round(((j.debt ?? 0) * (j.ratePct ?? 8)) / 100 / 12);
   if (cap > 0) {
     const room = Math.max(0, commitment - (j.debt ?? 0));
-    const capitalised = Math.min(cap, room);
-    const cashInterest = cap - capitalised;
-    if (cashInterest > (s.econ.cityBuildCash ?? 0)) {
-      // Capitalise what fits the commitment; forbear unpaid cash interest unless
-      // this is a greenfield credit-crunch skeleton (same rule as a missed draw).
-      j.debt = (j.debt ?? 0) + capitalised;
-      const pay = Math.min(cashInterest, s.econ.cityBuildCash ?? 0);
-      s.econ.cityBuildCash = (s.econ.cityBuildCash ?? 0) - pay;
-      if (anonShouldOrphan(s, j)) {
-        orphanCityJob(s, j);
-        s.news.unshift({
-          q: s.month, kind: "event",
-          text: `An anonymous frame has stalled after exhausting interest carry in the city construction pool.`,
-        });
-      }
-      return;
-    }
-    j.debt = (j.debt ?? 0) + capitalised;
-    s.econ.cityBuildCash = (s.econ.cityBuildCash ?? 0) - cashInterest;
+    j.debt = (j.debt ?? 0) + Math.min(cap, room);
   }
 }
 
 export function fundJobs(s: GameState) {
-  replenishCityBuildPool(s);
   // Near-delivery anonymous work takes the pool before greenfield claims can
   // starve it — otherwise a wave of starts orphans the frames closest to
   // adding stock, which is the opposite of how a thin capital pool behaves.
@@ -2907,13 +2852,9 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     floors = hbu.floors;
     sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   }
-  // A named developer reads the same comps the anonymous city does: one
-  // increment above the block's cornice datum, not the zoning envelope.
+  // What the plate can physically stand up (`cityInfillCap` is the
+  // engineering limit since the cornice rule went, 2026-10-10).
   const infill = cityInfillCap(s, parcels, rec, lead);
-  // ...and he can go over it by buying the permission. Same rule as the
-  // anonymous city: the taller scheme stands only if it clears the same
-  // hurdle carrying the entitlement premium. See entitlementPremium in dev.ts.
-  const wantedFl = floors;   // what the envelope asked for, before the cornice
   if (floors > infill) {
     floors = infill;
     sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
@@ -2931,27 +2872,12 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
       return Math.max(landValue(rec, s.econ), assetValue(rec, s.econ, cond) * hair);
     })()
     : undefined;
-  // ...AND HE CAN GO OVER THE CORNICE BY BUYING THE PERMISSION. Taken only
-  // when the taller scheme clears the SAME hurdle while carrying the premium,
-  // so it never costs a project that would have gone ahead by right. A
-  // redevelopment's opportunity cost and an entitlement premium are both
-  // basis and therefore ADD: the premium is the price of the permission on
-  // top of the writedown on what is standing, not an alternative to it.
-  // See entitlementPremium in dev.ts.
-  const ownBasis = opp ?? s.holdings[bbl]?.costBasis ?? landValue(rec, s.econ);
-  let entitlePaid = 0;
-  {
-    const ceilFl = cap !== undefined ? Math.min(wantedFl, cap) : wantedFl;
-    if (ceilFl > floors) {
-      const tallSf = Math.max(3000, Math.round((rec.lotArea * plate * ceilFl) / 100) * 100);
-      const premium = entitlementPremium(ceilFl, infill, tallSf, ownBasis, s.econ.costIdx ?? 1);
-      const tall = premium > 0
-        ? underwriteDevelopment(s, parcels, bbl, use, ceilFl, plate, ownBasis + premium)
-        : null;
-      if (tall?.clears) { floors = ceilFl; sf = tallSf; entitlePaid = premium; }
-    }
-  }
-  const basisOverride = entitlePaid > 0 ? ownBasis + entitlePaid : opp;
+  // NO PERMISSION TO BUY (2026-10-13). A firm could pay an "entitlement
+  // premium" to build past `infill` — which since the cornice rule went is the
+  // engineering limit, so it was buying floors the plate cannot carry. This
+  // game has no discretionary approvals; the envelope is the FAR and the
+  // physics, and the pro forma decides within them.
+  const basisOverride = opp;
   const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, basisOverride);
   if (!underwriting?.clears) return;
   // Land-bank starts were ~1%/month even for a full-appetite developer — so a

@@ -38,7 +38,10 @@ import type { GameState, Rival, RivalStyle, TakePrivateRecord } from "./types";
 import { cloneState, monthLabel } from "./types";
 import { resolveRec, holdingNOIYr, heldOccupancy } from "./value";
 import { conveyedDeed, depositsOn } from "./leasing";
-import { assetGrade, livingRivals, marketAppetite, markRival, STYLE_OF, tie } from "./rivals";
+import { assetGrade, livingRivals, marketAppetite, markRival, paramsOf, tie, transferDeed } from "./rivals";
+import { observe } from "./competitorReads";
+import { sheetOf } from "./rivals";
+import { assumeBook, syncDebt } from "./rivalDebt";
 import { buyQuote, executePurchase, TRANSFER_TAX } from "./actions";
 import { fundableNow, fundAndBook } from "./credit";
 import { isCivicLand } from "./demand";
@@ -137,7 +140,7 @@ function situationOf(r: Rival, ltv: number): { sit: TakePrivateSituation; why: s
   if ((r.stressMs ?? 0) > 0) {
     return { sit: "distressed", why: `${r.name} is ${r.stressMs} month${r.stressMs === 1 ? "" : "s"} behind on debt service. The board would rather sell the company than hand the lenders the keys one building at a time.` };
   }
-  const st = STYLE_OF(r.style);
+  const st = paramsOf(r);
   if (ltv > st.maxLtv * 0.92) {
     return { sit: "strained", why: `${r.name} is at ${(ltv * 100).toFixed(0)}% leverage against a ${(st.maxLtv * 100).toFixed(0)}% ceiling — one bad year from being a forced seller, and the board knows it.` };
   }
@@ -440,6 +443,9 @@ function runClose(
   // (floating), which prepays at par.
   const r = (cur.rivals ?? []).find((x) => x.id === q.firmId)!;
   r.bbls = [];
+  // Every mortgage and the line repaid at the closing.
+  for (const x of Object.values(cur.cityLoans ?? {})) if (x.obligorId === r.id) delete cur.cityLoans![x.bbl];
+  r.lineBal = 0;
   r.debt = 0;
   r.cash = 0;
   r.uncalled = 0;
@@ -592,6 +598,79 @@ export function tickTakePrivateApproach(s: GameState, parcels: ParcelTable) {
   s.news.unshift({
     q: s.month, kind: "deal",
     text: `${poss(r.name)} board has retained a banker, and the banker has called you. ${q.situationWhy} `
-      + `They will talk about ${money(q.ask)} for the company — ${q.deeds.length} buildings marked at ${money(q.gross)}, ${money(q.debt)} of debt, ${money(q.cash)} in the account. The Street desk has the book.`,
+      + `They will talk about ${money(q.ask)} for the company — ${q.deeds.length} buildings marked at ${money(q.gross)}, ${money(q.debt)} of debt, ${money(q.cash)} in the account. The Competitors page has the book.`,
   });
+}
+
+
+// ------------------------------------------------------- firm-on-firm raids
+//
+// COMPETITORS_PLAN.md §3.1 #25. A raider buys a weakened competitor WHOLE, on
+// the same quote the take-private desk gives you: the board's own ask for
+// the equity (property equity at its situation's premium, plus the cash),
+// and nothing the player is not also offered. The difference is the paper.
+// The player's closing repays it at par and writes new loans; a raider with
+// no appetite for that ASSUMES it — the lender's consent and a fee of 1% of
+// the balance assumed, the standard assumption charge — and only if the
+// combined book stays inside the raider's own leverage limit. Closing costs
+// are the 2% the street pays on any purchase. The target's owners are paid
+// out and the name comes off the street.
+//
+// Once a year, mid-year; a raider looks at most once. The look is hashed
+// (no RNG stream), so a raid cannot re-roll anything it did not cause.
+
+export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
+  if (s.month % 12 !== 6) return;
+  for (const raider of livingRivals(s)) {
+    const sh = raider.sheet;
+    if (!sh || raider.stressMs) continue;
+    const raids = raider.profile === "raider" || (sh.capacity >= 85 && sh.reach >= 75 && sh.distress >= 60);
+    if (!raids || hash01(`${s.seed}:raid:${raider.id}:${s.month}`) > 0.5) continue;
+    const rm = markRival(s, parcels, raider);
+    let pick: { q: TakePrivateQuote; t: Rival; score: number } | null = null;
+    for (const t of livingRivals(s)) {
+      if (t === raider) continue;
+      const q = takePrivateQuote(s, parcels, t.id);
+      if (!q?.available || q.ask <= 0) continue;
+      const fees = Math.round(q.debt * 0.01 + q.gross * 0.02);
+      if (q.ask - q.cash + fees > raider.cash * 0.9) continue;
+      const debtAfter = raider.debt + q.debt;
+      const aumAfter = rm.aum + q.bookMark;
+      if (aumAfter <= 0 || debtAfter / aumAfter > paramsOf(raider).maxLtv) continue;
+      // Cheapest equity per dollar of property, and a board in trouble first.
+      const score = (q.situation === "distressed" ? 2 : 1) * Math.max(0, q.propertyEquity) / q.ask;
+      if (!pick || score > pick.score) pick = { q, t, score };
+    }
+    if (!pick) continue;
+    const { q, t } = pick;
+    const fees = Math.round(q.debt * 0.01 + q.gross * 0.02);
+    // Everything the target had in motion goes with the company: its listings
+    // are now the raider's to sell, its note claims the raider's to collect,
+    // and a books-for-sale package it had put up is withdrawn.
+    for (const li of s.listings) if (li.sellerId === t.id) li.sellerId = raider.id;
+    for (const rn of s.rivalNotes ?? []) if (rn.firmId === t.id) { rn.firmId = raider.id; rn.firm = raider.name; }
+    if (s.portfolios) s.portfolios = s.portfolios.filter((p) => !p.bbls.some((b) => t.bbls.includes(b)));
+    // THE PAPER IS ASSUMED (the 1% in `fees` is the lenders' consent): every
+    // mortgage, the line and the cranes move to the raider with the deeds.
+    assumeBook(s, t, raider);
+    for (const j of s.cityJobs ?? []) if (j.firmId === t.id && !j.orphaned) j.firmId = raider.id;
+    for (const bbl of [...t.bbls]) transferDeed(s, bbl, raider, 0);
+    syncDebt(s, raider);
+    raider.cash += q.cash - q.ask - fees;
+    t.distributed = (t.distributed ?? 0) + q.ask;
+    t.bbls = []; t.debt = 0; t.cash = 0; t.uncalled = 0; t.aum = 0; t.stressMs = 0;
+    t.heldSince = {};
+    delete t.extendedTo; delete t.deliveredM;
+    t.failedM = s.month;
+    t.takenOverBy = raider.id;
+    t.epilogueM = -1;
+    // A takeover is public: what it paid says how the raider prices.
+    observe(s, raider, sheetOf(raider), ["discipline", "leverage", "distress"], 0.12);
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: `${raider.name} has bought ${t.name} outright — ${q.deeds.length} building${q.deeds.length === 1 ? "" : "s"} marked at ${money(q.gross)}, `
+        + `${money(q.ask)} to the owners${q.situation === "distressed" ? " of a firm that was behind on its debt" : ""}, and ${money(q.debt)} of paper assumed. `
+        + `${t.name} comes off the street.`,
+    });
+  }
 }

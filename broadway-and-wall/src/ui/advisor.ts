@@ -13,16 +13,9 @@ import { loiMarketPsf, openingNe } from "@/ui/panels/LoiNegotiate";
 import { usd } from "@/ui/format";
 import "./advisor.css";
 
-/**
- * Who signs the line under a letter: the leasing hire covering that building
- * if one is assigned, otherwise the house. Read-only — assignment itself is
- * done on the payroll page.
- */
-export function leasingDeskName(game: GameState, bbl: string): string {
-  const st = (game.staff ?? []).find(
-    (x) => x.role === "leasing" && x.assignedBbls?.includes(bbl),
-  );
-  return st ? `${st.name}, leasing` : "Your leasing desk";
+/** Who signs the line under a letter: the house. */
+export function leasingDeskName(_game: GameState, _bbl: string): string {
+  return "Your leasing desk";
 }
 
 /**

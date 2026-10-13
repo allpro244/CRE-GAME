@@ -208,7 +208,9 @@ export function workoutMood(s: GameState, lenderName: string, bbl?: string): {
   // underwrote to OWNING the building, and every month it waits is a month off
   // its return. There is no conversation to have.
   const loanHere = bbl ? s.holdings[bbl]?.loan : undefined;
-  const bought = (s.lenders ?? []).some((x) => x.name === lenderName && x.kind === "fund")
+  // A fund that bought it — or a competitor that did (it wants the building).
+  const bought = ((s.lenders ?? []).some((x) => x.name === lenderName && x.kind === "fund")
+    || (s.rivals ?? []).some((r) => r.name === lenderName))
     && (bbl
       ? loanHere?.holder === lenderName && productById(loanHere.product).lender !== lenderName
       : Object.values(s.holdings).some((h) => h.loan?.holder === lenderName));

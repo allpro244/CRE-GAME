@@ -2482,17 +2482,17 @@ export function opexPsf(cls: BuiltClass, econ: Econ, systemsDone: boolean, servi
   return (OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex + OPEX_FIXED[cls]) * econ.costIdx;
 }
 
-/** Controllable opex only — pmOpexMult applies here, not to fixed costs. */
+/** Controllable opex only — the half the service level moves; fixed costs are separate. */
 function controllableOpexPsf(
-  cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1, pmMult = 1,
+  cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1,
 ): number {
-  return OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex * econ.costIdx * pmMult;
+  return OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex * econ.costIdx;
 }
 
 function managedOpexPsf(
-  cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1, pmMult = 1,
+  cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1,
 ): number {
-  return controllableOpexPsf(cls, econ, systemsDone, service, pmMult) + OPEX_FIXED[cls] * econ.costIdx;
+  return controllableOpexPsf(cls, econ, systemsDone, service) + OPEX_FIXED[cls] * econ.costIdx;
 }
 
 /**
@@ -3070,17 +3070,15 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // cannot: the service policy moving the CONTROLLABLE half only (a manager
     // cannot economise on insurance), and the systems programme.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = rentableSf(rec) * managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+    const opexBill = rentableSf(rec) * managedOpexPsf(cls, econ, systemsDone, h.service) * locOpexMult(rec, econ, cls);
     return egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - propertyTaxYr(rec, h) - (h.groundRentOut?.rentYr ?? 0);
   }
   // Rent first, then the expense stack, then what comes back through the
   // recovery clauses. Vacant space reimburses nothing and still costs money —
   // that gap is the whole reason occupancy matters more than headline rent.
   const systemsDone = h.programsDone?.systems !== undefined;
-  // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
-  // controllable half only — fixed costs do not care who manages the building.
-  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service) * locOpexMult(rec, econ, cls);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service)) * locOpexMult(rec, econ, cls);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
 
@@ -3155,7 +3153,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
     // The same opexPsf every other class reads — see holdingNOIYr, where the
     // flat legacy table used to disagree with it by 22%.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = letSf * managedOpexPsf("multifamily", econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, "multifamily");
+    const opexBill = letSf * managedOpexPsf("multifamily", econ, systemsDone, h.service) * locOpexMult(rec, econ, "multifamily");
     const taxBill = grossTaxYr(rec, h);
     return {
       baseRent: egi, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi,
@@ -3169,10 +3167,8 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   }
   const cls = rec.class as BuiltClass;
   const systemsDone = h.programsDone?.systems !== undefined;
-  // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
-  // controllable half only — fixed costs do not care who manages the building.
-  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service) * locOpexMult(rec, econ, cls);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service)) * locOpexMult(rec, econ, cls);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;
@@ -3591,7 +3587,7 @@ function leaseUpGapNoiYr(rec: ParcelRecord, econ: Econ, h: Holding, gapSf: numbe
   const rent = marketRentPsfYr(rec, econ, h.condition, h.condIdx);
   if (cls === "multifamily") return gapSf * rent * (1 - MGMT_FEE - APT_RESERVE);
   const systemsDone = h.programsDone?.systems !== undefined;
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service)) * locOpexMult(rec, econ, cls);
   const taxNowPsf = grossTaxYr(rec, h) / Math.max(1, rec.bldgArea);
   return gapSf * (rent + RECOVERY_RATE[cls] * (opexRecoverPsf + taxNowPsf)) * (1 - MGMT_FEE);
 }

@@ -149,7 +149,12 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
   ok(qk / Math.max(1, qn) >= 0.3, `the regional quotes ${(qk / Math.max(1, qn) * 100).toFixed(0)}% of the opening tape across twelve markets (${qk} of ${qn}; was 9%)`);
   // the life company across three towns and two dates — it is the desk most sensitive to the window and the grade
   let pn = 0, pq = 0;
-  for (const seed of [12007, 11, 4242]) {
+  // TEN TOWNS, NOT THREE. Three towns' tape at two dates is ~110 listings, and
+  // which buildings happen to be listed moved the share across this floor on
+  // a re-roll alone: 8% of 114 against 12% of 142, same desk, same sheet.
+  // Measured either side of the change that tripped it, ten towns read 8.7%
+  // and 9.8% — the floor and the quantity are unchanged; the sample is not.
+  for (const seed of [12007, 11, 4242, 22, 33, 55, 77, 99, 7777, 91117]) {
     let g2 = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
     // Two dates, as the comment above says: one snapshot of three towns' tape
     // was 25-31 built listings, and a sample-size guard of 25 then failed on
@@ -161,7 +166,7 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
       for (const li of g2.listings) { const r = E.resolveRec(parcels, g2, li.bbl); if (!r || r.class === "land" || !r.bldgArea || li.halfBuilt) continue; pn++; if (E.buyQuote(g2, parcels, li.bbl, li.ask, "pelican", 1).principal > 0) pq++; }
     }
   }
-  ok(pn > 25 && pq / pn >= 0.08, `the life company quotes ${(pq / pn * 100).toFixed(0)}% of ${pn} listings at months 20 and 36, three towns — standard buildings at a quarter point more (was 0%)`);
+  ok(pn > 25 && pq / pn >= 0.08, `the life company quotes ${(pq / pn * 100).toFixed(1)}% of ${pn} listings at months 20 and 36, ten towns — standard buildings at a quarter point more (was 0%)`);
   const qGood = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "good"), qStd = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "standard"), qWorn = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "worn");
   ok(near(qStd.ratePct - qGood.ratePct, 0.25, 0.011) && E.conditionOk(pl, "standard") && !E.conditionOk(pl, "worn"), `Pelican: standard +${(qStd.ratePct - qGood.ratePct).toFixed(2)}% over good; worn refused${qWorn.principal > 0 ? " (quote path still sizes; originate refuses)" : ""}`);
 }

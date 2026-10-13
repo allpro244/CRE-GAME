@@ -2,18 +2,14 @@
  * FIRM CAPITAL — what the firm has earned as an institution.
  *
  * Not XP. Not a skill tree. A readout of institutional standing already earned
- * in hireReputation, lender relationships, clean exits, payroll shape, and
- * whether a vehicle is live. See ATTR_CONTRACT.md Phases 5–6.
- *
- * Process capacity: a mature shop covers slightly more float SF (playbooks,
- * reporting) — capped and earned, never a free dial. (There is no death or
- * succession in this game — owner decision, ECONOMY.md "No age, no
- * mortality" — so nothing ever strips it back.)
+ * in lender relationships, clean exits, the book, and whether a vehicle is
+ * live. It is a readout only: nothing in the economy reads it. There are no
+ * people in this game (owner decision, ECONOMY.md "Firms only"), so standing
+ * belongs to the firm.
  */
 import type { GameState } from "./types";
-import { topCareerLines, type Person } from "./people";
 
-/** Labels only — keep in sync with MILESTONES in sim.ts (avoid sim↔staff cycle). */
+/** Labels only — keep in sync with MILESTONES in sim.ts (avoids an import cycle with sim.ts). */
 const MILESTONE_LABELS: Record<string, string> = {
   deed1: "First deed recorded",
   lease1: "First lease signed",
@@ -51,11 +47,6 @@ export interface FirmCapital {
   /** 0..1 continuous maturity. */
   score: number;
   pillars: FirmPillar[];
-  /**
-   * Multiplier on owner float capacity from institutional process.
-   * 1.00 at tier 0 → 1.08 at tier 5. Bandwidth still dominates.
-   */
-  processCapacityMult: number;
   milestonesHit: number;
   milestonesTotal: number;
 }
@@ -81,13 +72,11 @@ function meanLenderRel(s: GameState): number {
 }
 
 /**
- * Pure readout — no RNG, no mutation. Safe on every Staff page render.
+ * Pure readout — no RNG, no mutation. Safe on every render.
  */
 export function firmCapital(s: GameState): FirmCapital {
-  const hire = s.hireReputation ?? 0.55;
   const lender = meanLenderRel(s);
   const exits = cleanExits(s);
-  const staffN = (s.staff ?? []).length;
   const liveFund = !!(s.fund && !s.fund.settled);
   const fundRealised = !!(s.fund?.settled && !s.fund.failed && !s.fund.inKind);
   // Avoid netWorth(parcels) here — firmCapital is called from capacity paths that
@@ -99,18 +88,7 @@ export function firmCapital(s: GameState): FirmCapital {
   const milestonesHit = Object.keys(MILESTONE_LABELS)
     .filter((id) => s.milestones?.[id] !== undefined).length;
 
-  const shape = staffN <= 1 ? "hands-on" : staffN >= 5 ? "platform" : "growing firm";
   const pillars: FirmPillar[] = [
-    {
-      id: "hire",
-      label: "Hiring name",
-      score: Math.max(0, Math.min(1, (hire - 0.15) / 0.80)),
-      detail: hire < 0.45
-        ? "Messy firings — shortlists read worse"
-        : hire > 0.70
-          ? "People take your calls about seats"
-          : "Ordinary street standing on hires",
-    },
     {
       id: "lender",
       label: "Lender standing",
@@ -124,14 +102,6 @@ export function firmCapital(s: GameState): FirmCapital {
       detail: exits === 0
         ? "No profitable voluntary exit on the record"
         : `${exits} clean exit${exits === 1 ? "" : "s"} — LPs and desks notice`,
-    },
-    {
-      id: "bench",
-      label: "Bench",
-      score: Math.max(0, Math.min(1, staffN / 6)),
-      detail: staffN === 0
-        ? "You alone — no institutional bench"
-        : `${staffN} on payroll · ${shape}`,
     },
     {
       id: "vehicle",
@@ -169,14 +139,12 @@ export function firmCapital(s: GameState): FirmCapital {
 
   const score = pillars.reduce((a, p) => a + p.score, 0) / pillars.length;
   const tier = Math.max(0, Math.min(5, Math.floor(score * 6 - 1e-9)));
-  const processCapacityMult = 1 + 0.016 * tier; // ≤ 1.08
 
   return {
     tier,
     label: TIER_LABEL[tier],
     score,
     pillars,
-    processCapacityMult,
     milestonesHit,
     milestonesTotal: Object.keys(MILESTONE_LABELS).length,
   };
@@ -188,23 +156,7 @@ function valsDetail(lender: number): string {
   return "Thin file with the lenders in town";
 }
 
-/** Career years + top lines for the leveling readout (person track). */
-export function personProgress(person: Person | undefined): {
-  careerYears: number;
-  knows: string[];
-} {
-  if (!person) {
-    return { careerYears: 0, knows: [] };
-  }
-  const classM = Object.values(person.career?.classM ?? {}).reduce((a, m) => a + (m ?? 0), 0);
-  const careerYears = Math.round((classM / 12) * 10) / 10;
-  return {
-    careerYears,
-    knows: topCareerLines(person.career, 3),
-  };
-}
-
-/** Named milestones already struck — for the Staff "leveling" panel. */
+/** Named milestones already struck — for the firm's standing panel. */
 export function firmMilestonesHit(s: GameState): { id: string; label: string; atM: number }[] {
   const out: { id: string; label: string; atM: number }[] = [];
   for (const [id, label] of Object.entries(MILESTONE_LABELS)) {

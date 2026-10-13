@@ -72,6 +72,8 @@ export function describePropertyEvent(e: PropertyEvent): { when: string; title: 
       };
     case "demolished":
       return { when, title: "Building demolished", detail: e.outcome ?? "The site was cleared for redevelopment." };
+    case "converted":
+      return { when, title: "Conversion begun", detail: e.outcome ?? "The shell is being converted to a new use." };
     case "default":
       return { when, title: "Default / enforcement", detail: e.outcome ?? e.party ?? "The secured party took control." };
     case "major-lease":

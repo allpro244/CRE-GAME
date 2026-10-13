@@ -448,7 +448,7 @@ export default function TopBar() {
                 normal screen. Vitals stay up. */}
             {standing && (
               <Stat
-                label="Street"
+                label="Rank"
                 value={`${ordinal(standing.rank)} / ${standing.of}`}
                 delta={dRank !== 0 ? <span className={"tstat-rank " + (dRank > 0 ? "up" : "down")}>{dRank > 0 ? `▲${dRank}` : `▼${-dRank}`}</span> : null}
                 drop={3}
@@ -475,7 +475,7 @@ export default function TopBar() {
                     title={`Annualised cash flow vs ${dCfSince !== null ? monthLabel(dCfSince) : "last month"} — the same walk as the readout, run on the pre-advance book.`}
                   />
                 ) : null}
-                title={`After debt service and overhead. Firm cash flow annualised: deed NOI (including ground rent) less mortgages, mezz, construction interest, facility, the revolver, and the firm's own G&A and payroll. ${usd(cf)} / mo. Reconciled 2026-08: this walk is net of every facility that actually charges. Portfolio rows now subtract mezz and a pooled facility share; their strip is still deeds-only (no construction / revolver).`}
+                title={`After debt service and overhead. Firm cash flow annualised: deed NOI (including ground rent) less mortgages, mezz, construction interest, facility, the revolver, and the firm's own G&A. ${usd(cf)} / mo. Reconciled 2026-08: this walk is net of every facility that actually charges. Portfolio rows now subtract mezz and a pooled facility share; their strip is still deeds-only (no construction / revolver).`}
               />
             </span>
             {/* THE NEXT CLOCK — see ui/nextDue.ts. Never shed: in a game of

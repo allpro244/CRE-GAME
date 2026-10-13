@@ -33,11 +33,6 @@ import { drawLoc, repayLoc } from "@/engine/credit";
 import { openFacility, refinanceFacility, repayFacility, releaseFromFacility } from "@/engine/facility";
 import { raiseFund, callFundCapital, distributeFund } from "@/engine/fund";
 import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
-import {
-  hire, fire, refreshPool, POOL_REFRESH_M,
-  setSearchTier, assignStaff, unassignStaff,
-  type OwnerStyle, type BenchStyle,
-} from "@/engine/staff";
 import { netWorth, resolveRec, ownedHoldingValue } from "@/engine/value";
 import { leasingOdds } from "@/engine/absorption";
 import { usd as usdShort, usdSigned } from "@/ui/format";
@@ -66,7 +61,7 @@ export interface DesignPreview {
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "staff" | "primer" | "firm" | "rankings";
+export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -434,8 +429,6 @@ interface AppState {
   broker: (bbl: string, on: boolean) => void;
   rateCap: (bbl: string) => void;
   setAgent: (on: boolean) => void;
-  /** Hand the book to in-house leasing staff (quiet desk at 4%/2%). */
-  setTeamLeasing: (on: boolean) => void;
   setRenewalMgmt: (on: boolean) => void;
   /** Auto-sign at or above this share of market (net effective). */
   /**
@@ -469,20 +462,6 @@ interface AppState {
   setFundPay: (on: boolean) => void;
   drawCredit: (amt: number) => void;
   repayCredit: (amt: number) => void;
-  /**
-   * THE DESK. Hiring is an offer and a notice period, not a purchase — see
-   * engine/staff.ts. Nothing here moves money: the salary bills monthly
-   * through the G&A line in sim.ts and the severance is charged inside
-   * `fire`, which is where the ledger can see it.
-   */
-  hireStaff: (candidateId: number) => void;
-  fireStaff: (staffId: number) => void;
-  postJob: () => void;
-  setStaffSearchTier: (key: "post" | "network" | "recruiter") => void;
-  setStaffOwnerStyle: (style: OwnerStyle) => void;
-  setStaffBenchStyle: (style: BenchStyle) => void;
-  assignStaffBuilding: (staffId: number, bbl: string) => void;
-  unassignStaffBuilding: (staffId: number, bbl: string) => void;
   /** Cut a brand new town on this island at this size and build-out, and play it. */
   startRun: (island: string, size: string, dev: string, cash0?: number, setup?: Partial<GameSetup>, seed?: number) => Promise<void>;
   /** Rebuild the town in a named save and pick the campaign back up. */
@@ -2234,8 +2213,6 @@ export const useStore = create<AppState>((set, get) => ({
     // working the whole desk yourself for the rest of the month.
     let next: GameState = { ...game, agent: on };
     if (on) {
-      // Outside firm takes over — team handoff is redundant while they are on.
-      delete next.teamLeasing;
       if (parcels) {
         next = structuredClone(next);
         workLeasingDesk(next, parcels);
@@ -2247,36 +2224,6 @@ export const useStore = create<AppState>((set, get) => ({
             ? `Your agent has the book — ${tally.signed} signed, ${tally.passed} passed this month. Routine LOIs no longer interrupt.`
             : "Your agent has the book. They work the posted plan — 6% on what they sign. Routine LOIs no longer interrupt.");
       }
-    } else {
-      toast(next.teamLeasing
-        ? "Firm agent dismissed — your team still has the book."
-        : "You're handling leasing yourself again.");
-    }
-    set({ game: next });
-    void persist(next);
-  },
-
-  setTeamLeasing: (on) => {
-    const { game, parcels } = get();
-    if (!game) return;
-    if (on && !(game.staff ?? []).some((x) => x.role === "leasing")) {
-      toast("Hire a leasing person on Staff first — then hand them the book.", "err");
-      return;
-    }
-    if (on && game.agent) {
-      toast("Dismiss the firm agent first, or leave the book with them.", "err");
-      return;
-    }
-    let next: GameState = { ...game, teamLeasing: on || undefined };
-    if (!on) delete next.teamLeasing;
-    if (on && parcels) {
-      next = structuredClone(next);
-      next.teamLeasing = true;
-      workLeasingDesk(next, parcels);
-      const referred = next.lois.filter((l) => l.referred).length;
-      toast(referred
-        ? `Your team has the book — ${referred} letter${referred === 1 ? "" : "s"} referred back. Routine LOIs no longer interrupt.`
-        : "Your team has the book. They work the posted plan at the usual 4%/2% — no LOI popups unless they refer something.");
     } else {
       toast("You're handling leasing yourself again.");
     }
@@ -2301,112 +2248,6 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast("Paid down.");
-    void persist(r.s);
-  },
-
-  // THE PAYROLL. An offer is accepted on the spot and then nothing happens for
-  // two months while they work out a notice, which is why this toast talks
-  // about a start date rather than a hire.
-  hireStaff: (candidateId) => {
-    const { game, parcels } = get();
-    if (!game || !parcels) return;
-    const r = hire(game, parcels, candidateId);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    const hiringLeasing = (r.s.pendingHires ?? []).some((x) => x.staff.role === "leasing");
-    toast(hiringLeasing && !r.s.teamLeasing && !r.s.agent && !(r.s.staff ?? []).some((x) => x.role === "leasing")
-      ? "Offer accepted. A leasing hire signs nothing until you hand them the pen — the Leasing desk, once they walk in."
-      : "Offer accepted. They give notice first — the seat is empty until they walk in.");
-    void persist(r.s);
-  },
-
-  fireStaff: (staffId) => {
-    const { game, parcels } = get();
-    if (!game || !parcels) return;
-    const r = fire(game, parcels, staffId);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    // Marked as a bad outcome deliberately, the way handing back keys is: it
-    // succeeded, and it cost you three months' pay and your coverage.
-    toast("Severance paid. Nobody is in that seat now.", "err");
-    void persist(r.s);
-  },
-
-  /**
-   * POST THE JOB.
-   *
-   * `refreshPool` is called every month by `tickStaff`, so in ordinary play
-   * this never has anything to do — which is the point. It is deliberately
-   * passed force=false so that a player cannot make the shortlist reshuffle
-   * on demand: a hiring market you can spin produces the decision "spin
-   * again" instead of "is this person worth $140,000 a year", and staff.ts
-   * says so in as many words.
-   *
-   * What it is actually for is the two moments the tick cannot cover: a brand
-   * new campaign, where the desk exists before the first month has been
-   * advanced and there is no pool at all, and a save written before any of
-   * this existed. In both, the pool is stale by construction and this posts
-   * the first one.
-   */
-  postJob: () => {
-    const { game } = get();
-    if (!game) return;
-    const age = game.month - (game.hirePool?.m ?? -999);
-    if (game.hirePool && age < POOL_REFRESH_M) {
-      const wait = POOL_REFRESH_M - age;
-      toast(`That list went up ${age} month${age === 1 ? "" : "s"} ago. The next one is ${wait} month${wait === 1 ? "" : "s"} out.`, "err");
-      return;
-    }
-    // refreshPool writes into the state it is handed, and zustand repaints on
-    // identity — editing the live object would change the pool and render
-    // nothing.
-    const next: GameState = JSON.parse(JSON.stringify(game));
-    refreshPool(next, false);
-    set({ game: next });
-    toast("The job is posted. Three names on each desk — property, leasing and construction.");
-    void persist(next);
-  },
-
-  setStaffSearchTier: (key) => {
-    const { game, parcels } = get();
-    if (!game || !parcels) return;
-    const r = setSearchTier(game, parcels, key);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    toast(key === "post" ? "Posted. Cheap looks, wide bands."
-      : key === "network" ? "Working the network — tighter first impressions."
-        : "Recruiter retained. You paid for a sharper read.");
-    void persist(r.s);
-  },
-
-  setStaffOwnerStyle: (_style) => {
-    // Free capacity dial removed — firm shape emerges from headcount.
-  },
-
-  setStaffBenchStyle: (_style) => {
-    // Free capacity dial removed — firm shape emerges from headcount.
-  },
-
-  assignStaffBuilding: (staffId, bbl) => {
-    const { game } = get();
-    if (!game) return;
-    const r = assignStaff(game, staffId, bbl);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    const who = (r.s.staff ?? []).find((x) => x.id === staffId);
-    toast(who?.role === "construction"
-      ? "On that job — their cover is now that site's load."
-      : "Pinned — that building is their load now, not a skill chip on the firm desk.");
-    void persist(r.s);
-  },
-
-  unassignStaffBuilding: (staffId, bbl) => {
-    const { game } = get();
-    if (!game) return;
-    const r = unassignStaff(game, staffId, bbl);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    toast("Back on the float desk.");
     void persist(r.s);
   },
 

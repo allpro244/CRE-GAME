@@ -50,6 +50,8 @@ import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
 import { assetGrade, clearRivalClaims, forgetDeed } from "./rivals";
+import { addToLine, dropDeed, syncDebt } from "./rivalDebt";
+import { hash01 } from "./competitorTraits";
 import { genRentRoll } from "./leasing";
 import { recordComp } from "./comps";
 import { distressPrice, markSponsor } from "./sponsor";
@@ -172,6 +174,7 @@ export function tickNotes(s: GameState, parcels: ParcelTable) {
   if (!s.noteOffers) s.noteOffers = [];
   serviceNotes(s, parcels);
   takeRivalNotes(s, parcels);
+  loanToOwnBids(s);
   expireOffers(s, parcels);
   bringPaperToMarket(s, parcels);
 }
@@ -221,7 +224,7 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
       if (s.month >= n.maturityM) {
         if (!dead && rng(s) < 0.55 + 0.4 * pCure(s, r, n.face)) {
           s.cash += n.face; logBooks(s, "sold", n.face);
-          if (r) r.cash = Math.max(0, r.cash - n.face);
+          if (r) { r.cash = Math.max(0, r.cash - n.face); dropDeed(s, r, n.bbl); }
           clearPrivateOrigination(s, n);
           s.news.unshift({
             q: s.month, kind: "deal",
@@ -344,10 +347,8 @@ export function takeDeed(s: GameState, parcels: ParcelTable, n: Note, how: "fore
   if (r) {
     r.bbls = r.bbls.filter((b) => b !== n.bbl);
     forgetDeed(r, n.bbl);
-    r.debt = Math.max(0, r.debt - n.face);   // the debt went with the deed
+    dropDeed(s, r, n.bbl);   // the debt went with the deed
   }
-  // Private-originated paper also drops the cityLoans row in your name.
-  if (n.privateOriginated && s.cityLoans?.[n.bbl]) delete s.cityLoans[n.bbl];
   clearRivalClaims(s, n.bbl);
   s.listings = s.listings.filter((l) => l.bbl !== n.bbl);
   delete s.approaches[n.bbl];
@@ -393,6 +394,45 @@ function wreckedRoll(s: GameState, rec: ParcelRecord, h: Holding, occ: number) {
 
 // -------------------------------------------------------------- the offer sheet
 
+/**
+ * LOAN-TO-OWN (COMPETITORS_PLAN.md §3.1 #20). A firm that hunts distress and
+ * hears about paper early does not wait for you to pass on it: it buys the
+ * non-performing loan while the offer is still open, on the same terms the
+ * tape is offering you, and files on the deed. You find out when the offer is
+ * gone. Each such firm looks at each open offer once a month, on a hashed
+ * clock (no RNG stream), and only when its book can carry the paper — the
+ * test the expiry buyer below already applies.
+ */
+function loanToOwnBids(s: GameState) {
+  if (!s.noteOffers?.length) return;
+  const hunters = (s.rivals ?? []).filter((r) =>
+    r.failedM === undefined && !r.stressMs && r.sheet && r.sheet.distress >= 85 && r.sheet.reach >= 60);
+  if (!hunters.length) return;
+  for (let i = s.noteOffers.length - 1; i >= 0; i--) {
+    const o = s.noteOffers[i];
+    if (o.perf === "performing") continue;
+    const px = Math.round(o.face * o.askPct);
+    const buyer = hunters.find((r) =>
+      r.id !== o.obligorId && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78
+      && hash01(`${s.seed}:lto:${r.id}:${o.id}:${s.month}`) < 0.08);
+    if (!buyer) continue;
+    s.noteOffers.splice(i, 1);
+    const equity = Math.min(Math.max(0, buyer.cash), Math.round(px * 0.35));
+    buyer.cash -= equity;
+    addToLine(s, buyer, px - equity);     // the paper is bought on the line
+    holdPaper(s, o.bbl, buyer.id);
+    (s.rivalNotes ??= []).push({
+      bbl: o.bbl, firmId: buyer.id, firm: buyer.name, face: o.face,
+      takeM: s.month + FILE_MIN_M + Math.floor(hash01(`${s.seed}:lto-file:${o.id}`) * (FILE_MAX_M - FILE_MIN_M + 1)),
+    });
+    s.news.unshift({
+      q: s.month, kind: "event",
+      text: `${buyer.name} bought the defaulted loan on ${o.address} off ${o.lender} at ${(100 * o.askPct).toFixed(0)} cents before anyone else moved. `
+        + `They want the building, not the coupon — ${o.obligor} has about a year.`,
+    });
+  }
+}
+
 function expireOffers(s: GameState, _parcels: ParcelTable) {
   for (let i = s.noteOffers!.length - 1; i >= 0; i--) {
     const o = s.noteOffers![i];
@@ -420,7 +460,7 @@ function expireOffers(s: GameState, _parcels: ParcelTable) {
         ? bondBuyers[Math.floor(rng(s) * bondBuyers.length)] : undefined;
       if (!bb) continue;
       bb.cash -= px;
-      if (s.cityLoans?.[o.bbl]) delete s.cityLoans[o.bbl];
+      holdPaper(s, o.bbl, bb.id);
       s.news.unshift({
         q: s.month, kind: "event",
         text: `${bb.name} bought the performing loan on ${o.address} off ${o.lender} at `
@@ -430,14 +470,16 @@ function expireOffers(s: GameState, _parcels: ParcelTable) {
     }
     const able = (s.rivals ?? []).filter((r) =>
       r.failedM === undefined && r.id !== o.obligorId
-      && (r.style === "opportunistic")
+      // A firm with a sheet is a paper buyer if it hunts distress; the legacy
+      // roster keeps its style test.
+      && (r.sheet ? r.sheet.distress >= 70 : r.style === "opportunistic")
       && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78);
     const buyer = able.length && rng(s) < 0.55 ? able[Math.floor(rng(s) * able.length)] : undefined;
     if (!buyer) continue;
     const equity = Math.min(Math.max(0, buyer.cash), Math.round(px * 0.35));
     buyer.cash -= equity;
-    if (s.cityLoans?.[o.bbl]) delete s.cityLoans[o.bbl];       // the record follows the paper
-    buyer.debt += px - equity;
+    holdPaper(s, o.bbl, buyer.id);       // the record follows the paper
+    addToLine(s, buyer, px - equity);
     if (!s.rivalNotes) s.rivalNotes = [];
     s.rivalNotes.push({
       bbl: o.bbl, firmId: buyer.id, firm: buyer.name, face: o.face,
@@ -464,7 +506,7 @@ function takeRivalNotes(s: GameState, parcels: ParcelTable) {
     if (!from || from.id === to.id) continue;
     from.bbls = from.bbls.filter((b) => b !== rn.bbl);
     forgetDeed(from, rn.bbl);
-    from.debt = Math.max(0, from.debt - rn.face);
+    dropDeed(s, from, rn.bbl);
     to.bbls.push(rn.bbl);
     // Taking title through the paper is still taking title today — see the
     // same line in auction.ts for what an undated deed does to the hold clock.
@@ -647,7 +689,7 @@ export function buyNote(s: GameState, parcels: ParcelTable, id: string): { s: Ga
   const next = clone(s);
   fundAndBook(next, parcels, px, "bought");
   next.noteOffers = next.noteOffers!.filter((x) => x.id !== o.id);
-  if (next.cityLoans?.[o.bbl]) delete next.cityLoans[o.bbl];   // off the bank's statement — it is your paper now
+  holdPaper(next, o.bbl, "player");   // off the bank's statement — it is your paper now, and still owed
   next.notes!.push({
     id: "N" + (next.nextNoteId = (next.nextNoteId ?? 1) + 1),
     bbl: o.bbl, address: o.address, originator: o.lender,
@@ -695,6 +737,8 @@ export function modifyNote(s: GameState, _parcels: ParcelTable, id: string): { s
   r!.cash -= paydown;
   next.cash += paydown; logBooks(next, "sold", paydown);
   nn.face = Math.max(0, nn.face - paydown);
+  const row = next.cityLoans?.[nn.bbl];
+  if (row && row.obligorId === r!.id) { row.balance = Math.max(0, row.balance - paydown); syncDebt(next, r!); }
   nn.ratePct = +Math.max(1, nn.ratePct - 1.5).toFixed(2);
   nn.maturityM = next.month + Math.round(rrange(next, 24, 36));
   nn.perf = "performing";
@@ -804,6 +848,18 @@ export function payoffQuote(
   const l = lenderByName(s, lender);
   const p = lenderPressure(l);
   const bal = Math.round(h.loan.balance);
+  // A COMPETITOR THAT BOUGHT YOUR LOAN will take a profit instead of the
+  // building — 35% on what it paid, never more than you owe. It is the cheapest
+  // way out of its hands and it is not cheap.
+  const held = (s.firmHeldLoans ?? []).find((x) => x.bbl === bbl && x.firmId === h.loan!.holderFirmId);
+  if (held) {
+    const px = Math.min(bal, Math.round(held.paid * 1.35));
+    return {
+      px, bal, open: true,
+      why: `${lender} paid ${money(held.paid)} for this loan to get the building. It will take ${money(px)} instead — `
+        + `a third over what it paid — against ${money(bal)} owed.`,
+    };
+  }
   const value = ownedHoldingValue(s, parcels, h);
   const auction = value * distressPrice(s) * 0.86;
   const under = auction < bal;
@@ -849,6 +905,8 @@ export function discountedPayoff(s: GameState, parcels: ParcelTable, bbl: string
   const lender = loanLender(h.loan);
   const discount = q.bal - q.px;
   fundAndBook(next, parcels, q.px, "debtSvc", { bbl });
+  const held = (next.firmHeldLoans ?? []).find((x) => x.bbl === bbl);
+  if (held) held.payoff = q.px;
   next.holdings[bbl]!.loan = null;
   delete next.workouts![bbl];
   chargeLenderLoss(next, lender, discount);
@@ -864,6 +922,113 @@ export function discountedPayoff(s: GameState, parcels: ParcelTable, bbl: string
 }
 
 /**
+ * A COMPETITOR BUYS YOUR DEFAULTED LOAN — and wants the building.
+ *
+ * A bank holding a loan in default has two ways to be rid of it: run the
+ * foreclosure itself, or sell the paper to somebody who will. The buyers of
+ * defaulted commercial paper are loan-to-own funds: they price the loan off
+ * the BUILDING, not the coupon, because the building is what they intend to
+ * end up with. So when your loan is in a workout file and the bank has a
+ * reason to sell — its own capital is under pressure, or the file has run
+ * three months with no cure — a competitor that hunts distress (Distress 80+,
+ * Reach 55+) can buy it.
+ *
+ *   THE PRICE is what the paper is worth to an owner: the building's value
+ *   at a distress discount, never more than the balance — 55 to 95 cents.
+ *   The bank books the difference as a loss (`chargeLenderLoss`).
+ *   THE BUYER funds it like any note: a third of it equity, the rest on its
+ *   line, and only if its book can carry it.
+ *   AFTER: the loan's holder is that firm. It will not extend or forbear —
+ *   it paid to own the building (`workoutMood`). It collects your coupon
+ *   while you pay it; if you cure or refinance, it is repaid at par; a
+ *   discounted payoff costs you its purchase price plus a profit; and if the
+ *   July auction ends at its credit bid, the deed goes onto its book.
+ *
+ * Each candidate looks once a month on a hashed clock (no RNG stream). One
+ * loan per firm per month.
+ */
+function sellYourDefaultToACompetitor(s: GameState, parcels: ParcelTable) {
+  if (!s.workouts) return;
+  const hunters = (s.rivals ?? []).filter((r) =>
+    r.failedM === undefined && !r.stressMs && r.sheet && r.sheet.distress >= 80 && r.sheet.reach >= 55);
+  if (!hunters.length) return;
+  const used = new Set<string>();
+  for (const w of Object.values(s.workouts)) {
+    const h = s.holdings[w.bbl];
+    if (!h?.loan || h.loan.holder || w.stage === "forbearance") continue;
+    const bank = productById(h.loan.product).lender;
+    const p = lenderPressure(lenderByName(s, bank));
+    if (p < 0.35 && s.month - w.startM < 3) continue;
+    const rec = resolveRec(parcels, s, w.bbl);
+    if (!rec) continue;
+    const bal = Math.round(h.loan.balance);
+    const value = ownedHoldingValue(s, parcels, h);
+    const pct = Math.max(0.55, Math.min(0.95, (value * distressPrice(s) * 0.92) / Math.max(1, bal)));
+    const px = Math.round(bal * pct);
+    const buyer = hunters.find((r) =>
+      !used.has(r.id) && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.75
+      && Math.max(0, r.cash) >= px * 0.34
+      && hash01(`${s.seed}:ltoYou:${r.id}:${w.bbl}:${s.month}`) < 0.12);
+    if (!buyer) continue;
+    used.add(buyer.id);
+    const equity = Math.round(px * 0.34);
+    buyer.cash -= equity;
+    addToLine(s, buyer, px - equity);
+    chargeLenderLoss(s, bank, bal - px);
+    h.loan.holder = buyer.name;
+    h.loan.holderFirmId = buyer.id;
+    w.lender = buyer.name;
+    (s.firmHeldLoans ??= []).push({ bbl: w.bbl, firmId: buyer.id, paid: px, bal, m: s.month });
+    s.news.unshift({
+      q: s.month, kind: "warn", bbl: w.bbl,
+      text: `${bank} has sold your defaulted loan on ${rec.address} to ${buyer.name}, at ${(pct * 100).toFixed(0)} cents. `
+        + `${buyer.name} did not buy a coupon; it bought a road to your building. It will not extend, and if the July auction `
+        + `ends at its credit bid the deed is theirs. Cure it, refinance it, sell it — or pay them off for less than you owe.`,
+    });
+  }
+}
+
+/**
+ * THE PAPER SETTLES. Once a month, every loan of yours a competitor holds is
+ * squared with that competitor's books — the coupon while you pay, par when
+ * the loan is paid off by any route (a cure, a refinancing, a sale), the
+ * agreed number on a discounted payoff or the auction's net when the room
+ * outbids its credit bid, and nothing at all when the deed itself came to it
+ * (it took the building instead of the money).
+ */
+/** The row stays on the record — the borrower still owes it — but it is no desk's paper now. */
+function holdPaper(s: GameState, bbl: string, by: string) {
+  const x = s.cityLoans?.[bbl];
+  if (x) x.heldBy = by;
+}
+
+export function tickFirmHeldLoans(s: GameState) {
+  if (!s.firmHeldLoans?.length) return;
+  for (let i = s.firmHeldLoans.length - 1; i >= 0; i--) {
+    const x = s.firmHeldLoans[i];
+    const firm = (s.rivals ?? []).find((r) => r.id === x.firmId);
+    const loan = s.holdings[x.bbl]?.loan;
+    if (loan && loan.holderFirmId === x.firmId) {
+      // still theirs: the coupon reaches them only when it was actually paid
+      // (the whole payment: the principal it amortises is theirs as much as the coupon)
+      if (firm && !(loan.arrearsMs ?? 0)) firm.cash += Math.round(loan.monthlyPmt ?? 0);
+      x.bal = Math.round(loan.balance);
+      continue;
+    }
+    s.firmHeldLoans.splice(i, 1);
+    if (!firm) continue;
+    if (firm.bbls.includes(x.bbl)) continue;           // they took the building
+    firm.cash += x.payoff ?? x.bal;                    // repaid: par, or the agreed number
+  }
+}
+
+/** The firm holding this loan of yours, if a competitor bought it. */
+export function firmHoldingYourLoan(s: GameState, bbl: string) {
+  const id = s.holdings[bbl]?.loan?.holderFirmId;
+  return id ? (s.rivals ?? []).find((r) => r.id === id) : undefined;
+}
+
+/**
  * A DESK SELLS YOUR LOAN.
  *
  * Called from tickNotes' sibling in the lender tick. One field changes and the
@@ -872,6 +1037,7 @@ export function discountedPayoff(s: GameState, parcels: ParcelTable, bbl: string
  * seventy cents wants your building.
  */
 export function maybeSellYourLoan(s: GameState, parcels: ParcelTable) {
+  sellYourDefaultToACompetitor(s, parcels);
   for (const h of Object.values(s.holdings)) {
     if (!h.loan || h.loan.holder) continue;
     const from = productById(h.loan.product).lender;

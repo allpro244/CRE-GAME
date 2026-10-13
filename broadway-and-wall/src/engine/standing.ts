@@ -97,6 +97,11 @@ export interface YearReview {
   /** The building whose income grew most over the year, and the one that emptied most. */
   star: { bbl: string; noi0: number; noi1: number } | null;
   worry: { bbl: string; occ0: number; occ1: number } | null;
+  /**
+   * THE COMPETITORS' YEAR (COMPETITORS_PLAN.md §7): the biggest purchase a
+   * competitor made, the firms that went under, and the ones that raised.
+   */
+  street: { deal: { buyer: string; address: string; price: number } | null; failed: string[]; raised: string[] };
 }
 
 /**
@@ -144,11 +149,11 @@ export function yearReview(
   const up = start.rank - end.rank;
   const beat = nwPct - streetPct;
   const verdict =
-    end.nw <= 0 ? "A year spent underwater. The street is watching to see whether you surface."
-    : up > 0 ? `${up === 1 ? "Up a place" : `Up ${up} places`} to ${ordinal(end.rank)} of ${end.of}. ${beat >= 0 ? "You outran the street" : "The street ran faster, and you still climbed"}.`
-    : up < 0 ? `${up === -1 ? "Down a place" : `Down ${-up} places`} to ${ordinal(end.rank)} of ${end.of}. ${beat >= 0 ? "You grew — somebody grew faster" : "The street outran you this year"}.`
+    end.nw <= 0 ? "A year spent underwater. The market is watching to see whether you surface."
+    : up > 0 ? `${up === 1 ? "Up a place" : `Up ${up} places`} to ${ordinal(end.rank)} of ${end.of}. ${beat >= 0 ? "You outran the competition" : "The competition ran faster, and you still climbed"}.`
+    : up < 0 ? `${up === -1 ? "Down a place" : `Down ${-up} places`} to ${ordinal(end.rank)} of ${end.of}. ${beat >= 0 ? "You grew — somebody grew faster" : "The competition outran you this year"}.`
     : end.rank === 1 ? `Still the biggest book in town. ${beat >= 0 ? "And pulling away" : "The pack gained on you"}.`
-    : `Holding ${ordinal(end.rank)} of ${end.of}. ${Math.abs(beat) < 2 ? "Level with the street" : beat > 0 ? "Gaining on the firms above" : "Losing ground to the street"}.`;
+    : `Holding ${ordinal(end.rank)} of ${end.of}. ${Math.abs(beat) < 2 ? "Level with the competition" : beat > 0 ? "Gaining on the firms above" : "Losing ground to the competition"}.`;
   return {
     y, year: startYear + y,
     nw0: start.nw, nw1: end.nw, nwPct,
@@ -168,7 +173,20 @@ export function yearReview(
     tier0: start.tier !== undefined ? TIER_LABEL[start.tier] ?? null : null,
     tier1: end.tier !== undefined ? TIER_LABEL[end.tier] ?? null : null,
     star, worry,
+    street: competitorYear(s, start.m, end.m),
   };
+}
+
+function competitorYear(s: GameState, m0: number, m1: number): YearReview["street"] {
+  const firms = new Set((s.rivals ?? []).map((r) => r.name));
+  let deal: YearReview["street"]["deal"] = null;
+  for (const c of s.comps ?? []) {
+    if (c.m <= m0 || c.m > m1 || !firms.has(c.buyer)) continue;
+    if (!deal || c.price > deal.price) deal = { buyer: c.buyer, address: c.address, price: c.price };
+  }
+  const failed = (s.rivals ?? []).filter((r) => r.failedM !== undefined && r.failedM > m0 && r.failedM <= m1).map((r) => r.name);
+  const raised = (s.rivals ?? []).filter((r) => r.bornM > m0 && r.bornM <= m1).map((r) => r.name);
+  return { deal, failed, raised };
 }
 
 

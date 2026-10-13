@@ -55,7 +55,7 @@ const TERMS: Record<string, { def: string; primerHint?: string }> = {
     def: "A lease written to end the same month as one the tenant already holds. Expansions are signed this way — one covenant, one roll date, one negotiation at the end.",
   },
   spinout: {
-    def: "A senior hire leaving an established shop to raise their own vehicle. The new firm starts small and knows its old employer's book — sometimes yours too.",
+    def: "A team leaving an established shop to raise its own vehicle. The new firm starts small and knows its parent's book.",
   },
   suite: {
     def: "A tenancy cut from a floorplate — the size the tenant asked for, not a pre-cut equal bite. A remnant under the lettable floor is not a suite.",

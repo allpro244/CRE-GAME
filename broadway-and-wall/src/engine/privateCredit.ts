@@ -16,6 +16,7 @@ import { cloneState, logBooks, monthLabel } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, netWorth, resolveRec } from "./value";
 import { assetGrade } from "./rivals";
+import { syncDebt } from "./rivalDebt";
 import { firmShort } from "./firm";
 import { lenderByName } from "./lenders";
 import { coverCashShortfall, fundableNow, sweepLocIdleCash } from "./credit";
@@ -137,8 +138,8 @@ export function releasePrivateStreetRecord(s: GameState, n: Note, newLender?: st
 export function clearPrivateOrigination(s: GameState, n: Note) {
   if (!n.privateOriginated) return;
   const r = s.rivals?.find((x) => x.id === n.obligorId);
-  if (r) r.debt = Math.max(0, r.debt - n.face);
   releasePrivateStreetRecord(s, n);
+  if (r) syncDebt(s, r);
 }
 
 function deedAlreadyLiens(s: GameState, bbl: string): boolean {
@@ -313,7 +314,6 @@ export function fundPrivateAsk(
   logBooks(next, "interest", pointsCost);
 
   rival.cash += netToBorrower;
-  rival.debt += ask.face;
   if ((rival.stressMs ?? 0) > 0) rival.stressMs = Math.max(0, (rival.stressMs ?? 0) - 2);
 
   if (!next.cityLoans) next.cityLoans = {};
@@ -328,7 +328,9 @@ export function fundPrivateAsk(
     origValue: ask.asIs,
     klass: rec.class,
     status: "current",
+    heldBy: "player",
   };
+  syncDebt(next, rival);
 
   if (!next.notes) next.notes = [];
   next.notes.push({

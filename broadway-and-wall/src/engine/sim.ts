@@ -147,6 +147,14 @@ export function newGame(
    * `s.setup` itself — test/setup.mjs holds that with a state hash.
    */
   setupIn?: Partial<GameSetup>,
+  /**
+   * The map's size preset and lot count, set before the rivals are dealt so
+   * `sizeAreaScale` sees the real market (2026-10-13). The app used to set
+   * these on the state AFTER newGame, so a Great City opened with a
+   * standard island's roster and the opening text called it the standard
+   * island. Harnesses pass nothing and keep the unscaled opening.
+   */
+  where?: { citySize?: string; cityLots?: number },
 ): GameState {
   const setup = setupIn ? normalizeSetup(setupIn) : undefined;
   if (setup?.sandbox) cash0 = SANDBOX_CASH;
@@ -205,6 +213,8 @@ export function newGame(
   // Before the economy, because initEcon reads the era and the credit
   // position off it, and initRivals reads the field.
   if (setup) s.setup = setup;
+  if (where?.citySize) s.citySize = where.citySize as GameState["citySize"];
+  if (where?.cityLots) s.cityLots = where.cityLots;
   if (setup?.firmName) { s.firm = { ...s.firm!, name: setup.firmName, short: shortFirmName(setup.firmName) }; }
   if (setup?.clock === "everything" || setup?.clock === "opportunities") s.clockStops = setup.clock;
   if (setup?.brokerStops === "never") s.brokerStops = "never";

@@ -1818,6 +1818,8 @@ export interface Econ {
   regionTrend?: number;
   /** The last month's regional pull on the export base, per year, after the cost brake. */
   regionPull?: number;
+  /** Half the town's loan book is at desks too impaired to quote (see tickEcon). */
+  debtShut?: boolean;
   /** The population by age: children, working age, over 65. */
   ages?: { kids: number; work: number; old: number };
   /** Adults (working age + over 65) at the opening, for household formation. */

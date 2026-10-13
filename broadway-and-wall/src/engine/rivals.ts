@@ -49,7 +49,8 @@ import { sizeAreaScale } from "./cityscale";
 import { money } from "./money";
 import { FUND_INVEST_M, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { observe, yearOfWatching } from "./competitorReads";
-import { renewRow, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
+import { SURNAMES as OWNER_SURNAMES } from "./owners";
+import { deskWithRoom, renewRow, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
 import {
   paramsFrom, siteFit, dealsPerYear, misreadPp, drawSheet, profilesForStyle, hash01, GRADE_NUM,
   PROFILE_OF, PROFILES, inv as invTrait, LEVERAGE_RANGE, sheetFromStyle, classTrait, nearestProfile,
@@ -2274,6 +2275,26 @@ function coinFirm(s: GameState, used: Set<string>): { name: string; style: Rival
     if (used.has(name)) continue;
     return { name, style: NEW_FIRMS[Math.floor(rng(s, "rivals") * NEW_FIRMS.length)].style };
   }
+  const name = spareFirmName(used);
+  return name ? { name, style: NEW_FIRMS[Math.floor(rng(s, "rivals") * NEW_FIRMS.length)].style } : null;
+}
+
+/**
+ * WHEN THE STREET HAS USED THE OBVIOUS NAMES (2026-10-13). 26 surnames x 10
+ * forms ran out over a century and spinouts came out "Hollis Capital 692".
+ * Only reached once the seeded draw comes up empty, and it draws nothing, so
+ * no stream moves: both surname tables with every form, then two founders.
+ */
+let NAME_POOL: string[] | null = null;   // lazy: owners.ts imports this module
+function spareFirmName(used: Set<string>, lead?: string): string | null {
+  NAME_POOL ??= [...new Set([...SURNAMES, ...OWNER_SURNAMES])];
+  const heads = lead ? [lead] : NAME_POOL;
+  for (const a of heads) for (const h of HOUSES) { const n = `${a} ${h}`; if (!used.has(n)) return n; }
+  for (const a of heads) for (const b of NAME_POOL!) {
+    if (a === b) continue;
+    const n = `${a} & ${b}`; if (!used.has(n)) return n;
+    const m = `${a} ${b} ${HOUSES[(a.length + b.length) % HOUSES.length]}`; if (!used.has(m)) return m;
+  }
   return null;
 }
 
@@ -2461,7 +2482,7 @@ function firmNameFromFounder(s: GameState, stem: string, used: Set<string>): str
     const name = `${last} ${HOUSES[Math.floor(rng(s, "rivals") * HOUSES.length)]}`;
     if (!used.has(name)) return name;
   }
-  return `${last} Capital ${s.month}`;
+  return spareFirmName(used, last) ?? `${last} Capital ${s.month}`;
 }
 
 /**
@@ -4602,6 +4623,13 @@ export function rivalBuys(
     // its own limit (Discipline 100 → ten points) for the year the marks fall.
     const cushion = r.sheet ? 0.10 * r.sheet.discipline / 100 : 0;
     if (aumAfter > 0 && debtAfter / aumAfter > st.maxLtv - cushion) return false;
+    // NO DESK, NO DEAL (2026-10-13). Every lender caps what it holds against
+    // one name (`singleNameCap`: a bank's house limit inside the legal
+    // lending limit, 12 CFR 32). pickDesk wrote the loan regardless when every
+    // desk was full, so one sponsor could lever without end — a playthrough
+    // ended with one firm holding 65% of the street's buildings. A sponsor no
+    // desk will take more of does not get a term sheet, and does not bid.
+    if (debt > 0 && !deskWithRoom(s, r.id, debt)) return false;
     return true;
   });
   if (!candidates.length) return null;

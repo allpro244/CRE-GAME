@@ -11,6 +11,8 @@
   that merged tip. Do not stack parallel feature chats off an old base.
 - Before engine or economy work: `broadway-and-wall/CLAUDE.md` and
   `broadway-and-wall/HANDOFF.md`.
+- Before debt, lender or rival-debt work: `broadway-and-wall/BANKING.md`
+  (the loan book, the price law, and the handoff for rival per-loan debt).
 - Post-skyline / no-playtest queue: `broadway-and-wall/NO_PLAYTEST_PLAN.md`.
 - Developer-only play (MDGA — Make Development Great Again): `broadway-and-wall/MDGA_PLAN.md`;
   instruments in `broadway-and-wall/tools/mdga/`.

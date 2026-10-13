@@ -69,6 +69,7 @@ import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { fundCashNeed, fundableNow, spendable, fundAndBook } from "./credit";
 import { money } from "./money";
+import { monthlyPayment, scheduledPayment } from "./amortize";
 
 /** Facility money in news copy — never "$0.03M" for a $30k shortfall. */
 function dollars(n: number): string {
@@ -78,13 +79,6 @@ function dollars(n: number): string {
   return `$${Math.round(n).toLocaleString()}`;
 }
 
-/** Standard annuity payment, monthly, on a level-pay loan. */
-function monthlyPayment(principal: number, ratePct: number, years: number): number {
-  const r = ratePct / 100 / 12;
-  const n = years * 12;
-  if (r <= 0) return principal / n;
-  return (principal * r) / (1 - Math.pow(1 + r, -n));
-}
 
 /**
  * THE FACILITY PAYMENT — one function, four callers.
@@ -101,9 +95,7 @@ function monthlyPayment(principal: number, ratePct: number, years: number): numb
  * principal.
  */
 export function facilityPmt(principal: number, ratePct: number, ioMLeft: number, amortYears: number): number {
-  return ioMLeft > 0
-    ? Math.ceil((principal * ratePct) / 100 / 12)
-    : Math.round(monthlyPayment(principal, ratePct, amortYears));
+  return scheduledPayment(principal, ratePct, ioMLeft > 0, amortYears);
 }
 
 /** The same payment per dollar of balance, unrounded — what the coverage test solves against. */

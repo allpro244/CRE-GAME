@@ -419,6 +419,7 @@ interface AppState {
   setDepositBank: (id: string) => void;
   /** Cash management: sweep idle cash into Treasury bills, and the operating balance kept at the bank. */
   setCashMgmt: (p: { sweep?: boolean; keep?: number }) => void;
+  setDebtPolicy: (p: { rollMaxJumpBp?: number }) => void;
   /** Fold contiguous owned lots into one site; `payoff` retires the loans on them at the filing. */
   assemble: (bbls: string[], opts?: { payoff?: boolean }) => void;
   groundLease: (bbl: string, years: number, review?: import("@/engine/types").GroundReview) => void;
@@ -1937,6 +1938,13 @@ export const useStore = create<AppState>((set, get) => ({
     const { game } = get();
     if (!game) return;
     const next = { ...game, cashMgmt: { ...(game.cashMgmt ?? {}), ...p } };
+    set({ game: next });
+    void persist(next);
+  },
+  setDebtPolicy: (p) => {
+    const { game } = get();
+    if (!game) return;
+    const next = { ...game, debtPolicy: { ...(game.debtPolicy ?? {}), ...p } };
     set({ game: next });
     void persist(next);
   },

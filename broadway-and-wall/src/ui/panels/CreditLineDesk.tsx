@@ -2,18 +2,20 @@ import { useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { netWorth } from "@/engine/value";
-import { locLimit, locRate, locAvailable, spendable } from "@/engine/credit";
+import { locLimit, locRate, locAvailable, spendable, lineLender } from "@/engine/credit";
 import { usd, pct } from "@/ui/format";
 import { Big } from "@/ui/panels/shared";
 import { SponsorRecord } from "@/ui/panels/SponsorRecord";
 
-// The revolving line: up to 35% of net worth at prime + 400bps, and the
-// advance rate moves with the credit cycle — the label used to promise a
-// fixed 35% while the engine was quietly cutting it in a crunch. It draws
+// The revolving line: up to 60% of net worth (LOC_LTV) at the short index +
+// 400bps, written by the firm's bank and moving with that bank's appetite,
+// and the advance rate moves with the credit cycle — the label used to promise
+// a fixed share while the engine was quietly cutting it in a crunch. It draws
 // before a shortfall becomes insolvency, and idle cash sweeps against it.
 export function CreditLine() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
+  const lineBank = lineLender(game);
   const { drawCredit, repayCredit } = useStore.getState();
   const limit = locLimit(game, parcels);
   const nw = netWorth(game, parcels);
@@ -46,7 +48,7 @@ export function CreditLine() {
             never the answer to "can I afford this" — the engine funds a need
             from cash and then the line, and the desks quote the same total. */}
         <Big label="Spending power · cash + line" value={usd(power.total)} />
-        <Big label="Rate · index + 400" value={pct(rate)} />
+        <Big label={`Rate · ${lineBank ? `${lineBank.name}${lineBank.failedM !== undefined ? " (receiver)" : ""}` : "the line"}`} value={pct(rate)} />
         <Big label="Interest paid" value={usd(game.loc?.interestPaid ?? 0)} />
       </div>
       <SponsorRecord />

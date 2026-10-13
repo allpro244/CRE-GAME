@@ -19,7 +19,9 @@ import { assetGrade } from "./rivals";
 import { firmShort } from "./firm";
 import { lenderByName } from "./lenders";
 import { coverCashShortfall, fundableNow, sweepLocIdleCash } from "./credit";
-import { prepayPenalty, refiQuotes } from "./debt";
+import { prepayPenalty, refiQuotes, isPrivatePaper, productById, underwritingStandards } from "./debt";
+import { deskRatePct } from "./pricing";
+import { shortIndexOf } from "./market";
 import { money } from "./money";
 
 const clone = (s: GameState): GameState => cloneState(s);
@@ -43,6 +45,40 @@ const MAX_BORROW_QUOTES = 2;
 const CHEAP_DESKS = new Set(["savings", "harbor", "pelican", "conduit"]);
 /** Rival styles that will write short, expensive bridges. */
 const PRIVATE_LENDER_STYLES = new Set(["opportunistic", "pe", "vulture", "merchant"]);
+
+/**
+ * WHAT PRIVATE MONEY COSTS — priced off the market it is the alternative to.
+ *
+ * This was the index plus a random six to nine points, in every month of every
+ * cycle, so in a crunch — when the debt fund itself widens by half again —
+ * private paper got relatively CHEAPER than the institutional bridge it exists
+ * to undercut on speed, and in a boom it sat five points over a Cordage sheet
+ * nobody needed it to beat. A private bridge is priced as a premium over the
+ * debt fund's own floating sheet (the same price law every desk reads,
+ * pricing.ts): what the borrower would pay Cordage today, plus what certainty
+ * and a cheque that clears this month are worth. 2.5-5 points over the fund
+ * is the private-bridge / hard-money band over institutional bridge; the draw
+ * stays a draw because who is lending, and how badly they want it, varies.
+ */
+const PRIVATE_PREMIUM: [number, number] = [2.5, 5.0];
+function privateBase(s: GameState): number {
+  const fund = productById("cordage");
+  return deskRatePct(shortIndexOf(s.econ), fund.spread, {
+    ci: s.econ.creditIdx ?? 1,
+    app: lenderByName(s, fund.lender)?.appetite ?? 1,
+  });
+}
+/**
+ * HOW FAR PRIVATE MONEY ADVANCES, before the borrower's own distress. It sat
+ * at a fixed 55-68% whatever the market; it now moves with the same
+ * underwriting standards every desk reads — a few points looser at the top of
+ * a cycle, more points tighter at the bottom, with the same asymmetry
+ * (standards tighten faster than they loosen).
+ */
+function privateAdvance(s: GameState): number {
+  const st = underwritingStandards(s);
+  return 0.58 + (st >= 0 ? 0.04 * st : 0.10 * st);
+}
 
 /** Face you have already written that is still on the book. */
 export function privateBookFace(s: GameState): number {
@@ -122,12 +158,16 @@ function rivalNeedsPrivate(
   if (!stressed && !dry && !balloonSoon) return null;
 
   // Size: bridge, not a permanent takeout — 55–68% of as-is, capped.
-  const ltv = cl(0.55, 0.68, 0.55 + ((r.stressMs ?? 0) > 8 ? 0.08 : 0));
+  const ltv = cl(0.45, 0.72, privateAdvance(s) + ((r.stressMs ?? 0) > 8 ? 0.08 : 0));
   let face = Math.round(asIs * ltv / 25_000) * 25_000;
   face = cl(250_000, 12_000_000, face);
   if (face < 250_000 || asIs < face / 0.7) return null;
 
-  const alden = lenderByName(s, "Alden National");
+  // The volume bank is the one a stressed sponsor calls first. This looked up
+  // "Alden National", a desk that has never existed, so `bankShut` was always
+  // true and every ask in the game said "the banks have stopped answering" —
+  // in booms as well as panics.
+  const alden = lenderByName(s, "Alden Savings & Trust");
   const cordage = lenderByName(s, "Cordage Debt Partners");
   const bankShut = !alden || (alden.appetite ?? 1) < 0.2 || alden.failedM !== undefined;
   const why = bankShut
@@ -188,7 +228,7 @@ export function tickPrivateCredit(s: GameState, parcels: ParcelTable) {
   if (!candidates.length) return;
   const pick = candidates[Math.floor(rng(s) * candidates.length)];
   const rec = resolveRec(parcels, s, pick.bbl)!;
-  const ratePct = +(s.econ.indexRate + rrange(s, 6.0, 9.0)).toFixed(2);
+  const ratePct = +(privateBase(s) + rrange(s, PRIVATE_PREMIUM[0], PRIVATE_PREMIUM[1])).toFixed(2);
   const points = +rrange(s, 0.012, 0.028).toFixed(3);
   const termM = Math.round(rrange(s, 6, 18));
   const ask: PrivateCreditAsk = {
@@ -358,7 +398,7 @@ function playerNeedsPrivateBorrow(
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec || rec.class === "land" || !rec.bldgArea) return null;
   if (s.facility?.bbls.includes(bbl)) return null;
-  if (h.loan?.product === "cordage" && h.loan.holder && !h.loan.holder.includes("Cordage")) {
+  if (h.loan && isPrivatePaper(h.loan)) {
     // Already on private paper from a named holder — no stack.
     return null;
   }
@@ -395,7 +435,7 @@ function playerNeedsPrivateBorrow(
   // If a cheap desk already clears you, private money has nothing to say.
   if (payoff > 0 && bestCheap >= payoff) return null;
 
-  const ltv = cl(0.55, 0.68, 0.58 + (balloonFile ? 0.06 : 0));
+  const ltv = cl(0.45, 0.72, privateAdvance(s) + 0.03 + (balloonFile ? 0.06 : 0));
   let principal = Math.round((asIs * ltv) / 25_000) * 25_000;
   principal = cl(250_000, 12_000_000, principal);
   // A quote that cannot touch the balloon is noise — size at least toward payoff.
@@ -463,7 +503,7 @@ export function tickPrivateBorrow(s: GameState, parcels: ParcelTable) {
 
   const pick = candidates[Math.floor(rng(s) * candidates.length)];
   const rec = resolveRec(parcels, s, pick.bbl)!;
-  const ratePct = +(s.econ.indexRate + rrange(s, 6.0, 9.0)).toFixed(2);
+  const ratePct = +(privateBase(s) + rrange(s, PRIVATE_PREMIUM[0], PRIVATE_PREMIUM[1])).toFixed(2);
   const points = +rrange(s, 0.012, 0.028).toFixed(3);
   const termM = Math.round(rrange(s, 6, 18));
   const quote: PrivateBorrowQuote = {
@@ -494,7 +534,7 @@ export function tickPrivateBorrow(s: GameState, parcels: ParcelTable) {
 function buildPrivateLoan(s: GameState, q: PrivateBorrowQuote): Loan {
   const pmt = Math.round((q.principal * q.ratePct) / 100 / 12);
   return {
-    product: "cordage",
+    product: "private",
     holder: q.lenderName,
     floating: true,
     points: q.points,

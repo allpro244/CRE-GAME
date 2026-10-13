@@ -9,7 +9,7 @@ import type { ParcelTable } from "@/data/types";
 import type { BalanceSnapshot, BooksMonth, BooksYear, GameState, Holding, PnlYear } from "./types";
 import { logBooks, deedCfProbe, deedIrr, fundDepositsHeld, pnlAdd, pnlYear, START_YEAR } from "./types";
 import { depositsHeld } from "./leasing";
-import { locLimit, locRate, LOC_SPREAD } from "./credit";
+import { locLimit, locRate } from "./credit";
 import { jvShare } from "./jv";
 import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec } from "./value";
 import { gpInterestInFund } from "./fund";
@@ -229,7 +229,7 @@ export function stampPnlMonth(s: GameState) {
     depr += (h.deprYr ?? 0) / 12;
   }
   if (s.facility && s.facility.balance > 0) intExp += (s.facility.balance * s.facility.ratePct) / 100 / 12;
-  if (s.loc && s.loc.balance > 0) intExp += (s.loc.balance * ((s.econ.indexRate ?? 0) + LOC_SPREAD)) / 100 / 12;
+  if (s.loc && s.loc.balance > 0) intExp += (s.loc.balance * locRate(s)) / 100 / 12;
   pnlAdd(s, "intExp", intExp);
   pnlAdd(s, "jv", -jvInt);
   pnlAdd(s, "depr", depr);

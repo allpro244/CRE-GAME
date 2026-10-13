@@ -1,7 +1,6 @@
 // IndexedDB saves: named snapshots plus one debounced `auto` crash-protection
 // slot. A save is just GameState — parcels/adjacency are deterministic city data.
 import type { Credit, GameState, PlanRow } from "./types";
-import { clearStyleOverrides, ensurePeople } from "./people";
 import { ensureLeasingPlan, starterPlan } from "./leasing";
 import { describeSetup } from "./setup";
 import { shortIndexOf } from "./market";
@@ -57,31 +56,42 @@ function migrateExtendedPaper(state: GameState) {
 }
 
 /**
- * NOBODY AGES AND NOBODY DIES (owner decision — ECONOMY.md "No age, no
- * mortality"). Saves from before carry the old life fields: a principal's
- * birth and death months, every hire's, every founder bid's, the opening age,
- * an outstanding estate-tax bill and the closed-career cards. They are
- * stripped on load and nothing reads them. An estate bill still owing is
- * simply dropped — there is no death for it to be the tax on. SAVE_VERSION
- * does NOT move for this: it is a pure field strip that runs on every load,
- * the same as the other shape migrations here.
+ * FIRMS ONLY (owner decision — ECONOMY.md "Firms only"). There are no people
+ * in this game: no principal, no staff, no competitor principals, no hiring
+ * pool. Saves from before carry all of it — and, from before that, the old
+ * life fields (ages, estate bills, career cards; "No age, no mortality").
+ * Every one is stripped on load and nothing reads them. The monthly stamps the
+ * staff desk left on holdings (management multipliers) go too, so an old
+ * campaign runs at the same neutral, professionally-managed standard as a new
+ * one. SAVE_VERSION does NOT move for this: it is a pure field strip that runs
+ * on every load, the same as the other shape migrations here.
  */
-function migrateNoAge(state: GameState) {
+function migrateFirmsOnly(state: GameState) {
   const legacy = state as GameState & Record<string, unknown>;
-  delete legacy.startAge;
-  delete legacy.estateDue;
-  delete legacy.careers;
-  const strip = (p: unknown) => {
-    if (!p || typeof p !== "object") return;
-    const o = p as Record<string, unknown>;
-    delete o.bornM; delete o.diesM; delete o.diedM;
-  };
-  strip(state.principal);
-  for (const p of Object.values(state.rivalPrincipals ?? {})) strip(p);
-  for (const st of state.staff ?? []) strip(st);
-  for (const ph of state.pendingHires ?? []) strip(ph.staff);
-  for (const c of state.hirePool?.list ?? []) strip(c);
-  for (const b of state.founderBids ?? []) strip(b);
+  for (const k of [
+    "startAge", "estateDue", "careers",
+    "principal", "rivalPrincipals", "nextPersonId", "peopleRng",
+    "staff", "pendingHires", "hirePool", "nextStaffId", "staffRng", "hireReputation",
+    "ownerStyle", "benchStyle", "teamLeasing",
+    "leasingOddsMult", "pmRenewalMult", "leasingRentMult", "pmDeskSlip",
+  ]) delete legacy[k];
+  for (const h of Object.values(state.holdings ?? {})) {
+    const o = h as unknown as Record<string, unknown>;
+    delete o.pmOpexMult; delete o.pmRenewalMult; delete o.leasingRentMult;
+  }
+  // A founder bid queued by one of YOUR people walking out has nobody behind
+  // it any more. Competitor spinouts are firm events and stay.
+  if (state.founderBids) {
+    state.founderBids = state.founderBids.filter((b) => b.fromFirmId !== "you");
+    for (const b of state.founderBids) {
+      const o = b as unknown as Record<string, unknown>;
+      delete o.attrs; delete o.obs; delete o.band0; delete o.career;
+      delete o.bornM; delete o.diesM; delete o.diedM;
+    }
+  }
+  for (const r of state.rivals ?? []) {
+    if (r.spawnedFrom) delete (r.spawnedFrom as unknown as Record<string, unknown>).personName;
+  }
 }
 
 export const SAVE_VERSION = 40 as const;
@@ -240,7 +250,7 @@ function migrateLegacyMandateDials(state: GameState): void {
     agentMaxTiMonths?: number;
     agentMaxSigningMonths?: number;
   };
-  if ((state.agent || state.teamLeasing || state.renewalMgmt) && !state.leasingPlan) {
+  if ((state.agent || state.renewalMgmt) && !state.leasingPlan) {
     const floor = raw.agentFloor === undefined || !Number.isFinite(raw.agentFloor)
       ? 0.90
       : Math.min(1.00, Math.max(0.70, raw.agentFloor));
@@ -291,12 +301,7 @@ export function migrateSaveState(state: GameState): GameState {
     };
     delete state.varianceApp;
   }
-  // The Principal: one Person type, peopleRng, drop free style dials.
-  // ensurePeople synthesises a principal and rival faces from peopleRng only;
-  // s.rng / staffRng step counts are untouched (BASELINE must stay bit-identical).
-  clearStyleOverrides(state);
-  migrateNoAge(state);
-  ensurePeople(state);
+  migrateFirmsOnly(state);
   // Floorplate inventory (LEASING_OVERHAUL Phase 1): Tenant.floorLo/floorHi
   // and Holding.blocks are optional. Old saves stamp lazily on first
   // blocksOf / assignTenantFloors — largest tenant, lowest floor, stable by
@@ -306,7 +311,7 @@ export function migrateSaveState(state: GameState): GameState {
   migratePlanRows(state);
   migrateFloatingBench(state);
   migrateDropJev(state);
-  if ((state.agent || state.teamLeasing || state.renewalMgmt) && !state.leasingPlan) {
+  if ((state.agent || state.renewalMgmt) && !state.leasingPlan) {
     ensureLeasingPlan(state);
   }
   // Older campaigns bump forward once shape migrations have run — EXCEPT

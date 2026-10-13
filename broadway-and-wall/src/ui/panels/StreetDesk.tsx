@@ -2,16 +2,16 @@ import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec, netWorth, portfolioMark } from "@/engine/value";
-import { marketAppetite, markRival, rivalCondition, rivalTemperamentWeight, firmEntryPitch } from "@/engine/rivals";
-import { rivalPrincipalOf } from "@/engine/people";
+import { marketAppetite, markRival, rivalCondition, firmEntryPitch } from "@/engine/rivals";
 import { ownerById } from "@/engine/ownership";
 import { OwnerStatement } from "@/ui/panels/OwnersDesk";
-import { PersonCard, personLine } from "@/ui/PersonCard";
 import { firmName } from "@/engine/firm";
 import { usd, sf } from "@/ui/format";
 import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
 import { TakePrivateDesk, TakenPrivateRecord } from "@/ui/panels/TakePrivateDesk";
 import { poss } from "@/engine/takeprivate";
+import { HeadlinerStrip, RaceChart, FirmSheet } from "@/ui/panels/CompetitorCards";
+import Fold from "@/ui/Fold";
 
 // THE STREET. Who else is buying, what they own, and how much rope they have
 // left. This is not decoration: the appetite number at the top is the same one
@@ -65,23 +65,21 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
   [game, parcels, rivals]);
   if (!rivals.length) return null;
   const needle = q.trim().toLowerCase();
-  const hit = (name: string, person?: { name: string } | null) =>
-    !needle || name.toLowerCase().includes(needle) || (person?.name.toLowerCase().includes(needle) ?? false);
-  const noHit = !!needle && !hit(firmName(game), game.principal)
-    && !marked.some(({ r }) => hit(r.name, rivalPrincipalOf(game, r.id)));
+  // Firms only (ECONOMY.md "Firms only"): the search reads firm names.
+  const hit = (name: string) => !needle || name.toLowerCase().includes(needle);
+  const noHit = !!needle && !hit(firmName(game)) && !marked.some(({ r }) => hit(r.name));
   const appetite = marketAppetite(game);
   const approach = game.takePrivate?.offer && game.month <= game.takePrivate.offer.expiresM ? game.takePrivate.offer : null;
   return (
     <>
       <div className="page-section">
-        The street · competing money {appetite < 0.6 ? "has left the room" : appetite < 0.9 ? "is thin" : appetite > 1.15 ? "is everywhere" : "is normal"}
+        Competitors · competing money {appetite < 0.6 ? "has left the room" : appetite < 0.9 ? "is thin" : appetite > 1.15 ? "is everywhere" : "is normal"}
       </div>
       <div className="hint">
         These firms bid on the same tape you do, with their own money — a firm without the equity does not
         close, and one already at its covenant cannot borrow to. When their dry powder is high your lowballs
         get refused; when their leverage runs past their covenants they sell into whatever bid exists, and
-        that bid is you. The principal column is who runs the shop and how old they are — equity alone cannot
-        tell you the next thirty years. Click any firm for its balance sheet and what it owns.
+        that bid is you. Click any firm for its balance sheet and what it owns.
       </div>
       {/* THE DOOR TO THE STREET. How many firms this town carries is an output
           of two terms — whether buildings yield over the debt against them,
@@ -96,7 +94,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
           ? ep.leverage <= 0
             ? "Nobody is raising a new fund into this street today: buildings yield less than the debt against them, and no allocator pays fees for negative leverage."
             : "Nobody is raising a new fund into this street today: nothing has traded in a year, so there is no product to pitch a first close on."
-          : `The street is open to a new raise — cap rates clear the cost of debt, and ${ep.traded} trade${ep.traded === 1 ? "" : "s"} went round ${ep.firms} firm${ep.firms === 1 ? "" : "s"} this past year`
+          : `The market is open to a new raise — cap rates clear the cost of debt, and ${ep.traded} trade${ep.traded === 1 ? "" : "s"} went round ${ep.firms} firm${ep.firms === 1 ? "" : "s"} this past year`
             + `${ep.thin > 1.15 ? ", with few bidders contesting them" : ""}. On these terms somebody will eventually clear a first close.`;
         const bids = game.founderBids ?? [];
         return (
@@ -106,11 +104,11 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
               <div className="grid" style={{ marginBottom: 10 }}>
                 {bids.map((b) => (
                   <Row
-                    key={`${b.name}:${b.readyM}`}
+                    key={`${b.fromFirmId}:${b.readyM}`}
                     k="Raising now"
-                    v={`${b.name}, raising out of ${b.fromFirmName}`
+                    v={`A team raising out of ${b.fromFirmName}`
                       + (b.readyM > game.month
-                        ? ` · on the street from ${monthLabel(b.readyM)}`
+                        ? ` · raising from ${monthLabel(b.readyM)}`
                         : ` · ${Math.max(0, FOUNDER_WINDOW_M - (b.openMs ?? 0))} open month${FOUNDER_WINDOW_M - (b.openMs ?? 0) === 1 ? "" : "s"} left to clear a first close`)}
                   />
                 ))}
@@ -128,6 +126,10 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
         </div>
       )}
       <TakenPrivateRecord />
+      {/* THE CAST FIRST (COMPETITORS_PLAN.md §6): who matters right now and
+          what is about to happen to them, then the race, then the full table. */}
+      <HeadlinerStrip onOpen={(id) => setOpen(id)} />
+      <RaceChart />
       {/* THE LEAGUE TABLE. They started where you started — five to eighteen
           million and a hundred years — so the only honest way to read your own
           number is against theirs. */}
@@ -141,12 +143,13 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
           const rank = board.findIndex((b) => b.me) + 1;
           return (
             <>
-              <Row k="Your place on the street" v={`${rank} of ${board.length} by equity`} strong bad={rank > board.length / 2} />
+              <Row k="Your place among competitors" v={`${rank} of ${board.length} by equity`} strong bad={rank > board.length / 2} />
               <Row k="The biggest book in town" v={`${board[0].name} · ${usd(board[0].eq)}`} />
             </>
           );
         })()}
       </div>
+      <Fold id="competitors:table" title="Every competitor" summary={`${marked.filter((x) => x.r.failedM === undefined).length} firms in business, ranked by net equity`} defaultOpen>
       <table className="tbl">
         <thead>
           <tr>
@@ -159,7 +162,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                 three expressions for one quantity is how a table comes to
                 disagree with the row it expands into, so all three now read
                 the same `eq` off `markRival` and the firm's own balance. */}
-            <th>Firm</th><th>Principal</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
+            <th>Firm</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
             <th className="num">Debt</th><th className="num">Net equity</th>
             <th className="num">Leverage</th><th className="num">Dry powder</th><th>Read</th>
           </tr>
@@ -172,15 +175,14 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
             const all = [...marked.slice(0, at < 0 ? marked.length : at).map((x) => ({ x })), { you: true as const },
               ...marked.slice(at < 0 ? marked.length : at).map((x) => ({ x }))];
             return all.filter((row) => "you" in row
-              ? hit(firmName(game), game.principal)
-              : hit(row.x.r.name, rivalPrincipalOf(game, row.x.r.id)));
+              ? hit(firmName(game))
+              : hit(row.x.r.name));
           })().map((row) => {
             if ("you" in row) return (
               <tr key="__you" ref={youRef} style={{ cursor: "pointer", background: "var(--accent-soft, rgba(138,109,31,0.12))", fontWeight: 600 }}
                 title="Your firm, marked the same way as theirs. Click for your Books."
                 onClick={() => useStore.getState().setPage("books")}>
                 <td>★ {firmName(game)} <span className="dim" style={{ fontWeight: 400 }}>· you</span></td>
-                <td className="dim" style={{ fontWeight: 400 }}>{game.principal ? personLine(game.principal) : "—"}</td>
                 <td className="dim" style={{ fontWeight: 400 }}>Yours</td>
                 <td className="num">{mine.buildings}</td>
                 <td className="num">{usd(mine.gav)}</td>
@@ -199,16 +201,14 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
             const dead = r.failedM !== undefined;
             const stress = (r.stressMs ?? 0) > 0;
             const isOpen = open === r.id;
-            const principal = rivalPrincipalOf(game, r.id);
             return (
               <Fragment key={r.id}>
               <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }}
                 onClick={() => setOpen(isOpen ? null : r.id)}>
-                <td title={r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}` : undefined}>
+                <td title={r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName}` : undefined}>
                   {isOpen ? "▾ " : "▸ "}{r.name}
                   {r.spawnedFrom ? <span className="dim"> · from {r.spawnedFrom.firmName}</span> : null}
                 </td>
-                <td className="dim">{dead ? "—" : personLine(principal)}</td>
                 <td className="dim">{STYLE_WORD[r.style]}</td>
                 <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
                 <td className="num">{dead ? "—" : usd(m.aum)}</td>
@@ -255,26 +255,13 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                 if (!view) return null;
                 return (
                 <tr>
-                  <td colSpan={10} style={{ background: "rgba(43,37,26,0.035)" }}>
+                  <td colSpan={9} style={{ background: "rgba(43,37,26,0.035)" }}>
                     <OwnerStatement
                       o={view}
                       onFocus={(b) => focus(b, true)}
                       extra={
                         <>
-                          {principal && !dead && (
-                            <PersonCard person={principal} game={game} showAttrs={false} title="Operating principal" />
-                          )}
-                          {principal && !dead && (() => {
-                            const tw = rivalTemperamentWeight(game, r);
-                            const pace = tw > 1.12 ? "Contests the tape hard"
-                              : tw < 0.88 ? "Patient bidder — slower on contested asks"
-                                : "Ordinary pace on the tape";
-                            return (
-                              <div className="hint" style={{ marginBottom: 6 }} title="Bandwidth × Access — temperament, not their balance sheet">
-                                {pace}
-                              </div>
-                            );
-                          })()}
+                          <FirmSheet r={r} />
                         </>
                       }
                       extraLate={
@@ -302,7 +289,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                               title="Realised and no longer on this balance sheet — modest equity is not the same as a bad century." />
                             <Row k="Founded" v={r.bornM > 0 ? monthLabel(r.bornM) : "before you arrived"} />
                             {r.spawnedFrom && (
-                              <Row k="Raised out of" v={`${r.spawnedFrom.firmName} · ${r.spawnedFrom.personName}`} />
+                              <Row k="Raised out of" v={r.spawnedFrom.firmName} />
                             )}
                           </div>
                           {/* WHAT THEY HAVE IN THE GROUND. A firm's live jobs are
@@ -350,6 +337,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
           })}
         </tbody>
       </table>
+      </Fold>
     </>
   );
 }

@@ -23,6 +23,11 @@
  *    money fishes: when the number is far over its limit it counters low
  *    anyway, and an owner who is insulted does not take that firm's call
  *    again for years — the same memory the player is subject to.
+ *  - REACH (COMPETITORS_PLAN.md §1). How far a firm's network runs: a firm
+ *    with Reach 100 hears about owners nobody else does — it calls more
+ *    often (×1.6) and knows more doors per call (12 lots, not 8); Reach 0
+ *    only works the open tape (×0.4, 4 lots). Reach 50 is the old desk
+ *    exactly, so a firm with no sheet is unchanged.
  *  - WHO FINDS OUT. A building bought from under a conversation the player
  *    had open is news to the player, and goes on the beaten list, so the
  *    firm rings the player first when it sells (`s.beaten`).
@@ -37,7 +42,7 @@ import { assetValue, initialCondition, resolveRec } from "./value";
 import { isCivicLand } from "./demand";
 import { holderOf } from "./owners";
 import { ownerAnswersCall } from "./actions";
-import { livingRivals, ownerOf, rivalBuys, firmMaxPrice, styleHunt } from "./rivals";
+import { livingRivals, ownerOf, rivalBuys, firmMaxPrice, styleHunt, fitOf, deployPressure } from "./rivals";
 import { money } from "./money";
 
 /**
@@ -57,10 +62,18 @@ const SAMPLE = 8;
 /** Styles that counter far under a number rather than walk away. */
 const FISHES: Partial<Record<RivalStyle, boolean>> = { opportunistic: true, pe: true, vulture: true };
 
-let keyCache: { p: ParcelTable; keys: string[] } | null = null;
+let keyCache: { p: ParcelTable; keys: string[]; byDistrict: Map<string, string[]> } | null = null;
 function lotKeys(parcels: ParcelTable): string[] {
-  if (keyCache?.p !== parcels) keyCache = { p: parcels, keys: Object.keys(parcels) };
-  return keyCache.keys;
+  return lotIndex(parcels).keys;
+}
+function lotIndex(parcels: ParcelTable) {
+  if (keyCache?.p !== parcels) {
+    const keys = Object.keys(parcels);
+    const byDistrict = new Map<string, string[]>();
+    for (const k of keys) { const d = parcels[k]?.district; if (d) (byDistrict.get(d) ?? byDistrict.set(d, []).get(d)!).push(k); }
+    keyCache = { p: parcels, keys, byDistrict };
+  }
+  return keyCache;
 }
 
 export function tickOffMarketCalls(s: GameState, parcels: ParcelTable): void {
@@ -69,12 +82,19 @@ export function tickOffMarketCalls(s: GameState, parcels: ParcelTable): void {
   const ci = s.econ.creditIdx ?? 1;
   for (const r of livingRivals(s)) {
     if (r.stressMs) continue;
-    const st = styleHunt(r.style);
+    const st = styleHunt(r);
     const cyc = Math.max(0.05, 1 + st.procyclical * (ci - 1) + st.contra * (1 - ci));
-    if (rng(s, "rivals") >= Math.min(0.9, CALLS_MO * st.appetite * cyc)) continue;
+    const reach = (r.sheet?.reach ?? 50) / 100;
+    if (rng(s, "rivals") >= Math.min(0.9, CALLS_MO * st.appetite * cyc * (0.4 + 1.2 * reach) * deployPressure(s, r))) continue;
     let best: { rec: ParcelRecord; max: number; fit: number; held: NonNullable<ReturnType<typeof holderOf>> } | null = null;
-    for (let i = 0; i < SAMPLE; i++) {
-      const bbl = keys[Math.floor(rng(s, "rivals") * keys.length)];
+    const doors = Math.max(2, Math.round(SAMPLE * (0.5 + reach)));
+    // A HOME-TURF FIRM KNOWS ITS OWN STREETS: that share of its calls goes to
+    // owners in its home district (Home turf 80 → four calls in five).
+    const homeKeys = r.home && r.sheet ? lotIndex(parcels).byDistrict.get(r.home) : undefined;
+    const homeShare = homeKeys?.length ? (r.sheet!.homeTurf / 100) : 0;
+    for (let i = 0; i < doors; i++) {
+      const pool = homeShare > 0 && rng(s, "rivals") < homeShare ? homeKeys! : keys;
+      const bbl = pool[Math.floor(rng(s, "rivals") * pool.length)];
       if ((r.doors?.[bbl] ?? 0) > s.month) continue;
       if (s.holdings[bbl] || ownerOf(s, bbl) || isCivicLand(s, bbl)) continue;
       if (s.listings.some((l) => l.bbl === bbl)) continue;
@@ -86,10 +106,15 @@ export function tickOffMarketCalls(s: GameState, parcels: ParcelTable): void {
       if (!rec || !(rec.lotArea > 0)) continue;
       const max = firmMaxPrice(s, r, rec);
       if (!(max > 0)) continue;
+      // WHAT AND WHERE (COMPETITORS_PLAN.md §2) — the same fit the open tape
+      // reads: a firm rings owners of the buildings its sheet wants, on its
+      // own turf, and a hard rule is a door it does not knock on.
+      const want = fitOf(s, parcels, r, rec);
+      if (!(want > 0)) continue;
       // A call about a building the firm could never close is not a call.
       if (max > (r.aum ?? 0) * 0.6 + r.cash * 4) continue;
       // Headroom: what the firm can pay against what the building appraises at.
-      const fit = max / Math.max(1, assetValue(rec, s.econ, initialCondition(rec)));
+      const fit = (max / Math.max(1, assetValue(rec, s.econ, initialCondition(rec)))) * want;
       if (!best || fit > best.fit) best = { rec, max, fit, held };
     }
     if (best) callOwner(s, parcels, r, best.rec, best.held, best.max);

@@ -26,22 +26,21 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
   ok("empty tape → pitch 0", p.pitch === 0, `pitch=${p.pitch}`);
 }
 
-// Founder bid → raise on a fertile street stamps genealogy.
+// Spinout bid → raise on a fertile street stamps genealogy. A spinout is a
+// firm event — a team leaving a competitor — with no person behind it.
 // Keep the tape fat every month so the product term stays open; the raise
 // hazard is ~1/14 when pitch is full, so a few years almost surely clear —
 // unless the street is barren, which the empty-tape case above already covers.
 {
   let g = E.firstListings(E.newGame(12007, parcels, 20_000_000), parcels, bbls);
   const before = (g.rivals ?? []).length;
+  const parent = g.rivals[0];
   g.founderBids = [{
     readyM: g.month,
-    name: "Vera Whitcomb",
-    attrs: { judgment: 80, urgency: 70, diligence: 75, relationships: 72 },
-    obs: { judgment: 70, urgency: 65, diligence: 68, relationships: 66 },
-    band0: 18,
+    stem: "Whitcomb",
     role: "pm",
-    fromFirmId: "you",
-    fromFirmName: "Player & Co.",
+    fromFirmId: parent.id,
+    fromFirmName: parent.name,
   }];
   let spawned = null;
   let refused = false;
@@ -53,10 +52,10 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
     g.econ.indexRate = 3;
     const pitch = E.firmEntryPitch(g);
     g = E.advanceMonth(g, parcels, bbls, null);
-    const spun = (g.rivals ?? []).find((r) => r.spawnedFrom?.personName === "Vera Whitcomb");
+    const spun = (g.rivals ?? []).find((r) => r.spawnedFrom?.firmId === parent.id && r.name.startsWith("Whitcomb"));
     if (spun) { spawned = spun; break; }
-    if (!(g.founderBids ?? []).some((b) => b.name === "Vera Whitcomb")
-      && (g.news ?? []).some((n) => /could not raise/.test(n.text) && /Vera Whitcomb/.test(n.text))) {
+    if (!(g.founderBids ?? []).some((b) => b.stem === "Whitcomb")
+      && (g.news ?? []).some((n) => /could not raise/.test(n.text) && n.text.includes(parent.name))) {
       refused = true;
       break;
     }
@@ -69,45 +68,16 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
   ok("founder bid resolved", !!spawned || refused,
     spawned ? "raised" : refused ? "refused" : "timed out");
   if (spawned) {
-    ok("genealogy stamped", spawned.spawnedFrom?.firmId === "you");
-    ok("principal is the founder", g.rivalPrincipals?.[spawned.id]?.name === "Vera Whitcomb");
+    ok("genealogy stamped", spawned.spawnedFrom?.firmId === parent.id);
+    ok("no person behind the firm", g.rivalPrincipals === undefined && spawned.spawnedFrom?.personName === undefined);
     ok("firm count grew", (g.rivals ?? []).length > before);
   } else if (refused) {
     // Fertile-tape refuse is still a valid outcome of the hazard — but then we
     // at least required the refuse news and a cleared bid.
     ok("raise refused clears bid", !(g.founderBids ?? []).length);
-    ok("refuse news names founder", true);
-    ok("no phantom firm", !(g.rivals ?? []).some((r) => r.spawnedFrom?.personName === "Vera Whitcomb"));
+    ok("refuse news names the parent", true);
+    ok("no phantom firm", !(g.rivals ?? []).some((r) => r.name.startsWith("Whitcomb")));
   }
-}
-
-// Poach queues a founder bid (staff → genealogy), does not silently vanish.
-{
-  let g = E.newGame(99, parcels, 10_000_000);
-  g.staff = [{
-    id: 9001, name: "Gus Radcliffe",
-    attrs: { judgment: 85, urgency: 80, diligence: 82, relationships: 78,
-      operations: 80, leasing: 70, construction: 60 },
-    obs: { judgment: 70 }, band0: 20, seat: "employee",
-    role: "pm", salary: 120_000, hiredM: 0,
-  }];
-  g.hireReputation = 0.2; // muddy name → higher poach chance
-  g.month = 30; // tenure ≥ 24
-  g.staff[0].hiredM = 0;
-  // Force many staff ticks via advance — or call tickStaff if exported.
-  let queued = false;
-  for (let i = 0; i < 120 && !queued; i++) {
-    g = E.advanceMonth(g, parcels, bbls, null);
-    if ((g.founderBids ?? []).some((b) => b.name === "Gus Radcliffe")) queued = true;
-    if (!(g.staff ?? []).some((x) => x.name === "Gus Radcliffe")
-      && (g.news ?? []).some((n) => /Gus Radcliffe/.test(n.text) && /left/.test(n.text))) {
-      queued = (g.founderBids ?? []).some((b) => b.name === "Gus Radcliffe");
-      break;
-    }
-  }
-  ok("star departure queues founder bid", queued
-    || (g.news ?? []).some((n) => /Gus Radcliffe/.test(n.text)),
-    queued ? "bid queued" : "news only / still employed");
 }
 
 // Living firm count over a century — output, not a hard refill rail (#48/#49).
@@ -156,7 +126,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
   // The street itself now produces genealogy — a number two leaving a thriving
   // shop — so this assert can actually fail on an unplayed century.
   ok("unplayed centuries produce spinouts", allSpinouts.length >= 1, `${allSpinouts.length} across ${SEEDS.length} seeds`);
-  ok("every spinout carries full genealogy", allSpinouts.every((r) => r.spawnedFrom.firmId && r.spawnedFrom.personName),
+  ok("every spinout carries full genealogy", allSpinouts.every((r) => r.spawnedFrom.firmId && r.spawnedFrom.firmName),
     `${allSpinouts.length} with lineage`);
 }
 

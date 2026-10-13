@@ -790,7 +790,7 @@ function ProfitAndLoss() {
           {line("Property operating costs", "propOpex", { sign: -1, sub: true, note: "opex, management, property tax, ground rent" })}
           {line("Leasing costs", "leasing", { sign: -1, sub: true, note: "TI and commissions, expensed as signed" })}
           {line("Capital work", "capex", { sign: -1, sub: true, note: "make-ready, programmes, renovations" })}
-          {line("Firm overhead", "ga", { sign: -1, sub: true, note: "staff, accounting, legal" })}
+          {line("Firm overhead", "ga", { sign: -1, sub: true, note: "management, accounting, legal" })}
           {line("Total operating expenses", "totalOpex", { sign: -1, strong: true, rule: true })}
           {line("Operating profit before depreciation", "ebitda", { strong: true, rule: true })}
           {line("Depreciation", "depr", { sign: -1, sub: true, note: cur.deprFinal ? "per the tax return" : "accrued at last year's rate · trued to the return in January" })}

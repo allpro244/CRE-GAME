@@ -213,7 +213,7 @@ export function NotesPage() {
         by hand: the coupon arrives on its own, every month, and a note asks you for something exactly twice.
       </div>
       <div className="hint" style={{ marginBottom: 8 }}>
-        You can also <b>write</b> paper — hard-money bridges to rivals the banks will not clear. That is the
+        You can also <b>write</b> paper — hard-money bridges to competitors the banks will not clear. That is the
         private sleeve below. Want the <b>deed</b>, not the paper? Receiver books are on{" "}
         <button className="news-link" onClick={() => useStore.getState().setPage("market")}>
           Marketplace · Books for sale

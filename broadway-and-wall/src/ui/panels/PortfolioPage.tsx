@@ -263,7 +263,7 @@ export function PortfolioPage() {
           label="Property CF / mo"
           value={usd(totCF)}
           bad={totCF < 0}
-          title="The buildings' cash flow only — NOI (including ground rent) less their mortgages. The top bar's CF / yr is the firm's: it also subtracts overhead and payroll, construction interest, the facility and the revolver, then annualises."
+          title="The buildings' cash flow only — NOI (including ground rent) less their mortgages. The top bar's CF / yr is the firm's: it also subtracts overhead, construction interest, the facility and the revolver, then annualises."
         />
         {/* HOW BIG YOU ACTUALLY ARE, AND WHAT IT COST YOU A FOOT.
             Dollars of assets is a number about the market as much as about the

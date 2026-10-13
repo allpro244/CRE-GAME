@@ -7,7 +7,7 @@
 // A REPORT, NOT A GATE. Every other harness asks whether one channel is right;
 // this one plays the game — buys off the tape through the negotiation desk,
 // answers every letter, refinances, appeals, renovates, builds, sells, draws
-// the line, hires, opens a facility, buys a note, approaches a neighbour,
+// the line, opens a facility, buys a note, approaches a neighbour,
 // offers a ground lease, files a variance, tries a conversion — and scans the
 // state every month for numbers that cannot be. It prints:
 //   BUG        a number that cannot be, or an invariant the engine asserts
@@ -80,7 +80,7 @@ for (const SEED of SEEDS) {
   const renoLog = [];
   const prevVal = {}; const prevNoi = {}; const leases = []; const trace = {};
   let lastDeepWalk = -99;
-  let hired = false; let facOpened = false; let glOffered = false; let reuseTried = false; let varTried = false;
+  let facOpened = false; let glOffered = false; let reuseTried = false; let varTried = false;
   const startYear = E.START_YEAR ?? 2000;
   console.log(`\n=== seed ${SEED} · phase ${g.econ.phase} · index ${f2(g.econ.indexRate)}% · cash ${K(g.cash)} ===`);
 
@@ -370,22 +370,6 @@ for (const SEED of SEEDS) {
       const lim = E.locLimit(g, parcels); const bal = g.loc?.balance ?? 0;
       if (g.cash < 80_000 && lim - bal > 100_000) { const r = E.drawLoc(g, parcels, Math.min(lim - bal, 400_000)); if (r.err) refused("drawLoc", r.err); else g = r.s; }
       else if (bal > 0 && g.cash > reserve * 3) { const r = E.repayLoc(g, Math.min(bal, g.cash - reserve * 2)); if (r.err) refused("repayLoc", r.err); else g = r.s; }
-    }
-
-    // ---------------------------------------------------------- play: staff
-    if (!hired && m === 30) {
-      const gg = JSON.parse(JSON.stringify(g));
-      E.refreshPool(gg, true);
-      g = gg;
-      const pool = g.hirePool?.list ?? [];
-      const want = ["leasing", "pm"];
-      for (const role of want) {
-        const c = pool.filter((x) => x.role === role).sort((a, b) => a.askSalary - b.askSalary)[0];
-        if (!c) { note("LIMIT", "no-candidate:" + role, "no candidate of role " + role + " in the pool", pool.map((x) => x.role)); continue; }
-        const r = E.hire(g, parcels, c.id);
-        if (r.err) refused("hire:" + role, r.err); else { g = r.s; T.hires++; met(SEED, "salary-" + role, c.askSalary); }
-      }
-      hired = true;
     }
 
     // ---------------------------------------------------------- play: exotic desks, once each

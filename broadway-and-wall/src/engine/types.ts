@@ -134,6 +134,11 @@ export interface Tenant {
   /** The principal economic reason given with that notice. */
   nonRenewWhy?: string;
   /**
+   * COMMITTED ELSEWHERE — a competitor's build-to-suit signed this tenant
+   * (COMPETITORS_PLAN.md #8). At renewal time it gives notice with this reason.
+   */
+  leavingFor?: string;
+  /**
    * THE MONTH YOU TURNED THEM DOWN. A tenant who asked for relief and did not
    * get it does not forget it: they run leaner, they fail more (see pFail),
    * and when the lease finally rolls they remember who held the paper over
@@ -422,6 +427,8 @@ export interface Loan {
    * patient. Absent means the originator still has it. See engine/notes.ts.
    */
   holder?: string;
+  /** The competitor that holds this loan, when one bought it in default (`holder` is its name). */
+  holderFirmId?: string;
   cap?: { strike: number; expiresM: number }; // purchased rate cap: index capped at strike
 }
 
@@ -516,21 +523,6 @@ export interface Holding {
   /** Cached vacant blocks from plates.blocksOf. Derived; restamped on read. */
   blocks?: import("./plates").SpaceBlock[];
   makeReady?: { sf: number; readyM: number; use?: BuiltClass; blockId?: number }[]; // vacated space being turned; unleasable until ready
-  /**
-   * WHAT YOUR MANAGEMENT IS DOING TO THIS BUILDING'S CONTROLLABLE COSTS.
-   * Stamped once a month by tickStaff so the operating functions can read a
-   * plain number without being handed the whole GameState. 1 is the market
-   * standard; below is a manager earning their salary, above is work that is
-   * not getting done. It moves the OWNER'S result only — `assetValue` still
-   * underwrites at market opex, because a buyer prices their own management,
-   * not yours. That is appraisal practice and it is also the difference
-   * between this and the same-quantity-two-answers fault in `holdingValue`.
-   */
-  pmOpexMult?: number;
-  /** Stamped by markStaff — assigned PM skill on this building's renewals. */
-  pmRenewalMult?: number;
-  /** Stamped by markStaff — assigned leasing skill on rent at this building. */
-  leasingRentMult?: number;
   // A listing exclusive. The house works the phones and is paid 6% of the
   // base rent over the term of every lease signed while they hold the file,
   // in place of the 4%/2% you pay doing it yourself — see exclusiveFeeRate.
@@ -1334,6 +1326,7 @@ export type PropertyEventKind =
   | "build-start"
   | "delivered"
   | "demolished"
+  | "converted"
   | "default"
   | "major-lease"
   | "planning";
@@ -1768,6 +1761,12 @@ export interface Econ {
      */
     termPrem?: number;
     /**
+     * How far the bond market has learned that the bank's resting level is
+     * above (or below) where the model says it should be, in points — the
+     * shifting endpoint (Kozicki & Tinsley 2001). See `expectedPolicyAvg`.
+     */
+    endShift?: number;
+    /**
      * What the bank's own rule prescribes this month, before gradualism —
      * the rate it is walking toward. The bond market reads it to price the
      * path, the way a real one reads the dot plot and the data.
@@ -1835,6 +1834,8 @@ export interface Econ {
   regionTrend?: number;
   /** The last month's regional pull on the export base, per year, after the cost brake. */
   regionPull?: number;
+  /** Half the town's loan book is at desks too impaired to quote (see tickEcon). */
+  debtShut?: boolean;
   /** The population by age: children, working age, over 65. */
   ages?: { kids: number; work: number; old: number };
   /** Adults (working age + over 65) at the opening, for household formation. */
@@ -2437,6 +2438,28 @@ export type RivalStyle =
  */
 export interface Rival {
   /**
+   * THE FIRM'S SHEET — COMPETITORS_PLAN.md §2. Absent on the legacy roster and
+   * on saves written before it: those firms act on their style row exactly as
+   * before (`paramsOf` in rivals.ts).
+   */
+  sheet?: import("./competitorTraits").Sheet;
+  rules?: import("./competitorTraits").Rule[];
+  quirks?: import("./competitorTraits").Quirk[];
+  /** The profile the firm was drawn from. What it reads as today is recomputed. */
+  profile?: import("./competitorTraits").ProfileId;
+  /** The district its book is thickest in — home turf. */
+  home?: string;
+  /** Year-end net equity, [year index, equity] — the race chart's line. */
+  eqHist?: [number, number][];
+  /** Month the hidden backer (quirk) committed equity; it does so once. */
+  backerUsedM?: number;
+  /** Month the firm stopped being a firm and its family kept the buildings. */
+  retiredM?: number;
+  /** The competitor that bought this firm whole (COMPETITORS_PLAN.md #25). */
+  takenOverBy?: string;
+  /** The competitor this firm is feuding with (quirk). */
+  feud?: string;
+  /**
    * LP CAPITAL COMMITTED AND NOT YET CALLED — the young fund's cushion.
    * Set once at the raise (30-50% of the first close, drawn per fund),
    * burned by capital calls, never refilled. Absent on the opening roster
@@ -2538,13 +2561,20 @@ export interface Rival {
   // on its revolver is a firm you should be watching.
   revolver?: number;
   /**
+   * WHAT IS DRAWN ON THE LINE TODAY — an outstanding balance at `lineBank`,
+   * repaid first out of sale proceeds (rivalDebt.ts). `revolver` is the
+   * lifetime tally of draws.
+   */
+  lineBal?: number;
+  /** The bank that writes this firm's line. */
+  lineBank?: string;
+  /**
    * Genealogy — who walked out of where to found this shop. Absent on the
    * opening roster and on anonymous capital entry. See HANDOFF_PRINCIPAL.md §5.
    */
   spawnedFrom?: {
     firmId: string;
     firmName: string;
-    personName: string;
   };
 }
 
@@ -2571,16 +2601,15 @@ export interface TakePrivateRecord {
 }
 
 /**
- * A person who left a firm and is trying to raise. Genealogy proposes; the
+ * A team that left a firm and is trying to raise. Genealogy proposes; the
  * product-gated raise in rivals.ts can still refuse (owner call #7).
  */
 export interface FounderBid {
   readyM: number;
-  name: string;
-  attrs: Record<string, number>;
-  obs: Record<string, number>;
-  band0: number;
-  career?: import("./people").CareerLog;
+  /** Name stem for the new firm. Old saves carry `name` instead. */
+  stem?: string;
+  /** @deprecated pre-firms-only saves: the departing person's name. */
+  name?: string;
   role: "pm" | "leasing" | "construction";
   fromFirmId: string;
   fromFirmName: string;
@@ -2863,49 +2892,6 @@ export interface GameState {
   /** Source of tour ids — see LOI.tourId. Letters on one tour share a number. */
   nextTourId?: number;
   /**
-   * THE PAYROLL. See staff.ts. `staff` are the people at their desks;
-   * `pendingHires` have accepted and are working out their notice; `hirePool`
-   * is who is on the market this half-year. All of it is plain data so the
-   * save file round-trips like everything else.
-   */
-  staff?: import("./staff").Staff[];
-  /**
-   * Stamped once a month by markStaff so leasing, renewals and the operating
-   * statement all quote the same desk. See staff.ts.
-   */
-  leasingOddsMult?: number;
-  pmRenewalMult?: number;
-  leasingRentMult?: number;
-  /** PM desk overload, stamped by markStaff for tenant-care reads without parcels. */
-  pmDeskSlip?: number;
-  /** How the market reads your hiring history — 0..1, default 0.55. */
-  hireReputation?: number;
-  /**
-   * @deprecated Free capacity dial — ignored. Firm shape emerges from headcount
-   * via effectiveOwnerStyle(). Cleared on migrate to v33.
-   */
-  ownerStyle?: "handsOn" | "delegated";
-  /**
-   * @deprecated Free capacity dial — ignored. Cleared on migrate to v33.
-   */
-  benchStyle?: "boutique" | "platform";
-  pendingHires?: { staff: import("./staff").Staff; startM: number }[];
-  hirePool?: { m: number; band: number; list: import("./staff").Candidate[] };
-  nextStaffId?: number;
-  /** A generator of its own, so hiring cannot re-roll the economy. See staff.ts. */
-  staffRng?: number;
-  /**
-   * People stream — principal synthesis, hire career seeds.
-   * Seeded `seed ^ 0x50454f50`. Must not step s.rng. See people.ts.
-   */
-  peopleRng?: number;
-  /** The participant the player controls — a Person, seat "you". */
-  principal?: import("./people").Person;
-  /** Operating principal per living rival firm id. */
-  rivalPrincipals?: Record<string, import("./people").Person>;
-  /** Ids for non-staff persons (rival principals). Staff keep nextStaffId. */
-  nextPersonId?: number;
-  /**
    * Player fund vehicle — second cash account. Absent = balance-sheet path
    * (the default). See fund.ts / PRINCIPAL_CALLS.md.
    */
@@ -2936,10 +2922,22 @@ export interface GameState {
    */
   fundFailedM?: number;
   /**
-   * People who left a firm and are waiting to raise. Consumed by maybeNewFirm
-   * — the raise can still refuse. See FounderBid / HANDOFF_PRINCIPAL.md.
+   * Teams that left a firm and are waiting to raise. Consumed by maybeNewFirm
+   * — the raise can still refuse. See FounderBid.
    */
   founderBids?: FounderBid[];
+  /**
+   * THE BRIDGE (COMPETITORS_PLAN.md §5a): firms that wound up and left their
+   * buildings with the family, now holders that do not bid, and the deeds
+   * pinned to them (`m` is the month — a later trade on the deed releases it).
+   */
+  retiredHolders?: import("./owners").Holder[];
+  deedHolder?: Record<string, { id: string; m: number }>;
+  /**
+   * WHAT YOU KNOW ABOUT EACH COMPETITOR — a band per trait, by firm id
+   * (engine/competitorReads.ts). Display only; nothing in the economy reads it.
+   */
+  reads?: Record<string, Partial<Record<import("./competitorTraits").TraitKey, [number, number]>>>;
   /**
    * HOW MANY MONTHS RUNNING NOBODY HAS BEEN AT THE DOOR.
    *
@@ -3308,6 +3306,13 @@ export interface GameState {
    */
   rivalNotes?: { bbl: string; firmId: string; firm: string; takeM: number; face: number }[];
   /**
+   * YOUR LOANS A COMPETITOR OWNS (COMPETITORS_PLAN.md, loan-to-own on you).
+   * `paid` is what it paid the bank; `bal` the balance it is owed, read each
+   * month; `payoff`, when set, is what the paper settled at (a discounted
+   * payoff, or the auction's net) — absent means par.
+   */
+  firmHeldLoans?: { bbl: string; firmId: string; paid: number; bal: number; m: number; payoff?: number }[];
+  /**
    * THE JULY AUCTION. Docket published when the tick lands on July; the hammer
    * falls on the August tick, so the player holds the flyer for exactly one
    * month — long enough to register bids, never long enough to become a chore.
@@ -3351,16 +3356,6 @@ export interface GameState {
   // Leasing agent on retainer: signs every LOI for you at a 6% commission
   // instead of the 4%/2% you'd pay doing it yourself.
   agent: boolean;
-  /**
-   * YOUR IN-HOUSE LEASING TEAM HAS THE PEN.
-   *
-   * Separate from `agent` (the 6% outside firm). When this is on and you have
-   * at least one leasing hire, they sign/counter/pass inside your mandate at
-   * the ordinary 4%/2% rates and LOIs stop interrupting — same quiet desk as
-   * the firm agent, your people instead of theirs. Off by default so hiring
-   * staff alone does not silently take the book; you hand it over on Leasing.
-   */
-  teamLeasing?: boolean;
   /**
    * WHAT THE DESK DID THIS MONTH while you were quiet.
    *
@@ -3410,7 +3405,7 @@ export interface GameState {
    * Asking sheet + hold-out + dollar authority. When this is present and a
    * desk holds the pen, `clearAgainstPlan` is the one clearing engine for
    * desk and (via the same tenant reaction) the principal. A save that loads
-   * with `agent` / `teamLeasing` / `renewalMgmt` and no plan gets a starter
+   * with `agent` / `renewalMgmt` and no plan gets a starter
    * sheet (`quotePct` 0.90, the old default sign line).
    */
   leasingPlan?: LeasingPlan;
@@ -4323,6 +4318,16 @@ export interface CityLoan {
   /** Asset class at origination, for the concentration ledger. */
   klass: string;
   status: "current" | "watch" | "workout";
+  /** The sheet the desk wrote it off (debt.ts PRODUCTS id). Absent on rows written before loans were originated. */
+  product?: string;
+  /** Consecutive months this loan's payment was not made (rivalDebt.markPayments). */
+  arrearsMs?: number;
+  /**
+   * WHO HOLDS THE PAPER WHEN IT IS NO LONGER A DESK'S: "player" when you bought
+   * the note, or the id of the firm that did. The borrower still owes it, so the
+   * row stays on the record; it is off every desk's book (loanbook.ts).
+   */
+  heldBy?: string;
 }
 
 export interface Workout {

@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useStore } from "@/state/store";
+import { holdersLikelyToSell } from "@/engine/owners";
 import { resolveRec } from "@/engine/value";
 import { allOwners } from "@/engine/ownership";
 import type { OwnerView } from "@/engine/ownership";
@@ -56,6 +57,7 @@ export function Owners({ only: onlyIn, q = "" }: { only?: "all" | "firms" | "pri
   const totAssets = rows.reduce((a, r) => a + r.o.sheet.assets, 0);
   const top10 = rows.slice(0, 10).reduce((a, r) => a + r.o.sheet.assets, 0);
   const firms = rows.filter((r) => r.o.operator).length;
+  const likely = useMemo(() => holdersLikelyToSell(game, parcels), [game, parcels]);
 
   return (
     <div>
@@ -65,6 +67,19 @@ export function Owners({ only: onlyIn, q = "" }: { only?: "all" | "firms" | "pri
         The ten biggest own {totAssets > 0 ? ((top10 / totAssets) * 100).toFixed(0) : 0}% of it. Every name
         here opens: what they own, what they owe on it, and what it earns them in a year.
       </div>
+      {/* WHO IS LIKELY TO COME TO MARKET (COMPETITORS_PLAN.md §5a). A holder
+          whose readiness has passed the tell — an estate in probate, a fund
+          near the end of its hold, partners who have stopped talking — puts
+          its whole book on the tape when it goes. Said before it happens. */}
+      {likely.length > 0 && (
+        <div className="hint" style={{ borderLeft: "3px solid var(--accent, #8a6d1f)", paddingLeft: 8 }}>
+          <b>Likely to come to market:</b>{" "}
+          {likely.slice(0, 5).map((x, i) => (
+            <span key={x.h.id}>{i ? " · " : ""}{x.h.name} ({x.n} building{x.n === 1 ? "" : "s"})</span>
+          ))}
+          {likely.length > 5 ? ` and ${likely.length - 5} more` : ""}. When a holder goes, its whole book lists at once.
+        </div>
+      )}
       {!onlyIn && <div className="row-btns" style={{ marginBottom: 8 }}>
         {([["all", "Everyone"], ["firms", "Operating firms"], ["private", "Private holders"]] as const).map(([k, label]) => (
           <button key={k} className={"btn" + (only === k ? " btn-on" : "")} onClick={() => setOnly(k)}>{label}</button>

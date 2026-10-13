@@ -46,7 +46,7 @@ export function tipHtml(g: GameState, parcels: Record<string, ParcelRecord>, rec
       out.push(row("Progress", `${pct}% built`));
     }
     out.push(row("Size", `${Math.round(j.sf).toLocaleString()} sf`));
-    out.push(row("Builder", job ? "You" : cityJob!.firmId ? g.rivals.find((r) => r.id === cityJob!.firmId)?.name ?? "A rival" : "The city"));
+    out.push(row("Builder", job ? "You" : cityJob!.firmId ? g.rivals.find((r) => r.id === cityJob!.firmId)?.name ?? "A competitor" : "The city"));
     return out.join("");
   }
 

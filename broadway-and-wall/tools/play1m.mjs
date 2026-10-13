@@ -12,7 +12,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 
 const SEED = Number(process.env.SEED ?? 4242);
 const YEARS = Number(process.env.YEARS ?? 50);
-// DELEGATE: "auto" (my judgement mid-run), "never", or "agent"/"team" from day 1
+// DELEGATE: "auto" (my judgement mid-run), "never", or "agent" from day 1
 const DELEGATE = process.env.DELEGATE ?? "auto";
 // NEW=1 plays with the October 2026 tools: a posted number and "clear the
 // tray", a relief rule, balloons left to roll, contracts left to close, the
@@ -321,21 +321,6 @@ function maybeDelegate() {
     g = { ...g, renewalMgmt: true };
     g = structuredClone(g); E.workLeasingDesk(g, parcels);
     delegated.renewals = g.month; J(`DELEGATE renewals to management (load ${load}/yr, ${stopsLastYr} stops last yr)`);
-  }
-  // Step 2: a leasing hire with the book once letters are past ~25/yr
-  if (!delegated.team && (DELEGATE === "team" || (DELEGATE === "auto" && load >= 25))) {
-    let gg = structuredClone(g); E.refreshPool(gg, true); g = gg;
-    const pool = (g.hirePool?.list ?? []).filter((x) => x.role === "leasing").sort((a, b) => a.askSalary - b.askSalary);
-    if (pool.length) {
-      const c = pool[Math.floor(pool.length / 2)];
-      const r = E.hire(g, parcels, c.id);
-      if (!r.err) { g = r.s; delegated.team = -1; J(`HIRE leasing ${c.name ?? c.id} at ${K(c.askSalary)}/yr (load ${load}/yr, ${stopsLastYr} stops)`); }
-      else J(`hire refused: ${r.err}`);
-    }
-  }
-  if (delegated.team === -1 && (g.staff ?? []).some((x) => x.role === "leasing")) {
-    g = structuredClone({ ...g, teamLeasing: true }); E.workLeasingDesk(g, parcels);
-    delegated.team = g.month; J(`HAND THE BOOK to the leasing desk (plan: ${JSON.stringify(g.leasingPlan?.sheet?.office ?? {}).slice(0, 120)})`);
   }
   if (!delegated.agent && DELEGATE === "agent") {
     g = structuredClone({ ...g, agent: true }); E.workLeasingDesk(g, parcels); delegated.agent = g.month; J("AGENT has the book");

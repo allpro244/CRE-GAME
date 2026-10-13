@@ -1,0 +1,482 @@
+# Competitors — design for approval
+
+**Status:** approved by the owner, holder section included. Being built in the
+phase order of §9. (The staff / principal removal it depends on landed first.)
+
+**Vocabulary.** The other AI firms are **competitors**. "Rival" and "the Street"
+leave every player-facing string: page titles, news copy, tooltips, glossary.
+Code identifiers (`Rival`, `rivals.ts`) and the save key `game.rivals` stay, so
+old saves load and the diff stays reviewable.
+
+**Firms only.** A competitor is a firm. It has no principal, no person, no
+portrait and no name beyond the firm's own. The player is a firm too.
+
+---
+
+## 0. The one sentence
+
+Every competitor is a **firm with a trait sheet**. About 22 numbers (1–100), a
+few hard **rules** and a couple of **quirks** decide what it buys, where, how
+big, how levered, and when it sells. The player sees the sheet through an
+**estimate** that sharpens with contact. A small **story layer** on top picks
+the handful of firms worth watching and tells their story without adding chores.
+
+---
+
+## 1. What exists today and what is wrong with it
+
+`engine/rivals.ts` is a strong economic engine and stays. It has:
+
+- 35 firms with real balance sheets;
+- ten styles: family, core, opportunistic, developer, merchant, pe, reit,
+  vulture, owneruser, foreign, slumlord;
+- hold clocks, balloon maturities, foreclosures, deeds in lieu, fund raises,
+  spinouts, construction jobs, and Jev at the decision points.
+
+The problem is not the economics. It is that:
+
+1. **Styles differ only in money behaviour.** They differ in leverage, hold clock,
+   cycle sensitivity, upkeep and build appetite. The only setting about *what* a
+   firm owns is a list of asset classes. Nothing says *where* it buys, *how big*
+   it goes, or *what quality* it builds. Location fit in `rivalBuys` is the same
+   for every firm (`locFit` from `demandScore`). So a "developer" and a "merchant"
+   look identical on the map.
+2. **Thirty-five near-equal rows.** Nobody stands out, so watching a game is a
+   league table and a news feed.
+3. **Nothing is foreshadowed.** Balloons, hold clocks and half-done assemblages
+   are all in the state, but the player only learns of them when they resolve.
+
+---
+
+## 2. The trait sheet
+
+### 2.1 Traits (numbers, 1–100)
+
+Every trait must change a **decision**: a filter, a threshold, or a weight when
+ranking options. No trait may change how the market treats a firm. That is
+`CLAUDE.md` (no fake numbers), and it is enforced in review.
+
+| Group | Trait | 1 means… | 100 means… | Decision it drives (code site) |
+|---|---|---|---|---|
+| **Where** | Prime appetite | avoids the core | only the best-located lots | Location weight in `rivalBuys` and in job/site choice. Replaces today's shared `locFit`. |
+| | Edge appetite | never leaves the core | lives on the outskirts | Same weight, inverted demand curve. Both can be high (a generalist); both low means it is pinned to its home turf. |
+| | Home-turf loyalty | buys anywhere | buys only in districts it already owns in | Multiplies weight by the share of its book already in that district |
+| **What** | Office, Residential, Retail, Industrial, Land (5 traits) | won't touch it | specialist | Class weight. Replaces `STYLE.classes`. A trait under 15 is a hard no. |
+| | Scale | small infill | full-block towers | Preferred deal size, in lot area and buildable floor area; a weight that peaks at its target |
+| | Quality | Class C | trophy | Which condition it buys at, and what it builds (floors, spec). It pairs with Upkeep. |
+| **How** | Build appetite | never builds | builds everything | Replaces `BUILD_APPETITE` |
+| | Hold patience | flips | holds for generations | Replaces `STYLE.holdM` |
+| | Renovation appetite | buys as-is | buys tired buildings to fix | Weight on below-grade buildings, plus capex after purchase |
+| | Distress appetite | avoids it | hunts it | Replaces `STYLE.distressBias` |
+| | Assembly drive | single lots | builds sites lot by lot | New: targets lots next to its own (§2.5) |
+| **Money** | Leverage appetite | all cash | max lender will give | Replaces `STYLE.maxLtv` and the opening `ltv` |
+| | Cycle timing | buys busts (contrarian) | rides booms | Replaces `procyclical` and `contra` |
+| | Price discipline | will overpay | never above its number | Replaces `STYLE.patience` (how far over appraisal it chases) |
+| | Cash-out appetite | never refinances out | pulls equity in every boom | Replaces `STYLE.cashOut` |
+| **Run** | Upkeep | milks the building | over-maintains | Replaces `CARE.capex` / `CARE.lease` |
+| | Capacity | one deal at a time | many deals and jobs at once | Replaces `maxLiveJobs`, and caps purchases per year |
+| | Reach | hears only the open tape | first call on off-market deals | Share of off-market and early-look listings it sees before the tape |
+| | Underwriting | sloppy values | sharp values | Noise on its own value estimate when it bids. Low means it overpays at times and misses bargains. |
+| **Temperament** | Grudge memory | forgets | never forgets | How long and how much the relationship ledger (§5) weighs |
+| | Secrecy | an open book | opaque | How wide the player's estimates stay (§3) |
+| | Panic threshold *(hidden)* | sells at the first stress | rides it to the end | Stress months before it markets assets (`DURESS_BAND`, `stressMs`) |
+
+That is 22 traits plus the hidden one.
+
+### 2.2 Rules (hard limits, not numbers)
+
+Each firm has 0–3 rules. Rules filter the options **before** traits rank them.
+
+- **ONLY …** — ONLY trophy · ONLY industrial · ONLY land · ONLY assembles ·
+  ONLY its home district · ONLY builds (never buys a standing building)
+- **NEVER …** — NEVER sells · NEVER builds · NEVER above 50% LTV ·
+  NEVER buys distress · NEVER sells to the player (earned through §5, never rolled)
+- **ALWAYS …** — ALWAYS bids on its own block · ALWAYS sells at delivery ·
+  ALWAYS buys at the courthouse steps
+
+Breadth falls out of the rules. A firm with an ONLY rule is a specialist. One
+with a single soft focus is a two-lane firm. One with no rules and mid traits
+is a generalist. There is no separate "focus" setting.
+
+### 2.3 Quirks (0–2 per firm)
+
+Each quirk has a small but real effect, and a story hook.
+
+| Quirk | Effect |
+|---|---|
+| Corner-obsessed | Weight ×1.5 on corner lots; pays up to its Price-discipline cap for them |
+| Loyal to one bank | Always borrows from the same lender: better terms in good times, shares its fate in bad |
+| Deep-pocketed backer *(hidden until used)* | One rescue capital injection in its first crisis |
+| Copycat | Moves toward whatever district or class the leading firm (often you) made money in last year |
+| Trophy hunter | Bids on any building that sets a record price |
+| Landmark lover | Won't redevelop old buildings, and buys them when offered |
+| Late payer | Lenders read it as riskier: wider spread, earlier sweep |
+| Patient seller | Lists well above value and waits |
+| Neighbourhood champion | Weight bonus in its home district, and refuses to sell there |
+| Feuding | Picks one other competitor and bids against it wherever they overlap |
+
+### 2.4 Shown, estimated, hidden
+
+| Tier | What | How it is shown |
+|---|---|---|
+| **Shown** | Name, book, what it owns, public rules ("NEVER sells" is something the market knows) | Exact |
+| **Estimated** | Most traits | A range, e.g. `Leverage appetite 40–65`. It starts about ±22 wide (the band the old principal reads used), plus a Secrecy bonus. |
+| **Hidden** | Panic threshold, deep-pocketed backer, any undiscovered quirk | `??` until an event reveals it |
+
+**How estimates narrow** (no RNG on the economic streams — see §8):
+
+- **Trading with them** (buy from, sell to, lose a bid to): the traits that deal
+  touched narrow a lot. A closed sale narrows Price discipline and Leverage.
+- **Watching them**: every observable action narrows the trait behind it a
+  little. A groundbreak narrows Build appetite, Scale and Quality; a cash-out
+  refi narrows Cash-out appetite.
+- **Time**: slow general narrowing for firms active near your holdings.
+
+**Fairness rule.** Every hidden trait must give off a visible tell before it
+decides anything. Before a panic sale you see the firm stop buying, its LTV
+climb past its pattern, a "marketing assets" line. A sharp player could have
+read it. Hidden must never mean random.
+
+### 2.5 Assembly (the one new mechanism in phase 1)
+
+A firm with high Assembly drive picks a **target site**: a run of adjacent lots
+that together pencil (using the player's existing assemblage underwriting). It
+then weights those lots heavily until it owns them all, or gives up after a
+patience window. The last lot is a **holdout**. If you own it, you can name your
+price, up to what the assembled site is worth to them under their Price
+discipline. If you won't sell, they build what they can around you.
+
+---
+
+## 3. From profiles to firms
+
+A **profile** is a template: a centre value for each trait, the rules it usually
+carries, and its likely quirks. A firm is drawn from a profile: each trait gets
+the centre ± a seeded jitter, then 0–3 rules and 0–2 quirks are rolled. So two
+Trophy Builders still differ.
+
+### 3.1 The profiles (28)
+
+Key traits only. Unlisted traits centre at 50.
+
+| # | Profile | Defining traits | Usual rules |
+|---|---|---|---|
+| 1 | Trophy Builder | Prime 90, Scale 85, Quality 95, Build 85, Hold 80, Leverage 35 | ONLY trophy |
+| 2 | Ego Builder | Prime 85, Scale 98, Quality 90, Build 95, Price discipline 15, Underwriting 25 | ONLY builds |
+| 3 | Merchant Builder | Build 95, Hold 10, Scale 50, Quality 55 | ALWAYS sells at delivery |
+| 4 | Industrial Edge Developer | Edge 90, Industrial 95, Build 85, Scale 70, Cycle timing 75 | ONLY industrial |
+| 5 | Workhorse Rental Builder | Residential 90, Prime 40, Edge 55, Build 70, Hold 90, Leverage 55 | — |
+| 6 | Mixed-Use Placemaker | Retail 70, Residential 70, Assembly 75, Home-turf 85, Build 80 | ONLY its home district |
+| 7 | Assembler | Assembly 98, Land 80, Price discipline 70, Hold 60 | ONLY assembles |
+| 8 | Build-to-Suit Specialist | Build 80, Office 70, Industrial 60, Reach 80 | ONLY builds |
+| 9 | Adaptive-Reuse Converter | Office 85, Renovation 95, Distress 60, Cycle timing 30 | — |
+| 10 | Pension / Core | Office 70, Residential 70, Quality 75, Leverage 30, Hold 85, Price discipline 80 | NEVER above 50% LTV |
+| 11a–c | Sector REIT (office / retail / residential) | that class 95, Capacity 80, Hold 75 | ONLY that class |
+| 12 | Old Family Dynasty (the version that still buys) | Hold 98, Leverage 15, Quality 70, Home-turf 75, Secrecy 85 | NEVER sells (most rolls) |
+| 13 | Foreign Trophy Buyer | Quality 95, Prime 95, Price discipline 10, Build 5, Leverage 25 | ONLY trophy |
+| 14 | Owner-User Corporation | Office 80, Industrial 50, Hold 100, Build 30 | NEVER sells |
+| 15 | High-Street Retail Landlord | Retail 98, Prime 80, Hold 70 | ONLY retail |
+| 16 | Net-Lease Buyer | Quality 60, Hold 80, Price discipline 40, Renovation 5 | — |
+| 17 | Neighbourhood Operator | Residential 85, Scale 15, Home-turf 95, Capacity 75, Upkeep 60 | ONLY its home district |
+| 18 | Institutional Expander (buys next to itself) | Home-turf 100, Price discipline 10, Hold 100 | ONLY its home district, NEVER sells |
+| 19 | Vulture | Distress 98, Cycle timing 5, Underwriting 80, Hold 50 | ALWAYS buys at the courthouse steps |
+| 20 | Loan-to-Own Lender | Distress 90, Reach 70, Underwriting 85 | (needs notes, phase 3) |
+| 21 | Hot-Money Flipper | Leverage 95, Cycle timing 98, Hold 10, Underwriting 30, Panic 20 | — |
+| 22 | Value-Add Fund | Renovation 85, Hold 25 (fund clock), Leverage 70 | — |
+| 23 | Contrarian | Cycle timing 5, Quality 70, Price discipline 90, Leverage 20, Hold 85 | — |
+| 24 | Land Banker | Land 98, Build 0, Edge 70, Hold 60, Leverage 15 | NEVER builds |
+| 25 | Corporate Raider | Distress 70, Capacity 90, Reach 85 | (takeovers, phase 3) |
+| 26 | Slumlord | Quality 5, Upkeep 3, Residential 70, Cash-out 70 | — |
+| 27 | Preservationist (buys landmarks) | Hold 98, Renovation 70, Build 0 | NEVER builds, NEVER sells |
+| 28 | Spinout Upstart | copies its parent firm's profile, Capacity 30, Grudge memory 90 (at its parent) | — |
+
+### 3.2 The roster
+
+- 35 slots, as today. Most profiles appear once, so each town has a different cast.
+- **Balance check (about the city, not any firm):** every town gets at least
+  4 builders, 4 long-term holders, 2 distress buyers and 1 land banker. That is
+  the mix a property market needs to clear, not a thumb on any firm's scale.
+- Opening equity stays in today's $2.5M–$10M band. Nobody starts much bigger than you.
+- New firms entering mid-game (today's `maybeNewFirm`) draw a profile that
+  fits the cycle: hot money in booms, vultures in busts.
+
+### 3.3 Migration that proves the plumbing
+
+Phase 1 opens by expressing each of today's 11 styles as a trait sheet. Each
+trait maps to the old parameter as an **offset from the style's centre**, so a
+trait at its centre reproduces the old number exactly. The baseline must then
+be **bit-identical**. Only after that do new traits and profiles switch on,
+each one measured.
+
+Profiles 12, 18 and 27 are competitors only in the version that bids. The
+passive versions (the family that never buys, the hospital that only sits) are
+**holders** (§5a).
+
+---
+
+## 4. Drift: traits change with what happens
+
+- Burned in a crash (lost more than a third of equity): Leverage −10 to −20,
+  Panic threshold down, Price discipline up.
+- A big win: Leverage and Scale +5, Price discipline −5 (hubris).
+- A new fund closes: Capacity up. A fund winds down: Hold patience forced short.
+- Taken over: the sheet moves toward the acquirer's.
+- Bounded: at most ±15 on any trait per year.
+
+The profile label is recalculated from the current traits each year. So news
+can say "Kestrel Capital has become a vulture", and over 100 years each firm
+has an arc rather than a fixed type.
+
+---
+
+## 5. Relationships: competitors remember you
+
+It extends the existing `s.street[firmId]` tie (`deals`, `beats`, `insults`) into a ledger:
+
+| Event | Effect |
+|---|---|
+| You sold them a building that worked out | goodwill |
+| You beat them to a deal | grudge |
+| You lowballed them | grudge (small) |
+| You rescued them (bought distress at a fair price, took their note fairly) | big goodwill |
+| You won a holdout against them | big grudge |
+
+Grudge memory decides how long each entry lasts and how much it weighs. The
+consequences are real decisions, kept inside the firm's own limits:
+
+- **Grudge:** the firm bids up on listings you are also in, but never above its
+  Price-discipline cap. It refuses to sell to you below value. A deep grudge
+  triggers **NEVER sells to the player**.
+- **Goodwill:** a first look at its sales before the tape, a JV invitation on a
+  job, and an offer to buy your building before you list.
+
+The player never manages this. It shows up as one line where it matters:
+"Lost to Kestrel — they have bid against you since the Pearl St holdout."
+
+---
+
+## 5a. Holders: the owners who are not competitors
+
+`owners.ts` keeps a register of named holders: families, estates, partnerships,
+institutions and original builders. They own most of the city's ~900 other
+buildings, on a power law. Keeping them apart from competitors is right and
+stays. Most property in a real city belongs to people who are not in your
+business, and making them bidders would put hundreds more firms in every auction.
+
+**The rule:** if it ever bids against you, it is a competitor. If it only
+sells, refuses or sits, it is a holder.
+
+| | Holders | Competitors |
+|---|---|---|
+| Number | hundreds (power law) | 35 |
+| Buys? | never | yes |
+| Balance sheet | none (derived from the deeds by hash) | real |
+| Personality | kind (estate, local family, institution, partnership, original builder), plus the mini-sheet below | full trait sheet |
+| Why it sells | life events (`EXIT_HAZARD` by kind), whole book at once | hold clocks, distress, raising cash |
+| Memory of you | yes, across all its buildings (`offend`, `isCold`) | relationship ledger (§5) |
+
+### What changes for holders
+
+1. **A mini-sheet: four numbers, not 22.** They refine the existing kind; they do
+   not replace it.
+   - **Attachment**: how unwilling it is to sell at all. It scales the walk-away
+     odds on an approach.
+   - **Ask premium**: how far above value it prices.
+   - **Memory**: how long a lowball keeps its doors shut. It scales the
+     `offend` window.
+   - **Readiness** *(hidden until a tell)*: how close it is to a sale event.
+     It scales its exit hazard.
+
+   All four are seed-hashed like the register itself (no RNG stream), and use
+   the same estimate rules as §2.4.
+2. **Holders are the stage competitors act on.**
+   - **Foreshadowing**: "The Calloway estate is in probate — 4 buildings likely
+     to market within 2 years." Readiness crossing a line produces the tell and
+     a watch item.
+   - Vultures and distress buyers weight estate and partnership books.
+     Assemblers target holder lots, and a holder can be the holdout.
+   - Working a holder relationship can get you a building before it lists. That
+     path exists today (approaches), and now it is visible.
+3. **The bridge runs both ways.** Heirs becoming a competitor already exists.
+   New: a competitor that winds down solvent can leave a few buildings with its
+   founders' family as a **holder**. This keeps the register alive over a
+   century instead of only shrinking.
+4. **Names are entities.** "Ainsworth Family Holdings", "the Calloway estate".
+   No individual people (firms only).
+5. **Clean up the overlap.** The holder kind "developer" reads as **original
+   builder**: someone holding what it built long ago. It never builds, so it is
+   not confused with competitor developers.
+6. **Screens.** Research → Owners stays the home. The Owners lens shows
+   competitors in colour, holders muted, and a flag on holders with a sale
+   event coming. Estate settlements and partnership splits go through the same
+   headline-beat budget as competitors (§6.4).
+
+---
+
+## 6. The story layer (what makes a game worth watching)
+
+### 6.1 Headliners
+
+A **story director** scores every firm each quarter for how much it matters
+right now. It promotes the top 4–6 to **headliners** and fills these roles when
+it can:
+
+- **Nemesis**: most grudge with you
+- **Neighbour**: most buildings or jobs next to yours
+- **High-flyer**: most levered firm in a boom
+- **Circling**: a vulture or raider near someone's distress
+- **Upstart**: youngest firm with momentum
+
+Headliners rotate as stories end. The other ~30 are background, shown in a
+folded table.
+
+### 6.2 Arc badges (headliners only)
+
+**Raising → Deploying → Overreaching → Strained → Crisis →
+Rescued / Fire sale / Foreclosed / Taken over**, computed from existing
+signals: LTV against the firm's own pattern, `stressMs`, the maturity ladder,
+and `uncalled`.
+
+### 6.3 What's coming (foreshadowing, read-only)
+
+One line per headliner, from state that already exists:
+
+- "Fairlead must exit 6 buildings by '34" (hold clock)
+- "Kestrel: $40M of balloons due Q3, LTV 81%" (maturities)
+- "Wexler holds 3 of 4 lots on Pearl & Water" (assembly)
+- "Alden tops out on Front St in 8 months, 240k sf of office" (construction pipeline)
+
+These never enter your docket and never stop the clock.
+
+### 6.4 Pacing
+
+Headline beats are capped at about 2–3 a quarter, with variety enforced, and
+something resolves roughly every year.
+
+---
+
+## 7. Screens
+
+Under the `UI_DECLUTTER.md` rules: one home per number, and desks, not doors.
+
+| What | Where |
+|---|---|
+| **Competitors page** | Replaces the Street page. Headliner strip on top (a card each), equity race chart, then the 35-row table in a `Fold`. **Merges the Jev match leaderboard into it**: one table, Jev firms carry the existing `JevBadge`. There is no second leaderboard. |
+| **Firm card** | Profile label · rules as tags · the 3 defining traits plus anything you've narrowed · quirks found · `??` for hidden · relationship line · arc badge · what's coming. The full sheet sits in a `Fold`. |
+| **Map** | The Owners lens (exists) colours by firm. It adds a crisis pulse on a firm in Crisis and outlines a target site under assembly. Cranes (exists) already shows jobs. |
+| **News** | Leads with headliner beats; routine tape stays out (existing rule). |
+| **Spectator mode** | Autoplay gets a spectator-only stop rule that pauses on headline beats, using the existing pause toast. A player's own stop rule is unchanged. |
+| **Year review** | Three competitor lines: deal of the year, biggest blow-up, your rank. |
+
+Example card:
+
+```
+WEXLER BUILDING CO.                      Trophy Builder   ◆ Overreaching
+Rules: ONLY trophy · NEVER sells                    Nemesis — Pearl St holdout
+  Prime appetite   86        Leverage      30–62
+  Scale            84        Capacity      40–62
+  Quality          92        Underwriting  ??
+Quirks: corner-obsessed · ???
+Coming: tops out at 1 Front St in 8 months — 410k sf of trophy office
+```
+
+---
+
+## 8. Rules the build must keep
+
+1. **Traits change choices, never market outcomes.** No trait multiplies rent,
+   NOI, cap rate or price paid by the market.
+2. **Determinism.** Trait draws, estimate narrowing and the story director use
+   their own seeded streams, not `rivals`/`econ`. Choosing which firm to
+   *show* must never move the economy.
+3. **Save compatibility.** A save with no trait sheets gets one derived from its
+   style on load (the §3.3 mapping), so old saves keep playing the same game.
+4. **Jev.** A Jev-run firm gets its trait sheet as part of its question state, so
+   its answers stay in character. The scripted rule stays the fallback.
+5. **Measurement.** Every phase that changes behaviour is run against
+   `pnpm check`, the gate and century runs, and recorded in
+   `BASELINE_ATTRIBUTION.md`.
+
+---
+
+## 9. Build order
+
+| Phase | What | Moves the economy? |
+|---|---|---|
+| **0** | Player-facing rename to "competitors" | No |
+| **1a** | Trait sheets as data; the 11 styles expressed as sheets; derivation on load | **No: bit-identical baseline is the acceptance test** |
+| **1b** | Where/What/Scale/Quality traits live in `rivalBuys` and site choice; rules and quirks; 28 profiles and the roster draw; assembly and holdouts | Yes — measured |
+| **2** | Estimates and hidden traits; firm card; Competitors page with headliners, race chart and merged Jev table; map pulse | No (display only) |
+| **3** | Story director, arcs, what's coming, spectator stops, year-review lines | No |
+| **4** | Relationship ledger consequences; drift | Yes — measured |
+| **4h** | Holders (§5a): mini-sheet, foreshadowing, competitor → holder bridge, "original builder" label, lens flag | Yes (Readiness/Attachment) — measured |
+| **5** | New mechanics: conversions (9), loan-to-own (20), build-to-suit tenant poaching (8), raider takeovers (25), firm-vs-firm feuds | Yes — each measured on its own |
+
+Phases 2 and 3 can ship before 1b if we want the spectator payoff first; they
+read existing state.
+
+---
+
+## 10. More ideas to make the city feel alive
+
+Suggestions, not part of the approved scope until picked:
+
+1. **Copycats chase your success.** When you make money in a district or class,
+   the next year's competitor weight there rises (the Copycat quirk, made
+   general and small). Real capital chases returns. Your edge erodes, which is
+   honest difficulty.
+2. **The tour log.** A listing shows which firms toured it ("3 firms walked
+   this building"). You see the competition before the bid, and it is the
+   foreshadowing system applied to deals.
+3. **Annual letters.** Each December, every headliner publishes a one-line
+   letter to its investors: "We are sellers of office" or "We see value in the
+   east side". It is generated from its current weights. It is true but
+   incomplete, like a real letter. Reading them narrows estimates a little.
+4. **Bidding wars you can watch.** When two headliners want the same listing,
+   it runs as a short visible auction in the news across a couple of months,
+   and you can jump in.
+5. **Competitor JVs with each other.** Two firms co-sponsor a big job.
+   Partners can fall out in a downturn: one buys the other out cheaply.
+6. **Signature buildings.** A firm's best delivery gets its name on the map
+   label ("Wexler Tower"). Landmarks outlive the firms that built them.
+7. **Trade-press survey.** A quarterly line on competitor sentiment ("7 of 10
+   headliners are net sellers"), computed from their actual positions. It is a
+   real leading indicator built from real behaviour.
+8. **Tenant moves between competitors.** When a competitor's tower delivers,
+   news names the tenants it pulled and from whose building. Supply competition
+   becomes visible, not just a vacancy number.
+9. **Firm obituaries.** When a firm dies, two lines: what it built, how it
+   died, and who bought the pieces. It is the payoff of a 30-year arc.
+10. **Your reputation as a trait sheet.** Competitors keep estimates of *you*,
+    built from how you play: "always overpays for corners", "sells into every
+    boom". They act on it (bid against your pattern). You can read their read
+    of you, and play against it.
+
+---
+
+## 11. Owner decisions
+
+Approved: the plan as written, the trait list (§2.1), the profiles (§3.1), the
+holder section (§5a). Build order: §9 as listed. §10 ideas stay out of scope
+until picked.
+
+---
+
+## 12. Build status
+
+| Phase | State | Where |
+|---|---|---|
+| Firms-only removal | Done; paired 16 seeds: a re-roll, no level shift | `345445f`, BASELINE_ATTRIBUTION.md |
+| 0 · rename | Done | `f466438` |
+| 1a · sheets read everywhere | Done; **bit-identical** (720 of 720 values, 16 seeds) | `engine/competitorTraits.ts`, `paramsOf` |
+| 1b · live traits | Done: class/where/scale/quality/renovation/assembly fit in `rivalBuys` and builders' site choice; capacity (deals a year); underwriting misreads; reach (how often its off-market desk calls owners and how many doors it knows — `offmarket.ts`); rules; 28 profiles; the cast with the city check; new firms by cycle; spinouts inherit and feud; heirs get profiles; Jev sees the temperament | `rivals.ts` (`fitOf`, `castRoster`, `seatProfile`) |
+| Quirks | All live: corner, champion, trophy hunter, landmark, feuding, backer (hidden until used), patient seller, late payer, loyal bank, copycat (leans into the districts where your book is working) | `competitorTraits.ts` `siteFit`, `rivals.ts` `fitOf` |
+| 2 · estimates, card, page | Done: reads narrow on trades, prints, groundbreaks, duress sales and time; the firm sheet in the drawer; headliner strip; race chart; the table in a fold | `engine/competitorReads.ts`, `ui/panels/CompetitorCards.tsx` |
+| 3 · story layer | Done: roles, arcs, what's coming, spectator stops (three a quarter), map crisis tint, year-review lines | `engine/storyline.ts`, `AutoPlay.tsx`, `MapView.tsx` |
+| 4 · relationships, drift | Done: grudge with fading memory; a grudge leans into listings you are negotiating (inside its discipline); deep grudge = NEVER sells to you; the "since the last one" line; annual drift with relabel news | `grudgeOf`, `driftYear` |
+| 4h · holders | Done: mini-sheet (attachment, ask premium, memory, readiness), readiness scales exit hazard (mean 1), "likely to come to market" on Owners and gold on the lens, "original builder" wording, and the bridge: an old, unlevered family firm that has stopped buying winds up and its deeds stay with the family as a named holder that never bids | `owners.ts` `holderSheet`, `rivals.ts` `tickRivalRetirements` |
+| Start menu | Competitors' opening range and your likely rank, by town size | `competitorOpeningRange`, `GameSetup.tsx` |
+| 5 · new mechanics | Done: **raids** — a raider buys a weakened competitor whole at the take-private desk's own quote, assumes the paper (1% consent fee) inside its leverage limit (`takeprivate.ts` `tickRivalTakeovers`); **holdouts** — an assembler owning two or more lots around yours offers 15–65% over appraisal by its discipline, three months, then builds around you (`actions.ts` `holdoutAssembler`); **loan-to-own** — a distress hunter with reach buys defaulted paper while the offer is still open and files on the deed (`notes.ts` `loanToOwnBids`); **build-to-suit poaching** — a build-to-suit start signs your largest tenant in that use whose lease ends around delivery, and it gives notice saying where it is going (`poachForBuildToSuit`, `Tenant.leavingFor`); **conversions** — a converter turns its own under-two-thirds-let offices into housing on the same desk as yours (`dev.ts` `planReuseAt`, `tickRivalConversions`) | Rare by design in a healthy town: 30 years of seed 550991 had 2 raids and 1 backer rescue, no conversions (its offices stayed 75–99% let) and no loan-to-own (no such firm in that cast, 4 defaulted loans offered) |
+| Loan-to-own on **you** | Done (owner request): once your loan is in a workout file and the bank is under pressure or the file is three months old, a distress hunter can buy it at a value-based discount (55–95 cents; the bank books the loss). It refuses extensions, collects your payment while you pay, is repaid at par if you cure or refinance, takes 35% over its cost on a discounted payoff, and if the July auction ends at its credit bid the deed goes onto its book. It shows as your nemesis with the loan in its "what's coming" | `notes.ts` `sellYourDefaultToACompetitor`, `tickFirmHeldLoans`; `auction.ts` |
+| Jev leaderboard merge | Moot: the banking merge from main removed Jev | — |
+| Per-loan debt (BANKING.md handoff) | Done: a competitor's mortgages are originated at real desks under the single-name and headroom limits; its debt is the sum of its loans, its line (an outstanding balance at its bank) and its construction; a sale pays off that building's loan then the line; balloons come off each loan's maturity and renew at the cheapest desk that clears them; one bad building can default without the rest | `engine/rivalDebt.ts`, `test/rival-loans.mjs` |

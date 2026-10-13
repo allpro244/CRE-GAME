@@ -1644,7 +1644,14 @@ export function condCeiling(rec: { yearBuilt: number; buildSpec?: number }, mont
 export function initialCondIdx(rec: ParcelRecord, month = 0, grade?: Condition): number {
   const age = START_YEAR + Math.floor(month / 12) - rec.yearBuilt;
   const notch = grade === "good" ? 0.10 : grade === "worn" ? -0.08 : 0;
-  return clamp(0.95 - age * 0.0072 + notch, 0.42, condCeiling(rec, month));
+  // SURVIVORS GET RECAPITALISED (2026-10-13). This was linear wear with a
+  // stop at 0.42, and 30% of the opening stock sat on the stop. A building
+  // still standing at 90 has had its roof, plant and windows replaced on a
+  // cycle, so the stock's condition decays toward the level that cycle
+  // sustains instead of through it: same 0.72 points/decade when new, the
+  // old 0.42 now an asymptote that no building is pinned to.
+  const worn = 0.42 + (0.95 - 0.42) * Math.exp(-age * 0.0072 / (0.95 - 0.42));
+  return clamp(worn + notch, 0, condCeiling(rec, month));
 }
 
 // A condition that isn't one of the three silently produced NaN rent, which
@@ -2482,17 +2489,17 @@ export function opexPsf(cls: BuiltClass, econ: Econ, systemsDone: boolean, servi
   return (OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex + OPEX_FIXED[cls]) * econ.costIdx;
 }
 
-/** Controllable opex only — pmOpexMult applies here, not to fixed costs. */
+/** Controllable opex only — the half the service level moves; fixed costs are separate. */
 function controllableOpexPsf(
-  cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1, pmMult = 1,
+  cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1,
 ): number {
-  return OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex * econ.costIdx * pmMult;
+  return OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex * econ.costIdx;
 }
 
 function managedOpexPsf(
-  cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1, pmMult = 1,
+  cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1,
 ): number {
-  return controllableOpexPsf(cls, econ, systemsDone, service, pmMult) + OPEX_FIXED[cls] * econ.costIdx;
+  return controllableOpexPsf(cls, econ, systemsDone, service) + OPEX_FIXED[cls] * econ.costIdx;
 }
 
 /**
@@ -3070,17 +3077,15 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
     // cannot: the service policy moving the CONTROLLABLE half only (a manager
     // cannot economise on insurance), and the systems programme.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = rentableSf(rec) * managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+    const opexBill = rentableSf(rec) * managedOpexPsf(cls, econ, systemsDone, h.service) * locOpexMult(rec, econ, cls);
     return egi * (1 - MGMT_FEE - APT_RESERVE) - opexBill - propertyTaxYr(rec, h) - (h.groundRentOut?.rentYr ?? 0);
   }
   // Rent first, then the expense stack, then what comes back through the
   // recovery clauses. Vacant space reimburses nothing and still costs money —
   // that gap is the whole reason occupancy matters more than headline rent.
   const systemsDone = h.programsDone?.systems !== undefined;
-  // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
-  // controllable half only — fixed costs do not care who manages the building.
-  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service) * locOpexMult(rec, econ, cls);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service)) * locOpexMult(rec, econ, cls);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
 
@@ -3155,7 +3160,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
     // The same opexPsf every other class reads — see holdingNOIYr, where the
     // flat legacy table used to disagree with it by 22%.
     const systemsDone = h.programsDone?.systems !== undefined;
-    const opexBill = letSf * managedOpexPsf("multifamily", econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, "multifamily");
+    const opexBill = letSf * managedOpexPsf("multifamily", econ, systemsDone, h.service) * locOpexMult(rec, econ, "multifamily");
     const taxBill = grossTaxYr(rec, h);
     return {
       baseRent: egi, freeRent: 0, recoveredOpex: 0, recoveredTax: 0, egi,
@@ -3169,10 +3174,8 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   }
   const cls = rec.class as BuiltClass;
   const systemsDone = h.programsDone?.systems !== undefined;
-  // YOUR MANAGEMENT, ON YOUR BUILDING. See Holding.pmOpexMult. Applied to the
-  // controllable half only — fixed costs do not care who manages the building.
-  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service, h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+  const opexNowPsf = managedOpexPsf(cls, econ, systemsDone, h.service) * locOpexMult(rec, econ, cls);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service)) * locOpexMult(rec, econ, cls);
   const taxBill = grossTaxYr(rec, h);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;
@@ -3323,7 +3326,7 @@ export function incomeValueAsIs(rec: ParcelRecord, econ: Econ, condition: Condit
     ? Math.round((START_YEAR + econ.m / 12 - rec.yearBuilt) * 12) : 999;
   const asIs = leaseUpMarkAt(
     rec, econ, condition, sinceM, occupancy(rec, econ),
-    clamp(capRateFor(rec, econ, condition, condIdx), 2.8, 13) / 100,
+    capRateFor(rec, econ, condition, condIdx) / 100,
   );
   return asIs === null ? income : income + leaseUpWeight(rec, sinceM) * Math.max(0, asIs - income);
 }
@@ -3455,7 +3458,9 @@ export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, 
   const walt = wYears / sfTot;
   const credit = wCredit / sfTot;                       // 0..2
   // long paper and good covenants compress the cap; short paper widens it
-  const waltSpread = clamp(0.45 - 0.11 * walt, -0.30, 0.55);
+  // Term premium saturates: the tenth year of a lease adds less certainty than
+  // the second. Smooth in WALT, same 11bp/yr slope at zero, -0.30 asymptote.
+  const waltSpread = 0.45 - 0.75 * (1 - Math.exp(-walt * 0.11 / 0.75));
   const creditSpread = 0.18 - 0.20 * credit;            // +0.18 unrated, −0.22 investment grade
   const occSpread = clamp((0.9 - occ) * 1.4, -0.10, 0.75);
   const structSpread = -0.10 * (nnnSf / sfTot);         // net paper is easier to finance
@@ -3591,7 +3596,7 @@ function leaseUpGapNoiYr(rec: ParcelRecord, econ: Econ, h: Holding, gapSf: numbe
   const rent = marketRentPsfYr(rec, econ, h.condition, h.condIdx);
   if (cls === "multifamily") return gapSf * rent * (1 - MGMT_FEE - APT_RESERVE);
   const systemsDone = h.programsDone?.systems !== undefined;
-  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service), h.pmOpexMult ?? 1) * locOpexMult(rec, econ, cls);
+  const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service)) * locOpexMult(rec, econ, cls);
   const taxNowPsf = grossTaxYr(rec, h) / Math.max(1, rec.bldgArea);
   return gapSf * (rent + RECOVERY_RATE[cls] * (opexRecoverPsf + taxNowPsf)) * (1 - MGMT_FEE);
 }
@@ -3898,8 +3903,8 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: 
   }
   if (rec.class === "land" || !rec.bldgArea) return landValue(rec, econ);
   const quality = month === undefined ? 0 : rollQualitySpread(rec, h, month, econ);
-  const capNoRoll = clamp(capRateFor(rec, econ, h.condition, h.condIdx), 2.8, 13) / 100;
-  const cap = clamp(capRateFor(rec, econ, h.condition, h.condIdx) + quality, 2.8, 13) / 100;
+  const capNoRoll = capRateFor(rec, econ, h.condition, h.condIdx) / 100;
+  const cap = (capRateFor(rec, econ, h.condition, h.condIdx) + quality) / 100;
   // CONTRACT rent, not the rent that happens to be arriving this month.
   //
   // This line used to read `h.renovatingUntilM ?? -1`, and month −1 is inside

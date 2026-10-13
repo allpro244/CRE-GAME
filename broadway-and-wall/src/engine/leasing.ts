@@ -30,7 +30,6 @@ import { partnerFunds } from "./jv";
 import { recordPropertyEvent } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
-import { pmTenantCareMult, rentMultFor } from "./staff";
 import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 import { money } from "./money";
 
@@ -1098,17 +1097,7 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   if (fClass < 0.98) why.push({ s: "the market is soft and better-built space came within their budget", w: 1 - fClass });
   why.sort((a, b) => b.w - a.w);
   let p = clampL(0.94 * fSvc * fCond * fRent * fInd * fFit * fCred * fTen * fLoc * fClass, 0.10, 0.96);
-  const pBefore = p;
-  const renewMult = s.holdings[rec.bbl]?.pmRenewalMult ?? s.pmRenewalMult ?? 1;
-  const careMult = pmTenantCareMult(s, rec.bbl);
-  p = clampL(p * renewMult * careMult, 0.10, 0.96);
   const whyLines = why.length ? why.map((x) => x.s) : ["they simply moved"];
-  if (renewMult < 0.98 && p < pBefore - 0.03) {
-    whyLines.push("renewals are slipping — the PM desk is behind");
-  }
-  if (careMult < 0.96 && p < pBefore - 0.03) {
-    whyLines.push("tenant relationships are fraying at this building");
-  }
   return { p, why: whyLines };
 }
 
@@ -1845,6 +1834,17 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // bearing on it. See renewalIntent: how it is run, what state it is in,
       // what you are charging, what their trade is doing, whether it still
       // fits them. And the notice says which of those it was.
+      // A tenant that has already signed for a competitor's build-to-suit
+      // does not write a renewal letter: its notice is the other building.
+      if (t.leavingFor) {
+        t.nonRenewM = q;
+        t.nonRenewWhy = t.leavingFor;
+        s.news.unshift({
+          q, kind: "warn",
+          text: `${t.name} is not renewing at ${rec.address} — ${t.leavingFor}. ${(t.sf / 1000).toFixed(1)}k sf comes available ${monthLabel(t.endM)}.`,
+        });
+        continue;
+      }
       const ri = renewalIntent(s, rec, h, t);
       if (rng(s, "leasing") > ri.p) {
         t.nonRenewM = q;
@@ -1927,7 +1927,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           if (need >= t.sf * 0.78) return t.sf;
           return Math.max(minLettableSf(rec, use), fitWantSf(rec, need, t.sf, use) || t.sf);
         })(),
-        rentPsf: +(Math.max(market * 0.6, ask) * rentMultFor(s, h)).toFixed(2),
+        rentPsf: +(Math.max(market * 0.6, ask)).toFixed(2),
         termM: renewTermM,
         // A sitting tenant asks for less than a new one — no fit-out, no
         // moving costs to cover — but the same market decides how far they get.
@@ -2145,7 +2145,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // markdown that brought this prospect through the door, seen from the
           // other side, and the reason the arrival factor is not a gift.
           rentPsf: +(market * (specLive ? 1.05 : 1) * rentBias * staleDiscount(h.darkMs)
-            * bid * rentMultFor(s, h)).toFixed(2),
+            * bid).toFixed(2),
           // Term length is not random. A credit tenant taking a whole floor
           // signs long paper and expects to be paid for it; a small unrated
           // firm wants three years and an out. WALT is the thing a buyer
@@ -2219,8 +2219,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     }
   }
 
-  // Firm agent takes the whole book at 6%. Without them, in-house leasing
-  // staff negotiate only after an explicit handoff. Renewal management is the
+  // Firm agent takes the whole book at 6%. Renewal management is the
   // narrow middle option for renewals. A listing exclusive works the phones
   // and does not sign. "Take leasing back" means the principal owns every
   // letter that is not on the renewal desk.
@@ -2536,21 +2535,14 @@ export function deskMonthNow(s: GameState): NonNullable<GameState["deskMonth"]> 
   return s.deskMonth;
 }
 
-/** True when at least one leasing hire can cover buildings (firm desk or assigned). */
-export function hasLeasingTeam(s: GameState): boolean {
-  return (s.staff ?? []).some((x) => x.role === "leasing");
-}
-
 /**
- * Somebody else holds the pen on at least part of the book — firm agent,
- * your team (when handed over), or renewal management.
+ * Somebody else holds the pen on at least part of the book — firm agent
+ * or renewal management.
  * A listing exclusive is not on this list: they work the phones.
  * Drives mandate UI and the quiet-desk scorecard.
  */
 export function deskHoldsPen(s: GameState): boolean {
-  if (s.agent || s.renewalMgmt) return true;
-  if (s.teamLeasing && hasLeasingTeam(s)) return true;
-  return false;
+  return !!(s.agent || s.renewalMgmt);
 }
 
 /**
@@ -2579,8 +2571,8 @@ export function overDeskAuthority(s: GameState, l: LOI): boolean {
  * Does this letter still need the principal — popup, Deals queue, Skip stop?
  *
  * Referred paper always does, and so does anything over the firm's signing
- * authority. Otherwise the firm agent, a covering team hire (after handoff),
- * or (for renewals) management already owns the decision. A listing exclusive
+ * authority. Otherwise the firm agent or (for renewals) management already
+ * owns the decision. A listing exclusive
  * does not.
  */
 export function loiNeedsPrincipal(s: GameState, l: LOI): boolean {
@@ -3971,7 +3963,7 @@ export function clearTrayAgainstPlan(
 
 function planCoverOf(
   s: GameState, bbl: string, loi: LOI, onlyDelegated: boolean,
-): { kind: "agent" | "exclusive" | "staff"; who: string } | null {
+): { kind: "agent" | "exclusive"; who: string } | null {
   if (s.holdings[bbl]?.principalSigns) return null;
   // auto-lease answers its own building's letters (autoLeaseDesk)
   if (s.holdings[bbl]?.autoLease) return null;
@@ -4060,31 +4052,22 @@ function runPlanDesk(
 /**
  * Who holds the pen on this deed.
  *
- * Three covers, one model:
+ * Two covers, one model:
  *   1. You (null) — default. Every letter is yours.
- *   2. Staff — only after an explicit handoff (`teamLeasing`); float hires
- *      cover the unassigned book, pinned hires only their buildings
- *   3. Firm agent — only after an explicit hire (`agent`)
+ *   2. Firm agent — only after an explicit hire (`agent`)
  *
  * A listing exclusive (`Holding.broker`) works the phones and takes 6% of
- * what you sign. It does not negotiate or sign. Hiring staff, owning a lot
- * of feet, or putting the house on the file does not take the pen.
+ * what you sign. It does not negotiate or sign. Owning a lot of feet, or
+ * putting the house on the file, does not take the pen.
  */
 export function deskCoverage(
-  s: GameState, bbl: string,
-): { kind: "agent" | "exclusive" | "staff"; who: string } | null {
+  s: GameState, _bbl: string,
+): { kind: "agent" | "exclusive"; who: string } | null {
   if (s.agent) return { kind: "agent", who: "Your agent" };
-  if (!s.teamLeasing) return null;
-  const leasing = (s.staff ?? []).filter((x) => x.role === "leasing");
-  if (!leasing.length) return null;
-  const assigned = leasing.some((st) => (st.assignedBbls ?? []).includes(bbl));
-  const firmDesk = leasing.some((st) => !(st.assignedBbls?.length));
-  if (!assigned && !firmDesk) return null;
-  return { kind: "staff", who: "Your leasing desk" };
+  return null;
 }
 
-function deskFee(kind: "agent" | "exclusive" | "staff", loi?: LOI): number {
-  if (kind === "staff") return loi?.kind === "renewal" ? 0.02 : 0.04;
+function deskFee(_kind: "agent" | "exclusive", _loi?: LOI): number {
   return AGENT_FEE;
 }
 
@@ -4190,9 +4173,9 @@ function agentReferLoi(
  * clears the open pile immediately — waiting until next month left every
  * existing LOI still popping.
  *
- * `onlyDelegated`: when the firm agent is off, in-house leasing staff
- * (after an explicit handoff) still counter/sign on buildings they cover.
- * A listing exclusive is not a cover — they work the phones.
+ * `onlyDelegated`: skip the firm agent and run only the narrower covers
+ * (renewal management). A listing exclusive is not a cover — they work the
+ * phones.
  */
 export function runLeasingAgent(
   s: GameState, parcels: ParcelTable, opts?: { onlyDelegated?: boolean },
@@ -4202,10 +4185,9 @@ export function runLeasingAgent(
 
 /**
  * Clear live letters under whoever currently holds the pen — hire path.
- * Same logic as the end of tickLeasing, so flipping agent / team handoff /
- * renewal management does not leave a month of popups on the open pile.
- * Hiring leasing staff, or listing a building exclusively, does not clear
- * the pile.
+ * Same logic as the end of tickLeasing, so flipping agent / renewal
+ * management does not leave a month of popups on the open pile. Listing a
+ * building exclusively does not clear the pile.
  */
 export function workLeasingDesk(s: GameState, parcels: ParcelTable) {
   if (ensureLeasingPlan(s)) runPlanDesk(s, parcels);

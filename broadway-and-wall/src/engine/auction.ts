@@ -27,7 +27,7 @@
 // can read or ignore — passing costs nothing but the bargain, and nothing
 // here ever asks for a second click.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding } from "./types";
+import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding, Rival } from "./types";
 import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
 import { rng, rrange, cycleHot, cycleDown } from "./market";
 import { openReoPortfolio } from "./portfoliosale";
@@ -40,7 +40,8 @@ import { genRentRoll, depositsOn } from "./leasing";
 import { bumpLenderRel } from "./debt";
 import { saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
-import { clearRivalClaims, forgetDeed } from "./rivals";
+import { clearRivalClaims, fitOf, forgetDeed } from "./rivals";
+import { dropDeed, originateRow } from "./rivalDebt";
 import { reinstateFundedForeclosures } from "./workout";
 import { spendable, fundAndBook } from "./credit";
 import { ownersShareOfProceeds } from "./jv";
@@ -108,22 +109,23 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
   for (const l of s.lenders ?? []) {
     if (l.failedM !== undefined) continue;
     if (l.delinquent < 0.035 || rng(s) > 0.09) continue;
-    const pool = (s.rivals ?? []).filter((r) =>
-      r.failedM === undefined && (r.stressMs ?? 0) >= 4 && r.bbls.length > 0
-      && r.debt / Math.max(1, r.aum ?? 1) > 0.7);
-    if (!pool.length) return;
-    const r = pool[Math.floor(rng(s) * pool.length)];
-    const cands = r.bbls.filter((b) =>
-      !s.holdings[b] && !s.bankFcls!.some((x) => x.bbl === b)
-      && !(s.notes ?? []).some((n) => n.bbl === b)
-      && !(s.rivalNotes ?? []).some((x) => x.bbl === b));
-    if (!cands.length) return;
-    const bbl = cands[Math.floor(rng(s) * cands.length)];
+    // A DESK FILES ON ITS OWN LOAN, AND ONLY ONE THAT IS NOT BEING PAID. The
+    // pool used to be any firm four months into a squeeze, on any of its
+    // buildings, for an owed figure drawn as 75-115% of the building's as-is
+    // value. It is now this desk's own rows three months in arrears
+    // (rivalDebt.markPayments), for what is actually owed on them.
+    const rows = Object.values(s.cityLoans ?? {}).filter((x) =>
+      x.lender === l.name && !x.heldBy && (x.arrearsMs ?? 0) >= 3
+      && !s.holdings[x.bbl] && !s.bankFcls!.some((f) => f.bbl === x.bbl)
+      && (s.rivals ?? []).some((r) => r.id === x.obligorId && r.failedM === undefined && r.bbls.includes(x.bbl)));
+    if (!rows.length) continue;
+    const row = rows[Math.floor(rng(s) * rows.length)];
+    const r = (s.rivals ?? []).find((x) => x.id === row.obligorId)!;
+    const bbl = row.bbl;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land") return;
-    const asIs = collateralAsIs(rec, s.econ, Math.max(0.15, Math.min(0.95, r.occ ?? 0.6)));
-    if (asIs < 600_000) return;
-    const debt = Math.round(asIs * rrange(s, 0.75, 1.15));
+    if (row.balance < 600_000) return;
+    const debt = Math.round(row.balance);
     s.bankFcls.push({
       bbl, lender: l.name, firmId: r.id, firm: r.name, debt,
       noticedM: s.month, saleM: nextJulyAfter(s.month, 5),
@@ -251,16 +253,22 @@ function roomBid(s: GameState, est: number): { px: number; heads: number } {
 }
 
 /** A named buyer if one on the street can carry it; out-of-town money if not. */
-function thirdPartyTakes(s: GameState, rec: ParcelRecord, px: number): string {
-  const r = (s.rivals ?? []).filter((x) =>
-    x.failedM === undefined && x.cash > px * 0.3
-    && (x.style === "opportunistic" || x.style === "core"))
-    .sort((a, b) => b.cash - a.cash)[0];
+function thirdPartyTakes(s: GameState, parcels: ParcelTable, rec: ParcelRecord, px: number): string {
+  // WHO IS IN THE ROOM: firms whose sheet hunts distress (Distress 55+), the
+  // building fitting what they buy, and the keenest of them takes it — the
+  // ALWAYS-at-the-courthouse shop first. A firm with no sheet keeps its style.
+  const keen = (x: Rival) => x.sheet
+    ? (x.sheet.distress >= 55 ? (x.sheet.distress / 100) ** 2 * (x.rules?.includes("alwaysCourthouse") ? 2 : 1) * fitOf(s, parcels, x, rec, true) : 0)
+    : (x.style === "opportunistic" || x.style === "core" ? 0.5 : 0);
+  const r = (s.rivals ?? [])
+    .filter((x) => x.failedM === undefined && !x.stressMs && x.cash > px * 0.3 && keen(x) > 0)
+    .sort((a, b) => keen(b) * b.cash - keen(a) * a.cash)[0];
   if (r) {
     const equity = Math.min(r.cash, Math.round(px * 0.35));
     r.cash -= equity;
-    r.debt += px - equity;
     r.bbls.push(rec.bbl);
+    // Bought on the steps with a desk's money behind it, on the deed.
+    originateRow(s, r, rec.bbl, px - equity, Math.max(px, collateralAsIs(rec, s.econ, 0.6)), 0, { klass: rec.class, condition: "worn" });
     // WHEN THE DEED ARRIVED, and it arrived today. Without it the hold clock
     // falls back to `r.bornM` and reads a building bought at the courthouse
     // this morning as having been owned since the firm opened — older than
@@ -390,11 +398,11 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         const paid = Math.round(Math.max(room, lot.debt * 1.01));
         s.cash += lot.debt; logBooks(s, "sold", lot.debt);
         const surplus = Math.max(0, paid - lot.debt);
-        const buyer = thirdPartyTakes(s, rec, paid);
+        const buyer = thirdPartyTakes(s, parcels, rec, paid);
         if (r) {
           r.bbls = r.bbls.filter((b) => b !== n.bbl);
           forgetDeed(r, n.bbl);
-          r.debt = Math.max(0, r.debt - n.face);
+          dropDeed(s, r, n.bbl);       // the debt went with the deed
           r.cash += surplus;           // the law hands the wiped borrower the rest
         }
         s.listings = s.listings.filter((l) => l.bbl !== n.bbl);
@@ -465,6 +473,20 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         closeDeedLedger(s, ex);
         s.exits.push(ex);
       }
+      // A COMPETITOR HOLDING YOUR PAPER takes the deed on its credit bid, onto
+      // its own book; if the room outbid it, it is paid what the steps cleared.
+      const holderFirm = h.loan?.holderFirmId ? (s.rivals ?? []).find((r) => r.id === h.loan!.holderFirmId && r.failedM === undefined) : undefined;
+      if (holderFirm) {
+        const held = (s.firmHeldLoans ?? []).find((x) => x.bbl === lot.bbl && x.firmId === holderFirm.id);
+        if (toREO) {
+          holderFirm.bbls.push(lot.bbl);
+          (holderFirm.heldSince ??= {})[lot.bbl] = s.month;
+          holderFirm.basis = Math.round((holderFirm.basis ?? 0) + (held?.paid ?? gross));
+          if (held) held.payoff = 0;
+        } else if (held) {
+          held.payoff = Math.min(bal, net + (recourse ? shortfall : 0));
+        }
+      }
       recordComp(s, rec, gross, toREO ? lot.holder : "the courthouse steps", firmShort(s), true, h.condition);
       if (s.groundLeases?.[lot.bbl]) transferGroundLeaseOffBook(s, lot.bbl);
       moveDeposit(s, h, -depositsOn(h));
@@ -504,7 +526,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       if (r) {
         r.bbls = r.bbls.filter((b) => b !== lot.bbl);
         forgetDeed(r, lot.bbl);
-        r.debt = Math.max(0, r.debt - lot.debt);
+        dropDeed(s, r, lot.bbl);
         r.cash += Math.max(0, paid - lot.debt);
       }
       if (lot.kind === "bank") s.bankFcls = (s.bankFcls ?? []).filter((f) => f.bbl !== lot.bbl);
@@ -523,13 +545,13 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     }
     if (room > protect && room >= lot.upset) {
       const paid = room;
-      const buyer = thirdPartyTakes(s, rec, paid);
+      const buyer = thirdPartyTakes(s, parcels, rec, paid);
       if (bid > 0) said(lot.bbl, lot.address, "outbid", bid, paid, buyer,
         `The room went past you. Your deposit came back.`);
       if (r) {
         r.bbls = r.bbls.filter((b) => b !== lot.bbl);
         forgetDeed(r, lot.bbl);
-        r.debt = Math.max(0, r.debt - lot.debt);
+        dropDeed(s, r, lot.bbl);
         r.cash += Math.max(0, paid - lot.debt);
       }
       if (lot.kind === "bank") s.bankFcls = (s.bankFcls ?? []).filter((f) => f.bbl !== lot.bbl);
@@ -550,7 +572,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         if (f && r) {
           r.bbls = r.bbls.filter((b) => b !== lot.bbl);
           forgetDeed(r, lot.bbl);
-          r.debt = Math.max(0, r.debt - lot.debt);
+          dropDeed(s, r, lot.bbl);
           s.bankFcls = s.bankFcls!.filter((x) => x.bbl !== lot.bbl);
           const lst = Math.round(lot.est * rrange(s, 0.78, 0.9) / 1000) * 1000;
           // the borrower may have listed it in the month between docket and

@@ -149,7 +149,6 @@ g.cash = Math.max(g.cash, 20_000_000);
 // A listing exclusive works the phones. It does not take the pen.
 {
   g.agent = false;
-  g.teamLeasing = false;
   g.renewalMgmt = false;
   g.holdings[boughtBbl].broker = true;
   g.holdings[boughtBbl].tenants = [];
@@ -175,55 +174,6 @@ g.cash = Math.max(g.cash, 20_000_000);
   check(g.holdings[boughtBbl].tenants.length === beforeTenants,
     "listing exclusive did not auto-sign");
   delete g.holdings[boughtBbl].broker;
-}
-
-// Hiring staff alone does not take the pen — you must hand them the book.
-{
-  g.agent = false;
-  g.teamLeasing = false;
-  g.renewalMgmt = false;
-  delete g.holdings[boughtBbl].broker;
-  g.holdings[boughtBbl].tenants = [];
-  g.staff = [{
-    id: 1, name: "Test Leaser", role: "leasing", hiredM: 0, salary: 90_000, band0: 20,
-    attrs: { urgency: 70, relationships: 70, marketKnowledge: 70, negotiation: 70, judgment: 70 },
-    obs: { urgency: 70, relationships: 70, marketKnowledge: 70, negotiation: 70, judgment: 70 },
-    assignedBbls: [],
-  }];
-  g.lois = [{
-    id: 451, bbl: boughtBbl, kind: "new", use, name: "Principal Owns This",
-    sector: "tech", credit: 1, sf: suite, rentPsf: +(market * 1.0).toFixed(2),
-    termM: 84, tiPsf: tiUnderCap(market, 84, 4), freeM: 0, net: true, expiresM: g.month + 3, arrivedM: g.month,
-  }];
-  check(E.loiNeedsPrincipal(g, g.lois[0]),
-    "loiNeedsPrincipal is true with leasing staff until you hand over the book");
-  check(!E.deskCoverage(g, boughtBbl),
-    "deskCoverage is null for staff until teamLeasing is on");
-  check(!E.deskHoldsPen(g),
-    "deskHoldsPen is false when staff are hired but the book was not handed over");
-  const before = g.lois.length;
-  E.workLeasingDesk(g, parcels);
-  check(g.lois.length === before && !g.lois[0].referred,
-    "workLeasingDesk leaves letters alone when the principal holds the book");
-  check(g.holdings[boughtBbl].tenants.length === 0,
-    "staff did not auto-sign while the player has leasing");
-
-  // Hand the book to the team — quiet desk, in-house rates.
-  g.teamLeasing = true;
-  check(!!E.deskCoverage(g, boughtBbl) && E.deskCoverage(g, boughtBbl).kind === "staff",
-    "deskCoverage is staff after handing the book over");
-  check(E.deskHoldsPen(g), "deskHoldsPen is true when the team has the book");
-  check(!E.loiNeedsPrincipal(g, g.lois[0]),
-    "unreferred LOI is quiet once the team has the book");
-  E.workLeasingDesk(g, parcels);
-  check(
-    g.holdings[boughtBbl].tenants.some((t) => t.name === "Principal Owns This")
-      || g.lois.some((l) => l.id === 451 && l.referred)
-      || !g.lois.some((l) => l.id === 451),
-    "team desk worked the letter (signed, passed, or referred)",
-  );
-  g.staff = [];
-  delete g.teamLeasing;
 }
 
 console.log("\nQUIET DESK SCORECARD\n");

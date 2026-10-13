@@ -489,7 +489,7 @@ export function isPrivatePaper(l: { product: string; holder?: string }): boolean
  */
 export const loanLender = (l: { holder?: string; product: string }): string => l.holder ?? productById(l.product).lender;
 
-const REFI_FEE = 0.01;
+export const REFI_FEE = 0.01;
 
 /**
  * WHAT TODAY'S MARKET DOES TO A DESK'S STATED ADVANCE RATE.

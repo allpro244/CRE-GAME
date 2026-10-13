@@ -34,7 +34,7 @@ const HOLDER_KEY: [string, string][] = [
   ["institution", "a fund or insurer"],
   ["partnership", "a partnership"],
   ["local", "an old local family"],
-  ["developer", "whoever built it"],
+  ["developer", "an original builder, holding what it built"],
 ];
 // Lots on the market read teal off the LOT, not the massing — the listed
 // case in gameLayers (src/map/style.ts) — and at legend zoom the lot is
@@ -170,6 +170,15 @@ export default function MapHud() {
               <span className="map-hud-legend-name">{label}</span>
             </div>
           ))}
+          {/* The two story colours (COMPETITORS_PLAN.md §5a, §7). */}
+          <div className="map-hud-legend-row">
+            <span className="map-hud-swatch" style={{ background: tintCss([1.42, 1.22, 0.55]) }} aria-hidden="true" />
+            <span className="map-hud-legend-name">a holder likely to sell soon</span>
+          </div>
+          <div className="map-hud-legend-row">
+            <span className="map-hud-swatch" style={{ background: tintCss([1.38, 0.66, 0.62]) }} aria-hidden="true" />
+            <span className="map-hud-legend-name">a competitor in crisis</span>
+          </div>
           <div className="map-hud-legend-row">
             <span
               className="map-hud-swatch"

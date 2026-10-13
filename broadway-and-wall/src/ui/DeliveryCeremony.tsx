@@ -30,7 +30,7 @@ export default function DeliveryCeremony() {
     >
       <div className="delivery-stamp" onClick={(e) => e.stopPropagation()}>
         <div className="delivery-kicker">
-          {ceremony.rival ? "Delivered · the street" : "Delivered · your tower"}
+          {ceremony.rival ? "Delivered · a competitor" : "Delivered · your tower"}
         </div>
         <div className="delivery-title" id="delivery-title">{ceremony.address}</div>
         <div className="delivery-meta mono">

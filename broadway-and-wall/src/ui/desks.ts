@@ -80,16 +80,15 @@ export const DESKS: readonly Desk[] = [
     tabs: [
       { page: "economy", label: "Markets", note: "Each space market, land, banks, employers and districts in depth" },
       { page: "pulse", label: "Pulse", note: "The city on one screen — cycle, markets, board and headlines" },
-      { page: "players", label: "Players", note: "Competing firms and every owner in town" },
+      { page: "players", label: "Players", note: "Competitors and every owner in town" },
       { page: "news", label: "Tape", note: "Headlines and closed sales" },
       { page: "rankings", label: "Rankings", note: "How this town ranks against real US cities" },
     ],
   },
   {
     id: "firm", label: "Firm", icon: "☺", key: "6",
-    note: "Your people and your record",
+    note: "Your standing and your record",
     tabs: [
-      { page: "staff", label: "Staff", note: "People, capacity and judgment" },
       { page: "firm", label: "The Record", note: "Every deed, delivery, exit and refinancing since founding" },
     ],
   },

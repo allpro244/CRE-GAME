@@ -158,6 +158,20 @@ const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: nu
  */
 const BOOK_SPREAD: Record<LenderKind, number> = { bank: 1.9, life: 1.9, conduit: 1.9, fund: 4.5 };
 const NORMAL_NIM: Record<LenderKind, number> = { bank: 4.1, life: 3.3, conduit: 1.6, fund: 3.4 };
+/**
+ * WHAT IT COSTS TO RUN THE DESK, % of book a year, and what the government
+ * takes (2026-10-13). Net income was interest less funding less charge-offs,
+ * so the banks earned 3.3-3.8% on assets and 24-26% on capital, against a
+ * real community bank's ~1.0-1.2% and 10-12% — which is most of why no bank
+ * in a century of play ever failed. Sources: FDIC Quarterly Banking Profile,
+ * community banks (non-interest expense ~2.8% of assets, non-interest income
+ * ~0.7%: net ~2.0%); life companies' mortgage operations run on ~15bp
+ * (ACLI; investment-expense ratios); a conduit's warehouse and servicing
+ * ~20bp; a debt fund's management fee and expenses ~1% of assets. Tax: 21%
+ * federal plus state, ~25%, on the taxable desks; a fund passes through.
+ */
+const OPEX_PCT: Record<LenderKind, number> = { bank: 2.0, life: 0.15, conduit: 0.20, fund: 1.0 };
+const TAX_RATE: Record<LenderKind, number> = { bank: 0.25, life: 0.25, conduit: 0.25, fund: 0 };
 
 /** Who writes construction paper in this town. Defined in types.ts, which
  * imports nothing, so the pro forma (proforma.ts, under value.ts) can name the
@@ -801,7 +815,9 @@ export function tickLenders(s: GameState) {
     anon = Math.max(0, anon - chargeOff);
     l.chargeOffsYr += chargeOff;
     l.chargeOffsTotal += chargeOff;
-    const net = Math.round(interest - funding - chargeOff);
+    const opex = (l.book * (OPEX_PCT[l.kind] ?? 0)) / 100 / 12;
+    // Taxed symmetrically: a loss month books a tax asset (carrybacks).
+    const net = Math.round((interest - funding - chargeOff - opex) * (1 - (TAX_RATE[l.kind] ?? 0)));
     l.netIncomeYr += net;
     l.capital = Math.round(l.capital + net);
 

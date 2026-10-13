@@ -211,8 +211,8 @@ const SOIL = [0.3, 0.22, 0.16], COPPER = [0.38, 0.6, 0.52];
 
 /**
  * The geometry of a park kind. `mat` names the material: "vc" a plain
- * vertex-coloured standard material, "lamp" the layer's lamp material (lit
- * after dark). `colored` means the instance colour multiplies it.
+ * vertex-coloured standard material, "lamp" the layer's lamp material (dark
+ * painted iron). `colored` means the instance colour multiplies it.
  */
 export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "lamp" | "water" | "leaf"; colored?: boolean } | null {
   switch (kind) {

@@ -1214,13 +1214,18 @@ export default function MapView() {
         String(Math.max(0.85, Math.min(1.2, 0.85 + (z - 13.4) * 0.12))));
       const placed: { x0: number; y0: number; x1: number; y1: number; name: string; cx: number; cy: number }[] = [];
       const cand: { el: HTMLElement; rank: number; m: maplibregl.Marker }[] = [];
+      // THE NEIGHBOURHOOD NAMES ARE THE DEMAND LENS'S. On the plain city they
+      // were captions over a model (the owner: "only have them show up when
+      // you click demand"): the districts and the stations named for them
+      // stay hidden until the Demand lens is up, then come up at every zoom.
+      const hoodsOn = useStore.getState().lens === "demand";
       for (const m of live.values()) {
         const el = m.getElement();
         const kind = kindOf(el);
         const on =
-          kind === "district" ? z >= 12.2 && z <= 15.6 :
+          kind === "district" || kind === "station" ? hoodsOn :
           kind === "park" ? z >= 13.2 :
-          kind === "station" || kind === "civic" ? z >= 13.6 :
+          kind === "civic" ? z >= 13.6 :
           z <= 14.5;
         if (on) cand.push({ el, rank: RANK[kind], m });
         else setOp(el, "0");
@@ -1245,13 +1250,23 @@ export default function MapView() {
     map.on("zoom", fade);
     map.on("moveend", fade);
     fade();
+    // THE LENS SETS THE TYPE SIZE. Under a market lens the names come up
+    // bigger (the .bw-lens-hoods CSS), but that class is toggled by a later
+    // effect in this same commit: measured now, every name would keep its
+    // small width and two neighbours would print over each other. One frame
+    // on, the new size is laid out: forget the widths and place again.
+    const remeasure = requestAnimationFrame(() => {
+      for (const m of live.values()) delete m.getElement().dataset.w;
+      fade();
+    });
     return () => {
+      cancelAnimationFrame(remeasure);
       // the zoom listener used to outlive its markers — every paintSig tick
       // left one more orphaned fade() walking a dead marker list
       map.off("zoom", fade);
       map.off("moveend", fade);
     };
-  }, [mapReady, city, paintSig, photoFrame]);
+  }, [mapReady, city, paintSig, photoFrame, lens]);
   // the markers themselves go only with the map
   useEffect(() => () => {
     for (const m of labelsRef.current.values()) m.remove();
@@ -1378,9 +1393,8 @@ export default function MapView() {
     const game = useStore.getState().game;
     const layer = threeRef.current;
     if (!layer || !mapReady || !game || !parcels) return;
-    const occ = new Map<string, number>();
-    // ...and the shops separately, because a full office tower can still have
-    // a dead ground floor, and the street knows the difference.
+    // the shops, because a full office tower can still have a dead ground
+    // floor, and the street knows the difference.
     const ret = new Map<string, number>();
     // ...and the condition index every price reader in the engine uses: the
     // holding's own where it is yours, the age-derived reading elsewhere.
@@ -1390,12 +1404,6 @@ export default function MapView() {
       const rec = resolveRec(parcels, game, bbl);
       if (!rec || rec.class === "land" || !rec.bldgArea) continue;
       cond.set(bbl, condIdxOf(rec, game.month, h?.condition, h));
-      if (h) {
-        const leased = h.tenants.reduce((n, t) => n + t.sf, 0);
-        occ.set(bbl, Math.max(0, Math.min(1, leased / Math.max(1, rec.bldgArea))));
-      } else {
-        occ.set(bbl, occupancy(rec, game.econ));
-      }
       const retailSf = useSf(rec, "retail");
       if (retailSf > 300) {
         if (h) {
@@ -1427,7 +1435,6 @@ export default function MapView() {
         for (const bbl of row.bbls) ret.set(bbl, mean);
       }
     }
-    layer.setOccupancy(occ);
     layer.setRetail(ret);
     layer.setCondition(cond);
     // the courthouse on the door: auction lots, noticed foreclosures, and
@@ -1550,7 +1557,7 @@ export default function MapView() {
   const visualGame = useStore.getState().game;
   const cityVisual = visualGame
     ? cityVisualState(visualGame)
-    : { weather: "clear" as const, precipitation: 0, overcast: 0, activity: 1 };
+    : { weather: "clear" as const, precipitation: 0, overcast: 0, activity: 1, snowCover: 0 };
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setMonth(gameMonth);
@@ -1559,14 +1566,22 @@ export default function MapView() {
     const LEAF = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02];
     const mo = ((Math.floor(gameMonth) % 12) + 12) % 12;
     const map = mapRef.current;
-    const snowLying = cityVisual.weather === "snow" ? 0.35 + cityVisual.precipitation * 0.55 : 0;
+    // the snowpack, not this month's flurry (cityVisuals snowCoverAt)
+    const snowLying = cityVisual.snowCover;
     if (map?.getLayer("blocks")) map.setPaintProperty("blocks", "fill-color", blocksPaint(LEAF[mo], snowLying) as never);
     if (map?.getLayer("parks")) map.setPaintProperty("parks", "fill-color", parksPaint(snowLying) as never);
+    // the shoal under the 3D sea's clear waterline: the same winter turn the
+    // sea shader takes (RealCity SEA.seaWinter), slate rather than turquoise
+    if (map?.getLayer("shallows")) {
+      const wk = [1, 1, 0.65, 0.25, 0, 0, 0, 0, 0, 0.1, 0.45, 0.85][mo];
+      const a = [0x5d, 0x99, 0xad], b = [0x5a, 0x7c, 0x86];
+      map.setPaintProperty("shallows", "fill-color", "#" + a.map((v, i) => Math.round(v + (b[i] - v) * wk).toString(16).padStart(2, "0")).join(""));
+    }
     if (map?.getLayer("median")) {
       const m0 = [0xa8, 0xbd, 0x93], sn = [234, 238, 241];
       map.setPaintProperty("median", "fill-color", "#" + m0.map((v, i) => Math.round(v + (sn[i] - v) * snowLying).toString(16).padStart(2, "0")).join(""));
     }
-  }, [gameMonth, mapReady, cityVisual.weather, cityVisual.precipitation]);
+  }, [gameMonth, mapReady, cityVisual.snowCover]);
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setActivity(cityVisual.activity);
@@ -1718,15 +1733,6 @@ export default function MapView() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designPeek, schemeBbl, designOrbit]);
-  // THE HOUR. Always the calibrated afternoon every colour in the renderer
-  // was tuned under. There used to be a dusk cycle while Play ran and a
-  // blue-hour photo frame; the owner's call: "we don't need a night mode,
-  // that's pointless". Both renderers still accept setDayPhase; nothing
-  // drives it off zero. The month still owns the sun's angle and the season.
-  useEffect(() => {
-    if (!mapReady) return;
-    threeRef.current?.setDayPhase(0);
-  }, [mapReady]);
   const graphics = useStore((s) => s.graphics);
   useEffect(() => {
     if (!mapReady) return;
@@ -1754,6 +1760,7 @@ export default function MapView() {
       cityVisual.weather,
       cityVisual.precipitation,
       cityVisual.overcast,
+      cityVisual.snowCover,
     );
     const map = mapRef.current;
     if (map) {
@@ -1763,7 +1770,7 @@ export default function MapView() {
       map.setSky(skySpec(cloud) as never);
       map.setLight(lightSpec(cloud) as never);
     }
-  }, [cityVisual.weather, cityVisual.precipitation, cityVisual.overcast, mapReady]);
+  }, [cityVisual.weather, cityVisual.precipitation, cityVisual.overcast, cityVisual.snowCover, mapReady]);
 
   // lenses — repaint when toggled and as the market moves
   //

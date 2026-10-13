@@ -10,7 +10,7 @@
  *    view reads as a model on a table; the island view, nearly flat-on and
  *    far, stays sharp. The band sits a little below centre, where the focus
  *    point of a pitched map camera falls on the ground.
- *  - BLOOM. Bright surfaces (sunlit stone, lit windows after dark) bleed a
+ *  - BLOOM. Bright surfaces (sunlit stone, glints on glass and water) bleed a
  *    soft glow, from a small blur of what is over a threshold.
  *  - GRADE. Warm highlights, a hint of blue in the shadows, a little more
  *    saturation and a gentle S-curve.
@@ -31,7 +31,6 @@ uniform float uFocus;      // the sharp band's centre, 0 (bottom) .. 1 (top)
 uniform float uBand;       // the sharp band's half-height, in uv
 uniform float uBloom;      // bloom strength (0: none)
 uniform float uGrade;      // grade strength (0: none)
-uniform float uNight;      // 0 day .. 1 night: less warmth, more glow
 uniform sampler2D tDist;   // distance to the eye, packed (aoPass); none when uAO is 0
 uniform vec2 uDistTexel;
 uniform float uAO;         // ambient-occlusion strength (0: none)
@@ -99,9 +98,9 @@ void main() {
     vec3 b = vec3(0.0);
     for (int i = 0; i < 12; i++) {
       vec3 s = tap(vUv + disc(i) * 7.0 * uTexel);
-      b += max(s - vec3(0.9 - 0.35 * uNight), 0.0);
+      b += max(s - vec3(0.9), 0.0);
     }
-    c += b / 12.0 * uBloom * (1.0 + 1.6 * uNight);
+    c += b / 12.0 * uBloom;
   }
 
   if (uGrade > 0.0) {
@@ -109,9 +108,9 @@ void main() {
     float l = dot(g, vec3(0.2126, 0.7152, 0.0722));
     // saturation
     g = mix(vec3(l), g, 1.0 + 0.22 * uGrade);
-    // warm highlights, a little blue in the shadows (less warmth at night)
+    // warm highlights, a little blue in the shadows
     vec3 warm = vec3(1.025, 1.0, 0.965), cool = vec3(0.96, 0.99, 1.04);
-    g *= mix(cool, mix(warm, vec3(1.0), uNight * 0.7), smoothstep(0.15, 0.75, l));
+    g *= mix(cool, warm, smoothstep(0.15, 0.75, l));
     // a gentle S-curve about the middle grey
     g = mix(g, g * g * (3.0 - 2.0 * g), 0.34 * uGrade);
     c = mix(c, g, uGrade);
@@ -161,7 +160,7 @@ export class PostFX {
       uniforms: {
         tFrame: { value: null }, uTexel: { value: new THREE.Vector2() },
         uTilt: { value: 0 }, uFocus: { value: 0.45 }, uBand: { value: 0.12 },
-        uBloom: { value: 0 }, uGrade: { value: 1 }, uNight: { value: 0 },
+        uBloom: { value: 0 }, uGrade: { value: 1 },
         tDist: { value: null }, uDistTexel: { value: new THREE.Vector2() }, uAO: { value: 0 }, uAOView: { value: 0 },
       },
       vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
@@ -175,9 +174,9 @@ export class PostFX {
 
   /**
    * Run the pass over what is on the canvas now. pitch in radians, distM the
-   * camera's distance to its focus in metres, night 0..1.
+   * camera's distance to its focus in metres.
    */
-  apply(renderer: THREE.WebGLRenderer, pitch: number, distM: number, night: number, scene?: THREE.Scene, camera?: THREE.Camera, hide: (THREE.Object3D | null)[] = []) {
+  apply(renderer: THREE.WebGLRenderer, pitch: number, distM: number, scene?: THREE.Scene, camera?: THREE.Camera, hide: (THREE.Object3D | null)[] = []) {
     if (this.level === "off" || this.forcedOff) return;
     // the distance pass for ambient occlusion, High only, at half resolution
     const ao = this.level === "full" && !!scene && !!camera;
@@ -219,8 +218,7 @@ export class PostFX {
     u.uBand.value = 0.2 + 0.08 * (1 - close);
     u.uBloom.value = full ? 0.35 : 0;
     u.uGrade.value = 1;
-    u.uNight.value = night;
-    u.uAO.value = ao ? 0.65 * (1 - night * 0.6) : 0;
+    u.uAO.value = ao ? 0.65 : 0;
     u.uAOView.value = this.aoView ? 1 : 0;
     const auto = renderer.autoClear;
     renderer.autoClear = false;

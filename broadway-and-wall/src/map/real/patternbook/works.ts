@@ -203,7 +203,7 @@ const splitFace = (c: RGB, cap: RGB, win: Win, smooth = false): Painter => (g, w
   }
 };
 
-/** Glass block, 1930-1958: panels of pressed glass block set in a concrete frame, a steel vent sash in the middle; they glow at night. */
+/** Glass block, 1930-1958: panels of pressed glass block set in a concrete frame, a steel vent sash in the middle. */
 const glassBlockWall = (frame: RGB, block: RGB, brickPier = false): Painter => (g, w, h, rnd, pc) => {
   g.fillStyle = rgb(frame); g.fillRect(0, 0, w, h);
   grime(g, w, h, rnd, 500, 0.06);
@@ -214,7 +214,7 @@ const glassBlockWall = (frame: RGB, block: RGB, brickPier = false): Painter => (
     g.fillStyle = rgb(frame, 0.72); g.fillRect(ox, oy + T - 19, T, 1.5);
     const bx = ox + 12, byy = oy + 6, n = 8, s = 13;
     g.fillStyle = "#d4d6d0"; g.fillRect(bx, byy, n * s, n * s);
-    if (pc) { pc.m.fillStyle = "rgb(70,255,0)"; pc.m.fillRect(bx, byy, n * s, n * s); }   // lit through at night; never painted (trim)
+    if (pc) { pc.m.fillStyle = "rgb(0,255,0)"; pc.m.fillRect(bx, byy, n * s, n * s); }   // never painted (trim)
     relief(pc, 170, bx, byy, n * s, n * s);
     for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
       const x = bx + i * s + 1, y = byy + j * s + 1, v = 0.9 + rnd() * 0.16;
@@ -658,7 +658,7 @@ export const BOOK_WORKS: BookEntry[] = [
   },
   // GLASS BLOCK. The streamlined factory of 1930-1958: a concrete frame
   // filled with panels of pressed glass block for an even light on the
-  // floor, a small steel vent sash in each; at night the whole wall glows.
+  // floor, a small steel vent sash in each.
   {
     key: "glassblock", like: "daylight",
     spec: { bayW: 4.4, floorH: 4.4, masonry: false, glass: false, win: { x0: 0.38, x1: 0.62, y0: 0.32, y1: 0.62 }, wall: glassBlockWall([206, 200, 188], [176, 204, 204]),

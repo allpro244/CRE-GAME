@@ -268,6 +268,39 @@ fixed in #231; the sweep is clean since.
   mirrors the street and the buildings opposite, not the sky, and 4% of a
   dark street is dark. That is what smoked glass looks like from a roof
   across the street; the look is right and stays.
+- **Round 34** — oil-canning. Close in, a curtain wall read as one smooth
+  mirror holding one smeared image of the city. No curtain wall is flat: each
+  pane is set a fraction of a degree off true, so the reflection breaks into
+  a faint grid of slightly different panes. Each glass pane's normal now
+  tilts by up to ~2.5° from its cell hash (glass fronts only, faded out past
+  ~320 m with the rest of the relief, where it would shimmer). Measured on a
+  street camera: brightness spread across a glass tower's panes +2.5 (sd
+  36.6 to 39.1) against +0.2 on a brick front used as the control.
+- **Round 35** — no night, and the names under the lens. Night is gone from
+  the code, not pinned off: the dusk state and setDayPhase, every night and
+  golden-hour term in the light, lit-window emission and the `lit` attribute
+  (occupancy was only ever shown as rooms lit after dark), the night veil
+  over the ground, lamp glow and the park lamps' light pools, the post pass's
+  uNight, the .bw-night label CSS. District and station names (the
+  neighbourhoods) show only while the Demand lens is up.
+- **Round 36** — winter. The owner: "winter used to be the prettiest part
+  about this game, now it's the ugliest by far". Measured: snow lay only in
+  a month the weather roll said it was snowing (~35% of winter months), so
+  most Januaries were a summer city with the leaves taken off, and even under
+  snow the roofs stayed grey (+0.2 albedo) and the harbour kept its summer
+  turquoise. Now:
+  - *A snowpack* (`cityVisuals snowCoverAt`): each snowfall adds to the
+    cover, each month keeps a share (most in deep winter, little in March,
+    none April-November). Lying snow in 36% of Decembers, 58% of Januaries
+    and Februaries, 33% of Marches over 300 seeds x 20 years: Boston's
+    winter. Flakes fall only in a snowing month.
+  - *Snow that is snow*: flat roofs to ~0.7 albedo under full cover against
+    the ploughed dark streets; gravel lots and yards under it, areaways and
+    plazas shovelled grey, work yards ploughed; bare crowns and pines
+    frosted.
+  - *A winter harbour*: from December to February the sea's sand, shelf and
+    deep colours, and MapLibre's shoal fill under the clear waterline, turn
+    slate and steel-green, snow or not.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

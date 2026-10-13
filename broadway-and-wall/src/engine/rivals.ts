@@ -39,7 +39,7 @@ import { DEV_MARGIN, assetValue, demandLinear, initialCondition, inPlace, landRe
 import type { DevPlan } from "./dev";
 import { cityCoverage, cityInfillCap, entitlementPremium, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
-import { streetRefiProceeds, productById, stabViewFor } from "./debt";
+import { streetRefiProceeds, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
@@ -49,6 +49,7 @@ import { sizeAreaScale } from "./cityscale";
 import { money } from "./money";
 import { FUND_INVEST_M, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { observe, yearOfWatching } from "./competitorReads";
+import { renewRow, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
 import {
   paramsFrom, siteFit, dealsPerYear, misreadPp, drawSheet, profilesForStyle, hash01, GRADE_NUM,
   PROFILE_OF, PROFILES, inv as invTrait, LEVERAGE_RANGE, sheetFromStyle, classTrait, nearestProfile,
@@ -573,9 +574,12 @@ export function transferDeed(s: GameState, bbl: string, to: Rival, price: number
     // meant that if the same firm ever bought the same corner back, its first
     // month of ownership arrived with an expired forbearance already on file.
     forgetDeed(r, bbl);
+    // The mortgage on the building is paid at the closing table, then the
+    // line out of what is left (rivalDebt.settleSale). A deed that moves for
+    // nothing still takes its loan off the old owner's record — the debt it
+    // secured stays owed, on the line.
+    const relief = settleSale(s, r, bbl, Math.max(0, price));
     if (price > 0) {
-      const relief = Math.min(r.debt, Math.round(price * r.targetLtv));
-      r.debt -= relief;
       r.cash += price - relief;
       r.cash -= jvLpTake(jv, price - relief, s.month);
     }
@@ -641,12 +645,9 @@ function lineDrawFor(s: GameState, parcels: ParcelTable, r: Rival, need: number)
   const room = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
   return Math.max(0, Math.min(room, need - r.cash));
 }
-/** Book a line draw — the same three lines `rivalBuys` writes. */
-function drawLine(r: Rival, draw: number) {
-  if (!(draw > 0)) return;
-  r.revolver = (r.revolver ?? 0) + draw;
-  r.debt += draw;
-  r.cash += draw;
+/** Book a line draw: an outstanding balance at the firm's bank (rivalDebt.drawLine). */
+function drawLine(s: GameState, r: Rival, draw: number) {
+  lineDraw(s, r, draw);
 }
 
 /**
@@ -756,7 +757,7 @@ export function claimJob(
   observe(s, best, sheetOf(best), ["build", "scale", "quality"], 0.08);
   const dayOneEquity = dayOneOf(best);
   const bestLtc = ltcOf(best);
-  drawLine(best, lineDrawFor(s, parcels, best, Math.round(dayOneEquity * sponsorShare(best.style)) + Math.max(400_000, best.cash * 0.04)));
+  drawLine(s, best, lineDrawFor(s, parcels, best, Math.round(dayOneEquity * sponsorShare(best.style)) + Math.max(400_000, best.cash * 0.04)));
   best.cash -= dayOneEquity - jvFund(s, best, bbl, dayOneEquity);
   best.basis = Math.round((best.basis ?? 0) + land);
   transferDeed(s, bbl, best, land);
@@ -1045,7 +1046,7 @@ export function fundJobs(s: GameState) {
       r.cash -= cashNeed;
       j.equityLeft = Math.max(0, (j.equityLeft ?? 0) - fromEquity);
       j.debt = (j.debt ?? 0) + fromDebt;
-      r.debt += fromDebt;
+      syncDebt(s, r);
       j.spent = (j.spent ?? 0) + spend;
     }
     // capitalised, the way construction interest actually works
@@ -1058,13 +1059,13 @@ export function fundJobs(s: GameState) {
         // Capitalise the coupon into the facility and slip — same survival
         // path anonymous jobs get when the city pool is thin for a month.
         j.debt = (j.debt ?? 0) + cap;
-        r.debt += cap;
+        syncDebt(s, r);
         j.deliverM = (j.deliverM ?? s.month) + 1;
         if (j.bbl) rescheduleSupplyProject(s, j.bbl, j.deliverM);
         continue;
       }
       j.debt = (j.debt ?? 0) + capitalised;
-      r.debt += capitalised;
+      syncDebt(s, r);
       r.cash -= cashInterest;
     }
   }
@@ -1117,6 +1118,11 @@ function chargeSponsorFailure(s: GameState, parcels: ParcelTable, r: Rival): { d
     exposure[name] = (exposure[name] ?? 0) + (j.debt ?? 0);
     known += j.debt ?? 0;
   }
+  // The line is its bank's loss, like any other loan.
+  if ((r.lineBal ?? 0) > 0 && r.lineBank) {
+    exposure[r.lineBank] = (exposure[r.lineBank] ?? 0) + r.lineBal!;
+    known += r.lineBal!;
+  }
   const term = Math.max(0, r.debt - known);
   const live = (s.lenders ?? []).filter((l) => l.failedM === undefined);
   // THE TERM DEBT LANDS ON WHOEVER HOLDS IT. The mortgage record (ledger.ts)
@@ -1127,7 +1133,7 @@ function chargeSponsorFailure(s: GameState, parcels: ParcelTable, r: Rival): { d
   // delinquency line has been counting while the firm was in workout.
   // Only a firm with no rows on the record (term debt and nothing financed)
   // falls back to the market's shares.
-  const rows = Object.values(s.cityLoans ?? {}).filter((x) => x.obligorId === r.id && x.balance > 0);
+  const rows = Object.values(s.cityLoans ?? {}).filter((x) => x.obligorId === r.id && x.balance > 0 && !x.heldBy);
   const rowSum = rows.reduce((a, x) => a + x.balance, 0);
   const books = live.reduce((a, l) => a + l.book, 0);
   if (term > 0 && rowSum > 0) {
@@ -1171,6 +1177,18 @@ export function jobDelivered(s: GameState, parcels: ParcelTable, bbl: string, fi
   if (!r) return;
   transferDeed(s, bbl, r, 0);
   r.basis = Math.round((r.basis ?? 0) + cost);
+  // THE TAKEOUT. The construction facility is repaid by a permanent mortgage
+  // on the finished building — and with it any land loan the site carried —
+  // written by whichever desk will take it today (rivalDebt.originateRow).
+  const job = (s.cityJobs ?? []).find((j) => j.bbl === bbl && j.firmId === firmId);
+  const cdebt = Math.round(job?.debt ?? 0);
+  if (job && cdebt > 0) {
+    job.debt = 0;
+    const rec0 = resolveRec(parcels, s, bbl);
+    const v0 = rec0 ? assetValue(rec0, s.econ, initialCondition(rec0)) : cost;
+    const noi0 = rec0 ? noiAfterTaxYr(rec0, s.econ, initialCondition(rec0), v0) : 0;
+    originateRow(s, r, bbl, cdebt, Math.max(v0, cost), noi0, { klass: rec0?.class, condition: rec0 ? initialCondition(rec0) : undefined });
+  }
   (r.deliveredM ??= {})[bbl] = s.month;
   const rec = resolveRec(parcels, s, bbl);
   // A ROUTINE OPENING IS NOT NEWS. "It is competing with you tomorrow" is only
@@ -1436,7 +1454,9 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
       if (equityIn > spend) { if (spend < f.equity * 0.08) break; else continue; }
       taken.add(bbl);
       r.bbls.push(bbl);
-      r.debt += sized;
+      // A REAL MORTGAGE, ALREADY PART-WAY THROUGH ITS TERM, at the desk that
+      // would write it — the opening record is the town's existing paper.
+      originateRow(s, r, bbl, sized, v, Math.max(0, noi), { klass: rec.class, condition: initialCondition(rec), opening: true, backdate: true });
       r.basis = Math.round((r.basis ?? 0) + v);
       spend -= equityIn;
     }
@@ -1583,12 +1603,15 @@ export function tie(s: GameState, firmId: string) {
  * full one, and why a firm can be losing money and still look solvent for a
  * while — right up until the lender marks it.
  */
-export function markRival(s: GameState, parcels: ParcelTable, r: Rival): { aum: number; noiYr: number; ltv: number; landV: number } {
+export function markRival(s: GameState, parcels: ParcelTable, r: Rival): { aum: number; noiYr: number; ltv: number; landV: number; byBbl: Record<string, { v: number; noi: number }> } {
   let aum = 0, noi = 0, landV = 0;
+  // Each building's own mark, for the loan on it (the maturity, the payment test).
+  const byBbl: Record<string, { v: number; noi: number }> = {};
   for (const bbl of r.bbls) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
     const a = markAsset(s, r, rec);
+    byBbl[bbl] = { v: a.v, noi: a.noi };
     aum += a.v;
     noi += a.noi;
     // HOW MUCH OF THE BOOK IS DIRT. Carried out separately because a lender
@@ -1597,7 +1620,7 @@ export function markRival(s: GameState, parcels: ParcelTable, r: Rival): { aum: 
     // income-property book that had stopped covering its debt service.
     if (rec.class === "land" || !rec.bldgArea) landV += a.v;
   }
-  return { aum, noiYr: noi, landV, ltv: aum > 0 ? r.debt / aum : r.debt > 0 ? 9 : 0 };
+  return { aum, noiYr: noi, landV, ltv: aum > 0 ? r.debt / aum : r.debt > 0 ? 9 : 0, byBbl };
 }
 
 /**
@@ -1775,12 +1798,7 @@ export function sheetOf(r: Rival): Sheet {
 export function nextBalloonM(s: GameState, r: Rival, bbl: string): number | undefined {
   const ext = extendedTo(r, bbl);
   if (ext !== undefined) return ext;
-  const term = loanTermM(r, bbl);
-  if (!(term > 0)) return undefined;
-  const origin = originM(r, bbl, term);
-  const held = s.month - origin;
-  const k = Math.max(1, Math.ceil((held + 1) / term));
-  return origin + k * term;
+  return rowOn(s, r, bbl)?.maturityM;
 }
 
 /**
@@ -1790,7 +1808,7 @@ export function nextBalloonM(s: GameState, r: Rival, bbl: string): number | unde
  * inside: the Access a long file buys (ATTR_CONTRACT.md), not a gift.
  */
 export function spreadAdj(r: Rival): number {
-  return (r.quirks?.includes("latePayer") ? 0.5 : 0) - (r.quirks?.includes("loyalBank") ? 0.15 : 0);
+  return fileSpread(r);
 }
 
 /**
@@ -1914,7 +1932,7 @@ export function tickRivalConversions(s: GameState, parcels: ParcelTable) {
     const need = Math.round(pick.plan.equity * 0.40 * sponsorShare(r.style)) + Math.max(400_000, r.cash * 0.03);
     const draw = lineDrawFor(s, parcels, r, need);
     if (r.cash + draw < need) continue;
-    drawLine(r, draw);
+    drawLine(s, r, draw);
     breakGround(s, parcels, r, pick.bbl, pick.rec, "multifamily", pick.plan, true, true);
     observe(s, r, sheetOf(r), ["renovation", "office"], 0.15);
   }
@@ -1962,6 +1980,8 @@ export function tickRivalRetirements(s: GameState, _parcels: ParcelTable) {
     const n = r.bbls.length;
     r.cash -= r.debt;
     r.distributed = (r.distributed ?? 0) + Math.max(0, r.cash);
+    for (const x of rowsOf(s, r)) delete s.cityLoans![x.bbl];
+    r.lineBal = 0;
     r.debt = 0; r.cash = 0; r.bbls = []; r.uncalled = 0; r.aum = 0;
     r.heldSince = {};
     r.failedM = s.month;
@@ -2694,8 +2714,13 @@ function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
   taker.cash -= price;
   taker.basis = Math.round((taker.basis ?? 0) + price);
   transferDeed(s, j.bbl, taker, price);
+  const was = (s.rivals ?? []).find((x) => x.id === j.firmId);
   j.orphaned = false;
   j.firmId = taker.id;
+  // The construction loan is the job's and stays with it, with its desk: the
+  // taker inherits the bill, the walked-away sponsor is relieved of it.
+  if (was && was.failedM === undefined) syncDebt(s, was);
+  syncDebt(s, taker);
   j.equityLeft = Math.round(toFinish * 0.45);
   j.cost = (j.spent ?? 0) + toFinish;
   j.ratePct = +(s.econ.indexRate + CONSTR_SPREAD_R + 0.6).toFixed(2);
@@ -2868,7 +2893,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (r.cash + draw < needWithReserve) return;
   const formerDurationRoll = rng(s, "rivals");
   void formerDurationRoll;
-  drawLine(r, draw);
+  drawLine(s, r, draw);
   breakGround(s, parcels, r, bbl, rec, use, plan, redev);
 }
 
@@ -3017,33 +3042,10 @@ export function breakGround(
 // wrote any particular file is not recorded anywhere in this engine, so it is
 // drawn deterministically per building — stable across a save, staggered
 // across a book, and honest about being an allocation rather than a fact.
-const TERM_DESKS = ["harbor", "savings", "conduit"];
-
 function hash32(key: string): number {
   let h = 2166136261;
   for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
-}
-
-/** The term of the paper on one building of one firm's, in months. */
-function loanTermM(r: Rival, bbl: string): number {
-  return productById(TERM_DESKS[hash32(r.id + "|" + bbl) % TERM_DESKS.length]).termM;
-}
-
-/**
- * WHEN THE PAPER ON THIS BUILDING WAS WRITTEN.
- *
- * `heldSince` when the deed moved inside the sim. The opening roster has no
- * such record — `initRivals` hands a firm nine buildings in month zero — and
- * dating all of them to month zero would land every balloon on the street in
- * the same month, which is an artefact of the setup and not a credit cycle. A
- * firm that opens the game owning nine buildings did not buy them all in
- * December: the opening book is spread back across the term it carries.
- */
-function originM(r: Rival, bbl: string, term: number): number {
-  const since = r.heldSince?.[bbl];
-  if (since !== undefined) return since;
-  return -(hash32(r.id + "~" + bbl) % term);
 }
 
 /**
@@ -3201,6 +3203,8 @@ function recallable(r: Rival): number {
  * if the extension is refused.
  */
 function deskFor(s: GameState, r: Rival, bbl: string): string {
+  const row = rowOn(s, r, bbl);
+  if (row && !row.heldBy) return row.lender;
   const live = (s.lenders ?? []).filter((l) => l.failedM === undefined);
   if (!live.length) return CONSTRUCTION_LENDER;
   const books = live.reduce((a, l) => a + l.book, 0);
@@ -3501,11 +3505,13 @@ function reoWindow(s: GameState, lender: string): number {
  * negotiating with somebody who has nothing to sell.
  */
 function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): boolean {
-  const lev = (r.aum ?? 0) > 0 ? Math.max(0, r.debt / (r.aum as number)) : r.targetLtv;
   const st = paramsOf(r);
   let worst: { bbl: string; rec: ParcelRecord; v: number; ratio: number } | null = null;
   for (const bbl of r.bbls) {
     if (s.holdings[bbl]) continue;
+    // Only a building with a mortgage on it can be handed to a lender.
+    const row = rowOn(s, r, bbl);
+    if (!row || row.heldBy || !(row.balance > 0)) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
     const { v, noi } = markAsset(s, r, rec);
@@ -3515,11 +3521,10 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): 
   }
   if (!worst) return false;
   const desk = deskFor(s, r, worst.bbl);
-  const owed = Math.min(r.debt, Math.round(worst.v * lev));
+  const owed = dropDeed(s, r, worst.bbl);
 
   r.bbls = r.bbls.filter((b) => b !== worst!.bbl);
   forgetDeed(r, worst.bbl);
-  r.debt = Math.max(0, r.debt - owed);
   // The book shrinks with it. Basis is aggregate, so it comes off by the share
   // this building was — the same estimate `gainsTax` makes on a sale.
   const basis = r.basis ?? 0;
@@ -3592,42 +3597,42 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string): 
  * this rung is a real rung rather than a free pass.
  */
 function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: number, noiYr: number, landV: number) {
-  if (r.debt <= 0 || aum <= 0 || !r.bbls.length) return;
+  if (aum <= 0 || !r.bbls.length) return;
   const st = paramsOf(r);
-  // The mortgage on one asset is the leverage actually on the book — the same
-  // proxy `debtReleasedOnSale` uses at a closing, for the same reason, so a
-  // building's loan is one number rather than two.
-  const lev = Math.max(0, r.debt / aum);
-  for (const bbl of [...r.bbls]) {
-    const term = loanTermM(r, bbl);
-    // WHICH CLOCK THIS BUILDING IS ON. Extended paper has a date of its own and
-    // it is a short one; everything else sits on the term ladder derived from
-    // when the deed arrived. See `extendedTo`.
+  // EACH LOAN ON ITS OWN DATE. The balloon is the row's maturity — the term
+  // the desk that wrote it agreed — or, on extended paper, the date the desk
+  // re-papered it to. It used to be a hashed term on a ladder from when the
+  // deed arrived, sized as the book's leverage times the building.
+  for (const x of rowsOf(s, r)) {
+    // Paper that left the banks matures on its holder's terms (notes.ts).
+    if (x.heldBy) continue;
+    const bbl = x.bbl;
+    if (!r.bbls.includes(bbl)) continue;
     const ext = extendedTo(r, bbl);
     if (ext !== undefined) {
       if (s.month < ext) continue;                // inside the forbearance
-    } else {
-      const held = s.month - originM(r, bbl, term);
-      if (held <= 0 || held % term !== 0) continue;
-    }
+    } else if (s.month < x.maturityM) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
     const { v, noi } = markAsset(s, r, rec);
-    // A firm cannot owe more on one building than it owes altogether. That is
-    // the only bound needed here — no cap on leverage, which would be a rail
-    // rather than a fact, because a book marked below its debt is a real
-    // condition and the whole point of this block is that it is survivable.
-    const due = Math.min(r.debt, Math.round(v * lev));
+    const due = x.balance;
     if (due <= 0) continue;
     const refi = streetRefiProceeds(s, v, noi, st.maxLtv);
     const gap = due - refi.principal;
-    // Rolled, and nobody hears about it. If this was extended paper the file
-    // closes with it: the loan has been refinanced and the building goes back
-    // on the ordinary term ladder.
-    if (gap <= 0) { clearExtended(r, bbl); continue; }
+    const renew = () => {
+      const fee = renewRow(s, r, bbl, v, noi, { condition: assetGrade(r, rec) });
+      // The table's costs come out of the account; on a dry account they are
+      // added to the note, which is what a desk does when the borrower has no cash.
+      if (r.cash >= fee) r.cash -= fee;
+      else { const row = rowOn(s, r, bbl); if (row) row.balance += fee; syncDebt(s, r); }
+      clearExtended(r, bbl);
+    };
+    // Renewed at today's terms, and nobody hears about it. If this was
+    // extended paper the file closes with it.
+    if (gap <= 0) { renew(); continue; }
 
     // 1. WRITE THE CHEQUE. A balloon is paid before a reserve is kept.
-    if (r.cash >= gap) { r.cash -= gap; r.debt = Math.max(0, r.debt - gap); clearExtended(r, bbl); continue; }
+    if (r.cash >= gap) { r.cash -= gap; x.balance -= gap; syncDebt(s, r); renew(); continue; }
 
     // 2. DRAW THE LINE. A corporate facility against the whole book is not the
     //    same money as a mortgage against one building: the desk that would not
@@ -3636,15 +3641,12 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     //    left draws it and re-papers the shortfall, because the alternatives on
     //    this list all cost him something and this one costs him headroom.
     //
-    //    On these books that is the whole of it: a rival carries one debt
-    //    number, so drawing the gap and paying the balloon with it nets to
-    //    nothing on the balance sheet — the same total owed, moved from a
-    //    mortgage to a line — and everything is in what did not happen: no fee,
-    //    no capital call, no keys. The firm's cash is deliberately left alone,
+    //    The gap moves from the mortgage to the line — the same total owed,
+    //    now at the line's floating coupon, which is dearer — and the rest of
+    //    the balloon renews. The firm's cash is deliberately left alone,
     //    because a sponsor plugs a maturity out of the facility rather than
     //    running the operating account to zero and missing a payment next
-    //    month. See `lineRoom` for the two walls, and for what this does NOT
-    //    model, which is that a revolver is dearer than a mortgage.
+    //    month. See `lineRoom` for the two walls.
     const room = lineRoom(s, r, aum, noiYr, landV);
     // What has to be found. `r.cash` and not `max(0, r.cash)`: an account that is
     // already overdrawn needs the overdraft covered too, and reading it as zero
@@ -3652,8 +3654,10 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     // arrears it already had.
     const short = gap - r.cash;
     if (room >= gap) {
+      x.balance -= gap;
+      addToLine(s, r, gap);
       r.revolver = (r.revolver ?? 0) + gap;
-      clearExtended(r, bbl);
+      renew();
       continue;
     }
 
@@ -3673,8 +3677,10 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
       // borrowers. It is capitalised, which is what a desk does when the
       // borrower plainly has no cash, and it is why an extended loan comes back
       // bigger than it went in.
-      r.debt = Math.round(r.debt + due * extensionFeePct(s, desk));
+      x.balance = Math.round(x.balance + due * extensionFeePct(s, desk));
       const until = s.month + extensionMonths(s);
+      x.maturityM = until;
+      syncDebt(s, r);
       setExtended(r, bbl, until);
       // AND IT DOES NOT ALSO FORCE A FIRE SALE. This branch used to call
       // `marketAssetToRaise` on the spot — a distress listing, at a receiver's
@@ -3706,8 +3712,9 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
       const got = callCapital(r, short);
       if (got > 0 && r.cash >= gap) {
         r.cash -= gap;
-        r.debt = Math.max(0, r.debt - gap);
-        clearExtended(r, bbl);
+        x.balance -= gap;
+        syncDebt(s, r);
+        renew();
         if (newsChance(s, "balloon:" + bbl, 0.4)) {
           s.news.unshift({
             q: s.month, kind: "event",
@@ -3728,10 +3735,36 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
   }
 }
 
+/**
+ * A CASH-OUT REFINANCING. The equity comes out of the buildings with the most
+ * room under the firm's own covenant — each re-papered at a desk that will
+ * write the bigger loan (rivalDebt.originateRow), up to `room` in all.
+ */
+function cashOutRefi(s: GameState, parcels: ParcelTable, r: Rival, room: number, ltvCap: number) {
+  const opts: { bbl: string; rec: ParcelRecord; v: number; noi: number; head: number }[] = [];
+  for (const bbl of r.bbls) {
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) continue;
+    const row = rowOn(s, r, bbl);
+    if (row?.heldBy) continue;
+    const { v, noi } = markAsset(s, r, rec);
+    const head = Math.round(Math.min(ltvCap * v, streetRefiProceeds(s, v, noi, ltvCap).principal) - (row?.balance ?? 0));
+    if (head > 250_000) opts.push({ bbl, rec, v, noi, head });
+  }
+  opts.sort((a, b) => b.head - a.head);
+  let left = Math.round(room);
+  for (const o of opts) {
+    if (left <= 250_000) break;
+    const take = Math.min(left, o.head);
+    originateRow(s, r, o.bbl, take, o.v, o.noi, { klass: o.rec.class, condition: assetGrade(r, o.rec) });
+    r.cash += take;
+    left -= take;
+  }
+}
+
 export function tickRivals(s: GameState, parcels: ParcelTable) {
   if (!s.rivals?.length) return;
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
-  const rate = s.econ.indexRate + RATE_SPREAD;
   tickRivalSpinouts(s);
   maybeNewFirm(s);
   // fundJobs runs earlier in tickMonth — before tickEcon settles deliveries —
@@ -3818,7 +3851,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     tickAssetManagement(s, parcels, r);
     // BUILD. The scripted site search.
     startOwnJob(s, parcels, r, ci);
-    const { aum, noiYr, landV } = markRival(s, parcels, r);
+    const { aum, noiYr, landV, byBbl } = markRival(s, parcels, r);
     r.aum = Math.round(aum);
     // Absorption / rivalBuys used to call markRival again for every bidder on
     // every trade the same month — a second full walk of the street's book.
@@ -3827,16 +3860,20 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     r.markLand = landV;
 
     // --- the money -------------------------------------------------------
-    // NOI in, interest and amortisation out. A firm this size amortises on a
-    // thirty-year schedule; nobody gets pure interest-only forever.
-    const interest = (r.debt * (rate + spreadAdj(r))) / 100 / 12;
-    const amort = r.debt > 0 ? (r.debt * AMORT_SHARE[r.style]) / (30 * 12) : 0;
+    // NOI in, interest and amortisation out — each mortgage at the coupon its
+    // desk wrote, the line at its floating rate (rivalDebt.monthlyService). A
+    // firm this size amortises on a thirty-year schedule; nobody gets pure
+    // interest-only forever. Construction interest is capitalised into the
+    // job (fundJobs) and is not charged here a second time.
+    const svc = monthlyService(s, r, AMORT_SHARE[r.style]);
+    const interest = svc.interest;
+    const amort = svc.amort;
     // Their dry powder sits in the same bank yours does, at the same sweep
     // rate off the same policy rate — one deposit desk for the whole street,
     // so a rate era the player can ride is an era the street rides too.
     const onDeposit = r.cash > 0 ? (r.cash * sweepApy(s.econ)) / 12 : 0;
     r.cash += Math.round(noiYr / 12 - interest - amort + onDeposit);
-    r.debt = Math.max(0, Math.round(r.debt - amort));
+    amortizeRows(s, r, AMORT_SHARE[r.style]);
 
     // THE SAME OVERHEAD THE PLAYER CARRIES. Asset management, accounting,
     // audit, legal, somebody to answer the phone. It is not billable to a
@@ -3963,10 +4000,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       const styleRoom = Math.round((st.maxLtv - 0.04 - lev) * aum);
       const deskRoom = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
       const room = Math.min(styleRoom, deskRoom);
-      if (room > 1_000_000) {
-        r.debt += room;
-        r.cash += room;
-      }
+      if (room > 1_000_000) cashOutRefi(s, parcels, r, room, st.maxLtv - 0.04);
     }
 
     // --- taking profits --------------------------------------------------
@@ -4215,8 +4249,12 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     if (r.cash < 0 && r.bbls.length) {
       const room = lineRoom(s, r, aum, noiYr, landV);
       const draw = Math.min(Math.max(0, room), Math.round(-r.cash + aum * 0.004));
-      if (draw > 0) { r.debt += draw; r.cash += draw; r.revolver = (r.revolver ?? 0) + draw; }
+      if (draw > 0) drawLine(s, r, draw);
     }
+    // WHICH LOANS WENT UNPAID (rivalDebt.markPayments): what the account is
+    // short after the line falls on the buildings that carry themselves least.
+    markPayments(s, r, Math.max(0, -r.cash), svc.byRow,
+      (b) => byBbl[b]?.noi ?? 0, (b) => extendedTo(r, b) !== undefined);
     // A NEGATIVE BALANCE AFTER THE LINE IS A MISSED PAYMENT. Not a mark, not a
     // covenant — money that was owed this month and did not go out. That is
     // the only thing that starts a clock in this business.
@@ -4610,10 +4648,8 @@ export function rivalBuys(
     const jv = takeJv(seller, rec.bbl);
     forgetDeed(seller, rec.bbl);
     // Same event, same rule — a firm selling to another firm and a firm selling
-    // to Hartford both retire the loan that was on the building. See
-    // debtReleasedOnSale.
-    const relief = debtReleasedOnSale(seller, price);
-    seller.debt -= relief;
+    // to Hartford both retire the loan that was on the building, then the line.
+    const relief = settleSale(s, seller, rec.bbl, price);
     seller.cash += price - relief - tax;
     const partnersOut = jvLpTake(jv, price - relief - tax, s.month);
     seller.cash -= partnersOut;
@@ -4623,13 +4659,16 @@ export function rivalBuys(
   // The corporate line funds any equity the operating account cannot cover —
   // same instrument they already draw at a balloon. Closing costs sit in
   // `closing` above.
-  if (fin.draw > 0) {
-    best.revolver = (best.revolver ?? 0) + fin.draw;
-    best.debt += fin.draw;
-    best.cash += fin.draw;
-  }
+  if (fin.draw > 0) drawLine(s, best, fin.draw);
   best.cash -= fin.equity + closing;
-  best.debt += fin.debt;
+  // THE ACQUISITION MORTGAGE, written by the desk that will take it
+  // (rivalDebt.originateRow) — sized above on the deal's own income.
+  if (fin.debt > 0) {
+    originateRow(s, best, rec.bbl, fin.debt, price, goingInNoi, {
+      klass: rec.class, condition: initialCondition(rec),
+      stab: stabViewFor(rec, s.econ, initialCondition(rec), price),
+    });
+  }
   best.basis = Math.round((best.basis ?? 0) + fin.equity + closing);
   best.aum = Math.round((best.aum ?? 0) + price);
   transferDeed(s, rec.bbl, best, 0);   // the seller was already paid above
@@ -4666,8 +4705,7 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
   seller.bbls = seller.bbls.filter((b) => b !== bbl);
   const jv = takeJv(seller, bbl);
   forgetDeed(seller, bbl);
-  const relief = debtReleasedOnSale(seller, price);
-  seller.debt -= relief;
+  const relief = settleSale(s, seller, bbl, price);
   seller.cash += price - relief - tax;
   const partnersOut = jvLpTake(jv, price - relief - tax, s.month);
   seller.cash -= partnersOut;
@@ -4693,11 +4731,7 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
 function settleEmptyBook(s: GameState, r: Rival) {
   if (r.bbls.length || !(r.debt > 0 || r.cash < 0)) return;
   if ((s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) return;
-  if (r.cash > 0) {
-    const repay = Math.min(r.debt, r.cash);
-    r.debt -= repay;
-    r.cash -= repay;
-  }
+  if (r.cash > 0) r.cash -= payDown(s, r, r.cash);
   // A CALL THE ACCOUNT COULD NOT CLEAR IS A MISSED PAYMENT, THIS MONTH. The
   // arrears check in tickRivals may already have run for the month (it reads
   // a firm with sale proceeds in the bank as current), so the clock starts
@@ -4713,28 +4747,11 @@ function settleEmptyBook(s: GameState, r: Rival) {
 }
 
 /**
- * WHAT A SALE PAYS OFF is the loan that was on the building, not the loan the
- * firm wishes it had. Retiring `price * targetLtv` over-repays every firm that
- * is running below its target, and a firm that sells often ends up with no debt
- * at all — when the outsider sale started actually conveying the deed and
- * became the commonest way a building leaves a portfolio, aggregate firm debt
- * across the town fell from $1.26B to $108M by year 50, which is a market of
- * unlevered landlords and not a property market. Firms that could not borrow
- * stopped building, the city delivered 108 jobs instead of 128, and real office
- * rents rose 0.44pp a year faster for the whole fifty years on the resulting
- * shortage.
- *
- * The honest proxy for the mortgage on one asset is the leverage actually on
- * the book, so a sale leaves the firm at roughly the leverage it had. Target
- * LTV is the fallback only for a firm with nothing marked yet.
+ * WHAT A SALE PAYS OFF is the loan that was on the building — the row on the
+ * record — and then the line out of what is left (rivalDebt.saleRelief). It
+ * used to be a leverage-share proxy (`price × the book's LTV`), because the
+ * firm carried one debt number and no loan on any building.
  */
-function debtReleasedOnSale(r: Rival, price: number): number {
-  const lev = (r.aum ?? 0) > 0
-    ? Math.min(1, Math.max(0, r.debt / (r.aum as number)))
-    : r.targetLtv;
-  return Math.min(r.debt, Math.round(price * lev));
-}
-
 /** What a rival will take for a building of theirs, and why. */
 export function rivalAsk(s: GameState, parcels: ParcelTable, r: Rival, bbl: string): { ask: number; note: string } {
   const rec = resolveRec(parcels, s, bbl);
@@ -4775,7 +4792,7 @@ export function rivalAsk(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
  * (rivalBuys, sellToOutsider) read.
  */
 function disposalNet(s: GameState, r: Rival, bbl: string, px: number): number {
-  const gross = px - debtReleasedOnSale(r, px) - gainsTaxOn(r, px);
+  const gross = px - saleRelief(s, r, bbl, px) - gainsTaxOn(r, px);
   return gross - jvLpTake(r.jvs?.[bbl], gross, s.month);
 }
 

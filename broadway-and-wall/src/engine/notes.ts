@@ -50,6 +50,7 @@ import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
 import { assetGrade, clearRivalClaims, forgetDeed } from "./rivals";
+import { addToLine, dropDeed, syncDebt } from "./rivalDebt";
 import { hash01 } from "./competitorTraits";
 import { genRentRoll } from "./leasing";
 import { recordComp } from "./comps";
@@ -223,7 +224,7 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
       if (s.month >= n.maturityM) {
         if (!dead && rng(s) < 0.55 + 0.4 * pCure(s, r, n.face)) {
           s.cash += n.face; logBooks(s, "sold", n.face);
-          if (r) r.cash = Math.max(0, r.cash - n.face);
+          if (r) { r.cash = Math.max(0, r.cash - n.face); dropDeed(s, r, n.bbl); }
           clearPrivateOrigination(s, n);
           s.news.unshift({
             q: s.month, kind: "deal",
@@ -346,10 +347,8 @@ export function takeDeed(s: GameState, parcels: ParcelTable, n: Note, how: "fore
   if (r) {
     r.bbls = r.bbls.filter((b) => b !== n.bbl);
     forgetDeed(r, n.bbl);
-    r.debt = Math.max(0, r.debt - n.face);   // the debt went with the deed
+    dropDeed(s, r, n.bbl);   // the debt went with the deed
   }
-  // Private-originated paper also drops the cityLoans row in your name.
-  if (n.privateOriginated && s.cityLoans?.[n.bbl]) delete s.cityLoans[n.bbl];
   clearRivalClaims(s, n.bbl);
   s.listings = s.listings.filter((l) => l.bbl !== n.bbl);
   delete s.approaches[n.bbl];
@@ -420,8 +419,8 @@ function loanToOwnBids(s: GameState) {
     s.noteOffers.splice(i, 1);
     const equity = Math.min(Math.max(0, buyer.cash), Math.round(px * 0.35));
     buyer.cash -= equity;
-    buyer.debt += px - equity;
-    if (s.cityLoans?.[o.bbl]) delete s.cityLoans[o.bbl];
+    addToLine(s, buyer, px - equity);     // the paper is bought on the line
+    holdPaper(s, o.bbl, buyer.id);
     (s.rivalNotes ??= []).push({
       bbl: o.bbl, firmId: buyer.id, firm: buyer.name, face: o.face,
       takeM: s.month + FILE_MIN_M + Math.floor(hash01(`${s.seed}:lto-file:${o.id}`) * (FILE_MAX_M - FILE_MIN_M + 1)),
@@ -461,7 +460,7 @@ function expireOffers(s: GameState, _parcels: ParcelTable) {
         ? bondBuyers[Math.floor(rng(s) * bondBuyers.length)] : undefined;
       if (!bb) continue;
       bb.cash -= px;
-      if (s.cityLoans?.[o.bbl]) delete s.cityLoans[o.bbl];
+      holdPaper(s, o.bbl, bb.id);
       s.news.unshift({
         q: s.month, kind: "event",
         text: `${bb.name} bought the performing loan on ${o.address} off ${o.lender} at `
@@ -479,8 +478,8 @@ function expireOffers(s: GameState, _parcels: ParcelTable) {
     if (!buyer) continue;
     const equity = Math.min(Math.max(0, buyer.cash), Math.round(px * 0.35));
     buyer.cash -= equity;
-    if (s.cityLoans?.[o.bbl]) delete s.cityLoans[o.bbl];       // the record follows the paper
-    buyer.debt += px - equity;
+    holdPaper(s, o.bbl, buyer.id);       // the record follows the paper
+    addToLine(s, buyer, px - equity);
     if (!s.rivalNotes) s.rivalNotes = [];
     s.rivalNotes.push({
       bbl: o.bbl, firmId: buyer.id, firm: buyer.name, face: o.face,
@@ -507,7 +506,7 @@ function takeRivalNotes(s: GameState, parcels: ParcelTable) {
     if (!from || from.id === to.id) continue;
     from.bbls = from.bbls.filter((b) => b !== rn.bbl);
     forgetDeed(from, rn.bbl);
-    from.debt = Math.max(0, from.debt - rn.face);
+    dropDeed(s, from, rn.bbl);
     to.bbls.push(rn.bbl);
     // Taking title through the paper is still taking title today — see the
     // same line in auction.ts for what an undated deed does to the hold clock.
@@ -690,7 +689,7 @@ export function buyNote(s: GameState, parcels: ParcelTable, id: string): { s: Ga
   const next = clone(s);
   fundAndBook(next, parcels, px, "bought");
   next.noteOffers = next.noteOffers!.filter((x) => x.id !== o.id);
-  if (next.cityLoans?.[o.bbl]) delete next.cityLoans[o.bbl];   // off the bank's statement — it is your paper now
+  holdPaper(next, o.bbl, "player");   // off the bank's statement — it is your paper now, and still owed
   next.notes!.push({
     id: "N" + (next.nextNoteId = (next.nextNoteId ?? 1) + 1),
     bbl: o.bbl, address: o.address, originator: o.lender,
@@ -738,6 +737,8 @@ export function modifyNote(s: GameState, _parcels: ParcelTable, id: string): { s
   r!.cash -= paydown;
   next.cash += paydown; logBooks(next, "sold", paydown);
   nn.face = Math.max(0, nn.face - paydown);
+  const row = next.cityLoans?.[nn.bbl];
+  if (row && row.obligorId === r!.id) { row.balance = Math.max(0, row.balance - paydown); syncDebt(next, r!); }
   nn.ratePct = +Math.max(1, nn.ratePct - 1.5).toFixed(2);
   nn.maturityM = next.month + Math.round(rrange(next, 24, 36));
   nn.perf = "performing";
@@ -972,7 +973,7 @@ function sellYourDefaultToACompetitor(s: GameState, parcels: ParcelTable) {
     used.add(buyer.id);
     const equity = Math.round(px * 0.34);
     buyer.cash -= equity;
-    buyer.debt += px - equity;
+    addToLine(s, buyer, px - equity);
     chargeLenderLoss(s, bank, bal - px);
     h.loan.holder = buyer.name;
     h.loan.holderFirmId = buyer.id;
@@ -995,6 +996,12 @@ function sellYourDefaultToACompetitor(s: GameState, parcels: ParcelTable) {
  * outbids its credit bid, and nothing at all when the deed itself came to it
  * (it took the building instead of the money).
  */
+/** The row stays on the record — the borrower still owes it — but it is no desk's paper now. */
+function holdPaper(s: GameState, bbl: string, by: string) {
+  const x = s.cityLoans?.[bbl];
+  if (x) x.heldBy = by;
+}
+
 export function tickFirmHeldLoans(s: GameState) {
   if (!s.firmHeldLoans?.length) return;
   for (let i = s.firmHeldLoans.length - 1; i >= 0; i--) {

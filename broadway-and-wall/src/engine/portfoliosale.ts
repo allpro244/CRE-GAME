@@ -28,6 +28,7 @@ import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./v
 import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed } from "./rivals";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
+import { financePackage, settleSale } from "./rivalDebt";
 import { acceptSaleOffer, executePurchase } from "./actions";
 import { cloneState } from "./types";
 import { sweepLocIdleCash, fundableNow } from "./credit";
@@ -514,6 +515,16 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
           toYou = Math.max(0, Math.round(s.cash - cash0));
           sweepLocIdleCash(s, { announce: true });
         }
+        // EACH DEED CLOSES ON ITS SHARE of the one cheque: the seller's
+        // mortgage on it is paid off out of that share (then its line), and
+        // the winner's debt is written deed by deed (rivalDebt).
+        const marks = p.bbls.map((b) => {
+          const rec = resolveRec(parcels, s, b);
+          const v = rec ? Math.max(1, assetValue(rec, s.econ, gradeOf(s, rec))) : 1;
+          return { bbl: b, v, noi: rec ? inPlace(rec, s, b, v).noi : 0, klass: rec?.class, condition: rec ? gradeOf(s, rec) : undefined };
+        });
+        const markV = marks.reduce((a, x) => a + x.v, 0) || 1;
+        const shareOf = (b: string) => Math.round(p.ask * ((marks.find((x) => x.bbl === b)?.v ?? 1) / markV));
         for (const b of p.bbls) {
           // Player deeds already left via acceptSaleOffer; rival-to-rival still
           // needs the register move below.
@@ -529,7 +540,13 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
           const rec = resolveRec(parcels, s, b);
           if (!rec) continue;
           const prev = ownerOf(s, b);
-          if (prev) { prev.bbls = prev.bbls.filter((x) => x !== b); forgetDeed(prev, b); }
+          if (prev) {
+            prev.bbls = prev.bbls.filter((x) => x !== b); forgetDeed(prev, b);
+            if (prev.failedM === undefined) {
+              const share = shareOf(b);
+              prev.cash += share - settleSale(s, prev, b, share);
+            }
+          }
           if (!winner.bbls.includes(b)) winner.bbls.push(b);
           (winner.heldSince ??= {})[b] = s.month;
           s.lastTradeM ??= {}; s.lastTradeM[b] = s.month;
@@ -541,23 +558,17 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
               + `${money(debtOff)} of debt retired out of the proceeds, ${money(toYou)} net cash movement. `
               + `You will not see those buildings on the tape again for a while.`,
           });
-          winner.cash -= winEq; winner.debt += winDebt;
+          winner.cash -= winEq;
+          financePackage(s, winner, winDebt, marks);
           winner.aum = Math.round((winner.aum ?? 0) + p.ask);
           s.portfolios = s.portfolios.filter((x) => x.id !== p.id);
           continue;
         }
-        winner.cash -= winEq; winner.debt += winDebt;
+        winner.cash -= winEq;
+        financePackage(s, winner, winDebt, marks);
         winner.aum = Math.round((winner.aum ?? 0) + p.ask);
+        // The seller was paid deed by deed above, net of the loans on them.
         const seller = p.sellerId ? (s.rivals ?? []).find((r) => r.id === p.sellerId) : null;
-        // Retire what the book was actually carrying, not personality LTV.
-        if (seller) {
-          const lev = (seller.aum ?? 0) > 0
-            ? Math.min(1, Math.max(0, seller.debt / (seller.aum as number)))
-            : seller.targetLtv;
-          const relief = Math.min(seller.debt, Math.round(p.ask * lev));
-          seller.debt -= relief;
-          seller.cash += p.ask - relief;
-        }
         s.portfolios = s.portfolios.filter((x) => x.id !== p.id);
         s.news.unshift({
           q: s.month, kind: "event",

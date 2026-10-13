@@ -2535,6 +2535,14 @@ export interface Rival {
   // on its revolver is a firm you should be watching.
   revolver?: number;
   /**
+   * WHAT IS DRAWN ON THE LINE TODAY — an outstanding balance at `lineBank`,
+   * repaid first out of sale proceeds (rivalDebt.ts). `revolver` is the
+   * lifetime tally of draws.
+   */
+  lineBal?: number;
+  /** The bank that writes this firm's line. */
+  lineBank?: string;
+  /**
    * Genealogy — who walked out of where to found this shop. Absent on the
    * opening roster and on anonymous capital entry. See HANDOFF_PRINCIPAL.md §5.
    */
@@ -4284,6 +4292,16 @@ export interface CityLoan {
   /** Asset class at origination, for the concentration ledger. */
   klass: string;
   status: "current" | "watch" | "workout";
+  /** The sheet the desk wrote it off (debt.ts PRODUCTS id). Absent on rows written before loans were originated. */
+  product?: string;
+  /** Consecutive months this loan's payment was not made (rivalDebt.markPayments). */
+  arrearsMs?: number;
+  /**
+   * WHO HOLDS THE PAPER WHEN IT IS NO LONGER A DESK'S: "player" when you bought
+   * the note, or the id of the firm that did. The borrower still owes it, so the
+   * row stays on the record; it is off every desk's book (loanbook.ts).
+   */
+  heldBy?: string;
 }
 
 export interface Workout {

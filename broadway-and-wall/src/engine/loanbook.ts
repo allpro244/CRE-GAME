@@ -124,14 +124,25 @@ export function cityLoanBook(s: GameState, parcels?: ParcelTable): BookLoan[] {
   }
 
   // --- the street ----------------------------------------------------------
-  // The mortgage record (ledger.ts) allocates each firm's term debt across its
-  // financed deeds; the construction jobs carry their own balance and desk.
+  // The mortgage record holds every firm's mortgages, originated by the desk
+  // that wrote them (rivalDebt.ts); a note sold out of the banks (`heldBy`) is
+  // still owed but is no desk's paper. Each firm's line sits at its bank, and
+  // the construction jobs carry their own balance and desk.
   for (const x of Object.values(s.cityLoans ?? {})) {
-    if (!(x.balance > 0)) continue;
+    if (!(x.balance > 0) || x.heldBy) continue;
     out.push({
       holder: x.lender, borrower: x.obligorId, kind: "senior", balance: x.balance,
       status: x.status === "workout" ? "default" : x.status === "watch" ? "watch" : "current",
       bbl: x.bbl, klass: x.klass,
+    });
+  }
+  for (const r of s.rivals ?? []) {
+    if (r.failedM !== undefined || !((r.lineBal ?? 0) > 0) || !r.lineBank) continue;
+    // A line is current while the firm is: it is the first thing a sponsor
+    // keeps paying, and the last thing a bank lets slide.
+    out.push({
+      holder: r.lineBank, borrower: r.id, kind: "line", balance: r.lineBal!,
+      status: (r.stressMs ?? 0) >= 3 ? "default" : (r.stressMs ?? 0) > 0 ? "watch" : "current",
     });
   }
   for (const j of s.cityJobs ?? []) {

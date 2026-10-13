@@ -15,7 +15,8 @@ decides who is exposed to whom and who is not paying.
 | `engine/amortize.ts` | The only payment arithmetic: `monthlyPayment`, `scheduledPayment`, `recastPayment(loan, month)`, `CAP_PREMIUM_PCT`. Imports nothing. |
 | `engine/pricing.ts` | The only price law: `deskRatePct(bench, spread, {ci, app, ease, standingAdd, rel, dealAdd})` and `appetiteAdvance(app)`. Imports nothing. |
 | `engine/loanbook.ts` | `cityLoanBook(s, parcels?)`, which lists every named loan: yours (senior, mezz, facility, construction, the line) and the street's (the mortgage record and construction jobs). It also gives each loan's status (`current` / `watch` / `default`), and `deskTotals()` sums the list by holder. It is a view, not a store. |
-| `engine/ledger.ts` | The street's mortgage record, which allocates each firm's TERM debt (debt less construction) across its financed deeds. New rows are placed under single-name limits and desk capital headroom (`placeLoan`). |
+| `engine/ledger.ts` | The street's mortgage record: prunes rows whose deed moved, marks paper held outside the banks, and reconciles each firm's debt to its loans. |
+| `engine/rivalDebt.ts` | A firm's loans: origination at a real desk under the single-name and headroom limits (`deskRoom`), the line, sale payoffs, renewals, the monthly service and the payment status. |
 | `engine/lenders.ts` | The desks' balance sheets. Each month the book is rebuilt as the **anonymous book** plus the **named book**. |
 | `engine/credit.ts` | The revolver, written by a named bank (`lineLender`). It is sized and priced through that bank. |
 | `engine/workout.ts` | The workout table. Extension odds and terms depend on lender type (`deskCondition`, `EXT_TERMS`). |
@@ -106,37 +107,46 @@ swept deeds.
 - The mortgage record counted each street firm's construction debt twice.
 - `books.ts` priced the line's interest with its own copy of the rate.
 
-## Handoff to the rivals revamp
+## The street's debt, loan by loan (the rivals handoff, done)
 
-The street is in the loan book through the mortgage record (`s.cityLoans`) and
-the construction jobs. That record is still a **projection** of one aggregate
-`Rival.debt`. These are the seams the rivals agent should pick up, in order:
+The four seams the banking revamp left for the rivals work are closed.
+`engine/rivalDebt.ts` owns a firm's debt; `test/rival-loans.mjs` asserts it.
 
-1. **Per-loan rival debt.**
-   - Replace the projection with real rows that rivals originate, using
-     `quote(s, product, value, noi, klass, /*street*/ true, …)` or
-     `streetRefiProceeds`. The desk the firm actually borrowed from should
-     become `CityLoan.lender`; it is currently `placeLoan`'s hashed preference.
-   - Make `Rival.debt` the sum of the rows, not the other way round.
-   - `cityLoanBook`, the desks' named books, `chargeSponsorFailure` (which
-     already routes term losses to `CityLoan.lender`) and the class ledger all
-     read `s.cityLoans` and need no change.
-2. **Status from payments, not from `stressMs`.** Today a firm six months into
-   a squeeze flips EVERY row to `workout`, which counts as `default` on the
-   desk. Per-loan arrears would let one bad building default without
-   cross-defaulting the book (or cross-default deliberately, by covenant).
-3. **The revolver as its own balance.**
-   - `Rival.revolver` is lifetime draws, not an outstanding balance.
-   - Add an outstanding line balance, pay it down first from sale proceeds,
-     and price it with
-     `deskRatePct(shortIndexOf(econ), LOC_SPREAD, { ci, app: <the firm's bank>.appetite })`
-     instead of `index + RATE_SPREAD`.
-   - Put it in `cityLoanBook` as `kind: "line"`.
-   - `lineRoom`'s docstring names this gap.
-4. **Maturities from the rows.** `tickMaturities` derives balloons from
-   `heldSince` and a hashed term. With real rows it can read `maturityM`
-   directly and walk `balloonLadder`-style desks for renewal.
+1. **Per-loan rival debt.** A firm's mortgages are real rows on
+   `s.cityLoans`, one first mortgage per deed, originated when the debt is
+   taken on: the opening book (backdated part-way through its term), an
+   acquisition (`rivalBuys`, the steps, a package), a construction takeout at
+   delivery, a cash-out refinancing. The amount is sized where it always was
+   (`streetRefiProceeds` / `acquisitionLoan`); the desk is the cheapest one
+   whose `quote(..., street = true)` funds that amount, among those with room
+   under `placeLoan`'s two rules (now `deskRoom`: the single-name limit, which
+   also counts the firm's line, and capital headroom). Its coupon and term are
+   that desk's. `Rival.debt` is re-summed from the rows, the line and the
+   construction balances after every change (`syncDebt`); the ledger counts
+   any path that moved it some other way (`debtDrift`) and the test holds the
+   count at zero. A sale pays off the mortgage on THAT building, then the line
+   (`settleSale`); a foreclosure, the keys or a deed through the paper takes
+   the row with the deed (`dropDeed`). A note sold out of the banks keeps its
+   row, marked `heldBy`, off every desk's book but still owed.
+2. **Status from payments.** Each month a firm short after its line misses
+   the loans whose buildings carry themselves least, until the unpaid service
+   covers the shortfall (`markPayments`). A missed payment is a default that
+   month — the player's rule — and a building that no longer covers its own
+   coupon, or that lives on an extension, is on watch. A bank files on its own
+   loan three months in arrears, for what is owed on it.
+3. **The revolver as its own balance.** `Rival.lineBal` at `Rival.lineBank`
+   (the bank holding most of the firm's mortgages), priced like yours:
+   `deskRatePct(shortIndexOf(econ), LOC_SPREAD, { ci, app })`. It is repaid
+   first from sale proceeds after the building's own mortgage, it carries a
+   short sale's deficiency, and it is on `cityLoanBook` as `kind: "line"`.
+   `Rival.revolver` stays as the lifetime tally of draws.
+4. **Maturities from the rows.** `tickMaturities` reads each row's
+   `maturityM` (or its extension date). A balloon the market will refinance
+   renews at the cheapest desk that clears it (`renewRow`, the
+   `balloonLadder` rule) and pays the renewal's closing costs; a gap is paid
+   from cash, moved to the line, extended by the desk, called from partners,
+   or the building is handed back.
 
-Keep `placeLoan`'s two rules, the single-name limit and capital headroom,
-whatever originates the rows. Without them, one street firm's failure takes
-down the hometown bank.
+Also fixed on the way: the street's carry charged the coupon on construction
+balances that `fundJobs` already capitalises, so every crane's interest was
+paid twice.

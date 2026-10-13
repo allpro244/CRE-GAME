@@ -17,6 +17,7 @@ import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing"
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
 import { payOffDue, payOffLoan } from "./debt";
+import { settleSale } from "./rivalDebt";
 import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen } from "./debt";
 import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
@@ -311,8 +312,8 @@ export function executePurchase(
       seller.bbls = seller.bbls.filter((b) => b !== bbl);
       const jv = seller.jvs?.[bbl];
       forgetDeed(seller, bbl);
-      const relief = Math.min(seller.debt, Math.round(price * seller.targetLtv));
-      seller.debt -= relief;
+      // The mortgage on the building is paid at the closing, then their line.
+      const relief = settleSale(next, seller, bbl, price);
       seller.cash += price - relief;
       // A syndicated deed pays its deal investors out of the closing — see
       // jvLpTake (rivals.ts).

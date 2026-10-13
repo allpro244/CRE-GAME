@@ -41,6 +41,7 @@ import { conveyedDeed, depositsOn } from "./leasing";
 import { assetGrade, livingRivals, marketAppetite, markRival, paramsOf, tie, transferDeed } from "./rivals";
 import { observe } from "./competitorReads";
 import { sheetOf } from "./rivals";
+import { assumeBook, syncDebt } from "./rivalDebt";
 import { buyQuote, executePurchase, TRANSFER_TAX } from "./actions";
 import { fundableNow, fundAndBook } from "./credit";
 import { isCivicLand } from "./demand";
@@ -442,6 +443,9 @@ function runClose(
   // (floating), which prepays at par.
   const r = (cur.rivals ?? []).find((x) => x.id === q.firmId)!;
   r.bbls = [];
+  // Every mortgage and the line repaid at the closing.
+  for (const x of Object.values(cur.cityLoans ?? {})) if (x.obligorId === r.id) delete cur.cityLoans![x.bbl];
+  r.lineBal = 0;
   r.debt = 0;
   r.cash = 0;
   r.uncalled = 0;
@@ -646,8 +650,12 @@ export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
     for (const li of s.listings) if (li.sellerId === t.id) li.sellerId = raider.id;
     for (const rn of s.rivalNotes ?? []) if (rn.firmId === t.id) { rn.firmId = raider.id; rn.firm = raider.name; }
     if (s.portfolios) s.portfolios = s.portfolios.filter((p) => !p.bbls.some((b) => t.bbls.includes(b)));
+    // THE PAPER IS ASSUMED (the 1% in `fees` is the lenders' consent): every
+    // mortgage, the line and the cranes move to the raider with the deeds.
+    assumeBook(s, t, raider);
+    for (const j of s.cityJobs ?? []) if (j.firmId === t.id && !j.orphaned) j.firmId = raider.id;
     for (const bbl of [...t.bbls]) transferDeed(s, bbl, raider, 0);
-    raider.debt += q.debt;
+    syncDebt(s, raider);
     raider.cash += q.cash - q.ask - fees;
     t.distributed = (t.distributed ?? 0) + q.ask;
     t.bbls = []; t.debt = 0; t.cash = 0; t.uncalled = 0; t.aum = 0; t.stressMs = 0;

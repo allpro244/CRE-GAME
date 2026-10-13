@@ -50,38 +50,39 @@ if (g.btsProspects?.[vacant]) {
   process.exit(1);
 }
 
-// Force arrival by hammering the tick with a clone that always rolls in —
-// or advance many months. Prefer exercising tickBuildToSuit until one lands
-// or we hit a ceiling; seed/rng is deterministic so a long enough run works.
-let arrived = false;
+// Hammer the tick until an occupier comes to the table. Whoever comes either
+// signs at a rent that builds the shell, or passes and says why — and a pass
+// leaves the listing up. Seed/rng is deterministic, so a long run is enough.
+let met = null;
 for (let i = 0; i < 240; i++) {
   const next = structuredClone(g);
   E.tickBuildToSuit(next, parcels);
   g = next;
-  if (g.btsProspects?.[vacant]) {
-    arrived = true;
-    break;
-  }
-  // Month must advance so signedM / news make sense; offer.sinceM stays.
+  if (g.btsProspects?.[vacant]) { met = "signed"; break; }
+  if (g.holdings[vacant]?.btsOffer?.lastWalk) { met = "walked"; break; }
   g = { ...g, month: g.month + 1 };
 }
-if (!arrived) {
-  console.error("FAIL no BTS tenant in 240 months", {
-    offer: g.holdings[vacant]?.btsOffer,
-    phase: g.econ.phase,
-  });
+if (!met) {
+  console.error("FAIL nobody came to the table in 240 months", { offer: g.holdings[vacant]?.btsOffer, phase: g.econ.phase });
   process.exit(1);
 }
-if (g.holdings[vacant].btsOffer) {
-  console.error("FAIL offer still up after commitment");
-  process.exit(1);
+const read = E.btsRentRead(g, parcels, vacant, "office", 12, 0.62);
+let summary;
+if (met === "walked") {
+  const w = g.holdings[vacant].btsOffer.lastWalk;
+  if (!(w.needPsf > w.ceilingPsf)) { console.error("FAIL walked from a deal that met", w); process.exit(1); }
+  if (!g.news.some((n) => n.text.includes(w.name) && n.text.includes("passed"))) { console.error("FAIL a pass with no news"); process.exit(1); }
+  if (g.btsProspects?.[vacant]) { console.error("FAIL terms minted on a pass"); process.exit(1); }
+  summary = { met, tenant: w.name, needPsf: w.needPsf, ceilingPsf: w.ceilingPsf };
+} else {
+  if (g.holdings[vacant].btsOffer) { console.error("FAIL offer still up after commitment"); process.exit(1); }
+  const bts = g.btsProspects[vacant];
+  if (!bts?.name || bts.use !== "office" || bts.sf <= 0) { console.error("FAIL bad commitment", bts); process.exit(1); }
+  if (!(bts.rentPsf >= read.need - 0.01) || !(bts.rentPsf <= read.ceiling + 0.01)) {
+    console.error("FAIL signed outside [need, ceiling]", bts.rentPsf, read); process.exit(1);
+  }
+  summary = { met, tenant: bts.name, sf: bts.sf, rentPsf: bts.rentPsf, needPsf: read.need };
 }
-const bts = g.btsProspects[vacant];
-if (!bts?.name || bts.use !== "office" || bts.sf <= 0) {
-  console.error("FAIL bad commitment", bts);
-  process.exit(1);
-}
-
 const cleared = E.clearBuildToSuit(g, vacant);
 if (cleared.btsProspects?.[vacant] || cleared.holdings[vacant]?.btsOffer) {
   console.error("FAIL clear left residue");
@@ -100,10 +101,4 @@ if (g2.holdings[vacant]?.btsOffer) {
   process.exit(1);
 }
 
-console.log(JSON.stringify({
-  ok: true,
-  vacant,
-  tenant: bts.name,
-  sf: bts.sf,
-  waitM: bts.signedM,
-}));
+console.log(JSON.stringify({ ok: true, vacant, waitM: g.month, ...summary }));

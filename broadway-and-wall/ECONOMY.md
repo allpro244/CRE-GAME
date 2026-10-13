@@ -2846,3 +2846,34 @@ national recession is a hazard that the real policy rate raises, so tight
 money makes one likelier without scheduling it. The market's forecast does
 not anticipate recessions it cannot see. That is a statement about the
 recession model, not the bond market.
+
+## Build-to-suit signed deals that could not pencil (fixed 2026-10)
+
+An anchor on a BTS listing signed at 78-88% of market rent whatever the shell
+cost. Measured on a live city at recovery and at peak: of ~420 vacant lots,
+**zero** cleared the development hurdle on those terms for office, retail or
+industrial. The listing filled and handed the player a lower rent on a job that
+already did not pencil — the anchored plan could only beat spec through its
+smaller lease-up reserve.
+
+A build-to-suit is priced off cost. Now:
+
+- `btsRentRead` solves the rent at which the anchored scheme clears the same
+  hurdle the desk shows (same `planDevelopment`, same land basis), and the
+  most an anchor pays: market for new space x (1 + `BTS_FIT_PREMIUM`, 10%,
+  the middle of the 5-15% premium BTS deals are reported to carry).
+- An arriving anchor opens at its old discount; it signs at the larger of that
+  and the rent the shell needs, if that is within its ceiling, and otherwise
+  passes — with news naming both numbers — and the listing stays up.
+- The arrival hazard no longer multiplies by `buildClimate`: whether building
+  pays is now asked of this shell at the table, so it is counted once.
+- Signed terms carry an outside date (`BTS_START_WINDOW_M`, 12 months) and
+  drop when the site leaves the book (sold, merged, ground-leased).
+  `startDevelopment` takes the commitment from `s.btsProspects`, not from the
+  caller.
+
+Result (test city, ~345 lots per use): office and retail BTS can now close on
+the 1-2% of lots near feasibility. **Industrial still never does**: the rent a
+new shed needs runs 1.7-2.6x market on every lot measured, so no spec or
+anchored shed pencils on vacant land. That is the development economy, not
+BTS, and it is left for its own investigation.

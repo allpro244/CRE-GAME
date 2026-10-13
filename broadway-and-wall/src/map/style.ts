@@ -836,6 +836,14 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: { "fill-color": "#8f9f76" },
       },
       {
+        // AN EMBANKED CHANNEL'S BANK is a stone promenade, not rough grass.
+        id: "embankment",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "embankment"],
+        paint: { "fill-color": "#bdb4a3" },
+      },
+      {
         // Inland water, ABOVE the roadway. Pavement used to paint over the
         // creek wherever a cell still overlapped the ribbon, which read as
         // asphalt triangles stretching to the bank.
@@ -866,6 +874,54 @@ export function fallbackBaseStyle(context?: unknown): StyleSpecification {
         paint: {
           "line-color": "#2f5566",
           "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 16.5, 2.0] as never,
+        },
+      },
+      {
+        // THE RAILWAY: a ballast bed the lots stop at, painted after the water
+        // so the line reads as crossing the river on its bridge.
+        id: "railverge",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "railverge"],
+        paint: { "fill-color": "#93a274" },
+      },
+      {
+        id: "railbed",
+        type: "fill",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "railbed"],
+        paint: { "fill-color": "#6a6259" },
+      },
+      {
+        // the lineside fence either side of the ballast
+        id: "railbed-edge",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "railbed"],
+        paint: {
+          "line-color": "#4b463f",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.4, 17, 1.4] as never,
+        },
+      },
+      {
+        id: "railtrack-sleepers",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "railtrack"],
+        paint: {
+          "line-color": "#6b5d4e",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 1.2, 17, 5] as never,
+          "line-dasharray": [0.35, 0.65],
+        },
+      },
+      {
+        id: "railtrack",
+        type: "line",
+        source: "bw-context",
+        filter: ["==", ["get", "kind"], "railtrack"],
+        paint: {
+          "line-color": "#3b3834",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.5, 17, 1.6] as never,
         },
       },
       {

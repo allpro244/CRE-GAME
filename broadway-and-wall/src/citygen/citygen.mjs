@@ -88,7 +88,7 @@ export function inRing(p, ring) {
  * each ring. Same answer as `rings.some((r) => inRing(p, r))` — a point
  * outside a ring's box cannot be inside the ring — but a long river ribbon
  * has hundreds of vertices and the coverage pass and the crossing finder ask
- * this of every point on a 10 m lattice. Measured on Aurelmere (a river and
+ * this of every point on a 10 m lattice. Measured on a written-down city (a river and
  * two canals over 11.7 km2): 66 s of generation, 90% of it in inRing, before
  * this; the generated island's parcel table is byte-identical after it.
  */
@@ -2095,6 +2095,9 @@ export function generateCity(cfg) {
     });
   }
   for (const br of cfg.bridges ?? []) {
+    // A DECK bridge is built whole by the renderer — balustrades and all —
+    // so the two deco rails would stand on top of its parapets as walls.
+    if (br.deck) continue;
     // Crossings are dry gaps the grid already paves. A 5.4 m slab from 3.1 m
     // up, sized `canal + 12`, was a floating planter the width of the race —
     // that is the brown box in the screenshot. Two parapets on the water
@@ -2467,14 +2470,42 @@ export function generateCity(cfg) {
   const inChannel = anyRing(CH_M);
   // the clearance the lots were cut back to either side of a channel — drawn
   // as the creek's own green bank instead of left as bare paved ground
-  const CUT_M = (cfg.streams ?? [])
-    .filter((st) => st.cut && st.ring && st.ring.length >= 3)
-    .map((st) => st.ring);
-  const bankFeatures = CUT_M.map((ring) => ({
-    type: "Feature",
-    geometry: { type: "Polygon", coordinates: [[...ring.map(proj.toLL), proj.toLL(ring[0])]] },
-    properties: { kind: "bank" },
-  }));
+  //
+  // A RAILWAY is cut the same way — a corridor the lots stop at — and its
+  // corridor is the lineside verge: grass either side of the ballast, which
+  // is drawn from cfg.railways on top of it. It is not water, so it is kept
+  // out of CUT_M and nothing downstream treats it as a bank.
+  // An EMBANKED channel's clearance is a stone promenade, not rough grass.
+  const CUT_ST = (cfg.streams ?? [])
+    .filter((st) => st.cut && st.kind !== "rail" && st.ring && st.ring.length >= 3);
+  const CUT_M = CUT_ST.map((st) => st.ring);
+  const bankFeatures = [
+    ...CUT_ST.map((st) => ({
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[...st.ring.map(proj.toLL), proj.toLL(st.ring[0])]] },
+      properties: { kind: st.embank ? "embankment" : "bank" },
+    })),
+    ...(cfg.streams ?? []).filter((st) => st.kind === "rail" && st.ring && st.ring.length >= 3).map((st) => ({
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[...st.ring.map(proj.toLL), proj.toLL(st.ring[0])]] },
+      properties: { kind: "railverge" },
+    })),
+  ];
+  const railFeaturesM = (cfg.railways ?? []).flatMap((rw) => [
+    ...(rw.bed && rw.bed.length >= 3 ? [{
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [[...rw.bed.map(proj.toLL), proj.toLL(rw.bed[0])]] },
+      properties: { kind: "railbed", name: rw.name },
+    }] : []),
+    ...(rw.tracks ?? []).filter((t) => t.length >= 2).map((t) => ({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: t.map(proj.toLL) },
+      properties: { kind: "railtrack", name: rw.name },
+    })),
+  ]);
+  // every street crossing of a channel, in metres, so the embankment trees
+  // can keep off the bridges
+  const crossSegsM = [];
   const crossingFeatures = [];
   if (CH_M.length) {
     const seenX = new Set();
@@ -2504,6 +2535,7 @@ export function generateCity(cfg) {
             const B = [a[0] + ux * (t1 + 4), a[1] + uy * (t1 + 4)];
             if (inPark(A) || inPark(B)) continue;
             const half = b.inset ? ringDist([a[0] + ux * Math.max(0, t0 - 6), a[1] + uy * Math.max(0, t0 - 6)], b.inset) : 6;
+            crossSegsM.push([A, B, Math.max(7, Math.min(28, 2 * half)) / 2]);
             crossingFeatures.push({
               type: "Feature",
               geometry: { type: "LineString", coordinates: [proj.toLL(A), proj.toLL(B)] },
@@ -2571,6 +2603,43 @@ export function generateCity(cfg) {
   const pathFeatures = [];
   const pondFeatures = [];
   const plant = (p) => { if (p && !inWater(p)) treeFeatures.push(p); };
+  // THE EMBANKMENT ALLÉE. A row of trees along each bank of an embanked
+  // channel, four metres back from the water on the promenade, every fifteen
+  // metres, kept off the street bridges and the declared bridges. Fixed
+  // spacing, no dice: a town without embanked water draws nothing here and
+  // its random stream is untouched.
+  {
+    const inBridge = anyRing((cfg.bridges ?? []).map((br) => rect(br.cx, br.cy, (br.w ?? 16) + 10, (br.h ?? 11) + 10, br.deg ?? 0)));
+    const segDist = (p, a, b) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2));
+      return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+    };
+    const onCrossing = (p) => crossSegsM.some(([a, b, hw]) => segDist(p, a, b) < hw + 5);
+    for (const st of cfg.streams ?? []) {
+      if (!st.embank || st.cut || st.paint === false || !st.ring || st.ring.length < 3) continue;
+      const r = st.ring;
+      let carry = 0;
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], b = r[(i + 1) % r.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 1e-6) continue;
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+        let t = carry;
+        for (; t < L; t += 15) {
+          const p = [a[0] + ux * t, a[1] + uy * t];
+          // whichever side of the edge is dry
+          // (the lots stand STREAM_CLEAR back from the cut, so four metres
+          // out is always on the promenade, never on a deed)
+          let q = [p[0] + uy * 4, p[1] - ux * 4];
+          if (inRing(q, r)) q = [p[0] - uy * 4, p[1] + ux * 4];
+          if (inRing(q, r) || !inRing(q, innerRing) || inPark(q) || inBridge(q) || onCrossing(q)) continue;
+          plant(q);
+        }
+        carry = t - L;
+      }
+    }
+  }
   const drySeg = (a, b) => {
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
     const steps = Math.max(2, Math.ceil(len / 8));
@@ -3462,7 +3531,7 @@ export function generateCity(cfg) {
       ...(cfg.streams ?? []).filter((st) => st.paint !== false).map((st) => ({
         type: "Feature",
         geometry: { type: "Polygon", coordinates: [[...st.ring.map(proj.toLL), proj.toLL(st.ring[0])]] },
-        properties: { kind: "stream", water: st.kind ?? "creek", name: st.name },
+        properties: { kind: "stream", water: st.kind ?? "creek", name: st.name, ...(st.embank ? { embank: true } : {}) },
       })),
       ...(cfg.bridges ?? []).map((br) => {
         const ring = rect(br.cx, br.cy, br.w, br.h, br.deg);
@@ -3473,7 +3542,7 @@ export function generateCity(cfg) {
           // gap is `w` long down the flow, and the creek either side of it is
           // measured off the painted ribbon, since the config does not keep it
           properties: {
-            kind: "bridge", name: br.name, deg: br.deg ?? 0, w: br.w ?? 16, h: br.h ?? 11,
+            kind: "bridge", name: br.name, deg: br.deg ?? 0, w: br.w ?? 16, h: br.h ?? 11, ...(br.type ? { type: br.type } : {}),
             // and the green corridor the lots were cut back from, which is
             // what a footbridge actually has to span from pavement to pavement
             cw: (() => {
@@ -3622,6 +3691,7 @@ export function generateCity(cfg) {
       ...zebraFeatures,
       ...crossingFeatures,
       ...bankFeatures,
+      ...railFeaturesM,
       shoreRoad,
       ...pondFeatures.map((ring) => ({
         type: "Feature",

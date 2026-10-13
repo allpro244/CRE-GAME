@@ -152,6 +152,9 @@ const GROUND_MOVED_AT: Record<string, number> = {
   // number IN THE SAME COMMIT. That is the whole contract, and the reason this
   // table exists instead of one global constant.
   manhattan: 39,
+  // TWINMARCH ARRIVES AT 39 on the same terms: additive, no save can predate
+  // it. Same contract — move its plat, bump SAVE_VERSION and this row together.
+  twinmarch: 39,
 };
 
 /**
@@ -159,7 +162,7 @@ const GROUND_MOVED_AT: Record<string, number> = {
  * from citygen for the same reason PROCEDURAL_ISLAND is: the engine does not
  * depend on the generator.
  */
-const KNOWN_ISLANDS = new Set([PROCEDURAL_ISLAND, "manhattan"]);
+const KNOWN_ISLANDS = new Set([PROCEDURAL_ISLAND, "manhattan", "twinmarch"]);
 
 /**
  * Phase 5 of the leasing overhaul. Old saves stored four mandate dials on

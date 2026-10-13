@@ -17,6 +17,9 @@ export interface CityCtx {
   quays?: [number, number][][];
   /** Open ground — boulevard malls and the esplanade — where a tree or a bench may stand but no car parks. */
   opens?: [number, number][][][];   // each: outer ring, then holes
+  embankments?: [number, number][][];
+  railBeds?: [number, number][][];      // ballast beds (outer rings)
+  railTracks?: [number, number][][];    // track centre lines   // promenade rings along embanked water (ground index only)
   piles?: [number, number][];
   land?: [number, number][];
   benches?: Oriented[];
@@ -24,9 +27,9 @@ export interface CityCtx {
   parks?: { ring: [number, number][]; holes?: [number, number][][]; flavour?: string }[] | [number, number][][];
   ponds?: [number, number][][];
   /** Creeks, canals and mill ponds — sunk into a channel with banks. */
-  streams?: { ring: [number, number][]; water: string }[];
+  streams?: { ring: [number, number][]; water: string; embank?: boolean }[];
   /** The generator's crossings: footprint, flow bearing, and the widths spanned. */
-  bridges?: { ring: [number, number][]; deg: number; w: number; rw: number; cw: number }[];
+  bridges?: { ring: [number, number][]; deg: number; type?: string; w: number; rw: number; cw: number }[];
   paths?: [number, number][][];
   /** The parcel outlines, by BBL — a redevelopment stands on its lot, not on what was knocked down. */
   lots?: Record<string, [number, number][]>;

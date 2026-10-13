@@ -16,7 +16,7 @@
 //
 // Nothing below knows which kind of island it is holding an id for, and nothing
 // below should.
-import { randomSeed, PROCEDURAL, MANHATTAN, DEFAULT_EXTENT } from "@/citygen/index.mjs";
+import { randomSeed, PROCEDURAL, MANHATTAN, TWINMARCH, defaultExtent } from "@/citygen/index.mjs";
 import { START_CASH_CHOICES, DEFAULT_START_CASH } from "@/engine/types";
 
 export interface CityInfo { id: string; name: string; tagline: string; lots: number }
@@ -79,7 +79,9 @@ export const DEFAULT_DEV = "village";
  * The player can still choose. This only changes what the picker starts on.
  */
 export function currentDev(city = currentCity()): string {
-  const dflt = city === MANHATTAN ? "metropolis" : DEFAULT_DEV;
+  // Twinmarch opens Established: a real skyline at both ends and a quarter of
+  // the plat still to build — two towns mid-growth, not a finished city.
+  const dflt = city === MANHATTAN ? "metropolis" : city === TWINMARCH ? "harbour" : DEFAULT_DEV;
   try { return localStorage.getItem(DEV_KEY + ":" + city) || dflt; } catch { return dflt; }
 }
 
@@ -117,7 +119,7 @@ export function setCash0(v: number): void {
  * city, so the two cannot collide; only the default differs.
  */
 export function currentSize(city = currentCity()): string {
-  const dflt = city === MANHATTAN ? DEFAULT_EXTENT : DEFAULT_SIZE;
+  const dflt = city === MANHATTAN || city === TWINMARCH ? defaultExtent(city) : DEFAULT_SIZE;
   try {
     return localStorage.getItem(SIZE_KEY + city) || dflt;
   } catch {

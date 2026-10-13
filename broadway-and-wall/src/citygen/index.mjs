@@ -21,10 +21,24 @@ import { generateCity } from "./citygen.mjs";
 import { buildCityData } from "./build.mjs";
 import { SIZES, DEFAULT_SIZE, scaleCity } from "./cities.mjs";
 import { islandConfig, islandName } from "./island.mjs";
-import { MANHATTAN, manhattanConfig, manhattanName, EXTENTS, DEFAULT_EXTENT, extentList } from "./manhattan.mjs";
+import { MANHATTAN, manhattanConfig, manhattanName, EXTENTS, DEFAULT_EXTENT, extentList as manhattanExtents } from "./manhattan.mjs";
+import { TWINMARCH, twinmarchConfig, twinmarchName, TWINMARCH_EXTENTS } from "./twinmarch.mjs";
 
 export { SIZES, DEFAULT_SIZE };
-export { MANHATTAN, EXTENTS, DEFAULT_EXTENT, extentList };
+export { MANHATTAN, TWINMARCH, EXTENTS, DEFAULT_EXTENT };
+
+/**
+ * The extents a written-down city offers, for the picker. Manhattan's are how
+ * far uptown the map goes; Twinmarch is designed whole and offers one.
+ */
+export function extentList(cityId = MANHATTAN) {
+  if (cityId === TWINMARCH) return Object.entries(TWINMARCH_EXTENTS).map(([id, e]) => ({ id, name: e.name, note: e.note }));
+  return manhattanExtents();
+}
+/** The extent a written-down city opens on. */
+export function defaultExtent(cityId = MANHATTAN) {
+  return cityId === TWINMARCH ? "whole" : DEFAULT_EXTENT;
+}
 
 /** The sizes an island can be built at, for the picker. */
 export function sizeList() {
@@ -91,6 +105,12 @@ export function cityList() {
       /** A written-down city takes an EXTENT rather than a size — see manhattan.mjs. */
       extents: true,
     },
+    {
+      id: TWINMARCH,
+      name: "Twinmarch",
+      tagline: "Two towns grown into one: a harbour exchange in a deep bay and a railhead three kilometres east, joined by a long market street over a river. Drawn so you can read where each kind of demand lives. About ten thousand lots.",
+      extents: true,
+    },
   ];
 }
 
@@ -105,6 +125,7 @@ export function cityList() {
 export function cityName(cityId, seed, opts) {
   if (cityId === PROCEDURAL) return islandName(seed);
   if (cityId === MANHATTAN) return manhattanName(opts?.size);
+  if (cityId === TWINMARCH) return twinmarchName();
   return cityId;
 }
 
@@ -153,7 +174,7 @@ export function makeCity(cityId, seed, opts) {
   if (LEGACY_DRAWN.has(cityId)) {
     throw new Error(`removed city: ${cityId} — all islands are generated from a seed now`);
   }
-  if (cityId !== PROCEDURAL && cityId !== MANHATTAN) throw new Error(`unknown city: ${cityId}`);
+  if (cityId !== PROCEDURAL && cityId !== MANHATTAN && cityId !== TWINMARCH) throw new Error(`unknown city: ${cityId}`);
   // A WRITTEN-DOWN CITY DOES NOT TAKE A SIZE, it takes an extent. `scaleCity`
   // multiplies every position and extent, and doing that to a traced Manhattan
   // gives a fictional island shaped like a shrunken one with real-sized blocks
@@ -161,12 +182,19 @@ export function makeCity(cityId, seed, opts) {
   // the extent id for this city, which is what the picker writes into it, and
   // the same field still identifies the town in a save.
   const manhattan = cityId === MANHATTAN;
+  // Twinmarch is written down too, and like Manhattan it is not the standard
+  // island times anything: it declares no size, so the economy counts its lots.
+  const twinmarch = cityId === TWINMARCH;
   const sizeId = manhattan
     ? (opts?.size && EXTENTS[opts.size] ? opts.size : DEFAULT_EXTENT)
-    : (opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE);
+    : twinmarch
+      ? (opts?.size && TWINMARCH_EXTENTS[opts.size] ? opts.size : "whole")
+      : (opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE);
   const cfg = manhattan
     ? manhattanConfig(seed, { extent: sizeId })
-    : scaleCity(islandConfig(seed), SIZES[sizeId].k);
+    : twinmarch
+      ? twinmarchConfig(seed)
+      : scaleCity(islandConfig(seed), SIZES[sizeId].k);
   // The street plan: the current one unless a save asks for the plan its
   // town was cut with (see CITY_PLAN and GameState.cityPlan).
   const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density, planV: opts?.planV ?? CITY_PLAN });
@@ -182,7 +210,7 @@ export function makeCity(cityId, seed, opts) {
     id: cityId,
     seed: seed >>> 0,
     size: sizeId,
-    sizeK: manhattan ? 0 : SIZES[sizeId].k,
+    sizeK: manhattan || twinmarch ? 0 : SIZES[sizeId].k,
     name: cfg.name,
     parcels: data.parcels,
     adjacency: data.adjacency,

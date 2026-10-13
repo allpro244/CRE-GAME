@@ -34,10 +34,13 @@ const KIND_STYLE = {
   block: { fill: "#e5dcc6" },
   seawall: { fill: "#9a958c" },
   quay: { fill: "#8f8a80" },
+  embankment: { fill: "#bdb4a3" },
+  railbed: { fill: "#6f685e" },
+  railtrack: { fill: "#2e2b27" },
 };
 // Drawn in this order; anything not listed is skipped (trees, benches, rail
 // and labels are noise at plat scale).
-const DRAW_ORDER = ["land", "beach", "marsh", "esplanade", "paveland", "pavement", "block", "street", "park", "apron", "median", "pond", "stream", "bridge", "seawall", "quay"];
+const DRAW_ORDER = ["land", "beach", "marsh", "esplanade", "paveland", "pavement", "block", "street", "park", "apron", "median", "embankment", "pond", "stream", "bridge", "railbed", "railtrack", "seawall", "quay"];
 
 export function renderPlatSVG(city, { w = 640 } = {}) {
   const proj = makeProjection(...city.manifest.core);

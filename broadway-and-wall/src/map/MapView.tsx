@@ -395,6 +395,9 @@ export default function MapView() {
                 .filter((f) => (f.properties?.kind === "median" || f.properties?.kind === "esplanade") && f.geometry.type === "Polygon")
                 .map((f) => (f.geometry as GeoJSON.Polygon).coordinates.map((r) => (r as [number, number][]).slice(0, -1))),
               trees: pointsOf("tree"),
+              embankments: ringsOf("embankment"),
+              railBeds: ringsOf("railbed"),
+              railTracks: linesOf("railtrack"),
               piles: pointsOf("pile"),
               benches: orientedOf("bench"),
               rails: orientedOf("rail"),
@@ -419,12 +422,14 @@ export default function MapView() {
                 .map((f) => ({
                   ring: ((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1),
                   water: String(f.properties?.water ?? "creek"),
+                  embank: !!f.properties?.embank,
                 })),
               bridges: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "bridge" && f.geometry.type === "Polygon")
                 .map((f) => ({
                   ring: ((f.geometry as GeoJSON.Polygon).coordinates[0] as [number, number][]).slice(0, -1),
                   deg: Number(f.properties?.deg ?? 0),
+                  type: f.properties?.type ? String(f.properties.type) : undefined,
                   w: Number(f.properties?.w ?? 16),
                   rw: Number(f.properties?.rw ?? 0),
                   cw: Number(f.properties?.cw ?? 0),

@@ -938,6 +938,7 @@ export class RealCityLayer {
     this.buildGround();
     this.buildChannels();
     this.buildBridges();
+    this.buildRailway();
     this.buildStreetLife();
     this.dyn.add(this.dynDone.group, this.dynSite.group);
     this.scene.add(this.dyn);
@@ -3521,7 +3522,7 @@ export class RealCityLayer {
   // ahead of the water, to stand in for the ground at the lip — and once in
   // colour facing the water. Harbour slips stay at sea level.
   private buildChannels() {
-    const streams = ((this.ctx as { streams?: { ring: P2[]; water: string }[] }).streams ?? []).filter((s) => s.water !== "slip");
+    const streams = ((this.ctx as { streams?: { ring: P2[]; water: string; embank?: boolean }[] }).streams ?? []).filter((s) => s.water !== "slip");
     if (!streams.length) return;
     const Z = RealCityLayer.WATER_Z, BED = Z - 0.4, TOP = 0.1;
     const water = new Buf(), stone = new Buf(), rubble = new Buf();
@@ -3547,7 +3548,8 @@ export class RealCityLayer {
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(r.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
       for (const t of tris) for (const i of t) { water.pos.push(r[i][0], r[i][1], Z); water.nrm.push(0, 0, 1); water.uv.push(r[i][0] / 6, r[i][1] / 6); water.col.push(1, 1, 1); }
-      const B = st.water === "canal" ? stone : rubble;
+      // a canal, and any embanked river, is walled in dressed stone
+      const B = st.water === "canal" || st.embank ? stone : rubble;
       for (let i = 0; i < r.length; i++) {
         const a = r[i], b = r[(i + 1) % r.length];
         const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -3578,48 +3580,217 @@ export class RealCityLayer {
   // The generator lays each creek crossing as a dry gap in the water. Flood
   // the gap, then span it: a stone deck a metre up with parapets along the
   // two sides that run with the bridge's axis.
+  // ---- the railway ----------------------------------------------------------
+  // A raised ballast bed, timber sleepers every 0.65 m, two steel rails per
+  // track, and catenary: a mast every fifty metres on each side with a
+  // cantilever arm and a contact wire over each track.
+  private buildRailway() {
+    const c = this.ctx as { railBeds?: P2[][]; railTracks?: P2[][] };
+    if (!c.railBeds?.length && !c.railTracks?.length) return;
+    const bed = new Buf(), wood = new Buf(), steel = new Buf();
+    const BED_Z = 0.32;
+    const BALLAST = [0.37, 0.35, 0.33], SHOULDER = [0.3, 0.28, 0.26], SLEEPER = [0.33, 0.24, 0.17];
+    const RAIL = [0.6, 0.6, 0.62], MAST = [0.32, 0.35, 0.36];
+    for (const ll of c.railBeds ?? []) {
+      let r = ll.map((q) => this.project(q));
+      if (r.length < 3) continue;
+      if (ringArea(r) < 0) r = r.slice().reverse();
+      let tris: number[][] = [];
+      try { tris = THREE.ShapeUtils.triangulateShape(r.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
+      for (const t of tris) bed.tri([r[t[0]][0], r[t[0]][1], BED_Z], [r[t[1]][0], r[t[1]][1], BED_Z], [r[t[2]][0], r[t[2]][1], BED_Z], [0, 0, 1], BALLAST);
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], b = r[(i + 1) % r.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 0.05) continue;
+        const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L;
+        bed.face([[a[0], a[1], -0.05], [b[0], b[1], -0.05], [b[0], b[1], BED_Z], [a[0], a[1], BED_Z]], [nx, ny, 0.6], SHOULDER);
+      }
+    }
+    const tracks = (c.railTracks ?? []).map((l) => l.map((q) => this.project(q))).filter((l) => l.length >= 2);
+    const walk = (line: P2[], step: number, fn: (x: number, y: number, ux: number, uy: number, d: number) => void, start = 0) => {
+      let carry = start, d = 0;
+      for (let i = 0; i + 1 < line.length; i++) {
+        const a = line[i], b = line[i + 1];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 1e-6) continue;
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+        let t = carry;
+        for (; t < L; t += step) fn(a[0] + ux * t, a[1] + uy * t, ux, uy, d + t);
+        carry = t - L; d += L;
+      }
+    };
+    const slab = (B: Buf, x: number, y: number, ux: number, uy: number, along: number, across: number, z0: number, z1: number, col: number[]) => {
+      const vx = -uy, vy = ux;
+      const P = (s: number, q: number, z: number) => [x + ux * s + vx * q, y + uy * s + vy * q, z];
+      const c4 = [[-along, -across], [along, -across], [along, across], [-along, across]];
+      B.face(c4.map(([s, q]) => P(s, q, z1)), [0, 0, 1], col);
+      for (let i = 0; i < 4; i++) {
+        const [s0, q0] = c4[i], [s1, q1] = c4[(i + 1) % 4];
+        B.face([P(s0, q0, z0), P(s1, q1, z0), P(s1, q1, z1), P(s0, q0, z1)], [ux * (s0 + s1) + vx * (q0 + q1), uy * (s0 + s1) + vy * (q0 + q1), 0], col);
+      }
+    };
+    for (const line of tracks) {
+      walk(line, 0.65, (x, y, ux, uy) => slab(wood, x, y, ux, uy, 0.12, 1.3, BED_Z - 0.02, BED_Z + 0.14, SLEEPER));
+      for (const g of [-0.72, 0.72]) {
+        for (let i = 0; i + 1 < line.length; i++) {
+          const a = line[i], b = line[i + 1];
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          if (L < 1e-6) continue;
+          const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+          slab(steel, (a[0] + b[0]) / 2 - uy * g, (a[1] + b[1]) / 2 + ux * g, ux, uy, L / 2 + 0.02, 0.04, BED_Z + 0.14, BED_Z + 0.3, RAIL);
+        }
+      }
+    }
+    // catenary, keyed off the first track: masts outside both tracks, an arm
+    // across, and a contact wire six metres up over each track
+    if (tracks.length >= 2) {
+      const [t0, t1] = tracks;
+      const sideOf = (x: number, y: number, ux: number, uy: number) => {
+        // which side of t0 the other track lies on
+        let best = Infinity, sx = 0;
+        for (const q of t1) { const dd = Math.hypot(q[0] - x, q[1] - y); if (dd < best) { best = dd; sx = Math.sign(-uy * (q[0] - x) + ux * (q[1] - y)) || 1; } }
+        return sx;
+      };
+      walk(t0, 50, (x, y, ux, uy) => {
+        const sgn = sideOf(x, y, ux, uy);
+        const vx = -uy * sgn, vy = ux * sgn;
+        for (const off of [-3.4, 4.4 + 3.4]) {
+          const mx = x + vx * off, my = y + vy * off;
+          slab(steel, mx, my, ux, uy, 0.13, 0.13, BED_Z, 6.8, MAST);
+        }
+        const arm0 = [x - vx * 3.4, y - vy * 3.4], arm1 = [x + vx * 7.8, y + vy * 7.8];
+        const ax = (arm0[0] + arm1[0]) / 2, ay = (arm0[1] + arm1[1]) / 2;
+        slab(steel, ax, ay, vx, vy, 5.6, 0.08, 6.45, 6.65, MAST);
+      }, 20);
+      for (const line of tracks) {
+        for (let i = 0; i + 1 < line.length; i++) {
+          const a = line[i], b = line[i + 1];
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          if (L < 1e-6) continue;
+          const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+          slab(steel, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, ux, uy, L / 2 + 0.02, 0.02, 6.0, 6.05, MAST);
+        }
+      }
+    }
+    const mk = (b: Buf, color: number, rough: number, metal = 0) => {
+      if (!b.count) return;
+      const m = new THREE.Mesh(b.geometry(), new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, vertexColors: true, envMapIntensity: 0.35 }));
+      m.castShadow = m.receiveShadow = true;
+      this.scene.add(m);
+    };
+    mk(bed, 0xffffff, 0.98);
+    mk(wood, 0xffffff, 0.9);
+    mk(steel, 0xffffff, 0.45, 0.55);
+  }
+
   private buildBridges() {
-    const list = (this.ctx as { bridges?: { ring: P2[]; deg: number }[] }).bridges ?? [];
+    const list = (this.ctx as { bridges?: { ring: P2[]; deg: number; type?: string }[] }).bridges ?? [];
     if (!list.length) return;
-    const water = new Buf(), stone = new Buf();
-    const wc = [1, 1, 1], sc = [1, 1, 1];
+    const water = new Buf(), body = new Buf();
+    const wc = [1, 1, 1];
+    // A BRIDGE CARRIES THE STREET, IT DOES NOT SIT ON IT. The deck used to be
+    // a pale stone slab a metre above the road with chest-high walls, which
+    // read as a plinth dropped in the river. Now the deck is flush with the
+    // street and paved like it — a dark carriageway between two footways —
+    // with a dressed-stone fascia and cornice on each face, slim parapets
+    // with pilasters, and piers standing in the water on the longer spans.
+    // A railway bridge is a steel through-girder carrying its two tracks.
+    const STONE = [0.74, 0.7, 0.62], CORNICE = [0.82, 0.78, 0.7], ROAD = [0.3, 0.3, 0.32], WALK = [0.64, 0.62, 0.58];
+    const STEEL = [0.24, 0.27, 0.3];
+    const WZ = RealCityLayer.WATER_Z;
     for (const br of list) {
       let r = br.ring.map((q) => this.project(q));
       if (r.length < 3) continue;
       if (ringArea(r) < 0) r = r.slice().reverse();
       let tris: number[][] = [];
       try { tris = THREE.ShapeUtils.triangulateShape(r.map(([x, y]) => new THREE.Vector2(x, y)), []); } catch { continue; }
-      const WZ = RealCityLayer.WATER_Z;
+      // flood the gap the generator left in the channel
       for (const t of tris) water.tri([r[t[0]][0], r[t[0]][1], WZ], [r[t[1]][0], r[t[1]][1], WZ], [r[t[2]][0], r[t[2]][1], WZ], [0, 0, 1], wc);
-      const deck0 = 0.55, deck1 = 1.05, par = 1.9;
-      for (const t of tris) {
-        stone.tri([r[t[0]][0], r[t[0]][1], deck1], [r[t[1]][0], r[t[1]][1], deck1], [r[t[2]][0], r[t[2]][1], deck1], [0, 0, 1], sc);
-        stone.tri([r[t[0]][0], r[t[0]][1], deck0], [r[t[2]][0], r[t[2]][1], deck0], [r[t[1]][0], r[t[1]][1], deck0], [0, 0, -1], sc);
-      }
-      // deg is the creek's flow (maths convention); the deck and its
-      // parapets run ACROSS the flow
+      // the frame: u runs down the flow (the bridge's width), v across it
+      // (the bridge's length); half-extents measured off the ring itself
       const ft = (br.deg * Math.PI) / 180;
-      const ax = -Math.sin(ft), ay = Math.cos(ft);
-      for (let i = 0; i < r.length; i++) {
-        const a = r[i], b = r[(i + 1) % r.length];
-        const dx = b[0] - a[0], dy = b[1] - a[1];
-        const L = Math.hypot(dx, dy);
-        if (L < 0.2) continue;
-        const nx = dy / L, ny = -dx / L;
-        // the deck's edge face, all the way round
-        stone.quad([a[0], a[1], deck0], [b[0], b[1], deck0], [b[0], b[1], deck1], [a[0], a[1], deck1], [nx, ny, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], sc);
-        // a parapet only where the edge runs along the bridge
-        if (Math.abs((dx * ax + dy * ay) / L) > 0.7) {
-          const ix = -nx * 0.35, iy = -ny * 0.35;
-          stone.quad([a[0], a[1], deck1], [b[0], b[1], deck1], [b[0], b[1], par], [a[0], a[1], par], [nx, ny, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], sc);
-          stone.quad([b[0] + ix, b[1] + iy, deck1], [a[0] + ix, a[1] + iy, deck1], [a[0] + ix, a[1] + iy, par], [b[0] + ix, b[1] + iy, par], [-nx, -ny, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], sc);
-          stone.quad([a[0], a[1], par], [b[0], b[1], par], [b[0] + ix, b[1] + iy, par], [a[0] + ix, a[1] + iy, par], [0, 0, 1], [[0, 0], [1, 0], [1, 1], [0, 1]], sc);
+      const u = [Math.cos(ft), Math.sin(ft)], v = [-Math.sin(ft), Math.cos(ft)];
+      let cx = 0, cy = 0;
+      for (const q of r) { cx += q[0]; cy += q[1]; }
+      cx /= r.length; cy /= r.length;
+      let hw = 0, hl = 0;
+      for (const q of r) {
+        hw = Math.max(hw, Math.abs((q[0] - cx) * u[0] + (q[1] - cy) * u[1]));
+        hl = Math.max(hl, Math.abs((q[0] - cx) * v[0] + (q[1] - cy) * v[1]));
+      }
+      if (hw < 1 || hl < 1) continue;
+      const P = (su: number, sv: number, z: number) => [cx + u[0] * su + v[0] * sv, cy + u[1] * su + v[1] * sv, z];
+      /** an oriented box from (u0..u1, v0..v1, z0..z1) */
+      const box = (u0: number, u1: number, v0: number, v1: number, z0: number, z1: number, col: number[], top = true) => {
+        const c = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+        if (top) body.face(c.map(([a, b]) => P(a, b, z1)), [0, 0, 1], col);
+        body.face(c.map(([a, b]) => P(a, b, z0)), [0, 0, -1], col);
+        for (let i = 0; i < 4; i++) {
+          const [a0, b0] = c[i], [a1, b1] = c[(i + 1) % 4];
+          const mu = (a0 + a1) / 2 - (u0 + u1) / 2, mv = (b0 + b1) / 2 - (v0 + v1) / 2;
+          const n = [u[0] * mu + v[0] * mv, u[1] * mu + v[1] * mv, 0];
+          body.face([P(a0, b0, z0), P(a1, b1, z0), P(a1, b1, z1), P(a0, b0, z1)], n, col);
+        }
+      };
+      const rail = br.type === "rail";
+      const top = 0.12;                          // flush with the footways either side
+      if (rail) {
+        // ballast trough between two plate girders, two tracks on top
+        // the ballast and the track come from buildRailway; this is the
+        // steel: a trough under the bed and two plate girders with
+        // stiffeners every two metres
+        box(-hw, hw, -hl, hl, -0.8, 0.2, STEEL);
+        for (const s of [-1, 1]) {
+          const g0 = s < 0 ? -hw - 0.5 : hw, g1 = s < 0 ? -hw : hw + 0.5;
+          box(g0, g1, -hl, hl, -0.95, 1.7, STEEL);
+          for (let sv = -hl + 1; sv < hl - 0.5; sv += 2) box(g0 + s * 0.5, g1 + s * 0.12, sv - 0.1, sv + 0.1, -0.9, 1.6, STEEL);
+        }
+      } else {
+        const fw = Math.min(2.6, Math.max(1.4, hw * 0.18));     // footway width
+        const ph = 0.32;                                         // parapet thickness
+        box(-hw + fw, hw - fw, -hl, hl, -0.5, top - 0.02, ROAD);
+        for (const s of [-1, 1]) {
+          const o0 = s < 0 ? -hw : hw - fw, o1 = s < 0 ? -hw + fw : hw;
+          box(o0, o1, -hl, hl, -0.5, top + 0.06, WALK);
+          // fascia and cornice on the outer face
+          const f0 = s < 0 ? -hw - 0.15 : hw - 0.05, f1 = s < 0 ? -hw + 0.05 : hw + 0.15;
+          box(f0, f1, -hl, hl, -0.75, top - 0.05, STONE);
+          box(s < 0 ? -hw - 0.28 : hw - 0.1, s < 0 ? -hw + 0.1 : hw + 0.28, -hl, hl, top - 0.12, top + 0.02, CORNICE);
+          // a balustrade, not a wall: a low plinth, balusters, a handrail,
+          // and a pier at both ends and every eight metres
+          const p0 = s < 0 ? -hw : hw - ph, p1 = s < 0 ? -hw + ph : hw;
+          box(p0, p1, -hl, hl, top + 0.06, top + 0.24, STONE);
+          box(p0 - 0.04, p1 + 0.04, -hl, hl, top + 0.86, top + 0.96, CORNICE);
+          for (let sv = -hl + 0.5; sv < hl - 0.3; sv += 0.55) {
+            box(p0 + 0.08, p1 - 0.08, sv - 0.07, sv + 0.07, top + 0.24, top + 0.86, CORNICE, false);
+          }
+          const n = Math.max(2, Math.round((2 * hl) / 8));
+          for (let k = 0; k <= n; k++) {
+            const sv = -hl + (2 * hl * k) / n;
+            box(p0 - 0.06, p1 + 0.06, Math.max(-hl, sv - 0.32), Math.min(hl, sv + 0.32), top + 0.06, top + 1.1, STONE);
+          }
+        }
+      }
+      // piers in the water on a long span, with cutwater noses down the flow
+      const span = 2 * hl;
+      const nPier = span > 34 ? Math.max(1, Math.round(span / 26) - 1) : 0;
+      for (let k = 1; k <= nPier; k++) {
+        const sv = -hl + (span * k) / (nPier + 1);
+        const pw = rail ? 1.6 : 1.9;
+        box(-hw + 0.4, hw - 0.4, sv - pw / 2, sv + pw / 2, WZ - 0.3, rail ? -0.7 : -0.75, rail ? STEEL : STONE, false);
+        for (const s of [-1, 1]) {
+          const tip = P(s * (hw + 1.2), sv, WZ - 0.3), tipT = P(s * (hw + 1.2), sv, -0.95);
+          const a = P(s * (hw - 0.4), sv - pw / 2, WZ - 0.3), aT = P(s * (hw - 0.4), sv - pw / 2, -0.95);
+          const b = P(s * (hw - 0.4), sv + pw / 2, WZ - 0.3), bT = P(s * (hw - 0.4), sv + pw / 2, -0.95);
+          body.face([a, tip, tipT, aT], [u[0] * s - v[0], u[1] * s - v[1], 0], rail ? STEEL : STONE);
+          body.face([tip, b, bT, tipT], [u[0] * s + v[0], u[1] * s + v[1], 0], rail ? STEEL : STONE);
+          body.face([aT, tipT, bT], [0, 0, 1], rail ? STEEL : STONE);
         }
       }
     }
     const wm = new THREE.Mesh(water.geometry(), new THREE.MeshStandardMaterial({ color: 0x2f6070, roughness: 0.12, metalness: 0.05, vertexColors: true, envMapIntensity: 1.2, normalMap: this.waveTex(0.25), normalScale: new THREE.Vector2(0.3, 0.3), envMap: this.skyEnv }));
     wm.receiveShadow = true; wm.renderOrder = -4;
-    const sm = new THREE.Mesh(stone.geometry(), new THREE.MeshStandardMaterial({ color: 0xb5ab98, roughness: 0.8, vertexColors: true, envMapIntensity: 0.3 }));
+    const sm = new THREE.Mesh(body.geometry(), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, vertexColors: true, envMapIntensity: 0.3 }));
     sm.castShadow = sm.receiveShadow = true;
     this.scene.add(wm, sm);
   }
@@ -4274,6 +4445,12 @@ export class RealCityLayer {
     const bld = new PolyGrid(30), walk = new PolyGrid(40), park = new PolyGrid(60), open = new PolyGrid(60);
     for (const pg of (this.ctx as { opens?: P2[][][] }).opens ?? []) {
       if (pg[0]?.length >= 3) open.add(pg[0].map((q) => this.project(q)), pg.slice(1).map((h) => h.map((q) => this.project(q))));
+    }
+    // an embanked river's promenade is open ground a tree may stand on; it is
+    // only indexed, never drawn (MapLibre paints it, and its ring covers the
+    // water too, which the channel draws on top)
+    for (const r of (this.ctx as { embankments?: P2[][] }).embankments ?? []) {
+      if (r.length >= 3) open.add(r.map((q) => this.project(q)), []);
     }
     for (const v of this.volumes) {
       if (v.d || v.k || !v.b || v.z0 > 0.5) continue;

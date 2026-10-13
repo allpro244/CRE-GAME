@@ -92,7 +92,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     const island = d.island;
     setD({
       ...d,
-      size: isWritten ? pick(extentList()).id : pick(sizes).id,
+      size: isWritten ? pick(extentList(d.island)).id : pick(sizes).id,
       dev: pick(devs).id,
       cash0: pick(START_CASH_CHOICES),
       field: pick(FIELDS).id,
@@ -141,7 +141,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
 
   const islandWord = cityName(d.island, d.seed) || cities.find((c) => c.id === d.island)?.name || "the island";
   const firmPlaceholder = generateFirmName(d.seed).name;
-  const sizeName = isWritten ? extentList().find((e) => e.id === d.size)?.name : sizes.find((s) => s.id === d.size)?.name;
+  const sizeName = isWritten ? extentList(d.island).find((e) => e.id === d.size)?.name : sizes.find((s) => s.id === d.size)?.name;
   const devName = devs.find((x) => x.id === d.dev)?.name;
   const opening = d.sandbox ? SANDBOX_CASH : d.cash0;
 
@@ -207,9 +207,9 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                 {cities.map((c) => opt(c.id === d.island, () => pickIsland(c.id), c.name, c.tagline, c.id))}
               </div>
               <div className="start-col">
-                <div className="start-col-head">{isWritten ? "how far uptown" : "how big"}</div>
+                <div className="start-col-head">{isWritten ? (d.island === "manhattan" ? "how far uptown" : "extent") : "how big"}</div>
                 {isWritten
-                  ? extentList().map((e) => opt(e.id === d.size, () => up({ size: e.id }), e.name, e.note, e.id))
+                  ? extentList(d.island).map((e) => opt(e.id === d.size, () => up({ size: e.id }), e.name, e.note, e.id))
                   : sizes.map((s) => opt(s.id === d.size, () => up({ size: s.id }), <>{s.name}<span className="start-opt-lots"> · about {lotsAt(s.k)} lots</span></>, s.note, s.id))}
               </div>
               <div className="start-col">

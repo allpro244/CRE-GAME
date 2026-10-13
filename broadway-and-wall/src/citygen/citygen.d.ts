@@ -41,6 +41,8 @@ declare module "@/citygen/index.mjs" {
   export function cityList(): { id: string; name: string; tagline: string; extents?: boolean }[];
   /** The id of the written-down city. */
   export const MANHATTAN: string;
+  /** The id of the designed city, Twinmarch. */
+  export const TWINMARCH: string;
   /**
    * HOW FAR UPTOWN THE MAP GOES. A written-down city cannot take a size — see
    * makeCity — so this is what fills the size slot for Manhattan, and it is a
@@ -48,7 +50,8 @@ declare module "@/citygen/index.mjs" {
    */
   export const EXTENTS: Record<string, { at: [number, number]; name: string; note: string }>;
   export const DEFAULT_EXTENT: string;
-  export function extentList(): { id: string; name: string; note: string }[];
+  export function extentList(cityId?: string): { id: string; name: string; note: string }[];
+  export function defaultExtent(cityId?: string): string;
   /**
    * What the island at (id, seed) is called, without building it. Constant for
    * the authored islands; for the procedural one the name comes out of the seed

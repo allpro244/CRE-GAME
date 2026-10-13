@@ -1404,6 +1404,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private meadowParkMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
   private bloomMat = new THREE.MeshStandardMaterial({ roughness: 0.9, transparent: true, alphaTest: 0.4, depthWrite: false });
   private bloomMesh: THREE.Mesh | null = null;
+  /** the pools of light the park lamps throw on the walks after dark */
+  private lampPools: P2[] = [];
+  private poolMat: THREE.MeshBasicMaterial | null = null;
   private sprayMat = new THREE.MeshStandardMaterial({ color: 0xeaf4f8, roughness: 0.15, transparent: true, opacity: 0.55, depthWrite: false, envMapIntensity: 1.2 });
   private lampMat = new THREE.MeshStandardMaterial({ color: 0x2b3033, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(1.0, 0.72, 0.38), emissiveIntensity: 0 });
   private meshes = new Map<string, THREE.Mesh>();
@@ -6243,7 +6246,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           return;
         }
       };
-      if (p.area > 20000) place("tennis", 19, 8.9, 17.9);
+      if (p.area > 11000) place("tennis", 19, 8.9, 17.9);
       if (p.area > 14000) place("bandstand", 7.5);
       if (p.area > 6000) place("playset", 9);
       if (p.area > 9000) place("kiosk", 3.5);
@@ -6328,6 +6331,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           const x = a[0] + ux * t + nx * off * side, y = a[1] + uy * t + ny * off * side;
           if (nearEnd(x, y, 2) || inPond(x, y) || !inRingPk(x, y, p.inner)) continue;
           this.putInst("plpost", x, y, 0.05, 1, Math.atan2(uy, ux)); this.putInst("plhead", x, y, 0.05, 1, 0);
+          this.lampPools.push([x, y]);
         }
         // strollers: a few per walk, slower than the street's commuters
         const n = Math.floor(L / 30) + (rnd() < 0.5 ? 1 : 0);
@@ -6626,6 +6630,21 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       }
     }
     await this.dressParks(rnd, COAT, BED);
+    if (this.lampPools.length) {
+      const { c, g } = makeCanvas(64, 64);
+      const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.35, "rgba(255,255,255,0.55)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+      const tex = new THREE.CanvasTexture(c);
+      this.poolMat = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(1.0, 0.72, 0.4), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+      const pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(11, 11), this.poolMat, this.lampPools.length);
+      const m4 = new THREE.Matrix4();
+      this.lampPools.forEach(([x, y], i) => pools.setMatrixAt(i, m4.makeTranslation(x, y, 0.1)));
+      pools.frustumCulled = false; pools.renderOrder = 1;
+      hazed.add(this.poolMat);   // additive light: hazing it would add the haze colour, not fade it
+      this.scene.add(pools);
+      this.applyLight();
+    }
     this.flushInst();
     const fleet = (kind: string, list: Mover[], z: number) => {
       if (!list.length) return;
@@ -7491,6 +7510,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // lit rooms after dark
     for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.4;
     this.lampMat.emissiveIntensity = night * 2.2;
+    if (this.poolMat) { this.poolMat.opacity = night * 0.42; this.poolMat.visible = night > 0.02; }
     // snow lies on the roofs
     // tar and gravel is dark (albedo ~0.2); snow lifts it toward white
     // a dusting, not a blanket: January opens every campaign

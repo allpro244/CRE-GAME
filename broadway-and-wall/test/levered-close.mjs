@@ -51,7 +51,7 @@ check(!E.sponsorStanding(marked).institutional, "the marked sponsor is shut out 
 
 const products = E.PRODUCTS.filter((p) => !p.mezz);
 for (const [label, s0] of [["clean sponsor", g], ["shut-out sponsor", marked]]) {
-  let closes = 0, levered = 0, mismatched = 0, pumped = 0, refusedAfterQuote = 0, worst = 0;
+  let closes = 0, levered = 0, mismatched = 0, pumped = 0, refusedAfterQuote = 0, worst = 0, zeroQuoteClosed = 0;
   const listings = s0.listings.slice(0, 40);
   for (const l of listings) {
     const rec = E.resolveRec(parcels, s0, l.bbl);
@@ -62,6 +62,9 @@ for (const [label, s0] of [["clean sponsor", g], ["shut-out sponsor", marked]]) 
         const q = E.buyQuote(s0, parcels, l.bbl, l.ask, p.id, lev);
         const r = E.executePurchase(s0, parcels, l.bbl, l.ask, p.id, false, lev);
         if (r.err) { if (q.principal > 0) refusedAfterQuote++; continue; }
+        // A desk that quoted nothing must refuse at the table, not close the
+        // deal all cash under its own name (actions.ts executePurchase).
+        if (!(q.principal > 0)) { zeroQuoteClosed++; continue; }
         closes++;
         const written = r.s.holdings[l.bbl]?.loan?.principal ?? 0;
         if (written > 0) levered++;
@@ -87,7 +90,12 @@ for (const [label, s0] of [["clean sponsor", g], ["shut-out sponsor", marked]]) 
     }
   }
   console.log(`  ${label}: ${closes} closings across ${listings.length} listings; ${levered} wrote a loan; ${refusedAfterQuote} refused at the table after a quote`);
-  check(closes > 40, `${label}: the harness closed deals (${closes}) — a test that closes nothing proves nothing`);
+  // Every closing counted here wrote a loan. The floor used to be 40 because
+  // closings on a desk that quoted nothing went through all cash and were
+  // counted; those are refused now, and the shut-out sponsor only has the
+  // debt fund and land money left to close on.
+  check(closes > 5, `${label}: the harness closed deals (${closes}) — a test that closes nothing proves nothing`);
+  check(zeroQuoteClosed === 0, `${label}: no desk that quoted nothing closed the deal all cash under its name (${zeroQuoteClosed})`);
   check(levered > 0, `${label}: some closings were levered (${levered})`);
   check(mismatched === 0, `${label}: every quoted principal is the principal written at close (${mismatched} mismatches)`);
   check(pumped === 0, `${label}: no closing raised net worth by more than 2% of price (${pumped}; worst ${M(worst)})`);

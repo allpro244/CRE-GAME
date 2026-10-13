@@ -106,7 +106,7 @@ const BALC_FAMS = new Set(["modern", "fibercement", "metalpanel", "whitebrick", 
  * every canal a flat royal blue next to a turquoise sea).
  */
 const CANAL_WATER = 0x2c5f5c;
-const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "person", "statue"];
+const FAR_PROPS = ["lamp", "car", "lotcar", "suv", "lotsuv", "van", "taxi", "headstone", "reeds", "lily", "sitter", "lawnsitter", "blanket", "coping", "drinking", "rock", "pbench", "person", "statue", "duck"];
 /** taxi yellow and transit-authority blue-white: the two vehicle colours that are a fact, not a draw */
 const TAXI = [0.95, 0.72, 0.12], BUS = [0.82, 0.84, 0.86];
 /** Shop trades: canopy and fascia colours. Looks only. */
@@ -6189,10 +6189,12 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       this.scene.add(m);
     }
     // a pond the turf could not be cut round is laid again over it
-    const over = this.parkInfo().filter((p) => p.pondOver).flatMap((p) => p.ponds);
+    // A POND IS DEEP AND STILL: its own darker, greener water with the sky in
+    // it, rather than the pale map fill showing through the turf's hole
+    const over = this.parkInfo().flatMap((p) => p.ponds);
     if (over.length) {
       const pm = new THREE.Mesh(new THREE.ShapeGeometry(over.map((r) => new THREE.Shape(r.map(([x, y]) => new THREE.Vector2(x, y))))), new THREE.MeshStandardMaterial({
-        color: 0x2c5a6e, roughness: 0.1, envMapIntensity: 1.5, normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.7, 0.7), envMap: this.skyEnv,
+        color: 0x2f5552, roughness: 0.08, envMapIntensity: 1.4, normalMap: this.waveTex(1), normalScale: new THREE.Vector2(0.35, 0.35), envMap: this.skyEnv,
       }));
       pm.position.z = 0.055; pm.receiveShadow = true;
       this.scene.add(pm);
@@ -6202,6 +6204,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   /** Before the trees go in: where each park's bandstand, playground and kiosk will stand, so no tree is planted through them. */
   private async planParks(rnd: () => number) {
     this.parkReserves = [];
+    const biggest = this.parkInfo().filter((q) => q.flavour === "park").reduce<ParkInfo | null>((b, q) => (!b || q.area > b.area ? q : b), null);
     const meadows: P2[][] = [];
     for (const p of this.parkInfo()) {
       await this.breathe();
@@ -6247,7 +6250,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         }
       };
       if (p.area > 11000) place("tennis", 19, 8.9, 17.9);
-      if (p.area > 14000) place("bandstand", 7.5);
+      // the generator already stands a bandstand 15 m east of the biggest park's middle
+      if (p === biggest) this.parkReserves.push({ x: p.cx + 15, y: p.cy, r: 7.5 });
+      else if (p.area > 14000) place("bandstand", 7.5);
       if (p.area > 6000) place("playset", 9);
       if (p.area > 9000) place("kiosk", 3.5);
       // a statue or two on the lawn by a walk, a memorial to somebody the town once thought mattered
@@ -6362,11 +6367,17 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
             else if (r < 0.37) this.putInst("rock", a[0] + ux * t + ox * 0.7, a[1] + uy * t + oy * 0.7, 0.05, 0.6 + rnd() * 0.6, rnd() * 6.28, "", [0.95 + rnd() * 0.1, 0.95, 0.92]);
           }
         }
+        // ducks dabbling about the water
+        for (let j = 0, nd = 3 + Math.floor(rnd() * 5); j < nd; j++) {
+          const v = pd[Math.floor(rnd() * pd.length)], f = 0.2 + rnd() * 0.6;
+          const x = v[0] + (px - v[0]) * f, y = v[1] + (py - v[1]) * f;
+          if (inRingPk(x, y, pd)) this.putInst("duck", x, y, 0.055, 1, rnd() * 6.28, "", rnd() < 0.5 ? [0.55, 0.45, 0.32] : [0.75, 0.74, 0.72]);
+        }
         const nl = 2 + Math.floor(rnd() * 3);
         for (let j = 0; j < nl; j++) {
           const v = pd[Math.floor(rnd() * pd.length)], f = 0.12 + rnd() * 0.18;
           const x = v[0] + (px - v[0]) * f, y = v[1] + (py - v[1]) * f;
-          if (inRingPk(x, y, pd)) this.putInst("lily", x, y, p.pondOver ? 0.06 : 0.03, 0.9 + rnd() * 0.4, rnd() * 6.28);
+          if (inRingPk(x, y, pd)) this.putInst("lily", x, y, 0.06, 0.9 + rnd() * 0.4, rnd() * 6.28);
         }
       }
       for (const f of p.features) this.putInst(f.kind, f.x, f.y, 0.05, 1, f.rot);
@@ -7510,7 +7521,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // lit rooms after dark
     for (const f of Object.values(this.families)) f.mat.emissiveIntensity = night * 1.4;
     this.lampMat.emissiveIntensity = night * 2.2;
-    if (this.poolMat) { this.poolMat.opacity = night * 0.42; this.poolMat.visible = night > 0.02; }
+    if (this.poolMat) { this.poolMat.opacity = night * 0.6; this.poolMat.visible = night > 0.02; }
     // snow lies on the roofs
     // tar and gravel is dark (albedo ~0.2); snow lifts it toward white
     // a dusting, not a blanket: January opens every campaign

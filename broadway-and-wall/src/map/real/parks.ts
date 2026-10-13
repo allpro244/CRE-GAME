@@ -378,6 +378,8 @@ export function parkGeom(kind: string): { g: THREE.BufferGeometry; mat: "vc" | "
       [new THREE.CylinderGeometry(0.55, 2.2, 2.75, 14, 1, true).rotateX(Math.PI / 2).translate(0, 0, 3.85), [1, 1, 1]], [new THREE.CylinderGeometry(2.3, 4.4, 1.7, 18, 1, true).rotateX(Math.PI / 2).translate(0, 0, 1.4), [1, 1, 1]]]), mat: "water" };
     // a gate pier: a dressed stone pillar with a capstone and a ball finial
     case "gatepier": return { g: mc([[bx(0.75, 0.75, 2.0), [0.74, 0.71, 0.66]], [bx(0.95, 0.95, 0.18, 0, 0, 2.0), [0.66, 0.63, 0.58]], [new THREE.SphereGeometry(0.28, 10, 8).translate(0, 0, 2.45), [0.66, 0.63, 0.58]]]), mat: "vc" };
+    // a mallard on the water: body, head, bill; the body is the instance colour
+    case "duck": return { g: mc([[new THREE.SphereGeometry(0.18, 8, 6).scale(1.5, 0.9, 0.7).translate(0, 0, 0.05), [1, 1, 1]], [new THREE.SphereGeometry(0.09, 8, 6).translate(0.2, 0, 0.2), [0.16, 0.36, 0.2]], [bx(0.09, 0.05, 0.03, 0.31, 0, 0.17), [0.9, 0.72, 0.2]]]), mat: "vc", colored: true };
     case "flagpole": return { g: mc([[bx(1.6, 1.6, 0.5), STONE], [cy(0.09, 11, 0.5, 6, 0.05), WHITE], [new THREE.SphereGeometry(0.14, 6, 4).translate(0, 0, 11.6), [0.8, 0.65, 0.25]], [bx(0.02, 1.8, 1.1, 0, 0.95, 10.2), [0.7, 0.18, 0.16]]]), mat: "vc" };
   }
   return null;

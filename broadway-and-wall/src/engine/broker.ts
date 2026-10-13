@@ -110,6 +110,10 @@ export function maybeEarlyLook(s: GameState, li: Listing, address: string) {
  */
 export function tickEarlyLooks(s: GameState) {
   for (const li of s.listings) {
+    // A firm's quiet call lapses into an ordinary distress listing.
+    if (li.quietFrom && li.earlyUntilM !== undefined && s.month >= li.earlyUntilM) {
+      delete li.quietFrom; delete li.earlyUntilM; continue;
+    }
     if (!li.via || li.earlyUntilM === undefined || s.month < li.earlyUntilM) continue;
     if (s.talks?.[li.bbl] || s.holdings[li.bbl]) { delete li.via; delete li.earlyUntilM; continue; }
     const rel = s.brokerRel?.[li.via];

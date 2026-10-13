@@ -311,6 +311,16 @@ fixed in #231; the sweep is clean since.
   shore band corners in citygen was tried first, on the guess that the bands
   were the teeth: parcels hashed identically on six towns, and the teeth
   stayed — reverted.)
+- **Round 38** — the occlusion's stepped rings. Every tree crown and
+  building edge on the ground wore a blocky, banded dark ring (`?post=aoview`
+  shows it plainly). Two causes: the distance pass ran at half resolution
+  with nearest filtering, so along every silhouette a frame pixel read the
+  distance of a 2x2 block that belonged to another surface; and only six of
+  the twelve sample pairs were used, each worth a fixed sixth, so the shade
+  came in six hard steps. Now the distance pass is full resolution (radius
+  doubled in its texels, the same reach on screen) and all twelve pairs are
+  taken. A per-pixel rotation of the pattern was tried and dropped: it hid
+  the steps but left a grain on every flat plaza. High only, as before.
 - **Round 17 (not merged)** — flat cloud sheets a few hundred metres up, seen
   only from the island view. Dropped: a flat sprite cannot be a volumetric
   cloud, and a lone hard-edged one read as an object, not weather. Branch

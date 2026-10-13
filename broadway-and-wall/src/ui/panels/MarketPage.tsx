@@ -712,7 +712,7 @@ export function MarketPage() {
                     <td>
                       {"earlyUntilM" in li && li.earlyUntilM !== undefined && game.month < li.earlyUntilM && (
                         <span className="chip chip-distress" style={{ marginRight: 6 }}
-                          title={`${game.brokerRel?.[li.via ?? ""]?.name ?? "A house broker"} rang you before the tape — yours alone until ${li.earlyUntilM - game.month} month${li.earlyUntilM - game.month === 1 ? "" : "s"} from now`}>
+                          title={`${li.quietFrom ?? game.brokerRel?.[li.via ?? ""]?.name ?? "A house broker"} rang you before the tape — yours alone until ${li.earlyUntilM - game.month} month${li.earlyUntilM - game.month === 1 ? "" : "s"} from now`}>
                           FIRST LOOK
                         </span>
                       )}
@@ -773,7 +773,7 @@ export function MarketPage() {
                       {rec.address}
                       {"earlyUntilM" in li && li.earlyUntilM !== undefined && game.month < li.earlyUntilM && (
                         <span className="dim">
-                          {" "}· {game.brokerRel?.[li.via ?? ""]?.name ?? "house"} · yours for {li.earlyUntilM - game.month} more month{li.earlyUntilM - game.month === 1 ? "" : "s"}
+                          {" "}· {li.quietFrom ?? game.brokerRel?.[li.via ?? ""]?.name ?? "house"} · yours for {li.earlyUntilM - game.month} more month{li.earlyUntilM - game.month === 1 ? "" : "s"}
                         </span>
                       )}
                       <span className="dim row-open"> · Open →</span>

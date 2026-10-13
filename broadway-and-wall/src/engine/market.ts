@@ -1592,6 +1592,16 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     econ.wageIdx = (econ.wageIdx ?? 1) * w;
     econ.outputIdx = (econ.outputIdx ?? 1) * w;
     econ.wage0 = (econ.wage0 ?? 1) * w;
+    // THE OPENING COST OF LIVING AGAINST THE NATION (2026-10-13), struck with
+    // the same weights the local CPI moves by (SHELTER_W 0.33 on housing,
+    // SERVICES_W 0.25 on local pay, the rest national goods): this town's
+    // opening flat rent and pay against the national reference, both net of
+    // the price level. Stored so real pay against the nation can be read as
+    // a level, not only as a change since the opening. Read by the display;
+    // nothing in the simulation uses it.
+    const shelterGap = econ.rentIdx.multifamily / Math.max(1e-6, RENT_BASE.multifamily * P) - 1;
+    const servicesGap = econ.wage0 / Math.max(1e-6, P) - 1;
+    econ.col0 = +(1 + 0.33 * shelterGap + 0.25 * servicesGap).toFixed(4);
   }
   // THE TOWN OPENS MID-CYCLE, SO ITS CONCESSIONS DO TOO.
   //

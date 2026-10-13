@@ -212,6 +212,12 @@ export function CityFigures() {
   // reference); the national path then carries it forward in this town's units.
   const payVsNation = (w0 / Math.max(1e-6, e.priceLevel ?? 1) * (e.wageIdx ?? w0) / Math.max(1e-6, natW) - 1) * 100;
   const realVsNationChg = (real(e.wageIdx, e.cpi) / Math.max(1e-6, real(natW, e.natCpi)) - 1) * 100;
+  // ...and as a LEVEL where the save carries the opening cost of living
+  // against the nation (`col0`, struck at the opening with the CPI's own
+  // weights): cost of living today = col0 x local prices / national prices,
+  // and real pay against the nation = pay against the nation / that.
+  const col = e.col0 !== undefined ? e.col0 * (e.cpi ?? 1) / Math.max(1e-6, e.natCpi ?? e.cpi ?? 1) : undefined;
+  const realVsNation = col !== undefined ? ((1 + payVsNation / 100) / col - 1) * 100 : undefined;
   return (
     <>
       <div className="page-section" style={{ marginTop: 14 }}>Where the city stands today</div>
@@ -243,8 +249,18 @@ export function CityFigures() {
           title="What a paycheque buys now against a year ago — pay is rarely cut, so a fall here is prices outrunning pay." />
         <Row k="Pay vs the nation" v={`${payVsNation >= 0 ? "+" : ""}${payVsNation.toFixed(0)}% ${payVsNation >= 0 ? "above" : "below"} national pay`}
           title="What employers here pay against the national average. Dear labour trims hiring and pushes work to other cities; cheap labour draws it in." />
-        <Row k="Real pay vs the nation" v={`${realVsNationChg >= 0 ? "+" : ""}${realVsNationChg.toFixed(0)}% since the year 2000`}
-          title="Local pay after local prices, against national pay after national prices — how much better or worse living here has got. This is what people moving in or out compare. Shown as a change since the opening: the town's starting cost of living against the nation is not recorded." />
+        {col !== undefined && (
+          <Row k="Cost of living vs the nation" v={`${col >= 1 ? "+" : ""}${((col - 1) * 100).toFixed(0)}% ${col >= 1 ? "dearer" : "cheaper"}`}
+            title="Housing, local services and goods together, weighted as the local price index weights them, against the national average." />
+        )}
+        {realVsNation !== undefined ? (
+          <Row k="Real pay vs the nation" v={`${realVsNation >= 0 ? "+" : ""}${realVsNation.toFixed(0)}% (${realVsNationChg >= 0 ? "+" : ""}${realVsNationChg.toFixed(0)} pts since 2000)`}
+            bad={realVsNation < 0}
+            title="Pay here after the cost of living here, against the national average — what people deciding whether to move in or out compare." />
+        ) : (
+          <Row k="Real pay vs the nation" v={`${realVsNationChg >= 0 ? "+" : ""}${realVsNationChg.toFixed(0)}% since the year 2000`}
+            title="Local pay after local prices, against national pay after national prices. This save predates the opening cost-of-living record, so only the change since the opening is shown." />
+        )}
         <Row k="Real output" v={`${((real((e.outputIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
         <Row k="Price level" v={`${(((e.cpi ?? 1) - 1) * 100).toFixed(0)}% of cumulative inflation`} />
       </div>

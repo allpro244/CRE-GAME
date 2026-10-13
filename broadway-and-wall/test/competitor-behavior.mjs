@@ -55,10 +55,12 @@ for (const [ci, seed] of SEEDS.entries()) {
   const prevB = {};
   const listed = (bbl) => g.listings.find((l) => l.bbl === bbl);
   let prevListings = new Map();
+  let prevNotes = new Set();
   for (const r of g.rivals) { firm(r); prevB[r.id] = new Set(r.bbls); }
   const jobsSeen = new Set((g.cityJobs ?? []).map((j) => j.bbl + ":" + j.startM));
   for (let m = 0; m < YEARS * 12; m++) {
     prevListings = new Map(g.listings.map((l) => [l.bbl, l]));
+    prevNotes = new Set([...(g.rivalNotes ?? []).map((x) => x.bbl), ...(g.notes ?? []).map((x) => x.bbl), ...(g.bankFcls ?? []).map((x) => x.bbl)]);
     g = E.advanceMonth(g, parcels, bbls, adjacency);
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
     const owner = {};
@@ -116,7 +118,9 @@ for (const [ci, seed] of SEEDS.entries()) {
         const since = r.heldSince?.[b];
         // a VOLUNTARY sale: its own non-distress listing, or a quiet sale to another firm
         const pl = prevListings.get(b);
-        const voluntary = pl ? (pl.sellerId === r.id && !pl.distress && pl.reason !== "receiver") : (!!owner[b] && owner[b] !== r.id && r.failedM === undefined && !r.stressMs);
+        // a deed taken through a note somebody else held is not a sale
+        const viaPaper = prevNotes.has(b);
+        const voluntary = !viaPaper && (pl ? (pl.sellerId === r.id && !pl.distress && pl.reason !== "receiver") : (!!owner[b] && owner[b] !== r.id && r.failedM === undefined && !r.stressMs));
         if (voluntary) f.voluntarySells = (f.voluntarySells ?? 0) + 1;
         if (f.rules.includes("neverSells") && voluntary) f.rulesBroken.push("neverSells sold");
       }

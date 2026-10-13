@@ -204,7 +204,11 @@ const holdOf = (t: number) => Math.round(12 + 2.88 * Math.max(0, Math.min(100, t
 // POSITIVE leans INTO a shut window (every reader is `+ contra × (1 − ci)`).
 // It was negative, carried over from the vulture style row, so a contrarian
 // bought less in a crunch and more in a boom — the opposite of its label.
-const contraOf = (t: number) => (t < 30 ? 1.7 * (30 - t) / 29 : 0);
+// Up to 3.4 at Cycle 0: in a crunch (credit index 0.8) a pure contrarian is
+// ~4.5x as keen as in a boom (1.2) — it does most of its buying when nobody
+// else can. (1.7 measured as barely visible: 15% of buys in tight credit
+// against 12-14% for everyone else, two towns x 50 years.)
+const contraOf = (t: number) => (t < 30 ? 3.4 * (30 - t) / 29 : 0);
 const jobsOf = (t: number, build: number) => (build <= 0 ? 0 : 1 + Math.floor(Math.max(0, Math.min(99, t)) / 25));
 
 const CLASS_TRAIT: Record<string, TraitKey> = {
@@ -266,7 +270,7 @@ export function sheetFromStyle(base: Params): Sheet {
     distress: inv(base.distressBias, R.distressBias[0], R.distressBias[1]),
     assembly: 10,
     leverage: inv(base.maxLtv, R.maxLtv[0], R.maxLtv[1]),
-    cycle: base.contra > 1 ? inv(30 - base.contra / 1.7 * 29, 0, 100) : inv(base.procyclical, R.procyclical[0], R.procyclical[1]),
+    cycle: base.contra > 1 ? inv(30 - base.contra / 3.4 * 29, 0, 100) : inv(base.procyclical, R.procyclical[0], R.procyclical[1]),
     discipline: inv(base.patience, R.patience[0], R.patience[1]),
     cashOut: inv(base.cashOut, R.cashOut[0], R.cashOut[1]),
     upkeep: inv(base.care.capex, R.capex[0], R.capex[1]),

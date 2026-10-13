@@ -42,7 +42,7 @@ import { assetValue, initialCondition, resolveRec } from "./value";
 import { isCivicLand } from "./demand";
 import { holderOf } from "./owners";
 import { ownerAnswersCall } from "./actions";
-import { livingRivals, ownerOf, rivalBuys, firmMaxPrice, styleHunt, fitOf } from "./rivals";
+import { livingRivals, ownerOf, rivalBuys, firmMaxPrice, styleHunt, fitOf, deployPressure } from "./rivals";
 import { money } from "./money";
 
 /**
@@ -85,7 +85,7 @@ export function tickOffMarketCalls(s: GameState, parcels: ParcelTable): void {
     const st = styleHunt(r);
     const cyc = Math.max(0.05, 1 + st.procyclical * (ci - 1) + st.contra * (1 - ci));
     const reach = (r.sheet?.reach ?? 50) / 100;
-    if (rng(s, "rivals") >= Math.min(0.9, CALLS_MO * st.appetite * cyc * (0.4 + 1.2 * reach))) continue;
+    if (rng(s, "rivals") >= Math.min(0.9, CALLS_MO * st.appetite * cyc * (0.4 + 1.2 * reach) * deployPressure(s, r))) continue;
     let best: { rec: ParcelRecord; max: number; fit: number; held: NonNullable<ReturnType<typeof holderOf>> } | null = null;
     const doors = Math.max(2, Math.round(SAMPLE * (0.5 + reach)));
     // A HOME-TURF FIRM KNOWS ITS OWN STREETS: that share of its calls goes to

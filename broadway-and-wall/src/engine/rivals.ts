@@ -745,7 +745,7 @@ export function claimJob(
     // Named builders should claim a real share of the pipeline. Near the
     // player is still hotter (comp + tenant risk), but far sites are no longer
     // a coin-flip against a 0.5× haircut that left them at ~3%.
-    const p = Math.min(0.95, want * ci * (nearPlayer ? 2.6 : 1.35) * suit);
+    const p = Math.min(0.95, want * ci * (nearPlayer ? 2.6 : 1.35) * suit * deployPressure(s, r));
     return rng(s, "rivals") < p;
   });
   if (!runners.length) return null;
@@ -4504,9 +4504,23 @@ export function firmMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
   const noi = inPlace(rec, s, rec.bbl, v).noi;
   if (!(noi > 0) || !(v > 0)) return 0;
   const coupon = (s.econ.indexRate + RATE_SPREAD) / 100;
-  const need = p.hurdle - 0.15;
+  const need = p.hurdle - 0.15 - 0.75 * (deployPressure(s, r) - 1);
   const reqYield = coupon + (need - underwrittenGrowthPct(s.econ)) / 100;
   return Math.min(v * 1.4, reqYield > 0.005 ? noi / reqYield : v * 1.4);
+}
+/**
+ * DRY POWDER BURNS A HOLE. A fund that raised money and has not found a
+ * building is paid to deploy it: every year it sits on an empty book its
+ * committee bends a little more — it hunts harder (up to 3x) and takes up to
+ * a point and a half less spread. Without it a small, picky fund sat on its
+ * cash for five years, began paying it back, and was wound up two years later
+ * having never made a deal (6 of ~50 firms a town, all at month 84). Returns
+ * 1 for a firm with a book, or one that was never a raised fund.
+ */
+export function deployPressure(s: GameState, r: Rival): number {
+  if (r.bbls.length || r.uncalled === undefined) return 1;
+  if ((s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) return 1;
+  return 1 + Math.min(2, Math.max(0, s.month - (r.bornM ?? 0) - 6) / 24);
 }
 /** A firm whose sheet buys dirt to hold for the town to grow into. */
 export const landBanker = (r: Rival) => !!r.sheet && r.sheet.land >= 70;
@@ -4641,7 +4655,11 @@ export function rivalBuys(
     const st = paramsOf(r);
     const builds = land && paramsOf(r).build > 0;
     const banks = land && !builds && landBanker(r);
-    const need = builds ? 0 : paramsOf(r).hurdle;
+    // A CONTRARIAN TAKES THINNER SPREADS WHEN THE WINDOW HAS SHUT — buying
+    // what nobody else can finance is its whole strategy (up to ~1.4 points
+    // at Cycle 0 in a credit crunch).
+    const contrarianBid = Math.max(0, st.contra) * shut * 2;
+    const need = builds ? 0 : paramsOf(r).hurdle - 0.75 * (deployPressure(s, r) - 1) - contrarianBid;
     // WHAT AND WHERE (COMPETITORS_PLAN.md §2): 1 for a firm with no sheet.
     const fit = fitOf(s, parcels, r, rec, isDistress);
     if (fit <= 0) continue;
@@ -4672,7 +4690,7 @@ export function rivalBuys(
     // A GRUDGE (§5): a firm that holds one leans into a listing you are
     // already talking about — inside its own price discipline, never past it.
     const spite = s.talks?.[rec.bbl] && r.sheet ? 1 + Math.min(1, Math.max(0, grudgeOf(s, r)) * 0.12) : 1;
-    const w = st.appetite * Math.max(0.05, cyc) * spite
+    const w = st.appetite * Math.max(0.05, cyc) * spite * deployPressure(s, r)
       // squared: a vulture is not a little keener on a receiver's ticket, it
       // is the room's first call (Distress 90: ~5x a firm at 30).
       * (isDistress ? st.distressBias * st.distressBias : 1)

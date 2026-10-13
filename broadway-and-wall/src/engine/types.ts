@@ -588,7 +588,7 @@ export interface Holding {
   /**
    * AUTO-LEASE: every letter at this building — new tenants, renewals,
    * expansions, and tenants' relief or give-back requests — is answered for
-   * you by the stance above and the fit-out cap below, and none of it reaches
+   * you by the stance above and the firm's concession limit, and none of it reaches
    * your desk. Fill signs what comes; Market signs near your ask and counters
    * the rest to it; Push holds out over your ask. Same terms, same commission
    * and the same tenant reactions as clicking the buttons yourself (see
@@ -598,8 +598,9 @@ export interface Holding {
   /**
    * AUTO-LEASE FIT-OUT CAP, $/sf per year of term, in OPENING-YEAR dollars
    * (read × econ.costIdx, so it tracks construction cost the way the asks do).
-   * Undefined: no cap. A letter over it is countered down to it once; a tenant
-   * who will not come under it is passed.
+   * Undefined: no cap beyond the firm's concession limit (GameState.
+   * autoConcessions), which applies on top of it. A per-building override
+   * from before the firm-wide limit existed; the panel shows it only when set.
    */
   autoTiCapPsfYr?: number;
   /**
@@ -2768,6 +2769,20 @@ export interface PlanRow {
   holdBlocks?: { floorLo: number; floorHi: number; untilM?: number }[];
 }
 
+export type AutoConcessions = "lean" | "market" | "generous";
+
+/** One letter auto-lease settled. See GameState.autoLeaseLog. */
+export interface AutoLeaseEntry {
+  m: number;
+  bbl: string;
+  v: "signed" | "passed" | "walked" | "referred";
+  /** Signed: the owner's net effective over the face market (loiMandateScore). */
+  ne?: number;
+  /** Signed: net effective over the street's own deal for the space (1.0 = a market deal). */
+  deal?: number;
+  sf?: number;
+}
+
 /** Last-closed or in-progress quarter of desk activity. See GameState.deskDigest. */
 export interface DeskDigest {
   startM: number;
@@ -3429,6 +3444,20 @@ export interface GameState {
     walked: number;
     countered: number;
   };
+  /**
+   * HOW MUCH THE TEAM MAY GIVE AWAY ON AUTO-LEASE — the firm's one standing
+   * instruction on concessions, for every building on auto. Measured against
+   * the street's package for the letter in hand (`streetPackage`): "lean"
+   * gives at most the typical fit-out and free rent, "market" anything inside
+   * the range the market asks, "generous" whatever the tenant asks (priced
+   * through net effective, the old behaviour). Absent reads as "market".
+   */
+  autoConcessions?: AutoConcessions;
+  /**
+   * WHAT AUTO-LEASE DID, last twelve months — the team's scorecard on the
+   * Leasing page. One row per letter it settled; trimmed as it is written.
+   */
+  autoLeaseLog?: AutoLeaseEntry[];
   /**
    * QUARTERLY DESK DIGEST — Phase 4. Accumulates while a plan is live;
    * rolled into `deskDigestPrev` every three months so Leasing can show

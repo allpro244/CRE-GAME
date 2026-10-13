@@ -11,7 +11,7 @@ import { openViewOn } from "@/ui/deskView";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, setSaleInstructions, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
-  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, setMinLeaseSfAll, setAutoLease, setAutoTiCap, workLeasingDesk,
+  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, setMinLeaseSfAll, setAutoLease, setAutoTiCap, setAutoConcessions, workLeasingDesk,
   patchPlanRow, setPlanAuthority as writePlanAuthority, patchPlanOptions, setPrincipalSigns as writePrincipalSigns, clearTrayAgainstPlan, type LOIAction,
 } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
@@ -406,6 +406,7 @@ interface AppState {
   autoLease: (bbl: string | string[], on: boolean) => void;
   /** Auto-lease fit-out cap, today's $/sf per lease year; undefined lifts it. */
   autoTiCap: (bbl: string, psfYr: number | undefined) => void;
+  autoConcessions: (c: import("@/engine/types").AutoConcessions) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
   /** The same minimum new lease on every building, and the house default for new ones. */
@@ -1839,8 +1840,17 @@ export const useStore = create<AppState>((set, get) => ({
     if (next === game) return;
     set({ game: next });
     toast(on
-      ? "Auto-lease on. Letters there are answered by the rent posture and fit-out cap — nothing will pop up."
+      ? "Auto-lease on. Letters there are answered by the rent posture and the team's concession limit — nothing will pop up."
       : "Auto-lease off. Those letters come to you again.");
+    void persist(next);
+  },
+
+  autoConcessions: (c) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const next = setAutoConcessions(game, parcels, c);
+    if (next === game) return;
+    set({ game: next });
     void persist(next);
   },
 

@@ -89,26 +89,55 @@ The cost is honest: more letters get countered and some tenants walk, so
 vacancy runs a point or two higher on Market and Push. Fill is unchanged by
 design: it signs whatever rent comes.
 
-## What is still wrong (not changed here — needs an economy pass)
+## Follow-up: fit-out capped by the rent (`tiBandPsfYr`)
 
-**The fit-out ask is in absolute dollars, so it is out of proportion on
-cheap buildings.** `TI_ASK` is a $/sf-per-year band (office $2.60–6.00)
-moved by the cost index but not by the rent the space commands. Its comment
-calls it "roughly 6–7% of lease value", which holds only near the rent level
-it was measured at. On a $5–7/sf building the market's own package is 1.5–4
-years of the lease's rent, and the street deal nets 58–69% of face. Every
-remaining worst deal in the audit is one of these, on every posture and
-every concession setting, because the yardstick itself is what's off:
+**The fault.** `TI_ASK` is a $/sf-per-year band (office $2.60–6.00) times
+the cost index, whatever the space lets for. Its own comment calls it
+"roughly 6–7% of lease value", which only holds near the rents it was
+measured at (`RENT_BASE`). Office fit-out asks per year of term, as a share
+of the space's own rent (`tools/mdga/ti-vs-rent.mjs`):
 
-    office 3,548 sf 8.3y at $5.37 vs $5.16 market, $16/sf TI (3.0y of rent),
-    6mo free — street deal nets 58% → owner 52%
+| | cheapest tenth | median | priciest tenth |
+|---|---|---|---|
+| month 12, before | 37% | 23% | 16% |
+| month 12, after | 15% | 15% | 12% |
+| month 600, before | 76% | 31% | 16% |
+| month 600, after | 10% | 9% | 4% |
 
-In life, allowances scale with what the space rents for: a landlord does not
-fund three years of rent in fit-out on a $5 building. The fix belongs in the
-letter roll (and the development pro forma's first-generation reserve that
-mirrors it), not in the team's policy. It moves the whole economy, so it
-should be its own change, with `pnpm check`, `pnpm report` and the baseline
-read before and after.
+**The change.** The band is capped at itself read as a share of the
+space's face rent: `TI_ASK / RENT_BASE`, so office 7–17% and retail and
+industrial 4–11% a year. It is a cap, not a re-pricing: it never raises an
+ask, and it leaves any space at or above the base rents exactly as it was.
+Every reader of the band in `leasing.ts` goes through it: new, expansion
+and renewal letters, the street package, the renewal refresh and the
+rollover reserve. **Deliberately not touched:** the development reserve
+(`proforma.ts`), the appraisal fill cost (`value.ts`) and build-to-suit
+(`dev.ts`). On the spaces where the cap binds they now reserve more than
+the letters ask, which errs on the safe side. Re-basing them is a separate
+economy decision. (An earlier, wider experiment that re-priced fit-out as a
+pure share of rent everywhere moved prime towers up as well, and changed
+how life-company lenders quote; this narrower cap does neither.)
+
+**Measured** (`auto-lease-audit.mjs`, before → after, seed 550991, 4 years):
+
+| book | posture | owner NE | deals < 80% | deals < 60% | TI p90 (yrs of rent) |
+|---|---|---|---|---|---|
+| older stock, half empty | Market | 83% → 88% | 32% → 17% | 0% → 0% | 1.00 → 0.79 |
+| older stock, half empty | Fill | 71% → 75% | 84% → 71% | 11% → 1% | 1.33 → 0.87 |
+| new shells | Market | 75% → 76% | 64% → 64% | 7% → 4% | 1.68 → 1.61 |
+| new shells | Fill | 64% → 66% | 82% → 80% | 33% → 29% | 2.05 → 2.04 |
+
+The worst Market deal on the older book went from a $3.31 lease against a
+$4.76 market (62%) to 76%; on new shells from 26% to 55%.
+
+**What is left.** On brand-new shells in a deep glut (this run's book sat at
+61% vacancy), the first-generation premium (1.7×), the glut (up to 1.56×)
+and a credit tenant (1.18×) still stack on top of the capped band. A long
+first-generation lease can then ask 2–5 years of rent, and Fill signs it. Each of
+those multipliers is a real thing, so this is the market, not a bug. The team's
+Lean concession limit is the control for an owner who will not pay it.
+
+## Still open
 
 **Time value.** The owner's score still straight-lines the allowance and
 free rent over the term. At a 7% rate, $25/sf over 6.5 years costs about

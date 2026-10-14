@@ -1881,6 +1881,8 @@ export interface Econ {
   /** Employment index per trade, its own shock state, and the local-serving index. */
   indIdx?: Record<Sector, number>;
   indShock?: Record<Sector, number>;
+  /** A trade's boom (and usually its bust) in progress — see `tickBoomBust` in market.ts. */
+  boomBust?: { sec: Sector; phase: "boom" | "bust" | "hold"; leftM: number; rate: number; startM: number };
   localIdx?: number;
   /** The export-base composite, its monthly change, recent history, last peak and months in phase. */
   cycIdx?: number;

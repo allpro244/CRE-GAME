@@ -220,8 +220,9 @@ property of how investors read a sponsor, not a penalty multiplier.
    closes the day-one-mark loophole from the realism findings.
 4. **Slow fade both ways.** Positive evidence decays over about 15–20 years
    (a team's record goes stale). Negative evidence decays over the existing
-   10-year memory. A failed fund also keeps today's permanent bar on
-   institutional money (`fundFailedM`).
+   10-year memory. Misconduct lasts 20 years. A failed fund's bar on
+   institutional money is now graded by cause rather than always permanent
+   (see "Losing investors' money" below).
 5. **A step-up limit, separate from the rating.** No investor backs a raise
    much larger than the sponsor has done before: roughly **2–3× your largest
    successfully completed raise** (a shape parameter). A great rating with
@@ -247,6 +248,104 @@ before the year's supply and competition move them.
 | above +75 | **Blue-chip** | + sovereign wealth funds and programmatic JVs (§6) | 7–8% | best tiers | market or above | 1–3% | no | oversubscribed |
 
 Lenders, sellers and brokers don't read this rating (see Scope above).
+
+#### Losing investors' money: exactly what happens
+
+This is the most important negative in the system, so it is specified in
+full. All numbers are a **starting design**: severity bands and fault
+classes are judgement calls to be measured, and the weights are shape
+parameters, labelled as such in code.
+
+**1. When the loss is recognised.** The investor market learns of a loss at
+the first **public** event, not at an appraisal:
+- a foreclosure, deed-in-lieu or forced sale of a vehicle's building (news
+  already reports these)
+- a vehicle wound up with investors short
+- a missed distribution the operating agreement required
+- a defaulted capital call
+
+Before that, nothing moves; afterwards, the final number replaces the
+estimate when the vehicle is wound up.
+
+**2. How bad it is.** Measured on the investors' money, net of fees:
+`M = what investors got back ÷ what they put in`.
+
+| Investors' multiple `M` | Severity | Base hit |
+|---|---|---|
+| 0.90–1.00 (pref missed, little principal lost) | Shortfall | −5 |
+| 0.70–0.90 | Loss | −12 |
+| 0.40–0.70 | Heavy loss | −22 |
+| under 0.40 | Wipe-out | −35 |
+
+**3. Whose fault it looks like.** Investors judge relative to the market,
+which is why the shared investor market needs peer benchmarks (same
+strategy, same vintage window, from rival funds and merchant SPVs):
+
+| Fault class | Test | Multiplier |
+|---|---|---|
+| **Market-wide** | Peer median `M` for that strategy and vintage is also under 1.0 | × 0.5 |
+| **Your deal** | Peers made money; you didn't | × 1.0 |
+| **Misconduct** | Broken completion guarantee, unfunded GP call, LPA breach, removal for cause | × 2.0, plus a separate −25 |
+
+**4. Size and skin in the game:**
+- **Size:** × 0.6 to × 1.4, scaled by the lost equity's share of all the
+  investor capital you have ever raised. Losing your biggest deal hurts most.
+- **Alignment:** × 0.85 if your own co-invest was at least 10% and was lost
+  alongside theirs. "We lost with you" is a real defence in investor
+  meetings.
+
+**5. No credibility shrinkage on losses.** Gains are discounted for small
+samples; losses aren't. **Hit = base × fault × size × alignment**, applied
+in full on recognition.
+
+**6. Memory.** Market-wide and your-deal hits fade linearly over **10 years**
+(the existing `sponsorStanding` horizon). Misconduct hits fade over **20
+years**.
+
+**7. The investors who lost money remember you personally,** on top of the
+rating:
+- **Friends and family, local wealthy individuals:** the player's personal
+  network is a **finite pool**. Investors who lost money leave it: 70% for
+  good, the rest for 10 years. Since this pool is all an Unknown sponsor can
+  raise from, a loss early in a career **shrinks the only money available**.
+- **Syndication platforms:** delist you for 10 years after any your-deal or
+  misconduct loss; 5 years after a market-wide one.
+- **Family offices:** won't re-invest for 10 years; if the loss was
+  market-wide, each comes back at 50% odds once the rating allows it.
+- **Endowments, pensions, insurers, sovereign funds (blind-pool losses):**
+  - market-wide losses: out for one fund cycle (about 10 years)
+  - your fund below 1.0× while peers were above: out permanently
+  - misconduct: everyone out permanently, except your own money and
+    hard-money lenders
+
+  This replaces today's blanket rule ("a fund that returned under 1.0× means
+  nobody backs you again"). Plenty of sponsors whose 2006–07 funds lost
+  money raised again, because everyone lost; fraud and broken guarantees end
+  careers.
+
+**8. Terms while a loss mark is live** (on top of whatever the band demands):
+- investors demand **+1.5 points of pref** and **+10 points of GP co-invest**
+- a **completion guarantee** is mandatory again, whatever the band
+- **the step-up limit resets:** the most you can raise is capped at **1×
+  your largest raise since the loss**, until the mark is half faded. You
+  can't grow out of a hole with other people's money.
+- placement agents won't take you on while a your-deal or misconduct mark
+  is live
+
+**9. Climbing back.** Only new, realised, profitable vehicles rebuild the
+rating, still subject to small-sample shrinkage. In practice that means
+**about 4–6 clean deals over 8–10 years** to regain one band. Putting in
+more of your own money shortens it, because larger co-invest raises the
+investor score (§3.2).
+
+**Worked examples** (a player rated +20, Emerging, mid-sized deal, size × 1.0):
+
+| What happened | Hit | New rating | Band | What it means |
+|---|---|---|---|---|
+| Market-wide 2008-style loss, `M` = 0.8, own 10% co-invest lost too | −12 × 0.5 × 0.85 = **−5** | +15 | Emerging, just | Platforms gone 5 years; terms +1.5 pref and +10 co-invest; can't upsize. Survivable. |
+| Your deal, `M` = 0.55 (lease-up failed while the market was fine) | −22 × 1.0 = **−22** | −2 | Unknown | Back to friends and family, minus the 70% who lost money and left for good; platforms and family offices out 10 years |
+| Wipe-out on your deal, `M` = 0.2 | −35 = **−35** | −15 | Questioned | Only people who already know you; 12%+ pref; personal guarantee; years of tiny raises |
+| Broken completion guarantee, `M` = 0.6 | −22 × 2.0 − 25 = **−69** | −49 | **Toxic** | No investor money for a decade or more; your own money and hard-money lenders only |
 
 #### Rivals
 

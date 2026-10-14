@@ -24,9 +24,8 @@ import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
-import { ownersShareOfProceeds, jvConsent } from "./jv";
-import { gpCapitalShare } from "./fund";
 import { money } from "./money";
+import { consentFor, purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
 
 /**
  * WHO BUYS THE BUILDINGS THE PLAYER DOES NOT.
@@ -819,7 +818,7 @@ export function assembleLots(
   if (roots.length < 2) return { s, err: "Assemblage takes at least two lots." };
   for (const r of roots) {
     if (!s.holdings[r]) return { s, err: "You have to own every lot in the assemblage." };
-    { const why = jvConsent(s.holdings[r]); if (why) return { s, err: why }; }
+    { const why = consentFor(s, s.holdings[r], "assemble"); if (why) return { s, err: why }; }
     if (s.holdings[r].groundRentOut) return { s, err: "You sold the land under this building — the fee owner's consent is not on offer. Buy the land back first." };
     const why = assembleBlocker(s, parcels, r, !!opts.payoff);
     if (why) return { s, err: why };
@@ -1047,7 +1046,7 @@ export function offerGroundLease(
   s: GameState, parcels: ParcelTable, bbl: string, years: number, review: GroundReview = "fixed",
 ): { s: GameState; err?: string; msg?: string } {
   if (!s.holdings[bbl]) return { s, err: "You don't own that." };
-  { const why = jvConsent(s.holdings[bbl]); if (why) return { s, err: why }; }
+  { const why = consentFor(s, s.holdings[bbl], "groundLease"); if (why) return { s, err: why }; }
   if (s.holdings[bbl].groundRentOut) return { s, err: "You are the ground lessee here — the land is somebody else's to lease." };
   if (s.groundLeases?.[bbl]) return { s, err: "It is already ground-leased." };
   if (s.holdings[bbl].groundOffer) return { s, err: "It is already on offer. A ground lessee comes when one comes." };
@@ -2898,8 +2897,9 @@ export function saleTaxQuote(h: Holding, price: number, s?: GameState): { net: n
  * shares are taxed on the LPs' returns, off this book.
  */
 export function sponsorsSaleTax(s: GameState, h: Holding, price: number): number {
-  const tax = h.jv ? saleTaxQuote(h, Math.round(price * (1 - h.jv.share)), s).tax : saleTaxQuote(h, price, s).tax;
-  if (h.fundOwned && s.fund && !s.fund.settled) return Math.round(tax * gpCapitalShare(s.fund));
+  const ps = partnerShare(s, h);
+  const tax = ps > 0 ? saleTaxQuote(h, Math.round(price * (1 - ps)), s).tax : saleTaxQuote(h, price, s).tax;
+  if (purseOf(s, h) === "fund") return Math.round(tax * taxShare(s, h));
   return tax;
 }
 
@@ -2925,7 +2925,9 @@ export function saleProceedsToSeller(
   const release = releaseCost(s, parcels, h.bbl);
   const loanPayoff = stack.balance;
   const toOwners = net - loanPayoff - kick - breakFee - release;
-  const toSeller = ownersShareOfProceeds(h, toOwners);
+  // What reaches the owners' side: the sponsor, or its vehicle (routed below).
+  const rp = routeProceeds(s, h, toOwners);
+  const toSeller = rp.toSponsor + rp.toVehicle;
   return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller, partner: toOwners - toSeller };
 }
 
@@ -2942,9 +2944,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
   // The vehicle's gain is the vehicle's: rolling it into the sponsor's own
   // exchange would move the fund's tax bill onto the GP's next purchase.
-  if (exchange && h.fundOwned && s.fund && !s.fund.settled) {
-    return { s, err: "A fund deed's gain belongs to the vehicle — it cannot roll into your own 1031." };
-  }
+  { const why = exchange ? consentFor(s, h, "exchange") : null; if (why) return { s, err: why }; }
   const next = clone(s);
   // Participating paper takes its cut here, and only here. That is the whole
   // trade: you borrowed at a third of a point over the index for years, and
@@ -2958,7 +2958,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // Vehicle deed: the proceeds sit on fund.cash so the promote has a
   // counterparty. The vehicle pays no tax on them — the sponsor's share of
   // the gain is taxed on the sponsor, below.
-  const intoFund = !!(h.fundOwned && next.fund && !next.fund.settled);
+  const intoFund = purseOf(next, h) === "fund";
   if (intoFund && next.fund) moveFundCash(next.fund, toSeller, "sale");
   else next.cash += toSeller;
   // THE FEE COMES OUT OF THE PROCEEDS ONCE, NOT TWICE.
@@ -3973,7 +3973,7 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
     return { s, err: "The ground lessee controls the improvement — you do not gut their building." };
   }
   if (!rec || rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to renovate on this lot." };
-  { const why = jvConsent(h); if (why) return { s, err: why }; }
+  { const why = consentFor(s, h, "redevelop"); if (why) return { s, err: why }; }
   if (h.condition === "good") return { s, err: "Already in top condition." };
   if (h.renovatingUntilM !== undefined) return { s, err: "Crews are already on site." };
   if (isCommercial(rec)) {

@@ -35,7 +35,6 @@ import {
   syncSupplyViews,
 } from "./supply";
 import { recordPropertyEvent } from "./history";
-import { JV_CONSENT } from "./jv";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -95,6 +94,7 @@ import {
 } from "./proforma";
 import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
+import { consentFor, purseOf } from "./vehicles";
 
 /**
  * THE PLATE THE CITY DRAWS — the site coverage an autonomous start (the
@@ -864,7 +864,7 @@ export function startAdaptiveReuse(
   s: GameState, parcels: ParcelTable, bbl: string,
   target: "multifamily" | "mixed" = "multifamily", customMix?: UseMix,
 ): { s: GameState; err?: string; msg?: string } {
-  if (s.holdings[bbl]?.jv) return { s, err: JV_CONSENT };
+  { const why = consentFor(s, s.holdings[bbl], "redevelop"); if (why) return { s, err: why }; }
   if (s.holdings[bbl]?.groundRentOut) return { s, err: "You sold the land under this building — the fee owner's consent is not on offer. Buy the land back first." };
   const eligible = adaptiveReuseEligibility(s, parcels, bbl);
   if (!eligible.ok) return { s, err: eligible.why };
@@ -1745,7 +1745,7 @@ export function startDevelopment(
   if (site.due > 0 && s.facility?.bbls.includes(bbl)) {
     return { s, err: "This site is pledged to your facility. Release it there before a construction lender will take first lien." };
   }
-  if (site.due > 0 && s.holdings[bbl].jv) return { s, err: JV_CONSENT };
+  if (site.due > 0) { const why = consentFor(s, s.holdings[bbl], "redevelop"); if (why) return { s, err: why }; }
   const siteNote = site.due > 0 ? ` and the ${money(site.due)} land loan, which the construction lender requires repaid at close` : "";
   const commitCap = need.whole + site.due;
   const fundable = fundableNow(s, parcels);
@@ -1940,7 +1940,7 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   if (h.groundLeased || s.groundLeases?.[bbl]) {
     return { s, err: "The ground lessee controls the improvement. You cannot demolish their building." };
   }
-  if (h.jv) return { s, err: JV_CONSENT };
+  { const why = consentFor(s, h, "redevelop"); if (why) return { s, err: why }; }
   if (h.groundRentOut) return { s, err: "You sold the land under this building — the fee owner's consent is not on offer. Buy the land back first." };
   if (rec.class === "land" || !rec.bldgArea) return { s, err: "There's nothing standing on it." };
   if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. Nobody knocks that down, including you." };
@@ -2585,7 +2585,8 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     const room = Math.max(0, d.commitment - d.drawn);
     const advance = Math.min(lease, room);
     d.drawn += advance;
-    if (h.fundOwned) {
+    const inFund = purseOf(s, h) === "fund";
+    if (inFund) {
       d.loanBalance += advance;
       s.cash += advance;
       logBooks(s, "dev", -advance, d.bbl);
@@ -2595,7 +2596,7 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
       text: advance < lease
         ? `The lease-up reserve at ${rec.address} was ${money(lease)}, and only ${money(advance)} of it `
           + `is still fundable. The fit-out and the leasing commissions on the rest come out of your own account.`
-        : h.fundOwned
+        : inFund
           ? `The lease-up reserve at ${rec.address} — ${money(lease)} — is released. That is what fits out the first tenants.`
           : `The lease-up reserve at ${rec.address} — ${money(lease)} — stays with the lender and is drawn as tenants are fitted out `
             + `and while the building cannot carry its loan. Your own cash is not touched until it runs out.`,
@@ -2773,7 +2774,7 @@ export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, pr
     return { s, err: "The ground lessee controls the improvement — their capital plan, not yours." };
   }
   if (rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to improve on a vacant lot." };
-  if (h.jv) return { s, err: JV_CONSENT };
+  { const why = consentFor(s, h, "redevelop"); if (why) return { s, err: why }; }
   if (h.program) return { s, err: "A capital program is already running." };
   // A PROGRAMME COMES ROUND AGAIN. These were once-per-building-forever, which
   // over a century is three capital decisions and then nothing — no answer to

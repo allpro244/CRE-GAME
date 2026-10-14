@@ -44,8 +44,8 @@ import { clearRivalClaims, fitOf, forgetDeed } from "./rivals";
 import { dropDeed, originateRow } from "./rivalDebt";
 import { reinstateFundedForeclosures } from "./workout";
 import { spendable, fundAndBook } from "./credit";
-import { ownersShareOfProceeds } from "./jv";
 import { money } from "./money";
+import { routeProceeds } from "./vehicles";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -452,7 +452,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       const { net } = saleTaxQuote(h, gross, s);
       const shortfall = Math.max(0, bal - net);
       // The law hands the surplus to the owners — a JV partner takes its share.
-      const surplus = ownersShareOfProceeds(h, Math.max(0, net - bal));
+      const rp = routeProceeds(s, h, Math.max(0, net - bal));
+      const surplus = rp.toSponsor + rp.toVehicle;
       if (surplus > 0) { s.cash += surplus; logBooks(s, "sold", surplus, lot.bbl); }
       if (shortfall > 0) {
         if (recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall, lot.bbl); }

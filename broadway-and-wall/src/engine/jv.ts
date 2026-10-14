@@ -41,7 +41,7 @@ const PARTNERS = ["Ashgrove Family Office", "Northbridge Pension", "Calloway Pri
 // The consent refusal lives with the ownership layer (vehicles.ts), which must
 // not import this module; re-exported here for the callers that read it from jv.
 export { JV_CONSENT } from "./vehicles";
-import { JV_CONSENT } from "./vehicles";
+import { JV_CONSENT, consentFor } from "./vehicles";
 
 /** The partner's share of this deed, 0 when there is none. */
 export function jvShare(h: Holding | undefined): number {
@@ -105,7 +105,7 @@ export function stakeQuote(s: GameState, parcels: ParcelTable, bbl: string, shar
   if (!JV_SHARES.includes(share)) return no("A minority stake: a quarter, or just under half.");
   if (rec.class === "land" || !rec.bldgArea || h.groundLeased) return no("A partner buys into a building with income, not dirt or a ground coupon.");
   if (h.jv) return no("There is a partner in it already.");
-  if (h.fundOwned) return no("It is a fund deed — the fund's LPs are its partners.");
+  if (h.fundOwned) return no(consentFor(s, h, "stake") ?? "It is a fund deed — the fund's LPs are its partners.");
   if (s.facility?.bbls.includes(bbl)) return no("Pledged to your facility — release it there first.");
   if (s.workouts?.[bbl]) return no("Nobody buys into a building in workout.");
   if (h.sale) return no("It is on the market. Pull the listing first.");

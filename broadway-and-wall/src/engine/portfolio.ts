@@ -36,6 +36,7 @@ import { EXCHANGE_WINDOW_M, transferGroundLeaseOffBook, saleProceedsToSeller } f
 import { FACILITY_MIN_ASSETS } from "./facility";
 import { sponsorStanding } from "./sponsor";
 import { money } from "./money";
+import { purseOf, partnerShare } from "./vehicles";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -270,7 +271,7 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
 /** Take a bundle to market. */
 /** Is this deed on the live fund's book (rather than the sponsor's balance sheet)? */
 export function onFundBook(s: GameState, bbl: string): boolean {
-  return !!(s.holdings[bbl]?.fundOwned && s.fund && !s.fund.settled);
+  return purseOf(s, s.holdings[bbl]) === "fund";
 }
 
 /** A bundle with deeds on both the fund's book and the sponsor's. */
@@ -305,7 +306,7 @@ export function listPortfolio(
     return { s, err: "That bundle mixes the fund's buildings with your own. One price across both is a conflict the LPs' advisory committee would refuse — sell the fund's deeds as their own book." };
   }
   // A partner's building does not go into somebody else's package without them.
-  if (clean.some((b) => s.holdings[b]?.jv)) return { s, err: "One of those has a JV partner — they have consent on a sale in a package. Sell it on its own, or buy them out first." };
+  if (clean.some((b) => partnerShare(s, s.holdings[b]) > 0)) return { s, err: "One of those has a JV partner — they have consent on a sale in a package. Sell it on its own, or buy them out first." };
   if (clean.length < 2) return { s, err: "A portfolio is two buildings or more. One building is a listing." };
   if (clean.some((b) => s.workouts?.[b])) {
     return { s, err: "One of these is in default. A lender in a workout controls that deed — clear the file first." };

@@ -64,7 +64,18 @@ quietly goes to the wrong party.
      (investment period only), the close cheque is a `build` flow out of the
      fund's purse, and `test/fund-builds.mjs` holds it
    - deal-by-deal syndication with a waterfall, fees and a co-invest slider
-     (§4, §4.4)
+     (§4, §4.4) — **first slice done** (`syndicate.ts`, `waterfall.ts`):
+     friends and family on Unknown terms (12% pref, 10% above a 15% IRR, $1
+     of theirs per $1 of yours with the site counted at its equity, a
+     completion guarantee), raised at groundbreak on the Build desk; a
+     hurdle-account waterfall; owner-side flows net monthly and settle (a
+     surplus is a distribution, a shortfall a call); the record lives off the
+     holding so every exit path settles the same way; net worth, the balance
+     sheet, the income statement and tax read the sponsor's share; a finite
+     network that grows by what it earned and loses 70% of what it lost.
+     `test/syndicate.mjs` and the conserve bot (odd seeds) hold it.
+     Not yet: fees, bands above Unknown (needs the reputation score), raise
+     time and failure, investors other than friends and family.
    - the reputation **score** (no ranking yet), from investor and own-money
      deals (§3.4)
    - the deal's business plan as its only mandate

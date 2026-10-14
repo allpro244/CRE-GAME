@@ -26,6 +26,7 @@ import { cancelSupplyProject, queueSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
 import { money } from "./money";
 import { consentFor, purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
+import { investorsTakeOfExit } from "./waterfall";
 
 /**
  * WHO BUYS THE BUILDINGS THE PLAYER DOES NOT.
@@ -2899,7 +2900,7 @@ export function saleTaxQuote(h: Holding, price: number, s?: GameState): { net: n
 export function sponsorsSaleTax(s: GameState, h: Holding, price: number): number {
   const ps = partnerShare(s, h);
   const tax = ps > 0 ? saleTaxQuote(h, Math.round(price * (1 - ps)), s).tax : saleTaxQuote(h, price, s).tax;
-  if (purseOf(s, h) === "fund") return Math.round(tax * taxShare(s, h));
+  if (purseOf(s, h) === "fund" || s.syndications?.[h.bbl]) return Math.round(tax * taxShare(s, h));
   return tax;
 }
 
@@ -2916,6 +2917,8 @@ export function saleProceedsToSeller(
 ): {
   net: number; gain: number; tax: number; kick: number; breakFee: number;
   release: number; loanPayoff: number; toSeller: number; partner: number;
+  /** A syndicate's investors' share of `toSeller`, paid from it at the month's settlement. */
+  investors: number;
 } {
   const { net, gain } = saleTaxQuote(h, price, s);
   const tax = sponsorsSaleTax(s, h, price);
@@ -2928,7 +2931,9 @@ export function saleProceedsToSeller(
   // What reaches the owners' side: the sponsor, or its vehicle (routed below).
   const rp = routeProceeds(s, h, toOwners);
   const toSeller = rp.toSponsor + rp.toVehicle;
-  return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller, partner: toOwners - toSeller };
+  const deal = s.syndications?.[h.bbl];
+  const investors = deal ? investorsTakeOfExit(deal, toOwners, s.month) : 0;
+  return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller, partner: toOwners - toSeller, investors };
 }
 
 export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string, exchange = false): { s: GameState; err?: string } {

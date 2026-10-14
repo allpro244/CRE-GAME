@@ -2974,6 +2974,58 @@ export interface LeasingPlan {
   };
 }
 
+/**
+ * ONE SYNDICATED DEAL (CAPITAL_RAISING_PLAN.md §4): outside investors in one
+ * of the sponsor's deeds, on a pref-and-promote waterfall (waterfall.ts). The
+ * deed stays on the sponsor's books — the sponsor is GP and manager and every
+ * cheque still moves through `s.cash` — and the investors' side settles each
+ * month from the net of what was booked to the deed (syndicate.ts).
+ */
+export interface Syndication {
+  bbl: string;
+  investor: string;
+  formedM: number;
+  /** The investors' share of each capital call, until their commitment is called. */
+  lpShare: number;
+  lpCommit: number;
+  lpCalled: number;
+  lpDist: number;
+  /** The sponsor's capital in (cash and the land it contributed) and cash out. */
+  gpIn: number;
+  gpDist: number;
+  /** [pref, hurdle 1, …] annual rates; `promotes[k]` applies above `hurdles[k]`. */
+  hurdles: number[];
+  promotes: number[];
+  /** The LPs' balance at each hurdle, and the GP's at the pref. */
+  lpBal: number[];
+  gpBal: number;
+  lpCap: number;
+  gpCap: number;
+  /** Owner-side flows booked to the deed since the last settlement (+ in, − out). */
+  pending: number;
+  /** Lifetime owner-side flows booked, and settled — tagged == settled + pending. */
+  tagged: number;
+  settled: number;
+  /** The investors' cash flows, [month, amount, …], + to them. */
+  lpFlows: number[];
+  /** Month the deed left the book; the record closes at its next settlement. */
+  goneM?: number;
+}
+
+/** A closed syndication, as its investors remember it. */
+export interface SynRecord {
+  bbl: string;
+  address: string;
+  investor: string;
+  formedM: number;
+  closedM: number;
+  lpIn: number;
+  lpOut: number;
+  lpIrr: number | null;
+  gpIn: number;
+  gpOut: number;
+}
+
 export interface GameState {
   /**
    * The principal's own recent signings — month, use, net effective as a
@@ -3104,6 +3156,21 @@ export interface GameState {
   fund?: import("./fund").PlayerFund | null;
   /** The sponsor's claim on a wound-down fund's liquidating trust — see fund.ts TrustNote. */
   trustNote?: import("./fund").TrustNote | null;
+  /**
+   * DEAL-BY-DEAL SYNDICATIONS, keyed by deed (syndicate.ts). Kept off the
+   * holding on purpose: a deed can leave the book by a dozen paths (sale,
+   * foreclosure, the courthouse steps, a package), and the investors' final
+   * settlement has to reach every one of them. The record outlives its deed
+   * until that settlement is done.
+   */
+  syndications?: Record<string, Syndication>;
+  /** Closed syndications: what each deal paid its investors (the record investors read). */
+  synClosed?: SynRecord[];
+  /**
+   * The friends-and-family network: what people who know the sponsor would
+   * put into its deals in total. Sized at first use; see syndicate.ts.
+   */
+  ffNetwork?: { cap: number };
   /**
    * When true, new purchases draw equity from the live fund during its
    * investment period. Opt-in path; balance-sheet remains the default until
@@ -3812,6 +3879,14 @@ export function logBooks(
     if (fv && !fv.settled && sgn && key !== "lpCalled" && key !== "lpDistributed" && Number.isFinite(amt)
       && (held ? held.fundOwned : vehicleDirect)) fv.deedTagged = (fv.deedTagged ?? 0) + sgn * amt;
     if (!vehicleDirect) settleVehicleDeedFlow(s, key, amt, bbl);
+    // A SYNDICATED DEED'S OWNER-SIDE FLOWS ARE THE DEAL'S. They net here and
+    // settle with the investors at the month's close (syndicate.ts). The
+    // settlement's own lpCalled / lpDistributed are not deal flows.
+    const syn = s.syndications?.[bbl];
+    if (syn && sgn && key !== "lpCalled" && key !== "lpDistributed" && Number.isFinite(amt)) {
+      syn.pending += sgn * amt;
+      syn.tagged += sgn * amt;
+    }
   } else if (deedCfProbe.on && DEED_SIGN[key] && amt) probeUntagged(s, key, amt);
   if (!s.books) s.books = [];
   const yr = Math.floor(s.month / 12);

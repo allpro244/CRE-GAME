@@ -96,6 +96,7 @@ import {
 import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
 import { consentFor, purseOf } from "./vehicles";
+import { formSyndication, maxOutside, settleSyndications, syndicateBar } from "./syndicate";
 
 /**
  * THE PLATE THE CITY DRAWS — the site coverage an autonomous start (the
@@ -1827,10 +1828,16 @@ export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
   contract: Contract = "gmp", ltcWanted?: number,
-  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: TakeoutKind },
+  custom?: {
+    mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: TakeoutKind;
+    /** Raise `outside` of the job's cash equity from friends and family (syndicate.ts). */
+    syndicate?: { outside: number };
+  },
   lender?: string,
   spec = 0.5,
 ): { s: GameState; err?: string } {
+  const outside = Math.max(0, Math.round(custom?.syndicate?.outside ?? 0));
+  if (outside > 0) { const bar = syndicateBar(s, bbl); if (bar) return { s, err: bar }; }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (!s.holdings[bbl]) return { s, err: "Buy the dirt first." };
@@ -1908,9 +1915,21 @@ export function startDevelopment(
   const purse = groundbreakPurse(s, parcels, bbl);
   const vehicle = purse.fund ? s.fund ?? null : null;
   if (purse.closed) return { s, err: purse.closed };
-  const fundable = purse.total;
+  // A SYNDICATED JOB is underwritten on the sponsor's money plus the
+  // investors' commitment, which the construction lender counts as equity in
+  // the deal. The sponsor contributes the site at its equity (the mark less
+  // the land loan this closing repays), and that counts toward the
+  // $1-for-$1 rule an Unknown sponsor raises under.
+  const landEquity = outside > 0 ? Math.max(0, Math.round(ownedHoldingValue(s, parcels, s.holdings[bbl]) - site.due)) : 0;
+  if (outside > 0) {
+    const most = maxOutside(s, commitCap, landEquity);
+    if (outside > most + 1) {
+      return { s, err: `Friends and family can put at most ${money(most)} into this job — no more than your own money in it, and only what your network has not already committed.` };
+    }
+  }
+  const fundable = purse.total + outside;
   const purseWords = vehicle ? "the fund can call" : "you can fund";
-  const purseNote = vehicle ? " (its cash and uncalled commitments)" : " including the line";
+  const purseNote = vehicle ? " (its cash and uncalled commitments)" : outside > 0 ? " with your investors' commitment and the line" : " including the line";
   if (fundable < commitCap) {
     const short = commitCap - fundable;
     return {
@@ -1960,6 +1979,18 @@ export function startDevelopment(
   // The origination fee is the lender's, paid at close and never part of the
   // job's own budget — folding it into the prefund would hand it back later as
   // free construction money.
+  // THE SYNDICATE IS FORMED AT THE CLOSE: its record exists before the
+  // closing cheques are booked, so they are the deal's first flows, and it
+  // settles before the closing ends, so the investors' share of the cheque
+  // is called today. `bridge` is their share fronted for the minutes between
+  // the two, so the sponsor's line is not drawn for money already committed;
+  // it nets to zero inside this function and books nothing.
+  let bridge = 0;
+  if (outside > 0) {
+    const w = formSyndication(next, bbl, outside, commitCap, landEquity);
+    bridge = Math.min(outside, Math.round(w.lpShare * (dayOne + Math.max(0, site.due))));
+    next.cash += bridge;
+  }
   payAtClose(dayOne - hedgeCost, "dev");
   // the hedge is a financing cost, booked as such, paid at the close
   if (hedgeCost > 0) payAtClose(hedgeCost, "debtSvc");
@@ -2041,6 +2072,17 @@ export function startDevelopment(
     q: next.month, kind: "deal",
     text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use === "mixed" ? "mixed-use" : use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded by ${plan.lender}, ${plan.bts ? `for ${plan.bts.name} on a ${Math.round(plan.bts.termM / 12)}-year build-to-suit` : "on spec"}. Delivery ${monthLabel(next.month + plan.months)}.`,
   });
+  if (outside > 0) {
+    settleSyndications(next, parcels, false, bbl);
+    next.cash -= bridge;
+    const w = next.syndications![bbl];
+    next.news.unshift({
+      q: next.month, kind: "deal",
+      text: `${w.investor} are in: ${money(w.lpCommit)} committed to ${rec.address}, ${Math.round(w.lpShare * 100)}% of every equity call, `
+        + `on a ${Math.round(w.hurdles[0] * 100)}% preferred return. You put in the site and the rest, and you guarantee completion — `
+        + `an overrun past their commitment is yours alone.`,
+    });
+  }
   return { s: next };
 }
 

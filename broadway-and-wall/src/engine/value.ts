@@ -181,6 +181,7 @@ export function demandBeta(demandScore: number): number {
 export { physicalMaxFloors } from "./structure";
 import { physicalMaxFloors } from "./structure";
 import { purseOf, partnerShare } from "./vehicles";
+import { sponsorPosition } from "./waterfall";
 
 /**
  * The plate a median NEW building in this city actually carries — measured at
@@ -4080,6 +4081,13 @@ export function collateralAsIs(rec: ParcelRecord, econ: Econ, occ: number): numb
  * inside `netWorth` — two full appraisals of every deed, every month. Year
  * advance pays that twelve times.
  */
+/** A job in the ground at money sunk less its loan — the carry portfolioMark gives it. */
+export function cipEquity(s: GameState, bbl: string): number {
+  const d = s.developments?.[bbl];
+  if (!d) return 0;
+  return Math.max(0, (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0) - d.loanBalance);
+}
+
 export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord>): { nw: number; gav: number } {
   let nw = s.cash;
   let gav = 0;
@@ -4102,6 +4110,10 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
     gav += v;
     const eq = v - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0);
     if (purseOf(s, h) === "fund") { fundNav += eq; continue; }
+    // A SYNDICATED DEED counts at what the waterfall would pay the sponsor
+    // on the deal's equity, a job in the ground included at money sunk.
+    const deal = s.syndications?.[h.bbl];
+    if (deal) { nw += sponsorPosition(deal, eq + cipEquity(s, h.bbl), s.month, true); continue; }
     // A JV partner owns its share of the equity, not of the building.
     nw += eq * (1 - partnerShare(s, h));
   }
@@ -4113,6 +4125,11 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
     fundNav += Math.max(0, (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0) - d.loanBalance);
   }
   if (liveFund) nw += gpInterestInFund(liveFund, fundNav);
+  // A syndicate whose deed has gone and whose last settlement has not run:
+  // the sponsor's account holds the investors' share of the proceeds.
+  for (const deal of Object.values(s.syndications ?? {})) {
+    if (!s.holdings[deal.bbl]) nw += sponsorPosition(deal, 0, s.month, false);
+  }
   // The note on a wound-down fund's liquidating trust — see fund.ts TrustNote.
   nw += s.trustNote?.balance ?? 0;
   // A CLAIM ON A FAILED BANK'S RECEIVER IS AN ASSET, at its expected recovery:
@@ -4135,7 +4152,7 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   // accountant carries and it is what a lender lends against.
   for (const d of Object.values(s.developments ?? {})) {
     const sunk = (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0);
-    if (!(liveFund && purseOf(s, s.holdings[d.bbl]) === "fund")) nw += Math.max(0, sunk - d.loanBalance);
+    if (!(liveFund && purseOf(s, s.holdings[d.bbl]) === "fund") && !s.syndications?.[d.bbl]) nw += Math.max(0, sunk - d.loanBalance);
     // Overhead still sizes against the committed budget — same as before.
     gav += d.costTotal;
   }

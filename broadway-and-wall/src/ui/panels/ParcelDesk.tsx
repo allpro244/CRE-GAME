@@ -25,6 +25,7 @@ import { fundableNow } from "@/engine/credit";
 import { demandNow } from "@/engine/demand";
 import { leaseholdQuote, landBuybackCost, LEASEHOLD_STEP } from "@/engine/leasehold";
 import { stakeQuote, buyoutCost, JV_SHARES, JV_MINORITY_DISCOUNT } from "@/engine/jv";
+import { syndicateView } from "@/engine/syndicate";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
 import { ownerAt } from "@/engine/ownership";
 import { taxAppealQuote } from "@/engine/tax";
@@ -1290,7 +1291,7 @@ function ParcelPanelInner({
       {on("deal") && !holding && isBuilt && <DisclosedRoll bbl={selectedBBL} />}
 
       {on("deal") && holding && <SaleSection bbl={selectedBBL} value={value} />}
-      {on("deal") && holding && isBuilt && !holding.groundLeased && <StakeSection bbl={selectedBBL} />}
+      {on("deal") && holding && ((isBuilt && !holding.groundLeased) || !!game.syndications?.[selectedBBL]) && <StakeSection bbl={selectedBBL} />}
       {on("deal") && holding && isBuilt && !holding.groundLeased && <LeaseholdSection bbl={selectedBBL} />}
 
       {on("summary") && holding && (
@@ -1504,12 +1505,39 @@ function LeaseholdSection({ bbl }: { bbl: string }) {
  * fund their share of every call, and the big decisions wait on them. On a JV
  * deed: who, how much, and what buying them out costs today.
  */
+/** A fraction as a whole percent. */
+const pc = (x: number) => `${Math.round(x * 100)}%`;
+
 function StakeSection({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const [share, setShare] = useState(JV_SHARES[0]);
   const h = game.holdings[bbl];
   if (!h) return null;
+  const syn = syndicateView(game, parcels, bbl);
+  if (syn) {
+    const pastPref = syn.owedAtPref <= 0;
+    const pastHurdle = syn.owedAtHurdle <= 0;
+    return (
+      <div className="deal">
+        <div className="deal-head">Syndicated · {syn.investor} since {monthLabel(syn.formedM)}</div>
+        <div className="hint">
+          Every month the cash this deed makes, or needs, settles with them: a surplus is paid through the waterfall — their capital and a {pc(syn.pref)} pref
+          first, pari passu with yours, then {pc(syn.promote)} of what is above a {pc(syn.hurdle)} IRR to you — and a shortfall is a call, their
+          {" "}{pc(syn.lpShare)} share until their commitment is in. Overruns past it are yours. Refinancing is yours to run; changing the plan,
+          the land or the title needs them, and they will not agree.
+        </div>
+        <div className="grid">
+          <Row k="Committed · called" v={`${usd(syn.lpCommit)} · ${usd(syn.lpCalled)}`} />
+          <Row k="Paid to them so far" v={usd(syn.lpDist)} />
+          <Row k="Their share of the capital" v={pc(syn.capShare)} />
+          <Row k="Owed them before any promote" v={pastPref ? "nothing — the pref is paid" : usd(syn.owedAtPref)} />
+          <Row k={`To their ${pc(syn.hurdle)} hurdle`} v={pastHurdle ? "cleared — you earn the promote" : usd(syn.owedAtHurdle)} />
+          <Row k="Equity at the mark · yours · theirs" v={`${usd(syn.equity)} · ${usd(syn.yours)} · ${usd(syn.theirs)}`} title="Liquidated through the waterfall today: what each side would take of the deal's equity at its mark." />
+        </div>
+      </div>
+    );
+  }
   if (h.jv) {
     const cost = buyoutCost(game, parcels, h);
     return (

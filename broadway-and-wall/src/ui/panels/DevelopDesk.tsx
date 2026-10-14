@@ -10,7 +10,8 @@ import { dominantOf } from "@/engine/proforma";
 import type { BuildingDesign, Contract, DevUse } from "@/engine/types";
 import { DesignPicker } from "@/ui/panels/DesignPicker";
 import SchemeViewer from "@/ui/panels/SchemeViewer";
-import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN } from "@/engine/value";
+import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN, ownedHoldingValue } from "@/engine/value";
+import { FF_TERMS, ffAvailable, maxOutside, syndicateBar } from "@/engine/syndicate";
 
 // What a plan short of its hurdle is still worth over its cost. The required
 // yield carries the merchant builder's margin, so value / basis is
@@ -240,6 +241,10 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const [design, setDesignRaw] = useState<BuildingDesign>(saved?.design ?? {});
   // HOW THE CONSTRUCTION LOAN COMES OUT (MDGA phase 5). Null = the lender's default.
   const [takeoutPick, setTakeoutRaw] = useState<"float" | "cap" | "fixed" | null>(saved?.takeout ?? null);
+  // OUTSIDE EQUITY (syndicate.ts): the share of what friends and family could
+  // put into this job that the player takes. Not saved with the draft — a
+  // raise is decided at the closing, on the numbers of the day.
+  const [ffPick, setFfPick] = useState(0);
   // Persist after the player has actually touched a dial — opening the desk
   // and leaving must not stamp a default scheme onto every vacant lot.
   const dirty = useRef(!!saved);
@@ -359,7 +364,14 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const need = plan ? { ...need0, whole: need0.whole + siteDebt, dayOne: need0.dayOne + siteDebt } : need0;
   // A fund lot is built with the fund's money (groundbreakPurse), not yours.
   const purse = groundbreakPurse(game, parcels, bbl);
-  const fundableTotal = purse.closed ? 0 : purse.total;
+  // Friends and family, on the engine's own limits: the site counts as your
+  // capital at its equity, and the job's whole cash need is what they can share.
+  const held = game.holdings[bbl];
+  const synBar = !held ? "Buy the dirt first." : purse.fund ? "A fund lot is built with the fund's money." : syndicateBar(game, bbl);
+  const landEquity = held ? Math.max(0, ownedHoldingValue(game, parcels, held) - siteDebt) : 0;
+  const ffMax = plan && !synBar ? maxOutside(game, need.whole, landEquity) : 0;
+  const outside = Math.round(ffMax * ffPick);
+  const fundableTotal = purse.closed ? 0 : purse.total + outside;
   const canFund = need.whole <= fundableTotal && need.dayOne <= fundableTotal;
   const fundShort = Math.max(0, need.whole - fundableTotal, need.dayOne - fundableTotal);
   const closeCheque = need.dayOne;
@@ -998,6 +1010,35 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 </div>
               </div>
               <div className="page-section" style={{ marginTop: 8 }}>
+                <div className="page-section-head">Outside equity · friends and family</div>
+                {ffMax > 0 ? (
+                  <>
+                    <div className="slider">
+                      <div className="slider-head">
+                        <span className="slider-label">Raise from friends and family · up to {usd(ffMax)}</span>
+                        <span className="slider-value">{usd(outside)}</span>
+                      </div>
+                      <input type="range" min={0} max={1} step={0.05} value={ffPick}
+                        style={{ ["--fill" as string]: `${ffPick * 100}%` }}
+                        onChange={(e) => setFfPick(Number(e.target.value))} />
+                    </div>
+                    {outside > 0 && (
+                      <div className="grid">
+                        <Row k="Their share of each call" v={`${Math.round(Math.min(1, outside / Math.max(1, need.whole)) * 100)}% until their ${usd(outside)} is in`} />
+                        <Row k="Your capital" v={`${usd(landEquity)} site + ${usd(Math.max(0, need.whole - outside))} cash`} />
+                        <Row k="Their terms" v={`${Math.round(FF_TERMS.hurdles[0] * 100)}% pref · ${Math.round(FF_TERMS.promotes[1] * 100)}% promote only above a ${Math.round(FF_TERMS.hurdles[1] * 100)}% IRR`} />
+                        <Row k="Completion guarantee" v="Yours — overruns past their commitment are your cash alone" bad />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="hint">{synBar ?? (ffAvailable(game) <= 0
+                    ? "Your friends and family have nothing left to put in — their money is in your live deals, or you lost it."
+                    : "Nothing to raise on this job.")}</div>
+                )}
+                <div className="hint">An unknown developer raises from people who know them, at most a dollar of theirs for each of yours. Pay them back with a profit and the network grows; lose their money and most of them are gone for good.</div>
+              </div>
+              <div className="page-section" style={{ marginTop: 8 }}>
                 <div className="page-section-head">Equity</div>
                 <div className="grid">
                   <Row k="At closing" v={`${usd(closeCheque)}`} strong bad={closeCheque > fundableTotal} />
@@ -1049,14 +1090,14 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 <button
                   className="btn btn-buy"
                   disabled={!canFund}
-                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design, takeout }, plan.lender, spec)}
+                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design, takeout, syndicate: outside > 0 ? { outside } : undefined }, plan.lender, spec)}
                   title={purse.closed ?? (!canFund
                     ? `Short ${usd(fundShort)} — needs ${usd(need.whole)} fundable: ${usd(equityRequired)} equity all-in plus the ${usd(need.margin)} overrun cushion`
                     : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build${purse.fund ? ", paid by the fund" : ""}.`)}
                 >
                   {purse.closed ? "Fund investment period over"
                     : canFund
-                    ? `Break ground · ${usd(equityRequired)} ${purse.fund ? "fund " : ""}equity all-in`
+                    ? `Break ground · ${usd(equityRequired)} ${purse.fund ? "fund " : ""}equity all-in${outside > 0 ? ` · ${usd(outside)} from friends and family` : ""}`
                     : `Cannot finish · short ${usd(fundShort)}`}
                 </button>
               </div>

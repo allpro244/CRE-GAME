@@ -14,6 +14,7 @@ import {
 import { taxAppealQuote, INCOME_TAX_RATE, NOL_SHELTER_CAP } from "@/engine/tax";
 import { compFlows } from "@/engine/comps";
 import { usd, pct } from "@/ui/format";
+import { syndicateView } from "@/engine/syndicate";
 import { NWChart, Big, openViewOn } from "@/ui/panels/shared";
 import Waterfall from "@/ui/vitals/Waterfall";
 
@@ -361,7 +362,8 @@ function BalanceSheet() {
                       const eq = v - debt;
                       const ltv = v > 0 ? debt / v : 0;
                       const jv = h.jv?.share ?? 0;
-                      const mine = g.key === "fund" ? null : eq * (1 - jv);
+                      const syn = syndicateView(game, parcels, h.bbl);
+                      const mine = g.key === "fund" ? null : syn ? syn.yours : eq * (1 - jv);
                       totEq += eq;
                       if (mine !== null) totMine += mine;
                       return (

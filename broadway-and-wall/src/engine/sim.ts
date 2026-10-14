@@ -50,6 +50,7 @@ import { tickBlackSwans } from "./blackswans";
 import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 import { purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
+import { settleSyndications } from "./syndicate";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -1033,6 +1034,9 @@ function tickMonth(
       // A partnership passes its income through: on a JV deed the owner is
       // taxed on their share (depreciation already runs on their basis alone).
       if (inFund) { fundTaxable += noi - interest - depr; continue; }
+      // A syndicated deed's basis is the whole deal's, so its depreciation
+      // passes through at the sponsor's share like the income does.
+      if (s.syndications?.[h.bbl]) { taxable += (noi - interest - depr) * taxShare(s, h); continue; }
       taxable += (noi - interest) * (1 - partnerShare(s, h)) - depr; // losses net against gains across the portfolio
     }
     if (liveFund) taxable += fundTaxable * gpCapitalShare(liveFund);
@@ -1298,6 +1302,9 @@ function tickMonth(
     }
   }
 
+  // The month's settlement with every syndicate's investors (syndicate.ts):
+  // after every flow the month booked to their deeds, before it is marked.
+  settleSyndications(s, parcels);
   // the record book — one appraisal for NW history, milestones, and next month's overhead base
   const { nw, gav } = portfolioMark(s, parcels);
   s.prevGav = Math.round(gav);

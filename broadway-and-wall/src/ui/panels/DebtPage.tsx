@@ -13,6 +13,7 @@ import { usd } from "@/ui/format";
 import { RefiSection } from "@/ui/panels/RefiDesk";
 import { Big, Row } from "@/ui/panels/shared";
 import { FundDesk } from "@/ui/panels/FundDesk";
+import { SyndicateDesk } from "@/ui/panels/SyndicateDesk";
 import { CreditLine } from "@/ui/panels/CreditLineDesk";
 import { MaturityWall } from "@/ui/rollups/MaturityWall";
 import { tabCounts } from "@/ui/desks";
@@ -288,6 +289,7 @@ export function DebtPage() {
           Books still shows the drawn balance as a liability; draw and repay live
           here with the mortgages and the facility. */}
       <FundDesk />
+      <SyndicateDesk />
       <CreditLine />
 
       {(game.privateBorrowQuotes?.length ?? 0) > 0 && (

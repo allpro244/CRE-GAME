@@ -337,7 +337,7 @@ interface AppState {
   sellStake: (bbl: string, share: number) => void;
   buyOutPartner: (bbl: string) => void;
   buyLandBack: (bbl: string) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed" }, lender?: string, spec?: number) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed"; syndicate?: { outside: number } }, lender?: string, spec?: number) => void;
   /** The scheme on the Build desk, drawn on its lot in the 3D city while you design it. */
   designPreview: DesignPreview | null;
   setDesignPreview: (p: DesignPreview | null) => void;

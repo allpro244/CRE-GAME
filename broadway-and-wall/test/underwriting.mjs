@@ -91,7 +91,9 @@ for (const [name, x] of [["rates", rate], ["costs", cost], ["vacancy", vacancy],
     if (!u) continue;
     const p = u.plan;
     const noi = p.yieldOnCost / 100 * p.basisTotal;
-    const rebuild = p.basisTotal - p.landBasis;
+    // Ex land means ex the land AND what it costs to hold it while the
+    // building goes up (landCarry, dev.ts) — both are the dirt's.
+    const rebuild = p.basisTotal - p.landBasis - (p.landCarry ?? 0);
     const noiEx = p.yieldOnCostExLand / 100 * rebuild;
     checked++;
     if (Math.abs(noi - noiEx) > 1) badId++;

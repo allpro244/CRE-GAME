@@ -142,9 +142,25 @@ function destroyBuilding(s: GameState, parcels: ParcelTable, bbl: string, payout
     h.tenants = [];
     delete h.occ; delete h.makeReady; delete h.deliveredM; delete h.shellSf; delete h.leasingHold;
     h.condition = "standard";
+    // THE LENDER IS PAID FIRST. Every mortgage names the lender as loss payee
+    // on the policy: casualty proceeds retire the debt before the owner sees a
+    // dollar, and without a prepayment charge — nobody chose to prepay. Only
+    // what is left over reaches the owner, and a loan bigger than the cheque
+    // stays on the dirt.
+    let left = paid;
+    for (const leg of ["loan", "mezz"] as const) {
+      const ln = h[leg];
+      if (!ln || left <= 0) continue;
+      const take = Math.min(left, ln.balance);
+      ln.balance = Math.round(ln.balance - take);
+      left -= take;
+      if (ln.balance <= 1) delete h[leg];
+    }
     const intoFund = !!(h.fundOwned && s.fund && !s.fund.settled);
-    if (intoFund && s.fund) s.fund.cash += paid; else s.cash += paid;
-    logBooks(s, "sold", paid, bbl, intoFund);
+    if (intoFund && s.fund) s.fund.cash += left; else s.cash += left;
+    // Repaying principal is a balance-sheet movement, not income: only what
+    // reached the owner is booked, as a sale books its proceeds.
+    if (left > 0) logBooks(s, "sold", left, bbl, intoFund);
     s.lois = s.lois.filter((l) => l.bbl !== bbl);
   } else {
     const r = ownerOf(s, bbl);

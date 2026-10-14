@@ -6,12 +6,11 @@ import {
 } from "@/engine/lenders";
 import type { Lender } from "@/engine/lenders";
 import {
-  PRODUCTS, statedLtv, advanceFactor, windowOpen, loanMin, singleNameCap, lenderRelOf, relCurve, relAdvance,
+  PRODUCTS, statedLtv, advanceFactor, windowOpen, loanMin, holdMaxOf, singleNameCap, lenderRelOf, relCurve, relAdvance,
   underwritingStandards, standardsWord,
 } from "@/engine/debt";
 import { deskRatePct } from "@/engine/pricing";
 import { shortIndexOf } from "@/engine/market";
-import { sizeAreaScale } from "@/engine/cityscale";
 import { cityLoanBook } from "@/engine/loanbook";
 import { lineLender } from "@/engine/credit";
 import { workoutMood, deskCondition } from "@/engine/workout";
@@ -277,7 +276,7 @@ function BankFile({ l }: { l: Lender }) {
                 const rate = deskRatePct(bench, p.spread, { ci: e.creditIdx ?? 1, app: failed ? 0 : l.appetite, rel: relCurve(game, l.name) });
                 const open = !failed && windowOpen(game, p);
                 const min = loanMin(game, p);
-                const max = p.maxLoan ? Math.round(p.maxLoan * sizeAreaScale(game)) : 0;
+                const max = holdMaxOf(game, p) ?? 0;
                 return (
                   <tr key={p.id}>
                     <td>{p.label.split(" · ").slice(1).join(" · ") || p.label}{p.recourse && !p.label.includes("recourse") ? <span className="dim"> · recourse</span> : null}</td>

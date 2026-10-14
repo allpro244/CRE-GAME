@@ -148,7 +148,8 @@ export function fundRaiseQuote(s: GameState): {
   }
   // Size from standing and phase — not a menu. Cleaner mark → larger raise.
   const clean = Math.max(0, 1.6 - st.mark);
-  const base = 8_000_000 + clean * 25_000_000;
+  // A first-time raise in the opening year's dollars, carried at inflation.
+  const base = (8_000_000 + clean * 25_000_000) * (s.econ.cpi ?? 1);
   const phaseMult = Math.max(0.85, Math.min(1.15, ciFund));
   // A SUCCESSOR FUND IS SIZED OFF THE LAST ONE. LPs re-up in proportion to
   // what the prior vehicle returned, and a manager's second fund raising a

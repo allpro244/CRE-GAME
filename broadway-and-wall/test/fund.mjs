@@ -95,6 +95,8 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 {
   let g = E.firstListings(E.newGame(12007, parcels, 20_000_000), parcels, bbls);
   g.econ.phase = "expansion";
+  // The raise reads the credit window, not the label (fund.ts): an open one.
+  g.econ.creditIdx = 1;
   g.exits = [
     { bbl: "x", address: "x", boughtM: 0, soldM: 1, price: 2, basis: 1, gain: 1, forced: false },
     { bbl: "y", address: "y", boughtM: 0, soldM: 2, price: 2, basis: 1, gain: 1, forced: false },

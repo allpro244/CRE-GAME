@@ -4026,7 +4026,9 @@ export function tickCityGrowth(
   for (const j of s.cityJobs) {
     // An orphaned frame does not finish itself. It stands there until the
     // receiver sells it, and the buyer decides whether it ever opens.
-    if (j.orphaned) { if (!s.built[j.bbl] && !s.holdings[j.bbl]) still.push(j); continue; }
+    // (A cleared marker is not a building — see A CLEARED LOT below: reading
+    // the key's presence dropped every orphaned teardown frame on the spot.)
+    if (j.orphaned) { if (!((s.built[j.bbl]?.bldgArea ?? 0) > 0) && !s.holdings[j.bbl]) still.push(j); continue; }
     if (s.month < j.deliverM) { still.push(j); continue; }
     const rec = parcels[j.bbl];
     // A CLEARED LOT IS NOT A BUILT ONE. This read `s.built[j.bbl]` as "somebody

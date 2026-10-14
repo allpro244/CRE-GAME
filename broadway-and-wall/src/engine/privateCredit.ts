@@ -161,8 +161,10 @@ function rivalNeedsPrivate(
   // Size: bridge, not a permanent takeout — 55–68% of as-is, capped.
   const ltv = cl(0.45, 0.72, privateAdvance(s) + ((r.stressMs ?? 0) > 8 ? 0.08 : 0));
   let face = Math.round(asIs * ltv / 25_000) * 25_000;
-  face = cl(250_000, 12_000_000, face);
-  if (face < 250_000 || asIs < face / 0.7) return null;
+  // A bridge desk's ticket band, carried at the town's inflation.
+  const infl = s.econ.cpi ?? 1;
+  face = cl(250_000 * infl, 12_000_000 * infl, face);
+  if (face < 250_000 * infl || asIs < face / 0.7) return null;
 
   // The volume bank is the one a stressed sponsor calls first. This looked up
   // "Alden National", a desk that has never existed, so `bankShut` was always
@@ -439,7 +441,7 @@ function playerNeedsPrivateBorrow(
 
   const ltv = cl(0.45, 0.72, privateAdvance(s) + 0.03 + (balloonFile ? 0.06 : 0));
   let principal = Math.round((asIs * ltv) / 25_000) * 25_000;
-  principal = cl(250_000, 12_000_000, principal);
+  principal = cl(250_000 * (s.econ.cpi ?? 1), 12_000_000 * (s.econ.cpi ?? 1), principal);
   // A quote that cannot touch the balloon is noise — size at least toward payoff.
   if (payoff > 0) principal = Math.max(principal, Math.min(Math.round(payoff / 25_000) * 25_000, Math.round(asIs * 0.7)));
   if (principal < 250_000) return null;

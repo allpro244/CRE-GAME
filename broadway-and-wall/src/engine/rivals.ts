@@ -2621,7 +2621,12 @@ function maybeNewFirm(s: GameState) {
         : PROFILES.filter((p) => p.id !== "spinout").map((p) => p.id);
   const profile = PROFILE_OF[pool[Math.floor(hash01(`${s.seed}:raise:${s.month}:${name}`) * pool.length)]];
   if (!founder) style = profile.style;
-  const equity = Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s));
+  // ...IN TODAY'S DOLLARS (2026-10-14). Not richer than the founders of forty
+  // years ago, but not poorer either: the band is the opening year's, carried
+  // at the town's own inflation. Read in nominal dollars, a fund raised in
+  // year eighty at a price level five times the opening one was a fifth of
+  // the size of every firm it was meant to compete with.
+  const equity = Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s) * (s.econ.cpi ?? 1));
   const ltv = STYLE[style].maxLtv * rrange(s, 0.68, 0.88, "rivals");
   /**
    * A FIRST CLOSE IS COMMITMENTS, NOT CASH. The LPs sign for the fund; the
@@ -2743,7 +2748,7 @@ function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
   const toFinish = Math.max(0, (j.cost ?? 0) - (j.spent ?? 0));
   const taker = livingRivals(s).find((r) =>
     paramsOf(r).build >= 0.3
-    && r.cash > price + toFinish * 0.4 + 2_000_000
+    && r.cash > price + toFinish * 0.4 + 2_000_000 * (s.econ.cpi ?? 1)
     && rng(s, "rivals") < 0.10 * paramsOf(r).build * ci);
   if (!taker) return;
   taker.cash -= price;
@@ -4073,7 +4078,8 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     const contrarianHold = r.sheet && r.sheet.cycle < 40 && (s.econ.creditIdx ?? 1) >= 0.95
       ? 1 + (40 - r.sheet.cycle) / 20 : 1;
     const reserve = contrarianHold * Math.min(
-      r.style === "developer" ? 45_000_000 : 30_000_000,
+      // The ceiling on dry powder is a real amount, carried at inflation.
+      (r.style === "developer" ? 45_000_000 : 30_000_000) * (s.econ.cpi ?? 1),
       Math.max(2_000_000 * dollarLevel(s.econ), aum * (
         r.style === "developer" ? 0.16 : r.style === "family" ? 0.09 : r.style === "core" ? 0.06 : 0.045)),
     );

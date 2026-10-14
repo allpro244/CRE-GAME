@@ -414,8 +414,20 @@ const AFFORD_BAND: [number, number] = [0.45, 2.2];
 /** Renter demand per point of the loan index over the town's opening rate.
  *  See the tenure note at the multifamily demand driver. */
 const TENURE_PER_PT = 0.008;
+// OFFICE 0.45 -> 0 (2026-10-14). The 0.45 rested on one unverified London
+// estimate of total occupancy demand, which the note above already says is
+// mostly a QUALITY effect. The quantity record runs the other way: US office
+// space per worker fell from ~250 sf to ~190 sf over 1990-2019 while real
+// income per worker rose ~1.5%/yr — a quantity income elasticity at or below
+// zero, as retail's is. With the secular eras' own space-per-worker
+// compression this left office demand per job RISING +0.15%/yr on net, and
+// office demand per job outgrowing the record. (Real office rent on this
+// island still rises ~0.5%/yr over a century, and should: Manhattan asking
+// rents went ~$5/sf in 1950 to ~$75-85 in 2019 against 10.6x CPI — about
+// +0.5-0.7%/yr real on a supply-constrained island, where the US average
+// is ~0.)
 const INCOME_ELAST: Record<BuiltClass, number> = {
-  office: 0.45, retail: 0.00, multifamily: 0.25, industrial: 0.40,
+  office: 0.00, retail: 0.00, multifamily: 0.25, industrial: 0.40,
 };
 
 /**

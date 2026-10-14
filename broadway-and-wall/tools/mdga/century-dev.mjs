@@ -18,7 +18,7 @@
 //
 //   pnpm engine && node tools/mdga/century-dev.mjs
 //   (SEED=… YEARS=100 CASH=1000000 OUT=path.json)
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 process.env.BW_SIZE ??= "giant";
@@ -540,7 +540,37 @@ function trackDownturn() {
 const snaps = [snapshot()];
 const years = [];
 let firstTop = null;
-J(`OPEN: ${K(open)} on a ${bbls.length}-lot Great City map (${snaps[0].vacantLots} vacant), ${snaps[0].field - 1} rivals; you rank #${snaps[0].rank}. Index ${g.econ.indexRate.toFixed(2)}%, ${g.econ.phase}.`);
+// CHECKPOINTS. A century on the Great City map is about an hour of wall clock,
+// and a container restart loses all of it. CKPT=path saves the game and the
+// bot's books every ten years and resumes from them on the next start.
+const CKPT = process.env.CKPT;
+function saveCkpt() {
+  if (!CKPT) return;
+  const bot = {
+    g, jobLog, sales, teardowns, landBuys, exitsSeen, seen: [...seen], dead, listedUnsellable, tape, om, landIdle,
+    downturns, dt: dt && { ...dt, failedSeen: [...dt.failedSeen], newsSeen: [...dt.newsSeen] },
+    histIdx, histVac, snaps, years, firstTop, journal, C, ERR,
+  };
+  writeFileSync(CKPT + ".tmp", JSON.stringify(bot));
+  renameSync(CKPT + ".tmp", CKPT);
+}
+const resumed = !!(CKPT && existsSync(CKPT));
+if (resumed) {
+  const b = JSON.parse(readFileSync(CKPT, "utf8"));
+  g = b.g;
+  const refill = (arr, from) => { arr.length = 0; arr.push(...from); };
+  refill(jobLog, b.jobLog); refill(sales, b.sales); refill(landBuys, b.landBuys); refill(listedUnsellable, b.listedUnsellable);
+  refill(downturns, b.downturns); refill(histIdx, b.histIdx); refill(histVac, b.histVac); refill(snaps, b.snaps); refill(years, b.years); refill(journal, b.journal);
+  // jobs{} and jobLog[] share records; JSON split them, so rebuild the index from the log.
+  for (const j of jobLog) jobs[j.bbl] = j;
+  for (const x of b.seen) seen.add(x);
+  Object.assign(teardowns, b.teardowns); Object.assign(dead, b.dead); Object.assign(tape, b.tape); Object.assign(om, b.om);
+  Object.assign(landIdle, b.landIdle); Object.assign(C, b.C); Object.assign(ERR, b.ERR);
+  exitsSeen = b.exitsSeen; firstTop = b.firstTop;
+  dt = b.dt && { ...b.dt, failedSeen: new Set(b.dt.failedSeen), newsSeen: new Set(b.dt.newsSeen) };
+  console.log(`resumed from ${CKPT} at ${yr()}`);
+}
+if (!resumed) J(`OPEN: ${K(open)} on a ${bbls.length}-lot Great City map (${snaps[0].vacantLots} vacant), ${snaps[0].field - 1} rivals; you rank #${snaps[0].rank}. Index ${g.econ.indexRate.toFixed(2)}%, ${g.econ.phase}.`);
 while (g.month < YEARS * 12 && !g.gameOver) {
   workTalks(); clearSites(); lease(); build(); manage();
   shop(); offMarket();
@@ -557,6 +587,7 @@ while (g.month < YEARS * 12 && !g.gameOver) {
     if (process.env.PROGRESS) console.log(`${yr()} ${g.econ.phase.padEnd(10)} idx ${g.econ.indexRate.toFixed(1)}% NW ${K(nw)} cash ${K(g.cash)} #${rank}/${bd.length} deeds ${Object.keys(g.holdings).length} jobs ${Object.keys(g.developments).length} started ${jobLog.length}`);
   }
   if (g.month % 240 === 0) snaps.push(snapshot());
+  if (g.month % 120 === 0) saveCkpt();
 }
 if (g.month % 240 !== 0) snaps.push(snapshot());
 const result = {

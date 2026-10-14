@@ -234,7 +234,8 @@ and their actual multiple `M`:
 
 | Outcome vs the promise | Evidence |
 |---|---|
-| Beat the pitch by 2+ points | **+6** (capped: big beats are partly luck) |
+| Exceptional: beat the pitch by 5+ points **and** investors' multiple ≥ 1.8× | **+8** (capped: the biggest beats are partly luck) |
+| Beat the pitch by 2–5 points | **+6** |
 | Met the pitch (within 2 points either way) | **+4** |
 | Missed by 2–5 points, investors still made money | **−8** |
 | Missed by more than 5 points, investors got their money back (`M` ≥ 1.0) | **−15** |
@@ -250,9 +251,44 @@ vintage window, from rival funds and merchant SPVs):
 - **Misconduct:** a broken completion guarantee, an unfunded GP call, an LPA
   breach, a removal for cause. × 2.0, plus a separate **−25**.
 
-Then **size** (× 0.6–1.4, by the vehicle's share of all the investor capital
-you have ever raised) and **alignment** (× 0.85 on negative evidence if your
-own co-invest was at least 10% and suffered alongside theirs).
+Then **size**:
+- **Good results** are multiplied by the deal's **size weight** (next
+  section), so a big success counts for more than a small one.
+- **Bad results** are multiplied by × 0.6 to × 2.0, by the deal's share of
+  all the investor capital you have ever managed. A blow-up on your biggest
+  deal hurts most, whatever your track record.
+
+Then **alignment**: × 0.85 on negative evidence if your own co-invest was at
+least 10% and suffered alongside theirs.
+
+#### Quality over quantity: experience is weighted by size
+
+A record isn't a count of deals. Investors weigh **how much money** a sponsor
+has handled and **how well**: three or four large, excellent deals say as
+much as ten small ones. So each realised deal carries a **size weight**:
+
+```
+size weight = (equity in the deal ÷ reference deal) ^ (1/3)
+```
+
+The **reference deal** is about $2M of equity in opening-year dollars,
+carried at inflation. That reference and the cube root are shape parameters.
+The cube root gives diminishing returns: a deal 8× the reference counts as 2
+small deals, and 27× counts as 3. Big deals matter, but one mega-deal can't
+swamp a record (with a square root or linear weight it would).
+
+| Equity in the deal (opening-year $) | Counts as |
+|---|---|
+| $2M | 1 small deal |
+| $5M | 1.4 |
+| $10M | 1.7 |
+| $25M | 2.3 |
+| $50M | 2.9 |
+| $100M | 3.7 |
+
+**Experience `N`** is the sum of the size weights of realised deals with
+positive evidence, not the number of deals. It drives the small-sample
+discount below and the experience requirements of each band.
 
 Credit events (foreclosure, deficiency, deed-in-lieu, DPO, forced sale) that
 are not already inside a vehicle's outcome add their own negative evidence,
@@ -286,12 +322,13 @@ multiple, since there was no pitch):
 | Foreclosure, deficiency or forced sale | read from `sponsor.events` exactly as for any sponsor |
 
 **Discounts:**
-- **Half weight in the sample count.** Each own deal counts as 0.5 toward
-  `n` in `shrink()`, so it takes twice as many own deals as investor deals to
-  convince anyone.
-- **Size.** Evidence × `min(1, equity in the deal ÷ size reference)`. The
-  reference is a shape parameter in opening-year dollars carried at
-  inflation, so a run of tiny flips can't farm a reputation.
+- **Half weight in experience.** Each own deal adds only half its size
+  weight to experience `N` (its evidence values are already the lower ones
+  in the table above), so it takes about twice as much own-money record as
+  investor record to convince anyone.
+- **Size.** Own deals use the same size weight as investor deals, so a run
+  of tiny flips counts for little, and a few big, very successful jobs count
+  for a lot.
 - **A ceiling: own-money evidence alone can lift the score to +35** and no
   further, and can't qualify a firm above Emerging however it ranks. Proven and above need a record with
   investors' money, because that is the thing institutions are underwriting.
@@ -340,24 +377,26 @@ first thing they ask for.
 
 ```
 score = shrink(sum of positive evidence) + (sum of negative evidence)
-shrink(x) = x × n / (n + 4)      n = realised vehicles with positive evidence
+shrink(x) = x × N / (N + 4)      N = experience: sum of size weights (above)
 ```
 
-- **Positive evidence is shrunk** by how few deals you have done. One good
-  deal is noise; a dozen is a record. The 4 is a shape parameter.
+- **Positive evidence is shrunk** by how little experience it rests on: one
+  small good deal is noise, while a dozen small deals or a few big ones are
+  a record. The 4 is a shape parameter.
 - **Negative evidence is never shrunk.** It lands in full the moment it is
   recognised.
 - **Only realised results build the rating.** Marks and paper IRRs don't.
-  Warning signs can only subtract. Own-money deals count at half weight in
-  `n` and are capped at +35 on their own (above).
+  Warning signs can only subtract. Own-money deals carry lower evidence,
+  count half toward experience, and are capped at +35 on their own (above).
 - **Memory:** positive evidence fades over 15–20 years, so a firm must keep
   delivering; ordinary negatives fade over 10 years; misconduct over 20.
 
-What that produces for a sponsor who meets every promise (+4 a deal), before
-fading. The last column is the highest band the **score floor** allows. The
-band actually held also depends on rank (below).
+What that produces for a sponsor doing **small deals** (size weight 1) and
+meeting every promise (+4 a deal), before fading. The last column is the
+highest band the **score floor** allows. The band actually held also depends
+on rank (below).
 
-| Clean realised investor deals | Score | Highest band the floor allows |
+| Clean small investor deals | Score | Highest band the floor allows |
 |---|---|---|
 | 1 | +0.8 | Unknown |
 | 3 | +5 | Unknown |
@@ -368,6 +407,21 @@ band actually held also depends on rank (below).
 | 15 | +47 | **Institutional** |
 | 17 | +55 | **Blue-chip** (if one of them was a fund) |
 | 23 | +78 | Blue-chip |
+
+**Quality vs quantity, side by side** (before fading):
+
+| Record | Experience `N` | Score | Highest band the floor allows |
+|---|---|---|---|
+| 10 small deals ($2M), all met the pitch | 10.0 | +29 | Proven |
+| 4 big deals ($25M), all met the pitch | 9.3 | +26 | Proven |
+| **4 big deals ($25M), all exceptional** | 9.3 | **+52** | **Institutional** |
+| **3 big deals ($50M), all exceptional** | 8.8 | **+48** | **Institutional** |
+| 10 small deals, all exceptional | 10.0 | +57 | Institutional (Blue-chip needs a fund) |
+| 1 huge deal ($100M), exceptional | 3.7 | +14 | Emerging (one deal is still luck) |
+
+So 3–4 large, excellent deals put a sponsor where 10 excellent small deals
+do, and ahead of 10 merely adequate ones. A single home run is not a track
+record.
 
 Passing a floor only makes the band **possible**. You also have to outrank
 enough of the street to be inside that band's rank share.
@@ -425,9 +479,9 @@ feature of private real estate; cite it in the code comment when calibrating.
    | Band | Score floor | Also needs |
    |---|---|---|
    | Emerging | +10 | — |
-   | Proven | +25 | 3 realised **investor** vehicles |
-   | Institutional | +40 | 10 realised investor vehicles |
-   | Blue-chip | +55 | 15 realised investor vehicles, including a fund |
+   | Proven | +25 | investor-deal experience `N` ≥ 3, from at least 2 deals |
+   | Institutional | +40 | investor-deal experience `N` ≥ 8, from at least 3 deals |
+   | Blue-chip | +55 | investor-deal experience `N` ≥ 12, from at least 4 deals, including a fund |
 
    Two bands are **absolute**, whatever the rank: **Questioned** (score
    under −10) and **Toxic** (score under −40, or any live misconduct mark).
@@ -479,7 +533,7 @@ band you still mostly hear no.
 
 Other limits on top of the band:
 - **Blind-pool funds** need Institutional or better, which already implies
-  10 realised investor vehicles. Investors back a fund on a record, not a
+  real investor-deal experience (`N` ≥ 8 from at least 3 deals). Investors back a fund on a record, not a
   deal.
 - **Step-up limit:** no raise above about 2–3× your largest successfully
   completed one (a shape parameter).

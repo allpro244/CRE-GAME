@@ -2291,6 +2291,10 @@ export interface Econ {
   // behaviour exactly.
   baseStock0?: Record<BuiltClass, number>;
   occupied: Record<BuiltClass, number>;
+  /** The player's own occupied sf by class, as last reconciled into `occupied` — see playerSpace in sim.ts. */
+  playerOcc?: Record<BuiltClass, number>;
+  /** This month's count, set before tickEcon: occupied and rentable sf in the player's standing buildings. */
+  playerNow?: { occ: Record<BuiltClass, number>; sf: Record<BuiltClass, number> };
   /**
    * New floor that has been delivered but is not yet a suite — marketing,
    * demise, fit-out. Occupied cannot eat it and the looking pool cannot
@@ -2616,6 +2620,8 @@ export interface Rival {
   targetLtv: number;
   bornM: number;
   aum?: number;          // marked each month, for display
+  /** Distributions over roughly the last two years (decays monthly) — what a recall clause can reach. */
+  distRecent?: number;
   /** Last mark's annual NOI — kept so absorption can size a line without re-walking the book. */
   markNoi?: number;
   /** Last mark's vacant-land value — same reason as markNoi. */

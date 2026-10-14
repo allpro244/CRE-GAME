@@ -255,5 +255,5 @@ export function driftInflTarget(econ: Econ, rnd: number) {
  * follows the committee, it does not trade like a ten-year.
  */
 export function shortIndexFor(policy: number, creditIdx: number): number {
-  return +Math.max(0.05, Math.min(23, policy + 0.15 + 0.75 * Math.max(0, 1 - creditIdx))).toFixed(2);
+  return +Math.max(0.05, (policy + 0.15 + 0.75 * Math.max(0, 1 - creditIdx))).toFixed(2);
 }

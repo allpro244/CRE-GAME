@@ -4166,7 +4166,11 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // this map — the historical worst case — as a consequence of the draw
   // structure rather than a quota.
   const cand: { use: BuiltClass; surplus: number; stock: number }[] = [];
-  for (const use of ["office", "retail", "multifamily"] as BuiltClass[]) {
+  // INDUSTRIAL TOO (2026-10-14). Sheds were left out, so a shed glut could
+  // only ever wait for demand: measured, real industrial rent halved over
+  // sixty years with vacancy at 13-37% and nothing leaving. An empty
+  // obsolete shed is cleared on the same carrying-cost test as anything else.
+  for (const use of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
     const natural = NATURAL_VAC[use];
     const vac = e.cityVac?.[use] ?? natural;
     if (vac <= natural + 0.05) continue;                    // deep, not cyclical

@@ -190,162 +190,185 @@ Bidding hard on a building is a negotiating matter between buyer and seller.
 It says nothing about whether a sponsor returns investors' money, so it
 doesn't touch this rating.
 
-#### What moves it
+#### Design intent (owner, Oct 2026)
 
-| Component | Source in the engine | Direction | How it weighs |
+> Really hard to raise money at the beginning. As a sponsor slowly shows
+> performance, the rating slowly builds, and investors only become interested
+> once they are highly confident the sponsor will make them money. Screwing up,
+> or not performing the way you said you would, has a big impact.
+
+So the rating is modelled as **investor confidence that this sponsor delivers
+what it promises**. Every number below is a starting design for that intent
+and must be measured (§9). The evidence values and the shrinkage constant are
+shape parameters, labelled as such in code.
+
+#### The promise is what you are judged against
+
+Every vehicle records, at closing, **what the sponsor told investors**: the
+pitched net IRR, net multiple, distribution schedule, delivery date and
+budget from the offering memorandum.
+
+- The player chooses how to pitch: conservative, base or aggressive against
+  the engine's own pro forma.
+- An aggressive pitch raises faster today and sets a higher bar to clear
+  tomorrow.
+- Investors also haircut the pitch of any sponsor below Proven, so pitching
+  high helps less than it looks.
+
+Making money is not enough. **Delivering less than you promised counts
+against you, even if investors got their money back.**
+
+#### Evidence from each realised vehicle
+
+When a vehicle is realised (sold, refinanced out, or wound up), it adds one
+piece of evidence based on investors' actual net IRR vs the pitched net IRR,
+and their actual multiple `M`:
+
+| Outcome vs the promise | Evidence |
+|---|---|
+| Beat the pitch by 2+ points | **+6** (capped: big beats are partly luck) |
+| Met the pitch (within 2 points either way) | **+4** |
+| Missed by 2–5 points, investors still made money | **−8** |
+| Missed by more than 5 points, investors got their money back (`M` ≥ 1.0) | **−15** |
+| Investors lost a little (`M` 0.9–1.0) | **−20** |
+| Investors lost money (`M` 0.7–0.9) | **−30** |
+| Heavy loss (`M` 0.4–0.7) | **−45** |
+| Wipe-out (`M` under 0.4) | **−60** |
+
+Then the **fault multiplier**, judged against peers (same strategy, same
+vintage window, from rival funds and merchant SPVs):
+- **Market-wide:** peers missed by a similar margin. × 0.5.
+- **Your deal:** peers delivered; you didn't. × 1.0.
+- **Misconduct:** a broken completion guarantee, an unfunded GP call, an LPA
+  breach, a removal for cause. × 2.0, plus a separate **−25**.
+
+Then **size** (× 0.6–1.4, by the vehicle's share of all the investor capital
+you have ever raised) and **alignment** (× 0.85 on negative evidence if your
+own co-invest was at least 10% and suffered alongside theirs).
+
+Credit events (foreclosure, deficiency, deed-in-lieu, DPO, forced sale) that
+are not already inside a vehicle's outcome add their own negative evidence,
+read from `sponsor.events`. Reading them here doesn't change anything lenders
+do.
+
+#### Warning signs before the end (investor reporting)
+
+Investors don't wait for the exit. Quarterly reporting on every live vehicle
+can flag a deal, and each flag adds **−3 provisional evidence**:
+- delivery more than 6 months behind the pitched date
+- costs more than 10% over the pitched budget (a capital call, or a guarantee
+  drawn)
+- lease-up more than 12 months behind plan
+- distributions below the pitched schedule for 4 quarters in a row
+
+The provisional total is capped at −10 per vehicle. When the vehicle is
+realised, its provisional evidence is replaced by the final evidence. Every
+prospective investor can see these flags: a track-record tear sheet is the
+first thing they ask for.
+
+#### How confidence is computed: slow up, fast down
+
+```
+rating = shrink(sum of positive evidence) + (sum of negative evidence)
+shrink(x) = x × n / (n + 4)      n = realised vehicles with positive evidence
+```
+
+- **Positive evidence is shrunk** by how few deals you have done. One good
+  deal is noise; a dozen is a record. The 4 is a shape parameter.
+- **Negative evidence is never shrunk.** It lands in full the moment it is
+  recognised.
+- **Only realised results build the rating.** Marks and paper IRRs don't.
+  Warning signs can only subtract.
+- **Memory:** positive evidence fades over 15–20 years, so a firm must keep
+  delivering; ordinary negatives fade over 10 years; misconduct over 20.
+
+What that produces for a sponsor who meets every promise (+4 a deal), before
+fading:
+
+| Clean realised deals | Rating | Band reached |
+|---|---|---|
+| 1 | +0.8 | Unknown |
+| 3 | +5 | Unknown |
+| 5 | +11 | Unknown |
+| 7 | +18 | **Emerging** |
+| 10 | +29 | Emerging |
+| 12 | +36 | **Proven** |
+| 15 | +47 | Proven |
+| 17 | +55 | **Institutional** |
+| 23 | +78 | **Blue-chip** |
+
+And what one failure does to a sponsor who has just reached Proven with 12
+clean deals (+36):
+
+| Failure | Hit | New rating | Clean deals needed to get back to +36 |
 |---|---|---|---|
-| **Realised investor outcomes** | `Exit` (equityIn, equityOut, `irr`); SPV and fund net IRR, DPI | + or − | Net-to-investor IRR vs that strategy's target, weighted by equity size and recency. The core of the rating. |
-| **Losing investors' money** | an SPV or fund with DPI < 1; a principal loss on any syndicated deal | −− | Counts in full immediately. Not shrunk for sample size (see below). |
-| **Credit events** | `sponsor.events`: foreclosure, deficiency, seizure, deed-in-lieu, DPO, forced sale | −− | Investors read the same public record lenders do: the same events and the same 10-year memory, weighted on this scale. Reading them here does not change `sponsorStanding` or anything lenders do. |
-| **Broken promises** | a failed completion guarantee, a missed capital call, an LPA breach, a removal for cause | −−− | The worst marks in the system: a broken guarantee follows a name longer than a foreclosure does. |
-| **Execution** | delivery slip vs plan (`deliveries`), budget overrun, lease-up vs underwriting | + or − | Small per job; matters in aggregate ("always late, always over"). |
-| **Tenure without incident** | firm age, years since the last mark | + (capped) | Small and capped: an old firm isn't automatically a good one. |
-| **Scale under management** | AUM in vehicles you run | + (capped) | Small: big managers get meetings, not trust. |
+| Missed the pitch by 3 points, investors still made money | −8 | +28, Emerging | about 3 |
+| Missed by 7 points, money back | −15 | +21, Emerging | about 4–5 |
+| Your deal lost investors 20% | −30 | +6, **Unknown** | about 8–9 |
+| Your deal wiped out | −60 | −24, **Questioned** | 15+, more than a decade |
+| Broken completion guarantee, `M` 0.6 | −45 × 2 − 25 = −115 | −79, **Toxic** | effectively a new career |
+| Market-wide crash, missed by 7 points, your co-invest lost too | −15 × 0.5 × 0.85 = −6 | +30, Emerging | about 2 |
 
-#### Why it is hard to earn and easy to lose
+#### Who invests, and on what terms
 
-These are the mechanisms that keep raising money hard. Each is a real
-property of how investors read a sponsor, not a penalty multiplier.
+Investors only commit when confidence is high. Within each band, the chance a
+given investor says yes rises steeply with the rating (a logistic centred on
+that investor type's threshold, as a shape parameter). So at the bottom of a
+band you still mostly hear no.
 
-1. **Credibility shrinkage.** Positive evidence is pulled toward 0 by sample
-   size: the rating moves by about `evidence × n / (n + k)`, where `n` is
-   realised deals (or funds, for institutional types) and `k` is a shape
-   parameter. One brilliant deal is luck; five is a record. A 40% IRR on
-   your first flip barely moves you.
-2. **Asymmetry.** Losses, credit events and broken promises are **not**
-   shrunk. One wiped-out deal costs more than three good ones earn. That
-   matches how investor committees actually write memos.
-3. **Only realised results count.** Marks, appraisals and unrealised
-   "paper" IRRs don't move the rating. Investors trust cash back, which also
-   closes the day-one-mark loophole from the realism findings.
-4. **Slow fade both ways.** Positive evidence decays over about 15–20 years
-   (a team's record goes stale). Negative evidence decays over the existing
-   10-year memory. Misconduct lasts 20 years. A failed fund's bar on
-   institutional money is now graded by cause rather than always permanent
-   (see "Losing investors' money" below).
-5. **A step-up limit, separate from the rating.** No investor backs a raise
-   much larger than the sponsor has done before: roughly **2–3× your largest
-   successfully completed raise** (a shape parameter). A great rating with
-   no history of size still raises small.
-6. **Relative, not absolute.** Investors compare. Your rating is read
-   against the rivals asking that year (§3.2's softmax), so a 30 in a town
-   full of 70s gets scraps.
+| Rating | Band | Who will invest | Max outside equity per $1 of yours | Pref | Promote you can get | Fees you can charge | Completion guarantee |
+|---|---|---|---|---|---|---|---|
+| below −40 | **Toxic** | Nobody | 0 | — | — | — | — |
+| −40 to −10 | **Questioned** | Only friends and family who were made whole before | $0.50 | 12%+ | none | none | personal |
+| **−10 to +15** | **Unknown** (player starts at 0) | Friends and family only, from a finite personal network | **$1 (a 50/50 deal)** | 12% | 0–10% above a 15% IRR | none | always |
+| +15 to +35 | **Emerging** | + local wealthy individuals, small platform cheques | $3 (75/25) | 10% | 15–20% above 12% | development fee ≤ 2% | always |
+| +35 to +55 | **Proven** | + platforms in size, family offices | $6 (85/15) | 9% | 20% above 12%, 30% above 18% | development 3%, asset management 1% | usually |
+| +55 to +75 | **Institutional** | + endowments, smaller pensions; a first blind-pool fund | $9 (90/10) | 8% | 20/30 tiers with catch-up | market | lender-driven |
+| above +75 | **Blue-chip** | + large pensions, insurers, sovereign funds; programmatic JVs (§6) | $19 (95/5) | 7–8% | best | market or above | rarely |
 
-#### What it does: gates and terms
+Other limits on top of the band:
+- **Blind-pool funds** need at least +55 **and** at least 10 realised
+  vehicles. Investors back a fund on a record, not a deal.
+- **Step-up limit:** no raise above about 2–3× your largest successfully
+  completed one (a shape parameter).
+- **The friends-and-family network is finite.** It is a shape parameter sized
+  at the start of the game, and grows slowly as you return money to it
+  (people tell their friends). At Unknown it is the only money there is.
 
-The bands below are a starting design to be measured, not a balance target.
-The terms columns are what the **market demands of a sponsor in that band**,
-before the year's supply and competition move them.
+**What this means at a $1M start:** the first syndicated job is at best a
+50/50 deal ($1M of yours, $1M of theirs, at a 12% pref with almost no
+promote), if the network has the money and the pitch closes at all. Reaching
+75/25 money takes about 7 clean deals; 90/10 money about 17. One real miss on
+the way costs years.
 
-| Rating | Band | Who will take the meeting | Investor pref demanded | Promote you can get | Fees you can charge | GP co-invest required | Completion guarantee | Raise speed |
-|---|---|---|---|---|---|---|---|---|
-| below −40 | **Toxic** | Nobody (bridge and hard money only) | — | — | — | — | — | — |
-| −40 to −10 | **Questioned** | Friends and family who already know you | 12%+ | 0–10% above a 15% IRR | none | 25%+ | always, personal | very slow |
-| −10 to +15 | **Unknown** (player starts at 0) | Friends, family and local HNW; small cheques | 10–12% | 10–15% above a 12–15% IRR | development fee ≤ 1% | 20%+ | always | slow; often fails |
-| +15 to +35 | **Emerging** | + syndication platforms, some family offices | 9–10% | 20% above 12% | development fee 2–3% | 10–20% | usually | moderate |
-| +35 to +55 | **Established** | + family offices, smaller endowments; a first fund is possible | 8–9% | 20%, then 30% above 15% | development 3–4%, management 1.25–1.5% | 5–10% | lender-driven | normal |
-| +55 to +75 | **Institutional** | + endowments, pensions (with size), insurers (separate accounts) | 8% | 20/30 tiers, catch-up | full market fees | 2–5% | rarely | fast |
-| above +75 | **Blue-chip** | + sovereign wealth funds and programmatic JVs (§6) | 7–8% | best tiers | market or above | 1–3% | no | oversubscribed |
+#### Investors who lost money remember you personally
 
-Lenders, sellers and brokers don't read this rating (see Scope above).
-
-#### Losing investors' money: exactly what happens
-
-This is the most important negative in the system, so it is specified in
-full. All numbers are a **starting design**: severity bands and fault
-classes are judgement calls to be measured, and the weights are shape
-parameters, labelled as such in code.
-
-**1. When the loss is recognised.** The investor market learns of a loss at
-the first **public** event, not at an appraisal:
-- a foreclosure, deed-in-lieu or forced sale of a vehicle's building (news
-  already reports these)
-- a vehicle wound up with investors short
-- a missed distribution the operating agreement required
-- a defaulted capital call
-
-Before that, nothing moves; afterwards, the final number replaces the
-estimate when the vehicle is wound up.
-
-**2. How bad it is.** Measured on the investors' money, net of fees:
-`M = what investors got back ÷ what they put in`.
-
-| Investors' multiple `M` | Severity | Base hit |
-|---|---|---|
-| 0.90–1.00 (pref missed, little principal lost) | Shortfall | −5 |
-| 0.70–0.90 | Loss | −12 |
-| 0.40–0.70 | Heavy loss | −22 |
-| under 0.40 | Wipe-out | −35 |
-
-**3. Whose fault it looks like.** Investors judge relative to the market,
-which is why the shared investor market needs peer benchmarks (same
-strategy, same vintage window, from rival funds and merchant SPVs):
-
-| Fault class | Test | Multiplier |
-|---|---|---|
-| **Market-wide** | Peer median `M` for that strategy and vintage is also under 1.0 | × 0.5 |
-| **Your deal** | Peers made money; you didn't | × 1.0 |
-| **Misconduct** | Broken completion guarantee, unfunded GP call, LPA breach, removal for cause | × 2.0, plus a separate −25 |
-
-**4. Size and skin in the game:**
-- **Size:** × 0.6 to × 1.4, scaled by the lost equity's share of all the
-  investor capital you have ever raised. Losing your biggest deal hurts most.
-- **Alignment:** × 0.85 if your own co-invest was at least 10% and was lost
-  alongside theirs. "We lost with you" is a real defence in investor
-  meetings.
-
-**5. No credibility shrinkage on losses.** Gains are discounted for small
-samples; losses aren't. **Hit = base × fault × size × alignment**, applied
-in full on recognition.
-
-**6. Memory.** Market-wide and your-deal hits fade linearly over **10 years**
-(the existing `sponsorStanding` horizon). Misconduct hits fade over **20
-years**.
-
-**7. The investors who lost money remember you personally,** on top of the
-rating:
-- **Friends and family, local wealthy individuals:** the player's personal
-  network is a **finite pool**. Investors who lost money leave it: 70% for
-  good, the rest for 10 years. Since this pool is all an Unknown sponsor can
-  raise from, a loss early in a career **shrinks the only money available**.
-- **Syndication platforms:** delist you for 10 years after any your-deal or
+On top of the rating:
+- **Friends and family, local wealthy individuals:** 70% of those who lost
+  money leave the network for good, the rest for 10 years. A loss early in a
+  career shrinks the only money available.
+- **Syndication platforms:** delist you for 10 years after a your-deal or
   misconduct loss; 5 years after a market-wide one.
-- **Family offices:** won't re-invest for 10 years; if the loss was
-  market-wide, each comes back at 50% odds once the rating allows it.
-- **Endowments, pensions, insurers, sovereign funds (blind-pool losses):**
-  - market-wide losses: out for one fund cycle (about 10 years)
+- **Family offices:** won't re-invest for 10 years. If the loss was
+  market-wide, each comes back at 50% odds once the rating allows.
+- **Endowments, pensions, insurers, sovereign funds (fund losses):**
+  - market-wide: out for one fund cycle (about 10 years)
   - your fund below 1.0× while peers were above: out permanently
   - misconduct: everyone out permanently, except your own money and
     hard-money lenders
 
-  This replaces today's blanket rule ("a fund that returned under 1.0× means
-  nobody backs you again"). Plenty of sponsors whose 2006–07 funds lost
-  money raised again, because everyone lost; fraud and broken guarantees end
-  careers.
+  This replaces today's blanket "a fund under 1.0× means nobody backs you
+  again". Sponsors whose 2006–07 funds lost money with everyone else did
+  raise again; fraud and broken guarantees end careers.
 
-**8. Terms while a loss mark is live** (on top of whatever the band demands):
-- investors demand **+1.5 points of pref** and **+10 points of GP co-invest**
-- a **completion guarantee** is mandatory again, whatever the band
-- **the step-up limit resets:** the most you can raise is capped at **1×
-  your largest raise since the loss**, until the mark is half faded. You
-  can't grow out of a hole with other people's money.
-- placement agents won't take you on while a your-deal or misconduct mark
-  is live
+#### Terms while a negative mark is live
 
-**9. Climbing back.** Only new, realised, profitable vehicles rebuild the
-rating, still subject to small-sample shrinkage. In practice that means
-**about 4–6 clean deals over 8–10 years** to regain one band. Putting in
-more of your own money shortens it, because larger co-invest raises the
-investor score (§3.2).
-
-**Worked examples** (a player rated +20, Emerging, mid-sized deal, size × 1.0):
-
-| What happened | Hit | New rating | Band | What it means |
-|---|---|---|---|---|
-| Market-wide 2008-style loss, `M` = 0.8, own 10% co-invest lost too | −12 × 0.5 × 0.85 = **−5** | +15 | Emerging, just | Platforms gone 5 years; terms +1.5 pref and +10 co-invest; can't upsize. Survivable. |
-| Your deal, `M` = 0.55 (lease-up failed while the market was fine) | −22 × 1.0 = **−22** | −2 | Unknown | Back to friends and family, minus the 70% who lost money and left for good; platforms and family offices out 10 years |
-| Wipe-out on your deal, `M` = 0.2 | −35 = **−35** | −15 | Questioned | Only people who already know you; 12%+ pref; personal guarantee; years of tiny raises |
-| Broken completion guarantee, `M` = 0.6 | −22 × 2.0 − 25 = **−69** | −49 | **Toxic** | No investor money for a decade or more; your own money and hard-money lenders only |
+- **+1.5 points of pref** and **+10 points of GP co-invest** over the band
+- a completion guarantee is mandatory again, whatever the band
+- **the step-up limit resets** to 1× your largest raise since the failure,
+  until the mark is half faded
+- placement agents won't take you on while a your-deal or misconduct mark is
+  live
 
 #### Rivals
 
@@ -369,11 +392,13 @@ investor score (§3.2).
 
 #### What we'd expect to see if it's right (measure; do not tune toward it)
 
-- A clean $1M developer reaches Emerging only after several realised,
-  profitable syndications, on the order of 10–15 years. Institutional money
-  arrives decades in, if ever.
-- One blown-up deal or broken guarantee knocks a firm down a band for years.
-- Most rivals sit Unknown to Established. Blue-chip is rare and held by the
+- A clean $1M developer reaches Emerging after about 7 realised deals that
+  met their pitch, which at a few years a deal is most of a decade or more.
+  Institutional money arrives decades in, if ever.
+- A single missed pitch costs a band; a loss on your own deal sends a Proven
+  firm back to Unknown; a broken guarantee is close to career-ending.
+- Firms that pitch aggressively raise faster early and fall further later.
+- Most rivals sit Unknown to Proven. Blue-chip is rare and held by the
   oldest, cleanest, biggest names.
 - When the median rating on the street falls after a crash, total
   fundraising falls with it (on top of the denominator effect).
@@ -449,8 +474,9 @@ This is the first thing to build. It reuses the merchant 90/10 machinery.
 
 - Finite investor allocations shared with rivals (§3).
 - Reputation starts at 0 (Unknown) for the player: friends and family only,
-  10–12% prefs, 20%+ co-invest, mandatory guarantees, slow and failure-prone
-  raises. The step-up limit keeps early syndications small (§3.4).
+  at most $1 of outside equity per $1 of yours, a 12% pref, almost no
+  promote, mandatory guarantees, and raises that often fail. Confidence
+  builds only from realised deals that met their pitch (§3.4).
 - The GP co-invest is cash, as in `raiseFund`.
 - Completion guarantees and clawbacks put the GP's own balance sheet at risk.
 - A loss marks the name for future raises.

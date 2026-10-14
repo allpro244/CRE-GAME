@@ -213,8 +213,33 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * 130/77/32/13 against MapPLUTO's 150/72/26/12 (plus the World Trade Center
  * towers PLUTO no longer carries); was 0 at 30+. Generated islands and
  * Midtown are unchanged.
+ *
+ * Plan 11 untangles the water from the streets and squares (island.mjs PLAN
+ * 11). A stream that ran along inside a boulevard's reservation and came out
+ * on the far side got one stone deck the whole length of the run — up to 93 m
+ * on a Metropolis, a walled slab down the middle of the road and across the
+ * circus beyond it; 21 of 28 Metropolis islands had a "bridge" over 50 m. A
+ * deck is now only laid where the stream crosses (the roadway's width at the
+ * crossing angle); a grazing run is culverted under the road. And a stream is
+ * culverted under a market square, a battery and a circus rather than laid
+ * across the setts and the circus carriageway. Towns without water are
+ * byte-identical; plan-10 saves rebuild the town they were cut with.
  */
-export const CITY_PLAN = 10;
+/**
+ * HOW MUCH OF THE TOWN IS PARK, from the setup page. A generated town draws a
+ * park programme and a count (island.mjs WHAT KIND OF PARK CITY THIS IS);
+ * this moves the odds of the programmes and stretches or cuts the count. It
+ * is part of the town's identity like its size and build-out — a save stores
+ * it and rebuilds the same town. Manhattan's parks are real and ignore it.
+ */
+export const PARK_AMOUNTS = [
+  { id: "low", name: "Few", note: "A dense port that never set the ground aside: most often one or two greens, sometimes none worth the name." },
+  { id: "medium", name: "Usual", note: "The town as it comes: a great park, a set of squares, commons or a few greens, as the seed draws them." },
+  { id: "high", name: "Many", note: "A leafy town: squares, commons or a great park far more often, and half as many parks again." },
+];
+export const DEFAULT_PARKS = "medium";
+
+export const CITY_PLAN = 11;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical
@@ -237,7 +262,7 @@ export function makeCity(cityId, seed, opts) {
     : (opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE);
   const cfg = manhattan
     ? manhattanConfig(seed, { extent: sizeId, planV: opts?.planV ?? CITY_PLAN })
-    : scaleCity(islandConfig(seed, { planV: opts?.planV ?? CITY_PLAN }), SIZES[sizeId].k);
+    : scaleCity(islandConfig(seed, { planV: opts?.planV ?? CITY_PLAN, parks: opts?.parks }), SIZES[sizeId].k);
   // The street plan: the current one unless a save asks for the plan its
   // town was cut with (see CITY_PLAN and GameState.cityPlan).
   const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density, planV: opts?.planV ?? CITY_PLAN });

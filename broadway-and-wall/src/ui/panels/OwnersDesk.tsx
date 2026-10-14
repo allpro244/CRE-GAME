@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
+import { FirmPage } from "@/ui/panels/CompetitorCards";
 import type { ReactNode } from "react";
 import { useStore } from "@/state/store";
 import { holdersLikelyToSell } from "@/engine/owners";
@@ -139,7 +140,8 @@ export function Owners({ only: onlyIn, q = "" }: { only?: "all" | "firms" | "pri
                 {isOpen && (
                   <tr>
                     <td colSpan={6} style={{ background: "rgba(43,37,26,0.035)" }}>
-                      <OwnerStatement o={o} onFocus={(b) => focus(b, true)} />
+                      <OwnerStatement o={o} onFocus={(b) => focus(b, true)}
+                        extra={(() => { const r = game.rivals?.find((x) => x.id === o.id); return r ? <FirmPage r={r} /> : undefined; })()} />
                     </td>
                   </tr>
                 )}

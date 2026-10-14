@@ -36,7 +36,10 @@ declare module "@/citygen/index.mjs" {
   export function loadManhattanPlat(): Promise<unknown>;
   /** Hand the plat to a context that already holds it (the town worker). */
   export function setManhattanPlat(data: unknown): void;
-  export function makeCity(cityId: string, seed: number, opts?: { density?: string; size?: string; planV?: number }): GeneratedCity;
+  export function makeCity(cityId: string, seed: number, opts?: { density?: string; size?: string; planV?: number; parks?: string }): GeneratedCity;
+  /** How much of a generated town is park: the setup page's choice (island.mjs). */
+  export const PARK_AMOUNTS: { id: "low" | "medium" | "high"; name: string; note: string }[];
+  export const DEFAULT_PARKS: string;
   /** The street plan new towns are cut with (see GameState.cityPlan). */
   export const CITY_PLAN: number;
   export function sizeList(): { id: string; k: number; name: string; note: string }[];

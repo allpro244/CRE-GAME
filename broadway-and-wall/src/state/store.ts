@@ -50,7 +50,7 @@ import { monthOffThread, spanOffThread } from "@/state/simClient";
 export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "reset";
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "pencils" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
-export type MapFilter = "all" | "owned" | "construction";
+export type MapFilter = "all" | "owned" | "construction" | "firm";
 export type GraphicsQuality = "low" | "medium" | "high";
 /** A scheme being designed: drawn finished, on its lot, in the 3D city. */
 export interface DesignPreview {
@@ -61,7 +61,7 @@ export interface DesignPreview {
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings";
+export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -304,6 +304,10 @@ interface AppState {
   setPhotoFrame: (v: boolean) => void;
   /** Request MapView to fit the holdings bounding box. */
   showBookOnMap: () => void;
+  /** The competitor the map is showing on its own (mapFilter "firm"). */
+  mapFirm?: string;
+  /** Close the desk and show one competitor's buildings on the map, everything else dimmed. */
+  showFirmOnMap: (id: string) => void;
   /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
@@ -725,8 +729,8 @@ function painted(): Promise<void> {
  * dealt there too when `deal` asks for it: on a big map the two together held
  * the page for tens of seconds.
  */
-async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"]) {
-  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal });
+async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"], parks?: string) {
+  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal, parks: parks === "medium" ? undefined : parks });
   // normalised in the worker, in place: the table is built.parcels
   return { built, parcels: built.parcels as ParcelTable, game };
 }
@@ -1242,6 +1246,18 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setMapFilter: (f) => set({ mapFilter: f }),
+
+  showFirmOnMap: (id) => {
+    const st = get();
+    set({
+      page: "none" as Page,
+      lens: "owners" as Lens,
+      mapFilter: "firm" as MapFilter,
+      mapFirm: id,
+      mapOnly: true,
+      fitBook: st.fitBook + 1,
+    });
+  },
 
   showBookOnMap: () => {
     const st = get();
@@ -2304,6 +2320,8 @@ export const useStore = create<AppState>((set, get) => ({
       || savedIsland !== hereIsland
       // the same seed cut with a different street plan is a different town
       || (saved.cityPlan ?? 1) !== (get().game?.cityPlan ?? 1)
+      // and so is the same seed with more or fewer parks
+      || (saved.cityParks ?? "medium") !== (get().game?.cityParks ?? "medium")
     ) {
       toast(`Loading "${slot}" — rebuilding the town it was played in.`);
       try {
@@ -2425,7 +2443,8 @@ export const useStore = create<AppState>((set, get) => ({
       if (!setup.firmName) setup.firmName = generateFirmName(seed).name;
       const runSeed = (crypto.getRandomValues(new Uint32Array(1))[0] || 1) >>> 0;
       // the town and its opening market, dealt together off the page's thread
-      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup });
+      const parks = setupIn?.parks && setupIn.parks !== "medium" ? setupIn.parks : undefined;
+      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup }, parks);
       get().setData({
         parcels,
         adjacency: built.adjacency as Adjacency,
@@ -2438,6 +2457,7 @@ export const useStore = create<AppState>((set, get) => ({
       g.citySize = size;
       g.cityDev = dev;
       g.cityPlan = CITY_PLAN;
+      if (parks) g.cityParks = parks;
       // HOW BIG THIS MARKET IS, counted rather than declared. A generated island
       // announces its scale through the size preset it was cut at; a
       // written-down city has no preset to read, so the economy sizes rivals
@@ -2477,7 +2497,7 @@ export const useStore = create<AppState>((set, get) => ({
       setSize(r.size, r.island);
       setDev(r.dev);
       // an old save is a plan-1 town: rebuild the streets it was played on
-      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1);
+      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1, undefined, saved.cityParks);
       // A save only fits if every deed in it exists in THIS town. It should,
       // because the town was rebuilt from the save's own three fields — this
       // catches a generator change that moved the lot lines under an old

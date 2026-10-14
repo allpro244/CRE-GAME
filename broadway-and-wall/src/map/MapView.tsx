@@ -6,7 +6,7 @@ import { blocksPaint, parksPaint, groundGrain, composeStyle, gameLayers, landLen
 import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
 import { mergeLotFeatures } from "./real/siteRing";
-import { condIdxOf, occupancy, physicalOcc, resolveRec, useOccupancy, landRead } from "@/engine/value";
+import { condIdxOf, liveDemand, occupancy, physicalOcc, resolveRec, useOccupancy, landRead } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { START_YEAR } from "@/engine/types";
 import type { BuildingDesign, GameState } from "@/engine/types";
@@ -492,6 +492,10 @@ export default function MapView() {
                   rw: Number(f.properties?.rw ?? 0),
                   cw: Number(f.properties?.cw ?? 0),
                 })),
+              // where a street meets a channel and crosses it: bank to bank plus an abutment
+              crossings: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "crossing" && f.geometry.type === "LineString")
+                .map((f) => ({ line: (f.geometry as GeoJSON.LineString).coordinates as [number, number][], w: Number(f.properties?.w ?? 12) })),
               paths: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "parkpath" && f.geometry.type === "LineString")
                 .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]),
@@ -850,7 +854,10 @@ export default function MapView() {
     const game = useStore.getState().game;
     if (!map || !parcels || !game) return;
     const pts: [number, number][] = [];
-    for (const bbl of Object.keys(game.holdings)) {
+    // One competitor's book when the map was asked to show that firm.
+    const st = useStore.getState();
+    const firm = st.mapFilter === "firm" ? game.rivals.find((r) => r.id === st.mapFirm) : undefined;
+    for (const bbl of firm ? firm.bbls : Object.keys(game.holdings)) {
       if (game.merged?.[bbl]) continue;
       const c = parcels[bbl]?.centroid;
       if (c) pts.push(c);
@@ -883,6 +890,8 @@ export default function MapView() {
   // ownership + listings → feature-state and rooftop markers
   // Subscribe to a paint signature, not `game` identity — see mapPaintSig.
   const paintSig = useStore((s) => mapPaintSig(s.game));
+  const pinFilter = useStore((s) => s.mapFilter);
+  const pinFirm = useStore((s) => s.mapFirm);
   useEffect(() => {
     const game = useStore.getState().game;
     const map = mapRef.current;
@@ -970,6 +979,24 @@ export default function MapView() {
       }),
     });
 
+    // One competitor's book, pinned, while the map is showing that firm.
+    {
+      const st = useStore.getState();
+      const firm = st.mapFilter === "firm" ? game.rivals.find((r) => r.id === st.mapFirm) : undefined;
+      const pins = map.getSource("bw-firm") as maplibregl.GeoJSONSource | undefined;
+      pins?.setData({
+        type: "FeatureCollection",
+        features: firm ? [
+          ...firm.bbls.map((bbl) => ({ bbl, kind: "deed" })),
+          ...(game.cityJobs ?? []).filter((j) => j.firmId === firm.id && !j.orphaned && !firm.bbls.includes(j.bbl)).map((j) => ({ bbl: j.bbl, kind: "crane" })),
+        ].map(({ bbl, kind }) => ({
+          type: "Feature" as const,
+          geometry: { type: "Point" as const, coordinates: parcels[bbl]?.centroid ?? [0, 0] },
+          properties: { bbl, kind },
+        })) : [],
+      });
+    }
+
     const civic = map.getSource("bw-civic") as maplibregl.GeoJSONSource | undefined;
     civic?.setData(civicCollection(
       game,
@@ -977,7 +1004,7 @@ export default function MapView() {
       city?.parcelFeatures as GeoJSON.FeatureCollection | undefined,
       city?.context as GeoJSON.FeatureCollection | null,
     ) as never);
-  }, [paintSig, parcels, mapReady, city]);
+  }, [paintSig, parcels, mapReady, city, pinFilter, pinFirm]);
 
   const lens = useStore((s) => s.lens);
 
@@ -997,7 +1024,7 @@ export default function MapView() {
       const r = parcels[bbl];
       const d = drift[r.block];
       if (!d) continue;
-      next.set(bbl, Math.max(2, Math.min(100, r.demandScore + d)));
+      next.set(bbl, liveDemand(game, r.demandScore, r.block));
     }
     for (const [bbl, v] of next) {
       if (dmdRef.current.get(bbl) === v) continue;
@@ -1312,6 +1339,7 @@ export default function MapView() {
   // it used to re-run on every mouse move because hover was one of its keys.
   const hoveredBBL = useStore((s) => s.hoveredBBL);
   const mapFilter = useStore((s) => s.mapFilter);
+  const mapFirm = useStore((s) => s.mapFirm);
   useEffect(() => {
     const layer = threeRef.current;
     if (!layer || !mapReady) return;
@@ -1389,18 +1417,33 @@ export default function MapView() {
       const keep = new Set<string>();
       if (mapFilter === "owned") {
         for (const bbl of Object.keys(game.holdings)) keep.add(bbl);
+      } else if (mapFilter === "firm") {
+        // one competitor's book, and its cranes, with yours kept for reference
+        const r = game.rivals.find((x) => x.id === useStore.getState().mapFirm);
+        for (const bbl of r?.bbls ?? []) keep.add(bbl);
+        for (const j of game.cityJobs ?? []) if (j.firmId === r?.id) keep.add(j.bbl);
+        for (const bbl of Object.keys(game.holdings)) keep.add(bbl);
       } else {
         for (const d of Object.values(game.developments ?? {})) keep.add(d.bbl);
         for (const j of game.cityJobs ?? []) keep.add(j.bbl);
       }
+      // ONE FIRM, LIT: its buildings bright orange, yours gold, everything
+      // else dimmed harder than the ordinary filters so the book reads at a
+      // glance across the whole town.
+      const firm = mapFilter === "firm" ? game.rivals.find((x) => x.id === useStore.getState().mapFirm) : undefined;
+      if (firm) {
+        for (const bbl of firm.bbls) tints.set(bbl, [1.65, 0.95, 0.3]);
+        for (const bbl of Object.keys(game.holdings)) tints.set(bbl, [1.45, 1.25, 0.5]);
+      }
+      const dim = firm ? 0.42 : 0.55;
       for (const bbl of layer.rangesByBBL.keys()) {
         if (keep.has(bbl)) continue;
         const cur = tints.get(bbl) ?? [1, 1, 1];
-        tints.set(bbl, [cur[0] * 0.55, cur[1] * 0.55, cur[2] * 0.55]);
+        tints.set(bbl, [cur[0] * dim, cur[1] * dim, cur[2] * dim]);
       }
     }
     layer.setTints(tints);
-  }, [selectedBBL, adjacency, paintSig, mapReady, lens, mapFilter, parcels]);
+  }, [selectedBBL, adjacency, paintSig, mapReady, lens, mapFilter, mapFirm, parcels]);
 
   // THE CITY'S VACANCY, ON THE CITY.
   //
@@ -1909,11 +1952,11 @@ export default function MapView() {
       ] as never);
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
       // the same live figure the fill reads: the parcel's score plus its
-      // block's drift, on the engine's own clamp
+      // block's drift, on the engine's own bounded scale
       const vals = new Map<string, number>();
       for (const bbl of Object.keys(parcels)) {
         const r = parcels[bbl];
-        vals.set(bbl, Math.max(2, Math.min(100, r.demandScore + (game?.blockD?.[r.block] ?? 0))));
+        vals.set(bbl, liveDemand(game, r.demandScore, r.block));
       }
       roofLens(vals, stops, ramp);
       return;
@@ -2008,7 +2051,7 @@ export default function MapView() {
       // percentile stops over CURRENT land $/sf so the ramp stays contrasty
       const nowPsf = (bbl: string) => {
         const r = parcels[bbl];
-        const d = Math.max(2, Math.min(100, r.demandScore + (game.blockD?.[r.block] ?? 0)));
+        const d = liveDemand(game, r.demandScore, r.block);
         return r.landPsf * game.econ.landIdx * (1 + 0.22 * (0.25 + 0.9 * (d / 100)) * game.econ.cycleDev);
       };
       const vals: number[] = [];

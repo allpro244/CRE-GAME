@@ -10,7 +10,8 @@ import { usd, sf } from "@/ui/format";
 import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
 import { TakePrivateDesk, TakenPrivateRecord } from "@/ui/panels/TakePrivateDesk";
 import { poss } from "@/engine/takeprivate";
-import { HeadlinerStrip, RaceChart, FirmSheet } from "@/ui/panels/CompetitorCards";
+import { HeadlinerStrip, RaceChart, FirmPage, SignatureTraits, StreetTicker } from "@/ui/panels/CompetitorCards";
+import { labelOf } from "@/engine/storyline";
 import Fold from "@/ui/Fold";
 
 // THE STREET. Who else is buying, what they own, and how much rope they have
@@ -34,7 +35,8 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const focus = useStore((s) => s.focus);
-  const [open, setOpen] = useState<string | null>(null);
+  // Coming back from "show on the map", their row is open again.
+  const [open, setOpen] = useState<string | null>(() => useStore.getState().mapFilter === "firm" ? useStore.getState().mapFirm ?? null : null);
   // YOU ARE THE ROW YOU CAME FOR. The top bar's Street readout opens this
   // table, and in most of a career your row is twenty-odd firms down — below
   // the fold, under the leaders. Bring it into view when a link brought you
@@ -128,6 +130,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
       <TakenPrivateRecord />
       {/* THE CAST FIRST (COMPETITORS_PLAN.md §6): who matters right now and
           what is about to happen to them, then the race, then the full table. */}
+      <StreetTicker onOpen={(id) => setOpen(id)} />
       <HeadlinerStrip onOpen={(id) => setOpen(id)} />
       <RaceChart />
       {/* THE LEAGUE TABLE. They started where you started — five to eighteen
@@ -162,7 +165,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                 three expressions for one quantity is how a table comes to
                 disagree with the row it expands into, so all three now read
                 the same `eq` off `markRival` and the firm's own balance. */}
-            <th>Firm</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
+            <th>Firm</th><th>Who they are</th><th className="num">Buildings</th><th className="num">Gross assets</th>
             <th className="num">Debt</th><th className="num">Net equity</th>
             <th className="num">Leverage</th><th className="num">Dry powder</th><th>Read</th>
           </tr>
@@ -209,7 +212,10 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                   {isOpen ? "▾ " : "▸ "}{r.name}
                   {r.spawnedFrom ? <span className="dim"> · from {r.spawnedFrom.firmName}</span> : null}
                 </td>
-                <td className="dim">{STYLE_WORD[r.style]}</td>
+                <td>
+                  <div style={{ fontSize: 12 }}>{r.sheet ? labelOf(r) : STYLE_WORD[r.style]}</div>
+                  {!dead && r.sheet && <SignatureTraits r={r} />}
+                </td>
                 <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
                 <td className="num">{dead ? "—" : usd(m.aum)}</td>
                 <td className={"num" + (!dead && r.debt > 0 ? " dim" : "")}>{dead ? "—" : usd(r.debt)}</td>
@@ -261,7 +267,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                       onFocus={(b) => focus(b, true)}
                       extra={
                         <>
-                          <FirmSheet r={r} />
+                          <FirmPage r={r} />
                         </>
                       }
                       extraLate={

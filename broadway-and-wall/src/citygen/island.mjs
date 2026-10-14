@@ -2337,12 +2337,42 @@ export function islandConfig(seed, opts = {}) {
   // but over 865 placements, 99.7% went down at full size, 0.3% shrank one
   // step, and none failed. Left alone deliberately; see the note in
   // GRAPHICS_HANDOFF.
-  const programme = (() => {
-    let r = Dp.rand() * PARK_PROGRAMMES.reduce((a, p) => a + p.w, 0);
-    for (const p of PARK_PROGRAMMES) { r -= p.w; if (r <= 0) return p; }
+  // HOW MUCH GREEN THE PLAYER ASKED FOR (setup page, index.mjs PARK_AMOUNTS).
+  // Not a new kind of town: the same five programmes, drawn with the odds
+  // moved toward the leafy ones (squares, commons, a great park) or toward
+  // the dense port that never set the ground aside, and the count within the
+  // programme stretched or cut. The same draws in the same order, so
+  // "medium" is byte-identical to a town cut before the option existed.
+  const PARK_ODDS = {
+    low: { great: 0.5, squares: 0.3, commons: 0.5, greens: 1.0, sparse: 2.4, n: 0.6, plus: 0 },
+    high: { great: 1.4, squares: 1.8, commons: 1.6, greens: 0.9, sparse: 0.2, n: 1.5, plus: 1 },
+  }[opts.parks] ?? null;
+  // One draw picks the programme and one the count, as they always have; the
+  // usual town's answer is read off the same two draws, so the choice is
+  // MONOTONIC town by town — "many" lays at least one more park than this
+  // seed's usual town would, "few" never more. Reweighting alone let a seed
+  // whose usual draw was a city of squares land on a great park under
+  // "many", and come out with fewer parks than if the player had left it.
+  const pickBy = (wOf, r) => {
+    let x = r * PARK_PROGRAMMES.reduce((a, p) => a + wOf(p), 0);
+    for (const p of PARK_PROGRAMMES) { x -= wOf(p); if (x <= 0) return p; }
     return PARK_PROGRAMMES[PARK_PROGRAMMES.length - 1];
-  })();
-  const nPark = Math.round(Dp.f(programme.n[0], programme.n[1]));
+  };
+  const rProg = Dp.rand();
+  const usual = pickBy((p) => p.w, rProg);
+  // ...and the programme itself only moves the way the choice points: "many"
+  // never trades a city of squares for one great park (which takes the room
+  // the squares needed), "few" never trades a great park for a city of squares
+  const moved = PARK_ODDS ? pickBy((p) => p.w * PARK_ODDS[p.key], rProg) : usual;
+  const programme = !PARK_ODDS ? usual
+    : opts.parks === "high" ? (moved.n[1] >= usual.n[1] ? moved : usual)
+      : (moved.n[1] <= usual.n[1] ? moved : usual);
+  const rN = Dp.rand();
+  const nAt = (p) => Math.round(p.n[0] + (p.n[1] - p.n[0]) * rN);   // Dp.f, the same draw
+  const nUsual = nAt(usual);
+  const nPark = !PARK_ODDS ? nUsual
+    : opts.parks === "high" ? Math.min(16, Math.max(Math.round(nAt(programme) * PARK_ODDS.n) + PARK_ODDS.plus, nUsual + 1))
+      : Math.max(1, Math.min(Math.round(nAt(programme) * PARK_ODDS.n), nUsual));
   // THE NAMES HAVE TO STRETCH TO FOURTEEN. Three hardcoded names were enough
   // for three parks; a city of squares needs a supply of them, so they are
   // drawn from the island's own word list with the suffix that matches what
@@ -2703,6 +2733,20 @@ export function islandConfig(seed, opts = {}) {
       return Math.abs(u) <= d.w / 2 + 4 && Math.abs(v) <= d.h / 2 + 9;
     });
     let crossDiag = -1, crossFrom = null, crossTo = null;
+    // PLAN 11: A STREAM IS BURIED UNDER A PAVED SQUARE. A creek or canal used
+    // to run straight on through a market square or a circus, its water and
+    // banks laid across the setts and the circus carriageway alike; cities
+    // culvert a stream that argues with a square (the Fleet under Farringdon,
+    // the Tyburn under Mayfair). Those stretches leave the run, the way a
+    // grazing reservation stretch already does, and the square paves them.
+    const plan11 = (opts.planV ?? 3) >= 11;
+    const pavedSquares = plan11
+      ? parks.filter((pk) => (pk.flavour === "market" || pk.flavour === "battery") && pk.ring?.length >= 3).map((pk) => pk.ring)
+      : [];
+    const circuses = plan11
+      ? Object.values(districts).filter((d) => d.kind === "radial" && d.focus && d.circusR).map((d) => ({ c: d.focus, r: d.circusR + 14 }))
+      : [];
+    const paved = (px, py) => pavedSquares.some((r) => inRing([px, py], r)) || circuses.some((q) => dist([px, py], q.c) < q.r);
     const sideOf = (k, p) => {
       const d = diagonals[k];
       const t = (d.deg * Math.PI) / 180;
@@ -2718,8 +2762,17 @@ export function islandConfig(seed, opts = {}) {
       // buried a stream that argues with a street; rails on that would be a
       // hundred-metre skew bridge over nothing.
       const crossed = sideOf(crossDiag, crossFrom) * sideOf(crossDiag, crossTo) < 0;
-      if (crossed && inRing([mx, my], inner)) {
-        const span = dist(crossFrom, crossTo);
+      const span = dist(crossFrom, crossTo);
+      // PLAN 11: AND A DECK ONLY WHERE IT CROSSES. A stream that ran along
+      // inside a reservation for a hundred metres and came out on the far
+      // side got one deck the whole length of that run — capped at 64 m, 93 m
+      // on a Metropolis — a walled stone slab laid down the middle of the
+      // boulevard and across whatever it met. A real crossing is the roadway's
+      // width at the angle of the crossing; anything much longer is the water
+      // culverted under the road, and gets no deck.
+      // up to a 45-degree skew (1/sin 45 = 1.41 of the road width) and a kerb either side
+      const square = !plan11 || span <= (diagonals[crossDiag].h ?? 11) * 1.45 + 6;
+      if (crossed && square && inRing([mx, my], inner)) {
         const cdeg = (Math.atan2(crossTo[1] - crossFrom[1], crossTo[0] - crossFrom[0]) * R2D + 360) % 360;
         localBridges.push({
           cx: Math.round(mx), cy: Math.round(my),
@@ -2739,6 +2792,12 @@ export function islandConfig(seed, opts = {}) {
       const deg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * R2D + 360) % 360;
       acc += L;
       const inland = inRing([cx, cy], inner);
+      if (inland && paved(cx, cy)) {
+        flushCrossing();
+        if (run.length >= 2) runs.push(run);
+        run = [b];
+        continue;
+      }
       const dHit = inland ? inReservation(cx, cy) : -1;
       if (dHit >= 0) {
         if (crossDiag < 0) crossFrom = a;
@@ -2748,7 +2807,13 @@ export function islandConfig(seed, opts = {}) {
         continue;
       }
       flushCrossing();
-      if (inland && acc > nextGap && i > 2 && i < path.length - 3) {
+      // PLAN 11: NO BRIDGES TO NOWHERE. Plans 1-10 left a dry gap in the
+      // water every 150-270 m and stood a bridge in it, expecting the street
+      // grid to run through — it rarely lined up, and the gap read as a green
+      // islet across the channel with a walled box on it and no road. The
+      // streets that really meet the water are found where they meet it
+      // (citygen.mjs STREETS THAT MEET THE WATER CROSS IT) and bridged there.
+      if (!plan11 && inland && acc > nextGap && i > 2 && i < path.length - 3) {
         localBridges.push({
           cx: Math.round(cx), cy: Math.round(cy),
           // Street-width strip in the dry gap — not canal-width + 12. That
@@ -2779,7 +2844,7 @@ export function islandConfig(seed, opts = {}) {
     }
     if ((forcePond || (kind !== "canal" && Dwat.chance(0.42))) && path.length > 5) {
       const end = path[path.length - 1];
-      if (inRing(end, inner) && distToRing(end, inner) > width + 28) {
+      if (inRing(end, inner) && distToRing(end, inner) > width + 28 && !paved(end[0], end[1])) {
         let r = Dwat.f(width * 1.6, width * 2.3);
         // A POND DOES NOT SIT UNDER A BOULEVARD. The reservations are laid
         // first, and a stream head that wanders near one used to cap itself

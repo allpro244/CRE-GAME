@@ -2945,6 +2945,12 @@ export interface GameState {
    * deeds it was played on.
    */
   cityPlan?: number;
+  /**
+   * How much of the town is park, as chosen on the setup page (citygen
+   * PARK_AMOUNTS). Part of the town's identity: absent is the usual amount,
+   * which is every town cut before the option existed.
+   */
+  cityParks?: "low" | "medium" | "high";
   rng: number;
   /**
    * Named RNG streams so a change in how often leasing rolls the dice does not
@@ -3291,6 +3297,8 @@ export interface GameState {
    * desk sells out of it and the bank statement on Research is a view of it.
    */
   cityLoans?: Record<string, CityLoan>;
+  /** What each competitor did, in order (firmLog.ts). Display only. */
+  firmLog?: import("./firmLog").FirmLogEntry[];
   /** Book-weighted appetite of the live desks — the banking system in one number. */
   bankApp?: number;
   /**

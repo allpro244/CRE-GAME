@@ -732,6 +732,81 @@ is a slider too:
 A larger commitment raises the investor score and can loosen the mandate
 (§5.1). As today, it is cash at the close, never the line.
 
+### 4.5 Refinance your partners out and keep the building (a recap buyout)
+
+A common real exit: at stabilisation or later, the sponsor refinances, uses
+the proceeds (and its own cash) to buy the investors out at an appraised
+value, and keeps 100% of the building. The promote it earned turns into
+ownership instead of cash.
+
+The engine has the pieces but not the transaction: `jv.ts` `buyOutPartner`
+(full pro-rata equity plus costs), and `refinance` already shares a JV's
+cash-out with the partner.
+
+**When it's allowed:**
+- **Deal-by-deal syndications:** after stabilisation, or in the business
+  plan's buy-sell window (§4.1).
+- **Building JV stakes** (`jv.ts`): any time, as today's buyout does.
+- **Fund properties:** only as a cross-trade, with investor-committee
+  consent and an independent appraisal (§5). Never during the investment
+  period for a deal the fund is still building.
+
+**The price is what investors would get on a sale.** Run the vehicle's
+waterfall on a hypothetical sale at an **independent appraisal**
+(`marketAppraisal`), with no selling costs, since nobody pays a broker:
+- Investors get their capital, their pref and their tiers, exactly as if it
+  had sold.
+- The sponsor's promote crystallises into extra ownership; no cash moves to
+  it.
+- Investors can refuse. Below Proven they ask for a **fairness premium** of
+  2–5% over the waterfall value (a shape parameter, by band). In a hot
+  market, investors may prefer a real sale.
+
+**How it's funded:**
+1. **A new loan**, sized by the lenders exactly as any refinance is today
+   (DSCR, LTV, hold limits).
+2. **Your own cash** for the gap.
+3. Optionally **preferred equity or mezzanine** (`placeMezz` exists), at a
+   higher cost.
+4. Or **a new investor buys the old ones out** (a continuation vehicle).
+   The building stays in a vehicle you run, with fresh terms from the
+   investor market (§3).
+5. **Partial buyouts are allowed:** buy back part of the investors' stake.
+
+**What the example deal costs** (Appendix A, Proven band: you 15%, 9% pref,
+20%/30% above 12%/18%):
+
+| When | Appraisal | New loan | Cash from the refinance | Buy out investors at | Investors' IRR | **You must add** | You then own 100%, with equity |
+|---|---|---|---|---|---|---|---|
+| Year 4, 65% LTV | 64.4 | 41.8 | 10.9 | 27.5 | 15.9% | **16.6** | 22.5 |
+| Year 4, 75% LTV | 64.4 | 48.3 | 17.3 | 27.5 | 15.9% | **10.2** | 16.1 |
+| Year 10, 65% LTV | 76.9 | 50.0 | 10.0 | 29.2 | 14.4% | **19.2** | 26.9 |
+| Year 10, 75% LTV | 76.9 | 57.7 | 17.6 | 29.2 | 14.4% | **11.6** | 19.2 |
+
+So a refinance alone almost never buys out 85% partners, and the sponsor has
+to bring real money. It's no free lunch either: at year 4 and 75% LTV your
+stake is worth about $5.9M before the recap; you add $10.2M and own $16.1M
+of equity. What you buy is **all of the future upside, no more pref or
+promote to share, and the right to hold forever**. You pay for it with
+higher leverage, which brings back the refinance-cliff risk of careers #1
+and #3.
+
+**Books and tax:**
+- payment to investors → `lpDistributed`
+- new loan → `borrowed`
+- old loan payoff → `debtSvc`
+- **transfer tax** on the share transferred when control changes hands
+  (over 50%), using the existing `TRANSFER_TAX`
+- no income tax to the sponsor, since it isn't selling; the purchased share
+  gets a basis step-up
+
+**Reputation:** investors who are bought out at a fair waterfall price
+count it as a **realised exit** (§3.4: evidence vs the promise). One
+anti-exploit rule: if the sponsor sells the building within **24 months**
+for more than **15% above** the buyout appraisal, investors read it as having
+bought them out cheap. That is −10 evidence, and the bought-out investors
+remember it personally (§3.4). In life this is the lawsuit.
+
 ---
 
 ## 5. Product B: the blind-pool fund (revamp `fund.ts`)

@@ -91,7 +91,10 @@ g.privateBorrowQuotes = [{
 const attn = E.attentionItems(g);
 check(attn.some((a) => a.key === "private-borrow:Btest"), "attention lists private borrow");
 
-const cash0 = g.cash;
+// Net liquidity, not cash: the purchase may have drawn the line, and any cash
+// over the operating balance sweeps it down (or a shortfall draws it).
+const liq = (x) => x.cash - (x.loc?.balance ?? 0);
+const cash0 = liq(g);
 const lenderCash0 = lender.cash;
 const accepted = E.acceptPrivateBorrowQuote(g, parcels, "Btest");
 check(!accepted.err, `accept succeeds — ${accepted.err ?? accepted.msg}`);
@@ -107,7 +110,7 @@ check((g.privateBorrowQuotes ?? []).length === 0, "quote consumed");
 const points = Math.round(face * 0.02);
 check(r2.cash === lenderCash0 - (face - points), `lender cash out net of points (${r2.cash} vs ${lenderCash0 - (face - points)})`);
 // Net draw was ~0 (same face payoff) minus points — cash should drop by points.
-check(g.cash === cash0 - points, `borrower paid points (${g.cash} vs ${cash0 - points})`);
+check(liq(g) === cash0 - points, `borrower paid points (${liq(g)} vs ${cash0 - points})`);
 
 // Decline path
 g.privateBorrowQuotes = [{

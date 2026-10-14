@@ -19,12 +19,24 @@ let g = E.firstListings(E.newGame(12007, parcels, 10_000_000), parcels, bbls);
 g.citySize = "city";
 
 // Find a rival with a financed-looking building we can lien-free.
-const rival = (g.rivals ?? []).find((r) => r.failedM === undefined && r.bbls.length >= 1);
-check(!!rival, `have a live rival (${rival?.name ?? "none"})`);
-const bbl = rival.bbls.find((b) => {
+// Any live rival with an unencumbered building — the first one may have a
+// loan on everything it owns.
+const standing = (b) => {
   const rec = E.resolveRec(parcels, g, b);
-  return rec && rec.class !== "land" && rec.bldgArea > 0 && !g.cityLoans?.[b] && !g.holdings[b];
-});
+  return rec && rec.class !== "land" && rec.bldgArea > 0 && !g.holdings[b];
+};
+const unliened = (r) => r.bbls.find((b) => standing(b) && !g.cityLoans?.[b]);
+const rival = (g.rivals ?? []).find((r) => r.failedM === undefined && r.bbls.length >= 1 && unliened(r))
+  ?? (g.rivals ?? []).find((r) => r.failedM === undefined && r.bbls.some(standing));
+check(!!rival, `have a live rival (${rival?.name ?? "none"})`);
+// The street opens with its mortgages on the book; if this firm has nothing
+// free and clear, take the lien off one building — that is the premise.
+let bbl = unliened(rival);
+if (!bbl) {
+  bbl = rival.bbls.find(standing);
+  // ...and off the firm's debt with it, as a payoff would (syncDebt sums the rows).
+  if (bbl && g.cityLoans?.[bbl]) { rival.debt = Math.max(0, rival.debt - (g.cityLoans[bbl].balance ?? 0)); delete g.cityLoans[bbl]; }
+}
 check(!!bbl, `rival deed without lien (${bbl ?? "none"})`);
 
 const rec = E.resolveRec(parcels, g, bbl);
@@ -123,7 +135,9 @@ const debtBeforeClear = g.rivals.find((x) => x.id === rival.id).debt;
 const noteSnap = { ...note };
 E.clearPrivateOrigination(g, noteSnap);
 const rClear = g.rivals.find((x) => x.id === rival.id);
-check(rClear.debt === debtBeforeClear - note.face, `payoff cuts rival debt by face`);
+// The firm's other loans amortise between the last sync and this one, so
+// allow their month of principal — the face is what has to come off.
+check(Math.abs(rClear.debt - (debtBeforeClear - note.face)) <= 0.005 * debtBeforeClear, `payoff cuts rival debt by face (${rClear.debt} vs ${debtBeforeClear} - ${note.face})`);
 check(!g.cityLoans?.[bbl], `payoff drops cityLoans row`);
 
 // Re-fund to exercise sell → street lender transfers, debt stays

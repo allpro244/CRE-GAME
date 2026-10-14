@@ -2387,6 +2387,26 @@ function autoPolicy(s: GameState, h: Holding): AutoPolicy {
   return cap === undefined ? { ...base, conc } : { ...base, conc, tiCapPsfYr: cap * (s.econ.costIdx ?? 1) };
 }
 
+/**
+ * THE MARKET RENT THE FLOOR READS, $/sf/yr face: what this space lets for in
+ * its own market — condition, location and a landmark's premium included —
+ * before the owner's Fill / Push posture and before any markdown for space
+ * that has sat empty. "Market" means the market, not the ask.
+ */
+export function autoMarketRentPsf(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
+  const use = loi.use ?? leasableUses(rec)[0] ?? "office";
+  return managedRentPsfYr(rec, s.econ, { ...h, stance: 0 }, use);
+}
+
+/** Switch the firm's market-rent floor for auto-lease; waiting letters are answered at once. */
+export function setAutoRentFloor(s: GameState, parcels: ParcelTable, on: boolean): GameState {
+  if (!!s.autoRentFloor === on) return s;
+  const next: GameState = cloneState(s);
+  next.autoRentFloor = on;
+  autoLeaseDesk(next, parcels);
+  return next;
+}
+
 /** The firm's concession limit for auto-lease; absent reads as "market". */
 export function autoConcessionsOf(s: GameState): AutoConcessions {
   const c = s.autoConcessions;
@@ -2470,8 +2490,9 @@ function autoLimits(s: GameState, rec: ParcelRecord, h: Holding, p: AutoPolicy, 
   return { ti, free };
 }
 /** Why this letter is outside the policy, in words for the news; null when it may be signed. */
-function autoMiss(p: AutoPolicy, lim: { ti: number; free: number }, loi: LOI, score: number): string | null {
+function autoMiss(p: AutoPolicy, lim: { ti: number; free: number }, loi: LOI, score: number, rentFloor = 0): string | null {
   const pkg = p.conc === "lean" ? "a lean package" : "the market's range";
+  if (rentFloor > 0 && loi.rentPsf + 0.005 < rentFloor) return `they offer $${loi.rentPsf.toFixed(2)}/sf, under the $${rentFloor.toFixed(2)}/sf market rent`;
   if ((loi.tiPsf ?? 0) > lim.ti) return `they want $${Math.round(loi.tiPsf)}/sf of fit-out, over the $${lim.ti}/sf ${p.tiCapPsfYr !== undefined && lim.ti < Infinity ? "this building's cap" : pkg} allows`;
   if ((loi.freeM ?? 0) > lim.free) return `they want ${loi.freeM} months free, over the ${lim.free} ${pkg} allows`;
   if (p.floor > 0 && score + 0.005 < p.floor) return `they net ${(score * 100).toFixed(0)}% of a market deal`;
@@ -2581,7 +2602,8 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
     }
     const pol = autoPolicy(s, h);
     const lim = autoLimits(s, rec, h, pol, mine);
-    const miss = () => autoMiss(pol, lim, mine, autoScore(s, rec, h, mine));
+    const rentFloor = s.autoRentFloor ? autoMarketRentPsf(s, rec, h, mine) : 0;
+    const miss = () => autoMiss(pol, lim, mine, autoScore(s, rec, h, mine), rentFloor);
     const cantFund = "the cash and the line cannot cover the fit-out and commission";
     // sign inside the policy, pass outside it — the end of every path below
     const settle = (prefix: string) => {
@@ -2596,7 +2618,11 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
     const tiPsf = Math.min(mine.tiPsf ?? 0, lim.ti);
     const freeM = Math.min(mine.freeM ?? 0, lim.free);
     const market = loiMarket(s, rec, h, mine);
-    const rentPsf = autoCounterRent(mine, market, tiPsf, freeM, pol.target * marketDealShare(s, rec, h, mine));
+    // ...and never under the market rent when the floor is on
+    const rentPsf = Math.max(
+      autoCounterRent(mine, market, tiPsf, freeM, pol.target * marketDealShare(s, rec, h, mine)),
+      Math.ceil(rentFloor * 100) / 100,
+    );
     if (!Number.isFinite(rentPsf)) { autoPass(s, mine, rec, miss() ?? "no rent reaches the policy"); continue; }
     const outcome = tenantCounterOutcome(s, rec, h, mine, {
       rentPsf, tiPsf, freeM, bumpPct: bumpOf(mine),
@@ -2625,7 +2651,11 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
     if (!h || !rec) continue;
     const st = h.stance ?? 0;
     const ask = currentAskPsfYr(rec, s.econ, h, leasableUses(rec)[0]);
-    const grant = st < 0 || (st === 0 && (a.kind === "giveback" || a.askPsf >= ask * 0.95));
+    // the floor holds a sitting tenant's rent at the market too: relief that
+    // would cut them under it is declined
+    const floorOk = !s.autoRentFloor || a.kind === "giveback"
+      || a.askPsf + 0.005 >= managedRentPsfYr(rec, s.econ, { ...h, stance: 0 }, leasableUses(rec)[0]);
+    const grant = floorOk && (st < 0 || (st === 0 && (a.kind === "giveback" || a.askPsf >= ask * 0.95)));
     const r = answerAsk(s, parcels, a.id, grant ? "grant" : "decline");
     if (r.err) continue;
     Object.assign(s, r.s);
@@ -2698,7 +2728,8 @@ export function autoLeaseRule(s: GameState, h: Holding): string {
     : "whatever fit-out and free rent the rent pays for";
   const cap = autoTiCapToday(s, h);
   const own = cap === undefined ? "" : `, and no more than $${cap.toFixed(2)}/sf of fit-out per lease year here`;
-  return `${rent}; ${conc}${own}. One counter, then sign or pass.`;
+  const floor = s.autoRentFloor ? "; never under market rent" : "";
+  return `${rent}; ${conc}${own}${floor}. One counter, then sign or pass.`;
 }
 
 /**

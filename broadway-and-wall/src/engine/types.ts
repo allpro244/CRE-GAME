@@ -3542,6 +3542,14 @@ export interface GameState {
    */
   autoConcessions?: AutoConcessions;
   /**
+   * NEVER BELOW MARKET RENT on auto-lease: no lease, renewal or rent relief
+   * the team signs carries a face rent under the space's market rent
+   * (`autoMarketRentPsf`). Lowballs are countered up to it; a tenant who will
+   * not pay it is passed. The owner's instruction, not a market rule — what it
+   * costs is the tenants who walk. Absent reads as off.
+   */
+  autoRentFloor?: boolean;
+  /**
    * WHAT AUTO-LEASE DID, last twelve months — the team's scorecard on the
    * Leasing page. One row per letter it settled; trimmed as it is written.
    */

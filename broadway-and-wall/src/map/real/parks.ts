@@ -70,7 +70,12 @@ export function settsTex(): THREE.CanvasTexture {
 }
 
 /** How much of the lawn is under fallen leaves (0-1), set by the season. */
-export const TURF_U = { uLeaves: { value: 0 } };
+export const TURF_U = {
+  uLeaves: { value: 0 },
+  /** the streams through the parks (RealCityLayer.buildWetMask): white is water, and the park turf is cut away there */
+  uWet: { value: (() => { const t = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1); t.needsUpdate = true; return t as THREE.Texture; })() },
+  uWetBox: { value: new THREE.Vector4(0, 0, 1, 1) },
+};
 /** How deep the snow lies on the grass (0-1): it buries the green's variety along with the green. */
 export const GRASS_U = { uSnow: { value: 0 } };
 
@@ -118,7 +123,7 @@ export function grassMaterial(kind: "lawn" | "turf" | "rough"): THREE.MeshStanda
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>
 varying vec2 vGw;${turf ? "\nvarying float vStripe;" : ""}
 uniform float uLeaves;
-uniform float uSnow;
+uniform float uSnow;${turf ? "\nuniform sampler2D uWet;\nuniform vec4 uWetBox;" : ""}
 // a hash that holds its precision far from the origin (no sin of a big number)
 float gH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -128,6 +133,7 @@ float gF(vec2 p) { const mat2 R = mat2(0.8, -0.6, 0.6, 0.8);
   float a = gN(p) * 0.57; p = R * p * 2.03 + 17.1; a += gN(p) * 0.29; p = R * p * 2.01 + 5.3; a += gN(p) * 0.14; return a; }
 float gGrassH;`)
       .replace("#include <color_fragment>", `#include <color_fragment>
+${turf ? "if (texture2D(uWet, (vGw - uWetBox.xy) / uWetBox.zw).r > 0.5) discard;   // a creek through the park" : ""}
 { vec2 p = vGw;
   float live = 1.0 - uSnow;
   float px = max(length(fwidth(p)), 1e-4);                 // metres per pixel

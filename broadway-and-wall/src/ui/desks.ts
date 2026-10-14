@@ -65,6 +65,10 @@ export const DESKS: readonly Desk[] = [
     note: "Loans, the line, the fund, and the ledger",
     tabs: [
       { page: "debt", label: "Debt", note: "Loans, refinancing, the line and the fund" },
+      // EVERY LENDER'S BOOKS, ALWAYS OPEN. The desks' statements had been an
+      // expandable row at the bottom of City → Markets → The banks; a borrower
+      // choosing where to go needs them where the borrowing is.
+      { page: "banks", label: "Banks", note: "Every lender's books — capital, income, losses, terms, limits and its loans" },
       { page: "books", label: "Books", note: "Cash movement, income statement and balance sheet" },
     ],
   },

@@ -1400,11 +1400,13 @@ export interface PropertyEvent {
 export interface Alert {
   id: number;
   q: number;                 // the month it fired
-  kind: "swan" | "bank" | "portfolio" | "ground" | "sale" | "fed";
+  kind: "swan" | "bank" | "portfolio" | "ground" | "sale" | "fed" | "delivered";
   tone: "bad" | "good";      // a black swan or a white one
   title: string;
   body: string;
   detail?: string;
+  /** The building it is about, when it is about one — the card can take you there. */
+  bbl?: string;
 }
 
 /**

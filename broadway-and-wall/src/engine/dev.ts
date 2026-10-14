@@ -7,7 +7,7 @@
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
 import type { BtsCommitment, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
-import { BUILT_CLASSES, cloneState} from "./types";
+import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
@@ -1897,6 +1897,8 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   delete nh.makeReady;
   delete nh.deliveredM;
   delete nh.shellSf;
+  // The hold emptied the building that is gone; dirt has nothing to stop letting.
+  delete nh.leasingHold;
   nh.condition = "standard";
   nh.lastCapM = s.month;
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
@@ -2610,6 +2612,11 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // A NEW BUILDING OPENS ON AUTO-LEASE, at its rent posture with no fit-out
   // cap — the leasing guidelines every lease-up runs on — unless you took it
   // off. Major leases still come to you (leasing.ts isMajorLease).
+  // A NEW BUILDING LETS. "Stop letting" (leasingHold) is how the old one was
+  // emptied for this — buying out the leases sets it — and nothing cleared
+  // it through the demolition and the build, so the delivery opened with
+  // letting stopped and its flats never let (owner, Oct 2026).
+  delete h.leasingHold;
   if (h.autoLease === undefined && !h.groundLeased) {
     const built = resolveRec(parcels, s, d.bbl);
     if (built && leasableUses(built).length) h.autoLease = true;
@@ -2619,9 +2626,13 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
 
   const over = d.costTotal - (d.hardCost + Math.round(d.hardCost * SOFT_COST));
   void over;
-  s.news.unshift({
-    q: s.month, kind: "deal",
-    text: `Delivered: ${(d.sf / 1000).toFixed(0)}k sf of ${d.use} at ${rec.address}, ${d.events === 0 ? "on programme" : `after ${d.events} problem${d.events > 1 ? "s" : ""}`}, $${(d.costTotal / 1e6).toFixed(1)}M all in`
+  // YOUR BUILDING IS UP, AND THAT TAKES THE SCREEN (owner, Oct 2026): the
+  // card's button flies the map to it and opens it. raiseAlert files the
+  // same line in the news.
+  raiseAlert(s, {
+    kind: "delivered", tone: "good", bbl: d.bbl,
+    title: `${rec.address} has delivered`,
+    body: `${(d.sf / 1000).toFixed(0)}k sf of ${d.use}, ${d.events === 0 ? "on programme" : `after ${d.events} problem${d.events > 1 ? "s" : ""}`}, $${(d.costTotal / 1e6).toFixed(1)}M all in`
       + (saved > 0 ? `, with ${money(saved)} of contingency returned` : "")
       + `. The mini-perm matures ${monthLabel(s.month + 60)} — stabilise it before then.`,
   });

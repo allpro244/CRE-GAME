@@ -366,7 +366,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const useBar = zoning.bar(use);
 
   return (
-    <div className="deal">
+    <div className={"deal" + (tab === "design" ? " dev-wide" : "")}>
       <div className="deal-head">
         Develop this lot
         {saved && <span className="dim"> · scheme held</span>}
@@ -853,15 +853,20 @@ export function DevelopSection({ bbl }: { bbl: string }) {
         </>
       )}
 
+      {/* The model and the choices side by side on the full page (index.css
+          .dev-design), the model held in view while the list scrolls; one
+          column in the side panel. */}
       {tab === "design" && (
-        <>
-          <SchemeViewer />
-          <DesignPicker design={design} onChange={setDesign} floors={fl} shops={previewShops} onPeek={peek} />
-          <div className="btn-row" style={{ marginTop: 8 }}>
-            <button type="button" className="btn" onClick={() => setTab("programme")}>Back · Programme</button>
-            <button type="button" className="btn" onClick={() => setTab("financing")}>Next · Financing</button>
+        <div className="dev-design">
+          <div className="dev-design-model"><SchemeViewer /></div>
+          <div>
+            <DesignPicker design={design} onChange={setDesign} floors={fl} shops={previewShops} onPeek={peek} />
+            <div className="btn-row" style={{ marginTop: 8 }}>
+              <button type="button" className="btn" onClick={() => setTab("programme")}>Back · Programme</button>
+              <button type="button" className="btn" onClick={() => setTab("financing")}>Next · Financing</button>
+            </div>
           </div>
-        </>
+        </div>
       )}
 
       {tab === "financing" && (

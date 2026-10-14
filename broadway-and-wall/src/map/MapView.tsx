@@ -6,7 +6,7 @@ import { blocksPaint, parksPaint, groundGrain, composeStyle, gameLayers, landLen
 import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
 import { mergeLotFeatures } from "./real/siteRing";
-import { condIdxOf, occupancy, physicalOcc, resolveRec, useOccupancy, landRead } from "@/engine/value";
+import { condIdxOf, liveDemand, occupancy, physicalOcc, resolveRec, useOccupancy, landRead } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { START_YEAR } from "@/engine/types";
 import type { BuildingDesign, GameState } from "@/engine/types";
@@ -1001,7 +1001,7 @@ export default function MapView() {
       const r = parcels[bbl];
       const d = drift[r.block];
       if (!d) continue;
-      next.set(bbl, Math.max(2, Math.min(100, r.demandScore + d)));
+      next.set(bbl, liveDemand(game, r.demandScore, r.block));
     }
     for (const [bbl, v] of next) {
       if (dmdRef.current.get(bbl) === v) continue;
@@ -1913,11 +1913,11 @@ export default function MapView() {
       ] as never);
       map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
       // the same live figure the fill reads: the parcel's score plus its
-      // block's drift, on the engine's own clamp
+      // block's drift, on the engine's own bounded scale
       const vals = new Map<string, number>();
       for (const bbl of Object.keys(parcels)) {
         const r = parcels[bbl];
-        vals.set(bbl, Math.max(2, Math.min(100, r.demandScore + (game?.blockD?.[r.block] ?? 0))));
+        vals.set(bbl, liveDemand(game, r.demandScore, r.block));
       }
       roofLens(vals, stops, ramp);
       return;
@@ -2012,7 +2012,7 @@ export default function MapView() {
       // percentile stops over CURRENT land $/sf so the ramp stays contrasty
       const nowPsf = (bbl: string) => {
         const r = parcels[bbl];
-        const d = Math.max(2, Math.min(100, r.demandScore + (game.blockD?.[r.block] ?? 0)));
+        const d = liveDemand(game, r.demandScore, r.block);
         return r.landPsf * game.econ.landIdx * (1 + 0.22 * (0.25 + 0.9 * (d / 100)) * game.econ.cycleDev);
       };
       const vals: number[] = [];

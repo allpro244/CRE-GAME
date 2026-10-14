@@ -213,8 +213,19 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * 130/77/32/13 against MapPLUTO's 150/72/26/12 (plus the World Trade Center
  * towers PLUTO no longer carries); was 0 at 30+. Generated islands and
  * Midtown are unchanged.
+ *
+ * Plan 11 untangles the water from the streets and squares (island.mjs PLAN
+ * 11). A stream that ran along inside a boulevard's reservation and came out
+ * on the far side got one stone deck the whole length of the run — up to 93 m
+ * on a Metropolis, a walled slab down the middle of the road and across the
+ * circus beyond it; 21 of 28 Metropolis islands had a "bridge" over 50 m. A
+ * deck is now only laid where the stream crosses (the roadway's width at the
+ * crossing angle); a grazing run is culverted under the road. And a stream is
+ * culverted under a market square, a battery and a circus rather than laid
+ * across the setts and the circus carriageway. Towns without water are
+ * byte-identical; plan-10 saves rebuild the town they were cut with.
  */
-export const CITY_PLAN = 10;
+export const CITY_PLAN = 11;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

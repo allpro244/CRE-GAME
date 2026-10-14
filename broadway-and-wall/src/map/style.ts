@@ -87,6 +87,7 @@ export function gameSources(city: {
     "bw-parcels": { type: "geojson", data: (city.parcelFeatures ?? EMPTY) as never },
     "bw-buildings": { type: "geojson", data: (city.buildingFeatures ?? EMPTY) as never },
     "bw-forsale": { type: "geojson", data: EMPTY } as never,
+    "bw-firm": { type: "geojson", data: EMPTY } as never,
     "bw-owned": { type: "geojson", data: EMPTY },
     "bw-civic": { type: "geojson", data: EMPTY },
   };
@@ -271,6 +272,32 @@ export function gameLayers(): LayerSpecification[] {
         "circle-color": ["match", ["get", "kind"], "land", "#3f7f4c", "offmkt", "#7d6a9c", "#c8452f"] as never,
         "circle-stroke-color": "#ffffff",
         "circle-stroke-width": 0.8,
+        "circle-pitch-alignment": "map",
+      },
+    },
+    {
+      // ONE COMPETITOR'S BOOK, pinned (Players → "Show on the map"): a
+      // bright orange pin on every building it owns, a ring on its cranes.
+      id: "bw-firm-halo",
+      type: "circle",
+      source: "bw-firm",
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 5, 14, 8, 17, 14] as never,
+        "circle-color": "rgba(0,0,0,0)",
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 11, 1.6, 17, 3] as never,
+        "circle-pitch-alignment": "map",
+      },
+    },
+    {
+      id: "bw-firm-pts",
+      type: "circle",
+      source: "bw-firm",
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3.6, 14, 6, 17, 11] as never,
+        "circle-color": ["match", ["get", "kind"], "crane", "rgba(0,0,0,0)", "#f07a12"] as never,
+        "circle-stroke-color": ["match", ["get", "kind"], "crane", "#f07a12", "#7a3a00"] as never,
+        "circle-stroke-width": ["match", ["get", "kind"], "crane", 2.5, 1] as never,
         "circle-pitch-alignment": "map",
       },
     },

@@ -3287,6 +3287,8 @@ export interface GameState {
    * desk sells out of it and the bank statement on Research is a view of it.
    */
   cityLoans?: Record<string, CityLoan>;
+  /** What each competitor did, in order (firmLog.ts). Display only. */
+  firmLog?: import("./firmLog").FirmLogEntry[];
   /** Book-weighted appetite of the live desks — the banking system in one number. */
   bankApp?: number;
   /**

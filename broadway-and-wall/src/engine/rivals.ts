@@ -49,7 +49,9 @@ import { sizeAreaScale } from "./cityscale";
 import { money } from "./money";
 import { FUND_INVEST_M, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { observe, yearOfWatching } from "./competitorReads";
-import { assembledBlock, reviewThesis, thesisFit, thesisSellMult } from "./strategy";
+import { logFirm } from "./firmLog";
+const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
+import { assembledBlock, reviewThesis, thesisFit, thesisLabel, thesisSellMult } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
 import { deskWithRoom, renewRow, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
 import {
@@ -771,6 +773,7 @@ export function claimJob(
   if (job) {
     job.firmId = best.id;
     best.lastBuildM = s.month;
+    logFirm(s, best, "build", `Took the site at ${rec.address} and broke ground: ${floors} floors of ${use}`, bbl, projectCost);
     job.cost = projectCost;
     // Day-one equity is in. Remaining work draws the construction facility —
     // leaving a multi-million equityLeft balance orphaned every claimed job
@@ -1142,6 +1145,7 @@ export function jobDelivered(s: GameState, parcels: ParcelTable, bbl: string, fi
   }
   (r.deliveredM ??= {})[bbl] = s.month;
   const rec = resolveRec(parcels, s, bbl);
+  logFirm(s, r, "open", `Opened ${rec?.address ?? bbl}${rec && rec.bldgArea ? ` — ${Math.round(rec.bldgArea / 1000)}k sf of ${CLASS_NOUN[rec.class] ?? rec.class}` : ""}`, bbl, cost);
   // A ROUTINE OPENING IS NOT NEWS. "It is competing with you tomorrow" is only
   // true if it is anywhere near you — see stakeIn. The square feet reach the
   // market either way, through the delivery cohort.
@@ -1814,7 +1818,7 @@ function driftYear(s: GameState, r: Rival) {
   // on its record, so its character has a history you can read.
   const y = START_YEAR + Math.floor(s.month / 12) - 1;
   const lev = (r.aum ?? 0) > 0 ? r.debt / r.aum! : 0;
-  const learn = (text: string) => { (r.lessons ??= []).push({ y, text }); if (r.lessons.length > 6) r.lessons.shift(); };
+  const learn = (text: string) => { (r.lessons ??= []).push({ y, text }); if (r.lessons.length > 6) r.lessons.shift(); logFirm(s, r, "event", text); };
   const delivered = Object.values(r.deliveredM ?? {}).some((m) => m > s.month - 12);
   const burned = (r.yrStressMax ?? 0) >= 3 || ch < -0.25;
   const distressYear = (r.yrDistressBuys ?? 0) >= 2;
@@ -2928,6 +2932,7 @@ export function breakGround(
   const sf = plan.sf;
   const floors = plan.floors;
   const cost = plan.costTotal;
+  logFirm(s, r, "build", `Broke ground at ${rec.address}: ${floors} floors of ${use}${reuse ? " (a conversion)" : redev ? " (a teardown)" : ""}`, bbl, cost);
   const dayOneNeed = Math.round(plan.equity * 0.40);
   const lead = dominantOf(devMix(use));
   const months = plan.months;
@@ -3456,6 +3461,7 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
       bbl: sell.bbl, ask, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id,
       earlyUntilM: s.month + 2, quietFrom: r.name,
     });
+    logFirm(s, r, "event", `Squeezed — offered ${sell.rec.address} to you privately`, sell.bbl, ask);
     s.news.unshift({
       q: s.month, kind: "deal", bbl: sell.bbl,
       text: `${r.name} rang you directly. They need money and they would rather not say so on the tape: `
@@ -3470,6 +3476,7 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
   // The deed stays with them until somebody buys it — a firm selling under
   // pressure is still the owner, and that is the whole point of the trade.
   s.listings.push({ bbl: sell.bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id });
+  logFirm(s, r, "event", `Short of cash — put ${sell.rec.address} on the tape under appraisal`, sell.bbl, px);
   // A FIRM SELLING UNDER PRESSURE IS ALWAYS RECORDED, AND INTERRUPTS WHEN IT IS
   // ABOUT YOU. This had no gate at all — every distress listing in the city
   // filed as an `event`, 0.81 a year, most of them buildings the player had
@@ -3587,6 +3594,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   if (!worst) return false;
   const desk = deskFor(s, r, worst.bbl);
   const owed = dropDeed(s, r, worst.bbl);
+  logFirm(s, r, "event", `Handed ${worst.rec.address} back to ${desk}`, worst.bbl, owed);
 
   r.bbls = r.bbls.filter((b) => b !== worst!.bbl);
   forgetDeed(r, worst.bbl);
@@ -3944,6 +3952,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         const pr = paramsOf(r);
         const line = reviewThesis(s, parcels, r, { maxLtv: pr.maxLtv, lev: aum > 0 ? r.debt / aum : 0, classes: pr.classes, builds: pr.build > 0 });
         if (line) s.news.unshift({ q: s.month, kind: "info", text: line });
+        if (r.thesis && r.thesis.fromM === s.month) logFirm(s, r, "plan", `New plan: ${thesisLabel(r.thesis)}`);
       }
     }
     // Absorption / rivalBuys used to call markRival again for every bidder on
@@ -3996,6 +4005,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           maxLtv: pr.maxLtv, lev: aum > 0 ? r.debt / aum : 0, classes: pr.classes, builds: pr.build > 0,
         });
         if (line) s.news.unshift({ q: s.month, kind: "info", text: line });
+        if (r.thesis && r.thesis.fromM === s.month) logFirm(s, r, "plan", `New plan: ${thesisLabel(r.thesis)}`);
       }
       r.rateYr = s.econ.indexRate;
       const depr = (r.basis ?? aum) * 0.7 / 33;
@@ -4876,8 +4886,15 @@ export function rivalBuys(
   best.basis = Math.round((best.basis ?? 0) + fin.equity + closing);
   best.aum = Math.round((best.aum ?? 0) + price);
   transferDeed(s, rec.bbl, best, 0);   // the seller was already paid above
+  const wasDistress = !!s.listings.find((l) => l.bbl === rec.bbl)?.distress;
   recordComp(s, rec, price, best.name, seller?.name ?? sellerName ?? "a private owner",
-    s.listings.find((l) => l.bbl === rec.bbl)?.distress, seller ? assetGrade(seller, rec) : undefined, offMarket);
+    wasDistress, seller ? assetGrade(seller, rec) : undefined, offMarket);
+  {
+    const what = rec.class === "land" || !rec.bldgArea ? "a site" : CLASS_NOUN[rec.class] ?? rec.class;
+    const how = wasDistress ? " — a distress sale" : offMarket ? " — never listed" : "";
+    logFirm(s, best, "buy", `Bought ${rec.address} (${what}) from ${seller?.name ?? sellerName ?? "a private owner"}${how}`, rec.bbl, price);
+    if (seller) logFirm(s, seller, "sell", `Sold ${rec.address} to ${best.name}`, rec.bbl, price);
+  }
   return best;
 }
 
@@ -4913,6 +4930,7 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
   seller.cash += price - relief - tax;
   const partnersOut = jvLpTake(jv, price - relief - tax, s.month);
   seller.cash -= partnersOut;
+  logFirm(s, seller, "sell", `Sold a building to money from out of town`, bbl, price);
   settleEmptyBook(s, seller);
   return true;
 }

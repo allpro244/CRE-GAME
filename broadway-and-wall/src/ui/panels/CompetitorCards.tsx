@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 import { useStore } from "@/state/store";
 import type { GameState, Rival } from "@/engine/types";
-import { START_YEAR } from "@/engine/types";
+import { START_YEAR, monthLabel } from "@/engine/types";
 import { sheetOf } from "@/engine/rivals";
 import { TRAITS, QUIRK_LABEL, HIDDEN_QUIRKS, type TraitKey } from "@/engine/competitorTraits";
 import { readOf, bandText, bandValue } from "@/engine/competitorReads";
 import { headliners, labelOf, shownRules, ARC_LABEL, ROLE_LABEL, type Arc } from "@/engine/storyline";
 import { LineChart } from "@/ui/Chart";
 import { thesisLabel } from "@/engine/strategy";
+import { movesOf, streetMoves } from "@/engine/firmLog";
 import { usd } from "@/ui/format";
 
 // THE CAST — COMPETITORS_PLAN.md §6–§7. Who matters right now, what each is in
@@ -185,6 +186,177 @@ export function FirmSheet({ r }: { r: Rival }) {
       <div className="dim" style={{ fontSize: 11, marginTop: 6 }}>
         Your read of them, 1–100. Faint numbers are guesses that sharpen as you trade with them and watch the tape; <span className="mono">??</span> has not shown yet.
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- the firm page
+
+const CLASS_COLOR: Record<string, string> = {
+  office: "#3b6fb6", multifamily: "#8a4fb0", retail: "#d9822b", industrial: "#6b7280", land: "#7a9a3a",
+};
+const MOVE_ICON: Record<string, string> = { buy: "＋", sell: "−", build: "▲", open: "■", plan: "◆", event: "•" };
+
+/** Every parcel's centroid and the town's bounds, computed once per parcel table. */
+const townCache = new WeakMap<object, { pts: [number, number][]; w: number; e: number; s: number; n: number }>();
+function townShape(parcels: Record<string, { centroid?: [number, number] }>) {
+  const hit = townCache.get(parcels);
+  if (hit) return hit;
+  const pts: [number, number][] = [];
+  let w = Infinity, e = -Infinity, s = Infinity, n = -Infinity, i = 0;
+  for (const rec of Object.values(parcels)) {
+    const c = rec?.centroid;
+    if (!c) continue;
+    if (c[0] < w) w = c[0]; if (c[0] > e) e = c[0]; if (c[1] < s) s = c[1]; if (c[1] > n) n = c[1];
+    if (i++ % 3 === 0) pts.push(c);   // a third of the town is enough to draw its shape
+  }
+  const out = { pts, w, e, s, n };
+  townCache.set(parcels, out);
+  return out;
+}
+
+/**
+ * WHERE THEY OWN. The whole town in faint grey, the firm's buildings coloured
+ * by what they are, its cranes ringed, and your own buildings in gold so you
+ * can see where you are up against them. Click to see it on the big map.
+ */
+export function FirmMiniMap({ r, width = 300, height = 210 }: { r: Rival; width?: number; height?: number }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels);
+  const showFirmOnMap = useStore((s) => s.showFirmOnMap);
+  if (!parcels) return null;
+  const t = townShape(parcels as never);
+  const sx = (lng: number) => ((lng - t.w) / Math.max(1e-9, t.e - t.w)) * (width - 12) + 6;
+  const sy = (lat: number) => (1 - (lat - t.s) / Math.max(1e-9, t.n - t.s)) * (height - 12) + 6;
+  const cranes = (game.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned);
+  const pt = (bbl: string) => (parcels as Record<string, { centroid?: [number, number] }>)[bbl]?.centroid;
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img"
+      aria-label={`Map of ${r.name}'s buildings`} style={{ background: "rgba(43,37,26,0.04)", borderRadius: 6, cursor: "pointer", display: "block" }}
+      onClick={() => showFirmOnMap(r.id)}>
+      <title>{`${r.name}: ${r.bbls.length} buildings. Click to see them on the map.`}</title>
+      {t.pts.map((c, i) => <circle key={i} cx={sx(c[0])} cy={sy(c[1])} r={0.8} fill="#b9b2a3" opacity={0.45} />)}
+      {Object.keys(game.holdings).map((b) => { const c = pt(b); return c ? <circle key={"y" + b} cx={sx(c[0])} cy={sy(c[1])} r={2.6} fill="#c9a227" stroke="#fff" strokeWidth={0.6} /> : null; })}
+      {cranes.map((j) => { const c = pt(j.bbl); return c ? <circle key={"c" + j.bbl} cx={sx(c[0])} cy={sy(c[1])} r={5} fill="none" stroke="#c0392b" strokeWidth={1.4} /> : null; })}
+      {r.bbls.map((b) => {
+        const c = pt(b);
+        const rec = (parcels as Record<string, { class?: string; bldgArea?: number }>)[b];
+        if (!c) return null;
+        const cls = rec && rec.bldgArea ? rec.class ?? "land" : "land";
+        return <circle key={b} cx={sx(c[0])} cy={sy(c[1])} r={3.2} fill={CLASS_COLOR[cls] ?? "#555"} stroke="#fff" strokeWidth={0.6} />;
+      })}
+    </svg>
+  );
+}
+
+/** What it has done lately, newest first. */
+export function FirmMoves({ r, n = 10 }: { r: Rival; n?: number }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels);
+  const focus = useStore((s) => s.focus);
+  const moves = movesOf(game, r.id, n);
+  if (!moves.length) return <div className="dim" style={{ fontSize: 12 }}>Nothing on the record yet — it has been quiet since you arrived.</div>;
+  return (
+    <div style={{ fontSize: 12, lineHeight: "18px" }}>
+      {moves.map((x, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, cursor: x.bbl ? "pointer" : undefined }}
+          onClick={() => x.bbl && parcels?.[x.bbl] && focus(x.bbl, true)}
+          title={x.bbl ? "Show this building" : undefined}>
+          <span className="dim mono" style={{ minWidth: 62 }}>{monthLabel(x.m)}</span>
+          <span style={{ minWidth: 12, color: x.kind === "buy" ? "#2f9e44" : x.kind === "sell" ? "#c0392b" : x.kind === "build" || x.kind === "open" ? "#3b6fb6" : "#8a6d1f" }}>{MOVE_ICON[x.kind]}</span>
+          <span style={{ flex: 1 }}>{x.text}</span>
+          {x.px ? <span className="mono dim">{usd(x.px)}</span> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A firm in one glance: its map, its record, its numbers, then its sheet. */
+export function FirmPage({ r }: { r: Rival }) {
+  const game = useStore((s) => s.game)!;
+  const showFirmOnMap = useStore((s) => s.showFirmOnMap);
+  const born = START_YEAR + Math.floor(Math.max(0, r.bornM ?? 0) / 12);
+  const counts: Record<string, number> = {};
+  const parcels = useStore((s) => s.parcels);
+  for (const b of r.bbls) {
+    const rec = parcels?.[b];
+    const k = rec && rec.bldgArea ? rec.class : "land";
+    counts[k] = (counts[k] ?? 0) + 1;
+  }
+  const feud = r.feud ? game.rivals.find((x) => x.id === r.feud) : undefined;
+  const tie = game.street?.[r.id];
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div>
+          <FirmMiniMap r={r} />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11, marginTop: 4 }}>
+            {Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
+              <span key={k}><span style={{ color: CLASS_COLOR[k] }}>●</span> {v} {k === "multifamily" ? "apartments" : k}</span>
+            ))}
+            <span><span style={{ color: "#c9a227" }}>●</span> yours</span>
+          </div>
+          <button type="button" className="btn" style={{ marginTop: 6 }} onClick={() => showFirmOnMap(r.id)}>Show {r.name} on the map</button>
+        </div>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <div className="dim" style={{ fontSize: 12, marginBottom: 4 }}>
+            Since {born}{r.home && parcels ? ` · home turf ${districtName(parcels, r.home)}` : ""}
+            {feud ? ` · feuding with ${feud.name}` : ""}
+            {tie ? ` · with you: ${tie.deals} deal${tie.deals === 1 ? "" : "s"}${tie.beats ? `, beat you ${tie.beats}×` : ""}${tie.insults ? `, insulted ${tie.insults}×` : ""}` : ""}
+          </div>
+          <div className="dim" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, margin: "6px 0 3px" }}>Lately</div>
+          <FirmMoves r={r} />
+        </div>
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <FirmSheet r={r} />
+      </div>
+    </div>
+  );
+}
+
+function districtName(parcels: Record<string, { district?: string; districtName?: string }>, key: string): string {
+  for (const rec of Object.values(parcels)) if (rec?.district === key) return rec.districtName ?? key;
+  return key;
+}
+
+/** The three traits that most define a firm, as coloured badges. */
+export function SignatureTraits({ r }: { r: Rival }) {
+  const game = useStore((s) => s.game)!;
+  const sheet = sheetOf(r);
+  const top = TRAITS.filter((t) => !t.hidden)
+    .map((t) => ({ t, d: Math.abs(sheet[t.key] - 50) }))
+    .sort((a, b) => b.d - a.d).slice(0, 3);
+  return (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      {top.map(({ t }) => (
+        <span key={t.key} style={{ display: "inline-flex", gap: 3, alignItems: "center", fontSize: 11 }}>
+          <span className="dim">{t.label.split(" ")[0]}</span>
+          <TraitRating band={readOf(game, r, sheet, t.key)} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** What the whole street did lately — a ticker at the top of the page. */
+export function StreetTicker({ onOpen }: { onOpen: (id: string) => void }) {
+  const game = useStore((s) => s.game)!;
+  const moves = streetMoves(game, game.month - 6, 8);
+  if (!moves.length) return null;
+  const nameOf = (id: string) => game.rivals.find((x) => x.id === id)?.name ?? "A firm";
+  return (
+    <div style={{ margin: "4px 0 12px", padding: "8px 10px", background: "rgba(43,37,26,0.04)", borderRadius: 6 }}>
+      <div className="dim" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>On the street lately</div>
+      {moves.map((x, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, fontSize: 12, lineHeight: "18px", cursor: "pointer" }} onClick={() => onOpen(x.firmId)}>
+          <span className="dim mono" style={{ minWidth: 62 }}>{monthLabel(x.m)}</span>
+          <span style={{ minWidth: 12, color: x.kind === "buy" ? "#2f9e44" : x.kind === "sell" ? "#c0392b" : x.kind === "build" || x.kind === "open" ? "#3b6fb6" : "#8a6d1f" }}>{MOVE_ICON[x.kind]}</span>
+          <span style={{ flex: 1 }}><strong style={{ fontWeight: 600 }}>{nameOf(x.firmId)}</strong> — {x.text.charAt(0).toLowerCase() + x.text.slice(1)}</span>
+          {x.px ? <span className="mono dim">{usd(x.px)}</span> : null}
+        </div>
+      ))}
     </div>
   );
 }

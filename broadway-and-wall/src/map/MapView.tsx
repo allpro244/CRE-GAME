@@ -854,7 +854,10 @@ export default function MapView() {
     const game = useStore.getState().game;
     if (!map || !parcels || !game) return;
     const pts: [number, number][] = [];
-    for (const bbl of Object.keys(game.holdings)) {
+    // One competitor's book when the map was asked to show that firm.
+    const st = useStore.getState();
+    const firm = st.mapFilter === "firm" ? game.rivals.find((r) => r.id === st.mapFirm) : undefined;
+    for (const bbl of firm ? firm.bbls : Object.keys(game.holdings)) {
       if (game.merged?.[bbl]) continue;
       const c = parcels[bbl]?.centroid;
       if (c) pts.push(c);
@@ -887,6 +890,8 @@ export default function MapView() {
   // ownership + listings → feature-state and rooftop markers
   // Subscribe to a paint signature, not `game` identity — see mapPaintSig.
   const paintSig = useStore((s) => mapPaintSig(s.game));
+  const pinFilter = useStore((s) => s.mapFilter);
+  const pinFirm = useStore((s) => s.mapFirm);
   useEffect(() => {
     const game = useStore.getState().game;
     const map = mapRef.current;
@@ -974,6 +979,24 @@ export default function MapView() {
       }),
     });
 
+    // One competitor's book, pinned, while the map is showing that firm.
+    {
+      const st = useStore.getState();
+      const firm = st.mapFilter === "firm" ? game.rivals.find((r) => r.id === st.mapFirm) : undefined;
+      const pins = map.getSource("bw-firm") as maplibregl.GeoJSONSource | undefined;
+      pins?.setData({
+        type: "FeatureCollection",
+        features: firm ? [
+          ...firm.bbls.map((bbl) => ({ bbl, kind: "deed" })),
+          ...(game.cityJobs ?? []).filter((j) => j.firmId === firm.id && !j.orphaned && !firm.bbls.includes(j.bbl)).map((j) => ({ bbl: j.bbl, kind: "crane" })),
+        ].map(({ bbl, kind }) => ({
+          type: "Feature" as const,
+          geometry: { type: "Point" as const, coordinates: parcels[bbl]?.centroid ?? [0, 0] },
+          properties: { bbl, kind },
+        })) : [],
+      });
+    }
+
     const civic = map.getSource("bw-civic") as maplibregl.GeoJSONSource | undefined;
     civic?.setData(civicCollection(
       game,
@@ -981,7 +1004,7 @@ export default function MapView() {
       city?.parcelFeatures as GeoJSON.FeatureCollection | undefined,
       city?.context as GeoJSON.FeatureCollection | null,
     ) as never);
-  }, [paintSig, parcels, mapReady, city]);
+  }, [paintSig, parcels, mapReady, city, pinFilter, pinFirm]);
 
   const lens = useStore((s) => s.lens);
 
@@ -1316,6 +1339,7 @@ export default function MapView() {
   // it used to re-run on every mouse move because hover was one of its keys.
   const hoveredBBL = useStore((s) => s.hoveredBBL);
   const mapFilter = useStore((s) => s.mapFilter);
+  const mapFirm = useStore((s) => s.mapFirm);
   useEffect(() => {
     const layer = threeRef.current;
     if (!layer || !mapReady) return;
@@ -1393,18 +1417,33 @@ export default function MapView() {
       const keep = new Set<string>();
       if (mapFilter === "owned") {
         for (const bbl of Object.keys(game.holdings)) keep.add(bbl);
+      } else if (mapFilter === "firm") {
+        // one competitor's book, and its cranes, with yours kept for reference
+        const r = game.rivals.find((x) => x.id === useStore.getState().mapFirm);
+        for (const bbl of r?.bbls ?? []) keep.add(bbl);
+        for (const j of game.cityJobs ?? []) if (j.firmId === r?.id) keep.add(j.bbl);
+        for (const bbl of Object.keys(game.holdings)) keep.add(bbl);
       } else {
         for (const d of Object.values(game.developments ?? {})) keep.add(d.bbl);
         for (const j of game.cityJobs ?? []) keep.add(j.bbl);
       }
+      // ONE FIRM, LIT: its buildings bright orange, yours gold, everything
+      // else dimmed harder than the ordinary filters so the book reads at a
+      // glance across the whole town.
+      const firm = mapFilter === "firm" ? game.rivals.find((x) => x.id === useStore.getState().mapFirm) : undefined;
+      if (firm) {
+        for (const bbl of firm.bbls) tints.set(bbl, [1.65, 0.95, 0.3]);
+        for (const bbl of Object.keys(game.holdings)) tints.set(bbl, [1.45, 1.25, 0.5]);
+      }
+      const dim = firm ? 0.42 : 0.55;
       for (const bbl of layer.rangesByBBL.keys()) {
         if (keep.has(bbl)) continue;
         const cur = tints.get(bbl) ?? [1, 1, 1];
-        tints.set(bbl, [cur[0] * 0.55, cur[1] * 0.55, cur[2] * 0.55]);
+        tints.set(bbl, [cur[0] * dim, cur[1] * dim, cur[2] * dim]);
       }
     }
     layer.setTints(tints);
-  }, [selectedBBL, adjacency, paintSig, mapReady, lens, mapFilter, parcels]);
+  }, [selectedBBL, adjacency, paintSig, mapReady, lens, mapFilter, mapFirm, parcels]);
 
   // THE CITY'S VACANCY, ON THE CITY.
   //

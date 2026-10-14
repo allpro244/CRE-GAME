@@ -67,7 +67,8 @@ export function BuildingDatabase() {
         yr: rec.yearBuilt, owner: own,
         occ: ip.occ, known: ip.disclosed,
         rent, noi,
-        dmd: Math.round(rec.demandScore + (game.blockD?.[rec.block] ?? 0)),
+        // resolveRec has already applied the block's drift
+        dmd: Math.round(rec.demandScore),
         val, psf: val / Math.max(1, rec.bldgArea),
       });
     }

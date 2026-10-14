@@ -7719,15 +7719,28 @@ export class RealCityLayer {
     return ring;
   }
 
+  /**
+   * WHAT A FLATTENED BUILDING LOOKED LIKE, so it can stand again. Flattening
+   * collapses the street's own geometry in place, and it used to be one-way:
+   * load a save from before a demolition (or before a delivery, or rewind) and
+   * the game had the building back while the map still showed dirt. Nothing
+   * else ever un-flattens, so the original vertices and instance matrices are
+   * kept here and put back by `unflatten` when no new stock covers the lot.
+   */
+  private flatSaved = new Map<string, { ranges: { pa: THREE.BufferAttribute; start: number; data: Float32Array }[]; inst: { mesh: THREE.InstancedMesh; i: number; m: THREE.Matrix4 }[] }>();
+
   private flatten(bbl: string) {
     if (this.flattened.has(bbl)) return;
     this.flattened.add(bbl);
     const d = this.deeds.get(bbl);
     if (!d) return;
+    const saved: { ranges: { pa: THREE.BufferAttribute; start: number; data: Float32Array }[]; inst: { mesh: THREE.InstancedMesh; i: number; m: THREE.Matrix4 }[] } = { ranges: [], inst: [] };
+    this.flatSaved.set(bbl, saved);
     for (const r of d.ranges) {
       const pa = r.mesh?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
       if (!pa) continue;
       const arr = pa.array as Float32Array;
+      saved.ranges.push({ pa, start: r.start, data: arr.slice(r.start * 3, (r.start + r.count) * 3) });
       // a demolished building's ground shade goes with it: collapse the band to a point
       if (r.buf === "contact" || r.buf.startsWith("lot:")) { for (let i = r.start; i < r.start + r.count; i++) { arr[i * 3] = arr[r.start * 3]; arr[i * 3 + 1] = arr[r.start * 3 + 1]; } }
       for (let i = r.start; i < r.start + r.count; i++) arr[i * 3 + 2] = Math.min(arr[i * 3 + 2], 0.01);
@@ -7737,9 +7750,27 @@ export class RealCityLayer {
     for (const it of d.inst) {
       const mesh = this.inst.get(it.mesh);
       if (!mesh) continue;
-      mesh.getMatrixAt(it.i, m4); m4.scale(new THREE.Vector3(0, 0, 0)); mesh.setMatrixAt(it.i, m4);
+      mesh.getMatrixAt(it.i, m4); saved.inst.push({ mesh, i: it.i, m: m4.clone() });
+      m4.scale(new THREE.Vector3(0, 0, 0)); mesh.setMatrixAt(it.i, m4);
       mesh.instanceMatrix.needsUpdate = true;
     }
+    this.renderer && (this.renderer.shadowMap.needsUpdate = true);
+  }
+
+  /** Put a flattened street building back exactly as it was. */
+  private unflatten(bbl: string) {
+    if (!this.flattened.delete(bbl)) return;
+    const saved = this.flatSaved.get(bbl);
+    this.flatSaved.delete(bbl);
+    if (saved) {
+      for (const r of saved.ranges) {
+        (r.pa.array as Float32Array).set(r.data, r.start * 3);
+        r.pa.addUpdateRange(r.start * 3, r.data.length); r.pa.needsUpdate = true;
+      }
+      for (const it of saved.inst) { it.mesh.setMatrixAt(it.i, it.m); it.mesh.instanceMatrix.needsUpdate = true; }
+    }
+    this.applyBays(bbl);
+    this.refreshDeed(bbl);
     this.renderer && (this.renderer.shadowMap.needsUpdate = true);
   }
 
@@ -7970,6 +8001,10 @@ export class RealCityLayer {
     const done = items.filter((i) => !(i.construction || i === pv));
     const rebuilt = [this.buildDyn(this.dynDone, done, force), this.buildDyn(this.dynSite, site, force)].filter((l): l is DynLayer => !!l);
     if (!rebuilt.length) return;
+    // A lot that no new stock stands on any more — a save loaded from before
+    // it was cleared or built on — gets the street's own building back.
+    const covered = new Set(items.flatMap((i) => this.siteOf(i.bbl)));
+    for (const b of [...this.flattened]) if (!covered.has(b)) this.unflatten(b);
     this.dynDeeds = new Map([...this.dynDone.deeds, ...this.dynSite.deeds]);
     this.dynHeight = new Map([...this.dynDone.heights, ...this.dynSite.heights]);
     this.cranes = this.dynSite.cranes ?? this.dynDone.cranes;

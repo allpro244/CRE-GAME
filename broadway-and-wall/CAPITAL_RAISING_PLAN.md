@@ -123,13 +123,13 @@ Each raising window, every sponsor asking (player, rival funds, spin-outs,
 merchant SPVs) gets a score per investor type:
 
 ```
-score = fit(strategy, size, cheque) × trackRecord × terms × relationship × reputation × capacity
+score = gate(reputation, type) × fit(strategy, size, cheque) × reputation × terms × relationship × capacity
 ```
 
-- **trackRecord:**
-  - realised count, deal-level IRR and multiple vs the type's target
-  - dispersion and loss ratio (one wipe-out weighs heavily)
-  - for funds: DPI, TVPI and net IRR vs same-vintage rival funds (quartile)
+- **gate and reputation:** the firm's **reputation rating** (§3.4). It
+  decides who will take the meeting at all, and how much the sponsor is
+  trusted once they do. Track record lives inside the rating, so it isn't
+  scored twice.
 - **terms:** the offered net-to-investor IRR at a base-case pro forma vs the
   type's clearing net IRR; fee load vs norm; GP co-invest (more skin in the
   game raises the score).
@@ -137,9 +137,6 @@ score = fit(strategy, size, cheque) × trackRecord × terms × relationship × r
   re-up rate rises with the multiple they received). Investors you lost money
   for stay out for a decade, read from the same 10-year memory as
   `sponsorStanding`.
-- **reputation:** `sponsorStanding` marks (foreclosure, deficiency, forced
-  sale, a failed fund), plus press: the stories engine can carry "the sponsor
-  who lost the tower".
 - **capacity:** pension and insurance pools refuse to be more than about
   20–25% of any vehicle, and won't back a fund smaller than a size floor.
 
@@ -162,9 +159,127 @@ rivals, with the same inputs.
 - **Abort costs are real:** legal and placement costs are sunk; a failed
   raise can lose the land deposit if the land was tied up on the
   syndication's timeline.
-- **Placement agents:** pay 1.5–2% of capital raised (industry norm) to
-  approach institutional pools before you'd otherwise qualify. That widens
-  access; it doesn't change the score.
+- **Placement agents:** pay 1.5–2% of capital raised (industry norm) to get a
+  meeting **one band above** your reputation (§3.4). The agent's name opens
+  the door; it doesn't change the rating, the terms that band demands of
+  you, or the odds the investor says yes.
+
+
+### 3.4 Reputation rating: one number per firm, earned from the record
+
+Every firm, player and rival, carries a **reputation rating** on a scale of
+**−100 to +100**. **The player always starts at 0**: unknown, which in this
+business is not neutral but a closed door. Rivals carry the same rating,
+computed the same way from their own records. It shows on the league table
+and on each firm's profile, with a breakdown of why.
+
+**It is a readout of facts, not XP** (the `firmCapital.ts` rule). Nothing
+grants reputation; it is recomputed each month from what the ledger and the
+news already know. It replaces the scattered reputation pieces the engine
+already has:
+- `sponsorStanding` (lender marks)
+- `recentLowballs` / `repFloorMult` (sellers)
+- broker goodwill
+- the `quietFeeRate` hook, whose comment already says "when the reputation
+  tab is built, it replaces the body of this function"
+
+One name, one memory, read by investors, lenders, sellers and brokers.
+
+#### What moves it
+
+| Component | Source in the engine | Direction | How it weighs |
+|---|---|---|---|
+| **Realised investor outcomes** | `Exit` (equityIn, equityOut, `irr`); SPV and fund net IRR, DPI | + or − | Net-to-investor IRR vs that strategy's target, weighted by equity size and recency. The core of the rating. |
+| **Losing investors' money** | an SPV or fund with DPI < 1; a principal loss on any syndicated deal | −− | Counts in full immediately. Not shrunk for sample size (see below). |
+| **Credit events** | `sponsor.events`: foreclosure, deficiency, seizure, deed-in-lieu, DPO, forced sale | −− | Today's `sponsorStanding` weights (0.5–1.3), scaled onto this scale; the same 10-year memory. |
+| **Broken promises** | a failed completion guarantee, a missed capital call, an LPA breach, a removal for cause | −−− | The worst marks in the system: a broken guarantee follows a name longer than a foreclosure does. |
+| **Execution** | delivery slip vs plan (`deliveries`), budget overrun, lease-up vs underwriting | + or − | Small per job; matters in aggregate ("always late, always over"). |
+| **Conduct** | lowballs, re-trades after agreement, walking from agreed deals, declined LOIs after a counter | − | Small, short memory (today's 3-year lowball window). |
+| **Tenure without incident** | firm age, years since the last mark | + (capped) | Small and capped: an old firm isn't automatically a good one. |
+| **Scale under management** | AUM in vehicles you run | + (capped) | Small: big managers get meetings, not trust. |
+
+#### Why it is hard to earn and easy to lose
+
+These are the mechanisms that keep raising money hard. Each is a real
+property of how investors read a sponsor, not a penalty multiplier.
+
+1. **Credibility shrinkage.** Positive evidence is pulled toward 0 by sample
+   size: the rating moves by about `evidence × n / (n + k)`, where `n` is
+   realised deals (or funds, for institutional types) and `k` is a shape
+   parameter. One brilliant deal is luck; five is a record. A 40% IRR on
+   your first flip barely moves you.
+2. **Asymmetry.** Losses, credit events and broken promises are **not**
+   shrunk. One wiped-out deal costs more than three good ones earn. That
+   matches how investor committees actually write memos.
+3. **Only realised results count.** Marks, appraisals and unrealised
+   "paper" IRRs don't move the rating. Investors trust cash back, which also
+   closes the day-one-mark loophole from the realism findings.
+4. **Slow fade both ways.** Positive evidence decays over about 15–20 years
+   (a team's record goes stale). Negative evidence decays over the existing
+   10-year memory. A failed fund also keeps today's permanent bar on
+   institutional money (`fundFailedM`).
+5. **A step-up limit, separate from the rating.** No investor backs a raise
+   much larger than the sponsor has done before: roughly **2–3× your largest
+   successfully completed raise** (a shape parameter). A great rating with
+   no history of size still raises small.
+6. **Relative, not absolute.** Investors compare. Your rating is read
+   against the rivals asking that year (§3.2's softmax), so a 30 in a town
+   full of 70s gets scraps.
+
+#### What it does: gates and terms
+
+The bands below are a starting design to be measured, not a balance target.
+The terms columns are what the **market demands of a sponsor in that band**,
+before the year's supply and competition move them.
+
+| Rating | Band | Who will take the meeting | Investor pref demanded | Promote you can get | Fees you can charge | GP co-invest required | Completion guarantee | Raise speed |
+|---|---|---|---|---|---|---|---|---|
+| below −40 | **Toxic** | Nobody (bridge and hard money only) | — | — | — | — | — | — |
+| −40 to −10 | **Questioned** | Friends and family who already know you | 12%+ | 0–10% above a 15% IRR | none | 25%+ | always, personal | very slow |
+| −10 to +15 | **Unknown** (player starts at 0) | Friends, family and local HNW; small cheques | 10–12% | 10–15% above a 12–15% IRR | development fee ≤ 1% | 20%+ | always | slow; often fails |
+| +15 to +35 | **Emerging** | + syndication platforms, some family offices | 9–10% | 20% above 12% | development fee 2–3% | 10–20% | usually | moderate |
+| +35 to +55 | **Established** | + family offices, smaller endowments; a first fund is possible | 8–9% | 20%, then 30% above 15% | development 3–4%, management 1.25–1.5% | 5–10% | lender-driven | normal |
+| +55 to +75 | **Institutional** | + endowments, pensions (with size), insurers (separate accounts) | 8% | 20/30 tiers, catch-up | full market fees | 2–5% | rarely | fast |
+| above +75 | **Blue-chip** | + sovereign wealth funds and programmatic JVs (§6) | 7–8% | best tiers | market or above | 1–3% | no | oversubscribed |
+
+The same rating also feeds (replacing what reads `sponsorStanding` today):
+- **Lenders:** spread and advance-rate adjustments. Negative already
+  exists; a positive tail (a modestly tighter spread for blue-chip names) is
+  optional and must be measured.
+- **Sellers:** whether an owner takes your call, and how hard their floor is
+  against you (`repFloorMult`).
+- **Brokers:** first looks and the quiet-sale fee (`quietFeeRate`).
+
+#### Rivals
+
+- **Same formula, same record.** Rival exits, merchant SPV outcomes
+  (`Rival.jvs`), failures (`failedM` and its reason), handbacks and missed
+  calls feed their rating exactly as the player's feed the player's.
+- **Opening roster:** rivals dealt at month 0 already have histories the
+  game implies (style, founding age, equity raised). Their opening rating is
+  an **initial condition derived from those facts**, the way `regime.ts`
+  runs a prehistory for the economy. For example, a decades-old institution
+  opens Institutional, a newly raised opportunity fund opens Unknown or
+  Emerging, and a family firm opens on its tenure. Write that derivation down
+  and measure it; don't hand-assign it.
+- **Spin-outs inherit part of the team's record:** about a third to a half of
+  the parent's positive evidence (track-record portability is partial in
+  practice) and none of its marks. New anonymous entrants start at 0, like
+  the player.
+- **Rival ratings then gate rival raising** in the shared investor market
+  (§3.1–3.2). That means `firmEntryPitch` and rival fund sizes start reading
+  reputation too. This is why it sits in P2 (§10).
+
+#### What we'd expect to see if it's right (measure; do not tune toward it)
+
+- A clean $1M developer reaches Emerging only after several realised,
+  profitable syndications, on the order of 10–15 years. Institutional money
+  arrives decades in, if ever.
+- One blown-up deal or broken guarantee knocks a firm down a band for years.
+- Most rivals sit Unknown to Established. Blue-chip is rare and held by the
+  oldest, cleanest, biggest names.
+- When the median rating on the street falls after a crash, total
+  fundraising falls with it (on top of the denominator effect).
 
 ---
 
@@ -236,8 +351,9 @@ This is the first thing to build. It reuses the merchant 90/10 machinery.
 ### 4.3 What stops it being a money pump
 
 - Finite investor allocations shared with rivals (§3).
-- No track record means only friends and family and small cheques; the first
-  syndications are small.
+- Reputation starts at 0 (Unknown) for the player: friends and family only,
+  10–12% prefs, 20%+ co-invest, mandatory guarantees, slow and failure-prone
+  raises. The step-up limit keeps early syndications small (§3.4).
 - The GP co-invest is cash, as in `raiseFund`.
 - Completion guarantees and clawbacks put the GP's own balance sheet at risk.
 - A loss marks the name for future raises.
@@ -362,15 +478,21 @@ Order matters. Each phase lands with its measurement.
    - realised gross and net IRR distributions
    - fraction of raises that close
    - share of each year's investor allocation won by the player vs rivals
-4. **Plausibility bands (reports, not gates; owner policy on lettered tests):**
+4. **Reputation, `pnpm reputation`, new:** the distribution of ratings
+   across the street by decade; years for a clean sponsor to cross each band;
+   how often firms fall a band and why; and a check that the rating can move
+   both ways (CLAUDE.md "a test that cannot fail is itself a fake"). Paired
+   counterfactual: the same seeds with the rating frozen at 0 for everyone,
+   to confirm it is what moves fundraising.
+5. **Plausibility bands (reports, not gates; owner policy on lettered tests):**
    - median realised LP net IRR on development SPVs about 10–15%, with real
      dispersion and losses
    - first-time fund close rate well below 100%
    - fundraising volume falling hard after crashes and panics
-5. **`pnpm stress`:** dominant-strategy and money-pump checks with
+6. **`pnpm stress`:** dominant-strategy and money-pump checks with
    syndication on. Fees on other people's money must not make an empty firm
    compound without risk.
-6. Re-run the six-century developer study (MDGA) and compare it with this
+7. Re-run the six-century developer study (MDGA) and compare it with this
    document's §0.
 
 ---
@@ -381,7 +503,7 @@ Order matters. Each phase lands with its measurement.
 |---|---|---|
 | P0 | Fund can pay construction on fund lots; successor fund doesn't need the prior one settled; investors share interim cash on merchant SPVs | Low; bug-level |
 | P1 | Deal-by-deal development syndication (§4), reusing the merchant 90/10 book; IRR-tier waterfall; fees; completion guarantee | Medium; new vehicle type and books buckets |
-| P2 | Investor market (§3) shared by player and rivals; `firmEntryPitch` reads it; track-record scoring | High; touches firm entry, which is load-bearing |
+| P2 | Reputation rating for every firm (§3.4), replacing `sponsorStanding`, the lowball and broker memories; investor market (§3) shared by player and rivals; `firmEntryPitch` reads both | High; touches firm entry and every reader of `sponsorStanding` |
 | P3 | Fund revamp (§5): strategy, LPA limits, fees, catch-up and clawback, overlap, demand-sized | Medium |
 | P4 | Programmatic JVs and separate accounts (§6); swan hooks | Medium |
 | P5 | Placement agents, investor relationships, press | Low |
@@ -401,3 +523,12 @@ Order matters. Each phase lands with its measurement.
    names), or anonymous pools with named anchors only?
 5. A development-only run should count syndicated jobs as "development" for
    the MDGA mandate. Agreed?
+6. Reputation scale and bands (§3.4): is −100 to +100, with named bands,
+   the right presentation, or would a letter grade read better on the league
+   table?
+7. Should a positive rating ever **improve** lender terms, or only open
+   investor doors? (Recommendation: investors and sellers first; lenders
+   negative-only until measured.)
+8. Should reputation be visible for every rival from day one, or only once
+   you've dealt with them or they've raised money publicly? (In life you know
+   the big names and not the small ones.)

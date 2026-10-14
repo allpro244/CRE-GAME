@@ -45,6 +45,7 @@ import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
 import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
+import { tickBlackSwans } from "./blackswans";
 import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 
@@ -685,6 +686,9 @@ function tickMonth(
   maybeSellYourLoan(s, parcels);
   tickFirmHeldLoans(s);
   tickPlanning(s, parcels, bbls);
+  // The rare thing that dates a city (blackswans.ts) — before the builders
+  // look, so a district that burned this month is dirt they can see.
+  tickBlackSwans(s, parcels, bbls, adjacency);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
   // Player site-risk can slip a job after econ settled it. Put the SF back

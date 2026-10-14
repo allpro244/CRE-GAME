@@ -1664,6 +1664,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   return econ;
 }
 
+export function pushNewsPublic(s: GameState, kind: NewsItem["kind"], text: string) { pushNews(s, kind, text); }
 function pushNews(s: GameState, kind: NewsItem["kind"], text: string) {
   s.news.unshift({ q: s.month, kind, text });
   if (s.news.length > 120) s.news.length = 120;
@@ -1741,7 +1742,10 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
   // integrated from the anchor so every level above ~5 is where it was.
   const RATE_BEND = 2;
   const rateTerm = 0.55 * ((capIndex - 5.4) + RATE_BEND * (Math.exp(-capIndex / RATE_BEND) - Math.exp(-5.4 / RATE_BEND)));
-  const base = CAP_BASE[k] + rateTerm - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk;
+  // A CAPITAL WAVE (blackswans.ts): foreign money bidding every cap down,
+  // then leaving. Points of cap, signed; zero when no wave is running.
+  const wave = e.capitalWave ?? 0;
+  const base = CAP_BASE[k] + rateTerm - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk + wave;
   // ONE TREND, PRICED ONCE (2026-10-11). `flows` reads `retExp`, which is
   // trailing RENT growth plus yield — the same signal `growthExp` carries,
   // on a four-year memory instead of ten. Added separately, the two priced
@@ -1848,7 +1852,10 @@ export function stepCredit(s: GameState) {
   // (Adrian, Estrella & Shin 2019; SLOOS tightening leads every post-war
   // inversion). Centred on the US average ten-year-less-policy spread, ~1.2.
   const curve = e.nat ? 0.04 * ((e.indexRate - e.nat.policy) - 1.2) : 0;
-  const creditTarget = clamp(1.0 + 6 * g12 - 14 * Math.max(0, natUnempRise12(e)) + curve, 0.4, 1.25);
+  // A PANIC (blackswans.ts) shuts the window whatever the cycle says: 2008's
+  // SLOOS reading arrived months before the payrolls that would justify it.
+  const panic = 0.7 * (e.panic?.force ?? 0);
+  const creditTarget = clamp(1.0 + 6 * g12 - 14 * Math.max(0, natUnempRise12(e)) + curve - panic, 0.4, 1.25);
   const creditSpeed = creditTarget < e.creditIdx ? 0.16 : 0.055;   // slams shut, reopens slowly
   e.creditIdx = clamp(e.creditIdx + creditSpeed * (creditTarget - e.creditIdx) + rrange(s, -0.012, 0.012), 0.4, 1.25);
 }
@@ -2189,7 +2196,11 @@ export function tickNation(s: GameState) {
     const spread = (e.indexRate ?? 5.4) - n.policy;
     const intensity = 0.0088 * Math.exp(-0.86 * (spread - 1))
       + (shock > 0.02 ? 0.010 : 0)
-      + ((n.expM ?? 0) > 110 ? 0.004 : 0);
+      + ((n.expM ?? 0) > 110 ? 0.004 : 0)
+      // A financial panic tips the real economy more often than not — 1907
+      // and 2008 did, 1970 and 1998 did not. At full force for the run's
+      // four to twelve months this is about even-to-two-thirds odds.
+      + 0.09 * (e.panic?.force ?? 0);
     if (rng(s, "nation") < 1 - Math.exp(-intensity)) {
       // ONE DISTRIBUTION, FITTED TO THE RECORD (2026-10-13). This was a 93/7
       // mixture — ordinary recessions centred on +2.6 points, a 7% "deep"
@@ -3142,7 +3153,9 @@ export function tickEcon(s: GameState) {
   // work, housing demand following population, the Phillips term — is the
   // machinery that was already here, answering a shock it can now see.
   // Zero in every month in which no level event is currently landing.
-  const swanPull = e.swanJobDrift ?? 0;
+  // ...and the black swans' (blackswans.ts): a broke city's layoffs, an
+  // anchor's campus hiring.
+  const swanPull = (e.swanJobDrift ?? 0) + (e.bsJobPull ?? 0);
   // A FIRM THAT CANNOT STAFF A CITY STOPS TRYING TO GROW IN IT.
   //
   // `employIdx` is desire and it had no idea whether the desire was being met.

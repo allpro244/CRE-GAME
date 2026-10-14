@@ -18,7 +18,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
   const natHere = use === "multifamily" ? 0.045 : use === "retail" ? 0.085 : use === "industrial" ? 0.07 : 0.115;
   return Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
 }
-import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, TAX_RATE, recoveryOf, demandLinear,
+import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, taxRate, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, buildingScore, qualityCycle, condWear, capPlanBillMo, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
@@ -67,7 +67,7 @@ function rollRecovery(s: GameState, cls: string): Recovery {
 
 /** The expense level frozen into a base-year lease on the day it is signed. */
 function stopPsfNow(rec: ParcelRecord, econ: GameState["econ"], h: Holding, use?: BuiltClass): number {
-  const tax = (h.assessed ?? h.costBasis) * TAX_RATE / Math.max(1, rec.bldgArea);
+  const tax = (h.assessed ?? h.costBasis) * taxRate(econ) / Math.max(1, rec.bldgArea);
   const sys = h.programsDone?.systems !== undefined;
   // A shop and an office in the same building do not have the same expense
   // stop — their expense loads are not the same and never were.

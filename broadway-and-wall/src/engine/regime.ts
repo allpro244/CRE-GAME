@@ -90,7 +90,9 @@ const pick = (r: number, lo: number, hi: number) => lo + r * (hi - lo);
  * averaged about five years; eight is where they start being called old.
  */
 export function nationPhase(n: NonNullable<Econ["nat"]>): MarketPhase {
-  if ((n.recM ?? 0) > 0) return n.deep ? "depression" : "recession";
+  // `deep` is 2008's class (+5 points of unemployment) and it is a recession.
+  // A depression is a labour market headed for 12% or worse (2026-10-14).
+  if ((n.recM ?? 0) > 0) return (n.uPeak ?? 0) >= 0.12 ? "depression" : "recession";
   const exp = n.expM ?? 0;
   if (exp < 24) return "recovery";
   if (exp > 96 && n.unemp < 0.048) return "peak";

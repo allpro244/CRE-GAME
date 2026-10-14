@@ -2730,7 +2730,6 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, 
   // like a commodity building with a nicer lobby.
   const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.80;
   // AFTER A SURGE THE WATER'S EDGE CARRIES A RISK PREMIUM (blackswans.ts).
-  const floodSpread = (econ.surgeRisk ?? 0) > 0 && (rec.shoreM ?? 9999) <= (econ.surgeM ?? 0) ? econ.surgeRisk! : 0;
   // THE BUYER PRICES THE RESERVE THE BUILDING WILL NEED. A capital plan that
   // holds the line costs CAP_PLAN_RATE of value a year scaled by wear (see
   // tickLeasing), so a perpetual extra reserve of k of value a year is k on
@@ -2744,7 +2743,7 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, 
   const age = Math.max(0, START_YEAR + Math.floor((econ.m ?? 0) / 12) - (rec.yearBuilt || START_YEAR));
   const wearRatio = (COND_DECAY[cls] ?? 0.0024) * (1 + Math.min(0.50, age / 220)) / COND_WEAR_REF;
   const reserveSpread = 100 * CAP_PLAN_RATE * (specWearMult(rec.buildSpec) - 1) * wearRatio;
-  return clamp(base + locSpread + qualSpread + specSpread + reserveSpread + floodSpread, 3.2, 13);
+  return clamp(base + locSpread + qualSpread + specSpread + reserveSpread, 3.2, 13);
 }
 
 // Appraisals are opinions. Each parcel's appraisal carries a stable bias off
@@ -3587,9 +3586,12 @@ export function remainingAbatement(h: Holding, month: number): number {
 function leaseUpMark(
   rec: ParcelRecord, econ: Econ, h: Holding, month: number,
   capNoRoll: number, cap: number, contractNoi: number, stabNoi: number,
+  /** Any vacancy, not only a first lease-up: see VACANCY IS A LEASE-UP TOO. */
+  anyVacancy = false,
 ): { mark: number; weight: number } | null {
-  if (h.deliveredM === undefined || !rec.bldgArea) return null;
-  const sinceM = month - h.deliveredM;
+  if (!rec.bldgArea) return null;
+  if (!anyVacancy && h.deliveredM === undefined) return null;
+  const sinceM = anyVacancy ? 0 : month - h.deliveredM!;
   const weight = leaseUpWeight(rec, sinceM);
   if (!(weight > 0)) return null;
   const letShare = heldOccupancy(rec, econ, h);
@@ -3993,7 +3995,19 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: 
   // that let fast is no more a demolition candidate than one still filling.
   const floor = landAppraisalFloor(rec, econ,
     h.deliveredM !== undefined && month !== undefined ? leaseUpWeight(rec, month - h.deliveredM) : 0);
-  const marked = asIs !== null ? blended + asIs.weight * Math.max(0, asIs.mark - blended) : blended;
+  // VACANCY IS A LEASE-UP TOO (2026-10-14). A stabilised office that lost one
+  // of its three tenants marked down 41% the month the suite emptied and back
+  // up 51% when it let again two months later — the in-place leg is the rent
+  // roll with the fixed costs still on it, so a vacancy cost far more than the
+  // space it left. An appraiser values a building with an empty floor the way
+  // the first lease-up is valued: stabilised, less the fit-out and the
+  // commissions to fill it, the income it forgoes while it does, and the risk
+  // that it does not (leaseUpMarkAt). That is a floor under the blend, not a
+  // replacement for it: a roll above market still marks above it.
+  const vac = month === undefined || inGut ? null
+    : leaseUpMark(rec, econ, h, month, capNoRoll, cap, contractNoi, stabNoi, true);
+  const firstUp = asIs !== null ? blended + asIs.weight * Math.max(0, asIs.mark - blended) : blended;
+  const marked = vac !== null ? Math.max(firstUp, vac.mark) : firstUp;
   const freehold = Math.max(floor, marked - abate);
   return h.groundRentOut ? Math.max(0, freehold - leaseholdGroundPv(h, econ)) : freehold;
 }

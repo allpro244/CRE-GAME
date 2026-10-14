@@ -2273,8 +2273,12 @@ export function tickNation(s: GameState) {
   const uMove = chasing
     ? Math.max(0.0008, 0.115 * ((n.uPeak ?? n.unemp + 0.02) - n.unemp))
     : 0.025 * (0.035 - n.unemp);
+  // (A pull toward this city's own unemployment — "one city, one per cent of
+  // a nation" — is gone, 2026-10-14. A nation of a hundred cities does not
+  // move with one of them, and it was the wire by which a player's building
+  // reached the national cycle: two careers on the same seed diverged in
+  // policy and phase from month 60. The nation reads only itself.)
   n.unemp = clamp(n.unemp + uMove
-    + 0.004 * ((e.unemployment ?? 0.055) - n.unemp)   // one city, one per cent of a nation
     + (shock > 0.02 ? 0.0006 : 0) + rrange(s, -0.0007, 0.0007, "nation"), 0, 1);
   // (No 2.6%/26% rails: the expansion pull aims at 3.5% and every recession
   // is aimed at a drawn depth, so the series holds its range by its own
@@ -2534,7 +2538,18 @@ export function tickNation(s: GameState) {
   // premium's: the LEVEL it reverts to moves on credibility's own decade-long
   // clock. Bounds -1.5..6 bracket the observed range (ACM: about -1 in 2020,
   // about 5 in 1981) — guards, not rails.
-  const premBase = termPremBase(n.credibility, e.creditIdx ?? 1);
+  // THE NATION'S CREDIT, NOT THIS TOWN'S (2026-10-14). The premium read the
+  // city's credit index, which reads the city's payrolls — so a developer's
+  // cranes moved the ten-year yield, and through the curve the recession
+  // hazard. The national window is the same equation as `stepCredit` on
+  // national inputs only: the unemployment rise, the curve, a panic.
+  {
+    const curveN = 0.04 * (((e.indexRate ?? 5.4) - n.policy) - 1.2);
+    const tgt = clamp(1.0 - 14 * Math.max(0, natUnempRise12(e)) + curveN - 0.7 * (e.panic?.force ?? 0), 0.4, 1.25);
+    const cn = n.creditNat ?? 1;
+    n.creditNat = clamp(cn + (tgt < cn ? 0.16 : 0.055) * (tgt - cn), 0.4, 1.25);
+  }
+  const premBase = termPremBase(n.credibility, n.creditNat ?? 1);
   if (n.termPrem === undefined) n.termPrem = premBase;
   n.termPrem = n.termPrem + 0.10 * (premBase - n.termPrem) + rrange(s, -0.30, 0.30, "nation");
   // THE MARKET LEARNS WHERE THE BANK RESTS (2026-10-13). The forecast assumed
@@ -2893,7 +2908,13 @@ function derivePhase(s: GameState) {
   switch (e.phase) {
     case "expansion": if (dwell && g6 < 0.004) next = "peak"; break;
     case "peak": if (dwell && g6 < -0.005) next = "recession"; else if (g6 > 0.012) next = "expansion"; break;
-    case "recession": if (dwell && g6 > 0.002) next = "recovery"; else if (dd > 0.05 && e.phaseAge >= 12) next = "depression"; break;
+    // A DEPRESSION IS NOT A BAD RECESSION (2026-10-14). The bar was five per
+    // cent off the peak after a year, which is 2008-09 (US payrolls -6.3%) —
+    // the worst recession since the war, and still a recession. Playthroughs
+    // put the label on episodes of 8-12% unemployment. A city in depression
+    // has lost one job in ten and is still losing them after eighteen months:
+    // the 1930s (US payrolls about -20%), Detroit 2008-10, Flint.
+    case "recession": if (dwell && g6 > 0.002) next = "recovery"; else if (dd > 0.10 && e.phaseAge >= 18) next = "depression"; break;
     case "depression": if (dwell && g6 > 0.002) next = "recovery"; break;
     case "recovery": if (T >= (e.cycPeak ?? T)) next = "expansion"; else if (dwell && g6 < -0.005) next = "recession"; break;
   }
@@ -2917,7 +2938,7 @@ function derivePhase(s: GameState) {
       peak: "The market has topped out. Everything is priced to perfection.",
       recession: "The turn is here: tenants retrench, lenders retreat.",
       recovery: "The bleeding has stopped. Recovery begins at the bottom of the stack.",
-      depression: "This is not a recovery — the city has lost more than one job in twenty and is still losing them.",
+      depression: "This is not a recovery — the city has lost more than one job in ten and is still losing them.",
     };
     pushNews(s, "event", label[e.phase]);
   }
@@ -3459,6 +3480,10 @@ export function tickEcon(s: GameState) {
       const share = clamp(islandResidents(e).residents / Math.max(1, e.population ?? 1), 0, 1);
       migration *= 1 - share * (1 - (0.20 + 0.80 * slack));
     }
+    // A WAVE OF NEWCOMERS (blackswans.ts) does not wait for a flat: it lands
+    // after the housing choke above, because refugees double up rather than
+    // go to the next town.
+    migration += e.bsMigPull ?? 0;
     // RETIRED (2026-10-09): out-migration on a rent-burden threshold
     // (`mfBurden > 1.25` against the global RENT_BASE table, capped at
     // 0.25%/mo). Rent now reaches movers through the real wage — it is a third
@@ -5979,9 +6004,12 @@ export function tickEcon(s: GameState) {
     // twice its own price level on the first tick (2026-10-12).
     const pl = e.priceLevel ?? 1;
     e.costIdx = clamp(
-      e.costIdx * (1 + costDrift + catchUp + realPull + rrange(s, -0.0012, 0.0012)),
+      // ...and a swan's materials shock (the embargo, blackswans.ts), whatever
+      // landed this month; consumed here so it is counted once.
+      e.costIdx * (1 + costDrift + catchUp + realPull + (e.costShock ?? 0) + rrange(s, -0.0012, 0.0012)),
       0.6 * pl, 400 * pl,
     );
+    e.costShock = 0;
   }
 
   recordHistory(e, s.month, monthAbs, monthComp);

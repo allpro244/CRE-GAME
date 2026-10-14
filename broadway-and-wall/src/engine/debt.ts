@@ -357,7 +357,16 @@ export function windowOpen(s: GameState, p: LoanProduct): boolean {
   // for a few months of 2020, not when one metro's payrolls dipped. The
   // credit window already reads local payrolls and the national labour
   // market; it alone decides.
-  return (s.econ.creditIdx ?? 1) >= 0.78;
+  // ...AND IT HAS TO BE THE NATIONAL WINDOW (2026-10-14). `creditIdx` is the
+  // town's, read off the town's payrolls, so the "national market" above was
+  // still a local one: measured over four 100-year towns the conduit was shut
+  // 10-58% of all months. The bond buyers read the country (`creditNat`,
+  // tickNation), and they leave only in a crisis: securitisation shut in
+  // 2008Q4-2010 and for a quarter of 2020, briefly in 1998 — about one month
+  // in twenty over three decades — and stayed open through 1991 and 2001.
+  // 0.6 on the national window is unemployment up about three points in a
+  // year (2008, 2020, 1974-75, 1982), or a panic.
+  return (s.econ.nat?.creditNat ?? s.econ.creditIdx ?? 1) >= 0.6;
 }
 
 // ------------------------------------------------------- lender relationships

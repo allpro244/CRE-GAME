@@ -455,6 +455,7 @@ function runClose(
   delete r.extendedTo;
   delete r.deliveredM;
   r.failedM = cur.month;
+  r.endReason = "takenPrivate";
   r.takenPrivateM = cur.month;
   // A firm that was bought is not a firm that failed: no courthouse-steps
   // epilogue years later. -1 never matches a month, and setting it means the
@@ -662,6 +663,7 @@ export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
     t.heldSince = {};
     delete t.extendedTo; delete t.deliveredM;
     t.failedM = s.month;
+    t.endReason = "absorbed";
     t.takenOverBy = raider.id;
     t.epilogueM = -1;
     // A takeover is public: what it paid says how the raider prices.

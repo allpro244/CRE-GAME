@@ -668,7 +668,7 @@ export function lenderHealth(l: Lender, econ?: { creditIdx?: number; phase?: str
   }
   const cr = capitalRatio(l);
   const target = KIND[l.name]?.capitalRatio ?? 0.1;
-  if (l.kind === "conduit" && econ && (econ.creditIdx ?? 1) < 0.78) return { word: "the bond window is shut — not writing", bad: true };
+  if (l.kind === "conduit" && econ && ((econ as { nat?: { creditNat?: number } }).nat?.creditNat ?? econ.creditIdx ?? 1) < 0.6) return { word: "the bond window is shut — not writing", bad: true };
   if (cr < target * 0.45) return { word: "undercapitalised — not lending to anybody", bad: true };
   if (cr < target * 0.7) return { word: "impaired — rationing hard", bad: true };
   if (l.delinquent > 0.055) return { word: "working out problem loans", bad: true };
@@ -698,7 +698,7 @@ export type StayingPower = "solid" | "stretched" | "at risk" | "closed";
 export function stayingPower(s: GameState, l: Lender): { word: StayingPower; why: string } {
   if (l.failedM !== undefined) return { word: "closed", why: "In receivership." };
   if (l.appetite < 0.12) return { word: "closed", why: "Not quoting — its capital will not carry new loans." };
-  if (l.kind === "conduit" && (s.econ.creditIdx ?? 1) < 0.78) return { word: "closed", why: "The bond market it sells into is shut." };
+  if (l.kind === "conduit" && (s.econ.nat?.creditNat ?? s.econ.creditIdx ?? 1) < 0.6) return { word: "closed", why: "The bond market it sells into is shut." };
   const mult = capitalRatio(l) / Math.max(0.01, KIND[l.name]?.capitalRatio ?? 0.1);
   const adc = KIND[l.name]?.adc ?? 0;
   const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
@@ -931,7 +931,8 @@ export function tickLenders(s: GameState) {
     // seizures in 360 city-years, 7 of them with delinquency under 5%. When
     // the window shuts the warehouse is stuck on repo and the old funding law
     // is exactly right.
-    const conduitOpen = l.kind === "conduit" && (e.creditIdx ?? 1) >= 0.78;   // = windowOpen (debt.ts): a national market
+    const natWin = e.nat?.creditNat ?? e.creditIdx ?? 1;
+    const conduitOpen = l.kind === "conduit" && natWin >= 0.6;   // = windowOpen (debt.ts): the national bond market
     const fundTarget = conduitOpen ? (l.bookYield ?? e.indexRate + spread) - (NORMAL_NIM.conduit ?? 1.6) : baseFund + hot * k.wholesale;
     if (l.fundCost === undefined) l.fundCost = baseFund;
     // AN INSURER'S MONEY IS AS LONG AS ITS LOANS. The general account is
@@ -1016,6 +1017,19 @@ export function tickLenders(s: GameState) {
     // pays the excess out, which is what keeps a loss in year forty as
     // dangerous as one in year four.
     const target = k.capitalRatio;
+    // THE CONDUIT BUSINESS IS RECAPITALISED BY THE BOND MARKET (2026-10-14). A
+    // conduit is never seized, so a desk whose thin first-loss capital had
+    // been eaten sat at zero appetite for decades while the bond window was
+    // open — measured, 48% of all months over fifty years, and with it the one
+    // desk with no hold size. That is not the business: after 2009 new sponsors
+    // and recapitalised shelves were issuing again inside two years (CMBS 2.0,
+    // 2010-12). While the national window is open, the desk is brought back
+    // toward its target over about a year. Measured over fifty years: the
+    // conduit unable to quote fell from 54% of months to 10%, nearly all of
+    // them the national window itself shut (9%).
+    if (l.kind === "conduit" && conduitOpen && l.capital < l.book * target) {
+      l.capital = Math.round(l.capital + (l.book * target - Math.max(l.capital, 0)) / 12 + Math.max(0, -l.capital) / 12);
+    }
     const buffer = l.book * target * 1.15;
     if (l.capital > buffer) {
       const div = Math.round((l.capital - buffer) * 0.08);
@@ -1047,7 +1061,7 @@ export function tickLenders(s: GameState) {
     const nimRel = nim / (NORMAL_NIM[l.kind] ?? 4.1);
     const nimFac = Math.max(0.25, Math.min(1, 0.35 + 0.65 * (nimRel - 0.195) / 0.683));
     l.appetite = Math.max(0, Math.min(1.15,
-      (raw - 0.55) / 0.6 * nimFac * (l.kind === "conduit" ? Math.max(0.25, e.creditIdx ?? 1) : 1)));
+      (raw - 0.55) / 0.6 * nimFac * (l.kind === "conduit" ? Math.max(0.25, Math.min(1, natWin)) : 1)));
     // Growth at 0.35%/mo compounded to an 8x book over fifty years while the
     // town's whole rival debt stayed under a quarter of one desk — the banks
     // outgrew the city they lend to. Half that pace keeps them in it.

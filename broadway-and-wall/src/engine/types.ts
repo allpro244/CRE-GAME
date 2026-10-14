@@ -2040,6 +2040,24 @@ export interface Econ {
   /** Last month's price level and wage index, read by the construction cost drift. */
   costInputsPrev?: { cpi: number; wage: number };
   /**
+   * What a building's inputs cost (materials and site labour) before the
+   * contractor's margin; `costIdx` is this times `1 + bidPremium`.
+   */
+  costInputIdx?: number;
+  /**
+   * The contractors' margin over a normal one, set by how booked the trades
+   * are: negative in a lull (bids under cost to keep crews), steep in a boom.
+   */
+  bidPremium?: number;
+  /**
+   * New-build order book (cranes running plus floor area ordered) against
+   * what a town this size ordinarily builds, a year's memory. One is a normal
+   * year; zero is nobody buying land to build on.
+   */
+  buildDemand?: number;
+  /** `buildDemand` over about a decade: what this town counts as a normal year. */
+  buildNorm?: number;
+  /**
    * How chronically short of space this city has been, over about a
    * twenty-year memory. A city that has been tight for a generation earns a
    * higher sustainable rent-to-income ratio — this is the Manhattan premium,
@@ -4091,6 +4109,12 @@ export function deedIrr(cf: number[]): number | null {
   if (crossings !== 1 || !bracket) return null;
   let [lo, hi] = bracket;
   let flo = npv(lo);
+  // ...and only when the flows are an INVESTMENT: value falling as the rate
+  // rises. A deed whose cash came out first and went in later (distributions,
+  // then a call or a shortfall) is a loan from the deal to its owner, and
+  // the rate that zeroes it is what that borrowing cost — its sign reads the
+  // opposite way to a return (a 1.04x deed showed -1.7%). The multiple speaks.
+  if (flo < 0) return null;
   for (let i = 0; i < 200 && hi - lo > 1e-12; i++) {
     const mid = (lo + hi) / 2;
     const f = npv(mid);

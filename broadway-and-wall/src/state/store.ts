@@ -456,7 +456,7 @@ interface AppState {
   /** Pay the facility down out of cash. */
   /** Re-quote the pool at today's rates and values and pay off the old paper. */
   refiFacility: (productId: string, lev?: number) => void;
-  repayFacility: (amount: number) => void;
+  repayFacility: (amount: number, useLine?: boolean) => void;
   /** Buy one deed back out of the pool at the release price. */
   releaseFacility: (bbl: string) => void;
   /** Close a player fund vintage (earned — never a menu size). */
@@ -2119,10 +2119,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  repayFacility: (amount) => {
-    const { game } = get();
-    if (!game) return;
-    const r = repayFacility(game, amount);
+  repayFacility: (amount, useLine = false) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = repayFacility(game, amount, parcels, useLine);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     void persist(r.s);

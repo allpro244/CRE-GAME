@@ -615,8 +615,9 @@ This is the first thing to build. It reuses the merchant 90/10 machinery.
    deposit) or already owns it.
 2. **Offering memorandum:** from the Build desk, "Syndicate the equity" on a
    pencilling scheme. The player sets:
-   - GP co-invest: 5–20% of equity. 10% is the market norm for a development
-     JV; institutions require 5–10%.
+   - **Your co-invest: any amount you choose**, from the minimum your
+     reputation band requires up to nearly all of the equity (§4.4). 10% is
+     the market norm for a development JV; institutions require 5–10%.
    - Pref: 6–10%. Promote tiers by IRR hurdle, e.g. 20% above an 8% pref to a
      15% IRR, 30% above.
    - Fees:
@@ -682,6 +683,54 @@ This is the first thing to build. It reuses the merchant 90/10 machinery.
 - A loss marks the name for future raises.
 - Consent and forced-sale clauses stop the GP from holding a loser forever.
 - `pnpm stress` "dominant strategy" must be re-run with syndication on (§9).
+
+### 4.4 How much of your own money goes in: your choice
+
+On any deal using outside capital (a syndication, a fund-plus-sidecar, or a
+JV), **the player chooses how much of their own money to put in**, on a
+slider in the term sheet builder.
+
+**Limits:**
+- **Minimum:** set by your reputation band (§3.4, "max outside equity per $1
+  of yours"):
+  - Unknown: 50% of the equity is yours (1:1)
+  - Emerging: 25%
+  - Proven: about 15%
+  - Institutional: 10%
+  - Blue-chip: 5%
+
+  A live negative mark adds 10 points (§3.4).
+- **Maximum:** no fixed cap. The practical limits are your cash (co-invest is
+  cash, never the line, as in `raiseFund`) and the investors' minimum cheque:
+  if the outside share gets too small, the investor types you're pitching
+  won't bother. A pension won't write $2M into a $40M deal.
+
+**What putting in more changes:**
+
+| | More of your own money | Less of your own money |
+|---|---|---|
+| **Raise** | Smaller raise; faster and more likely to close; investors score you higher for alignment (§3.2) | Bigger raise; slower, and more likely to fail |
+| **Terms** | Investors accept a lower pref and a richer promote: skin in the game buys trust | Investors demand more, up to the band's worst terms at the minimum |
+| **Your share of the profit** | Your pro-rata share **plus** the promote on the investors' share. More equity means more of the upside is plain ownership. | Most of your upside comes through the promote |
+| **Your risk** | More of your own capital lost if it goes wrong, so concentration and liquidity matter (the lessons of careers #1 and #3) | Less at stake, but a failure costs investors more, and their memory of you (§3.4) |
+| **Reputation if it fails** | The alignment discount (× 0.85 on negative evidence) applies once you're at 10% or more | No discount below 10% |
+
+**How the deal counts on your record:** a deal's evidence weight blends
+between the own-money weight (0.9) and the investor weight (1.0) by the
+outside share of the equity: `weight = 0.9 + 0.1 × outside share`. That way
+raising a token $50K can't turn an own-money deal into an "investor deal".
+For the **Institutional and Blue-chip** requirement of a realised investor
+vehicle (§3.4), the outside share must be **at least 25% of the equity and
+at least one reference deal in size**.
+
+**The same choice applies to funds.** The GP commitment to a blind-pool fund
+is a slider too:
+- from the market minimum (1–3% of commitments, more for a first-time or
+  low-ranked sponsor)
+- upward, at the player's choice
+
+A larger commitment raises the investor score and can loosen the mandate
+(§5.1). As today, it is cash at the close, never the line.
 
 ---
 

@@ -59,7 +59,10 @@ quietly goes to the wrong party.
 3. **Fix the as-is mark** for buildings in lease-up (realism finding #1), so
    promotes and recap prices don't inherit phantom value.
 4. **Minimum viable slice**, which is what unblocks a small developer:
-   - the fund pays construction on fund lots
+   - the fund pays construction on fund lots — **done**: `groundbreakPurse`
+     underwrites a fund lot against the fund's cash and uncalled commitments
+     (investment period only), the close cheque is a `build` flow out of the
+     fund's purse, and `test/fund-builds.mjs` holds it
    - deal-by-deal syndication with a waterfall, fees and a co-invest slider
      (§4, §4.4)
    - the reputation **score** (no ranking yet), from investor and own-money
@@ -86,7 +89,7 @@ quietly goes to the wrong party.
 | Piece | Where | What it does | Gap |
 |---|---|---|---|
 | Building JV | `src/engine/jv.ts` | Sell a 25% or 49% stake in a stabilised building at a 12% minority discount plus 1% costs; pro-rata cash, calls and exits; consent clause; buyout at full pro-rata equity | Income buildings only; no development or acquisition equity; no pref or promote; the partner is a passive price-taker |
-| Player fund | `src/engine/fund.ts`, `ui/panels/FundDesk.tsx` | Blind pool, 8% pref, 20% promote, pref → capital → promote waterfall, capital called as deals close, 5-year investment period / 10-year life plus 2 one-year extensions, buy-in at NAV, "second death" if DPI < 1, promote taxed when paid | Size from a formula; terms fixed; no management fee; no strategy or LPA limits; can't fund construction; a successor needs the prior fund **fully settled** (real managers raise Fund II at 60–75% deployed); no competition for LP money |
+| Player fund | `src/engine/fund.ts`, `ui/panels/FundDesk.tsx` | Blind pool, 8% pref, 20% promote, pref → capital → promote waterfall, capital called as deals close, 5-year investment period / 10-year life plus 2 one-year extensions, buy-in at NAV, "second death" if DPI < 1, promote taxed when paid | Size from a formula; terms fixed; no management fee; no strategy or LPA limits; funds construction only on lots it already owns; a successor needs the prior fund **fully settled** (real managers raise Fund II at 60–75% deployed); no competition for LP money |
 | Raise gate | `fundRaiseQuote` | Standing, credit index ≥ 0.7, 2 clean exits, cash for the 3% co-invest | A gate, not a market |
 | Merchant 90/10 | `rivals.ts` ~L470–492, `types.ts` ~L2568, `dev.ts` `settleMerchant` | Anonymous builders raise job equity from "national money"; 10% sponsor co-invest; investors paid at sale through the pref and promote | Not available to the player; investors don't share interim cash (noted there as an overstatement) |
 | Firm entry | `rivals.ts` `firmEntryPitch`, `RAISE_M = 14` | New rival funds arrive on leverage × product × thin; 14-month raise clock; spin-outs | Draws from no finite pool; doesn't compete with the player |

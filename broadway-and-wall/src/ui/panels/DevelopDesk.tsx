@@ -23,7 +23,7 @@ import {
   farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed,
   specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE, maxCoverageFor, siteDebtAtGroundbreak,
   devFundingNeed, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, TAKEOUT_HEDGE_LTC,
-  btsRentRead, BTS_FIT_PREMIUM, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY,
+  btsRentRead, BTS_FIT_PREMIUM, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY, groundbreakPurse,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
 import { BUILD_TIERS, buildTier, specRentMult, specWearMult } from "@/engine/value";
@@ -357,7 +357,9 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const hedgeCost = plan ? takeoutHedgeCost(plan, takeout) : 0;
   const need0 = plan ? devFundingNeed(plan, hedgeCost) : { whole: 0, dayOne: 0, margin: 0 };
   const need = plan ? { ...need0, whole: need0.whole + siteDebt, dayOne: need0.dayOne + siteDebt } : need0;
-  const fundableTotal = spendable(game, parcels).total;
+  // A fund lot is built with the fund's money (groundbreakPurse), not yours.
+  const purse = groundbreakPurse(game, parcels, bbl);
+  const fundableTotal = purse.closed ? 0 : purse.total;
   const canFund = need.whole <= fundableTotal && need.dayOne <= fundableTotal;
   const fundShort = Math.max(0, need.whole - fundableTotal, need.dayOne - fundableTotal);
   const closeCheque = need.dayOne;
@@ -397,7 +399,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
             k="Equity at closing"
             v={`${usd(closeCheque)} due the day you break ground`}
             strong
-            bad={closeCheque > spendable(game, parcels).total}
+            bad={closeCheque > fundableTotal}
             title="The bank will not fund until this leaves your account, plus the origination fee. The line counts."
           />
           <Row
@@ -998,7 +1000,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
               <div className="page-section" style={{ marginTop: 8 }}>
                 <div className="page-section-head">Equity</div>
                 <div className="grid">
-                  <Row k="At closing" v={`${usd(closeCheque)}`} strong bad={closeCheque > spendable(game, parcels).total} />
+                  <Row k="At closing" v={`${usd(closeCheque)}`} strong bad={closeCheque > fundableTotal} />
                   {siteDebt > 0 && <Row k="…of which land loan" v={`${usd(siteDebt)} repaid at close — the construction lender takes first lien`} />}
                   <Row
                     k="Drawn during build"
@@ -1048,12 +1050,13 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   className="btn btn-buy"
                   disabled={!canFund}
                   onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design, takeout }, plan.lender, spec)}
-                  title={!canFund
+                  title={purse.closed ?? (!canFund
                     ? `Short ${usd(fundShort)} — needs ${usd(need.whole)} fundable: ${usd(equityRequired)} equity all-in plus the ${usd(need.margin)} overrun cushion`
-                    : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build.`}
+                    : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build${purse.fund ? ", paid by the fund" : ""}.`)}
                 >
-                  {canFund
-                    ? `Break ground · ${usd(equityRequired)} equity all-in`
+                  {purse.closed ? "Fund investment period over"
+                    : canFund
+                    ? `Break ground · ${usd(equityRequired)} ${purse.fund ? "fund " : ""}equity all-in`
                     : `Cannot finish · short ${usd(fundShort)}`}
                 </button>
               </div>

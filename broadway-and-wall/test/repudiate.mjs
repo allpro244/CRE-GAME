@@ -68,7 +68,7 @@ function siteWithAJob(runIndex, lender) {
   // so far outside normal play that nothing it proves would transfer.
   const lots = bbls
     .map((b) => E.resolveRec(parcels, g, b))
-    .filter((r) => r && r.class === "land" && r.lotArea > 9_000 && r.lotArea < 22_000)
+    .filter((r) => r && r.class === "land" && r.lotArea > 9_000 && r.lotArea < 40_000)
     .sort((a, b) => a.bbl.localeCompare(b.bbl));
   if (!lots.length) return null;
 
@@ -158,8 +158,12 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
         const drawn0 = d.drawn;
         const bal0 = d.loanBalance;
         d.replaceM = g.month + 240;
-        const cashA = g.cash;
+        // Net of interest EARNED on the firm's cash: the fixture holds $400M,
+        // and a month of Treasury yield on that dwarfs the construction bill.
+        const intA = (g.books ?? []).reduce((a, e) => a + (e.interest ?? 0), 0);
+        const cashA0 = g.cash;
         g = E.advanceQuarter(g, parcels, bbls, adjacency);
+        const cashA = cashA0 + ((g.books ?? []).reduce((a, e) => a + (e.interest ?? 0), 0) - intA);
         const e = g.developments[bbl];
         ok("not one further dollar was advanced", !!e && e.drawn === drawn0 && drawn0 > 0,
           e ? `drawn ${m$(drawn0)} -> ${m$(e.drawn)}` : "the job vanished");
@@ -192,6 +196,12 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
       // the very first loop iteration and means nothing at all.
       ok("the job under test was actually repudiated", !!d0 && d0.repudiatedM !== undefined,
         d0?.repudiatedM === undefined ? "nothing to refinance — the rest of this block is meaningless" : "");
+      // The paperwork is a 3-9 month draw; the job delivers a few months after
+      // the seizure, so on a long draw there is nothing left to take out. This
+      // block asks whether a desk WILL take the job, not how long the lawyers
+      // take, so the paperwork is done next month (the mirror of the dead-
+      // period block above, which pushes it out).
+      if (d0 && d0.replaceM !== undefined) d0.replaceM = Math.min(d0.replaceM, g.month + 1);
       let out = null;
       // Give it a year and a half — longer than the outside of the paperwork
       // draw — and see whether any desk in town takes the job out.
@@ -257,9 +267,11 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
 
     const sum = (books, key) => books.reduce((a, e) => a + (e[key] ?? 0), 0);
     const delta = (key) => sum(g.books ?? [], key) - sum(yr0, key);
+    // The same ledger lines conserve.mjs reconciles on — a replacement loan's
+    // proceeds are "borrowed", and leaving them out read as money appearing.
     const modelled =
-      (delta("noi") + delta("sold") + delta("interest"))
-      - (delta("debtSvc") + delta("leasing") + delta("capex") + delta("dev") + delta("taxes") + delta("bought") + delta("ga"))
+      (delta("noi") + delta("sold") + delta("interest") + delta("borrowed") + delta("lpCalled"))
+      - (delta("debtSvc") + delta("leasing") + delta("capex") + delta("dev") + delta("taxes") + delta("bought") + delta("ga") + delta("lpDistributed"))
       + (loc1 - loc0) + (dep1 - dep0);
     const actual = g.cash - cash0;
     const resid = Math.round(actual - modelled) || 0;   // || 0 kills a -0 that reads as a fault

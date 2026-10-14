@@ -98,6 +98,12 @@ export function LeasingPage() {
   if (!rows.length) {
     return (
       <div>
+        {/* The house policy belongs here even with an empty book, because
+            its other half is the deeds you have not closed yet: set it now and
+            everything you buy arrives configured instead of being corrected
+            afterwards. That is the whole argument for a default. It leads the
+            page, as it does once there is a book. */}
+        <HousePolicy />
         <AgentBar />
         <RenewalBar />
         <DeskActivity />
@@ -108,11 +114,6 @@ export function LeasingPage() {
         <button className="btn btn-buy" onClick={() => setPage("market")}>
           Browse buildings in Marketplace →
         </button>
-        {/* …but the house policy belongs here even with an empty book, because
-            its other half is the deeds you have not closed yet: set it now and
-            everything you buy arrives configured instead of being corrected
-            afterwards. That is the whole argument for a default. */}
-        <HousePolicy />
       </div>
     );
   }
@@ -353,6 +354,10 @@ export function LeasingPage() {
     : "you hold the pen";
   return (
     <div>
+      {/* The house policy is the control on this page that gets used most —
+          one setting across the whole book — so it leads, above the numbers
+          it moves. */}
+      <HousePolicy />
       <div className="stat-strip">
         <Big
           label="Portfolio occupancy"
@@ -560,7 +565,6 @@ export function LeasingPage() {
       {/* Which YEAR the leases roll — the chart lived on Portfolio, but the
           roll is this desk's business, so this is its home. */}
       <Rollover />
-      <HousePolicy />
 
       <LeasedFeeStrip />
 

@@ -5,7 +5,7 @@ import { listSaves, type SaveMeta } from "@/engine/save";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
 import { ordinal } from "@/engine/standing";
-import { saleProceedsToSeller } from "@/engine/actions";
+import { groundLeaseFreeReversion, saleProceedsToSeller } from "@/engine/actions";
 import { MILESTONES, opportunitiesStop } from "@/engine/sim";
 import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal, planIsLive } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
@@ -511,7 +511,7 @@ function AlertBody() {
     swan: ["A black swan", "A white swan"],
     bank: ["A desk has gone down", "The credit window"],
     portfolio: ["The book has been taken", "Your portfolio"],
-    ground: ["Ground-lease default", "Your leased fee"],
+    ground: ["Ground-lease default", "Your land is leased out"],
     sale: ["A sale fell apart", "Bids are in"],
     fed: ["A new chair at the central bank", "A new chair at the central bank"],
     delivered: ["Your building is up", "Your building is up"],
@@ -534,16 +534,42 @@ function AlertBody() {
   const goSale = a.kind === "sale" && !bad;
   const goFed = a.kind === "fed";
   const goBuilt = a.kind === "delivered" && !!a.bbl;
+  // A GROUND LEASE MUST NOT LOOK LIKE A LEASE (owner, Oct 2026): "I got
+  // offered a ground lease but thought it was a regular lease." Every ground
+  // card — a lessee signing off your offer book, or one defaulting — gets its
+  // own banner, colour and a plain-words panel of what the paper is.
+  const ground = a.kind === "ground";
+  const gl = ground && a.bbl ? game.groundLeases?.[a.bbl] : undefined;
+  const glYears = gl ? Math.round((gl.endM - gl.startM) / 12) : 0;
+  const glReview = gl ? (gl.review === "cpi" ? "CPI each year, 2–4%" : gl.review === "fmv" ? "Market reset every 20 years, capped" : `+${gl.stepPct}% every ${Math.round(gl.stepEveryM / 12)} years`) : "";
   return (
-    <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "")} data-queue={queued + 1}>
-      <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good")} role="dialog" aria-modal="true">
+    <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "") + (ground ? " alert-tint-ground" : "")} data-queue={queued + 1}>
+      <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good") + (ground ? " alert-ground" : "")} role="dialog" aria-modal="true">
+        {ground && (
+          <div className="ground-banner" aria-hidden="true">
+            <span className="ground-banner-word">Ground lease</span>
+            <span className="ground-banner-sub">the land itself — not space in a building</span>
+          </div>
+        )}
         <div className="alert-kicker">{kicker}</div>
         <div className="modal-title">{a.title}</div>
         <div className="modal-sub">{monthLabel(a.q)}</div>
         <div className="alert-body">{a.body}</div>
+        {gl && !bad && (
+          <div className="ground-terms">
+            <div><span>Term</span><b>{glYears} years · to {monthLabel(gl.endM)}</b></div>
+            <div><span>Ground rent</span><b>{usd(gl.rentYr)} / yr</b></div>
+            <div><span>Rent review</span><b>{glReview}</b></div>
+            <div><span>Who builds</span><b>They do{gl.floors && gl.use ? ` — ${gl.floors} fl of ${gl.use}` : ""}</b></div>
+            <div><span>Who runs it</span><b>They do — no tenants, letters or capital plan for you</b></div>
+            <div><span>At the end</span><b>{groundLeaseFreeReversion(gl) ? "Their building reverts to you" : "You buy their building out, or it is cleared"}</b></div>
+          </div>
+        )}
         {a.detail && <div className="alert-detail">{a.detail}</div>}
         <div className="alert-foot">
-          {goBooks
+          {ground && !bad
+            ? "Nothing to sign — it signed itself off the offer book you set. Pull a lot off that book before a lessee comes if you mean to build on it yourself."
+            : goBooks
             ? "The book is for sale on Marketplace under Books for sale — one cash cheque for the whole package. Competitors are looking at it too."
             : goOwnBook
               ? game.portfolioSale?.unsolicited
@@ -593,8 +619,13 @@ function AlertBody() {
               Open the bid list
             </button>
           )}
+          {ground && a.bbl && (
+            <button className="btn" onClick={() => { dismissAlert(); useStore.getState().focus(a.bbl!); setPage("property"); }}>
+              Go to the lot
+            </button>
+          )}
           <button className={"btn" + (!goBooks && !goOwnBook && !goSale && !goBuilt && !bad ? " btn-buy" : "")} data-esc onClick={dismissAlert}>
-            {bad && !goBooks ? "Understood" : goBooks || goOwnBook || goSale || goBuilt ? "Later" : "Good."}
+            {(bad && !goBooks) || ground ? "Understood" : goBooks || goOwnBook || goSale || goBuilt ? "Later" : "Good."}
           </button>
         </div>
         {queued > 0 && (

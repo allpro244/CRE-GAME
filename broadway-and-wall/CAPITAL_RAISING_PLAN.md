@@ -40,6 +40,47 @@ mechanism.
 
 ---
 
+## 0.5 Build order and safety plan (start here)
+
+This document describes the full system. **Build it in this order**, each
+step behind its own flag and measured before the next. The danger in this
+change isn't a loud break; it's shipping with every check green while money
+quietly goes to the wrong party.
+
+1. **Write the missing identity first: vehicle conservation.** `conserve`
+   reconciles totals; it can't see the sponsor being paid what the investors
+   were owed. Add a check, every month, on every exit path (including forced
+   swans, foreclosures, 1031s and recaps):
+   - each vehicle's cash = calls − distributions ± its own flows
+   - investors' and sponsor's capital accounts sum to the vehicle's equity
+2. **Unify ownership** (§12.1). Move `fundOwned` and `jv` onto one ownership
+   record and one routing function. **Prove it changes nothing:** same seeds,
+   same state hash, before and after.
+3. **Fix the as-is mark** for buildings in lease-up (realism finding #1), so
+   promotes and recap prices don't inherit phantom value.
+4. **Minimum viable slice**, which is what unblocks a small developer:
+   - the fund pays construction on fund lots
+   - deal-by-deal syndication with a waterfall, fees and a co-invest slider
+     (§4, §4.4)
+   - the reputation **score** (no ranking yet), from investor and own-money
+     deals (§3.4)
+   - the deal's business plan as its only mandate
+   - a capital-source picker (§6.5)
+   - the conserve bot and the MDGA driver exercise all of it
+5. **Then, one flag each,** paired before/after on the same seeds:
+   1. the investor rank (§3.4, relative)
+   2. the finite investor pool and city attractiveness (§3.1), for the player
+      and rival funds only
+   3. dynamic fund mandates (§5.1) and the fund revamp (§5)
+   4. recap buyouts (§4.5) and side money
+   5. firm entry reading the pool (`firmEntryPitch`)
+   6. merchant builders on the pool, last and most carefully
+6. **Never tune toward a feel.** Every reputation and pool number here is a
+   starting design or a cited convention. If raising money is too easy or
+   too hard, find which real mechanism is missing (CLAUDE.md).
+
+---
+
 ## 1. What exists today (inventory)
 
 | Piece | Where | What it does | Gap |
@@ -98,24 +139,99 @@ mechanism.
 | Insurance companies | $25M–$150M | Core and core-plus; income | No | Separate accounts | 12+ months |
 | Sovereign and foreign capital | $50M–$500M | Size, trophies, cyclical | Rarely | Programmatic JV and separate accounts | Cyclical; the capital-wave swan |
 
-Each type is a **pool** with an annual allocation to real estate in this city's
-region, refreshed each year:
+#### The money is a real, finite pool, and this city competes for it
+
+Investor money is **a finite pool that every firm in town draws from**:
+- the player
+- rival funds and spin-outs
+- new entrants
+- (behind a flag, see below) the anonymous merchant builders
+
+A dollar committed to one sponsor is gone for everyone else that year. How
+big the pool is depends on **how attractive this city looks next to other
+cities**, because that is the real decision: national investors don't ask
+"should I invest in real estate here?", they ask "here, or Austin, or
+Columbus?"
+
+**Step 1: the national pool, per investor type, per year:**
 
 ```
-allocation_t = baseAllocation(type) × wealth_t × denominator_t × riskOn_t
+national_t(type) = base(type) × wealth_t × denominator_t × riskOn_t
 ```
 
-- `wealth_t`: the national economy and population, from regime and econ.
-- `denominator_t`: if real estate marks fell faster than the investor's other
-  holdings, it is over its target weight and cuts new commitments. This is the
-  2009–10 drought. It reads trailing real-estate returns against a
+- `wealth_t`: the national economy and population, from the regime and
+  econ state.
+- `denominator_t`: if real-estate marks fell faster than investors' other
+  holdings, they're over their target weight and cut new commitments. This
+  is the 2009–10 drought. It reads trailing real-estate returns against a
   stock-and-bond proxy from the regime state.
-- `riskOn_t`: credit index and phase. Panic swan → about 0 for 12–24 months;
-  capital-wave swan → foreign pool multiplied while the wave runs.
+- `riskOn_t`: credit index and phase. A panic swan takes it to about 0 for
+  12–24 months; a capital-wave swan multiplies the foreign pool while the
+  wave runs.
 
-The level of `baseAllocation` is calibrated so that the existing
-`firmEntryPitch` firm-count trajectory is reproduced with no player (§9). That
-is the anchor, not a free knob.
+**Step 2: this city's share of it.** The share comes from the city's
+**attractiveness relative to other cities**. That is read from what the
+engine already computes in `peers.ts` (`cityRankings`: this town against 32
+real US cities, all measured relative to the nation in the same year):
+
+| Factor | Source | Effect on the share |
+|---|---|---|
+| **Growth:** population growth over 10 years vs peers | `cityRankings` growth10 | Growth cities draw money (the biggest factor for value-add and development investors) |
+| **Jobs:** unemployment gap vs peers | `cityRankings` unemp | Weak job markets repel money |
+| **Pay and rent growth** | `cityRankings` pay, rent | Rising incomes support rent growth |
+| **Return over the cost of money:** going-in yield plus underwritten growth, minus the coupon | The same spread `firmEntryPitch` reads | A cheap city can attract yield buyers even without growth: the "secondary market" trade |
+| **Liquidity:** trades per year and depth of the tape | `lastTradeM`, `cityJobs` (as `firmEntryPitch`) | Institutions avoid markets they can't exit |
+| **Size** | Lots and population (`cityscale.ts`) | Pensions and sovereign funds need big markets: a Hamlet barely registers to them, a Great City does |
+| **Shocks:** recent fiscal crisis, fire, storm surge; a campus | `econ.blackSwans` | Fiscal crises and surges cut the share for years; a campus announcement lifts it |
+
+```
+cityShare_t(type) = baseShare(size, type) × attractiveness_t(type)
+pool_t(type)     = national_t(type) × cityShare_t(type)
+```
+
+- **Each investor type weights the factors differently** (shape parameters,
+  stated as such):
+  - pensions and insurers: size, liquidity, low risk
+  - endowments and opportunistic investors: growth and dislocation
+  - local friends and family: this town only, regardless of how it compares
+  - yield buyers: the spread
+- **Attractiveness is relative,** like demand in `demand.ts` and like the
+  investor rank: it's this city's standing against its peers, so the city
+  doing well in a nationwide boom doesn't by itself pull more money.
+- **The friends-and-family pool is the exception.** It's local wealth (§3.4),
+  sized by this town's own population and incomes, and it doesn't flow away
+  to other cities.
+
+**Step 3: the pool is drawn down.**
+- Each year's pool is the money available to every sponsor in town.
+- Commitments draw it down in the order the raises close.
+- What isn't committed by year end mostly goes elsewhere: a small carry, as
+  a shape parameter, the rest gone.
+- When the pool runs dry, later raises that year close small or fail, **yours
+  included**, which is the competition.
+
+**Visible to the player** (Investors tab, §7.2): "Investors put about $X
+into towns like this a year; $Y committed so far; this city ranks 19th of 33
+for investors (growth strong, jobs weak, too small for most pensions)."
+
+**What it should produce (measure, don't tune):**
+- a growing, job-rich city attracts more money, and more firms enter
+- a stagnant or shocked city sees capital dry up and firms thin out
+- a cheap, high-yield city attracts some yield money even without growth
+- Great City maps draw institutional money that Hamlets never see
+
+**Calibration anchor:** the pool's level is calibrated so that, with no
+player and no merchant builders on the pool, the existing `firmEntryPitch`
+firm-count trajectory is reproduced (§9). That is the anchor, not a free
+knob.
+
+**The merchant builders: a flag and a big decision.** Today the anonymous
+merchant builders raise each job's equity from unlimited "national money"
+(`rivals.ts`, `fundAnonymousCityJob`). They build about five-sixths of the
+city's new space. Putting them on the same finite pool is realistic (city
+supply would then answer to investor appetite), but it **changes the city's
+whole supply and glut behaviour**. Ship it behind its own flag and measure
+it separately (§12).
 
 ### 3.2 Sponsor score: who gets the money
 
@@ -1229,7 +1345,7 @@ Order matters. Each phase lands with its measurement.
 |---|---|---|
 | P0 | Fund can pay construction on fund lots; successor fund doesn't need the prior one settled; investors share interim cash on merchant SPVs | Low; bug-level |
 | P1 | Deal-by-deal development syndication (§4), reusing the merchant 90/10 book; IRR-tier waterfall; fees; completion guarantee | Medium; new vehicle type and books buckets |
-| P2 | Investor reputation for every firm (§3.4), read only by the investor market; investor market (§3) shared by player and rivals; `firmEntryPitch` reads both | High; touches firm entry, which is load-bearing |
+| P2 | Investor reputation for every firm (§3.4), read only by the investor market; the finite investor pool sized by city attractiveness vs peer cities (§3.1), shared by player and rivals; `firmEntryPitch` reads both; merchant builders on the pool behind their own flag | High; touches firm entry and city supply, both load-bearing |
 | P3 | Fund revamp (§5): strategy, LPA limits, fees, catch-up and clawback, overlap, demand-sized | Medium |
 | P4 | Programmatic JVs and separate accounts (§6); swan hooks | Medium |
 | P5 | Placement agents, investor relationships, press | Low |

@@ -153,6 +153,24 @@ export function dominantOf(mix: UseMix): BuiltClass {
   return best ?? "office";
 }
 /** Weighted average of a per-use number across a programme. */
+/**
+ * HOW LONG A NEW BUILDING TAKES TO FILL, against an ordinary market (1.0):
+ * availability — the vacancy it opens into, `vacOf`, plus sublet space —
+ * against natural, shortened by structural unmet demand (the looking book is
+ * already there). Logistic to ~[0.35, 2]; the old clamp pinned its floor half
+ * the time. The pro forma reads it at forecast delivery vacancy; a merchant's
+ * settlement reads it at the vacancy the building actually opened into
+ * (`settleMerchant` in dev.ts) — one curve, two readers.
+ */
+export function leaseUpMarketAt(econ: Econ, mix: UseMix, vacOf: (u: BuiltClass) => number): number {
+  const availability = overMix(mix, (u) =>
+    vacOf(u) + (econ.sublet?.[u] ?? 0) / Math.max(1, econ.stock?.[u] ?? CITY_STOCK[u]));
+  const naturalAvailability = overMix(mix, (u) => NATURAL_VAC[u]);
+  const struct = overMix(mix, (u) => econ.structTight?.[u] ?? 0);
+  const leaseRaw = availability / Math.max(0.001, naturalAvailability) - struct * 2.2;
+  return 0.35 + 1.65 / (1 + Math.exp(-(leaseRaw - 1) / 0.4));
+}
+
 export function overMix(mix: UseMix, f: (u: BuiltClass) => number): number {
   let sum = 0, w = 0;
   // for..in walks a plain object's own keys in Object.keys order, without
@@ -831,17 +849,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // scheme's own floor area (`forwardVacancy`). A tower the size of half the
   // town's office stock prices the glut it would create; nothing else needs
   // to cap it.
-  const availability = overMix(mix, (u) =>
-    forwardVacancy(econ, u, rentable * (mix[u] ?? 0))
-      + (econ.sublet?.[u] ?? 0) / Math.max(1, econ.stock?.[u] ?? CITY_STOCK[u]));
-  const naturalAvailability = overMix(mix, (u) => NATURAL_VAC[u]);
-  // Floor used to be 0.5 — even a bone-dry street kept half a glut's lease-up
-  // budget. Structural unmet demand shortens the curve further: the looking
-  // book is already there. Cap still 2× in a real glut.
-  const struct = overMix(mix, (u) => econ.structTight?.[u] ?? 0);
-  const leaseRaw = availability / Math.max(0.001, naturalAvailability) - struct * 2.2;
-  // Logistic curve to ~[0.35, 2] — the old clamp pinned the floor 50% of months.
-  const leaseUpMarket = 0.35 + 1.65 / (1 + Math.exp(-(leaseRaw - 1) / 0.4));
+  const leaseUpMarket = leaseUpMarketAt(econ, mix, (u) => forwardVacancy(econ, u, rentable * (mix[u] ?? 0)));
   // A BIG SCHEME FILLS AT THE MARKET'S PACE, NOT AT ITS OWN. Tenants arrive at
   // the market's absorption rate; a floor of them a quarter is a strong
   // programme for a big building (which is why Manhattan towers pre-lease for

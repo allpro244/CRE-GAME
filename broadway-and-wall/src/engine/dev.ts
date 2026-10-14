@@ -3574,7 +3574,22 @@ function tickCrews(s: GameState, bbls: string[]) {
   // The workforce that WOULD clear the book is the current one times how
   // oversubscribed it is; the industry walks toward it rather than jumping.
   const idx = e.crewIdx ?? 1;
-  e.crewIdx = idx * (1 + 0.010 * ((e.crewUtil ?? 1) - 1));
+  // ...AND CONTRACTORS GO UNDER WHEN THEY BID BELOW COST (2026-10-14). A lull
+  // does not only idle men; a firm that wins work at a loss to keep its crew
+  // together runs out of capital, and its crew leaves the trade. US
+  // construction lost ~30% of its workforce over 2006-11, faster than idle
+  // time alone explains. The loss scales with how far under cost bids are
+  // (`bidPremium`, market.ts), and it is what makes the rebound sharp: the
+  // order book returns to a smaller industry.
+  const failing = Math.min(0, e.bidPremium ?? 0);
+  e.crewIdx = idx * (1 + 0.010 * ((e.crewUtil ?? 1) - 1) + 0.06 * failing);
+  // Land buyers are builders: the new-build book against what a town this
+  // size ordinarily builds is how many bidders a lot has.
+  const newBook = (live + owed / TYPICAL_SF) / Math.max(1e-6, baseNew);
+  e.buildDemand = (e.buildDemand ?? newBook) + 0.08 * (newBook - (e.buildDemand ?? newBook));
+  // ...against what THIS town has been building, over about a decade: a
+  // built-out island and a frontier town each have their own normal year.
+  e.buildNorm = (e.buildNorm ?? e.buildDemand) + 0.008 * (e.buildDemand - (e.buildNorm ?? e.buildDemand));
 }
 
 /**
@@ -4166,11 +4181,12 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // this map — the historical worst case — as a consequence of the draw
   // structure rather than a quota.
   const cand: { use: BuiltClass; surplus: number; stock: number }[] = [];
-  // INDUSTRIAL TOO (2026-10-14). Sheds were left out, so a shed glut could
-  // only ever wait for demand: measured, real industrial rent halved over
-  // sixty years with vacancy at 13-37% and nothing leaving. An empty
-  // obsolete shed is cleared on the same carrying-cost test as anything else.
-  for (const use of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
+  // NOT INDUSTRIAL (tried 2026-10-14, reverted): the shed trades leave town
+  // when there is no shed space for them (market.ts, "SHEDS THE SAME WAY"),
+  // so clearing sheds here shrank demand with the stock — measured on one
+  // seed, 40% of the shed stock gone and real industrial rent still fell
+  // from 1.36x to 0.59x. Industrial has its own valve.
+  for (const use of ["office", "retail", "multifamily"] as BuiltClass[]) {
     const natural = NATURAL_VAC[use];
     const vac = e.cityVac?.[use] ?? natural;
     if (vac <= natural + 0.05) continue;                    // deep, not cyclical

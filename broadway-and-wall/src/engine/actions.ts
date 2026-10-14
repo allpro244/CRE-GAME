@@ -4,7 +4,7 @@
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import { districtLabel } from "./mix";
 import type { Bid, BuiltClass, Condition, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, Rival, RivalStyle, SaleInstructions } from "./types";
-import { logBooks, moveDeposit, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
+import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
@@ -310,10 +310,10 @@ export function executePurchase(
     if (call > 0) {
       next.fund.uncalled -= call;
       next.fund.called += call;
-      next.fund.cash += call;
+      moveFundCash(next.fund, call, "call");
       logBooks(next, "lpCalled", call); // LP equity in for this deal — not income
     }
-    next.fund.cash -= bq.equity;
+    moveFundCash(next.fund, -bq.equity, "purchase");
   } else fundCashNeed(next, parcels, bq.equity);
   // Points are a financing cost, not purchase consideration — same split
   // refinance and the facility use (debtSvc vs borrowed/bought). Deposits
@@ -323,6 +323,10 @@ export function executePurchase(
   // the fee found its way to a named shop, and the shop will remember
   if (!entity) creditBrokerFee(next, bbl);
   if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee, bbl, fromFund);
+  // The vehicle took the tenants' deposits on as a liability rather than in
+  // cash: `bought` above is gross of them, so they are consideration the
+  // vehicle settled without a cheque (the right-purse identity, invariants.ts).
+  if (fromFund && next.fund && (bq.deposits ?? 0) > 0) next.fund.deedSettled = (next.fund.deedSettled ?? 0) - (bq.deposits ?? 0);
   // If a named firm owned it, they are the seller — the money and the deed
   // both move, and their balance sheet is one building lighter.
   {
@@ -481,7 +485,7 @@ export function executePurchase(
     // buyQuote already netted the disclosed roll out of the cheque — only the
     // remainder (a preview that grew, or a quote that missed the paper) moves.
     const extra = depositsOn(holding) - (bq.deposits ?? 0);
-    if (fromFund && next.fund) next.fund.cash += extra;
+    if (fromFund && next.fund) moveFundCash(next.fund, extra, "deposit");
     else next.cash += extra;
   } else {
     // genRentRoll settles the deposits through moveDeposit, which already puts
@@ -2955,7 +2959,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // counterparty. The vehicle pays no tax on them — the sponsor's share of
   // the gain is taxed on the sponsor, below.
   const intoFund = !!(h.fundOwned && next.fund && !next.fund.settled);
-  if (intoFund && next.fund) next.fund.cash += toSeller;
+  if (intoFund && next.fund) moveFundCash(next.fund, toSeller, "sale");
   else next.cash += toSeller;
   // THE FEE COMES OUT OF THE PROCEEDS ONCE, NOT TWICE.
   //

@@ -5,7 +5,7 @@
 // been monthly; the name was a lie that trained the wrong instinct.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Listing } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleHot, cycleDown } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -2153,11 +2153,11 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
     // stop, downward. It goes in kind to the LPs' trust with its mortgage.
     const paid = price > 0 ? fundCashNeed(s, parcels, price, { allowLoc: true }) : 0;
     if (price > 0 && paid >= price) {
-      f.cash += paid;
+      moveFundCash(f, paid, "buyIn");
       // The tenants' deposits come across with the deed: the vehicle held
       // them, the sponsor owes them from here on.
       const dep = depositsOn(h);
-      f.cash -= dep;
+      moveFundCash(f, -dep, "deposit");
       s.cash += dep;
       paidTotal += paid;
       delete h.fundOwned;

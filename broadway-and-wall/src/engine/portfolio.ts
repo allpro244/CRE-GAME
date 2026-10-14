@@ -25,7 +25,7 @@
 // months after everybody has worked that out.
 import type { ParcelTable } from "@/data/types";
 import type { Exit, GameState, Holding } from "./types";
-import { logBooks, moveDeposit, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
+import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
 import { sweepLocIdleCash } from "./credit";
@@ -708,7 +708,7 @@ export function acceptPortfolioBid(
   }
   while (next.exits.length > 200) next.exits.shift();
   next.cash += cashToYou;
-  if (intoFund && next.fund) next.fund.cash += toFund;
+  if (intoFund && next.fund) moveFundCash(next.fund, toFund, "sale");
   // `sold` and the fees were booked leg by leg above, and the pool payoff
   // against `sold` with them.
   if (exchange && taxTotal > 0) {

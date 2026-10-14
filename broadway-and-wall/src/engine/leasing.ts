@@ -1613,6 +1613,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // being released rather than an asset arriving.
       // Already in the purse that held it (moveDeposit) — the vehicle for a fund deed.
       if (kept > 0) logBooks(s, "noi", kept, h.bbl, true);
+      // The vehicle already holds that cash: the forfeiture is settled where it
+      // sits (the right-purse identity, invariants.ts).
+      if (kept > 0 && h.fundOwned && s.fund && !s.fund.settled) s.fund.deedSettled = (s.fund.deedSettled ?? 0) + kept;
       const merge = recombinationCost(rec, t, s.econ.costIdx);
       if (merge > 0) {
         s.cash -= merge;

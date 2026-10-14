@@ -2097,12 +2097,29 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // the ceiling never got a vote. The requirement that actually tours
         // here is at most what is left of the address's own tenant pool.
         const legAll = useRentableSf(rec, use);
-        const poolSf = Math.max(0, legVac - (1 - supportableOcc(s.econ, rec, use)) * legAll);
+        let poolSf = Math.max(0, legVac - (1 - supportableOcc(s.econ, rec, use)) * legAll);
         // A starved pool must not round UP to a full market-norm bite — that
-        // is how the occupancy ceiling used to lose. When what is left of
-        // the pool will not fill the smallest thing this building demises,
-        // nobody tours.
-        if (poolSf < minLettableSf(rec, use)) continue;
+        // is how the occupancy ceiling used to lose. But it must not always
+        // round DOWN either, and it did: when the pool is short of one whole
+        // suite, nobody toured. supportableOcc never exceeds 0.985, so a leg
+        // that IS one suite — the 855 sf shop under a three-flat walk-up — had
+        // a pool of 98.5% of a suite at the best corner in town, every month,
+        // for ever. Measured on a Great City developer run (seed 760449): a
+        // ground-floor shop sat dark for sixteen years at 80% monthly letter
+        // odds and 0.6% city retail vacancy, and the building read 66% let
+        // the whole time. The same floor stranded the last suite of any leg
+        // whose leftover pool was under one demise.
+        //
+        // A suite lets whole or not at all, so the honest rounding is in
+        // EXPECTATION: a pool covering 98.5% of the suite lets it on 98.5% of
+        // the tours that would otherwise have come. The address's ceiling
+        // still holds on average; an indivisible space is no longer below it
+        // by construction. The extra draw is taken only on this branch.
+        const floorSf = minLettableSf(rec, use);
+        if (poolSf < floorSf) {
+          if (!(poolSf > 0) || rng(s, "leasing") >= poolSf / floorSf) continue;
+          poolSf = floorSf;
+        }
         // Consume the city's requirement draw so the world stream does not
         // re-roll (Phase 1 was the sanctioned extra draw). The letter's SIZE
         // is the class log-normal on the leasing channel — same SIZE_DIST

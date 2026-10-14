@@ -50,7 +50,7 @@ import { monthOffThread, spanOffThread } from "@/state/simClient";
 export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "reset";
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "pencils" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
-export type MapFilter = "all" | "owned" | "construction";
+export type MapFilter = "all" | "owned" | "construction" | "firm";
 export type GraphicsQuality = "low" | "medium" | "high";
 /** A scheme being designed: drawn finished, on its lot, in the 3D city. */
 export interface DesignPreview {
@@ -304,6 +304,10 @@ interface AppState {
   setPhotoFrame: (v: boolean) => void;
   /** Request MapView to fit the holdings bounding box. */
   showBookOnMap: () => void;
+  /** The competitor the map is showing on its own (mapFilter "firm"). */
+  mapFirm?: string;
+  /** Close the desk and show one competitor's buildings on the map, everything else dimmed. */
+  showFirmOnMap: (id: string) => void;
   /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
@@ -1242,6 +1246,18 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setMapFilter: (f) => set({ mapFilter: f }),
+
+  showFirmOnMap: (id) => {
+    const st = get();
+    set({
+      page: "none" as Page,
+      lens: "owners" as Lens,
+      mapFilter: "firm" as MapFilter,
+      mapFirm: id,
+      mapOnly: true,
+      fitBook: st.fitBook + 1,
+    });
+  },
 
   showBookOnMap: () => {
     const st = get();

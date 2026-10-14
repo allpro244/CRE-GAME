@@ -1896,7 +1896,9 @@ export interface Econ {
   /** Business rent against the nation's at this town's opening — the parity `regionalPull` measures cost against. */
   regionRent0?: number;
   /** Black swans that have landed (blackswans.ts), for the paper and probes. */
-  blackSwans?: { m: number; kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus"; size: number; sf: number }[];
+  blackSwans?: { m: number; kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus"; size: number; sf: number;
+    /** What the paper calls it, and for a fire the lots it took (stories.ts). */
+    title?: string; bbls?: string[] }[];
   /** A bank panic in progress (blackswans.ts): months of full force left, then its fade. */
   panic?: { leftM: number; force: number };
   /** The property-tax rate as a multiple of the statutory one (fiscal crisis). */

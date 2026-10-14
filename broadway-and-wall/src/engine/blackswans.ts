@@ -53,12 +53,23 @@
 //   November 2018 to February 2019), and whoever paid up for the land
 //   between owns very expensive dirt.
 //
+// MEASURED (2026-10-14). Four 100-year towns drew 1, 2, 3 and 3 swans. Each
+// forced at year ten on four seeds and read against the same town without it:
+//   panic   credit index -0.4 for two years; a recession inside a year in
+//           three of four; a lender closed in two; jobs -3.5% at two years
+//   fiscal  jobs -4.8% at four years, real land -8% at five, caps +0.4
+//   campus  jobs +3.6% by year six, real land +4%, the chosen centre +8-14
+//   fire    51-101 buildings, 0.6-0.9M sf; a third of the lots in the ground
+//           again within two years, half standing by four
+// and the century's trend reads as it did without them: jobs +1.1-1.4%/yr,
+// real office rent +0.2-0.8%/yr.
+//
 // Its own RNG stream ("shock"), so the economy's other draws do not move.
 
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, GameState } from "./types";
 import type { ParcelRecord } from "@/data/types";
-import { raiseAlert, logBooks, moveDeposit } from "./types";
+import { raiseAlert, logBooks, moveDeposit, START_YEAR } from "./types";
 import { rng, addStock, pushNewsPublic } from "./market";
 import { resolveRec, useRentableSf } from "./value";
 import { uses } from "./mix";
@@ -145,7 +156,7 @@ function destroyBuilding(s: GameState, parcels: ParcelTable, bbl: string, payout
 
 function greatFire(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null) {
   if (!adjacency) return;
-  const yr = 2000 + Math.floor(s.month / 12);
+  const yr = START_YEAR + Math.floor(s.month / 12);
   const built = (b: string) => {
     if (s.landmarks?.[b] !== undefined) return null;          // stone and a fire wall: the landmarks stand
     if ((s.cityJobs ?? []).some((j) => j.bbl === b) || s.developments[b]) return null;
@@ -197,7 +208,7 @@ function greatFire(s: GameState, parcels: ParcelTable, bbls: string[], adjacency
   }
   const where = resolveRec(parcels, s, origin);
   const district = (where as { districtName?: string; district?: string } | null)?.districtName ?? "the old quarter";
-  (s.econ.blackSwans ??= []).push({ m: s.month, kind: "fire", size: burned.length, sf: Math.round(sf) });
+  (s.econ.blackSwans ??= []).push({ m: s.month, kind: "fire", size: burned.length, sf: Math.round(sf), title: `the Great Fire of ${yr}`, bbls: burned });
   raiseAlert(s, {
     kind: "swan", tone: "bad", bbl: origin,
     title: `The Great Fire of ${yr}`,
@@ -222,7 +233,7 @@ function stormSurge(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const zone = standing.filter((r) => (r.shoreM ?? 9999) <= reach).map((r) => r.bbl);
   if (zone.length < 5) return;
   e.surgeM = reach;
-  const yr = 2000 + Math.floor(s.month / 12);
+  const yr = START_YEAR + Math.floor(s.month / 12);
   // Damage as a share of rebuilding cost: plant, electrical and fit-out in
   // the flooded floors. Most of it over the federal flood cap — uninsured.
   const dmg = 0.06 + 0.10 * rng(s, "shock");
@@ -247,7 +258,7 @@ function stormSurge(s: GameState, parcels: ParcelTable, bbls: string[]) {
   }
   // AND THE MARKET REMEMBERS: the zone trades at a lasting risk premium.
   e.surgeRisk = (e.surgeRisk ?? 0) + 0.4 + 0.3 * rng(s, "shock");
-  (e.blackSwans ??= []).push({ m: s.month, kind: "surge", size: zone.length, sf: 0 });
+  (e.blackSwans ??= []).push({ m: s.month, kind: "surge", size: zone.length, sf: 0, title: `the surge of ${yr}` });
   raiseAlert(s, {
     kind: "swan", tone: "bad",
     title: `The surge of ${yr}`,
@@ -280,7 +291,7 @@ function startCapitalWave(s: GameState) {
   const e = s.econ;
   const depth = -(0.8 + 0.7 * rng(s, "shock"));
   e.capWave = { phase: "in", leftM: 36, len: 36, from: e.capitalWave ?? 0, to: depth };
-  (e.blackSwans ??= []).push({ m: s.month, kind: "wave", size: Math.round(-depth * 100), sf: 0 });
+  (e.blackSwans ??= []).push({ m: s.month, kind: "wave", size: Math.round(-depth * 100), sf: 0, title: "foreign capital found the city" });
   raiseAlert(s, {
     kind: "swan", tone: "good",
     title: "Foreign capital has found the city",
@@ -307,7 +318,7 @@ function tickPanic(s: GameState) {
 
 function startPanic(s: GameState) {
   const e = s.econ;
-  const yr = 2000 + Math.floor(s.month / 12);
+  const yr = START_YEAR + Math.floor(s.month / 12);
   // THE HOLE IS SOMEWHERE ELSE. A trading book, a trust company's call loans,
   // a fund of mortgage bonds from another country — never this town's
   // buildings, which is what makes it a swan rather than the cycle. It lands
@@ -329,7 +340,7 @@ function startPanic(s: GameState) {
   // three weeks and its credit squeeze half a year; 2008's ran from September
   // to the following spring.
   e.panic = { leftM: Math.round(4 + 8 * rng(s, "shock")), force: 1 };
-  (e.blackSwans ??= []).push({ m: s.month, kind: "panic", size: 1, sf: 0 });
+  (e.blackSwans ??= []).push({ m: s.month, kind: "panic", size: 1, sf: 0, title: `the Panic of ${yr}` });
   raiseAlert(s, {
     kind: "swan", tone: "bad",
     title: `The Panic of ${yr}`,
@@ -360,7 +371,6 @@ function tickFiscal(s: GameState) {
 
 function startFiscal(s: GameState) {
   const e = s.econ;
-  const yr = 2000 + Math.floor(s.month / 12);
   // THE BILL: a surcharge on the property tax of a fifth to two fifths — the
   // city's one revenue it can raise by vote, and the one its bondholders are
   // secured by.
@@ -372,14 +382,13 @@ function startFiscal(s: GameState) {
   const loss = 0.03 + 0.04 * rng(s, "shock");
   const months = Math.round(36 + 24 * rng(s, "shock"));
   e.fiscal = { leftM: months, pullM: Math.pow(1 - loss, 1 / months) - 1 };
-  (e.blackSwans ??= []).push({ m: s.month, kind: "fiscal", size: Math.round(loss * 100), sf: 0 });
+  (e.blackSwans ??= []).push({ m: s.month, kind: "fiscal", size: Math.round(loss * 100), sf: 0, title: "the city could not pay its bills" });
   raiseAlert(s, {
     kind: "swan", tone: "bad",
     title: `The city cannot pay its bills`,
     body: `The banks have refused to roll the city's notes, and Washington has said no. A control board has taken the budget: ${Math.round(surcharge * 100)}% on every property-tax bill from this year, a fifth of the municipal payroll laid off, and the services that go with it.`,
     detail: `Every building's tax bill just went up and stays up — the board pays the bondholders first. And the cuts do what cuts do: over the next ${Math.round(months / 12)} years expect about ${Math.round(loss * 100)}% of the city's jobs to go somewhere else.`,
   });
-  void yr;
 }
 
 // ---------------------------------------------------------------- the campus
@@ -404,7 +413,7 @@ function tickCampus(s: GameState) {
       // land around the site had already repriced on the promise.
       const p = s.poles?.[c.pole];
       if (p) p.level = Math.max(-16, p.level - c.jump);
-      (e.blackSwans ??= []).push({ m: s.month, kind: "campus", size: -1, sf: 0 });
+      (e.blackSwans ??= []).push({ m: s.month, kind: "campus", size: -1, sf: 0, title: "the campus walked away" });
       raiseAlert(s, {
         kind: "swan", tone: "bad",
         title: "The campus is not coming",
@@ -451,7 +460,7 @@ function startCampus(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if ((r.lotArea ?? 0) > ba) { ba = r.lotArea ?? 0; best = b; }
   }
   const addr = best ? (resolveRec(parcels, s, best)?.address ?? "") : "";
-  (e.blackSwans ??= []).push({ m: s.month, kind: "campus", size: Math.round(gain * 1000), sf: 0 });
+  (e.blackSwans ??= []).push({ m: s.month, kind: "campus", size: Math.round(gain * 1000), sf: 0, title: `${name} picked the city` });
   raiseAlert(s, {
     kind: "swan", tone: "good", ...(best ? { bbl: best } : {}),
     title: "An anchor has picked the city",

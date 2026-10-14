@@ -4162,7 +4162,11 @@ function developerLook(
   let examined = 0;
   for (let draw = 0; draw < SITES_PER_LOOK * 8 && examined < SITES_PER_LOOK; draw++) {
     const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
-    if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
+    // A lot that is land again — burned (blackswans.ts) or knocked down and
+    // never rebuilt — is a site like any other; an override that is a
+    // building is not.
+    const over = s.built[bbl] as { class?: string } | undefined;
+    if (s.holdings[bbl] || (over && over.class !== "land") || s.developments[bbl]) continue;
     if (s.cityJobs.some((j) => j.bbl === bbl)) continue;
     if ((s.cityPlans ?? []).some((p) => p.bbl === bbl)) continue;   // tied up by another developer
     if (isCivicLand(s, bbl)) continue;

@@ -165,9 +165,9 @@ rivals, with the same inputs.
   you, or the odds the investor says yes.
 
 
-### 3.4 Reputation rating: one number per firm, earned from the record
+### 3.4 Investor reputation: one number per firm, earned from the record
 
-Every firm, player and rival, carries a **reputation rating** on a scale of
+Every firm, player and rival, carries an **investor reputation rating** on a scale of
 **−100 to +100**. **The player always starts at 0**: unknown, which in this
 business is not neutral but a closed door. Rivals carry the same rating,
 computed the same way from their own records. It shows on the league table
@@ -175,15 +175,20 @@ and on each firm's profile, with a breakdown of why.
 
 **It is a readout of facts, not XP** (the `firmCapital.ts` rule). Nothing
 grants reputation; it is recomputed each month from what the ledger and the
-news already know. It replaces the scattered reputation pieces the engine
-already has:
-- `sponsorStanding` (lender marks)
-- `recentLowballs` / `repFloorMult` (sellers)
-- broker goodwill
-- the `quietFeeRate` hook, whose comment already says "when the reputation
-  tab is built, it replaces the body of this function"
+news already know.
 
-One name, one memory, read by investors, lenders, sellers and brokers.
+**Scope: investors only.** The rating answers one question: *how do the
+people who write equity cheques read this sponsor?* Nothing else in the
+engine reads it. Each of these stays exactly as it is, and is out of scope
+for now:
+- lender marks and terms (`sponsorStanding`)
+- what sellers remember about lowball bids (`recentLowballs`,
+  `repFloorMult`)
+- broker goodwill and the quiet-sale fee (`quietFeeRate`)
+
+Bidding hard on a building is a negotiating matter between buyer and seller.
+It says nothing about whether a sponsor returns investors' money, so it
+doesn't touch this rating.
 
 #### What moves it
 
@@ -191,10 +196,9 @@ One name, one memory, read by investors, lenders, sellers and brokers.
 |---|---|---|---|
 | **Realised investor outcomes** | `Exit` (equityIn, equityOut, `irr`); SPV and fund net IRR, DPI | + or − | Net-to-investor IRR vs that strategy's target, weighted by equity size and recency. The core of the rating. |
 | **Losing investors' money** | an SPV or fund with DPI < 1; a principal loss on any syndicated deal | −− | Counts in full immediately. Not shrunk for sample size (see below). |
-| **Credit events** | `sponsor.events`: foreclosure, deficiency, seizure, deed-in-lieu, DPO, forced sale | −− | Today's `sponsorStanding` weights (0.5–1.3), scaled onto this scale; the same 10-year memory. |
+| **Credit events** | `sponsor.events`: foreclosure, deficiency, seizure, deed-in-lieu, DPO, forced sale | −− | Investors read the same public record lenders do: the same events and the same 10-year memory, weighted on this scale. Reading them here does not change `sponsorStanding` or anything lenders do. |
 | **Broken promises** | a failed completion guarantee, a missed capital call, an LPA breach, a removal for cause | −−− | The worst marks in the system: a broken guarantee follows a name longer than a foreclosure does. |
 | **Execution** | delivery slip vs plan (`deliveries`), budget overrun, lease-up vs underwriting | + or − | Small per job; matters in aggregate ("always late, always over"). |
-| **Conduct** | lowballs, re-trades after agreement, walking from agreed deals, declined LOIs after a counter | − | Small, short memory (today's 3-year lowball window). |
 | **Tenure without incident** | firm age, years since the last mark | + (capped) | Small and capped: an old firm isn't automatically a good one. |
 | **Scale under management** | AUM in vehicles you run | + (capped) | Small: big managers get meetings, not trust. |
 
@@ -242,13 +246,7 @@ before the year's supply and competition move them.
 | +55 to +75 | **Institutional** | + endowments, pensions (with size), insurers (separate accounts) | 8% | 20/30 tiers, catch-up | full market fees | 2–5% | rarely | fast |
 | above +75 | **Blue-chip** | + sovereign wealth funds and programmatic JVs (§6) | 7–8% | best tiers | market or above | 1–3% | no | oversubscribed |
 
-The same rating also feeds (replacing what reads `sponsorStanding` today):
-- **Lenders:** spread and advance-rate adjustments. Negative already
-  exists; a positive tail (a modestly tighter spread for blue-chip names) is
-  optional and must be measured.
-- **Sellers:** whether an owner takes your call, and how hard their floor is
-  against you (`repFloorMult`).
-- **Brokers:** first looks and the quiet-sale fee (`quietFeeRate`).
+Lenders, sellers and brokers don't read this rating (see Scope above).
 
 #### Rivals
 
@@ -503,7 +501,7 @@ Order matters. Each phase lands with its measurement.
 |---|---|---|
 | P0 | Fund can pay construction on fund lots; successor fund doesn't need the prior one settled; investors share interim cash on merchant SPVs | Low; bug-level |
 | P1 | Deal-by-deal development syndication (§4), reusing the merchant 90/10 book; IRR-tier waterfall; fees; completion guarantee | Medium; new vehicle type and books buckets |
-| P2 | Reputation rating for every firm (§3.4), replacing `sponsorStanding`, the lowball and broker memories; investor market (§3) shared by player and rivals; `firmEntryPitch` reads both | High; touches firm entry and every reader of `sponsorStanding` |
+| P2 | Investor reputation for every firm (§3.4), read only by the investor market; investor market (§3) shared by player and rivals; `firmEntryPitch` reads both | High; touches firm entry, which is load-bearing |
 | P3 | Fund revamp (§5): strategy, LPA limits, fees, catch-up and clawback, overlap, demand-sized | Medium |
 | P4 | Programmatic JVs and separate accounts (§6); swan hooks | Medium |
 | P5 | Placement agents, investor relationships, press | Low |
@@ -526,9 +524,6 @@ Order matters. Each phase lands with its measurement.
 6. Reputation scale and bands (§3.4): is −100 to +100, with named bands,
    the right presentation, or would a letter grade read better on the league
    table?
-7. Should a positive rating ever **improve** lender terms, or only open
-   investor doors? (Recommendation: investors and sellers first; lenders
-   negative-only until measured.)
-8. Should reputation be visible for every rival from day one, or only once
+7. Should reputation be visible for every rival from day one, or only once
    you've dealt with them or they've raised money publicly? (In life you know
    the big names and not the small ones.)

@@ -251,6 +251,67 @@ are not already inside a vehicle's outcome add their own negative evidence,
 read from `sponsor.events`. Reading them here doesn't change anything lenders
 do.
 
+#### Deals done with your own money also build the rating, slowly
+
+A sponsor who spends years doing successful deals on its own balance sheet
+earns a reputation from that alone. Investors check public deeds and sale
+prices, and the engine already has each deal's own cash ledger (`Exit`:
+equityIn, equityOut, levered pre-tax `irr`). But it counts for less than a
+record with other people's money: no promise was made, nobody else's money
+was at risk, and managing investors (reporting, alignment, calls) is a skill
+the sponsor hasn't shown yet.
+
+**Which deals count:** realised deals with a complete ledger (`Exit.irr` not
+null), whether a development sold or a refinance that returned the equity.
+Holdings that are still marked rather than realised don't count, same as
+everywhere else.
+
+**Evidence per own-money deal** (judged on its realised levered IRR and
+multiple, since there was no pitch):
+
+| Result | Evidence |
+|---|---|
+| Strong: IRR ≥ 20% and multiple ≥ 1.5× | **+3** |
+| Good: IRR 12–20% and multiple ≥ 1.25× | **+2** |
+| Modest: made money, below that | 0 |
+| Lost money, no credit event | half the matching row of the investor table (−10 to −30) |
+| Foreclosure, deficiency or forced sale | read from `sponsor.events` exactly as for any sponsor |
+
+**Discounts:**
+- **Half weight in the sample count.** Each own deal counts as 0.5 toward
+  `n` in `shrink()`, so it takes twice as many own deals as investor deals to
+  convince anyone.
+- **Size.** Evidence × `min(1, equity in the deal ÷ size reference)`. The
+  reference is a shape parameter in opening-year dollars carried at
+  inflation, so a run of tiny flips can't farm a reputation.
+- **A ceiling: own-money evidence alone can lift the rating to +35** (the
+  top of Emerging) and no further. Proven and above need a record with
+  investors' money, because that is the thing institutions are underwriting.
+  Investor-deal evidence adds on top as usual.
+- **The same fading** as other positive evidence (15–20 years), so the
+  record has to stay current.
+
+**What that looks like** (own deals only, before fading):
+
+| Own deals realised | All "good" (+2) | All "strong" (+3) |
+|---|---|---|
+| 5 | +4 | +6 |
+| 10 | +11 | +17, **Emerging** |
+| 15 | +19, **Emerging** | +29 |
+| 20 | +29 | +35 (ceiling) |
+
+So a developer who quietly builds and sells a good job every year or two
+climbs out of Unknown in **10–15 deals, about 15–20 years**. They arrive at
+their first syndication able to raise $3 per $1 (Emerging) instead of $1,
+and with better terms. That is exactly how many real sponsors start: years
+of their own money, then their first outside equity.
+
+For scale, career #4 in the October playthroughs (80 developments, 52
+sales, median about 1.9× cost) would on own deals alone have reached
+Emerging around 2043 and the +35 ceiling around 2048, about 45 years in.
+That's a rough estimate from its sale multiples, ignoring the size
+weighting.
+
 #### Warning signs before the end (investor reporting)
 
 Investors don't wait for the exit. Quarterly reporting on every live vehicle
@@ -278,7 +339,8 @@ shrink(x) = x × n / (n + 4)      n = realised vehicles with positive evidence
 - **Negative evidence is never shrunk.** It lands in full the moment it is
   recognised.
 - **Only realised results build the rating.** Marks and paper IRRs don't.
-  Warning signs can only subtract.
+  Warning signs can only subtract. Own-money deals count at half weight in
+  `n` and are capped at +35 on their own (above).
 - **Memory:** positive evidence fades over 15–20 years, so a firm must keep
   delivering; ordinary negatives fade over 10 years; misconduct over 20.
 
@@ -649,6 +711,9 @@ Order matters. Each phase lands with its measurement.
 6. Reputation scale and bands (§3.4): is −100 to +100, with named bands,
    the right presentation, or would a letter grade read better on the league
    table?
-7. Should reputation be visible for every rival from day one, or only once
+7. Own-money deals (§3.4): is +35 (the top of Emerging) the right ceiling
+   for a record built without investors, or should a very long, very clean
+   own-money record be able to reach Proven?
+8. Should reputation be visible for every rival from day one, or only once
    you've dealt with them or they've raised money publicly? (In life you know
    the big names and not the small ones.)

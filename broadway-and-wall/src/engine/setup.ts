@@ -67,6 +67,8 @@ export interface GameSetup {
   spectator?: boolean;
   /** How much the town's competitors raised before you arrived (RIVAL_CAPITAL). Absent = medium. */
   rivalCapital?: RivalCapital;
+  /** How much of the town is park (citygen PARK_AMOUNTS). Absent = the usual. The store applies it. */
+  parks?: "low" | "medium" | "high";
 }
 
 /**

@@ -2337,12 +2337,42 @@ export function islandConfig(seed, opts = {}) {
   // but over 865 placements, 99.7% went down at full size, 0.3% shrank one
   // step, and none failed. Left alone deliberately; see the note in
   // GRAPHICS_HANDOFF.
-  const programme = (() => {
-    let r = Dp.rand() * PARK_PROGRAMMES.reduce((a, p) => a + p.w, 0);
-    for (const p of PARK_PROGRAMMES) { r -= p.w; if (r <= 0) return p; }
+  // HOW MUCH GREEN THE PLAYER ASKED FOR (setup page, index.mjs PARK_AMOUNTS).
+  // Not a new kind of town: the same five programmes, drawn with the odds
+  // moved toward the leafy ones (squares, commons, a great park) or toward
+  // the dense port that never set the ground aside, and the count within the
+  // programme stretched or cut. The same draws in the same order, so
+  // "medium" is byte-identical to a town cut before the option existed.
+  const PARK_ODDS = {
+    low: { great: 0.5, squares: 0.3, commons: 0.5, greens: 1.0, sparse: 2.4, n: 0.6, plus: 0 },
+    high: { great: 1.4, squares: 1.8, commons: 1.6, greens: 0.9, sparse: 0.2, n: 1.5, plus: 1 },
+  }[opts.parks] ?? null;
+  // One draw picks the programme and one the count, as they always have; the
+  // usual town's answer is read off the same two draws, so the choice is
+  // MONOTONIC town by town — "many" lays at least one more park than this
+  // seed's usual town would, "few" never more. Reweighting alone let a seed
+  // whose usual draw was a city of squares land on a great park under
+  // "many", and come out with fewer parks than if the player had left it.
+  const pickBy = (wOf, r) => {
+    let x = r * PARK_PROGRAMMES.reduce((a, p) => a + wOf(p), 0);
+    for (const p of PARK_PROGRAMMES) { x -= wOf(p); if (x <= 0) return p; }
     return PARK_PROGRAMMES[PARK_PROGRAMMES.length - 1];
-  })();
-  const nPark = Math.round(Dp.f(programme.n[0], programme.n[1]));
+  };
+  const rProg = Dp.rand();
+  const usual = pickBy((p) => p.w, rProg);
+  // ...and the programme itself only moves the way the choice points: "many"
+  // never trades a city of squares for one great park (which takes the room
+  // the squares needed), "few" never trades a great park for a city of squares
+  const moved = PARK_ODDS ? pickBy((p) => p.w * PARK_ODDS[p.key], rProg) : usual;
+  const programme = !PARK_ODDS ? usual
+    : opts.parks === "high" ? (moved.n[1] >= usual.n[1] ? moved : usual)
+      : (moved.n[1] <= usual.n[1] ? moved : usual);
+  const rN = Dp.rand();
+  const nAt = (p) => Math.round(p.n[0] + (p.n[1] - p.n[0]) * rN);   // Dp.f, the same draw
+  const nUsual = nAt(usual);
+  const nPark = !PARK_ODDS ? nUsual
+    : opts.parks === "high" ? Math.min(16, Math.max(Math.round(nAt(programme) * PARK_ODDS.n) + PARK_ODDS.plus, nUsual + 1))
+      : Math.max(1, Math.min(Math.round(nAt(programme) * PARK_ODDS.n), nUsual));
   // THE NAMES HAVE TO STRETCH TO FOURTEEN. Three hardcoded names were enough
   // for three parks; a city of squares needs a supply of them, so they are
   // drawn from the island's own word list with the suffix that matches what

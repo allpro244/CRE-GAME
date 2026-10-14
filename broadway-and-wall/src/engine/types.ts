@@ -1927,6 +1927,8 @@ export interface Econ {
   merchantTotals?: { delivered: number; underBasis: number; handedBack: number; lossToLenders: number; equityLost: number };
   /** The street's last hundred deliveries: value the day it opened over all-in basis (dev.ts settleMerchant). */
   merchantLog?: { m: number; ratio: number }[];
+  /** The first payroll the labour market filled — the space market's jobs baseline (market.ts). */
+  jobsFilled0?: number;
   /** The last month's regional pull on the export base, per year, after the cost brake. */
   regionPull?: number;
   /** Half the town's loan book is at desks too impaired to quote (see tickEcon). */

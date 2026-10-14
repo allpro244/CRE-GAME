@@ -6,7 +6,7 @@ import type { BuiltClass } from "@/engine/types";
 import { holdingNOIYr, resolveRec, asIfOwned, recoveryOf } from "@/engine/value";
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
-import { bumpOf, loiSigningCost, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow, previewTray } from "@/engine/leasing";
+import { bumpOf, loiSigningCash, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow, previewTray } from "@/engine/leasing";
 import { saleTaxQuote } from "@/engine/actions";
 import { usd, sf, pctSigned } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
@@ -99,7 +99,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
   const h = game.holdings[loi.bbl];
   const market = loiMarketPsf(game, parcels, loi);
   const fee = exclusiveFeeRate(h);
-  const cost = loiSigningCost(loi, fee);
+  const cost = loiSigningCash(loi, fee);
   // Whether signing draws the line — the same cash test the interrupt modal
   // passes to respondLoi. `fund: true` unconditionally was drawing the
   // revolver for players whose cash already covered the letter.
@@ -175,7 +175,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         {!final && Math.abs(theirNe - nowNe) > 0.05 ? ` · opened NE $${theirNe.toFixed(2)}` : ""}
       </div>
       <div className="loi-line mono dim">
-        signing costs {usd(cost)}{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM - 1)}
+        signing costs {usd(cost)} net of the deposit{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM - 1)}
       </div>
       {(() => {
         // The desk's one line on the letter — same helpers as the lines

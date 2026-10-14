@@ -136,8 +136,11 @@ console.log("\nLOI COUNTER — what moves the needle\n");
   if (Math.abs((r - n) - E.RENEWAL_STICK) > 1e-9) {
     fail(`renewal indifference should sit ${E.RENEWAL_STICK} above new (new ${n.toFixed(4)} / ren ${r.toFixed(4)})`);
   } else ok(`renewal fStar is +${((r - n) * 100).toFixed(0)}pp over a new letter at the same tightness`);
-  if (Math.abs(n - (1 + E.TENANT_SWITCH + 0.015)) > 1e-9) {
-    fail(`new-letter balanced fStar expected ${1 + E.TENANT_SWITCH + 0.015}, got ${n.toFixed(4)}`);
+  // ...plus the payroll term: a growing town's tenants have less leverage
+  // (tenantIndifferenceMult reads payrollGrowth12, ~1%/yr on a bare econ).
+  const payroll = Math.max(-0.06, Math.min(0.05, 2.5 * E.payrollGrowth12(s.econ)));
+  if (Math.abs(n - (1 + E.TENANT_SWITCH + 0.015 + payroll)) > 1e-9) {
+    fail(`new-letter balanced fStar expected ${(1 + E.TENANT_SWITCH + 0.015 + payroll).toFixed(4)}, got ${n.toFixed(4)}`);
   } else ok(`new-letter balanced indifference is ${(n * 100).toFixed(1)}% of market`);
 }
 

@@ -10,7 +10,8 @@ import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParc
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
+import { useRentableSf } from "./value";
+import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
 import { stampYearMark } from "./standing";
@@ -646,6 +647,7 @@ function tickMonth(
   reconcileSupplyQueue(s, parcels);
   refreshDevelopmentFeasibility(s, parcels, bbls);
   refreshLandQueue(s, parcels, bbls);
+  s.econ.playerNow = playerSpace(s, parcels);
   tickEcon(s);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and
@@ -2075,7 +2077,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   {
     let committed = 0, vehicle = 0;
     for (const l of s.lois ?? []) {
-      const c = loiSigningCost(l, exclusiveFeeRate(s.holdings[l.bbl]));
+      const c = loiSigningCash(l, exclusiveFeeRate(s.holdings[l.bbl]));
       if (vehicleSigns(s, s.holdings[l.bbl])) vehicle += c;
       else committed += Math.max(0, c - leaseUpRoom(s.holdings[l.bbl]));
     }
@@ -2434,4 +2436,42 @@ export function stampStockVintage(s: GameState, parcels: ParcelTable) {
   const out: Partial<Record<BuiltClass, number>> = {};
   for (const c in w) out[c as BuiltClass] = +((sum[c as BuiltClass] ?? 0) / (w[c as BuiltClass] || 1)).toFixed(1);
   s.stockVintage = out;
+}
+
+/**
+ * THE PLAYER'S TENANTS ARE THE CITY'S TENANTS (2026-10-14). The city's
+ * occupied space is one finite pool of space users per class, and the
+ * player's buildings are part of the stock it fills — but the player's
+ * tenants lived in a second ledger: a signing only dented the looking pool,
+ * the dent refilled in six to nine months, and after two years the player's
+ * leasing sat ON TOP of the city's occupancy instead of being taken from it.
+ * Measured: 138k sf of office signed by the player took 9.6k sf from the
+ * street; flats, pre-lets and build-to-suit anchors took nothing at all; and
+ * the city model went on counting the player's empty floors as let at the
+ * market rate. So each month the player's actual occupied space by class —
+ * named suites, and the flats' occupancy — is counted here, and tickEcon
+ * moves the city total by its change and keeps the street out of the
+ * player's empty floors. A tenant who signs with the player is one the
+ * street does not get; one who leaves is a searcher again.
+ */
+function playerSpace(s: GameState, parcels: ParcelTable): { occ: Record<BuiltClass, number>; sf: Record<BuiltClass, number> } {
+  const occ: Record<BuiltClass, number> = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  const sf: Record<BuiltClass, number> = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  for (const h of Object.values(s.holdings)) {
+    if (s.developments[h.bbl]) continue;
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (!rec || !(rec.bldgArea > 0)) continue;
+    for (const k of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
+      const r = useRentableSf(rec, k);
+      if (!(r > 0)) continue;
+      sf[k] += r;
+      if (k === "multifamily") occ[k] += r * Math.max(0, Math.min(1, h.occ ?? 0));
+    }
+    for (const t of h.tenants) {
+      const k = (t.use ?? rec.class) as BuiltClass;
+      if (k === "multifamily" || !(k in occ)) continue;
+      occ[k] += Math.max(0, t.sf);
+    }
+  }
+  return { occ, sf };
 }

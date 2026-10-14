@@ -1159,6 +1159,10 @@ export function classIsShort(e: Econ, k: BuiltClass, slack = 0.02): boolean {
  * taken comes out of the looking book. Occupied still walks via absorb.
  */
 export function noteTenantSfChange(s: GameState, use: BuiltClass, deltaSf: number) {
+  // Superseded (2026-10-14): the player's occupied space is reconciled into
+  // `occupied` monthly (playerSpace in sim.ts), which is the real draw on the
+  // pool. Nudging the pool as well would count every signing twice.
+  if (s.econ.playerNow) return;
   if (!Number.isFinite(deltaSf) || Math.abs(deltaSf) < 2_000) return;
   if (use === "multifamily") return; // flats are aggregate, not named suites
   const e = s.econ;
@@ -1968,7 +1972,12 @@ function bankStep(gap: number, restoring: boolean, pressured: boolean): number {
     // while the inflation is still rising, which is the only reason
     // the peak is lower.
     const frightened = abs > 7 || restoring;
-    const unit = restoring ? 1.5 : frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
+    // ...and a bank far behind a runaway does not crawl to it at a fixed
+    // pace: the restore step is a quarter of the gap when that is larger
+    // (Volcker's October 1979 move was ~4 points inside a month; the
+    // stabilisations that ended Israel's 1985 and Brazil's 1994 inflations
+    // moved rates tens of points at once).
+    const unit = restoring ? Math.max(1.5, 0.25 * abs) : frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
     step = Math.sign(gap) * unit;
     if (Math.abs(step) > abs) step = gap;
   }
@@ -2070,10 +2079,10 @@ export function tickNation(s: GameState) {
   if (n.neutralAnchor === undefined) n.neutralAnchor = n.neutralReal;
   n.neutralAnchor = clamp(
     n.neutralAnchor + 0.0009 * (0.014 - n.neutralAnchor) + rrange(s, -0.00035, 0.00035, "nation"),
-    0.004, 0.032,
+    -Infinity, Infinity,
   );
   n.neutralReal = clamp(n.neutralReal + 0.004 * (n.neutralAnchor - n.neutralReal)
-    + rrange(s, -0.00020, 0.00020, "nation"), 0.001, 0.034);
+    + rrange(s, -0.00020, 0.00020, "nation"), -Infinity, Infinity);
   // Deterministic in (seed, month) rather than a draw from the shared
   // stream: consuming s.rng here would re-roll the whole century and any
   // movement in the acceptance gates would then be reshuffling rather than
@@ -2338,7 +2347,7 @@ export function tickNation(s: GameState) {
   // which leaves 2009-15 (about three points of slack) near target, and the
   // 1970s and 2021 — easy money into a tight labour market — at full force.
   const passThrough = Math.exp(-Math.max(0, n.unemp - NAT_U_STAR) / 0.02);
-  const easy = 0.55 * (n.easeEma >= 0 ? Math.min(n.easeEma, 0.10) * passThrough : 0.5 * Math.max(n.easeEma, -0.05));
+  const easy = 0.55 * (n.easeEma >= 0 ? n.easeEma * passThrough : 0.5 * n.easeEma);
   // DOWNWARD NOMINAL RIGIDITY BENDS THE CURVE AT ZERO (2026-10-13). Pay and
   // contract rents are rarely cut in nominal terms, so the forces pulling
   // inflation DOWN — slack and dear money — lose their grip as inflation
@@ -2354,7 +2363,7 @@ export function tickNation(s: GameState) {
   const down = Math.min(0, phillips) + Math.min(0, easy);
   const bend = n.infl >= 0.01 ? 1 : Math.exp((n.infl - 0.01) / 0.01);
   n.infl = clamp(n.inflExp + (phillips - Math.min(0, phillips)) + (easy - Math.min(0, easy)) + down * bend
-    + shock + rrange(s, -0.004, 0.004, "nation"), -0.06, 0.22);
+    + shock + rrange(s, -0.004, 0.004, "nation"), -Infinity, Infinity);
 
   // EXPECTATIONS UNANCHOR WHEN THE BANK IS NOT BELIEVED — and that is what
   // makes an inflation a decade rather than a year. Credibility is spent in
@@ -2379,16 +2388,16 @@ export function tickNation(s: GameState) {
   const c = n.credibility;
   n.credibility = c + (am < 0.010
     ? (0.0035 + (realPolicy > 0.03 ? 0.0022 : 0)) * (n.chair?.resolve ?? 1) * (1 - c) / (1 - c + 0.02)
-    : -(0.0018 + 0.110 * (am - 0.010)) * c / (c + 0.02));
+    : c * Math.expm1(-(0.003 + 0.20 * (am - 0.010)) / (c + 0.02)));
   // A believed bank's anchor beats the pass-through and expectations sit at
   // target; a disbelieved one's does not, and then last year's inflation
   // becomes next year's baseline. Those two regimes are the Great Moderation
   // and the Great Inflation, and the same four lines produce both.
-  const anchorPull = 0.004 + 0.030 * n.credibility;
+  const anchorPull = 0.034 * n.credibility;
   n.inflExp = clamp(
-    n.inflExp + (1 - 0.70 * n.credibility) * 0.055 * (n.infl - n.inflExp)
+    n.inflExp + (1 - 0.70 * n.credibility) * 0.08 * (n.infl - n.inflExp)
       - anchorPull * (n.inflExp - 0.02),
-    -0.005, 0.16);
+    -Infinity, Infinity);
 
   // THE REACTION FUNCTION — the classic Taylor rule, and it reproduces the
   // history. At 2% inflation and full employment it wants 4%, which is the
@@ -2422,9 +2431,9 @@ export function tickNation(s: GameState) {
   if (n.uStarBelief === undefined) n.uStarBelief = uStar;
   n.uStarBelief = clamp(
     n.uStarBelief + 0.006 * (uStar - n.uStarBelief)
-      + 0.011 * clamp(n.inflSm - 0.02, -0.012, 0.045)
+      + 0.011 * 0.045 * Math.tanh((n.inflSm - 0.02) / 0.045)
       + rrange(s, -0.0018, 0.0018, "nation"),
-    0.028, 0.075);
+    0.005, Infinity);
 
   const okunGap = -2.0 * (n.unemp - n.uStarBelief);
   // The level term reads what the bank BELIEVES trend inflation to be, not
@@ -4810,6 +4819,20 @@ export function tickEcon(s: GameState) {
     // absorption is limited by how many tenants there are, which is the gap
     // itself. The old caps become a guard at 3% of occupied a month, a pace no
     // market has sustained.
+    // THE PLAYER'S LEASING MOVES THE CITY TOTAL (see playerSpace, sim.ts): the
+    // change in what the player's buildings actually hold since last month is
+    // the city's change too, before the street's absorption runs on the gap.
+    const pNow = e.playerNow?.occ?.[k];
+    if (pNow !== undefined) {
+      const pPrev = e.playerOcc?.[k];
+      if (pPrev !== undefined) e.occupied[k] = Math.max(0, e.occupied[k] + (pNow - pPrev));
+      // The first count (a new game, or a save from before this): the total
+      // still assumes the player's floors are let at the market's rate —
+      // swap that assumption for what they actually hold, once.
+      else e.occupied[k] = Math.max(0, e.occupied[k] + pNow
+        - (e.playerNow?.sf?.[k] ?? 0) * (e.occupied[k] / Math.max(1, e.stock[k])));
+      (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;
+    }
     const gapSf = e.pool[k] - e.occupied[k];
     const absorb = clamp(gapSf / (gapSf > 0 ? MOVE_IN_M[k] : MOVE_OUT_M[k]), -0.03 * e.occupied[k], 0.03 * e.occupied[k])
       + e.occupied[k] * rrange(s, -0.0005, 0.0005);
@@ -4819,7 +4842,10 @@ export function tickEcon(s: GameState) {
     // fast a market can empty is still the -0.006 × occupied absorb bound;
     // vacancy itself is 1 − occ/stock, allowed to print what the flows did.
     const inTransit = betweenTenantsSf(e.occupied[k], k, e);
-    e.occupied[k] = clamp(e.occupied[k] + absorb, 0, Math.max(0, housable - inTransit));
+    // ...and the street cannot move its tenants into the player's empty floors.
+    const playerDark = pNow !== undefined ? Math.max(0, (e.playerNow?.sf?.[k] ?? 0) - pNow) : 0;
+    const streetCap = Math.max(pNow ?? 0, housable - inTransit - playerDark);
+    e.occupied[k] = clamp(e.occupied[k] + absorb, 0, Math.max(e.occupied[k] > streetCap ? Math.min(e.occupied[k], housable) : 0, streetCap));
 
     // THE GIVE-BACK. What a tenant would take AT TODAY'S RENT, against what it
     // is contractually sitting in — and the difference goes on the market at

@@ -31,6 +31,19 @@ const m$ = (n) => "$" + (n / 1e6).toFixed(2) + "M";
 // off an empty number is not measuring the thing in its name. This lands the
 // seizure in the middle of the draw period, with the job delivering at m32.
 const PRERUN = 16;
+// ...AND THE BANK'S FIRST DOLLAR MOVES WITH THE DEAL. The equity share now
+// depends on the loan-to-value cap and the job's own cost draw, so a fixed
+// sixteen months can land before the loan has advanced anything. Run at least
+// PRERUN, then until the facility is genuinely drawing (or a year more).
+function toMidDraw(g, bbl, parcels, bbls, adjacency) {
+  for (let i = 0; i < PRERUN + 12; i++) {
+    const d = g.developments[bbl];
+    if (i >= PRERUN && (!d || (d.drawn > 0 && d.loanBalance > 0))) break;
+    g = E.advanceQuarter(g, parcels, bbls, adjacency);
+    g.insolventMs = 0; g.gameOver = null;
+  }
+  return g;
+}
 let failed = 0;
 const ok = (name, pass, detail) => {
   if (!pass) failed++;
@@ -66,7 +79,12 @@ function siteWithAJob(runIndex, lender) {
     const bought = E.executePurchase(g, parcels, rec.bbl, price, "cash", false, 1);
     if (bought.err || !bought.s.holdings[rec.bbl]) continue;
     const r = E.startDevelopment(bought.s, parcels, rec.bbl, "office", 26, 0.6, "gmp", undefined, undefined, lender);
-    if (!r.err) return { g: r.s, parcels, bbls, adjacency, bbl: rec.bbl };
+    // A JOB LONG ENOUGH TO SEIZE A DESK IN THE MIDDLE OF. The lot's own height
+    // cap decides how tall "26 floors" really gets; a small one delivered at
+    // month 19, before the examiners could close the desk at all.
+    const d = r.s?.developments?.[rec.bbl];
+    const doneM = d?.doneM ?? d?.deliverM;
+    if (!r.err && (doneM === undefined || doneM - r.s.month >= 26)) return { g: r.s, parcels, bbls, adjacency, bbl: rec.bbl };
     g = bought.s;
     delete g.holdings[rec.bbl];
   }
@@ -114,10 +132,7 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
     let { g, parcels, bbls, adjacency, bbl } = site;
     // Run a year so the S-curve is genuinely mid-job and there is real undrawn
     // room to kill. A job that has drawn everything is not harmed by this.
-    for (let i = 0; i < PRERUN; i++) {
-      g = E.advanceQuarter(g, parcels, bbls, adjacency);
-      g.insolventMs = 0; g.gameOver = null;
-    }
+    g = toMidDraw(g, bbl, parcels, bbls, adjacency);
     const before = g.developments[bbl];
     const roomBefore = before ? Math.max(0, before.commitment - before.drawn) : 0;
     ok("the job is mid-draw with room still in the facility",
@@ -167,10 +182,7 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
   const site = siteWithAJob(0, "Cordage Debt Partners");
   if (site) {
     let { g, parcels, bbls, adjacency, bbl } = site;
-    for (let i = 0; i < PRERUN; i++) {
-      g = E.advanceQuarter(g, parcels, bbls, adjacency);
-      g.insolventMs = 0; g.gameOver = null;
-    }
+    g = toMidDraw(g, bbl, parcels, bbls, adjacency);
     if (g.developments[bbl]) {
       g = seizeAndTick(g, "Cordage Debt Partners", parcels, bbls, adjacency).g;
       const d0 = g.developments[bbl];
@@ -233,7 +245,7 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
   const site = siteWithAJob(0, "Cordage Debt Partners");
   if (site) {
     let { g, parcels, bbls, adjacency, bbl } = site;
-    for (let i = 0; i < PRERUN; i++) { g = E.advanceQuarter(g, parcels, bbls, adjacency); g.insolventMs = 0; g.gameOver = null; }
+    g = toMidDraw(g, bbl, parcels, bbls, adjacency);
     g = seizeAndTick(g, "Cordage Debt Partners", parcels, bbls, adjacency).g;
     const cash0 = g.cash;
     const dep0 = Object.values(g.holdings).reduce((a, h) => a + (h.tenants ?? []).reduce((x, t) => x + (t.deposit ?? 0), 0), 0);

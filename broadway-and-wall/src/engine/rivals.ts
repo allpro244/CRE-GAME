@@ -3218,7 +3218,14 @@ function recallable(r: Rival): number {
   // distributions second, at the style's clause. The opening roster carries no
   // uncalled tranche (their vehicles are fully invested; that is what makes
   // them the incumbents), so for them this is exactly the old expression.
-  return Math.floor((r.uncalled ?? 0) + Math.max(0, r.distributed ?? 0) * RECALL[r.style]);
+  // ...but only RECENT distributions. A recallable-distribution clause reaches
+  // back over a window (typically the last two to three years of returned
+  // capital), not over every dollar the vehicle has ever paid out: measured,
+  // small firms carried $15-27M of lifetime distributions against $1-3M of
+  // equity, a recall well several times the firm, and capital calls cured
+  // 60-75% of every month in arrears. `distRecent` decays with a two-year
+  // memory; old saves start with none.
+  return Math.floor((r.uncalled ?? 0) + Math.max(0, Math.min(r.distributed ?? 0, r.distRecent ?? 0)) * RECALL[r.style]);
 }
 
 /**
@@ -3349,7 +3356,10 @@ function callCapital(r: Rival, want: number): number {
   // The clawback goes back where it came from. `distributed` becomes cash NET
   // returned to the partners, which is what it should always have meant, and
   // the well cannot be drawn twice.
-  if (rest > 0) r.distributed = Math.round((r.distributed ?? 0) - rest);
+  if (rest > 0) {
+    r.distributed = Math.round((r.distributed ?? 0) - rest);
+    r.distRecent = Math.max(0, Math.round((r.distRecent ?? 0) - rest));
+  }
   return got;
 }
 
@@ -3575,6 +3585,7 @@ function reoWindow(s: GameState, lender: string): number {
 function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, only?: string): boolean {
   const st = paramsOf(r);
   let worst: { bbl: string; rec: ParcelRecord; v: number; ratio: number } | null = null;
+  let fore: { bbl: string; rec: ParcelRecord; v: number; ratio: number; cov: number } | null = null;
   // A MATURITY DEFAULT HANDS BACK THE BUILDING THAT DEFAULTED. The desk that
   // will not renew a loan takes THAT deed; giving it the firm's least-liked
   // building instead left the matured note outstanding and handed an unrelated
@@ -3596,9 +3607,31 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
     // squeeze path used to hand back the building the desks liked least
     // whether or not it had equity in it — 20 of 27 handbacks in a thirty-
     // year playthrough read "the $0 it is short is the bank's problem".
-    if (!only && row.balance < v * DURESS_MID) continue;
     const ratio = streetRefiProceeds(s, v, noi, st.maxLtv).principal / v;
+    if (!only && row.balance < v * DURESS_MID) {
+      // Not under water: kept as the foreclosure candidate (below).
+      const cov = noi / Math.max(1, row.balance);
+      if (!fore || cov < fore.cov) fore = { bbl, rec, v, ratio, cov };
+      continue;
+    }
     if (!worst || ratio < worst.ratio) worst = { bbl, rec, v, ratio };
+  }
+  // THE LOAN IN DEFAULT IS FORECLOSED, NOT THE FIRM (2026-10-14). A building
+  // with equity in it is not handed back — and a forced sale that nets no cash
+  // after the corporate line takes its share is refused (marketAssetToRaise)
+  // — so a firm at 60-78% loan-to-value fell between the two and held
+  // everything until the whole book went to one desk fourteen months later.
+  // Measured: 2-10 rival distressed listings in sixty years against hundreds
+  // of receiver sales. That is not what default looks like: the lender on
+  // the note that is not being paid forecloses on THAT building; it is sold
+  // at the courthouse at a distressed price, the debt is paid out of the
+  // proceeds and the surplus goes to the borrower (UCC/state foreclosure
+  // law — the surplus belongs to the owner). One building at a time, the
+  // weakest coverage first, and the rest of the book lives or dies on its own.
+  let surplus = 0;
+  if (!worst && fore && !only) {
+    worst = fore;
+    surplus = 1;
   }
   if (!worst) return false;
   const desk = deskFor(s, r, worst.bbl);
@@ -3620,6 +3653,12 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   const deedV = conveyedValue(s, worst.rec, worst.bbl, true, assetGrade(r, worst.rec));
   const ask = reoAsk(s, deedV, owed, desk);
   const loanBasis = Math.min(deedV, Math.max(0, owed));
+  // The courthouse price, and the borrower's surplus over the debt.
+  if (surplus) {
+    const sale = deedV * DURESS_MID;
+    surplus = Math.max(0, Math.round(sale - Math.max(0, owed)));
+    r.cash += surplus;
+  }
   s.listings.push({
     bbl: worst.bbl, ask, listedM: s.month,
     expiresM: s.month + reoWindow(s, desk), distress: true, receiverFor: desk, reason: "receiver",
@@ -3629,8 +3668,11 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   const off = Math.max(0, 1 - ask / Math.max(1, deedV));
   s.news.unshift({
     q: s.month, kind: "warn",
-    text: `${r.name} has handed ${worst.rec.address} back to ${desk}. ${why} `
-      + `The paper was non-recourse, so the ${money(Math.max(0, owed - ask))} it is short is the bank's problem, not theirs. `
+    text: (surplus > 0
+      ? `${desk} has foreclosed on ${r.name}'s ${worst.rec.address}. ${why} The debt was paid out of the courthouse price and `
+        + `${money(surplus)} of surplus went back to the firm — a fraction of what it was marked at. `
+      : `${r.name} has handed ${worst.rec.address} back to ${desk}. ${why} `
+      + `The paper was non-recourse, so the ${money(Math.max(0, owed - ask))} it is short is the bank's problem, not theirs. `)
       + (off > 0.06
         ? `${desk} has put it straight out at ${money(ask)} — ${(off * 100).toFixed(0)}% under the mark, which is the loan and not the value. `
           + `They are not pricing the building, they are clearing the balance sheet. `
@@ -3641,7 +3683,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
     kind: "default",
     party: `${r.name} / ${desk}`,
     amount: owed,
-    outcome: `deed in lieu; ${desk} took title`,
+    outcome: surplus > 0 ? `foreclosed; ${desk} took title, surplus to the borrower` : `deed in lieu; ${desk} took title`,
   });
   return true;
 }
@@ -4106,10 +4148,18 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // vehicles raised on this street carry `uncalled`; the opening roster are
     // established operators whose current fund is already mid-life.
     const investing = r.uncalled !== undefined && s.month - (r.bornM ?? 0) < FUND_INVEST_M;
+    if (r.distRecent) r.distRecent = Math.round(r.distRecent * Math.exp(-1 / 24));
+    // A TENTH OF THE SURPLUS A MONTH, about 70% of it a year (2026-10-14).
+    // This paid 35% a month — 99% of everything above the reserve inside a
+    // year — so a small firm could never accumulate the next equity cheque
+    // and the lower half of the street shrank 2-6% a year in real terms
+    // while the incumbents compounded. Operating partnerships and REITs pay
+    // out most, not all, of their free cash and keep the rest to grow.
     if (r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
-      const out = Math.round((r.cash - reserve) * 0.35);
+      const out = Math.round((r.cash - reserve) * 0.10);
       r.cash -= out;
       r.distributed = (r.distributed ?? 0) + out;
+      r.distRecent = (r.distRecent ?? 0) + out;
     }
 
     // --- the overreach ---------------------------------------------------
@@ -4466,7 +4516,9 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       //    only ever accelerate. Giving the keys back removes the asset AND the
       //    loan AND the interest on it in one move, and on non-recourse paper
       //    the shortfall stops being the borrower's problem at the door.
-      if ((r.stressMs === NOTICE_M || r.stressMs === NOTICE_M * 2) && r.bbls.length) {
+      //    Each note in default is its own lender's case, so after notice one
+      //    goes every quarter, not just twice (2026-10-14).
+      if (r.stressMs >= NOTICE_M && (r.stressMs - NOTICE_M) % 3 === 0 && r.bbls.length) {
         deedInLieu(s, parcels, r, `They have missed ${r.stressMs} months of debt service and could not cure.`);
       }
       // 4. AND WHEN THE CALENDAR RUNS OUT, the desks stop taking assets one at
@@ -4785,6 +4837,20 @@ export function rivalBuys(
   };
   let best = candidates[0], bestW = -Infinity;
   if (prefer) bestW = 1;
+  // ONE OWNER DOES NOT BUY THE WHOLE TOWN (2026-10-14). Measured, the largest
+  // firm held 32-45% of all the street's equity at its peak and the top five
+  // 66-79% by year sixty, while the lower half shrank in real terms. Real
+  // metros do not concentrate like that: the largest office owners in
+  // Manhattan hold single-digit shares of the inventory, and institutional
+  // capital runs under single-market concentration limits — a firm whose
+  // book is already mostly one city sends the next dollar to another one. So
+  // a firm's appetite here fades with its share of the street's book:
+  // halved at 15%, a fifth at 30%. A shape parameter for a mandate limit.
+  // Tightening it to 8% moved nothing (top five 70-77% either way): what is
+  // left is the size distribution itself, and firm sizes are Zipf-like
+  // (Axtell 2001, Science) — with ~30 firms Zipf alone puts the largest at
+  // ~25% and the top five at ~57% of the total.
+  const streetAum = livingRivals(s).reduce((a, x) => a + Math.max(0, x.aum ?? 0), 0);
   for (const r of prefer ? [] : candidates) {
     const st = paramsOf(r);
     const builds = land && paramsOf(r).build > 0;
@@ -4828,7 +4894,9 @@ export function rivalBuys(
     // A GRUDGE (§5): a firm that holds one leans into a listing you are
     // already talking about — inside its own price discipline, never past it.
     const spite = s.talks?.[rec.bbl] && r.sheet ? 1 + Math.min(1, Math.max(0, grudgeOf(s, r)) * 0.12) : 1;
-    const w = st.appetite * Math.max(0.05, cyc) * spite * deployPressure(s, r)
+    const share = streetAum > 0 ? Math.max(0, r.aum ?? 0) / streetAum : 0;
+    const mandate = 1 / (1 + (share / 0.15) ** 2);
+    const w = st.appetite * Math.max(0.05, cyc) * spite * deployPressure(s, r) * mandate
       // squared: a vulture is not a little keener on a receiver's ticket, it
       // is the room's first call (Distress 90: ~5x a firm at 30).
       * (isDistress ? st.distressBias * st.distressBias : 1)

@@ -7,7 +7,7 @@ import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRate
 import { ordinal } from "@/engine/standing";
 import { groundLeaseFreeReversion, saleProceedsToSeller } from "@/engine/actions";
 import { MILESTONES, opportunitiesStop } from "@/engine/sim";
-import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal, planIsLive } from "@/engine/leasing";
+import { loiSigningCash, exclusiveFeeRate, loiNeedsPrincipal, planIsLive } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { portfolioQuote, portfolioSettlement } from "@/engine/portfolio";
 import { fundableNow, locAvailable } from "@/engine/credit";
@@ -876,7 +876,7 @@ function DecisionBody({
     // as DealsPage (LoiNegotiate), so the modal and the page never disagree.
     const market = loiMarketPsf(game, parcels, loi);
     const fee = exclusiveFeeRate(h);
-    const cost = loiSigningCost(loi, fee);
+    const cost = loiSigningCash(loi, fee);
     const live = game.lois.filter(loiOnDesk);
     const idx = live.findIndex((l) => l.id === loi.id) + 1;
     const short = Math.max(0, Math.ceil((cost - game.cash) / 1000) * 1000);

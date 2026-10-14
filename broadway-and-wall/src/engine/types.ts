@@ -1873,6 +1873,8 @@ export interface Econ {
   exportIdx?: number;
   /** This town's own persistent growth over the nation's, per year — the region it sits in. See `regionalPull`. */
   regionTrend?: number;
+  /** Business rent against the nation's at this town's opening — the parity `regionalPull` measures cost against. */
+  regionRent0?: number;
   /** The last month's regional pull on the export base, per year, after the cost brake. */
   regionPull?: number;
   /** Half the town's loan book is at desks too impaired to quote (see tickEcon). */
@@ -3121,6 +3123,14 @@ export interface GameState {
   // they buy the dirt, write the equity, carry the construction loan, and own
   // the building on the day it opens. `firmId` is the difference between "a
   // building went up" and "Alden Development Co. got to that corner first".
+  /**
+   * SCHEMES A DEVELOPER HAS COMMITTED TO AND NOT YET STARTED — the site tied
+   * up, the design and the financing in hand, the hole not yet dug. Nobody
+   * else counts them: a pipeline report lists starts. See `developerLook`.
+   */
+  cityPlans?: {
+    bbl: string; use: string; floors: number; plate: number; spec: number; ltc: number; decidedM: number; breakM: number;
+  }[];
   cityJobs?: {
     bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number;
     /** The spec the developer built to (0..1, 0.5 = market) — see `developerLook`. */

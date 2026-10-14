@@ -3600,7 +3600,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
         // Same size discipline as on vacant dirt: no bigger than this shop's
         // share of the class's standing stock.
         if (fl > 1 && u.plan.sf * (u.plan.mix?.[k] ?? 1) > rdev.maxShare * Math.max(1, e.stock?.[k] ?? 0)) continue;
-        if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1)) > NATURAL_VAC[k] + rdev.vacTol) continue;
+        if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months) > NATURAL_VAC[k] + rdev.vacTol) continue;
         const h = hurdleAt(u.plan, DEV_MARGIN) * rdev.outlook * momentumRead(s, k, rdev.momentum) / rdev.bar;
         if (h < 1) continue;
         if (!bestU || h > bestH) { bestU = u; bestH = h; nextUse = k; lead = k; }
@@ -4111,7 +4111,15 @@ function developerLook(
         if (ownSf > dev.maxShare * Math.max(1, s.econ.stock?.[lead] ?? 0) && fl > 1) continue;
         // VACANCY AT DELIVERY THIS SHOP WILL LEASE INTO, its own building
         // and everything already in the ground included.
-        if (forwardVacancy(s.econ, lead, ownSf) > NATURAL_VAC[lead] + dev.vacTol) continue;
+        // TO ITS OWN DELIVERY DATE (2026-10-13). The tenant base's trend
+        // growth was extrapolated over a fixed 18 months, but a scheme decided
+        // today opens after its lead time and its build — three to five years
+        // for a tower. Every developer in a boom underwrites the boom running
+        // to the day its own building opens; that shared extrapolation, read
+        // over the real horizon, is what fills a market faster than demand
+        // turns out to grow (Wheaton 1999). Read over 18 months, every shop
+        // was more cautious than any real one and no market overshot.
+        if (forwardVacancy(s.econ, lead, ownSf, u.plan.months + PLAN_LEAD_M[lead]) > NATURAL_VAC[lead] + dev.vacTol) continue;
         // THEIR OWN READ: yield on cost over the exit cap at the trade margin,
         // through their rent outlook and how they read the market's direction.
         const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum);

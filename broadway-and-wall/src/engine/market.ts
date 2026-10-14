@@ -966,7 +966,7 @@ export function frictionFloor(k: BuiltClass): number {
  * project itself; so does every reader of this — the class pencil, the site
  * pro forma and the land residual (2026-10-12).
  */
-export function forwardVacancy(e: Econ, k: BuiltClass, extraSf = 0): number {
+export function forwardVacancy(e: Econ, k: BuiltClass, extraSf = 0, monthsAhead = 18): number {
   const nat = NATURAL_VAC[k];
   const vacNow = e.cityVac?.[k] ?? nat;
   if (!e.stock?.[k]) return vacNow;
@@ -974,7 +974,9 @@ export function forwardVacancy(e: Econ, k: BuiltClass, extraSf = 0): number {
   const pipe = Math.max(0, e.pipeline?.[k] ?? 0) + Math.max(0, extraSf);
   const occNow = stkNow * (1 - vacNow);
   const queue = Math.max(0, e.structTight?.[k] ?? 0) * stkNow;
-  const trendGrowth = Math.max(0, (e.classDrvTrend?.[k] ?? 0) * 18) * occNow;
+  // `monthsAhead`: 18 for a reader pricing the market in general; a developer
+  // deciding whether to build reads to its own delivery date (`developerLook`).
+  const trendGrowth = Math.max(0, (e.classDrvTrend?.[k] ?? 0) * monthsAhead) * occNow;
   return clamp((stkNow + pipe - occNow - queue - trendGrowth) / (stkNow + pipe), 0, 1);
 }
 

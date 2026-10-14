@@ -167,11 +167,19 @@ rivals, with the same inputs.
 
 ### 3.4 Investor reputation: one number per firm, earned from the record
 
-Every firm, player and rival, carries an **investor reputation rating** on a scale of
-**−100 to +100**. **The player always starts at 0**: unknown, which in this
-business is not neutral but a closed door. Rivals carry the same rating,
-computed the same way from their own records. It shows on the league table
-and on each firm's profile, with a breakdown of why.
+Every firm, player and rival, carries two linked numbers:
+- a **track-record score** from −100 to +100: the evidence, computed the
+  same way for every firm from its own record. **The player always starts
+  at 0.**
+- an **investor rank**: where that score places the firm against every
+  other living firm. **This is the reputation rating investors act on.** It
+  is a strict ranking: exactly one firm is #1, and no two firms share a
+  place (see "Reputation is relative" below).
+
+Both show on the league table and on each firm's profile, with a breakdown
+of why. Starting at 0 in a town of firms with records puts the player near
+the bottom of the ranking, which in this business is not neutral but a
+closed door.
 
 **It is a readout of facts, not XP** (the `firmCapital.ts` rule). Nothing
 grants reputation; it is recomputed each month from what the ledger and the
@@ -284,8 +292,8 @@ multiple, since there was no pitch):
 - **Size.** Evidence × `min(1, equity in the deal ÷ size reference)`. The
   reference is a shape parameter in opening-year dollars carried at
   inflation, so a run of tiny flips can't farm a reputation.
-- **A ceiling: own-money evidence alone can lift the rating to +35** (the
-  top of Emerging) and no further. Proven and above need a record with
+- **A ceiling: own-money evidence alone can lift the score to +35** and no
+  further, and can't qualify a firm above Emerging however it ranks. Proven and above need a record with
   investors' money, because that is the thing institutions are underwriting.
   Investor-deal evidence adds on top as usual.
 - **The same fading** as other positive evidence (15–20 years), so the
@@ -296,14 +304,15 @@ multiple, since there was no pitch):
 | Own deals realised | All "good" (+2) | All "strong" (+3) |
 |---|---|---|
 | 5 | +4 | +6 |
-| 10 | +11 | +17, **Emerging** |
-| 15 | +19, **Emerging** | +29 |
+| 10 | +11, Emerging floor met | +17, Emerging floor met |
+| 15 | +19 | +29 |
 | 20 | +29 | +35 (ceiling) |
 
 So a developer who quietly builds and sells a good job every year or two
-climbs out of Unknown in **10–15 deals, about 15–20 years**. They arrive at
-their first syndication able to raise $3 per $1 (Emerging) instead of $1,
-and with better terms. That is exactly how many real sponsors start: years
+clears the Emerging floor in **about 10 deals, roughly 15 years**. If that
+also lifts them past enough of the street to rank into Emerging, they arrive
+at their first syndication able to raise $3 per $1 instead of $1, with
+better terms. That is exactly how many real sponsors start: years
 of their own money, then their first outside equity.
 
 For scale, career #4 in the October playthroughs (80 developments, 52
@@ -330,7 +339,7 @@ first thing they ask for.
 #### How confidence is computed: slow up, fast down
 
 ```
-rating = shrink(sum of positive evidence) + (sum of negative evidence)
+score = shrink(sum of positive evidence) + (sum of negative evidence)
 shrink(x) = x × n / (n + 4)      n = realised vehicles with positive evidence
 ```
 
@@ -345,52 +354,133 @@ shrink(x) = x × n / (n + 4)      n = realised vehicles with positive evidence
   delivering; ordinary negatives fade over 10 years; misconduct over 20.
 
 What that produces for a sponsor who meets every promise (+4 a deal), before
-fading:
+fading. The last column is the highest band the **score floor** allows. The
+band actually held also depends on rank (below).
 
-| Clean realised deals | Rating | Band reached |
+| Clean realised investor deals | Score | Highest band the floor allows |
 |---|---|---|
 | 1 | +0.8 | Unknown |
 | 3 | +5 | Unknown |
-| 5 | +11 | Unknown |
-| 7 | +18 | **Emerging** |
-| 10 | +29 | Emerging |
-| 12 | +36 | **Proven** |
-| 15 | +47 | Proven |
-| 17 | +55 | **Institutional** |
-| 23 | +78 | **Blue-chip** |
+| 5 | +11 | **Emerging** |
+| 7 | +18 | Emerging |
+| 10 | +29 | **Proven** |
+| 12 | +36 | Proven |
+| 15 | +47 | **Institutional** |
+| 17 | +55 | **Blue-chip** (if one of them was a fund) |
+| 23 | +78 | Blue-chip |
 
-And what one failure does to a sponsor who has just reached Proven with 12
-clean deals (+36):
+Passing a floor only makes the band **possible**. You also have to outrank
+enough of the street to be inside that band's rank share.
 
-| Failure | Hit | New rating | Clean deals needed to get back to +36 |
+And what one failure does to the score of a sponsor at +36 (Proven) after 12
+clean deals. Every firm behind you also gains a place on you while you
+rebuild:
+
+| Failure | Hit | New score | Clean deals needed to get back to +36 |
 |---|---|---|---|
-| Missed the pitch by 3 points, investors still made money | −8 | +28, Emerging | about 3 |
-| Missed by 7 points, money back | −15 | +21, Emerging | about 4–5 |
+| Missed the pitch by 3 points, investors still made money | −8 | +28, barely over the Proven floor, and down the ranks | about 3 |
+| Missed by 7 points, money back | −15 | +21, **Emerging** | about 4–5 |
 | Your deal lost investors 20% | −30 | +6, **Unknown** | about 8–9 |
 | Your deal wiped out | −60 | −24, **Questioned** | 15+, more than a decade |
 | Broken completion guarantee, `M` 0.6 | −45 × 2 − 25 = −115 | −79, **Toxic** | effectively a new career |
-| Market-wide crash, missed by 7 points, your co-invest lost too | −15 × 0.5 × 0.85 = −6 | +30, Emerging | about 2 |
+| Market-wide crash, missed by 7 points, your co-invest lost too | −15 × 0.5 × 0.85 = −6 | +30, still Proven (and peers fell too, so your rank may rise) | about 2 |
+
+#### Reputation is relative: a strict ranking
+
+**Why relative.** Investor confidence is a relative good, like location value
+in `demand.ts` ("demand is redistributed, never created"). Each year there is
+a finite amount of investor money, and it goes to whoever looks best
+**compared with everyone else asking**. A few top managers raise a large
+share of each year's capital. Fundraising concentration is a well-documented
+feature of private real estate; cite it in the code comment when calibrating.
+
+**Mechanics:**
+
+1. **Score every firm** with the evidence machinery above. That part is
+   unchanged.
+2. **Rank every living firm once a quarter** (investor-reporting cadence).
+   Ties break deterministically, in order: score; lifetime investor capital
+   returned in dollars; years since the last negative mark; firm age; a
+   seed hash. No RNG stream is drawn, so the ranking never moves the
+   economy's random draws. **No two firms share a place, and exactly one is
+   #1.**
+3. **The rating shown is the rank:** "#7 of 52", with a percentile from 100
+   (#1) to 0 (last).
+4. **Bands are set by rank**, as shares of the living firms, with a minimum of
+   one firm so small maps still have a top:
+
+   | Band | Rank |
+   |---|---|
+   | **Blue-chip** | top 3% (at least the #1 firm) |
+   | **Institutional** | next 10% |
+   | **Proven** | next 20% |
+   | **Emerging** | next 27% |
+   | **Unknown** | bottom 40% |
+
+5. **And each band also needs a score floor.** Being the best of a weak
+   field mustn't unlock pensions; early in a game, or after a crash,
+   nobody may qualify. **Band held = the lower of the rank band and the
+   score band.**
+
+   | Band | Score floor | Also needs |
+   |---|---|---|
+   | Emerging | +10 | — |
+   | Proven | +25 | 3 realised **investor** vehicles |
+   | Institutional | +40 | 10 realised investor vehicles |
+   | Blue-chip | +55 | 15 realised investor vehicles, including a fund |
+
+   Two bands are **absolute**, whatever the rank: **Questioned** (score
+   under −10) and **Toxic** (score under −40, or any live misconduct mark).
+   A disgraced firm is not rescued by a street full of worse ones.
+6. **Money follows rank, steeply.** Within each investor type's gate, its
+   allocation is split by rank weight `w ∝ 1 / rank^α`. The exponent `α`
+   is a shape parameter, starting near 1. The #1 firm gets the most, #2
+   less, and a firm in the bottom half of a band gets little even when its
+   score is close to the firm above. **Terms also slide by percentile
+   within a band**: the top of Proven raises at better terms than the
+   bottom of Proven.
+7. **It's zero-sum, so others move you:**
+   - a rival delivering a big fund pushes you down a place without you
+     doing anything
+   - rivals blowing up in a crash push you up, which is the "survivors
+     raise the 2010 vintage" effect
+   - new entrants come in at score 0, near the bottom; failed firms leave
+   - a market-wide crash cuts everyone's score (at the ×0.5 fault weight),
+     so ranks reshuffle by who was hurt **most**, while the score floors
+     can close the top bands to everyone, which is a fundraising drought on
+     top of the denominator effect
+8. **Stability:**
+   - upgrades need two consecutive quarters at the new rank, so one quarter's
+     noise doesn't flip a band
+   - downgrades caused by a negative event are immediate
+   - scores only move on realised events, entries, exits and fading, so
+     ranks don't churn month to month
+9. **Player start:** score 0, which ranks just above any firms carrying marks
+   and below every firm with a positive record, typically in the bottom few
+   places at month 0 (for example around #44 of 48 on Metropolis). Unknown,
+   by both rank and score.
 
 #### Who invests, and on what terms
 
-Investors only commit when confidence is high. Within each band, the chance a
-given investor says yes rises steeply with the rating (a logistic centred on
-that investor type's threshold, as a shape parameter). So at the bottom of a
+Investors only commit when confidence is high. On top of the rank weighting,
+the chance a given investor says yes rises steeply toward the top of each
+band (a logistic on percentile, as a shape parameter). So at the bottom of a
 band you still mostly hear no.
 
-| Rating | Band | Who will invest | Max outside equity per $1 of yours | Pref | Promote you can get | Fees you can charge | Completion guarantee |
-|---|---|---|---|---|---|---|---|
-| below −40 | **Toxic** | Nobody | 0 | — | — | — | — |
-| −40 to −10 | **Questioned** | Only friends and family who were made whole before | $0.50 | 12%+ | none | none | personal |
-| **−10 to +15** | **Unknown** (player starts at 0) | Friends and family only, from a finite personal network | **$1 (a 50/50 deal)** | 12% | 0–10% above a 15% IRR | none | always |
-| +15 to +35 | **Emerging** | + local wealthy individuals, small platform cheques | $3 (75/25) | 10% | 15–20% above 12% | development fee ≤ 2% | always |
-| +35 to +55 | **Proven** | + platforms in size, family offices | $6 (85/15) | 9% | 20% above 12%, 30% above 18% | development 3%, asset management 1% | usually |
-| +55 to +75 | **Institutional** | + endowments, smaller pensions; a first blind-pool fund | $9 (90/10) | 8% | 20/30 tiers with catch-up | market | lender-driven |
-| above +75 | **Blue-chip** | + large pensions, insurers, sovereign funds; programmatic JVs (§6) | $19 (95/5) | 7–8% | best | market or above | rarely |
+| Band (rank and floor) | Who will invest | Max outside equity per $1 of yours | Pref | Promote you can get | Fees you can charge | Completion guarantee |
+|---|---|---|---|---|---|---|
+| **Toxic** (absolute) | Nobody | 0 | — | — | — | — |
+| **Questioned** (absolute) | Only friends and family who were made whole before | $0.50 | 12%+ | none | none | personal |
+| **Unknown** (player starts here) | Friends and family only, from a finite personal network | **$1 (a 50/50 deal)** | 12% | 0–10% above a 15% IRR | none | always |
+| **Emerging** | + local wealthy individuals, small platform cheques | $3 (75/25) | 10% | 15–20% above 12% | development fee ≤ 2% | always |
+| **Proven** | + platforms in size, family offices | $6 (85/15) | 9% | 20% above 12%, 30% above 18% | development 3%, asset management 1% | usually |
+| **Institutional** | + endowments, smaller pensions; a first blind-pool fund | $9 (90/10) | 8% | 20/30 tiers with catch-up | market | lender-driven |
+| **Blue-chip** | + large pensions, insurers, sovereign funds; programmatic JVs (§6) | $19 (95/5) | 7–8% | best | market or above | rarely |
 
 Other limits on top of the band:
-- **Blind-pool funds** need at least +55 **and** at least 10 realised
-  vehicles. Investors back a fund on a record, not a deal.
+- **Blind-pool funds** need Institutional or better, which already implies
+  10 realised investor vehicles. Investors back a fund on a record, not a
+  deal.
 - **Step-up limit:** no raise above about 2–3× your largest successfully
   completed one (a shape parameter).
 - **The friends-and-family network is finite.** It is a shape parameter sized
@@ -399,9 +489,10 @@ Other limits on top of the band:
 
 **What this means at a $1M start:** the first syndicated job is at best a
 50/50 deal ($1M of yours, $1M of theirs, at a 12% pref with almost no
-promote), if the network has the money and the pitch closes at all. Reaching
-75/25 money takes about 7 clean deals; 90/10 money about 17. One real miss on
-the way costs years.
+promote), if the network has the money and the pitch closes at all. Moving
+up now takes **both** a score over the floor (5+ clean deals for the Emerging floor)
+**and** passing the firms ranked above you, who are building records too.
+One real miss costs a band and lets everyone behind you through.
 
 #### Investors who lost money remember you personally
 
@@ -460,8 +551,11 @@ On top of the rating:
 - A single missed pitch costs a band; a loss on your own deal sends a Proven
   firm back to Unknown; a broken guarantee is close to career-ending.
 - Firms that pitch aggressively raise faster early and fall further later.
-- Most rivals sit Unknown to Proven. Blue-chip is rare and held by the
-  oldest, cleanest, biggest names.
+- By construction about 3% of firms rank Blue-chip, but in many years fewer
+  hold it, because the score floor isn't met. Early in a game and after
+  crashes, the top bands are empty.
+- The ranking is stable quarter to quarter and reshuffles after crashes,
+  with survivors rising.
 - When the median rating on the street falls after a crash, total
   fundraising falls with it (on top of the denominator effect).
 

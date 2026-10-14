@@ -1925,6 +1925,8 @@ export interface Econ {
   bsMigPull?: number;
   /** Anonymous merchants' schemes settled at delivery, cumulative (see `settleMerchant` in dev.ts). Display and probes only. */
   merchantTotals?: { delivered: number; underBasis: number; handedBack: number; lossToLenders: number; equityLost: number };
+  /** The street's last hundred deliveries: value the day it opened over all-in basis (dev.ts settleMerchant). */
+  merchantLog?: { m: number; ratio: number }[];
   /** The last month's regional pull on the export base, per year, after the cost brake. */
   regionPull?: number;
   /** Half the town's loan book is at desks too impaired to quote (see tickEcon). */
@@ -2045,6 +2047,9 @@ export interface Econ {
   /** What owners BELIEVE that level is — it learns the market at appraisal-smoothing speed. */
   landBelief?: number;
   landQueue?: Partial<Record<BuiltClass, { psf: number[]; ahead: number[]; total: number; absYr: number; r: number }>>;
+  /** The previous year's queue measurement, and how far the current one has glided in (value.ts queueFactor). */
+  landQueuePrev?: Partial<Record<BuiltClass, { psf: number[]; ahead: number[]; total: number; absYr: number; r: number }>>;
+  landQueueW?: number;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation

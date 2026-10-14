@@ -212,6 +212,10 @@ function settleMerchant(s: GameState, parcels: ParcelTable, bbl: string, m: Merc
   const worth = Math.max(0, Math.round(noi1 / Math.max(0.01, yld1) - m.leaseUp * Math.max(0, lum1 / Math.max(0.05, m.lum0) - 1)));
   e.merchantTotals ??= { delivered: 0, underBasis: 0, handedBack: 0, lossToLenders: 0, equityLost: 0 };
   e.merchantTotals.delivered += 1;
+  // The last hundred, for the economy probes: how the street's own builders
+  // actually did, opening day, against what they spent.
+  (e.merchantLog ??= []).push({ m: s.month, ratio: +(worth / Math.max(1, m.basis)).toFixed(3) });
+  if (e.merchantLog.length > 100) e.merchantLog.shift();
   if (worth < m.basis) { e.merchantTotals.underBasis += 1; e.merchantTotals.equityLost += Math.round(Math.min(m.basis - m.loan, m.basis - worth)); }
   if (!m.lender || worth >= m.loan) return;
   // The desk marks it and lists it, and what it will not fetch is its loss.

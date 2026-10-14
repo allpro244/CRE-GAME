@@ -852,7 +852,18 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
  * back on its own.
  */
 export function queueFactor(econ: Econ, use: BuiltClass, psf: number): number {
-  const q = econ.landQueue?.[use];
+  // THE QUEUE IS MEASURED ONCE A YEAR AND READ EVERY MONTH, so the measurement
+  // glides in over the year instead of landing as a step (2026-10-14). A step
+  // moved every lot's price at once each January — measured on a Great City
+  // career, sites under construction marked -34%, +37%, -30% in successive
+  // re-measurements with nothing about the lots changed.
+  const w = econ.landQueueW ?? 1;
+  const now = queueFactorOf(econ.landQueue?.[use], psf);
+  if (w >= 1 || !econ.landQueuePrev?.[use]) return now;
+  return w * now + (1 - w) * queueFactorOf(econ.landQueuePrev[use], psf);
+}
+
+function queueFactorOf(q: NonNullable<Econ["landQueue"]>[BuiltClass] | undefined, psf: number): number {
   if (!q || !(psf > 0) || !q.psf.length) return 1;
   let ahead = q.total;
   for (let i = 0; i < q.psf.length; i++) {
@@ -904,8 +915,17 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
       if (old) q[use] = { ...old, absYr: Math.round(absYrOf(use)), r: rOf(use) };
     }
     e.landQueue = q;
+    // ...and the previous measurement keeps its own clock, so the blend in
+    // queueFactor compares like with like.
+    if (e.landQueuePrev) {
+      const p: NonNullable<Econ["landQueue"]> = {};
+      for (const use of BUILT_CLASSES) { const o = e.landQueuePrev[use]; if (o) p[use] = { ...o, absYr: Math.round(absYrOf(use)), r: rOf(use) }; }
+      e.landQueuePrev = p;
+    }
+    e.landQueueW = Math.min(1, (s.month % 12) / 12);
     return;
   }
+  if (e.landQueue) { e.landQueuePrev = e.landQueue; e.landQueueW = 0; }
   const bare = { ...e, landQueue: undefined } as Econ;
   const n = bbls.length;
   const take = Math.min(n, LAND_QUEUE_SAMPLE);
@@ -3897,6 +3917,15 @@ export function ownedHoldingValueFromRec(
     };
     return leasedFeeValue(gl, bare, s.econ, s.month, gl.sf ?? s.built?.[h.bbl]?.bldgArea ?? 0);
   }
+  // A SITE UNDER CONSTRUCTION IS CARRIED AT COST, LAND INCLUDED (2026-10-14).
+  // The works are carried at money sunk (portfolioMark), and the dirt under
+  // them was carried at the land residual — the most levered number in the
+  // model, re-read every month — so a Great City career showed sites mid-build
+  // marking -34%, +37%, -30% with nothing about them changed. An accountant
+  // and a construction lender both carry the land in a live job at what was
+  // paid for it (the basis does not move until delivery, dev.ts), and the
+  // building's value is recognised once, when it stands.
+  if (s.developments?.[h.bbl] && (rec.class === "land" || !rec.bldgArea) && h.costBasis > 0) return h.costBasis;
   const v = holdingValue(rec, s.econ, h, s.month);
   // The roll that is about to roll — see leasing.ts rolloverReserve. Registered
   // rather than imported because leasing.ts imports this file.

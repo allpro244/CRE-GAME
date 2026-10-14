@@ -69,7 +69,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState } from "./types";
 import { raiseAlert, START_YEAR } from "./types";
-import { rng, pushNewsPublic } from "./market";
+import { rng, pushNewsPublic, islandResidents } from "./market";
 import { resolveRec } from "./value";
 import { chargeLenderLoss } from "./lenders";
 
@@ -148,11 +148,28 @@ function startEmbargo(s: GameState) {
 
 // ---------------------------------------------------------------- the arrivals
 
+/**
+ * Where they land. The region's homes are mostly on the mainland the island
+ * anchors, and in a spatial equilibrium a household's location follows the
+ * region's mix — but newcomers do not arrive in equilibrium. They go where
+ * their community already is and where a room can be had this week: the
+ * Mariel arrivals went overwhelmingly to the city of Miami and Hialeah, not
+ * the county at large. Half of them on the island is a shape parameter; the
+ * location margin (`locEff`, market.ts) then sorts them back out over its
+ * own five-year half-life, as those families did.
+ */
+const ARRIVALS_CORE = 0.5;
+
 function tickArrivals(s: GameState) {
   const e = s.econ, x = e.arrivals;
   if (!x) { e.bsMigPull = 0; return; }
-  if (x.leftM > 0) { e.bsMigPull = x.monthly; x.leftM -= 1; }
-  else { e.bsMigPull = 0; e.arrivals = undefined; }
+  if (x.leftM > 0) {
+    e.bsMigPull = x.monthly; x.leftM -= 1;
+    const share = Math.min(1, islandResidents(e).residents / Math.max(1, e.population ?? 1));
+    if (share > 0 && share < ARRIVALS_CORE && e.locEff) {
+      e.locEff.multifamily *= 1 + x.monthly * (ARRIVALS_CORE / share - 1);
+    }
+  } else { e.bsMigPull = 0; e.arrivals = undefined; }
 }
 
 function startArrivals(s: GameState) {

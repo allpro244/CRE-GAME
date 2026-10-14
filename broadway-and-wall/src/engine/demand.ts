@@ -51,7 +51,7 @@
 //   five-minute walk. None of the three asks the player for anything.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
-import { useOccupancy } from "./value";
+import { liveDemand, useOccupancy } from "./value";
 import { START_YEAR } from "./types";
 import { mixOf, type UseMix } from "./mix";
 import { SECTORS, INDUSTRY_LABEL } from "./market";
@@ -237,6 +237,16 @@ function tickPoles(s: GameState, model: DemandModel) {
     const g = Math.sqrt(-2 * Math.log(Math.max(1e-9, u1))) * Math.cos(2 * Math.PI * u2);
     p.level = +clamp(p.level + p.drift + g * POLE_NOISE_SD, -POLE_CAP, POLE_CAP).toFixed(3);
   }
+  // THE CENTRES COMPETE FOR ONE TOWN'S STANDING (2026-10-13). Walked on their
+  // own, the levels drifted up together — measured, their mean sat at +3 to
+  // +5 points by year 20-50 — so a winning centre lifted the best ground in
+  // town without anybody else's losing it, and the top of the demand scale
+  // inflated with the clock. One centre becoming THE address is exactly
+  // another becoming somewhere you used to be able to buy, so the levels are
+  // re-centred on their mean each month: fortunes move between centres, and
+  // the town's total standing is not theirs to set.
+  const mean = s.poles.reduce((a, p) => a + p.level, 0) / s.poles.length;
+  for (const p of s.poles) p.level = +clamp(p.level - mean, -POLE_CAP, POLE_CAP).toFixed(3);
 }
 
 /** What the town's centres are doing to this particular block, this month. */
@@ -1137,6 +1147,10 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
   // it does not serve are not made worse (transit capitalisation is local —
   // Gibbons & Machin 2005 — and it is why value capture funds stations). So
   // the civic lift is added after the centre is removed.
+  // SUPERSEDED (2026-10-13): that sinking came from the VALUE-weighted
+  // centring, since replaced by the acre-weighted one below, under which a
+  // handful of station blocks barely moves the mean. The civic lift is back
+  // inside the centring — see the note there.
   const civic = new Map<string, number>();
   const flat = flatOccupancy(model, occ);
   let bi = 0;
@@ -1208,16 +1222,26 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
   // acre now counts once, so the city's ordinary land — most of it — holds
   // its standing and only genuine change moves a block. Still relative:
   // the mean is removed every month, so nothing is created from nothing.
+  // ...AND THE CIVIC LIFT IS CENTRED WITH EVERYTHING ELSE (2026-10-13). It
+  // was added after the centring, on the reading that a station makes the
+  // blocks it serves better without making the rest worse. That is true of
+  // the city's RENT and LAND, which the macro engine prices — a line that
+  // lifts jobs and output reaches every reader through that channel already.
+  // Counted again here it is the city-wide gain counted twice: measured, the
+  // lot-area-weighted mean of the drift climbed to +2 to +4 points by year
+  // 20-50, and with it the top of the scale — the reason an 85 reached 105.
+  // This surface is RELATIVE desirability and nothing else; a station still
+  // lifts its own blocks by its full premium against the rest of town.
   let centre = 0, areaTot = 0;
   for (const [id, v] of raw) {
     const a = model.blocks.get(id)?.landArea ?? 0;
-    centre += v * a;
+    centre += (v + (civic.get(id) ?? 0)) * a;
     areaTot += a;
   }
   centre /= Math.max(1, areaTot);
 
   for (const b of model.blocks.values()) {
-    const target = clamp((raw.get(b.id) ?? 0) - centre + (civic.get(b.id) ?? 0), -DRIFT_CAP, DRIFT_CAP);
+    const target = clamp((raw.get(b.id) ?? 0) + (civic.get(b.id) ?? 0) - centre, -DRIFT_CAP, DRIFT_CAP);
     const was = s.blockE[b.id] ?? 0;
     const e = +(was + (target - was) * MOMENTUM).toFixed(2);
     if (e === 0) delete s.blockE[b.id];
@@ -1250,11 +1274,11 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
 
 /**
  * A parcel's live demand: what the generator gave it, plus whatever its
- * neighbourhood has become since. Clamped, because nothing in Ashport is
- * worthless and nothing is perfect.
+ * neighbourhood has become since — on a bounded scale (see liveDemand),
+ * because nothing in Ashport is worthless and nothing is perfect.
  */
 export function demandNow(s: GameState, rec: ParcelRecord): number {
-  return clamp(rec.demandScore + (s.blockD?.[rec.block] ?? 0), 2, 100);
+  return liveDemand(s, rec.demandScore, rec.block);
 }
 
 /**

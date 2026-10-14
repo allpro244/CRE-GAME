@@ -248,7 +248,7 @@ export interface FacilityQuote {
 // banks (fixed or floating), by the life company, by CMBS as a single-borrower
 // pool, and by the agencies when every building is apartments. The debt fund's
 // bridge, mezzanine and land loans stay single-asset.
-const FACILITY_DESKS = ["harbor", "savings", "savings25", "pelican", "conduit", "harborFloat", "savingsFloat", "agencyArm"];
+const FACILITY_DESKS = ["harbor", "savings", "savings25", "pelican", "ashford", "bowline", "conduit", "harborFloat", "savingsFloat", "agencyArm", "agencyFixed"];
 
 /**
  * THE BORROWING BASE. Three tests on the POOL, and the smallest one binds —

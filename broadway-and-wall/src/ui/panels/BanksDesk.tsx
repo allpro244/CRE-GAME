@@ -120,7 +120,7 @@ export function TheBanks() {
                 <tr onClick={() => setOpen(open === l.id ? null : l.id)} style={{ cursor: "pointer" }}>
                   <td>{open === l.id ? "▾ " : "▸ "}<BankLink name={l.name} /></td>
                   <td className="dim">
-                    {l.kind === "bank" ? "deposits" : l.kind === "life" ? "insurance float"
+                    {l.kind === "bank" ? (l.dep?.rate !== undefined ? `deposits ${usd(l.dep.total)} at ${l.dep.rate.toFixed(2)}%` : "deposits") : l.kind === "life" ? "insurance float"
                       : l.kind === "conduit" ? "selling the paper on" : "committed capital"}
                   </td>
                   <td className="num">{usd(l.book)}</td>
@@ -332,7 +332,7 @@ function YourCash() {
       <div className="deal-head">Your cash</div>
       <div className="grid">
         <Row2 k="Cash" v={`${usd(Math.max(0, game.cash))} · safe from any bank failure`} />
-        <Row2 k="Operating account" v={`${usd(cs.atBank)} · inside the ${usd(insuredLimit(game))} insurance limit · earns ${pct(depositApy(game.econ))}`} />
+        <Row2 k="Operating account" v={`${usd(cs.atBank)} · inside the ${usd(insuredLimit(game))} insurance limit · earns ${pct(depositApy(game.econ, cs.bank))} at ${cs.bank?.name ?? "the bank"}`} />
         <Row2 k="In Treasury bills" v={`${usd(cs.inBills)} · earns ${pct(sweepApy(game.econ))}`} />
       </div>
       <div className="hint">

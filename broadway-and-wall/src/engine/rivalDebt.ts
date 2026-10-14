@@ -125,7 +125,7 @@ export function deskRoom(s: GameState, l: Lender, obligorId: string, opening = f
 /** The sheets a firm on this street calls for a mortgage, by what the collateral is. */
 function sheetsFor(noiYr: number): string[] {
   // The ladder the player's balloon walks (debt.ts balloonLadder).
-  return noiYr > 0 ? ["pelican", "conduit", "savings25", "savings", "harbor", "cordage"] : ["land"];
+  return noiYr > 0 ? ["pelican", "ashford", "agencyFixed", "conduit", "bowline", "savings25", "savings", "harbor", "cordage"] : ["land", "tideLand"];
 }
 
 export interface Origination { lender: string; ratePct: number; termM: number; product: string }

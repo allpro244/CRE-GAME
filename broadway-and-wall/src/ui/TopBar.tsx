@@ -3,7 +3,7 @@ import { headlineEpithet } from "@/engine/firm";
 import { useStore, type Page } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
-import { locLimit } from "@/engine/credit";
+import { locLimit, locRate } from "@/engine/credit";
 import { availability } from "@/engine/space";
 import { netWorth } from "@/engine/value";
 import { streetStanding, ordinal } from "@/engine/standing";
@@ -384,11 +384,13 @@ export default function TopBar() {
               const drawn = game.loc?.balance ?? 0;
               const left = Math.max(0, line - drawn);
               const tight = line <= 0 || drawn > 0.6 * line;
+              // Drawn, the line costs money every month: show what it charges.
+              const rate = locRate(game);
               return (
                 <Stat label="Line left" value={usd(left)} n={left} bad={tight} w={72} keep
-                  delta={drawn > 0 ? <span className={"tstat-of" + (tight ? " neg" : "")}>{usd(drawn)} drawn</span> : null}
+                  delta={drawn > 0 ? <span className={"tstat-of" + (tight ? " neg" : "")}>{usd(drawn)} drawn · {rate.toFixed(2)}%</span> : null}
                   onClick={() => setPage("debt", "Line of credit")}
-                  title={`Undrawn revolver: ${usd(left)} of a ${usd(line)} line sized against net worth${drawn > 0 ? `; ${usd(drawn)} drawn` : ""}. It draws on its own when cash runs short. Click for the line on Capital → Debt.`} />
+                  title={`Undrawn revolver: ${usd(left)} of a ${usd(line)} line sized against net worth${drawn > 0 ? `; ${usd(drawn)} drawn at ${rate.toFixed(2)}%` : ""}. It draws on its own when cash runs short. Click for the line on Capital → Debt.`} />
               );
             })()}
             {game.fund && !game.fund.settled && (

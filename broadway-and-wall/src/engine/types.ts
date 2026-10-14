@@ -2641,6 +2641,11 @@ export interface Rival {
   taxPaid?: number;      // lifetime income + gains tax
   distributed?: number;  // lifetime cash sent out to their partners
   failedM?: number;      // the month they stopped existing
+  /** WHY they stopped existing (2026-10-14). `failedM` is set by five different
+   *  endings and only one of them is a failure: a playthrough counting
+   *  `failedM` found 161 "failures" a century, almost all of them takeovers
+   *  and solvent wind-ups. */
+  endReason?: "failed" | "absorbed" | "takenPrivate" | "retired" | "woundUp";
   /**
    * The month the player bought the whole firm (takeprivate.ts). Set together
    * with `failedM`, because from the street's point of view the firm has

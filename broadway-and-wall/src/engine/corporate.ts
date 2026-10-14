@@ -43,6 +43,7 @@ function absorb(s: GameState, from: Rival, into: Rival) {
   from.heldSince = {};
   delete from.extendedTo; delete from.deliveredM;
   from.failedM = s.month;
+  from.endReason = "absorbed";
   from.takenOverBy = into.id;
   from.epilogueM = -1;
 }

@@ -1990,6 +1990,7 @@ export function tickRivalRetirements(s: GameState, _parcels: ParcelTable) {
     r.debt = 0; r.cash = 0; r.bbls = []; r.uncalled = 0; r.aum = 0;
     r.heldSince = {};
     r.failedM = s.month;
+    r.endReason = "retired";
     r.retiredM = s.month;
     r.epilogueM = -1;
     s.news.unshift({
@@ -4472,6 +4473,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       //    a time and take the relationship. Same clock as the player's.
       if (r.stressMs > NOTICE_M + FORECLOSE_M) {
         r.failedM = s.month;
+        r.endReason = "failed";
         chargeSponsorFailure(s, parcels, r);
         s.news.unshift({
           q: s.month, kind: "warn",
@@ -4508,6 +4510,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         r.emptyMs = (r.emptyMs ?? 0) + 1;
         if (r.emptyMs > 24) {
           r.failedM = s.month;
+          r.endReason = "woundUp";
           s.news.unshift({
             q: s.month, kind: "event",
             text: `${r.name} has wound up. The last building is gone, the debt is clear, `

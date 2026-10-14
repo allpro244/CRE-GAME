@@ -19,6 +19,7 @@ import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
@@ -169,6 +170,8 @@ for (const seed of SEEDS) {
       if (!firstBad) firstBad = `seed ${seed} m${g.month}: ${v.detail}`;
     }
   }
+  // HASH=1: the end state's fingerprint, for proving a refactor changed nothing.
+  if (process.env.HASH) console.log(`HASH vehicles seed ${seed} ${createHash("sha256").update(JSON.stringify(g)).digest("hex").slice(0, 16)}`);
   const fl = g.fund?.flows ?? {};
   for (const k of KINDS) if (Math.abs(fl[k] ?? 0) > 0) coverage[k]++;
   console.log(`seed ${seed}: ${months} months · fund deeds ${fundDeeds.length} · own ${own.length} · JV ${stake ? "yes" : "no"} · refis ${refis} · sales ${sales}`

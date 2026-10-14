@@ -2690,6 +2690,12 @@ export function recoveryFor(
 // Property tax: ~1.1% of assessed value a year. On net leases the tenant
 // reimburses it; the landlord eats the share on vacant space and gross leases.
 export const TAX_RATE = 0.011;
+/**
+ * The rate this year: the statutory one times whatever the city has had to
+ * levy on top of it (`taxMult` — a fiscal crisis, blackswans.ts). One in
+ * ordinary times, so every reader is unchanged unless a city goes broke.
+ */
+export const taxRate = (econ?: { taxMult?: number }) => TAX_RATE * (econ?.taxMult ?? 1);
 
 // Cap rates aren't one number per class: a trophy on the square trades tighter
 // than a tired walk-up on the edge of town. Demand is location; condition is
@@ -2723,6 +2729,8 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, 
   // market, Box ~18 bp wider). It was ±15 bp, which left a trophy trading
   // like a commodity building with a nicer lobby.
   const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.80;
+  // AFTER A SURGE THE WATER'S EDGE CARRIES A RISK PREMIUM (blackswans.ts).
+  const floodSpread = (econ.surgeRisk ?? 0) > 0 && (rec.shoreM ?? 9999) <= (econ.surgeM ?? 0) ? econ.surgeRisk! : 0;
   // THE BUYER PRICES THE RESERVE THE BUILDING WILL NEED. A capital plan that
   // holds the line costs CAP_PLAN_RATE of value a year scaled by wear (see
   // tickLeasing), so a perpetual extra reserve of k of value a year is k on
@@ -2736,7 +2744,7 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, 
   const age = Math.max(0, START_YEAR + Math.floor((econ.m ?? 0) / 12) - (rec.yearBuilt || START_YEAR));
   const wearRatio = (COND_DECAY[cls] ?? 0.0024) * (1 + Math.min(0.50, age / 220)) / COND_WEAR_REF;
   const reserveSpread = 100 * CAP_PLAN_RATE * (specWearMult(rec.buildSpec) - 1) * wearRatio;
-  return clamp(base + locSpread + qualSpread + specSpread + reserveSpread, 3.2, 13);
+  return clamp(base + locSpread + qualSpread + specSpread + reserveSpread + floodSpread, 3.2, 13);
 }
 
 // Appraisals are opinions. Each parcel's appraisal carries a stable bias off
@@ -2808,7 +2816,7 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabi
  */
 export function noiAfterTaxYr(rec: ParcelRecord, econ: Econ, condition: Condition, price: number): number {
   if (rec.class === "land" || !rec.bldgArea) return noiYr(rec, econ, condition);
-  return noiYr(rec, econ, condition) - price * TAX_RATE * taxBorneShare(rec);
+  return noiYr(rec, econ, condition) - price * taxRate(econ) * taxBorneShare(rec);
 }
 
 /**
@@ -2826,7 +2834,7 @@ export function noiAfterTaxYr(rec: ParcelRecord, econ: Econ, condition: Conditio
  */
 export function proFormaNOIYr(rec: ParcelRecord, econ: Econ, condition: Condition, price: number): number {
   if (rec.class === "land" || !rec.bldgArea) return noiYr(rec, econ, condition, true);
-  return noiYr(rec, econ, condition, true) - price * TAX_RATE * taxBorneShare(rec);
+  return noiYr(rec, econ, condition, true) - price * taxRate(econ) * taxBorneShare(rec);
 }
 
 /**
@@ -3089,10 +3097,10 @@ export function ownedContractNoiYr(
 // The landlord's share of the property-tax bill: net leases reimburse it,
 // so you pay on the vacant + gross-leased fraction of the building.
 /** The gross property-tax bill, before anyone reimburses anything. */
-export function grossTaxYr(rec: ParcelRecord, h: Holding): number {
+export function grossTaxYr(rec: ParcelRecord, h: Holding, econ?: { taxMult?: number }): number {
   const assessed = h.assessed ?? h.costBasis;
   if (rec.class === "land" || !rec.bldgArea) return 0; // land carry already covers it
-  return assessed * TAX_RATE;
+  return assessed * taxRate(econ);
 }
 
 /**
@@ -3101,7 +3109,7 @@ export function grossTaxYr(rec: ParcelRecord, h: Holding): number {
  * their stop; gross tenants and vacant space are the owner's problem.
  */
 export function propertyTaxYr(rec: ParcelRecord, h: Holding, econ?: Econ): number {
-  const bill = grossTaxYr(rec, h);
+  const bill = grossTaxYr(rec, h, econ);
   if (!bill) return 0;
   if (rec.class === "multifamily") return bill;   // residential leases are gross
   const taxPsf = bill / Math.max(1, rec.bldgArea);
@@ -3188,7 +3196,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   const resEgi = resSf * occ * (resSf > 0 ? flatsRollPsf(rec, econ, h) : 0);
   let opexBill = 0;
   for (const u of legs) opexBill += useRentableSf(rec, u) * opexAt(u, h.service);
-  const taxBill = grossTaxYr(rec, h);
+  const taxBill = grossTaxYr(rec, h, econ);
   const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;
   for (const t of h.tenants) {
@@ -3296,7 +3304,7 @@ export function incomeValueAsIs(rec: ParcelRecord, econ: Econ, condition: Condit
   // Pre-tax NOI capitalised at the cap plus the tax the OWNER carries. A
   // triple-net building bills its tax bill to its tenants, so loading the full
   // rate onto every class priced net-leased retail as if it paid its own taxes.
-  const capY = capRateFor(rec, econ, condition, condIdx) / 100 + TAX_RATE * taxBorneShare(rec);
+  const capY = capRateFor(rec, econ, condition, condIdx) / 100 + taxRate(econ) * taxBorneShare(rec);
   // ...AT MARKET, PLUS OR MINUS THE LEASES IT ACTUALLY HAS (2026-10-11).
   //
   // A building you own is marked on its rent roll — contract rent, lease by
@@ -3600,7 +3608,7 @@ function leaseUpMark(
   const capFilled = capNoRoll + (cap - capNoRoll) * inPlaceShare;
   const filledNoi = contractNoi + leaseUpGapNoiYr(rec, econ, h, gap * rentableSf(rec));
   const filled = Math.max(0, filledNoi) / capFilled * 0.55
-    + stabNoi / (capFilled + TAX_RATE * taxBorneShare(rec)) * 0.45;
+    + stabNoi / (capFilled + taxRate(econ) * taxBorneShare(rec)) * 0.45;
   const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, capNoRoll, filled);
   return mark === null ? null : { mark, weight };
 }
@@ -3617,7 +3625,7 @@ function leaseUpGapNoiYr(rec: ParcelRecord, econ: Econ, h: Holding, gapSf: numbe
   if (cls === "multifamily") return gapSf * rent * (1 - MGMT_FEE - APT_RESERVE);
   const systemsDone = h.programsDone?.systems !== undefined;
   const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service)) * locOpexMult(rec, econ, cls);
-  const taxNowPsf = grossTaxYr(rec, h) / Math.max(1, rec.bldgArea);
+  const taxNowPsf = grossTaxYr(rec, h, econ) / Math.max(1, rec.bldgArea);
   return gapSf * (rent + RECOVERY_RATE[cls] * (opexRecoverPsf + taxNowPsf)) * (1 - MGMT_FEE);
 }
 
@@ -3699,7 +3707,7 @@ export function leaseUpMarkAt(
   // bills its tax to the tenants. assetValue and planDevelopment's exit yield
   // both load the cap this way (taxBorneShare); this leg loading the FULL rate
   // was the third answer to one question, worth ~14% on stabilised retail.
-  const taxLoad = TAX_RATE * taxBorneShare(rec);
+  const taxLoad = taxRate(econ) * taxBorneShare(rec);
   const stab = noiYr(rec, econ, condition, true) / (capNoRoll + taxLoad);
   if (!(stab > 0)) return null;
 
@@ -3970,7 +3978,7 @@ export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: 
   // so an identical stabilised net-leased building had two values ~14% apart
   // depending on which desk was asked (one quantity, two answers — CLAUDE.md).
   const stabNoi = noiYr(rec, econ, h.condition, true, h.condIdx);
-  const stabilized = stabNoi / (cap + TAX_RATE * taxBorneShare(rec));
+  const stabilized = stabNoi / (cap + taxRate(econ) * taxBorneShare(rec));
   const blended = inPlace * 0.55 + stabilized * 0.45;
   const abate = month === undefined ? 0 : remainingAbatement(h, month);
   // A BUILDING IN ITS FIRST LEASE-UP IS NOT A BUILDING WITH A VACANCY PROBLEM.

@@ -12,7 +12,7 @@ import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, START_YEAR } 
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
+import { resolveRec, marketRentPsfYr, opexPsf, taxRate, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
   rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier } from "./value";
 export { zoneUseBar };
@@ -474,7 +474,7 @@ export function cityValueToReplacement(s: GameState): number {
     // Same tax solve as the land residual: value and the tax bill define each
     // other, so V = NOI / (cap + t(1 - recovery)) rather than NOI / cap.
     const cap = Math.max(3, e.capRate[k]) / 100;
-    const valuePsf = noiPsf / (cap + TAX_RATE * (1 - recov));
+    const valuePsf = noiPsf / (cap + taxRate(e) * (1 - recov));
     // The low-rise base, deliberately: this is a citywide average against a
     // citywide stock, and weighting the height premium would need a height
     // distribution nobody has measured. It biases the ratio UP for a tall town
@@ -4162,7 +4162,11 @@ function developerLook(
   let examined = 0;
   for (let draw = 0; draw < SITES_PER_LOOK * 8 && examined < SITES_PER_LOOK; draw++) {
     const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
-    if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
+    // A lot that is land again — burned (blackswans.ts) or knocked down and
+    // never rebuilt — is a site like any other; an override that is a
+    // building is not.
+    const over = s.built[bbl] as { class?: string } | undefined;
+    if (s.holdings[bbl] || (over && over.class !== "land") || s.developments[bbl]) continue;
     if (s.cityJobs.some((j) => j.bbl === bbl)) continue;
     if ((s.cityPlans ?? []).some((p) => p.bbl === bbl)) continue;   // tied up by another developer
     if (isCivicLand(s, bbl)) continue;

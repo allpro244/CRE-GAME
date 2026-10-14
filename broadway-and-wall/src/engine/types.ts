@@ -1895,6 +1895,26 @@ export interface Econ {
   regionTrend?: number;
   /** Business rent against the nation's at this town's opening — the parity `regionalPull` measures cost against. */
   regionRent0?: number;
+  /** Black swans that have landed (blackswans.ts), for the paper and probes. */
+  blackSwans?: { m: number; kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus"; size: number; sf: number;
+    /** What the paper calls it, and for a fire the lots it took (stories.ts). */
+    title?: string; bbls?: string[] }[];
+  /** A bank panic in progress (blackswans.ts): months of full force left, then its fade. */
+  panic?: { leftM: number; force: number };
+  /** The property-tax rate as a multiple of the statutory one (fiscal crisis). */
+  taxMult?: number;
+  /** A city that cannot pay its bills (blackswans.ts): the job loss still landing. */
+  fiscal?: { leftM: number; pullM: number };
+  /** An anchor employer's campus (blackswans.ts): the hiring still landing, and whether it walks. */
+  campus?: { pole: number; leftM: number; pullM: number; jump: number; walkM?: number; name: string };
+  /** Monthly job pull from the black swans, read beside swanJobDrift in tickEcon. */
+  bsJobPull?: number;
+  /** A capital wave in progress and its cap-rate effect, points (negative while money floods in). */
+  capWave?: { phase: "in" | "hold" | "out" | "fade"; leftM: number; len: number; from: number; to: number };
+  capitalWave?: number;
+  /** The yield premium buyers demand for anything a storm surge can reach, after one has, and how far from the shore the worst one reached (m). */
+  surgeRisk?: number;
+  surgeM?: number;
   /** Anonymous merchants' schemes settled at delivery, cumulative (see `settleMerchant` in dev.ts). Display and probes only. */
   merchantTotals?: { delivered: number; underBasis: number; handedBack: number; lossToLenders: number; equityLost: number };
   /** The last month's regional pull on the export base, per year, after the cost brake. */

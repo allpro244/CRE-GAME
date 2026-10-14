@@ -549,6 +549,10 @@ function skylineStories(g: GameState, parcels: Parcels, hist: Map<string, Proper
     const ago = g.month - sw.m;
     if (ago > 0 && ago % 12 === 0) almanac.push({ m: sw.m, text: `${Math.round(ago / 12)} years ago this month: ${sw.title}.` });
   }
+  for (const sw of g.econ?.blackSwans ?? []) {
+    const ago = g.month - sw.m;
+    if (ago > 0 && ago % 12 === 0 && sw.title) almanac.push({ m: sw.m, text: `${Math.round(ago / 12)} years ago this month: ${sw.title}.`, ...(sw.bbls?.[0] ? { bbl: sw.bbls[0] } : {}) });
+  }
   for (const yAgo of [5, 10, 20, 25, 30, 40, 50]) {
     const m = g.month - yAgo * 12;
     const then = all.filter((e) => e.m === m);
@@ -991,6 +995,45 @@ function bankStories(g: GameState): Story[] {
 }
 
 /**
+ * AFTER THE FIRE. The alert is one morning; the rebuild is twenty years, and
+ * the paper is where it gets counted — how much of the burned district is
+ * standing again, how much is still a parking lot, and how tall it came back.
+ * Read from the lots the fire recorded (blackswans.ts) and what stands on
+ * them now.
+ */
+function fireStories(g: GameState, parcels: Parcels): Story[] {
+  const out: Story[] = [];
+  for (const sw of g.econ?.blackSwans ?? []) {
+    if (sw.kind !== "fire" || !sw.bbls?.length) continue;
+    const ago = g.month - sw.m;
+    if (ago < 24 || ago > 360) continue;
+    let up = 0, sfNow = 0, building = 0;
+    for (const b of sw.bbls) {
+      const r = g.built?.[b] ?? parcels[b];
+      const area = r && (r.class as string) !== "land" ? r.bldgArea ?? 0 : 0;
+      if (area > 0) { up++; sfNow += area; }
+      else if (g.developments?.[b] || (g.cityJobs ?? []).some((j) => j.bbl === b)) building++;
+    }
+    const n = sw.bbls.length, empty = n - up - building;
+    const ratio = sw.sf > 0 ? sfNow / sw.sf : 0;
+    out.push({
+      id: `fire:${sw.m}`, section: "market",
+      kicker: `${cap(count(Math.round(ago / 12)))} years after the fire`,
+      head: empty === 0 && building === 0
+        ? `Every lot the fire took has been built on again`
+        : `${count(empty)} of the ${n} lots the fire cleared ${empty === 1 ? "is" : "are"} still empty`,
+      body: `${cap(sw.title ?? "The fire")} took ${n} buildings and ${msf(sw.sf)} in ${monthLabel(sw.m)}. `
+        + `${up ? cap(count(up)) : "None"} of those lots ${up === 1 ? "carries" : "carry"} a building again${building ? `, ${count(building)} more are under construction` : ""}, `
+        + `and what stands there now is ${msf(sfNow)} — ${ratio >= 1 ? `${Math.round((ratio - 1) * 100)}% more than burned` : `${Math.round(ratio * 100)}% of what burned`}. `
+        + (ratio >= 1.2 ? "The fire did what fires do to a valuable district: it cleared the old fabric and the city built taller." : empty > n / 3 ? "Whoever owns the empty lots is waiting for a rent the district has not yet earned back." : "The district is mostly back, and mostly the same height it was."),
+      m: g.month, score: 3.2 + (empty > 0 ? 0.4 : 0),
+      bbl: sw.bbls[0],
+    });
+  }
+  return out;
+}
+
+/**
  * TENANTS ON THE MOVE. A year's biggest moves, from the record the engine
  * writes when an anchor walks out on a firm (sized by that firm's own
  * occupancy drop) and when a tenant leaves or signs in the player's
@@ -1062,6 +1105,7 @@ export function writePaper(g: GameState, parcels: Parcels): Paper {
     ...leagueStories(g, me),
     ...bankStories(g),
     ...tenantStories(g, parcels),
+    ...fireStories(g, parcels),
   ];
   // A deed story about the player's own building belongs in their corner.
   for (const s of stories) if (s.mine && s.section === "deeds") s.section = "yours";

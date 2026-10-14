@@ -63,7 +63,7 @@ import { NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, LEASE_TERM_M, forwardVacancy, co
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
-  TAX_RATE, taxBorneShare, physicalMaxFloors,
+  taxRate, taxBorneShare, physicalMaxFloors,
 } from "./value";
 
 const clampP = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -1048,7 +1048,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     stabNoi = marketStabNoi * (1 - btsShare) + btsNoi * btsShare;
   }
   const exitCap = capRateFor(asBuilt, uw, "good");
-  const exitYieldPct = exitCap + TAX_RATE * 100 * taxBorneShare(asBuilt);
+  const exitYieldPct = exitCap + taxRate(uw) * 100 * taxBorneShare(asBuilt);
 
   return {
     asBuilt, mix, floors: fl, coverage: cov, gsf, rentable,

@@ -26,8 +26,9 @@
  * yet. Call sites move to it file by file, each move proven to change nothing
  * (same seeds, same end state); only then does the data model change.
  */
-import type { GameState, Holding } from "./types";
+import type { GameState, Holding, Syndication } from "./types";
 import { gpCapitalShare } from "./fund";
+import { lpCapShare } from "./waterfall";
 
 // KEEP THIS MODULE LIGHT. It is imported by the valuation and books code
 // (value.ts, books.ts, credit.ts), and those are imported by jv.ts and
@@ -35,14 +36,18 @@ import { gpCapitalShare } from "./fund";
 // bundle's module evaluation order, and a top-level constant read before its
 // module has run comes out undefined, which turned net worth into NaN by
 // month two (measured, the first batch of this migration). Only types and
-// fund.ts (types, sponsor, money) belong above.
+// fund.ts (types, sponsor, money) and waterfall.ts (pure) belong above.
 
 /** The refusal a JV partner gives on a major decision. Re-exported by jv.ts. */
 export const JV_CONSENT = "Your partner has consent on that — buy them out first.";
 
 export type VehicleRef =
   | { kind: "fund" }
+  | { kind: "syn"; deal: Syndication }
   | { kind: "jv"; share: number; partner: string };
+
+/** The refusal a syndicate's investors give on a change to the deal they bought. */
+export const SYN_CONSENT = "Your investors bought this business plan — that needs their consent, and they will not give it.";
 
 /** The live vehicle this deed sits in, or null when it is wholly the sponsor's. */
 export function vehicleOf(s: GameState, h: Holding | undefined | null): VehicleRef | null {
@@ -50,6 +55,10 @@ export function vehicleOf(s: GameState, h: Holding | undefined | null): VehicleR
   // A fund deed is the fund's while the fund lives. It cannot also carry a JV
   // partner (stakeQuote refuses a fund deed), so the order here is not a choice.
   if (h.fundOwned && s.fund && !s.fund.settled) return { kind: "fund" };
+  // A syndicated deed takes no JV partner and no fund (syndicateBar), so this
+  // order is not a choice either.
+  const deal = s.syndications?.[h.bbl];
+  if (deal) return { kind: "syn", deal };
   if (h.jv) return { kind: "jv", share: h.jv.share, partner: h.jv.partner };
   return null;
 }
@@ -62,6 +71,7 @@ export function vehicleOf(s: GameState, h: Holding | undefined | null): VehicleR
 export function sponsorShare(s: GameState, h: Holding | undefined | null): number {
   const v = vehicleOf(s, h);
   if (!v) return 1;
+  if (v.kind === "syn") return 1 - lpCapShare(v.deal);
   return v.kind === "fund" ? 0 : 1 - v.share;
 }
 
@@ -93,6 +103,11 @@ export function consentFor(s: GameState, h: Holding | undefined | null, action: 
   const v = vehicleOf(s, h);
   if (!v) return null;
   if (v.kind === "jv") return action === "exchange" ? null : JV_CONSENT;
+  // A syndicate's GP runs the plan it sold, debt included (refinance proceeds
+  // go through the waterfall); changing the plan, the land or the title is
+  // the investors' call (§4.1, consent rights), and so is rolling their share
+  // of the gain into the sponsor's own exchange.
+  if (v.kind === "syn") return action === "debt" ? null : SYN_CONSENT;
   if (action === "stake") return "It is a fund deed — the fund's LPs are its partners.";
   if (action === "groundLease") return "The fund's documents do not allow selling the land out from under a vehicle deed.";
   if (action === "exchange") return "A fund deed's gain belongs to the vehicle — it cannot roll into your own 1031.";
@@ -114,6 +129,9 @@ export function routeProceeds(s: GameState, h: Holding | undefined | null, toOwn
   const v = vehicleOf(s, h);
   if (!v) return { toSponsor: toOwners, toVehicle: 0, toPartner: 0 };
   if (v.kind === "fund") return { toSponsor: 0, toVehicle: toOwners, toPartner: 0 };
+  // The investors are paid at the month's settlement, through the waterfall,
+  // from the sponsor's account — the proceeds land there whole (syndicate.ts).
+  if (v.kind === "syn") return { toSponsor: toOwners, toVehicle: 0, toPartner: 0 };
   const toPartner = toOwners > 0 ? Math.round(toOwners * v.share) : 0;
   return { toSponsor: toOwners - toPartner, toVehicle: 0, toPartner };
 }
@@ -127,5 +145,6 @@ export function routeProceeds(s: GameState, h: Holding | undefined | null, toOwn
 export function taxShare(s: GameState, h: Holding | undefined | null): number {
   const v = vehicleOf(s, h);
   if (!v) return 1;
+  if (v.kind === "syn") return 1 - lpCapShare(v.deal);
   return v.kind === "fund" ? gpCapitalShare(s.fund ?? undefined) : 1 - v.share;
 }

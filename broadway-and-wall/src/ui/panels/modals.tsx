@@ -982,7 +982,9 @@ function DecisionBody({
   // Same waterfall acceptSaleOffer runs — loan, kicker, break fee, facility release, tax.
   const proceeds = saleProceedsToSeller(game, parcels, h, offer.price);
   const onFund = !!(h.fundOwned && game.fund && !game.fund.settled);
-  const cashAtClose = (onFund ? 0 : proceeds.toSeller) - (game.exchange ? 0 : proceeds.tax);
+  // A syndicate's investors are paid out of the closing at the month's end:
+  // what is yours is what is left after their waterfall share.
+  const cashAtClose = (onFund ? 0 : proceeds.toSeller) - proceeds.investors - (game.exchange ? 0 : proceeds.tax);
   const value = ownedHoldingValue(game, parcels, h);
   const counterBounds = (() => {
     const b = counterPriceBounds(offer.price, apMid(offerBbl!, value));
@@ -1036,6 +1038,7 @@ function DecisionBody({
           {proceeds.kick > 0 && <Row k="Lender kicker" v={usd(proceeds.kick)} bad />}
           {proceeds.release > 0 && <Row k="Facility release" v={usd(proceeds.release)} bad />}
           {proceeds.partner > 0 && <Row k={`To ${h.jv?.partner ?? "your partner"} (${Math.round((h.jv?.share ?? 0) * 100)}%)`} v={usd(proceeds.partner)} bad />}
+          {proceeds.investors > 0 && <Row k="To your investors, through the waterfall" v={usd(proceeds.investors)} bad title="Their capital, their 12% pref and their share above it — paid from the proceeds at the month's settlement." />}
           <Row k="Gain over basis" v={usd(proceeds.gain)} bad={proceeds.gain < 0} />
           {/* A fund deed's gain passes through the vehicle: the proceeds go to
               the fund, and the sponsor's own tax is its co-invest share. */}

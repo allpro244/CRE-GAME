@@ -72,7 +72,7 @@ const depositsHeld = (g) => {
 const liquidity = (g) => g.cash + (g.fund?.cash ?? 0);
 
 const rows = [];
-let totalBreaks = 0, months = 0;
+let totalBreaks = 0, months = 0, syndicated = 0;
 // WHAT THE RUN ACTUALLY TOUCHED. An identity is only worth what it is asked
 // about: `Dcash == books + Dloc + Ddeposits` holds trivially for a player who
 // does nothing, and this file spent a stretch proving exactly that. Every
@@ -232,8 +232,17 @@ for (const seed of SEEDS) {
         if (g.developments[dirt] || g.holdings[dirt].sale) continue;
         const pick = scheme(dirt);
         if (!pick) continue;
-        const d = E.startDevelopment(g, parcels, dirt, pick.use, pick.fl, 0.6, "gmp");
-        if (!d.err) { g = d.s; built = true; break; }
+        // ON ODD SEEDS, WITH FRIENDS AND FAMILY IN THE DEAL (syndicate.ts):
+        // half of what they could put in, so the investors' calls and
+        // distributions run through this identity every month the deal lives.
+        let custom;
+        if (seed % 2 === 1) {
+          const land = E.ownedHoldingValue(g, parcels, g.holdings[dirt]);
+          const outside = Math.floor(E.maxOutside(g, E.devFundingNeed(pick.p).whole, land) * 0.5);
+          if (outside > 0) custom = { syndicate: { outside } };
+        }
+        const d = E.startDevelopment(g, parcels, dirt, pick.use, pick.fl, 0.6, "gmp", undefined, custom);
+        if (!d.err) { g = d.s; built = true; if (custom) syndicated++; break; }
       }
     }
 
@@ -367,6 +376,11 @@ console.log(`\n${"=".repeat(64)}`);
 const REQUIRED = ["noi", "interest", "borrowed", "debtSvc", "leasing", "capex", "taxes", "bought", "dev", "ga", "lpCalled", "lpDistributed"];
 const dead = REQUIRED.filter((k) => coverage[k] === 0);
 console.log(`ledger exercised: ${[...IN, ...OUT].map((k) => `${k} ${coverage[k] ? "yes" : "NO"}`).join("  ")}`);
+console.log(`syndicated jobs: ${syndicated} (friends and family in the deal, settled through this identity)`);
+if (!syndicated && SEEDS.some((x) => x % 2 === 1)) {
+  console.log(`\nFAIL  no odd seed broke ground with outside equity — the syndicate's flows went untested.`);
+  process.exit(1);
+}
 if (dead.length) {
   console.log(`\nFAIL  the bot never moved ${dead.join(", ")} — this run proved nothing.`);
   console.log(`      An identity holds trivially for a player who does not transact. Check the`);

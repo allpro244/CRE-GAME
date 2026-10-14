@@ -70,7 +70,7 @@ import { firmShort } from "./firm";
 import { fundCashNeed, fundableNow, spendable, fundAndBook } from "./credit";
 import { money } from "./money";
 import { monthlyPayment, scheduledPayment } from "./amortize";
-import { partnerShare } from "./vehicles";
+import { consentFor } from "./vehicles";
 
 /** Facility money in news copy — never "$0.03M" for a $30k shortfall. */
 function dollars(n: number): string {
@@ -1192,7 +1192,7 @@ export function pledgeable(s: GameState, parcels: ParcelTable): { bbl: string; r
     if (!rec || (!glIncome && (rec.class === "land" || !rec.bldgArea))) continue;
     if (s.workouts?.[h.bbl]) continue;
     if (h.sale) continue;
-    if (partnerShare(s, h) > 0 || h.groundRentOut) continue;   // a partner's consent, or land you do not own, is not a crossed lien's collateral
+    if (consentFor(s, h, "pledge") || h.groundRentOut) continue;   // a partner's or investors' consent, or land you do not own, is not a crossed lien's collateral
     out.push({
       bbl: h.bbl, rec, h,
       value: ownedHoldingValue(s, parcels, h),

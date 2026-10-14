@@ -10,8 +10,9 @@ import type { BalanceSnapshot, BooksMonth, BooksYear, GameState, Holding, PnlYea
 import { logBooks, deedCfProbe, deedIrr, fundDepositsHeld, pnlAdd, pnlYear, START_YEAR } from "./types";
 import { depositsHeld } from "./leasing";
 import { locLimit, locRate } from "./credit";
-import { purseOf, partnerShare } from "./vehicles";
-import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec } from "./value";
+import { purseOf, partnerShare, taxShare } from "./vehicles";
+import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec, cipEquity } from "./value";
+import { sponsorPosition } from "./waterfall";
 import { gpInterestInFund } from "./fund";
 
 /** Re-export so harnesses that load `books` can dual-write without pulling all of types. */
@@ -75,7 +76,13 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
     const junior = h.mezz?.balance ?? 0;
     if (purseOf(s, h) === "fund") { fundNav += v - debt - junior; fundDeeds++; continue; }
     mezz += junior;
-    partners += (v - debt - junior) * partnerShare(s, h);
+    // A syndicate's investors hold what the waterfall would pay them —
+    // portfolioMark's arithmetic, so the two agree.
+    const deal = s.syndications?.[h.bbl];
+    if (deal) {
+      const eqAll = v - debt - junior + cipEquity(s, h.bbl);
+      partners += eqAll - sponsorPosition(deal, eqAll, s.month, true);
+    } else partners += (v - debt - junior) * partnerShare(s, h);
     propGross += v;
     mortgages += debt;
     // A leased fee resolves as the lessee's tower — it is still coupon paper,
@@ -91,6 +98,9 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
     byClass[cls].debt += debt;
   }
 
+  for (const deal of Object.values(s.syndications ?? {})) {
+    if (!s.holdings[deal.bbl]) partners -= sponsorPosition(deal, 0, s.month, false);
+  }
   let cip = 0, cipDebt = 0, cipN = 0;
   for (const d of Object.values(s.developments ?? {})) {
     const sunk = Math.max(0, (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0));
@@ -194,6 +204,17 @@ export function booksMonthAsYear(b: BooksMonth): BooksYear {
 
 // ---- the income statement ------------------------------------------------
 
+/**
+ * THE MINORITY'S SHARE OF A DEED'S INCOME on the firm's statement (the "jv"
+ * line): a JV partner's stake, or a syndicate's investors at their share of
+ * the capital — the same allocation the tax pass uses (vehicles.ts taxShare);
+ * the promote is a share of gains, booked when it is realised.
+ */
+function outsideShare(s: GameState, h: Holding): number {
+  if (s.syndications?.[h.bbl]) return 1 - taxShare(s, h);
+  return partnerShare(s, h);
+}
+
 /** A deed the firm reports on its own statement — not the fund vehicle's. */
 function onFirmBooks(s: GameState, h: Holding): boolean {
   return purseOf(s, h) === "sponsor";
@@ -207,7 +228,7 @@ function onFirmBooks(s: GameState, h: Holding): boolean {
 export function stampPnlDeed(s: GameState, h: Holding, noiMonth: number, egiYr: number | null) {
   if (!onFirmBooks(s, h)) return;
   pnlAdd(s, "rev", egiYr === null ? noiMonth : egiYr / 12);
-  const share = partnerShare(s, h);
+  const share = outsideShare(s, h);
   if (share > 0) pnlAdd(s, "jv", noiMonth * share);
 }
 
@@ -227,7 +248,11 @@ export function stampPnlMonth(s: GameState) {
     if (h.loan && h.loan.balance > 0) i += (h.loan.balance * h.loan.ratePct) / 100 / 12;
     if (h.mezz && h.mezz.balance > 0) i += (h.mezz.balance * h.mezz.ratePct) / 100 / 12;
     intExp += i;
-    jvInt += i * partnerShare(s, h);
+    jvInt += i * outsideShare(s, h);
+    // A syndicated deed depreciates on the whole deal's basis (a JV deed's
+    // basis is already the owner's alone), so the investors' share of the
+    // depreciation comes off their line too.
+    if (s.syndications?.[h.bbl]) jvInt += ((h.deprYr ?? 0) / 12) * outsideShare(s, h);
     depr += (h.deprYr ?? 0) / 12;
   }
   if (s.facility && s.facility.balance > 0) intExp += (s.facility.balance * s.facility.ratePct) / 100 / 12;

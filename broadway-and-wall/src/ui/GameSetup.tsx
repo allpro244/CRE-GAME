@@ -9,7 +9,7 @@ import {
 } from "@/engine/setup";
 import { generateFirmName } from "@/engine/firm";
 import { currentCity, currentSize, currentDev, currentCash0 } from "@/state/city";
-import { cityList, cityName, sizeList, developmentList, extentList, randomSeed } from "@/citygen/index.mjs";
+import { cityList, cityName, sizeList, developmentList, extentList, randomSeed, PARK_AMOUNTS } from "@/citygen/index.mjs";
 import { BUILD_STAMP } from "@/buildStamp";
 import { usd } from "./format";
 
@@ -38,6 +38,7 @@ const CASH_NOTE: Record<number, string> = {
 interface Draft {
   island: string; size: string; dev: string; cash0: number; goal: GoalId | null;
   field: FieldChoice; inherit: 0 | 2 | 3 | 4; home: HomeChoice; rivalCapital: RivalCapital;
+  parks: "low" | "medium" | "high";
   firmName: string; sandbox: boolean; clock: NonNullable<GameSetup["clock"]>; brokerStops: boolean; seed: number;
 }
 
@@ -68,7 +69,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     const island = currentCity();
     return {
       island, size: currentSize(island), dev: currentDev(island), cash0: currentCash0(), goal: null,
-      field: DEFAULT_SETUP.field, inherit: 0, home: "any", rivalCapital: "medium",
+      field: DEFAULT_SETUP.field, inherit: 0, home: "any", rivalCapital: "medium", parks: "medium",
       firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(),
     };
   };
@@ -94,6 +95,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       cash0: pick(START_CASH_CHOICES),
       field: pick(FIELDS).id,
       rivalCapital: pick(RIVAL_CAPITAL).id,
+      parks: pick(PARK_AMOUNTS).id,
       inherit: pick([0, 0, 2, 3, 4] as const),
       home: pick(HOME_OPTIONS).id,
       goal: pick([null, ...GOALS.map((g) => g.id)]),
@@ -148,15 +150,18 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       d.field !== "standard" ? "before the opportunity funds" : null,
       d.inherit ? `${d.inherit} family buildings` : null,
       d.rivalCapital !== "medium" ? `competitors' money: ${RIVAL_CAPITAL.find((c) => c.id === d.rivalCapital)?.label.toLowerCase()}` : null,
+      d.parks !== "medium" && !isWritten ? `${PARK_AMOUNTS.find((x) => x.id === d.parks)?.name.toLowerCase()} parks` : null,
     ].filter(Boolean);
     return bits.join(" · ");
-  }, [d.field, d.inherit, d.rivalCapital]);
+  }, [d.field, d.inherit, d.rivalCapital, d.parks, isWritten]);
 
   const breakGround = () => {
     pendingGoal.id = d.sandbox ? null : d.goal;
     const setup: Partial<GameSetup> = {
       field: d.field, inherit: d.inherit, home: d.home,
       rivalCapital: d.rivalCapital === "medium" ? undefined : d.rivalCapital,
+      // a written-down city's parks are real: the choice only applies to a generated island
+      parks: d.parks === "medium" || isWritten ? undefined : d.parks,
       firmName: d.firmName.trim() || undefined, sandbox: d.sandbox, clock: d.clock,
       brokerStops: d.brokerStops ? undefined : "never",
     };
@@ -217,6 +222,17 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                 {devs.map((x) => opt(x.id === d.dev, () => up({ dev: x.id }), x.name, x.note, x.id))}
               </div>
             </div>
+            {/* HOW MUCH OF IT IS PARK. Part of the town, like its size: it moves
+                the odds of which park plan the island draws and how many parks
+                that plan lays down. Manhattan's parks are the real ones. */}
+            {!isWritten && (
+              <div className="start-cols setup-cols3">
+                <div className="start-col">
+                  <div className="start-col-head">how many parks</div>
+                  {PARK_AMOUNTS.map((x) => opt(x.id === d.parks, () => up({ parks: x.id }), x.name, x.note, x.id))}
+                </div>
+              </div>
+            )}
           </section>
 
           {/* ------------------------------------------------------------- firm */}

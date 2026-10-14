@@ -22,6 +22,8 @@ import type { ParcelTable } from "@/data/types";
 
 export type TownRequest = {
   island: string; seed: number; size: string; dev: string; plan?: number;
+  /** How much of the town is park (citygen PARK_AMOUNTS); absent = the usual. */
+  parks?: string;
   /** Manhattan's plat, when the island needs it: the worker cannot fetch it from the single-file build. */
   plat?: unknown;
   /** Deal a new campaign on the town as well (Break ground); absent for a Continue. */
@@ -31,7 +33,7 @@ export type TownReply = { built?: GeneratedCity; game?: GameState; err?: string 
 
 /** The town and, if asked, its opening market. Shared by the worker and the page's fallback. */
 export function cutTown(r: TownRequest): { built: GeneratedCity; game?: GameState } {
-  const built = makeCity(r.island, r.seed, { size: r.size, density: r.dev, planV: r.plan });
+  const built = makeCity(r.island, r.seed, { size: r.size, density: r.dev, planV: r.plan, parks: r.parks });
   // Any record the pipeline still files as "mixed" becomes its dominant use
   // plus an explicit mix, once, at the door. In place: built.parcels is the table.
   const parcels = normalizeParcels(built.parcels as ParcelTable);

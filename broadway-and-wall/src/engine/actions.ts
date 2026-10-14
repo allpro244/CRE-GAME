@@ -1492,13 +1492,25 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
     const revWord = review === "fixed" ? `+${q.stepPct}% every ten`
       : review === "cpi" ? "CPI each year (2–4%)"
       : "FMV every twenty, capped";
-    s.news.unshift({
-      q: s.month, kind: "deal",
-      text: `A ground lessee at last: ${who.name} signs at ${rec.address} — `
-        + `${money(q.rentYr)} a year for ${offer.years} years (${revWord}), `
-        + `after ${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`} on the offer book. `
-        + `They break ground on ${prog.floors} fl of ${prog.use} (${Math.round(prog.sf).toLocaleString()} sf); `
-        + `you do not touch the dirt again until ${monthLabel(s.month + offer.years * 12)}.`,
+    // A CARD, NOT A LINE IN THE PAPER (owner, Oct 2026): "I got offered a
+    // ground lease but thought it was a regular lease." This signs itself off
+    // the offer book and hands the land away for decades, and it used to land
+    // as one news line in the same voice as every suite lease. It takes the
+    // screen now, as a ground default already does, and the card says in plain
+    // words what kind of paper it is (modals.tsx, the ground-lease card).
+    raiseAlert(s, {
+      kind: "ground",
+      tone: "good",
+      bbl: h.bbl,
+      title: `${who.name} has ground-leased the land at ${rec.address}`,
+      body: `A ground lease, not a space lease: they take the whole lot for ${offer.years} years, `
+        + `build their own ${prog.floors}-floor ${prog.use} on it (${Math.round(prog.sf).toLocaleString()} sf), and run it. `
+        + `You collect ${money(q.rentYr)} a year of ground rent (${revWord}) and do not touch the dirt again until `
+        + `${monthLabel(s.month + offer.years * 12)}. It came off the offer book after `
+        + `${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`}.`,
+      detail: groundLeaseFreeReversion(s.groundLeases[h.bbl])
+        ? `${offer.years} years is long paper: when it runs out, their building comes back to you with the land.`
+        : `${offer.years} years is short paper: when it runs out you buy their building out, or it is cleared and you get the dirt back.`,
     });
   }
 

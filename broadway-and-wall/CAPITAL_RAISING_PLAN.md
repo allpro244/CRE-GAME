@@ -1032,27 +1032,135 @@ That's a cross-trade, which needs consent and an independent valuation (§5).
 
 ---
 
-## 7. Player experience
+## 7. Player experience (UI plan)
 
-- **Capital desk** (replaces FundDesk):
-  - an investor roster by type, showing appetite this year ("pensions are
-    over-allocated to real estate after the crash; they're out until about
-    2047")
-  - a **track record card** (deal IRRs and multiples, DPI, the marks)
-  - live raises with soft circles, commitments and time left
-- **Term sheet builder:** pref, tiers, fees, co-invest, guarantee choice,
-  with the **market-clearing band** shown for each targeted investor type
-  ("family offices are clearing value-add deals at 8% pref, 20% over 14%").
-  That keeps the decision legible instead of a hidden roll.
-- **Capital-source picker** on every closing and groundbreak (§6.5),
-  replacing the global "Buy from the vehicle" switch.
-- **Build desk:** "Syndicate this scheme" next to "Break ground", showing the
-  equity split, GP cheque, fees and promote at the base case.
-- **News and stories:** raises that close or fail (yours and rivals'), the
-  denominator-effect drought, an investor suing over a broken guarantee, a
-  fund placed in the bottom quartile.
+Built to the repo's own rules (`UI_PRINCIPLES.md`, `UI_DECLUTTER.md`): one
+home per figure, desks not doors, every desk shaped *strip → what wants you
+→ detail*, one interruption at a time, the verb in reach, and never offering
+what can't be done.
 
----
+### 7.1 Where it lives
+
+- **A new tab on the Capital desk: "Investors"** (in `src/ui/desks.ts`). It
+  is the **one home** for the investor rank, the track record, raises and
+  vehicles. Today's `FundDesk` content moves here from the Debt tab.
+- Everywhere else **links** to it rather than copying figures:
+  - the Firm desk's Record
+  - the Players league table
+  - property pages
+- **Naming:** "Rankings" is taken (the city against real US cities) and
+  "standing" means lender marks. Use **"Investor rank"** and **"Track
+  record"**.
+
+### 7.2 The Investors tab
+
+**Strip (a few tiles, one glance):**
+- **Investor rank:** "#14 of 52 · Emerging ▲2", linking to the breakdown
+- **Track-record score:** "+18", with the next floor ("Proven at +25 and
+  2 more investor deals")
+- **You can raise now:** "up to $3 per $1 of yours · about $4M from friends,
+  family and small platforms"
+- **Vehicles:** count, equity under management, uncalled commitments
+
+**What wants you** (only shown when something does):
+- raises in progress: a progress bar (soft-circled against target) and
+  months left
+- investor votes and consent requests waiting on you
+- mandate deadlines inside 6 months: "Fund I must commit $12M more by
+  Mar 2037"
+
+**Detail, in folds:**
+- **Track record sheet:** every realised deal, own money and investors
+  alike, as a real pitch deck would show it:
+
+  | Deal | Year | Equity | Projected | Actual | Investors' net | Evidence |
+  |---|---|---|---|---|---|---|
+
+  With colour for beat, met or missed, and a "why my rank moved" list
+  (the biggest evidence items, ± points).
+- **Investor market this year:** one row per investor type, showing:
+  - appetite (a small meter)
+  - the terms they're clearing at for your band
+  - a plain lock reason when they won't meet you: "Family offices: need
+    Proven"
+- **Vehicles:** one row per fund or deal vehicle: size, called, value today,
+  net IRR to date vs target, next deadline, and a status dot.
+
+### 7.3 The vehicle page (one per fund or deal)
+
+1. **The mandate card at the top**, in plain words, with a status light on
+   each lever:
+   - 🟢 "Deployment: $28M of $40M committed · 14 months left"
+   - 🟡 "Cash yield: 4.1% vs 6% promised (2 of 4 quarters below)"
+   - 🟢 "Leverage: 58% vs 65% cap"
+2. **"If it sold today"**: one stacked bar of who gets what (lender ·
+   investors' capital · pref · their profit share · your promote · your
+   co-invest), computed by the **same waterfall function** as the engine.
+3. **Capital account:** called, distributed, pref owed, net IRR and multiple.
+4. **Actions:**
+   - call capital, distribute, sell
+   - **recap buyout** (§4.5), showing the price and the gap you'd fund
+   - request an extension
+
+   Unavailable actions are disabled, and the tooltip says why (rule 5).
+
+### 7.4 Raising money: a three-step term sheet
+
+A modal launched from the Investors tab ("Raise a fund") or from a deal
+("Raise money for this deal"):
+
+1. **What:** a fund or this deal; strategy; target size.
+2. **Terms:**
+   - it opens on **"Market terms for your band"**
+   - adjust the **co-invest slider**, pref, promote tiers, fees, guarantee
+     and mandate levers
+   - a live side panel shows the size you're likely to raise, the odds of
+     closing, which investor types this keeps or loses, and **your take**
+     (base and downside) from the same waterfall
+3. **Pitch:** tick investor types. Locked ones are greyed out with the
+   reason. Then launch. Progress then lives in "What wants you"; no new HUD
+   vital (rule 1).
+
+### 7.5 Choosing the money on a deal
+
+A segmented control inside the existing closing and groundbreak cards
+(`AcquireDesk`, `DevelopDesk`): **Own money | Fund | Raise | Fund + side
+money**.
+- Each option shows one line of consequence: your cheque, time to close,
+  terms.
+- Unavailable options are disabled with the reason ("Fund: deal is 28% of
+  commitments, limit 20%").
+- This replaces the global "Buy from the vehicle" switch (`setFundPay`).
+
+### 7.6 Elsewhere
+
+- **Property page and parcel card:** an ownership line ("You 15% · Investors
+  85% · Old Vesey Partners →"). Consent-locked actions show a lock and the
+  reason, extending today's `JV_CONSENT` pattern.
+- **Players (league table) and competitor cards:** an **Investor rank**
+  column and band chip for every firm, linking to its breakdown.
+- **Tape:** raises closing or failing, yours and rivals'.
+
+### 7.7 Interruptions: one at a time, and only for decisions
+
+**Stop the clock only for decisions:**
+- a raise closed or failed
+- an investor vote or consent needed
+- a capital call you can't meet
+- a mandate breach within 90 days
+
+**Everything else goes into one quarterly "Investor letter" card,** a digest
+across all vehicles (distributions, warning flags, rank changes) that the
+player can mute. Band changes get a toast with what it unlocks: "Up to
+Proven: family offices will now take your call."
+
+### 7.8 Teaching the system
+
+- The Investors tab always says what the next step needs: "To reach
+  Emerging: about 2 more deals that meet their projection, or outrank
+  Kestrel Capital (+21)."
+- The first visit shows one short explainer card ("Why nobody will invest
+  yet"), then never again.
 
 ## 8. Calibration sources (industry conventions; cite in comments)
 
@@ -1223,3 +1331,94 @@ and it is the main money-pump risk: §4.3 and §9 (`pnpm stress`) must
 measure it. What answers it in the design is reputation: a fund pitched at
 15% that delivers 8.9% misses by more than 5 points. That is −15 evidence
 (× size, × fault) at wind-down, and the next raise is harder and smaller.
+
+---
+
+## 12. Integration pitfalls in the existing code (read before P0)
+
+What could go wrong wiring this into the engine as it stands, and what to do
+about each.
+
+1. **Ownership is two ad-hoc flags, checked in many places.** `h.fundOwned`
+   and `h.jv` are each tested by hand in `value.ts` (net worth), `books.ts`,
+   `standing.ts`, `goals.ts`, `sim.ts` (monthly cash split, tax),
+   `auction.ts` (foreclosure surplus), `actions.ts` (sale, 1031), `debt.ts`
+   (consent), `dev.ts` (lease-up reserve), `facility.ts`, `portfolio.ts`,
+   `leasehold.ts` and `blackswans.ts` (insurance proceeds). Adding deal
+   vehicles as a third flag multiplies the branches, and **one missed exit
+   path means investors silently go unpaid**, or net worth disagrees with the
+   books.
+   - **Do first:** one ownership record per deed (`owners: { vehicleId,
+     share }[]`), with single functions for share-of-equity, consent and
+     proceeds routing.
+   - Migrate `fundOwned` and `jv` onto it **before** adding any new vehicle.
+   - Exit paths to cover: sale, accepted bid, auction or foreclosure,
+     portfolio package, 1031, fire or surge insurance, take-private,
+     deed-in-lieu, DPO, ground-lease sale, recap buyout.
+2. **Every vehicle is another cash purse.** `conserve` reconciles
+   `cash + fund.cash` today. N deal vehicles mean N purses: sum them in
+   `totalLiquidity`, give every flow a bucket, and extend the coverage
+   assertion so a dead bucket fails the run.
+3. **Two IRRs for one deal.** `Exit.irr` is the owner's levered IRR from the
+   deed ledger, which also carries JV partner flows. Reputation needs
+   **investors' net IRR** and the deal's **gross IRR**. Define each once,
+   or the track-record sheet and the books will disagree (CLAUDE.md fake
+   number #3).
+4. **Construction is funded from the sponsor's account.**
+   `startDevelopment`, `devFundingNeed` and `fundableNow` read GP liquidity,
+   and draws book to `s.cash`. Every draw, overrun call and completion
+   guarantee must route to the right purse. `dev.ts` already branches on
+   `fundOwned` for the lease-up reserve; keep it to one routing function.
+5. **Inflated marks leak into the new system.** Day-one marks run 1.3–1.8×
+   cost on empty buildings (realism finding #1). The sponsor's promote "at
+   liquidation value" would be phantom net worth on the league table, and
+   recap buyouts priced off `marketAppraisal` would overpay. Fix the
+   as-is mark first, or price recaps and promote marks on a lease-up-adjusted
+   value.
+6. **Big refinances can fail.** Lenders refused to refinance large, healthy
+   buildings (finding #2; PR #339 scaled hold limits with inflation). Recap
+   buyouts depend on those refinances, so re-measure after #339.
+7. **Rivals have no track record to rank.** Rivals don't keep `Exit` ledgers
+   or pitched promises (`Rival.jvs` records only the LP/GP split). Ranking
+   them needs a per-rival deal ledger (compact: equity, projected, actual,
+   date) plus a written-down derivation of the opening roster's records.
+   Watch memory on the Great City map (about 200 firms over a century).
+8. **Random draws must not move the economy.** Investor decisions (commit
+   hazards, refusals, fairness premiums) need their **own RNG channel**,
+   like `"shock"` for swans. `initStreams` hashes each channel by name, so
+   adding one doesn't disturb the others. Drawing from an existing stream
+   would make the economy diverge with player choices, which the playthroughs
+   already caught once (finding #3). The ranking itself draws nothing.
+9. **Firm entry is load-bearing.** `firmEntryPitch` drives how many firms the
+   city carries, and its own comments record firm counts collapsing from 30
+   to 3 after a past change. Ship the investor pool behind a flag, measure
+   with `pnpm firms`, and only then let firm entry read it.
+10. **Existing fund rules change.** Today:
+    - a successor fund needs the prior one settled
+    - DPI under 1 is a permanent bar
+    - `fundPay` is a global switch
+    - size comes from a formula
+
+    Changing them moves `test/fund*`, `conserve` coverage and `BASELINE.json`.
+    Live funds in old saves need a migration to a default mandate.
+11. **Saves.** `SAVE_VERSION` is 40. The ownership refactor, mandates,
+    per-rival ledgers and reputation state all need migrations, and
+    mid-fund saves are the hard case.
+12. **Tax.** A pass-through allocates income by share; `promoteIncomeYr`
+    exists for the fund only, and deal-vehicle promotes and fees need the
+    same. A recap is a sale for the investors but not for the sponsor, and
+    transfer tax applies on a change of control.
+13. **Interruptions.** Raises, calls, votes, consents, deadlines and reports
+    across several vehicles become a wall of cards (UI rule 2). Wire only
+    decisions into `attentionItems` / `stopRule`, and batch the rest into the
+    quarterly investor letter (§7.7).
+14. **Bots and harnesses.** The `conserve` bot, the MDGA drivers and
+    `pnpm stress` must learn to syndicate, or the new code ships untested,
+    exactly the "identity reconciling a player who owns nothing" trap in
+    CLAUDE.md.
+15. **Fee income is the money pump.** Appendix A shows a sponsor earning
+    $24M+ on a mediocre fund, mostly from fees. Measure it in `pnpm stress`
+    before tuning anything; reputation and finite investor money are the
+    designed answer.
+16. **The development-only mandate.** MDGA tooling should count syndicated
+    and fund developments as development (open question 5).

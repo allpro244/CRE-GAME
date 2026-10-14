@@ -1074,3 +1074,77 @@ Order matters. Each phase lands with its measurement.
 8. Should reputation be visible for every rival from day one, or only once
    you've dealt with them or they've raised money publicly? (In life you know
    the big names and not the small ones.)
+
+---
+
+## Appendix A: worked examples (one deal, every structure)
+
+Use these to sanity-check the waterfall code. Figures are $M, annual
+compounding, pre-tax.
+
+**The deal.**
+- A $50M development: land, hard and soft costs, with a 3% development fee
+  to the sponsor inside the budget.
+- 65% construction loan ($32.5M); **$17.5M equity**.
+- 2 years to build, 1 year of lease-up; stabilised NOI $3.75M (7.5% yield on
+  cost).
+- **Sell in year 4** at a 6% cap rate ($64.4M), or **hold**: refinance in
+  year 4 at 65% LTV ($41.8M, about $9M back out), NOI growing 3% a year,
+  sold in year 10.
+- Before fees, the equity makes **1.84×, 16.5% IRR** selling in year 4, or
+  **3.10×, 15.4% IRR** holding 10 years.
+
+Syndications pay the investors' pref and capital first, then split the excess
+by IRR tier (the sponsor's promote). The asset-management fee (1% of equity a
+year) and the development fee go to the sponsor when the band allows them.
+
+**Sell in year 4:**
+
+| Structure | You put in | Investors put in | Investors get back | Investors' net | Your profit | Your multiple | Of which fees |
+|---|---|---|---|---|---|---|---|
+| Own money only | 17.5 | 0 | — | — | 14.7 | 1.84× | 0 |
+| Unknown: 50% you, 12% pref, 10% above 15% | 8.8 | 8.8 | 16.0 | 1.83×, 16.3% | 7.4 | 1.85× | 0 |
+| Emerging: 25% you, 10% pref, 15% above 12% | 4.4 | 13.1 | 23.6 | 1.80×, 15.2% | 6.1 | 2.40× | 2.2 |
+| Proven: 15% you, 9% pref, 20%/30% above 12%/18% | 2.6 | 14.9 | 26.6 | 1.79×, 15.0% | 5.0 | 2.89× | 2.2 |
+| Proven with more skin: 40% you, 8% pref | 7.0 | 10.5 | 18.8 | 1.79×, 15.0% | 8.3 | 2.18× | 2.2 |
+| Institutional: 10% you, 8% pref, 20%/30% above 12%/15% | 1.8 | 15.8 | 28.2 | 1.79×, 15.0% | 4.3 | 3.45× | 2.2 |
+
+**Hold 10 years** (refinance in year 4, sell in year 10):
+
+| Structure | You put in | Investors' net | Your profit | Your multiple |
+|---|---|---|---|---|
+| Own money only | 17.5 | — | 36.8 | 3.10× |
+| Unknown 50% | 8.8 | 3.09×, 15.4% | 18.5 | 3.11× |
+| Emerging 25% | 4.4 | 2.94×, 14.3% | 13.2 | 4.02× |
+| Proven 15% | 2.6 | 2.91×, 14.2% | 10.3 | 4.93× |
+| Proven with more skin, 40% | 7.0 | 2.91×, 14.2% | 18.5 | 3.65× |
+| Institutional 10% | 1.8 | 2.91×, 14.2% | 8.7 | 5.95× |
+
+**Hold forever (own money only).** A closed-end fund or syndication must
+exit, or the sponsor buys the investors out at appraisal. Owned outright,
+the $17.5M becomes:
+
+| Year | Annual cash after debt | Cash received to date | Equity value | Total |
+|---|---|---|---|---|
+| 10 | 2.0 | 20.8 | 35.0 | 55.8 |
+| 20 | 3.5 | 48.6 | 61.5 | 110.0 |
+| 30 | 5.6 | 94.5 | 97.0 | 191.5 |
+
+**A $100M fund doing five of these deals** (staggered over 3 years, each sold
+after 4 years):
+- 1.5% management fee on commitments during the investment period, then
+  1.25% on invested capital
+- development fees on each deal
+- 8% pref, 100% GP catch-up, then 80/20
+
+| Fund outcome | GP commit | Investors' net | Management fees | Development fees | Promote | Co-invest profit | **GP total profit** |
+|---|---|---|---|---|---|---|---|
+| All five deals good | 1.9 (2%) | 1.56×, 12.3% IRR | 7.1 | 7.5 | 13.3 | 1.1 | **29.0** |
+| One deal returns 0.6× | 1.9 (2%) | 1.38×, 8.9% IRR | 7.1 | 7.5 | 9.0 | 0.7 | **24.3** |
+| One bad deal, 10% GP commit | 9.5 | 1.38×, 8.9% IRR | 7.1 | 7.5 | 9.0 | 3.6 | **27.2** |
+
+Fee income is earned whether the fund performs or not. That is realistic,
+and it is the main money-pump risk: §4.3 and §9 (`pnpm stress`) must
+measure it. What answers it in the design is reputation: a fund pitched at
+15% that delivers 8.9% misses by more than 5 points. That is −15 evidence
+(× size, × fault) at wind-down, and the next raise is harder and smaller.

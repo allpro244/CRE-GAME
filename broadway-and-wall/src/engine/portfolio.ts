@@ -70,11 +70,13 @@ const BUYERS = [
 ];
 
 /** How many named buyers can underwrite a book of this size. */
-export function portfolioBuyerDepth(sumOfParts: number): number {
-  const raw = BUYERS.filter((b) => sumOfParts >= b.min).length;
+export function portfolioBuyerDepth(sumOfParts: number, infl = 1): number {
+  // The buyers' minimums are opening-year cheques, carried at inflation.
+  const real = sumOfParts / Math.max(0.01, infl);
+  const raw = BUYERS.filter((b) => real >= b.min).length;
   // Past a certain cheque the room thins — the same three institutions who
   // could write $40M cannot all write $200M in the same city the same year.
-  const crowdedOut = sumOfParts > 200_000_000 ? 2 : sumOfParts > 90_000_000 ? 1 : 0;
+  const crowdedOut = real > 200_000_000 ? 2 : real > 90_000_000 ? 1 : 0;
   return Math.max(0, raw - crowdedOut);
 }
 
@@ -189,7 +191,7 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   }
 
   // --- who can actually write this cheque ----------------------------------
-  const depth = portfolioBuyerDepth(sumOfParts);
+  const depth = portfolioBuyerDepth(sumOfParts, s.econ.cpi ?? 1);
   if (depth <= 0) {
     why.push({
       label: "No buyer in this city can fund a book this small as a portfolio — sell them one at a time",

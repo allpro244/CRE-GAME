@@ -320,6 +320,17 @@ export function conditionOk(p: LoanProduct, condition: string | undefined, spec?
  * median built value over the reference (`loanScale`), floored so a desk
  * never underwrites a loan smaller than the file costs.
  */
+/**
+ * THE HOLD SIZE, IN THIS TOWN'S MONEY. The $6M/$25M constants were written for
+ * the standard City in its opening year: scaled by island area (a Great City
+ * desk holds more) and carried at the town's inflation since — a desk whose
+ * limit was $25M when the building was $30M does not still say $25M when the
+ * same building is $150M eighty years later.
+ */
+export function holdMaxOf(s: GameState, p: LoanProduct): number | undefined {
+  return p.maxLoan ? Math.round(p.maxLoan * sizeAreaScale(s) * (s.econ?.cpi ?? 1)) : undefined;
+}
+
 export function loanMin(s: GameState, p: LoanProduct): number {
   if (!p.minLoan) return 0;
   const scale = s.loanScale ?? 1;
@@ -1113,9 +1124,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // written for the standard City; a Great City desk that will not hold past
   // $6M while its book is four times larger is a constant wearing a mechanism's
   // clothes.
-  const holdMax = product.maxLoan
-    ? Math.round(product.maxLoan * sizeAreaScale(s))
-    : undefined;
+  const holdMax = holdMaxOf(s, product);
   if (!street && holdMax && byLtv > holdMax) {
     // they participate up to the hold size rather than walking — a smaller
     // check from a lender who wants the file is still a real quote.
@@ -2264,7 +2273,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
            the way out, because there is one: a bigger balance sheet, or a
            syndicate, or several desks at once. */
         : q.holdCapped
-        ? `${p.lender} won't hold more than $${(((p.maxLoan ?? 0) * sizeAreaScale(s)) / 1e6).toFixed(0)}M on one asset — that is their limit, not this building's. `
+        ? `${p.lender} won't hold more than $${((holdMaxOf(s, p) ?? 0) / 1e6).toFixed(0)}M on one asset — that is their limit, not this building's. `
           + `A building this size needs a balance-sheet lender, a conduit, or the debt split across desks.`
         : raw.concWhy && !p.mezz
         ? `${raw.concWhy}.`

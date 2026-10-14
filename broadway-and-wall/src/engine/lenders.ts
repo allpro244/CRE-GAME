@@ -1055,8 +1055,11 @@ export function tickLenders(s: GameState) {
     // book is whatever the named borrowers have actually taken.
     // The $20M floor is on the desk's whole book, as it always was — flooring
     // the anonymous half alone re-inflated a small town's desk past the book
-    // its capital was sized for.
-    anon = Math.max(Math.max(0, 20_000_000 - named.named), Math.round(anon * (1 + (l.appetite > 0.8 ? 0.0017 : l.appetite > 0.4 ? 0 : -0.006))));
+    // its capital was sized for. And it is the SAME floor initLenders opened
+    // the desk with — $20M in the town's own prices. Unscaled, a town opening
+    // at half the reference price level had its smallest desk's book doubled
+    // the first month with no capital behind it (Tidewater: 9.0% to 4.4%).
+    anon = Math.max(Math.max(0, 20_000_000 * (e.priceLevel ?? 1) - named.named), Math.round(anon * (1 + (l.appetite > 0.8 ? 0.0017 : l.appetite > 0.4 ? 0 : -0.006))));
     l.book = Math.round(anon + named.named);
     if (s.cityLoans) l.anonBook = anon;
 

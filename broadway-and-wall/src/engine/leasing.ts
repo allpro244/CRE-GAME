@@ -1705,6 +1705,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const left = t.endM - q;
         if (left < 12 || left > 60) continue;
         if (t.credit === 2) continue;                       // investment grade does not beg
+        // A tenant shrunk far enough to hand a floor back offers the floor (the
+        // giveback above), not a rent cut — and asking for the cut first would
+        // set the 48-month clock and block the giveback it should have made.
+        if ((t.staff ?? 1) < 0.62) continue;
         if (t.reliefAskedM !== undefined && q - t.reliefAskedM < 48) continue;
         if ((s.asks ?? []).some((a) => a.bbl === h.bbl && a.name === t.name && a.tenantStartM === t.startM)) continue;
         const use = t.use ?? (rec.class as BuiltClass);
@@ -2521,7 +2525,7 @@ function logAuto(s: GameState, e: AutoLeaseEntry) {
 }
 function autoSign(s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Holding, loi: LOI): boolean {
   const fee = principalFee(h, loi);
-  const cost = loiSigningCost(loi, fee) + Math.max(0, Math.round(loi.demiseCost ?? 0));
+  const cost = loiSigningCash(loi, fee);
   if (vehicleSigns(s, h)) {
     if (vehiclePurse(s) < cost) return false;
   } else {
@@ -3452,7 +3456,7 @@ function isMustTake(loi: LOI, rec: ParcelRecord | undefined): boolean {
  * and let an agent sign the firm into an over-advance nobody authorised.
  */
 function agentCanFund(s: GameState, loi: LOI, feeRate: number = AGENT_FEE, parcels?: ParcelTable): boolean {
-  const cost = loiSigningCost(loi, feeRate) + Math.max(0, Math.round(loi.demiseCost ?? 0));
+  const cost = loiSigningCash(loi, feeRate);
   // A VEHICLE DEED'S LEASE IS THE VEHICLE'S CHEQUE, against the vehicle's
   // reserve: the fit-out and commission settle from `fund.cash` and, short,
   // from a call on uncalled commitments (settleVehicleDeedFlow). Testing it
@@ -3841,7 +3845,7 @@ export function clearAgainstPlan(
     return { verdict: "decline", why: `credit below the sheet's ${CREDIT_LABEL[row.minCredit ?? 0]} minimum`, ...base };
   }
   const signAsIs = neScore + 0.005 >= ask
-    && !((row.maxCashPerDeal ?? 0) > 0 && loiSigningCost(loi, feeRate) + Math.max(0, loi.demiseCost ?? 0) > (row.maxCashPerDeal ?? 0) + 0.5);
+    && !((row.maxCashPerDeal ?? 0) > 0 && loiSigningCash(loi, feeRate) > (row.maxCashPerDeal ?? 0) + 0.5);
   const funded = signAsIs ? loi : { ...loi, ...counter };
   if (!agentCanFund(s, funded, feeRate, ctx.parcels)) {
     return {
@@ -3858,7 +3862,7 @@ type CounterTerms = { rentPsf: number; tiPsf: number; freeM: number; bumpPct: nu
 
 /** Commission + fit-out + demising for a set of terms — the cash one signing takes. */
 function termsCash(loi: LOI, t: CounterTerms, feeRate: number): number {
-  return loiSigningCost({ ...loi, ...t }, feeRate) + Math.max(0, Math.round(loi.demiseCost ?? 0));
+  return loiSigningCash({ ...loi, ...t }, feeRate);
 }
 
 /**
@@ -3977,8 +3981,7 @@ function planTrySign(
   // The line the mandate authorised, drawn only for what the cheque needs
   // to keep the treasury reserve whole — never more.
   if (parcels && !vehicleSigns(s, h)) {
-    const need = loiSigningCost(loi, feeRate) + Math.max(0, Math.round(loi.demiseCost ?? 0))
-      + agentCashReserve(s) - s.cash;
+    const need = loiSigningCash(loi, feeRate) + agentCashReserve(s) - s.cash;
     const draw = Math.min(Math.max(0, Math.ceil(need)), lineDeskMayDraw(s, parcels));
     if (draw > 0) drawLineInPlace(s, parcels, draw);
   }
@@ -4492,6 +4495,26 @@ export function loiSigningCost(loi: LOI, feeRate?: number): number {
   return ti + lc;
 }
 
+/**
+ * THE DEPOSIT COMES IN AT THE SAME TABLE (2026-10-14). A new tenant posts its
+ * security deposit when it signs (signLoi: depositFor, cash in), so the cash a
+ * signing actually takes is the fit-out and commission LESS the deposit. Every
+ * affordability test read the gross cheque, so a firm with little cash could
+ * not sign a lease with no free rent and no TI — a lease that, after the
+ * deposit, cost it almost nothing. The deposit is the one that credit posts
+ * (depositMonths: one month for a name everyone knows, one and a half for an
+ * ordinary covenant, two for a start-up). Renewals true up an existing
+ * deposit and are not netted.
+ */
+export function depositAtSigning(loi: LOI): number {
+  if (loi.kind !== "new") return 0;
+  return Math.max(0, Math.round((loi.rentPsf * loi.sf) / 12 * depositMonths(loi.credit)));
+}
+/** Cash one signing takes: fit-out + commission + demising, less the deposit the tenant posts at signing. */
+export function loiSigningCash(loi: LOI, feeRate?: number): number {
+  return Math.max(0, loiSigningCost(loi, feeRate) + Math.max(0, Math.round(loi.demiseCost ?? 0)) - depositAtSigning(loi));
+}
+
 // Put a signed lease on the rent roll. Mutates — both the player's own
 // response and the agent's automatic signing come through here.
 /**
@@ -4499,13 +4522,16 @@ export function loiSigningCost(loi: LOI, feeRate?: number): number {
  *
  * One to two months of rent, and which end of that you get is a credit
  * question: a covenant everybody has heard of writes one month and argues
- * about it, a start-up with no history writes two and is glad to. It is cash
- * in and a liability on the balance sheet, never income — see Tenant.deposit.
+ * about it, an ordinary covenant a month and a half, a start-up with no
+ * history two and is glad to. It is cash in and a liability on the balance
+ * sheet, never income — see Tenant.deposit. A fixed schedule by credit, so
+ * the deposit a letter will bring is known before it is signed.
  */
-export function depositFor(s: GameState, rentPsf: number, sf: number, credit: Credit): number {
-  const monthly = (rentPsf * sf) / 12;
-  const months = credit === 2 ? 1.0 : credit === 1 ? rrange(s, 1.2, 1.6, "leasing") : rrange(s, 1.6, 2.0, "leasing");
-  return Math.round(monthly * months);
+export function depositMonths(credit: Credit): number {
+  return credit === 2 ? 1.0 : credit === 1 ? 1.5 : 2.0;
+}
+export function depositFor(_s: GameState, rentPsf: number, sf: number, credit: Credit): number {
+  return Math.round((rentPsf * sf) / 12 * depositMonths(credit));
 }
 
 /**
@@ -4800,7 +4826,7 @@ export function respondLOI(
   // term instead of the 4%/2% your own leasing department costs.
   const fee = exclusiveFeeRate(h);
   const sign = (l: LOI): string | null => {
-    const cost = loiSigningCost(l, fee) + Math.max(0, Math.round(l.demiseCost ?? 0));
+    const cost = loiSigningCash(l, fee);
     // A FUND DEED'S LEASE IS PAID BY THE FUND. The cheque settles through the
     // vehicle (settleVehicleDeedFlow: its cash, then a call on uncalled
     // commitments, which an LPA allows for an existing investment); only what

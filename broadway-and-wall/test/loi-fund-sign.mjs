@@ -38,7 +38,19 @@ g.lois = [{
   bumpPct: 2.5, net: true, expiresM: 6,
 }];
 g.nextLoiId = 2;
-const need = E.loiSigningCost(g.lois[0], E.exclusiveFeeRate(g.holdings[bbl]));
+// THE LINE NEEDS A BORROWING BASE (credit.ts locLimit: income after debt
+// service, or a third of vacant land's value) — an empty office has none. A
+// free-and-clear lot gives the firm a line to draw.
+const lot = bbls.filter((x) => parcels[x]?.class === "land" && parcels[x].lotArea > 20_000)
+  .sort((a, b) => parcels[b].lotArea - parcels[a].lotArea)[0];
+if (lot) {
+  const lv = Math.round(E.assetValue(parcels[lot], g.econ, "good"));
+  g.holdings[lot] = { bbl: lot, boughtM: 0, costBasis: lv, condition: "good", tenants: [], loan: null, assessed: lv,
+    condIdx: 0.85, svcIdx: 0.7, service: 0, stance: 0, plan: 1, cfHistory: [] };
+}
+// What signing actually takes out of the account: fit-out and commission LESS
+// the deposit the tenant posts at the same table (leasing.ts loiSigningCash).
+const need = E.loiSigningCash(g.lois[0], E.exclusiveFeeRate(g.holdings[bbl]));
 g.cash = Math.max(1_000, need - 40_000);
 
 let bad = 0;

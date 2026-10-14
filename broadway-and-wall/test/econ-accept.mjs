@@ -125,8 +125,11 @@ const rollOf = (g, bbl) => {
   const rent0 = g.econ.rentIdx.office;
   // the shock: one delivery equal to 10% of citywide office stock, placed on a
   // real mid-town lot — injected as a finished building with an empty roll
+  // A lot nobody is building on: a street job's crane makes the deed unsellable
+  // until it tops out, and which lots carry one depends on the economy.
   const site = bbls.map((b) => parcels[b])
-    .filter((r) => r && r.class === "land" && r.lotArea > 8000)
+    .filter((r) => r && r.class === "land" && r.lotArea > 8000
+      && !g.developments?.[r.bbl] && !(g.cityJobs ?? []).some((j) => j.bbl === r.bbl) && !(g.built?.[r.bbl]?.bldgArea > 0))
     .sort((a, b) => b.demandScore - a.demandScore)[2];
   const addSf = Math.round(stock0 * 0.10);
   const buy = E.executePurchase(g, parcels, site.bbl, 2_000_000, "cash", false, 1);

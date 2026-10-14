@@ -726,6 +726,103 @@ following.
 
 ---
 
+### 5.1 The mandate: what this fund's investors require
+
+When a fund closes, the player gets a **mandate card**: the investors'
+requirements in plain words. For example:
+
+> **Fund I: $40M, closed March 2034.**
+> - Capital must be committed to deals within **3 years** of closing.
+> - Investors expect a **6% annual cash distribution** once properties
+>   stabilise.
+> - Every property must be sold within **6 years** of closing (two one-year
+>   extensions by investor vote).
+> - Target: **15% net IRR, 1.7× net multiple.**
+> - No more than **20%** of the fund in one deal; leverage capped at **65%**.
+
+**The mandate is dynamic.** It isn't a fixed template. It is assembled at the
+close from the **levers the committed investors actually care about**, so two
+funds by the same sponsor can carry quite different mandates, and some
+levers are absent altogether.
+
+#### The levers
+
+| Lever | Plain-words example | Who tends to insist on it |
+|---|---|---|
+| **Deployment deadline** (investment period) | "Committed to deals within 1–4 years" | Everyone; shorter for single-strategy or club funds, longer for blind pools |
+| **Cash yield** (distribution rate) | "6% a year once stabilised", "quarterly distributions" | Pensions, insurers, income-focused individuals. Often **absent** for opportunistic and development funds. |
+| **Sale-by date** (fund life) | "All sold within 5–10 years" | Closed-end investors. **Absent** for open-ended or long-hold family-office capital, which wants holds instead. |
+| **Target net IRR** | "18% net IRR" | Endowments, opportunistic investors |
+| **Target net multiple** | "1.8× net" | Family offices, endowments |
+| **Leverage cap** | "No more than 60% LTV across the fund" | Pensions, insurers; loose or absent for opportunistic money |
+| **Concentration limit** | "No deal over 15–25% of the fund" | Institutions |
+| **Strategy and use limits** | "Multifamily and industrial only", "development ≤ 30%" | Mandate-driven institutions |
+| **Pre-leasing for development** | "No spec office: 40% pre-leased before groundbreak" | Conservative investors after a glut |
+| **Recycling** | "Sale proceeds can be reinvested during the investment period" or "must be distributed" | Varies |
+| **Co-invest rights** | "Largest investors get first look at any overflow" | Family offices, sovereigns |
+| **Reporting** | "Quarterly, audited annually" | Institutions (adds a small cost) |
+| **Key person / removal** | "If the founder leaves, investing stops" | Most |
+
+#### How the mandate is generated
+
+1. **The strategy the player declares** sets the starting point:
+   - **Core-plus:** 6–8% cash yield, 8–11% IRR, 7–10 year life, 50–60%
+     leverage cap
+   - **Value-add:** 4–6% yield after stabilisation, 12–16% IRR, 4–7 years,
+     about 65%
+   - **Opportunistic / development:** little or no yield, 18–20%+ IRR, 5–8
+     years, 70–75%
+   - These ranges are industry conventions; cite them in comments.
+2. **The investors who commit add or drop levers.** Each investor type
+   carries preferences (§3.1):
+   - pensions add a yield floor and a leverage cap
+   - endowments add an IRR target and don't care about yield
+   - family offices drop the sale-by date but want co-invest rights
+   - sovereigns want size and a concentration limit
+   - the mandate is the **union of the levers its largest investors insist
+     on**, weighted by their share of commitments
+3. **Market conditions move the numbers:**
+   - after a crash or a panic swan, investors demand higher targets, lower
+     leverage and pre-leasing
+   - in a boom they accept looser terms
+   - this reads the same credit index and recent-returns signal as the
+     investor market (§3.1)
+4. **Your rank moves them too.** Top-ranked sponsors negotiate looser
+   mandates (longer deployment, fewer covenants). Low-ranked ones get more
+   levers and tighter numbers.
+5. **The player can negotiate before the close.** Each lever can be accepted
+   or pushed back on in the term sheet builder (§7):
+   - **refusing a lever** loses the investors who insist on it (smaller fund)
+   - **accepting a tighter one** brings them in (bigger fund, harder to
+     live with)
+   - example: refusing a cash-yield requirement drops the pensions;
+     accepting a 1-year deployment deadline wins the impatient money but
+     forces fast deals
+
+#### Hard covenants vs targets: what happens if you miss
+
+Some levers are **covenants** the engine enforces; others are **targets**
+your reputation is judged against (§3.4).
+
+| Lever | Type | If you miss it |
+|---|---|---|
+| Deployment deadline | Covenant | Uncommitted capital is **released**: the fund shrinks, the management fee on it stops, and it counts as a warning sign (§3.4). Rushing bad deals to beat the deadline is the realistic trap. |
+| Cash yield | Target, reported quarterly | Four quarters below promise is a warning-sign flag; at realisation it's part of "delivered vs promised" |
+| Sale-by date | Covenant | Extension votes (investors can refuse). After that, unsold assets are bought in at NAV (today's rule) **or** sold by forced auction if investors vote it. Selling into a bad market to meet the date is a real risk. |
+| Target IRR and multiple | Targets | Scored at wind-down against the promise, peer-relative (§3.4 evidence table) |
+| Leverage, concentration, strategy, pre-leasing | Covenants | The engine **blocks** the deal from the fund (the capital-source picker greys it out with the reason, §6.5). Forcing it through is an LPA breach, which is misconduct. |
+| Key person | Covenant | Investing suspends until investors vote to continue |
+
+**The same idea applies to deal-by-deal syndications (§4):** the offering
+memorandum's business plan (hold period, projected IRR, distribution
+schedule) is the mandate for that deal, with the same covenant-or-target
+split.
+
+**Rivals' funds get mandates the same way.** The engine already makes
+rival funds sell when "the fund's clock has run out" (the fund-life clock in
+`rivals.ts`). Under this design that clock comes from each rival fund's
+generated mandate rather than a fixed rule.
+
 ## 6. Product C: programmatic JV and separate accounts (later)
 
 Once a sponsor has scale (AUM and realised track record), a pension, insurer

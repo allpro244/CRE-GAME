@@ -490,7 +490,8 @@ type AlertRow = NonNullable<NonNullable<ReturnType<typeof useStore.getState>["ga
 function alertTakesScreen(g: NonNullable<ReturnType<typeof useStore.getState>["game"]>, a: AlertRow): boolean {
   if (opportunitiesStop(g)) return true;
   // A new central-bank chair stops the game (owner, Oct 2026).
-  if (a.kind === "ground" || a.kind === "sale" || a.kind === "fed" || a.kind === "delivered") return true;
+  // A swan is the event the city will date itself by — it takes the screen.
+  if (a.kind === "ground" || a.kind === "sale" || a.kind === "fed" || a.kind === "delivered" || a.kind === "swan") return true;
   return a.kind === "portfolio" && a.tone === "good" && !!g.portfolioSale && !g.portfolioSale.unsolicited;
 }
 
@@ -534,6 +535,8 @@ function AlertBody() {
   const goSale = a.kind === "sale" && !bad;
   const goFed = a.kind === "fed";
   const goBuilt = a.kind === "delivered" && !!a.bbl;
+  // A fire or a campus has a place; show it.
+  const goSwan = a.kind === "swan" && !!a.bbl;
   // A GROUND LEASE MUST NOT LOOK LIKE A LEASE (owner, Oct 2026): "I got
   // offered a ground lease but thought it was a regular lease." Every ground
   // card — a lessee signing off your offer book, or one defaulting — gets its
@@ -602,6 +605,11 @@ function AlertBody() {
           {goBuilt && (
             <button className="btn btn-buy" onClick={() => { dismissAlert(); useStore.getState().focus(a.bbl!); setPage("property"); }}>
               Go to the building
+            </button>
+          )}
+          {goSwan && (
+            <button className="btn" onClick={() => { dismissAlert(); useStore.getState().focus(a.bbl!); setPage("property"); }}>
+              Show me where
             </button>
           )}
           {goFed && (

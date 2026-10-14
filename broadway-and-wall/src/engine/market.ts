@@ -23,7 +23,7 @@ export function mulberry32Step(a: number): { state: number; value: number } {
  *
  * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
  */
-export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation";
+export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation" | "shock";
 /**
  * THE RENT GROWTH A BUYER UNDERWRITES, in percentage points a year.
  *
@@ -45,7 +45,7 @@ export function underwrittenGrowthPct(e: { nat?: { inflExp?: number } }): number
   return CONTRACT_BUMP_PCT + inflationOverBumpPct(e);
 }
 
-export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners", "indust"];
+export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners", "indust", "shock"];
 
 /** Seed independent streams from the campaign seed. Called from newGame. */
 export function initStreams(seed: number): Record<RngChannel, number> {
@@ -414,8 +414,20 @@ const AFFORD_BAND: [number, number] = [0.45, 2.2];
 /** Renter demand per point of the loan index over the town's opening rate.
  *  See the tenure note at the multifamily demand driver. */
 const TENURE_PER_PT = 0.008;
+// OFFICE 0.45 -> 0 (2026-10-14). The 0.45 rested on one unverified London
+// estimate of total occupancy demand, which the note above already says is
+// mostly a QUALITY effect. The quantity record runs the other way: US office
+// space per worker fell from ~250 sf to ~190 sf over 1990-2019 while real
+// income per worker rose ~1.5%/yr — a quantity income elasticity at or below
+// zero, as retail's is. With the secular eras' own space-per-worker
+// compression this left office demand per job RISING +0.15%/yr on net, and
+// office demand per job outgrowing the record. (Real office rent on this
+// island still rises ~0.5%/yr over a century, and should: Manhattan asking
+// rents went ~$5/sf in 1950 to ~$75-85 in 2019 against 10.6x CPI — about
+// +0.5-0.7%/yr real on a supply-constrained island, where the US average
+// is ~0.)
 const INCOME_ELAST: Record<BuiltClass, number> = {
-  office: 0.45, retail: 0.00, multifamily: 0.25, industrial: 0.40,
+  office: 0.00, retail: 0.00, multifamily: 0.25, industrial: 0.40,
 };
 
 /**
@@ -1652,6 +1664,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   return econ;
 }
 
+export function pushNewsPublic(s: GameState, kind: NewsItem["kind"], text: string) { pushNews(s, kind, text); }
 function pushNews(s: GameState, kind: NewsItem["kind"], text: string) {
   s.news.unshift({ q: s.month, kind, text });
   if (s.news.length > 120) s.news.length = 120;
@@ -1729,7 +1742,10 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
   // integrated from the anchor so every level above ~5 is where it was.
   const RATE_BEND = 2;
   const rateTerm = 0.55 * ((capIndex - 5.4) + RATE_BEND * (Math.exp(-capIndex / RATE_BEND) - Math.exp(-5.4 / RATE_BEND)));
-  const base = CAP_BASE[k] + rateTerm - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk;
+  // A CAPITAL WAVE (blackswans.ts): foreign money bidding every cap down,
+  // then leaving. Points of cap, signed; zero when no wave is running.
+  const wave = e.capitalWave ?? 0;
+  const base = CAP_BASE[k] + rateTerm - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk + wave;
   // ONE TREND, PRICED ONCE (2026-10-11). `flows` reads `retExp`, which is
   // trailing RENT growth plus yield — the same signal `growthExp` carries,
   // on a four-year memory instead of ten. Added separately, the two priced
@@ -1836,7 +1852,10 @@ export function stepCredit(s: GameState) {
   // (Adrian, Estrella & Shin 2019; SLOOS tightening leads every post-war
   // inversion). Centred on the US average ten-year-less-policy spread, ~1.2.
   const curve = e.nat ? 0.04 * ((e.indexRate - e.nat.policy) - 1.2) : 0;
-  const creditTarget = clamp(1.0 + 6 * g12 - 14 * Math.max(0, natUnempRise12(e)) + curve, 0.4, 1.25);
+  // A PANIC (blackswans.ts) shuts the window whatever the cycle says: 2008's
+  // SLOOS reading arrived months before the payrolls that would justify it.
+  const panic = 0.7 * (e.panic?.force ?? 0);
+  const creditTarget = clamp(1.0 + 6 * g12 - 14 * Math.max(0, natUnempRise12(e)) + curve - panic, 0.4, 1.25);
   const creditSpeed = creditTarget < e.creditIdx ? 0.16 : 0.055;   // slams shut, reopens slowly
   e.creditIdx = clamp(e.creditIdx + creditSpeed * (creditTarget - e.creditIdx) + rrange(s, -0.012, 0.012), 0.4, 1.25);
 }
@@ -2177,7 +2196,11 @@ export function tickNation(s: GameState) {
     const spread = (e.indexRate ?? 5.4) - n.policy;
     const intensity = 0.0088 * Math.exp(-0.86 * (spread - 1))
       + (shock > 0.02 ? 0.010 : 0)
-      + ((n.expM ?? 0) > 110 ? 0.004 : 0);
+      + ((n.expM ?? 0) > 110 ? 0.004 : 0)
+      // A financial panic tips the real economy more often than not — 1907
+      // and 2008 did, 1970 and 1998 did not. At full force for the run's
+      // four to twelve months this is about even-to-two-thirds odds.
+      + 0.09 * (e.panic?.force ?? 0);
     if (rng(s, "nation") < 1 - Math.exp(-intensity)) {
       // ONE DISTRIBUTION, FITTED TO THE RECORD (2026-10-13). This was a 93/7
       // mixture — ordinary recessions centred on +2.6 points, a 7% "deep"
@@ -2728,6 +2751,8 @@ export function tickIndustryCycle(s: GameState) {
   if (e.regionRent0 === undefined) e.regionRent0 = businessRentVsNation(e);
   const pull = clamp(regionalPull(e), -0.03, 0.05);
   e.regionPull = pull;
+  tickBoomBust(s);
+  const bb = e.boomBust;
   let base = 0, wsum = 0;
   for (const k of SECTORS) {
     const vol = INDUSTRY_VOL[k];
@@ -2744,7 +2769,8 @@ export function tickIndustryCycle(s: GameState) {
         ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
         : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
     }
-    const dev = INDUSTRY_BETA[k] * natDev + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol;
+    const dev = INDUSTRY_BETA[k] * natDev + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol
+      + (bb && bb.sec === k && bb.phase !== "hold" ? bb.rate : 0);
     e.indIdx[k] *= 1 + (INDUSTRY_TREND[k] + pull) / 12 + dev;
     // Momentum is smoothed excess hiring, in the units its readers expect.
     e.industryMom[k] = clamp(e.industryMom[k] + (MOM_UNITS * dev - e.industryMom[k]) / 6, -0.05, 0.05);
@@ -2769,6 +2795,70 @@ export function tickIndustryCycle(s: GameState) {
   e.cycIdx = comp;
   e.cycDrift = prevComp > 0 ? comp / prevComp - 1 : 0;
   derivePhase(s);
+}
+
+/**
+ * A TRADE'S BOOM, AND USUALLY ITS BUST (2026-10-14).
+ *
+ * The industry clocks above turn: a trade has a good few years and a bad few
+ * and comes back to its trend. What they cannot produce is the episode that
+ * made and broke real property markets — one trade the town depends on
+ * growing far faster than anything around it for years, every landlord and
+ * developer underwriting that it continues, and then the trade breaking.
+ * Houston: oil and gas payrolls ran up through 1982, the city built 50
+ * million square feet of office, oil fell, the region lost ~13% of its jobs by
+ * 1987 and office vacancy reached ~30%. San Francisco: information employment
+ * up ~60% 1995-2000, down ~30% by 2003, office vacancy 3% -> 20%+. Austin and
+ * Charlotte are the other ending — the boom that held.
+ *
+ * About one such episode every quarter-century per city (a reading of the
+ * metro record, stated as a shape parameter), falling on a trade with odds in
+ * proportion to its share of the town's jobs and its volatility (a town's
+ * dominant volatile trade is its likeliest Houston). The boom runs three to
+ * six years at 6-12% a year over trend; seven in ten end in a bust that takes
+ * 30-50% of the trade's peak employment over two to three years; the rest
+ * hold. It enters only through the trade's employment index — the jobs, the
+ * space its firms take, the wages and everything downstream answer to it as
+ * they answer to any hiring — so nothing here sets a rent.
+ */
+const BOOM_HAZ_M = 1 / (25 * 12);
+function tickBoomBust(s: GameState) {
+  const e = s.econ;
+  const bb = e.boomBust;
+  if (bb) {
+    bb.leftM -= 1;
+    if (bb.leftM > 0) return;
+    if (bb.phase === "boom") {
+      const label = INDUSTRY_LABEL[bb.sec];
+      if (rng(s, "shock") < 0.7) {
+        // 30-50% of the peak: with three in ten booms holding their ~+40%,
+        // an episode's expected net is about nil, so the shocks widen the
+        // spread of a town's century without smuggling in a trend. Houston's
+        // oil payrolls ended the 1980s below where the boom began.
+        const fall = 0.30 + 0.20 * rng(s, "shock");
+        const months = Math.round(24 + 12 * rng(s, "shock"));
+        e.boomBust = { ...bb, phase: "bust", leftM: months, rate: Math.pow(1 - fall, 1 / months) - 1 };
+        pushNews(s, exposureToTrade(s, bb.sec) > 0.10 ? "warn" : "event",
+          `The ${label.toLowerCase()} boom has broken. The firms that were hiring are laying off, and the space they took on the way up is about to come back to market.`);
+      } else {
+        e.boomBust = undefined;
+        pushNews(s, "info", `${label} has stopped growing at boom pace — and kept what it gained. This is a ${label.toLowerCase()} town now.`);
+      }
+      return;
+    }
+    e.boomBust = undefined;
+    return;
+  }
+  if (rng(s, "shock") >= BOOM_HAZ_M) return;
+  const w = SECTORS.map((k) => (e.sectorShare?.[k] ?? 1 / SECTORS.length) * INDUSTRY_VOL[k]);
+  const tot = w.reduce((a, b) => a + b, 0);
+  let u = rng(s, "shock") * tot, sec: Sector = SECTORS[0];
+  for (let i = 0; i < SECTORS.length; i++) { u -= w[i]; if (u <= 0) { sec = SECTORS[i]; break; } }
+  const months = Math.round(36 + 36 * rng(s, "shock"));
+  const yr = 0.06 + 0.06 * rng(s, "shock");
+  e.boomBust = { sec, phase: "boom", leftM: months, rate: yr / 12, startM: s.month };
+  pushNews(s, exposureToTrade(s, sec) > 0.10 ? "event" : "info",
+    `${INDUSTRY_LABEL[sec]} is booming here — hiring far ahead of the nation and of every other trade in town. Everyone is underwriting that it lasts.`);
 }
 
 /**
@@ -3063,7 +3153,9 @@ export function tickEcon(s: GameState) {
   // work, housing demand following population, the Phillips term — is the
   // machinery that was already here, answering a shock it can now see.
   // Zero in every month in which no level event is currently landing.
-  const swanPull = e.swanJobDrift ?? 0;
+  // ...and the black swans' (blackswans.ts): a broke city's layoffs, an
+  // anchor's campus hiring.
+  const swanPull = (e.swanJobDrift ?? 0) + (e.bsJobPull ?? 0);
   // A FIRM THAT CANNOT STAFF A CITY STOPS TRYING TO GROW IN IT.
   //
   // `employIdx` is desire and it had no idea whether the desire was being met.

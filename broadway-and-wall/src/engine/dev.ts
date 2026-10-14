@@ -6,13 +6,13 @@
 // loan, wait 4-6 quarters while the building rises on the map, then lease up
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
-import type { BtsCommitment, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, UseMix } from "./types";
+import type { BtsCommitment, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, MerchantBook, UseMix } from "./types";
 import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, TAX_RATE, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
+import { resolveRec, marketRentPsfYr, opexPsf, taxRate, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
   rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier } from "./value";
 export { zoneUseBar };
@@ -25,7 +25,7 @@ import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, p
 import { claimJob, jobDelivered, ownerOf, gradeOf, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
-import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER } from "./lenders";
+import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER, reoAsk, chargeLenderLoss } from "./lenders";
 import { relCurve, bumpLenderRel, payOffDue, productById } from "./debt";
 import {
   cancelSupplyProject,
@@ -89,7 +89,7 @@ export {
 } from "./proforma";
 export type { ConstructionQuote } from "./proforma";
 import {
-  devMix, dominantOf, overMix, specShare, constructionDesks, deskQuote, clamp01, farMaxFor, maxFloorsFor,
+  devMix, dominantOf, overMix, leaseUpMarketAt, specShare, constructionDesks, deskQuote, clamp01, farMaxFor, maxFloorsFor,
   withStreetRetail, capRetail, reserveFor,
   developmentProForma, landCarryFactor, MAX_COVERAGE, maxCoverageFor,
 } from "./proforma";
@@ -153,6 +153,82 @@ export function pickConstructionDesk(s: GameState, key: string): string | undefi
   let u = (((h >>> 0) % 1_000_003) / 1_000_003) * total;
   for (const d of open) { u -= d.appetite; if (u <= 0) return d.name; }
   return open[open.length - 1].name;
+}
+
+/**
+ * THE ANONYMOUS MERCHANT BUILDS ON BORROWED MONEY TOO (2026-10-13).
+ *
+ * Five-sixths of the space this city builds is started by builders with no
+ * name — local merchants and one-building developers — and their schemes used
+ * to cost nobody anything if they opened into a glut: the building simply
+ * joined the stock. So overbuilding was never punished, which is the opposite
+ * of every real cycle: in 1990-92 and 2009-11 the schemes that opened into
+ * empty markets were handed back and their construction lenders took the hole
+ * (FDIC: construction and land loans were the costliest category in both).
+ *
+ * Each anonymous job now carries its book: the all-in basis, the construction
+ * loan at the shop's own loan-to-cost, and the desk that wrote it (the same
+ * appetite-weighted pick a named firm makes). Settled at delivery.
+ */
+const blendRent = (e: Econ, mix: UseMix) => overMix(mix, (u) => e.effRentIdx?.[u] ?? e.rentIdx[u]);
+const blendCap = (e: Econ, mix: UseMix) => overMix(mix, (u) => e.capRate?.[u] ?? 7);
+function merchantBook(s: GameState, bbl: string, startM: number, plan: DevPlan, ltc: number | undefined): MerchantBook {
+  const lev = Math.max(0, Math.min(0.85, ltc ?? 0.5));
+  const e = s.econ;
+  return {
+    basis: Math.round(plan.basisTotal), loan: Math.round(plan.basisTotal * lev),
+    lender: lev > 0 ? pickConstructionDesk(s, `${bbl}:${startM}:merchant`) : undefined,
+    noi: plan.stabNoi, yld: Math.max(0.01, plan.exitYield / 100), leaseUp: plan.leaseUp,
+    rent0: blendRent(e, plan.mix), cap0: blendCap(e, plan.mix),
+    lum0: leaseUpMarketAt(e, plan.mix, (u) => forwardVacancy(e, u, plan.rentable * (plan.mix[u] ?? 0))),
+    mix: plan.mix,
+  };
+}
+
+/**
+ * THE SCHEME OPENS AND MEETS ITS MARKET. What the building is worth the day it
+ * opens — the market's own mark, which already prices the vacancy it opens
+ * into, the concessions and the lease-up — against what it cost and what is
+ * owed on it:
+ *   worth more than the loan — the merchant sells or refinances and keeps
+ *     whatever is left of its equity, which in a glut may be nothing;
+ *   worth less than the loan — the merchant hands back the keys, the desk
+ *     takes the shortfall against its capital, and the building is on the
+ *     tape as bank REO.
+ */
+function settleMerchant(s: GameState, parcels: ParcelTable, bbl: string, m: MerchantBook) {
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec || !rec.bldgArea) return;
+  const e = s.econ;
+  // THE SAME PRO FORMA, RESTATED FOR THE MARKET THAT ARRIVED: the NOI moves
+  // with rent, the exit yield with the class's cap rate, and the lease-up
+  // with the vacancy the building actually opened into instead of the one
+  // forecast. In a market that did what the developer expected this is its
+  // own stabilised value, which cleared its margin; it falls short only when
+  // the market moved against the scheme.
+  const lum1 = leaseUpMarketAt(e, m.mix, (u) => e.cityVac?.[u] ?? NATURAL_VAC[u]);
+  const noi1 = m.noi * blendRent(e, m.mix) / Math.max(1e-6, m.rent0);
+  const yld1 = m.yld * blendCap(e, m.mix) / Math.max(0.1, m.cap0);
+  const worth = Math.max(0, Math.round(noi1 / Math.max(0.01, yld1) - m.leaseUp * Math.max(0, lum1 / Math.max(0.05, m.lum0) - 1)));
+  e.merchantTotals ??= { delivered: 0, underBasis: 0, handedBack: 0, lossToLenders: 0, equityLost: 0 };
+  e.merchantTotals.delivered += 1;
+  if (worth < m.basis) { e.merchantTotals.underBasis += 1; e.merchantTotals.equityLost += Math.round(Math.min(m.basis - m.loan, m.basis - worth)); }
+  if (!m.lender || worth >= m.loan) return;
+  // The desk marks it and lists it, and what it will not fetch is its loss.
+  const ask = reoAsk(s, worth, m.loan, m.lender);
+  chargeLenderLoss(s, m.lender, Math.max(0, m.loan - ask));
+  e.merchantTotals.handedBack += 1;
+  e.merchantTotals.lossToLenders += Math.round(Math.max(0, m.loan - ask));
+  if (!s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
+    s.listings.push({
+      bbl, ask, listedM: s.month, expiresM: s.month + 12, distress: true, receiverFor: m.lender, reason: "receiver",
+      loanBasis: Math.min(worth, m.loan),
+    });
+  }
+  s.news.unshift({
+    q: s.month, kind: "warn",
+    text: `The builder of the new ${rec.address} handed back the keys the month it opened — ${money(m.loan)} owed against a building worth ${money(worth)} into this market. ${m.lender} has it on the tape at ${money(ask)}.`,
+  });
 }
 
 export function constructionQuotes(s: GameState, mix: UseMix, costTotal: number): ConstructionQuote[] {
@@ -398,7 +474,7 @@ export function cityValueToReplacement(s: GameState): number {
     // Same tax solve as the land residual: value and the tax bill define each
     // other, so V = NOI / (cap + t(1 - recovery)) rather than NOI / cap.
     const cap = Math.max(3, e.capRate[k]) / 100;
-    const valuePsf = noiPsf / (cap + TAX_RATE * (1 - recov));
+    const valuePsf = noiPsf / (cap + taxRate(e) * (1 - recov));
     // The low-rise base, deliberately: this is a citywide average against a
     // citywide stock, and weighting the height premium would need a height
     // distribution nobody has measured. It biases the ratio UP for a tall town
@@ -3489,7 +3565,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const chosen: {
     rec: TearCand["rec"]; ratio: number; bbl: string; oldSf: number;
     nextUse: DevUse; lead: BuiltClass; nsf: number; nfl: number;
-    opportunityCost: number; plan: DevPlan;
+    opportunityCost: number; plan: DevPlan; ltc: number;
   }[] = [];
 
   let examinedRedev = 0;
@@ -3613,12 +3689,12 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     const nfl = plan.floors;
     chosen.push({
       rec, ratio: cand.ratio, bbl, oldSf, nextUse, lead, nsf, nfl,
-      opportunityCost, plan,
+      opportunityCost, plan, ltc: rdev.ltc,
     });
     if (chosen.length >= crewRoom) break;
   }
   for (const pick of chosen) {
-  const { rec, ratio, bbl, oldSf, nextUse, lead, nsf, nfl, opportunityCost, plan } = pick;
+  const { rec, ratio, bbl, oldSf, nextUse, lead, nsf, nfl, opportunityCost, plan, ltc } = pick;
   const yr = yr0;
   const tprog = plan.mix;
   const months = plan.months;
@@ -3637,7 +3713,8 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     outcome: `${rec.yearBuilt || "Older"} building cleared for ${nextUse}`,
   });
 
-  (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog, spec: plan.spec });
+  (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog, spec: plan.spec,
+    merchant: merchantBook(s, bbl, s.month, plan, ltc) });
   recordPropertyEvent(s, bbl, {
     kind: "build-start",
     use: nextUse,
@@ -4011,6 +4088,8 @@ export function tickCityGrowth(
     } else if (j.firmId) {
       // If it had a name on it, the name now owns a building.
       jobDelivered(s, parcels, j.bbl, j.firmId, j.cost ?? 0);
+    } else if (j.merchant) {
+      settleMerchant(s, parcels, j.bbl, j.merchant);
     }
     // NOTE: no addStock here. The square feet went into the econ pipeline the
     // month the job STARTED and land in the citywide stock when its cohort
@@ -4083,7 +4162,11 @@ function developerLook(
   let examined = 0;
   for (let draw = 0; draw < SITES_PER_LOOK * 8 && examined < SITES_PER_LOOK; draw++) {
     const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
-    if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
+    // A lot that is land again — burned (blackswans.ts) or knocked down and
+    // never rebuilt — is a site like any other; an override that is a
+    // building is not.
+    const over = s.built[bbl] as { class?: string } | undefined;
+    if (s.holdings[bbl] || (over && over.class !== "land") || s.developments[bbl]) continue;
     if (s.cityJobs.some((j) => j.bbl === bbl)) continue;
     if ((s.cityPlans ?? []).some((p) => p.bbl === bbl)) continue;   // tied up by another developer
     if (isCivicLand(s, bbl)) continue;
@@ -4201,8 +4284,17 @@ function drawDeveloper(s: GameState): DeveloperProfile {
   // when.
   const ambition = u();
   // HOW MUCH THEY BORROW: all cash (a family office, a REIT building to hold)
-  // to a merchant builder's 75% construction loan.
-  const ltc = 0.75 * u();
+  // to a merchant builder's construction loan.
+  // TWO POPULATIONS, NOT A UNIFORM SPREAD (2026-10-13). This was uniform
+  // 0-75%, a mean of 37.5% — but spec construction is mostly bank-financed at
+  // 55-80% of cost (MBA / Fed SLOOS construction terms; the legal ceiling is
+  // 80%), and only a minority builds mostly with its own money. At 37.5%
+  // nearly every scheme that opened into a glut still covered its loan, so
+  // overbuilding cost its lenders almost nothing (measured: under $1.2M of
+  // construction losses per five years with office at 14-18% vacancy).
+  // About a quarter build on equity (0-25%), the rest borrow 55-80%. The
+  // shares are stated, not fitted.
+  const ltc = u() < 0.25 ? 0.25 * u() : 0.55 + 0.25 * u();
   // BAR: the margin over the trade spread they need. The hurdle already
   // carries the trade margin (DEV_MARGIN), so 1.0 is the standard shop.
   // Patient cash builds to a thinner spread over the cap rate than a levered
@@ -4333,7 +4425,8 @@ function breakCityGround(
   const nowM = s.month;
   const startM = nowM - backM;
   const deliverM = startM + months;
-  (s.cityJobs ??= []).push({ bbl, use, sf, floors, startM, deliverM, mix: prog, ...(opts?.spec !== undefined ? { spec: opts.spec } : {}) });
+  (s.cityJobs ??= []).push({ bbl, use, sf, floors, startM, deliverM, mix: prog, ...(opts?.spec !== undefined ? { spec: opts.spec } : {}),
+    merchant: merchantBook(s, bbl, startM, plan, opts?.ltc) });
   s.month = startM;
   noteRecordPlan(s, parcels, bbl, lead, sf, floors, "The city");
 

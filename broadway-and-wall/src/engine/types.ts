@@ -1405,6 +1405,16 @@ export interface PropertyEvent {
  * UI shifts each alert off `game.alerts` as it shows it, so an engine that
  * raises nothing costs the UI nothing.
  */
+/** An anonymous merchant's scheme as underwritten at the start (see `merchantBook` in dev.ts). */
+export interface MerchantBook {
+  basis: number; loan: number; lender?: string;
+  /** The underwriting the start was decided on: stabilised NOI, exit yield (decimal), lease-up budget. */
+  noi: number; yld: number; leaseUp: number;
+  /** The market it was decided in: blended effective rent and cap rate, lease-up multiplier at forecast vacancy. */
+  rent0: number; cap0: number; lum0: number;
+  mix: UseMix;
+}
+
 export interface Alert {
   id: number;
   q: number;                 // the month it fired
@@ -1871,6 +1881,8 @@ export interface Econ {
   /** Employment index per trade, its own shock state, and the local-serving index. */
   indIdx?: Record<Sector, number>;
   indShock?: Record<Sector, number>;
+  /** A trade's boom (and usually its bust) in progress — see `tickBoomBust` in market.ts. */
+  boomBust?: { sec: Sector; phase: "boom" | "bust" | "hold"; leftM: number; rate: number; startM: number };
   localIdx?: number;
   /** The export-base composite, its monthly change, recent history, last peak and months in phase. */
   cycIdx?: number;
@@ -1883,6 +1895,28 @@ export interface Econ {
   regionTrend?: number;
   /** Business rent against the nation's at this town's opening — the parity `regionalPull` measures cost against. */
   regionRent0?: number;
+  /** Black swans that have landed (blackswans.ts), for the paper and probes. */
+  blackSwans?: { m: number; kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus"; size: number; sf: number;
+    /** What the paper calls it, and for a fire the lots it took (stories.ts). */
+    title?: string; bbls?: string[] }[];
+  /** A bank panic in progress (blackswans.ts): months of full force left, then its fade. */
+  panic?: { leftM: number; force: number };
+  /** The property-tax rate as a multiple of the statutory one (fiscal crisis). */
+  taxMult?: number;
+  /** A city that cannot pay its bills (blackswans.ts): the job loss still landing. */
+  fiscal?: { leftM: number; pullM: number };
+  /** An anchor employer's campus (blackswans.ts): the hiring still landing, and whether it walks. */
+  campus?: { pole: number; leftM: number; pullM: number; jump: number; walkM?: number; name: string };
+  /** Monthly job pull from the black swans, read beside swanJobDrift in tickEcon. */
+  bsJobPull?: number;
+  /** A capital wave in progress and its cap-rate effect, points (negative while money floods in). */
+  capWave?: { phase: "in" | "hold" | "out" | "fade"; leftM: number; len: number; from: number; to: number };
+  capitalWave?: number;
+  /** The yield premium buyers demand for anything a storm surge can reach, after one has, and how far from the shore the worst one reached (m). */
+  surgeRisk?: number;
+  surgeM?: number;
+  /** Anonymous merchants' schemes settled at delivery, cumulative (see `settleMerchant` in dev.ts). Display and probes only. */
+  merchantTotals?: { delivered: number; underBasis: number; handedBack: number; lossToLenders: number; equityLost: number };
   /** The last month's regional pull on the export base, per year, after the cost brake. */
   regionPull?: number;
   /** Half the town's loan book is at desks too impaired to quote (see tickEcon). */
@@ -3158,6 +3192,12 @@ export interface GameState {
      */
     groundLease?: boolean;
     firmId?: string;      // whose job it is; absent means the anonymous city
+    /**
+     * THE ANONYMOUS MERCHANT'S OWN BOOK: what the scheme cost all in, the
+     * construction loan against it and the desk that wrote it. Settled at
+     * delivery against what the building is worth (`settleMerchant`).
+     */
+    merchant?: MerchantBook;
     cost?: number;        // the budget, for a firm's job
     spent?: number;       // work in place to date
     equityLeft?: number;  // their equity still to go in

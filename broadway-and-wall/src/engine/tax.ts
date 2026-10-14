@@ -16,7 +16,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
 import { cloneState } from "./types";
 import { rng } from "./market";
-import { landValue, ownedHoldingValue, TAX_RATE } from "./value";
+import { landValue, ownedHoldingValue, taxRate } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
 import { money } from "./money";
@@ -39,7 +39,7 @@ export function taxAppealQuote(s: GameState, parcels: ParcelTable, bbl: string):
   const target = Math.round(ownedHoldingValue(s, parcels, h));
   if (!(target > 0) || assessed <= target * 1.05) return null;
   const over = assessed / target - 1;
-  const annualSavings = Math.round((assessed - target) * TAX_RATE);
+  const annualSavings = Math.round((assessed - target) * taxRate(s.econ));
   // Tax counsel commonly works for roughly a quarter to two fifths of first-
   // year savings. Use 35%, with a minimum that pays for the appraisal and
   // filing even on a small building.
@@ -104,7 +104,7 @@ export function tickTaxAppeals(s: GameState, parcels: ParcelTable): void {
       const target = Math.min(app.target, currentEvidence || app.target);
       const before = Math.round(h.assessed ?? app.assessedAtFile);
       h.assessed = Math.min(before, target);
-      const annual = Math.max(0, Math.round((before - h.assessed) * TAX_RATE));
+      const annual = Math.max(0, Math.round((before - h.assessed) * taxRate(s.econ)));
       s.news.unshift({
         q: s.month, kind: "deal", bbl: h.bbl,
         text: `Tax appeal won: ${money(before)} assessment reduced to ${money(h.assessed)}. `

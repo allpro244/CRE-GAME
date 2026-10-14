@@ -92,7 +92,8 @@ function runArm(arm) {
     h.stance = setup[0] === "fill" ? -1 : setup[0] === "push" ? 1 : 0;
     h.autoLease = false;
   }
-  if (setup[1]) g.autoConcessions = setup[1];
+  if (setup[1] && setup[1] !== "floor") g.autoConcessions = setup[1];
+  if (setup.includes("floor")) g.autoRentFloor = true;   // ARMS=market+lean+floor: never below market rent
   const deals = [];
   const letters = [];
   let vacSfM = 0, totSfM = 0;

@@ -250,6 +250,15 @@ export function LeasingPage() {
               >{o.label}</button>
             ))}
           </span>
+          <button
+            type="button"
+            className={"btn btn-mini" + (game.autoRentFloor ? " btn-on" : "")}
+            aria-pressed={!!game.autoRentFloor}
+            title={game.autoRentFloor
+              ? "The team will not sign any lease, renewal or rent relief under the space's market rent. Click to let each building's posture decide again."
+              : "Never sign a face rent under the space's market rent: lowballs are countered up to market, and tenants who won't pay it are passed. Slower to fill, never cheap."}
+            onClick={() => useStore.getState().autoRentFloor(!game.autoRentFloor)}
+          >{game.autoRentFloor ? "Never below market rent ✓" : "Never below market rent"}</button>
         </div>
         <div className="agent-sub" style={{ marginTop: 4 }}>
           Fit-out and free rent: {AUTO_CONCESSIONS.find((o) => o.key === conc)!.blurb}. Measured against the market's

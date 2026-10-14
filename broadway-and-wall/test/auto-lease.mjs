@@ -160,5 +160,29 @@ check(over === 0, `${signed} of ${trials} over-cap letters signed; none above th
 check(open === 0, `every letter settled the month it landed (${open} left on the desk)`);
 check(signed > 0, "some over-cap tenants take the trimmed allowance");
 
+// NEVER BELOW MARKET RENT: on every posture, Fill included, nothing signs under the space's market rent
+{
+  let n = 0, under = 0, signedN = 0;
+  for (const stance of [-1, 0, 1]) {
+    for (let i = 0; i < 40; i++) {
+      const l = letter(4000 + i + 100 * (stance + 1), { tiPsf: 0, freeM: 0, rentPsf: +(market * (0.6 + 0.012 * i)).toFixed(2) });
+      let g = structuredClone(g0);
+      if (g.streams) g.streams.econ = (g.streams.econ ?? g.rng) ^ ((900 + i + 50 * stance) * 2654435761); else g.rng ^= (900 + i + 50 * stance) * 2654435761;
+      g.holdings[bbl].stance = stance;
+      g.lois = [l];
+      g.autoRentFloor = true;
+      const floorPsf = E.autoMarketRentPsf(g, rec, g.holdings[bbl], l);
+      g = E.setAutoLease(g, parcels, bbl, true);
+      n++;
+      const line = g.news.find((x) => x.text.startsWith("Auto-lease signed"));
+      if (!line) continue;
+      signedN++;
+      const rent = Number(line.text.match(/sf at \$([\d.]+)\/sf/)?.[1]);
+      if (!(rent + 0.005 >= floorPsf)) under++;
+    }
+  }
+  check(under === 0 && signedN > 0, `never below market rent: ${signedN} of ${n} lowballs (60-107% of market, all three postures) signed, none under the market rent (${under} under)`);
+}
+
 console.log(bad ? `\n${bad} FAILED\n` : "\nall OK\n");
 process.exit(bad ? 1 : 0);

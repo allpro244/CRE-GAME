@@ -421,7 +421,7 @@ function recordExits() {
     };
     if (job) job.sale = row;
     sales.push(row);
-    J(`${x.forced ? "LOST (forced) " : "SOLD "}${row.kind} ${x.address} for ${K(x.price)}${row.psf ? ` ($${row.psf}/sf)` : ""} — basis ${K(x.basis)}, gain ${K(x.gain)}, held ${row.heldM} mo${x.irr != null ? `, levered IRR ${pct(x.irr)}` : ""}; ${u} cap ${pct(row.capRate, 2)}, vac ${pct(row.vac)}, index ${row.idx}%`);
+    J(`${x.forced ? "LOST (forced) " : "SOLD "}${row.kind} ${x.address} for ${K(x.price)}${row.psf ? ` ($${row.psf}/sf)` : ""} — basis ${K(x.basis)}, gain ${K(x.gain)}, held ${row.heldM} mo${x.irr != null ? `, levered IRR ${pct(x.irr)}` : ""}; ${u} cap ${row.capRate}%, vac ${pct(row.vac)}, index ${row.idx}%`);
   }
 }
 
@@ -459,6 +459,83 @@ function snapshot() {
   };
 }
 
+
+// ---------------------------------------------------------------- downturns
+// One record per recession: what the economy looked like going in, how deep it
+// went, what was announced while it ran, who failed, and what it did to us.
+const downturns = [];
+let dt = null;
+const DOWN = (ph) => ph === "recession" || ph === "depression";
+const histIdx = [];   // index rate by month, for "what preceded it"
+const histVac = [];
+function econRead() {
+  const e = g.econ;
+  return {
+    idx: +e.indexRate.toFixed(2), policy: +(e.nat?.policy ?? NaN).toFixed(2), infl: +((e.nat?.infl ?? NaN) * (Math.abs(e.nat?.infl ?? 0) < 1 ? 100 : 1)).toFixed(2),
+    natUnemp: +((e.nat?.unemp ?? NaN) * 100).toFixed(1), localUnemp: +((e.unemployment ?? NaN) * 100).toFixed(1),
+    jobs: Math.round(e.jobs ?? 0), credit: +(e.creditIdx ?? 1).toFixed(3), landIdx: +(e.landIdx ?? 0).toFixed(3),
+    rent: Object.fromEntries(BUILT.map((u) => [u, +(e.rentIdx?.[u] ?? 0).toFixed(2)])),
+    vac: Object.fromEntries(BUILT.map((u) => [u, +(e.cityVac?.[u] ?? 0).toFixed(4)])),
+    cap: Object.fromEntries(BUILT.map((u) => [u, +(e.capRate?.[u] ?? 0).toFixed(4)])),
+    shockM: e.nat?.shockM ?? 0,
+  };
+}
+function trackDownturn() {
+  const ph = g.econ.phase;
+  histIdx.push(g.econ.indexRate); histVac.push({ ...g.econ.cityVac });
+  const nw = E.netWorth(g, parcels);
+  const alive = (g.rivals ?? []).filter((r) => r.failedM === undefined).length;
+  if (!dt && DOWN(ph)) {
+    const i24 = histIdx.length > 24 ? histIdx[histIdx.length - 25] : histIdx[0];
+    const v24 = histVac.length > 24 ? histVac[histVac.length - 25] : histVac[0];
+    const pre = econRead();
+    dt = {
+      startM: g.month, startY: yr(), pre, idx24Before: +i24.toFixed(2),
+      vac24Before: Object.fromEntries(BUILT.map((u) => [u, +(v24?.[u] ?? 0).toFixed(4)])),
+      worst: JSON.parse(JSON.stringify(pre)), depression: false,
+      nw0: Math.round(nw), nwMin: Math.round(nw), cash0: Math.round(g.cash), cashMin: Math.round(g.cash),
+      rivals0: alive, rivalsFailed: [], swans: [], headlines: [], forcedSales: 0, mySales: 0, myStarts: 0, myDeliveries: 0,
+      liveJobs0: Object.keys(g.developments).length, deeds0: Object.keys(g.holdings).length,
+      started0: jobLog.length, sales0: sales.length, failedSeen: new Set((g.rivals ?? []).filter((r) => r.failedM !== undefined).map((r) => r.name)),
+      swanSeen: (g.swanLog ?? []).length, newsTop: g.news?.[0]?.q ?? -1, newsSeen: new Set(),
+    };
+  }
+  if (!dt) return;
+  const now = econRead();
+  const w = dt.worst;
+  if (ph === "depression") dt.depression = true;
+  w.idx = Math.max(w.idx, now.idx); w.policy = Math.max(w.policy, now.policy); w.infl = Math.max(w.infl, now.infl);
+  w.natUnemp = Math.max(w.natUnemp, now.natUnemp); w.localUnemp = Math.max(w.localUnemp, now.localUnemp);
+  w.jobs = Math.min(w.jobs, now.jobs); w.credit = Math.min(w.credit, now.credit); w.landIdx = Math.min(w.landIdx, now.landIdx);
+  for (const u of BUILT) { w.rent[u] = Math.min(w.rent[u], now.rent[u]); w.vac[u] = Math.max(w.vac[u], now.vac[u]); w.cap[u] = Math.max(w.cap[u], now.cap[u]); }
+  dt.nwMin = Math.min(dt.nwMin, Math.round(nw)); dt.cashMin = Math.min(dt.cashMin, Math.round(g.cash));
+  for (const r of g.rivals ?? []) if (r.failedM !== undefined && !dt.failedSeen.has(r.name)) { dt.failedSeen.add(r.name); dt.rivalsFailed.push(`${r.name} (${r.style})`); }
+  const sl = g.swanLog ?? [];
+  for (; dt.swanSeen < sl.length; dt.swanSeen++) { const x = sl[dt.swanSeen]; dt.swans.push(`${x.dir < 0 ? "BLACK" : "white"} ${x.family}/${x.key} ×${(+x.mult).toFixed(2)}: ${x.title}`); }
+  for (const n of (g.news ?? []).slice(0, 12)) {
+    if (n.q !== g.month || n.bbl || dt.newsSeen.has(n.text)) continue;
+    if (/\b\d+ (Old |New )?[A-Z][a-z]+ (St|Ave|Pl|Rd|Way|Sq|Ln|Blvd|Row|Ct)\b|on the tape|withdrawn|Motivated seller/.test(n.text)) continue;
+    if (!(n.kind === "warn" || n.kind === "event")) continue;
+    dt.newsSeen.add(n.text);
+    if (dt.headlines.length < 14) dt.headlines.push(`${YR0 + Math.floor(n.q / 12)}: ${n.text.slice(0, 220)}`);
+  }
+  if (!DOWN(ph)) {
+    const end = econRead();
+    const nwEnd = Math.round(nw);
+    const rec = {
+      startY: dt.startY, startM: dt.startM, endY: yr(), months: g.month - dt.startM, depression: dt.depression,
+      pre: dt.pre, worst: dt.worst, end, idx24Before: dt.idx24Before, vac24Before: dt.vac24Before,
+      rivals0: dt.rivals0, rivalsFailed: dt.rivalsFailed, rivalsAfter: alive, swans: dt.swans, headlines: dt.headlines,
+      nw0: dt.nw0, nwMin: dt.nwMin, nwEnd, cash0: dt.cash0, cashMin: dt.cashMin, deeds0: dt.deeds0, liveJobs0: dt.liveJobs0,
+      myStarts: jobLog.length - dt.started0,
+      mySales: sales.slice(dt.sales0).filter((x) => !x.forced).length, myForced: sales.slice(dt.sales0).filter((x) => x.forced).length,
+    };
+    downturns.push(rec);
+    J(`DOWNTURN ${rec.startY}-${rec.endY} (${rec.months} mo${rec.depression ? ", reached DEPRESSION" : ""}): index ${rec.pre.idx}%→peak ${rec.worst.idx}%, local unemp ${rec.pre.localUnemp}%→${rec.worst.localUnemp}%, jobs ${rec.pre.jobs.toLocaleString()}→${rec.worst.jobs.toLocaleString()}, office vac ${pct(rec.pre.vac.office)}→${pct(rec.worst.vac.office)}, MF vac ${pct(rec.pre.vac.multifamily)}→${pct(rec.worst.vac.multifamily)}, ${rec.rivalsFailed.length} rivals failed; my NW ${K(rec.nw0)}→low ${K(rec.nwMin)}→${K(rec.nwEnd)}`);
+    dt = null;
+  }
+}
+
 // ---------------------------------------------------------------- the clock
 const snaps = [snapshot()];
 const years = [];
@@ -470,6 +547,7 @@ while (g.month < YEARS * 12 && !g.gameOver) {
   for (let k = 0; k < 6 && Object.keys(g.talks ?? {}).length; k++) workTalks();
   g = E.advanceMonth(g, parcels, bbls, adjacency);
   recordExits();
+  trackDownturn();
   if (g.month % 12 === 0) {
     const bd = board();
     const rank = bd.findIndex((r) => r.name === "You") + 1;
@@ -483,7 +561,7 @@ while (g.month < YEARS * 12 && !g.gameOver) {
 if (g.month % 240 !== 0) snaps.push(snapshot());
 const result = {
   seed: SEED, years: YEARS, cash0: CASH, lots: bbls.length, gameOver: g.gameOver ?? null, endMonth: g.month, firstTop,
-  snaps, years, jobs: jobLog, sales, landBuys, counters: C, friction: ERR, listedUnsellable, tape, offMarket: om, finalBoard: board().slice(0, 12), journal,
+  snaps, years, downturns, openDownturn: dt ? { startY: dt.startY, months: g.month - dt.startM, pre: dt.pre, worst: dt.worst, rivalsFailed: dt.rivalsFailed, swans: dt.swans, headlines: dt.headlines } : null, jobs: jobLog, sales, landBuys, counters: C, friction: ERR, listedUnsellable, tape, offMarket: om, finalBoard: board().slice(0, 12), journal,
 };
 writeFileSync(OUT, JSON.stringify(result, null, 1));
 const last = snaps.at(-1);

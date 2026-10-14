@@ -15,7 +15,7 @@ for (const s of r.snaps) L(`| ${s.y} | ${s.phase} | ${s.idx.toFixed(2)}% | ${s.c
 L();
 L(`| Year | ${U.map((u) => `${ab[u]} rent $/sf`).join(" | ")} | ${U.map((u) => `${ab[u]} vac`).join(" | ")} | ${U.map((u) => `${ab[u]} cap`).join(" | ")} |`);
 L(`|---|${U.map(() => "--:").join("|")}|${U.map(() => "--:").join("|")}|${U.map(() => "--:").join("|")}|`);
-for (const s of r.snaps) L(`| ${s.y} | ${U.map((u) => `$${s.rent[u].toFixed(2)}`).join(" | ")} | ${U.map((u) => P(s.vac[u])).join(" | ")} | ${U.map((u) => P(s.cap[u], 2)).join(" | ")} |`);
+for (const s of r.snaps) L(`| ${s.y} | ${U.map((u) => `$${s.rent[u].toFixed(2)}`).join(" | ")} | ${U.map((u) => P(s.vac[u])).join(" | ")} | ${U.map((u) => s.cap[u].toFixed(2) + "%").join(" | ")} |`);
 L();
 L(`## The firm every 20 years`);
 L();
@@ -37,7 +37,7 @@ L(`## Every sale`);
 L();
 L(`| Year | What | Address | Price | $/sf | Basis | Gain | Held | IRR | Cap rate then | Vac then | Index | Phase |`);
 L(`|---|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|---|`);
-for (const s of r.sales) L(`| ${s.y} | ${s.forced ? "**FORCED** " : ""}${s.kind} | ${s.address} | ${K(s.price)} | ${s.psf ? "$" + s.psf : "—"} | ${K(s.basis)} | ${K(s.gain)} | ${s.heldM} mo | ${s.irr != null ? P(s.irr) : "—"} | ${P(s.capRate, 2)} | ${P(s.vac)} | ${s.idx}% | ${s.phase} |`);
+for (const s of r.sales) L(`| ${s.y} | ${s.forced ? "**FORCED** " : ""}${s.kind} | ${s.address} | ${K(s.price)} | ${s.psf ? "$" + s.psf : "—"} | ${K(s.basis)} | ${K(s.gain)} | ${s.heldM} mo | ${s.irr != null ? P(s.irr) : "—"} | ${s.capRate != null ? s.capRate.toFixed(2) + "%" : "—"} | ${P(s.vac)} | ${s.idx}% | ${s.phase} |`);
 L();
 L(`## Land bought`);
 L();
@@ -56,3 +56,19 @@ L();
 L(`Tape: \`${JSON.stringify(r.tape)}\` · off-market: \`${JSON.stringify(r.offMarket)}\``);
 L();
 L(`Friction: ${Object.entries(r.friction).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => `${v}× ${k}`).join(" · ")}`);
+L();
+L(`## Every recession`);
+L();
+L(`| Years | Months | Depression? | Index before → peak (24 mo earlier) | Local unemp | City jobs | Office vac | MF vac | Retail vac | Ind vac | MF cap | Office cap | Credit idx low | Land idx | Rivals failed | My NW start → low → end | My starts / sales / forced |`);
+L(`|---|--:|---|---|---|---|---|---|---|---|---|---|--:|---|--:|---|---|`);
+const arrow = (a, b, f) => `${f(a)} → ${f(b)}`;
+const all = [...(r.downturns ?? []), ...(r.openDownturn ? [{ ...r.openDownturn, endY: "(open)", open: true }] : [])];
+for (const d of all) L(`| ${d.startY}–${d.endY} | ${d.months} | ${d.depression ? "**yes**" : "no"} | ${d.pre.idx}% → ${d.worst.idx}% (${d.idx24Before ?? "—"}%) | ${arrow(d.pre.localUnemp, d.worst.localUnemp, (x) => x + "%")} | ${arrow(d.pre.jobs, d.worst.jobs, (x) => x.toLocaleString())} | ${arrow(d.pre.vac.office, d.worst.vac.office, P)} | ${arrow(d.pre.vac.multifamily, d.worst.vac.multifamily, P)} | ${arrow(d.pre.vac.retail, d.worst.vac.retail, P)} | ${arrow(d.pre.vac.industrial, d.worst.vac.industrial, P)} | ${arrow(d.pre.cap.multifamily, d.worst.cap.multifamily, (x) => x.toFixed(2) + "%")} | ${arrow(d.pre.cap.office, d.worst.cap.office, (x) => x.toFixed(2) + "%")} | ${d.worst.credit} | ${arrow(d.pre.landIdx, d.worst.landIdx, (x) => x.toFixed(2))} | ${d.rivalsFailed?.length ?? 0} | ${d.open ? "—" : `${K(d.nw0)} → ${K(d.nwMin)} → ${K(d.nwEnd)}`} | ${d.open ? "—" : `${d.myStarts} / ${d.mySales} / ${d.myForced}`} |`);
+L();
+for (const d of all) {
+  const bits = [];
+  if (d.swans?.length) bits.push(`shocks: ${d.swans.join("; ")}`);
+  if (d.rivalsFailed?.length) bits.push(`failed: ${d.rivalsFailed.join(", ")}`);
+  if (d.headlines?.length) bits.push(`headlines: ${d.headlines.slice(0, 5).join(" | ")}`);
+  if (bits.length) L(`- **${d.startY}–${d.endY}** — ${bits.join(" · ")}`);
+}

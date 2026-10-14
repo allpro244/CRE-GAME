@@ -34,7 +34,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
-import { dollarLevel, rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
+import { dollarLevel, rng, newsChance, rrange, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
 import { DEV_MARGIN, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
 import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar } from "./dev";
@@ -2824,8 +2824,11 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     if (useProbe === "retail" && retailWantsMixed(rec)) useProbe = "mixed";
     const leadProbe = dominantOf(devMix(useProbe));
     const st = s.econ.structTight?.[leadProbe] ?? 0;
-    const vac = s.econ.cityVac?.[leadProbe] ?? NATURAL_VAC[leadProbe];
-    if (st < 0.05 && vac > frictionFloor(leadProbe) + 0.02) continue;
+    // (2026-10-13) A shortage gate stood here: no redevelopment unless the
+    // class was already short (structTight over 5%, or vacancy on its floor).
+    // The pro forma below prices delivery vacancy, rent and lease-up, so the
+    // gate decided nothing it does not — except that a firm could never
+    // build ahead of a shortage, only into one, so no firm ever overbuilt.
     const infillProbe = cityInfillCap(s, parcels, rec, leadProbe);
     const targetSf = rec.lotArea * cityCoverage(useProbe) * infillProbe;
     if (targetSf < rec.bldgArea * 1.15) continue;

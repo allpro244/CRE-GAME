@@ -23,7 +23,7 @@ export function mulberry32Step(a: number): { state: number; value: number } {
  *
  * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
  */
-export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation";
+export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation" | "shock";
 /**
  * THE RENT GROWTH A BUYER UNDERWRITES, in percentage points a year.
  *
@@ -45,7 +45,7 @@ export function underwrittenGrowthPct(e: { nat?: { inflExp?: number } }): number
   return CONTRACT_BUMP_PCT + inflationOverBumpPct(e);
 }
 
-export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners", "indust"];
+export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners", "indust", "shock"];
 
 /** Seed independent streams from the campaign seed. Called from newGame. */
 export function initStreams(seed: number): Record<RngChannel, number> {
@@ -2740,6 +2740,8 @@ export function tickIndustryCycle(s: GameState) {
   if (e.regionRent0 === undefined) e.regionRent0 = businessRentVsNation(e);
   const pull = clamp(regionalPull(e), -0.03, 0.05);
   e.regionPull = pull;
+  tickBoomBust(s);
+  const bb = e.boomBust;
   let base = 0, wsum = 0;
   for (const k of SECTORS) {
     const vol = INDUSTRY_VOL[k];
@@ -2756,7 +2758,8 @@ export function tickIndustryCycle(s: GameState) {
         ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
         : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
     }
-    const dev = INDUSTRY_BETA[k] * natDev + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol;
+    const dev = INDUSTRY_BETA[k] * natDev + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol
+      + (bb && bb.sec === k && bb.phase !== "hold" ? bb.rate : 0);
     e.indIdx[k] *= 1 + (INDUSTRY_TREND[k] + pull) / 12 + dev;
     // Momentum is smoothed excess hiring, in the units its readers expect.
     e.industryMom[k] = clamp(e.industryMom[k] + (MOM_UNITS * dev - e.industryMom[k]) / 6, -0.05, 0.05);
@@ -2781,6 +2784,70 @@ export function tickIndustryCycle(s: GameState) {
   e.cycIdx = comp;
   e.cycDrift = prevComp > 0 ? comp / prevComp - 1 : 0;
   derivePhase(s);
+}
+
+/**
+ * A TRADE'S BOOM, AND USUALLY ITS BUST (2026-10-14).
+ *
+ * The industry clocks above turn: a trade has a good few years and a bad few
+ * and comes back to its trend. What they cannot produce is the episode that
+ * made and broke real property markets — one trade the town depends on
+ * growing far faster than anything around it for years, every landlord and
+ * developer underwriting that it continues, and then the trade breaking.
+ * Houston: oil and gas payrolls ran up through 1982, the city built 50
+ * million square feet of office, oil fell, the region lost ~13% of its jobs by
+ * 1987 and office vacancy reached ~30%. San Francisco: information employment
+ * up ~60% 1995-2000, down ~30% by 2003, office vacancy 3% -> 20%+. Austin and
+ * Charlotte are the other ending — the boom that held.
+ *
+ * About one such episode every quarter-century per city (a reading of the
+ * metro record, stated as a shape parameter), falling on a trade with odds in
+ * proportion to its share of the town's jobs and its volatility (a town's
+ * dominant volatile trade is its likeliest Houston). The boom runs three to
+ * six years at 6-12% a year over trend; seven in ten end in a bust that takes
+ * 30-50% of the trade's peak employment over two to three years; the rest
+ * hold. It enters only through the trade's employment index — the jobs, the
+ * space its firms take, the wages and everything downstream answer to it as
+ * they answer to any hiring — so nothing here sets a rent.
+ */
+const BOOM_HAZ_M = 1 / (25 * 12);
+function tickBoomBust(s: GameState) {
+  const e = s.econ;
+  const bb = e.boomBust;
+  if (bb) {
+    bb.leftM -= 1;
+    if (bb.leftM > 0) return;
+    if (bb.phase === "boom") {
+      const label = INDUSTRY_LABEL[bb.sec];
+      if (rng(s, "shock") < 0.7) {
+        // 30-50% of the peak: with three in ten booms holding their ~+40%,
+        // an episode's expected net is about nil, so the shocks widen the
+        // spread of a town's century without smuggling in a trend. Houston's
+        // oil payrolls ended the 1980s below where the boom began.
+        const fall = 0.30 + 0.20 * rng(s, "shock");
+        const months = Math.round(24 + 12 * rng(s, "shock"));
+        e.boomBust = { ...bb, phase: "bust", leftM: months, rate: Math.pow(1 - fall, 1 / months) - 1 };
+        pushNews(s, exposureToTrade(s, bb.sec) > 0.10 ? "warn" : "event",
+          `The ${label.toLowerCase()} boom has broken. The firms that were hiring are laying off, and the space they took on the way up is about to come back to market.`);
+      } else {
+        e.boomBust = undefined;
+        pushNews(s, "info", `${label} has stopped growing at boom pace — and kept what it gained. This is a ${label.toLowerCase()} town now.`);
+      }
+      return;
+    }
+    e.boomBust = undefined;
+    return;
+  }
+  if (rng(s, "shock") >= BOOM_HAZ_M) return;
+  const w = SECTORS.map((k) => (e.sectorShare?.[k] ?? 1 / SECTORS.length) * INDUSTRY_VOL[k]);
+  const tot = w.reduce((a, b) => a + b, 0);
+  let u = rng(s, "shock") * tot, sec: Sector = SECTORS[0];
+  for (let i = 0; i < SECTORS.length; i++) { u -= w[i]; if (u <= 0) { sec = SECTORS[i]; break; } }
+  const months = Math.round(36 + 36 * rng(s, "shock"));
+  const yr = 0.06 + 0.06 * rng(s, "shock");
+  e.boomBust = { sec, phase: "boom", leftM: months, rate: yr / 12, startM: s.month };
+  pushNews(s, exposureToTrade(s, sec) > 0.10 ? "event" : "info",
+    `${INDUSTRY_LABEL[sec]} is booming here — hiring far ahead of the nation and of every other trade in town. Everyone is underwriting that it lasts.`);
 }
 
 /**

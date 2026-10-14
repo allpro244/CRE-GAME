@@ -51,12 +51,17 @@ for (const seed of SEEDS) {
     if (p && p.equity > g.cash * 1.5 && p.equity < g.fund.cash * 0.8 && (!best || p.costTotal > best.p.costTotal)) best = { u, f, p };
   }
   if (!best) { fail(`seed ${seed}: no job on ${lot} sized between the sponsor's purse and the fund's`); continue; }
-  const c0 = g.cash, f0 = g.fund.cash;
+  const c0 = g.cash, f0 = g.fund.cash, nw0 = E.netWorth(g, parcels);
   const r = E.startDevelopment(g, parcels, lot, best.u, best.f, 0.6, "gmp");
   if (r.err) { fail(`seed ${seed}: groundbreaking refused — ${r.err.slice(0, 160)}`); continue; }
   g = r.s;
+  // The fund's cash became the fund's job: the sponsor's net worth reads it
+  // through the waterfall, so breaking ground moves it by (about) nothing.
+  // Carried as the sponsor's work in progress it jumped by the whole cheque.
+  const dNw = Math.round(E.netWorth(g, parcels) - nw0);
   const dSponsor = Math.round(g.cash - c0), dFund = Math.round(g.fund.cash - f0);
-  console.log(`seed ${seed}: ${best.u} ${best.f} fl on ${lot}, cost ${M(best.p.costTotal)}, equity ${M(best.p.equity)} · at close sponsor ${M(dSponsor)} fund ${M(dFund)}`);
+  console.log(`seed ${seed}: ${best.u} ${best.f} fl on ${lot}, cost ${M(best.p.costTotal)}, equity ${M(best.p.equity)} · at close sponsor ${M(dSponsor)} fund ${M(dFund)} · sponsor net worth ${M(dNw)}`);
+  if (Math.abs(dNw) > 0.05 * Math.abs(dFund)) fail(`seed ${seed}: the sponsor's net worth moved ${M(dNw)} on a ${M(-dFund)} fund-paid groundbreaking`);
   if (dSponsor !== 0) fail(`seed ${seed}: the sponsor paid ${M(-dSponsor)} toward the fund's groundbreaking`);
   if (!(dFund < 0)) fail(`seed ${seed}: the fund paid nothing at close`);
   if (Math.round(-(g.fund.flows.build ?? 0)) !== -dFund) fail(`seed ${seed}: close cheque ${M(-dFund)} vs build flow ${M(-(g.fund.flows.build ?? 0))}`);

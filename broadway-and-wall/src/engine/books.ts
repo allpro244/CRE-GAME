@@ -94,6 +94,8 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
   let cip = 0, cipDebt = 0, cipN = 0;
   for (const d of Object.values(s.developments ?? {})) {
     const sunk = Math.max(0, (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0));
+    // A job the fund is building sits in the vehicle's NAV — portfolioMark's arithmetic.
+    if (liveFund && purseOf(s, s.holdings[d.bbl]) === "fund") { fundNav += Math.max(0, sunk - (d.loanBalance ?? 0)); continue; }
     cip += sunk;
     // Carried the way net worth carries a job: equity in it floors at zero.
     cipDebt += Math.min(d.loanBalance ?? 0, sunk);

@@ -4105,6 +4105,13 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
     // A JV partner owns its share of the equity, not of the building.
     nw += eq * (1 - partnerShare(s, h));
   }
+  // A JOB THE FUND IS BUILDING IS THE FUND'S. Its sunk equity is in the
+  // vehicle's NAV, read through the waterfall, not in the sponsor's own net
+  // worth — the fund paid for it (startDevelopment, groundbreakPurse).
+  for (const d of Object.values(s.developments ?? {})) {
+    if (!liveFund || purseOf(s, s.holdings[d.bbl]) !== "fund") continue;
+    fundNav += Math.max(0, (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0) - d.loanBalance);
+  }
   if (liveFund) nw += gpInterestInFund(liveFund, fundNav);
   // The note on a wound-down fund's liquidating trust — see fund.ts TrustNote.
   nw += s.trustNote?.balance ?? 0;
@@ -4128,7 +4135,7 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   // accountant carries and it is what a lender lends against.
   for (const d of Object.values(s.developments ?? {})) {
     const sunk = (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0);
-    nw += Math.max(0, sunk - d.loanBalance);
+    if (!(liveFund && purseOf(s, s.holdings[d.bbl]) === "fund")) nw += Math.max(0, sunk - d.loanBalance);
     // Overhead still sizes against the committed budget — same as before.
     gav += d.costTotal;
   }

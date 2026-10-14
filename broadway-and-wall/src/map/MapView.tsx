@@ -492,6 +492,10 @@ export default function MapView() {
                   rw: Number(f.properties?.rw ?? 0),
                   cw: Number(f.properties?.cw ?? 0),
                 })),
+              // where a street meets a channel and crosses it: bank to bank plus an abutment
+              crossings: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "crossing" && f.geometry.type === "LineString")
+                .map((f) => ({ line: (f.geometry as GeoJSON.LineString).coordinates as [number, number][], w: Number(f.properties?.w ?? 12) })),
               paths: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "parkpath" && f.geometry.type === "LineString")
                 .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]),

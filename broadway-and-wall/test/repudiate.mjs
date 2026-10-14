@@ -82,7 +82,12 @@ function siteWithAJob(runIndex, lender) {
     const price = Math.max(500_000, Math.round(E.landValue(rec, g.econ)));
     const bought = E.executePurchase(g, parcels, rec.bbl, price, "cash", false, 1);
     if (bought.err || !bought.s.holdings[rec.bbl]) continue;
-    const r = E.startDevelopment(bought.s, parcels, rec.bbl, "office", 26, 0.6, "gmp", undefined, undefined, lender);
+    // AS MUCH LEVERAGE AS THE DESK WILL WRITE. Equity goes in first, so at a
+    // modest loan-to-cost the facility only funds the last few months of the
+    // job — too late to seize a desk in the middle of. Asking for the most
+    // the desk will lend (it clamps to its own ceiling) starts the draws
+    // early enough that the seizure lands with real undrawn room behind it.
+    const r = E.startDevelopment(bought.s, parcels, rec.bbl, "office", 26, 0.6, "gmp", 0.8, undefined, lender);
     const d = r.s?.developments?.[rec.bbl];
     const len = (d?.doneM ?? d?.deliverM ?? 0) - (r.s?.month ?? 0);
     if (!r.err && len > bestLen) { bestLen = len; bestSite = { g: r.s, parcels, bbls, adjacency, bbl: rec.bbl }; }

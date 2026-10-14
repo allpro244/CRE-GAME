@@ -448,7 +448,17 @@ export function withStreetRetail(mix: UseMix, floors: number, demand: number, ec
   // post-2008 and post-2020 corridors — not a fitted number).
   const natR = NATURAL_VAC.retail;
   const slack = Math.max(0, (econ?.cityVac?.retail ?? natR) - natR);
-  const street = Math.max(0, 1 - slack / 0.08);
+  // ...AND WHETHER A SHOP PAYS (2026-10-14). Slack alone let towers keep
+  // stapling shopfronts onto a street whose rents had fallen far behind the
+  // floors above — retail stock outgrew retail demand and real retail rent
+  // halved over sixty years in measured runs. A developer lets the ground
+  // floor as a shop when a shop pays at least what the lead use pays per foot,
+  // against the two classes' opening relationship; less than that, the share
+  // shrinks in proportion (lobby, amenity, more of the lead use).
+  const rOf = (k: BuiltClass) => (econ?.effRentIdx?.[k] ?? econ?.rentIdx?.[k] ?? 1);
+  const aOf = (k: BuiltClass) => (econ?.effAnchor?.[k] ?? econ?.rentAnchor?.[k] ?? 1);
+  const rel = econ ? (rOf("retail") / Math.max(1e-6, rOf(lead))) / Math.max(1e-6, aOf("retail") / Math.max(1e-6, aOf(lead))) : 1;
+  const street = Math.max(0, 1 - slack / 0.08) * Math.max(0, Math.min(1, rel));
   const share = Math.min(maxRetailShare(floors), 1.25 / floors) * street;
   if (share <= 0.01) return mix;
   const out: UseMix = { retail: +share.toFixed(4) };

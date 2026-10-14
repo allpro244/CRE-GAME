@@ -2730,7 +2730,6 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, 
   // like a commodity building with a nicer lobby.
   const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.80;
   // AFTER A SURGE THE WATER'S EDGE CARRIES A RISK PREMIUM (blackswans.ts).
-  const floodSpread = (econ.surgeRisk ?? 0) > 0 && (rec.shoreM ?? 9999) <= (econ.surgeM ?? 0) ? econ.surgeRisk! : 0;
   // THE BUYER PRICES THE RESERVE THE BUILDING WILL NEED. A capital plan that
   // holds the line costs CAP_PLAN_RATE of value a year scaled by wear (see
   // tickLeasing), so a perpetual extra reserve of k of value a year is k on
@@ -2744,7 +2743,7 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, 
   const age = Math.max(0, START_YEAR + Math.floor((econ.m ?? 0) / 12) - (rec.yearBuilt || START_YEAR));
   const wearRatio = (COND_DECAY[cls] ?? 0.0024) * (1 + Math.min(0.50, age / 220)) / COND_WEAR_REF;
   const reserveSpread = 100 * CAP_PLAN_RATE * (specWearMult(rec.buildSpec) - 1) * wearRatio;
-  return clamp(base + locSpread + qualSpread + specSpread + reserveSpread + floodSpread, 3.2, 13);
+  return clamp(base + locSpread + qualSpread + specSpread + reserveSpread, 3.2, 13);
 }
 
 // Appraisals are opinions. Each parcel's appraisal carries a stable bias off

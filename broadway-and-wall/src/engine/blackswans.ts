@@ -6,24 +6,10 @@
 // lands it is the story of the game.
 //
 // Each family is a real mechanism with a real record behind it, and each acts
-// on the thing it actually hits — buildings, insurance, capital — never on a
-// rent. The market answers the way it answers anything: a district that burns
-// is stock that is gone and tenants who need somewhere to go, and the rebuild
-// boom that follows is the developers, the land residual and the trades doing
-// what they always do.
-//
-//   THE GREAT FIRE — Chicago 1871 (a third of the city), Baltimore 1904 (the
-//   downtown core, 1,500 buildings), San Francisco 1906 (the fire after the
-//   quake did most of the damage). A district burns. What stood is gone; the
-//   land is not. Owners collect what their insurers can pay: about half in
-//   Chicago, where 68 insurers failed, 80-90% in San Francisco and Baltimore.
-//
-//   THE STORM SURGE — Sandy 2012: lower Manhattan's waterfront flooded,
-//   basements and plant destroyed, buildings dark for months, most of the
-//   damage over the federal flood cap and so uninsured. And the market
-//   remembered: exposed property traded at a lasting discount afterwards
-//   (Ortega & Taspinar 2018: ~8% for flooded and non-flooded homes in the
-//   zone alike, persisting and widening).
+// on the thing it actually hits — capital, credit, the tax bill, the cost of
+// building, a centre's fortunes, how many people need a home — never on a
+// rent directly. The market answers the way it answers anything.
+// (A great fire and a storm surge were tried and cut, owner 2026-10-14.)
 //
 //   THE CAPITAL WAVE — 1986-90, when Japanese buyers paid yields nobody local
 //   would (Rockefeller Center, the Exxon Building at a record price), cap
@@ -53,53 +39,61 @@
 //   November 2018 to February 2019), and whoever paid up for the land
 //   between owns very expensive dirt.
 //
-// MEASURED (2026-10-14). Four 100-year towns drew 1, 2, 3 and 3 swans. Each
-// forced at year ten on four seeds and read against the same town without it:
+//   THE EMBARGO — October 1973. The oil exporters cut supply and the price of
+//   a barrel quadrupled in three months. Inflation went from 3% to 12% inside
+//   a year and the central bank chased it into the 1974-75 recession; and
+//   construction, which runs on diesel, asphalt, steel and resin, took it
+//   worst: the BLS construction-materials index rose about 30% in 1974 alone
+//   against CPI's 11%. Every job in the ground went over budget, every pro
+//   forma written the year before was wrong, and the developers who had
+//   fixed-price contracts and the ones who did not found out which they were.
+//
+//   THE ARRIVALS — April to October 1980, the Mariel boatlift: 125,000 people
+//   landed in Miami in five months, 7% of its labour force (Card 1990). And
+//   1990-91, when the Soviet Union opened its doors and Israel's population
+//   rose 8% in two years; rents went up by a third before the builders caught
+//   up. A wave of newcomers does not wait for a flat to be empty: they double
+//   up, take the spare room, and the town's housing is suddenly short. Card
+//   found Miami's labour market absorbed them within a few years — which is
+//   the jobs model's business, not this file's.
+//
+// MEASURED (2026-10-14). Each forced at year ten on four seeds and read
+// against the same town without it:
 //   panic   credit index -0.4 for two years; a recession inside a year in
 //           three of four; a lender closed in two; jobs -3.5% at two years
 //   fiscal  jobs -4.8% at four years, real land -8% at five, caps +0.4
 //   campus  jobs +3.6% by year six, real land +4%, the chosen centre +8-14
-//   fire    51-101 buildings, 0.6-0.9M sf; a third of the lots in the ground
-//           again within two years, half standing by four
-// and the century's trend reads as it did without them: jobs +1.1-1.4%/yr,
-// real office rent +0.2-0.8%/yr.
 //
 // Its own RNG stream ("shock"), so the economy's other draws do not move.
 
 import type { ParcelTable } from "@/data/types";
-import type { BuiltClass, GameState } from "./types";
-import type { ParcelRecord } from "@/data/types";
-import { raiseAlert, logBooks, moveDeposit, START_YEAR } from "./types";
-import { rng, addStock, pushNewsPublic } from "./market";
-import { resolveRec, useRentableSf } from "./value";
-import { uses } from "./mix";
-import { replacementCost } from "./dev";
-import { ownerOf } from "./rivals";
-import { depositsOn } from "./leasing";
-import { recordPropertyEvent } from "./history";
+import type { GameState } from "./types";
+import { raiseAlert, START_YEAR } from "./types";
+import { rng, pushNewsPublic } from "./market";
+import { resolveRec } from "./value";
 import { chargeLenderLoss } from "./lenders";
 
 const YEAR = 12;
 /** Annual odds, per city. Shape parameters from the record, stated as such. */
-// Every family together runs to about two and a half a century (the panic, the
-// fiscal crisis and the campus included): a hundred-year game sees two or
-// three, and a given kind is once in a lifetime.
-const FIRE_HAZ = 1 / 400;
-const SURGE_HAZ = 1 / 250;
+// Every family together runs to about two and a half a century: a hundred-year
+// game sees two or three, and a given kind is once in a lifetime.
 const WAVE_HAZ = 1 / 200;
 const PANIC_HAZ = 1 / 200;
 const FISCAL_HAZ = 1 / 350;
 const CAMPUS_HAZ = 1 / 200;
-
-const money = (x: number) => x >= 1e9 ? `$${(x / 1e9).toFixed(2)}B` : x >= 1e6 ? `$${(x / 1e6).toFixed(1)}M` : `$${Math.round(x / 1e3)}K`;
+const EMBARGO_HAZ = 1 / 250;
+const ARRIVALS_HAZ = 1 / 250;
 
 export function tickBlackSwans(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null) {
+  void adjacency;
   const e = s.econ;
   tickCapitalWave(s);
   tickPanic(s);
   e.bsJobPull = 0;
   tickFiscal(s);
   tickCampus(s);
+  tickEmbargo(s);
+  tickArrivals(s);
   // No swan in the opening year: the player has not had time to own anything.
   if (s.month < YEAR) return;
   // A FISCAL CRISIS IS NOT INDEPENDENT OF THE CYCLE. A city's revenue falls
@@ -108,179 +102,74 @@ export function tickBlackSwans(s: GameState, parcels: ParcelTable, bbls: string[
   // recession, half outside one: about the same rate over a century.
   const inRec = (e.nat?.recM ?? 0) > 0;
   const fiscalHaz = FISCAL_HAZ * (inRec ? 3 : 0.5);
-  if (rng(s, "shock") < FIRE_HAZ / 12) greatFire(s, parcels, bbls, adjacency);
-  else if (rng(s, "shock") < SURGE_HAZ / 12) stormSurge(s, parcels, bbls);
+  if (!e.embargo && rng(s, "shock") < EMBARGO_HAZ / 12) startEmbargo(s);
+  else if (!e.arrivals && rng(s, "shock") < ARRIVALS_HAZ / 12) startArrivals(s);
   else if (!e.capWave && rng(s, "shock") < WAVE_HAZ / 12) startCapitalWave(s);
   else if (!e.panic && rng(s, "shock") < PANIC_HAZ / 12) startPanic(s);
   else if (!e.fiscal && rng(s, "shock") < fiscalHaz / 12) startFiscal(s);
   else if (!e.campus && rng(s, "shock") < CAMPUS_HAZ / 12) startCampus(s, parcels, bbls);
 }
 
-// ---------------------------------------------------------------- the fire
+// ---------------------------------------------------------------- the embargo
 
-/** A building gone, whoever owned it. Returns the insured payout made. */
-function destroyBuilding(s: GameState, parcels: ParcelTable, bbl: string, payoutFrac: number, cause: string): { sf: number; paid: number; mine: boolean } {
-  const rec = resolveRec(parcels, s, bbl);
-  if (!rec || rec.class === "land" || !rec.bldgArea) return { sf: 0, paid: 0, mine: false };
-  const e = s.econ;
-  for (const u of uses(rec)) {
-    const sf = useRentableSf(rec, u);
-    addStock(e, u as BuiltClass, -sf);
-    // Its tenants are out on the street, still wanting space: occupied falls,
-    // demand does not.
-    const vac = e.cityVac?.[u] ?? 0.08;
-    if (e.occupied) e.occupied[u] = Math.max(0, (e.occupied[u] ?? 0) - sf * (1 - vac));
-  }
-  const paid = Math.round(replacementCost(rec, e) * payoutFrac);
-  s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
-  recordPropertyEvent(s, bbl, { kind: "demolished", sf: rec.bldgArea, use: rec.class, outcome: `${rec.yearBuilt || "Older"} building lost to the ${cause}; insurers paid ${money(paid)}` });
-  const h = s.holdings[bbl];
-  let mine = false;
-  if (h) {
-    mine = true;
-    moveDeposit(s, h, -depositsOn(h));
-    h.tenants = [];
-    delete h.occ; delete h.makeReady; delete h.deliveredM; delete h.shellSf; delete h.leasingHold;
-    h.condition = "standard";
-    // THE LENDER IS PAID FIRST. Every mortgage names the lender as loss payee
-    // on the policy: casualty proceeds retire the debt before the owner sees a
-    // dollar, and without a prepayment charge — nobody chose to prepay. Only
-    // what is left over reaches the owner, and a loan bigger than the cheque
-    // stays on the dirt.
-    let left = paid;
-    for (const leg of ["loan", "mezz"] as const) {
-      const ln = h[leg];
-      if (!ln || left <= 0) continue;
-      const take = Math.min(left, ln.balance);
-      ln.balance = Math.round(ln.balance - take);
-      left -= take;
-      if (ln.balance <= 1) delete h[leg];
-    }
-    const intoFund = !!(h.fundOwned && s.fund && !s.fund.settled);
-    if (intoFund && s.fund) s.fund.cash += left; else s.cash += left;
-    // Repaying principal is a balance-sheet movement, not income: only what
-    // reached the owner is booked, as a sale books its proceeds.
-    if (left > 0) logBooks(s, "sold", left, bbl, intoFund);
-    s.lois = s.lois.filter((l) => l.bbl !== bbl);
-  } else {
-    const r = ownerOf(s, bbl);
-    if (r) r.cash = (r.cash ?? 0) + paid;
-  }
-  s.listings = s.listings.filter((l) => l.bbl !== bbl);
-  return { sf: rec.bldgArea, paid, mine };
+function tickEmbargo(s: GameState) {
+  const e = s.econ, x = e.embargo;
+  if (!x) return;
+  // The materials premium lands over the first year, then is simply the new
+  // price of materials: nobody hands it back (the 1974 jump never reversed in
+  // nominal terms). `costShock` is read once per month by the cost index.
+  if (x.leftM > 0) { e.costShock = (e.costShock ?? 0) + x.monthly; x.leftM -= 1; }
+  else e.embargo = undefined;
 }
 
-function greatFire(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null) {
-  if (!adjacency) return;
+function startEmbargo(s: GameState) {
+  const e = s.econ, n = e.nat;
   const yr = START_YEAR + Math.floor(s.month / 12);
-  const built = (b: string) => {
-    if (s.landmarks?.[b] !== undefined) return null;          // stone and a fire wall: the landmarks stand
-    if ((s.cityJobs ?? []).some((j) => j.bbl === b) || s.developments[b]) return null;
-    const r = resolveRec(parcels, s, b);
-    return r && r.class !== "land" && r.bldgArea > 0 ? r : null;
-  };
-  const standing = bbls.filter((b) => built(b));
-  if (standing.length < 50) return;
-  // Where it starts: the old fabric burns first — timber floors and party
-  // walls — so a building's odds of being the origin rise with its age.
-  const age = (r: ParcelRecord) => Math.max(0, yr - (r.yearBuilt || 1920));
-  let tot = 0; const w = standing.map((b) => { const a = 1 + age(built(b)!) / 40; tot += a; return a; });
-  let u = rng(s, "shock") * tot, origin = standing[0];
-  for (let i = 0; i < standing.length; i++) { u -= w[i]; if (u <= 0) { origin = standing[i]; break; } }
-  // How far it runs: lognormal around 5% of the city's buildings (a
-  // Baltimore: the whole downtown core), one in a hundred past 16% (towards a
-  // Chicago). Smaller than that and it is a bad fire, not the one a city
-  // dates itself by.
-  const z = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "shock")))) * Math.cos(2 * Math.PI * rng(s, "shock"));
-  const target = Math.max(12, Math.round(standing.length * 0.05 * Math.exp(0.5 * z)));
-  // IT TAKES A DISTRICT. The fire runs outward from where it started, block
-  // by block, until it has burned what it was going to burn — the size drawn
-  // above. On the way a new high-spec building (sprinklers, a concrete frame,
-  // a fire stair) usually stands while its neighbours go, as the steel-framed
-  // towers did in Baltimore in 1904; the landmarks stand. What is left is the
-  // contiguous burned district every one of those fires left.
-  const c0 = parcels[origin]?.centroid ?? [0, 0];
-  // Degrees of longitude are shorter than degrees of latitude away from the
-  // equator; scale them so the burned district is round, not an ellipse.
-  const kx = Math.cos((c0[1] * Math.PI) / 180);
-  const d2 = (b: string) => { const c = parcels[b]?.centroid ?? c0; return ((c[0] - c0[0]) * kx) ** 2 + (c[1] - c0[1]) ** 2; };
-  const ring = [...standing].sort((a, b) => d2(a) - d2(b));
-  const burned: string[] = [];
-  for (const b of ring) {
-    if (burned.length >= target) break;
-    const r = built(b)!;
-    const stands = Math.max(0, 0.75 * ((r.buildSpec ?? 0.5) - 0.5) * 2 - age(r) / 200);
-    if (b !== origin && rng(s, "shock") < stands) continue;
-    burned.push(b);
+  // THE NATION: the worst supply shock its weather can draw and then some —
+  // 1973-74 added seven to nine points to inflation — and the seventies'
+  // cluster after it, which is what made 1979 a second time.
+  if (n) {
+    n.shockM = Math.round(18 + 12 * rng(s, "shock"));
+    n.shockSev = 0.055 + 0.03 * rng(s, "shock");
+    n.shockClusterM = Math.max(n.shockClusterM ?? 0, 96);
   }
-  void adjacency;
-  if (burned.length < 3) return;
-  // What the insurers can pay: Chicago's paid about half, 1906 and 1904 most.
-  const payoutFrac = 0.5 + 0.45 * rng(s, "shock");
-  let sf = 0, paid = 0, mineN = 0;
-  for (const b of burned) {
-    const r = destroyBuilding(s, parcels, b, payoutFrac, "fire");
-    sf += r.sf; paid += r.paid; if (r.mine) mineN++;
-  }
-  const where = resolveRec(parcels, s, origin);
-  const district = (where as { districtName?: string; district?: string } | null)?.districtName ?? "the old quarter";
-  (s.econ.blackSwans ??= []).push({ m: s.month, kind: "fire", size: burned.length, sf: Math.round(sf), title: `the Great Fire of ${yr}`, bbls: burned });
+  // THE TRADES: materials 12-20% over and above the general inflation the
+  // cost index already passes through, landing over twelve months.
+  const jump = 0.12 + 0.08 * rng(s, "shock");
+  e.embargo = { leftM: 12, monthly: Math.pow(1 + jump, 1 / 12) - 1 };
+  (e.blackSwans ??= []).push({ m: s.month, kind: "embargo", size: Math.round(jump * 100), sf: 0, title: `the embargo of ${yr}` });
   raiseAlert(s, {
-    kind: "swan", tone: "bad", bbl: origin,
-    title: `The Great Fire of ${yr}`,
-    body: `It started near ${where?.address ?? "the waterfront"} and burned for two days. ${burned.length} buildings and ${(sf / 1e6).toFixed(2)}M sf are gone`
-      + (mineN ? `, ${mineN} of them yours` : "") + `. The insurers are paying about ${Math.round(payoutFrac * 100)} cents on the dollar of rebuilding cost — ${money(paid)} in all.`,
-    detail: `The land is still there and the tenants still need somewhere to be. Every crane in the region is about to be booked, and whoever owns cleared ground in ${district} owns the rebuild.`,
+    kind: "swan", tone: "bad",
+    title: `The embargo of ${yr}`,
+    body: `The oil exporters have cut supply and the price of a barrel has tripled in a month. Every price in the country is about to follow it, and construction first: diesel, asphalt, steel and resin are all oil. Expect materials about ${Math.round(jump * 100)}% dearer within the year, on top of the inflation itself.`,
+    detail: "Every job in the ground is about to go over budget, and every pro forma written last year is wrong. The central bank will have to choose between the inflation and the jobs, and in 1974 it chose both, badly.",
   });
 }
 
-// ---------------------------------------------------------------- the surge
+// ---------------------------------------------------------------- the arrivals
 
-function stormSurge(s: GameState, parcels: ParcelTable, bbls: string[]) {
+function tickArrivals(s: GameState) {
+  const e = s.econ, x = e.arrivals;
+  if (!x) { e.bsMigPull = 0; return; }
+  if (x.leftM > 0) { e.bsMigPull = x.monthly; x.leftM -= 1; }
+  else { e.bsMigPull = 0; e.arrivals = undefined; }
+}
+
+function startArrivals(s: GameState) {
   const e = s.econ;
-  // HOW FAR IT RUNS IS HOW HIGH IT WAS. Distance from the shore stands in for
-  // elevation: a surge floods the lowest 6-15% of the city's buildings —
-  // Sandy's flood zone was about a tenth of Manhattan — and the zone it
-  // reached is the zone buyers remember (`surgeM`, read by capRateFor).
-  const standing = bbls.map((b) => resolveRec(parcels, s, b)).filter((r) => r && r.class !== "land" && r.bldgArea > 0) as ParcelRecord[];
-  if (standing.length < 50) return;
-  const dist = standing.map((r) => r.shoreM ?? 9999).sort((a, b) => a - b);
-  const reach = Math.max(e.surgeM ?? 0, dist[Math.floor((0.06 + 0.09 * rng(s, "shock")) * (dist.length - 1))]);
-  const zone = standing.filter((r) => (r.shoreM ?? 9999) <= reach).map((r) => r.bbl);
-  if (zone.length < 5) return;
-  e.surgeM = reach;
   const yr = START_YEAR + Math.floor(s.month / 12);
-  // Damage as a share of rebuilding cost: plant, electrical and fit-out in
-  // the flooded floors. Most of it over the federal flood cap — uninsured.
-  const dmg = 0.06 + 0.10 * rng(s, "shock");
-  const uninsured = 0.4 + 0.3 * rng(s, "shock");
-  let total = 0, mineCost = 0, mineN = 0;
-  for (const b of zone) {
-    const rec = resolveRec(parcels, s, b)!;
-    const cost = replacementCost(rec, e) * dmg;
-    total += cost;
-    const h = s.holdings[b];
-    if (h) {
-      const own = Math.round(cost * uninsured);
-      mineCost += own; mineN++;
-      const intoFund = !!(h.fundOwned && s.fund && !s.fund.settled);
-      if (intoFund && s.fund) s.fund.cash -= own; else s.cash -= own;
-      logBooks(s, "capex", own, b, intoFund);
-      h.condIdx = Math.max(0.05, (h.condIdx ?? 0.6) - 0.12);
-    } else {
-      const r = ownerOf(s, b);
-      if (r) r.cash = (r.cash ?? 0) - cost * uninsured;
-    }
-  }
-  // AND THE MARKET REMEMBERS: the zone trades at a lasting risk premium.
-  e.surgeRisk = (e.surgeRisk ?? 0) + 0.4 + 0.3 * rng(s, "shock");
-  (e.blackSwans ??= []).push({ m: s.month, kind: "surge", size: zone.length, sf: 0, title: `the surge of ${yr}` });
+  // 3-8% of the town in six to twenty-four months: between Mariel (7.8% of
+  // Miami's labour force in five) and the aliyah (8% of Israel in twenty-four).
+  const size = 0.03 + 0.05 * rng(s, "shock");
+  const months = Math.round(6 + 18 * rng(s, "shock"));
+  e.arrivals = { leftM: months, monthly: Math.pow(1 + size, 1 / months) - 1 };
+  const people = Math.round((e.population ?? 0) * size / 1000) * 1000;
+  (e.blackSwans ??= []).push({ m: s.month, kind: "arrivals", size: Math.round(size * 1000), sf: 0, title: `the arrivals of ${yr}` });
   raiseAlert(s, {
-    kind: "swan", tone: "bad",
-    title: `The surge of ${yr}`,
-    body: `A storm drove the harbour over the seawall. ${zone.length} buildings within ${Math.round(reach)} m of the shore flooded — basements, switchgear and lobbies — ${money(total)} of damage, about ${Math.round(uninsured * 100)}% of it over the flood cap and uninsured.`
-      + (mineN ? ` ${mineN} of the buildings are yours: ${money(mineCost)} out of pocket, and they will need capital.` : ""),
-    detail: `Buyers will price the waterfront differently from now on — about ${(e.surgeRisk).toFixed(1)} points more yield to own anything the water can reach.`,
+    kind: "swan", tone: "good",
+    title: `The arrivals of ${yr}`,
+    body: `A political upheaval abroad has opened a door that was shut for a generation, and this city is where the boats and the planes are landing. About ${people.toLocaleString()} people — ${(size * 100).toFixed(0)}% of the town — over the next ${months} months, and they need somewhere to live the week they arrive.`,
+    detail: "They will not wait for a flat to come empty: families are doubling up already. Whoever owns apartments is about to find out what a housing shortage looks like from the right side, and the builders are about to find out how long it takes to catch up.",
   });
 }
 
@@ -486,9 +375,10 @@ function startCampus(s: GameState, parcels: ParcelTable, bbls: string[]) {
 }
 
 /** Fire one on demand — tests and probes only; the game never calls this. */
-export function forceBlackSwan(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus") {
-  if (kind === "fire") greatFire(s, parcels, bbls, adjacency);
-  else if (kind === "surge") stormSurge(s, parcels, bbls);
+export function forceBlackSwan(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, kind: "embargo" | "arrivals" | "wave" | "panic" | "fiscal" | "campus") {
+  void adjacency;
+  if (kind === "embargo") startEmbargo(s);
+  else if (kind === "arrivals") startArrivals(s);
   else if (kind === "wave") startCapitalWave(s);
   else if (kind === "panic") startPanic(s);
   else if (kind === "fiscal") startFiscal(s);

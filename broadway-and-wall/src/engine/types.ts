@@ -1802,6 +1802,8 @@ export interface Econ {
     /** months of elevated supply-shock hazard: shocks cluster, 1973 and 1979 did */
     shockClusterM?: number;
     /** National unemployment, last 13 months — the credit window's year-on-year read, kept by the nation itself so the pre-history has it too. */
+  /** The national credit window (market.ts tickNation): the term premium reads this, never the city's. */
+  creditNat?: number;
     uHist?: number[];
     /**
      * The term premium as its own state — what the bond market charges over
@@ -1896,7 +1898,7 @@ export interface Econ {
   /** Business rent against the nation's at this town's opening — the parity `regionalPull` measures cost against. */
   regionRent0?: number;
   /** Black swans that have landed (blackswans.ts), for the paper and probes. */
-  blackSwans?: { m: number; kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus"; size: number; sf: number;
+  blackSwans?: { m: number; kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus" | "embargo" | "arrivals"; size: number; sf: number;
     /** What the paper calls it, and for a fire the lots it took (stories.ts). */
     title?: string; bbls?: string[] }[];
   /** A bank panic in progress (blackswans.ts): months of full force left, then its fade. */
@@ -1913,8 +1915,14 @@ export interface Econ {
   capWave?: { phase: "in" | "hold" | "out" | "fade"; leftM: number; len: number; from: number; to: number };
   capitalWave?: number;
   /** The yield premium buyers demand for anything a storm surge can reach, after one has, and how far from the shore the worst one reached (m). */
-  surgeRisk?: number;
-  surgeM?: number;
+  /** The embargo (blackswans.ts): the materials premium still landing. */
+  embargo?: { leftM: number; monthly: number };
+  /** Extra construction-cost growth this month from a swan, consumed by the cost index. */
+  costShock?: number;
+  /** A wave of newcomers (blackswans.ts): months left and the monthly inflow as a share of population. */
+  arrivals?: { leftM: number; monthly: number };
+  /** Monthly in-migration from the arrivals, read beside migration in tickEcon. */
+  bsMigPull?: number;
   /** Anonymous merchants' schemes settled at delivery, cumulative (see `settleMerchant` in dev.ts). Display and probes only. */
   merchantTotals?: { delivered: number; underBasis: number; handedBack: number; lossToLenders: number; equityLost: number };
   /** The last month's regional pull on the export base, per year, after the cost brake. */

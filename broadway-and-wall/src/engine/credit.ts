@@ -6,7 +6,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BooksYear, GameState } from "./types";
 import { logBooks, cloneState} from "./types";
-import { netWorth } from "./value";
+import { netWorth, ownedHoldingNoiYr, ownedHoldingValue, resolveRec } from "./value";
 import { sponsorStanding } from "./sponsor";
 import { money } from "./money";
 import { deskRatePct, appetiteAdvance } from "./pricing";
@@ -210,7 +210,26 @@ export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): nu
   if (bank?.failedM !== undefined) return Math.max(0, Math.round(s.loc?.balance ?? 0));
   const appFac = bank ? appetiteAdvance(bank.appetite) : 1;
   const advance = LOC_LTV * Math.max(0.35, Math.min(1.15, ci)) * (1 - Math.min(0.6, 1.6 * st.advanceCut)) * appFac;
-  return Math.max(0, Math.round(nw * advance));
+  // ...AND IT HAS TO BE SERVICED (2026-10-14). Sixty per cent of net worth was
+  // the whole test, so a book of empty buildings and dirt marked up on paper
+  // carried a revolver its income could not pay a month of — and the line was
+  // drawn automatically to cover every shortfall. A street firm's line is the
+  // lesser of its covenant and what its income will carry (rivals.ts
+  // lineRoom); a corporate revolver has the same pair of tests, leverage AND
+  // coverage. Income after the mortgages must cover the line's interest
+  // 1.25 times, and the dirt gets the land desk's borrowing base — a third of
+  // its value — because land carries debt on value, not on income.
+  const rate = Math.max(1, (s.econ.indexRate ?? 5) + LOC_SPREAD) / 100;
+  let free = 0, land = 0;
+  for (const h of Object.values(s.holdings)) {
+    if (h.fundOwned && s.fund && !s.fund.settled) continue;
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (rec && (rec.class === "land" || !rec.bldgArea) && !h.groundLeased) { land += ownedHoldingValue(s, parcels, h); continue; }
+    const ds = (h.loan?.monthlyPmt ?? 0) * 12 + (h.mezz?.monthlyPmt ?? 0) * 12;
+    free += ownedHoldingNoiYr(s, parcels, h) - ds;
+  }
+  const serviceable = Math.max(0, free) / (1.25 * rate) + land / 3;
+  return Math.max(0, Math.round(Math.min(nw * advance, serviceable * appFac)));
 }
 
 /**

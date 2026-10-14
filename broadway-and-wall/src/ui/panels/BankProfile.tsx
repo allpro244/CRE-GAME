@@ -2,7 +2,7 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec } from "@/engine/value";
 import {
-  lenderHealth, capitalRatio, lenderBlurb, stayingPower, lenderConstitution, lenderPressure,
+  lenderHealth, capitalRatio, lenderBlurb, stayingPower, lenderConstitution, lenderPressure, marketDepositRate,
 } from "@/engine/lenders";
 import type { Lender } from "@/engine/lenders";
 import {
@@ -203,8 +203,26 @@ function BankFile({ l }: { l: Lender }) {
           <Row k="Capital ratio" v={`${pc(cr, 2)} against a ${pc(c.target, 1)} target — ${(cr / Math.max(0.01, c.target)).toFixed(2)}× · `
             + `${l.kind === "conduit" ? "a conduit is never seized" : `the examiners close a desk near ${pc(c.target * 0.22, 1)}`}`}
             bad={cr < c.target * 0.7} good={cr > c.target * 1.15} />
-          <Row k="Funding mix" v={`${pc(c.wholesale, 0)} wholesale (repriced the week rates move) · ${pc(1 - c.wholesale, 0)} core${l.kind === "bank" ? " deposits" : ""}`} />
-          {l.dep && <Row k="Deposits" v={`${usd(l.dep.total)} · ${pc(l.dep.uninsuredShare, 0)} over the insurance limit`} />}
+          {l.dep?.rate !== undefined ? (() => {
+            const d = l.dep!;
+            const mkt = marketDepositRate(game);
+            const gap = mkt !== undefined ? d.rate! - mkt : 0;
+            return (
+              <>
+                <Row k="Deposits" v={`${usd(d.total)} · ${pc(d.uninsuredShare, 0)} over the insurance limit`
+                  + (d.flowYr !== undefined ? ` · ${d.flowYr >= 0 ? "+" : ""}${pc(d.flowYr, 0)} over the year` : "")}
+                  bad={(d.flowYr ?? 0) < -0.1} good={(d.flowYr ?? 0) > 0.1} />
+                <Row k="Pays depositors" v={`${d.rate!.toFixed(2)}%`
+                  + (mkt !== undefined ? ` — ${Math.abs(gap) < 0.05 ? "the going rate" : `${Math.abs(gap).toFixed(2)}pt ${gap > 0 ? "over" : "under"} the town's ${mkt.toFixed(2)}%`}` : "")
+                  + (gap > 0.25 ? " · paying up for money" : gap < -0.25 ? " · flush, and letting it go" : "")}
+                  bad={gap > 0.4} />
+                <Row k="Borrowed money" v={`${usd(d.wholesale ?? 0)} of advances, brokered CDs and repo — ${pc(l.book > 0 ? (d.wholesale ?? 0) / l.book : 0, 0)} of the book, and the part a panic reprices`}
+                  bad={l.book > 0 && (d.wholesale ?? 0) / l.book > c.wholesale + 0.1} />
+                <Row k="Cash & securities" v={usd(d.liquid ?? 0)} />
+                <Row k="Cost of funds" v={`${(l.fundCost ?? 0).toFixed(2)}% of the book`} />
+              </>
+            );
+          })() : <Row k="Funding mix" v={`${pc(c.wholesale, 0)} wholesale (repriced the week rates move) · ${pc(1 - c.wholesale, 0)} core`} />}
           {c.adc > 0 && <Row k="Construction & land" v={`${pc(c.adc, 0)} of the book by policy — the first loans to sour when land prices fall`} />}
           <Row k="Pressure to sell" v={`${(lenderPressure(l) * 100).toFixed(0)} / 100 — ${lenderPressure(l) > 0.4 ? "it will sell loans and buildings at whatever clears its balance sheet" : lenderPressure(l) > 0 ? "some — the note desk may hear from it" : "none; it can wait for the right price"}`} bad={lenderPressure(l) > 0.4} />
         </div>

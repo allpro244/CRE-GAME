@@ -70,9 +70,17 @@ for (const l of g.lenders) {
   check(dM > dS && dS > 0, `a shut window widens the junior (+${dM.toFixed(2)}) more than the senior (+${dS.toFixed(2)})`);
   const lr = (s) => E.locRate(s);
   check(lr(shut) > lr(open), `the line reprices with the window: ${lr(open).toFixed(2)}% → ${lr(shut).toFixed(2)}%`);
-  const weak = clone(g);
+  // The line needs a borrowing base (credit.ts locLimit: income after the
+  // mortgages, or land) — a firm that owns nothing has no line to cut. Own
+  // one building free and clear first.
+  const li = g.listings.map((l) => ({ l, rec: E.resolveRec(parcels, g, l.bbl) }))
+    .filter((x) => x.rec && x.rec.class !== "land" && x.rec.bldgArea > 6000 && x.l.ask < 4_000_000)
+    .sort((a, b) => b.l.ask - a.l.ask)[0];
+  const owned = E.executePurchase(g, parcels, li.l.bbl, li.l.ask, "cash", false, 1);
+  const base = owned.err ? g : owned.s;
+  const weak = clone(base);
   const bank = E.lineLender(weak);
-  const flush = clone(g);
+  const flush = clone(base);
   weak.lenders.find((l) => l.id === bank.id).appetite = 0.2;
   flush.lenders.find((l) => l.id === bank.id).appetite = 1.0;
   check(E.locRate(weak) > E.locRate(flush), `a line at a rationing bank costs more: ${E.locRate(flush).toFixed(2)}% vs ${E.locRate(weak).toFixed(2)}%`);

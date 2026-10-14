@@ -775,6 +775,44 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     }
   }
 
+  // ------------------------------------------------------------------- vehicle
+  // THE RIGHT PURSE (CAPITAL_RAISING_PLAN.md §0.5). `conserve` reconciles the
+  // TOTAL of the sponsor's cash and the vehicle's, so a dollar that lands in
+  // the wrong one of the two — the LPs' sale proceeds in the sponsor's account,
+  // the sponsor paying the LPs' leasing — balances perfectly and is invisible
+  // there. Two identities close that:
+  //   - the vehicle's cash is the sum of its own ledger (`flows`): nothing
+  //     writes to it without saying why;
+  //   - what was booked to a live fund deed equals what the vehicle settled
+  //     for it (`deedTagged` == `deedSettled`), GP advances included.
+  // Both skip a fund written before the ledger existed (no `flows`).
+  // And a deed flagged `fundOwned` must sit in a LIVE fund: the ownership
+  // layer (vehicles.ts) reads the flag only through a live fund, and a few
+  // callers with no state to hand (debt.ts leaseUpRoom) read it bare. They
+  // agree only while this holds.
+  for (const h of Object.values(s.holdings)) {
+    if (h.fundOwned && !(s.fund && !s.fund.settled)) {
+      bad("vehicle", h.bbl, `flagged as a fund deed with no live fund (${s.fund ? "settled" : "none"})`);
+    }
+  }
+  {
+    const f = s.fund;
+    if (f && f.flows) {
+      const sum = Object.values(f.flows).reduce((a, v) => a + (v ?? 0), 0);
+      const gap = f.cash - sum;
+      if (!fin(gap) || Math.abs(gap) > 1_000) {
+        bad("vehicle", "fund", `cash ${Math.round(f.cash)} against its own ledger ${Math.round(sum)} — ${Math.round(gap)} moved without a kind`);
+      }
+      if (!f.settled && f.deedTagged !== undefined) {
+        const purse = (f.deedTagged ?? 0) - (f.deedSettled ?? 0);
+        const tol = Math.max(1_000, 1e-6 * Math.abs(f.deedTagged ?? 0));
+        if (!fin(purse) || Math.abs(purse) > tol) {
+          bad("vehicle", "fund", `booked to fund deeds ${Math.round(f.deedTagged ?? 0)} but the vehicle settled ${Math.round(f.deedSettled ?? 0)} — ${Math.round(purse)} in the wrong purse`);
+        }
+      }
+    }
+  }
+
   // ------------------------------------------------------------------- paper
   // A note is money and it can turn into a deed, which means every one of these
   // is a way to invent a building or a dollar out of nothing.

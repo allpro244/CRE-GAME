@@ -32,6 +32,7 @@ import { recordPropertyEvent, noteTenantMove } from "./history";
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
 import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 import { money } from "./money";
+import { purseOf } from "./vehicles";
 
 /** 0..1, for the net-effective trade in the prospect draw. */
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -1613,6 +1614,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // being released rather than an asset arriving.
       // Already in the purse that held it (moveDeposit) — the vehicle for a fund deed.
       if (kept > 0) logBooks(s, "noi", kept, h.bbl, true);
+      // The vehicle already holds that cash: the forfeiture is settled where it
+      // sits (the right-purse identity, invariants.ts).
+      if (kept > 0 && purseOf(s, h) === "fund" && s.fund) s.fund.deedSettled = (s.fund.deedSettled ?? 0) + kept;
       const merge = recombinationCost(rec, t, s.econ.costIdx);
       if (merge > 0) {
         s.cash -= merge;
@@ -3478,7 +3482,7 @@ export function lineDeskMayDraw(s: GameState, parcels?: ParcelTable): number {
 
 /** Does the vehicle, not the sponsor, pay this deed's signing costs? */
 export function vehicleSigns(s: GameState, h: Holding | undefined): boolean {
-  return !!(h?.fundOwned && s.fund && !s.fund.settled);
+  return purseOf(s, h) === "fund";
 }
 
 /** What the vehicle can put into an existing investment today: its cash and its uncalled commitments. */

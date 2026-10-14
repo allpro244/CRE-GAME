@@ -3727,6 +3727,18 @@ export function logBooks(
 ) {
   if (bbl) {
     tagDeed(s, key, amt, bbl);
+    // The right-purse identity's left side: what was booked to a live fund
+    // deed, owner-side and signed. A JV partner's flows are not the vehicle's.
+    const fv = s.fund;
+    const sgn = DEED_SIGN[key];
+    // A vehicle purchase or sale is booked while the deed is not on the books
+    // (before it exists, or after it has gone), so there `vehicleDirect` is
+    // what marks it as the vehicle's. On a deed that IS on the books the flag
+    // only means "the cash is already in the purse that held it" (a forfeited
+    // deposit), which may be the sponsor's: the deed's own flag decides.
+    const held = s.holdings[bbl];
+    if (fv && !fv.settled && sgn && key !== "lpCalled" && key !== "lpDistributed" && Number.isFinite(amt)
+      && (held ? held.fundOwned : vehicleDirect)) fv.deedTagged = (fv.deedTagged ?? 0) + sgn * amt;
     if (!vehicleDirect) settleVehicleDeedFlow(s, key, amt, bbl);
   } else if (deedCfProbe.on && DEED_SIGN[key] && amt) probeUntagged(s, key, amt);
   if (!s.books) s.books = [];
@@ -3847,8 +3859,29 @@ function settleVehicleDeedFlow(s: GameState, key: keyof Omit<BooksYear, "yr">, a
  */
 export function moveDeposit(s: GameState, h: Holding | undefined, amt: number) {
   if (!amt) return;
-  if (h?.fundOwned && s.fund && !s.fund.settled) s.fund.cash += amt;
+  if (h?.fundOwned && s.fund && !s.fund.settled) moveFundCash(s.fund, amt, "deposit");
   else s.cash += amt;
+}
+
+/**
+ * Why a dollar moved through the fund vehicle's `cash`. One kind per real
+ * movement: capital called, distributed, a GP advance repaid, a deed's own
+ * flow settled, a purchase or sale the caller moved directly, a tenant
+ * deposit, the sponsor's buy-in at the wind-down.
+ */
+export type FundFlowKind = "call" | "dist" | "advRepay" | "deed" | "purchase" | "sale" | "deposit" | "buyIn";
+
+/**
+ * THE ONE WRITE TO A VEHICLE'S CASH. Moves `amt` (signed) and records it on
+ * the vehicle's own ledger by kind, so `invariants.ts` can hold the purse to
+ * the sum of its flows. Mutates `f`.
+ */
+export function moveFundCash(f: import("./fund").PlayerFund, amt: number, kind: FundFlowKind) {
+  if (!amt) return;
+  f.cash += amt;
+  const fl = (f.flows ??= {});
+  fl[kind] = (fl[kind] ?? 0) + amt;
+  if (kind === "purchase" || kind === "sale") f.deedSettled = (f.deedSettled ?? 0) + amt;
 }
 
 /** Deposits the vehicle holds — on the live fund's deeds. */
@@ -3867,7 +3900,9 @@ export function vehicleCollect(s: GameState, amt: number) {
   if (repay > 0) f.gpAdvance = (f.gpAdvance ?? 0) - repay; // the sponsor keeps it: its loan back
   const rest = amt - repay;
   s.cash -= rest;
-  f.cash += rest;
+  moveFundCash(f, rest, "deed");
+  // The whole booking is settled: `rest` into the purse, `repay` against the advance.
+  f.deedSettled = (f.deedSettled ?? 0) + amt;
 }
 
 /**
@@ -3883,14 +3918,16 @@ export function vehicleReimburse(s: GameState, amt: number): number {
     const call = Math.min(short, f.uncalled);
     f.uncalled -= call;
     f.called += call;
-    f.cash += call;
+    moveFundCash(f, call, "call");
     logBooks(s, "lpCalled", call); // LP equity in for the vehicle's own costs — not income
   }
   const pay = Math.min(amt, Math.max(0, f.cash));
-  f.cash -= pay;
+  moveFundCash(f, -pay, "deed");
   s.cash += pay;
   const adv = amt - pay;
   if (adv > 0) f.gpAdvance = (f.gpAdvance ?? 0) + adv;
+  // The whole cost is settled: `pay` from the purse, `adv` as a GP advance.
+  f.deedSettled = (f.deedSettled ?? 0) - amt;
   return adv;
 }
 

@@ -35,6 +35,9 @@ export const MODULES = [
   "leasehold",
   // jv is a minority partner in one deed; fund.ts carries the waterfall.
   "jv",
+  // vehicles is the one answer to "whose equity is inside this deed" — fund,
+  // JV partner, later deal vehicles (CAPITAL_RAISING_PLAN.md §12.1a).
+  "vehicles",
   // standing is the reading of the score: the street ranking, the year marks, the reviews.
   "standing",
   // buybox is the sponsor's standing acquisition criteria (what a first look must match).

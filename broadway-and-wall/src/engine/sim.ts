@@ -5,7 +5,7 @@
 // been monthly; the name was a lie that trained the wrong instinct.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Listing } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleHot, cycleDown } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -14,7 +14,7 @@ import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, co
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
 import { stampYearMark } from "./standing";
-import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
+import { splitMonthCf } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
 import { tickLoan, productById, loanLender, stackPayoff, balloonLadder, drawLeaseUpReserve, leaseUpRoom } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
@@ -48,6 +48,7 @@ import { money } from "./money";
 import { tickBlackSwans } from "./blackswans";
 import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
+import { purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -1025,11 +1026,12 @@ function tickMonth(
       const depr = Math.max(0, Math.min(improvements / life, deprCapacity));
       h.deprTaken = (h.deprTaken ?? 0) + depr;
       h.deprYr = Math.round(depr);
-      if (!(liveFund && h.fundOwned)) firmDepr += depr;
+      const inFund = purseOf(s, h) === "fund";
+      if (!inFund) firmDepr += depr;
       // A partnership passes its income through: on a JV deed the owner is
       // taxed on their share (depreciation already runs on their basis alone).
-      if (liveFund && h.fundOwned) { fundTaxable += noi - interest - depr; continue; }
-      taxable += (noi - interest) * (1 - jvShare(h)) - depr; // losses net against gains across the portfolio
+      if (inFund) { fundTaxable += noi - interest - depr; continue; }
+      taxable += (noi - interest) * (1 - partnerShare(s, h)) - depr; // losses net against gains across the portfolio
     }
     if (liveFund) taxable += fundTaxable * gpCapitalShare(liveFund);
     // Carried interest received this year — the sponsor's own income.
@@ -1191,7 +1193,8 @@ function tickMonth(
         // pump a voluntary sale pays releaseCost to stop.
         const release = releaseCost(s, parcels, pick.bbl);
         // A JV partner takes its share of any surplus that reaches the owners.
-        const toBorrower = ownersShareOfProceeds(pick, net - lien - breakFee - release);
+        const rpB = routeProceeds(s, pick, net - lien - breakFee - release);
+        const toBorrower = rpB.toSponsor + rpB.toVehicle;
         const shortfall = Math.max(0, lien + breakFee - net);
         // toBorrower can go negative when the release premium exceeds net —
         // same as acceptSaleOffer: the lien settles even if cash deepens.
@@ -1203,7 +1206,7 @@ function tickMonth(
         // is the reason handing back the keys beats being levied.
         // A vehicle deed's gain passes through: the sponsor pays its
         // co-invest share, the vehicle pays nothing (sponsorsSaleTax).
-        const owed = pick.fundOwned && s.fund && !s.fund.settled ? Math.round(tax * gpCapitalShare(s.fund)) : tax;
+        const owed = purseOf(s, pick) === "fund" ? Math.round(tax * taxShare(s, pick)) : tax;
         if (owed > 0) {
           s.cash -= owed;
           s.taxesPaid = (s.taxesPaid ?? 0) + owed;
@@ -2167,11 +2170,11 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
     // stop, downward. It goes in kind to the LPs' trust with its mortgage.
     const paid = price > 0 ? fundCashNeed(s, parcels, price, { allowLoc: true }) : 0;
     if (price > 0 && paid >= price) {
-      f.cash += paid;
+      moveFundCash(f, paid, "buyIn");
       // The tenants' deposits come across with the deed: the vehicle held
       // them, the sponsor owes them from here on.
       const dep = depositsOn(h);
-      f.cash -= dep;
+      moveFundCash(f, -dep, "deposit");
       s.cash += dep;
       paidTotal += paid;
       delete h.fundOwned;

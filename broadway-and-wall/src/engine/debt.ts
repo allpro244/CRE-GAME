@@ -19,13 +19,13 @@ import { INDUSTRY_LABEL, shortIndexOf, natUnempRise12 } from "./market";
 import { sponsorStanding } from "./sponsor";
 import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash, spendable, fundAndBook } from "./credit";
 import { sizeAreaScale } from "./cityscale";
-import { JV_CONSENT } from "./jv";
 import { money } from "./money";
 import { monthlyPayment, scheduledPayment, recastPayment, CAP_PREMIUM_PCT, capPremiumOn } from "./amortize";
 import { deskRatePct, appetiteAdvance } from "./pricing";
 import { CONSTRUCTION_LENDER } from "./types";
 export { monthlyPayment, scheduledPayment, recastPayment, CAP_PREMIUM_PCT, capPremiumOn };
 import { releaseCost, FACILITY_MIN_ASSETS } from "./facility";
+import { consentFor, purseOf, partnerShare } from "./vehicles";
 
 export type PrepayKind = "open" | "stepdown" | "yieldmaint";
 
@@ -883,7 +883,7 @@ export function payOffLoan(
   const rec = resolveRec(parcels, next, bbl);
   if (!h?.loan) return { s, err: "Nothing to pay off on that deed." };
   if (!rec) return { s, err: "Unknown parcel." };
-  if (h.jv) return { s, err: JV_CONSENT };
+  { const why = consentFor(s, h, "debt"); if (why) return { s, err: why }; }
   if (next.facility?.bbls.includes(bbl)) {
     return { s, err: "This deed is pledged to your facility. Release it there, or repay the facility — a mortgage payoff does not cut the crossed lien." };
   }
@@ -957,7 +957,7 @@ export function paydownLoan(
 ): { s: GameState; err?: string; msg?: string } {
   const h0 = s.holdings[bbl];
   if (!h0?.loan) return { s, err: "Nothing to pay down on that deed." };
-  if (h0.jv) return { s, err: JV_CONSENT };
+  { const why = consentFor(s, h0, "debt"); if (why) return { s, err: why }; }
   if (!resolveRec(parcels, s, bbl)) return { s, err: "Unknown parcel." };
   if (s.facility?.bbls.includes(bbl)) {
     return { s, err: "This deed is pledged to your facility. Pay the facility down there — the mortgage is not what holds the lien." };
@@ -1003,7 +1003,7 @@ export function paydownLoan(
 export function drawLeaseUpReserve(s: GameState, h: Holding, want: number, toCash = true): number {
   const loan = h.loan;
   const room = loan?.leaseUpRoom ?? 0;
-  if (!loan || !(room > 0) || !(want > 0) || h.fundOwned) return 0;
+  if (!loan || !(room > 0) || !(want > 0) || purseOf(s, h) === "fund") return 0;
   const draw = Math.min(room, Math.round(want));
   if (draw <= 0) return 0;
   loan.leaseUpRoom = room - draw;
@@ -1906,7 +1906,7 @@ export function mezzQuote(s: GameState, parcels: ParcelTable, bbl: string): Mezz
 export function placeMezz(
   s: GameState, parcels: ParcelTable, bbl: string,
 ): { s: GameState; err?: string; msg?: string } {
-  if (s.holdings[bbl]?.jv) return { s, err: JV_CONSENT };
+  { const why = consentFor(s, s.holdings[bbl], "debt"); if (why) return { s, err: why }; }
   const q = mezzQuote(s, parcels, bbl);
   if (!q.available || q.principal < 250_000) {
     return { s, err: q.why ?? "No mezz quote." };
@@ -2444,8 +2444,9 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   next.cash += netDraw - fee;
   // A JV partner shares the refinance both ways: its share of a cash-out is
   // distributed, its share of a pay-down (and the fee) is called.
-  if (h.jv) {
-    const part = Math.round((netDraw - fee) * h.jv.share);
+  const ps = partnerShare(s, h);
+  if (ps > 0) {
+    const part = Math.round((netDraw - fee) * ps);
     if (part > 0) { next.cash -= part; logBooks(next, "lpDistributed", part, bbl); }
     else if (part < 0) { next.cash -= part; logBooks(next, "lpCalled", -part, bbl); }
   }

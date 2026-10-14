@@ -27,6 +27,7 @@ import { bareLandRec, groundYieldPct, landValue, leaseholdGroundPv, ownedHolding
 import { stackPayoff } from "./debt";
 import { fundCashNeed, fundableNow } from "./credit";
 import { CAP_GAINS_RATE, TRANSFER_TAX } from "./actions";
+import { consentFor } from "./vehicles";
 
 /** Ninety-nine years: the ordinary term for a ground lease a lender will finance under. */
 export const LEASEHOLD_TERM_M = 99 * 12;
@@ -58,8 +59,7 @@ function blocker(s: GameState, h: Holding | undefined, rec: ReturnType<typeof re
   if (rec.class === "land" || !rec.bldgArea) return "There is no building to keep — this is dirt. Sell it, or ground-lease it out.";
   if (h.groundLeased || s.groundLeases?.[h.bbl]) return "You are the ground lessor here already.";
   if (h.groundRentOut) return "The land under it is already sold.";
-  if (h.jv) return "Your partner has consent on that — buy them out first.";
-  if (h.fundOwned) return "The fund's documents do not allow selling the land out from under a vehicle deed.";
+  if (h.jv || h.fundOwned) return consentFor(s, h, "groundLease");
   if (s.facility?.bbls.includes(h.bbl)) return "Pledged to your facility — release it there first.";
   if (s.workouts?.[h.bbl]) return "The lender has a file open on it. Nobody buys the fee under a building in workout.";
   if (h.sale) return "It is on the market. Pull the listing first.";

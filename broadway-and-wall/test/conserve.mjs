@@ -334,6 +334,11 @@ for (const seed of SEEDS) {
   }
   totalBreaks += breaks.length;
   for (const k of [...IN, ...OUT]) coverage[k] += Math.abs(bookTotals(g)[k] ?? 0);
+  // HASH=1: the end state's fingerprint, for proving a refactor changed nothing.
+  if (process.env.HASH) {
+    const { createHash } = await import("node:crypto");
+    console.log(`HASH conserve seed ${seed} ${createHash("sha256").update(JSON.stringify(g)).digest("hex").slice(0, 16)}`);
+  }
   rows.push({ seed, breaks, worst, cum });
 }
 

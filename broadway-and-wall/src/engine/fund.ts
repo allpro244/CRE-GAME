@@ -12,7 +12,7 @@
  *   investment period 5y / life 10y — common closed-end shape
  */
 import type { GameState } from "./types";
-import { cloneState, logBooks, monthLabel } from "./types";
+import { cloneState, logBooks, monthLabel, moveFundCash } from "./types";
 import { markSponsor, sponsorStanding } from "./sponsor";
 import { money } from "./money";
 
@@ -84,6 +84,25 @@ export interface PlayerFund {
    * "raised and returned", whatever its DPI reads.
    */
   inKind?: number;
+  /**
+   * THE VEHICLE'S OWN LEDGER (2026-10, CAPITAL_RAISING_PLAN.md §0.5). Every
+   * dollar into or out of `cash`, by kind, written by `moveFundCash` at the
+   * one place each movement happens. `invariants.ts` holds `cash` to the sum:
+   * a write that bypasses it is money in the vehicle nobody can account for.
+   * Absent on saves written before it; the check skips those.
+   */
+  flows?: Partial<Record<import("./types").FundFlowKind, number>>;
+  /**
+   * THE RIGHT-PURSE IDENTITY. `deedTagged` is every owner-side dollar booked
+   * against a live fund deed (`logBooks`, signed: + into the owner, − out);
+   * `deedSettled` is what the vehicle actually settled for those bookings
+   * (`vehicleCollect` / `vehicleReimburse`, GP advances included) and the
+   * `purchase` / `sale` flows callers moved directly. They must agree: a
+   * fund deed's money landing in the sponsor's account, or the sponsor paying
+   * the LPs' bills, shows up as the gap.
+   */
+  deedTagged?: number;
+  deedSettled?: number;
 }
 
 /**
@@ -223,6 +242,9 @@ export function raiseFund(s: GameState): { s: GameState; err?: string } {
     size: q.size,
     uncalled: lpCommit - lpCalled0,
     cash: fundCash,
+    flows: { call: fundCash },
+    deedTagged: 0,
+    deedSettled: 0,
     called: lpCalled0 + gpCalled0,
     distributed: 0,
     promotePaid: 0,
@@ -252,7 +274,7 @@ export function callFundCapital(s: GameState, amount: number): { s: GameState; e
   const next = cloneState(s);
   const f = next.fund!;
   f.uncalled -= want;
-  f.cash += want;
+  moveFundCash(f, want, "call");
   f.called += want;
   logBooks(next, "lpCalled", want);
   return { s: next };
@@ -309,13 +331,13 @@ export function applyDistribute(s: GameState, amount: number): number {
   const adv = Math.min(want, Math.max(0, Math.round(f.gpAdvance ?? 0)));
   if (adv > 0) {
     f.gpAdvance = (f.gpAdvance ?? 0) - adv;
-    f.cash -= adv;
+    moveFundCash(f, -adv, "advRepay");
     s.cash += adv;
     want -= adv;
     if (want <= 0) return 0;
   }
   const w = waterfall(f, want);
-  f.cash -= want;
+  moveFundCash(f, -want, "dist");
   f.prefAccrued -= w.pref;
   f.capReturned = (f.capReturned ?? 0) + w.capital;
   // `distributed` is every dollar to the capital accounts — LP and co-invest —
@@ -478,14 +500,14 @@ export function chargeFundEquity(s: GameState, amount: number): { err?: string }
   if ((s.fund?.cash ?? 0) < want) {
     return { err: `The vehicle is short ${money((want - (s.fund?.cash ?? 0)))}.` };
   }
-  s.fund!.cash -= want;
+  moveFundCash(s.fund!, -want, "purchase");
   return {};
 }
 
 /** Sale / operating proceeds into the vehicle. Mutates `s`. */
-export function creditFundCash(s: GameState, amount: number): void {
+export function creditFundCash(s: GameState, amount: number, kind: import("./types").FundFlowKind = "sale"): void {
   if (!s.fund || s.fund.settled) return;
-  s.fund.cash += Math.round(amount);
+  moveFundCash(s.fund, Math.round(amount), kind);
 }
 
 /**

@@ -180,6 +180,7 @@ export function demandBeta(demandScore: number): number {
 //               and that discount is exactly what an assembler is buying up.
 export { physicalMaxFloors } from "./structure";
 import { physicalMaxFloors } from "./structure";
+import { purseOf, partnerShare } from "./vehicles";
 
 /**
  * The plate a median NEW building in this city actually carries — measured at
@@ -4100,9 +4101,9 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
     const v = ownedHoldingValue(s, parcels, h);
     gav += v;
     const eq = v - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0);
-    if (liveFund && h.fundOwned) { fundNav += eq; continue; }
+    if (purseOf(s, h) === "fund") { fundNav += eq; continue; }
     // A JV partner owns its share of the equity, not of the building.
-    nw += eq * (1 - (h.jv?.share ?? 0));
+    nw += eq * (1 - partnerShare(s, h));
   }
   if (liveFund) nw += gpInterestInFund(liveFund, fundNav);
   // The note on a wound-down fund's liquidating trust — see fund.ts TrustNote.

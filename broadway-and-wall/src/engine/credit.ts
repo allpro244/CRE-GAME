@@ -12,6 +12,7 @@ import { money } from "./money";
 import { deskRatePct, appetiteAdvance } from "./pricing";
 import { shortIndexOf } from "./market";
 import type { Lender } from "./lenders";
+import { purseOf } from "./vehicles";
 
 /**
  * THE ADVANCE RATE, against net worth.
@@ -222,7 +223,7 @@ export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): nu
   const rate = Math.max(1, (s.econ.indexRate ?? 5) + LOC_SPREAD) / 100;
   let free = 0, land = 0;
   for (const h of Object.values(s.holdings)) {
-    if (h.fundOwned && s.fund && !s.fund.settled) continue;
+    if (purseOf(s, h) === "fund") continue;
     const rec = resolveRec(parcels, s, h.bbl);
     if (rec && (rec.class === "land" || !rec.bldgArea) && !h.groundLeased) { land += ownedHoldingValue(s, parcels, h); continue; }
     const ds = (h.loan?.monthlyPmt ?? 0) * 12 + (h.mezz?.monthlyPmt ?? 0) * 12;

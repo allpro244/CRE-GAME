@@ -1406,6 +1406,41 @@ export interface PropertyEvent {
  * raises nothing costs the UI nothing.
  */
 /** An anonymous merchant's scheme as underwritten at the start (see `merchantBook` in dev.ts). */
+/**
+ * A NAMED SMALL DEVELOPER — the street's builders (dev.ts, developerLook).
+ * They were a fresh anonymous draw every month; now each is somebody: a name,
+ * fixed habits, its own money in each deal and a record that ends, for some,
+ * in a fold.
+ */
+export interface Builder {
+  id: string;
+  name: string;
+  founder: string;
+  bornM: number;
+  /** Habits, fixed for life — the same traits the anonymous draw produced (dev.ts DeveloperProfile). */
+  prof: {
+    bar: number; minDemand: number; spec: number; maxFloors: number; ltc: number; uses: DevUse[];
+    floor?: number; outlook: number; momentum: number; vacTol: number; maxShare: number;
+  };
+  /** The firm's own money, and how much of it is in schemes still building. */
+  capital: number;
+  committed: number;
+  starts: number;
+  delivered: number;
+  sfDelivered: number;
+  /** Delivered worth less than cost / handed back to the lender. */
+  underwater: number;
+  handedBack: number;
+  /** Profit booked to the firm over its life. */
+  profit: number;
+  lastStartM?: number;
+  /** Its best and worst openings: value against cost. */
+  best?: number;
+  worst?: number;
+  failedM?: number;
+  endReason?: "folded" | "retired";
+}
+
 export interface MerchantBook {
   basis: number; loan: number; lender?: string;
   /** The underwriting the start was decided on: stabilised NOI, exit yield (decimal), lease-up budget. */
@@ -2620,6 +2655,10 @@ export interface Rival {
   targetLtv: number;
   bornM: number;
   aum?: number;          // marked each month, for display
+  /** The firm's career — founding, peaks, distress, foreclosures, mergers, the end. Never trimmed past forty; the founding stays. */
+  career?: { m: number; text: string }[];
+  /** The high-water mark of its equity, for the career's "new high" lines. */
+  peakEq?: number;
   /** Distributions over roughly the last two years (decays monthly) — what a recall clause can reach. */
   distRecent?: number;
   /** Last mark's annual NOI — kept so absorption can size a line without re-walking the book. */
@@ -3196,8 +3235,13 @@ export interface GameState {
    * up, the design and the financing in hand, the hole not yet dug. Nobody
    * else counts them: a pipeline report lists starts. See `developerLook`.
    */
+  /** The street's named developers, living and gone (dev.ts). */
+  builders?: Builder[];
+  nextBuilderId?: number;
   cityPlans?: {
     bbl: string; use: string; floors: number; plate: number; spec: number; ltc: number; decidedM: number; breakM: number;
+    /** The named developer who committed to it (see Builder). */
+    builderId?: string;
   }[];
   cityJobs?: {
     bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number;
@@ -3217,7 +3261,11 @@ export interface GameState {
      * leasehold improvement is theirs until reversion.
      */
     groundLease?: boolean;
-    firmId?: string;      // whose job it is; absent means the anonymous city
+    firmId?: string;      // whose job it is; absent means the street's developer below
+    /** The named small developer building it, when no firm has claimed it (see Builder). */
+    builderId?: string;
+    /** That developer's own money in the scheme. */
+    coInvest?: number;
     /**
      * THE ANONYMOUS MERCHANT'S OWN BOOK: what the scheme cost all in, the
      * construction loan against it and the desk that wrote it. Settled at

@@ -49,7 +49,7 @@ import { sizeAreaScale } from "./cityscale";
 import { money } from "./money";
 import { FUND_INVEST_M, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { observe, yearOfWatching } from "./competitorReads";
-import { logFirm } from "./firmLog";
+import { logFirm, milestone } from "./firmLog";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
 import { assembledBlock, reviewThesis, thesisFit, thesisLabel, thesisSellMult } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
@@ -2664,6 +2664,7 @@ function maybeNewFirm(s: GameState) {
   });
   {
     const born = s.rivals[s.rivals.length - 1];
+    milestone(s, born, `Founded${parentFirm ? ` by partners out of ${parentFirm.name}` : ""}, with ${money(equity)} raised`);
     seatProfile(s, born, profile, parentFirm?.sheet);
     if (founder) born.style = style;
     born.home = parentFirm?.home;
@@ -3637,6 +3638,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   const desk = deskFor(s, r, worst.bbl);
   const owed = dropDeed(s, r, worst.bbl);
   logFirm(s, r, "event", `Handed ${worst.rec.address} back to ${desk}`, worst.bbl, owed);
+  milestone(s, r, surplus ? `Lost ${worst.rec.address} to foreclosure (${desk})` : `Handed ${worst.rec.address} back to ${desk}`);
 
   r.bbls = r.bbls.filter((b) => b !== worst!.bbl);
   forgetDeed(r, worst.bbl);
@@ -4046,6 +4048,13 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     if (s.month > 0 && s.month % 12 === 0) {
       // THE RACE CHART'S POINT, and a year of watching them. Display only.
       (r.eqHist ??= []).push([s.month / 12, Math.round(aum - r.debt + r.cash)]);
+      {
+        const eqNow = aum - r.debt + r.cash;
+        if (eqNow > 0 && eqNow > (r.peakEq ?? 0) * 1.25) {
+          if (r.peakEq) milestone(s, r, `A new high: worth ${money(eqNow)}, ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}`);
+          r.peakEq = eqNow;
+        }
+      }
       if (r.eqHist.length > 150) r.eqHist.shift();
       yearOfWatching(s, r, sheetOf(r));
       driftYear(s, r);
@@ -4475,6 +4484,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       && !(s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned);
     if (r.cash < 0 || calledShort) {
       r.stressMs = (r.stressMs ?? 0) + 1;
+      if (r.stressMs === 1) milestone(s, r, `Fell behind on its debt with ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} on the book`);
       // 0. THE DEEP-POCKETED BACKER (a quirk, hidden until used): a parent
       //    company or an old fortune behind the firm commits fresh equity once,
       //    the first time it misses a payment. It arrives as commitment the
@@ -4526,6 +4536,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       if (r.stressMs > NOTICE_M + FORECLOSE_M) {
         r.failedM = s.month;
         r.endReason = "failed";
+        milestone(s, r, `Went under — ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} to the lenders`);
         chargeSponsorFailure(s, parcels, r);
         s.news.unshift({
           q: s.month, kind: "warn",
@@ -4544,6 +4555,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       // the tape, so `dumped` ran to 22 on a shop with money in the bank and
       // the news line called it "their 22nd building on the tape this stretch".
       // The branch that did that is gone; this is the belt to its braces.
+      if ((r.stressMs ?? 0) > 1) milestone(s, r, `Caught up on its debt after ${r.stressMs} months behind`);
       r.stressMs = 0;
       r.dumped = 0;
     }

@@ -36,3 +36,18 @@ export function streetMoves(s: GameState, fromM: number, n = 10): FirmLogEntry[]
   }
   return out;
 }
+
+
+/**
+ * A LINE IN THE FIRM'S CAREER (2026-10-14). The move log above is capped
+ * across the whole street, so a firm's early years scroll off; the career is
+ * the handful of moments that make its story — founded, its peaks, the year
+ * it fell behind, the buildings it lost, who it swallowed or was swallowed
+ * by, the end — kept per firm. Display only.
+ */
+export function milestone(s: GameState, r: Rival | undefined, text: string) {
+  if (!r) return;
+  const c = (r.career ??= []);
+  c.push({ m: s.month, text });
+  if (c.length > 40) c.splice(1, 1);
+}

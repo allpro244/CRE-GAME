@@ -1926,7 +1926,7 @@ export interface Econ {
   /** Anonymous merchants' schemes settled at delivery, cumulative (see `settleMerchant` in dev.ts). Display and probes only. */
   merchantTotals?: { delivered: number; underBasis: number; handedBack: number; lossToLenders: number; equityLost: number };
   /** The street's last hundred deliveries: value the day it opened over all-in basis (dev.ts settleMerchant). */
-  merchantLog?: { m: number; ratio: number }[];
+  merchantLog?: { m: number; ratio: number; atStart?: number }[];
   /** The first payroll the labour market filled — the space market's jobs baseline (market.ts). */
   jobsFilled0?: number;
   /** The last month's regional pull on the export base, per year, after the cost brake. */

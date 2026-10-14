@@ -914,8 +914,52 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // are sized off the leverage and the leverage cannot wait for them. The
   // difference to the desk's own sizing is a rounding error; the difference to
   // the borrower of getting the reserve wrong is the building.
+  // ONE VALUATION IDENTITY. Stabilised NOI is the same stack the street marks
+  // with (`noiYr(..., true)`), and the exit yield is the same tax-loaded
+  // capitalisation `assetValue` uses — read at the underwritten market (see
+  // underwritingEcon). BTS overlays the committed share on top of that read.
+  // ...LESS WHAT THIS BUILDING DOES TO ITS OWN RENT (2026-10-12). A scheme
+  // that adds a fifth of the town's office stock lets into the glut it
+  // creates: the concession package at delivery vacancy WITH it against the
+  // package without it, taken off its stabilised rent. A shed on a big lot
+  // barely moves it; a tower the size of the market prices its own glut.
+  const ownConc = overMix(mix, (u) => {
+    const nat = NATURAL_VAC[u];
+    const vAt = forwardVacancy(econ, u);
+    const vOwn = forwardVacancy(econ, u, rentable * (mix[u] ?? 0));
+    return (1 - CONC_DEPTH * concessionTarget(vOwn - nat))
+      / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vAt - nat));
+  });
+  const marketStabNoi = noiYr(asBuilt, uw, "good", true)
+    - rentPsf0 * rentable * stabOcc0 * Math.max(0, 1 - ownConc);
+  let stabNoi = marketStabNoi;
+  if (btsShare > 0 && bts) {
+    const opex = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(asBuilt, econ, u));
+    const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);
+    const egiPsf = bts.rentPsf + opex * recovery;
+    const btsNoi = rentable * (egiPsf - opex - egiPsf * MGMT_FEE);
+    stabNoi = marketStabNoi * (1 - btsShare) + btsNoi * btsShare;
+  }
+  const exitCap = capRateFor(asBuilt, uw, "good");
+  const exitYieldPct = exitCap + taxRate(uw) * 100 * taxBorneShare(asBuilt);
+
   const cq = o.quote(mix, preReserve);
   let ltcMax = cq.open ? cq.ltcMax : 0;
+  // THE BANK APPRAISES THE BUILDING, NOT THE DEVELOPER'S HOPES (2026-10-14).
+  // The supervisory ceiling cited in constructionLtc is a loan-to-VALUE limit
+  // on the as-completed appraisal (80% for commercial construction, Interagency
+  // Guidelines, 12 CFR 365 App. A), and a bank's house limit sits inside it —
+  // 65-75% of as-stabilised value is the common term sheet. This desk lent up
+  // to 80% of COST whatever the building would be worth, so a scheme worth
+  // nine-tenths of its cost borrowed like a good one: measured, 68% of the
+  // street's starts were worth less than they cost on their own pro forma
+  // the day they broke ground, and half opened under water. The advance is
+  // now the lesser of the cost test and 75% of the stabilised value.
+  // On the cost the advance is quoted on (before the reserves, as above).
+  if (preReserve > 0 && exitYieldPct > 0) {
+    const ltvCap = 0.75 * (stabNoi / (exitYieldPct / 100)) / preReserve;
+    ltcMax = Math.max(0, Math.min(ltcMax, ltvCap));
+  }
   // A bankable lease turns speculative construction into contracted credit.
   // The boost is bounded by anchor share and covenant; it cannot exceed an
   // ordinary senior construction advance.
@@ -1021,34 +1065,6 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // because the commitment is sized off costTotal.
   const pointsCost = commitment > 0 ? Math.round(commitment * cq.points) : 0;
 
-  // ONE VALUATION IDENTITY. Stabilised NOI is the same stack the street marks
-  // with (`noiYr(..., true)`), and the exit yield is the same tax-loaded
-  // capitalisation `assetValue` uses — read at the underwritten market (see
-  // underwritingEcon). BTS overlays the committed share on top of that read.
-  // ...LESS WHAT THIS BUILDING DOES TO ITS OWN RENT (2026-10-12). A scheme
-  // that adds a fifth of the town's office stock lets into the glut it
-  // creates: the concession package at delivery vacancy WITH it against the
-  // package without it, taken off its stabilised rent. A shed on a big lot
-  // barely moves it; a tower the size of the market prices its own glut.
-  const ownConc = overMix(mix, (u) => {
-    const nat = NATURAL_VAC[u];
-    const vAt = forwardVacancy(econ, u);
-    const vOwn = forwardVacancy(econ, u, rentable * (mix[u] ?? 0));
-    return (1 - CONC_DEPTH * concessionTarget(vOwn - nat))
-      / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vAt - nat));
-  });
-  const marketStabNoi = noiYr(asBuilt, uw, "good", true)
-    - rentPsf0 * rentable * stabOcc0 * Math.max(0, 1 - ownConc);
-  let stabNoi = marketStabNoi;
-  if (btsShare > 0 && bts) {
-    const opex = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(asBuilt, econ, u));
-    const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);
-    const egiPsf = bts.rentPsf + opex * recovery;
-    const btsNoi = rentable * (egiPsf - opex - egiPsf * MGMT_FEE);
-    stabNoi = marketStabNoi * (1 - btsShare) + btsNoi * btsShare;
-  }
-  const exitCap = capRateFor(asBuilt, uw, "good");
-  const exitYieldPct = exitCap + taxRate(uw) * 100 * taxBorneShare(asBuilt);
 
   return {
     asBuilt, mix, floors: fl, coverage: cov, gsf, rentable,

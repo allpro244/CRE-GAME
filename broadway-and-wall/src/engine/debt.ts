@@ -8,7 +8,7 @@ import { commercialShare } from "./mix";
 import type { Condition, Econ, GameState, Holding, Loan } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { openWorkout } from "./workout";
-import { lenderAppetite } from "./lenders";
+import { lenderAppetite, lenderChase } from "./lenders";
 import {
   ownedHoldingNoiYrFromRec, ownedHoldingValue, ownedContractNoiYr,
   ownedHoldingValueFromRec, proFormaNOIYr, capRateFor,
@@ -211,11 +211,39 @@ export const PRODUCTS: LoanProduct[] = [
     // Unlike the conduit it does not close in a crunch: the agencies are the
     // apartment market's lender of last resort, which is why they wrote most
     // of the multifamily paper in 2009-10.
-    id: "agencyArm", label: "Meridian agency ARM · 10 yr floating, apartments", lender: "Meridian Street Capital",
+    id: "agencyArm", label: "Keystone agency ARM · 10 yr floating, apartments", lender: "Keystone Agency Finance",
     blurb: "Agency floating money for apartments only: non-recourse, ten years, a cap at closing, 1% to leave after year one.",
     ltv: 0.75, spread: 2.10, floating: true, ioM: 12, amortYears: 30, termM: 120,
     uwDscr: 1.25, debtYield: 0.075, points: 0.010, recourse: false, prepay: "stepdown", prepayM: 12,
     minDSCR: 1.15, maxLTV: 0.85, minLoan: 1_000_000, classes: ["multifamily"],
+  },
+  {
+    // The agency's fixed program — the 10-year DUS/Optigo loan, the most
+    // common apartment mortgage in the country. Priced inside the conduit,
+    // sized to coverage, yield maintenance to nearly the end.
+    id: "agencyFixed", label: "Keystone agency fixed · 10 yr, 30-yr am, apartments", lender: "Keystone Agency Finance",
+    blurb: "The agency's ten-year fixed loan for apartments: non-recourse, the cheapest long money a flats owner can get, and open through a crunch.",
+    ltv: 0.75, spread: 1.55, floating: false, ioM: 24, amortYears: 30, termM: 120,
+    uwDscr: 1.25, debtYield: 0.07, points: 0.010, recourse: false, prepay: "yieldmaint", prepayM: 114,
+    minDSCR: 1.15, maxLTV: 0.85, minLoan: 1_000_000, classes: ["multifamily"],
+  },
+  {
+    // The second insurer: a little more leverage than Pelican, a shorter
+    // term, the same appetite for well-kept buildings only.
+    id: "ashford", label: "Ashford Life & Annuity · 10 yr, 30-yr am", lender: "Ashford Life & Annuity",
+    blurb: "A second life company's money: long, fixed and cheap, for buildings that are kept up. A shade more leverage than Pelican, ten years instead of fifteen.",
+    ltv: 0.62, spread: 1.25, floating: false, ioM: 24, amortYears: 30, termM: 120,
+    uwDscr: 1.30, debtYield: 0.09, points: 0.008, recourse: false, prepay: "yieldmaint", prepayM: 108,
+    minDSCR: 1.25, maxLTV: 0.80, minLoan: 3_000_000, minCondition: "standard",
+  },
+  {
+    // The money-centre bank's balance-sheet loan: big tickets, non-recourse
+    // for size, five years fixed. Its hold is the biggest any bank here has.
+    id: "bowline", label: "Bowline National Bank · 5 yr, 30-yr am", lender: "Bowline National Bank",
+    blurb: "The out-of-town money-centre bank: the biggest bank check in the city, non-recourse on size, priced off its own funding — and gone the week the money markets lock.",
+    ltv: 0.65, spread: 1.75, floating: false, ioM: 24, amortYears: 30, termM: 60,
+    uwDscr: 1.25, debtYield: 0.085, points: 0.0075, recourse: false, prepay: "stepdown", prepayM: 36,
+    minDSCR: 1.20, maxLTV: 0.80, minLoan: 8_000_000, maxLoan: 120_000_000,
   },
   {
     id: "cordage", label: "Cordage Debt Partners · 3 yr, floating IO", lender: "Cordage Debt Partners",
@@ -334,7 +362,7 @@ export function holdMaxOf(s: GameState, p: LoanProduct): number | undefined {
 export function loanMin(s: GameState, p: LoanProduct): number {
   if (!p.minLoan) return 0;
   const scale = s.loanScale ?? 1;
-  const floor = p.window ? 1_000_000 : p.lender === "Pelican Life Insurance" ? 750_000 : 500_000;
+  const floor = p.window ? 1_000_000 : p.lender === "Pelican Life Insurance" || p.lender === "Ashford Life & Annuity" ? 750_000 : 500_000;
   return Math.max(floor, Math.round(p.minLoan * scale / 50_000) * 50_000);
 }
 
@@ -1101,7 +1129,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // Fixed paper prices off the loan index; floating off the short index.
   const bench = product.floating ? shortIndexOf(s.econ) : s.econ.indexRate;
   const ratePct = deskRatePct(bench, product.spread, {
-    ci, app, ease: crunchEase, standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongName,
+    ci, app, ease: crunchEase, standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongName + lenderChase(s, product.lender),
   });
   const adv = advanceFactor(s, product.lender);
   // THE SHEET TODAY, not the sheet on the brochure — see statedLtv.
@@ -1134,7 +1162,9 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // a desk that is not in the market for this deal quotes nothing at all
   if (!windowOpen(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
   // a program that lends on one asset class writes nothing on another
-  if (product.classes && klass && !product.classes.includes(klass)) {
+  // A class-restricted program asked about a building of unknown class does
+  // not lend on it — the agency writes flats, and only what it can see is flats.
+  if (product.classes && (!klass || !product.classes.includes(klass))) {
     return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: `${product.label.split(" · ")[0]} lends on ${product.classes.join(", ")} only` };
   }
   // A HOLD SIZE IS A LIMIT ON ONE ASSET. The street's books are spread across
@@ -2170,7 +2200,7 @@ export function balloonLadder(
   s: GameState, parcels: ParcelTable, h: Holding, rec: ParcelRecord, balance: number,
 ) {
   const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(s, parcels, h, rec);
-    const ladder = (vacantDirt ? ["land"] : ["pelican", "conduit", "savings25", "savings", "harbor", "cordage"])
+    const ladder = (vacantDirt ? ["land"] : ["pelican", "ashford", "agencyFixed", "conduit", "bowline", "savings25", "savings", "harbor", "cordage"])
       .map(productById)
       .filter((p) => productOpen(s, p) && windowOpen(s, p)
         // A desk that cannot close on this building must not be chosen as its

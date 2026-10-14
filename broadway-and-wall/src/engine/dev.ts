@@ -214,7 +214,7 @@ function settleMerchant(s: GameState, parcels: ParcelTable, bbl: string, m: Merc
   e.merchantTotals.delivered += 1;
   // The last hundred, for the economy probes: how the street's own builders
   // actually did, opening day, against what they spent.
-  (e.merchantLog ??= []).push({ m: s.month, ratio: +(worth / Math.max(1, m.basis)).toFixed(3) });
+  (e.merchantLog ??= []).push({ m: s.month, ratio: +(worth / Math.max(1, m.basis)).toFixed(3), atStart: +((m.noi / Math.max(0.01, m.yld)) / Math.max(1, m.basis)).toFixed(3) });
   if (e.merchantLog.length > 100) e.merchantLog.shift();
   if (worth < m.basis) { e.merchantTotals.underBasis += 1; e.merchantTotals.equityLost += Math.round(Math.min(m.basis - m.loan, m.basis - worth)); }
   if (!m.lender || worth >= m.loan) return;
@@ -629,8 +629,16 @@ export function planDevelopment(
   // you paid for the dirt.
   // The quote is the chosen desk's, not the town's. Rival and city jobs never
   // pass a lender, so they land on the regional — the historical default.
+  // EVERY JOB HAS ITS OWN BID (2026-10-14). The street's projects carry a
+  // per-site cost draw (projectCostMult — ground conditions, a tight site, a
+  // contractor's book that month), and the player's carried none: every
+  // scheme the player priced came in at exactly the average, a dispersion
+  // nobody else was spared. The same draw applies to every plan now; it is
+  // hashed on the lot and the season, so the design desk's number and the
+  // contract are the same number.
+  const customC = { ...(custom ?? {}), costMult: custom?.costMult ?? projectCostMult(s, bbl, use) };
   const pf = developmentProForma(rec, s.econ, {
-    use, floors, coverage, contract, spec, custom, ltcWanted,
+    use, floors, coverage, contract, spec, custom: customC, ltcWanted,
     quote: (mix, preReserve) => {
       const cqs = constructionQuotes(s, mix, preReserve);
       return cqs.find((q) => q.lender === lender) ?? cqs.find((q) => q.lender === CONSTRUCTION_LENDER)!;
@@ -4194,6 +4202,13 @@ function developerLook(
         // need the construction desk open: when the banks will not lend, the
         // cash-heavy ones still build what pencils.
         if (!u || (!u.financeable && !ownMoney && dev.ltc > CASH_BUILDER_LTC)) continue;
+        // A MERCHANT BUILDER BUILDS ON THE BANK'S NUMBERS (2026-10-14). The
+        // construction advance is now capped at 75% of the bank's appraisal
+        // of the finished building (developmentProForma); a shop that runs on
+        // borrowed money and cannot get near the leverage it runs on does not
+        // write the difference out of hope. Only the equity builders — about
+        // a quarter of the street — can still back a scheme the bank will not.
+        if (dev.ltc > CASH_BUILDER_LTC && u.plan.ltcMax < dev.ltc - 0.05) continue;
         // SIZE AGAINST THE MARKET: no bigger than the share of the class's
         // stock this shop will put into one building.
         const ownSf = u.plan.sf * (u.plan.mix?.[lead] ?? 1);
@@ -4211,6 +4226,9 @@ function developerLook(
         if (forwardVacancy(s.econ, lead, ownSf, u.plan.months + PLAN_LEAD_M[lead]) > NATURAL_VAC[lead] + dev.vacTol) continue;
         // THEIR OWN READ: yield on cost over the exit cap at the trade margin,
         // through their rent outlook and how they read the market's direction.
+        // ...but only on a scheme that already clears its spread on today's
+        // rent, whatever it believes about tomorrow's.
+        if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < spreadFloor(dev)) continue;
         const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum);
         if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h };
       }
@@ -4277,6 +4295,8 @@ function developerLook(
  */
 type DeveloperProfile = {
   bar: number; minDemand: number; spec: number; maxFloors: number; ltc: number; uses: DevUse[];
+  /** The value/cost this shop needs on TODAY's numbers, before any outlook — see spreadFloor. */
+  floor?: number;
   outlook: number; momentum: number; vacTol: number; maxShare: number;
 };
 function drawDeveloper(s: GameState): DeveloperProfile {
@@ -4307,6 +4327,18 @@ function drawDeveloper(s: GameState): DeveloperProfile {
   // merchant who must also carry the construction loan's risk (~100bp vs
   // ~150-200bp over a ~7% cap: 0.92x to 1.07x the trade margin).
   const bar = (0.92 + 0.2 * ltc) * Math.exp(0.20 * nrm());
+  // THE SPREAD ON TODAY'S RENT (2026-10-14). The bar above is a belief —
+  // it rides on the shop's rent outlook and its read of momentum — and it had
+  // no floor: with dozens of shops looking at every site, the scheme was
+  // built by whichever drew the lowest bar, and measured, the median start
+  // was worth 0.90-0.96 of its cost on its own untrended pro forma the day it
+  // was decided. No merchant builder's lender or investment committee signs
+  // that: the development spread is underwritten on current rents — a
+  // stabilised yield on cost 100-200bp over the exit cap for levered merchant
+  // builders (value/cost ~1.15-1.30), thinner for patient cash (~1.05).
+  // Market practice (NCREIF / Green Street development-spread surveys; the
+  // "untrended yield on cost" line of every merchant-build memo).
+  const floor = Math.max(1.0, Math.min(1.25, 1.05 + 0.10 * (ltc / 0.8) + 0.04 * nrm()));
   // WHERE: a minimum site quality; ~4 in 10 take any lot.
   const pref = Math.max(0, ambition + 0.25 * nrm() - 0.25);
   const minDemand = Math.min(0.8, pref * 0.9);
@@ -4337,7 +4369,7 @@ function drawDeveloper(s: GameState): DeveloperProfile {
   const w = types.map((_, i) => base[i] * -Math.log(Math.max(1e-9, u())));
   const top = Math.max(...w);
   const uses = types.filter((_, i) => w[i] >= 0.45 * top);
-  return { bar, minDemand, spec, maxFloors, ltc, uses, outlook, momentum, vacTol, maxShare };
+  return { bar, floor, minDemand, spec, maxFloors, ltc, uses, outlook, momentum, vacTol, maxShare };
 }
 
 /**
@@ -4377,6 +4409,12 @@ function breakCommittedPlans(s: GameState, parcels: ParcelTable, adjacency: Reco
     if (!rec || rec.class !== "land") continue;
     const u = underwriteDevelopment(s, parcels, p.bbl, p.use as DevUse, p.floors, p.plate, undefined, p.spec, p.ltc);
     if (!u || (!u.financeable && !ownMoney && p.ltc > CASH_BUILDER_LTC)) continue;
+    // SHELVED AT THE LAST LOOK. The scheme is re-priced at ground-break —
+    // land at today's ask, today's trades — and a builder whose spread has
+    // gone negative in the months of design and permits does not dig: the
+    // deposit on the land and the drawings are written off and the site
+    // waits (the shelved-scheme lists of 1990, 2008-09).
+    if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < SHELVE_AT) continue;
     if (breakCityGround(s, parcels, adjacency, p.bbl, rec, p.use as DevUse, p.floors, p.plate, { spec: p.spec, ltc: p.ltc, decided: true })) syncSupplyViews(s.econ, true);
   }
   s.cityPlans = keep;
@@ -4389,6 +4427,12 @@ function breakCommittedPlans(s: GameState, parcels: ParcelTable, adjacency: Reco
  * how often the market is sampled: what gets built is decided by the pro
  * forma, and a hot market converts more of its looks.
  */
+/** A shop's untrended value/cost floor; old saves derive it from leverage. */
+function spreadFloor(dev: { floor?: number; ltc: number }): number {
+  return dev.floor ?? Math.max(1.0, Math.min(1.25, 1.05 + 0.10 * (dev.ltc / 0.8)));
+}
+/** Below this value/cost on the re-priced plan, a decided scheme is shelved rather than started. */
+const SHELVE_AT = 0.97;
 function developerLooksPerMonth(e: Econ): number {
   let stock = 0;
   for (const k of BUILT_CLASSES) stock += e.stock?.[k] ?? 0;

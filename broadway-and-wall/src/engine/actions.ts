@@ -3311,9 +3311,13 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // level drops. One consistent RNG draw either way, so a save replays the
   // same whether or not the phone is switched on.
   const QUIETER = 0.25;
-  const p = (quiet > 0
-    ? Math.min(0.85, Math.max(base, 0.12 * (1 + quiet / 1.6)) * dry)
-    : base) * rep * QUIETER;
+  // NO DROUGHT FLOOR (owner, 2026-10-14: "the player should have less of
+  // their hand held"). The phone rang MORE the longer the desk sat idle — a
+  // pity timer no firm on the street was ever given. A broker calls the buyer
+  // with the book, the money and the name, at the rate above; a principal who
+  // does nothing hears nothing, and the public tape is where they go to work.
+  void quiet;
+  const p = base * dry * rep * QUIETER;
   const roll = rng(s, "sales");
   if (s.brokersOff) return;
   if (roll >= p) return;

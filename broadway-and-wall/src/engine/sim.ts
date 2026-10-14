@@ -923,9 +923,18 @@ function tickMonth(
   // below, because money-fund interest is ordinary income in life too.
   // THE OPERATING ACCOUNT EARNS THE DEPOSIT RATE, the swept balance the bill
   // rate (cashSplit in lenders.ts) — and only the first is the bank's risk.
+  // AN OVERDRAWN BALANCE IS BORROWED MONEY (2026-10-14). Negative cash paid
+  // nothing, so a firm could run underwater for months on what was in effect
+  // a free unsecured loan from its creditors. Whoever is carrying that hole
+  // charges for it, at the price of unsecured paper — the short index plus
+  // six points, about where a business overdraft sits over prime.
+  if (s.cash < 0 && !s.setup?.sandbox) {
+    const od = Math.round(-s.cash * ((s.econ.shortIndex ?? s.econ.indexRate) + 6) / 100 / 12);
+    if (od > 0) { s.cash -= od; logBooks(s, "debtSvc", od); }
+  }
   if (s.cash > 0) {
     const split = cashSplit(s);
-    const interest = Math.round((split.inBills * sweepApy(s.econ) + split.atBank * depositApy(s.econ)) / 12);
+    const interest = Math.round((split.inBills * sweepApy(s.econ) + split.atBank * depositApy(s.econ, split.bank)) / 12);
     if (interest > 0) {
       s.cash += interest; logBooks(s, "interest", interest);
       s.depositInterestYr = (s.depositInterestYr ?? 0) + interest;
@@ -1080,7 +1089,7 @@ function tickMonth(
   // revolver before they are insolvent; the month has to do the same.
   tickLoc(s, parcels);   // interest, sweeps, over-advance call, and the safety draw
 
-  // insolvency: after a year underwater the creditors don't end you — they
+  // insolvency: after six months underwater the creditors don't end you — they
   // start taking things. One asset a month, sold at a distressed bid, until the
   // balance is square. You only lose when the line is exhausted and there is
   // nothing left to take.
@@ -1095,15 +1104,20 @@ function tickMonth(
   if (s.cash < 0 && !s.setup?.sandbox) {
     s.insolventMs++;
     s.underwaterMs = (s.underwaterMs ?? 0) + 1;
-    if (s.insolventMs === 6) {
-      s.news.unshift({ q: s.month, kind: "warn", text: "Your lenders have noticed the negative balance. Six more months of this and they start seizing assets." });
+    // THE SAME CLOCK THE STREET RUNS ON (2026-10-14). The player had a year
+    // before anything was seized and eight years before the run ended; a firm
+    // on the street hands back its first building at six months and is
+    // finished at fourteen. Creditors do not wait longer for one borrower than
+    // for another: seizures from six months, the end at two years.
+    if (s.insolventMs === 3) {
+      s.news.unshift({ q: s.month, kind: "warn", text: "Your creditors have noticed the negative balance. Three more months of this and they start seizing assets." });
     }
-    if ((s.underwaterMs ?? 0) >= 96) {
+    if ((s.underwaterMs ?? 0) >= 24) {
       s.gameOver = {
-        cause: "Insolvency: eight years underwater without a month above water, and the hole still grows. The run ends here.",
+        cause: "Insolvency: two years underwater without a month above water, and the hole still grows. The run ends here.",
       };
       s.news.unshift({ q: s.month, kind: "warn", text: "The run is over — the creditors have waited long enough." });
-    } else if (s.insolventMs >= 12) {
+    } else if (s.insolventMs >= 6) {
       // Last draw before the bailiff — if the line still covers the hole,
       // there is nothing to seize.
       coverCashShortfall(s, parcels);
@@ -1242,7 +1256,7 @@ function tickMonth(
               : `${money(Math.max(0, toBorrower))} reached you after the costs of the sale${owed > 0 ? ` and ${money(owed)} of tax on the gain` : ``}. `)
             + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
         });
-        s.insolventMs = s.cash < 0 ? 12 : 0;
+        s.insolventMs = s.cash < 0 ? 6 : 0;
       } else if (locAvailable(s, parcels) > 0 || fundableNow(s, parcels) > 0) {
         // Book empty of seizable deeds (everything in workout / development /
         // coupon-current) but liquidity remains — keep the run alive.
@@ -1455,7 +1469,7 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
     return {
       label: "insolvent",
       bad: true,
-      title: `Insolvency month ${s.insolventMs} of 12 — the city cycle is still ${s.econ.phase}; your book is not.`,
+      title: `Insolvency month ${s.insolventMs} of 6 — the city cycle is still ${s.econ.phase}; your book is not.`,
     };
   }
   if (workouts > 0) {
@@ -2026,7 +2040,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       critical: true,
       key: "cash",
       label: ms > 0
-        ? `Cash is negative — insolvency month ${ms} of 12 before lender seizure`
+        ? `Cash is negative — insolvency month ${ms} of 6 before lender seizure`
         : "Cash is negative — the insolvency clock has started",
     });
   } else {

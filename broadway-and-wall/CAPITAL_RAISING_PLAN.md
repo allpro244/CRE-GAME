@@ -182,7 +182,7 @@ real US cities, all measured relative to the nation in the same year):
 | **Return over the cost of money:** going-in yield plus underwritten growth, minus the coupon | The same spread `firmEntryPitch` reads | A cheap city can attract yield buyers even without growth: the "secondary market" trade |
 | **Liquidity:** trades per year and depth of the tape | `lastTradeM`, `cityJobs` (as `firmEntryPitch`) | Institutions avoid markets they can't exit |
 | **Size** | Lots and population (`cityscale.ts`) | Pensions and sovereign funds need big markets: a Hamlet barely registers to them, a Great City does |
-| **Shocks:** recent fiscal crisis, fire, storm surge; a campus | `econ.blackSwans` | Fiscal crises and surges cut the share for years; a campus announcement lifts it |
+| **Shocks:** a recent fiscal crisis, embargo or panic; refugee or migrant arrivals; a campus | `econ.blackSwans` (on `main`: embargo, arrivals, capital wave, panic, fiscal crisis, campus; fire and storm surge were removed) | A fiscal crisis or embargo cuts the share for years; a campus announcement lifts it; a capital wave floods the foreign pool |
 
 ```
 cityShare_t(type) = baseShare(size, type) × attractiveness_t(type)
@@ -1469,7 +1469,7 @@ about each.
      proceeds routing.
    - Migrate `fundOwned` and `jv` onto it **before** adding any new vehicle.
    - Exit paths to cover: sale, accepted bid, auction or foreclosure,
-     portfolio package, 1031, fire or surge insurance, take-private,
+     portfolio package, 1031, any casualty or insurance path (none on `main` since fire and surge were removed), take-private,
      deed-in-lieu, DPO, ground-lease sale, recap buyout.
 2. **Every vehicle is another cash purse.** `conserve` reconciles
    `cash + fund.cash` today. N deal vehicles mean N purses: sum them in
@@ -1538,3 +1538,41 @@ about each.
     designed answer.
 16. **The development-only mandate.** MDGA tooling should count syndicated
     and fund developments as development (open question 5).
+
+### 12.1a Design: the ownership layer (`src/engine/vehicles.ts`), drafted
+
+`ownership.ts` is taken: it's the city-wide register of who owns each deed.
+This layer is about the **equity inside** the player's own deeds (sponsor,
+fund, JV partner, later deal vehicles), so it's a new module.
+
+**The call sites today** (on `main` after PR #342): about 37 `fundOwned`
+references and 67 JV references (`h.jv`, `jvShare`, `jvConsent`,
+`JV_CONSENT`, `ownersShareOfProceeds`, `partnerFunds`, `splitMonthCf`)
+across about 20 engine and UI files. They fall into six questions, so the
+layer is six functions:
+
+| Function | Answers | Replaces (examples) |
+|---|---|---|
+| `vehicleOf(s, h)` | Is this deed in a live vehicle, and which? | `h.fundOwned && s.fund && !s.fund.settled` (types, portfolio, leasing, actions), bare `h.fundOwned` (goals, standing, debt, dev) |
+| `sponsorShare(s, h)` | What fraction of the deed's equity is the sponsor's? | JV `1 − share` in `value.ts`, `books.ts`, `standing.ts`, `goals.ts`; the fund deed exclusion before `gpInterestInFund` |
+| `consentFor(s, h, action)` | Can the sponsor do this alone, and if not, why? | `jvConsent` / `JV_CONSENT` (debt, dev, actions, leasehold, facility, portfolio), `jv.ts:105`, `leasehold.ts:62`, the 1031 refusal (`actions.ts`) |
+| `purseOf(s, h)` | Which cash account takes this deed's money? | `moveDeposit`, `settleVehicleDeedFlow`, `fromFund` / `intoFund` (actions, portfolio), the lease-up reserve branch (`dev.ts`), `credit.ts` |
+| `routeProceeds(s, h, toOwners)` | Who gets what at an exit? | `ownersShareOfProceeds` (actions, auction, sim foreclosure), the `intoFund` sale branches |
+| `taxShare(s, h)` | What share of this deed's taxable income is the sponsor's? | `gpCapitalShare` uses (`actions.ts`, `sim.ts`), JV pass-through in `sim.ts` |
+
+**Today's inconsistency, made explicit.** Some checks read "fund-owned and
+the fund is live", others only "fund-owned". They agree today, because a
+fund settles only once it owns no deeds (`tickFund`), and the wind-down
+removes the flag on buy-in. `vehicleOf` makes that one rule.
+
+**Migration, in three moves:**
+1. **Add `vehicles.ts`**, implemented on today's flags (`fundOwned`, `jv`).
+   Nothing calls it yet.
+2. **Swap call sites file by file.** After each file, prove **no change**:
+   same seeds, the same end-state hash over 2 seeds × 20 years (as
+   `test/setup.mjs` does), plus `test/vehicles.mjs` and `conserve`. Any
+   difference is a bug in the swap.
+3. **Only then change the data model** to an owners record per deed
+   (`owners: { vehicleId, share }[]`) with a save migration
+   (`SAVE_VERSION` bump), and add deal vehicles as a new kind.
+

@@ -124,6 +124,29 @@ for (const seed of SEEDS) {
     const g0 = gapOf(prev), g1 = gapOf(g);
     g = E.advanceMonth(g, parcels, bbls, adjacency);
     months++;
+    // THE OWNERSHIP LAYER AGREES WITH TODAY'S HAND-WRITTEN CHECKS on every
+    // deed, every month. This is the guard the call-site migration rests on
+    // (CAPITAL_RAISING_PLAN.md §12.1a): when a file moves onto vehicles.ts,
+    // any disagreement is a bug in the move.
+    for (const h of Object.values(g.holdings)) {
+      const fundLive = !!(h.fundOwned && g.fund && !g.fund.settled);
+      const v = E.vehicleOf(g, h);
+      const want = fundLive ? "fund" : h.jv ? "jv" : "none";
+      const got = v ? v.kind : "none";
+      const disagree = [];
+      if (got !== want) disagree.push(`vehicleOf ${got} vs ${want}`);
+      if (E.purseOf(g, h) !== (fundLive ? "fund" : "sponsor")) disagree.push("purseOf");
+      const x = 1_000_000;
+      const r = E.routeProceeds(g, h, x);
+      const legacy = fundLive ? 0 : E.ownersShareOfProceeds(h, x);
+      if (r.toSponsor !== legacy) disagree.push(`routeProceeds ${r.toSponsor} vs ${legacy}`);
+      if (h.jv && E.consentFor(g, h, "debt") !== E.jvConsent(h)) disagree.push("consentFor");
+      if (disagree.length) {
+        const k = "layer: " + disagree.join(", ").replace(/-?\d[\d,.]*/g, "N");
+        violations[k] = (violations[k] ?? 0) + 1;
+        if (!firstBad) firstBad = `seed ${seed} m${g.month} ${h.bbl}: ${disagree.join(", ")}`;
+      }
+    }
     if (process.env.DEBUG && gapOf(g) !== g1) {
       const fd = Object.values(g.holdings).filter((h) => h.fundOwned).map((h) => h.bbl);
       const was = Object.values(prev.holdings).filter((h) => h.fundOwned).map((h) => h.bbl);

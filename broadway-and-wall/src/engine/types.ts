@@ -3723,10 +3723,14 @@ export function logBooks(
     // deed, owner-side and signed. A JV partner's flows are not the vehicle's.
     const fv = s.fund;
     const sgn = DEED_SIGN[key];
-    // A purchase or sale is booked before the deed exists, or after it has
-    // gone; the caller's `vehicleDirect` is what marks it as the vehicle's.
+    // A vehicle purchase or sale is booked while the deed is not on the books
+    // (before it exists, or after it has gone), so there `vehicleDirect` is
+    // what marks it as the vehicle's. On a deed that IS on the books the flag
+    // only means "the cash is already in the purse that held it" (a forfeited
+    // deposit), which may be the sponsor's: the deed's own flag decides.
+    const held = s.holdings[bbl];
     if (fv && !fv.settled && sgn && key !== "lpCalled" && key !== "lpDistributed" && Number.isFinite(amt)
-      && (vehicleDirect || s.holdings[bbl]?.fundOwned)) fv.deedTagged = (fv.deedTagged ?? 0) + sgn * amt;
+      && (held ? held.fundOwned : vehicleDirect)) fv.deedTagged = (fv.deedTagged ?? 0) + sgn * amt;
     if (!vehicleDirect) settleVehicleDeedFlow(s, key, amt, bbl);
   } else if (deedCfProbe.on && DEED_SIGN[key] && amt) probeUntagged(s, key, amt);
   if (!s.books) s.books = [];

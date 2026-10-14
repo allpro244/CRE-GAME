@@ -564,5 +564,6 @@ const result = {
   snaps, years, downturns, openDownturn: dt ? { startY: dt.startY, months: g.month - dt.startM, pre: dt.pre, worst: dt.worst, rivalsFailed: dt.rivalsFailed, swans: dt.swans, headlines: dt.headlines } : null, jobs: jobLog, sales, landBuys, counters: C, friction: ERR, listedUnsellable, tape, offMarket: om, finalBoard: board().slice(0, 12), journal,
 };
 writeFileSync(OUT, JSON.stringify(result, null, 1));
+if (process.env.STATE) writeFileSync(process.env.STATE, JSON.stringify(g));
 const last = snaps.at(-1);
 console.log(`END ${yr()}${g.gameOver ? " GAME OVER " + JSON.stringify(g.gameOver).slice(0, 160) : ""}: NW ${K(last.nw)} rank #${last.rank}/${last.field}, jobs ${jobLog.length}, sales ${sales.length}, first #1 ${firstTop ?? "never"} → ${OUT}`);

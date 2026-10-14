@@ -2082,10 +2082,49 @@ export function debtCollateral(
   const noi = ownedContractNoiYr(s, parcels, h);
   const quoteClass = vacantDirt ? "land" : (rec.class === "land" ? "office" : rec.class);
   const hair = collateralHaircut(h, s.month, s.econ, rec);
-  const stab = (!vacantDirt && !h.groundLeased && rec.bldgArea > 0)
+  const plan = (!vacantDirt && !h.groundLeased && rec.bldgArea > 0)
     ? stabViewFor(rec, s.econ, h.condition, value, h.condIdx)
     : undefined;
+  const stab = plan ? seasonPlan(plan, s.month - planStartM(h)) : undefined;
   return { value, noi, vacantDirt, quoteClass, hair, stab };
+}
+
+/**
+ * A BUSINESS PLAN HAS A DATE ON IT.
+ *
+ * The bridge desk lends against the stabilised plan (sizeRest) — right for a
+ * transitional asset, and the plan never expired. Measured on a Great City
+ * developer run (seed 760449): a walk-up delivered in 2012 that never got
+ * past 66% let was refinanced on its "stabilised" value four times over
+ * sixteen years, three of them for cash out, at a 0.30x coverage — a new
+ * lease-up advance on the same lease-up, every time the last one fell due.
+ *
+ * A bridge loan is a bet that the plan arrives inside its term. When the
+ * term is up and it has not, the lender is no longer looking at a plan; it is
+ * looking at a building that earns what it earns. Practice is an extension or
+ * two on the original paper, at in-place sizing or near it, and no cash out:
+ * a refinance of a missed plan is sized on the trailing number.
+ *
+ * So the plan carries full credit for one bridge term (36 months, the
+ * Cordage paper's own termM) from the last thing that reset it — delivery,
+ * purchase or the end of a renovation — and the plan leg then fades out over
+ * the two twelve-month extensions a bridge lender customarily writes. Past
+ * that there is no plan leg and the in-place tests size the loan, as they do
+ * for every other desk. It fades to NOTHING, not to the as-is mark: the mark
+ * on a building in lease-up still carries the lease-up (a 3.5% implied cap
+ * on the walk-up above), so lending 65% of it is lending on the plan by
+ * another name. Shape, not calibration: the 36 is the product's term; the
+ * 24-month fade is the extension practice.
+ */
+export const PLAN_CREDIT_M = 36;
+export const PLAN_FADE_M = 24;
+export function planStartM(h: Holding): number {
+  return Math.max(h.boughtM ?? 0, h.deliveredM ?? -Infinity, h.renovatingUntilM ?? -Infinity);
+}
+export function seasonPlan(plan: StabView, ageM: number): StabView | undefined {
+  if (!(ageM > PLAN_CREDIT_M)) return plan;
+  const w = Math.max(0, 1 - (ageM - PLAN_CREDIT_M) / PLAN_FADE_M);
+  return w > 0 ? { noiYr: plan.noiYr, value: plan.value * w } : undefined;
 }
 
 /**

@@ -327,7 +327,11 @@ export function facilityQuotes(s: GameState, parcels: ParcelTable, bbls: string[
     const points = Math.round(base * p.points);
     const fees = Math.round(base * 0.01) + points;
     const n = bbls.filter((b) => s.holdings[b]).length;
-    const why = n < FACILITY_MIN_ASSETS
+    // The desk that accelerated has called its money; it does not write a
+    // take-out of its own default. Every other desk can, right up to the sale.
+    const caller = s.facility?.accelM !== undefined && s.facility.lender === p.lender;
+    const why = caller ? `${p.lender} accelerated this facility and will not rewrite it — another desk has to take it out.`
+      : n < FACILITY_MIN_ASSETS
       ? `${p.label} will not paper a pool of ${n}. Pledge at least ${FACILITY_MIN_ASSETS} buildings.`
       : offClass ? `${p.label.split(" · ")[0]} lends on ${p.classes!.join(", ")} only, and this pool is not all ${p.classes!.join(", ")}.`
       : !open ? `${p.label} has stopped writing new paper this cycle.`
@@ -605,7 +609,6 @@ export function refinanceFacility(
 ): { s: GameState; err?: string; msg?: string } {
   const f = s.facility;
   if (!f) return { s, err: "No facility to refinance." };
-  if (f.accelM !== undefined) return { s, err: "The facility is accelerated — a receiver has the pool and there is nothing left to refinance." };
   const pool = f.bbls.filter((b) => s.holdings[b]);
   const quotes = facilityQuotes(s, parcels, pool);
   const qt = quotes.find((x) => x.productId === productId);
@@ -693,29 +696,59 @@ function renewalMarket(s: GameState, parcels: ParcelTable): { best: FacilityQuot
 }
 
 /**
- * Pay the balance down out of cash — and out of cash ONLY, deliberately.
+ * Pay the balance down — out of cash first, then the line if the owner says so.
  *
- * Every other refusal in this file now counts the revolver, because a sponsor
- * with an open line does not let a closing or a covenant fail over a thin
- * month. A VOLUNTARY paydown is the one case where drawing it is simply worse
- * money: the facility is term debt in the fives and the line is index plus 400,
- * so funding this from the revolver raises the interest bill and spends the
- * liquidity that keeps the next bad quarter from becoming a default. The
- * mandatory version of this payment — the coupon, the balloon, the cure — draws
- * the line already.
+ * This used to refuse the line outright, on the argument that the facility is
+ * term debt in the fives and the line is index plus 400, so drawing it to
+ * repay the facility is worse money. That is usually true and it is the
+ * owner's call, not the engine's: a sponsor whose pool is swept and short of
+ * its covenant, or accelerated with a receiver three months out, is exactly
+ * the sponsor who should be drawing the revolver, and refusing it left them
+ * watching the pool go with the line untouched. The automatic cure in
+ * `tickFacility` still pays from cash only.
  */
-export function repayFacility(s: GameState, amount: number): { s: GameState; err?: string } {
+export function repayFacility(
+  s: GameState, amount: number, parcels?: ParcelTable, useLine = false,
+): { s: GameState; err?: string } {
   const f = s.facility;
   if (!f) return { s, err: "No facility." };
-  const pay = Math.min(Math.floor(Math.max(0, amount)), f.balance, Math.floor(Math.max(0, s.cash)));
-  if (pay <= 0) return { s, err: "Nothing to pay with." };
+  const want = Math.min(Math.floor(Math.max(0, amount)), f.balance);
+  const room = parcels ? spendable(s, parcels, { allowLoc: useLine }).total : Math.floor(Math.max(0, s.cash));
+  if (want <= 0 || room <= 0) return { s, err: "Nothing to pay with." };
+  if (f.accelM !== undefined && want < f.balance) {
+    return { s, err: "An accelerated facility is only settled whole — repay the full balance or refinance it with another desk." };
+  }
+  if (room < want) return { s, err: `That needs ${money(want)} and you can raise ${money(room)}.` };
   const next: GameState = cloneState(s);
-  next.cash -= pay;
+  let pay: number;
+  if (parcels) {
+    pay = fundCashNeed(next, parcels, want, { allowLoc: useLine });
+  } else {
+    pay = want;
+    next.cash -= pay;
+  }
   logBooks(next, "debtSvc", pay);
   next.facility!.balance -= pay;
   if (next.facility!.balance <= 0) {
+    const wasAccel = next.facility!.accelM !== undefined;
     delete next.facility;
-    next.news.unshift({ q: next.month, kind: "deal", text: "The facility is repaid in full. Every deed in the pool is unencumbered again." });
+    next.news.unshift({
+      q: next.month, kind: "deal",
+      text: wasAccel
+        ? "The accelerated facility is paid off before the receiver could sell. Every deed in the pool is yours and unencumbered."
+        : "The facility is repaid in full. Every deed in the pool is unencumbered again.",
+    });
+  } else {
+    // Re-test now: a paydown that clears the covenant should say so this
+    // month, not after the next tick.
+    const m = parcels ? facilityMetrics(next, parcels) : null;
+    const f2 = next.facility!;
+    if (m && f2.breachedSince !== undefined && (f2.arrearsMs ?? 0) === 0
+      && (m.dscr === null || m.dscr >= f2.minDSCR) && (m.ltv === null || m.ltv <= f2.maxLTV)) {
+      delete f2.breachedSince;
+      if (f2.noticedM === undefined) delete f2.sweep;
+      next.news.unshift({ q: next.month, kind: "deal", text: `Paid ${money(pay)} into the facility and it is back inside its covenants. The sweep is lifted.` });
+    }
   }
   return { s: next };
 }
@@ -760,6 +793,23 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
   // way a building can leave — a deed in lieu, a receiver, an exchange.
   f.bbls = f.bbls.filter((b: string) => s.holdings[b]);
 
+  // A COVENANT MISS ACCELERATED A CURRENT POOL, AND IT NEVER SHOULD HAVE.
+  // Saves from before `accelWhy` carry accelerations the old covenant clock set
+  // on pools that were paying every dollar on time and had not matured. No
+  // lender files on a current loan over a coverage test (`tickLoan` has said so
+  // for single mortgages for a long time); withdraw those before the receiver
+  // sells, and leave the sweep on — the breach itself was real.
+  if (f.accelM !== undefined && f.accelWhy === undefined
+    && (f.arrearsMs ?? 0) < 3 && f.noticedM === undefined && q < f.maturityM) {
+    delete f.accelM;
+    f.sweep = true;
+    f.breachedSince ??= q;
+    s.news.unshift({
+      q, kind: "info",
+      text: `${f.lender} has withdrawn the acceleration — the pool is current, and a coverage miss on a current loan `
+        + `traps the cash flow; it does not hand the buildings to a receiver. The sweep stays on until the covenant is cured.`,
+    });
+  }
   if (f.accelM !== undefined) return accelerate(s, parcels);
 
   // floating pool paper reprices off its index every month, as a single loan does
@@ -800,6 +850,7 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       f.sweep = true;
       if ((f.arrearsMs ?? 0) >= FACILITY_CURE_M && f.accelM === undefined) {
         f.accelM = q;
+        f.accelWhy = "arrears";
         s.news.unshift({
           q, kind: "warn",
           text: `${f.lender} has accelerated the facility after ${f.arrearsMs} months of unpaid debt service. `
@@ -886,17 +937,26 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
           + (m.dscr !== null && m.dscr < f.minDSCR
             ? `coverage is ${m.dscr.toFixed(2)}x against a ${f.minDSCR.toFixed(2)}x covenant. `
             : `leverage is ${((m.ltv ?? 0) * 100).toFixed(0)}% against a ${(f.maxLTV * 100).toFixed(0)}% covenant. `)
-          + `Every building in the pool is swept, and you have ${FACILITY_CURE_M} months to cure it or they accelerate. `
+          + `Every building in the pool is swept — surplus cash flow goes to principal until the test passes. Pay it down to cure it now. `
           + `This is what crossed means.`,
       });
-    } else if (q - f.breachedSince >= FACILITY_CURE_M) {
-      f.accelM = q;
+    } else if (q - f.breachedSince === FACILITY_CURE_M) {
+      // A COVENANT MISS ON A CURRENT POOL DOES NOT ACCELERATE IT. This used to
+      // hand every building to a receiver twelve months after a coverage test
+      // failed — on a pool paying every dollar on time, at whatever leverage.
+      // A 1.25x pool against a 1.30x covenant at 58% loan-to-value was sold
+      // out from under a sponsor with the line to cover it. That is not what a
+      // lender does with a technical default and it is not what the single
+      // mortgage does (`tickLoan`: "They will not file while the note stays
+      // current"). The trap is the sweep: every dollar over debt service goes
+      // to principal until the test passes, which is the cure the lender is
+      // actually after. Missed payments and an unpaid maturity still
+      // accelerate; those are defaults, not tests.
       s.news.unshift({
         q, kind: "warn",
-        text: `${f.lender} has accelerated the facility. The whole balance is due and a receiver is being appointed over `
-          + `all ${f.bbls.length} buildings.`,
+        text: `A year in breach on the facility and ${f.lender} is still sweeping every building's cash flow into principal. `
+          + `They will not accelerate while the payments are current — cure it with a paydown, refinance, or let the sweep do it slowly.`,
       });
-      return out;
     }
   } else if (f.breachedSince !== undefined && (f.arrearsMs ?? 0) === 0) {
     delete f.breachedSince;
@@ -1045,6 +1105,7 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       });
     } else if (q - f.noticedM >= FACILITY_CURE_M) {
       f.accelM = q;
+      f.accelWhy = "maturity";
       s.news.unshift({
         q, kind: "warn",
         text: `${FACILITY_CURE_M} months since ${f.lender} called the facility's maturity and ${dollars(f.balance)} is `
@@ -1145,15 +1206,19 @@ export function facilityStatus(s: GameState, parcels: ParcelTable): string {
   const f = s.facility;
   if (!f) return "";
   const m = facilityMetrics(s, parcels);
-  if (f.accelM !== undefined) return "ACCELERATED — the receiver is selling the pool";
+  if (f.accelM !== undefined) {
+    const left = Math.max(0, 3 - (s.month - f.accelM));
+    return `ACCELERATED — the receiver sells the pool in ${left} month${left === 1 ? "" : "s"} unless it is repaid or refinanced`;
+  }
   if (f.noticedM !== undefined) {
     const left = FACILITY_CURE_M - (s.month - f.noticedM);
     return `MATURITY CALLED — swept, ${left} month${left === 1 ? "" : "s"} to refinance or pay it down`;
   }
-  if (f.breachedSince !== undefined) {
-    const left = FACILITY_CURE_M - (s.month - f.breachedSince);
-    return `IN DEFAULT — swept, ${left} month${left === 1 ? "" : "s"} to cure`;
+  if ((f.arrearsMs ?? 0) >= 3) {
+    const left = FACILITY_CURE_M - (f.arrearsMs ?? 0);
+    return `PAYMENT DEFAULT — swept, ${left} month${left === 1 ? "" : "s"} to bring it current before they accelerate`;
   }
+  if (f.breachedSince !== undefined) return "COVENANT BREACH — every building swept into principal until the test passes";
   if (f.maturityM - s.month <= 24) return `matures ${monthLabel(f.maturityM)} — start refinancing`;
   return `${(m.dscr ?? 0).toFixed(2)}x covered, ${((m.ltv ?? 0) * 100).toFixed(0)}% levered`;
 }

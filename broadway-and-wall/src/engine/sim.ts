@@ -1848,7 +1848,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     if (s.facility.sweep || s.facility.breachedSince !== undefined) {
       out.push({
         key: "facility-sweep",
-        label: `${s.facility.lender} facility covenant breach — portfolio cash flow at risk`,
+        label: `${s.facility.lender} facility covenant breach — every building's cash flow swept into principal`,
       });
     }
     // THE POOL IS SHORT ON ITS COUPON. Same clock as a single loan and a great
@@ -1887,7 +1887,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
         label: left <= 0
           ? `${s.facility.lender} has accelerated — the receiver is selling all ${s.facility.bbls.length} buildings now`
           : `${s.facility.lender} has accelerated the facility — a receiver sells all ${s.facility.bbls.length} `
-            + `buildings in ${left} month${left === 1 ? "" : "s"} unless $${(s.facility.balance / 1e6).toFixed(1)}M is paid`,
+            + `buildings in ${left} month${left === 1 ? "" : "s"} unless $${(s.facility.balance / 1e6).toFixed(1)}M is repaid or another desk refinances it`,
       });
     }
     // …and the pool renewing is news the docket should carry too.

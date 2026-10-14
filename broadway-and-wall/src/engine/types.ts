@@ -347,6 +347,14 @@ export interface Facility {
   /** The month they accelerated. A receiver sells the whole pool three months later. */
   accelM?: number;
   /**
+   * WHY they accelerated: unpaid debt service, or a called maturity left
+   * unpaid. A covenant miss on a current pool is not on the list — it traps
+   * the cash flow, it does not end the loan (see `tickFacility`). Saves from
+   * before this field have no reason recorded; `tickFacility` withdraws those
+   * accelerations if the pool was current and unmatured.
+   */
+  accelWhy?: "arrears" | "maturity";
+  /**
    * THE MONTH THE POOL'S MATURITY WAS CALLED, opening the same cure window a
    * single mortgage has always had. A crossed facility used to accelerate in
    * the tick it matured — no notice, no desk, no extension — which made it the

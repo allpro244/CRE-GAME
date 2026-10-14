@@ -6,9 +6,9 @@ import { CLASS_LABEL } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import { ownedHoldingValue, resolveRec, ownedContractNoiYr } from "@/engine/value";
 import { PRODUCTS, productById, payOffDue, rateCapCost, loanLender } from "@/engine/debt";
-import { fundableNow, locRate } from "@/engine/credit";
+import { fundableNow, locRate, spendable } from "@/engine/credit";
 import type { FacilityQuote } from "@/engine/facility";
-import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, FACILITY_CURE_M, RELEASE_PREMIUM } from "@/engine/facility";
+import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, RELEASE_PREMIUM } from "@/engine/facility";
 import { usd } from "@/ui/format";
 import { RefiSection } from "@/ui/panels/RefiDesk";
 import { Big, Row } from "@/ui/panels/shared";
@@ -114,7 +114,7 @@ function drawHint(qt: FacilityQuote, draw: number): string {
   const t = facilityDrawTerms(draw, qt.ratePct, qt.ioM, qt.amortYears, qt.quality.noi, qt.quality.value);
   if (t.dscr < qt.minDSCR) {
     return `At this draw the pool covers ${t.dscr.toFixed(2)}x against a ${qt.minDSCR.toFixed(2)}x covenant — `
-      + `it would open in default, swept, with ${FACILITY_CURE_M} months to cure. Draw less.`;
+      + `it would open in breach, with every building's cash flow swept into principal. Draw less.`;
   }
   return `${usd(t.monthlyPmt)} a month, ${t.dscr.toFixed(2)}x covered. `
     + "Drawing less than the base is the room you will have when the market turns — the covenant is tested against what you drew.";
@@ -140,6 +140,7 @@ export function DebtPage() {
   // The pool's own refinancing desk — open on demand, because re-quoting a pool
   // walks every pledged deed and there is no reason to pay for it on every render.
   const [refiFac, setRefiFac] = useState(false);
+  const [payAmt, setPayAmt] = useState(0);
   const [refiProd, setRefiProd] = useState<string>("");
   const [refiLev, setRefiLev] = useState(1);
 
@@ -385,17 +386,53 @@ export function DebtPage() {
             <Row k="Recourse" v={fac.recourse ? "yes — you signed personally" : "non-recourse"} bad={fac.recourse} />
           </div>
           <div className="btn-row">
-            <button className="btn" disabled={game.cash < 1_000_000} title={game.cash < 1_000_000 ? `A paydown needs at least $1.00M in cash — you have ${usd(game.cash)}` : undefined} onClick={() => payFac(Math.min(fac.balance, Math.floor(game.cash * 0.5)))}>
-              Pay down {usd(Math.min(fac.balance, Math.floor(game.cash * 0.5)))}
-            </button>
-            <button className="btn" disabled={game.cash < fac.balance} title={game.cash < fac.balance ? `Short ${usd(fac.balance - game.cash)} of the balance` : undefined} onClick={() => payFac(fac.balance)}>
-              Repay in full · {usd(fac.balance)}
-            </button>
-            <button className={"btn" + (refiFac ? " btn-on" : "")} disabled={fac.accelM !== undefined}
+            {(() => {
+              // WHAT THE OWNER CAN ACTUALLY PAY WITH. The paydown used to need
+              // $1M of cash before it would even offer half of it, and the
+              // full repayment ignored the line — so a swept or accelerated pool
+              // with an open revolver had no buttons that worked.
+              const room = spendable(game, parcels);
+              const accel = fac.accelM !== undefined;
+              const cureNeed = (() => {
+                if (fac.breachedSince === undefined || accel) return 0;
+                let target = fac.balance;
+                if (facM.dscr !== null && facM.dscr < fac.minDSCR) target = Math.min(target, fac.balance * (facM.dscr / fac.minDSCR));
+                if (facM.ltv !== null && facM.ltv > fac.maxLTV && facM.value > 0) target = Math.min(target, fac.maxLTV * facM.value);
+                return Math.min(fac.balance, Math.ceil(fac.balance - Math.max(0, target)));
+              })();
+              const amt = Math.min(fac.balance, Math.max(0, payAmt));
+              const short = (need: number) => need > room.total ? `You can raise ${usd(room.total)} — ${usd(room.cash)} cash and ${usd(room.line)} on the line` : undefined;
+              return (
+                <>
+                  {cureNeed > 0 && (
+                    <button className="btn btn-buy" disabled={cureNeed > room.total} title={short(cureNeed) ?? (cureNeed > room.cash ? `Draws ${usd(cureNeed - room.cash)} on the line` : undefined)}
+                      onClick={() => payFac(cureNeed, true)}>
+                      Cure the covenant · {usd(cureNeed)}
+                    </button>
+                  )}
+                  {!accel && (
+                    <>
+                      <input className="input" type="number" min={0} step={10000} style={{ width: 120 }} value={payAmt || ""} placeholder="amount"
+                        onChange={(e) => setPayAmt(Math.max(0, Math.floor(+e.target.value || 0)))} />
+                      <button className="btn" disabled={amt <= 0 || amt > room.total} title={amt > 0 ? short(amt) ?? (amt > room.cash ? `Draws ${usd(amt - room.cash)} on the line` : undefined) : "Enter an amount"}
+                        onClick={() => payFac(amt, true)}>
+                        Pay down{amt > 0 ? ` ${usd(amt)}` : ""}
+                      </button>
+                    </>
+                  )}
+                  <button className="btn" disabled={fac.balance > room.total} title={short(fac.balance) ?? (fac.balance > room.cash ? `Draws ${usd(fac.balance - room.cash)} on the line` : undefined)}
+                    onClick={() => payFac(fac.balance, true)}>
+                    Repay in full · {usd(fac.balance)}
+                  </button>
+                </>
+              );
+            })()}
+            <button className={"btn" + (refiFac ? " btn-on" : "")}
+              title={fac.accelM !== undefined ? "Another desk can take out the accelerated balance before the receiver sells." : undefined}
               onClick={() => setRefiFac(!refiFac)}>
               Refinance the pool
             </button>
-            <button className="btn" disabled={fac.accelM !== undefined}
+            <button className="btn"
               title="Keep the crossed deeds, add free-and-clear or separately mortgaged ones, and replace the paper in one closing."
               onClick={() => {
                 setBuilding(true);

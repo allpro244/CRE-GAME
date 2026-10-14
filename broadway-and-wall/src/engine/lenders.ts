@@ -969,7 +969,11 @@ export function tickLenders(s: GameState) {
       // (2026-10-13): noncurrent ADC loans reached ~16% as land fell 20-30% a
       // year (FDIC QBP 2009-10), so 0.65 per unit of the trailing year's land
       // fall, on the desk's ADC share.
-      + k.adc * 0.65 * landFall12;
+      // Construction loans are now settled scheme by scheme at delivery
+      // (settleMerchant in dev.ts; named firms' loans in the loan book), so
+      // this term carries the land and A&D share of the ADC book only —
+      // about 40% of it in FDIC call reports — not the whole of it twice.
+      + k.adc * 0.65 * 0.4 * landFall12;
     const ad = l.anonDelinq ?? l.delinquent;
     l.anonDelinq = Math.max(0.002, Math.min(0.35, ad + 0.10 * (badTarget - ad) + rrange(s, -0.0015, 0.0015, "lenders")));
     // THE NAMED BOOK IS COUNTED. A loan the engine runs is either being paid

@@ -1397,6 +1397,16 @@ export interface PropertyEvent {
  * UI shifts each alert off `game.alerts` as it shows it, so an engine that
  * raises nothing costs the UI nothing.
  */
+/** An anonymous merchant's scheme as underwritten at the start (see `merchantBook` in dev.ts). */
+export interface MerchantBook {
+  basis: number; loan: number; lender?: string;
+  /** The underwriting the start was decided on: stabilised NOI, exit yield (decimal), lease-up budget. */
+  noi: number; yld: number; leaseUp: number;
+  /** The market it was decided in: blended effective rent and cap rate, lease-up multiplier at forecast vacancy. */
+  rent0: number; cap0: number; lum0: number;
+  mix: UseMix;
+}
+
 export interface Alert {
   id: number;
   q: number;                 // the month it fired
@@ -1875,6 +1885,8 @@ export interface Econ {
   regionTrend?: number;
   /** Business rent against the nation's at this town's opening — the parity `regionalPull` measures cost against. */
   regionRent0?: number;
+  /** Anonymous merchants' schemes settled at delivery, cumulative (see `settleMerchant` in dev.ts). Display and probes only. */
+  merchantTotals?: { delivered: number; underBasis: number; handedBack: number; lossToLenders: number; equityLost: number };
   /** The last month's regional pull on the export base, per year, after the cost brake. */
   regionPull?: number;
   /** Half the town's loan book is at desks too impaired to quote (see tickEcon). */
@@ -3150,6 +3162,12 @@ export interface GameState {
      */
     groundLease?: boolean;
     firmId?: string;      // whose job it is; absent means the anonymous city
+    /**
+     * THE ANONYMOUS MERCHANT'S OWN BOOK: what the scheme cost all in, the
+     * construction loan against it and the desk that wrote it. Settled at
+     * delivery against what the building is worth (`settleMerchant`).
+     */
+    merchant?: MerchantBook;
     cost?: number;        // the budget, for a firm's job
     spent?: number;       // work in place to date
     equityLeft?: number;  // their equity still to go in

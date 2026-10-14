@@ -305,6 +305,19 @@ export function FirmPage({ r }: { r: Rival }) {
             {feud ? ` · feuding with ${feud.name}` : ""}
             {tie ? ` · with you: ${tie.deals} deal${tie.deals === 1 ? "" : "s"}${tie.beats ? `, beat you ${tie.beats}×` : ""}${tie.insults ? `, insulted ${tie.insults}×` : ""}` : ""}
           </div>
+          {(r.career?.length ?? 0) > 0 && (
+            <>
+              <div className="dim" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, margin: "6px 0 3px" }}>Career</div>
+              <div style={{ fontSize: 12, lineHeight: "18px" }}>
+                {[...(r.career ?? [])].reverse().map((c, i) => (
+                  <div key={i} style={{ display: "flex", gap: 6 }}>
+                    <span className="dim mono" style={{ minWidth: 62 }}>{monthLabel(c.m)}</span>
+                    <span style={{ flex: 1 }}>{c.text}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
           <div className="dim" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, margin: "6px 0 3px" }}>Lately</div>
           <FirmMoves r={r} />
         </div>

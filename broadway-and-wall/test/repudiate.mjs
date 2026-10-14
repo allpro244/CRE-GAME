@@ -68,26 +68,26 @@ function siteWithAJob(runIndex, lender) {
   // so far outside normal play that nothing it proves would transfer.
   const lots = bbls
     .map((b) => E.resolveRec(parcels, g, b))
-    .filter((r) => r && r.class === "land" && r.lotArea > 9_000 && r.lotArea < 40_000)
+    .filter((r) => r && r.class === "land" && r.lotArea > 9_000 && r.lotArea < 120_000)
     .sort((a, b) => a.bbl.localeCompare(b.bbl));
   if (!lots.length) return null;
 
   // Bought through the real purchase path, all cash — a hand-rolled holding
   // is missing half its fields and blows up three ticks later in sim.ts.
+  // THE LONGEST JOB ON OFFER, not the first: the seizure lands on a 35% roll
+  // a month after the loan starts drawing, then three to nine months of
+  // paperwork, so a short job can deliver before any of it happens.
+  let bestSite = null, bestLen = -1;
   for (const rec of lots.slice(0, 40)) {
     const price = Math.max(500_000, Math.round(E.landValue(rec, g.econ)));
     const bought = E.executePurchase(g, parcels, rec.bbl, price, "cash", false, 1);
     if (bought.err || !bought.s.holdings[rec.bbl]) continue;
     const r = E.startDevelopment(bought.s, parcels, rec.bbl, "office", 26, 0.6, "gmp", undefined, undefined, lender);
-    // A JOB LONG ENOUGH TO SEIZE A DESK IN THE MIDDLE OF. The lot's own height
-    // cap decides how tall "26 floors" really gets; a small one delivered at
-    // month 19, before the examiners could close the desk at all.
     const d = r.s?.developments?.[rec.bbl];
-    const doneM = d?.doneM ?? d?.deliverM;
-    if (!r.err && (doneM === undefined || doneM - r.s.month >= 26)) return { g: r.s, parcels, bbls, adjacency, bbl: rec.bbl };
-    g = bought.s;
-    delete g.holdings[rec.bbl];
+    const len = (d?.doneM ?? d?.deliverM ?? 0) - (r.s?.month ?? 0);
+    if (!r.err && len > bestLen) { bestLen = len; bestSite = { g: r.s, parcels, bbls, adjacency, bbl: rec.bbl }; }
   }
+  if (bestSite) return bestSite;
   return null;
 }
 

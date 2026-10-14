@@ -21,7 +21,7 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState, Rival } from "./types";
 import { START_YEAR } from "./types";
 import { hash01 } from "./competitorTraits";
-import { logFirm } from "./firmLog";
+import { logFirm, milestone } from "./firmLog";
 import { livingRivals, markRival, paramsOf, transferDeed } from "./rivals";
 import { assumeBook, rowOn, syncDebt } from "./rivalDebt";
 
@@ -29,6 +29,8 @@ const year = (s: GameState) => START_YEAR + Math.floor(s.month / 12);
 
 /** Everything the absorbed firm had in motion goes with the company. */
 function absorb(s: GameState, from: Rival, into: Rival) {
+  milestone(s, into, `Absorbed ${from.name} and its ${from.bbls.length} building${from.bbls.length === 1 ? "" : "s"}`);
+  milestone(s, from, `Absorbed into ${into.name}`);
   for (const li of s.listings) if (li.sellerId === from.id) li.sellerId = into.id;
   for (const rn of s.rivalNotes ?? []) if (rn.firmId === from.id) { rn.firmId = into.id; rn.firm = into.name; }
   if (s.portfolios) s.portfolios = s.portfolios.filter((p) => !p.bbls.some((b) => from.bbls.includes(b)));

@@ -593,11 +593,12 @@ function ParcelPanelInner({
         const j = (game.cityJobs ?? []).find((x) => x.bbl === selectedBBL);
         if (!j) return null;
         const firm = game.rivals?.find((r) => r.id === j.firmId);
+        const bld = !firm && j.builderId ? (game.builders ?? []).find((b) => b.id === j.builderId) : undefined;
         const pct = Math.min(100, Math.max(0, ((game.month - j.startM) / Math.max(1, j.deliverM - j.startM)) * 100));
         return (
           <div className="deal">
             <div className="deal-head">
-              {j.orphaned ? "A stalled building" : firm ? `${firm.name} is building here` : "Under construction"}
+              {j.orphaned ? "A stalled building" : firm ? `${firm.name} is building here` : bld ? `${bld.name} is building here` : "Under construction"}
             </div>
             <div className="grid">
               <Row k="Programme" v={`${sf(j.sf)} of ${j.use} · ${j.floors} floors`} strong />
@@ -606,6 +607,10 @@ function ParcelPanelInner({
                 v={j.orphaned ? "The sponsor is gone — the receiver holds it" : monthLabel(j.deliverM)}
                 bad={j.orphaned} />
               {j.firmId && !j.orphaned && j.cost !== undefined && <Row k="Their budget" v={usd(j.cost)} />}
+              {bld && <Row k="Developer" v={`${bld.founder}'s firm, since ${monthLabel(bld.bornM)} · ${bld.delivered} delivered`
+                + (bld.handedBack ? ` · ${bld.handedBack} handed back to a lender` : bld.underwater ? ` · ${bld.underwater} opened under cost` : "")}
+                bad={bld.handedBack > 0} />}
+              {j.merchant?.lender && !j.firmId && <Row k="Construction loan" v={`${j.merchant.lender} · ${Math.round(100 * j.merchant.loan / Math.max(1, j.merchant.basis))}% of cost`} />}
             </div>
             {j.orphaned && (
               <div className="hint">

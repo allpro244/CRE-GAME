@@ -47,7 +47,9 @@ export function tipHtml(g: GameState, parcels: Record<string, ParcelRecord>, rec
       out.push(row("Progress", `${pct}% built`));
     }
     out.push(row("Size", `${Math.round(j.sf).toLocaleString()} sf`));
-    out.push(row("Builder", job ? "You" : cityJob!.firmId ? g.rivals.find((r) => r.id === cityJob!.firmId)?.name ?? "A competitor" : "The city"));
+    const bld = cityJob?.builderId ? (g.builders ?? []).find((b) => b.id === cityJob.builderId) : undefined;
+    out.push(row("Builder", job ? "You" : cityJob!.firmId ? g.rivals.find((r) => r.id === cityJob!.firmId)?.name ?? "A competitor"
+      : bld ? `${esc(bld.name)}${bld.delivered ? ` · ${bld.delivered} built` : " · first building"}` : "A local developer"));
     return out.join("");
   }
 

@@ -540,7 +540,7 @@ export function EconomyPage() {
       const who = p.source === "player" || p.source === "reuse" ? "You"
         : j?.firmId ? (game.rivals.find((r) => r.id === j.firmId)?.name ?? "A competitor")
         : p.source === "rival" ? "A competitor"
-        : "The city";
+        : (j?.builderId && (game.builders ?? []).find((b) => b.id === j.builderId)?.name) || "A local developer";
       const floors = d?.floors ?? j?.floors ?? 0;
       const legs = Object.values(p.sfByUse).filter((v) => (v ?? 0) > 0).length;
       rows.push({
@@ -1045,6 +1045,73 @@ export function EconomyPage() {
               </div>
             </>
           )}
+          {/* PERMITS FILED. A scheme is decided months before the hole is dug —
+              design, permits, the loan — and a permit is public record, so the
+              broker's pipeline report lists it. The developers themselves only
+              count what has started (that blindness is how markets overbuild);
+              you get the permit list, the way a careful owner does. */}
+          {(() => {
+            const plans = (game.cityPlans ?? []).filter((p) => p.use === focus || (p.use === "mixed" && (focus === "retail" || focus === "multifamily")))
+              .sort((a, b) => a.breakM - b.breakM);
+            if (!plans.length) return null;
+            return (
+              <>
+                <div className="hint" style={{ marginTop: 8 }}>
+                  Permits filed, not yet started: {plans.length} scheme{plans.length === 1 ? "" : "s"}
+                </div>
+                <div className="mini-list">
+                  {plans.slice(0, 5).map((p) => {
+                    const b = (game.builders ?? []).find((x) => x.id === p.builderId);
+                    return (
+                      <button key={p.bbl} className="neighbor" onClick={() => flyTo(p.bbl, true)}>
+                        <span className="neighbor-addr">{parcels[p.bbl]?.address ?? p.bbl}</span>
+                        <span className="neighbor-meta mono">
+                          {b?.name ?? "A local developer"} · {p.floors} fl {p.use} · breaks ground ~{monthLabel(p.breakM)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
+          {/* THE TOWN'S DEVELOPERS. Who builds here, what they have delivered,
+              how it opened — and who has folded. */}
+          {(() => {
+            const all = game.builders ?? [];
+            const live = all.filter((b) => b.failedM === undefined && b.starts > 0)
+              .sort((a, b) => b.sfDelivered - a.sfDelivered).slice(0, 6);
+            const folded = all.filter((b) => b.endReason === "folded").sort((a, b) => (b.failedM ?? 0) - (a.failedM ?? 0)).slice(0, 3);
+            if (!live.length && !folded.length) return null;
+            return (
+              <>
+                <div className="hint" style={{ marginTop: 8 }}>
+                  The town's developers: {all.filter((b) => b.failedM === undefined).length} active
+                  {all.some((b) => b.endReason === "folded") ? ` · ${all.filter((b) => b.endReason === "folded").length} folded in the last twenty years` : ""}
+                </div>
+                <div className="mini-list">
+                  {live.map((b) => {
+                    const building = (game.cityJobs ?? []).filter((j) => j.builderId === b.id && !j.firmId).length;
+                    return (
+                      <div key={b.id} className="neighbor">
+                        <span className="neighbor-addr">{b.name}</span>
+                        <span className="neighbor-meta mono">
+                          {b.delivered} built · {sfFmt(b.sfDelivered)} sf{building ? ` · ${building} under way` : ""}
+                          {b.worst !== undefined ? ` · openings ${Math.round(b.worst * 100)}–${Math.round((b.best ?? b.worst) * 100)}% of cost` : ""}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {folded.map((b) => (
+                    <div key={b.id} className="neighbor">
+                      <span className="neighbor-addr neg">✕ {b.name}</span>
+                      <span className="neighbor-meta mono">folded {monthLabel(b.failedM ?? 0)} · {b.delivered} built · {b.handedBack} handed back</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </div>
         <div className="chart-cell">
           <div className="chart-title">Absorption vs completions, per year</div>

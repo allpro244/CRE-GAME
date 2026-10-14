@@ -28,6 +28,8 @@ import Fold from "@/ui/Fold";
  */
 export { rivalEquity } from "@/engine/standing";
 import { rivalEquity } from "@/engine/standing";
+import { targetCapital } from "@/engine/lenders";
+import { NOTICE_M, FORECLOSE_M } from "@/engine/workout";
 
 /** `q` filters the table by firm or principal name (City → Players' search
  *  box); the league-table summary above it always counts everyone. */
@@ -152,6 +154,37 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
           );
         })()}
       </div>
+      {/* THE DISTRESS BOARD (2026-10-14). Where the next forced sale comes
+          from, before it is on the tape: firms behind on their paper and how
+          close the desks are to filing, lenders under their capital target,
+          and what the receivers are selling now. */}
+      {(() => {
+        const stressed = rivals.filter((r) => r.failedM === undefined && (r.stressMs ?? 0) > 0)
+          .sort((a, b) => (b.stressMs ?? 0) - (a.stressMs ?? 0));
+        const weakDesks = (game.lenders ?? []).filter((l) => l.failedM === undefined && l.kind !== "conduit"
+          && l.book > 0 && l.capital / l.book < targetCapital(l.name) * 0.8);
+        const receiverSales = (game.listings ?? []).filter((l) => l.reason === "receiver" || l.receiverFor);
+        const n = stressed.length + weakDesks.length + receiverSales.length;
+        return (
+          <Fold id="competitors:distress" title="Distress board" summary={n ? `${stressed.length} firm${stressed.length === 1 ? "" : "s"} behind on their debt · ${weakDesks.length} lender${weakDesks.length === 1 ? "" : "s"} under target · ${receiverSales.length} receiver sale${receiverSales.length === 1 ? "" : "s"} on the market` : "Nobody in trouble today"} defaultOpen={n > 0}>
+            {stressed.map((r) => (
+              <Row key={r.id} k={r.name}
+                v={`${r.stressMs} month${r.stressMs === 1 ? "" : "s"} behind · ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}`
+                  + ((r.stressMs ?? 0) < NOTICE_M ? ` · the desks file in ${NOTICE_M - (r.stressMs ?? 0)} month${NOTICE_M - (r.stressMs ?? 0) === 1 ? "" : "s"}`
+                    : ` · filed — a note is foreclosed every quarter; the whole book goes in ${Math.max(0, NOTICE_M + FORECLOSE_M - (r.stressMs ?? 0) + 1)} months`)}
+                bad />
+            ))}
+            {weakDesks.map((l) => (
+              <Row key={l.id} k={l.name} v={`capital ${(100 * l.capital / l.book).toFixed(1)}% against a ${(100 * targetCapital(l.name)).toFixed(1)}% target — it will sell loans and buildings to get back`} bad />
+            ))}
+            {receiverSales.slice(0, 8).map((l) => (
+              <Row key={l.bbl} k={resolveRec(parcels, game, l.bbl)?.address ?? l.bbl}
+                v={`${l.receiverFor ?? "a receiver"} is selling · ask ${usd(l.ask)} · on the market until ${monthLabel(l.expiresM)}`} />
+            ))}
+            {!n && <div className="hint">No competitor is behind on its debt, every lender is above its target, and no receiver is selling.</div>}
+          </Fold>
+        );
+      })()}
       <Fold id="competitors:table" title="Every competitor" summary={`${marked.filter((x) => x.r.failedM === undefined).length} firms in business, ranked by net equity`} defaultOpen>
       <table className="tbl">
         <thead>

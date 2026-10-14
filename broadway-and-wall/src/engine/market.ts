@@ -4612,7 +4612,16 @@ export function tickEcon(s: GameState) {
     // space is demand from people who turned up, and `e.jobs` — the same
     // number the unemployment rate and the wage bill are struck on — is that
     // number. One quantity, one answer.
-    const jobs0 = e.jobs0 ?? 132_000;
+    // ...AGAINST THE PAYROLL THE LABOUR MARKET ACTUALLY FILLED (2026-10-14).
+    // `jobs0` is the size the town was drawn at, and the first month's labour
+    // solve moves it 2-5% (derivePhase says so) — so every town opened with
+    // its space positioned for tenants that the first solve then removed,
+    // and gave the floors back over the next two years. Measured across
+    // twelve seeds: office vacancy up 3-10 points and real office rent down
+    // 22-34% by year five, in every seed, whatever the opening vacancy. The
+    // space market is indexed to the first filled payroll instead.
+    if (e.jobsFilled0 === undefined && (e.history?.length ?? 0) > 1 && (e.jobs ?? 0) > 0) e.jobsFilled0 = e.jobs;
+    const jobs0 = e.jobsFilled0 ?? e.jobs0 ?? 132_000;
     const jobIdx = (e.jobs ?? jobs0) / jobs0;
     // Sheds are leased by industrial firms. Total jobs is the right scale for
     // office; for industrial it has to be multiplied by the secular share of

@@ -439,7 +439,14 @@ export function bumpLenderRel(s: GameState, lender: string | undefined, amt: num
  * does not ask whose name it is before asking how much of the book it is.
  */
 export function singleNameCap(kind: string | undefined): number {
-  return kind === "bank" ? 0.12 : kind === "life" ? 0.08 : kind === "conduit" ? 0.30 : 0.35;
+  // A NATIONAL BOOK IS NOT A TOWN BOOK (2026-10-14). The life company and the
+  // conduit lend into this town out of balance sheets the size of the country;
+  // what the game carries for them is their slice of this market. Their
+  // single-name limits bind against the whole general account — a life
+  // company writes a $150M loan on one tower without its committee blinking —
+  // so measured against the slice they are generous, like the fund's. A bank
+  // is local, and its limit is its own book.
+  return kind === "bank" ? 0.12 : kind === "life" ? 0.30 : kind === "conduit" ? 0.30 : 0.35;
 }
 
 export function concentrationRoom(s: GameState, p: LoanProduct, klass?: string): { mult: number; capRoom: number; why?: string } {
@@ -448,7 +455,10 @@ export function concentrationRoom(s: GameState, p: LoanProduct, klass?: string):
   const nameCap = singleNameCap(l.kind);
   const capRoom = Math.max(0, l.book * nameCap - l.yours);
   let mult = 1; let why: string | undefined;
-  if (klass && klass !== "land" && l.classBook) {
+  // The class test is a local balance sheet's: a national lender's property-
+  // type allocation is set across the country, where this town's office
+  // paper is a rounding error (see singleNameCap).
+  if (klass && klass !== "land" && l.classBook && l.kind === "bank") {
     const tot = Object.values(l.classBook).reduce((a, b) => a + b, 0);
     // A DESK IN AN APARTMENT TOWN IS AN APARTMENT LENDER. The cap was a flat
     // 45% of the book in one class, and in a city whose stock is half flats

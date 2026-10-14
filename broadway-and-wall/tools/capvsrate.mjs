@@ -36,18 +36,18 @@ for (let i = 0; i < N; i++) {
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
     const e = g.econ;
     const crunch = 1.6 * Math.max(0, 1 - e.creditIdx);
-    const retMean = K.reduce((a, k) => a + (e.retExp?.[k] ?? 0), 0) / 4;
+    const capIndex = e.indexRate - E.inflationOverBumpPct(e);
     const comp = {};
     for (const k of K) {
       const vacGap = (e.cityVac?.[k] ?? E.NATURAL_VAC[k]) - E.NATURAL_VAC[k];
       comp[k] = {
         base: E.CAP_BASE[k],
-        rate: 0.55 * ((e.indexRate - 100 * Math.max(0, (e.nat?.inflExp ?? 0.02) - 0.02)) - 5.4),
+        rate: 0.55 * ((capIndex - 5.4) + 2 * (Math.exp(-capIndex / 2) - Math.exp(-5.4 / 2))),   // market.ts capTargetOf
         cycle: -0.25 * e.cycleDev,
         crunch,
         sector: -30 * (e.sectorMom?.[k] ?? 0),
-        vacRisk: Math.max(-0.6, Math.min(2.0, E.CAP_VAC_BETA[k] * vacGap * 100)),
-        flows: Math.max(-1.3, Math.min(1.3, -0.65 * ((e.retExp?.[k] ?? 0) - retMean))),
+        vacRisk: E.CAP_VAC_BETA[k] * vacGap * 100,
+        flows: E.capFlowsOf(e.retExp ?? e.capRate, k),
       };
     }
     rows.push({

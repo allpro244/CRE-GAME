@@ -4044,6 +4044,7 @@ export function tickCityGrowth(
   // There is no order to fill: what gets started is whatever clears its own
   // pro forma at the owner's asking price for the dirt, with the pipeline and
   // the building itself in the vacancy it will lease into.
+  breakCommittedPlans(s, parcels, adjacency);
   const looksF = developerLooksPerMonth(s.econ);
   let looks = Math.floor(looksF) + (rng(s, "dev") < looksF % 1 ? 1 : 0);
   while (looks-- > 0) developerLook(s, parcels, bbls, adjacency);
@@ -4084,6 +4085,7 @@ function developerLook(
     const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
     if (s.holdings[bbl] || s.built[bbl] || s.developments[bbl]) continue;
     if (s.cityJobs.some((j) => j.bbl === bbl)) continue;
+    if ((s.cityPlans ?? []).some((p) => p.bbl === bbl)) continue;   // tied up by another developer
     if (isCivicLand(s, bbl)) continue;
     if (ownerOf(s, bbl)) continue;
     const rec = resolveRec(parcels, s, bbl);
@@ -4119,6 +4121,28 @@ function developerLook(
   }
   // Built only if the deal clears THIS developer's bar.
   if (!best || best.h < dev.bar) return false;
+  // COMMITTED NOW, STARTED LATER (2026-10-13). The deal is decided here; the
+  // hole is dug after the design, the permits and the construction loan —
+  // months in which nobody else can see it. A pipeline report counts starts,
+  // so every developer looking during a boom saw the same empty room and
+  // nobody saw the others coming; that blindness, with the lag to delivery,
+  // is how real markets overbuild (Wheaton 1999; the 1980s office wave was
+  // decided in 1981-84 and delivered into 1986-90). Without it a start was
+  // public the month it was decided, every developer underwrote everyone
+  // else's building exactly, and gluts formed only when a recession arrived
+  // after the cranes — office sat in excess vacancy 3-21% of years against
+  // ~40-50% for US office since 1985. The lead time to a start is a shape
+  // parameter, stated as such: about 15 months for an office scheme, 9 for
+  // flats and shops, 6 for a shed.
+  // (The opening's backdated pipeline still starts at once: it is history.)
+  if (!opts?.backdate) {
+    const lead = dominantOf(devMix(best.use));
+    (s.cityPlans ??= []).push({
+      bbl: best.bbl, use: best.use, floors: best.floors, plate: best.plate, spec: dev.spec, ltc: dev.ltc,
+      decidedM: s.month, breakM: s.month + PLAN_LEAD_M[lead],
+    });
+    return true;
+  }
   const started = breakCityGround(s, parcels, adjacency, best.bbl, best.rec, best.use, best.floors, best.plate, { ...opts, spec: dev.spec, ltc: dev.ltc, decided: true });
   // THE NEXT DEVELOPER HEARS ABOUT THIS ONE (2026-10-12). Every look reads
   // the pipeline in its delivery vacancy, but that figure was last month's
@@ -4226,6 +4250,31 @@ function momentumRead(s: GameState, k: BuiltClass, momentum: number): number {
 const SITES_PER_LOOK = 24;
 /** At or below this loan-to-cost a developer funds the job without the construction desk. */
 const CASH_BUILDER_LTC = 0.25;
+/** Months from a developer's commitment to the start on site, by lead use (see `developerLook`). */
+const PLAN_LEAD_M: Record<BuiltClass, number> = { office: 15, multifamily: 9, retail: 9, industrial: 6 };
+
+/**
+ * THE COMMITTED SCHEMES BREAK GROUND. A plan whose lead time is up starts
+ * on site whatever the market has done meanwhile — the land is bought and
+ * the design paid for — unless the lot has gone to someone else, or the
+ * construction desk will not lend and the developer cannot fund it alone
+ * (the schemes that died in 2008 were the levered ones).
+ */
+function breakCommittedPlans(s: GameState, parcels: ParcelTable, adjacency: Record<string, string[]> | null) {
+  if (!s.cityPlans?.length) return;
+  const keep: NonNullable<GameState["cityPlans"]> = [];
+  const ownMoney = streetHasOwnMoney(s);
+  for (const p of s.cityPlans) {
+    if (s.month < p.breakM) { keep.push(p); continue; }
+    if (s.holdings[p.bbl] || (s.built[p.bbl]?.bldgArea ?? 0) > 0 || s.developments[p.bbl] || (s.cityJobs ?? []).some((j) => j.bbl === p.bbl) || ownerOf(s, p.bbl)) continue;
+    const rec = resolveRec(parcels, s, p.bbl);
+    if (!rec || rec.class !== "land") continue;
+    const u = underwriteDevelopment(s, parcels, p.bbl, p.use as DevUse, p.floors, p.plate, undefined, p.spec, p.ltc);
+    if (!u || (!u.financeable && !ownMoney && p.ltc > CASH_BUILDER_LTC)) continue;
+    if (breakCityGround(s, parcels, adjacency, p.bbl, rec, p.use as DevUse, p.floors, p.plate, { spec: p.spec, ltc: p.ltc, decided: true })) syncSupplyViews(s.econ, true);
+  }
+  s.cityPlans = keep;
+}
 /**
  * HOW MANY DEVELOPERS ARE LOOKING THIS MONTH. A growing US metro delivers
  * about 1.8% of its stock a year (see `crewCapacity`), in buildings of about

@@ -1714,7 +1714,20 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
   // predictor of it (Plazzi, Torous & Valkanov 2010): buyers believe some
   // of the trend, not all of it. Real growth only: the inflation part is
   // already in `capIndex`.
-  const base = CAP_BASE[k] + 0.55 * (capIndex - 5.4) - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk;
+  // THE RATE PASS-THROUGH FLATTENS TOWARD ZERO (2026-10-13). It was a
+  // straight 0.55 of cap per point of index at every level, so a decade of
+  // 1% long rates priced flats at 2.5% and the normalisation that followed
+  // doubled every cap in town. The record bends: 1990-2007, the ten-year
+  // fell ~4 points and caps ~3 (a slope of 0.6-0.75); 2007-21 it fell ~3
+  // more and office caps did not move, apartments fell ~1.2 (0.0-0.4) — the
+  // spread over Treasuries went to records. Equity risk premia run high
+  // exactly when risk-free yields are low (Duarte & Rosa 2015), so a buyer
+  // does not capitalise the last points of a falling rate. The slope here is
+  // 0.55 x (1 - e^(-index/2)): ~0.51 at the 5.4 anchor, 0.29 at 1.5,
+  // integrated from the anchor so every level above ~5 is where it was.
+  const RATE_BEND = 2;
+  const rateTerm = 0.55 * ((capIndex - 5.4) + RATE_BEND * (Math.exp(-capIndex / RATE_BEND) - Math.exp(-5.4 / RATE_BEND)));
+  const base = CAP_BASE[k] + rateTerm - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk;
   // ONE TREND, PRICED ONCE (2026-10-11). `flows` reads `retExp`, which is
   // trailing RENT growth plus yield — the same signal `growthExp` carries,
   // on a four-year memory instead of ten. Added separately, the two priced
@@ -2183,7 +2196,20 @@ export function tickNation(s: GameState) {
       const zU = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
       const depth = 0.0364 * Math.exp(0.45 * zU);
       n.deep = depth >= 0.05;
-      n.recM = Math.round(n.deep ? rrange(s, 26, 48, "nation") : rrange(s, 7, 19, "nation"));
+      // HOW LONG IT LASTS, FITTED THE SAME WAY (2026-10-13). This was uniform
+      // 7-19 months, or 26-48 for a deep draw — Great Depression lengths for
+      // anything 2008-sized, which put the nation in recession 19-27% of all
+      // months against ~14% post-war, and held credit shut six years at a
+      // time. The NBER post-war contractions 1948-2009 ran 11, 10, 8, 10, 11,
+      // 16, 6, 16, 8, 8 and 18 months: log mean 2.36 (a 10.5-month median),
+      // sd 0.35, and length correlates 0.75 with the unemployment rise above
+      // — 2008, the deepest, was also the longest. (2020's two months, a
+      // shutdown rather than a cycle, is left out of this fit as it is not out
+      // of the depth one.) Drawn jointly with depth at that correlation.
+      // The labour market no longer needs a long clock to reach a deep
+      // trough: it keeps chasing the drawn depth after the official end.
+      const zD = 0.75 * zU + 0.66 * Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
+      n.recM = Math.max(1, Math.round(Math.exp(2.36 + 0.35 * zD)));
       n.uPeak = n.unemp + depth;
       pushNews(s, "warn", n.deep
         ? "The country has fallen off a cliff. This is not a soft patch — payrolls are "
@@ -2638,12 +2664,28 @@ export function islandResidents(e: Econ): { residents: number; homes: number; co
   return { residents, homes: Math.round(homes), commuters };
 }
 
-export function regionalPull(e: Econ): number {
-  const wageRatio = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
+/** Business rent against the nation's (offices and sheds, geometric mean), RENT_BASE at national prices. */
+function businessRentVsNation(e: Econ): number {
   const natP = Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
   const rentOf = (k: "office" | "industrial") =>
     Math.max(0.05, (e.effRentIdx?.[k] ?? e.rentIdx[k]) / (RENT_BASE[k] * natP));
-  const rentRatio = Math.sqrt(rentOf("office") * rentOf("industrial"));
+  return Math.sqrt(rentOf("office") * rentOf("industrial"));
+}
+
+export function regionalPull(e: Econ): number {
+  const wageRatio = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
+  // AGAINST THIS TOWN'S OWN OPENING, NOT THE REFERENCE TABLE (2026-10-13).
+  // Rent was read against RENT_BASE at national prices, and towns open at
+  // 22-43% of that table (a low-density town's rents print low), so every
+  // town read 60-80% cheaper than the nation on its first day and every day
+  // after, and drew +0.3 to +1.0%/yr of employer growth out of that mismatch
+  // for most of a century — demand that never let a shortage end. The space-
+  // cost term below (`costOfSpace`) was moved to opening parity for exactly
+  // this reason. A town opens in spatial equilibrium: its low rents are what
+  // its location is worth (Roback 1982), not a bargain nobody has noticed.
+  // What moves employers is the town growing dearer or cheaper than that.
+  // The persistent pull a young region does have is `regionTrend`.
+  const rentRatio = businessRentVsNation(e) / Math.max(0.05, e.regionRent0 ?? businessRentVsNation(e));
   const scale = Math.max(0.2, (e.jobs ?? 1) / Math.max(1, e.jobs0 ?? e.jobs ?? 1));
   const logCost = WAGE_SHARE * Math.log(wageRatio) + (1 - WAGE_SHARE) * Math.log(rentRatio) - AGGLOM * Math.log(scale);
   return (e.regionTrend ?? 0) - LOCATION_PULL * logCost;
@@ -2681,6 +2723,7 @@ export function tickIndustryCycle(s: GameState) {
   // half-life is a shape parameter from that persistence, stated as such: a
   // boom town is a boom town for a generation.
   if (e.regionTrend) e.regionTrend *= REGION_TREND_DECAY;
+  if (e.regionRent0 === undefined) e.regionRent0 = businessRentVsNation(e);
   const pull = clamp(regionalPull(e), -0.03, 0.05);
   e.regionPull = pull;
   let base = 0, wsum = 0;
@@ -4595,6 +4638,20 @@ export function tickEcon(s: GameState) {
     if (k === "office" && targetRaw > housable + searchFringe) {
       const excess = (targetRaw - housable - searchFringe) / Math.max(1, targetRaw);
       e.employIdx = Math.max(0.55, (e.employIdx ?? 1) * (1 - Math.min(0.0015, excess * 0.004)));
+    }
+    // ...AND SHEDS THE SAME WAY, THROUGH THE TRADES THAT USE THEM (2026-10-13).
+    // A distributor that cannot find a shed here opens the next one across
+    // the water, and its payroll goes with it. Nothing said so: logistics,
+    // food and apparel kept hiring at their national trend against an island
+    // with no sheds left, industrial sat at 0.3% vacancy for decades with
+    // nothing in the pipeline (no site pencils for a shed at island land
+    // prices), and the unhoused demand pressed rents forever. Same rate as
+    // offices, on the shed trades' own employment rather than every
+    // employer's, so it reaches the town's jobs through exportIdx.
+    if (k === "industrial" && targetRaw > housable + searchFringe && e.indIdx) {
+      const excess = (targetRaw - housable - searchFringe) / Math.max(1, targetRaw);
+      const cut = 1 - Math.min(0.0015, excess * 0.004);
+      for (const sec of SECTOR_CLASSES.industrial ?? []) e.indIdx[sec] = (e.indIdx[sec] ?? 1) * cut;
     }
     // ABSORPTION IS FINITE, and it is a property of TENANTS, not buildings.
     // The clamps and the noise used to scale with stock — a bigger city of

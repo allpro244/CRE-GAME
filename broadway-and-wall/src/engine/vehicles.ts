@@ -27,8 +27,18 @@
  * (same seeds, same end state); only then does the data model change.
  */
 import type { GameState, Holding } from "./types";
-import { JV_CONSENT } from "./jv";
 import { gpCapitalShare } from "./fund";
+
+// KEEP THIS MODULE LIGHT. It is imported by the valuation and books code
+// (value.ts, books.ts, credit.ts), and those are imported by jv.ts and
+// actions.ts. Importing either of those here closes a cycle that changes the
+// bundle's module evaluation order, and a top-level constant read before its
+// module has run comes out undefined, which turned net worth into NaN by
+// month two (measured, the first batch of this migration). Only types and
+// fund.ts (types, sponsor, money) belong above.
+
+/** The refusal a JV partner gives on a major decision. Re-exported by jv.ts. */
+export const JV_CONSENT = "Your partner has consent on that — buy them out first.";
 
 export type VehicleRef =
   | { kind: "fund" }
@@ -53,6 +63,16 @@ export function sponsorShare(s: GameState, h: Holding | undefined | null): numbe
   const v = vehicleOf(s, h);
   if (!v) return 1;
   return v.kind === "fund" ? 0 : 1 - v.share;
+}
+
+/**
+ * The share of this deed's equity a JV partner owns (0 when there is none).
+ * Read directly rather than as `1 − sponsorShare`: in floating point
+ * `1 − (1 − x)` is not always `x`, and the migration must change nothing.
+ */
+export function partnerShare(s: GameState, h: Holding | undefined | null): number {
+  const v = vehicleOf(s, h);
+  return v?.kind === "jv" ? v.share : 0;
 }
 
 /** The big decisions a vehicle can veto. */

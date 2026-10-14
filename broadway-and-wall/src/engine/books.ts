@@ -10,7 +10,7 @@ import type { BalanceSnapshot, BooksMonth, BooksYear, GameState, Holding, PnlYea
 import { logBooks, deedCfProbe, deedIrr, fundDepositsHeld, pnlAdd, pnlYear, START_YEAR } from "./types";
 import { depositsHeld } from "./leasing";
 import { locLimit, locRate } from "./credit";
-import { jvShare } from "./jv";
+import { purseOf, partnerShare } from "./vehicles";
 import { collateralAsIs, ownedHoldingValue, netWorth, resolveRec } from "./value";
 import { gpInterestInFund } from "./fund";
 
@@ -73,9 +73,9 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
     const v = ownedHoldingValue(s, parcels, h);
     const debt = h.loan?.balance ?? 0;
     const junior = h.mezz?.balance ?? 0;
-    if (liveFund && h.fundOwned) { fundNav += v - debt - junior; fundDeeds++; continue; }
+    if (purseOf(s, h) === "fund") { fundNav += v - debt - junior; fundDeeds++; continue; }
     mezz += junior;
-    partners += (v - debt - junior) * (h.jv?.share ?? 0);
+    partners += (v - debt - junior) * partnerShare(s, h);
     propGross += v;
     mortgages += debt;
     // A leased fee resolves as the lessee's tower — it is still coupon paper,
@@ -194,7 +194,7 @@ export function booksMonthAsYear(b: BooksMonth): BooksYear {
 
 /** A deed the firm reports on its own statement — not the fund vehicle's. */
 function onFirmBooks(s: GameState, h: Holding): boolean {
-  return !(h.fundOwned && s.fund && !s.fund.settled);
+  return purseOf(s, h) === "sponsor";
 }
 
 /**
@@ -205,7 +205,7 @@ function onFirmBooks(s: GameState, h: Holding): boolean {
 export function stampPnlDeed(s: GameState, h: Holding, noiMonth: number, egiYr: number | null) {
   if (!onFirmBooks(s, h)) return;
   pnlAdd(s, "rev", egiYr === null ? noiMonth : egiYr / 12);
-  const share = jvShare(h);
+  const share = partnerShare(s, h);
   if (share > 0) pnlAdd(s, "jv", noiMonth * share);
 }
 
@@ -225,7 +225,7 @@ export function stampPnlMonth(s: GameState) {
     if (h.loan && h.loan.balance > 0) i += (h.loan.balance * h.loan.ratePct) / 100 / 12;
     if (h.mezz && h.mezz.balance > 0) i += (h.mezz.balance * h.mezz.ratePct) / 100 / 12;
     intExp += i;
-    jvInt += i * jvShare(h);
+    jvInt += i * partnerShare(s, h);
     depr += (h.deprYr ?? 0) / 12;
   }
   if (s.facility && s.facility.balance > 0) intExp += (s.facility.balance * s.facility.ratePct) / 100 / 12;

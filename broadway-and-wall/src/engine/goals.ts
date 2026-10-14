@@ -8,6 +8,7 @@
 import type { GameState } from "./types";
 import type { ParcelTable } from "@/data/types";
 import { resolveRec, useRentableSf } from "./value";
+import { purseOf, partnerShare } from "./vehicles";
 
 export type GoalId = "street" | "nw100" | "builder" | "landlord" | "manager" | "nw500" | "developer";
 
@@ -91,11 +92,11 @@ export function goalProgress(s: GameState, parcels?: ParcelTable | null): { shar
       // are the LPs'; a JV partner owns its share.
       let let_ = 0;
       for (const h of Object.values(s.holdings)) {
-        if (h.fundOwned) continue;
+        if (purseOf(s, h) === "fund") continue;
         let sf = h.tenants.reduce((a, t) => a + t.sf, 0);
         const rec = parcels ? resolveRec(parcels, s, h.bbl) : null;
         if (rec && (h.occ ?? 0) > 0) sf += useRentableSf(rec, "multifamily") * (h.occ ?? 0);
-        let_ += sf * (1 - (h.jv?.share ?? 0));
+        let_ += sf * (1 - partnerShare(s, h));
       }
       return { share: Math.min(1, let_ / 500_000), text: `${Math.round(let_).toLocaleString()} of 500,000 sf let` };
     }

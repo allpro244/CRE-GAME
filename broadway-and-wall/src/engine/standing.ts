@@ -20,6 +20,7 @@ import { inPlace, resolveRec, ownedHoldingValue } from "./value";
 import { deedIrr } from "./types";
 import { buyQuote } from "./actions";
 import { PRODUCTS } from "./debt";
+import { purseOf, partnerShare } from "./vehicles";
 
 /** A rival's net equity — gross assets as marked, less debt, plus cash. The one expression. */
 export const rivalEquity = (m: { aum: number }, r: { debt: number; cash: number }) => m.aum - r.debt + r.cash;
@@ -306,7 +307,7 @@ export interface DeedReturn { bbl: string; equityIn: number; cashBack: number; e
 export function returnsToDate(s: GameState, parcels: ParcelTable): DeedReturn[] {
   const out: DeedReturn[] = [];
   for (const h of Object.values(s.holdings)) {
-    if (h.fundOwned) continue;
+    if (purseOf(s, h) === "fund") continue;
     const l = s.deedCf?.[h.bbl];
     if (!l || l.pooled || l.from === undefined || l.from > h.boughtM) continue;
     let inn = 0, back = 0;
@@ -316,7 +317,7 @@ export function returnsToDate(s: GameState, parcels: ParcelTable): DeedReturn[] 
     // hand back the keys, so the mark on what they hold floors at nothing.
     // Recourse debt can take them below zero, and then it does.
     const rawEq = ownedHoldingValue(s, parcels, h) - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0);
-    const eqNow = (h.loan?.recourse ? rawEq : Math.max(0, rawEq)) * (1 - (h.jv?.share ?? 0));
+    const eqNow = (h.loan?.recourse ? rawEq : Math.max(0, rawEq)) * (1 - partnerShare(s, h));
     const cf = [...l.cf];
     const last = cf.length - 2;
     if (cf[last] === s.month) cf[last + 1] += eqNow; else cf.push(s.month, eqNow);

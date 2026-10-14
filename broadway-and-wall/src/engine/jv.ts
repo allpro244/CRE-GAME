@@ -38,7 +38,10 @@ export const JV_DEAL_COST = 0.01;
 export const JV_SHARES = [0.25, 0.49];
 const PARTNERS = ["Ashgrove Family Office", "Northbridge Pension", "Calloway Private Capital", "Merrow Endowment"];
 
-export const JV_CONSENT = "Your partner has consent on that — buy them out first.";
+// The consent refusal lives with the ownership layer (vehicles.ts), which must
+// not import this module; re-exported here for the callers that read it from jv.
+export { JV_CONSENT } from "./vehicles";
+import { JV_CONSENT } from "./vehicles";
 
 /** The partner's share of this deed, 0 when there is none. */
 export function jvShare(h: Holding | undefined): number {

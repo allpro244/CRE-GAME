@@ -295,68 +295,54 @@ are not already inside a vehicle's outcome add their own negative evidence,
 read from `sponsor.events`. Reading them here doesn't change anything lenders
 do.
 
-#### Deals done with your own money also build the rating, slowly
+#### Deals done with your own money count almost as much
 
-A sponsor who spends years doing successful deals on its own balance sheet
-earns a reputation from that alone. Investors check public deeds and sale
-prices, and the engine already has each deal's own cash ledger (`Exit`:
-equityIn, equityOut, levered pre-tax `irr`). But it counts for less than a
-record with other people's money: no promise was made, nobody else's money
-was at risk, and managing investors (reporting, alignment, calls) is a skill
-the sponsor hasn't shown yet.
+In life, raising money comes down to the story and the track record behind
+it, and deals done with your own money are part of that record. So a
+sponsor's balance-sheet deals count **almost as much** as deals done with
+investors. Investors check public deeds and sale prices, and the engine
+already has each deal's cash ledger (`Exit`: equityIn, equityOut, levered
+pre-tax `irr`).
 
 **Which deals count:** realised deals with a complete ledger (`Exit.irr` not
 null), whether a development sold or a refinance that returned the equity.
 Holdings that are still marked rather than realised don't count, same as
 everywhere else.
 
-**Evidence per own-money deal** (judged on its realised levered IRR and
-multiple, since there was no pitch):
+**What they're judged against: their own underwriting.** An own-money deal
+had no pitch, but it had a plan. When a job breaks ground (or a building is
+bought), the engine records the base-case projected levered IRR and
+multiple from its own pro forma: the "projected" column of a sponsor's
+track-record sheet. At realisation the deal goes through **the same evidence
+table as an investor deal**, actual vs projected, with the same fault, size
+and alignment rules.
 
-| Result | Evidence |
-|---|---|
-| Strong: IRR ≥ 20% and multiple ≥ 1.5× | **+3** |
-| Good: IRR 12–20% and multiple ≥ 1.25× | **+2** |
-| Modest: made money, below that | 0 |
-| Lost money, no credit event | half the matching row of the investor table (−10 to −30) |
-| Foreclosure, deficiency or forced sale | read from `sponsor.events` exactly as for any sponsor |
+**The one difference: 90% weight.** Own-money evidence is multiplied by
+**0.9**, as a shape parameter. The 10% gap stands for what an own-money
+record can't show yet: other people's money handled, reported on, called and
+returned. It applies to good and bad results alike. Size weight and
+experience `N` count in full.
 
-**Discounts:**
-- **Half weight in experience.** Each own deal adds only half its size
-  weight to experience `N` (its evidence values are already the lower ones
-  in the table above), so it takes about twice as much own-money record as
-  investor record to convince anyone.
-- **Size.** Own deals use the same size weight as investor deals, so a run
-  of tiny flips counts for little, and a few big, very successful jobs count
-  for a lot.
-- **A ceiling: own-money evidence alone can lift the score to +35** and no
-  further, and can't qualify a firm above Emerging however it ranks. Proven and above need a record with
-  investors' money, because that is the thing institutions are underwriting.
-  Investor-deal evidence adds on top as usual.
-- **The same fading** as other positive evidence (15–20 years), so the
-  record has to stay current.
+The one hard requirement left: **Institutional and Blue-chip need at least
+one realised investor vehicle** (Blue-chip also needs a fund). Pensions and
+endowments want to have seen a sponsor manage outside capital at least once.
+Everything up to Proven can be earned on your own record.
 
-**What that looks like** (own deals only, before fading):
+**What that looks like.** Take a $5M start that does 4 big own-money
+developments, recycling the equity, and reaches $100M by 2040. Each sale is
+about 2.1× the equity in about 4 years (about 20% IRR), on equity of roughly
+$3M, $6M, $10.5M and $20M in opening-year dollars. Size weights total 6.5.
 
-| Own deals realised | All "good" (+2) | All "strong" (+3) |
-|---|---|---|
-| 5 | +4 | +6 |
-| 10 | +11, Emerging floor met | +17, Emerging floor met |
-| 15 | +19 | +29 |
-| 20 | +29 | +35 (ceiling) |
+| How each deal did vs its own projection | Evidence per deal (× 0.9) | Score in 2040 | Highest band possible |
+|---|---|---|---|
+| Exceptional (beat by 5+ points, 1.8×+) | +7.2 | **+29** | **Proven** |
+| Beat by 2–5 points | +5.4 | +22 | Emerging |
+| Met the projection | +3.6 | +15 | Emerging |
+| The same 4 deals with investors, exceptional | +8 | +32 | Proven |
 
-So a developer who quietly builds and sells a good job every year or two
-clears the Emerging floor in **about 10 deals, roughly 15 years**. If that
-also lifts them past enough of the street to rank into Emerging, they arrive
-at their first syndication able to raise $3 per $1 instead of $1, with
-better terms. That is exactly how many real sponsors start: years
-of their own money, then their first outside equity.
-
-For scale, career #4 in the October playthroughs (80 developments, 52
-sales, median about 1.9× cost) would on own deals alone have reached
-Emerging around 2043 and the +35 ceiling around 2048, about 45 years in.
-That's a rough estimate from its sale multiples, ignoring the size
-weighting.
+So a strong solo record lands within a few points of the same record built
+with investors' money. The band actually held still depends on rank against
+the rest of the street.
 
 #### Warning signs before the end (investor reporting)
 
@@ -386,10 +372,14 @@ shrink(x) = x × N / (N + 4)      N = experience: sum of size weights (above)
 - **Negative evidence is never shrunk.** It lands in full the moment it is
   recognised.
 - **Only realised results build the rating.** Marks and paper IRRs don't.
-  Warning signs can only subtract. Own-money deals carry lower evidence,
-  count half toward experience, and are capped at +35 on their own (above).
-- **Memory:** positive evidence fades over 15–20 years, so a firm must keep
-  delivering; ordinary negatives fade over 10 years; misconduct over 20.
+  Warning signs can only subtract. Own-money deals count at 90% (above).
+- **Memory: a record goes stale when the firm goes quiet, not just because
+  it's old.** Positive evidence keeps full weight while the firm keeps
+  realising good deals. Once 7 years pass without a realised deal with
+  positive evidence, the whole positive record starts fading, reaching zero
+  10 years later. It snaps back to full the next time a good deal is
+  realised. Separately, any single deal over 30 years old drops out. Ordinary
+  negatives fade over 10 years; misconduct over 20.
 
 What that produces for a sponsor doing **small deals** (size weight 1) and
 meeting every promise (+4 a deal), before fading. The last column is the
@@ -479,9 +469,9 @@ feature of private real estate; cite it in the code comment when calibrating.
    | Band | Score floor | Also needs |
    |---|---|---|
    | Emerging | +10 | — |
-   | Proven | +25 | investor-deal experience `N` ≥ 3, from at least 2 deals |
-   | Institutional | +40 | investor-deal experience `N` ≥ 8, from at least 3 deals |
-   | Blue-chip | +55 | investor-deal experience `N` ≥ 12, from at least 4 deals, including a fund |
+   | Proven | +25 | experience `N` ≥ 3, from at least 2 deals (own-money deals count) |
+   | Institutional | +40 | experience `N` ≥ 8 from at least 3 deals, including at least one realised investor vehicle |
+   | Blue-chip | +55 | experience `N` ≥ 12 from at least 4 deals, including a realised fund |
 
    Two bands are **absolute**, whatever the rank: **Questioned** (score
    under −10) and **Toxic** (score under −40, or any live misconduct mark).
@@ -533,8 +523,8 @@ band you still mostly hear no.
 
 Other limits on top of the band:
 - **Blind-pool funds** need Institutional or better, which already implies
-  real investor-deal experience (`N` ≥ 8 from at least 3 deals). Investors back a fund on a record, not a
-  deal.
+  experience `N` ≥ 8 from at least 3 deals, including at least one realised
+  investor vehicle. Investors back a fund on a record, not a deal.
 - **Step-up limit:** no raise above about 2–3× your largest successfully
   completed one (a shape parameter).
 - **The friends-and-family network is finite.** It is a shape parameter sized
@@ -859,9 +849,8 @@ Order matters. Each phase lands with its measurement.
 6. Reputation scale and bands (§3.4): is −100 to +100, with named bands,
    the right presentation, or would a letter grade read better on the league
    table?
-7. Own-money deals (§3.4): is +35 (the top of Emerging) the right ceiling
-   for a record built without investors, or should a very long, very clean
-   own-money record be able to reach Proven?
+7. Own-money deals (§3.4) count at 90% of investor deals. Is 90% right, and
+   should Institutional really require at least one investor vehicle?
 8. Should reputation be visible for every rival from day one, or only once
    you've dealt with them or they've raised money publicly? (In life you know
    the big names and not the small ones.)

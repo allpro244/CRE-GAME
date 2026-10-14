@@ -3920,10 +3920,10 @@ export function moveDeposit(s: GameState, h: Holding | undefined, amt: number) {
 /**
  * Why a dollar moved through the fund vehicle's `cash`. One kind per real
  * movement: capital called, distributed, a GP advance repaid, a deed's own
- * flow settled, a purchase or sale the caller moved directly, a tenant
+ * flow settled, a purchase, sale or construction closing the caller moved directly, a tenant
  * deposit, the sponsor's buy-in at the wind-down.
  */
-export type FundFlowKind = "call" | "dist" | "advRepay" | "deed" | "purchase" | "sale" | "deposit" | "buyIn";
+export type FundFlowKind = "call" | "dist" | "advRepay" | "deed" | "purchase" | "sale" | "build" | "deposit" | "buyIn";
 
 /**
  * THE ONE WRITE TO A VEHICLE'S CASH. Moves `amt` (signed) and records it on
@@ -3935,7 +3935,7 @@ export function moveFundCash(f: import("./fund").PlayerFund, amt: number, kind: 
   f.cash += amt;
   const fl = (f.flows ??= {});
   fl[kind] = (fl[kind] ?? 0) + amt;
-  if (kind === "purchase" || kind === "sale") f.deedSettled = (f.deedSettled ?? 0) + amt;
+  if (kind === "purchase" || kind === "sale" || kind === "build") f.deedSettled = (f.deedSettled ?? 0) + amt;
 }
 
 /** Deposits the vehicle holds — on the live fund's deeds. */

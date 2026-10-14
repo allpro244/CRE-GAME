@@ -9,7 +9,7 @@ import type { ParcelTable } from "@/data/types";
 import type { BtsCommitment, Builder, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, MerchantBook, UseMix } from "./types";
 import { hash01 } from "./competitorTraits";
 import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
-import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
+import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
@@ -1807,6 +1807,22 @@ export function siteDebtAtGroundbreak(s: GameState, bbl: string): { due: number;
   };
 }
 
+/**
+ * WHOSE MONEY BREAKS GROUND HERE, AND HOW MUCH OF IT THERE IS. A lot the fund
+ * owns is built with the vehicle's cash and uncalled commitments, and only
+ * while it is still investing; every other lot with the sponsor's cash and
+ * line. The desk's groundbreak button and `startDevelopment` both read this,
+ * so the button cannot offer what the engine refuses.
+ */
+export function groundbreakPurse(s: GameState, parcels: ParcelTable, bbl: string): { total: number; fund: boolean; closed: string | null } {
+  const f = purseOf(s, s.holdings[bbl]) === "fund" ? s.fund ?? null : null;
+  if (!f) return { total: fundableNow(s, parcels), fund: false, closed: null };
+  const closed = s.month > f.investEndM
+    ? "The fund's investment period is over — it can finish and run what it owns, but it cannot start a new job."
+    : null;
+  return { total: Math.max(0, f.cash) + Math.max(0, f.uncalled), fund: true, closed };
+}
+
 export function startDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.6,
@@ -1882,14 +1898,26 @@ export function startDevelopment(
   if (site.due > 0) { const why = consentFor(s, s.holdings[bbl], "redevelop"); if (why) return { s, err: why }; }
   const siteNote = site.due > 0 ? ` and the ${money(site.due)} land loan, which the construction lender requires repaid at close` : "";
   const commitCap = need.whole + site.due;
-  const fundable = fundableNow(s, parcels);
+  // A FUND LOT IS BUILT WITH THE FUND'S MONEY (CAPITAL_RAISING_PLAN.md §0.5).
+  // The vehicle already paid the monthly draws on its deeds (settleVehicleDeedFlow
+  // reimburses the sponsor), but both tests here read the SPONSOR's purse and
+  // the day-one cheque was drawn from it first, so a fund with $30M could not
+  // break ground on its own lot behind a sponsor holding $3M. The construction
+  // lender's evidence-of-funds is the vehicle's cash and uncalled commitments;
+  // a new job is a new investment, so only while the fund is still investing.
+  const purse = groundbreakPurse(s, parcels, bbl);
+  const vehicle = purse.fund ? s.fund ?? null : null;
+  if (purse.closed) return { s, err: purse.closed };
+  const fundable = purse.total;
+  const purseWords = vehicle ? "the fund can call" : "you can fund";
+  const purseNote = vehicle ? " (its cash and uncalled commitments)" : " including the line";
   if (fundable < commitCap) {
     const short = commitCap - fundable;
     return {
       s,
       err: `Equity short ${money(short)} to finish this job. `
         + `Needs ${money(plan.equity)} equity all-in (${money(plan.equityAtClose)} at close) `
-        + `plus change-order margin${siteNote}; you can fund ${money(fundable)} including the line. `
+        + `plus change-order margin${siteNote}; ${purseWords} ${money(fundable)}${purseNote}. `
         + `Cut floors or coverage, buy cash-flowing buildings first, or bring more capital — no lender closes without evidence you can finish.`,
     };
   }
@@ -1912,16 +1940,33 @@ export function startDevelopment(
     };
   }
   const next = clone(s);
+  // Every closing cheque comes out of the purse that owns the deed: the
+  // sponsor's (cash, then the line), or the vehicle's (cash, then a call on
+  // uncalled commitments), booked as the vehicle's own movement.
+  const payAtClose = (amt: number, cat: "dev" | "debtSvc") => {
+    if (!(amt > 0)) return;
+    const f = vehicle ? next.fund : null;
+    if (!f) { fundAndBook(next, parcels, amt, cat, { bbl }); return; }
+    const call = Math.max(0, Math.min(f.uncalled, amt - Math.max(0, f.cash)));
+    if (call > 0) {
+      f.uncalled -= call;
+      f.called += call;
+      moveFundCash(f, call, "call");
+      logBooks(next, "lpCalled", call); // LP equity in for this job — not income
+    }
+    moveFundCash(f, -amt, "build");
+    logBooks(next, cat, amt, bbl, true);
+  };
   // The origination fee is the lender's, paid at close and never part of the
   // job's own budget — folding it into the prefund would hand it back later as
   // free construction money.
-  fundAndBook(next, parcels, dayOne - hedgeCost, "dev", { bbl });
+  payAtClose(dayOne - hedgeCost, "dev");
   // the hedge is a financing cost, booked as such, paid at the close
-  if (hedgeCost > 0) fundAndBook(next, parcels, hedgeCost, "debtSvc", { bbl });
+  if (hedgeCost > 0) payAtClose(hedgeCost, "debtSvc");
   if (site.due > 0) {
     // Retired the way payOffLoan retires a mortgage: principal and any break
     // fee, booked as debt service, lien released.
-    fundAndBook(next, parcels, site.due, "debtSvc", { bbl });
+    payAtClose(site.due, "debtSvc");
     const nh = next.holdings[bbl];
     nh.loan = null;
     if (nh.mezz) nh.mezz = null;

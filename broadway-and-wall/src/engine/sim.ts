@@ -2160,6 +2160,11 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
   const f = s.fund;
   if (!f || f.settled || f.extendedTo === undefined || s.month < f.extendedTo) return;
   const deeds = Object.values(s.holdings).filter((h) => h.fundOwned);
+  // NOBODY LIQUIDATES A HALF-BUILT BUILDING. A NAV for a job in the ground is
+  // its land mark plus money sunk, not a price anyone pays, and a deed in kind
+  // would leave the job behind with no owner. The LPs wait for delivery —
+  // what any LPA's extension clause is for — and the wind-down runs then.
+  if (deeds.some((h) => s.developments?.[h.bbl])) return;
   let boughtIn = 0, inKind = 0, paidTotal = 0, trustNav = 0;
   for (const h of deeds) {
     const rec = resolveRec(parcels, s, h.bbl);

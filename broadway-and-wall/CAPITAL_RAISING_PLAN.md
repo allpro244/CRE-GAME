@@ -739,6 +739,78 @@ develop with this firm over N years.
 
 ---
 
+## 6.5 Choosing the capital on every deal
+
+**Today:** one global switch on the Fund desk (`s.fundPay`, "Buy from the
+vehicle") decides whether **every** purchase is paid from the fund or the
+balance sheet (`executePurchase`, `AcquireDesk.tsx`). Construction is always
+paid from the sponsor's own account, even on a fund lot.
+
+**Proposed:** a **capital-source picker on every closing and every
+groundbreak** (land, building, teardown, or vertical construction). It shows
+each available source side by side.
+
+| Source | Available when | What it means |
+|---|---|---|
+| **Your own balance sheet** | Always | Cash, line and lender, as today. Counts at 90% weight for reputation (§3.4). |
+| **Your fund** | A live fund in its investment period, with enough cash plus uncalled commitments, **and** the deal fits the LPA limits (strategy, concentration, development share, leverage) | The fund owns the deed, calls capital for it, **and pays its construction** (the P0 fix). Pays the waterfall and the management fee. |
+| **Syndicate this deal** | Your reputation band allows outside money (§3.4) and an investor type will take the meeting | Opens an offering memorandum. The raise runs during the contract period (1–3 months). Your co-invest comes from your balance sheet. |
+| **Fund plus a co-invest sidecar** | The deal is bigger than the fund's concentration limit allows | The fund takes its maximum. Fund investors (and others the band allows) are offered the excess deal by deal, usually at lower fees. This is the most common way funds do deals too big for them. |
+
+For each source the picker shows:
+- the equity **you** put in
+- the terms (pref, promote, fees)
+- time to close
+- the odds the raise closes, from §3.2
+- what the deal will count for on your track record
+
+#### The allocation rule (why you can't cherry-pick)
+
+Real LPAs give the fund **first claim on deals inside its strategy** during
+its investment period. Without that rule, a sponsor keeps the best deals for
+itself and hands investors the rest. So:
+- While a fund is investing, a deal that fits its strategy and limits must
+  be **offered to the fund first**.
+- Taking it onto your own balance sheet or syndicating it instead needs
+  **investor-committee consent**. That is granted automatically if the fund
+  lacks the capacity or the deal breaks a limit, and requested (and can be
+  refused) otherwise.
+- **Doing it anyway is an LPA breach:** misconduct under §3.4 (×2 and −25),
+  and grounds for removal for cause.
+- After the investment period ends, the rule lapses and every source is
+  open again.
+
+#### When a deal fails to raise
+
+If a syndication doesn't close by the end of the contract period, the player
+chooses:
+- **close on your own balance sheet** if it's affordable
+- **shrink the scheme** to what was raised
+- **ask the seller for an extension**, which costs a fee and isn't always
+  granted
+- **walk away and lose the deposit**
+
+The failed raise itself isn't a reputation event, but the investors who
+passed are recorded, and they remember the pitch (§3.2 relationship).
+
+#### Land you already own, syndicated at groundbreak
+
+The common path for a small developer: buy and assemble the land with your
+own money, then syndicate the vertical construction. The source chosen at
+land purchase can switch at groundbreak from **own → syndicate** or **own →
+fund**. How the land goes in matters, because selling your own land to your
+own investors is a conflict:
+- **Default: contributed at cost plus carry.** The sponsor's land basis and
+  carrying costs become its co-invest (or part of it). No sale, no tax.
+- **At appraised value:** only with an independent appraisal **and**
+  investor consent. It counts as a sale by the sponsor (taxable gain) and
+  shows on the offering memorandum.
+
+A fund lot can't be moved to your own balance sheet or to a syndication.
+That's a cross-trade, which needs consent and an independent valuation (§5).
+
+---
+
 ## 7. Player experience
 
 - **Capital desk** (replaces FundDesk):
@@ -751,6 +823,8 @@ develop with this firm over N years.
   with the **market-clearing band** shown for each targeted investor type
   ("family offices are clearing value-add deals at 8% pref, 20% over 14%").
   That keeps the decision legible instead of a hidden roll.
+- **Capital-source picker** on every closing and groundbreak (§6.5),
+  replacing the global "Buy from the vehicle" switch.
 - **Build desk:** "Syndicate this scheme" next to "Break ground", showing the
   equity split, GP cheque, fees and promote at the base case.
 - **News and stories:** raises that close or fail (yours and rivals'), the

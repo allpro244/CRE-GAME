@@ -127,6 +127,13 @@ for (const seed of SEEDS) {
           const need = p ? E.devFundingNeed(p).whole : Infinity;
           const outside = E.maxOutside(g1, need, land);
           const nw0 = E.netWorth(g1, parcels), c0 = g1.cash;
+          // The same groundbreaking without investors, for comparison: points
+          // and a rate hedge are cash that leaves net worth either way.
+          // (Topped up with idle cash so it can close; idle cash moves nothing.)
+          const rich = { ...g1, cash: g1.cash + need };
+          const nwRich = E.netWorth(rich, parcels);
+          const solo = p ? E.startDevelopment(rich, parcels, b, pick.u, pick.f, 0.6, "gmp") : { err: "no plan" };
+          const dNwSolo = solo.err ? null : E.netWorth(solo.s, parcels) - nwRich;
           const rr = p ? E.startDevelopment(g1, parcels, b, pick.u, pick.f, 0.6, "gmp", undefined, { syndicate: { outside } }) : { err: "no plan" };
           if (!rr.err) {
             g = rr.s; lot = b;
@@ -134,7 +141,12 @@ for (const seed of SEEDS) {
             const dNw = E.netWorth(g, parcels) - nw0;
             console.log(`seed ${seed} m${g.month}: ${pick.u} ${pick.f}fl on ${lot} (hurdle ${p.hurdleRatio.toFixed(2)}) · cash equity ${M(need)} · own ${M(own)} · friends and family ${M(w.lpCommit)} (${Math.round(w.lpShare * 100)}% of calls) · called at close ${M(w.lpCalled)} · Δcash ${M(g.cash - c0)} · Δnet worth ${M(dNw)}`);
             ok(w.lpCalled > 0 && w.lpCalled <= w.lpCommit, `seed ${seed}: the investors funded their share of the close`);
-            ok(Math.abs(dNw) < 0.03 * need, `seed ${seed}: net worth does not jump when their money arrives (${M(dNw)})`);
+            // Their money arriving moves net worth only as the same groundbreaking
+            // done alone would, at the sponsor's share of the capital: the
+            // costs a closing sinks (points, a rate hedge) are the deal's,
+            // and the investors carry their share of them.
+            const vs = (dNwSolo ?? 0) * (1 - E.lpCapShare(w));
+            ok(Math.abs(dNw - vs) < 0.01 * need, `seed ${seed}: net worth does not jump when their money arrives (${M(dNw)}; alone ${dNwSolo === null ? "n/a" : M(dNwSolo)} × your ${Math.round((1 - E.lpCapShare(w)) * 100)}% = ${M(vs)})`);
             formedAt = g.month;
             formed++;
           }

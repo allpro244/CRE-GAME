@@ -3928,7 +3928,23 @@ export function ownedHoldingValueFromRec(
   // paid for it (the basis does not move until delivery, dev.ts), and the
   // building's value is recognised once, when it stands.
   if (s.developments?.[h.bbl] && (rec.class === "land" || !rec.bldgArea) && h.costBasis > 0) return h.costBasis;
-  const v = holdingValue(rec, s.econ, h, s.month);
+  let v = holdingValue(rec, s.econ, h, s.month);
+  // A TENANT WHO HAS SAID THEY ARE GOING IS GONE (2026-10-15). The notice
+  // lands six months out, and from then the space is known to go dark; the
+  // mark carried the ordinary renewal odds (66-96%) to the last day and then
+  // fell 23-33% in one month the morning they left — measured on single-tenant
+  // offices, every time. A buyer reading a rent roll with a notice on it pays
+  // for the building as it will stand empty, plus the rent still owed. That
+  // is the engine's own mark without them, so the mark arrives at the empty
+  // building's value on the day they leave instead of falling to it.
+  const leaving = (t: Holding["tenants"][number]) =>
+    (t.nonRenewM !== undefined || !!t.leavingFor) && t.endM > s.month && !t.defaulted;
+  if (rec.class !== "land" && rec.bldgArea > 0 && h.tenants?.some(leaving)) {
+    const stay = { ...h, tenants: h.tenants.filter((t) => !leaving(t)) };
+    const dark = holdingValue(rec, s.econ, stay, s.month);
+    const owed = h.tenants.filter(leaving).reduce((a, t) => a + t.rentPsf * t.sf * (t.endM - s.month) / 12, 0);
+    v = Math.min(v, dark + owed);
+  }
   // The roll that is about to roll — see leasing.ts rolloverReserve. Registered
   // rather than imported because leasing.ts imports this file.
   // Capped at a quarter of the mark: a re-tenanting bill bigger than that is

@@ -5272,6 +5272,8 @@ export function rolloverReserve(s: GameState, rec: ParcelRecord, h: Holding): nu
   let reserve = 0;
   for (const t of h.tenants) {
     if (t.defaulted) continue;
+    // A tenant who has served notice is already out of the mark (value.ts).
+    if (t.nonRenewM !== undefined || t.leavingFor) continue;
     const left = t.endM - s.month;
     if (left <= 0 || left > 12) continue;
     const use = (t.use ?? rec.class) as BuiltClass;

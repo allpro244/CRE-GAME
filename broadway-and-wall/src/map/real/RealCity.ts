@@ -1897,14 +1897,17 @@ export class RealCityLayer {
     if (!this.hazeSheet) {
       // MapLibre's ground is not ours to shade: a sheet over it carries the
       // same fade, so a far street hazes with the buildings standing on it
+      // lifted clear of the ground and drawn a little forward, like the
+      // shadow catcher and for the same reason: a centimetre over the lot
+      // grounds, it hazed them twice or once at random from far off
       const mat = new THREE.ShaderMaterial({
-        uniforms: HAZE, transparent: true, depthWrite: false,
+        uniforms: HAZE, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,
         vertexShader: "varying vec3 vP; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vP = mv.xyz; gl_Position = projectionMatrix * mv; }",
         fragmentShader: "uniform vec3 hazeCol; uniform float hazeNear, hazeFar, hazeCap; varying vec3 vP; void main() { gl_FragColor = vec4(hazeCol, smoothstep(hazeNear, hazeFar, length(vP)) * hazeCap); }",
       });
       hazed.add(mat);
       this.hazeSheet = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000, 8, 8), mat);
-      this.hazeSheet.position.z = 0.035; this.hazeSheet.renderOrder = -2; this.hazeSheet.frustumCulled = false;
+      this.hazeSheet.position.z = 0.19; this.hazeSheet.renderOrder = -2; this.hazeSheet.frustumCulled = false;
       this.scene.add(this.hazeSheet);
     }
     this.scene.traverse((o) => {
@@ -1980,6 +1983,15 @@ export class RealCityLayer {
     const span = Math.max(300, Math.max(u1 - u0, v1 - v0) / 2);
     const texel = (2 * span) / this.sun.shadow.mapSize.x;
     const cu = Math.round(((u0 + u1) / 2) / texel) * texel, cv = Math.round(((v0 + v1) / 2) / texel) * texel;
+    // SHADOW ACNE. A surface tests its own depth against a map texel that
+    // covers ~1 m (High) or ~2 m (Medium) of the island, so without enough
+    // offset it shadows itself in fine stripes whose pattern swims as the
+    // camera moves: the flicker left once the box stopped moving. The offset
+    // along the surface normal is scaled to the texel (the 0.6 m it had was
+    // sized for the old ~0.3 m view-fitted texels); the depth bias steps with
+    // the map's depth range over the island.
+    this.sun.shadow.normalBias = Math.max(0.6, texel * 1.4);
+    this.sun.shadow.bias = -0.0006;
     const f = new THREE.Vector3(0, 0, 0);
     f.addScaledVector(right, cu).addScaledVector(up, cv);
     this.shadowBox = { cx: cu, cy: cv, span };
@@ -5031,7 +5043,17 @@ export class RealCityLayer {
     // a shadow catcher over MapLibre's ground: transparent except where a
     // building or a tree stands between it and the sun
     const catcher = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.catcherMat);
-    catcher.position.z = 0.04; catcher.receiveShadow = true; catcher.renderOrder = -1;
+    // THE FLICKER. The catcher stood at 4 cm, a centimetre over the lot
+    // grounds and yards (2-3 cm) and UNDER the park turf (4.6 cm). From a few
+    // hundred metres the depth buffer cannot part surfaces a centimetre
+    // apart, so pixel by pixel and frame by frame the catcher won or lost
+    // against the ground under it, and the ground's shadows came and went as
+    // the camera moved (the owner found it with ?noshadows, which hides the
+    // catcher). It now floats 20 cm up, clear of every flat ground surface
+    // (kerbs are 15 cm), and is drawn a little forward in the depth test, so
+    // it wins over the ground outright and still loses to anything standing
+    // on it.
+    catcher.position.z = 0.2; catcher.receiveShadow = true; catcher.renderOrder = -1;
     catcher.visible = this.quality !== "low" && !NO_SHADOWS;
     this.catcher = catcher;
     this.scene.add(catcher);
@@ -6046,7 +6068,7 @@ export class RealCityLayer {
     }
     return out;
   }
-  private catcherMat = new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c2433 });
+  private catcherMat = new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c2433, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
   private wetMat = new THREE.MeshStandardMaterial({ color: 0x1e2329, roughness: 0.12, metalness: 0, transparent: true, opacity: 0, depthWrite: false });
   private wetSheet: THREE.Mesh | null = null;
   private precip: THREE.LineSegments | null = null;

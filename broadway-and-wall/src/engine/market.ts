@@ -2280,9 +2280,29 @@ export function tickNation(s: GameState) {
   // until the depth is reached, then the feather-fall begins.
   const chasing = inRec || (n.uPeak !== undefined && n.unemp < n.uPeak - 0.001);
   if (!chasing) n.uPeak = undefined;
+  // ...AND TIGHT MONEY BITES BEFORE THE RECESSION DOES (2026-10-15). Outside
+  // a recession unemployment drifted to its expansion low whatever the Fed
+  // was doing, so a decade of punitive real rates cost nothing until the
+  // curve tipped. Money works with a lag and a slope: Romer & Romer (2004)
+  // find a one-point rise in the funds rate raises unemployment by roughly a
+  // point over the following two years — and part of that is the recessions
+  // tight money causes, which the hazard above already draws. The direct
+  // drag here is half that pace: sustained tight money holds unemployment
+  // about half a point higher per point of tightness while the expansion
+  // lasts. Measured on the national block (40 centuries): mean 5.86%, p50
+  // 5.27%, p10 4.04%, 37% of months under 4.8%, against the US 1948-2024
+  // record of 5.7 / 5.5 / 3.9 / ~33% (was 5.48 / 4.82 / 3.59 / 50%: the
+  // expansion low arrived regardless of money).
+  // The response bends: the record's range is a few points of tight money
+  // (Volcker's real funds rate peaked near 8-10), and a straight line run out
+  // to 18 points — a central bank holding 19.5% through a deflation — drew a
+  // 23% unemployment rate the drag alone was compounding. The first points
+  // bite in full, the next ones less, towards an asymptote of four points'
+  // worth: a shape, not a stop.
+  const tightGap = 0.04 * (1 - Math.exp(-Math.max(0, realPolicy - n.neutralReal) / 0.04));
   const uMove = chasing
     ? Math.max(0.0008, 0.115 * ((n.uPeak ?? n.unemp + 0.02) - n.unemp))
-    : 0.025 * (0.035 - n.unemp);
+    : 0.025 * (0.035 - n.unemp) + 0.0125 * tightGap;
   // (A pull toward this city's own unemployment — "one city, one per cent of
   // a nation" — is gone, 2026-10-14. A nation of a hundred cities does not
   // move with one of them, and it was the wire by which a player's building
@@ -2616,6 +2636,35 @@ const INDUSTRY_TREND: Record<Sector, number> = {      // per year
   finance: 0.008, law: 0.005, tech: 0.025, media: -0.005, insurance: 0.005,
   logistics: 0.015, apparel: -0.015, food: 0.012, medical: 0.020, design: 0.008,
 };
+/**
+ * HOW MUCH HARDER TIGHT MONEY HITS A TRADE THAN THE CYCLE ALONE (2026-10-15).
+ * Rates reach some employers directly: anything that sells on credit, runs
+ * inventory, or depends on capital spending. In 1980-82 manufacturing and
+ * construction payrolls fell three to four times as far as total nonfarm,
+ * while health care kept hiring through both recessions (BLS CES). Above 1 a
+ * trade sheds extra jobs while real policy runs over neutral — 0.8% a year
+ * per point of tightness per unit over 1 — on top of its cycle beta; at or
+ * below 1, the cycle beta is the whole story. Shape parameters, stated.
+ */
+const INDUSTRY_RATE_BETA: Record<Sector, number> = {
+  finance: 1.2, law: 0.4, tech: 1.2, media: 0.8, insurance: 0.5,
+  logistics: 1.6, apparel: 2.0, food: 0.8, medical: 0.2, design: 1.3,
+};
+/**
+ * A TOWN'S SHARE OF EACH NATIONAL TRADE WANDERS, FOR DECADES (2026-10-15).
+ * Every town grew each trade at the nation's own trend, so sixty-year job
+ * growth ran 1.16x-1.79x across seeds — 0.25-1%/yr — and no town ever shrank.
+ * Metros spread far wider: state employment growth differs by about 1%/yr
+ * over forty-year spans and the gaps last (Blanchard & Katz 1992), and the
+ * spread comes from what a place makes — Detroit's cars, Pittsburgh's steel,
+ * Manhattan's garment trade (-20% city jobs 1969-77) against Seattle's
+ * software. Each trade's local trend now carries its own mean-reverting
+ * offset: stationary spread 2%/yr, twenty-year memory. Shape parameters,
+ * stated; the cost brake (`regionalPull`) still answers a town that grows
+ * dear or cheap.
+ */
+const FORTUNE_SD = 0.02;
+const FORTUNE_TAU_M = 240;
 const INDUSTRY_BETA: Record<Sector, number> = {
   finance: 1.0, law: 0.5, tech: 1.3, media: 1.0, insurance: 0.5,
   logistics: 1.4, apparel: 1.6, food: 1.1, medical: 0.2, design: 1.4,
@@ -2762,10 +2811,15 @@ export function tickIndustryCycle(s: GameState) {
   const uPrev = e.natUnempPrev ?? uNow;
   e.natUnempPrev = uNow;
   const natDev = -NAT_EMP_PER_U * (uNow - uPrev);
+  // Points of real policy rate over neutral, for the rate-sensitive trades below.
+  // Bent the same way as the national drag (tickNation): about four points' worth at most.
+  const tightRaw = n ? Math.max(0, (n.policy / 100 - n.infl) - (n.neutralReal ?? 0.019)) * 100 : 0;
+  const tightPts = 4 * (1 - Math.exp(-tightRaw / 4));
 
   if (!e.indIdx) e.indIdx = Object.fromEntries(SECTORS.map((k) => [k, 1])) as Record<Sector, number>;
   if (!e.indShock) e.indShock = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
   if (!e.industryMom) e.industryMom = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
+  if (!e.indFortune) e.indFortune = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
   if (!e.industryPhase) e.industryPhase = Object.fromEntries(SECTORS.map((k) => [k, "steady"])) as Record<Sector, "boom" | "steady" | "bust">;
   const decay = Math.exp(-Math.LN2 / IND_SHOCK_HALF_M);
   // THE EDGE FADES (2026-10-12). A town's regional trend was drawn once at
@@ -2801,9 +2855,12 @@ export function tickIndustryCycle(s: GameState) {
         ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
         : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
     }
-    const dev = INDUSTRY_BETA[k] * natDev + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol
+    const rateDrag = -Math.max(0, INDUSTRY_RATE_BETA[k] - 1) * 0.8 * tightPts / 12 / 100;
+    const dev = INDUSTRY_BETA[k] * natDev + rateDrag + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol
       + (bb && bb.sec === k && bb.phase !== "hold" ? bb.rate : 0);
-    e.indIdx[k] *= 1 + (INDUSTRY_TREND[k] + pull) / 12 + dev;
+    e.indFortune[k] += -e.indFortune[k] / FORTUNE_TAU_M
+      + FORTUNE_SD * Math.sqrt(2 / FORTUNE_TAU_M) * Math.sqrt(3) * rrange(s, -1, 1);
+    e.indIdx[k] *= 1 + (INDUSTRY_TREND[k] + e.indFortune[k] + pull) / 12 + dev;
     // Momentum is smoothed excess hiring, in the units its readers expect.
     e.industryMom[k] = clamp(e.industryMom[k] + (MOM_UNITS * dev - e.industryMom[k]) / 6, -0.05, 0.05);
     const was = e.industryPhase[k];
@@ -4054,12 +4111,22 @@ export function tickEcon(s: GameState) {
         [-0.009, 3],   // slow space-per-worker compression
         [0.0, 2],      // steady state
         [0.008, 2],    // services boom pulls desks
+        // EVERY CLASS CAN WIN A CENTURY (owner, 2026-10-15: "any of the 4
+        // asset types could be the winner or loser"). The office menu only
+        // ran from compression to an ordinary boom; the towns that became
+        // headquarters towns — finance, law, HQ relocations — had an era of
+        // their own. Mean now ~0 (was -0.16%/yr).
+        [0.014, 1],    // headquarters town
       ],
+      // Retail keeps a lean down (e-commerce is real) but no longer a certain
+      // loser: a downtown renaissance or a destination-retail boom is as
+      // likely as the browser era. Mean -0.28%/yr (was -0.74%).
       retail: [
-        [-0.02, 2],    // the browser eats the high street
-        [-0.008, 3],   // slow erosion
+        [-0.02, 1.5],  // the browser eats the high street
+        [-0.008, 2],   // slow erosion
         [0.0, 2],      // steady state
-        [0.005, 1],    // urban retail renaissance
+        [0.005, 2],    // urban retail renaissance
+        [0.012, 1],    // destination / experiential retail boom
       ],
       // Weighted to the record (2026-10-09). These are demand for flats PER
       // ADULT — the adults themselves come from the age model — so their
@@ -4075,11 +4142,14 @@ export function tickEcon(s: GameState) {
         [0.007, 2],    // household-formation wave
         [0.013, 0.5],  // urbanization surge
       ],
+      // A shed town is as likely to be a fulfilment hub as a rust belt: the
+      // logistics boom weighs what the manufacturing exodus does. Mean
+      // -0.12%/yr (was -0.44%).
       industrial: [
-        [-0.0172, 3],  // the manufacturing exodus (the old constant, now one era)
+        [-0.0172, 2],  // the manufacturing exodus (the old constant, now one era)
         [-0.006, 2],   // slow thinning
         [0.0, 2],      // steady state
-        [0.012, 2],    // logistics / fulfilment boom
+        [0.012, 3],    // logistics / fulfilment boom
       ],
     };
     let retailErosion = 0;

@@ -134,7 +134,13 @@ for (const seed of SEEDS) {
             const dNw = E.netWorth(g, parcels) - nw0;
             console.log(`seed ${seed} m${g.month}: ${pick.u} ${pick.f}fl on ${lot} (hurdle ${p.hurdleRatio.toFixed(2)}) · cash equity ${M(need)} · own ${M(own)} · friends and family ${M(w.lpCommit)} (${Math.round(w.lpShare * 100)}% of calls) · called at close ${M(w.lpCalled)} · Δcash ${M(g.cash - c0)} · Δnet worth ${M(dNw)}`);
             ok(w.lpCalled > 0 && w.lpCalled <= w.lpCommit, `seed ${seed}: the investors funded their share of the close`);
-            ok(Math.abs(dNw) < 0.03 * need, `seed ${seed}: net worth does not jump when their money arrives (${M(dNw)})`);
+            // The close's financing costs (origination fee, hedge, a land loan's
+            // break) are spent, not invested, and land on the sponsor first: the
+            // investors' capital comes back ahead of them. So net worth may fall
+            // by those, and may not rise: the investors' money is not the sponsor's.
+            const yrOf = (x) => (x.books ?? []).at(-1) ?? {};
+            const closeFin = (yrOf(g).debtSvc ?? 0) - (yrOf(g1).debtSvc ?? 0);
+            ok(dNw < 0.03 * need && dNw + closeFin > -0.03 * need, `seed ${seed}: net worth does not jump when their money arrives (${M(dNw)}, ${M(closeFin)} of it closing finance)`);
             formedAt = g.month;
             formed++;
           }

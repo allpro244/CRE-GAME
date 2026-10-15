@@ -104,8 +104,9 @@ if (loi) {
 // against the one in force, and the reads (tenants' score, condition).
 {
   const html = renderLeasing();
-  ok("the rows show what each service and capital choice costs and reads as",
-    html.includes("ops-delta") && html.includes("tenants read it as") && html.includes("condition "));
+  const scores = [...html.matchAll(/ops-score[^>]*>(\d+)(?:<!-- -->)?\/100</g)].map((m) => m[1]);
+  console.log("row scores (service, condition per building): " + scores.join(", ") + (scores.length ? "" : " — markup: " + (html.match(/ops-score[^<]*<[^<]*/)?.[0] ?? "none")));
+  ok("each row shows service and condition as a number out of 100", scores.length >= 2 && scores.length % 2 === 0);
 }
 
 // THE TEAM CARD: one concession limit for the firm and the year's scorecard.

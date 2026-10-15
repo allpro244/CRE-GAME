@@ -184,5 +184,26 @@ check(signed > 0, "some over-cap tenants take the trimmed allowance");
   check(under === 0 && signedN > 0, `never below market rent: ${signedN} of ${n} lowballs (60-107% of market, all three postures) signed, none under the market rent (${under} under)`);
 }
 
+// NEW BUILDINGS JOIN AUTO-LEASE when the book runs on auto
+{
+  const buyNext = (g) => {
+    for (const L of g.listings ?? []) {
+      if (g.holdings[L.bbl] || L.bbl === bbl) continue;
+      const r2 = E.resolveRec(parcels, g, L.bbl);
+      if (!r2 || r2.class === "land" || !(r2.bldgArea > 0)) continue;
+      const r = E.executePurchase(g, parcels, L.bbl, L.ask, "cash", false, 1);
+      if (!r.err && r.s.holdings[L.bbl]) return r.s.holdings[L.bbl];
+    }
+    return null;
+  };
+  const onBook = structuredClone(g0); onBook.holdings[bbl].autoLease = true; onBook.cash = 1e9;
+  const offBook = structuredClone(g0); offBook.holdings[bbl].autoLease = false; offBook.cash = 1e9;
+  const optedOut = structuredClone(onBook); optedOut.autoLeaseNew = false;
+  const a = buyNext(onBook), b = buyNext(offBook), c = buyNext(optedOut);
+  check(!!a && a.autoLease === true, "a building bought while the book is on auto closes on auto-lease");
+  check(!!b && !b.autoLease, "a building bought while nothing is on auto does not");
+  check(!!c && !c.autoLease, "\"new buildings join auto-lease\" switched off wins over the book");
+}
+
 console.log(bad ? `\n${bad} FAILED\n` : "\nall OK\n");
 process.exit(bad ? 1 : 0);

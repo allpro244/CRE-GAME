@@ -25,6 +25,7 @@ import type { BuiltClass, Econ, GameState, Holding } from "./types";
 import { CITY_STOCK, NATURAL_VAC, rng } from "./market";
 import { resolveRec, useOccupancy, demandIdx, managedRentPsfYr, useRentableSf, qualityCycle, overallScore, initialCondIdx } from "./value";
 import { scoreDraw } from "./bands";
+import { sizeMean, sizeScale } from "./plates";
 import { demandModel } from "./demand";
 
 const clampA = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -596,7 +597,12 @@ export function leasingOdds(
   const draw = scoreDraw(s.econ, use, overallScore(rec, s.econ, use, cIdx));
   const shareOfMarket = (marketedSf * weight * dark) / compete * draw;
   const captureSf = requirementSf * shareOfMarket;
-  const typicalDealSf = Math.max(1, Math.min(availSf, REQ_MEAN[use] ?? REQ_MEAN.office));
+  // THE SIZE OF A LETTER IS THE SIZE OF A LETTER. This read REQ_MEAN — 19,450
+  // sf for office, the mean of a requirement draw nothing sizes a lease from —
+  // while the letters that arrive are drawn from SIZE_DIST (plates.ts), a
+  // third of that. Capture in feet was being turned into a rate of letters
+  // three times too low, and every building leased up three times too slowly.
+  const typicalDealSf = Math.max(1, Math.min(availSf, sizeMean(use) * sizeScale(overallScore(rec, s.econ, use, h.condIdx ?? initialCondIdx(rec, s.month)))));
   // SOFT SATURATION. min() pinned at 0.85 for ANY sizeable vacancy anywhere,
   // which made arrival odds location-blind at exactly the scale the game is
   // played at — the measured cause of the fringe tower filling before the

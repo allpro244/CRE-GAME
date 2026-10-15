@@ -9,6 +9,7 @@ import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housab
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import { bandTable } from "@/engine/bands";
+import { sizeMean } from "@/engine/plates";
 import type { BarGroup } from "@/ui/Chart";
 import { pctSigned } from "@/ui/format";
 import { TheBanks } from "@/ui/panels/BanksDesk";
@@ -1022,6 +1023,18 @@ export function EconomyPage() {
             return (
               <>
                 <div className="hint" style={{ marginTop: 8 }}>By building score — the street's buildings (yours are your own)</div>
+                {focus !== "multifamily" && (() => {
+                  // How many firms that floor is: occupied over the average lease (plates.ts sizeMean).
+                  const avg = sizeMean(focus);
+                  const n = Math.round((game.econ.occupied?.[focus] ?? 0) / avg);
+                  const pop = Math.max(1, game.econ.population ?? 1);
+                  return (
+                    <div className="hint">
+                      About {n.toLocaleString()} {focus === "retail" ? "shops" : "firms"} occupy it, averaging {Math.round(avg).toLocaleString()} sf
+                      {" "}— {(1000 * n / pop).toFixed(1)} per 1,000 residents.
+                    </div>
+                  );
+                })()}
                 <table className="mini-table mono" style={{ width: "100%", fontSize: 12 }}>
                   <thead><tr><th style={{ textAlign: "left" }}>Score</th><th>Floor</th><th>Vacant</th><th>Normal</th><th>Rent vs class</th></tr></thead>
                   <tbody>

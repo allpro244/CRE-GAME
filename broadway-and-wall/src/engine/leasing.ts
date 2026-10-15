@@ -32,7 +32,7 @@ import { partnerFunds } from "./jv";
 import { recordPropertyEvent, noteTenantMove } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
-import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
+import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, sizeScale, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 import { money } from "./money";
 import { purseOf } from "./vehicles";
 
@@ -762,7 +762,7 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
         // leg IS the suite.
         sf = Math.round(Math.min(legSf, floorSf));
       } else {
-        sf = drawTenantSf(s, use, stack.plateSf, free);
+        sf = drawTenantSf(s, use, stack.plateSf, free, sizeScale(overallScore(rec, s.econ, use)));
         if (sf > free + 0.5) {
           if (rng(s, "leasing") < free / sf) sf = Math.round(free);
           else break;
@@ -2136,7 +2136,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // inherited rolls use (office median 5k / p95 one large plate).
         drawRequirementSf(s, use);
         const plate = stackForUse(rec, use)?.plateSf ?? legVac;
-        const want = Math.min(legVac, poolSf, drawTenantSf(s, use, plate, Math.min(legVac, poolSf)));
+        const want = Math.min(legVac, poolSf, drawTenantSf(s, use, plate, Math.min(legVac, poolSf), sizeScale(overallScore(rec, s.econ, use, h.condIdx ?? initialCondIdx(rec, s.month)))));
         if (want < minLettableSf(rec, use)) continue;
         const fit = matchBlock(rec, h, use, want);
         if (!fit) continue;

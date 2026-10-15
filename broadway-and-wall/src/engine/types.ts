@@ -3514,6 +3514,8 @@ export interface GameState {
    * without being handed the parcel table. BUILD_CLASS_PLAN.md.
    */
   stockVintage?: Partial<Record<BuiltClass, number>>;
+  /** Month the last foreclosure-wave headline ran (sim.ts) — one a year at most. */
+  distressWaveM?: number;
   /**
    * WHAT THE BOARD SAID, and when.
    *

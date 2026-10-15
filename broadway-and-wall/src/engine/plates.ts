@@ -71,16 +71,50 @@ export const MARKET_NORM_SF: Record<CommercialUse, number> = {
 
 /**
  * Log-normal size draw for a new tenancy (Phase 1 rent-roll + Phase 2
- * prospects). μ = ln(median). σ is set so p95 is one large office plate
- * (~15k — the "large suite, not an anchor floor" already cited at
- * leasing.ts on the 614k tower). Floor is a commercial tenancy, not a kiosk
- * (same 2,000 sf fact as COMMERCIAL_SUITE_MIN).
+ * prospects). μ = ln(median), floored at the smallest suite a building is cut
+ * into (COMMERCIAL_SUITE_MIN — a smaller firm takes the minimum suite).
+ *
+ * RE-CALIBRATED TO THE TENANT BASE (2026-10-15). The office draw had its
+ * median at 5,000 sf and its p95 one plate (15,000): a mean of ~6,300 sf and
+ * almost no tail. The US average office lease is ~3,300-3,800 sf (CoStar:
+ * 3,275 sf in 2023; Miami 3,206-3,758 sf 2024-25; Raleigh Class B 3,158 sf)
+ * and the market's volume sits in a fat tail — the hundred largest deals were
+ * 19% of US office leasing in 2020 (CBRE). So: median at the minimum suite,
+ * σ 1.15 — a mean of ~4,400 sf before the building's own pull (`sizeScale`),
+ * p99 ~29,000 sf, the top 1% of deals carrying ~11% of the feet. That is
+ * ~22 employees per office tenant at the town's ~170 sf per worker, against
+ * a US average establishment of ~16-22. Retail likewise: most shops at the
+ * minimum, a tail of boxes. Industrial's draw already sat on the 10-50k sf
+ * band that is the most leased segment (JLL 2021); its floor is a bay.
  */
 export const SIZE_DIST: Record<CommercialUse, { mu: number; sigma: number; floor: number }> = {
-  office:     { mu: Math.log(5_000),  sigma: (Math.log(15_000) - Math.log(5_000)) / 1.645, floor: 2_000 },
-  retail:     { mu: Math.log(2_500),  sigma: (Math.log(8_000) - Math.log(2_500)) / 1.645,  floor: 2_000 },
-  industrial: { mu: Math.log(12_000), sigma: (Math.log(90_000) - Math.log(12_000)) / 1.645, floor: 2_000 },
+  office:     { mu: Math.log(2_000),  sigma: 1.15, floor: 2_000 },
+  retail:     { mu: Math.log(2_200),  sigma: 0.95, floor: 2_000 },
+  industrial: { mu: Math.log(12_000), sigma: 1.30, floor: 3_000 },
 };
+/** The mean of the floored log-normal draw above, so a rate of capture in feet can be turned into a rate of letters. */
+export function sizeMean(use: BuiltClass): number {
+  if (!isCommercialUse(use)) return 900;
+  const d = SIZE_DIST[use];
+  const a = (Math.log(d.floor) - d.mu) / d.sigma;
+  const Phi = (x: number) => 0.5 * (1 + erf(x / Math.SQRT2));
+  return d.floor * Phi(a) + Math.exp(d.mu + d.sigma * d.sigma / 2) * (1 - Phi(a - d.sigma));
+}
+function erf(x: number): number {
+  const s = Math.sign(x), ax = Math.abs(x), t = 1 / (1 + 0.3275911 * ax);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-ax * ax);
+  return s * y;
+}
+/**
+ * BIGGER TENANTS TAKE BETTER BUILDINGS. In Orlando, trophy/Class A leases
+ * averaged 8,784 sf against 3,596 sf in Class B (Avison Young, 2025) — 2.4x
+ * across roughly thirty points of score — and 74% of leases over 10,000 sf
+ * were signed in trophy/A space. So a building's requirement draw scales by
+ * exp(2.9 x (score - 55) / 100): ~1x at the middle of the stock, ~2x at 80.
+ */
+export function sizeScale(score: number): number {
+  return Math.exp(2.9 * (score - 55) / 100);
+}
 
 const isCommercialUse = (u: BuiltClass): u is CommercialUse =>
   u === "office" || u === "retail" || u === "industrial";
@@ -335,12 +369,13 @@ function gaussLeasing(s: GameState): number {
  * Industrial sheds often take the whole remaining plate — whole-bay product.
  */
 export function drawTenantSf(
-  s: GameState, use: BuiltClass, plateSf: number, cap: number,
+  s: GameState, use: BuiltClass, plateSf: number, cap: number, scale = 1,
 ): number {
   if (!(cap > 0)) return 0;
   if (!isCommercialUse(use)) return Math.round(Math.min(cap, 900));
   const d = SIZE_DIST[use];
-  const raw = Math.exp(d.mu + d.sigma * gaussLeasing(s));
+  // `scale`: the building's pull on bigger firms (`sizeScale`).
+  const raw = Math.exp(d.mu + d.sigma * gaussLeasing(s)) * Math.max(0.2, scale);
   let sf = Math.min(cap, Math.max(d.floor, raw));
   if (use === "industrial" && cap <= plateSf * 1.05 && rng(s, "leasing") < 0.45) {
     sf = cap;

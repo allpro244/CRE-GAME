@@ -1634,12 +1634,17 @@ export function buildingScore(
  * corner one at a time; it forms one view of how good the space is and then
  * asks what it costs. That view is a blend of the land (`demandScore`, the
  * address) and the building (`buildingScore`: bones, condition, how new it is
- * against the city's stock). How much of it is the address depends on the
- * business: retail is the most location-bound real estate there is, a
- * warehouse cares most about its clear height and dock doors, offices and
- * flats sit between. Shape parameters, stated as such.
+ * against the city's stock) — and the address is the bigger part of it in
+ * every class (owner, 2026-10-15). Measured across a town's standing stock
+ * before weighting: log rent tracked the address at r = 0.94 for offices,
+ * 0.89 for flats and retail, and the building at 0.18 / 0.33 / 0.16 — the
+ * market prices location first. Industrial is the one class where the
+ * building nearly matches it (0.48 against 0.53: clear height, doors, the
+ * slab), so it is the closest to even. A 50/50 blend ranked a score-64 office
+ * on a demand-48 corner above a score-57 one on a demand-77 corner that let
+ * for $3/sf more; at these weights the order is the market's.
  */
-export const SCORE_LOC_WEIGHT: Record<BuiltClass, number> = { office: 0.5, retail: 0.65, multifamily: 0.5, industrial: 0.35 };
+export const SCORE_LOC_WEIGHT: Record<BuiltClass, number> = { office: 0.7, retail: 0.8, multifamily: 0.65, industrial: 0.55 };
 export function overallScore(rec: ParcelRecord, econ: Econ, use?: BuiltClass, condIdx?: number): number {
   const cls = (use ?? rec.class) as BuiltClass;
   const w = SCORE_LOC_WEIGHT[cls] ?? 0.5;

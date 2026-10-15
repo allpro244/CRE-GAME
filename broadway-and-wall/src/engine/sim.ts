@@ -3,6 +3,7 @@
 //
 // Historical name `advanceQuarter` is kept as an alias: the tick has always
 // been monthly; the name was a lie that trained the wrong instinct.
+import { distressTally } from "./history";
 import { stampBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Listing } from "./types";
@@ -704,6 +705,22 @@ function tickMonth(
   tickConstructionLeasing(s, parcels);
   if (!s.stockVintage || s.month % 12 === 0) stampStockVintage(s, parcels);
   if (!s.econ.bandStamp || s.month % 12 === 0) stampBands(s, parcels);
+  // A FORECLOSURE WAVE IS NEWS (2026-10-15). One handback is a line on the
+  // tape; a quarter in which the desks take back a run of buildings is the
+  // story of the year, and it was arriving as the same one-line items.
+  if (s.month % 3 === 0) {
+    const q3 = distressTally(s, 3);
+    const quiet = s.month - (s.distressWaveM ?? -999) >= 12;
+    if (q3.defaults >= 5 && quiet) {
+      s.distressWaveM = s.month;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `A foreclosure wave: ${q3.defaults} buildings went back to their lenders this quarter`
+          + `${q3.firms ? `, ${q3.firms} firm${q3.firms === 1 ? "" : "s"} went under` : ""}${q3.banks ? ` and ${q3.banks} bank${q3.banks === 1 ? "" : "s"} closed` : ""}.`
+          + ` The receivers will be selling into a market with no buyers — see the distress board.`,
+      });
+    }
+  }
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
   applyReliefRule(s, parcels);

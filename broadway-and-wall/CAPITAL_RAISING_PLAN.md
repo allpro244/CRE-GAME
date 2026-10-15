@@ -291,6 +291,21 @@ supply would then answer to investor appetite), but it **changes the city's
 whole supply and glut behaviour**. Ship it behind its own flag and measure
 it separately (§12).
 
+*Built (builder-firms, Oct 2026, the owner's call: "every builder a
+competitor"):* the town's builders are firms on the street
+(`GameState.builderFirms`, on by default). Each is a `Rival` with the
+register's name, founder, habits and purse. It buys the site, raises its
+deal's investors, draws a construction facility, takes the deed and a
+takeout loan when the building opens, holds and sells it, and can be
+stressed and fail. Nothing after the opening is built anonymously.
+Teardowns go to the builder with the most free cash. Measured against main
+(#370) on the baseline's seeds: floor area −2.4%, buildings −3.1%, median
+land +12%, employment +3.4%, population +5.4%, industrial rent −24%,
+apartment vacancy 5.5% → 6.1%. A city of the same scale with a different
+mix; on #368 the same change read floor area −0.5% and industrial rent +18%.
+The economy underneath moves these, not the builders alone. The finite-pool question above is still open: the
+builders' deal investors are national money.
+
 ### 3.2 Sponsor score: who gets the money
 
 Each raising window, every sponsor asking (player, rival funds, spin-outs,

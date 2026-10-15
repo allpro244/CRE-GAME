@@ -5,6 +5,9 @@ import { reputationNow, rankStreet, playerTerms, termsLine, bandIdx, BANDS } fro
 import { resolveRec } from "@/engine/value";
 import { usd } from "@/ui/format";
 
+/** A fraction as a whole percent. */
+const pc = (x: number) => `${Math.round(x * 100)}%`;
+
 import { Row } from "@/ui/panels/shared";
 
 /**

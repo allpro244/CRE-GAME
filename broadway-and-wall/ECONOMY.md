@@ -2996,3 +2996,25 @@ p90; US 5.7 / 5.5 / 3.9 / ~8.5); output gap sd 2.6; policy over 10% in 10% of
 months and inflation over 6% in 11% (US 1948-2024: ~9% and ~20%). Tenant
 defaults (4 seeds x 12 years): weak 4.5%/yr, mid 1.6%, IG ~0; under a 20% hold
 8.8 / 2.5 / 0.5%. Engine cost: ~10% more per month.
+
+## Round three: what makes a recession, and what the bond market sees (2026-10-15)
+
+- **Credibility is judged on the year, against the bank's own target.** It read
+  each month's print (+/-0.4 points of noise) against a hard-coded 2%, so the
+  bank lost belief by arithmetic: credibility under 0.5 in 51% of months and a
+  median term premium of 3.4 points. Now 23% of months (the US: roughly the
+  1966-85 stretch) and a median premium of 1.3 (ACM ~1.2), with the
+  believed-bank premium at 0.6.
+- **The banks' margin is the curve** (Adrian, Estrella & Shin 2019): a smoothed
+  spread under its normal ~2.5 points slows lending and output a year on.
+- **Demand noise trimmed** so more downturns are made by money than by chance;
+  a recession is dated from a 0.3% fall off the output peak (2001's was ~0.3%).
+- **Trades sell with output.** Their sales follow the national output gap;
+  payrolls follow sales through each trade's books, so the lag of jobs behind
+  output comes out of the accounts.
+
+Measured (30 centuries): curve inverted 18% of months (US ~15-21%), inversion
+ahead of 75% of recessions (US 8 of the last 10), 13% of months in recession
+(US ~14%), about one recession a decade (US since 1983: one a decade; 1948-82
+nearer 1.6), output gap sd 2.3 (CBO ~2.2), unemployment mean 6.2 / p90 8.3.
+8 seeds x 60 years: real pay 1.5-1.8x, prices 2.3-4.8%/yr, jobs 1.06-2.8x.

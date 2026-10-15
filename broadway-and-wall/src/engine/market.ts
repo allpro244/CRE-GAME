@@ -1269,13 +1269,26 @@ const IS_RATE = 0.0100, IS_CORP = 0.0044;
 /** Credit window pull per month per unit of the national window off normal. */
 const IS_CREDIT = 0.0008;
 /**
+ * THE BANKS' MARGIN IS THE CURVE (Adrian, Estrella & Shin 2019). Banks fund
+ * short and lend long, so the term spread is their net interest margin on new
+ * business; when it flattens or inverts, lending growth slows about a year
+ * later, and that — not the level of rates alone — is why an inverted curve
+ * has preceded eight of the last ten US recessions. Per point of smoothed
+ * spread under one point, a monthly pull on output.
+ */
+const IS_CURVE = 0.00015;
+/** The spread a bank's margin is normal at: this economy's own average (~2.5 points). */
+const CURVE_NORMAL = 2.5;
+/**
  * Demand shocks — confidence, spending and investment waves. Persistent (an
  * AR(1) at 0.82 a month), not white noise: monthly white noise dated a
  * shallow "recession" every three years out of nothing.
  */
-const IS_NOISE = 0.00037, DEM_PERSIST = 0.82;
+const IS_NOISE = 0.00030, DEM_PERSIST = 0.82;
 /** A falling economy feeds on itself a little (layoffs cut spending); amplifies declines only. */
 const ACCEL = 0.05;
+/** A fall of this much off the output peak is a contraction (2001's was ~0.3%). */
+const REC_DROP = 0.003;
 /** Share of corporate debt that floats, and the fixed ladder's average life in months. */
 const CORP_FLOAT = 0.35, CORP_LADDER_M = 72;
 /**
@@ -1992,7 +2005,12 @@ export function termPremBase(credibility: number, creditIdx: number): number {
   // which this game does not have. A believed bank WITHOUT it is 1995-2007:
   // ACM ten-year premium about 1.0-1.5. With the premium at zero the curve
   // sat inverted 28-78% of months against the US record of ~15%.
-  return 1.0 + 4.4 * (1 - credibility) + 1.85 * Math.max(0, 1 - creditIdx);
+  // ...AND 0.6, NOT 1.0 (2026-10-15): with credibility judged on the year
+  // against the bank's own target, a believed bank is believed most of the
+  // time, and 0.6 puts the median premium at 1.3 (ACM 1961-2024 ~1.2), the
+  // curve inverted 18% of months and inversion ahead of 75% of recessions
+  // (US ~15-21% and 8 of the last 10).
+  return 0.6 + 4.4 * (1 - credibility) + 1.85 * Math.max(0, 1 - creditIdx);
 }
 
 /**
@@ -2279,6 +2297,7 @@ export function tickNation(s: GameState) {
   const impulse = - IS_RATE * (rAvg - rStar)
     - IS_CORP * (corpRate - corpNeutral)
     + IS_CREDIT * ((n.creditNat ?? 1) - 1)
+    + IS_CURVE * Math.max(-5, Math.min(1, (n.curveSm ?? CURVE_NORMAL) - CURVE_NORMAL))
     - 0.004 * (e.panic?.force ?? 0)
     + shockImpulse
     // THE OTHER TOOLS. A bank at its floor whose rule wants far lower does not
@@ -2293,6 +2312,9 @@ export function tickNation(s: GameState) {
     - ACCEL * Math.max(0, y2 - y1);
   n.gap1 = y1;
   n.gap = IS_PHI1 * y1 + IS_PHI2 * y2 + impulse;
+  // The curve banks lend on: long minus short, smoothed over a year (loan
+  // books reprice slowly, and a bank's margin is its whole book's).
+  n.curveSm = (n.curveSm ?? ((e.indexRate ?? 5.4) - n.policy)) + (((e.indexRate ?? 5.4) - n.policy) - (n.curveSm ?? 0)) / 12;
   // Output itself — potential grows ~2%/yr — so the cycle can be dated.
   n.lnY = (n.lnY ?? 0) + 0.02 / 12 + (n.gap - y1);
   const inRecNow = (n.recM ?? 0) > 0;
@@ -2300,7 +2322,7 @@ export function tickNation(s: GameState) {
     n.expM = (n.expM ?? 0) + 1;
     n.yPeak = Math.max(n.yPeak ?? n.lnY, n.lnY);
     // Half a per cent off the peak is a contraction, not a soft quarter.
-    if (n.lnY < (n.yPeak ?? n.lnY) - 0.005) {
+    if (n.lnY < (n.yPeak ?? n.lnY) - REC_DROP) {
       n.recM = 1; n.uStart = n.unemp; n.uPeak = n.unemp; n.yTrough = n.lnY; n.deep = false;
       pushNews(s, "warn", "The national economy has turned. Output is falling, payrolls are next, "
         + "and everyone is revising their numbers down.");
@@ -2428,7 +2450,15 @@ export function tickNation(s: GameState) {
   // from a collapse to a believed bank in about twenty years rather than
   // thirty-five — the US re-anchored long-run expectations within a decade
   // or so of 1983 (Michigan 5-10yr expectations ~3% by the mid-1990s).
-  const miss = n.infl - 0.02;
+  // JUDGED ON THE YEAR, AGAINST THE BANK'S OWN TARGET (2026-10-15). This read
+  // the month's print — which carries +/-0.4 points of noise by itself — against
+  // a hard-coded 2%, so a bank sitting on its own drifting target lost belief
+  // most months by arithmetic: measured over 30 centuries, credibility under
+  // 0.5 in 51% of months and a median ten-year term premium of 3.4 points
+  // (ACM 1961-2024: median ~1.2, p90 ~3.5; low credibility was ~1970-85). The
+  // public reads inflation as a year-on-year rate and measures the bank
+  // against the target it has announced.
+  const miss = (n.inflSm ?? n.infl) - (n.inflTarget ?? 0.02);
   const am = Math.abs(miss);
   // NO STOPS (2026-10-13). This was clamped to 0.10..0.99 and rested on the
   // 0.99 stop 47% of months. The walk is unchanged wherever belief is more
@@ -2850,6 +2880,8 @@ const INDUSTRY_BETA: Record<Sector, number> = {
   finance: 1.0, law: 0.5, tech: 1.3, media: 1.0, insurance: 0.5,
   logistics: 1.4, apparel: 1.6, food: 1.1, medical: 0.2, design: 1.4,
 };
+/** Points of a trade's sales per point of the national output gap, before its cycle beta. */
+const NAT_SALES_PER_GAP = 1.25;
 /** Local-serving jobs per tradable job (Moretti 2010, "Local Multipliers"). */
 const LOCAL_MULT = 1.6;
 /** Months for local-serving employment to close half its gap to the base. */
@@ -2992,6 +3024,15 @@ export function tickIndustryCycle(s: GameState) {
   const uPrev = e.natUnempPrev ?? uNow;
   e.natUnempPrev = uNow;
   const natDev = -NAT_EMP_PER_U * (uNow - uPrev);
+  // WHAT THE TRADES SELL MOVES WITH OUTPUT, NOT WITH PAYROLLS (2026-10-15).
+  // Sales follow the nation's output gap this month; the jobs follow the
+  // sales through each trade's own books (hire slowly, fire faster), so the
+  // payroll lag behind output — firms keep shedding after the trough — comes
+  // out of the accounts instead of being read off national unemployment.
+  // 1.25 points of sales per point of gap is the same swing the payroll
+  // proxy carried (1.5 per point of unemployment over Okun's 1.2).
+  const gapNow = n?.gap ?? 0, gapPrev = n?.gap1 ?? gapNow;
+  const gapMove = gapNow - gapPrev;
   // What money costs this month, for the trades' books below.
   const books = firmBookInputs(e);
 
@@ -3037,7 +3078,7 @@ export function tickIndustryCycle(s: GameState) {
     // DEMAND for what the trade sells: its national cycle, its trend and
     // the town's edge, its own shocks, and — for the trades whose customers
     // borrow to buy (freight, inventory, building design) — the price of money.
-    const demand = INDUSTRY_BETA[k] * natDev + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol
+    const demand = INDUSTRY_BETA[k] * NAT_SALES_PER_GAP * gapMove + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol
       + (bb && bb.sec === k && bb.phase !== "hold" ? bb.rate : 0)
       - FIRM_PROFILE[k].rateDem * 0.008 * books.ratePts / 12;
     e.indFortune[k] += -e.indFortune[k] / FORTUNE_TAU_M

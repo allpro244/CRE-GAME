@@ -2010,6 +2010,9 @@ export function startDevelopment(
   if (outside > 0) {
     const w = formSyndication(next, bbl, outside, commitCap, landEquity, custom?.syndicate?.sources);
     w.pitchIrr = projected;
+    // What the offering pitched, for the quarterly reports (reviewSyndications).
+    w.pitchDeliverM = next.month + plan.months;
+    w.pitchNoi = plan.stabNoi;
     bridge = Math.min(outside, Math.round(w.lpShare * (dayOne + Math.max(0, site.due))));
     next.cash += bridge;
   }

@@ -3041,6 +3041,19 @@ export interface Syndication {
   amFee?: number;
   /** Fees the deal has paid its sponsor. */
   feesPaid?: number;
+  /**
+   * WHAT WAS PITCHED, for the quarterly investor report (syndicate.ts
+   * reviewSyndications): the delivery month, the stabilised NOI, the cash the
+   * job needed and the site the sponsor put in. The flags the reports raised.
+   * `building` is whether the job was still in the ground at the last look —
+   * a deed lost while it was is a broken completion guarantee.
+   */
+  pitchDeliverM?: number;
+  pitchNoi?: number;
+  cashNeed?: number;
+  landIn?: number;
+  flags?: string[];
+  building?: boolean;
   /** Who committed the investors' money (investors.ts sources): friends and family, local private money, … */
   sources?: Partial<Record<import("./investors").InvestorSource, number>>;
 }
@@ -3060,6 +3073,10 @@ export interface SynRecord {
   pitchIrr?: number;
   /** The sponsor bought the investors out and kept the building (recap.ts). */
   recap?: boolean;
+  /** The deed was lost while the job was still in the ground: the completion guarantee broke. */
+  misconduct?: boolean;
+  /** Who wrote the investors' cheques, as on the live deal. */
+  sources?: Partial<Record<import("./investors").InvestorSource, number>>;
 }
 
 export interface GameState {

@@ -50,7 +50,7 @@ import { tickBlackSwans } from "./blackswans";
 import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 import { purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
-import { settleSyndications } from "./syndicate";
+import { settleSyndications, reviewSyndications } from "./syndicate";
 import { tickRaises } from "./raise";
 import { updateReputation } from "./reputation";
 
@@ -1317,7 +1317,7 @@ function tickMonth(
   settleSyndications(s, parcels);
   // The quarterly investor read (reputation.ts): the record, the street's
   // ranking, and the band the next raise is priced in.
-  if (s.month % 3 === 0) updateReputation(s);
+  if (s.month % 3 === 0) { reviewSyndications(s, parcels); updateReputation(s); }
   // the record book — one appraisal for NW history, milestones, and next month's overhead base
   const { nw, gav } = portfolioMark(s, parcels);
   s.prevGav = Math.round(gav);

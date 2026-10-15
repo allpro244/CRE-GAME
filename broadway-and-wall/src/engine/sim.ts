@@ -238,6 +238,7 @@ export function newGame(
   if (setup?.poolEntry !== false) s.poolEntry = true;
   if (setup?.rivalReputation !== false) s.rivalReputation = true;
   if (setup?.rivalDealTerms === true) s.rivalDealTerms = true;
+  if (setup?.builderFirms !== false) s.builderFirms = true;
   s.econ = initEcon(s, parcels);
   // ...and the banks are sized in this town's own dollars, which the opening
   // only knows once the economy has drawn its price level.

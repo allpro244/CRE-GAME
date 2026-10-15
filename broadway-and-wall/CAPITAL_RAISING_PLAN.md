@@ -1584,6 +1584,13 @@ about each.
    its multiple; an aggregate-basis estimate read 70% of sales as losses
    and was dropped). It replaced a tenure stand-in that credited a firm a
    promise met every three years it stayed alive.
+   *Tried and reverted (Oct 2026):* a per-deed purchase record (price paid,
+   mortgage at purchase) to give rivals' own-money sales a real multiple, the
+   way an analyst reads public deeds. Measured over 15 unplayed years it read
+   61% of sales as losses (median 0.81x) and 19 of 47 firms as Toxic, because
+   a sale price alone leaves out the income a building paid while it was held.
+   Without a per-deed income ledger for rivals, that multiple is biased low, so
+   the coarse read stays: on schedule, or in trouble.
    *Built (rival-capital):* each rival deal carries the offering's pitch —
    the job's own projection (`projectedDevIrr`) net of the promote
    (`lpNetIrr`) — and is judged on the investors' realised IRR against it.

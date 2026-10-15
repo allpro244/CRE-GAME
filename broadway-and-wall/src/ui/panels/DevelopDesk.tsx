@@ -11,7 +11,9 @@ import type { BuildingDesign, Contract, DevUse } from "@/engine/types";
 import { DesignPicker } from "@/ui/panels/DesignPicker";
 import SchemeViewer from "@/ui/panels/SchemeViewer";
 import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN, ownedHoldingValue } from "@/engine/value";
-import { FF_TERMS, ffAvailable, maxOutside, syndicateBar } from "@/engine/syndicate";
+import { ffAvailable, maxOutside, syndicateBar } from "@/engine/syndicate";
+import { playerTerms, termsLine } from "@/engine/reputation";
+import { raiseLegalCost, committedTotal, SOURCE_LABEL, RAISE_WINDOW_M } from "@/engine/investors";
 
 // What a plan short of its hurdle is still worth over its cost. The required
 // yield carries the merchant builder's margin, so value / basis is
@@ -1010,12 +1012,12 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                 </div>
               </div>
               <div className="page-section" style={{ marginTop: 8 }}>
-                <div className="page-section-head">Outside equity · friends and family</div>
+                <div className="page-section-head">Outside equity · {playerTerms(game).band === "Unknown" || playerTerms(game).band === "Questioned" ? "friends and family" : playerTerms(game).investor.toLowerCase()}</div>
                 {ffMax > 0 ? (
                   <>
                     <div className="slider">
                       <div className="slider-head">
-                        <span className="slider-label">Raise from friends and family · up to {usd(ffMax)}</span>
+                        <span className="slider-label">Raise outside equity · up to {usd(ffMax)}</span>
                         <span className="slider-value">{usd(outside)}</span>
                       </div>
                       <input type="range" min={0} max={1} step={0.05} value={ffPick}
@@ -1026,7 +1028,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                       <div className="grid">
                         <Row k="Their share of each call" v={`${Math.round(Math.min(1, outside / Math.max(1, need.whole)) * 100)}% until their ${usd(outside)} is in`} />
                         <Row k="Your capital" v={`${usd(landEquity)} site + ${usd(Math.max(0, need.whole - outside))} cash`} />
-                        <Row k="Their terms" v={`${Math.round(FF_TERMS.hurdles[0] * 100)}% pref · ${Math.round(FF_TERMS.promotes[1] * 100)}% promote only above a ${Math.round(FF_TERMS.hurdles[1] * 100)}% IRR`} />
+                        <Row k="Their terms" v={termsLine(playerTerms(game))} title={`What investors sign with a sponsor they read as ${playerTerms(game).band}.`} />
                         <Row k="Completion guarantee" v="Yours — overruns past their commitment are your cash alone" bad />
                       </div>
                     )}
@@ -1036,7 +1038,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                     ? "Your friends and family have nothing left to put in — their money is in your live deals, or you lost it."
                     : "Nothing to raise on this job.")}</div>
                 )}
-                <div className="hint">An unknown developer raises from people who know them, at most a dollar of theirs for each of yours. Pay them back with a profit and the network grows; lose their money and most of them are gone for good.</div>
+                <div className="hint">Investors read you as <b>{playerTerms(game).band}</b>: at most {playerTerms(game).perOwn} dollar{playerTerms(game).perOwn === 1 ? "" : "s"} of theirs for each of yours. Deliver what you project and the record builds, slowly; miss it and it falls at once. Your network is what it is until the investor market opens to you.</div>
               </div>
               <div className="page-section" style={{ marginTop: 8 }}>
                 <div className="page-section-head">Equity</div>
@@ -1085,21 +1087,50 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   ? " All cash, the cushion is 6% of the whole building — take some construction debt, or cut the massing."
                   : " This massing is past what you can finish.")}
               </div>
+              {game.raises?.[bbl] && (() => {
+                const r = game.raises[bbl];
+                const have = committedTotal(r);
+                return (
+                  <div className="page-section" style={{ marginTop: 8 }}>
+                    <div className="page-section-head">Raise open · {usd(have)} of {usd(r.target)} circled</div>
+                    <div className="grid">
+                      {Object.entries(r.committed).filter(([, v]) => v).map(([k, v]) => (
+                        <Row key={k} k={SOURCE_LABEL[k as keyof typeof SOURCE_LABEL]} v={usd(v ?? 0)} />
+                      ))}
+                      <Row k="Closes" v={`by ${r.deadlineM - game.month} month${r.deadlineM - game.month === 1 ? "" : "s"} from now — full, small if half is there, or not at all`} />
+                    </div>
+                    <div className="btn-row">
+                      <button type="button" className="btn" onClick={() => useStore.getState().cancelRaise(bbl)}>Pull the raise</button>
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="btn-row">
                 <button type="button" className="btn" onClick={() => setTab("design")}>Back · Design</button>
+                {outside > 0 && !game.raises?.[bbl] ? (
+                  <button
+                    className="btn btn-buy"
+                    disabled={!canFund}
+                    onClick={() => useStore.getState().launchRaise(bbl, { use, floors: fl, coverage: cov, contract, ltc: plan.ltcMax * ltcWant, custom: { mix: customMix, bts, groundRetail, design, takeout }, lender: plan.lender, spec }, outside)}
+                    title={`Investors circle over up to ${RAISE_WINDOW_M} months. It closes when ${usd(outside)} is in, small at the deadline if half is, or fails. Counsel is ${usd(raiseLegalCost(game, outside))}, paid now and sunk either way.`}
+                  >
+                    {canFund ? `Launch the raise · ${usd(outside)} · counsel ${usd(raiseLegalCost(game, outside))}` : `Cannot finish · short ${usd(fundShort)}`}
+                  </button>
+                ) : (
                 <button
                   className="btn btn-buy"
-                  disabled={!canFund}
-                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design, takeout, syndicate: outside > 0 ? { outside } : undefined }, plan.lender, spec)}
+                  disabled={!canFund || !!game.raises?.[bbl]}
+                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design, takeout }, plan.lender, spec)}
                   title={purse.closed ?? (!canFund
                     ? `Short ${usd(fundShort)} — needs ${usd(need.whole)} fundable: ${usd(equityRequired)} equity all-in plus the ${usd(need.margin)} overrun cushion`
                     : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build${purse.fund ? ", paid by the fund" : ""}.`)}
                 >
                   {purse.closed ? "Fund investment period over"
                     : canFund
-                    ? `Break ground · ${usd(equityRequired)} ${purse.fund ? "fund " : ""}equity all-in${outside > 0 ? ` · ${usd(outside)} from friends and family` : ""}`
+                    ? `Break ground · ${usd(equityRequired)} ${purse.fund ? "fund " : ""}equity all-in`
                     : `Cannot finish · short ${usd(fundShort)}`}
                 </button>
+                )}
               </div>
             </>
           ) : (

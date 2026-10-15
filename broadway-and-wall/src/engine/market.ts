@@ -24,7 +24,7 @@ export function mulberry32Step(a: number): { state: number; value: number } {
  *
  * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
  */
-export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation" | "shock";
+export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation" | "shock" | "capital";
 /**
  * THE RENT GROWTH A BUYER UNDERWRITES, in percentage points a year.
  *
@@ -6216,6 +6216,7 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
   e.history.push({
     q,
     indexRate: +e.indexRate.toFixed(2),
+    ...(e.nat?.policy !== undefined ? { policy: +e.nat.policy.toFixed(2) } : {}),
     // The era the index is orbiting. Recorded because the GAP between the two
     // is the readable thing — a 6% rate is cheap money inside a 1970s and dear
     // money inside a 2010s — and a chart of the base rate alone cannot show it.

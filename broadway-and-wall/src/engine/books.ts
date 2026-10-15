@@ -281,6 +281,7 @@ export interface PnlView {
   months: number;
   rev: number;
   intInc: number;
+  fees: number;
   totalRev: number;
   propOpex: number;
   leasing: number;
@@ -311,7 +312,7 @@ export function pnlView(s: GameState, e: PnlYear): PnlView {
     .filter((x) => Math.floor(x.soldM / 12) === e.yr)
     .reduce((a, x) => a + (x.gain ?? 0), 0);
   const propOpex = e.rev - e.noi;
-  const totalRev = e.rev + e.intInc;
+  const totalRev = e.rev + e.intInc + (e.fees ?? 0);
   const totalOpex = propOpex + e.leasing + e.capex + e.ga;
   const ebitda = totalRev - totalOpex;
   const ebit = ebitda - e.depr;
@@ -320,7 +321,7 @@ export function pnlView(s: GameState, e: PnlYear): PnlView {
     yr: e.yr,
     label: `${START_YEAR + e.yr}${months < 12 ? ` YTD` : ""}`,
     months,
-    rev: e.rev, intInc: e.intInc, totalRev,
+    rev: e.rev, intInc: e.intInc, fees: e.fees ?? 0, totalRev,
     propOpex, leasing: e.leasing, capex: e.capex, ga: e.ga, totalOpex,
     ebitda, depr: e.depr, deprFinal: !!e.deprFinal, ebit,
     intExp: e.intExp, gains, jv: e.jv, pretax,

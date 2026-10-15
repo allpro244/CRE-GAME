@@ -1549,6 +1549,8 @@ export interface EconHistoryPoint {
   indexRate: number;
   /** The loan index without the premium's monthly noise. See tickNation. */
   rateRegime?: number;
+  /** The central bank's policy rate that month (econ.nat.policy) — the top bar's twelve-month change. */
+  policy?: number;
   population?: number;
   jobs?: number;
   unemployment?: number;
@@ -2423,6 +2425,13 @@ export interface BooksYear {
    * Distributions to LPs from the vehicle — equity OUT, not expense.
    */
   lpDistributed?: number;
+  /**
+   * Fees the sponsor earns from its own syndicates — the development fee over
+   * construction and the asset-management fee (syndicate.ts). Income to the
+   * firm; the same dollars are a cost on the deal's deed, which its investors
+   * fund their share of.
+   */
+  fees?: number;
 }
 
 /**
@@ -2459,6 +2468,8 @@ export interface PnlYear {
   deprFinal?: boolean;
   /** JV partners' share of income before depreciation (NOI less interest). */
   jv: number;
+  /** Fee income from the sponsor's syndicates (development and asset management). */
+  fees?: number;
   /** Income and capital-gains tax paid in the year. */
   taxes: number;
 }
@@ -2479,6 +2490,7 @@ export interface BooksMonth {
   borrowed?: number;
   lpCalled?: number;
   lpDistributed?: number;
+  fees?: number;
 }
 
 /**
@@ -2540,6 +2552,12 @@ export interface Exit {
   equityOut?: number;
   /** Annualised levered pre-tax IRR, (1+r)^12-1 on monthly flows. null = did not solve. */
   irr?: number | null;
+  /**
+   * What the deal was underwritten to return when it was committed to (the
+   * deed ledger's `plan`): the "projected" column of a track-record sheet,
+   * which investors judge the realised IRR against (reputation.ts).
+   */
+  planIrr?: number;
 }
 
 /**
@@ -2566,6 +2584,12 @@ export interface DeedLedger {
    * whose own ledger was incomplete. Reports nothing rather than a wrong number.
    */
   pooled?: 1;
+  /**
+   * The deal's own underwriting at commitment: the projected levered IRR of
+   * a groundbreaking (dev.ts projectedDevIrr), or the going-in yield of a
+   * purchase. Copied onto the exit, where the investor reputation reads it.
+   */
+  plan?: { irr: number };
 }
 
 /**
@@ -3028,6 +3052,28 @@ export interface Syndication {
   lpFlows: number[];
   /** Month the deed left the book; the record closes at its next settlement. */
   goneM?: number;
+  /** The investors' IRR the deal was pitched at (the job's projection), judged at wind-up (reputation.ts). */
+  pitchIrr?: number;
+  /** Fee rates the deal was signed at (the band's, reputation.ts BAND_TERMS): development, on construction spend; asset management, a year, on the investors' capital out. */
+  devFee?: number;
+  amFee?: number;
+  /** Fees the deal has paid its sponsor. */
+  feesPaid?: number;
+  /**
+   * WHAT WAS PITCHED, for the quarterly investor report (syndicate.ts
+   * reviewSyndications): the delivery month, the stabilised NOI, the cash the
+   * job needed and the site the sponsor put in. The flags the reports raised.
+   * `building` is whether the job was still in the ground at the last look —
+   * a deed lost while it was is a broken completion guarantee.
+   */
+  pitchDeliverM?: number;
+  pitchNoi?: number;
+  cashNeed?: number;
+  landIn?: number;
+  flags?: string[];
+  building?: boolean;
+  /** Who committed the investors' money (investors.ts sources): friends and family, local private money, … */
+  sources?: Partial<Record<import("./investors").InvestorSource, number>>;
 }
 
 /** A closed syndication, as its investors remember it. */
@@ -3042,6 +3088,13 @@ export interface SynRecord {
   lpIrr: number | null;
   gpIn: number;
   gpOut: number;
+  pitchIrr?: number;
+  /** The sponsor bought the investors out and kept the building (recap.ts). */
+  recap?: boolean;
+  /** The deed was lost while the job was still in the ground: the completion guarantee broke. */
+  misconduct?: boolean;
+  /** Who wrote the investors' cheques, as on the live deal. */
+  sources?: Partial<Record<import("./investors").InvestorSource, number>>;
 }
 
 export interface GameState {
@@ -3189,6 +3242,23 @@ export interface GameState {
    * put into its deals in total. Sized at first use; see syndicate.ts.
    */
   ffNetwork?: { cap: number };
+  /** The sponsor's fee income from its syndicates this tax year (sim.ts taxes it, then resets it). */
+  feeIncomeYr?: number;
+  /**
+   * THE YEAR'S INVESTOR MONEY in this city (investors.ts): what each investor
+   * type will put to work here this year, and what has been raised from it.
+   */
+  investorPool?: { yr: number; cap: Record<string, number>; used: Record<string, number>; rivals: number; attract: number };
+  /** Recap buyouts: the deed, the month, and the appraisal the investors were paid on (recap.ts; reputation.ts reads a quick flip). */
+  recaps?: { bbl: string; m: number; value: number }[];
+  /** Deal-by-deal raises in progress, keyed by the lot (raise.ts). */
+  raises?: Record<string, import("./investors").Raise>;
+  /**
+   * How investors read the player, as of the last quarterly read
+   * (reputation.ts updateReputation). `band` is the one terms are set by;
+   * `pending` a higher band waiting out its second quarter.
+   */
+  reputation?: { band: import("./reputation").Band; pending?: import("./reputation").Band; pendingQ?: number; score: number; rank: number; of: number; m: number };
   /**
    * When true, new purchases draw equity from the live fund during its
    * investment period. Opt-in path; balance-sheet remains the default until
@@ -3919,7 +3989,7 @@ export function logBooks(
   if (!e || e.yr !== yr) {
     e = {
       yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0,
-      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0,
+      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0, fees: 0,
     };
     s.books.push(e);
   }
@@ -3932,7 +4002,7 @@ export function logBooks(
   if (!me || me.m !== s.month) {
     me = {
       m: s.month, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0,
-      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0,
+      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0, fees: 0,
     };
     s.booksMonthly.push(me);
     while (s.booksMonthly.length > 48) s.booksMonthly.shift();
@@ -3945,7 +4015,7 @@ export function logBooks(
 }
 
 const PNL_FROM_BOOKS: Partial<Record<keyof Omit<BooksYear, "yr">, keyof Omit<PnlYear, "yr" | "deprFinal">>> = {
-  noi: "noi", leasing: "leasing", capex: "capex", ga: "ga", interest: "intInc", taxes: "taxes",
+  noi: "noi", leasing: "leasing", capex: "capex", ga: "ga", interest: "intInc", taxes: "taxes", fees: "fees",
 };
 
 /** The income-statement year the current month belongs to, opened on first write. */
@@ -3964,7 +4034,7 @@ export function pnlYear(s: GameState, yr = Math.floor(s.month / 12)): PnlYear {
 export function pnlAdd(s: GameState, key: keyof Omit<PnlYear, "yr" | "deprFinal">, amt: number) {
   if (!amt || !Number.isFinite(amt)) return;
   const e = pnlYear(s);
-  e[key] += amt;
+  e[key] = (e[key] ?? 0) + amt;
 }
 
 
@@ -4246,6 +4316,7 @@ export function closeDeedLedger(s: GameState, e: Exit): void {
   e.equityIn = Math.round(inn);
   e.equityOut = Math.round(out);
   e.irr = deedIrr(l.cf);
+  if (l.plan && Number.isFinite(l.plan.irr)) e.planIrr = l.plan.irr;
 }
 
 /** Mark a deed's ledger as not attributable to the deed alone. */

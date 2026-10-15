@@ -857,7 +857,10 @@ export function EconomyPage() {
       {(sel === "general" || isClass) && spanSwitch("Every chart below shows")}
 
       {/* ---- the general view: the city's six series, or one class in depth ---- */}
-      {(sel === "general" || isClass) && (
+      {/* The four stock-vs-leased charts are the city's view: all four
+          markets side by side belong under The city, not repeated under each
+          class's own card (the owner's call, 2026-10-15). */}
+      {sel === "general" && (
         <StockVsLeased tail={tail} live={e} xFrom={xFrom} xTo={xTo} spanYrs={spanYrs} />
       )}
       {sel === "general" && <>{rateChart}<CityEconCharts tail={tail} spanYrs={spanYrs} /></>}

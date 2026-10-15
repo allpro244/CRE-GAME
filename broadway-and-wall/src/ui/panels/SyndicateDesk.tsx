@@ -38,7 +38,7 @@ export function SyndicateDesk() {
       </div>
       <div className="grid">
         <Row k="Band" v={`${terms.band}${pending ? ` · ${pending} next quarter if it holds` : ""}`} strong />
-        <Row k="Rank" v={`#${rep.rank} of ${rep.of} · top ${100 - rep.percentile}%`} />
+        <Row k="Rank" v={`#${rep.rank} of ${rep.of}${rep.rank === 1 ? " · the top of the street" : rep.rank === rep.of ? " · the bottom of the street" : ` · ahead of ${rep.percentile}% of the street`}`} />
         <Row k="Track-record score" v={`${rep.score.toFixed(1)} · experience ${rep.n.toFixed(1)} from ${rep.deals} good deal${rep.deals === 1 ? "" : "s"}`} bad={rep.score < 0} />
         <Row k="Their terms today" v={termsLine(terms)} />
         <Row k="Outside equity per $1 of yours" v={terms.perOwn > 0 ? `up to $${terms.perOwn}` : "none — nobody will invest"} bad={!(terms.perOwn > 0)} />

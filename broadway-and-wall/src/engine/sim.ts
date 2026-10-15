@@ -232,6 +232,8 @@ export function newGame(
   if (setup?.firmName) { s.firm = { ...s.firm!, name: setup.firmName, short: shortFirmName(setup.firmName) }; }
   if (setup?.clock === "everything" || setup?.clock === "opportunities") s.clockStops = setup.clock;
   if (setup?.brokerStops === "never") s.brokerStops = "never";
+  // One capital market (rivals.ts): on unless the setup turned it off.
+  if (setup?.poolEntry !== false) s.poolEntry = true;
   s.econ = initEcon(s, parcels);
   // ...and the banks are sized in this town's own dollars, which the opening
   // only knows once the economy has drawn its price level.

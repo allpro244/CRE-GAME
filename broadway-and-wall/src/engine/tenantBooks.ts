@@ -30,6 +30,8 @@ import { hashNormal } from "./value";
 export interface TenantFin {
   /** revenue at signing, $/yr, and the trade's sales per worker then */
   rev0: number; prod0: number;
+  /** the price level when the books opened — revenue is in dollars of the day */
+  cpi0?: number;
   /** the share of revenue that is neither rent nor margin (wages, goods, services) */
   otherShare: number;
   /** last year's revenue, smoothed — what the cost base was built for */
@@ -38,6 +40,9 @@ export interface TenantFin {
   /** this month's read: EBITDA over interest, months of costs in the bank, EBITDA margin */
   cover: number; liqM: number; margin: number;
 }
+
+/** Months of costs a tenant keeps in cash before it pays the surplus out. */
+const CASH_KEEP_M = 1.5;
 
 const GRADE: Record<Credit, { margin: number; lev: number; cashM: number; spread: number }> = {
   2: { margin: 1.30, lev: 0.6, cashM: 4.0, spread: 0.010 },
@@ -88,7 +93,15 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
   const f = tenantFin(e, t);
   const n = e.nat;
   const short = (n?.policy ?? 4) / 100, long = (e.indexRate ?? 5.4) / 100, infl = n?.infl ?? 0.02;
-  const rev = f.rev0 * (t.staff ?? 1) * (tradeProd(e, t) / Math.max(1e-6, f.prod0));
+  // IN DOLLARS OF THE DAY (2026-10-15). Revenue was held at its signing
+  // level in nominal terms while the rent escalated and the debt was eroded
+  // as if real, so a long inflation starved every tenant: measured, a century
+  // with prices up 32x emptied the street's offices, shops and sheds to the
+  // 45% bound. A business's sales rise with the prices it charges; its rent
+  // and its debt are nominal contracts. Everything here is in current dollars.
+  f.cpi0 ??= e.cpi ?? 1;
+  const priceLevel = (e.cpi ?? 1) / Math.max(1e-6, f.cpi0);
+  const rev = f.rev0 * (t.staff ?? 1) * (tradeProd(e, t) / Math.max(1e-6, f.prod0)) * priceLevel;
   // Costs are sticky — 40% were set for last year's revenue — so a revenue
   // drop goes straight to the bottom line before the business can adjust.
   f.revRef = (f.revRef ?? rev) + (rev - (f.revRef ?? rev)) / 12;
@@ -99,7 +112,7 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
   const interest = f.debt * rate;
   const tax = 0.21 * Math.max(0, ebitda - interest);
   f.cash += (ebitda - interest - tax) / 12;
-  f.debt *= 1 - infl / 12;
+  void infl;
   const costsM = (other + rentDueYr + interest) / 12;
   // Draw on the bank when cash is short and leverage allows; a shut window
   // means no new money. Repay when flush; pay surplus out to the owners.
@@ -107,10 +120,22 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
   if (f.cash < costsM && f.debt < cap) {
     const draw = Math.min(cap - f.debt, costsM * 1.5) * Math.max(0, Math.min(1, (creditOpen - 0.5) / 0.5));
     f.debt += draw; f.cash += draw;
-  } else if (f.cash > 4 * costsM) {
-    const spare = f.cash - 4 * costsM;
+  } else if (f.cash > CASH_KEEP_M * costsM) {
+    // LEAN, AS SMALL BUSINESSES RUN: the median US small business holds about
+    // 27 days of outflows in cash (JPMorgan Chase Institute 2016); surplus
+    // goes to the owners or pays down debt. Kept at ~1.5 months here.
+    const spare = f.cash - CASH_KEEP_M * costsM;
     const repay = Math.min(spare * 0.5, Math.max(0, f.debt - f.lev * Math.max(0, ebitda)));
     f.debt -= repay; f.cash -= repay + (spare - repay) * 0.15;
+  }
+  // ...AND BORROWS BACK UP TO ITS NORMAL LEVERAGE as earnings grow (and
+  // inflation wears the old debt down), paying the proceeds to its owners —
+  // the recapitalisation every levered small business does. Toward what a
+  // lender would write today, over three years, while the window is open.
+  {
+    const levNow = Math.min(f.lev, 1 / (Math.max(0.01, rate) * LENDER_COVER));
+    const target = levNow * Math.max(0, ebitda);
+    if (f.debt < target) f.debt += (target - f.debt) / 36 * Math.max(0, Math.min(1, (creditOpen - 0.5) / 0.5));
   }
   f.cover = interest > 0 ? ebitda / interest : (ebitda > 0 ? 99 : -1);
   f.liqM = f.cash / Math.max(1e-9, costsM);
@@ -127,14 +152,111 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
 export function tenantFailOdds(f: TenantFin, credit: Credit): number {
   // Background odds at rated-debt norms (S&P long-run annual defaults: ~0.1-0.3%
   // investment grade, ~1-2% BB/B, ~4-6% for unrated small firms).
-  const background = credit === 2 ? 0.0002 : credit === 1 ? 0.0011 : 0.0017;
-  const coverStress = Math.max(0, Math.min(4, 2 - f.cover));
+  const background = BACKGROUND_FAIL[credit];
+  // Odds climb from 2.5x cover down — roughly doubling by 1.8x, which is
+  // where a recession takes the typical small business; US business
+  // bankruptcies about doubled 2007-09 (28k to 60k filings).
+  const coverStress = Math.max(0, Math.min(4.5, 2.5 - f.cover));
   const cashStress = Math.max(0, 1 - f.liqM);
   const broke = f.cash < 0 ? Math.min(0.25, 0.04 * (1 - f.liqM)) : 0;
-  return Math.min(0.5, background * Math.exp(0.8 * coverStress + 2.2 * cashStress) + broke);
+  return Math.min(0.5, background * Math.exp(1.1 * coverStress + 2.2 * cashStress) + broke);
 }
 
 /** 0..~3: how hard the business is squeezed — what makes a tenant write for relief. */
 export function tenantSqueeze(f: TenantFin): number {
   return Math.max(0, 1.5 - f.cover) * 0.6 + Math.max(0, 3 - f.liqM) * 0.35 + Math.max(0, -f.margin) * 4;
 }
+
+// ---------------------------------------------------------------------------
+// THE STREET'S TENANTS KEEP THE SAME BOOKS (2026-10-15).
+//
+// The player's tenants each carried accounts and failed off them; everyone
+// else's tenants were a pool, and failed only as a share of their trade's
+// failures above a background rate. So the player's roll was held to a
+// stricter standard than the market it competes with.
+//
+// The street now carries representative tenants — one per trade and credit
+// grade in each commercial class — sized off the street's occupied space and
+// keeping exactly the books above (`tickTenantFin`, `tenantFailOdds`). A
+// cohort's failures hand its space back; the failed share is replaced by new
+// tenants on fresh books as the market re-lets it, so a cohort is a mix of
+// survivors and entrants rather than one firm dying slowly.
+// ---------------------------------------------------------------------------
+
+/** Share of a commercial class's let space by covenant: investment grade, mid, weak (sf-weighted). */
+const STREET_GRADE_SF: Record<Credit, number> = { 2: 0.30, 1: 0.45, 0: 0.25 };
+
+export interface StreetCohort { t: Tenant; w: number }
+/** Representative tenants per trade and covenant on the street. */
+const STREET_PER_COHORT = 6;
+
+function freshCohortTenant(e: Econ, k: string, sector: Tenant["sector"], credit: Credit, m: number): Tenant {
+  const rent = Math.max(0.01, (e.inPlaceReal?.[k as "office"] ?? 1) * (e.cpi ?? 1));
+  return { name: `street-${k}-${sector}-${credit}-${m}`, sector, credit, sf: 1000, rentPsf: rent,
+    net: false, startM: m, endM: m + 96, staff: 1 } as Tenant;
+}
+
+/**
+ * One month of the street's tenants in class `k`. Returns the share of the
+ * street's let space whose tenants failed this month (beyond the background
+ * a market's ordinary churn already carries).
+ */
+export function tickStreetTenants(e: Econ, k: "office" | "retail" | "industrial", sectors: Tenant["sector"][],
+  sectorShare: Partial<Record<string, number>>, month: number): number {
+  if (!sectors.length) return 0;
+  e.streetCohorts ??= {};
+  let book = e.streetCohorts[k] as StreetCohort[] | undefined;
+  if (!book) {
+    const tot = sectors.reduce((a, sec) => a + (sectorShare[sec] ?? 1), 0) || 1;
+    book = [];
+    // Six tenants per trade and covenant, each with its own draw of margin,
+    // rent burden and leverage (tenantFin hashes the name): a cohort fails
+    // from its weak tail first, not all at once.
+    for (const sec of sectors) for (const c of [2, 1, 0] as Credit[]) for (let i = 0; i < STREET_PER_COHORT; i++) {
+      const t = freshCohortTenant(e, k, sec, c, month);
+      t.name += `-${i}`;
+      book.push({ t, w: ((sectorShare[sec] ?? 1) / tot) * STREET_GRADE_SF[c] / STREET_PER_COHORT });
+    }
+    e.streetCohorts[k] = book;
+  }
+  const marketRent = Math.max(0.01, (e.inPlaceReal?.[k] ?? 1) * (e.cpi ?? 1));
+  let failed = 0;
+  for (const c of book) {
+    const t = c.t;
+    // Headcount follows the trade's own payroll month to month: a cohort is
+    // the trade's tenants on this street, so it shrinks and grows with them.
+    const emp = e.firmBooks?.[t.sector]?.emp ?? 1;
+    const prevEmp = (t as Tenant & { empRef?: number }).empRef ?? emp;
+    (t as Tenant & { empRef?: number }).empRef = emp;
+    t.staff = Math.max(0.4, Math.min(2.6, (t.staff ?? 1) * emp / Math.max(1e-6, prevEmp)));
+    // The roll reprices toward market over an eight-year term, and the space
+    // follows the headcount (a growing tenant takes more floor; the cohort's
+    // rent grows with it rather than shrinking as a share of its sales).
+    t.rentPsf += (marketRent - t.rentPsf) / 96;
+    t.sf = 1000 * (t.staff ?? 1);
+    const f = tickTenantFin(e, t, t.rentPsf * t.sf, e.creditIdx ?? 1);
+    const odds = tenantFailOdds(f, t.credit);
+    const excess = Math.max(0, odds - BACKGROUND_FAIL[t.credit]);
+    failed += c.w * excess;
+    // The failed share is re-let to newcomers on fresh books: blend toward a
+    // healthy balance sheet at today's revenue, in proportion to the turnover
+    // (failures plus ordinary roll, an eighth a year).
+    const renew = Math.min(1, odds + 1 / 96);
+    const rev = f.rev0 * (t.staff ?? 1) * (e.cpi ?? 1) / Math.max(1e-6, f.cpi0 ?? e.cpi ?? 1);
+    const g = GRADE[t.credit];
+    // Newcomers borrow what today's lenders will write: no more than keeps
+    // interest covered at today's rate, so a dear-money decade re-lets to
+    // firms carrying less debt, not to the opening's leverage.
+    const long = (e.indexRate ?? 5.4) / 100;
+    const levNow = Math.min(f.lev, 1 / ((long + f.spread) * LENDER_COVER));
+    f.cash += renew * (g.cashM * rev / 12 - f.cash);
+    f.debt += renew * (levNow * Math.max(0.02, f.margin) * rev - f.debt);
+    f.fixed += renew * (long + f.spread - f.fixed);
+    t.staff = (t.staff ?? 1) + renew * (1 - (t.staff ?? 1));
+  }
+  const tot = book.reduce((a, c) => a + c.w, 0) || 1;
+  return failed / tot;
+}
+
+/** The background odds already carried by a market's ordinary churn. */
+const BACKGROUND_FAIL: Record<Credit, number> = { 2: 0.00012, 1: 0.0005, 0: 0.0012 };

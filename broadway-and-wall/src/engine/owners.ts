@@ -779,8 +779,11 @@ export function tickHolders(
   // founding roster. The probabilities are demographic guesses stated as
   // such: about a third of estates have an heir who wants the business,
   // fewer partnerships survive their split.
-  const seats0 = (s.rivals ?? []).filter((r) => r.bornM === 0).length;
-  const live = (s.rivals ?? []).filter((r) => r.failedM === undefined).length;
+  // The founding roster against the investors and operators living — the
+  // town's builders (GameState.builderFirms) are neither, and counted here
+  // they kept every seat filled.
+  const seats0 = (s.rivals ?? []).filter((r) => r.bornM === 0 && !r.builderProf).length;
+  const live = (s.rivals ?? []).filter((r) => r.failedM === undefined && !r.builderProf).length;
   const heirOdds = h.kind === "estate" ? 0.35 : h.kind === "partnership" ? 0.25 : 0;
   if (heirOdds > 0 && live < seats0 && rng(s) < heirOdds) {
     const id = `h:${h.id}:${s.month}`;

@@ -515,6 +515,8 @@ export function sponsorShare(style: RivalStyle): number {
  * apartments — most builders the street ranks sit at Unknown or below, so a
  * capital-starved street builds and bids less, and the simulated economy
  * shrinks with it. Realistic, and a different city; the owner chooses.
+ * Re-measured with the town's builders as firms (Oct 2026): floor area −7%
+ * against 90/10, employment −3% — still a smaller city, still a choice.
  */
 export function sponsorShareOf(s: GameState, r: Rival): number {
   if (!SYNDICATES[r.style]) return 1;
@@ -2270,6 +2272,9 @@ export function marketAppetite(s: GameState): number {
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   let a = 0, n = 0;
   for (const r of livingRivals(s)) {
+    // How hard the street bids for BUILDINGS: the town's builders
+    // (GameState.builderFirms) bid for dirt through their own schemes.
+    if (r.builderProf) continue;
     const st = paramsOf(r);
     // a firm with no dry powder is not a bidder, however loudly it talks
     const dry = Math.max(0, Math.min(1.5, r.cash / Math.max(1, 0.04 * Math.max(1, r.aum ?? r.debt))));
@@ -2553,7 +2558,11 @@ export function firmEntryPitch(s: GameState): {
   let traded = 0;
   for (const m of Object.values(s.lastTradeM ?? {})) if (s.month - m < 12) traded++;
   for (const j of s.cityJobs ?? []) if (s.month - j.startM < 12) traded++;
-  const firms = livingRivals(s).length;
+  // The town's builders (GameState.builderFirms) are not funds chasing the
+  // tape's deals: they work their own schemes. Counted here they halved the
+  // product term and shut fund entry — measured, a 30-year seed went from 9
+  // first closes to 2 when the builders became firms.
+  const firms = livingRivals(s).filter((r) => !r.builderProf).length;
   const product = Math.min(1, traded / Math.max(1, firms) / DEPLOY_YR);
   const thin = Math.min(1.5, 1 / Math.max(0.2, marketAppetite(s)));
   const pitch = Math.min(1, leverage * product * thin);

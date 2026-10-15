@@ -303,8 +303,13 @@ Teardowns go to the builder with the most free cash. Measured against main
 land +12%, employment +3.4%, population +5.4%, industrial rent −24%,
 apartment vacancy 5.5% → 6.1%. A city of the same scale with a different
 mix; on #368 the same change read floor area −0.5% and industrial rent +18%.
-The economy underneath moves these, not the builders alone. The finite-pool question above is still open: the
-builders' deal investors are national money.
+The economy underneath moves these, not the builders alone. The finite-pool question above stays answered "not
+yet" for a measured reason: the pool is $600 a head a year (about $24M for a
+40,000-person town) and the builders raise roughly $15-25M a year of deal
+equity there by themselves. On the pool they would take nearly all of it,
+crowding out the player and every new fund, and the pool would need
+recalibrating from the start. Their deal investors stay national money, which
+is how merchant builders' JV equity is raised in practice.
 
 ### 3.2 Sponsor score: who gets the money
 
@@ -1589,7 +1594,8 @@ about each.
    is larger (+15% a band) and reaches the endowments from Institutional.
    Rival deal terms by band (`sponsorShareOf`, the player's `BAND_TERMS`)
    are built but OFF by default (`rivalDealTerms`): measured, they shrink
-   the city — floor area −4%, median land −15%, employment −4%.
+   the city — floor area −4%, median land −15%, employment −4%; re-measured
+   with the builders as firms, floor area −7%, employment −3%.
 8. **Random draws must not move the economy.** Investor decisions (commit
    hazards, refusals, fairness premiums) need their **own RNG channel**,
    like `"shock"` for swans. `initStreams` hashes each channel by name, so

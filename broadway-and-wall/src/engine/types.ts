@@ -1545,6 +1545,8 @@ export interface EconHistoryPoint {
   indexRate: number;
   /** The loan index without the premium's monthly noise. See tickNation. */
   rateRegime?: number;
+  /** The central bank's policy rate that month (econ.nat.policy) — the top bar's twelve-month change. */
+  policy?: number;
   population?: number;
   jobs?: number;
   unemployment?: number;

@@ -1627,6 +1627,79 @@ export function buildingScore(
     structure: Math.round(structure), condition: Math.round(condition), competitiveness: Math.round(competitiveness),
   };
 }
+/**
+ * THE ONE NUMBER A TENANT SHOPS ON, 1-100 (TENANT_TIERS_PLAN.md).
+ *
+ * A tenant does not weigh a building's spec, its plant, its age and its
+ * corner one at a time; it forms one view of how good the space is and then
+ * asks what it costs. That view is a blend of the land (`demandScore`, the
+ * address) and the building (`buildingScore`: bones, condition, how new it is
+ * against the city's stock). How much of it is the address depends on the
+ * business: retail is the most location-bound real estate there is, a
+ * warehouse cares most about its clear height and dock doors, offices and
+ * flats sit between. Shape parameters, stated as such.
+ */
+export const SCORE_LOC_WEIGHT: Record<BuiltClass, number> = { office: 0.5, retail: 0.65, multifamily: 0.5, industrial: 0.35 };
+export function overallScore(rec: ParcelRecord, econ: Econ, use?: BuiltClass, condIdx?: number): number {
+  const cls = (use ?? rec.class) as BuiltClass;
+  const w = SCORE_LOC_WEIGHT[cls] ?? 0.5;
+  const ctx = econ.tierCtx;
+  const b = ctx && rec.class !== "land" && rec.bldgArea
+    ? buildingScore(rec, condIdx !== undefined ? { condIdx } : null, { month: ctx.month, stockVintage: ctx.vintage }).score
+    : 50;
+  return Math.max(1, Math.min(100, w * Math.max(0, Math.min(100, rec.demandScore ?? 50)) + (1 - w) * b));
+}
+
+/**
+ * THE STREET'S STOCK BY SCORE, IN TEN-POINT BANDS — bookkeeping, not tiers:
+ * a tenant and a building each carry their exact score, and every reader
+ * below interpolates across bands, so a 74 and a 76 are the same market.
+ */
+export const N_BANDS = 10;
+export const bandCenter = (b: number) => b * 10 + 5;
+/** Kernel weight of band `b` for a score — how much of that band's market a building at `score` is in. */
+function bandW(score: number, b: number): number {
+  const d = (score - bandCenter(b)) / 7;
+  return Math.exp(-0.5 * d * d);
+}
+/**
+ * THE NATURAL VACANCY AT A SCORE. The best space runs tighter than the class
+ * and the worst looser, at every point in the cycle: US office Class A has
+ * sat roughly 1-3 points under B/C through most cycles and trophy well under
+ * both (CBRE / JLL quarterly); the bottom of the stock carries the
+ * structural vacancy — floors nobody wants at any rent. 1.45x the class's
+ * natural rate at score 0 falling to 0.7x at 100, renormalised on this
+ * street's own stock so the scale averages to the class. A shape parameter.
+ */
+export function scoreNatVac(econ: Econ, use: BuiltClass, score: number): number {
+  const raw = (sc: number) => NATURAL_VAC[use] * (1.45 - 0.75 * sc / 100);
+  const st = econ.bands?.[use]?.stock;
+  let mean = NATURAL_VAC[use];
+  if (st) {
+    let a = 0, w = 0;
+    for (let b = 0; b < N_BANDS; b++) { a += raw(bandCenter(b)) * st[b]; w += st[b]; }
+    if (w > 0) mean = a / w;
+  }
+  return raw(score) * NATURAL_VAC[use] / Math.max(1e-9, mean);
+}
+/** The street's vacancy around a score (kernel over the bands); absent bands, the street's or the city's. */
+export function scoreVacOf(econ: Econ, use: BuiltClass, score: number): number {
+  const bk = econ.bands?.[use];
+  const fallback = econ.streetVac?.[use] ?? econ.cityVac?.[use] ?? NATURAL_VAC[use];
+  if (!bk) return fallback;
+  let st = 0, oc = 0;
+  for (let b = 0; b < N_BANDS; b++) { const w = bandW(score, b); st += w * bk.stock[b]; oc += w * bk.occ[b]; }
+  return st > 0 ? Math.max(0, Math.min(0.9, 1 - oc / st)) : fallback;
+}
+/** The market's swing on rent around a score, around the premium the building always carries; 1 absent bands. */
+export function scoreRentMult(econ: Econ, use: BuiltClass, score: number): number {
+  const bk = econ.bands?.[use];
+  if (!bk) return 1;
+  let a = 0, w = 0;
+  for (let b = 0; b < N_BANDS; b++) { const x = bandW(score, b) * (bk.stock[b] > 0 ? 1 : 0); a += x * bk.rent[b]; w += x; }
+  return w > 0 ? a / w : 1;
+}
+
 export function buildingGrade(score: number): BuildingGrade {
   return score >= 90 ? "Trophy" : score >= 72 ? "A" : score >= 50 ? "B" : "C";
 }
@@ -1915,7 +1988,8 @@ export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condit
   // ...and each of those markets pays for the floor plate it is getting. See
   // plateRentMult: an office or a shed cares enormously about a big regular
   // floor, a flat does not care at all.
-  return blendBy(rec, (u) => (econ.effRentIdx?.[u] ?? econ.rentIdx[u] ?? 0) * plateRentMult(rec, u) * locationRentMult(rec, econ, u))
+  // ...and each at its own place on that market's quality scale (TENANT_TIERS_PLAN.md).
+  return blendBy(rec, (u) => (econ.effRentIdx?.[u] ?? econ.rentIdx[u] ?? 0) * plateRentMult(rec, u) * locationRentMult(rec, econ, u) * scoreRentMult(econ, u, overallScore(rec, econ, u, condIdx)))
     * (condIdx !== undefined ? condMultAt(condIdx) : condMult(condition)) * specRentMult(rec.buildSpec);
 }
 
@@ -1924,6 +1998,7 @@ export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition
   // EFFECTIVE, not asking: everything that prices a deal or values an asset
   // reads what deals actually sign at. The Economy page shows both lines.
   return (econ.effRentIdx?.[use] ?? econ.rentIdx[use] ?? 0) * plateRentMult(rec, use) * locationRentMult(rec, econ, use)
+    * scoreRentMult(econ, use, overallScore(rec, econ, use, condIdx))
     * (condIdx !== undefined ? condMultAt(condIdx) : condMult(condition)) * specRentMult(rec.buildSpec);
 }
 
@@ -2456,14 +2531,24 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   // from arriving as a step change on every roll in the city.
   // The street's own vacancy (market.ts streetVac): the player's empty floors
   // are not an incumbent's, and the tenants the player takes from it are.
-  const vacNow = econ.streetVac?.[use] ?? econ.cityVac?.[use];
-  let mktDelta = Number.isFinite(vacNow) ? (NATURAL_VAC[use] - (vacNow as number)) * 0.85 : 0;
+  //
+  // ...AND OF ITS OWN TIER (TENANT_TIERS_PLAN.md). A Class C building does not
+  // read the office market, it reads the C market: in a glut of new towers
+  // the prime tier fills out of the tier below and the vacancy lands on the
+  // oldest, cheapest floors. With the tiers live, the tier's own vacancy
+  // against the tier's own natural rate replaces the class's, and the vintage
+  // tilt below — which was standing in for exactly this — stands down.
+  const tierLive = !!econ.bands?.[use];
+  const sc = tierLive ? overallScore(rec, econ, use) : 50;
+  const natHere = tierLive ? scoreNatVac(econ, use, sc) : NATURAL_VAC[use];
+  const vacNow = tierLive ? scoreVacOf(econ, use, sc) : (econ.streetVac?.[use] ?? econ.cityVac?.[use]);
+  let mktDelta = Number.isFinite(vacNow) ? (natHere - (vacNow as number)) * 0.85 : 0;
   // QUALITY SEGMENTS THE MARKET (ECONOMY.md): when the market sheds tenants,
   // the 1928 building sheds ~3x what last year's does — flight to quality is
   // the pain of new supply landing on the oldest competing stock. Applied
   // only on the DOWNSIDE (a tight market does not favour old bones), and
   // renormalised by the city's measured vintage mean so the books reconcile.
-  if (mktDelta < 0) {
+  if (mktDelta < 0 && !tierLive) {
     const age = Math.max(0, 2000 - (rec.yearBuilt || 1960));
     const vintage = Math.min(1.7, Math.max(0.5, 0.5 + age / 80));
     mktDelta *= vintage / (econ.vintageMean ?? 1.0);
@@ -2493,7 +2578,7 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   // quantity — how full this city's buildings are — and CLAUDE.md fake number 3
   // says one of two answers to that is fiction.
   const shapeMean = -0.12 * (apt ? 0.12 : 0.22) - 0.06 * (apt ? 0.14 : 0.28);
-  const base = clamp((1 - NATURAL_VAC[use]) + mktDelta + loc + idio - trouble - shapeMean, 0.28, 0.99);
+  const base = clamp((1 - natHere) + mktDelta + loc + idio - trouble - shapeMean, 0.28, 0.99);
   // AS-IF-STABILISED IS THE SAME BUILDING WITHOUT THE CALENDAR. `stabilised`
   // asks for the occupancy this building runs at once it is no longer new —
   // which is what an appraiser means by the phrase, and what the stabilised

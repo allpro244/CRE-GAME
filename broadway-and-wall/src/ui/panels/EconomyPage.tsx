@@ -8,6 +8,7 @@ import { capitalRatio, targetCapital } from "@/engine/lenders";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
+import { bandTable } from "@/engine/bands";
 import type { BarGroup } from "@/ui/Chart";
 import { pctSigned } from "@/ui/format";
 import { TheBanks } from "@/ui/panels/BanksDesk";
@@ -1011,6 +1012,35 @@ export function EconomyPage() {
             space already on the sublet market; that is what a tenant can take and what rents price off. Direct
             vacancy is the landlord empty-floor rate and will sit on its frictional floor through a shortage.
           </div>
+          {/* THE MARKET BY QUALITY (TENANT_TIERS_PLAN.md): which floors the vacancy is in. */}
+          {(() => {
+            const rows = bandTable(game.econ, focus).filter((r) => r.stock > 0);
+            if (!rows.length) return null;
+            return (
+              <>
+                <div className="hint" style={{ marginTop: 8 }}>By building score — the street's buildings (yours are your own)</div>
+                <table className="mini-table mono" style={{ width: "100%", fontSize: 12 }}>
+                  <thead><tr><th style={{ textAlign: "left" }}>Score</th><th>Floor</th><th>Vacant</th><th>Normal</th><th>Rent vs class</th></tr></thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.lo}>
+                        <td style={{ textAlign: "left" }}>{r.lo}–{r.lo + 10}</td>
+                        <td style={{ textAlign: "right" }}>{sfFmt(r.stock)}</td>
+                        <td style={{ textAlign: "right" }} className={r.vac > r.nat + 0.03 ? "neg" : ""}>{(r.vac * 100).toFixed(1)}%</td>
+                        <td style={{ textAlign: "right" }}>{(r.nat * 100).toFixed(1)}%</td>
+                        <td style={{ textAlign: "right" }}>{pctSigned(r.rent - 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="chart-note">
+                  Every building has one score, 1-100 — its address and the building itself — and every tenant shops
+                  for the best score it can afford. When good space gets cheap, tenants in ordinary space trade up and
+                  the vacancy lands at the bottom of the scale; when the best space is dear, they stay or trade down.
+                </div>
+              </>
+            );
+          })()}
         </div>
         <div className="chart-cell">
           <div className="chart-title">What is coming, and when</div>

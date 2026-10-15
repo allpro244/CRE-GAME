@@ -1,4 +1,3 @@
-import { OPS_SERVICE, OPS_PLAN } from "@/engine/types";
 import { useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec } from "@/engine/types";
@@ -18,6 +17,7 @@ import { LoiCard, TrayClear } from "@/ui/panels/DealsPage";
 import { useLabel, occRead, occLabel, occTitle, Big } from "@/ui/panels/shared";
 import Fold from "@/ui/Fold";
 import { Rollover } from "@/ui/rollups/Rollover";
+import { OpsChoices } from "@/ui/panels/OpsChoices";
 
 export function LeasingPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -465,31 +465,13 @@ export function LeasingPage() {
                     </div>
                     {/* HOW IT IS RUN, FROM THE ROW. Service and the capital plan
                         lived only on each building's Operations tab — a click
-                        into every deed to set the book. Same settings, same
-                        store action as the property page. */}
-                    <div className="lease-ctl" onClick={(e) => e.stopPropagation()}>
-                      <span className="lease-ctl-label">Service</span>
-                      <span className="seg" role="group" aria-label={`Service level at ${r.rec.address}`}>
-                        {OPS_SERVICE.map((o) => (
-                          <button key={o.key} type="button"
-                            className={"btn btn-mini" + ((r.h.service ?? 0) === o.key ? " btn-on" : "")}
-                            aria-pressed={(r.h.service ?? 0) === o.key}
-                            title={o.blurb + " — three years to matter, three years to undo"}
-                            onClick={(e) => { e.stopPropagation(); useStore.getState().ops(r.h.bbl, { service: o.key }); }}
-                          >{o.label}</button>
-                        ))}
-                      </span>
-                      <span className="lease-ctl-label">Capital</span>
-                      <span className="seg" role="group" aria-label={`Capital plan at ${r.rec.address}`}>
-                        {OPS_PLAN.map((o) => (
-                          <button key={o.key} type="button"
-                            className={"btn btn-mini" + ((r.h.plan ?? 1) === o.key ? " btn-on" : "")}
-                            aria-pressed={(r.h.plan ?? 1) === o.key}
-                            title={o.blurb}
-                            onClick={(e) => { e.stopPropagation(); useStore.getState().ops(r.h.bbl, { plan: o.key }); }}
-                          >{o.label}</button>
-                        ))}
-                      </span>
+                        into every deed to set the book. The same component as
+                        the property page and Portfolio, so the row carries the
+                        same numbers: what each choice costs a year against the
+                        one in force, how tenants read the service, and the
+                        building's condition and reserve. */}
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <OpsChoices bbl={r.h.bbl} h={r.h} score={false} />
                     </div>
                   </td>
                   <td>{useLabel(r.rec)}</td>

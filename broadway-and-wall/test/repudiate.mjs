@@ -92,7 +92,22 @@ function siteWithAJob(runIndex, lender) {
     const len = (d?.doneM ?? d?.deliverM ?? 0) - (r.s?.month ?? 0);
     if (!r.err && len > bestLen) { bestLen = len; bestSite = { g: r.s, parcels, bbls, adjacency, bbl: rec.bbl }; }
   }
-  if (bestSite) return bestSite;
+  // A LEVERED JOB, ON PURPOSE. At the debt fund's rate the lease-up reserve
+  // is a third of the budget and the equity covers nearly all of the
+  // construction spend, so the loan only advances in the last months — too
+  // late to seize a desk in the middle of. The fixture keeps the equity
+  // already in (no cash moves, so the ledger checks below stay honest) and
+  // puts the rest of the job on the facility, which is the ordinary shape of
+  // a spec office loan and starts the draws about halfway through the build.
+  if (bestSite) {
+    const d = bestSite.g.developments[bestSite.bbl];
+    const keep = Math.max(d.equitySpent ?? 0, d.equityPrefunded ?? 0);
+    if (d.equityBudget > keep) {
+      d.commitment += d.equityBudget - keep;
+      d.equityBudget = keep;
+    }
+    return bestSite;
+  }
   return null;
 }
 

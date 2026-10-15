@@ -1,8 +1,8 @@
-// RIVAL ENTRY READS THE INVESTOR POOL — behind its flag.
+// RIVAL ENTRY READS THE INVESTOR POOL — on by default, a setup choice.
 //   pnpm engine && node test/pool-entry.mjs
 //
-// CAPITAL_RAISING_PLAN.md §0.5 5.5. Off (the default), a new firm's entry is
-// exactly what it was. On, a first close comes out of the city's local and
+// CAPITAL_RAISING_PLAN.md §0.5 5.5. Off, a new firm's entry is
+// exactly what it was. On (the default), a first close comes out of the city's local and
 // family-office money: entry slows when this year's has gone, a firm never
 // raises more than is left, and a player who has raised the city dry keeps
 // new competitors out that year.
@@ -32,20 +32,19 @@ const run = (seed, months, setup) => {
 };
 const firmsHash = (g) => createHash("sha256").update(JSON.stringify(g.rivals.map((r) => [r.id, r.name, r.bornM, Math.round(r.cash)]))).digest("hex").slice(0, 16);
 
-console.log("\nOff: entry is what it was");
+console.log("\nOff: new firms raise from money that never runs out");
 {
-  const a = run(7101, 120);
   const b = run(7101, 120, { poolEntry: false });
-  ok(firmsHash(a.g) === firmsHash(b.g) && !a.g.poolEntry && !(a.g.poolBindMs > 0), `the default street is untouched (${a.g.rivals.length} firms, ${firmsHash(a.g)})`);
+  ok(!b.g.poolEntry && !(b.g.poolBindMs > 0), `turned off, the pool never slows entry (${b.g.rivals.length} firms, ${firmsHash(b.g)})`);
 }
 
-console.log("\nOn: one capital market");
+console.log("\nOn (the default): one capital market");
 {
-  const { g, hooks } = run(7101, 240, { poolEntry: true });
+  const { g, hooks } = run(7101, 240);
   let over = 0;
   for (const h of hooks) if (h.pool) for (const id of ["local", "family"]) if ((h.pool.used[id] ?? 0) > (h.pool.cap[id] ?? 0) + 1) over++;
   console.log(`  ${g.rivals.length} firms after 20 years · the pool slowed entry in ${g.poolBindMs ?? 0} months`);
-  ok(g.poolEntry === true, "the setup switch reaches the game");
+  ok(g.poolEntry === true, "a new game runs on one capital market");
   ok(over === 0, "no year's local or family-office money is ever overdrawn");
   ok((g.poolBindMs ?? 0) > 0, "and a thin pool does slow new firms");
 }

@@ -3218,8 +3218,8 @@ export interface GameState {
   recaps?: { bbl: string; m: number; value: number }[];
   /**
    * Rival firm entry waits on the city's investor pool (rivals.ts,
-   * CAPITAL_RAISING_PLAN.md §0.5 5.5). Off by default — see the measurement
-   * in rivals.ts; a setup choice for the owner to turn on.
+   * CAPITAL_RAISING_PLAN.md §0.5 5.5). On for new games (a setup choice can
+   * turn it off); a save written before it existed runs without it.
    */
   poolEntry?: boolean;
   /** Months a rival's first close was slowed by a thin investor pool (rivals.ts; measured, display only). */

@@ -2567,11 +2567,12 @@ function maybeNewFirm(s: GameState) {
 
   if (!streetOpen) return;
 
-  // FIRM ENTRY READS THE POOL (CAPITAL_RAISING_PLAN.md §0.5 5.5) — behind
-  // its flag (`poolEntry`), off by default: measured, it slows entry in
-  // 22-55% of months on City and damps the boom-era surge of new firms (one
-  // seed's 42 living firms became 20), which changes the whole street, so it
-  // is the owner's to switch on. A first close is raised from the city's
+  // FIRM ENTRY READS THE POOL (CAPITAL_RAISING_PLAN.md §0.5 5.5), on for new
+  // games (`poolEntry`; the setup can turn it off). Measured, it slows entry
+  // in 22-55% of months on City and damps the boom-era surge of new firms
+  // (one seed's 42 living firms became 20): easy money in a boom builds
+  // firms, and a finite pool is what stops a boom compounding on itself —
+  // the owner's call, Oct 2026 ("it should dampen booms"). A first close is raised from the city's
   // local and family-office money (investors.ts); when this year's has mostly
   // gone — to firms already raised, or to the player — fewer first closes
   // clear, in proportion to what is left against a typical raise. With money

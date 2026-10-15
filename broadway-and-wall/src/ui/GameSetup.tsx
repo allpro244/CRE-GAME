@@ -72,7 +72,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     return {
       island, size: currentSize(island), dev: currentDev(island), cash0: currentCash0(), goal: null,
       field: DEFAULT_SETUP.field, inherit: 0, home: "any", rivalCapital: "medium", parks: "medium",
-      firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(), poolEntry: false,
+      firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(), poolEntry: true,
     };
   };
   const [d, setD] = useState<Draft>(fresh);
@@ -183,7 +183,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       parks: d.parks === "medium" || isWritten ? undefined : d.parks,
       firmName: d.firmName.trim() || undefined, sandbox: d.sandbox, clock: d.clock,
       brokerStops: d.brokerStops ? undefined : "never",
-      poolEntry: d.poolEntry || undefined,
+      poolEntry: d.poolEntry ? undefined : false,
     };
     void startRun(d.island, d.size, d.dev, d.cash0, setup, d.seed);
   };
@@ -347,7 +347,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                 <label className="setup-check" style={{ marginTop: 10 }}>
                   <input type="checkbox" checked={d.poolEntry} onChange={(e) => up({ poolEntry: e.target.checked })} />
                   <span><strong>New firms raise from the city's investor money</strong><br />
-                    <span className="start-opt-note">One capital market: a new competitor's first close comes out of the same yearly pool you raise from, so fewer firms open when the money has gone — to them or to you. Experimental.</span></span>
+                    <span className="start-opt-note">One capital market: a new competitor's first close comes out of the same yearly pool you raise from, so fewer firms open when the money has gone — to them or to you. Off, new firms raise from money that never runs out.</span></span>
                 </label>
               </div>
             </div>

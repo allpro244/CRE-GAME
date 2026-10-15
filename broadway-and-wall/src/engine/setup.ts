@@ -64,7 +64,7 @@ export interface GameSetup {
   clock?: "decisions" | "opportunities" | "everything";
   /** "never" keeps broker first looks off the clock (GameState.brokerStops). */
   brokerStops?: "affordable" | "never";
-  /** Rival firm entry waits on the city's investor pool (GameState.poolEntry). Off unless chosen. */
+  /** Rival firm entry waits on the city's investor pool (GameState.poolEntry). On unless turned off. */
   poolEntry?: boolean;
   spectator?: boolean;
   /** How much the town's competitors raised before you arrived (RIVAL_CAPITAL). Absent = medium. */

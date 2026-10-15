@@ -105,7 +105,16 @@ quietly goes to the wrong party.
       from what is left. Raises take time and can fail (§3.3): counsel paid
       up front and sunk, soft circles over up to three months as monthly
       hazards by street rank, close full, small (half or more) or fail.
-   3. dynamic fund mandates (§5.1) and the fund revamp (§5)
+   3. dynamic fund mandates (§5.1) and the fund revamp (§5) — **first slice done**: a blind pool needs
+      Institutional (replacing the lender-standing and two-exits gates); its
+      size is what the open investor pools have left this year, drawn down at
+      the raise ($5M floor); a 1.25% management fee on commitments through
+      the investment period, then on invested capital, signed into the fund
+      at the raise; a wound-up fund is investor evidence (by its multiple)
+      and Blue-chip needs one that returned its capital; a failed fund is on
+      the record instead of "nobody will back you again". Not yet: strategy
+      and mandates, catch-up and clawback, overlapping successor funds,
+      key-person and removal.
    4. recap buyouts (§4.5) and side money — **recap buyouts done** (`recap.ts`) for
       syndicates: after stabilisation, at the investors' waterfall take on a
       sale at the appraisal with no broker, plus a 2–5% fairness premium
@@ -1548,6 +1557,14 @@ about each.
    them needs a per-rival deal ledger (compact: equity, projected, actual,
    date) plus a written-down derivation of the opening roster's records.
    Watch memory on the Great City map (about 200 firms over a century).
+   *Built (rival-record):* `Rival.realised`, one compact row a deed that
+   left the book over thirty years — the deal investors' multiple on a
+   syndicated deed, 0x on a deed lost to its lender, and an own-money sale
+   read as on schedule or in trouble (no per-building cost exists to give
+   its multiple; an aggregate-basis estimate read 70% of sales as losses
+   and was dropped). It replaced a tenure stand-in that credited a firm a
+   promise met every three years it stayed alive. Still open: a pitch per
+   rival deal, so rivals can beat or miss a promise as the player does.
 8. **Random draws must not move the economy.** Investor decisions (commit
    hazards, refusals, fairness premiums) need their **own RNG channel**,
    like `"shock"` for swans. `initStreams` hashes each channel by name, so

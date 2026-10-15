@@ -40,7 +40,7 @@ import { genRentRoll, depositsOn } from "./leasing";
 import { bumpLenderRel } from "./debt";
 import { saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
-import { clearRivalClaims, fitOf, forgetDeed } from "./rivals";
+import { clearRivalClaims, fitOf, forgetDeed, noteLost } from "./rivals";
 import { dropDeed, originateRow } from "./rivalDebt";
 import { reinstateFundedForeclosures } from "./workout";
 import { spendable, fundAndBook } from "./credit";
@@ -402,6 +402,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         const buyer = thirdPartyTakes(s, parcels, rec, paid);
         if (r) {
           r.bbls = r.bbls.filter((b) => b !== n.bbl);
+          noteLost(s, r, n.bbl);
           forgetDeed(r, n.bbl);
           dropDeed(s, r, n.bbl);       // the debt went with the deed
           r.cash += surplus;           // the law hands the wiped borrower the rest
@@ -527,6 +528,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       const occ = Math.max(0.15, Math.min(0.95, r?.occ ?? 0.4));
       if (r) {
         r.bbls = r.bbls.filter((b) => b !== lot.bbl);
+        noteLost(s, r, lot.bbl);
         forgetDeed(r, lot.bbl);
         dropDeed(s, r, lot.bbl);
         r.cash += Math.max(0, paid - lot.debt);
@@ -552,6 +554,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         `The room went past you. Your deposit came back.`);
       if (r) {
         r.bbls = r.bbls.filter((b) => b !== lot.bbl);
+        noteLost(s, r, lot.bbl);
         forgetDeed(r, lot.bbl);
         dropDeed(s, r, lot.bbl);
         r.cash += Math.max(0, paid - lot.debt);
@@ -573,6 +576,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         const f = (s.bankFcls ?? []).find((x) => x.bbl === lot.bbl);
         if (f && r) {
           r.bbls = r.bbls.filter((b) => b !== lot.bbl);
+          noteLost(s, r, lot.bbl);
           forgetDeed(r, lot.bbl);
           dropDeed(s, r, lot.bbl);
           s.bankFcls = s.bankFcls!.filter((x) => x.bbl !== lot.bbl);

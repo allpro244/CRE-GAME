@@ -2690,6 +2690,17 @@ export interface Rival {
    */
   jvs?: Record<string, { lp: number; gp: number; m: number }>;
   /**
+   * THE FIRM'S REALISED DEALS, the last thirty years of them (reputation.ts
+   * reads them as the firm's record; CAPITAL_RAISING_PLAN.md §3.4 "same
+   * formula, same record"). One row a deed that left the book: `eq` the
+   * equity in it, `m` the month; `mult` what came back where the street can
+   * see it (the deal investors' multiple on a syndicated deed, `lp`; 0 on a
+   * deed lost to its lender); `forced` an own-money sale made while the firm
+   * was in trouble (rivals.ts noteRealised). Read only by the ranking;
+   * nothing in the economy reads it.
+   */
+  realised?: { m: number; eq: number; mult?: number; lp?: boolean; forced?: boolean }[];
+  /**
    * WHEN THE EXTENDED PAPER ON A BUILDING COMES BACK, by BBL. Present only for
    * a building whose balloon the desk re-papered rather than took the keys on;
    * absent is the ordinary case and means the loan sits on the term ladder.
@@ -3253,6 +3264,8 @@ export interface GameState {
    * type will put to work here this year, and what has been raised from it.
    */
   investorPool?: { yr: number; cap: Record<string, number>; used: Record<string, number>; rivals: number; attract: number };
+  /** Wound-up funds, as their LPs remember them (fund.ts settleFund; reputation.ts reads them). */
+  fundHistory?: { raisedM: number; closedM: number; size: number; called: number; distributed: number; gpCommit: number }[];
   /** Recap buyouts: the deed, the month, and the appraisal the investors were paid on (recap.ts; reputation.ts reads a quick flip). */
   recaps?: { bbl: string; m: number; value: number }[];
   /**
@@ -4125,7 +4138,7 @@ export function moveDeposit(s: GameState, h: Holding | undefined, amt: number) {
  * flow settled, a purchase, sale or construction closing the caller moved directly, a tenant
  * deposit, the sponsor's buy-in at the wind-down.
  */
-export type FundFlowKind = "call" | "dist" | "advRepay" | "deed" | "purchase" | "sale" | "build" | "deposit" | "buyIn";
+export type FundFlowKind = "call" | "dist" | "advRepay" | "deed" | "purchase" | "sale" | "build" | "deposit" | "buyIn" | "fee";
 
 /**
  * THE ONE WRITE TO A VEHICLE'S CASH. Moves `amt` (signed) and records it on

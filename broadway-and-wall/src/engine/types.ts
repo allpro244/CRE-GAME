@@ -3216,6 +3216,14 @@ export interface GameState {
   investorPool?: { yr: number; cap: Record<string, number>; used: Record<string, number>; rivals: number; attract: number };
   /** Recap buyouts: the deed, the month, and the appraisal the investors were paid on (recap.ts; reputation.ts reads a quick flip). */
   recaps?: { bbl: string; m: number; value: number }[];
+  /**
+   * Rival firm entry waits on the city's investor pool (rivals.ts,
+   * CAPITAL_RAISING_PLAN.md §0.5 5.5). Off by default — see the measurement
+   * in rivals.ts; a setup choice for the owner to turn on.
+   */
+  poolEntry?: boolean;
+  /** Months a rival's first close was slowed by a thin investor pool (rivals.ts; measured, display only). */
+  poolBindMs?: number;
   /** Deal-by-deal raises in progress, keyed by the lot (raise.ts). */
   raises?: Record<string, import("./investors").Raise>;
   /**

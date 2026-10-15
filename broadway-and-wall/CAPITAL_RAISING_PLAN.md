@@ -110,7 +110,15 @@ quietly goes to the wrong party.
       count it as a realised exit; a resale within 24 months at 15%+ over the
       buyout appraisal costs −10. Not yet: fund cross-trades, continuation
       vehicles, partial buyouts, side money.
-   5. firm entry reading the pool (`firmEntryPitch`)
+   5. firm entry reading the pool (`firmEntryPitch`) — **built behind its flag**
+      (`poolEntry`, a setup choice, off by default): a first close's hazard
+      scales with the local and family-office money left against a typical
+      raise, and no firm raises more than is left. Measured on City, 50
+      unplayed years, 3 seeds: entry slowed in 22–55% of months; living firms
+      by decade 20/21/18/27/26 → 20/21/18/20/19, 27/24/42/33/25 →
+      26/24/20/23/28, 20/24/24/24/23 → 20/24/25/25/21 (the boom-era surge of
+      new firms is damped). The anchor this step was to reproduce is not met
+      at the $600-a-head calibration, so it stays the owner's to switch on.
    6. merchant builders on the pool, last and most carefully
 6. **Never tune toward a feel.** Every reputation and pool number here is a
    starting design or a cited convention. If raising money is too easy or

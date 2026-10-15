@@ -29,7 +29,7 @@
 // now claims jobs out of the city's own pipeline: buys the dirt, writes the
 // equity, carries the loan through the cycle, and either owns a building at
 // the end of it or hands a frame to a receiver.
-import { drawRivalRaise } from "./investors";
+import { drawRivalRaise, poolLeft } from "./investors";
 import { fieldRoster, rivalCapitalMult, type RivalCapital } from "./setup";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
@@ -2567,7 +2567,22 @@ function maybeNewFirm(s: GameState) {
 
   if (!streetOpen) return;
 
-  if (rng(s, "rivals") > Math.min(1, pitch * Math.max(1, slots) / RAISE_M)) {
+  // FIRM ENTRY READS THE POOL (CAPITAL_RAISING_PLAN.md §0.5 5.5) — behind
+  // its flag (`poolEntry`), off by default: measured, it slows entry in
+  // 22-55% of months on City and damps the boom-era surge of new firms (one
+  // seed's 42 living firms became 20), which changes the whole street, so it
+  // is the owner's to switch on. A first close is raised from the city's
+  // local and family-office money (investors.ts); when this year's has mostly
+  // gone — to firms already raised, or to the player — fewer first closes
+  // clear, in proportion to what is left against a typical raise. With money
+  // to spare the factor is 1 and entry is exactly what it was (the same
+  // single draw).
+  const poolOn = !!s.poolEntry;
+  const poolAvail = poolOn ? poolLeft(s, "local") + poolLeft(s, "family") : Infinity;
+  const typicalRaise = 7_000_000 * sizeAreaScale(s) * (s.econ.cpi ?? 1);
+  const poolFactor = poolOn ? Math.min(1, poolAvail / Math.max(1, typicalRaise)) : 1;
+  if (poolFactor < 1) s.poolBindMs = (s.poolBindMs ?? 0) + 1;
+  if (rng(s, "rivals") > Math.min(1, pitch * Math.max(1, slots) / RAISE_M) * poolFactor) {
     // Not this month. Founders keep the slot and try again — a single roll
     // must not erase a career. Only the window expiring sends them elsewhere.
     if (founder && (founder.openMs ?? 0) >= FOUNDER_WINDOW_M) {
@@ -2628,9 +2643,12 @@ function maybeNewFirm(s: GameState) {
   // at the town's own inflation. Read in nominal dollars, a fund raised in
   // year eighty at a price level five times the opening one was a fifth of
   // the size of every firm it was meant to compete with.
-  const equity = Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s) * (s.econ.cpi ?? 1));
+  // It raises what it raises — and no more than the city has left to give.
+  const equity = Math.min(Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s) * (s.econ.cpi ?? 1)), poolOn ? Math.max(Math.round(poolAvail), 0) : Infinity);
+  // A first close too small to be a firm is not a first close.
+  if (equity < 0.25 * typicalRaise) return;
   // Its investors' money comes out of the city's pool (investors.ts): the
-  // player raises from what the rivals leave. Entry does not wait on it yet.
+  // player raises from what the rivals leave.
   drawRivalRaise(s, equity);
   const ltv = STYLE[style].maxLtv * rrange(s, 0.68, 0.88, "rivals");
   /**

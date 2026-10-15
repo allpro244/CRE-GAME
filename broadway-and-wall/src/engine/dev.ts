@@ -96,7 +96,7 @@ import {
 import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
 import { consentFor, purseOf } from "./vehicles";
-import { formSyndication, maxOutside, settleSyndications, syndicateBar } from "./syndicate";
+import { formSyndication, maxOutside, settleSyndications, syndicateBar, chargeDevFee } from "./syndicate";
 
 /**
  * THE PLATE THE CITY DRAWS — the site coverage an autonomous start (the
@@ -2448,6 +2448,9 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
       // capital call is actually for.
       s.cash -= fromEquity + unfunded;
       logBooks(s, "dev", fromEquity + unfunded, d.bbl);
+      // A syndicated job pays its sponsor a development fee on the month's
+      // construction spend (syndicate.ts, at the band's signed rate).
+      chargeDevFee(s, d.bbl, spendNow);
       if (unfunded > 0) {
         d.equitySpent += unfunded;
         d.lastCapitalCall = unfunded;

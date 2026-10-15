@@ -2387,6 +2387,13 @@ export interface BooksYear {
    * Distributions to LPs from the vehicle — equity OUT, not expense.
    */
   lpDistributed?: number;
+  /**
+   * Fees the sponsor earns from its own syndicates — the development fee over
+   * construction and the asset-management fee (syndicate.ts). Income to the
+   * firm; the same dollars are a cost on the deal's deed, which its investors
+   * fund their share of.
+   */
+  fees?: number;
 }
 
 /**
@@ -2423,6 +2430,8 @@ export interface PnlYear {
   deprFinal?: boolean;
   /** JV partners' share of income before depreciation (NOI less interest). */
   jv: number;
+  /** Fee income from the sponsor's syndicates (development and asset management). */
+  fees?: number;
   /** Income and capital-gains tax paid in the year. */
   taxes: number;
 }
@@ -2443,6 +2452,7 @@ export interface BooksMonth {
   borrowed?: number;
   lpCalled?: number;
   lpDistributed?: number;
+  fees?: number;
 }
 
 /**
@@ -3006,6 +3016,11 @@ export interface Syndication {
   goneM?: number;
   /** The investors' IRR the deal was pitched at (the job's projection), judged at wind-up (reputation.ts). */
   pitchIrr?: number;
+  /** Fee rates the deal was signed at (the band's, reputation.ts BAND_TERMS): development, on construction spend; asset management, a year, on the investors' capital out. */
+  devFee?: number;
+  amFee?: number;
+  /** Fees the deal has paid its sponsor. */
+  feesPaid?: number;
 }
 
 /** A closed syndication, as its investors remember it. */
@@ -3168,6 +3183,8 @@ export interface GameState {
    * put into its deals in total. Sized at first use; see syndicate.ts.
    */
   ffNetwork?: { cap: number };
+  /** The sponsor's fee income from its syndicates this tax year (sim.ts taxes it, then resets it). */
+  feeIncomeYr?: number;
   /**
    * How investors read the player, as of the last quarterly read
    * (reputation.ts updateReputation). `band` is the one terms are set by;
@@ -3897,7 +3914,7 @@ export function logBooks(
   if (!e || e.yr !== yr) {
     e = {
       yr, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0,
-      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0,
+      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0, fees: 0,
     };
     s.books.push(e);
   }
@@ -3910,7 +3927,7 @@ export function logBooks(
   if (!me || me.m !== s.month) {
     me = {
       m: s.month, noi: 0, debtSvc: 0, leasing: 0, capex: 0, dev: 0, taxes: 0,
-      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0,
+      bought: 0, sold: 0, ga: 0, interest: 0, borrowed: 0, lpCalled: 0, lpDistributed: 0, fees: 0,
     };
     s.booksMonthly.push(me);
     while (s.booksMonthly.length > 48) s.booksMonthly.shift();
@@ -3923,7 +3940,7 @@ export function logBooks(
 }
 
 const PNL_FROM_BOOKS: Partial<Record<keyof Omit<BooksYear, "yr">, keyof Omit<PnlYear, "yr" | "deprFinal">>> = {
-  noi: "noi", leasing: "leasing", capex: "capex", ga: "ga", interest: "intInc", taxes: "taxes",
+  noi: "noi", leasing: "leasing", capex: "capex", ga: "ga", interest: "intInc", taxes: "taxes", fees: "fees",
 };
 
 /** The income-statement year the current month belongs to, opened on first write. */
@@ -3942,7 +3959,7 @@ export function pnlYear(s: GameState, yr = Math.floor(s.month / 12)): PnlYear {
 export function pnlAdd(s: GameState, key: keyof Omit<PnlYear, "yr" | "deprFinal">, amt: number) {
   if (!amt || !Number.isFinite(amt)) return;
   const e = pnlYear(s);
-  e[key] += amt;
+  e[key] = (e[key] ?? 0) + amt;
 }
 
 

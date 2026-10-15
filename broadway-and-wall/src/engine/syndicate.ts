@@ -119,6 +119,7 @@ export function formSyndication(s: GameState, bbl: string, lpCommit: number, cas
     lpShare: cashNeed > 0 ? Math.min(1, lpCommit / cashNeed) : 0,
     lpCommit: Math.round(lpCommit), lpCalled: 0, lpDist: 0, gpIn: 0, gpDist: 0,
     hurdles: [...t.hurdles], promotes: [...t.promotes],
+    devFee: t.devFee, amFee: t.amFee, feesPaid: 0,
     lpBal: new Array(n).fill(0), gpBal: 0, lpCap: 0, gpCap: 0,
     pending: 0, tagged: 0, settled: 0, lpFlows: [],
   };
@@ -126,6 +127,34 @@ export function formSyndication(s: GameState, bbl: string, lpCommit: number, cas
   if (land > 0) { contribute(w, 0, land); w.gpIn += land; }
   (s.syndications ??= {})[bbl] = w;
   return w;
+}
+
+/**
+ * A FEE THE DEAL PAYS ITS SPONSOR (§4.1). No cash moves when it is charged:
+ * the deal owes it (a cost booked to the deed, so it nets into the month's
+ * settlement and the investors fund their share in the call), and the
+ * sponsor earns it (fee income, taxed as the firm's own). What the
+ * investors actually pay is their share of it, through the waterfall.
+ * Mutates `s`.
+ */
+export function chargeDealFee(s: GameState, w: Syndication, fee: number): void {
+  const f = Math.round(fee);
+  if (!(f > 0)) return;
+  logBooks(s, "dev", f, w.bbl);
+  logBooks(s, "fees", f);
+  w.feesPaid = (w.feesPaid ?? 0) + f;
+  s.feeIncomeYr = (s.feeIncomeYr ?? 0) + f;
+}
+
+/**
+ * The development fee on a month's construction spend (dev.ts calls it with
+ * the month's build cost). Market: 3–5% of hard and soft cost, paid over
+ * construction (§4.1); the rate is the band's, signed into the deal.
+ */
+export function chargeDevFee(s: GameState, bbl: string, spend: number): void {
+  const w = s.syndications?.[bbl];
+  if (!w || !(w.devFee && w.devFee > 0) || !(spend > 0)) return;
+  chargeDealFee(s, w, w.devFee * spend);
 }
 
 /**
@@ -141,6 +170,10 @@ export function settleSyndications(s: GameState, parcels: ParcelTable, accrue = 
     const w = all[bbl];
     if (accrue) accrueMonth(w);
     const held = !!s.holdings[bbl];
+    // The asset-management fee: a twelfth of the band's annual rate on the
+    // investors' capital still out (called less paid back), while the deal
+    // holds its deed (§4.1; market 1–1.5% of equity a year).
+    if (accrue && held && w.amFee && w.amFee > 0) chargeDealFee(s, w, (w.amFee / 12) * Math.max(0, w.lpCalled - w.lpDist));
     if (!held && w.goneM === undefined) w.goneM = s.month;
     const r = settlePeriod(w, s.month, held);
     if (r.cash > 0) { s.cash += r.cash; logBooks(s, "lpCalled", r.cash); }

@@ -82,7 +82,7 @@ const die = (msg) => {
 };
 
 // ---- the ledger identity, as conserve states it ------------------------------
-const IN = ["noi", "sold", "interest", "borrowed", "lpCalled"];
+const IN = ["noi", "sold", "interest", "borrowed", "lpCalled", "fees"];
 const OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga", "lpDistributed"];
 const TOL = 1000;
 const bookTotals = (s) => {

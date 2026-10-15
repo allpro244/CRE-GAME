@@ -34,7 +34,7 @@ const check = (ok, msg) => { console.log(`  ${ok ? "OK  " : "FAIL"}  ${msg}`); i
 const M = (n) => `$${(n / 1e6).toFixed(2)}M`;
 console.log("\nTAKE PRIVATE — a rival bought whole\n");
 
-const IN = ["noi", "sold", "interest", "borrowed", "lpCalled"];
+const IN = ["noi", "sold", "interest", "borrowed", "lpCalled", "fees"];
 const OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga", "lpDistributed"];
 const bookTotals = (g) => {
   const t = {};

@@ -86,13 +86,16 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels: P0, bbls, adjacency } = loadCity(0, E.normalizeParcels);
 const SEEDS = (process.env.SEEDS ?? "9401,9402,9403").split(",").map(Number);
 const HZ = Number(process.env.HZ ?? 180);
-const IN = ["noi", "sold", "interest", "borrowed", "lpCalled"];
+const IN = ["noi", "sold", "interest", "borrowed", "lpCalled", "fees"];
 const OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga", "lpDistributed"];
 const books = (g) => { let t = 0; for (const y of g.books ?? []) { for (const k of IN) t += y[k] ?? 0; for (const k of OUT) t -= y[k] ?? 0; } return t; };
 const deposits = (g) => { let d = 0; for (const h of Object.values(g.holdings)) for (const t of h.tenants ?? []) d += t.deposit ?? 0; return d; };
 
 let formed = 0, closed = 0, worstResid = 0, viol = 0, firstViol = null;
-for (const seed of SEEDS) {
+// One sponsor, one deal, groundbreak to wind-up. `band` pins how investors
+// read the sponsor at the closing (the terms, and the fees, lock in then).
+function play(seed, band) {
+  let lastRec = null, lastG = null;
   const parcels = JSON.parse(JSON.stringify(P0));
   let g = E.firstListings(E.newGame(seed, parcels, 1_000_000), parcels, bbls);
   let lot = null, prev = null, formedAt = null, soldListed = false;
@@ -127,6 +130,7 @@ for (const seed of SEEDS) {
           const need = p ? E.devFundingNeed(p).whole : Infinity;
           const outside = E.maxOutside(g1, need, land);
           const nw0 = E.netWorth(g1, parcels), c0 = g1.cash;
+          if (band) g1.reputation = { band, score: 30, rank: 1, of: 30, m: g1.month };
           const rr = p ? E.startDevelopment(g1, parcels, b, pick.u, pick.f, 0.6, "gmp", undefined, { syndicate: { outside } }) : { err: "no plan" };
           if (!rr.err) {
             g = rr.s; lot = b;
@@ -180,6 +184,26 @@ for (const seed of SEEDS) {
     const w = g.syndications?.[lot];
     console.log(`  still live at m${g.month}: investors in ${M(w?.lpCalled ?? 0)}, paid ${M(w?.lpDist ?? 0)}`);
   }
+  return { g, lot, rec: (g.synClosed ?? []).find((x) => x.bbl === lot) };
+}
+for (const seed of SEEDS) play(seed);
+
+// ── C. A PROVEN SPONSOR'S DEAL PAYS FEES ────────────────────────────────────
+// A sponsor investors read as Proven raises on Proven terms — a 9% pref, 20%
+// and 30% promote tiers — and charges a 3% development fee and a 1% asset-
+// management fee. The fees are a cost to the deal its investors fund their
+// share of, and income to the sponsor; the cash identity above holds through it.
+console.log("\nC. a Proven sponsor's deal, with fees");
+{
+  const formedBefore = formed;
+  const { g, lot, rec } = play(9401, "Proven");
+  const w = rec ? null : g.syndications?.[lot];
+  const fees = (g.books ?? []).reduce((a, y) => a + (y.fees ?? 0), 0);
+  const terms = rec ? null : w;
+  console.log(`  fee income booked ${M(fees)}${rec ? ` · investors in ${M(rec.lpIn)}, out ${M(rec.lpOut)}` : ""}`);
+  ok(formed > formedBefore, "the Proven sponsor broke ground with outside equity");
+  ok(fees > 0, "the deal paid its sponsor fees");
+  ok(!terms || terms.hurdles[0] === 0.09, "on Proven terms");
 }
 console.log();
 ok(formed >= 2, `a syndicate formed on ${formed} of ${SEEDS.length} seeds`);

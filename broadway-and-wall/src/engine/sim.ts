@@ -1044,6 +1044,9 @@ function tickMonth(
     // Carried interest received this year — the sponsor's own income.
     taxable += s.promoteIncomeYr ?? 0;
     s.promoteIncomeYr = 0;
+    // Fees from the sponsor's own syndicates — earned income (syndicate.ts).
+    taxable += s.feeIncomeYr ?? 0;
+    s.feeIncomeYr = 0;
     // Deposit interest is ordinary income — the money fund sends a 1099. It
     // was invisible to the taxman when the deposit paid a flat 1%; now that
     // the sweep reads the policy rate, the after-tax yield is the honest one:

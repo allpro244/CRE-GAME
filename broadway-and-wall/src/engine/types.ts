@@ -1859,6 +1859,8 @@ export interface Econ {
     gap1?: number;
     /** the persistent demand shock (confidence, spending waves) */
     demShock?: number;
+    /** the term spread, smoothed over a year — the banks' lending margin */
+    curveSm?: number;
     /** ex-ante real policy rate, the last 13 months — the demand equation reads the lagged year */
     rHist?: number[];
     /** what the corporate sector pays on its debt: the fixed ladder, and the blend with floating */

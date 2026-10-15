@@ -193,9 +193,11 @@ export default function TopBar() {
     const prevOk = usablePrev(deferredGame, deferredPrev);
     const dCf = prevOk && parcels ? cf - firmCf(prevOk) : null;
     const dCfSince = prevOk ? prevOk.month : null;
-    const rateThen = hist.length > 12 ? hist[hist.length - 13]?.indexRate : undefined;
-    const dRateBp = rateThen === undefined ? null
-      : Math.round((deferredGame.econ.indexRate - rateThen) * 100);
+    // the policy rate against a year ago; history from before it was recorded has none
+    const rateThen = hist.length > 12 ? hist[hist.length - 13]?.policy : undefined;
+    const policyNow = deferredGame.econ.nat?.policy;
+    const dRateBp = rateThen === undefined || policyNow === undefined ? null
+      : Math.round((policyNow - rateThen) * 100);
     // YOUR PLACE ON THE STREET, always in sight. It was two tabs deep on
     // Research, which is to say the one number that says who is winning was
     // the one the player never saw. Same ranking the league table prints.
@@ -533,15 +535,14 @@ export default function TopBar() {
             <span className="vital-pair">
               <Stat
                 label="Market"
-                // BOTH RATES. Fixed loans price off the loan index; floating
-                // loans and the line price off the short index, and only the
-                // first was shown — so a floating loan tracking the short
-                // index looked frozen next to it, and in a steep curve looked
-                // "under the market".
-                value={`${pct(game.econ.indexRate)} fixed · ${pct(game.econ.shortIndex ?? game.econ.indexRate)} fl · ${game.econ.phase}`}
+                // THE POLICY RATE — the central bank's own number, this game's
+                // federal funds rate. Every loan prices off it through one of
+                // two indexes (fixed off the loan index, floating and the line
+                // off the short index); both are on hover, and on the Economy page.
+                value={`Fed ${pct(game.econ.nat?.policy ?? game.econ.indexRate)} · ${game.econ.phase}`}
                 bad={vacDpp !== null && vacDpp >= 2}
                 drop={1}
-                w={210}
+                w={150}
                 onClick={() => setPage("economy")}
                 delta={dRateBp !== null ? (
                   <DeltaChip
@@ -549,11 +550,11 @@ export default function TopBar() {
                     fmt={(n) => `${Math.round(n)}bp`}
                     epsilon={4}
                     goodWhenUp={false}
-                    title="Base rate vs twelve months ago. Dearer money reprices every floating loan and every new quote, so up reads as the bad direction."
+                    title="The policy rate against twelve months ago. Dearer money reprices every floating loan and every new quote, so up reads as the bad direction."
                   />
                 ) : null}
                 title={[
-                  `City cycle: ${game.econ.phase}. Loan index ${pct(game.econ.indexRate)} — what fixed loans price off. Short index ${pct(game.econ.shortIndex ?? game.econ.indexRate)} — what floating loans price off and reprice to monthly (through the cap strike, if there is one). The gap is what the bond market expects policy to do over ten years plus the term premium, what certainty costs — and when cuts are expected the loan index sits under the short one.`,
+                  `Central bank policy rate ${pct(game.econ.nat?.policy ?? game.econ.indexRate)} — the federal funds rate. City cycle: ${game.econ.phase}. Loan index ${pct(game.econ.indexRate)} — what fixed loans price off. Short index ${pct(game.econ.shortIndex ?? game.econ.indexRate)} — what floating loans price off and reprice to monthly (through the cap strike, if there is one). The gap is what the bond market expects policy to do over ten years plus the term premium, what certainty costs — and when cuts are expected the loan index sits under the short one.`,
                   vacDpp === null
                     ? "Office vacancy change appears after the first year of tape."
                     : vacDpp >= 2

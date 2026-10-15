@@ -3,6 +3,8 @@
 //
 // Historical name `advanceQuarter` is kept as an alias: the tick has always
 // been monthly; the name was a lie that trained the wrong instinct.
+import { distressTally } from "./history";
+import { stampBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
@@ -10,7 +12,7 @@ import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParc
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { useRentableSf } from "./value";
+import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
@@ -232,6 +234,8 @@ export function newGame(
   if (setup?.firmName) { s.firm = { ...s.firm!, name: setup.firmName, short: shortFirmName(setup.firmName) }; }
   if (setup?.clock === "everything" || setup?.clock === "opportunities") s.clockStops = setup.clock;
   if (setup?.brokerStops === "never") s.brokerStops = "never";
+  // One capital market (rivals.ts): on unless the setup turned it off.
+  if (setup?.poolEntry !== false) s.poolEntry = true;
   s.econ = initEcon(s, parcels);
   // ...and the banks are sized in this town's own dollars, which the opening
   // only knows once the economy has drawn its price level.
@@ -702,6 +706,23 @@ function tickMonth(
   clawbackSlippedDeliveries(s);
   tickConstructionLeasing(s, parcels);
   if (!s.stockVintage || s.month % 12 === 0) stampStockVintage(s, parcels);
+  if (!s.econ.bandStamp || s.month % 12 === 0) stampBands(s, parcels);
+  // A FORECLOSURE WAVE IS NEWS (2026-10-15). One handback is a line on the
+  // tape; a quarter in which the desks take back a run of buildings is the
+  // story of the year, and it was arriving as the same one-line items.
+  if (s.month % 3 === 0) {
+    const q3 = distressTally(s, 3);
+    const quiet = s.month - (s.distressWaveM ?? -999) >= 12;
+    if (q3.defaults >= 5 && quiet) {
+      s.distressWaveM = s.month;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `A foreclosure wave: ${q3.defaults} buildings went back to their lenders this quarter`
+          + `${q3.firms ? `, ${q3.firms} firm${q3.firms === 1 ? "" : "s"} went under` : ""}${q3.banks ? ` and ${q3.banks} bank${q3.banks === 1 ? "" : "s"} closed` : ""}.`
+          + ` The receivers will be selling into a market with no buyers — see the distress board.`,
+      });
+    }
+  }
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
   applyReliefRule(s, parcels);
@@ -2477,24 +2498,30 @@ export function stampStockVintage(s: GameState, parcels: ParcelTable) {
  * player's empty floors. A tenant who signs with the player is one the
  * street does not get; one who leaves is a searcher again.
  */
-function playerSpace(s: GameState, parcels: ParcelTable): { occ: Record<BuiltClass, number>; sf: Record<BuiltClass, number> } {
+function playerSpace(s: GameState, parcels: ParcelTable): NonNullable<GameState["econ"]["playerNow"]> {
   const occ: Record<BuiltClass, number> = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
   const sf: Record<BuiltClass, number> = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  // ...and by quality score (TENANT_TIERS_PLAN.md), so the tenants moving up
+  // or down the scale see the street's empty floors and yours together.
+  const z = () => ({ sf: new Array(N_BANDS).fill(0) as number[], occ: new Array(N_BANDS).fill(0) as number[] });
+  const band: Record<BuiltClass, { sf: number[]; occ: number[] }> = { office: z(), retail: z(), multifamily: z(), industrial: z() };
   for (const h of Object.values(s.holdings)) {
     if (s.developments[h.bbl]) continue;
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec || !(rec.bldgArea > 0)) continue;
+    const bOf = (k: BuiltClass) => Math.min(N_BANDS - 1, Math.floor(overallScore(rec, s.econ, k, h.condIdx) / 10));
     for (const k of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
       const r = useRentableSf(rec, k);
       if (!(r > 0)) continue;
-      sf[k] += r;
-      if (k === "multifamily") occ[k] += r * Math.max(0, Math.min(1, h.occ ?? 0));
+      const bi = bOf(k);
+      sf[k] += r; band[k].sf[bi] += r;
+      if (k === "multifamily") { const o = r * Math.max(0, Math.min(1, h.occ ?? 0)); occ[k] += o; band[k].occ[bi] += o; }
     }
     for (const t of h.tenants) {
       const k = (t.use ?? rec.class) as BuiltClass;
       if (k === "multifamily" || !(k in occ)) continue;
-      occ[k] += Math.max(0, t.sf);
+      occ[k] += Math.max(0, t.sf); band[k].occ[bOf(k)] += Math.max(0, t.sf);
     }
   }
-  return { occ, sf };
+  return { occ, sf, band };
 }

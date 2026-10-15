@@ -1,6 +1,7 @@
 // The market: mean-reverting rate walk, rate-linked cap rates, cyclical
 // rents, and a phase machine whose turns are rumored before they land.
 // Randomness creates situations, never verdicts.
+import { tickBands } from "./bands";
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
@@ -4942,6 +4943,8 @@ export function tickEcon(s: GameState) {
         ? clamp(1 - Math.max(0, e.occupied[k] - pOcc) / streetSf, 0, 0.45)
         : e.cityVac[k];
     }
+    // ...and the street by quality (bands.ts): which of its floors the vacancy is in.
+    tickBands(e, k);
     // New deliveries age out of lease-up on the same clock a vacated suite
     // does. No draw: the months are a property of the use, already named.
     e.darkSf[k] = Math.max(0, (e.darkSf[k] ?? 0) * (1 - 1 / Math.max(1, reletMonths(k))));

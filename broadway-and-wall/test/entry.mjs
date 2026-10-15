@@ -21,7 +21,7 @@ export const MODULES = [
   // absorption carries staleDiscount and leasingOdds — how an owner's ask falls
   // on space that will not let, which the harness bots have to read rather than
   // guess at. space carries the submarket roll-up.
-  "absorption", "space",
+  "absorption", "space", "bands",
   // blackswans: the rare city-dating events (fire, surge, capital wave).
   "blackswans",
   // plates is floorplate inventory — stacks, vacant blocks, size draws.

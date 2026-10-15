@@ -23,6 +23,8 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locO
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
+import { overallScore } from "./value";
+import { drawTenantQuality, tenantQualityTerms } from "./bands";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve, drawLineInPlace, parkedOnLine } from "./credit";
 import { drawLeaseUpReserve, leaseUpRoom } from "./debt";
 import { fundReserve } from "./fund";
@@ -30,7 +32,7 @@ import { partnerFunds } from "./jv";
 import { recordPropertyEvent, noteTenantMove } from "./history";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
-import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
+import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, sizeScale, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 import { money } from "./money";
 import { purseOf } from "./vehicles";
 
@@ -760,7 +762,7 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
         // leg IS the suite.
         sf = Math.round(Math.min(legSf, floorSf));
       } else {
-        sf = drawTenantSf(s, use, stack.plateSf, free);
+        sf = drawTenantSf(s, use, stack.plateSf, free, sizeScale(overallScore(rec, s.econ, use)));
         if (sf > free + 0.5) {
           if (rng(s, "leasing") < free / sf) sf = Math.round(free);
           else break;
@@ -2134,7 +2136,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // inherited rolls use (office median 5k / p95 one large plate).
         drawRequirementSf(s, use);
         const plate = stackForUse(rec, use)?.plateSf ?? legVac;
-        const want = Math.min(legVac, poolSf, drawTenantSf(s, use, plate, Math.min(legVac, poolSf)));
+        const want = Math.min(legVac, poolSf, drawTenantSf(s, use, plate, Math.min(legVac, poolSf), sizeScale(overallScore(rec, s.econ, use, h.condIdx ?? initialCondIdx(rec, s.month)))));
         if (want < minLettableSf(rec, use)) continue;
         const fit = matchBlock(rec, h, use, want);
         if (!fit) continue;
@@ -2178,6 +2180,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const nTour = 1 + (rng(s, "leasing") < pTwo ? 1 : 0) + (rng(s, "leasing") < pTwo * 0.45 ? 1 : 0);
         const tourId = s.nextTourId ?? 1;
         s.nextTourId = tourId + 1;
+        const bCond = h.condIdx ?? initialCondIdx(rec, s.month);
+        const bScore = overallScore(rec, s.econ, use, bCond);
         for (let k = 0; k < nTour; k++) {
         // THREE SHAPES, and the whole trade-off lives in the difference between
         // them. k=0 is what the market sent. k=1 is THE COVENANT: better
@@ -2188,11 +2192,18 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // a mark on the building tomorrow. Both of those are already priced by
         // rollQualitySpread. The choice was simply never offered.
         const sector = pickSector(s, use);
+        // WHO IS TOURING (TENANT_TIERS_PLAN.md): the quality this tenant is
+        // shopping for, drawn from the movers this building draws at its
+        // price — tenants stretching up to it when it is cheap for what it is,
+        // tenants settling for it when better space is dear.
+        const tQ = drawTenantQuality(s.econ, use, bScore, rng(s, "leasing"), rng(s, "leasing"));
+        const tt = tenantQualityTerms(tQ, bScore);
         const drawnCredit = rollCredit(s, demandLinear(rec.demandScore), buildingScore(rec, h, s).score);
-        const credit: Credit = k === 1 ? (Math.min(2, drawnCredit + 1) as Credit)
+        const credit0: Credit = k === 1 ? (Math.min(2, drawnCredit + 1) as Credit)
           : k === 2 ? 0 : drawnCredit;
-        const rentBias = k === 1 ? rrange(s, 0.86, 0.95, "leasing") : k === 2 ? rrange(s, 1.04, 1.16, "leasing") : 1;
-        const termBias = k === 1 ? 1.35 : k === 2 ? 0.6 : 1;
+        const credit = Math.max(0, Math.min(2, credit0 + tt.credit)) as Credit;
+        const rentBias = (k === 1 ? rrange(s, 0.86, 0.95, "leasing") : k === 2 ? rrange(s, 1.04, 1.16, "leasing") : 1) * tt.rent;
+        const termBias = (k === 1 ? 1.35 : k === 2 ? 0.6 : 1) * tt.term;
         // term first: the free-rent ask is a function of how long they sign for
         const band = termBandM(credit);
         const termM = Math.round(
@@ -2212,6 +2223,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           bbl: h.bbl,
           use,
           kind: "new",
+          quality: Math.round(tQ),
           name: pickName(s, sector),
           sector,
           credit,
@@ -2270,7 +2282,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // demising, make-ready and spec suites already do; it did not, and
           // across a long game the allowance shrank against rents for no
           // reason but inflation.
-          tiPsf: Math.round(rrange(s, tiLo, tiHi, "leasing") * (termM / 12) * tiPressure(concession)
+          tiPsf: Math.round(rrange(s, tiLo, tiHi, "leasing") * (termM / 12) * tiPressure(concession) * tt.ti
             * tiCreditMult(credit) * (specLive ? 0.12 : 1)
             * ((1 - shell) * clamp01((bid - 0.85) / 0.15)
               + shell * (1 + (FIRST_GEN_TI_MULT - 1) * clamp01((bid - 0.85) / 0.15)))),
@@ -4725,7 +4737,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     const deposit = depositFor(s, l.rentPsf, sf, l.credit);
     moveDeposit(s, h, deposit);
     const signed: Tenant = {
-      name: l.name, use, sector: l.sector, credit: l.credit,
+      name: l.name, use, sector: l.sector, credit: l.credit, ...(l.quality !== undefined ? { quality: l.quality } : {}),
       sf, rentPsf: l.rentPsf, bumpPct: bumpOf(l), net: l.net,
       recovery: l.recovery ?? (l.net ? "nnn" : "gross"),
       baseStopPsf: +stopPsfNow(rec, s.econ, h, use).toFixed(2),

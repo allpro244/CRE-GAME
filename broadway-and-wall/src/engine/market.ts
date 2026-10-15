@@ -1256,6 +1256,12 @@ const PARTICIPATION = 0.58;
 const OPENING_UNEMP = 0.052;
 /** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay. */
 const NAT_U_STAR = 0.048;
+/** How far below zero the price level can fall a year, asymptotically (pay is not cut). */
+const DEFLATION_FLOOR = 0.02;
+/** Monthly demand from unconventional policy per point the rule sits under the floor. */
+const LB_TOOLS = 0.00015;
+/** Retail spending lost per point of real money over neutral (household credit channel). */
+const HH_CREDIT_PER_PT = 0.015;
 /** Monthly restatement of Rudebusch-Svensson (1999): roots 0.951 and 0.670. */
 const IS_PHI1 = 1.621, IS_PHI2 = -0.637;
 /** Real-rate pull per month; with IS_CORP, a long-run 0.9 points of output per point. */
@@ -1267,7 +1273,7 @@ const IS_CREDIT = 0.0008;
  * AR(1) at 0.82 a month), not white noise: monthly white noise dated a
  * shallow "recession" every three years out of nothing.
  */
-const IS_NOISE = 0.00042, DEM_PERSIST = 0.82;
+const IS_NOISE = 0.00037, DEM_PERSIST = 0.82;
 /** A falling economy feeds on itself a little (layoffs cut spending); amplifies declines only. */
 const ACCEL = 0.05;
 /** Share of corporate debt that floats, and the fixed ladder's average life in months. */
@@ -1918,7 +1924,11 @@ const INDEX_HORIZON_M = 120;
  * are because it has lived through them: model-consistent expectations, not
  * a chosen speed.
  */
-const RULE_GAP_RHO = 0.974;
+// RE-MEASURED 2026-10-15 on the simulated national economy (20 centuries,
+// tools in the session notes): autocorrelation 0.76 at a year, 0.05 at
+// three, negative by five — cycles turn faster than the drawn model's did
+// (0.974 was fitted on that one).
+const RULE_GAP_RHO = 0.9445;
 
 /**
  * WHAT THE BOND MARKET THINKS POLICY WILL AVERAGE over the index's life.
@@ -2271,6 +2281,12 @@ export function tickNation(s: GameState) {
     + IS_CREDIT * ((n.creditNat ?? 1) - 1)
     - 0.004 * (e.panic?.force ?? 0)
     + shockImpulse
+    // THE OTHER TOOLS. A bank at its floor whose rule wants far lower does not
+    // sit still and neither does the government: asset purchases, forward
+    // guidance and fiscal stimulus (2009-14, Japan after 2013) push demand
+    // where the rate cannot. Per point the rule sits under the floor, about a
+    // point of output in the long run, at most five.
+    + (n.policy <= 0.5 ? LB_TOOLS * Math.min(5, Math.max(0, n.policy - (n.ruleRate ?? n.policy) - 1)) : 0)
     + (n.demShock = DEM_PERSIST * (n.demShock ?? 0) + IS_NOISE * zDem)
     // Falling output feeds on itself for a while: layoffs cut spending, firms
     // pull investment, lenders pull lines. Amplifies a decline, not a rise.
@@ -2300,7 +2316,13 @@ export function tickNation(s: GameState) {
   }
 
   // Okun's law, with the labour market's own asymmetry.
-  const uTarget = NAT_U_STAR - n.gap / OKUN;
+  // ...WHICH BENDS AT THE BOTTOM. A boom cannot hire people who are not
+  // there: past ~3.5% the remaining unemployed are between jobs, and the
+  // post-war lows were 2.5% (1953) and 3.4-3.5% (1969, 2000, 2019). Below
+  // 3.5% Okun's level approaches 2.5% and never passes it; the excess demand
+  // goes into pay and prices instead (the Phillips curve already sees it).
+  const okunRaw = NAT_U_STAR - n.gap / OKUN;
+  const uTarget = okunRaw >= 0.035 ? okunRaw : 0.025 + 0.01 * Math.exp((okunRaw - 0.035) / 0.01);
   const uMove = (uTarget - n.unemp) * (uTarget > n.unemp ? U_UP_SPEED : U_DOWN_SPEED);
   n.unemp = clamp(n.unemp + uMove
     + (shock > 0.02 && !((n.pressureM ?? 0) > 0) ? 0.0003 : 0) + rrange(s, -0.0004, 0.0004, "nation"), 0, 1);
@@ -2382,8 +2404,18 @@ export function tickNation(s: GameState) {
   // at -1%. Deflation stays possible; a spiral at full employment does not.
   const down = Math.min(0, phillips) + Math.min(0, easy);
   const bend = n.infl >= 0.01 ? 1 : Math.exp((n.infl - 0.01) / 0.01);
-  n.infl = clamp(n.inflExp + (phillips - Math.min(0, phillips)) + (easy - Math.min(0, easy)) + down * bend
-    + shock + rrange(s, -0.004, 0.004, "nation"), -Infinity, Infinity);
+  const inflRaw = n.inflExp + (phillips - Math.min(0, phillips)) + (easy - Math.min(0, easy)) + down * bend
+    + shock + rrange(s, -0.004, 0.004, "nation");
+  // PRICES FOLLOW PAY, AND PAY IS NOT CUT (2026-10-15). With the bank's word
+  // gone, expectations could follow realised deflation down without limit: one
+  // measured century ran -6%/yr for a decade at 7-8% unemployment while
+  // nominal pay sat frozen (downward rigidity), so real pay rose 75% in a
+  // slump. Post-war deflations under fiat money were shallow — Japan
+  // 1998-2012 about -0.3%/yr, the US 2009 -0.4%, Hong Kong 1999-2003 about
+  // -2% at worst — because the largest cost in every price is a wage that is
+  // not cut. Below zero the price level falls toward a soft floor near -2%:
+  // deflation stays possible, a spiral does not.
+  n.infl = inflRaw >= 0 ? inflRaw : -DEFLATION_FLOOR * (1 - Math.exp(inflRaw / DEFLATION_FLOOR));
 
   // EXPECTATIONS UNANCHOR WHEN THE BANK IS NOT BELIEVED — and that is what
   // makes an inflation a decade rather than a year. Credibility is spent in
@@ -4919,8 +4951,22 @@ export function tickEcon(s: GameState) {
       const raw = 1 + TENURE_PER_PT * ((e.indexRate ?? ref) - ref);
       e.tenureIdx = (e.tenureIdx ?? 1) + (raw - (e.tenureIdx ?? 1)) / 36;
     }
+    // HOUSEHOLDS BORROW TO SHOP (2026-10-15). Cars, furniture, appliances and
+    // a good deal of everything else go on credit, so dear money cuts what
+    // households spend on goods before it costs anyone a job: durables fall
+    // roughly 3-5% per point of real rates and they are about a third of
+    // store sales, so ~1.5% of retail spending per point held over neutral
+    // (Mishkin 1976; Bernanke & Gertler 1995's household credit channel).
+    // Read against the town's opening, rolled over a year as card and auto
+    // rates reprice.
+    if (k === "retail") {
+      const pts = firmBookInputs(e).ratePts;
+      const raw = Math.exp(-HH_CREDIT_PER_PT * pts);
+      const ref = (e.hhCreditRef ??= raw);
+      e.hhCredit = (e.hhCredit ?? 1) + (raw / ref - (e.hhCredit ?? 1)) / 12;
+    }
     const driver = (k === "multifamily" ? hhIdx * (e.tenureIdx ?? 1)
-      : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32)
+      : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32) * (e.hhCredit ?? 1)
       : jobIdx * tradeMix) * secIdx;
     // A CLASS'S MOMENTUM IS ITS TENANTS' GROWTH AGAINST NORMAL. Monthly growth
     // of the driver less its own five-year average, smoothed over six months,
@@ -5070,6 +5116,28 @@ export function tickEcon(s: GameState) {
       else e.occupied[k] = Math.max(0, e.occupied[k] + pNow
         - (e.playerNow?.sf?.[k] ?? 0) * (e.occupied[k] / Math.max(1, e.stock[k])));
       (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;
+    }
+    // STREET TENANTS FAIL TOO (2026-10-15). The trades' books (tickFirmBook)
+    // say what share of each trade's firms went under this month. Above the
+    // ordinary background — which the market's churn already carries — those
+    // tenants stop paying and hand their space back at once, in everyone's
+    // buildings, not only the player's (whose tenants carry their own books).
+    // They are gone as demand too, so the pool loses them with the floors.
+    {
+      const secs = SECTOR_CLASSES[k] ?? [];
+      let wSum = 0, excess = 0;
+      for (const sec of secs) {
+        const w = e.sectorShare?.[sec] ?? 1 / SECTORS.length;
+        wSum += w;
+        excess += w * Math.max(0, (e.firmBooks?.[sec]?.fail ?? FIRM_FAIL_BASE) - FIRM_FAIL_BASE);
+      }
+      if (wSum > 0 && excess > 0) {
+        const street = Math.max(0, e.occupied[k] - (pNow ?? 0));
+        const shed = street * excess / wSum;
+        e.occupied[k] -= shed;
+        e.pool[k] = Math.max(0, e.pool[k] - shed);
+        (e.failedSf ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] += shed;
+      }
     }
     const gapSf = e.pool[k] - e.occupied[k];
     const absorb = clamp(gapSf / (gapSf > 0 ? MOVE_IN_M[k] : MOVE_OUT_M[k]), -0.03 * e.occupied[k], 0.03 * e.occupied[k])

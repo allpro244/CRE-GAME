@@ -69,3 +69,9 @@ declare module "@/citygen/index.mjs" {
   /** Fixed reference seed for harnesses and BASELINE.json. */
   export const REFERENCE_SEED: number;
 }
+
+declare module "@/citygen/platPreview.mjs" {
+  import type { GeneratedCity } from "@/citygen/index.mjs";
+  /** The town as a plat drawing for the setup screen: an SVG string, `w` px wide. */
+  export function platPreviewSVG(city: GeneratedCity, w?: number): { svg: string; lots: number; name: string };
+}

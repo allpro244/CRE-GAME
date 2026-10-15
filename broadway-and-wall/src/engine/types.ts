@@ -72,6 +72,8 @@ export const CREDIT_LABEL = ["C", "B", "A"];
 
 export interface Tenant {
   name: string;
+  /** The quality the tenant shopped for, 1-100 (TENANT_TIERS_PLAN.md). */
+  quality?: number;
   // Which part of the building they are in. A shop under a block of flats is
   // a retail lease in a retail market, not a "mixed-use" lease.
   use?: BuiltClass;
@@ -197,6 +199,8 @@ export interface LOI {
    */
   kind: "new" | "renewal" | "expansion";
   name: string;
+  /** The quality the tenant is shopping for, 1-100, on the same scale as `overallScore` (TENANT_TIERS_PLAN.md). Absent on letters written before it. */
+  quality?: number;
   sector: Sector;
   credit: Credit;
   sf: number;
@@ -2349,9 +2353,21 @@ export interface Econ {
   /** The player's own occupied sf by class, as last reconciled into `occupied` — see playerSpace in sim.ts. */
   playerOcc?: Record<BuiltClass, number>;
   /** This month's count, set before tickEcon: occupied and rentable sf in the player's standing buildings. */
-  playerNow?: { occ: Record<BuiltClass, number>; sf: Record<BuiltClass, number> };
+  playerNow?: { occ: Record<BuiltClass, number>; sf: Record<BuiltClass, number>; band?: Record<BuiltClass, { sf: number[]; occ: number[] }> };
   /** Vacancy of the space the player does not own — what the market reads a building it does not own against (market.ts). */
   streetVac?: Record<BuiltClass, number>;
+  /**
+   * THE STREET'S SPACE MARKET BY QUALITY SCORE (TENANT_TIERS_PLAN.md), in ten
+   * ten-point bands of `overallScore`: stock and occupied (summing to the
+   * street's), the market's rent swing in each band, and `prem` — the band's
+   * own average static rent premium (location, plate, condition, spec) over
+   * the class, measured off its buildings once a year. Bookkeeping: tenants
+   * and buildings carry exact scores and every reader interpolates.
+   */
+  bands?: Record<BuiltClass, { stock: number[]; occ: number[]; rent: number[]; prem: number[]; m?: number }>;
+  /** Each band's share of the street's stock, and its static premium, measured off the buildings once a year. */
+  bandStamp?: Record<BuiltClass, { share: number[]; prem: number[]; mean?: number }>;
+  tierCtx?: { month: number; vintage: Partial<Record<BuiltClass, number>> };
   /**
    * New floor that has been delivered but is not yet a suite — marketing,
    * demise, fit-out. Occupied cannot eat it and the looking pool cannot
@@ -3506,6 +3522,8 @@ export interface GameState {
    * without being handed the parcel table. BUILD_CLASS_PLAN.md.
    */
   stockVintage?: Partial<Record<BuiltClass, number>>;
+  /** Month the last foreclosure-wave headline ran (sim.ts) — one a year at most. */
+  distressWaveM?: number;
   /**
    * WHAT THE BOARD SAID, and when.
    *

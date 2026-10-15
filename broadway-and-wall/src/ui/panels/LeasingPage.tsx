@@ -597,7 +597,7 @@ export function LeasingPage() {
                     <td>
                       <div>{t.name}</div>
                       <div className="dim" style={{ fontSize: 11 }}>
-                        {t.sector} · {CREDIT_LABEL[t.credit]} · {recov === "nnn" ? "NNN" : recov === "base" ? "base yr" : "gross"}
+                        {t.sector}{t.quality !== undefined ? ` · q${t.quality}` : ""} · {CREDIT_LABEL[t.credit]} · {recov === "nnn" ? "NNN" : recov === "base" ? "base yr" : "gross"}
                         {recov === "base" ? ` · stop $${(t.baseStopPsf ?? 0).toFixed(2)}` : ""}
                       </div>
                     </td>

@@ -96,3 +96,21 @@ export function describePropertyEvent(e: PropertyEvent): { when: string; title: 
       return { when, title: "Planning decision", detail: e.outcome ?? "The legal envelope changed." };
   }
 }
+
+/**
+ * THE STREET'S DISTRESS OVER A WINDOW (2026-10-15). The distress board showed
+ * only the moment — who is behind today, which receiver is selling today —
+ * so a year in which a hundred buildings went back to their lenders left no
+ * trace once the sales had cleared, and the owner's read of a 20%-rate glut
+ * was "nothing happened". This is the tally behind it: buildings that went
+ * back to a lender (deed in lieu or foreclosure, `default` in the property
+ * log), firms that went under, banks that closed.
+ */
+export function distressTally(s: GameState, months = 12): { defaults: number; firms: number; banks: number } {
+  const since = s.month - months;
+  let defaults = 0;
+  for (const log of Object.values(s.propertyLog ?? {})) for (const e of log) if (e.kind === "default" && e.m > since) defaults++;
+  const firms = (s.rivals ?? []).filter((r) => r.failedM !== undefined && r.failedM > since && r.endReason === "failed").length;
+  const banks = (s.bankFails ?? []).filter((b) => b.m > since).length;
+  return { defaults, firms, banks };
+}

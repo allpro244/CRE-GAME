@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
+import { distressTally } from "@/engine/history";
 import { resolveRec, netWorth, portfolioMark } from "@/engine/value";
 import { marketAppetite, markRival, rivalCondition, firmEntryPitch } from "@/engine/rivals";
 import { ownerById } from "@/engine/ownership";
@@ -164,9 +165,13 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
         const weakDesks = (game.lenders ?? []).filter((l) => l.failedM === undefined && l.kind !== "conduit"
           && l.book > 0 && l.capital / l.book < targetCapital(l.name) * 0.8);
         const receiverSales = (game.listings ?? []).filter((l) => l.reason === "receiver" || l.receiverFor);
-        const n = stressed.length + weakDesks.length + receiverSales.length;
+        const yr = distressTally(game, 12);
+        const n = stressed.length + weakDesks.length + receiverSales.length + yr.defaults + yr.firms + yr.banks;
         return (
           <Fold id="competitors:distress" title="Distress board" summary={n ? `${stressed.length} firm${stressed.length === 1 ? "" : "s"} behind on their debt · ${weakDesks.length} lender${weakDesks.length === 1 ? "" : "s"} under target · ${receiverSales.length} receiver sale${receiverSales.length === 1 ? "" : "s"} on the market` : "Nobody in trouble today"} defaultOpen={n > 0}>
+            <Row k="The last twelve months"
+              v={`${yr.defaults} building${yr.defaults === 1 ? "" : "s"} back to the lenders · ${yr.firms} firm${yr.firms === 1 ? "" : "s"} gone under · ${yr.banks} bank${yr.banks === 1 ? "" : "s"} closed`}
+              bad={yr.defaults + yr.firms + yr.banks > 0} />
             {stressed.map((r) => (
               <Row key={r.id} k={r.name}
                 v={`${r.stressMs} month${r.stressMs === 1 ? "" : "s"} behind · ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}`

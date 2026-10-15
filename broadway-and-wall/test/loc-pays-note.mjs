@@ -72,7 +72,10 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   // $12M or eight deeds, whichever is first — and never fewer than three, the
   // smallest pool any desk papers (two towers on one tape reached $12M alone).
   let spent = 0, bought = 0;
-  const more = () => (spent < 12_000_000 || bought < 3) && bought < 8;
+  // ...and up to fourteen deeds, not eight (2026-10-15): an opening whose
+  // largest eight built listings came to $6.7M — a $4.4M base, under the $5M
+  // floor — left the desk correctly quoting nothing.
+  const more = () => (spent < 12_000_000 || bought < 3) && bought < 14;
   for (let m = 0; m < 24 && more(); m++) {
     const built = (g.listings ?? []).filter((L) => { const rec = E.resolveRec(parcels, g, L.bbl); return rec && rec.class !== "land" && rec.bldgArea && !L.halfBuilt; })
       .sort((a, b) => b.ask - a.ask);

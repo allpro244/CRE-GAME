@@ -2110,6 +2110,7 @@ export function startDevelopment(
     }
   }
   next.developments[bbl] = {
+    landMark: Math.round(ownedHoldingValue(s, parcels, s.holdings[bbl])),
     spec: plan.spec,
     bbl, use, mix: plan.mix, sf: plan.sf, floors: plan.floors,
     coverage: plan.coverage,

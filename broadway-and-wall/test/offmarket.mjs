@@ -40,7 +40,12 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 // What a firm will pay: nothing for a class its style does not buy.
 {
   const g = E.firstListings(E.newGame(4242, parcels), parcels, bbls);
-  const merchant = (g.rivals ?? []).find((r) => r.style === "merchant") ?? { id: "x", style: "merchant", cash: 1e7, bbls: [], debt: 0 };
+  // On the style table a merchant buys dirt only. A firm with a trait sheet
+  // reads its classes off the sheet instead (COMPETITORS_PLAN.md §2), and a
+  // merchant-profile sheet may rate offices well — so the style rule is read
+  // on a firm without one.
+  const m0 = (g.rivals ?? []).find((r) => r.style === "merchant");
+  const merchant = m0 ? { ...m0, sheet: undefined, rules: undefined, quirks: undefined } : { id: "x", style: "merchant", cash: 1e7, bbls: [], debt: 0 };
   const shop = bbls.map((b) => E.resolveRec(parcels, g, b)).find((r) => r && r.class === "office" && r.bldgArea > 0);
   ok("a merchant builder pays nothing for a standing office", E.firmMaxPrice(g, merchant, shop) === 0);
   const core = (g.rivals ?? []).find((r) => r.style === "core" || r.style === "reit");

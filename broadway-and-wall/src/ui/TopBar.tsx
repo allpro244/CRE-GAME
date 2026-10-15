@@ -454,14 +454,14 @@ export default function TopBar() {
                 normal screen. Vitals stay up. */}
             {standing && (
               <Stat
-                label="Rank"
+                label="Size rank"
                 value={`${ordinal(standing.rank)} / ${standing.of}`}
                 delta={dRank !== 0 ? <span className={"tstat-rank " + (dRank > 0 ? "up" : "down")}>{dRank > 0 ? `▲${dRank}` : `▼${-dRank}`}</span> : null}
                 drop={3}
                 w={72}
                 bad={dRank < 0}
                 title={standing.above
-                  ? `${ordinal(standing.rank)} of ${standing.of} firms by equity. Next up: ${standing.above.name} at ${usd(standing.above.eq)} — ${usd(standing.above.eq - standing.equity)} ahead. The biggest book is ${standing.leader.name} at ${usd(standing.leader.eq)}. Click for the league table.`
+                  ? `${ordinal(standing.rank)} of ${standing.of} firms by equity — how big you are. How investors rank your record is on the Capital page. Next up: ${standing.above.name} at ${usd(standing.above.eq)} — ${usd(standing.above.eq - standing.equity)} ahead. The biggest book is ${standing.leader.name} at ${usd(standing.leader.eq)}. Click for the league table.`
                   : `The biggest book in town, of ${standing.of} firms. Click for the league table.`}
                 onClick={() => { openViewOn("players", "street"); useStore.getState().setPage("players"); }}
               />

@@ -34,11 +34,11 @@ export function SyndicateDesk() {
       <div className="hint">
         Investors read your realised record against what each deal was underwritten to return, and rank you against every
         firm on the street. The band they act on is the lower of your rank's and your score's. Deals done with your own money
-        count at 90%; one good deal is luck, a record is many; a miss lands in full the day it is realised.
+        count at 90%; one good deal is luck, a record is many; a miss lands in full the day it is realised. This rank is your record, not your size — the rank in the top bar is by equity.
       </div>
       <div className="grid">
         <Row k="Band" v={`${terms.band}${pending ? ` · ${pending} next quarter if it holds` : ""}`} strong />
-        <Row k="Rank" v={`#${rep.rank} of ${rep.of}${rep.rank === 1 ? " · the top of the street" : rep.rank === rep.of ? " · the bottom of the street" : ` · ahead of ${rep.percentile}% of the street`}`} />
+        <Row k="Investor rank" v={`#${rep.rank} of ${rep.of}${rep.rank === 1 ? " · the top of the street" : rep.rank === rep.of ? " · the bottom of the street" : ` · ahead of ${rep.percentile}% of the street`}`} />
         <Row k="Track-record score" v={`${rep.score.toFixed(1)} · experience ${rep.n.toFixed(1)} from ${rep.deals} good deal${rep.deals === 1 ? "" : "s"}`} bad={rep.score < 0} />
         <Row k="Their terms today" v={termsLine(terms)} />
         <Row k="Outside equity per $1 of yours" v={terms.perOwn > 0 ? `up to $${terms.perOwn}` : "none — nobody will invest"} bad={!(terms.perOwn > 0)} />

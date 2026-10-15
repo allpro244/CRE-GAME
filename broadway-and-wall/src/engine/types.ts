@@ -847,6 +847,13 @@ export interface BtsCommitment {
 export interface Development {
   bbl: string;
   /**
+   * THE SITE'S MARK THE DAY GROUND BROKE (value.ts ownedHoldingValueFromRec):
+   * the land under a ground-up job carries at this until the building stands,
+   * so breaking ground neither marks the dirt up to what was paid for it nor
+   * down — it holds still, as the cost-carry intends, from where it was.
+   */
+  landMark?: number;
+  /**
    * HOW THE CONSTRUCTION LOAN COMES OUT THE OTHER END (MDGA phase 5). The
    * takeout rolls into a floating mini-perm; bought at the groundbreak, a
    * `cap` carries into it (index capped at `strike` until `expiresM`) and a

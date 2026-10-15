@@ -61,6 +61,11 @@ console.log("\nOn (the default): every builder is a firm");
   ok(owned.length > 0, `builder firms take the deed to what they build (${owned.length} buildings)`);
   ok(live.every((r) => r.endReason !== "woundUp"), "a builder between schemes is not wound up as a husk");
   ok(!(g.builders ?? []).some((b) => b.starts > 0), "the old register starts nothing");
+  // The street's own reads count investors and operators, not the builders:
+  // counted, they halved fund entry's product term (a seed went from 9 first
+  // closes in thirty years to 2) and kept every estate's heir seat filled.
+  const funds = g.rivals.filter((r) => r.failedM === undefined && !r.builderProf).length;
+  ok(E.firmEntryPitch(g).firms === funds, `fund entry counts the funds, not the builders (${E.firmEntryPitch(g).firms} of ${funds + live.length} firms)`);
 }
 
 console.log(fails ? "\nFAIL" : "\nPASS — the town's builders are firms on the street, and own what they build");

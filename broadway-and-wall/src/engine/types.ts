@@ -2348,6 +2348,8 @@ export interface Econ {
   playerOcc?: Record<BuiltClass, number>;
   /** This month's count, set before tickEcon: occupied and rentable sf in the player's standing buildings. */
   playerNow?: { occ: Record<BuiltClass, number>; sf: Record<BuiltClass, number> };
+  /** Vacancy of the space the player does not own — what the market reads a building it does not own against (market.ts). */
+  streetVac?: Record<BuiltClass, number>;
   /**
    * New floor that has been delivered but is not yet a suite — marketing,
    * demise, fit-out. Occupied cannot eat it and the looking pool cannot
@@ -4738,6 +4740,13 @@ export interface CityLoan {
    * row stays on the record; it is off every desk's book (loanbook.ts).
    */
   heldBy?: string;
+  /**
+   * FLOATING PAPER FLOATS (2026-10-15). The margin over the short index the
+   * desk wrote it at, and the cap the borrower bought at the closing. Absent
+   * on fixed paper. See rivalDebt.repriceFloating.
+   */
+  spread?: number;
+  cap?: { strike: number; expiresM: number };
 }
 
 export interface Workout {

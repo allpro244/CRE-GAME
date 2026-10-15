@@ -4924,6 +4924,24 @@ export function tickEcon(s: GameState) {
     e.sublet[k] = clamp(e.sublet[k], 0, e.occupied[k]);
 
     e.cityVac[k] = clamp(1 - e.occupied[k] / e.stock[k], 0, 0.45);
+    // THE STREET'S VACANCY, WHICH IS NOT THE CITY'S WHEN YOU OWN PART OF IT
+    // (2026-10-15). Every building the player does not own read the CITY
+    // rate — which counts the player's empty floors. So a player who built a
+    // million empty feet marked every incumbent in town as if it shared them,
+    // and when those floors filled by taking the incumbents' tenants, the
+    // city rate did not move and nobody else felt a thing. Measured on a
+    // town overbuilt by the player: new core towers at 22-54% leased for a
+    // decade while the street's books held 85-89%. Real overbuilding runs the
+    // other way — the new Class A fills out of the old stock and the old stock
+    // empties (Houston 1983-88, Manhattan 1990-93). The market's read on a
+    // building it does not own is the vacancy of the buildings like it.
+    {
+      const pSf = e.playerNow?.sf?.[k] ?? 0, pOcc = e.playerNow?.occ?.[k] ?? 0;
+      const streetSf = e.stock[k] - pSf;
+      (e.streetVac ??= { ...e.cityVac })[k] = streetSf > e.stock[k] * 0.05
+        ? clamp(1 - Math.max(0, e.occupied[k] - pOcc) / streetSf, 0, 0.45)
+        : e.cityVac[k];
+    }
     // New deliveries age out of lease-up on the same clock a vacated suite
     // does. No draw: the months are a property of the use, already named.
     e.darkSf[k] = Math.max(0, (e.darkSf[k] ?? 0) * (1 - 1 / Math.max(1, reletMonths(k))));
@@ -5601,7 +5619,21 @@ export function tickEcon(s: GameState) {
     // or cuts it while CPI runs, which is how real rents fall, and the
     // glut clears through cheap space being taken up (`affordEff`) and
     // through supply leaving — not through a floor under the quote.
-    const escalGate = firmW * railEscal;
+    // ONE GAP, ONE TERM (2026-10-15). This was `firmW * railEscal`: a market
+    // one point over natural passed on two-thirds of inflation, three points
+    // over none — and the same gap was already cutting rent through `vacTerm`.
+    // The gap priced twice. Measured: a town sitting 1-2 points soft (no glut
+    // at all) lost 2.5%/yr of real office rent for seventeen years, and a
+    // long glut kept bleeding the full rate of inflation every year after
+    // `capitulation` had finished repricing it (real effective -76% and
+    // still falling at year 16). The rent adjustment literature has REAL
+    // rent answer the vacancy gap (Wheaton & Torto 1988; Hendershott 1996):
+    // nominal = inflation + the gap term. So asking carries the price level
+    // and `vacTerm` alone decides whether the real rent falls — in a glut it
+    // falls hard and then sits at the bottom until the space is taken up,
+    // which is the shape of Houston 1983-90 and Manhattan 1990-96.
+    void firmW;
+    const escalGate = railEscal;
     // THE PRICE LEVEL THE RENT IS PAID IN, AS IT WAS (2026-10-08). This read
     // EXPECTED inflation, which the central bank anchors near 2%, while the
     // city's own price level ran 0.3-0.8 points a year faster (measured over

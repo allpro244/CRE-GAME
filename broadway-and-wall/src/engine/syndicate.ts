@@ -38,6 +38,8 @@ import type { GameState, Syndication } from "./types";
 import { logBooks } from "./types";
 import { accrueMonth, contribute, settlePeriod, seriesIrr, sponsorPosition, lpCapShare } from "./waterfall";
 import { resolveRec, ownedHoldingValue, cipEquity } from "./value";
+import { playerTerms } from "./reputation";
+import { openSources, investorPool, SOURCE_LABEL, type InvestorSource } from "./investors";
 
 /** The investors a first-time sponsor can call. */
 export const FF_INVESTOR = "Friends and family";
@@ -68,8 +70,36 @@ export function ffNetwork(s: GameState): { cap: number } {
 export function ffAvailable(s: GameState): number {
   const cap = s.ffNetwork?.cap ?? Math.max(0, Math.round(s.nwHistory?.[0] ?? 0));
   let committed = 0;
-  for (const w of Object.values(s.syndications ?? {})) committed += Math.max(0, w.lpCommit - w.lpDist);
+  for (const w of Object.values(s.syndications ?? {})) {
+    // Only the friends-and-family share of a deal ties up the network.
+    const ff = w.sources ? (w.sources.ff ?? 0) / Math.max(1, w.lpCommit) : 1;
+    committed += ff * Math.max(0, w.lpCommit - w.lpDist);
+  }
   return Math.max(0, cap - committed);
+}
+
+/** Everything the player could raise today: the network, and every investor pool the band opens. */
+export function outsideCapacity(s: GameState): number {
+  let t = 0;
+  for (const src of openSources(s, playerTerms(s).band, ffAvailable(s))) t += src.left;
+  return t;
+}
+
+/**
+ * Split an outside commitment across the sources that can carry it: the
+ * network first (people who know you write first), then each open pool in
+ * the band's order. For the engine's instant path; a launched raise records
+ * who actually circled (raise.ts).
+ */
+export function allocateSources(s: GameState, amount: number): Partial<Record<InvestorSource, number>> {
+  const out: Partial<Record<InvestorSource, number>> = {};
+  let rest = Math.max(0, Math.round(amount));
+  for (const src of openSources(s, playerTerms(s).band, ffAvailable(s))) {
+    const take = Math.min(rest, Math.floor(src.left));
+    if (take > 0) { out[src.id] = take; rest -= take; }
+    if (rest <= 0) break;
+  }
+  return out;
 }
 
 /**
@@ -80,10 +110,13 @@ export function ffAvailable(s: GameState): number {
  * (land plus its own cash), and by the cash need itself.
  */
 export function maxOutside(s: GameState, cashNeed: number, landEquity: number): number {
-  const perOwn = FF_MAX_OUTSIDE_PER_OWN;
+  // The ratio is the band's (reputation.ts): $1 per $1 for an Unknown
+  // sponsor, more as the record and the rank earn it, nothing for a Toxic one.
+  const perOwn = playerTerms(s).perOwn;
+  if (!(perOwn > 0)) return 0;
   // outside ≤ perOwn × (land + cashNeed − outside)
   const byRule = (perOwn * (Math.max(0, landEquity) + cashNeed)) / (1 + perOwn);
-  return Math.max(0, Math.floor(Math.min(ffAvailable(s), byRule, cashNeed)));
+  return Math.max(0, Math.floor(Math.min(outsideCapacity(s), byRule, cashNeed)));
 }
 
 /** Why this deed cannot be syndicated, or null. */
@@ -94,6 +127,7 @@ export function syndicateBar(s: GameState, bbl: string): string | null {
   if (h.jv) return "There is a partner in it already.";
   if (s.syndications?.[bbl]) return "It is syndicated already.";
   if (s.facility?.bbls.includes(bbl)) return "Pledged to your facility — release it there first.";
+  if (!(playerTerms(s).perOwn > 0)) return "Nobody will put money in a deal with you — your record with investors is toxic.";
   return null;
 }
 
@@ -103,14 +137,23 @@ export function syndicateBar(s: GameState, bbl: string): string | null {
  * the investors commit `lpCommit` of cash, called pro rata (`lpShare` of
  * every call) alongside the sponsor's own.
  */
-export function formSyndication(s: GameState, bbl: string, lpCommit: number, cashNeed: number, landEquity: number): Syndication {
+export function formSyndication(s: GameState, bbl: string, lpCommit: number, cashNeed: number, landEquity: number, sources?: Partial<Record<InvestorSource, number>>): Syndication {
   ffNetwork(s);
-  const n = FF_TERMS.hurdles.length;
+  // Who wrote the cheques, and the pools they came out of this year.
+  const src = sources ?? allocateSources(s, lpCommit);
+  const pool = investorPool(s);
+  for (const [id, v] of Object.entries(src)) if (id !== "ff" && v) pool.used[id] = (pool.used[id] ?? 0) + v;
+  const lead = (Object.entries(src) as [InvestorSource, number][]).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "ff";
+  // The terms are the sponsor's band's on the day the deal closes, and they
+  // stay with the deal: investors do not reprice a signed agreement.
+  const t = playerTerms(s);
+  const n = t.hurdles.length;
   const w: Syndication = {
-    bbl, investor: FF_INVESTOR, formedM: s.month,
+    bbl, investor: SOURCE_LABEL[lead], formedM: s.month, sources: src,
     lpShare: cashNeed > 0 ? Math.min(1, lpCommit / cashNeed) : 0,
     lpCommit: Math.round(lpCommit), lpCalled: 0, lpDist: 0, gpIn: 0, gpDist: 0,
-    hurdles: [...FF_TERMS.hurdles], promotes: [...FF_TERMS.promotes],
+    hurdles: [...t.hurdles], promotes: [...t.promotes],
+    devFee: t.devFee, amFee: t.amFee, feesPaid: 0,
     lpBal: new Array(n).fill(0), gpBal: 0, lpCap: 0, gpCap: 0,
     pending: 0, tagged: 0, settled: 0, lpFlows: [],
   };
@@ -118,6 +161,34 @@ export function formSyndication(s: GameState, bbl: string, lpCommit: number, cas
   if (land > 0) { contribute(w, 0, land); w.gpIn += land; }
   (s.syndications ??= {})[bbl] = w;
   return w;
+}
+
+/**
+ * A FEE THE DEAL PAYS ITS SPONSOR (§4.1). No cash moves when it is charged:
+ * the deal owes it (a cost booked to the deed, so it nets into the month's
+ * settlement and the investors fund their share in the call), and the
+ * sponsor earns it (fee income, taxed as the firm's own). What the
+ * investors actually pay is their share of it, through the waterfall.
+ * Mutates `s`.
+ */
+export function chargeDealFee(s: GameState, w: Syndication, fee: number): void {
+  const f = Math.round(fee);
+  if (!(f > 0)) return;
+  logBooks(s, "dev", f, w.bbl);
+  logBooks(s, "fees", f);
+  w.feesPaid = (w.feesPaid ?? 0) + f;
+  s.feeIncomeYr = (s.feeIncomeYr ?? 0) + f;
+}
+
+/**
+ * The development fee on a month's construction spend (dev.ts calls it with
+ * the month's build cost). Market: 3–5% of hard and soft cost, paid over
+ * construction (§4.1); the rate is the band's, signed into the deal.
+ */
+export function chargeDevFee(s: GameState, bbl: string, spend: number): void {
+  const w = s.syndications?.[bbl];
+  if (!w || !(w.devFee && w.devFee > 0) || !(spend > 0)) return;
+  chargeDealFee(s, w, w.devFee * spend);
 }
 
 /**
@@ -133,6 +204,10 @@ export function settleSyndications(s: GameState, parcels: ParcelTable, accrue = 
     const w = all[bbl];
     if (accrue) accrueMonth(w);
     const held = !!s.holdings[bbl];
+    // The asset-management fee: a twelfth of the band's annual rate on the
+    // investors' capital still out (called less paid back), while the deal
+    // holds its deed (§4.1; market 1–1.5% of equity a year).
+    if (accrue && held && w.amFee && w.amFee > 0) chargeDealFee(s, w, (w.amFee / 12) * Math.max(0, w.lpCalled - w.lpDist));
     if (!held && w.goneM === undefined) w.goneM = s.month;
     const r = settlePeriod(w, s.month, held);
     if (r.cash > 0) { s.cash += r.cash; logBooks(s, "lpCalled", r.cash); }
@@ -180,22 +255,25 @@ export function syndicateView(s: GameState, parcels: ParcelTable, bbl: string): 
   };
 }
 
-function closeSyndication(s: GameState, parcels: ParcelTable, w: Syndication) {
+/** Wind a deal up: record what it paid its investors, settle the network, drop the record. `recap` marks a buyout (recap.ts). */
+export function closeSyndication(s: GameState, parcels: ParcelTable, w: Syndication, recap = false) {
   const lpIn = w.lpCalled, lpOut = w.lpDist;
   (s.synClosed ??= []).push({
     bbl: w.bbl, address: resolveRec(parcels, s, w.bbl)?.address ?? w.bbl, investor: w.investor,
     formedM: w.formedM, closedM: s.month, lpIn, lpOut, lpIrr: seriesIrr(w.lpFlows),
-    gpIn: w.gpIn, gpOut: w.gpDist,
+    gpIn: w.gpIn, gpOut: w.gpDist, pitchIrr: w.pitchIrr, ...(recap ? { recap: true } : {}),
   });
   if (s.synClosed.length > 200) s.synClosed.shift();
   const net = ffNetwork(s);
-  // The network keeps what it made and loses most of who lost (see ffNetwork).
-  if (lpOut >= lpIn) net.cap += lpOut - lpIn;
-  else net.cap = Math.max(0, net.cap - Math.round(0.7 * lpIn));
+  // The network keeps what it made and loses most of who lost (see ffNetwork)
+  // — its own share of the deal, not the institutions'.
+  const ffShare = w.sources ? (w.sources.ff ?? 0) / Math.max(1, w.lpCommit) : 1;
+  if (lpOut >= lpIn) net.cap += Math.round(ffShare * (lpOut - lpIn));
+  else net.cap = Math.max(0, net.cap - Math.round(0.7 * ffShare * lpIn));
   const multiple = lpIn > 0 ? lpOut / lpIn : 1;
   s.news.unshift({
     q: s.month, kind: lpOut >= lpIn ? "deal" : "warn",
-    text: `The syndicate on ${resolveRec(parcels, s, w.bbl)?.address ?? w.bbl} is wound up. `
+    text: `The syndicate on ${resolveRec(parcels, s, w.bbl)?.address ?? w.bbl} is ${recap ? "bought out — the building is yours alone" : "wound up"}. `
       + `Your ${w.investor.toLowerCase()} put in $${Math.round(lpIn).toLocaleString()} and took back $${Math.round(lpOut).toLocaleString()} (${multiple.toFixed(2)}x)`
       + (lpOut >= lpIn ? " — and they will tell people." : ". Most of them will not invest with you again."),
   });

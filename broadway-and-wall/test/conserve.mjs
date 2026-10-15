@@ -54,7 +54,7 @@ const SETUP = process.env.SETUP_JSON ? JSON.parse(process.env.SETUP_JSON) : unde
 // facility draws. See BooksYear.borrowed and engine/debt.ts / facility.ts.
 // `lpCalled` / `lpDistributed` are fund equity in/out against the vehicle's
 // second cash account — conserve reconciles Δ(cash + fund.cash).
-const IN = ["noi", "sold", "interest", "borrowed", "lpCalled"];
+const IN = ["noi", "sold", "interest", "borrowed", "lpCalled", "fees"];
 const OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga", "lpDistributed"];
 const M = (n) => `$${(n / 1e6).toFixed(3)}M`;
 

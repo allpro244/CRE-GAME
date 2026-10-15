@@ -70,6 +70,19 @@ export type Sector =
 export type Credit = 0 | 1 | 2; // C, B, A
 export const CREDIT_LABEL = ["C", "B", "A"];
 
+/** One trade's accounts, real terms, opening month's sales = 1. */
+export interface FirmBook {
+  sales: number; emp: number; cash: number; debt: number;
+  /** last year's sales, smoothed — what the cost base was built for */
+  salesRef?: number;
+  /** the fixed ladder's average coupon */
+  fixed: number;
+  /** share of the trade's jobs in firms failing this month */
+  fail: number;
+  /** EBITDA over interest, and EBITDA over sales */
+  cover: number; margin: number;
+}
+
 export interface Tenant {
   name: string;
   /** The quality the tenant shopped for, 1-100 (TENANT_TIERS_PLAN.md). */
@@ -127,6 +140,8 @@ export interface Tenant {
    * space they do not use and hand it back at the renewal.
    */
   staff?: number;
+  /** The tenant's own hidden books (tenantBooks.ts). */
+  fin?: import("./tenantBooks").TenantFin;
   /** When they last asked for more room, so nobody asks twice in two years. */
   askedM?: number;
   /** When they last asked for rent relief — nobody re-opens a lease twice in four years. */
@@ -1824,7 +1839,8 @@ export interface Econ {
      */
     neutralAnchor?: number;
     /**
-     * Months left in a NATIONAL recession, 0 while the country is expanding.
+     * Months INTO a national recession, 0 while the country is expanding. Dated
+     * from output (market.ts tickNation), not drawn.
      * The nation has its own cycle and it is not the city's: what makes this
      * layer worth having is that tight money CAUSES the downturn that ends the
      * inflation, which is the loop the whole Volcker episode is made of.
@@ -1834,8 +1850,24 @@ export interface Econ {
     expM?: number;
     /** true while this recession is a depression rather than a downturn */
     deep?: boolean;
-    /** where THIS recession is headed — drawn at onset, approached, not exceeded */
+    /** the worst unemployment rate THIS recession has reached so far */
     uPeak?: number;
+    /** unemployment when this recession began */
+    uStart?: number;
+    /** the national output gap, fraction of potential (this month, last month) */
+    gap?: number;
+    gap1?: number;
+    /** the persistent demand shock (confidence, spending waves) */
+    demShock?: number;
+    /** ex-ante real policy rate, the last 13 months — the demand equation reads the lagged year */
+    rHist?: number[];
+    /** what the corporate sector pays on its debt: the fixed ladder, and the blend with floating */
+    corpFixed?: number;
+    corpRate?: number;
+    /** log real output, its last peak and this recession's trough — how a recession is dated */
+    lnY?: number;
+    yPeak?: number;
+    yTrough?: number;
     /** what the bank THINKS trend inflation is: smoothed, and it looks through shocks */
     inflSm?: number;
     /** how much easier than neutral money has been, smoothed — the 1970s in one number */
@@ -1924,6 +1956,10 @@ export interface Econ {
   /** Employment index per trade, its own shock state, and the local-serving index. */
   indIdx?: Record<Sector, number>;
   indShock?: Record<Sector, number>;
+  /** Each trade's books in aggregate (market.ts tickFirmBook). */
+  firmBooks?: Record<Sector, FirmBook>;
+  /** The opening reference the books measure pay and rent against. */
+  firmRef?: { wageRel: number; realNatPay: number; rent: Record<string, number> };
   /** Each trade's slow local trend offset, per year (mean-reverting). */
   indFortune?: Record<Sector, number>;
   /** A trade's boom (and usually its bust) in progress — see `tickBoomBust` in market.ts. */

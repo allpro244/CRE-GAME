@@ -3467,7 +3467,7 @@ export function incomeValueAsIs(rec: ParcelRecord, econ: Econ, condition: Condit
     ? Math.round((START_YEAR + econ.m / 12 - rec.yearBuilt) * 12) : 999;
   const asIs = leaseUpMarkAt(
     rec, econ, condition, sinceM, occupancy(rec, econ),
-    capRateFor(rec, econ, condition, condIdx) / 100,
+    capRateFor(rec, econ, condition, condIdx) / 100, undefined, condIdx,
   );
   return asIs === null ? income : income + leaseUpWeight(rec, sinceM) * Math.max(0, asIs - income);
 }
@@ -3725,7 +3725,7 @@ function leaseUpMark(
   const filledNoi = contractNoi + leaseUpGapNoiYr(rec, econ, h, gap * rentableSf(rec));
   const filled = Math.max(0, filledNoi) / capFilled * 0.55
     + stabNoi / (capFilled + taxRate(econ) * taxBorneShare(rec)) * 0.45;
-  const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, capNoRoll, filled);
+  const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, capNoRoll, filled, h.condIdx);
   return mark === null ? null : { mark, weight };
 }
 
@@ -3789,6 +3789,8 @@ export function leaseUpMarkAt(
    *  as-if-stabilised value below, which is exactly that for a record with no
    *  rent roll of its own. */
   filled?: number,
+  /** the exact condition, so a thousandth of it is a thousandth of value */
+  condIdx?: number,
 ): number | null {
   if (!rec.bldgArea || sinceM < 0 || !(leaseUpWeight(rec, sinceM) > 0)) return null;
   const apt = (rec.class as BuiltClass) === "multifamily";
@@ -3824,7 +3826,7 @@ export function leaseUpMarkAt(
   // both load the cap this way (taxBorneShare); this leg loading the FULL rate
   // was the third answer to one question, worth ~14% on stabilised retail.
   const taxLoad = taxRate(econ) * taxBorneShare(rec);
-  const stab = noiYr(rec, econ, condition, true) / (capNoRoll + taxLoad);
+  const stab = noiYr(rec, econ, condition, true, condIdx) / (capNoRoll + taxLoad);
   if (!(stab > 0)) return null;
 
   // THE CHEQUE IS ON RENTABLE FEET. planDevelopment reserves TI and LC on
@@ -3839,7 +3841,7 @@ export function leaseUpMarkAt(
   //    to let. Same money planDevelopment reserves, on the part still empty.
   const cls = (rec.class as BuiltClass) ?? "office";
   const tiPsf = cls === "office" ? 32 : cls === "retail" ? 22 : cls === "industrial" ? 5 : 7;
-  const lcPsf = apt ? 0 : marketRentPsfYr(rec, econ, condition) * 6 * 0.045;
+  const lcPsf = apt ? 0 : marketRentPsfYr(rec, econ, condition, condIdx) * 6 * 0.045;
   const fill = vacantSf * (tiPsf * econ.costIdx + lcPsf);
   // 2. The income it does not earn on the way there. Space lets in over the
   //    window rather than all at the end, so on average half of what is empty

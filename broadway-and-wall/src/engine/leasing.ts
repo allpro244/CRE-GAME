@@ -35,6 +35,7 @@ import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentA
 import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, sizeScale, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 import { money } from "./money";
 import { purseOf } from "./vehicles";
+import { tenantFin, tickTenantFin, tenantFailOdds, tenantSqueeze } from "./tenantBooks";
 
 /** 0..1, for the net-effective trade in the prospect draw. */
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -1571,26 +1572,16 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
     for (let i = h.tenants.length - 1; i >= 0; i--) {
       const t = h.tenants[i];
       if (q - t.startM < 6) continue;                       // give them a quarter to fail
-      // Business failures follow the labour market (Altman's failure series
-      // and unemployment move together): exp(35 x slack) reads 0.7 a point
-      // under the natural rate — the old expansion's 0.55-0.9 — and 2.9 three
-      // points over it, the old recession's 3.4, continuously.
-      const cycle = Math.max(0.4, Math.min(4, Math.exp(35 * labourSlack(s.econ))));
-      const grade = t.credit === 2 ? 0.14 : t.credit === 1 ? 0.55 : 1.6;   // investment grade rarely goes dark
-      const sectorStress = Math.max(0, -(s.econ.sectorMom?.[rec.class as "office"] ?? 0)) * 40;
-      // AND THE TENANT'S OWN TRADE. This is the whole point of modelling
-      // industries: a technology bust does not take out one startup, it takes
-      // out every startup you have, in every building, in the same eighteen
-      // months. Concentration stops being a word and becomes a thing that
-      // happens to you.
-      const trade = industryStress(s.econ, t.sector) * 2.6;
-      // A TENANT YOU REFUSED RELIEF TO is running on fumes by definition —
-      // they told you so, in writing. For two years after a declined or
-      // lapsed ask they go dark at three times the rate. This is the priced
-      // half of saying no: you kept the face rent and you are carrying the
-      // covenant risk you chose.
-      const strain = t.strainedM !== undefined && q - t.strainedM < 24 ? 3 : 1;
-      const pFail = 0.00035 * cycle * grade * strain * (1 + sectorStress + trade);
+      // THE TENANT'S OWN BOOKS DECIDE (2026-10-15). This was a hazard built
+      // from the labour market, the credit grade, the trade's momentum and a
+      // refusal multiplier: 0.00035 x cycle x grade x strain x (1 + stress).
+      // Now the business carries a revenue line, a fixed rent, its own debt at
+      // its own rate, and a cash balance (tenantBooks.ts): it goes dark when
+      // its interest cover collapses and its cash runs out. A refused relief
+      // letter still hurts — the rent it could not carry is still being
+      // charged — but through the cash it drains, not a multiplier.
+      const fin = tickTenantFin(s.econ, t, q < (t.freeUntilM ?? -1) ? 0 : t.rentPsf * t.sf, s.econ.creditIdx ?? 1);
+      const pFail = tenantFailOdds(fin, t.credit);
       if (rng(s, "leasing") >= pFail) continue;
       // FORFEITING A DEPOSIT IS NOT A CASH RECEIPT. It was collected at
       // signing and has been sitting in your account ever since as somebody
@@ -1726,10 +1717,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // the number they can no longer pay, wherever the market sits. Being
         // over market on top of that just makes them ask sooner and harder.
         const stress = industryStress(s.econ, t.sector);
-        const shrinking = (t.staff ?? 1) < 0.85 ? 0.5 : 0;
-        const squeeze = stress * 3
-          + 25 * Math.max(0, labourSlack(s.econ))
-          + shrinking + Math.max(0, over - 1) * 2;
+        // Their books, not the headlines: cover thinning, cash running down.
+        const squeeze = tenantSqueeze(tenantFin(s.econ, t)) + Math.max(0, over - 1) * 2;
         if (squeeze <= 0.65) continue;                      // healthy trades honour their paper
         if (rng(s, "leasing") >= Math.min(0.07, 0.022 * squeeze * (t.credit === 0 ? 1.6 : 1))) continue;
         t.reliefAskedM = q;
@@ -1773,9 +1762,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // degraded one — measured at zero credit changes across 163 tenancies.
         // It already drives default odds, deposit size, the renewal discount
         // and the quality spread a buyer pays. This is the only wire missing.
-        const ph = s.econ.industryPhase?.[t.sector];
-        if (ph === "boom" && t.credit < 2 && rng(s, "leasing") < 0.055) t.credit = (t.credit + 1) as Credit;
-        else if (ph === "bust" && t.credit > 0 && rng(s, "leasing") < 0.075) t.credit = (t.credit - 1) as Credit;
+        // ...on the tenant's own numbers: a business covering its interest
+        // five times with half a year of costs in the bank earns an upgrade;
+        // one under 1.5x or under a month of cash loses one.
+        const f = tenantFin(s.econ, t);
+        if (f.cover > 5 && f.liqM > 6 && t.credit < 2 && rng(s, "leasing") < 0.15) t.credit = (t.credit + 1) as Credit;
+        else if ((f.cover < 1.5 || f.liqM < 1) && t.credit > 0 && rng(s, "leasing") < 0.35) t.credit = (t.credit - 1) as Credit;
       }
       // HEADCOUNT. Measured, a p95 boom compounds this to 1.65x over two years
       // and a bust runs it back down. Everything else in this block reads it.

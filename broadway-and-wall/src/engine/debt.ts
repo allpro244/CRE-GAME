@@ -1261,7 +1261,14 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
   // closing (originate). Sizing at today's coupon would hand a floating
   // borrower more proceeds than a fixed one for the same building, which is
   // not a product anyone writes.
-  const uwRate = product.floating ? ratePct + 1.0 : ratePct;
+  // ...AND NEVER UNDER WHAT THE SAME SPREAD COSTS ON THE LONG INDEX. With a
+  // steep curve (short rates far under long ones, as after a slump) a point
+  // over today's floating coupon is still well under fixed money, and desks
+  // stress to the higher of the cap strike and a long-rate floor — so a
+  // floater never sizes larger than fixed paper on the same building.
+  const uwRate = product.floating
+    ? Math.max(ratePct + 1.0, ratePct - shortIndexOf(s.econ) + s.econ.indexRate)
+    : ratePct;
   const i = uwRate / 100;
   const byDscrIO = maxAnnualDS / i;
   const qp = monthlyPayment(1, uwRate, product.amortYears) * 12; // annual DS per $1

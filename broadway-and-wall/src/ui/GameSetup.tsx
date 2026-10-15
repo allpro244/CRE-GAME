@@ -40,7 +40,7 @@ interface Draft {
   island: string; size: string; dev: string; cash0: number; goal: GoalId | null;
   field: FieldChoice; inherit: 0 | 2 | 3 | 4; home: HomeChoice; rivalCapital: RivalCapital;
   parks: "low" | "medium" | "high";
-  firmName: string; sandbox: boolean; clock: NonNullable<GameSetup["clock"]>; brokerStops: boolean; seed: number; poolEntry: boolean;
+  firmName: string; sandbox: boolean; clock: NonNullable<GameSetup["clock"]>; brokerStops: boolean; seed: number; poolEntry: boolean; rivalReputation: boolean; rivalDealTerms: boolean;
 }
 
 
@@ -72,7 +72,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     return {
       island, size: currentSize(island), dev: currentDev(island), cash0: currentCash0(), goal: null,
       field: DEFAULT_SETUP.field, inherit: 0, home: "any", rivalCapital: "medium", parks: "medium",
-      firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(), poolEntry: true,
+      firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(), poolEntry: true, rivalReputation: true, rivalDealTerms: false,
     };
   };
   const [d, setD] = useState<Draft>(fresh);
@@ -184,6 +184,8 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       firmName: d.firmName.trim() || undefined, sandbox: d.sandbox, clock: d.clock,
       brokerStops: d.brokerStops ? undefined : "never",
       poolEntry: d.poolEntry ? undefined : false,
+      rivalReputation: d.rivalReputation ? undefined : false,
+      rivalDealTerms: d.rivalDealTerms ? true : undefined,
     };
     void startRun(d.island, d.size, d.dev, d.cash0, setup, d.seed);
   };
@@ -348,6 +350,16 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                   <input type="checkbox" checked={d.poolEntry} onChange={(e) => up({ poolEntry: e.target.checked })} />
                   <span><strong>New firms raise from the city's investor money</strong><br />
                     <span className="start-opt-note">One capital market: a new competitor's first close comes out of the same yearly pool you raise from, so fewer firms open when the money has gone — to them or to you. Off, new firms raise from money that never runs out.</span></span>
+                </label>
+                <label className="setup-check" style={{ marginTop: 10 }}>
+                  <input type="checkbox" checked={d.rivalReputation} onChange={(e) => up({ rivalReputation: e.target.checked })} />
+                  <span><strong>Competitors raise on their record</strong><br />
+                    <span className="start-opt-note">A team that spins out of a firm carries part of its old firm's record, and a better record raises a bigger first fund from deeper money. Off, every new firm raises like a new name.</span></span>
+                </label>
+                <label className="setup-check" style={{ marginTop: 10 }}>
+                  <input type="checkbox" checked={d.rivalDealTerms} onChange={(e) => up({ rivalDealTerms: e.target.checked })} />
+                  <span><strong>Builders raise each job on their record</strong><br />
+                    <span className="start-opt-note">A competitor's deal investors sign the same terms you do: an unknown builder raises a dollar per dollar of its own, a proven one six, a top one nine, one that lost its investors' money little or nothing. Off, every builder raises nine to one. On makes a smaller, slower city — fewer builders can afford to build.</span></span>
                 </label>
               </div>
             </div>

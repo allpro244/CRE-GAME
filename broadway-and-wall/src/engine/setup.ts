@@ -66,6 +66,10 @@ export interface GameSetup {
   brokerStops?: "affordable" | "never";
   /** Rival firm entry waits on the city's investor pool (GameState.poolEntry). On unless turned off. */
   poolEntry?: boolean;
+  /** Rivals raise on their investor record (GameState.rivalReputation). On unless turned off. */
+  rivalReputation?: boolean;
+  /** Deal-by-deal rivals raise each job on their band's terms (GameState.rivalDealTerms). Off unless turned on. */
+  rivalDealTerms?: boolean;
   spectator?: boolean;
   /** How much the town's competitors raised before you arrived (RIVAL_CAPITAL). Absent = medium. */
   rivalCapital?: RivalCapital;

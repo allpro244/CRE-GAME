@@ -148,9 +148,14 @@ function play(seed, band) {
             // Their money arriving moves net worth only as the same groundbreaking
             // done alone would, at the sponsor's share of the capital: the
             // costs a closing sinks (points, a rate hedge) are the deal's,
-            // and the investors carry their share of them.
-            const vs = (dNwSolo ?? 0) * (1 - E.lpCapShare(w));
-            ok(Math.abs(dNw - vs) < 0.01 * need, `seed ${seed}: net worth does not jump when their money arrives (${M(dNw)}; alone ${dNwSolo === null ? "n/a" : M(dNwSolo)} × your ${Math.round((1 - E.lpCapShare(w)) * 100)}% = ${M(vs)})`);
+            // and the investors carry their share of them. A groundbreaking that
+            // marks UP is a gain the waterfall splits with the promote, so the
+            // sponsor's share of it is its capital share plus at most the top
+            // promote on the investors' share.
+            const gp = 1 - E.lpCapShare(w);
+            const vs = (dNwSolo ?? 0) * gp;
+            const top = (dNwSolo ?? 0) > 0 ? (dNwSolo ?? 0) * (gp + (1 - gp) * Math.max(0, ...w.promotes)) : vs;
+            ok(dNw >= Math.min(vs, top) - 0.01 * need && dNw <= Math.max(vs, top) + 0.01 * need, `seed ${seed}: net worth does not jump when their money arrives (${M(dNw)}; alone ${dNwSolo === null ? "n/a" : M(dNwSolo)} × your ${Math.round(gp * 100)}% = ${M(vs)}${top !== vs ? `, up to ${M(top)} with the promote on a gain` : ""})`);
             formedAt = g.month;
             formed++;
           }

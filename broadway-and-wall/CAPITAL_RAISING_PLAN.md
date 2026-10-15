@@ -1557,6 +1557,14 @@ about each.
    them needs a per-rival deal ledger (compact: equity, projected, actual,
    date) plus a written-down derivation of the opening roster's records.
    Watch memory on the Great City map (about 200 firms over a century).
+   *Built (rival-record):* `Rival.realised`, one compact row a deed that
+   left the book over thirty years — the deal investors' multiple on a
+   syndicated deed, 0x on a deed lost to its lender, and an own-money sale
+   read as on schedule or in trouble (no per-building cost exists to give
+   its multiple; an aggregate-basis estimate read 70% of sales as losses
+   and was dropped). It replaced a tenure stand-in that credited a firm a
+   promise met every three years it stayed alive. Still open: a pitch per
+   rival deal, so rivals can beat or miss a promise as the player does.
 8. **Random draws must not move the economy.** Investor decisions (commit
    hazards, refusals, fairness premiums) need their **own RNG channel**,
    like `"shock"` for swans. `initStreams` hashes each channel by name, so

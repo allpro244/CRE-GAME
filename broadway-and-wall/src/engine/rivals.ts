@@ -29,6 +29,7 @@
 // now claims jobs out of the city's own pipeline: buys the dirt, writes the
 // equity, carries the loan through the cycle, and either owns a building at
 // the end of it or hands a frame to a receiver.
+import { drawRivalRaise } from "./investors";
 import { fieldRoster, rivalCapitalMult, type RivalCapital } from "./setup";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
@@ -2628,6 +2629,9 @@ function maybeNewFirm(s: GameState) {
   // year eighty at a price level five times the opening one was a fifth of
   // the size of every firm it was meant to compete with.
   const equity = Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s) * (s.econ.cpi ?? 1));
+  // Its investors' money comes out of the city's pool (investors.ts): the
+  // player raises from what the rivals leave. Entry does not wait on it yet.
+  drawRivalRaise(s, equity);
   const ltv = STYLE[style].maxLtv * rrange(s, 0.68, 0.88, "rivals");
   /**
    * A FIRST CLOSE IS COMMITMENTS, NOT CASH. The LPs sign for the fund; the

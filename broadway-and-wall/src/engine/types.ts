@@ -3021,6 +3021,8 @@ export interface Syndication {
   amFee?: number;
   /** Fees the deal has paid its sponsor. */
   feesPaid?: number;
+  /** Who committed the investors' money (investors.ts sources): friends and family, local private money, … */
+  sources?: Partial<Record<import("./investors").InvestorSource, number>>;
 }
 
 /** A closed syndication, as its investors remember it. */
@@ -3185,6 +3187,13 @@ export interface GameState {
   ffNetwork?: { cap: number };
   /** The sponsor's fee income from its syndicates this tax year (sim.ts taxes it, then resets it). */
   feeIncomeYr?: number;
+  /**
+   * THE YEAR'S INVESTOR MONEY in this city (investors.ts): what each investor
+   * type will put to work here this year, and what has been raised from it.
+   */
+  investorPool?: { yr: number; cap: Record<string, number>; used: Record<string, number>; rivals: number; attract: number };
+  /** Deal-by-deal raises in progress, keyed by the lot (raise.ts). */
+  raises?: Record<string, import("./investors").Raise>;
   /**
    * How investors read the player, as of the last quarterly read
    * (reputation.ts updateReputation). `band` is the one terms are set by;

@@ -39,6 +39,7 @@ import { logBooks } from "./types";
 import { accrueMonth, contribute, settlePeriod, seriesIrr, sponsorPosition, lpCapShare } from "./waterfall";
 import { resolveRec, ownedHoldingValue, cipEquity } from "./value";
 import { playerTerms } from "./reputation";
+import { openSources, investorPool, SOURCE_LABEL, type InvestorSource } from "./investors";
 
 /** The investors a first-time sponsor can call. */
 export const FF_INVESTOR = "Friends and family";
@@ -69,8 +70,36 @@ export function ffNetwork(s: GameState): { cap: number } {
 export function ffAvailable(s: GameState): number {
   const cap = s.ffNetwork?.cap ?? Math.max(0, Math.round(s.nwHistory?.[0] ?? 0));
   let committed = 0;
-  for (const w of Object.values(s.syndications ?? {})) committed += Math.max(0, w.lpCommit - w.lpDist);
+  for (const w of Object.values(s.syndications ?? {})) {
+    // Only the friends-and-family share of a deal ties up the network.
+    const ff = w.sources ? (w.sources.ff ?? 0) / Math.max(1, w.lpCommit) : 1;
+    committed += ff * Math.max(0, w.lpCommit - w.lpDist);
+  }
   return Math.max(0, cap - committed);
+}
+
+/** Everything the player could raise today: the network, and every investor pool the band opens. */
+export function outsideCapacity(s: GameState): number {
+  let t = 0;
+  for (const src of openSources(s, playerTerms(s).band, ffAvailable(s))) t += src.left;
+  return t;
+}
+
+/**
+ * Split an outside commitment across the sources that can carry it: the
+ * network first (people who know you write first), then each open pool in
+ * the band's order. For the engine's instant path; a launched raise records
+ * who actually circled (raise.ts).
+ */
+export function allocateSources(s: GameState, amount: number): Partial<Record<InvestorSource, number>> {
+  const out: Partial<Record<InvestorSource, number>> = {};
+  let rest = Math.max(0, Math.round(amount));
+  for (const src of openSources(s, playerTerms(s).band, ffAvailable(s))) {
+    const take = Math.min(rest, Math.floor(src.left));
+    if (take > 0) { out[src.id] = take; rest -= take; }
+    if (rest <= 0) break;
+  }
+  return out;
 }
 
 /**
@@ -87,7 +116,7 @@ export function maxOutside(s: GameState, cashNeed: number, landEquity: number): 
   if (!(perOwn > 0)) return 0;
   // outside ≤ perOwn × (land + cashNeed − outside)
   const byRule = (perOwn * (Math.max(0, landEquity) + cashNeed)) / (1 + perOwn);
-  return Math.max(0, Math.floor(Math.min(ffAvailable(s), byRule, cashNeed)));
+  return Math.max(0, Math.floor(Math.min(outsideCapacity(s), byRule, cashNeed)));
 }
 
 /** Why this deed cannot be syndicated, or null. */
@@ -108,14 +137,19 @@ export function syndicateBar(s: GameState, bbl: string): string | null {
  * the investors commit `lpCommit` of cash, called pro rata (`lpShare` of
  * every call) alongside the sponsor's own.
  */
-export function formSyndication(s: GameState, bbl: string, lpCommit: number, cashNeed: number, landEquity: number): Syndication {
+export function formSyndication(s: GameState, bbl: string, lpCommit: number, cashNeed: number, landEquity: number, sources?: Partial<Record<InvestorSource, number>>): Syndication {
   ffNetwork(s);
+  // Who wrote the cheques, and the pools they came out of this year.
+  const src = sources ?? allocateSources(s, lpCommit);
+  const pool = investorPool(s);
+  for (const [id, v] of Object.entries(src)) if (id !== "ff" && v) pool.used[id] = (pool.used[id] ?? 0) + v;
+  const lead = (Object.entries(src) as [InvestorSource, number][]).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "ff";
   // The terms are the sponsor's band's on the day the deal closes, and they
   // stay with the deal: investors do not reprice a signed agreement.
   const t = playerTerms(s);
   const n = t.hurdles.length;
   const w: Syndication = {
-    bbl, investor: t.band === "Unknown" || t.band === "Questioned" ? FF_INVESTOR : t.investor, formedM: s.month,
+    bbl, investor: SOURCE_LABEL[lead], formedM: s.month, sources: src,
     lpShare: cashNeed > 0 ? Math.min(1, lpCommit / cashNeed) : 0,
     lpCommit: Math.round(lpCommit), lpCalled: 0, lpDist: 0, gpIn: 0, gpDist: 0,
     hurdles: [...t.hurdles], promotes: [...t.promotes],
@@ -230,9 +264,11 @@ function closeSyndication(s: GameState, parcels: ParcelTable, w: Syndication) {
   });
   if (s.synClosed.length > 200) s.synClosed.shift();
   const net = ffNetwork(s);
-  // The network keeps what it made and loses most of who lost (see ffNetwork).
-  if (lpOut >= lpIn) net.cap += lpOut - lpIn;
-  else net.cap = Math.max(0, net.cap - Math.round(0.7 * lpIn));
+  // The network keeps what it made and loses most of who lost (see ffNetwork)
+  // — its own share of the deal, not the institutions'.
+  const ffShare = w.sources ? (w.sources.ff ?? 0) / Math.max(1, w.lpCommit) : 1;
+  if (lpOut >= lpIn) net.cap += Math.round(ffShare * (lpOut - lpIn));
+  else net.cap = Math.max(0, net.cap - Math.round(0.7 * ffShare * lpIn));
   const multiple = lpIn > 0 ? lpOut / lpIn : 1;
   s.news.unshift({
     q: s.month, kind: lpOut >= lpIn ? "deal" : "warn",

@@ -1,4 +1,5 @@
 import { startTransition } from "react";
+import { launchRaise, cancelRaise, type RaiseJob } from "@/engine/raise";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions, BuildingDesign } from "@/engine/types";
@@ -337,6 +338,8 @@ interface AppState {
   sellStake: (bbl: string, share: number) => void;
   buyOutPartner: (bbl: string) => void;
   buyLandBack: (bbl: string) => void;
+  launchRaise: (bbl: string, job: RaiseJob, target: number) => void;
+  cancelRaise: (bbl: string) => void;
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed"; syndicate?: { outside: number } }, lender?: string, spec?: number) => void;
   /** The scheme on the Build desk, drawn on its lot in the 3D city while you design it. */
   designPreview: DesignPreview | null;
@@ -1382,6 +1385,23 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
+  launchRaise: (bbl, job, target) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = launchRaise(game, parcels, bbl, job, target);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Raise launched.");
+    void persist(r.s);
+  },
+  cancelRaise: (bbl) => {
+    const { game } = get();
+    if (!game) return;
+    const r = cancelRaise(game, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    void persist(r.s);
+  },
   develop: (bbl, use, floors, coverage, contract, ltcWanted, custom, lender, spec = 0.5) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;

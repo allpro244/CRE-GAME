@@ -43,6 +43,8 @@ export const MODULES = [
   "waterfall", "syndicate",
   // reputation: the investor track-record score, the street's rank and bands.
   "reputation",
+  // investors: the city's investor pool; raise: a deal-by-deal raise over time.
+  "investors", "raise",
   // standing is the reading of the score: the street ranking, the year marks, the reviews.
   "standing",
   // buybox is the sponsor's standing acquisition criteria (what a first look must match).

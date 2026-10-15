@@ -13,6 +13,7 @@ import SchemeViewer from "@/ui/panels/SchemeViewer";
 import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN, ownedHoldingValue } from "@/engine/value";
 import { ffAvailable, maxOutside, syndicateBar } from "@/engine/syndicate";
 import { playerTerms, termsLine } from "@/engine/reputation";
+import { raiseLegalCost, committedTotal, SOURCE_LABEL, RAISE_WINDOW_M } from "@/engine/investors";
 
 // What a plan short of its hurdle is still worth over its cost. The required
 // yield carries the merchant builder's margin, so value / basis is
@@ -1086,21 +1087,50 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   ? " All cash, the cushion is 6% of the whole building — take some construction debt, or cut the massing."
                   : " This massing is past what you can finish.")}
               </div>
+              {game.raises?.[bbl] && (() => {
+                const r = game.raises[bbl];
+                const have = committedTotal(r);
+                return (
+                  <div className="page-section" style={{ marginTop: 8 }}>
+                    <div className="page-section-head">Raise open · {usd(have)} of {usd(r.target)} circled</div>
+                    <div className="grid">
+                      {Object.entries(r.committed).filter(([, v]) => v).map(([k, v]) => (
+                        <Row key={k} k={SOURCE_LABEL[k as keyof typeof SOURCE_LABEL]} v={usd(v ?? 0)} />
+                      ))}
+                      <Row k="Closes" v={`by ${r.deadlineM - game.month} month${r.deadlineM - game.month === 1 ? "" : "s"} from now — full, small if half is there, or not at all`} />
+                    </div>
+                    <div className="btn-row">
+                      <button type="button" className="btn" onClick={() => useStore.getState().cancelRaise(bbl)}>Pull the raise</button>
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="btn-row">
                 <button type="button" className="btn" onClick={() => setTab("design")}>Back · Design</button>
+                {outside > 0 && !game.raises?.[bbl] ? (
+                  <button
+                    className="btn btn-buy"
+                    disabled={!canFund}
+                    onClick={() => useStore.getState().launchRaise(bbl, { use, floors: fl, coverage: cov, contract, ltc: plan.ltcMax * ltcWant, custom: { mix: customMix, bts, groundRetail, design, takeout }, lender: plan.lender, spec }, outside)}
+                    title={`Investors circle over up to ${RAISE_WINDOW_M} months. It closes when ${usd(outside)} is in, small at the deadline if half is, or fails. Counsel is ${usd(raiseLegalCost(game, outside))}, paid now and sunk either way.`}
+                  >
+                    {canFund ? `Launch the raise · ${usd(outside)} · counsel ${usd(raiseLegalCost(game, outside))}` : `Cannot finish · short ${usd(fundShort)}`}
+                  </button>
+                ) : (
                 <button
                   className="btn btn-buy"
-                  disabled={!canFund}
-                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design, takeout, syndicate: outside > 0 ? { outside } : undefined }, plan.lender, spec)}
+                  disabled={!canFund || !!game.raises?.[bbl]}
+                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design, takeout }, plan.lender, spec)}
                   title={purse.closed ?? (!canFund
                     ? `Short ${usd(fundShort)} — needs ${usd(need.whole)} fundable: ${usd(equityRequired)} equity all-in plus the ${usd(need.margin)} overrun cushion`
                     : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build${purse.fund ? ", paid by the fund" : ""}.`)}
                 >
                   {purse.closed ? "Fund investment period over"
                     : canFund
-                    ? `Break ground · ${usd(equityRequired)} ${purse.fund ? "fund " : ""}equity all-in${outside > 0 ? ` · ${usd(outside)} from friends and family` : ""}`
+                    ? `Break ground · ${usd(equityRequired)} ${purse.fund ? "fund " : ""}equity all-in`
                     : `Cannot finish · short ${usd(fundShort)}`}
                 </button>
+                )}
               </div>
             </>
           ) : (

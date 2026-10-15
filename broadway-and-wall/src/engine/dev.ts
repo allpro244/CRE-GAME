@@ -1848,8 +1848,8 @@ export function startDevelopment(
   contract: Contract = "gmp", ltcWanted?: number,
   custom?: {
     mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: TakeoutKind;
-    /** Raise `outside` of the job's cash equity from friends and family (syndicate.ts). */
-    syndicate?: { outside: number };
+    /** Raise `outside` of the job's cash equity from outside investors (syndicate.ts); `sources` says who, when a raise circled it (raise.ts). */
+    syndicate?: { outside: number; sources?: Partial<Record<import("./investors").InvestorSource, number>> };
   },
   lender?: string,
   spec = 0.5,
@@ -2008,7 +2008,7 @@ export function startDevelopment(
   const projected = projectedDevIrr(plan);
   if (next.deedCf?.[bbl]) next.deedCf[bbl].plan = { irr: projected };
   if (outside > 0) {
-    const w = formSyndication(next, bbl, outside, commitCap, landEquity);
+    const w = formSyndication(next, bbl, outside, commitCap, landEquity, custom?.syndicate?.sources);
     w.pitchIrr = projected;
     bridge = Math.min(outside, Math.round(w.lpShare * (dayOne + Math.max(0, site.due))));
     next.cash += bridge;

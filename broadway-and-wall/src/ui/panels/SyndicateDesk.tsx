@@ -2,6 +2,7 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { ffAvailable, syndicateView } from "@/engine/syndicate";
 import { reputationNow, rankStreet, playerTerms, termsLine, bandIdx, BANDS } from "@/engine/reputation";
+import { INVESTOR_TYPES, cityAttractiveness, EQUITY_PER_HEAD, committedTotal } from "@/engine/investors";
 import { resolveRec } from "@/engine/value";
 import { usd } from "@/ui/format";
 
@@ -70,6 +71,43 @@ export function SyndicateDesk() {
           ))}
         </tbody>
       </table>
+    </div>
+    <div className="page-section">
+      <div className="page-section-head">This city's investor money, {monthLabel(game.month)}</div>
+      <div className="hint">
+        Each year the city draws private real-estate equity in proportion to its people — about ${EQUITY_PER_HEAD} a head at today's
+        prices — and how it compares as a place to put money ({Math.round(cityAttractiveness(game.econ) * 100)}% of an ordinary market now).
+        Rivals raising in the city draw it down; you raise from what they leave, from the types your band opens.
+      </div>
+      {(() => {
+        const p = game.investorPool;
+        const yr = Math.floor(game.month / 12);
+        const live = p && p.yr === yr ? p : null;
+        const scale = Math.max(0, (game.econ.population ?? 0) * EQUITY_PER_HEAD * (game.econ.priceLevel ?? 1) * (game.econ.cpi ?? 1) * cityAttractiveness(game.econ));
+        return (
+          <table className="tbl" style={{ marginTop: 8 }}>
+            <thead><tr><th>Investors</th><th>This year</th><th>Raised already</th><th>Open to you</th></tr></thead>
+            <tbody>
+              {INVESTOR_TYPES.map((t) => {
+                const cap = live ? live.cap[t.id] ?? 0 : Math.round(scale * t.share);
+                const used = live ? live.used[t.id] ?? 0 : 0;
+                const open = bandIdx(terms.band) >= bandIdx(t.band);
+                return (
+                  <tr key={t.id}>
+                    <td>{t.label}</td><td>{usd(cap)}</td><td>{usd(used)}</td>
+                    <td style={{ color: open ? undefined : "var(--muted, #888)" }}>{open ? usd(Math.max(0, cap - used)) : `from ${t.band}`}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        );
+      })()}
+      {Object.values(game.raises ?? {}).map((r) => (
+        <div key={r.bbl} className="hint" style={{ marginTop: 6 }}>
+          Raising for {resolveRec(parcels, game, r.bbl)?.address ?? r.bbl}: {usd(committedTotal(r))} of {usd(r.target)} circled, closes in {Math.max(0, r.deadlineM - game.month)} month{r.deadlineM - game.month === 1 ? "" : "s"}.
+        </div>
+      ))}
     </div>
     <div className="page-section">
       <div className="page-section-head">Outside equity · deal by deal</div>

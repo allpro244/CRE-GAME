@@ -51,6 +51,7 @@ import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 import { purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
 import { settleSyndications } from "./syndicate";
+import { tickRaises } from "./raise";
 import { updateReputation } from "./reputation";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
@@ -1308,6 +1309,9 @@ function tickMonth(
 
   // The month's settlement with every syndicate's investors (syndicate.ts):
   // after every flow the month booked to their deeds, before it is marked.
+  // Deal-by-deal raises circle, close or fail (raise.ts) — before the month
+  // settles, so a raise that closed today settles with everything else.
+  tickRaises(s, parcels);
   settleSyndications(s, parcels);
   // The quarterly investor read (reputation.ts): the record, the street's
   // ranking, and the band the next raise is priced in.

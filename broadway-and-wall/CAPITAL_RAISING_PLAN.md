@@ -93,7 +93,14 @@ quietly goes to the wrong party.
 5. **Then, one flag each,** paired before/after on the same seeds:
    1. the investor rank (§3.4, relative)
    2. the finite investor pool and city attractiveness (§3.1), for the player
-      and rival funds only
+      and rival funds only — **first step done** (`investors.ts`, `raise.ts`):
+      a yearly pool at ~$600 of private real-estate equity a head, scaled by
+      the city's attractiveness (job growth, unemployment vs the nation) and
+      split by investor type, each opening at a band; rivals entering the
+      city draw it down (entry does not wait on it yet); the player raises
+      from what is left. Raises take time and can fail (§3.3): counsel paid
+      up front and sunk, soft circles over up to three months as monthly
+      hazards by street rank, close full, small (half or more) or fail.
    3. dynamic fund mandates (§5.1) and the fund revamp (§5)
    4. recap buyouts (§4.5) and side money
    5. firm entry reading the pool (`firmEntryPitch`)

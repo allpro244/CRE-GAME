@@ -119,7 +119,7 @@ for (const seed of [550991, 12007]) {
   const core = ds({ inherit: 2, home: "core" }), edge = ds({ inherit: 2, home: "edge" });
   check(core > edge, `home core sits at better locations than the edge (demand ${core.toFixed(0)} vs ${edge.toFixed(0)})`);
   // CONSERVATION on the inherited book: the identity conserve.mjs asserts.
-  const IN = ["noi", "sold", "interest", "borrowed", "lpCalled"], OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga", "lpDistributed"];
+  const IN = ["noi", "sold", "interest", "borrowed", "lpCalled", "fees"], OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga", "lpDistributed"];
   const tot = (x) => { const t = {}; for (const k of [...IN, ...OUT]) t[k] = 0; for (const y of x.books ?? []) for (const k of [...IN, ...OUT]) t[k] += y[k] ?? 0; return t; };
   const dep = (x) => Object.values(x.holdings).reduce((a, h) => a + h.tenants.reduce((b, t) => b + (t.deposit ?? 0), 0), 0);
   let x = g, worst = 0, moved = new Set();

@@ -50,7 +50,9 @@ import { tickBlackSwans } from "./blackswans";
 import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 import { purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
-import { settleSyndications } from "./syndicate";
+import { settleSyndications, reviewSyndications } from "./syndicate";
+import { tickRaises } from "./raise";
+import { updateReputation } from "./reputation";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -1043,6 +1045,9 @@ function tickMonth(
     // Carried interest received this year — the sponsor's own income.
     taxable += s.promoteIncomeYr ?? 0;
     s.promoteIncomeYr = 0;
+    // Fees from the sponsor's own syndicates — earned income (syndicate.ts).
+    taxable += s.feeIncomeYr ?? 0;
+    s.feeIncomeYr = 0;
     // Deposit interest is ordinary income — the money fund sends a 1099. It
     // was invisible to the taxman when the deposit paid a flat 1%; now that
     // the sweep reads the policy rate, the after-tax yield is the honest one:
@@ -1304,7 +1309,13 @@ function tickMonth(
 
   // The month's settlement with every syndicate's investors (syndicate.ts):
   // after every flow the month booked to their deeds, before it is marked.
+  // Deal-by-deal raises circle, close or fail (raise.ts) — before the month
+  // settles, so a raise that closed today settles with everything else.
+  tickRaises(s, parcels);
   settleSyndications(s, parcels);
+  // The quarterly investor read (reputation.ts): the record, the street's
+  // ranking, and the band the next raise is priced in.
+  if (s.month % 3 === 0) { reviewSyndications(s, parcels); updateReputation(s); }
   // the record book — one appraisal for NW history, milestones, and next month's overhead base
   const { nw, gav } = portfolioMark(s, parcels);
   s.prevGav = Math.round(gav);

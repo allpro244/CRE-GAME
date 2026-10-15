@@ -26,6 +26,7 @@ import { demandNow } from "@/engine/demand";
 import { leaseholdQuote, landBuybackCost, LEASEHOLD_STEP } from "@/engine/leasehold";
 import { stakeQuote, buyoutCost, JV_SHARES, JV_MINORITY_DISCOUNT } from "@/engine/jv";
 import { syndicateView } from "@/engine/syndicate";
+import { recapQuote } from "@/engine/recap";
 import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
 import { ownerAt } from "@/engine/ownership";
 import { taxAppealQuote } from "@/engine/tax";
@@ -1530,11 +1531,35 @@ function StakeSection({ bbl }: { bbl: string }) {
         <div className="grid">
           <Row k="Committed · called" v={`${usd(syn.lpCommit)} · ${usd(syn.lpCalled)}`} />
           <Row k="Paid to them so far" v={usd(syn.lpDist)} />
+          {syn.flags.length > 0 && (
+            <Row k="Their report flags" bad
+              v={syn.flags.map((f) => ({ late: "behind schedule", over: "over budget", leaseup: "short of the pitched income", dist: "no distributions in a year" } as Record<string, string>)[f] ?? f).join(" · ")}
+              title="Each flag is −3 on your record with every investor until the deal's real result replaces it (at most −10 a deal)." />
+          )}
           <Row k="Their share of the capital" v={pc(syn.capShare)} />
           <Row k="Owed them before any promote" v={pastPref ? "nothing — the pref is paid" : usd(syn.owedAtPref)} />
           <Row k={`To their ${pc(syn.hurdle)} hurdle`} v={pastHurdle ? "cleared — you earn the promote" : usd(syn.owedAtHurdle)} />
           <Row k="Equity at the mark · yours · theirs" v={`${usd(syn.equity)} · ${usd(syn.yours)} · ${usd(syn.theirs)}`} title="Liquidated through the waterfall today: what each side would take of the deal's equity at its mark." />
         </div>
+        {(() => {
+          // REFINANCE THEM OUT AND KEEP IT (recap.ts): their waterfall take on
+          // a sale at the appraisal, no broker, plus the band's fairness premium.
+          const q = recapQuote(game, parcels, bbl);
+          if (!q.ok) return <div className="hint">Buy them out: {q.why}</div>;
+          const can = fundableNow(game, parcels) >= q.total;
+          return (
+            <>
+              <div className="grid" style={{ marginTop: 6 }}>
+                <Row k="Buy them out today" v={`${usd(q.price)}${q.premium ? ` (incl. ${usd(q.premium)} fairness premium)` : ""}${q.transferTax ? ` + ${usd(q.transferTax)} transfer tax` : ""}`}
+                  title={`What a sale at the ${usd(q.appraisal)} appraisal would pay them through the waterfall — capital, pref and tiers — with no broker. Sell it within two years for 15% more than that and investors will say you bought them out cheap.`} />
+              </div>
+              <div className="btn-row">
+                <button className="btn" disabled={!can} onClick={() => useStore.getState().recapBuyout(bbl)}>Buy them out · {usd(q.total)}</button>
+                <ShortBy need={q.total} have={fundableNow(game, parcels)} />
+              </div>
+            </>
+          );
+        })()}
       </div>
     );
   }

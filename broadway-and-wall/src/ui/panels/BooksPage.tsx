@@ -788,6 +788,7 @@ function ProfitAndLoss() {
         <tbody>
           {line("Rental revenue", "rev", { sub: true, note: "rent, recoveries and other income billed" })}
           {line("Interest on cash", "intInc", { sub: true })}
+          {years.some((y) => y.fees) && line("Fees from your syndicates", "fees", { sub: true, note: "development and asset management — your investors pay their share" })}
           {line("Total revenue", "totalRev", { strong: true, rule: true })}
           {line("Property operating costs", "propOpex", { sign: -1, sub: true, note: "opex, management, property tax, ground rent" })}
           {line("Leasing costs", "leasing", { sign: -1, sub: true, note: "TI and commissions, expensed as signed" })}

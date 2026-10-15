@@ -1,6 +1,6 @@
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { fundRaiseQuote, fundCanBuy, FUND_PREF, FUND_PROMOTE, gpInterestInFund, waterfall, fundReserve } from "@/engine/fund";
+import { fundRaiseQuote, fundCanBuy, FUND_PREF, FUND_PROMOTE, FUND_MGMT_FEE, gpInterestInFund, waterfall, fundReserve } from "@/engine/fund";
 import { ownedHoldingValue, resolveRec } from "@/engine/value";
 import { usd } from "@/ui/format";
 import { Big, Row } from "@/ui/panels/shared";
@@ -17,17 +17,17 @@ export function FundDesk() {
   const f = game.fund;
   const live = f && !f.settled;
   const fundDeeds = Object.values(game.holdings).filter((h) => h.fundOwned).length;
-  if (!live && !game.fundFailedM && !q.ok && (game.exits ?? []).length < 2) {
+  if (!live && !q.ok && !(game.fundHistory ?? []).length) {
     // Not raisable yet — say what it takes in one line rather than vanish, so
     // the Capital menu's "Fund" door lands on something and the Manager goal
     // has a visible first rung.
-    const clean = (game.exits ?? []).filter((e) => !e.forced && e.gain > 0).length;
     return (
       <div className="page-section">
         <div className="page-section-head">The fund</div>
         <div className="hint" style={{ marginBottom: 0 }}>
-          {q.reason} {clean < 2 ? `You have ${clean} of 2.` : ""} A fund raises LP money against your record,
-          pays you a promote over an {Math.round(FUND_PREF * 100)}% preferred return, and must hand the capital back.
+          {q.reason} A fund raises LP money against your record — sized by what the city's investors have to put to work
+          this year — pays you a {(FUND_MGMT_FEE * 100).toFixed(2)}% management fee and a promote over an {Math.round(FUND_PREF * 100)}% preferred return,
+          and must hand the capital back.
         </div>
       </div>
     );
@@ -37,8 +37,8 @@ export function FundDesk() {
       <div className="page-section-head">The fund</div>
       {game.fundFailedM !== undefined && (
         <div className="hint" style={{ color: "var(--neg, #a33)" }}>
-          Nobody will back you again. The last vehicle did not return capital
-          ({monthLabel(game.fundFailedM)}). That record does not clear.
+          The last vehicle did not return its capital ({monthLabel(game.fundFailedM)}). It is on your record with every
+          investor — the band you are read as says who will take the meeting now.
         </div>
       )}
       {live && f ? (
@@ -106,6 +106,7 @@ export function FundDesk() {
             <Row k="Investment period" v={`ends ${monthLabel(f.investEndM)}${fundCanBuy(game) ? "" : " · closed"}`} />
             <Row k="Fund life" v={`ends ${monthLabel(f.lifeEndM)}`} />
             <Row k="Waterfall" v={`${(FUND_PREF * 100).toFixed(0)}% pref · ${(FUND_PROMOTE * 100).toFixed(0)}% promote`} />
+            {f.mgmtFee ? <Row k="Management fee" v={`${(f.mgmtFee * 100).toFixed(2)}% a year · ${usd(f.feesPaid ?? 0)} paid to you so far`} title="On commitments through the investment period, then on the capital still invested. Your income; the LPs pay it." /> : null}
             <Row k="Vehicle deeds" v={`${fundDeeds}`} />
             <Row k="Distributions" v={game.month > f.investEndM
               ? `quarterly, cash over a ${usd(fundReserve(game))} reserve${f.lastDistM !== undefined ? ` · last ${monthLabel(f.lastDistM)}` : ""}`

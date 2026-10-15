@@ -35,7 +35,7 @@
  */
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Syndication } from "./types";
-import { logBooks } from "./types";
+import { logBooks, pnlAdd } from "./types";
 import { accrueMonth, contribute, settlePeriod, seriesIrr, sponsorPosition, lpCapShare } from "./waterfall";
 import { resolveRec, ownedHoldingValue, cipEquity, ownedHoldingNoiYr } from "./value";
 import { playerTerms } from "./reputation";
@@ -180,7 +180,13 @@ export function chargeDealFee(s: GameState, w: Syndication, fee: number): void {
   logBooks(s, "dev", f, w.bbl);
   logBooks(s, "fees", f);
   w.feesPaid = (w.feesPaid ?? 0) + f;
-  s.feeIncomeYr = (s.feeIncomeYr ?? 0) + f;
+  // CONSOLIDATED, THE SPONSOR'S OWN SHARE OF THE FEE IS ITS OWN MONEY. The
+  // whole fee moves in cash (above), but the sponsor is a partner in the deal
+  // that pays it: what it earns is the investors' share, and that is what it
+  // is taxed on (it deducts its own share of the deal's fee expense).
+  const lpPart = Math.round(f * lpCapShare(w));
+  pnlAdd(s, "fees", lpPart - f);
+  s.feeIncomeYr = (s.feeIncomeYr ?? 0) + lpPart;
 }
 
 /**

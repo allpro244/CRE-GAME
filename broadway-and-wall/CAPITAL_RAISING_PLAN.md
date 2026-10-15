@@ -105,7 +105,16 @@ quietly goes to the wrong party.
       from what is left. Raises take time and can fail (§3.3): counsel paid
       up front and sunk, soft circles over up to three months as monthly
       hazards by street rank, close full, small (half or more) or fail.
-   3. dynamic fund mandates (§5.1) and the fund revamp (§5)
+   3. dynamic fund mandates (§5.1) and the fund revamp (§5) — **first slice done**: a blind pool needs
+      Institutional (replacing the lender-standing and two-exits gates); its
+      size is what the open investor pools have left this year, drawn down at
+      the raise ($5M floor); a 1.25% management fee on commitments through
+      the investment period, then on invested capital, signed into the fund
+      at the raise; a wound-up fund is investor evidence (by its multiple)
+      and Blue-chip needs one that returned its capital; a failed fund is on
+      the record instead of "nobody will back you again". Not yet: strategy
+      and mandates, catch-up and clawback, overlapping successor funds,
+      key-person and removal.
    4. recap buyouts (§4.5) and side money — **recap buyouts done** (`recap.ts`) for
       syndicates: after stabilisation, at the investors' waterfall take on a
       sale at the appraisal with no broker, plus a 2–5% fairness premium

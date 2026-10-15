@@ -1809,6 +1809,24 @@ export function siteDebtAtGroundbreak(s: GameState, bbl: string): { due: number;
 }
 
 /**
+ * WHAT THIS JOB IS UNDERWRITTEN TO RETURN, levered, on the desk's own numbers:
+ * the site's cost and the equity go in, and the stabilised building is sold
+ * at its value on completion (NOI ÷ exit yield), less 2% to sell and the
+ * construction loan, a year after delivery (lease-up; a convention, and a
+ * shape parameter). All the equity is put in at the start, which understates
+ * the IRR a little: the projection a sponsor is judged against is, if
+ * anything, conservative. This is the "projected" column of the track-record
+ * sheet investors read (reputation.ts) and a syndicate's pitch.
+ */
+export function projectedDevIrr(plan: DevPlan): number {
+  const inn = Math.max(1, plan.landBasis + plan.equity + plan.pointsCost);
+  const value = plan.exitYield > 0 ? plan.stabNoi / (plan.exitYield / 100) : 0;
+  const out = value * 0.98 - plan.commitment;
+  const months = Math.max(1, plan.months + 12);
+  return out > 0 ? Math.pow(out / inn, 12 / months) - 1 : -1;
+}
+
+/**
  * WHOSE MONEY BREAKS GROUND HERE, AND HOW MUCH OF IT THERE IS. A lot the fund
  * owns is built with the vehicle's cash and uncalled commitments, and only
  * while it is still investing; every other lot with the sponsor's cash and
@@ -1986,8 +2004,12 @@ export function startDevelopment(
   // the two, so the sponsor's line is not drawn for money already committed;
   // it nets to zero inside this function and books nothing.
   let bridge = 0;
+  // The job's projection is the plan the sponsor will be judged against.
+  const projected = projectedDevIrr(plan);
+  if (next.deedCf?.[bbl]) next.deedCf[bbl].plan = { irr: projected };
   if (outside > 0) {
     const w = formSyndication(next, bbl, outside, commitCap, landEquity);
+    w.pitchIrr = projected;
     bridge = Math.min(outside, Math.round(w.lpShare * (dayOne + Math.max(0, site.due))));
     next.cash += bridge;
   }

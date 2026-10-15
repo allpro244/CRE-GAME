@@ -2504,6 +2504,12 @@ export interface Exit {
   equityOut?: number;
   /** Annualised levered pre-tax IRR, (1+r)^12-1 on monthly flows. null = did not solve. */
   irr?: number | null;
+  /**
+   * What the deal was underwritten to return when it was committed to (the
+   * deed ledger's `plan`): the "projected" column of a track-record sheet,
+   * which investors judge the realised IRR against (reputation.ts).
+   */
+  planIrr?: number;
 }
 
 /**
@@ -2530,6 +2536,12 @@ export interface DeedLedger {
    * whose own ledger was incomplete. Reports nothing rather than a wrong number.
    */
   pooled?: 1;
+  /**
+   * The deal's own underwriting at commitment: the projected levered IRR of
+   * a groundbreaking (dev.ts projectedDevIrr), or the going-in yield of a
+   * purchase. Copied onto the exit, where the investor reputation reads it.
+   */
+  plan?: { irr: number };
 }
 
 /**
@@ -2992,6 +3004,8 @@ export interface Syndication {
   lpFlows: number[];
   /** Month the deed left the book; the record closes at its next settlement. */
   goneM?: number;
+  /** The investors' IRR the deal was pitched at (the job's projection), judged at wind-up (reputation.ts). */
+  pitchIrr?: number;
 }
 
 /** A closed syndication, as its investors remember it. */
@@ -3006,6 +3020,7 @@ export interface SynRecord {
   lpIrr: number | null;
   gpIn: number;
   gpOut: number;
+  pitchIrr?: number;
 }
 
 export interface GameState {
@@ -3153,6 +3168,12 @@ export interface GameState {
    * put into its deals in total. Sized at first use; see syndicate.ts.
    */
   ffNetwork?: { cap: number };
+  /**
+   * How investors read the player, as of the last quarterly read
+   * (reputation.ts updateReputation). `band` is the one terms are set by;
+   * `pending` a higher band waiting out its second quarter.
+   */
+  reputation?: { band: import("./reputation").Band; pending?: import("./reputation").Band; pendingQ?: number; score: number; rank: number; of: number; m: number };
   /**
    * When true, new purchases draw equity from the live fund during its
    * investment period. Opt-in path; balance-sheet remains the default until
@@ -4197,6 +4218,7 @@ export function closeDeedLedger(s: GameState, e: Exit): void {
   e.equityIn = Math.round(inn);
   e.equityOut = Math.round(out);
   e.irr = deedIrr(l.cf);
+  if (l.plan && Number.isFinite(l.plan.irr)) e.planIrr = l.plan.irr;
 }
 
 /** Mark a deed's ledger as not attributable to the deed alone. */

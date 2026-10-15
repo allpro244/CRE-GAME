@@ -41,6 +41,8 @@ export const MODULES = [
   // waterfall is the deal waterfall (pure); syndicate is deal-by-deal outside
   // equity on one job (CAPITAL_RAISING_PLAN.md §4).
   "waterfall", "syndicate",
+  // reputation: the investor track-record score, the street's rank and bands.
+  "reputation",
   // standing is the reading of the score: the street ranking, the year marks, the reviews.
   "standing",
   // buybox is the sponsor's standing acquisition criteria (what a first look must match).

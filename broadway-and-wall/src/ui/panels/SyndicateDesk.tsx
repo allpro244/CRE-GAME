@@ -1,11 +1,10 @@
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { FF_TERMS, ffAvailable, syndicateView } from "@/engine/syndicate";
+import { ffAvailable, syndicateView } from "@/engine/syndicate";
+import { reputationNow, rankStreet, playerTerms, termsLine, bandIdx, BANDS } from "@/engine/reputation";
 import { resolveRec } from "@/engine/value";
 import { usd } from "@/ui/format";
 
-/** A fraction as a whole percent. */
-const pc = (x: number) => `${Math.round(x * 100)}%`;
 import { Row } from "@/ui/panels/shared";
 
 /**
@@ -20,12 +19,59 @@ export function SyndicateDesk() {
   const avail = ffAvailable(game);
   const live = Object.keys(game.syndications ?? {});
   const closed = [...(game.synClosed ?? [])].reverse();
+  const rep = reputationNow(game);
+  const terms = playerTerms(game);
+  const street = rankStreet(game).slice(0, 5);
+  const pending = game.reputation?.pending;
   return (
+    <>
     <div className="page-section">
-      <div className="page-section-head">Outside equity · friends and family</div>
+      <div className="page-section-head">Your standing with investors</div>
       <div className="hint">
-        Raised one job at a time on the Build desk, from people who know you: at most a dollar of theirs for each of yours,
-        a {pc(FF_TERMS.hurdles[0])} pref, and {pc(FF_TERMS.promotes[1])} of what is above a {pc(FF_TERMS.hurdles[1])} IRR to you.
+        Investors read your realised record against what each deal was underwritten to return, and rank you against every
+        firm on the street. The band they act on is the lower of your rank's and your score's. Deals done with your own money
+        count at 90%; one good deal is luck, a record is many; a miss lands in full the day it is realised.
+      </div>
+      <div className="grid">
+        <Row k="Band" v={`${terms.band}${pending ? ` · ${pending} next quarter if it holds` : ""}`} strong />
+        <Row k="Rank" v={`#${rep.rank} of ${rep.of} · top ${100 - rep.percentile}%`} />
+        <Row k="Track-record score" v={`${rep.score.toFixed(1)} · experience ${rep.n.toFixed(1)} from ${rep.deals} good deal${rep.deals === 1 ? "" : "s"}`} bad={rep.score < 0} />
+        <Row k="Their terms today" v={termsLine(terms)} />
+        <Row k="Outside equity per $1 of yours" v={terms.perOwn > 0 ? `up to $${terms.perOwn}` : "none — nobody will invest"} bad={!(terms.perOwn > 0)} />
+        {bandIdx(terms.band) < BANDS.length - 1 && (
+          <Row k="Next band" v={nextBandHint(terms.band)} />
+        )}
+      </div>
+      {rep.evidence.length > 0 && (
+        <table className="tbl" style={{ marginTop: 8 }}>
+          <thead><tr><th>The record</th><th>When</th><th>What it was</th><th>Evidence</th></tr></thead>
+          <tbody>
+            {[...rep.evidence].reverse().slice(0, 10).map((e, i) => (
+              <tr key={i}>
+                <td>{e.label}</td>
+                <td>{monthLabel(e.m)}</td>
+                <td>{e.kind === "investor" ? "with investors" : e.kind === "own" ? "your own money" : "credit event"}</td>
+                <td style={{ color: e.ev < 0 ? "var(--neg, #a33)" : undefined }}>{e.ev > 0 ? "+" : ""}{e.ev.toFixed(1)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <table className="tbl" style={{ marginTop: 8 }}>
+        <thead><tr><th>Top of the street</th><th>Score</th><th>Band</th></tr></thead>
+        <tbody>
+          {street.map((f) => (
+            <tr key={f.id} style={{ fontWeight: f.id === "you" ? 600 : undefined }}>
+              <td>#{f.rank} {f.name}</td><td>{f.score.toFixed(1)}</td><td>{f.band}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <div className="page-section">
+      <div className="page-section-head">Outside equity · deal by deal</div>
+      <div className="hint">
+        Raised one job at a time on the Build desk, on your band's terms ({termsLine(terms)}).
         You guarantee completion. Pay them back with a profit and they bring it back to you; lose their money and most of them are gone.
       </div>
       <div className="grid">
@@ -70,5 +116,18 @@ export function SyndicateDesk() {
         </table>
       )}
     </div>
+    </>
   );
+}
+
+/** What the next band up asks for (reputation.ts floorBand), in a line. */
+function nextBandHint(b: string): string {
+  switch (b) {
+    case "Toxic": return "Questioned at a score above −40, once the misconduct fades";
+    case "Questioned": return "Unknown at a score above −10";
+    case "Unknown": return "Emerging: a score of 10, and a rank in the top 60%";
+    case "Emerging": return "Proven: a score of 25 from at least 2 good deals worth 3 of experience, in the top third";
+    case "Proven": return "Institutional: 40 from 3 deals worth 8, one of them with outside investors, in the top 13%";
+    default: return "Blue-chip: 55 from 4 deals worth 12 and a realised fund, in the top 3%";
+  }
 }

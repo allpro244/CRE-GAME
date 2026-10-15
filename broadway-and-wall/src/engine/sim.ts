@@ -51,6 +51,7 @@ import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 import { purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
 import { settleSyndications } from "./syndicate";
+import { updateReputation } from "./reputation";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -1305,6 +1306,9 @@ function tickMonth(
   // The month's settlement with every syndicate's investors (syndicate.ts):
   // after every flow the month booked to their deeds, before it is marked.
   settleSyndications(s, parcels);
+  // The quarterly investor read (reputation.ts): the record, the street's
+  // ranking, and the band the next raise is priced in.
+  if (s.month % 3 === 0) updateReputation(s);
   // the record book — one appraisal for NW history, milestones, and next month's overhead base
   const { nw, gav } = portfolioMark(s, parcels);
   s.prevGav = Math.round(gav);

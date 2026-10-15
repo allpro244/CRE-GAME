@@ -38,6 +38,7 @@ import type { GameState, Syndication } from "./types";
 import { logBooks } from "./types";
 import { accrueMonth, contribute, settlePeriod, seriesIrr, sponsorPosition, lpCapShare } from "./waterfall";
 import { resolveRec, ownedHoldingValue, cipEquity } from "./value";
+import { playerTerms } from "./reputation";
 
 /** The investors a first-time sponsor can call. */
 export const FF_INVESTOR = "Friends and family";
@@ -80,7 +81,10 @@ export function ffAvailable(s: GameState): number {
  * (land plus its own cash), and by the cash need itself.
  */
 export function maxOutside(s: GameState, cashNeed: number, landEquity: number): number {
-  const perOwn = FF_MAX_OUTSIDE_PER_OWN;
+  // The ratio is the band's (reputation.ts): $1 per $1 for an Unknown
+  // sponsor, more as the record and the rank earn it, nothing for a Toxic one.
+  const perOwn = playerTerms(s).perOwn;
+  if (!(perOwn > 0)) return 0;
   // outside ≤ perOwn × (land + cashNeed − outside)
   const byRule = (perOwn * (Math.max(0, landEquity) + cashNeed)) / (1 + perOwn);
   return Math.max(0, Math.floor(Math.min(ffAvailable(s), byRule, cashNeed)));
@@ -94,6 +98,7 @@ export function syndicateBar(s: GameState, bbl: string): string | null {
   if (h.jv) return "There is a partner in it already.";
   if (s.syndications?.[bbl]) return "It is syndicated already.";
   if (s.facility?.bbls.includes(bbl)) return "Pledged to your facility — release it there first.";
+  if (!(playerTerms(s).perOwn > 0)) return "Nobody will put money in a deal with you — your record with investors is toxic.";
   return null;
 }
 
@@ -105,12 +110,15 @@ export function syndicateBar(s: GameState, bbl: string): string | null {
  */
 export function formSyndication(s: GameState, bbl: string, lpCommit: number, cashNeed: number, landEquity: number): Syndication {
   ffNetwork(s);
-  const n = FF_TERMS.hurdles.length;
+  // The terms are the sponsor's band's on the day the deal closes, and they
+  // stay with the deal: investors do not reprice a signed agreement.
+  const t = playerTerms(s);
+  const n = t.hurdles.length;
   const w: Syndication = {
-    bbl, investor: FF_INVESTOR, formedM: s.month,
+    bbl, investor: t.band === "Unknown" || t.band === "Questioned" ? FF_INVESTOR : t.investor, formedM: s.month,
     lpShare: cashNeed > 0 ? Math.min(1, lpCommit / cashNeed) : 0,
     lpCommit: Math.round(lpCommit), lpCalled: 0, lpDist: 0, gpIn: 0, gpDist: 0,
-    hurdles: [...FF_TERMS.hurdles], promotes: [...FF_TERMS.promotes],
+    hurdles: [...t.hurdles], promotes: [...t.promotes],
     lpBal: new Array(n).fill(0), gpBal: 0, lpCap: 0, gpCap: 0,
     pending: 0, tagged: 0, settled: 0, lpFlows: [],
   };
@@ -185,7 +193,7 @@ function closeSyndication(s: GameState, parcels: ParcelTable, w: Syndication) {
   (s.synClosed ??= []).push({
     bbl: w.bbl, address: resolveRec(parcels, s, w.bbl)?.address ?? w.bbl, investor: w.investor,
     formedM: w.formedM, closedM: s.month, lpIn, lpOut, lpIrr: seriesIrr(w.lpFlows),
-    gpIn: w.gpIn, gpOut: w.gpDist,
+    gpIn: w.gpIn, gpOut: w.gpDist, pitchIrr: w.pitchIrr,
   });
   if (s.synClosed.length > 200) s.synClosed.shift();
   const net = ffNetwork(s);

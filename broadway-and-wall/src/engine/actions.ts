@@ -9,7 +9,7 @@ import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
-import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
+import { ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake } from "./rivals";
@@ -509,6 +509,14 @@ export function executePurchase(
       + `${holding.loan ? ` on $${(holding.loan.principal / 1e6).toFixed(1)}M of ${productById(holding.loan.product).lender} paper at ${holding.loan.ratePct}%` : ", all cash"}`
       + `${offMarket ? ", off-market" : ""}.`,
   });
+  // THE PLAN A PURCHASE IS JUDGED AGAINST (reputation.ts): its going-in yield
+  // on the price — what an income buyer underwrites first. Land and a husk
+  // with no income have no going-in yield; their plan is the job built on them.
+  {
+    const noi = ownedHoldingNoiYr(next, parcels, holding);
+    const l = next.deedCf?.[bbl];
+    if (l && noi > 0 && price > 0) l.plan = { irr: noi / price };
+  }
   if (halfBuilt) takeoverDevelopment(next, parcels, bbl, halfBuilt);
   if (!entity) {
     recordComp(next, rec, price, firmShort(s), ownerOf(s, bbl)?.name ?? (offMarket ? "a private owner" : "a listed seller"),

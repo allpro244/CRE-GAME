@@ -77,7 +77,16 @@ quietly goes to the wrong party.
      Not yet: fees, bands above Unknown (needs the reputation score), raise
      time and failure, investors other than friends and family.
    - the reputation **score** (no ranking yet), from investor and own-money
-     deals (§3.4)
+     deals (§3.4) — **done, with the ranking** (`reputation.ts`): evidence
+     from realised exits and wound-up syndicates against the plan recorded
+     at commitment (a groundbreak's projected IRR, a purchase's going-in
+     yield), size weights, shrinkage, fading, market-wide fault from the
+     city's value index; rivals on a record derived from their opening
+     capital, tenure, deliveries and stress; a strict quarterly ranking;
+     bands = min(rank band, floor band), upgrades after two quarters,
+     downgrades at once; the band sets the syndication terms. Not yet:
+     warning-sign provisional evidence, misconduct, fund vehicles in the
+     record, real rival ledgers.
    - the deal's business plan as its only mandate
    - a capital-source picker (§6.5)
    - the conserve bot and the MDGA driver exercise all of it

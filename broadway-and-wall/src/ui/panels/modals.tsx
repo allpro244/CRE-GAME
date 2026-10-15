@@ -907,7 +907,7 @@ function DecisionBody({
           </div>
           <div className="modal-title">{loi.name}</div>
           <div className="modal-sub">
-            {loi.sector} · credit {CREDIT_LABEL[loi.credit]} · {rec.address}
+            {loi.sector}{loi.quality !== undefined ? ` · shops for quality ${loi.quality}/100` : ""} · credit {CREDIT_LABEL[loi.credit]} · {rec.address}
           </div>
           <LoiTermsGrid loi={loi} game={game} market={market} feeRate={fee} />
           {(() => {

@@ -23,7 +23,9 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, Holding } from "./types";
 import { CITY_STOCK, NATURAL_VAC, rng } from "./market";
-import { resolveRec, useOccupancy, demandIdx, managedRentPsfYr, useRentableSf, qualityCycle } from "./value";
+import { resolveRec, useOccupancy, demandIdx, managedRentPsfYr, useRentableSf, qualityCycle, overallScore, initialCondIdx } from "./value";
+import { scoreDraw } from "./bands";
+import { sizeMean, sizeScale } from "./plates";
 import { demandModel } from "./demand";
 
 const clampA = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -564,39 +566,6 @@ export function currentAskPsfYr(
   return managedRentPsfYr(rec, econ, h, use) * staleDiscount(h.darkMs);
 }
 
-/** Tenants a year, per unit of the street's excess vacancy, who go looking to trade up. A shape parameter. */
-export const TRADE_UP_RATE = 1.0;
-const GOOD_CACHE = new WeakMap<GameState, { m: number; byUse: Partial<Record<BuiltClass, number>> }>();
-/** Good-repair space on the market that a trading-up tenant would tour: the city's new floors still in lease-up, plus the player's good-repair vacancy. */
-function goodVacantSf(s: GameState, parcels: ParcelTable, use: BuiltClass): number {
-  let c = GOOD_CACHE.get(s);
-  if (!c || c.m !== s.month) { c = { m: s.month, byUse: {} }; GOOD_CACHE.set(s, c); }
-  const hit = c.byUse[use];
-  if (hit !== undefined) return hit;
-  let v = s.econ.darkSf?.[use] ?? 0;
-  for (const h of Object.values(s.holdings)) {
-    if (h.condition !== "good" || s.developments?.[h.bbl]) continue;
-    const r = resolveRec(parcels, s, h.bbl);
-    if (!r || !(r.bldgArea > 0)) continue;
-    const leg = useRentableSf(r, use);
-    if (!(leg > 0)) continue;
-    const taken = h.tenants.reduce((a, t) => a + ((t.use ?? r.class) === use ? t.sf : 0), 0);
-    v += Math.max(0, leg - taken);
-  }
-  c.byUse[use] = v;
-  return v;
-}
-/** This month's trade-up flow open to this building, and the good space it is shared across. */
-export function tradeUpFor(s: GameState, parcels: ParcelTable, h: Holding, use: BuiltClass): { sf: number; goodVacant: number } {
-  if (use === "multifamily" || h.condition !== "good") return { sf: 0, goodVacant: 1 };
-  const e = s.econ;
-  const vac = e.streetVac?.[use] ?? e.cityVac?.[use] ?? NATURAL_VAC[use];
-  const soft = Math.max(0, vac - NATURAL_VAC[use]);
-  if (!(soft > 0)) return { sf: 0, goodVacant: 1 };
-  const streetOcc = Math.max(0, (e.occupied?.[use] ?? 0) - (e.playerNow?.occ?.[use] ?? 0));
-  return { sf: (streetOcc * TRADE_UP_RATE * soft) / 12, goodVacant: goodVacantSf(s, parcels, use) };
-}
-
 export function leasingOdds(
   s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Holding, use: BuiltClass,
 ): LeasingOdds | null {
@@ -609,21 +578,7 @@ export function leasingOdds(
   const marketedSf = availSf > 0 ? ref * Math.pow(availSf / ref, MARKETED_ALPHA) : 0;
   const { sf: compete, lm } = competingSf(s, parcels, rec, use);
   const requirementSf = marketRequirement(s.econ, use);
-  // THE TRADE-UP (2026-10-15). Churn above is the relocation a market has
-  // in any year. A soft market has more of it, and it all runs one way: when
-  // good space gets cheap, tenants in the older stock move up into it — the
-  // new Class A fills out of the commodity tier, and the commodity tier is
-  // where the vacancy ends up (JLL/CBRE flight-to-quality: since 2010 the
-  // newest 10-20% of office stock absorbed more than all net demand while
-  // older stock shed it; Houston 1983-88 and Manhattan 1990-93 the same).
-  // The flow is a share of the street's tenants a year per point of the
-  // street's excess vacancy — at ten points soft, a further tenth of them go
-  // looking — and it is only open to space worth moving into: a building in
-  // good repair. They choose among that space alone, not every empty floor in
-  // town. Where they come FROM is the street: the space market takes the
-  // player's gain back out of the street's occupancy (market.ts), and the
-  // street's vacancy (`streetVac`) is what every incumbent is marked against.
-  const tradeUp = tradeUpFor(s, parcels, h, use);
+
   const factors = leaseFactors(s, rec, h, use);
   let weight = 1;
   for (const f of factors) weight *= f.mult;
@@ -631,9 +586,23 @@ export function leasingOdds(
   // be the only name on the board, and a building with a rent roll shows
   // better than a building with a security desk and an echo.
   const dark = 0.85 + 0.15 * (taken / Math.max(1, legSf));
-  const shareOfMarket = (marketedSf * weight * dark) / compete;
-  const captureSf = requirementSf * shareOfMarket + tradeUp.sf * (marketedSf * weight * dark) / Math.max(1, tradeUp.goodVacant);
-  const typicalDealSf = Math.max(1, Math.min(availSf, REQ_MEAN[use] ?? REQ_MEAN.office));
+  // ...AND WHO WANTS IT AT ITS PRICE (TENANT_TIERS_PLAN.md). The movers in
+  // the market weigh every empty floor's quality score against its rent, on
+  // a scale (bands.ts moveOdds): a building that is better than its rent
+  // draws more of them per empty foot than the average floor in town, and one
+  // that is dear for what it is draws fewer. In a glut of new towers whose
+  // rents have come down, tenants paying for ordinary space trade up and the
+  // ordinary space is what goes dark.
+  const cIdx = h.condIdx ?? initialCondIdx(rec, s.month);
+  const draw = scoreDraw(s.econ, use, overallScore(rec, s.econ, use, cIdx));
+  const shareOfMarket = (marketedSf * weight * dark) / compete * draw;
+  const captureSf = requirementSf * shareOfMarket;
+  // THE SIZE OF A LETTER IS THE SIZE OF A LETTER. This read REQ_MEAN — 19,450
+  // sf for office, the mean of a requirement draw nothing sizes a lease from —
+  // while the letters that arrive are drawn from SIZE_DIST (plates.ts), a
+  // third of that. Capture in feet was being turned into a rate of letters
+  // three times too low, and every building leased up three times too slowly.
+  const typicalDealSf = Math.max(1, Math.min(availSf, sizeMean(use) * sizeScale(overallScore(rec, s.econ, use, h.condIdx ?? initialCondIdx(rec, s.month)))));
   // SOFT SATURATION. min() pinned at 0.85 for ANY sizeable vacancy anywhere,
   // which made arrival odds location-blind at exactly the scale the game is
   // played at — the measured cause of the fringe tower filling before the

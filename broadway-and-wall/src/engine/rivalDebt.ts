@@ -32,7 +32,7 @@
 //
 // Nothing here draws on the RNG stream.
 import type { CityLoan, GameState, Rival } from "./types";
-import { productById, quote, REFI_FEE, singleNameCap, windowOpen, type StabView } from "./debt";
+import { productById, quote, REFI_FEE, singleNameCap, windowOpen, CAP_TERM_M, type StabView } from "./debt";
 import { capPremiumOn } from "./amortize";
 import { targetCapital } from "./lenders";
 import type { Lender } from "./lenders";
@@ -198,6 +198,14 @@ export function originateRow(
     origValue: Math.round(Math.max(value, 1)), klass: o.klass ?? old?.klass ?? "land",
     status: "current", product: d.product,
   };
+  // A floater is written at the short index plus the desk's margin, with a
+  // cap bought at the table (debt.ts originate: struck a point over today's
+  // index, for the loan's term or three years, whichever is shorter).
+  if (productById(d.product ?? "harbor")?.floating) {
+    const idx = shortIndexOf(s.econ);
+    row.spread = +(row.ratePct - idx).toFixed(2);
+    row.cap = { strike: +(idx + 1.0).toFixed(2), expiresM: originM + Math.min(d.termM, CAP_TERM_M) };
+  }
   s.cityLoans[bbl] = row;
   syncDebt(s, r);
   return row;
@@ -385,7 +393,30 @@ export function resyncAll(s: GameState) {
  * firm's account counted it twice. Returns what was owed by loan, for the
  * payment test.
  */
+/**
+ * FLOATING PAPER FLOATS (2026-10-15). The street's floaters — bank five-years,
+ * bridges, construction takeouts — were charged the coupon they were written
+ * at for their whole term, so a firm on floating debt paid 7% through a 20%
+ * index and never missed a payment: measured, delinquency on the desks ran to
+ * 14-30% in a glut while not one firm fell behind. The player's floater has
+ * always reset every month off the short index, through its cap until the cap
+ * runs out (debt.ts). The street's does the same now. A row written before
+ * this carries no margin: it is read off its current coupon the first time,
+ * uncapped.
+ */
+export function repriceFloating(s: GameState, r: Rival) {
+  const idx = shortIndexOf(s.econ);
+  for (const x of rowsOf(s, r)) {
+    if (!productById(x.product ?? "harbor")?.floating) continue;
+    if (x.spread === undefined) x.spread = +(x.ratePct - idx).toFixed(2);
+    if (x.cap && s.month >= x.cap.expiresM) delete x.cap;
+    const eff = x.cap ? Math.min(idx, x.cap.strike) : idx;
+    x.ratePct = +(eff + x.spread).toFixed(2);
+  }
+}
+
 export function monthlyService(s: GameState, r: Rival, amortShare: number): { interest: number; amort: number; byRow: Record<string, number> } {
+  repriceFloating(s, r);
   const adj = fileSpreadAdj(r);
   let interest = 0, amort = 0;
   const byRow: Record<string, number> = {};

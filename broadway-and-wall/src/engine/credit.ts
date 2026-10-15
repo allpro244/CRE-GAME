@@ -27,6 +27,8 @@ import { purseOf } from "./vehicles";
  */
 export const LOC_LTV = 0.60;      // against net worth
 export const LOC_SPREAD = 4.0;    // prime + 400bps
+/** The line's floor over the LOAN index: a commercial bank's five-year fixed mortgage spread (debt.ts product sheet, 1.55). */
+export const LOC_FLOOR_SPREAD = 1.55;
 /**
  * Operating float left on hand when idle cash pays the revolver.
  * Everything above this goes to the most expensive money first.
@@ -130,11 +132,24 @@ export function lineLender(s: GameState): Lender | undefined {
  */
 export function locRate(s: GameState): number {
   const bank = lineLender(s);
-  return deskRatePct(shortIndexOf(s.econ), LOC_SPREAD, {
+  const terms = {
     ci: s.econ.creditIdx ?? 1,
     app: bank ? (bank.failedM !== undefined ? 0 : bank.appetite) : 1,
     standingAdd: sponsorStanding(s).spreadAdd,
-  });
+  };
+  // NEVER UNDER THE BANK'S OWN MORTGAGE. A revolver is the riskier paper —
+  // undrawn until you are short, recourse to the firm rather than one
+  // building — so no bank lends it cheaper than it lends against a building.
+  // Off the short index alone it could: when the curve is steep (policy cut
+  // to the floor, the loan index still near four) index + 400 fell under the
+  // loan index itself, 0.4 points under at worst over a thirty-year run, and
+  // the line read as cheaper than the market's own mortgage rate. The floor
+  // is the bank's five-year fixed sheet (LOC_FLOOR_SPREAD), priced through the
+  // same law so it widens in a crunch the way the line does.
+  return Math.max(
+    deskRatePct(shortIndexOf(s.econ), LOC_SPREAD, terms),
+    deskRatePct(s.econ.indexRate, LOC_FLOOR_SPREAD, terms),
+  );
 }
 
 /**

@@ -4,7 +4,7 @@
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import { districtLabel } from "./mix";
 import type { Bid, BuiltClass, Condition, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, Rival, RivalStyle, SaleInstructions } from "./types";
-import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
+import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger, autoLeaseOnClose } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
@@ -363,6 +363,8 @@ export function executePurchase(
     service: s.opsPolicy?.service ?? 0,
     stance: s.opsPolicy?.stance ?? 0,
     plan: s.opsPolicy?.plan ?? 1,
+    // ...on auto-lease when the firm runs its book on auto
+    ...(autoLeaseOnClose(s) ? { autoLease: true } : {}),
     // ...and the house minimum new lease, when one is set
     ...(s.minLeaseDefault ? { minLeaseSf: s.minLeaseDefault } : {}),
     svcIdx: SVC_START,

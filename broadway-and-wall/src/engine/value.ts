@@ -2454,7 +2454,9 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   // to 0.85 because a building does not reprice the instant the market does:
   // the paper in it has years to run, and that is what stops citywide vacancy
   // from arriving as a step change on every roll in the city.
-  const vacNow = econ.cityVac?.[use];
+  // The street's own vacancy (market.ts streetVac): the player's empty floors
+  // are not an incumbent's, and the tenants the player takes from it are.
+  const vacNow = econ.streetVac?.[use] ?? econ.cityVac?.[use];
   let mktDelta = Number.isFinite(vacNow) ? (NATURAL_VAC[use] - (vacNow as number)) * 0.85 : 0;
   // QUALITY SEGMENTS THE MARKET (ECONOMY.md): when the market sheds tenants,
   // the 1928 building sheds ~3x what last year's does — flight to quality is

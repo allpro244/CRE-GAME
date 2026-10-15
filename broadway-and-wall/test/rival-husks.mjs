@@ -37,14 +37,18 @@ console.log("\nRIVAL HUSKS — an empty book is paid off and wound up, not carri
 {
   let g = E.firstListings(E.newGame(12007, parcels, 2_500_000), parcels, bbls);
   const r = (g.rivals ?? []).find((x) => x.failedM === undefined && !(g.cityJobs ?? []).some((j) => j.firmId === x.id));
-  r.bbls = []; r.debt = 48_000; r.cash = 2_010_000; r.stressMs = 0; r.basis = 1; r.extendedTo = {};
+  // Its debt is read off the loan book (rivalDebt.syncDebt: mortgages + line
+  // + job facilities), so the buildings' mortgages go with the buildings and
+  // the crumb is a drawn line — what is left on an empty firm in life.
+  for (const [b, l] of Object.entries(g.cityLoans ?? {})) if (l.obligorId === r.id) delete g.cityLoans[b];
+  r.bbls = []; r.lineBal = 48_000; r.debt = 48_000; r.cash = 2_010_000; r.stressMs = 0; r.basis = 1; r.extendedTo = {};
   const id = r.id;
   // THE CONTROL: the same firm, the same month, no crumb. A month's money-
   // market yield on the balance tracks the policy rate, which the simulated
   // opening sets, so the repayment is read against the control rather than a
   // fixed balance.
   const ctl = structuredClone(g);
-  ctl.rivals.find((x) => x.id === id).debt = 0;
+  { const c = ctl.rivals.find((x) => x.id === id); c.debt = 0; c.lineBal = 0; }
   const c1 = E.advanceMonth(ctl, parcels, bbls, adjacency).rivals.find((x) => x.id === id);
   g = E.advanceMonth(g, parcels, bbls, adjacency);
   const r1 = g.rivals.find((x) => x.id === id);
@@ -56,7 +60,8 @@ console.log("\nRIVAL HUSKS — an empty book is paid off and wound up, not carri
   // negative equity: it is in arrears, and the calendar winds it up.
   let h = E.firstListings(E.newGame(12007, parcels, 2_500_000), parcels, bbls);
   const q = (h.rivals ?? []).find((x) => x.failedM === undefined && !(h.cityJobs ?? []).some((j) => j.firmId === x.id));
-  q.bbls = []; q.debt = 900_000; q.cash = 300_000; q.stressMs = 0; q.basis = 1; q.extendedTo = {}; q.uncalled = 0;
+  for (const [b, l] of Object.entries(h.cityLoans ?? {})) if (l.obligorId === q.id) delete h.cityLoans[b];
+  q.bbls = []; q.lineBal = 900_000; q.debt = 900_000; q.cash = 300_000; q.stressMs = 0; q.basis = 1; q.extendedTo = {}; q.uncalled = 0;
   const qid = q.id;
   let gone = null;
   for (let m = 0; m < 24 && gone === null; m++) {
@@ -84,6 +89,9 @@ console.log("\nRIVAL HUSKS — an empty book is paid off and wound up, not carri
     if (g.gameOver) g = { ...g, gameOver: null, cash: 5e6 };
     for (const r of g.rivals ?? []) {
       if (r.failedM !== undefined) { delete emptySince[r.id]; continue; }
+      // A builder between schemes is not a husk (GameState.builderFirms): it
+      // waits for its next site and retires after fifteen idle years (dev.ts).
+      if (r.builderProf) continue;
       const building = (g.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned);
       if (r.bbls.length || building) { delete emptySince[r.id]; continue; }
       emptySince[r.id] ??= g.month;

@@ -4021,7 +4021,17 @@ export function ownedHoldingValueFromRec(
   // and a construction lender both carry the land in a live job at what was
   // paid for it (the basis does not move until delivery, dev.ts), and the
   // building's value is recognised once, when it stands.
-  if (s.developments?.[h.bbl] && (rec.class === "land" || !rec.bldgArea) && h.costBasis > 0) return h.costBasis;
+  //
+  // FROZEN AT THE GROUNDBREAK'S MARK, NOT RESET TO COST (2026-10-15). Carried
+  // at cost, a site bought above the land mark marked DOWN the day it was
+  // bought and back UP the day ground broke: on one test lot net worth rose
+  // $0.25M at a groundbreaking that cleared 0.74 of its hurdle, with nothing
+  // built and nothing earned. The mark the dirt carried the moment before is
+  // held instead, which keeps the job still through construction (the point
+  // of the cost carry) without a step at either end. Older jobs, recorded
+  // before `landMark` existed, keep the cost carry.
+  const dev = s.developments?.[h.bbl];
+  if (dev && (rec.class === "land" || !rec.bldgArea) && h.costBasis > 0) return dev.landMark ?? h.costBasis;
   let v = holdingValue(rec, s.econ, h, s.month);
   // A TENANT WHO HAS SAID THEY ARE GOING IS GONE (2026-10-15). The notice
   // lands six months out, and from then the space is known to go dark; the

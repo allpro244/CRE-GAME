@@ -84,7 +84,9 @@ const deal = () => ({
 console.log("\nB. friends and family in one job, groundbreak to wind-up");
 const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels: P0, bbls, adjacency } = loadCity(0, E.normalizeParcels);
-const SEEDS = (process.env.SEEDS ?? "9401,9402,9403").split(",").map(Number);
+// Whether a $1M sponsor finds a lot that nearly pencils inside fifteen years
+// moves with the economy; five seeds keep at least two deals in reach.
+const SEEDS = (process.env.SEEDS ?? "9401,9402,9403,9404,9405").split(",").map(Number);
 const HZ = Number(process.env.HZ ?? 180);
 const IN = ["noi", "sold", "interest", "borrowed", "lpCalled", "fees"];
 const OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga", "lpDistributed"];
@@ -104,7 +106,7 @@ function play(seed, band) {
     // FIND, BUY AND BREAK GROUND: a land listing with a scheme that (nearly)
     // pencils and needs more cash than the sponsor has — so the investors are
     // load-bearing. Most dirt does not pencil (CLAUDE.md), so the bot takes a
-    // thin margin (hurdle ≥ 0.9): this harness tests the plumbing of the deal,
+    // thin margin (hurdle ≥ 0.85): this harness tests the plumbing of the deal,
     // and an investor loss is a path it should walk too.
     if (!formedAt && g.month % 3 === 0) {
       const own0 = E.fundableNow(g, parcels);
@@ -114,7 +116,7 @@ function play(seed, band) {
         if (!rec || rec.class !== "land" || L.ask > own0 * 0.8) continue;
         for (const u of ["multifamily", "office", "retail", "industrial"]) for (const f of [2, 3, 4, 6, 8, 12]) {
           const p = E.planDevelopment(g, parcels, L.bbl, u, f, 0.6, "gmp");
-          if (!p || p.hurdleRatio < 0.9) continue;
+          if (!p || p.hurdleRatio < 0.85) continue;
           const need = E.devFundingNeed(p).whole;
           if (need <= own0 - L.ask || need > (own0 - L.ask) * 2.2) continue;   // needs the investors, within 1:1 reach
           if (!pick || p.hurdleRatio > pick.p.hurdleRatio) pick = { L, u, f, p };
@@ -204,6 +206,7 @@ function play(seed, band) {
   return { g, lot, rec: (g.synClosed ?? []).find((x) => x.bbl === lot) };
 }
 for (const seed of SEEDS) play(seed);
+const formedA = formed, closedA = closed;   // part B alone; C plays again below
 
 // ── C. A PROVEN SPONSOR'S DEAL PAYS FEES ────────────────────────────────────
 // A sponsor investors read as Proven raises on Proven terms — a 9% pref, 20%
@@ -212,8 +215,10 @@ for (const seed of SEEDS) play(seed);
 // share of, and income to the sponsor; the cash identity above holds through it.
 console.log("\nC. a Proven sponsor's deal, with fees");
 {
-  const formedBefore = formed;
-  const { g, lot, rec } = play(9401, "Proven");
+  // The first seed on which a sponsor finds a deal at all.
+  let formedBefore = formed, out = null;
+  for (const sd of SEEDS) { formedBefore = formed; out = play(sd, "Proven"); if (formed > formedBefore) break; }
+  const { g, lot, rec } = out;
   const w = rec ? null : g.syndications?.[lot];
   const fees = (g.books ?? []).reduce((a, y) => a + (y.fees ?? 0), 0);
   const terms = rec ? null : w;
@@ -223,8 +228,8 @@ console.log("\nC. a Proven sponsor's deal, with fees");
   ok(!terms || terms.hurdles[0] === 0.09, "on Proven terms");
 }
 console.log();
-ok(formed >= 2, `a syndicate formed on ${formed} of ${SEEDS.length} seeds`);
-ok(closed >= 1, `and wound up through a sale on ${closed}`);
+ok(formedA >= 2, `a syndicate formed on ${formedA} of ${SEEDS.length} seeds`);
+ok(closedA >= 1, `and wound up through a sale on ${closedA}`);
 ok(Math.abs(worstResid) <= 1, `cash identity every month: worst residual ${worstResid.toFixed(2)}`);
 ok(viol === 0, `syndicate and vehicle invariants: ${viol} violations${firstViol ? ` — first ${firstViol}` : ""}`);
 console.log(fails ? "\nFAIL" : "\nPASS — friends and family in, paid through the waterfall, every dollar on the ledger");

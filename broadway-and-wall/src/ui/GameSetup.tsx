@@ -10,6 +10,7 @@ import {
 import { generateFirmName } from "@/engine/firm";
 import { currentCity, currentSize, currentDev, currentCash0 } from "@/state/city";
 import { cityList, cityName, sizeList, developmentList, extentList, randomSeed, PARK_AMOUNTS } from "@/citygen/index.mjs";
+import { drawPlatOffThread } from "@/state/platClient";
 import { BUILD_STAMP } from "@/buildStamp";
 import { usd } from "./format";
 
@@ -51,6 +52,7 @@ const SECTIONS = [
   { id: "clock", label: "The clock" },
   { id: "seed", label: "Seed" },
   { id: "sandbox", label: "Sandbox" },
+  { id: "map", label: "The map" },
 ] as const;
 
 
@@ -81,6 +83,23 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   const [cashText, setCashText] = useState("");
   const [seedText, setSeedText] = useState(String(d.seed));
   useEffect(() => setSeedText(String(d.seed)), [d.seed]);
+
+  // THE SEED'S MAP. Drawn off the page's thread whenever anything that shapes
+  // the town changes — island, size, build-out, parks, seed — after a short
+  // pause, so typing a seed or clicking New seed a few times draws one map.
+  // Same makeCity call Break ground makes, so this is the town you will get.
+  const [plat, setPlat] = useState<{ key: string; svg?: string; lots?: number; err?: string } | null>(null);
+  const platKey = `${d.island}|${d.size}|${d.dev}|${d.parks}|${d.seed}`;
+  useEffect(() => {
+    if (isWritten) return;
+    let gone = false;
+    const t = setTimeout(() => {
+      void drawPlatOffThread({ island: d.island, seed: d.seed, size: d.size, dev: d.dev, parks: d.parks === "medium" ? undefined : d.parks })
+        .then((r) => { if (!gone) setPlat({ key: platKey, svg: r.svg, lots: r.lots, err: r.err }); });
+    }, 250);
+    return () => { gone = true; clearTimeout(t); };
+  }, [platKey, isWritten]);
+  const platFresh = plat?.key === platKey;
   const customCash = !START_CASH_CHOICES.includes(d.cash0 as never);
 
 
@@ -412,6 +431,39 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                   </span></span>
               </label>
             </div>
+          </section>
+          {/* ------------------------------------------------------------- map */}
+          <section id="setup-map" className="setup-sec">
+            <h2 className="setup-h"><span className="setup-n">8</span>The map</h2>
+            {isWritten ? (
+              <p className="setup-lede">Manhattan's streets and lots are the real ones — the seed deals the stock, not the map.</p>
+            ) : (
+              <>
+                <p className="setup-lede">
+                  The plat this seed deals: streets, blocks, parks and every lot, coloured by what stands on it
+                  (offices blue, shops orange, flats green, industry grey, vacant land tan). Not the town you want? Draw another.
+                </p>
+                <div className="setup-row" style={{ flexWrap: "wrap", margin: "6px 0 10px" }}>
+                  <button type="button" className="setup-btn setup-btn-strong" onClick={() => up({ seed: randomSeed() })}>New map</button>
+                  <span className="setup-dim">
+                    {!platFresh ? "Drawing the town…"
+                      : plat?.err ? `The map could not be drawn here (${plat.err}). The seed still works.`
+                      : <>the island of <strong>{islandWord}</strong> · seed <span className="mono">{d.seed}</span> · {plat?.lots?.toLocaleString()} lots</>}
+                  </span>
+                </div>
+                <div
+                  className="setup-plat"
+                  aria-label={`Plat map of ${islandWord}`}
+                  role="img"
+                  style={{
+                    width: "100%", maxWidth: 900, aspectRatio: "4 / 3", borderRadius: 6, overflow: "hidden",
+                    background: "#a9c8dd", border: "1px solid rgba(0,0,0,0.15)", opacity: platFresh ? 1 : 0.45,
+                    transition: "opacity 0.2s", display: "flex",
+                  }}
+                  dangerouslySetInnerHTML={plat?.svg ? { __html: plat.svg.replace("<svg ", '<svg width="100%" height="100%" ') } : undefined}
+                />
+              </>
+            )}
           </section>
           {loadError && <div className="start-err">{loadError}</div>}
         </div>

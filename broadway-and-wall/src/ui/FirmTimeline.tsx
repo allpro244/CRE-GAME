@@ -510,6 +510,9 @@ export default function FirmTimeline() {
         <button className="btn" onClick={() => useStore.getState().setPage("market")}>
           Open the Marketplace →
         </button>
+        {/* The street's year is the town's, not the firm's: a shop with no
+            deed yet still watches who broke ground and who folded. */}
+        {game.month >= 12 && <StreetYear game={game} />}
       </div>
     );
   }

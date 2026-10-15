@@ -2963,3 +2963,36 @@ grade.
    Default, relief letters and credit migration read cover and cash.
    Measured over 4 seeds x 12 years: annual default IG 0.4%, mid 2.3%, weak
    ~10%; under the 20% hold IG 0.8%, mid 2.7%, weak 15.6%.
+
+## Round two of the simulated economy (2026-10-15)
+
+Long-run validation (8 seeds x 60 years) found, and this round fixes:
+
+- **A deflation trap.** One century's bank lost its credibility and expectations
+  followed realised deflation down to -6%/yr for a decade while nominal pay sat
+  frozen, so real pay rose 4.5x in sixty years. Two real limits are now in:
+  inflation below zero approaches a soft floor near -2%/yr (pay is not cut;
+  post-war fiat deflations ran -0.3% to -2%), and at the lower bound the other
+  tools (asset purchases, fiscal stimulus) push demand in proportion to how far
+  the rule sits under the floor.
+- **The bond market's model of the cycle** (`RULE_GAP_RHO`) was fitted on the
+  drawn economy; re-measured on the simulated one (0.974 -> 0.9445). The curve
+  now inverts 11-12% of months (was 7%) and inversion precedes 55% of
+  recessions (was 40%).
+- **Labour markets bottom out.** Okun's level bends below 3.5% toward 2.5%
+  (the post-war lows), so a boom goes into pay and prices, not into a 1.5%
+  unemployment rate.
+- **Street tenants fail.** Trade failures above the background now hand space
+  back on everyone's buildings (`failedSf`), not only the player's. Under a 20%
+  hold, peak annual failures return 2.5% of industrial stock, 1.6% of retail,
+  0.8% of office.
+- **Households borrow to shop.** Retail space demand carries a consumer-credit
+  term: ~1.5% of spending per point of real money over neutral (`hhCredit`).
+- Demand noise trimmed; weak-tenant background defaults lowered to small-firm
+  norms.
+
+Measured after: national unemployment 6.0 / 5.7 / 3.7 / 8.7 (mean / p50 / p10 /
+p90; US 5.7 / 5.5 / 3.9 / ~8.5); output gap sd 2.6; policy over 10% in 10% of
+months and inflation over 6% in 11% (US 1948-2024: ~9% and ~20%). Tenant
+defaults (4 seeds x 12 years): weak 4.5%/yr, mid 1.6%, IG ~0; under a 20% hold
+8.8 / 2.5 / 0.5%. Engine cost: ~10% more per month.

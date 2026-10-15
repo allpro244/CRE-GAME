@@ -1958,6 +1958,11 @@ export interface Econ {
   indShock?: Record<Sector, number>;
   /** Each trade's books in aggregate (market.ts tickFirmBook). */
   firmBooks?: Record<Sector, FirmBook>;
+  /** Space handed back on the street by failed firms, cumulative sf by class. */
+  failedSf?: Record<BuiltClass, number>;
+  /** Household spending on goods against the opening, from the cost of consumer credit. */
+  hhCredit?: number;
+  hhCreditRef?: number;
   /** The opening reference the books measure pay and rent against. */
   firmRef?: { wageRel: number; realNatPay: number; rent: Record<string, number> };
   /** Each trade's slow local trend offset, per year (mean-reverting). */

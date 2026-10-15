@@ -127,7 +127,7 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
 export function tenantFailOdds(f: TenantFin, credit: Credit): number {
   // Background odds at rated-debt norms (S&P long-run annual defaults: ~0.1-0.3%
   // investment grade, ~1-2% BB/B, ~4-6% for unrated small firms).
-  const background = credit === 2 ? 0.0002 : credit === 1 ? 0.0011 : 0.0026;
+  const background = credit === 2 ? 0.0002 : credit === 1 ? 0.0011 : 0.0017;
   const coverStress = Math.max(0, Math.min(4, 2 - f.cover));
   const cashStress = Math.max(0, 1 - f.liqM);
   const broke = f.cash < 0 ? Math.min(0.25, 0.04 * (1 - f.liqM)) : 0;

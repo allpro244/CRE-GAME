@@ -1861,6 +1861,13 @@ export interface Econ {
     demShock?: number;
     /** the term spread, smoothed over a year — the banks' lending margin */
     curveSm?: number;
+    /** private credit against its trend, share of output (BIS gap), and last month's */
+    credGap?: number;
+    credGapPrev?: number;
+    /** real home prices (opening 1), last month, their slow trend, expected growth, and the references */
+    hpi?: number; hpiPrev?: number; hpiTrend?: number; hpiG3?: number; hpiPay0?: number; hpiUc0?: number;
+    /** what the mortgage stock pays, and its five-year average */
+    mortCoupon?: number; mortRef?: number;
     /** ex-ante real policy rate, the last 13 months — the demand equation reads the lagged year */
     rHist?: number[];
     /** what the corporate sector pays on its debt: the fixed ladder, and the blend with floating */
@@ -1962,6 +1969,8 @@ export interface Econ {
   firmBooks?: Record<Sector, FirmBook>;
   /** Space handed back on the street by failed firms, cumulative sf by class. */
   failedSf?: Record<BuiltClass, number>;
+  /** The street's representative tenants by class (tenantBooks.ts). */
+  streetCohorts?: Partial<Record<BuiltClass, import("./tenantBooks").StreetCohort[]>>;
   /** Household spending on goods against the opening, from the cost of consumer credit. */
   hhCredit?: number;
   hhCreditRef?: number;
@@ -2295,6 +2304,8 @@ export interface Econ {
   siteHurdle?: Partial<Record<BuiltClass, number>>;
   /** Loan index at the opening, the reference for tenure choice (market.ts). */
   tenureRef?: number;
+  /** Log owning-over-renting cost at the opening, the reference for tenure choice (market.ts). */
+  tenureOwnRef?: number;
   /** Renter share of households against the opening, rolled (market.ts). */
   tenureIdx?: number;
   // THE PIPELINE AS A QUEUE, not a number. Every start is a cohort with a

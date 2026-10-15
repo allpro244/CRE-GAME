@@ -3018,3 +3018,40 @@ ahead of 75% of recessions (US 8 of the last 10), 13% of months in recession
 (US ~14%), about one recession a decade (US since 1983: one a decade; 1948-82
 nearer 1.6), output gap sd 2.3 (CBO ~2.2), unemployment mean 6.2 / p90 8.3.
 8 seeds x 60 years: real pay 1.5-1.8x, prices 2.3-4.8%/yr, jobs 1.06-2.8x.
+
+## Round four: taking out what was still artificial (2026-10-15)
+
+1. **The apartment "cap".** Flats sold out ~26-48% of months with a queue of
+   1-4% of stock while real rents rose 3-7%/yr — a shortage clearing through
+   price, which is real. Two artefacts it exposed are fixed: occupied space
+   could stay above the cap, so vacancy fell to 0.12% against a 1.9% floor of
+   flats between tenants (it now drains to the cap as leases turn); and
+   construction switched on and off yearly on whether one best site cleared
+   its hurdle (it now ramps up as the best sites come within a tenth of
+   clearing — builders do not share one hurdle).
+2. **Street tenants keep the same books as the player's.** Representative
+   tenants per trade and covenant, six each, sized off the street's let space,
+   on the player's tenants' accounts (tenantBooks.ts). Their failures above
+   the background hand space back; the failed share re-lets to newcomers
+   borrowing at today's lender limits. Peak annual failures under a 20% hold:
+   2.2% of industrial stock, 1.5% retail, 0.3% office. In the process every
+   tenant book moved to dollars of the day: revenue had been frozen in
+   nominal terms while rents escalated, so a long inflation (prices x32)
+   bankrupted the street. Tenants now keep ~1.5 months of costs in cash
+   (US small-business median ~27 days) and re-lever as earnings grow.
+3. **Panics are grown, not drawn.** A national private credit gap (BIS
+   credit-to-GDP) builds with cheap money, loose lenders and a hot economy and
+   is written down in slumps; its growth adds to spending (the credit
+   impulse) and its unwinding subtracts. A bank panic's odds scale with it
+   (Schularick & Taylor). Median recession unemployment rise 3.1 points
+   (US 3.6), p75 4.8 (US 4.4).
+4. **Households.** Real home prices chase income over the user cost of owning
+   (mortgage rate + upkeep - expected appreciation - expected inflation),
+   slowly; households spend ~4c/$ of housing wealth; refinancing waves when
+   rates fall; renting vs owning reads the full cost of owning against rent.
+   Real home prices: yoy sd 3.5%, worst century drawdown median ~28%
+   (US 2006-12 ~35%).
+
+Tenant defaults (4 seeds x 12 years): weak 4.8%/yr, mid 1.5%, IG 0.6%; under a
+20% hold 16.5 / 5.8 / 2.4%. 8 seeds x 60 years: real pay 1.4-1.7x, no class on
+the vacancy bound.

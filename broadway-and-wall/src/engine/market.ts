@@ -5,6 +5,7 @@ import { tickBands } from "./bands";
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
+import { tickStreetTenants } from "./tenantBooks";
 import { simulateHistory, driftInflTarget, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { settleSupplyDeliveries } from "./supply";
@@ -414,7 +415,8 @@ const AFFORD_BAND: [number, number] = [0.45, 2.2];
  */
 /** Renter demand per point of the loan index over the town's opening rate.
  *  See the tenure note at the multifamily demand driver. */
-const TENURE_PER_PT = 0.008;
+/** Renter households per log point of owning cost over renting cost (~0.8% per mortgage point / ~9% cost). */
+const TENURE_PER_LOG = 0.09;
 // OFFICE 0.45 -> 0 (2026-10-14). The 0.45 rested on one unverified London
 // estimate of total occupancy demand, which the note above already says is
 // mostly a QUALITY effect. The quantity record runs the other way: US office
@@ -1268,6 +1270,20 @@ const IS_PHI1 = 1.621, IS_PHI2 = -0.637;
 const IS_RATE = 0.0100, IS_CORP = 0.0044;
 /** Credit window pull per month per unit of the national window off normal. */
 const IS_CREDIT = 0.0008;
+/** Output per log point of real home prices over their trend, per month (wealth effect ~4c/$ on ~1.5x GDP). */
+const HH_WEALTH = 0.0010;
+/** Output per point of mortgage coupon saved against its five-year average, per month. */
+const HH_REFI = 0.00006;
+/** Output per unit of monthly change in the private credit gap (the credit impulse). */
+const CREDIT_IMPULSE = 0.04;
+/** Credit gap built per month per point of real money under neutral (share of GDP). */
+const CRED_PER_EASY_PT = 0.0008;
+/** ...per unit of the lenders' window over normal, and per unit of output over potential. */
+const CRED_PER_WINDOW = 0.004, CRED_PER_GAP = 0.03;
+/** Written down per month per two points of unemployment over natural-plus-one (defaults). */
+const CRED_RECESSION_WRITEOFF = 0.0010;
+/** Months for the trend to catch up with the stock (a decade, as the BIS one-sided filter). */
+const CRED_TREND_M = 120;
 /**
  * THE BANKS' MARGIN IS THE CURVE (Adrian, Estrella & Shin 2019). Banks fund
  * short and lend long, so the term spread is their net interest margin on new
@@ -2118,6 +2134,70 @@ function centralBankChair(s: GameState, n: NonNullable<Econ["nat"]>): { untilM: 
   return n.chair;
 }
 
+/**
+ * HOUSEHOLDS OWN HOMES AND OWE MORTGAGES (2026-10-15).
+ *
+ * Real home prices chase a fundamental value: real income (national pay
+ * against prices) over the user cost of owning — the mortgage rate (the long
+ * rate plus a 1.7-point spread), upkeep and property tax (2.5%), less the
+ * appreciation buyers expect (last three years' real growth, damped). Prices
+ * are sticky and carry momentum — the Case-Shiller index autocorrelates at
+ * about 0.5 a year (Case & Shiller 1989) — so they overshoot and correct over
+ * years. A point on mortgage rates takes ~9% off the fundamental.
+ *
+ * Two flows reach spending. Wealth: households spend about four cents a year
+ * of each dollar of housing wealth gained or lost (Case, Quigley & Shiller
+ * 2005; Mian, Rao & Sufi 2013), and housing is about 1.5x a year's output.
+ * Refinancing: when mortgage rates fall below what the stock pays, owners
+ * refinance within a couple of years and spend part of the interest saved;
+ * when rates rise, the stock reprices only as people move (~1/15 a year).
+ */
+function tickHouseholds(e: Econ, n: NonNullable<Econ["nat"]>, gapPrev: number) {
+  void gapPrev;
+  const mort = (e.indexRate ?? 5.4) / 100 + 0.017;
+  n.mortCoupon ??= mort;
+  n.mortCoupon += (mort - n.mortCoupon) * (mort < n.mortCoupon ? 1 / 24 : 1 / 180);
+  n.mortRef = (n.mortRef ?? n.mortCoupon) + (n.mortCoupon - (n.mortRef ?? n.mortCoupon)) / 60;
+  // National real income: the model's own output index (potential ~2%/yr
+  // plus the gap), at the ~0.4 income elasticity of real house prices that
+  // gives the long-run ~0.8%/yr the US real index has shown.
+  const realPay = Math.exp(0.4 * (n.lnY ?? 0));
+  n.hpi ??= 1;
+  n.hpiPay0 ??= realPay;
+  const g3 = n.hpiG3 ?? 0;
+  const userCost = hhUserCost(mort, g3, n.inflExp ?? 0.02);
+  n.hpiUc0 ??= userCost;
+  const fundamental = (realPay / n.hpiPay0) * Math.pow(n.hpiUc0 / userCost, HPI_UC_ELAST)
+    * (1 + 0.5 * Math.max(-0.2, Math.min(0.2, n.credGap ?? 0)));
+  const prev = n.hpiPrev ?? n.hpi;
+  n.hpiPrev = n.hpi;
+  // Sticky: a third of the gap a year. The momentum is in the expectations
+  // (g3 lowers the user cost while prices rise), which is the bubble channel.
+  n.hpi = Math.max(0.2, n.hpi + (fundamental - n.hpi) / HPI_CHASE_M);
+  // Expected appreciation: the last three years' real growth, annualised.
+  n.hpiG3 = g3 + ((n.hpi / Math.max(1e-6, prev) - 1) * 12 - g3) / 36;
+  // The trend the wealth effect is measured from: income-driven, slow.
+  n.hpiTrend = (n.hpiTrend ?? n.hpi) + (n.hpi - (n.hpiTrend ?? n.hpi)) / 120;
+}
+
+/** Real user cost of owning: mortgage rate + upkeep and tax - expected real appreciation - expected inflation. */
+function hhUserCost(mort: number, g3: number, inflExp: number): number {
+  return Math.max(0.035, mort + 0.025 - 0.3 * Math.max(-0.03, Math.min(0.05, g3)) - inflExp);
+}
+/** Elasticity of the price fundamental to the user cost (~7% off per mortgage point near 6%). */
+const HPI_UC_ELAST = 0.5;
+/** Months for prices to close their gap to the fundamental. */
+const HPI_CHASE_M = 30;
+
+/** The cost of owning a home against the opening, real (house price x user cost). */
+export function ownCostIdx(e: Econ): number {
+  const n = e.nat;
+  if (!n) return 1;
+  const mort = (e.indexRate ?? 5.4) / 100 + 0.017;
+  const uc = hhUserCost(mort, n.hpiG3 ?? 0, n.inflExp ?? 0.02);
+  return (n.hpi ?? 1) * uc / Math.max(1e-6, n.hpiUc0 ?? uc);
+}
+
 export function tickNation(s: GameState) {
   const e = s.econ;
   if (!e.nat) {
@@ -2297,6 +2377,14 @@ export function tickNation(s: GameState) {
   const impulse = - IS_RATE * (rAvg - rStar)
     - IS_CORP * (corpRate - corpNeutral)
     + IS_CREDIT * ((n.creditNat ?? 1) - 1)
+    // CREDIT GROWTH IS SPENDING (the credit impulse, Biggs & Mayer 2010): new
+    // borrowing adds to demand while the stock is growing faster than output,
+    // and paying it down subtracts — the deleveraging drag that makes
+    // credit-fuelled booms end in deeper slumps (Jorda, Schularick & Taylor 2013).
+    + CREDIT_IMPULSE * ((n.credGap ?? 0) - (n.credGapPrev ?? n.credGap ?? 0))
+    // HOUSEHOLDS SPEND OUT OF WHAT THEY OWN AND WHAT THEY OWE (see tickHouseholds).
+    + HH_WEALTH * Math.log((n.hpi ?? 1) / (n.hpiTrend ?? n.hpi ?? 1))
+    + HH_REFI * ((n.mortRef ?? n.mortCoupon ?? 0) - (n.mortCoupon ?? n.mortRef ?? 0)) * 100
     + IS_CURVE * Math.max(-5, Math.min(1, (n.curveSm ?? CURVE_NORMAL) - CURVE_NORMAL))
     - 0.004 * (e.panic?.force ?? 0)
     + shockImpulse
@@ -2312,6 +2400,27 @@ export function tickNation(s: GameState) {
     - ACCEL * Math.max(0, y2 - y1);
   n.gap1 = y1;
   n.gap = IS_PHI1 * y1 + IS_PHI2 * y2 + impulse;
+  // THE CREDIT CYCLE (2026-10-15). Private credit against its trend, as a
+  // share of output (the BIS credit-to-GDP gap; US range roughly -10 to +12
+  // points, +12 at the 2007 top). It builds while money is cheap against
+  // neutral, lenders' standards are loose and the economy runs hot; it is
+  // written down in recessions as loans default; and the trend catches up
+  // with it over about a decade. A bank panic's odds read it
+  // (blackswans.ts): credit booms are the best single predictor of financial
+  // crises there is (Schularick & Taylor 2012).
+  {
+    const g0 = n.credGap ?? 0;
+    n.credGapPrev = g0;
+    const build = CRED_PER_EASY_PT * Math.max(-3, Math.min(4, (rStar - rAvg) * 100))
+      + CRED_PER_WINDOW * ((n.creditNat ?? 1) - 1)
+      + CRED_PER_GAP * Math.max(0, y1);
+    // Defaults follow the labour market: about 1.5% of output a year per two
+    // points of unemployment over its natural rate (US charge-offs 2009-10
+    // ran ~2.5-3% of loans, loans ~1.5x GDP... less recoveries).
+    const writeOff = CRED_RECESSION_WRITEOFF * Math.max(0, n.unemp - NAT_U_STAR - 0.01) / 0.02;
+    n.credGap = g0 + build - writeOff - g0 / CRED_TREND_M;
+  }
+  tickHouseholds(e, n, y1);
   // The curve banks lend on: long minus short, smoothed over a year (loan
   // books reprice slowly, and a bank's margin is its whole book's).
   n.curveSm = (n.curveSm ?? ((e.indexRate ?? 5.4) - n.policy)) + (((e.indexRate ?? 5.4) - n.policy) - (n.curveSm ?? 0)) / 12;
@@ -4491,7 +4600,18 @@ export function tickEcon(s: GameState) {
     // anyway. `rawSites === undefined` is the first year before the annual
     // refresh has run — treat as unconstrained so the book can form.
     const rawSites = e.sitePencil?.[k];
-    const sites = rawSites === undefined ? 1 : Math.max(0, rawSites);
+    // A RAMP, NOT A SWITCH (2026-10-15). `sitePencil` is zero unless the best
+    // sampled site clears the full hurdle, so construction flipped on and off
+    // from one annual refresh to the next (measured: apartment starts 0, 9,650,
+    // 0, 3,430 in alternate years on one seed). Builders do not share one
+    // hurdle — a merchant builder holding land, a family office, a pension fund
+    // with a lower cost of capital will each go a little under the street's
+    // line — so when the best sites stand within a tenth of clearing
+    // (`siteHurdle`, the same P97 including the ones that fail), some still
+    // start, in proportion to how close they are. Continuous at the hurdle.
+    const nearH = e.siteHurdle?.[k];
+    const ramp = nearH !== undefined && nearH < 1 ? Math.max(0, (nearH - 0.9) / 0.1) : 0;
+    const sites = rawSites === undefined ? 1 : Math.max(0, rawSites > 0 ? rawSites : ramp);
     // ONE ANSWER TO "DOES IT PAY" (2026-10-13). This multiplied two of them:
     // `devPencils` (a generic scheme on a top-decile corner, no land, ~0.66 in
     // an ordinary month) times `sites` (the best real sites' own
@@ -4988,8 +5108,17 @@ export function tickEcon(s: GameState) {
     // is decided at moves, not monthly: rolled over three years, which is
     // also how long the 1980s shift took to show in the survey.
     if (k === "multifamily") {
-      const ref = (e.tenureRef ??= e.indexRate ?? 5.4);
-      const raw = 1 + TENURE_PER_PT * ((e.indexRate ?? ref) - ref);
+      // OWN OR RENT, ON WHAT EACH COSTS (2026-10-15). This read the loan index
+      // alone. A household chooses on the user cost of owning — the house
+      // price times (mortgage rate + upkeep and tax - expected appreciation)
+      // (Poterba 1984; Himmelberg, Mayer & Sinai 2005) — against the rent. The
+      // elasticity keeps the old calibration: a point on mortgage rates moves
+      // owning cost ~9% and renter households ~0.8%, so ~0.09 per log point.
+      const own = ownCostIdx(e);
+      const rentRel = (e.effRentIdx?.multifamily ?? 1) / Math.max(0.1, e.cpi ?? 1);
+      const rel = Math.log(own / Math.max(1e-6, rentRel));
+      const ref = (e.tenureOwnRef ??= rel);
+      const raw = Math.exp(TENURE_PER_LOG * (rel - ref));
       e.tenureIdx = (e.tenureIdx ?? 1) + (raw - (e.tenureIdx ?? 1)) / 36;
     }
     // HOUSEHOLDS BORROW TO SHOP (2026-10-15). Cars, furniture, appliances and
@@ -5158,23 +5287,15 @@ export function tickEcon(s: GameState) {
         - (e.playerNow?.sf?.[k] ?? 0) * (e.occupied[k] / Math.max(1, e.stock[k])));
       (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;
     }
-    // STREET TENANTS FAIL TOO (2026-10-15). The trades' books (tickFirmBook)
-    // say what share of each trade's firms went under this month. Above the
-    // ordinary background — which the market's churn already carries — those
-    // tenants stop paying and hand their space back at once, in everyone's
-    // buildings, not only the player's (whose tenants carry their own books).
-    // They are gone as demand too, so the pool loses them with the floors.
-    {
-      const secs = SECTOR_CLASSES[k] ?? [];
-      let wSum = 0, excess = 0;
-      for (const sec of secs) {
-        const w = e.sectorShare?.[sec] ?? 1 / SECTORS.length;
-        wSum += w;
-        excess += w * Math.max(0, (e.firmBooks?.[sec]?.fail ?? FIRM_FAIL_BASE) - FIRM_FAIL_BASE);
-      }
-      if (wSum > 0 && excess > 0) {
+    // STREET TENANTS FAIL OFF THEIR OWN BOOKS (2026-10-15): representative
+    // tenants per trade and covenant (tenantBooks.ts), the same accounts the
+    // player's tenants keep. Their failures above the background the churn
+    // already carries hand space back at once, and are gone as demand too.
+    if (k !== "multifamily") {
+      const share = tickStreetTenants(e, k, SECTOR_CLASSES[k] ?? [], e.sectorShare ?? {}, s.month);
+      if (share > 0) {
         const street = Math.max(0, e.occupied[k] - (pNow ?? 0));
-        const shed = street * excess / wSum;
+        const shed = street * share;
         e.occupied[k] -= shed;
         e.pool[k] = Math.max(0, e.pool[k] - shed);
         (e.failedSf ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] += shed;
@@ -5192,7 +5313,16 @@ export function tickEcon(s: GameState) {
     // ...and the street cannot move its tenants into the player's empty floors.
     const playerDark = pNow !== undefined ? Math.max(0, (e.playerNow?.sf?.[k] ?? 0) - pNow) : 0;
     const streetCap = Math.max(pNow ?? 0, housable - inTransit - playerDark);
-    e.occupied[k] = clamp(e.occupied[k] + absorb, 0, Math.max(e.occupied[k] > streetCap ? Math.min(e.occupied[k], housable) : 0, streetCap));
+    // ABOVE THE CAP, TENANTS STILL MOVE OUT (2026-10-15). This held occupied
+    // wherever it already was once it sat over the cap, so a flat market
+    // could stay fuller than physically possible: measured, apartment vacancy
+    // 0.12% against a 1.9% residence floor (the flats between tenants), i.e.
+    // nobody moving for a year. The suites in transit are empty by
+    // definition; occupied above the cap now drains to it at half the gap a
+    // month, as leases turn — not in one step, so a demolition or a stock
+    // count does not print a cliff.
+    const next = clamp(e.occupied[k] + absorb, 0, Math.max(streetCap, Math.min(e.occupied[k], housable)));
+    e.occupied[k] = next > streetCap ? next - 0.5 * (next - streetCap) : next;
 
     // THE GIVE-BACK. What a tenant would take AT TODAY'S RENT, against what it
     // is contractually sitting in — and the difference goes on the market at

@@ -79,6 +79,18 @@ const YEAR = 12;
 // game sees two or three, and a given kind is once in a lifetime.
 const WAVE_HAZ = 1 / 200;
 const PANIC_HAZ = 1 / 200;
+/**
+ * A PANIC IS GROWN, NOT DRAWN (2026-10-15). Its odds were a flat one in two
+ * hundred a year. Financial crises follow credit booms: in Schularick & Taylor's
+ * 14-country, 140-year panel a one-standard-deviation rise in five-year credit
+ * growth roughly doubles the odds of a crisis. Here the odds scale with the
+ * private credit gap — about a third of the base rate after a deleveraging,
+ * the base rate at trend, five to eight times it at a 2007-sized boom.
+ */
+function panicHazard(credGap: number): number {
+  return PANIC_HAZ * Math.exp(PANIC_PER_GAP * Math.max(-0.15, Math.min(0.25, credGap)));
+}
+const PANIC_PER_GAP = 15;
 const FISCAL_HAZ = 1 / 350;
 const CAMPUS_HAZ = 1 / 200;
 const EMBARGO_HAZ = 1 / 250;
@@ -105,7 +117,7 @@ export function tickBlackSwans(s: GameState, parcels: ParcelTable, bbls: string[
   if (!e.embargo && rng(s, "shock") < EMBARGO_HAZ / 12) startEmbargo(s);
   else if (!e.arrivals && rng(s, "shock") < ARRIVALS_HAZ / 12) startArrivals(s);
   else if (!e.capWave && rng(s, "shock") < WAVE_HAZ / 12) startCapitalWave(s);
-  else if (!e.panic && rng(s, "shock") < PANIC_HAZ / 12) startPanic(s);
+  else if (!e.panic && rng(s, "shock") < panicHazard(e.nat?.credGap ?? 0) / 12) startPanic(s);
   else if (!e.fiscal && rng(s, "shock") < fiscalHaz / 12) startFiscal(s);
   else if (!e.campus && rng(s, "shock") < CAMPUS_HAZ / 12) startCampus(s, parcels, bbls);
 }

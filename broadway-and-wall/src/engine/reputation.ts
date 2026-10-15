@@ -166,6 +166,22 @@ export function playerEvidence(s: GameState): Evidence[] {
     const e = (s.exits ?? []).find((x) => x.bbl === r.bbl && x.soldM >= r.m && x.soldM - r.m <= 24);
     if (e && r.value > 0 && e.price > 1.15 * r.value) out.push({ m: e.soldM, ev: -10, size: 0, kind: "credit", label: `${e.address}: sold ${Math.round((e.price / r.value - 1) * 100)}% over the buyout appraisal` });
   }
+  // A WOUND-UP FUND (fund.ts settleFund) is an investor vehicle realised: its
+  // LPs judge it on what came back (the fund does not carry a pitched IRR, so
+  // the multiple speaks), sized by its commitments.
+  for (const f of s.fundHistory ?? []) {
+    if (!(f.called > 0)) continue;
+    const multiple = f.distributed / f.called;
+    const size = sizeWeight(f.size, level);
+    let ev = outcomeEvidence(null, null, multiple);
+    if (ev > 0) ev *= size;
+    else {
+      ev *= faultMult(s, f.raisedM, f.closedM);
+      ev *= 0.6 + 1.4 * Math.min(1, f.called / Math.max(1, managed + f.called));
+      if (f.gpCommit / Math.max(1, f.size) >= 0.10) ev *= 0.85;
+    }
+    out.push({ m: f.closedM, ev, size: ev > 0 ? size : 0, kind: "investor", label: `Your fund, ${multiple.toFixed(2)}x to its LPs` });
+  }
   // MISCONDUCT (§3.4): a deed lost while its syndicated job was still in the
   // ground broke the completion guarantee — a separate −25 on top of the
   // outcome, fading over 20 years, Toxic while it lives.
@@ -303,7 +319,9 @@ export interface FirmStanding { id: string; name: string; score: number; n: numb
 export function rankStreet(s: GameState): FirmStanding[] {
   const rows: { id: string; name: string; sc: ReturnType<typeof scoreOf>; bornM: number; fund: boolean; inst: boolean }[] = [];
   const pe = playerEvidence(s);
-  rows.push({ id: "you", name: "You", sc: scoreOf(pe, s.month), bornM: 0, fund: false, inst: false });
+  // Blue-chip needs a realised fund that returned its capital.
+  const fundDone = (s.fundHistory ?? []).some((f) => f.called > 0 && f.distributed >= f.called);
+  rows.push({ id: "you", name: "You", sc: scoreOf(pe, s.month), bornM: 0, fund: fundDone, inst: false });
   for (const r of s.rivals ?? []) {
     if (r.failedM !== undefined || r.retiredM !== undefined) continue;
     rows.push({ id: r.id, name: r.name, sc: scoreOf(rivalEvidence(s, r), s.month), bornM: r.bornM, fund: false, inst: INSTITUTIONAL_STYLES.has(r.style) });

@@ -35,7 +35,7 @@ export const SHRINK_K = 4;
 /** An own-money deal's evidence counts at 90% of an investor deal's. Shape parameter. */
 export const OWN_WEIGHT = 0.9;
 /** A record goes stale after 7 quiet years and reaches nothing 10 years later. Shape parameters. */
-const QUIET_M = 84, FADE_M = 120, DROP_M = 360, NEG_FADE_M = 120;
+const QUIET_M = 84, FADE_M = 120, DROP_M = 360, NEG_FADE_M = 120, MISCONDUCT_FADE_M = 240;
 
 const priceLevel = (e: Econ) => (e.priceLevel ?? 1) * (e.cpi ?? 1);
 
@@ -47,8 +47,10 @@ export interface Evidence {
   ev: number;
   /** Size weight (for experience N); 0 for a credit event. */
   size: number;
-  kind: "own" | "investor" | "credit" | "derived";
+  kind: "own" | "investor" | "credit" | "derived" | "warning" | "misconduct";
   label: string;
+  /** A broken guarantee or the like: fades over 20 years, and keeps the firm Toxic while it lives. */
+  misconduct?: boolean;
 }
 
 /**
@@ -128,7 +130,10 @@ export function playerEvidence(s: GameState): Evidence[] {
     const size = sizeWeight(equity, level);
     let ev = outcomeEvidence(actual, pitch, multiple);
     if (ev > 0) ev *= size;
-    else {
+    else if (syn?.misconduct) {
+      // A broken completion guarantee is the sponsor's, never the market's: ×2 (§3.4).
+      ev *= 2 * (0.6 + 1.4 * Math.min(1, equity / Math.max(1, managed)));
+    } else {
       ev *= faultMult(s, e.boughtM, e.soldM);
       ev *= 0.6 + 1.4 * Math.min(1, equity / Math.max(1, managed));
       if (gpShare >= 0.10) ev *= 0.85;   // the sponsor's own money suffered alongside
@@ -160,6 +165,16 @@ export function playerEvidence(s: GameState): Evidence[] {
   for (const r of s.recaps ?? []) {
     const e = (s.exits ?? []).find((x) => x.bbl === r.bbl && x.soldM >= r.m && x.soldM - r.m <= 24);
     if (e && r.value > 0 && e.price > 1.15 * r.value) out.push({ m: e.soldM, ev: -10, size: 0, kind: "credit", label: `${e.address}: sold ${Math.round((e.price / r.value - 1) * 100)}% over the buyout appraisal` });
+  }
+  // MISCONDUCT (§3.4): a deed lost while its syndicated job was still in the
+  // ground broke the completion guarantee — a separate −25 on top of the
+  // outcome, fading over 20 years, Toxic while it lives.
+  for (const c of closed) if (c.misconduct) out.push({ m: c.closedM, ev: -25, size: 0, kind: "misconduct", label: `${c.address}: completion guarantee broken`, misconduct: true });
+  // WARNING SIGNS on live deals (syndicate.ts reviewSyndications): −3 a flag,
+  // at most −10 a deal, provisional until the deal's real result replaces it.
+  for (const w of Object.values(s.syndications ?? {})) {
+    const n = w.flags?.length ?? 0;
+    if (n > 0) out.push({ m: s.month, ev: Math.max(-10, -3 * n), size: 0, kind: "warning", label: `Investor report flags on a live deal: ${w.flags!.join(", ")}` });
   }
   // Credit events not already inside a realised deal's outcome.
   for (const c of s.sponsor?.events ?? []) {
@@ -212,23 +227,28 @@ export function rivalEvidence(s: GameState, r: Rival): Evidence[] {
 }
 
 /** Score a record at month `now`: shrink(positive) + negative, with fading. */
-export function scoreOf(ev: Evidence[], now: number): { score: number; n: number; deals: number; investorDeals: number } {
+export function scoreOf(ev: Evidence[], now: number): { score: number; n: number; deals: number; investorDeals: number; misconduct: boolean } {
   const live = ev.filter((e) => now - e.m <= DROP_M);
   const lastPos = live.reduce((a, e) => (e.ev > 0 ? Math.max(a, e.m) : a), -Infinity);
   const quiet = now - lastPos;
   const posFade = quiet <= QUIET_M ? 1 : Math.max(0, 1 - (quiet - QUIET_M) / FADE_M);
-  let pos = 0, neg = 0, n = 0, deals = 0, investorDeals = 0;
+  let pos = 0, neg = 0, n = 0, deals = 0, investorDeals = 0, misconduct = false;
   for (const e of live) {
     if (e.ev > 0) { pos += e.ev * posFade; n += e.size * posFade; deals++; if (e.kind === "investor") investorDeals++; }
-    else if (e.ev < 0) neg += e.ev * Math.max(0, 1 - (now - e.m) / NEG_FADE_M);
+    else if (e.ev < 0) {
+      const fade = e.misconduct ? MISCONDUCT_FADE_M : NEG_FADE_M;
+      const f = Math.max(0, 1 - (now - e.m) / fade);
+      neg += e.ev * f;
+      if (e.misconduct && f > 0) misconduct = true;
+    }
   }
   const shrunk = pos * (n / (n + SHRINK_K));
-  return { score: Math.max(-100, Math.min(100, shrunk + neg)), n, deals, investorDeals };
+  return { score: Math.max(-100, Math.min(100, shrunk + neg)), n, deals, investorDeals, misconduct };
 }
 
 /** The highest band a score and record allow, before rank (§3.4, floors). */
-export function floorBand(sc: { score: number; n: number; deals: number; investorDeals: number }, fund = false): Band {
-  if (sc.score < -40) return "Toxic";
+export function floorBand(sc: { score: number; n: number; deals: number; investorDeals: number; misconduct?: boolean }, fund = false): Band {
+  if (sc.score < -40 || sc.misconduct) return "Toxic";
   if (sc.score < -10) return "Questioned";
   if (sc.score >= 55 && sc.n >= 12 && sc.deals >= 4 && fund) return "Blue-chip";
   if (sc.score >= 40 && sc.n >= 8 && sc.deals >= 3 && sc.investorDeals >= 1) return "Institutional";

@@ -165,6 +165,27 @@ export function payRaiseLegal(s: GameState, amt: number): void {
 }
 
 /**
+ * THE RELATIONSHIP (§3.2): investors who were paid back by this sponsor re-up
+ * first, and the better the multiple the faster; investors it lost money for
+ * stay mostly out for a decade (§3.4: family offices out ten years, platforms
+ * delist). Read from the last ten years of wound-up deals each source was in.
+ * Friends and family carry their memory in the network's size instead
+ * (syndicate.ts). A multiplier on the source's hazard; shape parameters.
+ */
+export function relationshipFactor(s: GameState, src: InvestorSource): number {
+  if (src === "ff") return 1;
+  let best = 0, lost = false;
+  for (const c of s.synClosed ?? []) {
+    if (s.month - c.closedM > 120 || !(c.sources?.[src]) || !(c.lpIn > 0)) continue;
+    const m = c.lpOut / c.lpIn;
+    if (m < 1 || c.misconduct) lost = true;
+    best = Math.max(best, m);
+  }
+  if (lost) return 0.3;
+  return 1 + Math.min(0.5, Math.max(0, best - 1));
+}
+
+/**
  * ONE MONTH OF SOFT CIRCLES for a raise. Mutates `r` (and draws the
  * "capital" random stream, which nothing else reads). Returns the month's new
  * commitments.
@@ -176,7 +197,8 @@ export function circleMonth(s: GameState, r: Raise, sources: { id: InvestorSourc
     if (!(need > 0)) break;
     const room = Math.max(0, src.left - (r.committed[src.id] ?? 0));
     if (!(room > 0)) continue;
-    const c = Math.round(Math.min(need, room) * commitHazard(src.id, pct) * (0.6 + 0.8 * rng(s, "capital")));
+    const cap = Math.min(need, room);
+    const c = Math.min(cap, Math.round(cap * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id)) * (0.6 + 0.8 * rng(s, "capital"))));
     if (c > 0) { r.committed[src.id] = (r.committed[src.id] ?? 0) + c; added += c; }
   }
   return added;

@@ -102,7 +102,14 @@ quietly goes to the wrong party.
       up front and sunk, soft circles over up to three months as monthly
       hazards by street rank, close full, small (half or more) or fail.
    3. dynamic fund mandates (§5.1) and the fund revamp (§5)
-   4. recap buyouts (§4.5) and side money
+   4. recap buyouts (§4.5) and side money — **recap buyouts done** (`recap.ts`) for
+      syndicates: after stabilisation, at the investors' waterfall take on a
+      sale at the appraisal with no broker, plus a 2–5% fairness premium
+      below Proven, transfer tax when control changes hands; funded from
+      cash and the line; the purchased share's basis steps up; investors
+      count it as a realised exit; a resale within 24 months at 15%+ over the
+      buyout appraisal costs −10. Not yet: fund cross-trades, continuation
+      vehicles, partial buyouts, side money.
    5. firm entry reading the pool (`firmEntryPitch`)
    6. merchant builders on the pool, last and most carefully
 6. **Never tune toward a feel.** Every reputation and pool number here is a

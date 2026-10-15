@@ -108,7 +108,7 @@ export function playerEvidence(s: GameState): Evidence[] {
   let managed = 0;
   for (const e of exits) managed += e.equityIn ?? 0;
   for (const e of exits) {
-    const syn = closed.find((c) => c.bbl === e.bbl && Math.abs(c.closedM - e.soldM) <= 2);
+    const syn = closed.find((c) => !c.recap && c.bbl === e.bbl && Math.abs(c.closedM - e.soldM) <= 2);
     let actual: number | null | undefined, pitch: number | null | undefined, multiple: number, equity: number, outside = 0, gpShare = 1;
     if (syn && syn.lpIn > 0) {
       actual = syn.lpIrr;
@@ -137,6 +137,29 @@ export function playerEvidence(s: GameState): Evidence[] {
     // a token raise cannot turn an own-money deal into an investor one.
     ev *= OWN_WEIGHT + (1 - OWN_WEIGHT) * outside;
     out.push({ m: e.soldM, ev, size: ev > 0 ? size : 0, kind: syn ? "investor" : "own", label: e.address });
+  }
+  // A RECAP BUYOUT IS A REALISED EXIT to the investors bought out (recap.ts):
+  // judged like any wound-up deal, though the deed never sold.
+  for (const c of closed) {
+    if (!c.recap || !(c.lpIn > 0)) continue;
+    const equity = c.lpIn + c.gpIn;
+    const multiple = c.lpOut / c.lpIn;
+    const size = sizeWeight(equity, level);
+    let ev = outcomeEvidence(c.lpIrr, c.pitchIrr, multiple);
+    if (ev > 0) ev *= size;
+    else {
+      ev *= 0.6 + 1.4 * Math.min(1, equity / Math.max(1, managed + equity));
+      if (c.gpIn / equity >= 0.10) ev *= 0.85;
+    }
+    ev *= OWN_WEIGHT + (1 - OWN_WEIGHT) * (c.lpIn / equity);
+    out.push({ m: c.closedM, ev, size: ev > 0 ? size : 0, kind: "investor", label: `${c.address} (bought out)` });
+  }
+  // BOUGHT OUT CHEAP. A building sold within 24 months of a buyout for more
+  // than 15% above the appraisal the investors were paid on: −10, and the
+  // investors remember it (§4.5).
+  for (const r of s.recaps ?? []) {
+    const e = (s.exits ?? []).find((x) => x.bbl === r.bbl && x.soldM >= r.m && x.soldM - r.m <= 24);
+    if (e && r.value > 0 && e.price > 1.15 * r.value) out.push({ m: e.soldM, ev: -10, size: 0, kind: "credit", label: `${e.address}: sold ${Math.round((e.price / r.value - 1) * 100)}% over the buyout appraisal` });
   }
   // Credit events not already inside a realised deal's outcome.
   for (const c of s.sponsor?.events ?? []) {

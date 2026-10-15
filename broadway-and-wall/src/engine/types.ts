@@ -3038,6 +3038,8 @@ export interface SynRecord {
   gpIn: number;
   gpOut: number;
   pitchIrr?: number;
+  /** The sponsor bought the investors out and kept the building (recap.ts). */
+  recap?: boolean;
 }
 
 export interface GameState {
@@ -3192,6 +3194,8 @@ export interface GameState {
    * type will put to work here this year, and what has been raised from it.
    */
   investorPool?: { yr: number; cap: Record<string, number>; used: Record<string, number>; rivals: number; attract: number };
+  /** Recap buyouts: the deed, the month, and the appraisal the investors were paid on (recap.ts; reputation.ts reads a quick flip). */
+  recaps?: { bbl: string; m: number; value: number }[];
   /** Deal-by-deal raises in progress, keyed by the lot (raise.ts). */
   raises?: Record<string, import("./investors").Raise>;
   /**

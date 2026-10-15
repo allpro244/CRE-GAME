@@ -255,12 +255,13 @@ export function syndicateView(s: GameState, parcels: ParcelTable, bbl: string): 
   };
 }
 
-function closeSyndication(s: GameState, parcels: ParcelTable, w: Syndication) {
+/** Wind a deal up: record what it paid its investors, settle the network, drop the record. `recap` marks a buyout (recap.ts). */
+export function closeSyndication(s: GameState, parcels: ParcelTable, w: Syndication, recap = false) {
   const lpIn = w.lpCalled, lpOut = w.lpDist;
   (s.synClosed ??= []).push({
     bbl: w.bbl, address: resolveRec(parcels, s, w.bbl)?.address ?? w.bbl, investor: w.investor,
     formedM: w.formedM, closedM: s.month, lpIn, lpOut, lpIrr: seriesIrr(w.lpFlows),
-    gpIn: w.gpIn, gpOut: w.gpDist, pitchIrr: w.pitchIrr,
+    gpIn: w.gpIn, gpOut: w.gpDist, pitchIrr: w.pitchIrr, ...(recap ? { recap: true } : {}),
   });
   if (s.synClosed.length > 200) s.synClosed.shift();
   const net = ffNetwork(s);
@@ -272,7 +273,7 @@ function closeSyndication(s: GameState, parcels: ParcelTable, w: Syndication) {
   const multiple = lpIn > 0 ? lpOut / lpIn : 1;
   s.news.unshift({
     q: s.month, kind: lpOut >= lpIn ? "deal" : "warn",
-    text: `The syndicate on ${resolveRec(parcels, s, w.bbl)?.address ?? w.bbl} is wound up. `
+    text: `The syndicate on ${resolveRec(parcels, s, w.bbl)?.address ?? w.bbl} is ${recap ? "bought out — the building is yours alone" : "wound up"}. `
       + `Your ${w.investor.toLowerCase()} put in $${Math.round(lpIn).toLocaleString()} and took back $${Math.round(lpOut).toLocaleString()} (${multiple.toFixed(2)}x)`
       + (lpOut >= lpIn ? " — and they will tell people." : ". Most of them will not invest with you again."),
   });

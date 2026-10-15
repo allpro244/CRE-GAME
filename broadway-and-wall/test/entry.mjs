@@ -45,6 +45,8 @@ export const MODULES = [
   "reputation",
   // investors: the city's investor pool; raise: a deal-by-deal raise over time.
   "investors", "raise",
+  // recap: buying a syndicate's investors out at the waterfall's value.
+  "recap",
   // standing is the reading of the score: the street ranking, the year marks, the reviews.
   "standing",
   // buybox is the sponsor's standing acquisition criteria (what a first look must match).

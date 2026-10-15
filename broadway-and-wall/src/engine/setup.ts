@@ -70,6 +70,8 @@ export interface GameSetup {
   rivalReputation?: boolean;
   /** Deal-by-deal rivals raise each job on their band's terms (GameState.rivalDealTerms). Off unless turned on. */
   rivalDealTerms?: boolean;
+  /** The town's builders are competitor firms (GameState.builderFirms). On unless turned off. */
+  builderFirms?: boolean;
   spectator?: boolean;
   /** How much the town's competitors raised before you arrived (RIVAL_CAPITAL). Absent = medium. */
   rivalCapital?: RivalCapital;

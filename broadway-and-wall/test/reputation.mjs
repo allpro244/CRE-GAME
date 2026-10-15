@@ -68,7 +68,9 @@ for (let m = 0; m < 3; m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
   const bands = {}; for (const f of st) bands[f.band] = (bands[f.band] ?? 0) + 1;
   console.log(`  ${st.length} firms · ${JSON.stringify(bands)} · you #${me.rank} at ${me.score}`);
   ok(ranks.size === st.length && Math.min(...ranks) === 1, "the ranking is strict: one #1, no shared places");
-  ok(me.score === 0 && me.rank > st.length * 0.8, `a new player starts at 0, near the bottom (#${me.rank} of ${st.length})`);
+  // Near the bottom means behind every firm with a record. New names — the
+  // town's builders the day they set up, the player — share a record of none.
+  ok(me.score === 0 && st.filter((f) => f.score > 0).every((f) => f.rank < me.rank), `a new player starts at 0, behind every firm with a record (#${me.rank} of ${st.length}; ${st.filter((f) => f.score > 0).length} have one)`);
   ok(st[0].score > 5, `incumbents open on a record their capital implies (#1 ${st[0].name} at ${st[0].score})`);
   ok(g.reputation?.band === "Unknown", "and the player's band is Unknown");
 }

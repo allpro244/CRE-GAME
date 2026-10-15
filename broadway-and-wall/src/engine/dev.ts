@@ -6,7 +6,7 @@
 // loan, wait 4-6 quarters while the building rises on the map, then lease up
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
-import type { BtsCommitment, Builder, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, MerchantBook, UseMix } from "./types";
+import type { BtsCommitment, Builder, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, MerchantBook, Rival, RivalStyle, UseMix } from "./types";
 import { hash01 } from "./competitorTraits";
 import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
@@ -23,7 +23,7 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, pickName, pickSector, useVacantSf } from "./leasing";
-import { claimJob, jobDelivered, ownerOf, gradeOf, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt } from "./rivals";
+import { claimJob, jobDelivered, ownerOf, gradeOf, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash } from "./rivals";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER, reoAsk, chargeLenderLoss } from "./lenders";
@@ -306,8 +306,58 @@ function newBuilder(s: GameState): Builder {
   return { id: `B${n}`, name, founder, bornM: s.month, prof, capital, committed: 0,
     starts: 0, delivered: 0, sfDelivered: 0, underwater: 0, handedBack: 0, profit: 0 };
 }
+// ---- THE TOWN'S BUILDERS AS FIRMS (GameState.builderFirms) ------------------
+//
+// The owner wanted nothing built by anybody who is not on the street. With
+// the flag on, each of the town's builders is a firm in `s.rivals`: the same
+// name, founder, habits and purse the register draws, and from then on the
+// whole firm machinery — it buys the site, raises its deal's investors, draws
+// a construction facility, takes the deed and a takeout loan when the
+// building opens, holds it on its book, sells it, marks it, can be stressed,
+// hand back keys and fail. A merchant's habits put it in the merchant style
+// (buys land, holds about three years); one building mostly on its own money
+// is a developer (holds for a decade). The roster target, the entry rate and
+// the fifteen-year retirement are the register's.
+const isBuilderFirm = (r: Rival) => !!r.builderProf;
+function livingBuilderFirms(s: GameState): Rival[] {
+  return (s.rivals ?? []).filter((r) => isBuilderFirm(r) && r.failedM === undefined && r.retiredM === undefined);
+}
+function newBuilderFirm(s: GameState): Rival {
+  const b = newBuilder(s);
+  const style: RivalStyle = b.prof.ltc <= CASH_BUILDER_LTC ? "developer" : "merchant";
+  const r: Rival = {
+    id: `r${s.rivals.length}`, name: b.name, style, founder: b.founder, builderProf: b.prof,
+    cash: b.capital, debt: 0, bbls: [], targetLtv: +Math.max(0, Math.min(0.8, b.prof.ltc)).toFixed(2), bornM: s.month,
+    career: [{ m: s.month, text: `Founded by ${b.founder}, a local ${style === "developer" ? "developer building on its own money" : "merchant builder"}, with ${money(b.capital)}` }],
+  };
+  s.rivals.push(r);
+  return r;
+}
+function tickBuilderFirms(s: GameState, looksF: number) {
+  const live = livingBuilderFirms(s);
+  const target = builderTarget(looksF);
+  if (!live.length && !(s.rivals ?? []).some(isBuilderFirm)) for (let i = 0; i < target; i++) newBuilderFirm(s);
+  else if (live.length < target && rng(s, "dev") < 0.25 * Math.max(0.3, Math.min(1.5, s.econ.creditIdx ?? 1))) {
+    const r = newBuilderFirm(s);
+    s.news.unshift({ q: s.month, kind: "info", text: `${r.name} has set up as a ${r.style === "developer" ? "developer" : "builder"} in town — ${r.founder}, with ${money(r.cash)} of the firm's own money.` });
+  }
+  // Fifteen years without breaking ground and nothing on the book: the founder retires.
+  for (const r of livingBuilderFirms(s)) {
+    const idle = s.month - (r.lastBuildM ?? r.bornM);
+    if (idle > 180 && !r.bbls.length && !(s.cityJobs ?? []).some((j) => j.firmId === r.id) && rng(s, "dev") < 0.02) {
+      r.retiredM = s.month;
+      (r.career ??= []).push({ m: s.month, text: `${r.founder} retired; the firm closed` });
+    }
+  }
+}
+function pickBuilderFirm(s: GameState): Rival | undefined {
+  const live = livingBuilderFirms(s);
+  return live.length ? live[Math.floor(rng(s, "dev") * live.length)] : undefined;
+}
+
 /** The roster, once a month: entries when it thins, retirements of the idle, commitments recounted from the live jobs. */
 function tickBuilders(s: GameState, looksF: number) {
+  if (s.builderFirms) { tickBuilderFirms(s, looksF); return; }
   if (!s.builders) s.builders = [];
   const live = livingBuilders(s);
   const target = builderTarget(looksF);
@@ -3979,6 +4029,20 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const tprog = plan.mix;
   const months = plan.months;
 
+  // With the town's builders as firms, a teardown is a firm's scheme: one of
+  // the builders takes the site (or the street does) before anything comes
+  // down, and if nobody named can carry it the building stands.
+  // A redevelopment needs a balance sheet: it goes to the builder with the
+  // most free cash, not to whichever shop happened to be looking.
+  let teardownFirm: Rival | null = null;
+  if (s.builderFirms) {
+    const f = livingBuilderFirms(s).reduce<Rival | undefined>((a, r) => (!a || freeCash(s, r) > freeCash(s, a) ? r : a), undefined);
+    (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog, spec: plan.spec });
+    teardownFirm = (f ? claimJob(s, parcels, bbl, nextUse as DevUse, nsf, nfl, s.month + months, false, plan, f) : null)
+      ?? claimJob(s, parcels, bbl, nextUse as DevUse, nsf, nfl, s.month + months, false, plan);
+    if (!teardownFirm) { s.cityJobs = s.cityJobs.filter((j) => !(j.bbl === bbl && j.startM === s.month)); continue; }
+  }
+
   // Off the record and off the stock only AFTER the replacement is funded.
   s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
   const stoodAs = rec.class !== "land" ? (rec.class as BuiltClass) : null;
@@ -3994,9 +4058,9 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   });
 
   // A teardown is a developer's scheme like any other — one of the town's.
-  const tb = pickBuilder(s);
+  const tb = teardownFirm ? undefined : pickBuilder(s);
   if (tb) { tb.starts += 1; tb.lastStartM = s.month; }
-  (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog, spec: plan.spec,
+  if (!teardownFirm) (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog, spec: plan.spec,
     merchant: merchantBook(s, bbl, s.month, plan, ltc),
     ...(tb ? { builderId: tb.id, coInvest: builderCoInvest(plan.basisTotal, ltc ?? 0.5) } : {}) });
   recordPropertyEvent(s, bbl, {
@@ -4004,7 +4068,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     use: nextUse,
     sf: nsf,
     floors: nfl,
-    party: tb?.name ?? "The city",
+    party: teardownFirm?.name ?? tb?.name ?? "The city",
   });
   // ...and the one delivery queue carries that same programme, whole.
   const teardownProgramme = programmeSf(rentableFromSpec(nsf, nfl), tprog);
@@ -4537,9 +4601,15 @@ function developerLook(
   const ownMoney = streetHasOwnMoney(s);
   // ONE OF THE TOWN'S DEVELOPERS is looking — with its own habits, and its
   // rent read moving a little from one look to the next.
-  const who = pickBuilder(s);
-  const dev: DeveloperProfile = who ? { ...who.prof, outlook: who.prof.outlook * Math.exp(0.03 * (2 * rng(s, "dev") - 1)) } : drawDeveloper(s);
-  const purse = who ? Math.max(0, who.capital - who.committed) : Infinity;
+  // The frames already standing when the game opens (a backdated look) are
+  // history and stay the city's; every look after that is one of the firms.
+  const firm = s.builderFirms && !opts?.backdate ? pickBuilderFirm(s) : undefined;
+  if (s.builderFirms && !opts?.backdate && !firm) return false;
+  const who = firm ? undefined : pickBuilder(s);
+  const habits = firm?.builderProf ?? who?.prof;
+  const dev: DeveloperProfile = habits ? { ...habits, outlook: habits.outlook * Math.exp(0.03 * (2 * rng(s, "dev") - 1)) } : drawDeveloper(s);
+  // A firm's purse is its free cash: what it holds less what its live jobs still need.
+  const purse = firm ? Math.max(0, freeCash(s, firm)) : who ? Math.max(0, who.capital - who.committed) : Infinity;
   let best: { bbl: string; rec: (typeof parcels)[string]; use: DevUse; floors: number; plate: number; h: number; coInvest: number } | null = null;
   let examined = 0;
   for (let draw = 0; draw < SITES_PER_LOOK * 8 && examined < SITES_PER_LOOK; draw++) {
@@ -4625,12 +4695,12 @@ function developerLook(
     const lead = dominantOf(devMix(best.use));
     (s.cityPlans ??= []).push({
       bbl: best.bbl, use: best.use, floors: best.floors, plate: best.plate, spec: dev.spec, ltc: dev.ltc,
-      decidedM: s.month, breakM: s.month + PLAN_LEAD_M[lead], ...(who ? { builderId: who.id } : {}),
+      decidedM: s.month, breakM: s.month + PLAN_LEAD_M[lead], ...(who ? { builderId: who.id } : {}), ...(firm ? { firmId: firm.id } : {}),
     });
     if (who) who.committed += best.coInvest;
     return true;
   }
-  const started = breakCityGround(s, parcels, adjacency, best.bbl, best.rec, best.use, best.floors, best.plate, { ...opts, spec: dev.spec, ltc: dev.ltc, decided: true, builderId: who?.id });
+  const started = breakCityGround(s, parcels, adjacency, best.bbl, best.rec, best.use, best.floors, best.plate, { ...opts, spec: dev.spec, ltc: dev.ltc, decided: true, builderId: who?.id, firmId: firm?.id });
   // THE NEXT DEVELOPER HEARS ABOUT THIS ONE (2026-10-12). Every look reads
   // the pipeline in its delivery vacancy, but that figure was last month's
   // snapshot, so the thirty-odd developers looking in one month all saw the
@@ -4777,6 +4847,7 @@ function breakCommittedPlans(s: GameState, parcels: ParcelTable, adjacency: Reco
   for (const p of s.cityPlans) {
     // A developer that has folded takes its unstarted schemes with it.
     if (p.builderId && builderById(s, p.builderId)?.failedM !== undefined) continue;
+    if (p.firmId) { const f = (s.rivals ?? []).find((r) => r.id === p.firmId); if (!f || f.failedM !== undefined || f.retiredM !== undefined) continue; }
     if (s.month < p.breakM) { keep.push(p); continue; }
     if (s.holdings[p.bbl] || (s.built[p.bbl]?.bldgArea ?? 0) > 0 || s.developments[p.bbl] || (s.cityJobs ?? []).some((j) => j.bbl === p.bbl) || ownerOf(s, p.bbl)) continue;
     const rec = resolveRec(parcels, s, p.bbl);
@@ -4789,7 +4860,7 @@ function breakCommittedPlans(s: GameState, parcels: ParcelTable, adjacency: Reco
     // deposit on the land and the drawings are written off and the site
     // waits (the shelved-scheme lists of 1990, 2008-09).
     if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < SHELVE_AT) continue;
-    if (breakCityGround(s, parcels, adjacency, p.bbl, rec, p.use as DevUse, p.floors, p.plate, { spec: p.spec, ltc: p.ltc, decided: true, builderId: p.builderId })) syncSupplyViews(s.econ, true);
+    if (breakCityGround(s, parcels, adjacency, p.bbl, rec, p.use as DevUse, p.floors, p.plate, { spec: p.spec, ltc: p.ltc, decided: true, builderId: p.builderId, firmId: p.firmId })) syncSupplyViews(s.econ, true);
   }
   s.cityPlans = keep;
 }
@@ -4816,7 +4887,7 @@ function developerLooksPerMonth(e: Econ): number {
 function breakCityGround(
   s: GameState, parcels: ParcelTable, adjacency: Record<string, string[]> | null,
   bbl: string, rec: NonNullable<ParcelTable[string]>, use: DevUse, floors: number, plate: number,
-  opts?: { backdate?: number; quiet?: boolean; spec?: number; ltc?: number; decided?: boolean; builderId?: string },
+  opts?: { backdate?: number; quiet?: boolean; spec?: number; ltc?: number; decided?: boolean; builderId?: string; firmId?: string },
 ): boolean {
   let sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   const lead = dominantOf(devMix(use));
@@ -4874,7 +4945,28 @@ function breakCityGround(
   // A backdated start is the city's: a named firm's claim stamps its own
   // day-one draw against today's cash, which a job forty per cent built
   // eighteen months ago did not take today.
-  const claimed = backM > 0 ? null : claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer, plan);
+  // A BUILDER FIRM THAT DREW THE DEAL builds it if its balance sheet will
+  // carry it; if not, the street may take it; with the town's builders as
+  // firms, if nobody named can carry it, it is not built.
+  const ownFirm = opts?.firmId ? (s.rivals ?? []).find((r) => r.id === opts.firmId && r.failedM === undefined) : undefined;
+  const claimed = backM > 0 ? null
+    : (ownFirm ? claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer, plan, ownFirm) : null)
+      ?? claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer, plan);
+  if (s.builderFirms && !claimed && !backM) {
+    s.cityJobs = (s.cityJobs ?? []).filter((j) => !(j.bbl === bbl && j.startM === startM));
+    cancelSupplyProject(s, bbl);
+    s.month = nowM;
+    return false;
+  }
+  // The firm's own start, with the market's context, when it is big enough to move it.
+  if (claimed && claimed === ownFirm && !opts?.quiet && sf * (prog[lead] ?? 1) >= 0.015 * Math.max(1, s.econ.stock?.[lead] ?? 0)) {
+    s.news.unshift({
+      q: s.month, kind: "info", bbl,
+      text: `${claimed.name} broke ground at ${rec.address}: ${Math.round(sf).toLocaleString()} sf of ${lead}, ${floors} floors, `
+        + `opening ${monthLabel(deliverM)}. ${lead === "multifamily" ? "Flats" : SECTOR_LABEL[lead] ?? lead} vacancy is `
+        + `${((s.econ.cityVac?.[lead] ?? 0) * 100).toFixed(1)}% today; this is ${(100 * sf * (prog[lead] ?? 1) / Math.max(1, s.econ.stock?.[lead] ?? 1)).toFixed(1)}% more space.`,
+    });
+  }
   // A START BIG ENOUGH TO MOVE ITS MARKET IS NEWS, with a name on it.
   if (!claimed && builder && !backM && !opts?.quiet && sf * (prog[lead] ?? 1) >= 0.015 * Math.max(1, s.econ.stock?.[lead] ?? 0)) {
     s.news.unshift({

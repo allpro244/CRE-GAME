@@ -756,6 +756,14 @@ export function claimJob(
   // call site, where the adjacency table is already in scope.
   nearPlayer = false,
   underwriting?: DevPlan,
+  /**
+   * A BUILDER FIRM THAT DREW THIS DEAL ITSELF (dev.ts developerLook, with
+   * GameState.builderFirms): it has already run the scheme against its own
+   * bar, so there is no contest and no coin — only whether its balance sheet
+   * can carry it, the same tests every firm passes. The groundbreaking news is
+   * the caller's, with the market's context.
+   */
+  only?: Rival,
 ): Rival | null {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return null;
@@ -802,10 +810,10 @@ export function claimJob(
   const equityOf = (r: Rival) => Math.round(projectCost * (1 - ltcOf(r)));
   const dayOneOf = (r: Rival) => Math.round(equityOf(r) * 0.40);
 
-  const runners = livingRivals(s).filter((r) => {
-    const want = paramsOf(r).build;
+  const runners = (only ? [only] : livingRivals(s)).filter((r) => {
+    const want = only ? 1 : paramsOf(r).build;
     if (want <= 0) return false;
-    if (!firmWouldBuild(s, r, plan, use, financeable)) return false;
+    if (!only && !firmWouldBuild(s, r, plan, use, financeable)) return false;
     if (!canCarryAnother(s, r)) return false;
     // A firm with a sheet also runs no more jobs than its Capacity allows.
     if (r.sheet && (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length >= paramsOf(r).jobs) return false;
@@ -825,6 +833,7 @@ export function claimJob(
     // warehouse on the fringe because the city's pipeline offered one.
     const suit = r.sheet ? Math.min(1.6, fitOf(s, parcels, r, { ...rec, class: use === "mixed" ? "retail" : use } as ParcelRecord)) : 1;
     if (suit <= 0) return false;
+    if (only) return true;
     // Named builders should claim a real share of the pipeline. Near the
     // player is still hotter (comp + tenant risk), but far sites are no longer
     // a coin-flip against a 0.5× haircut that left them at ~3%.
@@ -835,7 +844,7 @@ export function claimJob(
 
   // the hungriest of the firms that can actually fund it
   let best = runners[0], bestW = -Infinity;
-  for (const r of runners) {
+  if (!only) for (const r of runners) {
     const w = paramsOf(r).build * (r.cash / Math.max(1, dayOneOf(r) * sponsorShareOf(s, r))) * (0.6 + rng(s, "rivals") * 0.8);
     if (w > bestW) { bestW = w; best = r; }
   }
@@ -878,6 +887,7 @@ export function claimJob(
     }
   }
   poachForBuildToSuit(s, parcels, best, rec, use === "mixed" ? "retail" : use, sf, deliverM);
+  if (only) return best;
   s.news.unshift({
     q: s.month, kind: "event",
     text: nearPlayer
@@ -4687,7 +4697,12 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // tests. Give them two years to redeploy (or burn remaining dry powder),
     // then wind the vehicle up. New funds start empty: they are exempt until
     // they have either held a deed or exhausted their uncalled capital.
-    if (r.failedM === undefined && r.bbls.length === 0 && (r.debt ?? 0) <= 0 && (r.cash ?? 0) >= 0 && !(r.stressMs)) {
+    // A BUILDER BETWEEN SCHEMES IS NOT A HUSK: a merchant sells what it built
+    // and waits for the next site. It retires the way the builder register's
+    // founders do — fifteen years without breaking ground.
+    if (r.builderProf && r.failedM === undefined && r.bbls.length === 0 && s.month - (r.lastBuildM ?? r.bornM) <= 180) {
+      r.emptyMs = 0;
+    } else if (r.failedM === undefined && r.bbls.length === 0 && (r.debt ?? 0) <= 0 && (r.cash ?? 0) >= 0 && !(r.stressMs)) {
       const everDeployed = (r.basis ?? 0) > 0 || (r.distributed ?? 0) > 0 || (r.aum ?? 0) > 0;
       const dryPowderGone = (r.uncalled ?? 0) <= 0 && (s.month - (r.bornM ?? 0)) > 36;
       if (everDeployed || dryPowderGone) {

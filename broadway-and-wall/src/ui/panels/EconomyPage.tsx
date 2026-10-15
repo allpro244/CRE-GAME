@@ -1107,7 +1107,7 @@ export function EconomyPage() {
                 </div>
                 <div className="mini-list">
                   {plans.slice(0, 5).map((p) => {
-                    const b = (game.builders ?? []).find((x) => x.id === p.builderId);
+                    const b = (game.builders ?? []).find((x) => x.id === p.builderId) ?? game.rivals.find((r) => r.id === p.firmId);
                     return (
                       <button key={p.bbl} className="neighbor" onClick={() => flyTo(p.bbl, true)}>
                         <span className="neighbor-addr">{parcels[p.bbl]?.address ?? p.bbl}</span>
@@ -1123,7 +1123,41 @@ export function EconomyPage() {
           })()}
           {/* THE TOWN'S DEVELOPERS. Who builds here, what they have delivered,
               how it opened — and who has folded. */}
-          {(() => {
+          {game.builderFirms && (() => {
+            // The town's builders are firms on the street: who owns what it built, what is under way, who went under.
+            const firms = game.rivals.filter((r) => r.builderProf);
+            const live = firms.filter((r) => r.failedM === undefined && r.retiredM === undefined);
+            const top = [...live].sort((a, b) => b.bbls.length - a.bbls.length || b.cash - a.cash).slice(0, 6);
+            const failed = firms.filter((r) => r.failedM !== undefined).sort((a, b) => (b.failedM ?? 0) - (a.failedM ?? 0)).slice(0, 3);
+            if (!top.length && !failed.length) return null;
+            return (
+              <>
+                <div className="hint" style={{ marginTop: 8 }}>
+                  The town's builders: {live.length} firms{failed.length ? ` · ${firms.filter((r) => r.failedM !== undefined).length} gone under` : ""}
+                </div>
+                <div className="mini-list">
+                  {top.map((r) => {
+                    const building = (game.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
+                    return (
+                      <div key={r.id} className="neighbor">
+                        <span className="neighbor-addr">{r.name}</span>
+                        <span className="neighbor-meta mono">
+                          {r.style === "developer" ? "builds to hold" : "merchant builder"} · owns {r.bbls.length}{building ? ` · ${building} under way` : ""}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {failed.map((r) => (
+                    <div key={r.id} className="neighbor">
+                      <span className="neighbor-addr neg">✕ {r.name}</span>
+                      <span className="neighbor-meta mono">went under {monthLabel(r.failedM ?? 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
+          {!game.builderFirms && (() => {
             const all = game.builders ?? [];
             const live = all.filter((b) => b.failedM === undefined && b.starts > 0)
               .sort((a, b) => b.sfDelivered - a.sfDelivered).slice(0, 6);

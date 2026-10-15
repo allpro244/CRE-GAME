@@ -2753,6 +2753,14 @@ export interface Rival {
    */
   heritage?: { m: number; ev: number; size: number }[];
   /**
+   * A FIRM THAT WAS ONE OF THE TOWN'S BUILDERS (GameState.builderFirms): the
+   * habits its developer looks run on — where it builds, what, how tall, how
+   * much it borrows, the margin it needs — fixed for life, the same draw the
+   * builder register makes (dev.ts DeveloperProfile). Its founder's name.
+   */
+  builderProf?: Builder["prof"];
+  founder?: string;
+  /**
    * WHEN THE EXTENDED PAPER ON A BUILDING COMES BACK, by BBL. Present only for
    * a building whose balloon the desk re-papered rather than took the keys on;
    * absent is the ordinary case and means the loan sits on the term ladder.
@@ -3339,6 +3347,16 @@ export interface GameState {
    * shrinks the city (measured there).
    */
   rivalDealTerms?: boolean;
+  /**
+   * THE TOWN'S BUILDERS ARE COMPETITORS (dev.ts tickBuilderFirms). Every
+   * developer that starts a scheme is a firm on the street — a balance sheet,
+   * the deed to what it builds, its lenders, its stress and its failure —
+   * instead of a name on a register that never owns what it built. Nothing is
+   * built anonymously except the frames already standing when the game opens.
+   * On for new games (a setup choice can turn it off); a save written before
+   * it existed keeps the builder register.
+   */
+  builderFirms?: boolean;
   /** Months a rival's first close was slowed by a thin investor pool (rivals.ts; measured, display only). */
   poolBindMs?: number;
   /** Deal-by-deal raises in progress, keyed by the lot (raise.ts). */
@@ -3509,6 +3527,8 @@ export interface GameState {
     bbl: string; use: string; floors: number; plate: number; spec: number; ltc: number; decidedM: number; breakM: number;
     /** The named developer who committed to it (see Builder). */
     builderId?: string;
+    /** ...or the builder firm, when the town's builders are firms (GameState.builderFirms). */
+    firmId?: string;
   }[];
   cityJobs?: {
     bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number;

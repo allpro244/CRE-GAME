@@ -40,7 +40,7 @@ interface Draft {
   island: string; size: string; dev: string; cash0: number; goal: GoalId | null;
   field: FieldChoice; inherit: 0 | 2 | 3 | 4; home: HomeChoice; rivalCapital: RivalCapital;
   parks: "low" | "medium" | "high";
-  firmName: string; sandbox: boolean; clock: NonNullable<GameSetup["clock"]>; brokerStops: boolean; seed: number; poolEntry: boolean; rivalReputation: boolean; rivalDealTerms: boolean;
+  firmName: string; sandbox: boolean; clock: NonNullable<GameSetup["clock"]>; brokerStops: boolean; seed: number; poolEntry: boolean; rivalReputation: boolean; rivalDealTerms: boolean; builderFirms: boolean;
 }
 
 
@@ -72,7 +72,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     return {
       island, size: currentSize(island), dev: currentDev(island), cash0: currentCash0(), goal: null,
       field: DEFAULT_SETUP.field, inherit: 0, home: "any", rivalCapital: "medium", parks: "medium",
-      firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(), poolEntry: true, rivalReputation: true, rivalDealTerms: false,
+      firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(), poolEntry: true, rivalReputation: true, rivalDealTerms: false, builderFirms: true,
     };
   };
   const [d, setD] = useState<Draft>(fresh);
@@ -186,6 +186,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       poolEntry: d.poolEntry ? undefined : false,
       rivalReputation: d.rivalReputation ? undefined : false,
       rivalDealTerms: d.rivalDealTerms ? true : undefined,
+      builderFirms: d.builderFirms ? undefined : false,
     };
     void startRun(d.island, d.size, d.dev, d.cash0, setup, d.seed);
   };
@@ -355,6 +356,11 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                   <input type="checkbox" checked={d.rivalReputation} onChange={(e) => up({ rivalReputation: e.target.checked })} />
                   <span><strong>Competitors raise on their record</strong><br />
                     <span className="start-opt-note">A team that spins out of a firm carries part of its old firm's record, and a better record raises a bigger first fund from deeper money. Off, every new firm raises like a new name.</span></span>
+                </label>
+                <label className="setup-check" style={{ marginTop: 10 }}>
+                  <input type="checkbox" checked={d.builderFirms} onChange={(e) => up({ builderFirms: e.target.checked })} />
+                  <span><strong>Every builder is a competitor</strong><br />
+                    <span className="start-opt-note">The town's developers are firms on the street: each owns what it builds, borrows against it, sells it, and can go under in a glut. Off, most of the city is put up by small builders who never own what they build.</span></span>
                 </label>
                 <label className="setup-check" style={{ marginTop: 10 }}>
                   <input type="checkbox" checked={d.rivalDealTerms} onChange={(e) => up({ rivalDealTerms: e.target.checked })} />

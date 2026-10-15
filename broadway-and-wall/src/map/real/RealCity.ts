@@ -1947,51 +1947,41 @@ export class RealCityLayer {
   // frame actually shows (its corners cast onto the street, capped where the
   // haze has the city anyway), with a margin, and refit only when that ground
   // leaves the box or the box could be a step smaller.
+  //
+  // ONE BOX FOR THE WHOLE ISLAND. Fitting the box to the view (to the focus
+  // and then to the frame's footprint, #307 and #318) meant a redraw of the
+  // shadow map, and a shift of every shadow edge, whenever the camera moved
+  // enough — and the owner kept seeing the shadows flicker as the view moved
+  // (?noshadows took it away). The box now covers the island and its shore
+  // once, and is redrawn only when the sun moves (the month), the quality
+  // changes or a building is built or flattened: nothing about the camera
+  // touches it. The price is texel size, ~1 m on a 4096 map over a 4 km
+  // island, which the soft-filtered edge carries.
   private shadowBox = { cx: 1e9, cy: 0, span: 0 };
-  private fitShadow(fx: number, fy: number, distM: number, eye: THREE.Vector3) {
+  private fitShadow(fx: number, fy: number, _distM: number, _eye: THREE.Vector3) {
+    if (this.shadowSpan !== 0 && this.shadowBox.span !== 0) return;
     const sunEye = new THREE.Vector3().copy(this.sunDir).multiplyScalar(2500);
     const look = new THREE.Matrix4().lookAt(sunEye, new THREE.Vector3(), this.sun.shadow.camera.up);
     const right = new THREE.Vector3().setFromMatrixColumn(look, 0);
     const up = new THREE.Vector3().setFromMatrixColumn(look, 1);
-    // the frame's footprint on the ground, in the light's right/up axes
-    const cap = Math.min(5200, distM * 3.2);
+    // the island's extent in the light's right/up axes (the land ring, or the
+    // buildings if there is none), with room for the tallest towers' shadows
     let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
-    const inv = this.camera.projectionMatrixInverse;
-    const pt = (nx: number, ny: number) => {
-      const a = new THREE.Vector3(nx, ny, -1).applyMatrix4(inv), b = new THREE.Vector3(nx, ny, 1).applyMatrix4(inv);
-      const d = b.sub(a).normalize();
-      let t = d.z < -1e-4 ? -(a.z + eye.z) / d.z : Infinity;
-      const g = new THREE.Vector3().copy(a).add(eye);
-      // past the cap (or above the horizon) the ground is taken at the cap
-      const flat = Math.hypot(d.x, d.y) || 1;
-      t = Math.min(t, cap / flat);
-      g.addScaledVector(d, t); g.z = 0;
-      const u = g.dot(right), v = g.dot(up);
+    const take = (x: number, y: number) => {
+      const u = x * right.x + y * right.y, v = x * up.x + y * up.y;
       u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
     };
-    for (const nx of [-1, 0, 1]) for (const ny of [-1, 0, 1]) pt(nx, ny);
-    // a wide margin, so a pan or a tilt stays inside the box and nothing is
-    // redrawn: every redraw moves every shadow edge, and a stream of them as
-    // the camera moved was the flicker the owner saw (gone with ?noshadows)
-    const pad = 0.25 * Math.max(u1 - u0, v1 - v0) + 80;
+    const landLL = (this.ctx as { land?: P2[] }).land;
+    if (landLL && landLL.length >= 3) for (const q of landLL) { const [x, y] = this.project(q); take(x, y); }
+    else for (const v of this.volumes) for (const q of v.r) { const [x, y] = this.project(q); take(x, y); }
+    if (!Number.isFinite(u0)) { take(fx - 1500, fy - 1500); take(fx + 1500, fy + 1500); }
+    const pad = 250;
     u0 -= pad; u1 += pad; v0 -= pad; v1 += pad;
-    const need = Math.max(u1 - u0, v1 - v0) / 2;
-    // quarter-octave steps, so the texel size only changes on a real zoom
-    let span = 260 * Math.pow(2, Math.ceil(Math.log2(Math.max(220, Math.min(4200, need)) / 260) * 4) / 4);
-    const b = this.shadowBox;
-    // HYSTERESIS: the box grows the moment it must, but shrinks only once the
-    // view needs under ~55% of it, so a zoom does not step the shadow
-    // resolution (and redraw every edge) at each quarter-octave on the way
-    if (b.span && span < b.span && need > b.span * 0.55) span = b.span;
-    const inside = u0 >= b.cx - b.span && u1 <= b.cx + b.span && v0 >= b.cy - b.span && v1 <= b.cy + b.span;
-    if (inside && span === b.span && span === this.shadowSpan) return;
-    // centre on the footprint, moved in whole texels of the light's view
+    const span = Math.max(300, Math.max(u1 - u0, v1 - v0) / 2);
     const texel = (2 * span) / this.sun.shadow.mapSize.x;
     const cu = Math.round(((u0 + u1) / 2) / texel) * texel, cv = Math.round(((v0 + v1) / 2) / texel) * texel;
-    // the ground point at (cu, cv) in the light's frame: start from the
-    // focus and move it there along right and up
-    const f = new THREE.Vector3(fx, fy, 0);
-    f.addScaledVector(right, cu - f.dot(right)).addScaledVector(up, cv - f.dot(up));
+    const f = new THREE.Vector3(0, 0, 0);
+    f.addScaledVector(right, cu).addScaledVector(up, cv);
     this.shadowBox = { cx: cu, cy: cv, span };
     this.shadowFocus.set(fx, fy, 0);
     this.shadowSpan = span;
@@ -2002,6 +1992,7 @@ export class RealCityLayer {
     this.sun.target.position.copy(f);
     this.sun.position.copy(f).add(sunEye);
     this.sun.target.updateMatrixWorld();
+    this.sun.updateMatrixWorld();
     this.renderer.shadowMap.needsUpdate = true;
   }
 

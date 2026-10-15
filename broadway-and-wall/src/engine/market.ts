@@ -2496,6 +2496,13 @@ export function tickNation(s: GameState) {
   // the bank has to break the labour market to undo it.
   if (n.pressureM === undefined) n.pressureM = 0;
   if (n.pressureM > 0) {
+    // INFLATION ENDS FISCAL DOMINANCE (2026-10-14). A government leans on
+    // its central bank only while cheap money is popular; once inflation is
+    // the country's problem, the politics flip and the bank is set free —
+    // the 1951 Treasury-Fed Accord came after 1950-51 inflation near 9%, and
+    // Volcker was appointed in 1979 with it running 11-13%. Without this the
+    // pressure ran its full term into a 70% inflation and a 105% policy rate.
+    if ((n.inflSm ?? n.infl) > 0.10) n.pressureM = 1;
     n.pressureM--;
     if (n.pressureM === 0) {
       pushNews(s, "event",
@@ -3678,15 +3685,21 @@ export function tickEcon(s: GameState) {
     // nation's — above San Francisco, for a town of 50-70k, where the BEA's
     // price parities put small metros at 0.88-0.95 of the US.
     const natShelter12 = natWage12;
-    const inflM = natInfl / 12
-      + (SHELTER_W * (shelter12 - natShelter12) + SERVICES_W * (wage12 - natWage12)) / 12;
     void cost12;
     // The old monthly floor (-0.05%/mo unless the nation deflated) and the
     // 1.15%/mo ceiling were there to stop the labour term running away. With
     // the price level built from traded goods and two local relatives, those
     // are wide guards: a month the town deflates faster than 1% is a month
     // its rents fell by a third.
-    e.cpi = clamp(e.cpi! * (1 + clamp(inflM, -0.01, 0.02)), 0.5, 1000);
+    // THE NATION'S RATE PASSES THROUGH WHOLE (2026-10-14). The guard was on
+    // the whole monthly rate (+2%), sized for a national rate that could not
+    // pass 22%. With the national model uncapped, a fiscal-dominance century
+    // ran the nation at 70-100% a year while this town's prices were held at
+    // 26.8% — and pay, which follows the nation's, ran six times ahead of the
+    // town's prices: real wages, jobs and real rents exploded. Only the LOCAL
+    // difference is guarded now (a point a month either way).
+    const localM = (SHELTER_W * (shelter12 - natShelter12) + SERVICES_W * (wage12 - natWage12)) / 12;
+    e.cpi = e.cpi! * (1 + natInfl / 12 + clamp(localM, -0.01, 0.01));
     // ...AND THE SAME BASKET WITHOUT THE RENT, which is what rents escalate
     // by (see `escalation` in the rent block). Asking rents marked to a price
     // level that contains them index themselves: measured over 4 worlds x 50
@@ -5819,8 +5832,21 @@ export function tickEcon(s: GameState) {
   // inflation alone, so a century of ordinary CPI pinned the landIdx rail at
   // 40 even before real rents overheated — a load-bearing clamp, which is a
   // fake (CLAUDE.md). The residual is rent against construction cost.
-  const target = Math.pow(rentLevel / costLevel, 1.15) * (1 + 0.16 * e.cycleDev) * Math.max(0.25, vacDisc);
-  e.landIdx = clamp(e.landIdx + 0.024 * (target - e.landIdx) + e.landIdx * rrange(s, -0.003, 0.003), 0.05, 80);
+  // ...AND DIRT IS WORTH WHAT SOMEBODY WILL PAY FOR IT TODAY (2026-10-14).
+  // The residual says what a lot is worth to a builder; how many builders are
+  // bidding says whether anyone pays it. With nobody building, a lot has no
+  // buyer but a patient one at a deep discount (US land prices fell 40-60%
+  // over 2007-11, raw land more), and when builders crowd back in they bid
+  // past the residual for the right sites. `buildDemand` is that book, read
+  // against this town's own decade (`buildNorm`): one is a normal year; nil
+  // is no bidders, which leaves about a third of the
+  // residual — what a lot fetches held for parking and patience. Prices
+  // discover in log terms, ~40% of the gap a year, with no rail: the guard is
+  // only that a price is positive.
+  const bookVsNormal = Math.max(0, e.buildDemand ?? 1) / Math.max(1e-6, e.buildNorm ?? e.buildDemand ?? 1);
+  const bidders = Math.pow((bookVsNormal + 0.2) / 1.2, 0.6);
+  const target = Math.pow(rentLevel / costLevel, 1.15) * (1 + 0.16 * e.cycleDev) * Math.max(0.25, vacDisc) * bidders;
+  e.landIdx = Math.max(1e-3, e.landIdx * Math.exp(0.04 * Math.log(Math.max(1e-6, target) / Math.max(1e-6, e.landIdx)) + rrange(s, -0.003, 0.003)));
 
   // COSTS INFLATE AT LEAST AS FAST AS RENTS.
   //
@@ -5980,7 +6006,25 @@ export function tickEcon(s: GameState) {
     // permanent downward drift on real cost, because it cut the top off every
     // boom while leaving the busts intact, which is the same fault the stale
     // pivot had and arriving through a different door.
-    const heat = clamp(((e.crewUtil ?? 1) - 1) * 3.5, -1.9, 3.1);
+    // A DEEPER LULL (2026-10-14). The idle floor (-1.9 here, -4.8%/yr real)
+    // was shallower than the record: the Turner Building Cost Index fell ~7%
+    // nominal in 2009 (~9% real) and again in 2010, contractors' bids came in
+    // 10-15% lower through 2009-11 as builders cut margin to keep crews, and
+    // construction costs fell about a quarter over 1929-33. At -4 the deepest
+    // lull runs ~-10%/yr real before wages; the busy ceiling is unchanged.
+    //
+    // A MARGIN, NOT A DRIFT (2026-10-14). `heat` was a monthly RATE of change
+    // clamped to -1.9..+3.1, so the deepest lull could only ever shave ~5%/yr
+    // off real cost, a boom could only add ~8%/yr, and a long lull compounded
+    // into a permanently cheaper industry. A contractor's bid is inputs plus a
+    // margin, and the margin is a LEVEL set by the order book: bids came in
+    // 10-15% under cost through 2009-11 (and fell about a quarter over
+    // 1929-33) and ran 15-30% over it in 2021-22. So cost = inputs x (1 +
+    // premium), the premium chases 0.35 per unit of excess utilisation with no
+    // bound, and it gets there within about a year — bids reprice on every
+    // tender. A deep lull is a quick 10-20% drop; firms bidding under cost go
+    // under (`tickCrews`), and the order book comes back to a smaller trade.
+    const premiumTarget = 0.35 * ((e.crewUtil ?? 1) - 1);
     // ONE SLOPE (2026-10-09). This was 0.0026 below full employment and 0.0016
     // above, each set so its own extreme hit an ENR figure. Two gains on one
     // signal make the MEAN of an oscillating utilisation a drift: a market
@@ -5988,7 +6032,6 @@ export function tickEcon(s: GameState) {
     // that reason alone. The midpoint keeps the extremes in the record's range
     // (-4.8%/yr real at the idle floor, +7.8%/yr at the ceiling — 2009-10 and
     // 2021-22) and puts zero drift where utilisation averages one.
-    const slope = 0.0021;
     // WHAT A BUILDING COSTS IS WHAT ITS INPUTS COST (2026-10-08). The base
     // drift was EXPECTED inflation, which sits near its 2% anchor while
     // realised CPI ran 1.9-3.8%/yr across four 50-year worlds, and it gave
@@ -5999,32 +6042,41 @@ export function tickEcon(s: GameState) {
     // index slid 0.5-0.7%/yr whenever the trades were not fully booked, and
     // the office-rent catch-up below had been propping it up. Realised
     // inputs, not a target: a wage boom makes building dearer, a deflation
-    // cheaper. `heat` stays the premium for how busy the trades are.
+    // cheaper. `bidPremium` stays the premium for how busy the trades are.
     const LABOUR_SHARE = 0.45;
     // Materials are traded goods: they cost what they cost nationally
     // (2026-10-09; this read the local CPI, which now carries local rent, so a
     // housing shortage would have raised the price of steel).
     const cpiNow = Math.max(0.35, e.natCpi ?? e.cpi ?? 1), wageNow = Math.max(0.1, e.wageIdx ?? 1);
     const prevIn = e.costInputsPrev;
+    // ...LESS WHAT THE TRADES LEARN (2026-10-14). Pay rises with the town's
+    // productivity; a site crew's output rises far more slowly — the Baumol
+    // problem, and the reason real construction cost rose 27-35% over sixty
+    // years here and apartment rent (which tracks replacement cost) with it.
+    // Construction labour productivity grew ~1-2%/yr in the first half of the
+    // last century and has been flat-to-falling in the US since about 1970
+    // (Goolsbee & Syverson 2023); 0.7%/yr is a mid-century reading of that
+    // range, applied to the labour share only.
+    const TRADES_PRODUCTIVITY = 0.007;
     const inputGrowth = prevIn
-      ? (1 - LABOUR_SHARE) * (cpiNow / prevIn.cpi - 1) + LABOUR_SHARE * (wageNow / prevIn.wage - 1)
+      ? (1 - LABOUR_SHARE) * (cpiNow / prevIn.cpi - 1) + LABOUR_SHARE * ((wageNow / prevIn.wage - 1) - TRADES_PRODUCTIVITY / 12)
       : (e.inflExp ?? 0.02) / 12;
     e.costInputsPrev = { cpi: cpiNow, wage: wageNow };
     // The recession term (-0.0004/mo whenever the label read recession) is
-    // gone: an idle trade is already in `heat`, and a label is not a cost.
-    const costDrift = inputGrowth + heat * slope;
+    // gone: an idle trade is already in `bidPremium`, and a label is not a cost.
+    const costDrift = inputGrowth;
     // RETIRED (2026-10-08): the office-rent catch-up. This pulled the cost
     // index toward the OFFICE asking level whenever rents ran a quarter ahead
     // of it, for every class — flats and sheds priced their concrete off
     // office quotes. Nothing in the world does that: a contractor's bid is
     // materials, labour and how busy the trades are, which is `costDrift`
-    // above (inflation plus `heat`, the share of the city under
+    // above (inflation plus `bidPremium`, the share of the city under
     // construction). Measured over four 50-year worlds it fired in 22-63% of
     // months, and it fired exactly when a shortage lifted rents — so the
     // margin a shortage should open for builders was handed to the cost
     // index instead, the residual stayed flat, and the class stayed on its
     // vacancy floor. When rents outrun cost now, the residual rises, land
-    // pencils, cranes go up, and THEN the trades get dear through `heat`.
+    // pencils, cranes go up, and THEN the trades get dear through `bidPremium`.
     const catchUp = 0;
     // RETIRED (2026-10-09): the "fair real cost" path. Real cost was pulled
     // toward an asserted 1.004^years whenever it strayed 20-25% off it — a
@@ -6037,13 +6089,19 @@ export function tickEcon(s: GameState) {
     // The guards are in this town's dollars (`priceLevel`, drawn at the
     // opening): an absolute 0.6 floor lifted a cheap town's construction to
     // twice its own price level on the first tick (2026-10-12).
-    const pl = e.priceLevel ?? 1;
-    e.costIdx = clamp(
+    // The 0.6x-400x guards on `costIdx` are gone with the drift form: inputs
+    // follow prices and wages, and the margin follows the order book.
+    if (e.bidPremium === undefined || e.costInputIdx === undefined) {
+      e.bidPremium = premiumTarget;
+      e.costInputIdx = e.costIdx / (1 + premiumTarget);
+    }
+    e.costInputIdx = e.costInputIdx * Math.max(0.5,
       // ...and a swan's materials shock (the embargo, blackswans.ts), whatever
       // landed this month; consumed here so it is counted once.
-      e.costIdx * (1 + costDrift + catchUp + realPull + (e.costShock ?? 0) + rrange(s, -0.0012, 0.0012)),
-      0.6 * pl, 400 * pl,
-    );
+      1 + costDrift + catchUp + realPull + (e.costShock ?? 0) + rrange(s, -0.0012, 0.0012));
+    e.bidPremium += 0.12 * (premiumTarget - e.bidPremium);
+    // A bid can be under cost, never under nothing.
+    e.costIdx = e.costInputIdx * Math.max(0.2, 1 + e.bidPremium);
     e.costShock = 0;
   }
 

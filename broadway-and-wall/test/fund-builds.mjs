@@ -28,7 +28,8 @@ let fails = 0, built = 0;
 const fail = (m) => { console.log("  FAIL " + m); fails++; };
 
 for (const seed of SEEDS) {
-  let g = E.firstListings(E.newGame(seed, parcels, 3_000_000), parcels, bbls);
+  // $2.5M: small enough that a ten-storey job on a 4,000 sf lot is beyond its purse alone.
+  let g = E.firstListings(E.newGame(seed, parcels, 2_500_000), parcels, bbls);
   g.fund = { raisedM: 0, size: 6e7, uncalled: 3e7, cash: 3e7, called: 3e7, distributed: 0, promotePaid: 0, prefAccrued: 0,
     investEndM: 36, lifeEndM: 84, pref: 0.08, promote: 0.2, gpCommit: 1.8e6, flows: { call: 3e7 }, deedTagged: 0, deedSettled: 0 };
   let lot = null;

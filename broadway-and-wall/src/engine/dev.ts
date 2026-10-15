@@ -97,6 +97,7 @@ import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
 import { consentFor, purseOf } from "./vehicles";
 import { formSyndication, maxOutside, settleSyndications, syndicateBar, chargeDevFee } from "./syndicate";
+import { lpNetIrr } from "./waterfall";
 
 /**
  * THE PLATE THE CITY DRAWS — the site coverage an autonomous start (the
@@ -2009,7 +2010,9 @@ export function startDevelopment(
   if (next.deedCf?.[bbl]) next.deedCf[bbl].plan = { irr: projected };
   if (outside > 0) {
     const w = formSyndication(next, bbl, outside, commitCap, landEquity, custom?.syndicate?.sources);
-    w.pitchIrr = projected;
+    // Investors are pitched their own net IRR — the projection after the
+    // promote this band's terms take (waterfall.ts lpNetIrr) — and judged on it.
+    w.pitchIrr = lpNetIrr(projected, Math.max(1, plan.months + 12) / 12, w.hurdles, w.promotes);
     // What the offering pitched, for the quarterly reports (reviewSyndications).
     w.pitchDeliverM = next.month + plan.months;
     w.pitchNoi = plan.stabNoi;

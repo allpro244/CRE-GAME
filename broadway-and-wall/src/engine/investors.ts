@@ -91,10 +91,10 @@ export function poolLeft(s: GameState, id: Exclude<InvestorSource, "ff">): numbe
  * entry): the local money first, then the family offices. It does not wait on
  * the pool yet (see header). Mutates `s`.
  */
-export function drawRivalRaise(s: GameState, equity: number): void {
+export function drawRivalRaise(s: GameState, equity: number, ids: Exclude<InvestorSource, "ff">[] = ["local", "family"]): void {
   const p = investorPool(s);
   let rest = Math.max(0, equity);
-  for (const id of ["local", "family"] as const) {
+  for (const id of ids) {
     const take = Math.min(rest, Math.max(0, (p.cap[id] ?? 0) - (p.used[id] ?? 0)));
     p.used[id] = (p.used[id] ?? 0) + take;
     rest -= take;

@@ -2727,9 +2727,12 @@ export interface Rival {
    * The investors are paid out of the deed's sale proceeds through the pref
    * and promote (`jvLpTake`, rivals.ts); a deed that leaves any other way
    * (foreclosure, a deed in lieu, an orphaned frame) takes their equity with
-   * it, which is what happens to deal equity in life.
+   * it, which is what happens to deal equity in life. `mw` is the month the
+   * investors' money went in, weighted by the cheques (later draws move it);
+   * `pitch` the net IRR the offering promised them, `g` the sponsor's share
+   * of each cheque, fixed at the deal's formation (rivals.ts jvFund).
    */
-  jvs?: Record<string, { lp: number; gp: number; m: number }>;
+  jvs?: Record<string, { lp: number; gp: number; m: number; mw?: number; pitch?: number; g?: number }>;
   /**
    * THE FIRM'S REALISED DEALS, the last thirty years of them (reputation.ts
    * reads them as the firm's record; CAPITAL_RAISING_PLAN.md §3.4 "same
@@ -2737,10 +2740,16 @@ export interface Rival {
    * equity in it, `m` the month; `mult` what came back where the street can
    * see it (the deal investors' multiple on a syndicated deed, `lp`; 0 on a
    * deed lost to its lender); `forced` an own-money sale made while the firm
-   * was in trouble (rivals.ts noteRealised). Read only by the ranking;
-   * nothing in the economy reads it.
+   * was in trouble (rivals.ts noteRealised); on a syndicated deed, `irr` the
+   * investors' realised IRR and `pitch` the net IRR they were offered.
    */
-  realised?: { m: number; eq: number; mult?: number; lp?: boolean; forced?: boolean }[];
+  realised?: { m: number; eq: number; mult?: number; lp?: boolean; forced?: boolean; irr?: number; pitch?: number }[];
+  /**
+   * THE TEAM'S RECORD, carried out of the parent by a spinout (reputation.ts
+   * inheritRecord): part of the parent's positive evidence at the founding,
+   * dated as it was. None of the parent's losses or marks come with it.
+   */
+  heritage?: { m: number; ev: number; size: number }[];
   /**
    * WHEN THE EXTENDED PAPER ON A BUILDING COMES BACK, by BBL. Present only for
    * a building whose balloon the desk re-papered rather than took the keys on;
@@ -3315,6 +3324,19 @@ export interface GameState {
    * turn it off); a save written before it existed runs without it.
    */
   poolEntry?: boolean;
+  /**
+   * Rivals raise on their record: a spinout carries its team's record into a
+   * larger first close (rivals.ts maybeNewFirm;
+   * CAPITAL_RAISING_PLAN.md §3.4 "rival ratings then gate rival raising"). On
+   * for new games; a save written before it existed runs without it.
+   */
+  rivalReputation?: boolean;
+  /**
+   * Deal-by-deal rivals raise each job on the player's terms table for their
+   * band (rivals.ts sponsorShareOf). Off unless the setup turns it on: it
+   * shrinks the city (measured there).
+   */
+  rivalDealTerms?: boolean;
   /** Months a rival's first close was slowed by a thin investor pool (rivals.ts; measured, display only). */
   poolBindMs?: number;
   /** Deal-by-deal raises in progress, keyed by the lot (raise.ts). */
@@ -3324,7 +3346,11 @@ export interface GameState {
    * (reputation.ts updateReputation). `band` is the one terms are set by;
    * `pending` a higher band waiting out its second quarter.
    */
-  reputation?: { band: import("./reputation").Band; pending?: import("./reputation").Band; pendingQ?: number; score: number; rank: number; of: number; m: number };
+  reputation?: {
+    band: import("./reputation").Band; pending?: import("./reputation").Band; pendingQ?: number; score: number; rank: number; of: number; m: number;
+    /** Every living rival's band at the last quarterly ranking, by firm id — what investors read when a rival raises (reputation.ts rivalBand). */
+    street?: Record<string, import("./reputation").Band>;
+  };
   /**
    * When true, new purchases draw equity from the live fund during its
    * investment period. Opt-in path; balance-sheet remains the default until

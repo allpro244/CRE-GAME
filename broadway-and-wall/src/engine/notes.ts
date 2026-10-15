@@ -45,7 +45,7 @@
 // selling ends it. Nothing here can turn into a monthly rhythm of clicks.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Holding, Note, Rival } from "./types";
-import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState} from "./types";
+import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, autoLeaseOnClose } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
@@ -341,6 +341,7 @@ export function takeDeed(s: GameState, parcels: ParcelTable, n: Note, how: "fore
     tenants: [],
     cfHistory: [],
     ...(s.landmarks?.[n.bbl] !== undefined ? { landmarked: true } : {}),
+    ...(autoLeaseOnClose(s) ? { autoLease: true } : {}),
   };
   wreckedRoll(s, rec, h, occ);
   s.holdings[n.bbl] = h;

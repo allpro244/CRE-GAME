@@ -471,7 +471,7 @@ export function LeasingPage() {
                         one in force, how tenants read the service, and the
                         building's condition and reserve. */}
                     <div onClick={(e) => e.stopPropagation()}>
-                      <OpsChoices bbl={r.h.bbl} h={r.h} score={false} />
+                      <OpsChoices bbl={r.h.bbl} h={r.h} compact />
                     </div>
                   </td>
                   <td>{useLabel(r.rec)}</td>

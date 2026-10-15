@@ -2548,7 +2548,9 @@ export function listForSale(
  * because every caller asks the same question — what does this sale cost.
  */
 export function quietFeeRate(s: GameState): number {
-  const firms = livingRivals(s);
+  // The buyers for a building: investors and operators, not the town's
+  // builders (GameState.builderFirms), who buy dirt for their own schemes.
+  const firms = livingRivals(s).filter((r) => !r.builderProf);
   if (!firms.length) return SALE_BROKERAGE;
   let known = 0;
   for (const r of firms) if ((s.street?.[r.id]?.deals ?? 0) > 0) known++;

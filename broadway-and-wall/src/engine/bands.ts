@@ -29,7 +29,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
 import { BUILT_CLASSES } from "./types";
 import { NATURAL_VAC } from "./market";
-import { GROSS_TURNOVER } from "./absorption";
+import { GROSS_TURNOVER } from "./turnover";
 import {
   N_BANDS, bandCenter, overallScore, scoreNatVac, locationRentMult, plateRentMult,
   condMultAt, specRentMult, initialCondIdx, scoreRentMult,

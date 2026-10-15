@@ -533,10 +533,15 @@ export default function TopBar() {
             <span className="vital-pair">
               <Stat
                 label="Market"
-                value={`${pct(game.econ.indexRate)} · ${game.econ.phase}`}
+                // BOTH RATES. Fixed loans price off the loan index; floating
+                // loans and the line price off the short index, and only the
+                // first was shown — so a floating loan tracking the short
+                // index looked frozen next to it, and in a steep curve looked
+                // "under the market".
+                value={`${pct(game.econ.indexRate)} fixed · ${pct(game.econ.shortIndex ?? game.econ.indexRate)} fl · ${game.econ.phase}`}
                 bad={vacDpp !== null && vacDpp >= 2}
                 drop={1}
-                w={128}
+                w={210}
                 onClick={() => setPage("economy")}
                 delta={dRateBp !== null ? (
                   <DeltaChip

@@ -3689,6 +3689,13 @@ export interface GameState {
    */
   autoRentFloor?: boolean;
   /**
+   * NEW BUILDINGS JOIN AUTO-LEASE: a building you buy (off the tape, off
+   * market, at auction or by taking a note's collateral) closes on auto-lease.
+   * Absent reads from the book: on when any building you own is on auto
+   * (`autoLeaseOnClose`). Built buildings already open on auto at delivery.
+   */
+  autoLeaseNew?: boolean;
+  /**
    * WHAT AUTO-LEASE DID, last twelve months — the team's scorecard on the
    * Leasing page. One row per letter it settled; trimmed as it is written.
    */
@@ -4834,4 +4841,15 @@ export interface BankForeclosure {
   debt: number;
   noticedM: number;
   saleM: number;
+}
+
+/**
+ * Does a building closing today join auto-lease? The firm's explicit choice
+ * (GameState.autoLeaseNew) when it has made one; otherwise yes if any building
+ * already in the book is on auto — an owner running the book on auto wants the
+ * next deed run the same way, and one who answers their own letters does not.
+ */
+export function autoLeaseOnClose(s: GameState): boolean {
+  if (s.autoLeaseNew !== undefined) return s.autoLeaseNew;
+  return Object.values(s.holdings ?? {}).some((h) => !!h.autoLease && !h.groundLeased);
 }

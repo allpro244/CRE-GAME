@@ -85,8 +85,12 @@ quietly goes to the wrong party.
      capital, tenure, deliveries and stress; a strict quarterly ranking;
      bands = min(rank band, floor band), upgrades after two quarters,
      downgrades at once; the band sets the syndication terms. Not yet:
-     warning-sign provisional evidence, misconduct, fund vehicles in the
-     record, real rival ledgers.
+     fund vehicles in the record, real rival ledgers. Warning signs
+     (quarterly investor reports: late, over budget, lease-up short, no
+     distributions; −3 a flag, −10 a deal), misconduct (a deed lost while its
+     syndicated job was in the ground: ×2, −25, Toxic for twenty years) and
+     re-ups (paid-back sources re-up up to 50% faster; sources that lost money
+     at 30% for ten years) are in.
    - the deal's business plan as its only mandate
    - a capital-source picker (§6.5)
    - the conserve bot and the MDGA driver exercise all of it

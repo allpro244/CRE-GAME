@@ -37,7 +37,7 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState, Syndication } from "./types";
 import { logBooks } from "./types";
 import { accrueMonth, contribute, settlePeriod, seriesIrr, sponsorPosition, lpCapShare } from "./waterfall";
-import { resolveRec, ownedHoldingValue, cipEquity } from "./value";
+import { resolveRec, ownedHoldingValue, cipEquity, ownedHoldingNoiYr } from "./value";
 import { playerTerms } from "./reputation";
 import { openSources, investorPool, SOURCE_LABEL, type InvestorSource } from "./investors";
 
@@ -159,6 +159,9 @@ export function formSyndication(s: GameState, bbl: string, lpCommit: number, cas
   };
   const land = Math.max(0, Math.round(landEquity));
   if (land > 0) { contribute(w, 0, land); w.gpIn += land; }
+  w.cashNeed = Math.round(cashNeed);
+  w.landIn = land;
+  w.building = true;
   (s.syndications ??= {})[bbl] = w;
   return w;
 }
@@ -204,6 +207,7 @@ export function settleSyndications(s: GameState, parcels: ParcelTable, accrue = 
     const w = all[bbl];
     if (accrue) accrueMonth(w);
     const held = !!s.holdings[bbl];
+    if (held) w.building = !!s.developments?.[bbl];
     // The asset-management fee: a twelfth of the band's annual rate on the
     // investors' capital still out (called less paid back), while the deal
     // holds its deed (§4.1; market 1–1.5% of equity a year).
@@ -238,6 +242,8 @@ export interface SyndicateView {
   equity: number;
   yours: number;
   theirs: number;
+  /** Flags the quarterly investor reports have raised (reviewSyndications). */
+  flags: string[];
 }
 
 export function syndicateView(s: GameState, parcels: ParcelTable, bbl: string): SyndicateView | null {
@@ -252,7 +258,46 @@ export function syndicateView(s: GameState, parcels: ParcelTable, bbl: string): 
     owedAtPref: Math.round(w.lpBal[0]), owedAtHurdle: Math.round(w.lpBal[w.lpBal.length - 1]),
     pref: w.hurdles[0], hurdle: w.hurdles[w.hurdles.length - 1], promote: w.promotes[w.promotes.length - 1],
     equity: Math.round(equity), yours: Math.round(yours), theirs: Math.round(equity - yours),
+    flags: [...(w.flags ?? [])],
   };
+}
+
+/**
+ * THE QUARTERLY INVESTOR REPORT (§3.4, "warning signs before the end").
+ * Investors do not wait for the exit: each live deal is read against what it
+ * was pitched, and each of these raises a flag — provisional evidence of −3
+ * each, at most −10 a deal, replaced by the real result at the end
+ * (reputation.ts):
+ *   - delivery more than six months behind the pitched date;
+ *   - cash in more than 10% over the job's pitched cash need (an overrun the
+ *     guarantee had to fund);
+ *   - two years after delivery, NOI under 85% of the pitched stabilised NOI
+ *     (lease-up a year or more behind the plan's twelve months);
+ *   - two years after delivery, nothing distributed for a year.
+ * Thresholds from the plan; the last stands in for "below the pitched
+ * distribution schedule", which a deal-by-deal raise does not pitch. Mutates `s`.
+ */
+export function reviewSyndications(s: GameState, parcels: ParcelTable): void {
+  for (const w of Object.values(s.syndications ?? {})) {
+    const h = s.holdings[w.bbl];
+    if (!h) continue;
+    const add = (key: string, why: string) => {
+      const f = (w.flags ??= []);
+      if (f.includes(key)) return;
+      f.push(key);
+      s.news.unshift({ q: s.month, kind: "warn", text: `Your investors in ${resolveRec(parcels, s, w.bbl)?.address ?? w.bbl} flagged the quarter's report: ${why}. Everyone you ask for money next will see it on your tear sheet.` });
+    };
+    const building = !!s.developments?.[w.bbl];
+    if (w.pitchDeliverM !== undefined && ((building && s.month > w.pitchDeliverM + 6) || (h.deliveredM !== undefined && h.deliveredM > w.pitchDeliverM + 6))) add("late", "delivery is more than six months behind what you pitched");
+    if (w.cashNeed && w.lpCalled + (w.gpIn - (w.landIn ?? 0)) > 1.10 * w.cashNeed) add("over", "costs are more than 10% over budget");
+    const since = h.deliveredM !== undefined ? s.month - h.deliveredM : -1;
+    if (since >= 24 && w.pitchNoi && ownedHoldingNoiYr(s, parcels, h) < 0.85 * w.pitchNoi) add("leaseup", "the building is still well short of the income you pitched");
+    if (since >= 24) {
+      let paid = 0;
+      for (let i = 0; i < w.lpFlows.length; i += 2) if (w.lpFlows[i] > s.month - 12 && w.lpFlows[i + 1] > 0) paid += w.lpFlows[i + 1];
+      if (!(paid > 0)) add("dist", "nothing has been distributed in a year");
+    }
+  }
 }
 
 /** Wind a deal up: record what it paid its investors, settle the network, drop the record. `recap` marks a buyout (recap.ts). */
@@ -261,7 +306,10 @@ export function closeSyndication(s: GameState, parcels: ParcelTable, w: Syndicat
   (s.synClosed ??= []).push({
     bbl: w.bbl, address: resolveRec(parcels, s, w.bbl)?.address ?? w.bbl, investor: w.investor,
     formedM: w.formedM, closedM: s.month, lpIn, lpOut, lpIrr: seriesIrr(w.lpFlows),
-    gpIn: w.gpIn, gpOut: w.gpDist, pitchIrr: w.pitchIrr, ...(recap ? { recap: true } : {}),
+    gpIn: w.gpIn, gpOut: w.gpDist, pitchIrr: w.pitchIrr, sources: w.sources, ...(recap ? { recap: true } : {}),
+    // A deed lost while its job was still in the ground: the sponsor did not
+    // complete what it guaranteed (§3.4, misconduct).
+    ...(!recap && w.building ? { misconduct: true } : {}),
   });
   if (s.synClosed.length > 200) s.synClosed.shift();
   const net = ffNetwork(s);

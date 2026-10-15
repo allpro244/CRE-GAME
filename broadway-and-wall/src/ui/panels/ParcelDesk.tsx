@@ -1531,6 +1531,11 @@ function StakeSection({ bbl }: { bbl: string }) {
         <div className="grid">
           <Row k="Committed · called" v={`${usd(syn.lpCommit)} · ${usd(syn.lpCalled)}`} />
           <Row k="Paid to them so far" v={usd(syn.lpDist)} />
+          {syn.flags.length > 0 && (
+            <Row k="Their report flags" bad
+              v={syn.flags.map((f) => ({ late: "behind schedule", over: "over budget", leaseup: "short of the pitched income", dist: "no distributions in a year" } as Record<string, string>)[f] ?? f).join(" · ")}
+              title="Each flag is −3 on your record with every investor until the deal's real result replaces it (at most −10 a deal)." />
+          )}
           <Row k="Their share of the capital" v={pc(syn.capShare)} />
           <Row k="Owed them before any promote" v={pastPref ? "nothing — the pref is paid" : usd(syn.owedAtPref)} />
           <Row k={`To their ${pc(syn.hurdle)} hurdle`} v={pastHurdle ? "cleared — you earn the promote" : usd(syn.owedAtHurdle)} />

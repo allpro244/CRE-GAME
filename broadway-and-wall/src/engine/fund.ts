@@ -565,8 +565,11 @@ export function tickFund(s: GameState): void {
       if (pay > 0) {
         moveFundCash(f, -pay, "fee");
         s.cash += pay;
-        pnlAdd(s, "fees", pay);
-        s.feeIncomeYr = (s.feeIncomeYr ?? 0) + pay;
+        // The sponsor's co-invest pays its own share of the fee: what it earns
+        // (and is taxed on) is the LPs' share.
+        const lpPart = Math.round(pay * (1 - gpCapitalShare(f)));
+        pnlAdd(s, "fees", lpPart);
+        s.feeIncomeYr = (s.feeIncomeYr ?? 0) + lpPart;
         f.feesPaid = (f.feesPaid ?? 0) + pay;
       }
     }

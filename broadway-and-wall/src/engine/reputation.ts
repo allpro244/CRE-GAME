@@ -214,9 +214,11 @@ export function playerEvidence(s: GameState): Evidence[] {
  *   - IN THE GAME, observed. Every deed that left the book is a row on
  *     `Rival.realised` (rivals.ts noteRealised), through the same outcome
  *     table, size, fault and concentration rules as the player's exits:
- *       a syndicated deed on its deal investors' multiple — rivals record no
- *       pitch, so capital back with a profit is a promise met, exactly as a
- *       player deal with no recorded plan is;
+ *       a syndicated deed on its deal investors' realised IRR against the
+ *       net IRR the offering pitched them (rivals.ts jvFund — the job's
+ *       projection after the promote, the player's own rule), and on their
+ *       multiple; a deal raised before pitches were recorded is judged on the
+ *       money alone, as a player deal with no recorded plan is;
  *       a deed lost to its lender at 0x;
  *       an own-money sale, whose multiple nobody outside the firm can see,
  *       as a promise met when the firm sold on its own schedule and as the
@@ -246,7 +248,7 @@ export function rivalEvidence(s: GameState, r: Rival): Evidence[] {
   for (const d of rows) managed += d.eq;
   for (const d of rows) {
     const size = sizeWeight(d.eq, level);
-    let ev = d.mult !== undefined ? outcomeEvidence(null, null, d.mult) : d.forced ? -8 : 4;
+    let ev = d.mult !== undefined ? outcomeEvidence(d.irr, d.pitch, d.mult) : d.forced ? -8 : 4;
     if (ev > 0) ev *= size;
     else {
       ev *= faultMult(s, d.m - 36, d.m);
@@ -256,8 +258,26 @@ export function rivalEvidence(s: GameState, r: Rival): Evidence[] {
     ev *= d.lp ? 1 : OWN_WEIGHT;
     out.push({ m: d.m, ev, size: ev > 0 ? size : 0, kind: d.lp ? "investor" : "own", label: d.mult === 0 ? "a deed lost" : d.mult !== undefined ? `investors got ${d.mult.toFixed(2)}x` : d.forced ? "sold in trouble" : "a deed sold" });
   }
+  for (const h of r.heritage ?? []) out.push({ m: h.m, ev: h.ev, size: h.size, kind: "derived", label: `the team's record at ${r.spawnedFrom?.firmName ?? "its last firm"}` });
   if ((r.stressMs ?? 0) >= 6) out.push({ m: s.month, ev: -15 * faultMult(s, s.month - 36, s.month), size: 0, kind: "derived", label: "in stress" });
   return out;
+}
+
+/**
+ * A SPINOUT CARRIES PART OF THE TEAM'S RECORD (§3.4 "Rivals"): track-record
+ * portability is partial in practice — investors credit the people who did the
+ * deals, but not all of a platform's results were theirs — so a third to a
+ * half of the parent's positive evidence comes with them, here 0.4 (a shape
+ * parameter at the middle of that range), dated as it was so it fades on the
+ * same clock. None of the parent's losses or marks.
+ */
+export const HERITAGE_SHARE = 0.4;
+export function inheritRecord(s: GameState, parent: Rival): { m: number; ev: number; size: number }[] {
+  return rivalEvidence(s, parent)
+    .filter((e) => e.ev > 0 && s.month - e.m <= DROP_M)
+    .sort((a, b) => b.m - a.m)
+    .slice(0, 30)
+    .map((e) => ({ m: e.m, ev: Math.round(e.ev * HERITAGE_SHARE * 100) / 100, size: Math.round(e.size * HERITAGE_SHARE * 1000) / 1000 }));
 }
 
 /** Score a record at month `now`: shrink(positive) + negative, with fading. */
@@ -385,7 +405,22 @@ export function updateReputation(s: GameState): void {
         : `Investors now read you as ${band} (#${r.rank} of ${r.of}, score ${r.score.toFixed(0)}). The money that was there last quarter is asking harder questions.`,
     });
   }
-  s.reputation = { band, pending, pendingQ, score: r.score, rank: r.rank, of: r.of, m: s.month };
+  const street: Record<string, Band> = {};
+  for (const f of rankStreet(s)) if (f.id !== "you") street[f.id] = f.band;
+  s.reputation = { band, pending, pendingQ, score: r.score, rank: r.rank, of: r.of, m: s.month, street };
+}
+
+/**
+ * HOW INVESTORS READ A RIVAL when it raises: its band at the last quarterly
+ * ranking (updateReputation), or — for a firm founded since — the floor its
+ * own record allows, which is Unknown for a new name and more for a spinout
+ * carrying its team's record. Rank is not recomputed here: it draws nothing
+ * and is cheap, but the street's order is a quarterly read like the player's.
+ */
+export function rivalBand(s: GameState, r: Rival): Band {
+  const cached = s.reputation?.street?.[r.id];
+  if (cached) return cached;
+  return floorBand(scoreOf(rivalEvidence(s, r), s.month));
 }
 
 /**

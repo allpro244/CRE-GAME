@@ -163,6 +163,34 @@ export function investorsTakeOfExit(w: Syndication, toOwners: number, month: num
 }
 
 /**
+ * WHAT A PROJECTION PROMISES THE INVESTORS. A deal pitched at a project IRR
+ * pays its investors less than that once the sponsor's promote comes out, so
+ * judging their realised IRR against the project's number would call a deal
+ * delivered exactly on plan a miss. This runs the projection — one equity
+ * cheque in, `(1 + projIrr)^years` out — through the same tiers `distribute`
+ * pays: the pref in full, then each band above it net of that band's promote.
+ * The investors' share of the equity cancels, so it is per dollar. Returns
+ * their projected net IRR.
+ */
+export function lpNetIrr(projIrr: number, years: number, hurdles: number[], promotes: number[]): number {
+  if (!(years > 0) || !(projIrr > -1) || !hurdles.length) return projIrr;
+  const total = Math.pow(1 + projIrr, years);
+  const bal = (h: number) => Math.pow(1 + h, years);
+  let rest = total, lp = Math.min(rest, bal(hurdles[0]));
+  rest -= lp;
+  for (let k = 1; k < hurdles.length && rest > 0; k++) {
+    const f = 1 - (promotes[k - 1] ?? 0);
+    const need = Math.max(0, bal(hurdles[k]) - lp);
+    if (!(f > 0) || !(need > 0)) continue;
+    const z = Math.min(rest, need / f);
+    lp += z * f;
+    rest -= z;
+  }
+  if (rest > 0) lp += rest * (1 - (promotes[promotes.length - 1] ?? 0));
+  return Math.pow(Math.max(1e-9, lp), 1 / years) - 1;
+}
+
+/**
  * Monthly IRR of a [month, amount, month, amount, …] series, annualised; null
  * when it has no sign change or does not converge. Bisection: robust, and the
  * series are short.

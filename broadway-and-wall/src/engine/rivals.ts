@@ -38,7 +38,9 @@ import { isCivicLand } from "./demand";
 import { dollarLevel, rng, newsChance, rrange, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
 import { DEV_MARGIN, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
-import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar } from "./dev";
+import { lpNetIrr } from "./waterfall";
+import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
+import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar, projectedDevIrr } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue } from "./leasing";
@@ -498,16 +500,47 @@ export function sponsorShare(style: RivalStyle): number {
   return SYNDICATES[style] ? SPONSOR_COINVEST : 1;
 }
 /**
+ * THE SHARE A FIRM WRITES ITSELF ON ITS NEXT DEAL, ON ITS RECORD (§3.4,
+ * "rival ratings gate rival raising"; GameState.rivalReputation). The deal's
+ * investors sign the same terms table the player raises on (reputation.ts
+ * BAND_TERMS): at most `perOwn` dollars of theirs per dollar of the
+ * sponsor's. The 90/10 above is $9 per $1 — the Institutional row; a builder
+ * the street reads as Unknown raises $1 per $1, one that is Questioned fifty
+ * cents, and a Toxic one nothing. Off, every deal-by-deal builder raises
+ * 90/10 as before.
+ *
+ * OFF BY DEFAULT (GameState.rivalDealTerms, a setup choice). Measured on the
+ * baseline's seeds against 90/10 for everybody: city floor area −4.0%,
+ * median land −15.5%, employment −3.7%, vacancy up in office, retail and
+ * apartments — most builders the street ranks sit at Unknown or below, so a
+ * capital-starved street builds and bids less, and the simulated economy
+ * shrinks with it. Realistic, and a different city; the owner chooses.
+ */
+export function sponsorShareOf(s: GameState, r: Rival): number {
+  if (!SYNDICATES[r.style]) return 1;
+  if (!s.rivalDealTerms) return SPONSOR_COINVEST;
+  const per = BAND_TERMS[rivalBand(s, r)].perOwn;
+  return per > 0 ? 1 / (1 + per) : 1;
+}
+/**
  * The deal investors write their share of an equity cheque the firm is about
  * to pay on this job. Returns what came in. `inKind` is what the sponsor
  * contributes besides cash — its own land or standing building, at the basis
  * the job was underwritten on — which counts toward its share of the deal.
  */
-function jvFund(s: GameState, r: Rival, bbl: string, cheque: number, inKind = 0): number {
-  const g = sponsorShare(r.style);
+function jvFund(s: GameState, r: Rival, bbl: string, cheque: number, inKind = 0, plan?: DevPlan): number {
+  // The terms are set when the deal is formed; later draws are called on them.
+  const open = r.jvs?.[bbl];
+  const g = open ? (open.g ?? SPONSOR_COINVEST) : sponsorShareOf(s, r);
   if (g >= 1 || !(cheque > 0)) return 0;
   const lp = Math.round(cheque * (1 - g));
-  const jv = ((r.jvs ??= {})[bbl] ??= { lp: 0, gp: Math.max(0, Math.round(inKind)), m: s.month });
+  const jv = ((r.jvs ??= {})[bbl] ??= { lp: 0, gp: Math.max(0, Math.round(inKind)), m: s.month, g });
+  // THE OFFERING. The job's own projection — the same one the player's
+  // groundbreaking is judged on (dev.ts projectedDevIrr) — put to the deal's
+  // investors net of the sponsor's promote (waterfall.ts lpNetIrr), on the
+  // terms jvLpTake pays: the pref, then the excess less the promote.
+  if (plan && jv.pitch === undefined) jv.pitch = lpNetIrr(projectedDevIrr(plan), Math.max(1, plan.months + 12) / 12, [FUND_PREF], [FUND_PROMOTE]);
+  jv.mw = jv.lp + lp > 0 ? ((jv.mw ?? jv.m) * jv.lp + s.month * lp) / (jv.lp + lp) : s.month;
   jv.lp += lp;
   jv.gp += cheque - lp;
   r.cash += lp;
@@ -528,10 +561,14 @@ function jvFund(s: GameState, r: Rival, bbl: string, cheque: number, inKind = 0)
  * the price at the firm's target leverage; that is an estimate, and only its
  * cube root is read.
  */
-export function noteRealised(s: GameState, r: Rival, jv: { lp: number; gp: number; m: number } | undefined, price: number, lpOut: number, lost = false): void {
+export function noteRealised(s: GameState, r: Rival, jv: { lp: number; gp: number; m: number; mw?: number; pitch?: number } | undefined, price: number, lpOut: number, lost = false): void {
   const rows = (r.realised ??= []);
   if (jv && jv.lp > 0) {
-    rows.push({ m: s.month, eq: Math.round(jv.lp + jv.gp), mult: Math.round((lost ? 0 : Math.max(0, lpOut) / jv.lp) * 100) / 100, lp: true });
+    const mult = lost ? 0 : Math.max(0, lpOut) / jv.lp;
+    // Their realised IRR: one cheque at the money-weighted month in, one out today.
+    const yrs = Math.max(1, s.month - (jv.mw ?? jv.m)) / 12;
+    const irr = mult > 0 ? Math.pow(mult, 1 / yrs) - 1 : -1;
+    rows.push({ m: s.month, eq: Math.round(jv.lp + jv.gp), mult: Math.round(mult * 100) / 100, lp: true, irr: Math.round(irr * 1000) / 1000, ...(jv.pitch !== undefined ? { pitch: Math.round(jv.pitch * 1000) / 1000 } : {}) });
   } else {
     const eq = Math.round(Math.max(0, price) * (1 - Math.max(0, Math.min(0.95, r.targetLtv))));
     if (!(eq > 0)) return;
@@ -779,11 +816,11 @@ export function claimJob(
     // The firm's own cheque: all of the day-one equity, or a deal-by-deal
     // sponsor's co-invest (sponsorShare) with the deal's investors writing the
     // rest.
-    const need = Math.round(dayOneOf(r) * sponsorShare(r.style)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.04);
+    const need = Math.round(dayOneOf(r) * sponsorShareOf(s, r)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.04);
     if (freeCash(s, r) + lineDrawFor(s, parcels, r, need) < need) return false;
     // A firm building mostly with its own money has to HAVE it: the whole of
     // its equity, called or callable, not only the first draw.
-    if (ltcOf(r) < ltc && r.cash + (r.uncalled ?? 0) < equityOf(r) * sponsorShare(r.style)) return false;
+    if (ltcOf(r) < ltc && r.cash + (r.uncalled ?? 0) < equityOf(r) * sponsorShareOf(s, r)) return false;
     // THE SITE HAS TO SUIT THE BUILDER: a trophy builder does not put a
     // warehouse on the fringe because the city's pipeline offered one.
     const suit = r.sheet ? Math.min(1.6, fitOf(s, parcels, r, { ...rec, class: use === "mixed" ? "retail" : use } as ParcelRecord)) : 1;
@@ -799,7 +836,7 @@ export function claimJob(
   // the hungriest of the firms that can actually fund it
   let best = runners[0], bestW = -Infinity;
   for (const r of runners) {
-    const w = paramsOf(r).build * (r.cash / Math.max(1, dayOneOf(r) * sponsorShare(r.style))) * (0.6 + rng(s, "rivals") * 0.8);
+    const w = paramsOf(r).build * (r.cash / Math.max(1, dayOneOf(r) * sponsorShareOf(s, r))) * (0.6 + rng(s, "rivals") * 0.8);
     if (w > bestW) { bestW = w; best = r; }
   }
 
@@ -807,8 +844,8 @@ export function claimJob(
   observe(s, best, sheetOf(best), ["build", "scale", "quality"], 0.08);
   const dayOneEquity = dayOneOf(best);
   const bestLtc = ltcOf(best);
-  drawLine(s, best, lineDrawFor(s, parcels, best, Math.round(dayOneEquity * sponsorShare(best.style)) + Math.max(400_000 * dollarLevel(s.econ), best.cash * 0.04)));
-  best.cash -= dayOneEquity - jvFund(s, best, bbl, dayOneEquity);
+  drawLine(s, best, lineDrawFor(s, parcels, best, Math.round(dayOneEquity * sponsorShareOf(s, best)) + Math.max(400_000 * dollarLevel(s.econ), best.cash * 0.04)));
+  best.cash -= dayOneEquity - jvFund(s, best, bbl, dayOneEquity, 0, plan);
   best.basis = Math.round((best.basis ?? 0) + land);
   transferDeed(s, bbl, best, land);
   const job = (s.cityJobs ?? []).find((j) => j.bbl === bbl);
@@ -971,7 +1008,7 @@ export function fundJobs(s: GameState) {
     // buying window in the game — it is not a bonus, it is somebody's job.
     if (j.repudiatedM !== undefined) {
       const carry = Math.round(((j.debt ?? 0) * (j.ratePct ?? 8)) / 100 / 12);
-      const partnersIn = r.jvs?.[j.bbl] ? Math.round((spend + carry) * (1 - sponsorShare(r.style))) : 0;
+      const partnersIn = r.jvs?.[j.bbl] ? Math.round((spend + carry) * (1 - (r.jvs[j.bbl].g ?? SPONSOR_COINVEST))) : 0;
       if (r.cash + partnersIn < spend + carry) {
         orphanCityJob(s, j);
         s.news.unshift({
@@ -1024,7 +1061,7 @@ export function fundJobs(s: GameState) {
       const capitalCall = afterEquity - fromDebt;
       const cashNeed = fromEquity + capitalCall;
       // A syndicated job's investors meet their share of every call.
-      const partnersIn = r.jvs?.[j.bbl] ? Math.round(cashNeed * (1 - sponsorShare(r.style))) : 0;
+      const partnersIn = r.jvs?.[j.bbl] ? Math.round(cashNeed * (1 - (r.jvs[j.bbl].g ?? SPONSOR_COINVEST))) : 0;
       if (r.cash + partnersIn < cashNeed) {
         // Prefer a month of schedule slip over a standing skeleton when the
         // sponsor is only short this draw — orphans were eating most named
@@ -1980,7 +2017,7 @@ export function tickRivalConversions(s: GameState, parcels: ParcelTable) {
       if (!pick || plan.hurdleRatio > pick.plan.hurdleRatio) pick = { bbl, rec, plan };
     }
     if (!pick) continue;
-    const need = Math.round(pick.plan.equity * 0.40 * sponsorShare(r.style)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
+    const need = Math.round(pick.plan.equity * 0.40 * sponsorShareOf(s, r)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
     const draw = lineDrawFor(s, parcels, r, need);
     if (r.cash + draw < need) continue;
     drawLine(s, r, draw);
@@ -2624,7 +2661,19 @@ function maybeNewFirm(s: GameState) {
   // to spare the factor is 1 and entry is exactly what it was (the same
   // single draw).
   const poolOn = !!s.poolEntry;
-  const poolAvail = poolOn ? poolLeft(s, "local") + poolLeft(s, "family") : Infinity;
+  // A SPINOUT RAISES ON ITS TEAM'S RECORD (reputation.ts inheritRecord;
+  // GameState.rivalReputation). A new name is Unknown and raises as every new
+  // name does. A team carrying a record its investors can read raises a larger
+  // first close — +15% a band above Unknown, a shape parameter — and from
+  // Institutional the endowments take its meeting too, from Blue-chip the
+  // pensions (investors.ts, the same bands that open them to the player).
+  const parentEarly = founder && s.rivalReputation ? (s.rivals ?? []).find((x) => x.id === founder.fromFirmId) : undefined;
+  const heritage = parentEarly ? inheritRecord(s, parentEarly) : [];
+  const raiseBand: Band = heritage.length ? floorBand(scoreOf(heritage.map((h) => ({ ...h, kind: "derived" as const, label: "" })), s.month)) : "Unknown";
+  const raiseIds: ("local" | "family" | "endowment" | "pension")[] = ["local", "family"];
+  if (bandIdx(raiseBand) >= bandIdx("Institutional")) raiseIds.push("endowment");
+  if (bandIdx(raiseBand) >= bandIdx("Blue-chip")) raiseIds.push("pension");
+  const poolAvail = poolOn ? raiseIds.reduce((a, id) => a + poolLeft(s, id), 0) : Infinity;
   const typicalRaise = 7_000_000 * sizeAreaScale(s) * (s.econ.cpi ?? 1);
   const poolFactor = poolOn ? Math.min(1, poolAvail / Math.max(1, typicalRaise)) : 1;
   if (poolFactor < 1) s.poolBindMs = (s.poolBindMs ?? 0) + 1;
@@ -2690,12 +2739,13 @@ function maybeNewFirm(s: GameState) {
   // year eighty at a price level five times the opening one was a fifth of
   // the size of every firm it was meant to compete with.
   // It raises what it raises — and no more than the city has left to give.
-  const equity = Math.min(Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s) * (s.econ.cpi ?? 1)), poolOn ? Math.max(Math.round(poolAvail), 0) : Infinity);
+  const repMult = 1 + 0.15 * Math.max(0, bandIdx(raiseBand) - bandIdx("Unknown"));
+  const equity = Math.min(Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s) * (s.econ.cpi ?? 1) * repMult), poolOn ? Math.max(Math.round(poolAvail), 0) : Infinity);
   // A first close too small to be a firm is not a first close.
   if (equity < 0.25 * typicalRaise) return;
   // Its investors' money comes out of the city's pool (investors.ts): the
   // player raises from what the rivals leave.
-  drawRivalRaise(s, equity);
+  drawRivalRaise(s, equity, raiseIds);
   const ltv = STYLE[style].maxLtv * rrange(s, 0.68, 0.88, "rivals");
   /**
    * A FIRST CLOSE IS COMMITMENTS, NOT CASH. The LPs sign for the fund; the
@@ -2736,6 +2786,7 @@ function maybeNewFirm(s: GameState) {
     seatProfile(s, born, profile, parentFirm?.sheet);
     if (founder) born.style = style;
     born.home = parentFirm?.home;
+    if (heritage.length) born.heritage = heritage;
     // A spinout knows its parent's book and bids against it (§3.1, #28).
     if (parentFirm) { born.feud = parentFirm.id; if (!born.quirks?.includes("feuding")) (born.quirks ??= []).push("feuding"); }
     born.targetLtv = Math.min(born.targetLtv, +(paramsOf(born).maxLtv * 0.9).toFixed(2));
@@ -2985,7 +3036,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (cost > (r.aum ?? 0) * 0.9 + r.cash * 5) return;
   // Dirt is already theirs — first equity draw only (loan follows over the job).
   const dayOneNeed = Math.round(plan.equity * 0.40);
-  const needWithReserve = Math.round(dayOneNeed * sponsorShare(r.style)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
+  const needWithReserve = Math.round(dayOneNeed * sponsorShareOf(s, r)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
   const draw = lineDrawFor(s, parcels, r, needWithReserve);
   if (r.cash + draw < needWithReserve) return;
   const formerDurationRoll = rng(s, "rivals");
@@ -3046,7 +3097,7 @@ export function breakGround(
   const dayOne = dayOneNeed;
   // The deal's investors write their share of the cheque; the sponsor's own
   // dirt (or the building it is replacing) is its in-kind contribution.
-  jvFund(s, r, bbl, dayOne, plan.landBasis);
+  jvFund(s, r, bbl, dayOne, plan.landBasis, plan);
   r.cash -= dayOne;
   s.cityJobs.push({
     bbl, use, sf, floors, startM: s.month, deliverM, mix: prog,

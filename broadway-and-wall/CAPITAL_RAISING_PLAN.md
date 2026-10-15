@@ -1563,8 +1563,18 @@ about each.
    read as on schedule or in trouble (no per-building cost exists to give
    its multiple; an aggregate-basis estimate read 70% of sales as losses
    and was dropped). It replaced a tenure stand-in that credited a firm a
-   promise met every three years it stayed alive. Still open: a pitch per
-   rival deal, so rivals can beat or miss a promise as the player does.
+   promise met every three years it stayed alive.
+   *Built (rival-capital):* each rival deal carries the offering's pitch —
+   the job's own projection (`projectedDevIrr`) net of the promote
+   (`lpNetIrr`) — and is judged on the investors' realised IRR against it.
+   The player's offering is pitched the same way: it had compared the
+   investors' net IRR with the project's, so a deal delivered exactly on
+   plan read as a miss. Spinouts carry 40% of the parent's positive
+   evidence (`inheritRecord`), and a first close raised on a better record
+   is larger (+15% a band) and reaches the endowments from Institutional.
+   Rival deal terms by band (`sponsorShareOf`, the player's `BAND_TERMS`)
+   are built but OFF by default (`rivalDealTerms`): measured, they shrink
+   the city — floor area −4%, median land −15%, employment −4%.
 8. **Random draws must not move the economy.** Investor decisions (commit
    hazards, refusals, fairness premiums) need their **own RNG channel**,
    like `"shock"` for swans. `initStreams` hashes each channel by name, so

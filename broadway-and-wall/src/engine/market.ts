@@ -3,7 +3,7 @@
 // Randomness creates situations, never verdicts.
 import { tickBands } from "./bands";
 import type { ParcelTable } from "@/data/types";
-import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
+import type { BuiltClass, Econ, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { simulateHistory, driftInflTarget, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
@@ -1256,6 +1256,38 @@ const PARTICIPATION = 0.58;
 const OPENING_UNEMP = 0.052;
 /** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay. */
 const NAT_U_STAR = 0.048;
+/** Monthly restatement of Rudebusch-Svensson (1999): roots 0.951 and 0.670. */
+const IS_PHI1 = 1.621, IS_PHI2 = -0.637;
+/** Real-rate pull per month; with IS_CORP, a long-run 0.9 points of output per point. */
+const IS_RATE = 0.0100, IS_CORP = 0.0044;
+/** Credit window pull per month per unit of the national window off normal. */
+const IS_CREDIT = 0.0008;
+/**
+ * Demand shocks — confidence, spending and investment waves. Persistent (an
+ * AR(1) at 0.82 a month), not white noise: monthly white noise dated a
+ * shallow "recession" every three years out of nothing.
+ */
+const IS_NOISE = 0.00042, DEM_PERSIST = 0.82;
+/** A falling economy feeds on itself a little (layoffs cut spending); amplifies declines only. */
+const ACCEL = 0.05;
+/** Share of corporate debt that floats, and the fixed ladder's average life in months. */
+const CORP_FLOAT = 0.35, CORP_LADDER_M = 72;
+/**
+ * Okun's coefficient: points of output per point of unemployment. 1.2 is the
+ * recession-era ratio (1990-92: CBO gap +0.6 to -2.6, unemployment +2.6).
+ */
+const OKUN = 1.2;
+/** Unemployment closes this share of its gap to Okun's level a month — faster up than down. */
+const U_UP_SPEED = 0.15, U_DOWN_SPEED = 0.12;
+/*
+ * Calibration (national block alone, 30 centuries, tools in the session notes):
+ * unemployment mean 6.1 / p50 5.8 / p10 3.6 / p90 9.1 (US 1948-2024: 5.7 /
+ * 5.5 / 3.9 / ~8.5); output gap sd 2.8 (CBO ~2.2); in recession 15% of months
+ * (US ~14%), median length 12 months (US ~10). The depth now depends on the
+ * money: median unemployment rise 1.4 points when policy was at or under
+ * neutral the year before, 2.3 at 0-1 points over, 2.9 at 1-3, 5.3 above 3.
+ * The drawn model gave 3.2-3.5 whatever the money did.
+ */
 
 /**
  * THE TOWN'S OPENING SIZE, derived rather than declared.
@@ -1521,7 +1553,9 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     const [lo, hi] = PHASE_CFG[econ.phase].nextM;
     const u = mulberry32Step(((s.seed ^ 0x3c6ef372) >>> 0) || 1).value;
     econ.phaseMLeft = (econ.phase === "recession" || econ.phase === "depression") && (n.recM ?? 0) > 0
-      ? Math.max(3, n.recM ?? 0)
+      // recM counts months INTO the recession now (it is dated, not drawn):
+      // a post-war contraction runs about a year.
+      ? Math.max(3, 12 - (n.recM ?? 0))
       : Math.max(3, Math.round(u * (lo + (hi - lo) * 0.5)));
   }
   // EVERY TOWN OPENS ON ITS OWN SUPPLY PRICE (2026-10-12).
@@ -2173,146 +2207,111 @@ export function tickNation(s: GameState) {
   // recession, the recession opens a labour-market gap, the gap kills the
   // inflation, and the bank spends the next decade earning back its word.
   const realPolicy = n.policy / 100 - n.infl;
-  if ((n.recM ?? 0) > 0) {
-    n.recM = (n.recM ?? 0) - 1;
-    if (n.recM === 0) {
-      n.expM = 0; n.deep = false;
-      pushNews(s, "event", "The national recession is over on paper. Nobody in the room feels it yet.");
+
+  // --- THE NATIONAL ECONOMY IS SIMULATED, NOT DRAWN (2026-10-15) -------------
+  //
+  // A recession used to be a dice roll: a monthly hazard read off the yield
+  // curve, then a depth and a length drawn from the post-war record. The same
+  // depth was expected whether money stood at 6% or at 20%, and nothing about
+  // rates touched output except the odds of the roll.
+  //
+  // Now the output gap is a state and spending moves it. The core is the
+  // Rudebusch-Svensson (1999) demand equation fitted on US data 1961-96 —
+  //   y(t) = 1.16 y(t-1) - 0.26 y(t-2) - 0.09 (i - pi - r*)(4-qtr avg, lagged)
+  // — restated monthly with the same roots (0.95 and 0.67 a month) and the
+  // same long-run multiplier (0.9 points of output per point of real rate held
+  // over neutral). Higher money slows spending with a hump-shaped lag of about
+  // a year; held long enough it tips output into decline, and that decline is
+  // what a recession IS — dated afterwards from output, as the NBER dates one.
+  //
+  // Split across the channels rates actually travel through:
+  //  · the real short rate, averaged over the last year (consumers, inventory,
+  //    housing turnover, the bank-lending margin);
+  //  · what companies PAY on their debt — about a third floats and reprices
+  //    every month, the rest is fixed and rolls over a six-year ladder at the
+  //    long rate of the day (Fed Z.1 nonfinancial corporate debt; Compustat
+  //    maturity profiles). A spike that reverses costs little; years of high
+  //    rates walk through the whole book. Same multiplier in total.
+  //  · credit availability (the national window: a crunch cuts lending to
+  //    anyone who needs it — Bernanke-Gertler's financial accelerator, since
+  //    the window itself tightens as unemployment rises);
+  //  · a bank panic, an oil shock (supply: prices up AND output down), a
+  //    fiscal expansion (demand: both up), and ordinary demand noise.
+  // Unemployment follows output by Okun's law (two points of output a point
+  // of unemployment), rising fast and falling slowly — firms fire in weeks and
+  // hire over years.
+  const rStar = n.neutralReal;
+  const exAnte = n.policy / 100 - (n.inflExp ?? n.infl);
+  (n.rHist ??= []).push(exAnte);
+  if (n.rHist.length > 13) n.rHist.shift();
+  const rAvg = n.rHist.length > 1
+    ? n.rHist.slice(0, -1).reduce((acc, v) => acc + v, 0) / (n.rHist.length - 1) : exAnte;
+  // The corporate book: floating legs at the short index plus a credit spread,
+  // the fixed ladder rolling 1/72 a month at the long rate plus a spread.
+  const longRate = (e.indexRate ?? 5.4) / 100;
+  const shortRate = n.policy / 100;
+  n.corpFixed ??= longRate + 0.015;
+  n.corpFixed += (longRate + 0.015 - n.corpFixed) / CORP_LADDER_M;
+  const corpRate = CORP_FLOAT * (shortRate + 0.02) + (1 - CORP_FLOAT) * n.corpFixed;
+  n.corpRate = corpRate;
+  // Against what that book would cost at neutral money: r* plus expected
+  // inflation, plus the same blended spread.
+  const corpNeutral = rStar + (n.inflExp ?? 0.02) + CORP_FLOAT * 0.02 + (1 - CORP_FLOAT) * 0.015;
+  if (n.gap === undefined) { n.gap = -2 * (n.unemp - NAT_U_STAR); n.gap1 = n.gap; }
+  const y1 = n.gap, y2 = n.gap1 ?? n.gap;
+  // Supply shocks take output down; a fiscal expansion (the shock that comes
+  // with political pressure on the bank) pushes it up; a favourable supply
+  // shock (shock < 0) lifts it.
+  const shockImpulse = shock === 0 ? 0
+    : (n.pressureM ?? 0) > 0 ? 0.010 * Math.abs(shock)
+    : -0.010 * shock;
+  const zDem = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
+  const impulse = - IS_RATE * (rAvg - rStar)
+    - IS_CORP * (corpRate - corpNeutral)
+    + IS_CREDIT * ((n.creditNat ?? 1) - 1)
+    - 0.004 * (e.panic?.force ?? 0)
+    + shockImpulse
+    + (n.demShock = DEM_PERSIST * (n.demShock ?? 0) + IS_NOISE * zDem)
+    // Falling output feeds on itself for a while: layoffs cut spending, firms
+    // pull investment, lenders pull lines. Amplifies a decline, not a rise.
+    - ACCEL * Math.max(0, y2 - y1);
+  n.gap1 = y1;
+  n.gap = IS_PHI1 * y1 + IS_PHI2 * y2 + impulse;
+  // Output itself — potential grows ~2%/yr — so the cycle can be dated.
+  n.lnY = (n.lnY ?? 0) + 0.02 / 12 + (n.gap - y1);
+  const inRecNow = (n.recM ?? 0) > 0;
+  if (!inRecNow) {
+    n.expM = (n.expM ?? 0) + 1;
+    n.yPeak = Math.max(n.yPeak ?? n.lnY, n.lnY);
+    // Half a per cent off the peak is a contraction, not a soft quarter.
+    if (n.lnY < (n.yPeak ?? n.lnY) - 0.005) {
+      n.recM = 1; n.uStart = n.unemp; n.uPeak = n.unemp; n.yTrough = n.lnY; n.deep = false;
+      pushNews(s, "warn", "The national economy has turned. Output is falling, payrolls are next, "
+        + "and everyone is revising their numbers down.");
     }
   } else {
-    n.expM = (n.expM ?? 0) + 1;
-    // One recession about every six years at neutral money — the post-war
-    // average is 12 in 75 years — and far more often when the real policy
-    // rate is punitive. At Volcker's ten points of real money the hazard is
-    // better than one in ten a month, which is why 1980 and 1981-82 were two
-    // recessions inside three years.
-    // A HAZARD, NOT A CAPPED PROBABILITY (2026-10-13). The punitive-money
-    // term was clamped at 0.09/month; it is now an intensity, and the monthly
-    // chance is 1 - exp(-intensity), which stays below one by arithmetic
-    // rather than by a stop. Below neutral, money adds nothing (a hinge, not
-    // a rail: cheap money does not prevent the other causes).
-    //
-    // THE CURVE, NOT A RULE OF THUMB ON REAL RATES (2026-10-13). Tight money
-    // enters through the yield curve: banks fund short and lend long, so an
-    // inverted curve squeezes the margin on every new loan and lending
-    // dries up (Adrian, Estrella & Shin 2019). The term spread is the best
-    // single recession predictor there is (Estrella & Mishkin 1998): about
-    // 10% odds of a recession within a year at a +1 point spread, about 45%
-    // at -1. As a monthly intensity that is 0.0088 x e^(-0.86 (spread - 1)),
-    // with no cap — a Volcker curve at -5 makes a recession all but certain
-    // within months, as 1980 and 1981 were. A steep curve makes one rare.
-    // (This replaces the real-policy-rate term, which never saw the curve:
-    // 9% against 7% on the ten-year for a decade read as neutral.)
-    const spread = (e.indexRate ?? 5.4) - n.policy;
-    const intensity = 0.0088 * Math.exp(-0.86 * (spread - 1))
-      + (shock > 0.02 ? 0.010 : 0)
-      + ((n.expM ?? 0) > 110 ? 0.004 : 0)
-      // A financial panic tips the real economy more often than not — 1907
-      // and 2008 did, 1970 and 1998 did not. At full force for the run's
-      // four to twelve months this is about even-to-two-thirds odds.
-      + 0.09 * (e.panic?.force ?? 0);
-    if (rng(s, "nation") < 1 - Math.exp(-intensity)) {
-      // ONE DISTRIBUTION, FITTED TO THE RECORD (2026-10-13). This was a 93/7
-      // mixture — ordinary recessions centred on +2.6 points, a 7% "deep"
-      // branch on +6 — shape parameters chosen from a few episodes. Against
-      // the whole post-war record it was too gentle: the twelve US recessions
-      // 1948-2020 raised unemployment by +4.1 (1949), +3.6 (1954), +3.8
-      // (1958), +2.3 (1961), +2.7 (1970), +4.4 (1975), +2.2 (1980), +3.6
-      // (1982), +2.8 (1991), +2.5 (2001), +5.6 (2009) and +11.3 (2020) points
-      // (BLS U-3, peak-to-trough). Their log has mean 1.29 and sd 0.45: a
-      // median of +3.6 points with a quarter of recessions at +4.4 or worse.
-      // The mixture drew a median near +2.6 and about one in ten that severe.
-      // Depth is drawn from that fit directly, with no cap; a "deep" recession
-      // is simply one that draws 2008's class, five points or more, and runs
-      // the longer 26-48 month course.
-      // EVERY RECESSION IS AIMED, not integrated: the labour market approaches
-      // the drawn depth and decelerates into it (see `uMove`), which is why a
-      // long draw and a fast draw no longer compound into a third die.
-      const zU = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
-      const depth = 0.0364 * Math.exp(0.45 * zU);
-      n.deep = depth >= 0.05;
-      // HOW LONG IT LASTS, FITTED THE SAME WAY (2026-10-13). This was uniform
-      // 7-19 months, or 26-48 for a deep draw — Great Depression lengths for
-      // anything 2008-sized, which put the nation in recession 19-27% of all
-      // months against ~14% post-war, and held credit shut six years at a
-      // time. The NBER post-war contractions 1948-2009 ran 11, 10, 8, 10, 11,
-      // 16, 6, 16, 8, 8 and 18 months: log mean 2.36 (a 10.5-month median),
-      // sd 0.35, and length correlates 0.75 with the unemployment rise above
-      // — 2008, the deepest, was also the longest. (2020's two months, a
-      // shutdown rather than a cycle, is left out of this fit as it is not out
-      // of the depth one.) Drawn jointly with depth at that correlation.
-      // The labour market no longer needs a long clock to reach a deep
-      // trough: it keeps chasing the drawn depth after the official end.
-      const zD = 0.75 * zU + 0.66 * Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
-      n.recM = Math.max(1, Math.round(Math.exp(2.36 + 0.35 * zD)));
-      n.uPeak = n.unemp + depth;
-      pushNews(s, "warn", n.deep
-        ? "The country has fallen off a cliff. This is not a soft patch — payrolls are "
-          + "collapsing nationally and nobody can say where the bottom is."
-        : "The national economy has turned. The recession call is official and everyone "
-          + "is revising their numbers down.");
+    n.recM = (n.recM ?? 0) + 1;
+    n.yTrough = Math.min(n.yTrough ?? n.lnY, n.lnY);
+    // Over once output has climbed back half a per cent off the trough.
+    if (n.lnY > (n.yTrough ?? n.lnY) + 0.005) {
+      n.recM = 0; n.expM = 0; n.deep = false; n.yPeak = n.lnY;
+      pushNews(s, "event", "The national recession is over on paper. Nobody in the room feels it yet.");
     }
   }
-  const inRec = (n.recM ?? 0) > 0;
 
-  // UNEMPLOYMENT RISES LIKE A ROCKET AND FALLS LIKE A FEATHER. That asymmetry
-  // is the single most robust fact about the series — 5% to 10% in twenty
-  // months in 2008, then ten years to walk back down — and a symmetric
-  // mean-reverting process cannot produce it. Firms fire in weeks and hire
-  // over years.
-  // ...AND IT KEEPS FALLING UNTIL SOMETHING ENDS THE EXPANSION (2026-10-10).
-  // The pull aimed at 4.2%, the AVERAGE late-cycle low, and an exponential
-  // approach never reaches its target, so expansions ended with unemployment
-  // at 5.9% on average against 4.7% at US cycle peaks (1948-2020), and only
-  // 20% of them ended under 4.5% (US: half). The lows themselves run to
-  // 3.4-3.8% (1969, 2000, 2019) and 2.5% (1953): a long expansion keeps
-  // drawing people in until the recession comes. Aimed at 3.5%, the national
-  // block alone (40 seeds x 100 years, tools/econprobe/nation.mjs) reads mean
-  // 5.84% / p50 5.3% / p10 3.8% / 38% of months under 4.8%, against the US
-  // 1948-2024 record of 5.7% / 5.5% / 3.9% / ~33%. Was 6.35% / 5.7% / 4.4%
-  // / 25%, which held the nation 1.5 points over its natural rate on average.
-  // THE LABOUR MARKET LAGS THE CYCLE (2026-10-13). Unemployment chased the
-  // drawn depth only while the recession was on and turned the month it
-  // ended, so a 7-19 month draw reached half its depth: mild recessions rose
-  // +1.1-1.4 points against +2.2-2.7 in every US one since 1970. Firms keep
-  // shedding after output turns — unemployment peaked 15 months after the
-  // 1991 trough and 19 after 2001's (BLS; NBER dates) — so the climb runs on
-  // until the depth is reached, then the feather-fall begins.
-  const chasing = inRec || (n.uPeak !== undefined && n.unemp < n.uPeak - 0.001);
-  if (!chasing) n.uPeak = undefined;
-  // ...AND TIGHT MONEY BITES BEFORE THE RECESSION DOES (2026-10-15). Outside
-  // a recession unemployment drifted to its expansion low whatever the Fed
-  // was doing, so a decade of punitive real rates cost nothing until the
-  // curve tipped. Money works with a lag and a slope: Romer & Romer (2004)
-  // find a one-point rise in the funds rate raises unemployment by roughly a
-  // point over the following two years — and part of that is the recessions
-  // tight money causes, which the hazard above already draws. The direct
-  // drag here is half that pace: sustained tight money holds unemployment
-  // about half a point higher per point of tightness while the expansion
-  // lasts. Measured on the national block (40 centuries): mean 5.86%, p50
-  // 5.27%, p10 4.04%, 37% of months under 4.8%, against the US 1948-2024
-  // record of 5.7 / 5.5 / 3.9 / ~33% (was 5.48 / 4.82 / 3.59 / 50%: the
-  // expansion low arrived regardless of money).
-  // The response bends: the record's range is a few points of tight money
-  // (Volcker's real funds rate peaked near 8-10), and a straight line run out
-  // to 18 points — a central bank holding 19.5% through a deflation — drew a
-  // 23% unemployment rate the drag alone was compounding. The first points
-  // bite in full, the next ones less, towards an asymptote of four points'
-  // worth: a shape, not a stop.
-  const tightGap = 0.04 * (1 - Math.exp(-Math.max(0, realPolicy - n.neutralReal) / 0.04));
-  const uMove = chasing
-    ? Math.max(0.0008, 0.115 * ((n.uPeak ?? n.unemp + 0.02) - n.unemp))
-    : 0.025 * (0.035 - n.unemp) + 0.0125 * tightGap;
-  // (A pull toward this city's own unemployment — "one city, one per cent of
-  // a nation" — is gone, 2026-10-14. A nation of a hundred cities does not
-  // move with one of them, and it was the wire by which a player's building
-  // reached the national cycle: two careers on the same seed diverged in
-  // policy and phase from month 60. The nation reads only itself.)
+  // Okun's law, with the labour market's own asymmetry.
+  const uTarget = NAT_U_STAR - n.gap / OKUN;
+  const uMove = (uTarget - n.unemp) * (uTarget > n.unemp ? U_UP_SPEED : U_DOWN_SPEED);
   n.unemp = clamp(n.unemp + uMove
-    + (shock > 0.02 ? 0.0006 : 0) + rrange(s, -0.0007, 0.0007, "nation"), 0, 1);
-  // (No 2.6%/26% rails: the expansion pull aims at 3.5% and every recession
-  // is aimed at a drawn depth, so the series holds its range by its own
-  // dynamics. The 0-1 bound is what a rate is.)
+    + (shock > 0.02 && !((n.pressureM ?? 0) > 0) ? 0.0003 : 0) + rrange(s, -0.0004, 0.0004, "nation"), 0, 1);
+  if ((n.recM ?? 0) > 0) {
+    n.uPeak = Math.max(n.uPeak ?? n.unemp, n.unemp);
+    if (!n.deep && n.unemp - (n.uStart ?? n.unemp) >= 0.05) {
+      n.deep = true;
+      pushNews(s, "warn", "This is not a soft patch. Payrolls are collapsing nationally and nobody "
+        + "can say where the bottom is.");
+    }
+  }
 
   // National inflation: expectations, plus a Phillips term, plus the shock.
   // THE PHILLIPS CURVE IS CONVEX. Slack disinflates weakly — you cannot get
@@ -2637,19 +2636,169 @@ const INDUSTRY_TREND: Record<Sector, number> = {      // per year
   logistics: 0.015, apparel: -0.015, food: 0.012, medical: 0.020, design: 0.008,
 };
 /**
- * HOW MUCH HARDER TIGHT MONEY HITS A TRADE THAN THE CYCLE ALONE (2026-10-15).
- * Rates reach some employers directly: anything that sells on credit, runs
- * inventory, or depends on capital spending. In 1980-82 manufacturing and
- * construction payrolls fell three to four times as far as total nonfarm,
- * while health care kept hiring through both recessions (BLS CES). Above 1 a
- * trade sheds extra jobs while real policy runs over neutral — 0.8% a year
- * per point of tightness per unit over 1 — on top of its cycle beta; at or
- * below 1, the cycle beta is the whole story. Shape parameters, stated.
+ * EACH TRADE KEEPS BOOKS (2026-10-15).
+ *
+ * A trade in town is the sum of its firms, and it now carries their accounts
+ * in aggregate — an income statement and a balance sheet, in real terms, with
+ * the opening month's sales as 1:
+ *
+ *   sales              what it sells: national cycle, trend, shocks, money
+ *   - wages            staff x what local pay costs against national pay
+ *   - rent             staff x what its space costs against the opening
+ *   - other costs      materials, services, upkeep — scale with sales
+ *   = EBITDA
+ *   - interest         debt x the rate the trade's debt actually carries:
+ *                      a floating share reprices each month off the short
+ *                      rate; the rest is fixed and rolls over a five-year
+ *                      ladder at the long rate of the day
+ *   - tax
+ *   = cash flow        into cash; surplus cash is paid out; debt is drawn
+ *                      when the lenders' window is open and repaid when not
+ *
+ * Staff follow sales, are trimmed when margins thin and cut hard when cash
+ * runs short; firms whose interest cover collapses fail — their jobs go and
+ * their debt is written off — and new firms enter as margins recover. So the
+ * same rise in rates hits a thin-margin, floating-rate, levered trade (apparel,
+ * logistics) through its interest bill and its customers, and barely touches a
+ * cash-rich one (law): the difference is in the books, not in a table of
+ * sensitivities.
+ *
+ * Profiles are rounded US industry figures — payroll and occupancy as a share
+ * of revenue (BLS / Census Economic Census), EBITDA margins and net debt to
+ * EBITDA (Damodaran industry data, 2000-2024 averages), floating share from
+ * bank-loan vs bond mix. `rateDem` is how much the trade's own CUSTOMERS
+ * borrow to buy from it, per point of real money over neutral, on top of the
+ * national cycle: architects sell to builders, freight to inventory.
  */
-const INDUSTRY_RATE_BETA: Record<Sector, number> = {
-  finance: 1.2, law: 0.4, tech: 1.2, media: 0.8, insurance: 0.5,
-  logistics: 1.6, apparel: 2.0, food: 0.8, medical: 0.2, design: 1.3,
+export interface FirmProfile { wage: number; rent: number; margin: number; lev: number; float: number; spread: number; rateDem: number; space: Partial<Record<BuiltClass, number>> }
+export const FIRM_PROFILE: Record<Sector, FirmProfile> = {
+  finance:   { wage: 0.35, rent: 0.06, margin: 0.28, lev: 2.0, float: 0.50, spread: 0.020, rateDem: 0.6, space: { office: 1 } },
+  law:       { wage: 0.45, rent: 0.08, margin: 0.25, lev: 0.5, float: 0.70, spread: 0.020, rateDem: 0.0, space: { office: 1 } },
+  tech:      { wage: 0.40, rent: 0.05, margin: 0.22, lev: 1.2, float: 0.40, spread: 0.030, rateDem: 0.6, space: { office: 1 } },
+  media:     { wage: 0.35, rent: 0.05, margin: 0.20, lev: 2.8, float: 0.40, spread: 0.030, rateDem: 0.3, space: { office: 1 } },
+  insurance: { wage: 0.25, rent: 0.04, margin: 0.15, lev: 1.0, float: 0.20, spread: 0.015, rateDem: 0.0, space: { office: 1 } },
+  logistics: { wage: 0.33, rent: 0.10, margin: 0.12, lev: 3.0, float: 0.45, spread: 0.030, rateDem: 0.8, space: { industrial: 1 } },
+  apparel:   { wage: 0.22, rent: 0.09, margin: 0.10, lev: 3.0, float: 0.55, spread: 0.035, rateDem: 1.0, space: { retail: 0.6, industrial: 0.4 } },
+  food:      { wage: 0.32, rent: 0.09, margin: 0.11, lev: 2.8, float: 0.45, spread: 0.030, rateDem: 0.2, space: { retail: 0.7, industrial: 0.3 } },
+  medical:   { wage: 0.50, rent: 0.06, margin: 0.15, lev: 2.2, float: 0.30, spread: 0.025, rateDem: 0.0, space: { retail: 1 } },
+  design:    { wage: 0.45, rent: 0.08, margin: 0.14, lev: 1.2, float: 0.50, spread: 0.030, rateDem: 1.0, space: { office: 1 } },
 };
+/** The interest cover a lender underwrites new debt to (bank leveraged-loan practice ~3x). */
+export const LENDER_COVER = 3;
+/** Share of non-rent, non-wage costs that follow last year's sales rather than this month's. */
+const STICKY = 0.4;
+/** Months of sales a trade keeps in cash before it pays the surplus out. */
+const FIRM_CASH_TARGET = 1.5;
+/** The fixed ladder's average life, months. */
+const FIRM_LADDER_M = 60;
+/** Baseline share of a trade's jobs in firms that fail each month: ~1.5%/yr of employment. */
+const FIRM_FAIL_BASE = 0.00125;
+
+/** What every trade's books read this month: rates, pay and money. */
+function firmBookInputs(e: Econ) {
+  const n = e.nat;
+  const short = (n?.policy ?? 4) / 100;
+  const long = (e.indexRate ?? 5.4) / 100;
+  const infl = n?.infl ?? 0.02;
+  const rStar = n?.neutralReal ?? 0.014;
+  const rAvg = n?.rHist && n.rHist.length > 1
+    ? n.rHist.slice(0, -1).reduce((a, v) => a + v, 0) / (n.rHist.length - 1)
+    : short - (n?.inflExp ?? infl);
+  // Points of real money over (or under) neutral, bent past four either way.
+  const raw = (rAvg - rStar) * 100;
+  const ratePts = 4 * Math.tanh(raw / 4);
+  // Local pay against national pay — national productivity cancels — and the
+  // same for the space a trade rents, read against national real pay.
+  const wageRel = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
+  const realNatPay = (e.natWageIdx ?? e.wageIdx ?? 1) / Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
+  return { short, long, infl, ratePts, wageRel, realNatPay, credit: clamp(e.creditIdx ?? 1, 0.25, 1.25) };
+}
+
+/**
+ * One month of one trade's accounts. Returns its employment index.
+ * `salesGrowth` is the month's growth in what it sells.
+ */
+function tickFirmBook(e: Econ, k: Sector, salesGrowth: number, inp: ReturnType<typeof firmBookInputs>): number {
+  const P = FIRM_PROFILE[k];
+  e.firmRef ??= { wageRel: inp.wageRel, realNatPay: inp.realNatPay, rent: { ...(e.inPlaceReal ?? e.effRentIdx) } };
+  e.firmBooks ??= {} as Record<Sector, FirmBook>;
+  let b = e.firmBooks[k];
+  if (!b) {
+    b = e.firmBooks[k] = {
+      sales: e.indIdx?.[k] ?? 1, emp: e.indIdx?.[k] ?? 1,
+      cash: FIRM_CASH_TARGET * (e.indIdx?.[k] ?? 1),
+      debt: Math.min(P.lev, 1 / ((inp.long + P.spread) * LENDER_COVER)) * 12 * P.margin * (e.indIdx?.[k] ?? 1),
+      fixed: inp.long + P.spread, fail: 0, cover: 0, margin: P.margin,
+    };
+  }
+  b.sales *= 1 + salesGrowth;
+  // Last year's sales, smoothed: what the cost base was built for.
+  b.salesRef = (b.salesRef ?? b.sales) + (b.sales - (b.salesRef ?? b.sales)) / 12;
+  // Unit costs against the opening: pay relative to the nation, rent relative
+  // to national real pay (a town whose rents outrun what the country earns
+  // is a dearer place to do business).
+  const wageCost = inp.wageRel / Math.max(1e-6, e.firmRef.wageRel);
+  let rentCost = 0;
+  for (const [c, w] of Object.entries(P.space) as [BuiltClass, number][]) {
+    const now = e.inPlaceReal?.[c] ?? 1, then = e.firmRef.rent[c] ?? now;
+    rentCost += w * (now / Math.max(1e-9, then));
+  }
+  rentCost /= inp.realNatPay / Math.max(1e-6, e.firmRef.realNatPay);
+  // Costs are sticky: about 40% of them (overhead, contracts, salaried staff
+  // beyond the headcount line) were set for last year's sales and adjust over
+  // the year — the operating leverage that turns a sales drop into a profit
+  // collapse.
+  const other = (1 - P.wage - P.rent - P.margin) * (STICKY * (b.salesRef ?? b.sales) + (1 - STICKY) * b.sales);
+  const ebitda = b.sales - P.wage * b.emp * wageCost - P.rent * b.emp * rentCost - other;
+  // The debt book: floating legs at the short rate, the ladder rolling.
+  b.fixed += (inp.long + P.spread - b.fixed) / FIRM_LADDER_M;
+  const rate = P.float * (inp.short + P.spread) + (1 - P.float) * b.fixed;
+  const interest = b.debt * rate / 12;
+  const tax = 0.21 * Math.max(0, ebitda - interest);
+  b.cash += ebitda - interest - tax;
+  // Debt is nominal: inflation wears it down in real terms.
+  b.debt *= 1 - inp.infl / 12;
+  // Borrow toward the trade's normal leverage while lenders are open; repay
+  // out of cash when over it. A shut window means no new money.
+  const ebitdaAnn = Math.max(0, ebitda) * 12;
+  // Lenders size a loan on cover as well as on leverage: no more debt than
+  // keeps interest covered LENDER_COVER times at today's rate. So firms carry
+  // less debt when money is dear — the leverage norms are not fixed.
+  const targetDebt = Math.min(P.lev, 1 / (Math.max(0.01, rate) * LENDER_COVER))
+    * Math.max(ebitdaAnn, 12 * P.margin * b.sales * 0.5);
+  if (b.debt < targetDebt) {
+    const draw = (targetDebt - b.debt) / 36 * clamp((inp.credit - 0.5) / 0.5, 0, 1.2);
+    b.debt += draw; b.cash += draw;
+  } else if (b.cash > 0) {
+    const pay = Math.min(b.cash * 0.5, (b.debt - targetDebt) / 24);
+    b.debt -= pay; b.cash -= pay;
+  }
+  // Surplus cash goes to the owners.
+  const target = FIRM_CASH_TARGET * b.sales;
+  if (b.cash > target) b.cash -= (b.cash - target) * 0.15;
+  // How the trade is doing, in the two numbers its lenders read.
+  b.margin = ebitda / Math.max(1e-9, b.sales);
+  b.cover = interest > 0 ? ebitda / interest : 99;
+  const liquidity = b.cash / Math.max(1e-9, b.sales);   // months of sales in the bank
+  // FAILURES: interest cover under ~2x and cash under a month are where firms
+  // go under; a trade burning through its cash loses the weakest first.
+  // The trade is an average of its firms: as its interest cover thins toward
+  // the lenders' line, more of the weak tail is under it, and a trade whose
+  // sales are falling loses the firms that were built for the old volume.
+  const coverStress = Math.max(0, Math.min(5, 3 - b.cover));
+  const cashStress = Math.max(0, 1 - liquidity);
+  const salesDrop = Math.max(0, 1 - b.sales / Math.max(1e-9, b.salesRef ?? b.sales));
+  const fail = FIRM_FAIL_BASE * Math.exp(0.6 * coverStress + 1.6 * cashStress + 12 * salesDrop) * (b.cash < 0 ? 2 : 1);
+  b.fail = fail;
+  b.emp *= 1 - fail; b.debt *= 1 - fail * 1.5; if (b.cash < 0) b.cash *= 1 - fail;
+  // STAFFING: jobs follow sales, trimmed as margins thin and cut hard when
+  // the cash is going. Firms fire faster than they hire.
+  const marginGap = clamp((b.margin - P.margin) / P.margin, -1, 1);
+  const want = b.sales * (1 + 0.25 * marginGap) * (1 - 0.35 * Math.min(1, cashStress));
+  const gap = want - b.emp;
+  b.emp += gap * (gap > 0 ? 0.03 : 0.07);
+  return b.emp;
+}
 /**
  * A TOWN'S SHARE OF EACH NATIONAL TRADE WANDERS, FOR DECADES (2026-10-15).
  * Every town grew each trade at the nation's own trend, so sixty-year job
@@ -2811,10 +2960,8 @@ export function tickIndustryCycle(s: GameState) {
   const uPrev = e.natUnempPrev ?? uNow;
   e.natUnempPrev = uNow;
   const natDev = -NAT_EMP_PER_U * (uNow - uPrev);
-  // Points of real policy rate over neutral, for the rate-sensitive trades below.
-  // Bent the same way as the national drag (tickNation): about four points' worth at most.
-  const tightRaw = n ? Math.max(0, (n.policy / 100 - n.infl) - (n.neutralReal ?? 0.019)) * 100 : 0;
-  const tightPts = 4 * (1 - Math.exp(-tightRaw / 4));
+  // What money costs this month, for the trades' books below.
+  const books = firmBookInputs(e);
 
   if (!e.indIdx) e.indIdx = Object.fromEntries(SECTORS.map((k) => [k, 1])) as Record<Sector, number>;
   if (!e.indShock) e.indShock = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
@@ -2855,12 +3002,19 @@ export function tickIndustryCycle(s: GameState) {
         ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
         : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
     }
-    const rateDrag = -Math.max(0, INDUSTRY_RATE_BETA[k] - 1) * 0.8 * tightPts / 12 / 100;
-    const dev = INDUSTRY_BETA[k] * natDev + rateDrag + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol
-      + (bb && bb.sec === k && bb.phase !== "hold" ? bb.rate : 0);
+    // DEMAND for what the trade sells: its national cycle, its trend and
+    // the town's edge, its own shocks, and — for the trades whose customers
+    // borrow to buy (freight, inventory, building design) — the price of money.
+    const demand = INDUSTRY_BETA[k] * natDev + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol
+      + (bb && bb.sec === k && bb.phase !== "hold" ? bb.rate : 0)
+      - FIRM_PROFILE[k].rateDem * 0.008 * books.ratePts / 12;
     e.indFortune[k] += -e.indFortune[k] / FORTUNE_TAU_M
       + FORTUNE_SD * Math.sqrt(2 / FORTUNE_TAU_M) * Math.sqrt(3) * rrange(s, -1, 1);
-    e.indIdx[k] *= 1 + (INDUSTRY_TREND[k] + e.indFortune[k] + pull) / 12 + dev;
+    const growth = (INDUSTRY_TREND[k] + e.indFortune[k] + pull) / 12;
+    // ...and the trade's own books decide how many people it keeps.
+    const empBefore = e.indIdx[k];
+    e.indIdx[k] = tickFirmBook(e, k, growth + demand, books);
+    const dev = e.indIdx[k] / Math.max(1e-9, empBefore) - 1 - growth;
     // Momentum is smoothed excess hiring, in the units its readers expect.
     e.industryMom[k] = clamp(e.industryMom[k] + (MOM_UNITS * dev - e.industryMom[k]) / 6, -0.05, 0.05);
     const was = e.industryPhase[k];

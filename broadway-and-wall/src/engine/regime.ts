@@ -140,6 +140,9 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
       shockM: 0, shockSev: 0, recM: 0, expM: 60, deep: false, pressureM: 0,
     },
     creditIdx: 1, phase: "expansion" as MarketPhase, unemployment: 0.048,
+    // The history's first month must not read the town it is about to make:
+    // the corporate debt ladder (tickNation) remembers the long rate it opens on.
+    indexRate: +(100 * (anchor + 0.02) + 1).toFixed(2),
   } as Econ;
   const streams = initStreams(burnSeed);
   const s = { econ: scratchEcon, seed: burnSeed, month: -months, streams, rng: streams.econ, news: [] } as unknown as GameState;

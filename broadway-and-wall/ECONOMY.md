@@ -2922,3 +2922,44 @@ the 1-2% of lots near feasibility. **Industrial still never does**: the rent a
 new shed needs runs 1.7-2.6x market on every lot measured, so no spec or
 anchored shed pencils on vacant land. That is the development economy, not
 BTS, and it is left for its own investigation.
+
+---
+
+# The economy is simulated, not drawn (2026-10-15)
+
+**Before.** A national recession was a dice roll: a monthly hazard read off the
+yield curve, then a depth and length drawn from the post-war record. Depth did
+not depend on money (median unemployment rise 3.2-3.5 points whether policy had
+been at neutral or four points over). Trades moved with one national number
+times a beta. Tenants defaulted on a formula of the labour market and their
+grade.
+
+**Now, three layers, each with books:**
+
+1. **The nation** (`tickNation`). The output gap is a state, moved by the
+   Rudebusch-Svensson (1999) demand equation restated monthly: lagged real
+   policy rate over neutral, the corporate sector's interest bill (35% floating,
+   the rest a six-year ladder at the long rate), the credit window, panics,
+   oil and fiscal shocks, and persistent demand waves. Unemployment follows by
+   Okun's law, fast up and slow down. A recession is dated from output.
+   Measured (30 centuries): unemployment 6.1 / 5.8 / 3.6 / 9.1 (mean, p50,
+   p10, p90; US 5.7 / 5.5 / 3.9 / ~8.5); 15% of months in recession (US ~14%).
+   Depth now follows the money: median unemployment rise 1.4 points with policy
+   at or under neutral the year before, 5.3 points with more than three points
+   over. Policy held for ten years: 4% -> unemployment 5.5%, 5% -> 6.2%,
+   6% -> 6.9%, 8% -> 8.2%, 12% -> 10.8%, 20% -> 15.5% (curve -9.5 inverted).
+2. **The town's ten trades** (`tickFirmBook`). Each carries aggregate books:
+   sales, wages (local pay against national), rent (its own space), sticky
+   costs, interest on a floating share plus a five-year fixed ladder, tax, cash,
+   debt drawn while the lenders' window is open and capped at 3x interest cover.
+   Staff follow sales and margins and are cut when cash runs short; firms fail
+   when cover thins, cash runs out or sales fall. `FIRM_PROFILE` holds payroll,
+   occupancy, margin, leverage, floating share and customer rate-sensitivity
+   per trade. Under a 19.5% hold: apparel -34%, logistics -28%, finance -16%,
+   medical flat, law up.
+3. **Every tenant** (`tenantBooks.ts`). Hidden books drawn at signing from the
+   trade's profile and the credit grade: revenue sized off the rent agreed, a
+   fixed rent against moving revenue, its own debt at its own rate, cash.
+   Default, relief letters and credit migration read cover and cash.
+   Measured over 4 seeds x 12 years: annual default IG 0.4%, mid 2.3%, weak
+   ~10%; under the 20% hold IG 0.8%, mid 2.7%, weak 15.6%.

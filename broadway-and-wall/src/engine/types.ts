@@ -2670,6 +2670,17 @@ export interface Rival {
    */
   jvs?: Record<string, { lp: number; gp: number; m: number }>;
   /**
+   * THE FIRM'S REALISED DEALS, the last thirty years of them (reputation.ts
+   * reads them as the firm's record; CAPITAL_RAISING_PLAN.md §3.4 "same
+   * formula, same record"). One row a deed that left the book: `eq` the
+   * equity in it, `m` the month; `mult` what came back where the street can
+   * see it (the deal investors' multiple on a syndicated deed, `lp`; 0 on a
+   * deed lost to its lender); `forced` an own-money sale made while the firm
+   * was in trouble (rivals.ts noteRealised). Read only by the ranking;
+   * nothing in the economy reads it.
+   */
+  realised?: { m: number; eq: number; mult?: number; lp?: boolean; forced?: boolean }[];
+  /**
    * WHEN THE EXTENDED PAPER ON A BUILDING COMES BACK, by BBL. Present only for
    * a building whose balloon the desk re-papered rather than took the keys on;
    * absent is the ordinary case and means the loan sits on the term ladder.

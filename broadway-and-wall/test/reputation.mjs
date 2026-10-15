@@ -8,6 +8,10 @@
 // C. A player's record moving its band: clean deals build it slowly, an
 //    upgrade waits out a second quarter, a loss takes it down at once, and the
 //    band sets the syndication terms.
+// D. Rivals on the same formula: a firm's record is what it realised — deal
+//    investors' multiples, deeds lost, sales on its own schedule or in
+//    trouble — never credit for merely being alive; and in a real game the
+//    street's record fills from real sales.
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -93,6 +97,47 @@ console.log("\nC. a record moving the band, and the band setting the terms");
   E.updateReputation(g);
   console.log(`  after a 0.5x loss: score ${E.reputationNow(g).score} · held ${g.reputation.band}`);
   ok(E.bandIdx(g.reputation.band) < E.bandIdx(terms.band), `a loss takes the band down at once (${terms.band} → ${g.reputation.band})`);
+}
+
+// ── D ───────────────────────────────────────────────────────────────────────
+console.log("\nD. rivals on the same formula as the player");
+{
+  const mk = (over = {}) => ({ id: "t", name: "Test Co", style: "developer", cash: 0, debt: 0, bbls: [], targetLtv: 0.6, bornM: 24, aum: 10e6, ...over });
+  const h = { ...g, month: 120 };
+  const alive = mk();
+  ok(E.scoreOf(E.rivalEvidence(h, alive), h.month).score === 0, "a firm founded in the game with nothing sold has no record — tenure is not a record");
+  const seller = mk();
+  for (let i = 0; i < 4; i++) { h.month = 60 + 12 * i; E.noteRealised(h, seller, undefined, 5e6, 0); }
+  h.month = 120;
+  const s1 = E.scoreOf(E.rivalEvidence(h, seller), h.month);
+  ok(seller.realised.length === 4 && seller.realised.every((x) => x.mult === undefined && !x.forced && x.eq === 2e6), "an own-money sale is a row at the equity it carried (price at target leverage)");
+  ok(s1.score > 0 && s1.deals === 4, `four sales on its own schedule build a record (${s1.score.toFixed(1)})`);
+  const troubled = mk({ stressMs: 3 });
+  h.month = 110; E.noteRealised(h, troubled, undefined, 5e6, 0); h.month = 120;
+  ok(troubled.realised[0].forced && E.rivalEvidence(h, { ...troubled, stressMs: 0 })[0].ev < 0, "a sale made in trouble counts against the firm (−8, the missed-plan row)");
+  const syn = mk();
+  E.noteRealised(h, syn, { lp: 9e6, gp: 1e6, m: 60 }, 30e6, 13.5e6);
+  ok(syn.realised[0].lp && syn.realised[0].mult === 1.5 && syn.realised[0].eq === 10e6, "a syndicated deed records its deal investors' multiple (1.5x)");
+  const burnt = mk();
+  E.noteRealised(h, burnt, { lp: 9e6, gp: 1e6, m: 60 }, 0, 0, true);
+  const sb = E.scoreOf(E.rivalEvidence(h, burnt), h.month);
+  ok(burnt.realised[0].mult === 0 && sb.score <= -40, `a syndicated deed lost to its lender is a 0x loss on the record (${sb.score.toFixed(1)})`);
+  // The opening roster keeps its derived prehistory; it fades unless the firm keeps realising.
+  const vet = mk({ bornM: 0, eqHist: [[0, 40e6]] });
+  ok(E.scoreOf(E.rivalEvidence({ ...h, month: 0 }, vet), 0).score > 5, "an incumbent opens on its derived prehistory");
+  ok(E.scoreOf(E.rivalEvidence({ ...h, month: 240 }, vet), 240).score === 0, "and twenty quiet years later it has faded to nothing");
+}
+{
+  let q = g;
+  for (let m = q.month; m < 60; m++) q = E.advanceMonth(q, parcels, bbls, adjacency);
+  const live = q.rivals.filter((r) => r.failedM === undefined && r.retiredM === undefined);
+  const rows = live.flatMap((r) => r.realised ?? []);
+  const lost = rows.filter((x) => x.mult === 0).length, lp = rows.filter((x) => x.lp).length, forced = rows.filter((x) => x.forced).length;
+  const st = E.rankStreet(q);
+  const bands = {}; for (const f of st) bands[f.band] = (bands[f.band] ?? 0) + 1;
+  console.log(`  year 5: ${rows.length} deeds realised by ${live.length} living firms (${lp} syndicated, ${lost} lost, ${forced} sold in trouble) · ${JSON.stringify(bands)} · #1 ${st[0].name} at ${st[0].score}`);
+  ok(rows.length > 0, "the street's record fills from real sales");
+  ok(rows.every((x) => x.eq > 0 && q.month - x.m <= 360), "every row is sized and inside the thirty-year window");
 }
 
 console.log(fails ? "\nFAIL" : "\nPASS — the record, the rank and the terms agree");

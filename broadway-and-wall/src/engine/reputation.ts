@@ -186,42 +186,60 @@ export function playerEvidence(s: GameState): Evidence[] {
 }
 
 /**
- * A RIVAL'S RECORD, DERIVED FROM FACTS (§3.4 "Rivals": an initial condition
- * derived from what the game implies, the way regime.ts runs a prehistory for
- * the economy — never hand-assigned). Rivals do not yet carry per-deal
- * ledgers, so:
- *   - PREHISTORY. A firm on the opening roster raised its equity from
- *     investors before the game began, and that capital is the evidence of a
- *     record: 2·log2(equity ÷ reference deal) realised deals, at most 10,
- *     dated back from month 0 at three-year intervals. $4M of equity implies
- *     2; $16M, 6; $64M or more, 10. (Shape parameters.)
- *   - TENURE. One realisation per three years in the game (a hold-period
- *     convention; shape parameter), or one per delivered merchant job if
- *     that is more.
- *   - Each is sized at 15% of the firm's equity (shape parameter) and met its
- *     promise while the firm performs.
+ * A RIVAL'S RECORD (§3.4 "Rivals": same formula, same record).
+ *   - PREHISTORY, derived. A firm on the opening roster raised its equity
+ *     from investors before the game began, and that capital is the evidence
+ *     of a record: 2·log2(equity ÷ reference deal) realised deals, at most
+ *     10, dated back from month 0 at three-year intervals, each sized at 15%
+ *     of the firm's opening equity and taken as a promise met. $4M of equity
+ *     implies 2; $16M, 6; $64M or more, 10. (Shape parameters; the way
+ *     regime.ts runs a prehistory for the economy.) It fades like any record
+ *     once the firm stops realising deals.
+ *   - IN THE GAME, observed. Every deed that left the book is a row on
+ *     `Rival.realised` (rivals.ts noteRealised), through the same outcome
+ *     table, size, fault and concentration rules as the player's exits:
+ *       a syndicated deed on its deal investors' multiple — rivals record no
+ *       pitch, so capital back with a profit is a promise met, exactly as a
+ *       player deal with no recorded plan is;
+ *       a deed lost to its lender at 0x;
+ *       an own-money sale, whose multiple nobody outside the firm can see,
+ *       as a promise met when the firm sold on its own schedule and as the
+ *       table's "missed the plan" row (−8) when it sold in trouble — it sold
+ *       on its lender's schedule, not its own.
  *   - A firm in stress (six or more months in trouble) carries a live miss,
  *     −15, halved when the whole city fell with it.
- * Measured and printed by test/reputation.mjs. Real rival ledgers replace
- * this when they exist.
+ * It replaced a tenure stand-in (one promise met every three years alive),
+ * which credited a firm for existing while the player was credited only for
+ * what it sold: a $2.5M start that compounded to $43M over fifty years with
+ * a 2.18x deal on its record still ranked 20th of 21 (career bot, seed 9702).
+ * Measured and printed by test/reputation.mjs.
  */
 export function rivalEvidence(s: GameState, r: Rival): Evidence[] {
   const out: Evidence[] = [];
   const level = priceLevel(s.econ);
-  // Equity at the monthly mark (aum is marked every month; eqHist is yearly).
-  const eq = Math.max(0, (r.aum ?? 0) - r.debt + r.cash);
-  const size = sizeWeight(0.15 * eq, level);
-  const months: number[] = [];
   if (r.bornM <= 0) {
     // What it opened with: the first yearly point, or today's mark before one exists.
-    const firstEq = Math.max(0, r.eqHist?.length ? r.eqHist[0][1] : eq);
+    const eqNow = Math.max(0, (r.aum ?? 0) - r.debt + r.cash);
+    const firstEq = Math.max(0, r.eqHist?.length ? r.eqHist[0][1] : eqNow);
     const implied = firstEq > REF_EQUITY ? Math.min(10, Math.floor(2 * Math.log2(firstEq / REF_EQUITY))) : 0;
-    for (let i = 1; i <= implied; i++) months.push(-36 * i);
+    const size = sizeWeight(0.15 * firstEq, 1);
+    for (let i = 1; i <= implied; i++) out.push({ m: -36 * i, ev: 4 * size, size, kind: "derived", label: "realised before the game (derived)" });
   }
-  const tenureDeals = Math.floor(Math.max(0, s.month - Math.max(0, r.bornM)) / 36);
-  const delivered = Object.values(r.deliveredM ?? {}).filter((m) => s.month - m <= DROP_M).length;
-  for (let k = 1; k <= Math.max(tenureDeals, delivered); k++) months.push(s.month - 36 * (k - 1));
-  for (const m of months) out.push({ m, ev: 4 * size, size, kind: "derived", label: m < 0 ? "realised before the game (derived)" : "realised deal (derived)" });
+  const rows = r.realised ?? [];
+  let managed = 0;
+  for (const d of rows) managed += d.eq;
+  for (const d of rows) {
+    const size = sizeWeight(d.eq, level);
+    let ev = d.mult !== undefined ? outcomeEvidence(null, null, d.mult) : d.forced ? -8 : 4;
+    if (ev > 0) ev *= size;
+    else {
+      ev *= faultMult(s, d.m - 36, d.m);
+      ev *= 0.6 + 1.4 * Math.min(1, d.eq / Math.max(1, managed));
+      if (d.lp) ev *= 0.85;   // the sponsor's co-invest suffered alongside
+    }
+    ev *= d.lp ? 1 : OWN_WEIGHT;
+    out.push({ m: d.m, ev, size: ev > 0 ? size : 0, kind: d.lp ? "investor" : "own", label: d.mult === 0 ? "a deed lost" : d.mult !== undefined ? `investors got ${d.mult.toFixed(2)}x` : d.forced ? "sold in trouble" : "a deed sold" });
+  }
   if ((r.stressMs ?? 0) >= 6) out.push({ m: s.month, ev: -15 * faultMult(s, s.month - 36, s.month), size: 0, kind: "derived", label: "in stress" });
   return out;
 }

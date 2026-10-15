@@ -513,6 +513,45 @@ function jvFund(s: GameState, r: Rival, bbl: string, cheque: number, inKind = 0)
   r.cash += lp;
   return lp;
 }
+/**
+ * A DEAL REALISED, ON THE FIRM'S RECORD (Rival.realised; reputation.ts).
+ *
+ * The record carries what the street can actually see. A syndicated deed is
+ * judged on what its deal investors got back — their take over what they paid
+ * in, a real number. A deed lost to its lender is a loss of the deal, 0x. A
+ * deed sold on the firm's own money has no per-building cost on file (the
+ * book's basis is aggregate, and buildings differ tenfold in size: reading a
+ * deed's share of it as its cost put 70% of the street's sales under 1x,
+ * measured, and was noise), so it is judged on what investors read off it
+ * instead — a sale on the firm's own schedule, or a sale made while the firm
+ * was in trouble (`forced`). Its size is the equity it carried at the sale,
+ * the price at the firm's target leverage; that is an estimate, and only its
+ * cube root is read.
+ */
+export function noteRealised(s: GameState, r: Rival, jv: { lp: number; gp: number; m: number } | undefined, price: number, lpOut: number, lost = false): void {
+  const rows = (r.realised ??= []);
+  if (jv && jv.lp > 0) {
+    rows.push({ m: s.month, eq: Math.round(jv.lp + jv.gp), mult: Math.round((lost ? 0 : Math.max(0, lpOut) / jv.lp) * 100) / 100, lp: true });
+  } else {
+    const eq = Math.round(Math.max(0, price) * (1 - Math.max(0, Math.min(0.95, r.targetLtv))));
+    if (!(eq > 0)) return;
+    if (lost) rows.push({ m: s.month, eq, mult: 0 });
+    else if (r.stressMs) rows.push({ m: s.month, eq, forced: true });
+    else rows.push({ m: s.month, eq });
+  }
+  while (rows.length && s.month - rows[0].m > 360) rows.shift();
+}
+/**
+ * A DEED LOST TO ITS LENDER (a handback, a foreclosure, a note's receiver), on
+ * the firm's record at 0x, sized at what the debt was written against. Call it
+ * before the deed's papers are forgotten.
+ */
+export function noteLost(s: GameState, r: Rival, bbl: string): void {
+  const loan = s.cityLoans?.[bbl];
+  const debt = loan && loan.obligorId === r.id ? loan.balance : 0;
+  const value = debt / Math.max(0.05, Math.min(0.95, r.targetLtv));
+  noteRealised(s, r, r.jvs?.[bbl], value, 0, true);
+}
 /** The deal investors' interest in a deed, removed — read it before the deed moves. */
 function takeJv(r: Rival, bbl: string): { lp: number; gp: number; m: number } | undefined {
   const jv = r.jvs?.[bbl];
@@ -589,8 +628,10 @@ export function transferDeed(s: GameState, bbl: string, to: Rival, price: number
     // secured stays owed, on the line.
     const relief = settleSale(s, r, bbl, Math.max(0, price));
     if (price > 0) {
+      const lpOut = jvLpTake(jv, price - relief, s.month);
       r.cash += price - relief;
-      r.cash -= jvLpTake(jv, price - relief, s.month);
+      r.cash -= lpOut;
+      noteRealised(s, r, jv, price, lpOut);
     }
   }
   if (!to.bbls.includes(bbl)) to.bbls.push(bbl);
@@ -849,7 +890,11 @@ function orphanCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]>[numbe
   // investors: their equity is in the ground and the receiver takes the site.
   if (j.firmId) {
     const r = (s.rivals ?? []).find((x) => x.id === j.firmId);
-    if (r) takeJv(r, j.bbl);
+    if (r) {
+      const jv = r.jvs?.[j.bbl];
+      if (jv) noteRealised(s, r, jv, 0, 0, true);
+      takeJv(r, j.bbl);
+    }
   }
   if (j.bbl) stallSupplyProject(s, j.bbl);
 }
@@ -3640,6 +3685,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   }
   if (!worst) return false;
   const desk = deskFor(s, r, worst.bbl);
+  noteLost(s, r, worst.bbl);
   const owed = dropDeed(s, r, worst.bbl);
   logFirm(s, r, "event", `Handed ${worst.rec.address} back to ${desk}`, worst.bbl, owed);
   milestone(s, r, surplus ? `Lost ${worst.rec.address} to foreclosure (${desk})` : `Handed ${worst.rec.address} back to ${desk}`);
@@ -4963,6 +5009,7 @@ export function rivalBuys(
     seller.cash += price - relief - tax;
     const partnersOut = jvLpTake(jv, price - relief - tax, s.month);
     seller.cash -= partnersOut;
+    noteRealised(s, seller, jv, price, partnersOut);
     settleEmptyBook(s, seller);
   }
   const fin = drawFor(best);
@@ -5026,6 +5073,7 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
   seller.cash += price - relief - tax;
   const partnersOut = jvLpTake(jv, price - relief - tax, s.month);
   seller.cash -= partnersOut;
+  noteRealised(s, seller, jv, price, partnersOut);
   logFirm(s, seller, "sell", `Sold a building to money from out of town`, bbl, price);
   settleEmptyBook(s, seller);
   return true;

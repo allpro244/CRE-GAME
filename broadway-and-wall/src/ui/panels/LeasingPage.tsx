@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useStore } from "@/state/store";
-import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec } from "@/engine/types";
+import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec, autoLeaseOnClose } from "@/engine/types";
 import { isLeasedFee, marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
 import {
   isCommercial, walt, notReadySf,
@@ -233,7 +233,11 @@ export function LeasingPage() {
             title={allOn
               ? "Every building is answering its own letters. Click to take them all back."
               : "Put every building on auto-lease: each answers its letters by its own Fill / Market / Push posture and the concession limit here, and none of them pop up."}
-            onClick={() => useStore.getState().autoLease(book.map((r) => r.h.bbl), !allOn)}
+            onClick={() => {
+              // the whole book on (or off) is the instruction for the next deed too
+              useStore.getState().autoLease(book.map((r) => r.h.bbl), !allOn);
+              useStore.getState().autoLeaseNew(!allOn);
+            }}
           >{allOn ? "All on ✓" : "Auto-lease every building"}</button>
         </div>
         <div className="lease-ctl" style={{ marginTop: 6 }}>
@@ -259,6 +263,15 @@ export function LeasingPage() {
               : "Never sign a face rent under the space's market rent: lowballs are countered up to market, and tenants who won't pay it are passed. Slower to fill, never cheap."}
             onClick={() => useStore.getState().autoRentFloor(!game.autoRentFloor)}
           >{game.autoRentFloor ? "Never below market rent ✓" : "Never below market rent"}</button>
+          <button
+            type="button"
+            className={"btn btn-mini" + (autoLeaseOnClose(game) ? " btn-on" : "")}
+            aria-pressed={autoLeaseOnClose(game)}
+            title={autoLeaseOnClose(game)
+              ? "Every building you buy closes on auto-lease, at the house rent posture. Click to have new buildings' letters come to you instead."
+              : "Have every building you buy close on auto-lease, so its letters never reach your desk."}
+            onClick={() => useStore.getState().autoLeaseNew(!autoLeaseOnClose(game))}
+          >{autoLeaseOnClose(game) ? "New buildings join auto-lease ✓" : "New buildings join auto-lease"}</button>
         </div>
         <div className="agent-sub" style={{ marginTop: 4 }}>
           Fit-out and free rent: {AUTO_CONCESSIONS.find((o) => o.key === conc)!.blurb}. Measured against the market's
@@ -471,7 +484,7 @@ export function LeasingPage() {
                         one in force, how tenants read the service, and the
                         building's condition and reserve. */}
                     <div onClick={(e) => e.stopPropagation()}>
-                      <OpsChoices bbl={r.h.bbl} h={r.h} score={false} />
+                      <OpsChoices bbl={r.h.bbl} h={r.h} compact />
                     </div>
                   </td>
                   <td>{useLabel(r.rec)}</td>

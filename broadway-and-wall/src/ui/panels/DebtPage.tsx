@@ -467,6 +467,7 @@ export function DebtPage() {
                       </button>
                     ))}
                   </div>
+                  <PoolRefusal quotes={facQuotes} refi />
                   {rqt && (() => {
                     const draw = Math.floor(rqt.base * refiLev);
                     const fees = Math.round(draw * 0.01) + Math.round(draw * rqt.points);
@@ -651,6 +652,7 @@ export function DebtPage() {
                   </button>
                 ))}
               </div>
+              <PoolRefusal quotes={quotes} />
               <div className="grid">
                 <Row k="The pool" v={`${pool.length} buildings · ${usd(Math.round(qt.quality.value))} · ${qt.quality.why}`} />
                 <Row k="Diversification" v={`${(qt.quality.score * 100).toFixed(0)} of 100 — worth ${((qt.advance - PRODUCTS.find((p) => p.id === qt.productId)!.ltv) * 100).toFixed(1)} points of advance and ${(qt.spreadCut * 100).toFixed(0)}bp of coupon`} />
@@ -832,6 +834,25 @@ export function DebtPage() {
             )}
           </tbody>
         </table>
+    </div>
+  );
+}
+
+/**
+ * WHEN NO DESK WILL WRITE THE POOL, SAY SO ON THE PAGE. Every button greyed
+ * out with its reason in a tooltip read as a broken screen — most often a pool
+ * whose borrowing base has fallen under the smallest facility anybody
+ * documents, where the only exits are paying it down or off, or releasing
+ * buildings and refinancing them one at a time (a pledged deed has no
+ * single-asset quote while it is in the pool).
+ */
+function PoolRefusal({ quotes, refi = false }: { quotes: { available: boolean; why?: string; lender: string }[]; refi?: boolean }) {
+  if (!quotes.length || quotes.some((q) => q.available)) return null;
+  const whys = [...new Set(quotes.map((q) => q.why).filter(Boolean))] as string[];
+  return (
+    <div className="hint neg" style={{ margin: "6px 0" }}>
+      <strong>No desk will write this pool today.</strong> {whys.slice(0, 3).join(" ")}
+      {refi && " To get out: repay the balance from cash and the line, or release buildings one at a time below and refinance each on its own."}
     </div>
   );
 }

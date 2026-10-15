@@ -28,7 +28,7 @@
 // here ever asks for a second click.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding, Rival } from "./types";
-import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
+import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger, autoLeaseOnClose } from "./types";
 import { rng, rrange, cycleHot, cycleDown } from "./market";
 import { openReoPortfolio } from "./portfoliosale";
 import { collateralAsIs, ownedHoldingValue, resolveRec } from "./value";
@@ -289,6 +289,7 @@ function playerTakes(s: GameState, parcels: ParcelTable, lot: AuctionLot, paid: 
     assessed: Math.round(collateralAsIs(rec, s.econ, occ)),
     loan: null, condition: "worn", tenants: [], cfHistory: [],
     ...(s.landmarks?.[lot.bbl] !== undefined ? { landmarked: true } : {}),
+    ...(autoLeaseOnClose(s) ? { autoLease: true } : {}),
   };
   genRentRoll(s, rec, h);
   const total = h.tenants.reduce((a, t) => a + t.sf, 0);

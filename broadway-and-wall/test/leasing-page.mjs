@@ -100,6 +100,14 @@ if (loi) {
   ok("the cards carry their actions", html.includes(">Accept<") || html.includes("Take their final"));
 }
 
+// SERVICE AND CAPITAL CARRY THEIR NUMBERS ON THE ROW: what each choice costs
+// against the one in force, and the reads (tenants' score, condition).
+{
+  const html = renderLeasing();
+  ok("the rows show what each service and capital choice costs and reads as",
+    html.includes("ops-delta") && html.includes("tenants read it as") && html.includes("condition "));
+}
+
 // THE TEAM CARD: one concession limit for the firm and the year's scorecard.
 // Off auto it says so; on auto, after a year, it prints what the team signed.
 {

@@ -18,7 +18,7 @@ function Delta({ d, on }: { d: number; on: boolean }) {
  * the two cannot drift apart again (the row put all six buttons on one line
  * with a "|" between them).
  */
-export function OpsChoices({ bbl, h }: { bbl: string; h: Holding }) {
+export function OpsChoices({ bbl, h, score = true }: { bbl: string; h: Holding; score?: boolean }) {
   const ops = useStore((s) => s.ops);
   const parcels = useStore((s) => s.parcels);
   const game = useStore((s) => s.game);
@@ -74,7 +74,7 @@ export function OpsChoices({ bbl, h }: { bbl: string; h: Holding }) {
         </span>
         <span className="ops-choice-read">condition {Math.round(100 * (h.condIdx ?? 0.6))} of 100{h.condition ? ` (${h.condition})` : ""}{live && planNow > 0 ? ` · ${usd(planNow)}/yr` : ""}</span>
       </div>
-      {sc && rec && (
+      {score && sc && rec && (
         <div className="ops-choice">
           <span className="ops-choice-k">Building score</span>
           <span className="ops-choice-read" title="The building only: its bones, its condition, and how new it is against the city's own stock. Location is priced separately.">

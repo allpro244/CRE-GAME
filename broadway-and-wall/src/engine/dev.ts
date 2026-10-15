@@ -4085,7 +4085,16 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
 function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const e = s.econ;
   const ic = e.industComp ?? 1;
-  if (ic > 0.92) return;
+  // ANY SURPLUS, NOT ONLY THE SECULAR KIND (2026-10-15). This returned unless
+  // the composition index had fallen under 0.92, so sheds emptied by the
+  // town's own trades leaving (a logistics or apparel base in decline) had no
+  // door at all: one seed sat on the 0.45 vacancy clamp for fifteen years
+  // with composition at 0.94-0.81 and the shed stock 18% down from opening.
+  // A deep glut that has lasted two years now qualifies whatever emptied it;
+  // a shallower soft patch still needs the secular signal.
+  const deepOld = (e.cityVac?.industrial ?? 0) > NATURAL_VAC.industrial + 0.05
+    && (e.vacOverM?.industrial ?? 0) >= 24;
+  if (ic > 0.92 && !deepOld) return;
   // DEFER TO EMPLOYMENT SHORTAGE, DON'T FREEZE. Clearing sheds onto the plat
   // while office cannot house its jobs hands vacant M-lots to multifamily
   // (useForZone reads industComp) and the shared crane pool follows them —
@@ -4111,14 +4120,20 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   if (surplus < 4000) return;
   // Clearance is lumpy (one building). Own RNG channel — must not steal
   // draws from teardown densify (`dev`).
-  if (rng(s, "indust") > (officeShort ? 0.12 : 0.55)) return;
+  // The pace follows how much of the stock is surplus, as the all-class
+  // valve does: a market a third empty clears most months.
+  const share = surplus / Math.max(1, stock);
+  if (rng(s, "indust") > (officeShort ? 0.12 : Math.min(0.9, 0.3 + 2.2 * share))) return;
 
   // Pick the worst empty-ish anon shed: old, worn, low demand, preferably M.
+  // Thirty-six SHEDS looked at, not thirty-six lots: sheds are a few per cent
+  // of the map, so a lot sample saw one or two a month and usually none fit.
   let worst: { bbl: string; rec: NonNullable<ReturnType<typeof resolveRec>>; score: number } | null = null;
-  for (let i = 0; i < 36; i++) {
+  for (let i = 0, seen = 0; i < 600 && seen < 36; i++) {
     const bbl = bbls[Math.floor(rng(s, "indust") * bbls.length)];
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class !== "industrial" || !rec.bldgArea) continue;
+    seen++;
     // Never scrap more empty surplus than exists — a single large bay can
     // overshoot; skip if it would cut into occupied stock.
     if (rec.bldgArea > surplus * 1.05) continue;
@@ -4286,6 +4301,59 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
   }
 }
 
+/**
+ * THE STOCK NOBODY CAN POINT AT LEAVES TOO (2026-10-15).
+ *
+ * The market's inventory is the island's buildings plus, for a class the map
+ * shows thinly, a regional floor (`stockFromParcels`: 7.8% of the town) — the
+ * mainland sheds and strip retail the island's tenants also take. The two exit
+ * valves above demolish MAPPED buildings, so the floor's share of a glut had no
+ * door: measured on one seed, a town whose logistics and apparel base emptied
+ * its sheds sat on the 0.45 vacancy clamp for fifteen years with 482k sf of
+ * industrial stock of which 18k stood on the map. Mainland sheds are cleared
+ * and converted like any others — SoHo and Tribeca lofts, Brooklyn's
+ * waterfront, the Rust Belt's land banks.
+ *
+ * Same gates as the all-class valve (deep and two years old) and the same
+ * envelope (never into occupied space), on the off-map share of the surplus
+ * only. The pace is proportional to how empty the class is: a market 40%
+ * empty retires ~5%/yr of its off-map stock, the clearance rate of a city in
+ * genuine decline (Detroit, Youngstown); a shallow glut almost none. No dice.
+ */
+function retireOffMapSurplus(s: GameState, parcels: ParcelTable, bbls: string[]) {
+  const e = s.econ;
+  if (!e.offMapSf) {
+    const mapped: Record<BuiltClass, number> = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    for (const bbl of bbls) {
+      const rec = resolveRec(parcels, s, bbl);
+      if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+      // Counted as stockFromParcels counts it: by mix where there is one.
+      const letSf = rentableSf(rec);
+      if (rec.mix) for (const k of BUILT_CLASSES) mapped[k] += letSf * (rec.mix[k] ?? 0);
+      else if (rec.class in mapped) mapped[rec.class as BuiltClass] += letSf;
+    }
+    e.offMapSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    for (const k of BUILT_CLASSES) e.offMapSf[k] = Math.max(0, (e.stock?.[k] ?? 0) - mapped[k]);
+  }
+  for (const k of BUILT_CLASSES) {
+    const off = e.offMapSf[k] ?? 0;
+    if (off < 1000) continue;
+    const natural = NATURAL_VAC[k];
+    if ((e.cityVac?.[k] ?? natural) <= natural + 0.05) continue;
+    if ((e.vacOverM?.[k] ?? 0) < 24) continue;
+    const stock = Math.max(1, e.stock?.[k] ?? 0);
+    const occ = e.occupied?.[k] ?? 0;
+    const need = occ / Math.max(0.5, 1 - natural);
+    const surplus = Math.min(Math.max(0, stock - need * 1.03), Math.max(0, stock - occ));
+    if (surplus <= 0) continue;
+    const share = surplus / stock;
+    const cut = Math.min(surplus * (off / stock), off * Math.min(0.004, share * 0.01));
+    if (cut <= 0) continue;
+    addStock(e, k, -cut);
+    e.offMapSf[k] = off - cut;
+  }
+}
+
 export function tickCityGrowth(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
 ) {
@@ -4295,6 +4363,7 @@ export function tickCityGrowth(
   tickCrews(s, bbls);
   tickIndustrialExit(s, parcels, bbls);
   tickSurplusExit(s, parcels, bbls);
+  retireOffMapSurplus(s, parcels, bbls);
   tickTeardowns(s, parcels, bbls);
   // Extra densify passes when the book is pinned short — one wrecking ball a
   // month cannot catch a multi-decade capacity shortfall.

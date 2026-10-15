@@ -1924,6 +1924,8 @@ export interface Econ {
   /** Employment index per trade, its own shock state, and the local-serving index. */
   indIdx?: Record<Sector, number>;
   indShock?: Record<Sector, number>;
+  /** Each trade's slow local trend offset, per year (mean-reverting). */
+  indFortune?: Record<Sector, number>;
   /** A trade's boom (and usually its bust) in progress — see `tickBoomBust` in market.ts. */
   boomBust?: { sec: Sector; phase: "boom" | "bust" | "hold"; leftM: number; rate: number; startM: number };
   localIdx?: number;
@@ -2340,6 +2342,8 @@ export interface Econ {
   // what was standing on day one — the anchor the demand target is measured
   // against, so a century of building does not drag the target along with it
   baseStock?: Record<BuiltClass, number>;
+  /** The regional stock beyond the island's mapped buildings, by class (rentable sf). */
+  offMapSf?: Record<BuiltClass, number>;
   // ...and the same thing FROZEN, because baseStock is not frozen: the
   // sector-exit ratchet in market.ts writes it down as tenants are priced out
   // and never return. The difference between the two IS how much of a sector

@@ -59,14 +59,25 @@ for (const seed of SEEDS) {
       // algebra, so it is asked of the build-now residual: the queue's
       // positions are emptied, its absorption rate (which the desk's lease-up
       // also reads) is kept, and both ends run one pro forma.
-      const nowEcon = { ...g.econ, landQueue: Object.fromEntries(Object.entries(g.econ.landQueue ?? {}).map(([u, q]) => [u, { ...q, psf: [], ahead: [] }])) };
+      // Both queue reads are emptied — this year's and the one it is gliding
+      // from (value.ts queueFactor blends them over the year); emptying only
+      // this year's left last year's wait on a few big office schemes.
+      const emptyQ = (Q) => Object.fromEntries(Object.entries(Q ?? {}).map(([u, q]) => [u, { ...q, psf: [], ahead: [] }]));
+      const nowEcon = { ...g.econ, landQueue: emptyQ(g.econ.landQueue), landQueuePrev: emptyQ(g.econ.landQueuePrev) };
       const sc = E.landRead(rec, nowEcon).scheme;
       if (!sc || !(sc.psf > 0)) continue;
       // The scheme is the desk's own dials. (`coverage` is new with the
       // reconciliation; before it the residual built at usable/floors.)
       const cov = sc.coverage ?? sc.usable / sc.floors;
+      // AT THE AVERAGE BID. Every job carries its own construction draw
+      // (dev.ts projectCostMult: the contractor's book that season, re-drawn
+      // every term), and the land market cannot see a builder's quote before
+      // it is struck — it prices the average. Measured: with the draw in, the
+      // desk's non-land cost ran 0.78-1.29x the tape's on the same scheme
+      // while value matched to the dollar, so the identity is asked at the
+      // average bid (costMult 1), which is what the tape prices.
       const plan = E.planDevelopment(g, parcels, bbl, sc.use, sc.floors, cov, "gmp",
-        undefined, undefined, undefined, 0.5, sc.psf * rec.lotArea);
+        undefined, { costMult: 1 }, undefined, 0.5, sc.psf * rec.lotArea);
       const h = plan ? plan.hurdleRatio : NaN;
       hs.push(h);
       uses[sc.use] = (uses[sc.use] ?? 0) + 1;

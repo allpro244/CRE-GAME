@@ -1820,6 +1820,8 @@ export interface Econ {
    * monetary policy — which is exactly the position a real city is in.
    */
   nat?: {
+    /** the nation's spending, as shares of potential output (market.ts spendNation) */
+    dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number };
     /** national inflation, annualised */
     infl: number;
     /** what the nation EXPECTS — the anchor, and what a credible bank defends */

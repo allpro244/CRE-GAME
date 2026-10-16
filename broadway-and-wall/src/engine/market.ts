@@ -1260,22 +1260,8 @@ const OPENING_UNEMP = 0.052;
 const NAT_U_STAR = 0.048;
 /** How far below zero the price level can fall a year, asymptotically (pay is not cut). */
 const DEFLATION_FLOOR = 0.02;
-/** Monthly demand from unconventional policy per point the rule sits under the floor. */
-const LB_TOOLS = 0.00015;
 /** Retail spending lost per point of real money over neutral (household credit channel). */
 const HH_CREDIT_PER_PT = 0.015;
-/** Monthly restatement of Rudebusch-Svensson (1999): roots 0.951 and 0.670. */
-const IS_PHI1 = 1.621, IS_PHI2 = -0.637;
-/** Real-rate pull per month; with IS_CORP, a long-run 0.9 points of output per point. */
-const IS_RATE = 0.0100, IS_CORP = 0.0044;
-/** Credit window pull per month per unit of the national window off normal. */
-const IS_CREDIT = 0.0008;
-/** Output per log point of real home prices over their trend, per month (wealth effect ~4c/$ on ~1.5x GDP). */
-const HH_WEALTH = 0.0010;
-/** Output per point of mortgage coupon saved against its five-year average, per month. */
-const HH_REFI = 0.00006;
-/** Output per unit of monthly change in the private credit gap (the credit impulse). */
-const CREDIT_IMPULSE = 0.04;
 /** Credit gap built per month per point of real money under neutral (share of GDP). */
 const CRED_PER_EASY_PT = 0.0008;
 /** ...per unit of the lenders' window over normal, and per unit of output over potential. */
@@ -1284,25 +1270,8 @@ const CRED_PER_WINDOW = 0.004, CRED_PER_GAP = 0.03;
 const CRED_RECESSION_WRITEOFF = 0.0010;
 /** Months for the trend to catch up with the stock (a decade, as the BIS one-sided filter). */
 const CRED_TREND_M = 120;
-/**
- * THE BANKS' MARGIN IS THE CURVE (Adrian, Estrella & Shin 2019). Banks fund
- * short and lend long, so the term spread is their net interest margin on new
- * business; when it flattens or inverts, lending growth slows about a year
- * later, and that — not the level of rates alone — is why an inverted curve
- * has preceded eight of the last ten US recessions. Per point of smoothed
- * spread under one point, a monthly pull on output.
- */
-const IS_CURVE = 0.00015;
 /** The spread a bank's margin is normal at: this economy's own average (~2.5 points). */
 const CURVE_NORMAL = 2.5;
-/**
- * Demand shocks — confidence, spending and investment waves. Persistent (an
- * AR(1) at 0.82 a month), not white noise: monthly white noise dated a
- * shallow "recession" every three years out of nothing.
- */
-const IS_NOISE = 0.00030, DEM_PERSIST = 0.82;
-/** A falling economy feeds on itself a little (layoffs cut spending); amplifies declines only. */
-const ACCEL = 0.05;
 /** A fall of this much off the output peak is a contraction (2001's was ~0.3%). */
 const REC_DROP = 0.003;
 /** Share of corporate debt that floats, and the fixed ladder's average life in months. */
@@ -1957,7 +1926,7 @@ const INDEX_HORIZON_M = 120;
 // tools in the session notes): autocorrelation 0.76 at a year, 0.05 at
 // three, negative by five — cycles turn faster than the drawn model's did
 // (0.974 was fitted on that one).
-const RULE_GAP_RHO = 0.9445;
+const RULE_GAP_RHO = 0.85;
 
 /**
  * WHAT THE BOND MARKET THINKS POLICY WILL AVERAGE over the index's life.
@@ -2198,6 +2167,168 @@ export function ownCostIdx(e: Econ): number {
   return (n.hpi ?? 1) * uc / Math.max(1e-6, n.hpiUc0 ?? uc);
 }
 
+/**
+ * THE NATION'S SPENDING (2026-10-16). Output is what the country buys, built
+ * up from who buys it — not a fitted autoregression with demand noise on top.
+ *
+ *   consumption  households spend out of their income, smoothed toward what
+ *                they think they earn over a couple of years (permanent
+ *                income), plus their housing wealth (~4c a year per dollar,
+ *                Case-Quigley-Shiller), less when real rates are high, more
+ *                when a refinancing wave frees cash, and less when the job
+ *                market turns (precautionary saving: rising unemployment is
+ *                the best predictor of a consumer pull-back). Taxes come out
+ *                and unemployment insurance goes in, so the government
+ *                cushions every slump automatically.
+ *   investment   firms hold a stock of capital sized to the output they
+ *                expect, at the cost of carrying it — the long rate they
+ *                borrow at, less inflation, plus wear (Jorgenson's user cost)
+ *                — and close the gap over a few years; credit conditions,
+ *                the banks' margin and a panic move what they can finance.
+ *                Because investment answers the CHANGE in expected output,
+ *                a slowdown cuts it hard (the accelerator).
+ *   inventories  firms keep about six weeks of sales on hand; when sales fall
+ *                the shelves are over-full and orders are cut below sales
+ *                until they clear (the inventory cycle — most of the swing in
+ *                a mild recession).
+ *   housing      home building follows home prices against their trend and
+ *                the mortgage rate against what borrowers are used to.
+ *   government   spends a steady share, plus what politics adds (a fiscal
+ *                expansion under pressure on the bank) and what it does when
+ *                the bank is stuck at zero.
+ *   the world    exports ride the rest of the world's cycle — the one part of
+ *                demand that IS outside the model, and so the one that is drawn.
+ *   imports      a share of everything bought leaks abroad.
+ *
+ * Shares of output at rest are the US's (BEA NIPA, 1990-2019): consumption 68%,
+ * business investment 14%, residential 4%, government 17%, net exports -3%.
+ * The cycle comes out of the stocks — capital, inventories, what households
+ * think they earn — answering each other, not out of a lag polynomial.
+ */
+const DEM = {
+  C0: 0.68, I0: 0.14, IH0: 0.04, G0: 0.17, IMP: 0.15, TAX: 0.25,
+  /** transfers per unit of unemployment over natural (UI, SNAP, Medicaid: ~0.4% of output a point) */
+  TR_U: 0.4,
+  /** depreciation and potential growth, a year */
+  DELTA: 0.10, GROW: 0.02,
+  /** months for consumption to follow its target; for perceived income to follow income */
+  TAU_C: 3, YP_M: 48,
+  /** share of spending that follows this year's income rather than what households expect to earn (hand-to-mouth, Campbell-Mankiw ~0.2-0.3) */
+  C_NOW: 0.2,
+  /** months over which firms read the output they plan for; to close a capital gap; investment plans lag */
+  YE_M: 12, TAU_K: 48, I_LAG: 9,
+  /** how far the output firms plan capital for follows recent output rather than the trend (Survey of CFOs: plans are mostly trend) */
+  YE_W: 0.3,
+  /** wage share per unit of unemployment under natural, months to get there, capital wanted per unit of wage share */
+  WS_U: 1.0, WS_M: 18, PROF: 2,
+  /** user-cost elasticity of capital (Chirinko 1993: 0.25-0.5) */
+  SIGMA_K: 0.4,
+  /** consumption per point of real rate over neutral (intertemporal substitution, ~0.3-0.6) */
+  C_RATE: 0.6,
+  /** months over which households read the real rate */
+  RR_M: 12,
+  /** consumption pulled back per point of unemployment rise over six months */
+  PREC: 0.8,
+  /** inventory to annual sales (~6 weeks), months to restock */
+  NU: 0.12, TAU_N: 12,
+  /** months for home building to follow; starts per unit of mortgage rate over what borrowers are used to (a 3-point jump takes 30-50% off starts) */
+  IH_M: 9, IH_RATE: 6,
+  /** consumer and business confidence: monthly shock to the log of what households spend and firms plan */
+  CONF_SIG: 0.001, INV_SIG: 0.004, CONF_RHO: 0.97,
+  /** the rest of the world's cycle: monthly persistence and shock */
+  F_RHO: 0.985, F_SIG: 0.004,
+  /** spending out of new borrowing (the credit impulse, ~0.2 of it in total: Biggs, Mayer & Pick 2010) */
+  CRED_C: 0.1, CRED_I: 0.1,
+  /** capital wanted per unit of the lenders' window off normal (financing constraints) */
+  WIN_K: 0.32,
+};
+
+function spendNation(
+  s: GameState, e: Econ, n: NonNullable<Econ["nat"]>,
+  x: { rAvg: number; rStar: number; corpRate: number; corpNeutral: number; shock: number; lbTools: number },
+): number {
+  const P = DEM;
+  const X0 = 1 - (P.C0 + P.I0 + P.IH0 + P.G0) * (1 - P.IMP);
+  const K0 = P.I0 / (P.DELTA + P.GROW);
+  if (!n.dem) {
+    const y = 1 + (n.gap ?? 0);
+    n.dem = { C: P.C0 * y, K: K0 * y, I: P.I0 * y, Ih: P.IH0 * y, N: P.NU * y, Yp: y * (1 - P.TAX), Ye: y, Se: y, f: 0, Y: y, sup: 0, uH: [] };
+  }
+  const d = n.dem;
+  const Yprev = d.Y;
+  const u = n.unemp;
+  const infl = n.inflExp ?? 0.02;
+  // HOUSEHOLDS
+  const Yd = Yprev * (1 - P.TAX) + P.TR_U * (u - NAT_U_STAR);
+  d.Yp += (Yd - d.Yp) / P.YP_M;
+  d.uH.push(u); if (d.uH.length > 7) d.uH.shift();
+  const du6 = u - d.uH[0];
+  const lnH = Math.log((n.hpi ?? 1) / (n.hpiTrend ?? n.hpi ?? 1));
+  const refi = (n.mortRef ?? n.mortCoupon ?? 0) - (n.mortCoupon ?? n.mortRef ?? 0);
+  // New borrowing is spending while the stock grows faster than output; paying it down is not (Biggs & Mayer 2010).
+  const credFlow = ((n.credGap ?? 0) - (n.credGapPrev ?? n.credGap ?? 0)) * 12;
+  const panic = e.panic?.force ?? 0;
+  // CONFIDENCE. What households and firms believe about the years ahead is
+  // the one input to spending no model of this economy can derive — news
+  // about the future, a war, an election — so it is drawn, but persistent
+  // (monthly 0.97: a mood lasts a few years) and it works only through the
+  // spending decisions above: what households set aside, what capital firms
+  // plan for. Smets & Wouters (2007) need the same two shocks to fit the US.
+  const zc = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
+  const zk = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
+  d.cc = P.CONF_RHO * (d.cc ?? 0) + P.CONF_SIG * zc;
+  d.kc = P.CONF_RHO * (d.kc ?? 0) + P.INV_SIG * zk;
+  // Households answer the real rate over the year or two it takes to show up
+  // in what they borrow and save — car loans, card balances, deposits.
+  d.rr = (d.rr ?? 0) + ((x.rAvg - x.rStar) - (d.rr ?? 0)) / P.RR_M;
+  const cT = P.C0 / (1 - P.TAX) * ((1 - P.C_NOW) * d.Yp + P.C_NOW * Yd)
+    * Math.exp(d.cc - P.C_RATE * d.rr + 0.088 * lnH + 0.6 * refi - P.PREC * Math.max(0, du6) - 0.03 * panic)
+    + P.CRED_C * credFlow;
+  d.C += (cT - d.C) / P.TAU_C;
+  // FIRMS: capital for the output they expect, at what it costs to carry
+  d.Ye += (Yprev - d.Ye) / P.YE_M;
+  const uc = Math.max(0.03, x.corpRate - infl + P.DELTA);
+  const uc0 = Math.max(0.03, x.corpNeutral - infl + P.DELTA);
+  const fin = (1 + P.WIN_K * ((n.creditNat ?? 1) - 1))
+    * (1 + 0.02 * Math.max(-5, Math.min(1, (n.curveSm ?? CURVE_NORMAL) - CURVE_NORMAL)))
+    * (1 - 0.2 * panic);
+  // THE PROFIT SQUEEZE. A labour market held tight bids pay up faster than
+  // output per worker, the wage share climbs and margins thin; firms that
+  // earn less on capital want less of it. US corporate profits have peaked
+  // and turned down ahead of every post-war recession, usually after two or
+  // three years of unemployment under its natural rate (BEA NIPA; Kalecki,
+  // Goodwin). Labour's share drifts up about a point of output per point of
+  // unemployment held under natural, over a year and a half.
+  d.ws = (d.ws ?? 0) + (P.WS_U * (NAT_U_STAR - u) - (d.ws ?? 0)) / P.WS_M;
+  const kStar = K0 * (1 + P.YE_W * (d.Ye - 1)) * Math.pow(uc0 / uc, P.SIGMA_K) * fin * Math.exp(d.kc - P.PROF * d.ws);
+  const dep = (P.DELTA + P.GROW) * d.K;
+  // Capital is easier to stop buying than to sell: gross investment does not fall below a third of replacement.
+  const iWant = Math.max(dep * 0.35, dep + (kStar - d.K) / (P.TAU_K / 12)) + P.CRED_I * credFlow;
+  d.I += (iWant - d.I) / P.I_LAG;
+  d.K += (d.I - dep) / 12;
+  // HOMES
+  const mortNow = (e.indexRate ?? 5.4) / 100 + 0.017;
+  const ihT = P.IH0 * Math.pow((n.hpi ?? 1) / (n.hpiTrend ?? n.hpi ?? 1), 1.5) * Math.exp(-P.IH_RATE * (mortNow - (n.mortRef ?? mortNow)));
+  d.Ih += (ihT - d.Ih) / P.IH_M;
+  // GOVERNMENT: a steady share, a fiscal expansion under political pressure, the tools at the floor
+  const G = P.G0 + ((n.pressureM ?? 0) > 0 && x.shock !== 0 ? 0.6 * Math.abs(x.shock) : 0) + 0.009 * x.lbTools;
+  // THE WORLD: exports ride the rest of the world's cycle; imports leak out of everything bought
+  const z = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
+  d.f = P.F_RHO * d.f + P.F_SIG * z;
+  const X = X0 * Math.exp(d.f);
+  const M = P.IMP * (d.C + d.I + d.Ih + G);
+  const S = d.C + d.I + d.Ih + G + X - M;
+  // INVENTORIES: shelves follow sales; production is sales plus restocking
+  d.Se += (S - d.Se) / 3;
+  const invInv = Math.max(-0.06, Math.min(0.06, (P.NU * d.Se - d.N) / (P.TAU_N / 12)));
+  d.N += invInv / 12;
+  // SUPPLY: an oil shock takes real output while it runs (an adverse one; a favourable one gives it)
+  const supShock = (n.pressureM ?? 0) > 0 ? 0 : x.shock;
+  d.sup += (0.5 * supShock - d.sup) / 6;
+  d.Y = S + invInv - d.sup;
+  return d.Y - 1;
+}
+
 export function tickNation(s: GameState) {
   const e = s.econ;
   if (!e.nat) {
@@ -2366,40 +2497,15 @@ export function tickNation(s: GameState) {
   // inflation, plus the same blended spread.
   const corpNeutral = rStar + (n.inflExp ?? 0.02) + CORP_FLOAT * 0.02 + (1 - CORP_FLOAT) * 0.015;
   if (n.gap === undefined) { n.gap = -2 * (n.unemp - NAT_U_STAR); n.gap1 = n.gap; }
-  const y1 = n.gap, y2 = n.gap1 ?? n.gap;
-  // Supply shocks take output down; a fiscal expansion (the shock that comes
-  // with political pressure on the bank) pushes it up; a favourable supply
-  // shock (shock < 0) lifts it.
-  const shockImpulse = shock === 0 ? 0
-    : (n.pressureM ?? 0) > 0 ? 0.010 * Math.abs(shock)
-    : -0.010 * shock;
-  const zDem = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
-  const impulse = - IS_RATE * (rAvg - rStar)
-    - IS_CORP * (corpRate - corpNeutral)
-    + IS_CREDIT * ((n.creditNat ?? 1) - 1)
-    // CREDIT GROWTH IS SPENDING (the credit impulse, Biggs & Mayer 2010): new
-    // borrowing adds to demand while the stock is growing faster than output,
-    // and paying it down subtracts — the deleveraging drag that makes
-    // credit-fuelled booms end in deeper slumps (Jorda, Schularick & Taylor 2013).
-    + CREDIT_IMPULSE * ((n.credGap ?? 0) - (n.credGapPrev ?? n.credGap ?? 0))
-    // HOUSEHOLDS SPEND OUT OF WHAT THEY OWN AND WHAT THEY OWE (see tickHouseholds).
-    + HH_WEALTH * Math.log((n.hpi ?? 1) / (n.hpiTrend ?? n.hpi ?? 1))
-    + HH_REFI * ((n.mortRef ?? n.mortCoupon ?? 0) - (n.mortCoupon ?? n.mortRef ?? 0)) * 100
-    + IS_CURVE * Math.max(-5, Math.min(1, (n.curveSm ?? CURVE_NORMAL) - CURVE_NORMAL))
-    - 0.004 * (e.panic?.force ?? 0)
-    + shockImpulse
-    // THE OTHER TOOLS. A bank at its floor whose rule wants far lower does not
-    // sit still and neither does the government: asset purchases, forward
-    // guidance and fiscal stimulus (2009-14, Japan after 2013) push demand
-    // where the rate cannot. Per point the rule sits under the floor, about a
-    // point of output in the long run, at most five.
-    + (n.policy <= 0.5 ? LB_TOOLS * Math.min(5, Math.max(0, n.policy - (n.ruleRate ?? n.policy) - 1)) : 0)
-    + (n.demShock = DEM_PERSIST * (n.demShock ?? 0) + IS_NOISE * zDem)
-    // Falling output feeds on itself for a while: layoffs cut spending, firms
-    // pull investment, lenders pull lines. Amplifies a decline, not a rise.
-    - ACCEL * Math.max(0, y2 - y1);
+  const y1 = n.gap;
+  // THE OTHER TOOLS. A bank at its floor whose rule wants far lower does not
+  // sit still and neither does the government: asset purchases, forward
+  // guidance and fiscal stimulus (2009-14, Japan after 2013) push demand
+  // where the rate cannot — about a point of output per point the rule sits
+  // under the floor, at most five.
+  const lbTools = n.policy <= 0.5 ? Math.min(5, Math.max(0, n.policy - (n.ruleRate ?? n.policy) - 1)) : 0;
   n.gap1 = y1;
-  n.gap = IS_PHI1 * y1 + IS_PHI2 * y2 + impulse;
+  n.gap = spendNation(s, e, n, { rAvg, rStar, corpRate, corpNeutral, shock, lbTools });
   // THE CREDIT CYCLE (2026-10-15). Private credit against its trend, as a
   // share of output (the BIS credit-to-GDP gap; US range roughly -10 to +12
   // points, +12 at the 2007 top). It builds while money is cheap against
@@ -2751,7 +2857,7 @@ export function tickNation(s: GameState) {
   // hazard. The national window is the same equation as `stepCredit` on
   // national inputs only: the unemployment rise, the curve, a panic.
   {
-    const curveN = 0.04 * (((e.indexRate ?? 5.4) - n.policy) - 1.2);
+    const curveN = 0.08 * (((e.indexRate ?? 5.4) - n.policy) - 1.2);
     const tgt = clamp(1.0 - 14 * Math.max(0, natUnempRise12(e)) + curveN - 0.7 * (e.panic?.force ?? 0), 0.4, 1.25);
     const cn = n.creditNat ?? 1;
     n.creditNat = clamp(cn + (tgt < cn ? 0.16 : 0.055) * (tgt - cn), 0.4, 1.25);

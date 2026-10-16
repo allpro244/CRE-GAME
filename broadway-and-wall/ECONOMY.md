@@ -3153,3 +3153,53 @@ vanished. Now the firms are the market (streetRolls.ts).
 - **The opening street is grown.** Before the first listing is written, the
   town's firms and households live four years on the opening economy. The
   opening tape discloses the tenants actually in each building.
+
+## The nation's output is what the country buys (2026-10-16)
+
+The national output gap was a fitted autoregression (Rudebusch-Svensson
+restated monthly, roots 0.95 and 0.67) with rate, credit, housing and
+demand-noise impulses added on. Its persistence was two coefficients, and
+its cycle came from those coefficients and a drawn demand shock.
+
+Now output is the sum of what each part of the economy buys, at US shares
+(BEA NIPA 1990-2019), each with its own state (market.ts `spendNation`):
+
+- **Consumption (68%)** follows what households expect to earn: income
+  smoothed over about four years, with a fifth hand-to-mouth. It moves with
+  housing wealth (~4c/$), refinancing gains, the real rate over the past year
+  or two, new borrowing (the credit impulse), and precautionary saving when
+  unemployment starts to rise. Taxes come out and unemployment insurance goes
+  in, so the government cushions every slump automatically.
+- **Business investment (14%)** builds a capital stock toward what firms
+  want: sized to the output they plan for (mostly trend, partly recent),
+  scaled by the user cost of capital (the corporate book's rate less
+  inflation plus wear, elasticity 0.4), what lenders will finance (the
+  national window), and how much labour's share has squeezed margins after
+  years of tight labour markets. Gross investment cannot fall below a third
+  of replacement.
+- **Inventories** are kept at about six weeks of sales; when sales fall,
+  orders are cut below sales until the shelves clear.
+- **Home building (4%)** follows home prices against their trend and the
+  mortgage rate against what borrowers are used to.
+- **Government (17%)** is a steady share, plus fiscal expansions under
+  political pressure on the bank and what is done at the zero bound.
+- **Exports** ride the rest of the world's cycle, the one part of demand
+  outside the model. Imports leak 15% of everything bought.
+- **Confidence**: consumer and business moods are persistent drawn states
+  (as in Smets & Wouters 2007). They work only through what households set
+  aside and what capital firms plan for.
+
+The cycle comes out of the stocks answering each other: capital, shelves,
+perceived income and the credit window. The bank-margin channel is
+strengthened: an inverted curve shuts the national lending window twice as
+hard as before. The bond market's forecast of policy normalising was re-fit
+to the new dynamics (persistence 0.85).
+
+Measured, 30 centuries (national block alone), old model then new:
+unemployment mean 6.1 then 5.5 (US 5.7); output gap sd 2.87 then 2.85; months
+in recession 15.8% then 15.0% (US ~14%); recessions per decade 1.05 then
+1.06; median unemployment rise in a recession 3.2 then 3.7 (US 3.6);
+preceded by an inversion 72% then 60% (US ~80%); depth by how tight money
+was at the start 1.9 to 6.4 points, then 0.5 to 5.1. A one-point hike held a
+year takes 1.5% off output at the trough, 20 months later, and unemployment
+peaks about a point higher at two years.

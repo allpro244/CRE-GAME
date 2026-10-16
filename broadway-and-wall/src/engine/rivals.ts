@@ -2475,9 +2475,10 @@ const SPREAD_FULL = 3.5;
  * leverage: vulture, contrarian and loan-to-own money that buys at a discount
  * (the RTC-era opportunity funds of 1990-95, the distressed raises of 2009).
  * They pitch at this share of a full window. Shape parameter, stated as such.
- * Measured on twelve seeds: new firms in thirty years went from 5-23 to 9-23
- * (the calm seeds unchanged, draw for draw); the 12-seed paired baseline
- * moved only industrial rent, +2.7%, as industrial came off its vacancy rail.
+ * Measured on twelve seeds: new firms in thirty years went from 2-25 to 6-25
+ * (4242, shut 176 months: 2 -> 15; the calm seeds unchanged, draw for draw).
+ * The money is real, so the towns it reaches build more: on the five seeds
+ * it touched, jobs +6% and office rent +7% on the 12-seed paired baseline.
  */
 const DISTRESS_PITCH = 0.3;
 

@@ -84,10 +84,18 @@ console.log("\nINSOLVENCY SALE — a filed building is the last thing taken, not
 
 // ---- B: the same file, the line undrawn — the line is drawn and the deed stays
 {
-  const { g: g0, bbl } = setUp(4242);
-  let g = JSON.parse(JSON.stringify(g0));
-  g.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
-  const lim = E.locLimit(g, parcels);
+  // THE PREMISE NEEDS A LINE (2026-10-16). A world that opens in a high-rate
+  // era (a 17% loan index, the window half shut) gives a modest office no
+  // revolver at all — the serviceability rule working — and then there is no
+  // undrawn line to test. Take the first world whose line is real.
+  let g0, bbl, lim = 0, g;
+  for (const seed of [4242, 4243, 4244, 4245, 4246, 4247]) {
+    ({ g: g0, bbl } = setUp(seed));
+    g = JSON.parse(JSON.stringify(g0));
+    g.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
+    lim = E.locLimit(g, parcels);
+    if (lim > 50_000) break;
+  }
   // THE PREMISE IS THAT THE LINE IS BIGGER THAN THE HOLE (2026-10-09). The
   // hole was a fixed $150K while the line is sized off whatever office the
   // town listed: on one world a $2.6M office with an $815K line, on another

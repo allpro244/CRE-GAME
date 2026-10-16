@@ -2329,6 +2329,43 @@ function spendNation(
   return d.Y - 1;
 }
 
+/**
+ * RENTS ARE WHAT LEASES SIGN AT (2026-10-16). The office and shop rent indices
+ * used to move on an equation of the market's vacancy; every lease was then
+ * priced off the index, and no lease ever moved it. Now every lease signed —
+ * the street's new leases and renewals (streetRolls.ts) and the player's
+ * (leasing.ts) — is a comp, and the index follows the comps.
+ *
+ * A deal reads the market's slack the month it signs: the vacancy equation's
+ * pressure is now what a tenant's alternatives are worth at the table, carried
+ * as `DEAL_H` months of it (in a soft market a tenant signs under the index
+ * today, and the index follows over the months after). Each deal also carries
+ * its own terms — space marked down for how long it sat, a tenant stretching up
+ * or settling down, a landlord in trouble, the bargaining — which reach that
+ * deal's rent. The index moves by the slack the last six months' comps were
+ * struck at, weighted by the space they let: a market with few deals moves on
+ * few deals, and on the ones that happened.
+ *
+ * (Measured and dropped: moving the index on the comps' mix as well — how far
+ * their markdowns sat from the usual — needs a "usual", and every baseline
+ * learned in the first years carried the opening's stale space with it and
+ * pushed rents up for years.)
+ */
+export const DEAL_H = 6;
+/** What the market's slack does to a deal signed this month, against the index. */
+export function dealSlack(e: Econ, k: BuiltClass): number {
+  return Math.exp(DEAL_H * (e.dealPress?.[k] ?? 0));
+}
+/** A lease signed: `rel` is its rent over the building's market rent (the index's, for that building). */
+export function recordDeal(e: Econ, k: BuiltClass, m: number, rel: number, sf: number, renewal = false) {
+  if ((k !== "office" && k !== "retail") || !(rel > 0) || !(sf > 0)) return;
+  const p = e.dealPress?.[k] ?? 0;
+  const list = ((e.deals ??= {})[k] ??= []);
+  list.push({ m, c: +(Math.log(rel) - DEAL_H * p).toFixed(5), p: +p.toFixed(6), sf: Math.round(sf), ...(renewal ? { r: 1 } : {}) });
+  while (list.length && list[0].m < m - 6) list.shift();
+  if (list.length > 400) list.splice(0, list.length - 400);
+}
+
 export function tickNation(s: GameState) {
   const e = s.econ;
   if (!e.nat) {
@@ -6307,7 +6344,7 @@ export function tickEcon(s: GameState) {
     void liftGate; void jobDrift;
     const cycleJobs = 0;
     const cycleMom = 0;
-    const drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
+    let drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
     // THE HALF-OF-BASE FLOOR IS NOW A GUARD AGAIN, WHICH IS ALL IT WAS EVER
     // MEANT TO BE. It used to be load-bearing and it used to be the reason the
     // amplitude above looked survivable: removing it took office peak-to-trough
@@ -6316,8 +6353,24 @@ export function tickEcon(s: GameState) {
     // channel: it binds 0.0% of months in every class over 6 seeds x 50 years,
     // and deleting it entirely reproduces every statistic in this file to the
     // digit. Left in place because a guard that never fires is a guard.
+    let noise = rrange(s, -vol, vol);
+    // FROM THE COMPS, where the town's firms are the market (see recordDeal):
+    // the slack the last six months' leases signed in, and how far their mix
+    // sat from the usual one. The market's pressure this month is what the
+    // next month's deals will read.
+    {
+      const list = (k === "office" || k === "retail") && e.streetSpace?.[k] ? e.deals?.[k] : undefined;
+      while (list && list.length && list[0].m < s.month - 6) list.shift();
+      const sf = list ? list.reduce((a, d) => a + d.sf, 0) : 0;
+      if (list && sf > 0) {
+        const pD = list.reduce((a, d) => a + d.p * d.sf, 0) / sf;
+        drift = pD + escalation;
+        noise = 0;
+      }
+      (e.dealPress ??= {})[k] = press;
+    }
     const beforeRent = e.rentIdx[k];
-    e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5 * (e.priceLevel ?? 1), e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
+    e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5 * (e.priceLevel ?? 1), e.rentIdx[k] * (1 + drift + noise));
     if (!e.rentPath) e.rentPath = {} as NonNullable<Econ["rentPath"]>;
     e.rentPath[k] = {
       gap, vacTerm, instant, pressEma, pressClamped: press, clampBound,

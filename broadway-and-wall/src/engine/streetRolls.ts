@@ -46,7 +46,7 @@ import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, 
 import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, firmCredit, pickSector, pickName, termBandM, concessionPressure } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds } from "./tenantBooks";
-import { rng, rrange, reletMonths } from "./market";
+import { rng, rrange, reletMonths, dealSlack, recordDeal } from "./market";
 import { staleDiscount } from "./absorption";
 import { tenantQualityTerms } from "./bands";
 import { drawTenantSf, sizeScale } from "./plates";
@@ -470,7 +470,9 @@ function tickFirms(s: GameState, parcels: ParcelTable) {
     const sc = b.sc[k] ?? 50;
     const since = roll.vac?.[k];
     const qt = tenantQualityTerms(q, sc);
-    const rentMult = staleDiscount(since === undefined ? 0 : m - since) * qt.rent * (b.stressed ? 0.96 : 1) * rrange(s, 0.94, 1.03, "leasing");
+    const rentMult = staleDiscount(since === undefined ? 0 : m - since) * qt.rent * (b.stressed ? 0.96 : 1) * rrange(s, 0.94, 1.03, "leasing")
+      * dealSlack(e, k);
+    recordDeal(e, k, m, rentMult, take);
     const band = termBandM(firm.credit);
     const termM = rrange(s, band.loM, band.hiM, "leasing") * qt.term;
     const freeM = Math.round(termM / 12 * 0.8 * concessionPressure(e, k) * rng(s, "leasing"));
@@ -544,7 +546,10 @@ function tickFirms(s: GameState, parcels: ParcelTable) {
 function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: number) {
   const k = useOf(t);
   const m = s.month;
-  t.rentPsf = +(useRentPsfYr(b.rec, s.econ, b.cond, k, b.condIdx) * 0.97 * (b.stressed ? 0.96 : 1)).toFixed(2);
+  // A renewal is a deal too: today's market for the building, the tenant's
+  // saved moving costs off it, the market's slack at the table.
+  const rel = 0.97 * (b.stressed ? 0.96 : 1) * dealSlack(s.econ, k);
+  t.rentPsf = +(useRentPsfYr(b.rec, s.econ, b.cond, k, b.condIdx) * rel).toFixed(2);
   t.endM = m + 36 + Math.round(60 * rng(s, "leasing"));
   const floor = minLettableSf(b.rec, k);
   if (need < t.sf) t.sf = Math.round(Math.max(Math.min(t.sf, floor), need));
@@ -554,6 +559,7 @@ function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: n
   }
   t.staffSign = t.staff ?? 1;
   t.hcRef = need / rawNow(s, k);
+  recordDeal(s.econ, k, m, rel, t.sf, true);
 }
 
 // ------------------------------------------------------- the player's buildings
@@ -781,8 +787,10 @@ function growOpeningStreet(s: GameState, parcels: ParcelTable) {
     s.month = m0;
     e.m = em0;
     e.demandAt = savedDemand;
-    // What happened before the game is history, not this month's news.
+    // What happened before the game is history, not this month's news — or
+    // this month's comps.
     e.streetFailed = [];
+    e.deals = undefined;
     // ...and the market opens on what the firms hold, so its first month
     // does not restate the city's occupancy in one step.
     for (const k of ["office", "retail"] as const) {

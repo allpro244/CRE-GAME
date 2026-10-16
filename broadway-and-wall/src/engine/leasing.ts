@@ -6,7 +6,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
-import { rng, rrange, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, useGap, RENT_BASE } from "./market";
+import { rng, rrange, dealSlack, recordDeal, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, useGap, RENT_BASE } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Bare clamp so tools/rails.mjs can see the block-premium guards. */
@@ -2298,7 +2298,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // the agent cut the ask to move it. See staleDiscount: the same
           // markdown that brought this prospect through the door, seen from the
           // other side, and the reason the arrival factor is not a gift.
-          rentPsf: +(market * (specLive ? 1.05 : 1) * rentBias * staleDiscount(h.darkMs)
+          // ...at the market's slack the month the tenant sits down
+          // (market.ts dealSlack): in a soft market the offers come in under
+          // the index before the index has moved.
+          rentPsf: +(market * (specLive ? 1.05 : 1) * rentBias * staleDiscount(h.darkMs) * dealSlack(s.econ, use)
             * bid).toFixed(2),
           // Term length is not random. A credit tenant taking a whole floor
           // signs long paper and expects to be paid for it; a small unrated
@@ -4809,6 +4812,8 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     const stack = stackForUse(rec, use);
     if (stack) placeOnStack(rec, h.tenants, signed, stack);
     h.tenants.push(signed);
+    // ...and it is a comp: the street's rents move on what the player signs.
+    recordDeal(s.econ, use, s.month, l.rentPsf / Math.max(0.01, useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx)), sf);
     useUpShell(h, use, sf);
     blocksOf(rec, h);
     noteTenantSfChange(s, use, -sf);

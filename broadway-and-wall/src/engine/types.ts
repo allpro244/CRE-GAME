@@ -2008,6 +2008,14 @@ export interface Econ {
    */
   seekers?: import("./streetRolls").Seeker[];
   nextFid?: number;
+  /**
+   * THE COMPS (market.ts recordDeal): every lease signed in the last six
+   * months, by class — its rent against the building's market rent (`c`, net
+   * of the market's slack it signed in) and that slack (`p`).
+   */
+  deals?: Partial<Record<BuiltClass, { m: number; c: number; p: number; sf: number; r?: number }[]>>;
+  /** The market's slack each new deal reads (the rent equation's monthly pressure), and the comps' usual mix. */
+  dealPress?: Partial<Record<BuiltClass, number>>;
   /** Every street block of flats and the flats let in it (streetRolls.ts). */
   flatRolls?: Record<string, import("./streetRolls").FlatRoll>;
   /** The player's flats' occupancy last month, so a block sold carries its households. */

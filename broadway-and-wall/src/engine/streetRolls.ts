@@ -147,6 +147,21 @@ export function tickStreetRolls(s: GameState, parcels: ParcelTable) {
           // Renews at today's market for the building, for a fresh term.
           t.rentPsf = +(useRentPsfYr(rec, e, gradeOf(s, rec), use as BuiltClass) * 0.97).toFixed(2);
           t.endM = s.month + 36 + Math.round(60 * hashU(s.seed, `${bbl}|${t.name}|term|${s.month}`));
+          // ...AND FOR THE SPACE ITS PEOPLE NEED NOW. A firm that has grown
+          // since it signed takes the suite next door if the building has
+          // one; one that has shrunk hands floors back. Space per head is
+          // sticky (a tenant trims, it does not halve), so the move is half
+          // the change in headcount, within a third either way.
+          const tt = t as Tenant & { staffSign?: number };
+          const ratio = (t.staff ?? 1) / Math.max(0.2, tt.staffSign ?? 1);
+          const want = Math.round(t.sf * Math.max(0.67, Math.min(1.33, 1 + 0.5 * (ratio - 1))));
+          if (want < t.sf) t.sf = want;
+          else if (want > t.sf) {
+            const cap = useRentableSf(rec, use as BuiltClass);
+            const let_ = roll.t.reduce((a, x) => a + ((x.use ?? "office") === use ? x.sf : 0), 0);
+            t.sf += Math.max(0, Math.min(want - t.sf, cap - let_));
+          }
+          tt.staffSign = t.staff ?? 1;
         } else {                                    // moved on
           (e.streetFailed ??= []).push({ m: s.month, bbl, name: t.name, sf: t.sf, use: use as BuiltClass, why: "left" });
           continue;

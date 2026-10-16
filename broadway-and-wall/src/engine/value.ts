@@ -3474,7 +3474,24 @@ export function incomeValueAsIs(rec: ParcelRecord, econ: Econ, condition: Condit
   // signed below the peak keeps a boom's value below the hype, and one signed
   // above the trough holds a bust's value up while it runs.
   let leaseAdj = 0;
-  if (econ.inPlaceReal) {
+  // A STREET BUILDING'S OWN LEASES (streetRolls.ts). Where the building
+  // carries a real roll, the adjustment is the appraiser's own: each lease's
+  // contract rent against today's market for this building, over the months
+  // it actually has left — not the city's average lease at half a term.
+  // Benchmarked at the centre of where a new lease signs (95% of asking), so
+  // a roll signed at today's market adds nothing.
+  const street = econ.streetRolls?.[rec.bbl];
+  if (street && econ.m !== undefined) {
+    const mkt: Partial<Record<BuiltClass, number>> = {};
+    for (const t of street.t) {
+      const use = (t.use ?? "office") as BuiltClass;
+      const m = (mkt[use] ??= useRentPsfYr(rec, econ, condition, use, condIdx) * 0.95);
+      const yrs = Math.max(0, (t.endM - econ.m) / 12);
+      if (!(yrs > 0) || !(m > 0)) continue;
+      const annuity = (1 - Math.pow(1 + capY, -yrs)) / capY;
+      leaseAdj += t.sf * (t.rentPsf - m) * annuity;
+    }
+  } else if (econ.inPlaceReal) {
     const cpiNow = Math.max(0.35, econ.cpi ?? 1);
     for (const use of uses(rec)) {
       const sf = useRentableSf(rec, use);

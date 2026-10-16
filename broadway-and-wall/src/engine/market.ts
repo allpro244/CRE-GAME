@@ -3883,6 +3883,17 @@ export function tickEcon(s: GameState) {
     const premRaw = (e.wageIdx ?? 1) / Math.max(0.1, e.natWageIdx ?? (e.wageIdx ?? 1));
     e.wagePremEma = (e.wagePremEma ?? premRaw) + (premRaw - (e.wagePremEma ?? premRaw)) / 24;
     const wageDemand = Math.pow(Math.max(0.3, e.wagePremEma), -0.5);
+    // THE TOWN'S PAYROLL IS ITS FIRMS' (2026-10-16). Where the town keeps
+    // firms (streetRolls.ts), what employers want to hire is what its firms
+    // employ — each moving with its trade's demand, its own sales and its own
+    // margins, firms forming and closing — scaled for the jobs that sit
+    // outside the commercial floors (public, home-based, the sites). The
+    // employment index is restated to it, so everything that reads it reads
+    // the firms.
+    if (e.firmJobs && e.firmJobs > 0) {
+      if (!(e.firmJobs0 && e.firmJobs0 > 0)) { e.firmJobs0 = e.firmJobs; e.firmEmp0 = e.employIdx; }
+      e.employIdx = clamp((e.firmEmp0 ?? 1) * e.firmJobs / e.firmJobs0, 0.55, 12);
+    }
     const wanted = Math.round((e.jobs0 ?? 132_000) * e.employIdx * wageDemand * (1 - CONSTRUCTION_JOB_SHARE + trades));
     // PARTICIPATION ANSWERS THE MARKET. People come back to work when jobs are
     // easy to find and stop looking when they are not — the discouraged-
@@ -5354,7 +5365,12 @@ export function tickEcon(s: GameState) {
     // What the town's firms want of this class at reference rents, and the
     // rent response today — the street's firms form, size and resize off it
     // (streetRolls.ts).
-    if (k !== "multifamily") (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw };
+    if (k !== "multifamily") {
+      // ...and the space a worker takes beyond the rent: the island against the
+      // mainland, income, and the structural shifts (remote work after a swan).
+      const lvl = (e.locEff?.[k] ?? 1) * (e.incomeEff?.[k] ?? 1) * swanClassLevel(e, k);
+      (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw, lvl };
+    }
     if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     const housable = housableStock(e, k);
     const searchFringe = e.stock[k] * NATURAL_VAC[k] * 0.25;

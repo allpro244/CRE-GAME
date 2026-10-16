@@ -35,7 +35,7 @@ import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, GameState, Holding, Tenant } from "./types";
 import { START_YEAR } from "./types";
 import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, assetValue, occCharacter } from "./value";
-import { genRentRoll, isCommercial, streetNewTenant, bumpOf } from "./leasing";
+import { genRentRoll, isCommercial, streetNewTenant, bumpOf, minLettableSf } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, BACKGROUND_FAIL } from "./tenantBooks";
 import { rng } from "./market";
@@ -155,7 +155,8 @@ export function tickStreetRolls(s: GameState, parcels: ParcelTable) {
           const tt = t as Tenant & { staffSign?: number };
           const ratio = (t.staff ?? 1) / Math.max(0.2, tt.staffSign ?? 1);
           const want = Math.round(t.sf * Math.max(0.67, Math.min(1.33, 1 + 0.5 * (ratio - 1))));
-          if (want < t.sf) t.sf = want;
+          // ...never below the smallest suite the building lets.
+          if (want < t.sf) t.sf = Math.max(Math.min(t.sf, minLettableSf(rec, use as BuiltClass)), want);
           else if (want > t.sf) {
             const cap = useRentableSf(rec, use as BuiltClass);
             const let_ = roll.t.reduce((a, x) => a + ((x.use ?? "office") === use ? x.sf : 0), 0);

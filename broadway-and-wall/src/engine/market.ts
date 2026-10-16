@@ -5292,7 +5292,11 @@ export function tickEcon(s: GameState) {
     // player's tenants keep. Their failures above the background the churn
     // already carries hand space back at once, and are gone as demand too.
     if (k !== "multifamily") {
-      const share = tickStreetTenants(e, k, SECTOR_CLASSES[k] ?? [], e.sectorShare ?? {}, s.month);
+      // From the street's own rolls when it keeps them (streetRolls.ts); the
+      // representative cohorts only for a town with no mapped commercial stock.
+      const share = e.streetRolls && e.streetFailShare
+        ? (e.streetFailShare[k] ?? 0)
+        : tickStreetTenants(e, k, SECTOR_CLASSES[k] ?? [], e.sectorShare ?? {}, s.month);
       if (share > 0) {
         const street = Math.max(0, e.occupied[k] - (pNow ?? 0));
         const shed = street * share;

@@ -13,6 +13,7 @@ import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, o
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
+import { syncStreetRolls, tickStreetRolls, reconcileStreetRolls } from "./streetRolls";
 import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
@@ -658,7 +659,11 @@ function tickMonth(
   refreshDevelopmentFeasibility(s, parcels, bbls);
   refreshLandQueue(s, parcels, bbls);
   s.econ.playerNow = playerSpace(s, parcels);
+  // The street's tenants: who is where, and who failed (streetRolls.ts).
+  syncStreetRolls(s, parcels, bbls);
+  tickStreetRolls(s, parcels);
   tickEcon(s);
+  reconcileStreetRolls(s, parcels);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.

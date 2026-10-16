@@ -1978,6 +1978,14 @@ export interface Econ {
   failedSf?: Record<BuiltClass, number>;
   /** The street's representative tenants by class (tenantBooks.ts). */
   streetCohorts?: Partial<Record<BuiltClass, import("./tenantBooks").StreetCohort[]>>;
+  /** Every standing commercial building the player does not own, and its tenants (streetRolls.ts). */
+  streetRolls?: Record<string, import("./streetRolls").StreetRoll>;
+  /** Share of the street's let space whose tenants failed beyond the background this month, by class. */
+  streetFailShare?: Record<string, number>;
+  /** The street's recent move-outs, newest last, capped: tenants that went dark, and tenants that left at lease end. */
+  streetFailed?: { m: number; bbl: string; name: string; sf: number; use: BuiltClass; why?: "dark" | "left" }[];
+  /** The player's rolls last month, so a building sold carries its tenants to the street. */
+  heldTenants?: Record<string, Tenant[]>;
   /** Household spending on goods against the opening, from the cost of consumer credit. */
   hhCredit?: number;
   hhCreditRef?: number;
@@ -2840,6 +2848,8 @@ export interface Rival {
   // them mortal without giving twelve firms a rent roll each.
   occ?: number;          // portfolio occupancy, 0-1
   mktOcc?: number;       // what the market says their book should run at
+  /** How strongly their buildings draw the street's looking tenants: leasing care, a stretched desk, a leasing push (streetRolls.ts). */
+  leaseW?: number;
   condIdx?: number;      // how well they look after the bricks, 0-1
   capexYr?: number;      // what they spent on the buildings this year
   dumped?: number;       // buildings hit the tape in the CURRENT stress episode

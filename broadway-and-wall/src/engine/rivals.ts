@@ -1712,6 +1712,10 @@ export function markAsset(s: GameState, r: Rival, rec: ParcelRecord): { v: numbe
   // portfolio-wide operating delta onto it. A weak location stays weak even
   // when the rest of the book is full; a good operator can still outperform
   // the market by a few points across the portfolio.
+  // A BUILDING ON THE STREET HAS ITS OWN ROLL (streetRolls.ts): the value
+  // and the income above already read the tenants actually in it, and the
+  // firm's leasing shows up as who signs where. Nothing to carry on top.
+  if (s.econ.streetRolls?.[rec.bbl]) return { v, noi: noiAfterTaxYr(rec, s.econ, cond, v), occ: occupancy(rec, s.econ) };
   const bookMkt = Math.max(0.35, r.mktOcc ?? 0.88);
   const localMkt = Math.max(0.20, occupancy(rec, s.econ));
   const actual = Math.max(0.15, Math.min(0.995, localMkt + (r.occ ?? bookMkt) - bookMkt));
@@ -2181,40 +2185,56 @@ function castRoster(s: GameState, roster: { name: string; style: RivalStyle }[])
 function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   if (!r.bbls.length) { r.occ = undefined; return; }
   const care = paramsOf(r).care;
-  // where the market says their book should sit
-  let target = 0, n = 0, bookSf = 0;
+  // WHAT THEIR BUILDINGS ACTUALLY HOLD (streetRolls.ts), against where the
+  // market alone would put the same buildings. The book's occupancy was a
+  // number walked toward the market with a random anchor loss at a fixed
+  // hazard; it is now the tenants in their buildings, and an anchor walks
+  // when an anchor tenant's own books fail or its lease runs out.
+  const noRoll = { ...s.econ, streetRolls: undefined } as typeof s.econ;
+  let mkt = 0, act = 0, n = 0, bookSf = 0;
   for (const bbl of r.bbls) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-    target += occupancy(rec, s.econ); n++;
+    mkt += occupancy(rec, noRoll); act += occupancy(rec, s.econ); n++;
     bookSf += rec.bldgArea;
   }
   if (!n) { r.occ = undefined; return; }
-  r.mktOcc = target / n;
+  r.mktOcc = mkt / n;
+  r.occ = act / n;
   // A BOOK BIGGER THAN THE FIRM CAN RUN. Capacity is people as well as
   // deals: past `manageable` buildings (6 + 0.4 x Capacity — 26 at 50, 42 at
-  // 90) leasing slips half a point of occupancy a building, up to eight.
+  // 90) its leasing desk falls behind, and the street's tenants feel it as a
+  // weaker draw to its buildings (streetRolls.ts reads `leaseW`).
   const manageable = r.sheet ? 6 + 0.4 * r.sheet.capacity : Infinity;
   const stretched = Math.min(0.08, 0.005 * Math.max(0, r.bbls.length - manageable));
-  target = r.mktOcc * (0.965 + 0.05 * care.lease) - stretched;
-  if (r.occ === undefined) r.occ = target;
-  r.occ += (target - r.occ) * 0.055 + rrange(s, -0.004, 0.004, "rivals");
-  // AN ANCHOR WALKS. Rare, expensive, and the reason a portfolio occupancy is
-  // a story rather than a number that tracks the index.
-  if (rng(s, "rivals") < 0.006 / Math.max(1, Math.sqrt(r.bbls.length) / 2)) {
-    const drop = rrange(s, 0.05, 0.14, "rivals");
-    r.occ -= drop;
-    // The size is the book's own: the occupancy that left, times the floor
-    // area it left from. No name — a rival's book has none to give.
-    noteTenantMove(s, { kind: "walk", who: r.name, sf: Math.round(drop * bookSf), pts: +(drop * 100).toFixed(1) });
-    if (newsChance(s, "tenant:" + r.id, 0.35)) {
-      s.news.unshift({
-        q: s.month, kind: "event",
-        text: `${r.name} has lost a major tenant. Their book is running at ${(Math.max(0, r.occ) * 100).toFixed(0)}% — somebody in this town is about to have space to fill.`,
-      });
+  const lagNow = (r.mktOcc ?? 0) - (r.occ ?? 0);
+  const pushing = lagNow > 0.03 && !r.stressMs && (r.aum ?? 0) > 0 && r.cash > 0;
+  r.leaseW = (0.85 + 0.3 * (care.lease ?? 0.5)) * (1 - 6 * stretched) * (pushing ? 1 + 0.35 * care.lease * Math.min(1.5, lagNow / 0.06) : 1);
+  // AN ANCHOR WALKS — a real one now: the biggest of their tenants who went
+  // dark or moved out this month (streetRolls.ts streetFailed), if it held a
+  // real share of the building.
+  {
+    const own = new Set(r.bbls);
+    let big: { bbl: string; name: string; sf: number; why?: string } | null = null;
+    for (let i = (s.econ.streetFailed?.length ?? 0) - 1; i >= 0; i--) {
+      const f = s.econ.streetFailed![i];
+      if (f.m < s.month) break;
+      if (!own.has(f.bbl)) continue;
+      const rec = resolveRec(parcels, s, f.bbl);
+      if (!rec || f.sf < Math.max(8000, 0.2 * (rec.bldgArea || 0))) continue;
+      if (!big || f.sf > big.sf) big = f;
+    }
+    if (big) {
+      noteTenantMove(s, { kind: "walk", who: r.name, sf: Math.round(big.sf), pts: +(100 * big.sf / Math.max(1, bookSf)).toFixed(1) });
+      if (newsChance(s, "tenant:" + r.id, 0.35)) {
+        const rec = resolveRec(parcels, s, big.bbl);
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `${big.name} ${big.why === "left" ? "is moving out of" : "has gone dark at"} ${rec?.address ?? "one of their buildings"}, handing ${r.name} back ${Math.round(big.sf / 1000)}k sf. Their book is running at ${(Math.max(0, r.occ) * 100).toFixed(0)}% — somebody in this town is about to have space to fill.`,
+        });
+      }
     }
   }
-  r.occ = Math.max(0.2, Math.min(0.99, r.occ));
 
   // the bricks
   if (r.condIdx === undefined) r.condIdx = 0.72;
@@ -2225,13 +2245,12 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   // LEASING BEFORE BRICKS when the book is behind the market. Capex alone
   // could not fill empty floors — Wrenfield's century tutorial was a giant
   // that sat dark. A firm that is short of tenants spends on leasing first.
+  // The spend behind the leasing push above (`leaseW`): brokers' fees, a
+  // marketing budget, the free months that win the tenant.
   const lag = (r.mktOcc ?? 0) - (r.occ ?? 0);
   if (lag > 0.03 && !r.stressMs && aum > 0) {
     const leaseSpend = Math.round((0.0018 * aum * care.lease * Math.min(1.2, lag / 0.08)) / 12);
-    if (leaseSpend > 0 && r.cash > leaseSpend * 4) {
-      r.cash -= leaseSpend;
-      r.occ = Math.min(0.99, r.occ + 0.005 * care.lease * Math.min(1.5, lag / 0.06));
-    }
+    if (leaseSpend > 0 && r.cash > leaseSpend * 4) r.cash -= leaseSpend;
   }
   // a capital plan is roughly 30bps of gross assets a year, and it is the
   // first line cut when a firm is short

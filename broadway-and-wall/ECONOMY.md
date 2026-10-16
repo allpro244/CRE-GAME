@@ -3055,3 +3055,44 @@ nearer 1.6), output gap sd 2.3 (CBO ~2.2), unemployment mean 6.2 / p90 8.3.
 Tenant defaults (4 seeds x 12 years): weak 4.8%/yr, mid 1.5%, IG 0.6%; under a
 20% hold 16.5 / 5.8 / 2.4%. 8 seeds x 60 years: real pay 1.4-1.7x, no class on
 the vacancy bound.
+
+## Every building on the street has tenants (2026-10-16)
+
+The street's tenants were representative cohorts — six per trade and covenant,
+sized off the street's let space — and a building the player did not own had
+no tenants at all: its occupancy was the street-wide figure plus a fixed hash
+for its character, and a rival firm's book was one number walked toward the
+market with an anchor loss drawn at a fixed hazard.
+
+Now every standing commercial building the player does not own keeps a real
+rent roll (streetRolls.ts): named tenants with leases, bumps, covenants and the
+same hidden books the player's tenants keep. About 1,700-1,850 tenants on the
+small map; +6% per simulated month.
+
+- **Tenants live a month**: books run, failures are drawn off them (hashed on
+  the tenant, so the world's dice do not move), leases expire and renew about
+  55% of office, 65% of shop and 75% of shed space (CBRE/JLL; Prologis), or
+  the tenant leaves.
+- **The market says how much, the rolls say where.** The city's space market
+  stays the calibrated aggregate (it carries the regional stock off the map);
+  each month the street leases newcomers into vacant suites, weighted by
+  vacant space x the building's draw (overall score, its own character — the
+  dark lobby — and its owner's leasing desk), or sheds the space the market no
+  longer holds, tilted toward the weakest buildings. The rolls track the
+  market within ~0.5pt.
+- **What a buyer sees is what is there.** A listing, an appraisal and a deed
+  read the building's roll; as-is occupancy is the roll. A building the
+  player buys leaves the street; one they sell carries its tenants back, books
+  and all. A fresh delivery opens empty and leases up.
+- **Rival books are their buildings.** A firm's occupancy is its buildings'
+  rolls; its leasing care, an overstretched desk and a leasing push change
+  how strongly its buildings draw tenants. "Lost a major tenant" now names the
+  tenant and the building, from a real failure or move-out.
+- The street's failures above the background feed the space market as space
+  handed back, replacing the cohorts (still the fallback in a scratch economy).
+
+Measured: small buildings run lumpier than the model's hash did — a two-suite
+building with one suite empty is 50% let — so about a quarter of office
+buildings under 10k sf sit below 60% while the sf-weighted share below 60% is
+~8%. Larger buildings track the market. Also fixed on the way: the band
+stamp's mean premium went NaN when one lot had no reading.

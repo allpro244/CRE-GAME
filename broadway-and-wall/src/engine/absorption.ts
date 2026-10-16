@@ -179,7 +179,7 @@ function nbTable(s: GameState, parcels: ParcelTable, use: BuiltClass): Map<strin
   const model = demandModel(parcels);
   // At a neutral cycle and with no lease-up curve, so the shape is the
   // building stock's own and the cycle is added back analytically below.
-  const neutral = { ...s.econ, cycleDev: 0, m: undefined } as Econ;
+  const neutral = { ...s.econ, cycleDev: 0, m: undefined, streetRolls: undefined } as Econ;
   const bSf = new Map<string, number>(), bOcc = new Map<string, number>();
   for (const bbl of Object.keys(parcels)) {
     const rec = resolveRec(parcels, s, bbl);

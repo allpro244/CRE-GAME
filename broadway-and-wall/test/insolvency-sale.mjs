@@ -32,6 +32,9 @@ function setUp(seed) {
   // and a re-cut plat re-deals it.
   const pick = (gg) => gg.listings.map((l) => ({ l, rec: E.resolveRec(parcels, gg, l.bbl) }))
     .filter((x) => x.rec && x.rec.class === "office" && x.rec.bldgArea > 8000 && x.l.ask < 3_500_000)
+    // ...and LET: the street's buildings carry their real rolls now, and a
+    // half-empty one earns nothing a revolver can be written against.
+    .filter((x) => (x.l.roll ?? []).reduce((a, t) => a + t.sf, 0) >= 0.6 * E.useRentableSf(x.rec, "office"))
     // ...that a lender will actually put a note on. The premise is a building
     // carrying debt; in a tight-money year (a 10-11% loan index) a thinly let
     // office supports none at a 1.25x coverage, and closes all-cash.

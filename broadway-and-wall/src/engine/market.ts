@@ -5687,6 +5687,11 @@ export function tickEcon(s: GameState) {
     // So the queue is `wantedNow` (today's price, today's income) over what
     // the city can house.
     e.structTight[k] = Math.max(0, (wantedNow - housable) / Math.max(1, e.stock[k]));
+    // Where the town's firms ARE the market (streetRolls.ts), the queue is the
+    // firms actually looking that the empty floors could not take — not the
+    // aggregate equation's wish list. In a glut that is nothing, and rents
+    // fall as a glut's should.
+    if (firmsOnly) e.structTight[k] = Math.max(0, (firms!.seek - Math.max(0, housable - e.occupied[k])) / Math.max(1, e.stock[k]));
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;
     monthAbs[k] = absorb;
     monthComp[k] = delivered;

@@ -254,6 +254,8 @@ function tickFirms(s: GameState, parcels: ParcelTable) {
     (roll.ready ??= []).push({ use: k, sf: t.sf, readyM: m + Math.max(1, Math.round(reletMonths(k) * 0.5)) });
   };
 
+  // Headcount that closed or left town this month, by class — what new firms replace.
+  const lost: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
   // ---- 1. the firms in the street's buildings: books, failures, expiries
   for (const [bbl, roll] of Object.entries(R)) {
     const b = bld(bbl);
@@ -273,6 +275,7 @@ function tickFirms(s: GameState, parcels: ParcelTable) {
       if (age > 0 && age % 12 === 0) t.rentPsf = +(t.rentPsf * (1 + bumpOf(t) / 100)).toFixed(2);
       const f = tickTenantFin(e, t, m < (t.freeUntilM ?? -1) ? 0 : t.rentPsf * t.sf, e.creditIdx ?? 1);
       if (rng(s, "leasing") < tenantFailOdds(f, t.credit)) {
+        if (k in lost) lost[k] += firmHc(t);
         (e.streetFailed ??= []).push({ m, bbl, name: t.name, sf: t.sf, use: k, why: "dark", credit: t.credit });
         (e.failedSf ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] += t.sf;
         seeking.delete(t.fid!);
@@ -296,6 +299,7 @@ function tickFirms(s: GameState, parcels: ParcelTable) {
         // Closes or leaves town — more of them when the town has more firms than its payrolls support.
         const exitP = Math.min(0.5, EXIT_BASE[k] * Math.pow(Math.max(0.5, Math.min(2, ratio(k))), 4));
         if (rng(s, "leasing") < exitP) {
+          lost[k] += firmHc(t);
           (e.streetFailed ??= []).push({ m, bbl, name: t.name, sf: t.sf, use: k, why: "left" });
           vacate(roll, t);
           continue;
@@ -324,7 +328,8 @@ function tickFirms(s: GameState, parcels: ParcelTable) {
     }
     roll.t = keep;
   }
-  // Seekers whose firm is gone; new firms that ran out of patience.
+  // Seekers whose firm is gone; new firms that ran out of patience (they settle elsewhere).
+  for (const k of e.seekers) if (k.t && !k.from && m - k.since > PATIENCE_M[k.use]) lost[k.use] += firmHc(k.t);
   e.seekers = e.seekers.filter((k) => seeking.get(k.fid) === k
     && (k.from ? !!R[k.from]?.t.some((t) => t.fid === k.fid) : !!k.t)
     && (k.from || m - k.since <= PATIENCE_M[k.use]));
@@ -379,10 +384,15 @@ function tickFirms(s: GameState, parcels: ParcelTable) {
     const target = d.ref * share;
     sp.ratio = hc[k] / Math.max(1, target);
     const gap = target - hc[k];
-    if (!(gap > 0)) continue;
+    // NEW FIRMS REPLACE THE ONES THAT CLOSE, AND FILL WHAT THE TOWN'S GROWTH
+    // ADDS. US establishment births and deaths each run ~8-10% a year and
+    // track each other (Census BDS); formation that only chased the shortfall
+    // left the town permanently a few per cent short of the firms its payrolls
+    // support, and its floors that much emptier than the market's own rate.
+    let form = gap / FORM_M[k] + lost[k] * Math.min(1, target / Math.max(1, hc[k]));
+    if (!(form > 0)) continue;
     // New firms, sized off the city's distribution of requirements, shopping
     // for space across the quality the town has.
-    let form = gap / FORM_M[k];
     const capAll = scores[k].reduce((a, x) => a + x.cap, 0);
     for (let guard = 0; guard < 60 && form > 0; guard++) {
       let u = rng(s, "leasing") * capAll, q = 50;
@@ -751,7 +761,12 @@ function growOpeningStreet(s: GameState, parcels: ParcelTable) {
     }
     for (const h of Object.values(s.holdings)) for (const t of h.tenants ?? []) if (useOf(t) === k) { ensureFirm(s, t); hc += firmHc(t); }
     const share = Math.min(1, (cap + (e.playerNow?.sf?.[k] ?? 0)) / Math.max(1, e.stock?.[k] ?? cap));
-    if (hc > 0 && share > 0) demandAt[k] = { ref: hc / share, eff: 1, raw: 1 };
+    // The town at the size its space market opens at: the firms that hold
+    // what the city's opening occupancy says is held, plus the few per cent
+    // that are always between suites.
+    const held = (e.occupied?.[k] ?? 0) * share;
+    const want = held > 0 ? held * 1.03 : hc;
+    if (want > 0 && share > 0) demandAt[k] = { ref: want / share, eff: 1, raw: 1 };
   }
   e.demandAt = demandAt;
   const housed = Object.values(e.flatRolls ?? {}).reduce((a, f) => a + f.occ, 0);
@@ -768,6 +783,17 @@ function growOpeningStreet(s: GameState, parcels: ParcelTable) {
     e.demandAt = savedDemand;
     // What happened before the game is history, not this month's news.
     e.streetFailed = [];
+    // ...and the market opens on what the firms hold, so its first month
+    // does not restate the city's occupancy in one step.
+    for (const k of ["office", "retail"] as const) {
+      const sp = e.streetSpace?.[k];
+      if (!sp || !e.occupied || !e.stock?.[k]) continue;
+      const pOcc = e.playerNow?.occ?.[k] ?? 0;
+      e.occupied[k] = Math.min(e.stock[k], sp.let + pOcc);
+      if (e.cityVac) e.cityVac[k] = Math.max(0, Math.min(0.45, 1 - e.occupied[k] / e.stock[k]));
+      if (e.streetVac) e.streetVac[k] = Math.max(0, Math.min(0.45, 1 - sp.let / Math.max(1, sp.cap)));
+      if (e.pool) e.pool[k] = e.occupied[k] + sp.seek;
+    }
     e.streetSpace = undefined;
   }
 }

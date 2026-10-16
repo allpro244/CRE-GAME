@@ -45,8 +45,8 @@ import { START_YEAR } from "./types";
 import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, assetValue, useOccupancy, N_BANDS } from "./value";
 import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, firmCredit, pickSector, pickName, termBandM, concessionPressure } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
-import { tickTenantFin, tenantFailOdds } from "./tenantBooks";
-import { rng, rrange, reletMonths, dealSlack, recordDeal } from "./market";
+import { tickTenantFin, tenantFailOdds, entrantMargin } from "./tenantBooks";
+import { rng, rrange, reletMonths, dealSlack, recordDeal, FIRM_PROFILE } from "./market";
 import { staleDiscount } from "./absorption";
 import { tenantQualityTerms } from "./bands";
 import { drawTenantSf, sizeScale } from "./plates";
@@ -96,7 +96,9 @@ const HOLDOVER_M = 6;
  */
 const MOVE_BASE: Record<Comm, number> = { office: 0.36, retail: 0.26, industrial: 0.18 };
 /** Share of expiring firms that close or leave town in a town with exactly the firms its payrolls support. */
-const EXIT_BASE: Record<Comm, number> = { office: 0.05, retail: 0.07, industrial: 0.05 };
+/** Of the sheds' leases that end, the share whose tenants relocate within the region rather than renew. */
+const SHED_MOVE = 0.3;
+const EXIT_BASE: Record<Comm, number> = { office: 0.05, retail: 0.07, industrial: SHED_MOVE };
 /** Months for the town's want of space to turn into firms looking for it (market.ts DEMAND_FORM_M). */
 const FORM_M: Record<Comm, number> = { office: 9, retail: 6, industrial: 6 };
 /** Score points between the space a firm shops for and a building, per e-fold of its interest. */
@@ -398,6 +400,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   }
   e.tradeEmpPrev = Object.fromEntries(Object.entries(e.firmBooks ?? {}).map(([sec, b]) => [sec, b.emp]));
   const trade: Record<Comm, { r: number; grow: number; w: number }> = { office: { r: 1, grow: 0, w: 0 }, retail: { r: 1, grow: 0, w: 0 }, industrial: { r: 1, grow: 0, w: 0 } };
+  const secW: Partial<Record<Comm, Partial<Record<string, number>>>> = {};
   const tradeAdd = (t: Tenant) => {
     const k = useOf(t);
     if (!(k in trade)) return;
@@ -405,6 +408,8 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const x = trade[k];
     x.r = (x.r * x.w + r * h) / Math.max(1e-9, x.w + h); x.w += h;
     x.grow += h * (r - 1) * 0.5;
+    const ws = (secW[k] ??= {});
+    ws[t.sector] = (ws[t.sector] ?? 0) + h;
   };
   let jobs = 0;
   for (const roll of Object.values(R)) for (const t of roll.t) { tradeAdd(t); const k = useOf(t); if (k in SF_PER_JOB) jobs += firmHc(t) / SF_PER_JOB[k]; }
@@ -429,20 +434,39 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     if (!scores[k].length) continue;
     // THE OPENING ONLY (growOpeningStreet): before the game the town is grown
     // to the size its opening space market says it is.
-    // SHEDS ARE A REGIONAL MARKET, ALWAYS: most of the class's floor is off
-    // the map and its tenants are the region's distributors, so the sheds on
-    // the street fill to their share of the region's demand (and shed
-    // tenants leave faster when there are more of them than it supports).
-    // Firms formed only from the town's own trades left new sheds on the map
-    // empty while the region's market read short of space — 45% vacancy and
-    // rents tripling, measured on four of eight 60-year runs.
+    // THE OPENING: before the game the town is grown to the size its opening
+    // space market says it is.
     let fill = 0;
-    if ((opening || k === "industrial") && d) {
+    if (opening && d) {
       const pCap = e.playerNow?.sf?.[k] ?? 0;
       const share = Math.min(1, (sp.cap + pCap) / Math.max(1, e.stock[k]));
-      const target = d.ref * share;
-      fill = Math.max(0, target - hc[k]) / FORM_M[k];
-      if (k === "industrial") sp.ratio = hc[k] / Math.max(1, target);
+      fill = Math.max(0, d.ref * share - hc[k]) / FORM_M[k];
+    }
+    // SHEDS ARE A REGIONAL MARKET, AND ITS FIRMS CHOOSE WHERE TO BE
+    // (2026-10-16). Most of the class's floor is off the map; its tenants are
+    // the region's distributors. Each month some of them are on the move —
+    // the share of the region's let floor whose leases end and who relocate
+    // (SHED_MOVE of each year's expiries, on five-year leases), the sheds on
+    // the map whose tenants leave or close, and the region's net new demand —
+    // and each mover takes the empty floor it finds: the map's sheds get the
+    // movers in proportion to their share of the region's empty floor. That
+    // is a matching market, not a quota: the map fills when it has the space
+    // and the region is tight, and empties when the region has better to offer.
+    // (It replaced a fill toward the map's share of regional demand, itself
+    // there because firms formed only from the town's own trades left new
+    // sheds empty — 45% vacancy and rents tripling on four of eight runs.)
+    let shedMovers = 0;
+    if (!opening && k === "industrial" && d) {
+      const pCap = e.playerNow?.sf?.[k] ?? 0, pLet = e.playerNow?.occ?.[k] ?? 0;
+      let letMap = 0;
+      for (const roll of Object.values(R)) for (const t of roll.t) if (useOf(t) === k) letMap += t.sf;
+      const mapCap = sp.cap + pCap, occAll = e.occupied?.[k] ?? 0;
+      const offCap = Math.max(0, (e.stock?.[k] ?? 0) - mapCap), offOcc = Math.max(0, occAll - letMap - pLet);
+      const avMap = Math.max(0, mapCap - letMap - pLet), avOff = Math.max(0, offCap - offOcc);
+      const growth = Math.max(0, d.ref - (e.shedRefPrev ?? d.ref)) * (d.raw ?? 1);
+      e.shedRefPrev = d.ref;
+      const pool = offOcc * SHED_MOVE / 60 + lost[k] * rawNow(s, k) + growth;
+      shedMovers = pool * avMap / Math.max(1, avMap + avOff) / rawNow(s, k);
     }
     // NEW FIRMS REPLACE THE ONES THAT CLOSE — fewer of them while the trades
     // they would join are shrinking — AND CARRY HALF OF WHAT THE TRADES ADD
@@ -451,19 +475,26 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     // half of net job creation is new firms (Census BDS; Haltiwanger, Jarmin
     // & Miranda 2013). Nothing here reads the old space-demand equation: the
     // town's firms grow as their trades and their own books let them.
-    // ...AND COME TO A TOWN WHOSE SPACE THEY CAN AFFORD. A firm's books are
-    // opened at the rent it signs (tenantBooks.ts), so they cannot tell an
-    // entrant that the town has become dear; the entry decision reads it
-    // here instead — the class's rent against the incomes it is paid from,
-    // the same burden that sets how much space a firm takes (market.ts
-    // affordRaw = burden^-0.4), at unit elasticity: half as many entrants
-    // where space costs twice as much of what they would earn, more where it
-    // is cheap (Hopenhayn 1992: entry until the expected value of a start
-    // covers its costs). Without it closures driven out by rent were replaced
-    // one for one at the same rent, and shop rents tripled in real terms
-    // over twenty-five years at 3-7% vacancy (measured).
-    const entry = k === "industrial" || !d ? 1 : Math.max(0.25, Math.min(1.6, Math.pow(d.raw ?? 1, 2.5)));
-    let form = Math.max(0, lost[k] + trade[k].grow) * entry + fill;
+    // ...AND START WHERE A START PAYS. Entry follows what a new firm in the
+    // town's trades would clear here today — its trade's normal margin less
+    // what today's rent takes of a head's sales (tenantBooks entrantMargin),
+    // at the footage it would take at that rent — against the trade's normal
+    // margin: half the starts where a start earns half the usual margin, none
+    // where it would lose money, more where space is cheap against what is
+    // sold (Hopenhayn 1992: entry until the expected value of a start covers
+    // its cost). Without an entry decision, closures driven out by rent were
+    // replaced one for one at the same rent, and shop rents tripled in real
+    // terms over twenty-five years at 3-7% vacancy (measured).
+    let entry = 1;
+    if (k !== "industrial" && d) {
+      let mg = 0, mg0 = 0;
+      for (const [sec, w] of Object.entries(secW[k] ?? {})) {
+        mg += w! * entrantMargin(e, sec as Tenant["sector"], k, d.raw ?? 1);
+        mg0 += w! * FIRM_PROFILE[sec as Tenant["sector"]].margin;
+      }
+      if (mg0 > 0) entry = Math.max(0, Math.min(1.6, mg / mg0));
+    }
+    let form = k === "industrial" && !opening ? shedMovers : Math.max(0, lost[k] + trade[k].grow) * entry + fill;
     if (!(form > 0)) continue;
     // New firms, sized off the city's distribution of requirements, shopping
     // for space across the quality the town has.
@@ -716,7 +747,12 @@ export function playerTenantLeft(s: GameState, t: Tenant, bbl: string) {
 // household and tenure arithmetic (market.ts) — households are people, not
 // firms with books — and where they live is these flows.
 
-export interface FlatRoll { occ: number; vac?: number }
+/**
+ * A block of flats' roll: what is let, and the leases that let it — cohorts of
+ * flats signed the same month at the same rent ($/sf/yr), each on a one-year
+ * lease. `occ` is always the sum of the leases.
+ */
+export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: number; endM: number }[] }
 
 const MF_TURN = 0.45;
 const MF_LEASEUP = 0.08;
@@ -761,7 +797,7 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
     const m = s.month;
     const owners = new Map<string, NonNullable<GameState["rivals"]>[number]>();
     for (const r of s.rivals ?? []) for (const b of r.bbls) owners.set(b, r);
-    type F = { roll: FlatRoll; cap: number; w: number; unit: number; intake: number; lim: number };
+    type F = { roll: FlatRoll; cap: number; w: number; unit: number; intake: number; lim: number; mkt: number };
     const fs: F[] = [];
     let after = 0;
     for (const [bbl, roll] of Object.entries(e.flatRolls!)) {
@@ -770,15 +806,43 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       const cap = useRentableSf(rec, "multifamily");
       if (!(cap > 0)) continue;
       roll.occ = Math.min(cap, roll.occ);
-      // The month's move-outs: a renter's notice, a job elsewhere, a baby.
-      roll.occ = Math.max(0, roll.occ - roll.occ * MF_TURN / 12 * rrange(s, 0.6, 1.4, "leasing"));
+      const mkt = useRentPsfYr(rec, e, gradeOf(s, rec), "multifamily");
+      // The roll's leases (an old save, or a block that has just joined the
+      // street, carries only a count: its flats were let over the last year
+      // at about today's rent).
+      if (!roll.l) {
+        roll.l = [];
+        for (let i = 1; i <= 12; i++) if (roll.occ > 0) roll.l.push({ sf: roll.occ / 12, rent: +(mkt * rrange(s, 0.93, 1.01, "leasing")).toFixed(2), endM: m + i });
+      }
+      // THE MONTH'S EXPIRIES (2026-10-16). Each lease ending this month either
+      // renews — at today's rent for the block, less the discount a landlord
+      // gives a sitting tenant, and moved by how the last six months' deals
+      // went (market.ts dealSlack) — or moves out. About 55% of US renters
+      // renew (NMHC/RealPage retention), and a renter whose lease has fallen
+      // well under the market stays more often; one asked for much more goes.
+      // Each renewal and each new letting below is a deal the market reads.
+      const slack = dealSlack(e, "multifamily");
+      const keep: NonNullable<FlatRoll["l"]> = [];
+      for (const x of roll.l) {
+        if (x.endM > m) { keep.push(x); continue; }
+        const ask = mkt * slack * 0.97;
+        const pRenew = Math.max(0.3, Math.min(0.8, (1 - MF_TURN) - 0.8 * Math.log(ask / Math.max(0.01, x.rent))));
+        const stay = x.sf * pRenew * rrange(s, 0.85, 1.15, "leasing");
+        if (stay > 1) {
+          const rent = +Math.max(x.rent * 0.97, ask).toFixed(2);
+          keep.push({ sf: stay, rent, endM: m + 12 });
+          recordDeal(e, "multifamily", m, rent / Math.max(0.01, mkt), stay, true);
+        }
+      }
+      roll.l = keep;
+      roll.occ = keep.reduce((a, x) => a + x.sf, 0);
       const owner = owners.get(bbl);
       const care = owner ? owner.leaseW ?? 0.85 + 0.3 * (paramsOf(owner).care.lease ?? 0.5) : 1;
       const stale = staleDiscount(roll.vac === undefined ? 0 : m - roll.vac);
       const w = Math.exp((overallScore(rec, e, "multifamily") - 55) / 25) * Math.pow(1 / stale, 2) * care;
       const unit = Math.max(300, avgUnit(rec, cap));
       // A month's lettings: ~8% of the units of a big block, two flats of a small one.
-      fs.push({ roll, cap, w, unit, intake: 0, lim: Math.max(cap * MF_LEASEUP, unit * 2) });
+      fs.push({ roll, cap, w, unit, intake: 0, lim: Math.max(cap * MF_LEASEUP, unit * 2), mkt });
       after += roll.occ;
     }
     if (!fs.length) return;
@@ -788,7 +852,12 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       // Fewer households than last month: the extra leavers come out of the
       // least wanted blocks first.
       const tot = fs.reduce((a, f) => a + f.roll.occ / f.w, 0);
-      if (tot > 0) for (const f of fs) f.roll.occ = Math.max(0, f.roll.occ + gap * (f.roll.occ / f.w) / tot);
+      if (tot > 0) for (const f of fs) {
+        const occ = Math.max(0, f.roll.occ + gap * (f.roll.occ / f.w) / tot);
+        const k = f.roll.occ > 0 ? occ / f.roll.occ : 0;
+        for (const x of f.roll.l ?? []) x.sf *= k;
+        f.roll.occ = occ;
+      }
       gap = 0;
     }
     // Movers and new households take the empty flats.
@@ -801,8 +870,25 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       const take = Math.min(gap, pick.cap - pick.roll.occ, pick.unit * 4, pick.lim - pick.intake);
       if (!(take > 0)) break;
       pick.roll.occ += take; pick.intake += take; gap -= take;
+      // A new letting at the block's rent, as the last six months' deals have
+      // moved it, less the concession a block that has stood empty gives.
+      const rent = +(pick.mkt * dealSlack(e, "multifamily") * staleDiscount(pick.roll.vac === undefined ? 0 : m - pick.roll.vac)).toFixed(2);
+      (pick.roll.l ??= []).push({ sf: take, rent, endM: m + 12 });
+      recordDeal(e, "multifamily", m, rent / Math.max(0.01, pick.mkt), take);
     }
     for (const f of fs) {
+      // Same-month cohorts at one rent are one lease line; tiny remnants fold in.
+      if (f.roll.l) {
+        const byKey = new Map<string, { sf: number; rent: number; endM: number }>();
+        for (const x of f.roll.l) {
+          if (!(x.sf > 0.5)) continue;
+          const key = `${x.endM}|${x.rent}`;
+          const y = byKey.get(key);
+          if (y) y.sf += x.sf; else byKey.set(key, { ...x });
+        }
+        f.roll.l = [...byKey.values()].map((x) => ({ ...x, sf: Math.round(x.sf) }));
+        f.roll.occ = f.roll.l.reduce((a, x) => a + x.sf, 0);
+      }
       f.roll.occ = Math.round(f.roll.occ);
       const vacant = f.cap - f.roll.occ > f.unit;
       if (vacant && f.roll.vac === undefined) f.roll.vac = m;

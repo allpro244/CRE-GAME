@@ -350,7 +350,12 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     roll.t = keep;
   }
   // Seekers whose firm is gone; new firms that ran out of patience (they settle elsewhere).
-  for (const k of e.seekers) if (k.t && !k.from && m - k.since > PATIENCE_M[k.use]) lost[k.use] += firmHc(k.t);
+  // A firm that had been trading here and gave up looking has left town, and
+  // a new one replaces it like any other exit. A START-UP that never found a
+  // floor never traded here: replacing it as a closure kept the queue of
+  // the unhoused topped up for ever — measured, 400k sf of searchers beside
+  // 360k sf of empty shops, read as a shortage, rents up 70% at 25% vacancy.
+  for (const k of e.seekers) if (k.t && !k.from && k.why !== "new" && m - k.since > PATIENCE_M[k.use]) lost[k.use] += firmHc(k.t);
   e.seekers = e.seekers.filter((k) => seeking.get(k.fid) === k
     && (k.from ? !!R[k.from]?.t.some((t) => t.fid === k.fid) : !!k.t)
     && (k.from || m - k.since <= PATIENCE_M[k.use]));
@@ -424,11 +429,20 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     if (!scores[k].length) continue;
     // THE OPENING ONLY (growOpeningStreet): before the game the town is grown
     // to the size its opening space market says it is.
+    // SHEDS ARE A REGIONAL MARKET, ALWAYS: most of the class's floor is off
+    // the map and its tenants are the region's distributors, so the sheds on
+    // the street fill to their share of the region's demand (and shed
+    // tenants leave faster when there are more of them than it supports).
+    // Firms formed only from the town's own trades left new sheds on the map
+    // empty while the region's market read short of space — 45% vacancy and
+    // rents tripling, measured on four of eight 60-year runs.
     let fill = 0;
-    if (opening && d) {
+    if ((opening || k === "industrial") && d) {
       const pCap = e.playerNow?.sf?.[k] ?? 0;
       const share = Math.min(1, (sp.cap + pCap) / Math.max(1, e.stock[k]));
-      fill = Math.max(0, d.ref * share - hc[k]) / FORM_M[k];
+      const target = d.ref * share;
+      fill = Math.max(0, target - hc[k]) / FORM_M[k];
+      if (k === "industrial") sp.ratio = hc[k] / Math.max(1, target);
     }
     // NEW FIRMS REPLACE THE ONES THAT CLOSE — fewer of them while the trades
     // they would join are shrinking — AND CARRY HALF OF WHAT THE TRADES ADD
@@ -437,7 +451,19 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     // half of net job creation is new firms (Census BDS; Haltiwanger, Jarmin
     // & Miranda 2013). Nothing here reads the old space-demand equation: the
     // town's firms grow as their trades and their own books let them.
-    let form = Math.max(0, lost[k] + trade[k].grow) + fill;
+    // ...AND COME TO A TOWN WHOSE SPACE THEY CAN AFFORD. A firm's books are
+    // opened at the rent it signs (tenantBooks.ts), so they cannot tell an
+    // entrant that the town has become dear; the entry decision reads it
+    // here instead — the class's rent against the incomes it is paid from,
+    // the same burden that sets how much space a firm takes (market.ts
+    // affordRaw = burden^-0.4), at unit elasticity: half as many entrants
+    // where space costs twice as much of what they would earn, more where it
+    // is cheap (Hopenhayn 1992: entry until the expected value of a start
+    // covers its costs). Without it closures driven out by rent were replaced
+    // one for one at the same rent, and shop rents tripled in real terms
+    // over twenty-five years at 3-7% vacancy (measured).
+    const entry = k === "industrial" || !d ? 1 : Math.max(0.25, Math.min(1.6, Math.pow(d.raw ?? 1, 2.5)));
+    let form = Math.max(0, lost[k] + trade[k].grow) * entry + fill;
     if (!(form > 0)) continue;
     // New firms, sized off the city's distribution of requirements, shopping
     // for space across the quality the town has.

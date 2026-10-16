@@ -3235,3 +3235,31 @@ change, in both directions. The town's employment is the space its firms
 occupy divided by space per worker (office 230 sf, shops 420, sheds 550),
 scaled to the opening job count. Population and household spending follow
 from that, so the town's jobs are the sum of what its firms decide.
+
+What the 60-year runs caught, and what changed:
+
+- **Sheds stay a regional market.** Most industrial floor is off the map and
+  its tenants are the region's distributors. When industrial firms formed
+  only from the town's own trades, new sheds on the map stood empty while the
+  region read short of space. Four of eight towns showed 37–45% vacancy with
+  rents tripling. The sheds on the street now fill to their share of the
+  region's demand.
+- **The ledger's drift no longer switches markets.** Over decades the class
+  stock ledger runs 2–4% ahead of the floors on the map. At a 2% threshold,
+  that sliver alone sent shops back to the old aggregate equation, which read
+  a 10–40% shortage at 4–13% vacancy. Offices and shops now stay the firms'
+  market up to 10% off the map, with the sliver let at the street's own rate.
+- **Entry reads the cost of space.** A firm's books open at the rent it
+  signs, so they cannot tell an entrant that the town has become dear. Firms
+  forced out by rent were being replaced one for one at the same rent, and
+  shop rents tripled over 25 years at 3–7% vacancy. New firms now come in
+  proportion to how affordable the class's rent is against the incomes that
+  pay it. That is the same burden that sets space per worker, applied at unit
+  elasticity: half the entrants where space costs twice as much, more where
+  it is cheap (Hopenhayn 1992).
+- **A start-up that never found a floor is not a closure.** New firms that
+  run out of patience settle elsewhere. They were being counted as exits and
+  replaced, which kept the queue of unhoused firms topped up indefinitely.
+  On one run, 400k sf of searchers stood beside 360k sf of empty shops and
+  read as a shortage. A firm that traded here and then gave up looking is
+  still an exit.

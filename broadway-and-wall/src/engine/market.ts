@@ -5448,12 +5448,20 @@ export function tickEcon(s: GameState) {
     // mapped ones are the firms'.
     const firms = k !== "multifamily" ? e.streetSpace?.[k] : undefined;
     const offShare = firms ? Math.max(0, 1 - (firms.cap + (e.playerNow?.sf?.[k] ?? 0)) / Math.max(1, e.stock[k])) : 0;
-    const firmsOnly = !!firms && offShare < 0.02;
+    // The class's ledger and the map drift a few per cent apart over decades
+    // (deliveries and demolitions are booked to the stock as they happen);
+    // at 2% that sliver alone sent the shops back to the aggregate equation,
+    // which no longer describes the town's firms, and it read a 10-40%
+    // shortage at 4-13% vacancy (retail rents x2.7 in six years, measured).
+    // The offices and shops stay the firms' market; the sliver off the map is
+    // let as the street is.
+    const firmsOnly = !!firms && offShare < 0.10;
     if (firms && !firmsOnly) e.occupied[k] = (e.aggOcc ??= {})[k] ?? e.occupied[k];
     let absorb = 0;
     if (firmsOnly) {
       const before = e.occupied[k];
-      e.occupied[k] = Math.min(e.stock[k], firms!.let + (pNow ?? 0));
+      const onMap = firms!.cap + (e.playerNow?.sf?.[k] ?? 0), letMap = firms!.let + (pNow ?? 0);
+      e.occupied[k] = Math.min(e.stock[k], letMap + Math.max(0, e.stock[k] - onMap) * Math.min(1, letMap / Math.max(1, onMap)));
       absorb = e.occupied[k] - before;
       e.pool[k] = e.occupied[k] + firms!.seek;
       if (pNow !== undefined) (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;

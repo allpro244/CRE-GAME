@@ -259,4 +259,4 @@ export function tickStreetTenants(e: Econ, k: "office" | "retail" | "industrial"
 }
 
 /** The background odds already carried by a market's ordinary churn. */
-const BACKGROUND_FAIL: Record<Credit, number> = { 2: 0.00012, 1: 0.0005, 0: 0.0012 };
+export const BACKGROUND_FAIL: Record<Credit, number> = { 2: 0.00012, 1: 0.0005, 0: 0.0012 };

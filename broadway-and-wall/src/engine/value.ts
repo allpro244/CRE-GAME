@@ -2483,7 +2483,41 @@ export function leaseUpCurve(ageYears: number, apt: boolean): number {
   return clamp(0.2 + 0.8 * Math.pow(ageYears / span, 0.75), 0.2, 1);
 }
 
+/**
+ * A building's own character for a use — the persistent part of how full it
+ * runs against the market: ±11pp of idiosyncrasy and one building in eight
+ * troubled, recentred so the stock's mean is the market's. The street's
+ * leasing (streetRolls.ts) draws tenants toward it and away from it.
+ */
+export function occCharacter(rec: ParcelRecord, use: BuiltClass): number {
+  const apt = use === "multifamily";
+  const [u, u2] = occHashes(rec.bbl, use);
+  const idio = (apt ? 0.12 : 0.22) * (u - 0.62);
+  const trouble = u2 < 0.12 ? (apt ? 0.14 : 0.28) * (1 - u2 / 0.12) : 0;
+  const shapeMean = -0.12 * (apt ? 0.12 : 0.22) - 0.06 * (apt ? 0.14 : 0.28);
+  return idio - trouble - shapeMean;
+}
+
+/** Share of a use's rentable space let on a street building's own roll (streetRolls.ts), or undefined. */
+export function streetLetShare(rec: ParcelRecord, econ: Econ, use: BuiltClass): number | undefined {
+  if (use === "multifamily") return undefined;
+  const roll = econ.streetRolls?.[rec.bbl];
+  if (!roll) return undefined;
+  const cap = useRentableSf(rec, use);
+  if (!(cap > 0)) return undefined;
+  let l = 0;
+  for (const t of roll.t) if ((t.use ?? "office") === use) l += t.sf;
+  return Math.max(0, Math.min(1, l / cap));
+}
+
 export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, stabilised = false): number {
+  // THE STREET'S BUILDINGS HAVE TENANTS NOW (streetRolls.ts). As-is, a
+  // standing building the player does not own is exactly as full as its own
+  // roll — the tenants a listing discloses and an appraiser counts. What
+  // follows is the model's read, kept for the stabilised question (where the
+  // building settles once its calendar is behind it) and for any building
+  // with no roll: the player's own, a scheme on paper, a scratch economy.
+  if (!stabilised) { const roll = streetLetShare(rec, econ, use); if (roll !== undefined) return roll; }
   const apt = use === "multifamily";
   // The swing*cycleDev term died here (ECONOMY.md): with the vacancy wire
   // below live, it counted the cycle twice — cityVac already carries the

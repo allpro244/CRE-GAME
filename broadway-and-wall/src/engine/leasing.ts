@@ -716,6 +716,22 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
     holding.resRentPsf = marketRentPsfYr(rec, s.econ, holding.condition, holding.condIdx);
   }
   if (!isCommercial(rec)) return;
+  // THE STREET KEEPS REAL ROLLS NOW (2026-10-15, streetRolls.ts). A standing
+  // building that is not the player's carries its own tenants month to month;
+  // what a listing discloses, an appraiser reads and a buyer closes on is
+  // that roll, not a fresh draw. Copies, so the street's tenants are not
+  // shared with the paper.
+  const street = s.econ.streetRolls?.[rec.bbl];
+  if (street) {
+    for (const t of street.t) {
+      const c = structuredClone(t);
+      holding.tenants.push(c);
+      if (settle) moveDeposit(s, holding, c.deposit ?? 0);
+    }
+    assignTenantFloors(rec, holding.tenants);
+    blocksOf(rec, holding);
+    return;
+  }
   // A building in place has a rent roll per component: the shops at grade were
   // let to shopkeepers at retail rents on retail terms, and the floors above
   // to firms at office rents. One blended roll described neither.
@@ -807,6 +823,36 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
   }
   assignTenantFloors(rec, holding.tenants);
   blocksOf(rec, holding);
+}
+
+/**
+ * ONE NEW TENANT FOR A STREET BUILDING (streetRolls.ts), drawn the way a
+ * standing roll's tenants are: size off the city's distribution at this
+ * building's score, sector off the class, covenant off the location and the
+ * building, rent at today's market for this building. Runs on whatever stream
+ * the caller has seeded (the street desk uses a private one).
+ */
+export function streetNewTenant(s: GameState, rec: ParcelRecord, cond: Condition, condIdx: number, use: BuiltClass, maxSf: number): Tenant | null {
+  const floorSf = minLettableSf(rec, use);
+  if (maxSf < Math.min(floorSf, 800)) return null;
+  const stack = stacksOf(rec).find((st) => st.use === use);
+  let sf = drawTenantSf(s, use, stack?.plateSf ?? maxSf, maxSf, sizeScale(overallScore(rec, s.econ, use)));
+  sf = Math.min(sf, maxSf);
+  if (maxSf - sf < floorSf) sf = maxSf;
+  if (sf < 1) return null;
+  const vessel = { condition: cond, condIdx, tenants: [], costBasis: 0, assessed: assetValue(rec, s.econ, cond) } as unknown as Holding;
+  const market = useRentPsfYr(rec, s.econ, cond, use, condIdx);
+  const sector = pickSector(s, use);
+  const credit = rollCredit(s, demandLinear(rec.demandScore), buildingScore(rec, vessel, s).score);
+  return {
+    name: pickName(s, sector), use, sector, credit, sf: Math.round(sf),
+    rentPsf: +(market * rrange(s, 0.90, 1.0, "leasing")).toFixed(2),
+    net: use === "office" ? rng(s, "leasing") < 0.75 : rng(s, "leasing") < 0.4,
+    recovery: rollRecovery(s, use),
+    baseStopPsf: +stopPsfNow(rec, s.econ, vessel, use).toFixed(2),
+    startM: s.month, endM: s.month + Math.round(rrange(s, 36, 120, "leasing")),
+    deposit: depositFor(s, market, sf, credit),
+  };
 }
 
 export function vacantSf(rec: ParcelRecord, h: Holding): number {

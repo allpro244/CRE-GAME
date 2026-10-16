@@ -62,6 +62,9 @@ export function stampBands(s: GameState, parcels: ParcelTable) {
     const sc = overallScore(r, e, k, idx);
     const b = Math.min(N_BANDS - 1, Math.floor(sc / 10));
     const prem = locationRentMult(r, e, k) * plateRentMult(r, k) * condMultAt(idx) * specRentMult(r.buildSpec);
+    // A lot with no reading (a spec or plate the tables do not know) is left
+    // out rather than poisoning the class's mean premium with a NaN.
+    if (!Number.isFinite(prem) || !(r.bldgArea > 0)) continue;
     sf[k][b] += r.bldgArea; pw[k][b] += r.bldgArea * prem;
   }
   const out = {} as Record<BuiltClass, { share: number[]; prem: number[]; mean: number }>;

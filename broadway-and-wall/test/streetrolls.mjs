@@ -24,14 +24,25 @@ const ok = (name, cond, detail = "") => {
 const COMM = ["office", "retail", "industrial"];
 
 let g = E.firstListings(E.newGame(7, parcels, 3e7, { sandbox: true }, { citySize: "small", cityLots: bbls.length }), parcels, bbls);
-for (let m = 0; m < 30; m++) { g = E.advanceMonth(g, parcels, bbls, adjacency); if (g.gameOver) g = { ...g, gameOver: null, cash: 1e9 }; }
+// 0. The opening tape discloses the tenants who are actually there.
+{
+  const L = g.listings.filter((l) => g.econ.streetRolls?.[l.bbl]?.t.length && l.roll);
+  const same = L.filter((l) => JSON.stringify(l.roll.map((t) => t.name).sort()) === JSON.stringify(g.econ.streetRolls[l.bbl].t.map((t) => t.name).sort()));
+  ok("opening listings disclose the street's own tenants", L.length > 0 && same.length === L.length, `${same.length} of ${L.length}`);
+}
+let moved = 0;
+for (let m = 0; m < 30; m++) {
+  g = E.advanceMonth(g, parcels, bbls, adjacency); if (g.gameOver) g = { ...g, gameOver: null, cash: 1e9 };
+  moved += (g.econ.streetFailed ?? []).filter((x) => x.m === g.month - 1 && x.to).length;
+}
 const e = g.econ;
 const R = e.streetRolls ?? {};
 const n = Object.values(R).reduce((a, r) => a + r.t.length, 0);
 ok("the street carries named tenants", Object.keys(R).length > 200 && n > 500, `${Object.keys(R).length} buildings, ${n} tenants`);
 
-// 1. The rolls add up to the market.
-for (const k of COMM) {
+// 1. The rolls ARE the market for offices and shops — every foot of both is
+//    on the map; sheds carry the region's off-map stock on the aggregate.
+for (const k of ["office", "retail"]) {
   let cap = 0, let_ = 0;
   for (const [bbl, r] of Object.entries(R)) {
     const rec = E.resolveRec(parcels, g, bbl);
@@ -41,7 +52,20 @@ for (const k of COMM) {
   }
   if (cap < 50_000) continue;
   const occ = let_ / cap, mkt = 1 - (e.streetVac?.[k] ?? 0);
-  ok(`${k}: the street's rolls run at the market's occupancy`, Math.abs(occ - mkt) < 0.012, `rolls ${(occ * 100).toFixed(1)}% vs market ${(mkt * 100).toFixed(1)}%`);
+  ok(`${k}: the street's rolls are the market's occupancy`, Math.abs(occ - mkt) < 0.002, `rolls ${(occ * 100).toFixed(1)}% vs market ${(mkt * 100).toFixed(1)}%`);
+}
+
+// 1b. Firms move between named buildings, and new ones form and look.
+ok("firms move between the street's buildings", moved > 20, `${moved} moves in 30 months`);
+ok("firms are looking for space", (e.seekers ?? []).length > 0, `${(e.seekers ?? []).length} looking`);
+// 1c. The blocks of flats house the town's renters.
+{
+  const flats = Object.values(e.flatRolls ?? {}).reduce((a, f) => a + f.occ, 0);
+  const housed = e.occupied.multifamily - (e.playerNow?.occ?.multifamily ?? 0);
+  ok("the street's blocks of flats house the town's renters", Math.abs(flats - housed) / housed < 0.01, `${Math.round(flats)} vs ${Math.round(housed)}`);
+  const occ = Object.entries(e.flatRolls).map(([b, f]) => f.occ / E.useRentableSf(E.resolveRec(parcels, g, b), "multifamily")).sort((a, b) => a - b);
+  const med = occ[Math.floor(occ.length / 2)];
+  ok("blocks of flats run near the market, with a spread", med > 0.85 && occ[Math.floor(occ.length * 0.1)] < med, `p10 ${occ[Math.floor(occ.length * 0.1)].toFixed(2)} median ${med.toFixed(2)}`);
 }
 
 // 2. A street building's as-is occupancy is its roll.

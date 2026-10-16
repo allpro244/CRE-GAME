@@ -3096,3 +3096,60 @@ building with one suite empty is 50% let — so about a quarter of office
 buildings under 10k sf sit below 60% while the sf-weighted share below 60% is
 ~8%. Larger buildings track the market. Also fixed on the way: the band
 stamp's mean premium went NaN when one lot had no reading.
+
+## The town's firms decide what is let (2026-10-16)
+
+The street's rolls (previous section) were still shared out from the city's
+aggregate: the space market decided how much was let and the rolls decided
+where, newcomers were conjured to fill the gap, and a tenant who left
+vanished. Now the firms are the market (streetRolls.ts).
+
+- **Firms, not leases.** Every tenant is a firm with an id that it keeps when
+  it moves. Its headcount follows its trade's payroll; the space it needs is
+  that headcount at the space per head it chose when it signed, scaled by how
+  today's rent compares (the same rent response as the city's demand
+  equation).
+- **Expiries are decisions.** A firm renews in place, resized to its need if
+  the building has the room. Or it goes looking while it holds over: because
+  it has outgrown the building, because it can afford better (flight to
+  quality), because it must cut its rent, or for the ordinary reasons a share
+  of every roll moves. In a town with more firms than its payrolls support,
+  more of them close or leave. A firm that outgrows its suite mid-lease takes
+  the space next door or looks.
+- **Formation.** New firms form, and arrive from outside, at the pace the
+  town's payrolls (and location, income and long-run shifts) call for more
+  space than its firms hold. Half are sized by the suites actually on offer,
+  as start-ups are.
+- **One pool, one search.** Every firm looking tours the empty suites, the
+  street's and the player's. Your leasing desk's prospects are firms from this
+  pool, and a firm you turn down may sign down the street. It signs where the
+  building's quality is closest to what it shops for, the space is there and
+  the price is keen. Each building's ask is its market rent, marked down for
+  how long the space has sat, with free rent at the market's concession level
+  and a discount from a landlord in trouble. A firm that finds nothing within
+  its patience leaves town. A tenant that leaves your building goes looking,
+  and the paper reports where it lands. The old "they are taking space at
+  (a random building)" line is gone.
+- **Vacancy is what is left.** Office and shop occupancy is the sum of what
+  the town's firms hold; nothing reconciles it to an aggregate. Sheds are
+  half and half: the mapped ones are the firms', the region's off-map stock
+  stays on the aggregate. The quality bands' stock and tenants are measured
+  off the buildings.
+- **Failures are the books.** Each firm's sales run on its trade's plus a
+  persistent shock of its own (monthly persistence 0.985; about ±19% for a
+  small unrated firm, less for bigger, investment-grade names, which sell to
+  more customers). The fixed background failure odds are gone, apart from a
+  few hundredths of a per cent for fraud or a founder's death. Measured, 2
+  seeds x 12 years: weak 5.3-6.0%/yr, mid 0.9-1.6%, investment grade
+  0.3-0.5%, several times higher in recession years.
+- **Blocks of flats keep their households.** Renters move out at about 45% a
+  year; movers and new households choose a block by quality, how keen its
+  rent is and its owner's letting. A new block leases at most ~8% of its
+  units, or two flats, a month. The number of households housed is the
+  city's household and tenure arithmetic; where they live is these flows.
+- **No drawn character.** The per-building hash (±11pp, "one building in
+  eight troubled") is gone. A building is 68% let because of who left it and
+  who would not come.
+- **The opening street is grown.** Before the first listing is written, the
+  town's firms and households live four years on the opening economy. The
+  opening tape discloses the tenants actually in each building.

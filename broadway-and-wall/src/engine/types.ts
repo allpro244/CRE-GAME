@@ -85,6 +85,17 @@ export interface FirmBook {
 
 export interface Tenant {
   name: string;
+  /**
+   * THE FIRM BEHIND THE LEASE (streetRolls.ts). A firm keeps its id, name and
+   * books when it moves between buildings — the street's, or the player's.
+   */
+  fid?: number;
+  /** Space the firm wanted at signing, at reference rents, per unit of `staffSign` — its headcount in feet. */
+  hcRef?: number;
+  /** Headcount (`staff`) when it last signed — the space it took was sized for these people. */
+  staffSign?: number;
+  /** Its trade's payroll index last month — headcount moves with the trade. */
+  empRef?: number;
   /** The quality the tenant shopped for, 1-100 (TENANT_TIERS_PLAN.md). */
   quality?: number;
   // Which part of the building they are in. A shop under a block of flats is
@@ -204,6 +215,8 @@ export interface TenantAsk {
 export interface LOI {
   id: number;
   bbl: string;
+  /** The firm from the town's looking pool, if the party came from it (streetRolls.ts). */
+  fid?: number;
   use?: BuiltClass;    // the component of the building they want
   /**
    * `expansion` is the sitting tenant asking for the space next door. It is a
@@ -1983,9 +1996,26 @@ export interface Econ {
   /** Share of the street's let space whose tenants failed beyond the background this month, by class. */
   streetFailShare?: Record<string, number>;
   /** The street's recent move-outs, newest last, capped: tenants that went dark, and tenants that left at lease end. */
-  streetFailed?: { m: number; bbl: string; name: string; sf: number; use: BuiltClass; why?: "dark" | "left" }[];
+  streetFailed?: { m: number; bbl: string; name: string; sf: number; use: BuiltClass; why?: "dark" | "left"; to?: string; credit?: Credit }[];
   /** The player's rolls last month, so a building sold carries its tenants to the street. */
   heldTenants?: Record<string, Tenant[]>;
+  /**
+   * FIRMS LOOKING FOR SPACE (streetRolls.ts): new firms, arrivals, and firms
+   * already in town that want to move — to grow, to trade up or down. One
+   * pool, toured by the street's buildings and the player's alike.
+   */
+  seekers?: import("./streetRolls").Seeker[];
+  nextFid?: number;
+  /** Every street block of flats and the flats let in it (streetRolls.ts). */
+  flatRolls?: Record<string, import("./streetRolls").FlatRoll>;
+  /** The player's flats' occupancy last month, so a block sold carries its households. */
+  heldFlats?: Record<string, number>;
+  /** What the town's firms want of each class at reference rents, and the rent response now (market.ts). */
+  demandAt?: Partial<Record<BuiltClass, { ref: number; eff: number; raw: number }>>;
+  /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */
+  streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] } }>>;
+  /** The region's sheds off the map, occupied, on the city aggregate (market.ts). */
+  aggOcc?: Partial<Record<BuiltClass, number>>;
   /** Household spending on goods against the opening, from the cost of consumer credit. */
   hhCredit?: number;
   hhCreditRef?: number;

@@ -2416,10 +2416,10 @@ export function flatsRollPsf(rec: ParcelRecord, econ: Econ, h: Holding): number 
 //   cycle    — the whole market breathes together, harder than before
 //   location — vacancy concentrates at the bottom of the market; a fringe
 //              building loses tenants FIRST and re-lets LAST
-//   character— a stable per-building idiosyncrasy. Some buildings simply do
-//              not lease well and never have; the hash keeps each one's
-//              trouble consistent across the whole game, so a 68% building
-//              is a 68% building every time you look at it.
+//   character— RETIRED 2026-10-16: a per-building hash stood in for why
+//              some buildings lease badly. The street's buildings now carry
+//              real rolls (streetRolls.ts), and a 68% building is 68% because
+//              of who left it and who would not come.
 // RETIRED. This was the level occupancy sat at, and it disagreed with
 // 1 - NATURAL_VAC by 1.5-6.0pp per class — see the derivation at `base` in
 // useOccupancy. The level now comes from NATURAL_VAC, which is the same number
@@ -2428,21 +2428,6 @@ export function flatsRollPsf(rec: ParcelRecord, econ: Econ, h: Holding): number 
 // numbers used to be: office 0.84, retail 0.89, multifamily 0.94, industrial
 // 0.87, against 0.885 / 0.915 / 0.955 / 0.930.
 
-/**
- * `occHash(bbl + use)` and `occHash("trouble:" + bbl + use)`, memoised per lot:
- * pure functions of the strings, and hashing them was a tenth of the pro forma.
- */
-const OCC_HASHES = new Map<string, Record<string, [number, number]>>();
-function occHashes(bbl: string, use: string): [number, number] {
-  let byUse = OCC_HASHES.get(bbl);
-  if (!byUse) { byUse = Object.create(null) as Record<string, [number, number]>; OCC_HASHES.set(bbl, byUse); }
-  return byUse[use] ??= [occHash(bbl + use), occHash("trouble:" + bbl + use)];
-}
-function occHash(key: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return ((h >>> 0) % 10000) / 10000;
-}
 /**
  * A BUILDING THAT OPENED THIS MONTH IS EMPTY.
  *
@@ -2483,24 +2468,14 @@ export function leaseUpCurve(ageYears: number, apt: boolean): number {
   return clamp(0.2 + 0.8 * Math.pow(ageYears / span, 0.75), 0.2, 1);
 }
 
-/**
- * A building's own character for a use — the persistent part of how full it
- * runs against the market: ±11pp of idiosyncrasy and one building in eight
- * troubled, recentred so the stock's mean is the market's. The street's
- * leasing (streetRolls.ts) draws tenants toward it and away from it.
- */
-export function occCharacter(rec: ParcelRecord, use: BuiltClass): number {
-  const apt = use === "multifamily";
-  const [u, u2] = occHashes(rec.bbl, use);
-  const idio = (apt ? 0.12 : 0.22) * (u - 0.62);
-  const trouble = u2 < 0.12 ? (apt ? 0.14 : 0.28) * (1 - u2 / 0.12) : 0;
-  const shapeMean = -0.12 * (apt ? 0.12 : 0.22) - 0.06 * (apt ? 0.14 : 0.28);
-  return idio - trouble - shapeMean;
-}
-
 /** Share of a use's rentable space let on a street building's own roll (streetRolls.ts), or undefined. */
 export function streetLetShare(rec: ParcelRecord, econ: Econ, use: BuiltClass): number | undefined {
-  if (use === "multifamily") return undefined;
+  if (use === "multifamily") {
+    const f = econ.flatRolls?.[rec.bbl];
+    if (!f) return undefined;
+    const cap = useRentableSf(rec, use);
+    return cap > 0 ? Math.max(0, Math.min(1, f.occ / cap)) : undefined;
+  }
   const roll = econ.streetRolls?.[rec.bbl];
   if (!roll) return undefined;
   const cap = useRentableSf(rec, use);
@@ -2540,15 +2515,13 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   // one and the town-wide `locIdxMean` is only the fallback.
   const locPivot = econ.locIdxMeanBy?.[use] ?? econ.locIdxMean ?? 0.62;
   const loc = 0.22 * (demandIdx(rec.demandScore) - locPivot);
-  // the building's own character, ±11pp commercial, ±6pp residential — and
-  // skewed downward, because the tail of this distribution is a tail of pain
-  const [u, u2] = occHashes(rec.bbl, use);
-  const idio = (apt ? 0.12 : 0.22) * (u - 0.62);
-  // ...and one building in eight is simply TROUBLED: the dark lobby, the
-  // unleasable plates, the entrance on the wrong street. These are the 50-65%
-  // buildings every market carries, they are persistent, and they are the
-  // entire value-add trade — the discount is real and so is the reason.
-  const trouble = u2 < 0.12 ? (apt ? 0.14 : 0.28) * (1 - u2 / 0.12) : 0;
+  // NO DRAWN CHARACTER (2026-10-16). This added a fixed per-building hash —
+  // ±11pp of idiosyncrasy and one building in eight "troubled" — standing in
+  // for what made one building fuller than another. Every standing building
+  // now has a roll of real tenants and households (streetRolls.ts), and how
+  // full it is is what they did: its location, its quality, its price, its
+  // owner. What is left here is the market's read for a building with no
+  // roll — the player's own, a scheme on paper — and the stabilised question.
   // THE SPACE MARKET WAS NOT WIRED TO A SINGLE BUILDING.
   //
   // econ.cityVac[use] is recomputed every month out of stock, deliveries,
@@ -2616,8 +2589,7 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   // between the two and nothing asserting they should agree. They are the same
   // quantity — how full this city's buildings are — and CLAUDE.md fake number 3
   // says one of two answers to that is fiction.
-  const shapeMean = -0.12 * (apt ? 0.12 : 0.22) - 0.06 * (apt ? 0.14 : 0.28);
-  const base = clamp((1 - natHere) + mktDelta + loc + idio - trouble - shapeMean, 0.28, 0.99);
+  const base = clamp((1 - natHere) + mktDelta + loc, 0.28, 0.99);
   // AS-IF-STABILISED IS THE SAME BUILDING WITHOUT THE CALENDAR. `stabilised`
   // asks for the occupancy this building runs at once it is no longer new —
   // which is what an appraiser means by the phrase, and what the stabilised

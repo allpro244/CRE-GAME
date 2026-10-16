@@ -5208,6 +5208,10 @@ export function tickEcon(s: GameState) {
     // friction)` made every delivery raise the cap and occupy the same
     // month. Dark floor keeps the looking book from counting a crane's
     // last pour as already let.
+    // What the town's firms want of this class at reference rents, and the
+    // rent response today — the street's firms form, size and resize off it
+    // (streetRolls.ts).
+    if (k !== "multifamily") (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw };
     if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     const housable = housableStock(e, k);
     const searchFringe = e.stock[k] * NATURAL_VAC[k] * 0.25;
@@ -5277,7 +5281,24 @@ export function tickEcon(s: GameState) {
     // change in what the player's buildings actually hold since last month is
     // the city's change too, before the street's absorption runs on the gap.
     const pNow = e.playerNow?.occ?.[k];
-    if (pNow !== undefined) {
+    // THE STREET'S FIRMS DECIDE WHAT IS LET (streetRolls.ts, 2026-10-16).
+    // Offices and shops are all on the map: what is occupied is what the
+    // town's firms hold — the street's rolls and the player's — and what is
+    // looking is the firms still searching. Sheds run half and half: the
+    // region's off the map stays on the aggregate below (`aggOcc`), the
+    // mapped ones are the firms'.
+    const firms = k !== "multifamily" ? e.streetSpace?.[k] : undefined;
+    const offShare = firms ? Math.max(0, 1 - (firms.cap + (e.playerNow?.sf?.[k] ?? 0)) / Math.max(1, e.stock[k])) : 0;
+    const firmsOnly = !!firms && offShare < 0.02;
+    if (firms && !firmsOnly) e.occupied[k] = (e.aggOcc ??= {})[k] ?? e.occupied[k];
+    let absorb = 0;
+    if (firmsOnly) {
+      const before = e.occupied[k];
+      e.occupied[k] = Math.min(e.stock[k], firms!.let + (pNow ?? 0));
+      absorb = e.occupied[k] - before;
+      e.pool[k] = e.occupied[k] + firms!.seek;
+      if (pNow !== undefined) (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;
+    } else if (pNow !== undefined) {
       const pPrev = e.playerOcc?.[k];
       if (pPrev !== undefined) e.occupied[k] = Math.max(0, e.occupied[k] + (pNow - pPrev));
       // The first count (a new game, or a save from before this): the total
@@ -5287,6 +5308,7 @@ export function tickEcon(s: GameState) {
         - (e.playerNow?.sf?.[k] ?? 0) * (e.occupied[k] / Math.max(1, e.stock[k])));
       (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;
     }
+    if (!firmsOnly) {
     // STREET TENANTS FAIL OFF THEIR OWN BOOKS (2026-10-15): representative
     // tenants per trade and covenant (tenantBooks.ts), the same accounts the
     // player's tenants keep. Their failures above the background the churn
@@ -5294,8 +5316,9 @@ export function tickEcon(s: GameState) {
     if (k !== "multifamily") {
       // From the street's own rolls when it keeps them (streetRolls.ts); the
       // representative cohorts only for a town with no mapped commercial stock.
-      const share = e.streetRolls && e.streetFailShare
-        ? (e.streetFailShare[k] ?? 0)
+      // The street's own firms fail off their own books (streetRolls.ts); the
+      // representative cohorts only for a town with no mapped commercial stock.
+      const share = e.streetRolls ? 0
         : tickStreetTenants(e, k, SECTOR_CLASSES[k] ?? [], e.sectorShare ?? {}, s.month);
       if (share > 0) {
         const street = Math.max(0, e.occupied[k] - (pNow ?? 0));
@@ -5306,7 +5329,7 @@ export function tickEcon(s: GameState) {
       }
     }
     const gapSf = e.pool[k] - e.occupied[k];
-    const absorb = clamp(gapSf / (gapSf > 0 ? MOVE_IN_M[k] : MOVE_OUT_M[k]), -0.03 * e.occupied[k], 0.03 * e.occupied[k])
+    absorb = clamp(gapSf / (gapSf > 0 ? MOVE_IN_M[k] : MOVE_OUT_M[k]), -0.03 * e.occupied[k], 0.03 * e.occupied[k])
       + e.occupied[k] * rrange(s, -0.0005, 0.0005);
     // FRICTIONAL VACANCY IS RESIDENCE TIME, not a rail. Suites sit dark
     // between tenants for `reletMonths`; new floor sits dark until it
@@ -5327,6 +5350,12 @@ export function tickEcon(s: GameState) {
     // count does not print a cliff.
     const next = clamp(e.occupied[k] + absorb, 0, Math.max(streetCap, Math.min(e.occupied[k], housable)));
     e.occupied[k] = next > streetCap ? next - 0.5 * (next - streetCap) : next;
+    if (firms) {
+      // The region's sheds keep the aggregate; the mapped ones are the firms'.
+      e.aggOcc![k] = e.occupied[k];
+      e.occupied[k] = Math.min(e.stock[k], e.occupied[k] * offShare + firms.let + (pNow ?? 0));
+    }
+    }
 
     // THE GIVE-BACK. What a tenant would take AT TODAY'S RENT, against what it
     // is contractually sitting in — and the difference goes on the market at

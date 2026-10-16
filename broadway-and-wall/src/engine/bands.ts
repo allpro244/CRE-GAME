@@ -161,97 +161,113 @@ export function tickBands(e: Econ, k: BuiltClass) {
   }
   if (stamp) bk.prem = [...stamp.prem];
 
-  // 1. STOCK. Re-measured this year: the buildings set the mix, and a
-  //    building that slipped down the scale keeps its tenants. Between
-  //    measurements, new floor arrives high on the scale (it is new) and floor
-  //    that leaves goes from the bottom first.
-  let target: number[];
-  if (bk.m !== e.tierCtx?.month) {
-    target = share.map((x) => x * streetStock);
-    bk.m = e.tierCtx?.month;
-  } else {
-    target = [...bk.stock];
-    let d = streetStock - target.reduce((a, v) => a + v, 0);
-    if (d > 0) target[7] += d;
-    for (let b = 0; b < N_BANDS && d < 0; b++) { const cut = Math.min(target[b], -d); target[b] -= cut; d += cut; }
-  }
-  // Floor that shrinks out of a band moves down the scale with its tenants;
-  // floor that grows is new and arrives empty.
-  let carry = 0;
-  for (let b = N_BANDS - 1; b >= 0; b--) {
-    const d = target[b] - bk.stock[b];
-    if (d < 0 && bk.stock[b] > 0) {
-      const leave = bk.occ[b] * Math.min(1, -d / bk.stock[b]);
-      bk.occ[b] -= leave; carry += leave;
-    }
-  }
-  const grow = target.map((x, b) => Math.max(0, x - bk!.stock[b]));
-  const growSum = grow.reduce((a, v) => a + v, 0);
-  for (let b = 0; b < N_BANDS; b++) {
-    bk.stock[b] = target[b];
-    if (growSum > 0) bk.occ[b] += carry * grow[b] / growSum;
-  }
-  if (!(growSum > 0) && carry > 0) bk.occ[0] += carry;
-
-  // 2. THE CLASS'S NET ABSORPTION, distributed. In: by room. Out: weighted to the bottom.
-  let delta = streetOcc - bk.occ.reduce((a, v) => a + v, 0);
-  if (delta > 0) {
-    for (let pass = 0; pass < 3 && delta > 1; pass++) {
-      const room = bk.stock.map((x, b) => Math.max(0, x * 0.985 - bk!.occ[b]));
-      const roomSum = room.reduce((a, v) => a + v, 0);
-      if (!(roomSum > 0)) break;
-      const take = Math.min(delta, roomSum);
-      for (let b = 0; b < N_BANDS; b++) bk.occ[b] += take * room[b] / roomSum;
-      delta -= take;
-    }
-  } else if (delta < 0) {
-    const w = bk.occ.map((o, b) => o * outWeight(b));
-    const wSum = w.reduce((a, v) => a + v, 0);
-    for (let b = 0; b < N_BANDS && wSum > 0; b++) bk.occ[b] = Math.max(0, bk.occ[b] + delta * w[b] / wSum);
-  }
-
-  // 3. THE MOVES. The tenants whose leases are rolling this month (the
-  //    class's gross relocation rate) look across the street's empty floors —
-  //    and the player's (`playerNow.band`) — and go where the quality is worth
-  //    the rent. Of the tenants who choose the player's floors, the street
-  //    keeps nothing: the player's own leasing desk competes for them
-  //    (absorption.ts). Moving within a band is churn and changes nothing here.
-  const turn = (GROSS_TURNOVER[k] ?? 0) / 12;
-  if (turn > 0) {
-    const p = e.playerNow?.band?.[k];
-    const vacS = bk.stock.map((x, b) => Math.max(0, x * 0.985 - bk!.occ[b]));
-    const vacP = p ? p.sf.map((x, b) => Math.max(0, x - p.occ[b])) : zeros();
-    const moved = zeros(), arrive = zeros();
-    for (let j = 0; j < N_BANDS; j++) {
-      const lookers = bk.occ[j] * turn;
-      if (!(lookers > 0)) continue;
-      // Where they look: every empty floor, weighted by the odds they would take it.
-      let wAll = 0;
-      const w = zeros();
-      for (let i = 0; i < N_BANDS; i++) {
-        const odds = bandOdds(bk, j, i);
-        w[i] = odds * (vacS[i] + vacP[i]);
-        wAll += w[i];
-      }
-      // These are movers, not renewals (GROSS_TURNOVER is new-lease volume);
-      // the ones who land in their own band are churn and change nothing here.
-      if (!(wAll > 0)) continue;
-      for (let i = 0; i < N_BANDS; i++) {
-        if (i === j || !(w[i] > 0)) continue;
-        const go = lookers * w[i] / wAll;
-        const toStreet = go * vacS[i] / Math.max(1e-9, vacS[i] + vacP[i]);
-        moved[j] += toStreet; arrive[i] += toStreet;
-      }
-    }
+  // THE STREET'S FIRMS SAY WHICH FLOORS ARE LET (streetRolls.ts). Where the
+  // street keeps real rolls, each band's stock and tenants are measured off
+  // the buildings themselves — the moves between bands are firms actually
+  // moving — scaled to the class's street totals (sheds carry the region's
+  // off-map stock in the same proportions).
+  const fromRolls = k !== "multifamily" ? e.streetSpace?.[k]?.byBand : undefined;
+  if (fromRolls && fromRolls.stock.reduce((a, v) => a + v, 0) > 0) {
+    const st = fromRolls.stock.reduce((a, v) => a + v, 0);
+    const oc = fromRolls.occ.reduce((a, v) => a + v, 0);
     for (let b = 0; b < N_BANDS; b++) {
-      const room = Math.max(0, bk.stock[b] * 0.985 - (bk.occ[b] - moved[b]));
-      bk.occ[b] = bk.occ[b] - moved[b] + Math.min(room, arrive[b]);
+      bk.stock[b] = fromRolls.stock[b] * streetStock / st;
+      bk.occ[b] = oc > 0 ? Math.min(bk.stock[b], fromRolls.occ[b] * streetOcc / oc) : 0;
     }
-  }
+  } else {
+  // 1. STOCK. Re-measured this year: the buildings set the mix, and a
+    //    building that slipped down the scale keeps its tenants. Between
+    //    measurements, new floor arrives high on the scale (it is new) and floor
+    //    that leaves goes from the bottom first.
+    let target: number[];
+    if (bk.m !== e.tierCtx?.month) {
+      target = share.map((x) => x * streetStock);
+      bk.m = e.tierCtx?.month;
+    } else {
+      target = [...bk.stock];
+      let d = streetStock - target.reduce((a, v) => a + v, 0);
+      if (d > 0) target[7] += d;
+      for (let b = 0; b < N_BANDS && d < 0; b++) { const cut = Math.min(target[b], -d); target[b] -= cut; d += cut; }
+    }
+    // Floor that shrinks out of a band moves down the scale with its tenants;
+    // floor that grows is new and arrives empty.
+    let carry = 0;
+    for (let b = N_BANDS - 1; b >= 0; b--) {
+      const d = target[b] - bk.stock[b];
+      if (d < 0 && bk.stock[b] > 0) {
+        const leave = bk.occ[b] * Math.min(1, -d / bk.stock[b]);
+        bk.occ[b] -= leave; carry += leave;
+      }
+    }
+    const grow = target.map((x, b) => Math.max(0, x - bk!.stock[b]));
+    const growSum = grow.reduce((a, v) => a + v, 0);
+    for (let b = 0; b < N_BANDS; b++) {
+      bk.stock[b] = target[b];
+      if (growSum > 0) bk.occ[b] += carry * grow[b] / growSum;
+    }
+    if (!(growSum > 0) && carry > 0) bk.occ[0] += carry;
 
-  // Exactness: the bands hold the street's tenants, to the foot.
-  const sumOcc = bk.occ.reduce((a, v) => a + v, 0);
-  if (sumOcc > 0) for (let b = 0; b < N_BANDS; b++) bk.occ[b] = Math.max(0, Math.min(bk.stock[b], bk.occ[b] * streetOcc / sumOcc));
+    // 2. THE CLASS'S NET ABSORPTION, distributed. In: by room. Out: weighted to the bottom.
+    let delta = streetOcc - bk.occ.reduce((a, v) => a + v, 0);
+    if (delta > 0) {
+      for (let pass = 0; pass < 3 && delta > 1; pass++) {
+        const room = bk.stock.map((x, b) => Math.max(0, x * 0.985 - bk!.occ[b]));
+        const roomSum = room.reduce((a, v) => a + v, 0);
+        if (!(roomSum > 0)) break;
+        const take = Math.min(delta, roomSum);
+        for (let b = 0; b < N_BANDS; b++) bk.occ[b] += take * room[b] / roomSum;
+        delta -= take;
+      }
+    } else if (delta < 0) {
+      const w = bk.occ.map((o, b) => o * outWeight(b));
+      const wSum = w.reduce((a, v) => a + v, 0);
+      for (let b = 0; b < N_BANDS && wSum > 0; b++) bk.occ[b] = Math.max(0, bk.occ[b] + delta * w[b] / wSum);
+    }
+
+    // 3. THE MOVES. The tenants whose leases are rolling this month (the
+    //    class's gross relocation rate) look across the street's empty floors —
+    //    and the player's (`playerNow.band`) — and go where the quality is worth
+    //    the rent. Of the tenants who choose the player's floors, the street
+    //    keeps nothing: the player's own leasing desk competes for them
+    //    (absorption.ts). Moving within a band is churn and changes nothing here.
+    const turn = (GROSS_TURNOVER[k] ?? 0) / 12;
+    if (turn > 0) {
+      const p = e.playerNow?.band?.[k];
+      const vacS = bk.stock.map((x, b) => Math.max(0, x * 0.985 - bk!.occ[b]));
+      const vacP = p ? p.sf.map((x, b) => Math.max(0, x - p.occ[b])) : zeros();
+      const moved = zeros(), arrive = zeros();
+      for (let j = 0; j < N_BANDS; j++) {
+        const lookers = bk.occ[j] * turn;
+        if (!(lookers > 0)) continue;
+        // Where they look: every empty floor, weighted by the odds they would take it.
+        let wAll = 0;
+        const w = zeros();
+        for (let i = 0; i < N_BANDS; i++) {
+          const odds = bandOdds(bk, j, i);
+          w[i] = odds * (vacS[i] + vacP[i]);
+          wAll += w[i];
+        }
+        // These are movers, not renewals (GROSS_TURNOVER is new-lease volume);
+        // the ones who land in their own band are churn and change nothing here.
+        if (!(wAll > 0)) continue;
+        for (let i = 0; i < N_BANDS; i++) {
+          if (i === j || !(w[i] > 0)) continue;
+          const go = lookers * w[i] / wAll;
+          const toStreet = go * vacS[i] / Math.max(1e-9, vacS[i] + vacP[i]);
+          moved[j] += toStreet; arrive[i] += toStreet;
+        }
+      }
+      for (let b = 0; b < N_BANDS; b++) {
+        const room = Math.max(0, bk.stock[b] * 0.985 - (bk.occ[b] - moved[b]));
+        bk.occ[b] = bk.occ[b] - moved[b] + Math.min(room, arrive[b]);
+      }
+    }
+
+    // Exactness: the bands hold the street's tenants, to the foot.
+    const sumOcc = bk.occ.reduce((a, v) => a + v, 0);
+    if (sumOcc > 0) for (let b = 0; b < N_BANDS; b++) bk.occ[b] = Math.max(0, Math.min(bk.stock[b], bk.occ[b] * streetOcc / sumOcc));
+
+  }
 
   // 4. RENT. Each band's swing chases its vacancy gap against the class's,
   //    then the set is re-centred so the occupied-weighted mean is one.

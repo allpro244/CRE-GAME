@@ -2190,7 +2190,7 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   // number walked toward the market with a random anchor loss at a fixed
   // hazard; it is now the tenants in their buildings, and an anchor walks
   // when an anchor tenant's own books fail or its lease runs out.
-  const noRoll = { ...s.econ, streetRolls: undefined } as typeof s.econ;
+  const noRoll = { ...s.econ, streetRolls: undefined, flatRolls: undefined } as typeof s.econ;
   let mkt = 0, act = 0, n = 0, bookSf = 0;
   for (const bbl of r.bbls) {
     const rec = resolveRec(parcels, s, bbl);

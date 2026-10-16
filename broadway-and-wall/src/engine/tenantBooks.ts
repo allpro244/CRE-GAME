@@ -39,7 +39,28 @@ export interface TenantFin {
   cash: number; debt: number; fixed: number; spread: number; float: number; lev: number;
   /** this month's read: EBITDA over interest, months of costs in the bank, EBITDA margin */
   cover: number; liqM: number; margin: number;
+  /** the firm's own fortunes: log sales against its trade's, and the month last drawn */
+  z?: number; zM?: number;
 }
+
+/**
+ * A FIRM'S OWN FORTUNES (2026-10-16). Two firms in one trade do not have one
+ * year: one wins the big client and the other loses it. Each firm's sales run
+ * on its trade's plus a persistent shock of its own — monthly persistence 0.985,
+ * so a good or bad run lasts years — sized so a small unrated firm's sales sit
+ * about 19% either side of its trade's (the dispersion of small-firm revenue
+ * growth in the Census Business Dynamics Statistics runs 20-35%). Failures come out of
+ * this and the trade's year through the books; nothing is drawn at a fixed rate.
+ */
+const Z_RHO = 0.985;
+const Z_SIG = 0.033;
+/**
+ * ...and by covenant, because covenant is mostly size: an investment-grade
+ * name sells to thousands of customers in several lines, a small unrated
+ * shop to a handful. Sales volatility falls steeply with firm size (Comin &
+ * Philippon 2005; Davis et al. 2006).
+ */
+const Z_GRADE: Record<Credit, number> = { 2: 0.55, 1: 0.65, 0: 1 };
 
 /** Months of costs a tenant keeps in cash before it pays the surplus out. */
 const CASH_KEEP_M = 1.5;
@@ -101,7 +122,14 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
   // and its debt are nominal contracts. Everything here is in current dollars.
   f.cpi0 ??= e.cpi ?? 1;
   const priceLevel = (e.cpi ?? 1) / Math.max(1e-6, f.cpi0);
-  const rev = f.rev0 * (t.staff ?? 1) * (tradeProd(e, t) / Math.max(1e-6, f.prod0)) * priceLevel;
+  const mth = e.m ?? 0;
+  if (f.zM !== mth) {
+    f.z = Z_RHO * (f.z ?? 0) + Z_SIG * Z_GRADE[t.credit] * hashNormal(`${t.name}|${t.sector}|${Math.round(f.rev0)}|z|${mth}`);
+    f.zM = mth;
+  }
+  const sig = Z_SIG * Z_GRADE[t.credit];
+  const own = Math.exp((f.z ?? 0) - 0.5 * sig * sig / (1 - Z_RHO * Z_RHO));
+  const rev = f.rev0 * (t.staff ?? 1) * (tradeProd(e, t) / Math.max(1e-6, f.prod0)) * priceLevel * own;
   // Costs are sticky — 40% were set for last year's revenue — so a revenue
   // drop goes straight to the bottom line before the business can adjust.
   f.revRef = (f.revRef ?? rev) + (rev - (f.revRef ?? rev)) / 12;
@@ -150,17 +178,24 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
  * the bank, and a business already burning borrowed cash it cannot replace.
  */
 export function tenantFailOdds(f: TenantFin, credit: Credit): number {
-  // Background odds at rated-debt norms (S&P long-run annual defaults: ~0.1-0.3%
-  // investment grade, ~1-2% BB/B, ~4-6% for unrated small firms).
-  const background = BACKGROUND_FAIL[credit];
-  // Odds climb from 2.5x cover down — roughly doubling by 1.8x, which is
-  // where a recession takes the typical small business; US business
-  // bankruptcies about doubled 2007-09 (28k to 60k filings).
+  // FAILURE IS THE BOOKS (2026-10-16). What is left of a background is what
+  // no set of accounts sees coming — fraud, a founder's death — at a few
+  // hundredths of a per cent a year. The rest is the firm's own position:
+  // odds climb from 2.5x interest cover down and from under a month of costs
+  // in the bank, and a firm whose cash has run out and whose bank will not
+  // lend it more goes within months. With each firm's own fortunes on top of
+  // its trade's (`Z_SIG`), that gives the observed rated-debt default rates —
+  // ~0.5% a year investment grade, ~1.5% mid-market, ~5% for small unrated
+  // firms (S&P long-run; SBA loan performance) — out of the accounts, and
+  // roughly doubles them in a recession (US business bankruptcies 2007-09).
   const coverStress = Math.max(0, Math.min(4.5, 2.5 - f.cover));
   const cashStress = Math.max(0, 1 - f.liqM);
   const broke = f.cash < 0 ? Math.min(0.25, 0.04 * (1 - f.liqM)) : 0;
-  return Math.min(0.5, background * Math.exp(1.1 * coverStress + 2.2 * cashStress) + broke);
+  return Math.min(0.5, BACKGROUND_FAIL[credit] + FAIL_K * (Math.exp(1.1 * coverStress + 2.2 * cashStress) - 1) + broke);
 }
+
+/** Odds per unit of book stress (see tenantFailOdds). */
+const FAIL_K = 0.00005;
 
 /** 0..~3: how hard the business is squeezed — what makes a tenant write for relief. */
 export function tenantSqueeze(f: TenantFin): number {
@@ -259,4 +294,5 @@ export function tickStreetTenants(e: Econ, k: "office" | "retail" | "industrial"
 }
 
 /** The background odds already carried by a market's ordinary churn. */
-export const BACKGROUND_FAIL: Record<Credit, number> = { 2: 0.00012, 1: 0.0005, 0: 0.0012 };
+/** What no set of books sees coming — fraud, a death — per month, by covenant. */
+export const BACKGROUND_FAIL: Record<Credit, number> = { 2: 0.00002, 1: 0.00004, 0: 0.00008 };

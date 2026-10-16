@@ -13,7 +13,7 @@ import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, o
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
-import { syncStreetRolls, tickStreetRolls, reconcileStreetRolls } from "./streetRolls";
+import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
 import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
@@ -663,7 +663,8 @@ function tickMonth(
   syncStreetRolls(s, parcels, bbls);
   tickStreetRolls(s, parcels);
   tickEcon(s);
-  reconcileStreetRolls(s, parcels);
+  // ...and the town's renters move, to the households the city houses.
+  tickStreetFlats(s, parcels);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.
@@ -2463,6 +2464,10 @@ export function firstListings(s: GameState, parcels: ParcelTable, bbls: string[]
   next.loanScale = cityLoanScale(next, parcels);
   // The cranes first, so the tape does not offer a lot with a frame on it.
   seedOpeningPipeline(next, parcels, bbls);
+  // The street's firms and households, grown before the first listing is
+  // written, so the tape discloses the tenants who are actually there.
+  next.econ.playerNow ??= playerSpace(next, parcels);
+  syncStreetRolls(next, parcels, bbls);
   refreshListings(next, parcels, bbls);
   return next;
 }

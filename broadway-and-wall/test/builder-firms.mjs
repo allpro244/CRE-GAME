@@ -22,6 +22,10 @@ function run(seed, months, setup) {
   const parcels = JSON.parse(JSON.stringify(P0));
   let g = E.firstListings(E.newGame(seed, parcels, 2_500_000, setup), parcels, bbls);
   const starts = [];
+  // The opening frames are seeded by firstListings, before the first tick. A
+  // firm's start in that first tick is stamped month 0 too, so the opening is
+  // these keys, not `startM <= 0`.
+  const opening = new Set((g.cityJobs ?? []).map((j) => j.bbl + ":" + j.startM));
   const seen = new Set();
   const delivered = [];
   for (let m = 0; m < months; m++) {
@@ -31,7 +35,7 @@ function run(seed, months, setup) {
     const now = new Set((g.cityJobs ?? []).map((j) => j.bbl + ":" + j.startM));
     for (const j of g.cityJobs ?? []) {
       const k = j.bbl + ":" + j.startM;
-      if (!seen.has(k)) { seen.add(k); starts.push({ ...j, seenM: g.month }); }
+      if (!seen.has(k)) { seen.add(k); starts.push({ ...j, seenM: g.month, opening: opening.has(k) }); }
     }
     for (const [k, j] of live) if (!now.has(k) && j.firmId && g.month >= j.deliverM) delivered.push({ bbl: j.bbl, firmId: j.firmId, m: g.month });
   }
@@ -50,13 +54,13 @@ console.log("\nOn (the default): every builder is a firm");
   const { g, starts, delivered } = run(7101, 120);
   const firms = g.rivals.filter((r) => r.builderProf);
   const live = firms.filter((r) => r.failedM === undefined && r.retiredM === undefined);
-  const after = starts.filter((j) => j.startM > 0);
+  const after = starts.filter((j) => !j.opening);
   const anon = after.filter((j) => !j.firmId);
   console.log(`  ten years: ${firms.length} builder firms (${live.length} living, ${firms.length - live.length} gone) · ${after.length} starts after the opening, ${after.filter((j) => firms.some((r) => r.id === j.firmId)).length} by builder firms · ${delivered.length} delivered to firms`);
   ok(g.builderFirms === true, "on by default for a new game");
   ok(firms.length > 0 && firms.every((r) => r.founder && r.builderProf && ["merchant", "developer"].includes(r.style)), "the builders are firms: a founder, the register's habits, a merchant or developer style");
   ok(after.length > 0 && anon.length === 0, `nothing started after the opening is anonymous (${anon.length} of ${after.length})`);
-  ok(starts.filter((j) => j.startM <= 0).every((j) => !j.firmId), "the frames already standing at the opening are the city's");
+  ok(starts.filter((j) => j.opening).every((j) => !j.firmId), "the frames already standing at the opening are the city's");
   const owned = delivered.filter((d) => g.rivals.find((r) => r.id === d.firmId)?.builderProf);
   ok(owned.length > 0, `builder firms take the deed to what they build (${owned.length} buildings)`);
   ok(live.every((r) => r.endReason !== "woundUp"), "a builder between schemes is not wound up as a husk");

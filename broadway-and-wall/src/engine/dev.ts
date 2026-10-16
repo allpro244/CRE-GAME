@@ -4604,8 +4604,8 @@ function developerLook(
   // rent read moving a little from one look to the next.
   // The frames already standing when the game opens (a backdated look) are
   // history and stay the city's; every look after that is one of the firms.
-  const firm = s.builderFirms && !opts?.backdate ? pickBuilderFirm(s) : undefined;
-  if (s.builderFirms && !opts?.backdate && !firm) return false;
+  const firm = s.builderFirms && opts?.backdate === undefined ? pickBuilderFirm(s) : undefined;
+  if (s.builderFirms && opts?.backdate === undefined && !firm) return false;
   const who = firm ? undefined : pickBuilder(s);
   const habits = firm?.builderProf ?? who?.prof;
   const dev: DeveloperProfile = habits ? { ...habits, outlook: habits.outlook * Math.exp(0.03 * (2 * rng(s, "dev") - 1)) } : drawDeveloper(s);
@@ -4920,6 +4920,10 @@ function breakCityGround(
   const backM = opts?.backdate ? Math.floor(opts.backdate * Math.max(0, months - 1)) : 0;
   const nowM = s.month;
   const startM = nowM - backM;
+  // An opening frame is one asked for with a backdate, whatever the draw: a
+  // small draw rounds backM down to 0, and reading `backM > 0` below handed
+  // such a frame to the street as if it had broken ground today.
+  const opening = opts?.backdate !== undefined;
   const deliverM = startM + months;
   const builder = builderById(s, opts?.builderId);
   (s.cityJobs ??= []).push({ bbl, use, sf, floors, startM, deliverM, mix: prog, ...(opts?.spec !== undefined ? { spec: opts.spec } : {}),
@@ -4950,10 +4954,10 @@ function breakCityGround(
   // carry it; if not, the street may take it; with the town's builders as
   // firms, if nobody named can carry it, it is not built.
   const ownFirm = opts?.firmId ? (s.rivals ?? []).find((r) => r.id === opts.firmId && r.failedM === undefined) : undefined;
-  const claimed = backM > 0 ? null
+  const claimed = opening ? null
     : (ownFirm ? claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer, plan, ownFirm) : null)
       ?? claimJob(s, parcels, bbl, use, sf, floors, deliverM, nearPlayer, plan);
-  if (s.builderFirms && !claimed && !backM) {
+  if (s.builderFirms && !claimed && !opening) {
     s.cityJobs = (s.cityJobs ?? []).filter((j) => !(j.bbl === bbl && j.startM === startM));
     cancelSupplyProject(s, bbl);
     s.month = nowM;

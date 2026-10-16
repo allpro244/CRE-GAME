@@ -2036,6 +2036,8 @@ export interface Econ {
   dzBar?: Partial<Record<string, number>>;
   /** the region's shed demand last month (streetRolls shed movers) */
   shedRefPrev?: number;
+  /** the town's jobs, log, five-year memory (market.ts flats per adult) */
+  jobsLogRef?: number;
   /** each market's normal availability, learned from its own history (market.ts rent gap) */
   natVac?: Record<BuiltClass, number>;
   /** the opening's rent per foot by class and price level: what sales per head are measured from (tenantBooks) */

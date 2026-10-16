@@ -360,6 +360,10 @@ function affordSoft(v: number): number {
   const b = y < 0 ? Math.log(AFFORD_BAND[0]) : Math.log(AFFORD_BAND[1]);
   return Math.exp(b * Math.tanh(y / b));
 }
+/** Flats per adult: the national headship trend, its response to local job growth over the nation's, and that national job growth (a year). */
+const HEADSHIP_TREND = 0.0015;
+const HEADSHIP_JOBS = 0.5;
+const NAT_JOB_TREND = 0.008;
 /** A market's normal availability: monthly weight on this month's (twenty-year half-life). */
 const NATVAC_RATE = 1 - Math.exp(-Math.LN2 / 240);
 
@@ -4745,6 +4749,24 @@ export function tickEcon(s: GameState) {
         sec.leftM = Math.round(rrange(s, 144, 300));
       }
       sec.leftM--;
+      // FLATS FOLLOW THE TOWN, NOT A MENU (2026-10-16). Demand for flats per
+      // adult drew its eras independently of the town, so a town losing a
+      // sixth of its people drew a household-formation wave and an
+      // urbanisation surge and its flats ran 37% fuller per adult (measured).
+      // Household formation is local: young adults form households where the
+      // jobs are and double up or leave where they are not (headship falls
+      // in a weak local labour market and recovers with it — Haurin & Rosenthal
+      // 2007; Paciorek 2016). The drift is the national headship trend
+      // (+0.15%/yr, 1960-2020) plus half of the town's job growth over the
+      // nation's, read over five years; the menu above stays only for what
+      // a menu still stands for elsewhere.
+      if (k === "multifamily") {
+        const lj = Math.log(Math.max(1, e.jobs ?? 1));
+        e.jobsLogRef ??= lj;
+        e.jobsLogRef += (lj - e.jobsLogRef) / 60;
+        const g = (lj - e.jobsLogRef) / 5;
+        sec.drift = HEADSHIP_TREND + HEADSHIP_JOBS * (g - NAT_JOB_TREND);
+      }
       if (k === "retail" && sec.drift < -0.005) retailErosion = -sec.drift;
       const coupled = k === "industrial" ? sec.drift + 0.6 * retailErosion : sec.drift;
       // A SHARE DECELERATES AS IT APPROACHES ITS IRREDUCIBLE CORE. THIS WAS AN

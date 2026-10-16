@@ -225,7 +225,20 @@ export function reconcileStreetRolls(s: GameState, parcels: ParcelTable) {
           let pick = bs[0];
           for (const b of bs) { const v = b.cap - b.let; if (v <= 800) continue; u -= v * b.w; if (u <= 0) { pick = b; break; } }
           const cond = gradeOf(s, pick.rec);
-          const nt = streetNewTenant(s, pick.rec, cond, initialCondIdx(pick.rec, s.month, cond), k, Math.min(pick.cap - pick.let, Math.max(gap, 1500)));
+          const vac = pick.cap - pick.let;
+          const fl = minLettableSf(pick.rec, k);
+          // A REMNANT UNDER THE SMALLEST SUITE is nobody's new lease; the
+          // tenant next door takes it, as a lease-up does (leasing.ts: a
+          // leftover under the floor goes with the deal that leaves it).
+          if (vac < fl) {
+            const roll = e.streetRolls![pick.bbl];
+            const nb = roll.t.find((t) => (t.use ?? "office") === k);
+            if (nb) { nb.sf += vac; pick.let += vac; gap -= vac; } else pick.let = pick.cap;
+            continue;
+          }
+          // Sized to the gap, but never below the floor: a gap smaller than a
+          // suite is still a suite to let, not a reason to call the building full.
+          const nt = streetNewTenant(s, pick.rec, cond, initialCondIdx(pick.rec, s.month, cond), k, Math.min(vac, Math.max(gap, 1500, fl)));
           if (!nt) { pick.let = pick.cap; continue; }
           e.streetRolls![pick.bbl].t.push(nt);
           pick.let += nt.sf; gap -= nt.sf;

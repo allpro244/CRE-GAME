@@ -834,10 +834,14 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
  */
 export function streetNewTenant(s: GameState, rec: ParcelRecord, cond: Condition, condIdx: number, use: BuiltClass, maxSf: number): Tenant | null {
   const floorSf = minLettableSf(rec, use);
-  if (maxSf < Math.min(floorSf, 800)) return null;
+  // Nothing under the smallest suite the building lets (minLettableSf, which
+  // is already the whole building when the building is small). This read
+  // `min(floor, 800)` and let 800-2,000 sf remnants as whole tenancies, which
+  // a buyer then inherited under the floor (invariants.ts "tenancy").
+  if (maxSf < floorSf) return null;
   const stack = stacksOf(rec).find((st) => st.use === use);
   let sf = drawTenantSf(s, use, stack?.plateSf ?? maxSf, maxSf, sizeScale(overallScore(rec, s.econ, use)));
-  sf = Math.min(sf, maxSf);
+  sf = Math.max(floorSf, Math.min(sf, maxSf));
   if (maxSf - sf < floorSf) sf = maxSf;
   if (sf < 1) return null;
   const vessel = { condition: cond, condIdx, tenants: [], costBasis: 0, assessed: assetValue(rec, s.econ, cond) } as unknown as Holding;

@@ -2466,6 +2466,21 @@ const RAISE_M = 14;
 // six centuries read that spread positive in 95.2% of months, p50 +1.98, and
 // p90 of the positive months +3.53 (+3.39 on #164). 3.5 is that percentile.
 const SPREAD_FULL = 3.5;
+/**
+ * DISTRESS CAPITAL RAISES WHEN LEVERAGE DOES NOT (Oct 2026). With the coupon
+ * over the total return no levered fund can pitch, and the entry hazard was
+ * zero — for years at a time in a high-rate world (163 of 360 months on one
+ * seed, 6 new firms in thirty years against 20+ in calm ones). But the funds
+ * that raise in exactly those years are the ones that do not need positive
+ * leverage: vulture, contrarian and loan-to-own money that buys at a discount
+ * (the RTC-era opportunity funds of 1990-95, the distressed raises of 2009).
+ * They pitch at this share of a full window. Shape parameter, stated as such.
+ * Measured on twelve seeds: new firms in thirty years went from 2-25 to 6-25
+ * (4242, shut 176 months: 2 -> 15; the calm seeds unchanged, draw for draw).
+ * The money is real, so the towns it reaches build more: on the five seeds
+ * it touched, jobs +6% and office rent +7% on the 12-seed paired baseline.
+ */
+const DISTRESS_PITCH = 0.3;
 
 // HOW MUCH PRODUCT ONE SHOP NEEDS A YEAR TO BE A SHOP.
 //
@@ -2567,6 +2582,8 @@ const DEPLOY_YR = 2;
  */
 export function firmEntryPitch(s: GameState): {
   leverage: number; product: number; thin: number; pitch: number; traded: number; firms: number; slots: number;
+  /** The coupon is over the total return: only distress capital raises (DISTRESS_PITCH). */
+  distress: boolean;
 } {
   const c = s.econ.capRate;
   const cap = (c.office + c.retail + c.multifamily + c.industrial) / 4;
@@ -2574,6 +2591,8 @@ export function firmEntryPitch(s: GameState): {
   // See SPREAD_FULL for why the going-in yield alone was the wrong pitch.
   const spread = cap + underwrittenGrowthPct(s.econ) - (s.econ.indexRate + RATE_SPREAD);
   const leverage = spread <= 0 ? 0 : Math.min(1, spread / SPREAD_FULL);
+  // Shut to levered money, the window is distress capital's (DISTRESS_PITCH).
+  const distress = !(leverage > 0);
   let traded = 0;
   for (const m of Object.values(s.lastTradeM ?? {})) if (s.month - m < 12) traded++;
   for (const j of s.cityJobs ?? []) if (s.month - j.startM < 12) traded++;
@@ -2584,11 +2603,11 @@ export function firmEntryPitch(s: GameState): {
   const firms = livingRivals(s).filter((r) => !r.builderProf).length;
   const product = Math.min(1, traded / Math.max(1, firms) / DEPLOY_YR);
   const thin = Math.min(1.5, 1 / Math.max(0.2, marketAppetite(s)));
-  const pitch = Math.min(1, leverage * product * thin);
+  const pitch = Math.min(1, (distress ? DISTRESS_PITCH : leverage) * product * thin);
   // How many shops the tape carries that the town does not have: the year's
   // product at DEPLOY_YR a shop, less the shops standing.
   const slots = Math.max(0, traded / DEPLOY_YR - firms);
-  return { leverage, product, thin, pitch, traded, firms, slots };
+  return { leverage, product, thin, pitch, traded, firms, slots, distress };
 }
 
 function styleFromFounderRole(role: FounderBid["role"]): RivalStyle {
@@ -2669,14 +2688,17 @@ function tickRivalSpinouts(s: GameState) {
 // on an empty tape, a shut credit market or a crowded street, and still
 // lagging a bust, because the leverage term closes in one.
 function maybeNewFirm(s: GameState) {
-  const { leverage, product, pitch, slots } = firmEntryPitch(s);
+  const { leverage, product, pitch, slots, distress } = firmEntryPitch(s);
+  // Open to levered funds — founders' spinouts and anonymous raises alike —
+  // or, with the coupon over the return, to distress capital only.
   const streetOpen = leverage > 0 && product > 0 && pitch > 0;
+  const distressOpen = distress && product > 0 && pitch > 0;
 
   // Genealogy proposes first. A ready founder bid takes this month's raise
   // slot — anonymous capital only enters when nobody is waiting to spin out.
   const bids = s.founderBids ?? [];
   const readyIdx = bids.findIndex((b) => b.readyM <= s.month);
-  const founder = readyIdx >= 0 ? bids[readyIdx] : null;
+  let founder = readyIdx >= 0 ? bids[readyIdx] : null;
   /** Open-market months a ready founder keeps pitching before the street closes. */
   const FOUNDER_WINDOW_M = 18;
 
@@ -2685,7 +2707,10 @@ function maybeNewFirm(s: GameState) {
   // month leverage turns positive.
   if (founder && streetOpen) founder.openMs = (founder.openMs ?? 0) + 1;
 
-  if (!streetOpen) return;
+  if (!streetOpen && !distressOpen) return;
+  // A spinout is a levered fund: it waits out a distress window (its pitching
+  // clock above only runs while the street is open to it).
+  if (!streetOpen) founder = null;
 
   // FIRM ENTRY READS THE POOL (CAPITAL_RAISING_PLAN.md §0.5 5.5), on for new
   // games (`poolEntry`; the setup can turn it off). Measured, it slows entry
@@ -2766,6 +2791,10 @@ function maybeNewFirm(s: GameState) {
   const ciNow = s.econ.creditIdx ?? 1;
   const parentFirm = founder ? (s.rivals ?? []).find((x) => x.id === founder.fromFirmId) : undefined;
   const pool: ProfileId[] = founder ? ["spinout"]
+    // A distress window (DISTRESS_PITCH) is raised by money that buys at a
+    // discount and needs no positive leverage — not the converters and
+    // value-add shops a merely tight credit window also brings.
+    : distress ? ["vulture", "contrarian", "loanToOwn"]
     : ciNow < 0.85 ? ["vulture", "contrarian", "loanToOwn", "valueAdd", "converter"]
       : ciNow > 1.05 ? ["flipper", "merchant", "valueAdd", "ego", "industrialEdge", "rentalBuilder"]
         : PROFILES.filter((p) => p.id !== "spinout").map((p) => p.id);

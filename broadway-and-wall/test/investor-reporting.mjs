@@ -1,7 +1,7 @@
 // INVESTOR REPORTING — warning signs on live deals, misconduct, re-ups.
 //   pnpm engine && node test/investor-reporting.mjs
 //
-// On a real syndicated job (a $1M sponsor, seed 9401):
+// On a real syndicated job (a $1M sponsor, seed 9401 or the next that funds one):
 // A. the quarterly report raises a flag when the job runs late; each flag is
 //    −3 of provisional evidence, at most −10 a deal (CAPITAL_RAISING_PLAN.md
 //    §3.4, "warning signs before the end");
@@ -22,10 +22,13 @@ const { parcels: P0, bbls, adjacency } = loadCity(0, E.normalizeParcels);
 let fails = 0;
 const ok = (c, m) => { console.log(`  ${c ? "OK  " : "FAIL"}  ${m}`); if (!c) fails++; };
 
-// A syndicated job on seed 9401 (month 3, the same deal test/syndicate.mjs plays).
-const parcels = JSON.parse(JSON.stringify(P0));
-let g = E.firstListings(E.newGame(9401, parcels, 1_000_000), parcels, bbls);
-let lot = null;
+// A syndicated job in the first two years: seed 9401 first (the deal
+// test/syndicate.mjs plays), then the next seed if a re-rolled world gives
+// 9401 nothing to fund — which seed carries the deal is not under test.
+let parcels, g, lot = null;
+for (const seed of [9401, 7101, 9404, 550991]) {
+parcels = JSON.parse(JSON.stringify(P0));
+g = E.firstListings(E.newGame(seed, parcels, 1_000_000), parcels, bbls);
 for (let m = 0; m < 24 && !lot; m++) {
   if (g.month % 3 === 0) {
     const own0 = E.fundableNow(g, parcels);
@@ -50,6 +53,8 @@ for (let m = 0; m < 24 && !lot; m++) {
     }
   }
   if (!lot) g = E.advanceMonth(g, parcels, bbls, adjacency);
+}
+if (lot) break;
 }
 ok(!!lot, `a syndicated job to report on (${lot})`);
 const w = g.syndications[lot];

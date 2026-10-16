@@ -47,7 +47,9 @@ for (const seed of SEEDS) {
           // The use's own coverage limit — the one the desk and the residual share.
           const cov = Math.min(far, fl * E.MAX_COVERAGE[use]) / fl;
           if (!(cov > 0)) continue;
-          const p = E.planDevelopment(g, parcels, bbl, use, fl, cov, "gmp", undefined, undefined, undefined, 0.5, 0);
+          // At the average bid — the land market prices the average contractor,
+          // not this season's draw on this lot (see residual-recon.mjs).
+          const p = E.planDevelopment(g, parcels, bbl, use, fl, cov, "gmp", undefined, { costMult: 1 }, undefined, 0.5, 0);
           if (!p || !(p.requiredYield > 0) || p.floors !== fl) continue;
           const nonLand = p.basisTotal - p.landBasis - p.landCarry;
           const psf = (p.stabNoi / (p.requiredYield / 100) - nonLand) / (1 + E.landCarryFactor(p.months)) / rec.lotArea;
@@ -59,7 +61,11 @@ for (const seed of SEEDS) {
       // The build-now residual: the desk prices building TODAY, so the tape is
       // asked the same question with the redevelopment queue's positions
       // emptied (its absorption rate kept) — see residual-recon.mjs.
-      const nowEcon = { ...g.econ, landQueue: Object.fromEntries(Object.entries(g.econ.landQueue ?? {}).map(([u, q]) => [u, { ...q, psf: [], ahead: [] }])) };
+      // Both queue reads are emptied — this year's and the one it is gliding
+      // from (value.ts queueFactor blends them over the year); emptying only
+      // this year's left last year's wait on a few big office schemes.
+      const emptyQ = (Q) => Object.fromEntries(Object.entries(Q ?? {}).map(([u, q]) => [u, { ...q, psf: [], ahead: [] }]));
+      const nowEcon = { ...g.econ, landQueue: emptyQ(g.econ.landQueue), landQueuePrev: emptyQ(g.econ.landQueuePrev) };
       const read = E.landRead(rec, nowEcon);
       if (read.scheme && read.scheme.floors <= 4) lowWins++;
       // The desk quotes its own lender file; the residual the market's. ±3% is

@@ -30,6 +30,7 @@ import { drawLeaseUpReserve, leaseUpRoom } from "./debt";
 import { fundReserve } from "./fund";
 import { partnerFunds } from "./jv";
 import { recordPropertyEvent, noteTenantMove } from "./history";
+import { pullSeeker, seekerSigned, playerTenantLeft } from "./streetRolls";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
 import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, sizeScale, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
@@ -710,7 +711,10 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
     // represent that is refusing to represent the only reason it is cheap.
     // It is not zero because a building with nobody in it at all is not a
     // going concern being sold, it is a shell — and that is a different deal.
-    holding.occ = Math.min(0.99, Math.max(0.12,
+    // A street block keeps its own households (streetRolls.ts): the paper is
+    // what is let in it, as it is for the commercial floors.
+    const flats = s.econ.flatRolls?.[rec.bbl] ? useOccupancy(rec, s.econ, "multifamily") : undefined;
+    holding.occ = flats !== undefined ? flats : Math.min(0.99, Math.max(0.12,
       useOccupancy(rec, s.econ, "multifamily") + (distressed ? rrange(s, -0.38, -0.16, "leasing") : rrange(s, -0.05, 0.04, "leasing"))));
     // the roll in place opens at today's market; it walks from here — see Holding.resRentPsf
     holding.resRentPsf = marketRentPsfYr(rec, s.econ, holding.condition, holding.condIdx);
@@ -840,19 +844,44 @@ export function streetNewTenant(s: GameState, rec: ParcelRecord, cond: Condition
   sf = Math.min(sf, maxSf);
   if (maxSf - sf < floorSf) sf = maxSf;
   if (sf < 1) return null;
+  const sector = pickSector(s, use);
+  const vessel = { condition: cond, condIdx, tenants: [], costBasis: 0 } as unknown as Holding;
+  const credit = rollCredit(s, demandLinear(rec.demandScore), buildingScore(rec, vessel, s).score);
+  return streetLease(s, rec, cond, condIdx, use, Math.round(sf),
+    { name: pickName(s, sector), sector, credit }, rrange(s, 0.90, 1.0, "leasing"),
+    Math.round(rrange(s, 36, 120, "leasing")), 0);
+}
+
+/**
+ * A STREET LEASE SIGNED (streetRolls.ts): a named firm takes `sf` of `use` in
+ * a building the player does not own, at `rentMult` x the building's market
+ * rent, for `termM` months with `freeM` free. The lease is written the way
+ * the player's are — recovery, expense stop, deposit — so a buyer who later
+ * inherits it reads the same paper.
+ */
+export function streetLease(
+  s: GameState, rec: ParcelRecord, cond: Condition, condIdx: number, use: BuiltClass, sf: number,
+  firm: Pick<Tenant, "name" | "sector" | "credit"> & Partial<Tenant>, rentMult: number, termM: number, freeM: number,
+): Tenant {
   const vessel = { condition: cond, condIdx, tenants: [], costBasis: 0, assessed: assetValue(rec, s.econ, cond) } as unknown as Holding;
   const market = useRentPsfYr(rec, s.econ, cond, use, condIdx);
-  const sector = pickSector(s, use);
-  const credit = rollCredit(s, demandLinear(rec.demandScore), buildingScore(rec, vessel, s).score);
+  const rentPsf = +(market * rentMult).toFixed(2);
+  const { name, sector, credit, ...rest } = firm;
   return {
-    name: pickName(s, sector), use, sector, credit, sf: Math.round(sf),
-    rentPsf: +(market * rrange(s, 0.90, 1.0, "leasing")).toFixed(2),
+    ...rest,
+    name, use, sector, credit, sf: Math.round(sf), rentPsf,
     net: use === "office" ? rng(s, "leasing") < 0.75 : rng(s, "leasing") < 0.4,
     recovery: rollRecovery(s, use),
     baseStopPsf: +stopPsfNow(rec, s.econ, vessel, use).toFixed(2),
-    startM: s.month, endM: s.month + Math.round(rrange(s, 36, 120, "leasing")),
-    deposit: depositFor(s, market, sf, credit),
+    startM: s.month, endM: s.month + Math.max(12, Math.round(termM)),
+    freeUntilM: freeM > 0 ? s.month + Math.round(freeM) : undefined,
+    deposit: depositFor(s, rentPsf, sf, credit),
   };
+}
+
+/** A new firm's covenant from the quality of space it shops for: better space, better names. */
+export function firmCredit(s: GameState, quality: number): Credit {
+  return rollCredit(s, 50, 55 + (quality - 55) * 1.5);
 }
 
 export function vacantSf(rec: ParcelRecord, h: Holding): number {
@@ -1207,23 +1236,6 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   return { p, why: whyLines };
 }
 
-/** A plausible building the departing tenant is moving to, or null for "left town". */
-function departureDestination(s: GameState, parcels: ParcelTable, from: ParcelRecord, use: BuiltClass): string | null {
-  const live = (s.rivals ?? []).filter((r) => r.failedM === undefined && r.bbls.length);
-  // sample a handful of candidates rather than scanning every deed in town
-  for (let tries = 0; tries < 14 && live.length; tries++) {
-    const r = live[Math.floor(rng(s, "leasing") * live.length) % live.length];
-    const bbl = r.bbls[Math.floor(rng(s, "leasing") * r.bbls.length) % r.bbls.length];
-    if (bbl === from.bbl) continue;
-    const rec = resolveRec(parcels, s, bbl);
-    if (!rec || rec.class !== use || !rec.bldgArea) continue;
-    return `${rec.address} — ${r.name}'s building`;
-  }
-  // a third of unmatched departures leave the market entirely; the rest go
-  // somewhere too small to name, and saying nothing is better than inventing
-  return rng(s, "leasing") < 0.35 ? "smaller space outside the city" : null;
-}
-
 export function tickLeasing(s: GameState, parcels: ParcelTable) {
   const q = s.month;
   if (planIsLive(s)) rollDeskDigest(s);
@@ -1565,6 +1577,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // City pool: material departures become searchers (or leave-town noise).
       for (const mo of movedOut) {
         noteTenantSfChange(s, (mo.use ?? dominantUse(rec)) as BuiltClass, mo.sf);
+        // ...and the firm goes looking, in the same pool the street tours
+        // (streetRolls.ts) — where it lands is news when it signs.
+        playerTenantLeft(s, mo, rec.bbl);
       }
       // THE ONE WORTH NAMING. Most departures leave through this aggregate
       // line, not the earlier "is not renewing" notice — a letter that sat
@@ -1577,10 +1592,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (notable) {
         const yrsIn = Math.floor((q - notable.startM) / 12);
         if (yrsIn >= 8 || notable.sf >= 8000) {
-          const dest = departureDestination(s, parcels, rec, notable.use ?? (rec.class as BuiltClass));
-          gone = ` ${notable.name}${yrsIn >= 8 ? `, here ${yrsIn} years,` : ""} is gone`
-            + (dest ? ` — to ${dest}.` : ".");
-          noteTenantMove(s, { kind: "leave", who: notable.name, sf: notable.sf, bbl: rec.bbl, ...(dest ? { to: dest } : {}) });
+          // Where it goes is not known yet: it is looking (streetRolls.ts),
+          // and the paper reports it when it signs somewhere.
+          gone = ` ${notable.name}${yrsIn >= 8 ? `, here ${yrsIn} years,` : ""} is gone, looking for space elsewhere.`;
         }
       }
       s.news.unshift({
@@ -1957,18 +1971,15 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (rng(s, "leasing") > ri.p) {
         t.nonRenewM = q;
         t.nonRenewWhy = ri.why[0];
-        // WHERE THEY WENT. A tenant who leaves you does not evaporate — they
-        // take space in somebody else's building, and knowing WHOSE turns
-        // churn into rivalry. The destination is a plausible same-class
-        // building from a named firm's book; when nobody in town fits, they
-        // left the city, which is also a real thing tenants do.
-        const dest = departureDestination(s, parcels, rec, t.use ?? (rec.class as BuiltClass));
+        // WHERE THEY GO is reported when they sign: at the lease's end the
+        // firm joins the town's looking pool (streetRolls.ts) and takes space
+        // in somebody's building — or finds nothing and leaves town.
         const yrsIn = Math.floor((q - t.startM) / 12);
         s.news.unshift({
           q, kind: "warn",
           text: `${t.name}${yrsIn >= 8 ? `, ${yrsIn} years in the building,` : ""} is not renewing at ${rec.address} — ${ri.why[0]}. `
             + `${(t.sf / 1000).toFixed(1)}k sf comes available ${monthLabel(t.endM)}.`
-            + (dest ? ` They are taking space at ${dest}.` : ""),
+            + ` They are looking at other space.`,
         });
         continue;
       }
@@ -2229,17 +2240,24 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // unrated, short, and it will pay over the odds — income today against
         // a mark on the building tomorrow. Both of those are already priced by
         // rollQualitySpread. The choice was simply never offered.
-        const sector = pickSector(s, use);
+        // ONE POOL OF FIRMS (streetRolls.ts). The party touring is a firm
+        // from the town's looking pool — a new firm, an arrival, or a firm
+        // already in town that wants to move — the same firms the street's
+        // buildings are showing to; if you do not sign it, it may sign down
+        // the street. When nobody in the pool fits, the party is a firm
+        // arriving from outside the town, drawn as before.
+        const seeker = pullSeeker(s, use, sf, bScore);
+        const sector = seeker?.sector ?? pickSector(s, use);
         // WHO IS TOURING (TENANT_TIERS_PLAN.md): the quality this tenant is
         // shopping for, drawn from the movers this building draws at its
         // price — tenants stretching up to it when it is cheap for what it is,
         // tenants settling for it when better space is dear.
-        const tQ = drawTenantQuality(s.econ, use, bScore, rng(s, "leasing"), rng(s, "leasing"));
+        const tQ = seeker?.quality ?? drawTenantQuality(s.econ, use, bScore, rng(s, "leasing"), rng(s, "leasing"));
         const tt = tenantQualityTerms(tQ, bScore);
         const drawnCredit = rollCredit(s, demandLinear(rec.demandScore), buildingScore(rec, h, s).score);
         const credit0: Credit = k === 1 ? (Math.min(2, drawnCredit + 1) as Credit)
           : k === 2 ? 0 : drawnCredit;
-        const credit = Math.max(0, Math.min(2, credit0 + tt.credit)) as Credit;
+        const credit = seeker ? seeker.credit : Math.max(0, Math.min(2, credit0 + tt.credit)) as Credit;
         const rentBias = (k === 1 ? rrange(s, 0.86, 0.95, "leasing") : k === 2 ? rrange(s, 1.04, 1.16, "leasing") : 1) * tt.rent;
         const termBias = (k === 1 ? 1.35 : k === 2 ? 0.6 : 1) * tt.term;
         // term first: the free-rent ask is a function of how long they sign for
@@ -2262,7 +2280,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           use,
           kind: "new",
           quality: Math.round(tQ),
-          name: pickName(s, sector),
+          name: seeker?.name ?? pickName(s, sector),
+          ...(seeker?.fid !== undefined ? { fid: seeker.fid } : {}),
           sector,
           credit,
           sf,
@@ -4774,7 +4793,11 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     }
     const deposit = depositFor(s, l.rentPsf, sf, l.credit);
     moveDeposit(s, h, deposit);
+    // A firm from the town's pool leaves it, and any street suite it held
+    // over in, and brings its books and its people (streetRolls.ts).
+    const carried = l.fid !== undefined ? seekerSigned(s, l.fid) : null;
     const signed: Tenant = {
+      ...(carried ?? {}),
       name: l.name, use, sector: l.sector, credit: l.credit, ...(l.quality !== undefined ? { quality: l.quality } : {}),
       sf, rentPsf: l.rentPsf, bumpPct: bumpOf(l), net: l.net,
       recovery: l.recovery ?? (l.net ? "nnn" : "gross"),

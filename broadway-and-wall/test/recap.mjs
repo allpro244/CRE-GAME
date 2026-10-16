@@ -26,7 +26,11 @@ const books = (g) => { let t = 0; for (const y of g.books ?? []) { for (const k 
 const deposits = (g) => { let d = 0; for (const h of Object.values(g.holdings)) for (const t of h.tenants ?? []) d += t.deposit ?? 0; return d; };
 
 let done = 0;
-for (const seed of (process.env.SEEDS ?? "9401,9402").split(",").map(Number)) {
+// Three seeds: whether the player can afford the buyout inside 200 months is
+// a property of the world, and any change that re-rolls a seed's century
+// (firm entry in a high-rate decade did, for 9401) can take one seed out. 7101
+// never shuts levered credit, so it is the steady one.
+for (const seed of (process.env.SEEDS ?? "9401,9402,7101").split(",").map(Number)) {
   const parcels = JSON.parse(JSON.stringify(P0));
   let g = E.firstListings(E.newGame(seed, parcels, 1_000_000), parcels, bbls);
   let lot = null;

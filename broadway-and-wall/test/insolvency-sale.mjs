@@ -123,13 +123,17 @@ console.log("\nINSOLVENCY SALE — a filed building is the last thing taken, not
 {
   const { g: g0, bbl } = setUp(4242);
   let g = JSON.parse(JSON.stringify(g0));
-  const other = g.listings.map((l) => ({ l, rec: E.resolveRec(parcels, g, l.bbl) }))
+  g.cash = 6_000_000;
+  // the cheapest building on the tape that can actually be bought (one with a
+  // crane on it is not for sale)
+  let other = null, r = null;
+  for (const x of g.listings.map((l) => ({ l, rec: E.resolveRec(parcels, g, l.bbl) }))
     .filter((x) => x.rec && x.l.bbl !== bbl && x.rec.class !== "lot" && x.l.ask < 2_500_000 && x.l.ask > 400_000)
-    .sort((a, b) => a.l.ask - b.l.ask)[0];
+    .sort((a, b) => a.l.ask - b.l.ask)) {
+    r = E.executePurchase(g, parcels, x.l.bbl, x.l.ask, "cash", false, 1);
+    if (!r.err) { other = x; break; }
+  }
   if (other) {
-    g.cash = 6_000_000;
-    const r = E.executePurchase(g, parcels, other.l.bbl, other.l.ask, "cash", false, 1);
-    if (r.err) throw new Error(r.err);
     g = JSON.parse(JSON.stringify(r.s));
     g.cash = -150_000; g.insolventMs = 11; g.underwaterMs = 11;
     { const lim = E.locLimit(g, parcels); g.loc = { balance: lim, drawnTotal: lim, interestPaid: 0 }; }

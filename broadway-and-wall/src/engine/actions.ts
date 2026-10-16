@@ -3838,7 +3838,13 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         }
         bids.sort((a, b) => b - a);
         const reserve = li.ask * 0.92;
-        if (bids[0] < reserve) { survivors.push(li); continue; }
+        // A round that misses the reserve teaches the seller what the room
+        // will pay: the ask comes down toward the best bid (at most a twentieth
+        // a round), as a listing that sits does.
+        if (bids[0] < reserve) {
+          survivors.push({ ...li, ask: Math.round(Math.max(li.ask * 0.95, bids[0] * 1.04) / 1000) * 1000 });
+          continue;
+        }
         px = Math.round(Math.max(reserve, Math.min(bids[0], bids[1] ?? reserve)));
       }
       if (!talk && li.distress && depth > 1) {

@@ -3221,7 +3221,8 @@ the old vacancy reading. Apartments and sheds keep the aggregate reading
 five bids from the buyers who qualify. Each bid is that buyer's own read of
 value at the market's going cap rate, with about 7% disagreement between
 buyers. The building clears at the second-best bid, above a reserve of 92%
-of asking. If no bid clears the reserve, the listing stays on the market. The
+of asking. If no bid clears the reserve, the listing stays on the market and
+the seller re-prices toward the best bid, cutting at most 5% a round. The
 town's cap rate then follows the recorded sales: with three or more
 arm's-length sales in a year, it moves a tenth of the way toward what those
 sales paid against what the model valued them at. A town with no sales holds

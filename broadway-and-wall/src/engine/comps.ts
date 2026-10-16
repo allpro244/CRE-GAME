@@ -18,7 +18,7 @@
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, GameState, Sector } from "./types";
 import type { Disclosure } from "./value";
-import { initialCondition, noiAfterTaxYr, holdingNOIYr, asIfOwned, disclosureFor, landPsfNow, landRead, resolveRec } from "./value";
+import { initialCondition, noiAfterTaxYr, holdingNOIYr, asIfOwned, disclosureFor, landPsfNow, landRead, resolveRec, assetValue } from "./value";
 import { industryStress } from "./market";
 import { recordPropertyEvent } from "./history";
 
@@ -50,6 +50,13 @@ export interface Comp {
    * `tickLandComps`, which divided by it and got the sign backwards for it.
    */
   mark?: number;
+  /**
+   * WHAT THE INDEX SAID IT WAS WORTH, AND THE INDEX, on the day it closed —
+   * buildings only (2026-10-16). The cap-rate index follows where the
+   * market's sales actually clear (market.ts): a print under the model's
+   * value is the market saying yields are higher than the index thinks.
+   */
+  mv?: number; capAt?: number;
 }
 
 const MAX_COMPS = 240;
@@ -113,6 +120,7 @@ export function recordComp(
     // bit-for-bit the number `tickLandComps` would have computed for this lot
     // this month — and unlike that one, it does not keep moving afterwards.
     mark: built ? undefined : landPsfNow(rec, s.econ) || undefined,
+    ...(built ? { mv: Math.round(assetValue(rec, s.econ, cond)), capAt: +(s.econ.capRate?.[rec.class as "office"] ?? 0).toFixed(3) } : {}),
   });
   // Rolling sheet vs century volume. The buffer stays short for the UI; the
   // counters keep every print that ever closed so a long-horizon report is not

@@ -6497,7 +6497,26 @@ export function tickEcon(s: GameState) {
     // matches that without ever being the largest term in the sum.
     const flows = capFlowsOf(e.retExp!, k);
     const target = capTargetOf(e, k, capIndex, sector, flows);
-    e.capRate[k] = e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045);
+    // WHAT INVESTORS REQUIRE (the target: rates, expected returns, the
+    // sector) is what bidders read (actions.ts tickListingAbsorption); WHERE
+    // THE INDEX SITS is where the last year's arm's-length sales cleared
+    // against it (2026-10-16). Each print says how far under or over the
+    // index's own value it traded, restated for how far the index has moved
+    // since. With fewer than three prints in a year the market has no
+    // evidence and the index drifts toward what investors require.
+    (e.capTarget ??= {})[k] = target;
+    let capNext = e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045);
+    {
+      const since = s.month - 12;
+      let w = 0, dv = 0, n = 0;
+      for (const c of s.comps ?? []) {
+        if (c.cls !== k || c.m < since || c.distress || c.offMarket || !(c.mv && c.mv > 0) || !(c.capAt && c.capAt > 0) || !(c.price > 0)) continue;
+        const dev = Math.log(c.mv * (c.capAt / Math.max(0.5, e.capRate[k])) / c.price);
+        w += c.price; dv += c.price * clamp(dev, -0.5, 0.5); n++;
+      }
+      if (n >= 3 && w > 0) capNext = e.capRate[k] * Math.exp(0.1 * dv / w);
+    }
+    e.capRate[k] = capNext;
     // THE EXIT CAP A DEVELOPER UNDERWRITES, which is not this month's.
     //
     // Land is bought against a sale three or four years out, so the yield that

@@ -2014,7 +2014,9 @@ export interface Econ {
    * of the market's slack it signed in) and that slack (`p`).
    */
   deals?: Partial<Record<BuiltClass, { m: number; c: number; p: number; sf: number; r?: number }[]>>;
-  /** The market's slack each new deal reads (the rent equation's monthly pressure), and the comps' usual mix. */
+  /** What investors require of each class (the cap-rate equation's target) — what bidders price at (market.ts). */
+  capTarget?: Partial<Record<BuiltClass, number>>;
+  /** The market's slack each new deal reads (the rent equation's monthly pressure). */
   dealPress?: Partial<Record<BuiltClass, number>>;
   /** Every street block of flats and the flats let in it (streetRolls.ts). */
   flatRolls?: Record<string, import("./streetRolls").FlatRoll>;

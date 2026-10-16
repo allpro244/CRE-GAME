@@ -2008,12 +2008,30 @@ export interface Econ {
    */
   seekers?: import("./streetRolls").Seeker[];
   nextFid?: number;
+  /**
+   * THE COMPS (market.ts recordDeal): every lease signed in the last six
+   * months, by class — its rent against the building's market rent (`c`, net
+   * of the market's slack it signed in) and that slack (`p`).
+   */
+  deals?: Partial<Record<BuiltClass, { m: number; c: number; p: number; sf: number; r?: number }[]>>;
+  /** What investors require of each class (the cap-rate equation's target) — what bidders price at (market.ts). */
+  capTarget?: Partial<Record<BuiltClass, number>>;
+  /** The market's slack each new deal reads (the rent equation's monthly pressure). */
+  dealPress?: Partial<Record<BuiltClass, number>>;
   /** Every street block of flats and the flats let in it (streetRolls.ts). */
   flatRolls?: Record<string, import("./streetRolls").FlatRoll>;
   /** The player's flats' occupancy last month, so a block sold carries its households. */
   heldFlats?: Record<string, number>;
   /** What the town's firms want of each class at reference rents, and the rent response now (market.ts). */
-  demandAt?: Partial<Record<BuiltClass, { ref: number; eff: number; raw: number }>>;
+  demandAt?: Partial<Record<BuiltClass, { ref: number; eff: number; raw: number; lvl?: number }>>;
+  /** The space per worker's structural level at the opening, by class — what `lvl` is read against. */
+  demandLvl0?: Partial<Record<BuiltClass, number>>;
+  /** The town's firms' jobs (streetRolls.ts), at the first count, and the employment index then. */
+  firmJobs?: number; firmJobs0?: number; firmEmp0?: number;
+  /** Each trade's payroll last month, for the firms' month-on-month change. */
+  tradeEmpPrev?: Partial<Record<string, number>>;
+  /** each trade's mean firm-specific sales change last month (streetRolls) */
+  dzBar?: Partial<Record<string, number>>;
   /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */
   streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] } }>>;
   /** The region's sheds off the map, occupied, on the city aggregate (market.ts). */

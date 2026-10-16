@@ -2329,6 +2329,43 @@ function spendNation(
   return d.Y - 1;
 }
 
+/**
+ * RENTS ARE WHAT LEASES SIGN AT (2026-10-16). The office and shop rent indices
+ * used to move on an equation of the market's vacancy; every lease was then
+ * priced off the index, and no lease ever moved it. Now every lease signed —
+ * the street's new leases and renewals (streetRolls.ts) and the player's
+ * (leasing.ts) — is a comp, and the index follows the comps.
+ *
+ * A deal reads the market's slack the month it signs: the vacancy equation's
+ * pressure is now what a tenant's alternatives are worth at the table, carried
+ * as `DEAL_H` months of it (in a soft market a tenant signs under the index
+ * today, and the index follows over the months after). Each deal also carries
+ * its own terms — space marked down for how long it sat, a tenant stretching up
+ * or settling down, a landlord in trouble, the bargaining — which reach that
+ * deal's rent. The index moves by the slack the last six months' comps were
+ * struck at, weighted by the space they let: a market with few deals moves on
+ * few deals, and on the ones that happened.
+ *
+ * (Measured and dropped: moving the index on the comps' mix as well — how far
+ * their markdowns sat from the usual — needs a "usual", and every baseline
+ * learned in the first years carried the opening's stale space with it and
+ * pushed rents up for years.)
+ */
+export const DEAL_H = 6;
+/** What the market's slack does to a deal signed this month, against the index. */
+export function dealSlack(e: Econ, k: BuiltClass): number {
+  return Math.exp(DEAL_H * (e.dealPress?.[k] ?? 0));
+}
+/** A lease signed: `rel` is its rent over the building's market rent (the index's, for that building). */
+export function recordDeal(e: Econ, k: BuiltClass, m: number, rel: number, sf: number, renewal = false) {
+  if ((k !== "office" && k !== "retail") || !(rel > 0) || !(sf > 0)) return;
+  const p = e.dealPress?.[k] ?? 0;
+  const list = ((e.deals ??= {})[k] ??= []);
+  list.push({ m, c: +(Math.log(rel) - DEAL_H * p).toFixed(5), p: +p.toFixed(6), sf: Math.round(sf), ...(renewal ? { r: 1 } : {}) });
+  while (list.length && list[0].m < m - 6) list.shift();
+  if (list.length > 400) list.splice(0, list.length - 400);
+}
+
 export function tickNation(s: GameState) {
   const e = s.econ;
   if (!e.nat) {
@@ -3846,6 +3883,17 @@ export function tickEcon(s: GameState) {
     const premRaw = (e.wageIdx ?? 1) / Math.max(0.1, e.natWageIdx ?? (e.wageIdx ?? 1));
     e.wagePremEma = (e.wagePremEma ?? premRaw) + (premRaw - (e.wagePremEma ?? premRaw)) / 24;
     const wageDemand = Math.pow(Math.max(0.3, e.wagePremEma), -0.5);
+    // THE TOWN'S PAYROLL IS ITS FIRMS' (2026-10-16). Where the town keeps
+    // firms (streetRolls.ts), what employers want to hire is what its firms
+    // employ — each moving with its trade's demand, its own sales and its own
+    // margins, firms forming and closing — scaled for the jobs that sit
+    // outside the commercial floors (public, home-based, the sites). The
+    // employment index is restated to it, so everything that reads it reads
+    // the firms.
+    if (e.firmJobs && e.firmJobs > 0) {
+      if (!(e.firmJobs0 && e.firmJobs0 > 0)) { e.firmJobs0 = e.firmJobs; e.firmEmp0 = e.employIdx; }
+      e.employIdx = clamp((e.firmEmp0 ?? 1) * e.firmJobs / e.firmJobs0, 0.55, 12);
+    }
     const wanted = Math.round((e.jobs0 ?? 132_000) * e.employIdx * wageDemand * (1 - CONSTRUCTION_JOB_SHARE + trades));
     // PARTICIPATION ANSWERS THE MARKET. People come back to work when jobs are
     // easy to find and stop looking when they are not — the discouraged-
@@ -5317,7 +5365,12 @@ export function tickEcon(s: GameState) {
     // What the town's firms want of this class at reference rents, and the
     // rent response today — the street's firms form, size and resize off it
     // (streetRolls.ts).
-    if (k !== "multifamily") (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw };
+    if (k !== "multifamily") {
+      // ...and the space a worker takes beyond the rent: the island against the
+      // mainland, income, and the structural shifts (remote work after a swan).
+      const lvl = (e.locEff?.[k] ?? 1) * (e.incomeEff?.[k] ?? 1) * swanClassLevel(e, k);
+      (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw, lvl };
+    }
     if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     const housable = housableStock(e, k);
     const searchFringe = e.stock[k] * NATURAL_VAC[k] * 0.25;
@@ -5395,12 +5448,20 @@ export function tickEcon(s: GameState) {
     // mapped ones are the firms'.
     const firms = k !== "multifamily" ? e.streetSpace?.[k] : undefined;
     const offShare = firms ? Math.max(0, 1 - (firms.cap + (e.playerNow?.sf?.[k] ?? 0)) / Math.max(1, e.stock[k])) : 0;
-    const firmsOnly = !!firms && offShare < 0.02;
+    // The class's ledger and the map drift a few per cent apart over decades
+    // (deliveries and demolitions are booked to the stock as they happen);
+    // at 2% that sliver alone sent the shops back to the aggregate equation,
+    // which no longer describes the town's firms, and it read a 10-40%
+    // shortage at 4-13% vacancy (retail rents x2.7 in six years, measured).
+    // The offices and shops stay the firms' market; the sliver off the map is
+    // let as the street is.
+    const firmsOnly = !!firms && offShare < 0.10;
     if (firms && !firmsOnly) e.occupied[k] = (e.aggOcc ??= {})[k] ?? e.occupied[k];
     let absorb = 0;
     if (firmsOnly) {
       const before = e.occupied[k];
-      e.occupied[k] = Math.min(e.stock[k], firms!.let + (pNow ?? 0));
+      const onMap = firms!.cap + (e.playerNow?.sf?.[k] ?? 0), letMap = firms!.let + (pNow ?? 0);
+      e.occupied[k] = Math.min(e.stock[k], letMap + Math.max(0, e.stock[k] - onMap) * Math.min(1, letMap / Math.max(1, onMap)));
       absorb = e.occupied[k] - before;
       e.pool[k] = e.occupied[k] + firms!.seek;
       if (pNow !== undefined) (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;
@@ -6307,7 +6368,7 @@ export function tickEcon(s: GameState) {
     void liftGate; void jobDrift;
     const cycleJobs = 0;
     const cycleMom = 0;
-    const drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
+    let drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
     // THE HALF-OF-BASE FLOOR IS NOW A GUARD AGAIN, WHICH IS ALL IT WAS EVER
     // MEANT TO BE. It used to be load-bearing and it used to be the reason the
     // amplitude above looked survivable: removing it took office peak-to-trough
@@ -6316,8 +6377,24 @@ export function tickEcon(s: GameState) {
     // channel: it binds 0.0% of months in every class over 6 seeds x 50 years,
     // and deleting it entirely reproduces every statistic in this file to the
     // digit. Left in place because a guard that never fires is a guard.
+    let noise = rrange(s, -vol, vol);
+    // FROM THE COMPS, where the town's firms are the market (see recordDeal):
+    // the slack the last six months' leases signed in, and how far their mix
+    // sat from the usual one. The market's pressure this month is what the
+    // next month's deals will read.
+    {
+      const list = (k === "office" || k === "retail") && e.streetSpace?.[k] ? e.deals?.[k] : undefined;
+      while (list && list.length && list[0].m < s.month - 6) list.shift();
+      const sf = list ? list.reduce((a, d) => a + d.sf, 0) : 0;
+      if (list && sf > 0) {
+        const pD = list.reduce((a, d) => a + d.p * d.sf, 0) / sf;
+        drift = pD + escalation;
+        noise = 0;
+      }
+      (e.dealPress ??= {})[k] = press;
+    }
     const beforeRent = e.rentIdx[k];
-    e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5 * (e.priceLevel ?? 1), e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
+    e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5 * (e.priceLevel ?? 1), e.rentIdx[k] * (1 + drift + noise));
     if (!e.rentPath) e.rentPath = {} as NonNullable<Econ["rentPath"]>;
     e.rentPath[k] = {
       gap, vacTerm, instant, pressEma, pressClamped: press, clampBound,
@@ -6444,7 +6521,26 @@ export function tickEcon(s: GameState) {
     // matches that without ever being the largest term in the sum.
     const flows = capFlowsOf(e.retExp!, k);
     const target = capTargetOf(e, k, capIndex, sector, flows);
-    e.capRate[k] = e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045);
+    // WHAT INVESTORS REQUIRE (the target: rates, expected returns, the
+    // sector) is what bidders read (actions.ts tickListingAbsorption); WHERE
+    // THE INDEX SITS is where the last year's arm's-length sales cleared
+    // against it (2026-10-16). Each print says how far under or over the
+    // index's own value it traded, restated for how far the index has moved
+    // since. With fewer than three prints in a year the market has no
+    // evidence and the index drifts toward what investors require.
+    (e.capTarget ??= {})[k] = target;
+    let capNext = e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045);
+    {
+      const since = s.month - 12;
+      let w = 0, dv = 0, n = 0;
+      for (const c of s.comps ?? []) {
+        if (c.cls !== k || c.m < since || c.distress || c.offMarket || !(c.mv && c.mv > 0) || !(c.capAt && c.capAt > 0) || !(c.price > 0)) continue;
+        const dev = Math.log(c.mv * (c.capAt / Math.max(0.5, e.capRate[k])) / c.price);
+        w += c.price; dv += c.price * clamp(dev, -0.5, 0.5); n++;
+      }
+      if (n >= 3 && w > 0) capNext = e.capRate[k] * Math.exp(0.1 * dv / w);
+    }
+    e.capRate[k] = capNext;
     // THE EXIT CAP A DEVELOPER UNDERWRITES, which is not this month's.
     //
     // Land is bought against a sale three or four years out, so the yield that

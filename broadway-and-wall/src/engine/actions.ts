@@ -3821,6 +3821,32 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
     if (rng(s, "sales") < base * priceFactor * contested * Math.max(0.25, marketAppetite(s)) * (talk ? 1.7 : 1)) {
       // And whoever comes over the top pays for the privilege of ending it.
       let px = talk ? Math.max(li.ask, Math.round(talk.yourPrice * rrange(s, 1.04, 1.12, "sales"))) : li.ask;
+      // THE PRICE IS THE BIDS (2026-10-16). The buyers who can close on it
+      // each value the building at what investors require of the class today
+      // (market.ts capTarget) and their own read of it; it clears at the
+      // second-best bid, above the seller's reserve, or it does not clear this
+      // month. The cap-rate index then follows where these sales cleared.
+      if (!talk && !li.distress && rec.class !== "land" && rec.bldgArea > 0) {
+        const k = rec.class as "office";
+        const tgt = s.econ.capTarget?.[k], idx = s.econ.capRate?.[k];
+        const atReq = value * (tgt && idx && tgt > 0 ? idx / tgt : 1);
+        const n = Math.max(1, Math.min(5, qualifiedBuyers(s, rec, li.ask)));
+        const bids: number[] = [];
+        for (let i = 0; i < n; i++) {
+          const z = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "sales")))) * Math.cos(2 * Math.PI * rng(s, "sales"));
+          bids.push(atReq * Math.exp(0.07 * z));
+        }
+        bids.sort((a, b) => b - a);
+        const reserve = li.ask * 0.92;
+        // A round that misses the reserve teaches the seller what the room
+        // will pay: the ask comes down toward the best bid (at most a twentieth
+        // a round), as a listing that sits does.
+        if (bids[0] < reserve) {
+          survivors.push({ ...li, ask: Math.round(Math.max(li.ask * 0.95, bids[0] * 1.04) / 1000) * 1000 });
+          continue;
+        }
+        px = Math.round(Math.max(reserve, Math.min(bids[0], bids[1] ?? reserve)));
+      }
       if (!talk && li.distress && depth > 1) {
         // Each additional real bidder closes part of the gap between the
         // receiver's number and what the building is worth. Five serious
@@ -3892,8 +3918,8 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         // conveying the deed left the seller owning a building they had just
         // sold, free to list it again next quarter and print the sale a second
         // time, and a third. See sellToOutsider.
-        sellToOutsider(s, li.bbl, li.ask);
-        recordComp(s, rec, li.ask, b, "a listed seller", li.distress, initialCondition(rec));
+        sellToOutsider(s, li.bbl, px);
+        recordComp(s, rec, px, b, "a listed seller", li.distress, initialCondition(rec));
         // THE TAPE IS NOT NEWS. Measured over 25 years, "Sold: X went to a 1031
         // buyer at $Y" was the single most common line in the paper — 23.6 news
         // items a year and ordinary trades were the largest bucket of them,

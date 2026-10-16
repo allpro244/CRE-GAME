@@ -27,7 +27,9 @@ let g = E.firstListings(E.newGame(12007, parcels, 120_000_000), parcels, bbls);
 // A year in, then until a lot of size is on the tape: which month one lists is
 // the market's business, not this test's, and pinning month 12 made the fixture
 // hostage to every change upstream of the tape.
-const lotsNow = () => g.listings.map((l) => ({ l, rec: parcels[l.bbl] })).filter((x) => x.rec?.class === "land" && x.rec.lotArea > 4000).sort((a, b) => b.rec.demandScore - a.rec.demandScore);
+// The lot as it stands today, not the static record: a street builder may
+// have put a building on a parcel the opening map has as dirt.
+const lotsNow = () => g.listings.map((l) => ({ l, rec: E.resolveRec(parcels, g, l.bbl) })).filter((x) => x.rec?.class === "land" && !(x.rec.bldgArea > 0) && x.rec.lotArea > 4000).sort((a, b) => b.rec.demandScore - a.rec.demandScore);
 for (let m = 0; m < 12 || (m < 48 && lotsNow().length === 0); m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
 const lots = lotsNow();
 check(lots.length > 0, `a lot on the tape (${lots.length})`);

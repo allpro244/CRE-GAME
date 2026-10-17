@@ -161,12 +161,12 @@ export function tickBands(e: Econ, k: BuiltClass) {
   }
   if (stamp) bk.prem = [...stamp.prem];
 
-  // THE STREET'S FIRMS SAY WHICH FLOORS ARE LET (streetRolls.ts). Where the
+  // THE STREET'S FIRMS AND HOUSEHOLDS SAY WHICH FLOORS ARE LET (streetRolls.ts). Where the
   // street keeps real rolls, each band's stock and tenants are measured off
   // the buildings themselves — the moves between bands are firms actually
   // moving — scaled to the class's street totals (sheds carry the region's
   // off-map stock in the same proportions).
-  const fromRolls = k !== "multifamily" ? e.streetSpace?.[k]?.byBand : undefined;
+  const fromRolls = k === "multifamily" ? e.flatBands : e.streetSpace?.[k]?.byBand;
   if (fromRolls && fromRolls.stock.reduce((a, v) => a + v, 0) > 0) {
     const st = fromRolls.stock.reduce((a, v) => a + v, 0);
     const oc = fromRolls.occ.reduce((a, v) => a + v, 0);

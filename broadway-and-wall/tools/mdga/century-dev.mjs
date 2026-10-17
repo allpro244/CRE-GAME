@@ -536,6 +536,39 @@ function trackDownturn() {
   }
 }
 
+// ---------------------------------------------------------------- the town, yearly
+const town = [];
+const cpi0 = g.econ.cpi ?? 1;
+function townRow() {
+  const e = g.econ, R = e.streetRolls ?? {};
+  const byClass = {}, bySec = {}, big = [];
+  for (const [b, r] of Object.entries(R)) for (const t of r.t) {
+    const k = t.use ?? "office"; byClass[k] = (byClass[k] ?? 0) + 1;
+    const hc = (t.hcRef ?? t.sf) * (t.staff ?? 1) / Math.max(0.2, t.staffSign ?? 1);
+    bySec[t.sector] = (bySec[t.sector] ?? 0) + hc;
+    big.push({ name: t.name, sector: t.sector, use: k, sf: Math.round(t.sf), b });
+  }
+  big.sort((a, b) => b.sf - a.sf);
+  const yrFail = (e.streetFailed ?? []).filter((x) => x.m > g.month - 12);
+  const n = e.nat ?? {};
+  return {
+    y: yr(), pop: e.population, jobs: e.jobs, unemp: +((e.unemployment ?? 0) * 100).toFixed(1), natUnemp: +((n.unemp ?? 0) * 100).toFixed(1),
+    infl: +((n.infl ?? 0) * 100).toFixed(1), policy: +(n.policy ?? 0).toFixed(2), gap: +((n.gap ?? 0) * 100).toFixed(1), idx: +e.indexRate.toFixed(2),
+    cpi: +((e.cpi ?? 1) / cpi0).toFixed(3), rwage: +(((e.wageIdx ?? 1) / (e.cpi ?? 1))).toFixed(3), online: +((e.online ?? 0) * 100).toFixed(1),
+    tech: +(n.techLn ?? 0).toFixed(3), fx: +((n.dem?.q ?? 0) * 100).toFixed(1),
+    rentAsk: Object.fromEntries(BUILT.map((u) => [u, +(e.rentIdx?.[u] ?? 0).toFixed(2)])),
+    rentEff: Object.fromEntries(BUILT.map((u) => [u, +(e.effRentIdx?.[u] ?? e.rentIdx?.[u] ?? 0).toFixed(2)])),
+    rentReal: Object.fromEntries(BUILT.map((u) => [u, +((e.effRentIdx?.[u] ?? e.rentIdx?.[u] ?? 0) / ((e.cpi ?? 1) / cpi0)).toFixed(2)])),
+    vac: Object.fromEntries(BUILT.map((u) => [u, +((e.cityVac?.[u] ?? 0) * 100).toFixed(1)])),
+    cap: Object.fromEntries(BUILT.map((u) => [u, +((e.capRate?.[u] ?? 0)).toFixed(2)])),
+    stock: Object.fromEntries(BUILT.map((u) => [u, Math.round((e.stock?.[u] ?? 0) / 1e3)])),
+    firms: byClass, trades: Object.fromEntries(Object.entries(bySec).map(([k, v]) => [k, Math.round(v / 1e3)])),
+    biggest: big.slice(0, 3), failed: yrFail.filter((x) => x.why === "dark").length, left: yrFail.filter((x) => x.why === "left" && !x.to).length,
+    moves: yrFail.filter((x) => x.to).length, seekers: (e.seekers ?? []).length,
+    rivals: (g.rivals ?? []).filter((r) => r.failedM === undefined).length, swans: (g.swanLog ?? []).length,
+  };
+}
+
 // ---------------------------------------------------------------- the clock
 const snaps = [snapshot()];
 const years = [];
@@ -554,6 +587,7 @@ while (g.month < YEARS * 12 && !g.gameOver) {
     const nw = E.netWorth(g, parcels);
     years.push({ y: yr(), nw: Math.round(nw), cash: Math.round(g.cash), rank, field: bd.length, leader: bd[0].name, leaderEq: Math.round(bd[0].eq), phase: g.econ.phase, idx: +g.econ.indexRate.toFixed(2), deeds: Object.keys(g.holdings).length, jobs: Object.keys(g.developments).length });
     if (rank === 1 && !firstTop) { firstTop = yr(); J(`TOOK #1 on the street at ${K(nw)}`); }
+    town.push(townRow());
     if (process.env.PROGRESS) console.log(`${yr()} ${g.econ.phase.padEnd(10)} idx ${g.econ.indexRate.toFixed(1)}% NW ${K(nw)} cash ${K(g.cash)} #${rank}/${bd.length} deeds ${Object.keys(g.holdings).length} jobs ${Object.keys(g.developments).length} started ${jobLog.length}`);
   }
   if (g.month % 240 === 0) snaps.push(snapshot());
@@ -561,7 +595,7 @@ while (g.month < YEARS * 12 && !g.gameOver) {
 if (g.month % 240 !== 0) snaps.push(snapshot());
 const result = {
   seed: SEED, years: YEARS, cash0: CASH, lots: bbls.length, gameOver: g.gameOver ?? null, endMonth: g.month, firstTop,
-  snaps, years, downturns, openDownturn: dt ? { startY: dt.startY, months: g.month - dt.startM, pre: dt.pre, worst: dt.worst, rivalsFailed: dt.rivalsFailed, swans: dt.swans, headlines: dt.headlines } : null, jobs: jobLog, sales, landBuys, counters: C, friction: ERR, listedUnsellable, tape, offMarket: om, finalBoard: board().slice(0, 12), journal,
+  snaps, years, town, downturns, openDownturn: dt ? { startY: dt.startY, months: g.month - dt.startM, pre: dt.pre, worst: dt.worst, rivalsFailed: dt.rivalsFailed, swans: dt.swans, headlines: dt.headlines } : null, jobs: jobLog, sales, landBuys, counters: C, friction: ERR, listedUnsellable, tape, offMarket: om, finalBoard: board().slice(0, 12), journal,
 };
 writeFileSync(OUT, JSON.stringify(result, null, 1));
 if (process.env.STATE) writeFileSync(process.env.STATE, JSON.stringify(g));

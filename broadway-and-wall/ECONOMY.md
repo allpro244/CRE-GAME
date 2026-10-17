@@ -3398,3 +3398,58 @@ boom", "headquarters town". Each is now the thing that made it.
 These are measured facts or technology and preference parameters, which any
 model of behaviour has to start from. The elasticities that used to be typed
 in now come out of them.
+
+## Flats' vacancy floor, online ceiling, national cycle (2026-10-17)
+
+**Flats pinned at the vacancy floor.** In the 100-year playthrough, apartment
+vacancy sat at the transit floor for decades while rents ran far above the
+cost of building. There were two causes:
+- *The supply-price pull took a full step every month.* A landlord's asking
+  rent was pulled toward the price of new supply. A 12-month flat lease is
+  over long before a new building, 30 months away, can compete for the
+  tenant. The pull is now weighted by the share of a lease that the next
+  building can reach, `(lease − supply lag) / lease`:
+  - zero for flats;
+  - about 0.6–0.7 for office, retail and sheds, on 6- to 8-year leases.
+
+  Flats now price today's scarcity, and office, retail and sheds still
+  price tomorrow's competition.
+- *Natural vacancy learned from shortages.* The town's sense of "normal"
+  vacancy followed actual vacancy down, even when the market was short
+  because of a supply lag. It no longer learns while the structural
+  shortage indicator is on.
+
+Result: in the probe town's depression, apartment vacancy went from 3.7% to
+9.2%. Across 8 towns over 60 years, apartment vacancy ranges from 2.3% to
+13% through cycles.
+
+**Online selling** is capped at 40% of goods spending. Its response to
+technology is slower, so the share keeps climbing through the century
+instead of saturating by mid-century.
+
+**National cycle recalibrated.** Before, recessions averaged 21 months and
+the longest expansion in a century had a median of about 20 years. The
+post-war US record is 11 months, with expansions of up to 10–12 years.
+
+Changes:
+- confidence moods are shorter-lived (persistence 0.85, innovation sd
+  0.35%);
+- restocking (6 months) and investment plans (40-month capital adjustment,
+  6-month lag) are faster;
+- profit and precautionary-saving channels are stronger;
+- the central bank follows risk management: once unemployment has risen
+  0.5 points in six months, it eases in half-point steps, or 0.75 after a
+  1-point rise (as in 2001, 2008 and 2020);
+- recessions are dated from a 0.6% fall from the peak.
+
+Over 40 simulated centuries:
+
+| Measure | Result | US post-war |
+|---|---|---|
+| Recessions per decade | 1.7 | about 1.6 |
+| Length, median (90th percentile) | 13 (23) months | 11 months |
+| Unemployment rise, quartiles | 1.5 / 2.7 / 5.0 points | — |
+| Output-gap sd | 3.1% | — |
+| Months in recession | 19% | about 14% |
+| Longest expansion per century, median (max) | 16 (27) years | — |
+| Yield curve inverted before a recession | 57% | — |

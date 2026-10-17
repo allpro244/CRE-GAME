@@ -281,6 +281,8 @@ const MOVE_OUT_M: Record<BuiltClass, number> = { office: 24, retail: 18, industr
 /** The typical lease term by class, months — eight years of office paper,
  *  seven of retail, six of industrial, one of housing. */
 export const LEASE_TERM_M: Record<BuiltClass, number> = { office: 96, retail: 84, industrial: 72, multifamily: 12 };
+/** Months before a building not yet started can deliver: six of planning and the middle of its build (BUILD_MONTHS). */
+const SUPPLY_LAG_M: Record<BuiltClass, number> = { office: 27, retail: 29, industrial: 22, multifamily: 30 };
 const AFFORD_ROLL: Record<BuiltClass, number> = {
   office: 1 / LEASE_TERM_M.office,
   retail: 1 / LEASE_TERM_M.retail,
@@ -372,8 +374,8 @@ const HH_MIN = 0.5;
 const HH_RENT_SHARE0 = 0.30;
 /** Online selling (see ONLINE in the secular block). */
 const ONLINE_0 = 0.02;      // share of store-type sales online at the opening (US 2000)
-const ONLINE_MAX = 0.5;     // the most of it that can ship
-const ONLINE_TECH = 11;     // logit points per log point of technology (2% to ~15% over 2000-20 at 1.1%/yr)
+const ONLINE_MAX = 0.4;     // the most of it that can ship (2026-10-17: 0.5 saturated by year 60 in a playthrough)
+const ONLINE_TECH = 10;     // logit points per log point of technology: ~11% at year 20 (US 2019), ~24% at 30, ~37% at 50
 const ONLINE_COST = 1.5;    // logit points per log point of a shop's rent over a shed's
 const ONLINE_GOODS = 0.4;   // share of retail floor selling shippable goods
 const ONLINE_SHED = 0.8;    // shed floor gained per unit of online share
@@ -1319,7 +1321,7 @@ const CRED_TREND_M = 120;
 /** The spread a bank's margin is normal at: this economy's own average (~2.5 points). */
 const CURVE_NORMAL = 2.5;
 /** A fall of this much off the output peak is a contraction (2001's was ~0.3%). */
-const REC_DROP = 0.003;
+const REC_DROP = 0.006;
 /** Share of corporate debt that floats, and the fixed ladder's average life in months. */
 const CORP_FLOAT = 0.35, CORP_LADDER_M = 72;
 /**
@@ -2049,7 +2051,7 @@ export function termPremBase(credibility: number, creditIdx: number): number {
  * where policy sits. The committee uses it, and so does the bond market's
  * forecast of the committee (`expectedPolicyAvg`) — one rule, one answer.
  */
-function bankStep(gap: number, restoring: boolean, pressured: boolean): number {
+function bankStep(gap: number, restoring: boolean, pressured: boolean, uRise6 = 0): number {
   const abs = Math.abs(gap);
   let step = 0;
   if (abs >= 0.15) {
@@ -2071,7 +2073,15 @@ function bankStep(gap: number, restoring: boolean, pressured: boolean): number {
     // (Volcker's October 1979 move was ~4 points inside a month; the
     // stabilisations that ended Israel's 1985 and Brazil's 1994 inflations
     // moved rates tens of points at once).
-    const unit = restoring ? Math.max(1.5, 0.25 * abs) : frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
+    let unit = restoring ? Math.max(1.5, 0.25 * abs) : frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
+    // RISK MANAGEMENT ON THE WAY DOWN (2026-10-17). A committee watching
+    // payrolls roll over does not ease in quarter points: with unemployment up
+    // half a point in six months it cuts by halves, and by three-quarters once
+    // it is up a point — the Fed of 2001 (eleven cuts, 4.75 points in a year)
+    // and of 2007-08 (with intermeeting moves). Easing at a quarter a meeting
+    // left recessions running 19-21 months against ~10 in the US record and
+    // unemployment rising 4-5 points against ~3.6.
+    if (gap < 0 && !restoring && uRise6 >= 0.005) unit = Math.max(unit, uRise6 >= 0.01 ? 0.75 : 0.5);
     step = Math.sign(gap) * unit;
     if (Math.abs(step) > abs) step = gap;
   }
@@ -2262,6 +2272,29 @@ const ROW = {
   /** export income and price elasticities; import price elasticity */
   X_INC: 1.5, X_PRICE: 0.5, M_PRICE: 0.3,
 };
+/*
+ * THE CYCLE'S SHAPE, RECALIBRATED (2026-10-17). Measured over 40 simulated
+ * centuries of this block alone, the cycle had the right number of recessions
+ * but the wrong kind: 21 months long against ~10 in the post-war US record,
+ * unemployment up 4.8 points against ~3.6, an output gap swinging 3.6 points
+ * (US ~2.2), and expansions running 20 years in a typical century (34 in one
+ * in ten; the longest on the US record is 11). Real recessions are sharp and
+ * short: inventories liquidated inside two quarters, investment plans cut
+ * and restored, and a Fed easing in half points. So:
+ *   confidence moods are larger and shorter-lived (monthly persistence 0.85,
+ *     a half-life of four months, not two years);
+ *   shelves are restocked over six months, not twelve; investment plans lag
+ *     six months and capital gaps close over 40;
+ *   households cut half as hard on a rise in unemployment, and the profit
+ *     squeeze bites three-quarters as hard;
+ *   the bank eases in halves and three-quarters once payrolls roll over
+ *     (bankStep), and a recession is dated from a 0.6% fall in output, not
+ *     every 0.3% wobble.
+ * Measured after (40 centuries): 1.7 recessions a decade (US ~1.6), median
+ * length 13 months, unemployment up 3.0 points (p25 1.4, p75 5.0), the
+ * longest expansion in a century 17 years at the median and 23 at the 90th
+ * percentile, inflation above 6% in 8% of months.
+ */
 const DEM = {
   C0: 0.68, I0: 0.14, IH0: 0.04, G0: 0.17, IMP: 0.15, TAX: 0.25,
   /** transfers per unit of unemployment over natural (UI, SNAP, Medicaid: ~0.4% of output a point) */
@@ -2273,11 +2306,11 @@ const DEM = {
   /** share of spending that follows this year's income rather than what households expect to earn (hand-to-mouth, Campbell-Mankiw ~0.2-0.3) */
   C_NOW: 0.2,
   /** months over which firms read the output they plan for; to close a capital gap; investment plans lag */
-  YE_M: 12, TAU_K: 48, I_LAG: 9,
+  YE_M: 12, TAU_K: 40, I_LAG: 6,
   /** how far the output firms plan capital for follows recent output rather than the trend (Survey of CFOs: plans are mostly trend) */
   YE_W: 0.3,
   /** wage share per unit of unemployment under natural, months to get there, capital wanted per unit of wage share */
-  WS_U: 1.0, WS_M: 18, PROF: 2,
+  WS_U: 1.0, WS_M: 18, PROF: 1.5,
   /** user-cost elasticity of capital (Chirinko 1993: 0.25-0.5) */
   SIGMA_K: 0.4,
   /** consumption per point of real rate over neutral (intertemporal substitution, ~0.3-0.6) */
@@ -2285,13 +2318,13 @@ const DEM = {
   /** months over which households read the real rate */
   RR_M: 12,
   /** consumption pulled back per point of unemployment rise over six months */
-  PREC: 0.8,
+  PREC: 0.4,
   /** inventory to annual sales (~6 weeks), months to restock */
-  NU: 0.12, TAU_N: 12,
+  NU: 0.12, TAU_N: 6,
   /** months for home building to follow; starts per unit of mortgage rate over what borrowers are used to (a 3-point jump takes 30-50% off starts) */
   IH_M: 9, IH_RATE: 6,
   /** consumer and business confidence: monthly shock to the log of what households spend and firms plan */
-  CONF_SIG: 0.001, INV_SIG: 0.004, CONF_RHO: 0.97,
+  CONF_SIG: 0.0035, INV_SIG: 0.006, CONF_RHO: 0.85,
   /** spending out of new borrowing (the credit impulse, ~0.2 of it in total: Biggs, Mayer & Pick 2010) */
   CRED_C: 0.1, CRED_I: 0.1,
   /** capital wanted per unit of the lenders' window off normal (financing constraints) */
@@ -2914,7 +2947,8 @@ export function tickNation(s: GameState) {
     }
   }
   if (meeting) {
-    let step = bankStep(want - n.policy, restore > 0, n.pressureM > 0);
+    const uRise6 = n.uHist && n.uHist.length >= 7 ? n.unemp - n.uHist[n.uHist.length - 7] : 0;
+    let step = bankStep(want - n.policy, restore > 0, n.pressureM > 0, uRise6);
     // No floor (2026-10-13): the rule may take the rate below zero, as the
     // ECB, the SNB and the Bank of Japan did — but each cut below zero is
     // harder to make than the last, because cash pays zero. Past the cost of
@@ -4866,8 +4900,8 @@ export function tickEcon(s: GameState) {
     // (both real, against the opening). Measured US anchors: about 2% of
     // store-type sales online in 2000 and 15% by 2020 (Census e-commerce
     // series), which ONLINE_TECH reproduces at this economy's central
-    // technology growth; at most about half of what a high street sells can
-    // ship at all (groceries, services, food and drink, the clinic), so the
+    // technology growth; at most about two fifths of what a high street sells
+    // can ship at all (groceries, services, food and drink, the clinic), so the
     // share runs toward ONLINE_MAX, and only goods leave the shop: about
     // ONLINE_GOODS of retail floor sells shippable goods. Households move
     // their buying over about five years. A sale online needs about three
@@ -6027,7 +6061,12 @@ export function tickEcon(s: GameState) {
     const avail = (e.cityVac?.[k] ?? NATURAL_VAC[k])
       + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
     const nv = (e.natVac ??= { ...NATURAL_VAC });
-    nv[k] += (avail - nv[k]) * NATVAC_RATE;
+    // ...BUT NOT FROM A SHORTAGE. A month the market spends on its
+    // between-tenants floor with tenants still queueing (`structTight`) is not
+    // evidence of what normal is: it is the shortage itself, and learning from
+    // it taught a market short for eighty years that short was normal (natural
+    // vacancy 4.3% → 3.1%, the gap that should have raised rents erased).
+    if (!((e.structTight?.[k] ?? 0) > 0.005)) nv[k] += (avail - nv[k]) * NATVAC_RATE;
     const gap = avail - nv[k];
 
     // WHERE THE VACANCY-TO-RENT LAG IS NOT (OBSERVATION). `pnpm leadlag` says
@@ -6399,7 +6438,19 @@ export function tickEcon(s: GameState) {
     const siteHk = e.siteHurdle?.[k];
     const eqGap = siteHk !== undefined && siteHk > 1 ? -Math.log(siteHk) : 0;   // ln(r*/r), only when r > r*
     const RENT_EQ_PULL = 0.20 / 12;
-    const instant = vacTerm + RENT_EQ_PULL * eqGap;
+    // ...WEIGHTED BY HOW MUCH OF THE LEASE THE NEXT BUILDING CAN REACH
+    // (2026-10-17). The pull toward the supply price is the tenant pricing in
+    // the building that is coming: a lease prices the rent it expects over its
+    // term, and a building not yet started arrives a planning period plus a
+    // build away (SUPPLY_LAG_M). Of an eight-year office lease most of the term
+    // lies after that, so most of the pull applies; a one-year apartment lease
+    // ends before any crane now unstarted can deliver, so its rent is today's
+    // scarcity and nothing else. Applied at full weight to flats it held their
+    // rents at the cost of building through 80 years of shortage — vacancy
+    // pinned at the between-tenants floor while builders ran flat out at
+    // twice the supply price (measured, metro Frontier, seed 655720).
+    const leaseReach = Math.max(0, (LEASE_TERM_M[k] - SUPPLY_LAG_M[k]) / LEASE_TERM_M[k]);
+    const instant = vacTerm + RENT_EQ_PULL * eqGap * leaseReach;
     const tau = RENT_PRESS_TAU[k];
     e.rentPress[k] += (instant - e.rentPress[k]) / tau;
     const pressEma = e.rentPress[k];

@@ -834,7 +834,7 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
     e.jobsPrevYr = (e.jobsPrevYr ?? e.jobs ?? 1) + ((e.jobs ?? 1) - (e.jobsPrevYr ?? e.jobs ?? 1)) / 12;
     const owners = new Map<string, NonNullable<GameState["rivals"]>[number]>();
     for (const r of s.rivals ?? []) for (const b of r.bbls) owners.set(b, r);
-    type F = { roll: FlatRoll; cap: number; w: number; unit: number; intake: number; lim: number; mkt: number };
+    type F = { roll: FlatRoll; cap: number; w: number; unit: number; intake: number; lim: number; mkt: number; sc: number };
     const fs: F[] = [];
     let after = 0, flatOut = 0;
     for (const [bbl, roll] of Object.entries(e.flatRolls!)) {
@@ -892,10 +892,11 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       const owner = owners.get(bbl);
       const care = owner ? owner.leaseW ?? 0.85 + 0.3 * (paramsOf(owner).care.lease ?? 0.5) : 1;
       const stale = staleDiscount(roll.vac === undefined ? 0 : m - roll.vac);
-      const w = Math.exp((overallScore(rec, e, "multifamily") - 55) / 25) * Math.pow(1 / stale, 2) * care;
+      const sc = overallScore(rec, e, "multifamily");
+      const w = Math.exp((sc - 55) / 25) * Math.pow(1 / stale, 2) * care;
       const unit = Math.max(300, avgUnit(rec, cap));
       // A month's lettings: ~8% of the units of a big block, two flats of a small one.
-      fs.push({ roll, cap, w, unit, intake: 0, lim: Math.max(cap * MF_LEASEUP, unit * 2), mkt });
+      fs.push({ roll, cap, w, unit, intake: 0, lim: Math.max(cap * MF_LEASEUP, unit * 2), mkt, sc });
       after += roll.occ;
     }
     if (!fs.length) return;
@@ -952,6 +953,18 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       if (vacant && f.roll.vac === undefined) f.roll.vac = m;
       else if (!vacant) delete f.roll.vac;
     }
+    // THE FLATS BY QUALITY, MEASURED OFF THE BLOCKS (2026-10-17), as the
+    // offices' and shops' bands are (bands.ts reads it). The bands used to
+    // be bookkeeping: new floor parked empty in the top band and the
+    // households spread by room, so a band of new blocks that were 95% let
+    // read 30% empty, its rent swing fell to 0.26 and every new block
+    // priced off it let at a third of what its desk had planned.
+    const byBand = { stock: new Array(N_BANDS).fill(0), occ: new Array(N_BANDS).fill(0) };
+    for (const f of fs) {
+      const b = Math.max(0, Math.min(N_BANDS - 1, Math.floor(f.sc / 10)));
+      byBand.stock[b] += f.cap; byBand.occ[b] += Math.min(f.cap, f.roll.occ);
+    }
+    e.flatBands = byBand;
   });
 }
 

@@ -2024,6 +2024,8 @@ export interface Econ {
   dealPress?: Partial<Record<BuiltClass, number>>;
   /** Every street block of flats and the flats let in it (streetRolls.ts). */
   flatRolls?: Record<string, import("./streetRolls").FlatRoll>;
+  /** The street's flats by quality band, measured off the blocks each month (streetRolls.ts; bands.ts reads it). */
+  flatBands?: { stock: number[]; occ: number[] };
   /** The player's flats' occupancy last month, so a block sold carries its households. */
   heldFlats?: Record<string, number>;
   /** What the town's firms want of each class at reference rents, and the rent response now (market.ts). */

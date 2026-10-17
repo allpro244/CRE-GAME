@@ -33,8 +33,15 @@ const lotsNow = () => g.listings.map((l) => ({ l, rec: E.resolveRec(parcels, g, 
 for (let m = 0; m < 12 || (m < 48 && lotsNow().length === 0); m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
 const lots = lotsNow();
 check(lots.length > 0, `a lot on the tape (${lots.length})`);
-const { l, rec } = lots[0];
-g = E.executePurchase(g, parcels, l.bbl, l.ask, "cash", false, 1).s;
+// The first lot whose seller takes the ask: a reserve re-priced since it
+// listed is the tape's business, not this test's.
+let l, rec;
+for (const x of lots) {
+  const pr = E.executePurchase(g, parcels, x.l.bbl, x.l.ask, "cash", false, 1);
+  if (pr.err || !pr.s.holdings[x.l.bbl]) { console.log(`  ..    ${x.l.bbl} not bought: ${pr.err ?? "no holding"}`); continue; }
+  ({ l, rec } = x); g = pr.s; break;
+}
+check(!!l, "a lot bought at its ask");
 const landIdx = g.holdings[l.bbl].condIdx;
 check(landIdx !== undefined && landIdx < 0.7, `the dirt carries a middling index while it is dirt (${landIdx?.toFixed(2)})`);
 // Offices where the zoning hosts them, else the first use it does.

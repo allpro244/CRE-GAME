@@ -43,7 +43,7 @@ import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { BuiltClass, Condition, Credit, GameState, Holding, Tenant } from "./types";
 import { START_YEAR } from "./types";
 import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, assetValue, useOccupancy, N_BANDS } from "./value";
-import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, firmCredit, pickSector, pickName, termBandM, concessionPressure } from "./leasing";
+import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, firmCredit, pickSector, pickName, termBandM, concessionPressure, depositFor } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, entrantMargin } from "./tenantBooks";
 import { rng, rrange, reletMonths, dealSlack, recordDeal, FIRM_PROFILE, turnoverYr } from "./market";
@@ -681,7 +681,13 @@ function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: n
   // saved moving costs off it, the market's slack at the table.
   const rel = 0.97 * (b.stressed ? 0.96 : 1) * dealSlack(s.econ, k);
   t.rentPsf = +(useRentPsfYr(b.rec, s.econ, b.cond, k, b.condIdx) * rel).toFixed(2);
-  t.endM = m + 36 + Math.round(60 * rng(s, "leasing"));
+  // The renewal term is chosen as a new lease's is: within the covenant's
+  // band, shorter for a firm whose trade is growing fast (see THE TERM IS
+  // CHOSEN TOO).
+  const band = termBandM(t.credit);
+  const bk = s.econ.firmBooks?.[t.sector], prevE = s.econ.tradeEmpPrev?.[t.sector];
+  const gTrade = bk && prevE ? Math.pow(bk.emp / Math.max(1e-6, prevE), 12) - 1 : 0;
+  t.endM = m + Math.round(rrange(s, band.loM, band.hiM, "leasing") * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTrade))));
   const floor = minLettableSf(b.rec, k);
   if (need < t.sf) t.sf = Math.round(Math.max(Math.min(t.sf, floor), need));
   else if (need > t.sf) {
@@ -690,6 +696,10 @@ function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: n
   }
   t.staffSign = t.staff ?? 1;
   t.hcRef = need / rawNow(s, k);
+  // A fresh lease takes a fresh deposit, sized to the rent and floor it is
+  // for: it kept the old one, so a renewal at less rent or on less floor left
+  // a deposit of four months' rent with the firm (invariants, seed 4000).
+  t.deposit = depositFor(s, t.rentPsf, t.sf, t.credit);
   recordDeal(s.econ, k, m, rel, t.sf, true);
 }
 

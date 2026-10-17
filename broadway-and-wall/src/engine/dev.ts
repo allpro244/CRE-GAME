@@ -97,7 +97,7 @@ import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
 import { consentFor, purseOf } from "./vehicles";
 import { formSyndication, maxOutside, settleSyndications, syndicateBar, chargeDevFee } from "./syndicate";
-import { heldByRaises } from "./investors";
+import { heldByRaises, PITCH_MULT } from "./investors";
 import { lpNetIrr } from "./waterfall";
 
 /**
@@ -1901,7 +1901,7 @@ export function startDevelopment(
   custom?: {
     mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: TakeoutKind;
     /** Raise `outside` of the job's cash equity from outside investors (syndicate.ts); `sources` says who, when a raise circled it (raise.ts). */
-    syndicate?: { outside: number; sources?: Partial<Record<import("./investors").InvestorSource, number>>; clamp?: boolean };
+    syndicate?: { outside: number; sources?: Partial<Record<import("./investors").InvestorSource, number>>; clamp?: boolean; pitch?: import("./investors").PitchStyle };
   },
   lender?: string,
   spec = 0.5,
@@ -2076,7 +2076,8 @@ export function startDevelopment(
     const w = formSyndication(next, bbl, outside, commitCap, landEquity, synSources);
     // Investors are pitched their own net IRR — the projection after the
     // promote this band's terms take (waterfall.ts lpNetIrr) — and judged on it.
-    w.pitchIrr = lpNetIrr(projected, Math.max(1, plan.months + 12) / 12, w.hurdles, w.promotes);
+    // ...as the sponsor chose to pitch it (investors.ts PITCH_MULT; conservative unless told otherwise).
+    w.pitchIrr = lpNetIrr(projected, Math.max(1, plan.months + 12) / 12, w.hurdles, w.promotes) * PITCH_MULT[custom?.syndicate?.pitch ?? "conservative"];
     // What the offering pitched, for the quarterly reports (reviewSyndications).
     w.pitchDeliverM = next.month + plan.months;
     w.pitchNoi = plan.stabNoi;

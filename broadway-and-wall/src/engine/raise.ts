@@ -16,13 +16,15 @@ import { lpNetIrr } from "./waterfall";
 import { resolveRec } from "./value";
 import { playerTerms, dealStakes } from "./reputation";
 import { ffAvailable, syndicateBar } from "./syndicate";
-import { heldByRaises, pitchAppeal, circleMonth, commitHazard, relationshipFactor, committedTotal, openSources, payRaiseLegal, raiseLegalCost, RAISE_WINDOW_M, streetPercentile, SOURCE_LABEL, type InvestorSource, type Raise } from "./investors";
+import { heldByRaises, pitchAppeal, PITCH_MULT, type PitchStyle, circleMonth, commitHazard, relationshipFactor, committedTotal, openSources, payRaiseLegal, raiseLegalCost, RAISE_WINDOW_M, streetPercentile, SOURCE_LABEL, type InvestorSource, type Raise } from "./investors";
 import { money } from "./money";
 
 export interface RaiseJob {
   use: DevUse; floors: number; coverage: number; contract: Contract; ltc?: number;
   custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: TakeoutKind };
   lender?: string; spec: number;
+  /** How the offering is pitched (investors.ts PITCH_MULT); conservative if absent. */
+  pitch?: PitchStyle;
 }
 
 /**
@@ -51,7 +53,7 @@ export function offeringPitch(s: GameState, parcels: ParcelTable, bbl: string, j
   const plan = planDevelopment(s, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, job.custom, job.lender, job.spec);
   if (!plan) return null;
   const t = playerTerms(s);
-  return lpNetIrr(projectedDevIrr(plan), Math.max(1, plan.months + 12) / 12, t.hurdles, t.promotes);
+  return lpNetIrr(projectedDevIrr(plan), Math.max(1, plan.months + 12) / 12, t.hurdles, t.promotes) * PITCH_MULT[job.pitch ?? "conservative"];
 }
 
 export function raiseQuote(s: GameState, parcels: ParcelTable, bbl: string, job: RaiseJob, target: number): { ok: boolean; why?: string; legal: number } {
@@ -70,7 +72,7 @@ export function raiseQuote(s: GameState, parcels: ParcelTable, bbl: string, job:
   // fail at their closings.
   const t = cloneState(s);
   t.cash -= legal + heldByRaises(s, bbl);
-  const r = startDevelopment(t, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, { ...(job.custom ?? {}), syndicate: { outside: target } }, job.lender, job.spec);
+  const r = startDevelopment(t, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, { ...(job.custom ?? {}), syndicate: { outside: target, pitch: job.pitch } }, job.lender, job.spec);
   if (r.err) return { ok: false, why: r.err, legal };
   return { ok: true, legal };
 }
@@ -122,7 +124,7 @@ export function tickRaises(s: GameState, parcels: ParcelTable): void {
       const src: Partial<Record<InvestorSource, number>> = {};
       for (const [k, v] of Object.entries(r.committed)) if (v) src[k as InvestorSource] = Math.round(v * scale);
       const job = r.job as unknown as RaiseJob;
-      const res = startDevelopment(s, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, { ...(job.custom ?? {}), syndicate: { outside: amt, sources: src, clamp: true } }, job.lender, job.spec);
+      const res = startDevelopment(s, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, { ...(job.custom ?? {}), syndicate: { outside: amt, sources: src, clamp: true, pitch: job.pitch } }, job.lender, job.spec);
       if (!res.err) {
         Object.assign(s, res.s);
         closed = true;
@@ -149,7 +151,10 @@ export function tickRaises(s: GameState, parcels: ParcelTable): void {
 export interface RaisePreview {
   years: number;
   dealIrr: number;
+  /** What the offering promises (the projection × the pitch style) — the bar the record judges. */
   pitchIrr: number;
+  /** What the projection itself says investors will earn. */
+  expectIrr: number;
   lpMultiple: number;
   lpOut: number;
   gpOut: number;
@@ -164,7 +169,7 @@ export interface RaisePreview {
   pref: number;
 }
 
-export function raisePreview(s: GameState, plan: DevPlan, landEquity: number, cashNeed: number, outside: number): RaisePreview | null {
+export function raisePreview(s: GameState, plan: DevPlan, landEquity: number, cashNeed: number, outside: number, pitch: PitchStyle = "conservative"): RaisePreview | null {
   if (!(outside > 0)) return null;
   const t = playerTerms(s);
   const equity = Math.max(1, landEquity + cashNeed);
@@ -184,7 +189,8 @@ export function raisePreview(s: GameState, plan: DevPlan, landEquity: number, ca
   // offering, as circleMonth draws it.
   const sources = openSources(s, t.band, ffAvailable(s));
   const pct = streetPercentile(s);
-  const appeal = pitchAppeal(at.lpIrr, t.hurdles[0] ?? 0, t.band);
+  const pitched = at.lpIrr * PITCH_MULT[pitch];
+  const appeal = pitchAppeal(pitched, t.hurdles[0] ?? 0, t.band);
   let seed = 0x9e3779b9 ^ Math.round(outside);
   const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   let full = 0, small = 0, fail = 0, mSum = 0;
@@ -205,7 +211,7 @@ export function raisePreview(s: GameState, plan: DevPlan, landEquity: number, ca
   }
   const closed = full + small;
   return {
-    years, dealIrr, pitchIrr: at.lpIrr, lpMultiple: at.lpOut / lpCap, lpOut: at.lpOut, gpOut: at.gpOut, gpPromote: at.promote, gpMultiple: at.gpMultiple,
+    years, dealIrr, pitchIrr: pitched, expectIrr: at.lpIrr, lpMultiple: at.lpOut / lpCap, lpOut: at.lpOut, gpOut: at.gpOut, gpPromote: at.promote, gpMultiple: at.gpMultiple,
     miss: { lpIrr: mi.lpIrr, lpOut: mi.lpOut, gpOut: mi.gpOut, gpMultiple: mi.gpMultiple },
     stakes: dealStakes(s, equity, lpCap / equity),
     odds: { full: full / 200, small: small / 200, fail: fail / 200, months: closed > 0 ? mSum / closed : RAISE_WINDOW_M },

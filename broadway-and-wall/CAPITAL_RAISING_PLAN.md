@@ -113,6 +113,31 @@ quietly goes to the wrong party.
         stands, instead of failing over the excess;
       - an open raise holds the sponsor's own share of its job, so a
         second raise is not underwritten on the same cash.
+      - investors weigh the pitch: an offering circles at a pace set by its
+        net IRR against the pref, haircut 20% below Proven (§3.4). A pitch
+        at the pref raises at the ordinary pace, a richer one up to 1.25×
+        faster, and one projecting a loss doesn't raise at all;
+      - the cash an open raise holds binds the sponsor's own groundbreaks
+        too, not just other raises.
+
+      The UI, also Oct 2026:
+      - **Build desk.** It shows the offering before launch: the net IRR and
+        multiple pitched (the number the record will judge), the split at
+        plan and five points short, what each outcome would do to the
+        record today, and how raises like it go (fill, close small or fail,
+        from the same hazards).
+      - **Capital → Investors.** A tab of its own, moved off the Debt page,
+        with standing, a next-band checklist (each floor and the rank cut
+        against the record), investor money, deals raised, and the fund.
+      - **Sponsor's creditors.** They take the sponsor's own deeds first. A
+        syndicated deed is reached only through the sponsor's interest: the
+        investors replace their manager at the appraisal less 3%, not a fire
+        sale.
+      - **A job in the ground.** It's an asset the receiver takes and puts on
+        the tape, not the end of the run; a syndicated one so lost is
+        misconduct.
+      - **Half-built sites.** Buying one needs the equity to finish the job,
+        and the buy panel says so.
    3. dynamic fund mandates (§5.1) and the fund revamp (§5) — **first slice done**: a blind pool needs
       Institutional (replacing the lender-standing and two-exits gates); its
       size is what the open investor pools have left this year, drawn down at

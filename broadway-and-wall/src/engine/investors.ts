@@ -221,6 +221,15 @@ export function relationshipFactor(s: GameState, src: InvestorSource): number {
  * pref circles at the ordinary pace, a richer one faster (to 1.25x), a thin
  * one slower, and one that projects a loss does not raise at all.
  */
+/**
+ * HOW THE SPONSOR PITCHES (§3.4 "The promise"): against the engine's own
+ * projection, conservative (three-quarters of it), base (all of it) or
+ * aggressive (15% over it). A richer pitch raises faster today and is the
+ * bar the record judges tomorrow. Shape parameters.
+ */
+export type PitchStyle = "conservative" | "base" | "aggressive";
+export const PITCH_MULT: Record<PitchStyle, number> = { conservative: 0.75, base: 1, aggressive: 1.15 };
+
 export function pitchAppeal(pitch: number, pref: number, band: Band): number {
   const read = pitch * (bandIdx(band) < bandIdx("Proven") ? 0.8 : 1);
   if (!(pref > 0)) return 1;

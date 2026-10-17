@@ -11,11 +11,12 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuildingDesign, Contract, DevUse, GameState, UseMix, BtsCommitment, BuiltClass } from "./types";
 import { cloneState } from "./types";
-import { startDevelopment, planDevelopment, devFundingNeed, takeoutHedgeCost, takeoutHedgeRequired, siteDebtAtGroundbreak, type TakeoutKind } from "./dev";
+import { startDevelopment, planDevelopment, devFundingNeed, takeoutHedgeCost, takeoutHedgeRequired, siteDebtAtGroundbreak, projectedDevIrr, type TakeoutKind, type DevPlan } from "./dev";
+import { lpNetIrr } from "./waterfall";
 import { resolveRec } from "./value";
-import { playerTerms } from "./reputation";
+import { playerTerms, dealStakes } from "./reputation";
 import { ffAvailable, syndicateBar } from "./syndicate";
-import { circleMonth, committedTotal, openSources, payRaiseLegal, raiseLegalCost, RAISE_WINDOW_M, streetPercentile, SOURCE_LABEL, type InvestorSource, type Raise } from "./investors";
+import { circleMonth, commitHazard, relationshipFactor, committedTotal, openSources, payRaiseLegal, raiseLegalCost, RAISE_WINDOW_M, streetPercentile, SOURCE_LABEL, type InvestorSource, type Raise } from "./investors";
 import { money } from "./money";
 
 export interface RaiseJob {
@@ -127,4 +128,74 @@ export function tickRaises(s: GameState, parcels: ParcelTable): void {
       s.news.unshift({ q: s.month, kind: "warn", text: `The raise for ${addr} failed — ${why}. The counsel's ${money(r.legal)} is gone and the lot is still dirt.` });
     }
   }
+}
+
+/**
+ * THE OFFERING, AS THE SPONSOR WOULD SIGN IT (Build desk). What investors are
+ * told they will earn — the job's own projection after this band's
+ * promote, exactly what startDevelopment records as the pitch and what the
+ * record will judge — how the money splits at plan and five points short,
+ * what each outcome would do to the record today, and how a raise of this
+ * size usually goes with the sources the band opens.
+ */
+export interface RaisePreview {
+  years: number;
+  dealIrr: number;
+  pitchIrr: number;
+  lpMultiple: number;
+  lpOut: number;
+  gpOut: number;
+  gpPromote: number;
+  gpMultiple: number;
+  miss: { lpIrr: number; lpOut: number; gpOut: number; gpMultiple: number };
+  stakes: { met: number; beat: number; miss3: number; miss8: number; lost: number };
+  /** Of 200 raises of this size today: the share that fill, close small, fail; months to the close. */
+  odds: { full: number; small: number; fail: number; months: number };
+}
+
+export function raisePreview(s: GameState, plan: DevPlan, landEquity: number, cashNeed: number, outside: number): RaisePreview | null {
+  if (!(outside > 0)) return null;
+  const t = playerTerms(s);
+  const equity = Math.max(1, landEquity + cashNeed);
+  const lpCap = Math.min(outside, equity), gpCap = Math.max(1, equity - lpCap);
+  const years = Math.max(1, plan.months + 12) / 12;
+  const split = (irr: number) => {
+    const T = Math.pow(1 + Math.max(-0.99, irr), years);
+    const lpIrr = lpNetIrr(irr, years, t.hurdles, t.promotes);
+    const L = Math.pow(1 + lpIrr, years);
+    const lpOut = lpCap * L, gpOut = gpCap * T + lpCap * Math.max(0, T - L);
+    return { lpIrr, lpOut, gpOut, gpMultiple: gpOut / gpCap, promote: lpCap * Math.max(0, T - L) };
+  };
+  const dealIrr = projectedDevIrr(plan);
+  const at = split(dealIrr), mi = split(dealIrr - 0.05);
+  // The soft circles, run 200 times on a private generator (the game's own
+  // random streams are not touched): each source's monthly hazard on the
+  // offering, as circleMonth draws it.
+  const sources = openSources(s, t.band, ffAvailable(s));
+  const pct = streetPercentile(s);
+  let seed = 0x9e3779b9 ^ Math.round(outside);
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  let full = 0, small = 0, fail = 0, mSum = 0;
+  for (let k = 0; k < 200; k++) {
+    const got: Record<string, number> = {};
+    let have = 0, m = 0;
+    for (m = 1; m <= RAISE_WINDOW_M; m++) {
+      for (const src of sources) {
+        const need = outside - have;
+        if (!(need > 0)) break;
+        const room = Math.max(0, src.left - (got[src.id] ?? 0));
+        const c = Math.min(need, room, Math.round(outside * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id)) * (0.6 + 0.8 * rnd())));
+        if (c > 0) { got[src.id] = (got[src.id] ?? 0) + c; have += c; }
+      }
+      if (have >= outside) break;
+    }
+    if (have >= outside) { full++; mSum += m; } else if (have >= 0.5 * outside) { small++; mSum += RAISE_WINDOW_M; } else fail++;
+  }
+  const closed = full + small;
+  return {
+    years, dealIrr, pitchIrr: at.lpIrr, lpMultiple: at.lpOut / lpCap, lpOut: at.lpOut, gpOut: at.gpOut, gpPromote: at.promote, gpMultiple: at.gpMultiple,
+    miss: { lpIrr: mi.lpIrr, lpOut: mi.lpOut, gpOut: mi.gpOut, gpMultiple: mi.gpMultiple },
+    stakes: dealStakes(s, equity, lpCap / equity),
+    odds: { full: full / 200, small: small / 200, fail: fail / 200, months: closed > 0 ? mSum / closed : RAISE_WINDOW_M },
+  };
 }

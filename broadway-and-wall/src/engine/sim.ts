@@ -1194,9 +1194,13 @@ function tickMonth(
       // the hole. Only a book with nothing saleable at all ends the run.
       if (!owned.length && locAvailable(s, parcels) <= 0 && fundableNow(s, parcels) <= 0) owned = seizable(true);
       if (owned.length) {
-        // creditors take the most valuable thing you own
-        let pick = owned[0], pickV = -Infinity;
-        for (const h of owned) {
+        // creditors take the most valuable thing you own — of what is yours
+        // alone first. A syndicated deed is the deal's, not the sponsor's:
+        // its creditors can reach the sponsor's interest in it, not the
+        // investors' building, so it is the last thing they go after.
+        const mine = owned.filter((h) => !s.syndications?.[h.bbl]);
+        let pick = (mine.length ? mine : owned)[0], pickV = -Infinity;
+        for (const h of (mine.length ? mine : owned)) {
           const rec = resolveRec(parcels, s, h.bbl);
           const v = rec ? ownedHoldingValue(s, parcels, h) : 0;
           if (v > pickV) { pickV = v; pick = h; }
@@ -1204,7 +1208,13 @@ function tickMonth(
         const rec = resolveRec(parcels, s, pick.bbl)!;
         // Creditors liquidating a distressed borrower get the distressed bid,
         // not a polite 15% off — and every seizure goes on the sponsor's record.
-        const gross = Math.round(pickV * Math.min(0.85, distressPrice(s)));
+        // On a syndicated deed it is not a fire sale: the investors replace
+        // their sponsor as manager and take out its interest at the
+        // appraisal, less the costs of the change (3%), and the deal's
+        // waterfall pays them their share first. The sponsor's creditors get
+        // what the sponsor's interest was worth.
+        const gpOut = !!s.syndications?.[pick.bbl];
+        const gross = Math.round(pickV * (gpOut ? 0.97 : Math.min(0.85, distressPrice(s))));
         // A SEIZURE IS STILL A SALE, AND A SALE HAS A WATERFALL.
         //
         // The whole gross used to land in the account. Measured on a
@@ -1292,7 +1302,9 @@ function tickMonth(
         coverCashShortfall(s, parcels);
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `The creditors took ${rec.address} — sold at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `
+          text: (gpOut
+            ? `Your creditors took your interest in ${rec.address}. The investors replaced you as manager and took the building at ${money(gross)}, the appraisal less the costs of the change; their share came off first. `
+            : `The creditors took ${rec.address} — sold at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `)
             + (lien > 0 || release > 0
               ? shortfall > 0
                 ? `It did not cover the ${money(lien)} mortgage${pick.loan?.recourse ? `, and you signed for the ${money(shortfall)} shortfall` : `, and the paper was non-recourse`}. `

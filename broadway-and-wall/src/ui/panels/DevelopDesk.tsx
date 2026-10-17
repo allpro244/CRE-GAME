@@ -14,7 +14,7 @@ import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN, owne
 import { ffAvailable, maxOutside, syndicateBar } from "@/engine/syndicate";
 import { playerTerms, termsLine } from "@/engine/reputation";
 import { raiseLegalCost, committedTotal, SOURCE_LABEL, RAISE_WINDOW_M } from "@/engine/investors";
-import { heldByRaises } from "@/engine/raise";
+import { heldByRaises, raisePreview } from "@/engine/raise";
 
 // What a plan short of its hurdle is still worth over its cost. The required
 // yield carries the merchant builder's margin, so value / basis is
@@ -1034,6 +1034,29 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                         <Row k="Completion guarantee" v="Yours — overruns past their commitment are your cash alone" bad />
                       </div>
                     )}
+                    {outside > 0 && plan && (() => {
+                      // THE OFFERING (raise.ts raisePreview): what you are promising, how it
+                      // splits, what it stakes on your record, and how raises like it go.
+                      const pv = raisePreview(game, plan, landEquity, need.whole, outside);
+                      if (!pv) return null;
+                      const p1 = (x: number) => `${(x * 100).toFixed(1)}%`;
+                      const sc = (x: number) => `${x >= 0 ? "+" : ""}${x.toFixed(1)}`;
+                      return (
+                        <>
+                          <div className="page-section-head" style={{ marginTop: 8 }}>The promise</div>
+                          <div className="grid">
+                            <Row k="You pitch investors" v={`${p1(pv.pitchIrr)} a year net · ${pv.lpMultiple.toFixed(2)}x over ~${pv.years.toFixed(1)} years`} strong
+                              title="The job's own projection after your promote. This is the number the offering states, and the number every investor you ask next will judge this deal against." />
+                            <Row k="At plan" v={`they get ${usd(pv.lpOut)} · you get ${usd(pv.gpOut)} (${pv.gpMultiple.toFixed(2)}x, ${usd(pv.gpPromote)} of it promote)`} />
+                            <Row k="Five points short" v={`they get ${p1(pv.miss.lpIrr)} · ${usd(pv.miss.lpOut)} · you ${usd(pv.miss.gpOut)} (${pv.miss.gpMultiple.toFixed(2)}x)`} bad={pv.miss.lpIrr < 0} />
+                            <Row k="Your record if you…" v={`deliver ${sc(pv.stakes.met)} · beat by 2+ pts ${sc(pv.stakes.beat)} · miss by 2–5 ${sc(pv.stakes.miss3)} · miss by 5+ ${sc(pv.stakes.miss8)} · lose their money ${sc(pv.stakes.lost)}`}
+                              bad title="Change in your track-record score when this deal is realised, against your record today. A kept promise builds slowly; a broken one counts in full." />
+                            <Row k="How raises like this go" v={`${Math.round(pv.odds.full * 100)}% fill (~${pv.odds.months.toFixed(1)} mo) · ${Math.round(pv.odds.small * 100)}% close small · ${Math.round(pv.odds.fail * 100)}% fail`}
+                              bad={pv.odds.fail > 0.25} title={`Your band's sources, your rank on the street and how they have done with you before, over the ${RAISE_WINDOW_M}-month window.`} />
+                          </div>
+                        </>
+                      );
+                    })()}
                   </>
                 ) : (
                   <div className="hint">{synBar ?? (ffAvailable(game) <= 0

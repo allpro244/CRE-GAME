@@ -62,9 +62,13 @@ export const DESKS: readonly Desk[] = [
   },
   {
     id: "capital", label: "Capital", icon: "⚖", key: "4",
-    note: "Loans, the line, the fund, and the ledger",
+    note: "Loans, investors, the fund, and the ledger",
     tabs: [
-      { page: "debt", label: "Debt", note: "Loans, refinancing, the line and the fund" },
+      { page: "debt", label: "Debt", note: "Loans, refinancing and the line" },
+      // EQUITY IS NOT DEBT. Your standing with investors, every deal you
+      // raised and the fund sat at the bottom of the Debt page, under the
+      // mortgages — the one room a small developer needs to find first.
+      { page: "investors", label: "Investors", note: "Your standing with investors, outside equity deal by deal, and the fund" },
       // EVERY LENDER'S BOOKS, ALWAYS OPEN. The desks' statements had been an
       // expandable row at the bottom of City → Markets → The banks; a borrower
       // choosing where to go needs them where the borrowing is.

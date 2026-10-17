@@ -309,6 +309,28 @@ export function inheritRecord(s: GameState, parent: Rival): { m: number; ev: num
     .map((e) => ({ m: e.m, ev: Math.round(e.ev * HERITAGE_SHARE * 100) / 100, size: Math.round(e.size * HERITAGE_SHARE * 1000) / 1000 }));
 }
 
+/**
+ * WHAT ONE MORE INVESTOR DEAL WOULD DO TO THE RECORD, today, by outcome —
+ * the same weights playerEvidence gives a realised syndicate: size on a kept
+ * promise, the concentration floor of ×1 on a broken one, ×0.85 when the
+ * sponsor's own money is in at 10% or more, and the own-money blend. For the
+ * Build desk, so the sponsor sees what it is staking before it pitches.
+ */
+export function dealStakes(s: GameState, equity: number, outsideShare: number): { met: number; beat: number; miss3: number; miss8: number; lost: number } {
+  const ev0 = playerEvidence(s);
+  const base = scoreOf(ev0, s.month).score;
+  let managed = 0;
+  for (const e of s.exits ?? []) if (e.irr !== undefined && (e.equityIn ?? 0) > 0) managed += e.equityIn ?? 0;
+  const size = sizeWeight(equity, priceLevel(s.econ));
+  const blend = OWN_WEIGHT + (1 - OWN_WEIGHT) * outsideShare;
+  const neg = concentration(equity / Math.max(1, managed + equity), true) * (1 - outsideShare >= 0.10 ? 0.85 : 1) * blend;
+  const at = (ev: number) => {
+    const w = ev > 0 ? ev * size * blend : ev * neg;
+    return scoreOf([...ev0, { m: s.month, ev: w, size: w > 0 ? size : 0, kind: "investor", label: "" }], s.month).score - base;
+  };
+  return { met: at(4), beat: at(6), miss3: at(-8), miss8: at(-15), lost: at(-30) };
+}
+
 /** Score a record at month `now`: shrink(positive) + negative, with fading. */
 export function scoreOf(ev: Evidence[], now: number): { score: number; n: number; deals: number; investorDeals: number; misconduct: boolean } {
   const live = ev.filter((e) => now - e.m <= DROP_M);
@@ -354,6 +376,43 @@ export function rankBand(rank: number, of: number): Band {
 }
 
 const minBand = (a: Band, b: Band) => (bandIdx(a) <= bandIdx(b) ? a : b);
+
+/**
+ * WHAT THE NEXT BAND NEEDS, against what the record has today — the floors
+ * (floorBand) and the rank cut (rankBand) as checklist rows, for the
+ * Investors page. Misconduct is its own row: nothing else counts while it lives.
+ */
+export function nextBandNeeds(s: GameState): { next: Band; rows: { label: string; have: string; need: string; ok: boolean }[] } | null {
+  const cur = s.reputation?.band ?? "Unknown";
+  const i = bandIdx(cur);
+  if (i >= BANDS.length - 1) return null;
+  const next = BANDS[i + 1];
+  const sc = scoreOf(playerEvidence(s), s.month);
+  const me = rankStreet(s).find((x) => x.id === "you");
+  const of = Math.max(1, rankStreet(s).length);
+  const rows: { label: string; have: string; need: string; ok: boolean }[] = [];
+  const f1 = (x: number) => x.toFixed(1);
+  if (sc.misconduct) rows.push({ label: "Misconduct on the record", have: "live", need: "faded (20 years)", ok: false });
+  const floor: Partial<Record<Band, { score: number; n?: number; deals?: number; inv?: number; fund?: boolean }>> = {
+    Questioned: { score: -40 }, Unknown: { score: -10 }, Emerging: { score: 10 },
+    Proven: { score: 25, n: 3, deals: 2 }, Institutional: { score: 40, n: 8, deals: 3, inv: 1 }, "Blue-chip": { score: 55, n: 12, deals: 4, fund: true },
+  };
+  const f = floor[next];
+  if (f) {
+    rows.push({ label: "Track-record score", have: f1(sc.score), need: `${f.score}+`, ok: sc.score >= f.score });
+    if (f.n) rows.push({ label: "Experience (deals weighted by size)", have: f1(sc.n), need: `${f.n}+`, ok: sc.n >= f.n });
+    if (f.deals) rows.push({ label: "Good realised deals", have: String(sc.deals), need: `${f.deals}+`, ok: sc.deals >= f.deals });
+    if (f.inv) rows.push({ label: "…of them with outside investors", have: String(sc.investorDeals), need: `${f.inv}+`, ok: sc.investorDeals >= f.inv });
+    if (f.fund) { const ok = (s.fundHistory ?? []).some((x) => x.called > 0 && x.distributed >= x.called); rows.push({ label: "A fund that returned its capital", have: ok ? "yes" : "no", need: "yes", ok }); }
+  }
+  // The rank cut: the lowest rank that still holds `next` (rankBand), for bands the rank gates.
+  if (bandIdx(next) >= bandIdx("Emerging") && me) {
+    let cut = 0;
+    for (let r = 1; r <= of; r++) if (bandIdx(rankBand(r, of)) >= bandIdx(next)) cut = r;
+    rows.push({ label: "Rank on the street", have: `#${me.rank} of ${of}`, need: `#${cut} or better`, ok: me.rank <= cut });
+  }
+  return { next, rows };
+}
 
 /** Rivals' styles that run outside capital as a matter of course (count as a realised investor vehicle). */
 const INSTITUTIONAL_STYLES = new Set(["core", "pe", "reit", "opportunistic", "merchant", "foreign"]);

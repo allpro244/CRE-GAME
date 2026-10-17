@@ -63,7 +63,7 @@ export interface DesignPreview {
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks";
+export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "investors" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.

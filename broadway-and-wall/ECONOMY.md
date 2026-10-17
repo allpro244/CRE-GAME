@@ -3453,3 +3453,17 @@ Over 40 simulated centuries:
 | Months in recession | 19% | about 14% |
 | Longest expansion per century, median (max) | 16 (27) years | — |
 | Yield curve inverted before a recession | 57% | — |
+
+**Flats' quality bands are measured off the blocks.** Offices and shops
+already measured their quality bands (stock and let space by score) from the
+street's real rent rolls. Flats still kept them as bookkeeping:
+- new floor arrived empty in the top band;
+- households were spread across bands by room.
+
+In the playthrough town, a band of new blocks that was 95% let read as 30%
+empty. Its rent swing fell to 0.26, and the player's first block of flats let
+at a third of the rent its desk had planned. The bands now read the blocks'
+own rolls each month.
+
+Over 8 towns × 60 years, apartment rents and vacancy keep their ranges: real
+rent 1.1–2.0× by year 60, and vacancy cycling between 2% and 12%.

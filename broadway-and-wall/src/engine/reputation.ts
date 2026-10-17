@@ -79,6 +79,17 @@ export function sizeWeight(equity: number, level = 1): number {
   return equity > 0 ? Math.cbrt(equity / (REF_EQUITY * Math.max(1e-6, level))) : 0;
 }
 
+/**
+ * HOW MUCH OF THE BOOK A BAD RESULT WAS: ×0.6 for a sliver, ×2.0 for the
+ * whole of it (§3.4). A promise broken to investors is never a sliver
+ * (owner, Oct 2026: a broken promise must weigh far more than a kept one):
+ * it counts at least in full, and more when the deal was much of the book.
+ */
+function concentration(share: number, promised: boolean): number {
+  const c = 0.6 + 1.4 * Math.min(1, Math.max(0, share));
+  return promised ? Math.max(1, c) : c;
+}
+
 /** The city's value index at month m (office rent over office cap), for the market-wide fault test. */
 function marketIndex(s: GameState, m: number): number | null {
   const h = s.econ.history ?? [];
@@ -120,8 +131,17 @@ export function playerEvidence(s: GameState): Evidence[] {
       outside = syn.lpIn / equity;
       gpShare = syn.gpIn / equity;
     } else {
-      actual = e.irr;
-      pitch = e.planIrr;
+      // OWN MONEY IS JUDGED AS A RIVAL'S OWN-MONEY SALE IS (rivalEvidence):
+      // nobody outside the firm saw a pitch, so there is no promise to miss.
+      // The deeds show what it paid and what it sold for, so a loss is on the
+      // record at its multiple; a sale on the firm's own schedule at a profit
+      // is a promise met; one on its lender's schedule is the table's "missed
+      // the plan" row. (It used to be judged against the firm's own
+      // underwriting, which rivals never were: a $138M firm with ten good
+      // deals sold a $111K lot below its development plan and ranked 91st of
+      // 92 — "Questioned" — for four years.)
+      actual = null;
+      pitch = null;
       multiple = (e.equityOut ?? 0) / (e.equityIn ?? 1);
       equity = e.equityIn ?? 0;
     }
@@ -129,13 +149,21 @@ export function playerEvidence(s: GameState): Evidence[] {
     // at realisation (the nearest the record keeps to the deal's own vintage).
     const size = sizeWeight(equity, level);
     let ev = outcomeEvidence(actual, pitch, multiple);
+    if (!syn && e.forced) ev = Math.min(ev, -8);
+    // A good result is weighted by the deal's size. A PROMISE BROKEN TO
+    // INVESTORS IS NOT: however small the deal, people who were told one
+    // thing got another, and that counts in full (owner, Oct 2026: a broken
+    // promise must weigh far more than a kept one). An own-money loss
+    // broke no promise, so it is weighted by size like a gain — a small
+    // deal's miss says as little about a sponsor as a small deal's beat.
     if (ev > 0) ev *= size;
     else if (syn?.misconduct) {
       // A broken completion guarantee is the sponsor's, never the market's: ×2 (§3.4).
-      ev *= 2 * (0.6 + 1.4 * Math.min(1, equity / Math.max(1, managed)));
+      ev *= 2 * concentration(equity / Math.max(1, managed), true);
     } else {
+      if (!syn) ev *= size;
       ev *= faultMult(s, e.boughtM, e.soldM);
-      ev *= 0.6 + 1.4 * Math.min(1, equity / Math.max(1, managed));
+      ev *= concentration(equity / Math.max(1, managed), !!syn);
       if (gpShare >= 0.10) ev *= 0.85;   // the sponsor's own money suffered alongside
     }
     // Own-money evidence counts at 90%; a deal blends by its outside share, so
@@ -153,7 +181,7 @@ export function playerEvidence(s: GameState): Evidence[] {
     let ev = outcomeEvidence(c.lpIrr, c.pitchIrr, multiple);
     if (ev > 0) ev *= size;
     else {
-      ev *= 0.6 + 1.4 * Math.min(1, equity / Math.max(1, managed + equity));
+      ev *= concentration(equity / Math.max(1, managed + equity), true);
       if (c.gpIn / equity >= 0.10) ev *= 0.85;
     }
     ev *= OWN_WEIGHT + (1 - OWN_WEIGHT) * (c.lpIn / equity);
@@ -177,7 +205,7 @@ export function playerEvidence(s: GameState): Evidence[] {
     if (ev > 0) ev *= size;
     else {
       ev *= faultMult(s, f.raisedM, f.closedM);
-      ev *= 0.6 + 1.4 * Math.min(1, f.called / Math.max(1, managed + f.called));
+      ev *= concentration(f.called / Math.max(1, managed + f.called), true);
       if (f.gpCommit / Math.max(1, f.size) >= 0.10) ev *= 0.85;
     }
     out.push({ m: f.closedM, ev, size: ev > 0 ? size : 0, kind: "investor", label: `Your fund, ${multiple.toFixed(2)}x to its LPs` });
@@ -251,8 +279,9 @@ export function rivalEvidence(s: GameState, r: Rival): Evidence[] {
     let ev = d.mult !== undefined ? outcomeEvidence(d.irr, d.pitch, d.mult) : d.forced ? -8 : 4;
     if (ev > 0) ev *= size;
     else {
+      if (!d.lp) ev *= size;   // own money: no promise broken (see playerEvidence)
       ev *= faultMult(s, d.m - 36, d.m);
-      ev *= 0.6 + 1.4 * Math.min(1, d.eq / Math.max(1, managed));
+      ev *= concentration(d.eq / Math.max(1, managed), !!d.lp);
       if (d.lp) ev *= 0.85;   // the sponsor's co-invest suffered alongside
     }
     ev *= d.lp ? 1 : OWN_WEIGHT;

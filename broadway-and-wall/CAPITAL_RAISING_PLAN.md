@@ -105,6 +105,14 @@ quietly goes to the wrong party.
       from what is left. Raises take time and can fail (§3.3): counsel paid
       up front and sunk, soft circles over up to three months as monthly
       hazards by street rank, close full, small (half or more) or fail.
+      Fixed Oct 2026, after two 60-year raising playthroughs:
+      - each source circles a share of the offering a month, not of what
+        is left, so a raise can fill (before, all 12 ran three months and
+        closed short);
+      - a closing takes investors' money up to the $-per-$ rule as it then
+        stands, instead of failing over the excess;
+      - an open raise holds the sponsor's own share of its job, so a
+        second raise is not underwritten on the same cash.
    3. dynamic fund mandates (§5.1) and the fund revamp (§5) — **first slice done**: a blind pool needs
       Institutional (replacing the lender-standing and two-exits gates); its
       size is what the open investor pools have left this year, drawn down at
@@ -448,7 +456,24 @@ vintage window, from rival funds and merchant SPVs):
 Then **size**:
 - **Good results** are multiplied by the deal's **size weight** (next
   section), so a big success counts for more than a small one.
-- **Bad results** are multiplied by × 0.6 to × 2.0, by the deal's share of
+- **A promise broken to investors counts in full** (owner, Oct 2026: a broken
+  promise must weigh far more than a kept one). It isn't scaled down by size,
+  and the × 0.6 "sliver" discount below doesn't apply: it's × 1.0 to × 2.0.
+
+  Measured on a $2M deal, after six kept promises, a miss costs:
+
+  | Outcome | Cost, as a multiple of what keeping the promise earns |
+  |---|---|
+  | Missed by 3 points | 2× |
+  | Missed by 8 points | 3.8× |
+  | Lost 5% | 5× |
+  | Lost 20% | 7.5× |
+
+  For a first-time sponsor, one miss costs 16–60 kept promises.
+- **An own-money loss** broke no promise, so it is weighted by size like a
+  gain. Before this, a $111K lot sold at a loss outweighed every one of a
+  $138M firm's $4–10M successes.
+- **Otherwise, bad results** are multiplied by × 0.6 to × 2.0, by the deal's share of
   all the investor capital you have ever managed. A blow-up on your biggest
   deal hurts most, whatever your track record.
 
@@ -502,6 +527,14 @@ pre-tax `irr`).
 null), whether a development sold or a refinance that returned the equity.
 Holdings that are still marked rather than realised don't count, same as
 everywhere else.
+
+**Changed Oct 2026: judged as a rival's own-money sale is.** Nobody outside
+the firm saw a pitch, so there is no promise to miss. A profit on the firm's
+own schedule is a promise met (+4 × size); a loss shows on the deeds and takes
+its multiple's row of the table; a forced sale takes at least the "missed the
+plan" row (−8). Judging the player's own deals against its own underwriting,
+while rivals' own-money sales counted as met, ranked the player below rivals
+on the same record. The text below is the original design.
 
 **What they're judged against: their own underwriting.** An own-money deal
 had no pitch, but it had a plan. When a job breaks ground (or a building is

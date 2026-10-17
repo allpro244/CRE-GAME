@@ -11,7 +11,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuildingDesign, Contract, DevUse, GameState, UseMix, BtsCommitment, BuiltClass } from "./types";
 import { cloneState } from "./types";
-import { startDevelopment, type TakeoutKind } from "./dev";
+import { startDevelopment, planDevelopment, devFundingNeed, takeoutHedgeCost, takeoutHedgeRequired, siteDebtAtGroundbreak, type TakeoutKind } from "./dev";
 import { resolveRec } from "./value";
 import { playerTerms } from "./reputation";
 import { ffAvailable, syndicateBar } from "./syndicate";
@@ -29,15 +29,39 @@ export interface RaiseJob {
  * groundbreaking itself must pass with the money in (startDevelopment on a
  * copy), and the band must open sources that could carry it.
  */
+/**
+ * THE SPONSOR'S OWN SHARE of a job raising `target`: the whole cash the job
+ * needs from its owners (equity, points, the hedge, the change-order margin
+ * and any land loan repaid at close), less what the investors bring. A raise
+ * holds this much of the sponsor's money while it is open.
+ */
+export function sponsorShare(s: GameState, parcels: ParcelTable, bbl: string, job: RaiseJob, target: number): number {
+  const plan = planDevelopment(s, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, job.custom, job.lender, job.spec);
+  if (!plan) return 0;
+  const kind: TakeoutKind = job.custom?.takeout ?? (takeoutHedgeRequired(plan) ? "cap" : "float");
+  const need = devFundingNeed(plan, takeoutHedgeCost(plan, kind));
+  return Math.max(0, Math.round(need.whole + siteDebtAtGroundbreak(s, bbl).due - target));
+}
+
+/** What the sponsor's other open raises hold of its money (their own shares, at launch). */
+export function heldByRaises(s: GameState, except?: string): number {
+  let t = 0;
+  for (const [b, r] of Object.entries(s.raises ?? {})) if (b !== except) t += r.reserve ?? 0;
+  return t;
+}
+
 export function raiseQuote(s: GameState, parcels: ParcelTable, bbl: string, job: RaiseJob, target: number): { ok: boolean; why?: string; legal: number } {
   const legal = raiseLegalCost(s, target);
   const bar = syndicateBar(s, bbl);
   if (bar) return { ok: false, why: bar, legal };
   if (s.raises?.[bbl]) return { ok: false, why: "A raise is already open on this lot.", legal };
   if (!(target > 0)) return { ok: false, why: "Nothing to raise.", legal };
-  // The groundbreaking with the money in, tried on a copy with the counsel paid.
+  // The groundbreaking with the money in, tried on a copy with the counsel
+  // paid — and without the money the sponsor's other open raises already
+  // hold, or two raises would each be underwritten on the same cash and both
+  // fail at their closings.
   const t = cloneState(s);
-  t.cash -= legal;
+  t.cash -= legal + heldByRaises(s, bbl);
   const r = startDevelopment(t, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, { ...(job.custom ?? {}), syndicate: { outside: target } }, job.lender, job.spec);
   if (r.err) return { ok: false, why: r.err, legal };
   return { ok: true, legal };
@@ -49,7 +73,7 @@ export function launchRaise(s: GameState, parcels: ParcelTable, bbl: string, job
   if (!q.ok) return { s, err: q.why };
   const next = cloneState(s);
   payRaiseLegal(next, q.legal);
-  const raise: Raise = { bbl, target: Math.round(target), openedM: next.month, deadlineM: next.month + RAISE_WINDOW_M, committed: {}, legal: q.legal, job: job as unknown as Raise["job"] };
+  const raise: Raise = { bbl, target: Math.round(target), openedM: next.month, deadlineM: next.month + RAISE_WINDOW_M, committed: {}, legal: q.legal, job: job as unknown as Raise["job"], reserve: sponsorShare(s, parcels, bbl, job, target) };
   (next.raises ??= {})[bbl] = raise;
   const addr = resolveRec(parcels, next, bbl)?.address ?? bbl;
   const who = openSources(next, playerTerms(next).band, ffAvailable(next)).map((x) => SOURCE_LABEL[x.id].toLowerCase()).join(", ");
@@ -89,7 +113,7 @@ export function tickRaises(s: GameState, parcels: ParcelTable): void {
       const src: Partial<Record<InvestorSource, number>> = {};
       for (const [k, v] of Object.entries(r.committed)) if (v) src[k as InvestorSource] = Math.round(v * scale);
       const job = r.job as unknown as RaiseJob;
-      const res = startDevelopment(s, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, { ...(job.custom ?? {}), syndicate: { outside: amt, sources: src } }, job.lender, job.spec);
+      const res = startDevelopment(s, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, { ...(job.custom ?? {}), syndicate: { outside: amt, sources: src, clamp: true } }, job.lender, job.spec);
       if (!res.err) {
         Object.assign(s, res.s);
         closed = true;
@@ -97,7 +121,8 @@ export function tickRaises(s: GameState, parcels: ParcelTable): void {
     } else why = `only ${money(have)} of ${money(r.target)} was circled`;
     delete s.raises![bbl];
     if (closed) {
-      s.news.unshift({ q: s.month, kind: "deal", text: `The raise for ${addr} closed${amt < r.target ? ` small, at ${money(amt)} of ${money(r.target)}` : ` at ${money(amt)}`} after ${s.month - r.openedM} month${s.month - r.openedM === 1 ? "" : "s"}. Ground is broken.` });
+      const took = s.syndications?.[bbl]?.lpCommit ?? amt;
+      s.news.unshift({ q: s.month, kind: "deal", text: `The raise for ${addr} closed${took < r.target ? ` small, at ${money(took)} of ${money(r.target)}${took < amt ? " — all the rules let investors put in" : ""}` : ` at ${money(took)}`} after ${s.month - r.openedM} month${s.month - r.openedM === 1 ? "" : "s"}. Ground is broken.` });
     } else {
       s.news.unshift({ q: s.month, kind: "warn", text: `The raise for ${addr} failed — ${why}. The counsel's ${money(r.legal)} is gone and the lot is still dirt.` });
     }

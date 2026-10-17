@@ -32,9 +32,10 @@ export function SyndicateDesk() {
     <div className="page-section">
       <div className="page-section-head">Your standing with investors</div>
       <div className="hint">
-        Investors read your realised record against what each deal was underwritten to return, and rank you against every
-        firm on the street. The band they act on is the lower of your rank's and your score's. Deals done with your own money
-        count at 90%; one good deal is luck, a record is many; a miss lands in full the day it is realised. This rank is your record, not your size — the rank in the top bar is by equity.
+        Investors read every deal you raised against what you pitched them, and rank you against every firm on the street.
+        The band they act on is the lower of your rank's and your score's. A promise kept builds the record slowly; a promise
+        broken counts in full, however small the deal, the day it is realised. Deals with your own money promised nobody
+        anything: a profit counts as a promise met, a loss by its size. This rank is your record, not your size — the rank in the top bar is by equity.
       </div>
       <div className="grid">
         <Row k="Band" v={`${terms.band}${pending ? ` · ${pending} next quarter if it holds` : ""}`} strong />

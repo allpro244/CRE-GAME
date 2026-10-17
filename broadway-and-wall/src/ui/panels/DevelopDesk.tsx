@@ -14,6 +14,7 @@ import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN, owne
 import { ffAvailable, maxOutside, syndicateBar } from "@/engine/syndicate";
 import { playerTerms, termsLine } from "@/engine/reputation";
 import { raiseLegalCost, committedTotal, SOURCE_LABEL, RAISE_WINDOW_M } from "@/engine/investors";
+import { heldByRaises } from "@/engine/raise";
 
 // What a plan short of its hurdle is still worth over its cost. The required
 // yield carries the merchant builder's margin, so value / basis is
@@ -373,7 +374,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const landEquity = held ? Math.max(0, ownedHoldingValue(game, parcels, held) - siteDebt) : 0;
   const ffMax = plan && !synBar ? maxOutside(game, need.whole, landEquity) : 0;
   const outside = Math.round(ffMax * ffPick);
-  const fundableTotal = purse.closed ? 0 : purse.total + outside;
+  // Cash your other open raises hold for their own jobs is not yours to spend here (raise.ts heldByRaises).
+  const fundableTotal = purse.closed ? 0 : Math.max(0, purse.total - (purse.fund ? 0 : heldByRaises(game, bbl))) + outside;
   const canFund = need.whole <= fundableTotal && need.dayOne <= fundableTotal;
   const fundShort = Math.max(0, need.whole - fundableTotal, need.dayOne - fundableTotal);
   const closeCheque = need.dayOne;

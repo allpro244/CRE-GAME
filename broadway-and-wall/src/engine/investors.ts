@@ -147,6 +147,8 @@ export interface Raise {
   deadlineM: number;
   committed: Partial<Record<InvestorSource, number>>;
   legal: number;
+  /** The sponsor's own share of the job, held while the raise is open (raise.ts sponsorShare). */
+  reserve?: number;
   /** The job, exactly as the Build desk would break ground on it. */
   job: { use: string; floors: number; coverage: number; contract: string; ltc?: number; custom?: Record<string, unknown>; lender?: string; spec: number };
 }
@@ -189,6 +191,14 @@ export function relationshipFactor(s: GameState, src: InvestorSource): number {
  * ONE MONTH OF SOFT CIRCLES for a raise. Mutates `r` (and draws the
  * "capital" random stream, which nothing else reads). Returns the month's new
  * commitments.
+ *
+ * Each source circles a share of the OFFERING a month (its hazard), up to
+ * what is still needed and what it has. It used to circle a share of what
+ * was still NEEDED, which approaches the target and never reaches it: every
+ * raise ran its full three months and closed small (12 of 12 in two
+ * 60-year raising runs, at 66-99% of target). A source that knows the
+ * sponsor well now fills a modest offering in two or three months, and a
+ * raise that several sources want can close in one.
  */
 export function circleMonth(s: GameState, r: Raise, sources: { id: InvestorSource; left: number }[], pct: number): number {
   let added = 0;
@@ -198,7 +208,7 @@ export function circleMonth(s: GameState, r: Raise, sources: { id: InvestorSourc
     const room = Math.max(0, src.left - (r.committed[src.id] ?? 0));
     if (!(room > 0)) continue;
     const cap = Math.min(need, room);
-    const c = Math.min(cap, Math.round(cap * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id)) * (0.6 + 0.8 * rng(s, "capital"))));
+    const c = Math.min(cap, Math.round(r.target * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id)) * (0.6 + 0.8 * rng(s, "capital"))));
     if (c > 0) { r.committed[src.id] = (r.committed[src.id] ?? 0) + c; added += c; }
   }
   return added;

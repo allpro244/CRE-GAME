@@ -1900,12 +1900,13 @@ export function startDevelopment(
   custom?: {
     mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: TakeoutKind;
     /** Raise `outside` of the job's cash equity from outside investors (syndicate.ts); `sources` says who, when a raise circled it (raise.ts). */
-    syndicate?: { outside: number; sources?: Partial<Record<import("./investors").InvestorSource, number>> };
+    syndicate?: { outside: number; sources?: Partial<Record<import("./investors").InvestorSource, number>>; clamp?: boolean };
   },
   lender?: string,
   spec = 0.5,
 ): { s: GameState; err?: string } {
-  const outside = Math.max(0, Math.round(custom?.syndicate?.outside ?? 0));
+  let outside = Math.max(0, Math.round(custom?.syndicate?.outside ?? 0));
+  let synSources = custom?.syndicate?.sources;
   if (outside > 0) { const bar = syndicateBar(s, bbl); if (bar) return { s, err: bar }; }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
@@ -1993,7 +1994,17 @@ export function startDevelopment(
   if (outside > 0) {
     const most = maxOutside(s, commitCap, landEquity);
     if (outside > most + 1) {
-      return { s, err: `Friends and family can put at most ${money(most)} into this job — no more than your own money in it, and only what your network has not already committed.` };
+      // A RAISE CLOSES AT WHAT THE RULES ALLOW (raise.ts). The cap moves
+      // while a raise is open — the sponsor's own money in the deal, the
+      // network's other commitments — so the closing takes the investors'
+      // money up to it, pro rata across who circled, rather than sending
+      // everyone home over the excess.
+      if (!custom?.syndicate?.clamp || !(most >= 1)) {
+        return { s, err: `Friends and family can put at most ${money(most)} into this job — no more than your own money in it, and only what your network has not already committed.` };
+      }
+      const k = Math.floor(most) / outside;
+      outside = Math.floor(most);
+      if (synSources) synSources = Object.fromEntries(Object.entries(synSources).map(([id, v]) => [id, Math.floor((v ?? 0) * k)]));
     }
   }
   const fundable = purse.total + outside;
@@ -2059,7 +2070,7 @@ export function startDevelopment(
   const projected = projectedDevIrr(plan);
   if (next.deedCf?.[bbl]) next.deedCf[bbl].plan = { irr: projected };
   if (outside > 0) {
-    const w = formSyndication(next, bbl, outside, commitCap, landEquity, custom?.syndicate?.sources);
+    const w = formSyndication(next, bbl, outside, commitCap, landEquity, synSources);
     // Investors are pitched their own net IRR — the projection after the
     // promote this band's terms take (waterfall.ts lpNetIrr) — and judged on it.
     w.pitchIrr = lpNetIrr(projected, Math.max(1, plan.months + 12) / 12, w.hurdles, w.promotes);

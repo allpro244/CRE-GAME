@@ -2192,6 +2192,29 @@ export function startDevelopment(
  * Called from the closing, not by the player: buying the site IS taking the
  * job on. Mutates in place; the caller already cloned.
  */
+/**
+ * WHAT TAKING OVER A STALLED JOB COSTS ITS NEW OWNER IN EQUITY — the cost to
+ * finish plus lease-up, less the takeover lender's smaller, dearer
+ * commitment, plus the change-order margin any job must be able to fund.
+ * The purchase is refused below it (actions.ts executePurchase): no
+ * construction lender lets a buyer take the job on without evidence it can
+ * finish it, the same test a groundbreaking passes.
+ */
+export function takeoverEquityNeed(
+  s: GameState, parcels: ParcelTable, bbl: string,
+  half: { use: string; sf: number; floors: number; progress: number; costToComplete: number },
+): number {
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec || !rec.lotArea) return 0;
+  const floors = Math.max(1, Math.round(half.floors));
+  const coverage = Math.max(0.08, Math.min(0.9, half.sf / Math.max(1, rec.lotArea * floors)));
+  const plan = planDevelopment(s, parcels, bbl, half.use as DevUse, floors, coverage, "gmp", undefined, { vested: true, shell: true });
+  if (!plan) return 0;
+  const remaining = Math.max(0, Math.round(half.costToComplete)) + plan.leaseUp;
+  const commitment = Math.round(remaining * Math.max(0.35, plan.ltc - 0.12));
+  return Math.max(0, remaining - commitment) + Math.round(remaining * 0.06);
+}
+
 export function takeoverDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string,
   half: { use: string; sf: number; floors: number; progress: number; costToComplete: number },

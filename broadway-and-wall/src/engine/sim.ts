@@ -45,7 +45,7 @@ import { tickNotes, maybeSellYourLoan, tickFirmHeldLoans } from "./notes";
 import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
-import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
+import { reconcileSupplyQueue, clawbackSlippedDeliveries, stallSupplyProject } from "./supply";
 import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
@@ -1318,6 +1318,48 @@ function tickMonth(
         // coupon-current) but liquidity remains — keep the run alive.
         coverCashShortfall(s, parcels);
         if (s.cash >= 0) s.insolventMs = 0;
+      } else if (Object.values(s.developments).some((d) => s.holdings[d.bbl])) {
+        // A JOB IN THE GROUND IS STILL AN ASSET. The run used to end here with
+        // a half-built building on the book — net worth positive, "the
+        // creditors took everything" — because the bailiff could not reach a
+        // job. The receiver takes the site and the frame, pays off the
+        // construction lender from what a stranger will give for them (the
+        // land and about half of what was sunk, as a rival's stalled frame
+        // goes to the tape: rivals.ts orphanToTape), and puts it on the tape
+        // for someone else to finish. A syndicated job lost this way broke
+        // its completion guarantee (syndicate.ts closeSyndication).
+        const d = Object.values(s.developments).filter((x) => s.holdings[x.bbl])
+          .sort((a, b) => (b.equitySpent + b.drawn) - (a.equitySpent + a.drawn))[0];
+        const h = s.holdings[d.bbl];
+        const rec = resolveRec(parcels, s, d.bbl)!;
+        const sunk = Math.max(0, Math.round(d.equitySpent + d.drawn));
+        const gross = Math.round(landValue(rec, s.econ) + sunk * 0.55);
+        const net = Math.round(gross * 0.95);
+        const lien = Math.round(d.loanBalance + (h.loan?.balance ?? 0));
+        const surplus = Math.max(0, net - lien), shortfall = Math.max(0, lien - net);
+        s.cash += surplus;
+        if (surplus > 0) logBooks(s, "sold", surplus, d.bbl);
+        if (shortfall > 0) chargeLenderLoss(s, d.lender ?? "the construction lender", shortfall);
+        (s.cityJobs ??= []).push({ bbl: d.bbl, use: d.use, sf: d.sf, floors: d.floors ?? 1, startM: d.startM, deliverM: d.deliverM, cost: Math.round(d.costTotal), spent: sunk, orphaned: true });
+        stallSupplyProject(s, d.bbl);
+        {
+          const ex: Exit = { bbl: d.bbl, address: rec.address, boughtM: h.boughtM, soldM: s.month, price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true };
+          closeDeedLedger(s, ex);
+          s.exits.push(ex);
+        }
+        moveDeposit(s, h, -depositsOn(h));
+        delete s.developments[d.bbl];
+        delete s.holdings[d.bbl];
+        if (s.workouts?.[d.bbl]) delete s.workouts[d.bbl];
+        markSponsor(s, "seized", rec.address, shortfall);
+        coverCashShortfall(s, parcels);
+        s.news.unshift({
+          q: s.month, kind: "warn",
+          text: `The receiver took your job at ${rec.address} — the site and a frame ${Math.round(100 * sunk / Math.max(1, d.costTotal))}% built, valued at ${money(gross)}. `
+            + (surplus > 0 ? `After the construction lender, ${money(surplus)} reached you. ` : `It did not cover the construction lender. `)
+            + `It goes to the tape for somebody else to finish. ${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
+        });
+        s.insolventMs = s.cash < 0 ? 6 : 0;
       } else {
         s.gameOver = {
           cause: "Insolvency: the creditors took everything, and it wasn't enough. A hundred-year town remembers a bankruptcy.",

@@ -19,7 +19,7 @@ import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefus
 import { payOffDue, payOffLoan } from "./debt";
 import { settleSale } from "./rivalDebt";
 import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen, loanMin } from "./debt";
-import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
+import { takeoverDevelopment, takeoverEquityNeed, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
@@ -27,6 +27,7 @@ import { recordPropertyEvent } from "./history";
 import { money } from "./money";
 import { consentFor, purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
 import { investorsTakeOfExit } from "./waterfall";
+import { heldByRaises } from "./investors";
 
 /**
  * WHO BUYS THE BUILDINGS THE PLAYER DOES NOT.
@@ -520,7 +521,18 @@ export function executePurchase(
     const l = next.deedCf?.[bbl];
     if (l && noi > 0 && price > 0) l.plan = { irr: noi / price };
   }
-  if (halfBuilt) takeoverDevelopment(next, parcels, bbl, halfBuilt);
+  if (halfBuilt) {
+    // BUYING THE SITE IS TAKING THE JOB ON, and the job has to be fundable:
+    // a $23M site with a half-built 32-storey tower on it carried $64M of
+    // equity to finish that nothing checked, and a $40M firm bought it and
+    // was bankrupt inside two years.
+    const need = takeoverEquityNeed(next, parcels, bbl, halfBuilt);
+    const have = fundableNow(next, parcels) - heldByRaises(next);
+    if (!entity && need > have) {
+      return { s, err: `This site comes with a half-built job: ${money(need)} of equity to finish it and open it, and after the purchase you could fund ${money(Math.max(0, have))}.` };
+    }
+    takeoverDevelopment(next, parcels, bbl, halfBuilt);
+  }
   if (!entity) {
     recordComp(next, rec, price, firmShort(s), ownerOf(s, bbl)?.name ?? (offMarket ? "a private owner" : "a listed seller"),
       s.listings.find((l) => l.bbl === bbl)?.distress, holding.condition, offMarket);

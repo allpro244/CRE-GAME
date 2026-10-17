@@ -281,6 +281,8 @@ const MOVE_OUT_M: Record<BuiltClass, number> = { office: 24, retail: 18, industr
 /** The typical lease term by class, months — eight years of office paper,
  *  seven of retail, six of industrial, one of housing. */
 export const LEASE_TERM_M: Record<BuiltClass, number> = { office: 96, retail: 84, industrial: 72, multifamily: 12 };
+/** Months before a building not yet started can deliver: six of planning and the middle of its build (BUILD_MONTHS). */
+const SUPPLY_LAG_M: Record<BuiltClass, number> = { office: 27, retail: 29, industrial: 22, multifamily: 30 };
 const AFFORD_ROLL: Record<BuiltClass, number> = {
   office: 1 / LEASE_TERM_M.office,
   retail: 1 / LEASE_TERM_M.retail,
@@ -372,8 +374,8 @@ const HH_MIN = 0.5;
 const HH_RENT_SHARE0 = 0.30;
 /** Online selling (see ONLINE in the secular block). */
 const ONLINE_0 = 0.02;      // share of store-type sales online at the opening (US 2000)
-const ONLINE_MAX = 0.5;     // the most of it that can ship
-const ONLINE_TECH = 11;     // logit points per log point of technology (2% to ~15% over 2000-20 at 1.1%/yr)
+const ONLINE_MAX = 0.4;     // the most of it that can ship (2026-10-17: 0.5 saturated by year 60 in a playthrough)
+const ONLINE_TECH = 10;     // logit points per log point of technology: ~11% at year 20 (US 2019), ~24% at 30, ~37% at 50
 const ONLINE_COST = 1.5;    // logit points per log point of a shop's rent over a shed's
 const ONLINE_GOODS = 0.4;   // share of retail floor selling shippable goods
 const ONLINE_SHED = 0.8;    // shed floor gained per unit of online share
@@ -4866,8 +4868,8 @@ export function tickEcon(s: GameState) {
     // (both real, against the opening). Measured US anchors: about 2% of
     // store-type sales online in 2000 and 15% by 2020 (Census e-commerce
     // series), which ONLINE_TECH reproduces at this economy's central
-    // technology growth; at most about half of what a high street sells can
-    // ship at all (groceries, services, food and drink, the clinic), so the
+    // technology growth; at most about two fifths of what a high street sells
+    // can ship at all (groceries, services, food and drink, the clinic), so the
     // share runs toward ONLINE_MAX, and only goods leave the shop: about
     // ONLINE_GOODS of retail floor sells shippable goods. Households move
     // their buying over about five years. A sale online needs about three
@@ -6027,7 +6029,12 @@ export function tickEcon(s: GameState) {
     const avail = (e.cityVac?.[k] ?? NATURAL_VAC[k])
       + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
     const nv = (e.natVac ??= { ...NATURAL_VAC });
-    nv[k] += (avail - nv[k]) * NATVAC_RATE;
+    // ...BUT NOT FROM A SHORTAGE. A month the market spends on its
+    // between-tenants floor with tenants still queueing (`structTight`) is not
+    // evidence of what normal is: it is the shortage itself, and learning from
+    // it taught a market short for eighty years that short was normal (natural
+    // vacancy 4.3% → 3.1%, the gap that should have raised rents erased).
+    if (!((e.structTight?.[k] ?? 0) > 0.005)) nv[k] += (avail - nv[k]) * NATVAC_RATE;
     const gap = avail - nv[k];
 
     // WHERE THE VACANCY-TO-RENT LAG IS NOT (OBSERVATION). `pnpm leadlag` says
@@ -6399,7 +6406,19 @@ export function tickEcon(s: GameState) {
     const siteHk = e.siteHurdle?.[k];
     const eqGap = siteHk !== undefined && siteHk > 1 ? -Math.log(siteHk) : 0;   // ln(r*/r), only when r > r*
     const RENT_EQ_PULL = 0.20 / 12;
-    const instant = vacTerm + RENT_EQ_PULL * eqGap;
+    // ...WEIGHTED BY HOW MUCH OF THE LEASE THE NEXT BUILDING CAN REACH
+    // (2026-10-17). The pull toward the supply price is the tenant pricing in
+    // the building that is coming: a lease prices the rent it expects over its
+    // term, and a building not yet started arrives a planning period plus a
+    // build away (SUPPLY_LAG_M). Of an eight-year office lease most of the term
+    // lies after that, so most of the pull applies; a one-year apartment lease
+    // ends before any crane now unstarted can deliver, so its rent is today's
+    // scarcity and nothing else. Applied at full weight to flats it held their
+    // rents at the cost of building through 80 years of shortage — vacancy
+    // pinned at the between-tenants floor while builders ran flat out at
+    // twice the supply price (measured, metro Frontier, seed 655720).
+    const leaseReach = Math.max(0, (LEASE_TERM_M[k] - SUPPLY_LAG_M[k]) / LEASE_TERM_M[k]);
+    const instant = vacTerm + RENT_EQ_PULL * eqGap * leaseReach;
     const tau = RENT_PRESS_TAU[k];
     e.rentPress[k] += (instant - e.rentPress[k]) / tau;
     const pressEma = e.rentPress[k];

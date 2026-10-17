@@ -290,8 +290,6 @@ const AFFORD_ROLL: Record<BuiltClass, number> = {
 /** Households form and split over years, not at each lease: a two-year
  *  half-life on flats' price response (see `affordRaw`). Shape parameter. */
 const HH_FORM_ROLL = Math.LN2 / 24;
-/** Renter households lost per unit of unemployment over the natural rate (see flats' `affordRaw`). */
-const HH_U_SENS = 1.2;
 
 /** HOW MUCH SPACE A SECTOR'S CYCLE ACTUALLY MOVES. Demand for space is
  *  headcount times feet per head, so this multiplier is sized to the
@@ -360,6 +358,26 @@ function affordSoft(v: number): number {
   const b = y < 0 ? Math.log(AFFORD_BAND[0]) : Math.log(AFFORD_BAND[1]);
   return Math.exp(b * Math.tanh(y / b));
 }
+/**
+ * Elasticity of substitution between floor space and labour in a firm's
+ * costs (estimates for commercial space run 0.3-0.7: e.g. Eppli & Tu 1999 on
+ * office space per worker); the opening's space share of space-and-staff
+ * costs by class, from the trades' profiles (rent / (rent + wages)), until the
+ * street's books report their own.
+ */
+const SIGMA_KL = 0.5;
+const SPACE_SHARE0: Record<BuiltClass, number> = { office: 0.14, retail: 0.2, industrial: 0.23, multifamily: 0 };
+/** A household's minimum home against the opening's average, and the share of income renters spend on rent (ACS). */
+const HH_MIN = 0.5;
+const HH_RENT_SHARE0 = 0.30;
+/** Online selling (see ONLINE in the secular block). */
+const ONLINE_0 = 0.02;      // share of store-type sales online at the opening (US 2000)
+const ONLINE_MAX = 0.5;     // the most of it that can ship
+const ONLINE_TECH = 11;     // logit points per log point of technology (2% to ~15% over 2000-20 at 1.1%/yr)
+const ONLINE_COST = 1.5;    // logit points per log point of a shop's rent over a shed's
+const ONLINE_GOODS = 0.4;   // share of retail floor selling shippable goods
+const ONLINE_SHED = 0.8;    // shed floor gained per unit of online share
+const MANUF_FX = 0.1;       // share of factory floor sent abroad a year per unit of log dear dollar
 /** Flats per adult: the national headship trend, its response to local job growth over the nation's, and that national job growth (a year). */
 const HEADSHIP_TREND = 0.0015;
 const HEADSHIP_JOBS = 0.5;
@@ -446,7 +464,7 @@ const TENURE_PER_LOG = 0.09;
 // +0.5-0.7%/yr real on a supply-constrained island, where the US average
 // is ~0.)
 const INCOME_ELAST: Record<BuiltClass, number> = {
-  office: 0.00, retail: 0.00, multifamily: 0.25, industrial: 0.40,
+  office: 0.00, retail: 0.00, multifamily: 0.00, industrial: 0.40,   // flats: in the households' budgets now
 };
 
 /**
@@ -1082,6 +1100,18 @@ const TURNOVER_YR: Record<BuiltClass, number> = {
 };
 
 /**
+ * ...AND, ONCE THE TOWN HAS A RECORD, WHAT ITS OWN TENANTS DID (2026-10-16):
+ * the share of let space the street's firms and households actually handed
+ * back over the last two years (streetRolls `turnMeas`) — failures, moves
+ * and non-renewals as they happened — rather than the national renewal
+ * studies above, which are where a town starts.
+ */
+export function turnoverYr(e: Econ | undefined, k: BuiltClass): number {
+  const m = e?.turnMeas?.[k];
+  return m !== undefined && m > 0 ? m : TURNOVER_YR[k];
+}
+
+/**
  * Space that is standing but not yet a suite: new deliveries in lease-up.
  * One function so the pool cap, the occupancy cap and a demolition all
  * read the same remaining capacity.
@@ -1101,7 +1131,7 @@ export function housableStock(e: Econ, k: BuiltClass): number {
  * book, because only occupied space can roll.
  */
 export function betweenTenantsSf(occupied: number, k: BuiltClass, e?: Econ): number {
-  return Math.max(0, occupied) * (TURNOVER_YR[k] / 12) * reletMonths(k) * reletLag(e, k);
+  return Math.max(0, occupied) * (turnoverYr(e, k) / 12) * reletMonths(k) * reletLag(e, k);
 }
 
 /**
@@ -1137,12 +1167,12 @@ export function reletLag(e: Econ | undefined, k: BuiltClass): number {
   if (!e?.stock || !e.occupied) return 1;
   const stk = Math.max(1, e.stock[k] ?? 0);
   const occ = Math.max(0, e.occupied[k] ?? 0);
-  const nat = NATURAL_VAC[k];
-  const movers = occ * (TURNOVER_YR[k] / 12);
+  const nat = e.natVac?.[k] ?? NATURAL_VAC[k];
+  const movers = occ * (turnoverYr(e, k) / 12);
   const unhoused = Math.max(0, (e.pool?.[k] ?? occ) - occ);
   const vacant = Math.max(stk * 0.001, housableStock(e, k) - occ);
   const theta = (movers + unhoused) / vacant;
-  const theta0 = (stk * (1 - nat) * (TURNOVER_YR[k] / 12)) / (stk * nat);
+  const theta0 = (stk * (1 - nat) * (turnoverYr(e, k) / 12)) / (stk * nat);
   const ratio = Math.max(theta, theta0 / 4) / theta0;
   const d0 = reletMonths(k), dm = Math.min(d0, MAKE_READY_M[k]);
   return (dm + (d0 - dm) * Math.pow(ratio, -0.5)) / d0;
@@ -4115,6 +4145,7 @@ export function tickEcon(s: GameState) {
     // after the housing choke above, because refugees double up rather than
     // go to the next town.
     migration += e.bsMigPull ?? 0;
+    e.migRate = migration;
     // RETIRED (2026-10-09): out-migration on a rent-burden threshold
     // (`mfBurden > 1.25` against the global RENT_BASE table, capped at
     // 0.25%/mo). Rent now reaches movers through the real wage — it is a third
@@ -4409,6 +4440,9 @@ export function tickEcon(s: GameState) {
     const kDeep = kNow && nn.kSeen ? clamp(12 * Math.log(kNow / nn.kSeen), -0.05, 0.05) : 0;
     if (kNow) nn.kSeen = kNow;
     const prodEra = nn.tfpG + CAPITAL_SHARE * kDeep;
+    // The level of the technology a worker has to hand (log, from the opening):
+    // what the cost of selling at a distance falls with (see ONLINE below).
+    nn.techLn = (nn.techLn ?? 0) + nn.tfpG / 12;
     // Labour hoarding: firms carry staff they cannot use into a downturn, so
     // output per worker falls first and rebounds in the recovery.
     //
@@ -4760,6 +4794,23 @@ export function tickEcon(s: GameState) {
       // (+0.15%/yr, 1960-2020) plus half of the town's job growth over the
       // nation's, read over five years; the menu above stays only for what
       // a menu still stands for elsewhere.
+      // OFFICES, SHOPS AND SHEDS FOLLOW THEIR CAUSES, NOT A MENU (2026-10-16).
+      // The eras above were drawn: a town rolled "the browser eats the high
+      // street" or "a logistics boom" whether or not anything in it had
+      // happened. Each is now the thing that made the era:
+      //  - offices: no era. What an office is wanted for is the firms in it —
+      //    their headcount, their trades and what space costs them (affordEff
+      //    off their own cost shares); a headquarters town is a finance and
+      //    law town, which the trades already are.
+      //  - shops lose the goods that go online, and ONLINE (below) grows as the
+      //    technology of selling at a distance improves (this town's own
+      //    productivity path, market.ts tfpG) and as a shop's rent rises
+      //    against a shed's.
+      //  - sheds gain the fulfilment floor those online sales need, and lose
+      //    the factories a dear dollar sends abroad (the exchange rate of the
+      //    world block) — and win them back when it is cheap.
+      if (k === "office") sec.drift = 0;
+      if (k === "retail" || k === "industrial") sec.drift = 0;
       if (k === "multifamily") {
         const lj = Math.log(Math.max(1, e.jobs ?? 1));
         e.jobsLogRef ??= lj;
@@ -4803,7 +4854,43 @@ export function tickEcon(s: GameState) {
       // That is the honest trade for a bound that is a guard again.
       const span = coupled < 0 ? (sec.idx - 0.45) / (1 - 0.45)
                                : (2.2 - sec.idx) / (2.2 - 1);
+      if (k === "office") { sec.idx = 1; continue; }
+      if (k === "retail" || k === "industrial") continue;
       sec.idx = clamp(sec.idx * (1 + (coupled / 12) * Math.max(0, span)), 0.45, 2.2);
+    }
+    // ONLINE. The share of the town's shop-type sales made at a distance runs
+    // toward the share at which shopping online and in a shop cost the same,
+    // given (a) the technology of selling at a distance, which improves with
+    // this economy's own technology level — log points since the opening,
+    // times ONLINE_TECH — and (b) what a shop's floor costs against a shed's
+    // (both real, against the opening). Measured US anchors: about 2% of
+    // store-type sales online in 2000 and 15% by 2020 (Census e-commerce
+    // series), which ONLINE_TECH reproduces at this economy's central
+    // technology growth; at most about half of what a high street sells can
+    // ship at all (groceries, services, food and drink, the clinic), so the
+    // share runs toward ONLINE_MAX, and only goods leave the shop: about
+    // ONLINE_GOODS of retail floor sells shippable goods. Households move
+    // their buying over about five years. A sale online needs about three
+    // times the warehouse floor a sale in a shop does (Prologis 2020), so
+    // the sheds gain ONLINE_SHED of their floor per unit of share.
+    {
+      const nn = e.nat;
+      const techLn = nn?.techLn ?? 0;
+      const realOf = (k: "retail" | "industrial") =>
+        Math.log(Math.max(1e-6, ((e.effRentIdx?.[k] ?? e.rentIdx[k]) / Math.max(1e-6, e.cpi ?? 1))
+          / Math.max(1e-6, (e.effAnchor?.[k] ?? e.rentAnchor?.[k] ?? e.rentIdx[k]))));
+      const adv = ONLINE_TECH * techLn + ONLINE_COST * (realOf("retail") - realOf("industrial"));
+      const z0 = Math.log(ONLINE_0 / (ONLINE_MAX - ONLINE_0));
+      const target = ONLINE_MAX / (1 + Math.exp(-(z0 + adv)));
+      e.online = (e.online ?? ONLINE_0) + (target - (e.online ?? ONLINE_0)) / 60;
+      const lost = ONLINE_GOODS * (e.online - ONLINE_0) / (1 - ONLINE_0);
+      e.secular.retail.idx = Math.max(0.3, 1 - lost);
+      // Factories follow the exchange rate: a 10% dear dollar sends about 1%
+      // of manufacturing floor a year abroad (the 1980s and 2000s episodes).
+      const q = nn?.dem?.q ?? 0;
+      e.manufIdx = Math.max(0.3, (e.manufIdx ?? 1) * (1 - MANUF_FX * q / 12));
+      e.secular.industrial.idx = e.manufIdx * (1 + ONLINE_SHED * (e.online - ONLINE_0));
+      void retailErosion;
     }
     // (The extra industrial stop at INDUST_COMP_FLOOR is gone, 2026-10-13: the
     // `span` deceleration above already approaches the bound without reaching it.)
@@ -5058,34 +5145,40 @@ export function tickEcon(s: GameState) {
     const burden = relRent;
     let affordRaw: number;
     if (k === "multifamily") {
-      const u = e.unemployment ?? 0.055;
-      const low = clamp(0.30 + (u - 0.05) * 1.5, 0.22, 0.48);
-      const hi = clamp(0.28 - (u - 0.05) * 0.8, 0.15, 0.35);
-      const mid = Math.max(0.15, 1 - low - hi);
-      // HOUSEHOLDS, NOT SQUARE FEET (2026-10-13). A flat is a fixed unit: a
-      // household cannot take 40% more floor without moving, and the stock's
-      // unit mix does not change. What cheap rent buys in housing is MORE
-      // HOUSEHOLDS — young adults moving out, roommates and doubled-up families
-      // splitting — and that margin is smaller and slower. Headship
-      // elasticities to rent run about -0.1 to -0.4 (Börsch-Supan 1986;
-      // Haurin, Hendershott & Kim 1993), highest for the young and the poor.
-      // These were -0.70/-0.50/-0.35 at lease-rollover speed — the space
-      // margin of a commercial tenant — and doubling the flats stock was
-      // absorbed in five years with each household renting 40% more.
-      affordRaw = low * affordSoft(Math.pow(burden, -0.35))
-        + mid * affordSoft(Math.pow(burden, -0.25))
-        + hi * affordSoft(Math.pow(burden, -0.15));
-      // ...AND A JOB LOST IS A HOUSEHOLD UNFORMED (2026-10-13). People out of
-      // work double up, move back with parents and take roommates; flats
-      // demand read population and pay and never the jobless rate, so a
-      // depression left apartment vacancy at 2.8% while real rents rose. The
-      // US "lost" about 2.5 million households to 2008-11 (Paciorek 2013),
-      // mostly renters, on +5 points of unemployment — about 1.2% of renter
-      // households per point. Symmetric about the town's own natural rate,
-      // through the same household-formation clock.
-      affordRaw *= Math.exp(-HH_U_SENS * ((e.unemployment ?? OPENING_UNEMP) - OPENING_UNEMP));
+      // FROM HOUSEHOLDS' BUDGETS (2026-10-16). This was three income tiers
+      // with headship elasticities of -0.35/-0.25/-0.15 taken from the
+      // literature, a jobless rate read at 1.2% of renter households a point,
+      // and an income elasticity of 0.25 on top — four numbers from studies.
+      // Each is now what a household's budget does. A household needs at
+      // least HH_MIN of the opening's average home (the smallest flat people
+      // take before they double up instead: a studio is about half of the
+      // 900 sf the generator builds) and spends a fixed share of what it has
+      // left over on more (Stone 1954; Geary 1950). Its income is pay times
+      // the share of the town in work: a jobless household has less, and
+      // doubles up because of it. The one level that fixes the budget is a
+      // measured fact — US renters spend about 30% of income on rent
+      // (HH_RENT_SHARE0, ACS) — and from that and the minimum, every
+      // elasticity follows and moves with the town: at the opening, income
+      // 0.6 and price -0.4, falling as a town gets richer.
+      const realWage = (e.wageIdx ?? 1) / cpiNow;
+      const rw = realWage / Math.max(1e-6, e.wage0 ?? realWage);
+      const u = e.unemployment ?? OPENING_UNEMP;
+      const Y = rw * (1 - u) / (1 - OPENING_UNEMP) / HH_RENT_SHARE0;
+      const beta = (1 - HH_MIN) / (1 / HH_RENT_SHARE0 - HH_MIN);
+      const p = Math.max(0.05, burden);
+      affordRaw = Math.max(0.3, HH_MIN + beta * (Y - p * HH_MIN) / p);
     } else {
-      affordRaw = affordSoft(Math.pow(burden, -0.40));
+      // FROM THE FIRMS' OWN COSTS (2026-10-16). The exponent was -0.40 for
+      // every commercial class. A firm trades floor against people at the
+      // relative cost of each: with an elasticity of substitution SIGMA_KL
+      // between space and labour, its space per worker answers its rent at
+      // -SIGMA_KL x (1 - space's share of what it pays for space and staff) —
+      // and that share is read off the street's own books (streetRolls
+      // spaceShare), so a dear town, where rent has grown into a bigger slice
+      // of every firm's costs, economises proportionally less on each further
+      // point (the Cobb-Douglas limit is SIGMA_KL = 1).
+      const sh = e.spaceShare?.[k] ?? SPACE_SHARE0[k];
+      affordRaw = affordSoft(Math.pow(burden, -SIGMA_KL * (1 - sh)));
     }
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
     // At the lease-rollover rate of THIS class, not of an office. See AFFORD_ROLL.
@@ -5480,7 +5573,8 @@ export function tickEcon(s: GameState) {
     if (k !== "multifamily") {
       // ...and the space a worker takes beyond the rent: the island against the
       // mainland, income, and the structural shifts (remote work after a swan).
-      const lvl = (e.locEff?.[k] ?? 1) * (e.incomeEff?.[k] ?? 1) * swanClassLevel(e, k);
+      const lvl = (e.locEff?.[k] ?? 1) * (e.incomeEff?.[k] ?? 1) * swanClassLevel(e, k)
+        * (k === "retail" ? (e.secular?.retail?.idx ?? 1) : 1);
       (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw, lvl };
     }
     if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };

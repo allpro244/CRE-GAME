@@ -46,7 +46,7 @@ import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, 
 import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, firmCredit, pickSector, pickName, termBandM, concessionPressure } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, entrantMargin } from "./tenantBooks";
-import { rng, rrange, reletMonths, dealSlack, recordDeal, FIRM_PROFILE } from "./market";
+import { rng, rrange, reletMonths, dealSlack, recordDeal, FIRM_PROFILE, turnoverYr } from "./market";
 import { staleDiscount } from "./absorption";
 import { tenantQualityTerms } from "./bands";
 import { drawTenantSf, sizeScale } from "./plates";
@@ -261,8 +261,10 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const seeking = new Map<number, Seeker>();
   for (const k of e.seekers) seeking.set(k.fid, k);
   const ratio = (k: Comm) => e.streetSpace?.[k] && (e.streetSpace[k] as { ratio?: number }).ratio || 1;
+  const handed: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
   const vacate = (roll: StreetRoll, t: Tenant) => {
     const k = useOf(t);
+    handed[k] = (handed[k] ?? 0) + t.sf;
     (roll.ready ??= []).push({ use: k, sf: t.sf, readyM: m + Math.max(1, Math.round(reletMonths(k) * 0.5)) });
   };
 
@@ -401,6 +403,17 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   e.tradeEmpPrev = Object.fromEntries(Object.entries(e.firmBooks ?? {}).map(([sec, b]) => [sec, b.emp]));
   const trade: Record<Comm, { r: number; grow: number; w: number }> = { office: { r: 1, grow: 0, w: 0 }, retail: { r: 1, grow: 0, w: 0 }, industrial: { r: 1, grow: 0, w: 0 } };
   const secW: Partial<Record<Comm, Partial<Record<string, number>>>> = {};
+  // What space costs the town's firms against what space and staff cost them
+  // together, by class (market.ts reads it for how firms economise on floor).
+  const shareAcc: Partial<Record<Comm, [number, number]>> = {};
+  for (const roll of Object.values(R)) for (const t of roll.t) {
+    const k = useOf(t), f = t.fin;
+    if (!f || !(f.revRef ?? 0)) continue;
+    const rentYr = t.rentPsf * t.sf, wages = (f.revRef ?? 0) * (FIRM_PROFILE[t.sector]?.wage ?? 0.35);
+    const a = (shareAcc[k] ??= [0, 0]);
+    a[0] += rentYr; a[1] += rentYr + wages;
+  }
+  for (const k of COMM) { const a = shareAcc[k]; if (a && a[1] > 0) (e.spaceShare ??= {})[k] = a[0] / a[1]; }
   const tradeAdd = (t: Tenant) => {
     const k = useOf(t);
     if (!(k in trade)) return;
@@ -579,7 +592,14 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       * dealSlack(e, k);
     recordDeal(e, k, m, rentMult, take);
     const band = termBandM(firm.credit);
-    const termM = rrange(s, band.loM, band.hiM, "leasing") * qt.term;
+    // THE TERM IS CHOSEN TOO (2026-10-16): within its covenant's band, a firm
+    // in a trade that is growing fast signs shorter — it expects to outgrow
+    // the suite, and a short lease is the option to move — and one in a
+    // shrinking trade signs longer at today's rent (Grenadier 1995 on the
+    // option value in lease term; the covenant bands stay, since they are
+    // what landlords and their lenders will take from each grade).
+    const gTrade = Math.pow(tradeR[firm.sector] ?? 1, 12) - 1;
+    const termM = rrange(s, band.loM, band.hiM, "leasing") * qt.term * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTrade)));
     const freeM = Math.round(termM / 12 * 0.8 * concessionPressure(e, k) * rng(s, "leasing"));
     const carry: Partial<Tenant> = {
       fid: firm.fid, quality: firm.quality, staff: firm.staff, empRef: firm.empRef, fin: firm.fin,
@@ -643,6 +663,12 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     }
   }
   for (const sk of e.seekers) if (sk.t) space[sk.use]!.seek += sk.want;
+  // What the street's tenants handed back this month, against what is let, a
+  // year's rate over a two-year memory (market.ts turnoverYr).
+  if (!opening) for (const k of COMM) {
+    const l = space[k]!.let;
+    if (l > 0) { const tm = (e.turnMeas ??= {}); const was = tm[k] ?? turnoverYr(e, k); tm[k] = was + (12 * handed[k] / l - was) / 24; }
+  }
   e.streetSpace = space;
   if (e.streetFailed && e.streetFailed.length > 600) e.streetFailed = e.streetFailed.slice(-600);
 }
@@ -754,7 +780,6 @@ export function playerTenantLeft(s: GameState, t: Tenant, bbl: string) {
  */
 export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: number; endM: number }[] }
 
-const MF_TURN = 0.45;
 const MF_LEASEUP = 0.08;
 
 function flatsEligible(s: GameState, parcels: ParcelTable, bbl: string) {
@@ -795,11 +820,13 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
   if (!e.flatRolls) return;
   privately(s, `streetflats|${s.month}`, () => {
     const m = s.month;
+    // The town's jobs about a year ago (a twelve-month memory), for job moves.
+    e.jobsPrevYr = (e.jobsPrevYr ?? e.jobs ?? 1) + ((e.jobs ?? 1) - (e.jobsPrevYr ?? e.jobs ?? 1)) / 12;
     const owners = new Map<string, NonNullable<GameState["rivals"]>[number]>();
     for (const r of s.rivals ?? []) for (const b of r.bbls) owners.set(b, r);
     type F = { roll: FlatRoll; cap: number; w: number; unit: number; intake: number; lim: number; mkt: number };
     const fs: F[] = [];
-    let after = 0;
+    let after = 0, flatOut = 0;
     for (const [bbl, roll] of Object.entries(e.flatRolls!)) {
       const rec = resolveRec(parcels, s, bbl);
       if (!rec) continue;
@@ -823,11 +850,27 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       // Each renewal and each new letting below is a deal the market reads.
       const slack = dealSlack(e, "multifamily");
       const keep: NonNullable<FlatRoll["l"]> = [];
+      // WHY RENTERS MOVE OUT, FROM WHAT IS HAPPENING (2026-10-16). This was a
+      // flat 45% a year. A renter household leaves its flat for a reason, and
+      // most of the reasons are flows this town already keeps: it leaves town
+      // (renters are about half again as mobile as everyone, so they carry
+      // more of any net out-migration), it buys (the US renter-to-owner rate,
+      // about 8% a year, falls as owning gets dear against renting — the
+      // same tenure margin as `tenureIdx`), or it moves for a job (about 10% a
+      // year of renters, more when the town is hiring). What is left is
+      // family life — a baby, a partner, a split, an old age — at the rate
+      // the CPS records it (about 22% of renters a year). At the opening that
+      // adds up to about the old 45%; after it, it moves with the town.
+      const out = Math.max(0, -(e.migRate ?? 0)) * 12 * 1.5;
+      const buy = 0.08 * Math.exp(-10 * ((e.tenureIdx ?? 1) - 1));
+      const jobs = 0.10 * Math.max(0.5, Math.min(2, ((e.jobs ?? 1) / Math.max(1, e.jobsPrevYr ?? e.jobs ?? 1)) ** 10));
+      const moveOut = Math.min(0.85, 0.22 + out + buy + jobs);
       for (const x of roll.l) {
         if (x.endM > m) { keep.push(x); continue; }
         const ask = mkt * slack * 0.97;
-        const pRenew = Math.max(0.3, Math.min(0.8, (1 - MF_TURN) - 0.8 * Math.log(ask / Math.max(0.01, x.rent))));
+        const pRenew = Math.max(0.1, Math.min(0.9, (1 - moveOut) - 0.8 * Math.log(ask / Math.max(0.01, x.rent))));
         const stay = x.sf * pRenew * rrange(s, 0.85, 1.15, "leasing");
+        flatOut += Math.max(0, x.sf - Math.max(0, stay));
         if (stay > 1) {
           const rent = +Math.max(x.rent * 0.97, ask).toFixed(2);
           keep.push({ sf: stay, rent, endM: m + 12 });
@@ -846,6 +889,11 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       after += roll.occ;
     }
     if (!fs.length) return;
+    if (!growing && after + flatOut > 0) {
+      const r = 12 * flatOut / (after + flatOut), tm = (e.turnMeas ??= {});
+      const was = tm.multifamily ?? turnoverYr(e, "multifamily");
+      tm.multifamily = was + (r - was) / 24;
+    }
     const target = housed ?? Math.max(0, (e.occupied?.multifamily ?? 0) - (e.playerNow?.occ?.multifamily ?? 0));
     let gap = target - after;
     if (gap < 0) {

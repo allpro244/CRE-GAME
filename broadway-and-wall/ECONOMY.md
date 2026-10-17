@@ -3329,3 +3329,72 @@ Apartments still fall less often than the other classes, as they do in the US
 record. Real incomes rise in nearly every town and housing demand rises with
 them, while supply holds rents near what it costs to build. A town has to
 lose its jobs before its flats lose their rent.
+
+## No drawn eras; behaviour from budgets, costs and flows (2026-10-17)
+
+**The eras are gone.** Offices, shops and sheds each drew a demand "era" every
+12–25 years from a menu: "the browser eats the high street", "logistics
+boom", "headquarters town". Each is now the thing that made it.
+
+- **Offices:** no era. An office is wanted for the firms in it: their
+  headcount, their trades and what space costs them. A headquarters town is a
+  finance and law town, which its trades already are.
+- **Online selling:** the share of store-type sales made at a distance moves
+  over about five years toward the share at which buying online and in a
+  shop cost the same. Two things set that share:
+  - the technology of selling at a distance, which improves with this
+    economy's own simulated technology level;
+  - a shop's rent against a shed's.
+
+  Anchors (US Census e-commerce series): 2% in 2000 and about 15% by 2020 at
+  central technology growth. At most about half of what a high street sells
+  can ship (groceries, services, food and drink, the clinic stay), and about
+  40% of retail floor sells shippable goods.
+- **Shops** lose that floor.
+- **Sheds** gain about three times the warehouse space per online sale
+  (Prologis). They also lose factories to a dear dollar, about 1% of factory
+  floor a year per 10% of dear dollar, read from the world block's exchange
+  rate, and win them back when it is cheap.
+
+**Behaviour from what agents face:**
+
+- **Firms' response to rent.** A firm's space per worker answers its rent at
+  −σ × (1 − space's share of what it pays for space and staff). The share is
+  read off the street firms' own books each month, and σ = 0.5 is the
+  space–labour substitution elasticity. The fixed −0.40 for every class is
+  gone. A dear town, where rent is a bigger slice of costs, economises
+  proportionally less on each further point.
+- **Apartment demand from household budgets** (Stone–Geary). A household
+  needs at least half the opening's average home (a studio against the 900 sf
+  the generator builds) and spends a share of what is left on more. Its
+  income is pay times the share of the town in work. The budget is fixed by
+  one measured fact: renters spend about 30% of income on rent (ACS).
+
+  Every elasticity then follows and moves with the town: income about 0.6
+  and price about −0.4 at the opening. This replaces:
+  - the three income tiers;
+  - the 1.2%-per-point jobless rule;
+  - the 0.25 income elasticity.
+- **Renter move-outs from flows.** Renters move out by leaving town (half
+  again as mobile as everyone, carrying net out-migration), by buying (8% a
+  year, falling as owning gets dear against renting), for a job (10% a year,
+  more when the town is hiring), or through family life (22%, the CPS rate).
+  These replace a flat 45%.
+- **Turnover is measured.** Once a town has a record, frictional vacancy and
+  search times read the share of let space its own tenants actually handed
+  back over the last two years, not the national renewal studies.
+- **Lease terms.** Within its covenant's band, a firm in a fast-growing
+  trade signs shorter (the option to move), and one in a shrinking trade
+  signs longer (Grenadier 1995).
+
+**What remains a primitive, stated:**
+- σ for substitution;
+- the minimum home and the 30% rent share;
+- the online anchors;
+- the mobility rates by reason;
+- the covenant term bands;
+- the income elasticity of shed demand (0.4).
+
+These are measured facts or technology and preference parameters, which any
+model of behaviour has to start from. The elasticities that used to be typed
+in now come out of them.

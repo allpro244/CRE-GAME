@@ -1823,6 +1823,8 @@ export interface Econ {
     /** the nation's spending, as shares of potential output (market.ts spendNation) */
     /** growth of the technology a worker has to hand, a year; the capital stock last month (market.ts wages) */
     tfpG?: number; kSeen?: number;
+    /** the technology level, log points since the opening */
+    techLn?: number;
     dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number; wr?: number; q?: number };
     /** national inflation, annualised */
     infl: number;
@@ -2038,6 +2040,14 @@ export interface Econ {
   shedRefPrev?: number;
   /** the town's jobs, log, five-year memory (market.ts flats per adult) */
   jobsLogRef?: number;
+  /** share of store-type sales made online; the factory floor kept against the opening (market.ts ONLINE) */
+  online?: number; manufIdx?: number;
+  /** net migration this month, a share of the population (market.ts); the town's jobs a year ago (streetRolls) */
+  migRate?: number; jobsPrevYr?: number;
+  /** the share of let space handed back in a year, measured on the street, by class */
+  turnMeas?: Partial<Record<string, number>>;
+  /** the street firms' rent as a share of what they pay for space and staff, by class (streetRolls) */
+  spaceShare?: Partial<Record<string, number>>;
   /** each market's normal availability, learned from its own history (market.ts rent gap) */
   natVac?: Record<BuiltClass, number>;
   /** the opening's rent per foot by class and price level: what sales per head are measured from (tenantBooks) */

@@ -16,7 +16,7 @@ import { lpNetIrr } from "./waterfall";
 import { resolveRec } from "./value";
 import { playerTerms, dealStakes } from "./reputation";
 import { ffAvailable, syndicateBar } from "./syndicate";
-import { circleMonth, commitHazard, relationshipFactor, committedTotal, openSources, payRaiseLegal, raiseLegalCost, RAISE_WINDOW_M, streetPercentile, SOURCE_LABEL, type InvestorSource, type Raise } from "./investors";
+import { heldByRaises, pitchAppeal, circleMonth, commitHazard, relationshipFactor, committedTotal, openSources, payRaiseLegal, raiseLegalCost, RAISE_WINDOW_M, streetPercentile, SOURCE_LABEL, type InvestorSource, type Raise } from "./investors";
 import { money } from "./money";
 
 export interface RaiseJob {
@@ -44,17 +44,24 @@ export function sponsorShare(s: GameState, parcels: ParcelTable, bbl: string, jo
   return Math.max(0, Math.round(need.whole + siteDebtAtGroundbreak(s, bbl).due - target));
 }
 
-/** What the sponsor's other open raises hold of its money (their own shares, at launch). */
-export function heldByRaises(s: GameState, except?: string): number {
-  let t = 0;
-  for (const [b, r] of Object.entries(s.raises ?? {})) if (b !== except) t += r.reserve ?? 0;
-  return t;
+export { heldByRaises } from "./investors";
+
+/** The net IRR this job would pitch investors on the sponsor's terms today — what startDevelopment records. */
+export function offeringPitch(s: GameState, parcels: ParcelTable, bbl: string, job: RaiseJob): number | null {
+  const plan = planDevelopment(s, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, job.custom, job.lender, job.spec);
+  if (!plan) return null;
+  const t = playerTerms(s);
+  return lpNetIrr(projectedDevIrr(plan), Math.max(1, plan.months + 12) / 12, t.hurdles, t.promotes);
 }
 
 export function raiseQuote(s: GameState, parcels: ParcelTable, bbl: string, job: RaiseJob, target: number): { ok: boolean; why?: string; legal: number } {
   const legal = raiseLegalCost(s, target);
   const bar = syndicateBar(s, bbl);
   if (bar) return { ok: false, why: bar, legal };
+  const pitch = offeringPitch(s, parcels, bbl, job);
+  if (pitch !== null && pitchAppeal(pitch, playerTerms(s).hurdles[0] ?? 0, playerTerms(s).band) <= 0) {
+    return { ok: false, why: `Nobody invests in a deal that projects a loss — this one pitches ${(pitch * 100).toFixed(1)}% a year. Rework the scheme first.`, legal };
+  }
   if (s.raises?.[bbl]) return { ok: false, why: "A raise is already open on this lot.", legal };
   if (!(target > 0)) return { ok: false, why: "Nothing to raise.", legal };
   // The groundbreaking with the money in, tried on a copy with the counsel
@@ -74,7 +81,8 @@ export function launchRaise(s: GameState, parcels: ParcelTable, bbl: string, job
   if (!q.ok) return { s, err: q.why };
   const next = cloneState(s);
   payRaiseLegal(next, q.legal);
-  const raise: Raise = { bbl, target: Math.round(target), openedM: next.month, deadlineM: next.month + RAISE_WINDOW_M, committed: {}, legal: q.legal, job: job as unknown as Raise["job"], reserve: sponsorShare(s, parcels, bbl, job, target) };
+  const raise: Raise = { bbl, target: Math.round(target), openedM: next.month, deadlineM: next.month + RAISE_WINDOW_M, committed: {}, legal: q.legal, job: job as unknown as Raise["job"], reserve: sponsorShare(s, parcels, bbl, job, target),
+    appeal: (() => { const p = offeringPitch(s, parcels, bbl, job); const t = playerTerms(s); return p === null ? 1 : pitchAppeal(p, t.hurdles[0] ?? 0, t.band); })() };
   (next.raises ??= {})[bbl] = raise;
   const addr = resolveRec(parcels, next, bbl)?.address ?? bbl;
   const who = openSources(next, playerTerms(next).band, ffAvailable(next)).map((x) => SOURCE_LABEL[x.id].toLowerCase()).join(", ");
@@ -151,6 +159,9 @@ export interface RaisePreview {
   stakes: { met: number; beat: number; miss3: number; miss8: number; lost: number };
   /** Of 200 raises of this size today: the share that fill, close small, fail; months to the close. */
   odds: { full: number; small: number; fail: number; months: number };
+  /** How the pitch reads to investors (pitchAppeal), and the pref it is read against. */
+  appeal: number;
+  pref: number;
 }
 
 export function raisePreview(s: GameState, plan: DevPlan, landEquity: number, cashNeed: number, outside: number): RaisePreview | null {
@@ -173,6 +184,7 @@ export function raisePreview(s: GameState, plan: DevPlan, landEquity: number, ca
   // offering, as circleMonth draws it.
   const sources = openSources(s, t.band, ffAvailable(s));
   const pct = streetPercentile(s);
+  const appeal = pitchAppeal(at.lpIrr, t.hurdles[0] ?? 0, t.band);
   let seed = 0x9e3779b9 ^ Math.round(outside);
   const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   let full = 0, small = 0, fail = 0, mSum = 0;
@@ -184,7 +196,7 @@ export function raisePreview(s: GameState, plan: DevPlan, landEquity: number, ca
         const need = outside - have;
         if (!(need > 0)) break;
         const room = Math.max(0, src.left - (got[src.id] ?? 0));
-        const c = Math.min(need, room, Math.round(outside * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id)) * (0.6 + 0.8 * rnd())));
+        const c = Math.min(need, room, Math.round(outside * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id) * appeal) * (0.6 + 0.8 * rnd())));
         if (c > 0) { got[src.id] = (got[src.id] ?? 0) + c; have += c; }
       }
       if (have >= outside) break;
@@ -197,5 +209,6 @@ export function raisePreview(s: GameState, plan: DevPlan, landEquity: number, ca
     miss: { lpIrr: mi.lpIrr, lpOut: mi.lpOut, gpOut: mi.gpOut, gpMultiple: mi.gpMultiple },
     stakes: dealStakes(s, equity, lpCap / equity),
     odds: { full: full / 200, small: small / 200, fail: fail / 200, months: closed > 0 ? mSum / closed : RAISE_WINDOW_M },
+    appeal, pref: t.hurdles[0] ?? 0,
   };
 }

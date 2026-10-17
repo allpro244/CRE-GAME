@@ -149,8 +149,22 @@ export interface Raise {
   legal: number;
   /** The sponsor's own share of the job, held while the raise is open (raise.ts sponsorShare). */
   reserve?: number;
+  /** How the offering reads to investors, 0-1.25 (pitchAppeal): a multiplier on every source's hazard. */
+  appeal?: number;
   /** The job, exactly as the Build desk would break ground on it. */
   job: { use: string; floors: number; coverage: number; contract: string; ltc?: number; custom?: Record<string, unknown>; lender?: string; spec: number };
+}
+
+/**
+ * What the sponsor's open raises hold of its money (each its own share of its
+ * job, at launch). Nothing else may spend it — another raise, or ground
+ * broken with the sponsor's own cash — or the raise fails at its closing
+ * with the counsel already paid.
+ */
+export function heldByRaises(s: GameState, except?: string): number {
+  let t = 0;
+  for (const [b, r] of Object.entries(s.raises ?? {})) if (b !== except) t += r.reserve ?? 0;
+  return t;
 }
 
 export function committedTotal(r: Raise): number {
@@ -200,6 +214,19 @@ export function relationshipFactor(s: GameState, src: InvestorSource): number {
  * sponsor well now fills a modest offering in two or three months, and a
  * raise that several sources want can close in one.
  */
+/**
+ * WHAT THE PITCH IS WORTH TO AN INVESTOR (§3.3, §3.4 "The promise"): the net
+ * IRR offered against the pref the band's terms sign them at. Investors
+ * haircut the pitch of a sponsor below Proven (20%, §3.4), an offering at the
+ * pref circles at the ordinary pace, a richer one faster (to 1.25x), a thin
+ * one slower, and one that projects a loss does not raise at all.
+ */
+export function pitchAppeal(pitch: number, pref: number, band: Band): number {
+  const read = pitch * (bandIdx(band) < bandIdx("Proven") ? 0.8 : 1);
+  if (!(pref > 0)) return 1;
+  return Math.max(0, Math.min(1.25, read / pref));
+}
+
 export function circleMonth(s: GameState, r: Raise, sources: { id: InvestorSource; left: number }[], pct: number): number {
   let added = 0;
   for (const src of sources) {
@@ -208,7 +235,7 @@ export function circleMonth(s: GameState, r: Raise, sources: { id: InvestorSourc
     const room = Math.max(0, src.left - (r.committed[src.id] ?? 0));
     if (!(room > 0)) continue;
     const cap = Math.min(need, room);
-    const c = Math.min(cap, Math.round(r.target * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id)) * (0.6 + 0.8 * rng(s, "capital"))));
+    const c = Math.min(cap, Math.round(r.target * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id) * (r.appeal ?? 1)) * (0.6 + 0.8 * rng(s, "capital"))));
     if (c > 0) { r.committed[src.id] = (r.committed[src.id] ?? 0) + c; added += c; }
   }
   return added;

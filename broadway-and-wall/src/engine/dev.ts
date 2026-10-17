@@ -97,6 +97,7 @@ import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
 import { consentFor, purseOf } from "./vehicles";
 import { formSyndication, maxOutside, settleSyndications, syndicateBar, chargeDevFee } from "./syndicate";
+import { heldByRaises } from "./investors";
 import { lpNetIrr } from "./waterfall";
 
 /**
@@ -2007,7 +2008,9 @@ export function startDevelopment(
       if (synSources) synSources = Object.fromEntries(Object.entries(synSources).map(([id, v]) => [id, Math.floor((v ?? 0) * k)]));
     }
   }
-  const fundable = purse.total + outside;
+  // Money an open raise on another lot is holding is not this job's
+  // (investors.ts heldByRaises): it is spoken for at that raise's closing.
+  const fundable = (vehicle ? purse.total : Math.max(0, purse.total - heldByRaises(s, bbl))) + outside;
   const purseWords = vehicle ? "the fund can call" : "you can fund";
   const purseNote = vehicle ? " (its cash and uncalled commitments)" : outside > 0 ? " with your investors' commitment and the line" : " including the line";
   if (fundable < commitCap) {

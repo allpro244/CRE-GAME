@@ -5567,7 +5567,13 @@ export function tickEcon(s: GameState) {
     // shortage at 4-13% vacancy (retail rents x2.7 in six years, measured).
     // The offices and shops stay the firms' market; the sliver off the map is
     // let as the street is.
-    const firmsOnly = !!firms && offShare < 0.10;
+    // ALWAYS, for offices and shops (2026-10-16): even a 10% threshold was
+    // crossed in a boom (seed 32, year 54: the ledger ran ahead of the map as
+    // the town grew 30% in seven years), the shops fell back to the aggregate
+    // equation and read a 98% shortage at 12% vacancy, and real shop rents
+    // went 11 -> 85 in five years. Sheds stay split (most are off the map).
+    const firmsOnly = !!firms && (k === "office" || k === "retail" || offShare < 0.10);
+    void offShare;
     if (firms && !firmsOnly) e.occupied[k] = (e.aggOcc ??= {})[k] ?? e.occupied[k];
     let absorb = 0;
     if (firmsOnly) {

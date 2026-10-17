@@ -3263,3 +3263,69 @@ What the 60-year runs caught, and what changed:
   On one run, 400k sf of searchers stood beside 360k sf of empty shops and
   read as a shortage. A firm that traded here and then gave up looking is
   still an exit.
+
+## Taking out what was still artificial in demand and rents (2026-10-16)
+
+- **Town fortunes.** Each trade's national trend is no longer a fixed number
+  that is the same in every town. It wanders around its 1990–2019 mean, with a
+  0.8%/yr spread and a 30-year memory. Each town's fortune in each trade
+  starts partway through its story, not at zero. The town's own edge is now a
+  continuing process (1.2%/yr spread, 20-year memory) instead of a draw that
+  fades on a clock. Towns can now shrink.
+- **Productivity.** The fixed 1.1%/yr plus a sine-wave era is gone. Labour
+  productivity is technology growth, a persistent process centred on 1.1%/yr
+  with a 0.5-point spread and a 20-year memory, plus a third of the growth of
+  the nation's own capital stock over its trend.
+- **Flats on leases.** Every block on the street carries one-year lease
+  cohorts. About 55% renew at the block's rent less a sitting-tenant discount.
+  A renter whose lease sits well under the market stays more often, and one
+  asked for much more leaves. Each renewal and each new letting is a deal,
+  and apartment rents follow the deals as offices and shops do. Flats per
+  adult no longer draw from an era menu. They follow the national headship
+  trend plus half of the town's job growth over the nation's, so a weak
+  local labour market forms fewer households.
+- **Firm revenue is what it sells.** A firm's sales are its people times its
+  trade's sales per head, carried forward by productivity and prices. They
+  are no longer read back from its rent. Firms sort into buildings by what
+  they sell, so a dear town squeezes every firm's margin. New firms start in
+  proportion to what a start-up would clear today against its trade's normal
+  margin, which replaces the affordability rule.
+- **Sheds are a matching market.** The region's distributors move as leases
+  end (30% of expiries relocate). Movers, closures and the region's net new
+  demand take empty floor wherever it is, and the map's sheds get movers in
+  proportion to their share of the region's empty floor. There is no quota.
+- **The world is an economy.** The rest of the world has its own output gap
+  and central bank, and the two economies meet in the exchange rate. A point
+  of real-rate differential moves the dollar about 4% over a year. Exports
+  answer world demand (elasticity 1.5) and the dollar (0.5). Imports get
+  cheaper as the dollar rises (0.3).
+- **Natural vacancy is learned.** Each market's normal availability is its
+  own history, with a 20-year half-life, starting from the national figures.
+- **Guards.** These limits bound in no month over 3 towns × 60 years and are
+  removed:
+  - the rent floor at half the base rent;
+  - the 3%-a-month press guard;
+  - the regional-pull limit;
+  - the local-inflation limit;
+  - the inflation-expectations limit;
+  - the employment limit;
+  - the productivity limit (bound 2 months).
+
+  The affordability band is now a smooth saturation rather than a hard stop.
+- **Offices and shops are always the firms' market.** Even a 10% threshold
+  on off-map stock was crossed in a boom (seed 32, year 54). Shops fell back to
+  the aggregate equation, which read a 98% shortage at 12% vacancy, and real
+  shop rents went from 11 to 85 in five years.
+
+Measured, 16 towns × 60 years, real rent at year 60 (the four classes), and
+population:
+
+| | Office | Apartments | Industrial | Retail | Population |
+|---|---|---|---|---|---|
+| Before | 0.72–1.76 | 1.42–1.91 | 0.41–1.64 | 0.58–1.59 | 1.49–2.39 (8 towns) |
+| Now | 0.53–2.84 | 0.99–2.68 | 0.37–3.25 | 0.46–2.20 | 1.31–3.16 |
+
+Apartments still fall less often than the other classes, as they do in the US
+record. Real incomes rise in nearly every town and housing demand rises with
+them, while supply holds rents near what it costs to build. A town has to
+lose its jobs before its flats lose their rent.

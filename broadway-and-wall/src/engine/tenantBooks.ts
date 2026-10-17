@@ -24,7 +24,7 @@
  * migration read these books (leasing.ts).
  */
 import type { Credit, Econ, Tenant } from "./types";
-import { FIRM_PROFILE, LENDER_COVER } from "./market";
+import { FIRM_PROFILE, LENDER_COVER, SF_PER_JOB } from "./market";
 import { hashNormal } from "./value";
 
 export interface TenantFin {
@@ -76,6 +76,27 @@ function tradeProd(e: Econ, t: Tenant): number {
   return b ? b.sales / Math.max(1e-6, b.emp) : 1;
 }
 
+/** The opening's rent per foot and price level, which sales per head are measured from. */
+export function revAnchor(e: Econ): { cpi: number; rent: Partial<Record<string, number>> } {
+  return (e.revAnchor ??= { cpi: e.cpi ?? 1, rent: { office: e.rentIdx?.office, retail: e.rentIdx?.retail, industrial: e.rentIdx?.industrial } });
+}
+
+/**
+ * What a firm in this trade would clear if it started up here today: its
+ * trade's normal margin, less what today's rent takes of a head's sales
+ * beyond the trade's normal rent share. `space` is the footage per head it
+ * would take at today's rent (1 at the opening's).
+ */
+export function entrantMargin(e: Econ, sector: Tenant["sector"], k: "office" | "retail" | "industrial", space: number): number {
+  const P = FIRM_PROFILE[sector];
+  const A = revAnchor(e);
+  const b = e.firmBooks?.[sector];
+  const prod = b ? b.sales / Math.max(1e-6, b.emp) : 1;
+  const rentNow = (e.rentIdx?.[k] ?? 1) / Math.max(1e-6, A.rent[k] ?? e.rentIdx?.[k] ?? 1);
+  const salesNow = ((e.cpi ?? 1) / Math.max(1e-6, A.cpi)) * prod;
+  return P.margin + P.rent - P.rent * space * rentNow / Math.max(1e-6, salesNow);
+}
+
 /** Open a tenant's books if it has none (old saves, new leases). Deterministic. */
 export function tenantFin(e: Econ, t: Tenant): TenantFin {
   if (t.fin) return t.fin as TenantFin;
@@ -83,10 +104,30 @@ export function tenantFin(e: Econ, t: Tenant): TenantFin {
   const g = GRADE[t.credit];
   const key = `${t.name}|${t.startM}|${t.sector}`;
   const z1 = hashNormal(key + "|m"), z2 = hashNormal(key + "|r"), z3 = hashNormal(key + "|l");
-  const margin = Math.min(0.45, P.margin * g.margin * Math.exp(0.25 * z1));
-  const rentShare = Math.min(0.30, P.rent * Math.exp(0.30 * z2));
+  // REVENUE IS WHAT THE FIRM SELLS, NOT WHAT IT PAYS (2026-10-16). It was
+  // read back from the rent — revenue = rent / the trade's rent share — so a
+  // firm signing at three times the rent booked three times the sales, and
+  // no firm could ever be priced out of a dear town by its books. Revenue is
+  // now its people times what a worker in its trade sells: the town's opening
+  // sales per worker (the trade's rent share of the opening rent per head),
+  // carried forward by the trade's own productivity and the price level. A
+  // firm on a dearer floor than the market's is a firm that can pay for it —
+  // firms sort into buildings by what they sell, so a firm's sales per head
+  // carry its premium over the market's rent — and what is left to move a
+  // margin is the market's rent against what the trade sells. That is the
+  // squeeze a dear town puts on all of its firms at once.
+  const k = (t.use ?? "office") as keyof typeof SF_PER_JOB;
+  const A = revAnchor(e);
   const rentYr = Math.max(1, t.rentPsf * t.sf);
-  const rev0 = rentYr / rentShare;
+  const mkt = Math.max(0.01, e.rentIdx?.[k] ?? t.rentPsf);
+  const rel = Math.max(0.2, Math.min(5, t.rentPsf / mkt));
+  const heads = (t.hcRef ?? t.sf) / Math.max(0.2, t.staffSign ?? 1) / Math.max(1, SF_PER_JOB[k] || 230);
+  const perHead = (A.rent[k] ?? mkt) * (SF_PER_JOB[k] || 230) / P.rent
+    * ((e.cpi ?? 1) / Math.max(1e-6, A.cpi)) * tradeProd(e, t) * rel;
+  void z2;
+  const rev0 = Math.max(rentYr * 1.05, heads * perHead);
+  const rentShare = rentYr / rev0;
+  const margin = Math.min(0.45, P.margin * g.margin * Math.exp(0.25 * z1)) + P.rent - rentShare;
   const n = e.nat;
   const long = (e.indexRate ?? 5.4) / 100;
   // Leverage as the trade carries it, adjusted for the grade — but no more
@@ -95,9 +136,9 @@ export function tenantFin(e: Econ, t: Tenant): TenantFin {
     1 / ((long + P.spread + g.spread) * LENDER_COVER * (t.credit === 0 ? 0.75 : 1)));
   const fin: TenantFin = {
     rev0, prod0: tradeProd(e, t),
-    otherShare: Math.max(0.2, 1 - margin - rentShare),
+    otherShare: Math.max(0.2, 1 - Math.max(0, margin) - rentShare),
     cash: g.cashM * rev0 / 12,
-    debt: lev * margin * rev0,
+    debt: lev * Math.max(0, margin) * rev0,
     fixed: long + P.spread + g.spread, spread: P.spread + g.spread, float: P.float, lev,
     cover: 99, liqM: g.cashM, margin,
   };

@@ -1821,7 +1821,9 @@ export interface Econ {
    */
   nat?: {
     /** the nation's spending, as shares of potential output (market.ts spendNation) */
-    dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number };
+    /** growth of the technology a worker has to hand, a year; the capital stock last month (market.ts wages) */
+    tfpG?: number; kSeen?: number;
+    dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number; wr?: number; q?: number };
     /** national inflation, annualised */
     infl: number;
     /** what the nation EXPECTS — the anchor, and what a credible bank defends */
@@ -2032,6 +2034,14 @@ export interface Econ {
   tradeEmpPrev?: Partial<Record<string, number>>;
   /** each trade's mean firm-specific sales change last month (streetRolls) */
   dzBar?: Partial<Record<string, number>>;
+  /** the region's shed demand last month (streetRolls shed movers) */
+  shedRefPrev?: number;
+  /** the town's jobs, log, five-year memory (market.ts flats per adult) */
+  jobsLogRef?: number;
+  /** each market's normal availability, learned from its own history (market.ts rent gap) */
+  natVac?: Record<BuiltClass, number>;
+  /** the opening's rent per foot by class and price level: what sales per head are measured from (tenantBooks) */
+  revAnchor?: { cpi: number; rent: Partial<Record<string, number>> };
   /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */
   streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] } }>>;
   /** The region's sheds off the map, occupied, on the city aggregate (market.ts). */
@@ -2043,6 +2053,8 @@ export interface Econ {
   firmRef?: { wageRel: number; realNatPay: number; rent: Record<string, number> };
   /** Each trade's slow local trend offset, per year (mean-reverting). */
   indFortune?: Record<Sector, number>;
+  /** each trade's national trend this year (it wanders around INDUSTRY_TREND) */
+  natTrend?: Record<Sector, number>;
   /** A trade's boom (and usually its bust) in progress — see `tickBoomBust` in market.ts. */
   boomBust?: { sec: Sector; phase: "boom" | "bust" | "hold"; leftM: number; rate: number; startM: number };
   localIdx?: number;

@@ -212,17 +212,16 @@ export function playerEvidence(s: GameState): Evidence[] {
   // credited the record its equity implies (rivalEvidence: 2·log2(equity ÷
   // reference deal), at most 10, each a promise met at 15% of the firm). The
   // player is held to the same rule on what it BUILT: the record today's net
-  // worth implies, less what its starting cash implied, less the good deals
-  // already on the record (sold, or held at the mark) — so the deeds are not
-  // counted twice and starting rich earns nothing.
+  // worth implies, less what its starting cash implied — starting rich earns
+  // nothing. It is the firm's scale as evidence, as the rivals' is; the deeds
+  // themselves (sold, or held at the mark) count on top, so a firm that grew
+  // on good buildings always reads better than one that grew on nothing.
   {
     const implied = (eq: number) => eq > REF_EQUITY * level ? Math.min(10, Math.floor(2 * Math.log2(eq / (REF_EQUITY * level)))) : 0;
     const nw = Math.max(0, s.nwHistory?.[s.nwHistory.length - 1] ?? 0);
     const start = Math.max(0, s.nwHistory?.[0] ?? 0);
-    const good = out.filter((e) => e.ev > 0).length;
-    // the start in opening-year dollars, as a rival's opening equity is read
-    const implied0 = start > REF_EQUITY ? Math.min(10, Math.floor(2 * Math.log2(start / REF_EQUITY))) : 0;
-    const fill = Math.max(0, implied(nw) - implied0 - good);
+    // Both ends at today's prices, so a moving price level manufactures no growth.
+    const fill = nw > start ? Math.max(0, implied(nw) - implied(start)) : 0;
     const size = sizeWeight(0.15 * nw, level);
     for (let i = 0; i < fill; i++) out.push({ m: s.month, ev: 4 * size * OWN_WEIGHT, size, kind: "derived", label: "the record the firm's growth implies" });
   }

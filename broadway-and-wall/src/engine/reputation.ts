@@ -92,8 +92,9 @@ export function ownMoneyEvidence(multiple: number): number {
  * never selling, and still a tiny investor reputation"). A track record in
  * the business carries unrealised deals at their appraised value, discounted
  * because a mark is not a sale. A deed held two years or more counts at 60%
- * of what the same multiple would earn realised; a mark under cost counts in
- * full — investors discount good marks, not bad ones. It is dated today and
+ * of what the same multiple would earn realised, a loss as well as a gain
+ * (both are estimates), weighed against the whole book; within 10% of cost a
+ * mark is noise and counts for nothing. It is dated today and
  * so does not fade while the deed is held; once sold, the exit replaces it.
  */
 export const UNREALISED_WEIGHT = 0.6;
@@ -198,12 +199,17 @@ export function playerEvidence(s: GameState): Evidence[] {
     out.push({ m: e.soldM, ev, size: ev > 0 ? size : 0, kind: syn ? "investor" : "own", label: e.address });
   }
   // THE BOOK STILL HELD, at the quarterly mark (see UNREALISED_WEIGHT).
+  // A mark is weighed against the whole book — realised and still held.
+  const heldBook = (s.reputation?.held ?? []).reduce((a, d) => a + Math.max(0, d.eqIn), 0);
   for (const d of s.reputation?.held ?? []) {
     if (d.years < UNREALISED_MIN_Y || !(d.eqIn > 0)) continue;
+    // Within 10% of cost an appraisal is noise, not a result.
+    if (d.mult >= 0.9 && d.mult < 1) continue;
     const size = sizeWeight(d.eqIn, level);
     let ev = ownMoneyEvidence(d.mult);
+    // An estimate both ways: a held loss is discounted as a held gain is.
     if (ev > 0) ev *= size * UNREALISED_WEIGHT;
-    else ev *= size * concentration(d.eqIn / Math.max(1, managed + d.eqIn), false);
+    else ev *= size * UNREALISED_WEIGHT * concentration(d.eqIn / Math.max(1, managed + heldBook), false);
     ev *= OWN_WEIGHT;
     out.push({ m: s.month, ev, size: ev > 0 ? size * UNREALISED_WEIGHT : 0, kind: "own", label: `${d.mult.toFixed(2)}x held, at the mark` });
   }

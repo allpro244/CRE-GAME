@@ -7,7 +7,7 @@ import type { GameState } from "./types";
 export type AttentionPage =
   | "none" | "portfolio" | "deals" | "market" | "players" | "economy" | "books"
   | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings"
-  | "primer";
+  | "primer" | "investors";
 
 export type AttentionRoute = {
   page?: AttentionPage;
@@ -34,6 +34,7 @@ export function routeAttention(key: string, game: GameState | null): AttentionRo
     const bbl = key.split(":")[1];
     return { page: "market", bbl };
   }
+  if (head === "fund-idle") return { page: "investors" };
   if (head === "reo") return { page: "market", bbl: key.split(":")[1] };
   if (head === "early-look") {
     const bbl = key.split(":")[1];

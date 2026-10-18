@@ -2547,6 +2547,12 @@ export const useStore = create<AppState>((set, get) => ({
       // and lender hold caps off the plat itself. See engine/cityscale.ts.
       g.cityLots = Object.keys(parcels).length;
       if (pendingGoal.id) g.goal = newGoal(pendingGoal.id, g.month, g);
+      // A NEW FIRM'S BUILDINGS LEASE THEMSELVES until it says otherwise. An
+      // owner who never answered a renewal lost stabilised buildings in five
+      // to ten years (buy-and-hold playthrough, Oct 2026) — the game reading
+      // as rigged to a player who had not found the switch. Leasing → "New
+      // buildings join auto-lease" turns it off; every deed can be taken back.
+      g.autoLeaseNew = true;
       set({ game: g, phase: "playing", building: null, resume: null, yearReviewY: null });
       persist(g);
     } catch (e) {

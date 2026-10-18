@@ -611,6 +611,9 @@ export function settleFund(s: GameState): void {
   if (!f || f.settled) return;
   if (f.cash > 0) applyDistribute(s, f.cash);
   f.settled = true;
+  // Commitments not called by the end of its life are released back to the
+  // LPs; a wound-up vehicle has nothing left to call.
+  f.uncalled = 0;
   s.fundPay = false;
   // DPI on contributed capital. Below 1.0x means LPs lost principal — failed.
   const dpi = f.called > 0 ? f.distributed / f.called : 1;

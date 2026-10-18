@@ -42,13 +42,14 @@ export function routeAttention(key: string, game: GameState | null): AttentionRo
     const bbl = key.split(":")[1];
     return { page: "portfolio", bbl };
   }
-  if (head === "nonrenew" || head === "lease-roll" || head === "capital-plan") {
+  if (head === "nonrenew" || head === "lease-roll" || head === "capital-plan" || head === "tenant-dark") {
     const bbl = key.split(":")[1];
     return { page: "leasing", bbl };
   }
   // Arrears and a renewed balloon are both answered on the debt desk: one
   // needs the refinance / payoff buttons, the other is the record of them.
-  if (head === "balloon" || head === "sweep" || head === "arrears" || head === "renewed") {
+  if (head === "balloon" || head === "sweep" || head === "arrears" || head === "renewed"
+    || head === "mezz-arrears" || head === "mezz-balloon") {
     const bbl = key.split(":")[1];
     return { page: "debt", bbl };
   }

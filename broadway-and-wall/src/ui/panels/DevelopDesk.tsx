@@ -32,7 +32,6 @@ import {
 import { blockReport } from "@/engine/demand";
 import { BUILD_TIERS, buildTier, specRentMult, specWearMult } from "@/engine/value";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
-import { spendable } from "@/engine/credit";
 import { USE_WORD } from "@/engine/mix";
 import { usd, sf, pct } from "@/ui/format";
 import { useLabel, devUseLabel, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
@@ -158,7 +157,10 @@ export function ReuseSection({ bbl }: { bbl: string }) {
   const plan = eligibility.ok && !reuseBar ? planAdaptiveReuse(game, parcels, bbl, target, mixed) : null;
   const equity = (plan?.equity ?? 0) + (plan?.pointsCost ?? 0);
   // the engine's own test: equity, points and the change-order margin
-  const short = plan ? Math.max(0, devFundingNeed(plan).whole - spendable(game, parcels).total) : 0;
+  // ...from the purse that owns the deed, less cash held for other open raises.
+  const reusePurse = groundbreakPurse(game, parcels, bbl);
+  const reuseHave = reusePurse.closed ? 0 : Math.max(0, reusePurse.total - (reusePurse.fund ? 0 : heldByRaises(game, bbl)));
+  const short = plan ? Math.max(0, devFundingNeed(plan).whole - reuseHave) : 0;
   return (
     <div className="deal">
       <div className="deal-head">Adaptive reuse</div>

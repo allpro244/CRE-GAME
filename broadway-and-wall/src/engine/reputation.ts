@@ -74,6 +74,31 @@ export function outcomeEvidence(actual: number | null | undefined, pitch: number
   return -15;
 }
 
+/**
+ * OWN MONEY ON ITS MULTIPLE. Nobody was pitched, so there is no promise to
+ * beat — but the deeds show what was paid and what it is worth, and a firm
+ * that tripled its equity has shown more than one that got its money back
+ * with a little on top. A loss reads off the outcome table as before.
+ */
+export function ownMoneyEvidence(multiple: number): number {
+  if (multiple < 1) return outcomeEvidence(null, null, multiple);
+  if (multiple >= 2.5) return 8;
+  if (multiple >= 1.6) return 6;
+  return 4;
+}
+
+/**
+ * HELD, AT THE MARK (owner, Oct 2026: "the highest returns by net worth,
+ * never selling, and still a tiny investor reputation"). A track record in
+ * the business carries unrealised deals at their appraised value, discounted
+ * because a mark is not a sale. A deed held two years or more counts at 60%
+ * of what the same multiple would earn realised; a mark under cost counts in
+ * full — investors discount good marks, not bad ones. It is dated today and
+ * so does not fade while the deed is held; once sold, the exit replaces it.
+ */
+export const UNREALISED_WEIGHT = 0.6;
+const UNREALISED_MIN_Y = 2;
+
 /** A deal's size weight: (equity ÷ reference)^(1/3) — diminishing returns, so one mega-deal cannot swamp a record. */
 export function sizeWeight(equity: number, level = 1): number {
   return equity > 0 ? Math.cbrt(equity / (REF_EQUITY * Math.max(1e-6, level))) : 0;
@@ -143,12 +168,13 @@ export function playerEvidence(s: GameState): Evidence[] {
       actual = null;
       pitch = null;
       multiple = (e.equityOut ?? 0) / (e.equityIn ?? 1);
+      // (judged on its multiple below — ownMoneyEvidence)
       equity = e.equityIn ?? 0;
     }
     // Sizes are measured in opening-year dollars: deflate by the price level
     // at realisation (the nearest the record keeps to the deal's own vintage).
     const size = sizeWeight(equity, level);
-    let ev = outcomeEvidence(actual, pitch, multiple);
+    let ev = syn ? outcomeEvidence(actual, pitch, multiple) : ownMoneyEvidence(multiple);
     if (!syn && e.forced) ev = Math.min(ev, -8);
     // A good result is weighted by the deal's size. A PROMISE BROKEN TO
     // INVESTORS IS NOT: however small the deal, people who were told one
@@ -170,6 +196,34 @@ export function playerEvidence(s: GameState): Evidence[] {
     // a token raise cannot turn an own-money deal into an investor one.
     ev *= OWN_WEIGHT + (1 - OWN_WEIGHT) * outside;
     out.push({ m: e.soldM, ev, size: ev > 0 ? size : 0, kind: syn ? "investor" : "own", label: e.address });
+  }
+  // THE BOOK STILL HELD, at the quarterly mark (see UNREALISED_WEIGHT).
+  for (const d of s.reputation?.held ?? []) {
+    if (d.years < UNREALISED_MIN_Y || !(d.eqIn > 0)) continue;
+    const size = sizeWeight(d.eqIn, level);
+    let ev = ownMoneyEvidence(d.mult);
+    if (ev > 0) ev *= size * UNREALISED_WEIGHT;
+    else ev *= size * concentration(d.eqIn / Math.max(1, managed + d.eqIn), false);
+    ev *= OWN_WEIGHT;
+    out.push({ m: s.month, ev, size: ev > 0 ? size * UNREALISED_WEIGHT : 0, kind: "own", label: `${d.mult.toFixed(2)}x held, at the mark` });
+  }
+  // WHAT THE FIRM'S GROWTH IMPLIES (owner, Oct 2026: the wealthiest firm in
+  // town must have leverage with investors). A rival on the opening roster is
+  // credited the record its equity implies (rivalEvidence: 2·log2(equity ÷
+  // reference deal), at most 10, each a promise met at 15% of the firm). The
+  // player is held to the same rule on what it BUILT: the record today's net
+  // worth implies, less what its starting cash implied — starting rich earns
+  // nothing. It is the firm's scale as evidence, as the rivals' is; the deeds
+  // themselves (sold, or held at the mark) count on top, so a firm that grew
+  // on good buildings always reads better than one that grew on nothing.
+  {
+    const implied = (eq: number) => eq > REF_EQUITY * level ? Math.min(10, Math.floor(2 * Math.log2(eq / (REF_EQUITY * level)))) : 0;
+    const nw = Math.max(0, s.nwHistory?.[s.nwHistory.length - 1] ?? 0);
+    const start = Math.max(0, s.nwHistory?.[0] ?? 0);
+    // Both ends at today's prices, so a moving price level manufactures no growth.
+    const fill = nw > start ? Math.max(0, implied(nw) - implied(start)) : 0;
+    const size = sizeWeight(0.15 * nw, level);
+    for (let i = 0; i < fill; i++) out.push({ m: s.month, ev: 4 * size * OWN_WEIGHT, size, kind: "derived", label: "the record the firm's growth implies" });
   }
   // A RECAP BUYOUT IS A REALISED EXIT to the investors bought out (recap.ts):
   // judged like any wound-up deal, though the deed never sold.
@@ -356,7 +410,10 @@ export function floorBand(sc: { score: number; n: number; deals: number; investo
   if (sc.score < -40 || sc.misconduct) return "Toxic";
   if (sc.score < -10) return "Questioned";
   if (sc.score >= 55 && sc.n >= 12 && sc.deals >= 4 && fund) return "Blue-chip";
-  if (sc.score >= 40 && sc.n >= 8 && sc.deals >= 3 && sc.investorDeals >= 1) return "Institutional";
+  // Institutional money wants to have seen the firm handle someone else's
+  // money — or a long enough record on its own that the question answers
+  // itself: a dozen good deals of size (a family office that compounded).
+  if (sc.score >= 40 && sc.n >= 8 && sc.deals >= 3 && (sc.investorDeals >= 1 || (sc.n >= 12 && sc.deals >= 6))) return "Institutional";
   if (sc.score >= 25 && sc.n >= 3 && sc.deals >= 2) return "Proven";
   if (sc.score >= 10) return "Emerging";
   return "Unknown";
@@ -401,15 +458,19 @@ export function nextBandNeeds(s: GameState): { next: Band; rows: { label: string
   if (f) {
     rows.push({ label: "Track-record score", have: f1(sc.score), need: `${f.score}+`, ok: sc.score >= f.score });
     if (f.n) rows.push({ label: "Experience (deals weighted by size)", have: f1(sc.n), need: `${f.n}+`, ok: sc.n >= f.n });
-    if (f.deals) rows.push({ label: "Good realised deals", have: String(sc.deals), need: `${f.deals}+`, ok: sc.deals >= f.deals });
-    if (f.inv) rows.push({ label: "…of them with outside investors", have: String(sc.investorDeals), need: `${f.inv}+`, ok: sc.investorDeals >= f.inv });
+    if (f.deals) rows.push({ label: "Good deals (sold, or held 2+ years at the mark)", have: String(sc.deals), need: `${f.deals}+`, ok: sc.deals >= f.deals });
+    if (f.inv) {
+      const longOwn = sc.n >= 12 && sc.deals >= 6;
+      rows.push({ label: "…one with outside investors, or 6+ deals and 12+ experience on your own", have: `${sc.investorDeals} with investors · ${sc.deals} deals, ${f1(sc.n)}`, need: `1+ · or 6+ and 12+`, ok: sc.investorDeals >= f.inv || longOwn });
+    }
     if (f.fund) { const ok = (s.fundHistory ?? []).some((x) => x.called > 0 && x.distributed >= x.called); rows.push({ label: "A fund that returned its capital", have: ok ? "yes" : "no", need: "yes", ok }); }
   }
   // The rank cut: the lowest rank that still holds `next` (rankBand), for bands the rank gates.
   if (bandIdx(next) >= bandIdx("Emerging") && me) {
     let cut = 0;
     for (let r = 1; r <= of; r++) if (bandIdx(rankBand(r, of)) >= bandIdx(next)) cut = r;
-    rows.push({ label: "Rank on the street", have: `#${me.rank} of ${of}`, need: `#${cut} or better`, ok: me.rank <= cut });
+    const best = Math.min(me.rank, me.sizeRank);
+    rows.push({ label: "Rank on the street (record or size)", have: `#${me.rank} by record · #${me.sizeRank} by size`, need: `#${cut} or better on either`, ok: best <= cut });
   }
   return { next, rows };
 }
@@ -417,7 +478,29 @@ export function nextBandNeeds(s: GameState): { next: Band; rows: { label: string
 /** Rivals' styles that run outside capital as a matter of course (count as a realised investor vehicle). */
 const INSTITUTIONAL_STYLES = new Set(["core", "pe", "reit", "opportunistic", "merchant", "foreign"]);
 
-export interface FirmStanding { id: string; name: string; score: number; n: number; rank: number; band: Band }
+export interface FirmStanding { id: string; name: string; score: number; n: number; rank: number; band: Band; sizeRank: number; eq: number }
+
+/** A firm's equity as investors see it: the player's net worth, a rival's book less its debt plus its cash. */
+function firmEq(s: GameState, r?: Rival): number {
+  if (!r) return Math.max(0, s.nwHistory?.[s.nwHistory.length - 1] ?? 0);
+  return Math.max(0, (r.aum ?? 0) - r.debt + r.cash);
+}
+const maxBand = (a: Band, b: Band) => (bandIdx(a) >= bandIdx(b) ? a : b);
+
+/**
+ * SCALE OPENS DOORS (owner, Oct 2026). Money follows the biggest names:
+ * fundraising concentrates in the largest managers, who also draw on capital
+ * from well beyond their own city. A firm's place on the street BY EQUITY
+ * multiplies what investors put in per dollar of its own, how fast they
+ * commit, and how much out-of-town money it can reach — 1x at the median
+ * firm, rising to 2x at the top. Read from the quarterly ranking.
+ */
+export function scaleMult(s: GameState): number {
+  const r = s.reputation;
+  if (!r?.sizeRank || !(r.of > 1)) return 1;
+  const pct = (r.of - r.sizeRank) / (r.of - 1);
+  return 1 + Math.pow(Math.max(0, (pct - 0.5) / 0.5), 2);
+}
 
 /**
  * THE STREET'S RANKING. Every living firm, scored and placed. Ties break
@@ -425,20 +508,28 @@ export interface FirmStanding { id: string; name: string; score: number; n: numb
  * stream is drawn and the economy's random draws never move.
  */
 export function rankStreet(s: GameState): FirmStanding[] {
-  const rows: { id: string; name: string; sc: ReturnType<typeof scoreOf>; bornM: number; fund: boolean; inst: boolean }[] = [];
+  const rows: { id: string; name: string; sc: ReturnType<typeof scoreOf>; bornM: number; fund: boolean; inst: boolean; eq: number }[] = [];
   const pe = playerEvidence(s);
   // Blue-chip needs a realised fund that returned its capital.
   const fundDone = (s.fundHistory ?? []).some((f) => f.called > 0 && f.distributed >= f.called);
-  rows.push({ id: "you", name: "You", sc: scoreOf(pe, s.month), bornM: 0, fund: fundDone, inst: false });
+  rows.push({ id: "you", name: "You", sc: scoreOf(pe, s.month), bornM: 0, fund: fundDone, inst: false, eq: firmEq(s) });
   for (const r of s.rivals ?? []) {
     if (r.failedM !== undefined || r.retiredM !== undefined) continue;
-    rows.push({ id: r.id, name: r.name, sc: scoreOf(rivalEvidence(s, r), s.month), bornM: r.bornM, fund: false, inst: INSTITUTIONAL_STYLES.has(r.style) });
+    rows.push({ id: r.id, name: r.name, sc: scoreOf(rivalEvidence(s, r), s.month), bornM: r.bornM, fund: false, inst: INSTITUTIONAL_STYLES.has(r.style), eq: firmEq(s, r) });
   }
   rows.sort((a, b) => b.sc.score - a.sc.score || b.sc.n - a.sc.n || a.bornM - b.bornM || (a.id < b.id ? -1 : 1));
   const of = rows.length;
+  // The street by size, for the better of the two rank bands: a firm among
+  // the biggest gets the meeting its record alone would not — but never past
+  // the floors its record sets (floorBand), so size cannot buy a pension's
+  // money for a firm that has never handled anyone else's.
+  const bySize = [...rows].sort((a, b) => b.eq - a.eq || (a.id < b.id ? -1 : 1));
+  const sizeRank = new Map(bySize.map((x, i) => [x.id, i + 1]));
   return rows.map((x, i) => {
     const sc = x.inst && x.sc.investorDeals === 0 ? { ...x.sc, investorDeals: x.sc.deals } : x.sc;
-    return { id: x.id, name: x.name, score: Math.round(x.sc.score * 10) / 10, n: x.sc.n, rank: i + 1, band: minBand(rankBand(i + 1, of), floorBand(sc, x.fund)) };
+    const sr = sizeRank.get(x.id) ?? of;
+    return { id: x.id, name: x.name, score: Math.round(x.sc.score * 10) / 10, n: x.sc.n, rank: i + 1, sizeRank: sr, eq: x.eq,
+      band: minBand(maxBand(rankBand(i + 1, of), rankBand(sr, of)), floorBand(sc, x.fund)) };
   });
 }
 
@@ -476,7 +567,12 @@ export function reputationNow(s: GameState): Reputation {
  * Downgrades are immediate; an upgrade needs two consecutive quarters at the
  * new band, so one quarter's noise does not flip it.
  */
-export function updateReputation(s: GameState): void {
+export function updateReputation(s: GameState, held?: { bbl: string; equityIn: number; multiple: number; years: number }[]): void {
+  // The unrealised record is read off the marks first, so this quarter's ranking sees it.
+  if (held) {
+    const marks = held.map((d) => ({ bbl: d.bbl, eqIn: Math.round(d.equityIn), mult: Math.round(d.multiple * 1000) / 1000, years: Math.round(d.years * 10) / 10 }));
+    s.reputation = { ...(s.reputation ?? { band: "Unknown", score: 0, rank: 0, of: 0, m: s.month }), held: marks };
+  }
   const r = reputationNow(s);
   const cur: { band: Band; pending?: Band; pendingQ?: number } = s.reputation ?? { band: "Unknown" };
   let band = cur.band, pending = cur.pending, pendingQ = cur.pendingQ ?? 0;
@@ -495,7 +591,8 @@ export function updateReputation(s: GameState): void {
   }
   const street: Record<string, Band> = {};
   for (const f of rankStreet(s)) if (f.id !== "you") street[f.id] = f.band;
-  s.reputation = { band, pending, pendingQ, score: r.score, rank: r.rank, of: r.of, m: s.month, street };
+  const me = rankStreet(s).find((x) => x.id === "you");
+  s.reputation = { band, pending, pendingQ, score: r.score, rank: r.rank, of: r.of, m: s.month, street, sizeRank: me?.sizeRank, held: s.reputation?.held };
 }
 
 /**
@@ -533,7 +630,9 @@ export const BAND_TERMS: Record<Band, BandTerms> = {
 /** The terms the player raises on today. */
 export function playerTerms(s: GameState): BandTerms & { band: Band } {
   const band = s.reputation?.band ?? "Unknown";
-  return { ...BAND_TERMS[band], band };
+  const t = BAND_TERMS[band];
+  // Scale buys more outside money per dollar of the sponsor's own (scaleMult).
+  return { ...t, perOwn: t.perOwn > 0 ? +(t.perOwn * scaleMult(s)).toFixed(2) : 0, band };
 }
 
 /** The waterfall in a line: "9% pref · 20% to you above 12% · 30% above 18%". */

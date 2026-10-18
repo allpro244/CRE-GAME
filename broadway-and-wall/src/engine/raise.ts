@@ -14,7 +14,7 @@ import { cloneState } from "./types";
 import { startDevelopment, planDevelopment, devFundingNeed, takeoutHedgeCost, takeoutHedgeRequired, siteDebtAtGroundbreak, projectedDevIrr, type TakeoutKind, type DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
 import { resolveRec } from "./value";
-import { playerTerms, dealStakes } from "./reputation";
+import { playerTerms, dealStakes, scaleMult } from "./reputation";
 import { ffAvailable, syndicateBar } from "./syndicate";
 import { heldByRaises, pitchAppeal, PITCH_MULT, type PitchStyle, circleMonth, commitHazard, relationshipFactor, committedTotal, openSources, payRaiseLegal, raiseLegalCost, RAISE_WINDOW_M, streetPercentile, SOURCE_LABEL, type InvestorSource, type Raise } from "./investors";
 import { money } from "./money";
@@ -190,7 +190,7 @@ export function raisePreview(s: GameState, plan: DevPlan, landEquity: number, ca
   const sources = openSources(s, t.band, ffAvailable(s));
   const pct = streetPercentile(s);
   const pitched = at.lpIrr * PITCH_MULT[pitch];
-  const appeal = pitchAppeal(pitched, t.hurdles[0] ?? 0, t.band);
+  const appeal = pitchAppeal(pitched, t.hurdles[0] ?? 0, t.band) * scaleMult(s);
   let seed = 0x9e3779b9 ^ Math.round(outside);
   const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   let full = 0, small = 0, fail = 0, mSum = 0;

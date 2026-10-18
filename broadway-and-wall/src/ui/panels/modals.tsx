@@ -5,7 +5,7 @@ import { listSaves, type SaveMeta } from "@/engine/save";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
 import { ordinal } from "@/engine/standing";
-import { groundLeaseFreeReversion, saleProceedsToSeller } from "@/engine/actions";
+import { groundLeaseFreeReversion, saleProceedsToSeller, sellerCashAtClose } from "@/engine/actions";
 import { MILESTONES, opportunitiesStop } from "@/engine/sim";
 import { loiSigningCash, exclusiveFeeRate, loiNeedsPrincipal, planIsLive } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
@@ -1006,7 +1006,7 @@ function DecisionBody({
   const onFund = !!(h.fundOwned && game.fund && !game.fund.settled);
   // A syndicate's investors are paid out of the closing at the month's end:
   // what is yours is what is left after their waterfall share.
-  const cashAtClose = (onFund ? 0 : proceeds.toSeller) - proceeds.investors - (game.exchange ? 0 : proceeds.tax);
+  const cashAtClose = sellerCashAtClose(game, parcels, h, offer.price);
   const value = ownedHoldingValue(game, parcels, h);
   const counterBounds = (() => {
     const b = counterPriceBounds(offer.price, apMid(offerBbl!, value));

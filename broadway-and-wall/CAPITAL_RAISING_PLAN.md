@@ -98,7 +98,7 @@ quietly goes to the wrong party.
    1. the investor rank (§3.4, relative)
    2. the finite investor pool and city attractiveness (§3.1), for the player
       and rival funds only — **first step done** (`investors.ts`, `raise.ts`):
-      a yearly pool at ~$600 of private real-estate equity a head, scaled by
+      a yearly pool at ~$600 (raised to ~$1,500 in Oct 2026, the whole of the equity reaching US commercial property) a head, scaled by
       the city's attractiveness (job growth, unemployment vs the nation) and
       split by investor type, each opening at a band; rivals entering the
       city draw it down (entry does not wait on it yet); the player raises
@@ -1738,3 +1738,45 @@ removes the flag on buy-in. `vehicleOf` makes that one rule.
    (`owners: { vehicleId, share }[]`) with a save migration
    (`SAVE_VERSION` bump), and add deal vehicles as a new kind.
 
+
+## Scale opens doors (Oct 2026)
+
+The owner's note: being one of the wealthiest, most successful firms should
+give real leverage with investors. It now does, three ways, all from the
+firm's place on the street by equity at the quarterly ranking:
+- **Band.** The rank band is the better of the record rank and the size rank,
+  still capped by the record's score floors (`floorBand`). A big firm gets the
+  meeting; it cannot buy a pension's money with no record of handling anyone's.
+- **Terms and speed** (`scaleMult`, 1× at the median firm, up to 2× at the
+  top):
+  - outside equity per dollar of the sponsor's own is multiplied;
+  - every source's monthly commitment hazard is multiplied.
+- **Reach.** The open pools are multiplied by the same factor: the largest
+  managers raise national allocations as well as the city's.
+
+The pool itself is ~$1,500 a head a year (was $600). See `investors.ts`.
+
+## A record without selling (Oct 2026)
+
+The owner's note: the highest returns in the game by net worth, never
+selling and never raising, and still a tiny investor reputation. The record
+read only realised exits, so a buy-and-hold firm had no evidence at all, and
+the record's floor held it at Unknown however large it grew. Three changes,
+all in `reputation.ts playerEvidence`:
+
+1. **Held deeds at the mark.** Each deed held two years or more (the
+   quarterly `returnsToDate` read, stored as `reputation.held`) counts on its
+   equity multiple at the appraisal, at 60% of the weight the same result
+   would earn sold. A mark under cost counts in full.
+2. **Own money on its multiple** (`ownMoneyEvidence`): 2.5x or better is +8,
+   1.6x +6, a profit +4 — sold or held — instead of +4 for every profit.
+3. **The firm's growth implies a record**, by the rule that credits a
+   rival's opening equity: 2·log2(net worth ÷ reference deal), at most 10,
+   less what the starting cash implied (both at today's prices), each a
+   promise met sized at 15% of the firm. It adds to the deeds' own evidence.
+
+Institutional also opens to a long own-money record (12+ experience and
+6+ good deals) without an investor vehicle. Measured (year 10, 64 firms,
+`$S/hold/synth.mjs` shape): #1 by size with nothing realised reads
+Institutional (score 52, 2x scale); ten deeds at 2x at the top, 93; a
+mid-size firm with four 1.3x deeds, Emerging; a new player, 0 as before.

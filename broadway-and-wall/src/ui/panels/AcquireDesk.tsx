@@ -11,7 +11,7 @@ import {
   recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr, useRentableSf } from "@/engine/value";
 import { demolitionCost } from "@/engine/dev";
 import {
-  buyQuote, saleTaxQuote, quietFeeRate, groundLeaseQuote,
+  buyQuote, quietFeeRate, saleFeeRate, sellerCashAtClose, saleProceedsToSeller, groundLeaseQuote,
   GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN,
 } from "@/engine/actions";
 import { sellerOf, sellerProfile, closingBand, phaseShift, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
@@ -311,11 +311,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const sale = holding.sale;
   const exchangeBusy = !!game.exchange;
   if (sale) {
-    const tq = sale.offer ? saleTaxQuote(holding, sale.offer.price) : null;
-    const closeNet = (px: number) => {
-      const q = saleTaxQuote(holding, px);
-      return q.net - (holding.loan?.balance ?? 0) - q.tax;
-    };
+    // Same waterfall the close runs — stack, kicker, break fee, release, investors, tax.
+    const tq = sale.offer && parcels ? saleProceedsToSeller(game, parcels, holding, sale.offer.price) : null;
+    const closeNet = (px: number) => (parcels ? sellerCashAtClose(game, parcels, holding, px) : 0);
     const counterBounds = sale.offer
       ? (() => {
           const b = counterPriceBounds(sale.offer.price, apMid(bbl, value));
@@ -352,7 +350,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
         <div className="grid">
           <Row k={sale.mode === "marketed" ? "Whisper price" : "Your ask"} v={usd(sale.ask)} strong />
           <Row k="vs. appraisal" v={pctSigned(sale.ask / apMid(bbl, value) - 1)} />
-          <Row k="Process" v={sale.mode === "marketed" ? "Marketed campaign · 2.5% fee" : "Quiet listing · 1.5% fee"} />
+          <Row k="Process" v={`${sale.mode === "marketed" ? "Marketed campaign" : "Quiet listing"} · ${(saleFeeRate(holding, game) * 100).toFixed(2).replace(/\.?0+$/, "")}% fee`} />
           {sale.callM !== undefined && <Row k="Offers due" v={monthLabel(sale.callM)} strong />}
           {describeInstructions(sale.instructions) && (
             <Row k="Broker's instructions" v={describeInstructions(sale.instructions)!} />
@@ -489,7 +487,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
             })()}
             <div className="btn-row">
               <button className="btn btn-buy" onClick={() => setAcceptConfirm({})}>
-                {sale.offer.contract && !sale.offer.held ? "Close now" : "Accept"} · net {usd(tq.net - (holding.loan?.balance ?? 0) - tq.tax)}
+                {sale.offer.contract && !sale.offer.held ? "Close now" : "Accept"} · net {usd(closeNet(sale.offer.price))}
               </button>
               {tq.tax > 0 && !exchangeBusy && (
                 <button

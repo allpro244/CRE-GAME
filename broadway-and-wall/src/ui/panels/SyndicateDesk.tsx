@@ -1,7 +1,7 @@
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { ffAvailable, syndicateView } from "@/engine/syndicate";
-import { reputationNow, rankStreet, playerTerms, termsLine, bandIdx, BANDS, nextBandNeeds } from "@/engine/reputation";
+import { reputationNow, rankStreet, playerTerms, termsLine, bandIdx, BANDS, nextBandNeeds, scaleMult } from "@/engine/reputation";
 import { INVESTOR_TYPES, cityAttractiveness, EQUITY_PER_HEAD, committedTotal } from "@/engine/investors";
 import { resolveRec } from "@/engine/value";
 import { usd } from "@/ui/format";
@@ -35,7 +35,7 @@ export function SyndicateDesk() {
         Investors read every deal you raised against what you pitched them, and rank you against every firm on the street.
         The band they act on is the lower of your rank's and your score's. A promise kept builds the record slowly; a promise
         broken counts in full, however small the deal, the day it is realised. Deals with your own money promised nobody
-        anything: a profit counts as a promise met, a loss by its size. This rank is your record, not your size — the rank in the top bar is by equity.
+        anything: they are judged on the multiple, a loss by its size. Buildings you have held two years or more count too, at the appraisal and at 60% of the weight a sale would earn — you do not have to sell to build a record. Your band reads the better of your record rank and your size rank, and size alone never lifts you past what your record allows.
       </div>
       <div className="grid">
         <Row k="Band" v={`${terms.band}${pending ? ` · ${pending} next quarter if it holds` : ""}`} strong />
@@ -43,6 +43,11 @@ export function SyndicateDesk() {
         <Row k="Track-record score" v={`${rep.score.toFixed(1)} · experience ${rep.n.toFixed(1)} from ${rep.deals} good deal${rep.deals === 1 ? "" : "s"}`} bad={rep.score < 0} />
         <Row k="Their terms today" v={termsLine(terms)} />
         <Row k="Outside equity per $1 of yours" v={terms.perOwn > 0 ? `up to $${terms.perOwn}` : "none — nobody will invest"} bad={!(terms.perOwn > 0)} />
+        {(() => {
+          const me = street.length ? rankStreet(game).find((f) => f.id === "you") : undefined;
+          const m = scaleMult(game);
+          return me ? <Row k="Size on the street" v={`#${me.sizeRank} of ${rep.of} by equity${m > 1.01 ? ` · scale opens doors: ${m.toFixed(2)}× the outside money, the pace and the reach` : " · the biggest firms raise more, faster, from further afield"}`} /> : null;
+        })()}
       </div>
       {bandIdx(terms.band) < BANDS.length - 1 && (() => {
         const nb = nextBandNeeds(game);

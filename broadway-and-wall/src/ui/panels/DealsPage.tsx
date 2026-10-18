@@ -7,7 +7,7 @@ import { holdingNOIYr, resolveRec, asIfOwned, recoveryOf } from "@/engine/value"
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
 import { bumpOf, loiSigningCash, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow, previewTray } from "@/engine/leasing";
-import { saleTaxQuote } from "@/engine/actions";
+import { sellerCashAtClose } from "@/engine/actions";
 import { usd, sf, pctSigned } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
 import { liveBrokerCalls } from "@/ui/panels/broker";
@@ -241,9 +241,8 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
   const suggested = offer ? Math.round(offer.price * 1.06) : 0;
   const value = h && parcels ? apMid(bbl, ask) : ask;
   const closeNet = (px: number) => {
-    if (!h) return 0;
-    const q = saleTaxQuote(h, px);
-    return q.net - (h.loan?.balance ?? 0) - q.tax;
+    if (!h || !parcels) return 0;
+    return sellerCashAtClose(game, parcels, h, px);
   };
   const counterBounds = offer
     ? (() => {

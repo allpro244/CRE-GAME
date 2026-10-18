@@ -256,8 +256,8 @@ export function SettingsPage() {
         detail="Letters, offers, bid lists and the auction take the screen when they arrive. Off, they wait on Deals — nothing is lost but the interruption."
         more={"Covers letters of intent, quiet offers and marketed bid lists on buildings you are selling, portfolio indications and the auction card. "
           + "Off, they wait on Deals (watch the badge) and on the property desk — not on Portfolio, which only shows that a deed is listed. "
-          + "Turn this off to simulate long stretches. Bank failures, level events, books taken back, portfolio indications and bid lists also raise "
-          + "stop-everything cards on the switch below."}
+          + "Turn this off to simulate long stretches. Bid lists on your sales, portfolio indications and a ground tenant's default "
+          + "are stop-everything cards — the switch below governs those."}
       />
       <Toggle
         on={!alertsOff}

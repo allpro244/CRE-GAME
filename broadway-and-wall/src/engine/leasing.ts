@@ -1686,6 +1686,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // has been on your fourth floor since 2004 failed" is a month you
       // remember. The engine has always known how long they were there — it
       // just never said so.
+      h.wentDark = { q, name: t.name, sf: t.sf, share: t.sf / Math.max(1, rentableSf(rec)) };
       const yrsIn = Math.floor((q - t.startM) / 12);
       const tenure = yrsIn >= 8 ? `, ${yrsIn} years in the building,` : "";
       s.news.unshift({

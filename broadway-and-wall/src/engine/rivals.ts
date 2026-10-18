@@ -3659,7 +3659,9 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
   const credible = Object.keys(s.holdings).length > 0 || !!t?.deals;
   const secrecy = (r.sheet?.secrecy ?? 50) / 100;
   if (credible && !(t?.insults) && !r.rules?.includes("neverSellsToPlayer")
-    && rng(s, "rivals") < 0.25 + 0.45 * secrecy) {
+    && rng(s, "rivals") < 0.25 + 0.45 * secrecy
+    // After the draw, so the phones being off moves no stream.
+    && !s.brokersOff) {
     const lev = (r.aum ?? 0) > 0 ? r.debt / r.aum! : 1;
     const desperate = Math.max(0, Math.min(1, (r.stressMs ?? 0) / 8 + Math.max(0, lev - paramsOf(r).maxLtv) * 2));
     const ask = Math.round(v * (0.95 - 0.20 * desperate) / 1000) * 1000;

@@ -10,10 +10,14 @@
  * Rivals entering the city raise from the same pools; the player raises from
  * what they leave.
  *
- * CALIBRATION. US private real-estate equity raised a year — closed-end
- * funds, non-traded vehicles and direct syndication together — runs on the
- * order of $150–250B (Preqin; NAREIT on non-traded REITs), about $600 a
- * head; carried here at the town's price level. The split across investor
+ * CALIBRATION. The first cut counted only new private commitments —
+ * closed-end funds, non-traded vehicles and syndication, $150–250B a year
+ * (Preqin; NAREIT), about $600 a head. The equity that actually reaches US
+ * commercial property each year is the larger number the owner asked for
+ * (Oct 2026): add open-end core funds' net inflows, separate accounts and
+ * programmatic JVs, cross-border capital and REIT equity raised, and it is
+ * on the order of $400-500B — about $1,500 a head. Carried at the town's
+ * price level. The split across investor
  * types follows the composition of private real-estate LPs (pensions the
  * largest single group, then high-net-worth and family offices, endowments
  * and foundations, insurers and sovereign wealth). Both are calibrations, not
@@ -33,12 +37,12 @@
 import type { Econ, GameState } from "./types";
 import { logBooks } from "./types";
 import { rng, payrollGrowth12 } from "./market";
-import { bandIdx, reputationNow, type Band } from "./reputation";
+import { bandIdx, reputationNow, scaleMult, type Band } from "./reputation";
 
 export type InvestorSource = "ff" | "local" | "family" | "endowment" | "pension";
 
 /** Private real-estate equity raised a year per head, in today's dollars. Calibration (see header). */
-export const EQUITY_PER_HEAD = 600;
+export const EQUITY_PER_HEAD = 1500;
 
 /** The investor types, their share of the city's pool, and the band each opens at. Shares: LP composition (see header). */
 export const INVESTOR_TYPES: { id: Exclude<InvestorSource, "ff">; label: string; share: number; band: Band }[] = [
@@ -106,7 +110,10 @@ export function drawRivalRaise(s: GameState, equity: number, ids: Exclude<Invest
 export function openSources(s: GameState, band: Band, ffLeft: number): { id: InvestorSource; left: number }[] {
   const out: { id: InvestorSource; left: number }[] = [];
   if (bandIdx(band) >= bandIdx("Questioned")) out.push({ id: "ff", left: Math.max(0, ffLeft) });
-  for (const t of INVESTOR_TYPES) if (bandIdx(band) >= bandIdx(t.band)) out.push({ id: t.id, left: poolLeft(s, t.id) });
+  // The biggest firms reach money from well beyond the city (scaleMult): the
+  // same types, the national allocations as well as the local ones.
+  const reach = scaleMult(s);
+  for (const t of INVESTOR_TYPES) if (bandIdx(band) >= bandIdx(t.band)) out.push({ id: t.id, left: poolLeft(s, t.id) * reach });
   return out;
 }
 
@@ -244,7 +251,7 @@ export function circleMonth(s: GameState, r: Raise, sources: { id: InvestorSourc
     const room = Math.max(0, src.left - (r.committed[src.id] ?? 0));
     if (!(room > 0)) continue;
     const cap = Math.min(need, room);
-    const c = Math.min(cap, Math.round(r.target * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id) * (r.appeal ?? 1)) * (0.6 + 0.8 * rng(s, "capital"))));
+    const c = Math.min(cap, Math.round(r.target * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id) * (r.appeal ?? 1) * scaleMult(s)) * (0.6 + 0.8 * rng(s, "capital"))));
     if (c > 0) { r.committed[src.id] = (r.committed[src.id] ?? 0) + c; added += c; }
   }
   return added;

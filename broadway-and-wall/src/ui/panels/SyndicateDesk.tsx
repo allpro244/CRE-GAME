@@ -35,7 +35,7 @@ export function SyndicateDesk() {
         Investors read every deal you raised against what you pitched them, and rank you against every firm on the street.
         The band they act on is the lower of your rank's and your score's. A promise kept builds the record slowly; a promise
         broken counts in full, however small the deal, the day it is realised. Deals with your own money promised nobody
-        anything: a profit counts as a promise met, a loss by its size. Your band reads the better of your record rank and your size rank, and size alone never lifts you past what your record allows.
+        anything: they are judged on the multiple, a loss by its size. Buildings you have held two years or more count too, at the appraisal and at 60% of the weight a sale would earn — you do not have to sell to build a record. Your band reads the better of your record rank and your size rank, and size alone never lifts you past what your record allows.
       </div>
       <div className="grid">
         <Row k="Band" v={`${terms.band}${pending ? ` · ${pending} next quarter if it holds` : ""}`} strong />

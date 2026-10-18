@@ -17,7 +17,7 @@ import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls
 import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
-import { stampYearMark } from "./standing";
+import { stampYearMark, returnsToDate } from "./standing";
 import { splitMonthCf } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
 import { tickLoan, productById, loanLender, stackPayoff, balloonLadder, drawLeaseUpReserve, leaseUpRoom } from "./debt";
@@ -1399,7 +1399,7 @@ function tickMonth(
   settleSyndications(s, parcels);
   // The quarterly investor read (reputation.ts): the record, the street's
   // ranking, and the band the next raise is priced in.
-  if (s.month % 3 === 0) { reviewSyndications(s, parcels); updateReputation(s); }
+  if (s.month % 3 === 0) { reviewSyndications(s, parcels); updateReputation(s, returnsToDate(s, parcels)); }
   // the record book — one appraisal for NW history, milestones, and next month's overhead base
   const { nw, gav } = portfolioMark(s, parcels);
   s.prevGav = Math.round(gav);
@@ -1954,13 +1954,13 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
         });
       }
     }
-    // A TENANT THAT FILED AND WENT DARK. A quarter of the building or more
-    // emptied mid-lease is a hole in the income the debt was sized on — it
-    // stops the clock the month it happens; a smaller suite is on the docket.
+    // A TENANT THAT FILED AND WENT DARK: on the docket, never a stop (owner,
+    // Oct 2026: "when you have 300 tenants you really don't care"). The
+    // consequences that matter — a sweep, arrears, thin cash — stop on their own.
     if (h.wentDark && h.wentDark.q === s.month) {
       const d = h.wentDark;
       out.push({
-        soft: d.share < 0.25,
+        soft: true,
         key: `tenant-dark:${h.bbl}:${s.month}`,
         label: `${d.name} filed and went dark at ${addr(h.bbl)} — ${Math.round(d.sf / 1000)}k sf, `
           + `${Math.round(d.share * 100)}% of the building, back mid-lease`,

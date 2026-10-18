@@ -1043,7 +1043,9 @@ function tickMonth(
       // NOI the header and the debt page use. Vacant freehold dirt still has
       // no taxable NOI here (carry is not income).
       const noi = ownedHoldingNoiYr(s, parcels, h);
-      const interest = h.loan ? (h.loan.balance * h.loan.ratePct) / 100 : 0;
+      // The junior coupon is interest too — mezz is deductible like the senior.
+      const interest = (h.loan ? (h.loan.balance * h.loan.ratePct) / 100 : 0)
+        + (h.mezz && h.mezz.balance > 0 ? (h.mezz.balance * h.mezz.ratePct) / 100 : 0);
       // Straight-line over the statutory life, on the IMPROVEMENTS only —
       // land is never depreciable. Residential rental property runs 27.5
       // years and everything else 39, which is why an apartment building
@@ -1072,6 +1074,17 @@ function tickMonth(
       taxable += (noi - interest) * (1 - partnerShare(s, h)) - depr; // losses net against gains across the portfolio
     }
     if (liveFund) taxable += fundTaxable * gpCapitalShare(liveFund);
+    // THE FIRM'S OWN COSTS ARE DEDUCTIBLE. Overhead (last year's G&A), the
+    // pooled facility's interest (its deeds carry no loan of their own) and
+    // the revolver's were never taken off, so a firm running a facility, a
+    // line or an office was taxed on income it had spent.
+    {
+      const lastYr = s.month / 12 - 1;
+      const ga = (s.books ?? []).find((b) => b.yr === lastYr)?.ga ?? 0;
+      const facInt = s.facility && s.facility.balance > 0 ? (s.facility.balance * s.facility.ratePct) / 100 : 0;
+      const locInt = (s.loc?.balance ?? 0) > 0 ? ((s.loc!.balance) * locRate(s)) / 100 : 0;
+      taxable -= ga + facInt + locInt;
+    }
     // Carried interest received this year — the sponsor's own income.
     taxable += s.promoteIncomeYr ?? 0;
     s.promoteIncomeYr = 0;
@@ -1106,7 +1119,7 @@ function tickMonth(
           : "";
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `Tax season: ${M(yr.tax)} due on last year's portfolio income (after interest and depreciation).${shel}`,
+        text: `Tax season: ${M(yr.tax)} due on last year's income (after interest, overhead and depreciation).${shel}`,
       });
     } else if (yr.carry > priorCarry + 100_000) {
       // A sheltered year used to pass in silence, which is how a player learns

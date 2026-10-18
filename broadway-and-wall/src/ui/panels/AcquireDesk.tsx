@@ -1,5 +1,6 @@
 // Buy, sell, list, ground lease, disclosed roll, vacant possession.
 // Extracted from ParcelDesk so the property shell stays readable.
+import { consentFor } from "@/engine/vehicles";
 import { useState } from "react";
 import Slider, { widePriceBounds, counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
@@ -313,7 +314,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   if (sale) {
     // Same waterfall the close runs — stack, kicker, break fee, release, investors, tax.
     const tq = sale.offer && parcels ? saleProceedsToSeller(game, parcels, holding, sale.offer.price) : null;
-    const closeNet = (px: number) => (parcels ? sellerCashAtClose(game, parcels, holding, px) : 0);
+    const closeNet = (px: number, ex = false) => (parcels ? sellerCashAtClose(game, parcels, holding, px, ex) : 0);
     const counterBounds = sale.offer
       ? (() => {
           const b = counterPriceBounds(sale.offer.price, apMid(bbl, value));
@@ -335,8 +336,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
             <SaleAcceptConfirm
               address={parcels[bbl]?.address ?? bbl}
               price={px}
-              net={closeNet(px)}
+              net={closeNet(px, !!acceptConfirm.exchange)}
               exchange={acceptConfirm.exchange}
+              contract={acceptConfirm.bidIndex !== undefined}
               onCancel={() => setAcceptConfirm(null)}
               onConfirm={() => {
                 if (acceptConfirm.bidIndex !== undefined) takeBid(bbl, acceptConfirm.bidIndex);
@@ -489,7 +491,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               <button className="btn btn-buy" onClick={() => setAcceptConfirm({})}>
                 {sale.offer.contract && !sale.offer.held ? "Close now" : "Accept"} · net {usd(closeNet(sale.offer.price))}
               </button>
-              {tq.tax > 0 && !exchangeBusy && (
+              {tq.tax > 0 && !exchangeBusy && !consentFor(game, holding, "exchange") && (
                 <button
                   className="btn btn-buy"
                   title={`Roll the gain into your next purchase: defer ${usd(tq.tax)} of tax, but you must buy for ≥ 80% of this price within 6 months`}
@@ -1208,7 +1210,10 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     && game.month <= game.fund.investEndM);
   // The vehicle calls capital as the deal closes (executePurchase): its purse
   // is the cash it holds plus the commitments still to call.
-  const closePurse = fromFund ? (game.fund?.cash ?? 0) + (game.fund?.uncalled ?? 0) : spendable(game, parcels).total;
+  // Earnest money already posted under contract comes back at the table
+  // (acquire.ts closeAgreed), so it counts toward the cheque.
+  const postedDeposit = game.talks?.[bbl]?.agreed ? (game.talks[bbl].deposit ?? 0) : 0;
+  const closePurse = (fromFund ? (game.fund?.cash ?? 0) + (game.fund?.uncalled ?? 0) : spendable(game, parcels).total) + postedDeposit;
   const noi = ip?.noi ?? 0;
   const stab = rec ? proFormaNOIYr(rec, game.econ, ip?.h?.condition ?? initialCondition(rec), offerPrice) : 0;
   // ACTUAL first-year debt service — amortizing payment for amortizing paper,
@@ -1392,7 +1397,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 <Row k={<Gloss term="cash-on-cash">Cash-on-cash</Gloss>} v={`${coc.toFixed(1)}%`} bad={coc < 0} />
               </>
             )}
-            <Row k="Equity to close" v={usd(equity)} strong bad={equity > closePurse} />
+            <Row k="Equity to close" v={postedDeposit > 0 ? `${usd(equity)} · ${usd(postedDeposit)} already posted` : usd(equity)} strong bad={equity > closePurse} />
           </div>
           {!fromFund && <LocSplitHint need={equity} game={game} parcels={parcels} />}
           <div className="btn-row">

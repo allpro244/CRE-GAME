@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { consentFor } from "@/engine/vehicles";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore, rewindPrefix } from "@/state/store";
 import { listSaves, type SaveMeta } from "@/engine/save";
@@ -1019,7 +1020,7 @@ function DecisionBody({
       <SaleAcceptConfirm
         address={rec.address}
         price={offer.price}
-        net={cashAtClose}
+        net={sellerCashAtClose(game, parcels, h, offer.price, !!saleAcceptConfirm.exchange)}
         exchange={saleAcceptConfirm.exchange}
         onCancel={() => setSaleAcceptConfirm(null)}
         onConfirm={() => {
@@ -1084,7 +1085,7 @@ function DecisionBody({
           <button className="btn btn-buy" onClick={() => setSaleAcceptConfirm({})}>
             Accept · net {usd(cashAtClose)}
           </button>
-          {proceeds.tax > 0 && !game.exchange && !onFund && (
+          {proceeds.tax > 0 && !game.exchange && !onFund && !consentFor(game, h, "exchange") && (
             <button className="btn btn-buy" title="Roll the gain into your next purchase within 6 months" onClick={() => setSaleAcceptConfirm({ exchange: true })}>
               1031 · defer {usd(proceeds.tax)}
             </button>

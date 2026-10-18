@@ -1,5 +1,6 @@
 // Permanent debt desk for a single deed — refinance / mezz / payoff.
 // Extracted from ParcelDesk; also embedded from Portfolio and Debt pages.
+import { consentFor } from "@/engine/vehicles";
 import { useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
@@ -188,7 +189,9 @@ export function RefiSection({ bbl }: { bbl: string }) {
             A second lien, not a refinance. The coupon is why nobody does this twice.
           </div>
           <div className="btn-row" style={{ marginTop: 6 }}>
-            <button className="btn" onClick={() => placeMezz(bbl)}>Place mezz · {usd(mq.principal)}</button>
+            <button className="btn" disabled={!!consentFor(game, holding, "debt")}
+              title={consentFor(game, holding, "debt") ?? undefined}
+              onClick={() => placeMezz(bbl)}>Place mezz · {usd(mq.principal)}</button>
           </div>
         </div>
       )}
@@ -329,7 +332,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
         <Row
           k="Prepayment"
           v={q.prepay === "open" ? "open — leave any time"
-            : q.prepay === "stepdown" ? `step-down, ${q.prepayM / 12} yrs (5% falling to 1%)`
+            : q.prepay === "stepdown" ? `step-down, ${q.prepayM / 12} yrs (${Math.min(5, Math.ceil(q.prepayM / 12))}% falling a point a year${Math.min(5, Math.ceil(q.prepayM / 12)) > 1 ? " to 1%" : ""})`
             : `yield maintenance, ${q.prepayM / 12} yrs`}
           bad={q.prepay === "yieldmaint"}
         />

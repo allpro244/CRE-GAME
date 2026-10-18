@@ -1,11 +1,12 @@
 import { useState, Fragment } from "react";
+import { consentFor } from "@/engine/vehicles";
 import { BankLink } from "@/ui/panels/BankProfile";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import { ownedHoldingValue, resolveRec, ownedContractNoiYr } from "@/engine/value";
-import { PRODUCTS, productById, payOffDue, rateCapCost, loanLender } from "@/engine/debt";
+import { PRODUCTS, productById, payOffDue, rateCapCost, capStrikeFor, loanLender } from "@/engine/debt";
 import { fundableNow, locRate, spendable } from "@/engine/credit";
 import type { FacilityQuote } from "@/engine/facility";
 import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, RELEASE_PREMIUM } from "@/engine/facility";
@@ -708,7 +709,8 @@ export function DebtPage() {
               const lv = v > 0 ? l.balance / v : null;
               const near = l.maturityM - game.month <= 24;
               const due = payOffDue(l, game.month, game.econ);
-              const canPay = !pledged(game, h.bbl) && fundableNow(game, parcels) >= due.due;
+              const jvBlock = consentFor(game, h, "debt");
+              const canPay = !pledged(game, h.bbl) && !jvBlock && fundableNow(game, parcels) >= due.due;
               const crumb = due.balance > 0 && due.balance < 25_000;
               return (
                 <Fragment key={h.bbl}>
@@ -735,7 +737,7 @@ export function DebtPage() {
                       <button
                         className={"btn btn-sm" + (crumb ? " btn-buy" : "")}
                         disabled={!canPay}
-                        title={pledged(game, h.bbl)
+                        title={jvBlock ? jvBlock : pledged(game, h.bbl)
                           ? "Pledged to the facility — release it there first."
                           : !canPay
                             ? `Need ${usd(due.due)}${due.penalty > 0 ? ` incl. ${usd(due.penalty)} break fee` : ""} — short ${usd(due.due - fundableNow(game, parcels))}.`
@@ -749,7 +751,7 @@ export function DebtPage() {
                       {(l.floating ?? l.product === "float") && !l.cap && (
                         <button
                           className="btn btn-sm"
-                          title={`Index capped at ${(game.econ.indexRate + 0.5).toFixed(2)}% for three years.`}
+                          title={`Index capped at ${capStrikeFor(game, l).toFixed(2)}% for three years.`}
                           onClick={() => useStore.getState().rateCap(h.bbl)}
                         >
                           Cap · {usd(rateCapCost(l))}

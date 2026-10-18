@@ -964,6 +964,7 @@ export function PortfolioBidActions({
   rowClass?: string;
 }) {
   const { counterPortfolioBid, acceptPortfolio } = useStore.getState();
+  const exchangeLive = useStore((s) => !!s.game?.exchange);
   const [countering, setCountering] = useState(false);
   const [counter, setCounter] = useState(0);
   const pb = counterPriceBounds(bid.price, sumOfParts);
@@ -979,9 +980,10 @@ export function PortfolioBidActions({
           Close it · net {usd(book.netToYou)}{book.toFund ? " to the fund" : ""}
         </button>
         <button className="btn" onClick={() => { acceptPortfolio(true); onDone?.(); }}
-          disabled={book.toFund}
+          disabled={book.toFund || exchangeLive}
           title={book.toFund
             ? "The fund's gain belongs to the vehicle — it cannot roll into your own 1031"
+            : exchangeLive ? "One exchange at a time — the live 1031 has to close first"
             : "Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due"}>
           Close into a 1031{book.tax > 0 ? ` · defer ${usd(book.tax)}` : ""}
         </button>

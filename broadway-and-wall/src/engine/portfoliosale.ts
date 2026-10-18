@@ -338,6 +338,21 @@ export function buyPortfolio(
     taken.push(b);
   }
   if (!taken.length) return { s, err: "Nothing in that package could be conveyed." };
+  // A PACKAGE IS ONE REPLACEMENT PROPERTY FOR A 1031 when the whole price
+  // clears the bar the hint quotes (80% of what was sold); the rolled gain is
+  // spread across the deeds by their share of the price.
+  if (cur.exchange && struck >= cur.exchange.minPrice * 0.8) {
+    const ex = cur.exchange;
+    for (const { b, v } of vals) {
+      const h = cur.holdings[b];
+      if (h) h.costBasis -= Math.round(ex.rolledGain * (v / tot));
+    }
+    cur.news.unshift({
+      q: cur.month, kind: "deal",
+      text: `1031 completed: ${money(ex.rolledGain)} of gain rolled into the ${taken.length}-building package — ${money(ex.deferredTax)} of tax deferred.`,
+    });
+    cur.exchange = null;
+  }
   cur.portfolios = (cur.portfolios ?? []).filter((x) => x.id !== id);
   cur.news.unshift({
     q: cur.month, kind: "deal",

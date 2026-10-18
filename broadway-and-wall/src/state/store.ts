@@ -267,6 +267,14 @@ interface AppState {
   alertsOff: boolean;
   setAlertsOff: (v: boolean) => void;
   /**
+   * ONE KIND AT A TIME (owner, Oct 2026). Rather than silence every card
+   * because one kind is tedious, a card can be told "don't stop me for these":
+   * that kind passes as a line in the toast lane and in the news. A swan can
+   * never be muted. Cleared with the master switch at every new game.
+   */
+  mutedAlerts: string[];
+  muteAlertKind: (kind: string, on: boolean) => void;
+  /**
    * THE FRAME COUNTER IS A QA INSTRUMENT AND IT WAS ALWAYS ON SCREEN.
    * It sat in the top-right corner of a shipped game reading "4 fps" at people
    * who had not asked. Off by default now, with a switch in Settings for when
@@ -860,6 +868,7 @@ export const useStore = create<AppState>((set, get) => ({
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   hoverCard: (() => { try { return localStorage.getItem("bw:hovercard") !== "off"; } catch { return true; } })(),
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
+  mutedAlerts: (() => { try { const v = JSON.parse(localStorage.getItem("bw:alerts-muted") ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "swan") : []; } catch { return []; } })(),
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   // THE GRAPHICS DIAL. An old "prefer smoother frames" on reads as Medium.
   graphics: (() => {
@@ -1225,6 +1234,12 @@ export const useStore = create<AppState>((set, get) => ({
   setAlertsOff: (v) => {
     try { localStorage.setItem("bw:alerts", v ? "off" : "on"); } catch { /* private mode */ }
     set({ alertsOff: v });
+  },
+  muteAlertKind: (kind, on) => {
+    if (kind === "swan") return;
+    const next = on ? [...new Set([...get().mutedAlerts, kind])] : get().mutedAlerts.filter((k) => k !== kind);
+    try { localStorage.setItem("bw:alerts-muted", JSON.stringify(next)); } catch { /* private mode */ }
+    set({ mutedAlerts: next });
   },
 
   setFpsOn: (v) => {
@@ -2466,7 +2481,11 @@ export const useStore = create<AppState>((set, get) => ({
    * one leaves the pair (island, seed) pointing at a town nobody asked for.
    */
   startRun: async (island, size, dev, cash0, setupIn, seedIn) => {
-    set({ phase: "generating", building: islandName(island), loadError: null });
+    // EVERY NEW GAME STARTS WITH THE CARDS ON (owner, Oct 2026): a switch
+    // turned off in a past campaign, or a kind muted there, does not follow
+    // the player into the next town.
+    try { localStorage.setItem("bw:alerts", "on"); localStorage.setItem("bw:alerts-muted", "[]"); } catch { /* private mode */ }
+    set({ phase: "generating", building: islandName(island), loadError: null, alertsOff: false, mutedAlerts: [] });
     await painted();
     try {
       setCity(island);

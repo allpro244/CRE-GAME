@@ -2388,7 +2388,15 @@ export function stopRule(s: GameState, parcels: ParcelTable, seen?: ReadonlySet<
     : !a.soft && !OPPORTUNITY_KEYS.has(a.key.split(":")[0]);
   // Critical first: if a foreclosure and a broker's call land the same month,
   // the stop names the foreclosure.
+  // A SWAN STOPS THE CLOCK, IN EVERY MODE (owner, Oct 2026: "I missed a
+  // black swan"). The level event the city will date itself by used to stop
+  // nothing — the stop rule reads the docket and swans are alerts, so a Year
+  // click ran on eleven months past one. Any swan raised during the run ends
+  // it that month, whatever the clock or card settings.
+  const swansBefore = new Set((s.alerts ?? []).filter((a) => a.kind === "swan").map((a) => a.id));
   return (cur) => {
+    const swan = (cur.alerts ?? []).find((a) => a.kind === "swan" && !swansBefore.has(a.id));
+    if (swan) return { key: `swan:${swan.id}`, label: `${swan.tone === "good" ? "A white swan" : "A black swan"} — ${swan.title}`, critical: swan.tone !== "good" };
     const due = attentionItems(cur, parcels).filter((a) => counts(a) && (a.lastM !== undefined
       ? cur.month >= a.lastM && !dueAtStart.has(a.key)
       : !before.has(a.key)));

@@ -1730,6 +1730,19 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     if (!s.watch?.includes(li.bbl)) continue;
     out.push({ key: `watch:${li.bbl}:${li.listedM}`, label: `★ ${addr(li.bbl)} is on the tape` });
   }
+  // A BANK HAS PUT A BUILDING OUT. The month a desk lists what it took back,
+  // the docket says so — on the docket, never a stop (an opportunity), so a
+  // player with every card off still sees it in Next due and on Marketplace.
+  for (const li of s.listings ?? []) {
+    if (li.reason !== "receiver" || li.listedM !== s.month || s.holdings[li.bbl]) continue;
+    const off = li.mark && li.mark > 0 ? Math.round((1 - li.ask / li.mark) * 100) : 0;
+    out.push({
+      soft: true,
+      key: `reo:${li.bbl}:${li.listedM}`,
+      label: `Bank-owned: ${addr(li.bbl)} for sale at ${money(li.ask)}${off >= 3 ? `, ${off}% under the mark` : ""}`
+        + `${li.receiverFor ? ` (${li.receiverFor})` : ""}`,
+    });
+  }
   // YOUR BUILDING IS FINISHED. Years of construction end in one month, and
   // the lease-up starts the same day: the empty building costs its tax,
   // opex and debt service from here, and the leasing desk is where the
@@ -2385,7 +2398,7 @@ const TYPICAL_LTV = 0.65;
  */
 export const OPPORTUNITY_KEYS = new Set([
   "watch", "portfolio-bid", "broker", "early-look", "offer", "sale-bids", "talks", "note", "private-ask", "street-book",
-  "take-private", "auction", "private-borrow",
+  "take-private", "auction", "private-borrow", "reo",
 ]);
 
 /**

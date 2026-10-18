@@ -230,7 +230,7 @@ function settleMerchant(s: GameState, parcels: ParcelTable, bbl: string, m: Merc
   if (!s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
     s.listings.push({
       bbl, ask, listedM: s.month, expiresM: s.month + 12, distress: true, receiverFor: m.lender, reason: "receiver",
-      loanBasis: Math.min(worth, m.loan),
+      loanBasis: Math.min(worth, m.loan), mark: Math.round(worth),
     });
   }
   s.news.unshift({

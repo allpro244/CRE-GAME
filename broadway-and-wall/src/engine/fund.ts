@@ -166,7 +166,7 @@ export function fundRaiseQuote(s: GameState): {
   // sponsor whose fund lost money with everyone else's did raise again.
   const band = playerTerms(s).band;
   if (bandIdx(band) < bandIdx("Institutional")) {
-    return { ok: false, size: 0, reason: `Pensions and endowments back a blind pool on a record. They read you as ${band}; a fund needs Institutional — a score of 40 from three good deals worth eight of experience, one of them with outside investors, and a place in the street's top 13%.` };
+    return { ok: false, size: 0, reason: `Pensions and endowments back a blind pool on a record. They read you as ${band}; a fund needs Institutional — a score of 40 from three good deals worth eight of experience, one of them with outside investors or six of your own, and a place in the street's top 13% by record or by size.` };
   }
   // LPs commit when the credit window is open — the denominator effect and
   // the debt they lever their own commitments with — not when a label says so.

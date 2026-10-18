@@ -33,7 +33,8 @@ export function PropertyPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const adjacency = useStore((s) => s.adjacency);
-  const bbl = useStore((s) => s.selectedBBL);
+  // A folded lot reads as its site wherever the selection came from (back/forward, a stale link).
+  const bbl = useStore((s) => (s.selectedBBL ? s.game?.merged?.[s.selectedBBL] ?? s.selectedBBL : s.selectedBBL));
   const [tab, setTab] = useState<PropTab>("summary");
   const fundingDue = !!bbl && !game.holdings[bbl] && !!game.talks?.[bbl]?.agreed;
   // The desk the map card asked for by name ("Open the Build desk"), read once.

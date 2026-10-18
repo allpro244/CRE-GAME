@@ -2495,9 +2495,55 @@ export class RealCityLayer {
     const form = SIGNATURE_BY_KEY.get(key);
     if (!form || ring0.length < 3 || H < 20) return false;
     if (ringArea(ring0) < 0) ring0 = ring0.slice().reverse();
+    // The AREA centroid for a non-convex site: a vertex average drifts toward
+    // whichever side of an assembled site has the most corners.
     let cx = 0, cy = 0;
-    for (const [x, y] of ring0) { cx += x / ring0.length; cy += y / ring0.length; }
+    {
+      let a2 = 0;
+      for (let i = 0; i < ring0.length; i++) {
+        const [x0, y0] = ring0[i], [x1, y1] = ring0[(i + 1) % ring0.length];
+        const c = x0 * y1 - x1 * y0;
+        a2 += c; cx += (x0 + x1) * c; cy += (y0 + y1) * c;
+      }
+      if (Math.abs(a2) > 1e-6) { cx /= 3 * a2; cy /= 3 * a2; } else { cx = 0; cy = 0; for (const [x, y] of ring0) { cx += x / ring0.length; cy += y / ring0.length; } }
+    }
     if (!PolyGrid.inRing(ring0, cx, cy)) return false;
+    // A NON-CONVEX SITE IS MEASURED ON ITS REAL EDGES (owner, Oct 2026: "choosing
+    // a landmark tower doesn't work"). Reach used to be read off each edge's
+    // infinite line, which is exact on a convex lot and wrong on an assembled
+    // L or T: the line through an inside corner passes beside the centre, the
+    // reach came out near nothing and every form was refused. Distances are to
+    // the segments, and reach along an axis is a ray cast to the boundary.
+    const segDist = (a: P2, b: P2) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+      const s = L2 > 0 ? Math.max(0, Math.min(1, ((cx - a[0]) * dx + (cy - a[1]) * dy) / L2)) : 0;
+      return Math.hypot(cx - (a[0] + s * dx), cy - (a[1] + s * dy));
+    };
+    const ray = (ux: number, uy: number) => {
+      let best = Infinity;
+      for (let i = 0; i < ring0.length; i++) {
+        const a = ring0[i], b = ring0[(i + 1) % ring0.length];
+        const ex = b[0] - a[0], ey = b[1] - a[1];
+        const den = ux * ey - uy * ex;
+        if (Math.abs(den) < 1e-9) continue;
+        const qx = a[0] - cx, qy = a[1] - cy;
+        const tt = (qx * ey - qy * ex) / den, s = (qx * uy - qy * ux) / den;
+        if (tt > 1e-6 && s >= 0 && s <= 1) best = Math.min(best, tt);
+      }
+      return best;
+    };
+    const convex = (() => {
+      let sgn = 0;
+      for (let i = 0; i < ring0.length; i++) {
+        const a = ring0[i], b = ring0[(i + 1) % ring0.length], c = ring0[(i + 2) % ring0.length];
+        const z = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+        if (Math.abs(z) < 1e-6) continue;
+        if (sgn === 0) sgn = Math.sign(z); else if (Math.sign(z) !== sgn) return false;
+      }
+      return true;
+    })();
+    // A convex lot keeps the centre it always had, so every tower already in town is drawn as before.
+    if (convex) { cx = 0; cy = 0; for (const [x, y] of ring0) { cx += x / ring0.length; cy += y / ring0.length; } }
     let li = 0, ll = -1;
     for (let i = 0; i < ring0.length; i++) { const a = ring0[i], b = ring0[(i + 1) % ring0.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
     let bear = Math.atan2(ring0[(li + 1) % ring0.length][1] - ring0[li][1], ring0[(li + 1) % ring0.length][0] - ring0[li][0]);
@@ -2514,6 +2560,12 @@ export class RealCityLayer {
       const nu = Math.abs(n[0] * U[0] + n[1] * U[1]), nv = Math.abs(n[0] * V[0] + n[1] * V[1]);
       if (nu > 0.5) A = Math.min(A, d / nu);
       if (nv > 0.5) B = Math.min(B, d / nv);
+    }
+    if (!convex) {
+      R = Infinity;
+      for (let i = 0; i < ring0.length; i++) R = Math.min(R, segDist(ring0[i], ring0[(i + 1) % ring0.length]));
+      A = Math.min(ray(U[0], U[1]), ray(-U[0], -U[1]));
+      B = Math.min(ray(V[0], V[1]), ray(-V[0], -V[1]));
     }
     if (!isFinite(A)) A = R;
     if (!isFinite(B)) B = R;

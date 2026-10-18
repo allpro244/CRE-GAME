@@ -2032,7 +2032,7 @@ export function expectedPolicyAvg(
  * Plus the credit term this line always had: when the window is frightened
  * the premium a LOAN index carries widens even while policy is being cut.
  */
-export function termPremBase(credibility: number, creditIdx: number): number {
+export function termPremBase(credibility: number, creditIdx: number, inflExp = 0.02, target = 0.02): number {
   // RECALIBRATED 2026-10-13: the believed-bank end was the 2010s' ~0, which
   // is what a decade of central-bank bond buying did to the premium — QE,
   // which this game does not have. A believed bank WITHOUT it is 1995-2007:
@@ -2043,7 +2043,19 @@ export function termPremBase(credibility: number, creditIdx: number): number {
   // time, and 0.6 puts the median premium at 1.3 (ACM 1961-2024 ~1.2), the
   // curve inverted 18% of months and inversion ahead of 75% of recessions
   // (US ~15-21% and 8 of the last 10).
-  return 0.6 + 4.4 * (1 - credibility) + 1.85 * Math.max(0, 1 - creditIdx);
+  // THE PREMIUM PRICES THE RISK OF MORE INFLATION, NOT OF LESS (2026-10-18).
+  // A bank that has lost belief by UNDERSHOOTING — a recession's inflation
+  // below target — does not make a ten-year bond riskier: with expectations
+  // under target, long bonds hedge the downturn and the inflation-risk
+  // premium falls (ACM: the premium went negative in the low-inflation 2010s
+  // and around 2020). Read symmetrically, a recession's undershoot cost belief
+  // and DOUBLED the premium exactly when policy was at zero — measured over
+  // 20 centuries, policy under 0.5% came with a 2.8-point premium and a 5.65%
+  // ten-year, above the 5.09% of all months. So the credibility term weighs
+  // in full once expectations sit at or over target and fades to a quarter as
+  // they fall a point under it.
+  const upside = Math.max(0.25, Math.min(1, 1 + (inflExp - target) / 0.01));
+  return 0.6 + 4.4 * (1 - credibility) * upside + 1.85 * Math.max(0, 1 - creditIdx);
 }
 
 /**
@@ -3002,7 +3014,7 @@ export function tickNation(s: GameState) {
     const cn = n.creditNat ?? 1;
     n.creditNat = clamp(cn + (tgt < cn ? 0.16 : 0.055) * (tgt - cn), 0.4, 1.25);
   }
-  const premBase = termPremBase(n.credibility, n.creditNat ?? 1);
+  const premBase = termPremBase(n.credibility, n.creditNat ?? 1, n.inflExp, n.inflTarget ?? 0.02);
   if (n.termPrem === undefined) n.termPrem = premBase;
   n.termPrem = n.termPrem + 0.10 * (premBase - n.termPrem) + rrange(s, -0.30, 0.30, "nation");
   // THE MARKET LEARNS WHERE THE BANK RESTS (2026-10-13). The forecast assumed

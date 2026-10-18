@@ -1956,6 +1956,8 @@ export interface Econ {
      * produce either of them.
      */
     pressureM?: number;
+    /** The committee's last non-zero step, so a card can say when a cycle turns (market.ts). */
+    lastStep?: number;
   };
 
   /**

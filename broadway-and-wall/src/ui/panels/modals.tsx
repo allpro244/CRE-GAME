@@ -458,7 +458,7 @@ export function AlertModal() {
   // A SWAN ALWAYS TAKES THE SCREEN — no switch silences it (owner, Oct 2026:
   // with the cards off a black swan went by unseen).
   const awake = useStore((s) =>
-    !s.game?.gameOver && (s.game?.alerts ?? []).some((a) => a.kind === "swan" || (!s.alertsOff && !s.mutedAlerts.includes(a.kind))));
+    !s.game?.gameOver && (s.game?.alerts ?? []).some((a) => ALWAYS_STOP.has(a.kind) || (!s.alertsOff && !s.mutedAlerts.includes(a.kind))));
   // THE WORLD'S NEWS NO LONGER TAKES THE SCREEN (owner, Oct 2026): "a lot of
   // stuff stops the game that shouldn't, like when portfolios are taken back
   // by the bank." A rival's book repossessed, a bank closed, a swan, a buyer
@@ -491,15 +491,17 @@ export function AlertModal() {
 
 type AlertRow = NonNullable<NonNullable<ReturnType<typeof useStore.getState>["game"]>["alerts"]>[number];
 /** Does this card stay on screen? A swan always; anything else unless the cards are off, its kind is muted, or it does not take the screen. */
+/** Cards no setting silences: a swan, and the central bank moving (owner, Oct 2026). */
+const ALWAYS_STOP = new Set<string>(["swan", "fed"]);
 function cardStays(g: NonNullable<ReturnType<typeof useStore.getState>["game"]>, a: AlertRow, off: boolean, muted: string[]): boolean {
-  if (a.kind === "swan") return true;
+  if (ALWAYS_STOP.has(a.kind)) return true;
   if (off || muted.includes(a.kind)) return false;
   return alertTakesScreen(g, a);
 }
 /** What "don't stop me for these" mutes, in the player's words. */
 const MUTE_LABEL: Record<string, string> = {
   bank: "bank failures", portfolio: "books and portfolio offers", ground: "ground-lease defaults",
-  sale: "bid lists on your sales", fed: "central-bank news", delivered: "deliveries",
+  sale: "bid lists on your sales", delivered: "deliveries",
 };
 function alertTakesScreen(g: NonNullable<ReturnType<typeof useStore.getState>["game"]>, a: AlertRow): boolean {
   if (opportunitiesStop(g)) return true;
@@ -646,7 +648,7 @@ function AlertBody() {
               Go to the lot
             </button>
           )}
-          {a.kind !== "swan" && (
+          {!ALWAYS_STOP.has(a.kind) && (
             <button className="btn" title="This kind will pass as a line at the top of the screen and in the news instead of stopping the game. Undo it in Settings. Black swans always stop the game."
               onClick={() => { useStore.getState().muteAlertKind(a.kind, true); dismissAlert(); }}>
               Don't stop me for {MUTE_LABEL[a.kind] ?? "these"}

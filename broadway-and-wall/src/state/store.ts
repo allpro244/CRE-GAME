@@ -870,7 +870,7 @@ export const useStore = create<AppState>((set, get) => ({
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   hoverCard: (() => { try { return localStorage.getItem("bw:hovercard") !== "off"; } catch { return true; } })(),
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
-  mutedAlerts: (() => { try { const v = JSON.parse(localStorage.getItem("bw:alerts-muted") ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "swan") : []; } catch { return []; } })(),
+  mutedAlerts: (() => { try { const v = JSON.parse(localStorage.getItem("bw:alerts-muted") ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "swan" && x !== "fed") : []; } catch { return []; } })(),
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   // THE GRAPHICS DIAL. An old "prefer smoother frames" on reads as Medium.
   graphics: (() => {
@@ -1239,7 +1239,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ alertsOff: v });
   },
   muteAlertKind: (kind, on) => {
-    if (kind === "swan") return;
+    if (kind === "swan" || kind === "fed") return;
     const next = on ? [...new Set([...get().mutedAlerts, kind])] : get().mutedAlerts.filter((k) => k !== kind);
     try { localStorage.setItem("bw:alerts-muted", JSON.stringify(next)); } catch { /* private mode */ }
     set({ mutedAlerts: next });

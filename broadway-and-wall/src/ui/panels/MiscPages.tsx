@@ -263,7 +263,7 @@ export function SettingsPage() {
         on={!alertsOff}
         set={(v) => setAlertsOff(!v)}
         label="Stop-everything cards"
-        detail="Bids on a sale you listed, an indication on a book you put up, and your ground tenant's default take the screen. Off, you read them on Deals and News instead. Black swans always stop the game, whatever this says — and a single kind can be muted from its own card instead."
+        detail="Bids on a sale you listed, an indication on a book you put up, and your ground tenant's default take the screen. Off, you read them on Deals and News instead. Black swans and the central bank's moves always stop the game, whatever this says — and a single kind can be muted from its own card instead."
         more={"Bank failures, economy-wide events and a competitor's book taken back pass as a line at the top of the screen and do not stop play, "
           + "unless the clock is set to stop for opportunities too or for everything. "
           + "Each is written into the news feed the moment it fires, so turning this off loses the interruption and not the event. "
@@ -276,7 +276,7 @@ export function SettingsPage() {
           Not stopping you for: {mutedAlerts.map((k, i) => (
             <span key={k}>{i > 0 ? " · " : ""}{({ bank: "bank failures", portfolio: "books and portfolio offers", ground: "ground-lease defaults", sale: "bid lists on your sales", fed: "central-bank news", delivered: "deliveries" } as Record<string, string>)[k] ?? k}{" "}
               <button type="button" className="linkish" onClick={() => muteAlertKind(k, false)}>(stop me again)</button></span>
-          ))}. Black swans always stop the game.
+          ))}. Black swans and the central bank's moves always stop the game.
         </div>
       )}
       <Toggle

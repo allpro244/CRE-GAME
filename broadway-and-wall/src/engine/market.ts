@@ -2972,7 +2972,27 @@ export function tickNation(s: GameState) {
     // -0.75, one in eighteen at -1. A lower bound that emerges, not a stop.
     if (step < 0 && n.policy + step < 0
         && rng(s, "nation") > Math.exp((n.policy + step) / 0.35)) step = 0;
+    const was = n.policy;
     n.policy = n.policy + step;
+    // A RATE DECISION STOPS THE GAME (owner, Oct 2026), like a new chair and
+    // a swan: the policy rate is what every floater resets on next month and
+    // what the bond market prices the fixed index off. Only a change raises a
+    // card; a meeting that holds passes in the news as before.
+    if (Math.abs(step) >= 0.01) {
+      const up = step > 0;
+      const infl = ((n.inflSm ?? n.infl ?? 0) * 100).toFixed(1), un = ((n.unemp ?? 0) * 100).toFixed(1);
+      const turn = n.lastStep !== undefined && n.lastStep !== 0 && Math.sign(n.lastStep) !== Math.sign(step);
+      raiseAlert(s, {
+        kind: "fed",
+        tone: up ? "bad" : "good",
+        title: `The central bank ${up ? "raises" : "cuts"} rates ${Math.abs(step).toFixed(2)} to ${n.policy.toFixed(2)}%${turn ? ` — the first ${up ? "hike" : "cut"} of a new cycle` : ""}`,
+        body: `${up ? "Tightening" : "Easing"} from ${was.toFixed(2)}% with inflation at ${infl}% and unemployment at ${un}%. `
+          + `Floating loans reset on the new rate next month (through any cap you bought); the short index is now ${shortIndexFor(n.policy, e.creditIdx ?? 1).toFixed(2)}%. `
+          + (up ? "Dearer money reaches cap rates and lending before it reaches rents." : "Cheaper money reaches refinancing and land bids first, rents later."),
+        detail: "The committee's path, the curve and how far the market believes the bank are on Markets under Central bank.",
+      });
+      n.lastStep = step;
+    }
   }
 
   // THE LOAN INDEX IS A FORECAST, PLUS A PRICE FOR BEING WRONG ABOUT IT.

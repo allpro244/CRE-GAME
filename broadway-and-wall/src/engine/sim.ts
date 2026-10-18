@@ -17,7 +17,7 @@ import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls
 import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
-import { stampYearMark, returnsToDate } from "./standing";
+import { stampYearMark, recordMarks } from "./standing";
 import { splitMonthCf } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
 import { tickLoan, productById, loanLender, stackPayoff, balloonLadder, drawLeaseUpReserve, leaseUpRoom } from "./debt";
@@ -1399,7 +1399,7 @@ function tickMonth(
   settleSyndications(s, parcels);
   // The quarterly investor read (reputation.ts): the record, the street's
   // ranking, and the band the next raise is priced in.
-  if (s.month % 3 === 0) { reviewSyndications(s, parcels); updateReputation(s, returnsToDate(s, parcels)); }
+  if (s.month % 3 === 0) { reviewSyndications(s, parcels); updateReputation(s, recordMarks(s, parcels)); }
   // the record book — one appraisal for NW history, milestones, and next month's overhead base
   const { nw, gav } = portfolioMark(s, parcels);
   s.prevGav = Math.round(gav);

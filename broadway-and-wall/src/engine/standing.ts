@@ -330,3 +330,27 @@ export function returnsToDate(s: GameState, parcels: ParcelTable): DeedReturn[] 
   }
   return out.sort((a, b) => (b.irr ?? -9) - (a.irr ?? -9));
 }
+
+/**
+ * WHAT THE INVESTOR RECORD READS OF THE BOOK STILL HELD (reputation.ts
+ * UNREALISED_WEIGHT). Deeds with their own ledger read their levered returns
+ * (returnsToDate). A deed the ledger cannot speak for — pooled in the
+ * facility, merged into a site, bought before the ledger — still has a price
+ * paid and a mark: it reads the UNLEVERED multiple, today's value over its
+ * cost basis, which understates a levered win and so errs low. Its size is
+ * read at a typical 35% equity cheque. Fund deeds are the LPs' record.
+ */
+export function recordMarks(s: GameState, parcels: ParcelTable): DeedReturn[] {
+  const rows = returnsToDate(s, parcels);
+  const have = new Set(rows.map((r) => r.bbl));
+  for (const h of Object.values(s.holdings)) {
+    if (have.has(h.bbl) || purseOf(s, h) === "fund" || !(h.costBasis > 0)) continue;
+    const value = ownedHoldingValue(s, parcels, h);
+    const share = 1 - partnerShare(s, h);
+    rows.push({
+      bbl: h.bbl, equityIn: 0.35 * h.costBasis * share, cashBack: 0, equityNow: value * share,
+      multiple: value / h.costBasis, irr: null, years: (s.month - h.boughtM) / 12,
+    });
+  }
+  return rows;
+}

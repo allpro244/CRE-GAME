@@ -1755,3 +1755,28 @@ firm's place on the street by equity at the quarterly ranking:
   managers raise national allocations as well as the city's.
 
 The pool itself is ~$1,500 a head a year (was $600). See `investors.ts`.
+
+## A record without selling (Oct 2026)
+
+The owner's note: the highest returns in the game by net worth, never
+selling and never raising, and still a tiny investor reputation. The record
+read only realised exits, so a buy-and-hold firm had no evidence at all, and
+the record's floor held it at Unknown however large it grew. Three changes,
+all in `reputation.ts playerEvidence`:
+
+1. **Held deeds at the mark.** Each deed held two years or more (the
+   quarterly `returnsToDate` read, stored as `reputation.held`) counts on its
+   equity multiple at the appraisal, at 60% of the weight the same result
+   would earn sold. A mark under cost counts in full.
+2. **Own money on its multiple** (`ownMoneyEvidence`): 2.5x or better is +8,
+   1.6x +6, a profit +4 — sold or held — instead of +4 for every profit.
+3. **The firm's growth implies a record**, by the rule that credits a
+   rival's opening equity: 2·log2(net worth ÷ reference deal), at most 10,
+   less what the starting cash implied (both at today's prices), each a
+   promise met sized at 15% of the firm. It adds to the deeds' own evidence.
+
+Institutional also opens to a long own-money record (12+ experience and
+6+ good deals) without an investor vehicle. Measured (year 10, 64 firms,
+`$S/hold/synth.mjs` shape): #1 by size with nothing realised reads
+Institutional (score 52, 2x scale); ten deeds at 2x at the top, 93; a
+mid-size firm with four 1.3x deeds, Emerging; a new player, 0 as before.

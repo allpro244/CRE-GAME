@@ -1084,6 +1084,8 @@ export interface Listing {
   receiverFor?: string;
   /** Outstanding loan the desk is clearing — the ask is anchored here, not appraisal. */
   loanBasis?: number;
+  /** A bank-owned listing: what the deed was marked at when the desk took it, so the page can say how far under it the ask is. */
+  mark?: number;
 }
 
 /**

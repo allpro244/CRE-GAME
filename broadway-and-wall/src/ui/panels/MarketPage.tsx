@@ -267,6 +267,15 @@ export function MarketPage() {
   // books banks put out after a seizure; they used to raise an alert with no desk.
   const streetBooks = (game.portfolios ?? []).filter((p) => !p.player);
   const bankFcls = game.bankFcls ?? [];
+  // BANK-OWNED, FOR SALE NOW (owner, Oct 2026: "when players lose their
+  // properties to the bank I can't see them getting sold"). They are on the
+  // tape, but a building a bank took back is usually half empty and sorted
+  // to the bottom of a yield-ordered table; the distress section said
+  // "nothing is on the steps" while a dozen sat there. Deepest discount first.
+  const reo = game.listings
+    .filter((l) => l.reason === "receiver" && !game.holdings[l.bbl])
+    .map((l) => ({ l, off: l.mark && l.mark > 0 ? 1 - l.ask / l.mark : 0 }))
+    .sort((a, b) => b.off - a.off);
   const { buyStreetBook, offerStreetBook, acceptStreetBook } = useStore.getState();
   return (
     <div>
@@ -535,7 +544,29 @@ export function MarketPage() {
         // COLLAPSIBLE, AND OPEN WHEN IT MATTERS. Opens on a live docket, when
         // banks have noticed sales, or when a receiver book is upstairs —
         // otherwise eleven months of watchlist stays tucked away.
-        const open = distressOpen ?? !!(liveDocket || bankFcls.length || streetBooks.length);
+        const open = distressOpen ?? !!(liveDocket || bankFcls.length || streetBooks.length || reo.length);
+        const reoList = reo.length > 0 && (
+          <>
+            <div className="page-section" style={{ marginTop: 4 }}>Bank-owned, for sale now · {reo.length}</div>
+            <div className="hint" style={{ marginTop: 0 }}>
+              Buildings lenders took back, listed by the desk to clear its balance sheet — the ask follows the loan, not the value.
+              Rival firms buy most of them within a few months.
+            </div>
+            <div className="mini-list">
+              {reo.slice(0, 15).map(({ l, off }) => {
+                const rec = resolveRec(parcels, game, l.bbl);
+                return (
+                  <button key={`${l.bbl}:${l.listedM}`} className="neighbor" onClick={() => go(l.bbl)}>
+                    <span className="neighbor-addr">{rec?.address ?? l.bbl}</span>
+                    <span className="neighbor-meta mono">
+                      {l.receiverFor ?? "a receiver"} · ask {usd(l.ask)}{off >= 0.03 ? ` · ${Math.round(off * 100)}% under the mark` : ""} · until {monthLabel(l.expiresM)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        );
         return (
           <div className="deal" style={{ marginBottom: 10 }}>
             <div className="deal-head" style={{ cursor: "pointer", userSelect: "none" }}
@@ -544,10 +575,11 @@ export function MarketPage() {
               <span className="dim" style={{ marginRight: 6 }}>{open ? "▾" : "▸"}</span>
               {liveDocket
                 ? `The county foreclosure docket · ${game.auction!.lots.length} lot${game.auction!.lots.length === 1 ? "" : "s"} · the hammer falls ${monthLabel(game.auction!.m)}`
-                : `Distress pipeline · ${bankFcls.length} noticed for sale, ${inWorkout.length} in workout, ${onWatch.length} on watch · next docket ${monthLabel(nextDocket)}`}
+                : `Distress pipeline · ${reo.length ? `${reo.length} bank-owned for sale, ` : ""}${bankFcls.length} noticed for sale, ${inWorkout.length} in workout, ${onWatch.length} on watch · next docket ${monthLabel(nextDocket)}`}
             </div>
             {!open ? null : liveDocket ? (
               <>
+                {reoList}
                 <div className="hint">
                   As-is, ten per cent down the day you register, no financing and no warranty. Nobody on this list
                   chose to sell. Receiver <b>books</b> (whole relationships) are under Books for sale above —
@@ -559,9 +591,10 @@ export function MarketPage() {
               </>
             ) : (
               <>
+                {reoList}
                 <div className="hint">
-                  Nothing is on the steps this month. The county calls its list every July and sells the month
-                  after. A loan goes on <b>watch</b>, into <b>workout</b>, then a bank <b>notices a sale</b>
+                  Nothing is on the courthouse steps this month. The county calls its list every July and sells the month
+                  after. A loan goes on <b>watch</b>, into <b>workout</b>, then a bank <b>notices a sale</b>{" "}
                   toward the docket. Whole books seized from failed firms are under Books for sale above —
                   not here — because a package is one cheque, not a courthouse lot.
                 </div>
@@ -729,7 +762,7 @@ export function MarketPage() {
                           {li.reason === "merchant" ? "MERCHANT EXIT"
                             : li.reason === "fund-life" ? "FUND CLOCK"
                               : li.reason === "estate" ? "ESTATE"
-                                : li.reason === "receiver" ? "RECEIVER" : "VOLUNTARY"}
+                                : li.reason === "receiver" ? "BANK-OWNED" : "VOLUNTARY"}
                         </span>
                       )}
                       {yours && <span className="chip" style={{ marginRight: 6 }}>YOURS</span>}

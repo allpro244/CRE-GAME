@@ -936,12 +936,15 @@ export const useStore = create<AppState>((set, get) => ({
     docketSnooze: { ...st.docketSnooze, [key]: untilMonth },
   })),
   markCardSeen: (key) => set((st) => (st.cardSeen.includes(key) ? {} : { cardSeen: [...st.cardSeen.slice(-199), key] })),
-  focus: (bbl, closePanel = false) => set((st) => ({
+  focus: (bbl0, closePanel = false) => set((st) => {
+    const bbl = st.game?.merged?.[bbl0] ?? bbl0;
+    return {
     selectedBBL: bbl,
     flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 },
     ...(closePanel ? { page: "none" as Page } : {}),
     ...(pushNav(st, closePanel ? "none" : st.page, bbl) ?? {}),
-  })),
+    };
+  }),
   openAttention: (key) => {
     const st0 = get();
     const route = routeAttention(key, st0.game);
@@ -989,8 +992,11 @@ export const useStore = create<AppState>((set, get) => ({
     }
     startTransition(() => set({ page, pageJump, ...(nav ?? {}) }));
   },
-  openProperty: (bbl, tab) => {
+  openProperty: (bbl0, tab) => {
     const st = get();
+    // A folded lot of an assemblage IS its site, as on a map click (select):
+    // a list, link or docket row naming the old lot used to open a 0 sf page.
+    const bbl = st.game?.merged?.[bbl0] ?? bbl0;
     const nav = pushNav(st, "property", bbl);
     if (st.mapOnly) {
       try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }

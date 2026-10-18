@@ -3854,7 +3854,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   s.listings.push({
     bbl: worst.bbl, ask, listedM: s.month,
     expiresM: s.month + reoWindow(s, desk), distress: true, receiverFor: desk, reason: "receiver",
-    loanBasis,
+    loanBasis, mark: Math.round(deedV),
   });
   chargeLenderLoss(s, desk, Math.max(0, owed - ask));
   const off = Math.max(0, 1 - ask / Math.max(1, deedV));
@@ -4174,7 +4174,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           listedM: s.month, expiresM: s.month + reoWindow(s, desk), distress: true,
           sellerId: r.id, receiverFor: r.name,
           reason: "receiver",
-          loanBasis,
+          loanBasis, mark: Math.round(v),
         });
       }
       continue;

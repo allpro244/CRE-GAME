@@ -109,7 +109,7 @@ const PREFIXES = [
   "facility-balloon", "facility-sweep", "capital-call", "workout",
   "contract", "talks", "exchange", "note", "npl", "private-ask", "private-borrow",
   "street-book", "auction", "line-over", "cash", "cash-runway", "ti-book",
-  "over", "tenant-dark", "mezz-arrears", "mezz-balloon",
+  "over", "tenant-dark", "mezz-arrears", "mezz-balloon", "reo",
 ];
 for (const p of PREFIXES) {
   const sample = p === "tenant-ask" ? `${p}:1`
@@ -117,7 +117,7 @@ for (const p of PREFIXES) {
     : p === "broker" || p === "early-look" || p === "offer" || p === "sale-bids" || p === "nonrenew"
       || p === "lease-roll" || p === "capital-plan" || p === "balloon"
       || p === "sweep" || p === "capital-call" || p === "workout"
-      || p === "contract" || p === "talks" || p === "tenant-dark" || p === "mezz-arrears" || p === "mezz-balloon"
+      || p === "contract" || p === "talks" || p === "tenant-dark" || p === "mezz-arrears" || p === "mezz-balloon" || p === "reo"
       ? `${p}:0000010001:extra`
     : p === "facility-balloon" ? `${p}:far`
     : p === "note" || p === "private-ask" || p === "private-borrow" ? `${p}:1`

@@ -34,6 +34,7 @@ export function routeAttention(key: string, game: GameState | null): AttentionRo
     const bbl = key.split(":")[1];
     return { page: "market", bbl };
   }
+  if (head === "reo") return { page: "market", bbl: key.split(":")[1] };
   if (head === "early-look") {
     const bbl = key.split(":")[1];
     return { page: "market", bbl };

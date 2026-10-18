@@ -1944,13 +1944,6 @@ export default function MapView() {
     };
 
     if (lens === "demand" && parcels) {
-      const stops = [5, 30, 50, 70, 92];
-      const ramp = ["#eef0e8", "#cfe0d5", "#93c4b1", "#4f9887", "#1e6a60"];
-      map.setPaintProperty("bw-parcel-fill", "fill-color", [
-        "interpolate", ["linear"], LIVE_DEMAND,
-        ...stops.flatMap((s, i) => [s, ramp[i]]),
-      ] as never);
-      map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
       // the same live figure the fill reads: the parcel's score plus its
       // block's drift, on the engine's own bounded scale
       const vals = new Map<string, number>();
@@ -1958,6 +1951,23 @@ export default function MapView() {
         const r = parcels[bbl];
         vals.set(bbl, liveDemand(game, r.demandScore, r.block));
       }
+      // THIS CITY'S OWN SPREAD, AND MOST OF THE RAMP AT THE TOP (owner, Oct
+      // 2026). Fixed stops ended at 92, so a core where most blocks score
+      // 80-100 painted one flat dark green — exactly where the player is
+      // choosing between sites. The stops are this town's percentiles, packed
+      // toward the top, and the ramp turns warm past the 85th: the hottest
+      // blocks read gold, orange, red against the rest of the core.
+      const sorted = [...vals.values()].filter(Number.isFinite).sort((x, y) => x - y);
+      const pct = (p: number) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))] : p * 100;
+      const qs = [0.05, 0.30, 0.55, 0.72, 0.85, 0.93, 0.975, 0.995];
+      const stops: number[] = [];
+      for (const q of qs) stops.push(Math.max(pct(q), (stops[stops.length - 1] ?? -Infinity) + 0.01));
+      const ramp = ["#eef0e8", "#cfe0d5", "#93c4b1", "#4f9887", "#1e6a60", "#c9a227", "#e0702e", "#b8242c"];
+      map.setPaintProperty("bw-parcel-fill", "fill-color", [
+        "interpolate", ["linear"], LIVE_DEMAND,
+        ...stops.flatMap((st, i) => [st, ramp[i]]),
+      ] as never);
+      map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
       roofLens(vals, stops, ramp);
       return;
     }

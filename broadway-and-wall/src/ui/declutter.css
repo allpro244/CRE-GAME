@@ -140,3 +140,8 @@
 }
 /* long explanations open on two lines, not three (see useHintFolds) */
 .app .page .hint.hint-fold { -webkit-line-clamp: 2; }
+
+/* With the rail naming every room, the desk's own tab strip says the same
+   thing twice — it shows only when the rail is collapsed to icons. */
+.app:has(.siderail:not(.siderail-compact)) .desk-tabs { display: none; }
+@media (max-width: 760px) { .app .desk-tabs { display: flex; } }

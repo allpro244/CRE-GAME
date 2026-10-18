@@ -29,7 +29,7 @@
 // now claims jobs out of the city's own pipeline: buys the dirt, writes the
 // equity, carries the loan through the cycle, and either owns a building at
 // the end of it or hands a frame to a receiver.
-import { drawRivalRaise, poolLeft } from "./investors";
+import { drawRivalRaise, poolLeft, PITCH_MULT } from "./investors";
 import { fieldRoster, rivalCapitalMult, type RivalCapital } from "./setup";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
@@ -541,7 +541,8 @@ function jvFund(s: GameState, r: Rival, bbl: string, cheque: number, inKind = 0,
   // groundbreaking is judged on (dev.ts projectedDevIrr) — put to the deal's
   // investors net of the sponsor's promote (waterfall.ts lpNetIrr), on the
   // terms jvLpTake pays: the pref, then the excess less the promote.
-  if (plan && jv.pitch === undefined) jv.pitch = lpNetIrr(projectedDevIrr(plan), Math.max(1, plan.months + 12) / 12, [FUND_PREF], [FUND_PROMOTE]);
+  // Pitched the way most sponsors pitch, and the player's default: conservatively (investors.ts PITCH_MULT).
+  if (plan && jv.pitch === undefined) jv.pitch = lpNetIrr(projectedDevIrr(plan), Math.max(1, plan.months + 12) / 12, [FUND_PREF], [FUND_PROMOTE]) * PITCH_MULT.conservative;
   jv.mw = jv.lp + lp > 0 ? ((jv.mw ?? jv.m) * jv.lp + s.month * lp) / (jv.lp + lp) : s.month;
   jv.lp += lp;
   jv.gp += cheque - lp;

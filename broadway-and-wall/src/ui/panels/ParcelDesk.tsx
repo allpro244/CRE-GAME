@@ -13,7 +13,7 @@ import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { OpsChoices } from "@/ui/panels/OpsChoices";
 import type { BuiltClass } from "@/engine/types";
 import { initialCondition, recoveryOf, marketRentPsfYr, flatsRollPsf, flatsMarkPsf, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
-import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
+import { PROGRAMS, programCost, demolitionCost, takeoverEquityNeed } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
 import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive, autoLeaseRule, autoTiCapToday } from "@/engine/leasing";
@@ -963,6 +963,18 @@ function ParcelPanelInner({
                 );
               })()}
               {!isBuilt && <Row k="Land" v={"$" + ((contract?.agreedPrice ?? listing.ask) / rec.lotArea).toFixed(0) + " /sf of lot"} />}
+              {listing.halfBuilt && (() => {
+                // A RECEIVER'S SITE WITH A FRAME ON IT IS A JOB, NOT A LOT: the
+                // buyer takes the construction on at the closing, and the
+                // purchase is refused unless the rest can be funded.
+                const hb = listing.halfBuilt;
+                const need = takeoverEquityNeed(game, parcels, selectedBBL, hb);
+                return (
+                  <Row k="Comes with a half-built job"
+                    v={`${Math.round(hb.progress * 100)}% built · ${hb.floors} floors of ${hb.use} · ${usd(need)} of your equity to finish and open it`}
+                    bad strong title="Buying the site takes the job on. The purchase is refused unless you can fund this after paying the price." />
+                );
+              })()}
             </div>
             {/* TWO ACTS, and never both at once. Before a handshake there is
                 only a price; after one there is only the money. */}

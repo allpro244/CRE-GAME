@@ -63,7 +63,7 @@ export interface DesignPreview {
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks";
+export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "investors" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -267,6 +267,14 @@ interface AppState {
   alertsOff: boolean;
   setAlertsOff: (v: boolean) => void;
   /**
+   * ONE KIND AT A TIME (owner, Oct 2026). Rather than silence every card
+   * because one kind is tedious, a card can be told "don't stop me for these":
+   * that kind passes as a line in the toast lane and in the news. A swan can
+   * never be muted. Cleared with the master switch at every new game.
+   */
+  mutedAlerts: string[];
+  muteAlertKind: (kind: string, on: boolean) => void;
+  /**
    * THE FRAME COUNTER IS A QA INSTRUMENT AND IT WAS ALWAYS ON SCREEN.
    * It sat in the top-right corner of a shipped game reading "4 fps" at people
    * who had not asked. Off by default now, with a switch in Settings for when
@@ -345,6 +353,8 @@ interface AppState {
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed"; syndicate?: { outside: number } }, lender?: string, spec?: number) => void;
   /** The scheme on the Build desk, drawn on its lot in the 3D city while you design it. */
   designPreview: DesignPreview | null;
+  /** The landmark forms the previewed lot can hold, as the 3D city drew it (null until it has). */
+  designSigFits: string[] | null;
   setDesignPreview: (p: DesignPreview | null) => void;
   /** Stepped out of the Build desk to look at the scheme on the map (DesignPeekBar). */
   designPeek: boolean;
@@ -860,6 +870,7 @@ export const useStore = create<AppState>((set, get) => ({
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   hoverCard: (() => { try { return localStorage.getItem("bw:hovercard") !== "off"; } catch { return true; } })(),
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
+  mutedAlerts: (() => { try { const v = JSON.parse(localStorage.getItem("bw:alerts-muted") ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "swan" && x !== "fed") : []; } catch { return []; } })(),
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   // THE GRAPHICS DIAL. An old "prefer smoother frames" on reads as Medium.
   graphics: (() => {
@@ -876,7 +887,8 @@ export const useStore = create<AppState>((set, get) => ({
     } catch { return false; }
   })(),
   designPreview: null,
-  setDesignPreview: (p) => set({ designPreview: p }),
+  designSigFits: null,
+  setDesignPreview: (p) => set(p ? { designPreview: p } : { designPreview: p, designSigFits: null }),
   designPeek: false,
   setDesignPeek: (v) => set(v ? { designPeek: true } : { designPeek: false, designSpin: false }),
   designCam: null,
@@ -1225,6 +1237,12 @@ export const useStore = create<AppState>((set, get) => ({
   setAlertsOff: (v) => {
     try { localStorage.setItem("bw:alerts", v ? "off" : "on"); } catch { /* private mode */ }
     set({ alertsOff: v });
+  },
+  muteAlertKind: (kind, on) => {
+    if (kind === "swan" || kind === "fed") return;
+    const next = on ? [...new Set([...get().mutedAlerts, kind])] : get().mutedAlerts.filter((k) => k !== kind);
+    try { localStorage.setItem("bw:alerts-muted", JSON.stringify(next)); } catch { /* private mode */ }
+    set({ mutedAlerts: next });
   },
 
   setFpsOn: (v) => {
@@ -2466,7 +2484,11 @@ export const useStore = create<AppState>((set, get) => ({
    * one leaves the pair (island, seed) pointing at a town nobody asked for.
    */
   startRun: async (island, size, dev, cash0, setupIn, seedIn) => {
-    set({ phase: "generating", building: islandName(island), loadError: null });
+    // EVERY NEW GAME STARTS WITH THE CARDS ON (owner, Oct 2026): a switch
+    // turned off in a past campaign, or a kind muted there, does not follow
+    // the player into the next town.
+    try { localStorage.setItem("bw:alerts", "on"); localStorage.setItem("bw:alerts-muted", "[]"); } catch { /* private mode */ }
+    set({ phase: "generating", building: islandName(island), loadError: null, alertsOff: false, mutedAlerts: [] });
     await painted();
     try {
       setCity(island);

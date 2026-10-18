@@ -62,9 +62,13 @@ export const DESKS: readonly Desk[] = [
   },
   {
     id: "capital", label: "Capital", icon: "⚖", key: "4",
-    note: "Loans, the line, the fund, and the ledger",
+    note: "Loans, investors, the fund, and the ledger",
     tabs: [
-      { page: "debt", label: "Debt", note: "Loans, refinancing, the line and the fund" },
+      { page: "debt", label: "Debt", note: "Loans, refinancing and the line" },
+      // EQUITY IS NOT DEBT. Your standing with investors, every deal you
+      // raised and the fund sat at the bottom of the Debt page, under the
+      // mortgages — the one room a small developer needs to find first.
+      { page: "investors", label: "Investors", note: "Your standing with investors, outside equity deal by deal, and the fund" },
       // EVERY LENDER'S BOOKS, ALWAYS OPEN. The desks' statements had been an
       // expandable row at the bottom of City → Markets → The banks; a borrower
       // choosing where to go needs them where the borrowing is.
@@ -97,6 +101,31 @@ export const DESKS: readonly Desk[] = [
     ],
   },
 ];
+
+/**
+ * THE RAIL, ONE ROOM PER LINE (owner, Oct 2026: six icons hid seventeen
+ * rooms, and a rail that is only symbols tells nobody what they are clicking).
+ * Every room is its own named line, grouped under the job it serves. The
+ * desks above still own the rooms — the page header, the digit keys and the
+ * palette read them — the rail just stops making you open a desk to find one.
+ */
+export const RAIL_GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
+  { label: "Your firm", pages: ["portfolio", "leasing", "deals", "firm"] },
+  { label: "Buy", pages: ["market", "buildings", "notes"] },
+  { label: "Capital", pages: ["debt", "investors", "banks", "books"] },
+  { label: "The city", pages: ["economy", "pulse", "players", "news", "rankings"] },
+];
+export const PAGE_ICON: Partial<Record<Page, string>> = {
+  portfolio: "▦", leasing: "⊟", deals: "✎", firm: "☺",
+  market: "◎", buildings: "▥", notes: "✉",
+  debt: "⚖", investors: "◆", banks: "⌂", books: "≡",
+  economy: "∿", pulse: "♥", players: "♟", news: "☰", rankings: "★",
+};
+/** A room's own line on the rail: its tab (label, note, when) and the desk it belongs to. */
+export function railEntry(page: Page): { tab: DeskTab; desk: Desk } | null {
+  for (const d of DESKS) for (const t of d.tabs) if (t.page === page) return { tab: t, desk: d };
+  return null;
+}
 
 /** The property file belongs to the Portfolio desk even though it is not a tab. */
 export function deskOf(page: Page): Desk | null {

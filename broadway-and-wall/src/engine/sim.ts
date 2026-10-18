@@ -45,7 +45,7 @@ import { tickNotes, maybeSellYourLoan, tickFirmHeldLoans } from "./notes";
 import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
-import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
+import { reconcileSupplyQueue, clawbackSlippedDeliveries, stallSupplyProject } from "./supply";
 import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
@@ -1194,9 +1194,13 @@ function tickMonth(
       // the hole. Only a book with nothing saleable at all ends the run.
       if (!owned.length && locAvailable(s, parcels) <= 0 && fundableNow(s, parcels) <= 0) owned = seizable(true);
       if (owned.length) {
-        // creditors take the most valuable thing you own
-        let pick = owned[0], pickV = -Infinity;
-        for (const h of owned) {
+        // creditors take the most valuable thing you own — of what is yours
+        // alone first. A syndicated deed is the deal's, not the sponsor's:
+        // its creditors can reach the sponsor's interest in it, not the
+        // investors' building, so it is the last thing they go after.
+        const mine = owned.filter((h) => !s.syndications?.[h.bbl]);
+        let pick = (mine.length ? mine : owned)[0], pickV = -Infinity;
+        for (const h of (mine.length ? mine : owned)) {
           const rec = resolveRec(parcels, s, h.bbl);
           const v = rec ? ownedHoldingValue(s, parcels, h) : 0;
           if (v > pickV) { pickV = v; pick = h; }
@@ -1204,7 +1208,13 @@ function tickMonth(
         const rec = resolveRec(parcels, s, pick.bbl)!;
         // Creditors liquidating a distressed borrower get the distressed bid,
         // not a polite 15% off — and every seizure goes on the sponsor's record.
-        const gross = Math.round(pickV * Math.min(0.85, distressPrice(s)));
+        // On a syndicated deed it is not a fire sale: the investors replace
+        // their sponsor as manager and take out its interest at the
+        // appraisal, less the costs of the change (3%), and the deal's
+        // waterfall pays them their share first. The sponsor's creditors get
+        // what the sponsor's interest was worth.
+        const gpOut = !!s.syndications?.[pick.bbl];
+        const gross = Math.round(pickV * (gpOut ? 0.97 : Math.min(0.85, distressPrice(s))));
         // A SEIZURE IS STILL A SALE, AND A SALE HAS A WATERFALL.
         //
         // The whole gross used to land in the account. Measured on a
@@ -1292,7 +1302,9 @@ function tickMonth(
         coverCashShortfall(s, parcels);
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `The creditors took ${rec.address} — sold at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `
+          text: (gpOut
+            ? `Your creditors took your interest in ${rec.address}. The investors replaced you as manager and took the building at ${money(gross)}, the appraisal less the costs of the change; their share came off first. `
+            : `The creditors took ${rec.address} — sold at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `)
             + (lien > 0 || release > 0
               ? shortfall > 0
                 ? `It did not cover the ${money(lien)} mortgage${pick.loan?.recourse ? `, and you signed for the ${money(shortfall)} shortfall` : `, and the paper was non-recourse`}. `
@@ -1306,6 +1318,48 @@ function tickMonth(
         // coupon-current) but liquidity remains — keep the run alive.
         coverCashShortfall(s, parcels);
         if (s.cash >= 0) s.insolventMs = 0;
+      } else if (Object.values(s.developments).some((d) => s.holdings[d.bbl])) {
+        // A JOB IN THE GROUND IS STILL AN ASSET. The run used to end here with
+        // a half-built building on the book — net worth positive, "the
+        // creditors took everything" — because the bailiff could not reach a
+        // job. The receiver takes the site and the frame, pays off the
+        // construction lender from what a stranger will give for them (the
+        // land and about half of what was sunk, as a rival's stalled frame
+        // goes to the tape: rivals.ts orphanToTape), and puts it on the tape
+        // for someone else to finish. A syndicated job lost this way broke
+        // its completion guarantee (syndicate.ts closeSyndication).
+        const d = Object.values(s.developments).filter((x) => s.holdings[x.bbl])
+          .sort((a, b) => (b.equitySpent + b.drawn) - (a.equitySpent + a.drawn))[0];
+        const h = s.holdings[d.bbl];
+        const rec = resolveRec(parcels, s, d.bbl)!;
+        const sunk = Math.max(0, Math.round(d.equitySpent + d.drawn));
+        const gross = Math.round(landValue(rec, s.econ) + sunk * 0.55);
+        const net = Math.round(gross * 0.95);
+        const lien = Math.round(d.loanBalance + (h.loan?.balance ?? 0));
+        const surplus = Math.max(0, net - lien), shortfall = Math.max(0, lien - net);
+        s.cash += surplus;
+        if (surplus > 0) logBooks(s, "sold", surplus, d.bbl);
+        if (shortfall > 0) chargeLenderLoss(s, d.lender ?? "the construction lender", shortfall);
+        (s.cityJobs ??= []).push({ bbl: d.bbl, use: d.use, sf: d.sf, floors: d.floors ?? 1, startM: d.startM, deliverM: d.deliverM, cost: Math.round(d.costTotal), spent: sunk, orphaned: true });
+        stallSupplyProject(s, d.bbl);
+        {
+          const ex: Exit = { bbl: d.bbl, address: rec.address, boughtM: h.boughtM, soldM: s.month, price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true };
+          closeDeedLedger(s, ex);
+          s.exits.push(ex);
+        }
+        moveDeposit(s, h, -depositsOn(h));
+        delete s.developments[d.bbl];
+        delete s.holdings[d.bbl];
+        if (s.workouts?.[d.bbl]) delete s.workouts[d.bbl];
+        markSponsor(s, "seized", rec.address, shortfall);
+        coverCashShortfall(s, parcels);
+        s.news.unshift({
+          q: s.month, kind: "warn",
+          text: `The receiver took your job at ${rec.address} — the site and a frame ${Math.round(100 * sunk / Math.max(1, d.costTotal))}% built, valued at ${money(gross)}. `
+            + (surplus > 0 ? `After the construction lender, ${money(surplus)} reached you. ` : `It did not cover the construction lender. `)
+            + `It goes to the tape for somebody else to finish. ${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
+        });
+        s.insolventMs = s.cash < 0 ? 6 : 0;
       } else {
         s.gameOver = {
           cause: "Insolvency: the creditors took everything, and it wasn't enough. A hundred-year town remembers a bankruptcy.",
@@ -2334,7 +2388,22 @@ export function stopRule(s: GameState, parcels: ParcelTable, seen?: ReadonlySet<
     : !a.soft && !OPPORTUNITY_KEYS.has(a.key.split(":")[0]);
   // Critical first: if a foreclosure and a broker's call land the same month,
   // the stop names the foreclosure.
+  // A SWAN STOPS THE CLOCK, IN EVERY MODE (owner, Oct 2026: "I missed a
+  // black swan"). The level event the city will date itself by used to stop
+  // nothing — the stop rule reads the docket and swans are alerts, so a Year
+  // click ran on eleven months past one. Any swan raised during the run ends
+  // it that month, whatever the clock or card settings.
+  // ...and so does the central bank: a rate decision or a new chair (owner,
+  // Oct 2026, "changes to the fed stop the game as well").
+  const stops = (k: string) => k === "swan" || k === "fed";
+  const swansBefore = new Set((s.alerts ?? []).filter((a) => stops(a.kind)).map((a) => a.id));
   return (cur) => {
+    const swan = (cur.alerts ?? []).find((a) => stops(a.kind) && !swansBefore.has(a.id));
+    if (swan) return {
+      key: `${swan.kind}:${swan.id}`,
+      label: swan.kind === "fed" ? swan.title : `${swan.tone === "good" ? "A white swan" : "A black swan"} — ${swan.title}`,
+      critical: swan.kind === "swan" && swan.tone !== "good",
+    };
     const due = attentionItems(cur, parcels).filter((a) => counts(a) && (a.lastM !== undefined
       ? cur.month >= a.lastM && !dueAtStart.has(a.key)
       : !before.has(a.key)));

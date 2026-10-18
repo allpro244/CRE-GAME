@@ -13,7 +13,8 @@ import SchemeViewer from "@/ui/panels/SchemeViewer";
 import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN, ownedHoldingValue } from "@/engine/value";
 import { ffAvailable, maxOutside, syndicateBar } from "@/engine/syndicate";
 import { playerTerms, termsLine } from "@/engine/reputation";
-import { raiseLegalCost, committedTotal, SOURCE_LABEL, RAISE_WINDOW_M } from "@/engine/investors";
+import { raiseLegalCost, committedTotal, SOURCE_LABEL, RAISE_WINDOW_M, type PitchStyle } from "@/engine/investors";
+import { heldByRaises, raisePreview } from "@/engine/raise";
 
 // What a plan short of its hurdle is still worth over its cost. The required
 // yield carries the merchant builder's margin, so value / basis is
@@ -247,6 +248,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // put into this job that the player takes. Not saved with the draft — a
   // raise is decided at the closing, on the numbers of the day.
   const [ffPick, setFfPick] = useState(0);
+  const [pitchStyle, setPitchStyle] = useState<PitchStyle>("conservative");
   // Persist after the player has actually touched a dial — opening the desk
   // and leaving must not stamp a default scheme onto every vacant lot.
   const dirty = useRef(!!saved);
@@ -373,7 +375,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const landEquity = held ? Math.max(0, ownedHoldingValue(game, parcels, held) - siteDebt) : 0;
   const ffMax = plan && !synBar ? maxOutside(game, need.whole, landEquity) : 0;
   const outside = Math.round(ffMax * ffPick);
-  const fundableTotal = purse.closed ? 0 : purse.total + outside;
+  // Cash your other open raises hold for their own jobs is not yours to spend here (raise.ts heldByRaises).
+  const fundableTotal = purse.closed ? 0 : Math.max(0, purse.total - (purse.fund ? 0 : heldByRaises(game, bbl))) + outside;
   const canFund = need.whole <= fundableTotal && need.dayOne <= fundableTotal;
   const fundShort = Math.max(0, need.whole - fundableTotal, need.dayOne - fundableTotal);
   const closeCheque = need.dayOne;
@@ -1032,6 +1035,39 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                         <Row k="Completion guarantee" v="Yours — overruns past their commitment are your cash alone" bad />
                       </div>
                     )}
+                    {outside > 0 && plan && (() => {
+                      // THE OFFERING (raise.ts raisePreview): what you are promising, how it
+                      // splits, what it stakes on your record, and how raises like it go.
+                      const pv = raisePreview(game, plan, landEquity, need.whole, outside, pitchStyle);
+                      if (!pv) return null;
+                      const p1 = (x: number) => `${(x * 100).toFixed(1)}%`;
+                      const sc = (x: number) => `${x >= 0 ? "+" : ""}${x.toFixed(1)}`;
+                      return (
+                        <>
+                          <div className="page-section-head" style={{ marginTop: 8 }}>The promise</div>
+                          <div className="btn-row" role="radiogroup" aria-label="How you pitch it">
+                            {(["conservative", "base", "aggressive"] as const).map((p) => (
+                              <button key={p} type="button" role="radio" aria-checked={pitchStyle === p}
+                                className={"btn" + (pitchStyle === p ? " btn-buy" : "")} onClick={() => setPitchStyle(p)}
+                                title={p === "conservative" ? "Three-quarters of the projection: slower to raise, easiest to beat"
+                                  : p === "base" ? "The projection itself" : "15% over the projection: raises fastest, hardest to meet"}>
+                                {p === "conservative" ? "Pitch conservative" : p === "base" ? "Pitch the base case" : "Pitch aggressive"}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="grid">
+                            <Row k="You pitch investors" v={`${p1(pv.pitchIrr)} a year net (your projection ${p1(pv.expectIrr)}) · ${pv.lpMultiple.toFixed(2)}x over ~${pv.years.toFixed(1)} years${pv.appeal <= 0 ? " — nobody invests in a projected loss" : pv.appeal < 1 ? ` — under their ${p1(pv.pref)} pref, so slow to raise` : ""}`} strong bad={pv.appeal < 1}
+                              title="The job's own projection after your promote. This is the number the offering states, and the number every investor you ask next will judge this deal against." />
+                            <Row k="At plan" v={`they get ${usd(pv.lpOut)} · you get ${usd(pv.gpOut)} (${pv.gpMultiple.toFixed(2)}x, ${usd(pv.gpPromote)} of it promote)`} />
+                            <Row k="Five points short" v={`they get ${p1(pv.miss.lpIrr)} · ${usd(pv.miss.lpOut)} · you ${usd(pv.miss.gpOut)} (${pv.miss.gpMultiple.toFixed(2)}x)`} bad={pv.miss.lpIrr < 0} />
+                            <Row k="Your record if you…" v={`deliver ${sc(pv.stakes.met)} · beat by 2+ pts ${sc(pv.stakes.beat)} · miss by 2–5 ${sc(pv.stakes.miss3)} · miss by 5+ ${sc(pv.stakes.miss8)} · lose their money ${sc(pv.stakes.lost)}`}
+                              title="Change in your track-record score when this deal is realised, against your record today. A kept promise builds slowly; a broken one counts in full." />
+                            <Row k="How raises like this go" v={`${Math.round(pv.odds.full * 100)}% fill (~${pv.odds.months.toFixed(1)} mo) · ${Math.round(pv.odds.small * 100)}% close small · ${Math.round(pv.odds.fail * 100)}% fail`}
+                              bad={pv.odds.fail > 0.25} title={`Your band's sources, your rank on the street and how they have done with you before, over the ${RAISE_WINDOW_M}-month window.`} />
+                          </div>
+                        </>
+                      );
+                    })()}
                   </>
                 ) : (
                   <div className="hint">{synBar ?? (ffAvailable(game) <= 0
@@ -1111,7 +1147,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   <button
                     className="btn btn-buy"
                     disabled={!canFund}
-                    onClick={() => useStore.getState().launchRaise(bbl, { use, floors: fl, coverage: cov, contract, ltc: plan.ltcMax * ltcWant, custom: { mix: customMix, bts, groundRetail, design, takeout }, lender: plan.lender, spec }, outside)}
+                    onClick={() => useStore.getState().launchRaise(bbl, { use, floors: fl, coverage: cov, contract, ltc: plan.ltcMax * ltcWant, custom: { mix: customMix, bts, groundRetail, design, takeout }, lender: plan.lender, spec, pitch: pitchStyle }, outside)}
                     title={`Investors circle over up to ${RAISE_WINDOW_M} months. It closes when ${usd(outside)} is in, small at the deadline if half is, or fails. Counsel is ${usd(raiseLegalCost(game, outside))}, paid now and sunk either way.`}
                   >
                     {canFund ? `Launch the raise · ${usd(outside)} · counsel ${usd(raiseLegalCost(game, outside))}` : `Cannot finish · short ${usd(fundShort)}`}

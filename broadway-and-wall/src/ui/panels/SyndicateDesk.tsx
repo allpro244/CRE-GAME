@@ -1,7 +1,7 @@
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { ffAvailable, syndicateView } from "@/engine/syndicate";
-import { reputationNow, rankStreet, playerTerms, termsLine, bandIdx, BANDS } from "@/engine/reputation";
+import { reputationNow, rankStreet, playerTerms, termsLine, bandIdx, BANDS, nextBandNeeds } from "@/engine/reputation";
 import { INVESTOR_TYPES, cityAttractiveness, EQUITY_PER_HEAD, committedTotal } from "@/engine/investors";
 import { resolveRec } from "@/engine/value";
 import { usd } from "@/ui/format";
@@ -32,9 +32,10 @@ export function SyndicateDesk() {
     <div className="page-section">
       <div className="page-section-head">Your standing with investors</div>
       <div className="hint">
-        Investors read your realised record against what each deal was underwritten to return, and rank you against every
-        firm on the street. The band they act on is the lower of your rank's and your score's. Deals done with your own money
-        count at 90%; one good deal is luck, a record is many; a miss lands in full the day it is realised. This rank is your record, not your size — the rank in the top bar is by equity.
+        Investors read every deal you raised against what you pitched them, and rank you against every firm on the street.
+        The band they act on is the lower of your rank's and your score's. A promise kept builds the record slowly; a promise
+        broken counts in full, however small the deal, the day it is realised. Deals with your own money promised nobody
+        anything: a profit counts as a promise met, a loss by its size. This rank is your record, not your size — the rank in the top bar is by equity.
       </div>
       <div className="grid">
         <Row k="Band" v={`${terms.band}${pending ? ` · ${pending} next quarter if it holds` : ""}`} strong />
@@ -42,10 +43,24 @@ export function SyndicateDesk() {
         <Row k="Track-record score" v={`${rep.score.toFixed(1)} · experience ${rep.n.toFixed(1)} from ${rep.deals} good deal${rep.deals === 1 ? "" : "s"}`} bad={rep.score < 0} />
         <Row k="Their terms today" v={termsLine(terms)} />
         <Row k="Outside equity per $1 of yours" v={terms.perOwn > 0 ? `up to $${terms.perOwn}` : "none — nobody will invest"} bad={!(terms.perOwn > 0)} />
-        {bandIdx(terms.band) < BANDS.length - 1 && (
-          <Row k="Next band" v={nextBandHint(terms.band)} />
-        )}
       </div>
+      {bandIdx(terms.band) < BANDS.length - 1 && (() => {
+        const nb = nextBandNeeds(game);
+        if (!nb) return null;
+        return (
+          <table className="tbl" style={{ marginTop: 8 }}>
+            <thead><tr><th>To reach {nb.next}</th><th>You</th><th>Needed</th></tr></thead>
+            <tbody>
+              {nb.rows.map((r) => (
+                <tr key={r.label}>
+                  <td>{r.ok ? "✓ " : "· "}{r.label}</td><td>{r.have}</td>
+                  <td style={{ color: r.ok ? undefined : "var(--neg, #a33)" }}>{r.need}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+      })()}
       {rep.evidence.length > 0 && (
         <table className="tbl" style={{ marginTop: 8 }}>
           <thead><tr><th>The record</th><th>When</th><th>What it was</th><th>Evidence</th></tr></thead>
@@ -159,16 +174,4 @@ export function SyndicateDesk() {
     </div>
     </>
   );
-}
-
-/** What the next band up asks for (reputation.ts floorBand), in a line. */
-function nextBandHint(b: string): string {
-  switch (b) {
-    case "Toxic": return "Questioned at a score above −40, once the misconduct fades";
-    case "Questioned": return "Unknown at a score above −10";
-    case "Unknown": return "Emerging: a score of 10, and a rank in the top 60%";
-    case "Emerging": return "Proven: a score of 25 from at least 2 good deals worth 3 of experience, in the top third";
-    case "Proven": return "Institutional: 40 from 3 deals worth 8, one of them with outside investors, in the top 13%";
-    default: return "Blue-chip: 55 from 4 deals worth 12 and a realised fund, in the top 3%";
-  }
 }

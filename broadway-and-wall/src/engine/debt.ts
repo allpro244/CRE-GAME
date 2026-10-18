@@ -1363,7 +1363,15 @@ export function originate(
     principal: qd.principal,
     balance: qd.principal,
     ratePct: qd.ratePct,
-    spread: product.spread,
+    // THE MARGIN IS LOCKED AT SIGNING; ONLY THE INDEX MOVES. A floater resets
+    // to index + spread every month (serviceLoan), and the spread it resets
+    // to is the one it was signed at — the sheet spread plus that day's
+    // credit-window premium, the desk's appetite, the borrower's standing and
+    // relationship (deskRatePct) — as facility.ts already does. Storing the
+    // bare sheet spread dropped every one of those the month after closing:
+    // a floater signed in a crunch fell a point or more the next month while
+    // the fixed loan beside it stayed at the crunch price.
+    spread: product.floating ? +(qd.ratePct - shortIndexOf(s.econ)).toFixed(2) : product.spread,
     ioUntilM: s.month + product.ioM,
     amortYears: product.amortYears,
     maturityM: s.month + product.termM,

@@ -455,8 +455,10 @@ function AuctionBody({
  * failure in year nine most needs to stop.
  */
 export function AlertModal() {
+  // A SWAN ALWAYS TAKES THE SCREEN — no switch silences it (owner, Oct 2026:
+  // with the cards off a black swan went by unseen).
   const awake = useStore((s) =>
-    !s.alertsOff && !s.game?.gameOver && (s.game?.alerts?.length ?? 0) > 0);
+    !s.game?.gameOver && (s.game?.alerts ?? []).some((a) => ALWAYS_STOP.has(a.kind) || (!s.alertsOff && !s.mutedAlerts.includes(a.kind))));
   // THE WORLD'S NEWS NO LONGER TAKES THE SCREEN (owner, Oct 2026): "a lot of
   // stuff stops the game that shouldn't, like when portfolios are taken back
   // by the bank." A rival's book repossessed, a bank closed, a swan, a buyer
@@ -468,15 +470,16 @@ export function AlertModal() {
   // the screen; "Opportunities too" or "Everything" restores the cards.
   const stray = useStore((s) => {
     const g = s.game;
-    if (s.alertsOff || !g?.alerts?.length || g.gameOver) return 0;
-    return g.alerts.filter((a) => !alertTakesScreen(g, a)).length;
+    if (!g?.alerts?.length || g.gameOver) return 0;
+    return g.alerts.filter((a) => !cardStays(g, a, s.alertsOff, s.mutedAlerts)).length;
   });
   useEffect(() => {
     if (!stray) return;
-    const g = useStore.getState().game;
+    const st = useStore.getState();
+    const g = st.game;
     if (!g?.alerts) return;
-    const pass = g.alerts.filter((a) => !alertTakesScreen(g, a));
-    const keep = g.alerts.filter((a) => alertTakesScreen(g, a));
+    const pass = g.alerts.filter((a) => !cardStays(g, a, st.alertsOff, st.mutedAlerts));
+    const keep = g.alerts.filter((a) => cardStays(g, a, st.alertsOff, st.mutedAlerts));
     useStore.setState({
       game: { ...g, alerts: keep },
       toast: { text: pass.map((a) => a.title).join(" · "), kind: "ok", at: Date.now() },
@@ -487,6 +490,19 @@ export function AlertModal() {
 }
 
 type AlertRow = NonNullable<NonNullable<ReturnType<typeof useStore.getState>["game"]>["alerts"]>[number];
+/** Does this card stay on screen? A swan always; anything else unless the cards are off, its kind is muted, or it does not take the screen. */
+/** Cards no setting silences: a swan, and the central bank moving (owner, Oct 2026). */
+const ALWAYS_STOP = new Set<string>(["swan", "fed"]);
+function cardStays(g: NonNullable<ReturnType<typeof useStore.getState>["game"]>, a: AlertRow, off: boolean, muted: string[]): boolean {
+  if (ALWAYS_STOP.has(a.kind)) return true;
+  if (off || muted.includes(a.kind)) return false;
+  return alertTakesScreen(g, a);
+}
+/** What "don't stop me for these" mutes, in the player's words. */
+const MUTE_LABEL: Record<string, string> = {
+  bank: "bank failures", portfolio: "books and portfolio offers", ground: "ground-lease defaults",
+  sale: "bid lists on your sales", delivered: "deliveries",
+};
 function alertTakesScreen(g: NonNullable<ReturnType<typeof useStore.getState>["game"]>, a: AlertRow): boolean {
   if (opportunitiesStop(g)) return true;
   // A new central-bank chair stops the game (owner, Oct 2026).
@@ -630,6 +646,12 @@ function AlertBody() {
           {ground && a.bbl && (
             <button className="btn" onClick={() => { dismissAlert(); useStore.getState().focus(a.bbl!); setPage("property"); }}>
               Go to the lot
+            </button>
+          )}
+          {!ALWAYS_STOP.has(a.kind) && (
+            <button className="btn" title="This kind will pass as a line at the top of the screen and in the news instead of stopping the game. Undo it in Settings. Black swans always stop the game."
+              onClick={() => { useStore.getState().muteAlertKind(a.kind, true); dismissAlert(); }}>
+              Don't stop me for {MUTE_LABEL[a.kind] ?? "these"}
             </button>
           )}
           <button className={"btn" + (!goBooks && !goOwnBook && !goSale && !goBuilt && !bad ? " btn-buy" : "")} data-esc onClick={dismissAlert}>

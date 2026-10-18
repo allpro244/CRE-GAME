@@ -3467,3 +3467,39 @@ own rolls each month.
 
 Over 8 towns × 60 years, apartment rents and vacancy keep their ranges: real
 rent 1.1–2.0× by year 60, and vacancy cycling between 2% and 12%.
+
+## Floating margins lock at signing; the premium prices upside inflation (2026-10-18)
+
+**Floating loans.** A floater resets every month to the short index plus
+its spread. The spread stored on the loan was the sheet spread. The coupon
+signed at closing also carries that day's adjustments:
+- the credit-window premium;
+- the desk's appetite;
+- the borrower's standing and relationship.
+
+So all of those fell away the month after closing: a floater signed in a
+crunch dropped a point or more while the fixed loan beside it stayed put. The
+spread is now the one signed (`coupon − index`), as the facility's already
+was. Only the index moves.
+
+**The ten-year at zero.** Over 20 simulated centuries, policy under 0.5% came
+with a 10-year rate of 5.65%, above the 5.09% of all months. The cause: a
+recession's inflation undershoot cost the bank credibility, and the term
+premium read credibility symmetrically, so the premium doubled to 2.8 exactly
+when policy was at zero.
+
+The term premium mostly prices the risk of more inflation, not less. With
+expectations under target, long bonds hedge the downturn, and the ACM premium
+fell, even going negative, in low-inflation years. The credibility term now
+applies in full when expectations are at or above target, and fades to a
+quarter as they fall a point under it.
+
+| Measure | Before | After |
+|---|---|---|
+| 10-year at zero policy | 5.65% | 4.5% |
+| Term premium, median | 1.43 | 1.21 (ACM ~1.2) |
+| Term premium, 90th percentile | 4.86 | 2.80 (ACM ~3.5) |
+| Months with credibility under 0.5 | 28% | 18% |
+
+Recessions (1.7 a decade, median 12 months) and curve inversion (14% of
+months) are unchanged.

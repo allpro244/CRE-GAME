@@ -79,6 +79,17 @@ export function sizeWeight(equity: number, level = 1): number {
   return equity > 0 ? Math.cbrt(equity / (REF_EQUITY * Math.max(1e-6, level))) : 0;
 }
 
+/**
+ * HOW MUCH OF THE BOOK A BAD RESULT WAS: ×0.6 for a sliver, ×2.0 for the
+ * whole of it (§3.4). A promise broken to investors is never a sliver
+ * (owner, Oct 2026: a broken promise must weigh far more than a kept one):
+ * it counts at least in full, and more when the deal was much of the book.
+ */
+function concentration(share: number, promised: boolean): number {
+  const c = 0.6 + 1.4 * Math.min(1, Math.max(0, share));
+  return promised ? Math.max(1, c) : c;
+}
+
 /** The city's value index at month m (office rent over office cap), for the market-wide fault test. */
 function marketIndex(s: GameState, m: number): number | null {
   const h = s.econ.history ?? [];
@@ -120,8 +131,17 @@ export function playerEvidence(s: GameState): Evidence[] {
       outside = syn.lpIn / equity;
       gpShare = syn.gpIn / equity;
     } else {
-      actual = e.irr;
-      pitch = e.planIrr;
+      // OWN MONEY IS JUDGED AS A RIVAL'S OWN-MONEY SALE IS (rivalEvidence):
+      // nobody outside the firm saw a pitch, so there is no promise to miss.
+      // The deeds show what it paid and what it sold for, so a loss is on the
+      // record at its multiple; a sale on the firm's own schedule at a profit
+      // is a promise met; one on its lender's schedule is the table's "missed
+      // the plan" row. (It used to be judged against the firm's own
+      // underwriting, which rivals never were: a $138M firm with ten good
+      // deals sold a $111K lot below its development plan and ranked 91st of
+      // 92 — "Questioned" — for four years.)
+      actual = null;
+      pitch = null;
       multiple = (e.equityOut ?? 0) / (e.equityIn ?? 1);
       equity = e.equityIn ?? 0;
     }
@@ -129,13 +149,21 @@ export function playerEvidence(s: GameState): Evidence[] {
     // at realisation (the nearest the record keeps to the deal's own vintage).
     const size = sizeWeight(equity, level);
     let ev = outcomeEvidence(actual, pitch, multiple);
+    if (!syn && e.forced) ev = Math.min(ev, -8);
+    // A good result is weighted by the deal's size. A PROMISE BROKEN TO
+    // INVESTORS IS NOT: however small the deal, people who were told one
+    // thing got another, and that counts in full (owner, Oct 2026: a broken
+    // promise must weigh far more than a kept one). An own-money loss
+    // broke no promise, so it is weighted by size like a gain — a small
+    // deal's miss says as little about a sponsor as a small deal's beat.
     if (ev > 0) ev *= size;
     else if (syn?.misconduct) {
       // A broken completion guarantee is the sponsor's, never the market's: ×2 (§3.4).
-      ev *= 2 * (0.6 + 1.4 * Math.min(1, equity / Math.max(1, managed)));
+      ev *= 2 * concentration(equity / Math.max(1, managed), true);
     } else {
+      if (!syn) ev *= size;
       ev *= faultMult(s, e.boughtM, e.soldM);
-      ev *= 0.6 + 1.4 * Math.min(1, equity / Math.max(1, managed));
+      ev *= concentration(equity / Math.max(1, managed), !!syn);
       if (gpShare >= 0.10) ev *= 0.85;   // the sponsor's own money suffered alongside
     }
     // Own-money evidence counts at 90%; a deal blends by its outside share, so
@@ -153,7 +181,7 @@ export function playerEvidence(s: GameState): Evidence[] {
     let ev = outcomeEvidence(c.lpIrr, c.pitchIrr, multiple);
     if (ev > 0) ev *= size;
     else {
-      ev *= 0.6 + 1.4 * Math.min(1, equity / Math.max(1, managed + equity));
+      ev *= concentration(equity / Math.max(1, managed + equity), true);
       if (c.gpIn / equity >= 0.10) ev *= 0.85;
     }
     ev *= OWN_WEIGHT + (1 - OWN_WEIGHT) * (c.lpIn / equity);
@@ -177,7 +205,7 @@ export function playerEvidence(s: GameState): Evidence[] {
     if (ev > 0) ev *= size;
     else {
       ev *= faultMult(s, f.raisedM, f.closedM);
-      ev *= 0.6 + 1.4 * Math.min(1, f.called / Math.max(1, managed + f.called));
+      ev *= concentration(f.called / Math.max(1, managed + f.called), true);
       if (f.gpCommit / Math.max(1, f.size) >= 0.10) ev *= 0.85;
     }
     out.push({ m: f.closedM, ev, size: ev > 0 ? size : 0, kind: "investor", label: `Your fund, ${multiple.toFixed(2)}x to its LPs` });
@@ -251,8 +279,9 @@ export function rivalEvidence(s: GameState, r: Rival): Evidence[] {
     let ev = d.mult !== undefined ? outcomeEvidence(d.irr, d.pitch, d.mult) : d.forced ? -8 : 4;
     if (ev > 0) ev *= size;
     else {
+      if (!d.lp) ev *= size;   // own money: no promise broken (see playerEvidence)
       ev *= faultMult(s, d.m - 36, d.m);
-      ev *= 0.6 + 1.4 * Math.min(1, d.eq / Math.max(1, managed));
+      ev *= concentration(d.eq / Math.max(1, managed), !!d.lp);
       if (d.lp) ev *= 0.85;   // the sponsor's co-invest suffered alongside
     }
     ev *= d.lp ? 1 : OWN_WEIGHT;
@@ -278,6 +307,28 @@ export function inheritRecord(s: GameState, parent: Rival): { m: number; ev: num
     .sort((a, b) => b.m - a.m)
     .slice(0, 30)
     .map((e) => ({ m: e.m, ev: Math.round(e.ev * HERITAGE_SHARE * 100) / 100, size: Math.round(e.size * HERITAGE_SHARE * 1000) / 1000 }));
+}
+
+/**
+ * WHAT ONE MORE INVESTOR DEAL WOULD DO TO THE RECORD, today, by outcome —
+ * the same weights playerEvidence gives a realised syndicate: size on a kept
+ * promise, the concentration floor of ×1 on a broken one, ×0.85 when the
+ * sponsor's own money is in at 10% or more, and the own-money blend. For the
+ * Build desk, so the sponsor sees what it is staking before it pitches.
+ */
+export function dealStakes(s: GameState, equity: number, outsideShare: number): { met: number; beat: number; miss3: number; miss8: number; lost: number } {
+  const ev0 = playerEvidence(s);
+  const base = scoreOf(ev0, s.month).score;
+  let managed = 0;
+  for (const e of s.exits ?? []) if (e.irr !== undefined && (e.equityIn ?? 0) > 0) managed += e.equityIn ?? 0;
+  const size = sizeWeight(equity, priceLevel(s.econ));
+  const blend = OWN_WEIGHT + (1 - OWN_WEIGHT) * outsideShare;
+  const neg = concentration(equity / Math.max(1, managed + equity), true) * (1 - outsideShare >= 0.10 ? 0.85 : 1) * blend;
+  const at = (ev: number) => {
+    const w = ev > 0 ? ev * size * blend : ev * neg;
+    return scoreOf([...ev0, { m: s.month, ev: w, size: w > 0 ? size : 0, kind: "investor", label: "" }], s.month).score - base;
+  };
+  return { met: at(4), beat: at(6), miss3: at(-8), miss8: at(-15), lost: at(-30) };
 }
 
 /** Score a record at month `now`: shrink(positive) + negative, with fading. */
@@ -325,6 +376,43 @@ export function rankBand(rank: number, of: number): Band {
 }
 
 const minBand = (a: Band, b: Band) => (bandIdx(a) <= bandIdx(b) ? a : b);
+
+/**
+ * WHAT THE NEXT BAND NEEDS, against what the record has today — the floors
+ * (floorBand) and the rank cut (rankBand) as checklist rows, for the
+ * Investors page. Misconduct is its own row: nothing else counts while it lives.
+ */
+export function nextBandNeeds(s: GameState): { next: Band; rows: { label: string; have: string; need: string; ok: boolean }[] } | null {
+  const cur = s.reputation?.band ?? "Unknown";
+  const i = bandIdx(cur);
+  if (i >= BANDS.length - 1) return null;
+  const next = BANDS[i + 1];
+  const sc = scoreOf(playerEvidence(s), s.month);
+  const me = rankStreet(s).find((x) => x.id === "you");
+  const of = Math.max(1, rankStreet(s).length);
+  const rows: { label: string; have: string; need: string; ok: boolean }[] = [];
+  const f1 = (x: number) => x.toFixed(1);
+  if (sc.misconduct) rows.push({ label: "Misconduct on the record", have: "live", need: "faded (20 years)", ok: false });
+  const floor: Partial<Record<Band, { score: number; n?: number; deals?: number; inv?: number; fund?: boolean }>> = {
+    Questioned: { score: -40 }, Unknown: { score: -10 }, Emerging: { score: 10 },
+    Proven: { score: 25, n: 3, deals: 2 }, Institutional: { score: 40, n: 8, deals: 3, inv: 1 }, "Blue-chip": { score: 55, n: 12, deals: 4, fund: true },
+  };
+  const f = floor[next];
+  if (f) {
+    rows.push({ label: "Track-record score", have: f1(sc.score), need: `${f.score}+`, ok: sc.score >= f.score });
+    if (f.n) rows.push({ label: "Experience (deals weighted by size)", have: f1(sc.n), need: `${f.n}+`, ok: sc.n >= f.n });
+    if (f.deals) rows.push({ label: "Good realised deals", have: String(sc.deals), need: `${f.deals}+`, ok: sc.deals >= f.deals });
+    if (f.inv) rows.push({ label: "…of them with outside investors", have: String(sc.investorDeals), need: `${f.inv}+`, ok: sc.investorDeals >= f.inv });
+    if (f.fund) { const ok = (s.fundHistory ?? []).some((x) => x.called > 0 && x.distributed >= x.called); rows.push({ label: "A fund that returned its capital", have: ok ? "yes" : "no", need: "yes", ok }); }
+  }
+  // The rank cut: the lowest rank that still holds `next` (rankBand), for bands the rank gates.
+  if (bandIdx(next) >= bandIdx("Emerging") && me) {
+    let cut = 0;
+    for (let r = 1; r <= of; r++) if (bandIdx(rankBand(r, of)) >= bandIdx(next)) cut = r;
+    rows.push({ label: "Rank on the street", have: `#${me.rank} of ${of}`, need: `#${cut} or better`, ok: me.rank <= cut });
+  }
+  return { next, rows };
+}
 
 /** Rivals' styles that run outside capital as a matter of course (count as a realised investor vehicle). */
 const INSTITUTIONAL_STYLES = new Set(["core", "pe", "reit", "opportunistic", "merchant", "foreign"]);

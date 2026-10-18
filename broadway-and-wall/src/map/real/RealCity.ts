@@ -7871,6 +7871,8 @@ export class RealCityLayer {
   }
   private preview: PlayerItem | null = null;
   private previewSig = "";
+  /** Told which landmark forms the previewed lot can hold, each time the preview is drawn. */
+  onPreviewFits: ((keys: string[]) => void) | null = null;
   private lastItems: PlayerItem[] = [];
 
   /** One player or rival building into the current buffers: a job site by stage, or the finished building in its design. */
@@ -7915,6 +7917,15 @@ export class RealCityLayer {
     // A LANDMARK: the form the developer named, or, on a tower nobody
     // designed, one the city does not have yet (autoSignature). A preview or
     // the desk's model only looks; it never claims a form.
+    // THE DESK ASKS WHICH LANDMARKS THIS LOT HOLDS (owner, Oct 2026: "choosing
+    // a landmark tower doesn't work"). A form the footprint cannot hold drew
+    // nothing and the tower stood in its ordinary massing while the picker
+    // still showed the form as chosen. The preview now runs every form dry on
+    // the lot as drawn and tells the desk which fit, so it can say so.
+    if (this.preview && it.bbl === this.preview.bbl && this.onPreviewFits) {
+      const fitsNow = SIGNATURE_FORMS.filter((f) => formFits(f, h) && this.signatureTower(ring, h, fam, tint, it.bbl, k, shop, it.cls, f.key, ov, true)).map((f) => f.key);
+      this.onPreviewFits(fitsNow);
+    }
     const named = d?.signature ? SIGNATURE_BY_KEY.get(d.signature as SignatureKey) : undefined;
     const sigKey = named && formFits(named, h) ? named.key
       : !ov && !d?.crown && !d?.signature && TOWER_FAMS.has(fam) && fam !== "brutalist"

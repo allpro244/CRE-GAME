@@ -84,10 +84,14 @@ export function DesignPicker({ design, onChange, floors, shops, onPeek, compact 
   };
   // a landmark form is offered from the year the first of its kind went up
   const year = useStore((s) => START_YEAR + Math.floor((s.game?.month ?? 0) / 12));
+  // What the 3D city found this lot can hold (RealCity onPreviewFits); null
+  // until the preview has been drawn once.
+  const sigFits = useStore((s) => s.designSigFits);
   const sigBlock = (f: SignatureForm) =>
     floors < f.minFloors ? `${f.name} needs ${f.minFloors} floors or more`
       : year < f.from ? `${f.name} — nobody builds one until about ${f.from}`
         : "";
+  const sigNoRoom = (f: SignatureForm) => !!sigFits && !sigBlock(f) && !sigFits.includes(f.key);
   const landmarks = floors >= SIGNATURE_MIN_FLOORS ? SIGNATURE_FORMS.filter((f) => !sigBlock(f) || design.signature === f.key) : [];
 
   // THE TOP is one choice: a roof on a low building, a crown on a tower, or a
@@ -200,7 +204,9 @@ export function DesignPicker({ design, onChange, floors, shops, onPeek, compact 
                   return (
                     <button key={f.key} type="button"
                       className={"btn" + (design.signature === f.key ? " btn-on" : "")}
-                      title={sigBlock(f) || `${f.name} — ${f.blurb}${revival ? ` (a revival: the type was last built about ${f.until})` : ""}`}
+                      disabled={sigNoRoom(f) && design.signature !== f.key}
+                      style={sigNoRoom(f) ? { opacity: 0.45 } : undefined}
+                      title={sigBlock(f) || (sigNoRoom(f) ? `${f.name} — this footprint cannot hold it: a bigger site, more lot coverage, or a squarer lot` : `${f.name} — ${f.blurb}${revival ? ` (a revival: the type was last built about ${f.until})` : ""}`)}
                       onClick={() => set({ signature: f.key, crown: undefined, roof: undefined })}>
                       {f.name}
                     </button>
@@ -208,7 +214,9 @@ export function DesignPicker({ design, onChange, floors, shops, onPeek, compact 
                 })}
               </div>
               <div className="hint" style={{ marginTop: 4 }}>
-                {sig ? `${sig.blurb}. The form is the whole tower, top included.` : "A signature form replaces the tower's massing and its top."}
+                {sig && sigNoRoom(sig)
+                  ? <span className="neg">This lot cannot hold a {sig.name}: the tower is drawn in its ordinary massing. Assemble a bigger site, raise the lot coverage, or pick a form that is not greyed out.</span>
+                  : sig ? `${sig.blurb}. The form is the whole tower, top included.` : "A signature form replaces the tower's massing and its top. Greyed-out forms do not fit this footprint."}
               </div>
             </>
           )}

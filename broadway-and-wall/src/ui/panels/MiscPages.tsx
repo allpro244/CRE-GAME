@@ -202,6 +202,8 @@ export function SettingsPage() {
   const [sound, setSound] = useState(soundOn());
   const setPopupsOff = useStore((s) => s.setPopupsOff);
   const alertsOff = useStore((s) => s.alertsOff);
+  const mutedAlerts = useStore((s) => s.mutedAlerts);
+  const muteAlertKind = useStore((s) => s.muteAlertKind);
   const setAlertsOff = useStore((s) => s.setAlertsOff);
   const fpsOn = useStore((s) => s.fpsOn);
   const setFpsOn = useStore((s) => s.setFpsOn);
@@ -261,7 +263,7 @@ export function SettingsPage() {
         on={!alertsOff}
         set={(v) => setAlertsOff(!v)}
         label="Stop-everything cards"
-        detail="Bids on a sale you listed, an indication on a book you put up, and your ground tenant's default take the screen. Off, you read them on Deals and News instead."
+        detail="Bids on a sale you listed, an indication on a book you put up, and your ground tenant's default take the screen. Off, you read them on Deals and News instead. Black swans and the central bank's moves always stop the game, whatever this says — and a single kind can be muted from its own card instead."
         more={"Bank failures, economy-wide events and a competitor's book taken back pass as a line at the top of the screen and do not stop play, "
           + "unless the clock is set to stop for opportunities too or for everything. "
           + "Each is written into the news feed the moment it fires, so turning this off loses the interruption and not the event. "
@@ -269,6 +271,14 @@ export function SettingsPage() {
           + "With both switches off a sale or portfolio bid still stops Year/Skip and badges Deals, but will not take the screen — "
           + "and a quiet offer lapses in two months, a bid list in fourteen, a portfolio indication in three, if you never open the desk."}
       />
+      {mutedAlerts.length > 0 && (
+        <div className="hint" style={{ margin: "4px 0 10px" }}>
+          Not stopping you for: {mutedAlerts.map((k, i) => (
+            <span key={k}>{i > 0 ? " · " : ""}{({ bank: "bank failures", portfolio: "books and portfolio offers", ground: "ground-lease defaults", sale: "bid lists on your sales", fed: "central-bank news", delivered: "deliveries" } as Record<string, string>)[k] ?? k}{" "}
+              <button type="button" className="linkish" onClick={() => muteAlertKind(k, false)}>(stop me again)</button></span>
+          ))}. Black swans and the central bank's moves always stop the game.
+        </div>
+      )}
       <Toggle
         on={!game.brokersOff}
         set={(v) => flip({ brokersOff: !v })}

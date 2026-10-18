@@ -109,6 +109,8 @@ function teardownBasis(rec, ask) {
   const roll = (rec.bldgArea ?? 0) * 0.85 * rent * 2.5 * 1.25; // ~2.5 years left on average
   return ask * 1.03 + roll;
 }
+/** Outside equity the sponsor could count on (RAISE mode): most of what its band's investors have open. */
+const oc = () => (process.env.RAISE === "1" ? 0.8 * E.outsideCapacity(g) : 0);
 function shop() {
   if (Object.keys(g.talks ?? {}).length >= 2) return;
   const f = free();
@@ -139,7 +141,7 @@ function shop() {
     }
     if (first) tape.land++;
     const rows = sweep(l.bbl, l.ask);
-    const fit = rows.find((r) => r.hurdle >= HURDLE && l.ask * 1.03 + jobAllIn(r) <= f);
+    const fit = rows.find((r) => r.hurdle >= HURDLE && l.ask * 1.03 + jobAllIn(r) <= f + oc() && l.ask * 1.03 <= f);
     if (!fit) { if (first) err("land", rows[0]?.hurdle >= HURDLE ? "pencils, cannot fund dirt + job" : "does not pencil at ask"); continue; }
     if (first) tape.landPencil++;
     const score = fit.hurdle + (l.distress ? 0.05 : 0);
@@ -222,7 +224,7 @@ function offMarket() {
     if (r.refused) { om.refused++; continue; }
     const price = r.blind ? Math.round(c.v) : r.ask;
     const rows = sweep(c.b, price);
-    const fit = rows.find((x) => x.hurdle >= HURDLE && price * 1.03 + jobAllIn(x) <= free());
+    const fit = rows.find((x) => x.hurdle >= HURDLE && price * 1.03 + jobAllIn(x) <= free() + oc() && price * 1.03 <= free());
     if (!fit) { if (rows[0]?.hurdle >= HURDLE) om.cantFund++; else om.tooDear++; continue; }
     const q = E.buyQuote(g, parcels, c.b, price, "land", 1);
     const product = q.principal > 0 && q.equity < g.cash - reserve() * 0.5 ? "land" : "cash";
@@ -280,6 +282,7 @@ function build() {
     if (landIdle[h.bbl] > 1 && landIdle[h.bbl] % 2 === 0) continue; // re-underwrite every other month
     const rows = sweep(h.bbl);
     const f = free();
+    if (RAISE && raiseFor(h, rec, rows, f)) { delete landIdle[h.bbl]; continue; }
     const pick = rows.find((r) => r.hurdle >= 1.0 && jobAllIn(r) <= f);
     if (!pick) {
       if (landIdle[h.bbl] % 12 === 1) J(`lot ${rec.address} waiting — best ${rows[0] ? `${rows[0].use} ${rows[0].hurdle.toFixed(2)}x needs ${K(jobAllIn(rows[0]))}` : "nothing"}, can fund ${K(f)}`);
@@ -288,10 +291,66 @@ function build() {
       continue;
     }
     const kind = E.takeoutHedgeRequired(pick.p) ? "cap" : "cap";
-    const m0 = mkt();
     const r = E.startDevelopment(g, parcels, h.bbl, pick.use, pick.floors, pick.cov ?? 0.6, "gmp", undefined, { takeout: kind }, undefined, 0.5);
     if (r.err) { err("startDevelopment", r.err); J(`BUILD REFUSED ${rec.address} ${pick.use} ${pick.floors}fl: ${r.err.slice(0, 160)}`); continue; }
     g = r.s; bump("built");
+    logJob(h, rec, pick, kind);
+  }
+}
+
+// RAISE=1: the sponsor takes outside equity on every job it can (raise.ts —
+// the Build desk's raise: counsel paid, up to three months of soft circles,
+// close full, small or fail), and picks among jobs its own cash plus what its
+// band's investors could carry would fund.
+const RAISE = process.env.RAISE === "1";
+const pendingRaise = {};
+const capLog = [];
+function raiseFor(h, rec, rows, f) {
+  if (g.raises?.[h.bbl]) return true;
+  const cap = E.outsideCapacity(g);
+  if (!(cap > 0)) return false;
+  const pick = rows.find((r) => r.hurdle >= 1.0 && jobAllIn(r) <= f + cap && jobAllIn(r) > f * 0.5);
+  if (!pick) return false;
+  const job = { use: pick.use, floors: pick.floors, coverage: pick.cov ?? 0.6, contract: "gmp", custom: { takeout: "cap" }, spec: 0.5 };
+  let why = "";
+  for (const frac of [1, 0.8, 0.6, 0.45, 0.3, 0.2]) {
+    const target = Math.round(Math.min(cap, jobAllIn(pick)) * frac);
+    if (target < 50_000) break;
+    const q = E.raiseQuote(g, parcels, h.bbl, job, target);
+    if (!q.ok) { why = q.why; continue; }
+    const L = E.launchRaise(g, parcels, h.bbl, job, target);
+    if (L.err) { why = L.err; continue; }
+    g = L.s; bump("raisesLaunched");
+    const t = E.playerTerms(g);
+    pendingRaise[h.bbl] = { pick, target, legal: q.legal, m: g.month, band: t.band, need: jobAllIn(pick), own: f };
+    J(`RAISE LAUNCHED ${rec.address}: ${K(target)} of outside equity for ${pick.use} ${pick.floors}fl (job cash ${K(jobAllIn(pick))}, own free ${K(f)}); band ${t.band}, terms ${E.termsLine(t)}, counsel ${K(q.legal)}`);
+    return true;
+  }
+  if (why) err("raiseQuote", why);
+  return false;
+}
+function checkRaises() {
+  for (const [bbl, pr] of Object.entries(pendingRaise)) {
+    if (g.raises?.[bbl]) continue;
+    const h = g.holdings[bbl]; const rec = E.resolveRec(parcels, g, bbl);
+    const w = g.syndications?.[bbl];
+    const why = (g.news ?? []).find((n) => n.text.includes(`raise for ${rec?.address}`))?.text;
+    if (g.developments[bbl] && w) {
+      bump("raisesClosed");
+      capLog.push({ y: yr(), bbl, address: rec?.address, ok: true, target: pr.target, got: w.lpCommit, months: g.month - pr.m, band: pr.band, sources: w.sources ?? null, legal: pr.legal });
+      J(`RAISE CLOSED ${rec?.address}: ${K(w.lpCommit)} of ${K(pr.target)} after ${g.month - pr.m} mo from ${JSON.stringify(w.sources ?? {})}`);
+      logJob(h, rec, pr.pick, "cap");
+    } else {
+      bump("raisesFailed");
+      capLog.push({ y: yr(), bbl, address: rec?.address, ok: false, target: pr.target, months: g.month - pr.m, band: pr.band, legal: pr.legal, why });
+      J(`RAISE FAILED ${rec?.address}: ${why ?? "?"}`);
+    }
+    delete pendingRaise[bbl];
+  }
+}
+function logJob(h, rec, pick, kind) {
+  {
+    const m0 = mkt();
     const d = g.developments[h.bbl];
     const p = pick.p;
     const u = useKey(pick.use);
@@ -307,6 +366,8 @@ function build() {
       mktRentPsf: +marketRent.toFixed(2), cityVac: m0.vac[u], idx: m0.idx, phase: m0.phase, capRate: m0.cap[u], costIdx: m0.costIdx,
       plannedDeliverM: d.deliverM,
     };
+    const w = g.syndications?.[h.bbl];
+    if (w) job.syn = { lp: w.lpCommit, sources: w.sources ?? null, terms: E.playerTerms(g).band };
     jobs[h.bbl] = job; jobLog.push(job);
     delete landIdle[h.bbl];
     J(`BREAK GROUND #${job.n} ${rec.address}: ${pick.use} ${job.floors}fl ${job.gsf.toLocaleString()} gsf, all-in ${K(job.basisTotal)} ($${job.allInPsf}/sf; hard $${job.hardPsf}/sf), land ${K(job.landBasis)}; construction loan ${K(job.loan)} @${job.rate}% = ${(job.ltc * 100).toFixed(0)}% LTC; equity ${K(job.equity)}; YoC ${job.yoc}% vs exit ${job.exitYield}% (${job.hurdle}x); ${job.months} mo. Market: ${u} rent $${job.mktRentPsf}/sf, city vac ${pct(job.cityVac)}, index ${job.idx}%, ${job.phase}`);
@@ -579,13 +640,15 @@ while (g.month < YEARS * 12 && !g.gameOver) {
   shop(); offMarket();
   for (let k = 0; k < 6 && Object.keys(g.talks ?? {}).length; k++) workTalks();
   g = E.advanceMonth(g, parcels, bbls, adjacency);
+  if (RAISE) checkRaises();
   recordExits();
   trackDownturn();
   if (g.month % 12 === 0) {
     const bd = board();
     const rank = bd.findIndex((r) => r.name === "You") + 1;
     const nw = E.netWorth(g, parcels);
-    years.push({ y: yr(), nw: Math.round(nw), cash: Math.round(g.cash), rank, field: bd.length, leader: bd[0].name, leaderEq: Math.round(bd[0].eq), phase: g.econ.phase, idx: +g.econ.indexRate.toFixed(2), deeds: Object.keys(g.holdings).length, jobs: Object.keys(g.developments).length });
+    years.push({ y: yr(), nw: Math.round(nw), cash: Math.round(g.cash), rank, field: bd.length, leader: bd[0].name, leaderEq: Math.round(bd[0].eq), phase: g.econ.phase, idx: +g.econ.indexRate.toFixed(2), deeds: Object.keys(g.holdings).length, jobs: Object.keys(g.developments).length,
+      cap: (() => { const rp = E.reputationNow(g); const t = E.playerTerms(g); return { band: t.band, score: rp?.score !== undefined ? +(+rp.score).toFixed(2) : null, rank: rp ? `${rp.rank}/${rp.of}` : null, deals: rp?.deals, perOwn: t.perOwn, terms: E.termsLine(t), ff: Math.round(g.ffNetwork?.cap ?? 0), outside: Math.round(E.outsideCapacity(g)), syn: Object.keys(g.syndications ?? {}).length, raising: Object.keys(g.raises ?? {}).length }; })() });
     if (rank === 1 && !firstTop) { firstTop = yr(); J(`TOOK #1 on the street at ${K(nw)}`); }
     town.push(townRow());
     if (process.env.PROGRESS) console.log(`${yr()} ${g.econ.phase.padEnd(10)} idx ${g.econ.indexRate.toFixed(1)}% NW ${K(nw)} cash ${K(g.cash)} #${rank}/${bd.length} deeds ${Object.keys(g.holdings).length} jobs ${Object.keys(g.developments).length} started ${jobLog.length}`);
@@ -595,7 +658,7 @@ while (g.month < YEARS * 12 && !g.gameOver) {
 if (g.month % 240 !== 0) snaps.push(snapshot());
 const result = {
   seed: SEED, years: YEARS, cash0: CASH, lots: bbls.length, gameOver: g.gameOver ?? null, endMonth: g.month, firstTop,
-  snaps, years, town, downturns, openDownturn: dt ? { startY: dt.startY, months: g.month - dt.startM, pre: dt.pre, worst: dt.worst, rivalsFailed: dt.rivalsFailed, swans: dt.swans, headlines: dt.headlines } : null, jobs: jobLog, sales, landBuys, counters: C, friction: ERR, listedUnsellable, tape, offMarket: om, finalBoard: board().slice(0, 12), journal,
+  snaps, years, town, downturns, openDownturn: dt ? { startY: dt.startY, months: g.month - dt.startM, pre: dt.pre, worst: dt.worst, rivalsFailed: dt.rivalsFailed, swans: dt.swans, headlines: dt.headlines } : null, jobs: jobLog, capLog, sales, landBuys, counters: C, friction: ERR, listedUnsellable, tape, offMarket: om, finalBoard: board().slice(0, 12), journal,
 };
 writeFileSync(OUT, JSON.stringify(result, null, 1));
 if (process.env.STATE) writeFileSync(process.env.STATE, JSON.stringify(g));

@@ -425,9 +425,12 @@ export function floorBand(sc: { score: number; n: number; deals: number; investo
   return "Unknown";
 }
 
-/** The band a rank holds among `of` firms: top 3% (at least #1), next 10%, 20%, 27%, bottom 40%. */
+/** The band a rank holds among `of` firms: top 5% (at least #1), next 10%, 20%, 27%, bottom 38%. */
 export function rankBand(rank: number, of: number): Band {
-  const blue = Math.max(1, Math.round(0.03 * of));
+  // Top 5% (was 3%): Blue-chip still needs a fund that returned its capital
+  // (floorBand), so this opens the band to the few firms that have run one,
+  // not to size alone.
+  const blue = Math.max(1, Math.round(0.05 * of));
   const inst = blue + Math.round(0.10 * of);
   const proven = inst + Math.round(0.20 * of);
   const emerging = proven + Math.round(0.27 * of);

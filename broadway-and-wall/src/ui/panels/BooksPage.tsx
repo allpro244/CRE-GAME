@@ -475,7 +475,8 @@ function IncomeStatementTab() {
             </thead>
             <tbody>
               {years.map((b) => {
-                const net = b.noi + (b.interest ?? 0) + (b.borrowed ?? 0) - b.debtSvc - b.leasing - b.capex - (b.ga ?? 0) - b.dev - b.taxes - b.bought + b.sold;
+                const net = b.noi + (b.interest ?? 0) + (b.borrowed ?? 0) - b.debtSvc - b.leasing - b.capex - (b.ga ?? 0) - b.dev - b.taxes - b.bought + b.sold
+                  + (b.lpCalled ?? 0) + (b.fees ?? 0) - (b.lpDistributed ?? 0);
                 return (
                   <tr key={b.yr} style={{ cursor: "default" }}>
                     <td className="mono">{START_YEAR + b.yr}</td>
@@ -581,7 +582,12 @@ export function IncomeStatement() {
   const opCf = (b: BooksYear) => b.noi - b.leasing - b.capex - b.ga;
   const afterDebt = (b: BooksYear) => opCf(b) - b.debtSvc + (b.interest ?? 0) + (b.borrowed ?? 0);
   const investing = (b: BooksYear) => b.sold - b.bought - b.dev;
-  const bottom = (b: BooksYear) => afterDebt(b) + investing(b) - b.taxes;
+  // INVESTORS' MONEY MOVES THE ACCOUNT TOO: capital called in from syndicate
+  // and fund investors, distributions paid out to them, and the deal fees the
+  // sponsor charges (which development booked as spend). The same identity the
+  // conservation test reconciles against cash (test/conserve.mjs IN / OUT).
+  const investors = (b: BooksYear) => (b.lpCalled ?? 0) + (b.fees ?? 0) - (b.lpDistributed ?? 0);
+  const bottom = (b: BooksYear) => afterDebt(b) + investing(b) - b.taxes + investors(b);
 
   const L = ({ k, v, sub, strong, rule, note }: {
     k: string; v: number; sub?: boolean; strong?: boolean; rule?: boolean; note?: string;
@@ -682,6 +688,9 @@ export function IncomeStatement() {
               <L k="Acquisitions" v={-cur.bought} sub note="equity out the door at closing" />
               <L k="Disposition proceeds" v={cur.sold} sub note="net of loan payoff and penalties" />
               <L k="Taxes" v={-cur.taxes} sub note={`${(INCOME_TAX_RATE * 100).toFixed(0)}% blended personal rate on income · §1250 recapture and gains on exits`} />
+              {investors(cur) !== 0 && (
+                <L k="Investors and fees" v={investors(cur)} sub note="capital your investors paid in, less what was distributed to them, plus the deal fees you charge" />
+              )}
               <L k="Change in cash" v={bottom(cur)} strong rule />
             </tbody>
           </table>

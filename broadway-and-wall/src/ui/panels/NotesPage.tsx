@@ -8,6 +8,7 @@ import { assetValue, ownedHoldingValue, resolveRec, collateralAsIs } from "@/eng
 import { PRODUCTS } from "@/engine/debt";
 import { capitalRatio, lenderPressure, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { noteBid } from "@/engine/notes";
+import { creditBookRoom } from "@/engine/privateCredit";
 import { PRIVATE_CASH_RESERVE, privateBookFace, privateSleeveCapacity } from "@/engine/privateCredit";
 import { firmShort } from "@/engine/firm";
 import { assetGrade } from "@/engine/rivals";
@@ -277,7 +278,9 @@ export function NotesPage() {
               </div>
             )}
             <div className="btn-row" style={{ marginTop: 6 }}>
-              <button className="btn" disabled={fundableNow(game, parcels) < px} onClick={() => takeNote(o.id)}>
+              <button className="btn" disabled={fundableNow(game, parcels) < px || creditBookRoom(game, parcels) < px}
+                title={creditBookRoom(game, parcels) < px ? `Your credit book will only carry another ${usd(creditBookRoom(game, parcels))}` : undefined}
+                onClick={() => takeNote(o.id)}>
                 Buy the paper · {usd(px)}
               </button>
               <span className="dim">Offer lapses {monthLabel(o.expiresM)}. Somebody else is looking at it.</span>
@@ -325,7 +328,7 @@ export function NotesPage() {
                             onClick={() => restructureNote(n.id)}>restructure</button>
                         )}
                         {n.perf === "nonperforming" && (
-                          <button className="btn-mini" title="Two per cent of face in legal, then nine to seventeen months of nothing, then you own it."
+                          <button className="btn-mini" title="Two per cent of face in legal, then nine to seventeen months to the July sale on the courthouse steps. Your debt bids for you: if nobody bids above it you take the building; if the room does, you are paid off in cash. The borrower can still reinstate until the hammer."
                             onClick={() => fileNote(n.id)}>foreclose</button>
                         )}
                         <button className="btn-mini" disabled={!bid.buyer}

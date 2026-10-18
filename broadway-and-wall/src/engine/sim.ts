@@ -1730,6 +1730,26 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     if (!s.watch?.includes(li.bbl)) continue;
     out.push({ key: `watch:${li.bbl}:${li.listedM}`, label: `★ ${addr(li.bbl)} is on the tape` });
   }
+  // THE FUND'S WINDOW IS CLOSING WITH MONEY UNSPENT. After the investment
+  // period a vehicle cannot start anything new, and committed capital that was
+  // never put to work earns its LPs nothing. Told at a year, six months, three
+  // and one; the six-month notice stops the clock once, the rest are docket lines.
+  {
+    const f = s.fund;
+    if (f && !f.settled && s.month <= f.investEndM) {
+      const left = f.investEndM - s.month;
+      const idle = Math.max(0, f.cash) + Math.max(0, f.uncalled);
+      if ([12, 6, 3, 1].includes(left) && f.size > 0 && idle > 0.25 * f.size) {
+        out.push({
+          soft: left !== 6,
+          key: `fund-idle:${f.raisedM}:${left}`,
+          label: `Your fund has ${money(idle)} (${Math.round((idle / f.size) * 100)}%) not yet invested — `
+            + `${left} month${left === 1 ? "" : "s"} left in its investment period`,
+          lastM: f.investEndM,
+        });
+      }
+    }
+  }
   // A BANK HAS PUT A BUILDING OUT. The month a desk lists what it took back,
   // the docket says so — on the docket, never a stop (an opportunity), so a
   // player with every card off still sees it in Next due and on Marketplace.

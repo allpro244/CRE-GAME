@@ -50,7 +50,7 @@ export default function YearReview() {
           {r.street.deal && (<><span>Competitors&rsquo; deal of the year</span><span>{r.street.deal.buyer} · {r.street.deal.address} · {usd(r.street.deal.price)}</span></>)}
           {r.street.failed.length > 0 && (<><span>Went under</span><span className="neg">{r.street.failed.join(", ")}</span></>)}
           {r.street.raised.length > 0 && (<><span>New competitors</span><span>{r.street.raised.join(", ")}</span></>)}
-          <span>Buildings, after debt</span>
+          <span title="Rent less operating costs, leasing, capital work and debt service — the Books page's buildings line">Buildings, after leasing and debt</span>
           <span className={r.cashFromBuildings < 0 ? "neg" : ""}>{usd(r.cashFromBuildings)}</span>
           <span>Office overhead</span>
           <span>−{usd(r.overhead)}</span>

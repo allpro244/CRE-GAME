@@ -2503,7 +2503,6 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     const t1 = Math.max(0, Math.min(1, (s.month - d.startM) / span));
     // the classic S-curve of spend against time
     const curve = (t: number) => t * t * (3 - 2 * t);
-    const spendShare = Math.max(0, curve(t1) - curve(t0));
     // The lease-up reserve is in the budget and financed with everything else,
     // but it is NOT construction spend — it does not buy steel, it buys
     // tenants, and it is released at delivery. Pouring it into the S-curve is
@@ -2511,7 +2510,16 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
     // to fit anybody out: the reserve existed on the pro forma and had already
     // been spent on the building it was supposed to fill.
     const buildSpend = Math.max(0, d.costTotal - (d.leaseUpReserve ?? 0));
-    const spendNow = Math.round(buildSpend * spendShare);
+    // SPEND IS BUDGET × PROGRESS LESS WHAT IS ALREADY OUT, not this month's
+    // slice of the curve. The slice was recomputed against today's schedule
+    // and budget, so a delay that pushed delivery out re-paid part of the curve
+    // (5-15% of the job on a mid-build slip, surfacing later as a capital call
+    // on a GMP job), and an overrun added to the budget was only ever paid on
+    // the months still to come though the news said all of it lands on you.
+    // Old saves start from the curve's own reading of last month.
+    const spentSoFar = d.buildSpent ?? Math.round(buildSpend * curve(t0));
+    const spendNow = Math.max(0, Math.round(buildSpend * curve(t1)) - spentSoFar);
+    d.buildSpent = spentSoFar + spendNow;
 
     // FINDING A DESK THAT WILL TAKE THE JOB OUT. See repudiateCommitments in
     // lenders.ts for how the job got here.

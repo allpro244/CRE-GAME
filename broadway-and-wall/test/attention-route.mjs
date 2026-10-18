@@ -109,7 +109,7 @@ const PREFIXES = [
   "facility-balloon", "facility-sweep", "capital-call", "workout",
   "contract", "talks", "exchange", "note", "npl", "private-ask", "private-borrow",
   "street-book", "auction", "line-over", "cash", "cash-runway", "ti-book",
-  "over", "tenant-dark", "mezz-arrears", "mezz-balloon", "reo",
+  "over", "tenant-dark", "mezz-arrears", "mezz-balloon", "reo", "fund-idle",
 ];
 for (const p of PREFIXES) {
   const sample = p === "tenant-ask" ? `${p}:1`

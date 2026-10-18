@@ -2982,15 +2982,27 @@ export function tickNation(s: GameState) {
       const up = step > 0;
       const infl = ((n.inflSm ?? n.infl ?? 0) * 100).toFixed(1), un = ((n.unemp ?? 0) * 100).toFixed(1);
       const turn = n.lastStep !== undefined && n.lastStep !== 0 && Math.sign(n.lastStep) !== Math.sign(step);
-      raiseAlert(s, {
-        kind: "fed",
-        tone: up ? "bad" : "good",
-        title: `The central bank ${up ? "raises" : "cuts"} rates ${Math.abs(step).toFixed(2)} to ${n.policy.toFixed(2)}%${turn ? ` — the first ${up ? "hike" : "cut"} of a new cycle` : ""}`,
-        body: `${up ? "Tightening" : "Easing"} from ${was.toFixed(2)}% with inflation at ${infl}% and unemployment at ${un}%. `
-          + `Floating loans reset on the new rate next month (through any cap you bought); the short index is now ${shortIndexFor(n.policy, e.creditIdx ?? 1).toFixed(2)}%. `
-          + (up ? "Dearer money reaches cap rates and lending before it reaches rents." : "Cheaper money reaches refinancing and land bids first, rents later."),
-        detail: "The committee's path, the curve and how far the market believes the bank are on Markets under Central bank.",
-      });
+      const title = `The central bank ${up ? "raises" : "cuts"} rates ${Math.abs(step).toFixed(2)} to ${n.policy.toFixed(2)}%${turn ? ` — the first ${up ? "hike" : "cut"} of a new cycle` : ""}`;
+      const body = `${up ? "Tightening" : "Easing"} from ${was.toFixed(2)}% with inflation at ${infl}% and unemployment at ${un}%. `
+        + `Floating loans reset on the new rate next month (through any cap you bought); the short index is now ${shortIndexFor(n.policy, e.creditIdx ?? 1).toFixed(2)}%. `
+        + (up ? "Dearer money reaches cap rates and lending before it reaches rents." : "Cheaper money reaches refinancing and land bids first, rents later.");
+      // THE MOVES THAT CHANGE THE STORY STOP THE GAME; THE STEPS ALONG IT DO
+      // NOT. A turn of the cycle, the first move on record, or half a point or
+      // more takes the screen. A routine quarter-point step in the direction
+      // the bank is already going is in the news — five stops a year was the
+      // tedium that made players switch cards off and miss the swans.
+      const big = turn || n.lastStep === undefined || n.lastStep === 0 || Math.abs(step) >= 0.5 - 1e-9;
+      if (big) {
+        raiseAlert(s, {
+          kind: "fed",
+          tone: up ? "bad" : "good",
+          title,
+          body,
+          detail: "The committee's path, the curve and how far the market believes the bank are on Markets under Central bank.",
+        });
+      } else {
+        s.news.unshift({ q: s.month, kind: "info", text: `${title}. ${body}` });
+      }
       n.lastStep = step;
     }
   }

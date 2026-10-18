@@ -4630,29 +4630,35 @@ export function depositsHeld(s: GameState): number {
 }
 
 export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, feeRate?: number) {
-  // A tenant moving into pre-built space USES IT UP. The suite is theirs now;
-  // the next prospect tours a shell again unless you build more.
-  if (l.kind === "new" && h.specSuites && h.specSuites.use === (l.use ?? rec.class) && s.month >= h.specSuites.readyM) {
-    h.specSuites.sf -= l.sf;
-    if (h.specSuites.sf < 800) delete h.specSuites;
-  }
-  const cost = loiSigningCost(l, feeRate);
-  // Demising walls are construction. $9/sf of the smaller piece × costIdx,
-  // booked as capex so conserve can see it.
-  const demise = Math.max(0, Math.round(l.demiseCost ?? 0));
-  // A NEW BUILDING'S FIT-OUT COMES FROM ITS LEASE-UP RESERVE FIRST — the
-  // lender advances it against this lease (debt.ts drawLeaseUpReserve). A JV
-  // partner funds its share only of what the reserve did not cover.
-  const drawn = drawLeaseUpReserve(s, h, cost + demise);
-  const fromReserveCost = Math.min(cost, drawn);
-  s.cash -= cost;
-  logBooks(s, "leasing", cost, h.bbl);
-  partnerFunds(s, h, cost - fromReserveCost);
-  if (demise > 0) {
-    s.cash -= demise;
-    logBooks(s, "capex", demise, h.bbl);
-    partnerFunds(s, h, demise - (drawn - fromReserveCost));
-  }
+  // THE SIGNING IS PAID FOR WHAT SIGNS, AND ONLY IF IT SIGNS. The fit-out,
+  // commission and demising were charged before the space was checked, so a
+  // letter that lost its suite to the other live one still cost its full TI,
+  // and one clamped to the space that was left paid for the feet it was
+  // written for. Each branch charges after its own check, pro rata to the
+  // feet it actually leases.
+  let paid = 0, signedSf = l.sf;
+  const charge = (sfSigned: number) => {
+    signedSf = sfSigned;
+    const scale = l.sf > 0 ? Math.max(0, Math.min(1, sfSigned / l.sf)) : 1;
+    const cost = Math.round(loiSigningCost(l, feeRate) * scale);
+    // Demising walls are construction. $9/sf of the smaller piece × costIdx,
+    // booked as capex so conserve can see it.
+    const demise = Math.max(0, Math.round((l.demiseCost ?? 0) * scale));
+    // A NEW BUILDING'S FIT-OUT COMES FROM ITS LEASE-UP RESERVE FIRST — the
+    // lender advances it against this lease (debt.ts drawLeaseUpReserve). A JV
+    // partner funds its share only of what the reserve did not cover.
+    const drawn = drawLeaseUpReserve(s, h, cost + demise);
+    const fromReserveCost = Math.min(cost, drawn);
+    paid = cost;
+    s.cash -= cost;
+    logBooks(s, "leasing", cost, h.bbl);
+    partnerFunds(s, h, cost - fromReserveCost);
+    if (demise > 0) {
+      s.cash -= demise;
+      logBooks(s, "capex", demise, h.bbl);
+      partnerFunds(s, h, demise - (drawn - fromReserveCost));
+    }
+  };
   if (l.kind === "expansion" && l.tenantIdx !== undefined && h.tenants[l.tenantIdx]) {
     // THE SPACE NEXT DOOR. The old floor keeps its rent and the new floor takes
     // today's, so what the row shows afterwards is the blend — which is what a
@@ -4680,6 +4686,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
         + `the ${Math.round(add).toLocaleString()} sf left will not demise.`;
       return;
     }
+    charge(add);
     t.rentPsf = +(((t.rentPsf * t.sf) + (l.rentPsf * add)) / (t.sf + add)).toFixed(2);
     t.sf += add;
     useUpShell(h, use, add);
@@ -4704,6 +4711,8 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
       const cap = Math.max(minLettableSf(rec, use), useRentableSf(rec, use) - others);
       if (t.sf > cap + 0.5) { t.sf = Math.round(cap); if (l.sf > cap) l.sf = Math.round(cap); }
     }
+    // (after the re-measure, which can only shrink the letter)
+    charge(l.sf);
     // THEY ARE RENEWING FOR LESS. The space they hand back is space, and it
     // turns like any other giveback before anybody can be shown it.
     if (l.sf < t.sf) {
@@ -4795,6 +4804,13 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
         + `${Math.round(sf).toLocaleString()} sf left will not demise.`;
       return;
     }
+    charge(sf);
+    // A tenant moving into pre-built space USES IT UP. The suite is theirs now;
+    // the next prospect tours a shell again unless you build more.
+    if (l.kind === "new" && h.specSuites && h.specSuites.use === (l.use ?? rec.class) && s.month >= h.specSuites.readyM) {
+      h.specSuites.sf -= sf;
+      if (h.specSuites.sf < 800) delete h.specSuites;
+    }
     const deposit = depositFor(s, l.rentPsf, sf, l.credit);
     moveDeposit(s, h, deposit);
     // A firm from the town's pool leaves it, and any street suite it held
@@ -4843,8 +4859,8 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     : "";
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `Signed${feeRate === AGENT_FEE ? " by your agent" : ""}: ${l.name} — ${l.sf.toLocaleString()} sf at ${rec.address}, $${l.rentPsf.toFixed(0)}/sf, ${(l.termM / 12).toFixed(0)} yrs, ${bumpOf(l).toFixed(2)}%/yr${l.kind === "renewal" ? " (renewal)" : ""}. `
-      + `Building is ${occPct.toFixed(0)}% let. Upfront TI and commission: ${money(cost)}.${freeNote}`,
+    text: `Signed${feeRate === AGENT_FEE ? " by your agent" : ""}: ${l.name} — ${Math.round(signedSf).toLocaleString()} sf at ${rec.address}, $${l.rentPsf.toFixed(0)}/sf, ${(l.termM / 12).toFixed(0)} yrs, ${bumpOf(l).toFixed(2)}%/yr${l.kind === "renewal" ? " (renewal)" : ""}. `
+      + `Building is ${occPct.toFixed(0)}% let. Upfront TI and commission: ${money(paid)}.${freeNote}`,
   });
   if (l.sf >= Math.max(25_000, rec.bldgArea * 0.15)) {
     noteTenantMove(s, { kind: "sign", who: l.name, sf: l.sf, bbl: l.bbl });

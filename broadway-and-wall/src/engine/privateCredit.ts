@@ -541,6 +541,7 @@ function buildPrivateLoan(s: GameState, q: PrivateBorrowQuote): Loan {
     product: "private",
     holder: q.lenderName,
     floating: true,
+    bench: "long",   // spread struck off the loan index; see save.ts migrateFloatingBench
     points: q.points,
     recourse: false,
     prepay: "open",

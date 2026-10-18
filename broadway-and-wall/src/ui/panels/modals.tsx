@@ -333,8 +333,11 @@ function AuctionBody({
                     return (<><td className="num dim">site</td><td className="num dim">—</td></>);
                   }
                   const borrower = game.rivals?.find((x) => x.id === l.borrowerId);
-                  const occ = l.kind === "yours"
-                    ? physicalOcc(rec as never, game.holdings[l.bbl]!)
+                  // Your building may have left the book since the docket was posted
+                  // (sold out of default, deed in lieu): read the borrower's estimate then.
+                  const yoursNow = l.kind === "yours" ? game.holdings[l.bbl] : undefined;
+                  const occ = yoursNow
+                    ? physicalOcc(rec as never, yoursNow)
                     : Math.max(0.15, Math.min(0.95, borrower?.occ ?? 0.4));
                   // The engine's own receiver basis: worn condition, scaled by
                   // the borrower's occupancy. Capitalised back through the

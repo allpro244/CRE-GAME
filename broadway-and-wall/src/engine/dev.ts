@@ -3025,6 +3025,9 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   h.loan = {
     product: "miniperm",
     floating: !fixedTk,
+    // It floats on the loan index (its spread is struck off it), and says so,
+    // so the save migration does not re-base it onto the short index on load.
+    ...(!fixedTk ? { bench: "long" as const } : {}),
     principal: d.loanBalance + carried,
     balance: d.loanBalance + carried,
     ratePct: takeRate,

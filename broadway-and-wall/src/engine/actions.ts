@@ -12,7 +12,7 @@ import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown
 import { ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
-import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake, noteRealised } from "./rivals";
+import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
@@ -333,15 +333,20 @@ export function executePurchase(
   {
     const seller = ownerOf(next, bbl);
     if (seller) {
+      // Struck while the deed is still theirs (rivals.ts basisShare).
+      const tax = gainsTax(seller, price);
       seller.bbls = seller.bbls.filter((b) => b !== bbl);
       const jv = seller.jvs?.[bbl];
       forgetDeed(seller, bbl);
-      // The mortgage on the building is paid at the closing, then their line.
+      // The mortgage on the building is paid at the closing, then their line;
+      // the seller pays its own selling costs and gains tax, as on every other
+      // sale on the street.
       const relief = settleSale(next, seller, bbl, price);
-      seller.cash += price - relief;
+      const costs = streetSaleCost(price);
+      seller.cash += price - relief - costs - tax;
       // A syndicated deed pays its deal investors out of the closing — see
       // jvLpTake (rivals.ts).
-      const partnersOut = jvLpTake(jv, price - relief, next.month);
+      const partnersOut = jvLpTake(jv, price - relief - costs - tax, next.month);
       seller.cash -= partnersOut;
       noteRealised(next, seller, jv, price, partnersOut);
     }

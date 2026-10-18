@@ -56,7 +56,7 @@ import { logFirm, milestone } from "./firmLog";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
 import { assembledBlock, reviewThesis, thesisFit, thesisLabel, thesisSellMult } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
-import { deskWithRoom, renewRow, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
+import { deskWithRoom, renewRow, streetLoanCost, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
 import {
   paramsFrom, siteFit, dealsPerYear, misreadPp, drawSheet, profilesForStyle, hash01, GRADE_NUM,
   PROFILE_OF, PROFILES, inv as invTrait, LEVERAGE_RANGE, sheetFromStyle, classTrait, nearestProfile,
@@ -668,8 +668,9 @@ export function transferDeed(s: GameState, bbl: string, to: Rival, price: number
     // secured stays owed, on the line.
     const relief = settleSale(s, r, bbl, Math.max(0, price));
     if (price > 0) {
-      const lpOut = jvLpTake(jv, price - relief, s.month);
-      r.cash += price - relief;
+      const costs = streetSaleCost(price);
+      const lpOut = jvLpTake(jv, price - relief - costs, s.month);
+      r.cash += price - relief - costs;
       r.cash -= lpOut;
       noteRealised(s, r, jv, price, lpOut);
     }
@@ -2909,7 +2910,7 @@ function gainsTaxOn(r: Rival, price: number): number {
  * the player paid on every disposal. Charged at the same rate the player pays.
  * Call it BEFORE the deed comes off `r.bbls`; see basisShare.
  */
-function gainsTax(r: Rival, price: number): number {
+export function gainsTax(r: Rival, price: number): number {
   const share = basisShare(r);
   const tax = gainsTaxOn(r, price);
   r.basis = Math.max(0, Math.round((r.basis ?? 0) - share));
@@ -4088,8 +4089,11 @@ function cashOutRefi(s: GameState, parcels: ParcelTable, r: Rival, room: number,
   for (const o of opts) {
     if (left <= 250_000) break;
     const take = Math.min(left, o.head);
-    originateRow(s, r, o.bbl, take, o.v, o.noi, { klass: o.rec.class, condition: assetGrade(r, o.rec) });
-    r.cash += take;
+    const row = originateRow(s, r, o.bbl, take, o.v, o.noi, { klass: o.rec.class, condition: assetGrade(r, o.rec) });
+    // A cash-out is a refinancing: the fee on the whole new balance, the new
+    // desk's points on what is drawn, a cap on floating paper — as the
+    // player's refinance charges.
+    r.cash += take - (row ? streetLoanCost(row, take, row.balance) : 0);
     left -= take;
   }
 }
@@ -5151,8 +5155,9 @@ export function rivalBuys(
     // Same event, same rule — a firm selling to another firm and a firm selling
     // to Hartford both retire the loan that was on the building, then the line.
     const relief = settleSale(s, seller, rec.bbl, price);
-    seller.cash += price - relief - tax;
-    const partnersOut = jvLpTake(jv, price - relief - tax, s.month);
+    const costs = streetSaleCost(price);
+    seller.cash += price - relief - tax - costs;
+    const partnersOut = jvLpTake(jv, price - relief - tax - costs, s.month);
     seller.cash -= partnersOut;
     noteRealised(s, seller, jv, price, partnersOut);
     settleEmptyBook(s, seller);
@@ -5166,10 +5171,12 @@ export function rivalBuys(
   // THE ACQUISITION MORTGAGE, written by the desk that will take it
   // (rivalDebt.originateRow) — sized above on the deal's own income.
   if (fin.debt > 0) {
-    originateRow(s, best, rec.bbl, fin.debt, price, goingInNoi, {
+    const row = originateRow(s, best, rec.bbl, fin.debt, price, goingInNoi, {
       klass: rec.class, condition: initialCondition(rec),
       stab: stabViewFor(rec, s.econ, initialCondition(rec), price),
     });
+    // ...and pays for it at the table, as the player does (points, a cap).
+    if (row) best.cash -= streetLoanCost(row, fin.debt);
   }
   best.basis = Math.round((best.basis ?? 0) + fin.equity + closing);
   best.aum = Math.round((best.aum ?? 0) + price);
@@ -5215,8 +5222,9 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
   const jv = takeJv(seller, bbl);
   forgetDeed(seller, bbl);
   const relief = settleSale(s, seller, bbl, price);
-  seller.cash += price - relief - tax;
-  const partnersOut = jvLpTake(jv, price - relief - tax, s.month);
+  const costs = streetSaleCost(price);
+  seller.cash += price - relief - tax - costs;
+  const partnersOut = jvLpTake(jv, price - relief - tax - costs, s.month);
   seller.cash -= partnersOut;
   noteRealised(s, seller, jv, price, partnersOut);
   logFirm(s, seller, "sell", `Sold a building to money from out of town`, bbl, price);
@@ -5302,8 +5310,19 @@ export function rivalAsk(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
  * syndicated. The one expression the disposal decision and every settlement
  * (rivalBuys, sellToOutsider) read.
  */
+/**
+ * A SELLER ON THE STREET PAYS WHAT THE PLAYER PAYS TO SELL: the sell-side
+ * brokerage, the transfer tax, and legal, title and diligence — the same
+ * rates as actions.ts (SALE_BROKERAGE, TRANSFER_TAX, SALE_FRICTION), about
+ * 3.3% of the price. Rivals used to keep the whole price.
+ */
+const STREET_SALE_COST = 0.015 + 0.006 + 0.012;
+export function streetSaleCost(price: number): number {
+  return Math.round(Math.max(0, price) * STREET_SALE_COST);
+}
+
 function disposalNet(s: GameState, r: Rival, bbl: string, px: number): number {
-  const gross = px - saleRelief(s, r, bbl, px) - gainsTaxOn(r, px);
+  const gross = px - saleRelief(s, r, bbl, px) - gainsTaxOn(r, px) - streetSaleCost(px);
   return gross - jvLpTake(r.jvs?.[bbl], gross, s.month);
 }
 

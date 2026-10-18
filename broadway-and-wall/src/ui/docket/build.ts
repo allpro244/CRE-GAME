@@ -65,13 +65,18 @@ function catForKey(key: string): DocketCat {
   if (
     head === "balloon" || head === "sweep" || head.startsWith("facility") ||
     head === "line-over" || head.startsWith("cash") || head === "workout" ||
+    // Missed payments, a junior balloon, a renewal and your bank failing are
+    // debt business, not deal flow.
+    head === "arrears" || head === "mezz-arrears" || head === "mezz-balloon" ||
+    head === "renewed" || head === "bank-seized" || head === "fund-idle" ||
     // A construction capital call is the firm's own money being demanded,
     // not a deal being negotiated — it reads as capital or it reads wrong.
     head === "capital-call"
   ) return "capital";
   if (
     head === "lease-roll" || head === "nonrenew" || head === "tenant-ask" ||
-    head === "capital-plan" || head === "ti-book"
+    head === "capital-plan" || head === "ti-book" || head === "ti-book-fund" ||
+    head === "delivered" || head === "tenant-dark"
   ) return "assets";
   return "deals";
 }
@@ -142,7 +147,9 @@ export function buildDocket(
     items.push({
       key: a.key,
       cat: catForKey(a.key),
-      urgent: urgentKey(a.key) || (letter?.referred ? true : undefined),
+      // A critical item (missed payments, an accelerated facility, a seized
+      // bank) cannot be snoozed: "Later" on it hid a three-month receiver window.
+      urgent: urgentKey(a.key) || a.critical || (letter?.referred ? true : undefined),
       title: a.label,
       // THE TERMS ON THE ROW. Sign / Counter / Decline sat on a line that
       // said only "LOI from X" — a blind decision. The letter's own size,
@@ -292,7 +299,8 @@ export function buildDocket(
 
   // Snoozes are honored before the milestone check: a quiet docket after
   // three snoozes is a quiet docket, and the nudge may take the empty seat.
-  const live = items.filter((it) => !((snooze[it.key] ?? -1) > month));
+  // An urgent item ignores a snooze set before it was urgent.
+  const live = items.filter((it) => it.urgent || !((snooze[it.key] ?? -1) > month));
 
   // (d) The year-one nudge — the next milestone a first-year firm has not
   // reached, offered only when nothing on the desk is on fire. netWorth is a

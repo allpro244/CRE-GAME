@@ -25,7 +25,7 @@ import type { GameState, PortfolioListing } from "./types";
 import type { ParcelRecord, ParcelTable } from "../data/types";
 import { dollarLevel, rng, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
-import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed, fitOf } from "./rivals";
+import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed, fitOf, streetSaleCost } from "./rivals";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
 import { financePackage, settleSale } from "./rivalDebt";
@@ -570,7 +570,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
             prev.bbls = prev.bbls.filter((x) => x !== b); forgetDeed(prev, b);
             if (prev.failedM === undefined) {
               const share = shareOf(b);
-              prev.cash += share - settleSale(s, prev, b, share);
+              prev.cash += share - settleSale(s, prev, b, share) - streetSaleCost(share);
             }
           }
           if (!winner.bbls.includes(b)) winner.bbls.push(b);

@@ -20,6 +20,21 @@ import Badges from "./Badges";
 import { esc, tipHtml } from "./hoverCard";
 
 /**
+ * AN ASSEMBLED SITE PAINTS AS ONE (owner, Oct 2026). A folded deed keeps its
+ * shape on the map but its land, value and envelope have moved to the site
+ * (GameState.merged), so every lens that reads a lot on its own painted the
+ * pieces as if they had never been joined — "no room", no occupancy, the old
+ * lot's demand. Each piece takes the site's value, or none if the site has none.
+ */
+function mirrorSites(next: Map<string, number>, game: GameState): Map<string, number> {
+  for (const [child, site] of Object.entries(game.merged ?? {})) {
+    const v = next.get(site);
+    if (v === undefined) next.delete(child); else next.set(child, v);
+  }
+  return next;
+}
+
+/**
  * Where a site is on the ground: an assembled site's middle is the area-weighted
  * middle of all its deeds, not the parent lot's, which sits off to one side of
  * the building that now stands across all of them.
@@ -1026,6 +1041,7 @@ export default function MapView() {
       if (!d) continue;
       next.set(bbl, liveDemand(game, r.demandScore, r.block));
     }
+    mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (dmdRef.current.get(bbl) === v) continue;
       map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { dmd: v });
@@ -1068,6 +1084,7 @@ export default function MapView() {
       const used = rec.bldgArea / (rec.lotArea * far);
       next.set(bbl, Math.round(100 * Math.max(0, Math.min(1, 1 - used))));
     }
+    mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (zoneRef.current.get(bbl) === v) continue;
       map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { room: v });
@@ -1098,6 +1115,7 @@ export default function MapView() {
       // 0–24 months mapped to 100–0 (bright when near). Beyond 24 → 0 (dark).
       next.set(h.bbl, Math.round(100 * Math.max(0, 1 - Math.min(24, soonest) / 24)));
     }
+    mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (leaseRef.current.get(bbl) === v) continue;
       map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { leaseSoon: v });
@@ -1125,6 +1143,7 @@ export default function MapView() {
       const occ = h && !h.groundLeased ? physicalOcc(rec, h) : occupancy(rec, game.econ);
       next.set(bbl, Math.round(100 * Math.max(0, Math.min(1, occ))));
     }
+    mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (vacRef.current.get(bbl) === v) continue;
       map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { occPct: v });
@@ -1157,6 +1176,7 @@ export default function MapView() {
       const pay = Math.max(0, read.builder) * rec.lotArea;
       next.set(bbl, Math.round(100 * Math.min(2, price > 0 ? pay / price : 0)));
     }
+    mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (siteRef.current.get(bbl) === v) continue;
       map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { sitePct: v });
@@ -1951,6 +1971,7 @@ export default function MapView() {
         const r = parcels[bbl];
         vals.set(bbl, liveDemand(game, r.demandScore, r.block));
       }
+      if (game) mirrorSites(vals, game);
       // THIS CITY'S OWN SPREAD, AND MOST OF THE RAMP AT THE TOP (owner, Oct
       // 2026). Fixed stops ended at 92, so a core where most blocks score
       // 80-100 painted one flat dark green — exactly where the player is
@@ -2099,8 +2120,13 @@ export default function MapView() {
     const container = map.getContainer();
     let tipKey = "";
     const onMove = (e: MouseEvent) => {
-      const { hoveredBBL, parcels: table, selectedBBL, game: g, hoverCard } = useStore.getState();
-      const rec = hoverCard && hoveredBBL && hoveredBBL !== selectedBBL ? table?.[hoveredBBL] : null;
+      const { hoveredBBL: hov0, parcels: table, selectedBBL, game: g, hoverCard } = useStore.getState();
+      // AN ASSEMBLED LOT IS THE SITE. Hovering a folded deed read its own
+      // static record — the old lot's size, value and zoning, as if it had
+      // never been merged. Read the site's live record instead, as a click does.
+      const hoveredBBL = hov0 ? (g?.merged?.[hov0] ?? hov0) : hov0;
+      const rec = hoverCard && hoveredBBL && hoveredBBL !== selectedBBL && table
+        ? (g ? resolveRec(table, g, hoveredBBL) : null) ?? table[hoveredBBL] : null;
       if (!rec) { tip.style.display = "none"; return; }
       // One card per lot and month: the same numbers the property panel
       // prints, read off the same functions, so the glance and the click agree.

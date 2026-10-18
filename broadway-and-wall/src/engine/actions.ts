@@ -1335,6 +1335,7 @@ export function defaultGroundLease(
       raiseAlert(s, {
         kind: "ground",
         tone: "bad",
+        stops: true,
         title: `${gl.tenant} defaulted at ${address}`,
         body: `The ground rent has stopped and the lease has terminated. You now control the land and the `
           + `${standing.floors}-floor ${standing.class} building standing on it — that is what long paper secured.`,
@@ -1360,6 +1361,7 @@ export function defaultGroundLease(
         raiseAlert(s, {
           kind: "ground",
           tone: "bad",
+          stops: true,
           title: `${gl.tenant} defaulted at ${address}`,
           body: `Short ground paper does not gift the tower. You funded a ${money(buyout)} leasehold buyout `
             + `and took the ${standing.floors}-floor ${standing.class} vacant.`,
@@ -1377,6 +1379,7 @@ export function defaultGroundLease(
         raiseAlert(s, {
           kind: "ground",
           tone: "bad",
+          stops: true,
           title: `${gl.tenant} defaulted at ${address}`,
           body: buyout > 0
             ? `The ground rent has stopped. Short paper does not hand you the building — a ${money(buyout)} `
@@ -1398,6 +1401,7 @@ export function defaultGroundLease(
     raiseAlert(s, {
       kind: "ground",
       tone: "bad",
+      stops: true,
       title: `${gl.tenant} defaulted at ${address}`,
       body: duringBuild
         ? "They walked the job. The ground rent has stopped, the frame is cancelled, and full control of the site is back with you."
@@ -2959,6 +2963,14 @@ export function saleProceedsToSeller(
   const deal = s.syndications?.[h.bbl];
   const investors = deal ? investorsTakeOfExit(deal, toOwners, s.month) : 0;
   return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller, partner: toOwners - toSeller, investors };
+}
+
+/** Cash that lands in the sponsor's own account if `price` closes today —
+ *  the offer modal's "net to you", shared with the sale desks. */
+export function sellerCashAtClose(s: GameState, parcels: ParcelTable, h: Holding, price: number): number {
+  const p = saleProceedsToSeller(s, parcels, h, price);
+  const onFund = !!(h.fundOwned && s.fund && !s.fund.settled);
+  return (onFund ? 0 : p.toSeller) - p.investors - (s.exchange ? 0 : p.tax);
 }
 
 export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string, exchange = false): { s: GameState; err?: string } {

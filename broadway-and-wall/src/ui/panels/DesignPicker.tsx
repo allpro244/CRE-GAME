@@ -102,6 +102,8 @@ export function DesignPicker({ design, onChange, floors, shops, onPeek, compact 
     ...(floors >= CROWN_MIN_FLOORS ? CROWN_CHOICES : [])
       .map((c) => ({ id: `crown:${c.key}`, name: c.name, patch: { crown: c.key, roof: undefined, signature: undefined } })),
   ];
+  // A pitched roof the preview found the footprint cannot carry (RealCity onPreviewFits).
+  const roofNoRoom = (id: string) => (id === "roof:gable" || id === "roof:hip") && !!sigFits && !sigFits.includes(id);
   const topNow = design.signature ? "signature" : design.crown ? `crown:${design.crown}` : design.roof ? `roof:${design.roof}` : "auto";
   const sig = design.signature ? SIGNATURE_FORMS.find((f) => f.key === design.signature) : undefined;
 
@@ -186,12 +188,22 @@ export function DesignPicker({ design, onChange, floors, shops, onPeek, compact 
         <button type="button" className={"btn" + (topNow === "auto" ? " btn-on" : "")}
           title="The period and the style choose"
           onClick={() => set({ roof: undefined, crown: undefined, signature: undefined })}>Auto</button>
-        {tops.map((t) => (
-          <button key={t.id} type="button" className={"btn" + (topNow === t.id ? " btn-on" : "")} onClick={() => set(t.patch)}>
-            {t.name}
-          </button>
-        ))}
+        {tops.map((t) => {
+          const flat = roofNoRoom(t.id);
+          return (
+            <button key={t.id} type="button" className={"btn" + (topNow === t.id ? " btn-on" : "")}
+              disabled={flat && topNow !== t.id}
+              style={flat ? { opacity: 0.45 } : undefined}
+              title={flat ? `${t.name} — a pitched roof needs a four-cornered footprint; this one would be drawn flat` : undefined}
+              onClick={() => set(t.patch)}>
+              {t.name}
+            </button>
+          );
+        })}
       </div>
+      {roofNoRoom(topNow) && (
+        <div className="hint"><span className="neg">This footprint is not four-cornered, so a pitched roof is drawn flat. Pick another top, or a squarer lot.</span></div>
+      )}
 
       {landmarks.length > 0 && (
         <>

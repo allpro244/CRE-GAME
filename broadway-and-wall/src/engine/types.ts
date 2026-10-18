@@ -562,6 +562,8 @@ export interface Holding {
   tenants: Tenant[];   // commercial rent roll
   /** Cached vacant blocks from plates.blocksOf. Derived; restamped on read. */
   blocks?: import("./plates").SpaceBlock[];
+  /** The last tenant that filed and went dark here — read by the docket the month it happens. */
+  wentDark?: { q: number; name: string; sf: number; share: number };
   makeReady?: { sf: number; readyM: number; use?: BuiltClass; blockId?: number }[]; // vacated space being turned; unleasable until ready
   // A listing exclusive. The house works the phones and is paid 6% of the
   // base rent over the term of every lease signed while they hold the file,
@@ -1499,6 +1501,8 @@ export interface Alert {
   detail?: string;
   /** The building it is about, when it is about one — the card can take you there. */
   bbl?: string;
+  /** Something the firm already has is at stake (your ground tenant, your lender): it stops Year / Skip like a docket item. */
+  stops?: boolean;
 }
 
 /**

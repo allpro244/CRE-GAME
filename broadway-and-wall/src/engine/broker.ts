@@ -89,6 +89,8 @@ export function brokerScore(s: GameState, id: string): number {
  * other name they like, which is how it feels from the buyer's chair.
  */
 export function maybeEarlyLook(s: GameState, li: Listing, address: string) {
+  // "Brokers ring you" off means no calls at all — first looks included.
+  if (s.brokersOff) return;
   const id = brokerIdFor(s, li.bbl);
   if (brokerScore(s, id) < EARLY_FEES) return;
   if (hash01(`look:${s.seed}:${li.bbl}:${li.listedM}`) >= 0.5) return;

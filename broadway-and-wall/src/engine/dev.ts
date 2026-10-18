@@ -1061,7 +1061,13 @@ export function startAdaptiveReuse(
   const plan = planAdaptiveReuse(s, parcels, bbl, target, customMix);
   if (!plan) return { s, err: "That conversion cannot be planned." };
   if (plan.hurdleRatio < 1) return { s, err: plan.lenderNote ?? "The conversion does not clear its economic hurdle." };
-  if (fundableNow(s, parcels) < devFundingNeed(plan).whole) {
+  // THE PURSE THAT OWNS THE DEED pays for its conversion, the same rule as a
+  // ground-up start: a fund deed draws on the vehicle (and only while it is
+  // investing); the sponsor's own money net of cash held for open raises.
+  const purse = groundbreakPurse(s, parcels, bbl);
+  if (purse.closed) return { s, err: purse.closed };
+  const available = purse.fund ? purse.total : Math.max(0, purse.total - heldByRaises(s, bbl));
+  if (available < devFundingNeed(plan).whole) {
     return { s, err: `The conversion requires ${money(plan.equity)} of equity plus a change-order margin.` };
   }
   // THE DAY-ONE CHEQUE COUNTS THE LINE TOO, and this was the odd one out: the
@@ -1070,12 +1076,12 @@ export function startAdaptiveReuse(
   // narrower definition of it. Two answers to one question. Closing equity is
   // written from the balance sheet, and the balance sheet includes the line.
   const dayOne = plan.equityAtClose + plan.pointsCost;
-  if (fundableNow(s, parcels) < dayOne) {
+  if (available < dayOne) {
     return { s, err: `${money(dayOne)} is due at closing.` };
   }
   const next = clone(s);
   const nh = next.holdings[bbl];
-  fundAndBook(next, parcels, dayOne, "dev", { bbl });
+  payFromPurse(next, parcels, bbl, dayOne, "dev", purse.fund);
   const oldMix = mixOf(rec);
   for (const use of BUILT_CLASSES) {
     const oldSf = useRentableSf(rec, use);
@@ -1885,6 +1891,22 @@ export function projectedDevIrr(plan: DevPlan): number {
  * line. The desk's groundbreak button and `startDevelopment` both read this,
  * so the button cannot offer what the engine refuses.
  */
+/** A closing cheque from the purse that owns the deed — see `groundbreakPurse`. */
+function payFromPurse(next: GameState, parcels: ParcelTable, bbl: string, amt: number, cat: "dev" | "debtSvc", vehicle: boolean): void {
+  if (!(amt > 0)) return;
+  const f = vehicle ? next.fund : null;
+  if (!f) { fundAndBook(next, parcels, amt, cat, { bbl }); return; }
+  const call = Math.max(0, Math.min(f.uncalled, amt - Math.max(0, f.cash)));
+  if (call > 0) {
+    f.uncalled -= call;
+    f.called += call;
+    moveFundCash(f, call, "call");
+    logBooks(next, "lpCalled", call); // LP equity in for this job — not income
+  }
+  moveFundCash(f, -amt, "build");
+  logBooks(next, cat, amt, bbl, true);
+}
+
 export function groundbreakPurse(s: GameState, parcels: ParcelTable, bbl: string): { total: number; fund: boolean; closed: string | null } {
   const f = purseOf(s, s.holdings[bbl]) === "fund" ? s.fund ?? null : null;
   if (!f) return { total: fundableNow(s, parcels), fund: false, closed: null };
@@ -2045,20 +2067,7 @@ export function startDevelopment(
   // Every closing cheque comes out of the purse that owns the deed: the
   // sponsor's (cash, then the line), or the vehicle's (cash, then a call on
   // uncalled commitments), booked as the vehicle's own movement.
-  const payAtClose = (amt: number, cat: "dev" | "debtSvc") => {
-    if (!(amt > 0)) return;
-    const f = vehicle ? next.fund : null;
-    if (!f) { fundAndBook(next, parcels, amt, cat, { bbl }); return; }
-    const call = Math.max(0, Math.min(f.uncalled, amt - Math.max(0, f.cash)));
-    if (call > 0) {
-      f.uncalled -= call;
-      f.called += call;
-      moveFundCash(f, call, "call");
-      logBooks(next, "lpCalled", call); // LP equity in for this job — not income
-    }
-    moveFundCash(f, -amt, "build");
-    logBooks(next, cat, amt, bbl, true);
-  };
+  const payAtClose = (amt: number, cat: "dev" | "debtSvc") => payFromPurse(next, parcels, bbl, amt, cat, !!vehicle);
   // The origination fee is the lender's, paid at close and never part of the
   // job's own budget — folding it into the prefund would hand it back later as
   // free construction money.

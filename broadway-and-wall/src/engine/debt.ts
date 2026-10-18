@@ -1682,16 +1682,18 @@ export function tickLoan(
     // tell the difference between "the market will not renew this" and "the
     // ladder did not ask". A maturing performing loan is renewed by whoever will
     // write it, and a borrower takes the cheapest of them.
-    const { fee, product, qd } = balloonLadder(s, parcels, h, rec, loan.balance);
+    const { fee, product, qd, guarantor } = balloonLadder(s, parcels, h, rec, loan.balance);
     let renewed = false;
-    if (qd.principal >= loan.balance + fee) {
+    // The desk has to advance the balance; the fee is paid from the account,
+    // or added to the note when the desk's sizing has room for it too.
+    if (qd.principal >= loan.balance && (qd.principal >= loan.balance + fee || fundableNow(s, parcels) >= fee)) {
       const rolled = loan.balance;
       // ORIGINATE CAN REFUSE. It returns null on a shut window, a failed
       // condition test or a sub-$100k cheque, and this used to assume it never
       // did: the deed came out free and clear, the 1% fee was paid anyway, and
       // the lender's paper simply evaporated. Guard it and walk the rest of the
       // ladder's answers — retire it, write the gap, or open a file.
-      const fresh = originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab, undefined, rec.buildSpec);
+      const fresh = originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab, guarantor, rec.buildSpec);
       if (fresh) {
         h.loan = fresh;
         fresh.balance = fresh.principal = rolled;
@@ -1759,7 +1761,7 @@ export function tickLoan(
         // lev=1 with no hair (and the wrong class on land) used to write a
         // bigger loan than "today's market only refinances $X" claimed.
         h.loan = qd.principal > 100_000
-          ? originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab, undefined, rec.buildSpec)
+          ? originate(s, product, value, noi, hair.mult, h.condition, quoteClass, stab, guarantor, rec.buildSpec)
           : null;
         if (h.loan && h.loan.balance !== qd.principal) {
           h.loan.balance = h.loan.principal = qd.principal;
@@ -2215,6 +2217,9 @@ export function balloonLadder(
   s: GameState, parcels: ParcelTable, h: Holding, rec: ParcelRecord, balance: number,
 ) {
   const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(s, parcels, h, rec);
+    // The sponsor signs the renewal the way it signs a refinance: recourse
+    // desks size against its balance sheet, so the ladder must quote that too.
+    const guarantor: Guarantor = { nw: netWorth(s, parcels) };
     const ladder = (vacantDirt ? ["land"] : ["pelican", "ashford", "agencyFixed", "conduit", "bowline", "savings25", "savings", "harbor", "cordage"])
       .map(productById)
       .filter((p) => productOpen(s, p) && windowOpen(s, p)
@@ -2223,7 +2228,7 @@ export function balloonLadder(
         // `originate` refuses at the table after the ladder has already picked.
         && conditionOk(p, h.condition, rec.buildSpec));
     const sized = ladder.map((p) => {
-      const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition);
+      const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition, guarantor);
       return { p, qd: { ...raw, principal: Math.round(raw.principal * hair.mult) } };
     });
     // THE LENDER'S OWN UNDERWRITING DECIDES, NOT A PREFERENCE ORDER. A quote
@@ -2258,7 +2263,7 @@ export function balloonLadder(
     // the same desk at the same rate on the Refi screen the month before.
     const fee = Math.round(balance * (REFI_FEE + product.points))
       + (product.floating ? capPremiumOn(balance) : 0);
-  return { ladder, fee, pick, product, qd, clears: qd.principal >= balance + fee, value, noi, vacantDirt, quoteClass, hair, stab };
+  return { ladder, fee, pick, product, qd, guarantor, clears: qd.principal >= balance && (qd.principal >= balance + fee || fundableNow(s, parcels) >= fee), value, noi, vacantDirt, quoteClass, hair, stab };
 }
 
 /**
@@ -2449,7 +2454,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
             : "Proceeds don't cover the payoff — you're underwater on this refi.",
     };
   }
-  const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab, undefined, rec.buildSpec);
+  const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab, { nw: netWorth(next, parcels) }, rec.buildSpec);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
   // PRINCIPAL INTO CASH IS A LEDGER EVENT. Fees stay in debtSvc; net new
   // principal that lands in the operating account is `borrowed` — the bucket

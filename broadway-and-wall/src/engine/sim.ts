@@ -1608,7 +1608,7 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
     };
   }
   const monthlyDebt = Object.values(s.holdings).reduce(
-    (a, h) => a + (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0), 0,
+    (a, h) => purseOf(s, h) === "fund" ? a : a + (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0), 0,
   )
     + (s.facility?.monthlyPmt ?? 0)
     + ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + 4)) / 100 / 12;
@@ -1929,6 +1929,43 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
           + `${loanLender(h.loan!)} files at three`,
       });
     }
+    // THE JUNIOR HAS A CLOCK TOO. Mezz misses and its balloon used to reach the
+    // player only as a news line the month the file opened.
+    if (h.mezz && h.mezz.balance > 0 && !s.workouts?.[h.bbl]) {
+      const m = h.mezz;
+      const holder = m.holder ?? "Cordage Debt Partners";
+      if ((m.arrearsMs ?? 0) > 0) {
+        out.push({
+          critical: true,
+          key: `mezz-arrears:${h.bbl}:${m.arrearsMs}`,
+          label: `${addr(h.bbl)} mezz has missed ${m.arrearsMs} coupon${m.arrearsMs === 1 ? "" : "s"} — ${holder} files at three`,
+        });
+      }
+      const mo = m.maturityM - s.month;
+      if (mo > 0 && mo <= 12) {
+        const covered = (parcels ? fundableNow(s, parcels) : s.cash) >= m.balance;
+        out.push({
+          // Retired from liquidity at maturity when the firm can: then it is a notice.
+          soft: covered,
+          key: `mezz-balloon:${h.bbl}:${covered ? "paid" : "short"}`,
+          label: `${addr(h.bbl)}: mezz balloon due ${monthLabel(m.maturityM)} — ${money(m.balance)} to ${holder}`
+            + (covered ? ", retired from cash" : " and you cannot clear it today"),
+          lastM: m.maturityM,
+        });
+      }
+    }
+    // A TENANT THAT FILED AND WENT DARK. A quarter of the building or more
+    // emptied mid-lease is a hole in the income the debt was sized on — it
+    // stops the clock the month it happens; a smaller suite is on the docket.
+    if (h.wentDark && h.wentDark.q === s.month) {
+      const d = h.wentDark;
+      out.push({
+        soft: d.share < 0.25,
+        key: `tenant-dark:${h.bbl}:${s.month}`,
+        label: `${d.name} filed and went dark at ${addr(h.bbl)} — ${Math.round(d.sf / 1000)}k sf, `
+          + `${Math.round(d.share * 100)}% of the building, back mid-lease`,
+      });
+    }
     // A BALLOON THAT RENEWED. New lender, new coupon, new term on the largest
     // liability against a building — announced once, in the month it happened.
     if (h.loan && (h.loan as { renewedM?: number }).renewedM === s.month) {
@@ -2154,7 +2191,8 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     // Forward runway: cash still positive but less than three months of
     // contractual debt service. Waiting for cash < 0 is waiting for the clock.
     const monthlyDebt = Object.values(s.holdings).reduce(
-      (a, h) => a + (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0), 0,
+      // A fund deed's debt is paid from the fund's purse, not the sponsor's.
+      (a, h) => purseOf(s, h) === "fund" ? a : a + (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0), 0,
     )
       // Use the contractual facility coupon, not an IO proxy off balance×rate —
       // post-IO amortizing paper is larger, and the runway warning was quiet
@@ -2356,6 +2394,20 @@ export const OPPORTUNITY_KEYS = new Set([
  * a broker's call, a first look, another firm's repossessed book, a board
  * that wants to sell, the county docket — all wait on the docket.
  */
+/**
+ * AN ANSWER TO SOMETHING YOU STARTED IS NOT AN OPPORTUNITY. A bid on a deed
+ * you listed, or on a book you put up, is the reply the firm asked for and
+ * lapses if unread — the default clock stops for it, as Settings promise.
+ * An unsolicited approach on a deed you never listed still waits on Deals.
+ */
+function answersYourListing(s: GameState, key: string): boolean {
+  const [head, bbl] = key.split(":");
+  if (head === "portfolio-bid") return !!s.portfolioSale;
+  if (head !== "offer" && head !== "sale-bids") return false;
+  const sale = s.holdings[bbl]?.sale;
+  return !!sale && !sale.unsolicited;
+}
+
 export function opportunitiesStop(s: GameState): boolean {
   return s.clockStops === "everything" || s.clockStops === "opportunities";
 }
@@ -2381,11 +2433,11 @@ export function stopRule(s: GameState, parcels: ParcelTable, seen?: ReadonlySet<
   // the stops that did. "opportunities" lets those stop it too; "everything"
   // adds the soft notices. A critical item stops it in every mode.
   const mode = s.clockStops;
-  const counts = (a: AttentionItem) => a.critical ? true
+  const counts = (a: AttentionItem, st: GameState) => a.critical ? true
     : seenSet?.has(a.key) ? false
     : mode === "everything" ? true
     : mode === "opportunities" ? !a.soft
-    : !a.soft && !OPPORTUNITY_KEYS.has(a.key.split(":")[0]);
+    : !a.soft && (!OPPORTUNITY_KEYS.has(a.key.split(":")[0]) || answersYourListing(st, a.key));
   // Critical first: if a foreclosure and a broker's call land the same month,
   // the stop names the foreclosure.
   // A SWAN STOPS THE CLOCK, IN EVERY MODE (owner, Oct 2026: "I missed a
@@ -2395,16 +2447,20 @@ export function stopRule(s: GameState, parcels: ParcelTable, seen?: ReadonlySet<
   // it that month, whatever the clock or card settings.
   // ...and so does the central bank: a rate decision or a new chair (owner,
   // Oct 2026, "changes to the fed stop the game as well").
-  const stops = (k: string) => k === "swan" || k === "fed";
-  const swansBefore = new Set((s.alerts ?? []).filter((a) => stops(a.kind)).map((a) => a.id));
+  // A ground tenant's default or the failure of a bank holding your debt or
+  // deposits (`Alert.stops`) is the firm's own money: it stops the clock the
+  // way a docket item does, in every mode but after the swan and the Fed.
+  const stops = (a: { kind: string; stops?: boolean }) => a.kind === "swan" || a.kind === "fed" || !!a.stops;
+  const swansBefore = new Set((s.alerts ?? []).filter(stops).map((a) => a.id));
   return (cur) => {
-    const swan = (cur.alerts ?? []).find((a) => stops(a.kind) && !swansBefore.has(a.id));
+    const fresh = (cur.alerts ?? []).filter((a) => stops(a) && !swansBefore.has(a.id));
+    const swan = fresh.find((a) => a.kind === "swan" || a.kind === "fed") ?? fresh[0];
     if (swan) return {
       key: `${swan.kind}:${swan.id}`,
-      label: swan.kind === "fed" ? swan.title : `${swan.tone === "good" ? "A white swan" : "A black swan"} — ${swan.title}`,
+      label: swan.kind !== "swan" ? swan.title : `${swan.tone === "good" ? "A white swan" : "A black swan"} — ${swan.title}`,
       critical: swan.kind === "swan" && swan.tone !== "good",
     };
-    const due = attentionItems(cur, parcels).filter((a) => counts(a) && (a.lastM !== undefined
+    const due = attentionItems(cur, parcels).filter((a) => counts(a, cur) && (a.lastM !== undefined
       ? cur.month >= a.lastM && !dueAtStart.has(a.key)
       : !before.has(a.key)));
     return due.find((a) => a.critical) ?? due[0];

@@ -7924,6 +7924,9 @@ export class RealCityLayer {
     // the lot as drawn and tells the desk which fit, so it can say so.
     if (this.preview && it.bbl === this.preview.bbl && this.onPreviewFits) {
       const fitsNow = SIGNATURE_FORMS.filter((f) => formFits(f, h) && this.signatureTower(ring, h, fam, tint, it.bbl, k, shop, it.cls, f.key, ov, true)).map((f) => f.key);
+      // ...and whether it can carry a pitched roof: the gable and hip are cut
+      // on a four-cornered footprint and anything else is drawn flat.
+      if (ring.length === 4) fitsNow.push("roof:gable", "roof:hip");
       this.onPreviewFits(fitsNow);
     }
     const named = d?.signature ? SIGNATURE_BY_KEY.get(d.signature as SignatureKey) : undefined;

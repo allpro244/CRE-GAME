@@ -1377,6 +1377,7 @@ export function tickLenders(s: GameState) {
       // they do about it — what this desk was lending THEM.
       raiseAlert(s, {
         kind: "bank", tone: "bad",
+        stops: (l.yours ?? 0) > 0 || wasOurs,
         title: `${l.name} has been closed`,
         body: l.kind === "bank"
           ? `The examiners closed them on Friday and the deposit insurer sold the franchise to an acquirer the same `

@@ -98,7 +98,7 @@ quietly goes to the wrong party.
    1. the investor rank (§3.4, relative)
    2. the finite investor pool and city attractiveness (§3.1), for the player
       and rival funds only — **first step done** (`investors.ts`, `raise.ts`):
-      a yearly pool at ~$600 of private real-estate equity a head, scaled by
+      a yearly pool at ~$600 (raised to ~$1,500 in Oct 2026, the whole of the equity reaching US commercial property) a head, scaled by
       the city's attractiveness (job growth, unemployment vs the nation) and
       split by investor type, each opening at a band; rivals entering the
       city draw it down (entry does not wait on it yet); the player raises
@@ -1738,3 +1738,20 @@ removes the flag on buy-in. `vehicleOf` makes that one rule.
    (`owners: { vehicleId, share }[]`) with a save migration
    (`SAVE_VERSION` bump), and add deal vehicles as a new kind.
 
+
+## Scale opens doors (Oct 2026)
+
+The owner's note: being one of the wealthiest, most successful firms should
+give real leverage with investors. It now does, three ways, all from the
+firm's place on the street by equity at the quarterly ranking:
+- **Band.** The rank band is the better of the record rank and the size rank,
+  still capped by the record's score floors (`floorBand`). A big firm gets the
+  meeting; it cannot buy a pension's money with no record of handling anyone's.
+- **Terms and speed** (`scaleMult`, 1× at the median firm, up to 2× at the
+  top):
+  - outside equity per dollar of the sponsor's own is multiplied;
+  - every source's monthly commitment hazard is multiplied.
+- **Reach.** The open pools are multiplied by the same factor: the largest
+  managers raise national allocations as well as the city's.
+
+The pool itself is ~$1,500 a head a year (was $600). See `investors.ts`.

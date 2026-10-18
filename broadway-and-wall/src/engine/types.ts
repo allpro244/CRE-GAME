@@ -3472,6 +3472,8 @@ export interface GameState {
    */
   reputation?: {
     band: import("./reputation").Band; pending?: import("./reputation").Band; pendingQ?: number; score: number; rank: number; of: number; m: number;
+    /** The player's place on the street by equity at the last quarterly ranking (reputation.ts scaleMult reads it). */
+    sizeRank?: number;
     /** Every living rival's band at the last quarterly ranking, by firm id — what investors read when a rival raises (reputation.ts rivalBand). */
     street?: Record<string, import("./reputation").Band>;
   };

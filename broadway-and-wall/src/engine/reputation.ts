@@ -409,7 +409,8 @@ export function nextBandNeeds(s: GameState): { next: Band; rows: { label: string
   if (bandIdx(next) >= bandIdx("Emerging") && me) {
     let cut = 0;
     for (let r = 1; r <= of; r++) if (bandIdx(rankBand(r, of)) >= bandIdx(next)) cut = r;
-    rows.push({ label: "Rank on the street", have: `#${me.rank} of ${of}`, need: `#${cut} or better`, ok: me.rank <= cut });
+    const best = Math.min(me.rank, me.sizeRank);
+    rows.push({ label: "Rank on the street (record or size)", have: `#${me.rank} by record · #${me.sizeRank} by size`, need: `#${cut} or better on either`, ok: best <= cut });
   }
   return { next, rows };
 }
@@ -417,7 +418,29 @@ export function nextBandNeeds(s: GameState): { next: Band; rows: { label: string
 /** Rivals' styles that run outside capital as a matter of course (count as a realised investor vehicle). */
 const INSTITUTIONAL_STYLES = new Set(["core", "pe", "reit", "opportunistic", "merchant", "foreign"]);
 
-export interface FirmStanding { id: string; name: string; score: number; n: number; rank: number; band: Band }
+export interface FirmStanding { id: string; name: string; score: number; n: number; rank: number; band: Band; sizeRank: number; eq: number }
+
+/** A firm's equity as investors see it: the player's net worth, a rival's book less its debt plus its cash. */
+function firmEq(s: GameState, r?: Rival): number {
+  if (!r) return Math.max(0, s.nwHistory?.[s.nwHistory.length - 1] ?? 0);
+  return Math.max(0, (r.aum ?? 0) - r.debt + r.cash);
+}
+const maxBand = (a: Band, b: Band) => (bandIdx(a) >= bandIdx(b) ? a : b);
+
+/**
+ * SCALE OPENS DOORS (owner, Oct 2026). Money follows the biggest names:
+ * fundraising concentrates in the largest managers, who also draw on capital
+ * from well beyond their own city. A firm's place on the street BY EQUITY
+ * multiplies what investors put in per dollar of its own, how fast they
+ * commit, and how much out-of-town money it can reach — 1x at the median
+ * firm, rising to 2x at the top. Read from the quarterly ranking.
+ */
+export function scaleMult(s: GameState): number {
+  const r = s.reputation;
+  if (!r?.sizeRank || !(r.of > 1)) return 1;
+  const pct = (r.of - r.sizeRank) / (r.of - 1);
+  return 1 + Math.pow(Math.max(0, (pct - 0.5) / 0.5), 2);
+}
 
 /**
  * THE STREET'S RANKING. Every living firm, scored and placed. Ties break
@@ -425,20 +448,28 @@ export interface FirmStanding { id: string; name: string; score: number; n: numb
  * stream is drawn and the economy's random draws never move.
  */
 export function rankStreet(s: GameState): FirmStanding[] {
-  const rows: { id: string; name: string; sc: ReturnType<typeof scoreOf>; bornM: number; fund: boolean; inst: boolean }[] = [];
+  const rows: { id: string; name: string; sc: ReturnType<typeof scoreOf>; bornM: number; fund: boolean; inst: boolean; eq: number }[] = [];
   const pe = playerEvidence(s);
   // Blue-chip needs a realised fund that returned its capital.
   const fundDone = (s.fundHistory ?? []).some((f) => f.called > 0 && f.distributed >= f.called);
-  rows.push({ id: "you", name: "You", sc: scoreOf(pe, s.month), bornM: 0, fund: fundDone, inst: false });
+  rows.push({ id: "you", name: "You", sc: scoreOf(pe, s.month), bornM: 0, fund: fundDone, inst: false, eq: firmEq(s) });
   for (const r of s.rivals ?? []) {
     if (r.failedM !== undefined || r.retiredM !== undefined) continue;
-    rows.push({ id: r.id, name: r.name, sc: scoreOf(rivalEvidence(s, r), s.month), bornM: r.bornM, fund: false, inst: INSTITUTIONAL_STYLES.has(r.style) });
+    rows.push({ id: r.id, name: r.name, sc: scoreOf(rivalEvidence(s, r), s.month), bornM: r.bornM, fund: false, inst: INSTITUTIONAL_STYLES.has(r.style), eq: firmEq(s, r) });
   }
   rows.sort((a, b) => b.sc.score - a.sc.score || b.sc.n - a.sc.n || a.bornM - b.bornM || (a.id < b.id ? -1 : 1));
   const of = rows.length;
+  // The street by size, for the better of the two rank bands: a firm among
+  // the biggest gets the meeting its record alone would not — but never past
+  // the floors its record sets (floorBand), so size cannot buy a pension's
+  // money for a firm that has never handled anyone else's.
+  const bySize = [...rows].sort((a, b) => b.eq - a.eq || (a.id < b.id ? -1 : 1));
+  const sizeRank = new Map(bySize.map((x, i) => [x.id, i + 1]));
   return rows.map((x, i) => {
     const sc = x.inst && x.sc.investorDeals === 0 ? { ...x.sc, investorDeals: x.sc.deals } : x.sc;
-    return { id: x.id, name: x.name, score: Math.round(x.sc.score * 10) / 10, n: x.sc.n, rank: i + 1, band: minBand(rankBand(i + 1, of), floorBand(sc, x.fund)) };
+    const sr = sizeRank.get(x.id) ?? of;
+    return { id: x.id, name: x.name, score: Math.round(x.sc.score * 10) / 10, n: x.sc.n, rank: i + 1, sizeRank: sr, eq: x.eq,
+      band: minBand(maxBand(rankBand(i + 1, of), rankBand(sr, of)), floorBand(sc, x.fund)) };
   });
 }
 
@@ -495,7 +526,8 @@ export function updateReputation(s: GameState): void {
   }
   const street: Record<string, Band> = {};
   for (const f of rankStreet(s)) if (f.id !== "you") street[f.id] = f.band;
-  s.reputation = { band, pending, pendingQ, score: r.score, rank: r.rank, of: r.of, m: s.month, street };
+  const me = rankStreet(s).find((x) => x.id === "you");
+  s.reputation = { band, pending, pendingQ, score: r.score, rank: r.rank, of: r.of, m: s.month, street, sizeRank: me?.sizeRank };
 }
 
 /**
@@ -533,7 +565,9 @@ export const BAND_TERMS: Record<Band, BandTerms> = {
 /** The terms the player raises on today. */
 export function playerTerms(s: GameState): BandTerms & { band: Band } {
   const band = s.reputation?.band ?? "Unknown";
-  return { ...BAND_TERMS[band], band };
+  const t = BAND_TERMS[band];
+  // Scale buys more outside money per dollar of the sponsor's own (scaleMult).
+  return { ...t, perOwn: t.perOwn > 0 ? +(t.perOwn * scaleMult(s)).toFixed(2) : 0, band };
 }
 
 /** The waterfall in a line: "9% pref · 20% to you above 12% · 30% above 18%". */

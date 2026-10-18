@@ -12,7 +12,7 @@ import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engin
 import { portfolioOccupancy, portfolioRentPsf } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { nextDue } from "./nextDue";
-import { DESKS, deskOf, deskCount, deskLanding, tabCounts, tabLabel, visibleTabs } from "./desks";
+import { DESKS, tabCounts, tabLabel, RAIL_GROUPS, PAGE_ICON, railEntry } from "./desks";
 import DeltaChip from "@/ui/vitals/DeltaChip";
 import Waterfall, { usablePrev } from "@/ui/vitals/Waterfall";
 
@@ -107,7 +107,11 @@ export default function TopBar() {
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
   }, []);
-  const railCompact = railPref === "auto" ? narrow : railPref === "compact";
+  // Labels unless the player asks for icons: a rail of bare symbols at
+  // laptop widths left people guessing what each one opened. Narrow windows
+  // get a slimmer labelled rail instead (shell.css).
+  const railCompact = railPref === "compact";
+  void narrow;
   const setRailCompact = (v: boolean) => {
     const next = v ? "compact" : "full";
     setRailPref(next);
@@ -652,46 +656,49 @@ export default function TopBar() {
           </div>
         </div>
         <div className="siderail-scroll">
-          {/* SIX DESKS. Each is a job, and the rooms that serve it are tabs
-              inside (see desks.ts). The badge is everything waiting across the
-              desk's tabs; the tab strip at the top of the desk says where. */}
-          <div className="rail-group" role="group" aria-label="Desks">
-            {DESKS.map((d) => {
-              const on = deskOf(page)?.id === d.id;
-              const n = deskCount(d, counts);
-              const warn = d.id === "capital" ? counts.debtWarn : null;
-              const debtBal = counts.debtBal ?? 0, debtWall = counts.debtWall ?? 0;
-              const title = [
-                `${d.label} — ${d.note} (${d.key})`,
-                visibleTabs(d, game, page).length > 1 ? `Tabs: ${visibleTabs(d, game, page).map((t) => t.label).join(", ")}.` : "",
-                d.id === "market" && (counts.market ?? 0) > 0 && counts.bcallSoon !== undefined
-                  ? `${counts.market} file${counts.market === 1 ? "" : "s"} waiting; the soonest off-market call lapses in ${counts.bcallSoon} mo.` : "",
-                d.id === "capital" && debtBal > 0
-                  ? `${(debtBal / 1e6).toFixed(1)}M outstanding${warn ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% matures inside 3y` : ""}.` : "",
-              ].filter(Boolean).join(" ");
-              return (
-                <button
-                  key={d.id}
-                  type="button"
-                  className={"rail-item" + (on ? " on" : "")}
-                  aria-current={on ? "page" : undefined}
-                  title={title}
-                  onClick={() => setPage(on && page !== "property" ? "none" : deskLanding(d, counts, game))}
-                >
-                  <span className="rail-ico" aria-hidden="true">{d.icon}</span>
-                  <span className="rail-label">{d.label}</span>
-                  {/* A NUMBER MEANS AN ANSWER IS OWED. City's count was this
-                      month's news — lit on nearly every screen, which teaches a
-                      player that badges are wallpaper. News is unread, not
-                      waiting: a dot here, the count on the News tab inside. */}
-                  {n > 0 && d.id === "city" ? <span className="rail-dot" aria-label="new on the tape" />
-                    : n > 0 ? <span className="rail-badge" aria-label={`${n} waiting`}>{n}</span>
-                    : warn ? <span className="rail-badge rail-badge-warn" aria-label={warn === "swept" ? "cash sweep on" : "maturity wall"}>{warn === "swept" ? "⚠" : "!"}</span>
-                    : <kbd className="rail-key" aria-hidden="true">{d.key}</kbd>}
-                </button>
-              );
-            })}
-          </div>
+          {/* EVERY ROOM, NAMED, UNDER THE JOB IT SERVES (desks.ts RAIL_GROUPS).
+              It was six bare icons over seventeen rooms; now each room is its
+              own labelled line and carries its own badge. */}
+          {RAIL_GROUPS.map((grp) => (
+            <div key={grp.label} className="rail-group" role="group" aria-label={grp.label}>
+              <div className="rail-group-label">{grp.label}</div>
+              {grp.pages.map((p) => {
+                const e = railEntry(p);
+                if (!e) return null;
+                if (e.tab.when && page !== p && !(game && e.tab.when(game))) return null;
+                const on = page === p || (p === "portfolio" && page === "property");
+                const n = counts[p] ?? 0;
+                const warn = p === "debt" ? counts.debtWarn : null;
+                const debtBal = counts.debtBal ?? 0, debtWall = counts.debtWall ?? 0;
+                const label = e.tab.label === "Holdings" ? "Portfolio" : e.tab.label;
+                const title = [
+                  `${label} — ${e.tab.note}`,
+                  p === "market" && n > 0 && counts.bcallSoon !== undefined
+                    ? `${n} file${n === 1 ? "" : "s"} waiting; the soonest off-market call lapses in ${counts.bcallSoon} mo.` : "",
+                  p === "debt" && debtBal > 0
+                    ? `${(debtBal / 1e6).toFixed(1)}M outstanding${warn ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% matures inside 3y` : ""}.` : "",
+                ].filter(Boolean).join(" ");
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    className={"rail-item" + (on ? " on" : "")}
+                    aria-current={on ? "page" : undefined}
+                    title={title}
+                    onClick={() => setPage(on && page !== "property" ? "none" : p)}
+                  >
+                    <span className="rail-ico" aria-hidden="true">{PAGE_ICON[p] ?? e.desk.icon}</span>
+                    <span className="rail-label">{label}</span>
+                    {/* A NUMBER MEANS AN ANSWER IS OWED; the tape's news is unread, not owed — a dot. */}
+                    {n > 0 && p === "news" ? <span className="rail-dot" aria-label="new on the tape" />
+                      : n > 0 ? <span className="rail-badge" aria-label={`${n} waiting`}>{n}</span>
+                      : warn ? <span className="rail-badge rail-badge-warn" aria-label={warn === "swept" ? "cash sweep on" : "maturity wall"}>{warn === "swept" ? "⚠" : "!"}</span>
+                      : null}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
         {/* THE TOOLS, ONE ROW. Saves, the primer, settings and the view modes
             are things you reach for, not places you work — icons with their
@@ -728,7 +735,7 @@ export default function TopBar() {
             title="Map only — hide firm pages and watch the skyline (M). Inbox and glance cards stay."
             onClick={() => setMapOnly(!mapOnly)}
           >
-            <span className="rail-ico" aria-hidden="true">◈</span><span className="rail-label">Map only</span><kbd className="rail-key" aria-hidden="true">M</kbd>
+            <span className="rail-ico" aria-hidden="true">◈</span><span className="rail-label">Map</span><kbd className="rail-key" aria-hidden="true">M</kbd>
           </button>
           <button
             type="button"
@@ -736,7 +743,7 @@ export default function TopBar() {
             title="Photo frame — hide all chrome for a clean skyline still (P)"
             onClick={() => useStore.getState().setPhotoFrame(true)}
           >
-            <span className="rail-ico" aria-hidden="true">◻</span><span className="rail-label">Photo frame</span><kbd className="rail-key" aria-hidden="true">P</kbd>
+            <span className="rail-ico" aria-hidden="true">◻</span><span className="rail-label">Photo</span><kbd className="rail-key" aria-hidden="true">P</kbd>
           </button>
           {/* No window.confirm: a two-click arm-then-fire needs nothing from the
               browser. It erases this campaign and goes back to the start
@@ -752,7 +759,7 @@ export default function TopBar() {
                 useStore.getState().newRun();
               }}
             >
-              <span className="rail-ico" aria-hidden="true">↺</span><span className="rail-label">{armNewRun ? "Erase this game?" : "New city"}</span>
+              <span className="rail-ico" aria-hidden="true">↺</span><span className="rail-label">{armNewRun ? "Erase?" : "New city"}</span>
             </button>
           </div>
           {fpsOn && (

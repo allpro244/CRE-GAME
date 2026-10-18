@@ -613,3 +613,41 @@
   .app .siderail, .app .rail-item { transition: none; }
   .app .advance-pulse { animation: none; }
 }
+
+/* ---------- the rail names every room (Oct 2026) ----------
+   Seventeen rooms in four groups, each a labelled line. Laptop widths get a
+   slimmer labelled rail rather than bare icons; icons only when the player
+   asks for them (the Collapse toggle) or on a phone. */
+.app .siderail .rail-group { margin-bottom: 6px; }
+.app .siderail .rail-group-label { padding: 10px 10px 3px; }
+.app .siderail .rail-group:first-child .rail-group-label { padding-top: 4px; }
+.app .siderail .rail-item { min-height: 30px; }
+@media (min-width: 761px) and (max-width: 1359px) {
+  :root { --rail-w-full: 184px; }
+  .app .siderail .rail-item { gap: 8px; padding-inline: 8px; }
+}
+/* The tools at the foot carry their names too: small tiles, the name under
+   the glyph, three to a row — a row of bare glyphs said nothing. */
+.app .siderail:not(.siderail-compact) .rail-foot {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;
+}
+.app .siderail:not(.siderail-compact) .rail-foot .rail-item {
+  flex-direction: column; justify-content: center; align-items: center;
+  padding: 6px 2px 5px; gap: 3px; min-height: 44px; text-align: center;
+}
+.app .siderail:not(.siderail-compact) .rail-foot .rail-label {
+  display: block; flex: none; width: 100%;
+  font-size: 10.5px; line-height: 1.1; text-align: center;
+}
+.app .siderail:not(.siderail-compact) .rail-foot .rail-key { display: none; }
+.app .siderail:not(.siderail-compact) .rail-foot > .city-pick { min-width: 0; display: flex; }
+.app .siderail:not(.siderail-compact) .rail-foot > .city-pick > .rail-item { flex: 1 1 auto; }
+.app .siderail:not(.siderail-compact) .rail-foot > .rail-collapse {
+  grid-column: 1 / -1; flex-direction: row; min-height: 26px; gap: 6px;
+}
+.app .siderail:not(.siderail-compact) .rail-foot > .rail-collapse .rail-label { width: auto; }
+.app .siderail:not(.siderail-compact) .rail-foot .rail-fps { grid-column: 1 / -1; }
+@media (max-width: 760px) {
+  .app .siderail .rail-foot { display: flex; flex-direction: column; }
+  .app .siderail .rail-foot .rail-label { display: none; }
+}

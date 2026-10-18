@@ -102,6 +102,31 @@ export const DESKS: readonly Desk[] = [
   },
 ];
 
+/**
+ * THE RAIL, ONE ROOM PER LINE (owner, Oct 2026: six icons hid seventeen
+ * rooms, and a rail that is only symbols tells nobody what they are clicking).
+ * Every room is its own named line, grouped under the job it serves. The
+ * desks above still own the rooms — the page header, the digit keys and the
+ * palette read them — the rail just stops making you open a desk to find one.
+ */
+export const RAIL_GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
+  { label: "Your firm", pages: ["portfolio", "leasing", "deals", "firm"] },
+  { label: "Buy", pages: ["market", "buildings", "notes"] },
+  { label: "Capital", pages: ["debt", "investors", "banks", "books"] },
+  { label: "The city", pages: ["economy", "pulse", "players", "news", "rankings"] },
+];
+export const PAGE_ICON: Partial<Record<Page, string>> = {
+  portfolio: "▦", leasing: "⊟", deals: "✎", firm: "☺",
+  market: "◎", buildings: "▥", notes: "✉",
+  debt: "⚖", investors: "◆", banks: "⌂", books: "≡",
+  economy: "∿", pulse: "♥", players: "♟", news: "☰", rankings: "★",
+};
+/** A room's own line on the rail: its tab (label, note, when) and the desk it belongs to. */
+export function railEntry(page: Page): { tab: DeskTab; desk: Desk } | null {
+  for (const d of DESKS) for (const t of d.tabs) if (t.page === page) return { tab: t, desk: d };
+  return null;
+}
+
 /** The property file belongs to the Portfolio desk even though it is not a tab. */
 export function deskOf(page: Page): Desk | null {
   if (page === "property") return DESKS[0];

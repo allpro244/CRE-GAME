@@ -353,6 +353,8 @@ interface AppState {
   develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed"; syndicate?: { outside: number } }, lender?: string, spec?: number) => void;
   /** The scheme on the Build desk, drawn on its lot in the 3D city while you design it. */
   designPreview: DesignPreview | null;
+  /** The landmark forms the previewed lot can hold, as the 3D city drew it (null until it has). */
+  designSigFits: string[] | null;
   setDesignPreview: (p: DesignPreview | null) => void;
   /** Stepped out of the Build desk to look at the scheme on the map (DesignPeekBar). */
   designPeek: boolean;
@@ -885,7 +887,8 @@ export const useStore = create<AppState>((set, get) => ({
     } catch { return false; }
   })(),
   designPreview: null,
-  setDesignPreview: (p) => set({ designPreview: p }),
+  designSigFits: null,
+  setDesignPreview: (p) => set(p ? { designPreview: p } : { designPreview: p, designSigFits: null }),
   designPeek: false,
   setDesignPeek: (v) => set(v ? { designPeek: true } : { designPeek: false, designSpin: false }),
   designCam: null,

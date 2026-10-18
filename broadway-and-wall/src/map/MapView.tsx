@@ -1682,8 +1682,12 @@ export default function MapView() {
   const designPreview = useStore((s) => s.designPreview);
   useEffect(() => {
     if (!mapReady) return;
-    const layer = threeRef.current as unknown as { setPreview?: (i: unknown) => void } | null;
+    const layer = threeRef.current as unknown as { setPreview?: (i: unknown) => void; onPreviewFits?: ((k: string[]) => void) | null } | null;
     if (!layer?.setPreview) return;
+    layer.onPreviewFits = (keys) => {
+      const cur = useStore.getState().designSigFits;
+      if (!cur || cur.join() !== keys.join()) useStore.setState({ designSigFits: keys });
+    };
     const p = designPreview;
     const month = useStore.getState().game?.month ?? 0;
     const FLOOR_M = 3.55;   // the storey the skyline effect below draws player stock at

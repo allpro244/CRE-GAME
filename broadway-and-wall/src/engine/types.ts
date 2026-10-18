@@ -948,6 +948,8 @@ export interface Development {
   leaseUpReserve?: number;
   equityBudget: number;   // your share of the budget
   equitySpent: number;
+  /** Construction spend paid so far, against the S-curve (dev.ts tick): budget × progress less this. */
+  buildSpent?: number;
   /** Most recent borrower capital call caused by a construction funding gap. */
   lastCapitalCall?: number;
   lastCapitalCallM?: number;

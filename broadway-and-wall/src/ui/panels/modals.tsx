@@ -210,6 +210,8 @@ function AuctionBody({
 }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
+  // Registration and the hammer both read cash plus the undrawn line (auction.ts).
+  const purse = parcels ? fundableNow(game, parcels) : game.cash;
   const focus = useStore((s) => s.focus);
   const auctionOpen = useStore((s) => s.auctionOpen);
   const popupsOff = useStore((s) => s.popupsOff);
@@ -376,13 +378,13 @@ function AuctionBody({
         </table>
         <div className="dim" style={{ marginTop: 6 }}>
           {Object.keys(parsed).length
-            ? <>Deposits due today: <b className="mono">{usd(dep)}</b> against {usd(game.cash)} of cash.</>
+            ? <>Deposits due today: <b className="mono">{usd(dep)}</b> against {usd(purse)} of cash and line.</>
             : a.lots.some((l) => l.kind === "note")
               ? "Your debt already bids on your own lots — enter a number only to protect the building above it."
               : "Enter a number to bid, or watch from the back. Most years, watching is right."}
         </div>
         <div className="modal-actions">
-          <button className="btn btn-buy" disabled={!Object.keys(parsed).length || dep > game.cash}
+          <button className="btn btn-buy" disabled={!Object.keys(parsed).length || dep > purse}
             onClick={() => { bidAuction(parsed); setSeenM(a.m); setAuctionOpen(false); }}>
             Register bids{dep > 0 ? ` · ${usd(dep)} down` : ""}
           </button>

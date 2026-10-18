@@ -341,7 +341,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     const w = lot.kind === "yours" ? s.workouts?.[lot.bbl] : undefined;
     const live =
       lot.kind === "note" ? !!note && note.perf === "nonperforming" && note.filedM !== undefined
-      : lot.kind === "yours" ? !!w && w.stage === "foreclosure" && !!s.holdings[lot.bbl]?.loan
+      // a mezz-only stack forecloses too (the docket admits it; see above)
+      : lot.kind === "yours" ? !!w && w.stage === "foreclosure"
+        && (!!s.holdings[lot.bbl]?.loan || (s.holdings[lot.bbl]?.mezz?.balance ?? 0) > 0)
       : lot.kind === "bank" ? (s.bankFcls ?? []).some((f) => f.bbl === lot.bbl) && !s.holdings[lot.bbl]
         && !!s.rivals?.find((r) => r.id === lot.borrowerId)?.bbls.includes(lot.bbl)
       : !s.holdings[lot.bbl] && !!s.rivals?.find((r) => r.id === lot.borrowerId)?.bbls.includes(lot.bbl);
@@ -371,7 +373,10 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     // your own note's lot the cash you owe is only the part above your debt
     const owedAtHammer = lot.kind === "note" ? Math.max(0, bid - lot.debt) : bid;
     let yours = bid;
-    if (yours > 0 && s.cash + deposit < owedAtHammer) {
+    // THE SAME PURSE AS REGISTRATION: cash plus the undrawn line. Winning
+    // debits the price and month-end draws the line for any gap, so a firm
+    // with room on its revolver could always close — and was told it could not.
+    if (yours > 0 && spendable(s, parcels).total + deposit < owedAtHammer) {
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `You could not close on ${lot.address} — the balance was due at the hammer and the cash was not there. `
@@ -386,7 +391,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     }
 
     const bestCash = Math.max(room, yours);
-    const youWin = yours > 0 && yours >= room && bestCash > protect
+    // AT the posted minimum is a sale: "minimum is X — bid that" has to win.
+    const youWin = yours > 0 && yours >= room && bestCash >= protect
       && !(lot.kind === "note");       // your own lot: handled below, credit bid first
     const notePlayerWins = lot.kind === "note" && (yours >= Math.max(room, lot.debt) || room <= lot.debt);
 
@@ -598,6 +604,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         }
       }
       // receiver lots that fail simply stay with the receiver for the drip
+      // ...and a bid that did not reach the holder's number is in the results.
+      if (yours > 0) said(lot.bbl, lot.address, "outbid", bid, 0, lot.holder,
+        `No bid reached ${lot.holder}'s number (${money(protect)}); it stays with them.`);
     }
   }
   // A BANK THAT TOOK MORE THAN ONE BUILDING OFF THE SAME BORROWER DOES NOT WANT

@@ -146,7 +146,9 @@ export function yearReview(
   }
   const nwPct = start.nw > 0 ? (end.nw / start.nw - 1) * 100 : 0;
   const streetPct = start.medianRival > 0 ? (end.medianRival / start.medianRival - 1) * 100 : 0;
-  const cash = b ? Math.round(b.noi - b.debtSvc) : 0;
+  // The Books page's own buildings line: income less leasing and capital
+  // spend, less debt service (overhead and tax are shown on their own rows).
+  const cash = b ? Math.round(b.noi - b.leasing - b.capex - b.debtSvc) : 0;
   const up = start.rank - end.rank;
   const beat = nwPct - streetPct;
   const verdict =

@@ -1767,7 +1767,12 @@ all in `reputation.ts playerEvidence`:
 1. **Held deeds at the mark.** Each deed held two years or more (the
    quarterly `returnsToDate` read, stored as `reputation.held`) counts on its
    equity multiple at the appraisal, at 60% of the weight the same result
-   would earn sold. A mark under cost counts in full.
+   would earn sold — a loss as well as a gain, weighed against the whole
+   book (realised and held); within 10% of cost a mark is noise and counts
+   for nothing. A deed the ledger cannot speak for (pooled in the facility,
+   merged into a site, bought before the ledger) reads its unlevered
+   multiple, value over cost basis, which errs low (`standing.ts
+   recordMarks`).
 2. **Own money on its multiple** (`ownMoneyEvidence`): 2.5x or better is +8,
    1.6x +6, a profit +4 — sold or held — instead of +4 for every profit.
 3. **The firm's growth implies a record**, by the rule that credits a
@@ -1780,3 +1785,8 @@ Institutional also opens to a long own-money record (12+ experience and
 `$S/hold/synth.mjs` shape): #1 by size with nothing realised reads
 Institutional (score 52, 2x scale); ten deeds at 2x at the top, 93; a
 mid-size firm with four 1.3x deeds, Emerging; a new player, 0 as before.
+
+Played (`$S/hold/hold.mjs`: stabilised buildings at 65% leverage, auto-lease
+on, never sells, never raises), two 40-year seeds: Unknown → Emerging →
+Proven → Institutional as the firm compounds to $97–138M at 3.9–5.1x median
+marks, 1.4–1.7x scale; no band drops from a single flat building.

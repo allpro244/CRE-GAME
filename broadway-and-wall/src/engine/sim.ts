@@ -1741,7 +1741,13 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   // key carries the listing month, so a relist is news again.
   for (const li of s.listings ?? []) {
     if (!s.watch?.includes(li.bbl)) continue;
-    out.push({ key: `watch:${li.bbl}:${li.listedM}`, label: `★ ${addr(li.bbl)} is on the tape` });
+    // one row per building: a starred bank-owned listing says both in this one
+    out.push({
+      key: `watch:${li.bbl}:${li.listedM}`,
+      label: li.reason === "receiver"
+        ? `★ ${addr(li.bbl)} is on the tape — bank-owned at ${money(li.ask)}${li.receiverFor ? ` (${li.receiverFor})` : ""}`
+        : `★ ${addr(li.bbl)} is on the tape`,
+    });
   }
   // THE FUND'S WINDOW IS CLOSING WITH MONEY UNSPENT. After the investment
   // period a vehicle cannot start anything new, and committed capital that was
@@ -1767,7 +1773,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   // the docket says so — on the docket, never a stop (an opportunity), so a
   // player with every card off still sees it in Next due and on Marketplace.
   for (const li of s.listings ?? []) {
-    if (li.reason !== "receiver" || li.listedM !== s.month || s.holdings[li.bbl]) continue;
+    if (li.reason !== "receiver" || li.listedM !== s.month || s.holdings[li.bbl] || s.watch?.includes(li.bbl)) continue;
     const off = li.mark && li.mark > 0 ? Math.round((1 - li.ask / li.mark) * 100) : 0;
     out.push({
       soft: true,

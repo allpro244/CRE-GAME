@@ -1966,6 +1966,8 @@ export interface Econ {
     pressureM?: number;
     /** The committee's last non-zero step, so a card can say when a cycle turns (market.ts). */
     lastStep?: number;
+    /** Month the last rate decision stopped the clock (market.ts: a crisis-sized move stops it once a year at most). */
+    lastFedStopM?: number;
   };
 
   /**

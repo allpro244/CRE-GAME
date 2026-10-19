@@ -28,7 +28,7 @@ import { leaseholdQuote, landBuybackCost, LEASEHOLD_STEP } from "@/engine/leaseh
 import { stakeQuote, buyoutCost, JV_SHARES, JV_MINORITY_DISCOUNT } from "@/engine/jv";
 import { syndicateView } from "@/engine/syndicate";
 import { recapQuote } from "@/engine/recap";
-import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
+import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD, dominantUse } from "@/engine/mix";
 import { ownerAt } from "@/engine/ownership";
 import { taxAppealQuote } from "@/engine/tax";
 import { usd, sf, pct, termLeft, pctSigned } from "@/ui/format";
@@ -524,10 +524,25 @@ function ParcelPanelInner({
           const or = occRead(rec, holding);
           return <Row k="Occupancy" v={occLabel(or)} title={occTitle(or)} />;
         })()}
-        {holding && isBuilt && unitStatus(rec, holding, game.month).byUse.map((u) => (
+        {holding && isBuilt && unitStatus(rec, holding, game.month).byUse.map((u) => u.use !== "multifamily" ? (() => {
+          // OFFICES AND SHOPS LET BY THE FOOT, NOT BY THE SUITE (owner, Oct
+          // 2026). Tenants take whatever size they need, so the row reads feet
+          // let of feet rentable and how many tenants hold them.
+          const ts = holding.tenants.filter((t) => (t.use ?? dominantUse(rec)) === u.use);
+          const let_ = ts.reduce((a, t) => a + t.sf, 0);
+          const all = Math.round(useRentableSf(rec, u.use));
+          return (
+            <Row
+              key={u.use}
+              k={`${USE_WORD[u.use][0].toUpperCase()}${USE_WORD[u.use].slice(1)} let`}
+              v={`${sf(Math.round(let_))} of ${sf(all)} · ${ts.length} tenant${ts.length === 1 ? "" : "s"}`}
+              bad={let_ < all * 0.6}
+            />
+          );
+        })() : (
           <Row
             key={u.use}
-            k={u.use === "multifamily" ? "Apartments let" : `${USE_WORD[u.use][0].toUpperCase()}${USE_WORD[u.use].slice(1)} spaces let`}
+            k="Apartments let"
             /* Flats quote the average of the leg, not the demise: the leg is
                divided into a whole number of apartments and they occupy all of
                it, so a 1,412 sf residential leg is two flats of 706 and saying

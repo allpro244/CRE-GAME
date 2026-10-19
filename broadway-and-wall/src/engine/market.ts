@@ -2986,13 +2986,19 @@ export function tickNation(s: GameState) {
       const body = `${up ? "Tightening" : "Easing"} from ${was.toFixed(2)}% with inflation at ${infl}% and unemployment at ${un}%. `
         + `Floating loans reset on the new rate next month (through any cap you bought); the short index is now ${shortIndexFor(n.policy, e.creditIdx ?? 1).toFixed(2)}%. `
         + (up ? "Dearer money reaches cap rates and lending before it reaches rents." : "Cheaper money reaches refinancing and land bids first, rents later.");
-      // THE MOVES THAT CHANGE THE STORY STOP THE GAME; THE STEPS ALONG IT DO
-      // NOT. A turn of the cycle, the first move on record, or half a point or
-      // more takes the screen. A routine quarter-point step in the direction
-      // the bank is already going is in the news — five stops a year was the
-      // tedium that made players switch cards off and miss the swans.
-      const big = turn || n.lastStep === undefined || n.lastStep === 0 || Math.abs(step) >= 0.5 - 1e-9;
+      // ONLY THE MASSIVE MOVES STOP THE GAME (owner, Oct 2026: "it should only
+      // pop up when something massive happens or the chair's switched"). A
+      // point or more in one meeting — the Volcker-scale moves — always takes
+      // the screen; a crisis-sized three-quarters takes it once, the first
+      // time after a calm year, and the meetings that follow it are in the
+      // news. Everything else, a new cycle's first move included, is in the
+      // news. (It used to stop on every turn of the cycle and every half
+      // point, which in a recession was most meetings.)
+      const mag = Math.abs(step);
+      const calmYear = n.lastFedStopM === undefined || s.month - n.lastFedStopM >= 12;
+      const big = mag >= 1 - 1e-9 || (mag >= 0.75 - 1e-9 && calmYear);
       if (big) {
+        n.lastFedStopM = s.month;
         raiseAlert(s, {
           kind: "fed",
           tone: up ? "bad" : "good",

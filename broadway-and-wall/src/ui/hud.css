@@ -15,6 +15,13 @@
    sparkline beside it. The movement now sits in the tile's own label row,
    and readouts shed by rank as the bar narrows instead of wrapping. */
 .app .topbar { flex-wrap: nowrap; }
+/* ...except on a phone, where one row cannot hold the clock and the readouts:
+   the time controls take a second row (shell.css, the 390 px check). */
+@media (max-width: 760px) {
+  .app .topbar { flex-wrap: wrap; }
+  /* date, cash and net worth fit beside the arrow; cash flow sheds (Portfolio has it) */
+  .app .topbar-vital .vital-pair { display: none; }
+}
 .app .topbar-game { flex: 1 1 0; min-width: 0; }
 .app .topbar-summary, .app .topbar-vital { flex-wrap: nowrap; min-width: 0; }
 .app .topbar-vital .nw-pair, .app .topbar-vital .vital-pair { gap: 0; }

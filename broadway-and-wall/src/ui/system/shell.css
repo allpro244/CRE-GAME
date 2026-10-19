@@ -651,3 +651,33 @@
   .app .siderail .rail-foot { display: flex; flex-direction: column; }
   .app .siderail .rail-foot .rail-label { display: none; }
 }
+
+/* ---------- a phone (Oct 2026 check at 390 px) ----------
+   The ≤760 rules above lost to the laptop rules on specificity: the foot kept
+   its labelled three-column grid inside a 60 px rail ("S. P. S."), group
+   names were clipped ("CAPITA"), and the time controls pushed the skip
+   button off the right edge. Same selectors, phone values. */
+@media (max-width: 760px) {
+  .app .siderail .rail-group-label {
+    font-size: 0; padding: 6px 0; margin: 0 10px;
+    border-top: 1px solid var(--border);
+  }
+  .app .siderail .rail-group:first-child .rail-group-label { border-top: 0; }
+  .app .siderail:not(.siderail-compact) .rail-foot { display: flex; flex-direction: column; }
+  .app .siderail:not(.siderail-compact) .rail-foot .rail-item { flex-direction: row; min-height: 34px; padding: 6px 0; }
+  .app .siderail:not(.siderail-compact) .rail-foot .rail-label { display: none; }
+  .app .topbar { gap: 6px 8px; padding: 6px 8px; flex-wrap: wrap; }
+  /* the readouts take the row beside the back arrow and wrap inside it... */
+  .app .topbar-game { flex: 1 1 0; min-width: 0; }
+  .app .topbar-summary, .app .topbar-vital { flex-wrap: wrap; min-width: 0; width: 100%; }
+  /* ...and the clock gets a row of its own, all four controls in reach */
+  .app .nav-cluster-time { flex: 1 1 100%; margin-left: 0; width: 100%; justify-content: space-between; gap: 4px; }
+  .app .nav-cluster-time .advance-btn { padding: 0 10px; height: 34px; min-height: 34px; }
+  .app .topbar .tstat { padding: 2px 8px 2px 6px; }
+  /* A wide table scrolls sideways inside its own box instead of hanging off
+     the page (the Marketplace tape is ~830 px of columns). */
+  .app .page table.tbl { display: block; max-width: 100%; overflow-x: auto; }
+  .app .page .deals-grid { grid-template-columns: minmax(0, 1fr); }
+  .app .page .deals-grid > section { min-width: 0; }
+  .app .primer-offer { max-width: calc(100vw - var(--rail-w, 60px) - 20px); box-sizing: border-box; }
+}

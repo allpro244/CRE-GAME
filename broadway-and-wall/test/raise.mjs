@@ -148,5 +148,25 @@ ok(launched >= 3, `raises launched on ${launched} runs`);
 ok(closedN >= 2, `and closed on ${closedN} (failed on ${failedN})`);
 ok(sourcesSeen.has("ff"), `sources recorded: ${[...sourcesSeen].join(", ")}`);
 ok(Math.abs(worst) <= 1, `cash identity every month: worst residual ${worst.toFixed(2)}`);
+// ── C ───────────────────────────────────────────────────────────────────────
+// THE BIGGEST FIRMS RAISE MORE. Same record, same job, same city: the firm at
+// the top of the street by size takes more outside money per dollar of its
+// own and reaches a deeper pool, so a job too big for a small sponsor's rule
+// is one a big sponsor can fill.
+console.log("\nC. size buys leverage with investors");
+{
+  const parcels = JSON.parse(JSON.stringify(P0));
+  const g = E.firstListings(E.newGame(9401, parcels, 1_000_000), parcels, bbls);
+  const at = (sizeRank) => { const g1 = structuredClone(g); g1.reputation = { band: "Emerging", score: 30, rank: 15, of: 30, m: g1.month, sizeRank }; return g1; };
+  const small = at(30), big = at(1);
+  const [ps, pb] = [E.playerTerms(small).perOwn, E.playerTerms(big).perOwn];
+  const [cs, cb] = [E.outsideCapacity(small), E.outsideCapacity(big)];
+  const [ms, mb] = [E.maxOutside(small, 40e6, 3e6), E.maxOutside(big, 40e6, 3e6)];
+  console.log(`  per own dollar ${ps} → ${pb}; pool reach ${M(cs)} → ${M(cb)}; most a $40M job can take ${M(ms)} → ${M(mb)}`);
+  ok(pb >= 1.9 * ps, "the biggest firm takes about twice the outside money per dollar of its own");
+  ok(cb > 1.5 * cs, "the biggest firm reaches a deeper pool");
+  ok(mb > 1.5 * ms, "so a big job a small sponsor cannot fill, a big one can");
+}
+
 console.log(fails ? "\nFAIL" : "\nPASS — the city's money, raised over time, every dollar on the ledger");
 process.exit(fails ? 1 : 0);

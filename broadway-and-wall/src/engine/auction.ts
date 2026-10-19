@@ -339,7 +339,14 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     // ---- pulled from the docket: the borrower found the money -------------
     const note = lot.noteId ? (s.notes ?? []).find((n) => n.id === lot.noteId) : undefined;
     const w = lot.kind === "yours" ? s.workouts?.[lot.bbl] : undefined;
-    const live = lotLive(s, lot);
+    const live =
+      lot.kind === "note" ? !!note && note.perf === "nonperforming" && note.filedM !== undefined
+      // a mezz-only stack forecloses too (the docket admits it; see above)
+      : lot.kind === "yours" ? !!w && w.stage === "foreclosure"
+        && (!!s.holdings[lot.bbl]?.loan || (s.holdings[lot.bbl]?.mezz?.balance ?? 0) > 0)
+      : lot.kind === "bank" ? (s.bankFcls ?? []).some((f) => f.bbl === lot.bbl) && !s.holdings[lot.bbl]
+        && !!s.rivals?.find((r) => r.id === lot.borrowerId)?.bbls.includes(lot.bbl)
+      : !s.holdings[lot.bbl] && !!s.rivals?.find((r) => r.id === lot.borrowerId)?.bbls.includes(lot.bbl);
     if (!live) {
       pulled++;
       if (bid > 0) {
@@ -645,47 +652,6 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
  */
 export const FIRST_DOCKET_M = 30;
 
-/** Is this lot still headed for the hammer? The borrower may have reinstated,
- *  the note been cured, or the building moved since July. */
-function lotLive(s: GameState, lot: AuctionLot): boolean {
-  const note = lot.noteId ? (s.notes ?? []).find((n) => n.id === lot.noteId) : undefined;
-  const w = lot.kind === "yours" ? s.workouts?.[lot.bbl] : undefined;
-  return lot.kind === "note" ? !!note && note.perf === "nonperforming" && note.filedM !== undefined
-    // a mezz-only stack forecloses too (the docket admits it; see above)
-    : lot.kind === "yours" ? !!w && w.stage === "foreclosure"
-      && (!!s.holdings[lot.bbl]?.loan || (s.holdings[lot.bbl]?.mezz?.balance ?? 0) > 0)
-    : lot.kind === "bank" ? (s.bankFcls ?? []).some((f) => f.bbl === lot.bbl) && !s.holdings[lot.bbl]
-      && !!s.rivals?.find((r) => r.id === lot.borrowerId)?.bbls.includes(lot.bbl)
-    : !s.holdings[lot.bbl] && !!s.rivals?.find((r) => r.id === lot.borrowerId)?.bbls.includes(lot.bbl);
-}
-
-/**
- * THE DOCKET THINS BETWEEN JULY AND THE HAMMER. A lot whose borrower
- * reinstated in the month between stayed on the sheet — counted in the
- * docket line, listed in the sale, open to a bid — until the hammer pulled it.
- * It comes off when it dies, with any deposit on it handed back.
- */
-function pruneDocket(s: GameState) {
-  const a = s.auction;
-  if (!a || s.month >= a.m) return;
-  for (let i = a.lots.length - 1; i >= 0; i--) {
-    const lot = a.lots[i];
-    if (lotLive(s, lot)) continue;
-    a.lots.splice(i, 1);
-    if (lot.yourBid) {
-      const dep = depositFor(lot, lot.yourBid);
-      a.deposit = Math.max(0, a.deposit - dep);
-      s.cash += dep; logBooks(s, "sold", dep);
-    }
-    s.news.unshift({
-      q: s.month, kind: "info",
-      text: `${lot.address} is off the county docket — the borrower reinstated, or the file died first.`
-        + (lot.yourBid ? ` Your ${money(depositFor(lot, lot.yourBid))} deposit came back.` : ""),
-    });
-  }
-  if (!a.lots.length) { s.cash += a.deposit; if (a.deposit) logBooks(s, "sold", a.deposit); delete s.auction; }
-}
-
 export function tickAuction(s: GameState, parcels: ParcelTable) {
   tickBankForeclosures(s, parcels);
   // A funded reinstate pulls your building off the docket BEFORE the hammer.
@@ -693,7 +659,6 @@ export function tickAuction(s: GameState, parcels: ParcelTable) {
   // so a sponsor with the arrears in hand lost the building on the same tick
   // the cure cheque would have cleared.
   reinstateFundedForeclosures(s, parcels);
-  pruneDocket(s);
   // the hammer first — an auction resolved before July's docket is built
   if (s.auction && s.month >= s.auction.m) resolveAuction(s, parcels);
   if (s.month >= FIRST_DOCKET_M && s.month % 12 === 6 && !s.auction) buildDocket(s, parcels);

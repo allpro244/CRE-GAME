@@ -370,6 +370,7 @@ export function LoiTermsGrid({
         bad={nowNe < market * 0.9}
       />
       <Row k="Cash to sign" v={usd(cost) + (dep > 0 ? ` · after their ${usd(dep)} deposit` : "")} bad={cost > game.cash} strong />
+      <Row k="Broker's commission" v={`${usd(Math.max(0, loiSigningCost(loi, feeRate) - Math.round(loi.tiPsf * loi.sf)))} · paid at signing if you have it, otherwise owed until you do`} />
       {/* "Answer by Jan 2008" in January read like a date, not a deadline. */}
       <Row k="Answer by" v={monthLabel(loi.expiresM - 1) + (loi.expiresM - 1 <= game.month ? " — this month, or it lapses" : loi.expiresM - 2 === game.month ? " — next month" : "")} bad={loi.expiresM - 1 <= game.month} />
       {recov === "gross" && <Row k="Recovery" v="full gross — every expense is yours" bad />}

@@ -130,7 +130,8 @@ export function buildBalanceSheet(s: GameState, parcels: ParcelTable): BalanceSh
   // its interest in the fund — the same claim, one step later.
   const fundInterest = (liveFund ? gpInterestInFund(liveFund, fundNav) : 0) + (s.trustNote?.balance ?? 0);
   const totalAssets = cash + propGross + Math.max(0, cip) + notesVal + fundInterest;
-  const totalLiab = mortgages + mezz + partners + cipDebt + facility + locBal + deposits;
+  const brokersOwed = (s.leasingPayables ?? []).reduce((a, p) => a + p.amount, 0);
+  const totalLiab = mortgages + mezz + partners + cipDebt + facility + locBal + deposits + brokersOwed;
   const equity = totalAssets - totalLiab;
   const nwEngine = netWorth(s, parcels);
 

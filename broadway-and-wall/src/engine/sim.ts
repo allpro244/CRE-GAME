@@ -14,7 +14,7 @@ import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
-import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
+import { settleLeasingPayables, tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
 import { stampYearMark, recordMarks } from "./standing";
@@ -238,7 +238,7 @@ export function newGame(
   // One capital market (rivals.ts): on unless the setup turned it off.
   if (setup?.poolEntry !== false) s.poolEntry = true;
   if (setup?.rivalReputation !== false) s.rivalReputation = true;
-  if (setup?.rivalDealTerms === true) s.rivalDealTerms = true;
+  if (setup?.rivalDealTerms !== false) s.rivalDealTerms = true;
   if (setup?.builderFirms !== false) s.builderFirms = true;
   s.econ = initEcon(s, parcels);
   // ...and the banks are sized in this town's own dollars, which the opening
@@ -1145,6 +1145,9 @@ function tickMonth(
   // and could end the run while credit remained. Real sponsors draw the
   // revolver before they are insolvent; the month has to do the same.
   tickLoc(s, parcels);   // interest, sweeps, over-advance call, and the safety draw
+  // Brokers owed a commission from a lease signed short are paid the first
+  // month the account or the line can cover it.
+  settleLeasingPayables(s, parcels);
 
   // insolvency: after six months underwater the creditors don't end you — they
   // start taking things. One asset a month, sold at a distressed bid, until the

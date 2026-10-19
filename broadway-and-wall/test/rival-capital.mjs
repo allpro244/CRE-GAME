@@ -7,7 +7,7 @@
 // rival's syndicated deal carries that pitch and is judged on the investors'
 // realised IRR against it. C. A spinout carries part of its team's record.
 // D. A deal-by-deal rival raises on the player's terms table for its band
-// (GameState.rivalDealTerms, a setup choice, off by default). E. In a real game: jobs carry
+// (GameState.rivalDealTerms, a setup choice, on by default since Oct 2026). E. In a real game: jobs carry
 // their pitch and their terms, and the street's bands set them.
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
@@ -85,7 +85,7 @@ console.log("\nD. a deal-by-deal builder raises on the player's terms for its ba
   ok(share("d") === 1, "Toxic: nobody — the firm writes the whole cheque");
   ok(near(share("e"), 0.05, 1e-9), "Blue-chip: $19 per $1");
   ok(share("a", "pe") === 1, "a fund vehicle raised at the fund and writes its own cheques, whatever its band");
-  ok(E.sponsorShareOf({ ...g, rivalDealTerms: false }, mk({ id: "d" })) === 0.10, "off (the default), every builder raises 90/10 as before");
+  ok(E.sponsorShareOf({ ...g, rivalDealTerms: false }, mk({ id: "d" })) === 0.10, "off, every builder raises 90/10 as before");
 }
 
 // ── E ───────────────────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ console.log("\nE. in a real game");
   const { parcels: P0, bbls, adjacency } = loadCity(0, E.normalizeParcels);
   const parcels = JSON.parse(JSON.stringify(P0));
   let g = E.firstListings(E.newGame(7101, parcels, 2_500_000), parcels, bbls);
-  ok(g.rivalReputation === true && !g.rivalDealTerms, "record-raised first closes on by default; deal terms by band off by default");
+  ok(g.rivalReputation === true && g.rivalDealTerms === true, "record-raised first closes and deal terms by band are both on by default");
   const formed = [];
   for (let m = 0; m < 72; m++) {
     const before = new Map(g.rivals.map((r) => [r.id, new Set(Object.keys(r.jvs ?? {}))]));

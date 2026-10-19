@@ -72,7 +72,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     return {
       island, size: currentSize(island), dev: currentDev(island), cash0: currentCash0(), goal: null,
       field: DEFAULT_SETUP.field, inherit: 0, home: "any", rivalCapital: "medium", parks: "medium",
-      firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(), poolEntry: true, rivalReputation: true, rivalDealTerms: false, builderFirms: true,
+      firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(), poolEntry: true, rivalReputation: true, rivalDealTerms: true, builderFirms: true,
     };
   };
   const [d, setD] = useState<Draft>(fresh);
@@ -185,7 +185,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       brokerStops: d.brokerStops ? undefined : "never",
       poolEntry: d.poolEntry ? undefined : false,
       rivalReputation: d.rivalReputation ? undefined : false,
-      rivalDealTerms: d.rivalDealTerms ? true : undefined,
+      rivalDealTerms: d.rivalDealTerms ? undefined : false,
       builderFirms: d.builderFirms ? undefined : false,
     };
     void startRun(d.island, d.size, d.dev, d.cash0, setup, d.seed);
@@ -365,7 +365,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                 <label className="setup-check" style={{ marginTop: 10 }}>
                   <input type="checkbox" checked={d.rivalDealTerms} onChange={(e) => up({ rivalDealTerms: e.target.checked })} />
                   <span><strong>Builders raise each job on their record</strong><br />
-                    <span className="start-opt-note">A competitor's deal investors sign the same terms you do: an unknown builder raises a dollar per dollar of its own, a proven one six, a top one nine, one that lost its investors' money little or nothing. Off, every builder raises nine to one. On makes a smaller, slower city — fewer builders can afford to build.</span></span>
+                    <span className="start-opt-note">A competitor's deal investors sign the same terms you do: an unknown builder raises a dollar per dollar of its own, a proven one six, a top one nine, one that lost its investors' money little or nothing. Off, every builder raises nine to one, which is easier money than any real sponsor finds. On (the default) makes a smaller, slower city: fewer builders can afford to build.</span></span>
                 </label>
               </div>
             </div>

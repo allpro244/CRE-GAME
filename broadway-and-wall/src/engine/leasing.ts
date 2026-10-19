@@ -4583,9 +4583,38 @@ export function depositAtSigning(loi: LOI): number {
   if (loi.kind !== "new") return 0;
   return Math.max(0, Math.round((loi.rentPsf * loi.sf) / 12 * depositMonths(loi.credit)));
 }
-/** Cash one signing takes: fit-out + commission + demising, less the deposit the tenant posts at signing. */
-export function loiSigningCash(loi: LOI, feeRate?: number): number {
-  return Math.max(0, loiSigningCost(loi, feeRate) + Math.max(0, Math.round(loi.demiseCost ?? 0)) - depositAtSigning(loi));
+/**
+ * Cash one signing has to find on the day: the fit-out and the demising walls,
+ * less the deposit the tenant posts at signing. The commission is not in it —
+ * the broker is paid at signing if the account holds it, and otherwise is owed
+ * and paid the first month the cash or the line can cover it
+ * (settleLeasingPayables). So a lease with no free rent and no TI costs almost
+ * nothing to sign, as it does in life.
+ */
+export function loiSigningCash(loi: LOI, _feeRate?: number): number {
+  return Math.max(0, Math.round(leaseCosts(loi).ti) + Math.max(0, Math.round(loi.demiseCost ?? 0)) - depositAtSigning(loi));
+}
+
+/** Commissions the firm still owes its brokers, $. */
+export function leasingPayablesOwed(s: GameState): number {
+  return (s.leasingPayables ?? []).reduce((a, p) => a + p.amount, 0);
+}
+
+/**
+ * PAY THE BROKERS WHAT THEY ARE OWED, oldest first, each in full, the first
+ * month the account or the line can cover it. Booked as a leasing cost on the
+ * deed it was earned on, when it is paid. A JV partner funds its share then.
+ */
+export function settleLeasingPayables(s: GameState, parcels: ParcelTable) {
+  if (!s.leasingPayables?.length) return;
+  const keep: NonNullable<GameState["leasingPayables"]> = [];
+  for (const p of s.leasingPayables) {
+    if (keep.length || fundableNow(s, parcels) < p.amount) { keep.push(p); continue; }
+    fundAndBook(s, parcels, p.amount, "leasing", { bbl: p.bbl });
+    const h = s.holdings[p.bbl];
+    if (h) partnerFunds(s, h, p.amount);
+  }
+  if (keep.length) s.leasingPayables = keep; else delete s.leasingPayables;
 }
 
 // Put a signed lease on the rent roll. Mutates — both the player's own
@@ -4640,14 +4669,24 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
   const charge = (sfSigned: number) => {
     signedSf = sfSigned;
     const scale = l.sf > 0 ? Math.max(0, Math.min(1, sfSigned / l.sf)) : 1;
-    const cost = Math.round(loiSigningCost(l, feeRate) * scale);
+    const full = Math.round(loiSigningCost(l, feeRate) * scale);
     // Demising walls are construction. $9/sf of the smaller piece × costIdx,
     // booked as capex so conserve can see it.
     const demise = Math.max(0, Math.round((l.demiseCost ?? 0) * scale));
     // A NEW BUILDING'S FIT-OUT COMES FROM ITS LEASE-UP RESERVE FIRST — the
     // lender advances it against this lease (debt.ts drawLeaseUpReserve). A JV
     // partner funds its share only of what the reserve did not cover.
-    const drawn = drawLeaseUpReserve(s, h, cost + demise);
+    const drawn = drawLeaseUpReserve(s, h, full + demise);
+    // THE BROKER CAN WAIT (settleLeasingPayables). The commission is paid now
+    // if the account holds it after the fit-out, the walls and the deposit the
+    // tenant posts today; otherwise it is owed, and paid the first month the
+    // cash or the line can cover it. A fund deed's cheque is the vehicle's and
+    // settles as it always has.
+    const lc = Math.round(leaseCosts(l, feeRate).lc * scale);
+    const depositIn = l.kind === "new" ? Math.round(depositAtSigning(l) * scale) : 0;
+    const owe = !vehicleSigns(s, h) && lc > 0 && s.cash - (full - lc) - demise + depositIn < lc;
+    const cost = owe ? full - lc : full;
+    if (owe) (s.leasingPayables ??= []).push({ bbl: h.bbl, amount: lc, m: s.month });
     const fromReserveCost = Math.min(cost, drawn);
     paid = cost;
     s.cash -= cost;

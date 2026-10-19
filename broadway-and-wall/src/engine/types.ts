@@ -3400,6 +3400,14 @@ export interface GameState {
   holdings: Record<string, Holding>;
   listings: Listing[];
   lois: LOI[];
+  /**
+   * LEASING COMMISSIONS STILL OWED (owner, Oct 2026: "you can pay the broker's
+   * fee after you get enough cash or LOC again"). A lease signs whether or not
+   * the commission can be paid that day; what could not is owed to the broker
+   * and settled in full the first month the account or the line can cover it
+   * (leasing.ts settleLeasingPayables). A liability until then.
+   */
+  leasingPayables?: { bbl: string; amount: number; m: number }[];
   /** Tenants asking mid-lease — see TenantAsk. Optional so old saves load. */
   asks?: TenantAsk[];
   nextAskId?: number;

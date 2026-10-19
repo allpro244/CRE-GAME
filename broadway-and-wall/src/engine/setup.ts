@@ -68,7 +68,7 @@ export interface GameSetup {
   poolEntry?: boolean;
   /** Rivals raise on their investor record (GameState.rivalReputation). On unless turned off. */
   rivalReputation?: boolean;
-  /** Deal-by-deal rivals raise each job on their band's terms (GameState.rivalDealTerms). Off unless turned on. */
+  /** Deal-by-deal rivals raise each job on their band's terms (GameState.rivalDealTerms). On unless turned off (owner, Oct 2026: a realistic street is the default). */
   rivalDealTerms?: boolean;
   /** The town's builders are competitor firms (GameState.builderFirms). On unless turned off. */
   builderFirms?: boolean;

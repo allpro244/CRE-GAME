@@ -2503,35 +2503,25 @@ export function listForSale(
     // everybody who might buy it. Two to four months, then offers are due on a
     // date everyone knows, which is the entire mechanism by which a marketed
     // sale finds a price a quiet one never will.
-    // A CAMPAIGN IS NOT A FREE OPTION ON SIX DRAWS.
+    // LISTING IS FREE; THE FEE IS PAID WHEN IT TRADES (owner, Oct 2026: "it
+    // costs absolutely $0 to sell a property and you only pay if a property
+    // transacts, like real life"). An investment-sales broker takes the book,
+    // the photography and the mailing on the commission and is paid at
+    // closing, out of the proceeds; a seller who pulls the deal owes nothing.
+    // This used to charge 35bp of the ask up front, whether or not it traded.
     //
-    // Listing cost nothing and delisting cost nothing — the fee only bit on a
-    // close. So the optimal play was to run a process, read up to six bids,
-    // walk away unless one landed in the tail, and rerun it next year.
-    // Measured: 557 campaigns, 427 walked away from at zero cost, 98 sales at
-    // a realised median 1.21x appraisal. You sold at the ceiling of the
-    // distribution every single time and paid nothing for the misses.
-    //
-    // In life you pay the broker's marketing budget up front — the book, the
-    // photography, the mailing — and you pay it whether or not it trades. And
-    // a building the market has already been shown twice is a building
-    // everyone has already passed on.
+    // What still prices the option is the market's memory, not a fee: a
+    // building that has been shown and pulled is a building every buyer has
+    // already passed on, so the same process cannot be rerun for two years.
+    // (Measured before any up-front fee existed: 557 campaigns, 427 walked
+    // away from, 98 sales at a median 1.21x appraisal, because a campaign
+    // could be rerun every year. The cooling-off is what stops that.)
     const since = next.month - (next.holdings[bbl].lastCampaignM ?? -999);
     if (since < 24) {
       return { s, err: `You ran a process on this one ${since} months ago and pulled it. `
         + `Every buyer in town has seen the book — going back out now tells them only that nobody bid. `
         + `Wait until ${monthLabel((next.holdings[bbl].lastCampaignM ?? 0) + 24)}, or sell it quietly.` };
     }
-    const marketing = Math.round(ask * 0.0035);
-    // The book, the photography and the mailing are a marketing spend against
-    // a sale you are about to make — the shortest-dated use a revolver has,
-    // repaid out of the proceeds. What was priced here is the OPTION: 35bps
-    // whether or not it trades, and the two-year cooling-off on a pulled
-    // campaign. Both stand.
-    if (fundableNow(next, parcels) < marketing) {
-      return { s, err: `A campaign costs $${(marketing / 1000).toFixed(0)}K in marketing up front and you cannot fund it. A quiet listing costs nothing until it sells.` };
-    }
-    fundAndBook(next, parcels, marketing, "ga");
     const weeks = Math.round(rrange(next, 2, 4));
     next.holdings[bbl].sale = {
       ask: Math.round(ask), listedM: next.month, mode: "marketed",

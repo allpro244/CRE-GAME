@@ -632,7 +632,9 @@ export function sponsorShare(style: RivalStyle): number {
  * cents, and a Toxic one nothing. Off, every deal-by-deal builder raises
  * 90/10 as before.
  *
- * OFF BY DEFAULT (GameState.rivalDealTerms, a setup choice). Measured on the
+ * ON BY DEFAULT since Oct 2026 (owner: "shouldn't this be a default, almost
+ * not even an option? If we are going for realism"); GameState.rivalDealTerms
+ * stays a setup choice that can be turned off. Measured on the
  * baseline's seeds against 90/10 for everybody: city floor area −4.0%,
  * median land −15.5%, employment −3.7%, vacancy up in office, retail and
  * apartments — most builders the street ranks sit at Unknown or below, so a

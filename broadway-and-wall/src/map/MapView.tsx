@@ -1994,14 +1994,17 @@ export default function MapView() {
       // 2026). Fixed stops ended at 92, so a core where most blocks score
       // 80-100 painted one flat dark green — exactly where the player is
       // choosing between sites. The stops are this town's percentiles, packed
-      // toward the top, and the ramp turns warm past the 85th: the hottest
-      // blocks read gold, orange, red against the rest of the core.
+      // toward the top.
+      // RED IS WEAK, BLUE IS STRONG (owner, Oct 2026: "the more red the more
+      // demand ... should be flipped"). The weakest blocks read red and
+      // orange, the middle of town a neutral sand, and the ramp deepens
+      // through blue to the hottest blocks of the core.
       const sorted = [...vals.values()].filter(Number.isFinite).sort((x, y) => x - y);
       const pct = (p: number) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))] : p * 100;
       const qs = [0.05, 0.30, 0.55, 0.72, 0.85, 0.93, 0.975, 0.995];
       const stops: number[] = [];
       for (const q of qs) stops.push(Math.max(pct(q), (stops[stops.length - 1] ?? -Infinity) + 0.01));
-      const ramp = ["#eef0e8", "#cfe0d5", "#93c4b1", "#4f9887", "#1e6a60", "#c9a227", "#e0702e", "#b8242c"];
+      const ramp = ["#b8242c", "#e0702e", "#ead9b0", "#eef0e8", "#a9cbe0", "#5b9bd0", "#2a6bb3", "#123f80"];
       map.setPaintProperty("bw-parcel-fill", "fill-color", [
         "interpolate", ["linear"], LIVE_DEMAND,
         ...stops.flatMap((st, i) => [st, ramp[i]]),

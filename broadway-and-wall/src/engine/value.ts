@@ -4240,6 +4240,8 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   // a borrower whose net worth ignores their largest liability is being shown
   // a number that would let them borrow against it twice.
   nw -= s.facility?.balance ?? 0;
+  // Commissions owed to leasing brokers (leasing.ts settleLeasingPayables).
+  nw -= (s.leasingPayables ?? []).reduce((a, p) => a + p.amount, 0);
   // THE FUND IS MOSTLY THE LPs' MONEY. Vehicle deeds used to count at 100%
   // here while the vehicle's cash counted at nothing, so the co-invest left
   // net worth at the raise and the LPs' capital arrived in it the day it

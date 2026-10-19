@@ -757,11 +757,13 @@ export function MarketPage() {
                           title={li.reason === "merchant" ? "A merchant builder selling what it built — the business plan was always to sell on completion"
                             : li.reason === "fund-life" ? "A closed-end fund reaching the end of its life: it has to sell to return its investors' capital, whatever the market"
                               : li.reason === "estate" ? "A property held in an estate — the executors are selling to settle it"
+                                : li.reason === "non-core" ? "A large firm selling a small building it has outgrown, to fund bigger work"
                                 : li.reason === "receiver" ? "A lender took it back and a receiver is clearing it off the balance sheet"
                                   : "The owner simply decided to sell"}>
                           {li.reason === "merchant" ? "MERCHANT EXIT"
                             : li.reason === "fund-life" ? "FUND CLOCK"
                               : li.reason === "estate" ? "ESTATE"
+                                : li.reason === "non-core" ? "NON-CORE"
                                 : li.reason === "receiver" ? "BANK-OWNED" : "VOLUNTARY"}
                         </span>
                       )}

@@ -645,7 +645,13 @@ export function buyListing(
   // missing `err` as "deed recorded," so a lowball that the seller waved off
   // still printed as a closing. `refused` carries the news / listing pull
   // without pretending the deed changed hands — same shape as approachOwner.
-  if (roll < p + 0.45) {
+  // AN INSULT IS A NUMBER NOWHERE NEAR THEIRS. Every refusal used to carry the
+  // same slice of insult — so a bid at 95% of the ask, a coin flip on the
+  // seller's own curve, could end the relationship across the owner's whole
+  // book. Only a bid this seller would almost never take (under 2% on the
+  // curve: about a fifth under the ask for a typical owner, further for a
+  // forced one) can offend; anything closer is a plain no.
+  if (roll < p + 0.45 || p >= 0.02) {
     next.news.unshift({ q: next.month, kind: "info", text: `Your ${money(price)} on ${parcels[bbl]?.address} was refused — the ask stands.` });
     return { s: next, msg: "Refused. The ask stands.", refused: true };
   }
@@ -2517,7 +2523,7 @@ export function listForSale(
     // whether or not it trades, and the two-year cooling-off on a pulled
     // campaign. Both stand.
     if (fundableNow(next, parcels) < marketing) {
-      return { s, err: `A campaign costs $${(marketing / 1000).toFixed(0)}K in marketing up front. You do not have it.` };
+      return { s, err: `A campaign costs $${(marketing / 1000).toFixed(0)}K in marketing up front and you cannot fund it. A quiet listing costs nothing until it sells.` };
     }
     fundAndBook(next, parcels, marketing, "ga");
     const weeks = Math.round(rrange(next, 2, 4));

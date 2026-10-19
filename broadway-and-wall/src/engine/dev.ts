@@ -353,7 +353,25 @@ function tickBuilderFirms(s: GameState, looksF: number) {
 }
 function pickBuilderFirm(s: GameState): Rival | undefined {
   const live = livingBuilderFirms(s);
-  return live.length ? live[Math.floor(rng(s, "dev") * live.length)] : undefined;
+  if (!live.length) return undefined;
+  // THE TOWN'S WORK GOES ROUND. Every job the supply desk commissions went to
+  // a living builder firm drawn uniformly — so a town with three builders
+  // handed a third of everything it built, forever, to whichever happened to
+  // grow first, and the street's mandate limit (rivals.ts: appetite halved at
+  // 15% of the street's book) never saw it. Measured: one builder held 360
+  // buildings and $10B by year forty, eight times the next firm. A client
+  // spreads its commissions the same way the street spreads its money, so the
+  // draw is weighted by that same fade. One draw, as before.
+  const street = (s.rivals ?? []).filter((x) => x.failedM === undefined && x.retiredM === undefined)
+    .reduce((a, x) => a + Math.max(0, x.aum ?? 0), 0);
+  const w = live.map((r) => {
+    const share = street > 0 ? Math.max(0, r.aum ?? 0) / street : 0;
+    return 1 / (1 + (share / 0.15) ** 2);
+  });
+  const total = w.reduce((a, b) => a + b, 0);
+  let x = rng(s, "dev") * total;
+  for (let i = 0; i < live.length; i++) { x -= w[i]; if (x <= 0) return live[i]; }
+  return live[live.length - 1];
 }
 
 /** The roster, once a month: entries when it thins, retirements of the idle, commitments recounted from the live jobs. */

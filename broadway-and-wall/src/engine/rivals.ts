@@ -463,6 +463,32 @@ const BUILD_APPETITE: Record<RivalStyle, number> = {
   merchant: 1.35, pe: 0.50, reit: 0.14, vulture: 0.06,
   owneruser: 0.22, foreign: 0, slumlord: 0,
 };
+/**
+ * A FIRM'S SMALLEST CHEQUE (owner, Oct 2026: "more rivals should develop high
+ * quality buildings instead of acquiring a ton of them"). An investment
+ * committee has a minimum deal size, and it grows with the fund: a platform
+ * with $400M of equity does not underwrite a $900K walk-up, because the work
+ * of closing it is the same as the work of closing a $20M tower and it moves
+ * nothing. The deal-count capacity below counted deals, not dollars, so the
+ * biggest firms filled their eight a year with whatever was on the tape and
+ * held a hundred small buildings by mid-century while the player, building a
+ * few good ones, held five. The ticket is a share of the firm's own equity, by
+ * style: institutions and offshore money the largest, family offices and
+ * small landlords the smallest, owner-users none (they buy premises, not a
+ * portfolio). A small firm's ticket is under any building in town, so the
+ * young firms still buy what young firms buy.
+ */
+const TICKET_PCT: Record<RivalStyle, number> = {
+  core: 0.02, reit: 0.02, foreign: 0.025, pe: 0.015,
+  opportunistic: 0.01, developer: 0.01, merchant: 0.01,
+  vulture: 0.006, family: 0.006, slumlord: 0.004, owneruser: 0,
+};
+/** Dirt is a fifth or so of what goes up on it: a lot is judged by the job it carries. */
+const LAND_SHARE_OF_JOB = 0.2;
+export function minTicket(r: Rival): number {
+  const eq = Math.max(0, (r.aum ?? 0) - r.debt + r.cash);
+  return (TICKET_PCT[r.style] ?? 0) * eq;
+}
 const CONSTR_SPREAD_R = 2.6;   // construction paper is dearer than term paper
 
 // ---------------------------------------------------------------- deal equity
@@ -3096,8 +3122,21 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // Redevelopment was rarer than land-bank starts; push densify harder so the
   // city renews itself (same roll count — higher gate pass rate only).
   const startGate = redev ? 0.12 : 0.055;
-  if (startsRoll >= startGate * paramsOf(r).build * ci * underwriting.appetite) return;
+  // ONE BUILDER DOES NOT BUILD THE WHOLE TOWN EITHER. The street's mandate
+  // limit (rivalBuys: appetite halved at 15% of the street's book) was only
+  // ever applied to buying, so a builder that got ahead compounded on its own
+  // dirt without one: measured, one developer went $158M → $10B in thirty
+  // years, 360 buildings, the city's largest owner by a factor of eight. The
+  // same fade gates a start. A builder at a few per cent of the street builds
+  // as before; one that owns a fifth of it breaks ground a third as often.
+  const streetAum = livingRivals(s).reduce((a, x) => a + Math.max(0, x.aum ?? 0), 0);
+  const share = streetAum > 0 ? Math.max(0, r.aum ?? 0) / streetAum : 0;
+  const mandate = 1 / (1 + (share / 0.15) ** 2);
+  if (startsRoll >= startGate * paramsOf(r).build * ci * underwriting.appetite * mandate) return;
   const plan = underwriting.plan;
+  // ...and its construction lender has a house limit on one name, like every
+  // acquisition desk (deskWithRoom): no desk with room, no start.
+  if (plan.commitment > 0 && !deskWithRoom(s, r.id, plan.commitment)) return;
   sf = plan.sf;
   floors = plan.floors;
   if (redev && sf < rec.bldgArea * 1.08) return;
@@ -4432,6 +4471,24 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         }
       }
     }
+    // RECYCLING. A firm that has outgrown its oldest small buildings sells
+    // them to fund what it does now — the non-core disposal every grown
+    // platform runs. Twice a year, the smallest seasoned deed under a third of
+    // its ticket goes to the tape, so a big book concentrates into its best
+    // buildings rather than carrying the tail it bought when it was small.
+    let recycle = false;
+    if (!forcedBbl && !r.stressMs && s.month % 6 === 0) {
+      const floor = minTicket(r) / 3;
+      let smallest = Infinity;
+      for (const bbl of r.bbls) {
+        const v = byBbl[bbl]?.v ?? 0;
+        const held = s.month - (r.heldSince?.[bbl] ?? r.bornM ?? 0);
+        if (v <= 0 || v >= floor || held < 24 || v >= smallest) continue;
+        if (s.holdings[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
+        if (s.developments?.[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
+        smallest = v; forcedBbl = bbl; recycle = true;
+      }
+    }
     if (forcedBbl) {
       const rec = resolveRec(parcels, s, forcedBbl);
       if (rec) {
@@ -4463,7 +4520,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
               ask: Math.round(v * rrange(s, 0.94, 1.04, "rivals") / 1000) * 1000,
               listedM: s.month, expiresM: s.month + Math.round(rrange(s, 9, 16, "rivals")),
               sellerId: r.id,
-              reason: "fund-life",
+              reason: recycle ? "non-core" : "fund-life",
             });
           }
         } else {
@@ -4473,7 +4530,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
             ask: Math.round(v * rrange(s, 0.94, 1.04, "rivals") / 1000) * 1000,
             listedM: s.month, expiresM: s.month + Math.round(rrange(s, 9, 16, "rivals")),
             sellerId: r.id,
-            reason: r.style === "merchant" ? "merchant" : "fund-life",
+            reason: recycle ? "non-core" : r.style === "merchant" ? "merchant" : "fund-life",
           });
           // AND A ROUTINE LISTING IS NOT NEWS EITHER. A fund reaching the end of
           // its hold and putting a building up is the most ordinary thing on this
@@ -4984,6 +5041,8 @@ export function rivalBuys(
     if (st.classes && !st.classes.includes(rec.class)) return false;
     // CAPACITY: a small shop digests two deals a year, a platform eight.
     if (r.sheet && boughtLastYear(r, s.month) >= dealsPerYear(r.sheet)) return false;
+    // ...AND NOT BELOW ITS TICKET. A lot is sized by the job it carries.
+    if ((rec.class === "land" ? price / LAND_SHARE_OF_JOB : price) < minTicket(r)) return false;
     const { debt, need, draw, aum } = drawFor(r);
     if (r.cash + draw < need) return false;
     const aumAfter = aum + price;

@@ -400,8 +400,8 @@ export interface Loan {
   origValue?: number;
   product: string;
   floating?: boolean;
-  /** Floating paper: which index it resets on. "short" since Oct 2026; absent on older saves until migrated. */
-  bench?: "short";
+  /** Floating paper: which index it resets on. "short" since Oct 2026; "long" for paper written off the loan index (mini-perm, private credit); absent on older saves until migrated. */
+  bench?: "short" | "long";
   points?: number;
   recourse?: boolean;         // a personal guarantee: a deficiency follows you
   prepay?: "open" | "stepdown" | "yieldmaint";

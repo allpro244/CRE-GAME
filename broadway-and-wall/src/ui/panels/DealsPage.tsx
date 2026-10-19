@@ -240,9 +240,9 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
     .filter(({ b }) => !b.dropped);
   const suggested = offer ? Math.round(offer.price * 1.06) : 0;
   const value = h && parcels ? apMid(bbl, ask) : ask;
-  const closeNet = (px: number) => {
+  const closeNet = (px: number, ex = false) => {
     if (!h || !parcels) return 0;
-    return sellerCashAtClose(game, parcels, h, px);
+    return sellerCashAtClose(game, parcels, h, px, ex);
   };
   const counterBounds = offer
     ? (() => {
@@ -260,8 +260,9 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
           <SaleAcceptConfirm
             address={parcels?.[bbl]?.address ?? bbl}
             price={px}
-            net={closeNet(px)}
+            net={closeNet(px, !!acceptConfirm.exchange)}
             exchange={acceptConfirm.exchange}
+            contract={acceptConfirm.bidIndex !== undefined}
             onCancel={() => setAcceptConfirm(null)}
             onConfirm={() => {
               if (acceptConfirm.bidIndex !== undefined) takeBid(bbl, acceptConfirm.bidIndex);

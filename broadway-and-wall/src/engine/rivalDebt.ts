@@ -212,6 +212,19 @@ export function originateRow(
 }
 
 /**
+ * WHAT A STREET LOAN COSTS AT THE TABLE, the player's own closing costs: the
+ * desk's points on what is borrowed, the rate cap no desk writes a floater
+ * without, and on a refinance the 1% fee on the whole new balance. Rivals'
+ * acquisitions and cash-outs used to close free while the player paid all of
+ * it on the same desks (renewRow already charged it).
+ */
+export function streetLoanCost(row: CityLoan, borrowed: number, refiBalance = 0): number {
+  const p = productById(row.product ?? "harbor");
+  const base = Math.max(borrowed, refiBalance);
+  return Math.round(borrowed * (p?.points ?? 0) + refiBalance * REFI_FEE) + (p?.floating ? capPremiumOn(base) : 0);
+}
+
+/**
  * A BALLOON RENEWED. The outstanding balance goes onto whichever desk clears
  * it cheapest today — the way the player's balloon rolls (balloonLadder) —
  * at today's coupon and a fresh term, and the borrower pays what a renewal

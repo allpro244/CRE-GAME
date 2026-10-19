@@ -234,7 +234,7 @@ function migrateFloatingBench(state: GameState): void {
   const gap = e.indexRate - shortIndexOf(e);
   for (const h of Object.values(state.holdings ?? {})) {
     const l = h.loan;
-    if (!l || !(l.floating ?? l.product === "float") || l.bench === "short") continue;
+    if (!l || !(l.floating ?? l.product === "float") || l.bench !== undefined) continue;
     l.spread = +((l.spread ?? 0) + gap).toFixed(2);
     if (l.cap) l.cap = { ...l.cap, strike: +(l.cap.strike - gap).toFixed(2) };
     l.bench = "short";

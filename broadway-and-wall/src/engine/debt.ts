@@ -1994,7 +1994,7 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
         + `${money(room.total)} — ${money(room.cash)} of cash and ${money(room.line)} on the line.`,
     };
   }
-  const strike = +((h.loan.bench === "short" ? shortIndexOf(next.econ) : next.econ.indexRate) + 0.5).toFixed(2);
+  const strike = capStrikeFor(next, h.loan);
   fundAndBook(next, parcels, cost, "debtSvc", { bbl });
   h.loan.cap = { strike, expiresM: next.month + CAP_TERM_M };
   next.news.unshift({
@@ -2264,6 +2264,11 @@ export function balloonLadder(
     const fee = Math.round(balance * (REFI_FEE + product.points))
       + (product.floating ? capPremiumOn(balance) : 0);
   return { ladder, fee, pick, product, qd, guarantor, clears: qd.principal >= balance && (qd.principal >= balance + fee || fundableNow(s, parcels) >= fee), value, noi, vacantDirt, quoteClass, hair, stab };
+}
+
+/** The strike a cap bought today carries: half a point over the index the loan floats on. */
+export function capStrikeFor(s: GameState, loan: Loan): number {
+  return +((loan.bench === "short" ? shortIndexOf(s.econ) : s.econ.indexRate) + 0.5).toFixed(2);
 }
 
 /**

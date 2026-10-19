@@ -3,6 +3,7 @@
 //   AcquireDesk   buy / sell / list / ground lease / disclosed roll / vacant possession
 //   RefiDesk      permanent debt on a deed
 //   DevelopDesk   ground-up + adaptive reuse (Programme · Design · Financing)
+import { consentFor } from "@/engine/vehicles";
 import { marketAppraisal } from "@/engine/value";
 import { memo, useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
@@ -20,7 +21,7 @@ import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unit
 import { StackingList } from "@/ui/panels/StackingList";
 import { stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
-import { dscr, ltv, payOffDue, rateCapCost, prepayPenalty, equityCureNeed } from "@/engine/debt";
+import { dscr, ltv, payOffDue, rateCapCost, capStrikeFor, prepayPenalty, equityCureNeed } from "@/engine/debt";
 import { fundableNow } from "@/engine/credit";
 import { demandNow } from "@/engine/demand";
 import { leaseholdQuote, landBuybackCost, LEASEHOLD_STEP } from "@/engine/leasehold";
@@ -860,18 +861,20 @@ function ParcelPanelInner({
             {(() => {
               const due = payOffDue(holding.loan, game.month, game.econ);
               const facPledged = !!game.facility?.bbls?.includes(selectedBBL);
-              const canPay = !facPledged && fundableNow(game, parcels) >= due.due;
+              // A JV partner has consent over the debt (vehicles.ts): the button says so rather than erroring.
+              const jvBlock = consentFor(game, holding, "debt");
+              const canPay = !facPledged && !jvBlock && fundableNow(game, parcels) >= due.due;
               return (
                 <button
                   className="btn btn-buy"
                   disabled={!canPay}
-                  title={facPledged
+                  title={jvBlock ?? (facPledged
                     ? "Pledged to the facility — release it there first."
                     : !canPay
                       ? `Need ${usd(due.due)} to retire this loan.`
                       : due.penalty > 0
                         ? `Pay ${usd(due.balance)} + ${usd(due.penalty)} break fee. Required before a ground lease.`
-                        : `Pay ${usd(due.due)}. Deed free and clear — required before a ground lease.`}
+                        : `Pay ${usd(due.due)}. Deed free and clear — required before a ground lease.`)}
                   onClick={() => useStore.getState().payOffLoan(selectedBBL)}
                 >
                   Pay off · {usd(due.due)}
@@ -888,7 +891,7 @@ function ParcelPanelInner({
             {(holding.loan.floating ?? holding.loan.product === "float") && !holding.loan.cap && (
               <button
                 className="btn"
-                title={`Base rate capped at ${(game.econ.indexRate + 0.5).toFixed(2)}% for 3 years`}
+                title={`Base rate capped at ${capStrikeFor(game, holding.loan).toFixed(2)}% for 3 years`}
                 onClick={() => useStore.getState().rateCap(selectedBBL)}
               >
                 Buy rate cap · {usd(rateCapCost(holding.loan))}
@@ -1424,6 +1427,7 @@ function PaydownRow({ bbl }: { bbl: string }) {
   const valid = amt > 0 && amt < bal;
   const pen = valid ? prepayPenalty({ ...loan, balance: amt }, game.month, game.econ) : 0;
   const tooMuch = valid && amt + pen > game.cash;
+  const jvBlock = consentFor(game, game.holdings[bbl], "debt");
   return (
     <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
       <input
@@ -1438,8 +1442,8 @@ function PaydownRow({ bbl }: { bbl: string }) {
       <button className="btn" onClick={() => setTxt(String(Math.round(bal * 0.1)))}>10%</button>
       <button className="btn" onClick={() => setTxt(String(Math.round(bal * 0.25)))}>25%</button>
       <button
-        className="btn btn-buy" disabled={!valid || tooMuch}
-        title={!valid ? "Less than the balance — Pay off retires the whole note." : tooMuch ? `Needs ${usd(amt + pen)} in cash.` : undefined}
+        className="btn btn-buy" disabled={!valid || tooMuch || !!jvBlock}
+        title={jvBlock ? jvBlock : !valid ? "Less than the balance — Pay off retires the whole note." : tooMuch ? `Needs ${usd(amt + pen)} in cash.` : undefined}
         onClick={() => { useStore.getState().paydownLoan(bbl, amt); setTxt(""); }}
       >
         Pay down{valid ? ` · ${usd(amt + pen)}` : ""}

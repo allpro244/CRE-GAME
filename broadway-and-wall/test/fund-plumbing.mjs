@@ -295,6 +295,9 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
     // the very month advanced here, and that is the sponsor's income, not the
     // vehicle's: hold no idle balance so the probe reads only the fund's leg.
     t.taxLossCarry = 0; t.depositInterestYr = 0; t.cash = 0;
+    // ...and the sponsor's own overhead, now deductible on its return, is the
+    // sponsor's, not the vehicle's: no office cost in the probe either.
+    for (const b of t.books ?? []) b.ga = 0;
     t.fund.gpCommit = Math.round(t.fund.called * share);
     if (promote) t.promoteIncomeYr = promote;
     const f0 = t.fund.cash, tax0 = t.taxesPaid ?? 0;

@@ -12,7 +12,7 @@ import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown
 import { ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
-import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake, noteRealised } from "./rivals";
+import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
@@ -333,15 +333,20 @@ export function executePurchase(
   {
     const seller = ownerOf(next, bbl);
     if (seller) {
+      // Struck while the deed is still theirs (rivals.ts basisShare).
+      const tax = gainsTax(seller, price);
       seller.bbls = seller.bbls.filter((b) => b !== bbl);
       const jv = seller.jvs?.[bbl];
       forgetDeed(seller, bbl);
-      // The mortgage on the building is paid at the closing, then their line.
+      // The mortgage on the building is paid at the closing, then their line;
+      // the seller pays its own selling costs and gains tax, as on every other
+      // sale on the street.
       const relief = settleSale(next, seller, bbl, price);
-      seller.cash += price - relief;
+      const costs = streetSaleCost(price);
+      seller.cash += price - relief - costs - tax;
       // A syndicated deed pays its deal investors out of the closing — see
       // jvLpTake (rivals.ts).
-      const partnersOut = jvLpTake(jv, price - relief, next.month);
+      const partnersOut = jvLpTake(jv, price - relief - costs - tax, next.month);
       seller.cash -= partnersOut;
       noteRealised(next, seller, jv, price, partnersOut);
     }
@@ -419,7 +424,9 @@ export function executePurchase(
     }
   }
   // a live 1031: this purchase completes the exchange if it's big enough
-  if (!entity && next.exchange && price >= next.exchange.minPrice * 0.8) {
+  // Not on a fund deed: the vehicle's purchase cannot complete the sponsor's
+  // own exchange (its basis is the LPs' too).
+  if (!entity && !fromFund && next.exchange && price >= next.exchange.minPrice * 0.8) {
     holding.costBasis -= next.exchange.rolledGain; // deferred gain carries into the new basis
     next.news.unshift({
       q: next.month, kind: "deal",
@@ -2926,6 +2933,20 @@ export function saleTaxQuote(h: Holding, price: number, s?: GameState): { net: n
  * sponsor owes only its co-invest share of it (gpCapitalShare). The LPs'
  * shares are taxed on the LPs' returns, off this book.
  */
+/**
+ * THE GAIN ON A JV DEED IS THE OWNER'S SHARE OF THE PRICE OVER THE OWNER'S
+ * BASIS. Selling a stake cuts `costBasis` to the owner's share (jv.ts), so the
+ * full price over it overstated the gain shown, the 1031 roll and the kicker.
+ * `owner` is what the owner is taxed on and rolls; `property` is the whole
+ * building's gain, which is what a participating lender takes its cut of.
+ */
+export function saleGains(s: GameState, h: Holding, price: number): { owner: number; property: number } {
+  const ps = partnerShare(s, h);
+  if (!(ps > 0)) { const g = saleTaxQuote(h, price, s).gain; return { owner: g, property: g }; }
+  const owner = saleTaxQuote(h, Math.round(price * (1 - ps)), s).gain;
+  return { owner, property: Math.round(owner / Math.max(1e-6, 1 - ps)) };
+}
+
 export function sponsorsSaleTax(s: GameState, h: Holding, price: number): number {
   const ps = partnerShare(s, h);
   const tax = ps > 0 ? saleTaxQuote(h, Math.round(price * (1 - ps)), s).tax : saleTaxQuote(h, price, s).tax;
@@ -2949,9 +2970,11 @@ export function saleProceedsToSeller(
   /** A syndicate's investors' share of `toSeller`, paid from it at the month's settlement. */
   investors: number;
 } {
-  const { net, gain } = saleTaxQuote(h, price, s);
+  const { net } = saleTaxQuote(h, price, s);
+  const { owner: gain, property: propGain } = saleGains(s, h, price);
   const tax = sponsorsSaleTax(s, h, price);
-  const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
+  // The lender's kicker is a share of the BUILDING's gain, partner's half included.
+  const kick = h.loan?.kicker && propGain > 0 ? Math.round(propGain * h.loan.kicker) : 0;
   const stack = stackPayoff(h, s.month, s.econ);
   const breakFee = stack.penalty;
   const release = releaseCost(s, parcels, h.bbl);
@@ -2967,10 +2990,12 @@ export function saleProceedsToSeller(
 
 /** Cash that lands in the sponsor's own account if `price` closes today —
  *  the offer modal's "net to you", shared with the sale desks. */
-export function sellerCashAtClose(s: GameState, parcels: ParcelTable, h: Holding, price: number): number {
+export function sellerCashAtClose(s: GameState, parcels: ParcelTable, h: Holding, price: number, intoExchange = false): number {
   const p = saleProceedsToSeller(s, parcels, h, price);
   const onFund = !!(h.fundOwned && s.fund && !s.fund.settled);
-  return (onFund ? 0 : p.toSeller) - p.investors - (s.exchange ? 0 : p.tax);
+  // The tax is withheld at the close unless THIS sale rolls into a 1031
+  // (acceptSaleOffer) — not "unless an exchange happens to be running".
+  return (onFund ? 0 : p.toSeller) - p.investors - (intoExchange ? 0 : p.tax);
 }
 
 export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string, exchange = false): { s: GameState; err?: string } {
@@ -2980,7 +3005,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (s.month > offer.expiresM) return { s, err: "That offer lapsed." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  const { gain } = saleTaxQuote(h, offer.price, s);
+  const gain = saleGains(s, h, offer.price).owner;
   const tax = sponsorsSaleTax(s, h, offer.price);
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };

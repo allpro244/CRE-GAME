@@ -2,6 +2,14 @@
 
 **This repository is Broadway & Wall only.**
 
+**The game is moving to Unreal Engine 5.8 (owner's decision, 2026-10-19).
+Read `UE58_PLAN.md` first.** The web build in `broadway-and-wall/` is frozen:
+no new features, economy rounds or UI work. Its economy engine
+(`broadway-and-wall/src/engine/`), city generator and tests are reused
+unchanged by the Unreal game; touch them only when the Unreal work needs it,
+and keep `pnpm check` green when you do. The Unreal project lives in
+`unreal/`.
+
 - The game code is in **`broadway-and-wall/`**.
 - Do **not** create, restore, or work on Groundwork. That product is gone.
 - Do **not** treat a root-level `src/` tree (or anything named Groundwork /

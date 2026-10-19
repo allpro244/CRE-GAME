@@ -157,7 +157,10 @@ for (const n of [3, 4, 5]) {
       const r = E.advanceUntilAttention(g, parcels, bbls, adjacency, 120);
       g = r.s;
       if (g.gameOver) g = { ...g, gameOver: null, cash: g.cash + 50e6 };
-      if (r.key?.startsWith(`delivered:${root}:`)) stoppedOn = r;
+      // The stop in the delivery month counts whatever it is named for: when
+      // the Fed or a swan lands the same month, the clock stops once, for it,
+      // and the delivery is on the docket beside it.
+      if (r.key?.startsWith(`delivered:${root}:`) || (r.months > 0 && g.holdings[root]?.deliveredM === g.month)) stoppedOn = r;
       if (r.months === 0) break;
     }
     if (g.developments[root]) { fail(n, mode, "never delivered"); continue; }

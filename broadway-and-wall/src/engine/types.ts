@@ -3645,6 +3645,8 @@ export interface GameState {
     builderId?: string;
     /** ...or the builder firm, when the town's builders are firms (GameState.builderFirms). */
     firmId?: string;
+    /** Empty lots next door the firm will buy into the site at the start (dev.ts assemblyKids). */
+    assemble?: string[];
   }[];
   cityJobs?: {
     bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number;

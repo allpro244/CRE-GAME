@@ -32,7 +32,7 @@ import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
 import { tickCorporate } from "./corporate";
-import { initRivals, tickRivals, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
+import { initRivals, tickRivals, tickRivalAssembly, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -452,7 +452,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   let rejects = 0;
   while (s.listings.length < target && guard++ < 4000 && rejects < 250) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
-    if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) { rejects++; continue; }
+    if (listed.has(bbl) || s.holdings[bbl] || s.merged?.[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) { rejects++; continue; }
     // A LOT WITH A CRANE ON IT IS NOT FOR SALE AS DIRT. A merchant builder's
     // live job stayed in `cityJobs` while the tape sold the lot underneath it;
     // the buyer's own development then queued a second delivery on the same
@@ -680,6 +680,7 @@ function tickMonth(
   tickPortfolio(s, parcels);
   tickFirm(s, parcels);
   tickRivals(s, parcels);
+  tickRivalAssembly(s, parcels, adjacency);
   tickRivalTakeovers(s, parcels);
   tickRivalConversions(s, parcels);
   tickRivalRetirements(s, parcels);
@@ -1484,9 +1485,15 @@ function tickMonth(
   for (const bbl of Object.keys(s.groundLeases ?? {})) {
     if (!s.holdings[bbl]) transferGroundLeaseOffBook(s, bbl);
   }
+  // AN ASSEMBLED SITE STAYS ONE SITE WHOEVER OWNS IT. A player's site keeps
+  // its lots as deeds (actions.ts assembleLots); a firm's or the street's has
+  // absorbed them. A site goes as a whole, by any door — a sale, a seizure, a
+  // receiver: a lot of yours left behind under a site you no longer hold
+  // leaves your book with it, deposits and all. The lots never fall back out:
+  // a building, if one stands, stands across all of them.
   for (const [child, parent] of Object.entries(s.merged ?? {})) {
-    if (s.holdings[child] && s.holdings[parent]) continue;
-    delete s.merged![child];
+    if (s.holdings[parent] || !s.holdings[child]) continue;
+    moveDeposit(s, s.holdings[child], -depositsOn(s.holdings[child]));
     delete s.holdings[child];
   }
   // The same for a workout file. A deed that left the book by any route takes

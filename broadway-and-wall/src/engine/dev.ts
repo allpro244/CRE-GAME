@@ -3821,7 +3821,7 @@ function classPinnedOwed(e: Econ, k: BuiltClass, slack = 0.02): boolean {
   return (e.structTight?.[k] ?? 0) > 0.06;
 }
 
-function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
+function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null = null) {
   // A slow clock. Roughly one candidate examined a month, and only the worst
   // offender in a sample gets the notice — a city does not clear a block a
   // month, it clears one building every year or two.
@@ -3972,8 +3972,10 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const chosen: {
     rec: TearCand["rec"]; ratio: number; bbl: string; oldSf: number;
     nextUse: DevUse; lead: BuiltClass; nsf: number; nfl: number;
-    opportunityCost: number; plan: DevPlan; ltc: number;
+    opportunityCost: number; plan: DevPlan; ltc: number; kids: string[];
   }[] = [];
+  // Lots spoken for this pass: a site, or a neighbour folded into one.
+  const taken = new Set<string>();
 
   let examinedRedev = 0;
   for (const cand of pool) {
@@ -4060,10 +4062,40 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (demandIdx(rec.demandScore) < rdev.minDemand) continue;
     let bestU: ReturnType<typeof underwriteDevelopment> = null;
     let bestH = -Infinity;
+    let bestKids: string[] = [];
+    let bestOc = opportunityCost;
+    // THE BUILDING NEXT DOOR TOO (owner, Oct 2026: rivals assemble lots). Where
+    // building pays, the neighbours are buildings: a real core tower stands on
+    // three or four old walk-ups bought together and cleared at once. A firm
+    // prices the site alone and the site with the cheap old fabric next door —
+    // each neighbour at what it is worth standing, with the holdout premium
+    // and its own demolition — and builds whichever pays more.
+    // Priced only when the lot alone comes close: measured, folding in the
+    // neighbours lifts a scheme's return by about 2% at the median and 7% at
+    // the 90th percentile, so a lot that misses by more than ASSEMBLY_NEAR does
+    // not get there by growing.
+    let nearH = 0;
+    for (const assemble of s.builderFirms ? [false, true] : [false]) {
+    const kids = assemble ? (nearH >= ASSEMBLY_NEAR ? teardownKids(s, parcels, adjacency, bbl, rec, opportunityCost, taken) : []) : [];
+    if (assemble && !kids.length) break;
+    const before = s.merged;
+    let oc = opportunityCost;
+    let oldAll = oldSf;
+    if (kids.length) {
+      for (const kk of kids) {
+        const kr = resolveRec(parcels, s, kk)!;
+        oc += (1 + ASSEMBLY_PREMIUM) * redevelopmentBasis(kr, e, gradeOf(s, kr)) + (kr.class !== "land" && kr.bldgArea > 0 ? demolitionCost(kr, s) : 0);
+        if (kr.class === cls) oldAll += kr.bldgArea;
+      }
+      oc = Math.round(oc + (45_000 + 30_000 * (kids.length + 1)) * e.costIdx);
+      s.merged = { ...(before ?? {}) };
+      for (const kk of kids) s.merged[kk] = bbl;
+    }
+    const site = kids.length ? resolveRec(parcels, s, bbl)! : rec;
     for (const k of BUILT_CLASSES) {
       if (!zonePermits(rec.zoneDist, k, rec.demandScore, e)) continue;
       const plate = cityCoverage(k);
-      const env = Math.max(1, Math.min(cityInfillCap(s, parcels, rec, k), maxFloorsFor(rec, plate, k)));
+      const env = Math.max(1, Math.min(cityInfillCap(s, parcels, site, k), maxFloorsFor(site, plate, k)));
       // THE MARKET ORDERED SO MANY FEET, HERE TOO (2026-10-10). The start path
       // caps a building at what is owed for its use; this path took the
       // best-clearing height whatever the book said and netted it off after.
@@ -4073,35 +4105,40 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
       // replacement ADDS — less what stood, when it stood in the same use — is
       // held to the order, one storey always allowed.
       const owedK = Number.POSITIVE_INFINITY;   // no order cap: the pro forma's delivery vacancy sizes it
-      const standsAsK = cls === k ? oldSf : 0;
+      const standsAsK = cls === k ? oldAll : 0;
       for (const fl of schemeFloorLadder(k, env)) {
-        if (rec.lotArea * plate * fl < oldSf * 1.08) continue;
-        if (fl > 1 && rec.lotArea * plate * fl - standsAsK > Math.max(owedK, rec.lotArea * plate)) continue;
+        if (site.lotArea * plate * fl < oldAll * 1.08) continue;
+        if (fl > 1 && site.lotArea * plate * fl - standsAsK > Math.max(owedK, site.lotArea * plate)) continue;
         if (fl > rdev.maxFloors) continue;
-        const u = underwriteDevelopment(s, parcels, bbl, k, fl, plate, opportunityCost, rdev.spec, rdev.ltc);
+        const u = underwriteDevelopment(s, parcels, bbl, k, fl, plate, oc, rdev.spec, rdev.ltc);
         if (!u || (!u.financeable && rdev.ltc > CASH_BUILDER_LTC)) continue;
         // Same size discipline as on vacant dirt: no bigger than this shop's
         // share of the class's standing stock.
         if (fl > 1 && u.plan.sf * (u.plan.mix?.[k] ?? 1) > rdev.maxShare * Math.max(1, e.stock?.[k] ?? 0)) continue;
         if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months) > NATURAL_VAC[k] + rdev.vacTol) continue;
         const h = hurdleAt(u.plan, DEV_MARGIN) * rdev.outlook * momentumRead(s, k, rdev.momentum) / rdev.bar;
+        if (!kids.length) nearH = Math.max(nearH, h);
         if (h < 1) continue;
-        if (!bestU || h > bestH) { bestU = u; bestH = h; nextUse = k; lead = k; }
+        if (!bestU || h > bestH) { bestU = u; bestH = h; nextUse = k; lead = k; bestKids = kids; bestOc = oc; }
       }
     }
+    s.merged = before;
+    }
     if (!bestU) continue;
+    taken.add(bbl);
+    for (const kk of bestKids) taken.add(kk);
     void teardownRoll; void shareJitter; void stood; void stoodAge; void leadShort;
     const plan = bestU.plan;
     const nsf = plan.sf;
     const nfl = plan.floors;
     chosen.push({
       rec, ratio: cand.ratio, bbl, oldSf, nextUse, lead, nsf, nfl,
-      opportunityCost, plan, ltc: rdev.ltc,
+      opportunityCost: bestOc, plan, ltc: rdev.ltc, kids: bestKids,
     });
     if (chosen.length >= crewRoom) break;
   }
   for (const pick of chosen) {
-  const { rec, ratio, bbl, oldSf, nextUse, lead, nsf, nfl, opportunityCost, plan, ltc } = pick;
+  const { rec, ratio, bbl, oldSf, nextUse, lead, nsf, nfl, opportunityCost, plan, ltc, kids } = pick;
   const yr = yr0;
   const tprog = plan.mix;
   const months = plan.months;
@@ -4112,12 +4149,33 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // A redevelopment needs a balance sheet: it goes to the builder with the
   // most free cash, not to whichever shop happened to be looking.
   let teardownFirm: Rival | null = null;
+  // The neighbours are folded in before the claim, so the firm takes title to
+  // the whole site; if nobody can carry it, they come back out untouched.
+  const mergedBefore = s.merged;
+  const kidRecs = kids.map((kk) => resolveRec(parcels, s, kk)!);
+  if (kids.length) {
+    s.merged = { ...(mergedBefore ?? {}) };
+    for (const kk of kids) s.merged[kk] = bbl;
+  }
   if (s.builderFirms) {
     const f = livingBuilderFirms(s).reduce<Rival | undefined>((a, r) => (!a || freeCash(s, r) > freeCash(s, a) ? r : a), undefined);
     (s.cityJobs ??= []).push({ bbl, use: nextUse, sf: nsf, floors: nfl, startM: s.month, deliverM: s.month + months, mix: tprog, spec: plan.spec });
     teardownFirm = (f ? claimJob(s, parcels, bbl, nextUse as DevUse, nsf, nfl, s.month + months, false, plan, f) : null)
       ?? claimJob(s, parcels, bbl, nextUse as DevUse, nsf, nfl, s.month + months, false, plan);
-    if (!teardownFirm) { s.cityJobs = s.cityJobs.filter((j) => !(j.bbl === bbl && j.startM === s.month)); continue; }
+    if (!teardownFirm) { s.cityJobs = s.cityJobs.filter((j) => !(j.bbl === bbl && j.startM === s.month)); s.merged = mergedBefore; continue; }
+  }
+  if (kids.length && !teardownFirm) s.merged = mergedBefore;
+  // ...and what stood on them comes down with the rest.
+  if (teardownFirm) for (let i = 0; i < kids.length; i++) {
+    const kr = kidRecs[i];
+    if (kr.class === "land" || !(kr.bldgArea > 0)) continue;
+    s.built[kids[i]] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
+    if ((CITY_STOCK as Record<string, number>)[kr.class] !== undefined) addStock(e, kr.class as keyof typeof CITY_STOCK, -rentableSf(kr));
+    s.demolished = (s.demolished ?? 0) + 1;
+    recordPropertyEvent(s, kids[i], {
+      kind: "demolished", sf: kr.bldgArea, use: kr.class as BuiltClass,
+      outcome: `${kr.yearBuilt || "Older"} building bought by ${teardownFirm.name} and cleared, with ${rec.address}, for one ${nextUse} site`,
+    });
   }
 
   // Off the record and off the stock only AFTER the replacement is funded.
@@ -4196,10 +4254,14 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[]) {
       : ratio >= 0.85
         ? `the land under it is worth ${ratio.toFixed(1)}x the standing building`
         : `the replacement clears its full hurdle after charging $${(opportunityCost / 1e6).toFixed(1)}M for the building being sacrificed`;
+    const yoursNext = kids.some((kk) => Object.keys(s.holdings).some((b) => parcels[b]?.block === parcels[kk]?.block));
     s.news.unshift({
-      q: s.month, kind: yoursHere ? "event" : "info",
-      text: `${rec.address} is coming down. It went up in ${rec.yearBuilt}, and ${why}. `
-        + `${(nsf / 1000).toFixed(0)}k sf of ${nextUse} replaces it, opening ${monthLabel(s.month + months)}.`,
+      q: s.month, kind: yoursHere || yoursNext ? "event" : "info",
+      text: kids.length && teardownFirm
+        ? `${teardownFirm.name} has bought ${rec.address} and ${kids.length} lot${kids.length > 1 ? "s" : ""} beside it and is clearing all of it for one building. `
+          + `${(nsf / 1000).toFixed(0)}k sf of ${nextUse}, ${nfl} floors, opening ${monthLabel(s.month + months)}.`
+        : `${rec.address} is coming down. It went up in ${rec.yearBuilt}, and ${why}. `
+          + `${(nsf / 1000).toFixed(0)}k sf of ${nextUse} replaces it, opening ${monthLabel(s.month + months)}.`,
     });
   }
   void yr;
@@ -4508,7 +4570,7 @@ export function tickCityGrowth(
   tickIndustrialExit(s, parcels, bbls);
   tickSurplusExit(s, parcels, bbls);
   retireOffMapSurplus(s, parcels, bbls);
-  tickTeardowns(s, parcels, bbls);
+  tickTeardowns(s, parcels, bbls, adjacency);
   // Extra densify passes when the book is pinned short — one wrecking ball a
   // month cannot catch a multi-decade capacity shortfall.
   {
@@ -4516,8 +4578,8 @@ export function tickCityGrowth(
     const bookShort = BUILT_CLASSES.some((k) => classPinnedOwed(e2, k, 0.015));
     const shortOf = (th: number) => BUILT_CLASSES.some((k) => (e2.structTight?.[k] ?? 0) > th
       && (e2.cityVac?.[k] ?? NATURAL_VAC[k]) <= frictionFloor(k) + 0.015);
-    if (bookShort || shortOf(0.08)) tickTeardowns(s, parcels, bbls);
-    if (shortOf(0.16)) tickTeardowns(s, parcels, bbls);
+    if (bookShort || shortOf(0.08)) tickTeardowns(s, parcels, bbls, adjacency);
+    if (shortOf(0.16)) tickTeardowns(s, parcels, bbls, adjacency);
   }
 
   // ---- deliveries first: today's opening was somebody's decision years ago --
@@ -4670,6 +4732,94 @@ export function tickCityGrowth(
  * (`projectCostMult`) and each lot its own land price; and only a few
  * developers are looking in any month (`developerLooksPerMonth`).
  */
+/**
+ * ASSEMBLE BEFORE YOU BUILD (owner, Oct 2026: "I definitely do want rivals to
+ * have the ability to assemble lots"). The builder firms buy the empty lots
+ * next to a site they like and put up one building on the lot. Most real
+ * mid-block towers stand on three or four old house lots bought together.
+ *
+ * The neighbours are empty dirt nobody holds: a lot with a building, an owner,
+ * a job, a plan, or a civic use on it is not for sale as part of a site. At
+ * most three are taken, the ones the parcel graph lists first.
+ */
+function assemblyKids(s: GameState, parcels: ParcelTable, adjacency: Record<string, string[]> | null, bbl: string): string[] {
+  if (!adjacency) return [];
+  const parents = new Set(Object.values(s.merged ?? {}));
+  const out: string[] = [];
+  for (const n of adjacency[bbl] ?? []) {
+    if (out.length >= ASSEMBLY_MAX_KIDS) break;
+    if (n === bbl || out.includes(n) || !assemblyFree(s, parcels, n) || parents.has(n)) continue;
+    out.push(n);
+  }
+  return out;
+}
+/** Empty dirt nobody holds, plans or builds on: a lot a builder can buy into a site. */
+function assemblyFree(s: GameState, parcels: ParcelTable, bbl: string): boolean {
+  if (s.merged?.[bbl] || s.holdings[bbl] || s.developments[bbl] || ownerOf(s, bbl) || isCivicLand(s, bbl)) return false;
+  const over = s.built[bbl] as { class?: string } | undefined;
+  if (over && over.class !== "land") return false;
+  if ((s.cityJobs ?? []).some((j) => j.bbl === bbl) || (s.cityPlans ?? []).some((p) => p.bbl === bbl || p.assemble?.includes(bbl))) return false;
+  const rec = resolveRec(parcels, s, bbl);
+  return !!rec && rec.class === "land" && rec.lotArea > 0;
+}
+/**
+ * THE OLD FABRIC NEXT DOOR A REDEVELOPER WOULD BUY WITH THE SITE: unowned
+ * lots (the street's, not a firm's or yours), not landmarked, ground-leased,
+ * listed or under a crane, and no dearer to clear per foot of dirt than the
+ * site itself — a walk-up beside a walk-up, not the tower beside it. At most
+ * three.
+ */
+function teardownKids(
+  s: GameState, parcels: ParcelTable, adjacency: Record<string, string[]> | null,
+  bbl: string, rec: NonNullable<ReturnType<typeof resolveRec>>, siteCost: number, taken: Set<string>,
+): string[] {
+  if (!adjacency) return [];
+  const parents = new Set(Object.values(s.merged ?? {}));
+  const listed = new Set(s.listings.map((l) => l.bbl));
+  const perSf = siteCost / Math.max(1, rec.lotArea);
+  const out: string[] = [];
+  for (const n of adjacency[bbl] ?? []) {
+    if (out.length >= ASSEMBLY_MAX_KIDS) break;
+    if (n === bbl || out.includes(n) || taken.has(n) || parents.has(n) || listed.has(n)) continue;
+    if (s.merged?.[n] || s.holdings[n] || s.developments[n] || ownerOf(s, n) || isCivicLand(s, n)) continue;
+    if (s.landmarks?.[n] !== undefined || s.cityGroundLeases?.[n]) continue;
+    if ((s.cityJobs ?? []).some((j) => j.bbl === n) || (s.cityPlans ?? []).some((p) => p.bbl === n || p.assemble?.includes(n))) continue;
+    const kr = resolveRec(parcels, s, n);
+    if (!kr || !(kr.lotArea > 0)) continue;
+    const standing = kr.class === "land" ? ownerAskPsf(kr, s.econ) * kr.lotArea : redevelopmentBasis(kr, s.econ, gradeOf(s, kr));
+    if (standing / kr.lotArea > perSf) continue;
+    out.push(n);
+  }
+  return out;
+}
+
+/**
+ * WHAT AN ASSEMBLED SITE COSTS, AND FOLDS THE LOTS IN (the caller puts
+ * `s.merged` back). Each owner asks what their own lot is worth alone; the
+ * neighbours add a holdout premium on top; then the filing. Whatever the
+ * bigger site is worth beyond that (the plottage: one core, one plate, a
+ * taller frame) is the builder's to earn, and the pro forma decides whether
+ * there is any.
+ *
+ * The premium is there because the last owners on a block know what a builder
+ * is doing. Studies of urban assemblages put it at 10-40% over the lots'
+ * separate value (Brooks & Lutz 2016; the holdout literature). One fifth is a
+ * stated shape parameter, not a fitted one. The filing is the same survey,
+ * title and counsel the player pays (actions.ts mergeCost).
+ */
+function assembledLandBasis(s: GameState, parcels: ParcelTable, bbl: string, kids: string[]): number {
+  const ask = (b: string) => { const r = resolveRec(parcels, s, b)!; return ownerAskPsf(r, s.econ) * r.lotArea; };
+  const kidsAsk = kids.reduce((a, k) => a + ask(k), 0);
+  const total = ask(bbl) + (1 + ASSEMBLY_PREMIUM) * kidsAsk + (45_000 + 30_000 * (kids.length + 1)) * s.econ.costIdx;
+  s.merged = { ...(s.merged ?? {}) };
+  for (const k of kids) s.merged[k] = bbl;
+  return Math.round(total);
+}
+const ASSEMBLY_MAX_KIDS = 3;
+/** How close the lot alone must come to its bar before the assembled site is priced. */
+const ASSEMBLY_NEAR = 0.9;
+const ASSEMBLY_PREMIUM = 0.2;
+
 function developerLook(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
   opts?: { backdate?: number; quiet?: boolean },
@@ -4687,7 +4837,7 @@ function developerLook(
   const dev: DeveloperProfile = habits ? { ...habits, outlook: habits.outlook * Math.exp(0.03 * (2 * rng(s, "dev") - 1)) } : drawDeveloper(s);
   // A firm's purse is its free cash: what it holds less what its live jobs still need.
   const purse = firm ? Math.max(0, freeCash(s, firm)) : who ? Math.max(0, who.capital - who.committed) : Infinity;
-  let best: { bbl: string; rec: (typeof parcels)[string]; use: DevUse; floors: number; plate: number; h: number; coInvest: number } | null = null;
+  let best: { bbl: string; rec: (typeof parcels)[string]; use: DevUse; floors: number; plate: number; h: number; coInvest: number; kids: string[] } | null = null;
   let examined = 0;
   for (let draw = 0; draw < SITES_PER_LOOK * 8 && examined < SITES_PER_LOOK; draw++) {
     const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
@@ -4705,14 +4855,25 @@ function developerLook(
     examined++;
     // Where this developer works: a prime-site developer passes over the fringe.
     if (demandIdx(rec.demandScore) < dev.minDemand) continue;
+    // THE LOT ALONE, AND THE LOT WITH THE EMPTY DIRT NEXT DOOR. A builder firm
+    // prices both on the same pro forma; the assembled one carries the
+    // neighbours' asks with the holdout premium and the filing on top, and
+    // wins only when the bigger plate pays for them.
+    let nearV = 0;
+    for (const assemble of firm ? [false, true] : [false]) {
+    const kids = assemble ? (nearV >= ASSEMBLY_NEAR ? assemblyKids(s, parcels, adjacency, bbl) : []) : [];
+    if (assemble && !kids.length) break;
+    const before = s.merged;
+    const landOv = kids.length ? assembledLandBasis(s, parcels, bbl, kids) : undefined;
+    const site = kids.length ? resolveRec(parcels, s, bbl)! : rec;
     for (const base of dev.uses) {
-      const use: DevUse = base === "retail" && retailWantsMixed(rec) ? "mixed" : base;
+      const use: DevUse = base === "retail" && retailWantsMixed(site) ? "mixed" : base;
       const lead = dominantOf(devMix(use));
       const plate = cityCoverage(use);
-      const env = Math.max(1, Math.min(cityInfillCap(s, parcels, rec, lead), maxFloorsFor(rec, plate, use)));
+      const env = Math.max(1, Math.min(cityInfillCap(s, parcels, site, lead), maxFloorsFor(site, plate, use)));
       const top = Math.max(1, Math.min(env, dev.maxFloors));
       for (const fl of schemeFloorLadder(lead, top)) {
-        const u = underwriteDevelopment(s, parcels, bbl, use, fl, plate, undefined, dev.spec, dev.ltc);
+        const u = underwriteDevelopment(s, parcels, bbl, use, fl, plate, landOv, dev.spec, dev.ltc);
         // A developer writing most of the cheque from its own money does not
         // need the construction desk open: when the banks will not lend, the
         // cash-heavy ones still build what pencils.
@@ -4743,13 +4904,16 @@ function developerLook(
         // through their rent outlook and how they read the market's direction.
         // ...but only on a scheme that already clears its spread on today's
         // rent, whatever it believes about tomorrow's.
+        if (!kids.length) nearV = Math.max(nearV, hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) / spreadFloor(dev));
         if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < spreadFloor(dev)) continue;
         // ...and only what its own money can carry its share of.
         const coInvest = builderCoInvest(u.plan.basisTotal, dev.ltc);
         if (coInvest > purse) continue;
         const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum);
-        if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h, coInvest };
+        if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h, coInvest, kids };
       }
+    }
+    s.merged = before;
     }
   }
   // Built only if the deal clears THIS developer's bar.
@@ -4773,6 +4937,7 @@ function developerLook(
     (s.cityPlans ??= []).push({
       bbl: best.bbl, use: best.use, floors: best.floors, plate: best.plate, spec: dev.spec, ltc: dev.ltc,
       decidedM: s.month, breakM: s.month + PLAN_LEAD_M[lead], ...(who ? { builderId: who.id } : {}), ...(firm ? { firmId: firm.id } : {}),
+      ...(best.kids.length ? { assemble: best.kids } : {}),
     });
     if (who) who.committed += best.coInvest;
     return true;
@@ -4927,17 +5092,35 @@ function breakCommittedPlans(s: GameState, parcels: ParcelTable, adjacency: Reco
     if (p.firmId) { const f = (s.rivals ?? []).find((r) => r.id === p.firmId); if (!f || f.failedM !== undefined || f.retiredM !== undefined) continue; }
     if (s.month < p.breakM) { keep.push(p); continue; }
     if (s.holdings[p.bbl] || (s.built[p.bbl]?.bldgArea ?? 0) > 0 || s.developments[p.bbl] || (s.cityJobs ?? []).some((j) => j.bbl === p.bbl) || ownerOf(s, p.bbl)) continue;
+    // THE ASSEMBLAGE CLOSES AT THE START, or not at all: if a neighbour has
+    // gone to someone else in the meantime, the scheme is re-priced on the
+    // lot alone and stands or falls on that.
+    const before = s.merged;
+    const kids = p.assemble?.length && p.assemble.every((k) => assemblyFree(s, parcels, k)) ? p.assemble : [];
+    const landOv = kids.length ? assembledLandBasis(s, parcels, p.bbl, kids) : undefined;
     const rec = resolveRec(parcels, s, p.bbl);
-    if (!rec || rec.class !== "land") continue;
-    const u = underwriteDevelopment(s, parcels, p.bbl, p.use as DevUse, p.floors, p.plate, undefined, p.spec, p.ltc);
-    if (!u || (!u.financeable && !ownMoney && p.ltc > CASH_BUILDER_LTC)) continue;
+    const fail = () => { s.merged = before; };
+    if (!rec || rec.class !== "land") { fail(); continue; }
+    const u = underwriteDevelopment(s, parcels, p.bbl, p.use as DevUse, p.floors, p.plate, landOv, p.spec, p.ltc);
+    if (!u || (!u.financeable && !ownMoney && p.ltc > CASH_BUILDER_LTC)) { fail(); continue; }
     // SHELVED AT THE LAST LOOK. The scheme is re-priced at ground-break —
     // land at today's ask, today's trades — and a builder whose spread has
     // gone negative in the months of design and permits does not dig: the
     // deposit on the land and the drawings are written off and the site
     // waits (the shelved-scheme lists of 1990, 2008-09).
-    if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < SHELVE_AT) continue;
-    if (breakCityGround(s, parcels, adjacency, p.bbl, rec, p.use as DevUse, p.floors, p.plate, { spec: p.spec, ltc: p.ltc, decided: true, builderId: p.builderId, firmId: p.firmId })) syncSupplyViews(s.econ, true);
+    if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < SHELVE_AT) { fail(); continue; }
+    if (breakCityGround(s, parcels, adjacency, p.bbl, rec, p.use as DevUse, p.floors, p.plate, { spec: p.spec, ltc: p.ltc, decided: true, builderId: p.builderId, firmId: p.firmId, landBasis: landOv })) {
+      syncSupplyViews(s.econ, true);
+      const firm = kids.length ? ownerOf(s, p.bbl) : null;
+      if (!firm) { fail(); continue; }
+      if ((adjacency?.[p.bbl] ?? []).some((a) => !!s.holdings[a]) || kids.length >= 2) {
+        s.news.unshift({
+          q: s.month, kind: "info", bbl: p.bbl,
+          text: `${firm.name} bought ${kids.length} lot${kids.length > 1 ? "s" : ""} next to ${rec.address} and is building on all of it: `
+            + `${Math.round(rec.lotArea).toLocaleString()} sf of dirt under one ${p.floors}-storey building.`,
+        });
+      }
+    } else fail();
   }
   s.cityPlans = keep;
 }
@@ -4964,11 +5147,11 @@ function developerLooksPerMonth(e: Econ): number {
 function breakCityGround(
   s: GameState, parcels: ParcelTable, adjacency: Record<string, string[]> | null,
   bbl: string, rec: NonNullable<ParcelTable[string]>, use: DevUse, floors: number, plate: number,
-  opts?: { backdate?: number; quiet?: boolean; spec?: number; ltc?: number; decided?: boolean; builderId?: string; firmId?: string },
+  opts?: { backdate?: number; quiet?: boolean; spec?: number; ltc?: number; decided?: boolean; builderId?: string; firmId?: string; landBasis?: number },
 ): boolean {
   let sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   const lead = dominantOf(devMix(use));
-  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, undefined, opts?.spec ?? 0.5, opts?.ltc);
+  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, opts?.landBasis, opts?.spec ?? 0.5, opts?.ltc);
   // The anonymous merchants build at the trade's margin, each on its own read
   // of rent (`anonHurdle`). Below that, the job goes ahead only if a named
   // firm that would build it takes it (`firmWouldBuild` in rivals.ts) —

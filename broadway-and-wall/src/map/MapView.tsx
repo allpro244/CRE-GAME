@@ -310,6 +310,18 @@ function hoodBoundaries(
   return { type: "FeatureCollection", features };
 }
 
+/**
+ * A MAP WITH NO STYLE IS NOT A MAP. When the browser takes the WebGL context
+ * away, MapLibre destroys the style at once (`map.style = null`), and the
+ * rebuild below waits a few seconds for the context to come back. Every
+ * effect that touched the map in that window — the month-end repaint, a
+ * selection, a lens — threw from inside MapLibre and put up the
+ * "city could not be drawn" card. The effects treat such a map as absent;
+ * the rebuild re-runs them.
+ */
+const liveMap = (m: maplibregl.Map | null): maplibregl.Map | null =>
+  m && (m as unknown as { style?: unknown }).style ? m : null;
+
 export default function MapView() {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -399,6 +411,7 @@ export default function MapView() {
       // state is unchanged — the features carry the same numeric ids they
       // carried as tiles, because the ids come from the BBL either way.
       const setState = (bbl: string, state: Record<string, boolean>) => {
+        if (!liveMap(map)) return;              // context lost: hover waits for the rebuild
         const id = featureIdsFor(bbl);
         map.setFeatureState({ source: "bw-parcels", id }, state);
         map.setFeatureState({ source: "bw-buildings", id }, state);
@@ -607,6 +620,7 @@ export default function MapView() {
         const pickAt = (pt: { x: number; y: number }): string | null => {
           const three = threeRef.current;
           if (three?.ready) return three.pickAt(pt.x, pt.y);
+          if (!liveMap(map)) return null;
           const fs = map.queryRenderedFeatures(
             [[pt.x - 8, pt.y - 8], [pt.x + 8, pt.y + 8]], { layers: ["bw-parcel-fill"] });
           return (fs[0]?.properties?.bbl as string | undefined) ?? null;
@@ -686,7 +700,7 @@ export default function MapView() {
   // lots it used to be.
   const mergedSig = useStore((s) => Object.entries(s.game?.merged ?? {}).map(([c, p]) => c + ">" + p).sort().join("|"));
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     const city = useStore.getState().city;
     const fc = city?.parcelFeatures as GeoJSON.FeatureCollection | undefined;
     const src = map?.getSource("bw-parcels") as maplibregl.GeoJSONSource | undefined;
@@ -698,7 +712,7 @@ export default function MapView() {
     });
   }, [mapReady, mergedSig]);
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !map.isStyleLoaded()) {
       // style may still be loading during the first selection — retry shortly
       const t = setTimeout(() => useStore.setState({ selectedBBL }), 150);
@@ -779,7 +793,7 @@ export default function MapView() {
   //             the part of the map you can see
   const flyTo = useStore((s) => s.flyTo);
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !flyTo || !parcels) return;
     const rec = parcels[flyTo.bbl];
     if (!rec) return;
@@ -865,7 +879,7 @@ export default function MapView() {
   const fitBook = useStore((s) => s.fitBook);
   useEffect(() => {
     if (!fitBook) return;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     const game = useStore.getState().game;
     if (!map || !parcels || !game) return;
     const pts: [number, number][] = [];
@@ -909,7 +923,7 @@ export default function MapView() {
   const pinFirm = useStore((s) => s.mapFirm);
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     const setState = (bbl: string, state: Record<string, boolean>) => {
       const id = Number(bbl);
@@ -1030,7 +1044,7 @@ export default function MapView() {
   const dmdRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "demand" && lens !== "land") return;
     const drift = game.blockD ?? {};
@@ -1070,7 +1084,7 @@ export default function MapView() {
   const zoneRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "zoning") return;
     const next = new Map<string, number>();
@@ -1100,7 +1114,7 @@ export default function MapView() {
   const leaseRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "leases") return;
     const next = new Map<string, number>();
@@ -1132,7 +1146,7 @@ export default function MapView() {
   const vacRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "vacancy") return;
     const next = new Map<string, number>();
@@ -1162,7 +1176,7 @@ export default function MapView() {
   const siteRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "pencils") return;
     const asks = new Map(game.listings.map((l) => [l.bbl, l.ask] as const));
@@ -1208,7 +1222,7 @@ export default function MapView() {
   const photoFrame = useStore((s) => s.photoFrame);
   const labelsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady) return;
     const live = labelsRef.current;
     const want = new Map<string, { name: string; cls: string; ll: [number, number] }>();
@@ -1656,7 +1670,7 @@ export default function MapView() {
     // the 3D lawns and trees read off the month
     const LEAF = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02];
     const mo = ((Math.floor(gameMonth) % 12) + 12) % 12;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     // the snowpack, not this month's flurry (cityVisuals snowCoverAt)
     const snowLying = cityVisual.snowCover;
     if (map?.getLayer("blocks")) map.setPaintProperty("blocks", "fill-color", blocksPaint(LEAF[mo], snowLying) as never);
@@ -1708,7 +1722,7 @@ export default function MapView() {
   const schemeBbl = designPreview?.bbl ?? null;
   const schemeFloors = designPreview?.floors ?? 0;
   const orbitCam = (bearing: number, pitch: number, zoom: number) => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     const rec = schemeBbl ? parcels?.[schemeBbl] : null;
     if (!map || !rec) return null;
     const height = threeRef.current?.buildingFrame(schemeBbl!)?.height || schemeFloors * 3.55;
@@ -1724,7 +1738,7 @@ export default function MapView() {
     return { center, bearing, pitch, zoom };
   };
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !designCam || !designPeek || !schemeBbl) return;
     if (designCam.op === "reset") {
       useStore.getState().setDesignSpin(false);
@@ -1745,7 +1759,7 @@ export default function MapView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designCam]);
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !designSpin || !designPeek || !schemeBbl) return;
     let raf = 0, last = performance.now();
     const stop = () => useStore.getState().setDesignSpin(false);
@@ -1779,7 +1793,7 @@ export default function MapView() {
   // until you leave, or until "Pan the map" on the bar hands them back.
   const designOrbit = useStore((s) => s.designOrbit);
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !designPeek || !schemeBbl || !designOrbit) return;
     const handlers = [map.dragPan, map.dragRotate, map.scrollZoom, map.touchZoomRotate, map.doubleClickZoom];
     const was = handlers.map((h) => h.isEnabled());
@@ -1831,7 +1845,7 @@ export default function MapView() {
   const graphics = useStore((s) => s.graphics);
   useEffect(() => {
     if (!mapReady) return;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     threeRef.current?.setQuality(graphics);
     // The pixel ratio is pinned explicitly, so MapLibre will NOT follow the
     // display on its own: browser zoom, or dragging the window to a screen of
@@ -1857,7 +1871,7 @@ export default function MapView() {
       cityVisual.overcast,
       cityVisual.snowCover,
     );
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (map) {
       // one sky, one light — the constants live in style.ts beside the style
       // that opens on them, so a weather tick can never revert a sky retune
@@ -1886,7 +1900,7 @@ export default function MapView() {
   // no lens at all. Reset, then override: a lens is only ever its own paint.
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady) return;
     const layer = threeRef.current;
     if (layer?.ready) {
@@ -2114,7 +2128,7 @@ export default function MapView() {
   const tipRef = useRef<HTMLDivElement>(null);
   const hoverCardOn = useStore((s) => s.hoverCard);
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     const tip = tipRef.current;
     if (!map || !mapReady || !tip) return;
     if (photoFrame || !hoverCardOn) {

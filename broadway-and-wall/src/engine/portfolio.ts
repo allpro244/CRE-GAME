@@ -677,9 +677,11 @@ export function acceptPortfolioBid(
     if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
     // The deposits go with the deed, out of the purse the sale lands in.
     moveDeposit(next, h, -depositsOn(h));
+    // AN ASSEMBLED SITE SELLS AS ONE SITE. The lots stay folded into it — the
+    // building, if one stands, stands across all of them — and leave your book
+    // with the parent.
     for (const [child, parent] of Object.entries(next.merged ?? {})) {
-      if (parent !== bbl) continue;
-      delete next.merged![child];
+      if (parent !== bbl || !next.holdings[child]) continue;
       moveDeposit(next, next.holdings[child], -depositsOn(next.holdings[child]));
       delete next.holdings[child];
       if (next.workouts?.[child]) delete next.workouts[child];

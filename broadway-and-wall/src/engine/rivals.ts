@@ -463,6 +463,103 @@ const BUILD_APPETITE: Record<RivalStyle, number> = {
   merchant: 1.35, pe: 0.50, reit: 0.14, vulture: 0.06,
   owneruser: 0.22, foreign: 0, slumlord: 0,
 };
+/** The parcel graph, handed over by the sim each month (tickRivalAssembly). */
+let ADJ: Record<string, string[]> | null = null;
+
+/** Does this lot touch dirt the firm already owns — a lot, or a site it has assembled? */
+function adjoinsOwnDirt(s: GameState, parcels: ParcelTable, r: Rival, bbl: string): boolean {
+  if (!ADJ) return false;
+  for (const n of ADJ[bbl] ?? []) {
+    const root = s.merged?.[n] ?? n;
+    if (root === bbl || !r.bbls.includes(root)) continue;
+    if (resolveRec(parcels, s, root)?.class === "land") return true;
+  }
+  return false;
+}
+
+/**
+ * THE STREET ASSEMBLES TOO (owner, Oct 2026: "I definitely do want rivals to
+ * have the ability to assemble lots"). A builder that owns two or more lots of
+ * dirt that touch folds them into one site — the same survey, title and
+ * counsel the player pays (actions.ts mergeCost) — when the site holds the
+ * value of its lots apart: a bigger plate carries one taller, better building
+ * instead of several small ones. The folded lots
+ * leave the firm's deed list and live on the parent (`s.merged`), so every
+ * path that moves a rival's deed — a sale, a seizure, a receiver, a failure —
+ * moves the whole site by moving its parent. Quarterly, builders only, empty
+ * dirt only (a lot with a building, a job, a listing or a land loan on it is
+ * not folded).
+ */
+export function tickRivalAssembly(s: GameState, parcels: ParcelTable, adjacency: Record<string, string[]> | null) {
+  ADJ = adjacency;
+  if (!adjacency || s.month % 3 !== 1) return;
+  const kids = new Map<string, string[]>();
+  for (const [c, p] of Object.entries(s.merged ?? {})) { const k = kids.get(p) ?? []; k.push(c); kids.set(p, k); }
+  const busy = new Set((s.cityJobs ?? []).map((j) => j.bbl));
+  const listed = new Set(s.listings.map((l) => l.bbl));
+  for (const r of livingRivals(s)) {
+    if (paramsOf(r).build <= 0 || r.stressMs) continue;
+    const dirt = r.bbls.filter((b) => {
+      if (busy.has(b) || listed.has(b) || s.holdings[b] || s.developments[b] || s.merged?.[b] || s.cityLoans?.[b]) return false;
+      const rec = resolveRec(parcels, s, b);
+      return !!rec && rec.class === "land" && rec.lotArea > 0;
+    });
+    if (dirt.length < 2) continue;
+    const pool = new Set(dirt);
+    const seen = new Set<string>();
+    for (const start of dirt) {
+      if (seen.has(start)) continue;
+      const comp = [start];
+      seen.add(start);
+      for (let i = 0; i < comp.length; i++) {
+        for (const d of [comp[i], ...(kids.get(comp[i]) ?? [])]) {
+          for (const n of adjacency[d] ?? []) {
+            const root = s.merged?.[n] ?? n;
+            if (pool.has(root) && !seen.has(root)) { seen.add(root); comp.push(root); }
+          }
+        }
+      }
+      if (comp.length < 2) continue;
+      const apart = comp.reduce((a, b) => a + landValue(resolveRec(parcels, s, b)!, s.econ), 0);
+      const bySize = comp.map((b) => ({ b, area: resolveRec(parcels, s, b)!.lotArea })).sort((a, b) => b.area - a.area || (a.b < b.b ? -1 : 1));
+      const parent = bySize[0].b;
+      const children = bySize.slice(1).map((x) => x.b);
+      const deeds = comp.reduce((a, b) => a + 1 + (kids.get(b)?.length ?? 0), 0);
+      const cost = Math.round((45_000 + 30_000 * deeds) * s.econ.costIdx);
+      if (r.cash < cost) continue;
+      const before = { ...(s.merged ?? {}) };
+      s.merged ??= {};
+      for (const c of children) {
+        s.merged[c] = parent;
+        for (const k of kids.get(c) ?? []) s.merged[k] = parent;
+      }
+      const site = resolveRec(parcels, s, parent)!;
+      // Dirt prices close to additively (measured: a merged site at 99.6% of
+      // its lots apart), so "worth more" would never be met; the builder folds
+      // when the site holds its value, within the filing's own cost.
+      if (landValue(site, s.econ) < apart * 0.98) { s.merged = before; continue; }
+      r.cash -= cost;
+      r.bbls = r.bbls.filter((b) => !children.includes(b));
+      for (const c of children) {
+        forgetDeed(r, c);
+        const k = kids.get(parent) ?? [];
+        k.push(c, ...(kids.get(c) ?? []));
+        kids.set(parent, k);
+        kids.delete(c);
+        pool.delete(c);
+      }
+      logFirm(s, r, "plan", `assembled ${deeds} lots at ${site.address} into one site of ${Math.round(site.lotArea).toLocaleString()} sf`, parent);
+      if (stakeIn(s, parcels, site, r.id) || deeds >= 4) {
+        s.news.unshift({
+          q: s.month, kind: "info",
+          text: `${r.name} has assembled ${deeds} lots at ${site.address} into one site of ${Math.round(site.lotArea).toLocaleString()} sf. `
+            + `One plate, one core — expect something bigger than anything on the block.`,
+        });
+      }
+    }
+  }
+}
+
 /**
  * A FIRM'S SMALLEST CHEQUE (owner, Oct 2026: "more rivals should develop high
  * quality buildings instead of acquiring a ton of them"). An investment
@@ -5042,7 +5139,9 @@ export function rivalBuys(
     // CAPACITY: a small shop digests two deals a year, a platform eight.
     if (r.sheet && boughtLastYear(r, s.month) >= dealsPerYear(r.sheet)) return false;
     // ...AND NOT BELOW ITS TICKET. A lot is sized by the job it carries.
-    if ((rec.class === "land" ? price / LAND_SHARE_OF_JOB : price) < minTicket(r)) return false;
+    // A lot that grows a site the builder already holds is bought for the site.
+    if ((rec.class === "land" ? price / LAND_SHARE_OF_JOB : price) < minTicket(r)
+      && !(rec.class === "land" && paramsOf(r).build > 0 && adjoinsOwnDirt(s, parcels, r, rec.bbl))) return false;
     const { debt, need, draw, aum } = drawFor(r);
     if (r.cash + draw < need) return false;
     const aumAfter = aum + price;
@@ -5166,7 +5265,9 @@ export function rivalBuys(
     const spite = s.talks?.[rec.bbl] && r.sheet ? 1 + Math.min(1, Math.max(0, grudgeOf(s, r)) * 0.12) : 1;
     const share = streetAum > 0 ? Math.max(0, r.aum ?? 0) / streetAum : 0;
     const mandate = 1 / (1 + (share / 0.15) ** 2);
-    const w = st.appetite * Math.max(0.05, cyc) * spite * deployPressure(s, r) * mandate
+    // THE LOT NEXT DOOR IS WORTH MORE TO THE BUILDER WHO OWNS THIS ONE.
+    const assembling = builds && adjoinsOwnDirt(s, parcels, r, rec.bbl) ? 1.8 : 1;
+    const w = st.appetite * Math.max(0.05, cyc) * spite * deployPressure(s, r) * mandate * assembling
       // squared: a vulture is not a little keener on a receiver's ticket, it
       // is the room's first call (Distress 90: ~5x a firm at 30).
       * (isDistress ? st.distressBias * st.distressBias : 1)

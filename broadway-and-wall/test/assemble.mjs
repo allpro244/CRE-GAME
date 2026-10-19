@@ -170,10 +170,10 @@ if (line) {
   if (fb.length !== 4 || !fb.includes(pr) || fb.some((b) => rf.s.merged?.[b])) {
     console.error("FAIL pool collateral after merge", fb, rf.s.merged); process.exit(1);
   }
-  // a pool of three cannot lose a deed to a merge
-  gf.facility = { bbls: [A, B, C], balance: 5e6 };
+  // a pool at its minimum cannot lose a deed to a merge
+  gf.facility = { bbls: [A, B], balance: 5e6 };
   rf = E.assembleLots(gf, parcels, adjacency, [A, B]);
-  if (!rf.err || !/at least 3/.test(rf.err)) { console.error("FAIL thin pool should refuse", rf.err); process.exit(1); }
+  if (!rf.err || !new RegExp(`at least ${E.FACILITY_MIN_ASSETS}`).test(rf.err)) { console.error("FAIL thin pool should refuse", rf.err); process.exit(1); }
   console.log("pooled lots assemble ok", { pool: fb.length });
 }
 

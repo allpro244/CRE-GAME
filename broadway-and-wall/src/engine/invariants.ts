@@ -193,8 +193,11 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
   for (const [child, parent] of Object.entries(s.merged ?? {})) {
     const at = `assemblage ${child}`;
     if (child === parent) bad("merge", at, "a lot merged into itself");
-    if (!s.holdings[child]) bad("merge", at, "a merged deed you do not own");
-    if (!s.holdings[parent]) bad("merge", at, `merged into ${parent}, which you do not own`);
+    // Two shapes: your site keeps its lots as deeds; a firm's or the street's
+    // site (or one you bought from either) has absorbed them. Either way the
+    // lot is nobody else's.
+    if (s.holdings[child] && !s.holdings[parent]) bad("merge", at, "a merged deed you hold under a parent you do not");
+    if ((s.rivals ?? []).some((r) => r.bbls.includes(child))) bad("merge", at, "a firm still lists a lot folded into a site");
     if (s.merged![parent]) bad("merge", at, `merged into ${parent}, which is itself merged into something else`);
   }
   for (const [bbl, gl] of Object.entries(s.groundLeases ?? {})) {

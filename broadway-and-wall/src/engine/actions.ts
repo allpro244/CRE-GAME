@@ -799,6 +799,9 @@ function assembleBlocker(
 ): string | null {
   const root = siteRoot(s, bbl);
   for (const d of siteDeeds(s, root)) {
+    // A lot a firm folded into this site before you bought it is part of the
+    // site, not a deed of its own (rivals.ts tickRivalAssembly).
+    if (!s.holdings[d] && d !== root && s.merged?.[d] === root && s.holdings[root]) continue;
     if (!s.holdings[d]) return "You have to own every lot in the assemblage.";
     const rec = resolveRec(parcels, s, d);
     // Children already have lotArea 0 on the resolved record — vacancy is
@@ -938,8 +941,11 @@ export function assembleLots(
       // which is one of the deeds being folded here.
       if (!next.merged[d]) mergeDeedLedger(next, d, parent, next.holdings[d].boughtM);
       next.merged[d] = parent;
-      next.holdings[parent].costBasis += next.holdings[d].costBasis;
-      next.holdings[d].costBasis = 0;
+      // an absorbed lot (a firm's site you bought) has no deed of its own
+      if (next.holdings[d]) {
+        next.holdings[parent].costBasis += next.holdings[d].costBasis;
+        next.holdings[d].costBasis = 0;
+      }
     }
   }
 
@@ -3083,10 +3089,11 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (next.exits.length > 200) next.exits.shift();
   // AN ASSEMBLED SITE SELLS AS ONE SITE. The child deeds go with it — their
   // land, their basis and their value were folded into this one the day it was
-  // assembled, and the buyer is paying for all of it.
+  // assembled, and the buyer is paying for all of it. The lots stay folded
+  // into the site the buyer takes (a building, if one stands, stands across
+  // them); a lot a firm had already absorbed has no deed of yours to move.
   for (const [child, parent] of Object.entries(next.merged ?? {})) {
-    if (parent !== bbl) continue;
-    delete next.merged![child];
+    if (parent !== bbl || !next.holdings[child]) continue;
     // ...AND THEIR TENANTS' DEPOSITS GO WITH THEM. This deleted the child deed
     // and left the deposits behind as a liability that simply stopped existing:
     // money the player was holding for somebody else, released with no entry

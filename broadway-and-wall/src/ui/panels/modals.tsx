@@ -1254,10 +1254,21 @@ function PostMortem() {
           backwards halfway down. */}
       {(forced.length > 0 || events.length > 0) && (
         <ul className="gameover-events">
-          {[
-            ...forced.map((e) => ({ m: e.soldM, k: `f${e.bbl}${e.soldM}`, text: `${e.address} sold under duress for ${usd(e.price)} against ${usd(e.basis)} basis.` })),
-            ...events.map((e, i) => ({ m: e.m, k: `s${i}`, text: `${e.address}: ${e.kind === "seized" ? "taken by the lender" : e.kind === "deficiency" ? "a deficiency judgment" : e.kind === "dpo" ? "a discounted payoff" : "a forced sale"}${e.amount > 0 ? `, ${usd(e.amount)} left behind` : ""}.` })),
-          ].sort((a, b) => a.m - b.m).map((r) => (
+          {(() => {
+            // ONE SALE, ONE LINE. A creditors' sale is recorded twice — as the
+            // exit and as the lender's mark on the sponsor — and the list said
+            // the same building was "sold under duress" and "taken by the
+            // lender" in the same month. The mark rides on the sale's line.
+            const what = (e: (typeof events)[number]) =>
+              `${e.kind === "seized" ? "taken by the lender" : e.kind === "deficiency" ? "a deficiency judgment" : e.kind === "dpo" ? "a discounted payoff" : "a forced sale"}${e.amount > 0 ? `, ${usd(e.amount)} left behind` : ""}`;
+            const used = new Set<number>();
+            const sales = forced.map((e) => {
+              const j = events.findIndex((x, i) => !used.has(i) && x.m === e.soldM && x.address === e.address);
+              if (j >= 0) used.add(j);
+              return { m: e.soldM, k: `f${e.bbl}${e.soldM}`, text: `${e.address} sold under duress for ${usd(e.price)} against ${usd(e.basis)} basis${j >= 0 ? ` — ${what(events[j])}` : ""}.` };
+            });
+            return [...sales, ...events.flatMap((e, i) => used.has(i) ? [] : [{ m: e.m, k: `s${i}`, text: `${e.address}: ${what(e)}.` }])];
+          })().sort((a, b) => a.m - b.m).map((r) => (
             <li key={r.k}><span className="mono dim">{monthLabel(r.m)}</span> {r.text}</li>
           ))}
         </ul>

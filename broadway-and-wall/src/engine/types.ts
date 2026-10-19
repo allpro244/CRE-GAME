@@ -5075,6 +5075,12 @@ export interface Workout {
   /** notice -> the clock is running; forbearance -> you bought time; foreclosure -> they have filed. */
   stage: "notice" | "forbearance" | "foreclosure";
   cause: "balloon" | "covenant" | "arrears";
+  /**
+   * THE JUNIOR'S FILE. Missed mezz coupons with the senior still current: the
+   * mezz holder opened it, the cure is the junior's own missed coupons, and
+   * the senior bank is not a party to it.
+   */
+  junior?: boolean;
   /** What has to be paid, or the loan balance if it is the whole thing. */
   cure: number;
   /** The month it is decided one way or the other. */

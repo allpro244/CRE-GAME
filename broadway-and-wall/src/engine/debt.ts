@@ -1830,7 +1830,7 @@ function serviceMezz(
   } else {
     m.arrearsMs = (m.arrearsMs ?? 0) + 1;
     if ((m.arrearsMs ?? 0) >= 3 && !s.workouts?.[h.bbl]) {
-      openWorkout(s, h.bbl, "arrears", m.balance);
+      openWorkout(s, h.bbl, "arrears", pmt * (m.arrearsMs ?? 3), true);
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `Mezz at ${rec.address} has missed three coupons. ${m.holder ?? "Cordage Debt Partners"} `

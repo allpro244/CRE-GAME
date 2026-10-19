@@ -59,12 +59,14 @@
  */
 import type { ParcelTable } from "@/data/types";
 import type { ParcelRecord } from "@/data/types";
-import type { BuiltClass, GameState, Holding } from "./types";
-import { logBooks, monthLabel, cloneState, poolDeedLedger } from "./types";
+import type { BuiltClass, Exit, GameState, Holding } from "./types";
+import { logBooks, monthLabel, cloneState, poolDeedLedger, moveDeposit, closeDeedLedger } from "./types";
+import { depositsOn } from "./leasing";
+import { transferGroundLeaseOffBook } from "./actions";
 import { ownedHoldingNoiYr, ownedHoldingValue, ownedMonthlyNoi, resolveRec } from "./value";
 import { PRODUCTS, productById, bumpLenderRel, windowOpen, quote, advanceFactor, statedLtv, stackPayoff } from "./debt";
 import { shortIndexOf } from "./market";
-import { distressPrice, sponsorStanding } from "./sponsor";
+import { distressPrice, sponsorStanding, markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { fundCashNeed, fundableNow, spendable, fundAndBook } from "./credit";
@@ -141,7 +143,7 @@ export const RELEASE_PREMIUM = 1.15;
 export const FACILITY_CURE_M = 12;
 
 /** The smallest pool anybody will paper as a facility. */
-export const FACILITY_MIN_ASSETS = 3;
+export const FACILITY_MIN_ASSETS = 2;
 export const FACILITY_MIN_LOAN = 5_000_000;
 
 /**
@@ -1148,8 +1150,22 @@ function accelerate(s: GameState, parcels: ParcelTable): number {
     gross += px;
     taken.push(rec.address);
     recordComp(s, rec, px, "a receiver", firmShort(s), true, h.condition);
+    // THE SAME CLOSING AS ANY CREDITORS' SALE (sim.ts insolvency). The pool's
+    // deeds used to vanish without one: the tenants' deposits stayed in your
+    // account, the sale never reached your exits or the deed ledger, and a
+    // leased fee or an open letter outlived the building it was on.
+    {
+      const ex: Exit = { bbl, address: rec.address, boughtM: h.boughtM, soldM: q, price: px, basis: h.costBasis, gain: px - h.costBasis, forced: true };
+      closeDeedLedger(s, ex);
+      s.exits.push(ex);
+    }
+    if (s.groundLeases?.[bbl]) transferGroundLeaseOffBook(s, bbl);
+    moveDeposit(s, h, -depositsOn(h));   // the deposits go with the deed
+    (s.lastTradeM ??= {})[bbl] = q;
+    s.lois = s.lois.filter((l) => l.bbl !== bbl);
     delete s.holdings[bbl];
     if (s.workouts?.[bbl]) delete s.workouts[bbl];
+    markSponsor(s, "seized", rec.address);
   }
   // The receiver's costs come out of the collateral before the lender is paid,
   // which is why a borrower almost never sees a surplus.

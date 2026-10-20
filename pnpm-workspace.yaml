@@ -1,2 +1,8 @@
 packages:
   - broadway-and-wall
+
+# Windows: the harnesses import absolute paths ("D:\…\.engine.mjs"), which
+# Node's ESM loader only takes as file:// URLs. This inlined hook (a data: URL,
+# so it works from any folder) rewrites drive-letter specifiers to file URLs on
+# win32 and does nothing elsewhere. Readable source: broadway-and-wall/test/winpaths.mjs.
+nodeOptions: "--import=data:text/javascript,import%7Bregister%7Dfrom%22node%3Amodule%22%3Bif(process.platform%3D%3D%3D%22win32%22)register(%22data%3Atext%2Fjavascript%2C%22%2BencodeURIComponent(%22import%7BpathToFileURL%7Dfrom%5C%22node%3Aurl%5C%22%3Bexport%20function%20resolve(s%2Cc%2Cn)%7Breturn%20n(%2F%5E%5BA-Za-z%5D%3A%2F.test(s)%26%26(s%5B2%5D%3D%3D%3D%5C%22%2F%5C%22%7C%7Cs.charCodeAt(2)%3D%3D%3D92)%3FpathToFileURL(s).href%3As%2Cc)%7D%22))"

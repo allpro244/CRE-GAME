@@ -6,3 +6,14 @@ bundle.html
 # agent worktrees — never part of the repo
 .claude/worktrees/
 node_modules
+
+# Unreal: build products and local state never go in git (UE58_PLAN.md §2)
+unreal/**/Binaries/
+unreal/**/Intermediate/
+unreal/**/Saved/
+unreal/**/DerivedDataCache/
+unreal/**/.vs/
+unreal/**/*.sln
+# screenshots: full-size shots stay local; only the phase summaries are committed
+unreal/shots/**/*.png
+unreal/shots/**/*.txt

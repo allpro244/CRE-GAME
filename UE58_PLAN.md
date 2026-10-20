@@ -368,6 +368,10 @@ BuildCookRun (all of `/Game` is cooked — City Sample content is loaded by path
 so the cooker cannot find it by reference; `Data/` stages as loose files).
 Editor-only plugins (MCP, toolsets, Python) are allow-listed to the editor.
 
+**Packaged frame rate:** metro city, 2560×1440 native (no upscaling), RTX 2080:
+**48 fps median, 45 p95** — the Phase 3 bar ("playable at 1440p") is met
+without DLSS.
+
 **A packaged build plays:** `D:\Builds\BroadwayWall\Windows\BroadwayWall.exe`
 (8.6 GB) served the web game from `Data/web`, generated a new town and ran the
 economy to June 2001 under the scripted player. Graphics settings come from the

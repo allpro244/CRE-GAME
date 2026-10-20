@@ -343,7 +343,7 @@ void ABWGameMode::SpawnSky()
 	// real-time capture set on a registered component never reached the renderer,
 	// which is why the shade side of every street was black.
 	// Late afternoon from the west-southwest: long raking light, as in the reference skyline.
-	ADirectionalLight* Sun = W->SpawnActorDeferred<ADirectionalLight>(ADirectionalLight::StaticClass(), FTransform(FRotator(-24, 235, 0), FVector(0, 0, 100000)));
+	Sun = W->SpawnActorDeferred<ADirectionalLight>(ADirectionalLight::StaticClass(), FTransform(FRotator(-24, 235, 0), FVector(0, 0, 100000)));
 	Sun->GetRootComponent()->SetMobility(EComponentMobility::Movable);
 	if (UDirectionalLightComponent* L = Cast<UDirectionalLightComponent>(Sun->GetLightComponent()))
 	{
@@ -724,6 +724,7 @@ void ABWGameMode::OnPageView(const FString& Json)
 	SimMonth = View.Month; SimYear = View.Year; SimPhase = View.Phase;
 	SimFrames = 0;
 	for (const FBWRenderLot& L : View.Lots) SimFrames += L.bConstruction ? 1 : 0;
+	SetSeason(View.Month);
 }
 
 void ABWGameMode::OnPageSelect(const FString& Bbl)
@@ -744,4 +745,17 @@ void ABWGameMode::OnPageInput(const FString& Json)
 	O->TryGetNumberField(TEXT("dx"), Dx); O->TryGetNumberField(TEXT("dy"), Dy);
 	O->TryGetNumberField(TEXT("w"), W); O->TryGetStringField(TEXT("k"), K);
 	PC->PageInput(O->GetStringField(TEXT("t")), X, Y, Dx, Dy, W, K);
+}
+
+void ABWGameMode::SetSeason(int32 Month)
+{
+	// Late afternoon throughout (the reference light), at the latitude of the
+	// generator's city (~41 N): the sun at 4 pm stands ~12 deg up in late
+	// December and ~45 deg in late June. Game month 0 is January.
+	if (!Sun) return;
+	const double Phase = FMath::Cos(2.0 * PI * ((Month % 12) - 5.7) / 12.0);   // +1 late June, -1 late December
+	const double Elev = 28.5 + 16.5 * Phase;
+	Sun->SetActorRotation(FRotator(-Elev, 235 + 10 * Phase, 0));
+	if (UDirectionalLightComponent* L = Cast<UDirectionalLightComponent>(Sun->GetLightComponent()))
+		L->SetTemperature(4600.f + 1100.f * float(Phase + 1.0) * 0.5f);   // redder winter afternoons
 }

@@ -124,7 +124,12 @@ public:
 	void OnPageSelect(const FString& Bbl);
 	void OnPageInput(const FString& Json);
 
+	/** The sun follows the game calendar: low and cool in winter, high and warm in summer. */
+	void SetSeason(int32 Month);
+
 private:
+	UPROPERTY()
+	TObjectPtr<class ADirectionalLight> Sun;
 	// not StartPlay: that name is AGameModeBase's own virtual (it begins play)
 	void StartPlayHost();
 	TSharedPtr<SWebBrowser> Browser;

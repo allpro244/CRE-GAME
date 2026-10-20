@@ -18,7 +18,7 @@
     await sleep(3500);
     const b = document.querySelector(".advance-main");
     if (b && !b.disabled) b.click();
-    document.querySelectorAll("button").forEach((x) => { if (/^(Close|Continue|OK|Got it|Dismiss|I know this)$/.test(x.textContent.trim())) x.click(); });
+    document.querySelectorAll("button").forEach((x) => { if (/^(Close|Continue|OK|Good.|Got it|Dismiss|I know this)$/.test(x.textContent.trim())) x.click(); });
     say("month " + i);
   }
 })();

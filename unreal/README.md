@@ -14,6 +14,21 @@ The Unreal Engine 5.8 side of Broadway & Wall. Plan and decisions: `../UE58_PLAN
 | `tools/export-city.mjs` | Writes a city for Unreal (`BroadwayWall/Data/city-<seed>-<size>.json`, not committed). |
 | `tools/ue.ps1` | Launches the editor with the D: cache settings. |
 | `shots/` | Screenshots. Full-size PNGs stay local; phase summaries are committed. |
+| `tools/package.ps1` | Builds the Windows game into `D:\Builds\BroadwayWall` (a packaged build starts the game; `-NoPlay` for the city tools). |
+| `tools/play-driver.js` | Scripted player (`-PlayScript=`): starts a campaign, buys the docket's first building, plays three years. |
+| `tools/build-driver.js` | Scripted Build desk test: buys a lot, walks the kit picker. |
+| `tools/facade-families.mjs` | Writes `Data/facade-families.json` (web facade families → kits) and reports kit shares. |
+| `tools/audit-streets.mjs` | Maps asphalt no street claims in an exported city. |
+| `tools/make-grass.py`, `tools/make-highlight.py` | Make the lawn and selection-band materials (`/Game/BW/Materials`). |
+
+## Playing
+
+Double-click `D:\Builds\BroadwayWall\Windows\BroadwayWall.exe` (or the desktop
+shortcut). Saves live in `%LOCALAPPDATA%\UnrealEngine\BroadwayWall\`. From the
+editor: `UnrealEditor.exe BroadwayWall.uproject -game -Play`. Kit thumbnails for
+the Build desk: `-game -KitThumbs -ResX=640 -ResY=480 -Shots=<dir>`, then copy
+`kit-*.png` to `BroadwayWall/Data/kit-thumbs/` (not committed: renders of City
+Sample content).
 
 ## Running the city (Phase 1)
 

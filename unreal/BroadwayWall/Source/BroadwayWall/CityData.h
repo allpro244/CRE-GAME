@@ -12,6 +12,25 @@ struct FBWParcel
 	TArray<FVector2D> Ring;
 };
 
+/** THE PLAYER'S LOOK for a building they designed (BuildingDesign kit fields):
+ *  which facade kit, its wall colour, how it meets the street, how it finishes
+ *  at the top, and its window rhythm. Empty fields leave the automatic choice. */
+struct FBWLook
+{
+	FString Kit;
+	bool bTint = false;
+	FLinearColor Tint = FLinearColor::White;
+	/** "shops" (the kit's shopfront floor), "entrance" (doors along it), "plain" (the upper floors run to the pavement) */
+	FString Ground;
+	/** "cornice" (the kit's top bands) or "plain" (stop at the last floor) */
+	FString Top;
+	/** index into the facade builder's bay rhythms; < 0 picks by lot */
+	int32 Bays = -1;
+	bool IsSet() const { return !Kit.IsEmpty(); }
+};
+/** Read a "look" object ({ kit, tint: [r,g,b], ground, top, bays }); returns an unset look when absent. */
+FBWLook BWReadLook(const TSharedPtr<class FJsonObject>& Parent, const TCHAR* Field = TEXT("look"));
+
 /** One extruded prism: a building tier, a crown, a piece of dressing, or a flat vacant lot. */
 struct FBWVolume
 {
@@ -26,12 +45,16 @@ struct FBWVolume
 	bool bOpen = false;
 	/** Phase 4 set-pieces: opened in the last three months (bunting); a lender has a workout file open (barricade). */
 	bool bFresh = false;
+	/** A frame going up: how far (0..1). A cleared lot: demolished in the last two months (rubble, not a car park). */
+	double Progress = 1;
+	bool bCleared = false;
 	int32 Distress = 0;
 	/** The player's facade family (web BuildingDesign.facade), which picks the kit. */
 	FString Facade;
 	/** The web map's facade family for this building (map/real/facades.ts familyFor) and its wall tint, an RGB multiplier. */
 	FString Fam;
 	FLinearColor Tint = FLinearColor::White;
+	FBWLook Look;
 	TArray<FVector2D> Ring;
 };
 
@@ -65,6 +88,10 @@ struct FBWCity
 	TArray<FBWLabel> Labels;
 	TArray<FBWCenterline> Centerlines;
 	TArray<TArray<FVector2D>> Zebras;
+	/** The generator's kerb lines (a footway's road edge), lawn edgings and park walks. */
+	TArray<TArray<FVector2D>> Curbs, ParkKerbs, ParkPaths;
+	/** Park and harbour benches: where, and the generator's bearing (degrees, its local frame: the walk's direction; the seat faces +90). */
+	TArray<TPair<FVector2D, double>> Benches;
 
 	/** Parse a bw-city/1 file. Returns false (and logs why) on failure. */
 	bool Load(const FString& Path);

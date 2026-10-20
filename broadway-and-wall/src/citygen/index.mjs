@@ -224,6 +224,10 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * culverted under a market square, a battery and a circus rather than laid
  * across the setts and the circus carriageway. Towns without water are
  * byte-identical; plan-10 saves rebuild the town they were cut with.
+ *
+ * Plan 12 holds a building to a plate it can stand on (citygen.mjs A PLATE
+ * HAS TO HOLD A CORE). Towers of 40-50 m were going up on footprints 7 m
+ * wide; plan 11 saves rebuild the town they were cut with.
  */
 /**
  * HOW MUCH OF THE TOWN IS PARK, from the setup page. A generated town draws a
@@ -239,7 +243,7 @@ export const PARK_AMOUNTS = [
 ];
 export const DEFAULT_PARKS = "medium";
 
-export const CITY_PLAN = 11;
+export const CITY_PLAN = 12;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

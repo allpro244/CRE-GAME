@@ -5,6 +5,8 @@
 #include "CityLife.h"
 
 #include "CompGeom/PolygonTriangulation.h"
+#include "ConstrainedDelaunay2.h"
+#include "Polygon2.h"
 #include "IndexTypes.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -20,17 +22,134 @@ DEFINE_LOG_CATEGORY_STATIC(LogBWBuilder, Log, All);
 
 namespace
 {
+	/** The road surface, one dynamic instance for every street so the weather can wet it. */
+	UMaterialInstanceDynamic* Road = nullptr;
+	float RoadDry[3] = { 0, 0, 0 };
+	const TCHAR* const RoadWet[3] = { TEXT("Puddle Height MFPD"), TEXT("Wetness Road Edge Amt MFPD"), TEXT("Wetness Tire Lane Amt MFPD") };
+	UMaterialInterface* BWRoadMaterial()
+	{
+		if (!Road)
+			// the matte parking-lot instance of the street master: the street instance is
+			// authored glossy, and reads as standing water from the air
+			if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots")))
+			{
+				Road = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
+				Road->AddToRoot();
+				// the lot instance is a sun-bleached grey; a city street is darker
+				Road->SetVectorParameterValue(TEXT("BaseColor Tint"), FLinearColor(0.45f, 0.45f, 0.47f));
+				for (int32 i = 0; i < 3; ++i) Base->GetScalarParameterValue(FHashedMaterialParameterInfo(RoadWet[i]), RoadDry[i]);
+			}
+		return Road;
+	}
+	/** The parks' lawn (tools/make-grass.py), one dynamic instance so the season can colour it. */
+	UMaterialInstanceDynamic* Grass = nullptr;
+	UMaterialInterface* BWGrassMaterial()
+	{
+		if (!Grass)
+			if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Grass.M_BW_Grass")))
+			{
+				Grass = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
+				Grass->AddToRoot();
+				// a city lawn, worn and a little dusty, not a golf green
+				Grass->SetVectorParameterValue(TEXT("GrassDark"), FLinearColor(0.028f, 0.040f, 0.017f));
+				Grass->SetVectorParameterValue(TEXT("GrassLight"), FLinearColor(0.062f, 0.076f, 0.034f));
+			}
+		return Grass;
+	}
+}
+
+void ACityBuilder::SetSeasonGrass(int32 MonthOfYear)
+{
+	// A cool-season lawn in a mid-Atlantic city: straw-dull through the winter,
+	// greening in April, at its deepest in June, tired and olive by August's
+	// heat, a second green in September, browning from November. Multipliers on
+	// the lawn's own greens (M_BW_Grass "Season").
+	static const FLinearColor ByMonth[12] = {
+		{ 1.95f, 1.15f, 1.55f }, { 1.95f, 1.15f, 1.55f }, { 1.6f, 1.15f, 1.3f },   // Jan Feb Mar: dormant
+		{ 1.15f, 1.2f, 1.0f },   { 1.0f, 1.12f, 0.95f },  { 1.0f, 1.0f, 1.0f },    // Apr May Jun
+		{ 1.12f, 1.0f, 0.9f },   { 1.3f, 1.05f, 0.9f },   { 1.05f, 1.02f, 0.95f }, // Jul Aug Sep
+		{ 1.2f, 1.05f, 0.95f },  { 1.55f, 1.12f, 1.25f }, { 1.85f, 1.15f, 1.5f } };// Oct Nov Dec
+	if (BWGrassMaterial()) Grass->SetVectorParameterValue(TEXT("Season"), ByMonth[((MonthOfYear % 12) + 12) % 12]);
+}
+
+void ACityBuilder::SetWetness(float Wet)
+{
+	// City Sample's asphalt carries its own puddles and wet tyre tracks at the
+	// authored amount (a street the morning after rain). Dry weather takes them
+	// down to a trace; rain takes them up past it.
+	// (The master also masks puddles by vertex colour, and every street mesh here
+	// carries one flat colour, so with puddles on the whole carriageway floods:
+	// they are switched off outright unless it has rained.)
+	if (!BWRoadMaterial()) return;
+	const float W = FMath::Clamp(Wet, 0.f, 1.f);
+	Road->SetScalarParameterValue(TEXT("Enable Puddle MFPD"), W > 0.3f ? 1.f : 0.f);
+	const float K = FMath::Lerp(0.f, 1.2f, W);
+	for (int32 i = 0; i < 3; ++i) Road->SetScalarParameterValue(RoadWet[i], RoadDry[i] * K);
+	// and the surface itself: City Sample authored its streets glossy, the look of
+	// asphalt after rain, which at a low sun angle mirrors the sky like standing
+	// water. Dry asphalt is rough (~0.9); wet goes back to the authored sheen.
+	Road->SetScalarParameterValue(TEXT("Roughness 3O"), FMath::Lerp(0.85f, 0.22f, W));
+	Road->SetScalarParameterValue(TEXT("BaseRoughnessMult"), FMath::Lerp(1.6f, 0.58f, W));
+	Road->SetScalarParameterValue(TEXT("Base_Roughness"), FMath::Lerp(0.9f, 0.5f, W));
+	Road->SetScalarParameterValue(TEXT("Rough Mult 4G"), FMath::Lerp(1.3f, 0.8f, W));
+	Road->SetScalarParameterValue(TEXT("Roughness MFPD"), FMath::Lerp(0.9f, 0.05f, W));
+}
+
+namespace
+{
 	/** City Sample surface for a ground layer (migrated by unreal/tools/asset-closure.py "ground"), or null for a flat colour. */
 	UMaterialInterface* GroundMaterial(const FString& Layer)
 	{
 		const TCHAR* Path = nullptr;
-		if (Layer == TEXT("pavement") || Layer == TEXT("paveland") || Layer == TEXT("apron")) Path = TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst.M_Asphalt_Master_Inst");
-		else if (Layer == TEXT("sidewalk")) Path = TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS");
-		else if (Layer == TEXT("land")) Path = TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS");
-		else if (Layer == TEXT("block")) Path = TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS");
+		if (Layer == TEXT("pavement")) return BWRoadMaterial();
+		// the base paving under everything and the aprons (boulevard carriageways,
+		// quays): the street master authored glossy reads as standing water across
+		// a big unmarked expanse at a low angle; the parking-lot instance is matte
+		if (Layer == TEXT("apron")) Path = TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots");
+		// the base under the whole plat shows only where nothing else is drawn:
+		// open paved ground (the web map paints it light), not road
+		if (Layer == TEXT("paveland")) Path = TEXT("/Game/Road/Material/MI/MI_Sidewalk_Plaza_B_WS.MI_Sidewalk_Plaza_B_WS");
+		else if (Layer == TEXT("sidewalk") || Layer == TEXT("land"))
+		{
+			// CONCRETE, NOT TERRACOTTA. The world-space sidewalk is City Sample's
+			// Inst_4, which tints its slabs brick-red (BaseColor_Tint 0.59/0.44/0.43);
+			// Inst_6 is the same slab in plain concrete (0.59/0.58/0.58). Keep the
+			// world-space mapping, take Inst_6's tint.
+			static UMaterialInstanceDynamic* Grey = nullptr;
+			if (!Grey)
+				if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS")))
+				{
+					Grey = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
+					Grey->SetVectorParameterValue(TEXT("BaseColor_Tint"), FLinearColor(0.59375f, 0.579379f, 0.578288f, 1));
+					Grey->AddToRoot();
+				}
+			return Grey;
+		}
+		// the inside of a block, where the buildings stop: service yards, alleys and
+		// the back-lot parking a downtown block is mostly made of behind its fronts
+		else if (Layer == TEXT("block")) Path = TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots");
 		else if (Layer == TEXT("esplanade")) Path = TEXT("/Game/Road/Material/MI/MI_Sidewalk_Plaza_A_WS.MI_Sidewalk_Plaza_A_WS");
+		else if (Layer == TEXT("park") || Layer == TEXT("median")) return BWGrassMaterial();   // a boulevard's planted median is lawn too
 		else if (Layer == TEXT("beach")) Path = TEXT("/Game/Megascans/Surfaces/sand_sand_pjuuP0/M_sand.M_sand");
-		else if (Layer == TEXT("sea") || Layer == TEXT("pond") || Layer == TEXT("stream")) Path = TEXT("/Game/Prop/kit_ocean/Material/M_ocean.M_ocean");
+		else if (Layer == TEXT("sea") || Layer == TEXT("pond") || Layer == TEXT("stream"))
+		{
+			// HARBOUR WATER IS NOT A LAGOON. City Sample's ocean reads tropical turquoise
+			// from the air; a northern port's water is a deep grey-green, a little
+			// desaturated, with foam only in the chop
+			static UMaterialInstanceDynamic* Harbour = nullptr;
+			if (!Harbour)
+				if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Prop/kit_ocean/Material/M_ocean.M_ocean")))
+				{
+					Harbour = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
+					Harbour->AddToRoot();
+					float V = 1;
+					if (Base->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Mult CR")), V)) Harbour->SetScalarParameterValue(TEXT("Mult CR"), V * 0.55f);
+					if (Base->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Amt FM")), V)) Harbour->SetScalarParameterValue(TEXT("Amt FM"), V * 0.35f);
+					Harbour->SetScalarParameterValue(TEXT("Desat CR"), 0.45f);
+					Harbour->SetVectorParameterValue(TEXT("Tint CR"), FLinearColor(0.50f, 0.70f, 0.66f));
+				}
+			return Harbour;
+		}
 		return Path ? LoadObject<UMaterialInterface>(nullptr, Path) : nullptr;
 	}
 
@@ -83,6 +202,40 @@ namespace
 			if (Ring.Num() < 3) return 0;
 			TArray<UE::Geometry::FIndex3i> Tris;
 			PolygonTriangulation::TriangulateSimplePolygon<double>(Ring, Tris, false);
+			// EAR CLIPPING DROPS PIECES OF A MESSY RING. The island's base layers are
+			// single rings thousands of points long with near-touching necks, and the
+			// ear clipper gave up partway, leaving holes the sea showed through (the
+			// "flooded" boulevard carriageways). When the triangles cover visibly less
+			// than the ring, triangulate again with constrained Delaunay, which keeps
+			// every edge and fills what the ring encloses.
+			double Want = 0, Got = 0;
+			for (int32 i = 0; i < Ring.Num(); ++i) Want += Ring[i].X * Ring[(i + 1) % Ring.Num()].Y - Ring[(i + 1) % Ring.Num()].X * Ring[i].Y;
+			for (const UE::Geometry::FIndex3i& Tr : Tris)
+			{
+				const FVector2D a = Ring[Tr.A], b = Ring[Tr.B], c = Ring[Tr.C];
+				Got += FMath::Abs((b.X - a.X) * (c.Y - a.Y) - (c.X - a.X) * (b.Y - a.Y));
+			}
+			if (Got < FMath::Abs(Want) * 0.995)
+			{
+				UE::Geometry::FConstrainedDelaunay2d CDT;
+				CDT.FillRule = UE::Geometry::FConstrainedDelaunay2d::EFillRule::NonZero;
+				UE::Geometry::FPolygon2d Poly;
+				for (const FVector2D& P : Ring) Poly.AppendVertex(UE::Math::TVector2<double>(P.X, P.Y));
+				CDT.Add(Poly);
+				if (CDT.Triangulate() && CDT.Triangles.Num())
+				{
+					// the CDT may merge duplicate points: use its own vertices
+					const int32 Base = V.Num();
+					for (const UE::Math::TVector2<double>& P : CDT.Vertices)
+					{
+						V.Emplace(P.X, P.Y, Z); N.Emplace(0, 0, 1); UV.Emplace(P.X / UVScale, P.Y / UVScale); C.Add(Col);
+					}
+					for (const UE::Geometry::FIndex3i& Tri : CDT.Triangles) AddTri(Base + Tri.A, Base + Tri.B, Base + Tri.C, FVector::UpVector);
+					static int32 Logged = 0;
+					if (Logged++ < 20) UE_LOG(LogTemp, Display, TEXT("cap: ear clipping covered %.1f%% of a %d-point ring; constrained Delaunay used"), 100.0 * Got / FMath::Max(1.0, FMath::Abs(Want)), Ring.Num());
+					return CDT.Triangles.Num();
+				}
+			}
 			const int32 Base = V.Num();
 			for (const FVector2D& P : Ring)
 			{
@@ -230,21 +383,82 @@ void ACityBuilder::BuildGround()
 	const FBox2D B = City.Bounds.ExpandBy(FMath::Max(City.Bounds.GetSize().X, City.Bounds.GetSize().Y) * 3.0);
 	Sea.AddCap({ B.Min, FVector2D(B.Max.X, B.Min.Y), B.Max, FVector2D(B.Min.X, B.Max.Y) }, -120, FLinearColor(FColor(0x2E, 0x5A, 0x78)));
 	for (const TArray<FVector2D>& R : City.Water) Sea.AddCap(R, -80, FLinearColor(FColor(0x4A, 0x7C, 0x96)));
+	// THE FAR SHORE. A harbour town looks across its water at somewhere: a band of
+	// low land 2.5-5 km off, over half the compass, built up with City Sample's
+	// background-city blocks (low-detail masses meant to be seen through haze),
+	// thinning and lowering toward the ends of the arc.
+	{
+		const FVector2D C = City.Bounds.GetCenter();
+		const double R0 = 0.5 * FMath::Max(City.Bounds.GetSize().X, City.Bounds.GetSize().Y) + 250000;
+		FRandomStream Rng(int32(City.Seed) ^ 0x5402e);
+		const double A0 = Rng.FRandRange(0, 2 * PI), Span = PI * 1.1;
+		const int32 Steps = 64;
+		auto Pt = [&](double A, double R) { return C + FVector2D(FMath::Cos(A), FMath::Sin(A)) * R; };
+		for (int32 k = 0; k < Steps; ++k)
+		{
+			const double a = A0 + Span * k / Steps, b = A0 + Span * (k + 1) / Steps;
+			Sea.AddCap({ Pt(a, R0 - 20000), Pt(b, R0 - 20000), Pt(b, R0 + 400000), Pt(a, R0 + 400000) }, -60, FLinearColor(FColor(0x5C, 0x5E, 0x58)));
+		}
+		static const TCHAR* const Bg[] = {
+			TEXT("/Game/Environment/Background_City/Mesh/SM_bgcitya.SM_bgcitya"),
+			TEXT("/Game/Environment/Background_City/Mesh/SM_bgcityb.SM_bgcityb") };
+		for (double a = A0 + 0.03; a < A0 + Span - 0.03; a += 30000.0 / R0)
+		{
+			const double t = (a - A0) / Span, Edge = FMath::Sin(t * PI);          // 0 at the arc's ends, 1 mid
+			for (int32 row = 0; row < 3; ++row)
+			{
+				if (Rng.FRand() > 0.35 + 0.6 * Edge) continue;
+				const double R = R0 + 15000 + row * 70000 + Rng.FRandRange(-15000, 15000);
+				const double Sc = (14 + 20 * Edge * Rng.FRand()) * (1.0 - 0.18 * row);
+				const int32 m = Rng.RandRange(0, 1);   // mesh bottoms sit 249 / 188 cm below their pivots
+				AddProp(Bg[m], FTransform(FRotator(0, Rng.FRandRange(0, 360), 0), FVector(Pt(a, R), (m ? 188 : 249) * Sc - 60), FVector(Sc)), false);
+			}
+		}
+	}
 	Sea.Emit(Ground, 0, false);
 	TArray<UMaterialInterface*> Mats = { GroundMaterial(TEXT("sea")) };
 
-	// land and its dressing, each layer 2 cm above the last so nothing fights
+	// land and its dressing, each layer a centimetre above the last so nothing
+	// fights. THE FOOTWAY IS A STEP UP: sidewalks, medians and lawns stand a
+	// kerb's height (12 cm, a city kerb's 4-6 in) above the carriageway, and
+	// every raised ring gets the kerb's vertical face in concrete down to the
+	// road. A footway level with the asphalt read as paint on one sheet.
 	int32 Section = 1;
-	double Z = 0;
+	double Z = 0, RoadZ = 0;
+	constexpr double KerbH = 12;
+	FMeshBuf Kerbs;
+	Kerbs.UVScale = 100.0;
 	for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
 	{
+		const bool bRaised = L.Key == TEXT("sidewalk") || L.Key == TEXT("block") || L.Key == TEXT("park") || L.Key == TEXT("median");
+		if (L.Key == TEXT("pavement")) RoadZ = Z;
+		const double Zl = bRaised ? Z + KerbH : Z;
 		FMeshBuf M;
 		// asphalt and paving tile at a few metres
 		M.UVScale = 400.0;
 		const FLinearColor Col = GroundColor(L.Key);
-		for (const TArray<FVector2D>& R : L.Value) M.AddCap(R, Z, Col);
+		for (const TArray<FVector2D>& R : L.Value)
+		{
+			M.AddCap(R, Zl, Col);
+			if (bRaised && L.Key != TEXT("block")) Kerbs.AddWalls(R, RoadZ - 1, Zl, FLinearColor::White);
+		}
 		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(L.Key)); }
-		Z += 2;
+		Z += 1;
+		if (bRaised) FootZ = FMath::Max(FootZ, Zl);
+	}
+	if (Kerbs.V.Num())
+	{
+		Kerbs.Emit(Ground, Section++, false);
+		Mats.Add(LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_roadcurb_master_concrete_instance.M_roadcurb_master_concrete_instance")));
+	}
+	Z = FootZ + 1;
+	{
+		TArray<TArray<FVector2D>> Paths;
+		DressParks(Paths);
+		FMeshBuf M;
+		M.UVScale = 400.0;
+		for (const TArray<FVector2D>& R : Paths) M.AddCap(R, Z, FLinearColor(FColor(0xB5, 0xAE, 0xA0)));
+		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(TEXT("esplanade"))); }
 	}
 	for (int32 i = 0; i < Section; ++i) Ground->SetMaterial(i, Mats.IsValidIndex(i) && Mats[i] ? Mats[i] : VertexColorMaterial.Get());
 }
@@ -258,9 +472,22 @@ void ACityBuilder::BuildVolumes()
 	constexpr int32 PerChunk = 200;
 	for (int32 Start = 0; Start < Current.Num(); Start += PerChunk)
 	{
-		FMeshBuf M, Roofs[3], Lots;
+		constexpr int32 NumRoofs = 8;
+		FMeshBuf M, Roofs[NumRoofs], Lots, Stone;
+		Stone.UVScale = 300.0;
 		Lots.UVScale = 400.0;
 		for (FMeshBuf& R : Roofs) R.UVScale = 300.0;
+		// a roof's covering: mostly the three tar-and-gravel finishes, then the
+		// coated and membrane roofs, the odd copper or painted tin on an old one
+		auto RoofOf = [](const FBWVolume& V)
+		{
+			const float U = float(GetTypeHash(V.Bbl) % 1000u) / 1000.f;
+			if (V.Year > 0 && V.Year < 1930 && U < 0.05f) return 6;                // copper
+			if (V.Year > 0 && V.Year < 1950 && U > 0.96f) return 7;                // red tin
+			static const float Cum[6] = { 0.24f, 0.40f, 0.54f, 0.72f, 0.86f, 1.0f };
+			for (int32 i = 0; i < 6; ++i) if (U < Cum[i]) return i;
+			return 0;
+		};
 		for (int32 i = Start; i < FMath::Min(Start + PerChunk, Current.Num()); ++i)
 		{
 			const FBWVolume& Vol = Current[i];
@@ -269,30 +496,72 @@ void ACityBuilder::BuildVolumes()
 			{
 				// the facade carries the look; the mass sits 60 cm behind it (no flicker
 				// against the kit's faces, and it still catches clicks), roofed in gravel
-				const int32 Pieces = Facades->Dress(*KitFor(Vol), Vol, GetTypeHash(Vol.Bbl) ^ uint32(Vol.Z0), Vol.Z0 < 50, Vol.Tint);
+				const int32 Pieces = Facades->Dress(*KitFor(Vol), Vol, GetTypeHash(Vol.Bbl) ^ uint32(Vol.Z0), Vol.Z0 < 50, Vol.Look.bTint ? Vol.Look.Tint : Vol.Tint, Vol.Look.bTint);
+				if (bPreview && Vol.Bbl == PreviewVol.Bbl) UE_LOG(LogBWBuilder, Display, TEXT("preview %s: kit %s, %d pieces, %.0f-%.0f cm"), *Vol.Bbl, *KitFor(Vol)->Name, Pieces, Vol.Z0, Vol.Z1);
 				if (Pieces > 0)
 				{
 					if (Vol.bCrown || Vol.Z1 >= 0) DressRoof(Vol, GetTypeHash(Vol.Bbl));
 					if (Vol.Z0 < 50 && (Vol.bFresh || Vol.Distress >= 2)) StreetMoment(Vol);
 					M.AddWalls(BWInsetRing(Vol.Ring, 60), Vol.Z0, Vol.Z1, FLinearColor(FColor(0x55, 0x52, 0x4E)));
 					if (Vol.bPlayer) M.AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor(FColor(0xE8, 0xB8, 0x3A)));
-					else Roofs[GetTypeHash(Vol.Bbl) % 3].AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor::White);
+					else Roofs[RoofOf(Vol)].AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor::White);
 					continue;
 				}
 			}
-			if (Vol.bVacant && !Vol.bFrame && Vol.Ring.Num() >= 3)
+			SetPiece(Vol);
+			if (Vol.bVacant && !Vol.bFrame && !Vol.bCleared && Vol.Ring.Num() >= 3)
 			{
 				// AN EMPTY LOT DOWNTOWN IS A CAR PARK until somebody builds on it
 				Lots.AddCap(Vol.Ring, 8, FLinearColor::White);
 				ParkLot(Vol, GetTypeHash(Vol.Bbl));
 				continue;
 			}
-			const FLinearColor Col = UseColor(Vol);
+			// with the facades on, a piece too low to dress (a stair bulkhead, a
+			// penthouse, a lift overrun) is a roof structure: brick-and-stucco grey, not
+			// the economy map's use colour
+			const FLinearColor Col = bFacades && !Vol.bVacant && !Vol.bFrame && Vol.Deco.IsEmpty() && !Vol.bPlayer
+				? FLinearColor(FColor(0x8A, 0x84, 0x7C)) : UseColor(Vol);
 			// vacant lots: a 30 cm pad, so they read and can be clicked
 			const double Z0 = Vol.bVacant ? 0 : Vol.Z0;
 			const double Z1 = Vol.bVacant ? 30 : FMath::Max(Vol.Z1, Vol.Z0 + 1);
-			M.AddWalls(Vol.Ring, Z0, Z1, Col);
-			if (!Vol.bOpen) M.AddCap(Vol.Ring, Z1, Vol.bPlayer ? FLinearColor(FColor(0xE8, 0xB8, 0x3A)) : Col * 1.08f);
+			// A FRAME GOING UP IS A SKELETON, not a box: a slab at every floor on a
+			// grid of columns, the lower floors closed in behind their glazing, the
+			// top two open to the sky. Concrete for the structure, a darker band for
+			// the curtain wall rising behind the frame.
+			if (Vol.bFrame && Vol.Ring.Num() >= 3)
+			{
+				const FLinearColor Slab(FColor(0xB5, 0xB0, 0xA6)), Column(FColor(0x9E, 0x99, 0x90)), Skin(FColor(0x3A, 0x44, 0x4E));
+				const double Storey = 355.0;
+				const int32 Floors = FMath::Max(1, FMath::FloorToInt((Z1 - Z0) / Storey));
+				const TArray<FVector2D> Edge = BWInsetRing(Vol.Ring, 40);
+				const TArray<FVector2D>& Ring = Edge.Num() >= 3 ? Edge : Vol.Ring;
+				for (int32 f = 1; f <= Floors; ++f)
+				{
+					const double Zs = Z0 + f * Storey;
+					M.AddWalls(Vol.Ring, Zs - 30, Zs, Slab);          // the slab edge
+					M.AddCap(Vol.Ring, Zs, Slab * 1.05f);
+				}
+				// columns on the perimeter, about every 6 m
+				for (int32 e = 0; e < Ring.Num(); ++e)
+				{
+					const FVector2D A = Ring[e], B = Ring[(e + 1) % Ring.Num()];
+					const double Len = (B - A).Size();
+					const int32 N = FMath::Max(1, FMath::RoundToInt(Len / 600.0));
+					for (int32 k = 0; k < N; ++k)
+					{
+						const FVector2D P = A + (B - A) * (double(k) / N);
+						M.AddWalls({ P + FVector2D(-25, -25), P + FVector2D(25, -25), P + FVector2D(25, 25), P + FVector2D(-25, 25) }, Z0, Z0 + Floors * Storey, Column);
+					}
+				}
+				// the curtain wall follows two floors behind the topmost slab
+				const double SkinTop = Z0 + FMath::Max(0, Floors - 2) * Storey;
+				if (SkinTop > Z0 + 10) M.AddWalls(BWInsetRing(Vol.Ring, 60), Z0, SkinTop, Skin);
+				continue;
+			}
+			// a civic monument (plinth, column, statue base) is dressed stone
+			FMeshBuf& Into = Vol.Deco.StartsWith(TEXT("civic")) ? Stone : M;
+			Into.AddWalls(Vol.Ring, Z0, Z1, Col);
+			if (!Vol.bOpen) Into.AddCap(Vol.Ring, Z1, Vol.bPlayer ? FLinearColor(FColor(0xE8, 0xB8, 0x3A)) : Col * 1.08f);
 		}
 		UProceduralMeshComponent* Mesh = NewObject<UProceduralMeshComponent>(this, MakeUniqueObjectName(this, UProceduralMeshComponent::StaticClass(), TEXT("Buildings")));
 		Mesh->SetupAttachment(RootComponent);
@@ -302,20 +571,33 @@ void ACityBuilder::BuildVolumes()
 		Mesh->RegisterComponent();
 		M.Emit(Mesh, 0, true);
 		Mesh->SetMaterial(0, VertexColorMaterial);
+		if (Stone.V.Num())
+		{
+			Stone.Emit(Mesh, 2, true);
+			UMaterialInterface* StoneMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Building/Material/MI/Paint/MI_Bldg_PaintedStone_Beige.MI_Bldg_PaintedStone_Beige"));
+			Mesh->SetMaterial(2, StoneMat ? StoneMat : VertexColorMaterial.Get());
+		}
 		if (Lots.V.Num())
 		{
-			const int32 LotSec = 4;
+			const int32 LotSec = 1;   // 0 walls, 1 lots, 2 stone, 3.. roofs
 			Lots.Emit(Mesh, LotSec, true);
 			UMaterialInterface* LotMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots"));
 			Mesh->SetMaterial(LotSec, LotMat ? LotMat : VertexColorMaterial.Get());
 		}
 		// roofs: City Sample's rooftop surfaces (bitumen, dirty concrete tiles, pebble-dash), one per building
-		static const TCHAR* RoofPaths[3] = {
+		// ...and the coverings a city's roofs actually wear besides: the silver
+		// reflective coat, white membrane, black tar, green copper and red tin
+		static const TCHAR* RoofPaths[NumRoofs] = {
 			TEXT("/Game/Environment/RoofTop/Material/MI/MI_Rooftop_BitumenRoofing.MI_Rooftop_BitumenRoofing"),
 			TEXT("/Game/Environment/RoofTop/Material/MI/MI_Rooftop_DirtyConcreteTiles.MI_Rooftop_DirtyConcreteTiles"),
-			TEXT("/Game/Environment/RoofTop/Material/MI/MI_Rooftop_PebbleDash.MI_Rooftop_PebbleDash") };
-		int32 Sec = 1;
-		for (int32 r = 0; r < 3; ++r)
+			TEXT("/Game/Environment/RoofTop/Material/MI/MI_Rooftop_PebbleDash.MI_Rooftop_PebbleDash"),
+			TEXT("/Game/Building/Material/MI/Paint/MI_Bldg_PaintedMetal_Roof.MI_Bldg_PaintedMetal_Roof"),
+			TEXT("/Game/Building/Material/MI/Paint/MI_Bldg_PaintedStone_White.MI_Bldg_PaintedStone_White"),
+			TEXT("/Game/Building/Material/MI/Paint/MI_Bldg_PaintedStone_Black.MI_Bldg_PaintedStone_Black"),
+			TEXT("/Game/Building/Material/MI/Paint/MI_Bldg_PaintedMetal_Green.MI_Bldg_PaintedMetal_Green"),
+			TEXT("/Game/Building/Material/MI/Paint/MI_Bldg_PaintedMetal_Red.MI_Bldg_PaintedMetal_Red") };
+		int32 Sec = 3;
+		for (int32 r = 0; r < NumRoofs; ++r)
 		{
 			if (!Roofs[r].V.Num()) continue;
 			Roofs[r].Emit(Mesh, Sec, true);
@@ -438,6 +720,7 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		Owners.Add(O.Bbl, O.Owner == TEXT("player") ? TEXT("player") : O.Firm);
 	}
 
+	for (const FBWRenderEvent& E : View.Events) if (E.Kind == TEXT("demolished")) DemolishedM.Add(E.Bbl, E.M);
 	Current.Reset();
 	for (const FBWVolume& V : City.Volumes)
 		if (V.Bbl.IsEmpty() || !Over.Contains(V.Bbl))
@@ -467,10 +750,25 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		V.bPlayer = Player.Contains(L.Bbl);
 		V.bFresh = L.bFresh;
 		V.Facade = L.Facade;
+		V.Look = L.Look;
 		V.Distress = Distress.FindRef(L.Bbl);
 		if (L.Cls == TEXT("land"))
 		{
 			V.bVacant = true;
+			// THE TEARDOWN LEAVES A HOLE. For two months after a demolition the lot is
+			// a site — hoarding round it, the rubble heaps not yet hauled — before it
+			// settles into whatever a vacant lot becomes
+			if (const int32* Dm = DemolishedM.Find(L.Bbl); Dm && View.Month - *Dm <= 2)
+			{
+				V.bCleared = true;
+				FBWVolume Fence;
+				Fence.Bbl = L.Bbl;
+				Fence.Deco = TEXT("hoarding");
+				Fence.bOpen = true;
+				Fence.Z1 = 240;
+				Fence.Ring = Ring;
+				Current.Add(MoveTemp(Fence));
+			}
 			V.Ring = MoveTemp(Ring);
 			Current.Add(MoveTemp(V));
 			++Cleared;
@@ -487,6 +785,7 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		V.Z0 = 0;
 		V.Z1 = FMath::Max(3.0, L.HeightM) * 100.0;
 		V.bFrame = L.bConstruction;
+		V.Progress = L.Progress;
 		if (L.bConstruction)
 		{
 			// the site: a hoarding round the whole lot, and a crane over the frame
@@ -505,9 +804,128 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		Current.Add(MoveTemp(V));
 		++(L.bConstruction ? Frames : Built);
 	}
+	BaseVolumes = Current;
+	if (bPreview) ComposePreview();
 	BuildVolumes();
 	UE_LOG(LogBWBuilder, Display, TEXT("month %d (%d): %d frames rising, %d built, %d cleared, %d owned by the player"),
 		View.Month, View.Year, Frames, Built, Cleared, Player.Num());
+}
+
+void ACityBuilder::SetHighlight(const FBWParcel* Sel, const FBWParcel* Hover, double ViewDist)
+{
+	if (Hover == Sel) Hover = nullptr;
+	// about 3 px on a 1080-line screen: the band widens as the camera pulls back (1 below 180 m)
+	const double Scale = ViewDist > 0 ? FMath::Max(1.0, ViewDist / 14000.0) : HiScale;
+	if (Sel == HiSel && Hover == HiHover && Highlight && FMath::Abs(Scale / HiScale - 1) < 0.2) return;
+	HiSel = Sel; HiHover = Hover; HiScale = Scale;
+	if (!Highlight)
+	{
+		Highlight = NewObject<UProceduralMeshComponent>(this, TEXT("Highlight"));
+		Highlight->SetupAttachment(RootComponent);
+		Highlight->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Highlight->SetCastShadow(false);
+		Highlight->RegisterComponent();
+	}
+	Highlight->ClearAllMeshSections();
+	// a band W wide along a closed ring at height Z, laid flat (or, Up, standing as a rim)
+	auto Band = [](FMeshBuf& M, const TArray<FVector2D>& Ring, double Z, double W, bool bUp, const FLinearColor& Col)
+	{
+		const int32 N = Ring.Num();
+		for (int32 i = 0; i < N; ++i)
+		{
+			const FVector2D A = Ring[i], B = Ring[(i + 1) % N];
+			const FVector2D Dd = (B - A).GetSafeNormal();
+			if (Dd.IsNearlyZero()) continue;
+			const FVector2D Nn(-Dd.Y, Dd.X);
+			// run a half-width past each corner so the corners close
+			const FVector2D A2 = A - Dd * W * 0.5, B2 = B + Dd * W * 0.5;
+			const int32 Base = M.V.Num();
+			if (bUp)
+			{
+				M.V.Append({ FVector(A2, Z), FVector(B2, Z), FVector(B2, Z + W), FVector(A2, Z + W) });
+				for (int32 k = 0; k < 4; ++k) { M.N.Add(FVector(Nn, 0)); M.C.Add(Col); }
+			}
+			else
+			{
+				M.V.Append({ FVector(A2 - Nn * W * 0.5, Z), FVector(B2 - Nn * W * 0.5, Z), FVector(B2 + Nn * W * 0.5, Z), FVector(A2 + Nn * W * 0.5, Z) });
+				for (int32 k = 0; k < 4; ++k) { M.N.Add(FVector::UpVector); M.C.Add(Col); }
+			}
+			M.UV.Append({ FVector2D(0, 0), FVector2D(1, 0), FVector2D(1, 1), FVector2D(0, 1) });
+			// both faces, so the band reads from any side
+			M.T.Append({ Base, Base + 1, Base + 2, Base, Base + 2, Base + 3, Base, Base + 2, Base + 1, Base, Base + 3, Base + 2 });
+		}
+	};
+	FMeshBuf Gold, White;
+	// vertex colours stop at 1: the hue is here, the brightness is the material's Glow
+	const FLinearColor GoldC(1.0f, 0.55f, 0.06f), WhiteC(0.85f, 0.85f, 0.85f);
+	if (Sel && Sel->Ring.Num() >= 3)
+	{
+		Band(Gold, Sel->Ring, FootZ + 4, 45 * Scale, false, GoldC);
+		for (const FBWVolume& V : Current)
+			if (V.Bbl == Sel->Bbl && !V.bVacant && V.Deco.IsEmpty() && V.Ring.Num() >= 3)
+				Band(Gold, BWInsetRing(V.Ring, -25 * Scale), V.Z1 - 10, 40 * Scale, true, GoldC);
+	}
+	if (Hover && Hover->Ring.Num() >= 3) Band(White, Hover->Ring, FootZ + 3, 25 * Scale, false, WhiteC);
+	UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Highlight.M_BW_Highlight"));
+	if (!Mat) Mat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
+	int32 Sec = 0;
+	for (FMeshBuf* M : { &Gold, &White })
+	{
+		if (!M->V.Num()) continue;
+		Highlight->CreateMeshSection_LinearColor(Sec, M->V, M->T, M->N, M->UV, M->C, TArray<FProcMeshTangent>(), false);
+		Highlight->SetMaterial(Sec++, Mat);
+	}
+}
+
+void ACityBuilder::SetPreview(const FString& Bbl, int32 Floors, double Cov, const FString& Facade, const FString& Cls, int32 Year, const FBWLook& Look)
+{
+	const FBWParcel* P = City.FindParcel(Bbl);
+	if (!P || P->Ring.Num() < 3) { ClearPreview(); return; }
+	if (BaseVolumes.Num() == 0) BaseVolumes = Current;
+	// the web renderer's footprint rule, as ApplyView draws a delivered building
+	TArray<FVector2D> Ring = P->Ring;
+	FVector2D C(0, 0);
+	for (const FVector2D& Q : Ring) C += Q;
+	C /= Ring.Num();
+	const double B = Cov > 0 ? FMath::Min(0.97, FMath::Sqrt(Cov)) : 0.82;
+	for (FVector2D& Q : Ring) Q = C + (Q - C) * B;
+	PreviewVol = FBWVolume();
+	PreviewVol.Bbl = Bbl;
+	PreviewVol.Cls = Cls;
+	PreviewVol.Year = Year;
+	PreviewVol.Facade = Facade;
+	PreviewVol.Look = Look;
+	PreviewVol.bCrown = true;
+	PreviewVol.Ring = MoveTemp(Ring);
+	PreviewVol.Z1 = FMath::Max(1, Floors) * 355.0 + 150.0;   // a parapet's height over the top floor
+	bPreview = true;
+	ComposePreview();
+	BuildVolumes();
+}
+
+void ACityBuilder::ClearPreview()
+{
+	if (!bPreview) return;
+	bPreview = false;
+	Current = BaseVolumes;
+	BuildVolumes();
+}
+
+void ACityBuilder::ComposePreview()
+{
+	Current = BaseVolumes.FilterByPredicate([this](const FBWVolume& V) { return V.Bbl != PreviewVol.Bbl; });
+	Current.Add(PreviewVol);
+}
+
+bool ACityBuilder::PreviewBounds(FVector& Base, double& Height, double& Span) const
+{
+	if (!bPreview || PreviewVol.Ring.Num() < 3) return false;
+	FBox2D Box(ForceInit);
+	for (const FVector2D& Q : PreviewVol.Ring) Box += Q;
+	Base = FVector(Box.GetCenter(), 0);
+	Height = PreviewVol.Z1;
+	Span = Box.GetSize().Size();
+	return true;
 }
 
 void ACityBuilder::AddCrane(const TArray<FVector2D>& Footprint, double TopCm, uint32 Hash)
@@ -538,6 +956,26 @@ const FBWKit* ACityBuilder::KitFor(const FBWVolume& V) const
 	// before ~1945; plain post-war fronts to the mid-70s; curtain wall after.
 	// Among the kits that fit, the lot picks (stable, so a building keeps its skin).
 	auto Has = [this](const TCHAR* N) { return Kits.FindByPredicate([N](const FBWKit& K) { return K.Name == N; }); };
+	// THE WEB MAP'S FAMILY. The building wears what the browser map draws it in:
+	// its family lists the kits nearest it, and the lot picks among them (the same
+	// pick unreal/tools/facade-families.mjs measures shares with).
+	// a kit the player picked on the Build desk, by name
+	if (V.Look.IsSet()) if (const FBWKit* Kit = Has(*V.Look.Kit)) return Kit;
+	// (a building the player designed wears the style they picked, by the same table)
+	const FString& Family = V.Facade.IsEmpty() ? V.Fam : V.Facade;
+	if (!Family.IsEmpty())
+	{
+		const TArray<FString>* List = FamilyKits.Find(Family);
+		if (!List) if (const FString* Like = FamilyLike.Find(Family)) List = FamilyKits.Find(*Like);
+		if (List && List->Num())
+		{
+			uint32 H = 2166136261u;
+			for (const TCHAR Ch : V.Bbl) { H ^= uint32(Ch); H *= 16777619u; }
+			H = (H ^ (H >> 13)) * 0x5bd1e995u;
+			for (int32 i = 0; i < List->Num(); ++i)
+				if (const FBWKit* Kit = Has(*(*List)[(H + i) % List->Num()])) return Kit;
+		}
+	}
 	// A BUILDING THE PLAYER DESIGNED wears the family they picked on the design
 	// desk: each of the web renderer's facade families has the City Sample kit
 	// closest to it in material and era.
@@ -549,22 +987,6 @@ const FBWKit* ACityBuilder::KitFor(const FBWVolume& V) const
 			{ TEXT("loft"), TEXT("CHF") }, { TEXT("modern"), TEXT("SFE") }, { TEXT("moderne"), TEXT("CHH") },
 			{ TEXT("ribbon"), TEXT("SFC") }, { TEXT("stone"), TEXT("CHA") }, { TEXT("terracotta"), TEXT("CHC") } };
 		if (const TCHAR* const* K = ByFamily.Find(V.Facade)) if (const FBWKit* Kit = Has(*K)) return Kit;
-	}
-	// THE WEB MAP'S FAMILY. The building wears what the browser map draws it in:
-	// its family lists the kits nearest it, and the lot picks among them (the same
-	// pick unreal/tools/facade-families.mjs measures shares with).
-	if (!V.Fam.IsEmpty())
-	{
-		const TArray<FString>* List = FamilyKits.Find(V.Fam);
-		if (!List) if (const FString* Like = FamilyLike.Find(V.Fam)) List = FamilyKits.Find(*Like);
-		if (List && List->Num())
-		{
-			uint32 H = 2166136261u;
-			for (const TCHAR Ch : V.Bbl) { H ^= uint32(Ch); H *= 16777619u; }
-			H = (H ^ (H >> 13)) * 0x5bd1e995u;
-			for (int32 i = 0; i < List->Num(); ++i)
-				if (const FBWKit* Kit = Has(*(*List)[(H + i) % List->Num()])) return Kit;
-		}
 	}
 	TArray<const FBWKit*> Fit;
 	auto Want = [&](std::initializer_list<const TCHAR*> Names) { for (const TCHAR* N : Names) if (const FBWKit* K = Has(N)) Fit.Add(K); };
@@ -639,6 +1061,42 @@ void ACityBuilder::AddProp(const TCHAR* Path, const FTransform& T, bool bRoof)
 	C->AddInstance(T);
 }
 
+void ACityBuilder::SetPiece(const FBWVolume& V)
+{
+	if (V.Ring.Num() < 3) return;
+	FVector2D C(0, 0);
+	for (const FVector2D& P : V.Ring) C += P;
+	C /= V.Ring.Num();
+	const uint32 H = GetTypeHash(V.Bbl);
+	const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(V.Ring[1].Y - V.Ring[0].Y, V.Ring[1].X - V.Ring[0].X));
+	// TOPPING OUT. When the frame reaches its last floors the ironworkers set a
+	// small evergreen and a flag on the highest beam; it rides up with the frame
+	// until the building closes in.
+	if (V.bFrame && V.Progress >= 0.85)
+	{
+		AddProp(TEXT("/Game/Prop/Kit_Tree_Birch/Mesh/SM_Tree_Birch_e.SM_Tree_Birch_e"), FTransform(FRotator(0, H % 360, 0), FVector(C, V.Z1), FVector(0.32)), true);
+		AddProp(TEXT("/Game/Prop/Kit_StreetLamp_A/Mesh/SM_StreetLamp_A_Banner_2.SM_StreetLamp_A_Banner_2"), FTransform(FRotator(0, Yaw, 0), FVector(C + FVector2D(250, 150), V.Z1)), true);
+	}
+	// THE CLEARED SITE: rubble heaps (dressed stone, crushed to grey), barricades at
+	// the gate on the street side
+	if (V.bVacant && V.bCleared)
+	{
+		FRandomStream Rng((int32)H);
+		FBox2D Box(ForceInit);
+		for (const FVector2D& P : V.Ring) Box += P;
+		for (int32 i = 0; i < 5; ++i)
+		{
+			const FVector2D P(Rng.FRandRange(Box.Min.X, Box.Max.X), Rng.FRandRange(Box.Min.Y, Box.Max.Y));
+			if (!InsideRing(BWInsetRing(V.Ring, 300), P)) continue;
+			const double S = Rng.FRandRange(2.0, 4.5);
+			AddProp(TEXT("/Engine/BasicShapes/Cone.Cone"), FTransform(FRotator(0, Rng.FRandRange(0, 360), 0), FVector(P, S * 50 - 5), FVector(S, S * Rng.FRandRange(0.7, 1.2), S * 0.45)), true);
+		}
+		const FVector2D A = V.Ring[0], B = V.Ring[1], Mid = (A + B) * 0.5, Dd = (B - A).GetSafeNormal();
+		for (int32 k = -1; k <= 1; ++k)
+			AddProp(TEXT("/Game/Prop/Kit_Barricade_A/Mesh/SM_Barricade_A.SM_Barricade_A"), FTransform(FRotator(0, Yaw, 0), FVector(Mid + Dd * k * 220, FootZ)), true);
+	}
+}
+
 void ACityBuilder::ClearRoofProps()
 {
 	for (TPair<FString, TObjectPtr<UInstancedStaticMeshComponent>>& P : RoofProps) if (P.Value) P.Value->ClearInstances();
@@ -684,7 +1142,136 @@ void ACityBuilder::BuildStreetProps()
 				}
 				// (kerb parking is laid out by CityLife from the street centrelines, in a
 				// parking lane the traffic lane is sized around)
+				StreetFurniture(A, Dir, Out, Len, Rng);
 			}
+		}
+	}
+}
+
+void ACityBuilder::DressParks(TArray<TArray<FVector2D>>& Paths)
+{
+	// THE PARK AS THE GENERATOR LAID IT OUT. Its walks (a promenade inside the
+	// lawn's edge, the axes, the corner paths, the harbour walk) and its
+	// benches come from citygen, so a park here is the park on the web map;
+	// its trees come with the city's trees. Drawn here: the walks' paving, the
+	// benches, and an iron hoop railing along the lawn's edge, open wherever a
+	// walk comes out of the park.
+	constexpr double WalkW = 300;
+	for (const TArray<FVector2D>& Line : City.ParkPaths)
+		for (int32 i = 0; i + 1 < Line.Num(); ++i)
+		{
+			const FVector2D A = Line[i], B = Line[i + 1];
+			const double Len = (B - A).Size();
+			if (Len < 50) continue;
+			const FVector2D Dd = (B - A) / Len, N(-Dd.Y, Dd.X);
+			// each piece runs half a width past its ends, so the joints close
+			const FVector2D A2 = A - Dd * WalkW * 0.5, B2 = B + Dd * WalkW * 0.5;
+			Paths.Add({ A2 - N * WalkW * 0.5, B2 - N * WalkW * 0.5, B2 + N * WalkW * 0.5, A2 + N * WalkW * 0.5 });
+		}
+	const TCHAR* const Bench = TEXT("/Game/Prop/Kit_bench_RR/mesh/SM_street_bench.SM_street_bench");
+	for (const TPair<FVector2D, double>& Bn : City.Benches)
+		// the generator's bearing is the walk's direction in its east-north frame;
+		// the seat faces 90 degrees left of it. Here +X is north and +Y east.
+		AddProp(Bench, FTransform(FRotator(0, -Bn.Value - 90.0, 0), FVector(Bn.Key, FootZ)), false);
+	const TCHAR* const Rail = TEXT("/Game/Prop/Kit_Railing_A/Mesh/SM_Railing_A_Railing_N01.SM_Railing_A_Railing_N01");
+	const TCHAR* const Post = TEXT("/Game/Prop/Kit_Railing_A/Mesh/SM_Railing_A_Pole_N01.SM_Railing_A_Pole_N01");
+	auto NearWalk = [&](const FVector2D& P)
+	{
+		for (const TArray<FVector2D>& Line : City.ParkPaths)
+			for (int32 i = 0; i + 1 < Line.Num(); ++i)
+			{
+				const FVector2D A = Line[i], AB = Line[i + 1] - A;
+				const double L2 = AB.SizeSquared();
+				const double t = L2 > 0 ? FMath::Clamp(FVector2D::DotProduct(P - A, AB) / L2, 0.0, 1.0) : 0.0;
+				if ((P - (A + AB * t)).Size() < 400) return true;
+			}
+		return false;
+	};
+	for (const TArray<FVector2D>& Edge0 : City.ParkKerbs)
+	{
+		// the edging runs on the lawn's edge; the railing stands 40 cm inside it
+		for (int32 i = 0; i + 1 < Edge0.Num(); ++i)
+		{
+			const FVector2D A = Edge0[i], B = Edge0[i + 1];
+			const double Len = (B - A).Size();
+			if (Len < 300) continue;
+			const FVector2D Dd = (B - A) / Len;
+			const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Dd.Y, Dd.X));
+			for (double t = 0; t + 282 <= Len; t += 282)
+			{
+				const FVector2D P0 = A + Dd * t, P1 = P0 + Dd * 282;
+				if (NearWalk((P0 + P1) * 0.5)) continue;
+				AddProp(Rail, FTransform(FRotator(0, Yaw, 0), FVector(P1, FootZ)), false);
+				AddProp(Post, FTransform(FRotator(0, Yaw, 0), FVector(P0, FootZ)), false);
+			}
+		}
+	}
+}
+
+void ACityBuilder::StreetFurniture(const FVector2D& A, const FVector2D& Dir, const FVector2D& Out, double Len, FRandomStream& Rng)
+{
+	// WHAT STANDS ON A SIDEWALK, besides lamps and trees, and where a city puts
+	// it. Out points to the street; the kerb is the edge line. A piece is skipped
+	// where the sidewalk is too narrow and the spot falls on a lot.
+	const double Along = FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X));
+	const double Facing = FMath::RadiansToDegrees(FMath::Atan2(Out.Y, Out.X));
+	auto At = [&](double S, double In) { return A + Dir * S - Out * In; };
+	auto Free = [&](const FVector2D& P) { return !ParcelAt(P); };
+	const FString P0 = TEXT("/Game/Prop/");
+	// a bus stop on about one long block face in four, mid-block: the shelter
+	// along the kerb, the stop's pole sign at its head, an ad panel behind
+	if (Len > 6000 && Rng.FRand() < 0.25)
+	{
+		const FVector2D P = At(Len * 0.5, 160);
+		if (Free(P) && Free(At(Len * 0.5, 260)))
+		{
+			AddProp(TEXT("/Game/Prop/CITY/Kit_BusStop/Mesh/SM_CTY_BusStop_A01_N1.SM_CTY_BusStop_A01_N1"), FTransform(FRotator(0, Facing + 180, 0), FVector(P, 15)), false);
+			AddProp(TEXT("/Game/Prop/Kit_BusStopSign_A/Mesh/SM_BusStopSign_A.SM_BusStopSign_A"), FTransform(FRotator(0, Facing, 0), FVector(At(Len * 0.5 + 420, 60), 15)), false);
+			const FVector2D Ad = At(Len * 0.5 - 520, 170);
+			const int32 N = Rng.RandRange(1, 4);
+			if (Free(Ad)) AddProp(*FString::Printf(TEXT("/Game/Prop/CITY/Kit_StandingSign/Mesh/SM_StandingSignAd_A0%d_N1.SM_StandingSignAd_A0%d_N1"), N, N),
+				FTransform(FRotator(0, Along, 0), FVector(Ad, 15)), false);
+		}
+	}
+	// news boxes in a row near the corner, about one corner in six
+	if (Len > 1500 && Rng.FRand() < 0.16)
+	{
+		const FVector2D P = At(380, 90);
+		if (Free(P))
+		{
+			AddProp(Rng.FRand() < 0.5 ? TEXT("/Game/Prop/Kit_NewsDispenser_A/Mesh/SM_NewsDispenser_Small_A_01.SM_NewsDispenser_Small_A_01") : TEXT("/Game/Prop/Kit_NewsDispenser_A/Mesh/SM_NewsDispenser_Large_A_01.SM_NewsDispenser_Large_A_01"),
+				FTransform(FRotator(0, Along + 180, 0), FVector(P, 15)), false);
+		}
+	}
+	// a parking-regulation sign on its pole at each block face's start
+	if (Len > 1200)
+	{
+		const FVector2D P = At(260, 45);
+		if (Free(P)) AddProp(TEXT("/Game/Prop/Kit_PoleSign_A/Mesh/SM_PoleSign_A.SM_PoleSign_A"), FTransform(FRotator(0, Along, 0), FVector(P, 15)), false);
+	}
+	// a newsstand on a rare busy corner
+	if (Len > 4000 && Rng.FRand() < 0.04)
+	{
+		const FVector2D P = At(700, 200);
+		if (Free(P) && Free(At(700, 300))) AddProp(TEXT("/Game/Prop/Kit_NewsBooth_A/Mesh/SM_NewsBooth_A_01.SM_NewsBooth_A_01"), FTransform(FRotator(0, Facing, 0), FVector(P, 15)), false);
+	}
+	// bicycles locked along the kerb, a few to a block
+	for (double S = 900; S < Len - 900; S += 1700)
+		if (Rng.FRand() < 0.07)
+		{
+			const FVector2D P = At(S, 55);
+			if (Free(P)) AddProp(TEXT("/Game/Prop/Kit_Bicycle_A/Mesh/SM_Bicycle_A_01.SM_Bicycle_A_01"), FTransform(FRotator(0, Along + 90 + Rng.FRandRange(-8, 8), 0), FVector(P, 15)), false);
+		}
+	// cafe tables with an umbrella outside a shop, in the warm months the place
+	// keeps them out (they stay: the city is mostly seen from above)
+	if (Len > 2000 && Rng.FRand() < 0.10)
+	{
+		const FVector2D P = At(Len * Rng.FRandRange(0.3, 0.7), 330);
+		const FBWParcel* Behind = ParcelAt(At(Len * 0.5, 900));
+		if (Free(P) && Behind && Behind->Cls == TEXT("retail"))
+		{
+			AddProp(TEXT("/Game/Prop/Kit_Umbella_StoneTable_A/Mesh/SM_StoneTable_Circle_A.SM_StoneTable_Circle_A"), FTransform(FRotator(0, Rng.FRandRange(0, 90), 0), FVector(P, 15), FVector(0.55)), false);
+			AddProp(TEXT("/Game/Prop/Kit_Umbella_StoneTable_A/Mesh/SM_Umbella_A.SM_Umbella_A"), FTransform(FRotator::ZeroRotator, FVector(P, 15), FVector(0.85)), false);
 		}
 	}
 }
@@ -713,6 +1300,15 @@ void ACityBuilder::DressRoof(const FBWVolume& V, uint32 Seed)
 	const double Height = V.Z1 - V.Z0;
 	if (V.Year > 0 && V.Year < 1950 && Height > 1500 && Height < 9000 && Rng.FRand() < 0.4 && Spot(P))
 		AddProp(Rng.FRand() < 0.5 ? TEXT("/Game/Prop/Kit_roof_tank_a_RR/Mesh/SM_roof_tank_a_N1.SM_roof_tank_a_N1") : TEXT("/Game/Prop/Kit_roof_tank_B_RR/Mesh/SM_roof_tank_b.SM_roof_tank_b"), FTransform(Square, FVector(P, Z)), true);
+	// masts on the tall roofs (radio, cellular), a chimney stack or two on the
+	// coal-and-oil-heated walk-ups, a switch box by the bulkhead
+	if (V.Z1 > 4000 && Rng.FRand() < 0.35 && Spot(P))
+		AddProp(Rng.FRand() < 0.5 ? TEXT("/Game/Prop/Kit_antenna_RR/Mesh/SM_roof_antenna_a_N1.SM_roof_antenna_a_N1") : TEXT("/Game/Prop/Kit_antenna_RR/Mesh/SM_roof_antenna_d_N1.SM_roof_antenna_d_N1"), FTransform(Square, FVector(P, Z)), true);
+	if (V.Year > 0 && V.Year < 1940 && Height < 2500)
+		for (int32 i = Rng.RandRange(0, 2); i > 0; --i) if (Spot(P))
+			AddProp(TEXT("/Game/Prop/Kit_roof_brick_RR/Mesh/SM_roof_brick_N1.SM_roof_brick_N1"), FTransform(Square, FVector(P, Z), FVector(1, 1, Rng.FRandRange(1.5, 3.0))), true);
+	if (Rng.FRand() < 0.3 && Spot(P))
+		AddProp(TEXT("/Game/Prop/Kit_antenna_RR/Mesh/SM_roof_breaker_box_a_N1.SM_roof_breaker_box_a_N1"), FTransform(Square, FVector(P, Z)), true);
 }
 
 void ACityBuilder::ParkLot(const FBWVolume& V, uint32 Seed)
@@ -788,15 +1384,23 @@ void ACityBuilder::BuildMarkings()
 			// keep paint out of the intersections at either end
 			const double Trim = FMath::Min(900.0, Len * 0.2);
 			const FVector2D A2 = A + D * Trim, B2 = B - D * Trim;
-			if (C.Width >= 700)
+			// THE MARKING THE GENERATOR CHOSE (centerline mk): a narrow lane gets no
+			// paint, a working street a dashed centre line, an avenue the double
+			// yellow and its lane lines. A boulevard's side roadway is one-way: white
+			// lane dashes, never a yellow.
+			auto Dashes = [&](FMeshBuf& M, double Off, const FLinearColor& Col)
+			{
+				for (double S = Trim; S + 300 < Len - Trim; S += 900)
+					Strip(M, A + D * S + N * Off, A + D * (S + 300) + N * Off, 12, Col);
+			};
+			if (C.Cls == TEXT("boulevard")) Dashes(White, 0, Paint);
+			else if (C.Mark >= 2)
 			{
 				Strip(Yellow, A2 + N * 15, B2 + N * 15, 12, Amber);
 				Strip(Yellow, A2 - N * 15, B2 - N * 15, 12, Amber);
+				for (const double Off : { -C.Width * 0.25, C.Width * 0.25 }) Dashes(White, Off, Paint);
 			}
-			if (C.Width >= 1200)
-				for (const double Off : { -C.Width * 0.25, C.Width * 0.25 })
-					for (double S = Trim; S + 300 < Len - Trim; S += 1200)
-						Strip(White, A + D * S + N * Off, A + D * (S + 300) + N * Off, 12, Paint);
+			else if (C.Mark == 1) Dashes(Yellow, 0, Amber);
 		}
 	}
 	for (const TArray<FVector2D>& Zb : City.Zebras)

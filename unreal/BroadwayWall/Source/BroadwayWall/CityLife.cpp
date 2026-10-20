@@ -3,6 +3,8 @@
 #include "CityData.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 
@@ -20,6 +22,30 @@ namespace
 		TEXT("/Game/Vehicle/vehCar_vehicle13/Mesh/SM_vehCar_vehicle13.SM_vehCar_vehicle13"),
 		TEXT("/Game/Vehicle/vehVan_vehicle01/Mesh/SM_vehVan_vehicle01.SM_vehVan_vehicle01"),
 		TEXT("/Game/Vehicle/vehVan_vehicle09/Mesh/SM_vehVan_vehicle09.SM_vehVan_vehicle09") };
+
+	// WHAT COLOUR CARS ARE. The share of each paint on the road (US registrations
+	// of the 2010s-20s, rounded: white a quarter, black a fifth, then grey, silver,
+	// blue and red, and a little of everything else), and the paint in linear
+	// colour for City Sample's car shader (M_Veh_CarPaint "BaseColor").
+	struct FPaint { float Share; FLinearColor Color; };
+	const FPaint Paints[] = {
+		{ 0.25f, FLinearColor(0.80f, 0.80f, 0.78f) },   // white
+		{ 0.22f, FLinearColor(0.015f, 0.015f, 0.017f) }, // black
+		{ 0.19f, FLinearColor(0.16f, 0.165f, 0.17f) },  // grey
+		{ 0.10f, FLinearColor(0.46f, 0.47f, 0.48f) },   // silver
+		{ 0.09f, FLinearColor(0.025f, 0.06f, 0.20f) },  // blue
+		{ 0.09f, FLinearColor(0.34f, 0.02f, 0.02f) },   // red
+		{ 0.03f, FLinearColor(0.04f, 0.09f, 0.05f) },   // green
+		{ 0.03f, FLinearColor(0.42f, 0.36f, 0.27f) },   // beige, brown, gold
+	};
+	constexpr int32 NumPaints = UE_ARRAY_COUNT(Paints);
+	/** A car of any model, in a paint by its share on the road: the component index within one pass. */
+	int32 PickCar(FRandomStream& Rng, int32 NumModels)
+	{
+		float U = Rng.FRand(); int32 P = NumPaints - 1;
+		for (int32 i = 0; i < NumPaints; ++i) { if (U < Paints[i].Share) { P = i; break; } U -= Paints[i].Share; }
+		return Rng.RandRange(0, NumModels - 1) * NumPaints + P;
+	}
 
 	// signal cycle: axis 0 green, all red, axis 1 green, all red (seconds)
 	constexpr double GreenT = 14, ClearT = 3, Cycle = 2 * (GreenT + ClearT);
@@ -89,7 +115,17 @@ int32 ACityLife::PieceMesh(const FString& Path)
 	C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	C->SetMobility(EComponentMobility::Movable);
 	C->NumCustomDataFloats = 5;
-	C->SetCastShadow(true);
+	// no shadow: a walker is a few pixels from the game camera, and every moving
+	// caster invalidates the virtual shadow map pages it touches each frame
+	// (measured: the crowd took the city from 33 fps to 20 at 1080p)
+	C->SetCastShadow(false);
+	// nor in the distance-field and Lumen scene: a moving instance there is rebuilt every frame
+	C->bAffectDistanceFieldLighting = false;
+	C->SetAffectDynamicIndirectLighting(false);
+	// DRAWN ONLY NEAR THE CAMERA. Nineteen thousand crowd pieces (body, clothes,
+	// hair) across the city were drawn every frame at full detail, which took the
+	// city from 33 fps to 20 at 1080p; a walker past ~350 m is a pixel or two
+	C->SetCullDistances(30000, 38000);
 	C->RegisterComponent();
 	const int32 I = PersonMeshes.Add(C);
 	PersonMeshIndex.Add(Path, I);
@@ -139,14 +175,32 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 	}
 	for (FNode& N : Nodes) N.bSignal = N.Out.Num() >= 3;
 
+	// one component per model and paint (a paint is a material parameter, so it
+	// is per component); the body slots are the ones on the car-paint master
+	TMap<TPair<UMaterialInterface*, int32>, UMaterialInstanceDynamic*> Painted;
+	const int32 NumModels = UE_ARRAY_COUNT(Vehicles);
 	for (int32 Pass = 0; Pass < 2; ++Pass)
 	for (const TCHAR* P : Vehicles)
+	for (int32 Paint = 0; Paint < NumPaints; ++Paint)
 	{
 		UInstancedStaticMeshComponent* I = NewObject<UInstancedStaticMeshComponent>(this);
 		I->SetupAttachment(RootComponent);
 		I->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, P));
 		I->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		I->SetMobility(Pass ? EComponentMobility::Movable : EComponentMobility::Static);
+		for (int32 Slot = 0; Slot < I->GetNumMaterials(); ++Slot)
+		{
+			UMaterialInterface* Base = I->GetMaterial(Slot);
+			const UMaterial* Master = Base ? Base->GetBaseMaterial() : nullptr;
+			if (!Master || !Master->GetName().Contains(TEXT("CarPaint"))) continue;
+			UMaterialInstanceDynamic*& MID = Painted.FindOrAdd(TPair<UMaterialInterface*, int32>(Base, Paint));
+			if (!MID)
+			{
+				MID = UMaterialInstanceDynamic::Create(Base, this);
+				MID->SetVectorParameterValue(TEXT("BaseColor"), Paints[Paint].Color);
+			}
+			I->SetMaterial(Slot, MID);
+		}
 		I->RegisterComponent();
 		(Pass ? CarMeshes : ParkedMeshes).Add(I);
 	}
@@ -154,7 +208,7 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 	// clear of the junctions at either end (crosswalks, turning room)
 	for (const FBWCenterline& C : City.Centerlines)
 	{
-		if (C.Line.Num() < 2 || !HasParking(C.Width)) continue;
+		if (C.Line.Num() < 2 || !HasParking(C.Width) || FParse::Param(FCommandLine::Get(), TEXT("NoParked"))) continue;
 		TArray<double> Cum; double Len = 0;
 		Cumulate(C.Line, Cum, Len);
 		const double Kerb = C.Width * 0.5 - ParkW * 0.5;
@@ -168,7 +222,7 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 				const FVector2D At2 = P + Right * Kerb * Side;
 				// parked facing the traffic on its side of the street
 				const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)) + (Side > 0 ? 0 : 180);
-				UInstancedStaticMeshComponent* M = ParkedMeshes[Rng.RandRange(0, ParkedMeshes.Num() - 1)];
+				UInstancedStaticMeshComponent* M = ParkedMeshes[PickCar(Rng, NumModels)];
 				M->AddInstance(FTransform(FRotator(0, Yaw, 0), FVector(At2, 14)));
 				++Parked;
 			}
@@ -188,7 +242,7 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 			C.S = (L.Len - StopBack) * (n + Rng.FRandRange(0.1, 0.9)) / FMath::Max(1, Count);
 			C.V0 = Rng.FRandRange(950, 1250);
 			C.V = C.V0 * 0.5;
-			C.Mesh = Rng.RandRange(0, CarMeshes.Num() - 1);
+			C.Mesh = PickCar(Rng, NumModels);
 			C.Inst = CarMeshes[C.Mesh]->AddInstance(FTransform::Identity);
 			L.Cars.Add(Cars.Add(C));
 		}
@@ -260,7 +314,7 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 					PersonMeshes[M]->SetCustomData(I, TArrayView<const float>(Anim, 5));
 					P.Pieces.Add({ M, I });
 				}
-				if (P.Pieces.Num()) People.Add(MoveTemp(P));
+				if (P.Pieces.Num() && !FParse::Param(FCommandLine::Get(), TEXT("NoCrowd"))) People.Add(MoveTemp(P));
 			}
 		}
 	}
@@ -271,13 +325,23 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 void ACityLife::Tick(float Dt)
 {
 	Super::Tick(Dt);
+	const double T0 = FPlatformTime::Seconds();
+	ON_SCOPE_EXIT { static double Acc = 0; static int32 N = 0; Acc += FPlatformTime::Seconds() - T0; if (++N == 300) { UE_LOG(LogTemp, Display, TEXT("LIFE tick %.2f ms avg"), Acc / N * 1000.0); Acc = 0; N = 0; } };
 	Dt = FMath::Min(Dt, 0.1f);
 	Clock += Dt;
 
+	// MOVING THE CITY COSTS WHAT IS SENT. Every car and every walker used to be
+	// re-uploaded whole each frame (BatchUpdateInstancesTransforms on all of
+	// them), about 20,000 instance transforms and a full render-state rebuild
+	// per mesh: measured, the crowd alone took 22 fps to 35 at 1440p. Now the
+	// simulation runs for all of them, but only what is near the camera is sent
+	// every frame; the rest are sent in slices, each far one about four times a
+	// second, by single-instance updates the renderer applies as deltas.
+	++Frame;
+	if (const APlayerController* PC = GetWorld()->GetFirstPlayerController(); PC && PC->PlayerCameraManager)
+		Eye = FVector2D(PC->PlayerCameraManager->GetCameraLocation());
+
 	// ---------------- cars
-	TArray<TArray<FTransform>> Xf;
-	Xf.SetNum(CarMeshes.Num());
-	for (int32 m = 0; m < CarMeshes.Num(); ++m) Xf[m].SetNum(CarMeshes[m]->GetInstanceCount());
 	for (FLane& L : Lanes) L.Cars.Sort([this](int32 A, int32 B) { return Cars[A].S > Cars[B].S; }); // leader first
 	for (FLane& L : Lanes)
 	{
@@ -317,34 +381,46 @@ void ACityLife::Tick(float Dt)
 		C.Lane = Next;
 		Lanes[Next].Cars.Add(c);
 	}
-	for (const FCar& C : Cars)
+	for (int32 c = 0; c < Cars.Num(); ++c)
 	{
+		const FCar& C = Cars[c];
 		FVector2D Dir;
 		const FVector2D P = At(Lanes[C.Lane], FMath::Min(C.S, Lanes[C.Lane].Len), &Dir);
-		if (Xf[C.Mesh].IsValidIndex(C.Inst))
-			Xf[C.Mesh][C.Inst] = FTransform(FRotator(0, FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)), 0), FVector(P, 14));
+		if (!Due(P, uint32(c))) continue;
+		UInstancedStaticMeshComponent* M = CarMeshes[C.Mesh];
+		M->UpdateInstanceTransform(C.Inst, FTransform(FRotator(0, FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)), 0), FVector(P, 14)), false, false, true);
 	}
-	for (int32 m = 0; m < CarMeshes.Num(); ++m) if (Xf[m].Num()) CarMeshes[m]->BatchUpdateInstancesTransforms(0, Xf[m], true, true);
 
 	// ---------------- people
 	if (People.Num())
 	{
-		TArray<TArray<FTransform>> Px;
-		Px.SetNum(PersonMeshes.Num());
-		for (int32 m = 0; m < PersonMeshes.Num(); ++m) Px[m].SetNum(PersonMeshes[m]->GetInstanceCount());
-		for (FPerson& P : People)
+		for (int32 i = 0; i < People.Num(); ++i)
 		{
+			FPerson& P = People[i];
 			const FWalk& W = Walks[P.Walk];
 			P.S = FMath::Fmod(P.S + P.Dir * P.V * Dt + W.Len, W.Len);
 			FVector2D Dir;
 			const FVector2D At2 = AlongPath(W.Pts, W.Cum, P.S, &Dir);
+			if (!Due(At2, uint32(i))) continue;
 			if (P.Dir < 0) Dir = -Dir;
 			// the crowd meshes face +Y (skeletal convention): turn them to face along X
 			const FTransform T(FRotator(0, FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)) - 90.0, 0), FVector(At2, 17));
-			for (const TPair<int32, int32>& Pc : P.Pieces) if (Px[Pc.Key].IsValidIndex(Pc.Value)) Px[Pc.Key][Pc.Value] = T;
+			for (const TPair<int32, int32>& Pc : P.Pieces)
+			{
+				UInstancedStaticMeshComponent* M = PersonMeshes[Pc.Key];
+				M->UpdateInstanceTransform(Pc.Value, T, false, false, true);
+			}
 		}
-		for (int32 m = 0; m < PersonMeshes.Num(); ++m) if (Px[m].Num()) PersonMeshes[m]->BatchUpdateInstancesTransforms(0, Px[m], true, true);
 	}
+	// (the instance data manager uploads just the changed instances; a full
+	// render-state rebuild here would undo the saving)
+}
+
+bool ACityLife::Due(const FVector2D& P, uint32 Index) const
+{
+	// near: within 350 m of the camera, every frame; far: one in fifteen a frame
+	if (FVector2D::DistSquared(P, Eye) < 35000.0 * 35000.0) return true;
+	return (Index + Frame) % 15 == 0;
 }
 
 bool ACityLife::PersonNear(const FVector& Q, FVector& Out, FVector2D& Facing) const

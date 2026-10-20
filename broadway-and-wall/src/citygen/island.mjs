@@ -2631,11 +2631,16 @@ export function islandConfig(seed, opts = {}) {
     { key: "canal", w: 0.22 },
     { key: "pair",  w: 0.20 },
   ];
-  const streamProg = (() => {
+  const drawnProg = (() => {
     let r = Dwat.rand() * STREAM_PROGRAMMES.reduce((a, p) => a + p.w, 0);
     for (const p of STREAM_PROGRAMMES) { r -= p.w; if (r <= 0) return p; }
     return STREAM_PROGRAMMES[0];
   })();
+  // PLAN 12: NO INLAND WATER. The owner's call: the creeks, canals and mill
+  // ponds cut the plat into banks and bridges that never read as a city, so a
+  // plan-12 town has none (the harbour slips at the waterfront stay). The draw
+  // is still made, so every later draw from this stream lands where it did.
+  const streamProg = (opts.planV ?? 3) >= 12 ? STREAM_PROGRAMMES[0] : drawnProg;
 
   const inlandStart = (mouth, minEdge) => {
     const dir = [mid[0] - mouth[0], mid[1] - mouth[1]];

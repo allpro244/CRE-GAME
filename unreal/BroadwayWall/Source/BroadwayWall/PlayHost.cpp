@@ -38,8 +38,22 @@ bool FBWWebServer::Start(const FString& Root, uint32 Port)
 			}
 			const FString Ext = FPaths::GetExtension(File).ToLower();
 			const FString Type = Ext == TEXT("html") ? TEXT("text/html; charset=utf-8") : Ext == TEXT("js") ? TEXT("text/javascript")
-				: Ext == TEXT("json") ? TEXT("application/json") : Ext == TEXT("png") ? TEXT("image/png") : TEXT("application/octet-stream");
+				: Ext == TEXT("json") ? TEXT("application/json") : Ext == TEXT("png") ? TEXT("image/png") : Ext == TEXT("jpg") ? TEXT("image/jpeg") : TEXT("application/octet-stream");
 			Done(FHttpServerResponse::Create(MoveTemp(Bytes), Type));
+			return true;
+		}));
+	// the Build desk's kit pictures (Data/kit-thumbs/kit-<KIT>.jpg, rendered by -KitThumbs):
+	// the same in the repo and in a packaged build, wherever the page itself is served from
+	const FString Thumbs = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("Data/kit-thumbs"));
+	Router->BindRoute(FHttpPath(TEXT("/game/kits")), EHttpServerRequestVerbs::VERB_GET,
+		FHttpRequestHandler::CreateLambda([Thumbs](const FHttpServerRequest& Req, const FHttpResultCallback& Done)
+		{
+			FString Rel = Req.RelativePath.GetPath();
+			Rel.RemoveFromStart(TEXT("/"));
+			const FString File = FPaths::Combine(Thumbs, FPaths::GetCleanFilename(Rel));
+			TArray<uint8> Bytes;
+			if (!FFileHelper::LoadFileToArray(Bytes, *File)) { Done(FHttpServerResponse::Error(EHttpServerResponseCodes::NotFound)); return true; }
+			Done(FHttpServerResponse::Create(MoveTemp(Bytes), FPaths::GetExtension(File).ToLower() == TEXT("png") ? TEXT("image/png") : TEXT("image/jpeg")));
 			return true;
 		}));
 	FHttpServerModule::Get().StartAllListeners();

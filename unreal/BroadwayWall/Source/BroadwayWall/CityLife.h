@@ -45,6 +45,10 @@ private:
 	UPROPERTY() TArray<TObjectPtr<UInstancedStaticMeshComponent>> CarMeshes;
 	UPROPERTY() TArray<TObjectPtr<UInstancedStaticMeshComponent>> ParkedMeshes;
 	double Clock = 0;
+	uint32 Frame = 0;
+	/** Whether this instance's new place goes to the renderer this frame: every frame near the camera, a slice of the rest each frame (so each far one a few times a second). */
+	bool Due(const FVector2D& P, uint32 Index) const;
+	FVector2D Eye = FVector2D::ZeroVector;
 	bool Green(int32 Node, int32 Axis) const;
 	FVector2D At(const FLane& L, double S, FVector2D* Dir) const;
 

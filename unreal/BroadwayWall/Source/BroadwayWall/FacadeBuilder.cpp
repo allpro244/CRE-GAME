@@ -21,6 +21,9 @@ static bool ReadModule(const TSharedPtr<FJsonObject>& O, FBWKitModule& M)
 	M.Y0 = O->GetNumberField(TEXT("y0"));
 	M.Y1 = O->GetNumberField(TEXT("y1"));
 	M.Mesh = LoadObject<UStaticMesh>(nullptr, *M.Path);
+	// a kit holds its meshes by plain pointer, so they are rooted: the collector
+	// frees a mesh no component shows yet, and the next building to use it crashed
+	if (M.Mesh) M.Mesh->AddToRoot();
 	// the decal companion sits beside the mesh (.../Mesh/X_decal) or in a sibling
 	// folder (.../decal/X_decal); without it every wall reads factory-clean
 	{
@@ -32,6 +35,7 @@ static bool ReadModule(const TSharedPtr<FJsonObject>& O, FBWKitModule& M)
 		{
 			if (!FPackageName::DoesPackageExist(Cand)) continue;
 			M.Decal = LoadObject<UStaticMesh>(nullptr, *(Cand + TEXT(".") + FPackageName::GetShortName(Cand)));
+			if (M.Decal) M.Decal->AddToRoot();
 			if (M.Decal) break;
 		}
 	}
@@ -133,10 +137,13 @@ void FBWFacadeBuilder::Put(const FBWKitModule& M, const FVector2D& A, const FVec
 	++Placed;
 }
 
-int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed, bool bGround, const FLinearColor& Tint)
+int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed, bool bGround, const FLinearColor& Tint, bool bExactTint)
 {
 	{
-		auto Q = [](float X) { return uint32(FMath::Clamp(FMath::RoundToInt(X / 0.04f), 1, 255)); };
+		// the web family's tint is drawn for a flat painted wall; on a scanned kit
+		// material with its own colour it barely registered, so its departure
+		// from white is doubled (clamped to a plausible paint range)
+		auto Q = [bExactTint](float X) { return uint32(FMath::Clamp(FMath::RoundToInt(FMath::Clamp(bExactTint ? X : 1.f + 2.2f * (X - 1.f), 0.4f, 1.6f) / 0.04f), 1, 255)); };
 		const uint32 R = Q(Tint.R), G = Q(Tint.G), B = Q(Tint.B);
 		TintKey = (R == 25 && G == 25 && B == 25) ? 0 : (R << 16) | (G << 8) | B;   // 25 x 0.04 = 1: untinted
 		TintNow = FLinearColor(R * 0.04f, G * 0.04f, B * 0.04f);
@@ -155,34 +162,59 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 	for (const FBWKitBand& B : Kit.Bands)
 	{
 		if (B.Height < 10 || B.Walls.Num() == 0) continue;           // the footing slot is a hairline
-		if (!bGround && B.bGround) continue;                           // upper tiers have no shopfront floor
+		if ((!bGround || V.Look.Ground == TEXT("plain")) && B.bGround) continue;   // upper tiers have no shopfront floor; nor a building the player ran to the pavement
 		Order.Add(&B);
 		if (B.bRepeat) Reps.Add(&B); else FixedH += B.Height;
 	}
 	if (Order.Num() == 0) return 0;
-	TMap<const FBWKitBand*, int32> Count;
-	double Squeeze = 1.0;
-	if (H > FixedH && Reps.Num())
+	// ONE ROW OF WINDOWS PER FLOOR. The kit's bands carry their own storey
+	// heights (3 m to 9 m: a tall band is a double-height floor), and the
+	// stack used to repeat the shaft band by HEIGHT, so a ten-storey building in
+	// a kit with a 6 m shaft showed six rows of windows. Now the building's
+	// floors are counted (the generator's 3.55 m storey; what is left over is
+	// the parapet) and each band is counted as the storeys it spans; the
+	// repeating bands make up the difference, then the whole stack is scaled
+	// to land on the roof. On a low building the fixed bands that do not fit
+	// are dropped from the middle (keeping the street floor and the cornice).
+	if (V.Look.Top == TEXT("plain"))
 	{
-		double RepH = 0;
-		for (const FBWKitBand* B : Reps) RepH += B->Height;
-		const int32 Total = FMath::Max(0, FMath::RoundToInt((H - FixedH) / (RepH / Reps.Num())));
-		for (int32 i = 0; i < Reps.Num(); ++i) Count.Add(Reps[i], Total / Reps.Num() + (i < Total % Reps.Num() ? 1 : 0));
+		int32 LastRep = -1;
+		for (int32 k = 0; k < Order.Num(); ++k) if (Order[k]->bRepeat) LastRep = k;
+		if (LastRep >= 0 && LastRep + 1 < Order.Num()) Order.SetNum(LastRep + 1);
 	}
-	else
+	auto Storeys = [](const FBWKitBand* B) { return FMath::Max(1, FMath::RoundToInt(B->Height / 450.0)); };
+	const int32 Floors = FMath::Max(1, FMath::FloorToInt(H / 355.0 + 0.2));
+	int32 FixedS = 0;
+	for (const FBWKitBand* B : Order) if (!B->bRepeat) FixedS += Storeys(B);
+	while (FixedS > Floors && Order.Num() > 1)
 	{
-		// shorter than the fixed stack: drop the middle fixed bands until it fits, then squeeze
-		while (FixedH > H * 1.15 && Order.Num() > 2)
-		{
-			const int32 Mid = Order.Num() / 2;
-			if (!Order[Mid]->bRepeat) FixedH -= Order[Mid]->Height;
-			Order.RemoveAt(Mid);
-		}
-		for (const FBWKitBand* B : Reps) Count.Add(B, 0);
+		// drop the fixed band nearest the middle; never the street floor (first) or the top (last) while others remain
+		int32 Drop = -1;
+		for (int32 k = Order.Num() / 2, step = 0; step < Order.Num(); ++step, k = (k + 1) % Order.Num())
+			if (!Order[k]->bRepeat && (Order.Num() <= 2 || (k != 0 && k != Order.Num() - 1))) { Drop = k; break; }
+		if (Drop < 0) break;
+		FixedS -= Storeys(Order[Drop]);
+		Order.RemoveAt(Drop);
+	}
+	Reps.RemoveAll([&Order](const FBWKitBand* B) { return !Order.Contains(B); });
+	TMap<const FBWKitBand*, int32> Count;
+	{
+		int32 Left = FMath::Max(0, Floors - FixedS);
+		// fill with the repeating bands in turn, each taking its own storey count
+		int32 Guard = 0;
+		while (Left > 0 && Reps.Num() && Guard++ < 200)
+			for (const FBWKitBand* B : Reps)
+			{
+				if (Left <= 0) break;
+				const int32 S = Storeys(B);
+				if (S > Left && Count.FindRef(B) > 0) { Left = 0; break; }
+				Count.FindOrAdd(B)++;
+				Left -= S;
+			}
 	}
 	double StackH = 0;
 	for (const FBWKitBand* B : Order) StackH += B->bRepeat ? B->Height * Count.FindRef(B) : B->Height;
-	Squeeze = StackH > 0 ? H / StackH : 1.0;
+	const double Squeeze = StackH > 0 ? H / StackH : 1.0;
 	struct FRow { const FBWKitBand* Band; double Z, ScaleZ; };
 	TArray<FRow> Rows;
 	double Z = V.Z0;
@@ -196,8 +228,10 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 	// ---- this building's design: a bay rhythm shared by every floor, so the
 	// windows stack, but a different rhythm (and different modules) per building
 	static const TArray<TArray<int32>> Rhythms = { {0}, {0, 1}, {0, 0, 1}, {0, 1, 0, 2}, {1, 0, 0, 1}, {0, 1, 1}, {2, 0, 1, 0} };
-	const TArray<int32>& Rhythm = Rhythms[Rng.RandRange(0, Rhythms.Num() - 1)];
-	const int32 DoorEvery = Rng.RandRange(3, 5);
+	const int32 Pick = Rng.RandRange(0, Rhythms.Num() - 1);
+	const TArray<int32>& Rhythm = Rhythms[V.Look.Bays >= 0 ? V.Look.Bays % Rhythms.Num() : Pick];
+	// "entrance": doors all along the street floor rather than one in a few bays
+	const int32 DoorEvery = V.Look.Ground == TEXT("entrance") ? 2 : Rng.RandRange(3, 5);
 	TMap<const FBWKitBand*, TArray<const FBWKitModule*>> Palette;
 
 	double Area2 = 0;

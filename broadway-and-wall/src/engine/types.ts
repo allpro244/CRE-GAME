@@ -810,6 +810,17 @@ export interface BuildingDesign {
   crown?: "none" | "setback" | "spire" | "mast" | "cake";
   /** a landmark form for a tower (a key of src/map/real/signature.ts SIGNATURE_FORMS); it replaces the massing and the crown */
   signature?: string;
+  /**
+   * THE UNREAL FACADE KIT (Build desk, Unreal host): which City Sample kit the
+   * building is dressed in (engine/renderView.ts KITS), its wall colour (an
+   * index into KIT_COLOURS), how it meets the street, how it finishes at the
+   * top, and its window rhythm. Looks only, like everything here.
+   */
+  kit?: string;
+  kitColour?: number;
+  ground?: "shops" | "entrance" | "plain";
+  top?: "cornice" | "plain";
+  bays?: number;
 }
 
 export interface DevDraft {

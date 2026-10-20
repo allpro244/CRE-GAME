@@ -1,0 +1,74 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="M_Asphalt_Master_Inst_ParkingLots" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="M_Asphalt_Master_Inst_ParkingLotsEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots:M_Asphalt_Master_Inst_ParkingLotsEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="M_Asphalt_Master_Inst_ParkingLotsEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots:M_Asphalt_Master_Inst_ParkingLotsEditorOnlyData'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=5EB5C4364BF7169BC5ECC1A08FCF95B9
+   Parent="/Script/Engine.MaterialInstanceConstant'/Game/Road/Material/MI/M_Asphalt_Master_Inst.M_Asphalt_Master_Inst'"
+   bHasStaticPermutationResource=True
+   ScalarParameterValues(0)=(ParameterInfo=(Name="Patch Mask Mult 0I"),ParameterValue=4.000000,ExpressionGUID=A6BF424E470343D5598B25B5F8821150)
+   ScalarParameterValues(1)=(ParameterInfo=(Name="Patch Mask Pow 0I"),ParameterValue=5.000000,ExpressionGUID=577F05114A7C646622A54CA33BF04B87)
+   ScalarParameterValues(2)=(ParameterInfo=(Name="puddle_IntersectionMask_mult"),ParameterValue=3.000000,ExpressionGUID=C4CD2EE1409AD2903436DCB1B5BEB53F)
+   ScalarParameterValues(3)=(ParameterInfo=(Name="puddle_IntersectionMask_PowerExp"),ParameterValue=1.000000,ExpressionGUID=9DB50228494DB2CE50ADC1819E72B9EC)
+   ScalarParameterValues(4)=(ParameterInfo=(Name="BaseRoughnessMult"),ParameterValue=0.650000,ExpressionGUID=775B8AD64DDAB5639D87878DFCEFF86F)
+   ScalarParameterValues(5)=(ParameterInfo=(Name="Roughness 3O"),ParameterValue=0.220000,ExpressionGUID=61451BEB48EA50A16DF306BBA6E3818C)
+   ScalarParameterValues(6)=(ParameterInfo=(Name="TCB ScaleGlobal 3O"),ParameterValue=0.050000,ExpressionGUID=096C66334B0682942D200B823BA191BF)
+   ScalarParameterValues(7)=(ParameterInfo=(Name="Rough Mult 4G"),ParameterValue=0.800000,ExpressionGUID=1587E39C414128C5B0C7E29AFF6DB683)
+   ScalarParameterValues(8)=(ParameterInfo=(Name="TCB ScaleGlobal 4G"),ParameterValue=0.001000,ExpressionGUID=3D0BF8DB4224040B699094B0F0700FD5)
+   ScalarParameterValues(9)=(ParameterInfo=(Name="MV_LargeScale"),ParameterValue=0.000150,ExpressionGUID=A81179DC4A6E35DABE2234969745301B)
+   ScalarParameterValues(10)=(ParameterInfo=(Name="Color Tex Scale 6P"),ParameterValue=0.001000,ExpressionGUID=8CF65DCF44585871C8B74284E0E1D3EC)
+   ScalarParameterValues(11)=(ParameterInfo=(Name="Edge Col Mult 6P"),ParameterValue=2.000000,ExpressionGUID=3DA1968B4EC00D51DF584F88DDEBE2D9)
+   ScalarParameterValues(12)=(ParameterInfo=(Name="P1 Col Mult 6P"),ParameterValue=1.000000,ExpressionGUID=E723D3AC4ABB182D56E9E7B373281E3C)
+   ScalarParameterValues(13)=(ParameterInfo=(Name="P2 Col Mult 6P"),ParameterValue=0.600000,ExpressionGUID=C513EAED4C245222E2481DA068CCC7CF)
+   ScalarParameterValues(14)=(ParameterInfo=(Name="Seam Roughness 6P"),ParameterValue=0.250000,ExpressionGUID=B23BC2314321E11D6647DF92E2CD2F34)
+   ScalarParameterValues(15)=(ParameterInfo=(Name="UV Offset X 6P"),ParameterValue=0.285714,ExpressionGUID=B29C48D946432A1C40631E95687F231E)
+   ScalarParameterValues(16)=(ParameterInfo=(Name="UV Offset Y 6P"),ParameterValue=0.228571,ExpressionGUID=3D17F85F4DFC31C18F7933AD92FEC5BD)
+   ScalarParameterValues(17)=(ParameterInfo=(Name="UV Scale 6P"),ParameterValue=0.200000,ExpressionGUID=B6C0FAD14AD7F590B3189E8933D5C433)
+   ScalarParameterValues(18)=(ParameterInfo=(Name="LM_Mask_XScale"),ParameterValue=1.000000,ExpressionGUID=4AD645224803B163A0C00FBE96A06197)
+   ScalarParameterValues(19)=(ParameterInfo=(Name="LM_Mask_YScale"),ParameterValue=1.000000,ExpressionGUID=F96AB6354378C9861B9AFFAD7BF15859)
+   ScalarParameterValues(20)=(ParameterInfo=(Name="ShoulderWSPNoise_Scale"),ParameterValue=0.010000,ExpressionGUID=F5C0B8E04AD2FB83B0B249A40AF4DA62)
+   ScalarParameterValues(21)=(ParameterInfo=(Name="ShoulderDust_MaskMult"),ParameterValue=10.000000,ExpressionGUID=A910EC414BD9B07E616A43885FCA3682)
+   ScalarParameterValues(22)=(ParameterInfo=(Name="ShoulderDust_PowerExp"),ParameterValue=1.000000,ExpressionGUID=28495ADE4A26DD7388358DA56EBC45C2)
+   ScalarParameterValues(23)=(ParameterInfo=(Name="ShoulderDust_MaskScale"),ParameterValue=0.020000,ExpressionGUID=8F4324644B12F03E0CB19BA9ECDDB2B0)
+   ScalarParameterValues(24)=(ParameterInfo=(Name="Color Mask Power MFPD"),ParameterValue=1.000000,ExpressionGUID=DBF9B82B41EF022B498D07AB0A1DCA4D)
+   ScalarParameterValues(25)=(ParameterInfo=(Name="Edge Mask Opacity MFPD"),ParameterValue=0.700000,ExpressionGUID=170F469C4DA7D3D8586616802895E954)
+   ScalarParameterValues(26)=(ParameterInfo=(Name="PL TireMark Amt"),ParameterValue=0.600000,ExpressionGUID=20290A92480BAAC75AB9618EA4036C4E)
+   ScalarParameterValues(27)=(ParameterInfo=(Name="PL TireMark TCB ScalePattern"),ParameterValue=30.000000,ExpressionGUID=60D84B624EF335D54B5EF8BA5E36FA23)
+   ScalarParameterValues(28)=(ParameterInfo=(Name="Roughness MFPD"),ParameterValue=0.075000,ExpressionGUID=A1C644A1400D8C69041CB6A76CA0C600)
+   ScalarParameterValues(29)=(ParameterInfo=(Name="Specular MFPD"),ParameterValue=0.100000,ExpressionGUID=D5032CB345BFB705F93C48BE1AB4CADA)
+   ScalarParameterValues(30)=(ParameterInfo=(Name="RefractionDepthBias"))
+   VectorParameterValues(0)=(ParameterInfo=(Name="BaseColor Tint"),ParameterValue=(R=0.600000,G=0.600000,B=0.600000,A=1.000000),ExpressionGUID=58B495CD456A52FFCEC89FA15ECB1714)
+   VectorParameterValues(1)=(ParameterInfo=(Name="Rubble_Tint"),ParameterValue=(R=1.000000,G=1.000000,B=1.000000,A=1.000000),ExpressionGUID=E040B2DA4D8D03E68F5938BC118015ED)
+   VectorParameterValues(2)=(ParameterInfo=(Name="Tint 3O"),ParameterValue=(R=0.450000,G=0.461136,B=0.500000,A=0.000000),ExpressionGUID=75A26F034CEA1201271422A851BBB102)
+   VectorParameterValues(3)=(ParameterInfo=(Name="GrimeTint"),ParameterValue=(R=0.500000,G=0.500000,B=0.500000,A=0.000000),ExpressionGUID=27070AFA415DAD0A1E58BCBAC411FE50)
+   VectorParameterValues(4)=(ParameterInfo=(Name="MV_Tint_Hi"),ParameterValue=(R=0.546875,G=0.470628,B=0.393066,A=0.000000),ExpressionGUID=B06F174A46D2643BBD125EAF953EBF2C)
+   VectorParameterValues(5)=(ParameterInfo=(Name="ShoulderDust_Color"),ParameterValue=(R=0.166667,G=0.153263,B=0.118924,A=1.000000),ExpressionGUID=CBDEB6BB406CA674D34AFEA4870423B3)
+   TextureParameterValues(0)=(ParameterInfo=(Name="ShoulderTrash_C"),ParameterValue="/Script/Engine.Texture2D'/Game/Megascans/Atlases/Debris_Manmade_00/shmpulh_8K_Albedo.shmpulh_8K_Albedo'",ExpressionGUID=283C936148DE4381DD23428DC0197112)
+   TextureParameterValues(1)=(ParameterInfo=(Name="ShoulderTrash_Mask"),ParameterValue="/Script/Engine.Texture2D'/Game/Megascans/Atlases/Debris_Manmade_00/shmpulh_8K_Opacity.shmpulh_8K_Opacity'",ExpressionGUID=4394D94E44F2FA0EAE127EA6139511A8)
+   TextureParameterValues(2)=(ParameterInfo=(Name="gradientLines_packed"),ParameterValue="/Script/Engine.Texture2D'/Game/Textures/T_Black_Mask_VT.T_Black_Mask_VT'",ExpressionGUID=9BC2A8A643828DC2F1DEF395D156FAA5)
+   TextureParameterValues(3)=(ParameterInfo=(Name="gradientLines_packed_manyLines"),ParameterValue="/Script/Engine.Texture2D'/Game/Textures/T_Black_Mask_VT.T_Black_Mask_VT'",ExpressionGUID=9565BB784B97218EDEC3369525667DC0)
+   BasePropertyOverrides=(OpacityMaskClipValue=0.333300,UsageFlags=4460928)
+   StaticParametersRuntime=(StaticSwitchParameters=((Value=True,ParameterInfo=(Name="Do_intersection"),bOverride=True,ExpressionGUID=CB5E0BA9466CC3B6A22BE985D88114B4),(ParameterInfo=(Name="Do Patches"),bOverride=True,ExpressionGUID=142B74DC4985CCDB15C7128C49E48B3A),(Value=True,ParameterInfo=(Name="IsShoulder"),bOverride=True,ExpressionGUID=1D892BE6462E434E7071B7A7FC2BAA81),(ParameterInfo=(Name="Shoulder-DoLaneMarkers"),bOverride=True,ExpressionGUID=B3A16CCA4EC1BA0187713AB696E4431E),(Value=True,ParameterInfo=(Name="Shoulder-DoTrash"),bOverride=True,ExpressionGUID=5FA33264488EF3B8CF7210B69724DF61),(Value=True,ParameterInfo=(Name="Shoulder-DoDust"),bOverride=True,ExpressionGUID=B4543A8442F04BDFCC12A697EF7D6CC4),(Value=True,ParameterInfo=(Name="Enable Puddle MFPD"),bOverride=True,ExpressionGUID=F40748D240368CD36CDB15B87A795742),(Value=True,ParameterInfo=(Name="PL Parking Lot Enable"),bOverride=True,ExpressionGUID=27DC396D4CEA7F67A8FE189236A3FC5F),(ParameterInfo=(Name="roadLaneMasks LaneScale UV1"),bOverride=True,ExpressionGUID=D7E1A31D423B62389C0789B5721B6107),(ParameterInfo=(Name="Do_EdgePuddles"),bOverride=True,ExpressionGUID=F4F79500458BE7750AC037BC0FAB4D41)))
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'M_Asphalt_Master_Inst_ParkingLotsEditorOnlyData'"
+   TextureStreamingDataVersion=1
+   TextureStreamingData(0)=(SamplingScale=0.015625,UVChannelIndex=0,TextureName="freeway_AsphaltNoise_packedA",TextureReference="/Game/Textures/SurfaceFeature/T_AsphaltNoise_packedA.T_AsphaltNoise_packedA")
+   TextureStreamingData(1)=(SamplingScale=0.375000,UVChannelIndex=2,TextureName="freeway_AsphaltNoise_packedB",TextureReference="/Game/Textures/SurfaceFeature/T_AsphaltNoise_packedB.T_AsphaltNoise_packedB")
+   TextureStreamingData(2)=(SamplingScale=2.000000,UVChannelIndex=1,TextureName="freeway_crackTileLarge_C",TextureReference="/Game/Textures/SurfaceFeature/T_CrackTileLarge_C.T_CrackTileLarge_C")
+   TextureStreamingData(3)=(SamplingScale=2.000000,UVChannelIndex=1,TextureName="freeway_crackTileLarge_N",TextureReference="/Game/Textures/SurfaceFeature/T_CrackTileLarge_N.T_CrackTileLarge_N")
+   TextureStreamingData(4)=(SamplingScale=0.031250,UVChannelIndex=0,TextureName="freeway_HeightPuddles_4k",TextureReference="/Game/Textures/SurfaceFeature/T_Puddles_4k.T_Puddles_4k")
+   TextureStreamingData(5)=(SamplingScale=0.046875,UVChannelIndex=0,TextureName="freeway_tireLines_blurred",TextureReference="/Game/Road/Textures/freeway_tireLines_blurred.freeway_tireLines_blurred")
+   TextureStreamingData(6)=(SamplingScale=0.015625,UVChannelIndex=1,TextureName="patch_04",TextureReference="/Game/Road/Textures/patch_04.patch_04")
+   TextureStreamingData(7)=(SamplingScale=0.640625,UVChannelIndex=0,TextureName="shmpulh_8K_Albedo",TextureReference="/Game/Megascans/Atlases/Debris_Manmade_00/shmpulh_8K_Albedo.shmpulh_8K_Albedo")
+   TextureStreamingData(8)=(SamplingScale=0.640625,UVChannelIndex=0,TextureName="shmpulh_8K_Opacity",TextureReference="/Game/Megascans/Atlases/Debris_Manmade_00/shmpulh_8K_Opacity.shmpulh_8K_Opacity")
+   TextureStreamingData(9)=(SamplingScale=0.015625,UVChannelIndex=1,TextureName="sl3badpc_4K_Mask",TextureReference="/Game/Megascans/Surfaces/Frost_00/sl3badpc_4K_Mask.sl3badpc_4K_Mask")
+   TextureStreamingData(10)=(SamplingScale=0.640625,UVChannelIndex=0,TextureName="tiggcjdo_8K_Normal",TextureReference="/Game/Megascans/Surfaces/Cast_In_Situ_Concrete_Wall_vcfice0/Asphalt_Road_2x2_M_02/tiggcjdo_8K_Normal.tiggcjdo_8K_Normal")
+   TextureStreamingData(11)=(SamplingScale=0.640625,UVChannelIndex=0,TextureName="tiggcjdo_8K_Roughness",TextureReference="/Game/Megascans/Surfaces/Cast_In_Situ_Concrete_Wall_vcfice0/Asphalt_Road_2x2_M_02/tiggcjdo_8K_Roughness.tiggcjdo_8K_Roughness")
+   TextureStreamingData(12)=(SamplingScale=0.187500,UVChannelIndex=0,TextureName="uchfff3ka_8K_AlbedoOpacity",TextureReference="/Game/Megascans/Atlases/Road_Debris_01/uchfff3ka_8K_AlbedoOpacity.uchfff3ka_8K_AlbedoOpacity")
+   TextureStreamingData(13)=(SamplingScale=0.187500,UVChannelIndex=0,TextureName="uchfff3ka_8K_Normal",TextureReference="/Game/Megascans/Atlases/Road_Debris_01/uchfff3ka_8K_Normal.uchfff3ka_8K_Normal")
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LightingGuid=352C461547531E2DA669878E959BA4BE
+End Object

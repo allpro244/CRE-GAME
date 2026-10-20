@@ -138,9 +138,38 @@ for (const [seed, band] of [[9401], [9402], [9603], [9404], [9405], [9401, "Prov
       g = lr.s;
       g.ffNetwork = { cap: 0 };   // the network turns out to have nothing to give
       const cash0 = g.cash;
-      for (let m = 0; m < 4; m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
+      // run past the raise's own deadline (a fixed four months can fall short of the window)
+      const dl = g.raises?.[pick.L.bbl]?.deadlineM ?? g.month + 4;
+      while (g.month <= dl + 1) g = E.advanceMonth(g, parcels, bbls, adjacency);
       ok(!g.raises?.[pick.L.bbl] && !g.syndications?.[pick.L.bbl] && !g.developments[pick.L.bbl], "a raise nobody fills fails at its deadline, and nothing is built");
     } else ok(false, `launch refused: ${lr.err}`);
+  }
+}
+{
+  // RAISE AND BREAK GROUND AT ONCE (raiseAndBuild): the same month, counsel
+  // paid, the investors' money in the deal — and no more than the network
+  // holds today, so an instant raise is not a bigger one.
+  const parcels = JSON.parse(JSON.stringify(P0));
+  let g = E.firstListings(E.newGame(9402, parcels, 1_000_000), parcels, bbls);
+  const pick = findJob(g, parcels) ?? (() => { for (let m = 0; m < 24; m++) { g = E.advanceMonth(g, parcels, bbls, adjacency); const p = findJob(g, parcels); if (p) return p; } return null; })();
+  ok(!!pick, "an instant raise: found a job");
+  if (pick) {
+    g = E.executePurchase(g, parcels, pick.L.bbl, pick.L.ask, "cash", false, 1).s;
+    const p = E.planDevelopment(g, parcels, pick.L.bbl, pick.u, pick.f, 0.6, "gmp");
+    const most = E.maxOutside(g, E.devFundingNeed(p).whole, E.ownedHoldingValue(g, parcels, g.holdings[pick.L.bbl]));
+    const job = { use: pick.u, floors: pick.f, coverage: 0.6, contract: "gmp", spec: 0.5 };
+    const over = E.raiseAndBuild(g, parcels, pick.L.bbl, job, Math.round(most * 1.5) + 100_000);
+    ok(!!over.err, `an instant raise is no bigger than the network holds (asked ${M(most * 1.5)}, most ${M(most)}): ${over.err?.slice(0, 80)}`);
+    const cash0 = g.cash, m0 = g.month;
+    const r = E.raiseAndBuild(g, parcels, pick.L.bbl, job, Math.round(most * 0.8));
+    ok(!r.err, `an instant raise closes: ${r.err ?? r.msg}`);
+    if (!r.err) {
+      const w = r.s.syndications?.[pick.L.bbl];
+      ok(!!r.s.developments[pick.L.bbl] && r.s.month === m0, "and breaks ground the same month");
+      ok(!!w && w.lpCommit > 0, `with the investors in the deal (${M(w?.lpCommit ?? 0)})`);
+      ok(!r.s.raises?.[pick.L.bbl], "and leaves no raise open");
+      ok(r.s.cash < cash0, `the counsel and the sponsor's share are paid (${M(cash0)} → ${M(r.s.cash)})`);
+    }
   }
 }
 console.log();

@@ -8,6 +8,8 @@
 // (MapView's design preview). Looks only — what the building costs and how it
 // wears is the build-quality dial on Programme; see BuildingDesign.
 import { useEffect, useState } from "react";
+import { KITS, KIT_GROUPS, KIT_COLOURS, KIT_BAYS } from "@/engine/renderView";
+import { UNREAL_HOST } from "@/state/unrealHost";
 import type { BuildingDesign } from "@/engine/types";
 import {
   FACADE_GROUPS, FACADE_STYLES, TRIM_PAINTS, ROOF_CHOICES, CROWN_CHOICES, CROWN_MIN_FLOORS, facadeSwatches,
@@ -106,6 +108,8 @@ export function DesignPicker({ design, onChange, floors, shops, onPeek, compact 
   const roofNoRoom = (id: string) => (id === "roof:gable" || id === "roof:hip") && !!sigFits && !sigFits.includes(id);
   const topNow = design.signature ? "signature" : design.crown ? `crown:${design.crown}` : design.roof ? `roof:${design.roof}` : "auto";
   const sig = design.signature ? SIGNATURE_FORMS.find((f) => f.key === design.signature) : undefined;
+
+  if (UNREAL_HOST) return <KitPicker design={design} set={set} />;
 
   return (
     <div className="design-picker">
@@ -256,6 +260,76 @@ export function DesignPicker({ design, onChange, floors, shops, onPeek, compact 
           wears are the build-quality dial on Programme.
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * THE KIT PICKER: the Design tab when Unreal draws the city. Every choice here
+ * is something the renderer actually builds (engine/renderView.ts KITS), shown
+ * by a picture Unreal took of it (-KitThumbs, served at /game/kits/), and the
+ * scheme on the lot redraws as each is picked (unrealHost sends the design).
+ */
+function KitPicker({ design, set }: { design: BuildingDesign; set: (p: Partial<BuildingDesign>) => void }) {
+  const kit = KITS.find((k) => k.key === design.kit);
+  const pick = (k: (typeof KITS)[number] | undefined) =>
+    set(k ? { kit: k.key, facade: k.family } : { kit: undefined, facade: undefined, kitColour: undefined, ground: undefined, top: undefined, bays: undefined });
+  const chip = (on: boolean) => "btn btn-sm" + (on ? " btn-on" : "");
+  return (
+    <div className="design-picker">
+      <div className="page-section">Facade</div>
+      <button type="button" className={chip(!design.kit)} style={{ marginBottom: 6 }} onClick={() => pick(undefined)}
+        title="The period and the street choose, as they do for every other building in town">Fits the street</button>
+      {KIT_GROUPS.map((g) => (
+        <div key={g.key} style={{ marginBottom: 6 }}>
+          <div className="hint" style={{ margin: "2px 0" }}>{g.name}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(92px, 1fr))", gap: 6 }}>
+            {KITS.filter((k) => k.group === g.key).map((k) => (
+              <button key={k.key} type="button" title={`${k.name} — ${k.era}`} onClick={() => pick(k)}
+                style={{ padding: 3, borderRadius: 6, cursor: "pointer", background: "transparent", display: "flex", flexDirection: "column", gap: 3,
+                  border: design.kit === k.key ? "2px solid var(--accent, #b8860b)" : "1px solid rgba(0,0,0,0.18)" }}>
+                <span style={{ display: "block", width: "100%", aspectRatio: "4 / 3", borderRadius: 4, overflow: "hidden", background: "#bcc6cf" }}>
+                  <img src={`kits/kit-${k.key}.png`} alt="" loading="lazy"
+                    style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scale(2.8)", transformOrigin: "48.5% 51%" }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.visibility = "hidden"; }} />
+                </span>
+                <span style={{ fontSize: 11, lineHeight: 1.2 }}>{k.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      {kit && (<>
+        <div className="page-section">Colour</div>
+        <div className="btn-row" style={{ flexWrap: "wrap" }}>
+          {KIT_COLOURS.map((c, i) => (
+            <button key={c.name} type="button" className={chip((design.kitColour ?? 0) === i)} onClick={() => set({ kitColour: i || undefined })}>
+              <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, marginRight: 4, verticalAlign: -1,
+                background: `rgb(${c.rgb.map((v) => Math.round(Math.min(255, 150 * v))).join(",")})` }} />{c.name}
+            </button>
+          ))}
+        </div>
+        <div className="page-section">Street floor</div>
+        <div className="btn-row" style={{ flexWrap: "wrap" }}>
+          {([[undefined, "Auto"], ["shops", "Shopfronts"], ["entrance", "Entrances"], ["plain", "Same as above"]] as const).map(([k, n]) => (
+            <button key={n} type="button" className={chip(design.ground === k)} onClick={() => set({ ground: k })}>{n}</button>
+          ))}
+        </div>
+        <div className="page-section">Top</div>
+        <div className="btn-row" style={{ flexWrap: "wrap" }}>
+          {([[undefined, "Cornice"], ["plain", "Plain parapet"]] as const).map(([k, n]) => (
+            <button key={n} type="button" className={chip(design.top === k)} onClick={() => set({ top: k })}>{n}</button>
+          ))}
+        </div>
+        <div className="page-section">Windows</div>
+        <div className="btn-row" style={{ flexWrap: "wrap" }}>
+          <button type="button" className={chip(design.bays === undefined)} onClick={() => set({ bays: undefined })}>Auto</button>
+          {KIT_BAYS.map((b) => (
+            <button key={b.name} type="button" className={chip(design.bays === b.i)} onClick={() => set({ bays: b.i })}>{b.name}</button>
+          ))}
+        </div>
+        <p className="hint">{kit.name} · {kit.era}. Looks only — the cost and how it wears are the build-quality dial on Programme.</p>
+      </>)}
     </div>
   );
 }

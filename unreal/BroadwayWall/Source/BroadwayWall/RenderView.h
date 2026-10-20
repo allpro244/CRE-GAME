@@ -4,6 +4,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "CityData.h"
 
 struct FBWRenderLot
 {
@@ -17,6 +18,7 @@ struct FBWRenderLot
 	bool bFresh = false;
 	bool bShops = false;
 	FString Facade;   // the player's chosen facade family, if they designed it
+	FBWLook Look;     // and the kit look they chose on the Build desk
 };
 
 struct FBWRenderOwner

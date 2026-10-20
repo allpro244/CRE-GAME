@@ -21,7 +21,7 @@
  * window.ue.bridge.city / view / select / input.
  */
 import { useStore } from "@/state/store";
-import { renderView } from "@/engine/renderView";
+import { renderView, lookOf } from "@/engine/renderView";
 import { toBwCity } from "@/citygen/unrealExport.mjs";
 import "@/map/real/patternbook/register";
 import { familyFor, TINTS } from "@/map/real/facades";
@@ -49,6 +49,7 @@ export function startUnrealHost(): void {
   let lastCity: unknown = null, lastGame: unknown = null, lastMonth = -1;
   let lastSel: string | null | undefined;
   let lastGfx: string | undefined;
+  let lastPreview: unknown = undefined;
   const push = () => {
     const b = bridge();
     if (!b) return false;
@@ -66,6 +67,15 @@ export function startUnrealHost(): void {
     if (s.graphics !== lastGfx) {
       lastGfx = s.graphics;
       void b.input(JSON.stringify({ t: "quality", k: s.graphics }));
+    }
+    // the Build desk's scheme: Unreal draws it on its lot (the desk's model box
+    // is a window onto that view: ui/panels/SchemeViewer.tsx HostSchemeWindow)
+    if (s.designPreview !== lastPreview) {
+      lastPreview = s.designPreview;
+      const p = s.designPreview;
+      void b.input(JSON.stringify(p
+        ? { t: "preview", bbl: p.bbl, floors: p.floors, cov: p.cov, cls: p.cls ?? p.use, year: p.year ?? 0, facade: p.design.facade?.split("#")[0] ?? "", ...(lookOf(p.design) ? { look: lookOf(p.design) } : {}) }
+        : { t: "preview-off" }));
     }
     if (s.selectedBBL !== lastSel) {
       lastSel = s.selectedBBL;

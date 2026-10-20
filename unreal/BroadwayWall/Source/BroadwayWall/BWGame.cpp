@@ -466,7 +466,7 @@ void ABWGameMode::BeginPlay()
 	const TCHAR* Cmd = FCommandLine::Get();
 	FString Unused;
 	const bool bTool = FParse::Param(Cmd, TEXT("NoPlay")) || FParse::Value(Cmd, TEXT("Shots="), Unused) || FParse::Value(Cmd, TEXT("Tour="), Unused)
-		|| FParse::Param(Cmd, TEXT("Perf")) || FParse::Value(Cmd, TEXT("Sim="), Unused) || FParse::Param(Cmd, TEXT("KitThumbs"));
+		|| FParse::Value(Cmd, TEXT("Perf="), Unused) || FParse::Value(Cmd, TEXT("Sim="), Unused) || FParse::Param(Cmd, TEXT("KitThumbs"));
 	bPlayMode = FParse::Param(Cmd, TEXT("Play")) || (!GIsEditor && !bTool);
 	if (bPlayMode) { StartPlayHost(); return; }
 	FString Path;

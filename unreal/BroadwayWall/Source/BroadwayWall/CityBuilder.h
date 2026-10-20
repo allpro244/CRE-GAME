@@ -20,6 +20,7 @@ class ACityBuilder : public AActor
 	GENERATED_BODY()
 public:
 	ACityBuilder();
+	virtual void Tick(float Dt) override;
 
 	/** Load a bw-city/1 file and build it. */
 	bool BuildFromFile(const FString& Path);
@@ -49,6 +50,15 @@ private:
 	void BuildTrees();
 	/** Lane lines, double yellow centres and zebra crossings, painted just above the asphalt. */
 	void BuildMarkings();
+	/** Phase 3 traffic (first cut): cars driving the lane centrelines, right-hand, at
+	 *  city speeds; each lane's cars wrap at its ends. Full Mass/ZoneGraph traffic later. */
+	void BuildTraffic();
+	struct FLane { TArray<FVector2D> Pts; TArray<double> Cum; double Len = 0; };
+	struct FCar { int32 Lane = 0, Mesh = 0, Instance = 0; double S = 0, Speed = 0; };
+	TArray<FLane> Lanes;
+	TArray<FCar> Cars;
+	UPROPERTY()
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> TrafficMeshes;
 
 	FBWCity City;
 	/** Phase 3: the facade kit, when Data/kit-*.json and its meshes are present. */

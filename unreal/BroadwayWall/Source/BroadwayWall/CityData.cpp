@@ -108,11 +108,11 @@ bool FBWCity::LoadText(const FString& Text, const FString& Path)
 		for (const TSharedPtr<FJsonValue>& V : (*Marks)->GetArrayField(TEXT("centerlines")))
 		{
 			const TSharedPtr<FJsonObject> O = V->AsObject();
-			FBWCenterline& C = Centerlines.AddDefaulted_GetRef();
-			O->TryGetNumberField(TEXT("w"), C.Width);
-			O->TryGetNumberField(TEXT("mk"), C.Mark);
-			O->TryGetStringField(TEXT("cls"), C.Cls);
-			C.Line = ReadFlat(O->GetArrayField(TEXT("line")));
+			FBWCenterline& Cl = Centerlines.AddDefaulted_GetRef();
+			O->TryGetNumberField(TEXT("w"), Cl.Width);
+			O->TryGetNumberField(TEXT("mk"), Cl.Mark);
+			O->TryGetStringField(TEXT("cls"), Cl.Cls);
+			Cl.Line = ReadFlat(O->GetArrayField(TEXT("line")));
 		}
 		for (const TSharedPtr<FJsonValue>& V : (*Marks)->GetArrayField(TEXT("zebras"))) Zebras.Add(ReadFlat(V->AsArray()));
 	}

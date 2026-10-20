@@ -143,6 +143,7 @@ namespace
 
 ACityBuilder::ACityBuilder()
 {
+	PrimaryActorTick.bCanEverTick = true;
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> VC(TEXT("/Engine/EngineDebugMaterials/VertexColorMaterial.VertexColorMaterial"));
 	VertexColorMaterial = VC.Object;
@@ -183,6 +184,7 @@ bool ACityBuilder::BuildFromText(const FString& Text)
 	BuildVolumes();
 	BuildTrees();
 	BuildMarkings();
+	if (!FParse::Param(FCommandLine::Get(), TEXT("NoTraffic"))) BuildTraffic();
 	BuildStreetProps();
 	UE_LOG(LogBWBuilder, Display, TEXT("built %s: parse %.2fs, meshes %.2fs, %d building chunks, %d facade pieces (%s)"),
 		*City.Name, T1 - T0, FPlatformTime::Seconds() - T1, Chunks.Num(), Facades ? Facades->Pieces() : 0, bFacades ? *FString::JoinBy(Kits, TEXT(","), [](const FBWKit& K) { return K.Name; }) : TEXT("blocks only"));
@@ -772,4 +774,84 @@ void ACityBuilder::BuildMarkings()
 	if (White.V.Num()) { White.Emit(Marks, 0, false); Marks->SetMaterial(0, VertexColorMaterial); }
 	if (Yellow.V.Num()) { Yellow.Emit(Marks, 1, false); Marks->SetMaterial(1, VertexColorMaterial); }
 	UE_LOG(LogBWBuilder, Display, TEXT("markings: %d centrelines, %d zebra bars"), City.Centerlines.Num(), City.Zebras.Num());
+}
+
+void ACityBuilder::BuildTraffic()
+{
+	FRandomStream Rng(int32(City.Seed) ^ 0x7aff1c);
+	// lanes: drive on the right; a carriageway of 12 m+ has two lanes each way
+	for (const FBWCenterline& C : City.Centerlines)
+	{
+		if (C.Line.Num() < 2 || C.Width < 600) continue;
+		const int32 PerDir = C.Width >= 1200 ? 2 : 1;
+		for (int32 Dir = 0; Dir < 2; ++Dir)
+			for (int32 k = 0; k < PerDir; ++k)
+			{
+				const double Off = C.Width * (0.5 * (k + 0.5) / PerDir);   // metres right of the centre, by lane
+				FLane L;
+				const int32 N = C.Line.Num();
+				for (int32 i = 0; i < N; ++i)
+				{
+					const int32 j = Dir == 0 ? i : N - 1 - i;
+					const FVector2D P = C.Line[j];
+					const FVector2D Nx = (Dir == 0 ? (j + 1 < N ? C.Line[j + 1] - P : P - C.Line[j - 1]) : (j > 0 ? C.Line[j - 1] - P : P - C.Line[j + 1])).GetSafeNormal();
+					L.Pts.Add(P + FVector2D(Nx.Y, -Nx.X) * Off * 0.5);       // right of travel
+				}
+				L.Cum.Add(0);
+				for (int32 i = 1; i < L.Pts.Num(); ++i) L.Cum.Add(L.Cum.Last() + (L.Pts[i] - L.Pts[i - 1]).Size());
+				L.Len = L.Cum.Last();
+				if (L.Len > 1500) Lanes.Add(MoveTemp(L));
+			}
+	}
+	for (const TCHAR* Path : CarMeshes)
+	{
+		UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, Path);
+		UInstancedStaticMeshComponent* I = NewObject<UInstancedStaticMeshComponent>(this);
+		I->SetupAttachment(RootComponent);
+		I->SetStaticMesh(Mesh);
+		I->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		I->SetMobility(EComponentMobility::Movable);
+		I->RegisterComponent();
+		TrafficMeshes.Add(I);
+	}
+	for (int32 l = 0; l < Lanes.Num(); ++l)
+	{
+		// a car every ~40 m of lane on average, each at its own pace (32-47 km/h)
+		// off-peak downtown: about one car per 160 m of lane (most short block lanes carry none)
+		const int32 Count = Rng.FRand() < Lanes[l].Len / 16000.0 ? FMath::Max(1, FMath::FloorToInt(Lanes[l].Len / 16000.0)) : 0;
+		for (int32 n = 0; n < Count; ++n)
+		{
+			FCar Car;
+			Car.Lane = l;
+			Car.S = Rng.FRandRange(0, Lanes[l].Len);
+			Car.Speed = Rng.FRandRange(900, 1300);
+			Car.Mesh = Rng.RandRange(0, TrafficMeshes.Num() - 1);
+			Car.Instance = TrafficMeshes[Car.Mesh]->AddInstance(FTransform::Identity);
+			Cars.Add(Car);
+		}
+	}
+	UE_LOG(LogBWBuilder, Display, TEXT("traffic: %d lanes, %d cars"), Lanes.Num(), Cars.Num());
+}
+
+void ACityBuilder::Tick(float Dt)
+{
+	Super::Tick(Dt);
+	if (Cars.Num() == 0) return;
+	TArray<TArray<FTransform>> Xf;
+	Xf.SetNum(TrafficMeshes.Num());
+	for (UInstancedStaticMeshComponent* I : TrafficMeshes) Xf[TrafficMeshes.IndexOfByKey(I)].SetNum(I ? I->GetInstanceCount() : 0);
+	for (FCar& Car : Cars)
+	{
+		const FLane& L = Lanes[Car.Lane];
+		Car.S = FMath::Fmod(Car.S + Car.Speed * Dt, L.Len);
+		int32 i = 1;
+		while (i < L.Cum.Num() - 1 && L.Cum[i] < Car.S) ++i;
+		const double T = (Car.S - L.Cum[i - 1]) / FMath::Max(1.0, L.Cum[i] - L.Cum[i - 1]);
+		const FVector2D P = FMath::Lerp(L.Pts[i - 1], L.Pts[i], T);
+		const FVector2D Fw = (L.Pts[i] - L.Pts[i - 1]).GetSafeNormal();
+		if (Xf[Car.Mesh].IsValidIndex(Car.Instance))
+			Xf[Car.Mesh][Car.Instance] = FTransform(FRotator(0, FMath::RadiansToDegrees(FMath::Atan2(Fw.Y, Fw.X)), 0), FVector(P, 14));
+	}
+	for (int32 m = 0; m < TrafficMeshes.Num(); ++m)
+		if (TrafficMeshes[m] && Xf[m].Num()) TrafficMeshes[m]->BatchUpdateInstancesTransforms(0, Xf[m], true, true);
 }

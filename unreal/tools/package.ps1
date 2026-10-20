@@ -11,7 +11,8 @@ $Project = Join-Path $Root 'unreal\BroadwayWall\BroadwayWall.uproject'
 $Web = Join-Path $Root 'unreal\BroadwayWall\Data\web'
 New-Item -ItemType Directory -Force $Web | Out-Null
 Copy-Item (Join-Path $Root 'broadway-and-wall\playable\broadway-and-wall.html') $Web -Force
-${env:UE-LocalDataCachePath} = 'D:\UnrealDDC'
+# No DDC override here: a Zen server already running on another data path
+# (started by an editor launched without it) makes the cook's oplog 404.
 # Build the game target first: UBT run directly accepts -NoHotReloadFromIDE,
 # which it needs while any editor on this engine has Live Coding open;
 # BuildCookRun's own build step does not pass it through.

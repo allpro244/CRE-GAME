@@ -46,6 +46,7 @@ export function startUnrealHost(): void {
 
   let lastCity: unknown = null, lastGame: unknown = null, lastMonth = -1;
   let lastSel: string | null | undefined;
+  let lastGfx: string | undefined;
   const push = () => {
     const b = bridge();
     if (!b) return false;
@@ -58,6 +59,11 @@ export function startUnrealHost(): void {
       const since = lastMonth;
       lastGame = s.game; lastMonth = s.game.month;
       void b.view(JSON.stringify(renderView(s.game, since)));
+    }
+    // the Settings page's graphics level drives Unreal's scalability (Phase 6)
+    if (s.graphics !== lastGfx) {
+      lastGfx = s.graphics;
+      void b.input(JSON.stringify({ t: "quality", k: s.graphics }));
     }
     if (s.selectedBBL !== lastSel) {
       lastSel = s.selectedBBL;

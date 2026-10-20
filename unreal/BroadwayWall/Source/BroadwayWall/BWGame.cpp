@@ -1,6 +1,8 @@
 #include "BWGame.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundWave.h"
 #include "CityBuilder.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/SkyLightComponent.h"
@@ -35,6 +37,7 @@
 #include "WebSocketsModule.h"
 #include "RenderView.h"
 #include "PlayHost.h"
+#include "Scalability.h"
 #include "SWebBrowser.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
@@ -52,9 +55,48 @@ ABWCameraPawn::ABWCameraPawn()
 	Camera->SetFieldOfView(50);
 }
 
+void ABWCameraPawn::BeginPlay()
+{
+	Super::BeginPlay();
+	if (FParse::Param(FCommandLine::Get(), TEXT("NoSound"))) return;
+	auto Loop = [this](const TCHAR* Path, const TCHAR* Name, bool bSpatial) -> UAudioComponent*
+	{
+		USoundWave* W = LoadObject<USoundWave>(nullptr, Path);
+		if (!W) return nullptr;
+		W->bLooping = true;
+		UAudioComponent* A = NewObject<UAudioComponent>(this, Name);
+		A->SetupAttachment(bSpatial ? nullptr : RootComponent.Get());
+		A->SetSound(W);
+		A->bAllowSpatialization = bSpatial;
+		A->bAutoActivate = false;
+		A->RegisterComponent();
+		A->Play();
+		return A;
+	};
+	StreetBed = Loop(TEXT("/Game/Audio/SoundWaves/Ambient/Air_Traffic/sfx_LeaveBehind_amb_Traffic_GroundLevel_Wash_lp_01.sfx_LeaveBehind_amb_Traffic_GroundLevel_Wash_lp_01"), TEXT("StreetBed"), false);
+	AirBed = Loop(TEXT("/Game/Audio/SoundWaves/Ambient/Air_Traffic/sfx_LeaveBehind_amb_Urban_Air_Wide_lp_01.sfx_LeaveBehind_amb_Urban_Air_Wide_lp_01"), TEXT("AirBed"), false);
+	Site = Loop(TEXT("/Game/Audio/SoundWaves/Ambient/Misc/sfx_LeaveBehind_amb_Swt_Jackhammer_Close_nl_01.sfx_LeaveBehind_amb_Swt_Jackhammer_Close_nl_01"), TEXT("Site"), true);
+}
+
 void ABWCameraPawn::Tick(float Dt)
 {
 	Super::Tick(Dt);
+	// the bed follows altitude: street wash at eye height, wide air from a drone
+	const double Alt = Mode == EMode::Street ? 170.0 : FMath::Max(170.0, GetActorLocation().Z);
+	const float Up = FMath::Clamp(float((Alt - 1500.0) / 40000.0), 0.f, 1.f);
+	if (StreetBed) StreetBed->SetVolumeMultiplier(0.9f * (1.f - Up) + 0.05f);
+	if (AirBed) AirBed->SetVolumeMultiplier(0.25f + 0.6f * Up);
+	if (Site)
+	{
+		// the nearest frame going up, if any; heard within ~150 m
+		FVector Best(0), Me = GetActorLocation();
+		double BestD = 1e18;
+		if (const ABWGameMode* GM = GetWorld()->GetAuthGameMode<ABWGameMode>(); GM && GM->City)
+			for (const FVector& S : GM->City->GetSites()) { const double D = FVector::DistSquared2D(S, Me); if (D < BestD) { BestD = D; Best = S; } }
+		const double Dist = FMath::Sqrt(BestD) + FMath::Max(0.0, Me.Z - 500.0) * 0.5;
+		Site->SetWorldLocation(FVector(Best.X, Best.Y, 300));
+		Site->SetVolumeMultiplier(BestD < 1e17 ? FMath::Clamp(float(1.0 - Dist / 15000.0), 0.f, 1.f) : 0.f);
+	}
 	if (Mode == EMode::Street)
 	{
 		// a pedestrian: eye height on the ground plane, looking where they like
@@ -167,6 +209,19 @@ void ABWPlayerController::PageInput(const FString& Type, double X, double Y, dou
 	else if (Type == TEXT("kd")) PageKeys.Add(Key);
 	else if (Type == TEXT("ku")) PageKeys.Remove(Key);
 	else if (Type == TEXT("hover")) HoverPx = FVector2D(X * W, Y * H);
+	else if (Type == TEXT("quality"))
+	{
+		// GRAPHICS (Phase 6), from the game's own Settings page. Measured on the
+		// metro city at 1440p, RTX 2080: full resolution ~41 fps, half ~55. High is
+		// native Epic; medium renders at 67% and upscales (TSR); low at 50% with
+		// High scalability. Resolution is the lever; everything else stays photoreal.
+		Scalability::FQualityLevels Q = Scalability::GetQualityLevels();
+		const bool bLow = Key == TEXT("low"), bMed = Key == TEXT("medium");
+		Q.SetFromSingleQualityLevel(bLow ? 2 : 3);
+		Scalability::SetQualityLevels(Q);
+		if (IConsoleVariable* SP = IConsoleManager::Get().FindConsoleVariable(TEXT("r.ScreenPercentage"))) SP->Set(bLow ? 50.f : bMed ? 67.f : 100.f);
+		UE_LOG(LogBW, Display, TEXT("QUALITY %s"), *Key);
+	}
 	else if (Type == TEXT("zoom")) Cam->Zoom(Wheel);
 	else if (Type == TEXT("orbit")) { Cam->Yaw += Dx * 0.25; Cam->Pitch += (Cam->Mode == ABWCameraPawn::EMode::Street ? -1 : -1) * Dy * 0.25; }
 	else if (Type == TEXT("pan"))
@@ -583,9 +638,9 @@ void ABWGameMode::RunShots(const FString& Dir)
 void ABWGameMode::StartPlayHost()
 {
 	// the committed playable is the game; Unreal serves it so it has a real origin (saves)
-	// packaged: Data/web next to the game; in the repo: the committed playable
-	FString Web = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("Data/web"));
-	if (!FPaths::FileExists(Web / TEXT("broadway-and-wall.html"))) Web = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../../broadway-and-wall/playable"));
+	// in the repo: the committed playable (always the current build); packaged: Data/web
+	FString Web = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../../broadway-and-wall/playable"));
+	if (!FPaths::FileExists(Web / TEXT("broadway-and-wall.html"))) Web = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("Data/web"));
 	FParse::Value(FCommandLine::Get(), TEXT("Web="), Web);
 	uint32 Port = 8770;
 	FParse::Value(FCommandLine::Get(), TEXT("WebPort="), Port);

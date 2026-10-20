@@ -25,6 +25,7 @@ class SWebBrowser;
 class UBWBridge;
 class IWebSocket;
 class UCameraComponent;
+class UAudioComponent;
 struct FBWParcel;
 
 UCLASS()
@@ -53,6 +54,16 @@ public:
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UCameraComponent> Camera;
+
+	/** Phase 4 sound: a city bed that crossfades from street wash to high air with
+	 *  altitude, and a jackhammer that sits on the nearest site going up. */
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> StreetBed;
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> AirBed;
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> Site;
+	virtual void BeginPlay() override;
 };
 
 UCLASS()

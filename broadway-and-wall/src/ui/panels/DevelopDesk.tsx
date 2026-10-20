@@ -1135,9 +1135,12 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                       {Object.entries(r.committed).filter(([, v]) => v).map(([k, v]) => (
                         <Row key={k} k={SOURCE_LABEL[k as keyof typeof SOURCE_LABEL]} v={usd(v ?? 0)} />
                       ))}
-                      <Row k="Closes" v={`by ${r.deadlineM - game.month} month${r.deadlineM - game.month === 1 ? "" : "s"} from now — full, small if half is there, or not at all`} />
+                      <Row k="Deadline" v={`${r.deadlineM - game.month} mo`} />
                     </div>
                     <div className="btn-row">
+                      <button type="button" className="btn btn-buy" disabled={have < 0.5 * r.target}
+                        title={have < 0.5 * r.target ? `Needs ${usd(Math.ceil(0.5 * r.target))} in to close` : "You cover the rest"}
+                        onClick={() => useStore.getState().closeRaiseNow(bbl)}>Close now · {usd(Math.min(have, r.target))}</button>
                       <button type="button" className="btn" onClick={() => useStore.getState().cancelRaise(bbl)}>Pull the raise</button>
                     </div>
                   </div>
@@ -1150,7 +1153,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                     className="btn btn-buy"
                     disabled={!canFund}
                     onClick={() => useStore.getState().launchRaise(bbl, { use, floors: fl, coverage: cov, contract, ltc: plan.ltcMax * ltcWant, custom: { mix: customMix, bts, groundRetail, design, takeout }, lender: plan.lender, spec, pitch: pitchStyle }, outside)}
-                    title={`Investors circle over up to ${RAISE_WINDOW_M} months. It closes when ${usd(outside)} is in, small at the deadline if half is, or fails. Counsel is ${usd(raiseLegalCost(game, outside))}, paid now and sunk either way.`}
+                    title={`Up to ${RAISE_WINDOW_M} months. Closes when full, or close it yourself once half is in. Counsel ${usd(raiseLegalCost(game, outside))}, sunk.`}
                   >
                     {canFund ? `Launch the raise · ${usd(outside)} · counsel ${usd(raiseLegalCost(game, outside))}` : `Cannot finish · short ${usd(fundShort)}`}
                   </button>

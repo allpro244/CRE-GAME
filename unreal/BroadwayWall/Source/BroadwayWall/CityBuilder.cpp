@@ -508,7 +508,8 @@ void ACityBuilder::BuildVolumes()
 					continue;
 				}
 			}
-			if (Vol.bVacant && !Vol.bFrame && Vol.Ring.Num() >= 3)
+			SetPiece(Vol);
+			if (Vol.bVacant && !Vol.bFrame && !Vol.bCleared && Vol.Ring.Num() >= 3)
 			{
 				// AN EMPTY LOT DOWNTOWN IS A CAR PARK until somebody builds on it
 				Lots.AddCap(Vol.Ring, 8, FLinearColor::White);
@@ -523,6 +524,40 @@ void ACityBuilder::BuildVolumes()
 			// vacant lots: a 30 cm pad, so they read and can be clicked
 			const double Z0 = Vol.bVacant ? 0 : Vol.Z0;
 			const double Z1 = Vol.bVacant ? 30 : FMath::Max(Vol.Z1, Vol.Z0 + 1);
+			// A FRAME GOING UP IS A SKELETON, not a box: a slab at every floor on a
+			// grid of columns, the lower floors closed in behind their glazing, the
+			// top two open to the sky. Concrete for the structure, a darker band for
+			// the curtain wall rising behind the frame.
+			if (Vol.bFrame && Vol.Ring.Num() >= 3)
+			{
+				const FLinearColor Slab(FColor(0xB5, 0xB0, 0xA6)), Column(FColor(0x9E, 0x99, 0x90)), Skin(FColor(0x3A, 0x44, 0x4E));
+				const double Storey = 355.0;
+				const int32 Floors = FMath::Max(1, FMath::FloorToInt((Z1 - Z0) / Storey));
+				const TArray<FVector2D> Edge = BWInsetRing(Vol.Ring, 40);
+				const TArray<FVector2D>& Ring = Edge.Num() >= 3 ? Edge : Vol.Ring;
+				for (int32 f = 1; f <= Floors; ++f)
+				{
+					const double Zs = Z0 + f * Storey;
+					M.AddWalls(Vol.Ring, Zs - 30, Zs, Slab);          // the slab edge
+					M.AddCap(Vol.Ring, Zs, Slab * 1.05f);
+				}
+				// columns on the perimeter, about every 6 m
+				for (int32 e = 0; e < Ring.Num(); ++e)
+				{
+					const FVector2D A = Ring[e], B = Ring[(e + 1) % Ring.Num()];
+					const double Len = (B - A).Size();
+					const int32 N = FMath::Max(1, FMath::RoundToInt(Len / 600.0));
+					for (int32 k = 0; k < N; ++k)
+					{
+						const FVector2D P = A + (B - A) * (double(k) / N);
+						M.AddWalls({ P + FVector2D(-25, -25), P + FVector2D(25, -25), P + FVector2D(25, 25), P + FVector2D(-25, 25) }, Z0, Z0 + Floors * Storey, Column);
+					}
+				}
+				// the curtain wall follows two floors behind the topmost slab
+				const double SkinTop = Z0 + FMath::Max(0, Floors - 2) * Storey;
+				if (SkinTop > Z0 + 10) M.AddWalls(BWInsetRing(Vol.Ring, 60), Z0, SkinTop, Skin);
+				continue;
+			}
 			// a civic monument (plinth, column, statue base) is dressed stone
 			FMeshBuf& Into = Vol.Deco.StartsWith(TEXT("civic")) ? Stone : M;
 			Into.AddWalls(Vol.Ring, Z0, Z1, Col);
@@ -685,6 +720,7 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		Owners.Add(O.Bbl, O.Owner == TEXT("player") ? TEXT("player") : O.Firm);
 	}
 
+	for (const FBWRenderEvent& E : View.Events) if (E.Kind == TEXT("demolished")) DemolishedM.Add(E.Bbl, E.M);
 	Current.Reset();
 	for (const FBWVolume& V : City.Volumes)
 		if (V.Bbl.IsEmpty() || !Over.Contains(V.Bbl))
@@ -719,6 +755,20 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		if (L.Cls == TEXT("land"))
 		{
 			V.bVacant = true;
+			// THE TEARDOWN LEAVES A HOLE. For two months after a demolition the lot is
+			// a site — hoarding round it, the rubble heaps not yet hauled — before it
+			// settles into whatever a vacant lot becomes
+			if (const int32* Dm = DemolishedM.Find(L.Bbl); Dm && View.Month - *Dm <= 2)
+			{
+				V.bCleared = true;
+				FBWVolume Fence;
+				Fence.Bbl = L.Bbl;
+				Fence.Deco = TEXT("hoarding");
+				Fence.bOpen = true;
+				Fence.Z1 = 240;
+				Fence.Ring = Ring;
+				Current.Add(MoveTemp(Fence));
+			}
 			V.Ring = MoveTemp(Ring);
 			Current.Add(MoveTemp(V));
 			++Cleared;
@@ -735,6 +785,7 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		V.Z0 = 0;
 		V.Z1 = FMath::Max(3.0, L.HeightM) * 100.0;
 		V.bFrame = L.bConstruction;
+		V.Progress = L.Progress;
 		if (L.bConstruction)
 		{
 			// the site: a hoarding round the whole lot, and a crane over the frame
@@ -1008,6 +1059,42 @@ void ACityBuilder::AddProp(const TCHAR* Path, const FTransform& T, bool bRoof)
 		Set.Add(Path, C);
 	}
 	C->AddInstance(T);
+}
+
+void ACityBuilder::SetPiece(const FBWVolume& V)
+{
+	if (V.Ring.Num() < 3) return;
+	FVector2D C(0, 0);
+	for (const FVector2D& P : V.Ring) C += P;
+	C /= V.Ring.Num();
+	const uint32 H = GetTypeHash(V.Bbl);
+	const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(V.Ring[1].Y - V.Ring[0].Y, V.Ring[1].X - V.Ring[0].X));
+	// TOPPING OUT. When the frame reaches its last floors the ironworkers set a
+	// small evergreen and a flag on the highest beam; it rides up with the frame
+	// until the building closes in.
+	if (V.bFrame && V.Progress >= 0.85)
+	{
+		AddProp(TEXT("/Game/Prop/Kit_Tree_Birch/Mesh/SM_Tree_Birch_e.SM_Tree_Birch_e"), FTransform(FRotator(0, H % 360, 0), FVector(C, V.Z1), FVector(0.32)), true);
+		AddProp(TEXT("/Game/Prop/Kit_StreetLamp_A/Mesh/SM_StreetLamp_A_Banner_2.SM_StreetLamp_A_Banner_2"), FTransform(FRotator(0, Yaw, 0), FVector(C + FVector2D(250, 150), V.Z1)), true);
+	}
+	// THE CLEARED SITE: rubble heaps (dressed stone, crushed to grey), barricades at
+	// the gate on the street side
+	if (V.bVacant && V.bCleared)
+	{
+		FRandomStream Rng((int32)H);
+		FBox2D Box(ForceInit);
+		for (const FVector2D& P : V.Ring) Box += P;
+		for (int32 i = 0; i < 5; ++i)
+		{
+			const FVector2D P(Rng.FRandRange(Box.Min.X, Box.Max.X), Rng.FRandRange(Box.Min.Y, Box.Max.Y));
+			if (!InsideRing(BWInsetRing(V.Ring, 300), P)) continue;
+			const double S = Rng.FRandRange(2.0, 4.5);
+			AddProp(TEXT("/Engine/BasicShapes/Cone.Cone"), FTransform(FRotator(0, Rng.FRandRange(0, 360), 0), FVector(P, S * 50 - 5), FVector(S, S * Rng.FRandRange(0.7, 1.2), S * 0.45)), true);
+		}
+		const FVector2D A = V.Ring[0], B = V.Ring[1], Mid = (A + B) * 0.5, Dd = (B - A).GetSafeNormal();
+		for (int32 k = -1; k <= 1; ++k)
+			AddProp(TEXT("/Game/Prop/Kit_Barricade_A/Mesh/SM_Barricade_A.SM_Barricade_A"), FTransform(FRotator(0, Yaw, 0), FVector(Mid + Dd * k * 220, FootZ)), true);
+	}
 }
 
 void ACityBuilder::ClearRoofProps()

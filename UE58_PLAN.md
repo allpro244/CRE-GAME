@@ -342,8 +342,12 @@ lit windows at night and weather by season; the asphalt reads very wet; DLSS
   families) picks the nearest City Sample kit.
 - Sound: City Sample's traffic wash and urban air crossfade with altitude; a
   jackhammer on the nearest site going up.
-- Left: topping-out and demolition set-pieces, the black swan on the street,
-  crown/base design choices, weather sound.
+- Topping out: from 85% of its height a frame carries the ironworkers'
+  evergreen and a flag on its top beam. Demolition: for two months after a
+  teardown the lot is a hoarded dirt site with rubble heaps and barricades at
+  the gate, not a car park (ACityBuilder::SetPiece, from the view's
+  `demolished` events).
+- Left: the black swan on the street, weather sound.
 
 #### Phase 5 progress (2026-10-20)
 

@@ -45,6 +45,9 @@ struct FBWVolume
 	bool bOpen = false;
 	/** Phase 4 set-pieces: opened in the last three months (bunting); a lender has a workout file open (barricade). */
 	bool bFresh = false;
+	/** A frame going up: how far (0..1). A cleared lot: demolished in the last two months (rubble, not a car park). */
+	double Progress = 1;
+	bool bCleared = false;
 	int32 Distress = 0;
 	/** The player's facade family (web BuildingDesign.facade), which picks the kit. */
 	FString Facade;

@@ -94,6 +94,10 @@ private:
 	/** What stands now: the generator's volumes minus overridden lots, plus the economy's. */
 	TArray<FBWVolume> Current;
 	TArray<FVector> Sites;
+	/** When each lot was last demolished (the view's events), for the cleared-site moment. */
+	TMap<FString, int32> DemolishedM;
+	/** The topping-out and cleared-site moments on one volume (BuildVolumes). */
+	void SetPiece(const FBWVolume& V);
 	UPROPERTY()
 	TObjectPtr<class UProceduralMeshComponent> Highlight;
 	const FBWParcel* HiSel = nullptr;

@@ -3,13 +3,49 @@
 	"EngineAssociation": "5.8",
 	"Category": "",
 	"Description": "Broadway & Wall on Unreal Engine 5.8. See UE58_PLAN.md.",
-	"Modules": [ { "Name": "BroadwayWall", "Type": "Runtime", "LoadingPhase": "Default" } ],
+	"Modules": [
+		{
+			"Name": "BroadwayWall",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
 	"Plugins": [
-		{ "Name": "ProceduralMeshComponent", "Enabled": true },
-		{ "Name": "WebBrowserWidget", "Enabled": true },
-		{ "Name": "ModelContextProtocol", "Enabled": true },
-		{ "Name": "AllToolsets", "Enabled": true },
-		{ "Name": "PythonScriptPlugin", "Enabled": true },
-		{ "Name": "EditorScriptingUtilities", "Enabled": true }
+		{
+			"Name": "ProceduralMeshComponent",
+			"Enabled": true
+		},
+		{
+			"Name": "WebBrowserWidget",
+			"Enabled": true
+		},
+		{
+			"Name": "ModelContextProtocol",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "AllToolsets",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "EditorScriptingUtilities",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		}
 	]
 }

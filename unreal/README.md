@@ -24,6 +24,13 @@ D:/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe $PWD/unreal/BroadwayWall/Broadw
 # add -Shots=$PWD/unreal/shots/phase1 to fly the fixed cameras, save PNGs and quit
 ```
 
+Live economy (Phase 2), from the sidecar harness:
+
+```bash
+node unreal/sim-server/server.mjs 8792 &
+D:/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe $PWD/unreal/BroadwayWall/BroadwayWall.uproject -game -windowed -Sim=ws://127.0.0.1:8792 -Years=20 -Shots=$PWD/unreal/shots/phase2
+```
+
 ## Re-running Phase 0
 
 All from the repo root. UE is not registered with Windows, so everything goes by path.

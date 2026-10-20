@@ -18,3 +18,14 @@ unreal/**/*.sln
 unreal/shots/**/*.png
 unreal/shots/**/*.txt
 unreal/BroadwayWall/Data/*.json
+unreal/BroadwayWall/Content/Building/
+unreal/BroadwayWall/Content/Material/
+unreal/BroadwayWall/Content/Textures/
+!unreal/BroadwayWall/Data/kit-*.json
+unreal/BroadwayWall/Content/Road/
+unreal/BroadwayWall/Content/Prop/
+unreal/BroadwayWall/Content/Environment/
+unreal/BroadwayWall/Content/Vehicle/
+unreal/BroadwayWall/Content/Megascans/
+unreal/BroadwayWall/Content/
+unreal/BroadwayWall/Data/web/

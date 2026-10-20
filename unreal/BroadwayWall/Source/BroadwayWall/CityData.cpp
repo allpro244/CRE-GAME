@@ -33,6 +33,11 @@ bool FBWCity::Load(const FString& Path)
 		UE_LOG(LogBWCity, Error, TEXT("cannot read %s"), *Path);
 		return false;
 	}
+	return LoadText(Text, Path);
+}
+
+bool FBWCity::LoadText(const FString& Text, const FString& Path)
+{
 	TSharedPtr<FJsonObject> Root;
 	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Root) || !Root.IsValid())
 	{
@@ -97,6 +102,20 @@ bool FBWCity::Load(const FString& Path)
 	}
 
 	Trees = ReadFlat(Root->GetArrayField(TEXT("trees")));
+	const TSharedPtr<FJsonObject>* Marks;
+	if (Root->TryGetObjectField(TEXT("markings"), Marks))
+	{
+		for (const TSharedPtr<FJsonValue>& V : (*Marks)->GetArrayField(TEXT("centerlines")))
+		{
+			const TSharedPtr<FJsonObject> O = V->AsObject();
+			FBWCenterline& Cl = Centerlines.AddDefaulted_GetRef();
+			O->TryGetNumberField(TEXT("w"), Cl.Width);
+			O->TryGetNumberField(TEXT("mk"), Cl.Mark);
+			O->TryGetStringField(TEXT("cls"), Cl.Cls);
+			Cl.Line = ReadFlat(O->GetArrayField(TEXT("line")));
+		}
+		for (const TSharedPtr<FJsonValue>& V : (*Marks)->GetArrayField(TEXT("zebras"))) Zebras.Add(ReadFlat(V->AsArray()));
+	}
 	for (const TSharedPtr<FJsonValue>& V : Root->GetArrayField(TEXT("labels")))
 	{
 		const TSharedPtr<FJsonObject> O = V->AsObject();

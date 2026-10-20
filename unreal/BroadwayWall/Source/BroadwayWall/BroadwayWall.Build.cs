@@ -6,6 +6,6 @@ public class BroadwayWall : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core", "CoreUObject", "Engine", "InputCore", "Slate", "SlateCore",
-			"Json", "ProceduralMeshComponent", "GeometryCore", "ImageCore" });
+			"Json", "ProceduralMeshComponent", "GeometryCore", "ImageCore", "WebSockets", "WebBrowser", "HTTPServer" });
 	}
 }

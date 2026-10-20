@@ -15,7 +15,9 @@ if (!existsSync(STAMP)) {
   process.exit(1);
 }
 
-execFileSync("pnpm", ["package:onefile"], { cwd: APP, stdio: "inherit" });
+// Windows: pnpm is a .cmd shim, which execFileSync only runs through a shell
+const SH = process.platform === "win32";
+execFileSync("pnpm", ["package:onefile"], { cwd: APP, stdio: "inherit", shell: SH });
 
 if (!existsSync(ONE)) {
   console.error("Expected dist/broadway-and-wall.html after package:onefile");
@@ -24,7 +26,7 @@ if (!existsSync(ONE)) {
 
 cpSync(ONE, PLAYABLE);
 
-execFileSync("pnpm", ["package"], { cwd: APP, stdio: "inherit" });
+execFileSync("pnpm", ["package"], { cwd: APP, stdio: "inherit", shell: SH });
 const ZIP = join(APP, "dist-zip", "broadway-and-wall-playable.zip");
 const PLAYABLE_ZIP = join(APP, "playable", "Broadway-and-Wall-playable.zip");
 if (!existsSync(ZIP)) {

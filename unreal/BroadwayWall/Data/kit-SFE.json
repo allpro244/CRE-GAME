@@ -1,0 +1,106 @@
+{
+ "format": "bw-kit/1",
+ "kit": "SFE",
+ "grammar": "L00, L01, L02, L03, L04*, L05",
+ "bands": [
+  {
+   "symbol": "L00",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L01",
+   "height": 400,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Wall_01_N1.SM_BLDG_SFE_L1_A1_Wall_01_N1",
+     "width": 1000,
+     "depth": 147,
+     "y0": -1001.9,
+     "y1": 71.8
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "L02",
+   "height": 650,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Wall_01_N1.SM_BLDG_SFE_L2_A1_Wall_01_N1",
+     "width": 1000,
+     "depth": 148,
+     "y0": -1001.9,
+     "y1": 71.7
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L03",
+   "height": 200,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L04",
+   "height": 600,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_Wall_01_N1.SM_BLDG_SFE_L4_A1_Wall_01_N1",
+     "width": 150,
+     "depth": 18,
+     "y0": -150,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L05",
+   "height": 125,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_Wall_01_N1.SM_BLDG_SFE_L5_A1_Wall_01_N1",
+     "width": 400,
+     "depth": 125,
+     "y0": -400,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerEx_01_N1.SM_BLDG_SFE_L5_A1_CornerEx_01_N1",
+    "width": 75,
+    "depth": 75,
+    "y0": 0,
+    "y1": 75
+   },
+   "inner": {
+    "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerIn_01_N1.SM_BLDG_SFE_L5_A1_CornerIn_01_N1",
+    "width": 75,
+    "depth": 125,
+    "y0": -125,
+    "y1": 75
+   }
+  }
+ ]
+}

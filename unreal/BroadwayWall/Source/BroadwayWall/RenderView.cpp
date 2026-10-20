@@ -1,0 +1,56 @@
+#include "RenderView.h"
+
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+
+bool FBWRenderView::Parse(const FString& Json)
+{
+	TSharedPtr<FJsonObject> R;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), R) || !R.IsValid()) return false;
+	if (R->GetStringField(TEXT("format")) != TEXT("bw-render/1")) return false;
+	Month = (int32)R->GetNumberField(TEXT("month"));
+	Year = (int32)R->GetNumberField(TEXT("year"));
+	R->TryGetStringField(TEXT("phase"), Phase);
+
+	Lots.Reset();
+	for (const TSharedPtr<FJsonValue>& V : R->GetArrayField(TEXT("lots")))
+	{
+		const TSharedPtr<FJsonObject> O = V->AsObject();
+		FBWRenderLot& L = Lots.AddDefaulted_GetRef();
+		L.Bbl = O->GetStringField(TEXT("bbl"));
+		L.Cls = O->GetStringField(TEXT("cls"));
+		L.Floors = (int32)O->GetNumberField(TEXT("floors"));
+		L.HeightM = O->GetNumberField(TEXT("heightM"));
+		L.bConstruction = O->GetBoolField(TEXT("construction"));
+		L.Progress = O->GetNumberField(TEXT("progress"));
+		O->TryGetNumberField(TEXT("cov"), L.Cov);
+		L.Year = (int32)O->GetNumberField(TEXT("year"));
+		O->TryGetBoolField(TEXT("fresh"), L.bFresh);
+		O->TryGetBoolField(TEXT("shops"), L.bShops);
+		O->TryGetStringField(TEXT("facade"), L.Facade);
+	}
+
+	Owners.Reset();
+	for (const TSharedPtr<FJsonValue>& V : R->GetArrayField(TEXT("owners")))
+	{
+		const TSharedPtr<FJsonObject> O = V->AsObject();
+		FBWRenderOwner& W = Owners.AddDefaulted_GetRef();
+		W.Bbl = O->GetStringField(TEXT("bbl"));
+		W.Owner = O->GetStringField(TEXT("owner"));
+		O->TryGetStringField(TEXT("firm"), W.Firm);
+		O->TryGetBoolField(TEXT("listed"), W.bListed);
+		O->TryGetNumberField(TEXT("distress"), W.Distress);
+	}
+
+	Merged.Reset();
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& P : R->GetObjectField(TEXT("merged"))->Values) Merged.Add(P.Key, P.Value->AsString());
+
+	Events.Reset();
+	for (const TSharedPtr<FJsonValue>& V : R->GetArrayField(TEXT("events")))
+	{
+		const TSharedPtr<FJsonObject> O = V->AsObject();
+		Events.Add({ (int32)O->GetNumberField(TEXT("m")), O->GetStringField(TEXT("bbl")), O->GetStringField(TEXT("kind")) });
+	}
+	return true;
+}

@@ -233,6 +233,43 @@ scripted camera; nobody has driven them by hand yet.
 **Done when:** a 20-year autoplay in Unreal shows the skyline growing, and the
 game is playable end to end with the existing desks.
 
+#### Phase 2 progress (2026-10-19) — first half done
+
+![Phase 2](unreal/shots/phase2/phase2-skyline.jpg)
+
+- **The render contract exists.** `broadway-and-wall/src/engine/renderView.ts`
+  is one pure function of the state — per lot what stands or is rising
+  (floors × `FLOOR_M` 3.55 × progress), owners, listed/distress, merged sites,
+  the month's deed events — using the web map's own rules (MapView's skyline
+  and parapet effects). C++ mirror: `unreal/BroadwayWall/.../RenderView.h`.
+  `test/render-view.mjs` fails if a field exists on one side only, or if the
+  view breaks a rule (it caught a frame and a teardown marker drawn on one lot).
+- **The 20-year autoplay works.** `-Sim=ws://…` drives the city from the
+  sidecar harness: the metro city ran 2000→2020 in 5½ minutes, 228 buildings
+  delivered, 91 lots cleared, downtown visibly taller. The C++ side takes the
+  same `bw-render/1` JSON whichever host sends it.
+
+#### Phase 2 result (2026-10-20) — **playable end to end**
+
+![Play mode](unreal/shots/play1-sheet.jpg)
+
+- **Host A is wired.** `unreal/Play.cmd` (or `-Play`) starts the real game:
+  Unreal serves the committed playable from its own HTTP server
+  (`/game/…`, real origin, saves work) and overlays it full-window and
+  transparent over the 3D city. With `?host=unreal` the page draws no map
+  (`src/state/unrealHost.ts`): it sends the city it cuts (`toBwCity`, shared
+  with the CLI exporter — byte-identical), each month's `renderView`, and the
+  selection; a transparent surface behind the desks forwards pointer and camera
+  keys. Unreal answers clicks in 3D with `window.bwUnreal.select`.
+- Verified unattended (`-PlayScript=unreal/tools/play-driver.js -PlayShots`):
+  menus → a new town (Granwich, 1,012 lots) → Unreal builds it → ten months of
+  cranes, deliveries and a clearance arrive as render views.
+- Construction: blue plywood hoarding and a tower crane over every frame.
+
+Left: selection both ways has only been driven by the scripted player; the
+player's own `BuildingDesign` choices are not yet mapped to kits; assembled
+sites use the convex hull of their deeds.
+
 ### Phase 3 — Photoreal
 - Replace blocks with City Sample buildings: a kit-of-parts chooser by use,
   height, footprint, era (year built), quality tier and condition. Use the
@@ -247,6 +284,45 @@ game is playable end to end with the existing desks.
 **Done when:** a screenshot set the owner would call "blows your socks off",
 running at 1440p with DLSS at a playable frame rate on the RTX 2080.
 
+#### Phase 3 progress (2026-10-20)
+
+![Phase 3](unreal/shots/phase3-sheet.jpg)
+
+Owner's reference images: `unreal/reference/` (pre-war masonry, lit windows,
+rooftop plant, parked cars, overcast or low golden sun).
+
+- **Facades from Epic's own grammar** (`FacadeBuilder`): 11 City Sample kits
+  (`unreal/ASSETS.md`), bands stacked up each volume, the repeating shafts
+  stretched to land on the roof, a corner then wall modules on the kit's grid
+  per edge. Per building: a bay rhythm over the modules that best fit, shop
+  doors every few bays, the `_decal` weathering layer on every piece. Kit by
+  era and use: pre-1945 masonry (NYA, NYG, CHA, CHC, CHG, CHI, NYH), post-war
+  to 1975 (CHH, CHF), curtain wall after (SFC, SFE).
+- **Ground and props:** City Sample asphalt, world-space sidewalk concrete,
+  rooftop bitumen/tile/pebble-dash, sand beaches; bare street trees in grates,
+  street lamps every ~25 m, parked cars at the kerbs, vacant lots as surface car
+  parks; roofs with stair bulkheads, condensers, exhausts, vents, water tanks.
+- **Light, measured:** sun 75,000 lux, warm late afternoon, volumetric clouds;
+  sky light from the engine's daylight cubemap at 8,000 nits (real-time capture
+  gave no light in -game); exposure clamped EV 13–14.5; Lumen's cached-lighting
+  pre-exposure at EV 12 (the default EV 4 clipped bounce at city exposures).
+- **Project settings the kits need:** DX12/SM6 (the building master material
+  binds 67 textures; SM5 allows 64), Substrate, virtual textures, no static
+  lighting.
+
+- **Streets:** double-yellow centres, dashed lane lines on 12 m+ carriageways,
+  zebra bars (`markings` in bw-city/1). **Traffic, first cut:** cars drive the
+  lane centrelines, right-hand, ~1 per 160 m of lane.
+- **Frame rate, measured** (`-Perf`, `unreal/tools/perf-matrix.sh`; metro city,
+  361,702 facade pieces, 2560×1440, RTX 2080, editor `-game`): **41 fps**
+  median, 39 p95. Half resolution 55; Lumen off 47; VSM off 35 (virtual
+  shadows help); blocks only 60; traffic ~1 fps. The game's Graphics setting
+  picks the render resolution (high 100%, medium 67%, low 50%, TSR upscale).
+
+Left: Mass crowds and lane-following traffic with intersections (ZoneGraph);
+lit windows at night and weather by season; the asphalt reads very wet; DLSS
+(an NVIDIA plugin download — the owner approved accepting its licence).
+
 ### Phase 4 — Game feel
 - Set-pieces for the moments that matter: groundbreak, topping out, the
   delivery ceremony, demolition, a foreclosure sign, a black swan's effect on
@@ -255,6 +331,25 @@ running at 1440p with DLSS at a playable frame rate on the RTX 2080.
 - The player's own buildings: the `BuildingDesign` choices (facade family,
   crown, materials) mapped to real kit choices.
 - Sound: street, construction, weather.
+
+#### Phase 4 progress (2026-10-20)
+
+- Camera modes: `1` strategy, `2` drone flyover, `3` street-level walk
+  (WASD, right-drag to look) — also from the page in play mode.
+- Opening day: banner poles at the corners of a building for the three months
+  after delivery; a lender workout puts barricades at the door.
+- The player's design: `BuildingDesign.facade` (the web renderer's twelve
+  families) picks the nearest City Sample kit.
+- Sound: City Sample's traffic wash and urban air crossfade with altitude; a
+  jackhammer on the nearest site going up.
+- Left: topping-out and demolition set-pieces, the black swan on the street,
+  crown/base design choices, weather sound.
+
+#### Phase 5 progress (2026-10-20)
+
+The desks stay in the browser layer (they work, and the plan says port only
+where it helps). Native so far: the map HUD — a hover card beside the pointer
+(address, use, floors, year, owner) at frame rate, and the selected-lot card.
 
 ### Phase 5 — The UI, native
 - Port the most-used surfaces to UMG (C++-driven): top bar, docket, the
@@ -266,6 +361,25 @@ running at 1440p with DLSS at a playable frame rate on the RTX 2080.
   settings (DLSS, Lumen quality, crowd density), performance pass, a crash
   reporter.
 
+#### Phase 6 progress (2026-10-20)
+
+`unreal/tools/package.ps1` copies the web game into `Data/web` and runs
+BuildCookRun (all of `/Game` is cooked — City Sample content is loaded by path,
+so the cooker cannot find it by reference; `Data/` stages as loose files).
+Editor-only plugins (MCP, toolsets, Python) are allow-listed to the editor.
+
+**Packaged frame rate:** metro city, 2560×1440 native (no upscaling), RTX 2080:
+**48 fps median, 45 p95** — the Phase 3 bar ("playable at 1440p") is met
+without DLSS.
+
+**A packaged build plays:** `D:\Builds\BroadwayWall\Windows\BroadwayWall.exe`
+(8.6 GB) served the web game from `Data/web`, generated a new town and ran the
+economy to June 2001 under the scripted player. Graphics settings come from the
+game's own Settings page.
+
+Left: an installer; saves in the user's folder (CEF keeps IndexedDB under the
+build's `Saved/webcache`, fine for a portable folder, not for Program Files);
+crash reporter wiring; a pass on cook size (all of `/Game` is cooked).
 ---
 
 ## 5 · Risks and how we handle them

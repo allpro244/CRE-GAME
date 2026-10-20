@@ -22,6 +22,12 @@
 #include "Misc/Paths.h"
 #include "TimerManager.h"
 #include "Widgets/SWindow.h"
+#include "IWebSocket.h"
+#include "WebSocketsModule.h"
+#include "RenderView.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBW, Log, All);
 
@@ -156,8 +162,10 @@ void ABWHUD::DrawHUD()
 	};
 
 	const FBWCity& C = GM->City->GetCity();
-	Panel(16 * S, 16 * S, 300 * S, 34 * S);
-	Text(FString::Printf(TEXT("%s  ·  %d lots"), *C.Name, C.Parcels.Num()), 28 * S, 22 * S, 1.2f, FLinearColor::White);
+	Panel(16 * S, 16 * S, (GM->SimMonth >= 0 ? 440 : 300) * S, 34 * S);
+	Text(GM->SimMonth >= 0
+		? FString::Printf(TEXT("%s  ·  %d  ·  %s  ·  %d cranes"), *C.Name, GM->SimYear, *GM->SimPhase, GM->SimFrames)
+		: FString::Printf(TEXT("%s  ·  %d lots"), *C.Name, C.Parcels.Num()), 28 * S, 22 * S, 1.2f, FLinearColor::White);
 
 	if (const FBWParcel* P = PC->Selected)
 	{
@@ -228,8 +236,78 @@ void ABWGameMode::BeginPlay()
 		Cam->SetView(FVector(B.GetCenter(), 0), 0, -50, B.GetSize().GetMax() * 1.05);
 	}
 
-	FString Dir;
-	if (FParse::Value(FCommandLine::Get(), TEXT("Shots="), Dir)) RunShots(Dir);
+	FString Dir, SimUrl;
+	FParse::Value(FCommandLine::Get(), TEXT("Shots="), ShotDir);
+	FParse::Value(FCommandLine::Get(), TEXT("Years="), SimYears);
+	if (FParse::Value(FCommandLine::Get(), TEXT("Sim="), SimUrl)) StartSim(SimUrl);
+	else if (!ShotDir.IsEmpty()) RunShots(ShotDir);
+}
+
+// ---------------------------------------------------------------- live economy (sidecar)
+
+void ABWGameMode::StartSim(const FString& Url)
+{
+	FModuleManager::LoadModuleChecked<FWebSocketsModule>(TEXT("WebSockets"));
+	Sim = FWebSocketsModule::Get().CreateWebSocket(Url);
+	TWeakObjectPtr<ABWGameMode> Self(this);
+	const FBWCity& C = City->GetCity();
+	const FString Town = FString::Printf(TEXT("{\"type\":\"town\",\"id\":1,\"seed\":%lld,\"size\":\"%s\",\"view\":true}"), C.Seed, *C.Size);
+	Sim->OnConnected().AddLambda([Self, Town]() { if (Self.IsValid()) { UE_LOG(LogBW, Display, TEXT("SIM connected")); Self->SimStarted = FPlatformTime::Seconds(); Self->Sim->Send(Town); } });
+	Sim->OnConnectionError().AddLambda([](const FString& E) { UE_LOG(LogBW, Error, TEXT("SIM connection error: %s"), *E); });
+	Sim->OnMessage().AddLambda([Self](const FString& M) { if (Self.IsValid()) Self->OnSimMessage(M); });
+	if (ABWCameraPawn* Cam = Cast<ABWCameraPawn>(GetWorld()->GetFirstPlayerController()->GetPawn()))
+	{
+		const FBox2D B = C.Bounds;
+		Cam->SetView(FVector(B.GetCenter(), 0), 35, -30, B.GetSize().GetMax() * 0.7);
+	}
+	Sim->Connect();
+}
+
+void ABWGameMode::OnSimMessage(const FString& Msg)
+{
+	TSharedPtr<FJsonObject> R;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Msg), R) || !R.IsValid()) return;
+	const FString Type = R->GetStringField(TEXT("type"));
+	if (Type == TEXT("error")) { UE_LOG(LogBW, Error, TEXT("SIM %s"), *R->GetStringField(TEXT("err"))); return; }
+	const TSharedPtr<FJsonObject>* ViewObj;
+	if (R->TryGetObjectField(TEXT("view"), ViewObj))
+	{
+		FString ViewJson;
+		FJsonSerializer::Serialize(ViewObj->ToSharedRef(), TJsonWriterFactory<>::Create(&ViewJson));
+		FBWRenderView View;
+		if (View.Parse(ViewJson))
+		{
+			City->ApplyView(View);
+			SimMonth = View.Month; SimYear = View.Year; SimPhase = View.Phase;
+			SimFrames = 0;
+			for (const FBWRenderLot& L : View.Lots) SimFrames += L.bConstruction ? 1 : 0;
+			for (const FBWRenderEvent& E : View.Events)
+				if (E.Kind == TEXT("build-start") || E.Kind == TEXT("delivered") || E.Kind == TEXT("demolished"))
+					if (const FBWParcel* P = City->GetCity().FindParcel(E.Bbl))
+						UE_LOG(LogBW, Display, TEXT("SIM %d  %-11s %s"), View.Year, *E.Kind, *P->Address);
+		}
+	}
+	const int32 Month = SimMonth;
+	auto Next = [this]() { Sim->Send(TEXT("{\"type\":\"month\",\"view\":true}")); };
+	const bool bShotYear = Month >= 0 && Month % 12 == 0 && (Month / 12 == 0 || Month / 12 == 5 || Month / 12 == 10 || Month / 12 == 20 || Month / 12 == SimYears);
+	if (Month >= SimYears * 12)
+	{
+		UE_LOG(LogBW, Display, TEXT("SIM done: %d years in %.0f s"), SimYears, FPlatformTime::Seconds() - SimStarted);
+	}
+	if (!ShotDir.IsEmpty() && bShotYear)
+	{
+		// let a frame render, then capture, then carry on (or stop)
+		const FString Path = ShotDir / FString::Printf(TEXT("sim-year-%02d.png"), Month / 12);
+		const bool bLast = Month >= SimYears * 12;
+		FTimerHandle H;
+		GetWorldTimerManager().SetTimer(H, [this, Path, bLast, Next]()
+		{
+			SaveWindowShot(Path);
+			if (bLast) FPlatformMisc::RequestExit(false); else Next();
+		}, 2.5f, false);
+		return;
+	}
+	if (Month < SimYears * 12) Next();
 }
 
 void ABWGameMode::SaveWindowShot(const FString& Path)

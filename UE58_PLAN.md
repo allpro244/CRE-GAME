@@ -233,6 +233,28 @@ scripted camera; nobody has driven them by hand yet.
 **Done when:** a 20-year autoplay in Unreal shows the skyline growing, and the
 game is playable end to end with the existing desks.
 
+#### Phase 2 progress (2026-10-19) — first half done
+
+![Phase 2](unreal/shots/phase2/phase2-skyline.jpg)
+
+- **The render contract exists.** `broadway-and-wall/src/engine/renderView.ts`
+  is one pure function of the state — per lot what stands or is rising
+  (floors × `FLOOR_M` 3.55 × progress), owners, listed/distress, merged sites,
+  the month's deed events — using the web map's own rules (MapView's skyline
+  and parapet effects). C++ mirror: `unreal/BroadwayWall/.../RenderView.h`.
+  `test/render-view.mjs` fails if a field exists on one side only, or if the
+  view breaks a rule (it caught a frame and a teardown marker drawn on one lot).
+- **The 20-year autoplay works.** `-Sim=ws://…` drives the city from the
+  sidecar harness: the metro city ran 2000→2020 in 5½ minutes, 228 buildings
+  delivered, 91 lots cleared, downtown visibly taller. The C++ side takes the
+  same `bw-render/1` JSON whichever host sends it.
+
+Left for Phase 2: the host A bridge (the web app in the widget sends
+`renderView` to C++ each month instead of the sidecar); construction set
+dressing (hoarding, crane, opening day — frames are plain concrete prisms
+now); the desks as an overlay with selection shared both ways; assembled sites
+use the convex hull of their deeds until sites carry a dissolved outline.
+
 ### Phase 3 — Photoreal
 - Replace blocks with City Sample buildings: a kit-of-parts chooser by use,
   height, footprint, era (year built), quality tier and condition. Use the

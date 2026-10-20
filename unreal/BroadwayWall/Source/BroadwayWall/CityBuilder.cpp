@@ -16,6 +16,7 @@ namespace
 	{
 		auto Hex = [](uint32 C) { return FLinearColor(FColor((C >> 16) & 255, (C >> 8) & 255, C & 255)); };
 		if (V.bVacant) return Hex(0x8C8466);              // dirt
+		if (V.bFrame) return Hex(0xA9A49A);               // concrete frame going up
 		if (!V.Deco.IsEmpty()) return Hex(0x9A9A96);      // sheds, masts, civic dressing
 		FLinearColor C = V.Cls == TEXT("office") ? Hex(0x5B8BC0)
 			: V.Cls == TEXT("retail") ? Hex(0xC4744A)
@@ -132,6 +133,7 @@ bool ACityBuilder::BuildFromFile(const FString& Path)
 	if (!City.Load(Path)) return false;
 	const double T1 = FPlatformTime::Seconds();
 	BuildGround();
+	Current = City.Volumes;
 	BuildVolumes();
 	BuildTrees();
 	UE_LOG(LogBWBuilder, Display, TEXT("built %s: parse %.2fs, meshes %.2fs, %d building chunks"),
@@ -170,21 +172,23 @@ void ACityBuilder::BuildGround()
 
 void ACityBuilder::BuildVolumes()
 {
+	for (UProceduralMeshComponent* Old : Chunks) if (Old) Old->DestroyComponent();
+	Chunks.Reset();
 	constexpr int32 PerChunk = 200;
-	for (int32 Start = 0; Start < City.Volumes.Num(); Start += PerChunk)
+	for (int32 Start = 0; Start < Current.Num(); Start += PerChunk)
 	{
 		FMeshBuf M;
-		for (int32 i = Start; i < FMath::Min(Start + PerChunk, City.Volumes.Num()); ++i)
+		for (int32 i = Start; i < FMath::Min(Start + PerChunk, Current.Num()); ++i)
 		{
-			const FBWVolume& Vol = City.Volumes[i];
+			const FBWVolume& Vol = Current[i];
 			const FLinearColor Col = UseColor(Vol);
 			// vacant lots: a 30 cm pad, so they read and can be clicked
 			const double Z0 = Vol.bVacant ? 0 : Vol.Z0;
 			const double Z1 = Vol.bVacant ? 30 : FMath::Max(Vol.Z1, Vol.Z0 + 1);
 			M.AddWalls(Vol.Ring, Z0, Z1, Col);
-			M.AddCap(Vol.Ring, Z1, Col * 1.08f);
+			M.AddCap(Vol.Ring, Z1, Vol.bPlayer ? FLinearColor(FColor(0xE8, 0xB8, 0x3A)) : Col * 1.08f);
 		}
-		UProceduralMeshComponent* Mesh = NewObject<UProceduralMeshComponent>(this, *FString::Printf(TEXT("Buildings_%03d"), Chunks.Num()));
+		UProceduralMeshComponent* Mesh = NewObject<UProceduralMeshComponent>(this, MakeUniqueObjectName(this, UProceduralMeshComponent::StaticClass(), TEXT("Buildings")));
 		Mesh->SetupAttachment(RootComponent);
 		Mesh->bUseAsyncCooking = true;
 		Mesh->bUseComplexAsSimpleCollision = true;
@@ -239,7 +243,7 @@ const FBWParcel* ACityBuilder::ParcelAt(const FVector2D& P) const
 		return In;
 	};
 	// volumes first (a tower can overhang its lot line), then parcels
-	for (const FBWVolume& V : City.Volumes) if (!V.Bbl.IsEmpty() && Inside(V.Ring)) return City.FindParcel(V.Bbl);
+	for (const FBWVolume& V : Current) if (!V.Bbl.IsEmpty() && Inside(V.Ring)) return City.FindParcel(V.Bbl);
 	for (const FBWParcel& Pa : City.Parcels) if (Inside(Pa.Ring)) return &Pa;
 	return nullptr;
 }
@@ -247,6 +251,92 @@ const FBWParcel* ACityBuilder::ParcelAt(const FVector2D& P) const
 double ACityBuilder::ParcelTop(const FString& Bbl) const
 {
 	double Top = 0;
-	for (const FBWVolume& V : City.Volumes) if (V.Bbl == Bbl) Top = FMath::Max(Top, V.Z1);
+	for (const FBWVolume& V : Current) if (V.Bbl == Bbl) Top = FMath::Max(Top, V.Z1);
 	return Top;
+}
+
+namespace
+{
+	/** Andrew's monotone chain: the outline an assembled site builds inside (until sites carry a dissolved ring). */
+	TArray<FVector2D> Hull(TArray<FVector2D> P)
+	{
+		P.Sort([](const FVector2D& A, const FVector2D& B) { return A.X < B.X || (A.X == B.X && A.Y < B.Y); });
+		if (P.Num() < 3) return P;
+		auto Cross = [](const FVector2D& O, const FVector2D& A, const FVector2D& B) { return (A.X - O.X) * (B.Y - O.Y) - (A.Y - O.Y) * (B.X - O.X); };
+		TArray<FVector2D> H;
+		for (int32 Pass = 0; Pass < 2; ++Pass)
+		{
+			const int32 Start = H.Num();
+			for (int32 k = 0; k < P.Num(); ++k)
+			{
+				const FVector2D& Q = P[Pass == 0 ? k : P.Num() - 1 - k];
+				while (H.Num() >= Start + 2 && Cross(H[H.Num() - 2], H.Last(), Q) <= 0) H.Pop();
+				H.Add(Q);
+			}
+			H.Pop();
+		}
+		return H;
+	}
+}
+
+void ACityBuilder::ApplyView(const FBWRenderView& View)
+{
+	// which deeds the economy has taken over, and the site each building sits on
+	TMap<FString, TArray<FString>> SiteDeeds;
+	for (const TPair<FString, FString>& M : View.Merged) SiteDeeds.FindOrAdd(M.Value).Add(M.Key);
+	TSet<FString> Over;
+	for (const FBWRenderLot& L : View.Lots) Over.Add(L.Bbl);
+	for (const TPair<FString, FString>& M : View.Merged) Over.Add(M.Key);
+	TSet<FString> Player;
+	for (const FBWRenderOwner& O : View.Owners) if (O.Owner == TEXT("player")) Player.Add(O.Bbl);
+
+	Current.Reset();
+	for (const FBWVolume& V : City.Volumes)
+		if (V.Bbl.IsEmpty() || !Over.Contains(V.Bbl))
+		{
+			FBWVolume& K = Current.Add_GetRef(V);
+			K.bPlayer = Player.Contains(V.Bbl) && !V.bCrown;
+		}
+
+	int32 Frames = 0, Built = 0, Cleared = 0;
+	for (const FBWRenderLot& L : View.Lots)
+	{
+		const FBWParcel* P = City.FindParcel(L.Bbl);
+		if (!P || P->Ring.Num() < 3) continue;
+		TArray<FVector2D> Ring = P->Ring;
+		if (const TArray<FString>* Kids = SiteDeeds.Find(L.Bbl))
+		{
+			for (const FString& K : *Kids) if (const FBWParcel* C = City.FindParcel(K)) Ring.Append(C->Ring);
+			Ring = Hull(Ring);
+		}
+		FBWVolume V;
+		V.Bbl = L.Bbl;
+		V.Cls = L.Cls;
+		V.Year = L.Year;
+		V.bPlayer = Player.Contains(L.Bbl);
+		if (L.Cls == TEXT("land"))
+		{
+			V.bVacant = true;
+			V.Ring = MoveTemp(Ring);
+			Current.Add(MoveTemp(V));
+			++Cleared;
+			continue;
+		}
+		// the web renderer's footprint rule (map/real/RealCity.ts buildItem): the lot
+		// scaled about its centre by sqrt(coverage), or 0.82 when none was kept
+		FVector2D C(0, 0);
+		for (const FVector2D& Q : Ring) C += Q;
+		C /= Ring.Num();
+		const double B = L.Cov > 0 ? FMath::Min(0.97, FMath::Sqrt(L.Cov)) : 0.82;
+		for (FVector2D& Q : Ring) Q = C + (Q - C) * B;
+		V.Ring = MoveTemp(Ring);
+		V.Z0 = 0;
+		V.Z1 = FMath::Max(3.0, L.HeightM) * 100.0;
+		V.bFrame = L.bConstruction;
+		Current.Add(MoveTemp(V));
+		++(L.bConstruction ? Frames : Built);
+	}
+	BuildVolumes();
+	UE_LOG(LogBWBuilder, Display, TEXT("month %d (%d): %d frames rising, %d built, %d cleared, %d owned by the player"),
+		View.Month, View.Year, Frames, Built, Cleared, Player.Num());
 }

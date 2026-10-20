@@ -95,6 +95,8 @@ export const MODULES = [
   "deliveryNotice",
   // takeprivate — buying a rival firm whole (test/take-private.mjs).
   "takeprivate",
+  // renderView — the render contract Unreal draws from (test/render-view.mjs).
+  "renderView",
 ];
 
 export function writeEntry(path) {

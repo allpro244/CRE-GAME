@@ -19,6 +19,8 @@ struct FBWVolume
 	int32 Year = 0;
 	double Z0 = 0, Z1 = 0;
 	bool bCrown = false, bVacant = false;
+	/** Set by the live economy (RenderView): a frame going up; the player owns it. */
+	bool bFrame = false, bPlayer = false;
 	TArray<FVector2D> Ring;
 };
 

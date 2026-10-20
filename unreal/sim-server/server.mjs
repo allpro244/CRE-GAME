@@ -9,6 +9,8 @@
 //   {type:"month"}                  advance one month
 //   {type:"span", cap?}             advance until something needs the player
 //   {type:"action", name, args}     call any exported engine function as name(g, ...args)
+// Add view:true to any of them to get the month's render view (engine/renderView.ts,
+// the "bw-render/1" contract Unreal draws from) in the reply.
 // Every reply is {type, id, ms, ...summary}. No dependencies: the WebSocket
 // framing is hand-rolled (RFC 6455, text frames only).
 import { createServer } from "node:http";
@@ -30,9 +32,17 @@ function summary() {
   return { month: g.month, cash: Math.round(g.cash), holdings, gameOver: !!g.gameOver, stateBytes: JSON.stringify(g).length };
 }
 
+let lastViewMonth = -1;
+function withView(m, reply) {
+  if (!m.view || !g || typeof E.renderView !== "function") return reply;
+  const view = E.renderView(g, lastViewMonth);
+  lastViewMonth = g.month;
+  return { ...reply, view };
+}
+
 function handle(m) {
   const t0 = performance.now();
-  const done = (extra) => ({ id: m.id ?? 0, ms: +(performance.now() - t0).toFixed(1), ...extra });
+  const done = (extra) => withView(m, { id: m.id ?? 0, ms: +(performance.now() - t0).toFixed(1), ...extra });
   switch (m.type) {
     case "town": {
       if (m.seed != null) process.env.BW_SEED = String(m.seed);
@@ -41,6 +51,7 @@ function handle(m) {
       const parcels = JSON.parse(JSON.stringify(c.parcels));
       town = { parcels, bbls: c.bbls, adjacency: c.adjacency };
       g = E.firstListings(E.newGame(m.gameSeed ?? 1, parcels), parcels, c.bbls);
+      lastViewMonth = -1;
       return done({ type: "ready", citySeed: c.seed, parcels: c.bbls.length, ...summary() });
     }
     case "month":

@@ -5,6 +5,7 @@
 #pragma once
 
 #include "CityData.h"
+#include "RenderView.h"
 #include "GameFramework/Actor.h"
 #include "CityBuilder.generated.h"
 
@@ -29,7 +30,11 @@ public:
 	/** The tallest point of a parcel's volumes, in cm (for framing a selection). */
 	double ParcelTop(const FString& Bbl) const;
 
+	/** Redraw for this month: lots the economy changed replace the generator's buildings. */
+	void ApplyView(const FBWRenderView& View);
+
 	const FBWCity& GetCity() const { return City; }
+	const TArray<FBWVolume>& GetVolumes() const { return Current; }
 
 private:
 	void BuildGround();
@@ -37,6 +42,8 @@ private:
 	void BuildTrees();
 
 	FBWCity City;
+	/** What stands now: the generator's volumes minus overridden lots, plus the economy's. */
+	TArray<FBWVolume> Current;
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> VertexColorMaterial;

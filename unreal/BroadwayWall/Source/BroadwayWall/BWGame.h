@@ -7,6 +7,9 @@
 // Command line:
 //   -City=<path>      a bw-city/1 file (default: Data/city-1-metro.json)
 //   -Shots=<dir>      fly a fixed set of cameras, save a PNG at each, then quit
+//   -Sim=<ws://...>   drive the city from the engine sidecar (unreal/sim-server):
+//                     autoplay -Years=N (default 20); with -Shots, capture the
+//                     skyline at years 0, 5, 10, 20 from one camera
 #pragma once
 
 #include "GameFramework/GameModeBase.h"
@@ -16,6 +19,7 @@
 #include "BWGame.generated.h"
 
 class ACityBuilder;
+class IWebSocket;
 class UCameraComponent;
 struct FBWParcel;
 
@@ -75,8 +79,19 @@ public:
 	UPROPERTY()
 	TObjectPtr<ACityBuilder> City;
 
+	/** Live economy state for the HUD. */
+	int32 SimMonth = -1, SimYear = 0;
+	FString SimPhase;
+	int32 SimFrames = 0;
+
 private:
 	void SpawnSky();
+	void StartSim(const FString& Url);
+	void OnSimMessage(const FString& Msg);
+	TSharedPtr<IWebSocket> Sim;
+	int32 SimYears = 20;
+	FString ShotDir;
+	double SimStarted = 0;
 	void RunShots(const FString& Dir);
 	void SaveWindowShot(const FString& Path);
 };

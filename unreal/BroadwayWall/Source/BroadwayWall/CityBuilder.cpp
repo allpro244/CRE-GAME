@@ -17,6 +17,7 @@ namespace
 		auto Hex = [](uint32 C) { return FLinearColor(FColor((C >> 16) & 255, (C >> 8) & 255, C & 255)); };
 		if (V.bVacant) return Hex(0x8C8466);              // dirt
 		if (V.bFrame) return Hex(0xA9A49A);               // concrete frame going up
+		if (V.Deco == TEXT("hoarding")) return Hex(0x2F5D8C); // site hoarding, painted plywood
 		if (!V.Deco.IsEmpty()) return Hex(0x9A9A96);      // sheds, masts, civic dressing
 		FLinearColor C = V.Cls == TEXT("office") ? Hex(0x5B8BC0)
 			: V.Cls == TEXT("retail") ? Hex(0xC4744A)
@@ -186,7 +187,7 @@ void ACityBuilder::BuildVolumes()
 			const double Z0 = Vol.bVacant ? 0 : Vol.Z0;
 			const double Z1 = Vol.bVacant ? 30 : FMath::Max(Vol.Z1, Vol.Z0 + 1);
 			M.AddWalls(Vol.Ring, Z0, Z1, Col);
-			M.AddCap(Vol.Ring, Z1, Vol.bPlayer ? FLinearColor(FColor(0xE8, 0xB8, 0x3A)) : Col * 1.08f);
+			if (!Vol.bOpen) M.AddCap(Vol.Ring, Z1, Vol.bPlayer ? FLinearColor(FColor(0xE8, 0xB8, 0x3A)) : Col * 1.08f);
 		}
 		UProceduralMeshComponent* Mesh = NewObject<UProceduralMeshComponent>(this, MakeUniqueObjectName(this, UProceduralMeshComponent::StaticClass(), TEXT("Buildings")));
 		Mesh->SetupAttachment(RootComponent);
@@ -202,6 +203,20 @@ void ACityBuilder::BuildVolumes()
 
 void ACityBuilder::BuildTrees()
 {
+	if (UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")))
+	{
+		Cranes = NewObject<UInstancedStaticMeshComponent>(this, TEXT("Cranes"));
+		Cranes->SetupAttachment(RootComponent);
+		Cranes->SetStaticMesh(Cube);
+		Cranes->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+		{
+			UMaterialInstanceDynamic* Yellow = UMaterialInstanceDynamic::Create(Base, this);
+			Yellow->SetVectorParameterValue(TEXT("Color"), FLinearColor(FColor(0xF2, 0xB7, 0x05)));
+			Cranes->SetMaterial(0, Yellow);
+		}
+		Cranes->RegisterComponent();
+	}
 	UStaticMesh* Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 	UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (!Sphere) return;
@@ -299,6 +314,8 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		}
 
 	int32 Frames = 0, Built = 0, Cleared = 0;
+	if (Cranes) Cranes->ClearInstances();
+	Sites.Reset();
 	for (const FBWRenderLot& L : View.Lots)
 	{
 		const FBWParcel* P = City.FindParcel(L.Bbl);
@@ -333,10 +350,46 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		V.Z0 = 0;
 		V.Z1 = FMath::Max(3.0, L.HeightM) * 100.0;
 		V.bFrame = L.bConstruction;
+		if (L.bConstruction)
+		{
+			// the site: a hoarding round the whole lot, and a crane over the frame
+			// topping out a few storeys above where the finished roof will be
+			FBWVolume Fence;
+			Fence.Bbl = L.Bbl;
+			Fence.Deco = TEXT("hoarding");
+			Fence.bOpen = true;
+			Fence.Z1 = 240;
+			Fence.Ring = P->Ring;
+			Current.Add(MoveTemp(Fence));
+			const double Top = FMath::Max(L.Floors * 355.0, V.Z1) + 1200.0;
+			AddCrane(V.Ring, Top, GetTypeHash(L.Bbl));
+			Sites.Add(FVector(C, Top));
+		}
 		Current.Add(MoveTemp(V));
 		++(L.bConstruction ? Frames : Built);
 	}
 	BuildVolumes();
 	UE_LOG(LogBWBuilder, Display, TEXT("month %d (%d): %d frames rising, %d built, %d cleared, %d owned by the player"),
 		View.Month, View.Year, Frames, Built, Cleared, Player.Num());
+}
+
+void ACityBuilder::AddCrane(const TArray<FVector2D>& Footprint, double TopCm, uint32 Hash)
+{
+	if (!Cranes || Footprint.Num() < 3) return;
+	FVector2D C(0, 0);
+	for (const FVector2D& Q : Footprint) C += Q;
+	C /= Footprint.Num();
+	// mast two thirds of the way to a corner, jib swung to a yaw fixed by the lot
+	const FVector2D Corner = Footprint[Hash % Footprint.Num()];
+	const FVector2D Base = C + (Corner - C) * 0.66;
+	const double Yaw = double(Hash % 360);
+	const FRotator Rot(0, Yaw, 0);
+	const FVector Dir = Rot.Vector();
+	const double Jib = 4200, Counter = 1400, Section = 180; // cm; the engine cube is 100 cm
+	const FVector Top(Base.X, Base.Y, TopCm);
+	Cranes->AddInstance(FTransform(FRotator::ZeroRotator, FVector(Base.X, Base.Y, TopCm * 0.5), FVector(Section / 100, Section / 100, TopCm / 100)));
+	Cranes->AddInstance(FTransform(Rot, Top + Dir * (Jib * 0.5) + FVector(0, 0, 150), FVector(Jib / 100, 1.4, 1.6)));
+	Cranes->AddInstance(FTransform(Rot, Top - Dir * (Counter * 0.5) + FVector(0, 0, 150), FVector(Counter / 100, 1.6, 1.6)));
+	Cranes->AddInstance(FTransform(Rot, Top - Dir * (Counter - 250) + FVector(0, 0, 0), FVector(4.0, 3.0, 2.5)));  // ballast
+	Cranes->AddInstance(FTransform(Rot, Top + FVector(0, 0, 450), FVector(1.0, 1.0, 6.0)));                       // apex
 }

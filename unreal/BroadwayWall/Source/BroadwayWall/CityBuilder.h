@@ -35,6 +35,8 @@ public:
 
 	const FBWCity& GetCity() const { return City; }
 	const TArray<FBWVolume>& GetVolumes() const { return Current; }
+	/** Where frames are rising this month: base centre (cm), Z = crane top. */
+	const TArray<FVector>& GetSites() const { return Sites; }
 
 private:
 	void BuildGround();
@@ -44,6 +46,7 @@ private:
 	FBWCity City;
 	/** What stands now: the generator's volumes minus overridden lots, plus the economy's. */
 	TArray<FBWVolume> Current;
+	TArray<FVector> Sites;
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> VertexColorMaterial;
@@ -51,4 +54,8 @@ private:
 	TArray<TObjectPtr<UProceduralMeshComponent>> Chunks;
 	UPROPERTY()
 	TObjectPtr<UInstancedStaticMeshComponent> Trees;
+	/** Tower cranes over every frame going up: mast, jib, counter-jib, ballast. */
+	UPROPERTY()
+	TObjectPtr<UInstancedStaticMeshComponent> Cranes;
+	void AddCrane(const TArray<FVector2D>& Footprint, double TopCm, uint32 Hash);
 };

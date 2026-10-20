@@ -299,11 +299,27 @@ void ABWGameMode::OnSimMessage(const FString& Msg)
 		// let a frame render, then capture, then carry on (or stop)
 		const FString Path = ShotDir / FString::Printf(TEXT("sim-year-%02d.png"), Month / 12);
 		const bool bLast = Month >= SimYears * 12;
+		// then a close-up of the tallest site going up, and back to the overview
+		const TArray<FVector>& Sites = City->GetSites();
+		const FVector* Tall = nullptr;
+		for (const FVector& S : Sites) if (!Tall || S.Z > Tall->Z) Tall = &S;
+		const FVector Site = Tall ? *Tall : FVector::ZeroVector;
+		const FString Close = ShotDir / FString::Printf(TEXT("sim-year-%02d-site.png"), Month / 12);
 		FTimerHandle H;
-		GetWorldTimerManager().SetTimer(H, [this, Path, bLast, Next]()
+		GetWorldTimerManager().SetTimer(H, [this, Path, Close, Site, bLast, Next]()
 		{
 			SaveWindowShot(Path);
-			if (bLast) FPlatformMisc::RequestExit(false); else Next();
+			ABWCameraPawn* Cam = Cast<ABWCameraPawn>(GetWorld()->GetFirstPlayerController()->GetPawn());
+			if (!Cam || Site.IsZero()) { if (bLast) FPlatformMisc::RequestExit(false); else Next(); return; }
+			const FVector Focus = Cam->Focus; const double Yaw = Cam->Yaw, Pitch = Cam->Pitch, Dist = Cam->Distance;
+			Cam->SetView(FVector(Site.X, Site.Y, Site.Z * 0.5), 215, -24, FMath::Max(18000.0, Site.Z * 4.0));
+			FTimerHandle H2;
+			GetWorldTimerManager().SetTimer(H2, [this, Close, Focus, Yaw, Pitch, Dist, bLast, Next]()
+			{
+				SaveWindowShot(Close);
+				if (ABWCameraPawn* C2 = Cast<ABWCameraPawn>(GetWorld()->GetFirstPlayerController()->GetPawn())) C2->SetView(Focus, Yaw, Pitch, Dist);
+				if (bLast) FPlatformMisc::RequestExit(false); else Next();
+			}, 2.5f, false);
 		}, 2.5f, false);
 		return;
 	}

@@ -21,6 +21,8 @@ struct FBWVolume
 	bool bCrown = false, bVacant = false;
 	/** Set by the live economy (RenderView): a frame going up; the player owns it. */
 	bool bFrame = false, bPlayer = false;
+	/** Walls only, no roof (site hoarding). */
+	bool bOpen = false;
 	TArray<FVector2D> Ring;
 };
 

@@ -4,14 +4,25 @@ The Unreal Engine 5.8 side of Broadway & Wall. Plan and decisions: `../UE58_PLAN
 
 | Path | What |
 |---|---|
+| `BroadwayWall/` | The game project (C++ only). Phase 1: the city as blocks, RTS camera, picking. |
 | `spikes/BWSpike/` | Phase 0 spike project (C++ only): the web game in a browser widget (A), the sidecar client (B). |
 | `sim-server/` | The engine as a Node WebSocket sidecar (spike B; kept as a headless harness). |
 | `tools/mcp.mjs` | Minimal client for the editor's MCP server (`UE_MCP_URL`, default `:8000/mcp`). |
 | `tools/mcp-proof.mjs` | Spawn, move, screenshot an actor through MCP. |
 | `tools/spikeA-driver.js` | Drives the web game inside the widget: new game, a year, save, load. |
 | `tools/serve.mjs` | Serves the playable over http (saves need a real origin). |
+| `tools/export-city.mjs` | Writes a city for Unreal (`BroadwayWall/Data/city-<seed>-<size>.json`, not committed). |
 | `tools/ue.ps1` | Launches the editor with the D: cache settings. |
 | `shots/` | Screenshots. Full-size PNGs stay local; phase summaries are committed. |
+
+## Running the city (Phase 1)
+
+```bash
+node unreal/tools/export-city.mjs --size metro          # -> BroadwayWall/Data/city-1-metro.json
+D:/UE_5.8/Engine/Build/BatchFiles/Build.bat BroadwayWallEditor Win64 Development -Project=$PWD/unreal/BroadwayWall/BroadwayWall.uproject -WaitMutex
+D:/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe $PWD/unreal/BroadwayWall/BroadwayWall.uproject -game -windowed -ResX=1600 -ResY=900
+# add -Shots=$PWD/unreal/shots/phase1 to fly the fixed cameras, save PNGs and quit
+```
 
 ## Re-running Phase 0
 

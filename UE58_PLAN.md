@@ -199,6 +199,30 @@ How to re-run: `unreal/README.md`.
 **Done when:** the metro city stands in Unreal at the right size, every
 building the right height, and clicking one names its address.
 
+#### Phase 1 result (2026-10-19) — **done**, one item open
+
+![Phase 1](unreal/shots/phase1/phase1-sheet.jpg)
+
+- `unreal/tools/export-city.mjs` writes `bw-city/1` JSON: parcels, every
+  building tier (the web map's own `buildings3d` feed), ground layers, trees,
+  labels. Back through the generator's own projection, so metres are its metres.
+  Metro, seed 1: 3,046 lots, 3,242 volumes, 2.6 × 1.5 km, 1.7 MB.
+- `unreal/BroadwayWall/` (C++ only, no assets): `CityBuilder` extrudes every
+  tier from footprint to height, coloured by use, in 17 mesh chunks; ground in
+  layers (sea, land, beach, asphalt, sidewalks, parks, water); trees as
+  instances. Parse + build: **0.15 s**. Sky, sun and Lumen are spawned in code.
+- RTS camera (WASD pan, wheel zoom, right-drag orbit, Q/E rotate). Click picks
+  by geometry — the hit point is tested against the footprints, because
+  collision cooking reorders triangles and face indices lie.
+- `-Shots=<dir>` flies five fixed cameras, picks the building at the centre
+  of the last one, saves PNGs and quits: the check an agent runs after a change.
+
+Open: streets are drawn from the generator's pavement polygons rather than
+"laid out from the block geometry" — the same streets, but Phase 3 will want
+centrelines and widths (`street` / `centerline` features are in the context
+layer, not yet exported). The interactive controls were exercised only by the
+scripted camera; nobody has driven them by hand yet.
+
 ### Phase 2 — Live economy
 - Wire the engine host to `CityState`: start a game, advance months, and the
   blocks change as the economy builds, demolishes and repurposes.

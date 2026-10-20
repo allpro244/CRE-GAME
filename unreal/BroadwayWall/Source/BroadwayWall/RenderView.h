@@ -16,6 +16,7 @@ struct FBWRenderLot
 	int32 Year = 0;
 	bool bFresh = false;
 	bool bShops = false;
+	FString Facade;   // the player's chosen facade family, if they designed it
 };
 
 struct FBWRenderOwner

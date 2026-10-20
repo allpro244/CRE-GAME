@@ -28,6 +28,7 @@ bool FBWRenderView::Parse(const FString& Json)
 		L.Year = (int32)O->GetNumberField(TEXT("year"));
 		O->TryGetBoolField(TEXT("fresh"), L.bFresh);
 		O->TryGetBoolField(TEXT("shops"), L.bShops);
+		O->TryGetStringField(TEXT("facade"), L.Facade);
 	}
 
 	Owners.Reset();

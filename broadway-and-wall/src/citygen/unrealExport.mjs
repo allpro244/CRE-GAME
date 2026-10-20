@@ -40,12 +40,18 @@ export function toBwCity(c) {
 
   const ground = Object.fromEntries(GROUND_LAYERS.map((k) => [k, []]));
   const water = [], trees = [], labels = [];
+  // street markings: centrelines carry the carriageway width (w, metres) the
+  // renderer divides into lanes; zebra bars and crosswalk outlines come as drawn
+  const markings = { centerlines: [], zebras: [], crosswalks: [] };
   for (const f of c.context.features) {
     const k = f.properties?.kind, g = f.geometry;
     if (k === "shallows" && g.type === "Polygon") water.push(ring(g.coordinates[0]));
     else if (k in ground && g.type === "Polygon") ground[k].push(ring(g.coordinates[0]));
     else if (k in ground && g.type === "MultiPolygon") for (const p of g.coordinates) ground[k].push(ring(p[0]));
     else if (k === "tree" && g.type === "Point") trees.push(...ue(g.coordinates));
+    else if (k === "centerline" && g.type === "LineString") markings.centerlines.push({ w: Math.round((f.properties.w ?? 8) * 100), mk: f.properties.mk ?? 0, cls: f.properties.cls ?? "", line: g.coordinates.flatMap(ue) });
+    else if (k === "zebra" && g.type === "LineString") markings.zebras.push(g.coordinates.flatMap(ue));
+    else if (k === "crosswalk" && g.type === "Polygon") markings.crosswalks.push(ring(g.coordinates[0]));
     else if (k === "label" && g.type === "Point") labels.push({ name: f.properties.name, kind: f.properties.labelKind, at: ue(g.coordinates) });
   }
 
@@ -59,6 +65,6 @@ export function toBwCity(c) {
     city: { id: c.id, seed: c.seed, size: c.size, name: c.name, lots: parcels.length },
     origin: { lon: lon0, lat: lat0 },
     bounds: { minX, maxX, minY, maxY },
-    parcels, volumes, water, ground, trees, labels,
+    parcels, volumes, water, ground, trees, labels, markings,
   };
 }

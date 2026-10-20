@@ -51,6 +51,8 @@ export interface RenderLot {
   fresh?: boolean;
   /** Ground-floor shops in the mix. */
   shops?: boolean;
+  /** The facade family the player chose (BuildingDesign.facade, variant stripped), when they designed it. */
+  facade?: string;
 }
 
 export interface RenderOwner {
@@ -93,7 +95,8 @@ export function renderView(s: GameState, sinceMonth = s.month - 1): RenderView {
     const total = Math.max(1, d.deliverM - d.startM);
     const progress = Math.min(1, Math.max(0.15, (s.month - d.startM + 1) / total));
     lots.push({ bbl: d.bbl, cls: d.use, floors: d.floors, heightM: d.floors * FLOOR_M * progress, construction: true, progress, year: nowYear,
-      ...(d.coverage !== undefined ? { cov: d.coverage } : {}) });
+      ...(d.coverage !== undefined ? { cov: d.coverage } : {}),
+      ...(d.design?.facade ? { facade: d.design.facade.split("#")[0] } : {}) });
   }
   for (const j of s.cityJobs ?? []) {
     if ((s.built?.[j.bbl]?.bldgArea ?? 0) > 0 || s.developments?.[j.bbl]) continue;
@@ -111,7 +114,8 @@ export function renderView(s: GameState, sinceMonth = s.month - 1): RenderView {
     lots.push({ bbl, cls: b.class, floors: b.floors, heightM: b.floors * FLOOR_M, construction: false, progress: 1, year: b.yearBuilt || nowYear,
       ...(b.cov !== undefined ? { cov: b.cov } : {}),
       ...(dM !== undefined && s.month - dM <= 3 ? { fresh: true } : {}),
-      ...(b.mix ? { shops: (b.mix.retail ?? 0) > 0.001 } : {}) });
+      ...(b.mix ? { shops: (b.mix.retail ?? 0) > 0.001 } : {}),
+      ...(b.design?.facade ? { facade: b.design.facade.split("#")[0] } : {}) });
   }
 
   const owners: RenderOwner[] = [];

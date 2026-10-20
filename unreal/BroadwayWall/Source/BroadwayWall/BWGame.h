@@ -72,6 +72,10 @@ public:
 
 	/** Play mode: the page owns the mouse and keyboard and forwards them here. */
 	TSet<FString> PageKeys;
+	/** Phase 5 map HUD: the lot under the pointer (page-forwarded in play mode), refreshed ~10x a second. */
+	const FBWParcel* Hovered = nullptr;
+	FVector2D HoverPx = FVector2D(-1, -1);
+	double HoverClock = 0;
 	void PageInput(const FString& Type, double X, double Y, double Dx, double Dy, double Wheel, const FString& Key);
 	/** Called when the player picks a lot in 3D (play mode tells the page). */
 	TFunction<void(const FBWParcel*)> OnPicked;

@@ -102,6 +102,20 @@ bool FBWCity::LoadText(const FString& Text, const FString& Path)
 	}
 
 	Trees = ReadFlat(Root->GetArrayField(TEXT("trees")));
+	const TSharedPtr<FJsonObject>* Marks;
+	if (Root->TryGetObjectField(TEXT("markings"), Marks))
+	{
+		for (const TSharedPtr<FJsonValue>& V : (*Marks)->GetArrayField(TEXT("centerlines")))
+		{
+			const TSharedPtr<FJsonObject> O = V->AsObject();
+			FBWCenterline& C = Centerlines.AddDefaulted_GetRef();
+			O->TryGetNumberField(TEXT("w"), C.Width);
+			O->TryGetNumberField(TEXT("mk"), C.Mark);
+			O->TryGetStringField(TEXT("cls"), C.Cls);
+			C.Line = ReadFlat(O->GetArrayField(TEXT("line")));
+		}
+		for (const TSharedPtr<FJsonValue>& V : (*Marks)->GetArrayField(TEXT("zebras"))) Zebras.Add(ReadFlat(V->AsArray()));
+	}
 	for (const TSharedPtr<FJsonValue>& V : Root->GetArrayField(TEXT("labels")))
 	{
 		const TSharedPtr<FJsonObject> O = V->AsObject();

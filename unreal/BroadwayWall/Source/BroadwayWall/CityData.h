@@ -27,7 +27,18 @@ struct FBWVolume
 	/** Phase 4 set-pieces: opened in the last three months (bunting); a lender has a workout file open (barricade). */
 	bool bFresh = false;
 	int32 Distress = 0;
+	/** The player's facade family (web BuildingDesign.facade), which picks the kit. */
+	FString Facade;
 	TArray<FVector2D> Ring;
+};
+
+/** A street's centreline and the carriageway width the markings divide into lanes. */
+struct FBWCenterline
+{
+	double Width = 800;   // cm, kerb to kerb
+	int32 Mark = 0;
+	FString Cls;
+	TArray<FVector2D> Line;
 };
 
 struct FBWLabel
@@ -49,6 +60,8 @@ struct FBWCity
 	TArray<TPair<FString, TArray<TArray<FVector2D>>>> Ground;
 	TArray<FVector2D> Trees;
 	TArray<FBWLabel> Labels;
+	TArray<FBWCenterline> Centerlines;
+	TArray<TArray<FVector2D>> Zebras;
 
 	/** Parse a bw-city/1 file. Returns false (and logs why) on failure. */
 	bool Load(const FString& Path);

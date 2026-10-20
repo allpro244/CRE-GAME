@@ -182,6 +182,7 @@ bool ACityBuilder::BuildFromText(const FString& Text)
 	Current = City.Volumes;
 	BuildVolumes();
 	BuildTrees();
+	BuildMarkings();
 	BuildStreetProps();
 	UE_LOG(LogBWBuilder, Display, TEXT("built %s: parse %.2fs, meshes %.2fs, %d building chunks, %d facade pieces (%s)"),
 		*City.Name, T1 - T0, FPlatformTime::Seconds() - T1, Chunks.Num(), Facades ? Facades->Pieces() : 0, bFacades ? *FString::JoinBy(Kits, TEXT(","), [](const FBWKit& K) { return K.Name; }) : TEXT("blocks only"));
@@ -401,7 +402,13 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 	for (const TPair<FString, FString>& M : View.Merged) Over.Add(M.Key);
 	TSet<FString> Player;
 	TMap<FString, int32> Distress;
-	for (const FBWRenderOwner& O : View.Owners) { if (O.Owner == TEXT("player")) Player.Add(O.Bbl); if (O.Distress) Distress.Add(O.Bbl, O.Distress); }
+	Owners.Reset();
+	for (const FBWRenderOwner& O : View.Owners)
+	{
+		if (O.Owner == TEXT("player")) Player.Add(O.Bbl);
+		if (O.Distress) Distress.Add(O.Bbl, O.Distress);
+		Owners.Add(O.Bbl, O.Owner == TEXT("player") ? TEXT("player") : O.Firm);
+	}
 
 	Current.Reset();
 	for (const FBWVolume& V : City.Volumes)
@@ -431,6 +438,7 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		V.Year = L.Year;
 		V.bPlayer = Player.Contains(L.Bbl);
 		V.bFresh = L.bFresh;
+		V.Facade = L.Facade;
 		V.Distress = Distress.FindRef(L.Bbl);
 		if (L.Cls == TEXT("land"))
 		{
@@ -502,6 +510,18 @@ const FBWKit* ACityBuilder::KitFor(const FBWVolume& V) const
 	// before ~1945; plain post-war fronts to the mid-70s; curtain wall after.
 	// Among the kits that fit, the lot picks (stable, so a building keeps its skin).
 	auto Has = [this](const TCHAR* N) { return Kits.FindByPredicate([N](const FBWKit& K) { return K.Name == N; }); };
+	// A BUILDING THE PLAYER DESIGNED wears the family they picked on the design
+	// desk: each of the web renderer's facade families has the City Sample kit
+	// closest to it in material and era.
+	if (!V.Facade.IsEmpty())
+	{
+		static const TMap<FString, const TCHAR*> ByFamily = {
+			{ TEXT("brick"), TEXT("NYA") }, { TEXT("brownstone"), TEXT("NYH") }, { TEXT("castiron"), TEXT("CHG") },
+			{ TEXT("deco"), TEXT("NYG") }, { TEXT("decobrick"), TEXT("CHI") }, { TEXT("glass"), TEXT("SFC") },
+			{ TEXT("loft"), TEXT("CHF") }, { TEXT("modern"), TEXT("SFE") }, { TEXT("moderne"), TEXT("CHH") },
+			{ TEXT("ribbon"), TEXT("SFC") }, { TEXT("stone"), TEXT("CHA") }, { TEXT("terracotta"), TEXT("CHC") } };
+		if (const TCHAR* const* K = ByFamily.Find(V.Facade)) if (const FBWKit* Kit = Has(*K)) return Kit;
+	}
 	TArray<const FBWKit*> Fit;
 	auto Want = [&](std::initializer_list<const TCHAR*> Names) { for (const TCHAR* N : Names) if (const FBWKit* K = Has(N)) Fit.Add(K); };
 	const int32 Y = V.Year;
@@ -702,4 +722,54 @@ void ACityBuilder::StreetMoment(const FBWVolume& V)
 		else if (i < 2)
 			AddProp(TEXT("/Game/Prop/Kit_Barricade_A/Mesh/SM_Barricade_A.SM_Barricade_A"), FTransform(FRotator(0, Yaw + 90, 0), FVector(P, 10)), true);
 	}
+}
+
+void ACityBuilder::BuildMarkings()
+{
+	// PAINT, NOT GEOMETRY: thin quads 1 cm above the asphalt layer (z 14) and
+	// under the sidewalks (z 18). Highway paint is ~12 cm wide; centre lines are
+	// a double yellow; carriageways of 12 m and up get dashed white lane lines
+	// (3 m on, 9 m off, the US urban standard); zebra bars are 60 cm.
+	FMeshBuf White, Yellow;
+	const double Z = 15;
+	auto Strip = [Z](FMeshBuf& M, const FVector2D& A, const FVector2D& B, double W, const FLinearColor& Col)
+	{
+		const FVector2D D = (B - A).GetSafeNormal();
+		const FVector2D N(-D.Y, D.X);
+		M.AddCap({ A - N * W * 0.5, B - N * W * 0.5, B + N * W * 0.5, A + N * W * 0.5 }, Z, Col);
+	};
+	const FLinearColor Paint(0.85f, 0.85f, 0.82f), Amber(0.85f, 0.62f, 0.12f);
+	for (const FBWCenterline& C : City.Centerlines)
+	{
+		for (int32 i = 0; i + 1 < C.Line.Num(); ++i)
+		{
+			const FVector2D A = C.Line[i], B = C.Line[i + 1];
+			const double Len = (B - A).Size();
+			if (Len < 50) continue;
+			const FVector2D D = (B - A) / Len, N(-D.Y, D.X);
+			// keep paint out of the intersections at either end
+			const double Trim = FMath::Min(900.0, Len * 0.2);
+			const FVector2D A2 = A + D * Trim, B2 = B - D * Trim;
+			if (C.Width >= 700)
+			{
+				Strip(Yellow, A2 + N * 15, B2 + N * 15, 12, Amber);
+				Strip(Yellow, A2 - N * 15, B2 - N * 15, 12, Amber);
+			}
+			if (C.Width >= 1200)
+				for (const double Off : { -C.Width * 0.25, C.Width * 0.25 })
+					for (double S = Trim; S + 300 < Len - Trim; S += 1200)
+						Strip(White, A + D * S + N * Off, A + D * (S + 300) + N * Off, 12, Paint);
+		}
+	}
+	for (const TArray<FVector2D>& Zb : City.Zebras)
+		if (Zb.Num() >= 2) Strip(White, Zb[0], Zb.Last(), 60, Paint);
+
+	UProceduralMeshComponent* Marks = NewObject<UProceduralMeshComponent>(this, TEXT("Markings"));
+	Marks->SetupAttachment(RootComponent);
+	Marks->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Marks->SetCastShadow(false);
+	Marks->RegisterComponent();
+	if (White.V.Num()) { White.Emit(Marks, 0, false); Marks->SetMaterial(0, VertexColorMaterial); }
+	if (Yellow.V.Num()) { Yellow.Emit(Marks, 1, false); Marks->SetMaterial(1, VertexColorMaterial); }
+	UE_LOG(LogBWBuilder, Display, TEXT("markings: %d centrelines, %d zebra bars"), City.Centerlines.Num(), City.Zebras.Num());
 }

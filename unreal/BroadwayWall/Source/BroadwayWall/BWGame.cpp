@@ -141,6 +141,13 @@ void ABWPlayerController::PlayerTick(float Dt)
 		Cam->Yaw += Dx * 0.25;
 		Cam->Pitch += Dy * 0.25;
 	}
+	// hover card: own mouse when Unreal has it, the page's when it forwards it
+	{
+		float MX, MY;
+		if (GetMousePosition(MX, MY)) HoverPx = FVector2D(MX, MY);
+		HoverClock += Dt;
+		if (HoverClock > 0.1 && HoverPx.X >= 0) { HoverClock = 0; Hovered = PickAt(HoverPx); }
+	}
 	if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
 	{
 		float X, Y;
@@ -159,6 +166,7 @@ void ABWPlayerController::PageInput(const FString& Type, double X, double Y, dou
 	else if (Type == TEXT("kd") && Key == TEXT("Digit3")) Cam->SetMode(ABWCameraPawn::EMode::Street);
 	else if (Type == TEXT("kd")) PageKeys.Add(Key);
 	else if (Type == TEXT("ku")) PageKeys.Remove(Key);
+	else if (Type == TEXT("hover")) HoverPx = FVector2D(X * W, Y * H);
 	else if (Type == TEXT("zoom")) Cam->Zoom(Wheel);
 	else if (Type == TEXT("orbit")) { Cam->Yaw += Dx * 0.25; Cam->Pitch += (Cam->Mode == ABWCameraPawn::EMode::Street ? -1 : -1) * Dy * 0.25; }
 	else if (Type == TEXT("pan"))
@@ -238,6 +246,18 @@ void ABWHUD::DrawHUD()
 		? FString::Printf(TEXT("%s  ·  %d  ·  %s  ·  %d cranes"), *C.Name, GM->SimYear, *GM->SimPhase, GM->SimFrames)
 		: FString::Printf(TEXT("%s  ·  %d lots"), *C.Name, C.Parcels.Num()), 28 * S, 22 * S, 1.2f, FLinearColor::White);
 
+	// MAP HUD (Phase 5): a small native card beside the pointer, at frame rate
+	if (const FBWParcel* P = PC->Hovered; P && P != PC->Selected && PC->HoverPx.X >= 0)
+	{
+		const FString Own = GM->City->OwnerOf(P->Bbl);
+		const FString Line2 = P->Cls == TEXT("land") ? TEXT("vacant lot") : FString::Printf(TEXT("%s · %d fl · %d"), *P->Cls, P->Floors, P->YearBuilt);
+		const FString Line3 = Own == TEXT("player") ? TEXT("yours") : Own.IsEmpty() ? TEXT("") : TEXT("rival: ") + Own;
+		const float X = PC->HoverPx.X + 18 * S, Y = PC->HoverPx.Y + 14 * S;
+		Panel(X, Y, 230 * S, (Line3.IsEmpty() ? 52 : 74) * S);
+		Text(P->Address, X + 10 * S, Y + 6 * S, 1.05f, FLinearColor::White);
+		Text(Line2, X + 10 * S, Y + 28 * S, 0.9f, FLinearColor(0.75f, 0.78f, 0.82f));
+		if (!Line3.IsEmpty()) Text(Line3, X + 10 * S, Y + 50 * S, 0.9f, Own == TEXT("player") ? FLinearColor(1.f, 0.84f, 0.25f) : FLinearColor(0.85f, 0.55f, 0.45f));
+	}
 	if (const FBWParcel* P = PC->Selected)
 	{
 		const float X = 16 * S, Y = 58 * S;

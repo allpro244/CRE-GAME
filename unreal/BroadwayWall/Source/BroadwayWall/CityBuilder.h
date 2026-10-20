@@ -40,11 +40,15 @@ public:
 	const TArray<FBWVolume>& GetVolumes() const { return Current; }
 	/** Where frames are rising this month: base centre (cm), Z = crane top. */
 	const TArray<FVector>& GetSites() const { return Sites; }
+	/** Who owns a lot as of the last render view: "player", a rival firm id, or empty. */
+	FString OwnerOf(const FString& Bbl) const { return Owners.FindRef(Bbl); }
 
 private:
 	void BuildGround();
 	void BuildVolumes();
 	void BuildTrees();
+	/** Lane lines, double yellow centres and zebra crossings, painted just above the asphalt. */
+	void BuildMarkings();
 
 	FBWCity City;
 	/** Phase 3: the facade kit, when Data/kit-*.json and its meshes are present. */
@@ -56,6 +60,7 @@ private:
 	/** What stands now: the generator's volumes minus overridden lots, plus the economy's. */
 	TArray<FBWVolume> Current;
 	TArray<FVector> Sites;
+	TMap<FString, FString> Owners;
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> VertexColorMaterial;

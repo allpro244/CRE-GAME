@@ -12,7 +12,7 @@ import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown
 import { ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
-import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
+import { clearRivalClaims, fitOf, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
@@ -2640,8 +2640,12 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
   // who outbid you on the Drydock block in 2009, is a story.
   //
   // Who actually turns up is filtered by who can pay: a firm bids on your
-  // building only if it has the cash and is not already in trouble.
-  const live = livingRivals(s).filter((r) => !r.stressMs && r.cash > value * 0.22);
+  // building only if it has the cash and is not already in trouble — and only
+  // if the building is one its own rules let it own. A firm whose mandate
+  // excludes it used to bid, win, and then fail the same rule at the close
+  // (rivalBuys), so the deed went to nobody in its name (test/deed-goes.mjs).
+  const live = livingRivals(s).filter((r) => !r.stressMs && r.cash > value * 0.22
+    && (!r.sheet || fitOf(s, parcels, r, rec) > 0));
   for (let i = 0; i < n; i++) {
     // roughly half the room is the street, by name, when the street is liquid
     const firm = live.length && rng(s, "sales") < 0.55

@@ -447,6 +447,11 @@ Everything a new session needs that is not in the code. Read it once.
   slop"). Numbers and short labels first; explanations only on hover; at most
   one hint per screen, and only when something blocks the player. Build the
   Unreal UI to this from the start; a full revamp is planned.
+- **Rates on screen:** the top bar shows one rate, the **10-year Treasury**
+  (`econ.indexRate`: fixed loans, mezz, prepayment and cap rates price off
+  it). Floating loans show **SOFR + spread** on their own line (the short
+  index, `econ.shortIndex`). The Fed rate stays in the background; it alerts
+  only for a new chair or a massive move.
 - The owner works from a phone a lot: keep messages short, lead with what they
   need to do or decide.
 

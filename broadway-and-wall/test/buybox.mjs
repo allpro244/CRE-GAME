@@ -18,7 +18,11 @@ const check = (ok, msg) => { console.log(`  ${ok ? "OK  " : "FAIL"}  ${msg}`); i
 const lookKeys = (g) => E.attentionItems(g, parcels).filter((a) => a.key.startsWith("early-look:") || a.key.startsWith("broker:")).map((a) => a.key);
 
 console.log("\nBUY BOX — only what matches stops the clock\n");
-let g = E.firstListings(E.newGame(31337, parcels, 40_000_000), parcels, bbls);
+// The world this filter is tested in: deal-by-deal builders raising 90/10, as
+// before rivalDealTerms became the default (Oct 2026). On this seed the
+// capital-starved street of the new default sells nothing a broker shows
+// early inside twenty years, and this file is about the box, not the street.
+let g = E.firstListings(E.newGame(31337, parcels, 40_000_000, { rivalDealTerms: false }), parcels, bbls);
 // A firm that has closed through the town's brokers. First looks go to the
 // buyers a shop has earned fees from (broker.ts EARLY_FEES), and cold calls to
 // an idle desk with nothing owned are rare by design (actions.ts

@@ -16,7 +16,7 @@ import { lpNetIrr } from "./waterfall";
 import { resolveRec } from "./value";
 import { playerTerms, dealStakes, scaleMult } from "./reputation";
 import { ffAvailable, syndicateBar } from "./syndicate";
-import { heldByRaises, pitchAppeal, PITCH_MULT, type PitchStyle, circleMonth, commitHazard, relationshipFactor, committedTotal, openSources, payRaiseLegal, raiseLegalCost, RAISE_WINDOW_M, streetPercentile, SOURCE_LABEL, type InvestorSource, type Raise } from "./investors";
+import { heldByRaises, pitchAppeal, PITCH_MULT, type PitchStyle, circleMonth, circleNoise, commitHazard, relationshipFactor, committedTotal, openSources, payRaiseLegal, raiseLegalCost, RAISE_WINDOW_M, streetPercentile, SOURCE_LABEL, type InvestorSource, type Raise } from "./investors";
 import { money } from "./money";
 
 export interface RaiseJob {
@@ -109,35 +109,64 @@ export function tickRaises(s: GameState, parcels: ParcelTable): void {
   if (!s.raises) return;
   for (const bbl of Object.keys(s.raises)) {
     const r = s.raises[bbl];
-    const addr = resolveRec(parcels, s, bbl)?.address ?? bbl;
     if (!s.holdings[bbl] || s.developments[bbl]) { delete s.raises[bbl]; continue; }
     const sources = openSources(s, playerTerms(s).band, ffAvailable(s));
     circleMonth(s, r, sources, streetPercentile(s));
-    const have = committedTotal(r);
-    const full = have >= r.target;
+    const full = committedTotal(r) >= r.target;
     if (!full && s.month < r.deadlineM) continue;
-    const amt = Math.min(r.target, have);
-    let closed = false, why = "";
-    if (amt >= 0.5 * r.target) {
-      // Who closes in, scaled to the amount taken.
-      const scale = have > 0 ? amt / have : 0;
-      const src: Partial<Record<InvestorSource, number>> = {};
-      for (const [k, v] of Object.entries(r.committed)) if (v) src[k as InvestorSource] = Math.round(v * scale);
-      const job = r.job as unknown as RaiseJob;
-      const res = startDevelopment(s, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, { ...(job.custom ?? {}), syndicate: { outside: amt, sources: src, clamp: true, pitch: job.pitch } }, job.lender, job.spec);
-      if (!res.err) {
-        Object.assign(s, res.s);
-        closed = true;
-      } else why = res.err;
-    } else why = `only ${money(have)} of ${money(r.target)} was circled`;
-    delete s.raises![bbl];
-    if (closed) {
-      const took = s.syndications?.[bbl]?.lpCommit ?? amt;
-      s.news.unshift({ q: s.month, kind: "deal", text: `The raise for ${addr} closed${took < r.target ? ` small, at ${money(took)} of ${money(r.target)}${took < amt ? " — all the rules let investors put in" : ""}` : ` at ${money(took)}`} after ${s.month - r.openedM} month${s.month - r.openedM === 1 ? "" : "s"}. Ground is broken.` });
-    } else {
-      s.news.unshift({ q: s.month, kind: "warn", text: `The raise for ${addr} failed — ${why}. The counsel's ${money(r.legal)} is gone and the lot is still dirt.` });
-    }
+    closeRaise(s, parcels, bbl);
   }
+}
+
+/**
+ * CLOSE THE RAISE: what is circled (up to the target) comes in, the job
+ * breaks ground with it and the sponsor carries the rest. Fails under half
+ * the target, or when the groundbreaking itself no longer passes. Mutates.
+ */
+function closeRaise(s: GameState, parcels: ParcelTable, bbl: string): boolean {
+  const r = s.raises![bbl];
+  const addr = resolveRec(parcels, s, bbl)?.address ?? bbl;
+  const have = committedTotal(r);
+  const amt = Math.min(r.target, have);
+  let closed = false, why = "";
+  if (amt >= 0.5 * r.target) {
+    // Who closes in, scaled to the amount taken.
+    const scale = have > 0 ? amt / have : 0;
+    const src: Partial<Record<InvestorSource, number>> = {};
+    for (const [k, v] of Object.entries(r.committed)) if (v) src[k as InvestorSource] = Math.round(v * scale);
+    const job = r.job as unknown as RaiseJob;
+    const res = startDevelopment(s, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, { ...(job.custom ?? {}), syndicate: { outside: amt, sources: src, clamp: true, pitch: job.pitch } }, job.lender, job.spec);
+    if (!res.err) {
+      Object.assign(s, res.s);
+      closed = true;
+    } else why = res.err;
+  } else why = `only ${money(have)} of ${money(r.target)} was circled`;
+  delete s.raises![bbl];
+  if (closed) {
+    const took = s.syndications?.[bbl]?.lpCommit ?? amt;
+    const mo = s.month - r.openedM;
+    s.news.unshift({ q: s.month, kind: "deal", text: `Raise closed: ${addr}, ${money(took)}${took < r.target ? ` of ${money(r.target)}` : ""} in ${mo} month${mo === 1 ? "" : "s"}. Ground broken.` });
+  } else {
+    s.news.unshift({ q: s.month, kind: "warn", text: `Raise failed: ${addr} — ${why}. Counsel ${money(r.legal)} lost.` });
+  }
+  return closed;
+}
+
+/**
+ * CLOSE NOW, ON WHAT IS IN (owner, Oct 2026). Once half the target is
+ * circled the sponsor may stop raising and break ground, carrying the rest
+ * itself — what a sponsor with the cash does rather than sit out the window.
+ */
+export function closeRaiseNow(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
+  const r = s.raises?.[bbl];
+  if (!r) return { s, err: "No raise open on that lot." };
+  if (committedTotal(r) < 0.5 * r.target) return { s, err: `Half the target has to be in to close: ${money(committedTotal(r))} of ${money(r.target)}.` };
+  const next = cloneState(s);
+  if (!closeRaise(next, parcels, bbl)) {
+    const why = next.news[0]?.text ?? "the close failed";
+    return { s, err: why };
+  }
+  return { s: next };
 }
 
 /**
@@ -202,7 +231,7 @@ export function raisePreview(s: GameState, plan: DevPlan, landEquity: number, ca
         const need = outside - have;
         if (!(need > 0)) break;
         const room = Math.max(0, src.left - (got[src.id] ?? 0));
-        const c = Math.min(need, room, Math.round(outside * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id) * appeal) * (0.6 + 0.8 * rnd())));
+        const c = Math.min(need, room, Math.round(outside * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id) * appeal) * circleNoise(rnd())));
         if (c > 0) { got[src.id] = (got[src.id] ?? 0) + c; have += c; }
       }
       if (have >= outside) break;

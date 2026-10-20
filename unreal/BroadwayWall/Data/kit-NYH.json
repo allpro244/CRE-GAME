@@ -1,0 +1,179 @@
+{
+ "format": "bw-kit/1",
+ "kit": "NYH",
+ "grammar": "L00, L01, L02, L03, L04, L05*, L08, L09, L10, L11, L12",
+ "bands": [
+  {
+   "symbol": "L00",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L01",
+   "height": 575,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/NY/H/Kit_Bldg_NYH_L1_A/Mesh/SM_BLDG_NYH_L1_A_Wall_02_N1.SM_BLDG_NYH_L1_A_Wall_02_N1",
+     "width": 400,
+     "depth": 114,
+     "y0": -400,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "L02",
+   "height": 450,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/NY/H/Kit_Bldg_NYH_L2_A/Mesh/SM_BLDG_NYH_L2_A_Wall_01_N1.SM_BLDG_NYH_L2_A_Wall_01_N1",
+     "width": 400,
+     "depth": 79,
+     "y0": -400,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L03",
+   "height": 400,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/NY/H/Kit_Bldg_NYH_L3_A/Mesh/SM_BLDG_NYH_L3_A_Wall_01_N1.SM_BLDG_NYH_L3_A_Wall_01_N1",
+     "width": 400,
+     "depth": 84,
+     "y0": -400,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L04",
+   "height": 375,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/NY/H/Kit_Bldg_NYH_L4_A/Mesh/SM_BLDG_NYH_L4_A_Wall_01_N1.SM_BLDG_NYH_L4_A_Wall_01_N1",
+     "width": 400,
+     "depth": 85,
+     "y0": -400,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L05",
+   "height": 350,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/Building/NY/H/Kit_Bldg_NYH_L5_A/Mesh/SM_BLDG_NYH_L5_A_Wall_01_N1.SM_BLDG_NYH_L5_A_Wall_01_N1",
+     "width": 400,
+     "depth": 84,
+     "y0": -400,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L08",
+   "height": 400,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L09",
+   "height": 400,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/NY/H/Kit_Bldg_NYH_L9_A/Mesh/SM_BLDG_NYH_L9_A_Wall_01_N1.SM_BLDG_NYH_L9_A_Wall_01_N1",
+     "width": 350,
+     "depth": 84,
+     "y0": -350,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L10",
+   "height": 350,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/NY/H/Kit_Bldg_NYH_L10_A/Mesh/SM_BLDG_NYH_L10_A_Wall_01_N1.SM_BLDG_NYH_L10_A_Wall_01_N1",
+     "width": 400,
+     "depth": 84,
+     "y0": -400,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L11",
+   "height": 300,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/NY/H/Kit_Bldg_NYH_L11_A/Mesh/SM_BLDG_NYH_L11_A_Wall_01_N1.SM_BLDG_NYH_L11_A_Wall_01_N1",
+     "width": 400,
+     "depth": 85,
+     "y0": -400,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L12",
+   "height": 100,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/NY/H/Kit_Bldg_NYH_L12_A/Mesh/SM_BLDG_NYH_L12_A_Wall_01_N1.SM_BLDG_NYH_L12_A_Wall_01_N1",
+     "width": 400,
+     "depth": 69,
+     "y0": -400,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  }
+ ]
+}

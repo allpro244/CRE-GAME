@@ -22,6 +22,10 @@
 #include "Misc/Paths.h"
 #include "TimerManager.h"
 #include "Widgets/SWindow.h"
+#include "ContentStreaming.h"
+#if WITH_EDITOR
+#include "ShaderCompiler.h"
+#endif
 #include "IWebSocket.h"
 #include "WebSocketsModule.h"
 #include "RenderView.h"
@@ -384,7 +388,24 @@ void ABWGameMode::RunShots(const FString& Dir)
 			PC->GetViewportSize(W, H);
 			PC->Select(PC->PickAt(FVector2D(W * 0.5, H * 0.5)));
 		}
-		else if (Beat == 2) Self->SaveWindowShot(Dir / (S.Name + TEXT(".png")));
+		else if (Beat == 2)
+		{
+			// do not photograph a half-loaded city: wait (up to two minutes) for
+			// texture/mesh streaming and shader compiles to drain
+			static double WaitStart = 0;
+			int32 Pending = IStreamingManager::Get().GetNumWantingResources();
+#if WITH_EDITOR
+			if (GShaderCompilingManager) Pending += GShaderCompilingManager->GetNumRemainingJobs();
+#endif
+			if (Pending > 0)
+			{
+				if (WaitStart == 0) WaitStart = FPlatformTime::Seconds();
+				if (FPlatformTime::Seconds() - WaitStart < 120) return;
+				UE_LOG(LogBW, Warning, TEXT("SHOT %s taken with %d resources still pending"), *S.Name, Pending);
+			}
+			WaitStart = 0;
+			Self->SaveWindowShot(Dir / (S.Name + TEXT(".png")));
+		}
 		++*Step;
-	}, 1.0f, true, 4.0f);
+	}, 2.0f, true, 15.0f); // 15 s first: textures and Nanite pages stream in before the first capture
 }

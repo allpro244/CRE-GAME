@@ -6,6 +6,9 @@
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "ProceduralMeshComponent.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "Misc/Paths.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBWBuilder, Log, All);
 
@@ -133,12 +136,30 @@ bool ACityBuilder::BuildFromFile(const FString& Path)
 	const double T0 = FPlatformTime::Seconds();
 	if (!City.Load(Path)) return false;
 	const double T1 = FPlatformTime::Seconds();
+	// Phase 3 facades: on when the kit table and its migrated meshes are here (-NoFacades: blocks only)
+	// every Data/kit-*.json whose meshes are migrated; -Kits=CHF,SFC narrows it
+	if (!FParse::Param(FCommandLine::Get(), TEXT("NoFacades")))
+	{
+		FString Only;
+		FParse::Value(FCommandLine::Get(), TEXT("Kits="), Only);
+		TArray<FString> Files;
+		IFileManager::Get().FindFiles(Files, *(FPaths::ProjectDir() / TEXT("Data/kit-*.json")), true, false);
+		for (const FString& F : Files)
+		{
+			const FString Name = FPaths::GetBaseFilename(F).RightChop(4);
+			if (!Only.IsEmpty() && !Only.Contains(Name)) continue;
+			FBWKit K;
+			if (K.Load(FPaths::ProjectDir() / TEXT("Data") / F) && K.Bands.ContainsByPredicate([](const FBWKitBand& B) { return B.Walls.Num() > 0; })) Kits.Add(MoveTemp(K));
+		}
+	}
+	bFacades = Kits.Num() > 0;
+	if (bFacades) Facades = MakeUnique<FBWFacadeBuilder>(RootComponent);
 	BuildGround();
 	Current = City.Volumes;
 	BuildVolumes();
 	BuildTrees();
-	UE_LOG(LogBWBuilder, Display, TEXT("built %s: parse %.2fs, meshes %.2fs, %d building chunks"),
-		*City.Name, T1 - T0, FPlatformTime::Seconds() - T1, Chunks.Num());
+	UE_LOG(LogBWBuilder, Display, TEXT("built %s: parse %.2fs, meshes %.2fs, %d building chunks, %d facade pieces (%s)"),
+		*City.Name, T1 - T0, FPlatformTime::Seconds() - T1, Chunks.Num(), Facades ? Facades->Pieces() : 0, bFacades ? *FString::JoinBy(Kits, TEXT(","), [](const FBWKit& K) { return K.Name; }) : TEXT("blocks only"));
 	return true;
 }
 
@@ -175,6 +196,7 @@ void ACityBuilder::BuildVolumes()
 {
 	for (UProceduralMeshComponent* Old : Chunks) if (Old) Old->DestroyComponent();
 	Chunks.Reset();
+	if (Facades) Facades->Reset();
 	constexpr int32 PerChunk = 200;
 	for (int32 Start = 0; Start < Current.Num(); Start += PerChunk)
 	{
@@ -182,6 +204,19 @@ void ACityBuilder::BuildVolumes()
 		for (int32 i = Start; i < FMath::Min(Start + PerChunk, Current.Num()); ++i)
 		{
 			const FBWVolume& Vol = Current[i];
+			const bool bDress = bFacades && !Vol.bVacant && !Vol.bFrame && !Vol.bOpen && Vol.Deco.IsEmpty() && Vol.Z1 - Vol.Z0 >= 400;
+			if (bDress)
+			{
+				// the facade carries the look; the mass sits 60 cm behind it (no flicker
+				// against the kit's faces, and it still catches clicks), roofed in gravel
+				const int32 Pieces = Facades->Dress(*KitFor(Vol), Vol, GetTypeHash(Vol.Bbl) ^ uint32(Vol.Z0), Vol.Z0 < 50);
+				if (Pieces > 0)
+				{
+					M.AddWalls(BWInsetRing(Vol.Ring, 60), Vol.Z0, Vol.Z1, FLinearColor(FColor(0x55, 0x52, 0x4E)));
+					M.AddCap(Vol.Ring, Vol.Z1 - 5, Vol.bPlayer ? FLinearColor(FColor(0xE8, 0xB8, 0x3A)) : FLinearColor(FColor(0x6E, 0x6C, 0x68)));
+					continue;
+				}
+			}
 			const FLinearColor Col = UseColor(Vol);
 			// vacant lots: a 30 cm pad, so they read and can be clicked
 			const double Z0 = Vol.bVacant ? 0 : Vol.Z0;
@@ -392,4 +427,22 @@ void ACityBuilder::AddCrane(const TArray<FVector2D>& Footprint, double TopCm, ui
 	Cranes->AddInstance(FTransform(Rot, Top - Dir * (Counter * 0.5) + FVector(0, 0, 150), FVector(Counter / 100, 1.6, 1.6)));
 	Cranes->AddInstance(FTransform(Rot, Top - Dir * (Counter - 250) + FVector(0, 0, 0), FVector(4.0, 3.0, 2.5)));  // ballast
 	Cranes->AddInstance(FTransform(Rot, Top + FVector(0, 0, 450), FVector(1.0, 1.0, 6.0)));                       // apex
+}
+
+const FBWKit* ACityBuilder::KitFor(const FBWVolume& V) const
+{
+	// THE STREET READS ITS AGE AND ITS USE. Glass curtain wall is a post-1960s
+	// office idea; walk-up brick and limestone are what pre-war housing is made
+	// of; shops want a storefront floor. Among the kits that fit, the lot picks
+	// (stable across months, so a building keeps its skin).
+	auto Has = [this](const TCHAR* N) { return Kits.FindByPredicate([N](const FBWKit& K) { return K.Name == N; }); };
+	TArray<const FBWKit*> Fit;
+	auto Want = [&](std::initializer_list<const TCHAR*> Names) { for (const TCHAR* N : Names) if (const FBWKit* K = Has(N)) Fit.Add(K); };
+	const bool bModern = V.Year >= 1965, bTall = V.Z1 >= 4500;
+	if (V.Cls == TEXT("office")) { if (bModern || bTall) Want({ TEXT("SFC"), TEXT("SFE") }); else Want({ TEXT("CHH"), TEXT("CHF") }); }
+	else if (V.Cls == TEXT("multifamily")) { if (V.Year >= 1985) Want({ TEXT("SFD") }); else Want({ TEXT("NYH"), TEXT("CHF") }); }
+	else if (V.Cls == TEXT("retail")) Want({ TEXT("CHF"), TEXT("SFE") });
+	else Want({ TEXT("CHH") });
+	if (Fit.Num() == 0) for (const FBWKit& K : Kits) Fit.Add(&K);
+	return Fit[GetTypeHash(V.Bbl) % Fit.Num()];
 }

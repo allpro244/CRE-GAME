@@ -6,6 +6,7 @@
 
 #include "CityData.h"
 #include "RenderView.h"
+#include "FacadeBuilder.h"
 #include "GameFramework/Actor.h"
 #include "CityBuilder.generated.h"
 
@@ -44,6 +45,12 @@ private:
 	void BuildTrees();
 
 	FBWCity City;
+	/** Phase 3: the facade kit, when Data/kit-*.json and its meshes are present. */
+	TArray<FBWKit> Kits;
+	bool bFacades = false;
+	/** Which kit dresses this volume: by use, era and height, varied by lot. */
+	const FBWKit* KitFor(const FBWVolume& V) const;
+	TUniquePtr<FBWFacadeBuilder> Facades;
 	/** What stands now: the generator's volumes minus overridden lots, plus the economy's. */
 	TArray<FBWVolume> Current;
 	TArray<FVector> Sites;

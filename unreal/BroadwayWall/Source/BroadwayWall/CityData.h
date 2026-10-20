@@ -18,6 +18,7 @@ struct FBWVolume
 	FString Bbl, Cls, Deco;
 	int32 Year = 0;
 	double Z0 = 0, Z1 = 0;
+	/** The top tier of its building (the generator's "crown": the volume whose roof is the roof). */
 	bool bCrown = false, bVacant = false;
 	/** Set by the live economy (RenderView): a frame going up; the player owns it. */
 	bool bFrame = false, bPlayer = false;

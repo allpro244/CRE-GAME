@@ -1,0 +1,1777 @@
+{
+ "kit": "SFE",
+ "root": "/Game/Building/SF/E",
+ "pieces": [
+  {
+   "name": "SM_BLDG_SFE_L1_A1_CornerExL_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerExL_01_N1",
+   "min": [
+    -75.00000762939453,
+    -75.00067138671875,
+    325.000244140625
+   ],
+   "max": [
+    4.9591064453125e-05,
+    -0.7376635670661926,
+    399.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerExL_01_0.MI_SFE_L1_A1_CornerExL_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L1_A1_CornerExR_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerExR_01_N1",
+   "min": [
+    -75.00067138671875,
+    0.6816301345825195,
+    325.000244140625
+   ],
+   "max": [
+    3.1099516490940005e-05,
+    75.00000762939453,
+    399.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerExR_01_0.MI_SFE_L1_A1_CornerExR_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L1_A1_CornerEx_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerEx_01_N1",
+   "min": [
+    -75.00067138671875,
+    -4.9591064453125e-05,
+    325.000244140625
+   ],
+   "max": [
+    3.1099516490940005e-05,
+    75.00000762939453,
+    399.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerEx_01_0.MI_SFE_L1_A1_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L1_A1_CornerInL_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerInL_01_N1",
+   "min": [
+    -124.99995422363281,
+    -75.0,
+    4.135813287575729e-05
+   ],
+   "max": [
+    3.0517578125e-05,
+    125.0000228881836,
+    399.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerInL_01_0.MI_SFE_L1_A1_CornerInL_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L1_A1_CornerInR_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerInR_01_N1",
+   "min": [
+    -146.84115600585938,
+    -124.99995422363281,
+    2.518720975785982e-06
+   ],
+   "max": [
+    3.0517578125e-05,
+    146.84115600585938,
+    399.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerInR_01_0.MI_SFE_L1_A1_CornerInR_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L1_A1_CornerIn_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerIn_01_N1",
+   "min": [
+    -146.84115600585938,
+    -124.99995422363281,
+    2.518720975785982e-06
+   ],
+   "max": [
+    75.0,
+    146.84115600585938,
+    399.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerIn_01_0.MI_SFE_L1_A1_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L1_A1_Entrance_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Entrance_01_N1",
+   "min": [
+    -827.53271484375,
+    -796.8412475585938,
+    -2.219196403530077e-06
+   ],
+   "max": [
+    -3.6768434047698975,
+    93.708984375,
+    401.06427001953125
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_0.MI_SFE_L1_A1_Entrance_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_1.MI_SFE_L1_A1_Entrance_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_2.MI_SFE_L1_A1_Entrance_01_2",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_3.MI_SFE_L1_A1_Entrance_01_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L1_A1_Entrance_02_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Entrance_02_N1",
+   "min": [
+    -846.8411865234375,
+    -1001.8716430664062,
+    -0.011789381504058838
+   ],
+   "max": [
+    -3.1588428020477295,
+    71.8411865234375,
+    401.06427001953125
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_0.MI_SFE_L1_A1_Entrance_02_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_1.MI_SFE_L1_A1_Entrance_02_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_2.MI_SFE_L1_A1_Entrance_02_2",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_3.MI_SFE_L1_A1_Entrance_02_3",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_4.MI_SFE_L1_A1_Entrance_02_4"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L1_A1_Entrance_03_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Entrance_03_N1",
+   "min": [
+    -860.2205200195312,
+    -761.3535766601562,
+    -2.219196403530077e-06
+   ],
+   "max": [
+    -0.5435366630554199,
+    53.948974609375,
+    399.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_0.MI_SFE_L1_A1_Entrance_03_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_1.MI_SFE_L1_A1_Entrance_03_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_2.MI_SFE_L1_A1_Entrance_03_2",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_3.MI_SFE_L1_A1_Entrance_03_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L1_A1_Wall_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Wall_01_N1",
+   "min": [
+    -146.84115600585938,
+    -1001.8716430664062,
+    -2.219196403530077e-06
+   ],
+   "max": [
+    3.0517578125e-05,
+    71.8411865234375,
+    399.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_0.MI_SFE_L1_A1_Wall_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_1.MI_SFE_L1_A1_Wall_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_2.MI_SFE_L1_A1_Wall_01_2",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_3.MI_SFE_L1_A1_Wall_01_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L1_A1_Wall_02_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Wall_02_N1",
+   "min": [
+    -146.84115600585938,
+    -1001.8716430664062,
+    -0.011789381504058838
+   ],
+   "max": [
+    4.174170017242432,
+    71.8411865234375,
+    399.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_0.MI_SFE_L1_A1_Wall_02_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_1.MI_SFE_L1_A1_Wall_02_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_2.MI_SFE_L1_A1_Wall_02_2",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_3.MI_SFE_L1_A1_Wall_02_3",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_4.MI_SFE_L1_A1_Wall_02_4"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L2_A1_CornerExL_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerExL_01_N1",
+   "min": [
+    -75.00000762939453,
+    -75.00067138671875,
+    6.103515625e-05
+   ],
+   "max": [
+    4.9591064453125e-05,
+    -0.7376635670661926,
+    649.9999389648438
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerExL_01_0.MI_SFE_L2_A1_CornerExL_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L2_A1_CornerExR_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerExR_01_N1",
+   "min": [
+    -75.00067901611328,
+    0.6816301345825195,
+    6.103515625e-05
+   ],
+   "max": [
+    3.1113624572753906e-05,
+    75.00000762939453,
+    649.9999389648438
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerExR_01_0.MI_SFE_L2_A1_CornerExR_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L2_A1_CornerEx_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerEx_01_N1",
+   "min": [
+    -75.00067138671875,
+    -4.9591064453125e-05,
+    6.103515625e-05
+   ],
+   "max": [
+    4.9591064453125e-05,
+    75.00067138671875,
+    649.9999389648438
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerEx_01_0.MI_SFE_L2_A1_CornerEx_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerEx_01_1.MI_SFE_L2_A1_CornerEx_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerEx_01_2.MI_SFE_L2_A1_CornerEx_01_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L2_A1_CornerInL_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerInL_01_N1",
+   "min": [
+    -124.99995422363281,
+    -75.0,
+    6.103515625e-05
+   ],
+   "max": [
+    3.0517578125e-05,
+    125.0000228881836,
+    649.9999389648438
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerInL_01_0.MI_SFE_L2_A1_CornerInL_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L2_A1_CornerInR_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerInR_01_N1",
+   "min": [
+    -148.34622192382812,
+    -124.99995422363281,
+    6.103515625e-05
+   ],
+   "max": [
+    3.0517578125e-05,
+    146.7101593017578,
+    649.9999389648438
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerInR_01_0.MI_SFE_L2_A1_CornerInR_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L2_A1_CornerIn_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerIn_01_N1",
+   "min": [
+    -148.34622192382812,
+    -124.99995422363281,
+    6.103515625e-05
+   ],
+   "max": [
+    75.0,
+    146.7101593017578,
+    649.9999389648438
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerIn_01_0.MI_SFE_L2_A1_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L2_A1_Entrance_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Entrance_01_N1",
+   "min": [
+    -826.5291748046875,
+    -796.8412475585938,
+    2.518720975785982e-06
+   ],
+   "max": [
+    2.8934476375579834,
+    104.08203125,
+    650.0
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_0.MI_SFE_L2_A1_Entrance_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_1.MI_SFE_L2_A1_Entrance_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_2.MI_SFE_L2_A1_Entrance_01_2",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_3.MI_SFE_L2_A1_Entrance_01_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L2_A1_Entrance_02_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Entrance_02_N1",
+   "min": [
+    -848.34619140625,
+    -1001.8716430664062,
+    -2.7998856239719316e-05
+   ],
+   "max": [
+    -3.1588428020477295,
+    71.710205078125,
+    650.0
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_0.MI_SFE_L2_A1_Entrance_02_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_1.MI_SFE_L2_A1_Entrance_02_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_2.MI_SFE_L2_A1_Entrance_02_2",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_3.MI_SFE_L2_A1_Entrance_02_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L2_A1_Entrance_03_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Entrance_03_N1",
+   "min": [
+    -860.1513671875,
+    -761.3535766601562,
+    6.103515625e-05
+   ],
+   "max": [
+    -0.5435371398925781,
+    53.9061279296875,
+    649.9999389648438
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_0.MI_SFE_L2_A1_Entrance_03_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_1.MI_SFE_L2_A1_Entrance_03_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_2.MI_SFE_L2_A1_Entrance_03_2",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_3.MI_SFE_L2_A1_Entrance_03_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L2_A1_Wall_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Wall_01_N1",
+   "min": [
+    -148.34622192382812,
+    -1001.8716430664062,
+    6.103515625e-05
+   ],
+   "max": [
+    3.0517578125e-05,
+    71.710205078125,
+    649.9999389648438
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_0.MI_SFE_L2_A1_Wall_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_1.MI_SFE_L2_A1_Wall_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_2.MI_SFE_L2_A1_Wall_01_2",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_3.MI_SFE_L2_A1_Wall_01_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L3_A1_CornerExL_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerExL_01_N1",
+   "min": [
+    -75.00067138671875,
+    -75.00067138671875,
+    6.103515625e-05
+   ],
+   "max": [
+    4.9591064453125e-05,
+    -0.6816301345825195,
+    199.999755859375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerExL_01_0.MI_SFE_L3_A1_CornerExL_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L3_A1_CornerExR_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerExR_01_N1",
+   "min": [
+    -75.00067138671875,
+    0.6816336512565613,
+    6.103515625e-05
+   ],
+   "max": [
+    4.9591064453125e-05,
+    75.00067138671875,
+    199.999755859375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerExR_01_0.MI_SFE_L3_A1_CornerExR_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L3_A1_CornerEx_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerEx_01_N1",
+   "min": [
+    -75.00067138671875,
+    -4.9591064453125e-05,
+    6.103515625e-05
+   ],
+   "max": [
+    4.9591064453125e-05,
+    75.00067138671875,
+    199.999755859375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerEx_01_0.MI_SFE_L3_A1_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L3_A1_CornerInL_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerInL_01_N1",
+   "min": [
+    -124.99993133544922,
+    -74.9996337890625,
+    6.103515625e-05
+   ],
+   "max": [
+    3.0517578125e-05,
+    124.99993896484375,
+    199.999755859375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerInL_01_0.MI_SFE_L3_A1_CornerInL_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L3_A1_CornerInR_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerInR_01_N1",
+   "min": [
+    -124.99993133544922,
+    -124.99993133544922,
+    6.103515625e-05
+   ],
+   "max": [
+    3.0517578125e-05,
+    74.9996337890625,
+    199.999755859375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerInR_01_0.MI_SFE_L3_A1_CornerInR_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L3_A1_CornerIn_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerIn_01_N1",
+   "min": [
+    -124.99993896484375,
+    -124.99993133544922,
+    6.103515625e-05
+   ],
+   "max": [
+    74.9996337890625,
+    74.9996337890625,
+    199.999755859375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerIn_01_0.MI_SFE_L3_A1_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L3_A1_Entrance_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Entrance_01_N1",
+   "min": [
+    -945.8340454101562,
+    -750.0,
+    -4.263256414560601e-14
+   ],
+   "max": [
+    3.0517578125e-05,
+    0.0,
+    200.0
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_01_0.MI_SFE_L3_A1_Entrance_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L3_A1_Entrance_02_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Entrance_02_N1",
+   "min": [
+    -776.125244140625,
+    -975.0,
+    -2.2737367544323206e-13
+   ],
+   "max": [
+    3.0517578125e-05,
+    0.0,
+    200.0
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_02_0.MI_SFE_L3_A1_Entrance_02_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L3_A1_Entrance_03_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Entrance_03_N1",
+   "min": [
+    -945.8340454101562,
+    -750.0,
+    -4.263256414560601e-14
+   ],
+   "max": [
+    3.0517578125e-05,
+    0.0,
+    200.0
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_03_0.MI_SFE_L3_A1_Entrance_03_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L3_A1_Wall_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Wall_01_N1",
+   "min": [
+    -124.99992370605469,
+    -1000.0,
+    6.103515625e-05
+   ],
+   "max": [
+    3.0517578125e-05,
+    -0.000732421875,
+    199.999755859375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Wall_01_0.MI_SFE_L3_A1_Wall_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L4_A1_CornerExL_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerExL_01_N1",
+   "min": [
+    -18.780427932739258,
+    -150.0,
+    0.0
+   ],
+   "max": [
+    5.684341886080802e-14,
+    -0.3854273557662964,
+    600.0135498046875
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExL_01_0.MI_SFE_L4_A1_CornerExL_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExL_01_1.MI_SFE_L4_A1_CornerExL_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExL_01_2.MI_SFE_L4_A1_CornerExL_01_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L4_A1_CornerExR_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerExR_01_N1",
+   "min": [
+    -18.780427932739258,
+    0.38542354106903076,
+    0.0
+   ],
+   "max": [
+    0.0,
+    150.00001525878906,
+    600.0135498046875
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExR_01_0.MI_SFE_L4_A1_CornerExR_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExR_01_1.MI_SFE_L4_A1_CornerExR_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExR_01_2.MI_SFE_L4_A1_CornerExR_01_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L4_A1_CornerEx_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerEx_01_N1",
+   "min": [
+    -150.0,
+    0.0,
+    0.0
+   ],
+   "max": [
+    0.0,
+    150.00001525878906,
+    600.0135498046875
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerEx_01_0.MI_SFE_L4_A1_CornerEx_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerEx_01_1.MI_SFE_L4_A1_CornerEx_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerEx_01_2.MI_SFE_L4_A1_CornerEx_01_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L4_A1_CornerInL_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerInL_01_N1",
+   "min": [
+    -18.395004272460938,
+    -150.0,
+    -4.9591064453125e-05
+   ],
+   "max": [
+    0.43929776549339294,
+    18.395004272460938,
+    600.0135498046875
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInL_01_0.MI_SFE_L4_A1_CornerInL_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInL_01_1.MI_SFE_L4_A1_CornerInL_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInL_01_2.MI_SFE_L4_A1_CornerInL_01_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L4_A1_CornerInR_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerInR_01_N1",
+   "min": [
+    -18.395034790039062,
+    -18.395004272460938,
+    -4.9591064453125e-05
+   ],
+   "max": [
+    0.43929967284202576,
+    150.00001525878906,
+    600.0135498046875
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInR_01_0.MI_SFE_L4_A1_CornerInR_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInR_01_1.MI_SFE_L4_A1_CornerInR_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInR_01_2.MI_SFE_L4_A1_CornerInR_01_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L4_A1_CornerIn_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerIn_01_N1",
+   "min": [
+    -18.395034790039062,
+    -18.395004272460938,
+    -4.9591064453125e-05
+   ],
+   "max": [
+    150.0,
+    150.00001525878906,
+    600.0135498046875
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerIn_01_0.MI_SFE_L4_A1_CornerIn_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerIn_01_1.MI_SFE_L4_A1_CornerIn_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerIn_01_2.MI_SFE_L4_A1_CornerIn_01_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L4_A1_Wall_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_Wall_01_N1",
+   "min": [
+    -18.395002365112305,
+    -150.0,
+    -5.066999074188061e-05
+   ],
+   "max": [
+    -9.040915216473877e-08,
+    1.52587890625e-05,
+    600.0135498046875
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_Wall_01_0.MI_SFE_L4_A1_Wall_01_0",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_Wall_01_1.MI_SFE_L4_A1_Wall_01_1",
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_Wall_01_2.MI_SFE_L4_A1_Wall_01_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L5_A1_CornerExL_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerExL_01_N1",
+   "min": [
+    -75.00067901611328,
+    -75.00066375732422,
+    6.103515625e-05
+   ],
+   "max": [
+    4.57763671875e-05,
+    -0.6816336512565613,
+    124.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerExL_01_0.MI_SFE_L5_A1_CornerExL_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L5_A1_CornerExR_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerExR_01_N1",
+   "min": [
+    -75.00067138671875,
+    0.6816336512565613,
+    6.103515625e-05
+   ],
+   "max": [
+    4.9591064453125e-05,
+    75.00067138671875,
+    124.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerExR_01_0.MI_SFE_L5_A1_CornerExR_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L5_A1_CornerEx_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerEx_01_N1",
+   "min": [
+    -75.00067138671875,
+    -4.9591064453125e-05,
+    6.103515625e-05
+   ],
+   "max": [
+    4.9591064453125e-05,
+    75.00067138671875,
+    124.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerEx_01_0.MI_SFE_L5_A1_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L5_A1_CornerInL_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerInL_01_N1",
+   "min": [
+    -124.99993133544922,
+    -74.9996337890625,
+    6.103515625e-05
+   ],
+   "max": [
+    3.0517578125e-05,
+    124.99993133544922,
+    124.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerInL_01_0.MI_SFE_L5_A1_CornerInL_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L5_A1_CornerInR_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerInR_01_N1",
+   "min": [
+    -124.99993133544922,
+    -124.99993133544922,
+    6.103515625e-05
+   ],
+   "max": [
+    3.0517578125e-05,
+    74.9996337890625,
+    124.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerInR_01_0.MI_SFE_L5_A1_CornerInR_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L5_A1_CornerIn_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerIn_01_N1",
+   "min": [
+    -124.99993133544922,
+    -124.99993133544922,
+    6.103515625e-05
+   ],
+   "max": [
+    74.9996337890625,
+    74.9996337890625,
+    124.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerIn_01_0.MI_SFE_L5_A1_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_SFE_L5_A1_Wall_01_N1",
+   "path": "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_Wall_01_N1",
+   "min": [
+    -124.99992370605469,
+    -400.0,
+    6.103515625e-05
+   ],
+   "max": [
+    3.0517578125e-05,
+    0.0,
+    126.99993896484375
+   ],
+   "materials": [
+    "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_Wall_01_0.MI_SFE_L5_A1_Wall_01_0",
+    "/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial"
+   ],
+   "nanite": true
+  }
+ ],
+ "closure": [
+  "/Game/Building/Material/MI/Block/MI_Bldg_Block_Granite",
+  "/Game/Building/Material/MI/Block/MI_Bldg_Block_Granite_Black",
+  "/Game/Building/Material/MI/Block/MI_Bldg_Block_Limestone",
+  "/Game/Building/Material/MI/Block/MI_Bldg_Block_Limestone_Beige",
+  "/Game/Building/Material/MI/MI_Bldg_Base",
+  "/Game/Building/Material/MI/MI_Bldg_Block",
+  "/Game/Building/Material/MI/MI_Bldg_Glass",
+  "/Game/Building/Material/MI/MI_Bldg_Metal",
+  "/Game/Building/Material/MI/MI_Bldg_PaintedMetal",
+  "/Game/Building/Material/MI/MI_GrdDecal",
+  "/Game/Building/Material/MI/Metal/MI_Bldg_Metal_Brushed",
+  "/Game/Building/Material/MI/Paint/MI_Bldg_PaintedMetal_Black",
+  "/Game/Building/Material/M_Bldg_Base",
+  "/Game/Building/Material/M_Bldg_Block",
+  "/Game/Building/Material/M_DirtSkirt",
+  "/Game/Building/Material/MaterialFunction/BuildingPost",
+  "/Game/Building/Material/MaterialFunction/DamageEdge",
+  "/Game/Building/Material/MaterialFunction/GrimeBroad",
+  "/Game/Building/Material/MaterialFunction/GrimeCrevice",
+  "/Game/Building/Material/MaterialFunction/GrimeDrip",
+  "/Game/Building/Material/MaterialFunction/GrimeGround",
+  "/Game/Building/Material/MaterialFunction/MatLayerBlend_CRN",
+  "/Game/Building/Material/MaterialFunction/MatLayerBlend_CRNM_replaceColor",
+  "/Game/Building/Material/MaterialFunction/Ramp",
+  "/Game/Building/Material/MaterialFunction/VariationColorHSV",
+  "/Game/Building/Material/MaterialFunction/VariationNormRough",
+  "/Game/Building/Material/Window/InteriorCubemapCustomTransform",
+  "/Game/Building/Material/Window/M_Window",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_1x1x1_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_1x1x1_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_2x2x1_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_2x2x1_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x1_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x1_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x3_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x3_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_1x1x1_Rooms",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_2x2x1_Rooms",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_3x3x1_Rooms",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_3x3x3_Rooms",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1a1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1b1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1c",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom2x2x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom1x1x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom1x1x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom2x2x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom2x2x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom3x3x1a1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby1x1x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby1x1x1b1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x1b",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2c",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2d1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby3x3x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1c3",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1d2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1e3",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1c2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1f2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office3x3x1a2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office3x3x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1a3",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1b",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1c",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant2x2x2a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1c3",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket2x2x1a1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket2x2x2a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket3x3x1a2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/T_CubeTex_Black",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom3x3x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom3x3x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/black1x1x1_Capture",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/black1x1x1_Depth",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1d_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1d_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1e_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1e_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1f_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1f_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant2x2x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant2x2x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket2x2x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket2x2x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x3b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x3b_DepthFG",
+  "/Game/Building/Material/Window/Texture/SquareGradient_Linear",
+  "/Game/Building/Material/Window/Texture/T_BlindsAtlas_Col",
+  "/Game/Building/Material/Window/Texture/T_BlindsAtlas_Norm",
+  "/Game/Building/Material/Window/Texture/T_NoiseOffsets",
+  "/Game/Building/Material/Window/Texture/T_WinCorr_CHA",
+  "/Game/Building/Material/Window/Texture/Window_1K_Roughness",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerExL_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerExR_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerEx_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerEx_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerEx_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerInL_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerInR_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerIn_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_3",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_3",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_4",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_3",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_L_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_L_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_L_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_R_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_R_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_R_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_3",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_3",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_4",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Entrance_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Entrance_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Entrance_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Wall_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Wall_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Wall_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_CornerEx_01_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_CornerEx_01_N1_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_CornerEx_01_N1_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Trans_01_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Trans_01_N1_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Trans_01_N1_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_01_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_01_N1_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_01_N1_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_02_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_02_N1_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_02_N1_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_block_granite_black",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_block_limestone_beige",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_glass",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_metal_brushed",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_paintedmetal_black",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerExL_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerExR_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerEx_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerInL_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerInR_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerIn_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Entrance_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Entrance_02_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Entrance_03_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Wall_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Wall_02_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_CornerExL_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_CornerEx_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_CornerIn_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_Entrance_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_Entrance_02_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_Entrance_03_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_Wall_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_Wall_02_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_CornerInL_01_N2_decal",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_CornerInR_01_N2_decal",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_CornerIn_01_N2_decal",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_Entrance_01_N1_decal",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_Entrance_02_N1_decal",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_Entrance_03_N1_decal",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_Wall_01_N1_decal",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_Wall_02_N1_decal",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerExL_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerExR_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerEx_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerEx_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerEx_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerInL_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerInR_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerIn_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_3",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_3",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_3",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_L_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_L_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_L_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_R_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_R_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_R_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_3",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_B1_Entrance_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_B1_Entrance_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_B1_Entrance_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_CornerEx_01_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_CornerEx_01_N1_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_CornerEx_01_N1_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Trans_01_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Trans_01_N1_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Trans_01_N1_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Wall_01_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Wall_01_N1_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Wall_01_N1_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/M_Bldg_block_granite_black",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/M_Bldg_block_limestone_beige",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/M_Bldg_glass",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Material/M_Bldg_paintedmetal_black",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerExL_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerExR_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerEx_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerInL_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerInR_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerIn_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Entrance_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Entrance_02_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Entrance_03_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Wall_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Texture/T_SFE_L02_A_CornerEx_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Texture/T_SFE_L02_A_CornerIn_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L2_A/Texture/T_SFE_L02_A_Entrance_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerExL_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerExR_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerEx_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerInL_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerInR_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerIn_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_02_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_03_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_L_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_R_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Wall_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_B1_Entrance_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SM_BLDG_SFE_L3_A1_CornerEx_01_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SM_BLDG_SFE_L3_A1_CornerEx_02_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SM_BLDG_SFE_L3_A1_Trans_01_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SM_BLDG_SFE_L3_A1_Wall_01_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SM_BLDG_SFE_L3_A1_Wall_Overhang_01_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Material/M_Bldg_block_limestone_beige",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerExL_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerExR_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerEx_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerInL_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerInR_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerIn_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Entrance_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Entrance_02_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Entrance_03_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Wall_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_CornerEx_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_CornerIn_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_Entrance_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_Entrance_02_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_Entrance_03_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_Wall_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExL_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExL_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExL_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExR_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExR_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExR_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerEx_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerEx_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerEx_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInL_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInL_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInL_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInR_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInR_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInR_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerIn_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerIn_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerIn_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_Wall_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_Wall_01_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_Wall_01_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_CornerEx_02_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_CornerEx_02_N1_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_CornerEx_02_N1_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_Wall_01_N1_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_Wall_01_N1_1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_Wall_01_N1_2",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/M_Bldg_block_limestone_beige",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/M_Bldg_glass",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/M_Bldg_paint_black",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Material/M_Bldg_paintedmetal_black",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerExL_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerExR_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerEx_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerInL_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerInR_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerIn_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_Wall_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Texture/T_SFE_L04_A_CornerEx_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Texture/T_SFE_L04_A_CornerIn_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L4_A/Texture/T_SFE_L04_A_Wall_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerExL_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerExR_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerEx_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerInL_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerInR_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerIn_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_Wall_01_0",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Material/M_Bldg_block_limestone_beige",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerExL_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerExR_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerEx_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerInL_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerInR_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerIn_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_Wall_01_N1",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerExL_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerExR_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerEx_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerInL_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerInR_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerIn_01_packedA",
+  "/Game/Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_Wall_01_packedA",
+  "/Game/Building/SF/E/Material/MI_Bldg_Block_Granite_Black",
+  "/Game/Building/SF/E/Material/MI_Bldg_Block_Limestone",
+  "/Game/Building/SF/E/Material/MI_Bldg_Block_Limestone_Beige",
+  "/Game/Building/SF/E/Material/MI_Bldg_Glass",
+  "/Game/Building/SF/E/Material/MI_Bldg_Metal_Brushed",
+  "/Game/Building/SF/E/Material/MI_Bldg_PaintedMetal_Black",
+  "/Game/Building/Texture/Block/T_Block_N",
+  "/Game/Building/Texture/Block/T_Block_PackedB",
+  "/Game/Building/Texture/Gen/T_default_packedA",
+  "/Game/Building/Texture/Gradient/T_GradientColor_Limestone",
+  "/Game/Building/Texture/Gradient/T_Gradient_Mask",
+  "/Game/Building/Texture/Granite/T_Granite_AORMD",
+  "/Game/Building/Texture/Granite/T_Granite_Black_AORMD",
+  "/Game/Building/Texture/Granite/T_Granite_Black_C",
+  "/Game/Building/Texture/Granite/T_Granite_Black_N",
+  "/Game/Building/Texture/Granite/T_Granite_Grey_C",
+  "/Game/Building/Texture/Granite/T_Granite_N",
+  "/Game/Building/Texture/Grunge/T_BuildingDamageDetail_Mask",
+  "/Game/Building/Texture/Grunge/T_GrimeCrevice_Breakup_Mask",
+  "/Game/Building/Texture/Grunge/T_GrimeCrevice_Detail_Mask",
+  "/Game/Building/Texture/Grunge/T_GrimeDrip_MediumBreakup_Mask",
+  "/Game/Building/Texture/Grunge/T_LargeDrip_Mask",
+  "/Game/Building/Texture/Grunge/T_tile_packedGrime",
+  "/Game/Building/Texture/Grunge/tile_noiseDirt",
+  "/Game/Building/Texture/Grunge/tile_noiseDirtSmear_Mask",
+  "/Game/Building/Texture/Limestone/T_Limestone_AORMD",
+  "/Game/Building/Texture/Limestone/T_Limestone_Grey_C",
+  "/Game/Building/Texture/Limestone/T_Limestone_N",
+  "/Game/Building/Texture/MetalBrushed/T_MetalBrushed_AORMD",
+  "/Game/Building/Texture/MetalBrushed/T_MetalBrushed_C",
+  "/Game/Building/Texture/MetalBrushed/T_MetalBrushed_N",
+  "/Game/Building/Texture/PaintedMetal/T_PaintedMetal_AORMD",
+  "/Game/Building/Texture/PaintedMetal/T_PaintedMetal_C",
+  "/Game/Building/Texture/PaintedMetal/T_PaintedMetal_N",
+  "/Game/Material/MPC/MPC_GlobalTextureControls",
+  "/Game/Material/MaterialFunction/ColorCorrectHSV",
+  "/Game/Material/MaterialFunction/GradientRemap",
+  "/Game/Material/MaterialFunction/HSVtoRGB_v2",
+  "/Game/Material/MaterialFunction/MF_Blend_AddSub",
+  "/Game/Material/MaterialFunction/MF_HistogramScan",
+  "/Game/Material/MaterialFunction/MF_MaskEdge",
+  "/Game/Material/MaterialFunction/MF_NormalBlend_Whiteout",
+  "/Game/Material/MaterialFunction/MF_NormalStrength",
+  "/Game/Material/MaterialFunction/MF_TriplanarNormal_Whiteout_OffsetBias",
+  "/Game/Material/MaterialFunction/MF_WorldAlignedTexture_OffsetBias",
+  "/Game/Material/MaterialFunction/RGBtoHSV_v2",
+  "/Game/Textures/Default_3or4Channel_Linear_BC7_VT",
+  "/Game/Textures/Default_Color_sRGB_BC7_VT",
+  "/Game/Textures/FlatNormal_VT",
+  "/Game/Textures/Noise/T_Noises_Clouds_4k_",
+  "/Game/Textures/Noise/T_Noises_Grunge_4k_",
+  "/Game/Textures/SurfaceFeature/T_GrimeDrip_Breakup_Mask",
+  "/Game/Textures/SurfaceFeature/T_GrimeDrip_Detail_Mask",
+  "/Game/Textures/SurfaceFeature/T_Imperfection_vdepdipc_8K",
+  "/Game/Textures/T_UDIMCheckSmall",
+  "/Game/Textures/T_UVCheck"
+ ],
+ "files": [
+  "Building/Material/MI/Block/MI_Bldg_Block_Granite.uasset",
+  "Building/Material/MI/Block/MI_Bldg_Block_Granite_Black.uasset",
+  "Building/Material/MI/Block/MI_Bldg_Block_Limestone.uasset",
+  "Building/Material/MI/Block/MI_Bldg_Block_Limestone_Beige.uasset",
+  "Building/Material/MI/MI_Bldg_Base.uasset",
+  "Building/Material/MI/MI_Bldg_Block.uasset",
+  "Building/Material/MI/MI_Bldg_Glass.uasset",
+  "Building/Material/MI/MI_Bldg_Metal.uasset",
+  "Building/Material/MI/MI_Bldg_PaintedMetal.uasset",
+  "Building/Material/MI/MI_GrdDecal.uasset",
+  "Building/Material/MI/Metal/MI_Bldg_Metal_Brushed.uasset",
+  "Building/Material/MI/Paint/MI_Bldg_PaintedMetal_Black.uasset",
+  "Building/Material/M_Bldg_Base.uasset",
+  "Building/Material/M_Bldg_Block.uasset",
+  "Building/Material/M_DirtSkirt.uasset",
+  "Building/Material/MaterialFunction/BuildingPost.uasset",
+  "Building/Material/MaterialFunction/DamageEdge.uasset",
+  "Building/Material/MaterialFunction/GrimeBroad.uasset",
+  "Building/Material/MaterialFunction/GrimeCrevice.uasset",
+  "Building/Material/MaterialFunction/GrimeDrip.uasset",
+  "Building/Material/MaterialFunction/GrimeGround.uasset",
+  "Building/Material/MaterialFunction/MatLayerBlend_CRN.uasset",
+  "Building/Material/MaterialFunction/MatLayerBlend_CRNM_replaceColor.uasset",
+  "Building/Material/MaterialFunction/Ramp.uasset",
+  "Building/Material/MaterialFunction/VariationColorHSV.uasset",
+  "Building/Material/MaterialFunction/VariationNormRough.uasset",
+  "Building/Material/Window/InteriorCubemapCustomTransform.uasset",
+  "Building/Material/Window/M_Window.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_1x1x1_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_1x1x1_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_2x2x1_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_2x2x1_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x1_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x1_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x3_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x3_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_1x1x1_Rooms.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_2x2x1_Rooms.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_3x3x1_Rooms.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_3x3x3_Rooms.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1a1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1b1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1c.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom2x2x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom1x1x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom1x1x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom2x2x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom2x2x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom3x3x1a1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby1x1x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby1x1x1b1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x1b.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2c.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2d1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby3x3x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1c3.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1d2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1e3.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1c2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1f2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office3x3x1a2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office3x3x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1a3.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1b.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1c.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant2x2x2a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1c3.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket2x2x1a1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket2x2x2a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket3x3x1a2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/T_CubeTex_Black.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom3x3x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom3x3x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/black1x1x1_Capture.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/black1x1x1_Depth.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1d_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1d_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1e_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1e_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1f_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1f_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant2x2x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant2x2x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket2x2x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket2x2x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x3b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x3b_DepthFG.uasset",
+  "Building/Material/Window/Texture/SquareGradient_Linear.uasset",
+  "Building/Material/Window/Texture/T_BlindsAtlas_Col.uasset",
+  "Building/Material/Window/Texture/T_BlindsAtlas_Norm.uasset",
+  "Building/Material/Window/Texture/T_NoiseOffsets.uasset",
+  "Building/Material/Window/Texture/T_WinCorr_CHA.uasset",
+  "Building/Material/Window/Texture/Window_1K_Roughness.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerExL_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerExR_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerEx_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerEx_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerEx_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerInL_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerInR_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_CornerIn_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_01_3.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_3.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_02_4.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_03_3.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_L_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_L_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_L_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_R_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_R_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Entrance_R_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_01_3.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_3.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_A1_Wall_02_4.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Entrance_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Entrance_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Entrance_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Wall_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Wall_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SFE_L1_B1_Wall_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_CornerEx_01_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_CornerEx_01_N1_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_CornerEx_01_N1_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Trans_01_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Trans_01_N1_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Trans_01_N1_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_01_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_01_N1_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_01_N1_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_02_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_02_N1_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/MI/MI_SM_BLDG_SFE_L1_A1_Wall_02_N1_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_block_granite_black.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_block_limestone_beige.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_glass.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_metal_brushed.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Material/M_Bldg_paintedmetal_black.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerExL_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerExR_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerEx_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerInL_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerInR_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_CornerIn_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Entrance_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Entrance_02_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Entrance_03_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Wall_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Mesh/SM_BLDG_SFE_L1_A1_Wall_02_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_CornerExL_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_CornerEx_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_CornerIn_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_Entrance_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_Entrance_02_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_Entrance_03_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_Wall_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/Texture/T_SFE_L01_A_Wall_02_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_CornerInL_01_N2_decal.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_CornerInR_01_N2_decal.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_CornerIn_01_N2_decal.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_Entrance_01_N1_decal.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_Entrance_02_N1_decal.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_Entrance_03_N1_decal.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_Wall_01_N1_decal.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L1_A/decal/SM_BLDG_SFE_L1_A1_Wall_02_N1_decal.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerExL_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerExR_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerEx_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerEx_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerEx_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerInL_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerInR_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_CornerIn_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_01_3.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_02_3.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_03_3.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_L_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_L_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_L_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_R_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_R_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Entrance_R_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_A1_Wall_01_3.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_B1_Entrance_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_B1_Entrance_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SFE_L2_B1_Entrance_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_CornerEx_01_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_CornerEx_01_N1_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_CornerEx_01_N1_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Trans_01_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Trans_01_N1_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Trans_01_N1_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Wall_01_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Wall_01_N1_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/MI/MI_SM_BLDG_SFE_L2_A1_Wall_01_N1_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/M_Bldg_block_granite_black.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/M_Bldg_block_limestone_beige.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/M_Bldg_glass.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Material/M_Bldg_paintedmetal_black.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerExL_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerExR_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerEx_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerInL_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerInR_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_CornerIn_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Entrance_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Entrance_02_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Entrance_03_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Mesh/SM_BLDG_SFE_L2_A1_Wall_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Texture/T_SFE_L02_A_CornerEx_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Texture/T_SFE_L02_A_CornerIn_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L2_A/Texture/T_SFE_L02_A_Entrance_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerExL_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerExR_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerEx_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerInL_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerInR_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_CornerIn_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_02_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_03_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_L_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Entrance_R_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_A1_Wall_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SFE_L3_B1_Entrance_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SM_BLDG_SFE_L3_A1_CornerEx_01_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SM_BLDG_SFE_L3_A1_CornerEx_02_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SM_BLDG_SFE_L3_A1_Trans_01_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SM_BLDG_SFE_L3_A1_Wall_01_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/MI/MI_SM_BLDG_SFE_L3_A1_Wall_Overhang_01_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Material/M_Bldg_block_limestone_beige.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerExL_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerExR_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerEx_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerInL_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerInR_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_CornerIn_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Entrance_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Entrance_02_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Entrance_03_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Mesh/SM_BLDG_SFE_L3_A1_Wall_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_CornerEx_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_CornerIn_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_Entrance_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_Entrance_02_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_Entrance_03_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L3_A/Texture/T_SFE_L03_A_Wall_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExL_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExL_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExL_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExR_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExR_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerExR_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerEx_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerEx_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerEx_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInL_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInL_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInL_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInR_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInR_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerInR_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerIn_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerIn_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_CornerIn_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_Wall_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_Wall_01_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SFE_L4_A1_Wall_01_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_CornerEx_02_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_CornerEx_02_N1_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_CornerEx_02_N1_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_Wall_01_N1_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_Wall_01_N1_1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/MI/MI_SM_BLDG_SFE_L4_A1_Wall_01_N1_2.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/M_Bldg_block_limestone_beige.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/M_Bldg_glass.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/M_Bldg_paint_black.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Material/M_Bldg_paintedmetal_black.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerExL_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerExR_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerEx_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerInL_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerInR_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_CornerIn_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Mesh/SM_BLDG_SFE_L4_A1_Wall_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Texture/T_SFE_L04_A_CornerEx_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Texture/T_SFE_L04_A_CornerIn_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L4_A/Texture/T_SFE_L04_A_Wall_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerExL_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerExR_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerEx_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerInL_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerInR_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_CornerIn_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Material/MI/MI_SFE_L5_A1_Wall_01_0.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Material/M_Bldg_block_limestone_beige.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerExL_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerExR_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerEx_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerInL_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerInR_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_CornerIn_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Mesh/SM_BLDG_SFE_L5_A1_Wall_01_N1.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerExL_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerExR_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerEx_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerInL_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerInR_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_CornerIn_01_packedA.uasset",
+  "Building/SF/E/Kit_Bldg_SFE_L5_A/Texture/T_SFE_L05_A_Wall_01_packedA.uasset",
+  "Building/SF/E/Material/MI_Bldg_Block_Granite_Black.uasset",
+  "Building/SF/E/Material/MI_Bldg_Block_Limestone.uasset",
+  "Building/SF/E/Material/MI_Bldg_Block_Limestone_Beige.uasset",
+  "Building/SF/E/Material/MI_Bldg_Glass.uasset",
+  "Building/SF/E/Material/MI_Bldg_Metal_Brushed.uasset",
+  "Building/SF/E/Material/MI_Bldg_PaintedMetal_Black.uasset",
+  "Building/Texture/Block/T_Block_N.uasset",
+  "Building/Texture/Block/T_Block_PackedB.uasset",
+  "Building/Texture/Gen/T_default_packedA.uasset",
+  "Building/Texture/Gradient/T_GradientColor_Limestone.uasset",
+  "Building/Texture/Gradient/T_Gradient_Mask.uasset",
+  "Building/Texture/Granite/T_Granite_AORMD.uasset",
+  "Building/Texture/Granite/T_Granite_Black_AORMD.uasset",
+  "Building/Texture/Granite/T_Granite_Black_C.uasset",
+  "Building/Texture/Granite/T_Granite_Black_N.uasset",
+  "Building/Texture/Granite/T_Granite_Grey_C.uasset",
+  "Building/Texture/Granite/T_Granite_N.uasset",
+  "Building/Texture/Grunge/T_BuildingDamageDetail_Mask.uasset",
+  "Building/Texture/Grunge/T_GrimeCrevice_Breakup_Mask.uasset",
+  "Building/Texture/Grunge/T_GrimeCrevice_Detail_Mask.uasset",
+  "Building/Texture/Grunge/T_GrimeDrip_MediumBreakup_Mask.uasset",
+  "Building/Texture/Grunge/T_LargeDrip_Mask.uasset",
+  "Building/Texture/Grunge/T_tile_packedGrime.uasset",
+  "Building/Texture/Grunge/tile_noiseDirt.uasset",
+  "Building/Texture/Grunge/tile_noiseDirtSmear_Mask.uasset",
+  "Building/Texture/Limestone/T_Limestone_AORMD.uasset",
+  "Building/Texture/Limestone/T_Limestone_Grey_C.uasset",
+  "Building/Texture/Limestone/T_Limestone_N.uasset",
+  "Building/Texture/MetalBrushed/T_MetalBrushed_AORMD.uasset",
+  "Building/Texture/MetalBrushed/T_MetalBrushed_C.uasset",
+  "Building/Texture/MetalBrushed/T_MetalBrushed_N.uasset",
+  "Building/Texture/PaintedMetal/T_PaintedMetal_AORMD.uasset",
+  "Building/Texture/PaintedMetal/T_PaintedMetal_C.uasset",
+  "Building/Texture/PaintedMetal/T_PaintedMetal_N.uasset",
+  "Material/MPC/MPC_GlobalTextureControls.uasset",
+  "Material/MaterialFunction/ColorCorrectHSV.uasset",
+  "Material/MaterialFunction/GradientRemap.uasset",
+  "Material/MaterialFunction/HSVtoRGB_v2.uasset",
+  "Material/MaterialFunction/MF_Blend_AddSub.uasset",
+  "Material/MaterialFunction/MF_HistogramScan.uasset",
+  "Material/MaterialFunction/MF_MaskEdge.uasset",
+  "Material/MaterialFunction/MF_NormalBlend_Whiteout.uasset",
+  "Material/MaterialFunction/MF_NormalStrength.uasset",
+  "Material/MaterialFunction/MF_TriplanarNormal_Whiteout_OffsetBias.uasset",
+  "Material/MaterialFunction/MF_WorldAlignedTexture_OffsetBias.uasset",
+  "Material/MaterialFunction/RGBtoHSV_v2.uasset",
+  "Textures/Default_3or4Channel_Linear_BC7_VT.uasset",
+  "Textures/Default_Color_sRGB_BC7_VT.uasset",
+  "Textures/FlatNormal_VT.uasset",
+  "Textures/Noise/T_Noises_Clouds_4k_.uasset",
+  "Textures/Noise/T_Noises_Grunge_4k_.uasset",
+  "Textures/SurfaceFeature/T_GrimeDrip_Breakup_Mask.uasset",
+  "Textures/SurfaceFeature/T_GrimeDrip_Detail_Mask.uasset",
+  "Textures/SurfaceFeature/T_Imperfection_vdepdipc_8K.uasset",
+  "Textures/T_UDIMCheckSmall.uasset",
+  "Textures/T_UVCheck.uasset"
+ ],
+ "bytes": 828344852
+}

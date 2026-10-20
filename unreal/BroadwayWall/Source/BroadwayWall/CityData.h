@@ -24,6 +24,9 @@ struct FBWVolume
 	bool bFrame = false, bPlayer = false;
 	/** Walls only, no roof (site hoarding). */
 	bool bOpen = false;
+	/** Phase 4 set-pieces: opened in the last three months (bunting); a lender has a workout file open (barricade). */
+	bool bFresh = false;
+	int32 Distress = 0;
 	TArray<FVector2D> Ring;
 };
 
@@ -49,5 +52,7 @@ struct FBWCity
 
 	/** Parse a bw-city/1 file. Returns false (and logs why) on failure. */
 	bool Load(const FString& Path);
+	/** The same, from a document already in memory (the game sends its city over the bridge). */
+	bool LoadText(const FString& Text, const FString& Label);
 	const FBWParcel* FindParcel(const FString& Bbl) const;
 };

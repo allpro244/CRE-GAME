@@ -17,6 +17,8 @@ import { bootMenu, useStore } from "@/state/store";
 import AtRiskBanner from "@/ui/AtRiskBanner";
 import CardQueue from "@/ui/CardQueue";
 import MapBoundary from "@/ui/MapBoundary";
+import UnrealSurface from "@/ui/UnrealSurface";
+import { UNREAL_HOST, startUnrealHost } from "@/state/unrealHost";
 
 export default function App() {
   const loadError = useStore((s) => s.loadError);
@@ -53,6 +55,7 @@ export default function App() {
   });
   useEffect(() => {
     void bootMenu();
+    startUnrealHost();
   }, []);
   // RightPanel (and its keybindings) unmount in photo frame — keep P/Esc here.
   useEffect(() => {
@@ -70,7 +73,7 @@ export default function App() {
   }, [photoFrame]);
   return (
     <div className={"app" + (photoFrame ? " photo-frame" : "")}>
-      <MapBoundary><MapView /></MapBoundary>
+      {UNREAL_HOST ? <UnrealSurface /> : <MapBoundary><MapView /></MapBoundary>}
       {playing && !photoFrame && <TopBar />}
       {playing && !photoFrame && <MapRail />}
       {playing && !photoFrame && <MapControls />}

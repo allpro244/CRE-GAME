@@ -33,6 +33,11 @@ bool FBWCity::Load(const FString& Path)
 		UE_LOG(LogBWCity, Error, TEXT("cannot read %s"), *Path);
 		return false;
 	}
+	return LoadText(Text, Path);
+}
+
+bool FBWCity::LoadText(const FString& Text, const FString& Path)
+{
 	TSharedPtr<FJsonObject> Root;
 	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Root) || !Root.IsValid())
 	{

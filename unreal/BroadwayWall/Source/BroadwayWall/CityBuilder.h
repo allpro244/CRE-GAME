@@ -23,6 +23,8 @@ public:
 
 	/** Load a bw-city/1 file and build it. */
 	bool BuildFromFile(const FString& Path);
+	/** Build from a bw-city/1 document in memory. */
+	bool BuildFromText(const FString& Text);
 
 	/** The parcel a trace hit, if it hit a building or a lot. */
 	const FBWParcel* ParcelFromHit(const FHitResult& Hit) const;
@@ -65,4 +67,17 @@ private:
 	UPROPERTY()
 	TObjectPtr<UInstancedStaticMeshComponent> Cranes;
 	void AddCrane(const TArray<FVector2D>& Footprint, double TopCm, uint32 Hash);
+
+	/** City Sample props (trees, lamps, rooftop plant), instanced per mesh. Street props
+	 *  persist; roof props are rebuilt with the buildings they stand on. */
+	void AddProp(const TCHAR* Path, const FTransform& T, bool bRoof);
+	void ClearRoofProps();
+	void BuildStreetProps();
+	void DressRoof(const FBWVolume& V, uint32 Seed);
+	void ParkLot(const FBWVolume& V, uint32 Seed);
+	void StreetMoment(const FBWVolume& V);
+	UPROPERTY()
+	TMap<FString, TObjectPtr<UInstancedStaticMeshComponent>> StreetProps;
+	UPROPERTY()
+	TMap<FString, TObjectPtr<UInstancedStaticMeshComponent>> RoofProps;
 };

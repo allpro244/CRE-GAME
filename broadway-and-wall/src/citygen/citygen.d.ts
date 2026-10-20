@@ -75,3 +75,10 @@ declare module "@/citygen/platPreview.mjs" {
   /** The town as a plat drawing for the setup screen: an SVG string, `w` px wide. */
   export function platPreviewSVG(city: GeneratedCity, w?: number): { svg: string; lots: number; name: string };
 }
+
+declare module "@/citygen/unrealExport.mjs" {
+  import type { GeneratedCity } from "@/citygen/index.mjs";
+  /** The city as the Unreal build reads it ("bw-city/1"); see unrealExport.mjs. */
+  export function toBwCity(city: GeneratedCity): unknown;
+  export const GROUND_LAYERS: string[];
+}

@@ -2701,3 +2701,9 @@ html, body, #root { overflow-x: hidden; }
   .chart-grid.chart-masonry { grid-auto-rows: 4px; row-gap: 0; align-items: start; }
   .chart-grid.chart-masonry > .chart-cell { margin-bottom: 16px; }
 }
+
+/* INSIDE UNREAL (state/unrealHost.ts): no map of our own, the 3D city is drawn
+   by Unreal behind a transparent page; the surface sheet takes the pointer. */
+html.host-unreal, html.host-unreal body, html.host-unreal #root, html.host-unreal .app { background: transparent !important; }
+html.host-unreal .app::after { display: none; }
+.unreal-surface { position: absolute; inset: 0; z-index: 0; touch-action: none; }

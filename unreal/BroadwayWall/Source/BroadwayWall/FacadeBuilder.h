@@ -22,6 +22,8 @@ struct FBWKitModule
 	FString Path;
 	double Width = 400, Depth = 100, Y0 = -400, Y1 = 0;
 	UStaticMesh* Mesh = nullptr;
+	/** The piece's weathering layer (City Sample's "_decal" companion: grime, stains, wear), when it has one. */
+	UStaticMesh* Decal = nullptr;
 };
 
 struct FBWKitBand

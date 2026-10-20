@@ -9,10 +9,13 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/Engine.h"
 #include "Engine/ExponentialHeightFog.h"
+#include "Engine/PostProcessVolume.h"
+#include "Components/VolumetricCloudComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Engine/Font.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/SkyLight.h"
+#include "Engine/TextureCube.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Framework/Application/SlateApplication.h"
 #include "ImageCore.h"
@@ -26,10 +29,13 @@
 #include "ContentStreaming.h"
 #if WITH_EDITOR
 #include "ShaderCompiler.h"
+#include "AssetCompilingManager.h"
 #endif
 #include "IWebSocket.h"
 #include "WebSocketsModule.h"
 #include "RenderView.h"
+#include "PlayHost.h"
+#include "SWebBrowser.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -49,16 +55,40 @@ ABWCameraPawn::ABWCameraPawn()
 void ABWCameraPawn::Tick(float Dt)
 {
 	Super::Tick(Dt);
+	if (Mode == EMode::Street)
+	{
+		// a pedestrian: eye height on the ground plane, looking where they like
+		Pitch = FMath::Clamp(Pitch, -60.0, 60.0);
+		const FRotator Rot(Pitch, Yaw, 0);
+		SetActorLocationAndRotation(FVector(Focus.X, Focus.Y, 170), Rot);
+		return;
+	}
+	if (Mode == EMode::Drone)
+	{
+		// a slow helicopter circle, drifting in and out over the focus
+		DroneT += Dt;
+		Yaw += 3.0 * Dt;
+		Pitch = -18 - 6 * FMath::Sin(DroneT * 0.07);
+	}
 	Pitch = FMath::Clamp(Pitch, -89.0, -8.0);
 	Distance = FMath::Clamp(Distance, MinDistance, MaxDistance);
 	const FRotator Rot(Pitch, Yaw, 0);
 	SetActorLocationAndRotation(Focus - Rot.Vector() * Distance, Rot);
 }
 
+void ABWCameraPawn::SetMode(EMode M)
+{
+	if (M == Mode) return;
+	if (M == EMode::Street) { Focus = Focus - FRotator(0, Yaw, 0).Vector() * 3000; Pitch = 4; } // step back from what you were looking at
+	if (M == EMode::Drone) { Distance = FMath::Max(Distance, 60000.0); DroneT = 0; }
+	if (M == EMode::Strategy && Mode == EMode::Street) { Pitch = -40; Distance = 30000; }
+	Mode = M;
+}
+
 void ABWCameraPawn::Pan(const FVector2D& Dir, double Dt)
 {
-	// faster when high up: a screen's width a second-ish
-	const double Speed = Distance * 0.9;
+	// faster when high up: a screen's width a second-ish; a brisk walk at street level
+	const double Speed = Mode == EMode::Street ? 450.0 : Distance * 0.9;
 	const FRotator Flat(0, Yaw, 0);
 	Focus += (Flat.Vector() * Dir.Y + FRotationMatrix(Flat).GetUnitAxis(EAxis::Y) * Dir.X) * Speed * Dt;
 }
@@ -89,14 +119,18 @@ void ABWPlayerController::PlayerTick(float Dt)
 	ABWCameraPawn* Cam = Cast<ABWCameraPawn>(GetPawn());
 	if (!Cam) return;
 
+	auto Down = [this](const FKey& K, const TCHAR* Code) { return IsInputKeyDown(K) || PageKeys.Contains(Code); };
 	FVector2D Dir(0, 0);
-	if (IsInputKeyDown(EKeys::W) || IsInputKeyDown(EKeys::Up)) Dir.Y += 1;
-	if (IsInputKeyDown(EKeys::S) || IsInputKeyDown(EKeys::Down)) Dir.Y -= 1;
-	if (IsInputKeyDown(EKeys::D) || IsInputKeyDown(EKeys::Right)) Dir.X += 1;
-	if (IsInputKeyDown(EKeys::A) || IsInputKeyDown(EKeys::Left)) Dir.X -= 1;
+	if (Down(EKeys::W, TEXT("KeyW")) || IsInputKeyDown(EKeys::Up)) Dir.Y += 1;
+	if (Down(EKeys::S, TEXT("KeyS")) || IsInputKeyDown(EKeys::Down)) Dir.Y -= 1;
+	if (Down(EKeys::D, TEXT("KeyD")) || IsInputKeyDown(EKeys::Right)) Dir.X += 1;
+	if (Down(EKeys::A, TEXT("KeyA")) || IsInputKeyDown(EKeys::Left)) Dir.X -= 1;
 	if (!Dir.IsZero()) Cam->Pan(Dir.GetSafeNormal(), Dt);
-	if (IsInputKeyDown(EKeys::Q)) Cam->Yaw -= 70 * Dt;
-	if (IsInputKeyDown(EKeys::E)) Cam->Yaw += 70 * Dt;
+	if (WasInputKeyJustPressed(EKeys::One)) Cam->SetMode(ABWCameraPawn::EMode::Strategy);
+	if (WasInputKeyJustPressed(EKeys::Two)) Cam->SetMode(ABWCameraPawn::EMode::Drone);
+	if (WasInputKeyJustPressed(EKeys::Three)) Cam->SetMode(ABWCameraPawn::EMode::Street);
+	if (Down(EKeys::Q, TEXT("KeyQ"))) Cam->Yaw -= 70 * Dt;
+	if (Down(EKeys::E, TEXT("KeyE"))) Cam->Yaw += 70 * Dt;
 	if (WasInputKeyJustPressed(EKeys::MouseScrollUp)) Cam->Zoom(1);
 	if (WasInputKeyJustPressed(EKeys::MouseScrollDown)) Cam->Zoom(-1);
 
@@ -110,8 +144,40 @@ void ABWPlayerController::PlayerTick(float Dt)
 	if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
 	{
 		float X, Y;
-		if (GetMousePosition(X, Y)) Select(PickAt(FVector2D(X, Y)));
+		if (GetMousePosition(X, Y)) { Select(PickAt(FVector2D(X, Y))); if (OnPicked) OnPicked(Selected); }
 	}
+}
+
+void ABWPlayerController::PageInput(const FString& Type, double X, double Y, double Dx, double Dy, double Wheel, const FString& Key)
+{
+	ABWCameraPawn* Cam = Cast<ABWCameraPawn>(GetPawn());
+	if (!Cam) return;
+	int32 W = 1, H = 1;
+	GetViewportSize(W, H);
+	if (Type == TEXT("kd") && Key == TEXT("Digit1")) Cam->SetMode(ABWCameraPawn::EMode::Strategy);
+	else if (Type == TEXT("kd") && Key == TEXT("Digit2")) Cam->SetMode(ABWCameraPawn::EMode::Drone);
+	else if (Type == TEXT("kd") && Key == TEXT("Digit3")) Cam->SetMode(ABWCameraPawn::EMode::Street);
+	else if (Type == TEXT("kd")) PageKeys.Add(Key);
+	else if (Type == TEXT("ku")) PageKeys.Remove(Key);
+	else if (Type == TEXT("zoom")) Cam->Zoom(Wheel);
+	else if (Type == TEXT("orbit")) { Cam->Yaw += Dx * 0.25; Cam->Pitch += (Cam->Mode == ABWCameraPawn::EMode::Street ? -1 : -1) * Dy * 0.25; }
+	else if (Type == TEXT("pan"))
+	{
+		// drag the ground: a screen width of drag moves about a view width of city
+		const double PerPx = Cam->Distance * 1.1 / FMath::Max(W, 1);
+		const FRotator Flat(0, Cam->Yaw, 0);
+		Cam->Focus -= (FRotationMatrix(Flat).GetUnitAxis(EAxis::Y) * Dx - Flat.Vector() * Dy) * PerPx;
+	}
+	else if (Type == TEXT("click"))
+	{
+		Select(PickAt(FVector2D(X * W, Y * H)));
+		if (OnPicked) OnPicked(Selected);
+	}
+}
+
+void ABWPlayerController::ShowSelected(const FBWParcel* P)
+{
+	if (P != Selected) Select(P);
 }
 
 const FBWParcel* ABWPlayerController::PickAt(const FVector2D& ScreenPos)
@@ -198,7 +264,11 @@ ABWGameMode::ABWGameMode()
 void ABWGameMode::SpawnSky()
 {
 	UWorld* W = GetWorld();
-	ADirectionalLight* Sun = W->SpawnActor<ADirectionalLight>(FVector(0, 0, 100000), FRotator(-38, 125, 0));
+	// Lights are configured before they register (deferred spawn): mobility and
+	// real-time capture set on a registered component never reached the renderer,
+	// which is why the shade side of every street was black.
+	// Late afternoon from the west-southwest: long raking light, as in the reference skyline.
+	ADirectionalLight* Sun = W->SpawnActorDeferred<ADirectionalLight>(ADirectionalLight::StaticClass(), FTransform(FRotator(-24, 235, 0), FVector(0, 0, 100000)));
 	Sun->GetRootComponent()->SetMobility(EComponentMobility::Movable);
 	if (UDirectionalLightComponent* L = Cast<UDirectionalLightComponent>(Sun->GetLightComponent()))
 	{
@@ -206,18 +276,51 @@ void ABWGameMode::SpawnSky()
 		// 8 read as dusk, so auto-exposure lifted everything into fog-white
 		L->SetIntensity(75000.f);
 		L->SetLightSourceAngle(0.5357f);
+		L->SetUseTemperature(true);
+		L->SetTemperature(5200.f);
+		L->bCastCloudShadows = true;
 		L->SetAtmosphereSunLight(true);
 		L->SetDynamicShadowDistanceMovableLight(400000.f);
 	}
+	Sun->FinishSpawning(FTransform(FRotator(-24, 235, 0), FVector(0, 0, 100000)));
 	AActor* Atmos = W->SpawnActor<AActor>();
 	USkyAtmosphereComponent* SA = NewObject<USkyAtmosphereComponent>(Atmos, TEXT("SkyAtmosphere"));
 	Atmos->SetRootComponent(SA);
 	SA->RegisterComponent();
-	ASkyLight* Sky = W->SpawnActor<ASkyLight>();
-	Sky->GetLightComponent()->SetMobility(EComponentMobility::Movable);
-	Sky->GetLightComponent()->bRealTimeCapture = true;
-	Sky->GetLightComponent()->SetIntensity(1.f);
-	Sky->GetLightComponent()->RecaptureSky();
+	ASkyLight* Sky = W->SpawnActorDeferred<ASkyLight>(ASkyLight::StaticClass(), FTransform::Identity);
+	USkyLightComponent* SL = Sky->GetLightComponent();
+	SL->Mobility = EComponentMobility::Movable;
+	// The shade side of a street is lit by the sky. Real-time capture of the atmosphere
+	// contributed nothing in -game (measured: shade went fully black with Lumen off), so
+	// light from the engine's daylight cubemap, scaled to a bright sky's luminance
+	// (-SkyNits=N to tune).
+	double Nits = 8000;
+	FParse::Value(FCommandLine::Get(), TEXT("SkyNits="), Nits);
+	SL->SourceType = ESkyLightSourceType::SLS_SpecifiedCubemap;
+	SL->Cubemap = LoadObject<UTextureCube>(nullptr, TEXT("/Engine/MapTemplates/Sky/DaylightAmbientCubemap.DaylightAmbientCubemap"));
+	SL->Intensity = (float)Nits;
+	Sky->FinishSpawning(FTransform::Identity);
+	// clouds: the engine's volumetric layer, which also gives the sky light something to scatter
+	AActor* Clouds = W->SpawnActor<AActor>();
+	UVolumetricCloudComponent* VC = NewObject<UVolumetricCloudComponent>(Clouds, TEXT("Clouds"));
+	Clouds->SetRootComponent(VC);
+	if (UMaterialInterface* CM = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst"))) VC->SetMaterial(CM);
+	VC->SetLayerBottomAltitude(2.5f);
+	VC->SetLayerHeight(6.0f);
+	VC->RegisterComponent();
+	// A CAMERA IN SUNLIGHT. Auto-exposure free to roam metered the city like a
+	// dim room and blew the pavement out; a sunny-day exposure sits near EV100 14-15
+	// ("sunny 16"), so clamp it there and keep bloom to a hint.
+	if (APostProcessVolume* PP = W->SpawnActor<APostProcessVolume>())
+	{
+		PP->bUnbound = true;
+		FPostProcessSettings& S = PP->Settings;
+		S.bOverride_AutoExposureMinBrightness = S.bOverride_AutoExposureMaxBrightness = true;
+		S.AutoExposureMinBrightness = 13.0f;
+		S.AutoExposureMaxBrightness = 14.5f;
+		S.bOverride_BloomIntensity = true;
+		S.BloomIntensity = 0.2f;
+	}
 	// light haze, not a fog bank: a city-scale density (the default 0.02 is a pea-souper over 2 km)
 	if (AExponentialHeightFog* Fog = W->SpawnActor<AExponentialHeightFog>())
 	{
@@ -231,6 +334,8 @@ void ABWGameMode::BeginPlay()
 	Super::BeginPlay();
 	SpawnSky();
 
+	// play mode builds the town the player cuts, when the page sends it
+	if (FParse::Param(FCommandLine::Get(), TEXT("Play"))) { StartPlayHost(); return; }
 	FString Path;
 	if (!FParse::Value(FCommandLine::Get(), TEXT("City="), Path)) Path = FPaths::ProjectDir() / TEXT("Data/city-1-metro.json");
 	City = GetWorld()->SpawnActor<ACityBuilder>();
@@ -251,7 +356,8 @@ void ABWGameMode::BeginPlay()
 	FString Dir, SimUrl;
 	FParse::Value(FCommandLine::Get(), TEXT("Shots="), ShotDir);
 	FParse::Value(FCommandLine::Get(), TEXT("Years="), SimYears);
-	if (FParse::Value(FCommandLine::Get(), TEXT("Sim="), SimUrl)) StartSim(SimUrl);
+	if (FParse::Param(FCommandLine::Get(), TEXT("Play"))) StartPlayHost();
+	else if (FParse::Value(FCommandLine::Get(), TEXT("Sim="), SimUrl)) StartSim(SimUrl);
 	else if (!ShotDir.IsEmpty()) RunShots(ShotDir);
 }
 
@@ -364,7 +470,7 @@ void ABWGameMode::RunShots(const FString& Dir)
 	for (const FBWVolume& V : City->GetCity().Volumes)
 		if (V.Z1 > TallZ && V.Ring.Num()) { TallZ = V.Z1; FVector2D C(0, 0); for (const FVector2D& P : V.Ring) C += P; Tall = FVector(C / V.Ring.Num(), 0); }
 
-	struct FShot { FString Name; FVector Focus; double Yaw, Pitch, Dist; bool bPick; };
+	struct FShot { FString Name; FVector Focus; double Yaw, Pitch, Dist; bool bPick; int32 Mode = 0; };
 	TArray<FShot> Shots = {
 		{ TEXT("01-overview"), Mid, 0, -60, Span * 1.0, false },
 		{ TEXT("02-oblique"), Mid, 35, -28, Span * 0.75, false },
@@ -373,7 +479,11 @@ void ABWGameMode::RunShots(const FString& Dir)
 		{ TEXT("05-picked"), Tall, 300, -35, 60000, true },
 		{ TEXT("06-street"), Tall + FVector(-3500, 2500, 1200), 40, -6, 4500, false },
 		{ TEXT("07-facade"), Tall + FVector(-1500, 0, 2500), 20, -2, 2600, false },
+		{ TEXT("08-drone"), Mid, 20, -20, Span * 0.45, false, 2 },
+		{ TEXT("09-walk"), Tall + FVector(-5000, 1500, 0), 15, 6, 0, false, 3 },
 	};
+	FString Only;
+	if (FParse::Value(FCommandLine::Get(), TEXT("ShotOnly="), Only)) Shots.RemoveAll([&Only](const FShot& S) { return !S.Name.Contains(Only); });
 	IFileManager::Get().MakeDirectory(*Dir, true);
 	TSharedRef<int32> Step = MakeShared<int32>(0);
 	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
@@ -389,7 +499,10 @@ void ABWGameMode::RunShots(const FString& Dir)
 		const FShot& S = Shots[I];
 		if (Beat == 0)
 		{
+			Cam->SetMode(ABWCameraPawn::EMode::Strategy);
 			Cam->SetView(S.Focus, S.Yaw, S.Pitch, S.Dist);
+			if (S.Mode == 2) Cam->SetMode(ABWCameraPawn::EMode::Drone);
+			if (S.Mode == 3) { Cam->Mode = ABWCameraPawn::EMode::Street; Cam->Focus = S.Focus; Cam->Yaw = S.Yaw; Cam->Pitch = S.Pitch; }
 			PC->Select(nullptr);
 		}
 		else if (Beat == 1 && S.bPick)
@@ -406,6 +519,7 @@ void ABWGameMode::RunShots(const FString& Dir)
 			int32 Pending = IStreamingManager::Get().GetNumWantingResources();
 #if WITH_EDITOR
 			if (GShaderCompilingManager) Pending += GShaderCompilingManager->GetNumRemainingJobs();
+			Pending += FAssetCompilingManager::Get().GetNumRemainingAssets();
 #endif
 			if (Pending > 0)
 			{
@@ -418,4 +532,117 @@ void ABWGameMode::RunShots(const FString& Dir)
 		}
 		++*Step;
 	}, 2.0f, true, 15.0f); // 15 s first: textures and Nanite pages stream in before the first capture
+}
+
+// ---------------------------------------------------------------- play mode
+
+void ABWGameMode::StartPlayHost()
+{
+	// the committed playable is the game; Unreal serves it so it has a real origin (saves)
+	// packaged: Data/web next to the game; in the repo: the committed playable
+	FString Web = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("Data/web"));
+	if (!FPaths::FileExists(Web / TEXT("broadway-and-wall.html"))) Web = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../../broadway-and-wall/playable"));
+	FParse::Value(FCommandLine::Get(), TEXT("Web="), Web);
+	uint32 Port = 8770;
+	FParse::Value(FCommandLine::Get(), TEXT("WebPort="), Port);
+	FBWWebServer::Start(Web, Port);
+
+	Bridge = NewObject<UBWBridge>(this);
+	Bridge->Game = this;
+	TWeakObjectPtr<ABWGameMode> Self(this);
+	if (ABWPlayerController* PC = Cast<ABWPlayerController>(GetWorld()->GetFirstPlayerController()))
+	{
+		PC->OnPicked = [Self](const FBWParcel* P)
+		{
+			if (!Self.IsValid() || !Self->Browser.IsValid()) return;
+			Self->Browser->ExecuteJavascript(FString::Printf(TEXT("window.bwUnreal && window.bwUnreal.select('%s')"), P ? *P->Bbl : TEXT("")));
+		};
+	}
+	SAssignNew(Browser, SWebBrowser)
+		.InitialURL(FString::Printf(TEXT("http://127.0.0.1:%u/game/broadway-and-wall.html?host=unreal"), Port))
+		.ShowControls(false)
+		.ShowAddressBar(false)
+		.SupportsTransparency(true)
+		.BackgroundColor(FColor(0, 0, 0, 0))
+		.BrowserFrameRate(60)
+		.OnLoadCompleted_Lambda([Self]()
+		{
+			if (!Self.IsValid() || !Self->Browser.IsValid() || Self->Browser->GetUrl().StartsWith(TEXT("about:"))) return;
+			// a cross-site navigation lands in a renderer that never got the binding (Phase 0)
+			Self->Browser->UnbindUObject(TEXT("bridge"), Self->Bridge, true);
+			Self->Browser->BindUObject(TEXT("bridge"), Self->Bridge, true);
+			// -PlayScript=<file.js>: a scripted player, for testing the whole loop unattended
+			FString ScriptPath, Script;
+			if (FParse::Value(FCommandLine::Get(), TEXT("PlayScript="), ScriptPath) && FFileHelper::LoadFileToString(Script, *ScriptPath))
+				Self->Browser->ExecuteJavascript(Script);
+		})
+		.OnConsoleMessage_Lambda([](const FString& Msg, const FString&, int32, EWebBrowserConsoleLogSeverity)
+		{
+			UE_LOG(LogBW, Display, TEXT("PAGE: %s"), *Msg.Left(300));
+		});
+	Browser->BindUObject(TEXT("bridge"), Bridge, true);
+	GEngine->GameViewport->AddViewportWidgetContent(Browser.ToSharedRef(), 100);
+	FSlateApplication::Get().SetKeyboardFocus(Browser);
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) { PC->bShowMouseCursor = true; PC->SetInputMode(FInputModeUIOnly()); }
+	UE_LOG(LogBW, Display, TEXT("PLAY serving the game from %s"), *Web);
+	// -PlayShots=<dir>: a screenshot every 20 s (desks and city together), six of them, then quit
+	FString PlayShots;
+	if (FParse::Value(FCommandLine::Get(), TEXT("PlayShots="), PlayShots))
+	{
+		IFileManager::Get().MakeDirectory(*PlayShots, true);
+		TSharedRef<int32> N = MakeShared<int32>(0);
+		FTimerHandle H;
+		GetWorldTimerManager().SetTimer(H, [Self, PlayShots, N]()
+		{
+			if (!Self.IsValid()) return;
+			Self->SaveWindowShot(PlayShots / FString::Printf(TEXT("play-%02d.png"), ++*N));
+			if (*N >= 6) FPlatformMisc::RequestExit(false);
+		}, 20.f, true, 20.f);
+	}
+}
+
+void ABWGameMode::OnPageCity(const FString& Json)
+{
+	// a new town: throw the old one away and build the one the player cut
+	if (City) City->Destroy();
+	City = GetWorld()->SpawnActor<ACityBuilder>();
+	if (!City->BuildFromText(Json)) { UE_LOG(LogBW, Error, TEXT("PLAY the page sent a city that would not build")); return; }
+	ABWPlayerController* PC = Cast<ABWPlayerController>(GetWorld()->GetFirstPlayerController());
+	if (PC) PC->City = City;
+	if (ABWCameraPawn* Cam = PC ? Cast<ABWCameraPawn>(PC->GetPawn()) : nullptr)
+	{
+		const FBox2D B = City->GetCity().Bounds;
+		Cam->SetView(FVector(B.GetCenter(), 0), 30, -38, B.GetSize().GetMax() * 0.8);
+	}
+	UE_LOG(LogBW, Display, TEXT("PLAY city %s: %d lots"), *City->GetCity().Name, City->GetCity().Parcels.Num());
+}
+
+void ABWGameMode::OnPageView(const FString& Json)
+{
+	FBWRenderView View;
+	if (!City || !View.Parse(Json)) return;
+	City->ApplyView(View);
+	SimMonth = View.Month; SimYear = View.Year; SimPhase = View.Phase;
+	SimFrames = 0;
+	for (const FBWRenderLot& L : View.Lots) SimFrames += L.bConstruction ? 1 : 0;
+}
+
+void ABWGameMode::OnPageSelect(const FString& Bbl)
+{
+	ABWPlayerController* PC = Cast<ABWPlayerController>(GetWorld()->GetFirstPlayerController());
+	if (PC && City) PC->ShowSelected(Bbl.IsEmpty() ? nullptr : City->GetCity().FindParcel(Bbl));
+}
+
+void ABWGameMode::OnPageInput(const FString& Json)
+{
+	TSharedPtr<FJsonObject> O;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), O) || !O.IsValid()) return;
+	ABWPlayerController* PC = Cast<ABWPlayerController>(GetWorld()->GetFirstPlayerController());
+	if (!PC) return;
+	double X = 0, Y = 0, Dx = 0, Dy = 0, W = 0;
+	FString K;
+	O->TryGetNumberField(TEXT("x"), X); O->TryGetNumberField(TEXT("y"), Y);
+	O->TryGetNumberField(TEXT("dx"), Dx); O->TryGetNumberField(TEXT("dy"), Dy);
+	O->TryGetNumberField(TEXT("w"), W); O->TryGetStringField(TEXT("k"), K);
+	PC->PageInput(O->GetStringField(TEXT("t")), X, Y, Dx, Dy, W, K);
 }

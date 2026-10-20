@@ -9,11 +9,26 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "Misc/PackageName.h"
+#include "Misc/FileHelper.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBWBuilder, Log, All);
 
 namespace
 {
+	/** City Sample surface for a ground layer (migrated by unreal/tools/asset-closure.py "ground"), or null for a flat colour. */
+	UMaterialInterface* GroundMaterial(const FString& Layer)
+	{
+		const TCHAR* Path = nullptr;
+		if (Layer == TEXT("pavement") || Layer == TEXT("paveland") || Layer == TEXT("apron")) Path = TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst.M_Asphalt_Master_Inst");
+		else if (Layer == TEXT("sidewalk")) Path = TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS");
+		else if (Layer == TEXT("land")) Path = TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS");
+		else if (Layer == TEXT("esplanade")) Path = TEXT("/Game/Road/Material/MI/MI_Sidewalk_Plaza_A_WS.MI_Sidewalk_Plaza_A_WS");
+		else if (Layer == TEXT("beach")) Path = TEXT("/Game/Megascans/Surfaces/sand_sand_pjuuP0/M_sand.M_sand");
+		else if (Layer == TEXT("sea") || Layer == TEXT("pond") || Layer == TEXT("stream")) Path = TEXT("/Game/Prop/kit_ocean/Material/M_ocean.M_ocean");
+		return Path ? LoadObject<UMaterialInterface>(nullptr, Path) : nullptr;
+	}
+
 	/** Use colours, from the web build's economy page palette, lifted for daylight. */
 	FLinearColor UseColor(const FBWVolume& V)
 	{
@@ -37,7 +52,7 @@ namespace
 		if (Layer == TEXT("beach")) return Hex(0xD9C99A);
 		if (Layer == TEXT("marsh")) return Hex(0x7E8C5A);
 		if (Layer == TEXT("rock")) return Hex(0x7D7A72);
-		if (Layer == TEXT("park")) return Hex(0x6E9A52);
+		if (Layer == TEXT("park")) return Hex(0x6B6F4E); // winter lawn under bare trees, as in the reference plates
 		if (Layer == TEXT("pond") || Layer == TEXT("stream")) return Hex(0x3F6E8C);
 		if (Layer == TEXT("sidewalk") || Layer == TEXT("esplanade")) return Hex(0xC9C5BB);
 		if (Layer == TEXT("median")) return Hex(0x8FA070);
@@ -52,6 +67,8 @@ namespace
 		TArray<FVector> N;
 		TArray<FVector2D> UV;
 		TArray<FLinearColor> C;
+		/** World cm per UV unit (texture tile size). */
+		double UVScale = 1000.0;
 
 		int32 NumTris() const { return T.Num() / 3; }
 
@@ -66,7 +83,7 @@ namespace
 			{
 				V.Emplace(P.X, P.Y, Z);
 				N.Emplace(0, 0, 1);
-				UV.Emplace(P.X / 1000.0, P.Y / 1000.0);
+				UV.Emplace(P.X / UVScale, P.Y / UVScale);
 				C.Add(Col);
 			}
 			for (const UE::Geometry::FIndex3i& Tri : Tris) AddTri(Base + Tri.A, Base + Tri.B, Base + Tri.C, FVector::UpVector);
@@ -133,8 +150,15 @@ ACityBuilder::ACityBuilder()
 
 bool ACityBuilder::BuildFromFile(const FString& Path)
 {
+	FString Text;
+	if (!FFileHelper::LoadFileToString(Text, *Path)) { UE_LOG(LogBWBuilder, Error, TEXT("cannot read %s"), *Path); return false; }
+	return BuildFromText(Text);
+}
+
+bool ACityBuilder::BuildFromText(const FString& Text)
+{
 	const double T0 = FPlatformTime::Seconds();
-	if (!City.Load(Path)) return false;
+	if (!City.LoadText(Text, TEXT("bridge"))) return false;
 	const double T1 = FPlatformTime::Seconds();
 	// Phase 3 facades: on when the kit table and its migrated meshes are here (-NoFacades: blocks only)
 	// every Data/kit-*.json whose meshes are migrated; -Kits=CHF,SFC narrows it
@@ -158,6 +182,7 @@ bool ACityBuilder::BuildFromFile(const FString& Path)
 	Current = City.Volumes;
 	BuildVolumes();
 	BuildTrees();
+	BuildStreetProps();
 	UE_LOG(LogBWBuilder, Display, TEXT("built %s: parse %.2fs, meshes %.2fs, %d building chunks, %d facade pieces (%s)"),
 		*City.Name, T1 - T0, FPlatformTime::Seconds() - T1, Chunks.Num(), Facades ? Facades->Pieces() : 0, bFacades ? *FString::JoinBy(Kits, TEXT(","), [](const FBWKit& K) { return K.Name; }) : TEXT("blocks only"));
 	return true;
@@ -177,6 +202,7 @@ void ACityBuilder::BuildGround()
 	Sea.AddCap({ B.Min, FVector2D(B.Max.X, B.Min.Y), B.Max, FVector2D(B.Min.X, B.Max.Y) }, -120, FLinearColor(FColor(0x2E, 0x5A, 0x78)));
 	for (const TArray<FVector2D>& R : City.Water) Sea.AddCap(R, -80, FLinearColor(FColor(0x4A, 0x7C, 0x96)));
 	Sea.Emit(Ground, 0, false);
+	TArray<UMaterialInterface*> Mats = { GroundMaterial(TEXT("sea")) };
 
 	// land and its dressing, each layer 2 cm above the last so nothing fights
 	int32 Section = 1;
@@ -184,12 +210,14 @@ void ACityBuilder::BuildGround()
 	for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
 	{
 		FMeshBuf M;
+		// asphalt and paving tile at a few metres
+		M.UVScale = 400.0;
 		const FLinearColor Col = GroundColor(L.Key);
 		for (const TArray<FVector2D>& R : L.Value) M.AddCap(R, Z, Col);
-		if (M.V.Num()) M.Emit(Ground, Section++, false);
+		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(L.Key)); }
 		Z += 2;
 	}
-	for (int32 i = 0; i < Section; ++i) Ground->SetMaterial(i, VertexColorMaterial);
+	for (int32 i = 0; i < Section; ++i) Ground->SetMaterial(i, Mats.IsValidIndex(i) && Mats[i] ? Mats[i] : VertexColorMaterial.Get());
 }
 
 void ACityBuilder::BuildVolumes()
@@ -197,10 +225,13 @@ void ACityBuilder::BuildVolumes()
 	for (UProceduralMeshComponent* Old : Chunks) if (Old) Old->DestroyComponent();
 	Chunks.Reset();
 	if (Facades) Facades->Reset();
+	ClearRoofProps();
 	constexpr int32 PerChunk = 200;
 	for (int32 Start = 0; Start < Current.Num(); Start += PerChunk)
 	{
-		FMeshBuf M;
+		FMeshBuf M, Roofs[3], Lots;
+		Lots.UVScale = 400.0;
+		for (FMeshBuf& R : Roofs) R.UVScale = 300.0;
 		for (int32 i = Start; i < FMath::Min(Start + PerChunk, Current.Num()); ++i)
 		{
 			const FBWVolume& Vol = Current[i];
@@ -212,10 +243,20 @@ void ACityBuilder::BuildVolumes()
 				const int32 Pieces = Facades->Dress(*KitFor(Vol), Vol, GetTypeHash(Vol.Bbl) ^ uint32(Vol.Z0), Vol.Z0 < 50);
 				if (Pieces > 0)
 				{
+					if (Vol.bCrown || Vol.Z1 >= 0) DressRoof(Vol, GetTypeHash(Vol.Bbl));
+					if (Vol.Z0 < 50 && (Vol.bFresh || Vol.Distress >= 2)) StreetMoment(Vol);
 					M.AddWalls(BWInsetRing(Vol.Ring, 60), Vol.Z0, Vol.Z1, FLinearColor(FColor(0x55, 0x52, 0x4E)));
-					M.AddCap(Vol.Ring, Vol.Z1 - 5, Vol.bPlayer ? FLinearColor(FColor(0xE8, 0xB8, 0x3A)) : FLinearColor(FColor(0x6E, 0x6C, 0x68)));
+					if (Vol.bPlayer) M.AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor(FColor(0xE8, 0xB8, 0x3A)));
+					else Roofs[GetTypeHash(Vol.Bbl) % 3].AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor::White);
 					continue;
 				}
+			}
+			if (Vol.bVacant && !Vol.bFrame && Vol.Ring.Num() >= 3)
+			{
+				// AN EMPTY LOT DOWNTOWN IS A CAR PARK until somebody builds on it
+				Lots.AddCap(Vol.Ring, 8, FLinearColor::White);
+				ParkLot(Vol, GetTypeHash(Vol.Bbl));
+				continue;
 			}
 			const FLinearColor Col = UseColor(Vol);
 			// vacant lots: a 30 cm pad, so they read and can be clicked
@@ -232,6 +273,26 @@ void ACityBuilder::BuildVolumes()
 		Mesh->RegisterComponent();
 		M.Emit(Mesh, 0, true);
 		Mesh->SetMaterial(0, VertexColorMaterial);
+		if (Lots.V.Num())
+		{
+			const int32 LotSec = 4;
+			Lots.Emit(Mesh, LotSec, true);
+			UMaterialInterface* LotMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots"));
+			Mesh->SetMaterial(LotSec, LotMat ? LotMat : VertexColorMaterial.Get());
+		}
+		// roofs: City Sample's rooftop surfaces (bitumen, dirty concrete tiles, pebble-dash), one per building
+		static const TCHAR* RoofPaths[3] = {
+			TEXT("/Game/Environment/RoofTop/Material/MI/MI_Rooftop_BitumenRoofing.MI_Rooftop_BitumenRoofing"),
+			TEXT("/Game/Environment/RoofTop/Material/MI/MI_Rooftop_DirtyConcreteTiles.MI_Rooftop_DirtyConcreteTiles"),
+			TEXT("/Game/Environment/RoofTop/Material/MI/MI_Rooftop_PebbleDash.MI_Rooftop_PebbleDash") };
+		int32 Sec = 1;
+		for (int32 r = 0; r < 3; ++r)
+		{
+			if (!Roofs[r].V.Num()) continue;
+			Roofs[r].Emit(Mesh, Sec, true);
+			UMaterialInterface* Roof = LoadObject<UMaterialInterface>(nullptr, RoofPaths[r]);
+			Mesh->SetMaterial(Sec++, Roof ? Roof : VertexColorMaterial.Get());
+		}
 		Chunks.Add(Mesh);
 	}
 }
@@ -262,11 +323,12 @@ void ACityBuilder::BuildTrees()
 	if (Base)
 	{
 		UMaterialInstanceDynamic* Leaf = UMaterialInstanceDynamic::Create(Base, this);
-		Leaf->SetVectorParameterValue(TEXT("Color"), FLinearColor(FColor(0x4C, 0x7A, 0x3A)));
+		Leaf->SetVectorParameterValue(TEXT("Color"), FLinearColor(FColor(0x2C, 0x3E, 0x22))); // placeholder: dark, so it does not bounce green over the street
 		Trees->SetMaterial(0, Leaf);
 	}
 	Trees->RegisterComponent();
 	FRandomStream Rng(int32(City.Seed));
+	if (FPackageName::DoesPackageExist(TEXT("/Game/Prop/Kit_Tree_Alder/Mesh/Tree_Alder_A"))) return; // real trees: BuildStreetProps
 	for (const FVector2D& P : City.Trees)
 	{
 		const double D = Rng.FRandRange(6.0, 9.0); // crown diameter in m; the engine sphere is 1 m across
@@ -338,7 +400,8 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 	for (const FBWRenderLot& L : View.Lots) Over.Add(L.Bbl);
 	for (const TPair<FString, FString>& M : View.Merged) Over.Add(M.Key);
 	TSet<FString> Player;
-	for (const FBWRenderOwner& O : View.Owners) if (O.Owner == TEXT("player")) Player.Add(O.Bbl);
+	TMap<FString, int32> Distress;
+	for (const FBWRenderOwner& O : View.Owners) { if (O.Owner == TEXT("player")) Player.Add(O.Bbl); if (O.Distress) Distress.Add(O.Bbl, O.Distress); }
 
 	Current.Reset();
 	for (const FBWVolume& V : City.Volumes)
@@ -346,6 +409,7 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		{
 			FBWVolume& K = Current.Add_GetRef(V);
 			K.bPlayer = Player.Contains(V.Bbl) && !V.bCrown;
+			K.Distress = Distress.FindRef(V.Bbl);
 		}
 
 	int32 Frames = 0, Built = 0, Cleared = 0;
@@ -366,6 +430,8 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		V.Cls = L.Cls;
 		V.Year = L.Year;
 		V.bPlayer = Player.Contains(L.Bbl);
+		V.bFresh = L.bFresh;
+		V.Distress = Distress.FindRef(L.Bbl);
 		if (L.Cls == TEXT("land"))
 		{
 			V.bVacant = true;
@@ -431,18 +497,209 @@ void ACityBuilder::AddCrane(const TArray<FVector2D>& Footprint, double TopCm, ui
 
 const FBWKit* ACityBuilder::KitFor(const FBWVolume& V) const
 {
-	// THE STREET READS ITS AGE AND ITS USE. Glass curtain wall is a post-1960s
-	// office idea; walk-up brick and limestone are what pre-war housing is made
-	// of; shops want a storefront floor. Among the kits that fit, the lot picks
-	// (stable across months, so a building keeps its skin).
+	// THE STREET READS ITS AGE AND ITS USE. Most of a city's stock is old: pre-war
+	// masonry (limestone, multi-colour brick, arches, cornices) for anything put up
+	// before ~1945; plain post-war fronts to the mid-70s; curtain wall after.
+	// Among the kits that fit, the lot picks (stable, so a building keeps its skin).
 	auto Has = [this](const TCHAR* N) { return Kits.FindByPredicate([N](const FBWKit& K) { return K.Name == N; }); };
 	TArray<const FBWKit*> Fit;
 	auto Want = [&](std::initializer_list<const TCHAR*> Names) { for (const TCHAR* N : Names) if (const FBWKit* K = Has(N)) Fit.Add(K); };
-	const bool bModern = V.Year >= 1965, bTall = V.Z1 >= 4500;
-	if (V.Cls == TEXT("office")) { if (bModern || bTall) Want({ TEXT("SFC"), TEXT("SFE") }); else Want({ TEXT("CHH"), TEXT("CHF") }); }
-	else if (V.Cls == TEXT("multifamily")) { if (V.Year >= 1985) Want({ TEXT("SFD") }); else Want({ TEXT("NYH"), TEXT("CHF") }); }
-	else if (V.Cls == TEXT("retail")) Want({ TEXT("CHF"), TEXT("SFE") });
-	else Want({ TEXT("CHH") });
+	const int32 Y = V.Year;
+	const bool bTall = V.Z1 >= 4500;
+	if (Y < 1945)
+	{
+		if (V.Cls == TEXT("office")) { if (bTall) Want({ TEXT("CHA"), TEXT("CHC"), TEXT("NYG") }); else Want({ TEXT("CHC"), TEXT("CHG"), TEXT("NYG"), TEXT("CHA") }); }
+		else if (V.Cls == TEXT("multifamily")) Want({ TEXT("NYA"), TEXT("CHI"), TEXT("NYH"), TEXT("CHG") });
+		else if (V.Cls == TEXT("retail")) Want({ TEXT("CHI"), TEXT("CHG"), TEXT("NYA"), TEXT("CHF") });
+		else Want({ TEXT("CHG"), TEXT("CHH"), TEXT("CHI") });
+	}
+	else if (Y < 1975)
+	{
+		if (V.Cls == TEXT("multifamily")) Want({ TEXT("NYH"), TEXT("CHI"), TEXT("CHF") });
+		else if (V.Cls == TEXT("office")) Want({ TEXT("CHH"), TEXT("CHC"), TEXT("SFE") });
+		else Want({ TEXT("CHF"), TEXT("CHH") });
+	}
+	else
+	{
+		if (V.Cls == TEXT("office")) Want({ TEXT("SFC"), TEXT("SFE") });
+		else if (V.Cls == TEXT("multifamily")) Want({ TEXT("NYH"), TEXT("SFE"), TEXT("CHF") });
+		else Want({ TEXT("SFE"), TEXT("CHF") });
+	}
 	if (Fit.Num() == 0) for (const FBWKit& K : Kits) Fit.Add(&K);
 	return Fit[GetTypeHash(V.Bbl) % Fit.Num()];
+}
+
+// ---------------------------------------------------------------- props
+
+namespace
+{
+	bool InsideRing(const TArray<FVector2D>& R, const FVector2D& P)
+	{
+		bool In = false;
+		for (int32 i = 0, j = R.Num() - 1; i < R.Num(); j = i++)
+			if (((R[i].Y > P.Y) != (R[j].Y > P.Y)) && (P.X < (R[j].X - R[i].X) * (P.Y - R[i].Y) / (R[j].Y - R[i].Y) + R[i].X)) In = !In;
+		return In;
+	}
+	const TCHAR* const CarMeshes[] = {
+		TEXT("/Game/Vehicle/vehCar_vehicle02/Mesh/SM_vehCar_vehicle02.SM_vehCar_vehicle02"),
+		TEXT("/Game/Vehicle/vehCar_vehicle03/Mesh/SM_vehCar_vehicle03.SM_vehCar_vehicle03"),
+		TEXT("/Game/Vehicle/vehCar_vehicle05/Mesh/SM_vehCar_vehicle05.SM_vehCar_vehicle05"),
+		TEXT("/Game/Vehicle/vehCar_vehicle06/Mesh/SM_vehCar_vehicle06.SM_vehCar_vehicle06"),
+		TEXT("/Game/Vehicle/vehCar_vehicle07/Mesh/SM_vehCar_vehicle07.SM_vehCar_vehicle07"),
+		TEXT("/Game/Vehicle/vehCar_vehicle12/Mesh/SM_vehCar_vehicle12.SM_vehCar_vehicle12"),
+		TEXT("/Game/Vehicle/vehCar_vehicle13/Mesh/SM_vehCar_vehicle13.SM_vehCar_vehicle13"),
+		TEXT("/Game/Vehicle/vehVan_vehicle01/Mesh/SM_vehVan_vehicle01.SM_vehVan_vehicle01"),
+		TEXT("/Game/Vehicle/vehVan_vehicle09/Mesh/SM_vehVan_vehicle09.SM_vehVan_vehicle09") };
+	const TCHAR* const TreeMeshes[] = {
+		TEXT("/Game/Prop/Kit_Tree_Alder/Mesh/Tree_Alder_A.Tree_Alder_A"),
+		TEXT("/Game/Prop/Kit_Tree_Alder/Mesh/Tree_Alder_B.Tree_Alder_B"),
+		TEXT("/Game/Prop/Kit_Tree_Maple_Red/Mesh/Tree_Maple_Red_A.Tree_Maple_Red_A") };
+}
+
+void ACityBuilder::AddProp(const TCHAR* Path, const FTransform& T, bool bRoof)
+{
+	TMap<FString, TObjectPtr<UInstancedStaticMeshComponent>>& Set = bRoof ? RoofProps : StreetProps;
+	TObjectPtr<UInstancedStaticMeshComponent>* Found = Set.Find(Path);
+	UInstancedStaticMeshComponent* C = Found ? Found->Get() : nullptr;
+	if (!C)
+	{
+		UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, Path);
+		if (!Mesh) { Set.Add(Path, nullptr); return; }
+		C = NewObject<UInstancedStaticMeshComponent>(this);
+		C->SetupAttachment(RootComponent);
+		C->SetStaticMesh(Mesh);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->RegisterComponent();
+		Set.Add(Path, C);
+	}
+	C->AddInstance(T);
+}
+
+void ACityBuilder::ClearRoofProps()
+{
+	for (TPair<FString, TObjectPtr<UInstancedStaticMeshComponent>>& P : RoofProps) if (P.Value) P.Value->ClearInstances();
+}
+
+void ACityBuilder::BuildStreetProps()
+{
+	FRandomStream Rng(int32(City.Seed) ^ 0x51ee7);
+	// trees where the generator planted them, each in a cast-iron grate
+	for (const FVector2D& P : City.Trees)
+	{
+		const FRotator R(0, Rng.FRandRange(0, 360), 0);
+		const double S = Rng.FRandRange(0.85, 1.15);
+		AddProp(TreeMeshes[Rng.RandRange(0, 2)], FTransform(R, FVector(P, 4), FVector(S)), false);
+		AddProp(TEXT("/Game/Prop/Kit_TreeBase_A/Mesh/SM_TreeBase_SquareGrill_A.SM_TreeBase_SquareGrill_A"), FTransform(R, FVector(P, 3)), false);
+	}
+	// street lamps along every curb (the sidewalk's outer edge), ~25 m apart, facing the street
+	for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
+	{
+		if (L.Key != TEXT("sidewalk")) continue;
+		for (const TArray<FVector2D>& R : L.Value)
+		{
+			const int32 N = R.Num();
+			if (N < 3) continue;
+			double Area2 = 0;
+			for (int32 i = 0; i < N; ++i) Area2 += R[i].X * R[(i + 1) % N].Y - R[(i + 1) % N].X * R[i].Y;
+			for (int32 i = 0; i < N; ++i)
+			{
+				const FVector2D A = R[i], B = R[(i + 1) % N];
+				const double Len = (B - A).Size();
+				if (Len < 1500) continue;
+				const FVector2D Dir = (B - A) / Len;
+				const FVector2D Out = Area2 > 0 ? FVector2D(Dir.Y, -Dir.X) : FVector2D(-Dir.Y, Dir.X);
+				const int32 Count = FMath::Max(1, FMath::FloorToInt(Len / 2500));
+				for (int32 k = 0; k < Count; ++k)
+				{
+					const FVector2D P = A + Dir * (Len * (k + 0.5) / Count) - Out * 70; // 70 cm in from the kerb
+					const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Out.Y, Out.X));
+					AddProp(TEXT("/Game/Prop/Kit_StreetLamp_B/Mesh/SM_StreetLamp_B.SM_StreetLamp_B"), FTransform(FRotator(0, Yaw, 0), FVector(P, 15)), false);
+					if (Rng.FRand() < 0.18)
+						AddProp(TEXT("/Game/Prop/Kit_Trashcan_A/Mesh/SM_Trashcan_A_01.SM_Trashcan_A_01"), FTransform(FRotator(0, Yaw, 0), FVector(P + Dir * 180, 15)), false);
+				}
+				// cars at the kerb: the parking lane, a space every 6.5 m, about half taken,
+				// clear of the corners where the crosswalks are
+				const double Along = FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X));
+				for (double S = 900; S < Len - 900; S += 650)
+				{
+					if (Rng.FRand() > 0.55) continue;
+					const FVector2D P = A + Dir * S + Out * 230;
+					AddProp(CarMeshes[Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - 1)], FTransform(FRotator(0, Along + (Rng.FRand() < 0.5 ? 0 : 180), 0), FVector(P, 0)), false);
+				}
+			}
+		}
+	}
+}
+
+void ACityBuilder::DressRoof(const FBWVolume& V, uint32 Seed)
+{
+	// ROOFTOPS ARE MACHINE ROOMS. A stair bulkhead on almost every flat roof, a few
+	// condensers, an exhaust or two; the wooden water tank on the walk-ups and
+	// lofts of the era that needed one (pre-1950, mid-rise).
+	if (V.Ring.Num() < 3) return;
+	FBox2D Box(ForceInit);
+	for (const FVector2D& P : V.Ring) Box += P;
+	const FVector2D Sz = Box.GetSize();
+	if (Sz.X < 900 || Sz.Y < 900) return;
+	const TArray<FVector2D> In = BWInsetRing(V.Ring, 250);
+	FRandomStream Rng((int32)Seed);
+	auto Spot = [&](FVector2D& Out) { for (int32 t = 0; t < 12; ++t) { const FVector2D P(Rng.FRandRange(Box.Min.X, Box.Max.X), Rng.FRandRange(Box.Min.Y, Box.Max.Y)); if (InsideRing(In, P)) { Out = P; return true; } } return false; };
+	const double Z = V.Z1;
+	const FRotator Square(0, Rng.RandRange(0, 3) * 90.0 + FMath::RadiansToDegrees(FMath::Atan2(V.Ring[1].Y - V.Ring[0].Y, V.Ring[1].X - V.Ring[0].X)), 0);
+	FVector2D P;
+	if (Rng.FRand() < 0.85 && Spot(P)) AddProp(TEXT("/Game/Prop/Kit_roof_door_stair_RR/Mesh/SM_roof_door_stair_N1.SM_roof_door_stair_N1"), FTransform(Square, FVector(P, Z)), true);
+	const int32 Units = Rng.RandRange(1, FMath::Clamp(int32(Sz.X * Sz.Y / 4.0e6), 1, 6));
+	for (int32 i = 0; i < Units; ++i) if (Spot(P)) AddProp(TEXT("/Game/Prop/Kit_roof_AC_Unit_B/Mesh/SM_roof_AC_Unit_B_01_N1.SM_roof_AC_Unit_B_01_N1"), FTransform(Square, FVector(P, Z)), true);
+	if (Rng.FRand() < 0.6 && Spot(P)) AddProp(TEXT("/Game/Prop/Kit_roof_Exhaust_A/Mesh/SM_roof_RectExhaust_A_N1.SM_roof_RectExhaust_A_N1"), FTransform(Square, FVector(P, Z)), true);
+	for (int32 i = Rng.RandRange(0, 3); i > 0; --i) if (Spot(P)) AddProp(TEXT("/Game/Prop/Kit_Roof_Vent_RR/Mesh/SM_RooftopVent_N1.SM_RooftopVent_N1"), FTransform(Square, FVector(P, Z)), true);
+	const double Height = V.Z1 - V.Z0;
+	if (V.Year > 0 && V.Year < 1950 && Height > 1500 && Height < 9000 && Rng.FRand() < 0.4 && Spot(P))
+		AddProp(Rng.FRand() < 0.5 ? TEXT("/Game/Prop/Kit_roof_tank_a_RR/Mesh/SM_roof_tank_a_N1.SM_roof_tank_a_N1") : TEXT("/Game/Prop/Kit_roof_tank_B_RR/Mesh/SM_roof_tank_b.SM_roof_tank_b"), FTransform(Square, FVector(P, Z)), true);
+}
+
+void ACityBuilder::ParkLot(const FBWVolume& V, uint32 Seed)
+{
+	// rows of stalls along the lot's first edge, 2.6 m wide, 5.5 m deep, a 7 m aisle
+	// between facing rows; a weekday downtown lot runs about two thirds full
+	const TArray<FVector2D> In = BWInsetRing(V.Ring, 150);
+	if (In.Num() < 3) return;
+	const FVector2D Ax = (V.Ring[1] - V.Ring[0]).GetSafeNormal();
+	const FVector2D Ay(-Ax.Y, Ax.X);
+	double MinA = 1e18, MaxA = -1e18, MinB = 1e18, MaxB = -1e18;
+	for (const FVector2D& P : In) { MinA = FMath::Min(MinA, P | Ax); MaxA = FMath::Max(MaxA, P | Ax); MinB = FMath::Min(MinB, P | Ay); MaxB = FMath::Max(MaxB, P | Ay); }
+	FRandomStream Rng((int32)Seed);
+	const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Ay.Y, Ay.X));
+	int32 Row = 0;
+	for (double B = MinB + 275; B < MaxB - 275; B += (Row++ % 2 == 0) ? 550 : 1250)
+		for (double A = MinA + 130; A < MaxA - 130; A += 260)
+		{
+			const FVector2D P = Ax * A + Ay * B;
+			if (!InsideRing(In, P) || Rng.FRand() > 0.66) continue;
+			AddProp(CarMeshes[Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - 1)], FTransform(FRotator(0, Yaw + (Row % 2 ? 0 : 180), 0), FVector(P, 8)), true);
+		}
+}
+
+void ACityBuilder::StreetMoment(const FBWVolume& V)
+{
+	// OPENING DAY: banner poles at the corners for the first three months, the
+	// way a developer dresses a new building for its leasing push.
+	// A WORKOUT FILE: barricades at the door — the lender's people are inside.
+	const int32 N = V.Ring.Num();
+	if (N < 3) return;
+	FVector2D C(0, 0);
+	for (const FVector2D& P : V.Ring) C += P;
+	C /= N;
+	for (int32 i = 0; i < FMath::Min(N, 6); ++i)
+	{
+		const FVector2D P = V.Ring[i] + (V.Ring[i] - C).GetSafeNormal() * 180;
+		const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(P.Y - C.Y, P.X - C.X));
+		if (V.bFresh)
+		{
+			AddProp(TEXT("/Game/Prop/Kit_StreetLamp_A/Mesh/SM_StreetLamp_A_Pole_Large.SM_StreetLamp_A_Pole_Large"), FTransform(FRotator(0, Yaw, 0), FVector(P, 10)), true);
+			AddProp(i % 2 ? TEXT("/Game/Prop/Kit_StreetLamp_A/Mesh/SM_StreetLamp_A_Banner_2.SM_StreetLamp_A_Banner_2") : TEXT("/Game/Prop/Kit_StreetLamp_A/Mesh/SM_StreetLamp_A_Banner.SM_StreetLamp_A_Banner"),
+				FTransform(FRotator(0, Yaw, 0), FVector(P, 10)), true);
+		}
+		else if (i < 2)
+			AddProp(TEXT("/Game/Prop/Kit_Barricade_A/Mesh/SM_Barricade_A.SM_Barricade_A"), FTransform(FRotator(0, Yaw + 90, 0), FVector(P, 10)), true);
+	}
 }

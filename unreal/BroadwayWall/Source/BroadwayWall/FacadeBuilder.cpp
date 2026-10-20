@@ -5,6 +5,7 @@
 #include "Dom/JsonObject.h"
 #include "Engine/StaticMesh.h"
 #include "Misc/FileHelper.h"
+#include "Misc/PackageName.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 
@@ -19,6 +20,20 @@ static bool ReadModule(const TSharedPtr<FJsonObject>& O, FBWKitModule& M)
 	M.Y0 = O->GetNumberField(TEXT("y0"));
 	M.Y1 = O->GetNumberField(TEXT("y1"));
 	M.Mesh = LoadObject<UStaticMesh>(nullptr, *M.Path);
+	// the decal companion sits beside the mesh (.../Mesh/X_decal) or in a sibling
+	// folder (.../decal/X_decal); without it every wall reads factory-clean
+	{
+		const FString Pkg = FPackageName::ObjectPathToPackageName(M.Path);
+		const FString Name = FPackageName::GetShortName(Pkg);
+		const FString Dir = FPackageName::GetLongPackagePath(Pkg);
+		const FString Up = FPackageName::GetLongPackagePath(Dir);
+		for (const FString& Cand : { Dir / Name + TEXT("_decal"), Up / TEXT("decal") / Name + TEXT("_decal"), Dir / Name + TEXT("_Decal"), Up / TEXT("decal") / Name + TEXT("_Decal") })
+		{
+			if (!FPackageName::DoesPackageExist(Cand)) continue;
+			M.Decal = LoadObject<UStaticMesh>(nullptr, *(Cand + TEXT(".") + FPackageName::GetShortName(Cand)));
+			if (M.Decal) break;
+		}
+	}
 	if (!M.Mesh) UE_LOG(LogBWFacade, Warning, TEXT("kit mesh missing: %s (run unreal/tools/migrate-kit.mjs)"), *M.Path);
 	return M.Mesh != nullptr;
 }
@@ -43,7 +58,9 @@ bool FBWKit::Load(const FString& Path)
 		if (O->TryGetObjectField(TEXT("corner"), C)) B.bHasCorner = ReadModule(*C, B.Corner);
 	}
 	for (const FBWKitBand& B : Bands) if (B.bRepeat && B.Walls.Num()) Grid = B.Walls[0].Width;
-	UE_LOG(LogBWFacade, Display, TEXT("kit %s: %d bands, %.0f cm grid"), *Name, Bands.Num(), Grid);
+	int32 Decals = 0, Pieces = 0;
+	for (const FBWKitBand& B : Bands) for (const FBWKitModule& M : B.Walls) { ++Pieces; Decals += M.Decal ? 1 : 0; }
+	UE_LOG(LogBWFacade, Display, TEXT("kit %s: %d bands, %.0f cm grid, %d/%d wall pieces weathered"), *Name, Bands.Num(), Grid, Decals, Pieces);
 	return Bands.Num() > 0;
 }
 
@@ -83,7 +100,9 @@ void FBWFacadeBuilder::Put(const FBWKitModule& M, const FVector2D& A, const FVec
 	const double Origin = bFlip ? S + M.Y1 * SY : S - M.Y0 * SY;
 	const FVector2D P = A + D * Origin;
 	const FMatrix R = FRotationMatrix::MakeFromXY(X, Y);
-	Comp(M.Mesh)->AddInstance(FTransform(R.Rotator(), FVector(P, Z), FVector(1.0, SY, ScaleZ)));
+	const FTransform T(R.Rotator(), FVector(P, Z), FVector(1.0, SY, ScaleZ));
+	Comp(M.Mesh)->AddInstance(T);
+	if (M.Decal) Comp(M.Decal)->AddInstance(T);
 	++Placed;
 }
 
@@ -93,63 +112,63 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 	const int32 N = V.Ring.Num();
 	const double H = V.Z1 - V.Z0;
 	if (N < 3 || H < 400) return 0;
+	FRandomStream Rng((int32)Seed);
 
-	// ---- the vertical stack: fixed bands, plus the repeating one as often as it fits
-	TArray<const FBWKitBand*> Fixed;
-	const FBWKitBand* Rep = nullptr;
+	// ---- the vertical stack, in grammar order. Fixed bands once each; the
+	// repeating bands (some kits have two: lower and upper shafts) share the
+	// floors that are left, each stretched a little so the stack lands on the roof.
+	TArray<const FBWKitBand*> Order, Reps;
+	double FixedH = 0;
 	for (const FBWKitBand& B : Kit.Bands)
 	{
 		if (B.Height < 10 || B.Walls.Num() == 0) continue;           // the footing slot is a hairline
-		if (B.bRepeat) { Rep = &B; continue; }
 		if (!bGround && B.bGround) continue;                           // upper tiers have no shopfront floor
-		Fixed.Add(&B);
+		Order.Add(&B);
+		if (B.bRepeat) Reps.Add(&B); else FixedH += B.Height;
 	}
-	double FixedH = 0;
-	for (const FBWKitBand* B : Fixed) FixedH += B->Height;
-	struct FRow { const FBWKitBand* Band; double Z, ScaleZ; };
-	TArray<FRow> Rows;
-	if (Rep && H > FixedH)
+	if (Order.Num() == 0) return 0;
+	TMap<const FBWKitBand*, int32> Count;
+	double Squeeze = 1.0;
+	if (H > FixedH && Reps.Num())
 	{
-		const int32 Count = FMath::Max(0, FMath::RoundToInt((H - FixedH) / Rep->Height));
-		const double RepScale = Count > 0 ? (H - FixedH) / (Count * Rep->Height) : 1.0;
-		double Z = V.Z0;
-		// ground band(s) first (everything before the repeat in grammar order), then the repeat, then the top
-		bool bRepeatDone = false;
-		for (const FBWKitBand& B : Kit.Bands)
-		{
-			if (&B == Rep)
-			{
-				for (int32 i = 0; i < Count; ++i) { Rows.Add({ Rep, Z, RepScale }); Z += Rep->Height * RepScale; }
-				bRepeatDone = true;
-				continue;
-			}
-			if (!Fixed.Contains(&B)) continue;
-			Rows.Add({ &B, Z, 1.0 });
-			Z += B.Height;
-		}
-		if (Count == 0 && FixedH > 0) for (FRow& Row : Rows) Row.ScaleZ = H / FixedH; // squeeze the fixed bands to fit
+		double RepH = 0;
+		for (const FBWKitBand* B : Reps) RepH += B->Height;
+		const int32 Total = FMath::Max(0, FMath::RoundToInt((H - FixedH) / (RepH / Reps.Num())));
+		for (int32 i = 0; i < Reps.Num(); ++i) Count.Add(Reps[i], Total / Reps.Num() + (i < Total % Reps.Num() ? 1 : 0));
 	}
 	else
 	{
-		// shorter than the kit's fixed stack: the fixed bands, squeezed to the height
-		double Z = V.Z0;
-		const double S = FixedH > 0 ? H / FixedH : 1.0;
-		for (const FBWKitBand* B : Fixed) { Rows.Add({ B, Z, S }); Z += B->Height * S; }
+		// shorter than the fixed stack: drop the middle fixed bands until it fits, then squeeze
+		while (FixedH > H * 1.15 && Order.Num() > 2)
+		{
+			const int32 Mid = Order.Num() / 2;
+			if (!Order[Mid]->bRepeat) FixedH -= Order[Mid]->Height;
+			Order.RemoveAt(Mid);
+		}
+		for (const FBWKitBand* B : Reps) Count.Add(B, 0);
+	}
+	double StackH = 0;
+	for (const FBWKitBand* B : Order) StackH += B->bRepeat ? B->Height * Count.FindRef(B) : B->Height;
+	Squeeze = StackH > 0 ? H / StackH : 1.0;
+	struct FRow { const FBWKitBand* Band; double Z, ScaleZ; };
+	TArray<FRow> Rows;
+	double Z = V.Z0;
+	for (const FBWKitBand* B : Order)
+	{
+		const int32 Times = B->bRepeat ? Count.FindRef(B) : 1;
+		for (int32 i = 0; i < Times; ++i) { Rows.Add({ B, Z, Squeeze }); Z += B->Height * Squeeze; }
 	}
 	if (Rows.Num() == 0) return 0;
 
-	// ---- ring orientation: outward is right of the edge for a counter-clockwise ring
+	// ---- this building's design: a bay rhythm shared by every floor, so the
+	// windows stack, but a different rhythm (and different modules) per building
+	static const TArray<TArray<int32>> Rhythms = { {0}, {0, 1}, {0, 0, 1}, {0, 1, 0, 2}, {1, 0, 0, 1}, {0, 1, 1}, {2, 0, 1, 0} };
+	const TArray<int32>& Rhythm = Rhythms[Rng.RandRange(0, Rhythms.Num() - 1)];
+	const int32 DoorEvery = Rng.RandRange(3, 5);
+	TMap<const FBWKitBand*, TArray<const FBWKitModule*>> Palette;
+
 	double Area2 = 0;
 	for (int32 i = 0; i < N; ++i) Area2 += V.Ring[i].X * V.Ring[(i + 1) % N].Y - V.Ring[(i + 1) % N].X * V.Ring[i].Y;
-
-	// the longest edge of a ground floor gets the entrance
-	int32 Front = 0;
-	for (int32 i = 1; i < N; ++i) if ((V.Ring[(i + 1) % N] - V.Ring[i]).SizeSquared() > (V.Ring[(Front + 1) % N] - V.Ring[Front]).SizeSquared()) Front = i;
-
-	FRandomStream Rng((int32)Seed);
-	// one wall variant per band for the whole building, so it reads as one design
-	TMap<const FBWKitBand*, int32> Variant;
-	for (const FRow& Row : Rows) if (!Variant.Contains(Row.Band)) Variant.Add(Row.Band, Rng.RandRange(0, Row.Band->Walls.Num() - 1));
 
 	for (int32 i = 0; i < N; ++i)
 	{
@@ -158,7 +177,6 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 		if (Len < 150) continue;
 		const FVector2D D = (B - A) / Len;
 		const FVector2D Out = Area2 > 0 ? FVector2D(D.Y, -D.X) : FVector2D(-D.Y, D.X);
-		// convex corner at A? (the turn from the previous edge goes the ring's way)
 		const FVector2D Prev = V.Ring[(i + N - 1) % N];
 		const double Turn = FVector2D::CrossProduct(A - Prev, B - A);
 		const bool bConvex = (Area2 > 0) == (Turn > 0);
@@ -170,12 +188,26 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 		for (const FRow& Row : Rows)
 		{
 			const FBWKitBand& Band = *Row.Band;
+			// the modules that fit this bay with the least stretch, picked once per building
+			TArray<const FBWKitModule*>& Pal = Palette.FindOrAdd(&Band);
+			if (Pal.Num() == 0)
+			{
+				TArray<const FBWKitModule*> All;
+				for (const FBWKitModule& M : Band.Walls) All.Add(&M);
+				All.Sort([W](const FBWKitModule& X, const FBWKitModule& Y) { return FMath::Abs(X.Width - W) < FMath::Abs(Y.Width - W); });
+				const int32 Keep = FMath::Min(All.Num(), 4);
+				// shuffle among the best fits so neighbours of one kit still differ
+				for (int32 k = 0; k < Keep; ++k) Pal.Add(All[k]);
+				for (int32 k = Pal.Num() - 1; k > 0; --k) Pal.Swap(k, Rng.RandRange(0, k));
+			}
 			if (bConvex && Band.bHasCorner) Put(Band.Corner, A, D, Out, 0, Corner, Row.Z, Row.ScaleZ);
-			const FBWKitModule& Wall = Band.Walls[Variant[&Band]];
 			for (int32 k = 0; k < Mods; ++k)
 			{
-				const bool bDoor = bGround && i == Front && k == Mods / 2 && Band.Entrances.Num() > 0 && Band.bGround;
-				Put(bDoor ? Band.Entrances[0] : Wall, A, D, Out, Corner + k * W, W, Row.Z, Row.ScaleZ);
+				const FBWKitModule* M = Pal[Rhythm[k % Rhythm.Num()] % Pal.Num()];
+				// street floor: a door every few bays on every frontage, shopfronts between
+				if (Band.bGround && Band.Entrances.Num() && Mods > 1 && (k % DoorEvery) == DoorEvery / 2)
+					M = &Band.Entrances[(i + k) % Band.Entrances.Num()];
+				Put(*M, A, D, Out, Corner + k * W, W, Row.Z, Row.ScaleZ);
 			}
 		}
 	}

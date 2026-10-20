@@ -1,0 +1,3537 @@
+{
+ "kit": "NYG",
+ "root": "/Game/Building/NY/G",
+ "pieces": [
+  {
+   "name": "SM_BLDG_NYG_L017_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Column_01_N1",
+   "min": [
+    -126.30612182617188,
+    -175.00006103515625,
+    -2.4363398551940918e-05
+   ],
+   "max": [
+    39.47637939453125,
+    4.57763671875e-05,
+    182.0760498046875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_Column_01_0.MI_NYG_L017_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L017_A_Column_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Column_02_N1",
+   "min": [
+    -126.3061294555664,
+    -300.00006103515625,
+    -2.436340037093032e-05
+   ],
+   "max": [
+    55.94140625,
+    6.103515625e-05,
+    182.07696533203125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Material/MI_Bldg_Block_Limestone_Grey_Topper.MI_Bldg_Block_Limestone_Grey_Topper"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L017_A_Column_03_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Column_03_N1",
+   "min": [
+    -126.30612182617188,
+    -175.00006103515625,
+    -35.44305419921875
+   ],
+   "max": [
+    98.390625,
+    7.62939453125e-05,
+    209.54046630859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_Column_03_0.MI_NYG_L017_A_Column_03_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L017_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_CornerEx_01_N1",
+   "min": [
+    -200.0,
+    -39.255615234375,
+    -2.4184584617614746e-05
+   ],
+   "max": [
+    39.258056640625,
+    200.0,
+    182.1534423828125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Material/MI_Bldg_Block_Limestone_Grey_Topper.MI_Bldg_Block_Limestone_Grey_Topper"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L017_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_CornerIn_01_N1",
+   "min": [
+    -126.30615234375,
+    -126.33746337890625,
+    -2.4363398551940918e-05
+   ],
+   "max": [
+    200.000244140625,
+    200.00027465820312,
+    182.076416015625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Material/MI_Bldg_Block_Limestone_Grey_Topper.MI_Bldg_Block_Limestone_Grey_Topper"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L017_A_Wall_02_N3",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Wall_02_N3",
+   "min": [
+    -126.30612182617188,
+    -600.0,
+    -4.50421142578125
+   ],
+   "max": [
+    30.10095977783203,
+    0.0,
+    182.07598876953125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Material/MI_Bldg_Block_Limestone_Grey_Topper.MI_Bldg_Block_Limestone_Grey_Topper"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L017_A_Wall_04_N3",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Wall_04_N3",
+   "min": [
+    -126.3061294555664,
+    -925.0001220703125,
+    -4.73260498046875
+   ],
+   "max": [
+    30.07763671875,
+    0.0001220703125,
+    182.0770263671875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Material/MI_Bldg_Block_Limestone_Grey_Topper.MI_Bldg_Block_Limestone_Grey_Topper"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L01_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Column_01_N1",
+   "min": [
+    -199.010009765625,
+    -175.00897216796875,
+    6.103515625e-05
+   ],
+   "max": [
+    -21.72998046875,
+    -0.033599853515625,
+    624.9988403320312
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Column_01_0.MI_NYG_L01_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L01_A_Column_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Column_02_N1",
+   "min": [
+    -184.28857421875,
+    -300.0001220703125,
+    0.00012199999764561653
+   ],
+   "max": [
+    -5.04443359375,
+    0.0001220703125,
+    624.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Column_02_0.MI_NYG_L01_A_Column_02_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L01_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_CornerEx_01_N1",
+   "min": [
+    -200.0,
+    21.730224609375,
+    0.0
+   ],
+   "max": [
+    -21.730224609375,
+    200.001953125,
+    624.9996337890625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_CornerEx_01_0.MI_NYG_L01_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L01_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_CornerIn_01_N1",
+   "min": [
+    -258.2100524902344,
+    -159.17660522460938,
+    5.340576171875e-05
+   ],
+   "max": [
+    19.274810791015625,
+    118.23235321044922,
+    625.0025024414062
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_CornerIn_01_0.MI_NYG_L01_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L01_A_Entrance_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Entrance_01_N1",
+   "min": [
+    -513.580078125,
+    -800.0,
+    -0.000579833984375
+   ],
+   "max": [
+    32.22998046875,
+    -0.001953125,
+    1550.0
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_0.MI_NYG_L01_A_Entrance_01_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_1.MI_NYG_L01_A_Entrance_01_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_2.MI_NYG_L01_A_Entrance_01_2",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_3.MI_NYG_L01_A_Entrance_01_3",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_4.MI_NYG_L01_A_Entrance_01_4"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L01_A_Wall_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Wall_01_N1",
+   "min": [
+    -178.8857421875,
+    0.000244140625,
+    -6.103515625e-05
+   ],
+   "max": [
+    18.3203125,
+    600.190673828125,
+    0.0
+   ],
+   "materials": [
+    "/Game/Building/Material/MI/MI_GrdDecal.MI_GrdDecal"
+   ],
+   "nanite": false
+  },
+  {
+   "name": "SM_BLDG_NYG_L01_A_Wall_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Wall_01_N1",
+   "min": [
+    -200.98388671875,
+    -599.999755859375,
+    -0.0001220703125
+   ],
+   "max": [
+    -21.6796875,
+    6.103515625e-05,
+    625.00341796875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_0.MI_NYG_L01_A_Wall_01_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_1.MI_NYG_L01_A_Wall_01_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_2.MI_NYG_L01_A_Wall_01_2",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_3.MI_NYG_L01_A_Wall_01_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L01_A_Wall_03_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Wall_03_N1",
+   "min": [
+    -200.984130859375,
+    -924.999755859375,
+    -0.0001373291015625
+   ],
+   "max": [
+    -21.729248046875,
+    -0.00018310546875,
+    625.0033569335938
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_03_0.MI_NYG_L01_A_Wall_03_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_03_1.MI_NYG_L01_A_Wall_03_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_03_2.MI_NYG_L01_A_Wall_03_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L01_A_Wall_04_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Wall_04_N1",
+   "min": [
+    -200.984375,
+    -924.999755859375,
+    0.0
+   ],
+   "max": [
+    -21.6796875,
+    -0.00018310546875,
+    625.0034790039062
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_0.MI_NYG_L01_A_Wall_04_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_1.MI_NYG_L01_A_Wall_04_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_2.MI_NYG_L01_A_Wall_04_2",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_3.MI_NYG_L01_A_Wall_04_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L02_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Column_01_N1",
+   "min": [
+    -200.84979248046875,
+    -175.0,
+    -6.103515625e-05
+   ],
+   "max": [
+    39.47637939453125,
+    0.0,
+    924.9984741210938
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Column_01_0.MI_NYG_L02_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L02_A_Column_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Column_02_N1",
+   "min": [
+    -184.28857421875,
+    -300.0,
+    0.0
+   ],
+   "max": [
+    55.94140625,
+    0.0,
+    924.9993896484375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Column_02_0.MI_NYG_L02_A_Column_02_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L02_A_Column_03_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Column_03_N1",
+   "min": [
+    -199.01025390625,
+    -800.0014038085938,
+    -6.103515625e-05
+   ],
+   "max": [
+    98.390625,
+    -624.9999389648438,
+    952.462890625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Column_03_0.MI_NYG_L02_A_Column_03_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L02_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_CornerEx_01_N1",
+   "min": [
+    -200.0,
+    -39.255615234375,
+    0.0
+   ],
+   "max": [
+    39.258056640625,
+    200.00341796875,
+    924.9994506835938
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_CornerEx_01_0.MI_NYG_L02_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L02_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_CornerIn_01_N1",
+   "min": [
+    -71.83904266357422,
+    -93.8759765625,
+    -0.00018310546875
+   ],
+   "max": [
+    222.3926544189453,
+    200.355712890625,
+    924.9988403320312
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_CornerIn_01_0.MI_NYG_L02_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L02_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Wall_02_N1",
+   "min": [
+    -200.98828125,
+    -600.0,
+    0.0
+   ],
+   "max": [
+    30.07763671875,
+    0.0,
+    924.9984130859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_02_0.MI_NYG_L02_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_02_1.MI_NYG_L02_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_02_2.MI_NYG_L02_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L02_A_Wall_04_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Wall_04_N1",
+   "min": [
+    -200.98828125,
+    -925.000244140625,
+    -9.5367431640625e-07
+   ],
+   "max": [
+    30.07763671875,
+    -0.00018310546875,
+    924.99951171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_04_0.MI_NYG_L02_A_Wall_04_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_04_1.MI_NYG_L02_A_Wall_04_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_04_2.MI_NYG_L02_A_Wall_04_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L03_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Column_01_N1",
+   "min": [
+    -199.99903869628906,
+    -174.99996948242188,
+    -0.0009765626164153218
+   ],
+   "max": [
+    31.047863006591797,
+    0.0240478515625,
+    449.9990234375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Column_01_0.MI_NYG_L03_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L03_A_Column_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Column_02_N1",
+   "min": [
+    -200.0,
+    -300.0,
+    -0.000732421875
+   ],
+   "max": [
+    48.478759765625,
+    0.0,
+    449.9997253417969
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Column_02_0.MI_NYG_L03_A_Column_02_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L03_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_CornerEx_01_N1",
+   "min": [
+    -200.0,
+    -31.825439453125,
+    0.0
+   ],
+   "max": [
+    31.825439453125,
+    200.00003051757812,
+    449.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_CornerEx_01_0.MI_NYG_L03_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L03_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_CornerIn_01_N1",
+   "min": [
+    -77.39013671875,
+    -77.39013671875,
+    0.0
+   ],
+   "max": [
+    200.0,
+    200.0,
+    450.0
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_CornerIn_01_0.MI_NYG_L03_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L03_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Wall_02_N1",
+   "min": [
+    -200.0,
+    -600.0,
+    0.0
+   ],
+   "max": [
+    18.397216796875,
+    0.0,
+    598.68310546875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_02_0.MI_NYG_L03_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_02_1.MI_NYG_L03_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_02_2.MI_NYG_L03_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L03_A_Wall_04_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Wall_04_N1",
+   "min": [
+    -200.0,
+    -925.0,
+    0.0
+   ],
+   "max": [
+    18.397216796875,
+    6.103515625e-05,
+    598.39013671875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_04_0.MI_NYG_L03_A_Wall_04_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_04_1.MI_NYG_L03_A_Wall_04_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_04_2.MI_NYG_L03_A_Wall_04_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L03_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Wall_06_N1",
+   "min": [
+    -200.0,
+    -800.0,
+    0.0
+   ],
+   "max": [
+    18.397216796875,
+    6.103515625e-05,
+    598.39013671875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_06_0.MI_NYG_L03_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_06_1.MI_NYG_L03_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_06_2.MI_NYG_L03_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L04_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Column_01_N1",
+   "min": [
+    -199.99972534179688,
+    -175.0,
+    0.0
+   ],
+   "max": [
+    10.285866737365723,
+    0.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Column_01_0.MI_NYG_L04_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L04_A_Column_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Column_02_N1",
+   "min": [
+    -200.00018310546875,
+    -300.0,
+    -3.814697265625e-06
+   ],
+   "max": [
+    30.40133285522461,
+    0.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Column_02_0.MI_NYG_L04_A_Column_02_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L04_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_CornerEx_01_N1",
+   "min": [
+    -200.0,
+    -3.8701171875,
+    0.0
+   ],
+   "max": [
+    3.8701171875,
+    200.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_CornerEx_01_0.MI_NYG_L04_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L04_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_CornerIn_01_N1",
+   "min": [
+    -77.389892578125,
+    -77.389892578125,
+    0.0
+   ],
+   "max": [
+    200.0,
+    200.0,
+    424.99853515625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_CornerIn_01_0.MI_NYG_L04_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L04_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Wall_02_N1",
+   "min": [
+    -200.01123046875,
+    -599.999267578125,
+    0.0
+   ],
+   "max": [
+    -19.615234375,
+    0.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_02_0.MI_NYG_L04_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_02_1.MI_NYG_L04_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_02_2.MI_NYG_L04_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L04_A_Wall_04_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Wall_04_N1",
+   "min": [
+    -200.01123046875,
+    -925.0152587890625,
+    0.0052490234375
+   ],
+   "max": [
+    -30.589599609375,
+    0.000244140625,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_04_0.MI_NYG_L04_A_Wall_04_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_04_1.MI_NYG_L04_A_Wall_04_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_04_2.MI_NYG_L04_A_Wall_04_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L04_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Wall_06_N1",
+   "min": [
+    -200.01123046875,
+    -800.0,
+    0.0
+   ],
+   "max": [
+    -19.615234375,
+    0.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_06_0.MI_NYG_L04_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_06_1.MI_NYG_L04_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_06_2.MI_NYG_L04_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L05_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Column_01_N1",
+   "min": [
+    -199.99903869628906,
+    -175.0,
+    -1.1641532182693481e-10
+   ],
+   "max": [
+    31.047863006591797,
+    1.52587890625e-05,
+    449.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Column_01_0.MI_NYG_L05_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L05_A_Column_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Column_02_N1",
+   "min": [
+    -200.00018310546875,
+    -300.0,
+    -7.152557373046875e-07
+   ],
+   "max": [
+    48.478790283203125,
+    0.0,
+    449.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Column_02_0.MI_NYG_L05_A_Column_02_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L05_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_CornerEx_01_N1",
+   "min": [
+    -200.0,
+    -31.825439453125,
+    0.0
+   ],
+   "max": [
+    31.825439453125,
+    200.0,
+    449.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_CornerEx_01_0.MI_NYG_L05_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L05_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_CornerIn_01_N1",
+   "min": [
+    -77.39013671875,
+    -77.39013671875,
+    0.0
+   ],
+   "max": [
+    200.0,
+    200.0,
+    450.0
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_CornerIn_01_0.MI_NYG_L05_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L05_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Wall_02_N1",
+   "min": [
+    -200.0,
+    -600.0,
+    0.0
+   ],
+   "max": [
+    18.397216796875,
+    0.0,
+    449.9997253417969
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_02_0.MI_NYG_L05_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_02_1.MI_NYG_L05_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_02_2.MI_NYG_L05_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L05_A_Wall_04_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Wall_04_N1",
+   "min": [
+    -200.0,
+    -925.0,
+    0.0
+   ],
+   "max": [
+    18.397216796875,
+    6.103515625e-05,
+    449.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_04_0.MI_NYG_L05_A_Wall_04_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_04_1.MI_NYG_L05_A_Wall_04_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_04_2.MI_NYG_L05_A_Wall_04_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L05_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Wall_06_N1",
+   "min": [
+    -200.0,
+    -800.0,
+    0.0
+   ],
+   "max": [
+    18.397216796875,
+    0.0,
+    449.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_06_0.MI_NYG_L05_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_06_1.MI_NYG_L05_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_06_2.MI_NYG_L05_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L06_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Column_01_N1",
+   "min": [
+    -199.99972534179688,
+    -175.0,
+    0.0
+   ],
+   "max": [
+    10.285866737365723,
+    6.103515625e-05,
+    1199.999267578125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Column_01_0.MI_NYG_L06_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L06_A_Column_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Column_02_N1",
+   "min": [
+    -199.99945068359375,
+    -300.0000305175781,
+    0.0
+   ],
+   "max": [
+    30.399982452392578,
+    0.0,
+    1199.999267578125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Column_02_0.MI_NYG_L06_A_Column_02_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L06_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_CornerEx_01_N1",
+   "min": [
+    -200.0,
+    -31.825439453125,
+    0.0
+   ],
+   "max": [
+    31.825439453125,
+    200.0,
+    1199.999267578125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_CornerEx_01_0.MI_NYG_L06_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L06_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_CornerIn_01_N1",
+   "min": [
+    -77.39013671875,
+    -77.39013671875,
+    -0.86566162109375
+   ],
+   "max": [
+    200.0,
+    200.0,
+    1199.12548828125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_CornerIn_01_0.MI_NYG_L06_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L06_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_02_N1",
+   "min": [
+    -186.10498046875,
+    -600.0,
+    0.0
+   ],
+   "max": [
+    123.375,
+    6.103515625e-05,
+    1199.999267578125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_02_0.MI_NYG_L06_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_02_1.MI_NYG_L06_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_02_2.MI_NYG_L06_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L06_A_Wall_03_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_03_N1",
+   "min": [
+    -186.11181640625,
+    -924.998046875,
+    0.181640625
+   ],
+   "max": [
+    180.182861328125,
+    -0.00048828125,
+    1199.9921875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_03_0.MI_NYG_L06_A_Wall_03_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_03_1.MI_NYG_L06_A_Wall_03_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_03_2.MI_NYG_L06_A_Wall_03_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L06_A_Wall_04_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_04_N1",
+   "min": [
+    -179.71044921875,
+    -925.010009765625,
+    0.0
+   ],
+   "max": [
+    123.375,
+    0.0,
+    1199.999267578125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_04_0.MI_NYG_L06_A_Wall_04_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_04_1.MI_NYG_L06_A_Wall_04_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_04_2.MI_NYG_L06_A_Wall_04_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L06_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_06_N1",
+   "min": [
+    -186.10400390625,
+    -800.0,
+    0.0
+   ],
+   "max": [
+    123.375,
+    0.0,
+    1199.999267578125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_06_0.MI_NYG_L06_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_06_1.MI_NYG_L06_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_06_2.MI_NYG_L06_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L07_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Column_01_N1",
+   "min": [
+    -199.99972534179688,
+    -175.0,
+    0.0
+   ],
+   "max": [
+    10.285866737365723,
+    0.0,
+    599.99951171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Column_01_0.MI_NYG_L07_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L07_A_Column_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Column_02_N1",
+   "min": [
+    -199.99945068359375,
+    -300.0,
+    0.0
+   ],
+   "max": [
+    30.40206527709961,
+    0.0,
+    599.99951171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Column_02_0.MI_NYG_L07_A_Column_02_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L07_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_CornerEx_01_N1",
+   "min": [
+    -200.0,
+    -12.8642578125,
+    0.0
+   ],
+   "max": [
+    8.7724609375,
+    200.12744140625,
+    599.9996337890625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_CornerEx_01_0.MI_NYG_L07_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L07_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_CornerIn_01_N1",
+   "min": [
+    -199.989501953125,
+    -199.989501953125,
+    0.0
+   ],
+   "max": [
+    200.12721252441406,
+    200.1272735595703,
+    600.0771484375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_CornerIn_01_0.MI_NYG_L07_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L07_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_02_N1",
+   "min": [
+    -200.04150390625,
+    -600.0,
+    0.0
+   ],
+   "max": [
+    24.119384765625,
+    0.0,
+    599.994140625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_02_0.MI_NYG_L07_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_02_1.MI_NYG_L07_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_02_2.MI_NYG_L07_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L07_A_Wall_03_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_03_N1",
+   "min": [
+    -274.84124755859375,
+    -924.999267578125,
+    -0.0036621778272092342
+   ],
+   "max": [
+    205.8143310546875,
+    0.00042724609375,
+    599.9959716796875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_03_0.MI_NYG_L07_A_Wall_03_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_03_1.MI_NYG_L07_A_Wall_03_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_03_2.MI_NYG_L07_A_Wall_03_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L07_A_Wall_04_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_04_N1",
+   "min": [
+    -200.04150390625,
+    -925.0,
+    -1.9326762412674725e-12
+   ],
+   "max": [
+    24.119384765625,
+    0.0,
+    599.994140625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_04_0.MI_NYG_L07_A_Wall_04_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_04_1.MI_NYG_L07_A_Wall_04_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_04_2.MI_NYG_L07_A_Wall_04_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L07_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_06_N1",
+   "min": [
+    -210.70751953125,
+    -800.0,
+    0.0
+   ],
+   "max": [
+    24.119384765625,
+    0.0,
+    599.9996337890625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_06_0.MI_NYG_L07_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_06_1.MI_NYG_L07_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_06_2.MI_NYG_L07_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L08_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_CornerEx_01_N1",
+   "min": [
+    -223.272705078125,
+    2.719482421875,
+    -0.0107421875
+   ],
+   "max": [
+    -7.963623046875,
+    207.079345703125,
+    480.9140625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_CornerEx_01_0.MI_NYG_L08_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L08_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_02_N1",
+   "min": [
+    -925.26806640625,
+    -600.0,
+    0.0
+   ],
+   "max": [
+    22.953369140625,
+    0.0,
+    854.8994140625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_0.MI_NYG_L08_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_1.MI_NYG_L08_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_2.MI_NYG_L08_A_Wall_02_2",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_3.MI_NYG_L08_A_Wall_02_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L08_A_Wall_03_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_03_N1",
+   "min": [
+    -1124.565185546875,
+    -925.560791015625,
+    0.0
+   ],
+   "max": [
+    -117.407958984375,
+    0.0010986328125,
+    854.6082763671875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_0.MI_NYG_L08_A_Wall_03_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_1.MI_NYG_L08_A_Wall_03_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_2.MI_NYG_L08_A_Wall_03_2",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_3.MI_NYG_L08_A_Wall_03_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L08_A_Wall_04_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_04_N1",
+   "min": [
+    -1124.5654296875,
+    -925.0,
+    -0.0009765625
+   ],
+   "max": [
+    -117.408203125,
+    0.466552734375,
+    854.6083984375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_0.MI_NYG_L08_A_Wall_04_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_1.MI_NYG_L08_A_Wall_04_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_2.MI_NYG_L08_A_Wall_04_2",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_3.MI_NYG_L08_A_Wall_04_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L08_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_06_N1",
+   "min": [
+    -1111.0986328125,
+    -2950.0,
+    0.0
+   ],
+   "max": [
+    -76.521240234375,
+    0.0,
+    850.0
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_06_0.MI_NYG_L08_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_06_1.MI_NYG_L08_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_06_2.MI_NYG_L08_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L08_A_Wall_08_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_08_N1",
+   "min": [
+    -1125.00048828125,
+    -1290.9013671875,
+    -0.0045166015625
+   ],
+   "max": [
+    36.11279296875,
+    15.9033203125,
+    1734.2392578125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_0.MI_NYG_L08_A_Wall_08_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_1.MI_NYG_L08_A_Wall_08_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_2.MI_NYG_L08_A_Wall_08_2",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_3.MI_NYG_L08_A_Wall_08_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L09_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_Column_01_N1",
+   "min": [
+    -199.99972534179688,
+    1.4210854715202004e-14,
+    0.0
+   ],
+   "max": [
+    10.285866737365723,
+    175.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Column_01_0.MI_NYG_L09_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L09_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_CornerEx_01_N1",
+   "min": [
+    -300.0,
+    -28.497314453125,
+    -2.842170943040401e-14
+   ],
+   "max": [
+    28.212890625,
+    300.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_CornerEx_01_0.MI_NYG_L09_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L09_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_CornerIn_01_N1",
+   "min": [
+    -205.964111328125,
+    -205.964111328125,
+    -0.0048828125
+   ],
+   "max": [
+    299.715576171875,
+    299.715576171875,
+    424.9951171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_CornerIn_01_0.MI_NYG_L09_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L09_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_Wall_02_N1",
+   "min": [
+    -200.01123046875,
+    -3.4332275390625e-05,
+    0.0
+   ],
+   "max": [
+    -19.615234375,
+    599.9998779296875,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_02_0.MI_NYG_L09_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_02_1.MI_NYG_L09_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_02_2.MI_NYG_L09_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L09_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_Wall_06_N1",
+   "min": [
+    -200.01123046875,
+    -3.4332275390625e-05,
+    0.0048828125
+   ],
+   "max": [
+    -19.615234375,
+    800.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_06_0.MI_NYG_L09_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_06_1.MI_NYG_L09_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_06_2.MI_NYG_L09_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L10_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_Column_01_N1",
+   "min": [
+    -199.99903869628906,
+    -175.0,
+    -1.1641532182693481e-10
+   ],
+   "max": [
+    31.047863006591797,
+    1.52587890625e-05,
+    449.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Column_01_0.MI_NYG_L10_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L10_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_CornerEx_01_N1",
+   "min": [
+    -300.0,
+    -56.045654296875,
+    -2.842170943040401e-14
+   ],
+   "max": [
+    55.834716796875,
+    299.8232421875,
+    449.9997253417969
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_CornerEx_01_0.MI_NYG_L10_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L10_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_CornerIn_01_N1",
+   "min": [
+    -206.174072265625,
+    -206.17408752441406,
+    -2.842170943040401e-14
+   ],
+   "max": [
+    299.8232421875,
+    299.8232421875,
+    450.0
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_CornerIn_01_0.MI_NYG_L10_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L10_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_Wall_02_N1",
+   "min": [
+    -200.0,
+    -600.0000610351562,
+    0.0
+   ],
+   "max": [
+    18.397216796875,
+    0.0,
+    449.9997253417969
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_02_0.MI_NYG_L10_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_02_1.MI_NYG_L10_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_02_2.MI_NYG_L10_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L10_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_Wall_06_N1",
+   "min": [
+    -200.0,
+    -800.0000610351562,
+    0.0
+   ],
+   "max": [
+    18.397216796875,
+    0.0,
+    449.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_06_0.MI_NYG_L10_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_06_1.MI_NYG_L10_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_06_2.MI_NYG_L10_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L11_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_Column_01_N1",
+   "min": [
+    -299.999267578125,
+    -175.0,
+    0.0
+   ],
+   "max": [
+    31.0478515625,
+    0.0,
+    774.99951171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Column_01_0.MI_NYG_L11_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L11_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_CornerEx_01_N1",
+   "min": [
+    -300.0,
+    -56.045654296875,
+    0.0
+   ],
+   "max": [
+    55.834716796875,
+    299.8232421875,
+    1214.6875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_CornerEx_01_0.MI_NYG_L11_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L11_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_Wall_02_N1",
+   "min": [
+    -300.284912109375,
+    -300.00006103515625,
+    0.0
+   ],
+   "max": [
+    123.34619140625,
+    300.00323486328125,
+    774.99951171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_02_0.MI_NYG_L11_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_02_1.MI_NYG_L11_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_02_2.MI_NYG_L11_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L11_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_Wall_06_N1",
+   "min": [
+    -300.001708984375,
+    -800.0000610351562,
+    -8.58306884765625e-06
+   ],
+   "max": [
+    143.71958923339844,
+    0.0,
+    774.99951171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_06_0.MI_NYG_L11_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_06_1.MI_NYG_L11_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_06_2.MI_NYG_L11_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L12_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_Column_01_N1",
+   "min": [
+    -186.103759765625,
+    -175.00003051757812,
+    0.0
+   ],
+   "max": [
+    24.18183135986328,
+    -4.57763671875e-05,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Column_01_0.MI_NYG_L12_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L12_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_CornerEx_01_N1",
+   "min": [
+    -300.0,
+    -28.497344970703125,
+    -2.842170943040401e-14
+   ],
+   "max": [
+    28.212867736816406,
+    300.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_CornerEx_01_0.MI_NYG_L12_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L12_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_CornerIn_01_N1",
+   "min": [
+    -206.173583984375,
+    -206.17408752441406,
+    -2.842170943040401e-14
+   ],
+   "max": [
+    299.82373046875,
+    299.8232421875,
+    424.990234375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_CornerIn_01_0.MI_NYG_L12_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L12_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_Wall_02_N1",
+   "min": [
+    -186.10400390625,
+    -300.0000305175781,
+    2.288818359375e-05
+   ],
+   "max": [
+    0.0009765625,
+    0.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_02_0.MI_NYG_L12_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_02_1.MI_NYG_L12_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_02_2.MI_NYG_L12_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L12_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_Wall_06_N1",
+   "min": [
+    -186.10400390625,
+    -800.0,
+    -3.0517578125e-05
+   ],
+   "max": [
+    0.0009765625,
+    0.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_06_0.MI_NYG_L12_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_06_1.MI_NYG_L12_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_06_2.MI_NYG_L12_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L13_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_Column_01_N1",
+   "min": [
+    -186.103759765625,
+    -175.00003051757812,
+    3.0517578125e-05
+   ],
+   "max": [
+    24.18183135986328,
+    -3.0517578125e-05,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Column_01_0.MI_NYG_L13_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L13_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_CornerEx_01_N1",
+   "min": [
+    -300.0000915527344,
+    -28.497344970703125,
+    -3.0517578125e-05
+   ],
+   "max": [
+    28.212867736816406,
+    300.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_CornerEx_01_0.MI_NYG_L13_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L13_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_CornerIn_01_N1",
+   "min": [
+    -206.174072265625,
+    -206.17408752441406,
+    -2.842170943040401e-14
+   ],
+   "max": [
+    299.8232421875,
+    299.8232421875,
+    424.990234375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_CornerIn_01_0.MI_NYG_L13_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L13_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_Wall_02_N1",
+   "min": [
+    -186.10400390625,
+    -300.0000305175781,
+    2.288818359375e-05
+   ],
+   "max": [
+    0.0009765625,
+    0.0,
+    424.999755859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_02_0.MI_NYG_L13_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_02_1.MI_NYG_L13_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_02_2.MI_NYG_L13_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L13_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_Wall_06_N1",
+   "min": [
+    -186.10400390625,
+    -800.0,
+    -3.0517578125e-05
+   ],
+   "max": [
+    0.0009765625,
+    0.0,
+    424.9997253417969
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_06_0.MI_NYG_L13_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_06_1.MI_NYG_L13_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_06_2.MI_NYG_L13_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L14_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_Column_01_N1",
+   "min": [
+    -276.9794921875,
+    -175.00006103515625,
+    0.0
+   ],
+   "max": [
+    53.77783203125,
+    -3.0517578125e-05,
+    774.99951171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Column_01_0.MI_NYG_L14_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L14_A_CornerEx_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_CornerEx_01_N1",
+   "min": [
+    -300.0,
+    -45.573974609375,
+    0.0
+   ],
+   "max": [
+    45.324951171875,
+    300.0,
+    774.99951171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_CornerEx_01_0.MI_NYG_L14_A_CornerEx_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L14_A_CornerIn_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_CornerIn_01_N1",
+   "min": [
+    -206.174072265625,
+    -206.174072265625,
+    0.017578125
+   ],
+   "max": [
+    299.8232421875,
+    299.8232421875,
+    774.98828125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_CornerIn_01_0.MI_NYG_L14_A_CornerIn_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L14_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_Wall_02_N1",
+   "min": [
+    -281.75390625,
+    -300.00006103515625,
+    2.24970281124115e-05
+   ],
+   "max": [
+    132.5,
+    0.0,
+    774.99951171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_02_0.MI_NYG_L14_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_02_1.MI_NYG_L14_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_02_2.MI_NYG_L14_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L14_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_Wall_06_N1",
+   "min": [
+    -281.61810302734375,
+    -800.0,
+    -6.103515625e-05
+   ],
+   "max": [
+    127.813720703125,
+    6.103515625e-05,
+    774.99951171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_06_0.MI_NYG_L14_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_06_1.MI_NYG_L14_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_06_2.MI_NYG_L14_A_Wall_06_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L15_A_Column_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_01_N1",
+   "min": [
+    -392.78662109375,
+    23.12841796875,
+    0.013671875
+   ],
+   "max": [
+    -14.946533203125,
+    400.968505859375,
+    211.859375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_01_0.MI_NYG_L15_A_Column_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L15_A_Column_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_02_N1",
+   "min": [
+    -473.579345703125,
+    -57.66259765625,
+    0.013671875
+   ],
+   "max": [
+    65.844482421875,
+    481.76116943359375,
+    1633.298828125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_0.MI_NYG_L15_A_Column_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_1.MI_NYG_L15_A_Column_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_2.MI_NYG_L15_A_Column_02_2",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_3.MI_NYG_L15_A_Column_02_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L15_A_Column_03_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_03_N1",
+   "min": [
+    -150.6805419921875,
+    -0.4632568359375,
+    0.001953125
+   ],
+   "max": [
+    -1.6392822265625,
+    156.5809326171875,
+    1520.1015625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_03_0.MI_NYG_L15_A_Column_03_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L15_A_Column_04_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_04_N1",
+   "min": [
+    -158.268310546875,
+    -1.2177734375,
+    0.013671875
+   ],
+   "max": [
+    -1.2269287109375,
+    147.822265625,
+    1520.11328125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_04_0.MI_NYG_L15_A_Column_04_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L15_A_Wall_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_01_N1",
+   "min": [
+    -249.471923828125,
+    -0.000717461109161377,
+    0.0
+   ],
+   "max": [
+    -122.692138671875,
+    887.336669921875,
+    417.09765625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_01_0.MI_NYG_L15_A_Wall_01_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_01_1.MI_NYG_L15_A_Wall_01_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_01_2.MI_NYG_L15_A_Wall_01_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L15_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_02_N1",
+   "min": [
+    -249.4716796875,
+    -0.0001220703125,
+    13.2578125
+   ],
+   "max": [
+    -109.8369140625,
+    887.336181640625,
+    685.9417724609375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_02_0.MI_NYG_L15_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_02_1.MI_NYG_L15_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_02_2.MI_NYG_L15_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L15_A_Wall_03_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_03_N1",
+   "min": [
+    -484.167236328125,
+    -363.0514831542969,
+    -0.00390625
+   ],
+   "max": [
+    -83.272705078125,
+    1248.5335693359375,
+    851.853515625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_03_0.MI_NYG_L15_A_Wall_03_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_03_1.MI_NYG_L15_A_Wall_03_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_03_2.MI_NYG_L15_A_Wall_03_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L15_A_Wall_04_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_04_N1",
+   "min": [
+    -125.99267578125,
+    2.6702880859375e-05,
+    0.013671875
+   ],
+   "max": [
+    0.80908203125,
+    545.8406982421875,
+    417.11328125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_04_0.MI_NYG_L15_A_Wall_04_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_04_1.MI_NYG_L15_A_Wall_04_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_04_2.MI_NYG_L15_A_Wall_04_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L15_A_Wall_05_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_05_N1",
+   "min": [
+    -125.990478515625,
+    -5.684341886080802e-14,
+    0.0
+   ],
+   "max": [
+    13.671875,
+    545.8408203125,
+    685.892578125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_05_0.MI_NYG_L15_A_Wall_05_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_05_1.MI_NYG_L15_A_Wall_05_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_05_2.MI_NYG_L15_A_Wall_05_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L15_A_Wall_06_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_06_N1",
+   "min": [
+    -949.89013671875,
+    -0.927978515625,
+    -0.009765625
+   ],
+   "max": [
+    -11.616943359375,
+    707.458740234375,
+    1387.146484375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_0.MI_NYG_L15_A_Wall_06_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_1.MI_NYG_L15_A_Wall_06_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_2.MI_NYG_L15_A_Wall_06_2",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_3.MI_NYG_L15_A_Wall_06_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L15_A_Wall_07_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_07_N1",
+   "min": [
+    -949.89013671875,
+    6.712158203125,
+    -0.009765625
+   ],
+   "max": [
+    -11.6171875,
+    767.158447265625,
+    1387.146484375
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_0.MI_NYG_L15_A_Wall_07_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_1.MI_NYG_L15_A_Wall_07_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_2.MI_NYG_L15_A_Wall_07_2",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_3.MI_NYG_L15_A_Wall_07_3"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L16_A_Rotunda_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Rotunda_01_N1",
+   "min": [
+    -452.41455078125,
+    62.428680419921875,
+    -0.0001373291015625
+   ],
+   "max": [
+    -63.02099609375,
+    450.46484375,
+    808.671875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Rotunda_01_0.MI_NYG_L16_A_Rotunda_01_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Rotunda_01_1.MI_NYG_L16_A_Rotunda_01_1"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L16_A_Wall_01_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Wall_01_N1",
+   "min": [
+    -625.000244140625,
+    -10.514404296875,
+    -0.46875
+   ],
+   "max": [
+    7.679931640625,
+    625.0003051757812,
+    302.8125
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_01_0.MI_NYG_L16_A_Wall_01_0"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L16_A_Wall_02_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Wall_02_N1",
+   "min": [
+    -515.0,
+    -13.549560546875,
+    69.828125
+   ],
+   "max": [
+    14.097412109375,
+    560.27392578125,
+    1436.837890625
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_02_0.MI_NYG_L16_A_Wall_02_0",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_02_1.MI_NYG_L16_A_Wall_02_1",
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_02_2.MI_NYG_L16_A_Wall_02_2"
+   ],
+   "nanite": true
+  },
+  {
+   "name": "SM_BLDG_NYG_L16_A_Wall_03_N1",
+   "path": "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Wall_03_N1",
+   "min": [
+    -655.330322265625,
+    -6.0521240234375,
+    12.572265625
+   ],
+   "max": [
+    6.144775390625,
+    655.423095703125,
+    225.6171875
+   ],
+   "materials": [
+    "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_03_0.MI_NYG_L16_A_Wall_03_0"
+   ],
+   "nanite": true
+  }
+ ],
+ "closure": [
+  "/Game/Building/Material/MI/Block/MI_Bldg_Block_Limestone",
+  "/Game/Building/Material/MI/Block/MI_Bldg_Block_Limestone_Grey",
+  "/Game/Building/Material/MI/MI_Bldg_Base",
+  "/Game/Building/Material/MI/MI_Bldg_Block",
+  "/Game/Building/Material/MI/MI_Bldg_Glass",
+  "/Game/Building/Material/MI/MI_Bldg_Metal",
+  "/Game/Building/Material/MI/MI_Bldg_PaintedMetal",
+  "/Game/Building/Material/MI/MI_GrdDecal",
+  "/Game/Building/Material/MI/Metal/MI_Bldg_Metal_Brass",
+  "/Game/Building/Material/MI/Paint/MI_Bldg_PaintedMetal_Beige",
+  "/Game/Building/Material/MI/Paint/MI_Bldg_PaintedMetal_Black",
+  "/Game/Building/Material/MI/Paint/MI_Bldg_PaintedMetal_Roof",
+  "/Game/Building/Material/M_Bldg_Base",
+  "/Game/Building/Material/M_Bldg_Block",
+  "/Game/Building/Material/M_DirtSkirt",
+  "/Game/Building/Material/MaterialFunction/BuildingPost",
+  "/Game/Building/Material/MaterialFunction/DamageEdge",
+  "/Game/Building/Material/MaterialFunction/GrimeBroad",
+  "/Game/Building/Material/MaterialFunction/GrimeCrevice",
+  "/Game/Building/Material/MaterialFunction/GrimeDrip",
+  "/Game/Building/Material/MaterialFunction/GrimeGround",
+  "/Game/Building/Material/MaterialFunction/MatLayerBlend_CRN",
+  "/Game/Building/Material/MaterialFunction/MatLayerBlend_CRNM_replaceColor",
+  "/Game/Building/Material/MaterialFunction/Ramp",
+  "/Game/Building/Material/MaterialFunction/VariationColorHSV",
+  "/Game/Building/Material/MaterialFunction/VariationNormRough",
+  "/Game/Building/Material/Window/InteriorCubemapCustomTransform",
+  "/Game/Building/Material/Window/M_Window",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_1x1x1_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_1x1x1_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_2x2x1_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_2x2x1_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x1_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x1_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x3_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x3_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_1x1x1_Rooms",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_2x2x1_Rooms",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_3x3x1_Rooms",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_3x3x3_Rooms",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1a1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1b1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1c",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom2x2x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom1x1x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom1x1x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom2x2x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom2x2x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom3x3x1a1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby1x1x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby1x1x1b1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x1b",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2c",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2d1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby3x3x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1c3",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1d2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1e3",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1c2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1f2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office3x3x1a2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office3x3x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1a3",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1b",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1c",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant2x2x2a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1b2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1c3",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket2x2x1a1",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket2x2x2a",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket3x3x1a2",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom3x3x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom3x3x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/black1x1x1_Capture",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/black1x1x1_Depth",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1d_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1d_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1e_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1e_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1f_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1f_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant2x2x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant2x2x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1b_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1c_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1c_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket2x2x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket2x2x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x1a_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x1a_DepthFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x3b_CaptureFG",
+  "/Game/Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x3b_DepthFG",
+  "/Game/Building/Material/Window/Texture/SquareGradient_Linear",
+  "/Game/Building/Material/Window/Texture/T_BlindsAtlas_Col",
+  "/Game/Building/Material/Window/Texture/T_BlindsAtlas_Norm",
+  "/Game/Building/Material/Window/Texture/T_NoiseOffsets",
+  "/Game/Building/Material/Window/Texture/T_WinCorr_CHA",
+  "/Game/Building/Material/Window/Texture/T_WindowCorr_NYG_01_A_01",
+  "/Game/Building/Material/Window/Texture/T_WindowCorr_NYG_01_A_04",
+  "/Game/Building/Material/Window/Texture/T_WindowCorr_NYG_07_A_03",
+  "/Game/Building/Material/Window/Texture/Window_1K_Roughness",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Texture/T_NYG_L10_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Texture/T_NYG_L10_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Texture/T_NYG_L10_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Texture/T_NYG_L10_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L10_A/Texture/T_NYG_L10_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Texture/T_NYG_L11_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Texture/T_NYG_L11_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Texture/T_NYG_L11_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L11_A/Texture/T_NYG_L11_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Texture/T_NYG_L12_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Texture/T_NYG_L12_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Texture/T_NYG_L12_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Texture/T_NYG_L12_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L12_A/Texture/T_NYG_L12_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Texture/T_NYG_L13_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Texture/T_NYG_L13_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Texture/T_NYG_L13_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Texture/T_NYG_L13_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L13_A/Texture/T_NYG_L13_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Texture/T_NYG_L14_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Texture/T_NYG_L14_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Texture/T_NYG_L14_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Texture/T_NYG_L14_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L14_A/Texture/T_NYG_L14_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_03_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_04_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_01_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_01_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_03_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_03_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_03_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_04_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_04_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_04_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_05_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_05_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_05_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Material/M_Bldg_paintedMetal_roof",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_03_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_04_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_03_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_04_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_05_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_07_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Column_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Column_03_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Column_04_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_03_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_04_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_05_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_07_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Rotunda_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Rotunda_01_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_03_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Material/M_Bldg_paintedMetal_roof",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Rotunda_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Wall_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Wall_03_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Texture/T_NYG_L16_A_Rotunda_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Texture/T_NYG_L16_A_Wall_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Texture/T_NYG_L16_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L16_A/Texture/T_NYG_L16_A_Wall_03_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_Column_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_Column_03_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Column_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Column_03_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Wall_02_N3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Wall_04_N3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Column_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_4",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_03_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_03_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_03_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_metal_brass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_paintedMetal_beige",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Column_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Entrance_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Wall_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Wall_03_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Wall_04_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Column_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Entrance_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Wall_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Wall_03_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Wall_04_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Column_01_N1_decal",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Column_02_N1_decal",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_CornerExL_01_N1_decal",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_CornerExR_01_N1_decal",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_CornerEx_01_N1_decal",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_CornerIn_01_N1_decal",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Entrance_01_N1_decal",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Wall_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Wall_02_N1_decal",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Wall_03_N1_decal",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Wall_03_decal",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Wall_04_N1_decal",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Column_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Column_03_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_04_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_04_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_04_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Column_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Column_03_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Wall_04_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_Column_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_Column_03_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_Wall_04_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Column_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_04_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_04_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_04_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Column_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Wall_04_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_Column_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_Wall_04_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Column_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_04_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_04_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_04_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Column_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Wall_04_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_Column_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_Wall_04_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Column_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_04_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_04_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_04_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Column_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Wall_04_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_Column_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_Wall_04_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Column_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_03_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_03_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_03_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_04_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_04_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_04_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Column_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_03_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_04_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Column_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Wall_03_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Wall_04_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Column_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_03_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_03_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_03_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_04_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_04_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_04_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Column_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_03_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_04_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Column_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Wall_03_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Wall_04_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_3",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Material/M_Bldg_paintedMetal_roof",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_03_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_04_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_08_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_Wall_03_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_Wall_04_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_Wall_08_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Column_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_CornerEx_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_CornerIn_01_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_02_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_02_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_02_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_06_0",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_06_1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_06_2",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/M_Bldg_block_limestone",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/M_Bldg_block_limestone_grey",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/M_Bldg_glass",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Material/M_Bldg_paintedMetal_black",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_Column_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_CornerEx_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_CornerIn_01_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_Wall_02_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_Wall_06_N1",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Texture/T_NYG_L09_A_Column_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Texture/T_NYG_L09_A_CornerEx_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Texture/T_NYG_L09_A_CornerIn_01_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Texture/T_NYG_L09_A_Wall_02_packedA",
+  "/Game/Building/NY/G/Kit_Bldg_NYG_L9_A/Texture/T_NYG_L09_A_Wall_06_packedA",
+  "/Game/Building/NY/G/Material/MI_Bldg_Block_Limestone",
+  "/Game/Building/NY/G/Material/MI_Bldg_Block_Limestone_Grey",
+  "/Game/Building/NY/G/Material/MI_Bldg_Block_Limestone_Grey_Topper",
+  "/Game/Building/NY/G/Material/MI_Bldg_Glass",
+  "/Game/Building/NY/G/Material/MI_Bldg_Metal_Brass",
+  "/Game/Building/NY/G/Material/MI_Bldg_PaintedMetal_Beige",
+  "/Game/Building/NY/G/Material/MI_Bldg_PaintedMetal_Black",
+  "/Game/Building/NY/G/Material/MI_Bldg_PaintedMetal_Roof",
+  "/Game/Building/Texture/Block/T_Block_N",
+  "/Game/Building/Texture/Block/T_Block_PackedB",
+  "/Game/Building/Texture/Gen/T_default_packedA",
+  "/Game/Building/Texture/Gradient/T_GradientColor_Limestone",
+  "/Game/Building/Texture/Gradient/T_Gradient_Mask",
+  "/Game/Building/Texture/Grunge/T_BuildingDamageDetail_Mask",
+  "/Game/Building/Texture/Grunge/T_GrimeCrevice_Breakup_Mask",
+  "/Game/Building/Texture/Grunge/T_GrimeCrevice_Detail_Mask",
+  "/Game/Building/Texture/Grunge/T_GrimeDrip_MediumBreakup_Mask",
+  "/Game/Building/Texture/Grunge/T_LargeDrip_Mask",
+  "/Game/Building/Texture/Grunge/T_tile_packedGrime",
+  "/Game/Building/Texture/Grunge/tile_noiseDirt",
+  "/Game/Building/Texture/Grunge/tile_noiseDirtSmear_Mask",
+  "/Game/Building/Texture/Limestone/T_Limestone_AORMD",
+  "/Game/Building/Texture/Limestone/T_Limestone_Grey_C",
+  "/Game/Building/Texture/Limestone/T_Limestone_N",
+  "/Game/Building/Texture/MetalBrass/T_MetalBrass_AORMD",
+  "/Game/Building/Texture/MetalBrass/T_MetalBrass_C",
+  "/Game/Building/Texture/MetalBrass/T_MetalBrass_N",
+  "/Game/Building/Texture/MetalCopperOxidized/T_MetalCopperOxidized_AORMD",
+  "/Game/Building/Texture/MetalCopperOxidized/T_MetalCopperOxidized_C",
+  "/Game/Building/Texture/MetalCopperOxidized/T_MetalCopperOxidized_N",
+  "/Game/Building/Texture/PaintedMetal/T_PaintedMetal_AORMD",
+  "/Game/Building/Texture/PaintedMetal/T_PaintedMetal_C",
+  "/Game/Building/Texture/PaintedMetal/T_PaintedMetal_N",
+  "/Game/Material/MPC/MPC_GlobalTextureControls",
+  "/Game/Material/MaterialFunction/ColorCorrectHSV",
+  "/Game/Material/MaterialFunction/GradientRemap",
+  "/Game/Material/MaterialFunction/HSVtoRGB_v2",
+  "/Game/Material/MaterialFunction/MF_Blend_AddSub",
+  "/Game/Material/MaterialFunction/MF_HistogramScan",
+  "/Game/Material/MaterialFunction/MF_MaskEdge",
+  "/Game/Material/MaterialFunction/MF_NormalBlend_Whiteout",
+  "/Game/Material/MaterialFunction/MF_NormalStrength",
+  "/Game/Material/MaterialFunction/MF_TriplanarNormal_Whiteout_OffsetBias",
+  "/Game/Material/MaterialFunction/MF_WorldAlignedTexture_OffsetBias",
+  "/Game/Material/MaterialFunction/RGBtoHSV_v2",
+  "/Game/Textures/Default_3or4Channel_Linear_BC7_VT",
+  "/Game/Textures/Default_Color_sRGB_BC7_VT",
+  "/Game/Textures/FlatNormal_VT",
+  "/Game/Textures/Noise/T_Noises_Clouds_4k_",
+  "/Game/Textures/Noise/T_Noises_Grunge_4k_",
+  "/Game/Textures/SurfaceFeature/T_GrimeDrip_Breakup_Mask",
+  "/Game/Textures/SurfaceFeature/T_GrimeDrip_Detail_Mask",
+  "/Game/Textures/SurfaceFeature/T_Imperfection_vdepdipc_8K",
+  "/Game/Textures/T_UDIMCheckSmall",
+  "/Game/Textures/T_UVCheck"
+ ],
+ "files": [
+  "Building/Material/MI/Block/MI_Bldg_Block_Limestone.uasset",
+  "Building/Material/MI/Block/MI_Bldg_Block_Limestone_Grey.uasset",
+  "Building/Material/MI/MI_Bldg_Base.uasset",
+  "Building/Material/MI/MI_Bldg_Block.uasset",
+  "Building/Material/MI/MI_Bldg_Glass.uasset",
+  "Building/Material/MI/MI_Bldg_Metal.uasset",
+  "Building/Material/MI/MI_Bldg_PaintedMetal.uasset",
+  "Building/Material/MI/MI_GrdDecal.uasset",
+  "Building/Material/MI/Metal/MI_Bldg_Metal_Brass.uasset",
+  "Building/Material/MI/Paint/MI_Bldg_PaintedMetal_Beige.uasset",
+  "Building/Material/MI/Paint/MI_Bldg_PaintedMetal_Black.uasset",
+  "Building/Material/MI/Paint/MI_Bldg_PaintedMetal_Roof.uasset",
+  "Building/Material/M_Bldg_Base.uasset",
+  "Building/Material/M_Bldg_Block.uasset",
+  "Building/Material/M_DirtSkirt.uasset",
+  "Building/Material/MaterialFunction/BuildingPost.uasset",
+  "Building/Material/MaterialFunction/DamageEdge.uasset",
+  "Building/Material/MaterialFunction/GrimeBroad.uasset",
+  "Building/Material/MaterialFunction/GrimeCrevice.uasset",
+  "Building/Material/MaterialFunction/GrimeDrip.uasset",
+  "Building/Material/MaterialFunction/GrimeGround.uasset",
+  "Building/Material/MaterialFunction/MatLayerBlend_CRN.uasset",
+  "Building/Material/MaterialFunction/MatLayerBlend_CRNM_replaceColor.uasset",
+  "Building/Material/MaterialFunction/Ramp.uasset",
+  "Building/Material/MaterialFunction/VariationColorHSV.uasset",
+  "Building/Material/MaterialFunction/VariationNormRough.uasset",
+  "Building/Material/Window/InteriorCubemapCustomTransform.uasset",
+  "Building/Material/Window/M_Window.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_1x1x1_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_1x1x1_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_2x2x1_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_2x2x1_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x1_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x1_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x3_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/T2A_3x3x3_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_1x1x1_Rooms.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_2x2x1_Rooms.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_3x3x1_Rooms.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Arrays/TCA_3x3x3_Rooms.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1a1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1b1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom1x1x1c.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Bedroom2x2x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom1x1x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom1x1x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom2x2x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom2x2x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_LivingRoom3x3x1a1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby1x1x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby1x1x1b1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x1b.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2c.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby2x2x2d1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Lobby3x3x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1c3.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1d2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office1x1x1e3.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1c2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office2x2x1f2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office3x3x1a2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Office3x3x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1a3.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1b.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant1x1x1c.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Restaurant2x2x2a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1b2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket1x1x1c3.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket2x2x1a1.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket2x2x2a.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Cubes/CaptureCube_Tex_Supermarket3x3x1a2.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom1x1x1c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom3x3x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/bedroom3x3x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/black1x1x1_Capture.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/black1x1x1_Depth.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom1x1x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/livingRoom2x2x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby2x2x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/lobby3x3x3c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1d_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1d_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1e_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office1x1x1e_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1f_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office2x2x1f_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/office3x3x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant1x1x1c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant2x2x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/restaurant2x2x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1b_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1c_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket1x1x1c_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket2x2x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket2x2x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x1a_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x1a_DepthFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x3b_CaptureFG.uasset",
+  "Building/Material/Window/Texture/RoomInteriors/Interiors/supermarket3x3x3b_DepthFG.uasset",
+  "Building/Material/Window/Texture/SquareGradient_Linear.uasset",
+  "Building/Material/Window/Texture/T_BlindsAtlas_Col.uasset",
+  "Building/Material/Window/Texture/T_BlindsAtlas_Norm.uasset",
+  "Building/Material/Window/Texture/T_NoiseOffsets.uasset",
+  "Building/Material/Window/Texture/T_WinCorr_CHA.uasset",
+  "Building/Material/Window/Texture/T_WindowCorr_NYG_01_A_01.uasset",
+  "Building/Material/Window/Texture/T_WindowCorr_NYG_01_A_04.uasset",
+  "Building/Material/Window/Texture/T_WindowCorr_NYG_07_A_03.uasset",
+  "Building/Material/Window/Texture/Window_1K_Roughness.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/MI/MI_NYG_L10_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Mesh/SM_BLDG_NYG_L10_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Texture/T_NYG_L10_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Texture/T_NYG_L10_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Texture/T_NYG_L10_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Texture/T_NYG_L10_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L10_A/Texture/T_NYG_L10_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/MI/MI_NYG_L11_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Mesh/SM_BLDG_NYG_L11_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Texture/T_NYG_L11_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Texture/T_NYG_L11_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Texture/T_NYG_L11_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L11_A/Texture/T_NYG_L11_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/MI/MI_NYG_L12_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Mesh/SM_BLDG_NYG_L12_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Texture/T_NYG_L12_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Texture/T_NYG_L12_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Texture/T_NYG_L12_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Texture/T_NYG_L12_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L12_A/Texture/T_NYG_L12_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/MI/MI_NYG_L13_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Mesh/SM_BLDG_NYG_L13_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Texture/T_NYG_L13_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Texture/T_NYG_L13_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Texture/T_NYG_L13_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Texture/T_NYG_L13_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L13_A/Texture/T_NYG_L13_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/MI/MI_NYG_L14_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Mesh/SM_BLDG_NYG_L14_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Texture/T_NYG_L14_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Texture/T_NYG_L14_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Texture/T_NYG_L14_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Texture/T_NYG_L14_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L14_A/Texture/T_NYG_L14_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_02_3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_03_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Column_04_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_01_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_01_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_03_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_03_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_03_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_04_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_04_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_04_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_05_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_05_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_05_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_06_3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/MI/MI_NYG_L15_A_Wall_07_3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Material/M_Bldg_paintedMetal_roof.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_03_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Column_04_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_03_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_04_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_05_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Mesh/SM_BLDG_NYG_L15_A_Wall_07_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Column_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Column_03_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Column_04_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_03_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_04_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_05_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L15_A/Texture/T_NYG_L15_A_Wall_07_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Rotunda_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Rotunda_01_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/MI/MI_NYG_L16_A_Wall_03_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Material/M_Bldg_paintedMetal_roof.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Rotunda_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Wall_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Mesh/SM_BLDG_NYG_L16_A_Wall_03_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Texture/T_NYG_L16_A_Rotunda_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Texture/T_NYG_L16_A_Wall_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Texture/T_NYG_L16_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L16_A/Texture/T_NYG_L16_A_Wall_03_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_Column_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_Column_03_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Material/MI/MI_NYG_L017_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Column_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Column_03_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Wall_02_N3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L17_A/Mesh/SM_BLDG_NYG_L017_A_Wall_04_N3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Column_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Entrance_01_4.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_01_3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_03_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_03_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_03_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/MI/MI_NYG_L01_A_Wall_04_3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_metal_brass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_paintedMetal_beige.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Column_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Entrance_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Wall_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Wall_03_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Mesh/SM_BLDG_NYG_L01_A_Wall_04_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Column_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Entrance_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Wall_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Wall_03_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/Texture/T_NYG_L01_A_Wall_04_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Column_01_N1_decal.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Column_02_N1_decal.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_CornerExL_01_N1_decal.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_CornerExR_01_N1_decal.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_CornerEx_01_N1_decal.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_CornerIn_01_N1_decal.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Entrance_01_N1_decal.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Wall_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Wall_02_N1_decal.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Wall_03_N1_decal.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Wall_03_decal.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L1_A/decal/SM_BLDG_NYG_L01_A_Wall_04_N1_decal.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Column_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Column_03_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_04_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_04_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/MI/MI_NYG_L02_A_Wall_04_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Column_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Column_03_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Mesh/SM_BLDG_NYG_L02_A_Wall_04_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_Column_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_Column_03_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L2_A/Texture/T_NYG_L02_A_Wall_04_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Column_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_04_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_04_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_04_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/MI/MI_NYG_L03_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Column_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Wall_04_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Mesh/SM_BLDG_NYG_L03_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_Column_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_Wall_04_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L3_A/Texture/T_NYG_L03_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Column_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_04_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_04_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_04_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/MI/MI_NYG_L04_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Column_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Wall_04_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Mesh/SM_BLDG_NYG_L04_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_Column_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_Wall_04_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L4_A/Texture/T_NYG_L04_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Column_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_04_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_04_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_04_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/MI/MI_NYG_L05_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Column_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Wall_04_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Mesh/SM_BLDG_NYG_L05_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_Column_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_Wall_04_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L5_A/Texture/T_NYG_L05_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Column_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_03_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_03_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_03_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_04_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_04_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_04_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/MI/MI_NYG_L06_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Column_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_03_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_04_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Mesh/SM_BLDG_NYG_L06_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Column_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Wall_03_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Wall_04_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L6_A/Texture/T_NYG_L06_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Column_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_03_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_03_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_03_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_04_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_04_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_04_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/MI/MI_NYG_L07_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Column_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_03_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_04_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Mesh/SM_BLDG_NYG_L07_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Column_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Wall_03_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Wall_04_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L7_A/Texture/T_NYG_L07_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_02_3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_03_3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_04_3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/MI/MI_NYG_L08_A_Wall_08_3.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Material/M_Bldg_paintedMetal_roof.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_03_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_04_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Mesh/SM_BLDG_NYG_L08_A_Wall_08_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_Wall_03_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_Wall_04_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L8_A/Texture/T_NYG_L08_A_Wall_08_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Column_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_CornerEx_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_CornerIn_01_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_02_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_02_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_02_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_06_0.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_06_1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/MI/MI_NYG_L09_A_Wall_06_2.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/M_Bldg_block_limestone.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/M_Bldg_block_limestone_grey.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/M_Bldg_glass.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Material/M_Bldg_paintedMetal_black.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_Column_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_CornerEx_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_CornerIn_01_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_Wall_02_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Mesh/SM_BLDG_NYG_L09_A_Wall_06_N1.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Texture/T_NYG_L09_A_Column_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Texture/T_NYG_L09_A_CornerEx_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Texture/T_NYG_L09_A_CornerIn_01_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Texture/T_NYG_L09_A_Wall_02_packedA.uasset",
+  "Building/NY/G/Kit_Bldg_NYG_L9_A/Texture/T_NYG_L09_A_Wall_06_packedA.uasset",
+  "Building/NY/G/Material/MI_Bldg_Block_Limestone.uasset",
+  "Building/NY/G/Material/MI_Bldg_Block_Limestone_Grey.uasset",
+  "Building/NY/G/Material/MI_Bldg_Block_Limestone_Grey_Topper.uasset",
+  "Building/NY/G/Material/MI_Bldg_Glass.uasset",
+  "Building/NY/G/Material/MI_Bldg_Metal_Brass.uasset",
+  "Building/NY/G/Material/MI_Bldg_PaintedMetal_Beige.uasset",
+  "Building/NY/G/Material/MI_Bldg_PaintedMetal_Black.uasset",
+  "Building/NY/G/Material/MI_Bldg_PaintedMetal_Roof.uasset",
+  "Building/Texture/Block/T_Block_N.uasset",
+  "Building/Texture/Block/T_Block_PackedB.uasset",
+  "Building/Texture/Gen/T_default_packedA.uasset",
+  "Building/Texture/Gradient/T_GradientColor_Limestone.uasset",
+  "Building/Texture/Gradient/T_Gradient_Mask.uasset",
+  "Building/Texture/Grunge/T_BuildingDamageDetail_Mask.uasset",
+  "Building/Texture/Grunge/T_GrimeCrevice_Breakup_Mask.uasset",
+  "Building/Texture/Grunge/T_GrimeCrevice_Detail_Mask.uasset",
+  "Building/Texture/Grunge/T_GrimeDrip_MediumBreakup_Mask.uasset",
+  "Building/Texture/Grunge/T_LargeDrip_Mask.uasset",
+  "Building/Texture/Grunge/T_tile_packedGrime.uasset",
+  "Building/Texture/Grunge/tile_noiseDirt.uasset",
+  "Building/Texture/Grunge/tile_noiseDirtSmear_Mask.uasset",
+  "Building/Texture/Limestone/T_Limestone_AORMD.uasset",
+  "Building/Texture/Limestone/T_Limestone_Grey_C.uasset",
+  "Building/Texture/Limestone/T_Limestone_N.uasset",
+  "Building/Texture/MetalBrass/T_MetalBrass_AORMD.uasset",
+  "Building/Texture/MetalBrass/T_MetalBrass_C.uasset",
+  "Building/Texture/MetalBrass/T_MetalBrass_N.uasset",
+  "Building/Texture/MetalCopperOxidized/T_MetalCopperOxidized_AORMD.uasset",
+  "Building/Texture/MetalCopperOxidized/T_MetalCopperOxidized_C.uasset",
+  "Building/Texture/MetalCopperOxidized/T_MetalCopperOxidized_N.uasset",
+  "Building/Texture/PaintedMetal/T_PaintedMetal_AORMD.uasset",
+  "Building/Texture/PaintedMetal/T_PaintedMetal_C.uasset",
+  "Building/Texture/PaintedMetal/T_PaintedMetal_N.uasset",
+  "Material/MPC/MPC_GlobalTextureControls.uasset",
+  "Material/MaterialFunction/ColorCorrectHSV.uasset",
+  "Material/MaterialFunction/GradientRemap.uasset",
+  "Material/MaterialFunction/HSVtoRGB_v2.uasset",
+  "Material/MaterialFunction/MF_Blend_AddSub.uasset",
+  "Material/MaterialFunction/MF_HistogramScan.uasset",
+  "Material/MaterialFunction/MF_MaskEdge.uasset",
+  "Material/MaterialFunction/MF_NormalBlend_Whiteout.uasset",
+  "Material/MaterialFunction/MF_NormalStrength.uasset",
+  "Material/MaterialFunction/MF_TriplanarNormal_Whiteout_OffsetBias.uasset",
+  "Material/MaterialFunction/MF_WorldAlignedTexture_OffsetBias.uasset",
+  "Material/MaterialFunction/RGBtoHSV_v2.uasset",
+  "Textures/Default_3or4Channel_Linear_BC7_VT.uasset",
+  "Textures/Default_Color_sRGB_BC7_VT.uasset",
+  "Textures/FlatNormal_VT.uasset",
+  "Textures/Noise/T_Noises_Clouds_4k_.uasset",
+  "Textures/Noise/T_Noises_Grunge_4k_.uasset",
+  "Textures/SurfaceFeature/T_GrimeDrip_Breakup_Mask.uasset",
+  "Textures/SurfaceFeature/T_GrimeDrip_Detail_Mask.uasset",
+  "Textures/SurfaceFeature/T_Imperfection_vdepdipc_8K.uasset",
+  "Textures/T_UDIMCheckSmall.uasset",
+  "Textures/T_UVCheck.uasset"
+ ],
+ "bytes": 2079265437
+}

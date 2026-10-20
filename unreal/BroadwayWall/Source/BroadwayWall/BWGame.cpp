@@ -9,6 +9,7 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/Engine.h"
 #include "Engine/ExponentialHeightFog.h"
+#include "Components/ExponentialHeightFogComponent.h"
 #include "Engine/Font.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/SkyLight.h"
@@ -201,7 +202,10 @@ void ABWGameMode::SpawnSky()
 	Sun->GetRootComponent()->SetMobility(EComponentMobility::Movable);
 	if (UDirectionalLightComponent* L = Cast<UDirectionalLightComponent>(Sun->GetLightComponent()))
 	{
-		L->SetIntensity(8.f);
+		// physical units (ExtendDefaultLuminanceRange): a clear-sky sun is ~100,000 lux;
+		// 8 read as dusk, so auto-exposure lifted everything into fog-white
+		L->SetIntensity(75000.f);
+		L->SetLightSourceAngle(0.5357f);
 		L->SetAtmosphereSunLight(true);
 		L->SetDynamicShadowDistanceMovableLight(400000.f);
 	}
@@ -214,8 +218,12 @@ void ABWGameMode::SpawnSky()
 	Sky->GetLightComponent()->bRealTimeCapture = true;
 	Sky->GetLightComponent()->SetIntensity(1.f);
 	Sky->GetLightComponent()->RecaptureSky();
-	AExponentialHeightFog* Fog = W->SpawnActor<AExponentialHeightFog>();
-	(void)Fog;
+	// light haze, not a fog bank: a city-scale density (the default 0.02 is a pea-souper over 2 km)
+	if (AExponentialHeightFog* Fog = W->SpawnActor<AExponentialHeightFog>())
+	{
+		Fog->GetComponent()->SetFogDensity(0.0015f);
+		Fog->GetComponent()->SetFogHeightFalloff(0.08f);
+	}
 }
 
 void ABWGameMode::BeginPlay()
@@ -363,6 +371,8 @@ void ABWGameMode::RunShots(const FString& Dir)
 		{ TEXT("03-downtown"), Tall, 210, -22, 90000, false },
 		{ TEXT("04-low"), Tall + FVector(-20000, 4000, 0), 25, -16, 45000, false },
 		{ TEXT("05-picked"), Tall, 300, -35, 60000, true },
+		{ TEXT("06-street"), Tall + FVector(-3500, 2500, 1200), 40, -6, 4500, false },
+		{ TEXT("07-facade"), Tall + FVector(-1500, 0, 2500), 20, -2, 2600, false },
 	};
 	IFileManager::Get().MakeDirectory(*Dir, true);
 	TSharedRef<int32> Step = MakeShared<int32>(0);

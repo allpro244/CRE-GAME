@@ -9,10 +9,12 @@
 // metre. Rings are flat [x0,y0,x1,y1,...] integer arrays, unclosed.
 import { makeProjection } from "./geom.mjs";
 
-/** Ground layers, in draw order (later on top). A sidewalk is a ring around its
+/** Ground layers, in draw order (later on top). The aprons (a park's frontage
+ * road, a boulevard's carriageways) lie over the base paving, which shows only
+ * where nothing else is drawn. A sidewalk is a ring around its
  * block (the block is its hole); rings go out unholed, so the block surface is drawn
  * after it to fill the hole back in. */
-export const GROUND_LAYERS = ["land", "beach", "marsh", "rock", "esplanade", "apron", "paveland", "pavement", "median", "sidewalk", "block", "park", "pond", "stream"];
+export const GROUND_LAYERS = ["land", "beach", "marsh", "rock", "esplanade", "paveland", "apron", "pavement", "median", "sidewalk", "block", "park", "pond", "stream"];
 
 // the web renderer's own hashes (map/real/RealCity.ts hash01, keyOf), so a
 // building draws the same family here as on the browser map
@@ -82,7 +84,9 @@ export function toBwCity(c, opts = {}) {
   const water = [], trees = [], labels = [];
   // street markings: centrelines carry the carriageway width (w, metres) the
   // renderer divides into lanes; zebra bars and crosswalk outlines come as drawn
-  const markings = { centerlines: [], zebras: [], crosswalks: [] };
+  const markings = { centerlines: [], zebras: [], crosswalks: [], curbs: [], parkkerbs: [], parkpaths: [] };
+  // park benches, with the bearing they face (degrees, the generator's own)
+  const benches = [];
   for (const f of c.context.features) {
     const k = f.properties?.kind, g = f.geometry;
     if (k === "shallows" && g.type === "Polygon") water.push(ring(g.coordinates[0]));
@@ -92,6 +96,11 @@ export function toBwCity(c, opts = {}) {
     else if (k === "centerline" && g.type === "LineString") markings.centerlines.push({ w: Math.round((f.properties.w ?? 8) * 100), mk: f.properties.mk ?? 0, cls: f.properties.cls ?? "", line: g.coordinates.flatMap(ue) });
     else if (k === "zebra" && g.type === "LineString") markings.zebras.push(g.coordinates.flatMap(ue));
     else if (k === "crosswalk" && g.type === "Polygon") markings.crosswalks.push(ring(g.coordinates[0]));
+    // the kerb lines (a raised footway's road edge), a lawn's edging, the park walks
+    else if (k === "curb" && g.type === "LineString") markings.curbs.push(g.coordinates.flatMap(ue));
+    else if (k === "parkkerb" && g.type === "LineString") markings.parkkerbs.push(g.coordinates.flatMap(ue));
+    else if (k === "parkpath" && g.type === "LineString") markings.parkpaths.push(g.coordinates.flatMap(ue));
+    else if (k === "bench" && g.type === "Point") benches.push({ at: ue(g.coordinates), rot: Number(f.properties.rot ?? 0) });
     else if (k === "label" && g.type === "Point") labels.push({ name: f.properties.name, kind: f.properties.labelKind, at: ue(g.coordinates) });
   }
 
@@ -105,6 +114,6 @@ export function toBwCity(c, opts = {}) {
     city: { id: c.id, seed: c.seed, size: c.size, name: c.name, lots: parcels.length },
     origin: { lon: lon0, lat: lat0 },
     bounds: { minX, maxX, minY, maxY },
-    parcels, volumes, water, ground, trees, labels, markings,
+    parcels, volumes, water, ground, trees, labels, markings, benches,
   };
 }

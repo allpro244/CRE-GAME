@@ -1152,10 +1152,10 @@ export function DevelopSection({ bbl }: { bbl: string }) {
                   <button
                     className="btn btn-buy"
                     disabled={!canFund}
-                    onClick={() => useStore.getState().launchRaise(bbl, { use, floors: fl, coverage: cov, contract, ltc: plan.ltcMax * ltcWant, custom: { mix: customMix, bts, groundRetail, design, takeout }, lender: plan.lender, spec, pitch: pitchStyle }, outside)}
-                    title={`Up to ${RAISE_WINDOW_M} months. Closes when full, or close it yourself once half is in. Counsel ${usd(raiseLegalCost(game, outside))}, sunk.`}
+                    onClick={() => useStore.getState().raiseAndBuild(bbl, { use, floors: fl, coverage: cov, contract, ltc: plan.ltcMax * ltcWant, custom: { mix: customMix, bts, groundRetail, design, takeout }, lender: plan.lender, spec, pitch: pitchStyle }, outside)}
+                    title={`Your investors commit at the table and the crane goes up today. Counsel ${usd(raiseLegalCost(game, outside))}.`}
                   >
-                    {canFund ? `Launch the raise · ${usd(outside)} · counsel ${usd(raiseLegalCost(game, outside))}` : `Cannot finish · short ${usd(fundShort)}`}
+                    {canFund ? `Raise ${usd(outside)} and break ground · counsel ${usd(raiseLegalCost(game, outside))}` : `Cannot finish · short ${usd(fundShort)}`}
                   </button>
                 ) : (
                 <button

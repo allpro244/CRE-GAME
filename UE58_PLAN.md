@@ -377,9 +377,45 @@ without DLSS.
 economy to June 2001 under the scripted player. Graphics settings come from the
 game's own Settings page.
 
-Left: an installer; saves in the user's folder (CEF keeps IndexedDB under the
-build's `Saved/webcache`, fine for a portable folder, not for Program Files);
-crash reporter wiring; a pass on cook size (all of `/Game` is cooked).
+Saves: UE 5.8 keeps CEF's IndexedDB under the user's folder
+(`%LOCALAPPDATA%\UnrealEngine\BroadwayWall\webcache_*`), so a reinstall keeps
+them; a second copy running at once gets its own folder.
+
+Left: an installer; crash reporter wiring; a pass on cook size (all of `/Game`
+is cooked).
+
+#### 2026-10-20, second day — the city, the look, the Build desk
+
+- **Generator, plan 12** (citygen.mjs, `CITY_PLAN = 12`; older saves rebuild
+  their own plan): a building over six floors needs a 10 m plate and stands
+  no taller than 4.5× its narrow side (no pencil towers); shops, offices,
+  garages and works take 78-98% of their lot at grade (open ground on built
+  lots 38% → 25%); no creeks, canals or mill ponds; a park has its own kerbed
+  footway; a park frontage's centre line is in the middle of the real road; a
+  boulevard's carriageways get their own centre lines and its blocks a
+  footway. `unreal/tools/audit-streets.mjs` maps asphalt no street claims
+  (24.5% → 1.7%).
+- **Every building wears the web map's family** (toBwCity runs facades.ts
+  familyFor; `Data/facade-families.json` maps 111 families to 18 kits, no kit
+  over 13%), with its wall tint. Window rows follow the floor count.
+- **Look:** months by real solar geometry (afternoon light) and a weather draw
+  per month (clear, partly, overcast, rain; wet streets only in rain); a colour
+  grade; eight roof finishes; painted cars (needed City Sample's Traffic
+  plugin content for the car-paint material); parks laid out with the
+  generator's walks, benches and railings on a seasonal lawn
+  (`/Game/BW/Materials/M_BW_Grass`); raised kerbs; street furniture; the far
+  shore.
+- **Selection:** a gold band on the lot line and a rim at each roof level,
+  constant on-screen width; hover a thin white band (`M_BW_Highlight`).
+- **The Build desk in Unreal:** the model box is a window onto Unreal — the
+  scheme is built on its lot and the camera framed into the box. The Design
+  tab is the kit picker (engine/renderView.ts `KITS`): 18 kits named for what
+  they build, with thumbnails Unreal renders (`-KitThumbs`, served at
+  `/game/kits/`), six wall colours, street floor, top and window rhythm
+  (`BuildingDesign.kit/kitColour/ground/top/bays` → `look` on the render lot).
+- **Play-throughs:** `unreal/tools/play-driver.js` buys the docket's first
+  building and plays three years; `unreal/tools/build-driver.js` buys a lot and
+  walks the kit picker.
 ---
 
 ## 5 · Risks and how we handle them

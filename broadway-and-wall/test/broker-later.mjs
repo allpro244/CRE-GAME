@@ -37,7 +37,7 @@ if (!bbl) process.exit(1);
 const rec = E.resolveRec(parcels, g, bbl);
 const h = g.holdings[bbl];
 const loi = {
-  id: 999001, bbl, kind: "new", name: "Test Tenant LLC", sector: "Professional services", credit: 1,
+  id: 999001, bbl, kind: "new", name: "Test Tenant LLC", sector: "law", credit: 1,   // a trade the engine has books for (FIRM_PROFILE)
   sf: Math.round(free), rentPsf: 40, termM: 60, tiPsf: 0, freeM: 0, net: false,
   use, expiresM: g.month + 3,
 };

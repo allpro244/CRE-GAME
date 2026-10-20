@@ -29,6 +29,7 @@ bool FBWRenderView::Parse(const FString& Json)
 		O->TryGetBoolField(TEXT("fresh"), L.bFresh);
 		O->TryGetBoolField(TEXT("shops"), L.bShops);
 		O->TryGetStringField(TEXT("facade"), L.Facade);
+		L.Look = BWReadLook(O);
 	}
 
 	Owners.Reset();

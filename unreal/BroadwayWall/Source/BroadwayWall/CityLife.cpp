@@ -3,6 +3,8 @@
 #include "CityData.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 
@@ -20,6 +22,30 @@ namespace
 		TEXT("/Game/Vehicle/vehCar_vehicle13/Mesh/SM_vehCar_vehicle13.SM_vehCar_vehicle13"),
 		TEXT("/Game/Vehicle/vehVan_vehicle01/Mesh/SM_vehVan_vehicle01.SM_vehVan_vehicle01"),
 		TEXT("/Game/Vehicle/vehVan_vehicle09/Mesh/SM_vehVan_vehicle09.SM_vehVan_vehicle09") };
+
+	// WHAT COLOUR CARS ARE. The share of each paint on the road (US registrations
+	// of the 2010s-20s, rounded: white a quarter, black a fifth, then grey, silver,
+	// blue and red, and a little of everything else), and the paint in linear
+	// colour for City Sample's car shader (M_Veh_CarPaint "BaseColor").
+	struct FPaint { float Share; FLinearColor Color; };
+	const FPaint Paints[] = {
+		{ 0.25f, FLinearColor(0.80f, 0.80f, 0.78f) },   // white
+		{ 0.22f, FLinearColor(0.015f, 0.015f, 0.017f) }, // black
+		{ 0.19f, FLinearColor(0.16f, 0.165f, 0.17f) },  // grey
+		{ 0.10f, FLinearColor(0.46f, 0.47f, 0.48f) },   // silver
+		{ 0.09f, FLinearColor(0.025f, 0.06f, 0.20f) },  // blue
+		{ 0.09f, FLinearColor(0.34f, 0.02f, 0.02f) },   // red
+		{ 0.03f, FLinearColor(0.04f, 0.09f, 0.05f) },   // green
+		{ 0.03f, FLinearColor(0.42f, 0.36f, 0.27f) },   // beige, brown, gold
+	};
+	constexpr int32 NumPaints = UE_ARRAY_COUNT(Paints);
+	/** A car of any model, in a paint by its share on the road: the component index within one pass. */
+	int32 PickCar(FRandomStream& Rng, int32 NumModels)
+	{
+		float U = Rng.FRand(); int32 P = NumPaints - 1;
+		for (int32 i = 0; i < NumPaints; ++i) { if (U < Paints[i].Share) { P = i; break; } U -= Paints[i].Share; }
+		return Rng.RandRange(0, NumModels - 1) * NumPaints + P;
+	}
 
 	// signal cycle: axis 0 green, all red, axis 1 green, all red (seconds)
 	constexpr double GreenT = 14, ClearT = 3, Cycle = 2 * (GreenT + ClearT);
@@ -139,14 +165,32 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 	}
 	for (FNode& N : Nodes) N.bSignal = N.Out.Num() >= 3;
 
+	// one component per model and paint (a paint is a material parameter, so it
+	// is per component); the body slots are the ones on the car-paint master
+	TMap<TPair<UMaterialInterface*, int32>, UMaterialInstanceDynamic*> Painted;
+	const int32 NumModels = UE_ARRAY_COUNT(Vehicles);
 	for (int32 Pass = 0; Pass < 2; ++Pass)
 	for (const TCHAR* P : Vehicles)
+	for (int32 Paint = 0; Paint < NumPaints; ++Paint)
 	{
 		UInstancedStaticMeshComponent* I = NewObject<UInstancedStaticMeshComponent>(this);
 		I->SetupAttachment(RootComponent);
 		I->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, P));
 		I->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		I->SetMobility(Pass ? EComponentMobility::Movable : EComponentMobility::Static);
+		for (int32 Slot = 0; Slot < I->GetNumMaterials(); ++Slot)
+		{
+			UMaterialInterface* Base = I->GetMaterial(Slot);
+			const UMaterial* Master = Base ? Base->GetBaseMaterial() : nullptr;
+			if (!Master || !Master->GetName().Contains(TEXT("CarPaint"))) continue;
+			UMaterialInstanceDynamic*& MID = Painted.FindOrAdd(TPair<UMaterialInterface*, int32>(Base, Paint));
+			if (!MID)
+			{
+				MID = UMaterialInstanceDynamic::Create(Base, this);
+				MID->SetVectorParameterValue(TEXT("BaseColor"), Paints[Paint].Color);
+			}
+			I->SetMaterial(Slot, MID);
+		}
 		I->RegisterComponent();
 		(Pass ? CarMeshes : ParkedMeshes).Add(I);
 	}
@@ -168,7 +212,7 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 				const FVector2D At2 = P + Right * Kerb * Side;
 				// parked facing the traffic on its side of the street
 				const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)) + (Side > 0 ? 0 : 180);
-				UInstancedStaticMeshComponent* M = ParkedMeshes[Rng.RandRange(0, ParkedMeshes.Num() - 1)];
+				UInstancedStaticMeshComponent* M = ParkedMeshes[PickCar(Rng, NumModels)];
 				M->AddInstance(FTransform(FRotator(0, Yaw, 0), FVector(At2, 14)));
 				++Parked;
 			}
@@ -188,7 +232,7 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 			C.S = (L.Len - StopBack) * (n + Rng.FRandRange(0.1, 0.9)) / FMath::Max(1, Count);
 			C.V0 = Rng.FRandRange(950, 1250);
 			C.V = C.V0 * 0.5;
-			C.Mesh = Rng.RandRange(0, CarMeshes.Num() - 1);
+			C.Mesh = PickCar(Rng, NumModels);
 			C.Inst = CarMeshes[C.Mesh]->AddInstance(FTransform::Identity);
 			L.Cars.Add(Cars.Add(C));
 		}

@@ -106,6 +106,14 @@ bool FBWCity::LoadText(const FString& Text, const FString& Path)
 	}
 
 	Trees = ReadFlat(Root->GetArrayField(TEXT("trees")));
+	const TArray<TSharedPtr<FJsonValue>>* BenchArr;
+	if (Root->TryGetArrayField(TEXT("benches"), BenchArr))
+		for (const TSharedPtr<FJsonValue>& V : *BenchArr)
+		{
+			const TSharedPtr<FJsonObject> O = V->AsObject();
+			const TArray<FVector2D> P = ReadFlat(O->GetArrayField(TEXT("at")));
+			if (P.Num()) Benches.Emplace(P[0], O->GetNumberField(TEXT("rot")));
+		}
 	const TSharedPtr<FJsonObject>* Marks;
 	if (Root->TryGetObjectField(TEXT("markings"), Marks))
 	{
@@ -119,6 +127,10 @@ bool FBWCity::LoadText(const FString& Text, const FString& Path)
 			Cl.Line = ReadFlat(O->GetArrayField(TEXT("line")));
 		}
 		for (const TSharedPtr<FJsonValue>& V : (*Marks)->GetArrayField(TEXT("zebras"))) Zebras.Add(ReadFlat(V->AsArray()));
+		const TArray<TSharedPtr<FJsonValue>>* Arr;
+		if ((*Marks)->TryGetArrayField(TEXT("curbs"), Arr)) for (const TSharedPtr<FJsonValue>& V : *Arr) Curbs.Add(ReadFlat(V->AsArray()));
+		if ((*Marks)->TryGetArrayField(TEXT("parkkerbs"), Arr)) for (const TSharedPtr<FJsonValue>& V : *Arr) ParkKerbs.Add(ReadFlat(V->AsArray()));
+		if ((*Marks)->TryGetArrayField(TEXT("parkpaths"), Arr)) for (const TSharedPtr<FJsonValue>& V : *Arr) ParkPaths.Add(ReadFlat(V->AsArray()));
 	}
 	for (const TSharedPtr<FJsonValue>& V : Root->GetArrayField(TEXT("labels")))
 	{
@@ -135,4 +147,23 @@ const FBWParcel* FBWCity::FindParcel(const FString& Bbl) const
 {
 	const int32* I = ParcelByBbl.Find(Bbl);
 	return I ? &Parcels[*I] : nullptr;
+}
+
+FBWLook BWReadLook(const TSharedPtr<FJsonObject>& Parent, const TCHAR* Field)
+{
+	FBWLook L;
+	const TSharedPtr<FJsonObject>* O;
+	if (!Parent.IsValid() || !Parent->TryGetObjectField(Field, O) || !O->IsValid()) return L;
+	(*O)->TryGetStringField(TEXT("kit"), L.Kit);
+	(*O)->TryGetStringField(TEXT("ground"), L.Ground);
+	(*O)->TryGetStringField(TEXT("top"), L.Top);
+	double Bays = -1;
+	if ((*O)->TryGetNumberField(TEXT("bays"), Bays)) L.Bays = int32(Bays);
+	const TArray<TSharedPtr<FJsonValue>>* T;
+	if ((*O)->TryGetArrayField(TEXT("tint"), T) && T->Num() == 3)
+	{
+		L.bTint = true;
+		L.Tint = FLinearColor((float)(*T)[0]->AsNumber(), (float)(*T)[1]->AsNumber(), (float)(*T)[2]->AsNumber());
+	}
+	return L;
 }

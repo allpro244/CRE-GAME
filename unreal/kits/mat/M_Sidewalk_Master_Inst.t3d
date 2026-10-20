@@ -1,0 +1,35 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="M_Sidewalk_Master_Inst" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Road/Material/MI/M_Sidewalk_Master_Inst.M_Sidewalk_Master_Inst'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="M_Sidewalk_Master_InstEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Road/Material/MI/M_Sidewalk_Master_Inst.M_Sidewalk_Master_Inst:M_Sidewalk_Master_InstEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Road/Material/MI/M_Sidewalk_Master_Inst.M_Sidewalk_Master_Inst:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="M_Sidewalk_Master_InstEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Road/Material/MI/M_Sidewalk_Master_Inst.M_Sidewalk_Master_Inst:M_Sidewalk_Master_InstEditorOnlyData'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Road/Material/MI/M_Sidewalk_Master_Inst.M_Sidewalk_Master_Inst:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=4C8A2CC84DC323D03E8A1897CC0CAC49
+   Parent="/Script/Engine.MaterialInstanceConstant'/Game/Road/Material/MI/MI_Sidewalk.MI_Sidewalk'"
+   ScalarParameterValues(0)=(ParameterInfo=(Name="Position Variation Scale"),ParameterValue=3970.688477,ExpressionGUID=2829A9614CF4C0B3B3CED3BBDDAB0E6B)
+   ScalarParameterValues(1)=(ParameterInfo=(Name="PatchScale"),ParameterValue=0.000250,ExpressionGUID=E3970D10476AEB9014F01D83F723D48A)
+   ScalarParameterValues(2)=(ParameterInfo=(Name="RefractionDepthBias"))
+   VectorParameterValues(0)=(ParameterInfo=(Name="Position Variation Primes"),ParameterValue=(R=131.000000,G=23.000000,B=131.000000,A=1.000000),ExpressionGUID=76291A60446A7F4175A590869888CB08)
+   BasePropertyOverrides=(OpacityMaskClipValue=0.333300,UsageFlags=4456592)
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'M_Sidewalk_Master_InstEditorOnlyData'"
+   TextureStreamingDataVersion=1
+   TextureStreamingData(0)=(SamplingScale=0.890625,UVChannelIndex=0,TextureName="freeway_AsphaltNoise_packedA",TextureReference="/Game/Textures/SurfaceFeature/T_AsphaltNoise_packedA.T_AsphaltNoise_packedA")
+   TextureStreamingData(1)=(SamplingScale=0.250000,UVChannelIndex=0,TextureName="freeway_crackTileLarge_C",TextureReference="/Game/Textures/SurfaceFeature/T_CrackTileLarge_C.T_CrackTileLarge_C")
+   TextureStreamingData(2)=(SamplingScale=0.250000,UVChannelIndex=0,TextureName="freeway_crackTileLarge_N",TextureReference="/Game/Textures/SurfaceFeature/T_CrackTileLarge_N.T_CrackTileLarge_N")
+   TextureStreamingData(3)=(SamplingScale=0.015625,UVChannelIndex=0,TextureName="Imperfection_vdepdipc_8K",TextureReference="/Game/Textures/SurfaceFeature/T_Imperfection_vdepdipc_8K.T_Imperfection_vdepdipc_8K")
+   TextureStreamingData(4)=(SamplingScale=0.640625,UVChannelIndex=0,TextureName="shmpulh_8K_Albedo",TextureReference="/Game/Megascans/Atlases/Debris_Manmade_00/shmpulh_8K_Albedo.shmpulh_8K_Albedo")
+   TextureStreamingData(5)=(SamplingScale=0.640625,UVChannelIndex=0,TextureName="shmpulh_8K_Opacity",TextureReference="/Game/Megascans/Atlases/Debris_Manmade_00/shmpulh_8K_Opacity.shmpulh_8K_Opacity")
+   TextureStreamingData(6)=(SamplingScale=0.250000,UVChannelIndex=0,TextureName="sl3badpc_4K_Mask",TextureReference="/Game/Megascans/Surfaces/Frost_00/sl3badpc_4K_Mask.sl3badpc_4K_Mask")
+   TextureStreamingData(7)=(SamplingScale=0.125000,UVChannelIndex=0,TextureName="sl3badpc_4K_Roughness",TextureReference="/Game/Megascans/Surfaces/Frost_00/sl3badpc_4K_Roughness.sl3badpc_4K_Roughness")
+   TextureStreamingData(8)=(SamplingScale=0.031250,UVChannelIndex=0,TextureName="T_Puddles_4k",TextureReference="/Game/Textures/SurfaceFeature/T_Puddles_4k.T_Puddles_4k")
+   TextureStreamingData(9)=(SamplingScale=0.109375,UVChannelIndex=0,TextureName="T_sidewalk_puddleVarMask",TextureReference="/Game/Textures/SurfaceFeature/T_puddleVarMask.T_puddleVarMask")
+   TextureStreamingData(10)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="ugxjcdpn_4K_Albedo",TextureReference="/Game/Megascans/Surfaces/Dirty_Sidewalk_2x2_M_00/ugxjcdpn_4K_Albedo.ugxjcdpn_4K_Albedo")
+   TextureStreamingData(11)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="ugxjcdpn_4K_AO",TextureReference="/Game/Megascans/Surfaces/Dirty_Sidewalk_2x2_M_00/ugxjcdpn_4K_AO.ugxjcdpn_4K_AO")
+   TextureStreamingData(12)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="ugxjcdpn_4K_Normal",TextureReference="/Game/Megascans/Surfaces/Dirty_Sidewalk_2x2_M_00/ugxjcdpn_4K_Normal.ugxjcdpn_4K_Normal")
+   TextureStreamingData(13)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="ugxjcdpn_4K_Roughness",TextureReference="/Game/Megascans/Surfaces/Dirty_Sidewalk_2x2_M_00/ugxjcdpn_4K_Roughness.ugxjcdpn_4K_Roughness")
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LightingGuid=D7BC854A478A3C1C5CC2FFBACB7304A2
+End Object

@@ -24,7 +24,7 @@
  * C++ (unreal/BroadwayWall/Source/BroadwayWall/RenderView.h) and checked by
  * test/render-view.mjs.
  */
-import type { GameState, PropertyEventKind } from "./types";
+import type {GameState, PropertyEventKind, BuildingDesign } from "./types";
 import { START_YEAR } from "./types";
 import { ownerOf } from "./rivals";
 
@@ -53,6 +53,8 @@ export interface RenderLot {
   shops?: boolean;
   /** The facade family the player chose (BuildingDesign.facade, variant stripped), when they designed it. */
   facade?: string;
+  /** The Unreal facade kit the player chose, when they chose one (lookOf). */
+  look?: RenderLook;
 }
 
 export interface RenderOwner {
@@ -87,6 +89,63 @@ export interface RenderView {
   events: RenderEvent[];
 }
 
+/**
+ * THE FACADE KITS the Unreal renderer can build (unreal/BroadwayWall/Data/kit-*.json),
+ * as the Build desk offers them: grouped by era, each with the web family it
+ * stands nearest (BuildingDesign.facade, so the browser map draws the same
+ * building in its own pattern book).
+ */
+export const KITS: { key: string; name: string; era: string; group: "prewar" | "interwar" | "postwar"; family: string }[] = [
+  // named for what each kit builds (Unreal renders: unreal/BroadwayWall/Data/kit-thumbs)
+  { key: "NYA", name: "Painted brick walk-up", era: "1880-1930", group: "prewar", family: "brick" },
+  { key: "NYH", name: "Arched red brick", era: "1860-1900", group: "prewar", family: "brick" },
+  { key: "CHG", name: "Brick & cast iron", era: "1860-1910", group: "prewar", family: "castiron" },
+  { key: "SFA", name: "Brick on a stone base", era: "1900-1930", group: "prewar", family: "buff" },
+  { key: "SFJ", name: "Romanesque stone", era: "1885-1905", group: "prewar", family: "romanesque" },
+  { key: "CHA", name: "Terra cotta commercial", era: "1890-1925", group: "prewar", family: "terracotta" },
+  { key: "CHC", name: "Gothic terra cotta", era: "1900-1930", group: "prewar", family: "terracotta" },
+  { key: "NYG", name: "Collegiate Gothic", era: "1900-1930", group: "prewar", family: "gothic" },
+  { key: "SFB", name: "Classical portico", era: "1900-1930", group: "prewar", family: "stone" },
+  { key: "CHB", name: "Deco stone", era: "1925-1940", group: "interwar", family: "deco" },
+  { key: "CHI", name: "Deco brick", era: "1920-1940", group: "interwar", family: "decobrick" },
+  { key: "CHD", name: "Stripped classical", era: "1930-1950", group: "interwar", family: "stone" },
+  { key: "CHH", name: "Moderne, bronze bays", era: "1935-1955", group: "interwar", family: "moderne" },
+  { key: "CHF", name: "Mid-century frame", era: "1945-1965", group: "postwar", family: "midcentury" },
+  { key: "CHE", name: "Stone base, glass top", era: "1950-1975", group: "postwar", family: "modern" },
+  { key: "SFE", name: "Modern strip", era: "1955-1990", group: "postwar", family: "modern" },
+  { key: "SFC", name: "Punched grid", era: "1960-1990", group: "postwar", family: "grid" },
+  { key: "CHJ", name: "Dark glass curtain wall", era: "1960-1985", group: "postwar", family: "blackglass" },
+];
+export const KIT_GROUPS: { key: (typeof KITS)[number]["group"]; name: string }[] = [
+  { key: "prewar", name: "Pre-war" }, { key: "interwar", name: "Inter-war" }, { key: "postwar", name: "Post-war" },
+];
+/** Wall colours: multipliers on the kit's own wall material (its brick, stone or panel). */
+export const KIT_COLOURS: { name: string; rgb: [number, number, number] }[] = [
+  { name: "As built", rgb: [1, 1, 1] },
+  { name: "Warm", rgb: [1.12, 1.0, 0.84] },
+  { name: "Red", rgb: [1.18, 0.82, 0.74] },
+  { name: "Pale", rgb: [1.25, 1.22, 1.16] },
+  { name: "Grey", rgb: [0.9, 0.92, 0.95] },
+  { name: "Dark", rgb: [0.68, 0.66, 0.66] },
+];
+/** Window rhythms: indices into the Unreal facade builder's bay patterns. */
+export const KIT_BAYS: { name: string; i: number }[] = [
+  { name: "Even", i: 0 }, { name: "Alternating", i: 1 }, { name: "Grouped", i: 2 }, { name: "Varied", i: 3 },
+];
+export interface RenderLook { kit: string; tint?: [number, number, number]; ground?: string; top?: string; bays?: number }
+/** What the Unreal renderer needs of a design's kit choice, or nothing when the player left it to the street. */
+export function lookOf(d: BuildingDesign | undefined): RenderLook | undefined {
+  if (!d?.kit) return undefined;
+  const c = d.kitColour !== undefined ? KIT_COLOURS[d.kitColour] : undefined;
+  return {
+    kit: d.kit,
+    ...(c && d.kitColour ? { tint: c.rgb } : {}),
+    ...(d.ground ? { ground: d.ground } : {}),
+    ...(d.top ? { top: d.top } : {}),
+    ...(d.bays !== undefined ? { bays: d.bays } : {}),
+  };
+}
+
 export function renderView(s: GameState, sinceMonth = s.month - 1): RenderView {
   const nowYear = START_YEAR + Math.floor(s.month / 12);
   const lots: RenderLot[] = [];
@@ -96,7 +155,8 @@ export function renderView(s: GameState, sinceMonth = s.month - 1): RenderView {
     const progress = Math.min(1, Math.max(0.15, (s.month - d.startM + 1) / total));
     lots.push({ bbl: d.bbl, cls: d.use, floors: d.floors, heightM: d.floors * FLOOR_M * progress, construction: true, progress, year: nowYear,
       ...(d.coverage !== undefined ? { cov: d.coverage } : {}),
-      ...(d.design?.facade ? { facade: d.design.facade.split("#")[0] } : {}) });
+      ...(d.design?.facade ? { facade: d.design.facade.split("#")[0] } : {}),
+      ...(lookOf(d.design) ? { look: lookOf(d.design) } : {}) });
   }
   for (const j of s.cityJobs ?? []) {
     if ((s.built?.[j.bbl]?.bldgArea ?? 0) > 0 || s.developments?.[j.bbl]) continue;
@@ -115,7 +175,8 @@ export function renderView(s: GameState, sinceMonth = s.month - 1): RenderView {
       ...(b.cov !== undefined ? { cov: b.cov } : {}),
       ...(dM !== undefined && s.month - dM <= 3 ? { fresh: true } : {}),
       ...(b.mix ? { shops: (b.mix.retail ?? 0) > 0.001 } : {}),
-      ...(b.design?.facade ? { facade: b.design.facade.split("#")[0] } : {}) });
+      ...(b.design?.facade ? { facade: b.design.facade.split("#")[0] } : {}),
+      ...(lookOf(b.design) ? { look: lookOf(b.design) } : {}) });
   }
 
   const owners: RenderOwner[] = [];

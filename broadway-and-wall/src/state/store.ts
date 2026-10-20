@@ -1,6 +1,6 @@
 import { startTransition } from "react";
 import { recapBuyout } from "@/engine/recap";
-import { launchRaise, cancelRaise, closeRaiseNow, type RaiseJob } from "@/engine/raise";
+import { launchRaise, raiseAndBuild, cancelRaise, closeRaiseNow, type RaiseJob } from "@/engine/raise";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions, BuildingDesign } from "@/engine/types";
@@ -348,6 +348,8 @@ interface AppState {
   buyOutPartner: (bbl: string) => void;
   buyLandBack: (bbl: string) => void;
   launchRaise: (bbl: string, job: RaiseJob, target: number) => void;
+  /** Raise the outside equity and break ground in one step (raise.ts raiseAndBuild). */
+  raiseAndBuild: (bbl: string, job: RaiseJob, target: number) => void;
   recapBuyout: (bbl: string) => void;
   cancelRaise: (bbl: string) => void;
   closeRaiseNow: (bbl: string) => void;
@@ -1421,6 +1423,15 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Raise launched.");
+    void persist(r.s);
+  },
+  raiseAndBuild: (bbl, job, target) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = raiseAndBuild(game, parcels, bbl, job, target);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Raised — ground broken.");
     void persist(r.s);
   },
   recapBuyout: (bbl) => {

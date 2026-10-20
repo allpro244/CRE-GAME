@@ -18,6 +18,7 @@
 #include "GameFramework/HUD.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "Camera/CameraComponent.h"
 #include "BWGame.generated.h"
 
 class ACityBuilder;
@@ -27,6 +28,22 @@ class IWebSocket;
 class UCameraComponent;
 class UAudioComponent;
 struct FBWParcel;
+
+/** A camera that can put its subject anywhere on screen (the Build desk's model
+ *  sits in a box beside the desk's controls, not in the middle of the window). */
+UCLASS()
+class UBWCameraComponent : public UCameraComponent
+{
+	GENERATED_BODY()
+public:
+	/** Where the view's centre lands, in normalised device units (0,0 the middle). */
+	FVector2D Offset = FVector2D::ZeroVector;
+	virtual void GetCameraView(float DeltaTime, FMinimalViewInfo& DesiredView) override
+	{
+		Super::GetCameraView(DeltaTime, DesiredView);
+		DesiredView.OffCenterProjectionOffset = Offset;
+	}
+};
 
 UCLASS()
 class ABWCameraPawn : public APawn
@@ -53,7 +70,15 @@ public:
 	void SetView(const FVector& InFocus, double InYaw, double InPitch, double InDistance);
 
 	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UCameraComponent> Camera;
+	TObjectPtr<UBWCameraComponent> Camera;
+
+	/** The Build desk's model box, as fractions of the window (x, y, w, h); w <= 0 when the desk is closed. */
+	FVector4 DeskRect = FVector4(0, 0, 0, 0);
+	double DeskYaw = 30, DeskSpin = 1, DeskHeld = 0;
+	/** The view to go back to when the desk closes. */
+	FVector SavedFocus = FVector::ZeroVector;
+	double SavedYaw = 0, SavedPitch = -45, SavedDistance = 150000;
+	void SetDeskRect(const FVector4& R);
 
 	/** Phase 4 sound: a city bed that crossfades from street wash to high air with
 	 *  altitude, and a jackhammer that sits on the nearest site going up. */
@@ -115,6 +140,8 @@ public:
 
 	/** Live economy state for the HUD. */
 	int32 SimMonth = -1, SimYear = 0;
+	/** Running the game (the page drives it), not a city tool. */
+	bool bPlayMode = false;
 	FString SimPhase;
 	int32 SimFrames = 0;
 
@@ -130,6 +157,17 @@ public:
 private:
 	UPROPERTY()
 	TObjectPtr<class ADirectionalLight> Sun;
+	UPROPERTY()
+	TObjectPtr<class USkyLightComponent> SkyLight;
+	UPROPERTY()
+	TObjectPtr<class UMaterialInstanceDynamic> CloudMat;
+	UPROPERTY()
+	TObjectPtr<class APostProcessVolume> Post;
+	UPROPERTY()
+	TObjectPtr<class AExponentialHeightFog> Fog;
+	/** The game month the sky was last set for, and its weather (for the HUD). */
+	int32 SkyMonth = -1;
+	FString Weather;
 	// not StartPlay: that name is AGameModeBase's own virtual (it begins play)
 	void StartPlayHost();
 	TSharedPtr<SWebBrowser> Browser;

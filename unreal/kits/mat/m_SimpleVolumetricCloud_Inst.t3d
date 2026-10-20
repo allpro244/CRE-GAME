@@ -1,0 +1,21 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="m_SimpleVolumetricCloud_Inst" ExportPath="/Script/Engine.MaterialInstanceConstant'/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="m_SimpleVolumetricCloud_InstEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst:m_SimpleVolumetricCloud_InstEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="m_SimpleVolumetricCloud_InstEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst:m_SimpleVolumetricCloud_InstEditorOnlyData'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=439999564E4C0236669BBABE0DAF5D54
+   Parent="/Script/Engine.Material'/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud.m_SimpleVolumetricCloud'"
+   ScalarParameterValues(0)=(ParameterInfo=(Name="RefractionDepthBias"))
+   TextureParameterValues(0)=(ParameterInfo=(Name="Layout_CloudHeightProfile"),ParameterValue="/Script/Engine.Texture2D'/Engine/EngineSky/VolumetricClouds/T_Profile_08.T_Profile_08'",ExpressionGUID=6280CB004FDA707806DFD6919B86F287)
+   TextureParameterValues(1)=(ParameterInfo=(Name="Layout_CloudGlobalPattern"),ParameterValue="/Script/Engine.Texture2D'/Engine/EngineSky/VolumetricClouds/T_CloudPattern.T_CloudPattern'",ExpressionGUID=1A287A914A7D435A18D211BF21EDE1E1)
+   TextureParameterValues(2)=(ParameterInfo=(Name="Layout_GlobalCloudMask"),ParameterValue="/Script/Engine.Texture2D'/Engine/EngineSky/VolumetricClouds/T_CloudMask.T_CloudMask'",ExpressionGUID=C39AD7A84827D43B6D65699E897790F5)
+   TextureParameterValues(3)=(ParameterInfo=(Name="Noise_Texture3D"),ParameterValue="/Script/Engine.VolumeTexture'/Engine/EngineSky/VolumetricClouds/VT_PerlinWorley_Balanced.VT_PerlinWorley_Balanced'",ExpressionGUID=382589CB4A223F490293DE9CAA0C83EB)
+   BasePropertyOverrides=(BlendMode=BLEND_Additive,OpacityMaskClipValue=0.333300,UsageFlags=5242880)
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'm_SimpleVolumetricCloud_InstEditorOnlyData'"
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LightingGuid=17358F1B45FCFE8B01C9AB8A1BEF533E
+End Object

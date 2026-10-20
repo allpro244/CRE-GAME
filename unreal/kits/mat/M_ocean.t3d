@@ -1,0 +1,902 @@
+Begin Object Class=/Script/Engine.Material Name="M_ocean" ExportPath="/Script/Engine.Material'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean'"
+   Begin Object Class=/Script/Engine.MaterialEditorOnlyData Name="M_oceanEditorOnlyData" ExportPath="/Script/Engine.MaterialEditorOnlyData'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:M_oceanEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_0" ExportPath="/Script/Engine.MaterialExpressionAdd'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionAdd_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAppendVector Name="MaterialExpressionAppendVector_0" ExportPath="/Script/Engine.MaterialExpressionAppendVector'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionAppendVector_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_0" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionComment_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_1" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionComment_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_2" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionComment_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_2" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionComponentMask_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComponentMask Name="MaterialExpressionComponentMask_4" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionComponentMask_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_3" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionConstant_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDesaturation Name="MaterialExpressionDesaturation_0" ExportPath="/Script/Engine.MaterialExpressionDesaturation'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionDesaturation_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionLinearInterpolate_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_1" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionLinearInterpolate_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_2" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionLinearInterpolate_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_0" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_1" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_2" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_22" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_22'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_4" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_5" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_6" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_9" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_0" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMultiply_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_1" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMultiply_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_2" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMultiply_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_3" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMultiply_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteDeclaration Name="MaterialExpressionNamedRerouteDeclaration_0" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionNamedRerouteDeclaration_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_0" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionNamedRerouteUsage_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPanner Name="MaterialExpressionPanner_0" ExportPath="/Script/Engine.MaterialExpressionPanner'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionPanner_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPanner Name="MaterialExpressionPanner_2" ExportPath="/Script/Engine.MaterialExpressionPanner'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionPanner_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPower Name="MaterialExpressionPower_0" ExportPath="/Script/Engine.MaterialExpressionPower'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionPower_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPower Name="MaterialExpressionPower_1" ExportPath="/Script/Engine.MaterialExpressionPower'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionPower_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPower Name="MaterialExpressionPower_2" ExportPath="/Script/Engine.MaterialExpressionPower'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionPower_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSaturate Name="MaterialExpressionSaturate_1" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionSaturate_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_1" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_10" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_10'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_11" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_11'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_13" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_13'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_15" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_15'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_16" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_16'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_17" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_17'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_18" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_18'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_19" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_19'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_2" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_22" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_22'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_23" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_23'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_24" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_24'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_25" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_25'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_26" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_26'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_27" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_27'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_28" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_28'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_29" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_29'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_3" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_30" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_30'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_5" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_6" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_7" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_8" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_9" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionSetMaterialAttributes_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_2" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionSetMaterialAttributes_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_0" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionStaticSwitchParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObject Name="MaterialExpressionTextureObject_1" ExportPath="/Script/Engine.MaterialExpressionTextureObject'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionTextureObject_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObject Name="MaterialExpressionTextureObject_2" ExportPath="/Script/Engine.MaterialExpressionTextureObject'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionTextureObject_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSample Name="MaterialExpressionTextureSample_0" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionTextureSample_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSample Name="MaterialExpressionTextureSample_1" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionTextureSample_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_3" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionVectorParameter_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionWorldPosition Name="MaterialExpressionWorldPosition_2" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionWorldPosition_2'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="M_oceanEditorOnlyData" ExportPath="/Script/Engine.MaterialEditorOnlyData'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:M_oceanEditorOnlyData'"
+      BaseColor=(Constant=(R=0.501961,G=0.501961,B=0.501961,A=1.000000),Expression="/Script/Engine.MaterialExpressionAdd'M_ocean:MaterialExpressionAdd_0'")
+      Specular=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_1'")
+      Roughness=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'M_ocean:MaterialExpressionLinearInterpolate_0'")
+      MaterialAttributes=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'M_ocean:MaterialExpressionStaticSwitchParameter_0'")
+      ExpressionCollection=(Expressions=("/Script/Engine.MaterialExpressionAdd'M_ocean:MaterialExpressionAdd_0'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_1'","/Script/Engine.MaterialExpressionLinearInterpolate'M_ocean:MaterialExpressionLinearInterpolate_0'","/Script/Engine.MaterialExpressionStaticSwitchParameter'M_ocean:MaterialExpressionStaticSwitchParameter_0'","/Script/Engine.MaterialExpressionTextureObject'M_ocean:MaterialExpressionTextureObject_1'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_1'","/Script/Engine.MaterialExpressionComponentMask'M_ocean:MaterialExpressionComponentMask_4'","/Script/Engine.MaterialExpressionPower'M_ocean:MaterialExpressionPower_0'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_15'","/Script/Engine.MaterialExpressionMultiply'M_ocean:MaterialExpressionMultiply_2'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_5'","/Script/Engine.MaterialExpressionMultiply'M_ocean:MaterialExpressionMultiply_3'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_22'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_22'","/Script/Engine.MaterialExpressionDesaturation'M_ocean:MaterialExpressionDesaturation_0'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_8'","/Script/Engine.MaterialExpressionVectorParameter'M_ocean:MaterialExpressionVectorParameter_3'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_9'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_10'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_16'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_5'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_17'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_18'","/Script/Engine.MaterialExpressionPanner'M_ocean:MaterialExpressionPanner_0'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_19'","/Script/Engine.MaterialExpressionTextureSample'M_ocean:MaterialExpressionTextureSample_0'","/Script/Engine.MaterialExpressionTextureSample'M_ocean:MaterialExpressionTextureSample_1'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_2'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_2'","/Script/Engine.MaterialExpressionPower'M_ocean:MaterialExpressionPower_1'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_3'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_6'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_7'","/Script/Engine.MaterialExpressionSaturate'M_ocean:MaterialExpressionSaturate_1'","/Script/Engine.MaterialExpressionSetMaterialAttributes'M_ocean:MaterialExpressionSetMaterialAttributes_0'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_4'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_13'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_6'","/Script/Engine.MaterialExpressionTextureObject'M_ocean:MaterialExpressionTextureObject_2'","/Script/Engine.MaterialExpressionWorldPosition'M_ocean:MaterialExpressionWorldPosition_2'","/Script/Engine.MaterialExpressionComponentMask'M_ocean:MaterialExpressionComponentMask_2'","/Script/Engine.MaterialExpressionPanner'M_ocean:MaterialExpressionPanner_2'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_23'","/Script/Engine.MaterialExpressionAppendVector'M_ocean:MaterialExpressionAppendVector_0'","/Script/Engine.MaterialExpressionConstant'M_ocean:MaterialExpressionConstant_3'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_24'","/Script/Engine.MaterialExpressionLinearInterpolate'M_ocean:MaterialExpressionLinearInterpolate_1'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_4'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_11'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_0'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_25'","/Script/Engine.MaterialExpressionSetMaterialAttributes'M_ocean:MaterialExpressionSetMaterialAttributes_2'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_26'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_27'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_9'","/Script/Engine.MaterialExpressionMultiply'M_ocean:MaterialExpressionMultiply_0'","/Script/Engine.MaterialExpressionPower'M_ocean:MaterialExpressionPower_2'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_28'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_29'","/Script/Engine.MaterialExpressionMultiply'M_ocean:MaterialExpressionMultiply_1'","/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_ocean:MaterialExpressionNamedRerouteDeclaration_0'","/Script/Engine.MaterialExpressionLinearInterpolate'M_ocean:MaterialExpressionLinearInterpolate_2'","/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_30'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_ocean:MaterialExpressionNamedRerouteUsage_0'"),EditorComments=("/Script/Engine.MaterialExpressionComment'M_ocean:MaterialExpressionComment_0'","/Script/Engine.MaterialExpressionComment'M_ocean:MaterialExpressionComment_1'","/Script/Engine.MaterialExpressionComment'M_ocean:MaterialExpressionComment_2'"))
+      ParameterGroupData(0)=(GroupName="Specular")
+      ParameterGroupData(1)=(GroupName="0.Global")
+      ParameterGroupData(2)=(GroupName="Foam")
+      ParameterGroupData(3)=(GroupName="Foam")
+      ParameterGroupData(4)=(GroupName="Color")
+      ParameterGroupData(5)=(GroupName="Color")
+      ParameterGroupData(6)=(GroupName="Color")
+      ParameterGroupData(7)=(GroupName="Color")
+      ParameterGroupData(8)=(GroupName="Normal")
+      ParameterGroupData(9)=(GroupName="Foam")
+      ParameterGroupData(10)=(GroupName="Foam")
+      ParameterGroupData(11)=(GroupName="Foam")
+      ParameterGroupData(12)=(GroupName="Foam")
+      ParameterGroupData(13)=(GroupName="Roughness")
+      ParameterGroupData(14)=(GroupName="Roughness")
+      ParameterGroupData(15)=(GroupName="Roughness")
+      ParameterGroupData(16)=(GroupName="Roughness")
+      ParameterGroupData(17)=(GroupName="Normal")
+      ParameterGroupData(18)=(GroupName="Normal")
+      ParameterGroupData(19)=(GroupName="Normal")
+      ParameterGroupData(20)=(GroupName="Roughness")
+      ParameterGroupData(21)=(GroupName="Roughness")
+      ParameterGroupData(22)=(GroupName="Roughness")
+      ParameterGroupData(23)=(GroupName="Foam")
+      ParameterGroupData(24)=(GroupName="Foam")
+      ParameterGroupData(25)=(GroupName="Color")
+      ParameterGroupData(26)=(GroupName="Color")
+      ParameterGroupData(27)=(GroupName="Specular")
+   End Object
+   Begin Object Name="MaterialExpressionAdd_0" ExportPath="/Script/Engine.MaterialExpressionAdd'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionAdd_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'M_ocean:MaterialExpressionMultiply_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionMultiply'M_ocean:MaterialExpressionMultiply_2'")
+      MaterialExpressionEditorX=-432
+      MaterialExpressionEditorY=-635
+      MaterialExpressionGuid=597C06AE40F4219C36DEDAB88BB1FE5E
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionAppendVector_0" ExportPath="/Script/Engine.MaterialExpressionAppendVector'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionAppendVector_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionPanner'M_ocean:MaterialExpressionPanner_2'")
+      B=(Expression="/Script/Engine.MaterialExpressionConstant'M_ocean:MaterialExpressionConstant_3'")
+      MaterialExpressionEditorX=-1103
+      MaterialExpressionEditorY=2036
+      MaterialExpressionGuid=C03B40BC4A6A387E9A2B5FBAB3147663
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_0" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionComment_0'"
+      SizeX=2304
+      SizeY=1040
+      Text="Albedo"
+      MaterialExpressionEditorX=-2528
+      MaterialExpressionEditorY=-1216
+      MaterialExpressionGuid=DAA3E6854B8FC12FF146B98D5EDE339B
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_1" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionComment_1'"
+      SizeX=1536
+      SizeY=656
+      Text="Normal"
+      MaterialExpressionEditorX=-1792
+      MaterialExpressionEditorY=1920
+      MaterialExpressionGuid=C2164F4C491F49019AC0E08717B2E905
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_2" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionComment_2'"
+      SizeX=2240
+      SizeY=704
+      Text="Roughness"
+      MaterialExpressionEditorX=-2462
+      MaterialExpressionEditorY=20
+      MaterialExpressionGuid=958C86C741185417A5C3E2AC1326BE1C
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_2" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionComponentMask_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionWorldPosition'M_ocean:MaterialExpressionWorldPosition_2'")
+      R=True
+      G=True
+      MaterialExpressionEditorX=-1529
+      MaterialExpressionEditorY=1999
+      MaterialExpressionGuid=2133952C4F1D5210648368A0C26493CA
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionComponentMask_4" ExportPath="/Script/Engine.MaterialExpressionComponentMask'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionComponentMask_4'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_1'")
+      R=True
+      MaterialExpressionEditorX=-1230
+      MaterialExpressionEditorY=-609
+      MaterialExpressionGuid=77D911484B633FF3DAF944B3ADD917DF
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_3" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionConstant_3'"
+      MaterialExpressionEditorX=-1193
+      MaterialExpressionEditorY=2095
+      MaterialExpressionGuid=6B2C38EB47E8D57E97B8C9960665969E
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionDesaturation_0" ExportPath="/Script/Engine.MaterialExpressionDesaturation'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionDesaturation_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionPower'M_ocean:MaterialExpressionPower_2'")
+      Fraction=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_8'")
+      MaterialExpressionEditorX=-996
+      MaterialExpressionEditorY=-1073
+      MaterialExpressionGuid=A72EE3584A726B9A6E859B868BE9B41F
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionLinearInterpolate_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_7'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_6'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionSaturate'M_ocean:MaterialExpressionSaturate_1'")
+      MaterialExpressionEditorX=-880
+      MaterialExpressionEditorY=238
+      MaterialExpressionGuid=F14ED403429001897F41CA847E4F2B85
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_1" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionLinearInterpolate_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_25'")
+      B=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'M_ocean:MaterialExpressionLinearInterpolate_0'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_0'")
+      MaterialExpressionEditorX=-528
+      MaterialExpressionEditorY=212
+      MaterialExpressionGuid=046A06184017CFCAD3D24C91095CBA99
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_2" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionLinearInterpolate_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_30'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_ocean:MaterialExpressionNamedRerouteUsage_0'")
+      MaterialExpressionEditorX=272
+      MaterialExpressionEditorY=48
+      MaterialExpressionGuid=B5413ED0419A1099224001877C73B80E
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_0" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_0'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions03/Particles/Distance_Blend.Distance_Blend'"
+      FunctionInputs(0)=(ExpressionInputId=691FC2AF43DCCE45F03E3694A94BB137,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_11'",InputName="Blend Range"))
+      FunctionInputs(1)=(ExpressionInputId=E1A368B04DDB189B49FB0A841917D2D0,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_4'",InputName="Start Offset"))
+      FunctionOutputs(0)=(ExpressionOutputId=0D882D5449FE35292F6C8480E2AB7136,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-560
+      MaterialExpressionEditorY=384
+      MaterialExpressionGuid=834C34EC406DA6E9745FE78B44535696
+      Material="/Script/Engine.Material'M_ocean'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_1" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_1'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions03/ComplexMotion/Motion_4WayChaos.Motion_4WayChaos'"
+      FunctionInputs(0)=(ExpressionInputId=694A8C7B4818A79CBAB5FCAF787F64AB,Input=(Expression="/Script/Engine.MaterialExpressionPanner'M_ocean:MaterialExpressionPanner_0'",InputName="Coordinates"))
+      FunctionInputs(1)=(ExpressionInputId=63E2A1CE4696FA319E81D28F5E41E451,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_15'",InputName="Speed"))
+      FunctionInputs(2)=(ExpressionInputId=55386161419E95B577AA499D5EA27E57,Input=(OutputIndex=-1,InputName="Divisor"))
+      FunctionInputs(3)=(ExpressionInputId=34D7522A455D90B04EE02E800E1C866D,Input=(Expression="/Script/Engine.MaterialExpressionTextureObject'M_ocean:MaterialExpressionTextureObject_1'",InputName="Texture"))
+      FunctionOutputs(0)=(ExpressionOutputId=86A8532A4D53E96F911B8DA840667EB7,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-1486
+      MaterialExpressionEditorY=-608
+      MaterialExpressionGuid=B1E1BEE84D68BDB96270BAA45E3F3C36
+      Material="/Script/Engine.Material'M_ocean'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_2" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_2'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Material/TextureCellBombing/MF_TextureCellBombing.MF_TextureCellBombing'"
+      FunctionInputs(0)=(ExpressionInputId=61CD5CB3495B43BED1AEE8A323A3D550,Input=(InputName="Position"))
+      FunctionInputs(1)=(ExpressionInputId=851FE166492B48062C6A729A2E240A00,Input=(InputName="Pattern"))
+      FunctionInputs(2)=(ExpressionInputId=560E8FE343D4B89A85B342902D31DB26,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_2'",InputName="ScaleGlobal"))
+      FunctionInputs(3)=(ExpressionInputId=14612250436B91098C234B8F3CD11D23,Input=(InputName="ScalePattern"))
+      FunctionInputs(4)=(ExpressionInputId=3B22DF5F409353334A8231BA3E5E2E87,Input=(InputName="MipBias"))
+      FunctionInputs(5)=(ExpressionInputId=391103EF4DC609597F9221BA26A4FB2E,Input=(OutputIndex=-1,InputName="ScaleCell"))
+      FunctionInputs(6)=(ExpressionInputId=1800EAEB43E0F5173E284D9F9955CEE0,Input=(InputName="RandomScaleMax"))
+      FunctionInputs(7)=(ExpressionInputId=49F399D042B8E1A674EF5F992B0EC80F,Input=(InputName="RandomOffsetVariation"))
+      FunctionInputs(8)=(ExpressionInputId=93553D46441B76EB9CC8A392DB4E523E,Input=(InputName="RandomScaleMin"))
+      FunctionInputs(9)=(ExpressionInputId=239ECE1843F812BF8EC73E8642290B9C,Input=(InputName="DoRotationVariation"))
+      FunctionInputs(10)=(ExpressionInputId=85BF350D49CCF32D9F6DC48197662CE4,Input=(InputName="RandomRotationVariation"))
+      FunctionInputs(11)=(ExpressionInputId=B019D35F484BB40123FB0AB9E892C5AD,Input=(InputName="RandomRotationSteps"))
+      FunctionInputs(12)=(ExpressionInputId=536E313A483D2C2255B719AE215394C9,Input=(OutputIndex=-1,InputName="DoNormalRotation"))
+      FunctionOutputs(0)=(ExpressionOutputId=FC3551894EC5ED621E123F84C9B4D554,Output=(OutputName="TextureSample"))
+      FunctionOutputs(1)=(ExpressionOutputId=31FA932F48280C4E3AC0E08A0D0D979E,Output=(OutputName="PatternUV"))
+      FunctionOutputs(2)=(ExpressionOutputId=31B3F02C4F285FD7113CF4B1E97E601E,Output=(OutputName="BombUV"))
+      FunctionOutputs(3)=(ExpressionOutputId=4EDA59914FC467AC6CF4ABBC209D3486,Output=(OutputName="DDX"))
+      FunctionOutputs(4)=(ExpressionOutputId=DABA225C4E5DD3AB0BB68CA661A83721,Output=(OutputName="DDY"))
+      FunctionOutputs(5)=(ExpressionOutputId=8891634245EDD5E81D1E069D0B4B77AB,Output=(OutputName="Cell"))
+      MaterialExpressionEditorX=-2016
+      MaterialExpressionEditorY=240
+      MaterialExpressionGuid=FAEB500F453A7F68FD43888C8B93036A
+      Material="/Script/Engine.Material'M_ocean'"
+      Outputs(0)=(OutputName="TextureSample")
+      Outputs(1)=(OutputName="PatternUV")
+      Outputs(2)=(OutputName="BombUV")
+      Outputs(3)=(OutputName="DDX")
+      Outputs(4)=(OutputName="DDY")
+      Outputs(5)=(OutputName="Cell")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_22" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_22'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Material/TextureCellBombing/MF_TextureCellBombing.MF_TextureCellBombing'"
+      FunctionInputs(0)=(ExpressionInputId=61CD5CB3495B43BED1AEE8A323A3D550,Input=(InputName="Position"))
+      FunctionInputs(1)=(ExpressionInputId=851FE166492B48062C6A729A2E240A00,Input=(InputName="Pattern"))
+      FunctionInputs(2)=(ExpressionInputId=560E8FE343D4B89A85B342902D31DB26,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_22'",InputName="ScaleGlobal"))
+      FunctionInputs(3)=(ExpressionInputId=14612250436B91098C234B8F3CD11D23,Input=(OutputIndex=-1,InputName="ScalePattern"))
+      FunctionInputs(4)=(ExpressionInputId=3B22DF5F409353334A8231BA3E5E2E87,Input=(InputName="MipBias"))
+      FunctionInputs(5)=(ExpressionInputId=391103EF4DC609597F9221BA26A4FB2E,Input=(OutputIndex=-1,InputName="ScaleCell"))
+      FunctionInputs(6)=(ExpressionInputId=1800EAEB43E0F5173E284D9F9955CEE0,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_9'",InputName="RandomScaleMax"))
+      FunctionInputs(7)=(ExpressionInputId=49F399D042B8E1A674EF5F992B0EC80F,Input=(InputName="RandomOffsetVariation"))
+      FunctionInputs(8)=(ExpressionInputId=93553D46441B76EB9CC8A392DB4E523E,Input=(InputName="RandomScaleMin"))
+      FunctionInputs(9)=(ExpressionInputId=239ECE1843F812BF8EC73E8642290B9C,Input=(InputName="DoRotationVariation"))
+      FunctionInputs(10)=(ExpressionInputId=85BF350D49CCF32D9F6DC48197662CE4,Input=(InputName="RandomRotationVariation"))
+      FunctionInputs(11)=(ExpressionInputId=B019D35F484BB40123FB0AB9E892C5AD,Input=(InputName="RandomRotationSteps"))
+      FunctionInputs(12)=(ExpressionInputId=536E313A483D2C2255B719AE215394C9,Input=(OutputIndex=-1,InputName="DoNormalRotation"))
+      FunctionOutputs(0)=(ExpressionOutputId=FC3551894EC5ED621E123F84C9B4D554,Output=(OutputName="TextureSample"))
+      FunctionOutputs(1)=(ExpressionOutputId=31FA932F48280C4E3AC0E08A0D0D979E,Output=(OutputName="PatternUV"))
+      FunctionOutputs(2)=(ExpressionOutputId=31B3F02C4F285FD7113CF4B1E97E601E,Output=(OutputName="BombUV"))
+      FunctionOutputs(3)=(ExpressionOutputId=4EDA59914FC467AC6CF4ABBC209D3486,Output=(OutputName="DDX"))
+      FunctionOutputs(4)=(ExpressionOutputId=DABA225C4E5DD3AB0BB68CA661A83721,Output=(OutputName="DDY"))
+      FunctionOutputs(5)=(ExpressionOutputId=8891634245EDD5E81D1E069D0B4B77AB,Output=(OutputName="Cell"))
+      MaterialExpressionEditorX=-1855
+      MaterialExpressionEditorY=-1097
+      MaterialExpressionGuid=FAEB500F453A7F68FD43888C8B93036A
+      Material="/Script/Engine.Material'M_ocean'"
+      Outputs(0)=(OutputName="TextureSample")
+      Outputs(1)=(OutputName="PatternUV")
+      Outputs(2)=(OutputName="BombUV")
+      Outputs(3)=(OutputName="DDX")
+      Outputs(4)=(OutputName="DDY")
+      Outputs(5)=(OutputName="Cell")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_4" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_4'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Crowd/Character/Shared/MaterialFunctions/MF_NormalStrength.MF_NormalStrength'"
+      FunctionInputs(0)=(ExpressionInputId=D0A8D3F249800EA6E7815A839DAB3477,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_6'",InputName="Normal"))
+      FunctionInputs(1)=(ExpressionInputId=0F5221D34A8FECDDF0DA798B65B0955E,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_13'",InputName="Strength"))
+      FunctionOutputs(0)=(ExpressionOutputId=2CA61B8F44E35B9E73464BABCF413E40,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-538
+      MaterialExpressionEditorY=2036
+      MaterialExpressionGuid=82706D6344EDF77D3256EFAC297E7853
+      Material="/Script/Engine.Material'M_ocean'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_5" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_5'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Material/TextureCellBombing/MF_TextureCellBombing.MF_TextureCellBombing'"
+      FunctionInputs(0)=(ExpressionInputId=61CD5CB3495B43BED1AEE8A323A3D550,Input=(InputName="Position"))
+      FunctionInputs(1)=(ExpressionInputId=851FE166492B48062C6A729A2E240A00,Input=(InputName="Pattern"))
+      FunctionInputs(2)=(ExpressionInputId=560E8FE343D4B89A85B342902D31DB26,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_17'",InputName="ScaleGlobal"))
+      FunctionInputs(3)=(ExpressionInputId=14612250436B91098C234B8F3CD11D23,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_18'",InputName="ScalePattern"))
+      FunctionInputs(4)=(ExpressionInputId=3B22DF5F409353334A8231BA3E5E2E87,Input=(InputName="MipBias"))
+      FunctionInputs(5)=(ExpressionInputId=391103EF4DC609597F9221BA26A4FB2E,Input=(OutputIndex=-1,InputName="ScaleCell"))
+      FunctionInputs(6)=(ExpressionInputId=1800EAEB43E0F5173E284D9F9955CEE0,Input=(InputName="RandomScaleMax"))
+      FunctionInputs(7)=(ExpressionInputId=49F399D042B8E1A674EF5F992B0EC80F,Input=(InputName="RandomOffsetVariation"))
+      FunctionInputs(8)=(ExpressionInputId=93553D46441B76EB9CC8A392DB4E523E,Input=(InputName="RandomScaleMin"))
+      FunctionInputs(9)=(ExpressionInputId=239ECE1843F812BF8EC73E8642290B9C,Input=(InputName="DoRotationVariation"))
+      FunctionInputs(10)=(ExpressionInputId=85BF350D49CCF32D9F6DC48197662CE4,Input=(InputName="RandomRotationVariation"))
+      FunctionInputs(11)=(ExpressionInputId=B019D35F484BB40123FB0AB9E892C5AD,Input=(InputName="RandomRotationSteps"))
+      FunctionInputs(12)=(ExpressionInputId=536E313A483D2C2255B719AE215394C9,Input=(OutputIndex=-1,InputName="DoNormalRotation"))
+      FunctionOutputs(0)=(ExpressionOutputId=FC3551894EC5ED621E123F84C9B4D554,Output=(OutputName="TextureSample"))
+      FunctionOutputs(1)=(ExpressionOutputId=31FA932F48280C4E3AC0E08A0D0D979E,Output=(OutputName="PatternUV"))
+      FunctionOutputs(2)=(ExpressionOutputId=31B3F02C4F285FD7113CF4B1E97E601E,Output=(OutputName="BombUV"))
+      FunctionOutputs(3)=(ExpressionOutputId=4EDA59914FC467AC6CF4ABBC209D3486,Output=(OutputName="DDX"))
+      FunctionOutputs(4)=(ExpressionOutputId=DABA225C4E5DD3AB0BB68CA661A83721,Output=(OutputName="DDY"))
+      FunctionOutputs(5)=(ExpressionOutputId=8891634245EDD5E81D1E069D0B4B77AB,Output=(OutputName="Cell"))
+      MaterialExpressionEditorX=-2238
+      MaterialExpressionEditorY=-634
+      MaterialExpressionGuid=FAEB500F453A7F68FD43888C8B93036A
+      Material="/Script/Engine.Material'M_ocean'"
+      Outputs(0)=(OutputName="TextureSample")
+      Outputs(1)=(OutputName="PatternUV")
+      Outputs(2)=(OutputName="BombUV")
+      Outputs(3)=(OutputName="DDX")
+      Outputs(4)=(OutputName="DDY")
+      Outputs(5)=(OutputName="Cell")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_6" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_6'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Material/TextureCellBombing/MF_TextureCellBombing_Ocean.MF_TextureCellBombing_Ocean'"
+      FunctionInputs(0)=(ExpressionInputId=61CD5CB3495B43BED1AEE8A323A3D550,Input=(Expression="/Script/Engine.MaterialExpressionAppendVector'M_ocean:MaterialExpressionAppendVector_0'",InputName="Position"))
+      FunctionInputs(1)=(ExpressionInputId=851FE166492B48062C6A729A2E240A00,Input=(Expression="/Script/Engine.MaterialExpressionTextureObject'M_ocean:MaterialExpressionTextureObject_2'",InputName="Pattern"))
+      FunctionInputs(2)=(ExpressionInputId=560E8FE343D4B89A85B342902D31DB26,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_10'",InputName="ScaleGlobal"))
+      FunctionInputs(3)=(ExpressionInputId=14612250436B91098C234B8F3CD11D23,Input=(OutputIndex=-1,InputName="ScalePattern"))
+      FunctionInputs(4)=(ExpressionInputId=391103EF4DC609597F9221BA26A4FB2E,Input=(OutputIndex=-1,InputName="ScaleCell"))
+      FunctionInputs(5)=(ExpressionInputId=C7DCA61D4F396606540F24BCBB8F9A3A,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_24'",InputName="4WayChaos Speed"))
+      FunctionInputs(6)=(ExpressionInputId=49F399D042B8E1A674EF5F992B0EC80F,Input=(OutputIndex=-1,InputName="RandomOffsetVariation"))
+      FunctionOutputs(0)=(ExpressionOutputId=FC3551894EC5ED621E123F84C9B4D554,Output=(OutputName="TextureSample"))
+      MaterialExpressionEditorX=-959
+      MaterialExpressionEditorY=2036
+      MaterialExpressionGuid=E063F4314E7FD7E248410090BEC0FC44
+      Material="/Script/Engine.Material'M_ocean'"
+      Outputs(0)=(OutputName="TextureSample")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_9" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMaterialFunctionCall_9'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions03/Particles/Distance_Blend.Distance_Blend'"
+      FunctionInputs(0)=(ExpressionInputId=691FC2AF43DCCE45F03E3694A94BB137,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_27'",InputName="Blend Range"))
+      FunctionInputs(1)=(ExpressionInputId=E1A368B04DDB189B49FB0A841917D2D0,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_26'",InputName="Start Offset"))
+      FunctionOutputs(0)=(ExpressionOutputId=0D882D5449FE35292F6C8480E2AB7136,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-908
+      MaterialExpressionEditorY=-374
+      MaterialExpressionGuid=834C34EC406DA6E9745FE78B44535696
+      Material="/Script/Engine.Material'M_ocean'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_0" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMultiply_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionPower'M_ocean:MaterialExpressionPower_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_9'")
+      MaterialExpressionEditorX=-896
+      MaterialExpressionEditorY=-608
+      MaterialExpressionGuid=2C9630C645B0E6087E96B583D5218DEC
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_1" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMultiply_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'M_ocean:MaterialExpressionMultiply_3'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_29'")
+      MaterialExpressionEditorX=-478
+      MaterialExpressionEditorY=-1072
+      MaterialExpressionGuid=44DA14DD4CB16DA1CA5D2B8AB7502AB0
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_2" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMultiply_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'M_ocean:MaterialExpressionMultiply_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_5'")
+      MaterialExpressionEditorX=-677
+      MaterialExpressionEditorY=-608
+      MaterialExpressionGuid=039F2544443AC17C10DBEAA1B1A5065D
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_3" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionMultiply_3'"
+      A=(Expression="/Script/Engine.MaterialExpressionDesaturation'M_ocean:MaterialExpressionDesaturation_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionVectorParameter'M_ocean:MaterialExpressionVectorParameter_3'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      MaterialExpressionEditorX=-656
+      MaterialExpressionEditorY=-1073
+      MaterialExpressionGuid=44DA14DD4CB16DA1CA5D2B8AB7502AB0
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteDeclaration_0" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionNamedRerouteDeclaration_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMultiply'M_ocean:MaterialExpressionMultiply_0'")
+      Name="FoamMask"
+      NodeColor=(R=0.000000,G=0.812500,B=1.000000,A=1.000000)
+      VariableGuid=2BC311114F121DA97B453A9F73F132BD
+      MaterialExpressionEditorX=-704
+      MaterialExpressionEditorY=-688
+      MaterialExpressionGuid=DAAD075C41D3BE87656A878C9A7DA86D
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_0" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionNamedRerouteUsage_0'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_ocean:MaterialExpressionNamedRerouteDeclaration_0'"
+      DeclarationGuid=2BC311114F121DA97B453A9F73F132BD
+      MaterialExpressionEditorX=51
+      MaterialExpressionEditorY=146
+      MaterialExpressionGuid=D31559834065929AE03140B3C23D8E47
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionPanner_0" ExportPath="/Script/Engine.MaterialExpressionPanner'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionPanner_0'"
+      Coordinate=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_5'",OutputIndex=1)
+      Speed=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_19'")
+      SpeedY=1.000000
+      MaterialExpressionEditorX=-1877
+      MaterialExpressionEditorY=-610
+      MaterialExpressionGuid=B0FF1406453986EE5760489A2F322EEB
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionPanner_2" ExportPath="/Script/Engine.MaterialExpressionPanner'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionPanner_2'"
+      Coordinate=(Expression="/Script/Engine.MaterialExpressionComponentMask'M_ocean:MaterialExpressionComponentMask_2'")
+      Speed=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_23'")
+      SpeedX=1.000000
+      SpeedY=1.000000
+      MaterialExpressionEditorX=-1369
+      MaterialExpressionEditorY=2036
+      MaterialExpressionGuid=B0FF1406453986EE5760489A2F322EEB
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionPower_0" ExportPath="/Script/Engine.MaterialExpressionPower'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionPower_0'"
+      Base=(Expression="/Script/Engine.MaterialExpressionComponentMask'M_ocean:MaterialExpressionComponentMask_4'")
+      Exponent=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_16'")
+      MaterialExpressionEditorX=-1052
+      MaterialExpressionEditorY=-609
+      MaterialExpressionGuid=666304CF4E6D304BEAA7BEAA538BD217
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionPower_1" ExportPath="/Script/Engine.MaterialExpressionPower'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionPower_1'"
+      Base=(Expression="/Script/Engine.MaterialExpressionTextureSample'M_ocean:MaterialExpressionTextureSample_1'",OutputIndex=3,Mask=1,MaskB=1)
+      Exponent=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_3'")
+      MaterialExpressionEditorX=-1409
+      MaterialExpressionEditorY=290
+      MaterialExpressionGuid=DAA9CA47412CA1E00B52899C46DF9178
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionPower_2" ExportPath="/Script/Engine.MaterialExpressionPower'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionPower_2'"
+      Base=(Expression="/Script/Engine.MaterialExpressionTextureSample'M_ocean:MaterialExpressionTextureSample_0'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      Exponent=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_ocean:MaterialExpressionScalarParameter_28'")
+      MaterialExpressionEditorX=-1196
+      MaterialExpressionEditorY=-1072
+      MaterialExpressionGuid=361769EA4F6DC80462FF21BD89C06F0A
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionSaturate_1" ExportPath="/Script/Engine.MaterialExpressionSaturate'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionSaturate_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionPower'M_ocean:MaterialExpressionPower_1'")
+      MaterialExpressionEditorX=-1256
+      MaterialExpressionEditorY=291
+      MaterialExpressionGuid=EFBDC32B4277FA162EF6E593E76436C7
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_1" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_1'"
+      DefaultValue=0.250000
+      ParameterName="Water Specular"
+      ExpressionGUID=0B9D51F64B4EA5E2CBC518AF9AD81577
+      Group="Specular"
+      MaterialExpressionEditorX=27
+      MaterialExpressionEditorY=-15
+      MaterialExpressionGuid=E7FE47474D3CDA401467E9A7A6350F23
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_10" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_10'"
+      DefaultValue=0.002000
+      ParameterName="TCB ScaleGlobal NL"
+      ExpressionGUID=2C521F6B4B005C4CED84AC8C420208E3
+      Group="Normal"
+      MaterialExpressionEditorX=-1263
+      MaterialExpressionEditorY=2340
+      MaterialExpressionGuid=8968D0BE42899A6B29891CAD4B886538
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_11" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_11'"
+      DefaultValue=5000.000000
+      ParameterName="Roughness Dist Ramp Blend"
+      ExpressionGUID=79BEB6524CF13BAFEAC848B1555FE64C
+      Group="Roughness"
+      MaterialExpressionEditorX=-817
+      MaterialExpressionEditorY=351
+      MaterialExpressionGuid=4B7AE4414849BB0EA31F93B4CF0F9098
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_13" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_13'"
+      DefaultValue=0.500000
+      ParameterName="Strength NL"
+      ExpressionGUID=FB1E7070442BC39D453FF0B55A5256E6
+      Group="Normal"
+      MaterialExpressionEditorX=-513
+      MaterialExpressionEditorY=2164
+      MaterialExpressionGuid=D6E2261644B18602601508AB7EC8F71A
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_15" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_15'"
+      DefaultValue=0.010000
+      ParameterName="4WayChaos Speed FM"
+      ExpressionGUID=1E0CDD444EB0C0E85DBB81A8331B46A2
+      Group="Foam"
+      MaterialExpressionEditorX=-1728
+      MaterialExpressionEditorY=-544
+      MaterialExpressionGuid=F4FD6A4D4A51522EE13A52AC3B19B64B
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_16" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_16'"
+      DefaultValue=3.000000
+      ParameterName="Pow FM"
+      ExpressionGUID=C01804D74EC0B285CF7BA18403F20566
+      Group="Foam"
+      MaterialExpressionEditorX=-1057
+      MaterialExpressionEditorY=-512
+      MaterialExpressionGuid=3781AB4B4F40C76D2049C787C5C30D79
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_17" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_17'"
+      DefaultValue=0.005000
+      ParameterName="TCB Global Scale FM"
+      ExpressionGUID=B7D0C38B42D2A50EF83421A925608F51
+      Group="Foam"
+      MaterialExpressionEditorX=-2419
+      MaterialExpressionEditorY=-599
+      MaterialExpressionGuid=7C6AD4624FADF36F380E0E9B86790654
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_18" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_18'"
+      DefaultValue=0.001000
+      ParameterName="TCB Pattern Scale FM"
+      ExpressionGUID=DC329E70414704D9C4E96CA9F574BCBE
+      Group="Foam"
+      MaterialExpressionEditorX=-2446
+      MaterialExpressionEditorY=-494
+      MaterialExpressionGuid=D1DF02B74EE7A4C1C684FDADD98D9476
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_19" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_19'"
+      DefaultValue=0.000800
+      ParameterName="Panner Speed FM"
+      ExpressionGUID=B575A5084FF66923770A9DB83A2EA8F9
+      Group="Foam"
+      MaterialExpressionEditorX=-1893
+      MaterialExpressionEditorY=-458
+      MaterialExpressionGuid=6ECF99704A447F03F78CAF9EC2162106
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_2" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_2'"
+      DefaultValue=0.000030
+      ParameterName="Roughness TCB ScaleGlobal"
+      ExpressionGUID=1EBE386747C087F2450ACFA157F684BA
+      Group="Roughness"
+      MaterialExpressionEditorX=-2272
+      MaterialExpressionEditorY=276
+      MaterialExpressionGuid=4E83F7A44CD9E1B1E73963AC65A8817C
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_22" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_22'"
+      DefaultValue=0.000030
+      ParameterName="TCB Scale Global CR"
+      ExpressionGUID=DAB4E89748372FECF8ECD6B927B41A1D
+      Group="Color"
+      MaterialExpressionEditorX=-2063
+      MaterialExpressionEditorY=-1062
+      MaterialExpressionGuid=3D8A6EB74987A72102C6058B50A8551F
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_23" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_23'"
+      DefaultValue=50.000000
+      ParameterName="Panner Speed NL"
+      ExpressionGUID=B5FD4EE04E37391695F87DB3AB6653F7
+      Group="Normal"
+      MaterialExpressionEditorX=-1577
+      MaterialExpressionEditorY=2127
+      MaterialExpressionGuid=5B7F441345967936FC9499ACB8552072
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_24" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_24'"
+      DefaultValue=0.002000
+      ParameterName="TCB 4WayChaos Speedl NL"
+      ExpressionGUID=C3F049444AAA9AEF76DD948F932A0352
+      Group="Normal"
+      MaterialExpressionEditorX=-1279
+      MaterialExpressionEditorY=2436
+      MaterialExpressionGuid=8968D0BE42899A6B29891CAD4B886538
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_25" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_25'"
+      DefaultValue=0.050000
+      ParameterName="Roughness Near"
+      ExpressionGUID=D2EEBC0E44AB8D6B6FBD6D8C6CDCFEAF
+      Group="Roughness"
+      MaterialExpressionEditorX=-960
+      MaterialExpressionEditorY=144
+      MaterialExpressionGuid=E3751C3145AE71F7A8C5CF94D853729C
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_26" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_26'"
+      DefaultValue=-8000.000000
+      ParameterName="Dist Blend Offset FM"
+      ExpressionGUID=6AFF5EC34B9158F5B293DC97294862A6
+      Group="Foam"
+      MaterialExpressionEditorX=-1164
+      MaterialExpressionEditorY=-326
+      MaterialExpressionGuid=FDAB1B3940A7B384A18461AF1EFF2C3B
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_27" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_27'"
+      DefaultValue=20000.000000
+      ParameterName="Dist Blend Range FM"
+      ExpressionGUID=F3A17CEE49ABB2B45357DB9EC2686DDD
+      Group="Foam"
+      MaterialExpressionEditorX=-1164
+      MaterialExpressionEditorY=-406
+      MaterialExpressionGuid=4B7AE4414849BB0EA31F93B4CF0F9098
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_28" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_28'"
+      DefaultValue=1.000000
+      ParameterName="Pow CR"
+      ExpressionGUID=3EAC13D244BE6BED03874EBB8588A479
+      Group="Color"
+      MaterialExpressionEditorX=-1203
+      MaterialExpressionEditorY=-976
+      MaterialExpressionGuid=5B5CC8304B3A192A901C578F0E7E8C07
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_29" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_29'"
+      DefaultValue=1.000000
+      ParameterName="Mult CR"
+      ExpressionGUID=44046C98478DCAAAECCC3A928A2C2B51
+      Group="Color"
+      MaterialExpressionEditorX=-481
+      MaterialExpressionEditorY=-976
+      MaterialExpressionGuid=5B5CC8304B3A192A901C578F0E7E8C07
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_3" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_3'"
+      DefaultValue=1.000000
+      ParameterName="Roughness Mask Pow"
+      ExpressionGUID=F65C9FA54D8C57A5194EB398DBC9C59E
+      Group="Roughness"
+      MaterialExpressionEditorX=-1438
+      MaterialExpressionEditorY=384
+      MaterialExpressionGuid=6909904A4D9FFC9B19F6C683EBB32F90
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_30" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_30'"
+      DefaultValue=0.500000
+      ParameterName="Foam Specular"
+      ExpressionGUID=C7D5C5BD4C1C434A01C43D914E463243
+      Group="Specular"
+      MaterialExpressionEditorX=28
+      MaterialExpressionEditorY=58
+      MaterialExpressionGuid=E7FE47474D3CDA401467E9A7A6350F23
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_4'"
+      DefaultValue=500.000000
+      ParameterName="Roughness Dist Blend Offset"
+      ExpressionGUID=BF584307456A2F858BF87AA71B3ADCDE
+      Group="Roughness"
+      MaterialExpressionEditorX=-809
+      MaterialExpressionEditorY=425
+      MaterialExpressionGuid=FDAB1B3940A7B384A18461AF1EFF2C3B
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_5" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_5'"
+      DefaultValue=0.750000
+      SliderMax=5.000000
+      ParameterName="Amt FM"
+      ExpressionGUID=8622B1E94E1DB059E9D1568EC6366789
+      Group="Foam"
+      MaterialExpressionEditorX=-688
+      MaterialExpressionEditorY=-496
+      MaterialExpressionGuid=BD8AF1BD460255E4099E7DADD9A3FD7C
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_6" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_6'"
+      DefaultValue=0.100000
+      ParameterName="Roughness Far Max"
+      ExpressionGUID=666C3CA24548AA2E64887EACCCEB6401
+      Group="Roughness"
+      MaterialExpressionEditorX=-1232
+      MaterialExpressionEditorY=464
+      MaterialExpressionGuid=3C02D59244AE533C9F7BF5953250ACE7
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_7" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_7'"
+      DefaultValue=0.050000
+      ParameterName="Roughness Far Min"
+      ExpressionGUID=FAFFE5374661F181807B0D9D9460A6E5
+      Group="Roughness"
+      MaterialExpressionEditorX=-1228
+      MaterialExpressionEditorY=384
+      MaterialExpressionGuid=E3751C3145AE71F7A8C5CF94D853729C
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_8" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_8'"
+      ParameterName="Desat CR"
+      ExpressionGUID=4A5B84EE43334474950A4F853F876DC2
+      Group="Color"
+      MaterialExpressionEditorX=-986
+      MaterialExpressionEditorY=-976
+      MaterialExpressionGuid=5B5CC8304B3A192A901C578F0E7E8C07
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_9" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionScalarParameter_9'"
+      DefaultValue=3.000000
+      ParameterName="TCB RandScaleMax CR"
+      ExpressionGUID=C15DA4374EBA972AD51334BE30AC9047
+      Group="Color"
+      MaterialExpressionEditorX=-2064
+      MaterialExpressionEditorY=-944
+      MaterialExpressionGuid=CE8A88324E037624762796A39B23F192
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionSetMaterialAttributes_0'"
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionAdd'M_ocean:MaterialExpressionAdd_0'",InputName="Base Color")
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'M_ocean:MaterialExpressionLinearInterpolate_1'",InputName="Roughness")
+      Inputs(3)=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_4'",InputName="Normal")
+      Inputs(4)=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'M_ocean:MaterialExpressionLinearInterpolate_2'",InputName="Specular")
+      AttributeSetTypes(0)=69B8D33616ED4D499AA497292F050F7A
+      AttributeSetTypes(1)=D1DD967C4CAD47D39E6346FB08ECF210
+      AttributeSetTypes(2)=0FA2821A200F4A4AB719B789C1259C64
+      AttributeSetTypes(3)=9FDAB39925564CC98CD2D572C12C8FED
+      MaterialExpressionEditorX=131
+      MaterialExpressionEditorY=-264
+      MaterialExpressionGuid=ADC06FB14D17325D1386CBBB39939A69
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_2" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionSetMaterialAttributes_2'"
+      Inputs(1)=(InputName="Emissive Color")
+      AttributeSetTypes(0)=B769B54DD08D4440ABC21BA6CD27D0E2
+      MaterialExpressionEditorX=506
+      MaterialExpressionEditorY=-400
+      MaterialExpressionGuid=7297CF7F4AE139317E4401B6E14E586E
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_0" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionStaticSwitchParameter_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'M_ocean:MaterialExpressionSetMaterialAttributes_2'")
+      B=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'M_ocean:MaterialExpressionSetMaterialAttributes_0'")
+      ParameterName="Debug"
+      ExpressionGUID=E2711C634254B5470967318D1D675E60
+      Group="0.Global"
+      MaterialExpressionEditorX=516
+      MaterialExpressionEditorY=-306
+      MaterialExpressionGuid=6663050E46DFE0AFF2FADD9F3A559CF9
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureObject_1" ExportPath="/Script/Engine.MaterialExpressionTextureObject'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionTextureObject_1'"
+      Texture="/Script/Engine.Texture2D'/Game/Prop/kit_ocean/Texture/T_Water_D.T_Water_D'"
+      SamplerType=SAMPLERTYPE_VirtualColor
+      MaterialExpressionEditorX=-1708
+      MaterialExpressionEditorY=-442
+      MaterialExpressionGuid=CB601E164CABD0B510A39A9A76F56DBC
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureObject_2" ExportPath="/Script/Engine.MaterialExpressionTextureObject'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionTextureObject_2'"
+      Texture="/Script/Engine.Texture2D'/Engine/Functions/Engine_MaterialFunctions02/ExampleContent/Textures/water_n.water_n'"
+      SamplerType=SAMPLERTYPE_Normal
+      MaterialExpressionEditorX=-1231
+      MaterialExpressionEditorY=2180
+      MaterialExpressionGuid=CB601E164CABD0B510A39A9A76F56DBC
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSample_0" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionTextureSample_0'"
+      Coordinates=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_22'",OutputIndex=1)
+      Texture="/Script/Engine.Texture2D'/Game/Prop/kit_ocean/Texture/T_Ocean.T_Ocean'"
+      SamplerType=SAMPLERTYPE_VirtualColor
+      MaterialExpressionEditorX=-1487
+      MaterialExpressionEditorY=-1073
+      MaterialExpressionGuid=2D1206684080E31CB3351CAB7B6FE42B
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSample_1" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionTextureSample_1'"
+      Coordinates=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_ocean:MaterialExpressionMaterialFunctionCall_2'",OutputIndex=1)
+      Texture="/Script/Engine.Texture2D'/Game/Prop/kit_ocean/Texture/T_Ocean.T_Ocean'"
+      SamplerType=SAMPLERTYPE_VirtualColor
+      MaterialExpressionEditorX=-1680
+      MaterialExpressionEditorY=264
+      MaterialExpressionGuid=F60975334BAF57A3DEA5BCB66EA309AB
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_3" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionVectorParameter_3'"
+      DefaultValue=(R=1.000000,G=1.000000,B=1.000000,A=1.000000)
+      ParameterName="Tint CR"
+      ExpressionGUID=DE80B6B2440337E2FABD3D90E660BC8F
+      Group="Color"
+      MaterialExpressionEditorX=-832
+      MaterialExpressionEditorY=-944
+      MaterialExpressionGuid=E7CEBA7D42ADF848CDA61C8D1AD88D3C
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="MaterialExpressionWorldPosition_2" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:MaterialExpressionWorldPosition_2'"
+      MaterialExpressionEditorX=-1753
+      MaterialExpressionEditorY=1983
+      MaterialExpressionGuid=31C51FA14337233FCAC442BB7BE7EDAF
+      Material="/Script/Engine.Material'M_ocean'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Prop/kit_ocean/Material/M_ocean.M_ocean:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   bScreenSpaceReflections=True
+   TranslucencyLightingMode=TLM_Surface
+   EditorX=736
+   EditorY=-289
+   bUseMaterialAttributes=True
+   bComputeFogPerPixel=True
+   PixelDepthOffsetMode=PDOM_Legacy
+   StateId=20BAA96FA7775002B11D5493D4F86FBD
+   EditorOnlyData="/Script/Engine.MaterialEditorOnlyData'M_oceanEditorOnlyData'"
+   TextureStreamingDataVersion=1
+   TextureStreamingData(0)=(SamplingScale=0.015625,UVChannelIndex=0,TextureName="water_n",TextureReference="/Engine/Functions/Engine_MaterialFunctions02/ExampleContent/Textures/water_n.water_n")
+   ReferencedDefaultTextures(0)="/Script/Engine.Texture2D'/Game/Prop/kit_ocean/Texture/T_Water_D.T_Water_D'"
+   ReferencedDefaultTextures(1)=None
+   ReferencedDefaultTextures(2)="/Script/Engine.Texture2D'/Engine/EngineResources/DefaultTexture.DefaultTexture'"
+   ReferencedDefaultTextures(3)="/Script/Engine.Texture2D'/Game/Textures/T_UVCheck_VT.T_UVCheck_VT'"
+   ReferencedDefaultTextures(4)="/Script/Engine.Texture2D'/Game/Material/TextureCellBombing/Voronoi_Perturbed_2k_RGBA8_nonVT.Voronoi_Perturbed_2k_RGBA8_nonVT'"
+   ReferencedDefaultTextures(5)="/Script/Engine.Texture2D'/Game/Prop/kit_ocean/Texture/T_Ocean.T_Ocean'"
+   ReferencedDefaultTextures(6)="/Script/Engine.Texture2D'/Engine/Engine_MI_Shaders/T_Base_Tile_Normal.T_Base_Tile_Normal'"
+   ReferencedDefaultTextures(7)="/Script/Engine.Texture2D'/Game/Textures/DefaultTexture_VT.DefaultTexture_VT'"
+   ReferencedDefaultTextures(8)="/Script/Engine.Texture2D'/Engine/Functions/Engine_MaterialFunctions02/ExampleContent/Textures/water_n.water_n'"
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   ParameterOverviewExpansion=(("-12Global 0.Global", True),("-12Global Color", True),("-12Global Foam", True),("-12Global Normal", True),("-12Global PBR", True),("-12Global TextureCellBombingDebug", True))
+   LightingGuid=D37558064D7B7C7CB74F1896F55F77A7
+End Object

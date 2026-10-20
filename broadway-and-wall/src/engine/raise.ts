@@ -92,6 +92,33 @@ export function launchRaise(s: GameState, parcels: ParcelTable, bbl: string, job
   return { s: next, msg: `Raise launched: ${money(target)}, ${RAISE_WINDOW_M} months to close.` };
 }
 
+/**
+ * RAISE AND BREAK GROUND, AT ONCE (owner, Oct 2026: "simplify the way you
+ * raise money ... instant"). The months-long offering is gone from the desk:
+ * the sponsor takes the offering to the investors already in its network, and
+ * what they have ready closes at the table with the groundbreaking. What is
+ * instant is the TIME, not the money — the most anyone can raise is still
+ * what the open sources hold right now (maxOutside: the band's dollars-per-own
+ * rule and each source's unspent capacity, drawn down by every other raise in
+ * town), on the band's own pref, promote and fees, with the completion
+ * guarantee the sponsor's. Counsel is still paid, at the closing. A raise
+ * opened under the old window (an older save) still runs it out in tickRaises.
+ */
+export function raiseAndBuild(s: GameState, parcels: ParcelTable, bbl: string, job: RaiseJob, target: number): { s: GameState; err?: string; msg?: string } {
+  const q = raiseQuote(s, parcels, bbl, job, target);
+  if (!q.ok) return { s, err: q.why };
+  const t = cloneState(s);
+  payRaiseLegal(t, q.legal);
+  const r = startDevelopment(t, parcels, bbl, job.use, job.floors, job.coverage, job.contract, job.ltc, { ...(job.custom ?? {}), syndicate: { outside: target, pitch: job.pitch } }, job.lender, job.spec);
+  if (r.err) return { s, err: r.err };
+  const next = r.s;
+  const took = next.syndications?.[bbl]?.lpCommit ?? target;
+  const addr = resolveRec(parcels, next, bbl)?.address ?? bbl;
+  const who = Object.entries(next.syndications?.[bbl]?.sources ?? {}).filter(([, v]) => v).map(([k]) => SOURCE_LABEL[k as InvestorSource].toLowerCase()).join(", ");
+  next.news.unshift({ q: next.month, kind: "deal", text: `Raised ${money(took)} for ${addr}${who ? ` from ${who}` : ""} and broke ground. Counsel ${money(q.legal)}.` });
+  return { s: next, msg: `Raised ${money(took)} — ground broken.` };
+}
+
 /** Walk away from a raise. The counsel is sunk; nobody's money moves. */
 export function cancelRaise(s: GameState, bbl: string): { s: GameState; err?: string } {
   if (!s.raises?.[bbl]) return { s, err: "No raise open on that lot." };

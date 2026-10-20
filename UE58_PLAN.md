@@ -310,9 +310,18 @@ rooftop plant, parked cars, overcast or low golden sun).
   binds 67 textures; SM5 allows 64), Substrate, virtual textures, no static
   lighting.
 
-Left: lane markings and crosswalks (streets are polygons, not centrelines yet);
-traffic and crowds (Mass + ZoneGraph lanes); lit windows at night and weather
-by season; the asphalt runs very wet; 1440p/DLSS frame-rate check.
+- **Streets:** double-yellow centres, dashed lane lines on 12 m+ carriageways,
+  zebra bars (`markings` in bw-city/1). **Traffic, first cut:** cars drive the
+  lane centrelines, right-hand, ~1 per 160 m of lane.
+- **Frame rate, measured** (`-Perf`, `unreal/tools/perf-matrix.sh`; metro city,
+  361,702 facade pieces, 2560×1440, RTX 2080, editor `-game`): **41 fps**
+  median, 39 p95. Half resolution 55; Lumen off 47; VSM off 35 (virtual
+  shadows help); blocks only 60; traffic ~1 fps. The game's Graphics setting
+  picks the render resolution (high 100%, medium 67%, low 50%, TSR upscale).
+
+Left: Mass crowds and lane-following traffic with intersections (ZoneGraph);
+lit windows at night and weather by season; the asphalt reads very wet; DLSS
+(an NVIDIA plugin download — the owner approved accepting its licence).
 
 ### Phase 4 — Game feel
 - Set-pieces for the moments that matter: groundbreak, topping out, the
@@ -329,8 +338,18 @@ by season; the asphalt runs very wet; 1440p/DLSS frame-rate check.
   (WASD, right-drag to look) — also from the page in play mode.
 - Opening day: banner poles at the corners of a building for the three months
   after delivery; a lender workout puts barricades at the door.
+- The player's design: `BuildingDesign.facade` (the web renderer's twelve
+  families) picks the nearest City Sample kit.
+- Sound: City Sample's traffic wash and urban air crossfade with altitude; a
+  jackhammer on the nearest site going up.
 - Left: topping-out and demolition set-pieces, the black swan on the street,
-  `BuildingDesign` → kit mapping, sound.
+  crown/base design choices, weather sound.
+
+#### Phase 5 progress (2026-10-20)
+
+The desks stay in the browser layer (they work, and the plan says port only
+where it helps). Native so far: the map HUD — a hover card beside the pointer
+(address, use, floors, year, owner) at frame rate, and the selected-lot card.
 
 ### Phase 5 — The UI, native
 - Port the most-used surfaces to UMG (C++-driven): top bar, docket, the
@@ -349,6 +368,14 @@ BuildCookRun (all of `/Game` is cooked — City Sample content is loaded by path
 so the cooker cannot find it by reference; `Data/` stages as loose files).
 Editor-only plugins (MCP, toolsets, Python) are allow-listed to the editor.
 
+**A packaged build plays:** `D:\Builds\BroadwayWall\Windows\BroadwayWall.exe`
+(8.6 GB) served the web game from `Data/web`, generated a new town and ran the
+economy to June 2001 under the scripted player. Graphics settings come from the
+game's own Settings page.
+
+Left: an installer; saves in the user's folder (CEF keeps IndexedDB under the
+build's `Saved/webcache`, fine for a portable folder, not for Program Files);
+crash reporter wiring; a pass on cook size (all of `/Game` is cooked).
 ---
 
 ## 5 · Risks and how we handle them

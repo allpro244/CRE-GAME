@@ -880,6 +880,9 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const g = localStorage.getItem("bw:graphics");
       if (g === "low" || g === "medium" || g === "high") return g;
+      // In Unreal, medium is DLSS Quality: 50 fps at 1080p on an RTX 2080
+      // against 37 at native (UE58_PLAN.md), so a first run starts there
+      if (new URLSearchParams(location.search).get("host") === "unreal") return "medium";
       return localStorage.getItem("bw:prefer-fps") === "on" ? "medium" : "high";
     } catch { return "high"; }
   })() as GraphicsQuality,

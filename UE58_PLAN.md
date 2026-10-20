@@ -417,6 +417,14 @@ is cooked).
   they build, with thumbnails Unreal renders (`-KitThumbs`, served at
   `/game/kits/`), six wall colours, street floor, top and window rhythm
   (`BuildingDesign.kit/kitColour/ground/top/bays` → `look` on the render lot).
+- **Frame rate, re-measured** (the owner's monitor is 1080p; benchmark there):
+  the day's additions took the packaged city from 48 fps (1440p, morning) to
+  24. The cause was the sidewalk crowd — ~3,100 walkers, ~19,000 VAT mesh
+  pieces drawn citywide at full detail (not their per-frame updates: the
+  life tick is 1.5 ms). Walkers now draw within ~350 m of the camera, cast no
+  shadow and stay out of the distance-field scene: editor 1080p 21 → 32 fps.
+  Parked cars (11,000) cost nothing measurable. `-Perf=N` measures (N
+  seconds); `-NoTraffic`, `-NoCrowd`, `-NoParked` isolate city life.
 - **Play-throughs:** `unreal/tools/play-driver.js` buys the docket's first
   building and plays three years; `unreal/tools/build-driver.js` buys a lot and
   walks the kit picker.

@@ -10,7 +10,9 @@ import { writeEntry } from "./entry.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 writeFileSync(join(HERE, ".entry.ts"), writeEntry());
-const r = spawnSync(join(HERE, "..", "node_modules", ".bin", "esbuild"),
+// Windows: .bin holds an esbuild.cmd shim, which spawnSync can only run through a shell
+const WIN = process.platform === "win32";
+const r = spawnSync(join(HERE, "..", "node_modules", ".bin", WIN ? "esbuild.cmd" : "esbuild"),
   [join(HERE, ".entry.ts"), "--bundle", "--format=esm", "--platform=node",
-   `--outfile=${join(HERE, ".engine.mjs")}`], { stdio: "inherit" });
+   `--outfile=${join(HERE, ".engine.mjs")}`], { stdio: "inherit", shell: WIN });
 process.exit(r.status ?? 1);

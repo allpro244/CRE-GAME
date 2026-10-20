@@ -70,6 +70,7 @@ argument:
   widget, as a client of the sidecar.
 
 Default expectation: **A**, falling back to **B** if the spike shows a blocker.
+**Decided 2026-10-19: A** (Phase 0 result, §4).
 Either way the C++ side is identical: it receives a city and a stream of state.
 
 ### The render contract (what Unreal needs from the engine)
@@ -156,6 +157,36 @@ Each phase ends in something the owner can see: a screenshot set or a build.
 
 **Done when:** a screenshot of the web game running inside an Unreal window,
 and a note of which host was chosen and why.
+
+#### Phase 0 result (2026-10-19) — **done. Host: A.**
+
+![Phase 0](unreal/shots/phase0/phase0-sheet.jpg)
+
+| | Result |
+|---|---|
+| Toolchain | Blank C++ project builds headless (`Build.bat`, MSVC 14.51; UE warns it prefers 14.50, builds fine). |
+| MCP | Agent spawned, moved and screenshotted an actor, no human (`unreal/tools/mcp-proof.mjs`, [shot](unreal/shots/phase0/mcp-proof.jpg)). |
+| A — browser widget | Chromium 128: WebGL2, module workers, IndexedDB all present. Starts, runs a year, saves, and a **fresh process** loads the save (PASS). |
+| A — speed, metro (3,084 lots) | city + game in 2.9 s; a month **584 ms** median (413–1,122), UI and 3D map included. Standard city: 367 ms. |
+| B — Node sidecar, metro | Unreal ↔ WebSocket works; a month **~470 ms** engine time + ~25 ms transport. |
+
+**Why A.** It works end to end with no extra process, saves and all, and B is
+not faster in any way the player would feel (~100 ms a month, which A spends
+drawing the UI). B would also mean rewiring the desks to a remote engine and
+shipping Node. `unreal/sim-server/` stays as a headless harness.
+
+**What A needs, learned the hard way:**
+- **Serve the page over `http://127.0.0.1`, not `file://`.** A `file://` page
+  has a null origin: no IndexedDB, so no saves. Ship with a tiny local server or
+  a custom scheme handler.
+- **Re-bind the JS bridge after every page load.** The real page loads in a new
+  renderer process that never got the permanent `BindUObject` binding;
+  `window.ue.bridge` was missing until the game mode unbound and re-bound it in
+  `OnLoadCompleted` (`unreal/spikes/BWSpike`).
+- Serve HTML as `text/html`; anything else is a silent download and the
+  browser stays on `about:blank`.
+
+How to re-run: `unreal/README.md`.
 
 ### Phase 1 — The city as blocks
 - Export the parcel table and footprints from `makeCity` (`unreal/tools/`).
@@ -326,6 +357,15 @@ Everything a new session needs that is not in the code. Read it once.
   14.50 toolset from the VS Installer's Individual components.
 - Epic launcher's Fab cache: `D:\EpicVaultCache\VaultCache` (holds a second
   ~96 GB copy of City Sample; safe to clear if space is needed).
-- `UE-LocalDataCachePath` should be `D:\UnrealDDC` — confirm it is set.
-- Node 24 LTS, Git, Claude Desktop installed. The owner controls sessions
-  from the phone via `claude remote-control`.
+- `UE-LocalDataCachePath=D:\UnrealDDC` is set (user scope, checked
+  2026-10-19), but processes started before it was set — the Epic launcher,
+  the Claude app — do not see it, so editors they start put the DDC and Zen's
+  store on `C:` (`%LOCALAPPDATA%\UnrealEngine\Common`, ~1 GB so far). Launch
+  through `unreal/tools/ue.ps1`, which sets it (and `UE-ZenDataPath`) fresh;
+  a sign-out or reboot fixes it for everything.
+- City Sample's MCP server is set to start with the editor on port 8000
+  (`Saved/Config/WindowsEditor/EditorPerProjectUserSettings.ini`); the repo's
+  `.mcp.json` points Claude Code at it. The spike project uses 8001.
+- Node 24 LTS, Git, Claude Desktop installed. `pnpm` comes through
+  `corepack pnpm`. The owner controls sessions from the phone via Remote
+  Control.

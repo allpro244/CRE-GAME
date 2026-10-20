@@ -5,7 +5,7 @@
 //    scaled by attractiveness and split by investor type; rivals entering the
 //    city draw it down.
 // B. A deal-by-deal raise: counsel paid up front and sunk, soft circles over
-//    up to three months, a close that breaks ground with the circled money
+//    up to six months (or closed early once half is in), a close that breaks ground with the circled money
 //    and records who wrote it — or a failure that leaves the lot as dirt.
 //    The cash identity holds every month (CAPITAL_RAISING_PLAN.md §3.1, §3.3).
 import { assertFreshBundle } from "./fresh.mjs";

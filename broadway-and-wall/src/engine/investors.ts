@@ -122,8 +122,26 @@ export function raiseLegalCost(s: GameState, target: number): number {
   return Math.round(Math.max(25_000 * dollarLevel(s.econ), 0.01 * target));
 }
 
-/** Months a deal-by-deal raise stays open before it closes small or fails (§3.3: soft circles over 1–3 months). */
-export const RAISE_WINDOW_M = 3;
+/**
+ * Months a deal-by-deal raise stays open before it closes small or fails.
+ * THE RAISE IS THE PRE-DEVELOPMENT WINDOW (owner, Oct 2026: "it feels off
+ * that you can't execute the raise and start construction at the same
+ * time"). A sponsor raises equity while the drawings, permits and the
+ * contractor's bid are being finished — three to nine months on a real job —
+ * and closes the equity with the construction loan. Three months was a
+ * waiting room: measured over 19 playtest raises by a new sponsor, none
+ * filled, nine closed small on the last day and ten failed. Six months, with
+ * the sponsor able to close early once half is in (raise.ts closeRaiseNow).
+ */
+export const RAISE_WINDOW_M = 6;
+/**
+ * HOW STEADY A MONTH OF CIRCLES IS. Investors commit at a pace the sponsor
+ * can read off its band, its rank and the deal — a month runs 85-115% of that
+ * pace, not 60-140% as it did. A raise is work, not a dice roll.
+ */
+export function circleNoise(u: number): number {
+  return 0.85 + 0.3 * u;
+}
 
 /**
  * THE MONTHLY HAZARD for one source: the share of the remaining need it
@@ -251,7 +269,7 @@ export function circleMonth(s: GameState, r: Raise, sources: { id: InvestorSourc
     const room = Math.max(0, src.left - (r.committed[src.id] ?? 0));
     if (!(room > 0)) continue;
     const cap = Math.min(need, room);
-    const c = Math.min(cap, Math.round(r.target * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id) * (r.appeal ?? 1) * scaleMult(s)) * (0.6 + 0.8 * rng(s, "capital"))));
+    const c = Math.min(cap, Math.round(r.target * Math.min(0.95, commitHazard(src.id, pct) * relationshipFactor(s, src.id) * (r.appeal ?? 1) * scaleMult(s)) * circleNoise(rng(s, "capital"))));
     if (c > 0) { r.committed[src.id] = (r.committed[src.id] ?? 0) + c; added += c; }
   }
   return added;

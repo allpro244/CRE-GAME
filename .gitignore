@@ -17,3 +17,4 @@ unreal/**/*.sln
 # screenshots: full-size shots stay local; only the phase summaries are committed
 unreal/shots/**/*.png
 unreal/shots/**/*.txt
+unreal/BroadwayWall/Data/*.json

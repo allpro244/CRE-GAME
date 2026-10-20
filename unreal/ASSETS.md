@@ -30,3 +30,14 @@ own mesh copies, `/CitySamplePCG/Meshes/...`, not `/Game`).
 
 Project settings the kits need (in `BroadwayWall/Config/DefaultEngine.ini`):
 DX12 with SM6 shaders, Substrate, virtual textures, no static lighting.
+
+## NVIDIA DLSS (not committed: 1.7 GB of binaries)
+
+The game uses NVIDIA's official DLSS 4.5 plugin for UE 5.8 (v8.9.0, NGX
+310.9.16), from https://developer.nvidia.com/rtx/dlss ("Download UE 5.8 DLSS
+Plugin"; no sign-in needed as of 2026-10-20). From the zip, copy
+`Plugins/DLSS` and `Plugins/StreamlineNGXCommon` (DLSS depends on it) into
+`unreal/BroadwayWall/Plugins/`. Super Resolution only: Frame Generation needs an
+RTX 40-series. Without the plugin the game still runs and upscales with TSR.
+The Graphics setting picks DLAA (high), DLSS Quality (medium) or Performance (low);
+`-NoDLSS` turns it off.

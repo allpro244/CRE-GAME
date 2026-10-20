@@ -46,6 +46,10 @@
 			"TargetAllowList": [
 				"Editor"
 			]
+		},
+		{
+			"Name": "DLSS",
+			"Enabled": true
 		}
 	]
 }

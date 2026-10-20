@@ -1,4 +1,5 @@
 #include "FacadeBuilder.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 #include "CityData.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -66,19 +67,45 @@ bool FBWKit::Load(const FString& Path)
 
 void FBWFacadeBuilder::Reset()
 {
-	for (TPair<UStaticMesh*, UInstancedStaticMeshComponent*>& C : Comps) if (C.Value) C.Value->ClearInstances();
+	for (TPair<TPair<UStaticMesh*, uint32>, UInstancedStaticMeshComponent*>& C : Comps) if (C.Value) C.Value->ClearInstances();
 	Placed = 0;
 }
 
-UInstancedStaticMeshComponent* FBWFacadeBuilder::Comp(UStaticMesh* Mesh)
+UInstancedStaticMeshComponent* FBWFacadeBuilder::Comp(UStaticMesh* Mesh, bool bTinted)
 {
-	if (UInstancedStaticMeshComponent** Found = Comps.Find(Mesh)) return *Found;
+	const uint32 Key = bTinted ? TintKey : 0;
+	if (UInstancedStaticMeshComponent** Found = Comps.Find(TPair<UStaticMesh*, uint32>(Mesh, Key))) return *Found;
 	UInstancedStaticMeshComponent* C = NewObject<UInstancedStaticMeshComponent>(Parent->GetOwner());
 	C->SetupAttachment(Parent);
 	C->SetStaticMesh(Mesh);
 	C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// THE WALL TINT. Every kit material is an instance of City Sample's building
+	// master, whose main layer (M1) multiplies its albedo by "Color Tint/Mult(A) M1";
+	// the web family's tint scales that, so one kit comes in its family's brick
+	// batches, stone creams and glass casts. The weathering decal keeps its own.
+	if (Key)
+		for (int32 Slot = 0; Slot < C->GetNumMaterials(); ++Slot)
+		{
+			UMaterialInterface* Base = C->GetMaterial(Slot);
+			if (!Base) continue;
+			const TPair<UMaterialInterface*, uint32> MK(Base, Key);
+			UMaterialInstanceDynamic* MID = nullptr;
+			if (UMaterialInstanceDynamic** Have = Tinted.Find(MK)) MID = *Have;
+			else
+			{
+				static const FName P(TEXT("Color Tint/Mult(A) M1"));
+				FLinearColor Cur(1, 1, 1, 1);
+				if (Base->GetVectorParameterValue(FHashedMaterialParameterInfo(P), Cur))
+				{
+					MID = UMaterialInstanceDynamic::Create(Base, Parent->GetOwner());
+					MID->SetVectorParameterValue(P, FLinearColor(Cur.R * TintNow.R, Cur.G * TintNow.G, Cur.B * TintNow.B, Cur.A));
+				}
+				Tinted.Add(MK, MID);
+			}
+			if (MID) C->SetMaterial(Slot, MID);
+		}
 	C->RegisterComponent();
-	Comps.Add(Mesh, C);
+	Comps.Add(TPair<UStaticMesh*, uint32>(Mesh, Key), C);
 	return C;
 }
 
@@ -102,12 +129,18 @@ void FBWFacadeBuilder::Put(const FBWKitModule& M, const FVector2D& A, const FVec
 	const FMatrix R = FRotationMatrix::MakeFromXY(X, Y);
 	const FTransform T(R.Rotator(), FVector(P, Z), FVector(1.0, SY, ScaleZ));
 	Comp(M.Mesh)->AddInstance(T);
-	if (M.Decal) Comp(M.Decal)->AddInstance(T);
+	if (M.Decal) Comp(M.Decal, false)->AddInstance(T);
 	++Placed;
 }
 
-int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed, bool bGround)
+int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed, bool bGround, const FLinearColor& Tint)
 {
+	{
+		auto Q = [](float X) { return uint32(FMath::Clamp(FMath::RoundToInt(X / 0.04f), 1, 255)); };
+		const uint32 R = Q(Tint.R), G = Q(Tint.G), B = Q(Tint.B);
+		TintKey = (R == 25 && G == 25 && B == 25) ? 0 : (R << 16) | (G << 8) | B;   // 25 x 0.04 = 1: untinted
+		TintNow = FLinearColor(R * 0.04f, G * 0.04f, B * 0.04f);
+	}
 	const int32 Before = Placed;
 	const int32 N = V.Ring.Num();
 	const double H = V.Z1 - V.Z0;

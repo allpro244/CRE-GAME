@@ -1,0 +1,574 @@
+Begin Object Class=/Script/Engine.MaterialFunctionMaterialLayer Name="ML_BoneAnimation" ExportPath="/Script/Engine.MaterialFunctionMaterialLayer'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation'"
+   Begin Object Class=/Script/Engine.MaterialFunctionEditorOnlyData Name="ML_BoneAnimationEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:ML_BoneAnimationEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionFunctionInput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_0" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_1" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_11" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_11'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_14" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_14'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_16" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_16'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_17" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_17'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_2" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_3" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_4" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_5" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialLayerOutput Name="MaterialExpressionMaterialLayerOutput_0" ExportPath="/Script/Engine.MaterialExpressionMaterialLayerOutput'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialLayerOutput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPerInstanceCustomData Name="MaterialExpressionPerInstanceCustomData_0" ExportPath="/Script/Engine.MaterialExpressionPerInstanceCustomData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPerInstanceCustomData Name="MaterialExpressionPerInstanceCustomData_1" ExportPath="/Script/Engine.MaterialExpressionPerInstanceCustomData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPerInstanceCustomData Name="MaterialExpressionPerInstanceCustomData_2" ExportPath="/Script/Engine.MaterialExpressionPerInstanceCustomData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPerInstanceCustomData Name="MaterialExpressionPerInstanceCustomData_3" ExportPath="/Script/Engine.MaterialExpressionPerInstanceCustomData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPerInstanceCustomData Name="MaterialExpressionPerInstanceCustomData_4" ExportPath="/Script/Engine.MaterialExpressionPerInstanceCustomData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionReroute_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionReroute_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionReroute_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_3" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionReroute_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_0" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_10" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_10'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_11" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_11'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_12" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_12'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_13" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_13'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_2" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_3" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_1" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_2" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticBoolParameter Name="MaterialExpressionStaticBoolParameter_1" ExportPath="/Script/Engine.MaterialExpressionStaticBoolParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionStaticBoolParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_1" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionStaticSwitchParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_2" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionStaticSwitchParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObjectParameter Name="MaterialExpressionTextureObjectParameter_2" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionTextureObjectParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObjectParameter Name="MaterialExpressionTextureObjectParameter_3" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionTextureObjectParameter_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObjectParameter Name="MaterialExpressionTextureObjectParameter_4" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionTextureObjectParameter_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_1" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionVectorParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_2" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionVectorParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVertexInterpolator Name="MaterialExpressionVertexInterpolator_0" ExportPath="/Script/Engine.MaterialExpressionVertexInterpolator'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionVertexInterpolator_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVertexInterpolator Name="MaterialExpressionVertexInterpolator_1" ExportPath="/Script/Engine.MaterialExpressionVertexInterpolator'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionVertexInterpolator_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVertexInterpolator Name="MaterialExpressionVertexInterpolator_2" ExportPath="/Script/Engine.MaterialExpressionVertexInterpolator'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionVertexInterpolator_2'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="ML_BoneAnimationEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:ML_BoneAnimationEditorOnlyData'"
+      ExpressionCollection=(Expressions=("/Script/Engine.MaterialExpressionMaterialLayerOutput'ML_BoneAnimation:MaterialExpressionMaterialLayerOutput_0'","/Script/Engine.MaterialExpressionFunctionInput'ML_BoneAnimation:MaterialExpressionFunctionInput_0'","/Script/Engine.MaterialExpressionSetMaterialAttributes'ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_0'","/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_17'","/Script/Engine.MaterialExpressionVectorParameter'ML_BoneAnimation:MaterialExpressionVectorParameter_1'","/Script/Engine.MaterialExpressionVectorParameter'ML_BoneAnimation:MaterialExpressionVectorParameter_2'","/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_2'","/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_3'","/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_4'","/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_11'","/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_10'","/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_14'","/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_11'","/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_12'","/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_13'","/Script/Engine.MaterialExpressionStaticBoolParameter'ML_BoneAnimation:MaterialExpressionStaticBoolParameter_1'","/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_16'","/Script/Engine.MaterialExpressionPerInstanceCustomData'ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_0'","/Script/Engine.MaterialExpressionPerInstanceCustomData'ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_2'","/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_0'","/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_3'","/Script/Engine.MaterialExpressionPerInstanceCustomData'ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_3'","/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_4'","/Script/Engine.MaterialExpressionPerInstanceCustomData'ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_4'","/Script/Engine.MaterialExpressionPerInstanceCustomData'ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_1'","/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_2'","/Script/Engine.MaterialExpressionStaticSwitchParameter'ML_BoneAnimation:MaterialExpressionStaticSwitchParameter_1'","/Script/Engine.MaterialExpressionStaticSwitchParameter'ML_BoneAnimation:MaterialExpressionStaticSwitchParameter_2'","/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_0'","/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_1'","/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_2'","/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_3'","/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_4'","/Script/Engine.MaterialExpressionReroute'ML_BoneAnimation:MaterialExpressionReroute_0'","/Script/Engine.MaterialExpressionVertexInterpolator'ML_BoneAnimation:MaterialExpressionVertexInterpolator_0'","/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_5'","/Script/Engine.MaterialExpressionSetMaterialAttributes'ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_1'","/Script/Engine.MaterialExpressionVertexInterpolator'ML_BoneAnimation:MaterialExpressionVertexInterpolator_1'","/Script/Engine.MaterialExpressionReroute'ML_BoneAnimation:MaterialExpressionReroute_1'","/Script/Engine.MaterialExpressionSetMaterialAttributes'ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_2'","/Script/Engine.MaterialExpressionVertexInterpolator'ML_BoneAnimation:MaterialExpressionVertexInterpolator_2'","/Script/Engine.MaterialExpressionReroute'ML_BoneAnimation:MaterialExpressionReroute_2'","/Script/Engine.MaterialExpressionReroute'ML_BoneAnimation:MaterialExpressionReroute_3'"))
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionFunctionInput_0'"
+      InputName="Material Attributes"
+      Id=F3A55F624A4984A08E0FC1BDF4DF3205
+      InputType=FunctionInput_MaterialAttributes
+      bUsePreviewValueAsDefault=True
+      MaterialExpressionEditorX=304
+      MaterialExpressionEditorY=768
+      MaterialExpressionGuid=CD8A109E4B224940D7C89C88F41EBC31
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_0" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_0'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/AnimToTexture/Materials/MaterialFunctions/BonePositionAndNormal.BonePositionAndNormal'"
+      FunctionInputs(0)=(ExpressionInputId=568998E5419C0C826C09F29E38769B57,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_14'",InputName="Frame"))
+      FunctionInputs(1)=(ExpressionInputId=20CC32CA4343925B3868A0943A292F37,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_16'",OutputIndex=1,InputName="BoneIndex"))
+      FunctionInputs(2)=(ExpressionInputId=A4F762F14759021CBDF339B73EAFBFBA,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_2'",InputName="BonePositionTexture"))
+      FunctionInputs(3)=(ExpressionInputId=7538F22E47FB3B024BD5DC9397688E98,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_4'",InputName="BoneRotationTexture"))
+      FunctionInputs(4)=(ExpressionInputId=551A1966447BEAB3F2192CBAAF988763,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'ML_BoneAnimation:MaterialExpressionVectorParameter_1'",InputName="SizeBBox",Mask=1,MaskR=1,MaskG=1,MaskB=1))
+      FunctionInputs(5)=(ExpressionInputId=4C6DC3BB4BE82908361710BCB2E9856D,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'ML_BoneAnimation:MaterialExpressionVectorParameter_2'",InputName="MinBBox",Mask=1,MaskR=1,MaskG=1,MaskB=1))
+      FunctionOutputs(0)=(ExpressionOutputId=A7D99B6B482DE61D3187B6B9209A49AB,Output=(OutputName="Normal"))
+      FunctionOutputs(1)=(ExpressionOutputId=B968DEB54F4281FAEF164291055F6ABC,Output=(OutputName="Position"))
+      MaterialExpressionEditorX=-816
+      MaterialExpressionEditorY=992
+      MaterialExpressionGuid=888A75AB43DA3FA4B43474B2B5A1F1D9
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      Desc="Second Influence"
+      bCommentBubbleVisible=True
+      Outputs(0)=(OutputName="Normal")
+      Outputs(1)=(OutputName="Position")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_1" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_1'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/AnimToTexture/Materials/MaterialFunctions/BonePositionAndNormal.BonePositionAndNormal'"
+      FunctionInputs(0)=(ExpressionInputId=568998E5419C0C826C09F29E38769B57,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_14'",InputName="Frame"))
+      FunctionInputs(1)=(ExpressionInputId=20CC32CA4343925B3868A0943A292F37,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_16'",OutputIndex=2,InputName="BoneIndex"))
+      FunctionInputs(2)=(ExpressionInputId=A4F762F14759021CBDF339B73EAFBFBA,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_2'",InputName="BonePositionTexture"))
+      FunctionInputs(3)=(ExpressionInputId=7538F22E47FB3B024BD5DC9397688E98,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_4'",InputName="BoneRotationTexture"))
+      FunctionInputs(4)=(ExpressionInputId=551A1966447BEAB3F2192CBAAF988763,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'ML_BoneAnimation:MaterialExpressionVectorParameter_1'",InputName="SizeBBox",Mask=1,MaskR=1,MaskG=1,MaskB=1))
+      FunctionInputs(5)=(ExpressionInputId=4C6DC3BB4BE82908361710BCB2E9856D,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'ML_BoneAnimation:MaterialExpressionVectorParameter_2'",InputName="MinBBox",Mask=1,MaskR=1,MaskG=1,MaskB=1))
+      FunctionOutputs(0)=(ExpressionOutputId=A7D99B6B482DE61D3187B6B9209A49AB,Output=(OutputName="Normal"))
+      FunctionOutputs(1)=(ExpressionOutputId=B968DEB54F4281FAEF164291055F6ABC,Output=(OutputName="Position"))
+      MaterialExpressionEditorX=-816
+      MaterialExpressionEditorY=1232
+      MaterialExpressionGuid=888A75AB43DA3FA4B43474B2B5A1F1D9
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      Desc="Third Influence"
+      bCommentBubbleVisible=True
+      Outputs(0)=(OutputName="Normal")
+      Outputs(1)=(OutputName="Position")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_11" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_11'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Crowd/VAT/MaterialFunctions/UnpackBoneWeights.UnpackBoneWeights'"
+      FunctionInputs(0)=(ExpressionInputId=0F5500334CCA68DD03A77DBC0C7257CD,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_3'",InputName="Tex"))
+      FunctionInputs(1)=(ExpressionInputId=C917A71849D4A47D552E2C88052CF80F,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_10'",InputName="RowsPerFrame"))
+      FunctionOutputs(0)=(ExpressionOutputId=C6EBEA384732FE8E8FDE359452D5FD9C,Output=(OutputName="Indices"))
+      FunctionOutputs(1)=(ExpressionOutputId=6EA6C3C64C114E044A70A79141C6FD51,Output=(OutputName="Weights"))
+      MaterialExpressionEditorX=-1918
+      MaterialExpressionEditorY=802
+      MaterialExpressionGuid=0357A65F4FBB05543A38F7B2DB009D7D
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      Outputs(0)=(OutputName="Indices")
+      Outputs(1)=(OutputName="Weights")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_14" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_14'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame'"
+      FunctionInputs(0)=(ExpressionInputId=CA9BF19E42CDD1C76DE18383E39B0648,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_11'",InputName="Frame"))
+      FunctionInputs(1)=(ExpressionInputId=864770724595B5A62EB1C5810992C6EA,Input=(Expression="/Script/Engine.MaterialExpressionPerInstanceCustomData'ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_0'",InputName="FrameOffset"))
+      FunctionInputs(2)=(ExpressionInputId=388340D14A08CF17754D738C7CFAD4BD,Input=(Expression="/Script/Engine.MaterialExpressionPerInstanceCustomData'ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_2'",InputName="NumFrames"))
+      FunctionInputs(3)=(ExpressionInputId=8DB9237F47D9DFF113987B8A13C33F08,Input=(Expression="/Script/Engine.MaterialExpressionStaticBoolParameter'ML_BoneAnimation:MaterialExpressionStaticBoolParameter_1'",InputName="Animate"))
+      FunctionInputs(4)=(ExpressionInputId=1AB8769B4029482FA6FE8CA66F0A12B9,Input=(Expression="/Script/Engine.MaterialExpressionPerInstanceCustomData'ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_3'",InputName="Playrate"))
+      FunctionInputs(5)=(ExpressionInputId=D6E1E228489907C11E08EBA92138C960,Input=(Expression="/Script/Engine.MaterialExpressionPerInstanceCustomData'ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_4'",InputName="Looping"))
+      FunctionInputs(6)=(ExpressionInputId=6472691043B6EB256B7CC796C3946E83,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_0'",InputName="SampleRate"))
+      FunctionInputs(7)=(ExpressionInputId=DFCF1FDB47FBDC4622AC76AC21285CE1,Input=(Expression="/Script/Engine.MaterialExpressionPerInstanceCustomData'ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_1'",InputName="TimeStartOffset"))
+      FunctionOutputs(0)=(ExpressionOutputId=14D48EDD45132E036F48219F06C82ACF,Output=(OutputName="Frame"))
+      MaterialExpressionEditorX=-1536
+      MaterialExpressionEditorY=80
+      MaterialExpressionGuid=AF4E32374C77EE33E3AEC28957A36C4A
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      Outputs(0)=(OutputName="Frame")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_16" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_16'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions02/Utility/BreakOutFloat4Components.BreakOutFloat4Components'"
+      FunctionInputs(0)=(ExpressionInputId=0FC5C56B4335798F20CB928CF1C87421,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_11'",InputName="Float4"))
+      FunctionOutputs(0)=(ExpressionOutputId=6BC893C247FCFC567178CE944E213385,Output=(OutputName="R"))
+      FunctionOutputs(1)=(ExpressionOutputId=9720C81E449DF8E5514FCB8A80FD5FA3,Output=(OutputName="G"))
+      FunctionOutputs(2)=(ExpressionOutputId=17CE6E2C4E70841B48F3D1B73828AA03,Output=(OutputName="B"))
+      FunctionOutputs(3)=(ExpressionOutputId=7E5140D94EE3BA89C55CD5ACDFA04604,Output=(OutputName="A"))
+      MaterialExpressionEditorX=-1568
+      MaterialExpressionEditorY=800
+      MaterialExpressionGuid=1354D4D34224BF11B3303E9A6B85D630
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      Outputs(0)=(OutputName="R")
+      Outputs(1)=(OutputName="G")
+      Outputs(2)=(OutputName="B")
+      Outputs(3)=(OutputName="A")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_17" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_17'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/AnimToTexture/Materials/MaterialFunctions/BonePositionAndNormal.BonePositionAndNormal'"
+      FunctionInputs(0)=(ExpressionInputId=568998E5419C0C826C09F29E38769B57,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_14'",InputName="Frame"))
+      FunctionInputs(1)=(ExpressionInputId=20CC32CA4343925B3868A0943A292F37,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_16'",InputName="BoneIndex"))
+      FunctionInputs(2)=(ExpressionInputId=A4F762F14759021CBDF339B73EAFBFBA,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_2'",InputName="BonePositionTexture"))
+      FunctionInputs(3)=(ExpressionInputId=7538F22E47FB3B024BD5DC9397688E98,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_4'",InputName="BoneRotationTexture"))
+      FunctionInputs(4)=(ExpressionInputId=551A1966447BEAB3F2192CBAAF988763,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'ML_BoneAnimation:MaterialExpressionVectorParameter_1'",InputName="SizeBBox",Mask=1,MaskR=1,MaskG=1,MaskB=1))
+      FunctionInputs(5)=(ExpressionInputId=4C6DC3BB4BE82908361710BCB2E9856D,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'ML_BoneAnimation:MaterialExpressionVectorParameter_2'",InputName="MinBBox",Mask=1,MaskR=1,MaskG=1,MaskB=1))
+      FunctionOutputs(0)=(ExpressionOutputId=A7D99B6B482DE61D3187B6B9209A49AB,Output=(OutputName="Normal"))
+      FunctionOutputs(1)=(ExpressionOutputId=B968DEB54F4281FAEF164291055F6ABC,Output=(OutputName="Position"))
+      MaterialExpressionEditorX=-816
+      MaterialExpressionEditorY=736
+      MaterialExpressionGuid=888A75AB43DA3FA4B43474B2B5A1F1D9
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      Desc="First Influence"
+      bCommentBubbleVisible=True
+      Outputs(0)=(OutputName="Normal")
+      Outputs(1)=(OutputName="Position")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_2" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_2'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/AnimToTexture/Materials/MaterialFunctions/BonePositionAndNormal.BonePositionAndNormal'"
+      FunctionInputs(0)=(ExpressionInputId=568998E5419C0C826C09F29E38769B57,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_14'",InputName="Frame"))
+      FunctionInputs(1)=(ExpressionInputId=20CC32CA4343925B3868A0943A292F37,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_16'",OutputIndex=3,InputName="BoneIndex"))
+      FunctionInputs(2)=(ExpressionInputId=A4F762F14759021CBDF339B73EAFBFBA,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_2'",InputName="BonePositionTexture"))
+      FunctionInputs(3)=(ExpressionInputId=7538F22E47FB3B024BD5DC9397688E98,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'ML_BoneAnimation:MaterialExpressionTextureObjectParameter_4'",InputName="BoneRotationTexture"))
+      FunctionInputs(4)=(ExpressionInputId=551A1966447BEAB3F2192CBAAF988763,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'ML_BoneAnimation:MaterialExpressionVectorParameter_1'",InputName="SizeBBox",Mask=1,MaskR=1,MaskG=1,MaskB=1))
+      FunctionInputs(5)=(ExpressionInputId=4C6DC3BB4BE82908361710BCB2E9856D,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'ML_BoneAnimation:MaterialExpressionVectorParameter_2'",InputName="MinBBox",Mask=1,MaskR=1,MaskG=1,MaskB=1))
+      FunctionOutputs(0)=(ExpressionOutputId=A7D99B6B482DE61D3187B6B9209A49AB,Output=(OutputName="Normal"))
+      FunctionOutputs(1)=(ExpressionOutputId=B968DEB54F4281FAEF164291055F6ABC,Output=(OutputName="Position"))
+      MaterialExpressionEditorX=-816
+      MaterialExpressionEditorY=1488
+      MaterialExpressionGuid=888A75AB43DA3FA4B43474B2B5A1F1D9
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      Desc="Forth Influence"
+      bCommentBubbleVisible=True
+      Outputs(0)=(OutputName="Normal")
+      Outputs(1)=(OutputName="Position")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_3" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_3'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/AnimToTexture/Materials/MaterialFunctions/BlendFourIfluences.BlendFourIfluences'"
+      FunctionInputs(0)=(ExpressionInputId=024EBAB64805468922576DAA84171685,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_17'",OutputIndex=1,InputName="Position1"))
+      FunctionInputs(1)=(ExpressionInputId=D01D68444C7E68C2EDA89182FBA6E542,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_17'",InputName="Normal1"))
+      FunctionInputs(2)=(ExpressionInputId=173F943649D1A7A5DF217AADC6459B2B,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_4'",InputName="Weight1"))
+      FunctionInputs(3)=(ExpressionInputId=CDDAF6E440D869FA0D8F8FAF354F4167,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_0'",OutputIndex=1,InputName="Position2"))
+      FunctionInputs(4)=(ExpressionInputId=3DA150544CBE1A2E419388AC39CFE8CC,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_0'",InputName="Normal2"))
+      FunctionInputs(5)=(ExpressionInputId=D9CC7AC947DEEE5B02578193AD12D9FD,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_4'",OutputIndex=1,InputName="Weight2"))
+      FunctionInputs(6)=(ExpressionInputId=2CC8C7684FD833BEF0D3C69096E59CA9,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_1'",OutputIndex=1,InputName="Position3"))
+      FunctionInputs(7)=(ExpressionInputId=7F02EDD74679F77BD4E0DFBAA48EFA89,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_1'",InputName="Normal3"))
+      FunctionInputs(8)=(ExpressionInputId=1437D9DD4E6165962897EE93B0D41273,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_4'",OutputIndex=2,InputName="Weight3"))
+      FunctionInputs(9)=(ExpressionInputId=5CD9918B45039056CE0CCD8149D0B12C,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_2'",OutputIndex=1,InputName="Position4"))
+      FunctionInputs(10)=(ExpressionInputId=92EF8E7A47FBB8839CBA90BAA725A719,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_2'",InputName="Normal4"))
+      FunctionInputs(11)=(ExpressionInputId=F62C731C45C28C5588BD33A1B1F5E77E,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_4'",OutputIndex=3,InputName="Weight4"))
+      FunctionOutputs(0)=(ExpressionOutputId=5FEAEE4047B5F31D8D16B090855BA340,Output=(OutputName="Normal"))
+      FunctionOutputs(1)=(ExpressionOutputId=3DA35FBC4C60D8A1D843FFAF1126B2A4,Output=(OutputName="Position"))
+      MaterialExpressionEditorX=-256
+      MaterialExpressionEditorY=992
+      MaterialExpressionGuid=0114BC694D6F3D81540E21886E272E87
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      Outputs(0)=(OutputName="Normal")
+      Outputs(1)=(OutputName="Position")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_4" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_4'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions02/Utility/BreakOutFloat4Components.BreakOutFloat4Components'"
+      FunctionInputs(0)=(ExpressionInputId=0FC5C56B4335798F20CB928CF1C87421,Input=(Expression="/Script/Engine.MaterialExpressionReroute'ML_BoneAnimation:MaterialExpressionReroute_0'",InputName="Float4"))
+      FunctionOutputs(0)=(ExpressionOutputId=6BC893C247FCFC567178CE944E213385,Output=(OutputName="R"))
+      FunctionOutputs(1)=(ExpressionOutputId=9720C81E449DF8E5514FCB8A80FD5FA3,Output=(OutputName="G"))
+      FunctionOutputs(2)=(ExpressionOutputId=17CE6E2C4E70841B48F3D1B73828AA03,Output=(OutputName="B"))
+      FunctionOutputs(3)=(ExpressionOutputId=7E5140D94EE3BA89C55CD5ACDFA04604,Output=(OutputName="A"))
+      MaterialExpressionEditorX=-800
+      MaterialExpressionEditorY=1744
+      MaterialExpressionGuid=901BF5BD4F999BBB1F9EF8BFD68F2A9A
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      Desc="Influence Weights"
+      bCommentBubbleVisible=True
+      Outputs(0)=(OutputName="R")
+      Outputs(1)=(OutputName="G")
+      Outputs(2)=(OutputName="B")
+      Outputs(3)=(OutputName="A")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_5" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_5'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/AnimToTexture/Materials/MaterialFunctions/BlendTwoInfluences.BlendTwoInfluences'"
+      FunctionInputs(0)=(ExpressionInputId=A0D3D830445EA01C3C41E5AF11EE3871,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_17'",OutputIndex=1,InputName="Position1"))
+      FunctionInputs(1)=(ExpressionInputId=17CD311D4648C7E539B9CAB0B140FBFB,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_17'",InputName="Normal1"))
+      FunctionInputs(2)=(ExpressionInputId=E2657B7D4F32B122080AB981A285B011,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_4'",InputName="Weight1"))
+      FunctionInputs(3)=(ExpressionInputId=5BB08F2049B9FBFC035924AF24FE931E,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_0'",OutputIndex=1,InputName="Position2"))
+      FunctionInputs(4)=(ExpressionInputId=30B82819411D8A01377A8BB3A178F4B1,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_0'",InputName="Normal2"))
+      FunctionInputs(5)=(ExpressionInputId=8669A9204B444C903B2EF196EA01417D,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_4'",OutputIndex=1,InputName="Weight2"))
+      FunctionOutputs(0)=(ExpressionOutputId=E6A5614B41866F7DA59404AADC30FA31,Output=(OutputName="Normal"))
+      FunctionOutputs(1)=(ExpressionOutputId=561A682D4BCECD47E904BDAE3587F941,Output=(OutputName="Position"))
+      MaterialExpressionEditorX=-256
+      MaterialExpressionEditorY=768
+      MaterialExpressionGuid=E608BDF24B435E087ACFFD8C118CE83F
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      Outputs(0)=(OutputName="Normal")
+      Outputs(1)=(OutputName="Position")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialLayerOutput_0" ExportPath="/Script/Engine.MaterialExpressionMaterialLayerOutput'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionMaterialLayerOutput_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'ML_BoneAnimation:MaterialExpressionStaticSwitchParameter_2'")
+      bLastPreviewed=True
+      Id=1A86EF14476E1FA5805706954B415F9D
+      MaterialExpressionEditorX=1840
+      MaterialExpressionEditorY=928
+      MaterialExpressionGuid=032A4DB647894F70010577B60CA8995D
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionPerInstanceCustomData_0" ExportPath="/Script/Engine.MaterialExpressionPerInstanceCustomData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_0'"
+      DefaultValue=(Expression="/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_12'")
+      MaterialExpressionEditorX=-2000
+      MaterialExpressionEditorY=-96
+      MaterialExpressionGuid=9269BB5640CCEBDD106B14832CF1407D
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionPerInstanceCustomData_1" ExportPath="/Script/Engine.MaterialExpressionPerInstanceCustomData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_1'"
+      DefaultValue=(Expression="/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_2'")
+      DataIndex=4
+      MaterialExpressionEditorX=-1984
+      MaterialExpressionEditorY=448
+      MaterialExpressionGuid=9269BB5640CCEBDD106B14832CF1407D
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionPerInstanceCustomData_2" ExportPath="/Script/Engine.MaterialExpressionPerInstanceCustomData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_2'"
+      DefaultValue=(Expression="/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_13'")
+      ConstDefaultValue=1.000000
+      DataIndex=1
+      MaterialExpressionEditorX=-2000
+      MaterialExpressionEditorY=-16
+      MaterialExpressionGuid=9269BB5640CCEBDD106B14832CF1407D
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionPerInstanceCustomData_3" ExportPath="/Script/Engine.MaterialExpressionPerInstanceCustomData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_3'"
+      DefaultValue=(Expression="/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_3'")
+      ConstDefaultValue=1.000000
+      DataIndex=2
+      MaterialExpressionEditorX=-1984
+      MaterialExpressionEditorY=144
+      MaterialExpressionGuid=9269BB5640CCEBDD106B14832CF1407D
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionPerInstanceCustomData_4" ExportPath="/Script/Engine.MaterialExpressionPerInstanceCustomData'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionPerInstanceCustomData_4'"
+      DefaultValue=(Expression="/Script/Engine.MaterialExpressionScalarParameter'ML_BoneAnimation:MaterialExpressionScalarParameter_4'")
+      ConstDefaultValue=1.000000
+      DataIndex=3
+      MaterialExpressionEditorX=-1984
+      MaterialExpressionEditorY=240
+      MaterialExpressionGuid=9269BB5640CCEBDD106B14832CF1407D
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionReroute_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_11'",OutputIndex=1)
+      MaterialExpressionEditorX=-1584
+      MaterialExpressionEditorY=1776
+      MaterialExpressionGuid=700D9AE0466A679697DEFAB4399E9506
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionReroute_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_5'",OutputIndex=1)
+      MaterialExpressionEditorX=352
+      MaterialExpressionEditorY=1296
+      MaterialExpressionGuid=3C9764A24BE4D097D24248A7F6B572FD
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionReroute_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_17'")
+      MaterialExpressionEditorX=-128
+      MaterialExpressionEditorY=1632
+      MaterialExpressionGuid=5832D9F7428311417EAC0FAE0D3955F0
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_3" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionReroute_3'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_17'",OutputIndex=1)
+      MaterialExpressionEditorX=-128
+      MaterialExpressionEditorY=1664
+      MaterialExpressionGuid=1AA864B14588DF465D31B2AA5854D4F3
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_0" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_0'"
+      DefaultValue=30.000000
+      ParameterName="SampleRate"
+      ExpressionGUID=953AF1DC48337FBBA48B7BB5AA028F05
+      MaterialExpressionEditorX=-1968
+      MaterialExpressionEditorY=352
+      MaterialExpressionGuid=56619E01481EAC8DFA7857AD72984191
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_10" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_10'"
+      ParameterName="BoneWeightsRowsPerFrame"
+      ExpressionGUID=F1E9131F4C4CB2D5DF998689DF168D86
+      MaterialExpressionEditorX=-2222
+      MaterialExpressionEditorY=850
+      MaterialExpressionGuid=932D8BF24E9E5676FB4DAE8523B90237
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_11" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_11'"
+      ParameterName="Frame"
+      ExpressionGUID=7FF10EA34C45B644EDE779BCD2A87FEB
+      MaterialExpressionEditorX=-1968
+      MaterialExpressionEditorY=-192
+      MaterialExpressionGuid=E120402B4C9C758D0AA6C7A06ACB96E8
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_12" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_12'"
+      ParameterName="FrameOffset"
+      ExpressionGUID=29D9A99F40A29D2421F3A0A57EF110FB
+      MaterialExpressionEditorX=-2192
+      MaterialExpressionEditorY=-96
+      MaterialExpressionGuid=808B61FC48E3FE9D8C5F98B9D47654EE
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_13" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_13'"
+      ParameterName="NumFrames"
+      ExpressionGUID=D13D9BCB4C5531CF992A94894C75CECF
+      MaterialExpressionEditorX=-2192
+      MaterialExpressionGuid=AF45BEFF4B03A9BFE309D980D26F3BE0
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_2" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_2'"
+      ParameterName="TimeStartOffset"
+      ExpressionGUID=42DFCB1A4DE5F03224EB6A84E2BBEB3B
+      MaterialExpressionEditorX=-2176
+      MaterialExpressionEditorY=448
+      MaterialExpressionGuid=063FAB774769663C470BC29E4F7FFA76
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_3" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_3'"
+      DefaultValue=1.000000
+      ParameterName="Playrate"
+      ExpressionGUID=1A91C4CE41499AFBFCDDADA033675ED9
+      MaterialExpressionEditorX=-2208
+      MaterialExpressionEditorY=144
+      MaterialExpressionGuid=AF45BEFF4B03A9BFE309D980D26F3BE0
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionScalarParameter_4'"
+      DefaultValue=1.000000
+      ParameterName="bLooping"
+      ExpressionGUID=916C7A9B4B2AC54F530EB88BEE253E22
+      MaterialExpressionEditorX=-2208
+      MaterialExpressionEditorY=240
+      MaterialExpressionGuid=AF45BEFF4B03A9BFE309D980D26F3BE0
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_0'"
+      Inputs(0)=(Expression="/Script/Engine.MaterialExpressionFunctionInput'ML_BoneAnimation:MaterialExpressionFunctionInput_0'")
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionVertexInterpolator'ML_BoneAnimation:MaterialExpressionVertexInterpolator_0'",InputName="Normal")
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_3'",OutputIndex=1,InputName="World Position Offset")
+      AttributeSetTypes(0)=0FA2821A200F4A4AB719B789C1259C64
+      AttributeSetTypes(1)=F905F895D5814314916D24348C40CE9E
+      MaterialExpressionEditorX=832
+      MaterialExpressionEditorY=960
+      MaterialExpressionGuid=2749E1B249340F7A020AA0AE83E74C5B
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_1" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_1'"
+      Inputs(0)=(Expression="/Script/Engine.MaterialExpressionFunctionInput'ML_BoneAnimation:MaterialExpressionFunctionInput_0'")
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionVertexInterpolator'ML_BoneAnimation:MaterialExpressionVertexInterpolator_1'",InputName="Normal")
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionReroute'ML_BoneAnimation:MaterialExpressionReroute_1'",InputName="World Position Offset")
+      AttributeSetTypes(0)=0FA2821A200F4A4AB719B789C1259C64
+      AttributeSetTypes(1)=F905F895D5814314916D24348C40CE9E
+      MaterialExpressionEditorX=832
+      MaterialExpressionEditorY=1216
+      MaterialExpressionGuid=2749E1B249340F7A020AA0AE83E74C5B
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_2" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_2'"
+      Inputs(0)=(Expression="/Script/Engine.MaterialExpressionFunctionInput'ML_BoneAnimation:MaterialExpressionFunctionInput_0'")
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionVertexInterpolator'ML_BoneAnimation:MaterialExpressionVertexInterpolator_2'",InputName="Normal")
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionReroute'ML_BoneAnimation:MaterialExpressionReroute_3'",InputName="World Position Offset")
+      AttributeSetTypes(0)=0FA2821A200F4A4AB719B789C1259C64
+      AttributeSetTypes(1)=F905F895D5814314916D24348C40CE9E
+      MaterialExpressionEditorX=816
+      MaterialExpressionEditorY=1568
+      MaterialExpressionGuid=2749E1B249340F7A020AA0AE83E74C5B
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticBoolParameter_1" ExportPath="/Script/Engine.MaterialExpressionStaticBoolParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionStaticBoolParameter_1'"
+      ParameterName="Animate"
+      ExpressionGUID=E3CED51B42E0B07A3BB1DDBC8C9A44C6
+      MaterialExpressionEditorX=-1968
+      MaterialExpressionEditorY=64
+      MaterialExpressionGuid=3D9A9F6E4A1533DFEB5505B03B9955E5
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_1" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionStaticSwitchParameter_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_2'")
+      ParameterName="UseTwoInfluences"
+      ExpressionGUID=8702E1A3456093843EA56B8ED387F3A8
+      MaterialExpressionEditorX=1200
+      MaterialExpressionEditorY=1200
+      MaterialExpressionGuid=EB9EF77C445123348736D3A5B21BD3E3
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_2" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionStaticSwitchParameter_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'ML_BoneAnimation:MaterialExpressionSetMaterialAttributes_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'ML_BoneAnimation:MaterialExpressionStaticSwitchParameter_1'")
+      ParameterName="UseFourInfluences"
+      ExpressionGUID=2A6E2D58430B8D24F5671898198F693E
+      MaterialExpressionEditorX=1456
+      MaterialExpressionEditorY=944
+      MaterialExpressionGuid=EB9EF77C445123348736D3A5B21BD3E3
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureObjectParameter_2" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionTextureObjectParameter_2'"
+      ParameterName="BonePositionTexture"
+      ExpressionGUID=0BB3F568452760256D8633B9F197D012
+      MaterialExpressionEditorX=-1488
+      MaterialExpressionEditorY=1024
+      MaterialExpressionGuid=AC85217D4889D32F95853DB6369DD21A
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureObjectParameter_3" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionTextureObjectParameter_3'"
+      ParameterName="BoneWeightsTexture"
+      ExpressionGUID=D3FDD7A146E99C28931BE8B5FE4A0A5A
+      MaterialExpressionEditorX=-2174
+      MaterialExpressionEditorY=754
+      MaterialExpressionGuid=941BC6814FE333ED21D806ACA214701C
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionTextureObjectParameter_4" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionTextureObjectParameter_4'"
+      ParameterName="BoneRotationTexture"
+      ExpressionGUID=7E0AE49E497698828E9763AC5460AAF9
+      MaterialExpressionEditorX=-1488
+      MaterialExpressionEditorY=1184
+      MaterialExpressionGuid=85842851491DEBA74C639FAEC92BFCB2
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_1" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionVectorParameter_1'"
+      ParameterName="SizeBBox"
+      ExpressionGUID=E819A35E43D2252F29344386A4A41A57
+      MaterialExpressionEditorX=-1488
+      MaterialExpressionEditorY=1360
+      MaterialExpressionGuid=DD8945424DB5DDCF217E0E82756E2DD6
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_2" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionVectorParameter_2'"
+      ParameterName="MinBBox"
+      ExpressionGUID=B6A8C3C84B768CA02424F79CAE153E05
+      MaterialExpressionEditorX=-1488
+      MaterialExpressionEditorY=1552
+      MaterialExpressionGuid=A817D8F14DFB23A3D94C81A6968ABEAC
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionVertexInterpolator_0" ExportPath="/Script/Engine.MaterialExpressionVertexInterpolator'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionVertexInterpolator_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_3'")
+      MaterialExpressionEditorX=352
+      MaterialExpressionEditorY=992
+      MaterialExpressionGuid=2C61BB664AFCE3EA4BA7B98491EFF1A2
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionVertexInterpolator_1" ExportPath="/Script/Engine.MaterialExpressionVertexInterpolator'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionVertexInterpolator_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'ML_BoneAnimation:MaterialExpressionMaterialFunctionCall_5'")
+      MaterialExpressionEditorX=352
+      MaterialExpressionEditorY=1232
+      MaterialExpressionGuid=2C61BB664AFCE3EA4BA7B98491EFF1A2
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="MaterialExpressionVertexInterpolator_2" ExportPath="/Script/Engine.MaterialExpressionVertexInterpolator'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:MaterialExpressionVertexInterpolator_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'ML_BoneAnimation:MaterialExpressionReroute_2'")
+      MaterialExpressionEditorX=384
+      MaterialExpressionEditorY=1600
+      MaterialExpressionGuid=2C61BB664AFCE3EA4BA7B98491EFF1A2
+      Function="/Script/Engine.MaterialFunctionMaterialLayer'ML_BoneAnimation'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Crowd/VAT/Materials/ML_BoneAnimation.ML_BoneAnimation:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   DependentFunctionExpressionCandidates(0)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_17'"
+   DependentFunctionExpressionCandidates(1)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_11'"
+   DependentFunctionExpressionCandidates(2)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_14'"
+   DependentFunctionExpressionCandidates(3)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_16'"
+   DependentFunctionExpressionCandidates(4)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_0'"
+   DependentFunctionExpressionCandidates(5)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_1'"
+   DependentFunctionExpressionCandidates(6)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_2'"
+   DependentFunctionExpressionCandidates(7)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_3'"
+   DependentFunctionExpressionCandidates(8)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_4'"
+   DependentFunctionExpressionCandidates(9)="/Script/Engine.MaterialExpressionMaterialFunctionCall'MaterialExpressionMaterialFunctionCall_5'"
+   EditorOnlyData="/Script/Engine.MaterialFunctionEditorOnlyData'ML_BoneAnimationEditorOnlyData'"
+   StateId=DA5444A14D056BB4EFBD2492CFC2A2BB
+   MaterialFunctionUsage=MaterialLayer
+   CombinedInputTypes=2048
+   CombinedOutputTypes=2048
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+End Object

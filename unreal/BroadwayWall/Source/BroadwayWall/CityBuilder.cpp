@@ -1,4 +1,8 @@
 #include "CityBuilder.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonSerializer.h"
+#include "Misc/FileHelper.h"
+#include "CityLife.h"
 
 #include "CompGeom/PolygonTriangulation.h"
 #include "IndexTypes.h"
@@ -23,6 +27,7 @@ namespace
 		if (Layer == TEXT("pavement") || Layer == TEXT("paveland") || Layer == TEXT("apron")) Path = TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst.M_Asphalt_Master_Inst");
 		else if (Layer == TEXT("sidewalk")) Path = TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS");
 		else if (Layer == TEXT("land")) Path = TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS");
+		else if (Layer == TEXT("block")) Path = TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS");
 		else if (Layer == TEXT("esplanade")) Path = TEXT("/Game/Road/Material/MI/MI_Sidewalk_Plaza_A_WS.MI_Sidewalk_Plaza_A_WS");
 		else if (Layer == TEXT("beach")) Path = TEXT("/Game/Megascans/Surfaces/sand_sand_pjuuP0/M_sand.M_sand");
 		else if (Layer == TEXT("sea") || Layer == TEXT("pond") || Layer == TEXT("stream")) Path = TEXT("/Game/Prop/kit_ocean/Material/M_ocean.M_ocean");
@@ -178,13 +183,34 @@ bool ACityBuilder::BuildFromText(const FString& Text)
 		}
 	}
 	bFacades = Kits.Num() > 0;
+	// the web map's facade families onto the kits (unreal/tools/facade-families.mjs)
+	{
+		FString Json;
+		TSharedPtr<FJsonObject> Root;
+		if (FFileHelper::LoadFileToString(Json, *(FPaths::ProjectDir() / TEXT("Data/facade-families.json"))) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Root) && Root)
+		{
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& P : Root->GetObjectField(TEXT("kits"))->Values)
+			{
+				TArray<FString>& L = FamilyKits.Add(P.Key);
+				for (const TSharedPtr<FJsonValue>& K : P.Value->AsArray()) L.Add(K->AsString());
+			}
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& P : Root->GetObjectField(TEXT("like"))->Values) FamilyLike.Add(P.Key, P.Value->AsString());
+		}
+		UE_LOG(LogTemp, Display, TEXT("facade families: %d mapped onto %d kits"), FamilyKits.Num(), Kits.Num());
+	}
 	if (bFacades) Facades = MakeUnique<FBWFacadeBuilder>(RootComponent);
 	BuildGround();
 	Current = City.Volumes;
 	BuildVolumes();
 	BuildTrees();
 	BuildMarkings();
-	if (!FParse::Param(FCommandLine::Get(), TEXT("NoTraffic"))) BuildTraffic();
+	// the street's life: signalled traffic and pedestrians (CityLife); -NoTraffic for neither
+	if (!FParse::Param(FCommandLine::Get(), TEXT("NoTraffic")))
+	{
+		ACityLife* Life = GetWorld()->SpawnActor<ACityLife>();
+		Life->Build(City, int32(City.Seed));
+		Life->AttachToActor(this, FAttachmentTransformRules::KeepWorldTransform);
+	}
 	BuildStreetProps();
 	UE_LOG(LogBWBuilder, Display, TEXT("built %s: parse %.2fs, meshes %.2fs, %d building chunks, %d facade pieces (%s)"),
 		*City.Name, T1 - T0, FPlatformTime::Seconds() - T1, Chunks.Num(), Facades ? Facades->Pieces() : 0, bFacades ? *FString::JoinBy(Kits, TEXT(","), [](const FBWKit& K) { return K.Name; }) : TEXT("blocks only"));
@@ -243,7 +269,7 @@ void ACityBuilder::BuildVolumes()
 			{
 				// the facade carries the look; the mass sits 60 cm behind it (no flicker
 				// against the kit's faces, and it still catches clicks), roofed in gravel
-				const int32 Pieces = Facades->Dress(*KitFor(Vol), Vol, GetTypeHash(Vol.Bbl) ^ uint32(Vol.Z0), Vol.Z0 < 50);
+				const int32 Pieces = Facades->Dress(*KitFor(Vol), Vol, GetTypeHash(Vol.Bbl) ^ uint32(Vol.Z0), Vol.Z0 < 50, Vol.Tint);
 				if (Pieces > 0)
 				{
 					if (Vol.bCrown || Vol.Z1 >= 0) DressRoof(Vol, GetTypeHash(Vol.Bbl));
@@ -524,6 +550,22 @@ const FBWKit* ACityBuilder::KitFor(const FBWVolume& V) const
 			{ TEXT("ribbon"), TEXT("SFC") }, { TEXT("stone"), TEXT("CHA") }, { TEXT("terracotta"), TEXT("CHC") } };
 		if (const TCHAR* const* K = ByFamily.Find(V.Facade)) if (const FBWKit* Kit = Has(*K)) return Kit;
 	}
+	// THE WEB MAP'S FAMILY. The building wears what the browser map draws it in:
+	// its family lists the kits nearest it, and the lot picks among them (the same
+	// pick unreal/tools/facade-families.mjs measures shares with).
+	if (!V.Fam.IsEmpty())
+	{
+		const TArray<FString>* List = FamilyKits.Find(V.Fam);
+		if (!List) if (const FString* Like = FamilyLike.Find(V.Fam)) List = FamilyKits.Find(*Like);
+		if (List && List->Num())
+		{
+			uint32 H = 2166136261u;
+			for (const TCHAR Ch : V.Bbl) { H ^= uint32(Ch); H *= 16777619u; }
+			H = (H ^ (H >> 13)) * 0x5bd1e995u;
+			for (int32 i = 0; i < List->Num(); ++i)
+				if (const FBWKit* Kit = Has(*(*List)[(H + i) % List->Num()])) return Kit;
+		}
+	}
 	TArray<const FBWKit*> Fit;
 	auto Want = [&](std::initializer_list<const TCHAR*> Names) { for (const TCHAR* N : Names) if (const FBWKit* K = Has(N)) Fit.Add(K); };
 	const int32 Y = V.Year;
@@ -634,20 +676,14 @@ void ACityBuilder::BuildStreetProps()
 				for (int32 k = 0; k < Count; ++k)
 				{
 					const FVector2D P = A + Dir * (Len * (k + 0.5) / Count) - Out * 70; // 70 cm in from the kerb
+					if (ParcelAt(P)) continue; // a narrow corner: the kerb line runs up against a building
 					const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Out.Y, Out.X));
 					AddProp(TEXT("/Game/Prop/Kit_StreetLamp_B/Mesh/SM_StreetLamp_B.SM_StreetLamp_B"), FTransform(FRotator(0, Yaw, 0), FVector(P, 15)), false);
 					if (Rng.FRand() < 0.18)
 						AddProp(TEXT("/Game/Prop/Kit_Trashcan_A/Mesh/SM_Trashcan_A_01.SM_Trashcan_A_01"), FTransform(FRotator(0, Yaw, 0), FVector(P + Dir * 180, 15)), false);
 				}
-				// cars at the kerb: the parking lane, a space every 6.5 m, about half taken,
-				// clear of the corners where the crosswalks are
-				const double Along = FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X));
-				for (double S = 900; S < Len - 900; S += 650)
-				{
-					if (Rng.FRand() > 0.55) continue;
-					const FVector2D P = A + Dir * S + Out * 230;
-					AddProp(CarMeshes[Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - 1)], FTransform(FRotator(0, Along + (Rng.FRand() < 0.5 ? 0 : 180), 0), FVector(P, 0)), false);
-				}
+				// (kerb parking is laid out by CityLife from the street centrelines, in a
+				// parking lane the traffic lane is sized around)
 			}
 		}
 	}

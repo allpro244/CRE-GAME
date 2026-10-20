@@ -1,0 +1,33 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="MI_VAT_BodySynthesized_SM_f_tal_nrw_body" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Crowd/VAT/Materials/MI_VAT_BodySynthesized_SM_f_tal_nrw_body.MI_VAT_BodySynthesized_SM_f_tal_nrw_body'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="MI_VAT_BodySynthesized_SM_f_tal_nrw_bodyEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Crowd/VAT/Materials/MI_VAT_BodySynthesized_SM_f_tal_nrw_body.MI_VAT_BodySynthesized_SM_f_tal_nrw_body:MI_VAT_BodySynthesized_SM_f_tal_nrw_bodyEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Crowd/VAT/Materials/MI_VAT_BodySynthesized_SM_f_tal_nrw_body.MI_VAT_BodySynthesized_SM_f_tal_nrw_body:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="MI_VAT_BodySynthesized_SM_f_tal_nrw_bodyEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Crowd/VAT/Materials/MI_VAT_BodySynthesized_SM_f_tal_nrw_body.MI_VAT_BodySynthesized_SM_f_tal_nrw_body:MI_VAT_BodySynthesized_SM_f_tal_nrw_bodyEditorOnlyData'"
+      StaticParameters=(MaterialLayers=(LayerStates=(True),LayerNames=(NSLOCTEXT("MaterialLayersFunctions", "Background", "Background")),RestrictToLayerRelatives=(False),LayerGuids=(00000002000000000000000000000000),LayerLinkStates=(LinkedToParent)))
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Crowd/VAT/Materials/MI_VAT_BodySynthesized_SM_f_tal_nrw_body.MI_VAT_BodySynthesized_SM_f_tal_nrw_body:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=9C3822A94C5C5233C4BCEEB74E9B0959
+   Parent="/Script/Engine.MaterialInstanceConstant'/Game/Crowd/Character/Female/f_001/Materials/M_BodySynthesized.M_BodySynthesized'"
+   bHasStaticPermutationResource=True
+   ScalarParameterValues(0)=(ParameterInfo=(Name="BoneWeightsRowsPerFrame",Association=LayerParameter,Index=0),ParameterValue=1.000000,ExpressionGUID=F1E9131F4C4CB2D5DF998689DF168D86)
+   ScalarParameterValues(1)=(ParameterInfo=(Name="NumFrames",Association=LayerParameter,Index=0),ParameterValue=430.000000,ExpressionGUID=D13D9BCB4C5531CF992A94894C75CECF)
+   ScalarParameterValues(2)=(ParameterInfo=(Name="RefractionDepthBias"))
+   VectorParameterValues(0)=(ParameterInfo=(Name="MinBBox",Association=LayerParameter,Index=0),ParameterValue=(R=-47.251892,G=-50.200760,B=-19.291290,A=1.000000),ExpressionGUID=B6A8C3C84B768CA02424F79CAE153E05)
+   VectorParameterValues(1)=(ParameterInfo=(Name="SizeBBox",Association=LayerParameter,Index=0),ParameterValue=(R=117.218483,G=84.520355,B=170.738754,A=1.000000),ExpressionGUID=E819A35E43D2252F29344386A4A41A57)
+   TextureParameterValues(0)=(ParameterInfo=(Name="BonePositionTexture",Association=LayerParameter,Index=0),ParameterValue="/Script/Engine.Texture2D'/Game/Crowd/VAT/TX_f_tal_BonePosition.TX_f_tal_BonePosition'",ExpressionGUID=0BB3F568452760256D8633B9F197D012)
+   TextureParameterValues(1)=(ParameterInfo=(Name="BoneRotationTexture",Association=LayerParameter,Index=0),ParameterValue="/Script/Engine.Texture2D'/Game/Crowd/VAT/TX_f_tal_BoneRotation.TX_f_tal_BoneRotation'",ExpressionGUID=7E0AE49E497698828E9763AC5460AAF9)
+   TextureParameterValues(2)=(ParameterInfo=(Name="BoneWeightsTexture",Association=LayerParameter,Index=0),ParameterValue="/Script/Engine.Texture2D'/Game/Crowd/VAT/Textures/TX_f_tal_nrw_body.TX_f_tal_nrw_body'",ExpressionGUID=D3FDD7A146E99C28931BE8B5FE4A0A5A)
+   BasePropertyOverrides=(bOverride_BlendMode=True,ShadingModel=MSM_SubsurfaceProfile,OpacityMaskClipValue=0.330000,UsageFlags=37748897)
+   StaticParametersRuntime=(StaticSwitchParameters=((Value=True,ParameterInfo=(Name="UseBoneAnimation"),bOverride=True,ExpressionGUID=E76595724AA9F377371E9BAEF8EB1DC1),(ParameterInfo=(Name="IsMale?"),bOverride=True,ExpressionGUID=988025EC4ADF7AFA9771E5B7ED246E14),(Value=True,ParameterInfo=(Name="UseAtlasSelection"),bOverride=True,ExpressionGUID=5A1EEBE144358EC53C324BA7B22A30B1),(Value=True,ParameterInfo=(Name="Animate",Association=LayerParameter,Index=0),bOverride=True,ExpressionGUID=E3CED51B42E0B07A3BB1DDBC8C9A44C6),(ParameterInfo=(Name="UseFourInfluences",Association=LayerParameter,Index=0),bOverride=True,ExpressionGUID=2A6E2D58430B8D24F5671898198F693E),(Value=True,ParameterInfo=(Name="UseTwoInfluences",Association=LayerParameter,Index=0),bOverride=True,ExpressionGUID=8702E1A3456093843EA56B8ED387F3A8),(Value=True,ParameterInfo=(Name="UseUV1",Association=LayerParameter,Index=0),bOverride=True,ExpressionGUID=CF9D934B448E9C1BD946928C33D437CA)))
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'MI_VAT_BodySynthesized_SM_f_tal_nrw_bodyEditorOnlyData'"
+   SubsurfaceProfile="/Script/Engine.SubsurfaceProfile'/Game/Crowd/Character/Shared/SubsurfaceProfiles/SP_Head.SP_Head'"
+   TextureStreamingDataVersion=1
+   TextureStreamingData(0)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="female_body_mask_map",TextureReference="/Game/Crowd/Character/Female/Textures/female_body_mask_map.female_body_mask_map")
+   TextureStreamingData(1)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="TX_f_tal_BoneRotation",TextureReference="/Game/Crowd/VAT/TX_f_tal_BoneRotation.TX_f_tal_BoneRotation")
+   TextureStreamingData(2)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="TX_f_tal_nrw_body",TextureReference="/Game/Crowd/VAT/Textures/TX_f_tal_nrw_body.TX_f_tal_nrw_body")
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LayerParameterExpansion=(("0", True),("00", True),("00Texture Parameter Values", True),("00Scalar Parameter Values", True),("00Static Switch Parameter Values", True),("00Vector Parameter Values", False),("00Vector Parameter ValuesMinBBox", False))
+   LightingGuid=9C39653C4E69ACE7765B368A08A20912
+End Object

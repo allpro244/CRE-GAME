@@ -14,13 +14,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const BW = join(HERE, "..", "..", "broadway-and-wall");
 const { makeCity, PROCEDURAL, REFERENCE_SEED } = await import(pathToFileURL(join(BW, "src", "citygen", "index.mjs")).href);
 const { toBwCity } = await import(pathToFileURL(join(BW, "src", "citygen", "unrealExport.mjs")).href);
+const { familyFor, TINTS } = await import(pathToFileURL(join(HERE, "families.mjs")).href);
 
 const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
 const size = arg("--size", "metro");
 const seed = Number(arg("--seed", REFERENCE_SEED));
 const out = arg("--out", join(HERE, "..", "BroadwayWall", "Data", `city-${seed}-${size}.json`));
 
-const doc = toBwCity(makeCity(PROCEDURAL, seed, { size }));
+const doc = toBwCity(makeCity(PROCEDURAL, seed, { size }), { familyFor, tints: TINTS });
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, JSON.stringify(doc));
 const { minX, maxX, minY, maxY } = doc.bounds;

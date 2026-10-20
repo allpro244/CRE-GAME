@@ -1,0 +1,18 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="MI_vehCar_vehicle02_2" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Vehicle/vehCar_vehicle02/Material/MI/MI_vehCar_vehicle02_2.MI_vehCar_vehicle02_2'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="MI_vehCar_vehicle02_2EditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Vehicle/vehCar_vehicle02/Material/MI/MI_vehCar_vehicle02_2.MI_vehCar_vehicle02_2:MI_vehCar_vehicle02_2EditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Vehicle/vehCar_vehicle02/Material/MI/MI_vehCar_vehicle02_2.MI_vehCar_vehicle02_2:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="MI_vehCar_vehicle02_2EditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Vehicle/vehCar_vehicle02/Material/MI/MI_vehCar_vehicle02_2.MI_vehCar_vehicle02_2:MI_vehCar_vehicle02_2EditorOnlyData'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Vehicle/vehCar_vehicle02/Material/MI/MI_vehCar_vehicle02_2.MI_vehCar_vehicle02_2:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=018B5C514112519CCAF91EA19FB10DB7
+   Parent="/Script/Engine.MaterialInstanceConstant'/Game/Vehicle/vehCar_vehicle02/Material/M_veh_metal_chrome.M_veh_metal_chrome'"
+   TextureParameterValues(0)=(ParameterInfo=(Name="Normal Tex"),ParameterValue="/Script/Engine.Texture2D'/Game/Vehicle/vehCar_vehicle02/Texture/T_vehCar_vehicle02_N.T_vehCar_vehicle02_N'",ExpressionGUID=4DB6EDD74C1681BF3B19E191B5C4A57B)
+   TextureParameterValues(1)=(ParameterInfo=(Name="Mask Tex MFPI"),ParameterValue="/Script/Engine.Texture2D'/Game/Vehicle/vehCar_vehicle02/Texture/T_vehCar_vehicle02_Grime.T_vehCar_vehicle02_Grime'",ExpressionGUID=5532ABBB4757C932A08E61AAF872D2CB)
+   BasePropertyOverrides=(bCastDynamicShadowAsMasked=True,ShadingModel=MSM_FromMaterialExpression,OpacityMaskClipValue=0.050000,UsageFlags=38015377)
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'MI_vehCar_vehicle02_2EditorOnlyData'"
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LightingGuid=F16E54104D7990A27FCA6C8DC3E16266
+End Object

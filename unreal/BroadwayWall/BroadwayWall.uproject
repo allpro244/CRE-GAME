@@ -50,6 +50,10 @@
 		{
 			"Name": "DLSS",
 			"Enabled": true
+		},
+		{
+			"Name": "AnimToTexture",
+			"Enabled": true
 		}
 	]
 }

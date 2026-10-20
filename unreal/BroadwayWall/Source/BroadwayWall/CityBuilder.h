@@ -66,6 +66,9 @@ private:
 	bool bFacades = false;
 	/** Which kit dresses this volume: by use, era and height, varied by lot. */
 	const FBWKit* KitFor(const FBWVolume& V) const;
+	/** Data/facade-families.json: the kits each web facade family can wear, and each later family's original. */
+	TMap<FString, TArray<FString>> FamilyKits;
+	TMap<FString, FString> FamilyLike;
 	TUniquePtr<FBWFacadeBuilder> Facades;
 	/** What stands now: the generator's volumes minus overridden lots, plus the economy's. */
 	TArray<FBWVolume> Current;

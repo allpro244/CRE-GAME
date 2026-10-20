@@ -1,0 +1,517 @@
+Begin Object Class=/Script/Engine.MaterialFunction Name="BuildingPost" ExportPath="/Script/Engine.MaterialFunction'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost'"
+   Begin Object Class=/Script/Engine.MaterialFunctionEditorOnlyData Name="BuildingPostEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:BuildingPostEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAppendVector Name="MaterialExpressionAppendVector_1" ExportPath="/Script/Engine.MaterialExpressionAppendVector'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionAppendVector_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionChannelMaskParameter Name="MaterialExpressionChannelMaskParameter_0" ExportPath="/Script/Engine.MaterialExpressionChannelMaskParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionChannelMaskParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionChannelMaskParameter Name="MaterialExpressionChannelMaskParameter_1" ExportPath="/Script/Engine.MaterialExpressionChannelMaskParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionChannelMaskParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionChannelMaskParameter Name="MaterialExpressionChannelMaskParameter_2" ExportPath="/Script/Engine.MaterialExpressionChannelMaskParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionChannelMaskParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionChannelMaskParameter Name="MaterialExpressionChannelMaskParameter_3" ExportPath="/Script/Engine.MaterialExpressionChannelMaskParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionChannelMaskParameter_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_0" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_1" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_2" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_3" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_4" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_5" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_6" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_7" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionInput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionInput_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionInput_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_3" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionInput_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_4" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionInput_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionOutput Name="MaterialExpressionFunctionOutput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionOutput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionReroute_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_1" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_2" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_3" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_4" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_5" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_6" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionShadingModel Name="MaterialExpressionShadingModel_0" ExportPath="/Script/Engine.MaterialExpressionShadingModel'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionShadingModel_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_0" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_1" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_2" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_3" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_4" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_5" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_6" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_7" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_8" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureCoordinate Name="MaterialExpressionTextureCoordinate_0" ExportPath="/Script/Engine.MaterialExpressionTextureCoordinate'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionTextureCoordinate_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureCoordinate Name="MaterialExpressionTextureCoordinate_1" ExportPath="/Script/Engine.MaterialExpressionTextureCoordinate'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionTextureCoordinate_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureCoordinate Name="MaterialExpressionTextureCoordinate_2" ExportPath="/Script/Engine.MaterialExpressionTextureCoordinate'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionTextureCoordinate_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSample Name="MaterialExpressionTextureSample_0" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionTextureSample_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSample Name="MaterialExpressionTextureSample_1" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionTextureSample_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVertexNormalWS Name="MaterialExpressionVertexNormalWS_0" ExportPath="/Script/Engine.MaterialExpressionVertexNormalWS'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionVertexNormalWS_0'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="BuildingPostEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:BuildingPostEditorOnlyData'"
+      ExpressionCollection=(Expressions=("/Script/Engine.MaterialExpressionFunctionOutput'BuildingPost:MaterialExpressionFunctionOutput_0'","/Script/Engine.MaterialExpressionFunctionInput'BuildingPost:MaterialExpressionFunctionInput_0'","/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_4'","/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_1'","/Script/Engine.MaterialExpressionFunctionInput'BuildingPost:MaterialExpressionFunctionInput_2'","/Script/Engine.MaterialExpressionTextureSample'BuildingPost:MaterialExpressionTextureSample_0'","/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_0'","/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_0'","/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_2'","/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_2'","/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_2'","/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_3'","/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_4'","/Script/Engine.MaterialExpressionShadingModel'BuildingPost:MaterialExpressionShadingModel_0'","/Script/Engine.MaterialExpressionVertexNormalWS'BuildingPost:MaterialExpressionVertexNormalWS_0'","/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_5'","/Script/Engine.MaterialExpressionReroute'BuildingPost:MaterialExpressionReroute_0'","/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_1'","/Script/Engine.MaterialExpressionTextureSample'BuildingPost:MaterialExpressionTextureSample_1'","/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_3'","/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_3'","/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_4'","/Script/Engine.MaterialExpressionFunctionInput'BuildingPost:MaterialExpressionFunctionInput_1'","/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_0'","/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_5'","/Script/Engine.MaterialExpressionFunctionInput'BuildingPost:MaterialExpressionFunctionInput_3'","/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_1'","/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_5'","/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_6'","/Script/Engine.MaterialExpressionFunctionInput'BuildingPost:MaterialExpressionFunctionInput_4'","/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_6'","/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_6'","/Script/Engine.MaterialExpressionAppendVector'BuildingPost:MaterialExpressionAppendVector_1'","/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_7'","/Script/Engine.MaterialExpressionTextureCoordinate'BuildingPost:MaterialExpressionTextureCoordinate_0'","/Script/Engine.MaterialExpressionTextureCoordinate'BuildingPost:MaterialExpressionTextureCoordinate_1'","/Script/Engine.MaterialExpressionTextureCoordinate'BuildingPost:MaterialExpressionTextureCoordinate_2'","/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_7'","/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_8'","/Script/Engine.MaterialExpressionChannelMaskParameter'BuildingPost:MaterialExpressionChannelMaskParameter_0'","/Script/Engine.MaterialExpressionChannelMaskParameter'BuildingPost:MaterialExpressionChannelMaskParameter_1'","/Script/Engine.MaterialExpressionChannelMaskParameter'BuildingPost:MaterialExpressionChannelMaskParameter_2'","/Script/Engine.MaterialExpressionChannelMaskParameter'BuildingPost:MaterialExpressionChannelMaskParameter_3'"))
+   End Object
+   Begin Object Name="MaterialExpressionAppendVector_1" ExportPath="/Script/Engine.MaterialExpressionAppendVector'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionAppendVector_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionFunctionInput'BuildingPost:MaterialExpressionFunctionInput_4'")
+      B=(Expression="/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_7'")
+      MaterialExpressionEditorX=-3280
+      MaterialExpressionEditorY=176
+      MaterialExpressionGuid=012EFFDB4724DF0FD035148370A55222
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionChannelMaskParameter_0" ExportPath="/Script/Engine.MaterialExpressionChannelMaskParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionChannelMaskParameter_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionFunctionInput'BuildingPost:MaterialExpressionFunctionInput_3'")
+      ParameterName="Debug Channel"
+      ExpressionGUID=1816D3D84B5F702679AC0FA3357427B2
+      Group="0.Debug"
+      MaterialExpressionEditorX=-2432
+      MaterialExpressionEditorY=160
+      MaterialExpressionGuid=4ED434764F58BBA403A4E182415C310A
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionChannelMaskParameter_1" ExportPath="/Script/Engine.MaterialExpressionChannelMaskParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionChannelMaskParameter_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionAppendVector'BuildingPost:MaterialExpressionAppendVector_1'")
+      ParameterName="Debug Channel"
+      ExpressionGUID=DB92F0D54FD6AA3CEBA4D2B88F3F10B1
+      Group="0.Debug"
+      MaterialExpressionEditorX=-3152
+      MaterialExpressionEditorY=160
+      MaterialExpressionGuid=4ED434764F58BBA403A4E182415C310A
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionChannelMaskParameter_2" ExportPath="/Script/Engine.MaterialExpressionChannelMaskParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionChannelMaskParameter_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionFunctionInput'BuildingPost:MaterialExpressionFunctionInput_2'")
+      ParameterName="Debug Channel"
+      ExpressionGUID=29B9B65D41345DF8804726B52D6F4381
+      Group="0.Debug"
+      MaterialExpressionEditorX=-464
+      MaterialExpressionEditorY=64
+      MaterialExpressionGuid=4ED434764F58BBA403A4E182415C310A
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionChannelMaskParameter_3" ExportPath="/Script/Engine.MaterialExpressionChannelMaskParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionChannelMaskParameter_3'"
+      Input=(Expression="/Script/Engine.MaterialExpressionFunctionInput'BuildingPost:MaterialExpressionFunctionInput_1'")
+      ParameterName="Debug Channel"
+      ExpressionGUID=C0685BCA4C9DFEB750F5DEA6397A3B06
+      Group="0.Debug"
+      MaterialExpressionEditorX=-1712
+      MaterialExpressionEditorY=144
+      MaterialExpressionGuid=4ED434764F58BBA403A4E182415C310A
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionConstant_0" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_0'"
+      R=1.000000
+      MaterialExpressionEditorX=-1616
+      MaterialExpressionEditorY=288
+      MaterialExpressionGuid=6E6F48124917B6DC80E493939D19C629
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_1" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_1'"
+      R=1.000000
+      MaterialExpressionEditorX=-2384
+      MaterialExpressionEditorY=304
+      MaterialExpressionGuid=6E6F48124917B6DC80E493939D19C629
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_2" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_2'"
+      R=1.000000
+      MaterialExpressionEditorX=-288
+      MaterialExpressionEditorY=272
+      MaterialExpressionGuid=6E6F48124917B6DC80E493939D19C629
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_3" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_3'"
+      R=1.000000
+      MaterialExpressionEditorX=-1084
+      MaterialExpressionEditorY=162
+      MaterialExpressionGuid=09B3372F426A7CFD3E33459A29259115
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_4" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_4'"
+      R=0.180000
+      MaterialExpressionEditorX=-1103
+      MaterialExpressionEditorY=137
+      MaterialExpressionGuid=B394AB384410C4EA20857BAE0F82512B
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_5" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_5'"
+      MaterialExpressionEditorX=-1084
+      MaterialExpressionEditorY=213
+      MaterialExpressionGuid=09B3372F426A7CFD3E33459A29259115
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_6" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_6'"
+      R=1.000000
+      MaterialExpressionEditorX=-3072
+      MaterialExpressionEditorY=320
+      MaterialExpressionGuid=6E6F48124917B6DC80E493939D19C629
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_7" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionConstant_7'"
+      MaterialExpressionEditorX=-3397
+      MaterialExpressionEditorY=288
+      MaterialExpressionGuid=923480D14D1CA56BEC2EB38D0E8C43A7
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionInput_0'"
+      Id=FE6541444981A51A1F2C04BE7CF3525B
+      InputType=FunctionInput_MaterialAttributes
+      MaterialExpressionEditorX=-4880
+      MaterialExpressionEditorY=649
+      MaterialExpressionGuid=8A943DD6482336449874C0A886DCD26A
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionInput_1'"
+      InputName="Debug PackedA"
+      Id=0C2DB75A481A0863A4C377B2A6AF2D1D
+      InputType=FunctionInput_Vector4
+      SortPriority=10
+      MaterialExpressionEditorX=-1984
+      MaterialExpressionEditorY=160
+      MaterialExpressionGuid=E8A03B7B4C340448C9C4148072A33F24
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionInput_2'"
+      InputName="Debug"
+      Id=2CB7F20A471ADAD4F04A9ABEEC61B0BE
+      InputType=FunctionInput_Vector4
+      SortPriority=10
+      MaterialExpressionEditorX=-656
+      MaterialExpressionEditorY=80
+      MaterialExpressionGuid=E8A03B7B4C340448C9C4148072A33F24
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_3" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionInput_3'"
+      InputName="Debug PackedB"
+      Id=9122BB0E4D13C07E14A31495CCAE99E7
+      InputType=FunctionInput_Vector4
+      SortPriority=10
+      MaterialExpressionEditorX=-2688
+      MaterialExpressionEditorY=176
+      MaterialExpressionGuid=E8A03B7B4C340448C9C4148072A33F24
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_4" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionInput_4'"
+      InputName="Debug ValVar"
+      Id=70401F884025533A6EE20C9A4EA44F51
+      SortPriority=10
+      MaterialExpressionEditorX=-3552
+      MaterialExpressionEditorY=112
+      MaterialExpressionGuid=E8A03B7B4C340448C9C4148072A33F24
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionOutput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionFunctionOutput_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_4'")
+      bLastPreviewed=True
+      Id=3AA3C4004CE5617C1C84C4AB05D3FA02
+      MaterialExpressionEditorX=464
+      MaterialExpressionEditorY=518
+      MaterialExpressionGuid=D91C890147A94F8571FF7A8EE9E4C1D7
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionReroute_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionVertexNormalWS'BuildingPost:MaterialExpressionVertexNormalWS_0'")
+      MaterialExpressionEditorX=-896
+      MaterialExpressionEditorY=355
+      MaterialExpressionGuid=F39893CF4B9F3662A24164A614E9727A
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_0'"
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionTextureSample'BuildingPost:MaterialExpressionTextureSample_0'",InputName="Emissive Color",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      AttributeSetTypes(0)=B769B54DD08D4440ABC21BA6CD27D0E2
+      MaterialExpressionEditorX=-3952
+      MaterialExpressionEditorY=281
+      MaterialExpressionGuid=CC67D4C24224B8DA7892ECB0FA72D810
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_1" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_1'"
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionChannelMaskParameter'BuildingPost:MaterialExpressionChannelMaskParameter_2'",InputName="Emissive Color",Mask=1,MaskR=1)
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_2'",InputName="Roughness")
+      Inputs(3)=(Expression="/Script/Engine.MaterialExpressionShadingModel'BuildingPost:MaterialExpressionShadingModel_0'",InputName="Shading Model")
+      Inputs(4)=(Expression="/Script/Engine.MaterialExpressionReroute'BuildingPost:MaterialExpressionReroute_0'",InputName="Normal")
+      AttributeSetTypes(0)=B769B54DD08D4440ABC21BA6CD27D0E2
+      AttributeSetTypes(1)=D1DD967C4CAD47D39E6346FB08ECF210
+      AttributeSetTypes(2)=D9423FFFD77E4D828FF9CF5E055D1255
+      AttributeSetTypes(3)=0FA2821A200F4A4AB719B789C1259C64
+      MaterialExpressionEditorX=-160
+      MaterialExpressionEditorY=221
+      MaterialExpressionGuid=CC67D4C24224B8DA7892ECB0FA72D810
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_2" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_2'"
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_4'",InputName="Base Color")
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_3'",InputName="Roughness")
+      Inputs(3)=(Expression="/Script/Engine.MaterialExpressionShadingModel'BuildingPost:MaterialExpressionShadingModel_0'",InputName="Shading Model")
+      Inputs(4)=(Expression="/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_5'",InputName="Metallic")
+      Inputs(5)=(Expression="/Script/Engine.MaterialExpressionVertexNormalWS'BuildingPost:MaterialExpressionVertexNormalWS_0'",InputName="Normal")
+      AttributeSetTypes(0)=69B8D33616ED4D499AA497292F050F7A
+      AttributeSetTypes(1)=D1DD967C4CAD47D39E6346FB08ECF210
+      AttributeSetTypes(2)=D9423FFFD77E4D828FF9CF5E055D1255
+      AttributeSetTypes(3)=57C3A1617F064296B00B24A5A496F34C
+      AttributeSetTypes(4)=0FA2821A200F4A4AB719B789C1259C64
+      MaterialExpressionEditorX=-960
+      MaterialExpressionEditorY=112
+      MaterialExpressionGuid=CC67D4C24224B8DA7892ECB0FA72D810
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_3" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_3'"
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionTextureSample'BuildingPost:MaterialExpressionTextureSample_1'",InputName="Emissive Color",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      AttributeSetTypes(0)=B769B54DD08D4440ABC21BA6CD27D0E2
+      MaterialExpressionEditorX=-4576
+      MaterialExpressionEditorY=271
+      MaterialExpressionGuid=CC67D4C24224B8DA7892ECB0FA72D810
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_4" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_4'"
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionChannelMaskParameter'BuildingPost:MaterialExpressionChannelMaskParameter_3'",InputName="Emissive Color",Mask=1,MaskR=1)
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_0'",InputName="Roughness")
+      Inputs(3)=(InputName="Shading Model")
+      Inputs(4)=(InputName="Normal")
+      AttributeSetTypes(0)=B769B54DD08D4440ABC21BA6CD27D0E2
+      AttributeSetTypes(1)=D1DD967C4CAD47D39E6346FB08ECF210
+      AttributeSetTypes(2)=D9423FFFD77E4D828FF9CF5E055D1255
+      AttributeSetTypes(3)=0FA2821A200F4A4AB719B789C1259C64
+      MaterialExpressionEditorX=-1488
+      MaterialExpressionEditorY=240
+      MaterialExpressionGuid=CC67D4C24224B8DA7892ECB0FA72D810
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_5" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_5'"
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionChannelMaskParameter'BuildingPost:MaterialExpressionChannelMaskParameter_0'",InputName="Emissive Color",Mask=1,MaskR=1)
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_1'",InputName="Roughness")
+      Inputs(3)=(InputName="Shading Model")
+      Inputs(4)=(InputName="Normal")
+      AttributeSetTypes(0)=B769B54DD08D4440ABC21BA6CD27D0E2
+      AttributeSetTypes(1)=D1DD967C4CAD47D39E6346FB08ECF210
+      AttributeSetTypes(2)=D9423FFFD77E4D828FF9CF5E055D1255
+      AttributeSetTypes(3)=0FA2821A200F4A4AB719B789C1259C64
+      MaterialExpressionEditorX=-2256
+      MaterialExpressionEditorY=256
+      MaterialExpressionGuid=CC67D4C24224B8DA7892ECB0FA72D810
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_6" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionSetMaterialAttributes_6'"
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionChannelMaskParameter'BuildingPost:MaterialExpressionChannelMaskParameter_1'",InputName="Emissive Color",Mask=1,MaskR=1)
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionConstant'BuildingPost:MaterialExpressionConstant_6'",InputName="Roughness")
+      Inputs(3)=(InputName="Shading Model")
+      Inputs(4)=(InputName="Normal")
+      AttributeSetTypes(0)=B769B54DD08D4440ABC21BA6CD27D0E2
+      AttributeSetTypes(1)=D1DD967C4CAD47D39E6346FB08ECF210
+      AttributeSetTypes(2)=D9423FFFD77E4D828FF9CF5E055D1255
+      AttributeSetTypes(3)=0FA2821A200F4A4AB719B789C1259C64
+      MaterialExpressionEditorX=-2944
+      MaterialExpressionEditorY=272
+      MaterialExpressionGuid=CC67D4C24224B8DA7892ECB0FA72D810
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionShadingModel_0" ExportPath="/Script/Engine.MaterialExpressionShadingModel'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionShadingModel_0'"
+      MaterialExpressionEditorX=-1165
+      MaterialExpressionEditorY=282
+      MaterialExpressionGuid=F387EF8A4688A483B7D89DBCC6CB73D2
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_0" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_1'")
+      ParameterName="UDIM #"
+      ExpressionGUID=9D385DA24A2F441C99F7F38F870D58AF
+      Group="0.Debug"
+      SortPriority=0
+      MaterialExpressionEditorX=-3584
+      MaterialExpressionEditorY=592
+      MaterialExpressionGuid=9080BE6640ADB0670687FDB16515B284
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_1" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_3'")
+      B=(Expression="/Script/Engine.MaterialExpressionFunctionInput'BuildingPost:MaterialExpressionFunctionInput_0'")
+      ParameterName="UV Check"
+      ExpressionGUID=24DBAD3C4F20419A34B95888E518FCC5
+      Group="0.Debug"
+      SortPriority=0
+      MaterialExpressionEditorX=-4320
+      MaterialExpressionEditorY=608
+      MaterialExpressionGuid=9080BE6640ADB0670687FDB16515B284
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_2" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_2'")
+      B=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_3'")
+      ParameterName="Middle Grey"
+      ExpressionGUID=058A94BA4454BC3973B7E0AA53D510BE
+      Group="0.Debug"
+      SortPriority=0
+      MaterialExpressionEditorX=-592
+      MaterialExpressionEditorY=560
+      MaterialExpressionGuid=9080BE6640ADB0670687FDB16515B284
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_3" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_3'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_4'")
+      B=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_5'")
+      ParameterName="Debug PackedA"
+      ExpressionGUID=4BDC8EEB4CA03B34DAA2F7A99797C701
+      Group="0.Debug"
+      SortPriority=0
+      MaterialExpressionEditorX=-1168
+      MaterialExpressionEditorY=560
+      MaterialExpressionGuid=9080BE6640ADB0670687FDB16515B284
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_4" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_4'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_2'")
+      ParameterName="Debug Input"
+      ExpressionGUID=4984ACE8425D9C96A69F97A1799C3AED
+      Group="0.Debug"
+      SortPriority=0
+      MaterialExpressionEditorX=144
+      MaterialExpressionEditorY=537
+      MaterialExpressionGuid=9080BE6640ADB0670687FDB16515B284
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_5" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_5'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_5'")
+      B=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_6'")
+      ParameterName="Debug PackedB"
+      ExpressionGUID=96FDA8B64A3692F38C270AB7A6566FF9
+      Group="0.Debug"
+      SortPriority=0
+      MaterialExpressionEditorX=-1936
+      MaterialExpressionEditorY=576
+      MaterialExpressionGuid=9080BE6640ADB0670687FDB16515B284
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_6" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_6'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'BuildingPost:MaterialExpressionSetMaterialAttributes_6'")
+      B=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_0'")
+      ParameterName="Debug ValVar"
+      ExpressionGUID=38A08CFD4ED4EF81DA2DE49AB967AB7E
+      Group="0.Debug"
+      SortPriority=0
+      MaterialExpressionEditorX=-2624
+      MaterialExpressionEditorY=592
+      MaterialExpressionGuid=9080BE6640ADB0670687FDB16515B284
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_7" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_7'"
+      A=(Expression="/Script/Engine.MaterialExpressionTextureCoordinate'BuildingPost:MaterialExpressionTextureCoordinate_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionTextureCoordinate'BuildingPost:MaterialExpressionTextureCoordinate_0'")
+      ParameterName="UDIM Tex Coord 1"
+      ExpressionGUID=0CC728B14876D5163859B3857BF7AE61
+      Group="0.Debug"
+      MaterialExpressionEditorX=-4208
+      MaterialExpressionEditorY=80
+      MaterialExpressionGuid=AF611E1D4733C6802F2831B605AF4ADD
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_8" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionStaticSwitchParameter_8'"
+      A=(Expression="/Script/Engine.MaterialExpressionTextureCoordinate'BuildingPost:MaterialExpressionTextureCoordinate_2'")
+      B=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_7'")
+      ParameterName="UDIM Tex Coord 2"
+      ExpressionGUID=E8E8ACF544EC77275AD43CBAE42F852B
+      Group="0.Debug"
+      MaterialExpressionEditorX=-4016
+      MaterialExpressionEditorY=128
+      MaterialExpressionGuid=AF611E1D4733C6802F2831B605AF4ADD
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureCoordinate_0" ExportPath="/Script/Engine.MaterialExpressionTextureCoordinate'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionTextureCoordinate_0'"
+      MaterialExpressionEditorX=-4368
+      MaterialExpressionEditorY=64
+      MaterialExpressionGuid=9480AF9C44D5E3F521E389A6F6D11E12
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureCoordinate_1" ExportPath="/Script/Engine.MaterialExpressionTextureCoordinate'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionTextureCoordinate_1'"
+      CoordinateIndex=1
+      MaterialExpressionEditorX=-4368
+      MaterialExpressionEditorY=128
+      MaterialExpressionGuid=A573573F45A854880A20B9800A6D538E
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureCoordinate_2" ExportPath="/Script/Engine.MaterialExpressionTextureCoordinate'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionTextureCoordinate_2'"
+      CoordinateIndex=2
+      MaterialExpressionEditorX=-4368
+      MaterialExpressionEditorY=192
+      MaterialExpressionGuid=15791C1C412AF7B6E1247A98BEAF88D1
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSample_0" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionTextureSample_0'"
+      Coordinates=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'BuildingPost:MaterialExpressionStaticSwitchParameter_8'")
+      Texture="/Script/Engine.Texture2D'/Game/Textures/T_UDIMCheckSmall.T_UDIMCheckSmall'"
+      SamplerType=SAMPLERTYPE_VirtualColor
+      MaterialExpressionEditorX=-4224
+      MaterialExpressionEditorY=309
+      MaterialExpressionGuid=95ACE1824F3D73DEE8389BAE19376784
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSample_1" ExportPath="/Script/Engine.MaterialExpressionTextureSample'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionTextureSample_1'"
+      Texture="/Script/Engine.Texture2D'/Game/Textures/T_UVCheck.T_UVCheck'"
+      MaterialExpressionEditorX=-4816
+      MaterialExpressionEditorY=297
+      MaterialExpressionGuid=AC334C3142C2F5649F63919560CC614B
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="MaterialExpressionVertexNormalWS_0" ExportPath="/Script/Engine.MaterialExpressionVertexNormalWS'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:MaterialExpressionVertexNormalWS_0'"
+      MaterialExpressionEditorX=-1180
+      MaterialExpressionEditorY=384
+      MaterialExpressionGuid=1171CE934DBA545165BB058F984BD5B0
+      Function="/Script/Engine.MaterialFunction'BuildingPost'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   EditorOnlyData="/Script/Engine.MaterialFunctionEditorOnlyData'BuildingPostEditorOnlyData'"
+   StateId=5A5263C440DB0A78E81DFD85044ED9C6
+   CombinedInputTypes=2060
+   CombinedOutputTypes=2048
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+End Object

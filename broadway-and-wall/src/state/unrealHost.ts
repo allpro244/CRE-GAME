@@ -23,6 +23,8 @@
 import { useStore } from "@/state/store";
 import { renderView } from "@/engine/renderView";
 import { toBwCity } from "@/citygen/unrealExport.mjs";
+import "@/map/real/patternbook/register";
+import { familyFor, TINTS } from "@/map/real/facades";
 
 export const UNREAL_HOST = typeof location !== "undefined" && new URLSearchParams(location.search).get("host") === "unreal";
 
@@ -53,7 +55,7 @@ export function startUnrealHost(): void {
     const s = useStore.getState();
     if (s.city && s.city !== lastCity) {
       lastCity = s.city; lastGame = null; lastMonth = -1;
-      void b.city(JSON.stringify(toBwCity(s.city)));
+      void b.city(JSON.stringify(toBwCity(s.city, { familyFor, tints: TINTS })));
     }
     if (s.game && s.city && s.game !== lastGame) {
       const since = lastMonth;

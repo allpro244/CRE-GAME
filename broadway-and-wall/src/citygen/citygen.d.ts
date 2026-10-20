@@ -79,6 +79,6 @@ declare module "@/citygen/platPreview.mjs" {
 declare module "@/citygen/unrealExport.mjs" {
   import type { GeneratedCity } from "@/citygen/index.mjs";
   /** The city as the Unreal build reads it ("bw-city/1"); see unrealExport.mjs. */
-  export function toBwCity(city: GeneratedCity): unknown;
+  export function toBwCity(city: GeneratedCity, opts?: { familyFor?: (cls: string, year: number, h: number, roll?: number, district?: number, nb?: number) => string; tints?: Record<string, number[][]> }): unknown;
   export const GROUND_LAYERS: string[];
 }

@@ -29,6 +29,9 @@ struct FBWVolume
 	int32 Distress = 0;
 	/** The player's facade family (web BuildingDesign.facade), which picks the kit. */
 	FString Facade;
+	/** The web map's facade family for this building (map/real/facades.ts familyFor) and its wall tint, an RGB multiplier. */
+	FString Fam;
+	FLinearColor Tint = FLinearColor::White;
 	TArray<FVector2D> Ring;
 };
 

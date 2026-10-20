@@ -1,0 +1,500 @@
+{
+ "format": "bw-kit-families/1",
+ "kits": {
+  "brick": [
+   "NYA",
+   "CHI",
+   "NYH",
+   "SFA"
+  ],
+  "buff": [
+   "NYA",
+   "CHI",
+   "CHF"
+  ],
+  "brownstone": [
+   "NYH",
+   "NYA"
+  ],
+  "whitebrick": [
+   "CHF",
+   "NYA"
+  ],
+  "georgian": [
+   "NYA",
+   "CHB",
+   "NYH"
+  ],
+  "gothic": [
+   "CHC",
+   "CHE"
+  ],
+  "romanesque": [
+   "CHE",
+   "NYH"
+  ],
+  "castiron": [
+   "CHG",
+   "CHC"
+  ],
+  "stone": [
+   "CHA",
+   "CHD",
+   "CHB"
+  ],
+  "terracotta": [
+   "CHC",
+   "CHA"
+  ],
+  "deco": [
+   "NYG",
+   "CHD"
+  ],
+  "decobrick": [
+   "CHI",
+   "NYG"
+  ],
+  "moderne": [
+   "CHH",
+   "CHF"
+  ],
+  "stucco": [
+   "SFA",
+   "CHF"
+  ],
+  "tudor": [
+   "NYH",
+   "CHE"
+  ],
+  "clapboard": [
+   "NYA",
+   "SFA"
+  ],
+  "industrial": [
+   "CHF",
+   "CHG"
+  ],
+  "daylight": [
+   "CHF",
+   "CHJ"
+  ],
+  "midcentury": [
+   "CHH",
+   "SFE"
+  ],
+  "modern": [
+   "SFE",
+   "CHH",
+   "SFC",
+   "CHJ"
+  ],
+  "precast": [
+   "CHJ",
+   "SFB",
+   "SFC",
+   "CHF"
+  ],
+  "brutalist": [
+   "CHJ"
+  ],
+  "pomo": [
+   "SFB",
+   "SFA"
+  ],
+  "ribbon": [
+   "SFC",
+   "SFE"
+  ],
+  "grid": [
+   "SFC",
+   "CHJ"
+  ],
+  "fins": [
+   "SFE",
+   "SFJ"
+  ],
+  "newstone": [
+   "SFB",
+   "CHD"
+  ],
+  "stackbrick": [
+   "SFA",
+   "CHI"
+  ],
+  "fibercement": [
+   "SFA",
+   "SFB"
+  ],
+  "metalpanel": [
+   "SFC",
+   "SFB"
+  ],
+  "rainscreen": [
+   "SFB",
+   "SFC"
+  ],
+  "timber": [
+   "SFB",
+   "SFA"
+  ],
+  "glass": [
+   "SFJ",
+   "SFC"
+  ],
+  "blueglass": [
+   "SFJ"
+  ],
+  "greenglass": [
+   "SFJ",
+   "SFE"
+  ],
+  "silverglass": [
+   "SFJ",
+   "SFC"
+  ],
+  "blackglass": [
+   "SFJ",
+   "SFE"
+  ],
+  "bronze": [
+   "SFJ",
+   "CHH"
+  ],
+  "diagrid": [
+   "SFJ"
+  ],
+  "pixel": [
+   "SFJ",
+   "SFB"
+  ],
+  "shop": [
+   "CHG",
+   "NYA"
+  ],
+  "lobby": [
+   "SFE"
+  ],
+  "plain": [
+   "CHJ",
+   "NYA"
+  ],
+  "rustic": [
+   "CHE"
+  ],
+  "arcade": [
+   "CHB",
+   "CHG"
+  ],
+  "greystone": [
+   "CHE",
+   "CHD"
+  ],
+  "formstone": [
+   "NYH"
+  ],
+  "tenement": [
+   "NYA"
+  ],
+  "phillyrow": [
+   "NYH",
+   "NYA"
+  ],
+  "twoflat": [
+   "NYA",
+   "CHI"
+  ],
+  "tripledecker": [
+   "NYA"
+  ],
+  "prairie": [
+   "CHI",
+   "CHH"
+  ],
+  "craftsman": [
+   "CHI",
+   "SFA"
+  ],
+  "mission": [
+   "SFA"
+  ],
+  "pueblo": [
+   "SFA"
+  ],
+  "mediterranean": [
+   "SFA",
+   "CHD"
+  ],
+  "spanishcolonial": [
+   "SFA"
+  ],
+  "beachdeco": [
+   "NYG",
+   "CHH"
+  ],
+  "zigzag": [
+   "NYG",
+   "CHI"
+  ],
+  "pwa": [
+   "CHD",
+   "NYG"
+  ],
+  "stripped": [
+   "CHD",
+   "CHJ"
+  ],
+  "beauxarts": [
+   "CHB",
+   "CHA"
+  ],
+  "chateau": [
+   "CHB"
+  ],
+  "secondempire": [
+   "CHB",
+   "CHE"
+  ],
+  "palazzo": [
+   "CHB",
+   "CHA"
+  ],
+  "greekrevival": [
+   "CHD",
+   "CHB"
+  ],
+  "egyptian": [
+   "CHD"
+  ],
+  "edwardian": [
+   "CHA",
+   "CHE"
+  ],
+  "bank": [
+   "CHB",
+   "CHD"
+  ],
+  "venetian": [
+   "CHC"
+  ],
+  "sullivanesque": [
+   "CHC"
+  ],
+  "neogrec": [
+   "NYH"
+  ],
+  "collegiate": [
+   "CHI",
+   "CHE"
+  ],
+  "armory": [
+   "CHE"
+  ],
+  "schoolbrick": [
+   "CHI"
+  ],
+  "neogeorgian": [
+   "CHB",
+   "NYA"
+  ],
+  "federal": [
+   "NYA",
+   "NYH"
+  ],
+  "powerhouse": [
+   "CHF",
+   "CHG"
+  ],
+  "brewery": [
+   "CHG",
+   "CHF"
+  ],
+  "textilemill": [
+   "CHG",
+   "CHF"
+  ],
+  "terminal": [
+   "CHB",
+   "CHF"
+  ],
+  "pumphouse": [
+   "CHG"
+  ],
+  "corrugated": [
+   "SFC"
+  ],
+  "tiltup": [
+   "CHJ",
+   "SFC"
+  ],
+  "flexspace": [
+   "SFC",
+   "SFE"
+  ],
+  "datacentre": [
+   "SFC",
+   "CHJ"
+  ],
+  "selfstorage": [
+   "SFC"
+  ],
+  "projectbrick": [
+   "NYA",
+   "CHI"
+  ],
+  "brickpier": [
+   "CHG",
+   "SFA"
+  ],
+  "newformalism": [
+   "CHH",
+   "CHD"
+  ],
+  "screenblock": [
+   "CHJ",
+   "SFE"
+  ],
+  "brisesoleil": [
+   "SFE"
+  ],
+  "eggcrate": [
+   "CHJ",
+   "SFC"
+  ],
+  "hightech": [
+   "SFC",
+   "SFJ"
+  ],
+  "doubleskin": [
+   "SFJ"
+  ],
+  "goldglass": [
+   "SFJ"
+  ],
+  "roseglass": [
+   "SFJ"
+  ],
+  "goldanodized": [
+   "SFB",
+   "SFJ"
+  ],
+  "stripglass": [
+   "SFC",
+   "SFJ"
+  ],
+  "baguetteglass": [
+   "SFE",
+   "SFB"
+  ],
+  "channelglass": [
+   "SFC"
+  ],
+  "copperclad": [
+   "SFB"
+  ],
+  "corten": [
+   "SFC",
+   "SFB"
+  ],
+  "ceramictile": [
+   "SFB",
+   "CHC"
+  ],
+  "greenwall": [
+   "SFB"
+  ],
+  "charredwood": [
+   "SFB"
+  ],
+  "fluted": [
+   "SFB",
+   "CHD"
+  ],
+  "gfrc": [
+   "SFB",
+   "SFE"
+  ],
+  "glassblock": [
+   "CHF"
+  ],
+  "sunshade": [
+   "SFE"
+  ],
+  "sawtooth": [
+   "SFJ"
+  ]
+ },
+ "like": {
+  "twoflat": "brick",
+  "greystone": "brownstone",
+  "tripledecker": "clapboard",
+  "phillyrow": "brick",
+  "formstone": "brick",
+  "tenement": "brick",
+  "shotgun": "clapboard",
+  "paintedlady": "clapboard",
+  "craftsman": "clapboard",
+  "prairie": "buff",
+  "shingle": "clapboard",
+  "mission": "stucco",
+  "pueblo": "stucco",
+  "mediterranean": "stucco",
+  "beachdeco": "moderne",
+  "dutchcolonial": "georgian",
+  "territorial": "stucco",
+  "spanishcolonial": "stucco",
+  "lowcountry": "clapboard",
+  "beauxarts": "stone",
+  "chateau": "stone",
+  "venetian": "gothic",
+  "sullivanesque": "terracotta",
+  "secondempire": "stone",
+  "neogrec": "brownstone",
+  "zigzag": "decobrick",
+  "palazzo": "stone",
+  "greekrevival": "stone",
+  "collegiate": "romanesque",
+  "federal": "georgian",
+  "pwa": "deco",
+  "stripped": "stone",
+  "bank": "stone",
+  "schoolbrick": "georgian",
+  "newformalism": "precast",
+  "edwardian": "stone",
+  "neogeorgian": "georgian",
+  "armory": "romanesque",
+  "egyptian": "stone",
+  "powerhouse": "industrial",
+  "brewery": "industrial",
+  "textilemill": "industrial",
+  "corrugated": "industrial",
+  "tiltup": "precast",
+  "flexspace": "modern",
+  "glassblock": "daylight",
+  "terminal": "industrial",
+  "pumphouse": "industrial",
+  "datacentre": "metalpanel",
+  "selfstorage": "metalpanel",
+  "brisesoleil": "grid",
+  "screenblock": "modern",
+  "projectbrick": "whitebrick",
+  "goldanodized": "ribbon",
+  "eggcrate": "grid",
+  "brickpier": "modern",
+  "hightech": "glass",
+  "doubleskin": "glass",
+  "goldglass": "bronze",
+  "roseglass": "silverglass",
+  "sawtooth": "pixel",
+  "sunshade": "fins",
+  "stripglass": "ribbon",
+  "baguetteglass": "fins",
+  "corten": "metalpanel",
+  "ceramictile": "rainscreen",
+  "greenwall": "timber",
+  "charredwood": "timber",
+  "fluted": "newstone",
+  "gfrc": "metalpanel",
+  "channelglass": "metalpanel",
+  "copperclad": "metalpanel"
+ }
+}

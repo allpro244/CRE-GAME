@@ -376,6 +376,30 @@ void ABWGameMode::BeginPlay()
 	FString Dir, SimUrl;
 	FParse::Value(FCommandLine::Get(), TEXT("Shots="), ShotDir);
 	FParse::Value(FCommandLine::Get(), TEXT("Years="), SimYears);
+	// -Perf=N: N seconds of drone flight over the city, then log the frame-time spread and quit
+	int32 PerfSecs = 0;
+	if (FParse::Value(FCommandLine::Get(), TEXT("Perf="), PerfSecs) && PerfSecs > 0)
+	{
+		if (ABWCameraPawn* Cam = Cast<ABWCameraPawn>(GetWorld()->GetFirstPlayerController()->GetPawn())) Cam->SetMode(ABWCameraPawn::EMode::Drone);
+		TSharedRef<TArray<float>> Frames = MakeShared<TArray<float>>();
+		TSharedRef<double> Start = MakeShared<double>(0);
+		FTimerHandle H;
+		GetWorldTimerManager().SetTimer(H, [Frames, Start, PerfSecs]()
+		{
+			if (*Start == 0) *Start = FPlatformTime::Seconds();
+			// a fast timer can fire several times in one frame to catch up: sample each frame once
+			static uint64 LastFrame = 0;
+			if (GFrameCounter == LastFrame) return;
+			LastFrame = GFrameCounter;
+			Frames->Add(FApp::GetDeltaTime() * 1000.f);
+			if (FPlatformTime::Seconds() - *Start < PerfSecs) return;
+			Frames->Sort();
+			const int32 N = Frames->Num();
+			const float Med = (*Frames)[N / 2], P95 = (*Frames)[FMath::Min(N - 1, N * 95 / 100)];
+			UE_LOG(LogBW, Display, TEXT("PERF %d frames: median %.1f ms (%.0f fps), p95 %.1f ms (%.0f fps)"), N, Med, 1000.f / Med, P95, 1000.f / P95);
+			FPlatformMisc::RequestExit(false);
+		}, 0.001f, true, 20.0f); // every frame (a rate of 0 clears a timer); 20 s to settle streaming first
+	}
 	if (FParse::Param(FCommandLine::Get(), TEXT("Play"))) StartPlayHost();
 	else if (FParse::Value(FCommandLine::Get(), TEXT("Sim="), SimUrl)) StartSim(SimUrl);
 	else if (!ShotDir.IsEmpty()) RunShots(ShotDir);

@@ -29,3 +29,5 @@ unreal/BroadwayWall/Content/Vehicle/
 unreal/BroadwayWall/Content/Megascans/
 unreal/BroadwayWall/Content/
 unreal/BroadwayWall/Data/web/
+# NVIDIA DLSS plugin (3 GB of binaries): not committed; see unreal/ASSETS.md
+unreal/BroadwayWall/Plugins/

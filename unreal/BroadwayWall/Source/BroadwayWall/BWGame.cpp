@@ -219,8 +219,13 @@ void ABWPlayerController::PageInput(const FString& Type, double X, double Y, dou
 		const bool bLow = Key == TEXT("low"), bMed = Key == TEXT("medium");
 		Q.SetFromSingleQualityLevel(bLow ? 2 : 3);
 		Scalability::SetQualityLevels(Q);
+		// DLSS when the NVIDIA plugin is present and the GPU supports it (RTX): high is
+		// DLAA (native resolution, DLSS anti-aliasing), medium DLSS Quality (67%), low
+		// DLSS Performance (50%). Otherwise the same resolutions through TSR.
+		IConsoleVariable* Dlss = IConsoleManager::Get().FindConsoleVariable(TEXT("r.NGX.DLSS.Enable"));
+		if (Dlss && !FParse::Param(FCommandLine::Get(), TEXT("NoDLSS"))) Dlss->Set(1);
 		if (IConsoleVariable* SP = IConsoleManager::Get().FindConsoleVariable(TEXT("r.ScreenPercentage"))) SP->Set(bLow ? 50.f : bMed ? 67.f : 100.f);
-		UE_LOG(LogBW, Display, TEXT("QUALITY %s"), *Key);
+		UE_LOG(LogBW, Display, TEXT("QUALITY %s (%s)"), *Key, Dlss && Dlss->GetInt() ? TEXT("DLSS") : TEXT("TSR"));
 	}
 	else if (Type == TEXT("zoom")) Cam->Zoom(Wheel);
 	else if (Type == TEXT("orbit")) { Cam->Yaw += Dx * 0.25; Cam->Pitch += (Cam->Mode == ABWCameraPawn::EMode::Street ? -1 : -1) * Dy * 0.25; }
@@ -431,6 +436,10 @@ void ABWGameMode::BeginPlay()
 	FString Dir, SimUrl;
 	FParse::Value(FCommandLine::Get(), TEXT("Shots="), ShotDir);
 	FParse::Value(FCommandLine::Get(), TEXT("Years="), SimYears);
+	// -Quality=low|medium|high: apply the graphics level without the page (for -Perf runs)
+	FString Q;
+	if (FParse::Value(FCommandLine::Get(), TEXT("Quality="), Q))
+		if (ABWPlayerController* QPC = Cast<ABWPlayerController>(GetWorld()->GetFirstPlayerController())) QPC->PageInput(TEXT("quality"), 0, 0, 0, 0, 0, Q);
 	// -Perf=N: N seconds of drone flight over the city, then log the frame-time spread and quit
 	int32 PerfSecs = 0;
 	if (FParse::Value(FCommandLine::Get(), TEXT("Perf="), PerfSecs) && PerfSecs > 0)

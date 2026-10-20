@@ -14,6 +14,8 @@
 
 class UStaticMesh;
 class UInstancedStaticMeshComponent;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 class USceneComponent;
 struct FBWVolume;
 
@@ -55,16 +57,22 @@ public:
 
 	void Reset();
 	/** Lay the kit over this volume. Returns the number of pieces placed. */
-	int32 Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed, bool bGround);
+	int32 Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed, bool bGround, const FLinearColor& Tint = FLinearColor::White);
 
 	int32 Pieces() const { return Placed; }
 
 private:
-	UInstancedStaticMeshComponent* Comp(UStaticMesh* Mesh);
+	UInstancedStaticMeshComponent* Comp(UStaticMesh* Mesh, bool bTinted = true);
 	void Put(const FBWKitModule& M, const FVector2D& A, const FVector2D& D, const FVector2D& Out, double S, double W, double Z, double ScaleZ);
 
 	USceneComponent* Parent;
-	TMap<UStaticMesh*, UInstancedStaticMeshComponent*> Comps;
+	/** One component per mesh and tint: a wall tint is a material parameter, so it is per component. */
+	TMap<TPair<UStaticMesh*, uint32>, UInstancedStaticMeshComponent*> Comps;
+	/** The kit's wall material at each tint (Color Tint/Mult(A) M1 scaled), shared by every mesh using it. */
+	TMap<TPair<UMaterialInterface*, uint32>, UMaterialInstanceDynamic*> Tinted;
+	/** The tint being laid now, quantised to a 0.04 grid (the web's tints sit on 0.02; coarser keeps the component count down). */
+	uint32 TintKey = 0;
+	FLinearColor TintNow = FLinearColor::White;
 	int32 Placed = 0;
 };
 

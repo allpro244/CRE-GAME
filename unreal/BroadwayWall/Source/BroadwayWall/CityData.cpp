@@ -88,6 +88,10 @@ bool FBWCity::LoadText(const FString& Text, const FString& Path)
 		Vol.Z1 = O->GetNumberField(TEXT("z1"));
 		O->TryGetBoolField(TEXT("crown"), Vol.bCrown);
 		O->TryGetBoolField(TEXT("vacant"), Vol.bVacant);
+		O->TryGetStringField(TEXT("fam"), Vol.Fam);
+		const TArray<TSharedPtr<FJsonValue>>* Tint;
+		if (O->TryGetArrayField(TEXT("tint"), Tint) && Tint->Num() == 3)
+			Vol.Tint = FLinearColor((float)(*Tint)[0]->AsNumber(), (float)(*Tint)[1]->AsNumber(), (float)(*Tint)[2]->AsNumber());
 		Vol.Ring = ReadRing(O);
 	}
 

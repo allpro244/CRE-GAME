@@ -1,0 +1,14 @@
+Begin Object Class=/PCGPrimitives/Grammar/BP/BP_ShapeGrammarDefinition.BP_ShapeGrammarDefinition_C Name="SGD_SFB_A" ExportPath="/PCGPrimitives/Grammar/BP/BP_ShapeGrammarDefinition.BP_ShapeGrammarDefinition_C'/CitySamplePCG/PCG/DataAssets/Buildings/SFB/SGD_SFB_A.SGD_SFB_A'"
+   Slots(0)=(ShapeGrammarRules_42_0CB868434643776AF184F78028144928=("/PCGPrimitives/Grammar/BP/BP_ShapeGrammarRule.BP_ShapeGrammarRule_C'/CitySamplePCG/PCG/DataAssets/Buildings/SFB/RULE_SFB_L00.RULE_SFB_L00'"),Symbol_24_E4469DFA4802EEF57E43D29349FBC6B7="L00",size_31_A6850F3346AA84D1D37A079B63B8C073=0.500000)
+   Slots(1)=(ShapeGrammarRules_42_0CB868434643776AF184F78028144928=("/PCGPrimitives/Grammar/BP/BP_ShapeGrammarRule.BP_ShapeGrammarRule_C'/CitySamplePCG/PCG/DataAssets/Buildings/SFB/RULE_SFB_L01.RULE_SFB_L01'"),Symbol_24_E4469DFA4802EEF57E43D29349FBC6B7="L01",size_31_A6850F3346AA84D1D37A079B63B8C073=900.000000)
+   Slots(2)=(ShapeGrammarRules_42_0CB868434643776AF184F78028144928=("/PCGPrimitives/Grammar/BP/BP_ShapeGrammarRule.BP_ShapeGrammarRule_C'/CitySamplePCG/PCG/DataAssets/Buildings/SFB/RULE_SFB_L02.RULE_SFB_L02'"),Symbol_24_E4469DFA4802EEF57E43D29349FBC6B7="L02",size_31_A6850F3346AA84D1D37A079B63B8C073=675.000000)
+   Slots(3)=(ShapeGrammarRules_42_0CB868434643776AF184F78028144928=("/PCGPrimitives/Grammar/BP/BP_ShapeGrammarRule.BP_ShapeGrammarRule_C'/CitySamplePCG/PCG/DataAssets/Buildings/SFB/RULE_SFB_L03.RULE_SFB_L03'"),Symbol_24_E4469DFA4802EEF57E43D29349FBC6B7="L03",size_31_A6850F3346AA84D1D37A079B63B8C073=375.000000)
+   Slots(4)=(ShapeGrammarRules_42_0CB868434643776AF184F78028144928=("/PCGPrimitives/Grammar/BP/BP_ShapeGrammarRule.BP_ShapeGrammarRule_C'/CitySamplePCG/PCG/DataAssets/Buildings/SFB/RULE_SFB_L04.RULE_SFB_L04'"),Symbol_24_E4469DFA4802EEF57E43D29349FBC6B7="L04",size_31_A6850F3346AA84D1D37A079B63B8C073=300.000000)
+   Slots(5)=(ShapeGrammarRules_42_0CB868434643776AF184F78028144928=("/PCGPrimitives/Grammar/BP/BP_ShapeGrammarRule.BP_ShapeGrammarRule_C'/CitySamplePCG/PCG/DataAssets/Buildings/SFB/RULE_SFB_L05.RULE_SFB_L05'"),Symbol_24_E4469DFA4802EEF57E43D29349FBC6B7="L05",size_31_A6850F3346AA84D1D37A079B63B8C073=475.000000)
+   Main Grammar="L00, L01, L02, L03*, L04, L05"
+   Use Grammar=True
+   Spawn on=NewEnumerator1
+   Reverse Spline=True
+   Description="SFB building - converted from BDF, medium facade variant."
+   Minimum Size=500.000000
+End Object

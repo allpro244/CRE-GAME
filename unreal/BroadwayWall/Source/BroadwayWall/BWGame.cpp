@@ -4,6 +4,8 @@
 #include "Components/AudioComponent.h"
 #include "Sound/SoundWave.h"
 #include "CityBuilder.h"
+#include "CityLife.h"
+#include "EngineUtils.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "DrawDebugHelpers.h"
@@ -589,7 +591,41 @@ void ABWGameMode::RunShots(const FString& Dir)
 		{ TEXT("07-facade"), Tall + FVector(-1500, 0, 2500), 20, -2, 2600, false },
 		{ TEXT("08-drone"), Mid, 20, -20, Span * 0.45, false, 2 },
 		{ TEXT("09-walk"), Tall + FVector(-5000, 1500, 0), 15, 6, 0, false, 3 },
+		{ TEXT("10-people"), Tall, 0, -50, 1400, false, 4 },
 	};
+	// -Tour=N[,seed]: N views at random places and angles across the whole city, instead of the fixed set
+	FString Tour;
+	if (FParse::Value(FCommandLine::Get(), TEXT("Tour="), Tour))
+	{
+		FString NStr, SeedStr;
+		if (!Tour.Split(TEXT(","), &NStr, &SeedStr)) { NStr = Tour; SeedStr = TEXT("7"); }
+		FRandomStream R(FCString::Atoi(*SeedStr));
+		TArray<const FBWVolume*> Pool;
+		for (const FBWVolume& V : City->GetVolumes()) if (!V.bVacant && V.Deco.IsEmpty() && V.Z1 > 1200 && V.Ring.Num()) Pool.Add(&V);
+		Shots.Reset();
+		for (int32 i = 0; i < FCString::Atoi(*NStr) && Pool.Num(); ++i)
+		{
+			const FBWVolume& V = *Pool[R.RandRange(0, Pool.Num() - 1)];
+			FVector2D C(0, 0);
+			for (const FVector2D& P : V.Ring) C += P;
+			C /= V.Ring.Num();
+			const int32 Kind = i % 3;   // street-level, mid-height, rooftop overview
+			const double Pitch = Kind == 0 ? -6 : Kind == 1 ? -22 : -38, Dist = Kind == 0 ? 3500 : Kind == 1 ? 12000 : 30000;
+			if (Kind == 0 && City->GetCity().Centerlines.Num())
+			{
+				// street level: stand on a real street, on the kerb side of the right lane, looking down it
+				const FBWCenterline& Cl = City->GetCity().Centerlines[R.RandRange(0, City->GetCity().Centerlines.Num() - 1)];
+				if (Cl.Line.Num() >= 2 && Cl.Width >= 800)
+				{
+					const FVector2D A0 = Cl.Line[0], B0 = Cl.Line.Last(), Dir = (B0 - A0).GetSafeNormal();
+					const FVector2D P = A0 + (B0 - A0) * 0.2 + FVector2D(Dir.Y, -Dir.X) * (Cl.Width * 0.5 - 60);
+					Shots.Add({ FString::Printf(TEXT("tour-%02d"), i + 1), FVector(P, 0), FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)) + R.FRandRange(-12, 12), 3, 0, false, 3 });
+					continue;
+				}
+			}
+			Shots.Add({ FString::Printf(TEXT("tour-%02d"), i + 1), FVector(C, V.Z1 * 0.4), R.FRandRange(0, 360), Kind == 0 ? -22 : Pitch, Kind == 0 ? 12000 : Dist, false });
+		}
+	}
 	FString Only;
 	if (FParse::Value(FCommandLine::Get(), TEXT("ShotOnly="), Only)) Shots.RemoveAll([&Only](const FShot& S) { return !S.Name.Contains(Only); });
 	IFileManager::Get().MakeDirectory(*Dir, true);
@@ -611,6 +647,12 @@ void ABWGameMode::RunShots(const FString& Dir)
 			Cam->SetView(S.Focus, S.Yaw, S.Pitch, S.Dist);
 			if (S.Mode == 2) Cam->SetMode(ABWCameraPawn::EMode::Drone);
 			if (S.Mode == 3) { Cam->Mode = ABWCameraPawn::EMode::Street; Cam->Focus = S.Focus; Cam->Yaw = S.Yaw; Cam->Pitch = S.Pitch; }
+			if (S.Mode == 4)
+				for (TActorIterator<ACityLife> It(Self->GetWorld()); It; ++It)
+				{
+					FVector P; FVector2D F;
+					if (It->PersonNear(S.Focus, P, F)) Cam->SetView(P + FVector(0, 0, 100), FMath::RadiansToDegrees(FMath::Atan2(-F.Y, -F.X)) + 25, S.Pitch, S.Dist);
+				}
 			PC->Select(nullptr);
 		}
 		else if (Beat == 1 && S.bPick)

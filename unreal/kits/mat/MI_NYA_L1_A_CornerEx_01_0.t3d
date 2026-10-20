@@ -1,0 +1,13 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="MI_NYA_L1_A_CornerEx_01_0" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Building/NY/A/Kit_Bldg_NYA_L1_A/Material/MI/MI_NYA_L1_A_CornerEx_01_0.MI_NYA_L1_A_CornerEx_01_0'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="MI_NYA_L1_A_CornerEx_01_0EditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Building/NY/A/Kit_Bldg_NYA_L1_A/Material/MI/MI_NYA_L1_A_CornerEx_01_0.MI_NYA_L1_A_CornerEx_01_0:MI_NYA_L1_A_CornerEx_01_0EditorOnlyData'"
+   End Object
+   Begin Object Name="MI_NYA_L1_A_CornerEx_01_0EditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Building/NY/A/Kit_Bldg_NYA_L1_A/Material/MI/MI_NYA_L1_A_CornerEx_01_0.MI_NYA_L1_A_CornerEx_01_0:MI_NYA_L1_A_CornerEx_01_0EditorOnlyData'"
+   End Object
+   ParameterStateId=80C31ADD488EC006B93A2280B94F056B
+   Parent="/Script/Engine.MaterialInstanceConstant'/Game/Building/NY/A/Kit_Bldg_NYA_L1_A/Material/M_Bldg_brickStacked_grey.M_Bldg_brickStacked_grey'"
+   ScalarParameterValues(0)=(ParameterInfo=(Name="Large Drip Amt MFGD"),ParameterValue=0.300000,ExpressionGUID=D53B513647B0DF5FDCDDC8B42F390B96)
+   TextureParameterValues(0)=(ParameterInfo=(Name="PackedA Tex"),ParameterValue="/Script/Engine.Texture2D'/Game/Building/NY/A/Kit_Bldg_NYA_L1_A/Texture/T_NYA_L1_A_CornerEx_01_packedA.T_NYA_L1_A_CornerEx_01_packedA'",ExpressionGUID=C6B1CA9D4F524DA57B4A258DA8A9864A)
+   BasePropertyOverrides=(OpacityMaskClipValue=0.333300,UsageFlags=4456848)
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'MI_NYA_L1_A_CornerEx_01_0EditorOnlyData'"
+   LightingGuid=3B37A0A840D728F9A9C338BACCCFBB3C
+End Object

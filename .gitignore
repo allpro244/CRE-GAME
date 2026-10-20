@@ -22,6 +22,7 @@ unreal/BroadwayWall/Content/Building/
 unreal/BroadwayWall/Content/Material/
 unreal/BroadwayWall/Content/Textures/
 !unreal/BroadwayWall/Data/kit-*.json
+!unreal/BroadwayWall/Data/facade-families.json
 unreal/BroadwayWall/Content/Road/
 unreal/BroadwayWall/Content/Prop/
 unreal/BroadwayWall/Content/Environment/

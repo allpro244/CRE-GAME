@@ -1,0 +1,1363 @@
+Begin Object Class=/Script/Engine.Material Name="M_Bldg_Base" ExportPath="/Script/Engine.Material'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base'"
+   Begin Object Class=/Script/Engine.MaterialEditorOnlyData Name="M_Bldg_BaseEditorOnlyData" ExportPath="/Script/Engine.MaterialEditorOnlyData'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:M_Bldg_BaseEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCollectionParameter Name="MaterialExpressionCollectionParameter_0" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionCollectionParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCollectionParameter Name="MaterialExpressionCollectionParameter_1" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionCollectionParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionCollectionParameter Name="MaterialExpressionCollectionParameter_2" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionCollectionParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_0" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_1" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_13" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_13'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_3" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_4" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_5" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_3" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionConstant_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant3Vector Name="MaterialExpressionConstant3Vector_0" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionConstant3Vector_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant3Vector Name="MaterialExpressionConstant3Vector_1" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionConstant3Vector_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionDesaturation Name="MaterialExpressionDesaturation_0" ExportPath="/Script/Engine.MaterialExpressionDesaturation'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionDesaturation_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionGetMaterialAttributes Name="MaterialExpressionGetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionGetMaterialAttributes'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionGetMaterialAttributes_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionGetMaterialAttributes Name="MaterialExpressionGetMaterialAttributes_1" ExportPath="/Script/Engine.MaterialExpressionGetMaterialAttributes'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionGetMaterialAttributes_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionLinearInterpolate_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_1" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionLinearInterpolate_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_2" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionLinearInterpolate_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_0" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_1" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_10" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_10'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_11" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_11'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_12" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_12'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_13" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_13'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_14" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_14'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_15" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_15'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_19" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_19'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_2" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_28" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_28'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_3" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_38" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_38'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_4" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_41" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_41'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_5" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMaterialFunctionCall Name="MaterialExpressionMaterialFunctionCall_9" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_1" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMultiply_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_38" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMultiply_38'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_6" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMultiply_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_9" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMultiply_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteDeclaration Name="MaterialExpressionNamedRerouteDeclaration_0" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteDeclaration Name="MaterialExpressionNamedRerouteDeclaration_1" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteDeclaration Name="MaterialExpressionNamedRerouteDeclaration_15" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_15'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteDeclaration Name="MaterialExpressionNamedRerouteDeclaration_2" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteDeclaration Name="MaterialExpressionNamedRerouteDeclaration_3" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteDeclaration Name="MaterialExpressionNamedRerouteDeclaration_4" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteDeclaration Name="MaterialExpressionNamedRerouteDeclaration_5" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteDeclaration Name="MaterialExpressionNamedRerouteDeclaration_6" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_0" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_1" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_11" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_11'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_12" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_12'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_2" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_3" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_4" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_5" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_6" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_7" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_8" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionNamedRerouteUsage Name="MaterialExpressionNamedRerouteUsage_9" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionOneMinus Name="MaterialExpressionOneMinus_0" ExportPath="/Script/Engine.MaterialExpressionOneMinus'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionOneMinus_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionPower Name="MaterialExpressionPower_2" ExportPath="/Script/Engine.MaterialExpressionPower'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionPower_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_10" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_10'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_25" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_25'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_27" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_27'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_3" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_4" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_5" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_6" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_7" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_8" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_9" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_0" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_1" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_2" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_28" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_28'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_31" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_31'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_58" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_58'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_7" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_7'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_8" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_95" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_95'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_96" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_96'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionScalarParameter Name="MaterialExpressionScalarParameter_97" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_97'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionSetMaterialAttributes_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSetMaterialAttributes Name="MaterialExpressionSetMaterialAttributes_1" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionSetMaterialAttributes_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_0" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_1" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_10" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_10'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_2" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_3" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_5" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitchParameter Name="MaterialExpressionStaticSwitchParameter_6" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObjectParameter Name="MaterialExpressionTextureObjectParameter_0" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureObjectParameter_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObjectParameter Name="MaterialExpressionTextureObjectParameter_1" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureObjectParameter_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObjectParameter Name="MaterialExpressionTextureObjectParameter_2" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureObjectParameter_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObjectParameter Name="MaterialExpressionTextureObjectParameter_4" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureObjectParameter_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureObjectParameter Name="MaterialExpressionTextureObjectParameter_9" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureObjectParameter_9'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTextureSampleParameter2D Name="MaterialExpressionTextureSampleParameter2D_6" ExportPath="/Script/Engine.MaterialExpressionTextureSampleParameter2D'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureSampleParameter2D_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_28" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionVectorParameter_28'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_30" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionVectorParameter_30'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionVectorParameter Name="MaterialExpressionVectorParameter_6" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionVectorParameter_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionWorldPosition Name="MaterialExpressionWorldPosition_0" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionWorldPosition_0'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="M_Bldg_BaseEditorOnlyData" ExportPath="/Script/Engine.MaterialEditorOnlyData'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:M_Bldg_BaseEditorOnlyData'"
+      MaterialAttributes=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_0'")
+      ExpressionCollection=(Expressions=("/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_0'","/Script/Engine.MaterialExpressionSetMaterialAttributes'M_Bldg_Base:MaterialExpressionSetMaterialAttributes_1'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_0'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_3'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_2'","/Script/Engine.MaterialExpressionTextureObjectParameter'M_Bldg_Base:MaterialExpressionTextureObjectParameter_0'","/Script/Engine.MaterialExpressionTextureObjectParameter'M_Bldg_Base:MaterialExpressionTextureObjectParameter_1'","/Script/Engine.MaterialExpressionTextureObjectParameter'M_Bldg_Base:MaterialExpressionTextureObjectParameter_2'","/Script/Engine.MaterialExpressionMultiply'M_Bldg_Base:MaterialExpressionMultiply_6'","/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_6'","/Script/Engine.MaterialExpressionMultiply'M_Bldg_Base:MaterialExpressionMultiply_9'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_95'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_96'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_97'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_2'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_38'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_1'","/Script/Engine.MaterialExpressionWorldPosition'M_Bldg_Base:MaterialExpressionWorldPosition_0'","/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_0'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_0'","/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_1'","/Script/Engine.MaterialExpressionConstant3Vector'M_Bldg_Base:MaterialExpressionConstant3Vector_0'","/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_2'","/Script/Engine.MaterialExpressionConstant3Vector'M_Bldg_Base:MaterialExpressionConstant3Vector_1'","/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_3'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_4'","/Script/Engine.MaterialExpressionLinearInterpolate'M_Bldg_Base:MaterialExpressionLinearInterpolate_0'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_1'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_1'","/Script/Engine.MaterialExpressionTextureSampleParameter2D'M_Bldg_Base:MaterialExpressionTextureSampleParameter2D_6'","/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_5'","/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_6'","/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_15'","/Script/Engine.MaterialExpressionOneMinus'M_Bldg_Base:MaterialExpressionOneMinus_0'","/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_1'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_2'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_3'","/Script/Engine.MaterialExpressionMultiply'M_Bldg_Base:MaterialExpressionMultiply_1'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_28'","/Script/Engine.MaterialExpressionConstant'M_Bldg_Base:MaterialExpressionConstant_3'","/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_5'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_5'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_0'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_1'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_3'","/Script/Engine.MaterialExpressionGetMaterialAttributes'M_Bldg_Base:MaterialExpressionGetMaterialAttributes_0'","/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_30'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_9'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_4'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_4'","/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_6'","/Script/Engine.MaterialExpressionLinearInterpolate'M_Bldg_Base:MaterialExpressionLinearInterpolate_1'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_7'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_8'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_10'","/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_2'","/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_3'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_5'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_6'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_13'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_8'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_19'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_11'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_12'","/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_4'","/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_10'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_7'","/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_9'","/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_28'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_58'","/Script/Engine.MaterialExpressionTextureObjectParameter'M_Bldg_Base:MaterialExpressionTextureObjectParameter_9'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_41'","/Script/Engine.MaterialExpressionDesaturation'M_Bldg_Base:MaterialExpressionDesaturation_0'","/Script/Engine.MaterialExpressionPower'M_Bldg_Base:MaterialExpressionPower_2'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_9'","/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_0'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_25'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_27'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_28'","/Script/Engine.MaterialExpressionTextureObjectParameter'M_Bldg_Base:MaterialExpressionTextureObjectParameter_4'","/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_31'","/Script/Engine.MaterialExpressionMultiply'M_Bldg_Base:MaterialExpressionMultiply_38'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_6'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_2'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_7'","/Script/Engine.MaterialExpressionGetMaterialAttributes'M_Bldg_Base:MaterialExpressionGetMaterialAttributes_1'","/Script/Engine.MaterialExpressionSetMaterialAttributes'M_Bldg_Base:MaterialExpressionSetMaterialAttributes_0'","/Script/Engine.MaterialExpressionLinearInterpolate'M_Bldg_Base:MaterialExpressionLinearInterpolate_2'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_11'","/Script/Engine.MaterialExpressionCollectionParameter'M_Bldg_Base:MaterialExpressionCollectionParameter_0'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_12'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_14'","/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_15'","/Script/Engine.MaterialExpressionCollectionParameter'M_Bldg_Base:MaterialExpressionCollectionParameter_1'","/Script/Engine.MaterialExpressionCollectionParameter'M_Bldg_Base:MaterialExpressionCollectionParameter_2'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_4'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_5'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_8'","/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_10'"),EditorComments=("/Script/Engine.MaterialExpressionComment'M_Bldg_Base:MaterialExpressionComment_4'","/Script/Engine.MaterialExpressionComment'M_Bldg_Base:MaterialExpressionComment_0'","/Script/Engine.MaterialExpressionComment'M_Bldg_Base:MaterialExpressionComment_1'","/Script/Engine.MaterialExpressionComment'M_Bldg_Base:MaterialExpressionComment_3'","/Script/Engine.MaterialExpressionComment'M_Bldg_Base:MaterialExpressionComment_5'","/Script/Engine.MaterialExpressionComment'M_Bldg_Base:MaterialExpressionComment_13'"))
+      ParameterGroupData(0)=(GroupName="Material 1")
+      ParameterGroupData(1)=(GroupName="Material 1")
+      ParameterGroupData(2)=(GroupName="Material 1")
+      ParameterGroupData(3)=(GroupName="Material 1")
+      ParameterGroupData(4)=(GroupName="Material 1")
+      ParameterGroupData(5)=(GroupName="Material 1")
+      ParameterGroupData(6)=(GroupName="Material 1")
+      ParameterGroupData(7)=(GroupName="Material 1")
+      ParameterGroupData(8)=(GroupName="Material 1")
+      ParameterGroupData(9)=(GroupName="Material 1")
+      ParameterGroupData(10)=(GroupName="Material 1")
+      ParameterGroupData(11)=(GroupName="Material 1")
+      ParameterGroupData(12)=(GroupName="Material 1")
+      ParameterGroupData(13)=(GroupName="Material 1")
+      ParameterGroupData(14)=(GroupName="Textures")
+      ParameterGroupData(15)=(GroupName="Color Correction")
+      ParameterGroupData(16)=(GroupName="Color Correction")
+      ParameterGroupData(17)=(GroupName="Material 1")
+      ParameterGroupData(18)=(GroupName="Material 1")
+      ParameterGroupData(19)=(GroupName="Material 1")
+      ParameterGroupData(20)=(GroupName="00.Switches")
+      ParameterGroupData(21)=(GroupName="Grad Remap")
+      ParameterGroupData(22)=(GroupName="Grad Remap")
+      ParameterGroupData(23)=(GroupName="Grad Remap")
+      ParameterGroupData(24)=(GroupName="Grad Remap")
+      ParameterGroupData(25)=(GroupName="Grad Remap")
+      ParameterGroupData(26)=(GroupName="Grad Remap")
+      ParameterGroupData(27)=(GroupName="Grad Remap")
+   End Object
+   Begin Object Name="MaterialExpressionCollectionParameter_0" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionCollectionParameter_0'"
+      Collection="/Script/Engine.MaterialParameterCollection'/Game/Material/MPC/MPC_GlobalTextureControls.MPC_GlobalTextureControls'"
+      ParameterName="BuildingMipBias"
+      ParameterId=E39E54AD49FA25A79BCB8A8F14B32EE3
+      MaterialExpressionEditorX=-4608
+      MaterialExpressionEditorY=-896
+      MaterialExpressionGuid=EE99A4314365B4A849EC37974E5F2E31
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionCollectionParameter_1" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionCollectionParameter_1'"
+      Collection="/Script/Engine.MaterialParameterCollection'/Game/Material/MPC/MPC_GlobalTextureControls.MPC_GlobalTextureControls'"
+      ParameterName="BuildingMipBias"
+      ParameterId=E39E54AD49FA25A79BCB8A8F14B32EE3
+      MaterialExpressionEditorX=-1200
+      MaterialExpressionEditorY=-592
+      MaterialExpressionGuid=EE99A4314365B4A849EC37974E5F2E31
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionCollectionParameter_2" ExportPath="/Script/Engine.MaterialExpressionCollectionParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionCollectionParameter_2'"
+      Collection="/Script/Engine.MaterialParameterCollection'/Game/Material/MPC/MPC_GlobalTextureControls.MPC_GlobalTextureControls'"
+      ParameterName="BuildingMipBias"
+      ParameterId=E39E54AD49FA25A79BCB8A8F14B32EE3
+      MaterialExpressionEditorX=448
+      MaterialExpressionEditorY=-272
+      MaterialExpressionGuid=EE99A4314365B4A849EC37974E5F2E31
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionComment_0" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_0'"
+      SizeX=2432
+      SizeY=1168
+      Text="Base Material"
+      MaterialExpressionEditorX=-5010
+      MaterialExpressionEditorY=-978
+      MaterialExpressionGuid=955C855C424769FBF79483B67BAE464A
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_1" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_1'"
+      SizeX=768
+      SizeY=512
+      Text="Mesh Tex"
+      MaterialExpressionEditorX=-4432
+      MaterialExpressionEditorY=-1568
+      MaterialExpressionGuid=3D02431045054A37908154B967F6E4C1
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_13" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_13'"
+      SizeX=1616
+      SizeY=944
+      Text="Grad Remap"
+      MaterialExpressionEditorX=-1232
+      MaterialExpressionEditorY=-896
+      MaterialExpressionGuid=84A0D63A46C6F13CD27A02A2AD0826A8
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_3" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_3'"
+      SizeX=544
+      SizeY=464
+      Text="Post & Debug"
+      MaterialExpressionEditorX=2704
+      MaterialExpressionEditorY=-800
+      MaterialExpressionGuid=8B7A0B994C1197051731C89CDCCBAE5A
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_4" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_4'"
+      SizeX=496
+      SizeY=400
+      Text="World Space\r\nKeep separate for building\r\nnon orthoganal to WS"
+      MaterialExpressionEditorX=-5008
+      MaterialExpressionEditorY=-1504
+      MaterialExpressionGuid=772BAF46480780212D796884B8B3F211
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_5" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionComment_5'"
+      SizeX=1066
+      SizeY=408
+      Text="Color Correction"
+      MaterialExpressionEditorX=-2482
+      MaterialExpressionEditorY=-579
+      MaterialExpressionGuid=AA68A3B94A1627CBB7FD92896388DC44
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_3" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionConstant_3'"
+      MaterialExpressionEditorX=2904
+      MaterialExpressionEditorY=-640
+      MaterialExpressionGuid=D4B986F14883591145B2AA9108297E6B
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant3Vector_0" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionConstant3Vector_0'"
+      Constant=(R=1.000000,G=1.000000,B=1.000000,A=0.000000)
+      MaterialExpressionEditorX=-3712
+      MaterialExpressionEditorY=-656
+      MaterialExpressionGuid=115387F94896FD90E6EF79A85996334F
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionConstant3Vector_1" ExportPath="/Script/Engine.MaterialExpressionConstant3Vector'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionConstant3Vector_1'"
+      Constant=(R=0.000000,G=0.000000,B=1.000000,A=0.000000)
+      MaterialExpressionEditorX=-3904
+      MaterialExpressionEditorY=-80
+      MaterialExpressionGuid=AD2B57AE4E23B762ABC135900F0EEC73
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionDesaturation_0" ExportPath="/Script/Engine.MaterialExpressionDesaturation'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionDesaturation_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_41'")
+      Fraction=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_9'")
+      MaterialExpressionEditorX=-480
+      MaterialExpressionEditorY=-432
+      MaterialExpressionGuid=A78B45D748BE58EB4AC06E9D7E38DB8E
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionGetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionGetMaterialAttributes'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionGetMaterialAttributes_0'"
+      MaterialAttributes=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'M_Bldg_Base:MaterialExpressionSetMaterialAttributes_1'")
+      AttributeGetTypes(0)=69B8D33616ED4D499AA497292F050F7A
+      MaterialExpressionEditorX=-2432
+      MaterialExpressionEditorY=-513
+      MaterialExpressionGuid=9C5B6E604EB9C2886E5835A98D521201
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(1)=(OutputName="Base Color")
+   End Object
+   Begin Object Name="MaterialExpressionGetMaterialAttributes_1" ExportPath="/Script/Engine.MaterialExpressionGetMaterialAttributes'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionGetMaterialAttributes_1'"
+      MaterialAttributes=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_7'")
+      AttributeGetTypes(0)=69B8D33616ED4D499AA497292F050F7A
+      MaterialExpressionEditorX=-592
+      MaterialExpressionEditorY=-752
+      MaterialExpressionGuid=D8AAA9194A0E1AD460477CB8A1AD1900
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(1)=(OutputName="Base Color")
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionLinearInterpolate_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_95'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_97'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_3'",OutputIndex=1)
+      MaterialExpressionEditorX=-3328
+      MaterialExpressionEditorY=-507
+      MaterialExpressionGuid=10DF7BD9434014A88E936385B3915EFA
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_1" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionLinearInterpolate_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_7'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_8'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_3'",OutputIndex=2)
+      MaterialExpressionEditorX=-3344
+      MaterialExpressionEditorY=-368
+      MaterialExpressionGuid=10DF7BD9434014A88E936385B3915EFA
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_2" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionLinearInterpolate_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'M_Bldg_Base:MaterialExpressionGetMaterialAttributes_1'",OutputIndex=1)
+      B=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_2'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_6'")
+      MaterialExpressionEditorX=-112
+      MaterialExpressionEditorY=-672
+      MaterialExpressionGuid=7A0297434293E063BA1BFBB71FE72976
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_0" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_0'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Building/Material/MaterialFunction/BuildingPost.BuildingPost'"
+      FunctionInputs(0)=(ExpressionInputId=FE6541444981A51A1F2C04BE7CF3525B,Input=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_10'",InputName="In"))
+      FunctionInputs(1)=(ExpressionInputId=0C2DB75A481A0863A4C377B2A6AF2D1D,Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_3'",InputName="Debug PackedA"))
+      FunctionInputs(2)=(ExpressionInputId=9122BB0E4D13C07E14A31495CCAE99E7,Input=(OutputIndex=-1,InputName="Debug PackedB"))
+      FunctionInputs(3)=(ExpressionInputId=70401F884025533A6EE20C9A4EA44F51,Input=(OutputIndex=-1,InputName="Debug ValVar"))
+      FunctionInputs(4)=(ExpressionInputId=2CB7F20A471ADAD4F04A9ABEEC61B0BE,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_28'",InputName="Debug"))
+      FunctionOutputs(0)=(ExpressionOutputId=3AA3C4004CE5617C1C84C4AB05D3FA02,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=3016
+      MaterialExpressionEditorY=-511
+      MaterialExpressionGuid=673CEE394EDC94F049F061819EA16E72
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_1" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_1'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Building/Material/MaterialFunction/GrimeCrevice.GrimeCrevice'"
+      FunctionInputs(0)=(ExpressionInputId=14650E69414E28B005E4AD9F7ADAB8A9,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_13'",InputName="In Mattrib"))
+      FunctionInputs(1)=(ExpressionInputId=1CDB7E4246F4CF6354567DA45CF5CE96,Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_1'",InputName="WorldPos"))
+      FunctionInputs(2)=(ExpressionInputId=02E31F8447D41F069D7F39986D3E3C7F,Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_2'",InputName="AO"))
+      FunctionInputs(3)=(ExpressionInputId=A3FAEF834BE99621B050939C05BD16BD,Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_10'",InputName="MipBias"))
+      FunctionOutputs(0)=(ExpressionOutputId=6E77CCE3426963BC6B7F418C45D9E527,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=2112
+      MaterialExpressionEditorY=-512
+      MaterialExpressionGuid=807CBB1D404B3BDD9297A48EBDD8F1B5
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_10" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_10'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Building/Material/MaterialFunction/GrimeBroad.GrimeBroad'"
+      FunctionInputs(0)=(ExpressionInputId=5CCED8E3423A3A790ED582B050A1F326,Input=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_0'",InputName="In"))
+      FunctionInputs(1)=(ExpressionInputId=B511AA134B3C41E2FA1480BC9A07D42C,Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_6'",InputName="AO"))
+      FunctionInputs(2)=(ExpressionInputId=BB0321E24A0DE9C4301A5DBBE7E52AFD,Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_5'",InputName="World Pos"))
+      FunctionInputs(3)=(ExpressionInputId=560017BD49FFAA67DD988BB996A11EA6,Input=(Expression="/Script/Engine.MaterialExpressionCollectionParameter'M_Bldg_Base:MaterialExpressionCollectionParameter_2'",InputName="MipBias"))
+      FunctionOutputs(0)=(ExpressionOutputId=55B996AA433001865776CC9AD0327EEC,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=656
+      MaterialExpressionEditorY=-512
+      MaterialExpressionGuid=C8C1DF7D4B3B127ED829C8974655CD80
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_11" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_11'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Material/MaterialFunction/MF_WorldAlignedTexture_OffsetBias.MF_WorldAlignedTexture_OffsetBias'"
+      FunctionInputs(0)=(ExpressionInputId=4EE64DD049AC714D089AD6AAB1BFA0C8,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'M_Bldg_Base:MaterialExpressionTextureObjectParameter_0'",InputName="TextureObject"))
+      FunctionInputs(1)=(ExpressionInputId=2C710AD6489D7B7213E379AD4846EBBB,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_0'",InputName="TextureSize"))
+      FunctionInputs(2)=(ExpressionInputId=8D8493D94C1C58DA6D253FB7E87350F4,Input=(Expression="/Script/Engine.MaterialExpressionCollectionParameter'M_Bldg_Base:MaterialExpressionCollectionParameter_0'",InputName="MipBias"))
+      FunctionInputs(3)=(ExpressionInputId=F9CEA7574004FF6704D0C5B341DB8F50,Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_2'",InputName="WorldPosition"))
+      FunctionInputs(4)=(ExpressionInputId=041C58BB4D6D46D766DE40A41673ECD6,Input=(OutputIndex=-1,InputName="Export Float 4"))
+      FunctionInputs(5)=(ExpressionInputId=44BC86704068F8EC87D548BBDB20E1FD,Input=(OutputIndex=-1,InputName="UV Offset"))
+      FunctionInputs(6)=(ExpressionInputId=71F8A8C449E0760B0230738E9F67EC8A,Input=(OutputIndex=-1,InputName="Rotate"))
+      FunctionInputs(7)=(ExpressionInputId=ABB498D643904DF08C37A0B911766DDB,Input=(OutputIndex=-1,InputName="World Space Normal"))
+      FunctionInputs(8)=(ExpressionInputId=D2134BC94ED09D2F619E9DBED3E550CD,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_2'",InputName="ProjectionTransitionContrast"))
+      FunctionOutputs(0)=(ExpressionOutputId=C73948F34CBC303FB1D8F3A99E6B0324,Output=(OutputName="XY Texture"))
+      FunctionOutputs(1)=(ExpressionOutputId=DC35E13448C6765AA54072B08874BFD4,Output=(OutputName="Z Texture"))
+      FunctionOutputs(2)=(ExpressionOutputId=1B6AC1E04D115FD30866E4A895261285,Output=(OutputName="XYZ Texture"))
+      MaterialExpressionEditorX=-4240
+      MaterialExpressionEditorY=-816
+      MaterialExpressionGuid=F11E05A34431CFF94D8D94BB8ECB070F
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="XY Texture")
+      Outputs(1)=(OutputName="Z Texture")
+      Outputs(2)=(OutputName="XYZ Texture")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_12" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_12'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Material/MaterialFunction/MF_WorldAlignedTexture_OffsetBias.MF_WorldAlignedTexture_OffsetBias'"
+      FunctionInputs(0)=(ExpressionInputId=4EE64DD049AC714D089AD6AAB1BFA0C8,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'M_Bldg_Base:MaterialExpressionTextureObjectParameter_1'",InputName="TextureObject"))
+      FunctionInputs(1)=(ExpressionInputId=2C710AD6489D7B7213E379AD4846EBBB,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_0'",InputName="TextureSize"))
+      FunctionInputs(2)=(ExpressionInputId=8D8493D94C1C58DA6D253FB7E87350F4,Input=(Expression="/Script/Engine.MaterialExpressionCollectionParameter'M_Bldg_Base:MaterialExpressionCollectionParameter_0'",InputName="MipBias"))
+      FunctionInputs(3)=(ExpressionInputId=F9CEA7574004FF6704D0C5B341DB8F50,Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_2'",InputName="WorldPosition"))
+      FunctionInputs(4)=(ExpressionInputId=041C58BB4D6D46D766DE40A41673ECD6,Input=(OutputIndex=-1,InputName="Export Float 4"))
+      FunctionInputs(5)=(ExpressionInputId=44BC86704068F8EC87D548BBDB20E1FD,Input=(OutputIndex=-1,InputName="UV Offset"))
+      FunctionInputs(6)=(ExpressionInputId=71F8A8C449E0760B0230738E9F67EC8A,Input=(OutputIndex=-1,InputName="Rotate"))
+      FunctionInputs(7)=(ExpressionInputId=ABB498D643904DF08C37A0B911766DDB,Input=(OutputIndex=-1,InputName="World Space Normal"))
+      FunctionInputs(8)=(ExpressionInputId=D2134BC94ED09D2F619E9DBED3E550CD,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_2'",InputName="ProjectionTransitionContrast"))
+      FunctionOutputs(0)=(ExpressionOutputId=C73948F34CBC303FB1D8F3A99E6B0324,Output=(OutputName="XY Texture"))
+      FunctionOutputs(1)=(ExpressionOutputId=DC35E13448C6765AA54072B08874BFD4,Output=(OutputName="Z Texture"))
+      FunctionOutputs(2)=(ExpressionOutputId=1B6AC1E04D115FD30866E4A895261285,Output=(OutputName="XYZ Texture"))
+      MaterialExpressionEditorX=-4240
+      MaterialExpressionEditorY=-544
+      MaterialExpressionGuid=F11E05A34431CFF94D8D94BB8ECB070F
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="XY Texture")
+      Outputs(1)=(OutputName="Z Texture")
+      Outputs(2)=(OutputName="XYZ Texture")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_13" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_13'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Building/Material/MaterialFunction/GrimeDrip.GrimeDrip'"
+      FunctionInputs(0)=(ExpressionInputId=0CC414ED402AEEDB2B505880E8EE4079,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_19'",InputName="In Mattrib"))
+      FunctionInputs(1)=(ExpressionInputId=F5BC79734A5E970A04A570AFAE06988A,Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_9'",InputName="Drip Mask"))
+      FunctionInputs(2)=(ExpressionInputId=52E3880B4BBE55791549E8BEBF489DCB,Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_8'",InputName="WorldPos"))
+      FunctionInputs(3)=(ExpressionInputId=974B3DED4A588076707982A19953D7E2,Input=(InputName="Stain Mask"))
+      FunctionInputs(4)=(ExpressionInputId=855AD8574FA323CD9583D7BCF2449D07,Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_8'",InputName="MipBias"))
+      FunctionOutputs(0)=(ExpressionOutputId=CF8AB82A4D7A54320A53DFB9AE9C125D,Output=(OutputName="Result Mattrib"))
+      MaterialExpressionEditorX=1712
+      MaterialExpressionEditorY=-512
+      MaterialExpressionGuid=158BCAE44A2B41DED2F474936E42A6BD
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Result Mattrib")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_14" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_14'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Material/MaterialFunction/MF_TriplanarNormal_Whiteout_OffsetBias.MF_TriplanarNormal_Whiteout_OffsetBias'"
+      FunctionInputs(0)=(ExpressionInputId=2ED326B44250091ABC520BA773510961,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'M_Bldg_Base:MaterialExpressionTextureObjectParameter_2'",InputName="TextureObject"))
+      FunctionInputs(1)=(ExpressionInputId=27F092D9459B6E2734FA3AAAE16CDBA4,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_0'",InputName="TextureSize"))
+      FunctionInputs(2)=(ExpressionInputId=42A2D7BB47464E193646E4A11ED0480D,Input=(Expression="/Script/Engine.MaterialExpressionCollectionParameter'M_Bldg_Base:MaterialExpressionCollectionParameter_0'",InputName="MipBias"))
+      FunctionInputs(3)=(ExpressionInputId=59D7341C4188F11B6C94F3A06D8B7529,Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_2'",InputName="PositionWS"))
+      FunctionInputs(4)=(ExpressionInputId=E26076574D4FAAE0F64B3881DC87F8B0,Input=(OutputIndex=-1,InputName="NormalWS"))
+      FunctionInputs(5)=(ExpressionInputId=5DD34777445BAA825115B8A1D7FBB3C3,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_2'",InputName="ProjectionTransitionSharpness"))
+      FunctionInputs(6)=(ExpressionInputId=921A639749D1823289C74DBFD4723B9F,Input=(OutputIndex=-1,InputName="UV Offset"))
+      FunctionInputs(7)=(ExpressionInputId=E0AE5FBF45E1E5EFC5D3ED8B247EDD6E,Input=(OutputIndex=-1,InputName="UseSymmetricBlend"))
+      FunctionOutputs(0)=(ExpressionOutputId=F3F2B0CF41DA5C11F1CA97AEC337F953,Output=(OutputName="WorldSpace"))
+      FunctionOutputs(1)=(ExpressionOutputId=E77937554BDA4CF4AF978583BF095826,Output=(OutputName="TangentSpace"))
+      MaterialExpressionEditorX=-4240
+      MaterialExpressionEditorY=-176
+      MaterialExpressionGuid=86CDDF2F421D56DCA42ED8BAE9F5B9F1
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="WorldSpace")
+      Outputs(1)=(OutputName="TangentSpace")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_15" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_15'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions01/Texturing/WorldAlignedTexture_MipBias.WorldAlignedTexture_MipBias'"
+      FunctionInputs(0)=(ExpressionInputId=4EE64DD049AC714D089AD6AAB1BFA0C8,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'M_Bldg_Base:MaterialExpressionTextureObjectParameter_4'",InputName="TextureObject"))
+      FunctionInputs(1)=(ExpressionInputId=2C710AD6489D7B7213E379AD4846EBBB,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_28'",InputName="TextureSize"))
+      FunctionInputs(2)=(ExpressionInputId=F9CEA7574004FF6704D0C5B341DB8F50,Input=(OutputIndex=-1,InputName="WorldPosition"))
+      FunctionInputs(3)=(ExpressionInputId=041C58BB4D6D46D766DE40A41673ECD6,Input=(OutputIndex=-1,InputName="Export Float 4"))
+      FunctionInputs(4)=(ExpressionInputId=ABB498D643904DF08C37A0B911766DDB,Input=(OutputIndex=-1,InputName="World Space Normal"))
+      FunctionInputs(5)=(ExpressionInputId=E65CCC654A057A7B693A0FB9BAB31726,Input=(Expression="/Script/Engine.MaterialExpressionCollectionParameter'M_Bldg_Base:MaterialExpressionCollectionParameter_1'",InputName="MipBias"))
+      FunctionInputs(6)=(ExpressionInputId=D2134BC94ED09D2F619E9DBED3E550CD,Input=(OutputIndex=-1,InputName="ProjectionTransitionContrast"))
+      FunctionOutputs(0)=(ExpressionOutputId=C73948F34CBC303FB1D8F3A99E6B0324,Output=(OutputName="XY Texture"))
+      FunctionOutputs(1)=(ExpressionOutputId=DC35E13448C6765AA54072B08874BFD4,Output=(OutputName="Z Texture"))
+      FunctionOutputs(2)=(ExpressionOutputId=1B6AC1E04D115FD30866E4A895261285,Output=(OutputName="XYZ Texture"))
+      MaterialExpressionEditorX=-992
+      MaterialExpressionEditorY=-816
+      MaterialExpressionGuid=AB752E824DC61701F32B4AAE6516C4F0
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="XY Texture")
+      Outputs(1)=(OutputName="Z Texture")
+      Outputs(2)=(OutputName="XYZ Texture")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_19" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_19'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Building/Material/MaterialFunction/DamageEdge.DamageEdge'"
+      FunctionInputs(0)=(ExpressionInputId=07E511814D74B1F8A40AE5A6C803AC66,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_4'",InputName="In"))
+      FunctionInputs(1)=(ExpressionInputId=1CDB7E4246F4CF6354567DA45CF5CE96,Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_11'",InputName="WorldPos"))
+      FunctionInputs(2)=(ExpressionInputId=02E31F8447D41F069D7F39986D3E3C7F,Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_12'",InputName="Curvature"))
+      FunctionInputs(3)=(ExpressionInputId=3BC98ECA4ABC17A96FF8D3A7D107C155,Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_5'",InputName="MipBias"))
+      FunctionOutputs(0)=(ExpressionOutputId=6E77CCE3426963BC6B7F418C45D9E527,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=1392
+      MaterialExpressionEditorY=-512
+      MaterialExpressionGuid=36D5C00D449161DA670D8BA5889B8170
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_2" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_2'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions03/Blends/Blend_Overlay.Blend_Overlay'"
+      FunctionInputs(0)=(ExpressionInputId=88817477432D9FAD10A549A321ACA1A3,Input=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'M_Bldg_Base:MaterialExpressionGetMaterialAttributes_1'",OutputIndex=1,InputName="Base"))
+      FunctionInputs(1)=(ExpressionInputId=199F573E4F017F639BE3529FE8C8D580,Input=(Expression="/Script/Engine.MaterialExpressionMultiply'M_Bldg_Base:MaterialExpressionMultiply_38'",InputName="Blend"))
+      FunctionOutputs(0)=(ExpressionOutputId=C17FADFB4135A52E64E751901D7BE521,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-320
+      MaterialExpressionEditorY=-640
+      MaterialExpressionGuid=D65BF04842E5B43EE7AEB6BF8B17FD17
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_28" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_28'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions02/Utility/MakeFloat4.MakeFloat4'"
+      FunctionInputs(0)=(ExpressionInputId=529C1D96441E07EB03A9E59B8A7F67B6,Input=(Expression="/Script/Engine.MaterialExpressionMultiply'M_Bldg_Base:MaterialExpressionMultiply_1'",InputName="X"))
+      FunctionInputs(1)=(ExpressionInputId=B5BD7D1B494F6928732CCDA1C63D8E15,Input=(Expression="/Script/Engine.MaterialExpressionConstant'M_Bldg_Base:MaterialExpressionConstant_3'",InputName="Y"))
+      FunctionInputs(2)=(ExpressionInputId=050F17B8471570B47A802CB7CAA5A201,Input=(Expression="/Script/Engine.MaterialExpressionConstant'M_Bldg_Base:MaterialExpressionConstant_3'",InputName="Z"))
+      FunctionInputs(3)=(ExpressionInputId=4302C68A4D3ABCFB34DE619C2867A488,Input=(Expression="/Script/Engine.MaterialExpressionConstant'M_Bldg_Base:MaterialExpressionConstant_3'",InputName="A"))
+      FunctionOutputs(0)=(ExpressionOutputId=0DD6F9954C067C3E5DDBBBA0D6910DD2,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=3016
+      MaterialExpressionEditorY=-690
+      MaterialExpressionGuid=1503147A4354642CC5E0688A8FFDC410
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_3" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_3'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/Engine_MaterialFunctions02/Utility/BreakOutFloat3Components.BreakOutFloat3Components'"
+      FunctionInputs(0)=(ExpressionInputId=0FC5C56B4335798F20CB928CF1C87421,Input=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_3'",InputName="Float3"))
+      FunctionOutputs(0)=(ExpressionOutputId=6BC893C247FCFC567178CE944E213385,Output=(OutputName="R"))
+      FunctionOutputs(1)=(ExpressionOutputId=9720C81E449DF8E5514FCB8A80FD5FA3,Output=(OutputName="G"))
+      FunctionOutputs(2)=(ExpressionOutputId=17CE6E2C4E70841B48F3D1B73828AA03,Output=(OutputName="B"))
+      MaterialExpressionEditorX=-3616
+      MaterialExpressionEditorY=-416
+      MaterialExpressionGuid=646EFC71499DACEFD8B7829493B041EC
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="R")
+      Outputs(1)=(OutputName="G")
+      Outputs(2)=(OutputName="B")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_38" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_38'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Material/MaterialFunction/MF_NormalStrength.MF_NormalStrength'"
+      FunctionInputs(0)=(ExpressionInputId=80B3BD2B4F1006FDBA6EF58EA90FC494,Input=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_2'",InputName="Normal"))
+      FunctionInputs(1)=(ExpressionInputId=37A9D03F47855F4BF4A61D9FA63E3724,Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_96'",InputName="Strength"))
+      FunctionOutputs(0)=(ExpressionOutputId=28F87B4749C1CD1B8199F6A358A2D88C,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-3424
+      MaterialExpressionEditorY=-176
+      MaterialExpressionGuid=0851125D4636D59E1CD794BA4A37B162
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_4" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_4'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Building/Material/MaterialFunction/GrimeGround.GrimeGround'"
+      FunctionInputs(0)=(ExpressionInputId=C6C48F9C42CBD87E0E0A95AC898DE1E9,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_10'",InputName="In"))
+      FunctionInputs(1)=(ExpressionInputId=752693E446511A0821F8C7872EE635B5,Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_4'",InputName="World Pos"))
+      FunctionInputs(2)=(ExpressionInputId=F5E356E24585735CA21FB08F2A9228D6,Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_4'",InputName="MipBias"))
+      FunctionOutputs(0)=(ExpressionOutputId=3BC8973A4FDD879790747E99BC97FB37,Output=(OutputName="Out"))
+      MaterialExpressionEditorX=1040
+      MaterialExpressionEditorY=-512
+      MaterialExpressionGuid=722DB4F34298B1D1D7B113AD305F7D89
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Out")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_41" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_41'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Material/MaterialFunction/GradientRemap.GradientRemap'"
+      FunctionInputs(0)=(ExpressionInputId=8373E7174F9998BA90CDE7A87A3ED346,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_28'",OutputIndex=2,InputName="Gradient Min",Mask=1,MaskG=1))
+      FunctionInputs(1)=(ExpressionInputId=0D4E006242FEDBAFE13BEBAADCA6876E,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_28'",OutputIndex=3,InputName="Gradient Max",Mask=1,MaskB=1))
+      FunctionInputs(2)=(ExpressionInputId=D66CEB834382697E41AC02A647BEE592,Input=(Expression="/Script/Engine.MaterialExpressionTextureObjectParameter'M_Bldg_Base:MaterialExpressionTextureObjectParameter_9'",InputName="Gradient Texture"))
+      FunctionInputs(3)=(ExpressionInputId=963B710547C0D5400EDA818BA5A8A036,Input=(Expression="/Script/Engine.MaterialExpressionPower'M_Bldg_Base:MaterialExpressionPower_2'",InputName="Height Texture"))
+      FunctionOutputs(0)=(ExpressionOutputId=46DF169F4FAE64C6B3AC249B8F931EAE,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-736
+      MaterialExpressionEditorY=-432
+      MaterialExpressionGuid=DECC34954FAFA2C4C1ED7783FA709B01
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_5" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_5'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Engine/Functions/MaterialLayerFunctions/MatLayerBlend_OverrideBaseColor.MatLayerBlend_OverrideBaseColor'"
+      FunctionInputs(0)=(ExpressionInputId=7551607540174E8847FDFEA7E6975C7D,Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_1'",InputName="Material"))
+      FunctionInputs(1)=(ExpressionInputId=6FFD329D4F29DB65D71345AB1BDE70CB,Input=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_9'",InputName="NewBaseColor"))
+      FunctionInputs(2)=(ExpressionInputId=6ECF380F4DADE7DA7FF17CA16532CF18,Input=(OutputIndex=-1,InputName="Mask"))
+      FunctionOutputs(0)=(ExpressionOutputId=F7C585F54643D8CAF0D51BBD9BDE2ADC,Output=(OutputName="Blended Material"))
+      MaterialExpressionEditorX=-1968
+      MaterialExpressionEditorY=-448
+      MaterialExpressionGuid=643B007B48A9571F32035EB1898E2C0C
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Blended Material")
+   End Object
+   Begin Object Name="MaterialExpressionMaterialFunctionCall_9" ExportPath="/Script/Engine.MaterialExpressionMaterialFunctionCall'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMaterialFunctionCall_9'"
+      MaterialFunction="/Script/Engine.MaterialFunction'/Game/Material/MaterialFunction/ColorCorrectHSV.ColorCorrectHSV'"
+      FunctionInputs(0)=(ExpressionInputId=2D3A5BDE4B04CE3075E5B4824BF2E0B6,Input=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'M_Bldg_Base:MaterialExpressionGetMaterialAttributes_0'",OutputIndex=1,InputName="Color"))
+      FunctionInputs(1)=(ExpressionInputId=6563D0704033971823B3B19C9CC3C883,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_30'",OutputIndex=1,InputName="Hue Offset",Mask=1,MaskR=1))
+      FunctionInputs(2)=(ExpressionInputId=D5A757C7444FA9A16098FCAF8A3E03F4,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_30'",OutputIndex=2,InputName="Sat Scale",Mask=1,MaskG=1))
+      FunctionInputs(3)=(ExpressionInputId=E958FF3E46F6EF8E92A3CDA1771C067B,Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_30'",OutputIndex=3,InputName="Val Scale",Mask=1,MaskB=1))
+      FunctionOutputs(0)=(ExpressionOutputId=F7C55B62497C8AB45BD6819B2D45C533,Output=(OutputName="Result"))
+      MaterialExpressionEditorX=-2176
+      MaterialExpressionEditorY=-368
+      MaterialExpressionGuid=09828B214A7B68659ECE6D934341661F
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Outputs(0)=(OutputName="Result")
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_1" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMultiply_1'"
+      MaterialExpressionEditorX=2760
+      MaterialExpressionEditorY=-692
+      MaterialExpressionGuid=003F876D4E3948B1A250A6982F5EA496
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Desc="DEBUG"
+      bCommentBubbleVisible=True
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_38" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMultiply_38'"
+      A=(Expression="/Script/Engine.MaterialExpressionDesaturation'M_Bldg_Base:MaterialExpressionDesaturation_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_31'")
+      MaterialExpressionEditorX=-320
+      MaterialExpressionEditorY=-432
+      MaterialExpressionGuid=C0FF9E8346243F6B6D6EB48813602E69
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_6" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMultiply_6'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'M_Bldg_Base:MaterialExpressionMultiply_9'")
+      B=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_1'")
+      MaterialExpressionEditorX=-3200
+      MaterialExpressionEditorY=-784
+      MaterialExpressionGuid=593AF29F4E8B9C1381E37CB0D147F0E6
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_9" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionMultiply_9'"
+      A=(Expression="/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_6'",Mask=1,MaskR=1,MaskG=1,MaskB=1)
+      B=(Expression="/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_6'",OutputIndex=4,Mask=1,MaskA=1)
+      MaterialExpressionEditorX=-3376
+      MaterialExpressionEditorY=-896
+      MaterialExpressionGuid=E63079A0479AFCC29336389E2146BB3B
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteDeclaration_0" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionWorldPosition'M_Bldg_Base:MaterialExpressionWorldPosition_0'")
+      Name="World Pos"
+      NodeColor=(R=0.000000,G=0.601562,B=1.000000,A=1.000000)
+      VariableGuid=FD883EFD4AA8FB401E42CFB6E459ECFB
+      MaterialExpressionEditorX=-4730
+      MaterialExpressionEditorY=-1249
+      MaterialExpressionGuid=3F6449C64285478A1FE3F0A11D191F02
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteDeclaration_1" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionOneMinus'M_Bldg_Base:MaterialExpressionOneMinus_0'")
+      Name="MM AO Inv"
+      NodeColor=(R=1.000000,G=0.726563,B=0.000000,A=1.000000)
+      VariableGuid=3294312A40F9387332AC51A6985BCF7B
+      MaterialExpressionEditorX=-3838
+      MaterialExpressionEditorY=-1235
+      MaterialExpressionGuid=31AA1F8C4A870602930E12B1E608F629
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteDeclaration_15" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_15'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTextureSampleParameter2D'M_Bldg_Base:MaterialExpressionTextureSampleParameter2D_6'",OutputIndex=5,Mask=1,MaskR=1,MaskG=1,MaskB=1,MaskA=1)
+      Name="MM PackedA RGBA"
+      NodeColor=(R=1.000000,G=0.000000,B=0.140625,A=1.000000)
+      VariableGuid=7FD014CA47F02A9B63DF0CA7877805CB
+      MaterialExpressionEditorX=-4139
+      MaterialExpressionEditorY=-1209
+      MaterialExpressionGuid=E12D6BA34AF578EA7DE34EB201FAC7A8
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteDeclaration_2" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTextureSampleParameter2D'M_Bldg_Base:MaterialExpressionTextureSampleParameter2D_6'",OutputIndex=2,Mask=1,MaskG=1)
+      Name="MM AO Large"
+      NodeColor=(R=0.710938,G=0.000000,B=1.000000,A=1.000000)
+      VariableGuid=69B5297843280C7197DE239BEFA2EBD8
+      MaterialExpressionEditorX=-4139
+      MaterialExpressionEditorY=-1289
+      MaterialExpressionGuid=F3489A304B35FE088471AD9E99FD8467
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteDeclaration_3" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_3'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTextureSampleParameter2D'M_Bldg_Base:MaterialExpressionTextureSampleParameter2D_6'",OutputIndex=3,Mask=1,MaskB=1)
+      Name="MM Curvature"
+      NodeColor=(R=1.000000,G=0.867188,B=0.000000,A=1.000000)
+      VariableGuid=62DA4EE64439B91456A776B1FCE0F07A
+      MaterialExpressionEditorX=-4139
+      MaterialExpressionEditorY=-1262
+      MaterialExpressionGuid=761843DC4FF03D8A843F4D8D4FE6E250
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteDeclaration_4" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_4'"
+      Input=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'M_Bldg_Base:MaterialExpressionSetMaterialAttributes_1'")
+      Name="BaseMattrib"
+      NodeColor=(R=0.218750,G=0.000000,B=1.000000,A=1.000000)
+      VariableGuid=67667B3F4542260E81D2BC84A3711BBC
+      MaterialExpressionEditorX=-2736
+      MaterialExpressionEditorY=-416
+      MaterialExpressionGuid=A3D4EDD34479962BA876368F6C6E56BC
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteDeclaration_5" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_5'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTextureSampleParameter2D'M_Bldg_Base:MaterialExpressionTextureSampleParameter2D_6'",OutputIndex=1,Mask=1,MaskR=1)
+      Name="MM Drip"
+      NodeColor=(R=1.000000,G=0.328125,B=0.000000,A=1.000000)
+      VariableGuid=EF8EF7B04801162D8AC864BD6781EE18
+      MaterialExpressionEditorX=-4139
+      MaterialExpressionEditorY=-1315
+      MaterialExpressionGuid=9608EB004486650DBBE497ACFCA57A01
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteDeclaration_6" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_6'"
+      Input=(Expression="/Script/Engine.MaterialExpressionTextureSampleParameter2D'M_Bldg_Base:MaterialExpressionTextureSampleParameter2D_6'",OutputIndex=4,Mask=1,MaskA=1)
+      Name="MM AO"
+      NodeColor=(R=1.000000,G=0.328125,B=0.000000,A=1.000000)
+      VariableGuid=6425E4704560EE36BFBB128C7A0C925B
+      MaterialExpressionEditorX=-4139
+      MaterialExpressionEditorY=-1235
+      MaterialExpressionGuid=9608EB004486650DBBE497ACFCA57A01
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_0" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_0'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_0'"
+      DeclarationGuid=FD883EFD4AA8FB401E42CFB6E459ECFB
+      MaterialExpressionEditorX=-4880
+      MaterialExpressionEditorY=80
+      MaterialExpressionGuid=D28EAB194595BF4CDC2596AA709E3051
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_1" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_1'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_0'"
+      DeclarationGuid=FD883EFD4AA8FB401E42CFB6E459ECFB
+      MaterialExpressionEditorX=1988
+      MaterialExpressionEditorY=-488
+      MaterialExpressionGuid=D4445D0142C0AA8F46C3708406B42F6F
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_11" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_11'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_0'"
+      DeclarationGuid=FD883EFD4AA8FB401E42CFB6E459ECFB
+      MaterialExpressionEditorX=1256
+      MaterialExpressionEditorY=-487
+      MaterialExpressionGuid=C93842234911A55612563A922CB75219
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_12" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_12'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_3'"
+      DeclarationGuid=62DA4EE64439B91456A776B1FCE0F07A
+      MaterialExpressionEditorX=1232
+      MaterialExpressionEditorY=-460
+      MaterialExpressionGuid=FF0EF6CA444AB0A452597E9571A5BA14
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_2" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_2'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_6'"
+      DeclarationGuid=6425E4704560EE36BFBB128C7A0C925B
+      MaterialExpressionEditorX=2008
+      MaterialExpressionEditorY=-463
+      MaterialExpressionGuid=B28E6942448663B50DC0A2B41F4C74FB
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_3" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_3'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_15'"
+      DeclarationGuid=7FD014CA47F02A9B63DF0CA7877805CB
+      MaterialExpressionEditorX=2747
+      MaterialExpressionEditorY=-487
+      MaterialExpressionGuid=3F643A7B44ADA5A2B7BD20B86CCFF738
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_4" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_4'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_0'"
+      DeclarationGuid=FD883EFD4AA8FB401E42CFB6E459ECFB
+      MaterialExpressionEditorX=896
+      MaterialExpressionEditorY=-488
+      MaterialExpressionGuid=282EFAB040274564588BDC9FFD8EFE78
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_5" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_5'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_0'"
+      DeclarationGuid=FD883EFD4AA8FB401E42CFB6E459ECFB
+      MaterialExpressionEditorX=519
+      MaterialExpressionEditorY=-463
+      MaterialExpressionGuid=0328B6A84EB22678BF8283B4396923FD
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_6" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_6'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_2'"
+      DeclarationGuid=69B5297843280C7197DE239BEFA2EBD8
+      MaterialExpressionEditorX=500
+      MaterialExpressionEditorY=-488
+      MaterialExpressionGuid=5AD1322A489629D42ABFBFA56E84EAA3
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_7" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_7'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_4'"
+      DeclarationGuid=67667B3F4542260E81D2BC84A3711BBC
+      MaterialExpressionEditorX=2336
+      MaterialExpressionEditorY=-488
+      MaterialExpressionGuid=0BE4DEE44228D02F10F70E86C0DD4E12
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_8" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_8'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_0'"
+      DeclarationGuid=FD883EFD4AA8FB401E42CFB6E459ECFB
+      MaterialExpressionEditorX=1584
+      MaterialExpressionEditorY=-463
+      MaterialExpressionGuid=98B787A24B01068089330F97C7808BF1
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionNamedRerouteUsage_9" ExportPath="/Script/Engine.MaterialExpressionNamedRerouteUsage'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionNamedRerouteUsage_9'"
+      Declaration="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_5'"
+      DeclarationGuid=EF8EF7B04801162D8AC864BD6781EE18
+      MaterialExpressionEditorX=1584
+      MaterialExpressionEditorY=-487
+      MaterialExpressionGuid=C2B644C44A4C076627256EBD6BA78B3C
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionOneMinus_0" ExportPath="/Script/Engine.MaterialExpressionOneMinus'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionOneMinus_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteDeclaration'M_Bldg_Base:MaterialExpressionNamedRerouteDeclaration_6'")
+      MaterialExpressionEditorX=-3934
+      MaterialExpressionEditorY=-1235
+      MaterialExpressionGuid=057BC8134D036BF97CC0A9BDB3929C0B
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionPower_2" ExportPath="/Script/Engine.MaterialExpressionPower'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionPower_2'"
+      Base=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_15'",OutputIndex=2)
+      Exponent=(Expression="/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_28'",OutputIndex=1,Mask=1,MaskR=1)
+      MaterialExpressionEditorX=-928
+      MaterialExpressionEditorY=-432
+      MaterialExpressionGuid=5B0B36054895A19F94B0D19646A7F397
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_3'")
+      MaterialExpressionEditorX=-1734
+      MaterialExpressionEditorY=-496
+      MaterialExpressionGuid=598263EC4DBE5AADB49BD487AC5960FD
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'M_Bldg_Base:MaterialExpressionGetMaterialAttributes_0'")
+      MaterialExpressionEditorX=-2075
+      MaterialExpressionEditorY=-479
+      MaterialExpressionGuid=E28D0AA64769C0E8CE1C9EA9E0D3C58E
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_10" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_10'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_8'")
+      MaterialExpressionEditorX=2048
+      MaterialExpressionEditorY=-320
+      MaterialExpressionGuid=C28D1FB942A602848262B3B009409F7A
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_0'")
+      MaterialExpressionEditorX=-4736
+      MaterialExpressionEditorY=112
+      MaterialExpressionGuid=8CE2DAA14038BB6F463EC08F43D26A13
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Desc="WORLD SPACE"
+      bCommentBubbleVisible=True
+   End Object
+   Begin Object Name="MaterialExpressionReroute_25" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_25'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_7'")
+      MaterialExpressionEditorX=-160
+      MaterialExpressionEditorY=-486
+      MaterialExpressionGuid=0CBDF02443061D052BB7D7A3FE410F49
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_27" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_27'"
+      Input=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_5'")
+      MaterialExpressionEditorX=-1184
+      MaterialExpressionEditorY=-486
+      MaterialExpressionGuid=BE4EBA9F4F43803F11A76DB3F1191633
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_3" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_3'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_1'")
+      MaterialExpressionEditorX=-1968
+      MaterialExpressionEditorY=-496
+      MaterialExpressionGuid=C989262943E9E9B1275A44BA087D1CEC
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_4" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_4'"
+      Input=(Expression="/Script/Engine.MaterialExpressionCollectionParameter'M_Bldg_Base:MaterialExpressionCollectionParameter_2'")
+      MaterialExpressionEditorX=976
+      MaterialExpressionEditorY=-320
+      MaterialExpressionGuid=F5598B35458F555E7E7119ABC9F4F082
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_5" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_5'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_4'")
+      MaterialExpressionEditorX=1328
+      MaterialExpressionEditorY=-320
+      MaterialExpressionGuid=7630EA114815786BFCCD0E90DE3EB9DE
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_6" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_6'"
+      Input=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_58'")
+      MaterialExpressionEditorX=-240
+      MaterialExpressionEditorY=-110
+      MaterialExpressionGuid=DE8FF5ED45A783A7E825E5A8E2378651
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_7" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_7'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_27'")
+      MaterialExpressionEditorX=-523
+      MaterialExpressionEditorY=-486
+      MaterialExpressionGuid=4F0126F84D933B1CD85789AFE93203AB
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_8" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_8'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_5'")
+      MaterialExpressionEditorX=1664
+      MaterialExpressionEditorY=-320
+      MaterialExpressionGuid=94F70F634736A60B1556CF82DDAA1E84
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_9" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionReroute_9'"
+      Input=(Expression="/Script/Engine.MaterialExpressionVectorParameter'M_Bldg_Base:MaterialExpressionVectorParameter_28'",OutputIndex=4,Mask=1,MaskA=1)
+      MaterialExpressionEditorX=-576
+      MaterialExpressionEditorY=-192
+      MaterialExpressionGuid=EBE443C24520ED4392376481A48FEADE
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_0" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_0'"
+      DefaultValue=200.000000
+      ParameterName="Tex Size (ws) M1"
+      ExpressionGUID=09C71BF743B9CB8287EBBE9D2F403883
+      Group="Material 1"
+      MaterialExpressionEditorX=-4832
+      MaterialExpressionEditorY=-624
+      MaterialExpressionGuid=183BE9AD41703FB4ABB1C08917609DC7
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_1" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_1'"
+      ParameterName="Metallic M1"
+      ExpressionGUID=6FC1C766404B8A1399EE9FB5F704F2B8
+      Group="Material 1"
+      MaterialExpressionEditorX=-3376
+      MaterialExpressionEditorY=-256
+      MaterialExpressionGuid=3B18FF094AECEAC46E3AA0BE24066217
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_2" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_2'"
+      DefaultValue=10.000000
+      ParameterName="Tex ProjCon M1"
+      ExpressionGUID=6A40EDA24DDF6DA64BFFF1BC6AA1EEFC
+      Group="Material 1"
+      MaterialExpressionEditorX=-4832
+      MaterialExpressionEditorY=-352
+      MaterialExpressionGuid=183BE9AD41703FB4ABB1C08917609DC7
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_28" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_28'"
+      DefaultValue=5000.000000
+      ParameterName="Mask Tex Size GR"
+      ExpressionGUID=BCD20C0C4010F975A6FCBA99E5354881
+      Group="Grad Remap"
+      MaterialExpressionEditorX=-1200
+      MaterialExpressionEditorY=-672
+      MaterialExpressionGuid=A472407E445D1F1ED5E38A80DA8548DC
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_31" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_31'"
+      DefaultValue=1.000000
+      ParameterName="Value Correction GR"
+      ExpressionGUID=499119484576C77801DAF29F3528A1A0
+      Group="Grad Remap"
+      SortPriority=0
+      MaterialExpressionEditorX=-480
+      MaterialExpressionEditorY=-288
+      MaterialExpressionGuid=59B72B8A4898F8B2026E82B5AC90B855
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_4" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_4'"
+      DefaultValue=0.100000
+      ParameterName="Roughness"
+      ExpressionGUID=62FDBFAB435470715EF84D82FADCE378
+      Group="Material 1"
+      MaterialExpressionEditorX=-3907
+      MaterialExpressionEditorY=-331
+      MaterialExpressionGuid=A30235694D65A26BD441D7B002386F45
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_58" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_58'"
+      DefaultValue=1.000000
+      ParameterName="Amt GR"
+      ExpressionGUID=D4AE16FB47A6559C1D5D0AA721921FB5
+      Group="Grad Remap"
+      SortPriority=-900
+      MaterialExpressionEditorX=-352
+      MaterialExpressionEditorY=-160
+      MaterialExpressionGuid=59B72B8A4898F8B2026E82B5AC90B855
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_7" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_7'"
+      ParameterName="Metallic Min M1"
+      ExpressionGUID=8C7F19E24E72CF227F9456A2F26CFE60
+      Group="Material 1"
+      MaterialExpressionEditorX=-3568
+      MaterialExpressionEditorY=-304
+      MaterialExpressionGuid=3B18FF094AECEAC46E3AA0BE24066217
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_8" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_8'"
+      DefaultValue=1.000000
+      ParameterName="Metallic Max M1"
+      ExpressionGUID=A16D41794229E6C2D1B069B7F553F2AB
+      Group="Material 1"
+      MaterialExpressionEditorX=-3568
+      MaterialExpressionEditorY=-224
+      MaterialExpressionGuid=3B18FF094AECEAC46E3AA0BE24066217
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_95" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_95'"
+      ParameterName="Roughness Min M1"
+      ExpressionGUID=AED115AE447B2EA3F90C98B238DC3175
+      Group="Material 1"
+      MaterialExpressionEditorX=-3568
+      MaterialExpressionEditorY=-576
+      MaterialExpressionGuid=3B18FF094AECEAC46E3AA0BE24066217
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_96" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_96'"
+      DefaultValue=1.000000
+      ParameterName="Normal Inten M1"
+      ExpressionGUID=98F402A44E587C06460E35880E3C4577
+      Group="Material 1"
+      MaterialExpressionEditorX=-3600
+      MaterialExpressionEditorY=-64
+      MaterialExpressionGuid=3B18FF094AECEAC46E3AA0BE24066217
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionScalarParameter_97" ExportPath="/Script/Engine.MaterialExpressionScalarParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionScalarParameter_97'"
+      DefaultValue=1.000000
+      ParameterName="Roughness Max M1"
+      ExpressionGUID=6F3D65924C20B2555611BDBF59AD42BD
+      Group="Material 1"
+      MaterialExpressionEditorX=-3568
+      MaterialExpressionEditorY=-496
+      MaterialExpressionGuid=3B18FF094AECEAC46E3AA0BE24066217
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_0" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionSetMaterialAttributes_0'"
+      Inputs(0)=(Expression="/Script/Engine.MaterialExpressionGetMaterialAttributes'M_Bldg_Base:MaterialExpressionGetMaterialAttributes_1'")
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'M_Bldg_Base:MaterialExpressionLinearInterpolate_2'",InputName="Base Color")
+      AttributeSetTypes(0)=69B8D33616ED4D499AA497292F050F7A
+      MaterialExpressionEditorX=32
+      MaterialExpressionEditorY=-768
+      MaterialExpressionGuid=1E8E773F4469D5FA8C3F91AB0ADA3C74
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionSetMaterialAttributes_1" ExportPath="/Script/Engine.MaterialExpressionSetMaterialAttributes'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionSetMaterialAttributes_1'"
+      Inputs(1)=(Expression="/Script/Engine.MaterialExpressionMultiply'M_Bldg_Base:MaterialExpressionMultiply_6'",InputName="Base Color")
+      Inputs(2)=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'M_Bldg_Base:MaterialExpressionLinearInterpolate_0'",InputName="Roughness")
+      Inputs(3)=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_38'",InputName="Normal")
+      Inputs(4)=(Expression="/Script/Engine.MaterialExpressionStaticSwitchParameter'M_Bldg_Base:MaterialExpressionStaticSwitchParameter_6'",InputName="Metallic")
+      AttributeSetTypes(0)=69B8D33616ED4D499AA497292F050F7A
+      AttributeSetTypes(1)=D1DD967C4CAD47D39E6346FB08ECF210
+      AttributeSetTypes(2)=0FA2821A200F4A4AB719B789C1259C64
+      AttributeSetTypes(3)=57C3A1617F064296B00B24A5A496F34C
+      MaterialExpressionEditorX=-2976
+      MaterialExpressionEditorY=-512
+      MaterialExpressionGuid=2FD7A3264BDDF7C862071CBF919EDA7D
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_0" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionSetMaterialAttributes'M_Bldg_Base:MaterialExpressionSetMaterialAttributes_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_25'")
+      ParameterName="Enable GR"
+      ExpressionGUID=4B0EBDB542CA76D6EE6F2888D8C2C7D0
+      Group="Grad Remap"
+      SortPriority=-1000
+      MaterialExpressionEditorX=192
+      MaterialExpressionEditorY=-562
+      MaterialExpressionGuid=2524B72049774B2A5E89A488DD9CDB63
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_1" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_11'",OutputIndex=2)
+      B=(Expression="/Script/Engine.MaterialExpressionConstant3Vector'M_Bldg_Base:MaterialExpressionConstant3Vector_0'")
+      ParameterName="Use TriPlanar Color Tex"
+      ExpressionGUID=3BD81B6C45786CF3F27B3594CAB999AE
+      Group="Material 1"
+      MaterialExpressionEditorX=-3600
+      MaterialExpressionEditorY=-736
+      MaterialExpressionGuid=9D5D31FC429CC0DEB2CCE08ED1DC586E
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_10" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_10'"
+      A=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionNamedRerouteUsage'M_Bldg_Base:MaterialExpressionNamedRerouteUsage_7'")
+      DefaultValue=True
+      ParameterName="Grime/Wear/Variation"
+      ExpressionGUID=010232F4483D195C8815039FD7B18646
+      Group="00.Switches"
+      SortPriority=-100
+      MaterialExpressionEditorX=2480
+      MaterialExpressionEditorY=-528
+      MaterialExpressionGuid=00B8F58E429E1AA5B6B94690B6BF891E
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_2" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_2'"
+      A=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_14'",OutputIndex=1)
+      B=(Expression="/Script/Engine.MaterialExpressionConstant3Vector'M_Bldg_Base:MaterialExpressionConstant3Vector_1'")
+      ParameterName="Use TriPlanar Normal Tex"
+      ExpressionGUID=A44260B649F31FD49784288DC446F28F
+      Group="Material 1"
+      MaterialExpressionEditorX=-3808
+      MaterialExpressionEditorY=-192
+      MaterialExpressionGuid=9D5D31FC429CC0DEB2CCE08ED1DC586E
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_3" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_3'"
+      A=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_12'",OutputIndex=2)
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_4'")
+      ParameterName="Use TriPlanar Rough Tex"
+      ExpressionGUID=4AA9EE0A4DFBB0BFA762A9A69311B058
+      Group="Material 1"
+      MaterialExpressionEditorX=-3872
+      MaterialExpressionEditorY=-480
+      MaterialExpressionGuid=9D5D31FC429CC0DEB2CCE08ED1DC586E
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_5" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_5'"
+      A=(Expression="/Script/Engine.MaterialExpressionMaterialFunctionCall'M_Bldg_Base:MaterialExpressionMaterialFunctionCall_5'")
+      B=(Expression="/Script/Engine.MaterialExpressionReroute'M_Bldg_Base:MaterialExpressionReroute_0'")
+      ParameterName="Enable CC"
+      ExpressionGUID=ECB0B70C4FD4315A84B68C8797308B3D
+      Group="Color Correction"
+      SortPriority=-1000
+      MaterialExpressionEditorX=-1616
+      MaterialExpressionEditorY=-529
+      MaterialExpressionGuid=00B8F58E429E1AA5B6B94690B6BF891E
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitchParameter_6" ExportPath="/Script/Engine.MaterialExpressionStaticSwitchParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionStaticSwitchParameter_6'"
+      A=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'M_Bldg_Base:MaterialExpressionLinearInterpolate_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionScalarParameter'M_Bldg_Base:MaterialExpressionScalarParameter_1'")
+      ParameterName="Use Metallic Tex"
+      ExpressionGUID=C203ADA84C0621E5067362A192995C2D
+      Group="Material 1"
+      MaterialExpressionEditorX=-3200
+      MaterialExpressionEditorY=-336
+      MaterialExpressionGuid=9D5D31FC429CC0DEB2CCE08ED1DC586E
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureObjectParameter_0" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureObjectParameter_0'"
+      ParameterName="Tex Albedo M1"
+      ExpressionGUID=8873AD7743A0DD2C16065888BC24D66B
+      Group="Material 1"
+      SortPriority=100
+      Texture="/Script/Engine.Texture2D'/Game/Textures/Default_Color_sRGB_BC7_VT.Default_Color_sRGB_BC7_VT'"
+      SamplerType=SAMPLERTYPE_VirtualColor
+      MaterialExpressionEditorX=-4832
+      MaterialExpressionEditorY=-832
+      MaterialExpressionGuid=64F582B04A49976551CFC4BBF9F33B7D
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureObjectParameter_1" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureObjectParameter_1'"
+      ParameterName="Tex AORMD M1"
+      ExpressionGUID=D4ACDF19465AF83808470091F64495A6
+      Group="Material 1"
+      SortPriority=100
+      Texture="/Script/Engine.Texture2D'/Game/Textures/Default_3or4Channel_Linear_BC7_VT.Default_3or4Channel_Linear_BC7_VT'"
+      SamplerType=SAMPLERTYPE_VirtualLinearColor
+      MaterialExpressionEditorX=-4832
+      MaterialExpressionEditorY=-528
+      MaterialExpressionGuid=D22F828440DB0FFE47ED22A43C5AD273
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureObjectParameter_2" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureObjectParameter_2'"
+      ParameterName="Tex Normal M1"
+      ExpressionGUID=E01E0E6F40CD184700D1948C823E8D1C
+      Group="Material 1"
+      SortPriority=100
+      Texture="/Script/Engine.Texture2D'/Game/Textures/FlatNormal_VT.FlatNormal_VT'"
+      SamplerType=SAMPLERTYPE_VirtualNormal
+      MaterialExpressionEditorX=-4832
+      MaterialExpressionEditorY=-193
+      MaterialExpressionGuid=A08A373F4DAB20F3720911BB9F0376CF
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureObjectParameter_4" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureObjectParameter_4'"
+      ParameterName="Mask Tex GR"
+      ExpressionGUID=FF8C3C8B40B388567C2F58915F7BE7A4
+      Group="Grad Remap"
+      Texture="/Script/Engine.Texture2D'/Game/Building/Texture/Gradient/T_Gradient_Mask.T_Gradient_Mask'"
+      SamplerType=SAMPLERTYPE_VirtualAlpha
+      MaterialExpressionEditorX=-1184
+      MaterialExpressionEditorY=-832
+      MaterialExpressionGuid=722FE245428175933A95E799A6AD433E
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureObjectParameter_9" ExportPath="/Script/Engine.MaterialExpressionTextureObjectParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureObjectParameter_9'"
+      ParameterName="Grad Tex BBR"
+      ExpressionGUID=DCF39A6B4DF06DF59C0FF2A39A46B5E1
+      Group="Grad Remap"
+      SortPriority=0
+      Texture="/Script/Engine.Texture2D'/Game/Building/Texture/Gradient/T_GradientColor_Limestone.T_GradientColor_Limestone'"
+      MaterialExpressionEditorX=-1120
+      MaterialExpressionEditorY=-160
+      MaterialExpressionGuid=8F76A69B46D24457D973749A96B64D79
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionTextureSampleParameter2D_6" ExportPath="/Script/Engine.MaterialExpressionTextureSampleParameter2D'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionTextureSampleParameter2D_6'"
+      ParameterName="PackedA Tex"
+      ExpressionGUID=9D32FAD0422D6ADDF9C92B9BB97FBA23
+      Group="Textures"
+      SamplerSource=SSM_Wrap_WorldGroupSettings
+      Texture="/Script/Engine.Texture2D'/Game/Building/Texture/Gen/T_default_packedA.T_default_packedA'"
+      SamplerType=SAMPLERTYPE_VirtualLinearColor
+      MaterialExpressionEditorX=-4398
+      MaterialExpressionEditorY=-1358
+      MaterialExpressionGuid=9B3520A341E283A960808FB3DCD980E1
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      Desc="packedA\r\n=============\r\nR - DRIP\r\nG -\r\nB - \r\nA - AO"
+      bCommentBubbleVisible=True
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_28" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionVectorParameter_28'"
+      DefaultValue=(R=1.000000,G=0.000000,B=1.000000,A=0.000000)
+      ChannelNames=(R=NSLOCTEXT("", "A94E7602489876EABBED5AAA7D6A63B0", "Mask Power"),G=NSLOCTEXT("", "A610819C4DB2AC951B89C9967AF62577", "Min"),B=NSLOCTEXT("", "5E854AA84811D9A5333D5C8316C6FD37", "Max"),A=NSLOCTEXT("", "039E6C684D03DE8EACC417B56F03AEEE", "Desat"))
+      ParameterName="Grad Params GR"
+      ExpressionGUID=D23B331048FB3F4D6007F8AE0AB5350B
+      Group="Grad Remap"
+      SortPriority=0
+      MaterialExpressionEditorX=-1136
+      MaterialExpressionEditorY=-352
+      MaterialExpressionGuid=2112A19C45FD17B2C2894786C48A2CAC
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      bCollapsed=True
+      Outputs(0)=(OutputName="")
+      Outputs(1)=(OutputName="Mask Power")
+      Outputs(2)=(OutputName="Min")
+      Outputs(3)=(OutputName="Max")
+      Outputs(4)=(OutputName="Desat")
+      Outputs.RemoveIndex(5)
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_30" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionVectorParameter_30'"
+      DefaultValue=(R=0.000000,G=1.000000,B=1.000000,A=1.000000)
+      ChannelNames=(R=NSLOCTEXT("", "6D0384C94E8187F5AA086789ADD33873", "Hue Offset"),G=NSLOCTEXT("", "3E041C044358CC6717A7B7AFFD147CD0", "Sat Scale"),B=NSLOCTEXT("", "5EB1BB3F4A8F5BFCC6CAD49575E07F1A", "Val Scale"))
+      ParameterName="HSV Params CC"
+      ExpressionGUID=74FA03424638A0BC9CC82EA0CDA7FB58
+      Group="Color Correction"
+      SortPriority=0
+      MaterialExpressionEditorX=-2416
+      MaterialExpressionEditorY=-384
+      MaterialExpressionGuid=3198F12242931DF512B078AA0CA2FCA8
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+      bCollapsed=True
+      Outputs(0)=(OutputName="")
+      Outputs(1)=(OutputName="Hue Offset")
+      Outputs(2)=(OutputName="Sat Scale")
+      Outputs(3)=(OutputName="Val Scale")
+      Outputs(4)=(OutputName="")
+      Outputs.RemoveIndex(5)
+   End Object
+   Begin Object Name="MaterialExpressionVectorParameter_6" ExportPath="/Script/Engine.MaterialExpressionVectorParameter'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionVectorParameter_6'"
+      DefaultValue=(R=1.000000,G=1.000000,B=1.000000,A=1.000000)
+      ParameterName="Color Tint/Mult(A) M1"
+      ExpressionGUID=CD0586E047CF0942D0C0AEA43A30DC56
+      Group="Material 1"
+      MaterialExpressionEditorX=-3584
+      MaterialExpressionEditorY=-928
+      MaterialExpressionGuid=08E7B0384DCA60D64BBBE3BA5BFBDFAF
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="MaterialExpressionWorldPosition_0" ExportPath="/Script/Engine.MaterialExpressionWorldPosition'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:MaterialExpressionWorldPosition_0'"
+      MaterialExpressionEditorX=-4976
+      MaterialExpressionEditorY=-1264
+      MaterialExpressionGuid=0316A073431569B43C137786F2CA5E9C
+      Material="/Script/Engine.Material'M_Bldg_Base'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Building/Material/M_Bldg_Base.M_Bldg_Base:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   bUsedWithStaticLighting=True
+   bUsedWithInstancedStaticMeshes=True
+   bUsedWithNanite=True
+   EditorX=3336
+   EditorY=-512
+   bUseMaterialAttributes=True
+   PixelDepthOffsetMode=PDOM_Legacy
+   StateId=ABD4526AAF3F9817C166D4828F657ABE
+   EditorOnlyData="/Script/Engine.MaterialEditorOnlyData'M_Bldg_BaseEditorOnlyData'"
+   TextureStreamingDataVersion=1
+   TextureStreamingData(0)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="T_default_packedA",TextureReference="/Game/Building/Texture/Gen/T_default_packedA.T_default_packedA")
+   ReferencedDefaultTextures(0)="/Script/Engine.Texture2D'/Game/Textures/T_UDIMCheckSmall.T_UDIMCheckSmall'"
+   ReferencedDefaultTextures(1)="/Script/Engine.Texture2D'/Game/Textures/T_UVCheck.T_UVCheck'"
+   ReferencedDefaultTextures(2)="/Script/Engine.Texture2D'/Game/Textures/Default_Color_sRGB_BC7_VT.Default_Color_sRGB_BC7_VT'"
+   ReferencedDefaultTextures(3)="/Script/Engine.Texture2D'/Game/Textures/Default_3or4Channel_Linear_BC7_VT.Default_3or4Channel_Linear_BC7_VT'"
+   ReferencedDefaultTextures(4)="/Script/Engine.Texture2D'/Game/Textures/FlatNormal_VT.FlatNormal_VT'"
+   ReferencedDefaultTextures(5)="/Script/Engine.Texture2D'/Engine/Functions/Engine_MaterialFunctions02/ExampleContent/Textures/LowResBlurredNoise.LowResBlurredNoise'"
+   ReferencedDefaultTextures(6)="/Script/Engine.Texture2D'/Engine/EngineMaterials/BlendFunc_DefBase.BlendFunc_DefBase'"
+   ReferencedDefaultTextures(7)="/Script/Engine.Texture2D'/Engine/EngineMaterials/BlendFunc_DefBlend.BlendFunc_DefBlend'"
+   ReferencedDefaultTextures(8)=None
+   ReferencedDefaultTextures(9)="/Script/Engine.Texture2D'/Engine/EngineMaterials/DefaultDiffuse.DefaultDiffuse'"
+   ReferencedDefaultTextures(10)="/Script/Engine.Texture2D'/Game/Building/Texture/Grunge/T_GrimeCrevice_Detail_Mask.T_GrimeCrevice_Detail_Mask'"
+   ReferencedDefaultTextures(11)="/Script/Engine.Texture2D'/Game/Building/Texture/Grunge/T_GrimeCrevice_Breakup_Mask.T_GrimeCrevice_Breakup_Mask'"
+   ReferencedDefaultTextures(12)="/Script/Engine.Texture2D'/Game/Building/Texture/Gen/T_default_packedA.T_default_packedA'"
+   ReferencedDefaultTextures(13)="/Script/Engine.Texture2D'/Game/Building/Texture/Grunge/tile_noiseDirt.tile_noiseDirt'"
+   ReferencedDefaultTextures(14)="/Script/Engine.Texture2D'/Game/Textures/Noise/T_Noises_Grunge_4k_.T_Noises_Grunge_4k_'"
+   ReferencedDefaultTextures(15)="/Script/Engine.Texture2D'/Game/Textures/Noise/T_Noises_Clouds_4k_.T_Noises_Clouds_4k_'"
+   ReferencedDefaultTextures(16)="/Script/Engine.Texture2D'/Game/Building/Texture/Grunge/tile_noiseDirtSmear_Mask.tile_noiseDirtSmear_Mask'"
+   ReferencedDefaultTextures(17)="/Script/Engine.Texture2D'/Game/Textures/SurfaceFeature/T_GrimeDrip_Detail_Mask.T_GrimeDrip_Detail_Mask'"
+   ReferencedDefaultTextures(18)="/Script/Engine.Texture2D'/Game/Building/Texture/Grunge/T_LargeDrip_Mask.T_LargeDrip_Mask'"
+   ReferencedDefaultTextures(19)="/Script/Engine.Texture2D'/Game/Textures/SurfaceFeature/T_GrimeDrip_Breakup_Mask.T_GrimeDrip_Breakup_Mask'"
+   ReferencedDefaultTextures(20)="/Script/Engine.Texture2D'/Game/Building/Texture/Grunge/T_GrimeDrip_MediumBreakup_Mask.T_GrimeDrip_MediumBreakup_Mask'"
+   ReferencedDefaultTextures(21)="/Script/Engine.Texture2D'/Game/Building/Texture/Grunge/T_BuildingDamageDetail_Mask.T_BuildingDamageDetail_Mask'"
+   ReferencedDefaultTextures(22)="/Script/Engine.Texture2D'/Game/Building/Texture/Gradient/T_GradientColor_Limestone.T_GradientColor_Limestone'"
+   ReferencedDefaultTextures(23)="/Script/Engine.Texture2D'/Engine/EngineResources/DefaultTexture.DefaultTexture'"
+   ReferencedDefaultTextures(24)="/Script/Engine.Texture2D'/Game/Building/Texture/Gradient/T_Gradient_Mask.T_Gradient_Mask'"
+   ReferencedDefaultTextures(25)="/Script/Engine.Texture2D'/Engine/EngineDebugMaterials/HeatmapGradient.HeatmapGradient'"
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   ParameterOverviewExpansion=(("-12Global 0.Debug", True),("-12Global 0.Switches", True),("-12Global 00.Debug Params", True),("-12Global Block Color Correction", True),("-12Global Grime Crevice", True),("-12Global Material 1", True),("-12Global Textures", True),("-12Global 00.Switches", True),("-12Global Color Correction", True),("-12Global Damage Edge", True),("-12Global Grime Broad", True),("-12Global Grime Drip", True),("-12Global Grime Ground", True),("-12Global Grad Remap", True))
+   LightingGuid=17673F884834403008D34FA3E789B9DD
+End Object

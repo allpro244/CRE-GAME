@@ -9,10 +9,28 @@
 // metre. Rings are flat [x0,y0,x1,y1,...] integer arrays, unclosed.
 import { makeProjection } from "./geom.mjs";
 
-/** Ground layers, in draw order (later on top). */
-export const GROUND_LAYERS = ["land", "beach", "marsh", "rock", "esplanade", "apron", "paveland", "pavement", "median", "sidewalk", "park", "pond", "stream"];
+/** Ground layers, in draw order (later on top). A sidewalk is a ring around its
+ * block (the block is its hole); rings go out unholed, so the block surface is drawn
+ * after it to fill the hole back in. */
+export const GROUND_LAYERS = ["land", "beach", "marsh", "rock", "esplanade", "apron", "paveland", "pavement", "median", "sidewalk", "block", "park", "pond", "stream"];
 
-export function toBwCity(c) {
+// the web renderer's own hashes (map/real/RealCity.ts hash01, keyOf), so a
+// building draws the same family here as on the browser map
+function hash01(n, seed) {
+  let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(seed + 0x632be5ab, 0xc2b2ae35);
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12; h = Math.imul(h, 0x297a2d39); h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+function keyOf(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+/** opts.familyFor / opts.tints: the web renderer's facade picker (map/real/facades.ts). With
+ * them each volume carries the family ("fam") and wall tint ("tint", RGB) the browser map
+ * gives it; the renderer maps a family to the facade kit nearest it. */
+export function toBwCity(c, opts = {}) {
   const [w, s, e, n] = c.manifest.bbox;
   const lon0 = (w + e) / 2, lat0 = (s + n) / 2;
   const proj = makeProjection(lon0, lat0);
@@ -37,6 +55,28 @@ export function toBwCity(c) {
     bbl: b.b || "", cls: b.c, year: b.y, z0: Math.round(b.z0 * 100), z1: Math.round(b.z1 * 100),
     deco: b.d ? (b.dk ?? "deco") : "", crown: !!b.x, vacant: !!b.k, ring: b.r.flatMap(ue),
   }));
+  if (opts.familyFor && opts.tints) {
+    // as RealCity draws a volume: the family by the building's full height (its
+    // tallest tier), its own roll, its district's tone and its neighbourhood
+    const core = Array.isArray(c.manifest.core) ? c.manifest.core : [lon0, lat0];
+    const kx = 111320 * Math.cos((core[1] * Math.PI) / 180);
+    const top = new Map();
+    for (const b of c.buildings3d) if (b.b) top.set(b.b, Math.max(top.get(b.b) ?? 0, b.z1));
+    const seed = (c.seed ?? 1) >>> 0;
+    c.buildings3d.forEach((b, i) => {
+      if (b.k || b.d || b.r.length < 3) return;
+      let cx = 0, cy = 0;
+      for (const [lon, lat] of b.r) { cx += ((lon - core[0]) * kx) / b.r.length; cy += ((lat - core[1]) * 111320) / b.r.length; }
+      const nb = hash01((Math.floor(cx / 380) * 7919) ^ (Math.floor(cy / 380) * 104729) ^ 0x6e62, seed);
+      const k = keyOf(b.b || `${b.r[0][0]},${b.r[0][1]}`);
+      const fam = opts.familyFor(b.c, b.y || 1950, top.get(b.b) ?? b.z1, hash01(k ^ 0x3c1f, seed), b.t ?? 4, nb);
+      const tints = opts.tints[fam] ?? [[1, 1, 1]];
+      const tr = hash01(k, seed);
+      const t = tints[tr < 0.55 ? ((b.t ?? 0) * 3 + 1) % tints.length : Math.floor(((tr - 0.55) / 0.45) * tints.length)];
+      volumes[i].fam = fam;
+      volumes[i].tint = t.map((x) => +x.toFixed(3));
+    });
+  }
 
   const ground = Object.fromEntries(GROUND_LAYERS.map((k) => [k, []]));
   const water = [], trees = [], labels = [];

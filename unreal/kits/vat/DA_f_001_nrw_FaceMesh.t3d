@@ -1,0 +1,16 @@
+Begin Object Class=/Script/AnimToTexture.AnimToTextureDataAsset Name="DA_f_001_nrw_FaceMesh" ExportPath="/Script/AnimToTexture.AnimToTextureDataAsset'/Game/Crowd/VAT/Data/DA_f_001_nrw_FaceMesh.DA_f_001_nrw_FaceMesh'"
+   SkeletalMesh="/Game/Crowd/Character/Female/f_001/Face/f_001_nrw_FaceMesh.f_001_nrw_FaceMesh"
+   SkeletalLODIndex=3
+   StaticMesh="/Game/Crowd/VAT/Meshes/SM_f_001_nrw_FaceMesh.SM_f_001_nrw_FaceMesh"
+   BonePositionTexture="/Game/Crowd/VAT/TX_f_tal_BonePosition.TX_f_tal_BonePosition"
+   BoneRotationTexture="/Game/Crowd/VAT/TX_f_tal_BoneRotation.TX_f_tal_BoneRotation"
+   BoneWeightTexture="/Game/Crowd/VAT/Textures/TX_f_001_nrw_FaceMesh.TX_f_001_nrw_FaceMesh"
+   AnimSequences(0)=(EndFrame=1)
+   AnimSequences(1)=(EndFrame=1)
+   NumFrames=430
+   BoneMinBBox=(X=-47.251892,Y=-50.200760,Z=-19.291290)
+   BoneSizeBBox=(X=117.218483,Y=84.520355,Z=170.738754)
+   Animations(0)=(EndFrame=319)
+   Animations(1)=(StartFrame=320,EndFrame=429)
+   AssetBundleData=(Bundles=((BundleName="Client",AssetPaths=("/Game/Crowd/Character/Female/f_001/Face/f_001_nrw_FaceMesh.f_001_nrw_FaceMesh","/Game/Crowd/VAT/Meshes/SM_f_001_nrw_FaceMesh.SM_f_001_nrw_FaceMesh"))))
+End Object

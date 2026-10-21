@@ -32,8 +32,11 @@ MATS = {
 def mat_path(name):
     if name.startswith("/"):
         return name if "." in name else name + "." + name.split("/")[-1]
-    # short names: Brick/BrickOffset_Red -> /Game/Building/Material/MI/Brick/ForGym/MI_Bldg_BrickOffset_Red_FG
+    # short names: Brick/BrickOffset_Red -> /Game/Building/Material/MI/Brick/ForGym/MI_Bldg_BrickOffset_Red_FG;
+    # BW/FibreCementOrange -> /Game/BW/Mats/MI_BW_FibreCementOrange (make-mats.py)
     folder, short = name.split("/")
+    if folder == "BW":
+        return "/Game/BW/Mats/MI_BW_%s.MI_BW_%s" % (short, short)
     p = "/Game/Building/Material/MI/%s/ForGym/MI_Bldg_%s_FG" % (folder, short)
     return p + "." + p.split("/")[-1]
 

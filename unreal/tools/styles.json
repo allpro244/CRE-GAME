@@ -3035,7 +3035,7 @@
    "wall": "Paint/PaintedMetal_Grey",
    "trim": "Paint/PaintedMetal_Grey",
    "base": "Block/Block_Granite_Grey",
-   "accent": "Brick/BrickOffset_Red",
+   "accent": "BW/BrickOrange",
    "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
   },
   "uv": 100,
@@ -3284,8 +3284,8 @@
    "wall": "Paint/PaintedMetal_Grey",
    "trim": "Paint/PaintedMetal_Black",
    "base": "Concrete/Concrete",
-   "accent": "Paint/PaintedStone_Khaki",
-   "accent2": "Paint/PaintedMetal_White",
+   "accent": "BW/PanelNavy",
+   "accent2": "BW/PanelWarmGrey",
    "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
   },
   "uv": 100,
@@ -3720,7 +3720,7 @@
    },
    {
     "mats": {
-     "wall": "Paint/PaintedStone_Red"
+     "wall": "BW/FibreCementOrange"
     },
     "proud": 45,
     "win": {
@@ -3789,7 +3789,7 @@
    },
    {
     "mats": {
-     "wall": "Paint/PaintedStone_Khaki"
+     "wall": "BW/PanelSage"
     },
     "proud": 50,
     "feature": "balcony",
@@ -4302,13 +4302,13 @@
    },
    {
     "mats": {
-     "wall": "Paint/PaintedMetal_Green"
+     "wall": "BW/PanelTeal"
     },
     "proud": 40
    },
    {
     "mats": {
-     "wall": "Paint/PaintedStone_charcoal"
+     "wall": "BW/PanelMustard"
     },
     "proud": 20,
     "win": {
@@ -4384,7 +4384,7 @@
    },
    {
     "mats": {
-     "wall": "Brick/BrickOffset_Brown"
+     "wall": "BW/FibreCementRust"
     },
     "proud": 25
    }
@@ -4403,6 +4403,219 @@
    "stucco",
    "fibercement",
    "brick"
+  ]
+ },
+ {
+  "key": "B82",
+  "label": "Navy and white rental, zoned",
+  "group": "contemporary",
+  "uv": 100,
+  "mats": {
+   "wall": "BW/PanelNavy",
+   "trim": "Paint/PaintedMetal_White",
+   "base": "Paint/PaintedStone_charcoal",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque",
+   "dark": "Paint/PaintedMetal_Black"
+  },
+  "bay": 320,
+  "storey": 305,
+  "win": {
+   "w": 160,
+   "h": 200,
+   "sill": 70,
+   "recess": 10,
+   "mullions": 1,
+   "transom": true,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 6
+  },
+  "zones": [
+   {
+    "mats": {
+     "wall": "BW/PanelNavy"
+    },
+    "proud": 0
+   },
+   {
+    "mats": {
+     "wall": "Paint/PaintedStone_White"
+    },
+    "proud": 45,
+    "feature": "balcony",
+    "feature_all": true,
+    "balcony_glass": true,
+    "balcony_depth": 120
+   },
+   {
+    "mats": {
+     "wall": "BW/PanelWarmGrey"
+    },
+    "proud": 20,
+    "win": {
+     "per_bay": 2,
+     "w": 110
+    }
+   }
+  ],
+  "ground": {
+   "type": "shop",
+   "h": 460,
+   "bulkhead": 0.5,
+   "sign": 420,
+   "lights": 2,
+   "pier": 40
+  },
+  "top": {
+   "type": "parapet",
+   "h": 100
+  },
+  "families": [
+   "metalpanel",
+   "fibercement",
+   "rainscreen"
+  ]
+ },
+ {
+  "key": "B83",
+  "label": "Sunbelt garden apartments",
+  "group": "contemporary",
+  "uv": 100,
+  "mats": {
+   "wall": "BW/StuccoCream",
+   "trim": "Paint/PaintedMetal_White",
+   "base": "BW/StuccoCream",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque",
+   "dark": "Paint/PaintedMetal_Black"
+  },
+  "bay": 320,
+  "storey": 310,
+  "win": {
+   "w": 120,
+   "h": 180,
+   "sill": 70,
+   "recess": 10,
+   "mullions": 1,
+   "transom": true,
+   "head": "plain",
+   "per_bay": 2,
+   "sill_ledge": false,
+   "frame": 6
+  },
+  "zones": [
+   {
+    "mats": {
+     "wall": "BW/StuccoCream"
+    },
+    "proud": 0,
+    "feature": "balcony",
+    "feature_all": true,
+    "balcony_depth": 110
+   },
+   {
+    "mats": {
+     "wall": "BW/StuccoTerracotta"
+    },
+    "proud": 50
+   },
+   {
+    "mats": {
+     "wall": "BW/PanelWarmGrey"
+    },
+    "proud": 25,
+    "win": {
+     "per_bay": 1,
+     "w": 150,
+     "juliet": true
+    }
+   }
+  ],
+  "ground": {
+   "type": "plain",
+   "h": 390,
+   "sill": 80,
+   "head": "plain"
+  },
+  "top": {
+   "type": "parapet",
+   "h": 130
+  },
+  "families": [
+   "stucco",
+   "mediterranean",
+   "fibercement"
+  ]
+ },
+ {
+  "key": "B84",
+  "label": "Charcoal brick and sage rental",
+  "group": "contemporary",
+  "uv": 100,
+  "mats": {
+   "wall": "BW/BrickCharcoal",
+   "trim": "Paint/PaintedMetal_Black",
+   "base": "BW/BrickCharcoal",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque",
+   "dark": "Paint/PaintedMetal_Black"
+  },
+  "bay": 330,
+  "storey": 310,
+  "win": {
+   "w": 190,
+   "h": 220,
+   "sill": 45,
+   "recess": 10,
+   "mullions": 2,
+   "transom": true,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 6
+  },
+  "zones": [
+   {
+    "mats": {
+     "wall": "BW/BrickCharcoal"
+    },
+    "proud": 0,
+    "win": {
+     "juliet": true
+    }
+   },
+   {
+    "mats": {
+     "wall": "BW/PanelSage"
+    },
+    "proud": 40
+   },
+   {
+    "mats": {
+     "wall": "BW/BrickGlazedWhite"
+    },
+    "proud": -25,
+    "feature": "balcony",
+    "feature_all": true,
+    "balcony_glass": true,
+    "balcony_depth": 90
+   }
+  ],
+  "ground": {
+   "type": "shop",
+   "h": 480,
+   "bulkhead": 0.5,
+   "sign": 440,
+   "lights": 2,
+   "pier": 40
+  },
+  "top": {
+   "type": "parapet",
+   "h": 100
+  },
+  "families": [
+   "brick",
+   "metalpanel",
+   "stackbrick"
   ]
  }
 ]

@@ -116,6 +116,24 @@ private:
 	TObjectPtr<UMaterialInterface> VertexColorMaterial;
 	UPROPERTY()
 	TArray<TObjectPtr<UProceduralMeshComponent>> Chunks;
+	/** THE CITY IN TILES (250 m): one mesh per tile, rebuilt only when a building in it changes. */
+	UPROPERTY()
+	TMap<FIntPoint, TObjectPtr<UProceduralMeshComponent>> TileMesh;
+	/** What was built for one volume last time: its signature, whether it took a facade, its tile, and every instanced piece laid for it. */
+	struct FVolRec
+	{
+		uint32 Sig = 0;
+		bool bDressed = false;
+		FIntPoint Tile = FIntPoint::ZeroValue;
+		TArray<TPair<UInstancedStaticMeshComponent*, int32>> Inst;
+	};
+	TMap<FString, FVolRec> Recs;
+	/** Instances hidden (scaled to nothing) rather than removed, since removing renumbers the rest; a full rebuild compacts them. */
+	int32 Garbage = 0;
+	/** Set to force the next BuildVolumes to start over (a new city, the facades switched). */
+	bool bFullNext = true;
+	/** Where AddProp notes a roof prop while a building is being laid (see FVolRec). */
+	TArray<TPair<UInstancedStaticMeshComponent*, int32>>* PropRecord = nullptr;
 	UPROPERTY()
 	TObjectPtr<UInstancedStaticMeshComponent> Trees;
 	/** Tower cranes over every frame going up: mast, jib, counter-jib, ballast. */

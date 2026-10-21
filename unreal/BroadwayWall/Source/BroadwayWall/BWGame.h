@@ -75,6 +75,8 @@ public:
 	/** The Build desk's model box, as fractions of the window (x, y, w, h); w <= 0 when the desk is closed. */
 	FVector4 DeskRect = FVector4(0, 0, 0, 0);
 	double DeskYaw = 30, DeskSpin = 1, DeskHeld = 0;
+	/** The desk camera's tilt, dragged up and down (degrees below level; 0 = the default for the zoom). */
+	double DeskPitch = 0;
 	/** -KitZoom=F: the style renders move in to F of the framing distance, looking at the lower floors (a close-up of the texture) */
 	double DeskZoom = 1;
 	/** The view to go back to when the desk closes. */

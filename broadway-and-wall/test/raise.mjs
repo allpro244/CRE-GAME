@@ -61,12 +61,14 @@ function findJob(g, parcels) {
   for (const L of g.listings ?? []) {
     const rec = E.resolveRec(parcels, g, L.bbl);
     if (!rec || rec.class !== "land" || L.ask > own0 * 0.8) continue;
-    for (const u of ["multifamily", "office", "retail", "industrial"]) for (const f of [2, 3, 4, 6, 8, 12]) {
-      const p = E.planDevelopment(g, parcels, L.bbl, u, f, 0.6, "gmp");
+    for (const u of ["multifamily", "office", "retail", "industrial"]) for (const f of [2, 3, 4, 6, 8, 12]) for (const c of [0.6, 0.75, 0.85]) {
+      // (at the 60% plate floor a $1M sponsor's lots mostly self-fund; the
+      // fuller plates are the ones that need outside money)
+      const p = E.planDevelopment(g, parcels, L.bbl, u, f, c, "gmp");
       if (!p || p.hurdleRatio < 0.9) continue;
       const need = E.devFundingNeed(p).whole;
       if (need <= own0 - L.ask || need > (own0 - L.ask) * 2.2) continue;
-      if (!pick || p.hurdleRatio > pick.p.hurdleRatio) pick = { L, u, f, p };
+      if (!pick || p.hurdleRatio > pick.p.hurdleRatio) pick = { L, u, f, c, p };
     }
   }
   return pick;
@@ -88,10 +90,10 @@ for (const [seed, band] of [[9401], [9402], [9603], [9404], [9405], [9401, "Prov
           let g1 = r.s;
           if (band) g1.reputation = { band, score: 30, rank: 1, of: 30, m: g1.month };
           const b = pick.L.bbl;
-          const p = E.planDevelopment(g1, parcels, b, pick.u, pick.f, 0.6, "gmp");
+          const p = E.planDevelopment(g1, parcels, b, pick.u, pick.f, pick.c, "gmp");
           const need = E.devFundingNeed(p).whole;
           const outside = E.maxOutside(g1, need, E.ownedHoldingValue(g1, parcels, g1.holdings[b]));
-          const job = { use: pick.u, floors: pick.f, coverage: 0.6, contract: "gmp", spec: 0.5 };
+          const job = { use: pick.u, floors: pick.f, coverage: pick.c, contract: "gmp", spec: 0.5 };
           const c0 = g1.cash;
           const lr = E.launchRaise(g1, parcels, b, job, outside);
           if (!lr.err) {
@@ -131,9 +133,9 @@ for (const [seed, band] of [[9401], [9402], [9603], [9404], [9405], [9401, "Prov
   if (pick) {
     const r = E.executePurchase(g, parcels, pick.L.bbl, pick.L.ask, "cash", false, 1);
     g = r.s;
-    const p = E.planDevelopment(g, parcels, pick.L.bbl, pick.u, pick.f, 0.6, "gmp");
+    const p = E.planDevelopment(g, parcels, pick.L.bbl, pick.u, pick.f, pick.c, "gmp");
     const outside = E.maxOutside(g, E.devFundingNeed(p).whole, E.ownedHoldingValue(g, parcels, g.holdings[pick.L.bbl]));
-    const lr = E.launchRaise(g, parcels, pick.L.bbl, { use: pick.u, floors: pick.f, coverage: 0.6, contract: "gmp", spec: 0.5 }, outside);
+    const lr = E.launchRaise(g, parcels, pick.L.bbl, { use: pick.u, floors: pick.f, coverage: pick.c, contract: "gmp", spec: 0.5 }, outside);
     if (!lr.err) {
       g = lr.s;
       g.ffNetwork = { cap: 0 };   // the network turns out to have nothing to give
@@ -163,9 +165,9 @@ for (const [seed, band] of [[9401], [9402], [9603], [9404], [9405], [9401, "Prov
   ok(!!pick, "an instant raise: found a job");
   if (pick) {
     g = E.executePurchase(g, parcels, pick.L.bbl, pick.L.ask, "cash", false, 1).s;
-    const p = E.planDevelopment(g, parcels, pick.L.bbl, pick.u, pick.f, 0.6, "gmp");
+    const p = E.planDevelopment(g, parcels, pick.L.bbl, pick.u, pick.f, pick.c, "gmp");
     const most = E.maxOutside(g, E.devFundingNeed(p).whole, E.ownedHoldingValue(g, parcels, g.holdings[pick.L.bbl]));
-    const job = { use: pick.u, floors: pick.f, coverage: 0.6, contract: "gmp", spec: 0.5 };
+    const job = { use: pick.u, floors: pick.f, coverage: pick.c, contract: "gmp", spec: 0.5 };
     const over = E.raiseAndBuild(g, parcels, pick.L.bbl, job, Math.round(most * 1.5) + 100_000);
     ok(!!over.err, `an instant raise is no bigger than the network holds (asked ${M(most * 1.5)}, most ${M(most)}): ${over.err?.slice(0, 80)}`);
     const cash0 = g.cash, m0 = g.month;

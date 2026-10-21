@@ -101,9 +101,12 @@ void ABWCameraPawn::Tick(float Dt)
 		Site->SetVolumeMultiplier(BestD < 1e17 ? FMath::Clamp(float(1.0 - Dist / 15000.0), 0.f, 1.f) : 0.f);
 	}
 	// THE BUILD DESK'S MODEL. While the desk shows its model box, the camera
-	// orbits the scheme on its lot, framed into the box: the view centre is
+	// looks at the scheme on its lot, framed into the box: the view centre is
 	// shifted onto the box's middle and the distance set so the building fills
-	// about three quarters of the box's height.
+	// about three quarters of the box's height. It stays where the player
+	// drags it (owner, Oct 2026: "instead of it rotating around the building
+	// automatically, make it so you can click and drag"); it used to spin slowly
+	// whenever the player let go.
 	if (DeskRect.Z > 0)
 	{
 		FVector Base; double Hb = 0, Span = 0;
@@ -111,8 +114,7 @@ void ABWCameraPawn::Tick(float Dt)
 		if (GM && GM->City && GM->City->PreviewBounds(Base, Hb, Span))
 		{
 			DeskHeld = FMath::Max(0.0, DeskHeld - Dt);
-			if (DeskHeld <= 0) DeskYaw += 6.0 * Dt * DeskSpin;
-			const double Pt = DeskZoom < 0.3 ? -6 : -20;   // the tightest close-up stands at the kerb
+			const double Pt = DeskPitch != 0 ? DeskPitch : DeskZoom < 0.3 ? -6 : -20;   // the tightest close-up stands at the kerb
 			const double Aspect = Camera->AspectRatio > 0 ? Camera->AspectRatio : 16.0 / 9.0;
 			const double TanV = FMath::Tan(FMath::DegreesToRadians(Camera->FieldOfView * 0.5)) / Aspect;
 			const double Extent = FMath::Max(Hb, Span * 0.75) + 1500;
@@ -361,8 +363,18 @@ const FBWParcel* ABWPlayerController::PickAt(const FVector2D& ScreenPos)
 	Q.bReturnFaceIndex = true;
 	FVector Origin, Dir;
 	if (!DeprojectScreenPositionToWorld(ScreenPos.X, ScreenPos.Y, Origin, Dir)) return nullptr;
-	if (!GetWorld()->LineTraceSingleByChannel(Hit, Origin, Origin + Dir * 2000000, ECC_Visibility, Q)) return nullptr;
-	return City->ParcelFromHit(Hit);
+	if (GetWorld()->LineTraceSingleByChannel(Hit, Origin, Origin + Dir * 2000000, ECC_Visibility, Q))
+		if (const FBWParcel* P = City->ParcelFromHit(Hit)) return P;
+	// THE GROUND HAS NO COLLISION (cooking the whole city floor would cost the
+	// load), so a click on a lot's open ground or a vacant lot passed straight
+	// through. Where the ray meets the ground plane (a lot's cover stands about
+	// 20 cm up), take the lot there.
+	if (Dir.Z < -1e-3)
+	{
+		const FVector G = Origin + Dir * ((20.0 - Origin.Z) / Dir.Z);
+		return City->ParcelAt(FVector2D(G.X, G.Y));
+	}
+	return nullptr;
 }
 
 void ABWPlayerController::Select(const FBWParcel* P)
@@ -1038,7 +1050,13 @@ void ABWGameMode::OnPageInput(const FString& Json)
 	}
 	if (T == TEXT("preview-orbit"))
 	{
-		if (ABWCameraPawn* Pawn = Cast<ABWCameraPawn>(PC->GetPawn())) { Pawn->DeskYaw += Dx * 0.3; Pawn->DeskHeld = 4.0; }
+		if (ABWCameraPawn* Pawn = Cast<ABWCameraPawn>(PC->GetPawn()))
+		{
+			Pawn->DeskYaw += Dx * 0.3;
+			// and up and down: from a kerb-height look (-3) to nearly overhead (-80)
+			if (Dy != 0) Pawn->DeskPitch = FMath::Clamp((Pawn->DeskPitch != 0 ? Pawn->DeskPitch : -20.0) - Dy * 0.25, -80.0, -3.0);
+			Pawn->DeskHeld = 4.0;
+		}
 		return;
 	}
 	PC->PageInput(O->GetStringField(TEXT("t")), X, Y, Dx, Dy, W, K);

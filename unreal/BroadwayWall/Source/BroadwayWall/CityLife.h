@@ -46,7 +46,7 @@ private:
 	// ---- roads
 	struct FNode { FVector2D P; TArray<int32> Out; bool bSignal = false; };
 	struct FLane { int32 From = 0, To = 0, Twin = -1; TArray<FVector2D> Pts; TArray<double> Cum; double Len = 0; int32 Axis = 0; TArray<int32> Cars; };
-	struct FCar { int32 Lane = 0, Mesh = 0, Inst = 0; double S = 0, V = 0, V0 = 0; };
+	struct FCar { int32 Lane = 0, Mesh = 0, Inst = 0; double S = 0, V = 0, V0 = 0, Len = 520; };
 	TArray<FNode> Nodes;
 	TArray<FLane> Lanes;
 	TArray<FCar> Cars;

@@ -159,8 +159,15 @@ void FBWFacadeBuilder::Put(const FBWKitModule& M, const FVector2D& A, const FVec
 	const FVector2D P = A + D * Origin;
 	const FMatrix R = FRotationMatrix::MakeFromXY(X, Y);
 	const FTransform T(R.Rotator(), FVector(P, Z), FVector(1.0, SY, ScaleZ));
-	Comp(M.Mesh)->AddInstance(T);
-	if (M.Decal) Comp(M.Decal, false)->AddInstance(T);
+	UInstancedStaticMeshComponent* C = Comp(M.Mesh);
+	const int32 I = C->AddInstance(T);
+	if (Record) Record->Add({ C, I });
+	if (M.Decal)
+	{
+		UInstancedStaticMeshComponent* Cd = Comp(M.Decal, false);
+		const int32 Id = Cd->AddInstance(T);
+		if (Record) Record->Add({ Cd, Id });
+	}
 	++Placed;
 }
 

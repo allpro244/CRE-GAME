@@ -95,6 +95,14 @@ export function streetCover(cls, coverage, lo, hi) {
 // seven-to-nine-floor buildings from 132 to 53 and its 10-19 from 25 to 4,
 // a downtown of walk-ups with almost nothing standing above them.)
 const PLATE_MIN_M = { office: 12, other: 11 };
+// THE LEAST OF ITS LOT A BUILDING COVERS AT GRADE (plan 14). New York has no
+// lot-coverage minimum by that name, but its towers stand on bases: the
+// street-wall rules of the contextual and tower-on-base districts bring the
+// building out to the sidewalk, and commercial floor area has no coverage
+// maximum at all, so a Manhattan lot is built over most of its area. The
+// tower-in-a-plaza of the 1961 bonus is the exception, and the owner's call
+// (Oct 2026) is that a thin shaft on an empty lot reads as a bug: 60%.
+const MIN_COVER = 0.6;
 export function plateFloors(footprint, floors, cls = "", planV = 12) {
   if (!footprint || floors <= WALKUP_FLOORS) return floors;
   const w = narrowWidth(footprint);
@@ -2503,7 +2511,7 @@ export function generateCity(cfg) {
           // District with five buildings past fifty against MapPLUTO's
           // fifteen. Calibrated, as TOWER_P_CORE_* are.
           floors = Math.round((rr(7, 12) + h * h * rr(10, assembled ? TOWER_H_CORE : 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
-          coverage = rr(0.42, 0.58);
+          coverage = PLAN_V >= 14 ? rr(MIN_COVER, 0.72) : rr(0.42, 0.58);
           isTower = true;
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
           floors = Math.round(rr(3, 6) * (DZ.base ?? 1) * baseLift(h) + mat * rr(0.55, 1.25));
@@ -2519,10 +2527,11 @@ export function generateCity(cfg) {
         // Industrial yards read wide and low; office cores read narrower plates.
         const massAspect = fl.massAspect ?? 1;
         if (massAspect > 1.05) coverage = Math.min(0.88, coverage * massAspect);
-        else if (massAspect < 0.95) coverage = Math.max(0.48, coverage * massAspect);
+        else if (massAspect < 0.95) coverage = Math.max(PLAN_V >= 14 ? MIN_COVER : 0.48, coverage * massAspect);
         // A tall building does not cover its lot the way a walk-up does: the
         // core, the light and the setback all take plate off it as it climbs.
         if (floors > 6) coverage *= Math.max(0.72, 1.0 - (floors - 6) * 0.012);
+        if (PLAN_V >= 14) coverage = Math.max(MIN_COVER, coverage);
         floors = Math.min(floors, fl.maxFloors);
         // AND THE PRESET'S CEILING IS A CEILING. `peakCap` used to bind only on
         // the landmark pass, so an ordinary tower roll could sail past it: the
@@ -2641,7 +2650,7 @@ export function generateCity(cfg) {
           if (isTower && floors < want && floors <= 12) {
             // no draw: the tower's own coverage places it in its use's band
             isTower = false;
-            coverage = streetCover(cls, coverage, 0.42 * 0.72, 0.58);
+            coverage = PLAN_V >= 14 ? streetCover(cls, coverage, MIN_COVER, 0.72) : streetCover(cls, coverage, 0.42 * 0.72, 0.58);
             footprint = solveFoot(coverage);
             floors = plateFloors(footprint, Math.min(floors, Math.max(1, Math.floor(Math.max(zone.commfar, zone.resfar) / coverage))), cls, PLAN_V);
           }

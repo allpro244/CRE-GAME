@@ -284,6 +284,25 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 		I->RegisterComponent();
 		(Pass ? CarMeshes : ParkedMeshes).Add(I);
 	}
+	// BUSES AND BOX TRUCKS (tools/make-fleet.py): a city's traffic is not all
+	// cars. Off-peak downtown about one vehicle in twenty is a bus or a truck
+	// (NYC screenline counts put trucks at 5-10% of midday traffic, buses a few
+	// percent); their own paint, so one component each, after the cars.
+	struct FFleet { const TCHAR* Path; double Len; };
+	static const FFleet Fleet[] = { { TEXT("/Game/BW/Fleet/SM_Bus.SM_Bus"), 1220 }, { TEXT("/Game/BW/Fleet/SM_BoxTruck.SM_BoxTruck"), 900 } };
+	const int32 FirstFleet = CarMeshes.Num();
+	for (const FFleet& F : Fleet)
+		if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, F.Path))
+		{
+			UInstancedStaticMeshComponent* I = NewObject<UInstancedStaticMeshComponent>(this);
+			I->SetupAttachment(RootComponent);
+			I->SetStaticMesh(Mesh);
+			I->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			I->SetMobility(EComponentMobility::Movable);
+			I->RegisterComponent();
+			CarMeshes.Add(I);
+		}
+	const int32 NumFleet = CarMeshes.Num() - FirstFleet;
 	// parked cars: in the parking lane, a stall every 6.5 m, about a third taken
 	// (a midday kerb with gaps, not a solid wall of cars seen from the air),
 	// clear of the junctions at either end (crosswalks, turning room), and only
@@ -333,6 +352,13 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 			C.V0 = Rng.FRandRange(950, 1250);
 			C.V = C.V0 * 0.5;
 			C.Mesh = PickCar(Rng, NumModels);
+			if (NumFleet && L.Len > 6000 && Rng.FRand() < 0.06)
+			{
+				const int32 F = Rng.RandRange(0, NumFleet - 1);
+				C.Mesh = FirstFleet + F;
+				C.Len = Fleet[F].Len;
+				C.V0 *= 0.85;   // a bus or a loaded truck takes the street slower
+			}
 			C.Inst = CarMeshes[C.Mesh]->AddInstance(FTransform::Identity);
 			L.Cars.Add(Cars.Add(C));
 		}
@@ -440,7 +466,7 @@ void ACityLife::Tick(float Dt)
 			FCar& C = Cars[L.Cars[k]];
 			// the gap to whatever is ahead: the car in front, or the stop line on red
 			double Gap = 1e9;
-			if (k > 0) Gap = Cars[L.Cars[k - 1]].S - C.S - CarLen;
+			if (k > 0) Gap = Cars[L.Cars[k - 1]].S - C.S - (Cars[L.Cars[k - 1]].Len + C.Len) * 0.5;
 			const double ToLine = L.Len - StopBack - C.S;
 			if (!Green(L.To, L.Axis) && ToLine > -50) Gap = FMath::Min(Gap, ToLine);
 			// a car following at a time gap; decelerate to stop inside the gap
@@ -464,7 +490,7 @@ void ACityLife::Tick(float Dt)
 		const int32 Next = Options[FMath::RandRange(0, Options.Num() - 1)];
 		// the next street's tail must have room for us, or we wait at the line
 		bool bRoom = true;
-		for (int32 o : Lanes[Next].Cars) if (Cars[o].S < CarLen + MinGap) { bRoom = false; break; }
+		for (int32 o : Lanes[Next].Cars) if (Cars[o].S < (Cars[o].Len + C.Len) * 0.5 + MinGap) { bRoom = false; break; }
 		if (!bRoom) { C.S = L.Len; C.V = 0; continue; }
 		L.Cars.Remove(c);
 		C.S -= L.Len;

@@ -17,7 +17,7 @@ for (const [k, rings] of Object.entries(c.ground)) o.push(`<path d="${rings.map(
 o.push(`<path d="${c.markings.centerlines.map((l) => line(l.line)).join("")}" stroke="#fff" stroke-width="1.2" fill="none"/>`);
 const t = []; for (let i = 0; i + 1 < c.trees.length; i += 2) t.push(`M${sx(c.trees[i + 1])},${sy(c.trees[i])}h0.1`);
 o.push(`<path d="${t.join("")}" stroke="#2f6b2a" stroke-width="4" stroke-linecap="round"/>`);
-const shade = (v) => v.deco === "house" ? (v.z1 > 500 ? "#b0574a" : "#c98a62") : v.z1 > 355 * 20 ? "#2b2f4a" : v.z1 > 355 * 8 ? "#4b4f6a" : "#7a7488";
+const shade = (v) => v.cls === "industrial" ? "#8a6d3b" : v.deco === "house" ? (v.z1 > 500 ? "#b0574a" : "#c98a62") : v.z1 > 355 * 9 ? "#1f2238" : v.z1 > 355 * 4 ? "#43465e" : v.z1 > 355 * 2 ? "#6e6a84" : "#9a95ab";
 const byCol = new Map(); for (const v of c.volumes) { const k = shade(v); (byCol.get(k) || byCol.set(k, []).get(k)).push(poly(v.ring)); }
 for (const [k, ps] of byCol) o.push(`<path d="${ps.join("")}" fill="${k}"/>`);
 for (const l of c.labels) o.push(`<text x="${sx(l.at[1])}" y="${sy(l.at[0])}" font-size="${W / 60}" font-family="sans-serif" text-anchor="middle" stroke="#fff" stroke-width="${W / 400}" paint-order="stroke">${l.name}</text>`);

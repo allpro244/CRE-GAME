@@ -359,6 +359,12 @@ export function generate(seed, km = 10, opts = {}) {
     const { radius: R, inset } = opts.gradientCore;
     const wetSide = (sd) => { let w = 0; for (let a = -0.9; a <= 0.9; a += 0.15) if (isWater(add(add(core.c, mul(core.v, sd * core.hw * 1.05)), mul(core.u, a * core.hl)))) w++; return w; };
     const sd = wetSide(1) >= wetSide(-1) ? 1 : -1;
+    // grid: the site is chosen at the small-city size above, then the street grid is laid out larger, growing inland from
+    // that waterfront (so a bigger grid does not drag the town away from its landing)
+    if (opts.gradientCore.grid) {
+      const [GL, GD] = opts.gradientCore.grid, edge = add(core.c, mul(core.v, sd * core.hw));
+      core = oRect(sub(edge, mul(core.v, sd * GD / 2)), core.u, GL / 2, GD / 2);
+    }
     core.centre = add(core.c, mul(core.v, sd * (core.hw - inset)));
     // creeks bend around the city (in life they are culverted or the city grew around their valleys)
     const rOut = R + 150, riverL = G.layer();
@@ -391,7 +397,7 @@ export function generate(seed, km = 10, opts = {}) {
     while (q.length) { const k = q.pop(), x = k % G.W, y = Math.floor(k / G.W); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= G.W || ny >= G.W) continue; const n = ny * G.W + nx; if (!reach[n] && !water[n] && dist(G.ctr(n), core.centre) < S) { reach[n] = 1; q.push(n); } } }
     const nzC = makeNoise(rng, 500);
     core.nr = (p) => dist(p, core.centre) * (0.85 + 0.3 * nzC(p[0], p[1]));
-    core.blockRects = core.blockRects.filter((b) => reach[G.idx(b.c)] && core.nr(b.c) <= R);
+    core.blockRects = core.blockRects.filter((b) => G.idx(b.c) >= 0 && reach[G.idx(b.c)] && core.nr(b.c) <= R);
     core.blocks = core.blockRects.map((b) => b.poly());
     M.cityBank = reach;
   }

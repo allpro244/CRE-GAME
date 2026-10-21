@@ -476,3 +476,47 @@ Floor mix: 866 buildings at 1–2 floors, 732 at 3–4, 326 at 5–8, plus the
 **Seed-specific:** on seed 3 the creek floodplains to the north and east box
 the city in, so most homes are in the inner house blocks. On a drier site
 the outer ring would be wider.
+
+### The gradient tells a story (owner: "not perfectly uniform ... it should tell a story and be realistic")
+
+Density now follows history and access, not only distance. `storyPrep()` in
+`export-unreal.mjs` builds a "story distance". It is distance from the
+centre, made shorter along the old country roads (×0.72) and near the first
+interstate (×0.85). A waterfront term makes it shorter still near the water
+and longer on the far side. Every band and choice then reads from it.
+
+**Each pattern and the era it comes from:**
+
+| Pattern | Era and cause |
+|---|---|
+| Fingers of development along the old roads and the highway | streetcar and wagon routes first, then the interstate |
+| Oldest, densest fabric by the water; inner houses dated 1890s near the water to 1930s further in | the town began at its landing |
+| Old main street: the old road leaving the core inland, lined with narrow 2–3 floor shopfronts (1880–1930), few gaps | 19th-century main street |
+| Industrial strip along the river: warehouses (cls `industrial`) and rail yards (1890–1945) | railway and mill era |
+| Its outer end declined: ~45% of those lots are vacant ("former mill") | post-1960s decline |
+| Freeway through the old city: the blocks it crosses are gone, the land left cleared | interstate era, urban renewal |
+| Interchange strip: about 4–8 big boxes behind parking lots at the first interchange out of the city (1985–2015) | late 20th century |
+| Two leapfrog subdivisions (cul-de-sacs, 2000s) out by the highway and old roads, past a farm and woodlot still holding out | recent |
+
+The strengths (0.72, 0.85, the waterfront term, the vacancy shares) are
+shape parameters chosen by eye for this spike. They are not calibrated.
+
+**Seed 3, 6 km:** 1.8 MB, made of:
+- 4,119 volumes;
+- 1,926 houses (1,104 in the inner house blocks);
+- 2,742 parcels, including:
+  - 173 main-street lots,
+  - 37 warehouses,
+  - 22 vacant former-mill lots,
+  - 4 strip stores,
+  - 156 parking lots and 278 vacant lots,
+  - 84 farm tracts,
+  - 8 neighbourhoods, two of them 2000s leapfrog subdivisions;
+- 199 centerlines.
+
+Floor mix:
+- 1,069 buildings at 1–2 floors;
+- 752 at 3–4;
+- 333 at 5–8;
+- 2 towers;
+- 37 warehouses.

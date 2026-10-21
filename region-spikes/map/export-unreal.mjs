@@ -121,7 +121,7 @@ function maskRects(G, [x0, y0, x1, y1], ok) {
 //   1500-~2500 m continuous neighbourhoods: pre-war near, post-war further out and along the highway, a few vacant lots;
 //                each subdivision built out from the city side first (phases), stopping at a ~2,000-home total
 //   beyond       farms and woods; the one river village, small
-const GRADIENT = { core: [3400, 1950], gradientCore: { radius: 1650, inset: 450 }, townBlocks: [[2, 4], [2, 3]], bankTowns: true, onlyRiverTown: true };
+const GRADIENT = { core: [1600, 1000], gradientCore: { radius: 2300, inset: 450, grid: [4600, 2600] }, townBlocks: [[2, 4], [2, 3]], bankTowns: true, onlyRiverTown: true };
 const TRACT_HOUSES = 600; // houses in the outer neighbourhoods; the inner house blocks add ~1,500 (owner: ~2,000 in all)
 // The older modes, kept behind flags. Earlier default ("few", --few-suburbs) followed the owner's previous spec: a 6 x 6 km region, a low-rise downtown (--dense restores the first
 // export's skyline) and "a lot less housing": only a few neighbourhoods, so the region has room to grow.
@@ -140,7 +140,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   const grad = suburbs === "gradient";
   const M = generate(seed, km, grad ? GRADIENT : { ...(dense ? {} : SMALL_TOWN), ...(suburbs === "thin" ? SPARSE_GEN : {}) }), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
   if (suburbs === "few") keepFewNeighbourhoods(M);
-  if (grad) gradientNeighbourhoods(M, rng, seed);
+  if (grad) { storyPrep(M, rng, seed); gradientNeighbourhoods(M, rng, seed); }
   const phaseOk = (p) => { if (!M.phase) return true; const k = G.idx(p); return k >= 0 && M.phase[k] === 1; };
   M.rotate = Math.floor(makeRng("orient:" + seed)() * 4); // same orientation as the SVG
   // canonical -> map frame (x east, y south, metres), as render() does
@@ -172,7 +172,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   const sea = (k) => M.isSea(G.ctr(k));
   for (const t of M.tracts) {
     if (t.era) { for (const r of maskRects(G, t.r, (k) => M.free(G.ctr(k)) && phaseOk(G.ctr(k)))) put("yard", r); }
-    else for (const r of maskRects(G, t.r, (k) => !sea(k) && !M.flood[k] && !M.water[k])) put(t.wood ? "woods" : "farm", r); // floodplain stays marsh (it is drawn under farm)
+    else for (const r of maskRects(G, t.r, (k) => !sea(k) && !M.flood[k] && !M.water[k] && !M.coreL[k] && !M.townL[k] && !(M.story && M.story.rS(G.ctr(k)) < 1300))) put(t.wood ? "woods" : "farm", r); // land cleared inside the city is not farmed // floodplain stays marsh (it is drawn under farm)
   }
   // water
   for (let i = 0; i < rs.length - 2; i += 2) put("stream", hull(circle(rs[i], M.river.half[i], 12).concat(circle(rs[i + 2], M.river.half[i + 2], 12))));
@@ -270,6 +270,14 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   let gridHouses = 0;
   if (grad) gridHouses = gradientLots(M.core);
   else blockLots(M.core, 25, "core");          // ~82 ft downtown lots (approximate; island.mjs owns the real plat)
+  // the interchange strip: big boxes set back behind their parking lots
+  for (const [i, st] of (M.strip ?? []).entries()) {
+    const ring = TT(rectRing(st.box.c, st.box.u, st.box.w, st.box.d)); if (!inBox(centroid(ring))) continue;
+    put("pavement", rectRing(st.park.c, st.park.u, st.park.w, st.park.d));
+    const bbl = "S" + (i + 1);
+    volumes.push({ bbl, cls: "retail", year: st.year, z0: 0, z1: 650, deco: "", crown: true, vacant: false, ring: flat(ring) });
+    parcels.push({ bbl, address: "Interchange strip, store " + (i + 1), block: 0, district: "Downtown", districtName: "Downtown", zone: "C", cls: "retail", floors: 1, yearBuilt: st.year, lotArea: sf((st.box.w + 10) * (st.box.d + st.park.d)), bldgArea: sf(st.box.w * st.box.d), ring: flat(TT(hull(rectRing(st.box.c, st.box.u, st.box.w, st.box.d).concat(rectRing(st.park.c, st.park.u, st.park.w, st.park.d))))) });
+  }
   // owner: "at most two ~11-floor towers", in the centre of the core
   coreLots.sort((a, b) => a.dn - b.dn).slice(0, 2).forEach(({ bbl }, j) => {
     const v = volumes.find((x) => x.bbl === bbl), p = parcels.find((x) => x.bbl === bbl);
@@ -283,23 +291,52 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
     const lotParcel = (bbl, address, cls, floors, year, lotM2, bldgM2, ring) => parcels.push({ bbl, address, block: 0, district: "Downtown", districtName: "Downtown", zone: "C", cls, floors, yearBuilt: year, lotArea: sf(lotM2), bldgArea: sf(bldgM2), ring: flat(ring) });
     for (const b of r.blockRects) {
       if (blockPts(b).some((p) => isWaterC(p) || M.isSea(p) || underHw(p))) continue;
-      const rb = r.nr(b.c), band = rb < 400 ? 0 : rb < 900 ? 1 : 2;
+      const St = M.story, kb = G.idx(b.c);
+      const rb = St ? St.rS(b.c) : r.nr(b.c), band = rb < 400 ? 0 : rb < 900 ? 1 : 2;
+      // what the block was built as: the river's mill/rail strip, the old main street, or the graded city
+      const industrial = St && St.ind(b.c) && rb > 250;
+      const mainSt = St && !industrial && St.mainL[kb] && rb > 300;
       // outward the shop blocks give way to house blocks (pre-war grid, small lots)
-      const houseBlock = band === 2 && rng() < Math.min(1, Math.max(0, (rb - 900) / 600)) ** 0.8;
-      const front = houseBlock ? SZ.prewarLot[0] : band === 2 ? 20 : 25;
+      const houseBlock = !industrial && !mainSt && band === 2 && rng() < Math.min(1, Math.max(0, (rb - 900) / 600)) ** 0.8;
+      const front = industrial ? 45 : mainSt ? 15 : houseBlock ? SZ.prewarLot[0] : band === 2 ? 20 : 25;
       const nl = Math.max(1, Math.round(2 * b.hl / front)), lw = 2 * b.hl / nl;
       const sec = houseBlock ? Math.floor(((Math.atan2(b.c[1] - r.centre[1], b.c[0] - r.centre[0]) + Math.PI) / (2 * Math.PI)) * 6) % 6 : -1;
       for (let i = 0; i < nl; i++) for (const sd of [-1, 1]) {
         const lc = add(add(b.c, mul(b.u, -b.hl + (i + 0.5) * lw)), mul(b.v, sd * b.hw / 2));
         const lot = rectRing(lc, b.u, lw, b.hw), ring = TT(lot);
         if (isWaterC(lc) || lot.some(isWaterC) || !inBox(centroid(ring))) continue;
+        if (industrial) {
+          // warehouses and yards (1890-1945); the outer end declined after the 1960s, so its lots stand empty
+          const declined = rb > 800, bbl = `D${parcels.length}`;
+          if (rng() < (declined ? 0.45 : 0.2)) {
+            put("pavement", lot); // a rail yard / old loading yard
+            lotParcel(bbl, `Waterfront lot ${++n} (${declined ? "vacant, former mill" : "rail yard"})`, "land", 0, 0, lw * b.hw, 0, ring);
+            continue;
+          }
+          const cv = 0.6 + 0.2 * rng(), fw = lw * Math.sqrt(cv), fd = b.hw * Math.sqrt(cv), fc = add(lc, mul(b.v, sd * (b.hw - fd) / 2));
+          const floors = 1 + (rng() < 0.35 ? 1 : 0), year = Math.round(1890 + 55 * rng());
+          volumes.push({ bbl, cls: "industrial", year, z0: 0, z1: floors === 1 ? 750 : 1100, deco: "", crown: true, vacant: false, ring: flat(TT(rectRing(fc, b.u, fw, fd))) });
+          lotParcel(bbl, `Waterfront lot ${++n} (warehouse)`, "industrial", floors, year, lw * b.hw, fw * fd * floors, ring);
+          continue;
+        }
+        if (mainSt) {
+          // the old main street: narrow 2-3 floor shopfronts built to the lot line (1880-1930), few gaps
+          const bbl = `D${parcels.length}`;
+          if (rng() < 0.05) { lotParcel(bbl, `Main Street lot ${++n} (vacant)`, "land", 0, 0, lw * b.hw, 0, ring); continue; }
+          const cv = 0.8 + 0.1 * rng(), fw = lw * 0.96, fd = b.hw * cv, fc = add(lc, mul(b.v, sd * (b.hw - fd) / 2));
+          const floors = 2 + (rng() < 0.45 ? 1 : 0), year = Math.round(1880 + 50 * rng()), cls = rng() < 0.7 ? "retail" : "multifamily";
+          volumes.push({ bbl, cls, year, z0: 0, z1: floors * 355, deco: "", crown: true, vacant: false, ring: flat(TT(rectRing(fc, b.u, fw, fd))) });
+          lotParcel(bbl, `Main Street lot ${++n}`, cls, floors, year, lw * b.hw, fw * fd * floors, ring);
+          continue;
+        }
         const vacant = rng() < (houseBlock ? 0.12 : [0.03, 0.15, 0.3][band]);
         if (houseBlock) {
           if (vacant) continue; // an empty lot in a house block
           const [w, d] = HOUSE.prewar;
           const c = add(lc, mul(b.v, sd * (b.hw / 2 - 4 - d / 2)));
           let s = sectors.get(sec);
-          if (!s) { s = { bbl: `N${++nbGrid}g`, pts: [], bldg: 0, n: 0, year: Math.round(1895 + 40 * rng()) }; sectors.set(sec, s); }
+          // older nearer the water, where the town began
+          if (!s) { const wd = St ? Math.min(1, St.waterD[kb] / 1500) : rng(); s = { bbl: `N${++nbGrid}g`, pts: [], bldg: 0, n: 0, year: Math.round(1890 + 35 * wd + 10 * rng()) }; sectors.set(sec, s); }
           const storeys = rng() < TWO_STOREY.prewar ? 2 : 1;
           volumes.push({ bbl: s.bbl, cls: "multifamily", year: s.year, z0: 0, z1: STOREY_CM[storeys], deco: "house", crown: true, vacant: false, ring: flat(TT(rectRing(c, b.u, w, d))) });
           s.pts.push(...lot); s.bldg += w * d * storeys; s.n++; nh++;
@@ -364,7 +401,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   const spacing = Math.max(12, Math.sqrt(woodArea / Math.max(1, TREE_CAP - trees.length)));
   for (const t of woodCells) for (let x = t.r[0] + spacing / 2; x < t.r[2]; x += spacing) for (let y = t.r[1] + spacing / 2; y < t.r[3]; y += spacing) {
     const p = [x + (rng() - 0.5) * spacing * 0.8, y + (rng() - 0.5) * spacing * 0.8];
-    if (M.isSea(p) || isWaterC(p) || settled(p) || !M.free(p) && !M.flood[G.idx(p)]) continue;
+    if (M.isSea(p) || isWaterC(p) || settled(p) || !M.free(p) && !M.flood[G.idx(p)] || (M.story && M.story.rS(p) < 1300)) continue;
     const q = T(p); if (inBox(q)) trees.push(q);
   }
   labels.push({ name: "Downtown", kind: "town", at: ue(T(M.core.centre ?? M.core.c)) });
@@ -388,6 +425,96 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   };
 }
 
+/**
+ * The city's history as fields the gradient reads (owner: density "should tell a story and be realistic", not spread
+ * uniformly). Each pattern is tied to an era of the region's growth:
+ *  - streetcar / wagon era (pre-1920): the city grew out along the OLD COUNTRY ROADS first, so distance counts for
+ *    less along them (fingers of development); the oldest, densest fabric is by the waterfront where the town began;
+ *  - the OLD MAIN STREET: the old road leaving the core inland, lined with 2-3 floor shopfronts (1880-1930);
+ *  - railway / mill era (1890-1945): an INDUSTRIAL STRIP of warehouses and yards along the river; its outer end
+ *    DECLINED after the 1960s, so vacant lots cluster there;
+ *  - interstate era (1960s on): growth reaches out along the FIRST HIGHWAY; a newer COMMERCIAL STRIP sits at the
+ *    first interchange (1985-2015);
+ *  - recent: a couple of LEAPFROG subdivisions out by the highway / old roads, past a farm still holding out.
+ * The strengths below (0.72 along old roads, 0.85 near the interstate, the waterfront term) are shape parameters chosen
+ * by eye for this spike, not calibrated.
+ */
+function storyPrep(M, rng, seed) {
+  const G = M.G, core = M.core, c = core.centre, Wd = G.W, C = G.S / G.W;
+  const bfs = (src) => {
+    const d = new Float32Array(G.N).fill(Infinity), q = [];
+    for (let k = 0; k < G.N; k++) if (src(k)) { d[k] = 0; q.push(k); }
+    for (let h = 0; h < q.length; h++) { const k = q[h], x = k % Wd, y = Math.floor(k / Wd); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= Wd || ny >= Wd) continue; const n = ny * Wd + nx; if (d[n] === Infinity) { d[n] = d[k] + C; q.push(n); } } }
+    return d;
+  };
+  const riverL = G.layer(); M.river.pts.forEach((p, i) => G.disk(riverL, p, M.river.half[i]));
+  const waterD = bfs((k) => M.water[k] === 1), riverD = bfs((k) => riverL[k] === 1);
+  const oldNear = G.layer(); for (const r of M.oldRoads) G.line(oldNear, r, 120);
+  const hwNear = G.layer(); for (const h of M.highways) if (h.kind === "interstate") for (const s of h.segs) if (s.built) G.line(hwNear, s.pts, 450);
+  const nz = makeNoise(makeRng("story:" + seed), 450);
+  const at = (p) => G.idx(p);
+  // "story distance": how far a place is from the centre in time, not metres
+  const rS = (p) => {
+    const k = at(p); if (k < 0) return Infinity;
+    let f = 0.82 + 0.36 * nz(p[0], p[1]);
+    if (oldNear[k]) f *= 0.72; else if (hwNear[k]) f *= 0.85;
+    f *= 0.85 + 0.3 * Math.min(1, waterD[k] / 1800); // oldest by the water, thinner on the far side
+    return dist(p, c) * f;
+  };
+  // the old main street: the old road that leaves the core most directly inland
+  const inland = norm(sub(core.c, c));
+  let best = null;
+  for (const r of M.oldRoads) {
+    if (Math.min(...r.map((p) => dist(p, c))) > 700) continue;
+    let sc = -Infinity; for (const p of r) { const d = dist(p, c); if (d > 600 && d < 1800) sc = Math.max(sc, (sub(p, c)[0] * inland[0] + sub(p, c)[1] * inland[1]) / d); }
+    if (!best || sc > best.sc) best = { r, sc };
+  }
+  const mainL = G.layer();
+  if (best) G.line(mainL, best.r.filter((p) => dist(p, c) < 2000), 70);
+  const ind = (p) => { const k = at(p); return k >= 0 && riverD[k] < 260 && dist(p, c) > 250; };
+  M.story = { rS, mainL, ind, waterD, oldNear, hwNear, main: best?.r };
+
+  // the city's extent follows the story, not a circle: keep blocks within story distance, plus the main street
+  // a block also goes if it would stand in water or on built freeway (cleared for it in the 1960s), so no orphan streets remain
+  const hwPave = G.layer(); for (const h of M.highways) for (const sg of h.segs) if (sg.built) G.line(hwPave, sg.pts, 20);
+  const wet = (p) => { const k = at(p); return k < 0 || M.water[k] === 1 || hwPave[k] === 1 || M.isSea(p); };
+  core.blockRects = core.blockRects.filter((b) => (rS(b.c) <= 1450 || (mainL[at(b.c)] && dist(b.c, c) < 2000)) && !b.poly().concat([b.c]).some(wet));
+  core.blocks = core.blockRects.map((b) => b.poly());
+  M.coreL.fill(0);
+  for (const b of core.blockRects) {
+    const e = { ...b, hl: b.hl + 12, hw: b.hw + 12 }, P = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, d]) => add(add(b.c, mul(b.u, a * e.hl)), mul(b.v, d * e.hw)));
+    const xs = P.map((p) => p[0]), ys = P.map((p) => p[1]);
+    for (let y = Math.max(0, Math.floor(Math.min(...ys) / C)); y <= Math.min(Wd - 1, Math.floor(Math.max(...ys) / C)); y++)
+      for (let x = Math.max(0, Math.floor(Math.min(...xs) / C)); x <= Math.min(Wd - 1, Math.floor(Math.max(...xs) / C)); x++) {
+        const k = y * Wd + x, q = sub(G.ctr(k), b.c);
+        if (!M.water[k] && Math.abs(q[0] * b.u[0] + q[1] * b.u[1]) <= e.hl && Math.abs(q[0] * b.v[0] + q[1] * b.v[1]) <= e.hw) M.coreL[k] = 1;
+      }
+  }
+  for (const t of M.tracts) { // land freed at the city's edge can be farmed or built again
+    let ok = 0; const [x0, y0, x1, y1] = t.r;
+    for (let i = 0.5; i < 6; i++) for (let j = 0.5; j < 6; j++) { const k = at([x0 + (x1 - x0) * i / 6, y0 + (y1 - y0) * j / 6]); if (k >= 0 && !M.water[k] && !M.flood[k] && !M.coreL[k] && !M.townL[k]) ok++; }
+    t.buildable = ok / 36;
+  }
+
+  // the newer commercial strip at the first interchange out of the city (1985-2015)
+  M.taken = G.layer(); M.strip = [];
+  const ixs = M.highways.filter((h) => h.kind === "interstate").flatMap((h) => h.ix.filter((x) => !x.sys)).map((x) => ({ p: x.p, d: dist(x.p, c) })).filter((x) => x.d > 900 && x.d < 2800).sort((a, b) => a.d - b.d);
+  if (ixs.length) {
+    const I = ixs[0].p;
+    for (const d of [140, 240, 340]) for (let a = 0; a < 2 * Math.PI && M.strip.length < 8; a += 0.35) {
+      const p = add(I, [d * Math.cos(a), d * Math.sin(a)]);
+      if (!M.free(p) || M.isSea(p) || M.strip.some((s) => dist(s.c, p) < 105)) continue;
+      const w = 50 + 40 * rng(), dd = 35 + 25 * rng(), u = [1, 0], v = [0, 1];
+      const toI = norm(sub(I, p)), side = Math.abs(toI[0]) > Math.abs(toI[1]) ? [Math.sign(toI[0]), 0] : [0, Math.sign(toI[1])];
+      // the box sits back, its parking lot in front toward the interchange road (approximate big-box layout)
+      const lotDepth = 45, box = { c: sub(p, mul(side, lotDepth / 2)), u: side[0] ? v : u, w, d: dd };
+      const park = { c: add(p, mul(side, dd / 2)), u: box.u, w: w + 10, d: lotDepth };
+      M.strip.push({ c: p, box, park, year: Math.round(1985 + 30 * rng()) });
+      G.disk(M.taken, p, 90);
+    }
+  }
+}
+
 /** gradient mode: neighbourhoods wrap the city continuously. Every tract on the city's bank is laid out; then houses are
  * built in order of their (noisy, highway-shortened) distance from the centre until the budget is spent — so each
  * subdivision is built out from the city side first, the way a plat is built in phases. */
@@ -395,7 +522,8 @@ function gradientNeighbourhoods(M, rng, seed) {
   const G = M.G, c = M.core.centre, nz = makeNoise(makeRng("grad:" + seed), 600);
   const nearHw = G.layer();
   for (const h of M.highways) if (h.kind === "interstate") for (const s of h.segs) if (s.built) G.line(nearHw, s.pts, 600);
-  const rEff = (p) => { const k = G.idx(p); return dist(p, c) * (0.85 + 0.3 * nz(p[0], p[1])) * (k >= 0 && nearHw[k] ? 0.75 : 1); };
+  const rEff = M.story ? M.story.rS : (p) => { const k = G.idx(p); return dist(p, c) * (0.85 + 0.3 * nz(p[0], p[1])) * (k >= 0 && nearHw[k] ? 0.75 : 1); };
+  const taken = (p) => { if (!M.taken) return false; const k = G.idx(p); return k >= 0 && M.taken[k] === 1; };
   for (const t of M.tracts) t.era = null;
   const cands = M.tracts.filter((t) => t.buildable >= 0.5 && M.cityBank[G.idx(t.c)] && rEff(t.c) < 3500);
   const all = [];
@@ -403,7 +531,7 @@ function gradientNeighbourhoods(M, rng, seed) {
     const k = G.idx(t.c);
     t.era = rEff(t.c) < 2000 && !nearHw[k] ? "prewar" : "postwar"; // pre-war near, post-war further out and on the highway
     subdivide(t, rng, M, (p) => { const q = G.idx(p); return q >= 0 && M.water[q] === 1; });
-    for (const h of t.plat.houses) if (M.free(h.m)) all.push({ t, h, r: rEff(h.m) });
+    for (const h of t.plat.houses) if (M.free(h.m) && !taken(h.m)) all.push({ t, h, r: rEff(h.m) });
   }
   all.sort((a, b) => a.r - b.r);
   for (const t of cands) t.keep = new Set();
@@ -421,7 +549,25 @@ function gradientNeighbourhoods(M, rng, seed) {
     a.t.keep.add(a.h); n++;
     G.disk(M.phase, a.h.m, 55); G.disk(grow, a.h.m, 200); added++;
   } }
-  for (const t of cands) if (t.keep.size < 20) { t.era = null; t.keep = null; } // no slivers: a tract is a neighbourhood or still a farm
+  // leapfrog (recent era): a developer skips the farm still holding out at the edge and builds a whole subdivision
+  // further out, where the land is cheaper but the highway or an old road gives access — at most two, ~250 homes each
+  if (M.story) {
+    const built = all.filter((a) => a.t.keep.has(a.h)), front = Math.max(0, ...built.map((a) => a.r));
+    const near = (t) => { const k = G.idx(t.c); return k >= 0 && (M.story.hwNear[k] || M.story.oldNear[k]); };
+    const gap = (t) => built.every((a) => dist(a.h.m, t.c) > 450);
+    const jumps = cands.filter((t) => t.keep.size === 0 && near(t) && gap(t) && rEff(t.c) > front + 300 && rEff(t.c) < front + 1600).sort((a, b) => rEff(a.c) - rEff(b.c));
+    let j = 0;
+    for (const t of jumps) {
+      if (j >= 2) break;
+      t.era = "recent";
+      subdivide(t, rng, M, (p) => { const q = G.idx(p); return q >= 0 && M.water[q] === 1; });
+      const hs = t.plat.houses.filter((h) => M.free(h.m) && !taken(h.m)).sort((a, b) => rEff(a.m) - rEff(b.m)).slice(0, 250);
+      if (hs.length < 80) { t.era = null; continue; }
+      t.keep = new Set(hs); t.leapfrog = true; j++;
+      for (const h of hs) G.disk(M.phase, h.m, 55);
+    }
+  }
+  for (const t of cands) if (t.keep && t.keep.size < 20) { t.era = null; t.keep = null; } // no slivers: a tract is a neighbourhood or still a farm
 }
 
 /** keep only a few neighbourhoods as built; every other subdivided tract goes back to farmland */

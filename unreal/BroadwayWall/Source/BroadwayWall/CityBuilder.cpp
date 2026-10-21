@@ -196,18 +196,19 @@ namespace
 		else if (Layer == TEXT("park") || Layer == TEXT("median") || Layer == TEXT("yard")) return BWGrassMaterial();   // a boulevard's planted median is lawn too; so are the region's back yards
 		// THE REGION EXPANSION'S OPEN LAND: crops in rows read from the air as a
 		// lighter, yellower green than a lawn; a woodlot as a dark one under its trees
-		else if (Layer == TEXT("farm") || Layer == TEXT("woods"))
+		else if (Layer == TEXT("farm") || Layer == TEXT("woods") || Layer == TEXT("marsh"))
 		{
-			static UMaterialInstanceDynamic* Crop = nullptr;
-			static UMaterialInstanceDynamic* Wood = nullptr;
-			UMaterialInstanceDynamic*& D = Layer == TEXT("farm") ? Crop : Wood;
+			// (the first cut of the fields was a bright straw: in leaf they are a
+			// muted green-brown; a floodplain is wet meadow)
+			static TMap<FString, UMaterialInstanceDynamic*> Open;
+			UMaterialInstanceDynamic*& D = Open.FindOrAdd(Layer);
 			if (!D)
 				if (UMaterialInterface* G = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Grass.M_BW_Grass")))
 				{
 					D = UMaterialInstanceDynamic::Create(G, GetTransientPackage());
-					const bool bFarm = Layer == TEXT("farm");
-					D->SetVectorParameterValue(TEXT("GrassDark"), bFarm ? FLinearColor(0.075f, 0.080f, 0.030f) : FLinearColor(0.016f, 0.030f, 0.012f));
-					D->SetVectorParameterValue(TEXT("GrassLight"), bFarm ? FLinearColor(0.150f, 0.140f, 0.055f) : FLinearColor(0.035f, 0.055f, 0.022f));
+					const bool bFarm = Layer == TEXT("farm"), bWood = Layer == TEXT("woods");
+					D->SetVectorParameterValue(TEXT("GrassDark"), bFarm ? FLinearColor(0.045f, 0.050f, 0.022f) : bWood ? FLinearColor(0.016f, 0.030f, 0.012f) : FLinearColor(0.030f, 0.048f, 0.020f));
+					D->SetVectorParameterValue(TEXT("GrassLight"), bFarm ? FLinearColor(0.095f, 0.092f, 0.042f) : bWood ? FLinearColor(0.035f, 0.055f, 0.022f) : FLinearColor(0.065f, 0.088f, 0.034f));
 					D->AddToRoot();
 				}
 			return D;

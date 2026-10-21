@@ -82,19 +82,21 @@ def noise(scale, x, y, levels=3):
 
 
 clump = noise(0.006, -1500, -300)          # leaf clumps, a metre or two
+# (a crown in full sun is a darker, less saturated green than a lawn; the
+# first cut was a lawn's green and read as broccoli up close)
 fleck = noise(0.05, -1500, -100, 2)        # sparkle of individual leaves
 rnd = node(unreal.MaterialExpressionPerInstanceRandom, -1500, 150)
 
-dark = vparam("LeafDark", (0.030, 0.062, 0.016), -1200, -500)
-light = vparam("LeafLight", (0.085, 0.150, 0.032), -1200, -380)
+dark = vparam("LeafDark", (0.024, 0.044, 0.014), -1200, -500)
+light = vparam("LeafLight", (0.062, 0.100, 0.028), -1200, -380)
 green = lerp(dark, light, clump, -950, -450)
 # trees differ: one street tree a touch bluer, the next a touch yellower
 tone = lerp(vparam("ToneA", (0.92, 1.0, 1.05), -1200, -260), vparam("ToneB", (1.12, 1.04, 0.85), -1200, -140), rnd, -950, -220)
 green = op(unreal.MaterialExpressionMultiply, green, tone, -750, -350)
 
 # autumn: yellows to reds, by tree
-yellow = vparam("AutumnA", (0.42, 0.26, 0.02), -1200, 0)
-red = vparam("AutumnB", (0.36, 0.07, 0.025), -1200, 120)
+yellow = vparam("AutumnA", (0.34, 0.21, 0.025), -1200, 0)
+red = vparam("AutumnB", (0.28, 0.06, 0.025), -1200, 120)
 fall = lerp(yellow, red, rnd, -950, 50)
 fall = op(unreal.MaterialExpressionMultiply, fall, lerp(const(0.7, -1100, 260), const(1.1, -1100, 320), clump, -950, 260), -750, 100)
 autumn = node(unreal.MaterialExpressionScalarParameter, -1200, 420)

@@ -934,7 +934,8 @@ export function planDevelopment(
   // or an arithmetic path nobody anticipated are others. No plan leaves this
   // function unless every number in it is a number — a null here reads to the
   // caller as "this site cannot be planned", which is the truth.
-  for (const v of Object.values(plan)) {
+  for (const k in plan) {
+    const v = plan[k as keyof DevPlan];
     if (typeof v === "number" && !Number.isFinite(v)) return null;
   }
   return plan;

@@ -686,6 +686,58 @@ export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
 }
 
 /**
+ * `underwritingEcon` behind a one-entry memo, for the desk's pro formas (the
+ * land residual keeps its own). The overlay prototypes the econ it was built
+ * on, so it is reused only for that same object, and only while every field
+ * the overlay copies or reads — the three indices it rewrites, whole and in
+ * key order, and each class's expectation, vacancy, stock, pipeline, unmet
+ * demand and trend — is identical to what it was built from.
+ */
+const UW_COPIED = ["rentIdx", "effRentIdx", "capRate"] as const;
+const UW_READ = ["rentExp", "capExp", "cityVac", "stock", "pipeline", "structTight", "classDrvTrend"] as const;
+let UW_MEMO: { econ: Econ; rentMult: number; snap: unknown[]; uw: Econ } | null = null;
+function underwritingSnap(econ: Econ): unknown[] {
+  const e = econ as unknown as Record<string, Record<string, unknown> | undefined>;
+  const out: unknown[] = [];
+  for (const f of UW_COPIED) {
+    const d = e[f];
+    out.push(d);
+    if (d) for (const k in d) out.push(k, d[k]);
+    out.push("|");
+  }
+  for (const f of UW_READ) {
+    const d = e[f];
+    out.push(!!d);
+    for (const u of BUILT_CLASSES) out.push(d?.[u]);
+  }
+  return out;
+}
+/** `underwritingSnap(econ)` equals `snap`, walked in place without building a new one. */
+function snapHolds(econ: Econ, snap: unknown[]): boolean {
+  const e = econ as unknown as Record<string, Record<string, unknown> | undefined>;
+  let i = 0;
+  for (const f of UW_COPIED) {
+    const d = e[f];
+    if (snap[i++] !== d) return false;
+    if (d) for (const k in d) { if (snap[i++] !== k || !Object.is(snap[i++], d[k])) return false; }
+    if (snap[i++] !== "|") return false;
+  }
+  for (const f of UW_READ) {
+    const d = e[f];
+    if (snap[i++] !== !!d) return false;
+    for (const u of BUILT_CLASSES) if (!Object.is(snap[i++], d?.[u])) return false;
+  }
+  return i === snap.length;
+}
+function underwritingEconOf(econ: Econ, rentMult: number): Econ {
+  const m = UW_MEMO;
+  if (m && m.econ === econ && Object.is(m.rentMult, rentMult) && snapHolds(econ, m.snap)) return m.uw;
+  const uw = underwritingEcon(econ, rentMult);
+  UW_MEMO = { econ, rentMult, snap: underwritingSnap(econ), uw };
+  return uw;
+}
+
+/**
  * THE DIRT EARNS NOTHING WHILE THE BUILDING GOES UP.
  *
  * Land is paid for at the start and the building it carries is worth
@@ -854,7 +906,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
 
   // What the finished building will be underwritten on — see underwritingEcon.
-  const uw = o.uw ?? underwritingEcon(econ, o.rentMult ?? 1);
+  const uw = o.uw ?? underwritingEconOf(econ, o.rentMult ?? 1);
   const asBuilt = asBuiltRec(rec, o.use, gsf, fl, spec, mix);
 
   // THE LEASE-UP RESERVE.

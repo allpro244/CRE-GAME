@@ -5154,6 +5154,13 @@ function breakCityGround(
   bbl: string, rec: NonNullable<ParcelTable[string]>, use: DevUse, floors: number, plate: number,
   opts?: { backdate?: number; quiet?: boolean; spec?: number; ltc?: number; decided?: boolean; builderId?: string; firmId?: string; landBasis?: number },
 ): boolean {
+  // NO GROUND, NO GROUNDBREAK. A lot folded into an assembled site reads as
+  // land with no building, which is what a greenfield search looks for, and
+  // its record keeps a lot area for the first month (the folding happens
+  // mid-tick): the town's growth started an eight-storey office on one beside
+  // the site it belonged to (city-accept M, plan 14, seed 0, month 88). Every
+  // city start passes here, so the guard lives here.
+  if (s.merged?.[bbl] || !(rec.lotArea > 0)) return false;
   let sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   const lead = dominantOf(devMix(use));
   const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, opts?.landBasis, opts?.spec ?? 0.5, opts?.ltc);

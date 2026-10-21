@@ -8,6 +8,8 @@ import { pendingTerm, glossId, glossaryEntries } from "@/ui/Glossary";
 import { Row } from "@/ui/panels/shared";
 import { themePref, setThemePref, type ThemePref } from "@/ui/theme";
 import { CLOCK_OPTIONS, describeSetup } from "@/engine/setup";
+import { UNREAL_HOST } from "@/state/unrealHost";
+import { GFX_PRESETS, presetOf, type GfxOptions, type GfxPreset } from "@/state/graphics";
 
 export function PrimerPage() {
   const game = useStore((s) => s.game)!;
@@ -305,6 +307,7 @@ export function SettingsPage() {
         label="Frame counter"
         detail="A frames-per-second readout in the top bar. It is an instrument for looking at the renderer, not part of the game, and it is off unless you want it."
       />
+      {UNREAL_HOST ? <UnrealGraphics /> : (<>
       <div className="page-section" style={{ marginTop: 10 }}>Graphics</div>
       <div className="btn-row">
         {([
@@ -318,6 +321,7 @@ export function SettingsPage() {
       <div className="hint">
         Looks only — the city, its numbers and your save are the same at every setting. If the map stutters, step down one.
       </div>
+      </>)}
       <div className="hint">
         Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction
         switches are decisions of this firm and travel with the save.
@@ -438,5 +442,109 @@ export function SaveSlots() {
         })()}
       </div>
     </div>
+  );
+}
+
+
+/**
+ * GRAPHICS IN THE 3D GAME: four presets, then every option they set, so a
+ * player tunes the picture to their machine. Each option says what it does and
+ * what it costs (measured at 1080p, RTX 2080; see state/graphics.ts); the game
+ * applies a change at once.
+ */
+function UnrealGraphics() {
+  const gfx = useStore((s) => s.gfx);
+  const setGfx = useStore((s) => s.setGfx);
+  const [open, setOpen] = useState(false);
+  const preset = presetOf(gfx);
+  const set = (p: Partial<GfxOptions>) => setGfx({ ...gfx, ...p });
+  const chip = (on: boolean) => "btn btn-sm" + (on ? " btn-on" : "");
+  const LEVELS = ["Low", "Medium", "High", "Epic", "Cinematic"];
+  const Opt = ({ label, hint, children }: { label: string; hint: string; children: React.ReactNode }) => (
+    <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: 8, alignItems: "start", margin: "6px 0" }}>
+      <div><div>{label}</div><div className="hint" style={{ margin: 0 }}>{hint}</div></div>
+      <div className="btn-row" style={{ flexWrap: "wrap" }}>{children}</div>
+    </div>
+  );
+  type LevelKey = "giq" | "shadow" | "view" | "textures" | "effects" | "post";
+  const Level = ({ k, max = 4, min = 0 }: { k: LevelKey; max?: number; min?: number }) => (
+    <>{LEVELS.slice(min, max + 1).map((n, i) => (
+      <button key={n} type="button" className={chip(gfx[k] === i + min)} onClick={() => set({ [k]: i + min } as Partial<GfxOptions>)}>{n}</button>
+    ))}</>
+  );
+  const PRESETS: [GfxPreset, string, string][] = [
+    ["low", "Low", "For laptops and older cards: half resolution upscaled, simple shadows, clouds without their shadows, a light crowd."],
+    ["medium", "Medium", "Two-thirds resolution upscaled with DLSS or TSR, full lighting at a lower quality. The best balance on most cards."],
+    ["high", "High", "Native resolution, full lighting, shadows and clouds. For strong cards (RTX 3070 and up at 1080p)."],
+    ["ultra", "Ultra", "Cinematic lighting, shadows and draw distance. For the strongest cards, and screenshots."],
+  ];
+  return (
+    <>
+      <div className="page-section" style={{ marginTop: 10 }}>Graphics</div>
+      <div className="btn-row" style={{ flexWrap: "wrap" }}>
+        {PRESETS.map(([q, label, tip]) => (
+          <button key={q} type="button" className={"btn" + (preset === q ? " btn-on" : "")} title={tip} onClick={() => setGfx({ ...GFX_PRESETS[q] })}>{label}</button>
+        ))}
+        {!preset && <span className="hint" style={{ alignSelf: "center" }}>Custom</span>}
+      </div>
+      <div className="hint">
+        Measured on an RTX 2080 at 1080p: Low about 68 fps, Medium 63, High 36, Ultra 17. A newer card runs each about twice as fast.
+        Looks only: the city, its numbers and your save are the same at every setting.
+      </div>
+      <button type="button" className="btn btn-sm" onClick={() => setOpen(!open)} style={{ margin: "6px 0" }}>{open ? "Hide advanced" : "Advanced settings"}</button>
+      {open && (
+        <div>
+          <Opt label="Render resolution" hint="The biggest lever. Rendered smaller and upscaled to your screen.">
+            {[50, 58, 67, 77, 100].map((r) => (
+              <button key={r} type="button" className={chip(gfx.res === r)} onClick={() => set({ res: r })}>{r}%</button>
+            ))}
+          </Opt>
+          <Opt label="Upscaler" hint="DLSS on NVIDIA RTX cards (sharper), TSR everywhere else.">
+            <button type="button" className={chip(gfx.up === "auto")} onClick={() => set({ up: "auto" })}>DLSS if available</button>
+            <button type="button" className={chip(gfx.up === "tsr")} onClick={() => set({ up: "tsr" })}>TSR</button>
+          </Opt>
+          <Opt label="Lighting" hint="Light bouncing between buildings (Lumen) and its quality. Off is flat but fast.">
+            <button type="button" className={chip(gfx.gi === "off")} onClick={() => set({ gi: "off" })}>Off</button>
+            {gfx.gi !== "off"
+              ? <Level k="giq" min={1} />
+              : <button type="button" className="btn btn-sm" onClick={() => set({ gi: "lumen" })}>On</button>}
+          </Opt>
+          <Opt label="Reflections" hint="Glass and wet streets reflecting the city.">
+            {(["off", "ssr", "lumen"] as const).map((r) => (
+              <button key={r} type="button" className={chip(gfx.reflections === r)} onClick={() => set({ reflections: r })}>
+                {r === "off" ? "Off" : r === "ssr" ? "Screen space" : "Full"}
+              </button>
+            ))}
+          </Opt>
+          <Opt label="Shadows" hint="Sharpness and reach of building shadows."><Level k="shadow" /></Opt>
+          <Opt label="Clouds" hint="Full clouds also cast moving shadows on the city (about 3 ms).">
+            <button type="button" className={chip(gfx.clouds === 1)} onClick={() => set({ clouds: 1 })}>Simple</button>
+            <button type="button" className={chip(gfx.clouds === 2)} onClick={() => set({ clouds: 2 })}>Full, with shadows</button>
+          </Opt>
+          <Opt label="View distance" hint="How far small things (props, trees) are drawn."><Level k="view" /></Opt>
+          <Opt label="Textures" hint="Texture detail; lower it on a card with little memory."><Level k="textures" max={3} /></Opt>
+          <Opt label="Effects" hint="Rain, snow, haze and material detail."><Level k="effects" max={3} /></Opt>
+          <Opt label="Post-processing" hint="Exposure, bloom and colour grade quality."><Level k="post" max={3} /></Opt>
+          <Opt label="City life" hint="Walkers and moving traffic. Light draws them only near the camera.">
+            {(["Off", "Light", "Full"] as const).map((n, i) => (
+              <button key={n} type="button" className={chip(gfx.life === i)} onClick={() => set({ life: i })}>{n}</button>
+            ))}
+          </Opt>
+          <Opt label="Frame cap" hint="Cap the frame rate to save power and heat.">
+            {[0, 30, 60, 120, 144].map((f) => (
+              <button key={f} type="button" className={chip(gfx.fps === f)} onClick={() => set({ fps: f })}>{f ? String(f) : "None"}</button>
+            ))}
+          </Opt>
+          <Opt label="V-Sync" hint="No tearing, at a little latency.">
+            <button type="button" className={chip(!gfx.vsync)} onClick={() => set({ vsync: false })}>Off</button>
+            <button type="button" className={chip(gfx.vsync)} onClick={() => set({ vsync: true })}>On</button>
+          </Opt>
+          <Opt label="Motion blur" hint="Blur on fast camera moves.">
+            <button type="button" className={chip(!gfx.blur)} onClick={() => set({ blur: false })}>Off</button>
+            <button type="button" className={chip(gfx.blur)} onClick={() => set({ blur: true })}>On</button>
+          </Opt>
+        </div>
+      )}
+    </>
   );
 }

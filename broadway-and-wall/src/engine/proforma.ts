@@ -75,6 +75,18 @@ const clampP = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
  * it means is the mix below: cost, rent, lease-up, lender appetite and
  * neighbourhood effect all follow from the components.
  */
+/**
+ * WHAT IT COSTS TO TAKE A BUILDING DOWN to clean dirt: about $14/sf of
+ * standing floor area at the cost index (abatement, demolition, haul-off;
+ * NYC interior-demolition-and-wreck bids run $10-20/sf), and never less than
+ * a mobilisation of $60,000. One number for everyone: the player clearing a
+ * site (dev.ts demolish) and a pro forma that knocks down what stands on its
+ * lot (rivals redeveloping) used to price the same wreck at $14 and $12.
+ */
+export function wreckCost(bldgArea: number, costIdx: number): number {
+  return bldgArea > 0 ? Math.round(Math.max(60_000, bldgArea * 14 * costIdx)) : 0;
+}
+
 export const MIXED_STACK: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.40 };
 
 /**
@@ -823,7 +835,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const specK = specCostMult(spec);
   const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl)) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK * (custom?.costMult ?? 1) * (1 + EXTERIOR_CLOSURE_SHARE * (formSkin - 1)));
   const softCost = Math.round(hardCost * SOFT_COST);
-  const demo = !o.asIfVacant && rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * econ.costIdx) : 0;
+  const demo = !o.asIfVacant ? wreckCost(rec.bldgArea, econ.costIdx) : 0;
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
 
   // What the finished building will be underwritten on — see underwritingEcon.

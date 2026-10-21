@@ -320,6 +320,7 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 	}
 	UE_LOG(LogBWLife, Display, TEXT("city life: %d junctions (%d signalled), %d lanes, %d moving cars, %d parked; %d sidewalk loops, %d people"),
 		Nodes.Num(), Signals, Lanes.Num(), Cars.Num(), Parked, Walks.Num(), People.Num());
+	if (DensityLevel != 2) SetDensity(DensityLevel);   // the player's setting, if it came first
 }
 
 void ACityLife::Tick(float Dt)
@@ -412,6 +413,20 @@ void ACityLife::Tick(float Dt)
 	}
 	// (the instance data manager uploads just the changed instances; a full
 	// render-state rebuild here would undo the saving)
+}
+
+int32 ACityLife::DensityLevel = 2;
+
+void ACityLife::SetDensity(int32 Level)
+{
+	DensityLevel = Level;
+	// walkers: off, near (150 m), or the full 300-380 m; cars: off, 600 m, everywhere
+	for (UInstancedStaticMeshComponent* C : PersonMeshes)
+		if (C) { C->SetVisibility(Level > 0); C->SetCullDistances(Level >= 2 ? 30000 : 12000, Level >= 2 ? 38000 : 15000); }
+	for (UInstancedStaticMeshComponent* C : CarMeshes)
+		if (C) { C->SetVisibility(Level > 0); C->SetCullDistances(0, Level >= 2 ? 0 : 60000); }
+	for (UInstancedStaticMeshComponent* C : ParkedMeshes)
+		if (C) C->SetCullDistances(0, Level >= 2 ? 0 : Level == 1 ? 50000 : 25000);
 }
 
 bool ACityLife::Due(const FVector2D& P, uint32 Index) const

@@ -85,13 +85,13 @@ export { HARD_COST_PSF, SOFT_COST, CONTINGENCY } from "./value";
 export {
   MIXED_STACK, normalizeMix, devMix, dominantOf, CONTRACT_PREMIUM, reserveFor, specCostMult,
   farMaxFor, maxRetailShare, withStreetRetail, capRetail, maxFloorsFor,
-  MAX_COVERAGE, maxCoverageFor,
+  MAX_COVERAGE, maxCoverageFor, wreckCost,
 } from "./proforma";
 export type { ConstructionQuote } from "./proforma";
 import {
   devMix, dominantOf, overMix, leaseUpMarketAt, specShare, constructionDesks, deskQuote, clamp01, farMaxFor, maxFloorsFor,
   withStreetRetail, capRetail, reserveFor,
-  developmentProForma, landCarryFactor, MAX_COVERAGE, maxCoverageFor,
+  developmentProForma, landCarryFactor, MAX_COVERAGE, maxCoverageFor, wreckCost,
 } from "./proforma";
 import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
@@ -2300,7 +2300,7 @@ export function takeoverDevelopment(
 // three-storey walk-up on a site that carries thirty floors is worth more as
 // a hole in the ground.
 export function demolitionCost(rec: { bldgArea: number }, s: GameState): number {
-  return Math.round(Math.max(60_000, rec.bldgArea * 14 * s.econ.costIdx));
+  return wreckCost(rec.bldgArea, s.econ.costIdx);
 }
 
 export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {

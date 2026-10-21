@@ -241,6 +241,78 @@ void ABWPlayerController::PlayerTick(float Dt)
 	}
 }
 
+/**
+ * THE PRESETS, as option strings (the Settings page offers the same four and
+ * lets every option be changed after). Measured on the metro city at 1080p,
+ * RTX 2080 (see UE58_PLAN.md for the table): the render resolution and the
+ * lighting method are the two big levers; the rest are a few ms each.
+ */
+FString BWGraphicsPreset(const FString& Name)
+{
+	// (Low keeps Lumen at its lowest: the screen-space fallback measured slower here)
+	if (Name == TEXT("low"))    return TEXT("res=50;up=auto;gi=lumen;giq=2;refl=ssr;shadow=1;view=1;tex=2;fx=1;post=1;clouds=1;life=1;fps=0;vsync=0;blur=0");
+	if (Name == TEXT("medium")) return TEXT("res=67;up=auto;gi=lumen;giq=2;refl=lumen;shadow=2;view=2;tex=3;fx=2;post=2;clouds=1;life=2;fps=0;vsync=0;blur=0");
+	if (Name == TEXT("ultra"))  return TEXT("res=100;up=auto;gi=lumen;giq=4;refl=lumen;shadow=4;view=4;tex=3;fx=3;post=3;clouds=2;life=2;fps=0;vsync=0;blur=0");
+	return TEXT("res=100;up=auto;gi=lumen;giq=3;refl=lumen;shadow=3;view=3;tex=3;fx=3;post=3;clouds=2;life=2;fps=0;vsync=0;blur=0");   // high
+}
+
+/** Apply a graphics option string ("key=value;..."); unknown keys are ignored, missing ones left as they are. */
+void BWApplyGraphics(UWorld* World, const FString& Opts)
+{
+	TMap<FString, FString> O;
+	TArray<FString> Parts;
+	Opts.ParseIntoArray(Parts, TEXT(";"));
+	for (const FString& P : Parts) { FString K, V; if (P.Split(TEXT("="), &K, &V)) O.Add(K.TrimStartAndEnd(), V.TrimStartAndEnd()); }
+	auto Int = [&O](const TCHAR* K, int32 Def) { const FString* V = O.Find(K); return V ? FCString::Atoi(**V) : Def; };
+	auto CVar = [](const TCHAR* N, float V) { if (IConsoleVariable* C = IConsoleManager::Get().FindConsoleVariable(N)) C->Set(V, ECVF_SetByGameSetting); };
+
+	// the scalability groups (0 low .. 3 epic, 4 cinematic)
+	Scalability::FQualityLevels Q = Scalability::GetQualityLevels();
+	if (O.Contains(TEXT("shadow"))) Q.ShadowQuality = Int(TEXT("shadow"), 3);
+	if (O.Contains(TEXT("view"))) { Q.ViewDistanceQuality = Int(TEXT("view"), 3); Q.FoliageQuality = FMath::Min(3, Int(TEXT("view"), 3)); }
+	if (O.Contains(TEXT("tex"))) Q.TextureQuality = Int(TEXT("tex"), 3);
+	if (O.Contains(TEXT("fx"))) { Q.EffectsQuality = Int(TEXT("fx"), 3); Q.ShadingQuality = FMath::Max(1, Int(TEXT("fx"), 3)); }
+	if (O.Contains(TEXT("post"))) Q.PostProcessQuality = Int(TEXT("post"), 3);
+	if (O.Contains(TEXT("giq"))) { Q.GlobalIlluminationQuality = Int(TEXT("giq"), 3); Q.ReflectionQuality = Int(TEXT("giq"), 3); }
+	Scalability::SetQualityLevels(Q);
+
+	// lighting: Lumen (dynamic, bounced), screen-space, or none
+	if (const FString* Gi = O.Find(TEXT("gi")))
+		CVar(TEXT("r.DynamicGlobalIlluminationMethod"), *Gi == TEXT("lumen") ? 1.f : *Gi == TEXT("ssgi") ? 2.f : 0.f);
+	if (const FString* Rf = O.Find(TEXT("refl")))
+		CVar(TEXT("r.ReflectionMethod"), *Rf == TEXT("lumen") ? 1.f : *Rf == TEXT("ssr") ? 2.f : 0.f);
+
+	// resolution and the upscaler: DLSS where the plugin and an RTX card are
+	// there (auto/dlss), otherwise TSR
+	const FString Up = O.FindRef(TEXT("up"));
+	IConsoleVariable* Dlss = IConsoleManager::Get().FindConsoleVariable(TEXT("r.NGX.DLSS.Enable"));
+	if (Dlss && !Up.IsEmpty()) Dlss->Set(Up != TEXT("tsr") && !FParse::Param(FCommandLine::Get(), TEXT("NoDLSS")) ? 1 : 0, ECVF_SetByGameSetting);
+	if (O.Contains(TEXT("res"))) CVar(TEXT("r.ScreenPercentage"), float(FMath::Clamp(Int(TEXT("res"), 100), 33, 100)));
+
+	// clouds: their shadows on the city and their light in the sky cost ~3 ms
+	// at 1080p on an RTX 2080 (profilegpu: VolumetricCloudShadow), which is a
+	// fifth of the Low preset's whole frame; 1 keeps the clouds, drops that
+	if (O.Contains(TEXT("clouds")))
+	{
+		const int32 Cl = Int(TEXT("clouds"), 2);
+		CVar(TEXT("r.VolumetricCloud.ShadowMap"), Cl >= 2 ? 1.f : 0.f);
+		CVar(TEXT("r.VolumetricCloud.SkyAO"), Cl >= 2 ? 1.f : 0.f);
+		CVar(TEXT("r.VolumetricCloud.ViewRaySampleMaxCount"), Cl >= 2 ? 768.f : 256.f);
+	}
+	if (O.Contains(TEXT("fps"))) CVar(TEXT("t.MaxFPS"), float(Int(TEXT("fps"), 0)));
+	if (O.Contains(TEXT("vsync"))) CVar(TEXT("r.VSync"), float(Int(TEXT("vsync"), 0)));
+	if (O.Contains(TEXT("blur"))) CVar(TEXT("r.MotionBlurQuality"), Int(TEXT("blur"), 0) ? 3.f : 0.f);
+
+	// the street's life
+	if (O.Contains(TEXT("life")))
+	{
+		ACityLife::DensityLevel = Int(TEXT("life"), 2);
+		if (World) for (TActorIterator<ACityLife> It(World); It; ++It) It->SetDensity(ACityLife::DensityLevel);
+	}
+
+	UE_LOG(LogBW, Display, TEXT("GRAPHICS %s (%s)"), *Opts, Dlss && Dlss->GetInt() ? TEXT("DLSS") : TEXT("TSR"));
+}
+
 void ABWPlayerController::PageInput(const FString& Type, double X, double Y, double Dx, double Dy, double Wheel, const FString& Key)
 {
 	ABWCameraPawn* Cam = Cast<ABWCameraPawn>(GetPawn());
@@ -253,23 +325,12 @@ void ABWPlayerController::PageInput(const FString& Type, double X, double Y, dou
 	else if (Type == TEXT("kd")) PageKeys.Add(Key);
 	else if (Type == TEXT("ku")) PageKeys.Remove(Key);
 	else if (Type == TEXT("hover")) HoverPx = FVector2D(X * W, Y * H);
-	else if (Type == TEXT("quality"))
+	else if (Type == TEXT("quality") || Type == TEXT("gfx"))
 	{
-		// GRAPHICS (Phase 6), from the game's own Settings page. Measured on the
-		// metro city at 1440p, RTX 2080: full resolution ~41 fps, half ~55. High is
-		// native Epic; medium renders at 67% and upscales (TSR); low at 50% with
-		// High scalability. Resolution is the lever; everything else stays photoreal.
-		Scalability::FQualityLevels Q = Scalability::GetQualityLevels();
-		const bool bLow = Key == TEXT("low"), bMed = Key == TEXT("medium");
-		Q.SetFromSingleQualityLevel(bLow ? 2 : 3);
-		Scalability::SetQualityLevels(Q);
-		// DLSS when the NVIDIA plugin is present and the GPU supports it (RTX): high is
-		// DLAA (native resolution, DLSS anti-aliasing), medium DLSS Quality (67%), low
-		// DLSS Performance (50%). Otherwise the same resolutions through TSR.
-		IConsoleVariable* Dlss = IConsoleManager::Get().FindConsoleVariable(TEXT("r.NGX.DLSS.Enable"));
-		if (Dlss && !FParse::Param(FCommandLine::Get(), TEXT("NoDLSS"))) Dlss->Set(1);
-		if (IConsoleVariable* SP = IConsoleManager::Get().FindConsoleVariable(TEXT("r.ScreenPercentage"))) SP->Set(bLow ? 50.f : bMed ? 67.f : 100.f);
-		UE_LOG(LogBW, Display, TEXT("QUALITY %s (%s)"), *Key, Dlss && Dlss->GetInt() ? TEXT("DLSS") : TEXT("TSR"));
+		// GRAPHICS, from the game's Settings page: a preset ("quality", key
+		// low|medium|high|ultra) or the full set of choices ("gfx", key
+		// "res=67;gi=lumen;..."); see ApplyGraphics.
+		BWApplyGraphics(GetWorld(), Type == TEXT("quality") ? BWGraphicsPreset(Key) : Key);
 	}
 	else if (Type == TEXT("zoom")) Cam->Zoom(Wheel);
 	else if (Type == TEXT("orbit")) { Cam->Yaw += Dx * 0.25; Cam->Pitch += (Cam->Mode == ABWCameraPawn::EMode::Street ? -1 : -1) * Dy * 0.25; }
@@ -491,6 +552,8 @@ void ABWGameMode::BeginPlay()
 	FParse::Value(FCommandLine::Get(), TEXT("Shots="), ShotDir);
 	FParse::Value(FCommandLine::Get(), TEXT("Years="), SimYears);
 	// -Quality=low|medium|high: apply the graphics level without the page (for -Perf runs)
+	FString Gfx;
+	if (FParse::Value(FCommandLine::Get(), TEXT("Gfx="), Gfx, false)) BWApplyGraphics(GetWorld(), Gfx);
 	FString Q;
 	if (FParse::Value(FCommandLine::Get(), TEXT("Quality="), Q))
 		if (ABWPlayerController* QPC = Cast<ABWPlayerController>(GetWorld()->GetFirstPlayerController())) QPC->PageInput(TEXT("quality"), 0, 0, 0, 0, 0, Q);
@@ -500,9 +563,10 @@ void ABWGameMode::BeginPlay()
 	{
 		if (ABWCameraPawn* Cam = Cast<ABWCameraPawn>(GetWorld()->GetFirstPlayerController()->GetPawn())) Cam->SetMode(ABWCameraPawn::EMode::Drone);
 		TSharedRef<TArray<float>> Frames = MakeShared<TArray<float>>();
+		TSharedRef<TArray<FVector3f>> Threads = MakeShared<TArray<FVector3f>>();   // game, render, GPU ms
 		TSharedRef<double> Start = MakeShared<double>(0);
 		FTimerHandle H;
-		GetWorldTimerManager().SetTimer(H, [Frames, Start, PerfSecs]()
+		GetWorldTimerManager().SetTimer(H, [Frames, Threads, Start, PerfSecs]()
 		{
 			if (*Start == 0) *Start = FPlatformTime::Seconds();
 			// a fast timer can fire several times in one frame to catch up: sample each frame once
@@ -510,11 +574,22 @@ void ABWGameMode::BeginPlay()
 			if (GFrameCounter == LastFrame) return;
 			LastFrame = GFrameCounter;
 			Frames->Add(FApp::GetDeltaTime() * 1000.f);
+			Threads->Add(FVector3f(FPlatformTime::ToMilliseconds(GGameThreadTime), FPlatformTime::ToMilliseconds(GRenderThreadTime), FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles())));
+			// -ProfileGPU: one GPU profile, halfway through the flight, into the log
+			static bool bProfiled = false;
+			if (!bProfiled && FParse::Param(FCommandLine::Get(), TEXT("ProfileGPU")) && FPlatformTime::Seconds() - *Start > PerfSecs * 0.5)
+			{
+				bProfiled = true;
+				if (GEngine) GEngine->Exec(nullptr, TEXT("profilegpu"));
+			}
 			if (FPlatformTime::Seconds() - *Start < PerfSecs) return;
 			Frames->Sort();
 			const int32 N = Frames->Num();
 			const float Med = (*Frames)[N / 2], P95 = (*Frames)[FMath::Min(N - 1, N * 95 / 100)];
 			UE_LOG(LogBW, Display, TEXT("PERF %d frames: median %.1f ms (%.0f fps), p95 %.1f ms (%.0f fps)"), N, Med, 1000.f / Med, P95, 1000.f / P95);
+			// which thread is the floor: the median of each
+			auto MedOf = [&Threads](int32 C) { TArray<float> V; for (const FVector3f& T : *Threads) V.Add(C == 0 ? T.X : C == 1 ? T.Y : T.Z); V.Sort(); return V.Num() ? V[V.Num() / 2] : 0.f; };
+			UE_LOG(LogBW, Display, TEXT("PERF threads: game %.1f ms, render %.1f ms, GPU %.1f ms"), MedOf(0), MedOf(1), MedOf(2));
 			FPlatformMisc::RequestExit(false);
 		}, 0.001f, true, 20.0f); // every frame (a rate of 0 clears a timer); 20 s to settle streaming first
 	}
@@ -1000,10 +1075,15 @@ void ABWGameMode::SetSeason(int32 Month)
 	const double ElDeg = FMath::RadiansToDegrees(El), AzDeg = FMath::RadiansToDegrees(Az);
 	Sun->SetActorRotation(FRotator(-ElDeg, AzDeg + 180.0, 0));
 
-	// ---- the weather. Monthly shares: wet days ~0.33 all year; dry overcast
-	// 0.30 Nov-Mar, 0.18 May-Sep; partly cloudy 0.27; the rest clear.
+	// ---- the weather. A month is shown as ONE day, so its weather is the
+	// month's typical afternoon, not the chance of any rain at all: a third of
+	// days see some precipitation in a mid-Atlantic port, but it rains on an
+	// afternoon far less often than that, and painting a whole month wet for
+	// it put more than half the game under grey skies. Wet afternoons ~0.14
+	// (more in winter), dry overcast 0.16 Nov-Mar and 0.08 May-Sep, partly
+	// cloudy 0.34, the rest clear.
 	const bool bWinter = M <= 2 || M >= 10, bSummer = M >= 4 && M <= 8;
-	const float PWet = 0.33f, POver = bWinter ? 0.30f : bSummer ? 0.18f : 0.24f, PPart = 0.27f;
+	const float PWet = bWinter ? 0.16f : 0.12f, POver = bWinter ? 0.16f : bSummer ? 0.08f : 0.12f, PPart = 0.34f;
 	const float R = U(1);
 	enum { Clear, Partly, Overcast, Rain } Wx = R < PWet ? Rain : R < PWet + POver ? Overcast : R < PWet + POver + PPart ? Partly : Clear;
 	// -Weather=clear|partly|overcast|rain: hold the weather (shots, testing)
@@ -1015,15 +1095,18 @@ void ABWGameMode::SetSeason(int32 Month)
 	// direct sun on the ground: ~120,000 lux times the air mass's transmission
 	// (clear), a tenth of it through a full overcast; the sky's share rises as
 	// the direct falls
-	const float Clearness = Wx == Clear ? 1.f : Wx == Partly ? 0.85f : Wx == Overcast ? 0.10f : 0.05f;
+	// (the overcast is a bright one, the white sky of a high cloud deck that
+	// lights a street evenly, not the dark grey of a storm)
+	const float Clearness = Wx == Clear ? 1.f : Wx == Partly ? 0.85f : Wx == Overcast ? 0.18f : 0.08f;
 	const float Direct = 120000.f * FMath::Max(0.05f, float(SinEl)) * FMath::Pow(0.7f, float(1.0 / FMath::Max(0.1, SinEl)) * 0.678f);
 	if (UDirectionalLightComponent* L = Cast<UDirectionalLightComponent>(Sun->GetLightComponent()))
 	{
 		L->SetIntensity(FMath::Max(2000.f, Direct * Clearness));
-		L->SetTemperature(ElDeg < 20 ? 5000.f : ElDeg < 35 ? 5400.f : 5700.f);   // midday light: barely warm even in winter
+		L->SetTemperature(ElDeg < 20 ? 4800.f : ElDeg < 35 ? 5100.f : 5400.f);   // afternoon light: a little warm, warmer as it lowers
 		L->SetLightSourceAngle(Wx >= Overcast ? 8.f : 0.5357f);   // overcast: a soft, shadowless sun
 	}
-	if (SkyLight) SkyLight->SetIntensity(Wx == Clear ? 9500.f : Wx == Partly ? 10000.f : Wx == Overcast ? 6000.f : 4500.f);
+	// the sky fills the shade: a blue sky lights a street's shadow side well
+	if (SkyLight) SkyLight->SetIntensity(Wx == Clear ? 12000.f : Wx == Partly ? 12500.f : Wx == Overcast ? 12000.f : 9000.f);
 	if (CloudMat)
 	{
 		// coverage is a bias on the cloud pattern (the material default, -0.2, is a
@@ -1034,7 +1117,7 @@ void ABWGameMode::SetSeason(int32 Month)
 	}
 	if (Fog)
 	{
-		Fog->GetComponent()->SetFogDensity(Wx == Rain ? 0.006f : Wx == Overcast ? 0.0035f : bSummer ? 0.002f : 0.0015f);
+		Fog->GetComponent()->SetFogDensity(Wx == Rain ? 0.005f : Wx == Overcast ? 0.0028f : bSummer ? 0.0012f : 0.0009f);
 	}
 	if (Post)
 	{
@@ -1048,7 +1131,10 @@ void ABWGameMode::SetSeason(int32 Month)
 		// little brighter), two to three stops less under cloud and rain. The
 		// month then reads in the light itself — the sun's height and colour,
 		// the cloud, the lawn — and not in the screen dimming and recovering.
-		const float Ev = Wx == Clear ? (ElDeg > 45 ? 14.9f : 14.4f) : Wx == Partly ? (ElDeg > 45 ? 14.6f : 14.1f) : Wx == Overcast ? 12.4f : 11.9f;
+		// (set for the street, not the brightest stone: a city photographed for
+		// how it feels to walk is exposed half a stop to a stop over the meter
+		// on sunlit stone, and a grey day is lifted too, as an eye does)
+		const float Ev = Wx == Clear ? (ElDeg > 45 ? 14.3f : 13.8f) : Wx == Partly ? (ElDeg > 45 ? 14.0f : 13.5f) : Wx == Overcast ? 11.6f : 11.1f;
 		S.AutoExposureMinBrightness = Ev;
 		S.AutoExposureMaxBrightness = Ev;
 		S.bOverride_AutoExposureSpeedUp = S.bOverride_AutoExposureSpeedDown = true;
@@ -1060,18 +1146,21 @@ void ABWGameMode::SetSeason(int32 Month)
 		// colour drained out of everything; summer is warm and full, autumn
 		// golden in the highlights; spring sits between.
 		const bool bAutumn = M >= 8 && M <= 10;
-		const float SeasonSat = bWinter && !bAutumn ? 0.86f : bSummer ? 1.04f : 0.97f;
-		const float Sat = (Wx >= Overcast ? 1.05f : 1.18f) * SeasonSat;
+		const float SeasonSat = bWinter && !bAutumn ? 0.94f : bSummer ? 1.08f : 1.02f;
+		const float Sat = (Wx >= Overcast ? 1.1f : 1.2f) * SeasonSat;
 		S.bOverride_ColorSaturation = true;
 		S.ColorSaturation = FVector4(Sat, Sat, Sat, 1);
 		S.bOverride_ColorContrast = true;
-		S.ColorContrast = FVector4(1.08f, 1.08f, 1.08f, 1);
+		S.ColorContrast = FVector4(1.03f, 1.03f, 1.03f, 1);
 		S.bOverride_ColorGainHighlights = true;
 		S.ColorGainHighlights = bWinter && !bAutumn ? FVector4(1.0f, 1.0f, 0.98f, 1) : bAutumn ? FVector4(1.06f, 1.01f, 0.92f, 1) : FVector4(1.04f, 1.0f, 0.94f, 1);
 		S.bOverride_ColorGainShadows = true;
-		S.ColorGainShadows = bWinter && !bAutumn ? FVector4(0.92f, 0.97f, 1.1f, 1) : FVector4(0.94f, 0.98f, 1.06f, 1);
+		S.ColorGainShadows = bWinter && !bAutumn ? FVector4(0.97f, 0.99f, 1.06f, 1) : FVector4(1.0f, 1.0f, 1.03f, 1);
+		// and the shadows lifted a little off black: a bright day's shade is never ink
+		S.bOverride_ColorOffsetShadows = true;
+		S.ColorOffsetShadows = FVector4(0.012f, 0.012f, 0.014f, 0);
 		S.bOverride_VignetteIntensity = true;
-		S.VignetteIntensity = 0.3f;
+		S.VignetteIntensity = 0.12f;
 		// THE SHADE SIDE OF THE STREET. Exposed for the sun, a street in a
 		// building's shadow fell five stops under it and printed black: the
 		// pavement, the parked cars, the walkers, all gone. An eye (and any
@@ -1082,7 +1171,7 @@ void ABWGameMode::SetSeason(int32 Month)
 		// (-NoStreetLook: off, for a perf A/B)
 		const bool bLift = !FParse::Param(FCommandLine::Get(), TEXT("NoStreetLook"));
 		S.bOverride_LocalExposureShadowContrastScale = bLift;
-		S.LocalExposureShadowContrastScale = Wx >= Overcast ? 0.85f : 0.62f;
+		S.LocalExposureShadowContrastScale = Wx >= Overcast ? 0.75f : 0.5f;
 		S.bOverride_LocalExposureHighlightContrastScale = bLift;
 		S.LocalExposureHighlightContrastScale = 0.85f;
 		S.bOverride_LumenSkylightLeaking = bLift;
@@ -1093,7 +1182,7 @@ void ABWGameMode::SetSeason(int32 Month)
 	// moisture and the far shore goes soft in it, while a winter high is crisp.
 	if (Atmosphere)
 	{
-		const float Haze = bSummer ? 2.2f : bWinter ? 1.3f : 1.7f;
+		const float Haze = bSummer ? 1.5f : bWinter ? 1.0f : 1.25f;
 		Atmosphere->SetMieScatteringScale(0.003996f * Haze * (Wx >= Overcast ? 1.4f : 1.f));
 	}
 	// streets wet in rain, damp for a while after it in the grey months

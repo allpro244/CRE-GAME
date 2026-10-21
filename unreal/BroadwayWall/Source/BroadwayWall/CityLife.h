@@ -31,6 +31,14 @@ public:
 	ACityLife();
 	virtual void Tick(float Dt) override;
 	void Build(const FBWCity& City, int32 Seed);
+	/**
+	 * THE STREET'S LIFE AS A SETTING (Settings > Graphics > City life): 0 off,
+	 * 1 light (walkers and moving cars drawn only near the camera), 2 full.
+	 * Draw distances only: the simulation underneath runs the same.
+	 */
+	void SetDensity(int32 Level);
+	/** The level last chosen, applied to a city built after the setting arrived. */
+	static int32 DensityLevel;
 	/** Where the person nearest P is now, and which way they face (for camera shots). */
 	bool PersonNear(const FVector& P, FVector& Out, FVector2D& Facing) const;
 

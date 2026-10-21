@@ -1409,7 +1409,22 @@ void ACityBuilder::DressRoof(const FBWVolume& V, uint32 Seed)
 		// go in a louvred penthouse set back from the parapet: on every real
 		// tower it is a second, smaller box on the roof, and the skyline
 		// reads flat-topped and toy-like without it.
-		if (V.bCrown && V.Z1 >= 2500 && e1 - e0 >= 1500 && n1 - n0 >= 1500 && InsideRing(V.Ring, C))
+		// THE PRE-WAR CROWN. A tower of the setback era finishes in a crown,
+		// not a machine room: a stepped deco ziggurat, a copper pyramid, a
+		// spire on a lantern (the plant hides inside it). Scaled to the top's
+		// own narrow width, so a crown is as tall as the top is wide.
+		const double TopW = FMath::Min(e1 - e0, n1 - n0);
+		if (V.bCrown && V.Z1 >= 6000 && V.Year >= 1900 && V.Year <= 1945 && TopW >= 1200 && TopW <= 4000 && InsideRing(V.Ring, C))
+		{
+			static const TCHAR* Crowns[] = { TEXT("/Game/BW/Roof/SM_Crown_Stepped.SM_Crown_Stepped"), TEXT("/Game/BW/Roof/SM_Crown_Pyramid.SM_Crown_Pyramid"), TEXT("/Game/BW/Roof/SM_Crown_Spire.SM_Crown_Spire") };
+			// the models stand 2.3-3.4 widths tall; a real crown is half to one
+			// width (the needle of a spire more): squash each to that
+			const int32 Kc = Rng.RandRange(0, 2);
+			static const double Height[] = { 0.30, 0.32, 0.38 };
+			const double S = TopW * Height[Kc] / 100.0;
+			AddProp(Crowns[Kc], FTransform(Axis, FVector(C, Z), FVector((e1 - e0) * 0.92 / 100.0, (n1 - n0) * 0.92 / 100.0, S)), true);
+		}
+		else if (V.bCrown && V.Z1 >= 2500 && e1 - e0 >= 1500 && n1 - n0 >= 1500 && InsideRing(V.Ring, C))
 		{
 			const double Hp = 450 + Rng.FRandRange(0, 1) * (V.Z1 >= 12000 ? 700 : 300);
 			const FVector Scale((e1 - e0) * Rng.FRandRange(0.38, 0.55) / 100.0, (n1 - n0) * Rng.FRandRange(0.38, 0.55) / 100.0, Hp / 100.0);

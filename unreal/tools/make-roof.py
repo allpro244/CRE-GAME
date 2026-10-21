@@ -51,3 +51,32 @@ box(m, 0, 0, 100, -1.5, 1.5, 50, 53)                  # mid rail
 box(m, 0, 0, 4, -2, 2, 0, 110)                        # a post every metre
 save(m, "SM_Railing", [("steel", DARK)])
 unreal.log("ROOF pieces built")
+
+# CROWNS for the tall pre-war tower (a unit footprint, -50..50, scaled to the tower's top):
+STONE = "/Game/Building/Material/MI/Block/ForGym/MI_Bldg_Block_Limestone_Beige_FG.MI_Bldg_Block_Limestone_Beige_FG"
+COPPER = "/Game/Building/Material/MI/Metal/ForGym/MI_Bldg_Metal_CopperOx_FG.MI_Bldg_Metal_CopperOx_FG"
+# stepped deco ziggurat: four receding stone tiers and a finial
+m = unreal.DynamicMesh()
+for k, (w, h) in enumerate([(100, 0), (80, 30), (60, 60), (40, 90), (22, 120)]):
+    box(m, 0, -w / 2, w / 2, -w / 2, w / 2, h, h + 30)
+box(m, 1, -4, 4, -4, 4, 150, 230)
+save(m, "SM_Crown_Stepped", [("stone", STONE), ("finial", COPPER)])
+# copper pyramid roof on a stone drum: stacked shrinking copper courses
+m = unreal.DynamicMesh()
+box(m, 0, -50, 50, -50, 50, 0, 20)
+n = 14
+for k in range(n):
+    w = 100 * (1 - k / n)
+    box(m, 1, -w / 2, w / 2, -w / 2, w / 2, 20 + k * 9, 29 + k * 9)
+box(m, 1, -3, 3, -3, 3, 20 + n * 9, 20 + n * 9 + 40)
+save(m, "SM_Crown_Pyramid", [("stone", STONE), ("copper", COPPER)])
+# spire: a lantern on a drum, then a needle
+m = unreal.DynamicMesh()
+box(m, 0, -40, 40, -40, 40, 0, 40)
+for k in range(4):
+    box(m, 0, -30 + k * 4, 30 - k * 4, -30 + k * 4, 30 - k * 4, 40 + k * 25, 65 + k * 25)
+box(m, 1, -6, 6, -6, 6, 140, 260)
+box(m, 1, -2, 2, -2, 2, 260, 340)
+save(m, "SM_Crown_Spire", [("stone", STONE), ("metal", COPPER)])
+unreal.log("ROOF crowns built")
+

@@ -582,7 +582,7 @@ def ground(R, W, H, entrance=False, M=None):
         M.box(1, 0, 8, a - 18, b + 18, dh, dh + 26)             # door surround head
         M.box(1, 0, 5, a - 18, a, 0, dh)
         M.box(1, 0, 5, b, b + 18, 0, dh)
-        if g.get("canopy"):
+        if g.get("canopy", True):
             M.box(4, 0, 110, a - 30, b + 30, dh + 26, dh + 40)
     else:
         # rusticated or plain stone base: windows set high, stone courses

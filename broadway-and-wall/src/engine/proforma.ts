@@ -392,7 +392,11 @@ export const clamp01 = (x: number) => Math.max(0, Math.min(1, x ?? 0.5));
 // The buildable envelope, and nothing else. Ashport has no use districts —
 // any class on any lot — so the only limit is how much floor area the FAR
 // allows, and how much of the lot you choose to cover with it.
-export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number }): number {
+// ...WITH ONE EXCEPTION: land zoned for agriculture (the region map's farms)
+// carries no building envelope at all until the board rezones it
+// (landdev.ts) — the town-wide FAR-2 floor is for town lots, not for a field.
+export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number; zoneDist?: string }): number {
+  if (rec.zoneDist === "AG") return 0;
   return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
 }
 

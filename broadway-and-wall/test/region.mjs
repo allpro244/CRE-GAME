@@ -93,6 +93,11 @@ for (const seed of SEEDS) {
     ...Object.keys(g.built ?? {}), ...(g.cityBuilt ?? []), ...(g.cityPlans ?? []).map((p) => p.bbl), ...(g.cityJobs ?? []).map((j) => j.bbl),
   ]);
   for (const b of touched) if (reserved[b]) fail(`reserved ${b} reached the market (${YEARS} y)`);
+  // farms trade, but nobody builds on a field the board has not rezoned
+  const farmBuilt = [...Object.keys(g.built ?? {}), ...(g.cityJobs ?? []).map((j) => j.bbl), ...(g.cityPlans ?? []).map((p) => p.bbl)].filter((b) => parcels[b]?.ag && !g.rezoned?.[b]);
+  if (farmBuilt.length) fail(`${farmBuilt.length} unrezoned farm tracts were built on`);
+  const farmsTraded = (g.comps ?? []).filter((c) => parcels[c.bbl]?.ag).length;
+  console.log(`  farms: ${bbls.filter((b) => parcels[b].ag).length} on the market, ${farmsTraded} traded, none built on`);
   // the inner ring's houses are ordinary deeds: how many did the market trade or rebuild?
   const houses = bbls.filter((b) => /^[ABC]/.test(parcels[b].bldgClass));
   const rebuilt = houses.filter((b) => g.built?.[b] || (g.cityJobs ?? []).some((j) => j.bbl === b)).length;

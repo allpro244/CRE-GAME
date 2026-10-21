@@ -81,6 +81,18 @@ export interface ParcelRecord {
    * citygen/region/index.mjs.
    */
   tenure?: Tenure;
+  /**
+   * A FARM OR WOODLOT TRACT (the region map): farmed land with a farm-use value
+   * of its own (value.ts farmUsePsf), "crop" or "wood". Kept through a
+   * rezoning; a farm stays a farm until it is platted.
+   */
+  ag?: "crop" | "wood";
+  /**
+   * The survey tract under a farm (region map, canonical metres) and what it
+   * takes to cut it into lots (citygen/region platTractLots). Absent where the
+   * tract cannot be platted whole (the unbuilt remainder of a subdivision).
+   */
+  tract?: { seed: number; r: [number, number, number, number]; id: number; bearing: number | null; edgeM: number };
 }
 
 export type ParcelTable = Record<string, ParcelRecord>;
@@ -124,7 +136,7 @@ export interface ReservedParcel {
    * exactly these lots, `built` (a base64url bitset over the plat's lots) naming
    * the ones standing.
    */
-  recipe?: { gen: string; seed: number; tract: [number, number, number, number]; era: string; id: number; bearing: number | null; waterNear?: [number, number]; built: string };
+  recipe?: { gen: string; seed: number; tract: [number, number, number, number]; era: string; id: number; bearing: number | null; waterNear?: [number, number]; scale?: number; built: string };
   acres?: number;
   floodShare?: number;
   wood?: boolean;

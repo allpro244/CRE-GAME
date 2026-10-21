@@ -58,6 +58,10 @@ declare module "@/citygen/index.mjs" {
   export function cityList(): { id: string; name: string; tagline: string; extents?: boolean; fixedSize?: boolean }[];
   /** The id of the region map. */
   export const REGION: string;
+  /** Region map: the grid plat of a farm tract at a lot size (region/index.mjs). */
+  export function platTractLots(
+    tract: NonNullable<import("@/data/types").ParcelRecord["tract"]>, lotSf: number,
+  ): { lots: { ring: [number, number][]; a: number; f: number; d: number }[]; streets: [number, number][][] };
   /** The id of the written-down city. */
   export const MANHATTAN: string;
   /**

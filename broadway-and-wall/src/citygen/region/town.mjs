@@ -189,6 +189,13 @@ export function townConfig({ seed, ring, centre, wet, roads, land, center: lonla
       // a later addition on bigger lots, no alleys
       spec = { flavor: "resi", bearingDeg: bearing, ...(rng() < 0.25 ? { alley: ALLEY } : {}), fullBlockP: 0.02, lot: rng() < 0.5 ? LOT.villa : LOT.fine, lotWay: "villa", kind: "lattice", stPitch: Math.round(R(90, 125)), avePitch: Math.round(R(150, 300)), streetW: Math.round(R(15, 19)), aveW: Math.round(R(15, 22)), warpAmp: Math.round(R(2, 10)), numbered: false };
     }
+    // BLOCKS GROW WITH DISTANCE (owner): an addition platted further out, on cheaper land, was cut in
+    // bigger blocks — up to ~1.5x the pitch at the town's edge, smoothly by story distance, with each
+    // plat's own variance [K]. The lots inside grow too (citygen.mjs LOTS GROW TOWARD THE EDGE).
+    const gs = (1 + 0.5 * smooth01((rs - 200) / 600)) * R(0.9, 1.1);
+    if (spec.stPitch) { spec.stPitch = Math.round(spec.stPitch * gs); spec.avePitch = Math.round(spec.avePitch * gs); }
+    if (spec.cell) spec.cell = spec.cell.map((v) => Math.round(v * gs * gs));
+    if (spec.curveLen) spec.curveLen = Math.round(spec.curveLen * gs);
     return leaf(`add${i + 1}`, pts, spec, named, pool);
   }
   const upTree = split(uplands, 0);
@@ -283,6 +290,7 @@ export function villageConfig({ seed, rect: t, wet, center: lonlat, name, abbr }
   };
 }
 
+const smooth01 = (x) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
 function mkCutAt(p, deg) { const c = cut(p[0], p[1], deg); return { c, neg: (q) => q[0] * c[0] + q[1] * c[1] <= c[2] }; }
 function round(p) { return [Math.round(p[0]), Math.round(p[1])]; }
 function farthest(pl, c) { let b = pl[0]; for (const p of pl) if (dist(p, c) > dist(b, c)) b = p; return dist(b, c) > 1 ? b : pl.at(-1); }

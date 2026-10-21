@@ -38,6 +38,7 @@
     "sectorexit": "node test/sectorexit.mjs",
     "land": "node test/land.mjs",
     "region": "node test/region.mjs",
+    "landdev": "node test/landdev.mjs",
     "variety": "node test/citygen-variety.mjs",
     "demandshape": "node test/demandshape.mjs",
     "station": "node test/station.mjs",

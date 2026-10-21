@@ -1212,6 +1212,24 @@ park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
   `city.parcels`, so every loop is safe by construction; the parcel card shows
   a reserved parcel's numbers and no desk. No price is shown: nothing in the
   engine prices an owner-occupied house or farmland yet.
+- **Phase 2, the land developer's slice (`engine/landdev.ts`).** Farm and
+  woodlot tracts are MARKET parcels now (numeric BBLs 5xxxxxxxxx, zone "AG",
+  `rec.ag`, `rec.tract`): `farMaxFor` gives AG no envelope at all, so nobody
+  builds on a field, and the land read prices it at farm-use value
+  (`value.ts farmUsePsf`: USDA 2024 Illinois cash rent over the 2.7%
+  rent-to-value ratio, in the town's price level). An owned tract can be
+  rezoned (`fileEntitlement`: fees, 12-24 months, odds 0.80 at the town's
+  edge to 0.45 at 3 km) and platted (`startPlat`: $40k per 65 ft of frontage
+  plus a $13,772 impact fee a lot, by the cost index; 6-18 months). The plat
+  is a recipe in `s.plats`; `materializePlats` puts its lots (BBL 6 + tract +
+  lot) into the parcel table and BBL list from the state alone — sim.ts at
+  the top of every month, the store on load and on every new state — and the
+  tract retires into its lots (`s.platted`, a deed with no land, like a
+  merged child). Geometry: `citygen platTractLots`. The store draws the lots
+  and streets on the map and resends the city to Unreal. `pnpm landdev`.
+  At the opening the builder residual on a fringe lot is zero (no for-sale
+  housing market yet — Phase 3's homebuilders), so a plat loses money until
+  demand reaches it: an honest result, not a fault to tune.
 - **No transit.** The demand blend's transit and second-centre terms (44 of
   100 points) read zero on the region, so its demand scores run lower than an
   island's. Car access as a demand term is a later-phase question.

@@ -1066,9 +1066,35 @@ export type LandRead = {
   holder: number;
   texture: number;
   /** Which bid set the price, and the scheme behind the builder's. */
-  winner: "builder" | "holder" | "texture";
+  winner: "builder" | "holder" | "texture" | "farm";
   scheme: ResidualScheme | null;
 };
+
+/**
+ * WHAT AN ACRE IS WORTH AS A FARM, $/sf of land (a farm or woodlot tract, `rec.ag`; 0 for
+ * anything else). The income approach a farmland appraiser uses: the cash
+ * rent a tenant farmer pays, capitalised at the rent-to-value ratio farmland
+ * actually trades at.
+ *
+ *   Cropland cash rent, Illinois, 2024: $261/acre (USDA NASS, Cash Rents
+ *   Survey, Aug 2024). Pasture and woodland, Illinois, 2024: about $40/acre
+ *   (same survey, pasture).
+ *   Rent-to-value: Illinois cropland averaged $9,600/acre in 2024 (USDA NASS
+ *   Land Values Summary, Aug 2024): 261 / 9,600 = 2.7%.
+ *
+ * Both are calibrated facts, carried in today's dollars by the price level.
+ * The cap does not move with the policy rate here — farmland's ratio has been
+ * among the stickiest in real estate — which is a simplification, stated.
+ */
+const FARM_RENT_PER_ACRE = { crop: 261, wood: 40 };
+const FARM_CAP = 261 / 9600;
+export function farmUsePsf(rec: ParcelRecord, econ: Econ): number {
+  // a farm keeps its farm bid when rezoned: a rezoning permits building, it does not stop the corn
+  if (!rec.ag || !(rec.lotArea > 0)) return 0;
+  const rent = rec.ag === "wood" ? FARM_RENT_PER_ACRE.wood : FARM_RENT_PER_ACRE.crop;
+  // in this town's money: its price level (market.ts EVERY TOWN HAS ITS OWN DOLLARS) and the years since
+  return (rent / FARM_CAP / 43560) * (econ.priceLevel ?? 1) * (econ.cpi ?? 1);
+}
 
 /**
  * DOES BUILDING PAY, CITY-WIDE, CLASS BY CLASS — one pro forma, read by
@@ -1522,6 +1548,19 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
     base = floor;
     winner = "texture";
   }
+  // FARMLAND HAS AN INCOME OF ITS OWN (the region map). A tract zoned for
+  // agriculture carries no building envelope, so every bid above is near zero;
+  // what it does carry is a crop, and the farmer next door is a real buyer at
+  // the land's farm-use value. That bid stands under the others.
+  // For a farm the comparable sales ARE farm sales: the town's urban texture
+  // floor is not evidence about an acre of corn, so a farm prices at the best
+  // of its farm bid and what a builder or a holder would pay.
+  const farm = farmUsePsf(rec, econ);
+  if (rec.ag) {
+    base = farm; winner = "farm";
+    if (builder > base) { base = builder; winner = "builder"; }
+    if (holder > base) { base = holder; winner = "holder"; }
+  } else if (farm > base) { base = farm; winner = "farm"; }
   return {
     psf: base,
     builder, holder, texture: floor,
@@ -2339,8 +2378,14 @@ function childrenOf(m: Record<string, string>, bbl: string): readonly string[] {
 }
 
 function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl: string): ParcelRecord | null {
-  const rec = parcels[bbl];
+  let rec = parcels[bbl];
   if (!rec) return null;
+  // LAND DEVELOPMENT (landdev.ts). A tract the board rezoned carries its new
+  // district and envelope; a tract cut into lots has passed its land to them —
+  // a deed with no buildable area left, exactly as a lot folded into a site.
+  const rz = s.rezoned?.[bbl];
+  if (rz) rec = { ...rec, zoneDist: rz.zone, farMaxComm: rz.far, farMaxRes: rz.far };
+  if (s.platted?.[bbl]) return { ...(resolveBase(s, rec) ?? rec), lotArea: 0, farMaxComm: 0, farMaxRes: 0 };
   // ASSEMBLED SITES. A merged lot's land has moved into its parent: the parent
   // is as big as the sum of the deeds, and the child is a deed with no
   // buildable area left in it. Everything downstream — the envelope, the land

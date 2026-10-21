@@ -931,15 +931,36 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       gap = 0;
     }
     // Movers and new households take the empty flats.
+    // Each block's weight in the draw, kept per block: a draw changes only the
+    // block it picks, so only that block's weight is worked out again — the
+    // same numbers, summed and walked in the same order, as recomputing every
+    // block every draw. (Two blocks sharing one roll would both move; then
+    // every weight is recomputed, as before.)
+    const nF = fs.length;
+    // (The sum counts a block when v > half a unit; the walk skips it only when
+    // v <= half a unit — the same blocks unless v is not a number.)
+    const inTot = new Uint8Array(nF), inPick = new Uint8Array(nF), termF = new Float64Array(nF);
+    const setTerm = (i: number) => {
+      const f = fs[i];
+      const v = Math.min(f.cap - f.roll.occ, f.lim - f.intake);
+      const half = f.unit * 0.5;
+      inTot[i] = v > half ? 1 : 0;
+      inPick[i] = v <= half ? 0 : 1;
+      termF[i] = v * f.w;
+    };
+    const sharedRoll = new Set(fs.map((f) => f.roll)).size !== nF;
+    for (let i = 0; i < nF; i++) setTerm(i);
     for (let guard = 0; guard < 2000 && gap > 1; guard++) {
+      if (sharedRoll) for (let i = 0; i < nF; i++) setTerm(i);
       let tot = 0;
-      for (const f of fs) { const v = Math.min(f.cap - f.roll.occ, f.lim - f.intake); if (v > f.unit * 0.5) tot += v * f.w; }
+      for (let i = 0; i < nF; i++) if (inTot[i]) tot += termF[i];
       if (!(tot > 0)) break;
-      let u = rng(s, "leasing") * tot, pick = fs[0];
-      for (const f of fs) { const v = Math.min(f.cap - f.roll.occ, f.lim - f.intake); if (v <= f.unit * 0.5) continue; u -= v * f.w; if (u <= 0) { pick = f; break; } }
+      let u = rng(s, "leasing") * tot, pick = fs[0], pickI = 0;
+      for (let i = 0; i < nF; i++) { if (!inPick[i]) continue; u -= termF[i]; if (u <= 0) { pick = fs[i]; pickI = i; break; } }
       const take = Math.min(gap, pick.cap - pick.roll.occ, pick.unit * 4, pick.lim - pick.intake);
       if (!(take > 0)) break;
       pick.roll.occ += take; pick.intake += take; gap -= take;
+      setTerm(pickI);
       // A new letting at the block's rent, as the last six months' deals have
       // moved it, less the concession a block that has stood empty gives.
       const rent = +(pick.mkt * dealSlack(e, "multifamily") * staleDiscount(pick.roll.vac === undefined ? 0 : m - pick.roll.vac)).toFixed(2);

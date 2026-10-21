@@ -2477,7 +2477,8 @@ export function recordDeal(e: Econ, k: BuiltClass, m: number, rel: number, sf: n
   const list = ((e.deals ??= {})[k] ??= []);
   list.push({ m, c: +(Math.log(rel) - DEAL_H * p).toFixed(5), p: +p.toFixed(6), sf: Math.round(sf), ...(renewal ? { r: 1 } : {}) });
   while (list.length && list[0].m < m - 6) list.shift();
-  if (list.length > 400) list.splice(0, list.length - 400);
+  // (shift, not splice: the same array, and V8 trims the front in place.)
+  while (list.length > 400) list.shift();
 }
 
 export function tickNation(s: GameState) {

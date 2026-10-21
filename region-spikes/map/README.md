@@ -380,22 +380,21 @@ street tree per ~2 houses.
 
 ### Low-rise downtown by default (owner: "not dense" means the downtowns only)
 
-outcity-region-3.json  6.6 MB  3262 ms
-  {"volumes":21236,"houses":17872,"parcels":4204,"neighbourhoods":115,"trees":36867,"centerlines":1491,"ground":{"land":1,"marsh":268,"farm":657,"woods":161,"yard":1087,"stream":684,"pond":76,"pavement":6202,"block":217,"park":0}} exports a small-town centre.  gives back the
-first skyline (written as ).
+`export-unreal.mjs` exports a small-town centre. `--dense` gives back the
+first skyline (written as `…-dense.json`).
 
 **Downtown:**
 - Mostly 2–4 floors, some 5–8 near the middle, at most two towers of 10–12
   floors.
 - Footprints cover 50–70% of the lot.
 - ~15% of downtown lots and ~10% of village lots are vacant or surface
-  parking: a  parcel paved over.
+  parking: a `land` parcel paved over.
 
 **Suburbs, farms and woods** are the generator's own, as in the SVG maps.
 
 An earlier export also thinned the suburbs, by a third of the urbanised
 KNOB, growth from the towns, and less leapfrog. The owner reversed that.
-Those options are still in  but nothing uses
+Those options are still in `generate(seed, km, opts)` but nothing uses
 them.
 
 **Seed 3, 10 km:** 6.6 MB, made of:

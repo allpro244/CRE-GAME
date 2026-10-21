@@ -111,13 +111,19 @@ function maskRects(G, [x0, y0, x1, y1], ok) {
 }
 
 // ================================================================ export
-// Defaults follow the owner's final call ("the original small-town version"):
-//  - LOW-RISE DOWNTOWN: a small-town centre with some parking lots (--dense restores the first export's skyline);
-//  - THIN SUBURBS: the region at an earlier point in its growth — a third of the urbanised-share KNOB, car-era
-//    growth from the old towns as well as downtown, little leapfrogging (--full-suburbs uses the SVG maps' growth).
+// Defaults follow the owner's FINAL spec: a 6 x 6 km region, a low-rise downtown (--dense restores the first
+// export's skyline) and "a lot less housing": only a few neighbourhoods, so the region has room to grow.
+// suburbs: "few"  (default) the generator's full growth, then only these kept as built (the rest reverts to farm):
+//                  the pre-war ring nearest downtown, the two post-war tracts nearest the first interstate, and
+//                  the one recent tract nearest downtown, within a 2,500-house budget (owner target 1,500-2,500).
+//                  The budget is the owner's design call (an early point in the region's history), not a fact.
+//          "thin"  a third of the urbanised-share KNOB, growth from towns too, little leapfrog (--thin-suburbs)
+//          "full"  the generator's own growth, as in the SVG maps (--full-suburbs)
 const SPARSE_GEN = { urbanisedScale: 1 / 3, townSources: true, holdoutSigma: 0.1 };
-export function exportRegion(seed, { km = 10, crop = 0, dense = false, fullSuburbs = false } = {}) {
-  const M = generate(seed, km, fullSuburbs ? {} : SPARSE_GEN), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
+const HOUSE_BUDGET = 2500;
+export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = "few" } = {}) {
+  const M = generate(seed, km, suburbs === "thin" ? SPARSE_GEN : {}), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
+  if (suburbs === "few") keepFewNeighbourhoods(M);
   M.rotate = Math.floor(makeRng("orient:" + seed)() * 4); // same orientation as the SVG
   // canonical -> map frame (x east, y south, metres), as render() does
   const T = (p) => { const c = S / 2; let x = p[0] - c, y = p[1] - c; for (let i = 0; i < M.rotate; i++) [x, y] = [-y, x]; return [x + c, y + c]; };
@@ -303,16 +309,35 @@ export function exportRegion(seed, { km = 10, crop = 0, dense = false, fullSubur
   };
 }
 
+/** keep only a few neighbourhoods as built; every other subdivided tract goes back to farmland */
+function keepFewNeighbourhoods(M) {
+  const houses = (t) => t.plat.houses.filter((h) => M.free(h.m)).length;
+  const firstHw = M.highways.find((h) => h.kind === "interstate");
+  const hwPts = firstHw ? firstHw.segs.filter((s) => s.built).flatMap((s) => s.pts) : [];
+  const toHw = (t) => hwPts.reduce((m, p) => Math.min(m, dist(p, t.c)), Infinity);
+  const toCore = (t) => dist(t.c, M.core.c);
+  const by = (era, key) => M.tracts.filter((t) => t.era === era).sort((a, b) => key(a) - key(b));
+  const keep = new Set(); let total = 0;
+  const take = (t) => { const n = houses(t); if (total + n > HOUSE_BUDGET) return false; keep.add(t); total += n; return true; };
+  // pre-war ring first, but leave room for the post-war and recent picks
+  for (const t of by("prewar", toCore)) if (total + houses(t) <= HOUSE_BUDGET * 0.55) take(t);
+  // a real subdivision, not a sliver the freeway right-of-way cut off (150 houses ~ a 40-ac tract, approximate)
+  let pw = 0; for (const t of by("postwar", toHw)) { if (pw >= 2) break; if (houses(t) >= 150 && take(t)) pw++; }
+  for (const t of by("recent", toCore)) if (take(t)) break;
+  for (const t of M.tracts) if (t.era && !keep.has(t)) t.era = null;
+  M.keptHouses = total;
+}
+
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isMain) {
-  const args = process.argv.slice(2); let km = 10, crop = 0, dense = false, fullSuburbs = false; const seeds = [];
-  for (let i = 0; i < args.length; i++) { if (args[i] === "--km") km = Number(args[++i]); else if (args[i] === "--dense") dense = true; else if (args[i] === "--full-suburbs") fullSuburbs = true; else if (args[i] === "--crop") crop = Number(args[++i]); else seeds.push(args[i]); }
+  const args = process.argv.slice(2); let km = 6, crop = 0, dense = false, suburbs = "few"; const seeds = [];
+  for (let i = 0; i < args.length; i++) { if (args[i] === "--km") km = Number(args[++i]); else if (args[i] === "--dense") dense = true; else if (args[i] === "--full-suburbs") suburbs = "full"; else if (args[i] === "--thin-suburbs") suburbs = "thin"; else if (args[i] === "--crop") crop = Number(args[++i]); else seeds.push(args[i]); }
   if (!seeds.length) seeds.push("3");
   const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "out"); fs.mkdirSync(outDir, { recursive: true });
   for (const seed of seeds) {
     const t0 = Date.now();
-    const { city, stats } = exportRegion(seed, { km, crop, dense, fullSuburbs });
-    const file = path.join(outDir, `city-region-${seed}${crop ? `-crop${crop}` : ""}${dense ? "-dense" : ""}${fullSuburbs ? "-fullsuburbs" : ""}${km !== 10 ? `-${km}km` : ""}.json`);
+    const { city, stats } = exportRegion(seed, { km, crop, dense, suburbs });
+    const file = path.join(outDir, `city-region-${seed}${crop ? `-crop${crop}` : ""}${dense ? "-dense" : ""}${suburbs !== "few" ? `-${suburbs}suburbs` : ""}${km !== 6 ? `-${km}km` : ""}.json`);
     fs.writeFileSync(file, JSON.stringify(city));
     const mb = fs.statSync(file).size / 1e6;
     console.log(`${path.relative(process.cwd(), file)}  ${mb.toFixed(1)} MB  ${Date.now() - t0} ms\n  ${JSON.stringify(stats)}`);

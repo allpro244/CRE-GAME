@@ -378,35 +378,45 @@ street tree per ~2 houses.
 - Proposed-freeway right-of-way shows as bare land strips through
   subdivisions. A real reserved corridor looks like that.
 
-### Default export: the small-town version (owner's final call)
+### Default export: the owner's final spec
 
-`export-unreal.mjs` exports a low-rise downtown and thin suburbs.
+```bash
+node region-spikes/map/export-unreal.mjs 3    # -> out/city-region-3.json (6 x 6 km)
+```
 
-**Downtown and villages:**
-- Mostly 2–4 floors, some 5–8 near the middle, at most two towers of 10–12
-  floors. Villages are 1–3 floors.
+**Region:** 6 × 6 km. `--km 10` writes `…-10km.json`.
+
+**Downtown and villages: low-rise.**
+- Downtown is mostly 1–4 floors, with a handful at 5–8 and at most two
+  towers of 10–12 floors. Villages are 1–3 floors.
 - Footprints cover 50–70% of the lot.
-- ~15% of downtown lots and ~10% of village lots are vacant or surface
-  parking: a `land` parcel paved over.
-- `--dense` restores the first export's skyline.
+- ~15% of downtown lots and ~10% of village lots are surface parking: a
+  `land` parcel paved over.
+- `--dense` restores the first skyline.
 
-**Suburbs:** the region at an earlier point in its growth.
-- A third of the urbanised-share KNOB. It was always a knob; in the game the
-  growth sim decides it.
-- Car-era growth radiates from the old towns as well as downtown.
-- Leapfrog spread σ 0.1, so growth hugs the first highways, downtown and the
-  towns.
-- `--full-suburbs` uses the SVG maps' growth instead.
-- The SVG maps are unchanged.
+**Homes: "a lot less housing".** The generator grows the region as usual;
+then only these neighbourhoods stay built:
+- the pre-war ring nearest downtown;
+- the two post-war subdivisions nearest the first interstate (at least
+  150 houses each, so not a sliver cut off by the freeway);
+- the one recent subdivision nearest downtown.
 
-Flags combine, and each one adds a suffix to the file name (`-dense`,
-`-fullsuburbs`).
+All of this sits within a 2,500-house budget (the owner's target is
+1,500–2,500). Every other subdivided tract goes back to farmland, so the
+region has room to grow. The budget is a design call (an early point in the
+region's history), not a fact. In the game the growth sim takes over from
+here.
 
-**Seed 3, 10 km (default):** 4.1 MB, made of:
-- 9,036 volumes, of which 5,672 are houses;
-- 4,204 parcels, including 46 neighbourhoods and 512 parking or vacant lots;
-- downtown floor mix: 3,329 buildings at 1–4 floors, 33 at 5–8, 2 at 11;
-- 42,944 trees;
-- 640 centerlines.
+**Other suburb options:**
+- `--thin-suburbs`: a third of the urbanised KNOB, growth from the towns too.
+- `--full-suburbs`: the SVG maps' growth.
 
-With `--full-suburbs` it is 17,872 houses in 115 neighbourhoods.
+**Seed 3, 6 km (default):** 2.2 MB, made of:
+- 4,913 volumes, of which 2,266 are houses;
+- 7 neighbourhoods: 4 pre-war, 2 post-war, 1 recent;
+- 3,168 parcels, about 400 of them parking or vacant;
+- 12,412 trees;
+- 243 centerlines.
+
+**Known:** at 6 km seed 3's downtown straddles the river, and two creeks run
+through it. These are the generator issues noted above.

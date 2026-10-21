@@ -494,7 +494,7 @@ and longer on the far side. Every band and choice then reads from it.
 | Old main street: the old road leaving the core inland, lined with narrow 2–3 floor shopfronts (1880–1930), few gaps | 19th-century main street |
 | Industrial strip along the river: warehouses (cls `industrial`) and rail yards (1890–1945) | railway and mill era |
 | Its outer end declined: ~45% of those lots are vacant ("former mill") | post-1960s decline |
-| Freeway through the old city: the blocks it crosses are gone, the land left cleared | interstate era, urban renewal |
+| Freeway through the old city: an ~80 m corridor along the line, ragged where it nicked blocks, lined with parking, verges, weedy lots and a few 1970s buildings | interstate era, urban renewal |
 | Interchange strip: about 4–8 big boxes behind parking lots at the first interchange out of the city (1985–2015) | late 20th century |
 | Two leapfrog subdivisions (cul-de-sacs, 2000s) out by the highway and old roads, past a farm and woodlot still holding out | recent |
 
@@ -649,9 +649,34 @@ Code: `region.mjs` (land, roads, tracts, plats) and `export-unreal.mjs`
 **Road widths**
 - Highway 24 m, arterial 14 m, local 9 m, downtown 12 m [O, contract].
 
-**Freeway cut** [S, urban renewal]
-- Blocks within 20 m of built freeway pavement are cleared.
-- The land stays cleared; it is not farmed.
+**Freeway cut** [S, urban renewal; widths K]
+
+Blocks are never dropped whole. The cut is applied lot by lot:
+
+- **Corridor:** a lot is taken if its centre, or two or more of its corners,
+  lie within 40 m of the built freeway line (an ~80 m corridor). The edge is
+  therefore ragged where the freeway nicked blocks. The corridor is grassed
+  (`yard`, drawn under the road), with no building and no parcel.
+- **Beside the cut**, within 130 m of the line, the lots were reassembled
+  over the following decades:
+
+| Share | Use | Ground |
+|---|---|---|
+| 35% | surface parking | `pavement` |
+| 20% | landscaped highway verge | `yard` |
+| 20% | weedy vacant lot | `yard` |
+| 25% | 1965–85 building of 3–6 floors, 50–70% footprint, office or multifamily | `block` |
+
+- Grid streets do not run through the corridor.
+
+**Ground rule, all downtown**
+- Only real parking lots and working rail yards are paved.
+- Vacant land is grass or weeds:
+  - drawn as `park` over a paved city block;
+  - drawn as `yard` where the block is lawn, or where the block is laid out
+    lot by lot beside the freeway.
+- House blocks are `yard` (lawn), not paved `block`.
+- A dead mill lot is weeds, not paving.
 
 ### 4. Density: one gradient, bent by history
 
@@ -726,7 +751,7 @@ Code: `region.mjs` (land, roads, tracts, plats) and `export-unreal.mjs`
   existing houses, so subdivisions fill in from the city side phase by
   phase.
 - 6% of lots are left vacant.
-- Outer budget 600 houses [O, about 2,000 in all including the inner
+| 1960s–80s | freeway corridor through the old city, then parking, verges and 1965–85 buildings beside it |
   blocks].
 - A tract with fewer than 20 houses stays a farm. The unbuilt remainder of a
   tract stays a field.

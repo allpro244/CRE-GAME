@@ -228,12 +228,12 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
     const { nL, nW, pl, pw } = r.gridInfo;
     const at = (a, b) => add(add(r.c, mul(r.u, a)), mul(r.v, b));
     // a graded city's grid only runs where its blocks were kept (the settled area), not across the whole rectangle
-    const ok = (p) => !isWaterC(p) && (!(grad && r === M.core) || settled(p));
+    const ok = (p) => !isWaterC(p) && (!(grad && r === M.core) || (settled(p) && !M.story.corr[G.idx(p)]));
     for (let i = 0; i <= nL; i++) for (const run of keepRuns([at(-r.hl + i * pl, -r.hw), at(-r.hl + i * pl, r.hw)], ok)) road(run, "core", wm);
     for (let j = 0; j <= nW; j++) for (const run of keepRuns([at(-r.hl, -r.hw + j * pw), at(r.hl, -r.hw + j * pw)], ok)) road(run, "core", wm);
   }
 
-  for (const r of [M.core, ...M.towns]) for (const b of r.blockRects) if (!blockPts(b).some((p) => isWaterC(p) || M.isSea(p) || underHw(p))) put("block", b.poly());
+  for (const r of [M.core, ...M.towns]) { if (grad && r === M.core) continue; for (const b of r.blockRects) if (!blockPts(b).some((p) => isWaterC(p) || M.isSea(p) || underHw(p))) put("block", b.poly()); }
 
   // ---------------- buildings & parcels
   const volumes = [], parcels = [], trees = [], labels = [];
@@ -323,8 +323,8 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
     const sectors = new Map(); let n = 0, nh = 0;
     const lotParcel = (bbl, address, cls, floors, year, lotM2, bldgM2, ring) => parcels.push({ bbl, address, block: 0, district: "Downtown", districtName: "Downtown", zone: "C", cls, floors, yearBuilt: year, lotArea: sf(lotM2), bldgArea: sf(bldgM2), ring: flat(ring) });
     for (const b of r.blockRects) {
-      if (blockPts(b).some((p) => isWaterC(p) || M.isSea(p) || underHw(p))) continue;
       const St = M.story, kb = G.idx(b.c);
+      if (blockPts(b).some((p) => isWaterC(p) || M.isSea(p) || (!St && underHw(p)))) continue;
       const rb = St ? St.rS(b.c) : r.nr(b.c), band = rb < (St ? RINGS.core : 400) ? 0 : rb < (St ? RINGS.mid : 900) ? 1 : 2;
       // what the block was built as: the river's mill/rail strip, the old main street, or the graded city
       const industrial = St && St.ind(b.c) && rb > 250;
@@ -333,16 +333,40 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
       const houseBlock = !industrial && !mainSt && band === 2 && rng() < Math.min(1, Math.max(0, St ? (rb - RINGS.mid) / (RINGS.city - RINGS.mid) : (rb - 900) / 600)) ** 0.8;
       const front = industrial ? 45 : mainSt ? 15 : houseBlock ? SZ.prewarLot[0] : band === 2 ? 20 : 25;
       const nl = Math.max(1, Math.round(2 * b.hl / front)), lw = 2 * b.hl / nl;
+      // ground: a house block is lawn, a city block is paved; a block the freeway touched is laid lot by lot
+      const touches = St && blockPts(b).some((p) => St.beside[G.idx(p)] === 1);
+      if (!touches) put(houseBlock ? "yard" : "block", b.poly());
       const sec = houseBlock ? Math.floor(((Math.atan2(b.c[1] - r.centre[1], b.c[0] - r.centre[0]) + Math.PI) / (2 * Math.PI)) * 6) % 6 : -1;
       for (let i = 0; i < nl; i++) for (const sd of [-1, 1]) {
         const lc = add(add(b.c, mul(b.u, -b.hl + (i + 0.5) * lw)), mul(b.v, sd * b.hw / 2));
         const lot = rectRing(lc, b.u, lw, b.hw), ring = TT(lot);
         if (isWaterC(lc) || lot.some(isWaterC) || !inBox(centroid(ring))) continue;
+        if (touches) {
+          const inCorr = (p) => St.corr[G.idx(p)] === 1;
+          // the corridor itself: taken for the freeway, grassed either side of the carriageway (drawn under the road)
+          if (inCorr(lc) || lot.filter(inCorr).length >= 2) { put("yard", lot); continue; }
+          if (St.beside[G.idx(lc)] === 1) {
+            // beside the cut: what the decades made of the leftover lots
+            const x = rng(), bbl = `D${parcels.length}`;
+            if (x < 0.35) { put("pavement", lot); lotParcel(bbl, `Downtown lot ${++n} (parking)`, "land", 0, 0, lw * b.hw, 0, ring); }
+            else if (x < 0.55) { put("yard", lot); lotParcel(bbl, `Downtown lot ${++n} (highway verge)`, "land", 0, 0, lw * b.hw, 0, ring); }
+            else if (x < 0.75) { put("yard", lot); lotParcel(bbl, `Downtown lot ${++n} (vacant)`, "land", 0, 0, lw * b.hw, 0, ring); }
+            else {
+              put("block", lot);
+              const cv = 0.5 + 0.2 * rng(), fw = lw * Math.sqrt(cv), fd = b.hw * Math.sqrt(cv), fc = add(lc, mul(b.v, sd * (b.hw - fd) / 2));
+              const floors = 3 + Math.floor(rng() * 4), year = Math.round(1965 + 20 * rng()), cls = rng() < 0.6 ? "office" : "multifamily";
+              volumes.push({ bbl, cls, year, z0: 0, z1: floors * 355, deco: "", crown: true, vacant: false, ring: flat(TT(rectRing(fc, b.u, fw, fd))) });
+              lotParcel(bbl, `Downtown lot ${++n}`, cls, floors, year, lw * b.hw, fw * fd * floors, ring);
+            }
+            continue;
+          }
+          put(houseBlock ? "yard" : "block", lot);
+        }
         if (industrial) {
           // warehouses and yards (1890-1945); the outer end declined after the 1960s, so its lots stand empty
           const declined = rb > RINGS.mid, bbl = `D${parcels.length}`;
           if (rng() < (declined ? 0.45 : 0.2)) {
-            put("pavement", lot); // a rail yard / old loading yard
+            put(declined ? (touches ? "yard" : "park") : "pavement", lot); // a working rail yard is paved; a dead mill lot is weeds
             lotParcel(bbl, `Waterfront lot ${++n} (${declined ? "vacant, former mill" : "rail yard"})`, "land", 0, 0, lw * b.hw, 0, ring);
             continue;
           }
@@ -355,7 +379,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
         if (mainSt) {
           // the old main street: narrow 2-3 floor shopfronts built to the lot line (1880-1930), few gaps
           const bbl = `D${parcels.length}`;
-          if (rng() < 0.05) { lotParcel(bbl, `Main Street lot ${++n} (vacant)`, "land", 0, 0, lw * b.hw, 0, ring); continue; }
+          if (rng() < 0.05) { put(touches ? "yard" : "park", lot); lotParcel(bbl, `Main Street lot ${++n} (vacant)`, "land", 0, 0, lw * b.hw, 0, ring); continue; }
           const cv = 0.8 + 0.1 * rng(), fw = lw * 0.96, fd = b.hw * cv, fc = add(lc, mul(b.v, sd * (b.hw - fd) / 2));
           const floors = 2 + (rng() < 0.45 ? 1 : 0), year = Math.round(1880 + 50 * rng()), cls = rng() < 0.7 ? "retail" : "multifamily";
           volumes.push({ bbl, cls, year, z0: 0, z1: floors * 355, deco: "", crown: true, vacant: false, ring: flat(TT(rectRing(fc, b.u, fw, fd))) });
@@ -377,7 +401,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
           continue;
         }
         const bbl = `D${parcels.length}`;
-        if (vacant) { if (band < 2) put("pavement", lot); lotParcel(bbl, `Downtown lot ${++n} (${band < 2 ? "parking" : "vacant"})`, "land", 0, 0, lw * b.hw, 0, ring); continue; }
+        if (vacant) { put(band < 2 ? "pavement" : touches ? "yard" : "park", lot); lotParcel(bbl, `Downtown lot ${++n} (${band < 2 ? "parking" : "vacant"})`, "land", 0, 0, lw * b.hw, 0, ring); continue; }
         const cov = [[0.7, 0.85], [0.55, 0.7], [0.5, 0.65]][band], cv = cov[0] + (cov[1] - cov[0]) * rng();
         const fw = lw * Math.sqrt(cv), fd = b.hw * Math.sqrt(cv), fc = add(lc, mul(b.v, sd * (b.hw - fd) / 2));
         const floors = band === 0 ? 4 + Math.floor(rng() * 5) : band === 1 ? 2 + Math.floor(rng() * 3) : 1 + (rng() < 0.4 ? 1 : 0);
@@ -519,8 +543,13 @@ function storyPrep(M, rng, seed) {
 
   // the city's extent follows the story, not a circle: keep blocks within story distance, plus the main street
   // a block also goes if it would stand in water or on built freeway (cleared for it in the 1960s), so no orphan streets remain
-  const hwPave = G.layer(); for (const h of M.highways) for (const sg of h.segs) if (sg.built) G.line(hwPave, sg.pts, 20);
-  const wet = (p) => { const k = at(p); return k < 0 || M.water[k] === 1 || hwPave[k] === 1 || M.isSea(p); };
+  // the 1960s freeway cut: only its own corridor was taken (~80 m wide, following the line, ragged where it nicked
+  // blocks); the lots beside it were reassembled over the following decades (parking, a few 1970s buildings, verges,
+  // weedy vacant lots). Corridor half-width 40 m and the 130 m "beside" band are approximate.
+  const corr = G.layer(), beside = G.layer();
+  for (const h of M.highways) for (const sg of h.segs) if (sg.built) { G.line(corr, sg.pts, 40); G.line(beside, sg.pts, 130); }
+  M.story.corr = corr; M.story.beside = beside;
+  const wet = (p) => { const k = at(p); return k < 0 || M.water[k] === 1 || M.isSea(p); };
   core.blockRects = core.blockRects.filter((b) => (rS(b.c) <= RINGS.city || (mainL[at(b.c)] && dist(b.c, c) < RINGS.mainStreet)) && !b.poly().concat([b.c]).some(wet));
   core.blocks = core.blockRects.map((b) => b.poly());
   M.coreL.fill(0);

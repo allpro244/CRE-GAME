@@ -257,3 +257,69 @@ table shows which reasons matter:
   the residual.
 - **Monthly cash flow, IRR, multiple and peak equity per project.** This
   script is a working reference implementation of all of it.
+
+---
+
+## What the engine needs: homebuilder rival firms
+
+Homebuilders are rival firms. Each month a builder firm buys lots, starts
+homes, sells them and pays its construction loan. The lot price the land
+developer (the player) receives is that firm's residual bid.
+
+### Minimal state per homebuilder firm
+
+| State | What it holds | In this spike |
+|---|---|---|
+| `capital`, `committed` | The firm's equity, and how much of it is tied up in lots and homes | The equity side of `builderDebtShare` (78%) |
+| Lot inventory | Finished lots owned, per community: count and cost basis. Optionally lots under option (deposit, takedown schedule). | Lots taken down at `pace` |
+| Homes under construction | Per community: count, start month, cost drawn to date | `buildMonths` (7.4), with cost drawn evenly |
+| Unsold spec inventory | Completed and unsold homes: count, months on market | `monthsForSale` (3.2) |
+| Communities | Which subdivision, the lot price paid, and the home product (sf and price tier) | One community; the NAHB home |
+| Sales pace | Orders per community per month, and the backlog of sold-but-not-closed homes | `absorptionPerBuilder` (2.47) |
+| Construction loan | Balance, rate and loan-to-cost | `adcSpecRateNow` (11.82%), 22% debt share |
+| Habits (fixed for life) | Required margin, appetite for spec homes, maximum communities, loan-to-cost | `builderProfitShare` (9.8%) |
+
+### Monthly steps for one builder firm
+
+1. **Price the home.** New-home price = market house-price level × product
+   size. This needs a local price level by market, not one national number.
+2. **Sell.** Orders = pace × communities. The pace falls when the mortgage
+   rate rises above what borrowers are used to, and when the firm's spec
+   inventory is high. Closings move homes from backlog to revenue; the
+   construction loan is repaid, and capital and profit are booked.
+3. **Start homes** to replace sales, plus spec homes up to the firm's habit.
+   Each start uses one lot from inventory and draws construction cost
+   (cost per sf × size × the cost index) over the build time, financed at
+   the loan-to-cost share.
+4. **Buy lots** to keep about one phase's worth of lots ahead of starts. The
+   bid is `builderResidual()` at today's price, cost and rate. Several firms
+   bidding for the same developer's lots is how the lot price clears.
+5. **Accrue construction-loan interest** on the drawn balance.
+6. **Respond to trouble.** Cut price or offer incentives when spec inventory
+   ages: this is where margins flex, which this spike is missing. Walk away
+   from lot options when the residual falls below the option price. Write
+   down lots when their value falls below cost.
+
+The land developer's monthly steps are already in `run()`: entitlement
+clock, starting phases (with the mothball rule), finishing phases, lots
+taken down by builders at the residual, and the cash ledger.
+
+### Which inputs map to existing engine concepts
+
+The engine was read only, at the commit this branch started from
+(`broadway-and-wall/src/engine`).
+
+| Spike input | Existing engine concept | Notes |
+|---|---|---|
+| Mortgage rate path (`rateAt`) | `market.ts` `tickHouseholds`: mortgage rate = `econ.indexRate` + 1.7 points. `nat.mortRef` holds the rate "borrowers are used to". | Use the engine's rate directly. Rate shocks then come from the macro model, not a script. |
+| Rate → home price (`homePrice`, full pass-through) | **`nat.hpi`**, the national house-price index. It is already **sticky** (`HPI_CHASE_M = 30` months to close the gap to the fundamental) and built on the user cost of owning (`HPI_UC_ELAST`, about 7% off per mortgage point). | **This fixes the spike's weakest number.** Replace `homePrice()` with the price at the survey home × `hpi`. Full pass-through only gives the long-run target. |
+| Rate → sales pace | The housing-starts response in the national block (`IH_RATE`: "a 3-point jump takes 30-50% off starts", following the gap to `mortRef`) | Scale each builder's absorption by the same response, so national starts and the builders' local sales agree. |
+| Construction cost (`nahbConstructionCost`, cost per sf) | `econ.costIdx` (construction and operating cost inflation), `replacementCostPsf` in `dev.ts` | The single-family cost per sf is new (the engine's tables are commercial and multifamily); scale it by `costIdx`. |
+| Builder construction loan (`adcSpecRate`) | `proforma.ts` construction desks (`CONSTR_SPREAD` 2.4 over the index, points, loan-to-cost cap), and `lenders.ts` `adc` book share | Reuse the same desks. NAHB's 11.8% effective rate is the check. |
+| Builder firm | `Builder` in `types.ts` (`capital`, `committed`, `starts`, habits `prof` including `ltc` and `spec`) | Extend it with communities, lot inventory, work in progress, spec inventory and backlog, or create a sibling `HomeBuilder`. |
+| Land residual (`maxLandBid`) | `value.ts` `residualLandPsf` / `residualScheme`: the commercial residual solved per parcel | The same idea, applied to a tract: the subdivision cash flow solved for land price. |
+| Ag-value floor (`agLandPerAcreWI`) | None | New: USDA $/acre by state for each region. |
+| Jurisdiction parameters (lots per acre, horizontal cost per lot, review months, approval odds) | `zoning.ts` (district rules) | New fields per fringe jurisdiction. |
+| Entitlement odds | None | New, and still unsourced. |
+| Phases, finished-lot inventory, lot takedowns | None (`s.merged` handles merging lots, not splitting) | New: dynamic parcels (region plan step 2). |
+| Soft-cost shares, required margin, build time, months on market | None for for-sale housing | New constants, all sourced in the tables above. |

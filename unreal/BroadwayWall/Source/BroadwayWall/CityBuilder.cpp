@@ -815,6 +815,134 @@ void ACityBuilder::BuildGround()
 			}
 		}
 	}
+	// THE WORKING HARBOUR. The water off the bulkhead was empty: a port city's
+	// edge is piers, and boats at them. Along each long straight run of
+	// bulkhead (not a beach), about every 250 m, a pier straight out: 60-120 m
+	// by 12-18 m, a concrete deck a metre over the water on timber fender
+	// piles. Most piers have a boat alongside: a tug, a deck barge of
+	// containers, a commuter ferry where the pier is long enough, or a few
+	// sloops. Each pier, its size and its boat are hashed from where it
+	// stands, so the harbour is the same every time the city loads. The
+	// sea's surface is at z = -120.
+	if (StreetLook() && FPackageName::DoesPackageExist(TEXT("/Game/BW/Harbour/SM_PierDeck")))
+	{
+		// (a beach's bounding box is most of the shore: test the sand itself,
+		// a few metres either side of the spot)
+		TArray<const TArray<FVector2D>*> SandH;
+		for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
+			if (L.Key == TEXT("beach"))
+				for (const TArray<FVector2D>& R : L.Value) SandH.Add(&R);
+		auto InSand = [&SandH](const FVector2D& Q)
+		{
+			for (const TArray<FVector2D>* R : SandH)
+			{
+				bool b = false;
+				for (int32 i = 0, j = R->Num() - 1; i < R->Num(); j = i++)
+					if (((*R)[i].Y > Q.Y) != ((*R)[j].Y > Q.Y) && Q.X < ((*R)[j].X - (*R)[i].X) * (Q.Y - (*R)[i].Y) / ((*R)[j].Y - (*R)[i].Y) + (*R)[i].X) b = !b;
+				if (b) return true;
+			}
+			return false;
+		};
+		struct FLandRing { const TArray<FVector2D>* R; FBox2D B; };
+		TArray<FLandRing> Land;
+		for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
+			if (L.Key == TEXT("land"))
+				for (const TArray<FVector2D>& R : L.Value) { FBox2D Bx(ForceInit); for (const FVector2D& Q : R) Bx += Q; Land.Add({ &R, Bx }); }
+		auto InRing = [](const TArray<FVector2D>& R, const FVector2D& Q)
+		{
+			bool b = false;
+			for (int32 i = 0, j = R.Num() - 1; i < R.Num(); j = i++)
+				if ((R[i].Y > Q.Y) != (R[j].Y > Q.Y) && Q.X < (R[j].X - R[i].X) * (Q.Y - R[i].Y) / (R[j].Y - R[i].Y) + R[i].X) b = !b;
+			return b;
+		};
+		auto Wet = [&](const FVector2D& Q)
+		{
+			for (const FLandRing& L : Land) if (L.B.IsInside(Q) && InRing(*L.R, Q)) return false;
+			return true;
+		};
+		const double SeaZ = -120;
+		const TCHAR* const Deck = TEXT("/Game/BW/Harbour/SM_PierDeck.SM_PierDeck");
+		const TCHAR* const Pile = TEXT("/Game/BW/Harbour/SM_Piling.SM_Piling");
+		struct FBoat { const TCHAR* Mesh; double Len, Beam; };
+		const FBoat Tug = { TEXT("/Game/BW/Harbour/SM_Tug.SM_Tug"), 2800, 900 };
+		const FBoat Barge = { TEXT("/Game/BW/Harbour/SM_Barge.SM_Barge"), 6000, 1500 };
+		const FBoat Ferry = { TEXT("/Game/BW/Harbour/SM_Ferry.SM_Ferry"), 4500, 1200 };
+		const FBoat Sloop = { TEXT("/Game/BW/Harbour/SM_Sailboat.SM_Sailboat"), 1000, 330 };
+		int32 Piers = 0, Boats = 0;
+		TArray<FVector2D> Placed;
+		for (const FLandRing& L : Land)
+		{
+			const TArray<FVector2D>& R = *L.R;
+			const int32 Count = R.Num();
+			if (Count < 3) continue;
+			const double Area2 = FMeshBuf::SignedArea2(R);
+			// the shore is one smooth ring of short segments: walk it by distance,
+			// the bulkhead's direction at each spot taken over 40 m of it
+			TArray<double> Cum = { 0 };
+			for (int32 i = 0; i < Count; ++i) Cum.Add(Cum.Last() + (R[(i + 1) % Count] - R[i]).Size());
+			const double Per = Cum.Last();
+			auto At = [&](double S)
+			{
+				S = FMath::Fmod(FMath::Fmod(S, Per) + Per, Per);
+				int32 i = 0;
+				while (i < Count - 1 && Cum[i + 1] < S) ++i;
+				const double Seg = FMath::Max(1.0, Cum[i + 1] - Cum[i]);
+				return FMath::Lerp(R[i], R[(i + 1) % Count], (S - Cum[i]) / Seg);
+			};
+			{
+				for (double t = 0; t < Per; t += 25000)
+				{
+					const FVector2D Base = At(t);
+					const FVector2D Dd = (At(t + 2000) - At(t - 2000)).GetSafeNormal();
+					if (Dd.IsNearlyZero()) continue;
+					// off a beach, a promenade pier with a few sloops: no working boats
+					bool bBeach = false;
+					{
+						const FVector2D Nm(Dd.Y, -Dd.X);
+						bBeach = InSand(Base) || InSand(Base + Nm * 800) || InSand(Base - Nm * 800);
+					}
+					// straight here: the chord over 80 m runs with the local direction
+					if (((At(t + 4000) - At(t - 4000)).GetSafeNormal() | Dd) < 0.97) continue;
+					const FVector2D Out = Area2 > 0 ? FVector2D(Dd.Y, -Dd.X) : FVector2D(-Dd.Y, Dd.X);
+					const uint32 H = HashCombine(GetTypeHash(FMath::RoundToInt(Base.X / 100)), GetTypeHash(FMath::RoundToInt(Base.Y / 100)));
+					if (H % 10 < 3) continue;
+					const double PL = 6000 + double(H % 61) * 100, PW = 1200 + double((H >> 8) % 7) * 100;
+					// all of it over water, and clear of the last pier
+					bool bOk = true;
+					for (double f : { 0.15, 0.5, 1.0 })
+						for (double sd : { -0.5, 0.5 })
+							if (!Wet(Base + Out * (PL * f) + Dd * (PW * sd))) bOk = false;
+					for (const FVector2D& Q : Placed) if ((Q - Base).SizeSquared() < 15000.0 * 15000.0) bOk = false;
+					if (!bOk) continue;
+					Placed.Add(Base);
+					const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Out.Y, Out.X));
+					AddProp(Deck, FTransform(FRotator(0, Yaw, 0), FVector(Base + Out * (PL * 0.5), 20), FVector(PL / 100, PW / 100, 1.0)), false);
+					for (double d = 300; d < PL; d += 600)
+						for (double sd : { -1.0, 1.0 })
+							AddProp(Pile, FTransform(FRotator(0, Yaw, 0), FVector(Base + Out * d + Dd * (sd * (PW * 0.5 + 15)), 100)), false);
+					++Piers;
+					// the boat alongside, on one side or the other
+					const uint32 Kind = (H >> 16) % 20;
+					const double Side = ((H >> 12) & 1) ? 1.0 : -1.0;
+					auto Moor = [&](const FBoat& B, double Along, double Gap)
+					{
+						const FVector2D C = Base + Out * Along + Dd * (Side * (PW * 0.5 + B.Beam * 0.5 + Gap));
+						if (!Wet(C + Out * (B.Len * 0.5)) || !Wet(C - Out * (B.Len * 0.5)) || !Wet(C + Dd * (Side * B.Beam * 0.5))) return;
+						const double Bow = ((H >> 4) & 1) ? Yaw : Yaw + 180;
+						AddProp(B.Mesh, FTransform(FRotator(0, Bow, 0), FVector(C, SeaZ)), false);
+						++Boats;
+					};
+					if (bBeach) { if (Kind < 12) for (int32 k = 0; k < 3; ++k) Moor(Sloop, 1000 + k * 1600, 200 + k * 80); }
+					else if (Kind < 6) Moor(Tug, PL - Tug.Len * 0.5 - 300, 120);
+					else if (Kind < 10) Moor(Barge, FMath::Max(PL * 0.5, Barge.Len * 0.5 + 300), 120);
+					else if (Kind < 13 && PL >= Ferry.Len + 800) Moor(Ferry, PL - Ferry.Len * 0.5 - 300, 150);
+					else if (Kind < 17)
+						for (int32 k = 0; k < 3; ++k) Moor(Sloop, 1000 + k * 1600, 200 + k * 80);
+				}
+			}
+		}
+		UE_LOG(LogBWBuilder, Display, TEXT("harbour: %d piers, %d boats"), Piers, Boats);
+	}
 	if (Kerbs.V.Num())
 	{
 		Kerbs.Emit(Ground, Section++, false);

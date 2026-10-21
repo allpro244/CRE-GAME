@@ -1044,6 +1044,12 @@ export interface Listing {
    * the private window is `earlyUntilM`, the price set by how desperate it is.
    */
   quietFrom?: string;
+  /**
+   * A motivated seller's ask as a share of the deed's value, struck at the
+   * month's close (refreshListings) on the appraisal the buyer reads, not on
+   * the market's half-updated state when the firm made the call.
+   */
+  askFactor?: number;
   distress?: boolean;  // motivated seller — priced under appraisal, goes fast
   /** Why ordinary product reached the tape; makes turnover legible. */
   reason?: "fund-life" | "merchant" | "estate" | "voluntary" | "receiver" | "non-core";

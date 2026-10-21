@@ -36,14 +36,14 @@ import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, Rival
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
 import { dollarLevel, rng, newsChance, rrange, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
-import { DEV_MARGIN, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
+import { DEV_MARGIN, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
 import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
 import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar, projectedDevIrr } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, stabViewFor } from "./debt";
-import { stampApproach, conveyedValue } from "./leasing";
+import { stampApproach, conveyedValue, conveyedDeed } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
 import { programmeSf, queueSupplyProject, rescheduleSupplyProject, stallSupplyProject } from "./supply";
@@ -3777,14 +3777,26 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
 
 /** Put one named building on the tape at a motivated seller's price. */
 function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: string, rec: ParcelRecord) {
-  const sell = { bbl, rec };
+  // the deed that conveys is the canonical record, not the firm's copy of it
+  const sell = { bbl, rec: resolveRec(parcels, s, bbl) ?? rec };
   // PRICED ON THE DEED THAT CONVEYS, not the firm's class-model mark. The
   // duress discount is off what a buyer gets — this roll, this grade, less the
   // distress notch (conveyedValue) — and the class mark ran up to 2.6x the
   // market appraisal on an emptied building, so a "motivated" seller asked
   // over the tape (test/appraisal.mjs; the voluntary listing made this move
   // long ago, HANDOFF 0f).
-  const v = conveyedValue(s, sell.rec, sell.bbl, true, assetGrade(r, sell.rec));
+  // ...AND ON THE ROLL THAT CONVEYS. The deed's value rests on a drawn rent
+  // roll; pricing on one draw and stamping the listing with another (sim.ts
+  // stampListing at month end) gave the buyer a different building from the
+  // one priced: a "motivated" quiet sale asked 105% of the deed it handed
+  // over. The vessel the ask is struck on is the roll the listing carries.
+  const deed = conveyedDeed(s, sell.rec, sell.bbl, true, assetGrade(r, sell.rec));
+  // priced on the deed as disclosed, which is what the buyer's appraisal
+  // reads (asIfOwned over the listing's roll): the pricing vessel's space
+  // blocks are not part of the disclosure, and they alone put it 16% over
+  const v = holdingValue(sell.rec, s.econ, { ...deed.vessel, blocks: undefined } as typeof deed.vessel, s.month);
+  const disclosed = { cond: deed.vessel.condition, condIdx: deed.vessel.condIdx, roll: deed.vessel.tenants, resRentPsf: deed.vessel.resRentPsf,
+    ...(deed.vessel.occ !== undefined ? { occ: deed.vessel.occ } : {}) };
   // THE QUIET CALL FIRST. A sponsor with a few weeks of road left would rather
   // sell to one buyer it can name than put "motivated" on the tape and have
   // every vulture in town price its failure. If you are a buyer it can name —
@@ -3806,7 +3818,8 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
     const ask = Math.round(v * (0.95 - 0.20 * desperate) / 1000) * 1000;
     r.dumped = (r.dumped ?? 0) + 1;
     s.listings.push({
-      bbl: sell.bbl, ask, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id,
+      bbl: sell.bbl, ask, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id, ...disclosed,
+      askFactor: 0.95 - 0.20 * desperate,
       earlyUntilM: s.month + 2, quietFrom: r.name,
     });
     logFirm(s, r, "event", `Squeezed — offered ${sell.rec.address} to you privately`, sell.bbl, ask);
@@ -3823,7 +3836,7 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
   r.dumped = (r.dumped ?? 0) + 1;
   // The deed stays with them until somebody buys it — a firm selling under
   // pressure is still the owner, and that is the whole point of the trade.
-  s.listings.push({ bbl: sell.bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id });
+  s.listings.push({ bbl: sell.bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id, ...disclosed });
   logFirm(s, r, "event", `Short of cash — put ${sell.rec.address} on the tape under appraisal`, sell.bbl, px);
   // A FIRM SELLING UNDER PRESSURE IS ALWAYS RECORDED, AND INTERRUPTS WHEN IT IS
   // ABOUT YOU. This had no gate at all — every distress listing in the city

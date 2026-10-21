@@ -419,6 +419,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     // the withdraw test cannot drift away from the number they are guarding.
     const v = rec ? conveyedValue(s, rec, li.bbl, !!li.distress) : 0;
     const floor = v * ASK_FLOOR;
+    // a motivated seller's ask is struck now, on the closing appraisal (see Listing.askFactor)
+    if (li.askFactor && li.listedM === s.month && v > 0) li.ask = Math.round((v * li.askFactor) / 1000) * 1000;
     if (s.month - li.listedM >= 4) li.ask = Math.round(li.ask * 0.985 / 1000) * 1000;
     // Nor from under a buyer across the table: a seller in a live negotiation
     // has a number in play and does not pull the listing mid-conversation —

@@ -26,6 +26,7 @@
 // July and the hammer falls one tick later. One card, once a year, that you
 // can read or ignore — passing costs nothing but the bargain, and nothing
 // here ever asks for a second click.
+import { withFreshLand } from "./value";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding, Rival } from "./types";
 import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger, autoLeaseOnClose } from "./types";
@@ -309,7 +310,11 @@ function playerTakes(s: GameState, parcels: ParcelTable, lot: AuctionLot, paid: 
   recordComp(s, rec, paid, firmShort(s), lot.holder, true, "worn");
 }
 
-function resolveAuction(s: GameState, parcels: ParcelTable) {
+/** Priced for a deal: every lot read inside is read afresh (value.ts withFreshLand). */
+function resolveAuction(...args: Parameters<typeof resolveAuctionNow>): ReturnType<typeof resolveAuctionNow> {
+  return withFreshLand(() => resolveAuctionNow(...args));
+}
+function resolveAuctionNow(s: GameState, parcels: ParcelTable) {
   const a = s.auction!;
   delete s.auction;
   let sold = 0, reo = 0, pulled = 0;

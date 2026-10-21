@@ -5,6 +5,7 @@
 // max, pay hard+soft cost per sf, fund with a 60% interest-only construction
 // loan, wait 4-6 quarters while the building rises on the map, then lease up
 // from empty. A modest random cost/schedule overrun keeps it honest.
+import { withFreshLand } from "./value";
 import type { ParcelTable } from "@/data/types";
 import type { BtsCommitment, Builder, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, MerchantBook, Rival, RivalStyle, UseMix } from "./types";
 import { hash01 } from "./competitorTraits";
@@ -200,7 +201,11 @@ function merchantBook(s: GameState, bbl: string, startM: number, plan: DevPlan, 
  *     takes the shortfall against its capital, and the building is on the
  *     tape as bank REO.
  */
-function settleMerchant(s: GameState, parcels: ParcelTable, bbl: string, m: MerchantBook, who?: Builder): number | undefined {
+/** Priced for a deal: every lot read inside is read afresh (value.ts withFreshLand). */
+function settleMerchant(...args: Parameters<typeof settleMerchantNow>): ReturnType<typeof settleMerchantNow> {
+  return withFreshLand(() => settleMerchantNow(...args));
+}
+function settleMerchantNow(s: GameState, parcels: ParcelTable, bbl: string, m: MerchantBook, who?: Builder): number | undefined {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec || !rec.bldgArea) return undefined;
   const e = s.econ;

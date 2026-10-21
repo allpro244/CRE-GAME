@@ -35,6 +35,7 @@
  * The owner's draws come from the "owners" stream and the firm's from
  * "rivals"; the player's own approaches keep the "sales" stream they had.
  */
+import { withFreshLand } from "./value";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Rival, RivalStyle } from "./types";
 import { rng, rrange } from "./market";
@@ -117,7 +118,15 @@ export function tickOffMarketCalls(s: GameState, parcels: ParcelTable): void {
       const fit = (max / Math.max(1, assetValue(rec, s.econ, initialCondition(rec)))) * want;
       if (!best || fit > best.fit) best = { rec, max, fit, held };
     }
-    if (best) callOwner(s, parcels, r, best.rec, best.held, best.max);
+    // The doors are chosen on the firm's book read of each lot; the call is an
+    // offer, so the lot is read afresh before the firm names a number.
+    if (best) {
+      const b = best;
+      withFreshLand(() => {
+        const max = firmMaxPrice(s, r, b.rec);
+        if (max > 0) callOwner(s, parcels, r, b.rec, b.held, max);
+      });
+    }
   }
 }
 

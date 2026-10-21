@@ -1192,7 +1192,101 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
 /** Same supply elasticity `buildClimate` uses; see the note there. */
 const Q_ELASTICITY_DEV = 1.2;
 
+/**
+ * NOBODY RE-UNDERWRITES EVERY LOT EVERY MONTH (owner, 2026-10-21).
+ *
+ * The street's read of a lot — the residual, the holder's bid, the texture
+ * floor, and the auction between them — was struck afresh for every lot that
+ * anybody asked about, every month. That is not how land is priced in life:
+ * an owner, a lender's file, a rival's book carry the lot at its last read and
+ * revisit it on a cycle, the same reasoning by which the street's books are
+ * appraised once a year on January 1st (rivals.ts appraiseBooks). So inside a
+ * month tick a lot's read is its MARK, re-struck:
+ *
+ *   - on its own staggered quarterly cycle (each lot's phase is hashed off its
+ *     BBL, so a third of the town comes up each month rather than all of it
+ *     at once) — the most often a lot is revisited without a reason;
+ *   - at once when something that should move it happens: its inputs change
+ *     (zoning or FAR, demand, the comp-adjusted texture — a comp trading
+ *     nearby moves `landAdj` and `districtHeat` — its cornice, its size), or
+ *     the index rate has moved a quarter point (one policy step, a shape
+ *     parameter stated as such) since it was read;
+ *   - whenever it is priced for a deal: a listing's ask, a buyer's bid, an
+ *     offer to an owner. Those run inside `withFreshLand`, which reads afresh
+ *     and re-strikes the mark — a lot is re-read when it is listed or an offer
+ *     is made, and the price a player sees on a listing or an offer is always
+ *     freshly computed.
+ *
+ * Marks live on the economy (`econ.landMarks`), so a saved game reads the same
+ * lot the same way after a reload. They are read and written only for the
+ * live economy inside a month tick (`withLandMarks`); the opening, the
+ * player's own actions and every screen outside the tick read afresh and
+ * write nothing.
+ */
+const MARK_CYCLE_M = 3;
+const MARK_RATE_MOVE = 0.25;
+let MARK_ECON: Econ | null = null;
+let FRESH_LAND = 0;
+/** Run a month tick's worth of engine with lot marks live on `econ`. */
+export function withLandMarks<T>(econ: Econ, fn: () => T): T {
+  const prev = MARK_ECON;
+  MARK_ECON = econ;
+  try { return fn(); } finally { MARK_ECON = prev; }
+}
+/** Price for a deal: every lot read inside is read afresh and its mark re-struck. */
+export function withFreshLand<T>(fn: () => T): T {
+  FRESH_LAND++;
+  try { return fn(); } finally { FRESH_LAND--; }
+}
+function markPhase(bbl: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) % MARK_CYCLE_M;
+}
+/**
+ * WHAT MOVES A LOT'S READ AT ONCE, as one string: its size (an assemblage),
+ * its zoning and FAR, its district, its demand band (tens of score — the
+ * band, not every point of drift), and the skyline its block reads
+ * (`cornice`, which moves when something taller goes up next door). A land
+ * print on its block (`econ.landPrints`, counted by recordComp) re-reads it
+ * too. Slow drift — the town maturing a little each month, demand inching
+ * inside a band, a comp sheet ageing — waits for the lot's own cycle, as it
+ * would in an owner's file.
+ */
+function lotPrint(rec: ParcelRecord): string {
+  return `${rec.lotArea}|${rec.farMaxComm}|${rec.farMaxRes}|${String(rec.zoneDist)}|${String(rec.district)}|${Math.floor((rec.demandScore ?? 50) / 10)}|${rec.yearBuilt}|${rec.cornice}`;
+}
+/**
+ * The lot's mark under the rules above, or null when marks are not live for
+ * this economy. A mark struck for its price alone carries no read; a reader
+ * that needs the whole read re-reads the lot then, and the new read is the
+ * mark — price and read always carry the same date.
+ */
+function markedLand(rec: ParcelRecord, econ: Econ, wantRead: boolean): { psf: number; read?: LandRead } | null {
+  if (econ !== MARK_ECON || !rec.bbl) return null;
+  const marks = (econ.landMarks ??= {});
+  const fp = lotPrint(rec);
+  const m = econ.m ?? 0;
+  const pc = econ.landPrints?.[rec.block ?? "—"] ?? 0;
+  const mk = marks[rec.bbl];
+  if (!FRESH_LAND && mk && mk.fp === fp && mk.pc === pc && Math.abs((econ.indexRate ?? 0) - mk.r) < MARK_RATE_MOVE && (!wantRead || mk.read)) {
+    const ph = markPhase(rec.bbl);
+    if (Math.floor((m - ph) / MARK_CYCLE_M) <= Math.floor((mk.m - ph) / MARK_CYCLE_M)) return mk;
+  }
+  // A vacant lot's readers want the whole read (the scheme, the bids), so it is struck whole.
+  const next = wantRead || rec.class === "land"
+    ? (() => { const read = landReadNow(rec, econ); return { m, fp, pc, r: econ.indexRate ?? 0, psf: read.psf, read }; })()
+    : { m, fp, pc, r: econ.indexRate ?? 0, psf: landPsfNowFresh(rec, econ) };
+  marks[rec.bbl] = next;
+  return next;
+}
+
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
+  const marked = markedLand(rec, econ, false);
+  if (marked) return marked.psf;
+  return landPsfNowFresh(rec, econ);
+}
+function landPsfNowFresh(rec: ParcelRecord, econ: Econ): number {
   // A PURE-PERFORMANCE MEMO — it changes no number. `landRead` runs two full
   // residuals (four uses × up to three schemes × one pro forma each) and the
   // tick asks it for the same lot many times a month: every rival mark, every
@@ -1355,6 +1449,10 @@ function landLotMatches(m: LandMemoEntry, rec: ParcelRecord, heat: number | unde
 }
 
 export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
+  return markedLand(rec, econ, true)?.read ?? landReadNow(rec, econ);
+}
+/** The land read as of now, behind the pure-performance memo below. */
+function landReadNow(rec: ParcelRecord, econ: Econ): LandRead {
   // THE SAME PURE-PERFORMANCE MEMO as `landPsfNow`, for the whole read (both
   // bids and the scheme): firms, the comps desk, the order book and the map
   // ask for the same lot's read many times a month, and every ask ran two full

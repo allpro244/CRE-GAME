@@ -29,6 +29,7 @@
 // now claims jobs out of the city's own pipeline: buys the dirt, writes the
 // equity, carries the loan through the cycle, and either owns a building at
 // the end of it or hands a frame to a receiver.
+import { withFreshLand } from "./value";
 import { drawRivalRaise, poolLeft, PITCH_MULT } from "./investors";
 import { fieldRoster, rivalCapitalMult, type RivalCapital } from "./setup";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
@@ -1390,7 +1391,11 @@ export function jobDelivered(s: GameState, parcels: ParcelTable, bbl: string, fi
  * because whoever buys it inherits a design they did not draw. This is the
  * best deal in development and the game could not previously produce one.
  */
-function orphanToTape(s: GameState, parcels: ParcelTable) {
+/** Priced for a deal: every lot read inside is read afresh (value.ts withFreshLand). */
+function orphanToTape(...args: Parameters<typeof orphanToTapeNow>): ReturnType<typeof orphanToTapeNow> {
+  return withFreshLand(() => orphanToTapeNow(...args));
+}
+function orphanToTapeNow(s: GameState, parcels: ParcelTable) {
   for (const j of s.cityJobs ?? []) {
     if (!j.orphaned) continue;
     // A frame that did not sell goes back on the tape, cheaper. Standing steel
@@ -3810,7 +3815,11 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
 }
 
 /** Put one named building on the tape at a motivated seller's price. */
-function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: string, rec: ParcelRecord) {
+/** Priced for a deal: every lot read inside is read afresh (value.ts withFreshLand). */
+function listUnderDuress(...args: Parameters<typeof listUnderDuressNow>): ReturnType<typeof listUnderDuressNow> {
+  return withFreshLand(() => listUnderDuressNow(...args));
+}
+function listUnderDuressNow(s: GameState, parcels: ParcelTable, r: Rival, bbl: string, rec: ParcelRecord) {
   // the deed that conveys is the canonical record, not the firm's copy of it
   const sell = { bbl, rec: resolveRec(parcels, s, bbl) ?? rec };
   // PRICED ON THE DEED THAT CONVEYS, not the firm's class-model mark. The
@@ -3958,7 +3967,11 @@ function reoWindow(s: GameState, lender: string): number {
  * because the firm no longer owns it and negotiating with them for it would be
  * negotiating with somebody who has nothing to sell.
  */
-function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, only?: string): boolean {
+/** Priced for a deal: every lot read inside is read afresh (value.ts withFreshLand). */
+function deedInLieu(...args: Parameters<typeof deedInLieuNow>): ReturnType<typeof deedInLieuNow> {
+  return withFreshLand(() => deedInLieuNow(...args));
+}
+function deedInLieuNow(s: GameState, parcels: ParcelTable, r: Rival, why: string, only?: string): boolean {
   const st = paramsOf(r);
   let worst: { bbl: string; rec: ParcelRecord; v: number; ratio: number } | null = null;
   let fore: { bbl: string; rec: ParcelRecord; v: number; ratio: number; cov: number } | null = null;
@@ -5161,7 +5174,11 @@ export function styleHunt(r: Rival): { appetite: number; procyclical: number; co
   return { appetite: st.appetite, procyclical: st.procyclical, contra: st.contra };
 }
 
-export function rivalBuys(
+/** Priced for a deal: every lot read inside is read afresh (value.ts withFreshLand). */
+export function rivalBuys(...args: Parameters<typeof rivalBuysNow>): ReturnType<typeof rivalBuysNow> {
+  return withFreshLand(() => rivalBuysNow(...args));
+}
+function rivalBuysNow(
   s: GameState, parcels: ParcelTable, rec: ParcelRecord, price: number,
   // THE FIRM THAT BID IS THE FIRM THAT BUYS. When the player takes a named
   // firm's bid, that firm takes the deed — if it can still close. The

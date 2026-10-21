@@ -50,7 +50,7 @@ import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
 import { tickBlackSwans } from "./blackswans";
-import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./value";
+import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf, withLandMarks, withFreshLand } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 import { purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
 import { settleSyndications, reviewSyndications } from "./syndicate";
@@ -320,7 +320,11 @@ export function newGame(
  * distress mark; a fund with a committee and a builder recycling do not have to
  * and will not.
  */
-function listHolderExit(s: GameState, parcels: ParcelTable) {
+/** Priced for a deal: every lot read inside is read afresh (value.ts withFreshLand). */
+function listHolderExit(...args: Parameters<typeof listHolderExitNow>): ReturnType<typeof listHolderExitNow> {
+  return withFreshLand(() => listHolderExitNow(...args));
+}
+function listHolderExitNow(s: GameState, parcels: ParcelTable) {
   const { bbls, distress, kind } = tickHolders(s, parcels, (gs) => rng(gs, "owners"));
   for (const bbl of bbls) {
     if (s.listings.some((l) => l.bbl === bbl) || s.holdings[bbl] || isCivicLand(s, bbl)) continue;
@@ -348,7 +352,11 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
   }
 }
 
-export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string[]) {
+/** Priced for a deal: every lot read inside is read afresh (value.ts withFreshLand). */
+export function refreshListings(...args: Parameters<typeof refreshListingsNow>): ReturnType<typeof refreshListingsNow> {
+  return withFreshLand(() => refreshListingsNow(...args));
+}
+function refreshListingsNow(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // The register's own life runs first, so a book that came to market this
   // month is on the tape the player reads this month.
   listHolderExit(s, parcels);
@@ -576,7 +584,11 @@ const RIPE_CHECK_SHARE = 1 / 12;
 const RIPE_LIST_P = 0.25;
 // Forced land sales follow distress — slack and shrinking payrolls — at up to
 // 0.6% of vacant lots a month in a full downturn (the old depression row).
-function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: Set<string>) {
+/** Priced for a deal: every lot read inside is read afresh (value.ts withFreshLand). */
+function landSales(...args: Parameters<typeof landSalesNow>): ReturnType<typeof landSalesNow> {
+  return withFreshLand(() => landSalesNow(...args));
+}
+function landSalesNow(s: GameState, parcels: ParcelTable, bbls: string[], listed: Set<string>) {
   const vacant: { bbl: string; rec: ParcelRecord }[] = [];
   for (const bbl of bbls) {
     if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) continue;
@@ -642,6 +654,12 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
  * is most of why advancing decades felt like the UI had locked up.
  */
 function tickMonth(
+  s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
+): void {
+  // Lots are carried at their marks through the month (value.ts withLandMarks).
+  withLandMarks(s.econ, () => tickMonthMarked(s, parcels, bbls, adjacency));
+}
+function tickMonthMarked(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
 ): void {
   if (s.gameOver) return;

@@ -2293,6 +2293,16 @@ export interface Econ {
   /** The previous year's queue measurement, and how far the current one has glided in (value.ts queueFactor). */
   landQueuePrev?: Partial<Record<BuiltClass, { psf: number[]; ahead: number[]; total: number; absYr: number; r: number }>>;
   landQueueW?: number;
+  /**
+   * Each lot's last land read and when it was struck (value.ts `markedRead`):
+   * the street re-reads a lot on its own quarterly cycle, or at once when
+   * something that should move it happens. `fp` is the lot's inputs as read,
+   * `r` the index rate then. The whole read is kept once a reader has needed
+   * it (the scheme and the bids, not only the price).
+   */
+  landMarks?: Record<string, { m: number; fp: string; pc?: number; r: number; psf: number; read?: import("./value").LandRead }>;
+  /** Land prints recorded on each block, ever (comps.ts recordComp) — what re-reads the block's marks. */
+  landPrints?: Record<string, number>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation

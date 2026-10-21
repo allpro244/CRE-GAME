@@ -21,6 +21,7 @@
 // it cuts — every quarter, forever, until somebody does. That is the mechanism
 // by which bad debt eventually finds a clearing price instead of sitting on the
 // tape at a number nobody will pay.
+import { withFreshLand } from "./value";
 import type { GameState, PortfolioListing } from "./types";
 import type { ParcelRecord, ParcelTable } from "../data/types";
 import { dollarLevel, rng, rrange } from "./market";
@@ -417,7 +418,11 @@ export function acceptStreetBook(
 // ---------------------------------------------------------------------------
 // THE MONTHLY LIFE OF THE PACKAGE MARKET
 // ---------------------------------------------------------------------------
-export function tickPortfolios(s: GameState, parcels: ParcelTable) {
+/** Priced for a deal: every lot read inside is read afresh (value.ts withFreshLand). */
+export function tickPortfolios(...args: Parameters<typeof tickPortfoliosNow>): ReturnType<typeof tickPortfoliosNow> {
+  return withFreshLand(() => tickPortfoliosNow(...args));
+}
+function tickPortfoliosNow(s: GameState, parcels: ParcelTable) {
   s.portfolios ??= [];
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
 

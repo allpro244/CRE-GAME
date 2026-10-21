@@ -2,6 +2,7 @@
 // counters, TI/LC signing costs, renewals where the incumbent weighs the
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
+import { withFreshLand } from "./value";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
@@ -549,7 +550,11 @@ export function conveyedValue(
  * needs the income and the deposits as well as the value, and reading them off
  * a second vessel would be a second opinion about the same deed.
  */
-export function conveyedDeed(
+/** Priced for a deal: every lot read inside is read afresh (value.ts withFreshLand). */
+export function conveyedDeed(...args: Parameters<typeof conveyedDeedNow>): ReturnType<typeof conveyedDeedNow> {
+  return withFreshLand(() => conveyedDeedNow(...args));
+}
+function conveyedDeedNow(
   s: GameState, rec: ParcelRecord, bbl: string, distress = false,
   // A RIVAL'S BUILDING CONVEYS THE RIVAL'S GRADE. `assetGrade(r, rec)` is how
   // hard that firm has been running the plant, and it is not the same as the

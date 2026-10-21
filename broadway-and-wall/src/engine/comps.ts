@@ -81,6 +81,8 @@ export function recordComp(
   });
   if (!s.comps) s.comps = [];
   const built = rec.class !== "land" && rec.bldgArea > 0;
+  // A land print is news to every lot on its block: their marks re-read (value.ts).
+  if (!built) { const lp = (s.econ.landPrints ??= {}); const b = rec.block ?? "—"; lp[b] = (lp[b] ?? 0) + 1; }
   const cond = condition ?? initialCondition(rec);
   // A COMP IS A FACT, AND SO IS THE CAP RATE ON IT.
   //

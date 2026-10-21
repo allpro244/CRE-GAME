@@ -193,7 +193,25 @@ namespace
 			return Yard;
 		}
 		else if (Layer == TEXT("esplanade")) Path = TEXT("/Game/Road/Material/MI/MI_Sidewalk_Plaza_A_WS.MI_Sidewalk_Plaza_A_WS");
-		else if (Layer == TEXT("park") || Layer == TEXT("median")) return BWGrassMaterial();   // a boulevard's planted median is lawn too
+		else if (Layer == TEXT("park") || Layer == TEXT("median") || Layer == TEXT("yard")) return BWGrassMaterial();   // a boulevard's planted median is lawn too; so are the region's back yards
+		// THE REGION EXPANSION'S OPEN LAND: crops in rows read from the air as a
+		// lighter, yellower green than a lawn; a woodlot as a dark one under its trees
+		else if (Layer == TEXT("farm") || Layer == TEXT("woods"))
+		{
+			static UMaterialInstanceDynamic* Crop = nullptr;
+			static UMaterialInstanceDynamic* Wood = nullptr;
+			UMaterialInstanceDynamic*& D = Layer == TEXT("farm") ? Crop : Wood;
+			if (!D)
+				if (UMaterialInterface* G = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Grass.M_BW_Grass")))
+				{
+					D = UMaterialInstanceDynamic::Create(G, GetTransientPackage());
+					const bool bFarm = Layer == TEXT("farm");
+					D->SetVectorParameterValue(TEXT("GrassDark"), bFarm ? FLinearColor(0.075f, 0.080f, 0.030f) : FLinearColor(0.016f, 0.030f, 0.012f));
+					D->SetVectorParameterValue(TEXT("GrassLight"), bFarm ? FLinearColor(0.150f, 0.140f, 0.055f) : FLinearColor(0.035f, 0.055f, 0.022f));
+					D->AddToRoot();
+				}
+			return D;
+		}
 		else if (Layer == TEXT("beach")) Path = TEXT("/Game/Megascans/Surfaces/sand_sand_pjuuP0/M_sand.M_sand");
 		else if (Layer == TEXT("sea") || Layer == TEXT("pond") || Layer == TEXT("stream"))
 		{
@@ -541,6 +559,9 @@ void ACityBuilder::BuildGround()
 	// front is paved; lawns belong to the low-rise streets. A vacant lot is
 	// one ground (gravel, dirt, weeds). Picks are by lot (a hash of its BBL),
 	// so a lot keeps its ground across rebuilds; the building stands on it.
+	// (Not in the region expansion: there a parcel is a whole neighbourhood or a
+	// farm tract, drawn by its own ground layers.)
+	if (City.Size != TEXT("region"))
 	{
 		enum ECover { Lawn, Plaza, ConcLight, ConcDark, Asphalt, Gravel, Worn, Dirt, Meadow, NumCovers };
 		struct FShare { ECover C; float W; };
@@ -1158,6 +1179,34 @@ void ACityBuilder::BuildVolumes()
 			Rec.Tile = TileOf[i];
 			if (Facades) Facades->Record = bInst ? &Rec.Inst : nullptr;
 			PropRecord = bInst ? &Rec.Inst : nullptr;
+			// A HOUSE (the region expansion's suburbs): one instance of a house
+			// mesh (tools/make-house.py, a unit footprint) sized to its ring, the
+			// ridge along the longer side; no facade kit, no massing
+			if (Vol.Deco == TEXT("house"))
+			{
+				if (bInst && Vol.Ring.Num() >= 4)
+				{
+					static const TCHAR* const Houses[] = {
+						TEXT("/Game/BW/Houses/SM_House_Cream.SM_House_Cream"), TEXT("/Game/BW/Houses/SM_House_Sage.SM_House_Sage"),
+						TEXT("/Game/BW/Houses/SM_House_Navy.SM_House_Navy"), TEXT("/Game/BW/Houses/SM_House_Brick.SM_House_Brick"),
+						TEXT("/Game/BW/Houses/SM_House_Grey.SM_House_Grey") };
+					FVector2D C(0, 0);
+					for (const FVector2D& P : Vol.Ring) C += P;
+					C /= Vol.Ring.Num();
+					const FVector2D E0 = Vol.Ring[1] - Vol.Ring[0], E1 = Vol.Ring[2] - Vol.Ring[1];
+					const bool bLong = E0.Size() >= E1.Size();
+					const FVector2D Ax = bLong ? E0 : E1;
+					const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Ax.Y, Ax.X));
+					const double L = FMath::Max(E0.Size(), E1.Size()), W = FMath::Min(E0.Size(), E1.Size());
+					// walls 300 of the mesh's 330: a storey and a half per 450 cm of height
+					const double Sz = FMath::Max(0.8, (Vol.Z1 - Vol.Z0) / 450.0);
+					const uint32 Hh = GetTypeHash(Keys[i]);
+					// older houses mostly brick and cream, newer ones panel colours
+					const int32 Pick = Vol.Year > 0 && Vol.Year < 1945 ? (Hh % 3 == 0 ? 0 : 3) : Vol.Year >= 1990 ? int32(1 + Hh % 2) * ((Hh >> 3) % 3 == 0 ? 1 : 0) + ((Hh >> 3) % 3 == 0 ? 0 : 4) : int32(Hh % 3);
+					AddProp(Houses[Pick], FTransform(FRotator(0, Yaw, 0), FVector(C, Vol.Z0), FVector(L / 100.0, W / 100.0, Sz)), true);
+				}
+				continue;
+			}
 			const bool bDress = bFacades && !Vol.bVacant && !Vol.bFrame && !Vol.bOpen && Vol.Deco.IsEmpty() && Vol.Z1 - Vol.Z0 >= 400;
 			if (bDress)
 			{
@@ -1859,7 +1908,7 @@ void ACityBuilder::BuildStreetProps()
 		const uint32 Block = HashCombine(GetTypeHash(FMath::FloorToInt(P.X / 9000.0)), GetTypeHash(FMath::FloorToInt(P.Y / 9000.0)));
 		const int32 Species = Rng.FRand() < 0.7f ? int32(Block % 3) : Rng.RandRange(0, 2);
 		AddProp(LeafTreeMeshes[Species], FTransform(R, FVector(P, Z), FVector(S)), false);
-		AddProp(TEXT("/Game/Prop/Kit_TreeBase_A/Mesh/SM_TreeBase_SquareGrill_A.SM_TreeBase_SquareGrill_A"), FTransform(R, FVector(P, Z - 1)), false);
+		if (City.Size != TEXT("region")) AddProp(TEXT("/Game/Prop/Kit_TreeBase_A/Mesh/SM_TreeBase_SquareGrill_A.SM_TreeBase_SquareGrill_A"), FTransform(R, FVector(P, Z - 1)), false);
 	};
 	// trees where the generator planted them
 	for (const FVector2D& P : City.Trees) Plant(P, 4, 0.85, 1.15);

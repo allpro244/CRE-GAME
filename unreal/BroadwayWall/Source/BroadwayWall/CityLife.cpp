@@ -205,7 +205,8 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 		if (bKerb || L.Key == TEXT("median") || L.Key == TEXT("park"))
 			for (const TArray<FVector2D>& R : L.Value) { NoPark.Add(R); if (bKerb) Kerbs.Add(R); }
 	}
-	for (const FBWParcel& P : City.Parcels) { NoPark.Add(P.Ring); Kerbs.Add(P.Ring); }
+	// (a region's parcel is a whole neighbourhood, streets and all: only the ground layers find its kerbs)
+	if (City.Size != TEXT("region")) for (const FBWParcel& P : City.Parcels) { NoPark.Add(P.Ring); Kerbs.Add(P.Ring); }
 	TArray<FBWCenterline> Streets = City.Centerlines;
 	for (FBWCenterline& C : Streets)
 	{

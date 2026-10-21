@@ -186,3 +186,31 @@ Open questions and next ideas (visual):
 - Perf tools: -Perf=N logs game/render/GPU medians; -ProfileGPU dumps one GPU profile.
 - Demolition is one price, wreckCost ($14/sf × cost idx, $60k min), for both the player's teardown and the pro forma's knock-down (was $14 vs $12).
 - TODO: re-render thumbnails and catalog under the new light; repackage D:\Builds\BroadwayWall.
+
+## Update, 2026-10-21 afternoon: PRs #411 (brighter-graphics) and #412 (lot-coverage, stacked)
+- #411:
+  - brightness and graphics settings;
+  - leafy seasonal trees (make-trees.py) and ~6k street trees;
+  - lots in two zones, a front and a yard (BuildGround "THE OPEN PART OF A LOT");
+  - lot edges (make-yard.py): fences, driveways, hedges, dumpsters;
+  - harbour (make-harbour.py);
+  - cars on the measured carriageway (CityLife "THE KERB WHERE IT IS");
+  - fewer cars, more people;
+  - the rate-move card removed (news only; a new chair still stops);
+  - wreckCost.
+- #412:
+  - incremental BuildVolumes (per-volume signatures, FVolRec instance records, 250 m tile meshes, zero-scale garbage compacted at 25%): 1.65 s → ~40 ms a month;
+  - MIN_COVERAGE 0.6 and CITY_PLAN 14;
+  - merged-lot build guard in rivals.ts;
+  - picking falls back to the ground plane;
+  - sea to 200 km and far-shore land section;
+  - buses and box trucks (make-fleet.py);
+  - desk camera holds and tilts;
+  - collapsible kit shelves.
+- Asset scripts to run on a fresh checkout (Content/ is ignored), via UnrealEditor-Cmd -run=pythonscript:
+  - make-trees.py, make-ground.py, make-yard.py, make-harbour.py, make-fleet.py.
+- GOTCHA: Megascans textures stream as virtual textures; a material sampling them needs SAMPLERTYPE_VIRTUAL_* or it falls back to the grid.
+- GOTCHA: `node <file>` from bash fails on Windows with ERR_UNSUPPORTED_ESM_URL_SCHEME for test imports; use `pnpm -s exec node`.
+- Engine month tick is ~0.4 s on the 1.45k-lot test city (flat profile: developmentProForma, tickFirms, ownerOf). Next target for speed.
+- Owner's back-pocket idea: an expanding city with home development (memory: expanding-city-backlog). Don't start unprompted.
+- Packaged build being made at D:\Builds\BroadwayWall-next (copy over D:\Builds\BroadwayWall once #411/#412 merge).

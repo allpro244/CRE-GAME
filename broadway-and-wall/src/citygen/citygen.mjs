@@ -84,12 +84,17 @@ export function streetCover(cls, coverage, lo, hi) {
   return coverage;                                                      // housing keeps its yard
 }
 // PLAN 13: A LIFT BUILDING NEEDS A LETTABLE PLATE, not just room for the lift.
-// An office floor is a core with lettable depth either side of it: about 9 m
-// from window to core wall, so 18 m across at the least (London and New York
-// speculative office plates run 18-30 m deep). A block of flats is a corridor
-// with a unit either side: 15 m. Ten metres (plan 12) let 18-storey slabs
-// stand on 12 m plates, a building nobody lets.
-const PLATE_MIN_M = { office: 15, other: 12 };
+// An office floor above a side core is about 8-9 m of lettable depth beside a
+// 3-4 m core: 12 m across at the least, which is the 40 ft lot the side-street
+// lofts and office buildings of Midtown stand on to twelve and sixteen floors.
+// Flats behind a single-loaded corridor need about 11 m (the 35-40 ft lot of
+// the prewar elevator apartment house). Ten metres (plan 12) let slabs stand
+// on plates that hold the lift and little else. The slenderness cap below
+// (MAX_SLENDER) is what stops the pencils: a 12 m plate stops near 15 floors.
+// (15/12 was tried first and measured too blunt: it took the metro town's
+// seven-to-nine-floor buildings from 132 to 53 and its 10-19 from 25 to 4,
+// a downtown of walk-ups with almost nothing standing above them.)
+const PLATE_MIN_M = { office: 12, other: 11 };
 export function plateFloors(footprint, floors, cls = "", planV = 12) {
   if (!footprint || floors <= WALKUP_FLOORS) return floors;
   const w = narrowWidth(footprint);

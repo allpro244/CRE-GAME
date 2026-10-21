@@ -294,11 +294,11 @@ export function massingStack({ ring, lotRing = null, hM, year, klass, u, familie
   // towers run 1:5 to 1:8 (height to narrow base width: WTC 1:6.6, Seagram
   // about 1:5.8), and 1:10 and over is the "super-slender" class (CTBUH, the
   // 57th Street towers), engineering exceptions, not a type. Above walk-up
-  // height (six storeys, 22 m) a tier must also hold a lettable plate: 15 m
-  // across for offices, 12 m otherwise (citygen.mjs PLATE_MIN_M). A form that
+  // height (six storeys, 22 m) a tier must also hold a lettable plate: 12 m
+  // across for offices, 11 m otherwise (citygen.mjs PLATE_MIN_M). A form that
   // breaks either falls through to the plain building, whose height the
   // plate rule already bounds.
-  const minPlate = klass === "office" ? 15 : 12;
+  const minPlate = klass === "office" ? 12 : 11;
   const fits = (t) => {
     if (t.top <= 22) return true;
     const w = narrowestSpan(t.ring);

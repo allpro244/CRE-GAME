@@ -1335,7 +1335,9 @@ void ACityBuilder::BuildVolumes()
 		{
 			const int32 LotSec = 1;   // 0 walls, 1 lots, 2 stone, 3.. roofs
 			Lots.Emit(Mesh, LotSec, true);
-			UMaterialInterface* LotMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots"));
+			// (in the region the sun-bleached lot instance reads as pale blank slabs
+			// among low-rise blocks: there a car park is the street's dark asphalt)
+			UMaterialInterface* LotMat = City.Size == TEXT("region") ? BWRoadMaterial() : LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots"));
 			Mesh->SetMaterial(LotSec, LotMat ? LotMat : VertexColorMaterial.Get());
 		}
 		// roofs: City Sample's rooftop surfaces (bitumen, dirty concrete tiles, pebble-dash), one per building

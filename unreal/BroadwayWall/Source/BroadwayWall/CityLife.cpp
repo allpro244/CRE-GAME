@@ -312,6 +312,8 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 	for (const FBWCenterline& C : Streets)
 	{
 		if (C.Line.Num() < 2 || !HasParking(C.Width) || FParse::Param(FCommandLine::Get(), TEXT("NoParked"))) continue;
+		// a suburban street's cars stand in their driveways, not at the kerb
+		if (City.Size == TEXT("region") && C.Cls == TEXT("local")) continue;
 		TArray<double> Cum; double Len = 0;
 		Cumulate(C.Line, Cum, Len);
 		const double Kerb = C.Width * 0.5 - ParkW * 0.5;

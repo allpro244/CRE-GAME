@@ -133,3 +133,13 @@ Open questions and next ideas (visual):
 - Fire stairs and bulkheads on lot-line walls.
 - Build desk: let the player pick a zone palette.
 - City generator height variety along a street wall (src/citygen; needs tests).
+
+## Update, 03:00 2026-10-21
+- **Building forms for the player**, committed on branch `claude/forms-wip` (worktree D:/Projects/CRE-forms, commit 1b522017). Merge it into `claude/building-styles-forms` once the main test run finishes, then run the full suite again.
+  - `src/citygen/forms.mjs`: PLAYER_FORMS (forms legal from 2000: step, cake, terrace, base, podium, retail base, courtyard, lightcourt, endtowers, twins, notch, telescope), `formTiers`, `formMetrics` (retained, skin), `formsFor`.
+  - BuildingDesign `form` / `formRetained` / `formSkin`. The pro forma reads custom.form: gsf × retained (capped at 1), hard cost × (1 + 0.15 × (skin − 1)); EXTERIOR_CLOSURE_SHARE = 0.15 (RSMeans B20).
+  - unrealHost solves tiers on the real lot (rings from toBwCity) for the render view and the preview. DesignPicker FormPicker lists only eligible forms, with the % floor area and façade each changes.
+  - Measured on the metro city: small lots get no forms; medium lots get step/terrace/cake/retail base; large lots add podium, twins, telescope, base, notch.
+- C++ (on the main branch): RenderLot/preview `tiers` (BWReadTiers); ApplyView and SetPreview draw one volume per tier.
+- Industrial styles B85-B87, with a `ground.type: "dock"` loading-dock floor. Not yet merged into styleKits/families: run style-kits.mjs and facade-families.mjs after the tests.
+- Thumbnails re-rendered at 03:00; B85-B87 need a `-KitThumbs -ShotOnly=kit-B8` run.

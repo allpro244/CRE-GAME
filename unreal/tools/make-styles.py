@@ -553,6 +553,18 @@ def ground(R, W, H, entrance=False, M=None):
             # a canvas awning stepped out over the pavement in four courses
             for k in range(4):
                 M.box(5, 0, 40 + k * 30, a + 5, b - 5, sign - 30 - k * 22, sign - 10 - k * 22)
+    elif kind == "dock" and not entrance:
+        # LOADING DOCKS: a roll-up door per bay over a raised dock, a steel
+        # canopy over the run of them, bumpers at the dock edge
+        dw, dh = min(W - 80, g.get("door_w", 300)), g.get("door_h", 360)
+        a, b = -W / 2 - dw / 2, -W / 2 + dw / 2
+        wall_with_holes(M, mat, W, H, [(a, b, 120, 120 + dh)])
+        for z in range(120, int(120 + dh), 18):                     # the door's slats
+            M.box(4, -20, -16, a, b, z, z + 15)
+        M.box(3, 0, 140, a - 30, b + 30, 0, 120)                     # the dock
+        M.box(4, 140, 150, a + 20, a + 45, 30, 100)                  # bumpers
+        M.box(4, 140, 150, b - 45, b - 20, 30, 100)
+        M.box(1, 0, 220, -W, 0, 120 + dh + 40, 120 + dh + 55)       # canopy
     elif kind == "arcade" and not entrance:
         # an arcade: columns on the street line, the shopfront set back behind
         # a covered walk, under a round or flat head
@@ -915,7 +927,7 @@ def build(R, data_dir):
     # A STREET OF TENANTS. Each shop bay is somebody's: its own awning colour
     # or none, its own sign band. Shopfront variants share a mix group, so
     # FacadeBuilder gives each bay its own (the architecture is unchanged).
-    if R.get("ground", {}).get("type", "shop") == "shop":
+    if R.get("ground", {}).get("type", "shop") == "shop" and R.get("ground", {}).get("tenants", True):
         gw[0]["mix"] = 50
         palette = ["Paint/PaintedMetal_Red", "Paint/PaintedMetal_Green", "Paint/PaintedMetal_Black",
                    "Paint/PaintedMetal_Grey", "Paint/PaintedStone_Khaki", "Paint/PaintedStone_charcoal",

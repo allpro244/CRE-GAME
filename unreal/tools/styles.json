@@ -4617,5 +4617,143 @@
    "metalpanel",
    "stackbrick"
   ]
+ },
+ {
+  "key": "B85",
+  "label": "Brick warehouse with docks",
+  "group": "prewar",
+  "uv": 100,
+  "mats": {
+   "wall": "Brick/BrickOffset_Brown",
+   "trim": "Concrete/Concrete_Dirty",
+   "base": "Concrete/Concrete_Dirty",
+   "dark": "Paint/PaintedMetal_Grey"
+  },
+  "bay": 420,
+  "storey": 420,
+  "win": {
+   "w": 220,
+   "h": 230,
+   "sill": 90,
+   "recess": 20,
+   "mullions": 3,
+   "transom": true,
+   "head": "arch",
+   "per_bay": 1
+  },
+  "pier": {
+   "proud": 18,
+   "w": 70
+  },
+  "ground": {
+   "type": "dock",
+   "h": 620,
+   "door_w": 320,
+   "door_h": 380
+  },
+  "top": {
+   "type": "parapet",
+   "h": 140
+  },
+  "families": [
+   "industrial",
+   "brewery",
+   "textilemill"
+  ]
+ },
+ {
+  "key": "B86",
+  "label": "Metal-panel logistics",
+  "group": "contemporary",
+  "uv": 100,
+  "mats": {
+   "wall": "BW/PanelWarmGrey",
+   "trim": "Paint/PaintedMetal_Grey",
+   "base": "Concrete/Concrete",
+   "dark": "Paint/PaintedMetal_Grey",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
+  },
+  "bay": 450,
+  "storey": 600,
+  "win": {
+   "ribbon": true,
+   "w": 430,
+   "h": 90,
+   "sill": 440,
+   "recess": 4,
+   "mullions": 4,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 4
+  },
+  "pier": {
+   "w": 20,
+   "proud": 8
+  },
+  "ground": {
+   "type": "dock",
+   "h": 620,
+   "door_w": 340,
+   "door_h": 400
+  },
+  "top": {
+   "type": "parapet",
+   "h": 120
+  },
+  "families": [
+   "tiltup",
+   "corrugated",
+   "flexspace",
+   "datacentre"
+  ]
+ },
+ {
+  "key": "B87",
+  "label": "Self-storage",
+  "group": "contemporary",
+  "uv": 100,
+  "mats": {
+   "wall": "BW/PanelWarmGrey",
+   "trim": "BW/FibreCementOrange",
+   "base": "Concrete/Concrete",
+   "accent": "BW/FibreCementOrange",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
+  },
+  "bay": 360,
+  "storey": 330,
+  "win": {
+   "w": 120,
+   "h": 140,
+   "sill": 110,
+   "recess": 6,
+   "mullions": 0,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 5,
+   "box_frame": true,
+   "frame_depth": 20,
+   "frame_t": 10
+  },
+  "ground": {
+   "type": "shop",
+   "h": 450,
+   "bulkhead": 0.5,
+   "sign": 410,
+   "lights": 2,
+   "pier": 40,
+   "awning": false,
+   "tenants": false
+  },
+  "top": {
+   "type": "parapet",
+   "h": 140
+  },
+  "families": [
+   "selfstorage",
+   "corrugated",
+   "metalpanel"
+  ]
  }
 ]

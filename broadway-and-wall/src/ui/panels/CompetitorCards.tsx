@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { derive } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import type { GameState, Rival } from "@/engine/types";
 import { START_YEAR, monthLabel } from "@/engine/types";
@@ -62,7 +62,7 @@ function shownQuirks(r: Rival): string[] {
 export function HeadlinerStrip({ onOpen }: { onOpen: (id: string) => void }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
-  const cast = useMemo(() => headliners(game, parcels), [game, parcels]);
+  const cast = derive(game, "street.headliners", () => headliners(game, parcels), [parcels]);
   if (!cast.length) return null;
   return (
     <div className="page-section">
@@ -111,7 +111,7 @@ export function HeadlinerStrip({ onOpen }: { onOpen: (id: string) => void }) {
 export function RaceChart() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
-  const cast = useMemo(() => headliners(game, parcels, 5), [game, parcels]);
+  const cast = derive(game, "street.headliners5", () => headliners(game, parcels, 5), [parcels]);
   const marks = (game.yearMarks ?? []).filter((m) => m.y >= 0);
   const years = Math.max(marks.length, ...cast.map((h) => h.r.eqHist?.length ?? 0));
   if (years < 2) return null;

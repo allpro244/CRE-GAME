@@ -1,4 +1,5 @@
 import { startTransition } from "react";
+import { loadGfx, saveGfx, type GfxOptions } from "./graphics";
 import { recapBuyout } from "@/engine/recap";
 import { launchRaise, raiseAndBuild, cancelRaise, closeRaiseNow, type RaiseJob } from "@/engine/raise";
 import { create } from "zustand";
@@ -294,6 +295,9 @@ interface AppState {
   /** Graphics quality (Settings -> Display). preferFps is derived: anything below High. */
   graphics: GraphicsQuality;
   setGraphics: (q: GraphicsQuality) => void;
+  /** The Unreal game's full graphics settings (state/graphics.ts): a preset, then any option changed. */
+  gfx: GfxOptions;
+  setGfx: (o: GfxOptions) => void;
   setPreferFps: (v: boolean) => void;
   /**
    * The real-geometry city renderer (map/real/RealCity.ts) instead of the
@@ -892,6 +896,7 @@ export const useStore = create<AppState>((set, get) => ({
       return g ? g !== "high" : localStorage.getItem("bw:prefer-fps") === "on";
     } catch { return false; }
   })(),
+  gfx: loadGfx((() => { try { const g = localStorage.getItem("bw:graphics"); return g === "low" || g === "high" ? g : "medium"; } catch { return "medium"; } })()),
   designPreview: null,
   designSigFits: null,
   setDesignPreview: (p) => set(p ? { designPreview: p } : { designPreview: p, designSigFits: null }),
@@ -1269,6 +1274,10 @@ export const useStore = create<AppState>((set, get) => ({
   setGraphics: (q) => {
     try { localStorage.setItem("bw:graphics", q); } catch { /* private mode */ }
     set({ graphics: q, preferFps: q !== "high" });
+  },
+  setGfx: (o) => {
+    saveGfx(o);
+    set({ gfx: o });
   },
 
 

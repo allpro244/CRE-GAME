@@ -25,7 +25,7 @@ const shortNote = (h: number) => h * (1 + DEV_MARGIN) >= 1
 import {
   adaptiveReuseEligibility, planAdaptiveReuse, planDevelopment, constructionQuotes, reuseZoneBar, zoneUseBar, devMix,
   farMaxFor, maxFloorsFor, maxRetailShare, retailWantsMixed,
-  specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE, maxCoverageFor, siteDebtAtGroundbreak,
+  specCostMult, FLOOR_HEIGHT_FT, MAX_SLENDERNESS, MAX_FLOORS_BY_USE, maxCoverageFor, MIN_COVERAGE, siteDebtAtGroundbreak,
   devFundingNeed, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, TAKEOUT_HEDGE_LTC,
   btsRentRead, BTS_FIT_PREMIUM, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY, groundbreakPurse,
 } from "@/engine/dev";
@@ -281,7 +281,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   // as the 70% the flats may cover, and the slider ends there.
   const covCap = maxCoverageFor(use, use === "mixed"
     ? { retail: split.retail / 100, office: split.office / 100, multifamily: split.multifamily / 100 } : undefined);
-  const cov = Math.min(covDial, covCap);
+  const cov = Math.max(MIN_COVERAGE, Math.min(covDial, covCap));
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(floors, maxFl);
   // the scheme stands on its lot in the 3D city while the desk is open on
@@ -677,12 +677,12 @@ export function DevelopSection({ bbl }: { bbl: string }) {
           <Slider
             label="Footprint"
             value={cov}
-            min={0.08}
+            min={MIN_COVERAGE}
             max={covCap}
             step={0.01}
             onChange={(v) => { setCov(v); setFloors((f) => Math.min(f, maxFloorsFor(rec, v, use))); }}
             format={(v) => `${Math.round(v * 100)}% of the lot · ${sf(rec.lotArea * v)} plate`}
-            marks={[{ at: 0.15, label: "corner" }, { at: 0.35, label: "tower" }, { at: 0.6, label: "block" }, { at: covCap, label: `max ${Math.round(covCap * 100)}%` }]}
+            marks={[{ at: MIN_COVERAGE, label: `min ${Math.round(MIN_COVERAGE * 100)}%` }, { at: covCap, label: `max ${Math.round(covCap * 100)}%` }]}
             hint={(() => {
               // THE SLIDER USED TO PROMISE THE OPPOSITE OF WHAT IT DOES HERE.
               //
@@ -780,10 +780,11 @@ export function DevelopSection({ bbl }: { bbl: string }) {
           <div className="page-section" style={{ marginTop: 6 }}>Preset</div>
           <div className="btn-row">
             {([
-              { label: "Box", cov: 0.78, spec: 0.15 },
-              { label: "Standard", cov: 0.6, spec: 0.5 },
-              { label: "Tower", cov: 0.32, spec: 0.5 },
-              { label: "Signature", cov: 0.48, spec: 0.95 },
+              // (no "Tower" at a 32% plate: a building covers 60% of its lot
+              // at least, MIN_COVERAGE; a slender tower is a form on a base)
+              { label: "Box", cov: 0.85, spec: 0.15 },
+              { label: "Standard", cov: 0.65, spec: 0.5 },
+              { label: "Signature", cov: 0.6, spec: 0.95 },
             ] as const).map((p0) => ({ ...p0, cov: Math.min(p0.cov, covCap) })).map((p) => (
               <button
                 key={p.label}
@@ -1226,7 +1227,7 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
   const use: DevUse = saved?.use ?? deskZoning(rec, game.econ, undefined, 1).legal[0] ?? "office";
   const covCap = maxCoverageFor(use, use === "mixed" && saved?.split
     ? { retail: saved.split.retail / 100, office: saved.split.office / 100, multifamily: saved.split.multifamily / 100 } : undefined);
-  const cov = Math.min(saved?.cov ?? 0.6, covCap);
+  const cov = Math.max(MIN_COVERAGE, Math.min(saved?.cov ?? 0.6, covCap));
   const maxFl = maxFloorsFor(rec, cov, use);
   const fl = Math.min(saved?.floors ?? 8, maxFl);
   const contract: Contract = saved?.contract ?? "gmp";

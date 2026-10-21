@@ -70,6 +70,8 @@ public:
 	int32 Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed, bool bGround, const FLinearColor& Tint = FLinearColor::White, bool bExactTint = false);
 	/** Which of the next volume's walls stand on a lot line against a neighbour (one per ring edge); those get no facade. Cleared by Dress. */
 	TArray<bool> Party;
+	/** When set, every piece laid is noted here (component, instance), so one building can be taken down alone. */
+	TArray<TPair<UInstancedStaticMeshComponent*, int32>>* Record = nullptr;
 
 	int32 Components() const { return Comps.Num(); }
 	int32 Pieces() const { return Placed; }

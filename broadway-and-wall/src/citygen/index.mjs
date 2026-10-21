@@ -234,6 +234,11 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * lift alone needs; and a massing form whose tiers break 1:8 slenderness or
  * that plate falls back to the plain building (massing.mjs done()). Plan 12
  * saves rebuild their own town.
+ *
+ * Plan 14: every building covers at least 60% of its lot at grade
+ * (citygen.mjs MIN_COVER). A tower drew 42-58% and lost more as it climbed,
+ * down to ~30%: a thin shaft on an empty lot, which New York's base and
+ * street-wall rules do not build. Plan 13 saves rebuild their own town.
  */
 /**
  * HOW MUCH OF THE TOWN IS PARK, from the setup page. A generated town draws a
@@ -249,7 +254,7 @@ export const PARK_AMOUNTS = [
 ];
 export const DEFAULT_PARKS = "medium";
 
-export const CITY_PLAN = 13;
+export const CITY_PLAN = 14;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

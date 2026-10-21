@@ -1,7 +1,7 @@
 // The game's chrome: a glance card on the map, and firm desks as big rooms.
 // Detail pages are parchment sheets sized for underwriting — not a narrow
 // right-hand column that crams a rent roll into six hundred pixels.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Activity, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useStore } from "@/state/store";
 import type { Page } from "@/state/store";
 import FirmStanding from "@/ui/FirmStanding";
@@ -29,6 +29,7 @@ import {
 } from "@/ui/panels/modals";
 
 import { DESKS, deskOf, deskLanding, rememberTab, tabCounts, visibleTabs, type Desk } from "@/ui/desks";
+import { onScreen } from "@/ui/onScreen";
 
 export { liveBrokerCalls } from "@/ui/panels/broker";
 
@@ -98,7 +99,7 @@ export default function GamePanels() {
       }
       // Desk hotkeys, 1-6 — the rail, the "?" card and these keys share DESKS.
       // Pressing a desk's key again closes it.
-      if (!e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[1-9]$/.test(e.code) && !document.querySelector(".modal-backdrop")) {
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && /^Digit[1-9]$/.test(e.code) && !onScreen(".modal-backdrop")) {
         const hit = DESKS.find((d) => d.key === e.code.slice(5));
         if (hit) {
           e.preventDefault();
@@ -112,7 +113,7 @@ export default function GamePanels() {
       if ((e.code === "KeyG" || e.code === "Space") && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         if (st.autoplay) { st.setAutoplay(0); return; }
-        if (document.querySelector(".modal-backdrop")) {
+        if (onScreen(".modal-backdrop")) {
           useStore.setState({ toast: { text: "Answer or dismiss the card on your desk before playing.", kind: "err", at: Date.now() } });
           return;
         }
@@ -121,7 +122,7 @@ export default function GamePanels() {
       }
       if (st.advancing) return;
       const wantsTime = e.code === "KeyY" || e.code === "KeyN";
-      if (wantsTime && document.querySelector(".modal-backdrop")) {
+      if (wantsTime && onScreen(".modal-backdrop")) {
         e.preventDefault();
         useStore.setState({
           toast: { text: "Answer or dismiss the card on your desk before advancing time.", kind: "err", at: Date.now() },
@@ -134,6 +135,10 @@ export default function GamePanels() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [page, setPage]);
+  const open = page !== "none" && !mapOnly;
+  const kept = useKeptDesks(page, hasGame);
+  // The room on screen, plus the desks kept warm behind it.
+  const views = open && !kept.includes(page) ? [...kept, page] : kept;
   if (!hasGame) return null;
   const title = page === "portfolio" ? "Portfolio"
     : page === "deals" ? "The Deals Desk"
@@ -189,9 +194,13 @@ export default function GamePanels() {
     <>
       <Palette />
       {page === "none" && <ParcelPanel />}
-      {page !== "none" && !mapOnly && (
+      {(open || kept.length > 0) && (
+        // Closed, the room stays mounted and hidden so the desks kept below
+        // survive a look at the map. It drops the `page-backdrop` class while
+        // hidden: the toasts move aside for an open page (hud.css :has()).
+        <Activity mode={open ? "visible" : "hidden"}>
         <div
-          className="page-backdrop"
+          className={open ? "page-backdrop" : "page-backdrop-idle"}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setPage("none");
           }}
@@ -218,29 +227,15 @@ export default function GamePanels() {
             {/* Pages that carry their own view switch get no section rail —
                 two strips of chips stacked under the desk tabs read as one
                 cluttered control, and these pages are short enough per view. */}
-            {!OWN_VIEWS.has(page) && <SectionNav page={page} pageRef={pageRef} />}
-            {page === "portfolio" && <PortfolioPage />}
-            {page === "deals" && <DealsPage />}
-            {page === "market" && <MarketPage />}
-            {page === "pulse" && <PulsePage />}
-            {page === "players" && <PlayersPage />}
-            {page === "buildings" && <BuildingDatabase />}
-            {page === "notes" && <NotesPage />}
-            {page === "economy" && <EconomyPage />}
-            {page === "rankings" && <RankingsPage />}
-            {page === "books" && <BooksPage />}
-            {page === "news" && <NewsPage />}
-            {page === "saves" && <SavesPage />}
-            {page === "leasing" && <LeasingPage />}
-            {page === "debt" && <DebtPage />}
-            {page === "investors" && <InvestorsPage />}
-            {page === "banks" && <BanksPage />}
-            {page === "property" && <PropertyPage />}
-            {page === "firm" && <><FirmStanding /><FirmTimeline /></>}
-            {page === "settings" && <SettingsPage />}
-            {page === "primer" && <PrimerPage />}
+            {open && !OWN_VIEWS.has(page) && <SectionNav page={page} pageRef={pageRef} />}
+            {views.map((p) => (
+              <Activity key={p} mode={open && p === page ? "visible" : "hidden"}>
+                <div className="page-view" data-page={p}>{PAGE_VIEW[p]}</div>
+              </Activity>
+            ))}
           </div>
         </div>
+        </Activity>
       )}
       {/* THE INTERRUPTIONS THE ENGINE RAISES, ONE AT A TIME. An alert and a
           letter of intent can land in the same month, and the order matters:
@@ -260,6 +255,65 @@ export default function GamePanels() {
       {gameOver && page !== "saves" && <GameOverPage />}
     </>
   );
+}
+
+/**
+ * WHAT EACH ROOM DRAWS. Built once, at module scope, so a kept desk's element
+ * is the same object on every render of the shell: React bails out of it
+ * instead of redrawing a hidden page whenever the title or the page changes.
+ */
+const PAGE_VIEW: Partial<Record<Page, ReactElement>> = {
+  portfolio: <PortfolioPage />,
+  deals: <DealsPage />,
+  market: <MarketPage />,
+  pulse: <PulsePage />,
+  players: <PlayersPage />,
+  buildings: <BuildingDatabase />,
+  notes: <NotesPage />,
+  economy: <EconomyPage />,
+  rankings: <RankingsPage />,
+  books: <BooksPage />,
+  news: <NewsPage />,
+  saves: <SavesPage />,
+  leasing: <LeasingPage />,
+  debt: <DebtPage />,
+  investors: <InvestorsPage />,
+  banks: <BanksPage />,
+  property: <PropertyPage />,
+  firm: <><FirmStanding /><FirmTimeline /></>,
+  settings: <SettingsPage />,
+  primer: <PrimerPage />,
+};
+
+/**
+ * THE LAST DESKS STAY UP. Every desk used to unmount the moment you left it,
+ * so going Portfolio → Leasing → Portfolio rebuilt both from nothing each way
+ * (~200 ms apiece on a fifty-building book). The current desk and the two
+ * before it stay mounted, hidden with `<Activity mode="hidden">`: no effects,
+ * no store subscriptions while hidden, and their page state (sort, open row)
+ * is where you left it. Coming back after an advance redraws once with the
+ * new month, as a fresh open would.
+ *
+ * The property file is not kept: it is one building's file, and its tabs and
+ * inputs belong to the building it was opened on.
+ */
+const KEEP_DESKS = 3;
+const keepable = (p: Page) => p !== "property" && !!deskOf(p) && !!PAGE_VIEW[p];
+
+function useKeptDesks(page: Page, hasGame: boolean): Page[] {
+  // `recent` is by recency (most recent last) and decides who is dropped;
+  // `drawn` is the order they render in, which only ever appends, so a kept
+  // desk is never moved in the DOM.
+  const recent = useRef<Page[]>([]);
+  const drawn = useRef<Page[]>([]);
+  if (!hasGame) { recent.current = []; drawn.current = []; }
+  else if (keepable(page) && recent.current[recent.current.length - 1] !== page) {
+    const r = [...recent.current.filter((p) => p !== page), page].slice(-KEEP_DESKS);
+    recent.current = r;
+    const stay = drawn.current.filter((p) => r.includes(p));
+    drawn.current = stay.includes(page) ? stay : [...stay, page];
+  }
+  return drawn.current;
 }
 
 /** The card the player is looking at: the visible one highest in the stack.
@@ -370,12 +424,20 @@ function SectionNav({ page, pageRef }: { page: Page; pageRef: React.RefObject<HT
   // React attaches a parent's ref after its children's layout effects have
   // run — a layout-effect scan here saw a null ref on every fresh open and
   // never observed anything after.
+  //
+  // WATCHED CHEAPLY. This observed the whole page — every text node, every
+  // table cell — and re-read layout (`offsetParent`) on the next frame after
+  // any of it changed, so a page ticking its numbers re-scanned its headings
+  // every frame. Now it watches only the desk on screen (the kept ones are
+  // hidden siblings), rescans only when a mutation adds or removes something
+  // that is or holds a heading, and at most every 150 ms.
   useEffect(() => {
-    const root = pageRef.current;
+    const page0 = pageRef.current;
+    const root = page0?.querySelector<HTMLElement>(`:scope > .page-view[data-page="${page}"]`) ?? page0;
     if (!root) return;
-    let raf = 0;
+    let timer = 0;
     const scan = () => {
-      raf = 0;
+      timer = 0;
       const seen = new Set<string>();
       const out: Sec[] = [];
       for (const el of Array.from(root.querySelectorAll<HTMLElement>(HEAD_SEL))) {
@@ -392,9 +454,22 @@ function SectionNav({ page, pageRef }: { page: Page; pageRef: React.RefObject<HT
       setSecs((prev) => (prev.length === out.length && prev.every((p, i) => p.el === out[i].el && p.label === out[i].label) ? prev : out));
     };
     scan();
-    const mo = new MutationObserver(() => { if (!raf) raf = requestAnimationFrame(scan); });
-    mo.observe(root, { childList: true, subtree: true, characterData: true });
-    return () => { mo.disconnect(); if (raf) cancelAnimationFrame(raf); };
+    const touchesHead = (n: Node) =>
+      n instanceof HTMLElement && (n.matches(HEAD_SEL) || !!n.querySelector(HEAD_SEL));
+    const mo = new MutationObserver((recs) => {
+      if (timer) return;
+      for (const r of recs) {
+        // a heading's own text changing (a count after the dot) is a child
+        // list change of the heading itself
+        const head = r.target instanceof HTMLElement && r.target.closest(".page-section-head, .deal-head");
+        if (head || Array.from(r.addedNodes).some(touchesHead) || Array.from(r.removedNodes).some(touchesHead)) {
+          timer = window.setTimeout(scan, 150);
+          return;
+        }
+      }
+    });
+    mo.observe(root, { childList: true, subtree: true });
+    return () => { mo.disconnect(); if (timer) clearTimeout(timer); };
   }, [page, pageRef]);
 
   // Which chip is lit: the last heading above the rail's own line.

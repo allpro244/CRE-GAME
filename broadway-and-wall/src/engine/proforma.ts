@@ -75,6 +75,18 @@ const clampP = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
  * it means is the mix below: cost, rent, lease-up, lender appetite and
  * neighbourhood effect all follow from the components.
  */
+/**
+ * WHAT IT COSTS TO TAKE A BUILDING DOWN to clean dirt: about $14/sf of
+ * standing floor area at the cost index (abatement, demolition, haul-off;
+ * NYC interior-demolition-and-wreck bids run $10-20/sf), and never less than
+ * a mobilisation of $60,000. One number for everyone: the player clearing a
+ * site (dev.ts demolish) and a pro forma that knocks down what stands on its
+ * lot (rivals redeveloping) used to price the same wreck at $14 and $12.
+ */
+export function wreckCost(bldgArea: number, costIdx: number): number {
+  return bldgArea > 0 ? Math.round(Math.max(60_000, bldgArea * 14 * costIdx)) : 0;
+}
+
 export const MIXED_STACK: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.40 };
 
 /**
@@ -112,6 +124,18 @@ export const MIXED_STACK: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.
 export const MAX_COVERAGE: Record<BuiltClass, number> = {
   multifamily: 0.70, office: 0.80, retail: 0.85, industrial: 0.85,
 };
+/**
+ * AND THE LEAST: 60% of the lot (owner, Oct 2026, repeatedly). The desk let a
+ * new building take 8%, and its "Tower" preset drew 32% — a shaft on an empty
+ * lot that New York does not build: its towers stand on bases brought out to
+ * the street (the street-wall rules of the contextual and tower-on-base
+ * districts), and the tower-in-a-plaza of the 1961 bonus was retired in 1975.
+ * There is no minimum by that name in the Zoning Resolution; this is the base
+ * those rules produce. A slender tower is a FORM on top of such a base
+ * (citygen/forms.mjs), not a narrow plate. A structure already standing
+ * (a reuse, a takeover) keeps the footprint it has.
+ */
+export const MIN_COVERAGE = 0.6;
 /** The site coverage a new building of this programme may take. */
 export function maxCoverageFor(use: DevUse, mix?: UseMix): number {
   const m = devMix(use, mix);
@@ -780,7 +804,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // ...and before the footprint: the coverage limit is the use's (MAX_COVERAGE).
   // A shell that already stands keeps the footprint it has — a conversion or a
   // half-built takeover is not a new building's massing.
-  const cov = Math.max(0.08, Math.min(custom?.shell ? 0.9 : maxCoverageFor(o.use, raw), o.coverage));
+  const cov = Math.max(custom?.shell ? 0.08 : MIN_COVERAGE, Math.min(custom?.shell ? 0.9 : maxCoverageFor(o.use, raw), o.coverage));
   const retailOnly = Object.entries(raw).every(([k, v]) => k === "retail" || !v);
   const fl = Math.max(1, Math.min(Math.round(o.floors), maxFloorsFor(rec, cov, retailOnly ? "retail" : o.use)));
   // GROSS AND RENTABLE ARE NOT THE SAME NUMBER, and treating them as one was
@@ -823,7 +847,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const specK = specCostMult(spec);
   const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl)) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK * (custom?.costMult ?? 1) * (1 + EXTERIOR_CLOSURE_SHARE * (formSkin - 1)));
   const softCost = Math.round(hardCost * SOFT_COST);
-  const demo = !o.asIfVacant && rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * econ.costIdx) : 0;
+  const demo = !o.asIfVacant ? wreckCost(rec.bldgArea, econ.costIdx) : 0;
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
 
   // What the finished building will be underwritten on — see underwritingEcon.

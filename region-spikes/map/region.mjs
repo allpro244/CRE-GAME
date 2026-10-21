@@ -246,7 +246,7 @@ function travel(G, speed, sources, jumps) {
 }
 
 // ---------------------------------------------------------------- names
-const NAME_A = ["Mill", "Ash", "Oak", "Cedar", "Fair", "Green", "Elm", "Brook", "Clay", "Stone", "Wal", "Hazel", "Red", "Kings", "Marsh", "Pine", "Har", "Lin", "Bel", "Hamp"];
+export const NAME_A = ["Mill", "Ash", "Oak", "Cedar", "Fair", "Green", "Elm", "Brook", "Clay", "Stone", "Wal", "Hazel", "Red", "Kings", "Marsh", "Pine", "Har", "Lin", "Bel", "Hamp"];
 const NAME_B = ["ford", "ton", "ville", "field", "burg", "wood", " Crossing", " Mills", "dale", "port", "ridge", " Ferry", "mont", "boro"];
 const RIVERS = ["Kessaw", "Ottaquin", "Saline", "Big Muddy", "Tenmile", "Wabeno", "Paquette", "Cold Spring"];
 
@@ -541,6 +541,7 @@ export function generate(seed, km = 10) {
   const free = (p) => { const k = G.idx(p); return k >= 0 && !water[k] && !flood[k] && !coreL[k] && !townL[k] && !hwL[k]; };
   const coreKm2 = coreL.reduce((a, v) => a + v, 0) * CELL * CELL / 1e6;
   const townBlocks = towns.reduce((a, t) => a + t.blocks.length, 0);
+  Object.assign(M, { free, isSea, coreL, townL, hwL, roadL, artL });
   M.parcels = {
     // island.mjs measures 932-1,026 lots per km2 on the generated islands (New Alden 922-951)
     downtown: [Math.round(coreKm2 * 932), Math.round(coreKm2 * 1026)],
@@ -555,13 +556,14 @@ export function generate(seed, km = 10) {
 }
 
 function gridBlocks(r, pitchL, pitchW, street, isWater) {
-  const out = [];
+  const out = []; r.blockRects = [];
   const nL = Math.max(1, Math.round(2 * r.hl / pitchL)), nW = Math.max(1, Math.round(2 * r.hw / pitchW));
   const pl = 2 * r.hl / nL, pw = 2 * r.hw / nW;
+  r.gridInfo = { nL, nW, pl, pw };
   for (let i = 0; i < nL; i++) for (let j = 0; j < nW; j++) {
     const c = add(add(r.c, mul(r.u, -r.hl + (i + 0.5) * pl)), mul(r.v, -r.hw + (j + 0.5) * pw));
     if (isWater(c)) continue;
-    out.push(oRect(c, r.u, pl / 2 - street / 2, pw / 2 - street / 2).poly());
+    const b = oRect(c, r.u, pl / 2 - street / 2, pw / 2 - street / 2); r.blockRects.push(b); out.push(b.poly());
   }
   return out;
 }
@@ -574,10 +576,12 @@ function subdivide(t, rng, M, isWater) {
   // local frame: u along the long side, v across
   const Lu = horiz ? X1 - X0 : Y1 - Y0, Lv = horiz ? Y1 - Y0 : X1 - X0;
   const P = (u, v) => horiz ? [X0 + u, Y0 + v] : [X0 + v, Y0 + u];
-  const streets = [], ticks = [], bulbs = [], ponds = [];
+  const streets = [], ticks = [], bulbs = [], ponds = [], houses = [];
   const lotTicks = (pl, front, depth, sides = [1, -1]) => {
     const rs = resample(pl, front), n = normals(rs);
     for (let i = 1; i < rs.length - 1; i++) for (const sd of sides) { const a = add(rs[i], mul(n[i], sd * SZ.localROW / 2)), b = add(rs[i], mul(n[i], sd * (SZ.localROW / 2 + depth))); if (inside(b) && inside(a)) ticks.push([a, b]); }
+    // one house per lot, centred between this lot line and the next (used by export-unreal.mjs)
+    for (let i = 1; i < rs.length - 2; i++) { const m = lerp(rs[i], rs[i + 1], 0.5), u = norm(sub(rs[i + 1], rs[i])); for (const sd of sides) { const back = add(m, mul(perp(u), sd * (SZ.localROW / 2 + depth))); if (inside(m) && inside(back)) houses.push({ m, u, sd, depth }); } }
   };
   const inside = (p) => p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1 && !ponds.some((q) => dist(p, q.c) < q.r + 6);
   if (t.era === "prewar") {
@@ -625,7 +629,7 @@ function subdivide(t, rng, M, isWater) {
       }
     }
   }
-  t.plat = { streets, ticks, bulbs, ponds };
+  t.plat = { streets, ticks, bulbs, ponds, houses };
 }
 function nearestWater(M, p) {
   let d = Infinity;
@@ -642,6 +646,7 @@ const COL = {
   prewar: "#e8b7a0", postwar: "#f2d48f", recent: "#c9d6ef", lot: "#00000033", street: "#ffffff", streetCase: "#a9a49a",
   arterial: "#f7f2e4", arterialCase: "#8a7f68", hwBuilt: "#d9532b", hwCase: "#7a2a14", hwProp: "#d9532b", ix: "#ffffff",
 };
+export { SZ, MILE, ACRE, FT, makeRng, resample, rdp, dist, add, sub, mul, norm, perp, lerp, cumLen };
 export function render(M, seed) {
   const S = M.S, LEG = 2500, rot = M.rotate ?? 0;
   const T = (p) => { const c = S / 2; let x = p[0] - c, y = p[1] - c; for (let i = 0; i < rot; i++) [x, y] = [-y, x]; return [x + c, y + c]; };

@@ -16,7 +16,7 @@ import { cloneState, logBooks, monthLabel } from "./types";
 import { dollarLevel, rng, rrange } from "./market";
 import { assetValue, collateralAsIs, netWorth, resolveRec } from "./value";
 import { assetGrade } from "./rivals";
-import { syncDebt } from "./rivalDebt";
+import { loanBookTouched, syncDebt } from "./rivalDebt";
 import { firmShort } from "./firm";
 import { lenderByName } from "./lenders";
 import { coverCashShortfall, fundableNow, sweepLocIdleCash } from "./credit";
@@ -131,7 +131,7 @@ export function releasePrivateStreetRecord(s: GameState, n: Note, newLender?: st
   const row = s.cityLoans?.[n.bbl];
   if (!row || !s.cityLoans || row.lender !== firmShort(s)) return;
   if (newLender) row.lender = newLender;
-  else delete s.cityLoans[n.bbl];
+  else { delete s.cityLoans[n.bbl]; loanBookTouched(); }
 }
 
 /** Extinguish the claim — rival debt down and street record cleared. */
@@ -319,6 +319,7 @@ export function fundPrivateAsk(
   if ((rival.stressMs ?? 0) > 0) rival.stressMs = Math.max(0, (rival.stressMs ?? 0) - 2);
 
   if (!next.cityLoans) next.cityLoans = {};
+  loanBookTouched();
   next.cityLoans[ask.bbl] = {
     bbl: ask.bbl,
     lender: firmShort(next),

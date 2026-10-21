@@ -1147,6 +1147,17 @@ const FBWKit* ACityBuilder::KitFor(const FBWVolume& V) const
 			uint32 H = 2166136261u;
 			for (const TCHAR Ch : V.Bbl) { H ^= uint32(Ch); H *= 16777619u; }
 			H = (H ^ (H >> 13)) * 0x5bd1e995u;
+			// A BLOCK WAS BUILT IN RUNS. A builder put up a row of the same
+			// tenement, loft or brownstone at once, so buildings on one block of
+			// one family and decade mostly share a style: three in five take the
+			// block's pick (block + family + decade), the rest their own. A street
+			// of independent picks read as a patchwork.
+			if (V.Bbl.Len() >= 6 && (H % 5u) < 3u)
+			{
+				uint32 B = 2166136261u;
+				for (const TCHAR Ch : V.Bbl.Mid(1, 5) + Family + FString::FromInt(V.Year / 10)) { B ^= uint32(Ch); B *= 16777619u; }
+				H = (B ^ (B >> 13)) * 0x5bd1e995u;
+			}
 			for (int32 i = 0; i < List->Num(); ++i)
 				if (const FBWKit* Kit = Has(*(*List)[(H + i) % List->Num()])) return Kit;
 		}

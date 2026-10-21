@@ -520,3 +520,249 @@ Floor mix:
 - 333 at 5–8;
 - 2 towers;
 - 37 warehouses.
+
+### Final pass: smaller downtown, pockets out in the region, forest belt
+
+Owner feedback on the gradient render:
+- "Downtown seems about twice as large as it should be."
+- "City looks a bit too big. Sprinkle in some existing retail strips,
+  distribution centers, and other small pockets."
+- "Forests should cover the BACK of the map … a continuous forest belt, with
+  woodlots sprinkled through the farmland in the middle."
+
+**Seed 3, 6 km, the default export** (`out/city-region-3.json`): 2.0 MB.
+
+| Item | Count |
+|---|---|
+| Volumes | 2,952 |
+| Houses | 1,470 (501 in the inner house blocks) |
+| Parcels | 1,821 |
+| Neighbourhood parcels | 11 |
+| Main-street lots | 174 |
+| Waterfront warehouses | 11, plus 5 vacant former-mill lots |
+| Interchange big boxes | 4 |
+| Pockets | 9 (see below) |
+| Parking lots | 101 |
+| Vacant lots | 144 |
+| Farm or woodlot tracts | 81 |
+| Village lots | 96 |
+| Trees | 51,605 (under the 60k cap) |
+| Centerlines | 201 |
+
+The 9 pockets: 2 distribution centres, 3 strip centres, a gas station with a
+diner, a grain elevator, a business park, and a church with a school.
+
+Floor mix: 731 buildings at 1–2 floors, 533 at 3–4, 199 at 5–8, 2 towers,
+and 17 industrial buildings.
+
+## Generator rules for Phase 1
+
+These are all the layout rules and numbers the spike ended with, so the
+engine's Phase 1 generator can be built from them.
+
+**Status labels used below:**
+- **[S]** sourced, or a measured US norm (approximate);
+- **[O]** an owner design decision;
+- **[K]** a spike shape parameter chosen by eye, to be calibrated or replaced
+  by the growth sim.
+
+Code: `region.mjs` (land, roads, tracts, plats) and `export-unreal.mjs`
+(`storyPrep`, `placePockets`, `gradientLots`, `gradientNeighbourhoods`).
+
+### 1. Window and land
+
+**Window**
+- 6 × 6 km [O].
+- Generated in one frame: river runs top to bottom, sea at the bottom. Then
+  rotated by k·90°, so the survey stays cardinal.
+
+**River**
+- Width 100–250 m [S].
+- Meander wavelength 10–14 × width [S], amplitude about wavelength/4 [K].
+- Plus a valley-scale bend of 250–800 m amplitude over 0.9–1.6 × the window
+  [K].
+
+**Floodplain**
+- River half-width plus 150–700 m, noisy [S]. Unbuildable.
+- 1–3 creeks, 8–20 m wide, each with a 60–150 m flood band [S].
+- Coastal flood band 100–250 m [S].
+- Coast on half the seeds; the shoreline sits 80–88% of the way down the
+  window, ±150–450 m.
+
+**Survey grid**
+- US Public Land Survey: 1-mile sections [S].
+- Tracts are aliquot parts: 640, 160, 80 and 40 ac [S].
+- 66 ft section-line roads, broken at water and settlements [S].
+
+**Forest** [O, K]
+- A continuous belt along the window edges away from the coast.
+- Width 600 + 700·noise m (noise scale 700 m).
+- Never within 2.2 km of the city centre or 900 m of the shore.
+- Cut out of developed land, water and freeway right-of-way.
+
+**Woodlots**
+- About 8% of farm tracts, plus about 6% more in the middle farmland [K].
+
+### 2. Old settlements
+
+**Downtown site**
+- Chosen at small-city size: 1.6 × 1.0 km, long side on the shore. On a coast
+  it sits beside the river mouth; inland, on one bank of a straight reach.
+  The driest candidate wins.
+- The street grid is then laid out larger, 4.6 × 2.6 km, growing inland from
+  that waterfront.
+- Blocks: 80 × 240 m pitch with 18 m streets [S, Manhattan-type].
+- **Centre:** inset 450 m from the waterfront edge.
+
+**Creeks**
+- A creek inside the city's radius is pushed out to its edge, and follows it
+  round to the river.
+
+**One bank**
+- Only blocks reachable from the centre over dry land are kept.
+
+**Villages**
+- One river-crossing village, upriver, on one bank [O].
+- 2–4 × 2–3 blocks of 92–120 m pitch [S, from `island.mjs`], 15 m lots,
+  1–3 floors, about 10% parking.
+- With more villages (the SVG maps), spacing is at least 2 mi and there is
+  about one per 3.5 mi square [S].
+
+### 3. Roads
+
+**Old country roads**
+- A* over a noise cost. Floodplain ×2.5. Water ×60, except where a
+  settlement bridges it. Existing road ×0.35, so the network merges.
+- Downtown → 4–5 radials to the edges; village → downtown → edge;
+  village ↔ village.
+
+**Highway master plan**
+- **H1 interstate:** skirts downtown's landward side. Built 1958–74 [S].
+- **H2 spur:** from H1 at downtown. Built 1975–95, from the downtown end;
+  60% of the time stopped short with the rest PROPOSED.
+- **H3 bypass:** an arc at 0.42–0.55 × the window from downtown. All
+  PROPOSED, planned 2029–46 [S].
+- Later freeways avoid H1's flanks: cost ×6 within 350 m.
+- **Interchanges:** at arterial crossings, at least 1 mile apart [S].
+  System interchanges where freeways cross.
+
+**Road widths**
+- Highway 24 m, arterial 14 m, local 9 m, downtown 12 m [O, contract].
+
+**Freeway cut** [S, urban renewal]
+- Blocks within 20 m of built freeway pavement are cleared.
+- The land stays cleared; it is not farmed.
+
+### 4. Density: one gradient, bent by history
+
+**Story distance** [K]
+- rS = |p − centre| × f, where f is the product of:
+  - noise: 0.82 + 0.36 × noise (scale 450 m);
+  - old roads: ×0.72 within 120 m of an old road, otherwise ×0.85 within
+    450 m of the built interstate;
+  - waterfront: ×(0.85 + 0.3 × min(1, waterDist / 1,800 m)).
+- **Rings in rS** [O]: core < 280 m, mid < 640 m, city < 1,000 m.
+- Blocks with rS beyond the city edge are dropped, except along the main
+  street.
+
+| Ring | Floors | Footprint | Gaps | Classes |
+|---|---|---|---|---|
+| Core (< 280 m) | 4–8 | 70–85% | 3% | 60% office, 20% multifamily, 20% retail |
+| Mid (280–640 m) | 2–4 | 55–70% | 15% surface parking | 40% retail, 40% multifamily, 20% office |
+| Edge (640–1,000 m) | 1–2 | 50–65% | 30% vacant | shops and small apartments |
+
+- **Core:** the two most central lots are the 11 and 12 floor towers [O].
+- **Edge:** a block becomes a house block with probability
+  ((rS − 640) / 360)^0.8.
+- **House blocks** [S]: 40 × 110 ft lots, 12% vacant, a 7 × 11 m house set
+  4 m back, 60% two storeys. Built 1890 near the water to about 1935 further
+  away.
+- **Lot widths:** core and mid 25 m, edge 20 m, main street 15 m,
+  waterfront 45 m [K].
+
+**Story features (era)**
+- **Old main street** (1880–1930): the old road leaving the core most
+  directly inland, 70 m either side, out to 1.4 km. 2–3 floors, 80–90% of
+  the lot, 5% vacant, 70% retail [O, K].
+- **River industry** (1890–1945): within 260 m of the river, more than 250 m
+  from the centre. cls `industrial`, 7.5–11 m tall, 60–80% of the lot.
+  Vacant or rail yard: 20% normally, 45% past the mid ring, where it
+  declined after the 1960s [O, K].
+- **Interchange strip** (1985–2015): at the first interchange 0.9–2.8 km out.
+  Up to 8 big boxes of 50–90 × 35–60 m, 6.5 m tall, behind 45 m parking
+  lots, 140–340 m from the ramp [K].
+- **Pockets**, each against an arterial past its right-of-way, at least
+  500 m apart [O, K]:
+
+| Pocket | Count | Where | Size | Era |
+|---|---|---|---|---|
+| Distribution centre | 2–3 | within 900 m of an interchange | 180–260 × 90–130 m, 10–15 m tall, 50 m truck court | 1990–2020 |
+| Strip centre | 3–4 | on old roads or the highway, rS 1.1–2.8 km | 80–140 m long, 22 m deep, 35 m parking in front | 1960–2005 |
+| Gas station and diner | 1 | at a crossroads, rS > 1.8 km | | 1935–65 |
+| Grain elevator | 1 | rS > 2.2 km, off the highway | 3 silos ~35 m + shed | 1910–50 |
+| Business park | 1 | | 3 offices of 2–3 floors | 1975–2000 |
+| Church and school | 1 | | with a playing field (park) | 1900–60 |
+
+### 5. Neighbourhoods
+
+- **Candidates:** every survey tract on the city's bank with at least 50%
+  buildable land and rS < 3.5 km.
+- **Template by story distance:** pre-war grid if rS < 2 km and away from
+  the highway; post-war curving loops otherwise, including along the
+  highway [O].
+
+**Lots** [S]
+- Pre-war 40 × 110 ft.
+- Post-war 65 × 115 ft.
+- Recent 70 × 118 ft, on cul-de-sacs at most 600 ft long with 45 ft bulbs,
+  plus a pond of 4% of the tract.
+
+**Houses** [O, S]
+- 7 × 11 m pre-war, 9 × 13 m otherwise, 7 m setback.
+- Share with two storeys: 60% pre-war, 25% post-war, 70% recent.
+
+**Growth**
+- Houses are built in rS order, each within 200 m of the city or of
+  existing houses, so subdivisions fill in from the city side phase by
+  phase.
+- 6% of lots are left vacant.
+- Outer budget 600 houses [O, about 2,000 in all including the inner
+  blocks].
+- A tract with fewer than 20 houses stays a farm. The unbuilt remainder of a
+  tract stays a field.
+
+**Leapfrog** (recent, 1995–2020) [O, K]
+- Up to 2 tracts beside the highway or an old road.
+- 300–1,600 m past the built front, at least 450 m from any built house.
+- At least 80 and at most 250 houses each.
+- The farm between them and the city is the holdout.
+
+### 6. Eras, as the yearBuilt values tell them
+
+| Years | What was built |
+|---|---|
+| 1860–1940 | villages |
+| 1870s–1920 | the waterfront core |
+| 1880–1930 | main street |
+| 1890–1945 | mills and rail yards |
+| 1890–1935 | inner house blocks, older by the water |
+| 1905–1939 | pre-war subdivisions |
+| 1910–1950 | grain elevator |
+| 1935–1965 | crossroads gas station and diner |
+| 1946–1975 | post-war subdivisions along the interstate |
+| 1958–1974 | interstate opened |
+| 1960s | freeway cut through the old city |
+| 1960–2005 | strip centres |
+| 1975–2000 | business park |
+| 1985–2015 | interchange big boxes |
+| 1990–2020 | distribution centres |
+| 1995–2020 | leapfrog subdivisions |
+| 2029–2046 | proposed bypass |
+
+Decline after the 1960s shows as vacancy at the outer end of the industrial
+strip and the edge ring.
+
+**Not decided by the spike** (the growth sim should own these):
+- how far the city has grown (the house budgets);
+- the story-distance strengths;
+- every vacancy share.

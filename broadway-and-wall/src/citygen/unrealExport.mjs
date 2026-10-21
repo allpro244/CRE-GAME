@@ -51,11 +51,21 @@ export function toBwCity(c, opts = {}) {
     zone: p.zoneDist, cls: p.class, floors: p.floors, yearBuilt: p.yearBuilt, lotArea: p.lotArea, bldgArea: p.bldgArea,
     ring: parcelRing.get(p.bbl) ?? [],
   }));
+  // THE REGION'S RESERVED LAND: neighbourhoods ("N…"), farm tracts ("F…"), rural homes ("H…") and the parish
+  // ("C…") are parcels the renderer draws and the player can click, though no market holds them in Phase 1
+  for (const p of Object.values(c.reserved ?? {})) parcels.push({
+    bbl: p.bbl, address: p.address, block: 0, district: p.district, districtName: p.districtName,
+    zone: p.zoneDist, cls: p.class, floors: p.floors, yearBuilt: p.yearBuilt, lotArea: p.lotArea, bldgArea: p.bldgArea,
+    tenure: p.tenure, ...(p.homes ? { houses: p.homes } : {}),
+    ring: parcelRing.get(p.bbl) ?? [],
+  });
 
-  // volumes: one extruded prism per building tier (the web map's own feed)
+  // volumes: one extruded prism per building tier (the web map's own feed). A house (the region's
+  // neighbourhoods, and the small houses of a town's residential additions, which stay their deed's
+  // building) goes as deco "house": one instanced house sized to its ring.
   const volumes = c.buildings3d.map((b) => ({
     bbl: b.b || "", cls: b.c, year: b.y, z0: Math.round(b.z0 * 100), z1: Math.round(b.z1 * 100),
-    deco: b.d ? (b.dk ?? "deco") : "", crown: !!b.x, vacant: !!b.k, ring: b.r.flatMap(ue),
+    deco: b.d ? (b.dk ?? "deco") : b.dk === "house" ? "house" : "", crown: !!b.x, vacant: !!b.k, ring: b.r.flatMap(ue),
   }));
   if (opts.familyFor && opts.tints) {
     // as RealCity draws a volume: the family by the building's full height (its
@@ -80,7 +90,9 @@ export function toBwCity(c, opts = {}) {
     });
   }
 
-  const ground = Object.fromEntries(GROUND_LAYERS.map((k) => [k, []]));
+  // a region carries its own layer order: open land (farm, woods, yard) under the town, and its roads over
+  // its rivers (bridges) — region/index.mjs REGION_GROUND_LAYERS
+  const ground = Object.fromEntries((c.groundLayers ?? GROUND_LAYERS).map((k) => [k, []]));
   const water = [], trees = [], labels = [];
   // street markings: centrelines carry the carriageway width (w, metres) the
   // renderer divides into lanes; zebra bars and crosswalk outlines come as drawn
@@ -105,7 +117,9 @@ export function toBwCity(c, opts = {}) {
   }
 
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const v of volumes) for (let i = 0; i < v.ring.length; i += 2) {
+  // a region's extent is its window, sea included, not where its buildings happen to stand
+  const window = c.groundLayers ? [{ ring: [[w, s], [e, n]].flatMap(ue) }] : null;
+  for (const v of window ?? volumes) for (let i = 0; i < v.ring.length; i += 2) {
     minX = Math.min(minX, v.ring[i]); maxX = Math.max(maxX, v.ring[i]);
     minY = Math.min(minY, v.ring[i + 1]); maxY = Math.max(maxY, v.ring[i + 1]);
   }

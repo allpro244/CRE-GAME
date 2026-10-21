@@ -9,7 +9,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { useMasonry } from "@/ui/useMasonry";
-import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
+import { CLASS_COLOR, CLASS_LABEL, type ReservedParcel } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { OpsChoices } from "@/ui/panels/OpsChoices";
 import type { BuiltClass } from "@/engine/types";
@@ -69,12 +69,67 @@ function ParcelPanelShell({ embedded = false, tab }: { embedded?: boolean; tab?:
   // Closed card: do not subscribe to `game` at all — every LOI/cash write used
   // to rebuild this whole file for a panel that was not on screen.
   const selectedBBL = useStore((s) => s.selectedBBL);
+  // the region's reserved land (a neighbourhood, a farm, the parish) has a card of its own: no desk can trade it
+  const reserved = useStore((s) => (s.selectedBBL ? s.city?.reserved?.[s.selectedBBL] : undefined));
   if (!selectedBBL) return null;
+  if (reserved) return <ReservedCard rec={reserved} embedded={embedded} />;
   // Keyed on the deed: a new building is a new card. The card kept the last
   // one's scroll offset, so clicking a second building after reading the foot
   // of the first opened it at "Adjoining lots", and per-building drafts (an
   // offer half typed) could carry across.
   return <ParcelPanelInner key={selectedBBL} embedded={embedded} tab={tab} selectedBBL={selectedBBL} />;
+}
+
+/**
+ * LAND THE MARKET DOES NOT REACH (the region map, Phase 1). A neighbourhood is
+ * one parcel for a whole subdivision, a farm tract is farmland, the parish is
+ * the parish: the card says what is there, in the generator's own numbers. It
+ * carries no price — no mechanism in this engine prices an owner-occupied
+ * house or an acre of corn yet, and a number with nothing behind it would be a
+ * fake (CLAUDE.md). Homebuilders, land development and the farmland market are
+ * later phases.
+ */
+function ReservedCard({ rec, embedded }: { rec: ReservedParcel; embedded: boolean }) {
+  const select = useStore((s) => s.select);
+  const acres = rec.acres ?? rec.lotArea / 43560;
+  const kind = rec.kind === "neighbourhood" ? "Neighbourhood" : rec.kind === "rural" ? "Rural home" : rec.kind === "civic" ? "Church and school" : rec.kind === "woodlot" ? "Woodlot" : "Farm";
+  const era = rec.era === "prewar" ? "pre-war streetcar suburb" : rec.era === "postwar" ? "post-war subdivision" : rec.era === "recent" ? "1980s-and-after subdivision" : null;
+  const why = rec.tenure === "homes"
+    ? "Owned house by house by the households who live in them. Not for sale to a firm in this phase: homebuilding and land development come later."
+    : rec.tenure === "farm"
+      ? "Agricultural land, not buildable until the land-development phase, and not traded on this market."
+      : "Held by the parish and the school district, not by the market.";
+  return (
+    <div className={embedded ? "panel-embed" : "panel"}>
+      {!embedded && (
+        <div className="panel-head">
+          <div>
+            <div className="panel-address">{rec.address}</div>
+            <div className="panel-bbl mono">Parcel {rec.bbl}</div>
+          </div>
+          <button className="panel-close" onClick={() => select(null)} aria-label="Close">×</button>
+        </div>
+      )}
+      <div className="chip-row">
+        <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{kind}</span>
+        <span className="chip chip-zone mono">{rec.zoneDist}</span>
+        <span className="chip">NOT ON THE MARKET</span>
+      </div>
+      <div className="hint" style={{ marginBottom: 8 }}>{why}</div>
+      {rec.homes ? <Row k="Homes" v={rec.homes.toLocaleString()} strong /> : null}
+      {era && <Row k="Built as" v={`${era}, ${rec.eraYears?.[0] ?? rec.yearBuilt}–${rec.eraYears?.[1] ?? rec.yearBuilt}`} />}
+      {rec.yearBuilt > 0 && !era && <Row k="Built" v={String(rec.yearBuilt)} />}
+      {rec.avgHouseSf ? <Row k="Average house" v={sf(rec.avgHouseSf)} /> : null}
+      {rec.avgLotSf ? <Row k="Average lot" v={sf(rec.avgLotSf)} /> : null}
+      {rec.platLots && rec.homes ? <Row k="Platted lots" v={`${rec.platLots.toLocaleString()} (${(rec.platLots - rec.homes).toLocaleString()} not built yet)`} /> : null}
+      {rec.leapfrog && <Row k="Leapfrog" v="built out past farms still holding out" />}
+      <Row k="Land" v={acres >= 2 ? `${acres.toFixed(acres >= 20 ? 0 : 1)} acres` : sf(rec.lotArea)} />
+      {rec.bldgArea > 0 && <Row k="Floor area" v={sf(rec.bldgArea)} />}
+      {rec.crop && <Row k="This season" v={rec.crop} />}
+      {rec.floodShare ? <Row k="In the floodplain" v={`${Math.round(rec.floodShare * 100)}%`} /> : null}
+      {rec.districtName && <Row k="Area" v={rec.districtName} />}
+    </div>
+  );
 }
 
 function ParcelPanelInner({

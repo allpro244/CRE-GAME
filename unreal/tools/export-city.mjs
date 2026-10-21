@@ -2,6 +2,7 @@
 // building volume, and the ground layers, in Unreal units.
 //
 //   node unreal/tools/export-city.mjs [--size metro] [--seed N] [--out file.json]
+//   node unreal/tools/export-city.mjs --city region [--seed N]     the 6 km region map (size "region")
 //
 // The conversion itself lives in broadway-and-wall/src/citygen/unrealExport.mjs,
 // shared with the web app's Unreal host mode, so a city exported here and one
@@ -12,16 +13,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BW = join(HERE, "..", "..", "broadway-and-wall");
-const { makeCity, PROCEDURAL, REFERENCE_SEED } = await import(pathToFileURL(join(BW, "src", "citygen", "index.mjs")).href);
+const { makeCity, PROCEDURAL, REGION, REFERENCE_SEED } = await import(pathToFileURL(join(BW, "src", "citygen", "index.mjs")).href);
 const { toBwCity } = await import(pathToFileURL(join(BW, "src", "citygen", "unrealExport.mjs")).href);
 const { familyFor, TINTS } = await import(pathToFileURL(join(HERE, "families.mjs")).href);
 
 const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
-const size = arg("--size", "metro");
+const cityId = arg("--city", PROCEDURAL);
+const size = cityId === REGION ? "region" : arg("--size", "metro");
 const seed = Number(arg("--seed", REFERENCE_SEED));
 const out = arg("--out", join(HERE, "..", "BroadwayWall", "Data", `city-${seed}-${size}.json`));
 
-const doc = toBwCity(makeCity(PROCEDURAL, seed, { size }), { familyFor, tints: TINTS });
+const doc = toBwCity(makeCity(cityId, seed, { size }), { familyFor, tints: TINTS });
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, JSON.stringify(doc));
 const { minX, maxX, minY, maxY } = doc.bounds;

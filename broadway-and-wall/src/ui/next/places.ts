@@ -39,9 +39,11 @@ export const PLACES: Place[] = [
     tabs: [
       { id: "forsale", label: "For sale", page: "market", width: "wide" },
       { id: "all", label: "All buildings", page: "buildings", width: "wide" },
-      { id: "sites", label: "Sites", page: "market", jump: "Land", width: "wide" },
+      { id: "sites", label: "Sites", page: "market", jump: "Sites", width: "wide" },
+      // The note desk once there is paper; until then the Marketplace's distress pipeline.
       { id: "distressed", label: "Distressed", page: "notes", width: "wide", when: hasNotes },
-      { id: "books", label: "Books", page: "market", jump: "Books for sale", width: "wide" },
+      { id: "distressed", label: "Distressed", page: "market", jump: "Distress", width: "wide", when: (g) => !hasNotes(g) },
+      { id: "books", label: "Books", page: "market", jump: "Books", width: "wide" },
     ],
   },
   {
@@ -84,7 +86,9 @@ export function visibleTabs(p: Place, g: GameState | null): PlaceTab[] {
  * is one of them, else the first.
  */
 export function placeOf(page: Page, remembered?: Partial<Record<PlaceId, string>>): { place: PlaceId; tab: string } | null {
+  if (page === "none") return null;
   for (const p of PLACES) {
+    if (p.id === "inbox") continue;
     const hits = p.tabs.filter((t) => t.page === page);
     if (!hits.length) continue;
     const r = remembered?.[p.id];

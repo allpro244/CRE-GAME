@@ -65,9 +65,12 @@ export function Drawer({ width, crumbs, title, meta, chips, tabs, tab, onTab, fo
   );
 }
 
-export function ActionFooter({ steps, step, verbs, input, left }: {
-  steps?: string[]; step?: number; verbs: Verb[]; input?: ReactNode; left?: ReactNode;
+export function ActionFooter({ steps, step, verbs, input, inputAt, left }: {
+  steps?: string[]; step?: number; verbs: Verb[]; input?: ReactNode;
+  /** The verb the amount belongs to, by index; the input sits just before it. Default: the last. */
+  inputAt?: number; left?: ReactNode;
 }) {
+  const at = inputAt ?? verbs.length - 1;
   return (
     <div className="nx-actions">
       {steps && (
@@ -77,8 +80,9 @@ export function ActionFooter({ steps, step, verbs, input, left }: {
       )}
       {left}
       <div className="nx-actions-right">
+        {verbs.slice(0, at).map((v) => <VerbButton key={v.label} v={v} />)}
         {input}
-        {verbs.map((v) => <VerbButton key={v.label} v={v} />)}
+        {verbs.slice(at).map((v) => <VerbButton key={v.label} v={v} />)}
       </div>
     </div>
   );

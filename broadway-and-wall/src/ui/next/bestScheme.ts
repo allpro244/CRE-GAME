@@ -49,8 +49,11 @@ export function bestSchemes(g: GameState, p: ParcelTable, bbl: string, n = 3): S
   return derive(g, "next.best:" + bbl + ":" + n, () => {
     const rec = resolveRec(p, g, bbl);
     if (!rec) return [];
-    const cov = rec.class === "land" ? landRead(rec, g.econ).scheme?.coverage ?? 0.6 : 0.6;
-    const legal = DESK_USES.filter((u) => !zoneUseBar(rec, u, g.econ, u === "mixed" ? devMix("mixed", undefined) : undefined, 1));
+    const seed = rec.class === "land" ? landRead(rec, g.econ).scheme : null;
+    const cov = seed?.coverage ?? 0.6;
+    // the zoning question asked at the height the desk opens on, as DevelopDesk asks it
+    const fl = seed && seed.floors > 0 ? seed.floors : 8;
+    const legal = DESK_USES.filter((u) => !zoneUseBar(rec, u, g.econ, u === "mixed" ? devMix("mixed", undefined) : undefined, fl));
     return sweepSchemes(g, p, bbl, legal, cov, "gmp", {}, CONSTRUCTION_LENDER, 0.5, n);
   }, [p]);
 }

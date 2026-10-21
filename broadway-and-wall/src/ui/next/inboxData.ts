@@ -203,7 +203,7 @@ function build(g: GameState, p: ParcelTable | null, a: AttentionItem): Omit<Inbo
       return {
         ...base, bbl: o.bbl, dueM: o.expiresM - 1, real: true,
         subject: o.address,
-        facts: `${usd(o.face)} face · ${Math.round(o.askPct * 100)}¢ · ${o.perf} · ${o.lender}`,
+        facts: `${usd(o.face)} · ${Math.round(o.askPct * 100)}¢ · ${o.perf === "nonperforming" ? "NPL" : "paying"} · ${o.lender}`,
         verbs: [{ label: "Buy", primary: true, confirm: true, run: () => S().takeNote(id) }, openVerb(a.key)],
       };
     }
@@ -263,6 +263,75 @@ function build(g: GameState, p: ParcelTable | null, a: AttentionItem): Omit<Inbo
           { label: "Hang up", run: () => S().hangUpCall(bbl) },
           openVerb(a.key),
         ],
+      };
+    }
+    case "early-look":
+    case "watch":
+    case "reo": {
+      const bbl = parts[1];
+      const li = g.listings.find((x) => x.bbl === bbl);
+      if (!li) return fallback;
+      const tag = head === "early-look" ? "First look" : head === "reo" ? "Bank-owned" : "Watched";
+      const until = head === "early-look" && li.earlyUntilM !== undefined ? ` · lapses ${mo(li.earlyUntilM - 1)}` : "";
+      return {
+        ...base, bbl, real: true,
+        subject: addr(bbl),
+        facts: `${tag} · ${usd(li.ask)}${until}`,
+        verbs: [
+          { label: "Pay ask", primary: true, run: () => { S().select(bbl); S().offer(bbl, li.ask, false); } },
+          { label: "File", run: () => S().select(bbl) },
+        ],
+      };
+    }
+    case "contract":
+    case "talks": {
+      const bbl = parts[1];
+      const t = g.talks?.[bbl];
+      if (!t) return fallback;
+      if (t.agreed) {
+        return {
+          ...base, bbl, real: true, dueM: (t.closeByM ?? g.month + 1) - 1,
+          subject: addr(bbl),
+          facts: `Contract ${usd(t.agreedPrice ?? t.theirPrice)} · fund by ${mo((t.closeByM ?? g.month + 1) - 1)}`,
+          verbs: [
+            { label: "Fund", primary: true, run: () => S().openProperty(bbl, "summary") },
+            { label: "Walk", danger: true, confirm: true, run: () => S().walkAway(bbl) },
+          ],
+        };
+      }
+      return {
+        ...base, bbl, real: true,
+        subject: addr(bbl),
+        facts: `Seller at ${usd(t.theirPrice)}${t.final ? " · final" : ""} · you ${usd(t.yourPrice)}`,
+        verbs: [
+          { label: `Take`, primary: true, run: () => S().acceptCounter(bbl) },
+          { label: "Walk", run: () => S().walkAway(bbl) },
+        ],
+      };
+    }
+    case "lease-roll":
+    case "nonrenew": {
+      const bbl = parts[1];
+      const name = parts[2];
+      const t = g.holdings[bbl]?.tenants.find((x) => x.name === name);
+      return {
+        ...base, bbl,
+        real: false,
+        subject: name,
+        facts: t
+          ? `${head === "nonrenew" ? "Leaving" : "Expires"} ${mo(t.endM)} · ${sf(t.sf)} · $${t.rentPsf.toFixed(2)}`
+          : clipWords(a.label, 8),
+        verbs: [{ label: "Rent roll", run: () => S().openProperty(bbl, "leasing") }],
+      };
+    }
+    case "capital-call": {
+      const bbl = parts[1];
+      const d = g.developments[bbl];
+      return {
+        ...base, bbl, real: false,
+        subject: addr(bbl),
+        facts: `Capital call · ${usd(d?.lastCapitalCall ?? 0)}`,
+        verbs: [{ label: "Job file", run: () => S().openProperty(bbl, "build") }],
       };
     }
     case "auction": {

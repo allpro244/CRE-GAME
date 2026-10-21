@@ -13,7 +13,7 @@ import {
 } from "@/engine/value";
 import { replacementCost } from "@/engine/dev";
 import { occupancyRead, walt } from "@/engine/leasing";
-import { dscr as dscrOf } from "@/engine/debt";
+import { dscr as dscrOf, ltv as ltvOf, loanLender } from "@/engine/debt";
 import { demandNow } from "@/engine/demand";
 import { describePropertyEvent, propertyTimeline } from "@/engine/history";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
@@ -175,8 +175,8 @@ function Overview({ game, parcels, bbl, h }: { game: GameState; parcels: ParcelT
             <div className="nx-box-head">Rent</div>
             <KV rows={[
               ...(h ? [["In place", <Figure key="r" value={avgRent} fmt="psf" drill="rent" args={args} />] as [string, React.ReactNode]] : []),
-              ["Market", <span key="m" className="nx-with-spark"><Figure value={mkt} fmt="psf" drill={h ? "rent" : undefined} args={args} /><Spark pts={rentSeries} /></span>],
-              ["Leased", <Figure key="l" value={ip.occ} fmt="pct" drill={h ? "rent" : "noi"} args={args} />],
+              ["Market", <span key="m" className="nx-with-spark"><Figure value={mkt} fmt="psf" drill="rent" args={args} /><Spark pts={rentSeries} /></span>],
+              ...(h ? [] : [["Leased", <Figure key="l" value={ip.occ} fmt="pct" drill="rent" args={args} />] as [string, React.ReactNode]]),
               ...(h ? [
                 ["Roll 2y", <Figure key="r2" value={roll2} fmt="pct" drill="rent" args={args} />] as [string, React.ReactNode],
                 ["WALT", <span key="w" className="nx-fig">{h.tenants.length ? walt(h, game.month).toFixed(1) + " y" : "—"}</span>] as [string, React.ReactNode],
@@ -195,7 +195,36 @@ function Overview({ game, parcels, bbl, h }: { game: GameState; parcels: ParcelT
             ...(listing ? [["Listed", <span key="li" className="nx-fig">{monthLabel(listing.listedM)}</span>] as [string, React.ReactNode]] : []),
           ]} />
         </div>
+        {h?.loan && (
+          <div className="nx-box">
+            <div className="nx-box-head">Loan</div>
+            <KV rows={[
+              ["Lender", <span key="ln" className="nx-fig">{loanLender(h.loan)}</span>],
+              ["Balance", <Figure key="b" value={h.loan.balance} fmt="usd" drill="debt" />],
+              ["Coupon", <Figure key="c" value={h.loan.ratePct} fmt="pctv" drill="rate" args={args} />],
+              ["Matures", <span key="m" className="nx-fig">{monthLabel(h.loan.maturityM)}</span>],
+              ["LTV", <Figure key="ltv" value={ltvOf(rec, game, h)} fmt="pct" drill="value" args={args} />],
+              ["Min DSCR", <Figure key="md" value={h.loan.minDSCR} fmt="x" drill="dscr" args={args} />],
+            ]} />
+          </div>
+        )}
       </div>
+      {ip.h && ip.h.tenants.length > 0 && (
+        <table className="nx-table">
+          <thead><tr><th>Tenant</th><th className="num">sf</th><th className="num">$/sf</th><th className="num">vs mkt</th><th className="num">Ends</th></tr></thead>
+          <tbody>
+            {ip.h.tenants.slice().sort((a, b) => b.sf - a.sf).slice(0, 10).map((t, i) => (
+              <tr key={t.name + i}>
+                <td>{t.name}</td>
+                <td className="num mono">{Math.round(t.sf).toLocaleString()}</td>
+                <td className="num mono">{t.rentPsf.toFixed(2)}</td>
+                <td className={"num mono" + (mkt > 0 && t.rentPsf < mkt ? " nx-neg" : " nx-pos")}>{mkt > 0 ? fmtFig(t.rentPsf / mkt - 1, "pct") : "—"}</td>
+                <td className={"num mono" + (t.endM - game.month <= 12 ? " nx-neg" : "")}>{monthLabel(t.endM)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
@@ -238,10 +267,10 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
   if (!rec) return null;
   const value = marketAppraisal(game, rec, bbl, h?.condition ?? initialCondition(rec));
   const amount = (initial: number) => (
-    <input className="nx-amt mono" type="number" step={10000} value={amt ?? Math.round(initial)}
+    <input className="nx-amt mono" type="number" step={10000} value={n(initial)}
       onChange={(e) => setAmt(Number(e.target.value))} aria-label="Amount" />
   );
-  const n = (initial: number) => Math.round(amt ?? initial);
+  const n = (initial: number) => amt ?? Math.round(initial / 1000) * 1000;
 
   // ---- you own it
   if (h) {
@@ -265,10 +294,10 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
     }
     if (h.sale) {
       const bids = (h.sale.bids ?? []).filter((b) => !b.dropped);
-      if (bids.length) verbs.push({ label: `Take ${usd(bids[0].price)}`, primary: true, run: () => st.takeBid(bbl, 0) });
       verbs.push({ label: "Delist", run: () => st.delistSale(bbl) });
-      verbs.push({ label: "Reprice", run: () => { st.reprice(bbl, n(h.sale!.ask)); setAmt(null); } });
-      return <ActionFooter input={amount(h.sale.ask)} verbs={verbs} />;
+      verbs.push({ label: "Reprice", primary: !bids.length, run: () => { st.reprice(bbl, n(h.sale!.ask)); setAmt(null); } });
+      if (bids.length) verbs.push({ label: `Take ${usd(bids[0].price)}`, primary: true, run: () => st.takeBid(bbl, 0) });
+      return <ActionFooter input={amount(h.sale.ask)} inputAt={verbs.length - (bids.length ? 2 : 1)} verbs={verbs} />;
     }
     verbs.push({ label: "Renovate", run: () => st.renovate(bbl) });
     verbs.push({ label: "Build", run: () => setTab("build") });
@@ -292,7 +321,7 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
         </div>
         <ActionFooter
           steps={["Price", "Confirm"]} step={1}
-          left={<PresetPicker isLand={rec.class === "land"} />}
+          left={<><PresetPicker isLand={rec.class === "land"} /><span className="nx-dim mono">{q.label}{q.principal ? ` · ${(q.ratePct).toFixed(2)}%` : ""}</span></>}
           verbs={[
             { label: "Custom", run: () => setTab("deal") },
             { label: "Walk", run: () => st.walkAway(bbl) },
@@ -309,6 +338,7 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
       <ActionFooter
         steps={["Price", "Confirm"]} step={0}
         input={talks.final ? undefined : amount(talks.yourPrice)}
+        inputAt={0}
         verbs={[
           ...(talks.final ? [] : [{ label: `Offer ${usd(n(talks.yourPrice))}`, run: () => { st.offer(bbl, n(talks.yourPrice)); setAmt(null); } }]),
           { label: "Walk", run: () => st.walkAway(bbl) },
@@ -324,6 +354,7 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
       <ActionFooter
         steps={["Price", "Confirm"]} step={0}
         input={amount(listing.ask * 0.95)}
+        inputAt={0}
         verbs={[
           { label: `Offer ${usd(n(listing.ask * 0.95))}`, run: () => { st.offer(bbl, n(listing.ask * 0.95)); setAmt(null); } },
           { label: `Pay ask ${usd(listing.ask)}`, primary: true, key: "B", run: () => st.offer(bbl, listing.ask, false) },
@@ -340,6 +371,7 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
   return (
     <ActionFooter
       input={amount(value)}
+      inputAt={0}
       verbs={[
         { label: `Bid ${usd(n(value))}`, run: () => { st.bidBlind(bbl, n(value)); setAmt(null); } },
         { label: "Approach", primary: true, disabled: ap && (ap.refused || (ap.coldUntilM ?? 0) > game.month) ? "Owner said no" : undefined, run: () => st.approach(bbl) },

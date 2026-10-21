@@ -237,6 +237,11 @@ function PlaceDrawer({ place, tab, page }: { place: PlaceId; tab: string; page: 
   const t = tabs.find((x) => x.id === tab) ?? tabs[0];
   const kept = useKept(page);
   const body = useRef<HTMLDivElement>(null);
+  // A new tab opens at its top; a jump then scrolls it to its section.
+  useLayoutEffect(() => {
+    const sc = body.current?.parentElement;
+    if (sc) sc.scrollTop = 0;
+  }, [page, t?.id]);
   useJump(body, page);
   return (
     <Drawer

@@ -69,3 +69,6 @@ export const useNext = create<NextState>((set) => ({
   drill: null,
   setDrill: (d) => set({ drill: d }),
 }));
+
+// For the profiling harness and the screenshot driver, as `__store` is.
+(window as unknown as { __nextStore?: typeof useNext }).__nextStore = useNext;

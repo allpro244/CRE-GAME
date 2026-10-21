@@ -87,7 +87,6 @@ export const DRILLS: Record<DrillKey, (g: GameState, p: ParcelTable, a: DrillArg
     if (b.notesVal) rows.push(row(`Notes · ${b.noteCount}`, b.notesVal));
     if (b.fundInterest) rows.push(row("Fund interest", b.fundInterest));
     rows.push(row("Cash", b.cash));
-    if (b.deposits) rows.push(row("Deposits", b.deposits));
     rows.push(row("Assets", b.totalAssets, { strong: true }));
     rows.push(row("Mortgages", -b.mortgages));
     if (b.cipDebt) rows.push(row("Construction", -b.cipDebt));
@@ -95,6 +94,7 @@ export const DRILLS: Record<DrillKey, (g: GameState, p: ParcelTable, a: DrillArg
     if (b.facility) rows.push(row("Facility", -b.facility));
     if (b.locBal) rows.push(row("Line", -b.locBal));
     if (b.partners) rows.push(row("Partners", -b.partners));
+    if (b.deposits) rows.push(row("Tenant deposits", -b.deposits));
     rows.push(row("Liabilities", -b.totalLiab, { strong: true }));
     return {
       title: "Net worth",
@@ -161,17 +161,22 @@ export const DRILLS: Record<DrillKey, (g: GameState, p: ParcelTable, a: DrillArg
     };
   },
 
-  rate(g) {
+  rate(g, _p, a) {
     const e = g.econ;
     const hist = e.history ?? [];
+    const ln = a.bbl ? g.holdings[a.bbl]?.loan : undefined;
     return {
-      title: "10-year index",
-      total: pct(e.indexRate),
+      title: ln ? "Coupon" : "10-year index",
+      total: pct(ln ? ln.ratePct : e.indexRate),
       rows: [
         { label: "Loan index", value: pct(e.indexRate), strong: true },
         { label: "Short index", value: pct(e.shortIndex ?? e.indexRate) },
         { label: "Policy", value: pct(e.nat?.policy ?? e.indexRate) },
         { label: "Phase", value: String(e.phase) },
+        ...(ln ? [
+          { label: ln.floating ? "Floating · spread" : "Fixed", value: ln.floating ? pct(ln.spread) : "—" },
+          { label: "Coupon", value: pct(ln.ratePct), strong: true },
+        ] : []),
       ],
       series: { label: "10Y", pts: hist.slice(-120).map((h) => h.indexRate ?? NaN).filter(Number.isFinite) },
       link: { label: "Markets", go: () => st().setPage("economy") },
@@ -290,21 +295,26 @@ export const DRILLS: Record<DrillKey, (g: GameState, p: ParcelTable, a: DrillArg
 
   rent(g, p, a) {
     const r = recOf(g, p, a.bbl);
-    if (!r || !r.h) return none("Rent");
+    if (!r || !a.bbl) return none("Rent");
     const mkt = marketRentPsfYr(r.rec, g.econ, r.cond);
-    const rows: DrillRow[] = r.h.tenants
+    // Yours: the roll. For sale: the roll the seller discloses (inPlace), if any.
+    const h = r.h ?? inPlace(r.rec, g, a.bbl, a.price ?? marketAppraisal(g, r.rec, a.bbl, r.cond)).h;
+    const ten = h?.tenants ?? [];
+    const rows: DrillRow[] = ten
       .slice()
       .sort((x, y) => y.sf - x.sf)
       .slice(0, 14)
-      .map((t) => ({ label: t.name, value: `$${t.rentPsf.toFixed(2)} · ${sf(t.sf)}`, tone: t.rentPsf < mkt * 0.9 ? "neg" : undefined }));
-    const leased = r.h.tenants.reduce((s0, t) => s0 + t.sf, 0);
-    const avg = leased > 0 ? r.h.tenants.reduce((s0, t) => s0 + t.sf * t.rentPsf, 0) / leased : 0;
-    rows.push({ label: "In place avg", value: `$${avg.toFixed(2)}`, strong: true }, { label: "Market", value: `$${mkt.toFixed(2)}`, strong: true });
+      .map((t) => ({ label: t.name, value: `$${t.rentPsf.toFixed(2)} · ${sf(t.sf)} · ${monthLabel(t.endM)}`, tone: t.rentPsf < mkt * 0.9 ? "neg" : undefined }));
+    const leased = ten.reduce((s0, t) => s0 + t.sf, 0);
+    const avg = leased > 0 ? ten.reduce((s0, t) => s0 + t.sf * t.rentPsf, 0) / leased : null;
+    if (avg !== null) rows.push({ label: "In place avg", value: `$${avg.toFixed(2)}`, strong: true });
+    rows.push({ label: "Market", value: `$${mkt.toFixed(2)}`, strong: true });
     return {
       title: "Rent / sf",
-      total: `$${avg.toFixed(2)}`,
+      total: avg !== null ? `$${avg.toFixed(2)}` : `$${mkt.toFixed(2)}`,
       rows,
-      link: { label: "Rent roll", go: () => st().openProperty(a.bbl!, "leasing") },
+      series: { label: "Market", pts: (g.econ.history ?? []).slice(-60).map((x) => x.rent?.[r.rec.class as keyof NonNullable<typeof x.rent>] ?? NaN).filter(Number.isFinite) },
+      link: r.h ? { label: "Rent roll", go: () => st().openProperty(a.bbl!, "leasing") } : undefined,
     };
   },
 

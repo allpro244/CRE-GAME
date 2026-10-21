@@ -150,8 +150,8 @@ button.nx-fig.nx-drillable:hover, button.nx-fig.nx-open { color: var(--nx-gold);
 .nx-hosted .panel { position: static; width: auto; max-height: none; box-shadow: none; border: 0; background: transparent; }
 
 /* ---- footer verbs ------------------------------------------------------- */
-.nx-actions { display: flex; align-items: center; gap: 10px; }
-.nx-actions-right { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.nx-actions { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
+.nx-actions-right { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
 .nx-steps { display: flex; gap: 10px; list-style: none; margin: 0; padding: 0; font-size: 11px; color: var(--nx-dim); }
 .nx-steps li.on { color: var(--nx-ink); font-weight: 700; }
 .nx-steps li.done { color: var(--nx-green); }
@@ -185,7 +185,7 @@ button.nx-fig.nx-drillable:hover, button.nx-fig.nx-open { color: var(--nx-gold);
 /* ---- inbox ------------------------------------------------------------- */
 .nx-inbox { display: flex; flex-direction: column; }
 .nx-row {
-  display: grid; grid-template-columns: minmax(110px, 0.9fr) minmax(0, 1.6fr) auto; align-items: center; gap: 8px;
+  display: grid; grid-template-columns: minmax(90px, 160px) minmax(0, 1fr) auto; align-items: center; gap: 10px;
   min-height: 40px; padding: 4px 10px 4px 12px; border-bottom: 1px solid var(--nx-line);
   border-left: 4px solid transparent; cursor: pointer;
 }
@@ -208,6 +208,7 @@ button.nx-fig.nx-drillable:hover, button.nx-fig.nx-open { color: var(--nx-gold);
 .nx-lens:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ---- the classic layers that stay, moved clear of the shell ------------- */
-html.ui-next .toast-stack { top: calc(var(--hud-h) + 10px); left: calc(var(--rail-w) + 50% - var(--rail-w) / 2); }
+/* toasts sit bottom-left over the city, never over the drawer */
+html.ui-next .toast-stack { top: auto; bottom: 48px; left: calc(var(--rail-w) + 12px); transform: none; align-items: flex-start; max-width: min(460px, calc(100vw - var(--rail-w) - 40px)); }
 html.ui-next .clock-progress { bottom: -4px; }
 html.ui-next .map-root { left: var(--rail-w); top: var(--hud-h); }

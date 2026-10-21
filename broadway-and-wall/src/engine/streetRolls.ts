@@ -552,6 +552,9 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const pool = [...e.seekers];
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rng(s, "leasing") * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const signed = new Set<number>();
+  // The street's buildings, listed once: the search below lets space and moves
+  // tenants inside rolls, and never adds, removes or replaces a roll.
+  const rollList = Object.entries(R);
   for (const sk of pool) {
     if (sk.tourM !== undefined && m - sk.tourM < 3) continue;          // in talks at one of the player's buildings
     if (rng(s, "leasing") > 1 / SEARCH_M[sk.use]) continue;            // still looking
@@ -565,7 +568,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     type C = { b: Bld; roll: StreetRoll; avail: number; w: number };
     const cands: C[] = [];
     let tot = 0;
-    for (const [bbl, roll] of Object.entries(R)) {
+    for (const [bbl, roll] of rollList) {
       if (bbl === sk.from) continue;
       const b = blds.get(bbl) ?? bld(bbl);
       if (!b || !b.cap[k]) continue;

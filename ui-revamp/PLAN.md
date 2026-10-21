@@ -1,294 +1,305 @@
-# UI revamp plan: simpler, more functional, fast
+# UI revamp plan
 
-Status: **design only, for owner review.** Nothing under `broadway-and-wall/src`
-or `unreal/` has been changed. Branch `claude/ui-revamp-plan`, cut from
-`origin/main` 9a5acbc3 on 2026-10-21.
+Status: **design approved in outline (2026-10-21), second pass.** Nothing under
+`broadway-and-wall/src` or `unreal/` has been changed by this branch
+(`claude/ui-revamp-plan`). The speed fixes P1–P7 (§4) are being built in the
+`ui-speed-fixes` session; this plan does not implement them.
 
-Owner's brief: *"Moving through the UI is super slow ... we will soon revamp the
-entire UI to have a very functional yet simple design."* The game is played in
-Unreal, where the same React UI is hosted over the 3D city (`?host=unreal`). A
-metro **Region** mode (land tracts, entitlements, subdividing, selling lots to
-homebuilders) comes next and must fit without another redesign.
+- **Mockups:** [`mockups/index.html`](mockups/index.html), published as a private
+  Artifact: https://claude.ai/artifact/J4NRf711skqRaWeS9xw8sf
+- **Build spec for migration steps 1–4:** [`BUILD_SPEC.md`](BUILD_SPEC.md)
+- **Inventory of today's UI:** [`INVENTORY.md`](INVENTORY.md)
+- **Profiling harness:** [`profile-harness.html`](profile-harness.html)
 
-**Mockups:** [`ui-revamp/mockups/index.html`](mockups/index.html), also published
-as a private Artifact: https://claude.ai/artifact/J4NRf711skqRaWeS9xw8sf
-(eight core screens drawn over Unreal city shots, with before/after clicks).
-**Inventory of today's UI:** [`ui-revamp/INVENTORY.md`](INVENTORY.md).
-**Profiling harness used for the numbers below:** [`ui-revamp/profile-harness.html`](profile-harness.html).
+The owner's goal, verbatim: *"Simple, not filled with a bunch of words, little
+handholding, able to deeply read the economics and statistics, and most
+importantly functional. Functional and simple while maintaining depth is the
+key. Removing filler words and nonsense that clutters the page. Efficiency."*
+
+Decisions taken (by the main session for the owner): five places + Inbox;
+drawer beside the city; region view is a 3D metro scene in Unreal; Unreal
+camera presets move to F1–F3; speed fixes ship first.
 
 ---
 
-## 1. Findings
+## 0. Design rules
 
-### 1.1 What exists today (summary; detail in INVENTORY.md)
+These are hard rules. A screen that breaks one does not ship. They sit on top of
+`broadway-and-wall/UI_PRINCIPLES.md` and win where the two disagree.
 
-- **21 page values, 16 rail entries, 6 desks with 2–5 tabs each**, plus a docked
-  building card, the Property page (7 tabs), a docket, a card queue, four engine
-  card types, four "moment" cards, a palette, lenses and a HUD column.
-- Most pages are long scrolls of 5–12 sections; a section-chip rail is built by
-  scanning the DOM.
-- In Unreal mode a page is a 1,120px parchment room over a dimmed, blurred
-  backdrop: the 3D city the owner is playing in is mostly hidden whenever any
-  page is open (see `mockups/before-portfolio-unreal-mode.jpg`).
-- Lenses, "Show on map" and "Show my book" are never sent to Unreal, so they do
-  nothing there. Keys 1–3 move the Unreal camera **and** open desks 1–3.
+**R1 · Word budget.**
+- Labels, headings, tabs, column heads, chips: **1–3 words.**
+- Buttons: a verb, optionally with an object or amount, **at most 3 words**
+  ("Pay ask", "Offer $310K", "Refinance").
+- **No sentences on screens.** No page subtitles, no hint text, no explanatory
+  paragraphs, no "why" blurbs, no empty-state essays. An empty list says
+  "None" (or "No offers").
+- Inbox rows and toasts are **fact fragments of at most 8 words**, not sentences:
+  "Balloon Oct · $11.2M · 6.1%", not "Your loan on 85 State St balloons in five
+  months and lenders are quoting…".
+- Explanation, where it is genuinely needed, goes behind a **"?"** on the label:
+  a definition of at most 40 words with the formula (from `ui/Glossary.tsx`), or
+  a tooltip of at most 12 words. Nothing else.
+- Disabled verbs say why in a tooltip of at most 8 words ("Needs $1.2M more").
 
-Clicks for the common jobs today: buy a listed building **6–7**; total debt **1**
-(no top-bar readout); start a development on your lot **4–6**; advance time
-**1**; read the news **1–2**; answer a tenant letter **3**.
+**R2 · Numbers, not sentences.** A quantity is a figure with a unit. A trend is a
+sparkline or a signed delta. A comparison is a column. Words never restate a
+number that is already on screen.
 
-### 1.2 Why it feels slow (measured)
+**R3 · Every number drills.** Any figure on screen is clickable and opens its
+**breakdown**: the inputs, the arithmetic as one line, and a link to the full
+table it comes from. One click to the breakdown, one more to the source.
+The required drills are in §0.1.
 
-**How:** `pnpm vite` dev build of origin/main in its own worktree, opened with
-`?host=unreal`, 1600×900. A throwaway page (`profile-harness.html`) installs a
-React DevTools hook before React loads and records, for every commit, which
-components rendered and their self time (`selfBaseDuration`); a
-`PerformanceObserver('longtask')` records main-thread blocks. Each desk was
-opened from the rail with nothing else running. Two game states:
+**R4 · Dense, sortable tables.** 32px rows, tabular monospace numerals, every
+column sortable, sticky header, virtualised, a column picker, sparkline columns
+where a series exists. Small multiples over a single large chart. Row actions
+on the row.
 
-- **A:** Jan 2000, new firm, no buildings.
-- **B:** May 2012, a 50-building firm (bought from listings in the test save),
-  72 rival firms, 1,446 parcels.
+**R5 · Fewest clicks.** The common jobs have click budgets (§0.2). Defaults
+remove choices the player makes the same way every time (financing preset,
+best scheme). Every frequent verb has a key.
 
-Dev builds run React slower than production (roughly 1.5–3×), so read the
-numbers as relative. The browser pane was in the background, so frame timing
-(rAF) was unusable; the figures are commit times and long-task CPU, which are
-not throttled.
+**R6 · No handholding.** No onboarding or tutorial flows, no "Start here", no
+primer offers, no coaching lines, no "where to start" lists, no celebratory
+moments that stop play. The Primer and Glossary survive only as the reference
+behind "?".
 
-**Desk open cost, state B** (time from click to the page's commit / main thread
-blocked; top components by self time):
+**R7 · No decorative motion.** No arrival animations, pulses, glows, breathing
+buttons, stamps or count-up effects. State changes are instant. The one moving
+thing allowed is a progress bar while the clock runs.
 
-| Desk | commit | blocked | biggest costs |
+**R8 · One fact, one place.** If two places show the same figure they call the
+same function and one of them is a link to the other.
+
+**R9 · Speed budget.** Any place opens in under 50 ms (production build, a
+50-building firm). No render path loops over every parcel in town; that work is
+cached per month or done in the worker.
+
+### 0.1 Drill map (R3)
+
+| Figure | Click opens | Source function (see BUILD_SPEC §5) |
+|---|---|---|
+| NOI | rent roll lines − opex lines (tax, insurance, management, repairs, reserves) = NOI | holding rent roll + opex in `engine/value.ts` / `engine/sim.ts` |
+| Cap rate / going-in | NOI ÷ price, with the NOI drill inline | same |
+| Value / appraisal | NOI, cap, income value, appraisal range, replacement cost, comps used; total = the mark. Only what the engine computes: no invented weights | `marketAppraisal`, `incomeValueAsIs`, `appraise`, `replacementCost` |
+| Land value | scheme (use, floors, coverage) · finished value/sf − cost/sf = residual; builder vs holder bid, which wins | `landRead` / `residualScheme` (`engine/value.ts:1297`, `:707`) |
+| Cash flow | waterfall: NOI → debt service → capex → overhead → CF | `ui/vitals/Waterfall.tsx` data |
+| Net worth | balance sheet: assets at marks − loans − line = equity | BooksPage BalanceSheet |
+| Debt | loan list: balance, rate, maturity, DSCR | the loan book |
+| Rank | league table around you, ±5 places | `streetStanding` |
+| Occupancy | by building, then by suite | `portfolioOccupancy` |
+| Rent / sf | leases on the roll vs market rent | `portfolioRentPsf`, `marketRentPsfYr` |
+| Vacancy, rent, cap (city) | by submarket and class, 20-year series | econ history |
+| Rate (10Y, coupon) | index + spread = coupon, 10-year series | `econ.indexRate`, debt pricing |
+
+### 0.2 Click budgets (R5), before → after
+
+Counted from the default view (city, nothing open). "Before" is from the code
+paths in INVENTORY.md §3.
+
+| Job | Before | After | After path |
 |---|---:|---:|---|
-| Buildings | **1,204 ms** | 1,204 ms | `BuildingDatabase` 1,168 ms |
-| Marketplace | 302 ms | 279 ms | `MarketPage` 126 ms, `SiteFinder` 108 ms |
-| Players | 237 ms | 237 ms | `TheStreet` 108 ms, `HeadlinerStrip` 30 ms, `RaceChart` 21 ms |
-| Leasing | 218 ms | 173 ms | `LeasingPage` 53 ms, `OpsChoices` ×41 33 ms |
-| Portfolio | 209 ms | 177 ms | `PortfolioPage` 83 ms, `ReturnsToDate` 21 ms |
-| Books | 175 ms | 175 ms | `Waterfall` 77 ms, `BalanceSheet` 28 ms |
-| Markets | 111 ms | 111 ms | `LineChart` ×30 29 ms, `EconomyPage` 18 ms |
-| Banks | 106 ms | 105 ms | `BankFile` 33 ms |
-| The Record | 77 ms | 65 ms | `TimelineRow` ×61 8 ms |
-| Tape | 58 ms | 59 ms | `FrontPage` 18 ms |
-| Debt, Investors, Rankings, Settings, Pulse | 25–48 ms | 0 | — |
-| Click a building (card) | 13–39 ms | 0 | `Neighbourhood` 26 ms |
-| Open Property page | 55 ms | 55 ms | `PropertyPage` 15 ms |
-
-In state A the same desks were 15–40 ms except Buildings (493 ms), Marketplace
-(162 ms) and Players (86 ms). **Cost grows with the size of the book and the
-age of the city**, which matches the owner playing long games.
-
-**Advancing time, state B:**
-
-| Action | wall time to the new month on screen | UI main-thread work |
-|---|---:|---:|
-| +1 month, map view | 1.75 s | 378 ms blocked; `TopBar` 283 ms, `MapHud` 22 ms |
-| +1 month, Portfolio open | 1.33 s | 491 ms blocked; `TopBar` 312 ms, `PortfolioPage` 56 ms |
-| +1 year | 5.8–6.3 s | 300–380 ms; `TopBar` 195–247 ms, `Docket` 47–116 ms |
-
-The rest of the wall time is the simulation in its worker (`state/townWorker.ts`,
-`spanOffThread`), which is engine work, not UI.
-
-**Unreal bridge:** every game change pushes a `view` message. Measured with a
-stub bridge: 1.1 ms and 29 KB per change (the city message is ~1 MB, once).
-**Not a cause.**
-
-### 1.3 Top causes, with evidence
-
-1. **The Buildings table re-appraises every deed in town on every visit.**
-   `BuildingDatabase` (`ui/panels/MarketPage.tsx:20-76`) runs `marketAppraisal`
-   and `inPlace` for all ~1,446 parcels inside a `useMemo` that lives in the
-   component. Pages unmount on every switch (`ui/RightPanel.tsx:222-241`), so
-   the memo is thrown away and the work repeats every visit, and again every
-   month while open (it depends on `game`). 1.2 s at state B, 0.5 s at state A.
-   It pages its output to 50 rows but computes all of them.
-2. **The top bar redoes ~300 ms of portfolio math every month.** The `vitals`
-   memo (`ui/TopBar.tsx:143-234`) runs on every `game` change. Timed cold, one
-   call each at state B: `streetStanding` on the new state **63 ms** and again
-   on the previous state **81 ms** (`engine/standing.ts:40`, ranks all 72 rival
-   books just to print "1st / 62" and "▲3"), `netWorth` 11 ms, plus the rest.
-   It is wrapped in `useDeferredValue`, so it does not block the click, but it
-   is 200–310 ms of main-thread time on every advance and lands right when the
-   player wants to act.
-3. **Every desk is rebuilt from scratch on every switch.** No page stays mounted
-   and derived data is memoised inside components, so each visit recomputes
-   (Marketplace 279 ms, Players 237 ms, Portfolio 177 ms, Leasing 173 ms, Books
-   175 ms at state B). Switching back and forth between two desks pays the full
-   cost each time.
-4. **102 components subscribe to the whole `game` object and 81 to `parcels`**
-   (`grep "useStore((s) => s.game)"`). Every month, every one of them that is
-   mounted re-renders and re-derives. `Docket` alone is 47–116 ms per year
-   advance.
-5. **In Unreal, the page is drawn as a full-window transparent browser texture
-   at 60 fps** (`unreal/.../BWGame.cpp:856-866`, `SupportsTransparency(true)`,
-   `BrowserFrameRate(60)`). The CSS still carries 43 `backdrop-filter` blur
-   rules (e.g. `index.css:85`, `211`, `599` on `.page-backdrop`) and 180–220 ms
-   arrival animations on every page and dock (`index.css:604`, `1746`;
-   `ui/hud.css:361-440`). In the embedded browser the page cannot see the 3D
-   scene behind it, so the blur has nothing to blur and only costs raster time,
-   and each animation frame is a full-window repaint copied into Unreal.
-   **This one is inferred, not measured inside Unreal.** Confirm with
-   `stat slate` / `stat unit` and the CEF paint rate before and after turning
-   them off in `html.host-unreal`.
-6. **Small but constant:** `SectionNav` (`ui/RightPanel.tsx:363-395`) watches the
-   whole page subtree with a MutationObserver and reads layout
-   (`offsetParent`, `getBoundingClientRect`) on every mutated frame.
-7. **Click depth.** Even at 0 ms, buying a building is 6–7 clicks across two
-   surfaces, and the Offer button on a card is a scroll away. A third of the
-   "slow" feeling is distance, not milliseconds.
-8. **Out of the UI lane (flag for the engine):** a month takes 1.3–1.8 s and a
-   year about 6 s in the sim worker at state B. The UI can show progress and
-   stay responsive, but only engine work makes the clock itself faster.
+| Buy a listed building at ask | 6–7 | **3** | click building › Pay ask › Confirm (default financing) |
+| Offer below ask | 7 | **3** + amount | click building › type amount › Offer |
+| See cash and total debt | 1 | **0** | HUD |
+| See why NOI is what it is | 3+ (Property › Money › scroll) | **1** | click the NOI figure |
+| See what a lot is worth to build on | 3+ | **1** | click Land value › residual |
+| Start a development on your lot | 4–6 | **3** | click lot › Plan (best scheme preselected) › Break ground |
+| Answer a tenant letter | 3 | **1** | Inbox row › Accept / Counter / Decline |
+| Refinance a maturing loan | 4–5 | **3** | Inbox row › Refinance › pick quote |
+| Advance one month | 1 | **1** | Space or "+1 mo" |
+| Read the news | 1–2 | **1** | City (remembers the News tab) |
+| Find every building above 8% yield | 4+ (Marketplace, scroll, read) | **2** | Market › "Yield ≥ 8%" chip |
 
 ---
 
-## 2. Proposed structure
+## 1. Prose audit of today's UI (R1)
 
-### 2.1 Principles
+**Method.** The dev build in Unreal mode, the 2012 test save (50 buildings).
+Each page was opened from the store and every visible element whose text has
+12 or more words, at least 70% of them alphabetic (so numeric table rows do not
+count), and no child that meets the same test, was counted as a prose block.
+"Words" is all visible words on the page; "prose" is the words inside prose
+blocks. Source totals across `src/ui`: **344** `className="hint…"` sites,
+**422** `title=` tooltips.
 
-- **The city is the canvas.** Nothing covers more than two thirds of the window.
-  No dimming, no blur. Panels are solid.
-- **Five places, one Inbox.** Each place has at most five tabs. Each tab is one
-  screen: a summary strip on top, one table or board below.
-- **The verb is on screen.** Every drawer has a footer with its actions that
-  never scrolls away.
-- **Decide where you are told.** Anything that wants a decision can be answered
-  from the Inbox row that reports it.
-- **One scope value** (`island | region`) that every place reads, so the region
-  mode adds data, not screens.
-- **Keep `UI_PRINCIPLES.md`.** This plan applies its ten rules more strictly:
-  one interruption at a time, Esc closes everything, never offer what cannot
-  be done.
+| Page | Words on page | Prose words | Prose share | Prose blocks | Hint elements | Buttons |
+|---|---:|---:|---:|---:|---:|---:|
+| Leasing | 4,349 | **1,552** | 36% | **53** | 10 | **511** |
+| Primer | 1,433 | 1,224 | 85% | 43 | 6 | 7 |
+| Tape (News) | 1,119 | 733 | 66% | 25 | 6 | 18 |
+| Markets (Economy) | 1,133 | 644 | 57% | 18 | 4 | 16 |
+| Banks | 2,259 | 481 | 21% | 19 | 11 | 19 |
+| Marketplace | 1,597 | 429 | 27% | 13 | 8 | 26 |
+| Players | 2,254 | 422 | 19% | 19 | 8 | 7 |
+| Settings | 577 | 410 | 71% | 14 | 14 | 21 |
+| Investors | 652 | 272 | 42% | 6 | 4 | 6 |
+| Debt | 381 | 245 | 64% | 7 | 5 | 13 |
+| Pulse | 362 | 240 | 66% | 10 | 0 | 9 |
+| Card: listed building | 377 | 164 | 44% | 8 | 5 | 12 |
+| Books | 1,028 | 162 | 16% | 7 | 6 | 17 |
+| The Record | 889 | 142 | 16% | 8 | 3 | 56 |
+| Portfolio | 2,135 | 133 | 6% | 4 | 4 | 165 |
+| Property › Overview | 324 | 108 | 33% | 4 | 1 | 15 |
+| Property › Operations | 312 | 97 | 31% | 5 | 1 | 27 |
+| Deals | 169 | 82 | 49% | 6 | 3 | 12 |
+| Saves | 99 | 69 | 70% | 3 | 5 | 3 |
+| Rankings | 417 | 68 | 16% | 2 | 1 | 7 |
+| Buildings | 1,053 | 48 | 5% | 2 | 2 | 8 |
+| Property › Money | 218 | 25 | 11% | 2 | 0 | 10 |
+| Card: owned building | 198 | 13 | 7% | 1 | 0 | 15 |
+| City view (docket, HUD) | 369 | 100 | 27% | 5 | 0 | 68 |
 
-### 2.2 Navigation
+Every page also carries a kicker + title + one-sentence subtitle
+(`ui/RightPanel.tsx:208-211`); all subtitles go.
+
+**Worst single blocks** (strip first; file:line of the text):
+
+| Words | Where | Opens with |
+|---:|---|---|
+| 126 | `ui/panels/SyndicateDesk.tsx:35` | "Investors read every deal you raised…" |
+| 98 | `ui/panels/EconomyPage.tsx:1422` | "Employment decides how much space…" |
+| 73 | `ui/panels/MiscPages.tsx:266` (Settings) | "Bids on a sale you listed…" |
+| 72 | `ui/panels/DebtPage.tsx:601` | "Past a handful of buildings an owner…" |
+| 68 | `ui/panels/StreetDesk.tsx:84` | "These firms bid on the same tape…" |
+| 68 | `ui/panels/HousePolicyDesk.tsx:99` (Leasing) | "No retainer and nothing while the space sits…" |
+| 67 | `ui/panels/MarketPage.tsx:926` | "Every closing pays its fee…" |
+| 60 | `ui/panels/EconomyPage.tsx:137` | "What a paycheque buys…" |
+| 56 | `ui/panels/RankingsPage.tsx:60` | "Against 32 real US cities…" |
+| 55 | `ui/panels/MarketPage.tsx:596` | "Nothing is on the courthouse steps…" |
+| 54 | `ui/panels/MarketPage.tsx:315` | "Everything for sale in town…" |
+| 53 | `ui/panels/SyndicateDesk.tsx:98` | "Each year the city draws…" |
+| 51 | `ui/panels/PortfolioPage.tsx:1243` | "Every property dollar booked…" |
+| 45 | `ui/developable.ts:37` (Property, card) | "A rebuild does not pencil here today…" |
+| 43 | `ui/panels/BankProfile.tsx:84` | "Every lender in town, with nothing hidden…" |
+| 42 | `ui/rollups/Rollover.tsx:91` (Leasing) | "A cluster — over a quarter of the rent…" |
+| 42 | `ui/panels/BankProfile.tsx:319` | "Two tests no coverage ratio…" |
+| 40 | `ui/panels/AcquireDesk.tsx:1112` (buy card) | "Agreeing a price puts you under contract…" |
+| 35 | `ui/vitals/Waterfall.tsx:361` (Books) | "Two ledgers, one move…" |
+| 24 | `ui/panels/PulsePage.tsx:46` | "Below replacement cost…" |
+
+**Handholding to remove (R6):** `ui/PrimerOffer.tsx`; the docket's "Start here"
+row (`ui/docket/build.ts:335`); "Where to start" on Marketplace
+(`ui/panels/MarketPage.tsx:1103`); the advisor lines (`ui/advisor.ts`, used by
+`DealsPage.tsx` and `modals.tsx`); `hint-fold` click-to-expand prose
+(`ui/RightPanel.tsx:203-205`); YearReview, GoalCard, ExitCard,
+DeliveryCeremony and MilestoneFlash as play-stopping moments (they become one
+News row each).
+
+**Decorative motion to remove (R7):** `@keyframes` in `index.css` (stamp,
+start-sweep, page-arrive, panel-arrive, dock-arrive, rail-arrive, stage-fade,
+advance-glow, play-breathe, tick-up, tick-down, at-risk-arrive, at-risk-pulse)
+and `ui/hud.css` (card-arrive, card-nudge, tstat-turn and the redefinitions at
+361–441), `ui/palette.css:30`.
+
+How the build strips it: each place is rebuilt from the component set in §2.3,
+so old prose is not carried over by default; any sentence that survives must be
+moved to a "?" definition and pass R1. A lint (BUILD_SPEC §6) fails the build on
+JSX text over 3 words outside the allow-list (Inbox fragments, toasts, "?"
+definitions, news headlines).
+
+---
+
+## 2. Findings that led here (first pass, measured)
+
+### 2.1 Structure today
+
+21 page values, 16 rail entries, 6 desks, a docked card plus a 7-tab Property
+page, a docket, a card queue, 4 engine card types, 4 moment cards, a palette and
+lenses. Pages are long scrolls of 5–12 sections. In Unreal a page is a 1,120px
+room over a dimmed, blurred backdrop that hides the city. Lenses, "Show on map"
+and "Show my book" never reach Unreal; keys 1–3 move the Unreal camera and open
+desks at once. Detail: INVENTORY.md.
+
+### 2.2 Why it is slow (dev build, `?host=unreal`, 2012 save, 50 buildings, 72 rivals)
+
+| Desk / action | Cost | Cause |
+|---|---:|---|
+| Buildings | 1,204 ms | appraises all 1,446 parcels on every mount (`ui/panels/MarketPage.tsx:20-76`) |
+| Marketplace | 302 ms | `MarketPage` 126 ms + `SiteFinder` 108 ms, recomputed per visit |
+| Players | 237 ms | `TheStreet` 108 ms |
+| Leasing / Portfolio / Books | 218 / 209 / 175 ms | remount + recompute (`ui/RightPanel.tsx:222-241`) |
+| +1 month (UI share) | 378–491 ms | `TopBar` vitals 283–312 ms: `streetStanding` twice, 63 + 81 ms (`ui/TopBar.tsx:143-234`) |
+| +1 month / +1 year (wall) | 1.3–1.8 s / ~6 s | simulation worker (engine; the `engine-perf` session) |
+| Unreal bridge push | 1.1 ms, 29 KB | not a cause |
+
+Also: 102 components subscribe to the whole `game`; 43 `backdrop-filter` rules
+and 180–220 ms arrival animations repaint a full-window transparent browser
+texture at 60 fps inside Unreal (inferred, to be measured there).
+
+---
+
+## 3. Structure
+
+### 3.1 Places
 
 ```
-HUD (52px, one row): date + clock | Cash | Debt | Net worth | CF/yr | Rank | 10Y | Island/Region | Search (Ctrl K)
-Rail (64px icons): Inbox (I) · Holdings (1) · Pipeline (2) · Market (3) · Capital (4) · City (5) · … Settings
-Drawer (right): standard 540px for one thing, wide 1060px for tables and boards
-3D: lenses bar at the bottom; picking a building opens its file in the drawer
+HUD (52px): date + clock | Cash | Debt | Net worth | CF/yr | Rank | 10Y | Island/Region | Search
+Rail (64px): Inbox (I) · Holdings (1) · Pipeline (2) · Market (3) · Capital (4) · City (5) · Settings
+Drawer (right): 540px for one thing, 1060px for tables and boards. Never wider.
+3D: lens bar at the bottom; picking a building opens its file in the drawer.
 ```
 
 | Place (key) | Tabs | Absorbs |
 |---|---|---|
-| **Inbox** (I) | Needs you · Later · Done | Docket, card queue, deferred decision cards, at-risk banner, Deals "On the table" and "Tenants asking", alerts |
+| **Inbox** (I) | Needs you · Later · Done | docket, card queue, deferred cards, at-risk banner, Deals "On the table" / "Tenants asking" / "Their answer", sale offers, alerts |
 | **Holdings** (1) | Buildings · Leasing · Returns | Portfolio, Leasing, Returns, portfolio sale desk |
-| **Pipeline** (2) | Buying · Building · Selling · *Land (region)* | Deals (LOIs, talks, sales), schemes in progress, developments by stage, your listings |
+| **Pipeline** (2) | Buying · Building · Selling · *Land (region)* | Deals (LOIs, talks, sales), schemes in progress, developments, your listings |
 | **Market** (3) | For sale · All buildings · Sites · Distressed · Books | Marketplace, Buildings, Notes, Site finder, street books, auctions |
-| **Capital** (4) | Overview · Loans · Lenders · Investors · Books | Debt, Line of credit, Banks, Investors, Books |
-| **City** (5) | Markets & news · Players · Rankings · Your record | Markets, Pulse, Tape, Players, Rankings, The Record |
-| **Building file** (pick in 3D) | Overview · Rent roll · Money · Build · History | Docked card + Property page, one drawer |
-| Rail foot | Saves · Settings · Primer | unchanged; M and P stay |
+| **Capital** (4) | Overview · Loans · Lenders · Investors · Books | Debt, Line, Banks, Investors, Books |
+| **City** (5) | Markets · News · Players · Rankings · Record | Markets, Pulse, Tape, Players, Rankings, The Record |
+| **Building file** | Overview · Rent roll · Money · Build · History | docked card + Property page |
+| Rail foot | Saves · Settings | Primer → "?" reference only |
 
-Every section of every current page has a home in this table or in INVENTORY.md
-§5 (sections move into the tab named after their page). Nothing is removed.
+Keys: I, 1–5, Esc, Alt+← back, Ctrl K search, Space play/pause, `.` +1 month,
+Y +1 year, B buy at ask (building file), F1–F3 Unreal camera presets.
 
-**Keys:** I, 1–5, Esc, Alt+← back, Ctrl K search, Space play/pause, `.` +1
-month, Y +1 year, B buy at ask (in a building file). Unreal camera presets move
-off 1–3 (to F1–F3, proposed) so they stop colliding with desk keys.
+### 3.2 Component set (13)
 
-### 2.3 Layout and component set
+`HudBar`, `Rail`, `Drawer` (head · `Tabs` · body · `ActionFooter`), `StatStrip`,
+`DataTable`, `Figure` (a number that drills, R3), `Breakdown` (the drill
+popover), `KeyValue`, `StageBoard`, `InboxRow`, `Spark`/`Chart`, `Card`
+(engine interruption), `Toast`. Props and data sources: BUILD_SPEC.md.
 
-One shell, 13 components. New pages are built only from these:
+Unreal styling: solid surfaces, no `backdrop-filter`, no keyframes, no dim.
 
-| Component | Job |
-|---|---|
-| `HudBar` | one-row vitals with deltas, clock, scope switch, search |
-| `Rail` | five places + Inbox, badges, keys |
-| `Drawer` | header (crumbs, title, status chips, close), `Tabs`, body, `ActionFooter`; two widths |
-| `Tabs` | at most five, badge counts, remembers the last tab per place |
-| `StatStrip` | 3–6 figures with a one-line note each |
-| `DataTable` | virtualised, sortable, filter chips, row chips, row actions, "Show on city" |
-| `KeyValue` | label/value lists |
-| `StageBoard` | lanes of cards by stage (Pipeline; the Land lane later) |
-| `InboxItem` | severity stripe, one-line fact, inline verbs |
-| `ActionFooter` | sticky verbs plus an optional 2–3 step `Stepper` |
-| `Chart` | spark, line, bar (reuse `ui/Chart.tsx`) |
-| `Card` | engine interruption, one at a time (existing queue rules) |
-| `Toast` | outcome of an action, where the player is looking |
+### 3.3 Region
 
-Styling for Unreal: solid surfaces, no `backdrop-filter`, no arrival
-animations, a single 120 ms opacity fade at most.
-
-### 2.4 The core screens (see mockups)
-
-1. **City + Inbox** — default view; Inbox items answered inline.
-2. **Building file** — one drawer for any building; price and financing preset
-   on one screen; Buy in three clicks.
-3. **Holdings** — strip + virtual table; row chips for problems.
-4. **Pipeline** — stage board for buying, building, selling (+ Land lane).
-5. **Market** — tabbed search tables, "Show on city".
-6. **Capital** — cash, debt, line, maturity wall, next loans to act on.
-7. **City intel** — sparklines by sector + the Tape side by side.
-8. **Region (later)** — scope switch, region map, Land lane.
-
-Target clicks: buy a listed building **3** (with a saved financing preset; 4–5
-with a custom stack); total debt **0**; start a development **3** with the
-suggested scheme; advance **1**; news **1**; answer a tenant letter **1**.
-
-### 2.5 How the Region fits
-
-- `scope: "island" | "region"` in the store; the HUD switch sets it.
-- In region scope the backdrop is the metro view, Market lists tracts, Holdings
-  lists land, Pipeline shows the **Land** lane (Bought → Entitlement →
-  Subdivided → Lots listed → Lots sold), City › Players includes homebuilders.
-- All of that is the same `DataTable`, `StageBoard` and Building-file drawer
-  ("Tract file" with tabs Overview · Entitlement · Plat · Sales · History).
-- **Open question for the owner:** is the region view a 3D metro scene in
-  Unreal, or a 2D map the page draws? The layout works for both; 2D is sooner.
+`scope: "island" | "region"`; the HUD switch sets it. In region scope Unreal
+shows the 3D metro scene; Market lists tracts, Holdings lists land, Pipeline
+shows the **Land** lane (Bought › Entitled › Subdivided › Lots listed › Lots
+sold), City › Players includes homebuilders; the building file becomes a tract
+file (Overview · Entitlement · Plat · Sales · History). Same components.
 
 ---
 
-## 3. Performance fixes that can ship first, on their own
+## 4. Speed fixes (being built in `ui-speed-fixes`)
 
-Each is independent of the redesign, keeps the current UI, and is small.
-
-| # | Fix | Where | Expected |
-|---|---|---|---|
-| P1 | Cache the Buildings rows per game state outside the component (a `WeakMap` keyed by the `game` object, or by month + holdings version); render only the visible page of rows | `ui/panels/MarketPage.tsx:20-76` | Buildings 1.2 s → under 50 ms on revisits; first open per month still pays once (move it to the worker later) |
-| P2 | Compute the street ranking once per month: cache `streetStanding` by `game` object and keep last month's rank instead of re-ranking the previous state | `ui/TopBar.tsx:143-234`, `engine/standing.ts:40` | ~145 ms less main-thread work per advance |
-| P3 | A shared derived-data layer: `derive(game, key, fn)` memoised by `game` reference, used by pages instead of in-component `useMemo` | PortfolioPage, LeasingPage, MarketPage/SiteFinder, StreetDesk `TheStreet`, BooksPage `Waterfall`, Docket | desk revisits in the same month drop to render-only (tens of ms) |
-| P4 | Keep the last two desks mounted with React 19.2 `<Activity mode="hidden">` instead of unmounting | `ui/RightPanel.tsx:222-241` | back-and-forth switching becomes near-instant |
-| P5 | In `html.host-unreal`: `backdrop-filter: none`, `animation: none` on page, dock, rail and cards; no page-backdrop dim | `index.css`, `ui/hud.css` | fewer full-window repaints in the embedded browser; **measure in Unreal before/after** |
-| P6 | `SectionNav`: observe only the page's direct section list (or build chips from data), drop per-mutation layout reads | `ui/RightPanel.tsx:363-395` | removes layout thrash while a page updates |
-| P7 | Show month progress in the HUD while the worker runs (the click already returns at once) | `ui/TopBar.tsx` | the 1.3–1.8 s month reads as "working", not "stuck" |
-
-P1, P2 and P5 are the first three to do: biggest effect, smallest change.
-Verification for each: re-run `profile-harness.html` (copy it into
-`broadway-and-wall/`, open `/profile.html?host=unreal`, run the same desk
-sweep), and `pnpm check` stays green. P5 needs an Unreal session.
+P1 cache Buildings rows per month · P2 rank once per month · P3 shared derived
+cache keyed by `game` · P4 keep the last two desks mounted (`<Activity>`) ·
+P5 no blur/animation in `host-unreal` · P6 `SectionNav` without layout reads ·
+P7 clock progress in the HUD. Detail in the first-pass table above.
 
 ---
 
-## 4. Migration plan (each step keeps the game playable)
+## 5. Migration (each step keeps the game playable)
 
-The new shell is built behind a setting (`uiShell: "classic" | "next"`, stored
-like `popupsOff`), so classic stays the default until the owner switches.
+The new shell lives behind a setting `uiShell: "classic" | "next"` (persisted
+like `popupsOff`); classic stays the default until step 8.
 
-| Step | What | Playable because |
+| Step | What | Spec |
 |---|---|---|
-| 0 | Ship P1–P7 | no visible change except speed |
-| 1 | `html.host-unreal` styling: solid panels, no dim/blur, desks dock right at ≤ 2/3 width | same pages, same navigation |
-| 2 | New shell behind `uiShell=next`: `HudBar` (adds Debt), `Rail` with five places, `Drawer`. Each place/tab renders today's page component inside the drawer | every old page reachable through the map in §2.2; classic shell untouched |
-| 3 | Inbox: one derived list from docket, card queue, at-risk, Deals "On the table"/"Tenants asking"; inline verbs call the existing store actions | old Deals tabs still exist inside Pipeline until step 6 |
-| 4 | Building file: merge `ParcelPanel` and `PropertyPage` into one drawer with `ActionFooter`; financing presets in Settings › Buying defaults; Buy at ask in 3 clicks | the full stack desk stays behind "Custom…" |
-| 5 | Replace bespoke tables with `DataTable`, one place at a time: Market (incl. Buildings), Holdings, Capital › Loans, City | each place switches in one PR; others keep the old component |
-| 6 | Pipeline `StageBoard` over LOIs, approaches, developments, listings; retire DealsPage | every deal still reachable from Pipeline and the Building file |
-| 7 | Bridge additions so the 3D city answers the UI: `lens`, `highlight` (list of bbls), `flyTo`; camera presets off 1–3 | Unreal ignores unknown messages until the C++ side lands |
-| 8 | Make `next` the default; remove the classic shell after one release with no regressions | settings switch available for one release |
-| 9 | Region: `scope` value, Land lane, tract rows, region backdrop | island play unaffected |
+| 0 | Speed fixes P1–P7 | `ui-speed-fixes` session |
+| 1 | `host-unreal` styling and the rule lint (R1, R7) | BUILD_SPEC §1 |
+| 2 | Shell: `HudBar` (adds Debt), `Rail`, `Drawer`, keys; old pages hosted inside drawers | BUILD_SPEC §2 |
+| 3 | Inbox | BUILD_SPEC §3 |
+| 4 | Building file with `Figure`/`Breakdown` drills and the 3-click buy | BUILD_SPEC §4 |
+| 5 | `DataTable` per place: Market, Holdings, Capital › Loans, City; prose stripped per §1 | later spec |
+| 6 | Pipeline `StageBoard`; retire DealsPage | later spec |
+| 7 | Bridge: `lens`, `highlight`, `flyTo`; camera presets on F1–F3 (C++ side) | later spec |
+| 8 | `next` becomes the default; classic removed one release later | — |
+| 9 | Region scope, Land lane, tract file, 3D metro scene | after REGION_PLAN settles |
 
-Note: `AGENTS.md` says the web build is frozen for features. This plan only
-touches the UI shell that Unreal hosts; step 0 and step 1 are fixes. The main
-session should confirm that UI work under `broadway-and-wall/src/ui` is in
-scope again before step 2.
-
----
-
-## 5. Decisions needed from the owner
-
-1. Approve the five places + Inbox (and their names).
-2. Drawer beside the city (proposed) versus full-screen pages.
-3. Region view: 3D metro scene in Unreal, or a 2D map drawn by the page.
-4. Unreal camera presets moving from 1–3 to F1–F3.
-5. Ship the speed fixes (P1, P2, P5) before the redesign: recommended yes.
+`AGENTS.md` still says the web build is frozen for features; the main session
+has put this UI work in scope.

@@ -751,7 +751,7 @@ Blocks are never dropped whole. The cut is applied lot by lot:
   existing houses, so subdivisions fill in from the city side phase by
   phase.
 - 6% of lots are left vacant.
-| 1960s–80s | freeway corridor through the old city, then parking, verges and 1965–85 buildings beside it |
+- Outer budget 600 houses [O, about 2,000 in all including the inner
   blocks].
 - A tract with fewer than 20 houses stays a farm. The unbuilt remainder of a
   tract stays a field.
@@ -776,7 +776,7 @@ Blocks are never dropped whole. The cut is applied lot by lot:
 | 1935–1965 | crossroads gas station and diner |
 | 1946–1975 | post-war subdivisions along the interstate |
 | 1958–1974 | interstate opened |
-| 1960s | freeway cut through the old city |
+| 1960s–80s | freeway corridor through the old city, then parking, verges and 1965–85 buildings beside it |
 | 1960–2005 | strip centres |
 | 1975–2000 | business park |
 | 1985–2015 | interchange big boxes |

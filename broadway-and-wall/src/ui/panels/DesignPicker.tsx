@@ -7,9 +7,9 @@
 // listed. Every choice is drawn on the lot in the 3D city as it is made
 // (MapView's design preview). Looks only — what the building costs and how it
 // wears is the build-quality dial on Programme; see BuildingDesign.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { KITS, KIT_GROUPS, KIT_COLOURS } from "@/engine/renderView";
-import { UNREAL_HOST } from "@/state/unrealHost";
+import { UNREAL_HOST, formsForLot } from "@/state/unrealHost";
 import type { BuildingDesign } from "@/engine/types";
 import {
   FACADE_GROUPS, FACADE_STYLES, TRIM_PAINTS, ROOF_CHOICES, CROWN_CHOICES, CROWN_MIN_FLOORS, facadeSwatches,
@@ -270,6 +270,48 @@ export function DesignPicker({ design, onChange, floors, shops, onPeek, compact 
  * by a picture Unreal took of it (-KitThumbs, served at /game/kits/), and the
  * scheme on the lot redraws as each is picked (unrealHost sends the design).
  */
+/**
+ * THE BUILDING'S FORM. The lot decides what it can take: each form is solved
+ * on the real lot at the scheme's floors and coverage (state/unrealHost.ts
+ * formsForLot), and only the ones that fit are offered, each with what it
+ * costs in floor area and what it adds in wall. The choice is priced (the pro
+ * forma reads both numbers) and drawn (the model shows its tiers).
+ */
+function FormPicker({ design, set }: { design: BuildingDesign; set: (p: Partial<BuildingDesign>) => void }) {
+  const prev = useStore((st) => st.designPreview);
+  const options = useMemo(
+    () => (prev ? formsForLot(prev.bbl, prev.floors, prev.cov, prev.cls ?? String(prev.use), prev.year ?? START_YEAR) : []),
+    [prev?.bbl, prev?.floors, prev?.cov, prev?.cls, prev?.use, prev?.year],
+  );
+  // the numbers follow the scheme: a change of floors or coverage re-solves the
+  // form; a form the lot no longer takes falls back to the plain block
+  useEffect(() => {
+    if (!design.form || !prev) return;
+    const o = options.find((f) => f.key === design.form);
+    if (!o) set({ form: undefined, formRetained: undefined, formSkin: undefined });
+    else if (Math.abs((design.formRetained ?? 1) - o.retained) > 0.005 || Math.abs((design.formSkin ?? 1) - o.skin) > 0.005)
+      set({ formRetained: o.retained, formSkin: o.skin });
+  }, [options, design.form]);
+  const chip = (on: boolean) => "btn btn-sm" + (on ? " btn-on" : "");
+  const pct = (x: number) => (x >= 0 ? "+" : "") + Math.round(x * 100) + "%";
+  return (
+    <>
+      <div className="page-section">Form</div>
+      <div className="btn-row" style={{ flexWrap: "wrap", marginBottom: 4 }}>
+        <button type="button" className={chip(!design.form)} onClick={() => set({ form: undefined, formRetained: undefined, formSkin: undefined })}
+          title="One block to the height the floors make: the most floor area, the least wall">Plain block</button>
+        {options.map((f) => (
+          <button key={f.key} type="button" className={chip(design.form === f.key)}
+            title={`${f.blurb}. Floor area ${pct(f.retained - 1)}, facade ${pct(f.skin - 1)} against the plain block.`}
+            onClick={() => set({ form: f.key, formRetained: f.retained, formSkin: f.skin })}>{f.name}</button>
+        ))}
+      </div>
+      <p className="hint">{options.length ? "Only the forms this lot can take at these floors are listed." : "At these floors and this coverage the lot takes only the plain block."}
+        {design.form && options.find((f) => f.key === design.form) ? ` ${options.find((f) => f.key === design.form)!.blurb}.` : ""}</p>
+    </>
+  );
+}
+
 function KitPicker({ design, set }: { design: BuildingDesign; set: (p: Partial<BuildingDesign>) => void }) {
   const kit = KITS.find((k) => k.key === design.kit);
   const pick = (k: (typeof KITS)[number] | undefined) =>
@@ -277,6 +319,7 @@ function KitPicker({ design, set }: { design: BuildingDesign; set: (p: Partial<B
   const chip = (on: boolean) => "btn btn-sm" + (on ? " btn-on" : "");
   return (
     <div className="design-picker">
+      <FormPicker design={design} set={set} />
       <div className="page-section">Facade</div>
       <button type="button" className={chip(!design.kit)} style={{ marginBottom: 6 }} onClick={() => pick(undefined)}
         title="The period and the street choose, as they do for every other building in town">Fits the street</button>

@@ -56,6 +56,10 @@ export interface RenderLot {
   facade?: string;
   /** The Unreal facade kit the player chose, when they chose one (lookOf). */
   look?: RenderLook;
+  /** The building form the player chose (BuildingDesign.form); the host solves its tiers on the lot. */
+  form?: string;
+  /** Its tiers, rings in cm, heights in cm (state/unrealHost.ts solves them). */
+  tiers?: { ring: number[]; z0: number; z1: number }[];
 }
 
 export interface RenderOwner {
@@ -158,7 +162,7 @@ export function renderView(s: GameState, sinceMonth = s.month - 1): RenderView {
     lots.push({ bbl: d.bbl, cls: d.use, floors: d.floors, heightM: d.floors * FLOOR_M * progress, construction: true, progress, year: nowYear,
       ...(d.coverage !== undefined ? { cov: d.coverage } : {}),
       ...(d.design?.facade ? { facade: d.design.facade.split("#")[0] } : {}),
-      ...(lookOf(d.design) ? { look: lookOf(d.design) } : {}) });
+      ...(lookOf(d.design) ? { look: lookOf(d.design) } : {}), ...(d.design?.form ? { form: d.design.form } : {}) });
   }
   for (const j of s.cityJobs ?? []) {
     if ((s.built?.[j.bbl]?.bldgArea ?? 0) > 0 || s.developments?.[j.bbl]) continue;
@@ -178,7 +182,7 @@ export function renderView(s: GameState, sinceMonth = s.month - 1): RenderView {
       ...(dM !== undefined && s.month - dM <= 3 ? { fresh: true } : {}),
       ...(b.mix ? { shops: (b.mix.retail ?? 0) > 0.001 } : {}),
       ...(b.design?.facade ? { facade: b.design.facade.split("#")[0] } : {}),
-      ...(lookOf(b.design) ? { look: lookOf(b.design) } : {}) });
+      ...(lookOf(b.design) ? { look: lookOf(b.design) } : {}), ...(b.design?.form ? { form: b.design.form } : {}) });
   }
 
   const owners: RenderOwner[] = [];

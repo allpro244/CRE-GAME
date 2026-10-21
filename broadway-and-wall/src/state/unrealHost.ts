@@ -23,6 +23,7 @@
 import { useStore } from "@/state/store";
 import { renderView, lookOf } from "@/engine/renderView";
 import { toBwCity } from "@/citygen/unrealExport.mjs";
+import { formTiers, formMetrics, formsFor } from "@/citygen/forms.mjs";
 import "@/map/real/patternbook/register";
 import { familyFor, TINTS } from "@/map/real/facades";
 
@@ -38,6 +39,42 @@ const bridge = (): Bridge | undefined => (window as unknown as { ue?: { bridge?:
 
 export function sendInput(ev: Record<string, unknown>): void {
   void bridge()?.input(JSON.stringify(ev));
+}
+
+// THE FORMS ARE SOLVED HERE, where the lot's geometry and the game meet: the
+// deed's ring from the exported city (cm), the building's footprint the lot
+// scaled by sqrt(coverage) about its centre (Unreal's rule for a delivered
+// building), the height its floors make. The desk's numbers and the drawn
+// building come from the same tiers.
+let rings = new Map<string, number[]>();
+function lotGeom(bbl: string, cov: number) {
+  const flat = rings.get(bbl);
+  if (!flat || flat.length < 6) return null;
+  const lot: [number, number][] = [];
+  for (let i = 0; i < flat.length; i += 2) lot.push([flat[i] / 100, flat[i + 1] / 100]);
+  const c = lot.reduce((a, p) => [a[0] + p[0] / lot.length, a[1] + p[1] / lot.length], [0, 0]);
+  const k = cov > 0 ? Math.min(0.97, Math.sqrt(cov)) : 0.82;
+  const footprint = lot.map(([x, y]) => [c[0] + (x - c[0]) * k, c[1] + (y - c[1]) * k] as [number, number]);
+  return { lot, footprint };
+}
+const heightOf = (floors: number) => Math.max(1, floors) * 3.55 + 1.5;
+/** The tiers of a chosen form on a lot, in cm for Unreal, and its measured numbers; null where it does not fit. */
+export function solveForm(bbl: string, form: string, floors: number, cov: number, cls: string, year: number) {
+  const g = lotGeom(bbl, cov);
+  if (!g) return null;
+  const hM = heightOf(floors);
+  const tiers = formTiers({ bbl, footprint: g.footprint, lotRing: g.lot, hM, year, klass: cls, form });
+  if (!tiers) return null;
+  return {
+    tiers: tiers.map((t) => ({ ring: t.ring.flatMap(([x, y]) => [Math.round(x * 100), Math.round(y * 100)]), z0: Math.round(t.base * 100), z1: Math.round(t.top * 100) })),
+    ...formMetrics(g.footprint, tiers, hM),
+  };
+}
+/** Every form that fits this lot at these floors, with what it keeps and what it adds. */
+export function formsForLot(bbl: string, floors: number, cov: number, cls: string, year: number) {
+  const g = lotGeom(bbl, cov);
+  if (!g) return [];
+  return formsFor({ bbl, footprint: g.footprint, lotRing: g.lot, hM: heightOf(floors), year, klass: cls, floors });
 }
 
 let started = false;
@@ -56,12 +93,20 @@ export function startUnrealHost(): void {
     const s = useStore.getState();
     if (s.city && s.city !== lastCity) {
       lastCity = s.city; lastGame = null; lastMonth = -1;
-      void b.city(JSON.stringify(toBwCity(s.city, { familyFor, tints: TINTS })));
+      const bw = toBwCity(s.city, { familyFor, tints: TINTS }) as { parcels: { bbl: string; ring: number[] }[] };
+      rings = new Map(bw.parcels.map((p: { bbl: string; ring: number[] }) => [p.bbl, p.ring]));
+      void b.city(JSON.stringify(bw));
     }
     if (s.game && s.city && s.game !== lastGame) {
       const since = lastMonth;
       lastGame = s.game; lastMonth = s.game.month;
-      void b.view(JSON.stringify(renderView(s.game, since)));
+      const view = renderView(s.game, since);
+      view.lots = view.lots.map((l) => {
+        if (!l.form || l.construction) return l;
+        const f = solveForm(l.bbl, l.form, l.floors, l.cov ?? 0.6, l.cls, l.year);
+        return f ? { ...l, tiers: f.tiers } : l;
+      });
+      void b.view(JSON.stringify(view));
     }
     // the Settings page's graphics level drives Unreal's scalability (Phase 6)
     if (s.graphics !== lastGfx) {
@@ -74,7 +119,8 @@ export function startUnrealHost(): void {
       lastPreview = s.designPreview;
       const p = s.designPreview;
       void b.input(JSON.stringify(p
-        ? { t: "preview", bbl: p.bbl, floors: p.floors, cov: p.cov, cls: p.cls ?? p.use, year: p.year ?? 0, facade: p.design.facade?.split("#")[0] ?? "", ...(lookOf(p.design) ? { look: lookOf(p.design) } : {}) }
+        ? { t: "preview", bbl: p.bbl, floors: p.floors, cov: p.cov, cls: p.cls ?? p.use, year: p.year ?? 0, facade: p.design.facade?.split("#")[0] ?? "", ...(lookOf(p.design) ? { look: lookOf(p.design) } : {}),
+            ...(p.design.form ? { tiers: solveForm(p.bbl, p.design.form, p.floors, p.cov, p.cls ?? String(p.use), p.year ?? 0)?.tiers ?? [] } : {}) }
         : { t: "preview-off" }));
     }
     if (s.selectedBBL !== lastSel) {

@@ -566,6 +566,11 @@ void ACityBuilder::BuildGround()
 			if (V.Z0 < 50 && !V.bVacant && V.Ring.Num() >= 3 && !Foot.Contains(V.Bbl)) Foot.Add(V.Bbl, &V.Ring);
 		const TCHAR* const ShrubMesh = TEXT("/Game/BW/Trees/SM_Shrub.SM_Shrub");
 		const bool bShrubs = FPackageName::DoesPackageExist(TEXT("/Game/BW/Trees/SM_Shrub"));
+		const TCHAR* const FenceMesh = TEXT("/Game/BW/Yard/SM_ChainLink.SM_ChainLink");
+		const TCHAR* const HedgeMesh = TEXT("/Game/BW/Yard/SM_Hedge.SM_Hedge");
+		const TCHAR* const DumpsterMesh = TEXT("/Game/BW/Yard/SM_Dumpster.SM_Dumpster");
+		const bool bYard = FPackageName::DoesPackageExist(TEXT("/Game/BW/Yard/SM_Dumpster"));
+		int32 Hedges = 0, Fences = 0, Drives = 0, Bins = 0;
 		FMeshBuf Cov[NumCovers];
 		for (FMeshBuf& Cb : Cov) { Cb.UVScale = 400.0; Cb.bStrict = true; }
 		const double Zp = FootZ + 2;
@@ -580,6 +585,44 @@ void ACityBuilder::BuildGround()
 			if (!(bRes || bOff || bRet || bInd) || !F)
 			{
 				Cov[Pick(Land, H)].AddCap(P.Ring, Zp, FLinearColor::White);
+				if (F) continue;
+				// A VACANT LOT'S STREET EDGE. A car park (the same pick as
+				// BuildVolumes: about half) is open to the street, with a
+				// driveway apron across the sidewalk to the kerb; the rest are
+				// fenced in chain-link, as a city requires of an owner, with a
+				// locked gate in the longest run.
+				const bool bCarPark = GetTypeHash(P.Bbl) % 100u < 55u;
+				double LArea2 = 0;
+				for (int32 i = 0; i < N; ++i) LArea2 += P.Ring[i].X * P.Ring[(i + 1) % N].Y - P.Ring[(i + 1) % N].X * P.Ring[i].Y;
+				int32 Longest = INDEX_NONE; double LongLen = 0;
+				for (int32 i = 0; i < N; ++i)
+				{
+					const FVector2D A = P.Ring[i], E = P.Ring[(i + 1) % N];
+					const double Len = (E - A).Size();
+					if (Len < 300) continue;
+					const FVector2D D = (E - A) / Len;
+					const FVector2D Inw = LArea2 > 0 ? FVector2D(-D.Y, D.X) : FVector2D(D.Y, -D.X);
+					if (ParcelAt((A + E) * 0.5 - Inw * 300)) continue;   // a neighbour, not the street
+					if (Len > LongLen) { LongLen = Len; Longest = i; }
+					if (bCarPark || !bYard) continue;
+					const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
+					for (double t = 0; t + 300 <= Len; t += 300)
+					{
+						if (Len > 900 && FMath::Abs(t + 150 - Len * 0.5) < 160) continue;   // the gate
+						AddProp(FenceMesh, FTransform(FRotator(0, Yaw, 0), FVector(A + D * t + Inw * 20, Zp)), false);
+						++Fences;
+					}
+				}
+				if (bCarPark && Longest != INDEX_NONE && LongLen >= 900)
+				{
+					const FVector2D A = P.Ring[Longest], E = P.Ring[(Longest + 1) % N];
+					const FVector2D D = (E - A) / LongLen;
+					const FVector2D Out = LArea2 > 0 ? FVector2D(D.Y, -D.X) : FVector2D(-D.Y, D.X);
+					const FVector2D Mid = (A + E) * 0.5, W = D * 300;
+					// 6 m wide, out across the footway (2.5-3 m) to the kerb
+					Cov[Asphalt].AddCap({ Mid - W, Mid + W, Mid + W + Out * 280, Mid - W + Out * 280 }, Zp + 1, FLinearColor::White);
+					++Drives;
+				}
 				continue;
 			}
 			Cov[Pick(bRes ? YardRes : bOff ? YardOff : bRet ? YardRet : YardInd, H)].AddCap(P.Ring, Zp, FLinearColor::White);
@@ -642,21 +685,51 @@ void ACityBuilder::BuildGround()
 							AddProp(ShrubMesh, FTransform(FRotator(0, double(Ht % 360), 0), FVector(Q, Zp + 1), FVector(Sc)), false);
 							++Shrubs;
 						}
+					// about half the gardens are hedged along the sidewalk, open at the path
+					if (bYard && ((H >> 20) & 1))
+					{
+						const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
+						for (double t = 0; t + 100 <= Len; t += 100)
+						{
+							if (FMath::Abs(t + 50 - Len * 0.5) < 160) continue;
+							AddProp(HedgeMesh, FTransform(FRotator(0, Yaw, 0), FVector(A + D * t + Inw * 45, Zp + 1)), false);
+							++Hedges;
+						}
+					}
 				}
 			}
-		}
-		UE_LOG(LogBWBuilder, Display, TEXT("ground: %d lot fronts, %d shrubs"), Fronts, Shrubs);
-		if (TObjectPtr<UInstancedStaticMeshComponent>* C = StreetProps.Find(ShrubMesh))
-			if (*C)
-				if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Leaves.M_BW_Leaves")))
+			// THE SERVICE YARD'S BINS: a dumpster against a back or side lot
+			// line (one with a neighbour behind it), clear of the building,
+			// on about two lots in three
+			if (bYard && (H >> 24) % 3 != 0)
+				for (int32 i = 0; i < N; ++i)
 				{
-					// evergreen (yew, box): a deep blue-green all year, no autumn
-					UMaterialInstanceDynamic* Ev = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
-					Ev->SetVectorParameterValue(TEXT("LeafDark"), FLinearColor(0.012f, 0.028f, 0.014f));
-					Ev->SetVectorParameterValue(TEXT("LeafLight"), FLinearColor(0.035f, 0.065f, 0.030f));
-					Ev->AddToRoot();
-					(*C)->SetMaterial(1, Ev);
+					const FVector2D A = P.Ring[i], E = P.Ring[(i + 1) % N];
+					const double Len = (E - A).Size();
+					if (Len < 400) continue;
+					const FVector2D D = (E - A) / Len;
+					const FVector2D Inw = Area2 > 0 ? FVector2D(-D.Y, D.X) : FVector2D(D.Y, -D.X);
+					if (!ParcelAt((A + E) * 0.5 - Inw * 300)) continue;          // a street side
+					const FVector2D Q = (A + E) * 0.5 + D * (Len * 0.25) + Inw * 90;
+					bool bClear = true;
+					for (const FVector2D& O : { FVector2D(0, 0), D * 120, D * -120, Inw * 90 }) if (In(**F, Q + O)) bClear = false;
+					if (!bClear) continue;
+					AddProp(DumpsterMesh, FTransform(FRotator(0, FMath::RadiansToDegrees(FMath::Atan2(Inw.Y, Inw.X)) + 90, 0), FVector(Q, Zp + 1)), false);
+					++Bins;
+					break;
 				}
+		}
+		UE_LOG(LogBWBuilder, Display, TEXT("ground: %d lot fronts, %d shrubs, %d hedge m, %d fence panels, %d driveways, %d dumpsters"), Fronts, Shrubs, Hedges, Fences, Drives, Bins);
+		if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Leaves.M_BW_Leaves")))
+		{
+			// evergreen (yew, box, privet): a deep blue-green all year, no autumn
+			UMaterialInstanceDynamic* Ev = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
+			Ev->SetVectorParameterValue(TEXT("LeafDark"), FLinearColor(0.012f, 0.028f, 0.014f));
+			Ev->SetVectorParameterValue(TEXT("LeafLight"), FLinearColor(0.035f, 0.065f, 0.030f));
+			Ev->AddToRoot();
+			if (TObjectPtr<UInstancedStaticMeshComponent>* C = StreetProps.Find(ShrubMesh)) if (*C) (*C)->SetMaterial(1, Ev);
+			if (TObjectPtr<UInstancedStaticMeshComponent>* C = StreetProps.Find(HedgeMesh)) if (*C) (*C)->SetMaterial(0, Ev);
+		}
 		auto Tinted = [](const TCHAR* Path, const TCHAR* Param, const FLinearColor& Tint) -> UMaterialInterface*
 		{
 			UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, Path);

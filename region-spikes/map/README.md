@@ -422,3 +422,57 @@ here.
 - floor mix, downtown and villages together: 1,066 buildings at 1–4 floors, 15 at 5–8, 2 towers at 11.
 
 **Known:** the small core sits on the shore west of the river mouth, so the river and creeks no longer run through it.
+
+### Current default: one gradient from the centre (owner, after the 6 km render)
+
+The owner asked for a city that is "most built up" at the centre, then thins
+"into less dense buildings with more vacant lots, then homes and farms
+starting to surround it, like a real city".
+
+`export-unreal.mjs 3` now builds a single gradient by distance r from a
+centre near the waterfront. The distance has noise added, so the rings are
+not circles, and it is shortened by 25% within 600 m of the first highway.
+The band edges and shares are the owner's spec, not measurements.
+
+| r | What is there |
+|---|---|
+| < 400 m | 4–8 floors, footprints 70–85%, ~3% gaps; the two most central lots are the 11 and 12 floor towers |
+| 400–900 m | 2–4 floors, footprints 55–70%, ~15% surface parking |
+| 900–1,650 m | 1–2 floor shops and small apartments with ~30% vacant lots. Blocks turn into pre-war house blocks (40 ft lots) the further out they are. The city's edge is ragged: noisy radius, one bank only. |
+| beyond | neighbourhoods laid out on the survey tracts: pre-war near, post-war further out and along the highway |
+
+**How the outer neighbourhoods grow:**
+- Houses are built in order of distance, and only within 200 m of what is
+  already built. Each subdivision therefore fills in from the city side,
+  phase by phase, and nothing stands alone in the fields.
+- About 6% of lots are left vacant.
+- Growth stops at about 2,000 homes in all.
+
+**Generator options used** (`region.mjs`; the SVG maps are unchanged):
+- `gradientCore`: a 3.4 × 1.95 km grid, kept within a noisy 1,650 m of the
+  centre and only on the centre's bank. Creeks are bent round the city and
+  follow its edge to the river.
+- `onlyRiverTown` and `bankTowns`: a single small village upriver, on one
+  bank.
+
+**Seed 3, 6 km:** 1.7 MB, made of:
+- 3,940 volumes;
+- 2,014 houses: 1,659 in the inner house blocks and 355 in the outer
+  neighbourhoods;
+- 7 neighbourhood parcels;
+- 2,425 parcels in all, including 177 parking lots, 205 vacant lots, 110
+  farm or woodlot tracts and 96 village lots;
+- 10,404 trees;
+- 126 centerlines.
+
+Floor mix: 866 buildings at 1–2 floors, 732 at 3–4, 326 at 5–8, plus the
+11- and 12-floor towers.
+
+**Flags:**
+- `--few-suburbs`: the previous default (1.5 × 1.0 km core, a few chosen
+  neighbourhoods).
+- `--thin-suburbs`, `--full-suburbs`, `--dense`: as described above.
+
+**Seed-specific:** on seed 3 the creek floodplains to the north and east box
+the city in, so most homes are in the inner house blocks. On a drier site
+the outer ring would be wider.

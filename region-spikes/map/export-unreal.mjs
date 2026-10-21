@@ -17,7 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { generate, NAME_A, SZ, FT, makeRng, resample, rdp, dist, add, sub, mul, norm, perp, lerp } from "./region.mjs";
+import { generate, subdivide, NAME_A, SZ, FT, makeRng, makeNoise, resample, rdp, dist, add, sub, mul, norm, perp, lerp } from "./region.mjs";
 
 // road surface widths (carriageway, m) — the contract with the Unreal side
 const W = { highway: 24, arterial: 14, local: 9, core: 12 };
@@ -111,7 +111,19 @@ function maskRects(G, [x0, y0, x1, y1], ok) {
 }
 
 // ================================================================ export
-// Defaults follow the owner's FINAL spec: a 6 x 6 km region, a low-rise downtown (--dense restores the first
+// DEFAULT = "gradient" (owner, after the 6 km render: "the city center should be the most built up and it should slowly
+// turn into less dense buildings with more vacant lots, then homes and farms starting to surround it, like a real city").
+// One continuous gradient by distance r from a centre near the waterfront (noisy, so the rings are not circles, and
+// growth reaches further along the first highway). The band edges and shares below are the owner's spec, not facts:
+//   r < 400 m    core: 4-8 floors, the two towers (11-12), footprints 70-85%, ~3% gaps
+//   400-900 m    2-4 floors, footprints 55-70%, ~15% parking / vacant
+//   900-1500 m   1-2 floor shops and small apartments, ~30% vacant, blocks turning into pre-war house blocks outward
+//   1500-~2500 m continuous neighbourhoods: pre-war near, post-war further out and along the highway, a few vacant lots;
+//                each subdivision built out from the city side first (phases), stopping at a ~2,000-home total
+//   beyond       farms and woods; the one river village, small
+const GRADIENT = { core: [3400, 1950], gradientCore: { radius: 1650, inset: 450 }, townBlocks: [[2, 4], [2, 3]], bankTowns: true, onlyRiverTown: true };
+const TRACT_HOUSES = 600; // houses in the outer neighbourhoods; the inner house blocks add ~1,500 (owner: ~2,000 in all)
+// The older modes, kept behind flags. Earlier default ("few", --few-suburbs) followed the owner's previous spec: a 6 x 6 km region, a low-rise downtown (--dense restores the first
 // export's skyline) and "a lot less housing": only a few neighbourhoods, so the region has room to grow.
 // suburbs: "few"  (default) the generator's full growth, then only these kept as built (the rest reverts to farm):
 //                  the pre-war ring nearest downtown, the two post-war tracts nearest the first interstate, and
@@ -124,9 +136,12 @@ const HOUSE_BUDGET = 2500;
 // owner: a small-city core of ~1.0 x 1.5 km (long side on the coast/river), villages scaled down with it —
 // the island core is 3.9 km2, this is 1.5 km2 (38%), so village plats shrink by ~sqrt(0.38) a side: 2-4 x 2-3 blocks
 const SMALL_TOWN = { core: [1500, 1000], townBlocks: [[2, 4], [2, 3]], bankTowns: true };
-export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = "few" } = {}) {
-  const M = generate(seed, km, { ...(dense ? {} : SMALL_TOWN), ...(suburbs === "thin" ? SPARSE_GEN : {}) }), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
+export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = "gradient" } = {}) {
+  const grad = suburbs === "gradient";
+  const M = generate(seed, km, grad ? GRADIENT : { ...(dense ? {} : SMALL_TOWN), ...(suburbs === "thin" ? SPARSE_GEN : {}) }), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
   if (suburbs === "few") keepFewNeighbourhoods(M);
+  if (grad) gradientNeighbourhoods(M, rng, seed);
+  const phaseOk = (p) => { if (!M.phase) return true; const k = G.idx(p); return k >= 0 && M.phase[k] === 1; };
   M.rotate = Math.floor(makeRng("orient:" + seed)() * 4); // same orientation as the SVG
   // canonical -> map frame (x east, y south, metres), as render() does
   const T = (p) => { const c = S / 2; let x = p[0] - c, y = p[1] - c; for (let i = 0; i < M.rotate; i++) [x, y] = [-y, x]; return [x + c, y + c]; };
@@ -135,7 +150,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   const ue = (p) => [Math.round((S / 2 - p[1]) * 100), Math.round((p[0] - S / 2) * 100)];
   const flat = (pts) => pts.flatMap(ue);
   // a crop is centred 1 km inland of downtown's centre, so it holds the downtown edge AND the first suburbs
-  const box = crop ? (() => { const c = T(add(M.core.c, mul(norm(sub([S / 2, S / 2], M.core.c)), 1000))); return [c[0] - crop / 2, c[1] - crop / 2, c[0] + crop / 2, c[1] + crop / 2]; })() : [0, 0, S, S];
+  const box = crop ? (() => { const c = T(add(M.core.centre ?? M.core.c, mul(norm(sub([S / 2, S / 2], M.core.c)), 1000))); return [c[0] - crop / 2, c[1] - crop / 2, c[0] + crop / 2, c[1] + crop / 2]; })() : [0, 0, S, S];
   const inBox = (p) => p[0] >= box[0] && p[0] <= box[2] && p[1] >= box[1] && p[1] <= box[3];
   const ringOut = (r) => { const c = clipPolyBox(r, box); return c ? flat(c) : null; };
   const centroid = (r) => r.reduce((a, p) => [a[0] + p[0] / r.length, a[1] + p[1] / r.length], [0, 0]);
@@ -156,7 +171,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   // farm / woods / yard from the raster, so nothing lands on the sea or covers the floodplain, and yards stay off freeway right-of-way
   const sea = (k) => M.isSea(G.ctr(k));
   for (const t of M.tracts) {
-    if (t.era) { for (const r of maskRects(G, t.r, (k) => M.free(G.ctr(k)))) put("yard", r); }
+    if (t.era) { for (const r of maskRects(G, t.r, (k) => M.free(G.ctr(k)) && phaseOk(G.ctr(k)))) put("yard", r); }
     else for (const r of maskRects(G, t.r, (k) => !sea(k) && !M.flood[k] && !M.water[k])) put(t.wood ? "woods" : "farm", r); // floodplain stays marsh (it is drawn under farm)
   }
   // water
@@ -176,7 +191,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   const settled = (p) => { const k = G.idx(p); return k >= 0 && (M.coreL[k] || M.townL[k]); };
   for (const r of M.oldRoads) for (const run of keepRuns(r, (p) => !settled(p), 10)) road(run, "arterial", W.arterial);
   for (const r of M.secRoads) road(r, "arterial", W.arterial);
-  const okLocal = (p) => M.free(p);
+  const okLocal = (p) => M.free(p) && phaseOk(p);
   for (const t of M.tracts) if (t.era) {
     for (const st of t.plat.streets) for (const run of keepRuns(st, okLocal)) road(run, "local", W.local);
     for (const b of t.plat.bulbs) if (okLocal(b)) put("pavement", circle(b, SZ.bulbRadius, 12));
@@ -191,17 +206,19 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   for (const [r, wm] of [[M.core, W.core], ...M.towns.map((t) => [t, W.local])]) {
     const { nL, nW, pl, pw } = r.gridInfo;
     const at = (a, b) => add(add(r.c, mul(r.u, a)), mul(r.v, b));
-    for (let i = 0; i <= nL; i++) for (const run of keepRuns([at(-r.hl + i * pl, -r.hw), at(-r.hl + i * pl, r.hw)], (p) => !isWaterC(p))) road(run, "core", wm);
-    for (let j = 0; j <= nW; j++) for (const run of keepRuns([at(-r.hl, -r.hw + j * pw), at(r.hl, -r.hw + j * pw)], (p) => !isWaterC(p))) road(run, "core", wm);
+    // a graded city's grid only runs where its blocks were kept (the settled area), not across the whole rectangle
+    const ok = (p) => !isWaterC(p) && (!(grad && r === M.core) || settled(p));
+    for (let i = 0; i <= nL; i++) for (const run of keepRuns([at(-r.hl + i * pl, -r.hw), at(-r.hl + i * pl, r.hw)], ok)) road(run, "core", wm);
+    for (let j = 0; j <= nW; j++) for (const run of keepRuns([at(-r.hl, -r.hw + j * pw), at(r.hl, -r.hw + j * pw)], ok)) road(run, "core", wm);
   }
 
   for (const r of [M.core, ...M.towns]) for (const b of r.blockRects) if (!blockPts(b).some((p) => isWaterC(p) || M.isSea(p) || underHw(p))) put("block", b.poly());
 
   // ---------------- buildings & parcels
   const volumes = [], parcels = [], trees = [], labels = [];
-  const townOf = (p) => { let best = { name: "Downtown", d: dist(p, M.core.c) - M.core.hl }; for (const t of M.towns) { const d = dist(p, t.c); if (d < best.d) best = { name: t.name, d }; } return best.name; };
+  const townOf = (p) => { let best = { name: "Downtown", d: grad ? dist(p, M.core.centre) - 1500 : dist(p, M.core.c) - M.core.hl }; for (const t of M.towns) { const d = dist(p, t.c); if (d < best.d) best = { name: t.name, d }; } return best.name; };
   const sf = (m2) => Math.round(m2 / (FT * FT));
-  const coreLots = [];
+  const coreLots = []; let nbGrid = 0;
   const blockLots = (r, front, kind) => {
     let n = 0;
     for (const b of r.blockRects) {
@@ -250,14 +267,66 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
       }
     }
   };
-  blockLots(M.core, 25, "core");          // ~82 ft downtown lots (approximate; island.mjs owns the real plat)
+  let gridHouses = 0;
+  if (grad) gridHouses = gradientLots(M.core);
+  else blockLots(M.core, 25, "core");          // ~82 ft downtown lots (approximate; island.mjs owns the real plat)
   // owner: "at most two ~11-floor towers", in the centre of the core
-  for (const { bbl } of coreLots.sort((a, b) => a.dn - b.dn).slice(0, 2)) {
+  coreLots.sort((a, b) => a.dn - b.dn).slice(0, 2).forEach(({ bbl }, j) => {
     const v = volumes.find((x) => x.bbl === bbl), p = parcels.find((x) => x.bbl === bbl);
-    if (!v || !p) continue;
-    const k = 11 / p.floors; v.z1 = 11 * 355; v.cls = p.cls = "office"; p.bldgArea = Math.round(p.bldgArea * k); p.floors = 11;
-  }
+    if (!v || !p) return;
+    const f = grad ? 11 + j : 11, k = f / p.floors; v.z1 = f * 355; v.cls = p.cls = "office"; p.bldgArea = Math.round(p.bldgArea * k); p.floors = f;
+  });
   for (const t of M.towns) blockLots(t, 15, "town"); // ~50 ft village lots (approximate)
+
+  function gradientLots(r) {
+    const sectors = new Map(); let n = 0, nh = 0;
+    const lotParcel = (bbl, address, cls, floors, year, lotM2, bldgM2, ring) => parcels.push({ bbl, address, block: 0, district: "Downtown", districtName: "Downtown", zone: "C", cls, floors, yearBuilt: year, lotArea: sf(lotM2), bldgArea: sf(bldgM2), ring: flat(ring) });
+    for (const b of r.blockRects) {
+      if (blockPts(b).some((p) => isWaterC(p) || M.isSea(p) || underHw(p))) continue;
+      const rb = r.nr(b.c), band = rb < 400 ? 0 : rb < 900 ? 1 : 2;
+      // outward the shop blocks give way to house blocks (pre-war grid, small lots)
+      const houseBlock = band === 2 && rng() < Math.min(1, Math.max(0, (rb - 900) / 600)) ** 0.8;
+      const front = houseBlock ? SZ.prewarLot[0] : band === 2 ? 20 : 25;
+      const nl = Math.max(1, Math.round(2 * b.hl / front)), lw = 2 * b.hl / nl;
+      const sec = houseBlock ? Math.floor(((Math.atan2(b.c[1] - r.centre[1], b.c[0] - r.centre[0]) + Math.PI) / (2 * Math.PI)) * 6) % 6 : -1;
+      for (let i = 0; i < nl; i++) for (const sd of [-1, 1]) {
+        const lc = add(add(b.c, mul(b.u, -b.hl + (i + 0.5) * lw)), mul(b.v, sd * b.hw / 2));
+        const lot = rectRing(lc, b.u, lw, b.hw), ring = TT(lot);
+        if (isWaterC(lc) || lot.some(isWaterC) || !inBox(centroid(ring))) continue;
+        const vacant = rng() < (houseBlock ? 0.12 : [0.03, 0.15, 0.3][band]);
+        if (houseBlock) {
+          if (vacant) continue; // an empty lot in a house block
+          const [w, d] = HOUSE.prewar;
+          const c = add(lc, mul(b.v, sd * (b.hw / 2 - 4 - d / 2)));
+          let s = sectors.get(sec);
+          if (!s) { s = { bbl: `N${++nbGrid}g`, pts: [], bldg: 0, n: 0, year: Math.round(1895 + 40 * rng()) }; sectors.set(sec, s); }
+          const storeys = rng() < TWO_STOREY.prewar ? 2 : 1;
+          volumes.push({ bbl: s.bbl, cls: "multifamily", year: s.year, z0: 0, z1: STOREY_CM[storeys], deco: "house", crown: true, vacant: false, ring: flat(TT(rectRing(c, b.u, w, d))) });
+          s.pts.push(...lot); s.bldg += w * d * storeys; s.n++; nh++;
+          if (s.n % 2 === 0) { const tp = T(add(lc, mul(b.v, sd * (b.hw / 2 - 1.5)))); if (inBox(tp)) trees.push(tp); }
+          continue;
+        }
+        const bbl = `D${parcels.length}`;
+        if (vacant) { if (band < 2) put("pavement", lot); lotParcel(bbl, `Downtown lot ${++n} (${band < 2 ? "parking" : "vacant"})`, "land", 0, 0, lw * b.hw, 0, ring); continue; }
+        const cov = [[0.7, 0.85], [0.55, 0.7], [0.5, 0.65]][band], cv = cov[0] + (cov[1] - cov[0]) * rng();
+        const fw = lw * Math.sqrt(cv), fd = b.hw * Math.sqrt(cv), fc = add(lc, mul(b.v, sd * (b.hw - fd) / 2));
+        const floors = band === 0 ? 4 + Math.floor(rng() * 5) : band === 1 ? 2 + Math.floor(rng() * 3) : 1 + (rng() < 0.4 ? 1 : 0);
+        const x = rng();
+        const cls = band === 0 ? (x < 0.6 ? "office" : x < 0.8 ? "multifamily" : "retail") : band === 1 ? (x < 0.4 ? "retail" : x < 0.8 ? "multifamily" : "office") : (x < 0.5 ? "retail" : "multifamily");
+        const year = Math.round(band === 0 ? 1880 + 140 * rng() ** 0.8 : 1890 + 70 * rng());
+        if (band === 0) coreLots.push({ dn: rb, bbl });
+        volumes.push({ bbl, cls, year, z0: 0, z1: floors * 355, deco: "", crown: true, vacant: false, ring: flat(TT(rectRing(fc, b.u, fw, fd))) });
+        lotParcel(bbl, `Downtown lot ${++n}`, cls, floors, year, lw * b.hw, fw * fd * floors, ring);
+      }
+    }
+    // the inner house blocks, one neighbourhood parcel per sector of the ring
+    for (const s of sectors.values()) {
+      const name = `${NAME_A[Math.floor(rng() * NAME_A.length)]}${["wood", "dale", "field", "brook", "view", "haven"][Math.floor(rng() * 6)]} ${["Park", "Terrace", "Heights", "Place"][Math.floor(rng() * 4)]}`;
+      const lotM2 = s.pts.length / 4 * SZ.prewarLot[0] * SZ.prewarLot[1];
+      parcels.push({ bbl: s.bbl, address: `${name} (neighbourhood)`, block: 0, district: "Downtown", districtName: "Downtown", zone: "R", cls: "multifamily", floors: 2, yearBuilt: s.year, lotArea: sf(lotM2), bldgArea: sf(s.bldg), houses: s.n, ring: flat(TT(hull(s.pts))) });
+    }
+    return nh;
+  }
 
   const SUFFIX = { prewar: ["Park", "Terrace", "Heights", "Place"], postwar: ["Village", "Gardens", "Manor", "Acres"], recent: ["Estates", "Meadows", "Reserve", "Crossing", "Ridge"] };
   let houses = 0, nb = 0;
@@ -274,6 +343,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
     const bbl = `N${++nb}`;
     let bldg = 0, nh = 0;
     for (const h of t.plat.houses) {
+      if (t.keep && !t.keep.has(h)) continue;
       const [w, d] = HOUSE[t.era];
       const c = add(h.m, mul(perp(h.u), h.sd * (SZ.localROW / 2 + SETBACK + d / 2)));
       if (!M.free(c) || !M.free(h.m)) continue;
@@ -297,7 +367,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
     if (M.isSea(p) || isWaterC(p) || settled(p) || !M.free(p) && !M.flood[G.idx(p)]) continue;
     const q = T(p); if (inBox(q)) trees.push(q);
   }
-  labels.push({ name: "Downtown", kind: "town", at: ue(T(M.core.c)) });
+  labels.push({ name: "Downtown", kind: "town", at: ue(T(M.core.centre ?? M.core.c)) });
   for (const t of M.towns) labels.push({ name: t.name, kind: "town", at: ue(T(t.c)) });
 
   const [bx0, by0, bx1, by1] = box;
@@ -305,7 +375,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   const kept = parcels.filter((p) => p.ring);
   const name = `${M.river.name.replace(/ River$/, "")} Valley`;
   return {
-    stats: { volumes: volumes.length, houses, parcels: kept.length, neighbourhoods: nb, trees: trees.length, centerlines: centerlines.length, ground: Object.fromEntries(Object.entries(ground).map(([k, v]) => [k, v.length])) },
+    stats: { volumes: volumes.length, houses: houses + gridHouses, gridHouses, parcels: kept.length, neighbourhoods: nb + nbGrid, trees: trees.length, centerlines: centerlines.length, ground: Object.fromEntries(Object.entries(ground).map(([k, v]) => [k, v.length])) },
     city: {
       format: "bw-city/1",
       city: { id: `region-${seed}`, seed: Number(seed) || 0, size: "region", name, lots: kept.length },
@@ -316,6 +386,42 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
       benches: [],
     },
   };
+}
+
+/** gradient mode: neighbourhoods wrap the city continuously. Every tract on the city's bank is laid out; then houses are
+ * built in order of their (noisy, highway-shortened) distance from the centre until the budget is spent — so each
+ * subdivision is built out from the city side first, the way a plat is built in phases. */
+function gradientNeighbourhoods(M, rng, seed) {
+  const G = M.G, c = M.core.centre, nz = makeNoise(makeRng("grad:" + seed), 600);
+  const nearHw = G.layer();
+  for (const h of M.highways) if (h.kind === "interstate") for (const s of h.segs) if (s.built) G.line(nearHw, s.pts, 600);
+  const rEff = (p) => { const k = G.idx(p); return dist(p, c) * (0.85 + 0.3 * nz(p[0], p[1])) * (k >= 0 && nearHw[k] ? 0.75 : 1); };
+  for (const t of M.tracts) t.era = null;
+  const cands = M.tracts.filter((t) => t.buildable >= 0.5 && M.cityBank[G.idx(t.c)] && rEff(t.c) < 3500);
+  const all = [];
+  for (const t of cands) {
+    const k = G.idx(t.c);
+    t.era = rEff(t.c) < 2000 && !nearHw[k] ? "prewar" : "postwar"; // pre-war near, post-war further out and on the highway
+    subdivide(t, rng, M, (p) => { const q = G.idx(p); return q >= 0 && M.water[q] === 1; });
+    for (const h of t.plat.houses) if (M.free(h.m)) all.push({ t, h, r: rEff(h.m) });
+  }
+  all.sort((a, b) => a.r - b.r);
+  for (const t of cands) t.keep = new Set();
+  M.phase = G.layer();
+  // contiguous growth: a house is built only within ~200 m of the city or of houses already built (no islands in the
+  // fields; 200 m lets a subdivision cross a creek's floodplain on its road bridge)
+  const grow = G.layer();
+  for (let k = 0; k < G.N; k++) if (M.coreL[k]) G.disk(grow, G.ctr(k), 200);
+  let n = 0;
+  for (let added = 1; added && n < TRACT_HOUSES;) { added = 0; for (const a of all) {
+    if (n >= TRACT_HOUSES) break;
+    if (a.t.keep.has(a.h) || a.skip) continue;
+    if (!grow[G.idx(a.h.m)]) continue;
+    if (rng() < 0.06) { a.skip = true; continue; } // a few lots left vacant
+    a.t.keep.add(a.h); n++;
+    G.disk(M.phase, a.h.m, 55); G.disk(grow, a.h.m, 200); added++;
+  } }
+  for (const t of cands) if (t.keep.size < 20) { t.era = null; t.keep = null; } // no slivers: a tract is a neighbourhood or still a farm
 }
 
 /** keep only a few neighbourhoods as built; every other subdivided tract goes back to farmland */
@@ -339,14 +445,14 @@ function keepFewNeighbourhoods(M) {
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isMain) {
-  const args = process.argv.slice(2); let km = 6, crop = 0, dense = false, suburbs = "few"; const seeds = [];
-  for (let i = 0; i < args.length; i++) { if (args[i] === "--km") km = Number(args[++i]); else if (args[i] === "--dense") dense = true; else if (args[i] === "--full-suburbs") suburbs = "full"; else if (args[i] === "--thin-suburbs") suburbs = "thin"; else if (args[i] === "--crop") crop = Number(args[++i]); else seeds.push(args[i]); }
+  const args = process.argv.slice(2); let km = 6, crop = 0, dense = false, suburbs = "gradient"; const seeds = [];
+  for (let i = 0; i < args.length; i++) { if (args[i] === "--km") km = Number(args[++i]); else if (args[i] === "--dense") dense = true; else if (args[i] === "--full-suburbs") suburbs = "full"; else if (args[i] === "--thin-suburbs") suburbs = "thin"; else if (args[i] === "--few-suburbs") suburbs = "few"; else if (args[i] === "--crop") crop = Number(args[++i]); else seeds.push(args[i]); }
   if (!seeds.length) seeds.push("3");
   const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "out"); fs.mkdirSync(outDir, { recursive: true });
   for (const seed of seeds) {
     const t0 = Date.now();
     const { city, stats } = exportRegion(seed, { km, crop, dense, suburbs });
-    const file = path.join(outDir, `city-region-${seed}${crop ? `-crop${crop}` : ""}${dense ? "-dense" : ""}${suburbs !== "few" ? `-${suburbs}suburbs` : ""}${km !== 6 ? `-${km}km` : ""}.json`);
+    const file = path.join(outDir, `city-region-${seed}${crop ? `-crop${crop}` : ""}${dense ? "-dense" : ""}${suburbs !== "gradient" ? `-${suburbs}suburbs` : ""}${km !== 6 ? `-${km}km` : ""}.json`);
     fs.writeFileSync(file, JSON.stringify(city));
     const mb = fs.statSync(file).size / 1e6;
     console.log(`${path.relative(process.cwd(), file)}  ${mb.toFixed(1)} MB  ${Date.now() - t0} ms\n  ${JSON.stringify(stats)}`);

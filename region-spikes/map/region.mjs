@@ -257,6 +257,9 @@ const RIVERS = ["Kessaw", "Ottaquin", "Saline", "Big Muddy", "Tenmile", "Wabeno"
  *   townSources     car-era growth also radiates from the old towns, not only downtown
  *   core            [long, deep] downtown footprint in m (default: the island city, SZ.core)
  *   townBlocks      [[nx range], [ny range]] village plat size (default SZ.townBlocks)
+ *   gradientCore    { radius, inset }: a city grid graded from a centre near the waterfront, one bank only,
+ *                   ragged edge, creeks routed round it (export-unreal.mjs grades the buildings)
+ *   onlyRiverTown   keep just the river-crossing village
  *   bankTowns       the river-crossing village stands on one bank instead of straddling the river
  *   holdoutSigma    spread of the leapfrog factor (default 0.25; smaller = growth hugs roads and towns)
  */
@@ -307,9 +310,13 @@ export function generate(seed, km = 10, opts = {}) {
   M.creeks = creeks;
 
   const water = G.layer(), flood = G.layer();
-  river.forEach((p, i) => { G.disk(flood, p, fpHalf[i]); G.disk(water, p, rHalf[i]); });
-  for (const c of creeks) { G.line(flood, c.pts, c.fp); G.line(water, c.pts, c.w / 2 + 1); }
-  if (coast) for (let k = 0; k < G.N; k++) { const p = G.ctr(k); if (isSea(p)) water[k] = 1; else if (p[1] > coastY(p[0]) - M.coast.band) flood[k] = 1; }
+  const fillWater = () => {
+    water.fill(0); flood.fill(0);
+    river.forEach((p, i) => { G.disk(flood, p, fpHalf[i]); G.disk(water, p, rHalf[i]); });
+    for (const c of creeks) { G.line(flood, c.pts, c.fp); G.line(water, c.pts, c.w / 2 + 1); }
+    if (coast) for (let k = 0; k < G.N; k++) { const p = G.ctr(k); if (isSea(p)) water[k] = 1; else if (p[1] > coastY(p[0]) - M.coast.band) flood[k] = 1; }
+  };
+  fillWater();
   const isWater = (p) => { const k = G.idx(p); return k >= 0 ? water[k] === 1 : isSea(p); };
   const isFlood = (p) => { const k = G.idx(p); return k >= 0 && flood[k] === 1; };
   M.water = water; M.flood = flood;
@@ -347,7 +354,47 @@ export function generate(seed, km = 10, opts = {}) {
     }
     core = best.r;
   }
+  if (opts.gradientCore) {
+    // the city's centre sits near the waterfront (the landing), inset from the rect's wet side
+    const { radius: R, inset } = opts.gradientCore;
+    const wetSide = (sd) => { let w = 0; for (let a = -0.9; a <= 0.9; a += 0.15) if (isWater(add(add(core.c, mul(core.v, sd * core.hw * 1.05)), mul(core.u, a * core.hl)))) w++; return w; };
+    const sd = wetSide(1) >= wetSide(-1) ? 1 : -1;
+    core.centre = add(core.c, mul(core.v, sd * (core.hw - inset)));
+    // creeks bend around the city (in life they are culverted or the city grew around their valleys)
+    const rOut = R + 150, riverL = G.layer();
+    river.forEach((p, i) => G.disk(riverL, p, rHalf[i] + 10));
+    for (const c of creeks) {
+      const inside = c.pts.map((p) => dist(p, core.centre) < rOut);
+      if (!inside.some(Boolean)) continue;
+      let pts = c.pts.map((p, i) => inside[i] ? add(core.centre, mul(norm(sub(p, core.centre)), rOut)) : p);
+      if (inside.at(-1)) { // the confluence was inside the city: follow its edge round to the river
+        const l = pts.at(-1), a0 = Math.atan2(l[1] - core.centre[1], l[0] - core.centre[0]);
+        let bestArc = null;
+        for (const dir of [1, -1]) {
+          const arc = [];
+          for (let t = 0.02; t < 3.2; t += 0.02) { const q = add(core.centre, [rOut * Math.cos(a0 + dir * t), rOut * Math.sin(a0 + dir * t)]); arc.push(q); const k = G.idx(q); if (k >= 0 && riverL[k]) { if (!bestArc || arc.length < bestArc.length) bestArc = arc; break; } }
+        }
+        if (bestArc) pts = pts.concat(bestArc);
+      }
+      c.pts = chaikin(pts, 2);
+    }
+    fillWater();
+  }
   core.blocks = gridBlocks(core, SZ.corePitch[1], SZ.corePitch[0], 18, isWater); // 60 ft street ROW ~18 m, approximate
+  if (opts.gradientCore) {
+    // one bank and a ragged edge: keep blocks reachable from the centre over dry land, within a noisy radius
+    const { radius: R } = opts.gradientCore;
+    const reach = G.layer(), q = [];
+    let k0 = G.idx(core.centre);
+    if (k0 < 0 || water[k0]) { let bd = Infinity; for (let k = 0; k < G.N; k++) if (!water[k]) { const d = dist(G.ctr(k), core.centre); if (d < bd) { bd = d; k0 = k; } } }
+    reach[k0] = 1; q.push(k0);
+    while (q.length) { const k = q.pop(), x = k % G.W, y = Math.floor(k / G.W); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= G.W || ny >= G.W) continue; const n = ny * G.W + nx; if (!reach[n] && !water[n] && dist(G.ctr(n), core.centre) < S) { reach[n] = 1; q.push(n); } } }
+    const nzC = makeNoise(rng, 500);
+    core.nr = (p) => dist(p, core.centre) * (0.85 + 0.3 * nzC(p[0], p[1]));
+    core.blockRects = core.blockRects.filter((b) => reach[G.idx(b.c)] && core.nr(b.c) <= R);
+    core.blocks = core.blockRects.map((b) => b.poly());
+    M.cityBank = reach;
+  }
   M.core = core;
 
   const towns = [];
@@ -359,7 +406,7 @@ export function generate(seed, km = 10, opts = {}) {
     towns.push(makeTown(p, norm(sub(river[i + 1], river[i - 1])), "river", rHalf[i]));
     break;
   }
-  const nTowns = Math.max(2, Math.round(S * S / SZ.townArea) + rng.int(0, 1));
+  const nTowns = opts.onlyRiverTown ? Math.min(1, towns.length) : Math.max(2, Math.round(S * S / SZ.townArea) + rng.int(0, 1));
   for (let tries = 0; tries < 400 && towns.length < nTowns; tries++) {
     const p = [rng.range(0, S), rng.range(0, S)];
     if (!okTown(p) || isWater(p) || isFlood(p)) continue;
@@ -376,7 +423,14 @@ export function generate(seed, km = 10, opts = {}) {
   }
   M.towns = towns;
   const coreL = G.layer(), townL = G.layer();
-  G.fill(coreL, (p) => core.has(p) && !isWater(p));
+  if (opts.gradientCore) { // the settled area is the kept blocks plus their half-streets, not the whole rectangle
+    for (const b of core.blockRects) {
+      const e = oRect(b.c, b.u, b.hl + 12, b.hw + 12), P = e.poly();
+      const xs = P.map((p) => p[0]), ys = P.map((p) => p[1]);
+      for (let y = Math.max(0, Math.floor(Math.min(...ys) / CELL)); y <= Math.min(G.W - 1, Math.floor(Math.max(...ys) / CELL)); y++)
+        for (let x = Math.max(0, Math.floor(Math.min(...xs) / CELL)); x <= Math.min(G.W - 1, Math.floor(Math.max(...xs) / CELL)); x++) { const k = y * G.W + x; if (!water[k] && e.has(G.ctr(k))) coreL[k] = 1; }
+    }
+  } else G.fill(coreL, (p) => core.has(p) && !isWater(p));
   for (const t of towns) G.fill(townL, (p) => t.has(p) && !isWater(p));
 
   // ---------------- Layer 3: road skeleton --------------------------------
@@ -581,7 +635,7 @@ function gridBlocks(r, pitchL, pitchW, street, isWater) {
 }
 
 // ---------------------------------------------------------------- layer 4 templates
-function subdivide(t, rng, M, isWater) {
+export function subdivide(t, rng, M, isWater) {
   const [x0, y0, x1, y1] = t.r, inset = SZ.arterialROW / 2 + 4;
   const X0 = x0 + inset, Y0 = y0 + inset, X1 = x1 - inset, Y1 = y1 - inset;
   const horiz = X1 - X0 >= Y1 - Y0;
@@ -658,7 +712,7 @@ const COL = {
   prewar: "#e8b7a0", postwar: "#f2d48f", recent: "#c9d6ef", lot: "#00000033", street: "#ffffff", streetCase: "#a9a49a",
   arterial: "#f7f2e4", arterialCase: "#8a7f68", hwBuilt: "#d9532b", hwCase: "#7a2a14", hwProp: "#d9532b", ix: "#ffffff",
 };
-export { SZ, MILE, ACRE, FT, makeRng, resample, rdp, dist, add, sub, mul, norm, perp, lerp, cumLen };
+export { SZ, MILE, ACRE, FT, makeRng, makeNoise, resample, rdp, dist, add, sub, mul, norm, perp, lerp, cumLen };
 export function render(M, seed) {
   const S = M.S, LEG = 2500, rot = M.rotate ?? 0;
   const T = (p) => { const c = S / 2; let x = p[0] - c, y = p[1] - c; for (let i = 0; i < rot; i++) [x, y] = [-y, x]; return [x + c, y + c]; };

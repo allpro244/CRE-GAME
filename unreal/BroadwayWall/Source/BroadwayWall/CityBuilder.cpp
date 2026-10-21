@@ -601,7 +601,7 @@ void ACityBuilder::BuildVolumes()
 	for (int32 Start = 0; Start < Current.Num(); Start += PerChunk)
 	{
 		constexpr int32 NumRoofs = 8;
-		FMeshBuf M, Roofs[NumRoofs], Lots, Stone;
+		FMeshBuf M, Roofs[NumRoofs], Lots, Stone, Party[3];
 		Stone.UVScale = 300.0;
 		Lots.UVScale = 400.0;
 		for (FMeshBuf& R : Roofs) R.UVScale = 300.0;
@@ -632,7 +632,7 @@ void ACityBuilder::BuildVolumes()
 					if (Vol.bCrown || Vol.Z1 >= 0) DressRoof(Vol, GetTypeHash(Vol.Bbl));
 					if (Vol.Z0 < 50 && (Vol.bFresh || Vol.Distress >= 2)) StreetMoment(Vol);
 					// the mass behind the facade: where a lot-line wall shows, this is it, so it is party-wall brick
-					M.AddWalls(BWInsetRing(Vol.Ring, 60), Vol.Z0, Vol.Z1, FLinearColor(FColor(0x6E, 0x55, 0x48)));
+					Party[GetTypeHash(Vol.Bbl) % 3].AddWalls(BWInsetRing(Vol.Ring, 60), Vol.Z0, Vol.Z1, FLinearColor::White);
 					if (Vol.bPlayer) M.AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor(FColor(0xE8, 0xB8, 0x3A)));
 					else Roofs[RoofOf(Vol)].AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor::White);
 					continue;
@@ -733,6 +733,20 @@ void ACityBuilder::BuildVolumes()
 			Roofs[r].Emit(Mesh, Sec, true);
 			UMaterialInterface* Roof = LoadObject<UMaterialInterface>(nullptr, RoofPaths[r]);
 			Mesh->SetMaterial(Sec++, Roof ? Roof : VertexColorMaterial.Get());
+		}
+		// LOT-LINE WALLS in real brick (the materials project in world space, so
+		// a plain quad shows coursed brick at its true size): common brown,
+		// red and buff, by building
+		static const TCHAR* PartyPaths[3] = {
+			TEXT("/Game/Building/Material/MI/Brick/ForGym/MI_Bldg_BrickOffset_Brown_FG.MI_Bldg_BrickOffset_Brown_FG"),
+			TEXT("/Game/Building/Material/MI/Brick/ForGym/MI_Bldg_BrickOffset_Red_FG.MI_Bldg_BrickOffset_Red_FG"),
+			TEXT("/Game/Building/Material/MI/Brick/ForGym/MI_Bldg_BrickOffset_YellowWorn_FG.MI_Bldg_BrickOffset_YellowWorn_FG") };
+		for (int32 r = 0; r < 3; ++r)
+		{
+			if (!Party[r].V.Num()) continue;
+			Party[r].Emit(Mesh, Sec, true);
+			UMaterialInterface* Brick = LoadObject<UMaterialInterface>(nullptr, PartyPaths[r]);
+			Mesh->SetMaterial(Sec++, Brick ? Brick : VertexColorMaterial.Get());
 		}
 		Chunks.Add(Mesh);
 	}

@@ -74,4 +74,11 @@ export const STYLE_KITS: { key: string; name: string; era: string; group: "prewa
   { key: "B72", name: "Garden apartments, zoned", era: "1995-2025", group: "contemporary", family: "fibercement" },
   { key: "B73", name: "Five-over-one podium", era: "1995-2025", group: "contemporary", family: "fibercement" },
   { key: "B74", name: "Brooklyn zoned rental", era: "1995-2025", group: "contemporary", family: "brick" },
+  { key: "B75", name: "Glass and stone office, zoned", era: "1995-2025", group: "contemporary", family: "newstone" },
+  { key: "B76", name: "Terracotta and glass office, zoned", era: "1995-2025", group: "contemporary", family: "rainscreen" },
+  { key: "B77", name: "Hotel slab, zoned", era: "1995-2025", group: "contemporary", family: "stucco" },
+  { key: "B78", name: "Affordable mid-rise, zoned", era: "1995-2025", group: "contemporary", family: "projectbrick" },
+  { key: "B79", name: "Waterfront condo, zoned", era: "1995-2025", group: "contemporary", family: "brick" },
+  { key: "B80", name: "Student housing, colour blocks", era: "1995-2025", group: "contemporary", family: "metalpanel" },
+  { key: "B81", name: "Tan mid-rise, zoned", era: "1995-2025", group: "contemporary", family: "stucco" },
 ];

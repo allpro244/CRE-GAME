@@ -109,3 +109,4 @@ The owner wants buildings to look great: realistic NYC, nothing bland, nothing s
   - Fix the competitors.mjs quiet-sale 105% issue (the seller's rec vs resolveRec).
   - Baseline regen with a reason.
   - PR + merge.
+- competitors.mjs "priced under what it would appraise at" (105%) diagnosis: the quiet sale is listed and checked in the same month (listedM == month), with the same grade (standard) and the same record (resolveRec made no difference). Ask <= 0.95 x conveyedValue at listing time, so the deed's conveyedValue falls >= 10% between the listing (mid advanceMonth, rivals pass) and month end. Find which later step of advanceMonth marks it down (occupancy/rent roll of the squeezed firm, tax, condition) and price the quiet sale after it, or on the same basis. It only showed up with the plan-13 city.

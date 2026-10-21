@@ -1397,6 +1397,37 @@ void ACityBuilder::DressRoof(const FBWVolume& V, uint32 Seed)
 	const double Z = V.Z1;
 	const FRotator Square(0, Rng.RandRange(0, 3) * 90.0 + FMath::RadiansToDegrees(FMath::Atan2(V.Ring[1].Y - V.Ring[0].Y, V.Ring[1].X - V.Ring[0].X)), 0);
 	FVector2D P;
+	{
+		// the roof's own axes (its first edge), and its extent along them
+		FVector2D E = (V.Ring[1] - V.Ring[0]).GetSafeNormal(), Nn(-E.Y, E.X);
+		double e0 = 1e18, e1 = -1e18, n0 = 1e18, n1 = -1e18;
+		FVector2D C(0, 0);
+		for (const FVector2D& Q : V.Ring) { C += Q; e0 = FMath::Min(e0, FVector2D::DotProduct(Q, E)); e1 = FMath::Max(e1, FVector2D::DotProduct(Q, E)); n0 = FMath::Min(n0, FVector2D::DotProduct(Q, Nn)); n1 = FMath::Max(n1, FVector2D::DotProduct(Q, Nn)); }
+		C /= V.Ring.Num();
+		const FRotator Axis(0, FMath::RadiansToDegrees(FMath::Atan2(E.Y, E.X)), 0);
+		// A TOWER'S MACHINE ROOM. Lift overruns, cooling towers and the plant
+		// go in a louvred penthouse set back from the parapet: on every real
+		// tower it is a second, smaller box on the roof, and the skyline
+		// reads flat-topped and toy-like without it.
+		if (V.bCrown && V.Z1 >= 2500 && e1 - e0 >= 1500 && n1 - n0 >= 1500 && InsideRing(V.Ring, C))
+		{
+			const double Hp = 450 + Rng.FRandRange(0, 1) * (V.Z1 >= 12000 ? 700 : 300);
+			const FVector Scale((e1 - e0) * Rng.FRandRange(0.38, 0.55) / 100.0, (n1 - n0) * Rng.FRandRange(0.38, 0.55) / 100.0, Hp / 100.0);
+			AddProp(TEXT("/Game/BW/Roof/SM_Penthouse.SM_Penthouse"), FTransform(Axis, FVector(C, Z), Scale), true);
+		}
+		// A SETBACK TERRACE has a railing along its edge (a tier with more
+		// building above it: its roof is somebody's terrace)
+		if (!V.bCrown && V.Z1 >= 1200)
+			for (int32 i = 0; i < V.Ring.Num(); ++i)
+			{
+				const FVector2D A = V.Ring[i], B = V.Ring[(i + 1) % V.Ring.Num()];
+				const double L = (B - A).Size();
+				if (L < 200) continue;
+				const FVector2D D = (B - A) / L;
+				const FVector2D In2 = FVector2D(-D.Y, D.X) * (FVector2D::DotProduct(C - A, FVector2D(-D.Y, D.X)) > 0 ? 30.0 : -30.0);
+				AddProp(TEXT("/Game/BW/Roof/SM_Railing.SM_Railing"), FTransform(FRotator(0, FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X)), 0), FVector(A + In2, Z), FVector(L / 100.0, 1, 1)), true);
+			}
+	}
 	if (Rng.FRand() < 0.85 && Spot(P)) AddProp(TEXT("/Game/Prop/Kit_roof_door_stair_RR/Mesh/SM_roof_door_stair_N1.SM_roof_door_stair_N1"), FTransform(Square, FVector(P, Z)), true);
 	const int32 Units = Rng.RandRange(1, FMath::Clamp(int32(Sz.X * Sz.Y / 4.0e6), 1, 6));
 	for (int32 i = 0; i < Units; ++i) if (Spot(P)) AddProp(TEXT("/Game/Prop/Kit_roof_AC_Unit_B/Mesh/SM_roof_AC_Unit_B_01_N1.SM_roof_AC_Unit_B_01_N1"), FTransform(Square, FVector(P, Z)), true);

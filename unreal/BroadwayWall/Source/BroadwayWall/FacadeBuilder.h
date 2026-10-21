@@ -30,6 +30,9 @@ struct FBWKitModule
 	int32 Every = 0;
 	/** A facade zone (0, 1, 2...): a kit with zones splits each wall into runs of bays, each run in one zone's cladding. -1 = unzoned. */
 	int32 Zone = -1;
+	/** Pieces that differ only in their blinds share a Mix group; one is picked per bay per floor. Variants stay out of the palette. */
+	int32 Mix = -1;
+	bool bVariant = false;
 };
 
 struct FBWKitBand
@@ -79,6 +82,8 @@ private:
 	TMap<TPair<UMaterialInterface*, uint32>, UMaterialInstanceDynamic*> Tinted;
 	/** The tint being laid now, quantised to a 0.04 grid (the web's tints sit on 0.02; coarser keeps the component count down). */
 	uint32 TintKey = 0;
+	/** This building's weathering level, 0 (new) to 3 (a century old), in the top byte of TintKey. */
+	int32 GrimeNow = 0;
 	FLinearColor TintNow = FLinearColor::White;
 	int32 Placed = 0;
 };

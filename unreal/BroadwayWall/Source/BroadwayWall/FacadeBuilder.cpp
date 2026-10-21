@@ -22,6 +22,8 @@ static bool ReadModule(const TSharedPtr<FJsonObject>& O, FBWKitModule& M)
 	M.Y1 = O->GetNumberField(TEXT("y1"));
 	O->TryGetNumberField(TEXT("every"), M.Every);
 	O->TryGetNumberField(TEXT("zone"), M.Zone);
+	O->TryGetNumberField(TEXT("mix"), M.Mix);
+	O->TryGetBoolField(TEXT("variant"), M.bVariant);
 	M.Mesh = LoadObject<UStaticMesh>(nullptr, *M.Path);
 	// a kit holds its meshes by plain pointer, so they are rooted: the collector
 	// frees a mesh no component shows yet, and the next building to use it crashed
@@ -115,6 +117,19 @@ UInstancedStaticMeshComponent* FBWFacadeBuilder::Comp(UStaticMesh* Mesh, bool bT
 				{
 					MID = UMaterialInstanceDynamic::Create(Base, Parent->GetOwner());
 					MID->SetVectorParameterValue(P, FLinearColor(Cur.R * TintNow.R, Cur.G * TintNow.G, Cur.B * TintNow.B, Cur.A));
+					const int32 Grime = int32(Key >> 24);
+					if (Grime)
+					{
+						// raise each layer toward full by the level (only layers the material has)
+						static const FName Layers[] = { TEXT("Amt MFGD"), TEXT("Amount MFGB"), TEXT("Amount MFDE"), TEXT("Amount MFGC") };
+						static const float Reach[] = { 0.55f, 0.6f, 0.45f, 0.3f };
+						for (int32 L = 0; L < 4; ++L)
+						{
+							float A = 0;
+							if (Base->GetScalarParameterValue(FHashedMaterialParameterInfo(Layers[L]), A))
+								MID->SetScalarParameterValue(Layers[L], FMath::Max(A, Reach[L] * Grime / 3.f));
+						}
+					}
 				}
 				Tinted.Add(MK, MID);
 			}
@@ -159,6 +174,12 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 		const uint32 R = Q(Tint.R), G = Q(Tint.G), B = Q(Tint.B);
 		TintKey = (R == 25 && G == 25 && B == 25) ? 0 : (R << 16) | (G << 8) | B;   // 25 x 0.04 = 1: untinted
 		TintNow = FLinearColor(R * 0.04f, G * 0.04f, B * 0.04f);
+		// WEATHERING. A wall darkens and streaks with age: grime drips under
+		// every ledge, a dirty base, dirt in the edges. The building master
+		// carries those layers (MFGD drips, MFGB base, MFDE edges, MFGC cover);
+		// a building's level comes from its age, a new one stays clean.
+		GrimeNow = V.Year > 0 ? FMath::Clamp((2015 - V.Year) / 30, 0, 3) : 1;
+		if (GrimeNow) TintKey |= uint32(GrimeNow) << 24 | (TintKey ? 0u : (25u << 16 | 25u << 8 | 25u));
 	}
 	const int32 Before = Placed;
 	const int32 N = V.Ring.Num();
@@ -320,7 +341,7 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 				// court, and on a flat wall they open dark slots between the bays
 				double Shallow = 1e9;
 				for (const FBWKitModule& M : Band.Walls) Shallow = FMath::Min(Shallow, M.Depth);
-				for (const FBWKitModule& M : Band.Walls) if (M.Depth <= Shallow + 60) All.Add(&M);
+				for (const FBWKitModule& M : Band.Walls) if (M.Depth <= Shallow + 60 && !M.bVariant && M.Zone < 0) All.Add(&M);
 				All.Sort([W](const FBWKitModule& X, const FBWKitModule& Y) { return FMath::Abs(X.Width - W) < FMath::Abs(Y.Width - W); });
 				// only pieces that fit the bay: a kit's odd pieces (blank infill
 				// panels, a 7.5 m feature bay) stretched to a 3 m bay looked broken,
@@ -342,12 +363,20 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 			for (const FBWKitModule& M : Band.Walls) if (M.Every > 0 && FMath::Abs(M.Width - W) <= 0.2 * W) { Feature = &M; break; }
 			// zoned bands: each bay wears its run's zone (ZoneOf, the same on every floor)
 			TArray<const FBWKitModule*, TInlineAllocator<4>> ByZone;
-			for (const FBWKitModule& M : Band.Walls) if (M.Zone >= 0) { if (ByZone.Num() <= M.Zone) ByZone.SetNum(M.Zone + 1); if (!ByZone[M.Zone]) ByZone[M.Zone] = &M; }
+			for (const FBWKitModule& M : Band.Walls) if (M.Zone >= 0 && !M.bVariant) { if (ByZone.Num() <= M.Zone) ByZone.SetNum(M.Zone + 1); if (!ByZone[M.Zone]) ByZone[M.Zone] = &M; }
 			for (int32 k = 0; k < Mods; ++k)
 			{
 				const FBWKitModule* M = Pal[Rhythm[k % Rhythm.Num()] % Pal.Num()];
 				if (ByZone.Num() && ZoneOf.IsValidIndex(k)) { const int32 Zk = ZoneOf[k] % ByZone.Num(); if (ByZone[Zk]) M = ByZone[Zk]; }
 				if (Feature && Mods >= Feature->Every && (k % Feature->Every) == Feature->Every / 2) M = Feature;
+				// lived-in: this bay on this floor wears one of the piece's blind variants
+				if (M->Mix >= 0)
+				{
+					TArray<const FBWKitModule*, TInlineAllocator<4>> Group;
+					for (const FBWKitModule& G : Band.Walls) if (G.Mix == M->Mix) Group.Add(&G);
+					const uint32 BayHash = HashCombine(HashCombine(Seed, uint32(&Row - Rows.GetData()) * 7919u), uint32(i * 1000 + k));
+					if (Group.Num()) M = Group[BayHash % uint32(Group.Num())];
+				}
 				// street floor: a door every few bays on every frontage, shopfronts between
 				if (Band.bGround && Band.Entrances.Num() && Mods > 1 && (k % DoorEvery) == DoorEvery / 2)
 					M = &Band.Entrances[(i + k) % Band.Entrances.Num()];

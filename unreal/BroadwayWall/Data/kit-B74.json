@@ -19,21 +19,21 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_Ground_0.SM_B74_Ground_0",
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Ground_0.SM_B74_Ground_0",
      "width": 330.0,
      "depth": 50.0,
      "y0": -330.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_Ground_1.SM_B74_Ground_1",
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Ground_1.SM_B74_Ground_1",
      "width": 264.0,
      "depth": 50.0,
      "y0": -264.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_Ground_2.SM_B74_Ground_2",
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Ground_2.SM_B74_Ground_2",
      "width": 396.0,
      "depth": 50.0,
      "y0": -396.0,
@@ -42,7 +42,7 @@
    ],
    "entrances": [
     {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_Entrance.SM_B74_Entrance",
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Entrance.SM_B74_Entrance",
      "width": 330.0,
      "depth": 50.0,
      "y0": -330.0,
@@ -50,7 +50,7 @@
     }
    ],
    "corner": {
-    "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_GroundCorner.SM_B74_GroundCorner",
+    "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_GroundCorner.SM_B74_GroundCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -65,47 +65,168 @@
    "repeat": true,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_Typical_0.SM_B74_Typical_0",
-     "width": 330.0,
-     "depth": 50.0,
-     "y0": -330.0,
-     "y1": 0
-    },
-    {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_Typical_1.SM_B74_Typical_1",
-     "width": 330.0,
-     "depth": 50.0,
-     "y0": -330.0,
-     "y1": 0
-    },
-    {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_Zone_0.SM_B74_Zone_0",
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Typical_0.SM_B74_Typical_0",
      "width": 330.0,
      "depth": 50.0,
      "y0": -330.0,
      "y1": 0,
+     "mix": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Typical_1.SM_B74_Typical_1",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Typical_0_v1.SM_B74_Typical_0_v1",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Typical_0_v2.SM_B74_Typical_0_v2",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Typical_0_v3.SM_B74_Typical_0_v3",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_0.SM_B74_Zone_0",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "zone": 0,
+     "mix": 10
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_0_v1.SM_B74_Zone_0_v1",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 10,
+     "variant": true,
      "zone": 0
     },
     {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_Zone_1.SM_B74_Zone_1",
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_0_v2.SM_B74_Zone_0_v2",
      "width": 330.0,
      "depth": 50.0,
      "y0": -330.0,
      "y1": 0,
+     "mix": 10,
+     "variant": true,
+     "zone": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_0_v3.SM_B74_Zone_0_v3",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 10,
+     "variant": true,
+     "zone": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_1.SM_B74_Zone_1",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "zone": 1,
+     "mix": 11
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_1_v1.SM_B74_Zone_1_v1",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 11,
+     "variant": true,
      "zone": 1
     },
     {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_Zone_2.SM_B74_Zone_2",
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_1_v2.SM_B74_Zone_1_v2",
      "width": 330.0,
      "depth": 50.0,
      "y0": -330.0,
      "y1": 0,
+     "mix": 11,
+     "variant": true,
+     "zone": 1
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_1_v3.SM_B74_Zone_1_v3",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 11,
+     "variant": true,
+     "zone": 1
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_2.SM_B74_Zone_2",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "zone": 2,
+     "mix": 12
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_2_v1.SM_B74_Zone_2_v1",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 12,
+     "variant": true,
+     "zone": 2
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_2_v2.SM_B74_Zone_2_v2",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 12,
+     "variant": true,
+     "zone": 2
+    },
+    {
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Zone_2_v3.SM_B74_Zone_2_v3",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 12,
+     "variant": true,
      "zone": 2
     }
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_TypicalCorner.SM_B74_TypicalCorner",
+    "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_TypicalCorner.SM_B74_TypicalCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -119,14 +240,14 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_Top.SM_B74_Top",
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_Top.SM_B74_Top",
      "width": 330.0,
      "depth": 50.0,
      "y0": -330.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_TopZone_0.SM_B74_TopZone_0",
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_TopZone_0.SM_B74_TopZone_0",
      "width": 330.0,
      "depth": 50.0,
      "y0": -330.0,
@@ -134,7 +255,7 @@
      "zone": 0
     },
     {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_TopZone_1.SM_B74_TopZone_1",
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_TopZone_1.SM_B74_TopZone_1",
      "width": 330.0,
      "depth": 50.0,
      "y0": -330.0,
@@ -142,7 +263,7 @@
      "zone": 1
     },
     {
-     "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_TopZone_2.SM_B74_TopZone_2",
+     "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_TopZone_2.SM_B74_TopZone_2",
      "width": 330.0,
      "depth": 50.0,
      "y0": -330.0,
@@ -152,7 +273,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B74/v1020235248/SM_B74_TopCorner.SM_B74_TopCorner",
+    "path": "/Game/BW/Styles/B74/v1021002644/SM_B74_TopCorner.SM_B74_TopCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,

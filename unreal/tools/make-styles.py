@@ -21,7 +21,8 @@ GS = unreal.GeometryScript_Primitives
 UV = unreal.GeometryScript_UVs
 ROOT = "/Game/BW/Styles"
 DEPTH = 50.0
-UV_SCALE = [2.0]   # the box projection size: set per recipe ("uv")
+UV_SCALE = [2.0]
+BLINDS = [None, 0]   # [variant seed or None, window counter] while building a blind variant   # the box projection size: set per recipe ("uv")
 MATS = {
     "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque.MI_Bldg_glass_opaque",
     "dark": "/Game/Building/Material/MI/Paint/ForGym/MI_Bldg_PaintedMetal_Black_FG.MI_Bldg_PaintedMetal_Black_FG",
@@ -69,6 +70,29 @@ def window(M, R, y0, y1, z0, z1):
     M.box(0, -rec, 0, y1 - 0.5, y1, z0, z1)
     # glass, set back
     M.box(2, -rec - 4, -rec, y0, y1, z0, z1)
+    # A LIVED-IN WINDOW: a blind drawn part way down, or a curtain panel,
+    # just behind the frame (the glass is opaque, so this is what reads as
+    # the room behind it). Which, and how far, comes from BLINDS: the
+    # variant being built and the window's place in it, so the shaft's
+    # variants differ only in their blinds and FacadeBuilder mixes them bay
+    # by bay and floor by floor.
+    if BLINDS[0] is not None and not w.get("ribbon"):
+        BLINDS[1] += 1
+        h = ((BLINDS[0] * 7919 + BLINDS[1] * 104729) % 1000) / 1000.0
+        if h < 0.42:
+            # most blinds are part way down; a few all the way
+            frac = 0.12 + 0.5 * ((h * 7.3) % 1.0) if h > 0.06 else 0.95
+            M.box(8, -rec - 3.5, -rec - 1, y0 + 2, y1 - 2, z1 - (z1 - z0) * frac, z1 - 2)
+    elif BLINDS[0] is not None:
+        # a ribbon window: blinds in some of its lights, at their own heights
+        BLINDS[1] += 1
+        n = max(1, w.get("mullions", 1) + 1)
+        for k in range(n):
+            h = ((BLINDS[0] * 7919 + (BLINDS[1] * 31 + k) * 104729) % 1000) / 1000.0
+            if h < 0.3:
+                a = y0 + (y1 - y0) * k / n
+                b = y0 + (y1 - y0) * (k + 1) / n
+                M.box(8, -rec - 3.5, -rec - 1, a + 2, b - 2, z1 - (z1 - z0) * (0.2 + h), z1 - 2)
     # frame
     M.box(1, -rec, -rec + 3, y0, y1, z0, z0 + fr)
     M.box(1, -rec, -rec + 3, y0, y1, z1 - fr, z1)
@@ -806,7 +830,8 @@ def slots_for(R):
             ("base", mat_path(m.get("base", m["wall"]))), ("dark", mat_path(m.get("dark", MATS["dark"])) if m.get("dark") else MATS["dark"]),
             ("accent", mat_path(m.get("accent", "Paint/PaintedMetal_Green"))),
             ("roof", mat_path(m.get("roof", "Paint/PaintedStone_charcoal"))),
-            ("accent2", mat_path(m.get("accent2", "Paint/PaintedMetal_White")))]
+            ("accent2", mat_path(m.get("accent2", "Paint/PaintedMetal_White"))),
+            ("blind", mat_path(m.get("blind", "Paint/PaintedStone_Beige")))]
 
 
 def zoned(R, z):
@@ -908,6 +933,30 @@ def build(R, data_dir):
     # along each wall (FacadeBuilder: FBWKitModule::Every), not one every other bay
     if R.get("feature") and not R.get("feature_all") and not R.get("stagger"):
         tw[1]["every"] = int(R.get("feature_every", 4 if R["feature"] == "fire_escape" else 3))
+    # LIVED-IN VARIANTS: the plain shaft piece again three times, differing
+    # only in their blinds; FacadeBuilder picks among a piece's "mix" group
+    # per bay and per floor, so the windows vary while the architecture
+    # stays one rhythm
+    def blind_variants(make, path0, mz, mix):
+        mz["mix"] = mix
+        out = []
+        for v in range(1, 4):
+            BLINDS[0], BLINDS[1] = v * 13 + mix * 101, 0
+            Mv = make()
+            BLINDS[0] = None
+            pv = "%s_v%d" % (path0, v)
+            save(Mv, pv, slots_vars[0])
+            mv = module(pv, mz["width"])
+            mv["mix"] = mix
+            mv["variant"] = True
+            if "zone" in mz:
+                mv["zone"] = mz["zone"]
+            out.append(mv)
+        return out
+    slots_vars = [slots]
+    if not stagger:
+        tw += blind_variants(lambda: typical(R, W, Hs, alt=R.get("feature_all", False)),
+                             "%s/SM_%s_Typical_0" % (base, key), tw[0], 0)
     # FACADE ZONES: one shaft piece per zone, each in its own cladding and
     # depth; FacadeBuilder sets them out in mirrored runs along every wall
     for zi, z in enumerate(R.get("zones", [])):
@@ -922,6 +971,16 @@ def build(R, data_dir):
         mz = module(p, W)
         mz["zone"] = zi
         tw.append(mz)
+        def mk(Z=Z, z=z):
+            Mv = Mesh()
+            Mv.xoff = float(z.get("proud", 0))
+            typical(Z, W, Hs, alt=bool(Z.get("feature")) and Z.get("feature_all", True), M=Mv)
+            if Mv.xoff:
+                cheeks(Mv, W, Hs, Mv.xoff)
+            return Mv
+        slots_vars[0] = slots_for(Z)
+        tw += blind_variants(mk, p, mz, 10 + zi)
+        slots_vars[0] = slots
     pct = "%s/SM_%s_TypicalCorner" % (base, key)
     Hband = Hs * 2 if stagger else Hs
     if stagger and R.get("corner_window"):

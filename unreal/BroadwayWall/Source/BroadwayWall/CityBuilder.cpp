@@ -521,33 +521,142 @@ void ACityBuilder::BuildGround()
 		if (bRaised) FootZ = FMath::Max(FootZ, Zl);
 	}
 	// THE OPEN PART OF A LOT. Every lot's ground used to be the same tan
-	// paving under the building, which from the air made the city one sheet.
-	// What is round a building in life depends on what the building is: an
-	// apartment block keeps a lawn or a paved court, an office tower a stone
-	// plaza, a store a parking apron, a works a worn yard, and a vacant lot
-	// gravel, packed dirt or weeds. Each lot's cover is drawn from its use, the
-	// pick by lot (a hash of its BBL, so a lot keeps its ground across
-	// rebuilds); the building stands on it, so only the open part shows.
+	// paving, which from the air made the city one sheet; then one cover per
+	// lot, which sat an office block in a lawn on four sides like a suburban
+	// clinic. A city lot is two places. THE FRONT, between the building and
+	// the street, is the building's face to the city: an apartment block's
+	// front lawn and path to the door, an office's stone forecourt, a store's
+	// apron. THE REST, beside and behind, is service: a paved yard, the
+	// driveway, the bins, the loading dock. Downtown (six floors and up) the
+	// front is paved; lawns belong to the low-rise streets. A vacant lot is
+	// one ground (gravel, dirt, weeds). Picks are by lot (a hash of its BBL),
+	// so a lot keeps its ground across rebuilds; the building stands on it.
 	{
 		enum ECover { Lawn, Plaza, ConcLight, ConcDark, Asphalt, Gravel, Worn, Dirt, Meadow, NumCovers };
 		struct FShare { ECover C; float W; };
-		static const TArray<FShare> Res = { { Lawn, 0.45f }, { ConcLight, 0.22f }, { Plaza, 0.15f }, { ConcDark, 0.12f }, { Asphalt, 0.06f } };
-		static const TArray<FShare> Off = { { Plaza, 0.45f }, { ConcLight, 0.30f }, { Lawn, 0.20f }, { Asphalt, 0.05f } };
-		static const TArray<FShare> Ret = { { Asphalt, 0.50f }, { ConcLight, 0.28f }, { Worn, 0.15f }, { Plaza, 0.07f } };
-		static const TArray<FShare> Ind = { { Worn, 0.45f }, { Asphalt, 0.30f }, { Gravel, 0.25f } };
+		// the yard (the whole lot, under everything)
+		static const TArray<FShare> YardRes = { { ConcDark, 0.45f }, { ConcLight, 0.35f }, { Asphalt, 0.20f } };
+		static const TArray<FShare> YardOff = { { ConcLight, 0.45f }, { Asphalt, 0.35f }, { ConcDark, 0.20f } };
+		static const TArray<FShare> YardRet = { { Asphalt, 0.65f }, { ConcDark, 0.20f }, { Worn, 0.15f } };
+		static const TArray<FShare> YardInd = { { Worn, 0.50f }, { Asphalt, 0.30f }, { Gravel, 0.20f } };
 		static const TArray<FShare> Land = { { Gravel, 0.30f }, { Meadow, 0.30f }, { Dirt, 0.20f }, { Worn, 0.20f } };
+		// the front (the strip between the building and the street)
+		static const TArray<FShare> FrontResLow = { { Lawn, 0.70f }, { Plaza, 0.15f }, { ConcLight, 0.15f } };
+		static const TArray<FShare> FrontResHigh = { { Plaza, 0.55f }, { ConcLight, 0.25f }, { Lawn, 0.20f } };
+		static const TArray<FShare> FrontOffLow = { { Plaza, 0.45f }, { Lawn, 0.35f }, { ConcLight, 0.20f } };
+		static const TArray<FShare> FrontOffHigh = { { Plaza, 0.75f }, { ConcLight, 0.25f } };
+		static const TArray<FShare> FrontRet = { { ConcLight, 0.55f }, { Plaza, 0.25f }, { Asphalt, 0.20f } };
+		static const TArray<FShare> FrontInd = { { ConcDark, 0.60f }, { Asphalt, 0.40f } };
+		auto Pick = [](const TArray<FShare>& T, uint32 H)
+		{
+			float U = float(H % 1000u) / 1000.f;
+			for (const FShare& Sh : T) { if (U < Sh.W) return Sh.C; U -= Sh.W; }
+			return T.Last().C;
+		};
+		auto In = [](const TArray<FVector2D>& R, const FVector2D& Q)
+		{
+			bool b = false;
+			for (int32 i = 0, j = R.Num() - 1; i < R.Num(); j = i++)
+				if ((R[i].Y > Q.Y) != (R[j].Y > Q.Y) && Q.X < (R[j].X - R[i].X) * (Q.Y - R[i].Y) / (R[j].Y - R[i].Y) + R[i].X) b = !b;
+			return b;
+		};
+		// each lot's ground-floor footprint
+		TMap<FString, const TArray<FVector2D>*> Foot;
+		for (const FBWVolume& V : City.Volumes)
+			if (V.Z0 < 50 && !V.bVacant && V.Ring.Num() >= 3 && !Foot.Contains(V.Bbl)) Foot.Add(V.Bbl, &V.Ring);
+		const TCHAR* const ShrubMesh = TEXT("/Game/BW/Trees/SM_Shrub.SM_Shrub");
+		const bool bShrubs = FPackageName::DoesPackageExist(TEXT("/Game/BW/Trees/SM_Shrub"));
 		FMeshBuf Cov[NumCovers];
 		for (FMeshBuf& Cb : Cov) { Cb.UVScale = 400.0; Cb.bStrict = true; }
 		const double Zp = FootZ + 2;
+		int32 Fronts = 0, Shrubs = 0;
 		for (const FBWParcel& P : City.Parcels)
 		{
-			if (P.Ring.Num() < 3) continue;
-			const TArray<FShare>& T = P.Cls == TEXT("multifamily") ? Res : P.Cls == TEXT("office") ? Off : P.Cls == TEXT("retail") ? Ret : P.Cls == TEXT("industrial") ? Ind : Land;
-			float U = float(HashCombine(GetTypeHash(P.Bbl), 0x9e3779b9u) % 1000u) / 1000.f;
-			ECover C = T.Last().C;
-			for (const FShare& Sh : T) { if (U < Sh.W) { C = Sh.C; break; } U -= Sh.W; }
-			Cov[C].AddCap(P.Ring, Zp, FLinearColor::White);
+			const int32 N = P.Ring.Num();
+			if (N < 3) continue;
+			const uint32 H = HashCombine(GetTypeHash(P.Bbl), 0x9e3779b9u);
+			const bool bRes = P.Cls == TEXT("multifamily"), bOff = P.Cls == TEXT("office"), bRet = P.Cls == TEXT("retail"), bInd = P.Cls == TEXT("industrial");
+			const TArray<FVector2D>* const* F = Foot.Find(P.Bbl);
+			if (!(bRes || bOff || bRet || bInd) || !F)
+			{
+				Cov[Pick(Land, H)].AddCap(P.Ring, Zp, FLinearColor::White);
+				continue;
+			}
+			Cov[Pick(bRes ? YardRes : bOff ? YardOff : bRet ? YardRet : YardInd, H)].AddCap(P.Ring, Zp, FLinearColor::White);
+			const bool bHigh = P.Floors >= 6;
+			const ECover Front = Pick(bRes ? (bHigh ? FrontResHigh : FrontResLow) : bOff ? (bHigh ? FrontOffHigh : FrontOffLow) : bRet ? FrontRet : FrontInd, H >> 10);
+			double Area2 = 0;
+			for (int32 i = 0; i < N; ++i) Area2 += P.Ring[i].X * P.Ring[(i + 1) % N].Y - P.Ring[(i + 1) % N].X * P.Ring[i].Y;
+			// the street sides with room in front of the building; the longest is
+			// THE front (a corner lot has one front door, not three), the others
+			// side yards: paved, with a planting strip along the sidewalk where the
+			// front is a garden
+			struct FEdge { int32 I; double Set, Len; };
+			TArray<FEdge> Street;
+			for (int32 i = 0; i < N; ++i)
+			{
+				const FVector2D A = P.Ring[i], E = P.Ring[(i + 1) % N];
+				const double Len = (E - A).Size();
+				if (Len < 600) continue;
+				const FVector2D D = (E - A) / Len;
+				const FVector2D Inw = Area2 > 0 ? FVector2D(-D.Y, D.X) : FVector2D(D.Y, -D.X);
+				const FVector2D Mid = (A + E) * 0.5;
+				// a street front: outside this edge is no other lot
+				if (ParcelAt(Mid - Inw * 300)) continue;
+				// the setback: how far in the building starts
+				double Set = 0;
+				for (double d = 50; d <= 1500; d += 25) if (In(**F, Mid + Inw * d)) { Set = d; break; }
+				if (Set >= 200) Street.Add({ i, Set, Len });   // (less is built to the line, or nothing is in front: the yard)
+			}
+			int32 Main = INDEX_NONE;
+			for (int32 k = 0; k < Street.Num(); ++k) if (Main == INDEX_NONE || Street[k].Len > Street[Main].Len) Main = k;
+			for (int32 k = 0; k < Street.Num(); ++k)
+			{
+				const int32 i = Street[k].I;
+				const FVector2D A = P.Ring[i], E = P.Ring[(i + 1) % N];
+				const double Len = Street[k].Len;
+				const FVector2D D = (E - A) / Len;
+				const FVector2D Inw = Area2 > 0 ? FVector2D(-D.Y, D.X) : FVector2D(D.Y, -D.X);
+				const FVector2D Mid = (A + E) * 0.5;
+				const double Dp = Street[k].Set - 30;
+				if (k != Main)
+				{
+					if (Front == Lawn) Cov[Lawn].AddCap({ A, E, E + Inw * FMath::Min(Dp, 150.0), A + Inw * FMath::Min(Dp, 150.0) }, Zp + 1, FLinearColor::White);
+					continue;
+				}
+				Cov[Front].AddCap({ A, E, E + Inw * Dp, A + Inw * Dp }, Zp + 1, FLinearColor::White);
+				++Fronts;
+				// a front garden: the path from the sidewalk to the door, and a
+				// bed of shrubs along the building either side of it
+				if (Front == Lawn)
+				{
+					const FVector2D W = D * 90;
+					Cov[ConcLight].AddCap({ Mid - W, Mid + W, Mid + W + Inw * Dp, Mid - W + Inw * Dp }, Zp + 2, FLinearColor::White);
+					if (bShrubs && Dp > 300)
+						for (double t = 120; t < Len - 120; t += 170)
+						{
+							const uint32 Ht = HashCombine(H, GetTypeHash(int32(t)));
+							if (FMath::Abs(t - Len * 0.5) < 250 || (Ht & 3) == 0) continue;
+							const FVector2D Q = A + D * t + Inw * (Dp - 90);
+							const double Sc = 0.8 + 0.4 * double((Ht >> 4) & 7) / 7.0;
+							AddProp(ShrubMesh, FTransform(FRotator(0, double(Ht % 360), 0), FVector(Q, Zp + 1), FVector(Sc)), false);
+							++Shrubs;
+						}
+				}
+			}
 		}
+		UE_LOG(LogBWBuilder, Display, TEXT("ground: %d lot fronts, %d shrubs"), Fronts, Shrubs);
+		if (TObjectPtr<UInstancedStaticMeshComponent>* C = StreetProps.Find(ShrubMesh))
+			if (*C)
+				if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Leaves.M_BW_Leaves")))
+				{
+					// evergreen (yew, box): a deep blue-green all year, no autumn
+					UMaterialInstanceDynamic* Ev = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
+					Ev->SetVectorParameterValue(TEXT("LeafDark"), FLinearColor(0.012f, 0.028f, 0.014f));
+					Ev->SetVectorParameterValue(TEXT("LeafLight"), FLinearColor(0.035f, 0.065f, 0.030f));
+					Ev->AddToRoot();
+					(*C)->SetMaterial(1, Ev);
+				}
 		auto Tinted = [](const TCHAR* Path, const TCHAR* Param, const FLinearColor& Tint) -> UMaterialInterface*
 		{
 			UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, Path);

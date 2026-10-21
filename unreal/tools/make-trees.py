@@ -196,4 +196,13 @@ m = unreal.DynamicMesh()           # London plane / honey locust: wide and flat-
 trunk(m, 420, 19)
 crown(m, 3, 900, 560, 340, 26, 160, 240)
 save(m, "SM_LeafTree_Spread")
+# a shrub for the foundation planting along a building's front (yew, boxwood,
+# privet): leaves only, ~1.3 m tall and 1.6 m across, sitting on the bed
+m = unreal.DynamicMesh()
+rnd = random.Random(4)
+sphere(m, 1, 0, 0, 55, 100, 0.75, 0.75, 0.6)
+for i in range(7):
+    th = rnd.uniform(0, 2 * math.pi)
+    sphere(m, 1, 45 * math.cos(th), 45 * math.sin(th), rnd.uniform(50, 85), rnd.uniform(30, 45))
+save(m, "SM_Shrub")
 unreal.log("TREES built")

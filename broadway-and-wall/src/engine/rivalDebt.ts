@@ -85,6 +85,30 @@ function buildLoanIx(L: Record<string, CityLoan>): LoanIx {
   }
   return { book: L, rev: LOAN_REV, by };
 }
+/** An array-index key: for..in walks these first, in ascending numeric order. */
+const isIndexKey = (k: string) => /^(?:0|[1-9][0-9]*)$/.test(k) && Number(k) <= 4294967294;
+/**
+ * PUT A ROW ON THE RECORD, keeping the index current where that is the same
+ * as rebuilding it: a NEW numeric key (every BBL is one) sits among the
+ * numeric keys in ascending order, ahead of every other key, so it goes into
+ * its borrower's list at exactly that place. Anything else — a key already on
+ * the record, a non-numeric key, an index that was not current — just bumps.
+ */
+function loanPut(L: Record<string, CityLoan>, key: string, row: CityLoan): void {
+  const ix = LOAN_IX;
+  const current = !!ix && ix.book === L && ix.rev === LOAN_REV;
+  const existed = Object.prototype.hasOwnProperty.call(L, key);
+  L[key] = row;
+  if (!current || existed || !isIndexKey(key)) { loanBookTouched(); return; }
+  const n = Number(key);
+  const e = ix!.by.get(row.obligorId);
+  if (!e) { ix!.by.set(row.obligorId, { keys: [key], rows: [row] }); return; }
+  let i = 0;
+  while (i < e.keys.length && isIndexKey(e.keys[i]) && Number(e.keys[i]) < n) i++;
+  e.keys.splice(i, 0, key);
+  e.rows.splice(i, 0, row);
+}
+
 /** This firm's rows in record order, off the index; null when the record is empty or absent. */
 function obligorRows(s: GameState, id: string): CityLoan[] | null {
   const L = s.cityLoans;
@@ -318,8 +342,7 @@ export function originateRow(
     row.spread = +(row.ratePct - idx).toFixed(2);
     row.cap = { strike: +(idx + 1.0).toFixed(2), expiresM: originM + Math.min(d.termM, CAP_TERM_M) };
   }
-  s.cityLoans[bbl] = row;
-  loanBookTouched();
+  loanPut(s.cityLoans, bbl, row);
   syncDebt(s, r);
   return row;
 }

@@ -244,14 +244,24 @@ export function astar(G, cost, a, b, hmin) {
  * 4-connected component, holes filled, traced along cell edges (so it cannot
  * cross itself), then simplified and rounded. Coordinates are cell corners.
  */
-export function maskOutline(G, mask) {
-  const W = G.W, N = G.N;
+export function maskOutline(G, mask, box) {
+  // (with a box, {i0, j0, i1, j1} in cells holding every set cell, the trace
+  // runs on that window plus a one-cell empty margin: the same components,
+  // the same scan order, the same ring, without walking the whole region)
+  if (!box) return outlineCore(G.W, G.W, mask, 0, 0);
+  const w = box.i1 - box.i0 + 3, h = box.j1 - box.j0 + 3, loc = new Uint8Array(w * h);
+  for (let j = box.j0; j <= box.j1; j++) for (let i = box.i0; i <= box.i1; i++) loc[(j - box.j0 + 1) * w + (i - box.i0 + 1)] = mask[j * G.W + i];
+  return outlineCore(w, h, loc, box.i0 - 1, box.j0 - 1);
+}
+function outlineCore(W, H, mask, ox, oy) {
+  const N = W * H;
+  const nb = (c) => { const x = c % W, y = (c - x) / W; return [x > 0 ? c - 1 : -1, x < W - 1 ? c + 1 : -1, y > 0 ? c - W : -1, y < H - 1 ? c + W : -1]; };
   // largest component
   const comp = new Int32Array(N).fill(-1); let best = -1, bestN = 0, id = 0;
   for (let k = 0; k < N; k++) {
     if (!mask[k] || comp[k] >= 0) continue;
     const q = [k]; comp[k] = id; let n = 0;
-    while (q.length) { const c = q.pop(); n++; const x = c % W, y = (c - x) / W; for (const m of [x > 0 ? c - 1 : -1, x < W - 1 ? c + 1 : -1, y > 0 ? c - W : -1, y < W - 1 ? c + W : -1]) if (m >= 0 && mask[m] && comp[m] < 0) { comp[m] = id; q.push(m); } }
+    while (q.length) { const c = q.pop(); n++; for (const m of nb(c)) if (m >= 0 && mask[m] && comp[m] < 0) { comp[m] = id; q.push(m); } }
     if (n > bestN) { bestN = n; best = id; }
     id++;
   }
@@ -259,15 +269,17 @@ export function maskOutline(G, mask) {
   // fill holes: everything not reachable from the border through non-member cells is inside
   const inC = (k) => comp[k] === best;
   const outside = new Uint8Array(N), q = [];
-  for (let i = 0; i < W; i++) for (const k of [i, (W - 1) * W + i, i * W, i * W + W - 1]) if (!inC(k) && !outside[k]) { outside[k] = 1; q.push(k); }
-  while (q.length) { const c = q.pop(), x = c % W, y = (c - x) / W; for (const m of [x > 0 ? c - 1 : -1, x < W - 1 ? c + 1 : -1, y > 0 ? c - W : -1, y < W - 1 ? c + W : -1]) if (m >= 0 && !outside[m] && !inC(m)) { outside[m] = 1; q.push(m); } }
-  const solid = (x, y) => x >= 0 && y >= 0 && x < W && y < W && !outside[y * W + x];
+  const seed = (k) => { if (!inC(k) && !outside[k]) { outside[k] = 1; q.push(k); } };
+  for (let i = 0; i < W; i++) { seed(i); seed((H - 1) * W + i); }
+  for (let j = 0; j < H; j++) { seed(j * W); seed(j * W + W - 1); }
+  while (q.length) { const c = q.pop(); for (const m of nb(c)) if (m >= 0 && !outside[m] && !inC(m)) { outside[m] = 1; q.push(m); } }
+  const solid = (x, y) => x >= 0 && y >= 0 && x < W && y < H && !outside[y * W + x];
   // every boundary edge, directed so the solid cell is on its right (y-down lattice), keyed by its start corner
   const key = (x, y) => y * (W + 1) + x;
   const out = new Map();
   const addE = (x0, y0, x1, y1) => { const k = key(x0, y0); const l = out.get(k); if (l) l.push([x1, y1]); else out.set(k, [[x1, y1]]); };
   let start = null;
-  for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (!solid(x, y)) continue;
     if (!solid(x, y - 1)) { addE(x, y, x + 1, y); start ??= [x, y]; }   // top edge, heading +x
     if (!solid(x + 1, y)) addE(x + 1, y, x + 1, y + 1);                 // right edge, heading +y
@@ -297,5 +309,5 @@ export function maskOutline(G, mask) {
     const a = pts[(i - 1 + pts.length) % pts.length], b = pts[(i + 1) % pts.length];
     return (p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0]) !== 0;
   });
-  return ring.map(([i, j]) => [i * CELL, j * CELL]);
+  return ring.map(([i, j]) => [(i + ox) * CELL, (j + oy) * CELL]);
 }

@@ -232,10 +232,11 @@ export function makeRegion(seed, opts = {}) {
   const outlineIn = (t, test) => {
     const [x0, y0, x1, y1] = t.r, mask = G.layer();
     let n = 0;
-    for (let y = Math.max(0, Math.floor(y0 / CELL)); y <= Math.min(G.W - 1, Math.floor((y1 - 1) / CELL)); y++)
-      for (let x = Math.max(0, Math.floor(x0 / CELL)); x <= Math.min(G.W - 1, Math.floor((x1 - 1) / CELL)); x++) { const k = y * G.W + x; if (test(k)) { mask[k] = 1; n++; } }
+    const box = { i0: Math.max(0, Math.floor(x0 / CELL)), i1: Math.min(G.W - 1, Math.floor((x1 - 1) / CELL)), j0: Math.max(0, Math.floor(y0 / CELL)), j1: Math.min(G.W - 1, Math.floor((y1 - 1) / CELL)) };
+    for (let y = box.j0; y <= box.j1; y++)
+      for (let x = box.i0; x <= box.i1; x++) { const k = y * G.W + x; if (test(k)) { mask[k] = 1; n++; } }
     if (n < 4) return null;
-    const ring = maskOutline(G, mask);
+    const ring = maskOutline(G, mask, box);
     if (!ring || ring.length < 3) return null;
     const simp = closedRdp(ring, CELL * 0.6);
     return simp.length >= 3 ? { ring: simp, m2: n * CELL * CELL } : null;
@@ -437,7 +438,26 @@ function voidsOf(features, ring, toXY) {
     const px = poly.map((p) => p[0]), py = poly.map((p) => p[1]);
     const i0 = Math.max(0, Math.floor((Math.min(...px) - x0) / R)), i1 = Math.min(nx - 1, Math.ceil((Math.max(...px) - x0) / R));
     const j0 = Math.max(0, Math.floor((Math.min(...py) - y0) / R)), j1 = Math.min(ny - 1, Math.ceil((Math.max(...py) - y0) / R));
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (pointInRing([x0 + (i + 0.5) * R, y0 + (j + 0.5) * R], poly)) L[j * nx + i] = 1;
+    // a scanline fill: each row's edge crossings, the same even-odd rule and
+    // the same arithmetic as pointInRing at the cell centres, so the same cells
+    const xc = [];
+    for (let j = j0; j <= j1; j++) {
+      const py = y0 + (j + 0.5) * R;
+      xc.length = 0;
+      for (let a = 0, c = poly.length - 1; a < poly.length; c = a++) {
+        const xi = poly[a][0], yi = poly[a][1], xj = poly[c][0], yj = poly[c][1];
+        if ((yi > py) !== (yj > py)) xc.push(((xj - xi) * (py - yi)) / (yj - yi) + xi);
+      }
+      if (!xc.length) continue;
+      xc.sort((u, v) => u - v);
+      // a centre px is inside when an odd number of crossings lie strictly beyond it
+      let c = 0;
+      for (let i = i0; i <= i1; i++) {
+        const px = x0 + (i + 0.5) * R;
+        while (c < xc.length && xc[c] <= px) c++;
+        if ((xc.length - c) & 1) L[j * nx + i] = 1;
+      }
+    }
   };
   paint(ins, ring);
   const COVER = new Set(["pavement", "block", "park", "pond", "stream", "apron", "median", "sidewalk"]);

@@ -791,3 +791,48 @@ strip and the edge ring.
 - how far the city has grown (the house budgets);
 - the story-distance strengths;
 - every vacancy share.
+
+### City edge: a transition, not a wall (owner: "downtown should mesh into the rest of the environment")
+
+These rules come from the "downtown should mesh into the rest of the
+environment" pass and are part of the Phase 1 rules.
+
+**Edge ring, mixed** (story distance 640–1,000 m)
+- Let t run from 0 at 640 m to 1 at 1,000 m.
+- **In house blocks:**
+  - a block-end lot is a 1–2 floor corner shop with probability
+    0.5·(1 − t);
+  - any other lot is a 2–3 floor small apartment building with probability
+    0.18·(1 − t).
+- **In shop blocks:** a lot is a house with probability 0.45·t.
+- **Vacancy in house lots:** 12%, rising to 47% in the last 30% of the ring.
+  The last blocks are only partly built. [K]
+
+**Ground**
+- House blocks are `yard` (lawn); houses and street trees stand on it.
+- Only streets, alleys, real parking lots and working rail yards are
+  `pavement`.
+- Vacant land is grass or weeds: `park` over a paved block, `yard`
+  elsewhere. [O]
+
+**Exurban fringe** (`placeFringe`, laid after the neighbourhoods)
+- Distance d is measured from what is actually built: the city and the
+  neighbourhood houses.
+- **Big-lot homes along the arterials**, sampled every 70 m:
+  - built with probability 0.78 → 0.08 over d = 0–600 m, then 0.05 out to
+    1,600 m [K];
+  - lot size 0.5 ac near the edge, up to 2 ac at 600 m [S, typical rural
+    lots];
+  - frontage to depth about 1 : 1.6, house 10 × 14 m set back 12–24 m, one
+    driveway, one tree;
+  - built 1950–2010, newer further out.
+- **Hobby farms:** probability 3–15%, rising outward. A 5 ac lawn with a
+  house and a barn (cls `industrial`, 9 m tall).
+- **Crossroads houses:** at about 40% of section corners at least 300 m
+  beyond the built edge, up to 3 farmhouses (1900–1960) on 1-ac lots.
+- **Gravel lots:** 2, on the roads 200–1,500 m out (paved pad, 1950–1990).
+- **Spacing and siting:**
+  - fringe lots need at least 40 m between them; the larger pockets keep
+    500 m;
+  - nothing is sited on floodplain, water, freeway right-of-way, the city,
+    or built neighbourhood land.

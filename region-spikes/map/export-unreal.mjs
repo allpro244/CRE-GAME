@@ -17,7 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { generate, subdivide, NAME_A, SZ, FT, makeRng, makeNoise, resample, rdp, dist, add, sub, mul, norm, perp, lerp } from "./region.mjs";
+import { generate, subdivide, NAME_A, SZ, FT, MILE, makeRng, makeNoise, resample, rdp, dist, add, sub, mul, norm, perp, lerp } from "./region.mjs";
 
 // road surface widths (carriageway, m) — the contract with the Unreal side
 const W = { highway: 24, arterial: 14, local: 9, core: 12 };
@@ -140,7 +140,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   const grad = suburbs === "gradient";
   const M = generate(seed, km, grad ? GRADIENT : { ...(dense ? {} : SMALL_TOWN), ...(suburbs === "thin" ? SPARSE_GEN : {}) }), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
   if (suburbs === "few") keepFewNeighbourhoods(M);
-  if (grad) { storyPrep(M, rng, seed); gradientNeighbourhoods(M, rng, seed); }
+  if (grad) { storyPrep(M, rng, seed); gradientNeighbourhoods(M, rng, seed); placeFringe(M, rng); }
   const phaseOk = (p) => { if (!M.phase) return true; const k = G.idx(p); return k >= 0 && M.phase[k] === 1; };
   M.rotate = Math.floor(makeRng("orient:" + seed)() * 4); // same orientation as the SVG
   // canonical -> map frame (x east, y south, metres), as render() does
@@ -299,6 +299,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
     volumes.push({ bbl, cls: "retail", year: st.year, z0: 0, z1: 650, deco: "", crown: true, vacant: false, ring: flat(ring) });
     parcels.push({ bbl, address: "Interchange strip, store " + (i + 1), block: 0, district: "Downtown", districtName: "Downtown", zone: "C", cls: "retail", floors: 1, yearBuilt: st.year, lotArea: sf((st.box.w + 10) * (st.box.d + st.park.d)), bldgArea: sf(st.box.w * st.box.d), ring: flat(TT(hull(rectRing(st.box.c, st.box.u, st.box.w, st.box.d).concat(rectRing(st.park.c, st.park.u, st.park.w, st.park.d))))) });
   }
+  let exurbHouses = 0;
   for (const [i, st] of (M.pockets ?? []).entries()) {
     const bbl = "P" + (i + 1), all = [];
     let bldg = 0, floors = 1;
@@ -306,7 +307,8 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
       const ring = rectRing(r.c, st.u, r.w, r.d); all.push(...ring);
       if (r.kind === "pave") put("pavement", ring);
       else if (r.kind === "park") put("park", ring);
-      else { const q = TT(ring); if (!inBox(centroid(q))) continue; volumes.push({ bbl, cls: r.cls, year: st.year, z0: 0, z1: r.z, deco: "", crown: true, vacant: false, ring: flat(q) }); bldg += r.w * r.d; floors = Math.max(floors, Math.max(1, Math.round(r.z / 355))); }
+      else if (r.kind === "lawn") put("yard", ring);
+      else { const q = TT(ring); if (!inBox(centroid(q))) continue; const isHouse = r.kind === "house"; if (isHouse) { exurbHouses++; const tp = T(add(r.c, mul(perp(st.u), -12))); if (inBox(tp)) trees.push(tp); } volumes.push({ bbl, cls: isHouse ? "multifamily" : r.kind === "barn" ? "industrial" : r.cls, year: st.year, z0: 0, z1: r.z, deco: isHouse ? "house" : "", crown: true, vacant: false, ring: flat(q) }); bldg += r.w * r.d; floors = Math.max(floors, Math.max(1, Math.round(r.z / 355))); }
     }
     if (!inBox(centroid(TT(all)))) continue;
     parcels.push({ bbl, address: st.name, block: 0, district: townOf(st.anchor), districtName: townOf(st.anchor), zone: st.cls === "industrial" ? "M" : "C", cls: st.cls, floors, yearBuilt: st.year, lotArea: sf(st.rects.reduce((a, r) => a + r.w * r.d, 0)), bldgArea: sf(bldg), ring: flat(TT(hull(all))) });
@@ -336,7 +338,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
       // ground: a house block is lawn, a city block is paved; a block the freeway touched is laid lot by lot
       const touches = St && blockPts(b).some((p) => St.beside[G.idx(p)] === 1);
       if (!touches) put(houseBlock ? "yard" : "block", b.poly());
-      const sec = houseBlock ? Math.floor(((Math.atan2(b.c[1] - r.centre[1], b.c[0] - r.centre[0]) + Math.PI) / (2 * Math.PI)) * 6) % 6 : -1;
+      const sec = band === 2 ? Math.floor(((Math.atan2(b.c[1] - r.centre[1], b.c[0] - r.centre[0]) + Math.PI) / (2 * Math.PI)) * 6) % 6 : -1;
       for (let i = 0; i < nl; i++) for (const sd of [-1, 1]) {
         const lc = add(add(b.c, mul(b.u, -b.hl + (i + 0.5) * lw)), mul(b.v, sd * b.hw / 2));
         const lot = rectRing(lc, b.u, lw, b.hw), ring = TT(lot);
@@ -386,9 +388,15 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
           lotParcel(bbl, `Main Street lot ${++n}`, cls, floors, year, lw * b.hw, fw * fd * floors, ring);
           continue;
         }
-        const vacant = rng() < (houseBlock ? 0.12 : [0.03, 0.15, 0.3][band]);
-        if (houseBlock) {
-          if (vacant) continue; // an empty lot in a house block
+        // the edge ring is mixed, not a switch: corner shops and small apartments among the houses on the inner side,
+        // houses among the shops further out; the outermost blocks are only partly built (shares approximate, K)
+        const tEdge = St ? Math.min(1, Math.max(0, (rb - RINGS.mid) / (RINGS.city - RINGS.mid))) : 0;
+        let asShop = null, asHouse = false;
+        if (houseBlock) { if ((i === 0 || i === nl - 1) && rng() < 0.5 * (1 - tEdge)) asShop = "corner"; else if (rng() < 0.18 * (1 - tEdge)) asShop = "apartment"; }
+        else if (band === 2 && rng() < 0.45 * tEdge) asHouse = true;
+        const vacant = rng() < (houseBlock || asHouse ? 0.12 + 0.35 * Math.max(0, (tEdge - 0.7) / 0.3) : [0.03, 0.15, 0.3][band]);
+        if ((houseBlock && !asShop) || asHouse) {
+          if (vacant) { if (asHouse) put(touches ? "yard" : "park", lot); continue; } // an empty lot: weeds
           const [w, d] = HOUSE.prewar;
           const c = add(lc, mul(b.v, sd * (b.hw / 2 - 4 - d / 2)));
           let s = sectors.get(sec);
@@ -401,12 +409,12 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
           continue;
         }
         const bbl = `D${parcels.length}`;
-        if (vacant) { put(band < 2 ? "pavement" : touches ? "yard" : "park", lot); lotParcel(bbl, `Downtown lot ${++n} (${band < 2 ? "parking" : "vacant"})`, "land", 0, 0, lw * b.hw, 0, ring); continue; }
+        if (vacant) { put(band < 2 && !asShop ? "pavement" : touches || houseBlock ? "yard" : "park", lot); lotParcel(bbl, `Downtown lot ${++n} (${band < 2 ? "parking" : "vacant"})`, "land", 0, 0, lw * b.hw, 0, ring); continue; }
         const cov = [[0.7, 0.85], [0.55, 0.7], [0.5, 0.65]][band], cv = cov[0] + (cov[1] - cov[0]) * rng();
         const fw = lw * Math.sqrt(cv), fd = b.hw * Math.sqrt(cv), fc = add(lc, mul(b.v, sd * (b.hw - fd) / 2));
-        const floors = band === 0 ? 4 + Math.floor(rng() * 5) : band === 1 ? 2 + Math.floor(rng() * 3) : 1 + (rng() < 0.4 ? 1 : 0);
+        const floors = asShop === "corner" ? 1 + (rng() < 0.5 ? 1 : 0) : asShop === "apartment" ? 2 + (rng() < 0.5 ? 1 : 0) : band === 0 ? 4 + Math.floor(rng() * 5) : band === 1 ? 2 + Math.floor(rng() * 3) : 1 + (rng() < 0.4 ? 1 : 0);
         const x = rng();
-        const cls = band === 0 ? (x < 0.6 ? "office" : x < 0.8 ? "multifamily" : "retail") : band === 1 ? (x < 0.4 ? "retail" : x < 0.8 ? "multifamily" : "office") : (x < 0.5 ? "retail" : "multifamily");
+        const cls = asShop === "corner" ? "retail" : asShop === "apartment" ? "multifamily" : band === 0 ? (x < 0.6 ? "office" : x < 0.8 ? "multifamily" : "retail") : band === 1 ? (x < 0.4 ? "retail" : x < 0.8 ? "multifamily" : "office") : (x < 0.5 ? "retail" : "multifamily");
         const year = Math.round(band === 0 ? 1880 + 140 * rng() ** 0.8 : 1890 + 70 * rng());
         if (band === 0) coreLots.push({ dn: rb, bbl });
         volumes.push({ bbl, cls, year, z0: 0, z1: floors * 355, deco: "", crown: true, vacant: false, ring: flat(TT(rectRing(fc, b.u, fw, fd))) });
@@ -475,7 +483,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
   const kept = parcels.filter((p) => p.ring);
   const name = `${M.river.name.replace(/ River$/, "")} Valley`;
   return {
-    stats: { volumes: volumes.length, houses: houses + gridHouses, gridHouses, parcels: kept.length, neighbourhoods: nb + nbGrid, trees: trees.length, centerlines: centerlines.length, ground: Object.fromEntries(Object.entries(ground).map(([k, v]) => [k, v.length])) },
+    stats: { volumes: volumes.length, houses: houses + gridHouses + exurbHouses, gridHouses, exurbHouses, parcels: kept.length, neighbourhoods: nb + nbGrid, trees: trees.length, centerlines: centerlines.length, ground: Object.fromEntries(Object.entries(ground).map(([k, v]) => [k, v.length])) },
     city: {
       format: "bw-city/1",
       city: { id: `region-${seed}`, seed: Number(seed) || 0, size: "region", name, lots: kept.length },
@@ -595,13 +603,13 @@ function storyPrep(M, rng, seed) {
  */
 function placePockets(M, rng, rS, hwNear, oldNear) {
   const G = M.G, sites = []; M.pockets = sites;
-  const okPt = (p) => { const k = G.idx(p); return k >= 0 && M.free(p) && !M.isSea(p) && !M.taken[k] && !M.flood[k]; };
+  const okPt = (p) => { const k = G.idx(p); return k >= 0 && M.free(p) && !M.isSea(p) && !M.taken[k] && !M.flood[k] && !(M.phase && M.phase[k]) && !M.coreL[k]; };
   const tryPlace = (anchor, u, pieces, meta) => {
     for (const side of [1, -1]) {
       const v = mul(perp(u), side);
       const rects = pieces.map((pc) => ({ ...pc, c: add(add(anchor, mul(u, pc.a)), mul(v, 12 + pc.o + pc.d / 2)) }));
       if (!rects.flatMap((r) => rectRing(r.c, u, r.w, r.d).concat([r.c])).every(okPt)) continue;
-      if (sites.some((x) => dist(x.anchor, anchor) < 500)) return false; // pockets stand apart
+      if (sites.some((x) => dist(x.anchor, anchor) < Math.min(meta.gap ?? 500, x.gap ?? 500))) return false; // pockets stand apart
       for (const r of rects) G.disk(M.taken, r.c, Math.max(r.w, r.d) / 2 + 15);
       sites.push({ ...meta, anchor, u, rects }); return true;
     }
@@ -630,6 +638,45 @@ function placePockets(M, rng, rS, hwNear, oldNear) {
   place(1, (c) => c.rs > 1100 && c.rs < 3200 && (c.hw || nearIx(c.p, 1500)), () => [[{ a: 0, o: 0, w: 160, d: 40, kind: "pave" }, ...[-55, 0, 55].map((a) => ({ a, o: 40, w: 38, d: 24, kind: "bldg", z: 355 * (2 + (rng() < 0.5 ? 1 : 0)), cls: "office" }))], { name: "Business park", cls: "office", year: Math.round(R(1975, 2000)) }]);
   // a church and school campus with its playing field
   place(1, (c) => c.rs > 1000 && c.rs < 2400, () => [[{ a: -45, o: 0, w: 50, d: 30, kind: "pave" }, { a: -45, o: 30, w: 70, d: 35, kind: "bldg", z: 760, cls: "office" }, { a: 40, o: 8, w: 18, d: 32, kind: "bldg", z: 1300, cls: "office" }, { a: -10, o: 70, w: 100, d: 60, kind: "park" }], { name: "Church and school", cls: "office", year: Math.round(R(1900, 1960)) }]);
+
+  M._pk = { tryPlace, shuffle, place, R, pts };
+}
+
+/** the exurban fringe, laid after the neighbourhoods so it starts where building actually stops */
+function placeFringe(M, rng) {
+  // EXURBAN FRINGE (owner: the city should not stop in a wall): big-lot homes strung along the roads leading out,
+  // hobby farms, a few houses at farm crossroads, a gravel lot or two. Lots grow from ~0.5 to ~2 ac over the first
+  // ~600 m past the city's edge and thin out; beyond that only the odd lot. Rural lot sizes 0.5-2 ac [S, approximate];
+  // the probabilities are shape parameters [K].
+  const { tryPlace, shuffle, place, R } = M._pk, G = M.G;
+  // distance from what is already built (the city and the neighbourhoods), so the fringe hugs the real edge
+  const built = new Float32Array(G.N).fill(Infinity), q = [];
+  for (let k = 0; k < G.N; k++) if (M.coreL[k] || (M.phase && M.phase[k])) { built[k] = 0; q.push(k); }
+  const C = G.S / G.W;
+  for (let h = 0; h < q.length; h++) { const k = q[h], x = k % G.W, y = Math.floor(k / G.W); for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= G.W || ny >= G.W) continue; const n = ny * G.W + nx; if (built[n] === Infinity) { built[n] = built[k] + C; q.push(n); } } }
+  const rS = (p) => { const k = G.idx(p); return k < 0 ? Infinity : CITY + built[k]; };
+  const CITY = RINGS.city;
+  const house = (a, o, year) => { const two = rng() < 0.5; return [{ a, o, w: 10, d: 14, kind: "house", z: two ? 650 : 450 }, { a, o: 0, w: 4, d: o, kind: "pave" }]; };
+  const pts70 = [];
+  for (const pl of M.oldRoads.concat(M.secRoads)) { const r = resample(pl, 70); for (let i = 1; i < r.length - 1; i++) pts70.push({ p: r[i], u: norm(sub(r[i + 1], r[i - 1])), rs: rS(r[i]) }); }
+  const fringeP = (rs) => rs < CITY ? 0 : rs < CITY + 600 ? 0.08 + 0.7 * (1 - (rs - CITY) / 600) : rs < CITY + 1600 ? 0.05 : 0;
+  for (const c of shuffle(pts70)) {
+    if (rng() > fringeP(c.rs)) continue;
+    const far = Math.min(1, Math.max(0, (c.rs - CITY) / 600)), year = Math.round(1950 + 60 * Math.min(1, far * 0.7 + 0.3 * rng()));
+    if (rng() < 0.03 + 0.12 * far) { // a hobby farm, ~5 ac: house, barn, paddock
+      tryPlace(c.p, c.u, [{ a: 0, o: 0, w: 110, d: 170, kind: "lawn" }, ...house(-30, 18, year), { a: 25, o: 45, w: 18, d: 30, kind: "barn", z: 900 }], { name: "Hobby farm (5 ac)", cls: "multifamily", year, gap: 40 });
+      continue;
+    }
+    const ac = 0.5 + 1.5 * far * rng(), area = ac * 4046.856, Fw = Math.sqrt(area / 1.6), Dd = area / Fw; // frontage : depth ~ 1 : 1.6
+    tryPlace(c.p, c.u, [{ a: 0, o: 0, w: Fw, d: Dd, kind: "lawn" }, ...house((rng() - 0.5) * Fw * 0.4, 12 + 12 * rng(), year)], { name: `Rural home (${ac.toFixed(1)} ac)`, cls: "multifamily", year, gap: 40 });
+  }
+  // a few older houses at the farm crossroads (section corners), and a gravel lot or two by the road
+  const { ox, oy } = M.survey;
+  for (let x = ox - MILE; x < M.S + MILE; x += MILE) for (let y = oy - MILE; y < M.S + MILE; y += MILE) {
+    const p = [x, y]; if (p[0] < 100 || p[1] < 100 || p[0] > M.S - 100 || p[1] > M.S - 100 || rS(p) < CITY + 300 || rng() > 0.4) continue;
+    for (const [da, u] of [[70, [1, 0]], [-70, [1, 0]], [70, [0, 1]]]) if (rng() < 0.6) { const year = Math.round(1900 + 60 * rng()); tryPlace(add(p, mul(u, da)), u, [{ a: 0, o: 0, w: 50, d: 80, kind: "lawn" }, ...house(0, 15, year)], { name: "Farmhouse at the crossroads", cls: "multifamily", year, gap: 40 }); }
+  }
+  place(2, (c) => c.rs > CITY + 200 && c.rs < CITY + 1500, () => [[{ a: 0, o: 0, w: 30 + 15 * rng(), d: 40, kind: "pave" }], { name: "Gravel lot", cls: "land", year: Math.round(R(1950, 1990)), gap: 300 }]);
 }
 
 /** gradient mode: neighbourhoods wrap the city continuously. Every tract on the city's bank is laid out; then houses are

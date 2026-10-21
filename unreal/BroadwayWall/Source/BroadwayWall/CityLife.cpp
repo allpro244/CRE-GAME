@@ -231,7 +231,7 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 	}
 	for (const FBWCenterline& C : Streets)
 	{
-		if (C.Line.Num() < 2 || C.Width < 600) continue;
+		if (C.Line.Num() < 2 || C.Width < 500) continue;   // (measured: an old 5.5 m street still runs two narrow lanes)
 		const int32 A = NodeFor(C.Line[0]), B = NodeFor(C.Line.Last());
 		if (A == B) continue;
 		const double Off = TravelOffset(C.Width);   // centre of the right-hand travel lane

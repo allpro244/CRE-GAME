@@ -36,9 +36,12 @@ def make(name, albedo, normal, metres, tint):
 
     def tex(path, x, y, normal=False):
         t = node(unreal.MaterialExpressionTextureSample, x, y)
-        t.set_editor_property("texture", unreal.load_asset(path))
-        if normal:
-            t.set_editor_property("sampler_type", unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL)
+        tx = unreal.load_asset(path)
+        t.set_editor_property("texture", tx)
+        # the Megascans imports stream as virtual textures, which need the virtual samplers
+        virt = tx.get_editor_property("virtual_texture_streaming")
+        T = unreal.MaterialSamplerType
+        t.set_editor_property("sampler_type", (T.SAMPLERTYPE_VIRTUAL_NORMAL if virt else T.SAMPLERTYPE_NORMAL) if normal else (T.SAMPLERTYPE_VIRTUAL_COLOR if virt else T.SAMPLERTYPE_COLOR))
         lib.connect_material_expressions(uv, "", t, "UVs")
         return t
 
@@ -71,5 +74,5 @@ def make(name, albedo, normal, metres, tint):
 
 make("M_BW_Gravel", "Gravel_Pebbledash_ugzmbcrn_2K_surface_ms/ugzmbcrn_2K_Albedo", "Gravel_Pebbledash_ugzmbcrn_2K_surface_ms/ugzmbcrn_2K_Normal", 2.0, (1.0, 0.97, 0.92))
 make("M_BW_WornConcrete", "Concrete_Damaged_ueydffrdy/ueydffrdy_8K_Albedo", "Concrete_Damaged_ueydffrdy/ueydffrdy_8K_Normal", 4.0, (1.0, 1.0, 1.0))
-make("M_BW_Dirt", "sand_sand_pjuuP0/pjuuP_4K_Albedo", "sand_sand_pjuuP0/pjuuP_4K_Normal", 3.0, (0.62, 0.52, 0.42))
+make("M_BW_Dirt", "sand_sand_pjuuP0/pjuuP_4K_Albedo", "sand_sand_pjuuP0/pjuuP_4K_Normal", 3.0, (0.46, 0.40, 0.34))
 unreal.log("GROUND covers made")

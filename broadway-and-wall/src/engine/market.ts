@@ -25,7 +25,7 @@ export function mulberry32Step(a: number): { state: number; value: number } {
  *
  * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
  */
-export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation" | "shock" | "capital";
+export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation" | "shock" | "capital" | "homes";
 /**
  * THE RENT GROWTH A BUYER UNDERWRITES, in percentage points a year.
  *
@@ -2224,7 +2224,7 @@ function hhUserCost(mort: number, g3: number, inflExp: number): number {
 /** Elasticity of the price fundamental to the user cost (~7% off per mortgage point near 6%). */
 const HPI_UC_ELAST = 0.5;
 /** Months for prices to close their gap to the fundamental. */
-const HPI_CHASE_M = 30;
+export const HPI_CHASE_M = 30;
 
 /** The cost of owning a home against the opening, real (house price x user cost). */
 export function ownCostIdx(e: Econ): number {

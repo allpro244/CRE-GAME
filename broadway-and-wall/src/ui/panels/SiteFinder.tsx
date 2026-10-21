@@ -12,12 +12,12 @@
 // the engine's, which leaves out lots under construction, ground-leased,
 // landmarked, civic or merged. Nothing here is a second model: it is
 // `landRead`, the number the land market prices off.
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { derive, ownerName } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import { landRead, resolveRec } from "@/engine/value";
 import { sitesThatPencil } from "@/engine/buybox";
 import { spendable } from "@/engine/credit";
-import { ownerAt } from "@/engine/ownership";
 import { usd, sf } from "@/ui/format";
 
 type Row = { bbl: string; address: string; lotSf: number; price: number; pay: number; ratio: number; scheme: string; owner?: string };
@@ -31,7 +31,9 @@ export function SiteFinder() {
   const parcels = useStore((s) => s.parcels)!;
   const month = game.month;
   const [allOff, setAllOff] = useState(false);
-  const { listed, offMarket, vacant, pencilAtMarket } = useMemo(() => {
+  // Kept across visits (derive), keyed on the tape it reads rather than on
+  // the whole state, exactly as the in-component memo was.
+  const { listed, offMarket, vacant, pencilAtMarket } = derive(game.listings, "siteFinder", () => {
     const asks = new Map(game.listings.map((l) => [l.bbl, l.ask] as const));
     const listed: Row[] = [];
     let vacant = 0, pencilAtMarket = 0;
@@ -58,13 +60,12 @@ export function SiteFinder() {
         const pay = p.builderPsf * p.lotArea;
         return {
           bbl: p.bbl, address: p.address, lotSf: p.lotArea, price: p.value, pay, ratio: p.value > 0 ? pay / p.value : 0,
-          scheme: schemeLabel(p.use, p.floors), owner: ownerAt(game, parcels, p.bbl)?.name ?? "—",
+          scheme: schemeLabel(p.use, p.floors), owner: ownerName(game, parcels, p.bbl) ?? "—",
         };
       });
     return { listed, offMarket, vacant, pencilAtMarket };
     // the land read is monthly; the tape changes with listings
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month, game.listings, game.holdings, game.approaches, parcels]);
+  }, [month, game.holdings, game.approaches, parcels]);
   const purse = spendable(game, parcels).total;
 
   // open the lot's card, where it can be bought or its owner called

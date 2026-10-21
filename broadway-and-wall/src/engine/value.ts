@@ -588,10 +588,13 @@ function residualFloorChoices(use: BuiltClass, far: number): { floors: number; c
   // no stair to pay for (see the note below), and the two-storey one is drawn
   // even where it cannot fill its plate, because the desk can draw it too.
   const floors = schemeFloorLadder(use, envelopeFl);
-  return floors.map((fl) => {
+  const out: { floors: number; coverage: number }[] = [];
+  for (const fl of floors) {
     const usable = Math.min(far, fl * covMax);
-    return { floors: fl, coverage: usable / fl };
-  }).filter((c) => c.coverage > 0);
+    const coverage = usable / fl;
+    if (coverage > 0) out.push({ floors: fl, coverage });
+  }
+  return out;
 }
 
 /**
@@ -600,7 +603,23 @@ function residualFloorChoices(use: BuiltClass, far: number): { floors: number; c
  * "does anything pencil here" asks it of the same buildings (dev.ts's site
  * sampler did not, and priced only the envelope).
  */
-export function schemeFloorLadder(use: BuiltClass, envelopeFl: number): number[] {
+export function schemeFloorLadder(use: BuiltClass, envelopeFl: number): readonly number[] {
+  // A pure function of two small numbers, asked for on every lot every month:
+  // the ladder is built once per (use, envelope) and shared. Callers only read it.
+  // (-0 is a different ladder from 0 and a Map cannot tell them apart.)
+  if (Object.is(envelopeFl, -0)) return buildFloorLadder(use, envelopeFl);
+  let byFl = LADDERS.get(use);
+  if (!byFl) { byFl = new Map(); LADDERS.set(use, byFl); }
+  let ladder = byFl.get(envelopeFl);
+  if (!ladder) {
+    if (byFl.size >= 4096) byFl.clear();
+    ladder = buildFloorLadder(use, envelopeFl);
+    byFl.set(envelopeFl, ladder);
+  }
+  return ladder;
+}
+const LADDERS = new Map<BuiltClass, Map<number, readonly number[]>>();
+function buildFloorLadder(use: BuiltClass, envelopeFl: number): readonly number[] {
   const cap = USE_FLOORS_MAX[use];
   return cap !== undefined
     ? Array.from({ length: cap }, (_, i) => i + 1)
@@ -1652,9 +1671,26 @@ export function overallScore(rec: ParcelRecord, econ: Econ, use?: BuiltClass, co
   const w = SCORE_LOC_WEIGHT[cls] ?? 0.5;
   const ctx = econ.tierCtx;
   const b = ctx && rec.class !== "land" && rec.bldgArea
-    ? buildingScore(rec, condIdx !== undefined ? { condIdx } : null, { month: ctx.month, stockVintage: ctx.vintage }).score
+    ? buildingScoreOf(rec, condIdx, ctx)
     : 50;
   return Math.max(1, Math.min(100, w * Math.max(0, Math.min(100, rec.demandScore ?? 50)) + (1 - w) * b));
+}
+/**
+ * `buildingScore(...).score` behind a one-entry memo on exactly what it reads
+ * — the record's year, spec and class, the condition index, the clock and the
+ * class's stock vintage. A pro forma scores the same paper building three
+ * times per use; this is the same number without the three allocations.
+ */
+const BSCORE = { yearBuilt: NaN as unknown, buildSpec: NaN as unknown, cls: NaN as unknown, condIdx: NaN as unknown, month: NaN as unknown, vintage: NaN as unknown, score: 0 };
+function buildingScoreOf(rec: ParcelRecord, condIdx: number | undefined, ctx: NonNullable<Econ["tierCtx"]>): number {
+  const m = BSCORE;
+  const vintage = ctx.vintage?.[(rec.class ?? "office") as BuiltClass];
+  if (Object.is(m.yearBuilt, rec.yearBuilt) && Object.is(m.buildSpec, rec.buildSpec) && Object.is(m.cls, rec.class)
+    && Object.is(m.condIdx, condIdx) && Object.is(m.month, ctx.month) && Object.is(m.vintage, vintage)) return m.score;
+  const score = buildingScore(rec, condIdx !== undefined ? { condIdx } : null, { month: ctx.month, stockVintage: ctx.vintage }).score;
+  m.yearBuilt = rec.yearBuilt; m.buildSpec = rec.buildSpec; m.cls = rec.class;
+  m.condIdx = condIdx; m.month = ctx.month; m.vintage = vintage; m.score = score;
+  return score;
 }
 
 /**
@@ -1668,6 +1704,17 @@ export const bandCenter = (b: number) => b * 10 + 5;
 function bandW(score: number, b: number): number {
   const d = (score - bandCenter(b)) / 7;
   return Math.exp(-0.5 * d * d);
+}
+/** All ten `bandW(score, b)`, for the last score asked — the readers below ask the same score in runs. */
+const KERNEL = new Float64Array(N_BANDS);
+let KERNEL_AT: number = NaN;
+let KERNEL_SET = false;
+function bandKernel(score: number): Float64Array {
+  if (!KERNEL_SET || !Object.is(KERNEL_AT, score)) {
+    for (let b = 0; b < N_BANDS; b++) KERNEL[b] = bandW(score, b);
+    KERNEL_AT = score; KERNEL_SET = true;
+  }
+  return KERNEL;
 }
 /**
  * THE NATURAL VACANCY AT A SCORE. The best space runs tighter than the class
@@ -1695,7 +1742,8 @@ export function scoreVacOf(econ: Econ, use: BuiltClass, score: number): number {
   const fallback = econ.streetVac?.[use] ?? econ.cityVac?.[use] ?? NATURAL_VAC[use];
   if (!bk) return fallback;
   let st = 0, oc = 0;
-  for (let b = 0; b < N_BANDS; b++) { const w = bandW(score, b); st += w * bk.stock[b]; oc += w * bk.occ[b]; }
+  const k = bandKernel(score);
+  for (let b = 0; b < N_BANDS; b++) { const w = k[b]; st += w * bk.stock[b]; oc += w * bk.occ[b]; }
   return st > 0 ? Math.max(0, Math.min(0.9, 1 - oc / st)) : fallback;
 }
 /** The market's swing on rent around a score, around the premium the building always carries; 1 absent bands. */
@@ -1703,7 +1751,8 @@ export function scoreRentMult(econ: Econ, use: BuiltClass, score: number): numbe
   const bk = econ.bands?.[use];
   if (!bk) return 1;
   let a = 0, w = 0;
-  for (let b = 0; b < N_BANDS; b++) { const x = bandW(score, b) * (bk.stock[b] > 0 ? 1 : 0); a += x * bk.rent[b]; w += x; }
+  const k = bandKernel(score);
+  for (let b = 0; b < N_BANDS; b++) { const x = k[b] * (bk.stock[b] > 0 ? 1 : 0); a += x * bk.rent[b]; w += x; }
   return w > 0 ? a / w : 1;
 }
 

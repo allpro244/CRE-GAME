@@ -138,6 +138,8 @@ export const MAX_COVERAGE: Record<BuiltClass, number> = {
 export const MIN_COVERAGE = 0.6;
 /** The site coverage a new building of this programme may take. */
 export function maxCoverageFor(use: DevUse, mix?: UseMix): number {
+  // A single-use programme is a mix of one: its own limit, without building the mix.
+  if (use !== "mixed") return Math.min(1, MAX_COVERAGE[use] ?? 1);
   const m = devMix(use, mix);
   let cap = 1;
   for (const k of Object.keys(m) as BuiltClass[]) if ((m[k] ?? 0) > 0) cap = Math.min(cap, MAX_COVERAGE[k] ?? 1);
@@ -805,7 +807,8 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // A shell that already stands keeps the footprint it has — a conversion or a
   // half-built takeover is not a new building's massing.
   const cov = Math.max(custom?.shell ? 0.08 : MIN_COVERAGE, Math.min(custom?.shell ? 0.9 : maxCoverageFor(o.use, raw), o.coverage));
-  const retailOnly = Object.entries(raw).every(([k, v]) => k === "retail" || !v);
+  let retailOnly = true;
+  for (const k in raw) if (k !== "retail" && raw[k as BuiltClass]) { retailOnly = false; break; }
   const fl = Math.max(1, Math.min(Math.round(o.floors), maxFloorsFor(rec, cov, retailOnly ? "retail" : o.use)));
   // GROSS AND RENTABLE ARE NOT THE SAME NUMBER, and treating them as one was
   // why assembling paid nothing. Zoning counts gross and the contractor bills

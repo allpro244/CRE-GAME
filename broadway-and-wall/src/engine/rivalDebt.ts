@@ -61,8 +61,10 @@ export function fileSpreadAdj(r: Rival): number {
 
 /** This firm's mortgages on the record. */
 export function rowsOf(s: GameState, r: Rival): CityLoan[] {
+  // for..in walks the record in Object.values order without building the array.
   const out: CityLoan[] = [];
-  for (const x of Object.values(s.cityLoans ?? {})) if (x.obligorId === r.id) out.push(x);
+  const L = s.cityLoans;
+  if (L) for (const k in L) { const x = L[k]; if (x.obligorId === r.id) out.push(x); }
   return out;
 }
 /** The mortgage on one of this firm's deeds, if it has one. */
@@ -72,7 +74,8 @@ export function rowOn(s: GameState, r: Rival, bbl: string): CityLoan | undefined
 }
 export function termDebtOf(s: GameState, r: Rival): number {
   let t = 0;
-  for (const x of Object.values(s.cityLoans ?? {})) if (x.obligorId === r.id) t += x.balance;
+  const L = s.cityLoans;
+  if (L) for (const k in L) { const x = L[k]; if (x.obligorId === r.id) t += x.balance; }
   return t;
 }
 export function jobDebtOf(s: GameState, r: Rival): number {
@@ -104,7 +107,9 @@ export function deskWithRoom(s: GameState, obligorId: string, amount: number): b
 export function deskRoom(s: GameState, l: Lender, obligorId: string, opening = false): number {
   if (l.failedM !== undefined) return 0;
   let exposure = 0, onDesk = 0;
-  for (const x of Object.values(s.cityLoans ?? {})) {
+  const L = s.cityLoans;
+  if (L) for (const k in L) {
+    const x = L[k];
     if (x.lender !== l.name || x.heldBy) continue;
     onDesk += x.balance;
     if (x.obligorId === obligorId) exposure += x.balance;

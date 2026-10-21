@@ -2448,8 +2448,29 @@ const NEUTRAL_APPETITE = 0.43;
 
 /** The firm that owns this parcel, if any. */
 export function ownerOf(s: GameState, bbl: string): Rival | null {
-  for (const r of s.rivals ?? []) if (r.bbls.includes(bbl)) return r;
-  return null;
+  // The first firm whose book lists the deed — answered off an index of every
+  // book, rebuilt whenever any book or the roster is not the one it was built
+  // from. Books change by push or by replacement (never by writing a slot), so
+  // a book that is the same array at the same length lists the same deeds.
+  const rs = s.rivals ?? [];
+  let ix = OWNER_IX;
+  if (!ix || !ownerIxValid(ix, rs)) ix = OWNER_IX = buildOwnerIx(rs);
+  return ix.map.get(bbl) ?? null;
+}
+type OwnerIx = { roster: Rival[]; rivals: Rival[]; books: string[][]; lens: number[]; map: Map<string, Rival> };
+let OWNER_IX: OwnerIx | null = null;
+function ownerIxValid(ix: OwnerIx, rs: Rival[]): boolean {
+  if (ix.roster !== rs || ix.rivals.length !== rs.length) return false;
+  for (let i = 0; i < rs.length; i++) {
+    const r = rs[i];
+    if (r !== ix.rivals[i] || r.bbls !== ix.books[i] || r.bbls.length !== ix.lens[i]) return false;
+  }
+  return true;
+}
+function buildOwnerIx(rs: Rival[]): OwnerIx {
+  const map = new Map<string, Rival>();
+  for (const r of rs) for (const b of r.bbls) if (!map.has(b)) map.set(b, r);
+  return { roster: rs, rivals: [...rs], books: rs.map((r) => r.bbls), lens: rs.map((r) => r.bbls.length), map };
 }
 
 /**

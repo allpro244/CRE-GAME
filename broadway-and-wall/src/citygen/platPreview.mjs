@@ -14,6 +14,8 @@ const KIND_FILL = {
   paveland: "#cbc7bb", apron: "#918e88", median: "#a8bd93", park: "#b7d29f",
   pond: "#a9cadf", stream: "#4e7f96", bridge: "#797875", pavement: "#7a7875",
   street: "#9b978f", block: "#e5dcc6", alley: "#8d8981", seawall: "#9a958c", quay: "#8f8a80",
+  // the region's open land (region/index.mjs)
+  farm: "#d3d4a8", woods: "#8fa77a", yard: "#c2d5a0",
 };
 const DRAW_ORDER = ["land", "beach", "marsh", "esplanade", "paveland", "pavement", "block", "alley", "street", "park", "apron", "median", "pond", "stream", "bridge", "seawall", "quay"];
 
@@ -38,7 +40,9 @@ export function platPreviewSVG(city, w = 900) {
     if (!byKind.has(k)) byKind.set(k, []);
     byKind.get(k).push(f);
   }
-  for (const kind of DRAW_ORDER) {
+  // a region draws its open land first and its roads over its rivers (bridges), in its own layer order
+  const order = city.groundLayers ? [...city.groundLayers, ...DRAW_ORDER.filter((k) => !city.groundLayers.includes(k))] : DRAW_ORDER;
+  for (const kind of order) {
     const fill = KIND_FILL[kind];
     for (const f of byKind.get(kind) ?? []) {
       const g = f.geometry;
@@ -56,9 +60,17 @@ export function platPreviewSVG(city, w = 900) {
     if (!raw || raw.length < 4) continue;
     const ring = raw.map(P);
     if (!ring.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))) continue;
+    // a region's reserved land (a farm tract, a neighbourhood) is drawn by its ground: outline it, do not paint it
+    const tenure = f.properties?.tenure;
+    if (tenure) { parts.push(`<path d="${path(ring)}" fill="none" stroke="#00000033" stroke-width="0.5"/>`); continue; }
     const cls = city.parcels[f.properties?.bbl]?.class ?? f.properties?.class;
     parts.push(`<path d="${path(ring)}" fill="${CLASS_FILL[cls] ?? "#b5a67f"}" fill-opacity="0.85" stroke="#00000055" stroke-width="0.4"/>`);
     lots++;
+  }
+  // and its houses, which stand on no lot of the market
+  if (city.reserved) for (const b of city.buildings3d ?? []) {
+    if (!b.d || !b.r || b.r.length < 3) continue;
+    parts.push(`<path d="${path(b.r.map(P))}" fill="${b.dk === "house" ? "#7a5a4a" : "#6d6a64"}"/>`);
   }
   parts.push("</svg>");
   return { svg: parts.join(""), lots, name: city.manifest.city };

@@ -2,7 +2,7 @@
 // the browser — one copy, so a city built by `pnpm cities` and a city built on
 // page load are the same city. These are the shapes the app cares about.
 declare module "@/citygen/index.mjs" {
-  import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
+  import type { Adjacency, DataManifest, ParcelTable, ReservedParcel } from "@/data/types";
 
   export interface GeneratedCity {
     id: string;
@@ -20,6 +20,14 @@ declare module "@/citygen/index.mjs" {
     context: unknown;
     /** The compact volume feed the Three.js skyline renders. */
     buildings3d: unknown[];
+    /**
+     * The region map only: land the commercial market does not reach in Phase 1
+     * (neighbourhoods, farms, the parish), keyed by BBL. Never in `parcels`.
+     */
+    reserved?: Record<string, ReservedParcel>;
+    /** The region map only: its ground layers in draw order (unrealExport, platPreview). */
+    groundLayers?: string[];
+    size?: string;
     stats: {
       lots: number; blocks: number; coverage: number; edges: number;
       buildings: number; withNeighbours: number; heightsImputed: number;
@@ -47,7 +55,9 @@ declare module "@/citygen/index.mjs" {
   export const DEFAULT_DEVELOPMENT: string;
   export const SIZES: Record<string, { k: number; name: string; note: string }>;
   export function randomSeed(): number;
-  export function cityList(): { id: string; name: string; tagline: string; extents?: boolean }[];
+  export function cityList(): { id: string; name: string; tagline: string; extents?: boolean; fixedSize?: boolean }[];
+  /** The id of the region map. */
+  export const REGION: string;
   /** The id of the written-down city. */
   export const MANHATTAN: string;
   /**

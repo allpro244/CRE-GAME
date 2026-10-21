@@ -82,8 +82,18 @@ def window(M, R, y0, y1, z0, z1):
     # reveal sides and soffit in wall material, so the recess reads as depth
     M.box(0, -rec, 0, y0, y0 + 0.5, z0, z1)
     M.box(0, -rec, 0, y1 - 0.5, y1, z0, z1)
-    # glass, set back
-    M.box(2, -rec - 4, -rec, y0, y1, z0, z1)
+    # glass, set back. A style may glaze CLEAR (win.clear): the library's
+    # reflective glass with the room behind it (a pale back wall half a metre
+    # in), so a window shows the sky by day and depth up close, not a black pane
+    if w.get("clear", R.get("clear_glass", not w.get("ribbon") and not R.get("mats", {}).get("glass"))):
+        M.box(9, -rec - 3, -rec - 1, y0, y1, z0, z1)
+        M.box(10, -DEPTH + 2.5, -DEPTH + 4, y0, y1, z0, z1)        # the room's back wall
+        M.box(0, -DEPTH + 4, -rec - 3, y0 - 0.5, y0, z0, z1)       # reveals to it
+        M.box(0, -DEPTH + 4, -rec - 3, y1, y1 + 0.5, z0, z1)
+        M.box(10, -DEPTH + 4, -rec - 3, y0, y1, z1 - 1, z1)       # ceiling
+        M.box(4, -DEPTH + 4, -rec - 3, y0, y1, z0, z0 + 1)        # floor
+    else:
+        M.box(2, -rec - 4, -rec, y0, y1, z0, z1)
     # A LIVED-IN WINDOW: a blind drawn part way down, or a curtain panel,
     # just behind the frame (the glass is opaque, so this is what reads as
     # the room behind it). Which, and how far, comes from BLINDS: the
@@ -917,6 +927,12 @@ def save(M, path, slots):
         return None
     mats = [unreal.StaticMaterial(material_interface=unreal.load_asset(m), material_slot_name=n) for n, m in slots]
     sm.set_editor_property("static_materials", mats)
+    # NANITE, set on the asset: the create option did not take, and without it
+    # every instance drew all its sections (a city of ~190,000 pieces cost 18 ms
+    # a frame at 1080p). With it the pieces cluster-cull and shade per material.
+    ns = sm.get_editor_property("nanite_settings")
+    ns.enabled = True
+    sm.set_editor_property("nanite_settings", ns)
     unreal.EditorAssetLibrary.save_loaded_asset(sm)
     return sm
 

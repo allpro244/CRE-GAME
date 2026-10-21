@@ -33,6 +33,9 @@ def save(m, name, mats):
         unreal.EditorAssetLibrary.delete_asset(path)
     sm, _ = unreal.GeometryScript_NewAssetUtils.create_new_static_mesh_asset_from_mesh(m, path, o)
     sm.set_editor_property("static_materials", [unreal.StaticMaterial(material_interface=unreal.load_asset(p), material_slot_name=n) for n, p in mats])
+    ns = sm.get_editor_property("nanite_settings")      # the create option does not take: set on the asset
+    ns.enabled = True
+    sm.set_editor_property("nanite_settings", ns)
     unreal.EditorAssetLibrary.save_loaded_asset(sm)
 
 

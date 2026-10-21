@@ -143,3 +143,18 @@ Open questions and next ideas (visual):
 - C++ (on the main branch): RenderLot/preview `tiers` (BWReadTiers); ApplyView and SetPreview draw one volume per tier.
 - Industrial styles B85-B87, with a `ground.type: "dock"` loading-dock floor. Not yet merged into styleKits/families: run style-kits.mjs and facade-families.mjs after the tests.
 - Thumbnails re-rendered at 03:00; B85-B87 need a `-KitThumbs -ShotOnly=kit-B8` run.
+
+## Update, 04:45 2026-10-21
+- Merged `claude/forms-wip` into `claude/building-styles-forms` (forms on the Build desk). city-accept passes; the full suite was restarted at 04:45 (logs D:/Projects/CRE-GAME/t-<test>.log, rest.log, baseline.log).
+- competitors fixed: the quiet sale's ask is struck at month close (`Listing.askFactor`, refreshListings) on the closing appraisal. The test values the listing's disclosed roll.
+- GOTCHA: `node unreal/tools/style-kits.mjs` writes `src/engine/styleKits.ts`. Never run it while tests run (stale bundle). make-styles.py / make-roof.py / C++ are safe.
+- Also added since the last update:
+  - corner shops (glazed corner);
+  - shop glass with lit interiors;
+  - contemporary crowns (glass slope, fin screen);
+  - roof life (decks, solar, skylights);
+  - sawtooth bays (Mesh.obox), B88-B89;
+  - industrial docks B85-B87;
+  - the 14-colour BW palette (make-mats.py);
+  - `-KitZoom` < 0.3 = kerb-height view.
+- Baseline: 27 of 45 metrics moved with plan 13 (and forms now price). Regenerate deliberately after the suite (`pnpm baseline`), with the reason (plan 13 lettable plates; forms are opt-in, so no default change).

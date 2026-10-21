@@ -19,7 +19,7 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Ground_0.SM_B79_Ground_0",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Ground_0.SM_B79_Ground_0",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -27,21 +27,21 @@
      "mix": 50
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Ground_1.SM_B79_Ground_1",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Ground_1.SM_B79_Ground_1",
      "width": 272.0,
      "depth": 50.0,
      "y0": -272.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Ground_2.SM_B79_Ground_2",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Ground_2.SM_B79_Ground_2",
      "width": 408.0,
      "depth": 50.0,
      "y0": -408.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Ground_0_v1.SM_B79_Ground_0_v1",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Ground_0_v1.SM_B79_Ground_0_v1",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -50,7 +50,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Ground_0_v2.SM_B79_Ground_0_v2",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Ground_0_v2.SM_B79_Ground_0_v2",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -59,7 +59,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Ground_0_v3.SM_B79_Ground_0_v3",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Ground_0_v3.SM_B79_Ground_0_v3",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -68,7 +68,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Ground_0_v4.SM_B79_Ground_0_v4",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Ground_0_v4.SM_B79_Ground_0_v4",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -79,7 +79,7 @@
    ],
    "entrances": [
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Entrance.SM_B79_Entrance",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Entrance.SM_B79_Entrance",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -87,7 +87,7 @@
     }
    ],
    "corner": {
-    "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_GroundCorner.SM_B79_GroundCorner",
+    "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_GroundCorner.SM_B79_GroundCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -102,7 +102,7 @@
    "repeat": true,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Typical_0.SM_B79_Typical_0",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Typical_0.SM_B79_Typical_0",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -110,14 +110,14 @@
      "mix": 0
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Typical_1.SM_B79_Typical_1",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Typical_1.SM_B79_Typical_1",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Typical_0_v1.SM_B79_Typical_0_v1",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Typical_0_v1.SM_B79_Typical_0_v1",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -126,7 +126,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Typical_0_v2.SM_B79_Typical_0_v2",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Typical_0_v2.SM_B79_Typical_0_v2",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -135,7 +135,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Typical_0_v3.SM_B79_Typical_0_v3",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Typical_0_v3.SM_B79_Typical_0_v3",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -144,7 +144,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_0.SM_B79_Zone_0",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_0.SM_B79_Zone_0",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -153,7 +153,7 @@
      "mix": 10
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_0_v1.SM_B79_Zone_0_v1",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_0_v1.SM_B79_Zone_0_v1",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -163,7 +163,7 @@
      "zone": 0
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_0_v2.SM_B79_Zone_0_v2",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_0_v2.SM_B79_Zone_0_v2",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -173,7 +173,7 @@
      "zone": 0
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_0_v3.SM_B79_Zone_0_v3",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_0_v3.SM_B79_Zone_0_v3",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -183,7 +183,7 @@
      "zone": 0
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_1.SM_B79_Zone_1",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_1.SM_B79_Zone_1",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -192,7 +192,7 @@
      "mix": 11
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_1_v1.SM_B79_Zone_1_v1",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_1_v1.SM_B79_Zone_1_v1",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -202,7 +202,7 @@
      "zone": 1
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_1_v2.SM_B79_Zone_1_v2",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_1_v2.SM_B79_Zone_1_v2",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -212,7 +212,7 @@
      "zone": 1
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_1_v3.SM_B79_Zone_1_v3",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_1_v3.SM_B79_Zone_1_v3",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -222,7 +222,7 @@
      "zone": 1
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_2.SM_B79_Zone_2",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_2.SM_B79_Zone_2",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -231,7 +231,7 @@
      "mix": 12
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_2_v1.SM_B79_Zone_2_v1",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_2_v1.SM_B79_Zone_2_v1",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -241,7 +241,7 @@
      "zone": 2
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_2_v2.SM_B79_Zone_2_v2",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_2_v2.SM_B79_Zone_2_v2",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -251,7 +251,7 @@
      "zone": 2
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Zone_2_v3.SM_B79_Zone_2_v3",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Zone_2_v3.SM_B79_Zone_2_v3",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -263,7 +263,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_TypicalCorner.SM_B79_TypicalCorner",
+    "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_TypicalCorner.SM_B79_TypicalCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -277,14 +277,14 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_Top.SM_B79_Top",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_Top.SM_B79_Top",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_TopZone_0.SM_B79_TopZone_0",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_TopZone_0.SM_B79_TopZone_0",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -292,7 +292,7 @@
      "zone": 0
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_TopZone_1.SM_B79_TopZone_1",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_TopZone_1.SM_B79_TopZone_1",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -300,7 +300,7 @@
      "zone": 1
     },
     {
-     "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_TopZone_2.SM_B79_TopZone_2",
+     "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_TopZone_2.SM_B79_TopZone_2",
      "width": 340.0,
      "depth": 50.0,
      "y0": -340.0,
@@ -310,7 +310,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B79/v1021040512/SM_B79_TopCorner.SM_B79_TopCorner",
+    "path": "/Game/BW/Styles/B79/v1021050443/SM_B79_TopCorner.SM_B79_TopCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,

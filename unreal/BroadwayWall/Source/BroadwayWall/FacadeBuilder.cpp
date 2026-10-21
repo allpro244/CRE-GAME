@@ -170,7 +170,10 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 		// the web family's tint is drawn for a flat painted wall; on a scanned kit
 		// material with its own colour it barely registered, so its departure
 		// from white is doubled (clamped to a plausible paint range)
-		auto Q = [bExactTint](float X) { return uint32(FMath::Clamp(FMath::RoundToInt(FMath::Clamp(bExactTint ? X : 1.f + 2.2f * (X - 1.f), 0.4f, 1.6f) / 0.04f), 1, 255)); };
+		// quantised in steps of 0.1: every distinct tint is its own set of draw
+		// calls (a component per mesh per tint), and 0.04 steps made ten
+		// thousand of them for a difference the eye cannot see across a street
+		auto Q = [bExactTint](float X) { return uint32(FMath::Clamp(FMath::RoundToInt(FMath::Clamp(bExactTint ? X : 1.f + 2.2f * (X - 1.f), 0.4f, 1.6f) / 0.1f) * 10 / 4, 1, 255)); };
 		const uint32 R = Q(Tint.R), G = Q(Tint.G), B = Q(Tint.B);
 		TintKey = (R == 25 && G == 25 && B == 25) ? 0 : (R << 16) | (G << 8) | B;   // 25 x 0.04 = 1: untinted
 		TintNow = FLinearColor(R * 0.04f, G * 0.04f, B * 0.04f);
@@ -178,7 +181,8 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 		// every ledge, a dirty base, dirt in the edges. The building master
 		// carries those layers (MFGD drips, MFGB base, MFDE edges, MFGC cover);
 		// a building's level comes from its age, a new one stays clean.
-		GrimeNow = V.Year > 0 ? FMath::Clamp((2015 - V.Year) / 30, 0, 3) : 1;
+		// two levels, clean and weathered (each level is another set of draw calls)
+		GrimeNow = V.Year > 0 && V.Year < 1960 ? 3 : 0;
 		if (GrimeNow) TintKey |= uint32(GrimeNow) << 24 | (TintKey ? 0u : (25u << 16 | 25u << 8 | 25u));
 	}
 	const int32 Before = Placed;

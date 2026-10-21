@@ -71,6 +71,7 @@ public:
 	/** Which of the next volume's walls stand on a lot line against a neighbour (one per ring edge); those get no facade. Cleared by Dress. */
 	TArray<bool> Party;
 
+	int32 Components() const { return Comps.Num(); }
 	int32 Pieces() const { return Placed; }
 
 private:

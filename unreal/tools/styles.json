@@ -349,7 +349,8 @@
    "buff",
    "brick",
    "tenement"
-  ]
+  ],
+  "clear_glass": true
  },
  {
   "key": "B08",
@@ -652,7 +653,8 @@
    "brick",
    "neogeorgian",
    "edwardian"
-  ]
+  ],
+  "clear_glass": true
  },
  {
   "key": "B14",
@@ -2296,7 +2298,8 @@
    "beauxarts",
    "secondempire",
    "stone"
-  ]
+  ],
+  "clear_glass": true
  },
  {
   "key": "B46",
@@ -3752,7 +3755,8 @@
    "fibercement",
    "metalpanel",
    "stucco"
-  ]
+  ],
+  "clear_glass": true
  },
  {
   "key": "B73",

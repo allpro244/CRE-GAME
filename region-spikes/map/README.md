@@ -378,30 +378,29 @@ street tree per ~2 houses.
 - Proposed-freeway right-of-way shows as bare land strips through
   subdivisions. A real reserved corridor looks like that.
 
-### Sparse by default (owner: "make the cities not dense at all")
+### Low-rise downtown by default (owner: "not dense" means the downtowns only)
 
-`export-unreal.mjs` now exports the region at an earlier point in its
-growth. `--dense` gives back the first export (written as `…-dense.json`).
+outcity-region-3.json  6.6 MB  3262 ms
+  {"volumes":21236,"houses":17872,"parcels":4204,"neighbourhoods":115,"trees":36867,"centerlines":1491,"ground":{"land":1,"marsh":268,"farm":657,"woods":161,"yard":1087,"stream":684,"pond":76,"pavement":6202,"block":217,"park":0}} exports a small-town centre.  gives back the
+first skyline (written as ).
 
-**What sparse changes in the generator:**
-- The urbanised-share KNOB is multiplied by 1/3. It was always a knob, not a
-  fact.
-- Car-era growth also radiates from the old towns, not only downtown.
-- The leapfrog spread drops from σ 0.25 to 0.1, so growth hugs the first
-  highways, downtown and the towns.
-
-The SVG maps use the defaults and are unchanged.
-
-**What sparse changes downtown:**
+**Downtown:**
 - Mostly 2–4 floors, some 5–8 near the middle, at most two towers of 10–12
   floors.
 - Footprints cover 50–70% of the lot.
 - ~15% of downtown lots and ~10% of village lots are vacant or surface
-  parking: a `land` parcel paved over.
+  parking: a  parcel paved over.
 
-**Seed 3, sparse, 10 km:** 4.1 MB, made of:
-- 9,036 volumes, of which 5,672 are houses (a third of the dense export);
-- 4,204 parcels, including 46 neighbourhoods and 512 parking or vacant lots;
+**Suburbs, farms and woods** are the generator's own, as in the SVG maps.
+
+An earlier export also thinned the suburbs, by a third of the urbanised
+KNOB, growth from the towns, and less leapfrog. The owner reversed that.
+Those options are still in  but nothing uses
+them.
+
+**Seed 3, 10 km:** 6.6 MB, made of:
+- 21,236 volumes, of which 17,872 are houses;
+- 4,204 parcels, including 115 neighbourhoods and 512 parking or vacant lots;
 - downtown floor mix: 3,329 buildings at 1–4 floors, 33 at 5–8, 2 at 11;
-- 42,944 trees;
-- 640 centerlines.
+- 36,867 trees;
+- 1,491 centerlines.

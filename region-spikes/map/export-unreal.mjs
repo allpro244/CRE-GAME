@@ -111,12 +111,11 @@ function maskRects(G, [x0, y0, x1, y1], ok) {
 }
 
 // ================================================================ export
-// SPARSE (the default since the owner asked for "cities not dense at all"): the region at an earlier point in its
-// growth — a third of the urbanised-share KNOB, car-era growth from the old towns as well as downtown, little
-// leapfrogging — and a low-rise small-town downtown. --dense restores the first export.
-const SPARSE_GEN = { urbanisedScale: 1 / 3, townSources: true, holdoutSigma: 0.1 };
+// LOW-RISE DOWNTOWN (the default; owner: "not dense" means the downtowns only): a small-town centre with
+// some parking lots. The suburbs, farms and woods are the generator's own. --dense restores the first export's skyline.
+// generate() also takes sparse-growth options (urbanisedScale, townSources, holdoutSigma); they are not used here.
 export function exportRegion(seed, { km = 10, crop = 0, dense = false } = {}) {
-  const M = generate(seed, km, dense ? {} : SPARSE_GEN), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
+  const M = generate(seed, km), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
   M.rotate = Math.floor(makeRng("orient:" + seed)() * 4); // same orientation as the SVG
   // canonical -> map frame (x east, y south, metres), as render() does
   const T = (p) => { const c = S / 2; let x = p[0] - c, y = p[1] - c; for (let i = 0; i < M.rotate; i++) [x, y] = [-y, x]; return [x + c, y + c]; };

@@ -1,0 +1,116 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B33",
+ "grammar": "generated",
+ "label": "Brass deco tower",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 520.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B33/v1020201055/SM_B33_Ground_0.SM_B33_Ground_0",
+     "width": 280.0,
+     "depth": 50.0,
+     "y0": -280.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B33/v1020201055/SM_B33_Ground_1.SM_B33_Ground_1",
+     "width": 224.0,
+     "depth": 50.0,
+     "y0": -224.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B33/v1020201055/SM_B33_Ground_2.SM_B33_Ground_2",
+     "width": 336.0,
+     "depth": 50.0,
+     "y0": -336.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B33/v1020201055/SM_B33_Entrance.SM_B33_Entrance",
+     "width": 280.0,
+     "depth": 50.0,
+     "y0": -280.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B33/v1020201055/SM_B33_GroundCorner.SM_B33_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 360.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B33/v1020201055/SM_B33_Typical_0.SM_B33_Typical_0",
+     "width": 280.0,
+     "depth": 50.0,
+     "y0": -280.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B33/v1020201055/SM_B33_Typical_1.SM_B33_Typical_1",
+     "width": 280.0,
+     "depth": 50.0,
+     "y0": -280.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B33/v1020201055/SM_B33_TypicalCorner.SM_B33_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 220,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B33/v1020201055/SM_B33_Top.SM_B33_Top",
+     "width": 280.0,
+     "depth": 50.0,
+     "y0": -280.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B33/v1020201055/SM_B33_TopCorner.SM_B33_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

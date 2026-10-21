@@ -20,6 +20,7 @@ static bool ReadModule(const TSharedPtr<FJsonObject>& O, FBWKitModule& M)
 	M.Depth = O->GetNumberField(TEXT("depth"));
 	M.Y0 = O->GetNumberField(TEXT("y0"));
 	M.Y1 = O->GetNumberField(TEXT("y1"));
+	O->TryGetNumberField(TEXT("every"), M.Every);
 	M.Mesh = LoadObject<UStaticMesh>(nullptr, *M.Path);
 	// a kit holds its meshes by plain pointer, so they are rooted: the collector
 	// frees a mesh no component shows yet, and the next building to use it crashed
@@ -62,7 +63,16 @@ bool FBWKit::Load(const FString& Path)
 		const TSharedPtr<FJsonObject>* C;
 		if (O->TryGetObjectField(TEXT("corner"), C)) B.bHasCorner = ReadModule(*C, B.Corner);
 	}
-	for (const FBWKitBand& B : Bands) if (B.bRepeat && B.Walls.Num()) Grid = B.Walls[0].Width;
+	// the bay: the shaft piece nearest a window bay's 3 m (the first piece listed
+	// is often a 1 m blank pier, and a grid of piers is a wall with no windows)
+	for (const FBWKitBand& B : Bands) if (B.bRepeat && B.Walls.Num())
+	{
+		Grid = B.Walls[0].Width;
+		for (const FBWKitModule& M : B.Walls) if (FMath::Abs(M.Width - 300.0) < FMath::Abs(Grid - 300.0)) Grid = M.Width;
+		break;
+	}
+	// ...unless the kit names its bay (set by eye from the renders, where the rule picks a blank piece)
+	R->TryGetNumberField(TEXT("grid"), Grid);
 	int32 Decals = 0, Pieces = 0;
 	for (const FBWKitBand& B : Bands) for (const FBWKitModule& M : B.Walls) { ++Pieces; Decals += M.Decal ? 1 : 0; }
 	UE_LOG(LogBWFacade, Display, TEXT("kit %s: %d bands, %.0f cm grid, %d/%d wall pieces weathered"), *Name, Bands.Num(), Grid, Decals, Pieces);
@@ -176,11 +186,27 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 	// repeating bands make up the difference, then the whole stack is scaled
 	// to land on the roof. On a low building the fixed bands that do not fit
 	// are dropped from the middle (keeping the street floor and the cornice).
-	if (V.Look.Top == TEXT("plain"))
+	// BASE, ONE SHAFT, TOP. The City Sample kits are designed buildings: above
+	// the shaft come one-off crown tiers, setback belts and a second shaft,
+	// drawn for a tower that steps back. On our straight extrusions those
+	// pieces stacked into ribs and crowns halfway up the wall. So the stack is
+	// the base bands (street floor up to the shaft), the first repeating band
+	// as the whole shaft, and the kit's last band (cornice or parapet) on top.
 	{
-		int32 LastRep = -1;
-		for (int32 k = 0; k < Order.Num(); ++k) if (Order[k]->bRepeat) LastRep = k;
-		if (LastRep >= 0 && LastRep + 1 < Order.Num()) Order.SetNum(LastRep + 1);
+		int32 FirstRep = -1;
+		for (int32 k = 0; k < Order.Num(); ++k) if (Order[k]->bRepeat) { FirstRep = k; break; }
+		if (FirstRep >= 0)
+		{
+			const FBWKitBand* Top = Order.Last();
+			const bool bTop = V.Look.Top != TEXT("plain") && Order.Num() - 1 > FirstRep;
+			Order.SetNum(FirstRep + 1);
+			if (bTop) Order.Add(Top);
+			Reps = { Order[FirstRep] };
+			// A SETBACK TIER IS THE SAME BUILDING, NOT ANOTHER ONE ON ITS ROOF: it
+			// carries the shaft on up and its own parapet, never the base again
+			// (stacked bases read as three buildings piled up)
+			if (!bGround) Order.RemoveAt(0, FirstRep);
+		}
 	}
 	auto Storeys = [](const FBWKitBand* B) { return FMath::Max(1, FMath::RoundToInt(B->Height / 450.0)); };
 	const int32 Floors = FMath::Max(1, FMath::FloorToInt(H / 355.0 + 0.2));
@@ -229,7 +255,7 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 	// windows stack, but a different rhythm (and different modules) per building
 	static const TArray<TArray<int32>> Rhythms = { {0}, {0, 1}, {0, 0, 1}, {0, 1, 0, 2}, {1, 0, 0, 1}, {0, 1, 1}, {2, 0, 1, 0} };
 	const int32 Pick = Rng.RandRange(0, Rhythms.Num() - 1);
-	const TArray<int32>& Rhythm = Rhythms[V.Look.Bays >= 0 ? V.Look.Bays % Rhythms.Num() : Pick];
+	const TArray<int32>& Rhythm = Rhythms[Pick];   // (the desk's window setting is gone: some rhythms surfaced odd pieces)
 	// "entrance": doors all along the street floor rather than one in a few bays
 	const int32 DoorEvery = V.Look.Ground == TEXT("entrance") ? 2 : Rng.RandRange(3, 5);
 	TMap<const FBWKitBand*, TArray<const FBWKitModule*>> Palette;
@@ -249,6 +275,9 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 		const bool bConvex = (Area2 > 0) == (Turn > 0);
 		const double Corner = bConvex ? 100.0 : 0.0;
 		const double Usable = Len - Corner;
+		// a wall too short for one bay (a chamfer, a sliver beside a setback) is
+		// plain wall: a window piece squeezed to a metre reads as a blank panel
+		const bool bSliver = Usable < Kit.Grid * 0.6;
 		const int32 Mods = FMath::Max(1, FMath::RoundToInt(Usable / Kit.Grid));
 		const double W = Usable / Mods;
 
@@ -260,17 +289,34 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 			if (Pal.Num() == 0)
 			{
 				TArray<const FBWKitModule*> All;
-				for (const FBWKitModule& M : Band.Walls) All.Add(&M);
+				// not the light-court returns: pieces 1.5 m deep are drawn to turn into a
+				// court, and on a flat wall they open dark slots between the bays
+				double Shallow = 1e9;
+				for (const FBWKitModule& M : Band.Walls) Shallow = FMath::Min(Shallow, M.Depth);
+				for (const FBWKitModule& M : Band.Walls) if (M.Depth <= Shallow + 60) All.Add(&M);
 				All.Sort([W](const FBWKitModule& X, const FBWKitModule& Y) { return FMath::Abs(X.Width - W) < FMath::Abs(Y.Width - W); });
-				const int32 Keep = FMath::Min(All.Num(), 4);
+				// only pieces that fit the bay: a kit's odd pieces (blank infill
+				// panels, a 7.5 m feature bay) stretched to a 3 m bay looked broken,
+				// and the window-placement rhythm brought them up on some buildings
+				int32 Keep = 1;
+				while (Keep < FMath::Min(All.Num(), 4) && FMath::Abs(All[Keep]->Width - W) <= FMath::Max(0.12 * W, FMath::Abs(All[0]->Width - W) + 15.0)) ++Keep;
 				// shuffle among the best fits so neighbours of one kit still differ
-				for (int32 k = 0; k < Keep; ++k) Pal.Add(All[k]);
+				// (feature bays sit out of the palette: they go where Every puts them)
+				for (int32 k = 0; k < Keep; ++k) if (All[k]->Every <= 0) Pal.Add(All[k]);
+				if (Pal.Num() == 0) Pal.Add(All[0]);
 				for (int32 k = Pal.Num() - 1; k > 0; --k) Pal.Swap(k, Rng.RandRange(0, k));
 			}
+			if (bSliver && Band.bHasCorner) { Put(Band.Corner, A, D, Out, 0, Len, Row.Z, Row.ScaleZ); continue; }
 			if (bConvex && Band.bHasCorner) Put(Band.Corner, A, D, Out, 0, Corner, Row.Z, Row.ScaleZ);
+			// THE FEATURE BAY. A tenement front carries a fire escape or two, not
+			// one every other bay: a piece marked "every": N goes on one bay in N
+			// (the middle of each run of N), and a wall too short for one gets none.
+			const FBWKitModule* Feature = nullptr;
+			for (const FBWKitModule& M : Band.Walls) if (M.Every > 0 && FMath::Abs(M.Width - W) <= 0.2 * W) { Feature = &M; break; }
 			for (int32 k = 0; k < Mods; ++k)
 			{
 				const FBWKitModule* M = Pal[Rhythm[k % Rhythm.Num()] % Pal.Num()];
+				if (Feature && Mods >= Feature->Every && (k % Feature->Every) == Feature->Every / 2) M = Feature;
 				// street floor: a door every few bays on every frontage, shopfronts between
 				if (Band.bGround && Band.Entrances.Num() && Mods > 1 && (k % DoorEvery) == DoorEvery / 2)
 					M = &Band.Entrances[(i + k) % Band.Entrances.Num()];

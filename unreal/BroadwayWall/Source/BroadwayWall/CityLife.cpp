@@ -325,8 +325,6 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 void ACityLife::Tick(float Dt)
 {
 	Super::Tick(Dt);
-	const double T0 = FPlatformTime::Seconds();
-	ON_SCOPE_EXIT { static double Acc = 0; static int32 N = 0; Acc += FPlatformTime::Seconds() - T0; if (++N == 300) { UE_LOG(LogTemp, Display, TEXT("LIFE tick %.2f ms avg"), Acc / N * 1000.0); Acc = 0; N = 0; } };
 	Dt = FMath::Min(Dt, 0.1f);
 	Clock += Dt;
 

@@ -1,0 +1,21 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="MI_Bldg_BrickOffset_Red" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Building/Material/MI/Brick/MI_Bldg_BrickOffset_Red.MI_Bldg_BrickOffset_Red'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="MI_Bldg_BrickOffset_RedEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Building/Material/MI/Brick/MI_Bldg_BrickOffset_Red.MI_Bldg_BrickOffset_Red:MI_Bldg_BrickOffset_RedEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Building/Material/MI/Brick/MI_Bldg_BrickOffset_Red.MI_Bldg_BrickOffset_Red:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="MI_Bldg_BrickOffset_RedEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Building/Material/MI/Brick/MI_Bldg_BrickOffset_Red.MI_Bldg_BrickOffset_Red:MI_Bldg_BrickOffset_RedEditorOnlyData'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Building/Material/MI/Brick/MI_Bldg_BrickOffset_Red.MI_Bldg_BrickOffset_Red:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=62F906B94329868151630A8947BA9D17
+   Parent="/Script/Engine.MaterialInstanceConstant'/Game/Building/Material/MI/MI_Bldg_Brick.MI_Bldg_Brick'"
+   ScalarParameterValues(0)=(ParameterInfo=(Name="RefractionDepthBias"))
+   VectorParameterValues(0)=(ParameterInfo=(Name="Color Tint/Mult(A) M1"),ParameterValue=(R=0.660000,G=0.660000,B=0.660000,A=1.000000),ExpressionGUID=CD0586E047CF0942D0C0AEA43A30DC56)
+   TextureParameterValues(0)=(ParameterInfo=(Name="Tex Albedo M1"),ParameterValue="/Script/Engine.Texture2D'/Game/Building/Texture/BrickOffset/T_BrickOffset_Red_C.T_BrickOffset_Red_C'",ExpressionGUID=A6F930F54EF987BF0524EA86F153192E)
+   BasePropertyOverrides=(OpacityMaskClipValue=0.333300,UsageFlags=4456848)
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'MI_Bldg_BrickOffset_RedEditorOnlyData'"
+   TextureStreamingDataVersion=1
+   TextureStreamingData(0)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="T_SFJ_genBlocks_packedA",TextureReference="/Game/Building/Texture/Gen/T_default_packedA.T_default_packedA")
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LightingGuid=29C14F55420CFAE5E0D331B0953F3C25
+End Object

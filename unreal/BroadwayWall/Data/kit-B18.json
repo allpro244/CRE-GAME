@@ -1,0 +1,116 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B18",
+ "grammar": "generated",
+ "label": "Brick housing project",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 330.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B18/v1020201055/SM_B18_Ground_0.SM_B18_Ground_0",
+     "width": 310.0,
+     "depth": 50.0,
+     "y0": -310.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B18/v1020201055/SM_B18_Ground_1.SM_B18_Ground_1",
+     "width": 248.0,
+     "depth": 50.0,
+     "y0": -248.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B18/v1020201055/SM_B18_Ground_2.SM_B18_Ground_2",
+     "width": 372.0,
+     "depth": 50.0,
+     "y0": -372.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B18/v1020201055/SM_B18_Entrance.SM_B18_Entrance",
+     "width": 310.0,
+     "depth": 50.0,
+     "y0": -310.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B18/v1020201055/SM_B18_GroundCorner.SM_B18_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 280.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B18/v1020201055/SM_B18_Typical_0.SM_B18_Typical_0",
+     "width": 310.0,
+     "depth": 50.0,
+     "y0": -310.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B18/v1020201055/SM_B18_Typical_1.SM_B18_Typical_1",
+     "width": 310.0,
+     "depth": 50.0,
+     "y0": -310.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B18/v1020201055/SM_B18_TypicalCorner.SM_B18_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 70,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B18/v1020201055/SM_B18_Top.SM_B18_Top",
+     "width": 310.0,
+     "depth": 50.0,
+     "y0": -310.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B18/v1020201055/SM_B18_TopCorner.SM_B18_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

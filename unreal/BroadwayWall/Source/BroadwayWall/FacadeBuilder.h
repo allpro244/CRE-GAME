@@ -26,6 +26,8 @@ struct FBWKitModule
 	UStaticMesh* Mesh = nullptr;
 	/** The piece's weathering layer (City Sample's "_decal" companion: grime, stains, wear), when it has one. */
 	UStaticMesh* Decal = nullptr;
+	/** A feature bay (a fire escape, an oriel): used on one bay in Every along each wall, never by the rhythm. 0 = an ordinary bay. */
+	int32 Every = 0;
 };
 
 struct FBWKitBand

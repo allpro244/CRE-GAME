@@ -270,7 +270,10 @@ console.log("\nPLANS, QUIET CALLS, FAMILIES\n");
     quiet ? `${quiet.quietFrom}, ${quiet.earlyUntilM - g.month} months to decide` : "no quiet call in two years of squeezed firms");
   if (quiet) {
     const rec = E.resolveRec(parcels, g, quiet.bbl);
-    const v = E.conveyedValue(g, rec, quiet.bbl, true);
+    // the deed as it conveys from THIS seller: the grade the firm holds it at
+    // (rivals.ts listUnderDuress prices on that), not the default grade
+    const seller = g.rivals.find((r) => r.id === quiet.sellerId);
+    const v = E.conveyedValue(g, rec, quiet.bbl, true, seller ? E.assetGrade(seller, rec) : undefined);
     ok("priced under what it would appraise at", quiet.ask < v * 1.0, `${Math.round(100 * quiet.ask / v)}% of the deed's value`);
   }
 }

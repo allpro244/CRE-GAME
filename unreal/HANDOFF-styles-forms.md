@@ -1,0 +1,90 @@
+# Handoff: building styles, forms and slenderness (2026-10-20 night)
+
+The owner wants buildings to look great: realistic NYC, nothing bland, nothing silly. Rule: always look at renders, and scrap or fix anything that looks off. Short phone-friendly messages. Full autonomy, including merging.
+
+## Nothing is committed yet
+- Branch `claude/ue58-city-kits-build` is already merged.
+- Start a new branch from origin/main, then commit all of the work below.
+- Commit trailers per memory/system: no model names; City Sample content is never committed.
+
+## 1. Facade styles (done, needs commit and wiring)
+**Generator:** `unreal/tools/make-styles.py`, with recipes in `unreal/tools/styles.json`.
+- 56 styles: B01–B57, minus B24 (scrapped).
+- Run: `UnrealEditor-Cmd.exe <uproject> -run=pythonscript -script="unreal/tools/make-styles.py unreal/tools/styles.json unreal/BroadwayWall/Data [KEYS]"`.
+- Writes `Data/kit-<KEY>.json` and meshes in `/Game/BW/Styles/<KEY>/v<timestamp>/`. Folders are versioned because a running game locks the files; old versions are pruned when free.
+
+**Reviews:**
+- B01–B40 got two-lens reviews (results in `scratchpad/stylereview.json`). All 39 patches are applied to styles.json; families are in each recipe.
+- B41–B57 are new designs from a critic-checked workflow and are not reviewed yet.
+
+**Generator-features workflow** (run wf_d2a852b8-27f; may still be running):
+- Adds to make-styles.py: rustication fix, mansard, orders, setback crown, corner windows, spandrel patterns, mullion caps, stagger/loggia and rotated sawtooth.
+- When it finishes: read its journal, check that make-styles.py parses, then regenerate everything.
+
+**Generator bugs still TODO in make-styles.py:**
+- Fire-escape stair stringer: `M.box(4, 76, 80, y0+20, y0+20+W*0.55, 5, H)` is a solid sheet. Make it two thin rails.
+- Write `"every": 4` on the Typical_1 feature module when there is a recipe feature and not `feature_all`. The C++ side is done (`FBWKitModule.Every`).
+- Arch heads are 8 steps and look sawtoothed up close: use more steps or an extruded polygon.
+
+**Then:**
+1. Regenerate all styles.
+2. Render: `-KitThumbs -KitFloors=12 -ShotOnly=kit-B` (wide), plus `-KitZoom=0.3` (close).
+3. Re-review, then make thumbnails (`-KitThumbs` at the default 6 floors into `Data/kit-thumbs`).
+4. Run `node unreal/tools/style-kits.mjs`, which writes `src/engine/styleKits.ts`. Append STYLE_KITS to KITS in `renderView.ts` and remove CHD/SFB from KITS (retired to `Data/retired/`).
+5. Run `node unreal/tools/facade-families.mjs`, which merges recipe families so the city uses the styles.
+6. Remove the "Windows" section from `src/ui/panels/DesignPicker.tsx`. The C++ already ignores Look.Bays.
+
+**City Sample kits:**
+- 14 of 16 kept.
+- `grid` overrides: CHB 250, CHF 400, NYA 175, SFA 975 (kit JSON `grid` field, read in FBWKit::Load).
+- Palette now drops deep light-court return pieces.
+
+## 2. Unreal C++ changes this session (built, uncommitted)
+- FacadeBuilder:
+  - base + one shaft + top stacking;
+  - fit filter;
+  - grid override;
+  - feature `Every`;
+  - upper tiers (`!bGround`) skip the base bands;
+  - sliver walls get plain corner wall;
+  - the window rhythm setting is ignored.
+- CityBuilder: Dress seed = hash(Bbl) only, so every tier of a building shares one rhythm.
+- BWGame:
+  - `-KitZoom=` close-ups;
+  - KitThumbs uses a big square lot;
+  - `-LookFile=views.json` (name, x, y, z, yaw, pitch, dist).
+- CityLife: LIFE tick log removed.
+- Earlier, uncommitted: exposure per weather, roof-rim removal, `-KitFloors`.
+
+## 3. Building forms (massing), the owner's big new ask
+- Forms live in `src/citygen/massing.mjs` (massingStack, ~25 families). `families: [name]` forces one.
+- Gallery tool: `node unreal/tools/form-gallery.mjs <city> <out-city> <out-looks>`. Then run the game with `-City=<out> -LookFile=<looks> -NoCrowd -Shots=<dir>`.
+- Latest renders: `unreal/shots/forms4` (with the tier fix). Older ones: forms3.
+- Owner verdict: the tall late-modern forms (chamfertaper, twist, telescope, shifted, podium) look dumb, as pencil towers. Scrap them or fix them.
+
+**TODO NOW, the slenderness rule in massing.mjs:**
+- Edit `done()` at about line 292: reject a form (return null, so it falls back to a plain building) if any tier with top > 22 m has a narrow width below 12 m (15 m for office), or top / narrow width > 8.
+- Use `narrowWidth` from citygen.mjs, or copy the rotating-calipers helper.
+- Basis: CTBUH/NYC call "super-slender" 1:10 and up; ordinary towers run 1:5–1:8 (WTC 1:6.6, Seagram ~1:5.8).
+- Then re-export the city (`node unreal/tools/export-city.mjs --size metro --seed 1`), re-run the gallery and look.
+
+**Workflows with results to read:**
+- `forms-realism-audit` (run wf_996d9e72-e53): per-form keep/fix/scrap, lot table, slenderness audit with calibrated rules.
+- `building-forms-catalog` (run wf_c01861ba-334): catalog plus implementation plan (form picker on the Build desk, economics, preview).
+- Results: `C:\Users\Brian\.claude\projects\D--Projects\e41b8ba6-...\subagents\workflows\<run>\journal.jsonl`.
+- Turn the catalog into an owner-facing page with examples.
+
+## 4. City generator plan 13 (done, uncommitted)
+- `PLATE_MIN_M` is office 15 / other 12 in citygen.mjs, with CITY_PLAN = 13. city-accept passes.
+- `test/raise.mjs`: the instant-raise block now tries seeds 9402/9401/9405. The raise test passed after this.
+- A background run of the rest of `pnpm check` was writing to `D:/Projects/CRE-GAME/rest.log` (FAIL lines) and `baseline.log`. Check both. If the baseline moved, regenerate it deliberately (`pnpm baseline`) and give the reason in the commit (plan 13 city change).
+- Don't edit `broadway-and-wall/src` while tests run: the fresh-bundle guard fails.
+
+## 5. Other sessions
+- **Streetscape** (local_cf49a8fb…): works on everything outside buildings, in the same folder, uncommitted. It was told its street-level shot was black. Read its report and before/after (`unreal/shots/street-before`, `street-after`).
+- A stray `node tools/econaudit.mjs` (PID 24548) has been running since 08:44. The owner was asked whether to kill it; no answer yet.
+
+## Gotchas
+- Build fails while any UnrealEditor.exe runs the game (DLL lock). The streetscape session also runs the game; wait for it, and don't kill its processes.
+- PIL is installed. Contact sheets: `scratchpad/sheet.py out.jpg cols x0,y0,x1,y1 files...`
+- The owner's PC is an i9-9900K / RTX 2080 8 GB; a new 9800X3D / 5070 Ti machine is coming.

@@ -1,0 +1,116 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B23",
+ "grammar": "generated",
+ "label": "Stacked-brick tower",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 460.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B23/v1020201055/SM_B23_Ground_0.SM_B23_Ground_0",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B23/v1020201055/SM_B23_Ground_1.SM_B23_Ground_1",
+     "width": 256.0,
+     "depth": 50.0,
+     "y0": -256.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B23/v1020201055/SM_B23_Ground_2.SM_B23_Ground_2",
+     "width": 384.0,
+     "depth": 50.0,
+     "y0": -384.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B23/v1020201055/SM_B23_Entrance.SM_B23_Entrance",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B23/v1020201055/SM_B23_GroundCorner.SM_B23_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 330.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B23/v1020201055/SM_B23_Typical_0.SM_B23_Typical_0",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B23/v1020201055/SM_B23_Typical_1.SM_B23_Typical_1",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B23/v1020201055/SM_B23_TypicalCorner.SM_B23_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 90,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B23/v1020201055/SM_B23_Top.SM_B23_Top",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B23/v1020201055/SM_B23_TopCorner.SM_B23_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

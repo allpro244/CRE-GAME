@@ -22,6 +22,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogBWBuilder, Log, All);
 
 namespace
 {
+	/** -NoStreetLook: the waterfront, kerb furniture and signal posts off (perf A/B). */
+	bool StreetLook() { static const bool bOn = !FParse::Param(FCommandLine::Get(), TEXT("NoStreetLook")); return bOn; }
 	/** The road surface, one dynamic instance for every street so the weather can wet it. */
 	UMaterialInstanceDynamic* Road = nullptr;
 	float RoadDry[3] = { 0, 0, 0 };
@@ -35,8 +37,10 @@ namespace
 			{
 				Road = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
 				Road->AddToRoot();
-				// the lot instance is a sun-bleached grey; a city street is darker
-				Road->SetVectorParameterValue(TEXT("BaseColor Tint"), FLinearColor(0.45f, 0.45f, 0.47f));
+				// the lot instance is a sun-bleached grey; a city street is darker,
+				// and cool: the grade warms the highlights, and a neutral tint
+				// printed as brown dirt
+				Road->SetVectorParameterValue(TEXT("BaseColor Tint"), FLinearColor(0.33f, 0.34f, 0.37f));
 				for (int32 i = 0; i < 3; ++i) Base->GetScalarParameterValue(FHashedMaterialParameterInfo(RoadWet[i]), RoadDry[i]);
 			}
 		return Road;
@@ -126,8 +130,23 @@ namespace
 			return Grey;
 		}
 		// the inside of a block, where the buildings stop: service yards, alleys and
-		// the back-lot parking a downtown block is mostly made of behind its fronts
-		else if (Layer == TEXT("block")) Path = TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots");
+		// the back-lot parking a downtown block is mostly made of behind its fronts.
+		// NOT THE STREET'S ASPHALT: in the same paving as the carriageway the grid
+		// vanished from the air, streets and yards one brown sheet. Yards and lots
+		// are poured concrete, a shade under the sidewalk, so the street reads as
+		// the dark line between them.
+		else if (Layer == TEXT("block"))
+		{
+			static UMaterialInstanceDynamic* Yard = nullptr;
+			if (!Yard)
+				if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS")))
+				{
+					Yard = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
+					Yard->SetVectorParameterValue(TEXT("BaseColor_Tint"), FLinearColor(0.47f, 0.46f, 0.44f, 1));
+					Yard->AddToRoot();
+				}
+			return Yard;
+		}
 		else if (Layer == TEXT("esplanade")) Path = TEXT("/Game/Road/Material/MI/MI_Sidewalk_Plaza_A_WS.MI_Sidewalk_Plaza_A_WS");
 		else if (Layer == TEXT("park") || Layer == TEXT("median")) return BWGrassMaterial();   // a boulevard's planted median is lawn too
 		else if (Layer == TEXT("beach")) Path = TEXT("/Game/Megascans/Surfaces/sand_sand_pjuuP0/M_sand.M_sand");
@@ -145,8 +164,10 @@ namespace
 					float V = 1;
 					if (Base->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Mult CR")), V)) Harbour->SetScalarParameterValue(TEXT("Mult CR"), V * 0.55f);
 					if (Base->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Amt FM")), V)) Harbour->SetScalarParameterValue(TEXT("Amt FM"), V * 0.35f);
-					Harbour->SetScalarParameterValue(TEXT("Desat CR"), 0.45f);
-					Harbour->SetVectorParameterValue(TEXT("Tint CR"), FLinearColor(0.50f, 0.70f, 0.66f));
+					// (still read Caribbean at 0.5/0.7/0.66: the harbour off a big
+					// city is olive-grey, the colour of silt and plankton)
+					Harbour->SetScalarParameterValue(TEXT("Desat CR"), 0.6f);
+					Harbour->SetVectorParameterValue(TEXT("Tint CR"), FLinearColor(0.40f, 0.52f, 0.47f));
 				}
 			return Harbour;
 		}
@@ -193,6 +214,8 @@ namespace
 		TArray<FLinearColor> C;
 		/** World cm per UV unit (texture tile size). */
 		double UVScale = 1000.0;
+		/** Re-triangulate a cap whose ear clipping covers more than the ring, too. */
+		bool bStrict = false;
 
 		int32 NumTris() const { return T.Num() / 3; }
 
@@ -215,7 +238,10 @@ namespace
 				const FVector2D a = Ring[Tr.A], b = Ring[Tr.B], c = Ring[Tr.C];
 				Got += FMath::Abs((b.X - a.X) * (c.Y - a.Y) - (c.X - a.X) * (b.Y - a.Y));
 			}
-			if (Got < FMath::Abs(Want) * 0.995)
+			// (bStrict, the ground: a ring that touches itself can also come back
+			// with triangles OUTSIDE it, more area than it has, which painted
+			// wedges of one layer across the next: pale slivers across streets)
+			if (Got < FMath::Abs(Want) * 0.995 || (bStrict && Got > FMath::Abs(Want) * 1.002))
 			{
 				UE::Geometry::FConstrainedDelaunay2d CDT;
 				CDT.FillRule = UE::Geometry::FConstrainedDelaunay2d::EFillRule::NonZero;
@@ -436,6 +462,7 @@ void ACityBuilder::BuildGround()
 		FMeshBuf M;
 		// asphalt and paving tile at a few metres
 		M.UVScale = 400.0;
+		M.bStrict = true;
 		const FLinearColor Col = GroundColor(L.Key);
 		for (const TArray<FVector2D>& R : L.Value)
 		{
@@ -445,6 +472,55 @@ void ACityBuilder::BuildGround()
 		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(L.Key)); }
 		Z += 1;
 		if (bRaised) FootZ = FMath::Max(FootZ, Zl);
+	}
+	// THE WATERFRONT. The island's edge was a paving cap laid on the sea: from
+	// any angle but straight down the city floated. A harbour city stands on a
+	// bulkhead, a concrete wall two metres down into the water, with an iron
+	// railing along the top of the promenade. Not where a beach runs down to
+	// the water.
+	{
+		TArray<FBox2D> Sand;
+		for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
+			if (L.Key == TEXT("beach"))
+				for (const TArray<FVector2D>& R : L.Value) { FBox2D Bx(ForceInit); for (const FVector2D& P : R) Bx += P; Sand.Add(Bx.ExpandBy(300)); }
+		auto OnSand = [&Sand](const FVector2D& P) { for (const FBox2D& Bx : Sand) if (Bx.IsInside(P)) return true; return false; };
+		const TCHAR* const Rail = TEXT("/Game/Prop/Kit_Railing_A/Mesh/SM_Railing_A_Railing_N01.SM_Railing_A_Railing_N01");
+		const TCHAR* const Post = TEXT("/Game/Prop/Kit_Railing_A/Mesh/SM_Railing_A_Pole_N01.SM_Railing_A_Pole_N01");
+		for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
+		{
+			if (L.Key != TEXT("land") || !StreetLook()) continue;
+			for (const TArray<FVector2D>& R : L.Value)
+			{
+				const int32 Count = R.Num();
+				if (Count < 3) continue;
+				const double Area2 = FMeshBuf::SignedArea2(R);
+				for (int32 i = 0; i < Count; ++i)
+				{
+					const FVector2D E0 = R[i], E1 = R[(i + 1) % Count];
+					const double Len = (E1 - E0).Size();
+					if (Len < 100 || OnSand((E0 + E1) * 0.5)) continue;
+					const FVector2D Dd = (E1 - E0) / Len;
+					const FVector2D In = Area2 > 0 ? FVector2D(-Dd.Y, Dd.X) : FVector2D(Dd.Y, -Dd.X);
+					{
+						// the bulkhead face, out to the water, darker where it is wet
+						const FVector Out(-In.X, -In.Y, 0);
+						const int32 Base = Kerbs.V.Num();
+						const FVector Q[4] = { FVector(E0, -220), FVector(E1, -220), FVector(E1, 2), FVector(E0, 2) };
+						for (int32 k = 0; k < 4; ++k) { Kerbs.V.Add(Q[k]); Kerbs.N.Add(Out); Kerbs.UV.Add(FVector2D((k == 1 || k == 2) ? Len / 100.0 : 0, Q[k].Z / 100.0)); Kerbs.C.Add(FLinearColor::White * (k < 2 ? 0.6f : 1.f)); }
+						Kerbs.AddTri(Base, Base + 1, Base + 2, Out);
+						Kerbs.AddTri(Base, Base + 2, Base + 3, Out);
+					}
+					const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Dd.Y, Dd.X));
+					for (double t = 150; t + 282 <= Len - 150; t += 282)
+					{
+						const FVector2D P0 = E0 + Dd * t + In * 60, P1 = P0 + Dd * 282;
+						if (ParcelAt(P0) || ParcelAt(P1)) continue;
+						AddProp(Rail, FTransform(FRotator(0, Yaw, 0), FVector(P1, 4)), false);
+						AddProp(Post, FTransform(FRotator(0, Yaw, 0), FVector(P0, 4)), false);
+					}
+				}
+			}
+		}
 	}
 	if (Kerbs.V.Num())
 	{
@@ -496,7 +572,7 @@ void ACityBuilder::BuildVolumes()
 			{
 				// the facade carries the look; the mass sits 60 cm behind it (no flicker
 				// against the kit's faces, and it still catches clicks), roofed in gravel
-				const int32 Pieces = Facades->Dress(*KitFor(Vol), Vol, GetTypeHash(Vol.Bbl) ^ uint32(Vol.Z0), Vol.Z0 < 50, Vol.Look.bTint ? Vol.Look.Tint : Vol.Tint, Vol.Look.bTint);
+				const int32 Pieces = Facades->Dress(*KitFor(Vol), Vol, GetTypeHash(Vol.Bbl), Vol.Z0 < 50, Vol.Look.bTint ? Vol.Look.Tint : Vol.Tint, Vol.Look.bTint);
 				if (bPreview && Vol.Bbl == PreviewVol.Bbl) UE_LOG(LogBWBuilder, Display, TEXT("preview %s: kit %s, %d pieces, %.0f-%.0f cm"), *Vol.Bbl, *KitFor(Vol)->Name, Pieces, Vol.Z0, Vol.Z1);
 				if (Pieces > 0)
 				{
@@ -861,9 +937,7 @@ void ACityBuilder::SetHighlight(const FBWParcel* Sel, const FBWParcel* Hover, do
 	if (Sel && Sel->Ring.Num() >= 3)
 	{
 		Band(Gold, Sel->Ring, FootZ + 4, 45 * Scale, false, GoldC);
-		for (const FBWVolume& V : Current)
-			if (V.Bbl == Sel->Bbl && !V.bVacant && V.Deco.IsEmpty() && V.Ring.Num() >= 3)
-				Band(Gold, BWInsetRing(V.Ring, -25 * Scale), V.Z1 - 10, 40 * Scale, true, GoldC);
+		// (one outline, on the lot line: the owner found the roof rims busy)
 	}
 	if (Hover && Hover->Ring.Num() >= 3) Band(White, Hover->Ring, FootZ + 3, 25 * Scale, false, WhiteC);
 	UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Highlight.M_BW_Highlight"));
@@ -1146,6 +1220,12 @@ void ACityBuilder::BuildStreetProps()
 			}
 		}
 	}
+	// SMALL THINGS ARE DRAWN NEAR. Tens of thousands of hydrants, posts,
+	// signal heads and railing bays across the city are a pixel or less past
+	// a few hundred metres: stop drawing anything under ~3 m across there.
+	for (TPair<FString, TObjectPtr<UInstancedStaticMeshComponent>>& P : StreetProps)
+		if (P.Value && P.Value->GetStaticMesh() && P.Value->GetStaticMesh()->GetBounds().SphereRadius < 150)
+			P.Value->SetCullDistances(25000, 35000);
 }
 
 void ACityBuilder::DressParks(TArray<TArray<FVector2D>>& Paths)
@@ -1254,6 +1334,31 @@ void ACityBuilder::StreetFurniture(const FVector2D& A, const FVector2D& Dir, con
 	{
 		const FVector2D P = At(700, 200);
 		if (Free(P) && Free(At(700, 300))) AddProp(TEXT("/Game/Prop/Kit_NewsBooth_A/Mesh/SM_NewsBooth_A_01.SM_NewsBooth_A_01"), FTransform(FRotator(0, Facing, 0), FVector(P, 15)), false);
+	}
+	// THE NEW YORK KERB: a hydrant near most corners, a 45 cm in from the kerb
+	// face (a fire engine's reach, and the reason nobody may park there); the
+	// blue mailbox on one corner in eight; a red fire-alarm post now and then;
+	// a steel bike rack mid-block. (Megascans pieces: pivots on the ground.)
+	if (StreetLook() && Len > 1500 && Rng.FRand() < 0.7)
+	{
+		const FVector2D P = At(Rng.FRandRange(450, 700), 45);
+		if (Free(P)) AddProp(Rng.FRand() < 0.6 ? TEXT("/Game/Megascans/3D_Assets/Fire_Hydrant_00/uiuhbegfa_LOD0.uiuhbegfa_LOD0") : TEXT("/Game/Megascans/3D_Assets/Fire_Hydrant_01/uiohdaofa_LOD0.uiohdaofa_LOD0"),
+			FTransform(FRotator(0, Facing + Rng.FRandRange(-20, 20), 0), FVector(P, FootZ)), false);
+	}
+	if (StreetLook() && Len > 1500 && Rng.FRand() < 0.12)
+	{
+		const FVector2D P = At(Len - 450, 80);
+		if (Free(P)) AddProp(TEXT("/Game/Megascans/3D_Assets/Mailbox_00/uhcjaisfa_LOD0.uhcjaisfa_LOD0"), FTransform(FRotator(0, Facing + 90, 0), FVector(P, FootZ)), false);
+	}
+	if (StreetLook() && Len > 3000 && Rng.FRand() < 0.06)
+	{
+		const FVector2D P = At(Rng.FRandRange(900, Len - 900), 50);
+		if (Free(P)) AddProp(TEXT("/Game/Megascans/3D_Assets/Fire_Call_Box_00/uh3icioga_LOD0.uh3icioga_LOD0"), FTransform(FRotator(0, Facing, 0), FVector(P, FootZ)), false);
+	}
+	if (StreetLook() && Len > 3500 && Rng.FRand() < 0.2)
+	{
+		const FVector2D P = At(Len * Rng.FRandRange(0.35, 0.65), 75);
+		if (Free(P)) AddProp(TEXT("/Game/Megascans/3D_Assets/Bike_Stand_00/uhcgehnfa_LOD0.uhcgehnfa_LOD0"), FTransform(FRotator(0, Along, 0), FVector(P, FootZ)), false);
 	}
 	// bicycles locked along the kerb, a few to a block
 	for (double S = 900; S < Len - 900; S += 1700)
@@ -1403,8 +1508,109 @@ void ACityBuilder::BuildMarkings()
 			else if (C.Mark == 1) Dashes(Yellow, 0, Amber);
 		}
 	}
-	for (const TArray<FVector2D>& Zb : City.Zebras)
-		if (Zb.Num() >= 2) Strip(White, Zb[0], Zb.Last(), 60, Paint);
+	// ZEBRAS ARE BARS, NOT A LINE. The generator gives each half-crossing as its
+	// centre line, kerb to crown; the paint is the city's high-visibility
+	// ladder: bars 55 cm wide every 1.1 m along the crossing, each 3 m long the
+	// way the traffic runs (as the web map paints them). Where a skewed corner
+	// laid two crossings over each other, the shorter goes, or the bars plaid.
+	TArray<int32> Keep;
+	{
+		auto SegDist = [](const FVector2D& P, const FVector2D& A, const FVector2D& B)
+		{
+			const FVector2D AB = B - A;
+			const double T = FMath::Clamp(FVector2D::DotProduct(P - A, AB) / FMath::Max(1.0, AB.SizeSquared()), 0.0, 1.0);
+			return (P - (A + AB * T)).Size();
+		};
+		auto Crosses = [](const FVector2D& P, const FVector2D& Q, const FVector2D& R, const FVector2D& T)
+		{
+			auto O = [](const FVector2D& a, const FVector2D& b, const FVector2D& c) { return FMath::Sign((b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X)); };
+			return O(P, Q, R) * O(P, Q, T) < 0 && O(R, T, P) * O(R, T, Q) < 0;
+		};
+		TSet<int32> Drop;
+		TMultiMap<FIntPoint, int32> Grid;
+		auto Cell = [](const FVector2D& M) { return FIntPoint(FMath::FloorToInt(M.X / 4000.0), FMath::FloorToInt(M.Y / 4000.0)); };
+		for (int32 i = 0; i < City.Zebras.Num(); ++i)
+			if (City.Zebras[i].Num() >= 2) Grid.Add(Cell((City.Zebras[i][0] + City.Zebras[i].Last()) * 0.5), i);
+		for (int32 i = 0; i < City.Zebras.Num(); ++i)
+		{
+			const TArray<FVector2D>& G = City.Zebras[i];
+			if (G.Num() < 2 || Drop.Contains(i)) continue;
+			const FIntPoint C = Cell((G[0] + G.Last()) * 0.5);
+			for (int32 dx = -1; dx <= 1; ++dx) for (int32 dy = -1; dy <= 1; ++dy)
+			{
+				TArray<int32> Near;
+				Grid.MultiFind(C + FIntPoint(dx, dy), Near);
+				for (const int32 j : Near)
+				{
+					if (j <= i || Drop.Contains(i) || Drop.Contains(j)) continue;
+					const TArray<FVector2D>& H = City.Zebras[j];
+					const FVector2D Dg = (G.Last() - G[0]).GetSafeNormal(), Dh = (H.Last() - H[0]).GetSafeNormal();
+					const bool bPar = FMath::Abs(FVector2D::DotProduct(Dg, Dh)) > 0.8;
+					const double Gap = FMath::Min(FMath::Min(SegDist(G[0], H[0], H.Last()), SegDist(G.Last(), H[0], H.Last())), FMath::Min(SegDist(H[0], G[0], G.Last()), SegDist(H.Last(), G[0], G.Last())));
+					if (Crosses(G[0], G.Last(), H[0], H.Last()) || (!bPar && Gap < 300))
+						Drop.Add((G.Last() - G[0]).SizeSquared() < (H.Last() - H[0]).SizeSquared() ? i : j);
+				}
+			}
+		}
+		for (int32 i = 0; i < City.Zebras.Num(); ++i) if (City.Zebras[i].Num() >= 2 && !Drop.Contains(i)) Keep.Add(i);
+	}
+	int32 Bars = 0, StopBars = 0, Signals = 0;
+	for (const int32 i : Keep)
+	{
+		const FVector2D A = City.Zebras[i][0], B = City.Zebras[i].Last();
+		const double L = (B - A).Size();
+		if (L < 150) continue;
+		const FVector2D U = (B - A) / L, N(-U.Y, U.X);
+		for (double T = 45; T < L - 20; T += 110, ++Bars)
+			Strip(White, A + U * T - N * 150, A + U * T + N * 150, 55, Paint);
+		// THE STOP BAR. Traffic drives on the right, so the half-crossing is
+		// the lanes whose kerb is this one; if they run toward the junction the
+		// crossing guards, a 50 cm white bar stands across them a metre back.
+		const FVector2D M = (A + B) * 0.5;
+		const FBWCenterline* Best = nullptr;
+		FVector2D BestDir(0, 0), BestPt(0, 0);
+		double BestD = 1e18;
+		for (const FBWCenterline& C : City.Centerlines)
+			for (int32 k = 0; k + 1 < C.Line.Num(); ++k)
+			{
+				const FVector2D P = C.Line[k], Q = C.Line[k + 1], PQ = Q - P;
+				const double Len2 = PQ.SizeSquared();
+				if (Len2 < 1) continue;
+				// a centre line runs across the crossing, not along it
+				if (FMath::Abs(FVector2D::DotProduct(PQ.GetSafeNormal(), U)) > 0.45) continue;
+				const double T = FMath::Clamp(FVector2D::DotProduct(M - P, PQ) / Len2, 0.0, 1.0);
+				const double D = (M - (P + PQ * T)).SizeSquared();
+				if (D < BestD) { BestD = D; Best = &C; BestDir = PQ.GetSafeNormal(); BestPt = P + PQ * T; }
+			}
+		if (!Best || BestD > FMath::Square(2500.0)) continue;
+		const FVector2D Right(BestDir.Y, -BestDir.X);
+		const FVector2D Travel = FVector2D::DotProduct(M - BestPt, Right) > 0 ? BestDir : -BestDir;
+		// THE SIGNAL POST at the crossing's kerb end, a metre back on the
+		// footway: City Sample's plain post (its Container_02), one head
+		// facing the traffic in these lanes, the walk signal across the street
+		{
+			const FVector2D P = A - U * 110;
+			if (StreetLook() && !ParcelAt(P))
+			{
+				const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(-Travel.Y, -Travel.X));
+				const FTransform T(FRotator(0, Yaw, 0), FVector(P, FootZ));
+				AddProp(TEXT("/Game/Prop/Kit_StreetLamp_A/Mesh/SM_StreetLamp_A_Pole_Small.SM_StreetLamp_A_Pole_Small"), T, false);
+				AddProp(TEXT("/Game/Prop/Kit_StreetLamp_A/Mesh/SM_StreetLamp_A_TrafficLight.SM_StreetLamp_A_TrafficLight"), FTransform(FVector(33, 0, 306)) * T, false);
+				// the walk signal's bracket turned to the crossing (the head
+				// hangs off it as in the container)
+				const FTransform Latch = FTransform(FRotator(0, FMath::RadiansToDegrees(FMath::Atan2(U.Y, U.X)) - 90 - Yaw, 0), FVector(0, 0, 215)) * T;
+				AddProp(TEXT("/Game/Prop/Kit_StreetLamp_A/Mesh/SM_StreetLamp_A_WalkSignal_Latch.SM_StreetLamp_A_WalkSignal_Latch"), Latch, false);
+				AddProp(TEXT("/Game/Prop/Kit_StreetLamp_A/Mesh/SM_StreetLamp_A_WalkSignal_02.SM_StreetLamp_A_WalkSignal_02"), FTransform(FRotator(0, -90, 0), FVector(0, 39, 4)) * Latch, false);
+				++Signals;
+			}
+		}
+		// the junction is the centre line's end nearer the crossing
+		const FVector2D End = (M - Best->Line[0]).SizeSquared() < (M - Best->Line.Last()).SizeSquared() ? Best->Line[0] : Best->Line.Last();
+		if ((End - M).Size() > 3500 || FVector2D::DotProduct(End - M, Travel) <= 0) continue;
+		const FVector2D Back = -Travel * (150 + 100 + 25);
+		Strip(White, A + U * 30 + Back, B - U * 30 + Back, 50, Paint);
+		++StopBars;
+	}
 
 	UProceduralMeshComponent* Marks = NewObject<UProceduralMeshComponent>(this, TEXT("Markings"));
 	Marks->SetupAttachment(RootComponent);
@@ -1413,7 +1619,7 @@ void ACityBuilder::BuildMarkings()
 	Marks->RegisterComponent();
 	if (White.V.Num()) { White.Emit(Marks, 0, false); Marks->SetMaterial(0, VertexColorMaterial); }
 	if (Yellow.V.Num()) { Yellow.Emit(Marks, 1, false); Marks->SetMaterial(1, VertexColorMaterial); }
-	UE_LOG(LogBWBuilder, Display, TEXT("markings: %d centrelines, %d zebra bars"), City.Centerlines.Num(), City.Zebras.Num());
+	UE_LOG(LogBWBuilder, Display, TEXT("markings: %d centrelines, %d of %d crossings painted (%d bars), %d stop bars, %d signal posts"), City.Centerlines.Num(), Keep.Num(), City.Zebras.Num(), Bars, StopBars, Signals);
 }
 
 void ACityBuilder::BuildTraffic()

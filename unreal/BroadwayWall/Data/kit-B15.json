@@ -1,0 +1,116 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B15",
+ "grammar": "generated",
+ "label": "Deco limestone",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 480.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B15/v1020201055/SM_B15_Ground_0.SM_B15_Ground_0",
+     "width": 300.0,
+     "depth": 50.0,
+     "y0": -300.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B15/v1020201055/SM_B15_Ground_1.SM_B15_Ground_1",
+     "width": 240.0,
+     "depth": 50.0,
+     "y0": -240.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B15/v1020201055/SM_B15_Ground_2.SM_B15_Ground_2",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B15/v1020201055/SM_B15_Entrance.SM_B15_Entrance",
+     "width": 300.0,
+     "depth": 50.0,
+     "y0": -300.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B15/v1020201055/SM_B15_GroundCorner.SM_B15_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 355.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B15/v1020201055/SM_B15_Typical_0.SM_B15_Typical_0",
+     "width": 300.0,
+     "depth": 50.0,
+     "y0": -300.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B15/v1020201055/SM_B15_Typical_1.SM_B15_Typical_1",
+     "width": 300.0,
+     "depth": 50.0,
+     "y0": -300.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B15/v1020201055/SM_B15_TypicalCorner.SM_B15_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 160,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B15/v1020201055/SM_B15_Top.SM_B15_Top",
+     "width": 300.0,
+     "depth": 50.0,
+     "y0": -300.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B15/v1020201055/SM_B15_TopCorner.SM_B15_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

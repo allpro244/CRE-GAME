@@ -1,0 +1,116 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B08",
+ "grammar": "generated",
+ "label": "Brownstone row",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 420.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B08/v1020201055/SM_B08_Ground_0.SM_B08_Ground_0",
+     "width": 300.0,
+     "depth": 50.0,
+     "y0": -300.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B08/v1020201055/SM_B08_Ground_1.SM_B08_Ground_1",
+     "width": 240.0,
+     "depth": 50.0,
+     "y0": -240.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B08/v1020201055/SM_B08_Ground_2.SM_B08_Ground_2",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B08/v1020201055/SM_B08_Entrance.SM_B08_Entrance",
+     "width": 300.0,
+     "depth": 50.0,
+     "y0": -300.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B08/v1020201055/SM_B08_GroundCorner.SM_B08_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 340.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B08/v1020201055/SM_B08_Typical_0.SM_B08_Typical_0",
+     "width": 300.0,
+     "depth": 50.0,
+     "y0": -300.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B08/v1020201055/SM_B08_Typical_1.SM_B08_Typical_1",
+     "width": 300.0,
+     "depth": 50.0,
+     "y0": -300.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B08/v1020201055/SM_B08_TypicalCorner.SM_B08_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 120,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B08/v1020201055/SM_B08_Top.SM_B08_Top",
+     "width": 300.0,
+     "depth": 50.0,
+     "y0": -300.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B08/v1020201055/SM_B08_TopCorner.SM_B08_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

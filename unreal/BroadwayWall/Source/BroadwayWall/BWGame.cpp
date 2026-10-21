@@ -116,9 +116,9 @@ void ABWCameraPawn::Tick(float Dt)
 			const double Aspect = Camera->AspectRatio > 0 ? Camera->AspectRatio : 16.0 / 9.0;
 			const double TanV = FMath::Tan(FMath::DegreesToRadians(Camera->FieldOfView * 0.5)) / Aspect;
 			const double Extent = FMath::Max(Hb, Span * 0.75) + 1500;
-			const double Dist = Extent / (1.5 * FMath::Max(0.1, DeskRect.W) * TanV);
+			const double Dist = DeskZoom * Extent / (1.5 * FMath::Max(0.1, DeskRect.W) * TanV);
 			const FRotator Rot(Pt, DeskYaw, 0);
-			const FVector Look(Base.X, Base.Y, Hb * 0.45);
+			const FVector Look(Base.X, Base.Y, Hb * (DeskZoom < 1 ? 0.2 : 0.45));
 			SetActorLocationAndRotation(Look - Rot.Vector() * Dist, Rot);
 			Camera->Offset = FVector2D(1.0 - 2.0 * (DeskRect.X + DeskRect.Z * 0.5), 2.0 * (DeskRect.Y + DeskRect.W * 0.5) - 1.0);
 			return;
@@ -403,6 +403,7 @@ void ABWGameMode::SpawnSky()
 	USkyAtmosphereComponent* SA = NewObject<USkyAtmosphereComponent>(Atmos, TEXT("SkyAtmosphere"));
 	Atmos->SetRootComponent(SA);
 	SA->RegisterComponent();
+	Atmosphere = SA;
 	ASkyLight* Sky = W->SpawnActorDeferred<ASkyLight>(ASkyLight::StaticClass(), FTransform::Identity);
 	USkyLightComponent* SL = Sky->GetLightComponent();
 	SL->Mobility = EComponentMobility::Movable;
@@ -631,6 +632,25 @@ void ABWGameMode::RunShots(const FString& Dir)
 	for (const FBWVolume& V : City->GetCity().Volumes)
 		if (V.Z1 > TallZ && V.Ring.Num()) { TallZ = V.Z1; FVector2D C(0, 0); for (const FVector2D& P : V.Ring) C += P; Tall = FVector(C / V.Ring.Num(), 0); }
 
+	// STREET LEVEL NEAR DOWNTOWN: a fixed offset from the tallest tower stood the
+	// camera inside a building (a black frame). Stand instead on the sidewalk of
+	// the nearest real street (8 m+ kerb to kerb), 2 m in from the kerb, a
+	// third of the way along it, looking down it.
+	FVector Street = Tall;
+	double StreetYaw = 40;
+	{
+		double Best = 1e18;
+		for (const FBWCenterline& Cl : City->GetCity().Centerlines)
+		{
+			if (Cl.Line.Num() < 2 || Cl.Width < 800) continue;
+			const FVector2D A0 = Cl.Line[0], B0 = Cl.Line.Last();
+			if ((B0 - A0).Size() < 6000) continue;
+			const FVector2D Dir = (B0 - A0).GetSafeNormal();
+			const FVector2D P = A0 + (B0 - A0) * 0.3 + FVector2D(Dir.Y, -Dir.X) * (Cl.Width * 0.5 + 200);
+			const double D = (P - FVector2D(Tall)).SizeSquared();
+			if (D < Best && !City->ParcelAt(P)) { Best = D; Street = FVector(P, 0); StreetYaw = FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)) + 8; }
+		}
+	}
 	struct FShot { FString Name; FVector Focus; double Yaw, Pitch, Dist; bool bPick; int32 Mode = 0; FString Kit; FString Bbl; };
 	TArray<FShot> Shots = {
 		{ TEXT("01-overview"), Mid, 0, -60, Span * 1.0, false },
@@ -638,7 +658,7 @@ void ABWGameMode::RunShots(const FString& Dir)
 		{ TEXT("03-downtown"), Tall, 210, -22, 90000, false },
 		{ TEXT("04-low"), Tall + FVector(-20000, 4000, 0), 25, -16, 45000, false },
 		{ TEXT("05-picked"), Tall, 300, -35, 60000, true },
-		{ TEXT("06-street"), Tall + FVector(-3500, 2500, 1200), 40, -6, 4500, false },
+		{ TEXT("06-street"), Street, StreetYaw, 2, 0, false, 3 },
 		{ TEXT("07-facade"), Tall + FVector(-1500, 0, 2500), 20, -2, 2600, false },
 		{ TEXT("08-drone"), Mid, 20, -20, Span * 0.45, false, 2 },
 		{ TEXT("09-walk"), Tall + FVector(-5000, 1500, 0), 15, 6, 0, false, 3 },
@@ -689,6 +709,26 @@ void ABWGameMode::RunShots(const FString& Dir)
 			Shots.Add({ TEXT("look"), FVector(FCString::Atod(*P[0]), FCString::Atod(*P[1]), 0), FCString::Atod(*P[2]), FCString::Atod(*P[3]), FCString::Atod(*P[4]), false });
 		}
 	}
+	// -LookFile=path.json: a list of named views, [{"name","x","y","yaw","pitch","dist"}] (cm,
+	// degrees), one picture each (unreal/tools/form-gallery.mjs writes one per building form)
+	FString LookFile;
+	if (FParse::Value(FCommandLine::Get(), TEXT("LookFile="), LookFile))
+	{
+		FString Json;
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		if (FFileHelper::LoadFileToString(Json, *LookFile) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Arr))
+		{
+			Shots.Reset();
+			for (const TSharedPtr<FJsonValue>& V : Arr)
+			{
+				const TSharedPtr<FJsonObject> O = V->AsObject();
+				if (!O) continue;
+				double Z = 0; O->TryGetNumberField(TEXT("z"), Z);
+				Shots.Add({ O->GetStringField(TEXT("name")), FVector(O->GetNumberField(TEXT("x")), O->GetNumberField(TEXT("y")), Z),
+					O->GetNumberField(TEXT("yaw")), O->GetNumberField(TEXT("pitch")), O->GetNumberField(TEXT("dist")), false });
+			}
+		}
+	}
 	// -KitThumbs: one picture of each facade kit for the Build desk's picker: a
 	// six-storey block in that kit on one mid-sized lot, framed by the desk camera
 	// (run at a thumbnail resolution; unreal/tools/kit-thumbs.ps1 does the rest)
@@ -698,7 +738,18 @@ void ABWGameMode::RunShots(const FString& Dir)
 		double Best = 1e18;
 		for (const FBWParcel& P : City->GetCity().Parcels)
 		{
-			if (P.Ring.Num() < 4 || P.LotArea < 6000 || P.LotArea > 14000) continue;
+			// a big, square-ish lot: a style judged on a sliver reads as a sliver
+			if (P.Ring.Num() < 4 || P.LotArea < 20000 || P.LotArea > 60000) continue;
+			double Narrow = 1e18;
+			for (int32 i = 0; i < P.Ring.Num(); ++i)
+			{
+				const FVector2D E = (P.Ring[(i + 1) % P.Ring.Num()] - P.Ring[i]).GetSafeNormal();
+				const FVector2D Nrm(-E.Y, E.X);
+				double Lo = 1e18, Hi = -1e18;
+				for (const FVector2D& Q : P.Ring) { const double T = FVector2D::DotProduct(Q, Nrm); Lo = FMath::Min(Lo, T); Hi = FMath::Max(Hi, T); }
+				Narrow = FMath::Min(Narrow, Hi - Lo);
+			}
+			if (Narrow < 2800) continue;
 			FVector2D C(0, 0); for (const FVector2D& Q : P.Ring) C += Q; C /= P.Ring.Num();
 			const double D2 = C.SizeSquared();
 			if (D2 < Best) { Best = D2; Lot = &P; }
@@ -726,8 +777,10 @@ void ABWGameMode::RunShots(const FString& Dir)
 			FBWLook Look;
 			Look.Kit = S.Kit;
 			Look.Top = TEXT("cornice");
-			Self->City->SetPreview(S.Bbl, 6, 0.7, FString(), TEXT("office"), 1990, Look);
+			int32 TF = 6; FParse::Value(FCommandLine::Get(), TEXT("KitFloors="), TF);   // -KitFloors=N: thumbnails at another height
+			Self->City->SetPreview(S.Bbl, TF, 0.7, FString(), TEXT("office"), 1990, Look);
 			Cam->DeskSpin = 0;
+			FParse::Value(FCommandLine::Get(), TEXT("KitZoom="), Cam->DeskZoom);
 			Cam->SetDeskRect(FVector4(0.08, 0.04, 0.84, 0.92));
 			// look the way the light travels, a little off it: the sunlit faces
 			Cam->DeskYaw = Self->Sun ? Self->Sun->GetActorRotation().Yaw - 30.0 : 215;
@@ -988,22 +1041,60 @@ void ABWGameMode::SetSeason(int32 Month)
 		// the meter follows the light: sunny 16 in sun, two to three stops down under cloud
 		FPostProcessSettings& S = Post->Settings;
 		// half a stop under the meter: pale stone and white glazing were clipping
-		S.AutoExposureMinBrightness = Wx >= Overcast ? 10.8f : 13.2f;
-		S.AutoExposureMaxBrightness = Wx >= Overcast ? 12.8f : ElDeg > 45 ? 15.3f : 14.7f;
+		// ONE EXPOSURE PER SKY, set, not hunted for. The meter used to roam a two-
+		// stop window and adapt at the engine's pace, so every change of month
+		// opened nearly black and brightened over the month. A photographer sets
+		// the exposure for the light: sunny 16 in sun (EV 14-15, the summer sun a
+		// little brighter), two to three stops less under cloud and rain. The
+		// month then reads in the light itself — the sun's height and colour,
+		// the cloud, the lawn — and not in the screen dimming and recovering.
+		const float Ev = Wx == Clear ? (ElDeg > 45 ? 14.9f : 14.4f) : Wx == Partly ? (ElDeg > 45 ? 14.6f : 14.1f) : Wx == Overcast ? 12.4f : 11.9f;
+		S.AutoExposureMinBrightness = Ev;
+		S.AutoExposureMaxBrightness = Ev;
+		S.bOverride_AutoExposureSpeedUp = S.bOverride_AutoExposureSpeedDown = true;
+		S.AutoExposureSpeedUp = S.AutoExposureSpeedDown = 20.f;
 		// THE GRADE. A photograph of a city is never the raw exposure: a touch more
 		// colour and contrast, highlights a little warm, shadows a little cool
 		// (the sky lights the shade), and the corners eased down.
-		const float Sat = Wx >= Overcast ? 1.05f : 1.18f;
+		// AND THE SEASON IN IT: winter light is thin and blue in the shade, the
+		// colour drained out of everything; summer is warm and full, autumn
+		// golden in the highlights; spring sits between.
+		const bool bAutumn = M >= 8 && M <= 10;
+		const float SeasonSat = bWinter && !bAutumn ? 0.86f : bSummer ? 1.04f : 0.97f;
+		const float Sat = (Wx >= Overcast ? 1.05f : 1.18f) * SeasonSat;
 		S.bOverride_ColorSaturation = true;
 		S.ColorSaturation = FVector4(Sat, Sat, Sat, 1);
 		S.bOverride_ColorContrast = true;
 		S.ColorContrast = FVector4(1.08f, 1.08f, 1.08f, 1);
 		S.bOverride_ColorGainHighlights = true;
-		S.ColorGainHighlights = FVector4(1.04f, 1.0f, 0.94f, 1);
+		S.ColorGainHighlights = bWinter && !bAutumn ? FVector4(1.0f, 1.0f, 0.98f, 1) : bAutumn ? FVector4(1.06f, 1.01f, 0.92f, 1) : FVector4(1.04f, 1.0f, 0.94f, 1);
 		S.bOverride_ColorGainShadows = true;
-		S.ColorGainShadows = FVector4(0.94f, 0.98f, 1.06f, 1);
+		S.ColorGainShadows = bWinter && !bAutumn ? FVector4(0.92f, 0.97f, 1.1f, 1) : FVector4(0.94f, 0.98f, 1.06f, 1);
 		S.bOverride_VignetteIntensity = true;
 		S.VignetteIntensity = 0.3f;
+		// THE SHADE SIDE OF THE STREET. Exposed for the sun, a street in a
+		// building's shadow fell five stops under it and printed black: the
+		// pavement, the parked cars, the walkers, all gone. An eye (and any
+		// photograph of a city worth looking at) holds both: local exposure
+		// lifts the shade toward the middle without flattening the sunlit
+		// faces, and a little sky leaks into Lumen's canyons, where the real
+		// thing gets it from bounce off the facades opposite.
+		// (-NoStreetLook: off, for a perf A/B)
+		const bool bLift = !FParse::Param(FCommandLine::Get(), TEXT("NoStreetLook"));
+		S.bOverride_LocalExposureShadowContrastScale = bLift;
+		S.LocalExposureShadowContrastScale = Wx >= Overcast ? 0.85f : 0.62f;
+		S.bOverride_LocalExposureHighlightContrastScale = bLift;
+		S.LocalExposureHighlightContrastScale = 0.85f;
+		S.bOverride_LumenSkylightLeaking = bLift;
+		S.LumenSkylightLeaking = Wx >= Overcast ? 0.08f : 0.14f;
+	}
+	// THE SKY'S HAZE BY SEASON. The engine's default atmosphere is a mountain
+	// sky, deep blue to the horizon; a harbour city's summer sky is milky with
+	// moisture and the far shore goes soft in it, while a winter high is crisp.
+	if (Atmosphere)
+	{
+		const float Haze = bSummer ? 2.2f : bWinter ? 1.3f : 1.7f;
+		Atmosphere->SetMieScatteringScale(0.003996f * Haze * (Wx >= Overcast ? 1.4f : 1.f));
 	}
 	// streets wet in rain, damp for a while after it in the grey months
 	ACityBuilder::SetSeasonGrass(M);

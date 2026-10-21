@@ -1269,7 +1269,12 @@ void ACityBuilder::BuildVolumes()
 				// AN EMPTY LOT DOWNTOWN IS OFTEN A CAR PARK until somebody builds on
 				// it: about half of them, paved and striped with cars; the rest
 				// show the lot's own ground (gravel, dirt, weeds: BuildGround)
-				if (GetTypeHash(Vol.Bbl) % 100u < 55u)
+				// (a car park is a town lot's use: an acre at most; a farm or a
+				// woodlot tract on the market is open land, drawn by its own layers)
+				double A2 = 0;
+				for (int32 a = 0, n = Vol.Ring.Num(); a < n; ++a) A2 += FVector2D::CrossProduct(Vol.Ring[a], Vol.Ring[(a + 1) % n]);
+				const bool bTownLot = FMath::Abs(A2) * 0.5 < 4.0e7;   // cm^2: 4,000 m2, about an acre
+				if (bTownLot && GetTypeHash(Vol.Bbl) % 100u < 55u)
 				{
 					Lots.AddCap(Vol.Ring, FootZ + 4, FLinearColor::White);
 					if (bInst) ParkLot(Vol, GetTypeHash(Vol.Bbl));

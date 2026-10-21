@@ -168,6 +168,13 @@ export function normalizeMix(m: UseMix): UseMix {
   return out;
 }
 export function devMix(use: DevUse, custom?: UseMix): UseMix {
+  // The same one-key object as `{ [use]: 1 }`, as a literal shape (a computed key is the slow path).
+  switch (use) {
+    case "office": return { office: 1 };
+    case "retail": return { retail: 1 };
+    case "multifamily": return { multifamily: 1 };
+    case "industrial": return { industrial: 1 };
+  }
   if (use !== "mixed") return { [use]: 1 };
   return custom ? normalizeMix(custom) : { ...MIXED_STACK };
 }

@@ -59,13 +59,52 @@ export function fileSpreadAdj(r: Rival): number {
 
 // ------------------------------------------------------------------ reading
 
-/** This firm's mortgages on the record. */
-export function rowsOf(s: GameState, r: Rival): CityLoan[] {
-  // for..in walks the record in Object.values order without building the array.
-  const out: CityLoan[] = [];
+/**
+ * THE RECORD BY BORROWER. Every firm's service, amortisation, payment status
+ * and debt total reads its own rows, and the record is keyed by BBL — numeric
+ * keys, which every walk has to collect and sort — so a walk per firm per
+ * reader was a tenth of the month. The index is the walk done once: each
+ * firm's rows in record order, rebuilt whenever the record is a different
+ * object or anything has put a row on it, taken one off or moved one to
+ * another borrower. Every such write in the engine calls `loanBookTouched()`;
+ * and as a backstop for any writer that does not (a harness deleting a row),
+ * a firm's rows are checked on every read — each still on the record under
+ * its key and still this firm's — and any miss rebuilds. (Balances, rates and
+ * statuses are read off the rows themselves and need no bump.)
+ */
+let LOAN_REV = 0;
+export function loanBookTouched(): void { LOAN_REV++; }
+type LoanIx = { book: Record<string, CityLoan>; rev: number; by: Map<string, { keys: string[]; rows: CityLoan[] }> };
+let LOAN_IX: LoanIx | null = null;
+function buildLoanIx(L: Record<string, CityLoan>): LoanIx {
+  const by: LoanIx["by"] = new Map();
+  for (const k in L) {
+    const x = L[k];
+    const e = by.get(x.obligorId);
+    if (e) { e.keys.push(k); e.rows.push(x); } else by.set(x.obligorId, { keys: [k], rows: [x] });
+  }
+  return { book: L, rev: LOAN_REV, by };
+}
+/** This firm's rows in record order, off the index; null when the record is empty or absent. */
+function obligorRows(s: GameState, id: string): CityLoan[] | null {
   const L = s.cityLoans;
-  if (L) for (const k in L) { const x = L[k]; if (x.obligorId === r.id) out.push(x); }
-  return out;
+  if (!L) return null;
+  let ix = LOAN_IX;
+  if (!ix || ix.book !== L || ix.rev !== LOAN_REV) ix = LOAN_IX = buildLoanIx(L);
+  let e = ix.by.get(id);
+  if (e) {
+    for (let i = 0; i < e.rows.length; i++) {
+      const x = e.rows[i];
+      if (L[e.keys[i]] !== x || x.obligorId !== id) { ix = LOAN_IX = buildLoanIx(L); e = ix.by.get(id); break; }
+    }
+  }
+  return e ? e.rows : null;
+}
+
+/** This firm's mortgages on the record, in record order (a fresh array the caller may sort). */
+export function rowsOf(s: GameState, r: Rival): CityLoan[] {
+  const rows = obligorRows(s, r.id);
+  return rows ? rows.slice() : [];
 }
 /** The mortgage on one of this firm's deeds, if it has one. */
 export function rowOn(s: GameState, r: Rival, bbl: string): CityLoan | undefined {
@@ -74,8 +113,8 @@ export function rowOn(s: GameState, r: Rival, bbl: string): CityLoan | undefined
 }
 export function termDebtOf(s: GameState, r: Rival): number {
   let t = 0;
-  const L = s.cityLoans;
-  if (L) for (const k in L) { const x = L[k]; if (x.obligorId === r.id) t += x.balance; }
+  const rows = obligorRows(s, r.id);
+  if (rows) for (const x of rows) t += x.balance;
   return t;
 }
 export function jobDebtOf(s: GameState, r: Rival): number {
@@ -242,6 +281,7 @@ export function originateRow(
     row.cap = { strike: +(idx + 1.0).toFixed(2), expiresM: originM + Math.min(d.termM, CAP_TERM_M) };
   }
   s.cityLoans[bbl] = row;
+  loanBookTouched();
   syncDebt(s, r);
   return row;
 }
@@ -274,6 +314,7 @@ export function renewRow(
   if (!x) return 0;
   const bal = x.balance;
   delete s.cityLoans![bbl];
+  loanBookTouched();
   const row = originateRow(s, r, bbl, bal, value, noiYr, { ...o, klass: x.klass });
   if (!row) return 0;
   row.arrearsMs = x.arrearsMs;
@@ -348,7 +389,7 @@ export function payDown(s: GameState, r: Rival, amt: number): number {
       const take = Math.min(left, x.balance);
       x.balance -= take;
       left -= take;
-      if (x.balance <= 0) delete s.cityLoans![x.bbl];
+      if (x.balance <= 0) { delete s.cityLoans![x.bbl]; loanBookTouched(); }
     }
   }
   syncDebt(s, r);
@@ -366,6 +407,7 @@ export function dropDeed(s: GameState, r: Rival | undefined, bbl: string): numbe
   // noticed, measured by test/rival-loans.mjs.
   if (!x || x.obligorId !== r.id) { syncDebt(s, r); return 0; }
   delete s.cityLoans![bbl];
+  loanBookTouched();
   syncDebt(s, r);
   return x.balance;
 }
@@ -393,6 +435,7 @@ export function settleSale(s: GameState, r: Rival, bbl: string, price: number): 
   const row = rowOn(s, r, bbl);
   if (row) {
     delete s.cityLoans![bbl];
+    loanBookTouched();
     if (row.balance > price) addToLine(s, r, row.balance - price);
   }
   const fromLine = relief - Math.min(price, row?.balance ?? 0);
@@ -420,6 +463,7 @@ export function financePackage(
 /** One firm takes another's book: every mortgage, the line and the jobs move with the deeds. */
 export function assumeBook(s: GameState, from: Rival, to: Rival) {
   for (const x of rowsOf(s, from)) x.obligorId = to.id;
+  loanBookTouched();
   if ((from.lineBal ?? 0) > 0) { addToLine(s, to, from.lineBal!); from.lineBal = 0; }
   syncDebt(s, from);
   syncDebt(s, to);
@@ -490,7 +534,7 @@ export function amortizeRows(s: GameState, r: Rival, amortShare: number) {
   let term = 0;
   for (const x of rowsOf(s, r)) {
     x.balance = Math.max(0, Math.round(x.balance - (x.balance * amortShare) / (30 * 12)));
-    if (x.balance <= 0) delete s.cityLoans![x.bbl];
+    if (x.balance <= 0) { delete s.cityLoans![x.bbl]; loanBookTouched(); }
     else term += x.balance;
   }
   r.debt = Math.round(term + (r.lineBal ?? 0) + jobDebtOf(s, r));

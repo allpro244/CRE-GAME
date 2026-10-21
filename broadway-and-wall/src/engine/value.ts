@@ -2308,6 +2308,36 @@ export function resolveRec(parcels: Record<string, ParcelRecord>, s: GameState, 
   return { ...r, cornice: corniceDatum(s, parcels, r.block), maturity: townMaturity(s) };
 }
 
+/**
+ * THE MERGE RECORD BY PARENT. `resolveRecOnly` needs a parent's children and
+ * the record is keyed by BBL — numeric keys, collected and sorted on every
+ * walk — so walking it on every resolve was a few per cent of the month. The
+ * index is that walk done once per record object, rebuilt when the record is
+ * another object or `mergedTouched()` has been called; every in-place write
+ * to a merge record calls it. A parent's list is also checked on each read
+ * (every child still points at it) and rebuilt on any miss.
+ */
+let MERGE_REV = 0;
+export function mergedTouched(): void { MERGE_REV++; }
+let MERGE_IX: { m: Record<string, string>; rev: number; kids: Map<string, string[]> } | null = null;
+const NO_KIDS: readonly string[] = [];
+function buildMergeIx(m: Record<string, string>): NonNullable<typeof MERGE_IX> {
+  const kids = new Map<string, string[]>();
+  for (const child in m) {
+    const p = m[child];
+    const list = kids.get(p);
+    if (list) list.push(child); else kids.set(p, [child]);
+  }
+  return { m, rev: MERGE_REV, kids };
+}
+function childrenOf(m: Record<string, string>, bbl: string): readonly string[] {
+  let ix = MERGE_IX;
+  if (!ix || ix.m !== m || ix.rev !== MERGE_REV) ix = MERGE_IX = buildMergeIx(m);
+  let list = ix.kids.get(bbl);
+  if (list && list.some((c) => m[c] !== bbl)) { ix = MERGE_IX = buildMergeIx(m); list = ix.kids.get(bbl); }
+  return list ?? NO_KIDS;
+}
+
 function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl: string): ParcelRecord | null {
   const rec = parcels[bbl];
   if (!rec) return null;
@@ -2340,9 +2370,8 @@ function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl
     let psfSum = rec.lotArea * rec.landPsf;
     let commSum = rec.lotArea * rec.farMaxComm;
     let resSum = rec.lotArea * rec.farMaxRes;
-    // for..in walks the merge record in Object.entries order without building it.
-    for (const child in m) {
-      if (m[child] !== bbl) continue;
+    // This parent's children in merge-record order, off the index below.
+    for (const child of childrenOf(m, bbl)) {
       const c = parcels[child];
       if (!c) continue;
       const a = c.lotArea ?? 0;

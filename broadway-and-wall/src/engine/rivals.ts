@@ -36,7 +36,7 @@ import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, Rival
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
 import { dollarLevel, rng, newsChance, rrange, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
-import { DEV_MARGIN, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
+import { mergedTouched, DEV_MARGIN, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
 import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
@@ -56,7 +56,7 @@ import { logFirm, milestone } from "./firmLog";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
 import { assembledBlock, reviewThesis, thesisFit, thesisLabel, thesisSellMult } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
-import { deskWithRoom, renewRow, streetLoanCost, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
+import { deskWithRoom, loanBookTouched, renewRow, streetLoanCost, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
 import {
   paramsFrom, siteFit, dealsPerYear, misreadPp, drawSheet, profilesForStyle, hash01, GRADE_NUM,
   PROFILE_OF, PROFILES, inv as invTrait, LEVERAGE_RANGE, sheetFromStyle, classTrait, nearestProfile,
@@ -532,6 +532,7 @@ export function tickRivalAssembly(s: GameState, parcels: ParcelTable, adjacency:
       for (const c of children) {
         s.merged[c] = parent;
         for (const k of kids.get(c) ?? []) s.merged[k] = parent;
+        mergedTouched();
       }
       const site = resolveRec(parcels, s, parent)!;
       // Dirt prices close to additively (measured: a merged site at 99.6% of
@@ -2216,6 +2217,7 @@ export function tickRivalRetirements(s: GameState, _parcels: ParcelTable) {
     r.cash -= r.debt;
     r.distributed = (r.distributed ?? 0) + Math.max(0, r.cash);
     for (const x of rowsOf(s, r)) delete s.cityLoans![x.bbl];
+    loanBookTouched();
     r.lineBal = 0;
     r.debt = 0; r.cash = 0; r.bbls = []; r.uncalled = 0; r.aum = 0;
     r.heldSince = {};

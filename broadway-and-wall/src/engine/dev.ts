@@ -15,7 +15,7 @@ import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECT
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, taxRate, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
-  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier } from "./value";
+  mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier } from "./value";
 export { zoneUseBar };
 export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -4096,6 +4096,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
       oc = Math.round(oc + (45_000 + 30_000 * (kids.length + 1)) * e.costIdx);
       s.merged = { ...(before ?? {}) };
       for (const kk of kids) s.merged[kk] = bbl;
+      mergedTouched();
     }
     const site = kids.length ? resolveRec(parcels, s, bbl)! : rec;
     for (const k of BUILT_CLASSES) {
@@ -4162,6 +4163,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   if (kids.length) {
     s.merged = { ...(mergedBefore ?? {}) };
     for (const kk of kids) s.merged[kk] = bbl;
+    mergedTouched();
   }
   if (s.builderFirms) {
     const f = livingBuilderFirms(s).reduce<Rival | undefined>((a, r) => (!a || freeCash(s, r) > freeCash(s, a) ? r : a), undefined);
@@ -4819,6 +4821,7 @@ function assembledLandBasis(s: GameState, parcels: ParcelTable, bbl: string, kid
   const total = ask(bbl) + (1 + ASSEMBLY_PREMIUM) * kidsAsk + (45_000 + 30_000 * (kids.length + 1)) * s.econ.costIdx;
   s.merged = { ...(s.merged ?? {}) };
   for (const k of kids) s.merged[k] = bbl;
+  mergedTouched();
   return Math.round(total);
 }
 const ASSEMBLY_MAX_KIDS = 3;

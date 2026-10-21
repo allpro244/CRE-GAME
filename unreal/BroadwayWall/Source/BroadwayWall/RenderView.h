@@ -13,6 +13,9 @@ struct FBWRenderTier
 	double Z0 = 0, Z1 = 0;
 };
 
+/** Parse a "tiers" array ([{ring:[x,y,...] cm, z0, z1}]) from a lot or a preview message. */
+TArray<FBWRenderTier> BWReadTiers(const TSharedPtr<class FJsonObject>& O);
+
 struct FBWRenderLot
 {
 	FString Bbl, Cls;

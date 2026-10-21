@@ -950,7 +950,7 @@ void ABWGameMode::OnPageInput(const FString& Json)
 		FString Bbl, Facade, Cls; double Floors = 1, Cov = 0, Year = 0;
 		O->TryGetStringField(TEXT("bbl"), Bbl); O->TryGetStringField(TEXT("facade"), Facade); O->TryGetStringField(TEXT("cls"), Cls);
 		O->TryGetNumberField(TEXT("floors"), Floors); O->TryGetNumberField(TEXT("cov"), Cov); O->TryGetNumberField(TEXT("year"), Year);
-		City->SetPreview(Bbl, int32(Floors), Cov, Facade, Cls, int32(Year), BWReadLook(O));
+		City->SetPreview(Bbl, int32(Floors), Cov, Facade, Cls, int32(Year), BWReadLook(O), BWReadTiers(O));
 		return;
 	}
 	if (T == TEXT("preview-off") && City) { City->ClearPreview(); return; }

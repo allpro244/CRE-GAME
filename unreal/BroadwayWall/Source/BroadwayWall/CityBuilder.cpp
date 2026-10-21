@@ -1039,7 +1039,7 @@ void ACityBuilder::SetHighlight(const FBWParcel* Sel, const FBWParcel* Hover, do
 	}
 }
 
-void ACityBuilder::SetPreview(const FString& Bbl, int32 Floors, double Cov, const FString& Facade, const FString& Cls, int32 Year, const FBWLook& Look)
+void ACityBuilder::SetPreview(const FString& Bbl, int32 Floors, double Cov, const FString& Facade, const FString& Cls, int32 Year, const FBWLook& Look, const TArray<FBWRenderTier>& Tiers)
 {
 	const FBWParcel* P = City.FindParcel(Bbl);
 	if (!P || P->Ring.Num() < 3) { ClearPreview(); return; }
@@ -1060,6 +1060,18 @@ void ACityBuilder::SetPreview(const FString& Bbl, int32 Floors, double Cov, cons
 	PreviewVol.bCrown = true;
 	PreviewVol.Ring = MoveTemp(Ring);
 	PreviewVol.Z1 = FMath::Max(1, Floors) * 355.0 + 150.0;   // a parapet's height over the top floor
+	// a chosen form: its tiers, one building
+	PreviewTiers.Reset();
+	double TopZ = 0;
+	for (const FBWRenderTier& T : Tiers) TopZ = FMath::Max(TopZ, T.Z1);
+	for (const FBWRenderTier& T : Tiers)
+	{
+		if (T.Ring.Num() < 3 || T.Z1 - T.Z0 < 100) continue;
+		FBWVolume Tv = PreviewVol;
+		Tv.Ring = T.Ring; Tv.Z0 = T.Z0; Tv.Z1 = T.Z1; Tv.bCrown = T.Z1 >= TopZ;
+		PreviewTiers.Add(MoveTemp(Tv));
+	}
+	if (PreviewTiers.Num()) PreviewVol.Z1 = TopZ;
 	bPreview = true;
 	ComposePreview();
 	BuildVolumes();
@@ -1076,7 +1088,8 @@ void ACityBuilder::ClearPreview()
 void ACityBuilder::ComposePreview()
 {
 	Current = BaseVolumes.FilterByPredicate([this](const FBWVolume& V) { return V.Bbl != PreviewVol.Bbl; });
-	Current.Add(PreviewVol);
+	if (PreviewTiers.Num()) Current.Append(PreviewTiers);
+	else Current.Add(PreviewVol);
 }
 
 bool ACityBuilder::PreviewBounds(FVector& Base, double& Height, double& Span) const

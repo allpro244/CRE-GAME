@@ -1571,8 +1571,32 @@ void ACityBuilder::DressRoof(const FBWVolume& V, uint32 Seed)
 			}
 	}
 	if (Rng.FRand() < 0.85 && Spot(P)) AddProp(TEXT("/Game/Prop/Kit_roof_door_stair_RR/Mesh/SM_roof_door_stair_N1.SM_roof_door_stair_N1"), FTransform(Square, FVector(P, Z)), true);
-	const int32 Units = Rng.RandRange(1, FMath::Clamp(int32(Sz.X * Sz.Y / 4.0e6), 1, 6));
-	for (int32 i = 0; i < Units; ++i) if (Spot(P)) AddProp(TEXT("/Game/Prop/Kit_roof_AC_Unit_B/Mesh/SM_roof_AC_Unit_B_01_N1.SM_roof_AC_Unit_B_01_N1"), FTransform(Square, FVector(P, Z)), true);
+	// THE PLANT SCALES WITH THE FLOOR AREA BELOW IT. Rooftop units serve
+	// about 400-800 m2 of floor each (a 10-ton RTU), so an acre of roof over a
+	// mid-rise carries a field of them in rows, joined by duct runs; two units
+	// on a block-sized roof read as empty. Rows along the roof's own axis.
+	const double RoofM2 = Sz.X * Sz.Y / 1.0e4;
+	const int32 Units = FMath::Clamp(int32(RoofM2 / 260.0) + Rng.RandRange(0, 1), 1, 18);
+	{
+		const FVector2D E = (V.Ring[1] - V.Ring[0]).GetSafeNormal(), Nn(-E.Y, E.X);
+		FVector2D Cc(0, 0); for (const FVector2D& Q : V.Ring) Cc += Q; Cc /= V.Ring.Num();
+		const int32 PerRow = FMath::Max(1, FMath::Min(6, Units));
+		const int32 Rows = (Units + PerRow - 1) / PerRow;
+		const double Off = Rng.FRandRange(-0.25, 0.25) * FMath::Min(Sz.X, Sz.Y);
+		for (int32 r = 0; r < Rows; ++r)
+			for (int32 k = 0; k < PerRow && r * PerRow + k < Units; ++k)
+			{
+				const FVector2D Q = Cc + E * ((k - (PerRow - 1) * 0.5) * 420.0) + Nn * (Off + (r - (Rows - 1) * 0.5) * 520.0);
+				if (InsideRing(In, Q)) AddProp(TEXT("/Game/Prop/Kit_roof_AC_Unit_B/Mesh/SM_roof_AC_Unit_B_01_N1.SM_roof_AC_Unit_B_01_N1"), FTransform(Square, FVector(Q, Z)), true);
+			}
+		// a duct run along each row of units
+		if (Units >= 4)
+			for (int32 r = 0; r < Rows; ++r)
+			{
+				const FVector2D Q = Cc + Nn * (Off + (r - (Rows - 1) * 0.5) * 520.0 + 220.0);
+				if (InsideRing(In, Q)) AddProp(TEXT("/Game/Prop/Kit_ventilation_RR/Mesh/SM_roof_Ac_pipe_long_N1.SM_roof_Ac_pipe_long_N1"), FTransform(FRotator(0, FMath::RadiansToDegrees(FMath::Atan2(E.Y, E.X)), 0), FVector(Q, Z)), true);
+			}
+	}
 	if (Rng.FRand() < 0.6 && Spot(P)) AddProp(TEXT("/Game/Prop/Kit_roof_Exhaust_A/Mesh/SM_roof_RectExhaust_A_N1.SM_roof_RectExhaust_A_N1"), FTransform(Square, FVector(P, Z)), true);
 	for (int32 i = Rng.RandRange(0, 3); i > 0; --i) if (Spot(P)) AddProp(TEXT("/Game/Prop/Kit_Roof_Vent_RR/Mesh/SM_RooftopVent_N1.SM_RooftopVent_N1"), FTransform(Square, FVector(P, Z)), true);
 	const double Height = V.Z1 - V.Z0;

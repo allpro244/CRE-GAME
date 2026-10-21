@@ -361,8 +361,18 @@ const FBWParcel* ABWPlayerController::PickAt(const FVector2D& ScreenPos)
 	Q.bReturnFaceIndex = true;
 	FVector Origin, Dir;
 	if (!DeprojectScreenPositionToWorld(ScreenPos.X, ScreenPos.Y, Origin, Dir)) return nullptr;
-	if (!GetWorld()->LineTraceSingleByChannel(Hit, Origin, Origin + Dir * 2000000, ECC_Visibility, Q)) return nullptr;
-	return City->ParcelFromHit(Hit);
+	if (GetWorld()->LineTraceSingleByChannel(Hit, Origin, Origin + Dir * 2000000, ECC_Visibility, Q))
+		if (const FBWParcel* P = City->ParcelFromHit(Hit)) return P;
+	// THE GROUND HAS NO COLLISION (cooking the whole city floor would cost the
+	// load), so a click on a lot's open ground or a vacant lot passed straight
+	// through. Where the ray meets the ground plane (a lot's cover stands about
+	// 20 cm up), take the lot there.
+	if (Dir.Z < -1e-3)
+	{
+		const FVector G = Origin + Dir * ((20.0 - Origin.Z) / Dir.Z);
+		return City->ParcelAt(FVector2D(G.X, G.Y));
+	}
+	return nullptr;
 }
 
 void ABWPlayerController::Select(const FBWParcel* P)

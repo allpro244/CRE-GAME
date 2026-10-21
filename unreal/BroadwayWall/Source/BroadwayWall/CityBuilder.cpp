@@ -451,9 +451,12 @@ void ACityBuilder::BuildGround()
 	Ground->SetCastShadow(false);
 	Ground->RegisterComponent();
 
-	// the sea: one big sheet well past the island
-	FMeshBuf Sea;
-	const FBox2D B = City.Bounds.ExpandBy(FMath::Max(City.Bounds.GetSize().X, City.Bounds.GetSize().Y) * 3.0);
+	// the sea: one big sheet out past the horizon. It stopped ~8 km off, and
+	// from a low camera the edge showed as a dark band under the sky (the
+	// atmosphere's planet below the horizon): from 1-2 km up the horizon is
+	// 110-160 km away, so the sheet runs 200 km.
+	FMeshBuf Sea, Far;
+	const FBox2D B = City.Bounds.ExpandBy(20000000.0);
 	Sea.AddCap({ B.Min, FVector2D(B.Max.X, B.Min.Y), B.Max, FVector2D(B.Min.X, B.Max.Y) }, -120, FLinearColor(FColor(0x2E, 0x5A, 0x78)));
 	for (const TArray<FVector2D>& R : City.Water) Sea.AddCap(R, -80, FLinearColor(FColor(0x4A, 0x7C, 0x96)));
 	// THE FAR SHORE. A harbour town looks across its water at somewhere: a band of
@@ -470,33 +473,39 @@ void ACityBuilder::BuildGround()
 		for (int32 k = 0; k < Steps; ++k)
 		{
 			const double a = A0 + Span * k / Steps, b = A0 + Span * (k + 1) / Steps;
-			Sea.AddCap({ Pt(a, R0 - 20000), Pt(b, R0 - 20000), Pt(b, R0 + 400000), Pt(a, R0 + 400000) }, -60, FLinearColor(FColor(0x5C, 0x5E, 0x58)));
+			// LAND, NOT SEA: this band was laid in the sea's sheet and so drawn in
+			// the water's material, which made the far city a string of islands
+			// floating in the haze. Its own section, in the lawn, 1.5 m up.
+			// (to the horizon: a 4 km band with sea behind it read as a long island)
+			Far.AddCap({ Pt(a, R0 - 20000), Pt(b, R0 - 20000), Pt(b, R0 + 15000000), Pt(a, R0 + 15000000) }, 150, FLinearColor(FColor(0x5C, 0x5E, 0x58)));
 		}
 		static const TCHAR* const Bg[] = {
 			TEXT("/Game/Environment/Background_City/Mesh/SM_bgcitya.SM_bgcitya"),
 			TEXT("/Game/Environment/Background_City/Mesh/SM_bgcityb.SM_bgcityb") };
-		for (double a = A0 + 0.03; a < A0 + Span - 0.03; a += 30000.0 / R0)
+		for (double a = A0 + 0.03; a < A0 + Span - 0.03; a += 16000.0 / R0)
 		{
 			const double t = (a - A0) / Span, Edge = FMath::Sin(t * PI);          // 0 at the arc's ends, 1 mid
 			for (int32 row = 0; row < 3; ++row)
 			{
 				if (Rng.FRand() > 0.35 + 0.6 * Edge) continue;
 				const double R = R0 + 15000 + row * 70000 + Rng.FRandRange(-15000, 15000);
-				const double Sc = (14 + 20 * Edge * Rng.FRand()) * (1.0 - 0.18 * row);
+				// a far city is low on its shore: mostly mid-rise, a few towers mid-arc
+				const double Sc = (8 + 12 * Edge * Rng.FRand()) * (1.0 - 0.18 * row);
 				const int32 m = Rng.RandRange(0, 1);   // mesh bottoms sit 249 / 188 cm below their pivots
-				AddProp(Bg[m], FTransform(FRotator(0, Rng.FRandRange(0, 360), 0), FVector(Pt(a, R), (m ? 188 : 249) * Sc - 60), FVector(Sc)), false);
+				AddProp(Bg[m], FTransform(FRotator(0, Rng.FRandRange(0, 360), 0), FVector(Pt(a, R), (m ? 188 : 249) * Sc + 150), FVector(Sc)), false);
 			}
 		}
 	}
 	Sea.Emit(Ground, 0, false);
 	TArray<UMaterialInterface*> Mats = { GroundMaterial(TEXT("sea")) };
+	if (Far.V.Num()) { Far.Emit(Ground, 1, false); Mats.Add(BWGrassMaterial()); }
 
 	// land and its dressing, each layer a centimetre above the last so nothing
 	// fights. THE FOOTWAY IS A STEP UP: sidewalks, medians and lawns stand a
 	// kerb's height (12 cm, a city kerb's 4-6 in) above the carriageway, and
 	// every raised ring gets the kerb's vertical face in concrete down to the
 	// road. A footway level with the asphalt read as paint on one sheet.
-	int32 Section = 1;
+	int32 Section = Mats.Num();
 	double Z = 0, RoadZ = 0;
 	constexpr double KerbH = 12;
 	FMeshBuf Kerbs;
@@ -1219,9 +1228,12 @@ void ACityBuilder::BuildTrees()
 
 const FBWParcel* ACityBuilder::ParcelFromHit(const FHitResult& Hit) const
 {
-	if (Chunks.IndexOfByKey(Cast<UProceduralMeshComponent>(Hit.GetComponent())) == INDEX_NONE) return nullptr;
-	// by geometry, not by face index: collision cooking may reorder triangles.
-	// A wall hit sits on the footprint edge, so step half a metre inside.
+	// ANY HIT PICKS THE LOT UNDER IT. This used to accept only the building
+	// meshes, so the open part of a lot (the ground, a lawn, a yard) and a
+	// vacant lot that is not a car park (it has no mesh of its own: its ground
+	// is BuildGround's) could not be clicked at all. By geometry, not by face
+	// index: collision cooking may reorder triangles. A wall hit sits on the
+	// footprint edge, so step half a metre inside.
 	const FVector P = Hit.ImpactPoint - Hit.ImpactNormal * 50.0;
 	return ParcelAt(FVector2D(P.X, P.Y));
 }

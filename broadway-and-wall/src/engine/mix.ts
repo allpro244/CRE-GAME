@@ -129,6 +129,10 @@ export function useSf(rec: ParcelRecord, use: BuiltClass): number {
 /** Every use present, biggest first. */
 export function uses(rec: ParcelRecord): BuiltClass[] {
   const m = mixOf(rec);
+  // A mix of one is already in order; anything bigger sorts as it always did.
+  let only: BuiltClass | undefined, n = 0;
+  for (const k in m) { if (n++) break; only = k as BuiltClass; }
+  if (n === 1) return [only!];
   return (Object.keys(m) as BuiltClass[]).sort((a, b) => (m[b] ?? 0) - (m[a] ?? 0));
 }
 
@@ -153,7 +157,9 @@ export function isMixedUse(rec: ParcelRecord): boolean {
 export function blend(rec: ParcelRecord, table: Record<BuiltClass, number> | Partial<Record<BuiltClass, number>>): number {
   const m = mixOf(rec);
   let sum = 0, w = 0;
-  for (const k of Object.keys(m) as BuiltClass[]) {
+  // for..in walks the mix in Object.keys order without building the array.
+  for (const key in m) {
+    const k = key as BuiltClass;
     const share = m[k] ?? 0;
     const v = table[k];
     if (v === undefined) continue;
@@ -166,7 +172,8 @@ export function blend(rec: ParcelRecord, table: Record<BuiltClass, number> | Par
 export function blendBy(rec: ParcelRecord, f: (use: BuiltClass) => number): number {
   const m = mixOf(rec);
   let sum = 0, w = 0;
-  for (const k of Object.keys(m) as BuiltClass[]) {
+  for (const key in m) {
+    const k = key as BuiltClass;
     const share = m[k] ?? 0;
     sum += f(k) * share; w += share;
   }

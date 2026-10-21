@@ -1229,7 +1229,26 @@ type LandMemoEntry = {
   /** residualSchemeIn at rentMult 1 and at PEAK_RENT_MULT; undefined until run. */
   now?: ResidualScheme | null;
   peak?: ResidualScheme | null;
+  nowAt?: ResidualGate;
+  peakAt?: ResidualGate;
 };
+/**
+ * WHAT THE MEMO KEY DOES NOT COVER AND A RESIDUAL STILL READS. The price and
+ * read memos above are keyed on the market and lot fields listed there; a
+ * residual also reads the street's quality bands (the building score of the
+ * scheme, `overallScore`), which are re-stamped mid-month, and the blend of
+ * last year's land queue into this year's (`queueFactor`). A residual is only
+ * handed from one reader to the other while those are the ones it was run on,
+ * so sharing it can never give a number a fresh run would not.
+ */
+type ResidualGate = { tierCtx: unknown; bandStamp: unknown; queuePrev: unknown; queueW: unknown };
+function residualGate(econ: Econ): ResidualGate {
+  return { tierCtx: econ.tierCtx, bandStamp: econ.bandStamp, queuePrev: econ.landQueuePrev, queueW: econ.landQueueW };
+}
+function residualGateHolds(g: ResidualGate, econ: Econ): boolean {
+  return g.tierCtx === econ.tierCtx && g.bandStamp === econ.bandStamp
+    && g.queuePrev === econ.landQueuePrev && Object.is(g.queueW, econ.landQueueW);
+}
 const LAND_MEMO = new Map<string, LandMemoEntry>();
 /** The entry for this lot under the current market, made fresh if its lot fields have moved. */
 function landMemoFor(rec: ParcelRecord, econ: Econ): LandMemoEntry {
@@ -1347,7 +1366,6 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   if (m.read) return m.read;
   const read = readLand(rec, econ, true, LAND_CTX, m);
   m.read = read;
-  if (m.psf === undefined) m.psf = read.psf;
   return read;
 }
 
@@ -1387,13 +1405,13 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   // important line in a city and the game could not draw it before.
   // (`memo` is the lot's memo entry: each residual is run at most once a market.)
   let scheme: ResidualScheme | null;
-  if (memo && memo.now !== undefined) scheme = memo.now;
-  else { scheme = residualSchemeIn(rec, econ, 1, ctx); if (memo) memo.now = scheme; }
+  if (memo && memo.now !== undefined && residualGateHolds(memo.nowAt!, econ)) scheme = memo.now;
+  else { scheme = residualSchemeIn(rec, econ, 1, ctx); if (memo) { memo.now = scheme; memo.nowAt = residualGate(econ); } }
   const builder = scheme?.psf ?? 0;
   let peak: ResidualScheme | null = null;
   if (whole || !(builder > 0)) {
-    if (memo && memo.peak !== undefined) peak = memo.peak;
-    else { peak = residualSchemeIn(rec, econ, PEAK_RENT_MULT, ctx); if (memo) memo.peak = peak; }
+    if (memo && memo.peak !== undefined && residualGateHolds(memo.peakAt!, econ)) peak = memo.peak;
+    else { peak = residualSchemeIn(rec, econ, PEAK_RENT_MULT, ctx); if (memo) { memo.peak = peak; memo.peakAt = residualGate(econ); } }
   }
   const holder = whole || !(builder > 0)
     ? (peak?.psf ?? 0) * WAIT_DISCOUNT
@@ -1906,8 +1924,14 @@ function condMult(c: Condition): number {
  * life company's "good", the desk's repairs holdback).
  */
 const COND_CENTRE: Record<Condition, number> = { obsolete: 0.17, worn: 0.43, standard: 0.65, good: 0.865 };
+const COND_PTS = new Map<Record<Condition, number>, [number, number][]>();
 function condLerp(idx: number, table: Record<Condition, number>): number {
-  const pts: [number, number][] = (["obsolete", "worn", "standard", "good"] as Condition[]).map((g) => [COND_CENTRE[g], table[g]]);
+  // The four points are the table's, laid out once per table (both are constants).
+  let pts = COND_PTS.get(table);
+  if (!pts) {
+    pts = (["obsolete", "worn", "standard", "good"] as Condition[]).map((g) => [COND_CENTRE[g], table[g]] as [number, number]);
+    COND_PTS.set(table, pts);
+  }
   if (idx <= pts[0][0]) return pts[0][1];
   for (let i = 1; i < pts.length; i++) {
     if (idx <= pts[i][0]) { const t = (idx - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0]); return pts[i - 1][1] + t * (pts[i][1] - pts[i - 1][1]); }
@@ -2316,8 +2340,9 @@ function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl
     let psfSum = rec.lotArea * rec.landPsf;
     let commSum = rec.lotArea * rec.farMaxComm;
     let resSum = rec.lotArea * rec.farMaxRes;
-    for (const [child, parent] of Object.entries(m)) {
-      if (parent !== bbl) continue;
+    // for..in walks the merge record in Object.entries order without building it.
+    for (const child in m) {
+      if (m[child] !== bbl) continue;
       const c = parcels[child];
       if (!c) continue;
       const a = c.lotArea ?? 0;

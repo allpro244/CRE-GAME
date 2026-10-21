@@ -25,7 +25,8 @@
    "B76",
    "B78",
    "B79",
-   "B81"
+   "B81",
+   "B84"
   ],
   "buff": [
    "NYA",
@@ -134,7 +135,8 @@
    "B32",
    "B72",
    "B77",
-   "B81"
+   "B81",
+   "B83"
   ],
   "tudor": [
    "NYH",
@@ -153,7 +155,8 @@
    "B38",
    "B46",
    "B50",
-   "B70"
+   "B70",
+   "B85"
   ],
   "daylight": [
    "CHF",
@@ -246,7 +249,8 @@
    "B23",
    "B65",
    "B74",
-   "B79"
+   "B79",
+   "B84"
   ],
   "fibercement": [
    "SFA",
@@ -256,7 +260,9 @@
    "B77",
    "B78",
    "B80",
-   "B81"
+   "B81",
+   "B82",
+   "B83"
   ],
   "metalpanel": [
    "SFC",
@@ -265,14 +271,18 @@
    "B72",
    "B73",
    "B74",
-   "B80"
+   "B80",
+   "B82",
+   "B84",
+   "B87"
   ],
   "rainscreen": [
    "SFC",
    "B56",
    "B59",
    "B73",
-   "B76"
+   "B76",
+   "B82"
   ],
   "timber": [
    "SFA"
@@ -394,7 +404,8 @@
   ],
   "mediterranean": [
    "SFA",
-   "B28"
+   "B28",
+   "B83"
   ],
   "spanishcolonial": [
    "SFA",
@@ -505,11 +516,13 @@
   "brewery": [
    "CHG",
    "CHF",
-   "B41"
+   "B41",
+   "B85"
   ],
   "textilemill": [
    "CHG",
-   "CHF"
+   "CHF",
+   "B85"
   ],
   "terminal": [
    "CHB",
@@ -521,23 +534,29 @@
   ],
   "corrugated": [
    "SFC",
-   "B64"
+   "B64",
+   "B86",
+   "B87"
   ],
   "tiltup": [
    "CHJ",
    "SFC",
-   "B68"
+   "B68",
+   "B86"
   ],
   "flexspace": [
    "SFC",
-   "SFE"
+   "SFE",
+   "B86"
   ],
   "datacentre": [
    "SFC",
-   "CHJ"
+   "CHJ",
+   "B86"
   ],
   "selfstorage": [
-   "SFC"
+   "SFC",
+   "B87"
   ],
   "projectbrick": [
    "NYA",

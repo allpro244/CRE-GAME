@@ -81,4 +81,10 @@ export const STYLE_KITS: { key: string; name: string; era: string; group: "prewa
   { key: "B79", name: "Waterfront condo, zoned", era: "1995-2025", group: "contemporary", family: "brick" },
   { key: "B80", name: "Student housing, colour blocks", era: "1995-2025", group: "contemporary", family: "metalpanel" },
   { key: "B81", name: "Tan mid-rise, zoned", era: "1995-2025", group: "contemporary", family: "stucco" },
+  { key: "B82", name: "Navy and white rental, zoned", era: "1995-2025", group: "contemporary", family: "metalpanel" },
+  { key: "B83", name: "Sunbelt garden apartments", era: "1995-2025", group: "contemporary", family: "stucco" },
+  { key: "B84", name: "Charcoal brick and sage rental", era: "1995-2025", group: "contemporary", family: "brick" },
+  { key: "B85", name: "Brick warehouse with docks", era: "1850-1915", group: "prewar", family: "industrial" },
+  { key: "B86", name: "Metal-panel logistics", era: "1995-2025", group: "contemporary", family: "tiltup" },
+  { key: "B87", name: "Self-storage", era: "1995-2025", group: "contemporary", family: "selfstorage" },
 ];

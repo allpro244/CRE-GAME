@@ -73,6 +73,17 @@ const KITS = {
   sunshade: ["SFE"], sawtooth: ["SFJ"],
 };
 
+// The generated styles (unreal/tools/styles.json, built by make-styles.py) join
+// the families their recipe names; kits retired after review (no Data/kit-X.json)
+// leave every list, and a list they emptied falls back to its original's.
+import { existsSync } from "node:fs";
+for (const r of JSON.parse(readFileSync(join(HERE, "styles.json"), "utf8")))
+  for (const f of r.families ?? []) (KITS[f] ??= []).push(r.key);
+for (const f of Object.keys(KITS)) {
+  KITS[f] = KITS[f].filter((k) => existsSync(join(DATA, `kit-${k}.json`)));
+  if (!KITS[f].length) delete KITS[f];
+}
+
 const doc = { format: "bw-kit-families/1", kits: KITS, like: LIKE };
 writeFileSync(join(DATA, "facade-families.json"), JSON.stringify(doc, null, 1));
 

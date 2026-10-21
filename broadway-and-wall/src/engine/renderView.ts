@@ -27,6 +27,7 @@
 import type {GameState, PropertyEventKind, BuildingDesign } from "./types";
 import { START_YEAR } from "./types";
 import { ownerOf } from "./rivals";
+import { STYLE_KITS } from "./styleKits";
 
 /** Storey height the generator and both renderers build with (citygen, MapView). */
 export const FLOOR_M = 3.55;
@@ -55,6 +56,10 @@ export interface RenderLot {
   facade?: string;
   /** The Unreal facade kit the player chose, when they chose one (lookOf). */
   look?: RenderLook;
+  /** The building form the player chose (BuildingDesign.form); the host solves its tiers on the lot. */
+  form?: string;
+  /** Its tiers, rings in cm, heights in cm (state/unrealHost.ts solves them). */
+  tiers?: { ring: number[]; z0: number; z1: number }[];
 }
 
 export interface RenderOwner {
@@ -95,7 +100,7 @@ export interface RenderView {
  * stands nearest (BuildingDesign.facade, so the browser map draws the same
  * building in its own pattern book).
  */
-export const KITS: { key: string; name: string; era: string; group: "prewar" | "interwar" | "postwar"; family: string }[] = [
+export const KITS: { key: string; name: string; era: string; group: "prewar" | "interwar" | "postwar" | "contemporary"; family: string }[] = [
   // named for what each kit builds (Unreal renders: unreal/BroadwayWall/Data/kit-thumbs)
   { key: "NYA", name: "Painted brick walk-up", era: "1880-1930", group: "prewar", family: "brick" },
   { key: "NYH", name: "Arched red brick", era: "1860-1900", group: "prewar", family: "brick" },
@@ -105,19 +110,20 @@ export const KITS: { key: string; name: string; era: string; group: "prewar" | "
   { key: "CHA", name: "Terra cotta commercial", era: "1890-1925", group: "prewar", family: "terracotta" },
   { key: "CHC", name: "Gothic terra cotta", era: "1900-1930", group: "prewar", family: "terracotta" },
   { key: "NYG", name: "Collegiate Gothic", era: "1900-1930", group: "prewar", family: "gothic" },
-  { key: "SFB", name: "Classical portico", era: "1900-1930", group: "prewar", family: "stone" },
   { key: "CHB", name: "Deco stone", era: "1925-1940", group: "interwar", family: "deco" },
   { key: "CHI", name: "Deco brick", era: "1920-1940", group: "interwar", family: "decobrick" },
-  { key: "CHD", name: "Stripped classical", era: "1930-1950", group: "interwar", family: "stone" },
   { key: "CHH", name: "Moderne, bronze bays", era: "1935-1955", group: "interwar", family: "moderne" },
   { key: "CHF", name: "Mid-century frame", era: "1945-1965", group: "postwar", family: "midcentury" },
   { key: "CHE", name: "Stone base, glass top", era: "1950-1975", group: "postwar", family: "modern" },
   { key: "SFE", name: "Modern strip", era: "1955-1990", group: "postwar", family: "modern" },
   { key: "SFC", name: "Punched grid", era: "1960-1990", group: "postwar", family: "grid" },
   { key: "CHJ", name: "Dark glass curtain wall", era: "1960-1985", group: "postwar", family: "blackglass" },
+  // (CHD and SFB were retired after review: blank slabs at any height)
+  // and Broadway & Wall's own styles, built from recipes (unreal/tools/make-styles.py)
+  ...STYLE_KITS,
 ];
 export const KIT_GROUPS: { key: (typeof KITS)[number]["group"]; name: string }[] = [
-  { key: "prewar", name: "Pre-war" }, { key: "interwar", name: "Inter-war" }, { key: "postwar", name: "Post-war" },
+  { key: "prewar", name: "Pre-war" }, { key: "interwar", name: "Inter-war" }, { key: "postwar", name: "Post-war" }, { key: "contemporary", name: "Contemporary" },
 ];
 /** Wall colours: multipliers on the kit's own wall material (its brick, stone or panel). */
 export const KIT_COLOURS: { name: string; rgb: [number, number, number] }[] = [
@@ -156,7 +162,7 @@ export function renderView(s: GameState, sinceMonth = s.month - 1): RenderView {
     lots.push({ bbl: d.bbl, cls: d.use, floors: d.floors, heightM: d.floors * FLOOR_M * progress, construction: true, progress, year: nowYear,
       ...(d.coverage !== undefined ? { cov: d.coverage } : {}),
       ...(d.design?.facade ? { facade: d.design.facade.split("#")[0] } : {}),
-      ...(lookOf(d.design) ? { look: lookOf(d.design) } : {}) });
+      ...(lookOf(d.design) ? { look: lookOf(d.design) } : {}), ...(d.design?.form ? { form: d.design.form } : {}) });
   }
   for (const j of s.cityJobs ?? []) {
     if ((s.built?.[j.bbl]?.bldgArea ?? 0) > 0 || s.developments?.[j.bbl]) continue;
@@ -176,7 +182,7 @@ export function renderView(s: GameState, sinceMonth = s.month - 1): RenderView {
       ...(dM !== undefined && s.month - dM <= 3 ? { fresh: true } : {}),
       ...(b.mix ? { shops: (b.mix.retail ?? 0) > 0.001 } : {}),
       ...(b.design?.facade ? { facade: b.design.facade.split("#")[0] } : {}),
-      ...(lookOf(b.design) ? { look: lookOf(b.design) } : {}) });
+      ...(lookOf(b.design) ? { look: lookOf(b.design) } : {}), ...(b.design?.form ? { form: b.design.form } : {}) });
   }
 
   const owners: RenderOwner[] = [];

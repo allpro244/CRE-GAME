@@ -75,6 +75,8 @@ public:
 	/** The Build desk's model box, as fractions of the window (x, y, w, h); w <= 0 when the desk is closed. */
 	FVector4 DeskRect = FVector4(0, 0, 0, 0);
 	double DeskYaw = 30, DeskSpin = 1, DeskHeld = 0;
+	/** -KitZoom=F: the style renders move in to F of the framing distance, looking at the lower floors (a close-up of the texture) */
+	double DeskZoom = 1;
 	/** The view to go back to when the desk closes. */
 	FVector SavedFocus = FVector::ZeroVector;
 	double SavedYaw = 0, SavedPitch = -45, SavedDistance = 150000;
@@ -165,6 +167,8 @@ private:
 	TObjectPtr<class APostProcessVolume> Post;
 	UPROPERTY()
 	TObjectPtr<class AExponentialHeightFog> Fog;
+	UPROPERTY()
+	TObjectPtr<class USkyAtmosphereComponent> Atmosphere;
 	/** The game month the sky was last set for, and its weather (for the HUD). */
 	int32 SkyMonth = -1;
 	FString Weather;

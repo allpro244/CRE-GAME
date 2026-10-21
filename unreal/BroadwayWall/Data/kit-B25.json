@@ -1,0 +1,167 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B25",
+ "grammar": "generated",
+ "label": "Arcaded limestone",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 560.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_Ground_0.SM_B25_Ground_0",
+     "width": 400.0,
+     "depth": 50.0,
+     "y0": -400.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_Ground_1.SM_B25_Ground_1",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_Ground_2.SM_B25_Ground_2",
+     "width": 480.0,
+     "depth": 50.0,
+     "y0": -480.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_Entrance.SM_B25_Entrance",
+     "width": 400.0,
+     "depth": 50.0,
+     "y0": -400.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_GroundCorner.SM_B25_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "P",
+   "height": 440.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_Second.SM_B25_Second",
+     "width": 400.0,
+     "depth": 50.0,
+     "y0": -400.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_SecondCorner.SM_B25_SecondCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "S",
+   "height": 370.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_Typical_0.SM_B25_Typical_0",
+     "width": 400.0,
+     "depth": 50.0,
+     "y0": -400.0,
+     "y1": 0,
+     "mix": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_Typical_1.SM_B25_Typical_1",
+     "width": 400.0,
+     "depth": 50.0,
+     "y0": -400.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_Typical_0_v1.SM_B25_Typical_0_v1",
+     "width": 400.0,
+     "depth": 50.0,
+     "y0": -400.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_Typical_0_v2.SM_B25_Typical_0_v2",
+     "width": 400.0,
+     "depth": 50.0,
+     "y0": -400.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_Typical_0_v3.SM_B25_Typical_0_v3",
+     "width": 400.0,
+     "depth": 50.0,
+     "y0": -400.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_TypicalCorner.SM_B25_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 250,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_Top.SM_B25_Top",
+     "width": 400.0,
+     "depth": 50.0,
+     "y0": -400.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B25/v1021050443/SM_B25_TopCorner.SM_B25_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

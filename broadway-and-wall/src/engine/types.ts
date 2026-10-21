@@ -821,6 +821,16 @@ export interface BuildingDesign {
   ground?: "shops" | "entrance" | "plain";
   top?: "cornice" | "plain";
   bays?: number;
+  /**
+   * THE BUILDING'S FORM (citygen/forms.mjs, FORMS_PLAN.md): a courtyard, a
+   * setback, a tower on a base... Unlike the rest of this record it is not
+   * looks only: the desk solves the form on the lot, and the floor area it
+   * keeps and the facade it adds (both against the plain block, measured on
+   * the same tiers Unreal draws) go to the pro forma. Absent = the plain block.
+   */
+  form?: string;
+  formRetained?: number;
+  formSkin?: number;
 }
 
 export interface DevDraft {
@@ -1044,6 +1054,12 @@ export interface Listing {
    * the private window is `earlyUntilM`, the price set by how desperate it is.
    */
   quietFrom?: string;
+  /**
+   * A motivated seller's ask as a share of the deed's value, struck at the
+   * month's close (refreshListings) on the appraisal the buyer reads, not on
+   * the market's half-updated state when the firm made the call.
+   */
+  askFactor?: number;
   distress?: boolean;  // motivated seller — priced under appraisal, goes fast
   /** Why ordinary product reached the tape; makes turnover legible. */
   reason?: "fund-life" | "merchant" | "estate" | "voluntary" | "receiver" | "non-core";

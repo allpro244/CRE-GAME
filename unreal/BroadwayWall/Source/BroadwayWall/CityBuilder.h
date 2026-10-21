@@ -45,7 +45,7 @@ public:
 
 	/** THE BUILD DESK'S MODEL: the scheme the player is designing, drawn on its lot
 	 *  in place of what stands there (cov: the share of the lot it covers). */
-	void SetPreview(const FString& Bbl, int32 Floors, double Cov, const FString& Facade, const FString& Cls, int32 Year, const FBWLook& Look = FBWLook());
+	void SetPreview(const FString& Bbl, int32 Floors, double Cov, const FString& Facade, const FString& Cls, int32 Year, const FBWLook& Look = FBWLook(), const TArray<FBWRenderTier>& Tiers = TArray<FBWRenderTier>());
 	void ClearPreview();
 	/** Where the preview stands: its footprint's centre at ground, its height and its footprint's span (cm). */
 	bool PreviewBounds(FVector& Base, double& Height, double& Span) const;
@@ -107,6 +107,8 @@ private:
 	TArray<FBWVolume> BaseVolumes;
 	bool bPreview = false;
 	FBWVolume PreviewVol;
+	/** The scheme's form, when it has one: its tiers stand in for PreviewVol. */
+	TArray<FBWVolume> PreviewTiers;
 	void ComposePreview();
 	TMap<FString, FString> Owners;
 

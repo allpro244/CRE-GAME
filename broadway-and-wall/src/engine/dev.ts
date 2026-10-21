@@ -797,6 +797,8 @@ export function planDevelopment(
     shell?: boolean;
     /** This project's hard cost against the market index (`projectCostMult`). */
     costMult?: number;
+    /** A chosen building form's measured floor kept and facade per sf (BuildingDesign.form). */
+    form?: { retained: number; skin: number };
   },
   lender?: string,
   spec = 0.5,
@@ -1972,6 +1974,9 @@ export function startDevelopment(
     const signed = s.btsProspects?.[bbl];
     custom = { ...custom, bts: signed && signed.name === custom.bts.name && signed.signedM === custom.bts.signedM ? signed : undefined };
   }
+  // the design's form is priced as the desk priced it
+  if (custom?.design?.form && !(custom as { form?: unknown }).form)
+    custom = { ...custom, form: { retained: custom.design.formRetained ?? 1, skin: custom.design.formSkin ?? 1 } } as typeof custom;
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender, spec);
   if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
   // AND NOTHING UNPRICEABLE CLOSES. planDevelopment refuses a design it cannot

@@ -6,6 +6,16 @@
 #include "CoreMinimal.h"
 #include "CityData.h"
 
+/** One tier of a building's form (a setback, a wing, a tower on its podium): ring in cm, heights in cm. */
+struct FBWRenderTier
+{
+	TArray<FVector2D> Ring;
+	double Z0 = 0, Z1 = 0;
+};
+
+/** Parse a "tiers" array ([{ring:[x,y,...] cm, z0, z1}]) from a lot or a preview message. */
+TArray<FBWRenderTier> BWReadTiers(const TSharedPtr<class FJsonObject>& O);
+
 struct FBWRenderLot
 {
 	FString Bbl, Cls;
@@ -19,6 +29,8 @@ struct FBWRenderLot
 	bool bShops = false;
 	FString Facade;   // the player's chosen facade family, if they designed it
 	FBWLook Look;     // and the kit look they chose on the Build desk
+	FString Form;     // the building form the player chose (FORMS_PLAN.md), if any
+	TArray<FBWRenderTier> Tiers;   // its solved tiers; empty = one prism (the lot scaled by sqrt(cov))
 };
 
 struct FBWRenderOwner

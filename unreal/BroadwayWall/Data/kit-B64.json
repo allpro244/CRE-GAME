@@ -1,0 +1,181 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B64",
+ "grammar": "generated",
+ "label": "Brooklyn metal-panel rental",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 450.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Ground_0.SM_B64_Ground_0",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 50
+    },
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Ground_1.SM_B64_Ground_1",
+     "width": 264.0,
+     "depth": 50.0,
+     "y0": -264.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Ground_2.SM_B64_Ground_2",
+     "width": 396.0,
+     "depth": 50.0,
+     "y0": -396.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Ground_0_v1.SM_B64_Ground_0_v1",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 50,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Ground_0_v2.SM_B64_Ground_0_v2",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 50,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Ground_0_v3.SM_B64_Ground_0_v3",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 50,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Ground_0_v4.SM_B64_Ground_0_v4",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 50,
+     "variant": true
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Entrance.SM_B64_Entrance",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_GroundCorner.SM_B64_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 300.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Typical_0.SM_B64_Typical_0",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Typical_1.SM_B64_Typical_1",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Typical_0_v1.SM_B64_Typical_0_v1",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Typical_0_v2.SM_B64_Typical_0_v2",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Typical_0_v3.SM_B64_Typical_0_v3",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_TypicalCorner.SM_B64_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 90,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_Top.SM_B64_Top",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B64/v1021050443/SM_B64_TopCorner.SM_B64_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

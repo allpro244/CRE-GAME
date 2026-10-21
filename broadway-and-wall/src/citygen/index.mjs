@@ -228,6 +228,12 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * Plan 12 holds a building to a plate it can stand on (citygen.mjs A PLATE
  * HAS TO HOLD A CORE). Towers of 40-50 m were going up on footprints 7 m
  * wide; plan 11 saves rebuild the town they were cut with.
+ *
+ * Plan 13: the plate is a lettable one (citygen.mjs PLATE_MIN_M): above six
+ * floors an office needs 12 m across and anything else 11 m, not the 10 m a
+ * lift alone needs; and a massing form whose tiers break 1:8 slenderness or
+ * that plate falls back to the plain building (massing.mjs done()). Plan 12
+ * saves rebuild their own town.
  */
 /**
  * HOW MUCH OF THE TOWN IS PARK, from the setup page. A generated town draws a
@@ -243,7 +249,7 @@ export const PARK_AMOUNTS = [
 ];
 export const DEFAULT_PARKS = "medium";
 
-export const CITY_PLAN = 12;
+export const CITY_PLAN = 13;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

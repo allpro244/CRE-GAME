@@ -326,13 +326,6 @@
      "y1": 0
     },
     {
-     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L5_A/Mesh/SM_BLDG_SFA_L5_A_Wall_03_N1.SM_BLDG_SFA_L5_A_Wall_03_N1",
-     "width": 325,
-     "depth": 125,
-     "y0": -325,
-     "y1": 0
-    },
-    {
      "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L5_A/Mesh/SM_BLDG_SFA_L5_A_Wall_04_N1.SM_BLDG_SFA_L5_A_Wall_04_N1",
      "width": 650,
      "depth": 125,
@@ -647,5 +640,6 @@
     "y1": 150
    }
   }
- ]
+ ],
+ "grid": 975
 }

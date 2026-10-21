@@ -83,10 +83,23 @@ export function streetCover(cls, coverage, lo, hi) {
   if (cls === "S1") return 0.78 + 0.10 * u;                             // shop under flats: full street floor, a yard above
   return coverage;                                                      // housing keeps its yard
 }
-export function plateFloors(footprint, floors) {
+// PLAN 13: A LIFT BUILDING NEEDS A LETTABLE PLATE, not just room for the lift.
+// An office floor above a side core is about 8-9 m of lettable depth beside a
+// 3-4 m core: 12 m across at the least, which is the 40 ft lot the side-street
+// lofts and office buildings of Midtown stand on to twelve and sixteen floors.
+// Flats behind a single-loaded corridor need about 11 m (the 35-40 ft lot of
+// the prewar elevator apartment house). Ten metres (plan 12) let slabs stand
+// on plates that hold the lift and little else. The slenderness cap below
+// (MAX_SLENDER) is what stops the pencils: a 12 m plate stops near 15 floors.
+// (15/12 was tried first and measured too blunt: it took the metro town's
+// seven-to-nine-floor buildings from 132 to 53 and its 10-19 from 25 to 4,
+// a downtown of walk-ups with almost nothing standing above them.)
+const PLATE_MIN_M = { office: 12, other: 11 };
+export function plateFloors(footprint, floors, cls = "", planV = 12) {
   if (!footprint || floors <= WALKUP_FLOORS) return floors;
   const w = narrowWidth(footprint);
-  if (w < LIFT_MIN_PLATE_M) return WALKUP_FLOORS;
+  const need = planV >= 13 ? (cls[0] === "O" ? PLATE_MIN_M.office : PLATE_MIN_M.other) : LIFT_MIN_PLATE_M;
+  if (w < need) return WALKUP_FLOORS;
   return Math.max(WALKUP_FLOORS, Math.min(floors, Math.floor((MAX_SLENDER * w) / STOREY_M)));
 }
 
@@ -2624,13 +2637,13 @@ export function generateCity(cfg) {
         footprint = solveFoot(coverage);
         if (PLAN_V >= 12) {
           const want = floors;
-          floors = plateFloors(footprint, floors);
+          floors = plateFloors(footprint, floors, cls, PLAN_V);
           if (isTower && floors < want && floors <= 12) {
             // no draw: the tower's own coverage places it in its use's band
             isTower = false;
             coverage = streetCover(cls, coverage, 0.42 * 0.72, 0.58);
             footprint = solveFoot(coverage);
-            floors = plateFloors(footprint, Math.min(floors, Math.max(1, Math.floor(Math.max(zone.commfar, zone.resfar) / coverage))));
+            floors = plateFloors(footprint, Math.min(floors, Math.max(1, Math.floor(Math.max(zone.commfar, zone.resfar) / coverage))), cls, PLAN_V);
           }
         }
         if (isTower && PLAN_V >= 7) towerSolves.set(bbl, { solveFoot, areaM2, lotArea, floors, zone, side, assembled: PLAN_V >= 10 && !!cfg.districts[d].assembled });
@@ -2767,7 +2780,7 @@ export function generateCity(cfg) {
       const keepHeight = t.assembled;
       let fl = keepHeight ? t.floors
         : Math.max(1, Math.min(t.floors, Math.floor(Math.max(t.zone.commfar, t.zone.resfar) / realCov)));
-      if (PLAN_V >= 12) fl = plateFloors(fp, fl);
+      if (PLAN_V >= 12) fl = plateFloors(fp, fl, pp.bldgclass ?? "", PLAN_V);
       const bldg = keepHeight && fl === t.floors ? (pp.bldgarea || 1) : Math.round(t.lotArea * realCov * fl);
       const bldgOld = pp.bldgarea || 1;
       pp.assesstot = pp.assessland + Math.round((pp.assesstot - pp.assessland) * (bldg / bldgOld));

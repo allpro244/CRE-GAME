@@ -26,6 +26,13 @@ struct FBWKitModule
 	UStaticMesh* Mesh = nullptr;
 	/** The piece's weathering layer (City Sample's "_decal" companion: grime, stains, wear), when it has one. */
 	UStaticMesh* Decal = nullptr;
+	/** A feature bay (a fire escape, an oriel): used on one bay in Every along each wall, never by the rhythm. 0 = an ordinary bay. */
+	int32 Every = 0;
+	/** A facade zone (0, 1, 2...): a kit with zones splits each wall into runs of bays, each run in one zone's cladding. -1 = unzoned. */
+	int32 Zone = -1;
+	/** Pieces that differ only in their blinds share a Mix group; one is picked per bay per floor. Variants stay out of the palette. */
+	int32 Mix = -1;
+	bool bVariant = false;
 };
 
 struct FBWKitBand
@@ -35,6 +42,8 @@ struct FBWKitBand
 	bool bRepeat = false;
 	/** The street floor: only a volume that starts at the ground gets it. */
 	bool bGround = false;
+	/** Floors the band spans when the kit says (a two-storey shaft piece staggers its balconies); 0 = from its height. */
+	int32 Storeys = 0;
 	TArray<FBWKitModule> Walls, Entrances;
 	FBWKitModule Corner;
 	bool bHasCorner = false;
@@ -59,7 +68,10 @@ public:
 	/** Lay the kit over this volume. Returns the number of pieces placed. */
 	/** bExactTint: the tint is the player's chosen colour, used as given (the web families' tints are amplified). */
 	int32 Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed, bool bGround, const FLinearColor& Tint = FLinearColor::White, bool bExactTint = false);
+	/** Which of the next volume's walls stand on a lot line against a neighbour (one per ring edge); those get no facade. Cleared by Dress. */
+	TArray<bool> Party;
 
+	int32 Components() const { return Comps.Num(); }
 	int32 Pieces() const { return Placed; }
 
 private:
@@ -73,6 +85,8 @@ private:
 	TMap<TPair<UMaterialInterface*, uint32>, UMaterialInstanceDynamic*> Tinted;
 	/** The tint being laid now, quantised to a 0.04 grid (the web's tints sit on 0.02; coarser keeps the component count down). */
 	uint32 TintKey = 0;
+	/** This building's weathering level, 0 (new) to 3 (a century old), in the top byte of TintKey. */
+	int32 GrimeNow = 0;
 	FLinearColor TintNow = FLinearColor::White;
 	int32 Placed = 0;
 };

@@ -289,7 +289,22 @@ export function massingStack({ ring, lotRing = null, hM, year, klass, u, familie
     return true;
   };
   /** File the silhouette and hand it back, or fall through to a slab. */
-  const done = (name) => { if (out.length < 2) return null; return { name, tiers: out }; };
+  // NO PENCILS. A form that narrows its upper tiers can leave a tower the
+  // width of a townhouse standing 150 m up, which nobody builds: ordinary NYC
+  // towers run 1:5 to 1:8 (height to narrow base width: WTC 1:6.6, Seagram
+  // about 1:5.8), and 1:10 and over is the "super-slender" class (CTBUH, the
+  // 57th Street towers), engineering exceptions, not a type. Above walk-up
+  // height (six storeys, 22 m) a tier must also hold a lettable plate: 12 m
+  // across for offices, 11 m otherwise (citygen.mjs PLATE_MIN_M). A form that
+  // breaks either falls through to the plain building, whose height the
+  // plate rule already bounds.
+  const minPlate = klass === "office" ? 12 : 11;
+  const fits = (t) => {
+    if (t.top <= 22) return true;
+    const w = narrowestSpan(t.ring);
+    return w >= minPlate && t.top / w <= 8;
+  };
+  const done = (name) => { if (out.length < 2 || !out.every(fits)) return null; return { name, tiers: out }; };
 
   // ---- the plan families, which any era can reach --------------------------
   //

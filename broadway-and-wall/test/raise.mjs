@@ -149,9 +149,17 @@ for (const [seed, band] of [[9401], [9402], [9603], [9404], [9405], [9401, "Prov
   // RAISE AND BREAK GROUND AT ONCE (raiseAndBuild): the same month, counsel
   // paid, the investors' money in the deal — and no more than the network
   // holds today, so an instant raise is not a bigger one.
-  const parcels = JSON.parse(JSON.stringify(P0));
-  let g = E.firstListings(E.newGame(9402, parcels, 1_000_000), parcels, bbls);
-  const pick = findJob(g, parcels) ?? (() => { for (let m = 0; m < 24; m++) { g = E.advanceMonth(g, parcels, bbls, adjacency); const p = findJob(g, parcels); if (p) return p; } return null; })();
+  // Which seed offers a $1M sponsor a lot that pencils, and when, moves with
+  // the city (as the loop above says), so the first seed with one in three
+  // years is the one taken.
+  let parcels = null, g = null, pick = null;
+  for (const seed of [9402, 9401, 9405]) {
+    parcels = JSON.parse(JSON.stringify(P0));
+    g = E.firstListings(E.newGame(seed, parcels, 1_000_000), parcels, bbls);
+    pick = findJob(g, parcels);
+    for (let m = 0; m < 36 && !pick; m++) { g = E.advanceMonth(g, parcels, bbls, adjacency); pick = findJob(g, parcels); }
+    if (pick) break;
+  }
   ok(!!pick, "an instant raise: found a job");
   if (pick) {
     g = E.executePurchase(g, parcels, pick.L.bbl, pick.L.ask, "cash", false, 1).s;

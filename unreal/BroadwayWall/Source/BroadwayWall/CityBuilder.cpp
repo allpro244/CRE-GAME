@@ -577,10 +577,10 @@ void ACityBuilder::BuildGround()
 	// front is paved; lawns belong to the low-rise streets. A vacant lot is
 	// one ground (gravel, dirt, weeds). Picks are by lot (a hash of its BBL),
 	// so a lot keeps its ground across rebuilds; the building stands on it.
-	// (Not in the region expansion: there a parcel is a whole neighbourhood or a
-	// farm tract, drawn by its own ground layers.)
-	if (City.Size != TEXT("region"))
+	// (In the region expansion a neighbourhood ("N...") or a farm tract ("F...")
+	// is a whole parcel drawn by its own ground layers, and is left alone.)
 	{
+		const bool bRegionMap = City.Size == TEXT("region");
 		enum ECover { Lawn, Plaza, ConcLight, ConcDark, Asphalt, Gravel, Worn, Dirt, Meadow, NumCovers };
 		struct FShare { ECover C; float W; };
 		// the yard (the whole lot, under everything)
@@ -628,6 +628,7 @@ void ACityBuilder::BuildGround()
 		{
 			const int32 N = P.Ring.Num();
 			if (N < 3) continue;
+			if (bRegionMap && (P.Bbl.StartsWith(TEXT("N")) || P.Bbl.StartsWith(TEXT("F")))) continue;
 			const uint32 H = HashCombine(GetTypeHash(P.Bbl), 0x9e3779b9u);
 			const bool bRes = P.Cls == TEXT("multifamily"), bOff = P.Cls == TEXT("office"), bRet = P.Cls == TEXT("retail"), bInd = P.Cls == TEXT("industrial");
 			const TArray<FVector2D>* const* F = Foot.Find(P.Bbl);

@@ -114,4 +114,28 @@ for k in range(5):
 save(m, "SM_Skylight", [("glass", GLASS), ("frame", DARK)])
 unreal.log("ROOF life built")
 
+# CONTEMPORARY CROWNS (unit footprint -50..50, scaled to the tower's top)
+MIRROR = "/Game/Building/Material/MI/Metal/MI_Bldg_Mirror.MI_Bldg_Mirror"
+BRUSHED = "/Game/Building/Material/MI/Metal/ForGym/MI_Bldg_Metal_Brushed_FG.MI_Bldg_Metal_Brushed_FG"
+# a sloped glass crown: the top steps in on one side in glass courses (the 1980s-2000s cut top)
+m = unreal.DynamicMesh()
+n = 10
+for k in range(n):
+    box(m, 0, -50, 50 - k * 9, -50, 50, k * 6, k * 6 + 6)
+box(m, 1, -51, -49, -51, 51, 0, n * 6 + 4)                  # the frame at the back
+save(m, "SM_Crown_GlassSlope", [("glass", MIRROR), ("frame", BRUSHED)])
+# a mechanical screen: a band of vertical fins round the plant, the 2010s tower top
+m = unreal.DynamicMesh()
+box(m, 1, -46, 46, -46, 46, 0, 60)                          # the plant behind
+for k in range(26):
+    t = -50 + k * 4
+    box(m, 0, t, t + 1.2, -50, -47, 0, 70)
+    box(m, 0, t, t + 1.2, 47, 50, 0, 70)
+    box(m, 0, -50, -47, t, t + 1.2, 0, 70)
+    box(m, 0, 47, 50, t, t + 1.2, 0, 70)
+box(m, 0, -50, 50, -50, 50, 68, 70)
+save(m, "SM_Crown_Screen", [("fins", BRUSHED), ("plant", DARK)])
+unreal.log("ROOF contemporary crowns built")
+
+
 

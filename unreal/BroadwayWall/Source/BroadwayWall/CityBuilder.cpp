@@ -1518,6 +1518,15 @@ void ACityBuilder::DressRoof(const FBWVolume& V, uint32 Seed)
 			const double S = TopW * Height[Kc] / 100.0;
 			AddProp(Crowns[Kc], FTransform(Axis, FVector(C, Z), FVector((e1 - e0) * 0.92 / 100.0, (n1 - n0) * 0.92 / 100.0, S)), true);
 		}
+		// THE CONTEMPORARY TOP: a tower since the mid-1980s ends in a glass
+		// crown cut on a slope, or a screen of fins round its plant
+		else if (V.bCrown && V.Z1 >= 6000 && V.Year >= 1985 && TopW >= 1200 && TopW <= 5000 && InsideRing(V.Ring, C))
+		{
+			const bool bGlass = Rng.FRand() < 0.45;
+			const double Hc = TopW * (bGlass ? 0.45 : 0.10) / 60.0;   // models stand 60-70 units tall
+			AddProp(bGlass ? TEXT("/Game/BW/Roof/SM_Crown_GlassSlope.SM_Crown_GlassSlope") : TEXT("/Game/BW/Roof/SM_Crown_Screen.SM_Crown_Screen"),
+				FTransform(Axis, FVector(C, Z), FVector((e1 - e0) * (bGlass ? 1.0 : 0.6) / 100.0, (n1 - n0) * (bGlass ? 1.0 : 0.6) / 100.0, Hc)), true);
+		}
 		else if (V.bCrown && V.Z1 >= 2500 && e1 - e0 >= 1500 && n1 - n0 >= 1500 && InsideRing(V.Ring, C))
 		{
 			const double Hp = 450 + Rng.FRandRange(0, 1) * (V.Z1 >= 12000 ? 700 : 300);

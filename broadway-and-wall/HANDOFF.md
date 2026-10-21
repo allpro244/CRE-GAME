@@ -1229,7 +1229,34 @@ park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
   and streets on the map and resends the city to Unreal. `pnpm landdev`.
   At the opening the builder residual on a fringe lot is zero (no for-sale
   housing market yet — Phase 3's homebuilders), so a plat loses money until
-  demand reaches it: an honest result, not a fault to tune.
+  demand reaches it: an honest result, not a fault to tune. (Superseded by
+  Phase 3, below: the homebuilder is that demand.)
+- **Phase 3, the homebuilder's slice (`engine/homeprice.ts`, `engine/homes.ts`).**
+  The going new house ($/sf, `econ.homes.psf`) is what the town's new-house
+  buyer qualifies for at today's mortgage (index + 1.7) at 28% DTI, 10% down,
+  1.5% tax and insurance. The buyer is 1.58x the median household (`wageIdx`
+  x $80,610), derived so the Census 2024 median new house ($420k, 2,200 sf)
+  is exactly what that buyer carries at 6.72%. Sticky: it chases at
+  HPI_CHASE_M, so a rate shock hits sales first and prices later. Each plat
+  carries a location multiple: inner-ring resale comps (geometric mean near
+  the plat against the town, RELATIVE only — their level carries land texture
+  in reference dollars and is ~10x local incomes, an open inconsistency) times
+  a capitalised commute. Vertical $123/sf x costIdx (NAHB 2024 construction
+  share 64.4% on the Census median), overhead 5.2%, selling 4.6%, margin 11%,
+  construction interest at index + 2.4 → the builder's residual, which
+  `readLand` bids on `rec.homeLot` lots (winner "homes") times the plat's
+  sell-out discount (19%/yr over left / pace). Sales: Poisson on the "homes"
+  rng stream, households x 0.52%/yr (Census sales over households) x
+  (0.4 + 0.6 x growth/0.77%) x affordability share / AFFORD_REF, split among
+  sellers, elasticity 4 on a seller's price. A buyer signs on a house and
+  closes at completion (7 months). Your houses: draws "dev" into the lot's
+  basis, closings "sold" net of 4.6% selling, profit taxed at
+  INCOME_TAX_RATE, inventory carried at cost in portfolioMark. Builders
+  (named, off-book, `s.homes.builders`) offer to take down your lots at the
+  residual on an 18-month contract, take them as they start, and walk when
+  the residual falls 30% under the contract. A closed house, or a builder's
+  lot, is off the market through `isCivicLand`. `farMaxFor` no longer floors
+  R-2 at FAR 2 (`LOW_DENSITY_ZONES`). `pnpm homebuild`.
 - **No transit.** The demand blend's transit and second-centre terms (44 of
   100 points) read zero on the region, so its demand scores run lower than an
   island's. Car access as a demand term is a later-phase question.

@@ -124,6 +124,18 @@ export const MIXED_STACK: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.
 export const MAX_COVERAGE: Record<BuiltClass, number> = {
   multifamily: 0.70, office: 0.80, retail: 0.85, industrial: 0.85,
 };
+/**
+ * AND THE LEAST: 60% of the lot (owner, Oct 2026, repeatedly). The desk let a
+ * new building take 8%, and its "Tower" preset drew 32% — a shaft on an empty
+ * lot that New York does not build: its towers stand on bases brought out to
+ * the street (the street-wall rules of the contextual and tower-on-base
+ * districts), and the tower-in-a-plaza of the 1961 bonus was retired in 1975.
+ * There is no minimum by that name in the Zoning Resolution; this is the base
+ * those rules produce. A slender tower is a FORM on top of such a base
+ * (citygen/forms.mjs), not a narrow plate. A structure already standing
+ * (a reuse, a takeover) keeps the footprint it has.
+ */
+export const MIN_COVERAGE = 0.6;
 /** The site coverage a new building of this programme may take. */
 export function maxCoverageFor(use: DevUse, mix?: UseMix): number {
   const m = devMix(use, mix);
@@ -792,7 +804,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // ...and before the footprint: the coverage limit is the use's (MAX_COVERAGE).
   // A shell that already stands keeps the footprint it has — a conversion or a
   // half-built takeover is not a new building's massing.
-  const cov = Math.max(0.08, Math.min(custom?.shell ? 0.9 : maxCoverageFor(o.use, raw), o.coverage));
+  const cov = Math.max(custom?.shell ? 0.08 : MIN_COVERAGE, Math.min(custom?.shell ? 0.9 : maxCoverageFor(o.use, raw), o.coverage));
   const retailOnly = Object.entries(raw).every(([k, v]) => k === "retail" || !v);
   const fl = Math.max(1, Math.min(Math.round(o.floors), maxFloorsFor(rec, cov, retailOnly ? "retail" : o.use)));
   // GROSS AND RENTABLE ARE NOT THE SAME NUMBER, and treating them as one was

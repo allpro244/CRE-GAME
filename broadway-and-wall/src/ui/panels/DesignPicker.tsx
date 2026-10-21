@@ -317,6 +317,10 @@ function KitPicker({ design, set }: { design: BuildingDesign; set: (p: Partial<B
   const pick = (k: (typeof KITS)[number] | undefined) =>
     set(k ? { kit: k.key, facade: k.family } : { kit: undefined, facade: undefined, kitColour: undefined, ground: undefined, top: undefined, bays: undefined });
   const chip = (on: boolean) => "btn btn-sm" + (on ? " btn-on" : "");
+  // EACH SHELF FOLDS (owner, Oct 2026): ninety-odd kits in one scroll. The
+  // shelf holding the chosen kit starts open, the rest closed.
+  const [open, setOpen] = useState<Set<string>>(() => new Set(kit ? [kit.group] : []));
+  const flip = (k: string) => setOpen((o) => { const n = new Set(o); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   return (
     <div className="design-picker">
       <FormPicker design={design} set={set} />
@@ -325,8 +329,11 @@ function KitPicker({ design, set }: { design: BuildingDesign; set: (p: Partial<B
         title="The period and the street choose, as they do for every other building in town">Fits the street</button>
       {KIT_GROUPS.map((g) => (
         <div key={g.key} style={{ marginBottom: 6 }}>
-          <div className="hint" style={{ margin: "2px 0" }}>{g.name}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(92px, 1fr))", gap: 6 }}>
+          <button type="button" className="btn btn-sm" aria-expanded={open.has(g.key)} onClick={() => flip(g.key)}
+            style={{ width: "100%", textAlign: "left", margin: "2px 0" }}>
+            {open.has(g.key) ? "▾" : "▸"} {g.name} <span className="hint" style={{ margin: 0 }}>· {KITS.filter((k) => k.group === g.key).length}{kit?.group === g.key ? ` · ${kit.name}` : ""}</span>
+          </button>
+          {open.has(g.key) && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(92px, 1fr))", gap: 6 }}>
             {KITS.filter((k) => k.group === g.key).map((k) => (
               <button key={k.key} type="button" title={`${k.name} — ${k.era}`} onClick={() => pick(k)}
                 style={{ padding: 3, borderRadius: 6, cursor: "pointer", background: "transparent", display: "flex", flexDirection: "column", gap: 3,
@@ -339,7 +346,7 @@ function KitPicker({ design, set }: { design: BuildingDesign; set: (p: Partial<B
                 <span style={{ fontSize: 11, lineHeight: 1.2 }}>{k.name}</span>
               </button>
             ))}
-          </div>
+          </div>}
         </div>
       ))}
       {kit && (<>

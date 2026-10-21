@@ -85,13 +85,13 @@ export { HARD_COST_PSF, SOFT_COST, CONTINGENCY } from "./value";
 export {
   MIXED_STACK, normalizeMix, devMix, dominantOf, CONTRACT_PREMIUM, reserveFor, specCostMult,
   farMaxFor, maxRetailShare, withStreetRetail, capRetail, maxFloorsFor,
-  MAX_COVERAGE, maxCoverageFor, wreckCost,
+  MAX_COVERAGE, MIN_COVERAGE, maxCoverageFor, wreckCost,
 } from "./proforma";
 export type { ConstructionQuote } from "./proforma";
 import {
   devMix, dominantOf, overMix, leaseUpMarketAt, specShare, constructionDesks, deskQuote, clamp01, farMaxFor, maxFloorsFor,
   withStreetRetail, capRetail, reserveFor,
-  developmentProForma, landCarryFactor, MAX_COVERAGE, maxCoverageFor, wreckCost,
+  developmentProForma, landCarryFactor, MAX_COVERAGE, MIN_COVERAGE, maxCoverageFor, wreckCost,
 } from "./proforma";
 import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
@@ -744,7 +744,7 @@ export function buildClimate(s: GameState): number {
 /**
  * THE LARGEST BUILDING THE PLANNER WILL DRAW ON A LOT — the same
  * `min(plate x floors, envelope)` `planDevelopment` strikes, taken over the
- * footprints the Build desk offers (8% of the lot to each use's MAX_COVERAGE). Zoning alone
+ * footprints the Build desk offers (MIN_COVERAGE to each use's MAX_COVERAGE). Zoning alone
  * (lot x FAR) overstates a small lot several times over, because slenderness
  * and the core stop it going up long before the FAR runs out.
  */
@@ -755,7 +755,7 @@ export function maxBuildable(
   let best = { gsf: 0, floors: 1, coverage: 0.6 };
   // Each use at the footprints it may take (MAX_COVERAGE) and the height it stacks to.
   for (const use of BUILT_CLASSES) {
-    for (let c = 0.08; c <= MAX_COVERAGE[use] + 1e-4; c += 0.01) {
+    for (let c = MIN_COVERAGE; c <= MAX_COVERAGE[use] + 1e-4; c += 0.01) {
       const fl = maxFloorsFor(rec, c, use);
       const gsf = Math.min(rec.lotArea * c * fl, envelope);
       if (gsf > best.gsf + 1) best = { gsf: Math.round(gsf / 100) * 100, floors: fl, coverage: c };

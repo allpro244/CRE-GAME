@@ -138,11 +138,11 @@ export function exportRegion(seed, { km = 10, crop = 0 } = {}) {
   for (let i = 0; i < rs.length - step; i += step) put("marsh", dry(hull(circle(rs[i], M.river.fp[i], 16).concat(circle(rs[i + step], M.river.fp[i + step], 16)))));
   for (const c of M.creeks) for (const cap of capsules(rdp(c.pts, 4), c.fp)) put("marsh", dry(cap));
   if (M.coast) { const L = M.coast.line; put("marsh", L.concat(L.slice().reverse().map((p) => [p[0], p[1] - M.coast.band]))); }
-  // farm / woods / yard from the raster, so nothing lands on the sea and yards stay off floodplain and freeway
+  // farm / woods / yard from the raster, so nothing lands on the sea or covers the floodplain, and yards stay off freeway right-of-way
   const sea = (k) => M.isSea(G.ctr(k));
   for (const t of M.tracts) {
     if (t.era) { for (const r of maskRects(G, t.r, (k) => M.free(G.ctr(k)))) put("yard", r); }
-    else for (const r of maskRects(G, t.r, (k) => !sea(k))) put(t.wood ? "woods" : "farm", r);
+    else for (const r of maskRects(G, t.r, (k) => !sea(k) && !M.flood[k] && !M.water[k])) put(t.wood ? "woods" : "farm", r); // floodplain stays marsh (it is drawn under farm)
   }
   // water
   for (let i = 0; i < rs.length - 2; i += 2) put("stream", hull(circle(rs[i], M.river.half[i], 12).concat(circle(rs[i + 2], M.river.half[i + 2], 12))));
@@ -176,7 +176,7 @@ export function exportRegion(seed, { km = 10, crop = 0 } = {}) {
     for (let j = 0; j <= nW; j++) for (const run of keepRuns([at(-r.hl, -r.hw + j * pw), at(r.hl, -r.hw + j * pw)], (p) => !isWaterC(p))) road(run, "core", wm);
   }
 
-  for (const r of [M.core, ...M.towns]) for (const b of r.blockRects) put("block", b.poly());
+  for (const r of [M.core, ...M.towns]) for (const b of r.blockRects) if (!b.poly().some((p) => isWaterC(p) || M.isSea(p))) put("block", b.poly());
 
   // ---------------- buildings & parcels
   const volumes = [], parcels = [], trees = [], labels = [];

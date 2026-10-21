@@ -320,3 +320,60 @@ These notes are about the `-6km` files.
   It would also need a new **status field** for highway segments
   (built / proposed + year), and **streaming by tile**: the region is far
   bigger than one island-city export.
+
+## Unreal export (`export-unreal.mjs`)
+
+```bash
+node region-spikes/map/export-unreal.mjs 3              # full 10 km -> out/city-region-3.json
+node region-spikes/map/export-unreal.mjs 3 --crop 2000  # 2 x 2 km sample -> out/city-region-3-crop2000.json
+node region-spikes/map/preview-bwcity.mjs out/city-region-3.json   # top-down check -> .preview.svg
+```
+
+This writes the region in the Unreal builder's `bw-city/1` format: the shape
+`toBwCity` returns in `broadway-and-wall/src/citygen/unrealExport.mjs`, parsed
+by `unreal/.../CityData.cpp`.
+
+**Units and axes:** centimetres, origin at the region's centre, +X north,
++Y east. Rings are flat and unclosed.
+
+**Ground layers, in draw order:**
+
+| Layer | What it holds |
+|---|---|
+| `land` | the whole window minus the sea |
+| `marsh` | floodplain |
+| `farm` / `woods` | farm tracts and woodlots, kept off floodplain |
+| `yard` | developed tracts on buildable land |
+| `pavement` | one convex capsule per road segment, plus cul-de-sac bulbs |
+| `block` | downtown and village blocks |
+| `park` | empty |
+| `stream` | river and creek capsules |
+| `pond` | stormwater ponds |
+
+**Roads (`markings.centerlines`):** built roads only. Highways are 24 m,
+arterials 14 m, local streets 9 m and downtown streets 12 m. Proposed
+highways are left out.
+
+**Volumes:**
+- Downtown and village buildings: 60–80% of their lot. Downtown heights fall
+  off from the centre and are **illustrative**.
+- One house per drawn lot: 7 × 11 m pre-war, 9 × 13 m later, 7 m back from
+  the right-of-way, 1 or 2 storeys by era (approximate shares).
+
+**Parcels:** one per neighbourhood (`N…`, i.e. one per subdivided tract), one
+per farm tract (`F…`), and one per downtown or village lot (`D…` / `T…`).
+
+**Trees:** woodlots on a jittered grid (capped at ~60k in total), plus one
+street tree per ~2 houses.
+
+**Seed 3 at 10 km:** 6.7 MB, made of:
+- 21,748 volumes, of which 17,872 are houses;
+- 4,204 parcels, including 115 neighbourhoods;
+- 36,821 trees;
+- 1,491 centerlines.
+
+**Known gaps:**
+- Bridges are drawn as pavement under the stream layer.
+- Yard edges follow a 20 m raster.
+- Proposed-freeway right-of-way shows as bare land strips through
+  subdivisions. A real reserved corridor looks like that.

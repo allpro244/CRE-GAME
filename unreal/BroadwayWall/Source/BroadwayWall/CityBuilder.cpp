@@ -560,7 +560,10 @@ void ACityBuilder::BuildGround()
 			M.AddCap(R, Zl, Col);
 			if (bRaised && L.Key != TEXT("block")) Kerbs.AddWalls(R, RoadZ - 1, Zl, FLinearColor::White);
 		}
-		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(L.Key)); }
+		// (in the region expansion the plat's base is open country, not paving:
+		// where no street, lot or field is drawn round a town it is meadow)
+		const bool bMeadow = City.Size == TEXT("region") && L.Key == TEXT("paveland");
+		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(bMeadow ? FString(TEXT("yard")) : L.Key)); }
 		for (int32 k = 0; k < 3; ++k)
 			if (Crops[k].V.Num()) { Crops[k].Emit(Ground, Section++, false); Mats.Add(GroundMaterial(FString::Printf(TEXT("farm%d"), k))); }
 		Z += 1;

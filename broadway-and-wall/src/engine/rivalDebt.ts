@@ -101,7 +101,37 @@ export function syncDebt(s: GameState, r: Rival) {
  */
 /** Some live desk would take `amount` more against this name. */
 export function deskWithRoom(s: GameState, obligorId: string, amount: number): boolean {
-  return (s.lenders ?? []).some((l) => l.failedM === undefined && deskRoom(s, l, obligorId) >= amount);
+  // `deskRoom` for every live desk off ONE pass over the record: each desk's
+  // totals accumulate in the same order, so each is the number deskRoom gives.
+  const lenders = s.lenders ?? [];
+  const acc = new Map<string, { onDesk: number; exposure: number }>();
+  for (const l of lenders) if (l.failedM === undefined && !acc.has(l.name)) acc.set(l.name, { onDesk: 0, exposure: 0 });
+  if (!acc.size) return false;
+  const L = s.cityLoans;
+  if (L) for (const k in L) {
+    const x = L[k];
+    if (x.heldBy) continue;
+    const a = acc.get(x.lender);
+    if (!a) continue;
+    a.onDesk += x.balance;
+    if (x.obligorId === obligorId) a.exposure += x.balance;
+  }
+  for (const r of s.rivals ?? []) {
+    if ((r.lineBal ?? 0) > 0) {
+      const a = r.lineBank === undefined ? undefined : acc.get(r.lineBank);
+      if (!a) continue;
+      a.onDesk += r.lineBal!;
+      if (r.id === obligorId) a.exposure += r.lineBal!;
+    }
+  }
+  for (const l of lenders) {
+    if (l.failedM !== undefined) continue;
+    const a = acc.get(l.name)!;
+    const nameRoom = l.book * singleNameCap(l.kind) - a.exposure;
+    const room = l.capital / Math.max(0.01, targetCapital(l.name)) - l.book;
+    if (Math.min(nameRoom, room) >= amount) return true;
+  }
+  return false;
 }
 
 export function deskRoom(s: GameState, l: Lender, obligorId: string, opening = false): number {
@@ -423,8 +453,12 @@ export function resyncAll(s: GameState) {
  * uncapped.
  */
 export function repriceFloating(s: GameState, r: Rival) {
+  repriceRows(s, rowsOf(s, r));
+}
+/** Reprices rows in place; it moves no row on or off the record and changes no obligor. */
+function repriceRows(s: GameState, rows: CityLoan[]) {
   const idx = shortIndexOf(s.econ);
-  for (const x of rowsOf(s, r)) {
+  for (const x of rows) {
     if (!productById(x.product ?? "harbor")?.floating) continue;
     if (x.spread === undefined) x.spread = +(x.ratePct - idx).toFixed(2);
     if (x.cap && s.month >= x.cap.expiresM) delete x.cap;
@@ -434,11 +468,13 @@ export function repriceFloating(s: GameState, r: Rival) {
 }
 
 export function monthlyService(s: GameState, r: Rival, amortShare: number): { interest: number; amort: number; byRow: Record<string, number> } {
-  repriceFloating(s, r);
+  // Repricing leaves the firm's rows the rows they were, so one read serves both.
+  const rows = rowsOf(s, r);
+  repriceRows(s, rows);
   const adj = fileSpreadAdj(r);
   let interest = 0, amort = 0;
   const byRow: Record<string, number> = {};
-  for (const x of rowsOf(s, r)) {
+  for (const x of rows) {
     const i = (x.balance * (x.ratePct + adj)) / 100 / 12;
     const a = (x.balance * amortShare) / (30 * 12);
     interest += i; amort += a;
@@ -449,11 +485,15 @@ export function monthlyService(s: GameState, r: Rival, amortShare: number): { in
 }
 /** Book the scheduled principal: each row comes down by its own share. */
 export function amortizeRows(s: GameState, r: Rival, amortShare: number) {
+  // The rows that remain are these rows in the same order, less the ones paid
+  // to zero — which add nothing — so their sum is termDebtOf's, without a rescan.
+  let term = 0;
   for (const x of rowsOf(s, r)) {
     x.balance = Math.max(0, Math.round(x.balance - (x.balance * amortShare) / (30 * 12)));
     if (x.balance <= 0) delete s.cityLoans![x.bbl];
+    else term += x.balance;
   }
-  syncDebt(s, r);
+  r.debt = Math.round(term + (r.lineBal ?? 0) + jobDebtOf(s, r));
 }
 
 /**

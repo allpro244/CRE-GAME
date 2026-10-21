@@ -77,8 +77,11 @@ export function tickLedger(s: GameState, parcels: ParcelTable) {
       debtDrift.n++; debtDrift.abs += Math.abs(drift);
       if (drift > 0) addToLine(s, r, drift);
       else payDown(s, r, -drift);
+      syncDebt(s, r);
+    } else {
+      // Nothing moved since the two sums above: this is syncDebt without the rescan.
+      r.debt = Math.round(term + (r.lineBal ?? 0) + jobs);
     }
-    syncDebt(s, r);
   }
 
   // WHAT EACH DESK IS HOLDING IN THIS TOWN, BY CLASS — the number the quote

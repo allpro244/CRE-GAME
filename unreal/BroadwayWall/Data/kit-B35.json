@@ -19,21 +19,21 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_Ground_0.SM_B35_Ground_0",
+     "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_Ground_0.SM_B35_Ground_0",
      "width": 320.0,
      "depth": 50.0,
      "y0": -320.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_Ground_1.SM_B35_Ground_1",
+     "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_Ground_1.SM_B35_Ground_1",
      "width": 256.0,
      "depth": 50.0,
      "y0": -256.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_Ground_2.SM_B35_Ground_2",
+     "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_Ground_2.SM_B35_Ground_2",
      "width": 384.0,
      "depth": 50.0,
      "y0": -384.0,
@@ -42,7 +42,7 @@
    ],
    "entrances": [
     {
-     "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_Entrance.SM_B35_Entrance",
+     "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_Entrance.SM_B35_Entrance",
      "width": 320.0,
      "depth": 50.0,
      "y0": -320.0,
@@ -50,7 +50,7 @@
     }
    ],
    "corner": {
-    "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_GroundCorner.SM_B35_GroundCorner",
+    "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_GroundCorner.SM_B35_GroundCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -65,7 +65,7 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_Second.SM_B35_Second",
+     "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_Second.SM_B35_Second",
      "width": 320.0,
      "depth": 50.0,
      "y0": -320.0,
@@ -74,7 +74,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_SecondCorner.SM_B35_SecondCorner",
+    "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_SecondCorner.SM_B35_SecondCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -88,7 +88,7 @@
    "repeat": true,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_Typical_0.SM_B35_Typical_0",
+     "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_Typical_0.SM_B35_Typical_0",
      "width": 320.0,
      "depth": 50.0,
      "y0": -320.0,
@@ -96,14 +96,14 @@
      "mix": 0
     },
     {
-     "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_Typical_1.SM_B35_Typical_1",
+     "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_Typical_1.SM_B35_Typical_1",
      "width": 320.0,
      "depth": 50.0,
      "y0": -320.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_Typical_0_v1.SM_B35_Typical_0_v1",
+     "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_Typical_0_v1.SM_B35_Typical_0_v1",
      "width": 320.0,
      "depth": 50.0,
      "y0": -320.0,
@@ -112,7 +112,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_Typical_0_v2.SM_B35_Typical_0_v2",
+     "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_Typical_0_v2.SM_B35_Typical_0_v2",
      "width": 320.0,
      "depth": 50.0,
      "y0": -320.0,
@@ -121,7 +121,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_Typical_0_v3.SM_B35_Typical_0_v3",
+     "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_Typical_0_v3.SM_B35_Typical_0_v3",
      "width": 320.0,
      "depth": 50.0,
      "y0": -320.0,
@@ -132,7 +132,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_TypicalCorner.SM_B35_TypicalCorner",
+    "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_TypicalCorner.SM_B35_TypicalCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -146,7 +146,7 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_Top.SM_B35_Top",
+     "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_Top.SM_B35_Top",
      "width": 320.0,
      "depth": 50.0,
      "y0": -320.0,
@@ -155,7 +155,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B35/v1021010854/SM_B35_TopCorner.SM_B35_TopCorner",
+    "path": "/Game/BW/Styles/B35/v1021021034/SM_B35_TopCorner.SM_B35_TopCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,

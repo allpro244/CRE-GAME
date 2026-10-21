@@ -536,7 +536,15 @@ def ground(R, W, H, entrance=False, M=None):
         wall_with_holes(M, mat, W, H, [hole])
         a, b = hole[0], hole[1]
         M.box(4, -25, -20, a, b, 0, bulk)                       # bulkhead
-        M.box(2, -28, -24, a, b, bulk, sign - 15)               # shop glass
+        # A SHOP YOU CAN SEE INTO: clear glass with the reflection of the
+        # street, and behind it a lit room: a pale back wall, a counter, shelves
+        # (an opaque pane read as a black hole in every street-level view)
+        M.box(9, -28, -26, a, b, bulk, sign - 15)               # shop glass (clear)
+        M.box(10, -DEPTH + 2, -DEPTH + 4, a, b, 0, sign)        # the back wall, lit
+        M.box(10, -DEPTH + 4, -38, a + (b - a) * 0.15, a + (b - a) * 0.55, 0, 95)   # counter
+        for z in (60, 120, 180):
+            M.box(10, -DEPTH + 4, -DEPTH + 18, b - (b - a) * 0.35, b - 10, z, z + 6)  # shelves
+        M.box(4, -DEPTH, -26, a, b, 0, 1)                       # the floor inside
         M.box(1, -24, -20, a, b, bulk, bulk + 6)
         n = g.get("lights", 2)
         for k in range(1, n):
@@ -872,7 +880,9 @@ def slots_for(R):
             ("accent", mat_path(m.get("accent", "Paint/PaintedMetal_Green"))),
             ("roof", mat_path(m.get("roof", "Paint/PaintedStone_charcoal"))),
             ("accent2", mat_path(m.get("accent2", "Paint/PaintedMetal_White"))),
-            ("blind", mat_path(m.get("blind", "Paint/PaintedStone_Beige")))]
+            ("blind", mat_path(m.get("blind", "Paint/PaintedStone_Beige"))),
+            ("shopglass", "/Game/Building/Material/MI/MI_Bldg_Glass.MI_Bldg_Glass"),
+            ("interior", mat_path(m.get("interior", "Paint/PaintedStone_White")))]
 
 
 def zoned(R, z):

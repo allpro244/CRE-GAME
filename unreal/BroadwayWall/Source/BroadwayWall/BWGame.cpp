@@ -112,13 +112,13 @@ void ABWCameraPawn::Tick(float Dt)
 		{
 			DeskHeld = FMath::Max(0.0, DeskHeld - Dt);
 			if (DeskHeld <= 0) DeskYaw += 6.0 * Dt * DeskSpin;
-			const double Pt = -20;
+			const double Pt = DeskZoom < 0.3 ? -6 : -20;   // the tightest close-up stands at the kerb
 			const double Aspect = Camera->AspectRatio > 0 ? Camera->AspectRatio : 16.0 / 9.0;
 			const double TanV = FMath::Tan(FMath::DegreesToRadians(Camera->FieldOfView * 0.5)) / Aspect;
 			const double Extent = FMath::Max(Hb, Span * 0.75) + 1500;
 			const double Dist = DeskZoom * Extent / (1.5 * FMath::Max(0.1, DeskRect.W) * TanV);
 			const FRotator Rot(Pt, DeskYaw, 0);
-			const FVector Look(Base.X, Base.Y, Hb * (DeskZoom < 1 ? 0.2 : 0.45));
+			const FVector Look(Base.X, Base.Y, DeskZoom < 0.3 ? 300.0 : Hb * (DeskZoom < 1 ? 0.2 : 0.45));
 			SetActorLocationAndRotation(Look - Rot.Vector() * Dist, Rot);
 			Camera->Offset = FVector2D(1.0 - 2.0 * (DeskRect.X + DeskRect.Z * 0.5), 2.0 * (DeskRect.Y + DeskRect.W * 0.5) - 1.0);
 			return;

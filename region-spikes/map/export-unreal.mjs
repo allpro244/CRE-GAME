@@ -121,8 +121,11 @@ function maskRects(G, [x0, y0, x1, y1], ok) {
 //          "full"  the generator's own growth, as in the SVG maps (--full-suburbs)
 const SPARSE_GEN = { urbanisedScale: 1 / 3, townSources: true, holdoutSigma: 0.1 };
 const HOUSE_BUDGET = 2500;
+// owner: a small-city core of ~1.0 x 1.5 km (long side on the coast/river), villages scaled down with it —
+// the island core is 3.9 km2, this is 1.5 km2 (38%), so village plats shrink by ~sqrt(0.38) a side: 2-4 x 2-3 blocks
+const SMALL_TOWN = { core: [1500, 1000], townBlocks: [[2, 4], [2, 3]], bankTowns: true };
 export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = "few" } = {}) {
-  const M = generate(seed, km, suburbs === "thin" ? SPARSE_GEN : {}), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
+  const M = generate(seed, km, { ...(dense ? {} : SMALL_TOWN), ...(suburbs === "thin" ? SPARSE_GEN : {}) }), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
   if (suburbs === "few") keepFewNeighbourhoods(M);
   M.rotate = Math.floor(makeRng("orient:" + seed)() * 4); // same orientation as the SVG
   // canonical -> map frame (x east, y south, metres), as render() does
@@ -196,9 +199,9 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
 
   // ---------------- buildings & parcels
   const volumes = [], parcels = [], trees = [], labels = [];
-  const townOf = (p) => { let best = { name: "Downtown", d: dist(p, M.core.c) - 1300 }; for (const t of M.towns) { const d = dist(p, t.c); if (d < best.d) best = { name: t.name, d }; } return best.name; };
+  const townOf = (p) => { let best = { name: "Downtown", d: dist(p, M.core.c) - M.core.hl }; for (const t of M.towns) { const d = dist(p, t.c); if (d < best.d) best = { name: t.name, d }; } return best.name; };
   const sf = (m2) => Math.round(m2 / (FT * FT));
-  let towers = 0;
+  const coreLots = [];
   const blockLots = (r, front, kind) => {
     let n = 0;
     for (const b of r.blockRects) {
@@ -231,7 +234,7 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
             // small-town centre (owner direction): mostly 2-4 floors, some 5-8 near the middle, at most two 10-12 floor towers
             floors = 2 + Math.floor(rng() * 3);
             if (dn < 0.5 && rng() < 0.18 * (1 - dn / 0.5)) floors = 5 + Math.floor(rng() * 4);
-            if (dn < 0.2 && towers < 2 && rng() < 0.02) { floors = 10 + Math.floor(rng() * 3); towers++; }
+            coreLots.push({ dn, bbl: `D${parcels.length}` }); // the two most central become the towers, below
           }
           cls = floors >= (dense ? 12 : 5) ? (dn < 0.55 ? "office" : rng() < 0.5 ? "office" : "multifamily") : floors <= 4 && rng() < 0.5 ? "retail" : "multifamily";
         } else {
@@ -248,6 +251,12 @@ export function exportRegion(seed, { km = 6, crop = 0, dense = false, suburbs = 
     }
   };
   blockLots(M.core, 25, "core");          // ~82 ft downtown lots (approximate; island.mjs owns the real plat)
+  // owner: "at most two ~11-floor towers", in the centre of the core
+  for (const { bbl } of coreLots.sort((a, b) => a.dn - b.dn).slice(0, 2)) {
+    const v = volumes.find((x) => x.bbl === bbl), p = parcels.find((x) => x.bbl === bbl);
+    if (!v || !p) continue;
+    const k = 11 / p.floors; v.z1 = 11 * 355; v.cls = p.cls = "office"; p.bldgArea = Math.round(p.bldgArea * k); p.floors = 11;
+  }
   for (const t of M.towns) blockLots(t, 15, "town"); // ~50 ft village lots (approximate)
 
   const SUFFIX = { prewar: ["Park", "Terrace", "Heights", "Place"], postwar: ["Village", "Gardens", "Manor", "Acres"], recent: ["Estates", "Meadows", "Reserve", "Crossing", "Ridge"] };

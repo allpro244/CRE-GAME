@@ -384,6 +384,8 @@ street tree per ~2 houses.
 node region-spikes/map/export-unreal.mjs 3    # -> out/city-region-3.json (6 x 6 km)
 ```
 
+**Downtown footprint (owner addendum):** 1.5 × 1.0 km, a small-city core on the coast, instead of the 2.6 × 1.5 km island city. The two most central lots become the ~11-floor towers. Villages shrink with it to 2–4 × 2–3 blocks (sqrt of the 38% area ratio, a side), and the river-crossing village stands on one bank (bankTowns) instead of losing its blocks to the river. These are generator options (core, townBlocks, bankTowns), so the SVG maps are unchanged.
+
 **Region:** 6 × 6 km. `--km 10` writes `…-10km.json`.
 
 **Downtown and villages: low-rise.**
@@ -411,12 +413,12 @@ here.
 - `--thin-suburbs`: a third of the urbanised KNOB, growth from the towns too.
 - `--full-suburbs`: the SVG maps' growth.
 
-**Seed 3, 6 km (default):** 2.2 MB, made of:
-- 4,913 volumes, of which 2,266 are houses;
-- 7 neighbourhoods: 4 pre-war, 2 post-war, 1 recent;
-- 3,168 parcels, about 400 of them parking or vacant;
-- 12,412 trees;
-- 243 centerlines.
+**Seed 3, 6 km (default):** 1.4 MB, made of:
+- 2,805 volumes, of which 1,722 are houses;
+- 11 neighbourhoods (mostly small pre-war tracts beside downtown, plus post-war and recent ones near the first highway);
+- 1,409 parcels, 193 of them parking or vacant;
+- 16,240 trees;
+- 202 centerlines;
+- floor mix, downtown and villages together: 1,066 buildings at 1–4 floors, 15 at 5–8, 2 towers at 11.
 
-**Known:** at 6 km seed 3's downtown straddles the river, and two creeks run
-through it. These are the generator issues noted above.
+**Known:** the small core sits on the shore west of the river mouth, so the river and creeks no longer run through it.

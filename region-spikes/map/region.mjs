@@ -255,6 +255,9 @@ const RIVERS = ["Kessaw", "Ottaquin", "Saline", "Big Muddy", "Tenmile", "Wabeno"
  * opts (all default off, so the SVG renders are unchanged):
  *   urbanisedScale  multiply the urbanised-share KNOB (0.33 = an earlier point in the region's growth)
  *   townSources     car-era growth also radiates from the old towns, not only downtown
+ *   core            [long, deep] downtown footprint in m (default: the island city, SZ.core)
+ *   townBlocks      [[nx range], [ny range]] village plat size (default SZ.townBlocks)
+ *   bankTowns       the river-crossing village stands on one bank instead of straddling the river
  *   holdoutSigma    spread of the leapfrog factor (default 0.25; smaller = growth hugs roads and towns)
  */
 export function generate(seed, km = 10, opts = {}) {
@@ -312,7 +315,7 @@ export function generate(seed, km = 10, opts = {}) {
   M.water = water; M.flood = flood;
 
   // ---------------- Layer 2: old settlements ------------------------------
-  const [CL, CW] = SZ.core;
+  const [CL, CW] = opts.core ?? SZ.core;
   let core;
   const siteScore = (r) => {
     let wet = 0, out = 0; for (const q of r.poly().concat([r.c])) if (q[0] < 0 || q[1] < 0 || q[0] > S || q[1] > S) out++;
@@ -353,7 +356,7 @@ export function generate(seed, km = 10, opts = {}) {
   for (let tries = 0; tries < 200; tries++) {
     const i = rng.int(5, river.length - 6), p = river[i];
     if (!okTown(p)) continue;
-    towns.push(makeTown(p, norm(sub(river[i + 1], river[i - 1])), "river"));
+    towns.push(makeTown(p, norm(sub(river[i + 1], river[i - 1])), "river", rHalf[i]));
     break;
   }
   const nTowns = Math.max(2, Math.round(S * S / SZ.townArea) + rng.int(0, 1));
@@ -362,8 +365,10 @@ export function generate(seed, km = 10, opts = {}) {
     if (!okTown(p) || isWater(p) || isFlood(p)) continue;
     towns.push(makeTown(p, rng() < 0.5 ? [1, 0] : [Math.cos(rng.range(-0.35, 0.35)), Math.sin(rng.range(-0.35, 0.35))], "crossroads")); // platted on the survey, or pre-survey askew (approximate)
   }
-  function makeTown(c, u, kind) {
-    const nx = rng.int(...SZ.townBlocks[0]), ny = rng.int(...SZ.townBlocks[1]), pitch = rng.range(...SZ.townPitch);
+  function makeTown(c, u, kind, riverHalf = 0) {
+    const nx = rng.int(...(opts.townBlocks ?? SZ.townBlocks)[0]), ny = rng.int(...(opts.townBlocks ?? SZ.townBlocks)[1]), pitch = rng.range(...SZ.townPitch);
+    // bankTowns: a ferry/mill village sits on ONE bank, its landing at the water (otherwise it straddles the river)
+    if (opts.bankTowns && kind === "river") { const v = perp(norm(u)), side = isWater(add(c, mul(v, riverHalf + ny * pitch / 2 + 20))) ? -1 : 1; c = add(c, mul(v, side * (riverHalf + ny * pitch / 2 + 20))); }
     const r = oRect(c, u, nx * pitch / 2, ny * pitch / 2);
     r.blocks = gridBlocks(r, pitch, pitch, 18, isWater); // 60 ft street ROW ~18 m, approximate
     r.kind = kind; r.name = rng.pick(NAME_A) + rng.pick(NAME_B);

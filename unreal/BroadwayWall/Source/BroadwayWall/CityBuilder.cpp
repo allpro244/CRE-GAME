@@ -391,6 +391,7 @@ bool ACityBuilder::BuildFromText(const FString& Text)
 {
 	const double T0 = FPlatformTime::Seconds();
 	if (!City.LoadText(Text, TEXT("bridge"))) return false;
+	bFullNext = true;   // a new city: nothing built for the last one is kept
 	const double T1 = FPlatformTime::Seconds();
 	// Phase 3 facades: on when the kit table and its migrated meshes are here (-NoFacades: blocks only)
 	// every Data/kit-*.json whose meshes are migrated; -Kits=CHF,SFC narrows it
@@ -982,10 +983,56 @@ namespace
 
 void ACityBuilder::BuildVolumes()
 {
-	for (UProceduralMeshComponent* Old : Chunks) if (Old) Old->DestroyComponent();
-	Chunks.Reset();
-	if (Facades) Facades->Reset();
-	ClearRoofProps();
+	// ONLY WHAT CHANGED. Every month used to tear the whole city down and lay
+	// it again (3,309 volumes, facades, roofs, 1.4 s on the metro city) for the
+	// handful of buildings the month moved. Each volume is now signed by every
+	// field it is drawn from; one whose signature moved (or that is new, or
+	// gone) has its pieces hidden and is laid again, with its neighbours (a
+	// new building next door turns a facade into a lot-line wall), and only
+	// the 250 m tiles they stand in are re-meshed. Hidden pieces are compacted
+	// by a full rebuild once they are a quarter of the city.
+	const double T0 = FPlatformTime::Seconds();
+	const int32 Nv = Current.Num();
+	TArray<FString> Keys; Keys.SetNum(Nv);
+	TArray<uint32> Sigs; Sigs.SetNum(Nv);
+	TArray<FIntPoint> TileOf; TileOf.SetNum(Nv);
+	{
+		TMap<FString, int32> Ord;
+		for (int32 v = 0; v < Nv; ++v)
+		{
+			const FBWVolume& V = Current[v];
+			Keys[v] = V.Bbl + TEXT("#") + FString::FromInt(Ord.FindOrAdd(V.Bbl)++);
+			uint32 H = HashCombine(GetTypeHash(V.Bbl), GetTypeHash(V.Cls));
+			H = HashCombine(H, HashCombine(GetTypeHash(V.Deco), GetTypeHash(V.Year)));
+			H = HashCombine(H, HashCombine(GetTypeHash(FMath::RoundToInt(V.Z0)), GetTypeHash(FMath::RoundToInt(V.Z1))));
+			H = HashCombine(H, GetTypeHash(int32(V.bCrown) | int32(V.bVacant) << 1 | int32(V.bFrame) << 2 | int32(V.bPlayer) << 3 | int32(V.bOpen) << 4 | int32(V.bFresh) << 5 | int32(V.bCleared) << 6));
+			H = HashCombine(H, HashCombine(GetTypeHash(FMath::RoundToInt(V.Progress * 1000)), GetTypeHash(V.Distress)));
+			H = HashCombine(H, HashCombine(GetTypeHash(V.Facade), GetTypeHash(V.Fam)));
+			H = HashCombine(H, HashCombine(GetTypeHash(V.Tint.ToFColor(false)), GetTypeHash(V.Look.Kit)));
+			H = HashCombine(H, HashCombine(GetTypeHash(V.Look.bTint ? V.Look.Tint.ToFColor(false) : FColor::Black), GetTypeHash(V.Look.Ground + TEXT("|") + V.Look.Top)));
+			H = HashCombine(H, GetTypeHash(V.Look.Bays));
+			FVector2D C(0, 0);
+			for (const FVector2D& P : V.Ring) { H = HashCombine(H, HashCombine(GetTypeHash(FMath::RoundToInt(P.X)), GetTypeHash(FMath::RoundToInt(P.Y)))); C += P; }
+			if (V.Ring.Num()) C /= V.Ring.Num();
+			Sigs[v] = H;
+			TileOf[v] = FIntPoint(FMath::FloorToInt(C.X / 25000.0), FMath::FloorToInt(C.Y / 25000.0));
+		}
+	}
+	int32 LiveInst = 0;
+	for (const TPair<FString, FVolRec>& R : Recs) LiveInst += R.Value.Inst.Num();
+	const bool bFull = bFullNext || !Facades || Recs.Num() == 0 || Garbage > FMath::Max(20000, LiveInst / 4);
+	bFullNext = false;
+	if (bFull)
+	{
+		for (TPair<FIntPoint, TObjectPtr<UProceduralMeshComponent>>& T : TileMesh) if (T.Value) T.Value->DestroyComponent();
+		TileMesh.Reset();
+		for (UProceduralMeshComponent* Old : Chunks) if (Old) Old->DestroyComponent();
+		Chunks.Reset();
+		if (Facades) Facades->Reset();
+		ClearRoofProps();
+		Recs.Reset();
+		Garbage = 0;
+	}
 	// THE NEIGHBOURS, for lot-line walls: every volume's footprint in a 40 m
 	// grid, so a wall can ask whether another lot's building stands right
 	// outside it
@@ -1027,8 +1074,61 @@ void ACityBuilder::BuildVolumes()
 		}
 		return Out;
 	};
-	constexpr int32 PerChunk = 200;
-	for (int32 Start = 0; Start < Current.Num(); Start += PerChunk)
+	TArray<bool> Dirty; Dirty.Init(bFull, Nv);
+	TSet<FIntPoint> DirtyTiles;
+	TSet<UInstancedStaticMeshComponent*> Touched;
+	auto Hide = [&](const FVolRec& R)
+	{
+		static const FTransform Nothing(FQuat::Identity, FVector::ZeroVector, FVector::ZeroVector);
+		for (const TPair<UInstancedStaticMeshComponent*, int32>& P : R.Inst)
+			if (IsValid(P.Key) && P.Key->IsValidInstance(P.Value)) { P.Key->UpdateInstanceTransform(P.Value, Nothing, true, false, true); Touched.Add(P.Key); ++Garbage; }
+	};
+	if (bFull) for (int32 v = 0; v < Nv; ++v) DirtyTiles.Add(TileOf[v]);
+	else
+	{
+		TArray<int32> Moved;
+		for (int32 v = 0; v < Nv; ++v)
+		{
+			const FVolRec* R = Recs.Find(Keys[v]);
+			if (!R || R->Sig != Sigs[v]) { Dirty[v] = true; Moved.Add(v); }
+		}
+		// the neighbours of what moved: their lot-line walls may have changed
+		for (const int32 v : Moved)
+		{
+			if (Current[v].Ring.Num() < 3) continue;
+			FBox2D B(ForceInit); for (const FVector2D& P : Current[v].Ring) B += P;
+			B = B.ExpandBy(300);
+			const FIntPoint C0 = CellOf(B.Min), C1 = CellOf(B.Max);
+			for (int32 x = C0.X; x <= C1.X; ++x) for (int32 y = C0.Y; y <= C1.Y; ++y)
+				if (const TArray<int32>* Cell = Grid.Find(FIntPoint(x, y)))
+					for (const int32 o : *Cell)
+					{
+						if (Dirty[o]) continue;
+						FBox2D Bo(ForceInit); for (const FVector2D& P : Current[o].Ring) Bo += P;
+						if (Bo.Intersect(B)) Dirty[o] = true;
+					}
+		}
+		TSet<FString> Here(Keys);
+		for (const TPair<FString, FVolRec>& R : Recs)
+			if (!Here.Contains(R.Key)) { Hide(R.Value); DirtyTiles.Add(R.Value.Tile); }
+		for (int32 v = 0; v < Nv; ++v)
+			if (Dirty[v])
+			{
+				if (const FVolRec* R = Recs.Find(Keys[v])) { Hide(*R); DirtyTiles.Add(R->Tile); }
+				DirtyTiles.Add(TileOf[v]);
+			}
+	}
+	for (UInstancedStaticMeshComponent* C : Touched) C->MarkRenderStateDirty();
+	TMap<FString, FVolRec> NewRecs;
+	NewRecs.Reserve(Nv);
+	TMap<FIntPoint, TArray<int32>> TileVols;
+	for (int32 v = 0; v < Nv; ++v)
+	{
+		if (DirtyTiles.Contains(TileOf[v])) TileVols.FindOrAdd(TileOf[v]).Add(v);
+		if (!Dirty[v]) if (FVolRec* R = Recs.Find(Keys[v])) NewRecs.Add(Keys[v], MoveTemp(*R));
+	}
+	int32 Laid = 0;
+	for (const FIntPoint& Tile : DirtyTiles)
 	{
 		constexpr int32 NumRoofs = 8;
 		FMeshBuf M, Roofs[NumRoofs], Lots, Stone, Party[3];
@@ -1046,21 +1146,35 @@ void ACityBuilder::BuildVolumes()
 			for (int32 i = 0; i < 6; ++i) if (U < Cum[i]) return i;
 			return 0;
 		};
-		for (int32 i = Start; i < FMath::Min(Start + PerChunk, Current.Num()); ++i)
+		const TArray<int32>* InTile = TileVols.Find(Tile);
+		for (const int32 i : InTile ? *InTile : TArray<int32>())
 		{
 			const FBWVolume& Vol = Current[i];
+			// a building that moved is laid again, pieces and all; one that did
+			// not only lends its massing to the tile's mesh
+			const bool bInst = Dirty[i];
+			FVolRec& Rec = NewRecs.FindOrAdd(Keys[i]);
+			if (bInst) { Rec = FVolRec(); Rec.Sig = Sigs[i]; ++Laid; }
+			Rec.Tile = TileOf[i];
+			if (Facades) Facades->Record = bInst ? &Rec.Inst : nullptr;
+			PropRecord = bInst ? &Rec.Inst : nullptr;
 			const bool bDress = bFacades && !Vol.bVacant && !Vol.bFrame && !Vol.bOpen && Vol.Deco.IsEmpty() && Vol.Z1 - Vol.Z0 >= 400;
 			if (bDress)
 			{
 				// the facade carries the look; the mass sits 60 cm behind it (no flicker
 				// against the kit's faces, and it still catches clicks), roofed in gravel
-				if (!Vol.bPlayer && !(bPreview && Vol.Bbl == PreviewVol.Bbl)) Facades->Party = PartyWalls(Vol);
-				const int32 Pieces = Facades->Dress(*KitFor(Vol), Vol, GetTypeHash(Vol.Bbl), Vol.Z0 < 50, Vol.Look.bTint ? Vol.Look.Tint : Vol.Tint, Vol.Look.bTint);
-				if (bPreview && Vol.Bbl == PreviewVol.Bbl) UE_LOG(LogBWBuilder, Display, TEXT("preview %s: kit %s, %d pieces, %.0f-%.0f cm"), *Vol.Bbl, *KitFor(Vol)->Name, Pieces, Vol.Z0, Vol.Z1);
+				int32 Pieces = Rec.bDressed ? 1 : 0;
+				if (bInst)
+				{
+					if (!Vol.bPlayer && !(bPreview && Vol.Bbl == PreviewVol.Bbl)) Facades->Party = PartyWalls(Vol);
+					Pieces = Facades->Dress(*KitFor(Vol), Vol, GetTypeHash(Vol.Bbl), Vol.Z0 < 50, Vol.Look.bTint ? Vol.Look.Tint : Vol.Tint, Vol.Look.bTint);
+					Rec.bDressed = Pieces > 0;
+					if (bPreview && Vol.Bbl == PreviewVol.Bbl) UE_LOG(LogBWBuilder, Display, TEXT("preview %s: kit %s, %d pieces, %.0f-%.0f cm"), *Vol.Bbl, *KitFor(Vol)->Name, Pieces, Vol.Z0, Vol.Z1);
+				}
 				if (Pieces > 0)
 				{
-					if (Vol.bCrown || Vol.Z1 >= 0) DressRoof(Vol, GetTypeHash(Vol.Bbl));
-					if (Vol.Z0 < 50 && (Vol.bFresh || Vol.Distress >= 2)) StreetMoment(Vol);
+					if (bInst && (Vol.bCrown || Vol.Z1 >= 0)) DressRoof(Vol, GetTypeHash(Vol.Bbl));
+					if (bInst && Vol.Z0 < 50 && (Vol.bFresh || Vol.Distress >= 2)) StreetMoment(Vol);
 					// the mass behind the facade: where a lot-line wall shows, this is it, so it is party-wall brick
 					Party[GetTypeHash(Vol.Bbl) % 3].AddWalls(BWInsetRing(Vol.Ring, 60), Vol.Z0, Vol.Z1, FLinearColor::White);
 					if (Vol.bPlayer) M.AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor(FColor(0xE8, 0xB8, 0x3A)));
@@ -1068,7 +1182,7 @@ void ACityBuilder::BuildVolumes()
 					continue;
 				}
 			}
-			SetPiece(Vol);
+			if (bInst) SetPiece(Vol);
 			if (Vol.bVacant && !Vol.bFrame && !Vol.bCleared && Vol.Ring.Num() >= 3)
 			{
 				// AN EMPTY LOT DOWNTOWN IS OFTEN A CAR PARK until somebody builds on
@@ -1077,7 +1191,7 @@ void ACityBuilder::BuildVolumes()
 				if (GetTypeHash(Vol.Bbl) % 100u < 55u)
 				{
 					Lots.AddCap(Vol.Ring, FootZ + 4, FLinearColor::White);
-					ParkLot(Vol, GetTypeHash(Vol.Bbl));
+					if (bInst) ParkLot(Vol, GetTypeHash(Vol.Bbl));
 				}
 				continue;
 			}
@@ -1128,6 +1242,10 @@ void ACityBuilder::BuildVolumes()
 			Into.AddWalls(Vol.Ring, Z0, Z1, Col);
 			if (!Vol.bOpen) Into.AddCap(Vol.Ring, Z1, Vol.bPlayer ? FLinearColor(FColor(0xE8, 0xB8, 0x3A)) : Col * 1.08f);
 		}
+		if (Facades) Facades->Record = nullptr;
+		PropRecord = nullptr;
+		if (TObjectPtr<UProceduralMeshComponent>* Old = TileMesh.Find(Tile)) { if (*Old) (*Old)->DestroyComponent(); TileMesh.Remove(Tile); }
+		if (!InTile) continue;
 		UProceduralMeshComponent* Mesh = NewObject<UProceduralMeshComponent>(this, MakeUniqueObjectName(this, UProceduralMeshComponent::StaticClass(), TEXT("Buildings")));
 		Mesh->SetupAttachment(RootComponent);
 		Mesh->bUseAsyncCooking = true;
@@ -1183,8 +1301,13 @@ void ACityBuilder::BuildVolumes()
 			UMaterialInterface* Brick = LoadObject<UMaterialInterface>(nullptr, PartyPaths[r]);
 			Mesh->SetMaterial(Sec++, Brick ? Brick : VertexColorMaterial.Get());
 		}
-		Chunks.Add(Mesh);
+		TileMesh.Add(Tile, Mesh);
 	}
+	Recs = MoveTemp(NewRecs);
+	Chunks.Reset();
+	for (TPair<FIntPoint, TObjectPtr<UProceduralMeshComponent>>& T : TileMesh) Chunks.Add(T.Value);
+	UE_LOG(LogBWBuilder, Display, TEXT("volumes: %d (%s), %d laid, %d of %d tiles re-meshed, %d hidden pieces, %.0f ms"),
+		Nv, bFull ? TEXT("full") : TEXT("changes"), Laid, DirtyTiles.Num(), TileMesh.Num(), Garbage, (FPlatformTime::Seconds() - T0) * 1000.0);
 }
 
 void ACityBuilder::BuildTrees()
@@ -1675,7 +1798,8 @@ void ACityBuilder::AddProp(const TCHAR* Path, const FTransform& T, bool bRoof)
 		C->RegisterComponent();
 		Set.Add(Path, C);
 	}
-	C->AddInstance(T);
+	const int32 I = C->AddInstance(T);
+	if (bRoof && PropRecord) PropRecord->Add({ C, I });
 }
 
 void ACityBuilder::SetPiece(const FBWVolume& V)

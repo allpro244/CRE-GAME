@@ -1205,24 +1205,44 @@ export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   // developmentProForma, underwritingEcon, noiYr, capRateFor, useOccupancy,
   // marketConstructionQuote...) read a NEW field of the market or the lot,
   // add it to the matching list below or this memo will serve a stale price.
-  syncLandMemos(econ);
-  const hit = LAND_MEMO.get(rec.bbl);
-  const heat = econ.districtHeat?.[rec.district ?? "—"];
-  if (hit && landLotMatches(hit, rec, heat)) return hit.psf;
-  const psf = readLand(rec, econ, false, LAND_CTX).psf;
-  LAND_MEMO.set(rec.bbl, { ...lotKey(rec, heat), psf });
+  const m = landMemoFor(rec, econ);
+  if (m.psf !== undefined) return m.psf;
+  const psf = readLand(rec, econ, false, LAND_CTX, m).psf;
+  m.psf = psf;
   return psf;
 }
 
+/**
+ * ONE ENTRY PER LOT for everything the land read works out: the price, the
+ * whole read, and the two residuals both are built from (today's rents, and
+ * the holder's peak). The price and the read share their residuals — the
+ * read used to run today's residual again for a lot whose price had just
+ * been struck on it. Valid on the same read-set as before; an entry whose lot
+ * fields have moved is replaced whole.
+ */
 type LandMemoEntry = {
   lotArea: number; farMaxComm: number; farMaxRes: number; zoneDist: unknown; demandScore: number;
-  landPsf: number; district: unknown; yearBuilt: number; heat: number | undefined; psf: number;
+  landPsf: number; district: unknown; yearBuilt: number; heat: number | undefined;
   cornice: number | undefined; maturity: number | undefined;
+  psf?: number;
+  read?: LandRead;
+  /** residualSchemeIn at rentMult 1 and at PEAK_RENT_MULT; undefined until run. */
+  now?: ResidualScheme | null;
+  peak?: ResidualScheme | null;
 };
 const LAND_MEMO = new Map<string, LandMemoEntry>();
-const LAND_READ_MEMO = new Map<string, LandMemoEntry & { read: LandRead }>();
-/** The lot fields a land read depends on — the key both memos are checked against. */
-function lotKey(rec: ParcelRecord, heat: number | undefined): Omit<LandMemoEntry, "psf"> {
+/** The entry for this lot under the current market, made fresh if its lot fields have moved. */
+function landMemoFor(rec: ParcelRecord, econ: Econ): LandMemoEntry {
+  syncLandMemos(econ);
+  const heat = econ.districtHeat?.[rec.district ?? "—"];
+  const hit = LAND_MEMO.get(rec.bbl);
+  if (hit && landLotMatches(hit, rec, heat)) return hit;
+  const m = lotKey(rec, heat);
+  LAND_MEMO.set(rec.bbl, m);
+  return m;
+}
+/** The lot fields a land read depends on — the key the memo is checked against. */
+function lotKey(rec: ParcelRecord, heat: number | undefined): LandMemoEntry {
   return {
     lotArea: rec.lotArea, farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
     zoneDist: rec.zoneDist, demandScore: rec.demandScore, landPsf: rec.landPsf,
@@ -1230,9 +1250,9 @@ function lotKey(rec: ParcelRecord, heat: number | undefined): Omit<LandMemoEntry
     cornice: rec.cornice, maturity: rec.maturity,
   };
 }
-/** Clear both land memos when any market field a read depends on has moved. */
+/** Clear the land memo when any market field a read depends on has moved. */
 function syncLandMemos(econ: Econ): void {
-  if (!landMarketMatches(econ)) { LAND_MEMO.clear(); LAND_READ_MEMO.clear(); LAND_CTX = null; }
+  if (!landMarketMatches(econ)) { LAND_MEMO.clear(); LAND_CTX = null; }
   if (LAND_CTX?.econ !== econ) LAND_CTX = { econ, uw: new Map(), quotes: [] };
 }
 /** The market fields landRead reads, flattened, as of the entries in LAND_MEMO. */
@@ -1323,12 +1343,11 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // the market fields in `landMarketMatches` and the lot fields in
   // `landLotMatches` — and cleared together with the price memo, so it can
   // never serve a number a fresh read would not give. Callers only read it.
-  syncLandMemos(econ);
-  const heat = econ.districtHeat?.[rec.district ?? "—"];
-  const hit = LAND_READ_MEMO.get(rec.bbl);
-  if (hit && landLotMatches(hit, rec, heat)) return hit.read;
-  const read = readLand(rec, econ, true, LAND_CTX);
-  LAND_READ_MEMO.set(rec.bbl, { ...lotKey(rec, heat), psf: read.psf, read });
+  const m = landMemoFor(rec, econ);
+  if (m.read) return m.read;
+  const read = readLand(rec, econ, true, LAND_CTX, m);
+  m.read = read;
+  if (m.psf === undefined) m.psf = read.psf;
   return read;
 }
 
@@ -1338,7 +1357,7 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
  * on a lot that pencils the second residual is not run and `holder` comes back
  * as 0. The price is the same number either way.
  */
-function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | null): LandRead {
+function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | null, memo?: LandMemoEntry): LandRead {
   // LOCATION PRICES DIRT AT THE LEVEL, NOT ONLY IN THE CYCLE.
   //
   // Demand used to enter only as a multiplier on `cycleDev`, so a block that
@@ -1366,10 +1385,18 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   // the holder wins and the number is small but real; and the crossover between
   // them is exactly where redevelopment pressure starts, which is the most
   // important line in a city and the game could not draw it before.
-  const scheme = residualSchemeIn(rec, econ, 1, ctx);
+  // (`memo` is the lot's memo entry: each residual is run at most once a market.)
+  let scheme: ResidualScheme | null;
+  if (memo && memo.now !== undefined) scheme = memo.now;
+  else { scheme = residualSchemeIn(rec, econ, 1, ctx); if (memo) memo.now = scheme; }
   const builder = scheme?.psf ?? 0;
+  let peak: ResidualScheme | null = null;
+  if (whole || !(builder > 0)) {
+    if (memo && memo.peak !== undefined) peak = memo.peak;
+    else { peak = residualSchemeIn(rec, econ, PEAK_RENT_MULT, ctx); if (memo) memo.peak = peak; }
+  }
   const holder = whole || !(builder > 0)
-    ? (residualSchemeIn(rec, econ, PEAK_RENT_MULT, ctx)?.psf ?? 0) * WAIT_DISCOUNT
+    ? (peak?.psf ?? 0) * WAIT_DISCOUNT
     : 0;
 
   // AND WHAT THE CITY GENERATOR THOUGHT, which is not nothing.

@@ -301,12 +301,19 @@ export function generateLand(seed) {
     const c = [x + MILE / 2, y + MILE / 2];
     if (dist(c, site.c) > 3500 && rng() < 0.12) { push(x, y, x + MILE, y + MILE); continue; }
     const h = MILE / 2, q = MILE / 4;
+    // HOLDINGS ARE SMALLER NEAR TOWN (owner; and so they are: truck farms, market gardens and the first
+    // land sold off near a city come in 20s and 40s, consolidated quarter-sections lie further out). The
+    // split odds slide with the quarter's distance from the site, smoothly; near town a forty may be cut
+    // again into two twenties. Shares are shape parameters [K] within the plat-book range [S].
     for (const [qx, qy] of [[x, y], [x + h, y], [x, y + h], [x + h, y + h]]) {
+      const dq = dist([qx + q, qy + q], site.c), t = Math.max(0, Math.min(1, (dq - 1500) / 3000)), tt = t * t * (3 - 2 * t);
+      const pQuarter = 0.08 + 0.37 * tt, pHalf = pQuarter + 0.28 + 0.07 * tt, pForty = pHalf + 0.46 - 0.36 * tt;
+      const forty = (x0, y0) => { if (dq < 2600 && rng() < 0.5 * (1 - tt)) { if (rng() < 0.5) { push(x0, y0, x0 + q / 2, y0 + q); push(x0 + q / 2, y0, x0 + q, y0 + q); } else { push(x0, y0, x0 + q, y0 + q / 2); push(x0, y0 + q / 2, x0 + q, y0 + q); } } else push(x0, y0, x0 + q, y0 + q); };
       const r = rng();
-      if (r < 0.3) push(qx, qy, qx + h, qy + h);
-      else if (r < 0.6) { if (rng() < 0.5) { push(qx, qy, qx + h, qy + q); push(qx, qy + q, qx + h, qy + h); } else { push(qx, qy, qx + q, qy + h); push(qx + q, qy, qx + h, qy + h); } }
-      else if (r < 0.82) { push(qx, qy, qx + q, qy + q); push(qx + q, qy, qx + h, qy + q); push(qx, qy + q, qx + q, qy + h); push(qx + q, qy + q, qx + h, qy + h); }
-      else { push(qx, qy, qx + h, qy + q); push(qx, qy + q, qx + q, qy + h); push(qx + q, qy + q, qx + h, qy + h); }
+      if (r < pQuarter) push(qx, qy, qx + h, qy + h);
+      else if (r < pHalf) { if (rng() < 0.5) { push(qx, qy, qx + h, qy + q); push(qx, qy + q, qx + h, qy + h); } else { push(qx, qy, qx + q, qy + h); push(qx + q, qy, qx + h, qy + h); } }
+      else if (r < pForty) { forty(qx, qy); forty(qx + q, qy); forty(qx, qy + q); forty(qx + q, qy + q); }
+      else { push(qx, qy, qx + h, qy + q); forty(qx, qy + q); forty(qx + q, qy + q); }
     }
   }
   for (const [i, t] of tracts.entries()) {

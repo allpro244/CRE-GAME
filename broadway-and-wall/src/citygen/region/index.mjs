@@ -259,7 +259,7 @@ export function makeRegion(seed, opts = {}) {
       platLots: t.plat.lots.length, leapfrog: !!t.leapfrog,
       // THE RECIPE: platFor(recipe) redraws this plat lot for lot; `built` names the lots standing at the opening.
       // A later phase unpacks the neighbourhood into individual deeds from exactly these lots.
-      recipe: { gen: PLAT_GEN, seed, tract: t.r, era: t.era, id: t.id, bearing: t.recipe.bearing ?? null, waterNear: t.recipe.waterNear, built: packBits(t.plat.lots.length, (i) => t.keep.has(i)) },
+      recipe: { gen: PLAT_GEN, seed, tract: t.r, era: t.era, id: t.id, bearing: t.recipe.bearing ?? null, waterNear: t.recipe.waterNear, scale: t.recipe.scale, built: packBits(t.plat.lots.length, (i) => t.keep.has(i)) },
     }, out.ring, { homes });
     nbStats.push({ bbl, homes, era: t.era });
     for (const lot of built) houses3d.push({ bbl, house: true, year: t.year, cls: "multifamily", r: { c: lot.house.c, u: lot.house.u, w: lot.house.w, d: lot.house.d, z: lot.house.storeys === 2 ? 650 : 450 } });
@@ -405,7 +405,7 @@ export function makeRegion(seed, opts = {}) {
   const manifest = {
     ...data.manifest,
     bbox: [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)],
-    region: { km: S / 1000, river: M.river.name, coast: !!M.coast, rotation: F.k, towns: M.towns.map((t) => t.name), townAreaKm2: +(M.townArea / 1e6).toFixed(2) },
+    region: { km: S / 1000, centre: LL(M.centre), river: M.river.name, coast: !!M.coast, rotation: F.k, towns: M.towns.map((t) => t.name), townAreaKm2: +(M.townArea / 1e6).toFixed(2) },
   };
   const reservedCount = { homes: 0, farm: 0, civic: 0 };
   for (const r of Object.values(reserved)) reservedCount[r.tenure]++;

@@ -75,7 +75,10 @@ export function placeOuter(M) {
   const shuffle = (a) => a.map((x) => [rng(), x]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
   const place = (n, filter, make) => { let k = 0; for (const cnd of shuffle(pts.filter(filter))) { if (k >= n) break; if (tryPlace(cnd.p, cnd.u, ...make())) k++; } return k; };
   // distribution centres by the interchanges (1990-2020): 180-260 x 90-130 m, 10-15 m clear, truck court
-  place(2 + (rng() < 0.5 ? 1 : 0), (q) => q.rs > 1200 && nearIx(q.p, 900), () => { const w = R(180, 260), d = R(90, 130); return [[{ a: 0, o: 0, w: w + 20, d: 50, kind: "pave" }, { a: 0, o: 50, w, d, kind: "bldg", z: Math.round(R(1000, 1500)), cls: "industrial" }], { kind: "pocket", name: "Distribution centre", cls: "industrial", year: Math.round(R(1990, 2020)) }]; });
+  // light industry and flex sheds along the highway and the roads off its interchanges (1965-2015):
+  // 50-110 x 30-55 m, 7-9 m clear, a yard and a truck dock in front [S, typical flex/light-industrial]
+  place(4 + (rng() < 0.5 ? 1 : 0), (q) => q.rs > 800 && (q.hw || nearIx(q.p, 1600)), () => { const w = R(50, 110), d = R(30, 55); return [[{ a: 0, o: 0, w: w + 10, d: 30, kind: "pave" }, { a: 0, o: 30, w, d, kind: "bldg", z: Math.round(R(700, 900)), cls: "industrial" }], { kind: "pocket", name: "Light industrial building", cls: "industrial", year: Math.round(R(1965, 2015)), gap: 220 }]; });
+  place(2 + (rng() < 0.5 ? 1 : 0), (q) => q.rs > 900 && nearIx(q.p, 1500), () => { const w = R(180, 260), d = R(90, 130); return [[{ a: 0, o: 0, w: w + 20, d: 50, kind: "pave" }, { a: 0, o: 50, w, d, kind: "bldg", z: Math.round(R(1000, 1500)), cls: "industrial" }], { kind: "pocket", name: "Distribution centre", cls: "industrial", year: Math.round(R(1990, 2020)) }]; });
   // strip centres on the old roads and the highway (1960-2005): 80-140 m long, 22 m deep, parking in front
   place(3 + (rng() < 0.5 ? 1 : 0), (q) => q.rs > 1000 && q.rs < 2800 && (q.old || q.hw), () => { const L = R(80, 140); return [[{ a: 0, o: 0, w: L, d: 35, kind: "pave" }, { a: 0, o: 35, w: L, d: 22, kind: "bldg", z: 520, cls: "retail" }], { kind: "pocket", name: "Strip centre", cls: "retail", year: Math.round(R(1960, 2005)) }]; });
   // a gas station and diner at a country crossroads (1935-65)
@@ -107,10 +110,21 @@ export function placeOuter(M) {
     return best ? (Math.atan2(best.v[1], best.v[0]) * 180) / Math.PI : undefined;
   };
   const waterNear = (t) => { let b = null; for (const p of M.river.pts) if (!b || dist(p, t.c) < dist(b, t.c)) b = p; return b; };
+  // LOT SIZE GROWS WITH DISTANCE, continuing the town's own gradient past its edge (owner): a plat's lots
+  // are sized to ~9,000 sf at 1 km from the landing, rising as distance^0.8 (~15,000 sf at 2 km, ~21,000
+  // at 3 km) — the falling price of land outward, which every US metro's lot-size gradient shows; the
+  // exponent is a shape choice [K] matched to the town's edge lots so there is no step at the seam.
+  // Each plat varies +-15% around it.
+  const ERA_LOT_SF = { prewar: 4600, postwar: 8050, recent: 8700 };   // the era norms platFor cuts at scale 1
+  const scaleFor = (t, era) => {
+    const d = Math.max(600, dist(t.c, M.centre));
+    const target = 9000 * (d / 1000) ** 0.8 * rng.range(0.85, 1.15);
+    return +Math.max(0.8, Math.min(3.5, target / ERA_LOT_SF[era])).toFixed(3);
+  };
   const all = [];
   for (const t of cands) {
     t.era = rS(t.c) < 2000 && !nearHw[G.idx(t.c)] ? "prewar" : "postwar";
-    t.recipe = { seed: M.seed, tract: t.r, era: t.era, id: t.id, bearing: roadBearing(t), waterNear: waterNear(t) };
+    t.recipe = { seed: M.seed, tract: t.r, era: t.era, id: t.id, bearing: roadBearing(t), waterNear: waterNear(t), scale: scaleFor(t, t.era) };
     t.plat = platFor(t.recipe, ok);
     t.plat.lots.forEach((lot, i) => all.push({ t, i, m: lot.house.c, r: rS(lot.house.c) }));
   }
@@ -141,7 +155,7 @@ export function placeOuter(M) {
   let j = 0;
   for (const t of jumps) {
     if (j >= 2) break;
-    const recipe = { ...t.recipe, era: "recent" };
+    const recipe = { ...t.recipe, era: "recent", scale: scaleFor(t, "recent") };
     const plat = platFor(recipe, ok);
     const order = plat.lots.map((lot, i) => ({ i, r: rS(lot.house.c) })).sort((a, b) => a.r - b.r).slice(0, 250);
     if (order.length < 80) continue;

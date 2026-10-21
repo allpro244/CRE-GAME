@@ -54,6 +54,9 @@ export function platFor(recipe, ok = () => true) {
   const streets = [], bulbs = [], ponds = [], lots = [];
   const ROW = rng.range(50, 60) * FT;
   const [hw0, hd0] = HOUSE[era];
+  // LOTS GROW WITH DISTANCE (owner): `scale` is the lot area against the era's own norm, set from how far
+  // out the plat lies (outer.mjs); frontage takes most of it, depth the rest.
+  const SC = recipe.scale ?? 1, FS = SC ** 0.6, DS = SC ** 0.4;
 
   // stormwater detention in the corner nearest the water (recent plats; post-war often had none) [S]
   if (era === "recent" || (era === "postwar" && rng() < 0.3)) {
@@ -92,7 +95,7 @@ export function platFor(recipe, ok = () => true) {
 
   if (era === "prewar") {
     // a grid with uneven blocks: block length and lot width per plat, the odd jogged cross street, alleys in most
-    const front = rng.range(30, 50) * FT, depth = rng.range(100, 130) * FT, alley = rng() < 0.65 ? 16 * FT : 0;
+    const front = rng.range(30, 50) * FT * FS, depth = rng.range(100, 130) * FT * DS, alley = rng() < 0.65 ? 16 * FT : 0;
     const blockLen = rng.range(400, 700) * FT, pitch = 2 * depth + alley + ROW;
     const n = Math.max(1, Math.round((2 * halfV) / pitch));
     const crossAt = []; // positions along u of the cross streets, shared by every street of the plat (a grid), each jogged a little
@@ -109,7 +112,7 @@ export function platFor(recipe, ok = () => true) {
     }
   } else if (era === "postwar") {
     // curving streets of differing sweep closed into loops: a shared bend (the ground) plus each street's own
-    const front = rng.range(60, 80) * FT, depth = rng.range(105, 125) * FT, pitch = 2 * depth + ROW;
+    const front = rng.range(60, 80) * FT * FS, depth = rng.range(105, 125) * FT * DS, pitch = 2 * depth + ROW;
     const n = Math.max(1, Math.round((2 * halfV) / pitch));
     const lam = 2 * half * rng.range(0.7, 1.4), ph = rng.range(0, 6.28), A = Math.min(45, pitch * 0.4) * rng.range(0.5, 1);
     const end = depth + 20;
@@ -135,7 +138,7 @@ export function platFor(recipe, ok = () => true) {
     }
   } else {
     // a winding collector with cul-de-sacs of differing length, angle and spacing; lots back onto the collector
-    const front = rng.range(65, 80) * FT, depth = rng.range(110, 130) * FT;
+    const front = rng.range(65, 80) * FT * FS, depth = rng.range(110, 130) * FT * DS;
     const nSpine = Math.max(1, Math.round((2 * halfV) / (2 * (600 * FT + 40))));
     for (let k = 0; k < nSpine; k++) {
       const b = -halfV + ((k + 0.5) * 2 * halfV) / nSpine;

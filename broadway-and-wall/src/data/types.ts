@@ -124,7 +124,7 @@ export interface ReservedParcel {
    * exactly these lots, `built` (a base64url bitset over the plat's lots) naming
    * the ones standing.
    */
-  recipe?: { gen: string; seed: number; tract: [number, number, number, number]; era: string; id: number; bearing: number | null; waterNear?: [number, number]; built: string };
+  recipe?: { gen: string; seed: number; tract: [number, number, number, number]; era: string; id: number; bearing: number | null; waterNear?: [number, number]; scale?: number; built: string };
   acres?: number;
   floodShare?: number;
   wood?: boolean;

@@ -90,22 +90,23 @@ export function lotsOn(lotArea: number, lotSf: number): number {
 }
 
 /** What a rezoning would cost here, how long the board takes, and how often it says yes. */
-export function entitleQuote(s: GameState, parcels: ParcelTable, bbl: string, lotSf = 7_500) {
+/** `planned`: the lot count of the plat citygen draws for this tract (region platTractLots); absent, an estimate. */
+export function entitleQuote(s: GameState, parcels: ParcelTable, bbl: string, lotSf = 7_500, planned?: number) {
   const p = plattable(s, parcels, bbl);
   if ("err" in p) return null;
-  const lots = lotsOn(p.rec.lotArea, lotSf);
+  const lots = planned ?? lotsOn(p.rec.lotArea, lotSf);
   if (lots < 4) return null;
   const cost = Math.round((ENTITLE_FIXED + ENTITLE_PER_LOT * lots) * s.econ.costIdx);
   return { cost, months: ENTITLE_MONTHS(lots), odds: +entitleOdds(p.rec.tract!.edgeM).toFixed(2), lots, lotSf, zone: REZONE.zone, far: REZONE.far };
 }
 
-export function fileEntitlement(s: GameState, parcels: ParcelTable, bbl: string, lotSf = 7_500): { s: GameState; err?: string; msg?: string } {
+export function fileEntitlement(s: GameState, parcels: ParcelTable, bbl: string, lotSf = 7_500, planned?: number): { s: GameState; err?: string; msg?: string } {
   if (!s.holdings[bbl]) return { s, err: "You have to own the tract to ask the board for anything." };
   const p = plattable(s, parcels, bbl);
   if ("err" in p) return { s, err: p.err };
   if (s.rezoned?.[bbl]) return { s, err: "The board has already rezoned it." };
   if (s.entitlementApps?.[bbl]) return { s, err: "The application is already in front of the board." };
-  const q = entitleQuote(s, parcels, bbl, lotSf);
+  const q = entitleQuote(s, parcels, bbl, lotSf, planned);
   if (!q) return { s, err: "The tract is too small to plat." };
   const room = spendable(s, parcels);
   if (room.total < q.cost) return { s, err: `The application runs ${money(q.cost)} and you can raise ${money(room.total)}.` };
@@ -185,6 +186,14 @@ export function lotBbl(parent: ParcelRecord, n: number): string {
 
 /** The lot records of one finished plat, regenerated from the recipe and the parent. */
 function lotRecords(parent: ParcelRecord, plat: PlatRecord, rz: { zone: string; far: number } | undefined): ParcelRecord[] {
+  // A FINISHED LOT KEEPS THE FARM'S TEXTURE. The land read floors a lot at
+  // 30% of its generation stamp — "what dirt clears at here", from the
+  // town's comparable sales. A new lot on what was a field has no such sales
+  // behind it: stamping it like a town lot ($30/sf and up, build.mjs) priced
+  // a finished lot at ~$26/sf on farmland bought at $0.06, a money pump
+  // nobody bid for. What it is worth is what a builder would pay for it
+  // (the residual), and the farm under it.
+  const landPsf = parent.landPsf;
   return plat.lots.map((l, i) => ({
     ...parent,
     bbl: lotBbl(parent, i + 1),
@@ -193,8 +202,8 @@ function lotRecords(parent: ParcelRecord, plat: PlatRecord, rz: { zone: string; 
     zoneDist: rz?.zone ?? REZONE.zone, farMaxComm: rz?.far ?? REZONE.far, farMaxRes: rz?.far ?? REZONE.far,
     bldgClass: "V1", class: "land" as const, mix: undefined,
     lotArea: l.a, bldgArea: 0, floors: 0, yearBuilt: 0, unitsRes: 0,
-    assessedLand: Math.round(l.a * parent.landPsf), assessedTotal: Math.round(l.a * parent.landPsf),
-    landPsfHistory: [parent.landPsf], imputed: [],
+    landPsf, assessedLand: Math.round(l.a * landPsf * 0.45), assessedTotal: Math.round(l.a * landPsf * 0.45),
+    landPsfHistory: [landPsf], imputed: [],
     lotFront: l.f, lotDepth: l.d, corner: false,
     ag: undefined, tract: undefined,
   }));

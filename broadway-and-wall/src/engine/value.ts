@@ -1092,7 +1092,8 @@ export function farmUsePsf(rec: ParcelRecord, econ: Econ): number {
   // a farm keeps its farm bid when rezoned: a rezoning permits building, it does not stop the corn
   if (!rec.ag || !(rec.lotArea > 0)) return 0;
   const rent = rec.ag === "wood" ? FARM_RENT_PER_ACRE.wood : FARM_RENT_PER_ACRE.crop;
-  return (rent / FARM_CAP / 43560) * (econ.cpi ?? 1);
+  // in this town's money: its price level (market.ts EVERY TOWN HAS ITS OWN DOLLARS) and the years since
+  return (rent / FARM_CAP / 43560) * (econ.priceLevel ?? 1) * (econ.cpi ?? 1);
 }
 
 /**
@@ -1551,8 +1552,15 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   // agriculture carries no building envelope, so every bid above is near zero;
   // what it does carry is a crop, and the farmer next door is a real buyer at
   // the land's farm-use value. That bid stands under the others.
+  // For a farm the comparable sales ARE farm sales: the town's urban texture
+  // floor is not evidence about an acre of corn, so a farm prices at the best
+  // of its farm bid and what a builder or a holder would pay.
   const farm = farmUsePsf(rec, econ);
-  if (farm > base) { base = farm; winner = "farm"; }
+  if (rec.ag) {
+    base = farm; winner = "farm";
+    if (builder > base) { base = builder; winner = "builder"; }
+    if (holder > base) { base = holder; winner = "holder"; }
+  } else if (farm > base) { base = farm; winner = "farm"; }
   return {
     psf: base,
     builder, holder, texture: floor,

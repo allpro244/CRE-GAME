@@ -171,3 +171,18 @@ Open questions and next ideas (visual):
   - contemporary crowns;
   - faceted bays B88-B89.
 - Catalog sheets: unreal/shots/catalog-*.jpg (104 styles incl. City Sample).
+
+## Update, 2026-10-21: brighter city and graphics settings (branch claude/brighter-graphics)
+- Brightness pass (BWGame.cpp SetSeason):
+  - typical-afternoon weather odds (wet ~0.14, overcast 0.08-0.16);
+  - +~0.5 EV;
+  - warmer sun and more skylight;
+  - lighter grade; less haze and fog.
+- Graphics settings:
+  - state/graphics.ts (presets mirror BWGraphicsPreset) → `{t:"gfx",k}` → BWApplyGraphics.
+  - Settings > Graphics shows presets plus Advanced when UNREAL_HOST.
+  - CLI: -Quality=low|medium|high|ultra, -Gfx="res=67;...".
+- Measured at 1080p, RTX 2080, editor: Low 68 fps, Medium 63, High 36, Ultra 17. Cloud shadows cost 3 ms, so Low and Medium use clouds=1.
+- Perf tools: -Perf=N logs game/render/GPU medians; -ProfileGPU dumps one GPU profile.
+- Demolition is one price, wreckCost ($14/sf × cost idx, $60k min), for both the player's teardown and the pro forma's knock-down (was $14 vs $12).
+- TODO: re-render thumbnails and catalog under the new light; repackage D:\Builds\BroadwayWall.

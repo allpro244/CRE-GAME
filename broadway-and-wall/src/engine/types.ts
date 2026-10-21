@@ -2853,6 +2853,15 @@ export type RivalStyle =
  */
 export interface Rival {
   /**
+   * THE BOOK'S APPRAISALS (rivals.ts appraiseBooks): each asset's value as of
+   * its last appraisal, the month it was struck, and the building it was
+   * struck on (`k`: class, size, grade). Struck on January 1st, and the month
+   * an asset is bought, delivered or changed; a sale, a refinance, a maturity
+   * or a deed in lieu orders a fresh one (markAsset `fresh`). Absent on older
+   * saves: the book then marks to market until its first January.
+   */
+  marks?: Record<string, { v: number; m: number; k: string }>;
+  /**
    * THE FIRM'S SHEET — COMPETITORS_PLAN.md §2. Absent on the legacy roster and
    * on saves written before it: those firms act on their style row exactly as
    * before (`paramsOf` in rivals.ts).

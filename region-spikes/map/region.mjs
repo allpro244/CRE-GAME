@@ -251,7 +251,13 @@ const NAME_B = ["ford", "ton", "ville", "field", "burg", "wood", " Crossing", " 
 const RIVERS = ["Kessaw", "Ottaquin", "Saline", "Big Muddy", "Tenmile", "Wabeno", "Paquette", "Cold Spring"];
 
 // ================================================================ the generator
-export function generate(seed, km = 10) {
+/**
+ * opts (all default off, so the SVG renders are unchanged):
+ *   urbanisedScale  multiply the urbanised-share KNOB (0.33 = an earlier point in the region's growth)
+ *   townSources     car-era growth also radiates from the old towns, not only downtown
+ *   holdoutSigma    spread of the leapfrog factor (default 0.25; smaller = growth hugs roads and towns)
+ */
+export function generate(seed, km = 10, opts = {}) {
   const S = km * 1000, rng = makeRng("region:" + seed), G = new Grid(S);
   const nz = makeNoise(rng, 900), nzFine = makeNoise(rng, 250);
   const M = { seed, S, G };
@@ -486,12 +492,13 @@ export function generate(seed, km = 10) {
     t.buildable = ok / n; t.c = [(x0 + x1) / 2, (y0 + y1) / 2];
     t.landShare = (() => { let l = 0; for (let i = 0.5; i < 6; i++) for (let j = 0.5; j < 6; j++) { const k = G.idx([x0 + (x1 - x0) * i / 6, y0 + (y1 - y0) * j / 6]); if (k >= 0 && !water[k]) l++; } return l / 36; })();
     t.crop = rng.int(0, 4); t.wood = rng() < 0.08; // approximate: farm woodlots
-    t.holdout = Math.exp(0.25 * rng.gauss()); // leapfrog: some owners don't sell when the city arrives (spread approximate)
+    t.holdout = Math.exp((opts.holdoutSigma ?? 0.25) * rng.gauss()); // leapfrog: some owners don't sell when the city arrives (spread approximate)
   }
   M.tracts = tracts;
 
   // ---------------- Layer 4: suburbs by era -------------------------------
   const coreSrc = []; for (let k = 0; k < G.N; k++) if (coreL[k]) coreSrc.push(k);
+  const carSrc = opts.townSources ? coreSrc.concat([...townL.keys()].filter((k) => townL[k])) : coreSrc;
   const sp = (era) => {
     const s = new Float32Array(G.N);
     for (let k = 0; k < G.N; k++) {
@@ -518,8 +525,8 @@ export function generate(seed, km = 10) {
   };
   const eras = [
     { id: "prewar", T: travel(G, sp("prewar"), coreSrc, new Map()) },
-    { id: "postwar", T: travel(G, sp("postwar"), coreSrc, jumps(1975)) },
-    { id: "recent", T: travel(G, sp("recent"), coreSrc, jumps(2026)) },
+    { id: "postwar", T: travel(G, sp("postwar"), carSrc, jumps(1975)) },
+    { id: "recent", T: travel(G, sp("recent"), carSrc, jumps(2026)) },
   ];
   // land budget per era: share of units x gross land per unit
   const lotM2 = { prewar: SZ.prewarLot[0] * SZ.prewarLot[1], postwar: SZ.postwarLot[0] * SZ.postwarLot[1], recent: SZ.recentLot[0] * SZ.recentLot[1] };
@@ -527,7 +534,7 @@ export function generate(seed, km = 10) {
   const wsum = w.prewar + w.postwar + w.recent;
   const dev = tracts.filter((t) => t.buildable >= 0.5);
   const devAcres = dev.reduce((s, t) => s + t.acres * t.buildable, 0);
-  M.urbanised = rng.range(...URBANISED_SHARE);
+  M.urbanised = rng.range(...URBANISED_SHARE) * (opts.urbanisedScale ?? 1);
   M.budget = {};
   for (const e of eras) {
     const budget = devAcres * M.urbanised * w[e.id] / wsum; M.budget[e.id] = Math.round(budget);

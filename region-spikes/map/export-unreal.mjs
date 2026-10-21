@@ -111,8 +111,12 @@ function maskRects(G, [x0, y0, x1, y1], ok) {
 }
 
 // ================================================================ export
-export function exportRegion(seed, { km = 10, crop = 0 } = {}) {
-  const M = generate(seed, km), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
+// SPARSE (the default since the owner asked for "cities not dense at all"): the region at an earlier point in its
+// growth — a third of the urbanised-share KNOB, car-era growth from the old towns as well as downtown, little
+// leapfrogging — and a low-rise small-town downtown. --dense restores the first export.
+const SPARSE_GEN = { urbanisedScale: 1 / 3, townSources: true, holdoutSigma: 0.1 };
+export function exportRegion(seed, { km = 10, crop = 0, dense = false } = {}) {
+  const M = generate(seed, km, dense ? {} : SPARSE_GEN), S = M.S, G = M.G, rng = makeRng("unreal:" + seed);
   M.rotate = Math.floor(makeRng("orient:" + seed)() * 4); // same orientation as the SVG
   // canonical -> map frame (x east, y south, metres), as render() does
   const T = (p) => { const c = S / 2; let x = p[0] - c, y = p[1] - c; for (let i = 0; i < M.rotate; i++) [x, y] = [-y, x]; return [x + c, y + c]; };
@@ -187,6 +191,7 @@ export function exportRegion(seed, { km = 10, crop = 0 } = {}) {
   const volumes = [], parcels = [], trees = [], labels = [];
   const townOf = (p) => { let best = { name: "Downtown", d: dist(p, M.core.c) - 1300 }; for (const t of M.towns) { const d = dist(p, t.c); if (d < best.d) best = { name: t.name, d }; } return best.name; };
   const sf = (m2) => Math.round(m2 / (FT * FT));
+  let towers = 0;
   const blockLots = (r, front, kind) => {
     let n = 0;
     for (const b of r.blockRects) {
@@ -195,7 +200,15 @@ export function exportRegion(seed, { km = 10, crop = 0 } = {}) {
         const lc = add(add(b.c, mul(b.u, -b.hl + (i + 0.5) * lw)), mul(b.v, sd * b.hw / 2));
         const lot = rectRing(lc, b.u, lw, b.hw);
         if (isWaterC(lc) || lot.some(isWaterC) || blockPts(b).some(underHw)) continue;
-        const cov = 0.6 + 0.2 * rng(); // footprint 60-80% of the lot (contract)
+        // sparse: some lots are vacant or surface parking (~15% downtown, ~10% villages, approximate)
+        if (!dense && rng() < (kind === "core" ? 0.15 : 0.1)) {
+          const ring = TT(lot); if (!inBox(centroid(ring))) continue;
+          put("pavement", lot);
+          const bbl = `${kind === "core" ? "D" : "T"}${parcels.length}`;
+          parcels.push({ bbl, address: `${kind === "core" ? "Downtown" : r.name} lot ${++n} (parking)`, block: 0, district: kind === "core" ? "Downtown" : r.name, districtName: kind === "core" ? "Downtown" : r.name, zone: "C", cls: "land", floors: 0, yearBuilt: 0, lotArea: sf(lw * b.hw), bldgArea: 0, ring: flat(ring) });
+          continue;
+        }
+        const cov = dense ? 0.6 + 0.2 * rng() : 0.5 + 0.2 * rng(); // footprint share of the lot (contract: 60-80% dense, 50-70% sparse)
         // building pushed to the street edge of its half-block
         const fw = lw * Math.sqrt(cov), fd = b.hw * Math.sqrt(cov);
         const fc = add(lc, mul(b.v, sd * (b.hw - fd) / 2));
@@ -204,9 +217,16 @@ export function exportRegion(seed, { km = 10, crop = 0 } = {}) {
           // ILLUSTRATIVE skyline: heights fall off from the centre of the core
           const d = sub(lc, M.core.c), du = (d[0] * M.core.u[0] + d[1] * M.core.u[1]) / M.core.hl, dv = (d[0] * M.core.v[0] + d[1] * M.core.v[1]) / M.core.hw;
           const dn = Math.min(1.4, Math.hypot(du, dv));
-          floors = Math.round(4 + 4 * (1 - dn / 1.4) + 36 * Math.exp(-4 * dn) * (0.3 + 1.4 * rng() ** 2));
-          if (dn < 0.35 && rng() < 0.08) floors = Math.round(floors * 1.8); // the odd tower
-          cls = floors >= 12 ? (dn < 0.55 ? "office" : rng() < 0.5 ? "office" : "multifamily") : floors <= 4 && rng() < 0.5 ? "retail" : "multifamily";
+          if (dense) {
+            floors = Math.round(4 + 4 * (1 - dn / 1.4) + 36 * Math.exp(-4 * dn) * (0.3 + 1.4 * rng() ** 2));
+            if (dn < 0.35 && rng() < 0.08) floors = Math.round(floors * 1.8); // the odd tower
+          } else {
+            // small-town centre (owner direction): mostly 2-4 floors, some 5-8 near the middle, at most two 10-12 floor towers
+            floors = 2 + Math.floor(rng() * 3);
+            if (dn < 0.5 && rng() < 0.18 * (1 - dn / 0.5)) floors = 5 + Math.floor(rng() * 4);
+            if (dn < 0.2 && towers < 2 && rng() < 0.02) { floors = 10 + Math.floor(rng() * 3); towers++; }
+          }
+          cls = floors >= (dense ? 12 : 5) ? (dn < 0.55 ? "office" : rng() < 0.5 ? "office" : "multifamily") : floors <= 4 && rng() < 0.5 ? "retail" : "multifamily";
         } else {
           floors = 1 + Math.floor(rng() * 3); // 1-3 storey village main street, approximate
           cls = i === 0 || i === nl - 1 || rng() < 0.4 ? "retail" : "multifamily";
@@ -284,14 +304,14 @@ export function exportRegion(seed, { km = 10, crop = 0 } = {}) {
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isMain) {
-  const args = process.argv.slice(2); let km = 10, crop = 0; const seeds = [];
-  for (let i = 0; i < args.length; i++) { if (args[i] === "--km") km = Number(args[++i]); else if (args[i] === "--crop") crop = Number(args[++i]); else seeds.push(args[i]); }
+  const args = process.argv.slice(2); let km = 10, crop = 0, dense = false; const seeds = [];
+  for (let i = 0; i < args.length; i++) { if (args[i] === "--km") km = Number(args[++i]); else if (args[i] === "--dense") dense = true; else if (args[i] === "--crop") crop = Number(args[++i]); else seeds.push(args[i]); }
   if (!seeds.length) seeds.push("3");
   const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "out"); fs.mkdirSync(outDir, { recursive: true });
   for (const seed of seeds) {
     const t0 = Date.now();
-    const { city, stats } = exportRegion(seed, { km, crop });
-    const file = path.join(outDir, `city-region-${seed}${crop ? `-crop${crop}` : ""}${km !== 10 ? `-${km}km` : ""}.json`);
+    const { city, stats } = exportRegion(seed, { km, crop, dense });
+    const file = path.join(outDir, `city-region-${seed}${crop ? `-crop${crop}` : ""}${dense ? "-dense" : ""}${km !== 10 ? `-${km}km` : ""}.json`);
     fs.writeFileSync(file, JSON.stringify(city));
     const mb = fs.statSync(file).size / 1e6;
     console.log(`${path.relative(process.cwd(), file)}  ${mb.toFixed(1)} MB  ${Date.now() - t0} ms\n  ${JSON.stringify(stats)}`);

@@ -377,3 +377,31 @@ street tree per ~2 houses.
 - Yard edges follow a 20 m raster.
 - Proposed-freeway right-of-way shows as bare land strips through
   subdivisions. A real reserved corridor looks like that.
+
+### Sparse by default (owner: "make the cities not dense at all")
+
+`export-unreal.mjs` now exports the region at an earlier point in its
+growth. `--dense` gives back the first export (written as `…-dense.json`).
+
+**What sparse changes in the generator:**
+- The urbanised-share KNOB is multiplied by 1/3. It was always a knob, not a
+  fact.
+- Car-era growth also radiates from the old towns, not only downtown.
+- The leapfrog spread drops from σ 0.25 to 0.1, so growth hugs the first
+  highways, downtown and the towns.
+
+The SVG maps use the defaults and are unchanged.
+
+**What sparse changes downtown:**
+- Mostly 2–4 floors, some 5–8 near the middle, at most two towers of 10–12
+  floors.
+- Footprints cover 50–70% of the lot.
+- ~15% of downtown lots and ~10% of village lots are vacant or surface
+  parking: a `land` parcel paved over.
+
+**Seed 3, sparse, 10 km:** 4.1 MB, made of:
+- 9,036 volumes, of which 5,672 are houses (a third of the dense export);
+- 4,204 parcels, including 46 neighbourhoods and 512 parking or vacant lots;
+- downtown floor mix: 3,329 buildings at 1–4 floors, 33 at 5–8, 2 at 11;
+- 42,944 trees;
+- 640 centerlines.

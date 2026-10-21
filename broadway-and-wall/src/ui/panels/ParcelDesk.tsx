@@ -38,6 +38,8 @@ import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
 import { DevelopSection, DevelopGlance, ReuseSection } from "@/ui/panels/DevelopDesk";
 import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openViewOn, Neighbourhood, Row, STYLE_WORD, ShortBy } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
+import { entitleQuote, platQuote, PLAT_LOT_SIZES } from "@/engine/landdev";
+import { platTractLots } from "@/citygen/index.mjs";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
 export {
@@ -128,6 +130,73 @@ function ReservedCard({ rec, embedded }: { rec: ReservedParcel; embedded: boolea
       {rec.crop && <Row k="This season" v={rec.crop} />}
       {rec.floodShare ? <Row k="In the floodplain" v={`${Math.round(rec.floodShare * 100)}%`} /> : null}
       {rec.districtName && <Row k="Area" v={rec.districtName} />}
+    </div>
+  );
+}
+
+/**
+ * THE LAND DEVELOPER'S DESK (region map, engine/landdev.ts): a farm tract you
+ * own — rezone it, then build its streets and cut it into lots. Every number
+ * on it is the engine's own quote.
+ */
+function LandDevCard({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game);
+  const parcels = useStore((s) => s.parcels);
+  const fileRezoning = useStore((s) => s.fileRezoning);
+  const buildPlat = useStore((s) => s.buildPlat);
+  const [lotSf, setLotSf] = useState<number>(7500);
+  const rec = parcels?.[bbl];
+  if (!game || !parcels || !rec?.ag || !rec.tract) return null;
+  const owned = !!game.holdings[bbl];
+  const app = game.entitlementApps?.[bbl];
+  const rz = game.rezoned?.[bbl];
+  const plat = game.plats?.[bbl];
+  const acres = rec.lotArea / 43560;
+  return (
+    <div className="deal" style={{ marginTop: 6 }}>
+      <div className="deal-head">Land development</div>
+      <div className="hint">
+        {rec.ag === "wood" ? "Woodland" : "Farmland"}, {acres.toFixed(0)} acres, zoned for agriculture — priced at what it earns as a farm.
+        {" "}{(rec.tract.edgeM / 1000).toFixed(1)} km from the town's edge.
+      </div>
+      {!owned && <div className="hint">Buy it to rezone it and cut it into lots.</div>}
+      {owned && !app && !rz && (() => {
+        const planned = platTractLots(rec.tract, lotSf).lots.length;
+        const q = entitleQuote(game, parcels, bbl, lotSf, planned);
+        return (
+          <>
+            <div className="btn-row">
+              {PLAT_LOT_SIZES.map((v) => (
+                <button key={v} type="button" className={"btn-mini" + (v === lotSf ? " on" : "")} onClick={() => setLotSf(v)}>{v.toLocaleString()} sf lots</button>
+              ))}
+            </div>
+            {q ? (
+              <>
+                <Row k="Lots on the plat" v={q.lots.toLocaleString()} />
+                <Row k="Rezoning to" v={`${q.zone}, FAR ${q.far}`} />
+                <Row k="Counsel, studies, hearings" v={usd(q.cost)} />
+                <Row k="The board decides in" v={`${q.months} months`} />
+                <Row k="Applications like it pass" v={`${Math.round(q.odds * 100)}%`} />
+                <button type="button" className="btn btn-sm" onClick={() => fileRezoning(bbl, lotSf)}>File the rezoning</button>
+              </>
+            ) : <div className="hint">Too little buildable ground on this tract for a plat at that lot size.</div>}
+          </>
+        );
+      })()}
+      {app && <Row k="Before the board" v={`decides ${monthLabel(app.decideM)} · ${app.lots} lots · ${Math.round(app.odds * 100)}% odds`} />}
+      {owned && rz && !plat && (() => {
+        const lots = platTractLots(rec.tract, rz.lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
+        const q = platQuote(game, lots);
+        return (
+          <>
+            <Row k="Rezoned" v={`${rz.zone}, FAR ${rz.far}, ${lots.length} lots of ~${rz.lotSf.toLocaleString()} sf`} />
+            <Row k="Streets, pipes and impact fees" v={`${usd(q.cost)} · ${usd(q.perLot)} a lot`} />
+            <Row k="Built in" v={`${q.months} months`} />
+            <button type="button" className="btn btn-sm" onClick={() => buildPlat(bbl)}>Build the streets</button>
+          </>
+        );
+      })()}
+      {plat && !plat.done && <Row k="Streets going in" v={`${plat.lots.length} lots, finished ${monthLabel(plat.doneM)}`} />}
     </div>
   );
 }
@@ -243,6 +312,7 @@ function ParcelPanelInner({
         {holding?.loan?.sweep && <span className="chip chip-sweep">CASH SWEEP</span>}
         {game.landmarks?.[selectedBBL] !== undefined && <span className="chip chip-reno">LANDMARKED</span>}
       </div>}
+      {on("summary") && rec.ag && <LandDevCard bbl={selectedBBL} />}
 
       {on("summary") && !embedded && (
         <div className="btn-row" style={{ marginBottom: 8 }}>

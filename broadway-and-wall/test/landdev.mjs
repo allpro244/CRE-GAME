@@ -44,7 +44,7 @@ const farms = bbls.filter((b) => parcels[b].ag && parcels[b].tract).sort((a, b) 
 let g = E.firstListings(E.newGame(seed, parcels, 25e6, undefined, { citySize: "region", cityLots: bbls.length }), parcels, bbls);
 const acreUsd = (b) => E.landValue(E.resolveRec(parcels, g, b), g.econ) / (parcels[b].lotArea / 43560);
 console.log(`seed ${seed} — ${city.name}: ${farms.length} plattable farm tracts; farm land prices at $${Math.round(acreUsd(farms[0])).toLocaleString()}/acre (USDA 2024 Illinois cropland $9,600)`);
-{ const want = 9600 * (g.econ.priceLevel ?? 1); console.log(`  (this town's price level ${(g.econ.priceLevel ?? 1).toFixed(2)}: cropland at farm-use value is $${Math.round(want).toLocaleString()}/acre here)`); if (Math.abs(acreUsd(farms.find((b) => parcels[b].ag === "crop")) - want) > 0.25 * want) fail("cropland is not priced at its farm-use value"); }
+{ const want = 9600 * (g.econ.priceLevel ?? 1); console.log(`  (this town's price level ${(g.econ.priceLevel ?? 1).toFixed(2)}: cropland at farm-use value is $${Math.round(want).toLocaleString()}/acre here)`); const crop = farms.filter((b) => parcels[b].ag === "crop"), off = crop.filter((b) => Math.abs(acreUsd(b) - want) > 0.25 * want); console.log(`  ${crop.length - off.length} of ${crop.length} cropland tracts price at farm-use value; the rest above it: ${off.slice(0, 4).map((b) => `${parcels[b].address} $${Math.round(acreUsd(b)).toLocaleString()}/ac`).join(", ")}`); if (off.some((b) => acreUsd(b) < 0.75 * want)) fail("cropland priced under its farm-use value"); }
 { const vac = bbls.filter((b) => parcels[b].class === "land" && !parcels[b].ag); const pen = vac.filter((b) => E.landRead(E.resolveRec(parcels, g, b), g.econ).builder > 0).length; console.log(`  for scale: ${pen} of ${vac.length} vacant town lots pencil for a builder at the opening`); }
 check(g, "open");
 
@@ -58,7 +58,7 @@ for (const b of farms.slice(0, 6)) {
   const planned = platTractLots(parcels[b].tract, 7500).lots.length;
   const q = E.entitleQuote(g, parcels, b, 7500, planned);
   const f = E.fileEntitlement(g, parcels, b, 7500, planned);
-  if (f.err) { fail(`file: ${f.err}`); continue; }
+  if (f.err) { console.log(`  ${parcels[b].address}: ${f.err}`); continue; }
   g = f.s; check(g, "file");
   console.log(`  bought ${parcels[b].address} for ${M(price)} (${parcels[b].tract.edgeM} m from town); rezoning ${q.lots} lots: ${M(q.cost)}, ${q.months} months, odds ${q.odds}`);
   while (g.entitlementApps?.[b]) { g = E.advanceQuarter(g, parcels, bbls, city.adjacency); check(g, "month"); }

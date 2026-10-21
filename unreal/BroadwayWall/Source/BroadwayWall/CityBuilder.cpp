@@ -589,6 +589,9 @@ void ACityBuilder::BuildGround()
 		static const TArray<FShare> YardRet = { { Asphalt, 0.65f }, { ConcDark, 0.20f }, { Worn, 0.15f } };
 		static const TArray<FShare> YardInd = { { Worn, 0.50f }, { Asphalt, 0.30f }, { Gravel, 0.20f } };
 		static const TArray<FShare> Land = { { Gravel, 0.30f }, { Meadow, 0.30f }, { Dirt, 0.20f }, { Worn, 0.20f } };
+		// a small town's empty lots have gone back to weeds; the pale gravel
+		// slabs read as blanks across a low-rise grid
+		static const TArray<FShare> LandTown = { { Meadow, 0.70f }, { Dirt, 0.15f }, { Worn, 0.15f } };
 		// the front (the strip between the building and the street)
 		static const TArray<FShare> FrontResLow = { { Lawn, 0.70f }, { Plaza, 0.15f }, { ConcLight, 0.15f } };
 		static const TArray<FShare> FrontResHigh = { { Plaza, 0.55f }, { ConcLight, 0.25f }, { Lawn, 0.20f } };
@@ -634,7 +637,7 @@ void ACityBuilder::BuildGround()
 			const TArray<FVector2D>* const* F = Foot.Find(P.Bbl);
 			if (!(bRes || bOff || bRet || bInd) || !F)
 			{
-				Cov[Pick(Land, H)].AddCap(P.Ring, Zp, FLinearColor::White);
+				Cov[Pick(bRegionMap ? LandTown : Land, H)].AddCap(P.Ring, Zp, FLinearColor::White);
 				if (F) continue;
 				// A VACANT LOT'S STREET EDGE. A car park (the same pick as
 				// BuildVolumes: about half) is open to the street, with a

@@ -126,7 +126,8 @@ export function exportRegion(seed, { km = 10, crop = 0 } = {}) {
   const ringOut = (r) => { const c = clipPolyBox(r, box); return c ? flat(c) : null; };
   const centroid = (r) => r.reduce((a, p) => [a[0] + p[0] / r.length, a[1] + p[1] / r.length], [0, 0]);
 
-  const ground = { land: [], marsh: [], farm: [], woods: [], yard: [], pavement: [], block: [], park: [], stream: [], pond: [] };
+  // draw order (later on top): water before pavement, so roads cross rivers as bridges
+  const ground = { land: [], marsh: [], farm: [], woods: [], yard: [], stream: [], pond: [], pavement: [], block: [], park: [] };
   const put = (layer, canonRing) => { const r = ringOut(TT(canonRing)); if (r) ground[layer].push(r); };
   const coastY = M.coast ? ((xs, ys) => (x) => { const i = Math.max(0, Math.min(xs.length - 2, Math.floor((x + 200) / 40))); return ys[i] + (ys[i + 1] - ys[i]) * ((x + 200) / 40 - i); })(M.coast.line.map((p) => p[0]), M.coast.line.map((p) => p[1])) : null;
   const dry = (ring) => coastY ? ring.map((p) => [p[0], Math.min(p[1], coastY(p[0]))]) : ring; // clamp onto the shore
@@ -169,6 +170,10 @@ export function exportRegion(seed, { km = 10, crop = 0 } = {}) {
   }
   // downtown and town street grids, between the blocks
   const isWaterC = (p) => { const k = G.idx(p); return k >= 0 && M.water[k] === 1; };
+  // built freeway pavement plus a verge: the blocks it crosses were cleared for it (urban renewal), so no block or building stands there
+  const hwBuilt = G.layer(); for (const h of M.highways) for (const sg of h.segs) if (sg.built) G.line(hwBuilt, sg.pts, W.highway / 2 + 8);
+  const underHw = (p) => { const k = G.idx(p); return k >= 0 && hwBuilt[k] === 1; };
+  const blockPts = (b) => { const q = b.poly(); return q.concat([b.c], q.map((p, i) => lerp(p, q[(i + 1) % 4], 0.5))); };
   for (const [r, wm] of [[M.core, W.core], ...M.towns.map((t) => [t, W.local])]) {
     const { nL, nW, pl, pw } = r.gridInfo;
     const at = (a, b) => add(add(r.c, mul(r.u, a)), mul(r.v, b));
@@ -176,7 +181,7 @@ export function exportRegion(seed, { km = 10, crop = 0 } = {}) {
     for (let j = 0; j <= nW; j++) for (const run of keepRuns([at(-r.hl, -r.hw + j * pw), at(r.hl, -r.hw + j * pw)], (p) => !isWaterC(p))) road(run, "core", wm);
   }
 
-  for (const r of [M.core, ...M.towns]) for (const b of r.blockRects) if (!b.poly().some((p) => isWaterC(p) || M.isSea(p))) put("block", b.poly());
+  for (const r of [M.core, ...M.towns]) for (const b of r.blockRects) if (!blockPts(b).some((p) => isWaterC(p) || M.isSea(p) || underHw(p))) put("block", b.poly());
 
   // ---------------- buildings & parcels
   const volumes = [], parcels = [], trees = [], labels = [];
@@ -189,7 +194,7 @@ export function exportRegion(seed, { km = 10, crop = 0 } = {}) {
       for (let i = 0; i < nl; i++) for (const sd of [-1, 1]) {
         const lc = add(add(b.c, mul(b.u, -b.hl + (i + 0.5) * lw)), mul(b.v, sd * b.hw / 2));
         const lot = rectRing(lc, b.u, lw, b.hw);
-        if (isWaterC(lc) || lot.some(isWaterC)) continue;
+        if (isWaterC(lc) || lot.some(isWaterC) || blockPts(b).some(underHw)) continue;
         const cov = 0.6 + 0.2 * rng(); // footprint 60-80% of the lot (contract)
         // building pushed to the street edge of its half-block
         const fw = lw * Math.sqrt(cov), fd = b.hw * Math.sqrt(cov);

@@ -9,6 +9,7 @@
 import { MILE, ACRE, makeRng, makeNoise, add, sub, mul, dist, norm, perp, resample, rectRing, CELL } from "./util.mjs";
 import { tractShare, RINGS } from "./land.mjs";
 import { platFor, ERA_YEARS } from "./plats.mjs";
+import { placeCommerce } from "./commerce.mjs";
 
 const OUTER_HOUSES = 600;   // [O] houses in the outer subdivisions at the opening (spike: ~2,000 in all with the inner blocks)
 
@@ -53,16 +54,8 @@ export function placeOuter(M) {
   const nearIx = (p, d) => ix.some((q) => dist(p, q) < d);
   const shuffle = (a) => a.map((x) => [rng(), x]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
   const place = (n, filter, make) => { let k = 0; for (const cnd of shuffle(pts.filter(filter))) { if (k >= n) break; if (tryPlace(cnd.p, cnd.u, ...make())) k++; } return k; };
-  placeCentres(M, lots, pts, okPt, ix, stampRect, R, rng);
-  // distribution centres by the interchanges (1990-2020): 180-260 x 90-130 m, 10-15 m clear, truck court
-  // light industry and flex sheds along the highway and the roads off its interchanges (1965-2015):
-  // 50-110 x 30-55 m, 7-9 m clear, a yard and a truck dock in front [S, typical flex/light-industrial]
-  place(4 + (rng() < 0.5 ? 1 : 0), (q) => q.rs > 800 && (q.hw || nearIx(q.p, 1600)), () => { const w = R(50, 110), d = R(30, 55); return [[{ a: 0, o: 0, w: w + 10, d: 30, kind: "pave" }, { a: 0, o: 30, w, d, kind: "bldg", z: Math.round(R(700, 900)), cls: "industrial" }], { kind: "pocket", name: "Light industrial building", cls: "industrial", year: Math.round(R(1965, 2015)), gap: 220 }]; });
-  place(2 + (rng() < 0.5 ? 1 : 0), (q) => q.rs > 900 && nearIx(q.p, 1500), () => { const w = R(180, 260), d = R(90, 130); return [[{ a: 0, o: 0, w: w + 20, d: 50, kind: "pave" }, { a: 0, o: 50, w, d, kind: "bldg", z: Math.round(R(1000, 1500)), cls: "industrial" }], { kind: "pocket", name: "Distribution centre", cls: "industrial", year: Math.round(R(1990, 2020)) }]; });
-  // strip centres on the old roads and the highway (1960-2005): 80-140 m long, 22 m deep, parking in front
-  place(3 + (rng() < 0.5 ? 1 : 0), (q) => q.rs > 1000 && q.rs < 2800 && (q.old || q.hw), () => { const L = R(80, 140); return [[{ a: 0, o: 0, w: L, d: 35, kind: "pave" }, { a: 0, o: 35, w: L, d: 22, kind: "bldg", z: 520, cls: "retail" }], { kind: "pocket", name: "Strip centre", cls: "retail", year: Math.round(R(1960, 2005)) }]; });
-  // a gas station and diner at a country crossroads (1935-65)
-  place(1, (q) => q.rs > 1800 && !q.hw, () => [[{ a: 0, o: 0, w: 45, d: 30, kind: "pave" }, { a: -6, o: 30, w: 16, d: 11, kind: "bldg", z: 450, cls: "retail" }, { a: 34, o: 0, w: 26, d: 16, kind: "pave" }, { a: 34, o: 16, w: 18, d: 12, kind: "bldg", z: 450, cls: "retail" }], { kind: "pocket", name: "Gas station and diner", cls: "retail", year: Math.round(R(1935, 1965)) }]);
+  // the town's commerce: the retail hierarchy and the industrial land (commerce.mjs)
+  placeCommerce(M, lots, { okPt, stampRect, rng });
   // a farm co-op grain elevator on a country road (1910-50): three ~35 m silos and a shed
   place(1, (q) => q.rs > 2200 && !q.hw, () => [[{ a: 0, o: 0, w: 70, d: 45, kind: "pave" }, { a: -22, o: 45, w: 12, d: 12, kind: "bldg", z: 3600, cls: "industrial" }, { a: -8, o: 45, w: 12, d: 12, kind: "bldg", z: 3600, cls: "industrial" }, { a: 6, o: 45, w: 12, d: 12, kind: "bldg", z: 3200, cls: "industrial" }, { a: 32, o: 45, w: 36, d: 18, kind: "bldg", z: 700, cls: "industrial" }], { kind: "pocket", name: "Farm co-op grain elevator", cls: "industrial", year: Math.round(R(1910, 1950)) }]);
   // a small business park by the highway (1975-2000): three offices of 2-3 floors
@@ -190,99 +183,6 @@ export function placeOuter(M) {
   }
   for (const t of M.tracts) if (!t.era && !t.wood && rng() < 0.06) t.wood = true;
   return M;
-}
-
-/**
- * THE SHOPPING CENTRES (owner: real retail centres where retail would actually locate).
- *
- * WHERE: an interchange quadrant on the crossing arterial, or an arterial at the town's edge — the
- * two places a community or power centre is sited in life (visibility and access from the trade area).
- * HOW BIG: from the trade area. The town is its county's seat, so its centres serve the county, not the
- * window: a non-metro Midwest county of 35-60 thousand people [K, a drawn county]. US community and
- * power centres carry about 7.5 sf of GLA per resident of their trade areas [S, ICSC centre-type GLA
- * against US population, approximate]. That total is split over two or three centres, each 150-400k sf
- * GLA [O, the owner's range; ICSC community 125-400k, power 250-600k].
- * WHAT: a community centre is a grocery (45-60k sf) and a discount anchor beside an inline strip; a
- * power centre is three or four big boxes (25-60k sf each) and a short inline strip. Two to four pad
- * sites on the road (fast food, a bank, 3-6k sf each), each its own deed. Boxes 7-9 m tall.
- * PARKING: 4.5 spaces per 1,000 sf GLA [S, ICSC/ULI Parking Requirements for Shopping Centers: 4-5],
- * at 32.5 m2 a space with its share of the aisles [S, ~350 sf/space], drawn as the parcel's apron.
- * WHEN: built 1970-2005 [O], pads later.
- */
-function placeCentres(M, lots, pts, okPt, ix, stampRect, R, rng) {
-  const G = M.G;
-  const county = R(35000, 60000), total = county * 7.5;
-  const n = total > 330000 ? 3 : 2;
-  const NAMES = ["Crossroads Commons", "Interstate Plaza", "Town & Country Center", "Prairie Pointe", "Riverside Marketplace", "Heartland Square", "Gateway Shopping Center", "Meadowbrook Plaza"];
-  const nearIx = (p, d) => ix.some((q) => dist(p, q) < d);
-  // candidates: interchange quadrants first, then the arterials at the town's edge
-  const edgeD = G.bfs((k) => !!M.townMask[k]);
-  const at = (p) => { const k = G.idx(p); return k < 0 ? Infinity : edgeD[k]; };
-  const cands = pts.filter((q) => nearIx(q.p, 650) || (q.old && at(q.p) > 120 && at(q.p) < 900))
-    .map((q) => ({ ...q, score: (nearIx(q.p, 650) ? 0 : 1) + rng() * 0.8 })).sort((a, b) => a.score - b.score);
-  const placed = [];
-  for (const q of cands) {
-    if (placed.length >= n) break;
-    if (placed.some((p) => dist(p, q.p) < 900)) continue;
-    const gla = Math.max(150000, Math.min(400000, (total / n) * R(0.85, 1.15)));
-    const site = layoutCentre(gla, rng, R);
-    if (tryCentre(q.p, q.u, site, placed.length)) placed.push(q.p);
-  }
-  M.centres = placed.length;
-
-  function tryCentre(anchor, u, site, i) {
-    for (const sd of [1, -1]) {
-      const v = mul(perp(u), sd);
-      const place = (pc) => ({ ...pc, u, c: add(add(anchor, mul(u, pc.a)), mul(v, 12 + pc.o + pc.d / 2)) });
-      const main = site.main.map(place), pads = site.pads.map((p) => p.map(place));
-      const all = main.concat(pads.flat());
-      if (!all.flatMap((r) => rectRing(r.c, u, r.w, r.d).concat([r.c])).every(okPt)) continue;
-      if (lots.some((x) => x.gap !== undefined && dist(x.anchor, anchor) < 600)) return false;
-      for (const r of all) { G.disk(M.taken, r.c, Math.max(r.w, r.d) / 2 + 15); stampRect(M.lotL, rectRing(r.c, u, r.w, r.d)); }
-      const free = NAMES.filter((nm) => !lots.some((l) => l.kind === "centre" && l.name.startsWith(nm)));
-      const name = free[Math.floor(rng() * free.length)], year = Math.round(R(1970, 2005));
-      lots.push({ kind: "centre", name: `${name} (${site.type} centre)`, cls: "retail", bldgclass: "K6", year, gap: 600, anchor, u, rects: main, gla: site.gla });
-      pads.forEach((p, j) => lots.push({ kind: "pad", name: `${name}, pad ${j + 1}`, cls: "retail", year: Math.round(R(Math.max(year, 1985), 2015)), anchor: p[0].c, u, rects: p }));
-      return true;
-    }
-    return false;
-  }
-}
-
-/** One centre's pieces in its own frame: a = along the road, o = back from its right-of-way. */
-function layoutCentre(gla, rng, R) {
-  const FT2 = 0.09290304, SPACE_M2 = 32.5, RATIO = 4.5;
-  const type = rng() < 0.5 ? "community" : "power";
-  const nPads = 2 + Math.floor(rng() * 3), padSf = Array.from({ length: nPads }, () => R(3000, 6000));
-  const padTotal = padSf.reduce((a, b) => a + b, 0);
-  const boxes = [];   // sf
-  let rest = gla - padTotal;
-  if (type === "community") {
-    const grocery = R(45000, 60000), discount = Math.min(rest * 0.55, R(90000, 140000));
-    boxes.push(discount, grocery); rest -= grocery + discount;
-  } else {
-    const k = 3 + Math.floor(rng() * 2), share = (rest * 0.82) / k;
-    for (let j = 0; j < k; j++) boxes.push(Math.max(25000, Math.min(60000, share * R(0.8, 1.2))));
-    rest -= boxes.reduce((a, b) => a + b, 0);
-  }
-  const inline = Math.max(10000, rest);
-  // the building row: boxes ~100 m deep (less for small ones), the inline strip 25 m deep
-  const row = boxes.map((sf) => { const m2 = sf * FT2, d = Math.min(110, Math.max(60, Math.sqrt(m2 * 0.9))); return { w: m2 / d, d, z: Math.round(R(800, 900)) }; });
-  row.push({ w: (inline * FT2) / 25, d: 25, z: 700 });
-  const gap = 6, rowLen = row.reduce((a, b) => a + b.w, 0) + gap * (row.length - 1), W = rowLen + 30;
-  const mainGla = boxes.reduce((a, b) => a + b, 0) + inline;
-  const parkM2 = (mainGla / 1000) * RATIO * SPACE_M2, Dp = parkM2 / W;
-  const P = 55, Db = Math.max(...row.map((b) => b.d));
-  const main = [{ a: 0, o: P, w: W, d: Dp, kind: "lot" }];
-  let x = -rowLen / 2;
-  for (const b of row) { main.push({ a: x + b.w / 2, o: P + Dp + (Db - b.d), w: b.w, d: b.d, kind: "bldg", z: b.z, cls: "retail", floors: 1 }); x += b.w + gap; }
-  main.push({ a: 0, o: P + Dp + Db, w: W, d: 15, kind: "pave" });   // the service drive and the loading docks behind
-  // pad sites along the road, each a deed: a small building on its own lot, the rest its parking
-  const pads = padSf.map((sf, j) => {
-    const a = -W / 2 + ((j + 0.5) * W) / nPads, m2 = sf * FT2, bw = Math.sqrt(m2 * 1.3), bd = m2 / bw;
-    return [{ a, o: 0, w: Math.min(W / nPads - 8, 55), d: P - 5, kind: "lot" }, { a, o: (P - 5 - bd) / 2, w: bw, d: bd, kind: "bldg", z: 600, cls: "retail", floors: 1 }];
-  });
-  return { type, gla: Math.round(mainGla + padTotal), main, pads };
 }
 
 function insideConvex(p, ring) {

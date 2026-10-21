@@ -657,6 +657,11 @@ void ACityBuilder::BuildGround()
 			if (N < 3) continue;
 			// (a farm on the market is zone "AG", a numeric deed since the land game: also drawn by its own layers)
 			if (bRegionMap && (P.Bbl.StartsWith(TEXT("N")) || P.Bbl.StartsWith(TEXT("F")) || P.Zone == TEXT("AG"))) continue;
+			// (a region site out past the town — a shopping centre, a pad, an industrial lot, deeds numbered
+			// 3xxxxxxxxx by the generator — brings its own ground: its car park as the apron layer, its yards
+			// and truck courts as pavement. A lot cover here painted over all of it, which is what drew the
+			// centres' car parks as worn tan concrete.)
+			if (bRegionMap && P.Bbl.Len() == 10 && P.Bbl[0] == TEXT('3')) continue;
 			const uint32 H = HashCombine(GetTypeHash(P.Bbl), 0x9e3779b9u);
 			const bool bRes = P.Cls == TEXT("multifamily"), bOff = P.Cls == TEXT("office"), bRet = P.Cls == TEXT("retail"), bInd = P.Cls == TEXT("industrial");
 			const TArray<FVector2D>* const* F = Foot.Find(P.Bbl);

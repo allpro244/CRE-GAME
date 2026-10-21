@@ -189,7 +189,7 @@ export function makeRegion(seed, opts = {}) {
     const cls = lot.cls;
     const bldgclass = lot.bldgclass ?? (cls === "land" ? "V1" : cls === "retail" ? "K1" : cls === "office" ? "O4" : "E9");
     // zoning out past the town: a suburban business or light-industry district, FAR about 1 [S, typical suburban codes]
-    const zone = cls === "industrial" ? { z: "M1", far: 1.0 } : { z: "C-1", far: 1.0 };
+    const zone = lot.zone ? { z: lot.zone, far: 1.0 } : cls === "industrial" ? { z: "M1", far: 1.0 } : { z: "C-1", far: 1.0 };
     const front = Math.max(...lot.rects.map((r) => r.w)), depth = lotM2 / front;
     const landPsfBase = 60;   // the generator's own base for land with no heat (citygen.mjs: 60 + 380 x heat)
     const assessland = Math.round(sf(lotM2) * landPsfBase * (0.85 + 0.3 * rng()) * 0.45);
@@ -199,7 +199,7 @@ export function makeRegion(seed, opts = {}) {
     rawParcels.features.push({
       type: "Feature", id: Number(bbl), geometry: polyLL(outline),
       properties: {
-        bbl, borough: "RG", block: String(blockNo), lot: "1", address: lot.kind === "centre" || lot.kind === "pad" ? `${lot.name}, ${roadName(lot.anchor)}` : `${address} (${lot.name.toLowerCase()})`,
+        bbl, borough: "RG", block: String(blockNo), lot: "1", address: lot.named ? `${lot.name}, ${roadName(lot.anchor)}` : `${address} (${lot.name.toLowerCase()})`,
         zonedist1: zone.z, commfar: zone.far, resfar: 0, bldgclass, landuse: cls === "land" ? "11" : cls === "office" ? "05" : "04",
         lotarea: sf(lotM2), bldgarea: cls === "land" ? 0 : sf(bldgM2), numfloors: cls === "land" ? 0 : nFloors,
         yearbuilt: cls === "land" ? 0 : lot.year, assessland, assesstot, unitsres: 0,
@@ -353,6 +353,7 @@ export function makeRegion(seed, opts = {}) {
   for (const h of M.highways) for (const s of h.segs) if (s.built) road(rdp(s.pts, 1), "highway", ROAD_W.highway);
   for (const r of M.oldRoads) for (const run of keepRuns(r, (p) => !inTownC(p), 10)) road(run, "arterial", ROAD_W.arterial);
   for (const r of M.secRoads) road(r, "arterial", ROAD_W.arterial);
+  for (const rd of M.commerce?.roads ?? []) road(rd.pl, "local", rd.w);   // the industrial park's entrance and loop
   const okLocal = (p) => { const k = G.idx(p); return k >= 0 && M.free(p) && M.phase[k] === 1; };
   let streetTrees = 0;
   for (const t of M.tracts) if (t.keep) {
@@ -439,7 +440,7 @@ export function makeRegion(seed, opts = {}) {
   const manifest = {
     ...data.manifest,
     bbox: [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)],
-    region: { km: S / 1000, centre: LL(M.centre), river: M.river.name, coast: !!M.coast, rotation: F.k, towns: M.towns.map((t) => t.name), townAreaKm2: +(M.townArea / 1e6).toFixed(2) },
+    region: { km: S / 1000, centre: LL(M.centre), commerce: { county: M.commerce.county, townHouseholds: M.commerce.townHh, sites: M.commerce.placed.map((s) => ({ type: s.type, name: s.name, sf: s.sf, lotSf: s.lotSf, parcels: s.parcels })) }, river: M.river.name, coast: !!M.coast, rotation: F.k, towns: M.towns.map((t) => t.name), townAreaKm2: +(M.townArea / 1e6).toFixed(2) },
   };
   const reservedCount = { homes: 0, farm: 0, civic: 0 };
   for (const r of Object.values(reserved)) reservedCount[r.tenure]++;

@@ -196,7 +196,7 @@ namespace
 		else if (Layer == TEXT("park") || Layer == TEXT("median") || Layer == TEXT("yard")) return BWGrassMaterial();   // a boulevard's planted median is lawn too; so are the region's back yards
 		// THE REGION EXPANSION'S OPEN LAND: crops in rows read from the air as a
 		// lighter, yellower green than a lawn; a woodlot as a dark one under its trees
-		else if (Layer == TEXT("farm") || Layer == TEXT("woods") || Layer == TEXT("marsh"))
+		else if (Layer.StartsWith(TEXT("farm")) || Layer == TEXT("woods") || Layer == TEXT("marsh"))
 		{
 			// (the first cut of the fields was a bright straw: in leaf they are a
 			// muted green-brown; a floodplain is wet meadow)
@@ -206,9 +206,13 @@ namespace
 				if (UMaterialInterface* G = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Grass.M_BW_Grass")))
 				{
 					D = UMaterialInstanceDynamic::Create(G, GetTransientPackage());
-					const bool bFarm = Layer == TEXT("farm"), bWood = Layer == TEXT("woods");
-					D->SetVectorParameterValue(TEXT("GrassDark"), bFarm ? FLinearColor(0.045f, 0.050f, 0.022f) : bWood ? FLinearColor(0.016f, 0.030f, 0.012f) : FLinearColor(0.030f, 0.048f, 0.020f));
-					D->SetVectorParameterValue(TEXT("GrassLight"), bFarm ? FLinearColor(0.095f, 0.092f, 0.042f) : bWood ? FLinearColor(0.035f, 0.055f, 0.022f) : FLinearColor(0.065f, 0.088f, 0.034f));
+					const bool bWood = Layer == TEXT("woods"), bMarsh = Layer == TEXT("marsh");
+					// farm0 a green row crop, farm1 ripening grain, farm2 fallow ground
+					const int32 Crop = Layer == TEXT("farm1") ? 1 : Layer == TEXT("farm2") ? 2 : 0;
+					static const FLinearColor CropDark[3] = { { 0.030f, 0.055f, 0.018f }, { 0.085f, 0.075f, 0.030f }, { 0.060f, 0.048f, 0.030f } };
+					static const FLinearColor CropLight[3] = { { 0.070f, 0.110f, 0.035f }, { 0.165f, 0.140f, 0.060f }, { 0.110f, 0.090f, 0.058f } };
+					D->SetVectorParameterValue(TEXT("GrassDark"), bWood ? FLinearColor(0.016f, 0.030f, 0.012f) : bMarsh ? FLinearColor(0.030f, 0.048f, 0.020f) : CropDark[Crop]);
+					D->SetVectorParameterValue(TEXT("GrassLight"), bWood ? FLinearColor(0.035f, 0.055f, 0.022f) : bMarsh ? FLinearColor(0.065f, 0.088f, 0.034f) : CropLight[Crop]);
 					D->AddToRoot();
 				}
 			return D;
@@ -540,12 +544,25 @@ void ACityBuilder::BuildGround()
 		M.UVScale = 400.0;
 		M.bStrict = true;
 		const FLinearColor Col = GroundColor(L.Key);
+		// FIELDS ARE A PATCHWORK: each farm tract is in one of three crops this
+		// season (a green row crop, ripening grain, fallow), picked by the tract
+		const bool bFarm = L.Key == TEXT("farm");
+		FMeshBuf Crops[3];
+		for (FMeshBuf& Cb : Crops) { Cb.UVScale = 400.0; Cb.bStrict = true; }
 		for (const TArray<FVector2D>& R : L.Value)
 		{
+			if (bFarm && R.Num())
+			{
+				const uint32 Hh = HashCombine(GetTypeHash(FMath::RoundToInt(R[0].X)), GetTypeHash(FMath::RoundToInt(R[0].Y)));
+				Crops[Hh % 3].AddCap(R, Zl, Col);
+				continue;
+			}
 			M.AddCap(R, Zl, Col);
 			if (bRaised && L.Key != TEXT("block")) Kerbs.AddWalls(R, RoadZ - 1, Zl, FLinearColor::White);
 		}
 		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(L.Key)); }
+		for (int32 k = 0; k < 3; ++k)
+			if (Crops[k].V.Num()) { Crops[k].Emit(Ground, Section++, false); Mats.Add(GroundMaterial(FString::Printf(TEXT("farm%d"), k))); }
 		Z += 1;
 		if (bRaised) FootZ = FMath::Max(FootZ, Zl);
 	}

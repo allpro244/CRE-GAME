@@ -4755,5 +4755,99 @@
    "corrugated",
    "metalpanel"
   ]
+ },
+ {
+  "key": "B88",
+  "label": "Faceted-bay brick condo",
+  "group": "postwar",
+  "uv": 100,
+  "mats": {
+   "wall": "Brick/BrickOffset_Brown",
+   "trim": "Metal/Metal_BrushedWorn",
+   "base": "Block/Block_Granite_Brown",
+   "glass": "/Game/Building/Material/MI/Metal/MI_Bldg_Mirror"
+  },
+  "bay": 360,
+  "storey": 300,
+  "win": {
+   "w": 150,
+   "h": 180,
+   "sill": 80,
+   "recess": 10,
+   "mullions": 1,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 5
+  },
+  "feature": "sawtooth",
+  "feature_every": 2,
+  "saw_depth": 80,
+  "ground": {
+   "type": "shop",
+   "h": 460,
+   "bulkhead": 0.5,
+   "sign": 420,
+   "lights": 2,
+   "pier": 40,
+   "tenants": false,
+   "canopy": true
+  },
+  "top": {
+   "type": "parapet",
+   "h": 110
+  },
+  "families": [
+   "brick",
+   "modern",
+   "projectbrick"
+  ]
+ },
+ {
+  "key": "B89",
+  "label": "Sawtooth glass tower",
+  "group": "contemporary",
+  "uv": 100,
+  "mats": {
+   "wall": "Paint/PaintedMetal_Black",
+   "trim": "Metal/Metal_BrushedWorn",
+   "base": "Block/Block_Granite_Black",
+   "glass": "/Game/Building/Material/MI/Metal/MI_Bldg_Mirror"
+  },
+  "bay": 300,
+  "storey": 380,
+  "win": {
+   "ribbon": true,
+   "w": 296,
+   "h": 340,
+   "sill": 20,
+   "recess": 2,
+   "mullions": 1,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 3
+  },
+  "feature": "sawtooth",
+  "feature_all": true,
+  "saw_depth": 90,
+  "ground": {
+   "type": "shop",
+   "h": 620,
+   "bulkhead": 0.5,
+   "sign": 580,
+   "lights": 2,
+   "pier": 30,
+   "tenants": false
+  },
+  "top": {
+   "type": "parapet",
+   "h": 160
+  },
+  "families": [
+   "blackglass",
+   "goldglass",
+   "sawtooth"
+  ]
  }
 ]

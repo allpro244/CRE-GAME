@@ -60,6 +60,17 @@ class Mesh:
         GS.append_box(self.m, o, t, x1 - x0, y1 - y0, z1 - z0, 0, 0, 0, unreal.GeometryScriptPrimitiveOriginMode.BASE)
 
 
+    def obox(self, mid, cx, cy, z0, sx, sy, sz, yaw):
+        """a box sx (along its own x) by sy by sz, centred on (cx, cy), base at
+        z0, turned yaw degrees about Z: for faceted bays"""
+        if sx < 0.1 or sy < 0.1 or sz < 0.1:
+            return
+        o = unreal.GeometryScriptPrimitiveOptions()
+        o.material_id = mid
+        t = unreal.Transform(location=[cx + self.xoff, cy, z0 + self.zoff], rotation=[0, 0, yaw], scale=[1, 1, 1])
+        GS.append_box(self.m, o, t, sx, sy, sz, 0, 0, 0, unreal.GeometryScriptPrimitiveOriginMode.BASE)
+
+
 # ---------------------------------------------------------------- pieces
 
 def window(M, R, y0, y1, z0, z1):
@@ -518,6 +529,30 @@ def features(M, R, W, H, holes):
             y = -W + (k + 0.5) * W / n
             M.box(5, 18, 24, y - 2.5, y + 2.5, 0, H)
         M.box(5, 0, 26, -W, 0, 0, 8)
+    elif f == "sawtooth":
+        # A FACETED BAY: two glass faces meeting at a point out in front of the
+        # wall (each at 30 degrees), framed at the edges, floor to ceiling
+        d = R.get("saw_depth", 70)
+        half = (yb - ya) / 2 - 12
+        c = (ya + yb) / 2
+        L = (half ** 2 + d ** 2) ** 0.5
+        import math as _m
+        # each face runs from the wall at c +- half to the point at (d, c):
+        # its own x axis along that line
+        ang = _m.degrees(_m.atan2(half, d))
+        for sgn in (-1, 1):
+            cx, cy = d / 2, c + sgn * half / 2
+            M.obox(2, cx, cy, 15, L, 4, H - 30, -sgn * ang)
+            M.obox(1, cx, cy, 0, L, 8, 15, -sgn * ang)            # the spandrel under
+            M.obox(1, cx, cy, H - 15, L, 8, 15, -sgn * ang)       # and the head over
+        M.box(1, 0, d, c - 4, c + 4, 0, H)                       # the mullion at the point
+        # the bay's floor and ceiling: a triangle in plan, in four steps, so the
+        # V is a closed glass box and not two panes with a hole behind them
+        for k in range(4):
+            w = half * (1 - (k + 0.5) / 4)
+            M.box(1, d * k / 4, d * (k + 1) / 4, c - w, c + w, 0, 15)
+            M.box(1, d * k / 4, d * (k + 1) / 4, c - w, c + w, H - 15, H)
+        M.box(2, -4, 0, c - half, c + half, 15, H - 15)          # the window behind, glazed
     elif f == "fins":
         fd = R.get("fin_depth", 55)
         for y in (-W, -W / 2):

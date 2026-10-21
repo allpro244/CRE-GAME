@@ -539,12 +539,64 @@ void ACityBuilder::BuildGround()
 	for (int32 i = 0; i < Section; ++i) Ground->SetMaterial(i, Mats.IsValidIndex(i) && Mats[i] ? Mats[i] : VertexColorMaterial.Get());
 }
 
+namespace
+{
+	bool InsideRing(const TArray<FVector2D>& R, const FVector2D& P)
+	{
+		bool In = false;
+		for (int32 i = 0, j = R.Num() - 1; i < R.Num(); j = i++)
+			if (((R[i].Y > P.Y) != (R[j].Y > P.Y)) && (P.X < (R[j].X - R[i].X) * (P.Y - R[i].Y) / (R[j].Y - R[i].Y) + R[i].X)) In = !In;
+		return In;
+	}
+}
+
 void ACityBuilder::BuildVolumes()
 {
 	for (UProceduralMeshComponent* Old : Chunks) if (Old) Old->DestroyComponent();
 	Chunks.Reset();
 	if (Facades) Facades->Reset();
 	ClearRoofProps();
+	// THE NEIGHBOURS, for lot-line walls: every volume's footprint in a 40 m
+	// grid, so a wall can ask whether another lot's building stands right
+	// outside it
+	TMap<FIntPoint, TArray<int32>> Grid;
+	auto CellOf = [](const FVector2D& P) { return FIntPoint(FMath::FloorToInt(P.X / 4000.0), FMath::FloorToInt(P.Y / 4000.0)); };
+	for (int32 v = 0; v < Current.Num(); ++v)
+	{
+		if (Current[v].Ring.Num() < 3 || Current[v].bVacant || Current[v].bOpen) continue;
+		FBox2D B(ForceInit); for (const FVector2D& P : Current[v].Ring) B += P;
+		const FIntPoint C0 = CellOf(B.Min), C1 = CellOf(B.Max);
+		for (int32 x = C0.X; x <= C1.X; ++x) for (int32 y = C0.Y; y <= C1.Y; ++y) Grid.FindOrAdd(FIntPoint(x, y)).Add(v);
+	}
+	auto PartyWalls = [&](const FBWVolume& V)
+	{
+		TArray<bool> Out; Out.SetNumZeroed(V.Ring.Num());
+		double A2 = 0; const int32 N = V.Ring.Num();
+		for (int32 i = 0; i < N; ++i) A2 += V.Ring[i].X * V.Ring[(i + 1) % N].Y - V.Ring[(i + 1) % N].X * V.Ring[i].Y;
+		for (int32 i = 0; i < N; ++i)
+		{
+			const FVector2D A = V.Ring[i], B = V.Ring[(i + 1) % N];
+			const double L = (B - A).Size();
+			if (L < 150) continue;
+			const FVector2D D = (B - A) / L;
+			const FVector2D Out2 = A2 > 0 ? FVector2D(D.Y, -D.X) : FVector2D(-D.Y, D.X);
+			int32 Hits = 0;
+			for (const double T : { 0.25, 0.5, 0.75 })
+			{
+				const FVector2D P = A + D * (L * T) + Out2 * 150.0;
+				if (const TArray<int32>* Cell = Grid.Find(CellOf(P)))
+					for (const int32 o : *Cell)
+					{
+						const FBWVolume& O = Current[o];
+						// another lot's building, standing at this wall's foot
+						if (O.Bbl == V.Bbl || O.Z0 > 50 || O.Z1 < 400) continue;
+						if (InsideRing(O.Ring, P)) { ++Hits; break; }
+					}
+			}
+			Out[i] = Hits >= 2;
+		}
+		return Out;
+	};
 	constexpr int32 PerChunk = 200;
 	for (int32 Start = 0; Start < Current.Num(); Start += PerChunk)
 	{
@@ -572,13 +624,15 @@ void ACityBuilder::BuildVolumes()
 			{
 				// the facade carries the look; the mass sits 60 cm behind it (no flicker
 				// against the kit's faces, and it still catches clicks), roofed in gravel
+				if (!Vol.bPlayer && !(bPreview && Vol.Bbl == PreviewVol.Bbl)) Facades->Party = PartyWalls(Vol);
 				const int32 Pieces = Facades->Dress(*KitFor(Vol), Vol, GetTypeHash(Vol.Bbl), Vol.Z0 < 50, Vol.Look.bTint ? Vol.Look.Tint : Vol.Tint, Vol.Look.bTint);
 				if (bPreview && Vol.Bbl == PreviewVol.Bbl) UE_LOG(LogBWBuilder, Display, TEXT("preview %s: kit %s, %d pieces, %.0f-%.0f cm"), *Vol.Bbl, *KitFor(Vol)->Name, Pieces, Vol.Z0, Vol.Z1);
 				if (Pieces > 0)
 				{
 					if (Vol.bCrown || Vol.Z1 >= 0) DressRoof(Vol, GetTypeHash(Vol.Bbl));
 					if (Vol.Z0 < 50 && (Vol.bFresh || Vol.Distress >= 2)) StreetMoment(Vol);
-					M.AddWalls(BWInsetRing(Vol.Ring, 60), Vol.Z0, Vol.Z1, FLinearColor(FColor(0x55, 0x52, 0x4E)));
+					// the mass behind the facade: where a lot-line wall shows, this is it, so it is party-wall brick
+					M.AddWalls(BWInsetRing(Vol.Ring, 60), Vol.Z0, Vol.Z1, FLinearColor(FColor(0x6E, 0x55, 0x48)));
 					if (Vol.bPlayer) M.AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor(FColor(0xE8, 0xB8, 0x3A)));
 					else Roofs[RoofOf(Vol)].AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor::White);
 					continue;
@@ -1093,13 +1147,6 @@ const FBWKit* ACityBuilder::KitFor(const FBWVolume& V) const
 
 namespace
 {
-	bool InsideRing(const TArray<FVector2D>& R, const FVector2D& P)
-	{
-		bool In = false;
-		for (int32 i = 0, j = R.Num() - 1; i < R.Num(); j = i++)
-			if (((R[i].Y > P.Y) != (R[j].Y > P.Y)) && (P.X < (R[j].X - R[i].X) * (P.Y - R[i].Y) / (R[j].Y - R[i].Y) + R[i].X)) In = !In;
-		return In;
-	}
 	const TCHAR* const CarMeshes[] = {
 		TEXT("/Game/Vehicle/vehCar_vehicle02/Mesh/SM_vehCar_vehicle02.SM_vehCar_vehicle02"),
 		TEXT("/Game/Vehicle/vehCar_vehicle03/Mesh/SM_vehCar_vehicle03.SM_vehCar_vehicle03"),

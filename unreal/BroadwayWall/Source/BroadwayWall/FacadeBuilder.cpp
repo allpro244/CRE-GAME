@@ -295,6 +295,12 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 		const FVector2D A = V.Ring[i], B = V.Ring[(i + 1) % N];
 		const double Len = (B - A).Size();
 		if (Len < 150) continue;
+		// A LOT-LINE WALL IS BLANK. A wall built against the neighbour's lot
+		// has no windows and no shopfront (fire code, and nobody to look out
+		// at); where the building rises above its neighbour it shows as bare
+		// masonry, the mark of a New York block from the air. It gets no
+		// facade: the mass behind, in a party-wall brick, is the wall.
+		if (Party.IsValidIndex(i) && Party[i]) continue;
 		const FVector2D D = (B - A) / Len;
 		const FVector2D Out = Area2 > 0 ? FVector2D(D.Y, -D.X) : FVector2D(-D.Y, D.X);
 		const FVector2D Prev = V.Ring[(i + N - 1) % N];
@@ -384,6 +390,7 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 			}
 		}
 	}
+	Party.Reset();
 	return Placed - Before;
 }
 

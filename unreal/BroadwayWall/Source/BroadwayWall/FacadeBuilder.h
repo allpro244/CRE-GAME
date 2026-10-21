@@ -68,6 +68,8 @@ public:
 	/** Lay the kit over this volume. Returns the number of pieces placed. */
 	/** bExactTint: the tint is the player's chosen colour, used as given (the web families' tints are amplified). */
 	int32 Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed, bool bGround, const FLinearColor& Tint = FLinearColor::White, bool bExactTint = false);
+	/** Which of the next volume's walls stand on a lot line against a neighbour (one per ring edge); those get no facade. Cleared by Dress. */
+	TArray<bool> Party;
 
 	int32 Pieces() const { return Placed; }
 

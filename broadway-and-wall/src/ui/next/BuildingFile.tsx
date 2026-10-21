@@ -278,9 +278,10 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
     if (h.loan) verbs.push({ label: "Refinance", run: () => setTab("money") });
     if (rec.class === "land" || !rec.bldgArea) {
       if (game.developments[bbl]) return <ActionFooter verbs={[{ label: "Job file", run: () => setTab("build") }]} />;
+      // the sweep is dozens of pro formas: run it only once the Build tab is asked for
+      if (tab !== "build") return <ActionFooter verbs={[...verbs, { label: "Plan", primary: true, run: () => setTab("build") }]} />;
       const rows: SchemeRow[] = bestSchemes(game, parcels, bbl);
       const r = rows[pickI] ?? rows[0];
-      if (tab !== "build") return <ActionFooter verbs={[...verbs, { label: "Plan", primary: true, run: () => setTab("build") }]} />;
       return (
         <ActionFooter
           left={r ? <span className="mono nx-dim">{r.use} · {r.floors} fl · {r.hurdle.toFixed(2)}×</span> : undefined}

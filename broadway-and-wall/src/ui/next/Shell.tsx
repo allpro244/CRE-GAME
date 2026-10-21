@@ -81,16 +81,28 @@ export default function Shell() {
     if (sel || page !== "none") useNext.getState().setInboxOpen(false);
   }, [sel, page]);
   const where = placeOf(page, placeTab);
+  const placeShown = page !== "property" && !inboxOpen && !!where;
+  // THE PLACE DRAWER STAYS UP WHEN CLOSED, hidden, so the pages kept in it
+  // (and their sort, scroll and open rows) survive a look at the city or a
+  // building — reopening Holdings is a reveal, not a rebuild (P4).
+  const lastWhere = useRef<{ place: PlaceId; tab: string; page: Page } | null>(null);
+  if (where) lastWhere.current = { ...where, page };
   const drawer = page === "property" ? <BuildingFile />
     : inboxOpen ? <InboxDrawer />
-    : where ? <PlaceDrawer place={where.place} tab={where.tab} page={page} />
+    : where ? null
     : FOOT_PAGES.some((f) => f.page === page) || page === "primer" ? <FootDrawer page={page} />
     : page === "none" && sel ? <BuildingFile />
     : null;
+  const kept = lastWhere.current;
   return (
     <>
       <HudBar />
       <Rail />
+      {kept && (
+        <Activity mode={placeShown ? "visible" : "hidden"}>
+          <PlaceDrawer place={kept.place} tab={kept.tab} page={kept.page} />
+        </Activity>
+      )}
       {drawer}
       <LensBar />
       <DrillLayer />

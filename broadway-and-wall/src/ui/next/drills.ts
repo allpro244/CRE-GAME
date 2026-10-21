@@ -288,7 +288,7 @@ export const DRILLS: Record<DrillKey, (g: GameState, p: ParcelTable, a: DrillArg
         { label: "Winner", value: lr.winner, strong: true },
         { label: "Lot", value: sf(lot) },
       ],
-      formula: "finished − cost = residual",
+      formula: "residual = finished − cost, less margin, per land sf",
       link: r.h ? { label: "Build tab", go: () => st().openProperty(a.bbl!, "build") } : undefined,
     };
   },

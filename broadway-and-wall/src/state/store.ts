@@ -45,7 +45,8 @@ import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
-import { cityList, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
+import { cityList, CITY_PLAN, platTractLots, type GeneratedCity } from "@/citygen/index.mjs";
+import { fileEntitlement, startPlat, materializePlats, lotBbl } from "@/engine/landdev";
 import { cutTownOffThread } from "@/state/townClient";
 import type { TownRequest } from "@/state/townWorker";
 import { monthOffThread, spanOffThread } from "@/state/simClient";
@@ -396,6 +397,10 @@ interface AppState {
   runBestAndFinal: (bbl: string) => void;
   takeBid: (bbl: string, index: number) => void;
   applyVariance: (bbl: string, targetFar?: number) => void;
+  /** Region map: ask the board to rezone a farm tract you own for lots of `lotSf` (engine/landdev.ts). */
+  fileRezoning: (bbl: string, lotSf: number) => void;
+  /** Region map: build the streets on a rezoned tract and cut it into lots. */
+  buildPlat: (bbl: string) => void;
   appealTax: (bbl: string) => void;
   prebuild: (bbl: string, use: string, sf: number) => void;
   extendLease: (bbl: string, idx: number) => void;
@@ -2021,6 +2026,30 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
 
+  fileRezoning: (bbl, lotSf) => {
+    const { game, parcels } = get();
+    const tract = parcels?.[bbl]?.tract;
+    if (!game || !parcels || !tract) return;
+    const planned = platTractLots(tract, lotSf).lots.length;
+    const r = fileEntitlement(game, parcels, bbl, lotSf, planned);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Filed.");
+    void persist(r.s);
+  },
+
+  buildPlat: (bbl) => {
+    const { game, parcels } = get();
+    const tract = parcels?.[bbl]?.tract, rz = game?.rezoned?.[bbl];
+    if (!game || !parcels || !tract || !rz) return;
+    const lots = platTractLots(tract, rz.lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
+    const r = startPlat(game, parcels, bbl, lots);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Under way.");
+    void persist(r.s);
+  },
+
   applyVariance: (bbl, targetFar) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
@@ -2447,6 +2476,8 @@ export const useStore = create<AppState>((set, get) => ({
     // across seeds, so this is a weak check and only a fallback — a foreign
     // save with two holdings can pass it.
     if (savedSeed === undefined) {
+      // a land developer's finished plats are deeds: put their lots in the table before asking (engine/landdev.ts)
+      if (saved.plats) materializePlats(saved, parcels);
       const fits = Object.keys(saved.holdings).every((b) => parcels[b])
         && saved.listings.every((l) => parcels[l.bbl]);
       if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -2766,3 +2797,45 @@ export async function bootMenu() {
     await useStore.getState().continueRun();
   }
 }
+
+// LOTS CUT MID-GAME (engine/landdev.ts). When a plat finishes, the engine puts its lots in the
+// worker's parcel table; this puts them in the page's, draws them and their streets on the map, and
+// hands Unreal the new city (unrealHost resends on a new `city`). Per plat, once: a reload, whose
+// table already holds the lots, still gets them drawn. The city remembers which plats it has drawn.
+useStore.subscribe((st) => {
+  const g = st.game, parcels = st.parcels, city = st.city as (GeneratedCity & { platsDrawn?: string[] }) | null;
+  if (!g?.plats || !parcels || !city) return;
+  const added = materializePlats(g, parcels, st.bbls);
+  const drawn = new Set(city.platsDrawn ?? []);
+  const todo = Object.values(g.plats).filter((pl) => pl.done && !drawn.has(pl.parent) && parcels[pl.parent]?.tract);
+  if (!todo.length) { if (added.length) useStore.setState({ bbls: [...st.bbls] }); return; }
+  const fc = city.parcelFeatures as GeoJSON.FeatureCollection, ctx = city.context as GeoJSON.FeatureCollection;
+  const retired = new Set(Object.keys(g.platted ?? {}));
+  const feats = fc.features.filter((f) => !retired.has(String(f.properties?.bbl)));
+  const roads: GeoJSON.Feature[] = [];
+  for (const plat of todo) {
+    const parent = parcels[plat.parent];
+    const geo = platTractLots(parent.tract!, plat.lotSf);
+    geo.lots.forEach((l, i) => {
+      const bbl = lotBbl(parent, i + 1), rec = parcels[bbl];
+      if (!rec) return;
+      feats.push({ type: "Feature", id: Number(bbl), geometry: { type: "Polygon", coordinates: [[...l.ring, l.ring[0]]] }, properties: { bbl, address: rec.address, class: rec.class, demand: rec.demandScore, landpsf: rec.landPsf, zone: rec.zoneDist } });
+    });
+    // the local streets: a 9 m carriageway (the region's local street) and its centreline
+    for (const line of geo.streets) {
+      roads.push({ type: "Feature", geometry: { type: "LineString", coordinates: line }, properties: { kind: "centerline", w: 9, mk: 0, cls: "local" } });
+      for (let k = 0; k + 1 < line.length; k++) {
+        const a = line[k], b = line[k + 1];
+        const kx = 111320 * Math.cos((a[1] * Math.PI) / 180), ky = 111320;
+        const dx = (b[0] - a[0]) * kx, dy = (b[1] - a[1]) * ky, L = Math.hypot(dx, dy) || 1;
+        const ox = ((-dy / L) * 4.5) / kx, oy = ((dx / L) * 4.5) / ky;
+        const ring: [number, number][] = [[a[0] + ox, a[1] + oy], [b[0] + ox, b[1] + oy], [b[0] - ox, b[1] - oy], [a[0] - ox, a[1] - oy]];
+        roads.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [[...ring, ring[0]]] }, properties: { kind: "pavement" } });
+      }
+    }
+  }
+  useStore.setState({
+    city: { ...city, platsDrawn: [...drawn, ...todo.map((pl) => pl.parent)], parcelFeatures: { ...fc, features: feats }, context: { ...ctx, features: [...ctx.features, ...roads] } } as GeneratedCity,
+    bbls: [...st.bbls],
+  });
+});

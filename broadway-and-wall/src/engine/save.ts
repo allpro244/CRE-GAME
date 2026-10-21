@@ -175,7 +175,9 @@ const GROUND_MOVED_AT: Record<string, number> = {
  * from citygen for the same reason PROCEDURAL_ISLAND is: the engine does not
  * depend on the generator.
  */
-const KNOWN_ISLANDS = new Set([PROCEDURAL_ISLAND, "manhattan"]);
+// "region": the region map (citygen/region), born at the save version current when it arrived — no region
+// save can predate its own ground, so it needs no GROUND_MOVED_AT row until its plat moves.
+const KNOWN_ISLANDS = new Set([PROCEDURAL_ISLAND, "manhattan", "region"]);
 
 /**
  * Phase 5 of the leasing overhaul. Old saves stored four mandate dials on

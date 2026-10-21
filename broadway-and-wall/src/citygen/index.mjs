@@ -21,10 +21,12 @@ import { generateCity } from "./citygen.mjs";
 import { buildCityData } from "./build.mjs";
 import { SIZES, DEFAULT_SIZE, scaleCity } from "./cities.mjs";
 import { islandConfig, islandName } from "./island.mjs";
+import { makeRegion, regionName, REGION, platTractLots } from "./region/index.mjs";
 import { MANHATTAN, manhattanConfig, manhattanName, EXTENTS, DEFAULT_EXTENT, extentList, loadManhattanPlat, setManhattanPlat } from "./manhattan.mjs";
 
 export { SIZES, DEFAULT_SIZE };
 export { MANHATTAN, EXTENTS, DEFAULT_EXTENT, extentList };
+export { REGION, platTractLots };
 // for the town worker, which cannot fetch the plat itself from the single-file build
 export { loadManhattanPlat, setManhattanPlat };
 
@@ -102,6 +104,13 @@ export function cityList() {
       /** A written-down city takes an EXTENT rather than a size — see manhattan.mjs. */
       extents: true,
     },
+    {
+      id: REGION,
+      name: "Region (6 km)",
+      tagline: "A small river city and six kilometres of country round it: neighbourhoods, farms, a strip centre or two, a grain elevator and the interstate. The city's market plays as on the island; the homes and the farms are drawn, but not for sale yet.",
+      /** One size: the region is a fixed 6 x 6 km window (region/land.mjs). */
+      fixedSize: true,
+    },
   ];
 }
 
@@ -116,6 +125,7 @@ export function cityList() {
 export function cityName(cityId, seed, opts) {
   if (cityId === PROCEDURAL) return islandName(seed);
   if (cityId === MANHATTAN) return manhattanName(opts?.size);
+  if (cityId === REGION) return regionName(seed);
   return cityId;
 }
 
@@ -239,6 +249,11 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * (citygen.mjs MIN_COVER). A tower drew 42-58% and lost more as it climbed,
  * down to ~30%: a thin shaft on an empty lot, which New York's base and
  * street-wall rules do not build. Plan 13 saves rebuild their own town.
+ *
+ * Plan 15 adds the REGION map (region/index.mjs): six kilometres of country
+ * round a small river city whose plats the island generator cuts. No island
+ * rule reads plan 15, so plan-14 island saves rebuild their own town byte for
+ * byte; a region campaign records plan 15.
  */
 /**
  * HOW MUCH OF THE TOWN IS PARK, from the setup page. A generated town draws a
@@ -254,7 +269,7 @@ export const PARK_AMOUNTS = [
 ];
 export const DEFAULT_PARKS = "medium";
 
-export const CITY_PLAN = 14;
+export const CITY_PLAN = 15;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical
@@ -264,6 +279,9 @@ export function makeCity(cityId, seed, opts) {
   if (LEGACY_DRAWN.has(cityId)) {
     throw new Error(`removed city: ${cityId} — all islands are generated from a seed now`);
   }
+  // THE REGION is its own pipeline (region/index.mjs) ending in the same contract, plus `reserved`: the
+  // homes, farms and parish the commercial market does not reach in Phase 1.
+  if (cityId === REGION) return makeRegion(seed, { density: opts?.density, planV: opts?.planV ?? CITY_PLAN });
   if (cityId !== PROCEDURAL && cityId !== MANHATTAN) throw new Error(`unknown city: ${cityId}`);
   // A WRITTEN-DOWN CITY DOES NOT TAKE A SIZE, it takes an extent. `scaleCity`
   // multiplies every position and extent, and doing that to a traced Manhattan

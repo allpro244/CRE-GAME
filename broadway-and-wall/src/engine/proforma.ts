@@ -138,6 +138,8 @@ export const MAX_COVERAGE: Record<BuiltClass, number> = {
 export const MIN_COVERAGE = 0.6;
 /** The site coverage a new building of this programme may take. */
 export function maxCoverageFor(use: DevUse, mix?: UseMix): number {
+  // A single-use programme is a mix of one: its own limit, without building the mix.
+  if (use !== "mixed") return Math.min(1, MAX_COVERAGE[use] ?? 1);
   const m = devMix(use, mix);
   let cap = 1;
   for (const k of Object.keys(m) as BuiltClass[]) if ((m[k] ?? 0) > 0) cap = Math.min(cap, MAX_COVERAGE[k] ?? 1);
@@ -166,6 +168,13 @@ export function normalizeMix(m: UseMix): UseMix {
   return out;
 }
 export function devMix(use: DevUse, custom?: UseMix): UseMix {
+  // The same one-key object as `{ [use]: 1 }`, as a literal shape (a computed key is the slow path).
+  switch (use) {
+    case "office": return { office: 1 };
+    case "retail": return { retail: 1 };
+    case "multifamily": return { multifamily: 1 };
+    case "industrial": return { industrial: 1 };
+  }
   if (use !== "mixed") return { [use]: 1 };
   return custom ? normalizeMix(custom) : { ...MIXED_STACK };
 }
@@ -383,7 +392,11 @@ export const clamp01 = (x: number) => Math.max(0, Math.min(1, x ?? 0.5));
 // The buildable envelope, and nothing else. Ashport has no use districts —
 // any class on any lot — so the only limit is how much floor area the FAR
 // allows, and how much of the lot you choose to cover with it.
-export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number }): number {
+// ...WITH ONE EXCEPTION: land zoned for agriculture (the region map's farms)
+// carries no building envelope at all until the board rezones it
+// (landdev.ts) — the town-wide FAR-2 floor is for town lots, not for a field.
+export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number; zoneDist?: string }): number {
+  if (rec.zoneDist === "AG") return 0;
   return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
 }
 
@@ -684,6 +697,58 @@ export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
 }
 
 /**
+ * `underwritingEcon` behind a one-entry memo, for the desk's pro formas (the
+ * land residual keeps its own). The overlay prototypes the econ it was built
+ * on, so it is reused only for that same object, and only while every field
+ * the overlay copies or reads — the three indices it rewrites, whole and in
+ * key order, and each class's expectation, vacancy, stock, pipeline, unmet
+ * demand and trend — is identical to what it was built from.
+ */
+const UW_COPIED = ["rentIdx", "effRentIdx", "capRate"] as const;
+const UW_READ = ["rentExp", "capExp", "cityVac", "stock", "pipeline", "structTight", "classDrvTrend"] as const;
+let UW_MEMO: { econ: Econ; rentMult: number; snap: unknown[]; uw: Econ } | null = null;
+function underwritingSnap(econ: Econ): unknown[] {
+  const e = econ as unknown as Record<string, Record<string, unknown> | undefined>;
+  const out: unknown[] = [];
+  for (const f of UW_COPIED) {
+    const d = e[f];
+    out.push(d);
+    if (d) for (const k in d) out.push(k, d[k]);
+    out.push("|");
+  }
+  for (const f of UW_READ) {
+    const d = e[f];
+    out.push(!!d);
+    for (const u of BUILT_CLASSES) out.push(d?.[u]);
+  }
+  return out;
+}
+/** `underwritingSnap(econ)` equals `snap`, walked in place without building a new one. */
+function snapHolds(econ: Econ, snap: unknown[]): boolean {
+  const e = econ as unknown as Record<string, Record<string, unknown> | undefined>;
+  let i = 0;
+  for (const f of UW_COPIED) {
+    const d = e[f];
+    if (snap[i++] !== d) return false;
+    if (d) for (const k in d) { if (snap[i++] !== k || !Object.is(snap[i++], d[k])) return false; }
+    if (snap[i++] !== "|") return false;
+  }
+  for (const f of UW_READ) {
+    const d = e[f];
+    if (snap[i++] !== !!d) return false;
+    for (const u of BUILT_CLASSES) if (!Object.is(snap[i++], d?.[u])) return false;
+  }
+  return i === snap.length;
+}
+function underwritingEconOf(econ: Econ, rentMult: number): Econ {
+  const m = UW_MEMO;
+  if (m && m.econ === econ && Object.is(m.rentMult, rentMult) && snapHolds(econ, m.snap)) return m.uw;
+  const uw = underwritingEcon(econ, rentMult);
+  UW_MEMO = { econ, rentMult, snap: underwritingSnap(econ), uw };
+  return uw;
+}
+
+/**
  * THE DIRT EARNS NOTHING WHILE THE BUILDING GOES UP.
  *
  * Land is paid for at the start and the building it carries is worth
@@ -805,7 +870,8 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // A shell that already stands keeps the footprint it has — a conversion or a
   // half-built takeover is not a new building's massing.
   const cov = Math.max(custom?.shell ? 0.08 : MIN_COVERAGE, Math.min(custom?.shell ? 0.9 : maxCoverageFor(o.use, raw), o.coverage));
-  const retailOnly = Object.entries(raw).every(([k, v]) => k === "retail" || !v);
+  let retailOnly = true;
+  for (const k in raw) if (k !== "retail" && raw[k as BuiltClass]) { retailOnly = false; break; }
   const fl = Math.max(1, Math.min(Math.round(o.floors), maxFloorsFor(rec, cov, retailOnly ? "retail" : o.use)));
   // GROSS AND RENTABLE ARE NOT THE SAME NUMBER, and treating them as one was
   // why assembling paid nothing. Zoning counts gross and the contractor bills
@@ -851,7 +917,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
 
   // What the finished building will be underwritten on — see underwritingEcon.
-  const uw = o.uw ?? underwritingEcon(econ, o.rentMult ?? 1);
+  const uw = o.uw ?? underwritingEconOf(econ, o.rentMult ?? 1);
   const asBuilt = asBuiltRec(rec, o.use, gsf, fl, spec, mix);
 
   // THE LEASE-UP RESERVE.

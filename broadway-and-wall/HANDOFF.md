@@ -1181,3 +1181,59 @@ fixed/floating gap is the term premium alone. Test: `test/floating.mjs`.
   of appraisal, REO ~1.0 at a flush desk, under it at an impaired one.
 - `test/buybox.mjs`'s land-pencils fixture searches seeds 777 / 12007 /
   550991 — the criterion is unchanged, the re-roll moved which lot pencils.
+
+---
+
+## 13. THE REGION MAP (region expansion Phase 1, Oct 2026)
+
+`makeCity("region", seed)` (`src/citygen/region/`) is a 6 x 6 km piece of
+country round a small river city, in the same contract an island returns plus
+one table, `reserved`. Picked on the setup page as "Region (6 km)"; size and
+park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
+
+- **The city is the island generator's.** `region/town.mjs` builds a
+  generateCity config for a mainland town: the outline is the town's story
+  distance (`story.mjs`), the district plan is a BSP of historic plats (the
+  landing, downtown, the mill district, additions each on its own bearing,
+  block size, alleys or none, gridded / curving / organic), and the old
+  country roads, the main street and the interstate's cut are diagonal
+  reservations. The river village is a second, small generateCity.
+- **The inner ring is houses, and they are ordinary parcels.** An addition's
+  small apartment lot becomes the house that stood there (`index.mjs` THE
+  INNER RING IS HOUSES): multifamily, 1-3 units, R4/R6 zoning with FAR far
+  above what is built — so the engine's own assembly, teardown and growth
+  can buy and rebuild them. Drawn in Unreal as instanced houses (deco
+  "house"), still their deed's building.
+- **Reserved land never enters an engine table.** Outer neighbourhoods (one
+  parcel per subdivision: homes, sizes, era, and a `recipe` that redraws its
+  lots via `plats.mjs platFor` — `built` is a bitset — so a later phase can
+  unpack it), farm and woodlot tracts, rural homes and the parish carry
+  `tenure` and live only in `city.reserved`. The engine is handed
+  `city.parcels`, so every loop is safe by construction; the parcel card shows
+  a reserved parcel's numbers and no desk. No price is shown: nothing in the
+  engine prices an owner-occupied house or farmland yet.
+- **Phase 2, the land developer's slice (`engine/landdev.ts`).** Farm and
+  woodlot tracts are MARKET parcels now (numeric BBLs 5xxxxxxxxx, zone "AG",
+  `rec.ag`, `rec.tract`): `farMaxFor` gives AG no envelope at all, so nobody
+  builds on a field, and the land read prices it at farm-use value
+  (`value.ts farmUsePsf`: USDA 2024 Illinois cash rent over the 2.7%
+  rent-to-value ratio, in the town's price level). An owned tract can be
+  rezoned (`fileEntitlement`: fees, 12-24 months, odds 0.80 at the town's
+  edge to 0.45 at 3 km) and platted (`startPlat`: $40k per 65 ft of frontage
+  plus a $13,772 impact fee a lot, by the cost index; 6-18 months). The plat
+  is a recipe in `s.plats`; `materializePlats` puts its lots (BBL 6 + tract +
+  lot) into the parcel table and BBL list from the state alone — sim.ts at
+  the top of every month, the store on load and on every new state — and the
+  tract retires into its lots (`s.platted`, a deed with no land, like a
+  merged child). Geometry: `citygen platTractLots`. The store draws the lots
+  and streets on the map and resends the city to Unreal. `pnpm landdev`.
+  At the opening the builder residual on a fringe lot is zero (no for-sale
+  housing market yet — Phase 3's homebuilders), so a plat loses money until
+  demand reaches it: an honest result, not a fault to tune.
+- **No transit.** The demand blend's transit and second-centre terms (44 of
+  100 points) read zero on the region, so its demand scores run lower than an
+  island's. Car access as a demand term is a later-phase question.
+- `pnpm region` (test/region.mjs): determinism, record sanity, reserved land
+  never reaching the market, the island untouched by plan 15, month tick
+  timing. `node test/bwcity-contract.mjs <file>` checks an Unreal export;
+  `node unreal/tools/export-city.mjs --city region --seed N` writes one.

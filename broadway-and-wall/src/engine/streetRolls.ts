@@ -216,6 +216,14 @@ function toSeekers(s: GameState, t: Tenant, why: Seeker["why"], fromPlayer: stri
 interface Bld {
   bbl: string; rec: ParcelRecord; cond: Condition; condIdx: number; care: number; stressed: boolean;
   sc: Partial<Record<Comm, number>>; cap: Partial<Record<Comm, number>>;
+  /** minLettableSf(rec, k), worked out once: the record is resolved once a month and never written. */
+  min?: Partial<Record<Comm, number>>;
+}
+function minSfOf(b: Bld, k: Comm): number {
+  const m = (b.min ??= {});
+  let v = m[k];
+  if (v === undefined) { v = minLettableSf(b.rec, k); m[k] = v; }
+  return v;
 }
 
 /**
@@ -437,7 +445,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     for (const k of COMM) {
       if (!b.cap[k]) continue;
       const a = availOf(b, roll, k);
-      if (a >= minLettableSf(b.rec, k)) suites[k].push({ avail: a, sc: b.sc[k] ?? 50 });
+      if (a >= minSfOf(b, k)) suites[k].push({ avail: a, sc: b.sc[k] ?? 50 });
     }
   }
   for (const k of COMM) {
@@ -544,6 +552,9 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const pool = [...e.seekers];
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rng(s, "leasing") * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const signed = new Set<number>();
+  // The street's buildings, listed once: the search below lets space and moves
+  // tenants inside rolls, and never adds, removes or replaces a roll.
+  const rollList = Object.entries(R);
   for (const sk of pool) {
     if (sk.tourM !== undefined && m - sk.tourM < 3) continue;          // in talks at one of the player's buildings
     if (rng(s, "leasing") > 1 / SEARCH_M[sk.use]) continue;            // still looking
@@ -557,12 +568,12 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     type C = { b: Bld; roll: StreetRoll; avail: number; w: number };
     const cands: C[] = [];
     let tot = 0;
-    for (const [bbl, roll] of Object.entries(R)) {
+    for (const [bbl, roll] of rollList) {
       if (bbl === sk.from) continue;
       const b = blds.get(bbl) ?? bld(bbl);
       if (!b || !b.cap[k]) continue;
       const avail = availOf(b, roll, k);
-      const floor = minLettableSf(b.rec, k);
+      const floor = minSfOf(b, k);
       if (avail < Math.max(floor, Math.min(sk.want * 0.5, avail + 1))) continue;
       const since = roll.vac?.[k];
       const stale = staleDiscount(since === undefined ? 0 : m - since);
@@ -576,7 +587,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     let u = rng(s, "leasing") * tot, pick = cands[0];
     for (const c of cands) { u -= c.w; if (u <= 0) { pick = c; break; } }
     const { b, roll, avail } = pick;
-    const floor = minLettableSf(b.rec, k);
+    const floor = minSfOf(b, k);
     let take = Math.min(sk.want, avail);
     if (avail - take < floor) take = avail <= sk.want * 1.4 ? avail : Math.max(floor, avail - floor);
     if (take < floor) continue;
@@ -638,7 +649,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     if (!b) continue;
     for (const k of COMM) {
       if (!b.cap[k]) continue;
-      const vacNow = availOf(b, roll, k) >= minLettableSf(b.rec, k);
+      const vacNow = availOf(b, roll, k) >= minSfOf(b, k);
       roll.vac ??= {};
       if (vacNow && roll.vac[k] === undefined) roll.vac[k] = m;
       else if (!vacNow) delete roll.vac[k];
@@ -688,7 +699,7 @@ function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: n
   const bk = s.econ.firmBooks?.[t.sector], prevE = s.econ.tradeEmpPrev?.[t.sector];
   const gTrade = bk && prevE ? Math.pow(bk.emp / Math.max(1e-6, prevE), 12) - 1 : 0;
   t.endM = m + Math.round(rrange(s, band.loM, band.hiM, "leasing") * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTrade))));
-  const floor = minLettableSf(b.rec, k);
+  const floor = minSfOf(b, k);
   if (need < t.sf) t.sf = Math.round(Math.max(Math.min(t.sf, floor), need));
   else if (need > t.sf) {
     const room = Math.max(0, (b.cap[k] ?? 0) - roll.t.reduce((a, x) => a + (useOf(x) === k ? x.sf : 0), 0));

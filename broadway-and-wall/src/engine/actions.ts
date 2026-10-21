@@ -9,7 +9,7 @@ import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
-import { ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
+import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, fitOf, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
@@ -941,6 +941,7 @@ export function assembleLots(
       // which is one of the deeds being folded here.
       if (!next.merged[d]) mergeDeedLedger(next, d, parent, next.holdings[d].boughtM);
       next.merged[d] = parent;
+      mergedTouched();
       // an absorbed lot (a firm's site you bought) has no deed of its own
       if (next.holdings[d]) {
         next.holdings[parent].costBasis += next.holdings[d].costBasis;

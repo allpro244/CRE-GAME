@@ -23,7 +23,7 @@ import { START_YEAR } from "./types";
 import { hash01 } from "./competitorTraits";
 import { logFirm, milestone } from "./firmLog";
 import { livingRivals, markRival, paramsOf, transferDeed } from "./rivals";
-import { assumeBook, rowOn, syncDebt } from "./rivalDebt";
+import { assumeBook, loanBookTouched, rowOn, syncDebt } from "./rivalDebt";
 
 const year = (s: GameState) => START_YEAR + Math.floor(s.month / 12);
 
@@ -157,7 +157,7 @@ function successions(s: GameState, parcels: ParcelTable) {
       r.feud = id;
       for (const b of half) {
         const row = rowOn(s, r, b);
-        if (row) row.obligorId = id;    // the mortgage goes with its building
+        if (row) { row.obligorId = id; loanBookTouched(); }    // the mortgage goes with its building
         transferDeed(s, b, twin, 0);
       }
       twin.basis = Math.round((r.basis ?? 0) * half.length / Math.max(1, half.length + r.bbls.length));

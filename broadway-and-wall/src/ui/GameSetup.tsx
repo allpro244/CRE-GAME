@@ -78,7 +78,10 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   const [d, setD] = useState<Draft>(fresh);
   const up = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
   const isWritten = !!cities.find((c) => c.id === d.island)?.extents;
-  const pickIsland = (id: string) => up({ island: id, size: currentSize(id), dev: currentDev(id) });
+  // the region map is one fixed 6 km window: no size to choose, no park amount (its greens are its own)
+  const isFixed = !!cities.find((c) => c.id === d.island)?.fixedSize;
+  const fixedOf = (id: string) => !!cities.find((c) => c.id === id)?.fixedSize;
+  const pickIsland = (id: string) => up({ island: id, size: fixedOf(id) ? id : currentSize(id), dev: currentDev(id) });
 
   const [cashText, setCashText] = useState("");
   const [seedText, setSeedText] = useState(String(d.seed));
@@ -94,7 +97,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     if (isWritten) return;
     let gone = false;
     const t = setTimeout(() => {
-      void drawPlatOffThread({ island: d.island, seed: d.seed, size: d.size, dev: d.dev, parks: d.parks === "medium" ? undefined : d.parks })
+      void drawPlatOffThread({ island: d.island, seed: d.seed, size: isFixed ? d.island : d.size, dev: d.dev, parks: d.parks === "medium" ? undefined : d.parks })
         .then((r) => { if (!gone) setPlat({ key: platKey, svg: r.svg, lots: r.lots, err: r.err }); });
     }, 250);
     return () => { gone = true; clearTimeout(t); };
@@ -160,7 +163,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
 
   const islandWord = cityName(d.island, d.seed) || cities.find((c) => c.id === d.island)?.name || "the island";
   const firmPlaceholder = generateFirmName(d.seed).name;
-  const sizeName = isWritten ? extentList().find((e) => e.id === d.size)?.name : sizes.find((s) => s.id === d.size)?.name;
+  const sizeName = isFixed ? "6 × 6 km region" : isWritten ? extentList().find((e) => e.id === d.size)?.name : sizes.find((s) => s.id === d.size)?.name;
   const devName = devs.find((x) => x.id === d.dev)?.name;
   const opening = d.sandbox ? SANDBOX_CASH : d.cash0;
 
@@ -180,7 +183,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       field: d.field, inherit: d.inherit, home: d.home,
       rivalCapital: d.rivalCapital === "medium" ? undefined : d.rivalCapital,
       // a written-down city's parks are real: the choice only applies to a generated island
-      parks: d.parks === "medium" || isWritten ? undefined : d.parks,
+      parks: d.parks === "medium" || isWritten || isFixed ? undefined : d.parks,
       firmName: d.firmName.trim() || undefined, sandbox: d.sandbox, clock: d.clock,
       brokerStops: d.brokerStops ? undefined : "never",
       poolEntry: d.poolEntry ? undefined : false,
@@ -188,7 +191,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       rivalDealTerms: d.rivalDealTerms ? undefined : false,
       builderFirms: d.builderFirms ? undefined : false,
     };
-    void startRun(d.island, d.size, d.dev, d.cash0, setup, d.seed);
+    void startRun(d.island, isFixed ? d.island : d.size, d.dev, d.cash0, setup, d.seed);
   };
 
   const opt = (on: boolean, onClick: () => void, name: React.ReactNode, note: React.ReactNode, key?: string, disabled?: boolean) => (
@@ -236,7 +239,9 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
               </div>
               <div className="start-col">
                 <div className="start-col-head">{isWritten ? "how far uptown" : "how big"}</div>
-                {isWritten
+                {isFixed
+                  ? opt(true, () => {}, "6 × 6 km", "One window of country: the river city, its village, and the neighbourhoods, farms and pockets round them.", "fixed")
+                  : isWritten
                   ? extentList().map((e) => opt(e.id === d.size, () => up({ size: e.id }), e.name, e.note, e.id))
                   : sizes.map((s) => opt(s.id === d.size, () => up({ size: s.id }), <>{s.name}<span className="start-opt-lots"> · about {lotsAt(s.k)} lots</span></>, s.note, s.id))}
               </div>
@@ -248,7 +253,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
             {/* HOW MUCH OF IT IS PARK. Part of the town, like its size: it moves
                 the odds of which park plan the island draws and how many parks
                 that plan lays down. Manhattan's parks are the real ones. */}
-            {!isWritten && (
+            {!isWritten && !isFixed && (
               <div className="start-cols setup-cols3">
                 <div className="start-col">
                   <div className="start-col-head">how many parks</div>
@@ -432,7 +437,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                   }} />
                 <button type="button" className="setup-btn" onClick={() => up({ seed: randomSeed() })}>New seed</button>
                 <button type="button" className="setup-btn" onClick={() => { try { void navigator.clipboard?.writeText(String(d.seed)); } catch { /* no clipboard */ } }}>Copy</button>
-                <span className="setup-dim">{!isWritten ? <>→ the island of <strong>{islandWord}</strong></> : "on Manhattan the seed deals the stock, not the map"}</span>
+                <span className="setup-dim">{isFixed ? <>→ the town of <strong>{islandWord}</strong></> : !isWritten ? <>→ the island of <strong>{islandWord}</strong></> : "on Manhattan the seed deals the stock, not the map"}</span>
               </div>
               <div className="setup-row">
                 <button type="button" className="setup-btn setup-btn-strong" onClick={randomiseAll}>Randomise everything</button>
@@ -472,7 +477,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                   <span className="setup-dim">
                     {!platFresh ? "Drawing the town…"
                       : plat?.err ? `The map could not be drawn here (${plat.err}). The seed still works.`
-                      : <>the island of <strong>{islandWord}</strong> · seed <span className="mono">{d.seed}</span> · {plat?.lots?.toLocaleString()} lots</>}
+                      : <>{isFixed ? "the town of" : "the island of"} <strong>{islandWord}</strong> · seed <span className="mono">{d.seed}</span> · {plat?.lots?.toLocaleString()} lots</>}
                   </span>
                 </div>
                 <div

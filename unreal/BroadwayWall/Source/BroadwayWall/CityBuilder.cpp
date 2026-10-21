@@ -918,6 +918,26 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 			++Cleared;
 			continue;
 		}
+		// A CHOSEN FORM: the engine solved the building's tiers (a wedding cake's
+		// setbacks, a courtyard's wings, a tower on its podium); each is a volume,
+		// the topmost the crown, all one building (one Bbl, one look, one rhythm)
+		if (!L.bConstruction && L.Tiers.Num())
+		{
+			double TopZ = 0;
+			for (const FBWRenderTier& T : L.Tiers) TopZ = FMath::Max(TopZ, T.Z1);
+			for (const FBWRenderTier& T : L.Tiers)
+			{
+				if (T.Ring.Num() < 3 || T.Z1 - T.Z0 < 100) continue;
+				FBWVolume Tv = V;
+				Tv.Ring = T.Ring;
+				Tv.Z0 = T.Z0;
+				Tv.Z1 = T.Z1;
+				Tv.bCrown = T.Z1 >= TopZ;
+				Current.Add(MoveTemp(Tv));
+			}
+			++Built;
+			continue;
+		}
 		// the web renderer's footprint rule (map/real/RealCity.ts buildItem): the lot
 		// scaled about its centre by sqrt(coverage), or 0.82 when none was kept
 		FVector2D C(0, 0);

@@ -30,6 +30,19 @@ bool FBWRenderView::Parse(const FString& Json)
 		O->TryGetBoolField(TEXT("shops"), L.bShops);
 		O->TryGetStringField(TEXT("facade"), L.Facade);
 		L.Look = BWReadLook(O, TEXT("look"));
+		O->TryGetStringField(TEXT("form"), L.Form);
+		const TArray<TSharedPtr<FJsonValue>>* Tiers;
+		if (O->TryGetArrayField(TEXT("tiers"), Tiers))
+			for (const TSharedPtr<FJsonValue>& TV : *Tiers)
+			{
+				const TSharedPtr<FJsonObject> T = TV->AsObject();
+				if (!T) continue;
+				FBWRenderTier& Tier = L.Tiers.AddDefaulted_GetRef();
+				const TArray<TSharedPtr<FJsonValue>>& R2 = T->GetArrayField(TEXT("ring"));
+				for (int32 k = 0; k + 1 < R2.Num(); k += 2) Tier.Ring.Emplace(R2[k]->AsNumber(), R2[k + 1]->AsNumber());
+				Tier.Z0 = T->GetNumberField(TEXT("z0"));
+				Tier.Z1 = T->GetNumberField(TEXT("z1"));
+			}
 	}
 
 	Owners.Reset();

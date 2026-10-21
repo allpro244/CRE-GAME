@@ -19,21 +19,21 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_Ground_0.SM_B11_Ground_0",
+     "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_Ground_0.SM_B11_Ground_0",
      "width": 420.0,
      "depth": 50.0,
      "y0": -420.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_Ground_1.SM_B11_Ground_1",
+     "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_Ground_1.SM_B11_Ground_1",
      "width": 336.0,
      "depth": 50.0,
      "y0": -336.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_Ground_2.SM_B11_Ground_2",
+     "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_Ground_2.SM_B11_Ground_2",
      "width": 504.0,
      "depth": 50.0,
      "y0": -504.0,
@@ -42,7 +42,7 @@
    ],
    "entrances": [
     {
-     "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_Entrance.SM_B11_Entrance",
+     "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_Entrance.SM_B11_Entrance",
      "width": 420.0,
      "depth": 50.0,
      "y0": -420.0,
@@ -50,7 +50,7 @@
     }
    ],
    "corner": {
-    "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_GroundCorner.SM_B11_GroundCorner",
+    "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_GroundCorner.SM_B11_GroundCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -65,7 +65,7 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_Second.SM_B11_Second",
+     "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_Second.SM_B11_Second",
      "width": 420.0,
      "depth": 50.0,
      "y0": -420.0,
@@ -74,7 +74,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_SecondCorner.SM_B11_SecondCorner",
+    "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_SecondCorner.SM_B11_SecondCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -88,7 +88,7 @@
    "repeat": true,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_Typical_0.SM_B11_Typical_0",
+     "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_Typical_0.SM_B11_Typical_0",
      "width": 420.0,
      "depth": 50.0,
      "y0": -420.0,
@@ -96,14 +96,14 @@
      "mix": 0
     },
     {
-     "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_Typical_1.SM_B11_Typical_1",
+     "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_Typical_1.SM_B11_Typical_1",
      "width": 420.0,
      "depth": 50.0,
      "y0": -420.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_Typical_0_v1.SM_B11_Typical_0_v1",
+     "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_Typical_0_v1.SM_B11_Typical_0_v1",
      "width": 420.0,
      "depth": 50.0,
      "y0": -420.0,
@@ -112,7 +112,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_Typical_0_v2.SM_B11_Typical_0_v2",
+     "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_Typical_0_v2.SM_B11_Typical_0_v2",
      "width": 420.0,
      "depth": 50.0,
      "y0": -420.0,
@@ -121,7 +121,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_Typical_0_v3.SM_B11_Typical_0_v3",
+     "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_Typical_0_v3.SM_B11_Typical_0_v3",
      "width": 420.0,
      "depth": 50.0,
      "y0": -420.0,
@@ -132,7 +132,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_TypicalCorner.SM_B11_TypicalCorner",
+    "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_TypicalCorner.SM_B11_TypicalCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -146,7 +146,7 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_Top.SM_B11_Top",
+     "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_Top.SM_B11_Top",
      "width": 420.0,
      "depth": 50.0,
      "y0": -420.0,
@@ -155,7 +155,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B11/v1021021034/SM_B11_TopCorner.SM_B11_TopCorner",
+    "path": "/Game/BW/Styles/B11/v1021040512/SM_B11_TopCorner.SM_B11_TopCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,

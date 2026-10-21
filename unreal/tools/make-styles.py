@@ -822,6 +822,25 @@ def top(R, W, corner=False, M=None):
     return M, H
 
 
+def corner_shop(R, H):
+    """THE CORNER SHOP: the shopfront wraps the corner (the most valuable
+    retail frontage on a block), glass on both faces of the corner piece over a
+    bulkhead, the sign band carried round, a slim iron column at the corner"""
+    M = Mesh()
+    g = R.get("ground", {})
+    bulk, sign = g.get("bulkhead", 55), g.get("sign", 360)
+    M.box(3, -DEPTH, 0, -100, 0, sign - 15, H)                   # wall over the sign band
+    M.box(4, -25, -20, -96, -4, 0, bulk)                         # bulkhead
+    M.box(9, -28, -26, -96, -4, bulk, sign - 15)                 # glass, front face
+    M.box(9, -DEPTH, -26, -2, 0, bulk, sign - 15)                # and round the corner
+    M.box(10, -DEPTH + 2, -DEPTH + 4, -96, -4, 0, sign)          # the lit room behind
+    M.box(4, -6, 0, -6, 0, 0, sign - 15)                         # the corner column
+    M.box(1, 0, 6, -100, 0, sign - 15, sign + 10)                # sign band
+    M.box(1, 0, 12, -100, 0, sign + 10, sign + 18)
+    M.box(1, 0, 8, -100, 0, H - 22, H)                           # the band that caps the street floor
+    return M
+
+
 def corner(R, H, mid=0, quoins=False, glazed=False, M=None):
     M = M or Mesh()
     if glazed:
@@ -957,7 +976,10 @@ def build(R, data_dir):
     pe = "%s/SM_%s_Entrance" % (base, key)
     save(ground(R, W, Hg, entrance=True), pe, slots)
     pc = "%s/SM_%s_GroundCorner" % (base, key)
-    save(corner(R, Hg, 3, quoins=R.get("quoins", False)), pc, slots)
+    if R.get("ground", {}).get("type", "shop") == "shop":
+        save(corner_shop(R, Hg), pc, slots)
+    else:
+        save(corner(R, Hg, 3, quoins=R.get("quoins", False)), pc, slots)
     # a residential base carries the zones down to the pavement (the volumes
     # stand on the ground); a retail podium stays one continuous base
     if R.get("zones") and R.get("ground", {}).get("type", "shop") != "shop":

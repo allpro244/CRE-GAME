@@ -75,8 +75,8 @@ for (const [form, hM, klass, year] of FORMS) {
   byBbl.set(c.bbl, vols);
   const span = Math.sqrt(c.a);
   // three-quarter aerial, the whole building in frame: far enough for its height and its spread
-  const dist = Math.max(top * 1.9, span * 3.4, 75) * 100;
-  looks.push({ name: `form-${form.replace(/ /g, "")}`, x: c.c[0] * 100, y: c.c[1] * 100, z: top * 100 * 0.45, yaw: 215, pitch: -26, dist, r: Math.max(55, span * 1.6) });
+  const dist = Math.max(top * 2.7, span * 3.6, 80) * 100;
+  looks.push({ name: `form-${form.replace(/ /g, "")}`, x: c.c[0] * 100, y: c.c[1] * 100, z: top * 100 * 0.5, yaw: 215, pitch: -22, dist, r: Math.max(55, span * 1.6) });
   made.push(`${form} = "${r.name}" on ${c.bbl} (${Math.round(c.a)} m2, ${r.tiers.length} tiers, ${Math.round(top)} m)`);
 }
 // a gallery, not the city: the neighbours round each example come down to a few

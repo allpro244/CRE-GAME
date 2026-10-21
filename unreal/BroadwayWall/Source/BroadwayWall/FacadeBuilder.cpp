@@ -21,6 +21,7 @@ static bool ReadModule(const TSharedPtr<FJsonObject>& O, FBWKitModule& M)
 	M.Y0 = O->GetNumberField(TEXT("y0"));
 	M.Y1 = O->GetNumberField(TEXT("y1"));
 	O->TryGetNumberField(TEXT("every"), M.Every);
+	O->TryGetNumberField(TEXT("zone"), M.Zone);
 	M.Mesh = LoadObject<UStaticMesh>(nullptr, *M.Path);
 	// a kit holds its meshes by plain pointer, so they are rooted: the collector
 	// frees a mesh no component shows yet, and the next building to use it crashed
@@ -58,6 +59,7 @@ bool FBWKit::Load(const FString& Path)
 		B.Height = O->GetNumberField(TEXT("height"));
 		B.bRepeat = O->GetBoolField(TEXT("repeat"));
 		O->TryGetBoolField(TEXT("ground"), B.bGround);
+		O->TryGetNumberField(TEXT("storeys"), B.Storeys);
 		for (const TSharedPtr<FJsonValue>& W : O->GetArrayField(TEXT("walls"))) { FBWKitModule M; if (ReadModule(W->AsObject(), M)) B.Walls.Add(M); }
 		for (const TSharedPtr<FJsonValue>& W : O->GetArrayField(TEXT("entrances"))) { FBWKitModule M; if (ReadModule(W->AsObject(), M)) B.Entrances.Add(M); }
 		const TSharedPtr<FJsonObject>* C;
@@ -208,7 +210,7 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 			if (!bGround) Order.RemoveAt(0, FirstRep);
 		}
 	}
-	auto Storeys = [](const FBWKitBand* B) { return FMath::Max(1, FMath::RoundToInt(B->Height / 450.0)); };
+	auto Storeys = [](const FBWKitBand* B) { return B->Storeys > 0 ? B->Storeys : FMath::Max(1, FMath::RoundToInt(B->Height / 450.0)); };
 	const int32 Floors = FMath::Max(1, FMath::FloorToInt(H / 355.0 + 0.2));
 	int32 FixedS = 0;
 	for (const FBWKitBand* B : Order) if (!B->bRepeat) FixedS += Storeys(B);
@@ -253,9 +255,13 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 
 	// ---- this building's design: a bay rhythm shared by every floor, so the
 	// windows stack, but a different rhythm (and different modules) per building
-	static const TArray<TArray<int32>> Rhythms = { {0}, {0, 1}, {0, 0, 1}, {0, 1, 0, 2}, {1, 0, 0, 1}, {0, 1, 1}, {2, 0, 1, 0} };
-	const int32 Pick = Rng.RandRange(0, Rhythms.Num() - 1);
-	const TArray<int32>& Rhythm = Rhythms[Pick];   // (the desk's window setting is gone: some rhythms surfaced odd pieces)
+	// ONE WINDOW RHYTHM. Every bay of a building wears the same piece: real
+	// facades repeat one bay design across the front, and mixing up to four
+	// pieces per floor (pairs, singles, blanks) read as a broken pattern. The
+	// building's piece is its own (the palette is shuffled by its seed), and
+	// only a deliberate feature bay (FBWKitModule::Every) breaks the run.
+	static const TArray<int32> Rhythm = { 0 };
+	Rng.RandRange(0, 6);   // (the draw the old rhythm pick took, so the doors keep their places)
 	// "entrance": doors all along the street floor rather than one in a few bays
 	const int32 DoorEvery = V.Look.Ground == TEXT("entrance") ? 2 : Rng.RandRange(3, 5);
 	TMap<const FBWKitBand*, TArray<const FBWKitModule*>> Palette;
@@ -280,6 +286,27 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 		const bool bSliver = Usable < Kit.Grid * 0.6;
 		const int32 Mods = FMath::Max(1, FMath::RoundToInt(Usable / Kit.Grid));
 		const double W = Usable / Mods;
+		// FACADE ZONES. A contemporary apartment front is split into vertical
+		// runs of two to four bays, each in its own cladding and depth (panel,
+		// fibre-cement, stucco; popped out or recessed), set out symmetrically
+		// so the ends match: A B C B A. The runs are the same on every floor,
+		// so they read as stacked volumes. Seeded per building and wall.
+		TArray<int32> ZoneOf;
+		{
+			FRandomStream ZR(int32(Seed * 2654435761u + uint32(i) * 97u));
+			const int32 NZ = 3;
+			TArray<int32> Runs;
+			int32 Left = Mods;
+			while (Left > 0) { const int32 L = FMath::Min(Left, ZR.RandRange(2, 3)); Runs.Add(L); Left -= L; }
+			// mirror the zone order about the middle run, starting from a seeded zone
+			const int32 Z0 = ZR.RandRange(0, NZ - 1);
+			const int32 Step = ZR.RandBool() ? 1 : 2;
+			for (int32 r = 0; r < Runs.Num(); ++r)
+			{
+				const int32 m = FMath::Min(r, Runs.Num() - 1 - r);
+				for (int32 q = 0; q < Runs[r]; ++q) ZoneOf.Add((Z0 + m * Step) % NZ);
+			}
+		}
 
 		for (const FRow& Row : Rows)
 		{
@@ -313,9 +340,13 @@ int32 FBWFacadeBuilder::Dress(const FBWKit& Kit, const FBWVolume& V, uint32 Seed
 			// (the middle of each run of N), and a wall too short for one gets none.
 			const FBWKitModule* Feature = nullptr;
 			for (const FBWKitModule& M : Band.Walls) if (M.Every > 0 && FMath::Abs(M.Width - W) <= 0.2 * W) { Feature = &M; break; }
+			// zoned bands: each bay wears its run's zone (ZoneOf, the same on every floor)
+			TArray<const FBWKitModule*, TInlineAllocator<4>> ByZone;
+			for (const FBWKitModule& M : Band.Walls) if (M.Zone >= 0) { if (ByZone.Num() <= M.Zone) ByZone.SetNum(M.Zone + 1); if (!ByZone[M.Zone]) ByZone[M.Zone] = &M; }
 			for (int32 k = 0; k < Mods; ++k)
 			{
 				const FBWKitModule* M = Pal[Rhythm[k % Rhythm.Num()] % Pal.Num()];
+				if (ByZone.Num() && ZoneOf.IsValidIndex(k)) { const int32 Zk = ZoneOf[k] % ByZone.Num(); if (ByZone[Zk]) M = ByZone[Zk]; }
 				if (Feature && Mods >= Feature->Every && (k % Feature->Every) == Feature->Every / 2) M = Feature;
 				// street floor: a door every few bays on every frontage, shopfronts between
 				if (Band.bGround && Band.Entrances.Num() && Mods > 1 && (k % DoorEvery) == DoorEvery / 2)

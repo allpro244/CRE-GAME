@@ -28,6 +28,8 @@ struct FBWKitModule
 	UStaticMesh* Decal = nullptr;
 	/** A feature bay (a fire escape, an oriel): used on one bay in Every along each wall, never by the rhythm. 0 = an ordinary bay. */
 	int32 Every = 0;
+	/** A facade zone (0, 1, 2...): a kit with zones splits each wall into runs of bays, each run in one zone's cladding. -1 = unzoned. */
+	int32 Zone = -1;
 };
 
 struct FBWKitBand
@@ -37,6 +39,8 @@ struct FBWKitBand
 	bool bRepeat = false;
 	/** The street floor: only a volume that starts at the ground gets it. */
 	bool bGround = false;
+	/** Floors the band spans when the kit says (a two-storey shaft piece staggers its balconies); 0 = from its height. */
+	int32 Storeys = 0;
 	TArray<FBWKitModule> Walls, Entrances;
 	FBWKitModule Corner;
 	bool bHasCorner = false;

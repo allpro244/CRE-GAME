@@ -1,0 +1,116 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B70",
+ "grammar": "generated",
+ "label": "Dark loft-style new build",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 480.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B70/v1020234327/SM_B70_Ground_0.SM_B70_Ground_0",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B70/v1020234327/SM_B70_Ground_1.SM_B70_Ground_1",
+     "width": 304.0,
+     "depth": 50.0,
+     "y0": -304.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B70/v1020234327/SM_B70_Ground_2.SM_B70_Ground_2",
+     "width": 456.0,
+     "depth": 50.0,
+     "y0": -456.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B70/v1020234327/SM_B70_Entrance.SM_B70_Entrance",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B70/v1020234327/SM_B70_GroundCorner.SM_B70_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 360.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B70/v1020234327/SM_B70_Typical_0.SM_B70_Typical_0",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B70/v1020234327/SM_B70_Typical_1.SM_B70_Typical_1",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B70/v1020234327/SM_B70_TypicalCorner.SM_B70_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 110,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B70/v1020234327/SM_B70_Top.SM_B70_Top",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B70/v1020234327/SM_B70_TopCorner.SM_B70_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

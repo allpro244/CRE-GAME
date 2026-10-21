@@ -1,0 +1,117 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B66",
+ "grammar": "generated",
+ "label": "White brick, black frames",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 470.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B66/v1020234327/SM_B66_Ground_0.SM_B66_Ground_0",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B66/v1020234327/SM_B66_Ground_1.SM_B66_Ground_1",
+     "width": 264.0,
+     "depth": 50.0,
+     "y0": -264.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B66/v1020234327/SM_B66_Ground_2.SM_B66_Ground_2",
+     "width": 396.0,
+     "depth": 50.0,
+     "y0": -396.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B66/v1020234327/SM_B66_Entrance.SM_B66_Entrance",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B66/v1020234327/SM_B66_GroundCorner.SM_B66_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 310.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B66/v1020234327/SM_B66_Typical_0.SM_B66_Typical_0",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B66/v1020234327/SM_B66_Typical_1.SM_B66_Typical_1",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "every": 3
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B66/v1020234327/SM_B66_TypicalCorner.SM_B66_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 100,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B66/v1020234327/SM_B66_Top.SM_B66_Top",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B66/v1020234327/SM_B66_TopCorner.SM_B66_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

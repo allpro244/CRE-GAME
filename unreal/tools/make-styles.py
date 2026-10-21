@@ -40,6 +40,8 @@ def mat_path(name):
 class Mesh:
     def __init__(self):
         self.m = unreal.DynamicMesh()
+        self.zoff = 0.0   # added to every z: the upper storey of a two-storey module
+        self.xoff = 0.0   # added to every x: a zone popped out (+) or set back (-)
 
     def box(self, mid, x0, x1, y0, y1, z0, z1):
         """an axis box between the given planes (cm), material slot mid"""
@@ -47,6 +49,9 @@ class Mesh:
             return
         o = unreal.GeometryScriptPrimitiveOptions()
         o.material_id = mid
+        z0 += self.zoff
+        x0 += self.xoff
+        x1 += self.xoff
         t = unreal.Transform(location=[(x0 + x1) / 2, (y0 + y1) / 2, z0], rotation=[0, 0, 0], scale=[1, 1, 1])
         GS.append_box(self.m, o, t, x1 - x0, y1 - y0, z1 - z0, 0, 0, 0, unreal.GeometryScriptPrimitiveOriginMode.BASE)
 
@@ -114,14 +119,21 @@ def window(M, R, y0, y1, z0, z1):
         # courses, so the opening reads round, with a trim archivolt line above
         c, r = (y0 + y1) / 2, (y1 - y0) / 2
         zs = z1 - r
-        n = 8
+        # steps no wider than ~3.5 cm, each at the curve's height across its
+        # middle: eight wide courses read as a sawtooth up close
+        n = max(8, min(40, int(r / 3.5)))
         for k in range(n):
             a0, a1 = k / float(n), (k + 1) / float(n)
-            zc = zs + r * math.sqrt(max(0.0, 1 - a0 * a0))
+            am = (a0 + a1) / 2
+            zc = zs + r * math.sqrt(max(0.0, 1 - am * am))
             M.box(0, -rec - 1, 0, c + r * a0, c + r * a1, zc, z1)
             M.box(0, -rec - 1, 0, c - r * a1, c - r * a0, zc, z1)
+            if trim:
+                # the archivolt follows the curve, a moulding band on the face
+                M.box(1, 0, 4, c + r * a0, c + r * a1, zc, zc + 12)
+                M.box(1, 0, 4, c - r * a1, c - r * a0, zc, zc + 12)
         if trim:
-            M.box(1, 0, 4, y0 - 6, y1 + 6, z1, z1 + 14)
+            M.box(1, 0, 4, c - 9, c + 9, z1 - 4, z1 + 14)    # keystone at the crown
 
 
 def is_masonry(R):
@@ -290,8 +302,8 @@ def piers(M, R, W, H, mid=0):
         order(M, kind, W, half, 0, proud, 0, H, mid, p.get("order_mat", 1))
 
 
-def typical(R, W, H, alt=False):
-    M = Mesh()
+def typical(R, W, H, alt=False, M=None):
+    M = M or Mesh()
     if alt and R.get("pair_alt", not R.get("win", {}).get("ribbon") and R.get("group") in ("prewar", "interwar") and R.get("win", {}).get("per_bay", 1) == 1 and not R.get("feature")):
         # the alternate bay carries a pair of narrower windows: a facade of
         # bays that alternate one-two-one reads as designed, not punched
@@ -311,9 +323,99 @@ def typical(R, W, H, alt=False):
         M.box(sp.get("mat", 1), 0, sp.get("proud", 3), -W, 0, 0, sp.get("h", 18))
     if R.get("belt_every_floor"):
         M.box(1, 0, 5, -W, 0, sill - 10, sill - 4)
+    if w.get("caps"):
+        # A CURTAIN WALL HAS DEPTH: an aluminium cap on every mullion and at
+        # each bay edge, standing proud of the glass, and the band between the
+        # ribbons is spandrel glass (opaque, but glass), not painted wall
+        cd = w.get("cap_depth", 18)
+        for a, b, c, d in holes:
+            n = w.get("mullions", 1)
+            for k in range(n + 2):
+                y = a + (b - a) * k / (n + 1)
+                M.box(1, 0, cd, max(-W, y - 3), min(0, y + 3), 0, H)
+        M.box(2, 0, 1.5, -W, 0, 0, sill)
+        M.box(2, 0, 1.5, -W, 0, top, H)
+        M.box(1, 0, cd * 0.6, -W, 0, sill - 4, sill)
+    pat = (sp or {}).get("pattern")
+    if pat:
+        for a, b, c, d in holes:
+            spandrel_ornament(M, sp.get("mat", 1), pat, a, b, max(sp.get("h", 18) + 6, 10), c - 12)
+    for a, b, c, d in holes:
+        window_extras(M, R, a, b, c, d)
+    if R.get("panels"):
+        panels(M, R, W, H, holes, alt)
     if alt:
         features(M, R, W, H, holes)
     return M
+
+
+def spandrel_ornament(M, mat, pat, a, b, z0, z1):
+    """DECO SPANDRELS: the panel under each window carries the ornament, which
+    is most of what makes a facade read as Art Deco at street level (Kahn's
+    terra cotta, the Bronx's zigzag brick, Rockefeller Center's cast metal)"""
+    if z1 - z0 < 25 or b - a < 40:
+        return
+    zm, cy, hw = (z0 + z1) / 2, (a + b) / 2, (b - a) / 2
+    if pat == "flutes":
+        n = max(4, int((b - a) / 14))
+        for k in range(n):
+            y = a + (b - a) * (k + 0.5) / n
+            M.box(mat, 0, 3, y - 2.5, y + 2.5, z0 + 4, z1 - 4)
+    elif pat == "chevron":
+        n = 5
+        for k in range(n):
+            w = hw * (1 - k / n)
+            z = z0 + 4 + (z1 - z0 - 8) * k / n
+            M.box(mat, 0, 3, cy - w, cy - w + 8, z, z + (z1 - z0) / n)
+            M.box(mat, 0, 3, cy + w - 8, cy + w, z, z + (z1 - z0) / n)
+    elif pat == "diamond":
+        n = 6
+        for k in range(n):
+            f = 1 - abs((k + 0.5) / n * 2 - 1)
+            z = z0 + 4 + (z1 - z0 - 8) * k / n
+            M.box(mat, 0, 3, cy - hw * 0.8 * f, cy + hw * 0.8 * f, z, z + (z1 - z0 - 8) / n)
+    elif pat == "panel":
+        M.box(mat, 0, 3, a + 6, b - 6, z0 + 4, z0 + 9)
+        M.box(mat, 0, 3, a + 6, b - 6, z1 - 9, z1 - 4)
+        M.box(mat, 0, 3, a + 6, a + 11, z0 + 4, z1 - 4)
+        M.box(mat, 0, 3, b - 11, b - 6, z0 + 4, z1 - 4)
+
+
+def window_extras(M, R, a, b, c, d):
+    """contemporary window treatments: a pop-out frame round the window, or a
+    Juliet rail across its lower half"""
+    w = R.get("win", {})
+    if w.get("box_frame"):
+        # the 2010s window box: a coloured frame 30-50 cm proud round the opening
+        fd, ft = w.get("frame_depth", 40), w.get("frame_t", 12)
+        mat = 5 if w.get("frame_mat", "accent") == "accent" else 1
+        M.box(mat, 0, fd, a - ft, a, c - ft, d + ft)
+        M.box(mat, 0, fd, b, b + ft, c - ft, d + ft)
+        M.box(mat, 0, fd, a - ft, b + ft, d, d + ft)
+        M.box(mat, 0, fd, a - ft, b + ft, c - ft, c)
+    if w.get("juliet"):
+        rail = c + 100
+        M.box(4, 6, 9, a + 4, b - 4, rail - 4, rail)
+        M.box(4, 6, 9, a + 4, b - 4, c + 8, c + 11)
+        n = max(2, int((b - a) / 14))
+        for k in range(1, n):
+            y = a + (b - a) * k / n
+            M.box(4, 6, 9, y - 1, y + 1, c + 8, rail)
+
+
+def panels(M, R, W, H, holes, alt):
+    """MIXED METAL PANELS, the 2010s rental: the wall between the windows is
+    cladding in two or three colours, set in a pattern that changes bay to bay
+    (the alternate module flips it), proud of the backing wall by a joint"""
+    pr = R["panels"]
+    mats = [5, 7, 0] if pr.get("three", True) else [5, 0]
+    flip = 1 if alt else 0
+    for i, (a, b, c, d) in enumerate(holes):
+        k = (i + flip) % len(mats)
+        M.box(mats[k], 0, 4, a - 8, b + 8, 2, c - 4)                    # under the window
+        M.box(mats[(k + 1) % len(mats)], 0, 4, a - 8, b + 8, d + 4, H - 2)  # over it
+    if pr.get("vertical", True) and holes:
+        M.box(mats[(flip + 2) % len(mats)], 0, 4, -W + 2, holes[0][0] - 10, 2, H - 2)
 
 
 def features(M, R, W, H, holes):
@@ -323,20 +425,32 @@ def features(M, R, W, H, holes):
     f = R.get("feature")
     if not f:
         return
+    # a staggered module puts the feature on one half of the bay
+    side = R.get("_side")
+    ya, yb = (-W, 0) if not side else ((-W, -W / 2) if side == "L" else (-W / 2, 0))
     if f == "fire_escape":
         # an iron platform at each floor, railing, and the drop ladder's rails
         y0, y1 = -W + 15, -15
-        M.box(4, 0, 105, y0, y1, 0, 5)
-        M.box(4, 100, 105, y0, y1, 92, 97)
-        M.box(4, 100, 105, y0, y1, 45, 48)
-        for y in (y0, y1 - 4, (y0 + y1) / 2):
-            M.box(4, 100, 105, y, y + 4, 0, 97)
-        # a stair: a run of treads from this platform up to the next
+        # the platform is iron slats with light between them, not a plate
+        for k in range(6):
+            x = 4 + k * 17
+            M.box(4, x, x + 9, y0, y1, 0, 4)
+        M.box(4, 100, 105, y0, y1, 92, 97)                   # top rail
+        M.box(4, 101, 104, y0, y1, 45, 47)                   # mid rail
+        n_post = max(3, int((y1 - y0) / 45))
+        for k in range(n_post + 1):                          # balusters
+            y = y0 + (y1 - y0 - 3) * k / n_post
+            M.box(4, 100, 104, y, y + 3, 0, 97)
+        # the stair to the next platform: treads, and two thin stepped stringers
+        # (a solid stringer sheet read as a black chute hiding the windows)
         n = 9
+        run = W * 0.55
         for k in range(n):
-            yy = y0 + 20 + k * (W * 0.55 / n)
-            M.box(4, 20, 80, yy, yy + 14, 5 + (H - 5) * (k + 1) / (n + 1), 9 + (H - 5) * (k + 1) / (n + 1))
-        M.box(4, 76, 80, y0 + 20, y0 + 20 + W * 0.55, 5, H)
+            yy = y0 + 20 + k * (run / n)
+            z = 5 + (H - 5) * (k + 1) / (n + 1)
+            M.box(4, 24, 76, yy, yy + 14, z, z + 3)
+            for xs in (20, 76):
+                M.box(4, xs, xs + 4, yy, yy + run / n + 1, z - 12, z)
     elif f == "oriel":
         # a bay window carried up the front: a box out from the wall, glazed on three faces
         for a, b, c, d in holes:
@@ -348,17 +462,37 @@ def features(M, R, W, H, holes):
             M.box(2, 15, 55, a2 - 1, a2, c, d)               # side lights
             M.box(2, 15, 55, b2, b2 + 1, c, d)
     elif f == "balcony":
-        M.box(1, 0, 150, -W + 10, -10, 0, 16)                # slab
-        M.box(4, 145, 150, -W + 10, -10, 16, 105)            # solid front (painted metal)
-        M.box(4, 0, 150, -W + 10, -W + 14, 16, 105)
-        M.box(4, 0, 150, -14, -10, 16, 105)
+        bd = R.get("balcony_depth", 150)
+        glass = R.get("balcony_glass", False)
+        M.box(1, 0, bd, ya + 10, yb - 10, 0, 16)             # slab
+        if glass:
+            # a glass balustrade with a slim top rail, the contemporary condo
+            M.box(2, bd - 4, bd - 2, ya + 10, yb - 10, 16, 105)
+            M.box(4, bd - 5, bd - 1, ya + 10, yb - 10, 103, 107)
+            M.box(2, 0, bd, ya + 10, ya + 12, 16, 105)
+            M.box(2, 0, bd, yb - 12, yb - 10, 16, 105)
+        else:
+            M.box(4, bd - 5, bd, ya + 10, yb - 10, 16, 105)  # solid front (painted metal)
+            M.box(4, 0, bd, ya + 10, ya + 14, 16, 105)
+            M.box(4, 0, bd, yb - 14, yb - 10, 16, 105)
+    elif f == "baguettes":
+        # TERRACOTTA BAGUETTES: a screen of vertical clay rods across the bay
+        # in front of the glass (the 2010s rainscreen); spacing and depth in
+        # the recipe
+        sp = R.get("baguette_spacing", 22)
+        n = int(W / sp)
+        for k in range(n):
+            y = -W + (k + 0.5) * W / n
+            M.box(5, 18, 24, y - 2.5, y + 2.5, 0, H)
+        M.box(5, 0, 26, -W, 0, 0, 8)
     elif f == "fins":
+        fd = R.get("fin_depth", 55)
         for y in (-W, -W / 2):
-            M.box(1, 0, 55, y, y + 9, 0, H)
+            M.box(1, 0, fd, y, y + 9, 0, H)
 
 
-def ground(R, W, H, entrance=False):
-    M = Mesh()
+def ground(R, W, H, entrance=False, M=None):
+    M = M or Mesh()
     g = R.get("ground", {})
     kind = g.get("type", "shop")
     mat = 3
@@ -560,11 +694,11 @@ def dormer(M, t, P, c, hw):
         M.box(1, bk, fd + 6, c - ew, c + ew, z1, z1 + 14)                # cap
 
 
-def top(R, W, corner=False):
+def top(R, W, corner=False, M=None):
     t = R.get("top", {})
     kind = t.get("type", "cornice")
     H = t.get("h", 380 if kind == "mansard" else 150)
-    M = Mesh()
+    M = M or Mesh()
     if kind == "cornice":
         M.box(0, -DEPTH, 0, -W, 0, 0, H * 0.55)                 # frieze
         M.box(1, 0, 6, -W, 0, H * 0.55 - 10, H * 0.55)          # architrave line
@@ -615,8 +749,22 @@ def top(R, W, corner=False):
     return M, H
 
 
-def corner(R, H, mid=0, quoins=False):
-    M = Mesh()
+def corner(R, H, mid=0, quoins=False, glazed=False, M=None):
+    M = M or Mesh()
+    if glazed:
+        # MODERNE / CONTEMPORARY CORNER WINDOW: the glass wraps the corner
+        w = R.get("win", {})
+        sill = w.get("sill", 90)
+        top = min(H - 30, sill + w.get("h", 170))
+        M.box(mid, -DEPTH, 0, -100, 0, 0, sill)
+        M.box(mid, -DEPTH, 0, -100, 0, top, H)
+        M.box(2, -8, -4, -100, 0, sill, top)
+        M.box(2, -DEPTH, -4, -4, 0, sill, top)               # the return face
+        M.box(4, -6, -2, -100, 0, sill, sill + 5)
+        M.box(4, -6, -2, -100, 0, top - 5, top)
+        for z in range(int(sill) + 40, int(top) - 10, 40):
+            M.box(4, -6, -2, -100, 0, z, z + 2)              # horizontal muntins
+        return M
     M.box(mid, -DEPTH, 0, -100, 0, 0, H)
     if quoins:
         for z in range(0, int(H) - 30, 60):
@@ -651,6 +799,40 @@ def module(path, W, depth=DEPTH):
     return {"path": path + "." + name, "width": W, "depth": depth, "y0": -W, "y1": 0}
 
 
+def slots_for(R):
+    m = R["mats"]
+    return [("wall", mat_path(m["wall"])), ("trim", mat_path(m.get("trim", m["wall"]))),
+            ("glass", mat_path(m.get("glass", MATS["glass"])) if m.get("glass") else MATS["glass"]),
+            ("base", mat_path(m.get("base", m["wall"]))), ("dark", mat_path(m.get("dark", MATS["dark"])) if m.get("dark") else MATS["dark"]),
+            ("accent", mat_path(m.get("accent", "Paint/PaintedMetal_Green"))),
+            ("roof", mat_path(m.get("roof", "Paint/PaintedStone_charcoal"))),
+            ("accent2", mat_path(m.get("accent2", "Paint/PaintedMetal_White")))]
+
+
+def zoned(R, z):
+    """the recipe as one facade zone wears it: the zone's own fields over the
+    building's (materials merged key by key, windows likewise)"""
+    Z = dict(R)
+    for k, v in z.items():
+        if k in ("mats", "win", "pier", "spandrel") and isinstance(v, dict):
+            Z[k] = dict(R.get(k, {}), **v)
+        else:
+            Z[k] = v
+    return Z
+
+
+def cheeks(M, W, H, proud):
+    """the returns of a popped-out or set-back zone: wall at each side of the
+    module from the main face plane to the zone's; inside a run the next bay
+    covers them, at the run's ends they are the corner of the volume"""
+    lo, hi = (0, proud) if proud > 0 else (proud, 0)
+    x = M.xoff
+    M.xoff = 0
+    M.box(0, lo, hi, -W, -W + 1.5, 0, H)
+    M.box(0, lo, hi, -1.5, 0, 0, H)
+    M.xoff = x
+
+
 def build(R, data_dir):
     UV_SCALE[0] = float(R.get("uv", 2.0))
     key = R["key"]
@@ -658,18 +840,15 @@ def build(R, data_dir):
     # version's files open, and overwriting them in place fails (the kit JSON
     # names the version, so the game picks up whichever it was written with)
     base = "%s/%s/%s" % (ROOT, key, RUN)
-    m = R["mats"]
-    slots = [("wall", mat_path(m["wall"])), ("trim", mat_path(m.get("trim", m["wall"]))),
-             ("glass", mat_path(m.get("glass", MATS["glass"])) if m.get("glass") else MATS["glass"]),
-             ("base", mat_path(m.get("base", m["wall"]))), ("dark", mat_path(m.get("dark", MATS["dark"])) if m.get("dark") else MATS["dark"]),
-             ("accent", mat_path(m.get("accent", "Paint/PaintedMetal_Green"))),
-             ("roof", mat_path(m.get("roof", "Paint/PaintedStone_charcoal")))]
+    slots = slots_for(R)
     W = float(R.get("bay", 360))
     Hs = float(R.get("storey", 355))
     Hg = float(R.get("ground", {}).get("h", 450))
     bands = [{"symbol": "F", "height": 0.5, "repeat": False, "walls": [], "entrances": [], "corner": None, "inner": None}]
-    def band(sym, h, walls, entrances=(), corner_m=None, rep=False, gr=False):
+    def band(sym, h, walls, entrances=(), corner_m=None, rep=False, gr=False, storeys=0):
         b = {"symbol": sym, "height": h, "repeat": rep, "walls": walls, "entrances": list(entrances), "corner": corner_m, "inner": None}
+        if storeys:
+            b["storeys"] = storeys
         if gr:
             b["ground"] = True
         bands.append(b)
@@ -683,6 +862,21 @@ def build(R, data_dir):
     save(ground(R, W, Hg, entrance=True), pe, slots)
     pc = "%s/SM_%s_GroundCorner" % (base, key)
     save(corner(R, Hg, 3, quoins=R.get("quoins", False)), pc, slots)
+    # a residential base carries the zones down to the pavement (the volumes
+    # stand on the ground); a retail podium stays one continuous base
+    if R.get("zones") and R.get("ground", {}).get("type", "shop") != "shop":
+        for zi, z in enumerate(R["zones"]):
+            Z = zoned(R, z)
+            Mg = Mesh()
+            Mg.xoff = float(z.get("proud", 0))
+            ground(Z, W, Hg, M=Mg)
+            if Mg.xoff:
+                cheeks(Mg, W, Hg, Mg.xoff)
+            pz = "%s/SM_%s_GroundZone_%d" % (base, key, zi)
+            save(Mg, pz, slots_for(dict(Z, mats=dict(Z["mats"], base=Z["mats"]["wall"]))))
+            mz = module(pz, W)
+            mz["zone"] = zi
+            gw.append(mz)
     band("G", Hg, gw, [module(pe, W)], module(pc, 100), gr=True)
     # an optional second-floor band (a piano nobile or a transfer floor)
     if R.get("second"):
@@ -694,13 +888,52 @@ def build(R, data_dir):
         band("P", float(R["second"].get("storey", Hs)), [module(p, W)], (), module(pcs, 100))
     # typical floor: two variants at slightly different widths, so bays pick the best fit
     tw = []
+    stagger = R.get("stagger") and R.get("feature")
     for i, wid in enumerate([W, W]):   # same width: the fit filter keeps both, so the feature bay is used
         p = "%s/SM_%s_Typical_%d" % (base, key, i)
-        save(typical(R, wid, Hs, alt=(i == 1) or R.get("feature_all", False)), p, slots)
+        if stagger:
+            # STAGGERED: a two-storey piece with the feature on the left half of
+            # one floor and the right half of the next (the other variant the
+            # other way round), so balconies checkerboard up the facade
+            M = Mesh()
+            first, second = ("L", "R") if i == 0 else ("R", "L")
+            typical(dict(R, _side=first), wid, Hs, alt=True, M=M)
+            M.zoff = Hs
+            typical(dict(R, _side=second), wid, Hs, alt=True, M=M)
+            save(M, p, slots)
+        else:
+            save(typical(R, wid, Hs, alt=(i == 1) or R.get("feature_all", False)), p, slots)
         tw.append(module(p, wid))
+    # a feature bay that is not on every bay (fire escape, oriel) goes on one bay in N
+    # along each wall (FacadeBuilder: FBWKitModule::Every), not one every other bay
+    if R.get("feature") and not R.get("feature_all") and not R.get("stagger"):
+        tw[1]["every"] = int(R.get("feature_every", 4 if R["feature"] == "fire_escape" else 3))
+    # FACADE ZONES: one shaft piece per zone, each in its own cladding and
+    # depth; FacadeBuilder sets them out in mirrored runs along every wall
+    for zi, z in enumerate(R.get("zones", [])):
+        Z = zoned(R, z)
+        p = "%s/SM_%s_Zone_%d" % (base, key, zi)
+        M = Mesh()
+        M.xoff = float(z.get("proud", 0))
+        typical(Z, W, Hs, alt=bool(Z.get("feature")) and Z.get("feature_all", True), M=M)
+        if M.xoff:
+            cheeks(M, W, Hs, M.xoff)
+        save(M, p, slots_for(Z))
+        mz = module(p, W)
+        mz["zone"] = zi
+        tw.append(mz)
     pct = "%s/SM_%s_TypicalCorner" % (base, key)
-    save(corner(R, Hs, 0, quoins=R.get("quoins", False)), pct, slots)
-    band("S", Hs, tw, (), module(pct, 100), rep=True)
+    Hband = Hs * 2 if stagger else Hs
+    if stagger and R.get("corner_window"):
+        Mc = corner(R, Hs, 0, glazed=True)
+        Mc.zoff = Hs
+        corner(R, Hs, 0, glazed=True, M=Mc)
+        save(Mc, pct, slots)
+    elif stagger:
+        save(corner(R, Hband, 0, quoins=R.get("quoins", False)), pct, slots)
+    else:
+        save(corner(R, Hs, 0, quoins=R.get("quoins", False), glazed=R.get("corner_window", False)), pct, slots)
+    band("S", Hband, tw, (), module(pct, 100), rep=True, storeys=2 if stagger else 0)
     # top
     if R.get("top", {}).get("type", "cornice") != "none":
         Mt, Ht = top(R, W)
@@ -709,7 +942,20 @@ def build(R, data_dir):
         Mtc, _ = top(R, 100, corner=True)
         pct2 = "%s/SM_%s_TopCorner" % (base, key)
         save(Mtc, pct2, slots)
-        band("T", Ht, [module(p, W)], (), module(pct2, 100))
+        tops = [module(p, W)]
+        for zi, z in enumerate(R.get("zones", [])):
+            Z = zoned(R, z)
+            Mz = Mesh()
+            Mz.xoff = float(z.get("proud", 0))
+            Mz, Hz = top(Z, W, M=Mz)
+            if Mz.xoff:
+                cheeks(Mz, W, Hz, Mz.xoff)
+            pz = "%s/SM_%s_TopZone_%d" % (base, key, zi)
+            save(Mz, pz, slots_for(Z))
+            mz = module(pz, W)
+            mz["zone"] = zi
+            tops.append(mz)
+        band("T", Ht, tops, (), module(pct2, 100))
         if R["top"].get("type") == "mansard":
             # how far the roof's top step stands behind the face line: a hint
             # for the city, whose roof cap today runs out to the face line and

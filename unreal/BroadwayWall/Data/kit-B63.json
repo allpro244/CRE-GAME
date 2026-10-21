@@ -1,0 +1,117 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B63",
+ "grammar": "generated",
+ "label": "Glass condo, staggered balconies",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 500.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B63/v1020234327/SM_B63_Ground_0.SM_B63_Ground_0",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B63/v1020234327/SM_B63_Ground_1.SM_B63_Ground_1",
+     "width": 304.0,
+     "depth": 50.0,
+     "y0": -304.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B63/v1020234327/SM_B63_Ground_2.SM_B63_Ground_2",
+     "width": 456.0,
+     "depth": 50.0,
+     "y0": -456.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B63/v1020234327/SM_B63_Entrance.SM_B63_Entrance",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B63/v1020234327/SM_B63_GroundCorner.SM_B63_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 660.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B63/v1020234327/SM_B63_Typical_0.SM_B63_Typical_0",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B63/v1020234327/SM_B63_Typical_1.SM_B63_Typical_1",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B63/v1020234327/SM_B63_TypicalCorner.SM_B63_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "storeys": 2
+  },
+  {
+   "symbol": "T",
+   "height": 120,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B63/v1020234327/SM_B63_Top.SM_B63_Top",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B63/v1020234327/SM_B63_TopCorner.SM_B63_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

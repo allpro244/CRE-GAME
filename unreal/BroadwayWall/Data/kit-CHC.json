@@ -556,20 +556,6 @@
    "repeat": true,
    "walls": [
     {
-     "path": "/Game/Building/CH/C/Kit_Bldg_CHC_L9_A/Mesh/SM_BLDG_CHC_L09_A_Wall_01_N1.SM_BLDG_CHC_L09_A_Wall_01_N1",
-     "width": 100,
-     "depth": 75,
-     "y0": -100,
-     "y1": -0.2
-    },
-    {
-     "path": "/Game/Building/CH/C/Kit_Bldg_CHC_L9_A/Mesh/SM_BLDG_CHC_L09_A_Wall_02_N1.SM_BLDG_CHC_L09_A_Wall_02_N1",
-     "width": 225,
-     "depth": 75,
-     "y0": -225,
-     "y1": 0
-    },
-    {
      "path": "/Game/Building/CH/C/Kit_Bldg_CHC_L9_A/Mesh/SM_BLDG_CHC_L09_A_Wall_03_N1.SM_BLDG_CHC_L09_A_Wall_03_N1",
      "width": 325,
      "depth": 75,

@@ -5,20 +5,50 @@
    "NYA",
    "CHI",
    "NYH",
-   "SFA"
+   "SFA",
+   "B01",
+   "B04",
+   "B07",
+   "B10",
+   "B13",
+   "B16",
+   "B17",
+   "B18",
+   "B27",
+   "B35",
+   "B39",
+   "B41",
+   "B47",
+   "B66",
+   "B70",
+   "B74"
   ],
   "buff": [
    "NYA",
    "CHI",
-   "CHF"
+   "CHF",
+   "B04",
+   "B05",
+   "B07",
+   "B16",
+   "B23",
+   "B35",
+   "B39",
+   "B46",
+   "B50"
   ],
   "brownstone": [
    "NYH",
-   "NYA"
+   "NYA",
+   "B08"
   ],
   "whitebrick": [
    "CHF",
-   "NYA"
+   "NYA",
+   "B09",
+   "B22",
+   "B54",
+   "B66"
   ],
   "georgian": [
    "NYA",
@@ -27,40 +57,78 @@
   ],
   "gothic": [
    "CHC",
-   "CHE"
+   "CHE",
+   "B14",
+   "B44",
+   "B51"
   ],
   "romanesque": [
    "CHE",
-   "NYH"
+   "NYH",
+   "B41"
   ],
   "castiron": [
    "CHG",
-   "CHC"
+   "CHC",
+   "B02",
+   "B12",
+   "B34",
+   "B38",
+   "B43"
   ],
   "stone": [
    "CHA",
-   "CHD",
-   "CHB"
+   "CHB",
+   "B03",
+   "B08",
+   "B11",
+   "B15",
+   "B25",
+   "B33",
+   "B36",
+   "B42",
+   "B45",
+   "B67"
   ],
   "terracotta": [
    "CHC",
-   "CHA"
+   "CHA",
+   "B14",
+   "B40",
+   "B42"
   ],
   "deco": [
    "NYG",
-   "CHD"
+   "B04",
+   "B15",
+   "B16",
+   "B33",
+   "B48",
+   "B51"
   ],
   "decobrick": [
    "CHI",
-   "NYG"
+   "NYG",
+   "B04",
+   "B16",
+   "B17",
+   "B48",
+   "B49",
+   "B50",
+   "B52"
   ],
   "moderne": [
    "CHH",
-   "CHF"
+   "CHF",
+   "B17",
+   "B49"
   ],
   "stucco": [
    "SFA",
-   "CHF"
+   "CHF",
+   "B28",
+   "B32",
+   "B72"
   ],
   "tudor": [
    "NYH",
@@ -72,77 +140,143 @@
   ],
   "industrial": [
    "CHF",
-   "CHG"
+   "CHG",
+   "B12",
+   "B26",
+   "B27",
+   "B38",
+   "B46",
+   "B50",
+   "B70"
   ],
   "daylight": [
    "CHF",
-   "CHJ"
+   "CHJ",
+   "B26",
+   "B46"
   ],
   "midcentury": [
    "CHH",
-   "SFE"
+   "SFE",
+   "B05",
+   "B06",
+   "B09",
+   "B18",
+   "B19",
+   "B20",
+   "B21",
+   "B22",
+   "B23",
+   "B29",
+   "B32",
+   "B37"
   ],
   "modern": [
    "SFE",
    "CHH",
    "SFC",
-   "CHJ"
+   "CHJ",
+   "B06",
+   "B20",
+   "B21",
+   "B32",
+   "B37",
+   "B53",
+   "B55",
+   "B63",
+   "B71"
   ],
   "precast": [
    "CHJ",
-   "SFB",
    "SFC",
-   "CHF"
+   "CHF",
+   "B19",
+   "B54",
+   "B55",
+   "B57",
+   "B62",
+   "B68"
   ],
   "brutalist": [
-   "CHJ"
+   "CHJ",
+   "B30",
+   "B68"
   ],
   "pomo": [
-   "SFB",
-   "SFA"
+   "SFA",
+   "B31"
   ],
   "ribbon": [
    "SFC",
-   "SFE"
+   "SFE",
+   "B05",
+   "B22"
   ],
   "grid": [
    "SFC",
-   "CHJ"
+   "CHJ",
+   "B06",
+   "B19",
+   "B29",
+   "B30",
+   "B37"
   ],
   "fins": [
    "SFE",
-   "SFJ"
+   "SFJ",
+   "B19",
+   "B60"
   ],
   "newstone": [
-   "SFB",
-   "CHD"
+   "B31",
+   "B62",
+   "B67"
   ],
   "stackbrick": [
    "SFA",
-   "CHI"
+   "CHI",
+   "B23",
+   "B65",
+   "B74"
   ],
   "fibercement": [
    "SFA",
-   "SFB"
+   "B64",
+   "B72",
+   "B73"
   ],
   "metalpanel": [
    "SFC",
-   "SFB"
+   "B29",
+   "B64",
+   "B72",
+   "B73",
+   "B74"
   ],
   "rainscreen": [
-   "SFB",
-   "SFC"
+   "SFC",
+   "B56",
+   "B59",
+   "B73"
   ],
   "timber": [
-   "SFB",
    "SFA"
   ],
   "glass": [
    "SFJ",
-   "SFC"
+   "SFC",
+   "B06",
+   "B20",
+   "B21",
+   "B55",
+   "B58",
+   "B61",
+   "B63",
+   "B71"
   ],
   "blueglass": [
-   "SFJ"
+   "SFJ",
+   "B63"
   ],
   "greenglass": [
    "SFJ",
@@ -150,50 +284,70 @@
   ],
   "silverglass": [
    "SFJ",
-   "SFC"
+   "SFC",
+   "B06",
+   "B58"
   ],
   "blackglass": [
    "SFJ",
-   "SFE"
+   "SFE",
+   "B20",
+   "B53",
+   "B61"
   ],
   "bronze": [
    "SFJ",
-   "CHH"
+   "CHH",
+   "B21"
   ],
   "diagrid": [
    "SFJ"
   ],
   "pixel": [
    "SFJ",
-   "SFB"
+   "B69"
   ],
   "shop": [
    "CHG",
-   "NYA"
+   "NYA",
+   "B01",
+   "B02",
+   "B34"
   ],
   "lobby": [
    "SFE"
   ],
   "plain": [
    "CHJ",
-   "NYA"
+   "NYA",
+   "B18",
+   "B38"
   ],
   "rustic": [
    "CHE"
   ],
   "arcade": [
    "CHB",
-   "CHG"
+   "CHG",
+   "B25",
+   "B28",
+   "B30",
+   "B31",
+   "B36"
   ],
   "greystone": [
-   "CHE",
-   "CHD"
+   "CHE"
   ],
   "formstone": [
    "NYH"
   ],
   "tenement": [
-   "NYA"
+   "NYA",
+   "B01",
+   "B07",
+   "B10",
+   "B39",
+   "B47"
   ],
   "phillyrow": [
    "NYH",
@@ -222,65 +376,88 @@
   ],
   "mediterranean": [
    "SFA",
-   "CHD"
+   "B28"
   ],
   "spanishcolonial": [
-   "SFA"
+   "SFA",
+   "B28"
   ],
   "beachdeco": [
    "NYG",
-   "CHH"
+   "CHH",
+   "B49"
   ],
   "zigzag": [
    "NYG",
-   "CHI"
+   "CHI",
+   "B33",
+   "B48",
+   "B52"
   ],
   "pwa": [
-   "CHD",
-   "NYG"
+   "NYG",
+   "B51"
   ],
   "stripped": [
-   "CHD",
-   "CHJ"
+   "CHJ",
+   "B17",
+   "B52"
   ],
   "beauxarts": [
    "CHB",
-   "CHA"
+   "CHA",
+   "B03",
+   "B11",
+   "B40",
+   "B45"
   ],
   "chateau": [
    "CHB"
   ],
   "secondempire": [
    "CHB",
-   "CHE"
+   "CHE",
+   "B45"
   ],
   "palazzo": [
    "CHB",
-   "CHA"
+   "CHA",
+   "B02",
+   "B03",
+   "B11",
+   "B25",
+   "B34",
+   "B36",
+   "B43"
   ],
   "greekrevival": [
-   "CHD",
    "CHB"
-  ],
-  "egyptian": [
-   "CHD"
   ],
   "edwardian": [
    "CHA",
-   "CHE"
+   "CHE",
+   "B13",
+   "B47"
   ],
   "bank": [
    "CHB",
-   "CHD"
+   "B11",
+   "B36"
   ],
   "venetian": [
-   "CHC"
+   "CHC",
+   "B44"
   ],
   "sullivanesque": [
-   "CHC"
+   "CHC",
+   "B42"
   ],
   "neogrec": [
-   "NYH"
+   "NYH",
+   "B01",
+   "B08",
+   "B10",
+   "B44"
   ],
   "collegiate": [
    "CHI",
@@ -294,7 +471,10 @@
   ],
   "neogeorgian": [
    "CHB",
-   "NYA"
+   "NYA",
+   "B13",
+   "B35",
+   "B67"
   ],
   "federal": [
    "NYA",
@@ -306,7 +486,8 @@
   ],
   "brewery": [
    "CHG",
-   "CHF"
+   "CHF",
+   "B41"
   ],
   "textilemill": [
    "CHG",
@@ -314,17 +495,20 @@
   ],
   "terminal": [
    "CHB",
-   "CHF"
+   "CHF",
+   "B26"
   ],
   "pumphouse": [
    "CHG"
   ],
   "corrugated": [
-   "SFC"
+   "SFC",
+   "B64"
   ],
   "tiltup": [
    "CHJ",
-   "SFC"
+   "SFC",
+   "B68"
   ],
   "flexspace": [
    "SFC",
@@ -339,33 +523,50 @@
   ],
   "projectbrick": [
    "NYA",
-   "CHI"
+   "CHI",
+   "B18",
+   "B54",
+   "B65"
   ],
   "brickpier": [
    "CHG",
-   "SFA"
+   "SFA",
+   "B12",
+   "B23",
+   "B27",
+   "B65",
+   "B70"
   ],
   "newformalism": [
    "CHH",
-   "CHD"
+   "B53",
+   "B57"
   ],
   "screenblock": [
    "CHJ",
    "SFE"
   ],
   "brisesoleil": [
-   "SFE"
+   "SFE",
+   "B19",
+   "B60"
   ],
   "eggcrate": [
    "CHJ",
-   "SFC"
+   "SFC",
+   "B19",
+   "B30",
+   "B37"
   ],
   "hightech": [
    "SFC",
-   "SFJ"
+   "SFJ",
+   "B58"
   ],
   "doubleskin": [
-   "SFJ"
+   "SFJ",
+   "B58",
+   "B61"
   ],
   "goldglass": [
    "SFJ"
@@ -374,50 +575,47 @@
    "SFJ"
   ],
   "goldanodized": [
-   "SFB",
-   "SFJ"
+   "SFJ",
+   "B69"
   ],
   "stripglass": [
    "SFC",
-   "SFJ"
+   "SFJ",
+   "B71"
   ],
   "baguetteglass": [
-   "SFE",
-   "SFB"
+   "SFE"
   ],
   "channelglass": [
    "SFC"
   ],
   "copperclad": [
-   "SFB"
+   "B29",
+   "B69"
   ],
   "corten": [
-   "SFC",
-   "SFB"
+   "SFC"
   ],
   "ceramictile": [
-   "SFB",
-   "CHC"
-  ],
-  "greenwall": [
-   "SFB"
-  ],
-  "charredwood": [
-   "SFB"
+   "CHC",
+   "B56",
+   "B59"
   ],
   "fluted": [
-   "SFB",
-   "CHD"
+   "B57",
+   "B59"
   ],
   "gfrc": [
-   "SFB",
-   "SFE"
+   "SFE",
+   "B56",
+   "B62"
   ],
   "glassblock": [
    "CHF"
   ],
   "sunshade": [
-   "SFE"
+   "SFE",
+   "B60"
   ],
   "sawtooth": [
    "SFJ"

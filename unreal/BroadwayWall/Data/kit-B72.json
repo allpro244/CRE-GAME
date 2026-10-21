@@ -1,0 +1,188 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B72",
+ "grammar": "generated",
+ "label": "Garden apartments, zoned",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 380.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_Ground_0.SM_B72_Ground_0",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_Ground_1.SM_B72_Ground_1",
+     "width": 256.0,
+     "depth": 50.0,
+     "y0": -256.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_Ground_2.SM_B72_Ground_2",
+     "width": 384.0,
+     "depth": 50.0,
+     "y0": -384.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_GroundZone_0.SM_B72_GroundZone_0",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "zone": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_GroundZone_1.SM_B72_GroundZone_1",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "zone": 1
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_GroundZone_2.SM_B72_GroundZone_2",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "zone": 2
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_Entrance.SM_B72_Entrance",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_GroundCorner.SM_B72_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 315.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_Typical_0.SM_B72_Typical_0",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_Typical_1.SM_B72_Typical_1",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_Zone_0.SM_B72_Zone_0",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "zone": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_Zone_1.SM_B72_Zone_1",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "zone": 1
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_Zone_2.SM_B72_Zone_2",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "zone": 2
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_TypicalCorner.SM_B72_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 110,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_Top.SM_B72_Top",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_TopZone_0.SM_B72_TopZone_0",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "zone": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_TopZone_1.SM_B72_TopZone_1",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "zone": 1
+    },
+    {
+     "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_TopZone_2.SM_B72_TopZone_2",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "zone": 2
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B72/v1020235248/SM_B72_TopCorner.SM_B72_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

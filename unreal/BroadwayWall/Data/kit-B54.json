@@ -1,0 +1,117 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B54",
+ "grammar": "generated",
+ "label": "Mitchell-Lama co-op slab",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 420.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B54/v1020234327/SM_B54_Ground_0.SM_B54_Ground_0",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B54/v1020234327/SM_B54_Ground_1.SM_B54_Ground_1",
+     "width": 288.0,
+     "depth": 50.0,
+     "y0": -288.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B54/v1020234327/SM_B54_Ground_2.SM_B54_Ground_2",
+     "width": 432.0,
+     "depth": 50.0,
+     "y0": -432.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B54/v1020234327/SM_B54_Entrance.SM_B54_Entrance",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B54/v1020234327/SM_B54_GroundCorner.SM_B54_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 355.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B54/v1020234327/SM_B54_Typical_0.SM_B54_Typical_0",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B54/v1020234327/SM_B54_Typical_1.SM_B54_Typical_1",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0,
+     "every": 3
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B54/v1020234327/SM_B54_TypicalCorner.SM_B54_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 70,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B54/v1020234327/SM_B54_Top.SM_B54_Top",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B54/v1020234327/SM_B54_TopCorner.SM_B54_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

@@ -19,21 +19,21 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B12/v1020201055/SM_B12_Ground_0.SM_B12_Ground_0",
+     "path": "/Game/BW/Styles/B12/v1020234327/SM_B12_Ground_0.SM_B12_Ground_0",
      "width": 360.0,
      "depth": 50.0,
      "y0": -360.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B12/v1020201055/SM_B12_Ground_1.SM_B12_Ground_1",
+     "path": "/Game/BW/Styles/B12/v1020234327/SM_B12_Ground_1.SM_B12_Ground_1",
      "width": 288.0,
      "depth": 50.0,
      "y0": -288.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B12/v1020201055/SM_B12_Ground_2.SM_B12_Ground_2",
+     "path": "/Game/BW/Styles/B12/v1020234327/SM_B12_Ground_2.SM_B12_Ground_2",
      "width": 432.0,
      "depth": 50.0,
      "y0": -432.0,
@@ -42,7 +42,7 @@
    ],
    "entrances": [
     {
-     "path": "/Game/BW/Styles/B12/v1020201055/SM_B12_Entrance.SM_B12_Entrance",
+     "path": "/Game/BW/Styles/B12/v1020234327/SM_B12_Entrance.SM_B12_Entrance",
      "width": 360.0,
      "depth": 50.0,
      "y0": -360.0,
@@ -50,7 +50,7 @@
     }
    ],
    "corner": {
-    "path": "/Game/BW/Styles/B12/v1020201055/SM_B12_GroundCorner.SM_B12_GroundCorner",
+    "path": "/Game/BW/Styles/B12/v1020234327/SM_B12_GroundCorner.SM_B12_GroundCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -65,14 +65,14 @@
    "repeat": true,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B12/v1020201055/SM_B12_Typical_0.SM_B12_Typical_0",
+     "path": "/Game/BW/Styles/B12/v1020234327/SM_B12_Typical_0.SM_B12_Typical_0",
      "width": 360.0,
      "depth": 50.0,
      "y0": -360.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B12/v1020201055/SM_B12_Typical_1.SM_B12_Typical_1",
+     "path": "/Game/BW/Styles/B12/v1020234327/SM_B12_Typical_1.SM_B12_Typical_1",
      "width": 360.0,
      "depth": 50.0,
      "y0": -360.0,
@@ -81,7 +81,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B12/v1020201055/SM_B12_TypicalCorner.SM_B12_TypicalCorner",
+    "path": "/Game/BW/Styles/B12/v1020234327/SM_B12_TypicalCorner.SM_B12_TypicalCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -91,11 +91,11 @@
   },
   {
    "symbol": "T",
-   "height": 140,
+   "height": 200,
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B12/v1020201055/SM_B12_Top.SM_B12_Top",
+     "path": "/Game/BW/Styles/B12/v1020234327/SM_B12_Top.SM_B12_Top",
      "width": 360.0,
      "depth": 50.0,
      "y0": -360.0,
@@ -104,7 +104,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B12/v1020201055/SM_B12_TopCorner.SM_B12_TopCorner",
+    "path": "/Game/BW/Styles/B12/v1020234327/SM_B12_TopCorner.SM_B12_TopCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,

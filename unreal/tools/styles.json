@@ -184,7 +184,8 @@
   "spandrel": {
    "mat": 5,
    "proud": 1,
-   "h": 110
+   "h": 110,
+   "pattern": "chevron"
   },
   "ground": {
    "type": "shop",
@@ -514,7 +515,8 @@
   },
   "pier": {
    "proud": 30,
-   "w": 90
+   "w": 90,
+   "order": "ionic"
   },
   "ground": {
    "type": "plain",
@@ -728,7 +730,8 @@
   "spandrel": {
    "mat": 4,
    "proud": 5,
-   "h": 75
+   "h": 75,
+   "pattern": "flutes"
   },
   "ground": {
    "type": "shop",
@@ -772,7 +775,8 @@
   "spandrel": {
    "mat": 1,
    "proud": 3,
-   "h": 78
+   "h": 78,
+   "pattern": "diamond"
   },
   "ground": {
    "type": "plain",
@@ -825,7 +829,8 @@
   "spandrel": {
    "mat": 1,
    "proud": 4,
-   "h": 55
+   "h": 55,
+   "pattern": "panel"
   },
   "ground": {
    "type": "shop",
@@ -844,7 +849,8 @@
    "decobrick",
    "brick",
    "stripped"
-  ]
+  ],
+  "corner_window": true
  },
  {
   "key": "B18",
@@ -1171,7 +1177,8 @@
    "pier": 70,
    "head": "arch",
    "door_w": 240,
-   "door_h": 420
+   "door_h": 420,
+   "order": "doric"
   },
   "top": {
    "type": "cornice",
@@ -1582,7 +1589,8 @@
   "spandrel": {
    "mat": 4,
    "proud": 3,
-   "h": 95
+   "h": 95,
+   "pattern": "chevron"
   },
   "ground": {
    "type": "shop",
@@ -1704,7 +1712,13 @@
    "buff",
    "brick",
    "neogeorgian"
-  ]
+  ],
+  "spandrel": {
+   "mat": 1,
+   "proud": 2,
+   "h": 20,
+   "pattern": "panel"
+  }
  },
  {
   "key": "B36",
@@ -1730,7 +1744,8 @@
   },
   "pier": {
    "proud": 24,
-   "w": 80
+   "w": 80,
+   "order": "doric"
   },
   "ground": {
    "type": "arcade",
@@ -2030,7 +2045,12 @@
    "h": 150,
    "proud": 45,
    "brackets": false
-  }
+  },
+  "families": [
+   "romanesque",
+   "brick",
+   "brewery"
+  ]
  },
  {
   "key": "B42",
@@ -2094,7 +2114,12 @@
    "type": "cornice",
    "h": 240,
    "proud": 110
-  }
+  },
+  "families": [
+   "sullivanesque",
+   "terracotta",
+   "stone"
+  ]
  },
  {
   "key": "B43",
@@ -2145,7 +2170,11 @@
    "type": "cornice",
    "h": 180,
    "proud": 75
-  }
+  },
+  "families": [
+   "castiron",
+   "palazzo"
+  ]
  },
  {
   "key": "B44",
@@ -2154,7 +2183,8 @@
   "mats": {
    "wall": "Brick/BrickOffset_Beige",
    "trim": "Block/Block_Granite_Black",
-   "base": "Block/Block_Granite_Black"
+   "base": "Block/Block_Granite_Black",
+   "roof": "Metal/Metal_CopperOx"
   },
   "uv": 100,
   "bay": 340,
@@ -2192,10 +2222,16 @@
    "pier": 50
   },
   "top": {
-   "type": "cornice",
-   "h": 150,
-   "proud": 50
-  }
+   "type": "mansard",
+   "h": 380,
+   "dormers": "windows",
+   "dormer_head": "arch"
+  },
+  "families": [
+   "venetian",
+   "gothic",
+   "neogrec"
+  ]
  },
  {
   "key": "B45",
@@ -2205,7 +2241,8 @@
    "wall": "Block/Block_Limestone_Beige",
    "trim": "Metal/Metal_CopperOx",
    "base": "Block/Block_Granite_Grey",
-   "accent": "Metal/Metal_CopperOx"
+   "accent": "Metal/Metal_CopperOx",
+   "roof": "Paint/PaintedStone_charcoal"
   },
   "uv": 100,
   "bay": 360,
@@ -2250,10 +2287,16 @@
    "canopy": true
   },
   "top": {
-   "type": "cornice",
-   "h": 240,
-   "proud": 100
-  }
+   "type": "mansard",
+   "h": 420,
+   "dormers": "windows",
+   "dormer_head": "pediment"
+  },
+  "families": [
+   "beauxarts",
+   "secondempire",
+   "stone"
+  ]
  },
  {
   "key": "B46",
@@ -2315,7 +2358,12 @@
    "type": "cornice",
    "h": 160,
    "proud": 75
-  }
+  },
+  "families": [
+   "industrial",
+   "daylight",
+   "buff"
+  ]
  },
  {
   "key": "B47",
@@ -2364,7 +2412,12 @@
    "type": "cornice",
    "h": 150,
    "proud": 55
-  }
+  },
+  "families": [
+   "brick",
+   "edwardian",
+   "tenement"
+  ]
  },
  {
   "key": "B48",
@@ -2399,7 +2452,8 @@
   "spandrel": {
    "mat": 5,
    "proud": 2,
-   "h": 70
+   "h": 70,
+   "pattern": "flutes"
   },
   "ground": {
    "type": "shop",
@@ -2413,7 +2467,12 @@
   },
   "top": {
    "type": "none"
-  }
+  },
+  "families": [
+   "deco",
+   "zigzag",
+   "decobrick"
+  ]
  },
  {
   "key": "B49",
@@ -2454,7 +2513,13 @@
   "top": {
    "type": "parapet",
    "h": 90
-  }
+  },
+  "families": [
+   "moderne",
+   "beachdeco",
+   "decobrick"
+  ],
+  "corner_window": true
  },
  {
   "key": "B50",
@@ -2489,7 +2554,8 @@
   "spandrel": {
    "mat": 5,
    "proud": 3,
-   "h": 62
+   "h": 62,
+   "pattern": "diamond"
   },
   "ground": {
    "type": "shop",
@@ -2503,7 +2569,12 @@
   "top": {
    "type": "deco",
    "h": 200
-  }
+  },
+  "families": [
+   "decobrick",
+   "industrial",
+   "buff"
+  ]
  },
  {
   "key": "B51",
@@ -2546,7 +2617,12 @@
   "top": {
    "type": "deco",
    "h": 260
-  }
+  },
+  "families": [
+   "gothic",
+   "deco",
+   "pwa"
+  ]
  },
  {
   "key": "B52",
@@ -2581,7 +2657,8 @@
   "spandrel": {
    "mat": 1,
    "proud": 2,
-   "h": 72
+   "h": 72,
+   "pattern": "chevron"
   },
   "ground": {
    "type": "arcade",
@@ -2592,7 +2669,12 @@
   "top": {
    "type": "parapet",
    "h": 160
-  }
+  },
+  "families": [
+   "zigzag",
+   "decobrick",
+   "stripped"
+  ]
  },
  {
   "key": "B53",
@@ -2636,7 +2718,12 @@
   "top": {
    "type": "parapet",
    "h": 90
-  }
+  },
+  "families": [
+   "blackglass",
+   "newformalism",
+   "modern"
+  ]
  },
  {
   "key": "B54",
@@ -2685,7 +2772,12 @@
   "top": {
    "type": "band",
    "h": 70
-  }
+  },
+  "families": [
+   "projectbrick",
+   "whitebrick",
+   "precast"
+  ]
  },
  {
   "key": "B55",
@@ -2749,7 +2841,12 @@
   "top": {
    "type": "deco",
    "h": 160
-  }
+  },
+  "families": [
+   "modern",
+   "glass",
+   "precast"
+  ]
  },
  {
   "key": "B56",
@@ -2821,7 +2918,12 @@
   "top": {
    "type": "band",
    "h": 100
-  }
+  },
+  "families": [
+   "rainscreen",
+   "ceramictile",
+   "gfrc"
+  ]
  },
  {
   "key": "B57",
@@ -2867,6 +2969,934 @@
   "top": {
    "type": "parapet",
    "h": 140
-  }
+  },
+  "families": [
+   "newformalism",
+   "precast",
+   "fluted"
+  ]
+ },
+ {
+  "key": "B58",
+  "label": "Unitized glass office",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Metal/Metal_BrushedWorn",
+   "trim": "Metal/Metal_Brushed",
+   "base": "Block/Block_Granite_Black",
+   "glass": "/Game/Building/Material/MI/Metal/MI_Bldg_Mirror"
+  },
+  "uv": 100,
+  "bay": 300,
+  "storey": 410,
+  "win": {
+   "ribbon": true,
+   "w": 296,
+   "h": 330,
+   "sill": 40,
+   "recess": 2,
+   "mullions": 1,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 3,
+   "caps": true,
+   "cap_depth": 22
+  },
+  "pier": {
+   "w": 4
+  },
+  "ground": {
+   "type": "shop",
+   "h": 600,
+   "bulkhead": 0.5,
+   "sign": 560,
+   "lights": 2,
+   "pier": 24
+  },
+  "top": {
+   "type": "parapet",
+   "h": 160
+  },
+  "families": [
+   "glass",
+   "silverglass",
+   "hightech",
+   "doubleskin"
+  ]
+ },
+ {
+  "key": "B59",
+  "label": "Terracotta baguette office",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Paint/PaintedMetal_Grey",
+   "trim": "Paint/PaintedMetal_Grey",
+   "base": "Block/Block_Granite_Grey",
+   "accent": "Brick/BrickOffset_Red",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
+  },
+  "uv": 100,
+  "bay": 300,
+  "storey": 400,
+  "win": {
+   "ribbon": true,
+   "w": 280,
+   "h": 300,
+   "sill": 50,
+   "recess": 4,
+   "mullions": 1,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 4
+  },
+  "feature": "baguettes",
+  "feature_all": true,
+  "baguette_spacing": 42,
+  "ground": {
+   "type": "shop",
+   "h": 560,
+   "bulkhead": 0.5,
+   "sign": 520,
+   "lights": 2,
+   "pier": 30
+  },
+  "top": {
+   "type": "parapet",
+   "h": 120
+  },
+  "families": [
+   "rainscreen",
+   "ceramictile",
+   "fluted"
+  ]
+ },
+ {
+  "key": "B60",
+  "label": "White fin office",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Paint/PaintedMetal_White",
+   "trim": "Paint/PaintedMetal_White",
+   "base": "Block/Block_Granite_White",
+   "glass": "/Game/Building/Material/MI/Metal/MI_Bldg_Mirror"
+  },
+  "uv": 100,
+  "bay": 300,
+  "storey": 400,
+  "win": {
+   "ribbon": true,
+   "w": 290,
+   "h": 320,
+   "sill": 40,
+   "recess": 3,
+   "mullions": 1,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 3,
+   "caps": true,
+   "cap_depth": 10
+  },
+  "feature": "fins",
+  "feature_all": true,
+  "fin_depth": 45,
+  "ground": {
+   "type": "shop",
+   "h": 580,
+   "bulkhead": 0.5,
+   "sign": 540,
+   "lights": 2,
+   "pier": 30
+  },
+  "top": {
+   "type": "parapet",
+   "h": 140
+  },
+  "families": [
+   "fins",
+   "sunshade",
+   "brisesoleil"
+  ]
+ },
+ {
+  "key": "B61",
+  "label": "Black glass trophy tower",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Paint/PaintedMetal_Black",
+   "trim": "Paint/PaintedMetal_Black",
+   "base": "Block/Block_Granite_Black",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
+  },
+  "uv": 100,
+  "bay": 300,
+  "storey": 420,
+  "win": {
+   "ribbon": true,
+   "w": 296,
+   "h": 360,
+   "sill": 30,
+   "recess": 2,
+   "mullions": 1,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 3,
+   "caps": true,
+   "cap_depth": 30
+  },
+  "pier": {
+   "w": 4
+  },
+  "ground": {
+   "type": "shop",
+   "h": 640,
+   "bulkhead": 0.5,
+   "sign": 600,
+   "lights": 2,
+   "pier": 30
+  },
+  "top": {
+   "type": "parapet",
+   "h": 200
+  },
+  "families": [
+   "blackglass",
+   "glass",
+   "doubleskin"
+  ]
+ },
+ {
+  "key": "B62",
+  "label": "Stone-grid office",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Block/Block_Limestone_Grey",
+   "trim": "Metal/Metal_Brushed",
+   "base": "Block/Block_Granite_Grey",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
+  },
+  "uv": 100,
+  "bay": 330,
+  "storey": 400,
+  "win": {
+   "ribbon": true,
+   "w": 260,
+   "h": 290,
+   "sill": 60,
+   "recess": 28,
+   "mullions": 1,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 4
+  },
+  "pier": {
+   "w": 70,
+   "proud": 18
+  },
+  "spandrel": {
+   "mat": 0,
+   "proud": 18,
+   "h": 50
+  },
+  "ground": {
+   "type": "shop",
+   "h": 600,
+   "bulkhead": 0.5,
+   "sign": 560,
+   "lights": 2,
+   "pier": 70
+  },
+  "top": {
+   "type": "parapet",
+   "h": 150
+  },
+  "families": [
+   "newstone",
+   "gfrc",
+   "precast"
+  ]
+ },
+ {
+  "key": "B63",
+  "label": "Glass condo, staggered balconies",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Paint/PaintedMetal_White",
+   "trim": "Paint/PaintedMetal_White",
+   "base": "Block/Block_Granite_White",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque",
+   "dark": "Paint/PaintedMetal_Grey"
+  },
+  "uv": 100,
+  "bay": 380,
+  "storey": 330,
+  "win": {
+   "ribbon": true,
+   "w": 370,
+   "h": 280,
+   "sill": 20,
+   "recess": 3,
+   "mullions": 2,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 3
+  },
+  "spandrel": {
+   "mat": 1,
+   "proud": 6,
+   "h": 30
+  },
+  "feature": "balcony",
+  "stagger": true,
+  "balcony_glass": true,
+  "balcony_depth": 170,
+  "corner_window": true,
+  "ground": {
+   "type": "shop",
+   "h": 500,
+   "bulkhead": 0.5,
+   "sign": 460,
+   "lights": 2,
+   "pier": 30
+  },
+  "top": {
+   "type": "parapet",
+   "h": 120
+  },
+  "families": [
+   "glass",
+   "blueglass",
+   "modern"
+  ]
+ },
+ {
+  "key": "B64",
+  "label": "Brooklyn metal-panel rental",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Paint/PaintedMetal_Grey",
+   "trim": "Paint/PaintedMetal_Black",
+   "base": "Concrete/Concrete",
+   "accent": "Paint/PaintedStone_Khaki",
+   "accent2": "Paint/PaintedMetal_White",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
+  },
+  "uv": 100,
+  "bay": 330,
+  "storey": 300,
+  "win": {
+   "w": 180,
+   "h": 220,
+   "sill": 40,
+   "recess": 10,
+   "mullions": 1,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 4,
+   "juliet": true
+  },
+  "panels": {
+   "three": true,
+   "vertical": true
+  },
+  "ground": {
+   "type": "shop",
+   "h": 450,
+   "bulkhead": 0.5,
+   "sign": 410,
+   "lights": 2,
+   "pier": 30
+  },
+  "top": {
+   "type": "parapet",
+   "h": 90
+  },
+  "families": [
+   "metalpanel",
+   "fibercement",
+   "corrugated"
+  ]
+ },
+ {
+  "key": "B65",
+  "label": "LIC brick rental",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Brick/BrickStacked_Grey",
+   "trim": "Paint/PaintedMetal_Black",
+   "base": "Block/Block_Granite_Black",
+   "accent": "Paint/PaintedMetal_Black",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
+  },
+  "uv": 100,
+  "bay": 320,
+  "storey": 310,
+  "win": {
+   "w": 200,
+   "h": 230,
+   "sill": 40,
+   "recess": 14,
+   "mullions": 1,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 5,
+   "box_frame": true,
+   "frame_depth": 35,
+   "frame_t": 10
+  },
+  "ground": {
+   "type": "shop",
+   "h": 480,
+   "bulkhead": 0.5,
+   "sign": 440,
+   "lights": 2,
+   "pier": 40
+  },
+  "top": {
+   "type": "parapet",
+   "h": 100
+  },
+  "families": [
+   "stackbrick",
+   "brickpier",
+   "projectbrick"
+  ]
+ },
+ {
+  "key": "B66",
+  "label": "White brick, black frames",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Brick/BrickOffset_White",
+   "trim": "Paint/PaintedMetal_Black",
+   "base": "Paint/PaintedStone_charcoal",
+   "accent": "Paint/PaintedMetal_Black",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
+  },
+  "uv": 100,
+  "bay": 330,
+  "storey": 310,
+  "win": {
+   "w": 190,
+   "h": 230,
+   "sill": 40,
+   "recess": 12,
+   "mullions": 2,
+   "transom": true,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 6,
+   "box_frame": true,
+   "frame_depth": 25,
+   "frame_t": 8
+  },
+  "feature": "balcony",
+  "feature_every": 3,
+  "balcony_depth": 120,
+  "ground": {
+   "type": "shop",
+   "h": 470,
+   "bulkhead": 0.5,
+   "sign": 430,
+   "lights": 3,
+   "pier": 40
+  },
+  "top": {
+   "type": "parapet",
+   "h": 100
+  },
+  "families": [
+   "whitebrick",
+   "brick"
+  ]
+ },
+ {
+  "key": "B67",
+  "label": "Limestone luxury condo",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Block/Block_Limestone_Beige",
+   "trim": "Block/Block_Limestone_Grey",
+   "base": "Block/Block_Granite_Grey",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque",
+   "dark": "Metal/Metal_Brass"
+  },
+  "uv": 100,
+  "bay": 360,
+  "storey": 340,
+  "win": {
+   "w": 170,
+   "h": 240,
+   "sill": 40,
+   "recess": 24,
+   "mullions": 1,
+   "transom": true,
+   "head": "plain",
+   "per_bay": 1,
+   "juliet": true,
+   "frame": 5,
+   "surround": false,
+   "apron": false
+  },
+  "pier": {
+   "w": 50,
+   "proud": 12
+  },
+  "belt_every_floor": false,
+  "quoins": false,
+  "ground": {
+   "type": "rusticated",
+   "h": 560,
+   "sill": 80,
+   "head": "plain",
+   "voussoirs": false
+  },
+  "top": {
+   "type": "cornice",
+   "h": 200,
+   "proud": 70
+  },
+  "families": [
+   "newstone",
+   "neogeorgian",
+   "stone"
+  ]
+ },
+ {
+  "key": "B68",
+  "label": "Concrete frame condo",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Concrete/Concrete",
+   "trim": "Concrete/Concrete",
+   "base": "Concrete/Concrete_Dirty",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque",
+   "dark": "Paint/PaintedMetal_Grey"
+  },
+  "uv": 100,
+  "bay": 400,
+  "storey": 320,
+  "win": {
+   "ribbon": true,
+   "w": 340,
+   "h": 260,
+   "sill": 25,
+   "recess": 30,
+   "mullions": 2,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 4
+  },
+  "pier": {
+   "w": 60,
+   "proud": 30
+  },
+  "spandrel": {
+   "mat": 0,
+   "proud": 30,
+   "h": 35
+  },
+  "feature": "balcony",
+  "stagger": true,
+  "balcony_glass": true,
+  "balcony_depth": 140,
+  "ground": {
+   "type": "shop",
+   "h": 500,
+   "bulkhead": 0.5,
+   "sign": 460,
+   "lights": 2,
+   "pier": 60
+  },
+  "top": {
+   "type": "band",
+   "h": 120
+  },
+  "families": [
+   "precast",
+   "brutalist",
+   "tiltup"
+  ]
+ },
+ {
+  "key": "B69",
+  "label": "Pop-out window condo",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Paint/PaintedStone_White",
+   "trim": "Metal/Metal_Copper",
+   "base": "Block/Block_Granite_Black",
+   "accent": "Metal/Metal_Copper",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
+  },
+  "uv": 100,
+  "bay": 350,
+  "storey": 310,
+  "win": {
+   "w": 230,
+   "h": 240,
+   "sill": 30,
+   "recess": 8,
+   "mullions": 1,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 4,
+   "box_frame": true,
+   "frame_depth": 55,
+   "frame_t": 14
+  },
+  "ground": {
+   "type": "shop",
+   "h": 480,
+   "bulkhead": 0.5,
+   "sign": 440,
+   "lights": 2,
+   "pier": 40
+  },
+  "top": {
+   "type": "parapet",
+   "h": 100
+  },
+  "families": [
+   "copperclad",
+   "pixel",
+   "goldanodized"
+  ]
+ },
+ {
+  "key": "B70",
+  "label": "Dark loft-style new build",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Brick/BrickOffset_Brown",
+   "trim": "Paint/PaintedMetal_Black",
+   "base": "Paint/PaintedMetal_Black",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
+  },
+  "uv": 100,
+  "bay": 380,
+  "storey": 360,
+  "win": {
+   "w": 280,
+   "h": 270,
+   "sill": 50,
+   "recess": 16,
+   "mullions": 3,
+   "transom": true,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": true,
+   "frame": 6,
+   "surround": false,
+   "apron": false
+  },
+  "pier": {
+   "w": 60,
+   "proud": 14
+  },
+  "spandrel": {
+   "mat": 1,
+   "proud": 2,
+   "h": 20
+  },
+  "ground": {
+   "type": "shop",
+   "h": 480,
+   "bulkhead": 30,
+   "sign": 430,
+   "lights": 3,
+   "pier": 60
+  },
+  "top": {
+   "type": "parapet",
+   "h": 110
+  },
+  "families": [
+   "brick",
+   "industrial",
+   "brickpier"
+  ]
+ },
+ {
+  "key": "B71",
+  "label": "Window-wall rental tower",
+  "group": "contemporary",
+  "mats": {
+   "wall": "Paint/PaintedMetal_Grey",
+   "trim": "Paint/PaintedMetal_White",
+   "base": "Block/Block_Granite_Grey",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque"
+  },
+  "uv": 100,
+  "bay": 300,
+  "storey": 300,
+  "win": {
+   "ribbon": true,
+   "w": 290,
+   "h": 250,
+   "sill": 25,
+   "recess": 3,
+   "mullions": 2,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 3
+  },
+  "spandrel": {
+   "mat": 1,
+   "proud": 4,
+   "h": 25
+  },
+  "corner_window": true,
+  "feature": "balcony",
+  "feature_every": 4,
+  "balcony_glass": true,
+  "balcony_depth": 120,
+  "ground": {
+   "type": "shop",
+   "h": 460,
+   "bulkhead": 0.5,
+   "sign": 420,
+   "lights": 2,
+   "pier": 30
+  },
+  "top": {
+   "type": "parapet",
+   "h": 100
+  },
+  "families": [
+   "glass",
+   "stripglass",
+   "modern"
+  ]
+ },
+ {
+  "key": "B72",
+  "label": "Garden apartments, zoned",
+  "group": "contemporary",
+  "uv": 100,
+  "mats": {
+   "wall": "Paint/PaintedMetal_Grey",
+   "trim": "Paint/PaintedMetal_White",
+   "base": "Paint/PaintedMetal_Grey",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque",
+   "dark": "Paint/PaintedMetal_Black"
+  },
+  "bay": 320,
+  "storey": 315,
+  "win": {
+   "w": 110,
+   "h": 170,
+   "sill": 75,
+   "recess": 10,
+   "mullions": 1,
+   "transom": true,
+   "head": "plain",
+   "per_bay": 2,
+   "sill_ledge": false,
+   "frame": 6
+  },
+  "zones": [
+   {
+    "mats": {
+     "wall": "Paint/PaintedMetal_Grey"
+    },
+    "proud": 0,
+    "feature": "balcony",
+    "feature_all": true,
+    "balcony_depth": 110
+   },
+   {
+    "mats": {
+     "wall": "Paint/PaintedStone_Red"
+    },
+    "proud": 45,
+    "win": {
+     "juliet": true
+    }
+   },
+   {
+    "mats": {
+     "wall": "Paint/PaintedStone_White"
+    },
+    "proud": 90,
+    "win": {
+     "per_bay": 1,
+     "w": 150
+    }
+   }
+  ],
+  "ground": {
+   "type": "plain",
+   "h": 380,
+   "sill": 80,
+   "head": "plain"
+  },
+  "top": {
+   "type": "parapet",
+   "h": 110
+  },
+  "families": [
+   "fibercement",
+   "metalpanel",
+   "stucco"
+  ]
+ },
+ {
+  "key": "B73",
+  "label": "Five-over-one podium",
+  "group": "contemporary",
+  "uv": 100,
+  "mats": {
+   "wall": "Paint/PaintedStone_charcoal",
+   "trim": "Paint/PaintedMetal_Black",
+   "base": "Block/Block_Granite_Black",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque",
+   "dark": "Paint/PaintedMetal_Black"
+  },
+  "bay": 330,
+  "storey": 310,
+  "win": {
+   "w": 150,
+   "h": 200,
+   "sill": 60,
+   "recess": 10,
+   "mullions": 1,
+   "transom": true,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 6
+  },
+  "zones": [
+   {
+    "mats": {
+     "wall": "Paint/PaintedStone_charcoal"
+    },
+    "proud": 0
+   },
+   {
+    "mats": {
+     "wall": "Paint/PaintedStone_Khaki"
+    },
+    "proud": 50,
+    "feature": "balcony",
+    "feature_all": true,
+    "balcony_depth": 120,
+    "balcony_glass": false
+   },
+   {
+    "mats": {
+     "wall": "Paint/PaintedStone_White",
+     "trim": "Paint/PaintedMetal_Black"
+    },
+    "proud": 25,
+    "win": {
+     "per_bay": 2,
+     "w": 105
+    }
+   }
+  ],
+  "ground": {
+   "type": "shop",
+   "h": 500,
+   "bulkhead": 0.5,
+   "sign": 460,
+   "lights": 3,
+   "pier": 40,
+   "awning": true
+  },
+  "top": {
+   "type": "parapet",
+   "h": 120
+  },
+  "families": [
+   "fibercement",
+   "metalpanel",
+   "rainscreen"
+  ]
+ },
+ {
+  "key": "B74",
+  "label": "Brooklyn zoned rental",
+  "group": "contemporary",
+  "uv": 100,
+  "mats": {
+   "wall": "Brick/BrickOffset_Brown",
+   "trim": "Paint/PaintedMetal_Black",
+   "base": "Paint/PaintedStone_charcoal",
+   "glass": "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque",
+   "dark": "Paint/PaintedMetal_Black"
+  },
+  "bay": 330,
+  "storey": 310,
+  "win": {
+   "w": 200,
+   "h": 220,
+   "sill": 45,
+   "recess": 10,
+   "mullions": 2,
+   "transom": true,
+   "head": "plain",
+   "per_bay": 1,
+   "sill_ledge": false,
+   "frame": 6,
+   "box_frame": false
+  },
+  "zones": [
+   {
+    "mats": {
+     "wall": "Brick/BrickOffset_Brown"
+    },
+    "proud": 0,
+    "win": {
+     "juliet": true
+    }
+   },
+   {
+    "mats": {
+     "wall": "Paint/PaintedMetal_Black",
+     "trim": "Metal/Metal_Brushed"
+    },
+    "proud": 40
+   },
+   {
+    "mats": {
+     "wall": "Brick/BrickOffset_White"
+    },
+    "proud": -30,
+    "feature": "balcony",
+    "feature_all": true,
+    "balcony_glass": true,
+    "balcony_depth": 90
+   }
+  ],
+  "ground": {
+   "type": "shop",
+   "h": 480,
+   "bulkhead": 0.5,
+   "sign": 440,
+   "lights": 2,
+   "pier": 40
+  },
+  "top": {
+   "type": "parapet",
+   "h": 100
+  },
+  "families": [
+   "brick",
+   "metalpanel",
+   "stackbrick"
+  ]
  }
 ]

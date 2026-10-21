@@ -1,0 +1,116 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B50",
+ "grammar": "generated",
+ "label": "Jazz-age garment loft",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 480.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B50/v1020234327/SM_B50_Ground_0.SM_B50_Ground_0",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B50/v1020234327/SM_B50_Ground_1.SM_B50_Ground_1",
+     "width": 304.0,
+     "depth": 50.0,
+     "y0": -304.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B50/v1020234327/SM_B50_Ground_2.SM_B50_Ground_2",
+     "width": 456.0,
+     "depth": 50.0,
+     "y0": -456.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B50/v1020234327/SM_B50_Entrance.SM_B50_Entrance",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B50/v1020234327/SM_B50_GroundCorner.SM_B50_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 400.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B50/v1020234327/SM_B50_Typical_0.SM_B50_Typical_0",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B50/v1020234327/SM_B50_Typical_1.SM_B50_Typical_1",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B50/v1020234327/SM_B50_TypicalCorner.SM_B50_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 200,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B50/v1020234327/SM_B50_Top.SM_B50_Top",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B50/v1020234327/SM_B50_TopCorner.SM_B50_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

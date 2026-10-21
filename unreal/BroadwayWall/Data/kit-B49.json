@@ -1,0 +1,117 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B49",
+ "grammar": "generated",
+ "label": "Moderne bay-window apartments",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 420.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B49/v1020234327/SM_B49_Ground_0.SM_B49_Ground_0",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B49/v1020234327/SM_B49_Ground_1.SM_B49_Ground_1",
+     "width": 264.0,
+     "depth": 50.0,
+     "y0": -264.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B49/v1020234327/SM_B49_Ground_2.SM_B49_Ground_2",
+     "width": 396.0,
+     "depth": 50.0,
+     "y0": -396.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B49/v1020234327/SM_B49_Entrance.SM_B49_Entrance",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B49/v1020234327/SM_B49_GroundCorner.SM_B49_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 300.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B49/v1020234327/SM_B49_Typical_0.SM_B49_Typical_0",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B49/v1020234327/SM_B49_Typical_1.SM_B49_Typical_1",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0,
+     "every": 3
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B49/v1020234327/SM_B49_TypicalCorner.SM_B49_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 90,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B49/v1020234327/SM_B49_Top.SM_B49_Top",
+     "width": 330.0,
+     "depth": 50.0,
+     "y0": -330.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B49/v1020234327/SM_B49_TopCorner.SM_B49_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

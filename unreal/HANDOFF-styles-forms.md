@@ -88,3 +88,24 @@ The owner wants buildings to look great: realistic NYC, nothing bland, nothing s
 - Build fails while any UnrealEditor.exe runs the game (DLL lock). The streetscape session also runs the game; wait for it, and don't kill its processes.
 - PIL is installed. Contact sheets: `scratchpad/sheet.py out.jpg cols x0,y0,x1,y1 files...`
 - The owner's PC is an i9-9900K / RTX 2080 8 GB; a new 9800X3D / 5070 Ti machine is coming.
+
+## Update, overnight 2026-10-21
+- Committed WIP on branch `claude/building-styles-forms` (pushed). Commit again after each round.
+- Massing anti-pencil rule is in (massing.mjs `done()`: tiers above 22 m need narrow width >= 12 m, or 15 m for office, and slenderness <= 1:8). The city is now no thinner than 1:2.8.
+- 70 styles (B01-B71 minus B24). Contemporary set B58-B71 (group "contemporary"), wired into the Build desk: `src/engine/styleKits.ts` comes from `unreal/tools/style-kits.mjs`; `renderView.ts` KITS spreads STYLE_KITS; KIT_GROUPS gains Contemporary; CHD/SFB are removed.
+- The Windows setting is removed from DesignPicker. FacadeBuilder now uses ONE window piece per building (Rhythm {0}); only `Every` feature bays break the run.
+- New generator features:
+  - fire-escape slats and thin stringers, `every` 4;
+  - smooth arches with archivolt and keystone;
+  - two-storey staggered modules (`stagger`, band `storeys`, read in C++);
+  - glass balconies, baguettes, box_frame, juliet, mixed metal `panels`, mullion `caps`, `corner_window`;
+  - deco spandrel `pattern` (flutes/chevron/diamond/panel);
+  - mansard and orders, from the workflow (orders field `pier.order` / `ground.order`).
+- Families are assigned for every style; `facade-families.mjs` merges them (no kit above ~5% of the city).
+- Still to do:
+  - Review r5w/r5c renders (all kits) after the latest regeneration.
+  - Regenerate again for the spandrel patterns, mansards, orders and corner windows set at 04:40, then render and review again.
+  - Thumbnails for the picker (`-KitThumbs`, default floors -> Data/kit-thumbs).
+  - Fix the competitors.mjs quiet-sale 105% issue (the seller's rec vs resolveRec).
+  - Baseline regen with a reason.
+  - PR + merge.

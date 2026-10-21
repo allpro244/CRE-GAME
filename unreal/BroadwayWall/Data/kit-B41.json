@@ -1,0 +1,139 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B41",
+ "grammar": "generated",
+ "label": "Romanesque Revival store and loft",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 560.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_Ground_0.SM_B41_Ground_0",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_Ground_1.SM_B41_Ground_1",
+     "width": 304.0,
+     "depth": 50.0,
+     "y0": -304.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_Ground_2.SM_B41_Ground_2",
+     "width": 456.0,
+     "depth": 50.0,
+     "y0": -456.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_Entrance.SM_B41_Entrance",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_GroundCorner.SM_B41_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "P",
+   "height": 470.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_Second.SM_B41_Second",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_SecondCorner.SM_B41_SecondCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "S",
+   "height": 350.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_Typical_0.SM_B41_Typical_0",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_Typical_1.SM_B41_Typical_1",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_TypicalCorner.SM_B41_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 150,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_Top.SM_B41_Top",
+     "width": 380.0,
+     "depth": 50.0,
+     "y0": -380.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B41/v1020234327/SM_B41_TopCorner.SM_B41_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

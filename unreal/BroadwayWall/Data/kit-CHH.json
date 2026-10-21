@@ -137,13 +137,6 @@
    "repeat": true,
    "walls": [
     {
-     "path": "/Game/Building/CH/H/Kit_Bldg_CHH_L4_A/Mesh/SM_BLDG_CHH_L04_A_Wall_01_N1.SM_BLDG_CHH_L04_A_Wall_01_N1",
-     "width": 125,
-     "depth": 125,
-     "y0": -125,
-     "y1": 0
-    },
-    {
      "path": "/Game/Building/CH/H/Kit_Bldg_CHH_L4_A/Mesh/SM_BLDG_CHH_L04_A_Wall_02_N1.SM_BLDG_CHH_L04_A_Wall_02_N1",
      "width": 325,
      "depth": 100,
@@ -179,13 +172,6 @@
    "height": 425,
    "repeat": true,
    "walls": [
-    {
-     "path": "/Game/Building/CH/H/Kit_Bldg_CHH_L5_A/Mesh/SM_BLDG_CHH_L05_A_Wall_01_N1.SM_BLDG_CHH_L05_A_Wall_01_N1",
-     "width": 125,
-     "depth": 125,
-     "y0": -125,
-     "y1": 0
-    },
     {
      "path": "/Game/Building/CH/H/Kit_Bldg_CHH_L5_A/Mesh/SM_BLDG_CHH_L05_A_Wall_02_N1.SM_BLDG_CHH_L05_A_Wall_02_N1",
      "width": 325,

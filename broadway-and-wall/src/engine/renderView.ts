@@ -27,6 +27,7 @@
 import type {GameState, PropertyEventKind, BuildingDesign } from "./types";
 import { START_YEAR } from "./types";
 import { ownerOf } from "./rivals";
+import { STYLE_KITS } from "./styleKits";
 
 /** Storey height the generator and both renderers build with (citygen, MapView). */
 export const FLOOR_M = 3.55;
@@ -95,7 +96,7 @@ export interface RenderView {
  * stands nearest (BuildingDesign.facade, so the browser map draws the same
  * building in its own pattern book).
  */
-export const KITS: { key: string; name: string; era: string; group: "prewar" | "interwar" | "postwar"; family: string }[] = [
+export const KITS: { key: string; name: string; era: string; group: "prewar" | "interwar" | "postwar" | "contemporary"; family: string }[] = [
   // named for what each kit builds (Unreal renders: unreal/BroadwayWall/Data/kit-thumbs)
   { key: "NYA", name: "Painted brick walk-up", era: "1880-1930", group: "prewar", family: "brick" },
   { key: "NYH", name: "Arched red brick", era: "1860-1900", group: "prewar", family: "brick" },
@@ -105,19 +106,20 @@ export const KITS: { key: string; name: string; era: string; group: "prewar" | "
   { key: "CHA", name: "Terra cotta commercial", era: "1890-1925", group: "prewar", family: "terracotta" },
   { key: "CHC", name: "Gothic terra cotta", era: "1900-1930", group: "prewar", family: "terracotta" },
   { key: "NYG", name: "Collegiate Gothic", era: "1900-1930", group: "prewar", family: "gothic" },
-  { key: "SFB", name: "Classical portico", era: "1900-1930", group: "prewar", family: "stone" },
   { key: "CHB", name: "Deco stone", era: "1925-1940", group: "interwar", family: "deco" },
   { key: "CHI", name: "Deco brick", era: "1920-1940", group: "interwar", family: "decobrick" },
-  { key: "CHD", name: "Stripped classical", era: "1930-1950", group: "interwar", family: "stone" },
   { key: "CHH", name: "Moderne, bronze bays", era: "1935-1955", group: "interwar", family: "moderne" },
   { key: "CHF", name: "Mid-century frame", era: "1945-1965", group: "postwar", family: "midcentury" },
   { key: "CHE", name: "Stone base, glass top", era: "1950-1975", group: "postwar", family: "modern" },
   { key: "SFE", name: "Modern strip", era: "1955-1990", group: "postwar", family: "modern" },
   { key: "SFC", name: "Punched grid", era: "1960-1990", group: "postwar", family: "grid" },
   { key: "CHJ", name: "Dark glass curtain wall", era: "1960-1985", group: "postwar", family: "blackglass" },
+  // (CHD and SFB were retired after review: blank slabs at any height)
+  // and Broadway & Wall's own styles, built from recipes (unreal/tools/make-styles.py)
+  ...STYLE_KITS,
 ];
 export const KIT_GROUPS: { key: (typeof KITS)[number]["group"]; name: string }[] = [
-  { key: "prewar", name: "Pre-war" }, { key: "interwar", name: "Inter-war" }, { key: "postwar", name: "Post-war" },
+  { key: "prewar", name: "Pre-war" }, { key: "interwar", name: "Inter-war" }, { key: "postwar", name: "Post-war" }, { key: "contemporary", name: "Contemporary" },
 ];
 /** Wall colours: multipliers on the kit's own wall material (its brick, stone or panel). */
 export const KIT_COLOURS: { name: string; rgb: [number, number, number] }[] = [

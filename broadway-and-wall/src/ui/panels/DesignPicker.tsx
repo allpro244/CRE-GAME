@@ -8,7 +8,7 @@
 // (MapView's design preview). Looks only — what the building costs and how it
 // wears is the build-quality dial on Programme; see BuildingDesign.
 import { useEffect, useState } from "react";
-import { KITS, KIT_GROUPS, KIT_COLOURS, KIT_BAYS } from "@/engine/renderView";
+import { KITS, KIT_GROUPS, KIT_COLOURS } from "@/engine/renderView";
 import { UNREAL_HOST } from "@/state/unrealHost";
 import type { BuildingDesign } from "@/engine/types";
 import {
@@ -319,13 +319,6 @@ function KitPicker({ design, set }: { design: BuildingDesign; set: (p: Partial<B
         <div className="btn-row" style={{ flexWrap: "wrap" }}>
           {([[undefined, "Cornice"], ["plain", "Plain parapet"]] as const).map(([k, n]) => (
             <button key={n} type="button" className={chip(design.top === k)} onClick={() => set({ top: k })}>{n}</button>
-          ))}
-        </div>
-        <div className="page-section">Windows</div>
-        <div className="btn-row" style={{ flexWrap: "wrap" }}>
-          <button type="button" className={chip(design.bays === undefined)} onClick={() => set({ bays: undefined })}>Auto</button>
-          {KIT_BAYS.map((b) => (
-            <button key={b.name} type="button" className={chip(design.bays === b.i)} onClick={() => set({ bays: b.i })}>{b.name}</button>
           ))}
         </div>
         <p className="hint">{kit.name} · {kit.era}. Looks only — the cost and how it wears are the build-quality dial on Programme.</p>

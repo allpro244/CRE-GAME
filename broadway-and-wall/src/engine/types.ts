@@ -821,6 +821,16 @@ export interface BuildingDesign {
   ground?: "shops" | "entrance" | "plain";
   top?: "cornice" | "plain";
   bays?: number;
+  /**
+   * THE BUILDING'S FORM (citygen/forms.mjs, FORMS_PLAN.md): a courtyard, a
+   * setback, a tower on a base... Unlike the rest of this record it is not
+   * looks only: the desk solves the form on the lot, and the floor area it
+   * keeps and the facade it adds (both against the plain block, measured on
+   * the same tiers Unreal draws) go to the pro forma. Absent = the plain block.
+   */
+  form?: string;
+  formRetained?: number;
+  formSkin?: number;
 }
 
 export interface DevDraft {

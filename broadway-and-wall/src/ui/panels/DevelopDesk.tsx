@@ -50,6 +50,9 @@ import { useLabel, devUseLabel, Row, LocSplitHint, Verdict } from "@/ui/panels/s
  * it, in front of the player, while there is still a decision to take.
  */
 export type Stack = { retail: number; office: number; multifamily: number };
+/** A design's chosen form, as the pro forma reads it (undefined: the plain block). */
+const formOf = (d: BuildingDesign | undefined) => (d?.form ? { retained: d.formRetained ?? 1, skin: d.formSkin ?? 1 } : undefined);
+
 export function capStack(p: Stack, retailMaxPct: number): Stack {
   if (p.retail <= retailMaxPct) return p;
   const rest = p.office + p.multifamily;
@@ -331,9 +334,9 @@ export function DevelopSection({ bbl }: { bbl: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [game.month, bbl, btsUse, fl, cov, basisKey, !!prospect, btsTermDial],
   );
-  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail }, bank, spec);
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail, form: formOf(design) }, bank, spec);
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
-    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, bts, groundRetail }, bank, spec);
+    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, bts, groundRetail, form: formOf(design) }, bank, spec);
   // THE PREVIEW IS THE DELIVERY. The model on the desk is drawn from what the
   // engine will record when the building completes, not from the dials: the
   // class its mix makes it, whether that mix trades at street level, the
@@ -1235,9 +1238,9 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
     ? { retail: stack.retail / 100, office: stack.office / 100, multifamily: stack.multifamily / 100 }
     : undefined;
   const bts = game.btsProspects?.[bbl]?.use === use ? game.btsProspects[bbl] : undefined;
-  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail }, bank, spec);
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail, form: formOf(saved?.design) }, bank, spec);
   const plan = planMax
-    ? planDevelopment(game, parcels, bbl, use, fl, cov, contract, planMax.ltcMax * (saved?.ltcWant ?? 1), { mix: customMix, bts, groundRetail }, bank, spec)
+    ? planDevelopment(game, parcels, bbl, use, fl, cov, contract, planMax.ltcMax * (saved?.ltcWant ?? 1), { mix: customMix, bts, groundRetail, form: formOf(saved?.design) }, bank, spec)
     : null;
   const open = () => useStore.getState().openProperty(bbl, "build");
   const siteDebt = siteDebtAtGroundbreak(game, bbl).due;

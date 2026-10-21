@@ -692,6 +692,14 @@ function absorptionCurve(n: number): Float64Array {
   return c;
 }
 
+/**
+ * The exterior closure's share of a building's hard cost (RSMeans square-foot
+ * models, division B20 "exterior enclosure": about 12-18% for mid- and
+ * high-rise; 15% taken). A form with more wall per square foot pays for the
+ * extra wall in proportion; the rest of the building does not change.
+ */
+export const EXTERIOR_CLOSURE_SHARE = 0.15;
+
 export interface ProFormaInput {
   use: DevUse;
   floors: number;
@@ -704,6 +712,8 @@ export interface ProFormaInput {
     shell?: boolean;
     /** This project's hard cost against the market index — see `projectCostMult` (dev.ts). */
     costMult?: number;
+    /** A chosen building form (BuildingDesign.form): floor area kept and facade per sf, against the plain block. */
+    form?: { retained: number; skin: number };
   };
   /**
    * The floor area the scheme may reach, as FAR. The desk plans against the
@@ -778,12 +788,19 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // gross; you let rentable. The core, the two stairs, the risers and the
   // corridor take a bite out of every floor that is mostly FIXED — so a big
   // plate gives up a tenth of itself and a narrow one gives up a third.
-  const plate = rec.lotArea * cov;
+  // A FORM keeps less floor than the block it is cut from (a court, a
+  // setback's terraces) and wraps it in more wall: both measured on the
+  // form's own tiers (citygen/forms.mjs formMetrics), 1 for the plain block
+  // (never above 1: a podium that fills the lot past the scheme's coverage
+  // is not floor area the coverage limit lets it have)
+  const formKept = custom?.form ? clampP(custom.form.retained, 0.3, 1) : 1;
+  const formSkin = custom?.form ? clampP(custom.form.skin, 0.8, 3) : 1;
+  const plate = rec.lotArea * cov * formKept;
   // GROSS is what we store and what zoning/cost read. Rentable is what you
   // let — `rentableRatio`, not the plate-efficiency INDEX (median = 1.0),
   // which is why every new building's income used to be struck on cores.
   const envelope = rec.lotArea * (o.envelopeFar ?? farMaxFor(rec));
-  const gsf = Math.round(Math.min(rec.lotArea * cov * fl, envelope) / 100) * 100;
+  const gsf = Math.round(Math.min(rec.lotArea * cov * fl * formKept, envelope) / 100) * 100;
   const rentable = Math.round((gsf * rentableRatio(plate, fl)) / 100) * 100;
   if (rentable < 2000) return null;
 
@@ -804,7 +821,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // the budget is the sum of the jobs, not a number attached to a label
   // ...priced on GROSS. You pay for the core; you do not let it.
   const specK = specCostMult(spec);
-  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl)) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK * (custom?.costMult ?? 1));
+  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl)) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK * (custom?.costMult ?? 1) * (1 + EXTERIOR_CLOSURE_SHARE * (formSkin - 1)));
   const softCost = Math.round(hardCost * SOFT_COST);
   const demo = !o.asIfVacant && rec.bldgArea > 0 ? Math.round(rec.bldgArea * 12 * econ.costIdx) : 0;
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);

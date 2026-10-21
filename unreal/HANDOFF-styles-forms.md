@@ -158,3 +158,16 @@ Open questions and next ideas (visual):
   - the 14-colour BW palette (make-mats.py);
   - `-KitZoom` < 0.3 = kerb-height view.
 - Baseline: 27 of 45 metrics moved with plan 13 (and forms now price). Regenerate deliberately after the suite (`pnpm baseline`), with the reason (plan 13 lettable plates; forms are opt-in, so no default change).
+
+## Update, ~07:00 2026-10-21: PR open
+- PR allpro244/CRE-GAME#410 (branch claude/building-styles-forms). Full suite green (investor-reporting and loc-pays-note fixed for scope); city-accept 3/3.
+- BASELINE deliberately NOT regenerated: 26/45 moved (office rent idx +42%, land med +42%, retail rent −25%). Follow-up card "Attribute baseline moves before resetting BASELINE" proposed.
+- Plates are now office 12 m / other 11 m (15/12 halved the mid-rises).
+- Perf: Nanite is now set on the asset in make-styles.py and make-roof.py (the create option silently didn't). 1080p city 29.6 ms. Facade component count is in the build log.
+- Last additions:
+  - clear glass over lit rooms on punched windows;
+  - rooftop plant in rows scaled to the roof;
+  - block-coherent style picks;
+  - contemporary crowns;
+  - faceted bays B88-B89.
+- Catalog sheets: unreal/shots/catalog-*.jpg (104 styles incl. City Sample).

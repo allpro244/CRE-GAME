@@ -87,4 +87,6 @@ export const STYLE_KITS: { key: string; name: string; era: string; group: "prewa
   { key: "B85", name: "Brick warehouse with docks", era: "1850-1915", group: "prewar", family: "industrial" },
   { key: "B86", name: "Metal-panel logistics", era: "1995-2025", group: "contemporary", family: "tiltup" },
   { key: "B87", name: "Self-storage", era: "1995-2025", group: "contemporary", family: "selfstorage" },
+  { key: "B88", name: "Faceted-bay brick condo", era: "1945-1995", group: "postwar", family: "brick" },
+  { key: "B89", name: "Sawtooth glass tower", era: "1995-2025", group: "contemporary", family: "blackglass" },
 ];

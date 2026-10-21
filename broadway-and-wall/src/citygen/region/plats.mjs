@@ -30,7 +30,7 @@ export const PLAT_GEN = "region-plat/1";
 export const ERA_YEARS = { prewar: [1905, 1939], postwar: [1946, 1975], recent: [1985, 2020] };
 // [S, approximate] two-storey share: pre-war foursquares and bungalows mixed, post-war mostly ranches, recent mostly two
 export const TWO_STOREY = { prewar: 0.6, postwar: 0.25, recent: 0.7 };
-const HOUSE = { prewar: [7, 11], postwar: [9, 13], recent: [10, 14] };
+const HOUSE = { prewar: [7, 11], postwar: [9, 13], recent: [10, 14], grid: [9, 13] };
 
 /**
  * The plat for a recipe: { seed, tract: [x0,y0,x1,y1] (canonical m), era, id, bearing? }.
@@ -93,10 +93,12 @@ export function platFor(recipe, ok = () => true) {
     }
   };
 
-  if (era === "prewar") {
+  if (era === "prewar" || era === "grid") {
+    // ("grid": the land developer's plat, landdev.ts — the player's chosen lot size, 1:1.8, 600 ft blocks, no alley)
+    const G = era === "grid", gFront = G ? Math.sqrt((recipe.lotSf ?? 7500) / 1.8) : 0;
     // a grid with uneven blocks: block length and lot width per plat, the odd jogged cross street, alleys in most
-    const front = rng.range(30, 50) * FT * FS, depth = rng.range(100, 130) * FT * DS, alley = rng() < 0.65 ? 16 * FT : 0;
-    const blockLen = rng.range(400, 700) * FT, pitch = 2 * depth + alley + ROW;
+    const front = G ? gFront * FT : rng.range(30, 50) * FT * FS, depth = G ? gFront * 1.8 * FT : rng.range(100, 130) * FT * DS, alley = !G && rng() < 0.65 ? 16 * FT : 0;
+    const blockLen = G ? 600 * FT : rng.range(400, 700) * FT, pitch = 2 * depth + alley + ROW;
     const n = Math.max(1, Math.round((2 * halfV) / pitch));
     const crossAt = []; // positions along u of the cross streets, shared by every street of the plat (a grid), each jogged a little
     for (let s = -half + rng.range(0.3, 0.7) * blockLen; s < half; s += blockLen * rng.range(0.8, 1.2)) crossAt.push(s);
@@ -107,7 +109,7 @@ export function platFor(recipe, ok = () => true) {
       lotsAlong(pl, front, depth, j === 0 ? [1] : j === n ? [-1] : [1, -1], crossAt.map((a) => a + half));
     }
     for (const a of crossAt) {
-      const jog = rng() < 0.2 ? rng.range(-12, 12) : 0;   // platted off-line by a later owner
+      const jog = !G && rng() < 0.2 ? rng.range(-12, 12) : 0;   // platted off-line by a later owner
       streets.push([P(a, -halfV), P(a, 0), P(a + jog, 0.001), P(a + jog, halfV)]);
     }
   } else if (era === "postwar") {

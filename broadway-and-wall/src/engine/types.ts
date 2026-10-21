@@ -1201,6 +1201,36 @@ export interface GroundLease {
   builtM?: number;
 }
 
+/** A tract's rezoning from agriculture to a residential district (landdev.ts). */
+export interface EntitlementApplication {
+  bbl: string;
+  filedM: number;
+  decideM: number;
+  cost: number;
+  odds: number;
+  lotSf: number;
+  /** the lots the preliminary plat shows, as filed */
+  lots: number;
+}
+
+/**
+ * A SUBDIVISION, AS A RECIPE (landdev.ts). The lots are regenerated from this
+ * record on every load — the parent tract, the lot size and each lot's area
+ * and frontage — so a three-hundred-lot plat costs one record in a save.
+ */
+export interface PlatRecord {
+  parent: string;
+  template: "grid";
+  lotSf: number;
+  startM: number;
+  doneM: number;
+  /** horizontal development: streets, water, sewer, power, and the impact fees */
+  cost: number;
+  /** each lot: area (sf), frontage and depth (ft) — the geometry is redrawn from the tract by citygen */
+  lots: { a: number; f: number; d: number }[];
+  done?: boolean;
+}
+
 export interface VarianceApplication {
   bbl: string;
   filedM: number;
@@ -3797,6 +3827,15 @@ export interface GameState {
   varianceLog?: Record<string, { m: number; granted: boolean; far: number; cost: number }>;
   /** Pending hearings keyed by property; separate sites may run concurrently. */
   varianceApps?: Record<string, VarianceApplication>;
+  // ---- LAND DEVELOPMENT (landdev.ts; the region map, Phase 2) ----
+  /** Rezoning applications in front of the board, keyed by tract. */
+  entitlementApps?: Record<string, EntitlementApplication>;
+  /** Tracts the board rezoned: their new district and envelope (resolveRec applies it). */
+  rezoned?: Record<string, { zone: string; far: number; lotSf: number; m: number }>;
+  /** Subdivisions, keyed by the parent tract: the recipe that regenerates the lots, and when they finish. */
+  plats?: Record<string, PlatRecord>;
+  /** Parent tracts retired into their lots (a deed with no land left; resolveRec). */
+  platted?: Record<string, number>;
   /** @deprecated legacy single-application save; migrated on the next filing/tick. */
   varianceApp?: VarianceApplication;
   landmarks?: Record<string, number>;        // bbl -> month designated

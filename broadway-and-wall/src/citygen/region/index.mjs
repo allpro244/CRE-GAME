@@ -37,7 +37,7 @@ import { storyPrep, townFootprint } from "./story.mjs";
 import { placeOuter } from "./outer.mjs";
 import { townConfig, villageConfig } from "./town.mjs";
 import { makeFrame } from "./frame.mjs";
-import { packBits, PLAT_GEN, ERA_YEARS } from "./plats.mjs";
+import { packBits, PLAT_GEN, ERA_YEARS, platFor } from "./plats.mjs";
 
 export const REGION = "region";
 // A fictional place on the Public Land Survey (central Illinois). Only the
@@ -217,17 +217,11 @@ export function makeRegion(seed, opts = {}) {
     }
   }
 
-  // ---------------- the market's substrate: one buildCityData over every ordinary parcel
-  const manifest0 = { ...town.manifest, seed, city: name, districts: { ...Object.assign({}, ...towns.map((t) => t.city.manifest.districts ?? {})), [OUTSKIRTS]: outskirtsName } };
-  // the greens, in the metres buildCityData measures in (its frame is centred on the parcels' mean vertex)
-  let mx = 0, my = 0, mn = 0;
-  for (const f of rawParcels.features) { const g = f.geometry; const ring = g.type === "MultiPolygon" ? g.coordinates[0][0] : g.coordinates[0]; for (const [x, y] of ring) { mx += x; my += y; mn++; } }
-  const bproj = makeProjection(mx / mn, my / mn);
-  const parks = towns.flatMap((t) => (t.city.parks ?? []).map((pk) => ({ ...pk, xy: bproj.toXY(proj.toLL(pk.xy)) })));
-  const data = buildCityData({ rawParcels, rawBuildings, rawStations: { type: "FeatureCollection", features: [] }, manifest: manifest0, employment, parks });
-
-  // ---------------- the neighbourhoods and the farms: reserved parcels, with their numbers
-  const SUFFIX = { prewar: ["Park", "Terrace", "Heights", "Place"], postwar: ["Village", "Gardens", "Manor", "Acres"], recent: ["Estates", "Meadows", "Reserve", "Crossing", "Ridge"] };
+  // ---------------- FARMS ARE LAND ON THE MARKET (Phase 2). A farm or woodlot tract is an ordinary parcel:
+  // zoned for agriculture (no building envelope), priced at its farm-use value (engine value.ts
+  // farmUsePsf), bought and sold like any lot, and — owned — entitled and platted into lots (engine
+  // landdev.ts, the geometry from platTractLots below). The unbuilt remainder of a partly built
+  // subdivision is a farm too, but not a whole tract, so it cannot be platted.
   const town0 = (k) => M.townMask[k] || M.townL[k];
   const outlineIn = (t, test) => {
     const [x0, y0, x1, y1] = t.r, mask = G.layer();
@@ -240,6 +234,65 @@ export function makeRegion(seed, opts = {}) {
     const simp = closedRdp(ring, CELL * 0.6);
     return simp.length >= 3 ? { ring: simp, m2: n * CELL * CELL } : null;
   };
+  const edgeD = G.bfs((k) => !!M.townMask[k]);
+  // The opening stamp of a farm's land price, $/sf: Illinois cropland $9,600/acre and woodland ~$1,470/acre
+  // (2024; the cash rents over the 2.7% ratio, USDA NASS). Only the stamp: the price itself is the engine's
+  // farmUsePsf every month, and the texture floor this stamp feeds is 30% of it, so it never sets one.
+  const FARM_STAMP = { crop: 9600 / 43560, wood: (40 / (261 / 9600)) / 43560 };
+  const farms = [];
+  for (const t of M.tracts) {
+    const rest = !!t.keep;
+    const out = rest
+      ? outlineIn(t, (k) => !M.phase[k] && !M.water[k] && !M.isSea(G.ctr(k)) && !town0(k) && !M.hwL[k] && !M.lotL[k])
+      : outlineIn(t, (k) => !M.water[k] && !M.isSea(G.ctr(k)) && !town0(k) && !M.hwL[k] && !M.lotL[k]);
+    if (!out || out.m2 < (rest ? 4 : 2) * ACRE) continue;
+    const share = (test) => { let n = 0, f = 0; const [x0, y0, x1, y1] = t.r; for (let x = x0 + 10; x < x1; x += 40) for (let y = y0 + 10; y < y1; y += 40) { const k = G.idx([x, y]); if (k < 0 || M.water[k]) continue; n++; if (test(k)) f++; } return n ? f / n : 0; };
+    const fp = share((k) => M.flood[k]), wood = t.wood || share((k) => M.forestL[k]) > 0.5;
+    const acres = out.m2 / ACRE, bbl = String(5e9 + t.id * 10 + (rest ? 1 : 0));
+    const lotSf = sf(out.m2), stamp = wood ? FARM_STAMP.wood : FARM_STAMP.crop;
+    const kc = G.idx(t.c);
+    farms.push({
+      bbl, t, out, rest, wood, acres, fp,
+      edgeM: Math.round(kc >= 0 && Number.isFinite(edgeD[kc]) ? edgeD[kc] : dist(t.c, M.centre)),
+      address: `${wood ? "Woodlot" : "Farm"} tract ${t.id} (${Math.round(acres)} ac)`, stamp,
+    });
+    rawParcels.features.push({
+      type: "Feature", id: Number(bbl), geometry: polyLL(out.ring),
+      properties: {
+        bbl, borough: "RG", block: String(t.id), lot: rest ? "1" : "0", address: `${wood ? "Woodlot" : "Farm"} tract ${t.id} (${Math.round(acres)} ac)`,
+        zonedist1: "AG", commfar: 0, resfar: 0, bldgclass: "V1", landuse: "11", lotarea: lotSf, bldgarea: 0, numfloors: 0, yearbuilt: 0,
+        assessland: Math.round(lotSf * stamp), assesstot: Math.round(lotSf * stamp), unitsres: 0,
+        cd: cfg.district, district: OUTSKIRTS, shorem: 9999, shoreamen: 0, corridorm: Math.round(Math.max(0, lotNear(ringCentroid(out.ring)))), corner: 0,
+      },
+    });
+  }
+
+  // ---------------- the market's substrate: one buildCityData over every ordinary parcel
+  const manifest0 = { ...town.manifest, seed, city: name, districts: { ...Object.assign({}, ...towns.map((t) => t.city.manifest.districts ?? {})), [OUTSKIRTS]: outskirtsName } };
+  // the greens, in the metres buildCityData measures in (its frame is centred on the parcels' mean vertex)
+  let mx = 0, my = 0, mn = 0;
+  for (const f of rawParcels.features) { const g = f.geometry; const ring = g.type === "MultiPolygon" ? g.coordinates[0][0] : g.coordinates[0]; for (const [x, y] of ring) { mx += x; my += y; mn++; } }
+  const bproj = makeProjection(mx / mn, my / mn);
+  const parks = towns.flatMap((t) => (t.city.parks ?? []).map((pk) => ({ ...pk, xy: bproj.toXY(proj.toLL(pk.xy)) })));
+  const data = buildCityData({ rawParcels, rawBuildings, rawStations: { type: "FeatureCollection", features: [] }, manifest: manifest0, employment, parks });
+
+  // the farms, as the market holds them: agricultural, no envelope, the tract they can be platted from
+  for (const f of farms) {
+    const p = data.parcels[f.bbl];
+    if (!p) continue;
+    Object.assign(p, {
+      address: f.address, zoneDist: "AG", farMaxComm: 0, farMaxRes: 0, class: "land", bldgClass: "V1",
+      landPsf: +f.stamp.toFixed(4), landPsfHistory: [+f.stamp.toFixed(4)],
+      assessedLand: Math.round(p.lotArea * f.stamp), assessedTotal: Math.round(p.lotArea * f.stamp),
+      ag: f.wood ? "wood" : "crop",
+      ...(f.rest ? {} : { tract: { seed, r: f.t.r, id: f.t.id, bearing: f.t.recipe?.bearing ?? null, edgeM: f.edgeM } }),
+      acres: +f.acres.toFixed(1), floodShare: +f.fp.toFixed(2), crop: f.wood ? null : ["row crop", "grain", "fallow"][f.t.crop % 3],
+    });
+  }
+  for (const ft of data.tileParcels.features) if (data.parcels[ft.properties.bbl]?.ag) ft.properties.ag = data.parcels[ft.properties.bbl].ag;
+
+  // ---------------- the neighbourhoods: reserved parcels, with their numbers
+  const SUFFIX = { prewar: ["Park", "Terrace", "Heights", "Place"], postwar: ["Village", "Gardens", "Manor", "Acres"], recent: ["Estates", "Meadows", "Reserve", "Crossing", "Ridge"] };
   const nbStats = [];
   for (const t of M.tracts) {
     if (!t.keep) continue;
@@ -263,27 +316,6 @@ export function makeRegion(seed, opts = {}) {
     }, out.ring, { homes });
     nbStats.push({ bbl, homes, era: t.era });
     for (const lot of built) houses3d.push({ bbl, house: true, year: t.year, cls: "multifamily", r: { c: lot.house.c, u: lot.house.u, w: lot.house.w, d: lot.house.d, z: lot.house.storeys === 2 ? 650 : 450 } });
-  }
-  for (const t of M.tracts) {
-    if (t.keep) {
-      // the unbuilt remainder of a partly built subdivision is still farmed
-      const rest = outlineIn(t, (k) => !M.phase[k] && !M.water[k] && !M.isSea(G.ctr(k)) && !town0(k) && !M.hwL[k] && !M.lotL[k]);
-      if (rest && rest.m2 > 4 * ACRE) farmRec(t, rest, true);
-      continue;
-    }
-    const out = outlineIn(t, (k) => !M.water[k] && !M.isSea(G.ctr(k)) && !town0(k) && !M.hwL[k] && !M.lotL[k]);
-    if (out && out.m2 > 2 * ACRE) farmRec(t, out, false);
-  }
-  function farmRec(t, out, rest) {
-    const fp = (() => { let n = 0, f = 0; const [x0, y0, x1, y1] = t.r; for (let x = x0 + 10; x < x1; x += 40) for (let y = y0 + 10; y < y1; y += 40) { const k = G.idx([x, y]); if (k < 0 || M.water[k]) continue; n++; if (M.flood[k]) f++; } return n ? f / n : 0; })();
-    const forest = (() => { let n = 0, f = 0; const [x0, y0, x1, y1] = t.r; for (let x = x0 + 10; x < x1; x += 40) for (let y = y0 + 10; y < y1; y += 40) { const k = G.idx([x, y]); if (k < 0 || M.water[k]) continue; n++; if (M.forestL[k]) f++; } return n ? f / n : 0; })();
-    const wood = t.wood || forest > 0.5;
-    const acres = out.m2 / ACRE;
-    reserveRec({
-      bbl: `F${t.id}${rest ? "r" : ""}`, address: `${wood ? "Woodlot" : "Farm"} tract (${Math.round(acres)} ac)`, tenure: "farm", class: "land", zoneDist: "AG",
-      district: OUTSKIRTS, districtName: outskirtsName, lotArea: sf(out.m2), bldgArea: 0, floors: 0, yearBuilt: 0,
-      acres: +acres.toFixed(1), floodShare: +fp.toFixed(2), wood, crop: wood ? null : ["row crop", "grain", "fallow"][t.crop % 3], kind: wood ? "woodlot" : "farm",
-    }, out.ring);
   }
 
   // ---------------- the drawn region: ground, roads, trees, labels, houses
@@ -423,6 +455,41 @@ export function makeRegion(seed, opts = {}) {
       townHouses: [...houseLike].length, streetTrees, trees: Math.min(TREE_CAP, trees.length),
     },
   };
+}
+
+// ---------------------------------------------------------------- platting a farm (Phase 2)
+const MODELS = new Map();
+/** The region's land model for a seed (the river, the town, the outer lots), kept for platting. */
+function regionModel(seed) {
+  let M = MODELS.get(seed);
+  if (!M) {
+    M = generateLand(seed); storyPrep(M); townFootprint(M); placeOuter(M);
+    if (MODELS.size > 2) MODELS.clear();
+    MODELS.set(seed, M);
+  }
+  return M;
+}
+
+/**
+ * THE LAND DEVELOPER'S PLAT: a farm tract (a market parcel's `tract`) cut into a grid of lots of about
+ * `lotSf`, with its local streets, kept off the water, the floodplain, the freeway and anything already
+ * standing. Deterministic from (tract, lotSf): the engine stores each lot's area and frontage (landdev.ts
+ * startPlat) and the page redraws the same lots from this on every load.
+ * Returns lots in plat order (lot n is the engine's nth lot): ring (lon/lat), a (sf), f and d (ft); and
+ * the streets as lon/lat polylines.
+ */
+export function platTractLots(tract, lotSf) {
+  const seed = tract.seed >>> 0, M = regionModel(seed), G = M.G;
+  const F = makeFrame(seed, M.S), proj = makeProjection(LONLAT[0], LONLAT[1]);
+  const LL = (p) => { const q = proj.toLL(F.toW(p)); return [+q[0].toFixed(7), +q[1].toFixed(7)]; };
+  const ok = (p) => { const k = G.idx(p); return k >= 0 && M.free(p) && !M.lotL[k] && !M.phase[k]; };
+  const plat = platFor({ seed, tract: tract.r, era: "grid", id: tract.id, bearing: tract.bearing ?? undefined, lotSf }, ok);
+  const lots = plat.lots.map((l) => {
+    const a = ringAreaAbs(l.ring) * SQFT_PER_M2, f = dist(l.front[0], l.front[1]) / FT;
+    return { ring: l.ring.map(LL), a: Math.round(a), f: Math.round(f), d: Math.round(a / Math.max(1, f)) };
+  });
+  const streets = plat.streets.map((s) => s.map(LL));
+  return { lots, streets };
 }
 
 /**

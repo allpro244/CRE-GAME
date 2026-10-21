@@ -93,6 +93,8 @@ export interface ParcelRecord {
    * tract cannot be platted whole (the unbuilt remainder of a subdivision).
    */
   tract?: { seed: number; r: [number, number, number, number]; id: number; bearing: number | null; edgeM: number };
+  /** A finished lot on a plat (landdev.ts lotRecords): homebuilders bid for it (homeprice.ts). */
+  homeLot?: boolean;
 }
 
 export type ParcelTable = Record<string, ParcelRecord>;

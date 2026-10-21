@@ -49,6 +49,7 @@
 //   which trades a block's own tenants are in and whether those trades are
 //   hiring; and whether the transit authority has funded a station within a
 //   five-minute walk. None of the three asks the player for anything.
+import { isHomeOffMarket } from "./homes";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
 import { liveDemand, useOccupancy } from "./value";
@@ -969,7 +970,10 @@ function claimCivicLot(
 }
 
 export function isCivicLand(s: GameState, bbl: string): boolean {
-  return !!s.civicLand?.[bbl];
+  // ...and, on the region map, a lot a homebuilder has a house going up on or
+  // a family has bought (homes.ts isHomeOffMarket): off the market like the
+  // town's neighbourhoods, which every loop that asks this already respects.
+  return !!s.civicLand?.[bbl] || isHomeOffMarket(s, bbl);
 }
 
 function takeCivicLots(s: GameState, model: DemandModel, parcels: ParcelTable) {

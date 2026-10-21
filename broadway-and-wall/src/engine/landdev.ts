@@ -206,6 +206,7 @@ function lotRecords(parent: ParcelRecord, plat: PlatRecord, rz: { zone: string; 
     landPsfHistory: [landPsf], imputed: [],
     lotFront: l.f, lotDepth: l.d, corner: false,
     ag: undefined, tract: undefined,
+    homeLot: true,
   }));
 }
 

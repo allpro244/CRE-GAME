@@ -397,8 +397,16 @@ export const clamp01 = (x: number) => Math.max(0, Math.min(1, x ?? 0.5));
 // (landdev.ts) — the town-wide FAR-2 floor is for town lots, not for a field.
 export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number; zoneDist?: string }): number {
   if (rec.zoneDist === "AG") return 0;
+  // A SUBURBAN DISTRICT MEANS WHAT IT SAYS. The town-wide FAR-2 floor is the
+  // island's (every downtown lot carries at least a walk-up); a rezoning to
+  // R-2 at FAR 0.6 is the board granting houses and two-flats, and flooring it
+  // at 2 handed every plat lot a three-storey apartment envelope nobody
+  // approved (landdev.ts REZONE).
+  if (LOW_DENSITY_ZONES.has(rec.zoneDist ?? "")) return Math.max(rec.farMaxComm, rec.farMaxRes);
   return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
 }
+/** Districts whose stated envelope is the envelope: the region's suburban residential zones (landdev.ts). */
+export const LOW_DENSITY_ZONES: ReadonlySet<string> = new Set(["R-2"]);
 
 /**
  * THE SAME CAP, STATED AS A SHARE, so the dial and the planner cannot hold

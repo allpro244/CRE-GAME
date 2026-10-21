@@ -26,10 +26,12 @@ const ok = (c, m) => { console.log(`  ${c ? "OK  " : "FAIL"}  ${m}`); if (!c) fa
 // test/syndicate.mjs plays), then the next seed if a re-rolled world gives
 // 9401 nothing to fund — which seed carries the deal is not under test.
 let parcels, g, lot = null;
-for (const seed of [9401, 7101, 9404, 550991]) {
+// (the lots that pencil move with the city: the plan-13 plates let a lot
+// carry more floors, so dirt prices up and the early cheap lot comes later)
+for (const seed of [9401, 7101, 9404, 550991, 9402, 9405, 12007]) {
 parcels = JSON.parse(JSON.stringify(P0));
 g = E.firstListings(E.newGame(seed, parcels, 1_000_000), parcels, bbls);
-for (let m = 0; m < 24 && !lot; m++) {
+for (let m = 0; m < 36 && !lot; m++) {
   if (g.month % 3 === 0) {
     const own0 = E.fundableNow(g, parcels);
     let pick = null;

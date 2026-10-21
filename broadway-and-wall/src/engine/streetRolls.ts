@@ -555,6 +555,23 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   // The street's buildings, listed once: the search below lets space and moves
   // tenants inside rolls, and never adds, removes or replaces a roll.
   const rollList = Object.entries(R);
+  // Each roll's empty space by use, remembered while its tenant list and its
+  // make-ready list are the arrays they were at the same lengths: in this
+  // search a roll changes only by a lease pushed on, a tenant filtered off
+  // (a new array) or a suite put to make-ready (pushed), never in place.
+  type AvailMemo = { t: Tenant[]; tl: number; r: StreetRoll["ready"]; rl: number; v: Partial<Record<Comm, number>> };
+  const availMemo = new Map<StreetRoll, AvailMemo>();
+  const availIn = (b: Bld, roll: StreetRoll, k: Comm) => {
+    const rl = roll.ready ? roll.ready.length : -1;
+    let e = availMemo.get(roll);
+    if (!e || e.t !== roll.t || e.tl !== roll.t.length || e.r !== roll.ready || e.rl !== rl) {
+      e = { t: roll.t, tl: roll.t.length, r: roll.ready, rl, v: {} };
+      availMemo.set(roll, e);
+    }
+    let v = e.v[k];
+    if (v === undefined) { v = availOf(b, roll, k); e.v[k] = v; }
+    return v;
+  };
   for (const sk of pool) {
     if (sk.tourM !== undefined && m - sk.tourM < 3) continue;          // in talks at one of the player's buildings
     if (rng(s, "leasing") > 1 / SEARCH_M[sk.use]) continue;            // still looking
@@ -572,7 +589,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       if (bbl === sk.from) continue;
       const b = blds.get(bbl) ?? bld(bbl);
       if (!b || !b.cap[k]) continue;
-      const avail = availOf(b, roll, k);
+      const avail = availIn(b, roll, k);
       const floor = minSfOf(b, k);
       if (avail < Math.max(floor, Math.min(sk.want * 0.5, avail + 1))) continue;
       const since = roll.vac?.[k];

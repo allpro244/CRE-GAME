@@ -378,28 +378,35 @@ street tree per ~2 houses.
 - Proposed-freeway right-of-way shows as bare land strips through
   subdivisions. A real reserved corridor looks like that.
 
-### Low-rise downtown by default (owner: "not dense" means the downtowns only)
+### Default export: the small-town version (owner's final call)
 
-`export-unreal.mjs` exports a small-town centre. `--dense` gives back the
-first skyline (written as `…-dense.json`).
+`export-unreal.mjs` exports a low-rise downtown and thin suburbs.
 
-**Downtown:**
+**Downtown and villages:**
 - Mostly 2–4 floors, some 5–8 near the middle, at most two towers of 10–12
-  floors.
+  floors. Villages are 1–3 floors.
 - Footprints cover 50–70% of the lot.
 - ~15% of downtown lots and ~10% of village lots are vacant or surface
   parking: a `land` parcel paved over.
+- `--dense` restores the first export's skyline.
 
-**Suburbs, farms and woods** are the generator's own, as in the SVG maps.
+**Suburbs:** the region at an earlier point in its growth.
+- A third of the urbanised-share KNOB. It was always a knob; in the game the
+  growth sim decides it.
+- Car-era growth radiates from the old towns as well as downtown.
+- Leapfrog spread σ 0.1, so growth hugs the first highways, downtown and the
+  towns.
+- `--full-suburbs` uses the SVG maps' growth instead.
+- The SVG maps are unchanged.
 
-An earlier export also thinned the suburbs, by a third of the urbanised
-KNOB, growth from the towns, and less leapfrog. The owner reversed that.
-Those options are still in `generate(seed, km, opts)` but nothing uses
-them.
+Flags combine, and each one adds a suffix to the file name (`-dense`,
+`-fullsuburbs`).
 
-**Seed 3, 10 km:** 6.6 MB, made of:
-- 21,236 volumes, of which 17,872 are houses;
-- 4,204 parcels, including 115 neighbourhoods and 512 parking or vacant lots;
+**Seed 3, 10 km (default):** 4.1 MB, made of:
+- 9,036 volumes, of which 5,672 are houses;
+- 4,204 parcels, including 46 neighbourhoods and 512 parking or vacant lots;
 - downtown floor mix: 3,329 buildings at 1–4 floors, 33 at 5–8, 2 at 11;
-- 36,867 trees;
-- 1,491 centerlines.
+- 42,944 trees;
+- 640 centerlines.
+
+With `--full-suburbs` it is 17,872 houses in 115 neighbourhoods.

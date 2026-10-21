@@ -51,13 +51,53 @@ namespace
 	constexpr double GreenT = 14, ClearT = 3, Cycle = 2 * (GreenT + ClearT);
 	constexpr double StopBack = 650;   // stop line, cm before the node
 	constexpr double CarLen = 520, MinGap = 250, TimeGap = 1.2;
-	// THE STREET'S CROSS-SECTION, kerb to kerb: a parking lane 2.4 m wide against
-	// each kerb on streets of 10 m and more, the travel lane centred in what is
-	// left on its side. One rule for both, so a moving car can never be laid out
-	// through a parked one.
+	// THE STREET'S CROSS-SECTION, kerb to kerb (measured: see Build): a parking
+	// lane 2.4 m wide against each kerb on streets of 9 m and more, the travel
+	// lane centred in what is left on its side. An 8 m two-way street has room
+	// for its two lanes and no kerb lane. One rule for both, so a moving car can
+	// never be laid out through a parked one.
 	constexpr double ParkW = 240;
-	bool HasParking(double W) { return W >= 1000; }
+	bool HasParking(double W) { return W >= 900; }
 	double TravelOffset(double W) { const double Half = W * 0.5 - (HasParking(W) ? ParkW : 0); return FMath::Max(120.0, Half * 0.5); }
+
+	/** WHERE A CAR MAY NOT STAND: the footways, medians, lawns and the lots
+	 * behind them, in a 40 m grid so a stall is tested against the few rings
+	 * near it. A centreline's width is the street's nominal kerb-to-kerb; where
+	 * the drawn street narrows, bends or meets a plaza the nominal lane runs
+	 * onto the sidewalk, and the ground is the truth. */
+	struct FNoPark
+	{
+		TArray<TArray<FVector2D>> Rings;
+		TArray<FBox2D> Boxes;
+		TMultiMap<FIntPoint, int32> Grid;
+		static constexpr double Cell = 4000;
+		FIntPoint Key(const FVector2D& P) const { return FIntPoint(FMath::FloorToInt(P.X / Cell), FMath::FloorToInt(P.Y / Cell)); }
+		void Add(const TArray<FVector2D>& R)
+		{
+			if (R.Num() < 3) return;
+			FBox2D B(ForceInit);
+			for (const FVector2D& P : R) B += P;
+			const int32 I = Rings.Add(R);
+			Boxes.Add(B);
+			const FIntPoint A = Key(B.Min), Z = Key(B.Max);
+			for (int32 x = A.X; x <= Z.X; ++x) for (int32 y = A.Y; y <= Z.Y; ++y) Grid.Add(FIntPoint(x, y), I);
+		}
+		bool Hit(const FVector2D& P) const
+		{
+			TArray<int32> Near;
+			Grid.MultiFind(Key(P), Near);
+			for (int32 I : Near)
+			{
+				if (!Boxes[I].IsInside(P)) continue;
+				const TArray<FVector2D>& R = Rings[I];
+				bool bIn = false;
+				for (int32 i = 0, j = R.Num() - 1; i < R.Num(); j = i++)
+					if ((R[i].Y > P.Y) != (R[j].Y > P.Y) && P.X < (R[j].X - R[i].X) * (P.Y - R[i].Y) / (R[j].Y - R[i].Y) + R[i].X) bIn = !bIn;
+				if (bIn) return true;
+			}
+			return false;
+		}
+	};
 
 	void Cumulate(const TArray<FVector2D>& P, TArray<double>& Cum, double& Len)
 	{
@@ -149,7 +189,47 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 		NodeAt.Add(K, N);
 		return N;
 	};
-	for (const FBWCenterline& C : City.Centerlines)
+	// THE KERB WHERE IT IS. A centreline's width from the generator is the
+	// street's right of way, footways and all (a 13 m street is ~8 m kerb to
+	// kerb), and laying the parking lane out from it put the parked cars on the
+	// sidewalk. Each street's carriageway is measured instead: out from the
+	// centreline at a few places along it to the first footway, median, lawn or
+	// lot, both sides, the median of those (a corner or a driveway is one
+	// sample, not the street).
+	// (a boulevard's centreline runs down its median, so the kerb is found
+	// from the footways and lots alone; the median still keeps cars off it)
+	FNoPark NoPark, Kerbs;
+	for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
+	{
+		const bool bKerb = L.Key == TEXT("sidewalk") || L.Key == TEXT("block");
+		if (bKerb || L.Key == TEXT("median") || L.Key == TEXT("park"))
+			for (const TArray<FVector2D>& R : L.Value) { NoPark.Add(R); if (bKerb) Kerbs.Add(R); }
+	}
+	for (const FBWParcel& P : City.Parcels) { NoPark.Add(P.Ring); Kerbs.Add(P.Ring); }
+	TArray<FBWCenterline> Streets = City.Centerlines;
+	for (FBWCenterline& C : Streets)
+	{
+		if (C.Line.Num() < 2) continue;
+		TArray<double> Half;
+		for (int32 i = 1; i < C.Line.Num(); ++i)
+		{
+			const FVector2D A = C.Line[i - 1], B = C.Line[i];
+			const double Len = (B - A).Size();
+			if (Len < 1200) continue;
+			const FVector2D D = (B - A) / Len, Rt(D.Y, -D.X);
+			for (double T : { 0.3, 0.5, 0.7 })
+			{
+				const FVector2D P = FMath::Lerp(A, B, T);
+				double Near = C.Width * 0.5;
+				for (int32 Side = -1; Side <= 1; Side += 2)
+					for (double Dd = 150; Dd < Near; Dd += 25)
+						if (Kerbs.Hit(P + Rt * (Dd * Side))) { Near = Dd; break; }
+				Half.Add(Near);
+			}
+		}
+		if (Half.Num()) { Half.Sort(); C.Width = FMath::Min(C.Width, 2 * Half[Half.Num() / 2]); }
+	}
+	for (const FBWCenterline& C : Streets)
 	{
 		if (C.Line.Num() < 2 || C.Width < 600) continue;
 		const int32 A = NodeFor(C.Line[0]), B = NodeFor(C.Line.Last());
@@ -204,9 +284,12 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 		I->RegisterComponent();
 		(Pass ? CarMeshes : ParkedMeshes).Add(I);
 	}
-	// parked cars: in the parking lane, a stall every 6.5 m, about half taken,
-	// clear of the junctions at either end (crosswalks, turning room)
-	for (const FBWCenterline& C : City.Centerlines)
+	// parked cars: in the parking lane, a stall every 6.5 m, about a third taken
+	// (a midday kerb with gaps, not a solid wall of cars seen from the air),
+	// clear of the junctions at either end (crosswalks, turning room), and only
+	// where the whole car stands on the road
+	int32 Refused = 0;
+	for (const FBWCenterline& C : Streets)
 	{
 		if (C.Line.Num() < 2 || !HasParking(C.Width) || FParse::Param(FCommandLine::Get(), TEXT("NoParked"))) continue;
 		TArray<double> Cum; double Len = 0;
@@ -215,11 +298,17 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 		for (int32 Side = -1; Side <= 1; Side += 2)
 			for (double S = 1100; S < Len - 1100; S += 650)
 			{
-				if (Rng.FRand() > 0.5) continue;
+				if (Rng.FRand() > 0.35) continue;
 				FVector2D Dir;
 				const FVector2D P = AlongPath(C.Line, Cum, S, &Dir);
 				const FVector2D Right(Dir.Y, -Dir.X);
 				const FVector2D At2 = P + Right * Kerb * Side;
+				// the car's footprint, 4.8 m by 1.8 m, all on the carriageway
+				bool bClear = true;
+				for (int32 a = -1; a <= 1 && bClear; ++a)
+					for (int32 b = -1; b <= 1 && bClear; b += 2)
+						bClear = !NoPark.Hit(At2 + Dir * (240.0 * a) + Right * (90.0 * b));
+				if (!bClear) { ++Refused; continue; }
 				// parked facing the traffic on its side of the street
 				const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)) + (Side > 0 ? 0 : 180);
 				UInstancedStaticMeshComponent* M = ParkedMeshes[PickCar(Rng, NumModels)];
@@ -227,14 +316,15 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 				++Parked;
 			}
 	}
+	UE_LOG(LogBWLife, Display, TEXT("parking: %d stalls refused (off the carriageway)"), Refused);
 	int32 Signals = 0;
 	for (const FNode& N : Nodes) Signals += N.bSignal ? 1 : 0;
-	// off-peak downtown: about one car per 90 m of lane, spaced along it
+	// off-peak downtown: about one car per 130 m of lane, spaced along it
 	for (int32 l = 0; l < Lanes.Num(); ++l)
 	{
 		FLane& L = Lanes[l];
 		if (L.Len < 2500) continue;
-		const int32 Count = FMath::FloorToInt(L.Len / 9000.0 * Rng.FRandRange(0.5, 1.5));
+		const int32 Count = FMath::FloorToInt(L.Len / 13000.0 * Rng.FRandRange(0.5, 1.5));
 		for (int32 n = 0; n < Count; ++n)
 		{
 			FCar C;
@@ -286,8 +376,9 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 		auto Path = [&V](const FString& N) { return V + N + TEXT(".") + N; };
 		for (int32 w = 0; w < Walks.Num(); ++w)
 		{
-			// a person every ~35 m of sidewalk, walking either way round the block
-			const int32 Count = FMath::FloorToInt(Walks[w].Len / 3500.0 * Rng.FRandRange(0.4, 1.6));
+			// a person every ~18 m of sidewalk, walking either way round the block
+			// (a downtown weekday: busy enough to read as a living street from above)
+			const int32 Count = FMath::FloorToInt(Walks[w].Len / 1800.0 * Rng.FRandRange(0.4, 1.6));
 			for (int32 n = 0; n < Count; ++n)
 			{
 				FPerson P;

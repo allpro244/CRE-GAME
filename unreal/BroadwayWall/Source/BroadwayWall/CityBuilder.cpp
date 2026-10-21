@@ -40,7 +40,9 @@ namespace
 				// the lot instance is a sun-bleached grey; a city street is darker,
 				// and cool: the grade warms the highlights, and a neutral tint
 				// printed as brown dirt
-				Road->SetVectorParameterValue(TEXT("BaseColor Tint"), FLinearColor(0.33f, 0.34f, 0.37f));
+				// (0.33 still printed tan in summer sun, one sheet with the
+				// sidewalks: asphalt is the darkest thing on a street)
+				Road->SetVectorParameterValue(TEXT("BaseColor Tint"), FLinearColor(0.22f, 0.23f, 0.26f));
 				for (int32 i = 0; i < 3; ++i) Base->GetScalarParameterValue(FHashedMaterialParameterInfo(RoadWet[i]), RoadDry[i]);
 			}
 		return Road;
@@ -60,6 +62,33 @@ namespace
 			}
 		return Grass;
 	}
+	/** Street trees in leaf (tools/make-trees.py), one dynamic leaf material so the season can colour them. */
+	const TCHAR* const LeafTreeMeshes[] = {
+		TEXT("/Game/BW/Trees/SM_LeafTree_Round.SM_LeafTree_Round"),
+		TEXT("/Game/BW/Trees/SM_LeafTree_Upright.SM_LeafTree_Upright"),
+		TEXT("/Game/BW/Trees/SM_LeafTree_Spread.SM_LeafTree_Spread") };
+	UMaterialInstanceDynamic* Leaves = nullptr;
+	UMaterialInstanceDynamic* BWLeafMaterial()
+	{
+		if (!Leaves)
+			if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Leaves.M_BW_Leaves")))
+			{
+				Leaves = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
+				Leaves->AddToRoot();
+			}
+		return Leaves;
+	}
+	/** The tree sets the season switches between: bare (City Sample's) and in leaf. */
+	TArray<TWeakObjectPtr<UInstancedStaticMeshComponent>> BareTrees, LeafTrees;
+	int32 SeasonMonth = 5;
+	void ShowTrees()
+	{
+		// in leaf mid-April to late November, bare December to March
+		const bool bLeaf = SeasonMonth >= 3 && SeasonMonth <= 10;
+		const bool bHave = LeafTrees.ContainsByPredicate([](const TWeakObjectPtr<UInstancedStaticMeshComponent>& C) { return C.IsValid(); });
+		for (const TWeakObjectPtr<UInstancedStaticMeshComponent>& C : BareTrees) if (C.IsValid()) C->SetVisibility(!bLeaf || !bHave);
+		for (const TWeakObjectPtr<UInstancedStaticMeshComponent>& C : LeafTrees) if (C.IsValid()) C->SetVisibility(bLeaf);
+	}
 }
 
 void ACityBuilder::SetSeasonGrass(int32 MonthOfYear)
@@ -74,6 +103,22 @@ void ACityBuilder::SetSeasonGrass(int32 MonthOfYear)
 		{ 1.12f, 1.0f, 0.9f },   { 1.3f, 1.05f, 0.9f },   { 1.05f, 1.02f, 0.95f }, // Jul Aug Sep
 		{ 1.2f, 1.05f, 0.95f },  { 1.55f, 1.12f, 1.25f }, { 1.85f, 1.15f, 1.5f } };// Oct Nov Dec
 	if (BWGrassMaterial()) Grass->SetVectorParameterValue(TEXT("Season"), ByMonth[((MonthOfYear % 12) + 12) % 12]);
+	// The street trees: April's fresh yellow-green, summer's full green, a
+	// little dusty by August, turning through October, russet and thinning in
+	// November (the leaf material's Season tint and Autumn 0..1).
+	static const FLinearColor LeafTint[12] = {
+		{ 1, 1, 1 }, { 1, 1, 1 }, { 1, 1, 1 },
+		{ 1.35f, 1.3f, 0.9f }, { 1.12f, 1.12f, 0.95f }, { 1, 1, 1 },
+		{ 1, 0.98f, 0.95f }, { 1.05f, 0.97f, 0.9f }, { 1.05f, 0.98f, 0.9f },
+		{ 1, 1, 1 }, { 0.85f, 0.8f, 0.8f }, { 1, 1, 1 } };
+	static const float Autumn[12] = { 0, 0, 0, 0, 0, 0, 0, 0, 0.12f, 0.6f, 1.0f, 1.0f };
+	SeasonMonth = ((MonthOfYear % 12) + 12) % 12;
+	if (BWLeafMaterial())
+	{
+		Leaves->SetVectorParameterValue(TEXT("Season"), LeafTint[SeasonMonth]);
+		Leaves->SetScalarParameterValue(TEXT("Autumn"), Autumn[SeasonMonth]);
+	}
+	ShowTrees();
 }
 
 void ACityBuilder::SetWetness(float Wet)
@@ -166,8 +211,10 @@ namespace
 					if (Base->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Amt FM")), V)) Harbour->SetScalarParameterValue(TEXT("Amt FM"), V * 0.35f);
 					// (still read Caribbean at 0.5/0.7/0.66: the harbour off a big
 					// city is olive-grey, the colour of silt and plankton)
-					Harbour->SetScalarParameterValue(TEXT("Desat CR"), 0.6f);
-					Harbour->SetVectorParameterValue(TEXT("Tint CR"), FLinearColor(0.40f, 0.52f, 0.47f));
+					// On a fair day it takes the sky's blue on top of that: a
+					// little less desaturated, a little bluer than the overcast olive.
+					Harbour->SetScalarParameterValue(TEXT("Desat CR"), 0.45f);
+					Harbour->SetVectorParameterValue(TEXT("Tint CR"), FLinearColor(0.36f, 0.50f, 0.55f));
 				}
 			return Harbour;
 		}
@@ -473,6 +520,70 @@ void ACityBuilder::BuildGround()
 		Z += 1;
 		if (bRaised) FootZ = FMath::Max(FootZ, Zl);
 	}
+	// THE OPEN PART OF A LOT. Every lot's ground used to be the same tan
+	// paving under the building, which from the air made the city one sheet.
+	// What is round a building in life depends on what the building is: an
+	// apartment block keeps a lawn or a paved court, an office tower a stone
+	// plaza, a store a parking apron, a works a worn yard, and a vacant lot
+	// gravel, packed dirt or weeds. Each lot's cover is drawn from its use, the
+	// pick by lot (a hash of its BBL, so a lot keeps its ground across
+	// rebuilds); the building stands on it, so only the open part shows.
+	{
+		enum ECover { Lawn, Plaza, ConcLight, ConcDark, Asphalt, Gravel, Worn, Dirt, Meadow, NumCovers };
+		struct FShare { ECover C; float W; };
+		static const TArray<FShare> Res = { { Lawn, 0.45f }, { ConcLight, 0.22f }, { Plaza, 0.15f }, { ConcDark, 0.12f }, { Asphalt, 0.06f } };
+		static const TArray<FShare> Off = { { Plaza, 0.45f }, { ConcLight, 0.30f }, { Lawn, 0.20f }, { Asphalt, 0.05f } };
+		static const TArray<FShare> Ret = { { Asphalt, 0.50f }, { ConcLight, 0.28f }, { Worn, 0.15f }, { Plaza, 0.07f } };
+		static const TArray<FShare> Ind = { { Worn, 0.45f }, { Asphalt, 0.30f }, { Gravel, 0.25f } };
+		static const TArray<FShare> Land = { { Gravel, 0.30f }, { Meadow, 0.30f }, { Dirt, 0.20f }, { Worn, 0.20f } };
+		FMeshBuf Cov[NumCovers];
+		for (FMeshBuf& Cb : Cov) { Cb.UVScale = 400.0; Cb.bStrict = true; }
+		const double Zp = FootZ + 2;
+		for (const FBWParcel& P : City.Parcels)
+		{
+			if (P.Ring.Num() < 3) continue;
+			const TArray<FShare>& T = P.Cls == TEXT("multifamily") ? Res : P.Cls == TEXT("office") ? Off : P.Cls == TEXT("retail") ? Ret : P.Cls == TEXT("industrial") ? Ind : Land;
+			float U = float(HashCombine(GetTypeHash(P.Bbl), 0x9e3779b9u) % 1000u) / 1000.f;
+			ECover C = T.Last().C;
+			for (const FShare& Sh : T) { if (U < Sh.W) { C = Sh.C; break; } U -= Sh.W; }
+			Cov[C].AddCap(P.Ring, Zp, FLinearColor::White);
+		}
+		auto Tinted = [](const TCHAR* Path, const TCHAR* Param, const FLinearColor& Tint) -> UMaterialInterface*
+		{
+			UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, Path);
+			if (!Base) return nullptr;
+			UMaterialInstanceDynamic* D = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
+			D->SetVectorParameterValue(Param, Tint);
+			D->AddToRoot();
+			return D;
+		};
+		static UMaterialInterface* CovMat[NumCovers] = {};
+		if (!CovMat[Plaza])
+		{
+			const TCHAR* Walk = TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS");
+			// (City Sample's plaza paving reads as a 10 m checkerboard from the air:
+			// a forecourt here is pale limestone pavers, the footway's slab warmed)
+			CovMat[Plaza] = Tinted(Walk, TEXT("BaseColor_Tint"), FLinearColor(0.80f, 0.74f, 0.64f));
+			CovMat[ConcLight] = Tinted(Walk, TEXT("BaseColor_Tint"), FLinearColor(0.68f, 0.67f, 0.64f));
+			CovMat[ConcDark] = Tinted(Walk, TEXT("BaseColor_Tint"), FLinearColor(0.50f, 0.48f, 0.45f));
+			CovMat[Asphalt] = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots"));
+			CovMat[Gravel] = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Gravel.M_BW_Gravel"));
+			CovMat[Worn] = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_WornConcrete.M_BW_WornConcrete"));
+			CovMat[Dirt] = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Dirt.M_BW_Dirt"));
+			// a lot gone to seed: rank, darker and browner than a kept lawn
+			if (UMaterialInterface* G = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Grass.M_BW_Grass")))
+			{
+				UMaterialInstanceDynamic* D = UMaterialInstanceDynamic::Create(G, GetTransientPackage());
+				D->SetVectorParameterValue(TEXT("GrassDark"), FLinearColor(0.030f, 0.036f, 0.016f));
+				D->SetVectorParameterValue(TEXT("GrassLight"), FLinearColor(0.085f, 0.080f, 0.040f));
+				D->AddToRoot();
+				CovMat[Meadow] = D;
+			}
+		}
+		CovMat[Lawn] = BWGrassMaterial();
+		for (int32 c = 0; c < NumCovers; ++c)
+			if (Cov[c].V.Num()) { Cov[c].Emit(Ground, Section++, false); Mats.Add(CovMat[c]); }
+	}
 	// THE WATERFRONT. The island's edge was a paving cap laid on the sea: from
 	// any angle but straight down the city floated. A harbour city stands on a
 	// bulkhead, a concrete wall two metres down into the water, with an iron
@@ -641,9 +752,14 @@ void ACityBuilder::BuildVolumes()
 			SetPiece(Vol);
 			if (Vol.bVacant && !Vol.bFrame && !Vol.bCleared && Vol.Ring.Num() >= 3)
 			{
-				// AN EMPTY LOT DOWNTOWN IS A CAR PARK until somebody builds on it
-				Lots.AddCap(Vol.Ring, 8, FLinearColor::White);
-				ParkLot(Vol, GetTypeHash(Vol.Bbl));
+				// AN EMPTY LOT DOWNTOWN IS OFTEN A CAR PARK until somebody builds on
+				// it: about half of them, paved and striped with cars; the rest
+				// show the lot's own ground (gravel, dirt, weeds: BuildGround)
+				if (GetTypeHash(Vol.Bbl) % 100u < 55u)
+				{
+					Lots.AddCap(Vol.Ring, FootZ + 4, FLinearColor::White);
+					ParkLot(Vol, GetTypeHash(Vol.Bbl));
+				}
 				continue;
 			}
 			// with the facades on, a piece too low to dress (a stair bulkhead, a
@@ -1284,14 +1400,67 @@ void ACityBuilder::ClearRoofProps()
 void ACityBuilder::BuildStreetProps()
 {
 	FRandomStream Rng(int32(City.Seed) ^ 0x51ee7);
-	// trees where the generator planted them, each in a cast-iron grate
-	for (const FVector2D& P : City.Trees)
+	// a tree, bare and in leaf (the season shows one), in a cast-iron grate
+	TSet<FIntPoint> Planted;   // 6 m cells: no two trees in one
+	auto Cell = [](const FVector2D& P) { return FIntPoint(FMath::FloorToInt(P.X / 600.0), FMath::FloorToInt(P.Y / 600.0)); };
+	auto Plant = [&](const FVector2D& P, double Z, double S0, double S1)
 	{
+		Planted.Add(Cell(P));
 		const FRotator R(0, Rng.FRandRange(0, 360), 0);
-		const double S = Rng.FRandRange(0.85, 1.15);
-		AddProp(TreeMeshes[Rng.RandRange(0, 2)], FTransform(R, FVector(P, 4), FVector(S)), false);
-		AddProp(TEXT("/Game/Prop/Kit_TreeBase_A/Mesh/SM_TreeBase_SquareGrill_A.SM_TreeBase_SquareGrill_A"), FTransform(R, FVector(P, 3)), false);
+		const double S = Rng.FRandRange(S0, S1);
+		AddProp(TreeMeshes[Rng.RandRange(0, 2)], FTransform(R, FVector(P, Z), FVector(S)), false);
+		// the same tree in leaf: a block's trees mostly one species, as a city plants them
+		const uint32 Block = HashCombine(GetTypeHash(FMath::FloorToInt(P.X / 9000.0)), GetTypeHash(FMath::FloorToInt(P.Y / 9000.0)));
+		const int32 Species = Rng.FRand() < 0.7f ? int32(Block % 3) : Rng.RandRange(0, 2);
+		AddProp(LeafTreeMeshes[Species], FTransform(R, FVector(P, Z), FVector(S)), false);
+		AddProp(TEXT("/Game/Prop/Kit_TreeBase_A/Mesh/SM_TreeBase_SquareGrill_A.SM_TreeBase_SquareGrill_A"), FTransform(R, FVector(P, Z - 1)), false);
+	};
+	// trees where the generator planted them
+	for (const FVector2D& P : City.Trees) Plant(P, 4, 0.85, 1.15);
+	// STREET TREES. The generator plants its parks and boulevards; a city's
+	// forestry department plants every sidewalk wide enough for a pit: one
+	// every ~9 m, a metre in from the kerb, clear of the corners (sight lines
+	// at the crosswalk) and of the mid-block bus stop, where a building does
+	// not come out to the kerb. About three pits in four hold a tree.
+	if (FPackageName::DoesPackageExist(TEXT("/Game/BW/Trees/SM_LeafTree_Round")))
+		for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
+		{
+			if (L.Key != TEXT("sidewalk")) continue;
+			for (const TArray<FVector2D>& R : L.Value)
+			{
+				const int32 N = R.Num();
+				if (N < 3) continue;
+				double Area2 = 0;
+				for (int32 i = 0; i < N; ++i) Area2 += R[i].X * R[(i + 1) % N].Y - R[(i + 1) % N].X * R[i].Y;
+				for (int32 i = 0; i < N; ++i)
+				{
+					const FVector2D A = R[i], B = R[(i + 1) % N];
+					const double Len = (B - A).Size();
+					if (Len < 2400) continue;
+					const FVector2D Dir = (B - A) / Len;
+					const FVector2D Out = Area2 > 0 ? FVector2D(Dir.Y, -Dir.X) : FVector2D(-Dir.Y, Dir.X);
+					const int32 Count = FMath::FloorToInt((Len - 1200) / 900);
+					for (int32 k = 0; k < Count; ++k)
+					{
+						const double T = 600 + (Len - 1200) * (k + 0.5) / Count;
+						if (FMath::Abs(T - Len * 0.5) < 700 && Len > 6000) continue;   // the bus stop's place
+						const FVector2D P = A + Dir * T - Out * 90;
+						// room for the pit and a clear walk behind it (these are
+						// 2.5 m footways: a 90 cm pit at the kerb leaves ~1.5 m)
+						if (ParcelAt(P) || ParcelAt(P - Out * 120) || Planted.Contains(Cell(P)) || Rng.FRand() > 0.75) continue;
+						Plant(P, 15, 0.75, 0.95);
+					}
+				}
+			}
+		}
+	BareTrees.Reset(); LeafTrees.Reset();
+	for (const TCHAR* T : TreeMeshes) if (TObjectPtr<UInstancedStaticMeshComponent>* C = StreetProps.Find(T)) if (*C) BareTrees.Add(C->Get());
+	for (const TCHAR* T : LeafTreeMeshes) if (TObjectPtr<UInstancedStaticMeshComponent>* C = StreetProps.Find(T)) if (*C)
+	{
+		if (BWLeafMaterial()) (*C)->SetMaterial(1, Leaves);
+		LeafTrees.Add(C->Get());
 	}
+	ShowTrees();
 	// street lamps along every curb (the sidewalk's outer edge), ~25 m apart, facing the street
 	for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
 	{
@@ -1312,7 +1481,8 @@ void ACityBuilder::BuildStreetProps()
 				const int32 Count = FMath::Max(1, FMath::FloorToInt(Len / 2500));
 				for (int32 k = 0; k < Count; ++k)
 				{
-					const FVector2D P = A + Dir * (Len * (k + 0.5) / Count) - Out * 70; // 70 cm in from the kerb
+					FVector2D P = A + Dir * (Len * (k + 0.5) / Count) - Out * 70; // 70 cm in from the kerb
+					if (Planted.Contains(Cell(P))) P += Dir * 450;                 // between two street trees
 					if (ParcelAt(P)) continue; // a narrow corner: the kerb line runs up against a building
 					const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Out.Y, Out.X));
 					AddProp(TEXT("/Game/Prop/Kit_StreetLamp_B/Mesh/SM_StreetLamp_B.SM_StreetLamp_B"), FTransform(FRotator(0, Yaw, 0), FVector(P, 15)), false);
@@ -1627,7 +1797,8 @@ void ACityBuilder::DressRoof(const FBWVolume& V, uint32 Seed)
 void ACityBuilder::ParkLot(const FBWVolume& V, uint32 Seed)
 {
 	// rows of stalls along the lot's first edge, 2.6 m wide, 5.5 m deep, a 7 m aisle
-	// between facing rows; a weekday downtown lot runs about two thirds full
+	// between facing rows; about half full (midday, between the commuters' cars and
+	// the shoppers'), so the lot reads as stalls and not a solid sheet of roofs
 	const TArray<FVector2D> In = BWInsetRing(V.Ring, 150);
 	if (In.Num() < 3) return;
 	const FVector2D Ax = (V.Ring[1] - V.Ring[0]).GetSafeNormal();
@@ -1641,8 +1812,8 @@ void ACityBuilder::ParkLot(const FBWVolume& V, uint32 Seed)
 		for (double A = MinA + 130; A < MaxA - 130; A += 260)
 		{
 			const FVector2D P = Ax * A + Ay * B;
-			if (!InsideRing(In, P) || Rng.FRand() > 0.66) continue;
-			AddProp(CarMeshes[Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - 1)], FTransform(FRotator(0, Yaw + (Row % 2 ? 0 : 180), 0), FVector(P, 8)), true);
+			if (!InsideRing(In, P) || Rng.FRand() > 0.45) continue;
+			AddProp(CarMeshes[Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - 1)], FTransform(FRotator(0, Yaw + (Row % 2 ? 0 : 180), 0), FVector(P, FootZ + 8)), true);
 		}
 }
 

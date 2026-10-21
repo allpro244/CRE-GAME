@@ -1,0 +1,677 @@
+<title>Broadway &amp; Wall UI Revamp</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a review sheet. Each core screen is a fixed 1600x900 game frame, scaled to the column, with what changed beside it. */
+:root {
+  --bg: #f3efe4; --surface: #fbf8f0; --fg: #2b251a; --dim: #6b6250; --rule: #d9cfb8; --accent: #9a6c14; --accent-soft: rgba(176,127,30,.14); --good: #2f6f3c; --bad: #9c3b2a;
+  --display: "Newsreader", "Iowan Old Style", Palatino, Georgia, serif;
+  --body: "IBM Plex Sans", system-ui, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  /* game frame palette (fixed: it is a picture of the game, not page chrome) */
+  --g-ink: #1d1a14; --g-ink2: #2b2619; --g-paper: #f6f1e2; --g-paper2: #ebe3cf; --g-line: #d4c7a6; --g-dim: #6b6250; --g-gold: #c8952c; --g-teal: #2f7a72; --g-red: #a8402e; --g-green: #3a7d46; --g-amber: #8a5620;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #171510; --surface: #201d16; --fg: #ece5d3; --dim: #a69c86; --rule: #3a3428; --accent: #d9a648; --accent-soft: rgba(217,166,72,.16); --good: #79b884; --bad: #e08a74; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #171510; --surface: #201d16; --fg: #ece5d3; --dim: #a69c86; --rule: #3a3428; --accent: #d9a648; --accent-soft: rgba(217,166,72,.16); --good: #79b884; --bad: #e08a74; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 80px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 4.4vw, 46px); line-height: 1.08; }
+h2 { font-size: clamp(22px, 2.6vw, 28px); }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.lede { max-width: 68ch; color: var(--dim); font-size: 16px; margin: 12px 0 0; }
+header.top { display: grid; gap: 10px; padding-bottom: 24px; border-bottom: 1px solid var(--rule); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 20px; }
+.fact { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+.fact b { display: block; font: 600 22px/1.2 var(--mono); font-variant-numeric: tabular-nums; }
+.fact span { color: var(--dim); font-size: 13px; }
+nav.screens { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); display: flex; gap: 6px; overflow-x: auto; padding-block: 12px; border-bottom: 1px solid var(--rule); scrollbar-width: thin; }
+nav.screens a { flex: none; font: 500 13px/1 var(--body); color: var(--fg); text-decoration: none; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface); }
+nav.screens a:hover, nav.screens a:focus-visible { border-color: var(--accent); outline: none; }
+nav.screens a .k { font-family: var(--mono); color: var(--accent); margin-right: 6px; }
+section.screen { padding-top: 40px; display: grid; gap: 14px; scroll-margin-top: 64px; }
+.screen-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
+.screen-head p { margin: 0; color: var(--dim); max-width: 70ch; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px 28px; }
+.notes > div { min-width: 0; }
+.notes h3 { font-size: 16px; margin-bottom: 4px; }
+.notes ul { margin: 0; padding-left: 18px; color: var(--fg); }
+.notes li { margin: 3px 0; }
+.clicks { font-family: var(--mono); font-size: 13px; }
+.clicks .was { color: var(--bad); text-decoration: line-through; }
+.clicks .now { color: var(--good); font-weight: 500; }
+table.cmp { border-collapse: collapse; width: 100%; font-size: 14px; }
+.tablebox { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+table.cmp th, table.cmp td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+table.cmp td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+table.cmp tr:last-child td { border-bottom: 0; }
+.ex { font-size: 12px; color: var(--dim); }
+
+/* ---------- the game frame ---------- */
+.viewport { position: relative; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; border: 1px solid var(--rule); background: #39505a; }
+.frame { position: absolute; left: 0; top: 0; width: 1600px; height: 900px; transform: scale(var(--s, .5)); transform-origin: 0 0; font-family: var(--body); font-size: 14px; color: var(--g-ink); background: #39505a center / cover no-repeat; }
+.frame.city { background-image: url("city-downtown.jpg"); }
+.frame.city2 { background-image: url("city-oblique.jpg"); }
+.mono, .frame .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* HUD bar */
+.hud { position: absolute; left: 0; right: 0; top: 0; height: 52px; background: var(--g-ink); color: var(--g-paper); display: flex; align-items: stretch; }
+.hud .firm { width: 64px; display: grid; place-items: center; background: var(--g-ink2); }
+.logo { width: 30px; height: 30px; border-radius: 6px; background: var(--g-gold); color: var(--g-ink); display: grid; place-items: center; font: 600 13px/1 var(--display); }
+.hud .clock { display: flex; align-items: center; gap: 8px; padding: 0 16px; border-right: 1px solid #3a3326; }
+.hud .date { font: 600 18px/1 var(--display); margin-right: 6px; }
+.hbtn { height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid #4a4230; background: transparent; color: var(--g-paper); font: 500 13px/1 var(--body); display: inline-flex; align-items: center; gap: 6px; }
+.hbtn.primary { background: var(--g-gold); border-color: var(--g-gold); color: var(--g-ink); font-weight: 600; }
+.hud .vitals { display: flex; flex: 1; }
+.vital { padding: 8px 16px; border-right: 1px solid #3a3326; display: grid; align-content: center; gap: 2px; }
+.vital small { font: 500 10px/1 var(--mono); letter-spacing: .08em; color: #b8ac90; text-transform: uppercase; }
+.vital b { font: 500 16px/1 var(--mono); font-variant-numeric: tabular-nums; }
+.vital i { font-style: normal; font-size: 11px; margin-left: 4px; }
+.up { color: #7fc38c; } .down { color: #e58c76; }
+.hud .right { display: flex; align-items: center; gap: 8px; padding: 0 14px; }
+.scope { display: flex; border: 1px solid #4a4230; border-radius: 6px; overflow: hidden; }
+.scope span { padding: 7px 12px; font: 500 12px/1 var(--body); color: #b8ac90; }
+.scope span.on { background: #3a3326; color: var(--g-paper); }
+.search { width: 220px; height: 32px; border-radius: 6px; background: #2c271d; color: #b8ac90; display: flex; align-items: center; padding: 0 10px; font-size: 13px; justify-content: space-between; }
+.kbd { font: 500 11px/1 var(--mono); border: 1px solid #4a4230; border-radius: 4px; padding: 3px 5px; color: #b8ac90; }
+.inboxbtn { position: relative; }
+.badge { min-width: 18px; height: 18px; border-radius: 9px; background: var(--g-red); color: #fff; font: 600 11px/18px var(--mono); text-align: center; padding: 0 5px; }
+/* rail */
+.rail { position: absolute; left: 0; top: 52px; bottom: 0; width: 64px; background: var(--g-ink); display: flex; flex-direction: column; align-items: center; padding-top: 10px; gap: 4px; }
+.rail .it { width: 52px; padding: 8px 0 6px; border-radius: 8px; color: #b8ac90; display: grid; justify-items: center; gap: 4px; font: 500 10px/1 var(--body); position: relative; }
+.rail .it svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+.rail .it.on { background: #3a3326; color: var(--g-paper); }
+.rail .it .kk { position: absolute; top: 3px; right: 5px; font: 500 9px/1 var(--mono); color: #7d735d; }
+.rail .it .dot { position: absolute; top: 6px; left: 9px; width: 7px; height: 7px; border-radius: 50%; background: var(--g-red); }
+.rail .sep { width: 32px; height: 1px; background: #3a3326; margin: 6px 0; }
+.rail .foot { margin-top: auto; margin-bottom: 10px; }
+/* drawer */
+.drawer { position: absolute; top: 52px; bottom: 0; right: 0; background: var(--g-paper); border-left: 1px solid var(--g-line); display: flex; flex-direction: column; box-shadow: -8px 0 24px rgba(0,0,0,.25); }
+.drawer.std { width: 540px; }
+.drawer.wide { width: 1060px; }
+.dhead { padding: 16px 22px 0; display: grid; gap: 4px; }
+.crumbs { font: 500 11px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--g-dim); display: flex; gap: 6px; align-items: center; }
+.dtitle { display: flex; align-items: center; gap: 10px; }
+.dtitle h4 { margin: 0; font: 600 26px/1.15 var(--display); }
+.chip { font: 500 11px/1 var(--body); padding: 5px 8px; border-radius: 999px; border: 1px solid var(--g-line); background: #fffaf0; white-space: nowrap; }
+.chip.gold { background: rgba(200,149,44,.18); border-color: rgba(200,149,44,.6); }
+.chip.teal { background: rgba(47,122,114,.12); border-color: rgba(47,122,114,.5); color: #1f5a54; }
+.chip.red { background: rgba(168,64,46,.12); border-color: rgba(168,64,46,.5); color: #7f2c1e; }
+.chip.green { background: rgba(58,125,70,.12); border-color: rgba(58,125,70,.5); color: #275a31; }
+.chip.ghost { border-style: dashed; color: var(--g-dim); background: transparent; }
+.x { margin-left: auto; width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--g-line); display: grid; place-items: center; color: var(--g-dim); }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--g-line); margin-top: 12px; }
+.tabs span { padding: 10px 14px; font: 500 13px/1 var(--body); color: var(--g-dim); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs span.on { color: var(--g-ink); border-color: var(--g-gold); }
+.tabs span .badge { display: inline-block; margin-left: 4px; height: 16px; line-height: 16px; min-width: 16px; font-size: 10px; }
+.dbody { flex: 1; overflow: hidden; padding: 16px 22px; display: grid; align-content: start; gap: 14px; }
+.dfoot { border-top: 1px solid var(--g-line); background: var(--g-paper2); padding: 12px 22px; display: flex; align-items: center; gap: 10px; }
+.btn { height: 36px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--g-line); background: #fffaf0; font: 500 13px/1 var(--body); display: inline-flex; align-items: center; gap: 6px; color: var(--g-ink); white-space: nowrap; }
+.btn.primary { background: var(--g-ink); color: var(--g-paper); border-color: var(--g-ink); font-weight: 600; }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+.btn.gold { background: var(--g-gold); border-color: var(--g-gold); font-weight: 600; }
+.strip { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--g-line); border-radius: 8px; background: #fffaf0; }
+.strip > div { padding: 10px 14px; border-right: 1px solid var(--g-line); display: grid; gap: 4px; }
+.strip > div:last-child { border-right: 0; }
+.strip small { font: 500 10px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--g-dim); }
+.strip b { font: 500 18px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.strip em { font-style: normal; font-size: 11px; color: var(--g-dim); }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 7px 16px; font-size: 13px; }
+.kv span:nth-child(odd) { color: var(--g-dim); }
+.kv span:nth-child(even) { font-family: var(--mono); text-align: right; }
+.sect { font: 600 15px/1 var(--display); display: flex; align-items: baseline; gap: 8px; }
+.sect small { font: 400 12px/1 var(--body); color: var(--g-dim); }
+.filters { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.filters .chip.on { background: var(--g-ink); color: var(--g-paper); border-color: var(--g-ink); }
+.input { height: 32px; border: 1px solid var(--g-line); border-radius: 6px; background: #fffaf0; padding: 0 10px; display: flex; align-items: center; color: var(--g-dim); font-size: 13px; min-width: 240px; }
+table.dt { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.dt th { text-align: left; font: 500 10px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--g-dim); padding: 8px 10px; border-bottom: 1px solid var(--g-line); background: var(--g-paper2); }
+table.dt td { padding: 9px 10px; border-bottom: 1px solid #e3d9c2; white-space: nowrap; }
+table.dt td.n, table.dt th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+table.dt tr.sel td { background: rgba(200,149,44,.14); }
+table.dt td .sub { display: block; font-size: 11px; color: var(--g-dim); }
+.rowact { display: flex; gap: 4px; justify-content: flex-end; }
+.tfoot { display: flex; justify-content: space-between; font: 400 12px/1 var(--mono); color: var(--g-dim); padding-top: 4px; }
+.neg { color: var(--g-red); } .pos { color: var(--g-green); }
+/* inbox panel */
+.inbox { position: absolute; top: 64px; left: 76px; width: 420px; background: var(--g-paper); border: 1px solid var(--g-line); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.3); overflow: hidden; }
+.inbox .ih { padding: 12px 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--g-line); }
+.inbox .ih b { font: 600 17px/1 var(--display); }
+.item { padding: 11px 14px; border-bottom: 1px solid #e3d9c2; display: grid; grid-template-columns: 8px 1fr; gap: 4px 10px; }
+.item:last-child { border-bottom: 0; }
+.sev { width: 4px; border-radius: 2px; grid-row: span 3; }
+.sev.r { background: var(--g-red); } .sev.a { background: var(--g-gold); } .sev.t { background: var(--g-teal); }
+.item .t { font-size: 13px; font-weight: 500; }
+.item .m { font-size: 12px; color: var(--g-dim); }
+.item .a { display: flex; gap: 6px; margin-top: 4px; }
+/* 3D overlays */
+.pick { position: absolute; border: 2px solid var(--g-gold); border-radius: 4px; box-shadow: 0 0 0 4000px rgba(10,10,6,.0), 0 0 18px rgba(200,149,44,.8); }
+.tag3d { position: absolute; background: var(--g-ink); color: var(--g-paper); padding: 7px 10px; border-radius: 6px; font-size: 12px; display: grid; gap: 2px; box-shadow: 0 6px 16px rgba(0,0,0,.35); }
+.tag3d b { font-weight: 600; font-size: 13px; }
+.tag3d .num { color: #e7c77d; }
+.pin { position: absolute; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+.pin.sale { background: var(--g-gold); } .pin.mine { background: var(--g-teal); } .pin.dist { background: var(--g-red); }
+.lenses { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--g-ink); border-radius: 10px; padding: 6px; display: flex; gap: 4px; }
+.lenses span { color: #b8ac90; font: 500 12px/1 var(--body); padding: 8px 12px; border-radius: 6px; display: flex; gap: 6px; align-items: center; }
+.lenses span.on { background: #3a3326; color: var(--g-paper); }
+.lenses i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.toast { position: absolute; bottom: 78px; left: 50%; transform: translateX(-50%); background: var(--g-paper); border: 1px solid var(--g-line); border-radius: 8px; padding: 10px 14px; font-size: 13px; box-shadow: 0 8px 20px rgba(0,0,0,.3); display: flex; gap: 10px; align-items: center; }
+/* stage board */
+.board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.lane { background: var(--g-paper2); border-radius: 8px; padding: 8px; display: grid; align-content: start; gap: 8px; min-height: 300px; }
+.lane h5 { margin: 2px 4px 2px; font: 500 11px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--g-dim); display: flex; justify-content: space-between; }
+.card { background: #fffaf0; border: 1px solid var(--g-line); border-radius: 7px; padding: 9px 10px; display: grid; gap: 4px; font-size: 12px; }
+.card b { font-size: 13px; }
+.card .row { display: flex; justify-content: space-between; color: var(--g-dim); }
+.card .row .num { color: var(--g-ink); }
+.bar { height: 5px; background: #e3d9c2; border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--g-teal); }
+.lanegroup { display: grid; gap: 6px; }
+.lanegroup > .lbl { font: 600 14px/1 var(--display); display: flex; gap: 8px; align-items: center; }
+.ghostlane { border: 1.5px dashed var(--g-line); border-radius: 8px; padding: 12px; color: var(--g-dim); font-size: 12px; display: flex; gap: 12px; align-items: center; }
+/* charts (svg) */
+.chartbox { border: 1px solid var(--g-line); border-radius: 8px; background: #fffaf0; padding: 10px 12px; display: grid; gap: 6px; }
+.chartbox .ct { display: flex; justify-content: space-between; font-size: 12px; color: var(--g-dim); }
+.chartbox .ct b { font: 500 15px/1 var(--mono); color: var(--g-ink); }
+.cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cols3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.news { display: grid; gap: 0; border: 1px solid var(--g-line); border-radius: 8px; background: #fffaf0; }
+.news div { padding: 10px 12px; border-bottom: 1px solid #e3d9c2; display: grid; gap: 3px; }
+.news div:last-child { border-bottom: 0; }
+.news small { font: 500 10px/1 var(--mono); color: var(--g-dim); letter-spacing: .06em; text-transform: uppercase; }
+.news b { font: 600 14px/1.25 var(--display); }
+.stepper { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--g-dim); }
+.stepper span { display: flex; gap: 6px; align-items: center; }
+.stepper i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 600 11px/1 var(--mono); font-style: normal; border: 1px solid var(--g-line); }
+.stepper .on i { background: var(--g-ink); color: var(--g-paper); border-color: var(--g-ink); }
+.stepper .on { color: var(--g-ink); font-weight: 500; }
+.stepper .ln { width: 24px; height: 1px; background: var(--g-line); }
+.seg { display: flex; border: 1px solid var(--g-line); border-radius: 6px; overflow: hidden; background: #fffaf0; }
+.seg span { padding: 8px 12px; font-size: 12px; border-right: 1px solid var(--g-line); }
+.seg span:last-child { border-right: 0; }
+.seg span.on { background: var(--g-ink); color: var(--g-paper); }
+.region-map { position: absolute; top: 52px; left: 64px; right: 0; bottom: 0; background: #b9cfd2; }
+.region-map svg { width: 100%; height: 100%; display: block; }
+@media (prefers-reduced-motion: no-preference) { nav.screens a { transition: border-color .15s; } }
+</style>
+
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow">Design proposal · for owner review · not built yet</div>
+  <h1>Broadway &amp; Wall, simpler and faster</h1>
+  <p class="lede">Five places instead of fifteen, one drawer at a time beside the city instead of a room over it, and the jobs you do most cut to one to four clicks. Below: what was measured, then the eight core screens drawn over the Unreal city. Figures in the frames are example numbers from a test save (a 50-building firm in 2012), not your game.</p>
+  <div class="facts">
+    <div class="fact"><b>15 → 5</b><span>top-level places in the side rail, plus Inbox and search</span></div>
+    <div class="fact"><b>1.2 s</b><span>to open Buildings today: every deed in town is re-appraised on each visit</span></div>
+    <div class="fact"><b>~300 ms</b><span>of top-bar math after every month, mostly re-ranking all 72 rival firms twice</span></div>
+    <div class="fact"><b>6–7 → 3</b><span>clicks to buy a listed building (with a saved financing preset)</span></div>
+  </div>
+</header>
+
+<nav class="screens" aria-label="Screens">
+  <a href="#map"><span class="k">0</span>The map of places</a>
+  <a href="#city"><span class="k">1</span>City + Inbox</a>
+  <a href="#building"><span class="k">2</span>Building file</a>
+  <a href="#holdings"><span class="k">3</span>Holdings</a>
+  <a href="#pipeline"><span class="k">4</span>Pipeline</a>
+  <a href="#market"><span class="k">5</span>Market</a>
+  <a href="#capital"><span class="k">6</span>Capital</a>
+  <a href="#intel"><span class="k">7</span>City intel</a>
+  <a href="#region"><span class="k">8</span>Region (later)</a>
+</nav>
+
+<section class="screen" id="map">
+  <div class="screen-head"><h2>Where everything goes</h2><p>Every page that exists today keeps a home. Nothing is deleted; fifteen rail entries fold into five places, each with at most five tabs.</p></div>
+  <div class="tablebox"><table class="cmp">
+    <thead><tr><th>New place (key)</th><th>Tabs</th><th>What it absorbs from today</th></tr></thead>
+    <tbody>
+      <tr><td><b>Inbox</b> (I)</td><td>Needs you · Later · Done</td><td>Docket, card queue, deferred decision cards, at-risk banner, Deals “On the table” and “Tenants asking”, alerts</td></tr>
+      <tr><td><b>Holdings</b> (1)</td><td>Buildings · Leasing · Returns</td><td>Portfolio, Leasing, Returns to date, portfolio sale desk; each row opens the Building file</td></tr>
+      <tr><td><b>Pipeline</b> (2)</td><td>Buying · Building · Selling · <i>Land (region)</i></td><td>Deals (LOIs, talks, sales), schemes in progress, developments by stage, listings you placed</td></tr>
+      <tr><td><b>Market</b> (3)</td><td>For sale · All buildings · Sites · Distressed · Books</td><td>Marketplace, Buildings database, Notes, Site finder, street books, auctions</td></tr>
+      <tr><td><b>Capital</b> (4)</td><td>Overview · Loans · Lenders · Investors · Books</td><td>Debt, Line of credit, Banks, Investors (syndicate, fund), Books (balance, P&amp;L, cash, tax)</td></tr>
+      <tr><td><b>City</b> (5)</td><td>Markets · News · Players · Rankings · Your record</td><td>Markets, Pulse (folded into Markets), Tape, Players, Rankings, The Record</td></tr>
+      <tr><td><b>Building file</b> (click in 3D)</td><td>Overview · Rent roll · Money · Build · History</td><td>Docked parcel card and the Property page, merged into one drawer</td></tr>
+      <tr><td>Rail foot</td><td>Saves · Settings · Primer</td><td>Unchanged; Map-only and Photo stay as keys M and P</td></tr>
+    </tbody></table></div>
+</section>
+
+<!-- 1 CITY + INBOX -->
+<section class="screen" id="city">
+  <div class="screen-head"><span class="eyebrow">Screen 1</span><h2>City, with the Inbox open</h2><p>The default. The 3D city fills the window; the HUD answers “am I OK?” on one line, now including total debt. Everything that wants a decision is in one Inbox, and most items can be answered right there.</p></div>
+  <div class="viewport"><div class="frame city">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 month</span><span class="hbtn">+1 year</span></div>
+      <div class="vitals">
+        <div class="vital"><small>Cash</small><b>$78.1M</b></div>
+        <div class="vital"><small>Debt</small><b>$64.0M</b></div>
+        <div class="vital"><small>Net worth</small><b>$221.9M<i class="up">▲ $600K</i></b></div>
+        <div class="vital"><small>Cash flow / yr</small><b>$7.16M<i class="down">▼ $155K</i></b></div>
+        <div class="vital"><small>Rank</small><b>1st / 62</b></div>
+        <div class="vital"><small>10Y</small><b>4.86%<i class="down">recession</i></b></div>
+      </div>
+      <div class="right">
+        <div class="scope"><span class="on">Island</span><span>Region</span></div>
+        <div class="search">Search buildings, firms, actions <span class="kbd">Ctrl K</span></div>
+      </div>
+    </div>
+    <div class="rail">
+      <div class="it on"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox<span class="kk">I</span></div>
+      <div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings<span class="kk">1</span></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline<span class="kk">2</span></div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market<span class="kk">3</span></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital<span class="kk">4</span></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City<span class="kk">5</span></div>
+      <div class="it foot"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>Settings</div>
+    </div>
+    <div class="inbox">
+      <div class="ih"><b>Inbox</b><span class="badge">4</span><span class="chip" style="margin-left:auto">Needs you</span><span class="chip ghost">Later 2</span></div>
+      <div class="item"><span class="sev r"></span><div class="t">Balloon due in 5 months: 85 State St</div><div class="m">$11.2M at 6.1%. Lenders are quoting 7.4% today.</div><div class="a"><span class="btn sm primary">Refinance…</span><span class="btn sm">Open file</span><span class="btn sm">Later</span></div></div>
+      <div class="item"><span class="sev a"></span><div class="t">Harborcast Studios asks to renew 18,400 sf</div><div class="m">14 New Court St · $31.50/sf, 5 yrs, 3 mo free. Market is $33.78.</div><div class="a"><span class="btn sm primary">Accept</span><span class="btn sm">Counter…</span><span class="btn sm">Decline</span></div></div>
+      <div class="item"><span class="sev a"></span><div class="t">Offer for 418 Old Milk St: $9.6M</div><div class="m">From Pell &amp; Ward. Your value $9.12M, ask $9.9M.</div><div class="a"><span class="btn sm primary">Take it</span><span class="btn sm">Counter…</span><span class="btn sm">Open deal</span></div></div>
+      <div class="item"><span class="sev t"></span><div class="t">Motivated seller: 844 Old Trinity Pl</div><div class="m">$342K ask, 11.4% going-in, 91% let.</div><div class="a"><span class="btn sm">Show in city</span><span class="btn sm">Open file</span></div></div>
+    </div>
+    <span class="pin sale" style="left:880px;top:410px"></span>
+    <span class="pin mine" style="left:640px;top:300px"></span><span class="pin mine" style="left:1010px;top:520px"></span><span class="pin mine" style="left:760px;top:600px"></span>
+    <span class="pin dist" style="left:1240px;top:350px"></span>
+    <div class="tag3d" style="left:900px;top:380px"><b>844 Old Trinity Pl</b><span>Office · 4 fl · for sale</span><span class="num">$342K · 11.4%</span></div>
+    <div class="lenses"><span class="on"><i style="background:#c8952c"></i>For sale</span><span class="on"><i style="background:#2f7a72"></i>Mine</span><span><i style="background:#a8402e"></i>Distressed</span><span>Vacant lots</span><span>Rents</span><span>Demand</span></div>
+  </div></div>
+  <div class="notes">
+    <div><h3>What changed</h3><ul><li>The HUD is one 52px row in ink, readable over any part of the city. Debt is on it.</li><li>One Inbox replaces the docket, the card queue and the at-risk banner. Cards still stop the clock when it matters, and “Later” files them here.</li><li>Lenses are a bar at the bottom and tint the 3D city (needs a new <code>lens</code> message to Unreal).</li><li>Island / Region scope switch reserves the place for the metro mode.</li></ul></div>
+    <div><h3>Clicks</h3><ul class="clicks"><li>Cash and debt: <span class="was">0 + 1</span> <span class="now">0</span></li><li>Advance a month: <span class="now">1</span> (Space)</li><li>Answer a tenant letter: <span class="was">3</span> <span class="now">1</span></li></ul></div>
+  </div>
+</section>
+
+<!-- 2 BUILDING FILE -->
+<section class="screen" id="building">
+  <div class="screen-head"><span class="eyebrow">Screen 2</span><h2>Building file, buying in place</h2><p>Click any building in 3D and its file opens as a 540px drawer on the right; the city stays visible and the building stays lit. The docked card and the full Property page become one thing. The verbs live in a footer that never scrolls away.</p></div>
+  <div class="viewport"><div class="frame city">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 month</span><span class="hbtn">+1 year</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b>$78.1M</b></div><div class="vital"><small>Debt</small><b>$64.0M</b></div><div class="vital"><small>Net worth</small><b>$221.9M</b></div><div class="vital"><small>Cash flow / yr</small><b>$7.16M</b></div></div>
+      <div class="right"><div class="inboxbtn hbtn">Inbox <span class="badge">4</span></div><div class="search" style="width:180px">Search <span class="kbd">Ctrl K</span></div></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="pick" style="left:612px;top:262px;width:62px;height:98px"></div>
+    <div class="drawer std">
+      <div class="dhead">
+        <div class="crumbs">Market › For sale › <span style="color:var(--g-ink)">844 Old Trinity Pl</span></div>
+        <div class="dtitle"><h4>844 Old Trinity Pl</h4><span class="chip gold">For sale</span><span class="x">✕</span></div>
+        <div style="font-size:13px;color:var(--g-dim)">Office · 4 floors · 9,860 sf · built 1961 · worn · seller: Carrow Holdings (voluntary)</div>
+        <div class="tabs"><span class="on">Overview</span><span>Rent roll</span><span>Money</span><span>Build</span><span>History</span></div>
+      </div>
+      <div class="dbody">
+        <div class="strip"><div><small>Ask</small><b>$342K</b><em>$35/sf</em></div><div><small>Going-in</small><b>11.4%</b><em>on ask</em></div><div><small>Leased</small><b>91%</b><em>4 tenants</em></div><div><small>Appraised</small><b>$449K</b><em>−24% ask</em></div></div>
+        <div class="sect">Why it is cheap <small>seller listed 3 months, expires in 9</small></div>
+        <div class="kv"><span>In-place rent</span><span>$18.40/sf</span><span>Market rent</span><span>$21.10/sf</span><span>NOI (in place)</span><span>$39.0K</span><span>Rolling within 2 years</span><span class="neg">48% of the roll</span><span>Condition</span><span>worn · $41K to bring to fair</span><span>Neighbourhood demand</span><span>77 · rising</span></div>
+        <div class="sect">Pay for it with</div>
+        <div class="seg"><span>All cash</span><span class="on">Bank 65% · 6.9%</span><span>Bridge 75%</span><span>Custom…</span></div>
+        <div class="kv"><span>Equity in</span><span>$128K incl. closing</span><span>Debt service / yr</span><span>$19.6K</span><span>Cash-on-cash yr 1</span><span class="pos">15.2%</span></div>
+      </div>
+      <div class="dfoot">
+        <div class="stepper"><span class="on"><i>1</i>Price</span><span class="ln"></span><span><i>2</i>Confirm</span></div>
+        <span style="margin-left:auto" class="btn">Offer $310K…</span><span class="btn primary">Pay ask $342K ▸</span>
+      </div>
+    </div>
+    <div class="toast"><span>Tip: <b>B</b> buys at ask with your default financing.</span></div>
+  </div></div>
+  <div class="notes">
+    <div><h3>What changed</h3><ul><li>One drawer for any building, owned or not. Tabs show only when they apply (Build appears for lots and owned buildings).</li><li>Financing is a preset picker on the same screen as the price; “Custom…” opens today's full stack desk.</li><li>Breadcrumbs plus Back (Alt+←) replace the hidden nav history.</li><li>Owned building footer: Refinance · List for sale · Renovate · Build. Vacant lot: Plan a building.</li></ul></div>
+    <div><h3>Clicks</h3><ul class="clicks"><li>Buy a listed building: <span class="was">6–7</span> <span class="now">3</span> (click it, Pay ask, Confirm)</li><li>Start a build on your lot: <span class="was">4–6</span> <span class="now">3</span> (click it, Plan a building, Break ground with the suggested scheme)</li></ul></div>
+  </div>
+</section>
+
+<!-- 3 HOLDINGS -->
+<section class="screen" id="holdings">
+  <div class="screen-head"><span class="eyebrow">Screen 3</span><h2>Holdings</h2><p>A wide drawer (1060px) that still leaves the left third of the city in view. A summary strip, then one sortable table. Selecting a row lights the building in 3D; double-click opens its file.</p></div>
+  <div class="viewport"><div class="frame city2">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 month</span><span class="hbtn">+1 year</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b>$78.1M</b></div><div class="vital"><small>Debt</small><b>$64.0M</b></div><div class="vital"><small>Net worth</small><b>$221.9M</b></div><div class="vital"><small>Cash flow / yr</small><b>$7.16M</b></div></div>
+      <div class="right"><div class="inboxbtn hbtn">Inbox <span class="badge">4</span></div></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it on"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="pick" style="left:300px;top:330px;width:46px;height:60px"></div>
+    <div class="drawer wide">
+      <div class="dhead">
+        <div class="dtitle"><h4>Holdings</h4><span class="chip">50 buildings · 756,617 sf</span><span class="x">✕</span></div>
+        <div class="tabs"><span class="on">Buildings</span><span>Leasing <span class="badge">2</span></span><span>Returns</span></div>
+      </div>
+      <div class="dbody">
+        <div class="strip"><div><small>Equity</small><b>$152.7M</b></div><div><small>Property CF / mo</small><b>$635K</b></div><div><small>Occupancy</small><b>82.0%</b><em>market 88%</em></div><div><small>Unrealised gain</small><b class="pos">+$9.76M</b><em>+7%</em></div><div><small>Rolling in 2 yrs</small><b class="neg">48%</b><em>of the roll</em></div></div>
+        <div class="filters"><div class="input">Filter by address or tenant</div><span class="chip on">All</span><span class="chip">Office</span><span class="chip">Multifamily</span><span class="chip">Retail</span><span class="chip">Problems 3</span><span style="margin-left:auto" class="btn sm">Show all on city</span><span class="btn sm">Sell several…</span></div>
+        <table class="dt">
+          <thead><tr><th>Property</th><th class="n">SF</th><th class="n">Occ</th><th class="n">Rent / sf</th><th class="n">NOI / yr</th><th class="n">Value ▾</th><th class="n">Debt</th><th class="n">CF / mo</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>14 New Court St<span class="sub">Multifamily · 86/89 spaces</span></td><td class="n">92,308</td><td class="n">96%</td><td class="n">$33.78</td><td class="n">$1.42M</td><td class="n">$48.13M</td><td class="n">—</td><td class="n">$118K</td><td><div class="rowact"><span class="btn sm">Refi</span><span class="btn sm">Sell</span></div></td></tr>
+            <tr class="sel"><td>18 Milk St<span class="sub">Office · 8/9 spaces</span></td><td class="n">71,339</td><td class="n">95%</td><td class="n">$21.24</td><td class="n">$994K</td><td class="n">$12.31M</td><td class="n">$6.8M</td><td class="n">$43K</td><td><div class="rowact"><span class="btn sm">Refi</span><span class="btn sm">Sell</span></div></td></tr>
+            <tr><td>418 Old Milk St<span class="sub">Office · 1/2 spaces · offer in</span></td><td class="n">62,200</td><td class="n">97%</td><td class="n">$22.69</td><td class="n">$958K</td><td class="n">$9.12M</td><td class="n">—</td><td class="n">$79K</td><td><div class="rowact"><span class="chip gold">Offer $9.6M</span></div></td></tr>
+            <tr><td>85 State St<span class="sub">Office · 7/7 spaces · balloon Oct</span></td><td class="n">38,896</td><td class="n">100%</td><td class="n">$25.81</td><td class="n">$728K</td><td class="n">$8.81M</td><td class="n neg">$11.2M</td><td class="n">$18K</td><td><div class="rowact"><span class="chip red">Balloon 5 mo</span></div></td></tr>
+            <tr><td>38 North Larkin St<span class="sub">Retail · 5/6 spaces</span></td><td class="n">24,150</td><td class="n">83%</td><td class="n">$29.40</td><td class="n">$512K</td><td class="n">$6.40M</td><td class="n">$3.9M</td><td class="n">$21K</td><td><div class="rowact"><span class="btn sm">Refi</span><span class="btn sm">Sell</span></div></td></tr>
+            <tr><td>211 Bayard Row<span class="sub">Office · 3/6 spaces · lease-up</span></td><td class="n">31,400</td><td class="n neg">52%</td><td class="n">$19.10</td><td class="n">$188K</td><td class="n">$4.05M</td><td class="n">$2.6M</td><td class="n neg">−$6K</td><td><div class="rowact"><span class="chip teal">Leasing</span></div></td></tr>
+          </tbody>
+        </table>
+        <div class="tfoot"><span>6 of 50 shown · scroll for more (rows render as you scroll)</span><span>Sorted by value</span></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes">
+    <div><h3>What changed</h3><ul><li>Exposure, concentration and rollover move into the summary strip; the long prose sections fold into the Returns tab.</li><li>Row problems show as chips (offer in, balloon due, lease-up) that link to the Inbox item.</li><li>The table is virtualised, so 500 buildings cost the same as 50.</li></ul></div>
+    <div><h3>Speed target</h3><ul class="clicks"><li>Open Holdings: <span class="was">177 ms</span> <span class="now">&lt; 50 ms</span></li><li>Leasing tab: <span class="was">173 ms</span> <span class="now">&lt; 50 ms</span></li></ul></div>
+  </div>
+</section>
+
+<!-- 4 PIPELINE -->
+<section class="screen" id="pipeline">
+  <div class="screen-head"><span class="eyebrow">Screen 4</span><h2>Pipeline</h2><p>Everything in flight, as stages left to right. Buying, building and selling share one board, so the region's land pipeline becomes one more lane instead of a new page.</p></div>
+  <div class="viewport"><div class="frame city">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 month</span><span class="hbtn">+1 year</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b>$78.1M</b></div><div class="vital"><small>Debt</small><b>$64.0M</b></div><div class="vital"><small>Net worth</small><b>$221.9M</b></div><div class="vital"><small>Cash flow / yr</small><b>$7.16M</b></div></div>
+      <div class="right"><div class="inboxbtn hbtn">Inbox <span class="badge">4</span></div></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="drawer wide">
+      <div class="dhead">
+        <div class="dtitle"><h4>Pipeline</h4><span class="chip">9 in flight · $38.4M committed</span><span class="x">✕</span></div>
+        <div class="tabs"><span class="on">All</span><span>Buying 3</span><span>Building 3</span><span>Selling 3</span><span style="opacity:.55">Land · region</span></div>
+      </div>
+      <div class="dbody" style="gap:16px">
+        <div class="lanegroup"><div class="lbl">Buying <span class="chip">3</span></div>
+          <div class="board">
+            <div class="lane"><h5>Approached <span>1</span></h5><div class="card"><b>77 Pearl St</b><div class="row"><span>Owner thinking</span><span class="num">2 mo</span></div></div></div>
+            <div class="lane"><h5>Offer out <span>1</span></h5><div class="card"><b>9 Cedar Ct</b><div class="row"><span>Bid</span><span class="num">$2.10M</span></div><div class="row"><span>Ask</span><span class="num">$2.35M</span></div></div></div>
+            <div class="lane"><h5>Countered <span>1</span></h5><div class="card" style="border-color:var(--g-gold)"><b>52 Front St</b><div class="row"><span>They want</span><span class="num">$4.80M</span></div><span class="btn sm primary">Take $4.80M</span></div></div>
+            <div class="lane"><h5>Under contract <span>0</span></h5></div>
+            <div class="lane"><h5>Closed (90 d) <span>2</span></h5><div class="card"><b>844 Old Trinity Pl</b><div class="row"><span>Paid</span><span class="num">$342K</span></div></div></div>
+          </div></div>
+        <div class="lanegroup"><div class="lbl">Building <span class="chip">3</span></div>
+          <div class="board">
+            <div class="lane" style="min-height:0"><h5>Planning <span>1</span></h5><div class="card"><b>Lot 1-0412 Water St</b><div class="row"><span>12 fl office</span><span class="num">pencils 6.8%</span></div></div></div>
+            <div class="lane" style="min-height:0"><h5>Permits <span>0</span></h5></div>
+            <div class="lane" style="min-height:0"><h5>Construction <span>1</span></h5><div class="card"><b>301 Hanover Sq</b><div class="row"><span>Month 9 of 20</span><span class="num">$14.2M</span></div><div class="bar"><i style="width:45%"></i></div></div></div>
+            <div class="lane" style="min-height:0"><h5>Lease-up <span>1</span></h5><div class="card"><b>211 Bayard Row</b><div class="row"><span>Leased</span><span class="num">52%</span></div><div class="bar"><i style="width:52%"></i></div></div></div>
+            <div class="lane" style="min-height:0"><h5>Stabilised (90 d) <span>0</span></h5></div>
+          </div></div>
+        <div class="lanegroup"><div class="lbl">Selling <span class="chip">3</span></div>
+          <div class="ghostlane"><span class="chip">Listed 1</span><span class="chip gold">Offer in 1 · 418 Old Milk St $9.6M</span><span class="chip">Closing 1</span><span style="margin-left:auto">collapsed: click to expand</span></div></div>
+        <div class="ghostlane"><b style="color:var(--g-ink)">Land</b> Tract bought → Entitlement → Subdivided → Lots listed → Lots sold to homebuilders <span style="margin-left:auto" class="chip ghost">appears when Region mode ships</span></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes">
+    <div><h3>What changed</h3><ul><li>Deals (LOIs, talks, sales) and the portfolio's scheme-in-progress merge into stages. A card that needs you has a gold edge and its verb on the card.</li><li>Tenant letters move to the Inbox; the Pipeline is about assets changing hands or shape.</li></ul></div>
+    <div><h3>Room for the region</h3><ul><li>The Land lane uses the same stage component with land stages, so the region needs data, not a new layout.</li></ul></div>
+  </div>
+</section>
+
+<!-- 5 MARKET -->
+<section class="screen" id="market">
+  <div class="screen-head"><span class="eyebrow">Screen 5</span><h2>Market</h2><p>One search table per tab, with filter chips and “Show on city” to light the matches in 3D. All buildings (today's 1.2-second page) opens instantly because the appraisals are computed once per month, not once per visit.</p></div>
+  <div class="viewport"><div class="frame city2">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 month</span><span class="hbtn">+1 year</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b>$78.1M</b></div><div class="vital"><small>Debt</small><b>$64.0M</b></div><div class="vital"><small>Net worth</small><b>$221.9M</b></div><div class="vital"><small>Cash flow / yr</small><b>$7.16M</b></div></div>
+      <div class="right"><div class="inboxbtn hbtn">Inbox <span class="badge">4</span></div></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <span class="pin sale" style="left:200px;top:300px"></span><span class="pin sale" style="left:330px;top:420px"></span><span class="pin sale" style="left:150px;top:520px"></span><span class="pin sale" style="left:420px;top:250px"></span>
+    <div class="drawer wide">
+      <div class="dhead">
+        <div class="dtitle"><h4>Market</h4><span class="x">✕</span></div>
+        <div class="tabs"><span class="on">For sale <span class="badge" style="background:var(--g-gold);color:var(--g-ink)">30</span></span><span>All buildings</span><span>Sites</span><span>Distressed</span><span>Books</span></div>
+      </div>
+      <div class="dbody">
+        <div class="filters"><div class="input">Search address, owner, tenant</div><span class="chip on">Any class</span><span class="chip">Office</span><span class="chip">Retail</span><span class="chip">Multifamily</span><span class="chip">Industrial</span><span class="chip">I can afford</span><span class="chip">Yield ≥ 8%</span><span style="margin-left:auto" class="btn sm primary">Show 30 on city</span></div>
+        <table class="dt">
+          <thead><tr><th>Building</th><th>Seller</th><th class="n">Ask</th><th class="n">vs value</th><th class="n">Going-in ▾</th><th class="n">Leased</th><th class="n">Rolling 2y</th><th class="n">Listed</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>844 Old Trinity Pl<span class="sub">Office · 9,860 sf · worn</span></td><td>Carrow Holdings</td><td class="n">$342K</td><td class="n pos">−24%</td><td class="n">11.4%</td><td class="n">91%</td><td class="n neg">48%</td><td class="n">3 mo</td><td><div class="rowact"><span class="btn sm">Open</span><span class="btn sm primary">Buy…</span></div></td></tr>
+            <tr><td>52 Front St<span class="sub">Retail · 14,200 sf · fair</span></td><td>Pell &amp; Ward</td><td class="n">$4.95M</td><td class="n">−3%</td><td class="n">8.9%</td><td class="n">100%</td><td class="n">12%</td><td class="n">1 mo</td><td><div class="rowact"><span class="chip gold">Countered</span></div></td></tr>
+            <tr><td>9 Cedar Ct<span class="sub">Multifamily · 22 units · good</span></td><td>Estate of R. Haight</td><td class="n">$2.35M</td><td class="n">+2%</td><td class="n">8.1%</td><td class="n">95%</td><td class="n">—</td><td class="n">5 mo</td><td><div class="rowact"><span class="chip teal">Your bid $2.10M</span></div></td></tr>
+            <tr><td>1200 Canal St<span class="sub">Industrial · 61,000 sf · fair</span></td><td>Bank-owned (Second Harbor)</td><td class="n">$3.10M</td><td class="n pos">−18%</td><td class="n">7.7%</td><td class="n">64%</td><td class="n">30%</td><td class="n">2 mo</td><td><div class="rowact"><span class="btn sm">Open</span><span class="btn sm primary">Buy…</span></div></td></tr>
+            <tr><td>33 Exchange Alley<span class="sub">Office · 48,700 sf · good</span></td><td>Morrow Capital</td><td class="n">$11.8M</td><td class="n">+6%</td><td class="n">6.4%</td><td class="n">88%</td><td class="n">22%</td><td class="n">7 mo</td><td><div class="rowact"><span class="btn sm">Open</span><span class="btn sm primary">Buy…</span></div></td></tr>
+          </tbody>
+        </table>
+        <div class="tfoot"><span>5 of 30 · Sites tab lists vacant lots with what pencils on each</span><span>Sorted by going-in yield</span></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes">
+    <div><h3>What changed</h3><ul><li>Marketplace sections (books for sale, bank-owned, distressed, courthouse, workout, shops, land) become tabs and filter chips over one table.</li><li>Your own activity shows inline (Countered, Your bid), so you never hunt for a deal's state.</li><li>The Buy box editor moves to Settings › Buying defaults, where the financing presets live too.</li></ul></div>
+    <div><h3>Speed target</h3><ul class="clicks"><li>Marketplace: <span class="was">279 ms</span> <span class="now">&lt; 60 ms</span></li><li>All buildings: <span class="was">1,204 ms</span> <span class="now">&lt; 60 ms</span></li></ul></div>
+  </div>
+</section>
+
+<!-- 6 CAPITAL -->
+<section class="screen" id="capital">
+  <div class="screen-head"><span class="eyebrow">Screen 6</span><h2>Capital</h2><p>Cash, debt, the line and what comes due, on one overview. Loans, lenders, investors and the books are tabs of the same place.</p></div>
+  <div class="viewport"><div class="frame city">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 month</span><span class="hbtn">+1 year</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b>$78.1M</b></div><div class="vital"><small>Debt</small><b>$64.0M</b></div><div class="vital"><small>Net worth</small><b>$221.9M</b></div><div class="vital"><small>Cash flow / yr</small><b>$7.16M</b></div></div>
+      <div class="right"><div class="inboxbtn hbtn">Inbox <span class="badge">4</span></div></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="drawer wide">
+      <div class="dhead">
+        <div class="dtitle"><h4>Capital</h4><span class="x">✕</span></div>
+        <div class="tabs"><span class="on">Overview</span><span>Loans 9</span><span>Lenders</span><span>Investors</span><span>Books</span></div>
+      </div>
+      <div class="dbody">
+        <div class="strip"><div><small>Cash</small><b>$78.1M</b></div><div><small>Total debt</small><b>$64.0M</b><em>9 loans · avg 6.3%</em></div><div><small>Loan-to-value</small><b>22%</b><em>book $290M</em></div><div><small>Line of credit</small><b>$74.7M</b><em>left of $80.0M</em></div><div><small>Debt service / yr</small><b>$5.1M</b><em>DSCR 2.4×</em></div></div>
+        <div class="cols2">
+          <div class="chartbox"><div class="ct"><span>Maturity wall · principal due by year</span><b class="neg">$11.2M in 2012</b></div>
+            <svg viewBox="0 0 460 150" role="img" aria-label="Principal due by year: 2012 11.2M, 2013 0, 2014 6.8M, 2015 18.0M, 2016 9.1M, 2017 18.9M">
+              <g stroke="#e3d9c2"><line x1="40" y1="20" x2="450" y2="20"/><line x1="40" y1="65" x2="450" y2="65"/><line x1="40" y1="110" x2="450" y2="110"/></g>
+              <g font-family="IBM Plex Mono, monospace" font-size="10" fill="#6b6250"><text x="34" y="23" text-anchor="end">$20M</text><text x="34" y="68" text-anchor="end">$10M</text><text x="34" y="113" text-anchor="end">0</text></g>
+              <rect x="55" y="59.6" width="44" height="50.4" fill="#a8402e"/><rect x="123" y="109" width="44" height="1" fill="#2f7a72"/><rect x="191" y="79.4" width="44" height="30.6" fill="#2f7a72"/><rect x="259" y="29" width="44" height="81" fill="#2f7a72"/><rect x="327" y="69" width="44" height="41" fill="#2f7a72"/><rect x="395" y="25" width="44" height="85" fill="#2f7a72"/>
+              <g font-family="IBM Plex Mono, monospace" font-size="10" fill="#6b6250" text-anchor="middle"><text x="77" y="126">2012</text><text x="145" y="126">2013</text><text x="213" y="126">2014</text><text x="281" y="126">2015</text><text x="349" y="126">2016</text><text x="417" y="126">2017</text></g>
+              <text x="77" y="54" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#a8402e">$11.2M</text>
+            </svg></div>
+          <div class="chartbox"><div class="ct"><span>What money costs · 10Y and your blended rate</span><b>4.86% · 6.3%</b></div>
+            <svg viewBox="0 0 460 150" role="img" aria-label="10-year rate falling from about 6.6% to 4.86% over 2007 to 2012; blended loan rate near 6.3%">
+              <g stroke="#e3d9c2"><line x1="40" y1="20" x2="450" y2="20"/><line x1="40" y1="65" x2="450" y2="65"/><line x1="40" y1="110" x2="450" y2="110"/></g>
+              <g font-family="IBM Plex Mono, monospace" font-size="10" fill="#6b6250"><text x="34" y="23" text-anchor="end">8%</text><text x="34" y="68" text-anchor="end">6%</text><text x="34" y="113" text-anchor="end">4%</text></g>
+              <polyline fill="none" stroke="#2b251a" stroke-width="2" points="45,52 105,45 165,40 225,60 285,78 345,90 405,96 445,94"/>
+              <polyline fill="none" stroke="#c8952c" stroke-width="2" stroke-dasharray="5 4" points="45,70 445,71"/>
+              <circle cx="445" cy="94" r="3.5" fill="#2b251a"/>
+              <g font-family="IBM Plex Mono, monospace" font-size="10" fill="#6b6250" text-anchor="middle"><text x="45" y="126">2007</text><text x="245" y="126">2010</text><text x="440" y="126">2012</text></g>
+            </svg></div>
+        </div>
+        <table class="dt">
+          <thead><tr><th>Next to act on</th><th>Lender</th><th class="n">Balance</th><th class="n">Rate</th><th class="n">Matures</th><th class="n">DSCR</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>85 State St</td><td>Second Harbor Savings</td><td class="n">$11.2M</td><td class="n">6.1%</td><td class="n neg">Oct 2012</td><td class="n">1.31×</td><td><div class="rowact"><span class="btn sm primary">Refinance…</span></div></td></tr>
+            <tr><td>18 Milk St</td><td>Union Mutual Life</td><td class="n">$6.8M</td><td class="n">5.8%</td><td class="n">Mar 2014</td><td class="n">1.92×</td><td><div class="rowact"><span class="btn sm">Open</span></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes">
+    <div><h3>What changed</h3><ul><li>Debt, line, maturity wall and the next loans to act on share one screen; “Loan by loan” is the Loans tab.</li><li>Books (balance, P&amp;L, cash, tax) keep their sub-views inside the Books tab.</li></ul></div>
+    <div><h3>Speed target</h3><ul class="clicks"><li>Books: <span class="was">175 ms</span> <span class="now">&lt; 50 ms</span> (the waterfall chart is 77 ms of that)</li></ul></div>
+  </div>
+</section>
+
+<!-- 7 CITY INTEL -->
+<section class="screen" id="intel">
+  <div class="screen-head"><span class="eyebrow">Screen 7</span><h2>City intel: markets and news</h2><p>Markets and Pulse merge into one readout of rents, vacancy and money; the Tape sits beside it so the news and the numbers are read together. Players, Rankings and your Record are tabs.</p></div>
+  <div class="viewport"><div class="frame city2">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 month</span><span class="hbtn">+1 year</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b>$78.1M</b></div><div class="vital"><small>Debt</small><b>$64.0M</b></div><div class="vital"><small>Net worth</small><b>$221.9M</b></div><div class="vital"><small>Cash flow / yr</small><b>$7.16M</b></div></div>
+      <div class="right"><div class="inboxbtn hbtn">Inbox <span class="badge">4</span></div></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="drawer wide">
+      <div class="dhead">
+        <div class="dtitle"><h4>City</h4><span class="chip red">Recession · month 7</span><span class="x">✕</span></div>
+        <div class="tabs"><span class="on">Markets &amp; news</span><span>Players</span><span>Rankings</span><span>Your record</span></div>
+      </div>
+      <div class="dbody" style="grid-template-columns: 1.35fr 1fr; gap: 16px;">
+        <div style="display:grid;gap:12px;align-content:start;min-width:0">
+          <div class="filters"><span class="chip on">All</span><span class="chip">Office</span><span class="chip">Retail</span><span class="chip">Multifamily</span><span class="chip">Industrial</span><span class="chip">Land</span><span class="chip">Banks</span></div>
+          <div class="cols3">
+            <div class="chartbox"><div class="ct"><span>Office vacancy</span><b class="neg">14.2%</b></div><svg viewBox="0 0 160 46" role="img" aria-label="Office vacancy rising from 9 to 14.2 percent"><polyline fill="none" stroke="#a8402e" stroke-width="2" points="2,38 30,36 58,34 86,28 114,20 142,12 158,9"/><circle cx="158" cy="9" r="3" fill="#a8402e"/></svg></div>
+            <div class="chartbox"><div class="ct"><span>Office rent / sf</span><b>$21.10</b></div><svg viewBox="0 0 160 46" role="img" aria-label="Office rent easing from 23.40 to 21.10"><polyline fill="none" stroke="#2b251a" stroke-width="2" points="2,10 30,9 58,12 86,18 114,25 142,30 158,32"/><circle cx="158" cy="32" r="3" fill="#2b251a"/></svg></div>
+            <div class="chartbox"><div class="ct"><span>Cap rate</span><b>7.9%</b></div><svg viewBox="0 0 160 46" role="img" aria-label="Cap rates widening from 6.8 to 7.9 percent"><polyline fill="none" stroke="#2f7a72" stroke-width="2" points="2,36 30,35 58,33 86,28 114,20 142,15 158,12"/><circle cx="158" cy="12" r="3" fill="#2f7a72"/></svg></div>
+            <div class="chartbox"><div class="ct"><span>Jobs (yoy)</span><b class="neg">−2.1%</b></div><svg viewBox="0 0 160 46" role="img" aria-label="Job growth falling below zero"><line x1="0" y1="24" x2="160" y2="24" stroke="#e3d9c2"/><polyline fill="none" stroke="#a8402e" stroke-width="2" points="2,14 30,16 58,18 86,22 114,28 142,32 158,33"/><circle cx="158" cy="33" r="3" fill="#a8402e"/></svg></div>
+            <div class="chartbox"><div class="ct"><span>Credit window</span><b>61% open</b></div><svg viewBox="0 0 160 46" role="img" aria-label="Credit window closing from 90 to 61 percent"><polyline fill="none" stroke="#8a5620" stroke-width="2" points="2,6 30,7 58,9 86,16 114,24 142,28 158,30"/><circle cx="158" cy="30" r="3" fill="#8a5620"/></svg></div>
+            <div class="chartbox"><div class="ct"><span>Lots trading</span><b>38 / qtr</b></div><svg viewBox="0 0 160 46" role="img" aria-label="Lot trades falling"><polyline fill="none" stroke="#2b251a" stroke-width="2" points="2,12 30,10 58,14 86,22 114,30 142,34 158,36"/><circle cx="158" cy="36" r="3" fill="#2b251a"/></svg></div>
+          </div>
+          <div class="sect">Submarkets <small>vacancy · rent · trend</small></div>
+          <table class="dt"><thead><tr><th>District</th><th class="n">Vacancy</th><th class="n">Rent</th><th class="n">12 mo</th></tr></thead><tbody>
+            <tr><td>Financial District</td><td class="n">11.8%</td><td class="n">$27.40</td><td class="n neg">−6%</td></tr>
+            <tr><td>Harbour Front</td><td class="n">16.9%</td><td class="n">$18.90</td><td class="n neg">−11%</td></tr>
+            <tr><td>Old Milk / Larkin</td><td class="n">9.4%</td><td class="n">$22.70</td><td class="n neg">−2%</td></tr>
+          </tbody></table>
+        </div>
+        <div style="display:grid;gap:10px;align-content:start;min-width:0">
+          <div class="sect">The Tape <small>May 2012</small><span class="chip" style="margin-left:auto">Mine only</span></div>
+          <div class="news">
+            <div><small>Deals · 2 days ago</small><b>Pell &amp; Ward bid $9.6M for 418 Old Milk St</b><span style="font-size:12px;color:var(--g-dim)">An offer on your building. Answer it in the Inbox.</span></div>
+            <div><small>Banks</small><b>Second Harbor Savings tightens: 60% LTV, 7.4% on office</b></div>
+            <div><small>Tenants</small><b>Larkin Freight gives back 40,000 sf on Canal St</b></div>
+            <div><small>Rivals</small><b>Morrow Capital lists 33 Exchange Alley at $11.8M</b></div>
+            <div><small>City</small><b>Harbour rezoning hearing set for September</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes">
+    <div><h3>What changed</h3><ul><li>Pulse's six gauges and the Markets stance selector become one row of sparklines with a sector filter.</li><li>News opens in one click from the rail (City remembers its last tab), and stories about your firm link to the thing they are about.</li></ul></div>
+    <div><h3>Clicks</h3><ul class="clicks"><li>Read the news: <span class="was">1–2</span> <span class="now">1</span></li><li>Players: <span class="was">237 ms</span> <span class="now">&lt; 60 ms</span></li></ul></div>
+  </div>
+</section>
+
+<!-- 8 REGION -->
+<section class="screen" id="region">
+  <div class="screen-head"><span class="eyebrow">Screen 8 · planned, not in scope yet</span><h2>Region mode</h2><p>The scope switch flips the backdrop from the island to the metro region. The five places stay the same; they read region data. Market lists tracts, Pipeline shows the Land lane, Holdings includes land, and City adds the homebuilders.</p></div>
+  <div class="viewport"><div class="frame">
+    <div class="region-map"><svg viewBox="0 0 1536 848" role="img" aria-label="Schematic metro region: the island at left, mainland tracts in three counties to the right, highways, two tracts owned, three for sale">
+      <rect width="1536" height="848" fill="#b9cfd2"/>
+      <path d="M560 0 C 620 160 600 300 680 420 C 740 520 700 700 760 848 L1536 848 L1536 0 Z" fill="#e4dcc4"/>
+      <path d="M90 300 C 140 180 300 160 380 220 C 450 280 470 420 420 520 C 370 620 220 640 150 580 C 80 520 60 400 90 300 Z" fill="#cfc4a6" stroke="#a89a78"/>
+      <text x="250" y="420" text-anchor="middle" font-family="Newsreader, Georgia, serif" font-size="22" fill="#4a4230">Denbourne Island</text>
+      <g stroke="#a89a78" stroke-dasharray="6 6" fill="none"><path d="M760 0 L 960 848"/><path d="M700 420 L 1536 380"/></g>
+      <g font-family="IBM Plex Mono, monospace" font-size="13" fill="#6b6250"><text x="1000" y="80">ASHFORD COUNTY</text><text x="1230" y="560">KELL COUNTY</text><text x="780" y="700">MILL RIVER</text></g>
+      <path d="M430 400 C 600 380 900 360 1536 300" stroke="#8c7d58" stroke-width="5" fill="none"/>
+      <path d="M980 0 C 960 300 1000 600 1060 848" stroke="#8c7d58" stroke-width="4" fill="none"/>
+      <g stroke="#1d1a14" stroke-width="1.5">
+        <rect x="860" y="200" width="120" height="90" fill="#2f7a72" fill-opacity=".55"/>
+        <rect x="1130" y="420" width="160" height="110" fill="#2f7a72" fill-opacity=".55"/>
+        <rect x="1100" y="150" width="100" height="80" fill="#c8952c" fill-opacity=".6"/>
+        <rect x="820" y="520" width="140" height="100" fill="#c8952c" fill-opacity=".6"/>
+        <rect x="1330" y="220" width="110" height="90" fill="#c8952c" fill-opacity=".6"/>
+        <rect x="1180" y="620" width="130" height="90" fill="#e4dcc4" stroke-dasharray="4 3"/>
+      </g>
+      <g font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#1d1a14"><text x="866" y="218">Hollis Farm · 210 ac</text><text x="1136" y="438">Kell Ridge · 340 ac</text><text x="1106" y="168">for sale · 95 ac</text><text x="826" y="538">for sale · 160 ac</text><text x="1336" y="238">for sale · 120 ac</text></g>
+    </svg></div>
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 month</span><span class="hbtn">+1 year</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b>$78.1M</b></div><div class="vital"><small>Debt</small><b>$64.0M</b></div><div class="vital"><small>Net worth</small><b>$221.9M</b></div><div class="vital"><small>Land held</small><b>550 ac</b></div></div>
+      <div class="right"><div class="scope"><span>Island</span><span class="on">Region</span></div><div class="inboxbtn hbtn">Inbox <span class="badge">4</span></div></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="drawer std" style="width:600px">
+      <div class="dhead">
+        <div class="dtitle"><h4>Pipeline · Land</h4><span class="x">✕</span></div>
+        <div class="tabs"><span>All</span><span>Buying</span><span>Building</span><span>Selling</span><span class="on">Land 2</span></div>
+      </div>
+      <div class="dbody">
+        <div class="card" style="font-size:13px"><b style="font-size:15px">Hollis Farm · 210 acres · Ashford County</b>
+          <div class="stepper" style="margin:6px 0"><span><i>✓</i>Bought</span><span class="ln"></span><span class="on"><i>2</i>Entitlement</span><span class="ln"></span><span><i>3</i>Subdivide</span><span class="ln"></span><span><i>4</i>Sell lots</span></div>
+          <div class="row"><span>Hearing</span><span class="num">Sep 2012 · 70% odds</span></div><div class="row"><span>Basis</span><span class="num">$6.3M · $30K/ac</span></div><div class="row"><span>Plan</span><span class="num">620 lots @ 4 du/ac</span></div></div>
+        <div class="card" style="font-size:13px"><b style="font-size:15px">Kell Ridge · 340 acres · Kell County</b>
+          <div class="stepper" style="margin:6px 0"><span><i>✓</i>Bought</span><span class="ln"></span><span><i>✓</i>Entitled</span><span class="ln"></span><span><i>✓</i>Subdivided</span><span class="ln"></span><span class="on"><i>4</i>Sell lots</span></div>
+          <div class="row"><span>Lots sold</span><span class="num">212 of 880</span></div><div class="bar"><i style="width:24%"></i></div>
+          <div class="row"><span>Takedown offer</span><span class="num">Larch Homes · 120 lots @ $41K</span></div>
+          <div style="display:flex;gap:6px;margin-top:4px"><span class="btn sm primary">Accept takedown</span><span class="btn sm">Counter…</span></div></div>
+        <div class="ex" style="color:var(--g-dim)">Placeholder: stages and numbers are illustrative until REGION_PLAN.md is settled.</div>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes">
+    <div><h3>Why no redesign later</h3><ul><li>Scope is one value in the store (island or region). Every place reads it.</li><li>The Land lane, tract rows in Market and land rows in Holdings reuse the stage board, table and building-file components.</li><li>Homebuilder firms appear under City › Players, the same as rival landlords.</li></ul></div>
+    <div><h3>Open question for the owner</h3><ul><li>Should the region view be a 3D metro scene in Unreal, or a 2D map drawn by the page (cheaper, ready sooner)? The layout works for both.</li></ul></div>
+  </div>
+</section>
+
+<section class="screen">
+  <div class="screen-head"><h2>Before, for comparison</h2><p>Today's Portfolio in Unreal mode: a 1,120px room over the city, sixteen rail entries, and readouts the player has to decode.</p></div>
+  <img src="before-portfolio-unreal-mode.jpg" alt="Current Portfolio page covering most of the screen, with a sixteen-entry labelled side rail at left" style="border-radius:8px;border:1px solid var(--rule)">
+  <p class="ex">Full findings, the measured costs with file and line references, and the step-by-step migration are in ui-revamp/PLAN.md.</p>
+</section>
+</div>
+
+<script>
+(function () {
+  var vps = document.querySelectorAll('.viewport');
+  function fit() { vps.forEach(function (v) { v.style.setProperty('--s', (v.clientWidth / 1600).toFixed(4)); }); }
+  fit();
+  if ('ResizeObserver' in window) { var ro = new ResizeObserver(fit); vps.forEach(function (v) { ro.observe(v); }); }
+  else window.addEventListener('resize', fit);
+})();
+</script>

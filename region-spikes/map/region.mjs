@@ -43,7 +43,8 @@ const SZ = {
   corePitch: [80, 240],            // Manhattan grid: streets every ~264 ft (80 m), avenues ~800-920 ft (Commissioners' Plan 1811)
   townPitch: [92, 120],            // ordinary American block pitch, island.mjs's own measured range
   townBlocks: [[4, 7], [3, 5]],    // approximate: a 19th-c. village plat of ~15-35 blocks (a few hundred to ~1,500 people)
-  townSpacing: 2500,               // approximate: 19th-c. crossroads hamlets / mill villages ~2-5 mi apart; 2.5 km is the low end so 2-3 fit a 6 km window
+  townSpacing: 2 * MILE,           // approximate: 19th-c. crossroads hamlets / mill villages ~2-5 mi apart (low end)
+  townArea: (3.5 * MILE) ** 2,     // approximate: one hamlet per ~3.5 mi square, the middle of that spacing
   // Layer 3 -----------------------------------------------------------------
   section: MILE,                   // US Public Land Survey section = 1 mile square = 640 acres
   arterialROW: 66 * FT,            // section-line road ROW: 66 ft (one Gunter's chain), standard in PLSS states
@@ -250,7 +251,7 @@ const NAME_B = ["ford", "ton", "ville", "field", "burg", "wood", " Crossing", " 
 const RIVERS = ["Kessaw", "Ottaquin", "Saline", "Big Muddy", "Tenmile", "Wabeno", "Paquette", "Cold Spring"];
 
 // ================================================================ the generator
-export function generate(seed, km = 6) {
+export function generate(seed, km = 10) {
   const S = km * 1000, rng = makeRng("region:" + seed), G = new Grid(S);
   const nz = makeNoise(rng, 900), nzFine = makeNoise(rng, 250);
   const M = { seed, S, G };
@@ -349,7 +350,7 @@ export function generate(seed, km = 6) {
     towns.push(makeTown(p, norm(sub(river[i + 1], river[i - 1])), "river"));
     break;
   }
-  const nTowns = rng.int(2, 3);
+  const nTowns = Math.max(2, Math.round(S * S / SZ.townArea) + rng.int(0, 1));
   for (let tries = 0; tries < 400 && towns.length < nTowns; tries++) {
     const p = [rng.range(0, S), rng.range(0, S)];
     if (!okTown(p) || isWater(p) || isFlood(p)) continue;
@@ -535,6 +536,21 @@ export function generate(seed, km = 6) {
     for (const { t } of cand) { if (used >= budget) break; t.era = e.id; used += t.acres * t.buildable; }
   }
   for (const t of tracts) if (t.era) subdivide(t, rng, M, isWater);
+
+  // ---------------- parcel count by type (what the engine would have to hold)
+  const free = (p) => { const k = G.idx(p); return k >= 0 && !water[k] && !flood[k] && !coreL[k] && !townL[k] && !hwL[k]; };
+  const coreKm2 = coreL.reduce((a, v) => a + v, 0) * CELL * CELL / 1e6;
+  const townBlocks = towns.reduce((a, t) => a + t.blocks.length, 0);
+  M.parcels = {
+    // island.mjs measures 932-1,026 lots per km2 on the generated islands (New Alden 922-951)
+    downtown: [Math.round(coreKm2 * 932), Math.round(coreKm2 * 1026)],
+    // a ~100 m village block holds two rows of ~50 x 140 ft lots: ~12 (approximate)
+    townLots: townBlocks * 12,
+    // one lot per frontage tick, counted only where the tick stands on buildable land
+    suburbanLots: Object.fromEntries(['prewar', 'postwar', 'recent'].map((e) => [e, tracts.filter((t) => t.era === e).reduce((a, t) => a + t.plat.ticks.filter(([p, q]) => free(lerp(p, q, 0.5))).length, 0)])),
+    farmTracts: tracts.filter((t) => !t.era && t.landShare > 0).length,
+    subdividedTracts: tracts.filter((t) => t.era).length,
+  };
   return M;
 }
 
@@ -733,6 +749,10 @@ function legend(M, seed, S, LEG) {
   sw(COL.wood, "woodlot");
   y += 60;
   const n = (e) => M.tracts.filter((t) => t.era === e).length;
+  const P = M.parcels, sub = P.suburbanLots.prewar + P.suburbanLots.postwar + P.suburbanLots.recent;
+  t(`parcels ≈ ${(P.downtown[0] + sub + P.townLots + P.farmTracts).toLocaleString("en-US")}`, 80);
+  t(`downtown lots ${P.downtown[0].toLocaleString("en-US")}–${P.downtown[1].toLocaleString("en-US")}, house lots ${sub.toLocaleString("en-US")}`, 80);
+  t(`village lots ${P.townLots} · farm tracts ${P.farmTracts}`, 80);
   t(`tracts: ${M.tracts.length} · subdivided: pre-war ${n("prewar")}, post-war ${n("postwar")}, recent ${n("recent")}`, 80);
   for (const h of M.highways) t(`${h.name}: ${h.segs.filter((s) => s.built).length} built / ${h.segs.filter((s) => !s.built).length} proposed segments`, 80);
   // scale bar: 1 mile and 1 km
@@ -746,7 +766,7 @@ function legend(M, seed, S, LEG) {
 // ================================================================ CLI
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isMain) {
-  const args = process.argv.slice(2); let km = 6, png = false; const seeds = [];
+  const args = process.argv.slice(2); let km = 10, png = false; const seeds = [];
   for (let i = 0; i < args.length; i++) { if (args[i] === "--km") km = Number(args[++i]); else if (args[i] === "--png") png = true; else seeds.push(args[i]); }
   if (!seeds.length) seeds.push("1", "2", "3", "4", "5", "6");
   const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "out"); fs.mkdirSync(outDir, { recursive: true });
@@ -755,10 +775,10 @@ if (isMain) {
     const M = generate(seed, km);
     const r = makeRng("orient:" + seed); M.rotate = Math.floor(r() * 4);
     nameHighways(M, r);
-    const file = path.join(outDir, `region-${seed}${km !== 6 ? `-${km}km` : ""}.svg`);
+    const file = path.join(outDir, `region-${seed}${km !== 10 ? `-${km}km` : ""}.svg`);
     fs.writeFileSync(file, render(M, seed));
     if (png) toPng(file, M.S);
-    console.log(`seed ${seed}: ${path.relative(process.cwd(), file)}  (${Date.now() - t0} ms, ${M.tracts.length} tracts, budget ac ${JSON.stringify(M.budget)})`);
+    console.log(`seed ${seed}: ${path.relative(process.cwd(), file)}  (${Date.now() - t0} ms, ${M.tracts.length} tracts, parcels ${JSON.stringify(M.parcels)})`);
   }
 }
 function nameHighways(M, r) {

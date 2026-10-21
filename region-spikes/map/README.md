@@ -9,9 +9,9 @@ game reads it.
 ## Run
 
 ```bash
-node region-spikes/map/region.mjs                 # seeds 1..6, 6 x 6 km
-node region-spikes/map/region.mjs 7 42 --km 6     # chosen seeds
-node region-spikes/map/region.mjs 3 --km 10 --png # bigger window, plus a PNG
+node region-spikes/map/region.mjs                 # seeds 1..6, 10 x 10 km (the default)
+node region-spikes/map/region.mjs 7 42 --png      # chosen seeds, plus a PNG
+node region-spikes/map/region.mjs 3 --km 6        # another window size -> region-3-6km.svg
 ```
 
 - Plain Node ESM with no dependencies. It writes `out/region-<seed>.svg`.
@@ -19,11 +19,18 @@ node region-spikes/map/region.mjs 3 --km 10 --png # bigger window, plus a PNG
 - `--png` rasterises the SVG with a locally installed Edge or Chrome in
   headless mode. If neither is found it skips the PNG; set `CHROME=<path>` to
   point it at one.
-- Each seed takes about 1 s.
+- Each seed takes about 2 s at 10 km.
 
-Committed renders: seeds 1–6 at 6 km (SVG + PNG), and seed 3 at 10 km for
-comparison. Seeds 1–4 are river mouths on a coast; seeds 5–6 are an inland
-river. The coast/inland choice is a coin flip per seed.
+Committed renders, SVG + PNG:
+- `out/region-<seed>`: seeds 1–6 at **10 × 10 km**. This is the default
+  since the owner chose 10 km.
+- `out/region-<seed>-6km`: the first round at 6 × 6 km, kept for comparison.
+  These files were made by commit ff4cd6dc. The generator has changed since
+  (town spacing and count), so to reproduce them exactly, check out that
+  commit.
+
+Seeds 1–4 are river mouths on a coast; seeds 5–6 are an inland river. The
+coast/inland choice is a coin flip per seed.
 
 ## Layers (each one reads the ones before it)
 
@@ -113,7 +120,7 @@ are in `SZ` at the top of `region.mjs`.
 | Downtown footprint | 2.6 × 1.5 km | the existing island city |
 | Downtown blocks | 80 × 240 m pitch | Manhattan grid (Commissioners' Plan 1811) |
 | Town blocks | 92–120 m pitch, 4–7 × 3–5 blocks | `island.mjs`'s measured "ordinary American block"; plat size approximate |
-| Town spacing | ≥ 2.5 km | approximate: 19th-c. hamlets ~2–5 mi apart; 2.5 km is the low end so 2–3 fit in 6 km |
+| Town spacing / count | ≥ 2 mi; one per ~3.5 mi square | approximate: 19th-c. hamlets ~2–5 mi apart (6 km renders used 2.5 km and 2–3 towns) |
 | Interchange spacing | ≥ 1 mile | FHWA / AASHTO urban guidance (2–3 mi rural) |
 | Freeway ROW (mask) | 300 ft | approximate |
 | Interstate years | 1958–74 | 1956 Act; most urban segments opened in the 1960s–early 70s |
@@ -129,7 +136,96 @@ are in `SZ` at the top of `region.mjs`.
 | **Urbanised share by 2026** | **35–60% (per seed)** | **KNOB. Not a fact.** In the game this is the *output* of the growth sim. It is shown in red on every map. |
 | Holdout spread | lognormal σ = 0.25 | **KNOB**, also a growth-sim output in the end |
 
-## Critique, seed by seed (honest)
+## What changed at 10 km
+
+Only the window grew. Every world size is the same, apart from the towns:
+- Town spacing went from 2.5 km up to the real low end of **2 miles**.
+- Town count now follows area: one hamlet per ~3.5-mile square, which gives
+  3–4 towns at 10 km.
+
+**More believable:**
+- **There is a fringe.** Suburbs thin out into a band of leapfrog
+  subdivisions, then open farmland with 40–640 ac tracts. At 6 km the whole
+  window was "inner suburb".
+- **The bypass reads as a bypass.** At 4–5.5 km from downtown, the proposed
+  arc runs mostly through rural land with a few subdivisions already waiting
+  for it. That is the land-speculation play in `REGION_PLAN.md` §1.
+- **Eras sort themselves by distance.** Pre-war grids hug downtown, post-war
+  loops line the 1960s interstates, and cul-de-sacs sit beyond. It reads
+  clearly in seeds 1, 2, 5 and 6.
+- **Downtown is the right size.** It is ~4% of the window instead of ~11%,
+  and it no longer pushes against the edge.
+- **Towns read as absorbed villages.** Some are already ringed by
+  subdivisions (Cedarboro in seed 2, Cedarmont in seed 6); others are still
+  country crossroads.
+- **Rivers become barriers.** In seeds 4 and 5 the far bank stays
+  largely rural because the only crossings are the old-road bridges. "The
+  wrong side of the river" is a real pattern.
+
+**Still looks off:**
+- **Leapfrog is too speckled.** Isolated 40-ac cul-de-sac tracts sit miles out
+  in farmland (seed 1 south, seed 3 north). Some of that is real, but there
+  is too much of it, and drive time cannot explain it. The fix is the
+  utility frontier, listed under "What the full generator would need".
+- **The subdivision templates repeat even more visibly** at this extent:
+  rows of identical "combs" and "wavy stripes".
+- **Creeks run through downtown** (seeds 4, 5 and 6). A creek is narrower
+  than a block, so no blocks are dropped. Real cities bury such creeks in
+  culverts, so the image is not wrong, but it reads as a glitch.
+- **River towns lose their blocks to the river** (Oakwood in seed 5, Elmwood
+  in seed 4). They need to be placed on a bank, as downtown now is.
+- **Coastal seeds give ~15–20% of the window to open sea.** That is honest,
+  but wasted.
+- **Still no commerce.** The interchanges are empty circles in farmland or
+  tract housing.
+
+## Parcel count at 10 × 10 km (stretch item)
+
+This is what the engine would have to hold, by type, for each seed at the
+urbanised share drawn on that map (each total is shown on the map legend too):
+
+| Seed | Downtown lots | Village lots | Pre-war lots | Post-war lots | Recent lots | Farm tracts | **Total** |
+|---|---|---|---|---|---|---|---|
+| 1 | 3,329–3,665 | 648 | 3,174 | 7,991 | 9,101 | 195 | **≈ 24,400** |
+| 2 | 3,309–3,643 | 660 | 3,389 | 8,094 | 8,451 | 186 | **≈ 24,100** |
+| 3 | 3,369–3,708 | 504 | 3,419 | 8,311 | 8,074 | 213 | **≈ 23,900** |
+| 4 | 3,375–3,715 | 972 | 3,174 | 6,495 | 7,558 | 213 | **≈ 21,800** |
+| 5 | 3,619–3,984 | 1,056 | 4,146 | 8,276 | 10,220 | 223 | **≈ 27,500** |
+| 6 | 3,604–3,967 | 816 | 5,082 | 11,227 | 11,706 | 177 | **≈ 32,600** |
+
+How each number is made (`M.parcels` in `region.mjs`):
+- **Downtown:** land area of the core × **932–1,026 lots/km²**. That is what
+  `island.mjs` measures on the generated island cities.
+- **Villages:** village blocks × ~12 lots each. This is approximate: two rows
+  of ~50 × 140 ft lots on a ~100 m block.
+- **House lots:** one lot per frontage tick drawn by the plat templates,
+  counted only where it stands on buildable land. Against the land budget
+  divided by gross land per lot, this agrees within roughly ±30%. The
+  cul-de-sac template leaves unplatted gaps, so it comes in under its budget.
+- **Farm tracts:** undeveloped survey parcels.
+
+On top of these, the 90–180 subdivided parent tracts per seed would exist as
+the lots' parent IDs.
+
+**What it means for the engine:**
+- **House lots are the bulk:** ~80% of all parcels, nearly all of them
+  single-family lots owned by households, not firms.
+- **Scale versus the island:** the island city is ~4,000 parcels. A 10 km
+  region at today's urbanisation is **~6× that**.
+- **At full build-out it is ~12×:** the house-lot count scales roughly
+  linearly with the urbanised share (the KNOB), so 100% would mean
+  **~45–55k house lots and ~50–60k parcels in all**.
+- **What could stay individual:** downtown (~3.5k) and the farm tracts
+  (~200) could stay individually simulated parcels, as today.
+- **What must aggregate:** house lots should aggregate by subdivision tract or
+  phase. That is ~100–200 records, each with a lot count, era and average
+  value. Lots would split out only when one is traded, built on or inspected.
+- The renderer can still draw every lot, since plat geometry is cheap to
+  regenerate from the seed.
+
+## Critique of the 6 km renders, seed by seed (honest)
+
+These notes are about the `-6km` files.
 
 **Believable at a glance:**
 - **Seed 1** (coast): downtown on the shore, a pre-war ring hugging it, and
@@ -159,7 +255,7 @@ are in `SZ` at the top of `region.mjs`.
    - Towns only fit at the bottom of the real spacing range.
    - The "outer bypass" is 2.5–3.3 km from downtown, where a real beltway is
      10–20 km out.
-   - **The 10 km render (`region-3-10km`) is clearly more believable**: the
+   - **A 10 km render was clearly more believable**: the
      suburbs thin out into farmland, and the bypass has room to be a bypass.
    - "Start small" is the owner's call. My evidence says the believable
      window is ≥ 10 km, possibly 15–20 km with coarser rendering out at the

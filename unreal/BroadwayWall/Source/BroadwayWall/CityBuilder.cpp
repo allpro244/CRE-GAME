@@ -1524,6 +1524,30 @@ void ACityBuilder::DressRoof(const FBWVolume& V, uint32 Seed)
 			const FVector Scale((e1 - e0) * Rng.FRandRange(0.38, 0.55) / 100.0, (n1 - n0) * Rng.FRandRange(0.38, 0.55) / 100.0, Hp / 100.0);
 			AddProp(TEXT("/Game/BW/Roof/SM_Penthouse.SM_Penthouse"), FTransform(Axis, FVector(C, Z), Scale), true);
 		}
+		// ROOF LIFE by era and use, set off the roof's centre along its long axis
+		// (clear of the penthouse): a new apartment building's amenity deck, a
+		// newer office's or warehouse's solar array, an old loft's skylights
+		if (V.bCrown && e1 - e0 >= 1500 && n1 - n0 >= 1100)
+		{
+			const double Side = (Rng.FRand() < 0.5 ? -1.0 : 1.0) * (e1 - e0) * 0.27;
+			const FVector2D At = C + E * Side;
+			if (InsideRing(V.Ring, At))
+			{
+				if (V.Year >= 2005 && V.Cls == TEXT("multifamily") && Rng.FRand() < 0.6)
+					AddProp(TEXT("/Game/BW/Roof/SM_RoofDeck.SM_RoofDeck"), FTransform(Axis, FVector(At, Z)), true);
+				else if (V.Year >= 2008 && V.Cls != TEXT("multifamily") && Rng.FRand() < 0.55)
+				{
+					const double S = FMath::Min(1.0, FMath::Min((e1 - e0) * 0.4 / 1000.0, (n1 - n0) * 0.75 / 600.0));
+					AddProp(TEXT("/Game/BW/Roof/SM_SolarArray.SM_SolarArray"), FTransform(Axis, FVector(At, Z), FVector(S, S, 1)), true);
+				}
+				else if (V.Year > 0 && V.Year < 1940 && (V.Cls == TEXT("industrial") || V.Z1 < 3000) && Rng.FRand() < 0.5)
+					for (int32 k = -1; k <= 1; ++k)
+					{
+						const FVector2D Sk = At + Nn * (k * 300.0);
+						if (InsideRing(V.Ring, Sk)) AddProp(TEXT("/Game/BW/Roof/SM_Skylight.SM_Skylight"), FTransform(Axis, FVector(Sk, Z)), true);
+					}
+			}
+		}
 		// A SETBACK TERRACE has a railing along its edge (a tier with more
 		// building above it: its roof is somebody's terrace)
 		if (!V.bCrown && V.Z1 >= 1200)

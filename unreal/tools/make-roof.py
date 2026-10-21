@@ -80,3 +80,38 @@ box(m, 1, -2, 2, -2, 2, 260, 340)
 save(m, "SM_Crown_Spire", [("stone", STONE), ("metal", COPPER)])
 unreal.log("ROOF crowns built")
 
+# ROOF LIFE: what a roof's era and use put on it
+WOOD = "/Game/Building/Material/MI/Wood/ForGym/MI_Bldg_Wood_Cedar_FG.MI_Bldg_Wood_Cedar_FG"
+GLASS = "/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque.MI_Bldg_glass_opaque"
+GREEN = "/Game/Building/Material/MI/Paint/ForGym/MI_Bldg_PaintedMetal_Green_FG.MI_Bldg_PaintedMetal_Green_FG"
+# an amenity deck: 10 x 6 m of decking, a pergola over half of it, planters on the edge (unit: cm, real size)
+m = unreal.DynamicMesh()
+box(m, 0, -500, 500, -300, 300, 0, 8)                         # decking
+for x in (-480, -100):
+    for y in (-280, 280):
+        box(m, 1, x, x + 14, y - 7, y + 7, 8, 260)            # pergola posts
+for k in range(12):
+    x = -490 + k * 34
+    box(m, 0, x, x + 8, -300, 300, 255, 268)                  # pergola slats
+for x in range(-480, 480, 160):
+    box(m, 1, x, x + 120, 300, 345, 8, 70)                    # planters
+    box(m, 2, x + 5, x + 115, 305, 340, 70, 95)               # their green
+save(m, "SM_RoofDeck", [("wood", WOOD), ("steel", DARK), ("green", GREEN)])
+# a solar array: rows of panels tilted toward the sun (stepped, unit 10 x 6 m)
+m = unreal.DynamicMesh()
+for r in range(5):
+    y0 = -300 + r * 120
+    for k in range(4):                                        # the tilt as four steps
+        box(m, 0, -500, 500, y0 + k * 22, y0 + (k + 1) * 22, 20 + k * 14, 26 + k * 14)
+    box(m, 1, -500, 500, y0, y0 + 3, 0, 20)                   # the rack
+save(m, "SM_SolarArray", [("panel", GLASS), ("rack", DARK)])
+# a ridge skylight for a loft roof: 6 x 2 m, glass on a steel frame
+m = unreal.DynamicMesh()
+box(m, 1, -300, 300, -100, 100, 0, 30)
+for k in range(5):
+    w = 100 - k * 20
+    box(m, 0, -290, 290, -w, w, 30 + k * 12, 42 + k * 12)
+save(m, "SM_Skylight", [("glass", GLASS), ("frame", DARK)])
+unreal.log("ROOF life built")
+
+

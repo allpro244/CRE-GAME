@@ -166,9 +166,9 @@ export function makeRegion(seed, opts = {}) {
   for (const lot of M.outerLots) {
     const rings = lot.rects.map((r) => rectRing(r.c, r.u, r.w, r.d));
     const all = rings.flat(), outline = hull(all);
-    const lotM2 = lot.rects.reduce((a, r) => a + r.w * r.d, 0);
+    const lotM2 = ringAreaAbs(outline);   // the deed is the outline; pieces overlap (a building stands on its own lawn or car park)
     const bldgs = lot.rects.filter((r) => r.kind === "bldg" || r.kind === "house" || r.kind === "barn");
-    const floorsOf = (r) => Math.max(1, Math.round(r.z / 355));
+    const floorsOf = (r) => r.floors ?? Math.max(1, Math.round(r.z / 355));
     const bldgM2 = bldgs.filter((r) => r.kind !== "barn").reduce((a, r) => a + r.w * r.d * (r.cls === "industrial" ? 1 : floorsOf(r)), 0);
     const no = Math.round(100 + 900 * rng());
     const address = `${no} ${roadName(lot.anchor)}`;
@@ -187,7 +187,7 @@ export function makeRegion(seed, opts = {}) {
     }
     const bbl = String(3e9 + blockNo * 1e4 + 1); blockNo++;
     const cls = lot.cls;
-    const bldgclass = cls === "land" ? "V1" : cls === "retail" ? "K1" : cls === "office" ? "O4" : "E9";
+    const bldgclass = lot.bldgclass ?? (cls === "land" ? "V1" : cls === "retail" ? "K1" : cls === "office" ? "O4" : "E9");
     // zoning out past the town: a suburban business or light-industry district, FAR about 1 [S, typical suburban codes]
     const zone = cls === "industrial" ? { z: "M1", far: 1.0 } : { z: "C-1", far: 1.0 };
     const front = Math.max(...lot.rects.map((r) => r.w)), depth = lotM2 / front;
@@ -199,7 +199,7 @@ export function makeRegion(seed, opts = {}) {
     rawParcels.features.push({
       type: "Feature", id: Number(bbl), geometry: polyLL(outline),
       properties: {
-        bbl, borough: "RG", block: String(blockNo), lot: "1", address: lot.kind === "box" ? `${address} (${lot.name.toLowerCase()})` : `${address} (${lot.name.toLowerCase()})`,
+        bbl, borough: "RG", block: String(blockNo), lot: "1", address: lot.kind === "centre" || lot.kind === "pad" ? `${lot.name}, ${roadName(lot.anchor)}` : `${address} (${lot.name.toLowerCase()})`,
         zonedist1: zone.z, commfar: zone.far, resfar: 0, bldgclass, landuse: cls === "land" ? "11" : cls === "office" ? "05" : "04",
         lotarea: sf(lotM2), bldgarea: cls === "land" ? 0 : sf(bldgM2), numfloors: cls === "land" ? 0 : nFloors,
         yearbuilt: cls === "land" ? 0 : lot.year, assessland, assesstot, unitsres: 0,
@@ -363,6 +363,7 @@ export function makeRegion(seed, opts = {}) {
   for (const lot of M.outerLots) for (const r of lot.rects) {
     const ring = rectRing(r.c, r.u, r.w, r.d);
     if (r.kind === "pave") ground("pavement", ring);
+    else if (r.kind === "lot") ground("apron", ring);   // a centre's car park: the surface parking layer
     else if (r.kind === "park") ground("park", ring);
     else if (r.kind === "lawn") ground("yard", ring);
   }

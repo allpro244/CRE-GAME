@@ -192,6 +192,21 @@ namespace
 				}
 			return Yard;
 		}
+		// A SUBURBAN CAR PARK (the region's shopping centres): City Sample's
+		// parking-lot asphalt reads tan-brown across acres in daylight; this is the
+		// slab master tinted to fresh-sealed blacktop
+		else if (Layer == TEXT("lotpave"))
+		{
+			static UMaterialInstanceDynamic* Pave = nullptr;
+			if (!Pave)
+				if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS")))
+				{
+					Pave = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
+					Pave->SetVectorParameterValue(TEXT("BaseColor_Tint"), FLinearColor(0.16f, 0.16f, 0.17f, 1));
+					Pave->AddToRoot();
+				}
+			return Pave;
+		}
 		else if (Layer == TEXT("esplanade")) Path = TEXT("/Game/Road/Material/MI/MI_Sidewalk_Plaza_A_WS.MI_Sidewalk_Plaza_A_WS");
 		else if (Layer == TEXT("park") || Layer == TEXT("median") || Layer == TEXT("yard")) return BWGrassMaterial();   // a boulevard's planted median is lawn too; so are the region's back yards
 		// THE REGION EXPANSION'S OPEN LAND: crops in rows read from the air as a
@@ -569,7 +584,7 @@ void ACityBuilder::BuildGround()
 		// (in the region expansion the plat's base is open country, not paving:
 		// where no street, lot or field is drawn round a town it is meadow)
 		const bool bMeadow = City.Size == TEXT("region") && L.Key == TEXT("paveland");
-		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(bMeadow ? FString(TEXT("yard")) : L.Key)); }
+		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(bMeadow ? FString(TEXT("yard")) : City.Size == TEXT("region") && L.Key == TEXT("apron") ? FString(TEXT("lotpave")) : L.Key)); }
 		for (int32 k = 0; k < 3; ++k)
 			if (Crops[k].V.Num()) { Crops[k].Emit(Ground, Section++, false); Mats.Add(GroundMaterial((bMarsh ? FString::Printf(TEXT("marsh%d"), k) : FString::Printf(TEXT("farm%d"), k)))); }
 		Z += 1;
@@ -1269,7 +1284,12 @@ void ACityBuilder::BuildVolumes()
 				// AN EMPTY LOT DOWNTOWN IS OFTEN A CAR PARK until somebody builds on
 				// it: about half of them, paved and striped with cars; the rest
 				// show the lot's own ground (gravel, dirt, weeds: BuildGround)
-				if (GetTypeHash(Vol.Bbl) % 100u < 55u)
+				// (a car park is a town lot's use: an acre at most; a farm or a
+				// woodlot tract on the market is open land, drawn by its own layers)
+				double A2 = 0;
+				for (int32 a = 0, n = Vol.Ring.Num(); a < n; ++a) A2 += FVector2D::CrossProduct(Vol.Ring[a], Vol.Ring[(a + 1) % n]);
+				const bool bTownLot = FMath::Abs(A2) * 0.5 < 4.0e7;   // cm^2: 4,000 m2, about an acre
+				if (bTownLot && GetTypeHash(Vol.Bbl) % 100u < 55u)
 				{
 					Lots.AddCap(Vol.Ring, FootZ + 4, FLinearColor::White);
 					if (bInst) ParkLot(Vol, GetTypeHash(Vol.Bbl));

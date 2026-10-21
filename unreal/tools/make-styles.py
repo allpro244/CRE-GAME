@@ -83,6 +83,12 @@ def window(M, R, y0, y1, z0, z1):
             # most blinds are part way down; a few all the way
             frac = 0.12 + 0.5 * ((h * 7.3) % 1.0) if h > 0.06 else 0.95
             M.box(8, -rec - 3.5, -rec - 1, y0 + 2, y1 - 2, z1 - (z1 - z0) * frac, z1 - 2)
+        # THE WINDOW UNIT: a through-the-window air conditioner on the sill,
+        # the texture of every pre-war New York facade (about one window in eight)
+        if R.get("ac_units", R.get("group") in ("prewar", "interwar")) and 0.80 < h < 0.93 and y1 - y0 >= 70:
+            c = (y0 + y1) / 2
+            M.box(8, -rec, 34, c - 33, c + 33, z0 + 2, z0 + 40)
+            M.box(4, 30, 35, c - 28, c + 28, z0 + 8, z0 + 34)      # its grille
     elif BLINDS[0] is not None:
         # a ribbon window: blinds in some of its lights, at their own heights
         BLINDS[1] += 1
@@ -535,6 +541,11 @@ def ground(R, W, H, entrance=False, M=None):
             M.box(1, -24, -20, y - 3, y + 3, bulk, sign - 15)
         M.box(7 if g.get("tenant_sign") else 1, 0, 6, -W, 0, sign - 15, sign + 10)   # sign fascia (a tenant's colour)
         M.box(1, 0, 12, -W, 0, sign + 10, sign + 18)            # its cap
+        if g.get("blade"):
+            # a blade sign: the tenant's sign projecting from the pier, read down the street
+            M.box(7, 8, 70, -pw / 2 - 4, -pw / 2 + 4, sign + 30, sign + 190)
+            M.box(4, 0, 12, -pw / 2 - 2, -pw / 2 + 2, sign + 60, sign + 66)
+            M.box(4, 0, 12, -pw / 2 - 2, -pw / 2 + 2, sign + 160, sign + 166)
         if g.get("awning"):
             # a canvas awning stepped out over the pavement in four courses
             for k in range(4):
@@ -575,14 +586,29 @@ def ground(R, W, H, entrance=False, M=None):
         dw = min(W - 60, g.get("door_w", 180))
         a, b = -W / 2 - dw / 2, -W / 2 + dw / 2
         dh = g.get("door_h", 300)
-        wall_with_holes(M, mat, W, H, [(a, b, 0, dh)])
-        M.box(4, -32, -28, a, b, 0, dh * 0.72)                  # doors
-        M.box(2, -32, -28, a, b, dh * 0.72, dh)                 # transom light
-        M.box(1, -28, -24, a, b, dh * 0.72, dh * 0.72 + 6)
-        M.box(1, 0, 8, a - 18, b + 18, dh, dh + 26)             # door surround head
-        M.box(1, 0, 5, a - 18, a, 0, dh)
-        M.box(1, 0, 5, b, b + 18, 0, dh)
-        if g.get("canopy", True):
+        dz = 144 if g.get("stoop") else 0                       # a stoop's door is a parlour floor up
+        dh = min(dh, H - dz - 40)
+        wall_with_holes(M, mat, W, H, [(a, b, dz, dz + dh)])
+        M.box(4, -32, -28, a, b, dz, dz + dh * 0.72)            # doors
+        M.box(2, -32, -28, a, b, dz + dh * 0.72, dz + dh)       # transom light
+        M.box(1, -28, -24, a, b, dz + dh * 0.72, dz + dh * 0.72 + 6)
+        M.box(1, 0, 8, a - 18, b + 18, dz + dh, dz + dh + 26)   # door surround head
+        M.box(1, 0, 5, a - 18, a, dz, dz + dh)
+        M.box(1, 0, 5, b, b + 18, dz, dz + dh)
+        if dz:
+            M.box(4, -32, -28, a, b, 0, dz)                     # under the stoop: the areaway door's shadow
+        if g.get("stoop"):
+            # THE STOOP: a straight stair from the pavement to a parlour-floor
+            # door, stone treads and cheek walls, iron railings
+            n, rise, run = 8, 18, 30
+            for k in range(n):
+                M.box(3, 0, run * (n - k), a - 20, b + 20, k * rise, (k + 1) * rise)
+            M.box(3, 0, run * n, a - 32, a - 20, 0, n * rise + 15)
+            M.box(3, 0, run * n, b + 20, b + 32, 0, n * rise + 15)
+            for y in (a - 26, b + 26):
+                for k in range(0, n, 2):
+                    M.box(4, run * (n - k) - 6, run * (n - k) - 3, y - 1.5, y + 1.5, (k + 1) * rise, (k + 1) * rise + 90)
+        elif g.get("canopy", True):
             M.box(4, 0, 110, a - 30, b + 30, dh + 26, dh + 40)
     else:
         # rusticated or plain stone base: windows set high, stone courses
@@ -895,7 +921,7 @@ def build(R, data_dir):
             h = (sum(ord(c) for c in key) * 31 + v * 977) % 1000
             a1 = palette[h % len(palette)]
             a2 = palette[(h // 7 + v) % len(palette)]
-            gv = dict(R["ground"], awning=(h % 3) != 0, tenant_sign=True)
+            gv = dict(R["ground"], awning=(h % 3) != 0, tenant_sign=True, blade=(h % 5) in (1, 3))
             Rv = dict(R, ground=gv, mats=dict(R["mats"], accent=a1, accent2=a2))
             pv = "%s/SM_%s_Ground_0_v%d" % (base, key, v)
             save(ground(Rv, W, Hg), pv, slots_for(Rv))

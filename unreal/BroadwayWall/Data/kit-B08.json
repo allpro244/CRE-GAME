@@ -19,21 +19,21 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_Ground_0.SM_B08_Ground_0",
+     "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_Ground_0.SM_B08_Ground_0",
      "width": 260.0,
      "depth": 50.0,
      "y0": -260.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_Ground_1.SM_B08_Ground_1",
+     "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_Ground_1.SM_B08_Ground_1",
      "width": 208.0,
      "depth": 50.0,
      "y0": -208.0,
      "y1": 0
     },
     {
-     "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_Ground_2.SM_B08_Ground_2",
+     "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_Ground_2.SM_B08_Ground_2",
      "width": 312.0,
      "depth": 50.0,
      "y0": -312.0,
@@ -42,7 +42,7 @@
    ],
    "entrances": [
     {
-     "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_Entrance.SM_B08_Entrance",
+     "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_Entrance.SM_B08_Entrance",
      "width": 260.0,
      "depth": 50.0,
      "y0": -260.0,
@@ -50,7 +50,7 @@
     }
    ],
    "corner": {
-    "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_GroundCorner.SM_B08_GroundCorner",
+    "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_GroundCorner.SM_B08_GroundCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -65,7 +65,7 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_Second.SM_B08_Second",
+     "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_Second.SM_B08_Second",
      "width": 260.0,
      "depth": 50.0,
      "y0": -260.0,
@@ -74,7 +74,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_SecondCorner.SM_B08_SecondCorner",
+    "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_SecondCorner.SM_B08_SecondCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -88,7 +88,7 @@
    "repeat": true,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_Typical_0.SM_B08_Typical_0",
+     "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_Typical_0.SM_B08_Typical_0",
      "width": 260.0,
      "depth": 50.0,
      "y0": -260.0,
@@ -96,7 +96,7 @@
      "mix": 0
     },
     {
-     "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_Typical_1.SM_B08_Typical_1",
+     "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_Typical_1.SM_B08_Typical_1",
      "width": 260.0,
      "depth": 50.0,
      "y0": -260.0,
@@ -104,7 +104,7 @@
      "every": 3
     },
     {
-     "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_Typical_0_v1.SM_B08_Typical_0_v1",
+     "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_Typical_0_v1.SM_B08_Typical_0_v1",
      "width": 260.0,
      "depth": 50.0,
      "y0": -260.0,
@@ -113,7 +113,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_Typical_0_v2.SM_B08_Typical_0_v2",
+     "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_Typical_0_v2.SM_B08_Typical_0_v2",
      "width": 260.0,
      "depth": 50.0,
      "y0": -260.0,
@@ -122,7 +122,7 @@
      "variant": true
     },
     {
-     "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_Typical_0_v3.SM_B08_Typical_0_v3",
+     "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_Typical_0_v3.SM_B08_Typical_0_v3",
      "width": 260.0,
      "depth": 50.0,
      "y0": -260.0,
@@ -133,7 +133,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_TypicalCorner.SM_B08_TypicalCorner",
+    "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_TypicalCorner.SM_B08_TypicalCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,
@@ -147,7 +147,7 @@
    "repeat": false,
    "walls": [
     {
-     "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_Top.SM_B08_Top",
+     "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_Top.SM_B08_Top",
      "width": 260.0,
      "depth": 50.0,
      "y0": -260.0,
@@ -156,7 +156,7 @@
    ],
    "entrances": [],
    "corner": {
-    "path": "/Game/BW/Styles/B08/v1021004814/SM_B08_TopCorner.SM_B08_TopCorner",
+    "path": "/Game/BW/Styles/B08/v1021010854/SM_B08_TopCorner.SM_B08_TopCorner",
     "width": 100,
     "depth": 50.0,
     "y0": -100,

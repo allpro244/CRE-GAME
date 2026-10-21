@@ -375,7 +375,9 @@
    "type": "plain",
    "h": 420,
    "sill": 110,
-   "head": "hood"
+   "head": "hood",
+   "stoop": true,
+   "door_h": 300
   },
   "top": {
    "type": "cornice",
@@ -2404,7 +2406,9 @@
    "lights": 2,
    "pier": 50,
    "awning": true,
-   "canopy": true
+   "canopy": true,
+   "stoop": true,
+   "door_h": 300
   },
   "top": {
    "type": "cornice",

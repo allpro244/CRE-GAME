@@ -110,3 +110,26 @@ The owner wants buildings to look great: realistic NYC, nothing bland, nothing s
   - Baseline regen with a reason.
   - PR + merge.
 - competitors.mjs "priced under what it would appraise at" (105%) diagnosis: the quiet sale is listed and checked in the same month (listedM == month), with the same grade (standard) and the same record (resolveRec made no difference). Ask <= 0.95 x conveyedValue at listing time, so the deed's conveyedValue falls >= 10% between the listing (mid advanceMonth, rivals pass) and month end. Find which later step of advanceMonth marks it down (occupancy/rent roll of the squeezed firm, tax, condition) and price the quiet sale after it, or on the same basis. It only showed up with the plan-13 city.
+
+## Update, overnight 2026-10-21 (later)
+Shipped on `claude/building-styles-forms` (commits pushed):
+- **Facade zones:** recipe `zones` (cladding, depth `proud`, windows and feature per zone). FacadeBuilder sets out mirrored runs of 2-3 bays per wall, the same on every floor. Residential bases carry the zones down; retail podiums don't. Templates: B72-B81 (garden apartments, five-over-one, Brooklyn, offices, hotel, affordable, waterfront, student, tan mid-rise).
+- **Lived-in windows:** blind variants per shaft piece (`mix` group, `variant`), picked per bay per floor (FBWKitModule::Mix).
+- **Tenant storefronts:** shop variants with their own awning colour (or none) and sign band (`mix` 50).
+- **Weathering by age:** FacadeBuilder sets the master's grime layers (Amt MFGD, Amount MFGB/MFDE/MFGC) from V.Year, in the TintKey top byte.
+- **Roofs** (make-roof.py, CityBuilder::DressRoof):
+  - louvred penthouse on lift buildings 25 m+;
+  - railings on setback terraces;
+  - crowns (stepped / pyramid / spire) on pre-1945 towers 60 m+.
+- **Lot-line walls:** walls against another lot's building get no facade (`FacadeBuilder::Party`, probed in BuildVolumes). The mass walls are real FG brick (brown/red/buff by building).
+- **Entrances:** canopies by default; `ground.stoop` for row houses (B08, B47), with the door raised to the parlour floor.
+- **Generator:** see-through fire escapes (`every` 4), smooth arches, deco spandrel patterns, mansards, orders, corner windows, caps, baguettes, box frames, juliets, panels, staggered two-storey shafts.
+
+Open questions and next ideas (visual):
+- Corner buildings: chamfered or rounded corners with a corner entrance (prewar and Moderne).
+- Blade signs and neon on shops.
+- Party-wall painted signs (ghost signs) on old lot-line walls.
+- Window AC units on prewar residential.
+- Fire stairs and bulkheads on lot-line walls.
+- Build desk: let the player pick a zone palette.
+- City generator height variety along a street wall (src/citygen; needs tests).

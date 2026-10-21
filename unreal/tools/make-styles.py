@@ -533,7 +533,7 @@ def ground(R, W, H, entrance=False, M=None):
         for k in range(1, n):
             y = a + (b - a) * k / n
             M.box(1, -24, -20, y - 3, y + 3, bulk, sign - 15)
-        M.box(1, 0, 6, -W, 0, sign - 15, sign + 10)             # sign fascia
+        M.box(7 if g.get("tenant_sign") else 1, 0, 6, -W, 0, sign - 15, sign + 10)   # sign fascia (a tenant's colour)
         M.box(1, 0, 12, -W, 0, sign + 10, sign + 18)            # its cap
         if g.get("awning"):
             # a canvas awning stepped out over the pavement in four courses
@@ -883,6 +883,26 @@ def build(R, data_dir):
         p = "%s/SM_%s_Ground_%d" % (base, key, i)
         save(ground(R, wid, Hg), p, slots)
         gw.append(module(p, wid))
+    # A STREET OF TENANTS. Each shop bay is somebody's: its own awning colour
+    # or none, its own sign band. Shopfront variants share a mix group, so
+    # FacadeBuilder gives each bay its own (the architecture is unchanged).
+    if R.get("ground", {}).get("type", "shop") == "shop":
+        gw[0]["mix"] = 50
+        palette = ["Paint/PaintedMetal_Red", "Paint/PaintedMetal_Green", "Paint/PaintedMetal_Black",
+                   "Paint/PaintedMetal_Grey", "Paint/PaintedStone_Khaki", "Paint/PaintedStone_charcoal",
+                   "Paint/PaintedMetal_White", "Metal/Metal_Brass"]
+        for v in range(1, 5):
+            h = (sum(ord(c) for c in key) * 31 + v * 977) % 1000
+            a1 = palette[h % len(palette)]
+            a2 = palette[(h // 7 + v) % len(palette)]
+            gv = dict(R["ground"], awning=(h % 3) != 0, tenant_sign=True)
+            Rv = dict(R, ground=gv, mats=dict(R["mats"], accent=a1, accent2=a2))
+            pv = "%s/SM_%s_Ground_0_v%d" % (base, key, v)
+            save(ground(Rv, W, Hg), pv, slots_for(Rv))
+            mv = module(pv, W)
+            mv["mix"] = 50
+            mv["variant"] = True
+            gw.append(mv)
     pe = "%s/SM_%s_Entrance" % (base, key)
     save(ground(R, W, Hg, entrance=True), pe, slots)
     pc = "%s/SM_%s_GroundCorner" % (base, key)

@@ -89,8 +89,15 @@ for (const seed of SEEDS) {
     ...Object.keys(g.holdings ?? {}), ...(g.listings ?? []).map((l) => l.bbl), ...Object.keys(g.developments ?? {}),
     ...(g.rivals ?? []).flatMap((r) => Object.keys(r.holdings ?? r.deeds ?? {})),
     ...(g.comps ?? []).map((c) => c.bbl),
+    // the city's own building: delivered, decided, under way
+    ...Object.keys(g.built ?? {}), ...(g.cityBuilt ?? []), ...(g.cityPlans ?? []).map((p) => p.bbl), ...(g.cityJobs ?? []).map((j) => j.bbl),
   ]);
   for (const b of touched) if (reserved[b]) fail(`reserved ${b} reached the market (${YEARS} y)`);
+  // the inner ring's houses are ordinary deeds: how many did the market trade or rebuild?
+  const houses = bbls.filter((b) => /^[ABC]/.test(parcels[b].bldgClass));
+  const rebuilt = houses.filter((b) => g.built?.[b] || (g.cityJobs ?? []).some((j) => j.bbl === b)).length;
+  const traded = houses.filter((b) => (g.comps ?? []).some((c) => c.bbl === b)).length;
+  console.log(`  inner-ring houses: ${houses.length} ordinary deeds; ${traded} traded, ${rebuilt} rebuilt or under way in ${YEARS} y`);
   for (const b of touched) if (b && !parcels[b] && !String(b).includes(":")) { /* sites and synthetic keys are the engine's own */ }
   let nan = 0;
   const walk = (o, d = 0) => { if (d > 6 || !o || typeof o !== "object") return; for (const v of Object.values(o)) { if (typeof v === "number" && !Number.isFinite(v)) nan++; else if (typeof v === "object") walk(v, d + 1); } };
@@ -98,7 +105,7 @@ for (const seed of SEEDS) {
   if (nan) fail(`${nan} non-finite numbers in cash / econ / holdings after ${YEARS} y`);
   const stock = (cls) => Object.values(parcels).filter((p) => p.class === cls).reduce((a, p) => a + p.bldgArea, 0);
   console.log(`  ${YEARS} y run: month tick mean ${mean.toFixed(1)} ms, median ${times[times.length >> 1].toFixed(1)} ms, p95 ${times[Math.floor(times.length * 0.95)].toFixed(1)} ms`);
-  console.log(`  after: cash $${(g.cash / 1e6).toFixed(2)}M, developments ${Object.keys(g.developments ?? {}).length}, listings ${(g.listings ?? []).length}, comps ${(g.comps ?? []).length}, market touched ${touched.size} deeds, none reserved`);
+  console.log(`  after: cash $${(g.cash / 1e6).toFixed(2)}M, the city built ${(g.cityBuilt ?? []).length} and has ${(g.cityJobs ?? []).length} under way, your developments ${Object.keys(g.developments ?? {}).length}, listings ${(g.listings ?? []).length}, comps ${(g.comps ?? []).length}, market touched ${touched.size} deeds, none reserved`);
   console.log(`  stock: office ${(stock("office") / 1e6).toFixed(2)}M sf, retail ${(stock("retail") / 1e6).toFixed(2)}M sf, multifamily ${(stock("multifamily") / 1e6).toFixed(2)}M sf, industrial ${(stock("industrial") / 1e6).toFixed(2)}M sf`);
 }
 console.log(fails ? `\n${fails} failure(s)` : "\nregion: all checks pass");

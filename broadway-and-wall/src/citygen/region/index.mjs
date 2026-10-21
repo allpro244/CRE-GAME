@@ -95,6 +95,51 @@ export function makeRegion(seed, opts = {}) {
     for (const f of tw.city.buildings.features) if (f.properties.base_bbl) f.properties.base_bbl = rebase(f.properties.base_bbl, tw.base);
   }
 
+  // ---------------- THE INNER RING IS HOUSES (owner, Phase 1 design)
+  // The island generator fills a residential district with walk-ups covering most of their lot. The
+  // additions round a small river city were houses: one- and two-family frames and the odd triple-decker
+  // on 30-50 ft lots, a front yard and a back one. So an addition's ordinary apartment lot (fronting no
+  // boulevard, under 9,000 sf; half the corners) becomes the house that stood there — the same deed, the same year,
+  // an ordinary multifamily parcel the engine values as a small rental and the rivals and the street can
+  // buy, assemble and rebuild under the district's zoning. About one in five stays a small apartment
+  // building among the houses [K, the spike's 0.18].
+  // Sizes [S, approximate]: a pre-war house 6-9 m wide and 10-13 m deep; 60% two storeys; one family 60%,
+  // a two-flat 30%, three flats 10%.
+  const housed = new Set();
+  const h01 = (s, salt) => { let h = 2166136261 ^ salt; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } h ^= h >>> 13; h = Math.imul(h, 2246822507); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+  for (const tw of towns) {
+    const resi = new Set(Object.entries(tw.cfg.districts).filter(([, d]) => d.flavor === "resi").map(([k]) => k));
+    const bldgOf = new Map();
+    for (const f of tw.city.buildings.features) { const b = f.properties.base_bbl; if (b) { const l = bldgOf.get(b); if (l) l.push(f); else bldgOf.set(b, [f]); } }
+    const drop = new Set();
+    for (const f of tw.city.parcels.features) {
+      const p = f.properties;
+      if (!resi.has(p.district) || p.bldgclass !== "D0" || !(p.lotarea <= 9000) || (p.corridorm ?? 9999) < 12) continue;
+      if (p.corner === 1 && h01(p.bbl, 7) < 0.5) continue;   // half the corners keep their corner building
+      const bs = bldgOf.get(p.bbl);
+      if (!bs?.length || h01(p.bbl, 1) > 0.82) continue;
+      const lot = f.geometry.coordinates[0].slice(0, -1).map(proj.toXY);
+      // the lot's depth runs along its longest side
+      let ax = [1, 0], best = 0;
+      for (let i = 0; i < lot.length; i++) { const e = sub(lot[(i + 1) % lot.length], lot[i]), L = Math.hypot(e[0], e[1]); if (L > best) { best = L; ax = [e[0] / L, e[1] / L]; } }
+      const ay = perp(ax), c = ringCentroid(lot);
+      const ext = (v) => { const s = lot.map((q) => (q[0] - c[0]) * v[0] + (q[1] - c[1]) * v[1]); return Math.max(...s) - Math.min(...s); };
+      const D = ext(ax), Fw = ext(ay);
+      const w = Math.max(5.5, Math.min(0.7 * Fw, 9 * (0.9 + 0.2 * h01(p.bbl, 2)))), d = Math.max(7, Math.min(0.45 * D, 13 * (0.9 + 0.2 * h01(p.bbl, 3))));
+      const storeys = h01(p.bbl, 4) < 0.6 ? 2 : 1, uu = h01(p.bbl, 5), units = uu < 0.6 ? 1 : uu < 0.9 ? 2 : 3;
+      const ring = rectRing(c, ay, w, d);
+      const bldgarea = Math.round(w * d * storeys * SQFT_PER_M2);
+      p.bldgclass = units === 1 ? "A1" : units === 2 ? "B1" : "C0";
+      p.numfloors = storeys; p.bldgarea = bldgarea; p.unitsres = units;
+      p.assesstot = p.assessland + Math.round(bldgarea * (120 + 110 * h01(p.bbl, 6)) * 0.45);   // the generator's own D-class $/sf band
+      bs[0].geometry = { type: "Polygon", coordinates: [[...ring.map(LLw), LLw(ring[0])]] };
+      bs[0].properties.heightroof = +((storeys * 3.2 + 2.5) / FT).toFixed(1);
+      for (const extra of bs.slice(1)) drop.add(extra);
+      housed.add(p.bbl);
+    }
+    if (drop.size) tw.city.buildings.features = tw.city.buildings.features.filter((f) => !drop.has(f));
+  }
+
   // ---------------- the region's ordinary parcels: the market out past the town
   const rawParcels = { type: "FeatureCollection", features: towns.flatMap((t) => t.city.parcels.features) };
   const rawBuildings = { type: "FeatureCollection", features: towns.flatMap((t) => t.city.buildings.features) };
@@ -349,11 +394,9 @@ export function makeRegion(seed, opts = {}) {
     const r = h.r, ring = rectRing(r.c, r.u, r.w, r.d).map(LL);
     b3.push({ b: h.bbl, c: h.cls, y: h.year, t: 0, f: Math.max(1, Math.round(r.z / 355)), z0: 0, z1: +(r.z / 100).toFixed(1), d: 1, ...(h.house ? { dk: "house" } : {}), x: 1, r: ring });
   }
-  // a small house in the town's own residential additions draws as a house, not a box; it stays its deed's building
-  const resiDistricts = new Set(Object.entries(cfg.districts).filter(([, d]) => d.flavor === "resi").map(([k]) => k));
-  const houseLike = new Set();
-  for (const [bbl, p] of Object.entries(data.parcels)) if (resiDistricts.has(p.district) && p.class === "multifamily" && p.floors <= 2 && p.lotArea <= 7500) houseLike.add(bbl);
-  for (const b of b3) if (!b.d && houseLike.has(b.b) && ringAreaAbs(b.r.map((q) => proj.toXY(q))) <= 260) b.dk = "house";
+  // the inner ring's houses draw as houses, not boxes; each stays its deed's building
+  const houseLike = new Set([...housed].filter((b) => data.parcels[b]?.class === "multifamily"));
+  for (const b of b3) if (!b.d && houseLike.has(b.b)) b.dk = "house";
 
   // ---------------- the city record
   const parcelFeatures = { type: "FeatureCollection", features: [...data.tileParcels.features, ...reservedFeatures] };

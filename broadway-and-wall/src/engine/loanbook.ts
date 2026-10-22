@@ -145,6 +145,14 @@ export function cityLoanBook(s: GameState, parcels?: ParcelTable): BookLoan[] {
       status: (r.stressMs ?? 0) >= 3 ? "default" : (r.stressMs ?? 0) > 0 ? "watch" : "current",
     });
   }
+  // The homebuilders' acquisition, development and construction lines (homes.ts).
+  for (const b of Object.values(s.homes?.builders ?? {})) {
+    if (b.failedM !== undefined || !(b.debt > 0) || !b.lender) continue;
+    out.push({
+      holder: b.lender, borrower: `hb:${b.name}`, kind: "construction", balance: Math.round(b.debt),
+      status: (b.stressMs ?? 0) >= 2 ? "default" : (b.stressMs ?? 0) > 0 ? "watch" : "current", klass: "construction",
+    });
+  }
   for (const j of s.cityJobs ?? []) {
     if (!j.firmId || !((j.debt ?? 0) > 0)) continue;
     out.push({

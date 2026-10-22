@@ -30,6 +30,7 @@ struct FBWRenderLot
 	FString Facade;   // the player's chosen facade family, if they designed it
 	FBWLook Look;     // and the kit look they chose on the Build desk
 	FString Form;     // the building form the player chose (FORMS_PLAN.md), if any
+	FString Deco;     // "house": a homebuilder's detached house (engine homes.ts), drawn with the house meshes
 	TArray<FBWRenderTier> Tiers;   // its solved tiers; empty = one prism (the lot scaled by sqrt(cov))
 };
 

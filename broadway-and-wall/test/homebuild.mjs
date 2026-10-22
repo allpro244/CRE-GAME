@@ -95,6 +95,7 @@ for (const r of [pick, ...reads.filter((x) => x !== pick && x.lots >= 12 && x.lo
 }
 if (!tract) { fail("no rezoning approved"); process.exit(1); }
 const lots = platTractLots(parcels[tract].tract, g.rezoned[tract].lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
+// (the A&D note on a designed plat is platdesign.mjs's; this plat is paid in cash)
 const sp = E.startPlat(g, parcels, tract, lots);
 if (sp.err) { fail(`plat: ${sp.err}`); process.exit(1); }
 g = sp.s; check(g, "plat");
@@ -124,7 +125,8 @@ const v0 = E.platHomesView(g, parcels, tract);
   const nw1 = E.netWorth(g, parcels), spent = cash0 - g.cash;
   // anything else still on the book (a farm the board refused), at its own mark
   const other = Object.values(g.holdings).filter((h) => !mine.includes(h.bbl)).reduce((t, h) => t + E.ownedHoldingValueFromRec(g, E.resolveRec(parcels, g, h.bbl), h), 0);
-  const want = honest + other - spent, got = nw1 - nw0;
+  const owed = Object.values(g.holdings).reduce((t, h) => t + (h.loan?.balance ?? 0), 0);
+  const want = honest + other - spent - owed, got = nw1 - nw0;
   console.log(`  net worth ${M(nw0)} -> ${M(nw1)} (${M(got)}); cash spent ${M(spent)} (net of interest earned), lots honestly ${M(honest)}, other land ${M(other)} -> expected ${M(want)}`);
   if (Math.abs(got - want) > 0.05 * Math.max(honest, spent)) fail(`net worth moved ${M(got)}, the lots and the cash say ${M(want)}`);
 }
@@ -138,8 +140,9 @@ console.log(`  bids: takedown $${v0.bids.takedownPsf.toFixed(2)}/sf at ~${v0.bid
   console.log(`  pace = ${Math.round(hh).toLocaleString()} households x ${(E.NEW_HOME_RATE * 100).toFixed(2)}%/yr / 12 x growth ${(0.4 + 0.6 * Math.max(0, Math.min(4, g12 / E.HH_GROWTH_NAT))).toFixed(2)} (pop ${(g12 * 100).toFixed(2)}%/yr) x afford ${aff.toFixed(2)} = ${v0.bids.pace.toFixed(1)}/mo`);
 }
 
+const stock0 = g.econ.stock.multifamily;
 // sell: takedown to the first builder who offers; list the rest whole at the bid
-let months = 0, listed = false;
+let months = 0, listed = false, failChecked = false;
 while (months < HORIZON) {
   g = tick(g); months++;
   if (g.gameOver) { fail(`game over in month ${g.month}`); break; }
@@ -152,6 +155,21 @@ while (months < HORIZON) {
   if (!listed && v.contract && v.free > v.contract.left) {
     const r = E.listLotsToBuilders(g, parcels, tract, v.bids.bulkPsf * 0.98, true);
     if (!r.err) { g = r.s; listed = true; console.log(`  month ${g.month}: listed the rest whole at $${(v.bids.bulkPsf * 0.98).toFixed(2)}/sf`); }
+  }
+  // A BUILDER THAT CANNOT PAY ITS WAY FAILS, on a side copy: drain one with houses going up and run three months
+  if (!failChecked && Object.values(g.homes.units).some((u) => u.closedM === undefined && u.spent > 0)) {
+    failChecked = true;
+    let t = JSON.parse(JSON.stringify(g));
+    const by = Object.values(t.homes.units).find((u) => u.closedM === undefined).by;
+    const owed0 = t.homes.builders[by].debt, lender = t.homes.builders[by].lender;
+    const cap0 = t.lenders.find((l) => l.name === lender)?.capital ?? 0;
+    t.homes.builders[by].cash = -1e9;
+    for (let i = 0; i < 3; i++) t = E.advanceQuarter(t, parcels, bbls, city.adjacency);
+    const b = t.homes.builders[by], cap1 = t.lenders.find((l) => l.name === lender)?.capital ?? 0;
+    const heir = Object.values(t.homes.units).find((u) => u.closedM === undefined)?.by;
+    console.log(`  stress test: ${by} with ${M(owed0)} owed at ${lender}, drained -> ${b.failedM !== undefined ? `failed m${b.failedM}` : "still standing"}; its houses now ${heir ?? "none"}'s; the desk's capital ${M(cap0)} -> ${M(cap1)}; ${t.news.find((n) => /has failed/.test(n.text))?.text ?? ""}`);
+    if (b.failedM === undefined) fail("a builder three months unable to pay did not fail");
+    if (heir === by) fail("a failed builder kept its houses");
   }
   const units = Object.values(g.homes.units).filter((u) => u.parent === tract);
   if (!mine.some((b) => g.holdings[b]) && units.every((u) => u.closedM !== undefined) && !Object.values(g.homes.held ?? {}).length) break;
@@ -171,8 +189,24 @@ if (!closed.length) fail("no builder sold a house");
 const exits = (g.exits ?? []).filter((x) => mine.includes(x.bbl)).length;
 console.log(`  exits on the plat: ${exits}; ledger: worst unexplained month $${Math.round(worst).toLocaleString()}`);
 if (exits !== pl.lotsSold) fail(`${exits} exits for ${pl.lotsSold} lots sold`);
+// A SOLD HOUSE IS A HOUSE: standing on its lot, in the housing stock, an ordinary deed on the market again
 const fam = units.find((u) => u.closedM !== undefined);
-if (fam && !E.isCivicLand(g, fam.bbl)) fail("a sold house is still on the land market");
+if (fam) {
+  const r = E.resolveRec(parcels, g, fam.bbl);
+  console.log(`  a sold house: ${r.address}, ${r.class} ${r.bldgArea.toLocaleString()} sf, ${r.floors} fl, built ${r.yearBuilt}; on the market: ${!E.isCivicLand(g, fam.bbl)}`);
+  if (!g.built[fam.bbl]?.house || r.class !== "multifamily" || !(r.bldgArea > 0)) fail("a sold house does not stand on its lot");
+  if (E.isCivicLand(g, fam.bbl)) fail("a family's house is held off the market");
+  const rv = E.renderView(g);
+  if (!rv.lots.some((l) => l.bbl === fam.bbl && l.deco === "house")) fail("the render view does not draw the house");
+}
+// the houses joined the housing stock through the delivery queue
+console.log(`  multifamily stock ${Math.round(stock0).toLocaleString()} -> ${Math.round(g.econ.stock.multifamily).toLocaleString()} sf; houses delivered ${Math.round(units.filter((u) => u.builtM !== undefined).reduce((t, u) => t + u.sf, 0)).toLocaleString()} sf`);
+if (!units.some((u) => u.builtM !== undefined)) fail("no house was finished");
+// the builders' money is on real books: a line at a desk, on that desk's loan book
+for (const b of Object.values(g.homes.builders)) console.log(`    ${b.name}: capital ${M(b.capital)}, cash ${M(b.cash)}, debt ${M(b.debt)} at ${b.lender ?? "no desk"}, interest paid ${M(b.interestPaid)}${b.failedM !== undefined ? ", FAILED" : ""}`);
+const book = E.cityLoanBook(g).filter((l) => l.borrower.startsWith("hb:"));
+const owed = Object.values(g.homes.builders).filter((b) => b.failedM === undefined).reduce((t, b) => t + b.debt, 0);
+if (Math.abs(book.reduce((t, l) => t + l.balance, 0) - owed) > 10) fail("the builders' debt is not on the desks' books");
 {
   const fresh = makeCity(REGION, seed).parcels, fb = Object.keys(fresh);
   E.normalizeParcels(fresh);

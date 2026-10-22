@@ -46,7 +46,11 @@ import {
   ENTITLE_FIXED, ENTITLE_PER_LOT, ENTITLE_MONTHS, INFRA_MONTHS, INFRA_PER_FRONT_FT, IMPACT_FEE,
   MAIN_PER_M, REZONE, PLAT_LOT_SIZES, entitleOdds, servedM,
 } from "./landdev";
-import { platLocation, homeTargetPsf } from "./homes";
+import { platLocation, homeTargetPsf, platQuoteNow } from "./homes";
+import { pickConstructionDesk } from "./dev";
+import { lenderByName, chargeLenderLoss } from "./lenders";
+import { voidContract } from "./acquire";
+import { money } from "./money";
 import {
   homeQuote, salesPace, selloutDiscount, LOT_SELLOUT_RATE, HH_SIZE,
 } from "./homeprice";
@@ -66,6 +70,8 @@ export interface GrowthProject {
   stage: "entitle" | "approved" | "plat";
   decideM: number;
   odds: number;
+  /** the developer's own share of the streets, $, committed until they go in */
+  own?: number;
 }
 export interface GrowthYear {
   /** months since the opening */
@@ -93,9 +99,26 @@ export interface GrowthYear {
   roads: ReturnType<typeof roadsSummary>;
   town: ReturnType<typeof townSummary>;
 }
+/**
+ * A LAND DEVELOPER, ON ITS BOOKS (the homebuilders' rule, homes.ts HomeBuilder):
+ * founded with its own money, borrowing at a construction desk against the
+ * land and the streets, paying the interest out of cash, paid as the builders
+ * take its lots — and failing when it cannot pay its way. The counts are the
+ * record; the money is the business. (Saves from before the books carry only
+ * the counts: a developer without `cash` is founded on first sight.)
+ */
+export interface LandDev {
+  name: string; sinceM: number; tracts: number; plats: number; lots: number; spent: number; refused: number;
+  capital?: number; cash?: number; debt?: number; lender?: string;
+  interestPaid?: number; revenue?: number; lotsSold?: number; stressMs?: number; failedM?: number;
+  /** the desk's loan on each tract or plat: balance, and the release on each lot sold */
+  loans?: Record<string, { bal: number; perLot: number }>;
+}
 export interface GrowthState {
   /** the land developers, by name: what they have bought and platted */
-  devs: Record<string, { name: string; sinceM: number; tracts: number; plats: number; lots: number; spent: number; refused: number }>;
+  devs: Record<string, LandDev>;
+  /** each developer's plat, by parent tract: whose lots the builders are buying (homes.ts landDevSold) */
+  platBy?: Record<string, string>;
   /** a developer's tract, from purchase to the streets going in */
   projects: Record<string, GrowthProject>;
   /** tracts off the market while a developer holds them (demand.ts isCivicLand reads it) */
@@ -140,6 +163,30 @@ const LAND_CLOSING = 0.03;
 const READ_SIGMA = 0.10;
 /** The board does not rehear a refused plat for about two years [K]. */
 const REHEAR_M = 24;
+/**
+ * WHAT THE DESK ADVANCES a land developer: the interagency supervisory
+ * loan-to-value limits (12 CFR 34 App. A to Subpart D; OCC / FDIC / Fed) —
+ * 65% against raw land, 75% against land development [S] — at the
+ * construction desk's coupon, the loan index plus 2.4 points (proforma.ts
+ * CONSTR_SPREAD). The developer's own money is the rest, and the board's
+ * fees, which no bank lends against.
+ */
+const LAND_ADVANCE = 0.65, DEV_ADVANCE = 0.75;
+const devRate = (s: GameState) => ((s.econ.indexRate ?? 5.4) + 2.4) / 100;
+/**
+ * THE RELEASE PRICE: the desk is repaid 120% of its loan per lot as each lot
+ * closes, so the note is retired before the last lots sell (the same release
+ * the player's A&D note carries, adloan.ts; 110-125% is the lending norm) [S].
+ */
+const RELEASE = 1.2;
+/**
+ * WHAT A FAILED DEVELOPER'S LAND FETCHES: the desk's REO, a quarter under
+ * the market's read (homes.ts REO_DISCOUNT: bank REO land cleared 20-30% under
+ * market in 2009-11) [S].
+ */
+const LAND_REO_DISCOUNT = 0.25;
+/** Three months unable to pay its way and a developer fails (the homebuilders' rule) [K]. */
+const DEV_STRESS_M = 3;
 /** Land developers' names: regional land companies [O]. */
 const DEV_WORDS = [["Prairie", "Northfield", "Grand", "Crossroads", "Harvest", "Timberline", "Keystone", "Bluestem", "Lakeview", "Summit", "Landmark", "Cornerstone"], ["Land Co.", "Development", "Land Partners", "Communities", "Properties", "Land Group"]];
 
@@ -209,7 +256,9 @@ export function readTract(s: GameState, parcels: ParcelTable, bbl: string, extra
   const psf = e.homes?.psf ?? homeTargetPsf(e);
   const { loc } = platLocation(s, parcels, bbl, psf);
   const served = servedM(s, parcels, bbl);
-  const odds = entitleOdds(served);
+  // a farm the board has already zoned for houses (an approved developer's REO) needs no board: no fees, no wait, no odds
+  const zoned = isZonedForHouses(s, bbl);
+  const odds = zoned ? 1 : entitleOdds(served);
   const farm = farmUsePsf(rec, e) * rec.lotArea;
   const r = LOT_SELLOUT_RATE;
   const sellers = activeCommunities(s) + extraSellers + 1;
@@ -223,8 +272,8 @@ export function readTract(s: GameState, parcels: ParcelTable, bbl: string, extra
     const disc = q.residual > 0 ? selloutDiscount(g.n, pace) : 0;
     const lotsValue = Math.max(0, q.residual) * g.n * disc * lotsMult;
     const horizontal = (INFRA_PER_FRONT_FT * g.frontage + IMPACT_FEE * g.n) * e.costIdx * costMult;
-    const entitle = (ENTITLE_FIXED + ENTITLE_PER_LOT * g.n) * e.costIdx * costMult;
-    const tE = ENTITLE_MONTHS(g.n), tI = INFRA_MONTHS(g.n);
+    const entitle = zoned ? 0 : (ENTITLE_FIXED + ENTITLE_PER_LOT * g.n) * e.costIdx * costMult;
+    const tE = zoned ? 0 : ENTITLE_MONTHS(g.n), tI = INFRA_MONTHS(g.n);
     const dfE = Math.pow(1 + r, -tE / 12), dfI = Math.pow(1 + r, -(tE + tI) / 12);
     const bid = odds * (lotsValue * dfI - (horizontal + offsite) * dfE) + (1 - odds) * farm * dfE - entitle;
     if (!best || bid > best.bid) {
@@ -234,15 +283,27 @@ export function readTract(s: GameState, parcels: ParcelTable, bbl: string, extra
   return best;
 }
 
-/** A tract the market can trade: a whole farm, not platted, not the player's, not in anyone's hands or talks. */
+/**
+ * A tract the market can trade: a whole farm, not platted, not the player's,
+ * not in anyone's hands, not under contract. A farm the player is still
+ * NEGOTIATING for is on the market: the seller has signed nothing, and a land
+ * developer who reads it better can buy it first (the developers compete for
+ * the same farms the player does, on the same rules and their own money).
+ */
 function tradableTract(s: GameState, parcels: ParcelTable, bbl: string): boolean {
   const rec = parcels[bbl];
   if (!rec?.tract || s.platted?.[bbl] || s.plats?.[bbl]) return false;
   if (s.holdings[bbl] || s.growth?.held[bbl] || s.entitlementApps?.[bbl]) return false;
-  if (s.talks?.[bbl] || s.approaches?.[bbl] || s.civicLand?.[bbl]) return false;
+  if (s.talks?.[bbl]?.agreed || s.approaches?.[bbl] || s.civicLand?.[bbl]) return false;
   if (ownerOf(s, bbl)) return false;
   return true;
 }
+
+/** The player's standing offer on a farm it is negotiating for, $ (0 if none). */
+const playerOffer = (s: GameState, bbl: string): number => {
+  const t = s.talks?.[bbl];
+  return t && !t.agreed ? Math.max(0, t.yourPrice ?? 0) : 0;
+};
 
 // ---------------------------------------------------------------- the quarter: the land market
 let TRACTS: { key: string; list: string[] } | null = null;
@@ -269,12 +330,129 @@ function devName(s: GameState, g: GrowthState): string {
  * of regional developers. An existing one takes the next deal unless a new
  * name enters, about one deal in three [K].
  */
-function pickDev(s: GameState, g: GrowthState): string {
-  const names = Object.keys(g.devs).sort();
+function pickDev(s: GameState, g: GrowthState, ownNeed: number): string | null {
+  // only a developer with the money for its share can sign
+  const names = Object.keys(g.devs).sort().filter((n) => devFunds(s, g.devs[n]) >= ownNeed);
   if (names.length && rng(s, "growth") > 1 / 3) return names[Math.floor(rng(s, "growth") * names.length)];
   const n = devName(s, g);
-  g.devs[n] = { name: n, sinceM: s.month, tracts: 0, plats: 0, lots: 0, spent: 0, refused: 0 };
+  const d = newDev(s, n);
+  if (d.cash! < ownNeed) return names.length ? names[0] : null;
+  g.devs[n] = d;
   return n;
+}
+/**
+ * A LAND DEVELOPER IS FOUNDED with its own money — lognormal round $3M in the
+ * town's opening prices, carried at inflation: the purse the town's builders
+ * and homebuilders draw (homes.ts newBuilder; a regional land developer's
+ * equity runs a few million to a few tens of millions, ULI / NAHB land
+ * development surveys) [S, rounded] — and a construction desk.
+ */
+function newDev(s: GameState, name: string): LandDev {
+  const capital = Math.round(3_000_000 * Math.exp(0.9 * (hash01(`${s.seed}:ldcap:${name}`) * 2 - 1)) * (s.econ.priceLevel ?? 1) * (s.econ.cpi ?? 1));
+  return { name, sinceM: s.month, tracts: 0, plats: 0, lots: 0, spent: 0, refused: 0,
+    capital, cash: capital, debt: 0, lender: pickConstructionDesk(s, `ld:${name}`), interestPaid: 0, revenue: 0, lotsSold: 0, loans: {} };
+}
+/** A developer from a save before the books: founded now, on what it has already spent. */
+function booksOf(s: GameState, d: LandDev): LandDev {
+  if (d.cash === undefined) { const f = newDev(s, d.name); Object.assign(d, { ...f, ...d, cash: f.cash, capital: f.capital, debt: 0, loans: {} }); }
+  return d;
+}
+const deskOpenFor = (s: GameState, d: LandDev) => !!d.lender && lenderByName(s, d.lender)?.failedM === undefined;
+/** What a developer can put in of its own today. */
+function devFunds(s: GameState, d: LandDev, except?: string): number {
+  booksOf(s, d);
+  if (d.failedM !== undefined) return -Infinity;
+  // less what it has already promised its other farms' streets
+  let promised = 0;
+  for (const pr of Object.values(s.growth?.projects ?? {})) if (pr.by === d.name && pr.stage !== "plat" && pr.bbl !== except) promised += pr.own ?? 0;
+  return (d.cash ?? 0) - promised;
+}
+/** Pay `amount` on project `key`, the desk advancing `adv` of it while it is open. */
+function devPays(s: GameState, d: LandDev, key: string, amount: number, adv: number) {
+  const loan = deskOpenFor(s, d) ? Math.round(amount * adv) : 0;
+  d.cash = (d.cash ?? 0) - (amount - loan);
+  d.debt = (d.debt ?? 0) + loan;
+  const l = ((d.loans ??= {})[key] ??= { bal: 0, perLot: 0 });
+  l.bal += loan;
+}
+/** Retire project `key`'s loan out of `cash` (a sale), as far as it goes. */
+function devRepay(d: LandDev, key: string, max = Infinity) {
+  const l = d.loans?.[key];
+  if (!l) return;
+  const pay = Math.max(0, Math.min(l.bal, max));
+  l.bal -= pay; d.debt = Math.max(0, (d.debt ?? 0) - pay); d.cash = (d.cash ?? 0) - pay;
+  if (l.bal <= 0.5) delete d.loans![key];
+}
+
+/**
+ * A LOT ON A DEVELOPER'S PLAT CLOSED TO A HOMEBUILDER (homes.ts): the price
+ * to the developer, the desk's release out of it.
+ */
+export function landDevSold(s: GameState, parent: string, price: number): void {
+  const g = s.growth;
+  const by = g?.platBy?.[parent];
+  const d = by ? g!.devs[by] : undefined;
+  if (!d || d.failedM !== undefined || !(price > 0)) return;
+  booksOf(s, d);
+  d.cash! += price; d.revenue = (d.revenue ?? 0) + price; d.lotsSold = (d.lotsSold ?? 0) + 1;
+  const l = d.loans?.[parent];
+  if (l) devRepay(d, parent, Math.min(price, l.perLot));
+}
+
+/**
+ * THE MONTH'S CARRY: every developer pays its desk's interest out of its own
+ * cash. Land banked against a market that has not come pays the coupon every
+ * month it sits — the cost a developer weighs against the streets. One that
+ * cannot pay its way for three months fails, and its desk sells what it held.
+ */
+function tickDevBooks(s: GameState, parcels: ParcelTable) {
+  const g = s.growth!;
+  for (const d of Object.values(g.devs).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (d.failedM !== undefined) continue;
+    booksOf(s, d);
+    if ((d.debt ?? 0) > 0) {
+      const i = Math.round(d.debt! * devRate(s) / 12);
+      d.cash! -= i; d.interestPaid = (d.interestPaid ?? 0) + i;
+    }
+    d.stressMs = d.cash! < 0 ? (d.stressMs ?? 0) + 1 : 0;
+    if (d.stressMs >= DEV_STRESS_M) failDev(s, parcels, d);
+  }
+}
+/**
+ * A FAILED LAND DEVELOPER. Its desk takes what it held and sells it as REO, a
+ * quarter under the market's read: its farms back to the land market (a tract
+ * the board has already zoned keeps the zoning), its plats' unsold lots to the
+ * homebuilders through the market, as anybody's lots. What the sale does not
+ * cover of the debt is the desk's loss.
+ */
+function failDev(s: GameState, parcels: ParcelTable, d: LandDev) {
+  const g = s.growth!;
+  d.failedM = s.month;
+  let worth = 0, tracts = 0;
+  for (const pr of Object.values(g.projects).filter((p) => p.by === d.name).sort((a, b) => a.bbl.localeCompare(b.bbl))) {
+    const rec = parcels[pr.bbl];
+    // streets under way: at the money in them (the farm and the horizontal), a quarter off, as a failed
+    // builder's frames are (homes.ts failBuilder); the plat finishes and its lots sell through the market
+    if (pr.stage === "plat") { worth += (pr.price + (s.plats?.[pr.bbl]?.cost ?? 0)) * (1 - LAND_REO_DISCOUNT); tracts++; delete g.projects[pr.bbl]; delete g.held[pr.bbl]; continue; }
+    const rd = rec ? readTract(s, parcels, pr.bbl) : null;
+    worth += Math.max(rd?.farm ?? 0, rd?.bid ?? 0) * (1 - LAND_REO_DISCOUNT);
+    tracts++;
+    delete g.projects[pr.bbl]; delete g.held[pr.bbl];
+  }
+  let lots = 0;
+  for (const [parent, by] of Object.entries(g.platBy ?? {})) {
+    if (by !== d.name) continue;
+    const pm = s.econ.homes?.plats[parent];
+    const q = pm ? platQuoteNow(s, parent) : null;
+    const left = pm?.left ?? 0;
+    if (q && left > 0) { worth += Math.max(0, q.residualPsf) * (s.plats?.[parent]?.lotSf ?? 7_500) * left * pm!.disc * (1 - LAND_REO_DISCOUNT); lots += left; }
+    delete g.platBy![parent];
+  }
+  const debt = d.debt ?? 0;
+  const loss = Math.max(0, Math.round(debt - worth - Math.max(0, d.cash ?? 0)));
+  if (d.lender && loss > 0) chargeLenderLoss(s, d.lender, loss);
+  d.debt = 0; d.cash = 0; d.loans = {}; d.stressMs = 0;
+  s.news.unshift({ q: s.month, kind: "warn", text: `${d.name}, land developer, has failed: ${money(debt)} owed${d.lender ? ` to ${d.lender}` : ""} against ${tracts} tracts and ${lots} unsold lots${loss > 0 ? `; the desk takes a ${money(loss)} loss` : ""}. Its land goes back on the market.` });
 }
 
 function tickLandMarket(s: GameState, parcels: ParcelTable, bbls: string[]) {
@@ -304,7 +482,9 @@ function tickLandMarket(s: GameState, parcels: ParcelTable, bbls: string[]) {
     const cm = Math.exp(READ_SIGMA * hashNormal(`cost:${s.seed}:${rd.bbl}:${qtr}`));
     return readTract(s, parcels, rd.bbl, extra, lm, cm);
   };
-  const ask = (rd: TractRead) => Math.max(rd.farm, rd.bid);
+  // THE SELLER'S PRICE: the market's bid or the corn — or, where the player is in talks and has
+  // not yet signed, the player's own offer if it is higher: a farmer in talks takes the better offer.
+  const ask = (rd: TractRead) => Math.max(rd.farm, rd.bid, playerOffer(s, rd.bbl));
   let cands = reads.map((rd) => ({ rd, mine: own(rd, 0) })).filter((c) => c.mine && c.mine.bid > ask(c.rd) * (1 + LAND_CLOSING) && c.mine.lotsValue > 0);
   let bought = 0;
   while (cands.length) {
@@ -313,30 +493,49 @@ function tickLandMarket(s: GameState, parcels: ParcelTable, bbls: string[]) {
     // re-read with the communities bought this quarter in the count
     const mine = bought ? own(c.rd, 0) : c.mine;
     const base = bought ? readTract(s, parcels, c.rd.bbl) : c.rd;
-    if (!mine || !base || !(mine.bid > Math.max(base.farm, c.rd.bid) * (1 + LAND_CLOSING))) continue;
-    buyTract(s, parcels, g, c.rd.bbl, Math.round(ask(c.rd)), mine);
+    if (!mine || !base || !(mine.bid > Math.max(base.farm, c.rd.bid, playerOffer(s, c.rd.bbl)) * (1 + LAND_CLOSING))) continue;
+    const talks = s.talks?.[c.rd.bbl];
+    if (!buyTract(s, parcels, g, c.rd.bbl, Math.round(ask(c.rd)), mine)) continue;
+    if (talks) voidContract(s, parcels, c.rd.bbl, `${g.held[c.rd.bbl]} bought ${parcels[c.rd.bbl]?.address ?? c.rd.bbl} out from under you while you were negotiating, at ${money(ask(c.rd))}`);
     bought++;
     cands = cands.filter((x) => x.rd.bbl !== c.rd.bbl);
   }
 }
 
-function buyTract(s: GameState, parcels: ParcelTable, g: GrowthState, bbl: string, price: number, rd: TractRead) {
+function buyTract(s: GameState, parcels: ParcelTable, g: GrowthState, bbl: string, price: number, rd: TractRead): boolean {
   const rec = parcels[bbl];
-  const by = pickDev(s, g);
+  const zoned = isZonedForHouses(s, bbl);
+  // its own share of the land, the closing and the board's fees, in cash; the desk lends against the dirt
+  const closing = Math.round(price * LAND_CLOSING);
+  const entitle = zoned ? 0 : Math.round(rd.entitle);
+  // A developer signs only for a deal it can carry to the end: its share of the land, the closing and
+  // the fees now, and its share of the streets and the mains when the board says yes. One that can
+  // buy the farm but not build the streets would be buying a land bank.
+  const streetsOwn = (rd.horizontal + rd.offsite) * (1 - DEV_ADVANCE);
+  const by = pickDev(s, g, price * (1 - LAND_ADVANCE) + closing + entitle + streetsOwn);
+  if (!by) return false;
   const d = g.devs[by];
-  d.tracts++; d.spent += price + rd.entitle;
+  devPays(s, d, bbl, price, LAND_ADVANCE);
+  d.cash! -= closing + entitle;
+  d.tracts++; d.spent += price + closing + entitle;
   g.held[bbl] = by;
   g.yr.bought++;
   s.listings = (s.listings ?? []).filter((x) => x.bbl !== bbl);
   g.projects[bbl] = {
-    bbl, by, boughtM: s.month, price, lotSf: rd.lotSf, lots: rd.lots, stage: "entitle",
-    decideM: s.month + ENTITLE_MONTHS(rd.lots), odds: +rd.odds.toFixed(2),
+    bbl, by, boughtM: s.month, price, lotSf: rd.lotSf, lots: rd.lots, stage: zoned ? "approved" : "entitle",
+    decideM: zoned ? s.month : s.month + ENTITLE_MONTHS(rd.lots), odds: +rd.odds.toFixed(2), own: Math.round(streetsOwn),
   };
   (s.lastTradeM ??= {})[bbl] = s.month;
   s.news.unshift({
     q: s.month, kind: "deal", bbl,
-    text: `${by} bought ${rec.address} for $${Math.round(price / Math.max(1, rec.lotArea / 43560)).toLocaleString()} an acre and filed to rezone it for ${rd.lots} house lots. The board sits ${monthLabel(s.month + ENTITLE_MONTHS(rd.lots))}.`,
+    text: `${by} bought ${rec.address} for $${Math.round(price / Math.max(1, rec.lotArea / 43560)).toLocaleString()} an acre`
+      + (zoned ? `, already zoned for houses: ${rd.lots} lots once the streets pay.` : ` and filed to rezone it for ${rd.lots} house lots. The board sits ${monthLabel(s.month + ENTITLE_MONTHS(rd.lots))}.`),
   });
+  return true;
+}
+/** A tract the board has already zoned for houses (a refused developer's farm keeps no zoning; an approved one's REO does). */
+function isZonedForHouses(s: GameState, bbl: string): boolean {
+  return s.rezoned?.[bbl]?.zone === REZONE.zone;
 }
 
 // ---------------------------------------------------------------- the month: the board and the streets
@@ -353,10 +552,18 @@ function tickProjects(s: GameState, parcels: ParcelTable) {
         s.rezoned = { ...(s.rezoned ?? {}), [pr.bbl]: { zone: REZONE.zone, far: REZONE.far, lotSf: pr.lotSf, m: s.month } };
         pr.stage = "approved";
       } else {
-        g.devs[pr.by] && g.devs[pr.by].refused++;
+        const d = g.devs[pr.by];
         g.yr.refused++;
         (g.refusedM ??= {})[pr.bbl] = s.month;
         delete g.projects[pr.bbl]; delete g.held[pr.bbl];
+        // the developer owns a farm it did not want: it sells it back at the corn, pays off the desk and
+        // eats the difference and the board's fees
+        if (d) {
+          d.refused++;
+          booksOf(s, d);
+          d.cash! += Math.round(farmUsePsf(rec, s.econ) * rec.lotArea * (1 - LAND_CLOSING));
+          devRepay(d, pr.bbl);
+        }
         s.news.unshift({ q: s.month, kind: "info", bbl: pr.bbl, text: `The board refused ${pr.by}'s subdivision at ${rec.address}. It goes back on the market a farm.` });
         continue;
       }
@@ -375,13 +582,21 @@ function tickProjects(s: GameState, parcels: ParcelTable) {
       const horizontal = (INFRA_PER_FRONT_FT * g2.frontage + IMPACT_FEE * g2.n) * e.costIdx + MAIN_PER_M * servedM(s, parcels, pr.bbl) * e.costIdx;
       const tI = INFRA_MONTHS(g2.n);
       const lots = q.residual > 0 ? q.residual * g2.n * selloutDiscount(g2.n, pace) : 0;
-      if (lots * Math.pow(1 + LOT_SELLOUT_RATE, -tI / 12) > horizontal) {
+      const d = g.devs[pr.by];
+      // ...and when the developer can put in its share of them (the desk lends the rest)
+      const canBuild = !d || devFunds(s, d, pr.bbl) >= horizontal * (deskOpenFor(s, d) ? 1 - DEV_ADVANCE : 1);
+      if (canBuild && lots * Math.pow(1 + LOT_SELLOUT_RATE, -tI / 12) > horizontal) {
+        if (d) {
+          devPays(s, d, pr.bbl, horizontal, DEV_ADVANCE);
+          const l = d.loans?.[pr.bbl];
+          if (l) { l.perLot = Math.round(RELEASE * l.bal / Math.max(1, g2.n)); d.loans![pr.bbl] = l; }
+          (g.platBy ??= {})[pr.bbl] = pr.by;
+        }
         s.plats = {
           ...(s.plats ?? {}),
           [pr.bbl]: { parent: pr.bbl, template: "grid", lotSf: pr.lotSf, startM: s.month, doneM: s.month + tI, cost: Math.round(horizontal), lots: g2.lots.map((l) => ({ ...l })) },
         };
         pr.stage = "plat";
-        const d = g.devs[pr.by];
         if (d) { d.plats++; d.lots += g2.n; d.spent += Math.round(horizontal); }
         s.news.unshift({ q: s.month, kind: "info", bbl: pr.bbl, text: `${pr.by} is building the streets at ${rec.address}: ${g2.n} lots, finished ${monthLabel(s.month + tI)}.` });
       }
@@ -450,6 +665,7 @@ export function tickGrowth(s: GameState, parcels: ParcelTable, bbls: string[], a
   if ((globalThis as { BW_NO_GROWTH?: boolean }).BW_NO_GROWTH) return;
   const g = growthOf(s);
   if (g.mapSeed === undefined) { const t = tractList(parcels, bbls)[0]; if (!t) return; g.mapSeed = parcels[t].tract!.seed; }
+  tickDevBooks(s, parcels);
   tickProjects(s, parcels);
   tickRoads(s, parcels, bbls);
   if (s.month % 3 === 0) tickLandMarket(s, parcels, bbls);

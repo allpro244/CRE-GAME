@@ -1756,7 +1756,7 @@ function levelRatioSinceLooking(econ: Econ, rec: ParcelRecord, ageM: number): nu
   const level = (i: number): number => {
     const h = hist[i];
     if (!h) return NaN;
-    if (rec.class === "land" || !rec.bldgArea) return h.landIdx;
+    if (rec.class === "land" || rec.class === "house" || !rec.bldgArea) return h.landIdx;
     const rent = h.effRent?.[rec.class] ?? h.rent?.[rec.class];
     const cap = h.cap?.[rec.class];
     return rent && cap ? rent / cap : h.landIdx;

@@ -20,8 +20,10 @@
 //     unpacked neighbourhoods back from the state, and the parcel table it gets
 //     must equal the live one — contents AND order, since order is iteration
 //     order — and CHECK_M months on from both must hash the same.
+// BW_ENGINE=<file> runs a frozen copy of the bundle (parent and reload children alike), so a
+// 100-year run is not invalidated by edits made while it runs; otherwise the fresh bundle.
 import { assertFreshBundle } from "./fresh.mjs";
-assertFreshBundle();
+if (!process.env.BW_ENGINE) assertFreshBundle();
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
@@ -31,7 +33,7 @@ import { tmpdir } from "node:os";
 import v8 from "node:v8";
 import { makeConserveBot } from "./conserve-bot.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const E = await import(pathToFileURL(join(HERE, ".engine.mjs")).href);
+const E = await import(pathToFileURL(process.env.BW_ENGINE ?? join(HERE, ".engine.mjs")).href);
 const { makeCity, REGION } = await import(pathToFileURL(join(HERE, "..", "src", "citygen", "index.mjs")).href);
 
 const IN = ["noi", "sold", "interest", "borrowed", "lpCalled", "fees"];

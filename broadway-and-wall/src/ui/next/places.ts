@@ -38,7 +38,13 @@ export const PLACES: Place[] = [
   },
   {
     id: "pipeline", label: "Pipeline", key: "2", icon: "✎",
-    tabs: [{ id: "all", label: "All deals", page: "deals", width: "wide" }],
+    tabs: [
+      { id: "board", label: "Board", page: "deals", view: "pipe-board", width: "wide" },
+      { id: "buying", label: "Buying", page: "deals", view: "pipe-buy", width: "wide" },
+      { id: "building", label: "Building", page: "deals", view: "pipe-build", width: "wide" },
+      { id: "selling", label: "Selling", page: "deals", view: "pipe-sell", width: "wide" },
+      { id: "land", label: "Land", page: "deals", view: "land", width: "wide", when: hasLand },
+    ],
   },
   {
     id: "market", label: "Market", key: "3", icon: "◎",

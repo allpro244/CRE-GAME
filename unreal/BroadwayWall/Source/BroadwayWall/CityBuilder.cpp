@@ -192,8 +192,50 @@ namespace
 				}
 			return Yard;
 		}
+		// A SUBURBAN CAR PARK (the region's shopping centres): City Sample's
+		// parking-lot asphalt reads tan-brown across acres in daylight; this is the
+		// slab master tinted to fresh-sealed blacktop
+		else if (Layer == TEXT("lotpave"))
+		{
+			static UMaterialInstanceDynamic* Pave = nullptr;
+			if (!Pave)
+				if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Sidewalk_Master_Inst_4_WS.M_Sidewalk_Master_Inst_4_WS")))
+				{
+					Pave = UMaterialInstanceDynamic::Create(Base, GetTransientPackage());
+					Pave->SetVectorParameterValue(TEXT("BaseColor_Tint"), FLinearColor(0.16f, 0.16f, 0.17f, 1));
+					Pave->AddToRoot();
+				}
+			return Pave;
+		}
 		else if (Layer == TEXT("esplanade")) Path = TEXT("/Game/Road/Material/MI/MI_Sidewalk_Plaza_A_WS.MI_Sidewalk_Plaza_A_WS");
-		else if (Layer == TEXT("park") || Layer == TEXT("median")) return BWGrassMaterial();   // a boulevard's planted median is lawn too
+		else if (Layer == TEXT("park") || Layer == TEXT("median") || Layer == TEXT("yard")) return BWGrassMaterial();   // a boulevard's planted median is lawn too; so are the region's back yards
+		// THE REGION EXPANSION'S OPEN LAND: crops in rows read from the air as a
+		// lighter, yellower green than a lawn; a woodlot as a dark one under its trees
+		else if (Layer.StartsWith(TEXT("farm")) || Layer == TEXT("woods") || Layer.StartsWith(TEXT("marsh")))
+		{
+			// (the first cut of the fields was a bright straw: in leaf they are a
+			// muted green-brown; a floodplain is wet meadow)
+			static TMap<FString, UMaterialInstanceDynamic*> Open;
+			UMaterialInstanceDynamic*& D = Open.FindOrAdd(Layer);
+			if (!D)
+				if (UMaterialInterface* G = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Grass.M_BW_Grass")))
+				{
+					D = UMaterialInstanceDynamic::Create(G, GetTransientPackage());
+					const bool bWood = Layer == TEXT("woods"), bMarsh = Layer.StartsWith(TEXT("marsh"));
+					// marsh0 wet meadow, marsh1 a reed bed (straw-olive), marsh2 willow scrub (dark)
+					const int32 Fen = Layer == TEXT("marsh1") ? 1 : Layer == TEXT("marsh2") ? 2 : 0;
+					static const FLinearColor FenDark[3] = { { 0.030f, 0.048f, 0.020f }, { 0.042f, 0.054f, 0.022f }, { 0.018f, 0.034f, 0.014f } };
+					static const FLinearColor FenLight[3] = { { 0.065f, 0.088f, 0.034f }, { 0.084f, 0.098f, 0.040f }, { 0.040f, 0.062f, 0.024f } };
+					// farm0 a green row crop, farm1 ripening grain, farm2 fallow ground
+					const int32 Crop = Layer == TEXT("farm1") ? 1 : Layer == TEXT("farm2") ? 2 : 0;
+					static const FLinearColor CropDark[3] = { { 0.030f, 0.055f, 0.018f }, { 0.085f, 0.075f, 0.030f }, { 0.060f, 0.048f, 0.030f } };
+					static const FLinearColor CropLight[3] = { { 0.070f, 0.110f, 0.035f }, { 0.165f, 0.140f, 0.060f }, { 0.110f, 0.090f, 0.058f } };
+					D->SetVectorParameterValue(TEXT("GrassDark"), bWood ? FLinearColor(0.016f, 0.030f, 0.012f) : bMarsh ? FenDark[Fen] : CropDark[Crop]);
+					D->SetVectorParameterValue(TEXT("GrassLight"), bWood ? FLinearColor(0.035f, 0.055f, 0.022f) : bMarsh ? FenLight[Fen] : CropLight[Crop]);
+					D->AddToRoot();
+				}
+			return D;
+		}
 		else if (Layer == TEXT("beach")) Path = TEXT("/Game/Megascans/Surfaces/sand_sand_pjuuP0/M_sand.M_sand");
 		else if (Layer == TEXT("sea") || Layer == TEXT("pond") || Layer == TEXT("stream"))
 		{
@@ -521,12 +563,30 @@ void ACityBuilder::BuildGround()
 		M.UVScale = 400.0;
 		M.bStrict = true;
 		const FLinearColor Col = GroundColor(L.Key);
+		// FIELDS ARE A PATCHWORK: each farm tract is in one of three crops this
+		// season (a green row crop, ripening grain, fallow), picked by the tract
+		const bool bFarm = L.Key == TEXT("farm");
+		// (a floodplain likewise: wet meadow, reed bed and scrub, by the patch)
+		const bool bMarsh = L.Key == TEXT("marsh");
+		FMeshBuf Crops[3];
+		for (FMeshBuf& Cb : Crops) { Cb.UVScale = 400.0; Cb.bStrict = true; }
 		for (const TArray<FVector2D>& R : L.Value)
 		{
+			if ((bFarm || bMarsh) && R.Num())
+			{
+				const uint32 Hh = HashCombine(GetTypeHash(FMath::RoundToInt(R[0].X)), GetTypeHash(FMath::RoundToInt(R[0].Y)));
+				Crops[Hh % 3].AddCap(R, Zl, Col);
+				continue;
+			}
 			M.AddCap(R, Zl, Col);
 			if (bRaised && L.Key != TEXT("block")) Kerbs.AddWalls(R, RoadZ - 1, Zl, FLinearColor::White);
 		}
-		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(L.Key)); }
+		// (in the region expansion the plat's base is open country, not paving:
+		// where no street, lot or field is drawn round a town it is meadow)
+		const bool bMeadow = City.Size == TEXT("region") && L.Key == TEXT("paveland");
+		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(bMeadow ? FString(TEXT("yard")) : City.Size == TEXT("region") && L.Key == TEXT("apron") ? FString(TEXT("lotpave")) : L.Key)); }
+		for (int32 k = 0; k < 3; ++k)
+			if (Crops[k].V.Num()) { Crops[k].Emit(Ground, Section++, false); Mats.Add(GroundMaterial((bMarsh ? FString::Printf(TEXT("marsh%d"), k) : FString::Printf(TEXT("farm%d"), k)))); }
 		Z += 1;
 		if (bRaised) FootZ = FMath::Max(FootZ, Zl);
 	}
@@ -541,7 +601,10 @@ void ACityBuilder::BuildGround()
 	// front is paved; lawns belong to the low-rise streets. A vacant lot is
 	// one ground (gravel, dirt, weeds). Picks are by lot (a hash of its BBL),
 	// so a lot keeps its ground across rebuilds; the building stands on it.
+	// (In the region expansion a neighbourhood ("N...") or a farm tract ("F...")
+	// is a whole parcel drawn by its own ground layers, and is left alone.)
 	{
+		const bool bRegionMap = City.Size == TEXT("region");
 		enum ECover { Lawn, Plaza, ConcLight, ConcDark, Asphalt, Gravel, Worn, Dirt, Meadow, NumCovers };
 		struct FShare { ECover C; float W; };
 		// the yard (the whole lot, under everything)
@@ -550,6 +613,9 @@ void ACityBuilder::BuildGround()
 		static const TArray<FShare> YardRet = { { Asphalt, 0.65f }, { ConcDark, 0.20f }, { Worn, 0.15f } };
 		static const TArray<FShare> YardInd = { { Worn, 0.50f }, { Asphalt, 0.30f }, { Gravel, 0.20f } };
 		static const TArray<FShare> Land = { { Gravel, 0.30f }, { Meadow, 0.30f }, { Dirt, 0.20f }, { Worn, 0.20f } };
+		// a small town's empty lots have gone back to weeds; the pale gravel
+		// slabs read as blanks across a low-rise grid
+		static const TArray<FShare> LandTown = { { Meadow, 0.70f }, { Dirt, 0.15f }, { Worn, 0.15f } };
 		// the front (the strip between the building and the street)
 		static const TArray<FShare> FrontResLow = { { Lawn, 0.70f }, { Plaza, 0.15f }, { ConcLight, 0.15f } };
 		static const TArray<FShare> FrontResHigh = { { Plaza, 0.55f }, { ConcLight, 0.25f }, { Lawn, 0.20f } };
@@ -589,12 +655,19 @@ void ACityBuilder::BuildGround()
 		{
 			const int32 N = P.Ring.Num();
 			if (N < 3) continue;
+			// (a farm on the market is zone "AG", a numeric deed since the land game: also drawn by its own layers)
+			if (bRegionMap && (P.Bbl.StartsWith(TEXT("N")) || P.Bbl.StartsWith(TEXT("F")) || P.Zone == TEXT("AG"))) continue;
+			// (a region site out past the town — a shopping centre, a pad, an industrial lot, deeds numbered
+			// 3xxxxxxxxx by the generator — brings its own ground: its car park as the apron layer, its yards
+			// and truck courts as pavement. A lot cover here painted over all of it, which is what drew the
+			// centres' car parks as worn tan concrete.)
+			if (bRegionMap && P.Bbl.Len() == 10 && P.Bbl[0] == TEXT('3')) continue;
 			const uint32 H = HashCombine(GetTypeHash(P.Bbl), 0x9e3779b9u);
 			const bool bRes = P.Cls == TEXT("multifamily"), bOff = P.Cls == TEXT("office"), bRet = P.Cls == TEXT("retail"), bInd = P.Cls == TEXT("industrial");
 			const TArray<FVector2D>* const* F = Foot.Find(P.Bbl);
 			if (!(bRes || bOff || bRet || bInd) || !F)
 			{
-				Cov[Pick(Land, H)].AddCap(P.Ring, Zp, FLinearColor::White);
+				Cov[Pick(bRegionMap ? LandTown : Land, H)].AddCap(P.Ring, Zp, FLinearColor::White);
 				if (F) continue;
 				// A VACANT LOT'S STREET EDGE. A car park (the same pick as
 				// BuildVolumes: about half) is open to the street, with a
@@ -1158,6 +1231,34 @@ void ACityBuilder::BuildVolumes()
 			Rec.Tile = TileOf[i];
 			if (Facades) Facades->Record = bInst ? &Rec.Inst : nullptr;
 			PropRecord = bInst ? &Rec.Inst : nullptr;
+			// A HOUSE (the region expansion's suburbs): one instance of a house
+			// mesh (tools/make-house.py, a unit footprint) sized to its ring, the
+			// ridge along the longer side; no facade kit, no massing
+			if (Vol.Deco == TEXT("house"))
+			{
+				if (bInst && Vol.Ring.Num() >= 4)
+				{
+					static const TCHAR* const Houses[] = {
+						TEXT("/Game/BW/Houses/SM_House_Cream.SM_House_Cream"), TEXT("/Game/BW/Houses/SM_House_Sage.SM_House_Sage"),
+						TEXT("/Game/BW/Houses/SM_House_Navy.SM_House_Navy"), TEXT("/Game/BW/Houses/SM_House_Brick.SM_House_Brick"),
+						TEXT("/Game/BW/Houses/SM_House_Grey.SM_House_Grey") };
+					FVector2D C(0, 0);
+					for (const FVector2D& P : Vol.Ring) C += P;
+					C /= Vol.Ring.Num();
+					const FVector2D E0 = Vol.Ring[1] - Vol.Ring[0], E1 = Vol.Ring[2] - Vol.Ring[1];
+					const bool bLong = E0.Size() >= E1.Size();
+					const FVector2D Ax = bLong ? E0 : E1;
+					const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Ax.Y, Ax.X));
+					const double L = FMath::Max(E0.Size(), E1.Size()), W = FMath::Min(E0.Size(), E1.Size());
+					// walls 300 of the mesh's 330: a storey and a half per 450 cm of height
+					const double Sz = FMath::Max(0.8, (Vol.Z1 - Vol.Z0) / 450.0);
+					const uint32 Hh = GetTypeHash(Keys[i]);
+					// older houses mostly brick and cream, newer ones panel colours
+					const int32 Pick = Vol.Year > 0 && Vol.Year < 1945 ? (Hh % 3 == 0 ? 0 : 3) : Vol.Year >= 1990 ? int32(1 + Hh % 2) * ((Hh >> 3) % 3 == 0 ? 1 : 0) + ((Hh >> 3) % 3 == 0 ? 0 : 4) : int32(Hh % 3);
+					AddProp(Houses[Pick], FTransform(FRotator(0, Yaw, 0), FVector(C, Vol.Z0), FVector(L / 100.0, W / 100.0, Sz)), true);
+				}
+				continue;
+			}
 			const bool bDress = bFacades && !Vol.bVacant && !Vol.bFrame && !Vol.bOpen && Vol.Deco.IsEmpty() && Vol.Z1 - Vol.Z0 >= 400;
 			if (bDress)
 			{
@@ -1188,7 +1289,12 @@ void ACityBuilder::BuildVolumes()
 				// AN EMPTY LOT DOWNTOWN IS OFTEN A CAR PARK until somebody builds on
 				// it: about half of them, paved and striped with cars; the rest
 				// show the lot's own ground (gravel, dirt, weeds: BuildGround)
-				if (GetTypeHash(Vol.Bbl) % 100u < 55u)
+				// (a car park is a town lot's use: an acre at most; a farm or a
+				// woodlot tract on the market is open land, drawn by its own layers)
+				double A2 = 0;
+				for (int32 a = 0, n = Vol.Ring.Num(); a < n; ++a) A2 += FVector2D::CrossProduct(Vol.Ring[a], Vol.Ring[(a + 1) % n]);
+				const bool bTownLot = FMath::Abs(A2) * 0.5 < 4.0e7;   // cm^2: 4,000 m2, about an acre
+				if (bTownLot && GetTypeHash(Vol.Bbl) % 100u < 55u)
 				{
 					Lots.AddCap(Vol.Ring, FootZ + 4, FLinearColor::White);
 					if (bInst) ParkLot(Vol, GetTypeHash(Vol.Bbl));
@@ -1264,7 +1370,9 @@ void ACityBuilder::BuildVolumes()
 		{
 			const int32 LotSec = 1;   // 0 walls, 1 lots, 2 stone, 3.. roofs
 			Lots.Emit(Mesh, LotSec, true);
-			UMaterialInterface* LotMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots"));
+			// (in the region the sun-bleached lot instance reads as pale blank slabs
+			// among low-rise blocks: there a car park is the street's dark asphalt)
+			UMaterialInterface* LotMat = City.Size == TEXT("region") ? BWRoadMaterial() : LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Road/Material/MI/M_Asphalt_Master_Inst_ParkingLots.M_Asphalt_Master_Inst_ParkingLots"));
 			Mesh->SetMaterial(LotSec, LotMat ? LotMat : VertexColorMaterial.Get());
 		}
 		// roofs: City Sample's rooftop surfaces (bitumen, dirty concrete tiles, pebble-dash), one per building
@@ -1859,7 +1967,7 @@ void ACityBuilder::BuildStreetProps()
 		const uint32 Block = HashCombine(GetTypeHash(FMath::FloorToInt(P.X / 9000.0)), GetTypeHash(FMath::FloorToInt(P.Y / 9000.0)));
 		const int32 Species = Rng.FRand() < 0.7f ? int32(Block % 3) : Rng.RandRange(0, 2);
 		AddProp(LeafTreeMeshes[Species], FTransform(R, FVector(P, Z), FVector(S)), false);
-		AddProp(TEXT("/Game/Prop/Kit_TreeBase_A/Mesh/SM_TreeBase_SquareGrill_A.SM_TreeBase_SquareGrill_A"), FTransform(R, FVector(P, Z - 1)), false);
+		if (City.Size != TEXT("region")) AddProp(TEXT("/Game/Prop/Kit_TreeBase_A/Mesh/SM_TreeBase_SquareGrill_A.SM_TreeBase_SquareGrill_A"), FTransform(R, FVector(P, Z - 1)), false);
 	};
 	// trees where the generator planted them
 	for (const FVector2D& P : City.Trees) Plant(P, 4, 0.85, 1.15);
@@ -2437,6 +2545,99 @@ void ACityBuilder::BuildMarkings()
 		++StopBars;
 	}
 
+	// A SUBURBAN CAR PARK (the region's shopping centres and industrial sites:
+	// the "apron" rings): double-loaded rows of 2.75 x 5.5 m stalls on a 7.3 m
+	// aisle (the US 90-degree standard, 18.3 m a bay), a 7.5 m fire lane along
+	// the storefront, planted islands at the row ends and every 20 stalls, a pole
+	// light every other island, and cars thickest by the doors: a weekday
+	// afternoon, near full in front of the anchor and thin at the back rows.
+	FMeshBuf Green;
+	if (City.Size == TEXT("region"))
+	{
+		const TArray<TArray<FVector2D>>* Aprons = nullptr;
+		for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground) if (L.Key == TEXT("apron")) Aprons = &L.Value;
+		// the stores the lots serve: low wide boxes
+		TArray<FVector2D> Stores;
+		for (const FBWVolume& V : City.Volumes)
+		{
+			if (V.bVacant || V.Ring.Num() < 3 || V.Z1 < 300 || (V.Cls != TEXT("retail") && V.Cls != TEXT("industrial"))) continue;
+			FVector2D C(0, 0); for (const FVector2D& P : V.Ring) C += P; Stores.Add(C / V.Ring.Num());
+		}
+		const FLinearColor Planting(0.10f, 0.20f, 0.06f), Kerb(0.62f, 0.61f, 0.58f);
+		int32 Stalls = 0, Parked = 0;
+		for (int32 r = 0; Aprons && r < Aprons->Num(); ++r)
+		{
+			const TArray<FVector2D>& R = (*Aprons)[r];
+			if (R.Num() < 3) continue;
+			const TArray<FVector2D> In = BWInsetRing(R, 150);
+			if (In.Num() < 3) continue;
+			// rows run along the ring's longest edge
+			int32 Long = 0; double LongL = 0;
+			for (int32 i = 0; i < R.Num(); ++i) { const double L = (R[(i + 1) % R.Num()] - R[i]).Size(); if (L > LongL) { LongL = L; Long = i; } }
+			const FVector2D Ax = (R[(Long + 1) % R.Num()] - R[Long]).GetSafeNormal();
+			FVector2D Ay(-Ax.Y, Ax.X);
+			FVector2D Cen(0, 0); for (const FVector2D& P : R) Cen += P; Cen /= R.Num();
+			// the storefront side: toward the nearest store (within 300 m)
+			double Best = 3.0e4 * 3.0e4; FVector2D Store = Cen;
+			for (const FVector2D& S : Stores) { const double D2 = (S - Cen).SizeSquared(); if (D2 < Best) { Best = D2; Store = S; } }
+			if (((Store - Cen) | Ay) > 0) Ay = -Ay;   // B grows away from the store
+			double MinA = 1e18, MaxA = -1e18, MinB = 1e18, MaxB = -1e18;
+			for (const FVector2D& P : In) { MinA = FMath::Min(MinA, P | Ax); MaxA = FMath::Max(MaxA, P | Ax); MinB = FMath::Min(MinB, P | Ay); MaxB = FMath::Max(MaxB, P | Ay); }
+			if (MaxA - MinA < 1500 || MaxB - MinB < 1500) continue;
+			FRandomStream Rng(int32(HashCombine(GetTypeHash(FMath::RoundToInt(Cen.X)), GetTypeHash(FMath::RoundToInt(Cen.Y)))));
+			const double Depth = MaxB - MinB;
+			const double YawA = FMath::RadiansToDegrees(FMath::Atan2(Ay.Y, Ay.X));
+			const FVector2D Corner = Ax * MinA + Ay * MinB;
+			auto At = [&](double A, double B) { return Corner + Ax * A + Ay * B; };
+			auto Quad = [&](FMeshBuf& M, double A0, double A1, double B0, double B1, double Zq, const FLinearColor& Col)
+			{ M.AddCap({ At(A0, B0), At(A1, B0), At(A1, B1), At(A0, B1) }, Zq, Col); };
+			const double SW = 275, SD = 550, Aisle = 730, Fire = 750;
+			const double Len = MaxA - MinA;
+			const int32 NSt = FMath::FloorToInt((Len - 2 * SW) / SW);
+			int32 Bay = 0;
+			for (double B0 = Fire; B0 + 2 * SD <= Depth; B0 += 2 * SD + Aisle, ++Bay)
+			{
+				// occupancy falls off with distance from the store: ~85% in the first bay, ~25% at 120 m
+				const double Occ = FMath::Clamp(0.85 - (B0 / 12000.0) * 0.6, 0.18, 0.85);
+				for (int32 Side = 0; Side < 2; ++Side)
+				{
+					const double Rb0 = B0 + Side * SD, Rb1 = Rb0 + SD;
+					for (int32 k = 0; k <= NSt; ++k)
+					{
+						const double A0 = SW + k * SW;
+						const bool bIsland = k == 0 || k == NSt || (k % 21) == 0;
+						if (!InsideRing(In, At(A0 + SW * 0.5, (Rb0 + Rb1) * 0.5))) continue;
+						if (bIsland)
+						{
+							Quad(Green, A0 + 15, A0 + SW - 15, Rb0 + 15, Rb1 - 15, Z + 12, Planting);
+							Quad(Green, A0, A0 + SW, Rb0, Rb1, Z + 1, Kerb);
+							if (Side == 0 && ((k / 21) % 2 == 0) && k != NSt)
+								AddProp(TEXT("/Game/Prop/Kit_StreetLamp_A/Mesh/SM_StreetLamp_A_Pole_Large.SM_StreetLamp_A_Pole_Large"), FTransform(FRotator(0, YawA, 0), FVector(At(A0 + SW * 0.5, Rb1), Z)), true);
+							else
+								AddProp(LeafTreeMeshes[Rng.RandRange(0, UE_ARRAY_COUNT(LeafTreeMeshes) - 1)], FTransform(FRotator(0, Rng.FRandRange(0, 360), 0), FVector(At(A0 + SW * 0.5, (Rb0 + Rb1) * 0.5), Z + 12), FVector(Rng.FRandRange(0.55, 0.8))), false);
+							continue;
+						}
+						++Stalls;
+						// the stripe on the stall's far edge (10 cm paint)
+						Quad(White, A0 + SW - 5, A0 + SW + 5, Rb0 + (Side ? 0 : 30), Rb1 - (Side ? 30 : 0), Z, FLinearColor(0.85f, 0.85f, 0.82f));
+						if (Rng.FRand() < Occ)
+						{
+							++Parked;
+							const double Yaw = YawA + (Side ? 180 : 0) + Rng.FRandRange(-4, 4);
+							// (no cabs in a suburban lot: vehicle13 is City Sample's taxi, the one with a roof light)
+							int32 Pick = Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - 2);
+							if (Pick >= 6) ++Pick;
+							AddProp(CarMeshes[Pick], FTransform(FRotator(0, Yaw, 0), FVector(At(A0 + SW * 0.5 + Rng.FRandRange(-20, 20), (Rb0 + Rb1) * 0.5), Z - 7)), true);
+						}
+					}
+				}
+			}
+			// the fire lane's edge: a painted line along the storefront
+			Quad(White, SW, Len - SW, Fire - 8, Fire + 8, Z, FLinearColor(0.85f, 0.85f, 0.82f));
+		}
+		UE_LOG(LogBWBuilder, Display, TEXT("car parks: %d stalls, %d parked"), Stalls, Parked);
+	}
+
 	UProceduralMeshComponent* Marks = NewObject<UProceduralMeshComponent>(this, TEXT("Markings"));
 	Marks->SetupAttachment(RootComponent);
 	Marks->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -2444,6 +2645,7 @@ void ACityBuilder::BuildMarkings()
 	Marks->RegisterComponent();
 	if (White.V.Num()) { White.Emit(Marks, 0, false); Marks->SetMaterial(0, VertexColorMaterial); }
 	if (Yellow.V.Num()) { Yellow.Emit(Marks, 1, false); Marks->SetMaterial(1, VertexColorMaterial); }
+	if (Green.V.Num()) { Green.Emit(Marks, 2, false); Marks->SetMaterial(2, VertexColorMaterial); }
 	UE_LOG(LogBWBuilder, Display, TEXT("markings: %d centrelines, %d of %d crossings painted (%d bars), %d stop bars, %d signal posts"), City.Centerlines.Num(), Keep.Num(), City.Zebras.Num(), Bars, StopBars, Signals);
 }
 

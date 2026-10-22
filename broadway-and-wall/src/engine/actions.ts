@@ -9,7 +9,7 @@ import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
-import { ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
+import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, fitOf, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
@@ -941,6 +941,7 @@ export function assembleLots(
       // which is one of the deeds being folded here.
       if (!next.merged[d]) mergeDeedLedger(next, d, parent, next.holdings[d].boughtM);
       next.merged[d] = parent;
+      mergedTouched();
       // an absorbed lot (a firm's site you bought) has no deed of its own
       if (next.holdings[d]) {
         next.holdings[parent].costBasis += next.holdings[d].costBasis;
@@ -2487,6 +2488,7 @@ export function listForSale(
   if (h.renovatingUntilM !== undefined && s.month < h.renovatingUntilM) {
     return { s, err: "Can't market it mid-renovation — finish the work first." };
   }
+  if (s.homes?.units[bbl]) return { s, err: "A house is going up on it: it sells to a family with the house (the homes desk)." };
   if (s.developments[bbl]) return { s, err: "Can't sell with cranes on site — deliver the building first." };
   // It cannot be in two processes at once. A building shown to the market both
   // on its own and inside a bundle is a building whose seller does not know

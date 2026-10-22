@@ -208,7 +208,25 @@ export function ReuseSection({ bbl }: { bbl: string }) {
   );
 }
 
+// FARMLAND HAS NO ENVELOPE. An agricultural tract (zone AG, FAR 0) is not a
+// building site: the minimum-coverage floor used to draw a 447,000 sf plate on
+// seventeen acres of corn. Its path is the Land development card — rezone, plat.
 export function DevelopSection({ bbl }: { bbl: string }) {
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
+  if (rec && (rec.ag || rec.zoneDist === "AG")) {
+    return (
+      <div className="deal">
+        <div className="deal-head">Develop this lot</div>
+        <div className="hint">Zoned AG · no building envelope. Rezone and plat it on the Overview tab (Land development).</div>
+      </div>
+    );
+  }
+  return <DevelopSectionLive bbl={bbl} />;
+}
+
+function DevelopSectionLive({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   // The LIVE record: an upzoning, a variance you won, or lots you folded

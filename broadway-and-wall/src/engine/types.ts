@@ -1201,6 +1201,92 @@ export interface GroundLease {
   builtM?: number;
 }
 
+/** A tract's rezoning from agriculture to a residential district (landdev.ts). */
+export interface EntitlementApplication {
+  bbl: string;
+  filedM: number;
+  decideM: number;
+  cost: number;
+  odds: number;
+  lotSf: number;
+  /** the lots the preliminary plat shows, as filed */
+  lots: number;
+}
+
+/**
+ * A SUBDIVISION, AS A RECIPE (landdev.ts). The lots are regenerated from this
+ * record on every load — the parent tract, the lot size and each lot's area
+ * and frontage — so a three-hundred-lot plat costs one record in a save.
+ */
+export interface PlatRecord {
+  parent: string;
+  template: "grid";
+  lotSf: number;
+  startM: number;
+  doneM: number;
+  /** horizontal development: streets, water, sewer, power, and the impact fees */
+  cost: number;
+  /** each lot: area (sf), frontage and depth (ft) — the geometry is redrawn from the tract by citygen */
+  lots: { a: number; f: number; d: number }[];
+  done?: boolean;
+}
+
+/**
+ * ONE HOUSE ON ONE LOT (homes.ts). `by` is "you" or a homebuilder's name.
+ * Built: `spent` reaches `budget` and the month reaches `doneM`. Sold: a buyer
+ * signs (`soldM`, `price`); closes the month the house is finished
+ * (`closedM`), and the lot leaves the market as a family's home.
+ */
+export interface HomeUnit {
+  bbl: string;
+  parent: string;
+  by: string;
+  sf: number;
+  startM: number;
+  doneM: number;
+  /** vertical construction plus the builder's overhead */
+  budget: number;
+  spent: number;
+  /** what the lot cost the builder (your basis, or what a builder paid) */
+  lotCost: number;
+  price?: number;
+  soldM?: number;
+  closedM?: number;
+}
+/** A homebuilder's standing offer for your finished lots on one plat: so many lots, taken down as it starts houses, at a fixed price a square foot of lot. */
+export interface LotOffer {
+  parent: string;
+  builder: string;
+  lots: number;
+  psf: number;
+  madeM: number;
+  expiresM: number;
+}
+/** An accepted takedown: the builder buys `left` more of your lots on the plat at `psf`, as it starts houses. */
+export interface LotContract extends LotOffer {
+  left: number;
+  taken: number;
+}
+/** Your homebuilding on one plat, to date. */
+export interface PlatPL {
+  started: number; closed: number;
+  /** gross sale prices, the net after commission and marketing, and the cost of the houses and lots sold */
+  revenue: number; net: number; cost: number; lotCost: number;
+  /** lots sold to builders: count, proceeds and basis */
+  lotsSold: number; lotProceeds: number; lotBasis: number;
+}
+export interface HomesState {
+  units: Record<string, HomeUnit>;
+  builders: Record<string, { name: string; sinceM: number; lots: number; lotSpend: number; started: number; closed: number; revenue: number; cost: number }>;
+  /** your price on each plat against the going price, -0.15..0.15 */
+  adj?: Record<string, number>;
+  offers?: Record<string, LotOffer>;
+  contracts?: Record<string, LotContract>;
+  pl?: Record<string, PlatPL>;
+  /** the town's population, the last thirteen months */
+  popHist?: number[];
+}
+
 export interface VarianceApplication {
   bbl: string;
   filedM: number;
@@ -2298,6 +2384,12 @@ export interface Econ {
   costIdx: number; // construction & operating cost inflation
   /** This town's dollars against the reference table, drawn per seed at the opening (market.ts). */
   priceLevel?: number;
+  /** THE FOR-SALE HOUSING MARKET (region map, homes.ts / homeprice.ts): the going new-house $/sf and each plat's sell-out. */
+  homes?: import("./homeprice").HomeMarket;
+  /** Population growth over the last twelve months (homes.ts), the household growth the new-house demand reads. */
+  homesG12?: number;
+  /** Bumped whenever `homes` is rewritten, so the land memo (value.ts LAND_SCALARS) never serves a stale lot price. */
+  homesStamp?: number;
   /** Real construction cost at the opening — the mainland's real rent anchor (`locEff`). */
   costAnchorReal?: number;
   /** Island-vs-mainland location choice per class, smoothed at lease rollover (market.ts). */
@@ -2822,6 +2914,15 @@ export type RivalStyle =
  * loan stack for every building in town.
  */
 export interface Rival {
+  /**
+   * THE BOOK'S APPRAISALS (rivals.ts appraiseBooks): each asset's value as of
+   * its last appraisal, the month it was struck, and the building it was
+   * struck on (`k`: class, size, grade). Struck on January 1st, and the month
+   * an asset is bought, delivered or changed; a sale, a refinance, a maturity
+   * or a deed in lieu orders a fresh one (markAsset `fresh`). Absent on older
+   * saves: the book then marks to market until its first January.
+   */
+  marks?: Record<string, { v: number; m: number; k: string }>;
   /**
    * THE FIRM'S SHEET — COMPETITORS_PLAN.md §2. Absent on the legacy roster and
    * on saves written before it: those firms act on their style row exactly as
@@ -3797,6 +3898,17 @@ export interface GameState {
   varianceLog?: Record<string, { m: number; granted: boolean; far: number; cost: number }>;
   /** Pending hearings keyed by property; separate sites may run concurrently. */
   varianceApps?: Record<string, VarianceApplication>;
+  // ---- LAND DEVELOPMENT (landdev.ts; the region map, Phase 2) ----
+  /** Rezoning applications in front of the board, keyed by tract. */
+  entitlementApps?: Record<string, EntitlementApplication>;
+  /** Tracts the board rezoned: their new district and envelope (resolveRec applies it). */
+  rezoned?: Record<string, { zone: string; far: number; lotSf: number; m: number }>;
+  /** Subdivisions, keyed by the parent tract: the recipe that regenerates the lots, and when they finish. */
+  plats?: Record<string, PlatRecord>;
+  /** Parent tracts retired into their lots (a deed with no land left; resolveRec). */
+  platted?: Record<string, number>;
+  /** ---- HOMEBUILDING (homes.ts; the region map, Phase 3) ---- the houses going up and sold on the plats, yours and the builders'. */
+  homes?: HomesState;
   /** @deprecated legacy single-application save; migrated on the next filing/tick. */
   varianceApp?: VarianceApplication;
   landmarks?: Record<string, number>;        // bbl -> month designated

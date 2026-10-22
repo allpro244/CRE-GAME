@@ -25,7 +25,7 @@ export function mulberry32Step(a: number): { state: number; value: number } {
  *
  * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
  */
-export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation" | "shock" | "capital";
+export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation" | "shock" | "capital" | "homes";
 /**
  * THE RENT GROWTH A BUYER UNDERWRITES, in percentage points a year.
  *
@@ -2224,7 +2224,7 @@ function hhUserCost(mort: number, g3: number, inflExp: number): number {
 /** Elasticity of the price fundamental to the user cost (~7% off per mortgage point near 6%). */
 const HPI_UC_ELAST = 0.5;
 /** Months for prices to close their gap to the fundamental. */
-const HPI_CHASE_M = 30;
+export const HPI_CHASE_M = 30;
 
 /** The cost of owning a home against the opening, real (house price x user cost). */
 export function ownCostIdx(e: Econ): number {
@@ -2477,7 +2477,8 @@ export function recordDeal(e: Econ, k: BuiltClass, m: number, rel: number, sf: n
   const list = ((e.deals ??= {})[k] ??= []);
   list.push({ m, c: +(Math.log(rel) - DEAL_H * p).toFixed(5), p: +p.toFixed(6), sf: Math.round(sf), ...(renewal ? { r: 1 } : {}) });
   while (list.length && list[0].m < m - 6) list.shift();
-  if (list.length > 400) list.splice(0, list.length - 400);
+  // (shift, not splice: the same array, and V8 trims the front in place.)
+  while (list.length > 400) list.shift();
 }
 
 export function tickNation(s: GameState) {

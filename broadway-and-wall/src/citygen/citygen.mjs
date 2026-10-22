@@ -4632,10 +4632,28 @@ export function generateCity(cfg) {
     }
     let land = 0, covered = 0;
     const voids = [];
+    // inRing(p, innerRing) by row: each row's crossings once, the same
+    // arithmetic, so the same answer at every sample without walking the
+    // outline's every edge per sample
+    const rows = new Map();
+    const inInner = (x, y) => {
+      let xs = rows.get(y);
+      if (!xs) {
+        xs = [];
+        for (let i = 0, j = innerRing.length - 1; i < innerRing.length; j = i++) {
+          const [xi, yi] = innerRing[i], [xj, yj] = innerRing[j];
+          if (yi > y !== yj > y) xs.push(((xj - xi) * (y - yi)) / (yj - yi) + xi);
+        }
+        rows.set(y, xs);
+      }
+      let n = 0;
+      for (const c of xs) if (x < c) n++;
+      return (n & 1) === 1;
+    };
     for (let x = minX; x <= maxX; x += STEP) {
       for (let y = minY; y <= maxY; y += STEP) {
         const p = [x, y];
-        if (!inRing(p, innerRing)) continue;
+        if (!inInner(x, y)) continue;
         land++;
         const near = buckets.get(key(Math.floor(x / GRID), Math.floor(y / GRID))) ?? [];
         if (near.some((r) => inRing(p, r))) { covered++; continue; }

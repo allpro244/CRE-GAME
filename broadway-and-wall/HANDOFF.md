@@ -1181,3 +1181,86 @@ fixed/floating gap is the term premium alone. Test: `test/floating.mjs`.
   of appraisal, REO ~1.0 at a flush desk, under it at an impaired one.
 - `test/buybox.mjs`'s land-pencils fixture searches seeds 777 / 12007 /
   550991 — the criterion is unchanged, the re-roll moved which lot pencils.
+
+---
+
+## 13. THE REGION MAP (region expansion Phase 1, Oct 2026)
+
+`makeCity("region", seed)` (`src/citygen/region/`) is a 6 x 6 km piece of
+country round a small river city, in the same contract an island returns plus
+one table, `reserved`. Picked on the setup page as "Region (6 km)"; size and
+park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
+
+- **The city is the island generator's.** `region/town.mjs` builds a
+  generateCity config for a mainland town: the outline is the town's story
+  distance (`story.mjs`), the district plan is a BSP of historic plats (the
+  landing, downtown, the mill district, additions each on its own bearing,
+  block size, alleys or none, gridded / curving / organic), and the old
+  country roads, the main street and the interstate's cut are diagonal
+  reservations. The river village is a second, small generateCity.
+- **The inner ring is houses, and they are ordinary parcels.** An addition's
+  small apartment lot becomes the house that stood there (`index.mjs` THE
+  INNER RING IS HOUSES): multifamily, 1-3 units, R4/R6 zoning with FAR far
+  above what is built — so the engine's own assembly, teardown and growth
+  can buy and rebuild them. Drawn in Unreal as instanced houses (deco
+  "house"), still their deed's building.
+- **Reserved land never enters an engine table.** Outer neighbourhoods (one
+  parcel per subdivision: homes, sizes, era, and a `recipe` that redraws its
+  lots via `plats.mjs platFor` — `built` is a bitset — so a later phase can
+  unpack it), farm and woodlot tracts, rural homes and the parish carry
+  `tenure` and live only in `city.reserved`. The engine is handed
+  `city.parcels`, so every loop is safe by construction; the parcel card shows
+  a reserved parcel's numbers and no desk. No price is shown: nothing in the
+  engine prices an owner-occupied house or farmland yet.
+- **Phase 2, the land developer's slice (`engine/landdev.ts`).** Farm and
+  woodlot tracts are MARKET parcels now (numeric BBLs 5xxxxxxxxx, zone "AG",
+  `rec.ag`, `rec.tract`): `farMaxFor` gives AG no envelope at all, so nobody
+  builds on a field, and the land read prices it at farm-use value
+  (`value.ts farmUsePsf`: USDA 2024 Illinois cash rent over the 2.7%
+  rent-to-value ratio, in the town's price level). An owned tract can be
+  rezoned (`fileEntitlement`: fees, 12-24 months, odds 0.80 at the town's
+  edge to 0.45 at 3 km) and platted (`startPlat`: $40k per 65 ft of frontage
+  plus a $13,772 impact fee a lot, by the cost index; 6-18 months). The plat
+  is a recipe in `s.plats`; `materializePlats` puts its lots (BBL 6 + tract +
+  lot) into the parcel table and BBL list from the state alone — sim.ts at
+  the top of every month, the store on load and on every new state — and the
+  tract retires into its lots (`s.platted`, a deed with no land, like a
+  merged child). Geometry: `citygen platTractLots`. The store draws the lots
+  and streets on the map and resends the city to Unreal. `pnpm landdev`.
+  At the opening the builder residual on a fringe lot is zero (no for-sale
+  housing market yet — Phase 3's homebuilders), so a plat loses money until
+  demand reaches it: an honest result, not a fault to tune. (Superseded by
+  Phase 3, below: the homebuilder is that demand.)
+- **Phase 3, the homebuilder's slice (`engine/homeprice.ts`, `engine/homes.ts`).**
+  The going new house ($/sf, `econ.homes.psf`) is what the town's new-house
+  buyer qualifies for at today's mortgage (index + 1.7) at 28% DTI, 10% down,
+  1.5% tax and insurance. The buyer is 1.58x the median household (`wageIdx`
+  x $80,610), derived so the Census 2024 median new house ($420k, 2,200 sf)
+  is exactly what that buyer carries at 6.72%. Sticky: it chases at
+  HPI_CHASE_M, so a rate shock hits sales first and prices later. Each plat
+  carries a location multiple: inner-ring resale comps (geometric mean near
+  the plat against the town, RELATIVE only — their level carries land texture
+  in reference dollars and is ~10x local incomes, an open inconsistency) times
+  a capitalised commute. Vertical $123/sf x costIdx (NAHB 2024 construction
+  share 64.4% on the Census median), overhead 5.2%, selling 4.6%, margin 11%,
+  construction interest at index + 2.4 → the builder's residual, which
+  `readLand` bids on `rec.homeLot` lots (winner "homes") times the plat's
+  sell-out discount (19%/yr over left / pace). Sales: Poisson on the "homes"
+  rng stream, households x 0.52%/yr (Census sales over households) x
+  (0.4 + 0.6 x growth/0.77%) x affordability share / AFFORD_REF, split among
+  sellers, elasticity 4 on a seller's price. A buyer signs on a house and
+  closes at completion (7 months). Your houses: draws "dev" into the lot's
+  basis, closings "sold" net of 4.6% selling, profit taxed at
+  INCOME_TAX_RATE, inventory carried at cost in portfolioMark. Builders
+  (named, off-book, `s.homes.builders`) offer to take down your lots at the
+  residual on an 18-month contract, take them as they start, and walk when
+  the residual falls 30% under the contract. A closed house, or a builder's
+  lot, is off the market through `isCivicLand`. `farMaxFor` no longer floors
+  R-2 at FAR 2 (`LOW_DENSITY_ZONES`). `pnpm homebuild`.
+- **No transit.** The demand blend's transit and second-centre terms (44 of
+  100 points) read zero on the region, so its demand scores run lower than an
+  island's. Car access as a demand term is a later-phase question.
+- `pnpm region` (test/region.mjs): determinism, record sanity, reserved land
+  never reaching the market, the island untouched by plan 15, month tick
+  timing. `node test/bwcity-contract.mjs <file>` checks an Unreal export;
+  `node unreal/tools/export-city.mjs --city region --seed N` writes one.

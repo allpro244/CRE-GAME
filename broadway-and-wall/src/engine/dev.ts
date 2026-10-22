@@ -15,7 +15,7 @@ import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECT
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, taxRate, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
-  rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier } from "./value";
+  mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier } from "./value";
 export { zoneUseBar };
 export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -934,7 +934,8 @@ export function planDevelopment(
   // or an arithmetic path nobody anticipated are others. No plan leaves this
   // function unless every number in it is a number — a null here reads to the
   // caller as "this site cannot be planned", which is the truth.
-  for (const v of Object.values(plan)) {
+  for (const k in plan) {
+    const v = plan[k as keyof DevPlan];
     if (typeof v === "number" && !Number.isFinite(v)) return null;
   }
   return plan;
@@ -1956,6 +1957,7 @@ export function startDevelopment(
   if (!s.holdings[bbl]) return { s, err: "Buy the dirt first." };
   if (rec.class !== "land") return { s, err: "Clear the site first — demolish what's standing before you build." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
+  if (s.homes?.units[bbl]) return { s, err: "A house is already going up on it." };
   // You cannot break ground on a site you are trying to sell. Somebody is
   // marketing this lot to buyers right now.
   if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the listing before you put a crane on it." };
@@ -4098,6 +4100,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
       oc = Math.round(oc + (45_000 + 30_000 * (kids.length + 1)) * e.costIdx);
       s.merged = { ...(before ?? {}) };
       for (const kk of kids) s.merged[kk] = bbl;
+      mergedTouched();
     }
     const site = kids.length ? resolveRec(parcels, s, bbl)! : rec;
     for (const k of BUILT_CLASSES) {
@@ -4172,6 +4175,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   if (kids.length) {
     s.merged = { ...(mergedBefore ?? {}) };
     for (const kk of kids) s.merged[kk] = bbl;
+    mergedTouched();
   }
   if (s.builderFirms) {
     const f = livingBuilderFirms(s).reduce<Rival | undefined>((a, r) => (!a || freeCash(s, r) > freeCash(s, a) ? r : a), undefined);
@@ -4829,6 +4833,7 @@ function assembledLandBasis(s: GameState, parcels: ParcelTable, bbl: string, kid
   const total = ask(bbl) + (1 + ASSEMBLY_PREMIUM) * kidsAsk + (45_000 + 30_000 * (kids.length + 1)) * s.econ.costIdx;
   s.merged = { ...(s.merged ?? {}) };
   for (const k of kids) s.merged[k] = bbl;
+  mergedTouched();
   return Math.round(total);
 }
 const ASSEMBLY_MAX_KIDS = 3;

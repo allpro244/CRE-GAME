@@ -72,9 +72,80 @@ export interface ParcelRecord {
   landPsfHistory: number[];
   imputed: string[];
   centroid: [number, number];
+  /**
+   * NOT IN THE COMMERCIAL MARKET (the region map, Phase 1). Absent on every
+   * parcel the engine holds — and that is the rule, not a convention: a
+   * parcel with a tenure lives in the city's `reserved` table, never in the
+   * parcel table the engine is handed, so no listing, rival bid, teardown,
+   * street roll, city growth or land valuation can reach it. See
+   * citygen/region/index.mjs.
+   */
+  tenure?: Tenure;
+  /**
+   * A FARM OR WOODLOT TRACT (the region map): farmed land with a farm-use value
+   * of its own (value.ts farmUsePsf), "crop" or "wood". Kept through a
+   * rezoning; a farm stays a farm until it is platted.
+   */
+  ag?: "crop" | "wood";
+  /** A farm tract's ground a plat can use (sf): dry, off the floodplain, the freeway and anything built. lotArea counts the floodplain. */
+  buildableSf?: number;
+  /**
+   * The survey tract under a farm (region map, canonical metres) and what it
+   * takes to cut it into lots (citygen/region platTractLots). Absent where the
+   * tract cannot be platted whole (the unbuilt remainder of a subdivision).
+   */
+  tract?: { seed: number; r: [number, number, number, number]; id: number; bearing: number | null; edgeM: number };
+  /** A finished lot on a plat (landdev.ts lotRecords): homebuilders bid for it (homeprice.ts). */
+  homeLot?: boolean;
 }
 
 export type ParcelTable = Record<string, ParcelRecord>;
+
+/**
+ * Who holds land the commercial market does not reach in Phase 1 of the region:
+ * "homes" — households (a neighbourhood parcel, or a rural home on its acre);
+ * "farm" — a farm or woodlot tract, agricultural and unbuildable until Phase 2;
+ * "civic" — a church, a school.
+ */
+export type Tenure = "homes" | "farm" | "civic";
+
+/** A reserved parcel: drawn, labelled and clickable, with its numbers; never traded in Phase 1. */
+export interface ReservedParcel {
+  bbl: string;
+  address: string;
+  tenure: Tenure;
+  class: AssetClass;
+  zoneDist: string;
+  district: string;
+  districtName?: string;
+  lotArea: number;      // sf
+  bldgArea: number;     // sf
+  floors: number;
+  yearBuilt: number;
+  centroid: [number, number];
+  kind: "neighbourhood" | "rural" | "civic" | "farm" | "woodlot";
+  name?: string;
+  /** a neighbourhood or a rural home: how many houses stand on it */
+  homes?: number;
+  era?: "prewar" | "postwar" | "recent";
+  eraYears?: [number, number];
+  avgHouseSf?: number;
+  avgLotSf?: number;
+  /** how many lots the subdivision's plat holds, built or not */
+  platLots?: number;
+  leapfrog?: boolean;
+  /**
+   * THE RECIPE that redraws a neighbourhood lot for lot (citygen/region/plats.mjs
+   * platFor): a later phase unpacks the parcel into individual deeds from
+   * exactly these lots, `built` (a base64url bitset over the plat's lots) naming
+   * the ones standing.
+   */
+  recipe?: { gen: string; seed: number; tract: [number, number, number, number]; era: string; id: number; bearing: number | null; waterNear?: [number, number]; scale?: number; built: string };
+  acres?: number;
+  floodShare?: number;
+  wood?: boolean;
+  crop?: string | null;
+}
 export type Adjacency = Record<string, string[]>;
 
 export interface DataManifest {

@@ -205,7 +205,8 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 		if (bKerb || L.Key == TEXT("median") || L.Key == TEXT("park"))
 			for (const TArray<FVector2D>& R : L.Value) { NoPark.Add(R); if (bKerb) Kerbs.Add(R); }
 	}
-	for (const FBWParcel& P : City.Parcels) { NoPark.Add(P.Ring); Kerbs.Add(P.Ring); }
+	// (a region's parcel is a whole neighbourhood, streets and all: only the ground layers find its kerbs)
+	if (City.Size != TEXT("region")) for (const FBWParcel& P : City.Parcels) { NoPark.Add(P.Ring); Kerbs.Add(P.Ring); }
 	TArray<FBWCenterline> Streets = City.Centerlines;
 	for (FBWCenterline& C : Streets)
 	{
@@ -311,6 +312,8 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 	for (const FBWCenterline& C : Streets)
 	{
 		if (C.Line.Num() < 2 || !HasParking(C.Width) || FParse::Param(FCommandLine::Get(), TEXT("NoParked"))) continue;
+		// a suburban street's cars stand in their driveways, not at the kerb
+		if (City.Size == TEXT("region") && C.Cls == TEXT("local")) continue;
 		TArray<double> Cum; double Len = 0;
 		Cumulate(C.Line, Cum, Len);
 		const double Kerb = C.Width * 0.5 - ParkW * 0.5;

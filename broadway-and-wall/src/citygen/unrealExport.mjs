@@ -66,6 +66,9 @@ export function toBwCity(c, opts = {}) {
   const volumes = c.buildings3d.map((b) => ({
     bbl: b.b || "", cls: b.c, year: b.y, z0: Math.round(b.z0 * 100), z1: Math.round(b.z1 * 100),
     deco: b.d ? (b.dk ?? "deco") : b.dk === "house" ? "house" : "", crown: !!b.x, vacant: !!b.k, ring: b.r.flatMap(ue),
+    // a region store (RetailBuilder): its role (grocery, box, dept, mall, inline, qsr, bank, gas, restaurant,
+    // truckstop, general; "pylon" for a centre's sign), its storefront's middle, its floor area or a sign's panels
+    ...(b.rr ? { role: b.rr, front: ue(b.rf), ...(b.rs ? { sf: b.rs } : {}), ...(b.rn ? { panels: b.rn } : {}) } : {}),
   }));
   if (opts.familyFor && opts.tints) {
     // as RealCity draws a volume: the family by the building's full height (its

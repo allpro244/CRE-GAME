@@ -588,10 +588,13 @@ function residualFloorChoices(use: BuiltClass, far: number): { floors: number; c
   // no stair to pay for (see the note below), and the two-storey one is drawn
   // even where it cannot fill its plate, because the desk can draw it too.
   const floors = schemeFloorLadder(use, envelopeFl);
-  return floors.map((fl) => {
+  const out: { floors: number; coverage: number }[] = [];
+  for (const fl of floors) {
     const usable = Math.min(far, fl * covMax);
-    return { floors: fl, coverage: usable / fl };
-  }).filter((c) => c.coverage > 0);
+    const coverage = usable / fl;
+    if (coverage > 0) out.push({ floors: fl, coverage });
+  }
+  return out;
 }
 
 /**
@@ -600,7 +603,23 @@ function residualFloorChoices(use: BuiltClass, far: number): { floors: number; c
  * "does anything pencil here" asks it of the same buildings (dev.ts's site
  * sampler did not, and priced only the envelope).
  */
-export function schemeFloorLadder(use: BuiltClass, envelopeFl: number): number[] {
+export function schemeFloorLadder(use: BuiltClass, envelopeFl: number): readonly number[] {
+  // A pure function of two small numbers, asked for on every lot every month:
+  // the ladder is built once per (use, envelope) and shared. Callers only read it.
+  // (-0 is a different ladder from 0 and a Map cannot tell them apart.)
+  if (Object.is(envelopeFl, -0)) return buildFloorLadder(use, envelopeFl);
+  let byFl = LADDERS.get(use);
+  if (!byFl) { byFl = new Map(); LADDERS.set(use, byFl); }
+  let ladder = byFl.get(envelopeFl);
+  if (!ladder) {
+    if (byFl.size >= 4096) byFl.clear();
+    ladder = buildFloorLadder(use, envelopeFl);
+    byFl.set(envelopeFl, ladder);
+  }
+  return ladder;
+}
+const LADDERS = new Map<BuiltClass, Map<number, readonly number[]>>();
+function buildFloorLadder(use: BuiltClass, envelopeFl: number): readonly number[] {
   const cap = USE_FLOORS_MAX[use];
   return cap !== undefined
     ? Array.from({ length: cap }, (_, i) => i + 1)
@@ -1186,24 +1205,63 @@ export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
   // developmentProForma, underwritingEcon, noiYr, capRateFor, useOccupancy,
   // marketConstructionQuote...) read a NEW field of the market or the lot,
   // add it to the matching list below or this memo will serve a stale price.
-  syncLandMemos(econ);
-  const hit = LAND_MEMO.get(rec.bbl);
-  const heat = econ.districtHeat?.[rec.district ?? "—"];
-  if (hit && landLotMatches(hit, rec, heat)) return hit.psf;
-  const psf = readLand(rec, econ, false, LAND_CTX).psf;
-  LAND_MEMO.set(rec.bbl, { ...lotKey(rec, heat), psf });
+  const m = landMemoFor(rec, econ);
+  if (m.psf !== undefined) return m.psf;
+  const psf = readLand(rec, econ, false, LAND_CTX, m).psf;
+  m.psf = psf;
   return psf;
 }
 
+/**
+ * ONE ENTRY PER LOT for everything the land read works out: the price, the
+ * whole read, and the two residuals both are built from (today's rents, and
+ * the holder's peak). The price and the read share their residuals — the
+ * read used to run today's residual again for a lot whose price had just
+ * been struck on it. Valid on the same read-set as before; an entry whose lot
+ * fields have moved is replaced whole.
+ */
 type LandMemoEntry = {
   lotArea: number; farMaxComm: number; farMaxRes: number; zoneDist: unknown; demandScore: number;
-  landPsf: number; district: unknown; yearBuilt: number; heat: number | undefined; psf: number;
+  landPsf: number; district: unknown; yearBuilt: number; heat: number | undefined;
   cornice: number | undefined; maturity: number | undefined;
+  psf?: number;
+  read?: LandRead;
+  /** residualSchemeIn at rentMult 1 and at PEAK_RENT_MULT; undefined until run. */
+  now?: ResidualScheme | null;
+  peak?: ResidualScheme | null;
+  nowAt?: ResidualGate;
+  peakAt?: ResidualGate;
 };
+/**
+ * WHAT THE MEMO KEY DOES NOT COVER AND A RESIDUAL STILL READS. The price and
+ * read memos above are keyed on the market and lot fields listed there; a
+ * residual also reads the street's quality bands (the building score of the
+ * scheme, `overallScore`), which are re-stamped mid-month, and the blend of
+ * last year's land queue into this year's (`queueFactor`). A residual is only
+ * handed from one reader to the other while those are the ones it was run on,
+ * so sharing it can never give a number a fresh run would not.
+ */
+type ResidualGate = { tierCtx: unknown; bandStamp: unknown; queuePrev: unknown; queueW: unknown };
+function residualGate(econ: Econ): ResidualGate {
+  return { tierCtx: econ.tierCtx, bandStamp: econ.bandStamp, queuePrev: econ.landQueuePrev, queueW: econ.landQueueW };
+}
+function residualGateHolds(g: ResidualGate, econ: Econ): boolean {
+  return g.tierCtx === econ.tierCtx && g.bandStamp === econ.bandStamp
+    && g.queuePrev === econ.landQueuePrev && Object.is(g.queueW, econ.landQueueW);
+}
 const LAND_MEMO = new Map<string, LandMemoEntry>();
-const LAND_READ_MEMO = new Map<string, LandMemoEntry & { read: LandRead }>();
-/** The lot fields a land read depends on — the key both memos are checked against. */
-function lotKey(rec: ParcelRecord, heat: number | undefined): Omit<LandMemoEntry, "psf"> {
+/** The entry for this lot under the current market, made fresh if its lot fields have moved. */
+function landMemoFor(rec: ParcelRecord, econ: Econ): LandMemoEntry {
+  syncLandMemos(econ);
+  const heat = econ.districtHeat?.[rec.district ?? "—"];
+  const hit = LAND_MEMO.get(rec.bbl);
+  if (hit && landLotMatches(hit, rec, heat)) return hit;
+  const m = lotKey(rec, heat);
+  LAND_MEMO.set(rec.bbl, m);
+  return m;
+}
+/** The lot fields a land read depends on — the key the memo is checked against. */
+function lotKey(rec: ParcelRecord, heat: number | undefined): LandMemoEntry {
   return {
     lotArea: rec.lotArea, farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
     zoneDist: rec.zoneDist, demandScore: rec.demandScore, landPsf: rec.landPsf,
@@ -1211,9 +1269,9 @@ function lotKey(rec: ParcelRecord, heat: number | undefined): Omit<LandMemoEntry
     cornice: rec.cornice, maturity: rec.maturity,
   };
 }
-/** Clear both land memos when any market field a read depends on has moved. */
+/** Clear the land memo when any market field a read depends on has moved. */
 function syncLandMemos(econ: Econ): void {
-  if (!landMarketMatches(econ)) { LAND_MEMO.clear(); LAND_READ_MEMO.clear(); LAND_CTX = null; }
+  if (!landMarketMatches(econ)) { LAND_MEMO.clear(); LAND_CTX = null; }
   if (LAND_CTX?.econ !== econ) LAND_CTX = { econ, uw: new Map(), quotes: [] };
 }
 /** The market fields landRead reads, flattened, as of the entries in LAND_MEMO. */
@@ -1304,12 +1362,10 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // the market fields in `landMarketMatches` and the lot fields in
   // `landLotMatches` — and cleared together with the price memo, so it can
   // never serve a number a fresh read would not give. Callers only read it.
-  syncLandMemos(econ);
-  const heat = econ.districtHeat?.[rec.district ?? "—"];
-  const hit = LAND_READ_MEMO.get(rec.bbl);
-  if (hit && landLotMatches(hit, rec, heat)) return hit.read;
-  const read = readLand(rec, econ, true, LAND_CTX);
-  LAND_READ_MEMO.set(rec.bbl, { ...lotKey(rec, heat), psf: read.psf, read });
+  const m = landMemoFor(rec, econ);
+  if (m.read) return m.read;
+  const read = readLand(rec, econ, true, LAND_CTX, m);
+  m.read = read;
   return read;
 }
 
@@ -1319,7 +1375,7 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
  * on a lot that pencils the second residual is not run and `holder` comes back
  * as 0. The price is the same number either way.
  */
-function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | null): LandRead {
+function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | null, memo?: LandMemoEntry): LandRead {
   // LOCATION PRICES DIRT AT THE LEVEL, NOT ONLY IN THE CYCLE.
   //
   // Demand used to enter only as a multiplier on `cycleDev`, so a block that
@@ -1347,10 +1403,18 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   // the holder wins and the number is small but real; and the crossover between
   // them is exactly where redevelopment pressure starts, which is the most
   // important line in a city and the game could not draw it before.
-  const scheme = residualSchemeIn(rec, econ, 1, ctx);
+  // (`memo` is the lot's memo entry: each residual is run at most once a market.)
+  let scheme: ResidualScheme | null;
+  if (memo && memo.now !== undefined && residualGateHolds(memo.nowAt!, econ)) scheme = memo.now;
+  else { scheme = residualSchemeIn(rec, econ, 1, ctx); if (memo) { memo.now = scheme; memo.nowAt = residualGate(econ); } }
   const builder = scheme?.psf ?? 0;
+  let peak: ResidualScheme | null = null;
+  if (whole || !(builder > 0)) {
+    if (memo && memo.peak !== undefined && residualGateHolds(memo.peakAt!, econ)) peak = memo.peak;
+    else { peak = residualSchemeIn(rec, econ, PEAK_RENT_MULT, ctx); if (memo) { memo.peak = peak; memo.peakAt = residualGate(econ); } }
+  }
   const holder = whole || !(builder > 0)
-    ? (residualSchemeIn(rec, econ, PEAK_RENT_MULT, ctx)?.psf ?? 0) * WAIT_DISCOUNT
+    ? (peak?.psf ?? 0) * WAIT_DISCOUNT
     : 0;
 
   // AND WHAT THE CITY GENERATOR THOUGHT, which is not nothing.
@@ -1652,9 +1716,26 @@ export function overallScore(rec: ParcelRecord, econ: Econ, use?: BuiltClass, co
   const w = SCORE_LOC_WEIGHT[cls] ?? 0.5;
   const ctx = econ.tierCtx;
   const b = ctx && rec.class !== "land" && rec.bldgArea
-    ? buildingScore(rec, condIdx !== undefined ? { condIdx } : null, { month: ctx.month, stockVintage: ctx.vintage }).score
+    ? buildingScoreOf(rec, condIdx, ctx)
     : 50;
   return Math.max(1, Math.min(100, w * Math.max(0, Math.min(100, rec.demandScore ?? 50)) + (1 - w) * b));
+}
+/**
+ * `buildingScore(...).score` behind a one-entry memo on exactly what it reads
+ * — the record's year, spec and class, the condition index, the clock and the
+ * class's stock vintage. A pro forma scores the same paper building three
+ * times per use; this is the same number without the three allocations.
+ */
+const BSCORE = { yearBuilt: NaN as unknown, buildSpec: NaN as unknown, cls: NaN as unknown, condIdx: NaN as unknown, month: NaN as unknown, vintage: NaN as unknown, score: 0 };
+function buildingScoreOf(rec: ParcelRecord, condIdx: number | undefined, ctx: NonNullable<Econ["tierCtx"]>): number {
+  const m = BSCORE;
+  const vintage = ctx.vintage?.[(rec.class ?? "office") as BuiltClass];
+  if (Object.is(m.yearBuilt, rec.yearBuilt) && Object.is(m.buildSpec, rec.buildSpec) && Object.is(m.cls, rec.class)
+    && Object.is(m.condIdx, condIdx) && Object.is(m.month, ctx.month) && Object.is(m.vintage, vintage)) return m.score;
+  const score = buildingScore(rec, condIdx !== undefined ? { condIdx } : null, { month: ctx.month, stockVintage: ctx.vintage }).score;
+  m.yearBuilt = rec.yearBuilt; m.buildSpec = rec.buildSpec; m.cls = rec.class;
+  m.condIdx = condIdx; m.month = ctx.month; m.vintage = vintage; m.score = score;
+  return score;
 }
 
 /**
@@ -1668,6 +1749,17 @@ export const bandCenter = (b: number) => b * 10 + 5;
 function bandW(score: number, b: number): number {
   const d = (score - bandCenter(b)) / 7;
   return Math.exp(-0.5 * d * d);
+}
+/** All ten `bandW(score, b)`, for the last score asked — the readers below ask the same score in runs. */
+const KERNEL = new Float64Array(N_BANDS);
+let KERNEL_AT: number = NaN;
+let KERNEL_SET = false;
+function bandKernel(score: number): Float64Array {
+  if (!KERNEL_SET || !Object.is(KERNEL_AT, score)) {
+    for (let b = 0; b < N_BANDS; b++) KERNEL[b] = bandW(score, b);
+    KERNEL_AT = score; KERNEL_SET = true;
+  }
+  return KERNEL;
 }
 /**
  * THE NATURAL VACANCY AT A SCORE. The best space runs tighter than the class
@@ -1695,7 +1787,8 @@ export function scoreVacOf(econ: Econ, use: BuiltClass, score: number): number {
   const fallback = econ.streetVac?.[use] ?? econ.cityVac?.[use] ?? NATURAL_VAC[use];
   if (!bk) return fallback;
   let st = 0, oc = 0;
-  for (let b = 0; b < N_BANDS; b++) { const w = bandW(score, b); st += w * bk.stock[b]; oc += w * bk.occ[b]; }
+  const k = bandKernel(score);
+  for (let b = 0; b < N_BANDS; b++) { const w = k[b]; st += w * bk.stock[b]; oc += w * bk.occ[b]; }
   return st > 0 ? Math.max(0, Math.min(0.9, 1 - oc / st)) : fallback;
 }
 /** The market's swing on rent around a score, around the premium the building always carries; 1 absent bands. */
@@ -1703,7 +1796,8 @@ export function scoreRentMult(econ: Econ, use: BuiltClass, score: number): numbe
   const bk = econ.bands?.[use];
   if (!bk) return 1;
   let a = 0, w = 0;
-  for (let b = 0; b < N_BANDS; b++) { const x = bandW(score, b) * (bk.stock[b] > 0 ? 1 : 0); a += x * bk.rent[b]; w += x; }
+  const k = bandKernel(score);
+  for (let b = 0; b < N_BANDS; b++) { const x = k[b] * (bk.stock[b] > 0 ? 1 : 0); a += x * bk.rent[b]; w += x; }
   return w > 0 ? a / w : 1;
 }
 
@@ -1830,8 +1924,14 @@ function condMult(c: Condition): number {
  * life company's "good", the desk's repairs holdback).
  */
 const COND_CENTRE: Record<Condition, number> = { obsolete: 0.17, worn: 0.43, standard: 0.65, good: 0.865 };
+const COND_PTS = new Map<Record<Condition, number>, [number, number][]>();
 function condLerp(idx: number, table: Record<Condition, number>): number {
-  const pts: [number, number][] = (["obsolete", "worn", "standard", "good"] as Condition[]).map((g) => [COND_CENTRE[g], table[g]]);
+  // The four points are the table's, laid out once per table (both are constants).
+  let pts = COND_PTS.get(table);
+  if (!pts) {
+    pts = (["obsolete", "worn", "standard", "good"] as Condition[]).map((g) => [COND_CENTRE[g], table[g]] as [number, number]);
+    COND_PTS.set(table, pts);
+  }
   if (idx <= pts[0][0]) return pts[0][1];
   for (let i = 1; i < pts.length; i++) {
     if (idx <= pts[i][0]) { const t = (idx - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0]); return pts[i - 1][1] + t * (pts[i][1] - pts[i - 1][1]); }
@@ -2208,6 +2308,36 @@ export function resolveRec(parcels: Record<string, ParcelRecord>, s: GameState, 
   return { ...r, cornice: corniceDatum(s, parcels, r.block), maturity: townMaturity(s) };
 }
 
+/**
+ * THE MERGE RECORD BY PARENT. `resolveRecOnly` needs a parent's children and
+ * the record is keyed by BBL — numeric keys, collected and sorted on every
+ * walk — so walking it on every resolve was a few per cent of the month. The
+ * index is that walk done once per record object, rebuilt when the record is
+ * another object or `mergedTouched()` has been called; every in-place write
+ * to a merge record calls it. A parent's list is also checked on each read
+ * (every child still points at it) and rebuilt on any miss.
+ */
+let MERGE_REV = 0;
+export function mergedTouched(): void { MERGE_REV++; }
+let MERGE_IX: { m: Record<string, string>; rev: number; kids: Map<string, string[]> } | null = null;
+const NO_KIDS: readonly string[] = [];
+function buildMergeIx(m: Record<string, string>): NonNullable<typeof MERGE_IX> {
+  const kids = new Map<string, string[]>();
+  for (const child in m) {
+    const p = m[child];
+    const list = kids.get(p);
+    if (list) list.push(child); else kids.set(p, [child]);
+  }
+  return { m, rev: MERGE_REV, kids };
+}
+function childrenOf(m: Record<string, string>, bbl: string): readonly string[] {
+  let ix = MERGE_IX;
+  if (!ix || ix.m !== m || ix.rev !== MERGE_REV) ix = MERGE_IX = buildMergeIx(m);
+  let list = ix.kids.get(bbl);
+  if (list && list.some((c) => m[c] !== bbl)) { ix = MERGE_IX = buildMergeIx(m); list = ix.kids.get(bbl); }
+  return list ?? NO_KIDS;
+}
+
 function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl: string): ParcelRecord | null {
   const rec = parcels[bbl];
   if (!rec) return null;
@@ -2240,8 +2370,8 @@ function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl
     let psfSum = rec.lotArea * rec.landPsf;
     let commSum = rec.lotArea * rec.farMaxComm;
     let resSum = rec.lotArea * rec.farMaxRes;
-    for (const [child, parent] of Object.entries(m)) {
-      if (parent !== bbl) continue;
+    // This parent's children in merge-record order, off the index below.
+    for (const child of childrenOf(m, bbl)) {
       const c = parcels[child];
       if (!c) continue;
       const a = c.lotArea ?? 0;

@@ -41,7 +41,7 @@ import { conveyedDeed, depositsOn } from "./leasing";
 import { assetGrade, livingRivals, marketAppetite, markRival, paramsOf, tie, transferDeed } from "./rivals";
 import { observe } from "./competitorReads";
 import { sheetOf } from "./rivals";
-import { assumeBook, syncDebt } from "./rivalDebt";
+import { assumeBook, loanBookTouched, syncDebt } from "./rivalDebt";
 import { buyQuote, executePurchase, TRANSFER_TAX } from "./actions";
 import { fundableNow, fundAndBook } from "./credit";
 import { isCivicLand } from "./demand";
@@ -445,6 +445,7 @@ function runClose(
   r.bbls = [];
   // Every mortgage and the line repaid at the closing.
   for (const x of Object.values(cur.cityLoans ?? {})) if (x.obligorId === r.id) delete cur.cityLoans![x.bbl];
+  loanBookTouched();
   r.lineBal = 0;
   r.debt = 0;
   r.cash = 0;

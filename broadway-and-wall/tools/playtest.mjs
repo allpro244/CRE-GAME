@@ -486,6 +486,12 @@ await flow("land", async () => {
     await sleep(600);
     if (!bought || !(await st(`!!g.holdings[${S(b)}]`))) { note(`${b}: could not close (${bought ? await errToast(since) : "Buy button disabled or missing"})`); continue; }
     note(`bought ${b} at the owner's ask ${(ap.ask / 1e3).toFixed(0)}K (${lots} lots on its default plat)`);
+    // the file's Build tab opens the land desk, and the desk must agree with the Overview that a plat fits
+    await tap(`/^Build$/`, fileDrawer);
+    await sleep(1200);
+    const nd = await js(`const d = document.querySelector(".land-desk"); return d ? (/not developable/.test(d.textContent) ? __pt.norm(d.textContent).slice(0, 160) : "") : null;`);
+    if (nd === null) { await screen("no-desk"); check(false, "the Build tab opens the land development desk"); return; }
+    if (nd) { await screen("not-developable"); check(false, "the land desk agrees with the file's Overview that a plat fits", `Overview: ${lots} lots × 7,500 sf; desk: ${nd}`); continue; }
     bbl = b; break;
   }
   if (!check(!!bbl, "bought a plattable farm tract through the file")) return;
@@ -493,12 +499,8 @@ await flow("land", async () => {
   await sleep(400);
   ctx.last = await snap(true);
 
-  // THE LAND DEVELOPMENT DESK: the file's Build tab
-  await tap(`/^Build$/`, fileDrawer);
-  await sleep(1200);
+  // THE LAND DEVELOPMENT DESK, open on the file's Build tab
   const desk = `document.querySelector(".land-desk")`;
-  if (!check(await js(`return !!${desk};`), "the Build tab opens the land development desk")) { await screen("no-desk"); return; }
-  check(!(await js(`return /not developable/.test(${desk}.innerText);`)), "the desk offers a plat on a tract whose Overview counts lots");
   await tap(`/Programme$/`, desk); await screen("programme", ".land-desk");
   await tap(`/Design$/`, desk); await sleep(400);
   // a park, from the palette, set down on the plat with the mouse
@@ -522,7 +524,7 @@ await flow("land", async () => {
   let since = Date.now();
   const filed = await tap(`/^File the rezoning/`, desk);
   await sleep(500);
-  check(!!filed && await st(`!!g.entitlementApps?.[${S(bbl)}]`), "filed the rezoning from the desk", (await errToast(since)) ?? "no application on the books");
+  if (!check(!!filed && await st(`!!g.entitlementApps?.[${S(bbl)}]`), "filed the rezoning from the desk", (await errToast(since)) ?? "no application on the books")) { await screen("not-filed"); return; }
   await screen("filed");
 
   // BEFORE THE BOARD: month by month, the money checked every month

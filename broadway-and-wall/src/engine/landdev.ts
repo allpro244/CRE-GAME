@@ -58,6 +58,14 @@ const entitleOdds = (edgeM: number) => clamp(0.80 - 0.35 * clamp(edgeM / 3000, 0
  * with a garage on a 5,000-sf lot or a fourplex on 7,500 [S, typical R-2].
  */
 const REZONE = { zone: "R-2", far: 0.6 };
+/**
+ * AFTER A REFUSAL, A YEAR. Zoning codes commonly bar a substantially similar
+ * application on the same land for twelve months after a denial (a standard
+ * provision of US municipal codes — e.g. the one-year resubmittal rule in many
+ * Illinois, Texas and Georgia cities, and the APA model codes) [S, typical];
+ * the applicant may come back sooner only with a materially different plan.
+ */
+export const REFILE_BAR_M = 12;
 /** Streets, stormwater ponds and required open space take 20-30% of a plat's gross land [S]; 25% here. */
 export const PLAT_STREET_SHARE = 0.25;
 /**
@@ -106,6 +114,10 @@ export function fileEntitlement(s: GameState, parcels: ParcelTable, bbl: string,
   if ("err" in p) return { s, err: p.err };
   if (s.rezoned?.[bbl]) return { s, err: "The board has already rezoned it." };
   if (s.entitlementApps?.[bbl]) return { s, err: "The application is already in front of the board." };
+  const refused = s.rezoneRefusedM?.[bbl];
+  if (refused !== undefined && s.month - refused < REFILE_BAR_M) {
+    return { s, err: `The board refused this rezoning ${monthLabel(refused)}; a similar application cannot come back before ${monthLabel(refused + REFILE_BAR_M)}.` };
+  }
   const q = entitleQuote(s, parcels, bbl, lotSf, planned);
   if (!q) return { s, err: "The tract is too small to plat." };
   const room = spendable(s, parcels);
@@ -136,7 +148,8 @@ function decideEntitlements(s: GameState, parcels: ParcelTable) {
       s.rezoned = { ...(s.rezoned ?? {}), [app.bbl]: { zone: REZONE.zone, far: REZONE.far, lotSf: app.lotSf, m: s.month } };
       s.news.unshift({ q: s.month, kind: "deal", text: `The board rezoned ${rec?.address ?? app.bbl} ${REZONE.zone}, ${app.lots} lots approved. Plat it when you are ready to build the streets.` });
     } else {
-      s.news.unshift({ q: s.month, kind: "warn", text: `The board refused the rezoning at ${rec?.address ?? app.bbl}. The fees are spent; it is still a farm.` });
+      s.rezoneRefusedM = { ...(s.rezoneRefusedM ?? {}), [app.bbl]: s.month };
+      s.news.unshift({ q: s.month, kind: "warn", text: `The board refused the rezoning at ${rec?.address ?? app.bbl}. The fees are spent; it is still a farm, and a similar application cannot be heard again for ${REFILE_BAR_M} months.` });
     }
   }
   if (!Object.keys(apps).length) delete s.entitlementApps;

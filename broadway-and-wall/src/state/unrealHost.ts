@@ -20,6 +20,7 @@
  * its UFUNCTIONs City, View, Select and Input arrive here as
  * window.ue.bridge.city / view / select / input.
  */
+import { useNext } from "@/ui/next/nextStore";
 import { useStore } from "@/state/store";
 import { renderView, lookOf } from "@/engine/renderView";
 import { gfxString } from "./graphics";
@@ -143,9 +144,18 @@ export function startUnrealHost(): void {
 
   // camera keys go to Unreal unless the player is typing in a field
   const CAMERA = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "Digit1", "Digit2", "Digit3"]);
+  // THE NEW SHELL GIVES 1-5 TO THE PLACES (ui/next/keys.ts), so its camera
+  // presets are F1-F3. They reach Unreal under the preset names it already
+  // reads (BWGame.cpp: Digit1-3), so the C++ side needs no change.
+  const PRESET: Record<string, string> = { F1: "Digit1", F2: "Digit2", F3: "Digit3" };
   const key = (e: KeyboardEvent, down: boolean) => {
     const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || !CAMERA.has(e.code)) return;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (useNext.getState().uiShell === "next") {
+      if (PRESET[e.code]) { e.preventDefault(); sendInput({ t: down ? "kd" : "ku", k: PRESET[e.code] }); return; }
+      if (e.code.startsWith("Digit")) return;
+    }
+    if (!CAMERA.has(e.code)) return;
     sendInput({ t: down ? "kd" : "ku", k: e.code });
   };
   window.addEventListener("keydown", (e) => key(e, true));

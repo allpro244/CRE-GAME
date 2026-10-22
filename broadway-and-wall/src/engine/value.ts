@@ -29,9 +29,17 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 export function zonePermits(
   zone: string | undefined, use: BuiltClass, demand = 100, econ?: Econ,
 ): boolean {
-  void zone; void use; void demand; void econ;
+  void use; void demand; void econ;
+  // ...EXCEPT WHERE A BOARD HAS ZONED IT. The region's rezonings (landdev.ts)
+  // are real use districts: R-2 grants houses and two-flats on a plat and
+  // nothing else, so no commercial class — flats, shops, offices, sheds — is
+  // a permitted use there. What a lot in it is worth is what a homebuilder
+  // pays for it (homeprice.ts), not a scheme the board never approved.
+  if (zone !== undefined && HOMES_ONLY_ZONES.has(zone)) return false;
   return true;
 }
+/** Districts whose only permitted use is detached and two-family houses, built and sold through homes.ts. */
+export const HOMES_ONLY_ZONES: ReadonlySet<string> = new Set(["R-2"]);
 
 /**
  * THE SAME RULE, ASKED BY THE DEVELOP DESK — and why not, in words.
@@ -57,8 +65,12 @@ export function zoneUseBar(
   rec: { zoneDist?: string; demandScore?: number }, use: BuiltClass | "mixed",
   econ?: Econ, mix?: UseMix, floors = 1,
 ): string | null {
-  // No zoning: no programme is barred. See zonePermits.
-  void rec; void use; void econ; void mix; void floors;
+  // No zoning: no programme is barred — except in a district a board has
+  // zoned for houses (zonePermits).
+  void use; void econ; void mix; void floors;
+  if (rec.zoneDist !== undefined && HOMES_ONLY_ZONES.has(rec.zoneDist)) {
+    return `Zoned ${rec.zoneDist}: single- and two-family houses only. Build them from the homes desk, or sell the lot to a homebuilder.`;
+  }
   return null;
 }
 
@@ -1362,7 +1374,7 @@ const LAND_SCALARS = [
   "creditIdx", "phase", "constructionAppetite", "vintageMean",
   // the homes market (homeprice.ts homeLotBidPsf) reads econ.homes, wageIdx and
   // population; homes.ts bumps `homesStamp` whenever econ.homes is rewritten
-  "homesStamp", "wageIdx", "population", "homesG12",
+  "homesStamp", "wageIdx", "population", "homesG12", "priceLevel",
 ] as const;
 const LAND_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 const LAND_MKT_LEN = LAND_SCALARS.length + LAND_DICTS.length * (1 + LAND_CLASSES.length);
@@ -1514,7 +1526,18 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   // quietly dissolved to nothing in real terms (measured: fringe lots pricing
   // at year-0 nominal dollars against a 6-7x price level). Dirt with no
   // income case still trades in the dollars of the day it trades.
-  const texture = rec.landPsf * econ.landIdx * level * envelopeRealisation(rec) * (econ.cpi ?? 1);
+  // ...AND IN THIS TOWN'S DOLLARS. `rec.landPsf` is stamped against the
+  // reference table, like RENT_BASE and HARD_COST_PSF; rents, construction and
+  // pay all carry the seed's `priceLevel` (market.ts EVERY TOWN HAS ITS OWN
+  // DOLLARS) and the farm bid below does too, but this floor did not — and
+  // `landIdx`, a ratio of rent to cost, cancels the level out. So in a town
+  // whose dollars buy four times what the table's do, dirt priced at the
+  // table's money: measured on the region map (seeds 1-3) the inner ring's
+  // houses, valued at the land under them, came to 12-23x the town's median
+  // household income, against 3-6x in American towns (NAR / Census). The
+  // floor is a location texture, and a location premium is a share of the
+  // town's prices, not of somebody else's.
+  const texture = rec.landPsf * econ.landIdx * level * envelopeRealisation(rec) * (econ.cpi ?? 1) * (econ.priceLevel ?? 1);
 
   // HIGHEST AND BEST USE, NOT THE MAX OF THREE APPRAISALS.
   //
@@ -2207,19 +2230,17 @@ export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condit
  * address and the tier. Both rent readers below are this times the same two
  * multipliers, so they cannot disagree.
  *
- * AN INDUSTRIAL PRODUCT'S OFFICE FINISH LETS AS OFFICE (products.ts
- * officeShare). A flex building is a third office and showroom: that part is
- * let at what offices let for at this address, the warehouse at the
- * industrial rent — the blend is why flex rents run over a distribution box
- * per foot, from the engine's own two markets with nothing in between.
+ * AN INDUSTRIAL PRODUCT LETS AT THE INDUSTRIAL RENT, office finish and all.
+ * Blending a flex building's office share at the engine's office rent was
+ * tried and refused (2026-10-22): the office index is the town's office
+ * market, and at an upper-quartile commercial lot it put flex at $38-50/sf
+ * (2024 $) against an observed $12-25 for US flex — a CBD price on a
+ * showroom. Flex's office finish is in its cost (products.ts tiPsf) and not
+ * yet in its rent; that is a known gap, not a number made up to close it.
  */
 function marketLegRent(rec: ParcelRecord, econ: Econ, u: BuiltClass, condIdx?: number): number {
   const leg = (econ.effRentIdx?.[u] ?? econ.rentIdx[u] ?? 0) * plateRentMult(rec, u) * locationRentMult(rec, econ, u) * scoreRentMult(econ, u, overallScore(rec, econ, u, condIdx));
-  if (u !== "industrial" || !rec.product) return leg;
-  const os = productOf(rec.product)?.officeShare ?? 0;
-  if (!(os > 0)) return leg;
-  const off = (econ.effRentIdx?.office ?? econ.rentIdx.office ?? 0) * locationRentMult(rec, econ, "office") * scoreRentMult(econ, "office", overallScore(rec, econ, "office", condIdx));
-  return (1 - os) * leg + os * off;
+  return leg;
 }
 
 /** What one component of a building rents for, in its own market. */
@@ -4664,14 +4685,6 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
     if (!rec) continue;
     const r = s.rivals?.find((x) => x.id === n.obligorId);
     nw += Math.min(n.basis, Math.round(collateralAsIs(rec, s.econ, r?.occ ?? 0.5)));
-  }
-  // HOUSES YOU ARE BUILDING OR HAVE NOT YET CLOSED CARRY AT COST (homes.ts):
-  // the lot is in its deed's mark above; the frame is the money sunk in it,
-  // which is what a homebuilder's balance sheet carries as inventory.
-  for (const u of Object.values(s.homes?.units ?? {})) {
-    if (u.by !== "you" || u.closedM !== undefined || !s.holdings[u.bbl]) continue;
-    nw += u.spent;
-    gav += u.spent;
   }
   nw -= s.loc?.balance ?? 0;   // the line is real money owed
   // SECURITY DEPOSITS ARE NOT YOUR MONEY. They arrive as cash at signing and

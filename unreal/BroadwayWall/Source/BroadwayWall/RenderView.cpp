@@ -49,6 +49,7 @@ bool FBWRenderView::Parse(const FString& Json)
 		O->TryGetStringField(TEXT("facade"), L.Facade);
 		L.Look = BWReadLook(O, TEXT("look"));
 		O->TryGetStringField(TEXT("form"), L.Form);
+		O->TryGetStringField(TEXT("deco"), L.Deco);
 		L.Tiers = BWReadTiers(O);
 	}
 

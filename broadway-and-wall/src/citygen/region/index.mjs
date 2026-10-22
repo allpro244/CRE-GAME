@@ -38,6 +38,7 @@ import { placeOuter } from "./outer.mjs";
 import { townConfig, villageConfig } from "./town.mjs";
 import { makeFrame } from "./frame.mjs";
 import { packBits, PLAT_GEN, ERA_YEARS, platFor } from "./plats.mjs";
+import { designPlat } from "./platdesign.mjs";
 
 export const REGION = "region";
 // A fictional place on the Public Land Survey (central Illinois). Only the
@@ -620,3 +621,128 @@ function maskRects(G, [x0, y0, x1, y1], ok) {
   return out.map((r) => { const xa = Math.max(x0, r.a * C), xb = Math.min(x1, (r.b + 1) * C), ya = Math.max(y0, r.j0 * C), yb = Math.min(y1, (r.j1 + 1) * C); return [[xa, ya], [xb, ya], [xb, yb], [xa, yb]]; });
 }
 export { SZ, ROAD_W, pointInRing, cumLen, pointAt, perp };
+
+// ---------------------------------------------------------------- the designed plat (the subdivision design desk)
+/**
+ * WHAT THE DESIGN DESK DRAWS ON: a farm tract's ground, read once per tract and kept — its outline
+ * (the parcel as the land market holds it), the floodplain inside it (hatched; no lot stands in it),
+ * the buildable acres, the floodplain's dry edge (where a greenway trail runs), the distance from any
+ * point to the floodplain or the creek, the default detention site (the dry ground nearest the water,
+ * which the storm sewer runs downhill to), and which way north points in the canonical frame.
+ */
+const DESIGN_ENV = new Map();
+function designEnv(tract) {
+  const key = `${tract.seed >>> 0}:${tract.id}`;
+  let E = DESIGN_ENV.get(key);
+  if (E) return E;
+  const seed = tract.seed >>> 0, M = regionModel(seed), G = M.G;
+  const town0 = (k) => M.townMask[k] || M.townL[k];
+  const [x0, y0, x1, y1] = tract.r;
+  const box = { i0: Math.max(0, Math.floor(x0 / CELL)), i1: Math.min(G.W - 1, Math.floor((x1 - 1) / CELL)), j0: Math.max(0, Math.floor(y0 / CELL)), j1: Math.min(G.W - 1, Math.floor((y1 - 1) / CELL)) };
+  const land = G.layer(), wet = G.layer();
+  let nLand = 0, nFlood = 0;
+  for (let y = box.j0; y <= box.j1; y++) for (let x = box.i0; x <= box.i1; x++) {
+    const k = y * G.W + x;
+    if (M.water[k] || M.isSea(G.ctr(k)) || town0(k) || M.hwL[k] || M.lotL[k]) continue;
+    land[k] = 1; nLand++;
+    if (M.flood[k]) { wet[k] = 1; nFlood++; }
+  }
+  const ring = maskOutline(G, land, box);
+  const outline = ring && ring.length >= 3 ? closedRdp(ring, CELL * 0.6) : [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const flood = maskRects(G, tract.r, (k) => !!wet[k]);
+  const dWet = G.bfs((k) => !!M.flood[k] || !!M.water[k]);
+  const floodDist = (p) => { const k = G.idx(p); return k < 0 ? Infinity : Math.max(0, dWet[k] - CELL / 2); };
+  // the trail: the floodplain's outline inside the tract, where it meets dry ground
+  const trail = [];
+  if (nFlood >= 3) {
+    const fr = maskOutline(G, wet, box);
+    if (fr && fr.length > 3) {
+      const pts = closedRdp(fr, CELL * 0.5);
+      let cur = [];
+      const inside = (p) => p[0] > x0 + CELL && p[0] < x1 - CELL && p[1] > y0 + CELL && p[1] < y1 - CELL;
+      for (let i = 0; i <= pts.length; i++) {
+        const p = pts[i % pts.length];
+        if (inside(p)) cur.push(p); else { if (cur.length > 1) trail.push(cur); cur = []; }
+      }
+      if (cur.length > 1) trail.push(cur);
+    }
+  }
+  let pondAt = null, best = Infinity;
+  for (let y = box.j0; y <= box.j1; y++) for (let x = box.i0; x <= box.i1; x++) {
+    const k = y * G.W + x;
+    if (!land[k] || wet[k] || M.phase[k]) continue;
+    if (dWet[k] < best) { best = dWet[k]; pondAt = G.ctr(k); }
+  }
+  // north: the canonical direction that maps to world +y
+  const F = makeFrame(seed, M.S), w0 = F.toW([0, 0]), wx = sub(F.toW([1, 0]), w0), wy = sub(F.toW([0, 1]), w0);
+  const det = wx[0] * wy[1] - wx[1] * wy[0];
+  const north = norm([-wy[0] / det, wx[0] / det]);
+  const ok = (p) => { const k = G.idx(p); return k >= 0 && M.free(p) && !M.lotL[k] && !M.phase[k]; };
+  const street = (p) => { const k = G.idx(p); return k >= 0 && !M.water[k] && !M.isSea(p) && !town0(k) && !M.hwL[k] && !M.lotL[k] && !M.phase[k]; };
+  // a side with a road along it gives up half the road's 66 ft right-of-way and a 1 m verge (as platTractLots)
+  const roads = M.oldRoads.concat(M.secRoads);
+  const onRoad = (a, b) => [0.2, 0.5, 0.8].some((t) => roads.some((pl) => distToLine([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], pl) < 25));
+  const side = (a, b) => (onRoad(a, b) ? 66 * FT / 2 + 1 : 1);
+  const insets = [side([x0, y0], [x0, y1]), side([x0, y0], [x1, y0]), side([x1, y0], [x1, y1]), side([x0, y1], [x1, y1])];
+  const cellSf = CELL * CELL * SQFT_PER_M2;
+  E = {
+    r: tract.r, id: tract.id, seed, bearing: null, insets, ok, street, floodDist, trail, pondAt: pondAt ?? [(x0 + x1) / 2, (y0 + y1) / 2],
+    outline, flood, north,
+    grossSf: Math.round(nLand * cellSf), floodSf: Math.round(nFlood * cellSf), buildableSf: Math.round((nLand - nFlood) * cellSf),
+  };
+  if (DESIGN_ENV.size > 40) DESIGN_ENV.clear();
+  DESIGN_ENV.set(key, E);
+  return E;
+}
+
+/**
+ * A FARM TRACT AS THE PLAYER DESIGNED IT (platdesign.mjs designPlat), in canonical metres for the
+ * desk's drawing: the plat and the ground under it. `design.pondSf` and each amenity's `sf` are the
+ * engine's land takes (engine/platdesign.ts designRecipe resolves them). Deterministic from
+ * (tract, design).
+ */
+export function platTractDesign(tract, design) {
+  const E = designEnv(tract);
+  const geo = designPlat(design, { ...E, pondSf: design.pondSf ?? 0 });
+  return { ...geo, ground: { outline: E.outline, flood: E.flood, trail: E.trail, north: E.north, r: E.r, grossSf: E.grossSf, floodSf: E.floodSf, buildableSf: E.buildableSf, pondAt: E.pondAt } };
+}
+
+/**
+ * THE SAME PLAT FOR THE MAP AND UNREAL, in lon/lat: lots in engine order (ring, a, f, d, near), the
+ * streets, and what the amenities put on the ground — park and open-space land (HOA parcels), the
+ * pond, the trail, trees in the parks, and the clubhouse as a small volume.
+ */
+export function platDesignLL(tract, design) {
+  const geo = platTractDesign(tract, design);
+  const seed = tract.seed >>> 0, M = regionModel(seed);
+  const F = makeFrame(seed, M.S), proj = makeProjection(LONLAT[0], LONLAT[1]);
+  const LL = (p) => { const q = proj.toLL(F.toW(p)); return [+q[0].toFixed(7), +q[1].toFixed(7)]; };
+  const B = geo.base;
+  const rng = makeRng(`plat-design-trees:${tract.id}:${seed}`);
+  const trees = [], parks = [], volumes = [];
+  geo.amen.forEach((a, k) => {
+    for (const i of a.lots) {
+      parks.push({ k: a.k, amen: k, ring: B[i].ring.map(LL) });
+      if (a.k === "pocket" || a.k === "park" || a.k === "entry" || a.k === "playground") {
+        const c = B[i].c, n = a.k === "park" ? 4 : 2;
+        for (let t = 0; t < n; t++) trees.push(LL(add(c, [rng.range(-9, 9), rng.range(-9, 9)])));
+      }
+    }
+    if (a.k === "pool" && a.lots.length) {
+      const c = B[a.lots[0]].c;
+      const sq = (cc, w, d) => [[cc[0] - w / 2, cc[1] - d / 2], [cc[0] + w / 2, cc[1] - d / 2], [cc[0] + w / 2, cc[1] + d / 2], [cc[0] - w / 2, cc[1] + d / 2]];
+      volumes.push({ amen: k, ring: sq(c, 20, 16).map(LL), h: 6 });     // a one-storey clubhouse of ~3,500 sf
+    }
+    if (a.k === "greenway") for (const t of a.trail) for (let s = 0; s < cumLen(t).at(-1); s += 25) trees.push(LL(pointAt(t, s)));
+  });
+  for (const i of geo.open) parks.push({ k: "open", amen: -1, ring: B[i].ring.map(LL) });
+  for (const i of geo.pond.lots) parks.push({ k: "pond", amen: -1, ring: B[i].ring.map(LL) });
+  const pondRing = [];
+  if (geo.pond.lots.length) for (let t = 0; t < 24; t++) pondRing.push(LL(add(geo.pond.c, [geo.pond.r * Math.cos((t / 24) * 2 * Math.PI), geo.pond.r * Math.sin((t / 24) * 2 * Math.PI)])));
+  return {
+    lots: geo.lots.map((l) => ({ ring: l.ring.map(LL), a: l.a, f: Math.round(l.w), d: Math.round(l.d), near: l.near })),
+    streets: geo.streets.map((s) => s.pl.map(LL)),
+    bulbs: geo.bulbs.map((b) => { const r = []; for (let t = 0; t < 16; t++) r.push(LL(add(b.c, [b.r * Math.cos((t / 16) * 2 * Math.PI), b.r * Math.sin((t / 16) * 2 * Math.PI)]))); return r; }),
+    parks, pond: pondRing, trails: geo.amen.filter((a) => a.k === "greenway").flatMap((a) => a.trail.map((t) => t.map(LL))), trees, volumes,
+  };
+}

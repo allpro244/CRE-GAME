@@ -34,6 +34,15 @@ Each item: **who** · status. "You" = the owner.
 23. **Retail building detail** — real storefronts/signage, loading docks, pylon signs drawn (deco "sign" volumes exported, not yet drawn). · Visuals pass / assets
 24. **Houses look bad** — procedural stopgap until Fab pack. · Visuals pass / assets
 25. **Roads look bad** — region roads read brown; rural shoulders; markings. · Visuals pass / assets
+25a. **Product types (#424) gaps:**
+    - Flex rents at the plain industrial rent. Blending its office share at the town office rent gave $38–50/sf, which is CBD money, so I refused it.
+    - Pads get no drive-through or arterial premium.
+    - Inline tenants sign the leasing engine's generic terms, not the product's lease.
+    - There is no dark-anchor rent cut or termination right.
+    - Anchors always sign (no grocer-availability gate).
+    - The anonymous street growth path never builds products.
+    - Industrial plats put only ~39% of the tract into lots.
+    - DevelopDesk product picker not yet seen in a browser or Unreal. · Product-types agent
 
 ## D. Merges and builds
 26. Land #411 → #413 → #414 → #415 → #416, then a PR for `claude/region-preview` (with Phases 1–4, commerce, plat desk, product types) into main. · Me (after A1/A2)

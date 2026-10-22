@@ -397,7 +397,8 @@ export const clamp01 = (x: number) => Math.max(0, Math.min(1, x ?? 0.5));
 // carries no building envelope at all until the board rezones it
 // (landdev.ts) — the town-wide FAR-2 floor is for town lots, not for a field.
 export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number; zoneDist?: string }): number {
-  if (rec.zoneDist === "AG") return 0;
+  // farmland, and a plat's common land (OS: its parks and pond, landdev.ts hoaRecords), carry no envelope
+  if (rec.zoneDist === "AG" || rec.zoneDist === "OS") return 0;
   // A SUBURBAN DISTRICT MEANS WHAT IT SAYS. The town-wide FAR-2 floor is the
   // island's (every downtown lot carries at least a walk-up); a rezoning to
   // R-2 at FAR 0.6 is the board granting houses and two-flats, and flooring it

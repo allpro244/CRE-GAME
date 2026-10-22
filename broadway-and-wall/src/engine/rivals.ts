@@ -36,7 +36,7 @@ import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, Rival
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
 import { dollarLevel, rng, newsChance, rrange, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
-import { DEV_MARGIN, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
+import { mergedTouched, DEV_MARGIN, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
 import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
@@ -56,7 +56,7 @@ import { logFirm, milestone } from "./firmLog";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
 import { assembledBlock, reviewThesis, thesisFit, thesisLabel, thesisSellMult } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
-import { deskWithRoom, renewRow, streetLoanCost, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
+import { deskWithRoom, loanBookTouched, renewRow, streetLoanCost, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
 import {
   paramsFrom, siteFit, dealsPerYear, misreadPp, drawSheet, profilesForStyle, hash01, GRADE_NUM,
   PROFILE_OF, PROFILES, inv as invTrait, LEVERAGE_RANGE, sheetFromStyle, classTrait, nearestProfile,
@@ -532,6 +532,7 @@ export function tickRivalAssembly(s: GameState, parcels: ParcelTable, adjacency:
       for (const c of children) {
         s.merged[c] = parent;
         for (const k of kids.get(c) ?? []) s.merged[k] = parent;
+        mergedTouched();
       }
       const site = resolveRec(parcels, s, parent)!;
       // Dirt prices close to additively (measured: a merged site at 99.6% of
@@ -1831,9 +1832,12 @@ export function markRival(s: GameState, parcels: ParcelTable, r: Rival): { aum: 
  * `debtReleasedOnSale`. The sum of these over `r.bbls` is `markRival`, by
  * construction rather than by agreement.
  */
-export function markAsset(s: GameState, r: Rival, rec: ParcelRecord): { v: number; noi: number; occ?: number } {
+export function markAsset(s: GameState, r: Rival, rec: ParcelRecord, fresh = false): { v: number; noi: number; occ?: number } {
   const cond = assetGrade(r, rec);
-  const v = assetValue(rec, s.econ, cond);
+  // The book carries its last appraisal (appraiseBooks), not a monthly mark to
+  // market; a deal orders a new one (`fresh`), as a lender does.
+  const held = r.marks?.[rec.bbl];
+  const v = !fresh && held && held.k === markKey(rec, cond) ? held.v : assetValue(rec, s.econ, cond);
   if (rec.class === "land" || !rec.bldgArea) return { v, noi: noiAfterTaxYr(rec, s.econ, cond, v) };
   // Start with THIS building's modeled occupancy, then carry only the firm's
   // portfolio-wide operating delta onto it. A weak location stays weak even
@@ -2213,6 +2217,7 @@ export function tickRivalRetirements(s: GameState, _parcels: ParcelTable) {
     r.cash -= r.debt;
     r.distributed = (r.distributed ?? 0) + Math.max(0, r.cash);
     for (const x of rowsOf(s, r)) delete s.cityLoans![x.bbl];
+    loanBookTouched();
     r.lineBal = 0;
     r.debt = 0; r.cash = 0; r.bbls = []; r.uncalled = 0; r.aum = 0;
     r.heldSince = {};
@@ -2445,8 +2450,29 @@ const NEUTRAL_APPETITE = 0.43;
 
 /** The firm that owns this parcel, if any. */
 export function ownerOf(s: GameState, bbl: string): Rival | null {
-  for (const r of s.rivals ?? []) if (r.bbls.includes(bbl)) return r;
-  return null;
+  // The first firm whose book lists the deed — answered off an index of every
+  // book, rebuilt whenever any book or the roster is not the one it was built
+  // from. Books change by push or by replacement (never by writing a slot), so
+  // a book that is the same array at the same length lists the same deeds.
+  const rs = s.rivals ?? [];
+  let ix = OWNER_IX;
+  if (!ix || !ownerIxValid(ix, rs)) ix = OWNER_IX = buildOwnerIx(rs);
+  return ix.map.get(bbl) ?? null;
+}
+type OwnerIx = { roster: Rival[]; rivals: Rival[]; books: string[][]; lens: number[]; map: Map<string, Rival> };
+let OWNER_IX: OwnerIx | null = null;
+function ownerIxValid(ix: OwnerIx, rs: Rival[]): boolean {
+  if (ix.roster !== rs || ix.rivals.length !== rs.length) return false;
+  for (let i = 0; i < rs.length; i++) {
+    const r = rs[i];
+    if (r !== ix.rivals[i] || r.bbls !== ix.books[i] || r.bbls.length !== ix.lens[i]) return false;
+  }
+  return true;
+}
+function buildOwnerIx(rs: Rival[]): OwnerIx {
+  const map = new Map<string, Rival>();
+  for (const r of rs) for (const b of r.bbls) if (!map.has(b)) map.set(b, r);
+  return { roster: rs, rivals: [...rs], books: rs.map((r) => r.bbls), lens: rs.map((r) => r.bbls.length), map };
 }
 
 /**
@@ -3771,7 +3797,7 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
     // disposal nets and both ends read it" while two expressions stood. The
     // agreement it reported (+0.01% over 291 sales) was the formula compared
     // against itself — a test that cannot fail.
-    const px = markAsset(s, r, rec).v * DURESS_MID;
+    const px = markAsset(s, r, rec, true).v * DURESS_MID;
     const net = disposalNet(s, r, bbl, px);
     if (!biggest || net > biggest.net) biggest = { bbl, rec, net };
     if (net >= need && (!pick || net < pick.net)) pick = { bbl, rec, net };
@@ -3948,7 +3974,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
     if (!row || row.heldBy || !(row.balance > 0)) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    const { v, noi } = markAsset(s, r, rec);
+    const { v, noi } = markAsset(s, r, rec, true);   // a deal: a fresh appraisal
     if (v <= 0) continue;
     // ONLY A BUILDING UNDER WATER GOES BACK. A squeezed sponsor hands the keys
     // over on a loan a forced sale would not cover; on one it would, the sale
@@ -4090,7 +4116,7 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     } else if (s.month < x.maturityM) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    const { v, noi } = markAsset(s, r, rec);
+    const { v, noi } = markAsset(s, r, rec, true);   // a deal: a fresh appraisal
     const due = x.balance;
     if (due <= 0) continue;
     const refi = streetRefiProceeds(s, v, noi, st.maxLtv);
@@ -4239,7 +4265,7 @@ function cashOutRefi(s: GameState, parcels: ParcelTable, r: Rival, room: number,
     if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) continue;
     const row = rowOn(s, r, bbl);
     if (row?.heldBy) continue;
-    const { v, noi } = markAsset(s, r, rec);
+    const { v, noi } = markAsset(s, r, rec, true);   // a deal: a fresh appraisal
     const head = Math.round(Math.min(ltvCap * v, streetRefiProceeds(s, v, noi, ltvCap).principal) - (row?.balance ?? 0));
     if (head > 250_000) opts.push({ bbl, rec, v, noi, head });
   }
@@ -4257,11 +4283,49 @@ function cashOutRefi(s: GameState, parcels: ParcelTable, r: Rival, room: number,
   }
 }
 
+/** What an appraisal was struck on: a different building (bought, delivered, razed, regraded) needs a new one. */
+function markKey(rec: ParcelRecord, cond: Condition): string {
+  return `${rec.class}|${rec.bldgArea}|${cond}`;
+}
+
+/**
+ * THE BOOKS ARE APPRAISED ONCE A YEAR (owner, Oct 2026: "everything can be
+ * reappraised January 1st along with rival firms"). A private owner's
+ * portfolio is valued by an annual appraisal, and its lender reads that value
+ * until the next one or until a deal orders a new one (the open-end funds of
+ * the NCREIF index appraise quarterly; the owner-operators and closed-end
+ * books this street is made of, yearly). So a firm's book, its leverage and
+ * its loan tests move in January steps and lag a turning market, which is the
+ * appraisal lag real books have. Struck here, inside the tick only, so a
+ * screen that reads a firm's book never changes it.
+ *
+ * It was also the single largest repeat in the month: every firm marked every
+ * building every month (about a tenth of the tick).
+ */
+function appraiseBooks(s: GameState, parcels: ParcelTable) {
+  const jan = s.month % 12 === 0;
+  for (const r of s.rivals ?? []) {
+    const held = new Set(r.bbls);
+    const out: NonNullable<Rival["marks"]> = {};
+    for (const bbl of r.bbls) {
+      const rec = resolveRec(parcels, s, bbl);
+      if (!rec) continue;
+      const cond = assetGrade(r, rec);
+      const k = markKey(rec, cond);
+      const was = r.marks?.[bbl];
+      out[bbl] = !jan && was && was.k === k ? was : { v: assetValue(rec, s.econ, cond), m: s.month, k };
+    }
+    if (r.marks) for (const b of Object.keys(r.marks)) if (!held.has(b)) delete r.marks[b];
+    r.marks = out;
+  }
+}
+
 export function tickRivals(s: GameState, parcels: ParcelTable) {
   if (!s.rivals?.length) return;
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   tickRivalSpinouts(s);
   maybeNewFirm(s);
+  appraiseBooks(s, parcels);
   // fundJobs runs earlier in tickMonth — before tickEcon settles deliveries —
   // so schedule slips and orphans are visible to the space market. Cash draws
   // already landed; the solvency test below reads the same balances.

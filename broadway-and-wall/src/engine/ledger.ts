@@ -33,7 +33,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Rival } from "./types";
 import { cityLoanBook, deskTotals } from "./loanbook";
-import { addToLine, jobDebtOf, payDown, syncDebt, termDebtOf } from "./rivalDebt";
+import { addToLine, jobDebtOf, loanBookTouched, payDown, syncDebt, termDebtOf } from "./rivalDebt";
 
 /** Who holds this deed's paper when it has left the banks — you, or a firm on the street. */
 function paperHeldBy(s: GameState, bbl: string): string | undefined {
@@ -63,7 +63,7 @@ export function tickLedger(s: GameState, parcels: ParcelTable) {
   for (const bbl of Object.keys(led)) {
     const x = led[bbl];
     const o = owner[bbl];
-    if (!o || o.id !== x.obligorId) { delete led[bbl]; continue; }
+    if (!o || o.id !== x.obligorId) { delete led[bbl]; loanBookTouched(); continue; }
     const held = paperHeldBy(s, bbl);
     if (held) x.heldBy = held; else delete x.heldBy;
   }
@@ -77,8 +77,11 @@ export function tickLedger(s: GameState, parcels: ParcelTable) {
       debtDrift.n++; debtDrift.abs += Math.abs(drift);
       if (drift > 0) addToLine(s, r, drift);
       else payDown(s, r, -drift);
+      syncDebt(s, r);
+    } else {
+      // Nothing moved since the two sums above: this is syncDebt without the rescan.
+      r.debt = Math.round(term + (r.lineBal ?? 0) + jobs);
     }
-    syncDebt(s, r);
   }
 
   // WHAT EACH DESK IS HOLDING IN THIS TOWN, BY CLASS — the number the quote

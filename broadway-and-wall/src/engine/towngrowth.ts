@@ -35,6 +35,7 @@ import { FAR_CEIL } from "./zoning";
 import { ownerOf } from "./rivals";
 import { startTradeAreaBuilding } from "./dev";
 import { roadPlan } from "./roads";
+import { tableVersion } from "./tableVersion";
 
 // ---------------------------------------------------------------- the facts
 /**
@@ -104,7 +105,7 @@ type Statics = {
 };
 let ST: Statics | null = null;
 function statics(s: GameState, parcels: ParcelTable, bbls: string[]): Statics {
-  const key = `${s.seed}:${bbls[0]}`;
+  const key = `${s.seed}:${bbls[0]}:${tableVersion(parcels)}`;
   if (ST?.key === key) return ST;
   const byD = new Map<string, { x: number; y: number; n: number; units: number }>();
   const districts = new Map<string, string[]>();

@@ -28,6 +28,7 @@ import type { GameState, Rival, Thesis } from "./types";
 import { START_YEAR } from "./types";
 import { CLASS_FLOOR, hash01 } from "./competitorTraits";
 import { demandLinear } from "./value";
+import { tableVersion } from "./tableVersion";
 
 const CLASS_TRAIT: Record<string, "office" | "residential" | "retail" | "industrial" | "land"> = {
   office: "office", multifamily: "residential", retail: "retail", industrial: "industrial", land: "land",
@@ -37,9 +38,9 @@ const CLASS_WORD: Record<string, string> = {
 };
 
 /** Each district's mean demand score and name, cached per parcel table. */
-let distCache: { p: ParcelTable; d: Map<string, { name: string; demand: number; n: number }> } | null = null;
+let distCache: { p: ParcelTable; v: number; d: Map<string, { name: string; demand: number; n: number }> } | null = null;
 function districts(parcels: ParcelTable) {
-  if (distCache?.p === parcels) return distCache.d;
+  if (distCache?.p === parcels && distCache.v === tableVersion(parcels)) return distCache.d;
   const d = new Map<string, { name: string; demand: number; n: number }>();
   for (const rec of Object.values(parcels)) {
     if (!rec?.district) continue;
@@ -49,7 +50,7 @@ function districts(parcels: ParcelTable) {
     d.set(rec.district, x);
   }
   for (const x of d.values()) x.demand /= Math.max(1, x.n);
-  distCache = { p: parcels, d };
+  distCache = { p: parcels, v: tableVersion(parcels), d };
   return d;
 }
 

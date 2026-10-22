@@ -4518,8 +4518,6 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
     nw += Math.min(n.basis, Math.round(collateralAsIs(rec, s.econ, r?.occ ?? 0.5)));
   }
   nw -= s.loc?.balance ?? 0;   // the line is real money owed
-  // ...and so is a land loan (adloan.ts), against the lots in the book above
-  for (const l of Object.values(s.adLoans ?? {})) nw -= l.balance;
   // SECURITY DEPOSITS ARE NOT YOUR MONEY. They arrive as cash at signing and
   // sit in the bank looking exactly like equity until the day the tenant leaves
   // and takes them back. A landlord with a large roll is holding a real

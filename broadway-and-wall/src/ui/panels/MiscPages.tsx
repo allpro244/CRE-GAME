@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { InterfaceSwitch, BuyingPreset } from "@/ui/next/InterfaceSwitch";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
@@ -219,6 +220,8 @@ export function SettingsPage() {
   const clockMode = !game.clockStops || game.clockStops === "money" ? "decisions" : game.clockStops;
   return (
     <div>
+      <InterfaceSwitch />
+      <BuyingPreset />
       <ThemePicker />
       <Toggle
         on={sound}

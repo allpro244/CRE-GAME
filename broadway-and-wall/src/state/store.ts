@@ -45,9 +45,10 @@ import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
-import { cityList, CITY_PLAN, platTractLots, type GeneratedCity } from "@/citygen/index.mjs";
+import { cityList, CITY_PLAN, platTractLots, platTractDesign, platDesignLL, designSummary, type GeneratedCity } from "@/citygen/index.mjs";
+import { designRecipe, fileDesignedRezoning as fileDesignedRezoningE, startDesignedPlat } from "@/engine/platdesign";
+import type { PlatDesign } from "@/engine/types";
 import { fileEntitlement, startPlat, materializePlats, lotBbl } from "@/engine/landdev";
-import { startPlatFinanced } from "@/engine/adloan";
 import { acceptLotOffer, declineLotOffer, listLotsToBuilders, delistLots as delistPlatLots } from "@/engine/homes";
 import { cutTownOffThread } from "@/state/townClient";
 import type { TownRequest } from "@/state/townWorker";
@@ -403,8 +404,9 @@ interface AppState {
   fileRezoning: (bbl: string, lotSf: number) => void;
   /** Region map: build the streets on a rezoned tract and cut it into lots. */
   buildPlat: (bbl: string) => void;
-  /** ...on an A&D loan from a construction desk (engine/adloan.ts). */
-  buildPlatFinanced: (bbl: string) => void;
+  /** Region map, the design desk (engine/platdesign.ts): file the rezoning with a drawn plat; build its streets, with `lev` of the A&D loan the desk offers. */
+  fileDesignedRezoning: (bbl: string, design: PlatDesign) => void;
+  buildDesignedPlat: (bbl: string, design: PlatDesign, lev: number) => void;
   /** Region map, Phase 3 (engine/homes.ts): list your lots on the plat `parent` to the homebuilders at `askPsf`, as a takedown or whole. */
   listLots: (parent: string, askPsf: number, bulk: boolean) => void;
   delistLots: (parent: string) => void;
@@ -2048,24 +2050,36 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  buildPlatFinanced: (bbl) => {
-    const { game, parcels } = get();
-    const tract = parcels?.[bbl]?.tract, rz = game?.rezoned?.[bbl];
-    if (!game || !parcels || !tract || !rz) return;
-    const lots = platTractLots(tract, rz.lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
-    const r = startPlatFinanced(game, parcels, bbl, lots);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    toast(r.msg ?? "Under way.");
-    void persist(r.s);
-  },
-
   buildPlat: (bbl) => {
     const { game, parcels } = get();
     const tract = parcels?.[bbl]?.tract, rz = game?.rezoned?.[bbl];
     if (!game || !parcels || !tract || !rz) return;
     const lots = platTractLots(tract, rz.lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
     const r = startPlat(game, parcels, bbl, lots);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Under way.");
+    void persist(r.s);
+  },
+
+  fileDesignedRezoning: (bbl, design) => {
+    const { game, parcels } = get();
+    const rec = parcels?.[bbl];
+    if (!game || !parcels || !rec?.tract) return;
+    const geo = designSummary(platTractDesign(rec.tract, designRecipe(design, rec.buildableSf ?? rec.lotArea)));
+    const r = fileDesignedRezoningE(game, parcels, bbl, design, geo);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Filed.");
+    void persist(r.s);
+  },
+
+  buildDesignedPlat: (bbl, design, lev) => {
+    const { game, parcels } = get();
+    const rec = parcels?.[bbl];
+    if (!game || !parcels || !rec?.tract) return;
+    const geo = designSummary(platTractDesign(rec.tract, designRecipe(design, rec.buildableSf ?? rec.lotArea)));
+    const r = startDesignedPlat(game, parcels, bbl, design, geo, lev);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Under way.");
@@ -2871,9 +2885,34 @@ useStore.subscribe((st) => {
   const retired = new Set(Object.keys(g.platted ?? {}));
   const feats = fc.features.filter((f) => !retired.has(String(f.properties?.bbl)));
   const roads: GeoJSON.Feature[] = [];
+  const vols: unknown[] = [];
   for (const plat of todo) {
-    const parent = parcels[plat.parent];
-    const geo = platTractLots(parent.tract!, plat.lotSf);
+    const parent: import("@/data/types").ParcelRecord = parcels[plat.parent];
+    // A DESIGNED PLAT is redrawn from its design (engine/platdesign.ts, citygen platDesignLL): the same
+    // lots, and what its amenities put on the ground — the association's parks as park ground with trees,
+    // the pond, the trail, the clubhouse as a small volume — for the map and for Unreal alike
+    const designed = plat.template === "design" && plat.design
+      ? platDesignLL(parent.tract!, designRecipe(plat.design, parent.buildableSf ?? parent.lotArea)) : null;
+    const geo = designed ?? platTractLots(parent.tract!, plat.lotSf);
+    if (designed) {
+      const ring = (r: [number, number][]) => [[...r, r[0]]];
+      const byAmen = new Map<number, [number, number][][]>();
+      for (const pk of designed.parks) {
+        roads.push({ type: "Feature", geometry: { type: "Polygon", coordinates: ring(pk.ring) }, properties: { kind: "park" } });
+        const k = pk.amen < 0 ? 0 : pk.amen + 1;
+        (byAmen.get(k) ?? byAmen.set(k, []).get(k)!).push(pk.ring);
+      }
+      for (const [k, rings] of byAmen) {
+        const bbl = String(6e9 + (parent.tract!.id % 1e5) * 1e4 + 9000 + k), rec = parcels[bbl];
+        if (rec) feats.push({ type: "Feature", id: Number(bbl), geometry: { type: "MultiPolygon", coordinates: rings.map(ring) }, properties: { bbl, address: rec.address, class: rec.class, zone: rec.zoneDist, landpsf: 0 } });
+      }
+      if (designed.pond.length) roads.push({ type: "Feature", geometry: { type: "Polygon", coordinates: ring(designed.pond) }, properties: { kind: "pond" } });
+      for (const b of designed.bulbs) roads.push({ type: "Feature", geometry: { type: "Polygon", coordinates: ring(b) }, properties: { kind: "pavement" } });
+      for (const t of designed.trails) roads.push({ type: "Feature", geometry: { type: "LineString", coordinates: t }, properties: { kind: "parkpath" } });
+      for (const t of designed.trees) roads.push({ type: "Feature", geometry: { type: "Point", coordinates: t }, properties: { kind: "tree" } });
+      const yr = START_YEAR + Math.floor(g.month / 12);
+      designed.volumes.forEach((v) => vols.push({ b: String(6e9 + (parent.tract!.id % 1e5) * 1e4 + 9000 + v.amen + 1), c: "retail", y: yr, z0: 0, z1: v.h, r: v.ring, t: 1 }));
+    }
     geo.lots.forEach((l, i) => {
       const bbl = lotBbl(parent, i + 1), rec = parcels[bbl];
       if (!rec) return;
@@ -2893,7 +2932,10 @@ useStore.subscribe((st) => {
     }
   }
   useStore.setState({
-    city: { ...city, platsDrawn: [...drawn, ...todo.map((pl) => pl.parent)], parcelFeatures: { ...fc, features: feats }, context: { ...ctx, features: [...ctx.features, ...roads] } } as GeneratedCity,
+    city: {
+      ...city, platsDrawn: [...drawn, ...todo.map((pl) => pl.parent)], parcelFeatures: { ...fc, features: feats }, context: { ...ctx, features: [...ctx.features, ...roads] },
+      ...(vols.length ? { buildings3d: [...((city as unknown as { buildings3d: unknown[] }).buildings3d ?? []), ...vols] } : {}),
+    } as GeneratedCity,
     bbls: [...st.bbls],
   });
 });

@@ -145,11 +145,6 @@ export function cityLoanBook(s: GameState, parcels?: ParcelTable): BookLoan[] {
       status: (r.stressMs ?? 0) >= 3 ? "default" : (r.stressMs ?? 0) > 0 ? "watch" : "current",
     });
   }
-  // Your land loans (adloan.ts).
-  for (const l of Object.values(s.adLoans ?? {})) {
-    if (!(l.balance > 0)) continue;
-    out.push({ holder: l.lender, borrower: "player", kind: "construction", balance: Math.round(l.balance), status: "current", bbl: l.tract, klass: "construction" });
-  }
   // The homebuilders' acquisition, development and construction lines (homes.ts).
   for (const b of Object.values(s.homes?.builders ?? {})) {
     if (b.failedM !== undefined || !(b.debt > 0) || !b.lender) continue;

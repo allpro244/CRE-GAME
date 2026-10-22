@@ -207,6 +207,7 @@ export function makeRegion(seed, opts = {}) {
         lotfront: Math.round(front / FT), lotdepth: Math.round(depth / FT),
       },
     });
+    for (const r of lot.rects) if (r.kind === "sign") houses3d.push({ bbl, r, year: lot.year, cls: "retail", deco: "sign" });   // the pylon sign
     for (const r of bldgs) {
       rawBuildings.features.push({ type: "Feature", geometry: polyLL(rectRing(r.c, r.u, r.w, r.d)), properties: { base_bbl: bbl, heightroof: +((r.z / 100) / FT).toFixed(1), cnstrct_yr: lot.year } });
     }
@@ -365,6 +366,7 @@ export function makeRegion(seed, opts = {}) {
     const ring = rectRing(r.c, r.u, r.w, r.d);
     if (r.kind === "pave") ground("pavement", ring);
     else if (r.kind === "lot") ground("apron", ring);   // a centre's car park: the surface parking layer
+    else if (r.kind === "walk") ground("sidewalk", ring);
     else if (r.kind === "park") ground("park", ring);
     else if (r.kind === "lawn") ground("yard", ring);
   }
@@ -427,7 +429,7 @@ export function makeRegion(seed, opts = {}) {
   const b3 = data.buildings3d;
   for (const h of houses3d) {
     const r = h.r, ring = rectRing(r.c, r.u, r.w, r.d).map(LL);
-    b3.push({ b: h.bbl, c: h.cls, y: h.year, t: 0, f: Math.max(1, Math.round(r.z / 355)), z0: 0, z1: +(r.z / 100).toFixed(1), d: 1, ...(h.house ? { dk: "house" } : {}), x: 1, r: ring });
+    b3.push({ b: h.bbl, c: h.cls, y: h.year, t: 0, f: Math.max(1, Math.round(r.z / 355)), z0: 0, z1: +(r.z / 100).toFixed(1), d: 1, ...(h.house ? { dk: "house" } : h.deco ? { dk: h.deco } : {}), x: 1, r: ring });
   }
   // the inner ring's houses draw as houses, not boxes; each stays its deed's building
   const houseLike = new Set([...housed].filter((b) => data.parcels[b]?.class === "multifamily"));

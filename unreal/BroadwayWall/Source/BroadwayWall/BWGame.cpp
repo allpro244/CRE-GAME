@@ -1041,6 +1041,32 @@ void ABWGameMode::OnPageInput(const FString& Json)
 		return;
 	}
 	if (T == TEXT("preview-off") && City) { City->ClearPreview(); return; }
+	// the lens: the page's number per deed, tinted on the lots (ui-revamp step 7)
+	if (T == TEXT("lens") && City)
+	{
+		TMap<FString, double> Vals;
+		const TSharedPtr<FJsonObject>* VO = nullptr;
+		if (O->TryGetObjectField(TEXT("v"), VO) && VO && VO->IsValid())
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& E : (*VO)->Values) Vals.Add(E.Key, E.Value->AsNumber());
+		City->SetLens(K, Vals);
+		return;
+	}
+	// a row or a notice that names a building: the camera goes to it
+	if (T == TEXT("fly") && City)
+	{
+		FString Bbl;
+		O->TryGetStringField(TEXT("bbl"), Bbl);
+		if (const FBWParcel* P = City->GetCity().FindParcel(Bbl))
+			if (P->Ring.Num() && Cast<ABWCameraPawn>(PC->GetPawn()))
+			{
+				FVector2D C(0, 0);
+				for (const FVector2D& Q : P->Ring) C += Q;
+				C /= P->Ring.Num();
+				ABWCameraPawn* Pawn = Cast<ABWCameraPawn>(PC->GetPawn());
+				Pawn->SetView(FVector(C, 0), Pawn->Yaw, -40, FMath::Clamp(Pawn->Distance, 12000.0, 40000.0));
+			}
+		return;
+	}
 	if (T == TEXT("preview-rect"))
 	{
 		double H = 0;

@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DESKS as DESK_TABLE } from "@/ui/desks";
 import { districtLabel } from "@/engine/mix";
 import { useStore, type Lens, type Page } from "@/state/store";
+import { onScreen } from "@/ui/onScreen";
 import { openViewOn } from "@/ui/deskView";
 import type { GameState } from "@/engine/types";
 import { CLASS_LABEL, type ParcelTable } from "@/data/types";
@@ -110,7 +111,7 @@ function mk(e: Omit<Entry, "lower" | "subLower">): Entry {
 // Same rule and the same words as the keyboard clock in GamePanels: an
 // undismissed card on the desk outranks the calendar, however you reach for it.
 function clockClear(): boolean {
-  if (document.querySelector(".modal-backdrop")) {
+  if (onScreen(".modal-backdrop")) {
     useStore.setState({
       toast: { text: "Answer or dismiss the card on your desk before advancing time.", kind: "err", at: Date.now() },
     });

@@ -30,7 +30,7 @@ import { buildCityData } from "../build.mjs";
 import { makeProjection } from "../geom.mjs";
 import {
   ACRE, FT, SQFT_PER_M2, makeRng, add, sub, mul, dist, norm, perp, resample, rdp, circle, capsules, hull,
-  rectRing, ringAreaAbs, ringCentroid, pointInRing, distToLine, maskOutline, CELL, cumLen, pointAt,
+  rectRing, ringAreaAbs, ringCentroid, pointInRing, distToLine, maskOutline, CELL, cumLen, pointAt, slicePl,
 } from "./util.mjs";
 import { generateLand, NAME_A, NAME_B, SZ } from "./land.mjs";
 import { storyPrep, townFootprint } from "./story.mjs";
@@ -50,6 +50,7 @@ const ROAD_W = { highway: 24, arterial: 14, local: 9 };
 export const REGION_GROUND_LAYERS = ["land", "beach", "marsh", "farm", "woods", "yard", "rock", "esplanade", "stream", "pond", "paveland", "apron", "pavement", "median", "sidewalk", "block", "park"];
 const TREE_CAP = 30000;
 const OUTSKIRTS = "outskirts";
+const CENTRE_KINDS = new Set(["neighbourhood", "strip", "gas", "community", "power", "mall", "rural", "flex", "industrial park", "truck stop"]);
 
 export function regionName(seed) {
   const r = makeRng("name:" + (seed >>> 0));
@@ -152,6 +153,8 @@ export function makeRegion(seed, opts = {}) {
     return best;
   };
   const reserved = {}, reservedFeatures = [], houses3d = [];
+  // which rung of the commerce hierarchy each centre and industrial lot is (commerce.mjs), for the engine
+  const centreOf = new Map();
   let blockNo = 1, rid = 0;
   const reserveRec = (rec, ringC, extra = {}) => {
     const ringLL = polyLL(ringC);
@@ -187,6 +190,7 @@ export function makeRegion(seed, opts = {}) {
       continue;
     }
     const bbl = String(3e9 + blockNo * 1e4 + 1); blockNo++;
+    if (lot.kind && CENTRE_KINDS.has(lot.kind)) centreOf.set(bbl, lot.kind);
     const cls = lot.cls;
     const bldgclass = lot.bldgclass ?? (cls === "land" ? "V1" : cls === "retail" ? "K1" : cls === "office" ? "O4" : "E9");
     // zoning out past the town: a suburban business or light-industry district, FAR about 1 [S, typical suburban codes]
@@ -296,6 +300,7 @@ export function makeRegion(seed, opts = {}) {
     });
   }
   for (const ft of data.tileParcels.features) if (data.parcels[ft.properties.bbl]?.ag) ft.properties.ag = data.parcels[ft.properties.bbl].ag;
+  for (const [b, k] of centreOf) if (data.parcels[b]) data.parcels[b].centre = k;
 
   // ---------------- the neighbourhoods: reserved parcels, with their numbers
   const SUFFIX = { prewar: ["Park", "Terrace", "Heights", "Place"], postwar: ["Village", "Gardens", "Manor", "Acres"], recent: ["Estates", "Meadows", "Reserve", "Crossing", "Ridge"] };
@@ -507,13 +512,99 @@ export function platTractLots(tract, lotSf) {
   const onRoad = (a, b) => [0.2, 0.5, 0.8].some((t) => roads.some((pl) => distToLine([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], pl) < 25));
   const side = (a, b) => (onRoad(a, b) ? 66 * FT / 2 + 1 : 1);
   const insets = [side([x0, y0], [x0, y1]), side([x0, y0], [x1, y0]), side([x1, y0], [x1, y1]), side([x0, y1], [x1, y1])];
-  const plat = platFor({ seed, tract: tract.r, era: "grid", id: tract.id, bearing: tract.bearing ?? undefined, lotSf, insets }, ok);
+  // an acre and up is an industrial park's lot (landdev.ts INDUSTRIAL_LOT_SIZES): spine roads, deep lots
+  const plat = platFor({ seed, tract: tract.r, era: lotSf >= 43_560 ? "industrial" : "grid", id: tract.id, bearing: tract.bearing ?? undefined, lotSf, insets }, ok);
   const lots = plat.lots.map((l) => {
     const a = ringAreaAbs(l.ring) * SQFT_PER_M2, f = dist(l.front[0], l.front[1]) / FT;
     return { ring: l.ring.map(LL), a: Math.round(a), f: Math.round(f), d: Math.round(a / Math.max(1, f)) };
   });
   const streets = plat.streets.map((s) => s.map(LL));
   return { lots, streets, buildableSf: Math.round(buildableM2(M, tract.r) * SQFT_PER_M2) };
+}
+
+/**
+ * A NEIGHBOURHOOD, UNPACKED (Phase 4). The reserved neighbourhood `N<id>` redrawn from its own recipe
+ * (the plat outer.mjs drew, which the record's `recipe` regenerates through platFor): every lot that has
+ * a house on it at the opening, in plat order, with its ring (lon/lat), area (sf), frontage and depth
+ * (ft), and the house (floor area sf, storeys). Deterministic from (seed, id); null if no such
+ * neighbourhood.
+ */
+export function neighbourhoodLots(seed, id) {
+  seed = seed >>> 0;
+  const M = regionModel(seed);
+  const t = M.tracts.find((x) => x.id === id && x.keep && x.keep.size);
+  if (!t) return null;
+  const F = makeFrame(seed, M.S), proj = makeProjection(LONLAT[0], LONLAT[1]);
+  const LL = (p) => { const q = proj.toLL(F.toW(p)); return [+q[0].toFixed(7), +q[1].toFixed(7)]; };
+  const lots = [...t.keep].sort((a, b) => a - b).map((i) => {
+    const l = t.plat.lots[i];
+    const a = ringAreaAbs(l.ring) * SQFT_PER_M2, f = dist(l.front[0], l.front[1]) / FT;
+    return { i, ring: l.ring.map(LL), a: Math.round(a), f: Math.round(f), d: Math.round(a / Math.max(1, f)), houseSf: Math.round(l.house.w * l.house.d * l.house.storeys * SQFT_PER_M2), storeys: l.house.storeys, c: LL(l.house.c) };
+  });
+  return { id, era: t.era, year: t.year, lots };
+}
+
+// ---------------------------------------------------------------- the road network as a plan (Phase 4)
+/**
+ * The calendar the master plan's years are written in (land.mjs SZ.plannedYears, 2029-46: "10-20 years
+ * from study to ribbon-cutting" read from a 2026 desk). The engine reads a segment's year as years after
+ * the opening: year - PLAN_YEAR0.
+ */
+export const PLAN_YEAR0 = 2026;
+const PLANS = new Map();
+/**
+ * THE REGION'S ROADS AS THE ENGINE SEES THEM (growth simulation, Phase 4): every highway segment, built
+ * or proposed, with its planned year; the interchanges, each with its distance to the town's edge; and
+ * the arterials cut into county road pieces (the old roads, outside the town, about a kilometre each)
+ * and section-line roads (a mile each, as the survey laid them). Lon/lat polylines and lengths in metres.
+ * Deterministic from the seed and cached: the engine holds only ids, and draws from this.
+ */
+export function regionRoadPlan(seed) {
+  seed = seed >>> 0;
+  let P = PLANS.get(seed);
+  if (P) return P;
+  const M = regionModel(seed), G = M.G;
+  const F = makeFrame(seed, M.S), proj = makeProjection(LONLAT[0], LONLAT[1]);
+  const LL = (p) => { const q = proj.toLL(F.toW(p)); return [+q[0].toFixed(7), +q[1].toFixed(7)]; };
+  const edgeD = (M.edgeD ??= G.bfs((k) => !!M.townMask[k]));
+  const edgeAt = (p) => { const k = G.idx(p); return k >= 0 && Number.isFinite(edgeD[k]) ? Math.round(edgeD[k]) : Math.round(dist(p, M.centre)); };
+  const inTownC = (p) => { const k = G.idx(p); return k >= 0 && (M.townMask[k] || M.townL[k]); };
+  const len = (pl) => cumLen(pl).at(-1);
+  const highways = M.highways.map((h) => ({
+    id: h.id, kind: h.kind,
+    segs: h.segs.map((sg, i) => ({ id: `${h.id}.${i}`, built: !!sg.built, year: sg.year, lenM: Math.round(len(sg.pts)), pts: rdp(sg.pts, 2).map(LL), mid: LL(pointAt(sg.pts, len(sg.pts) / 2)), edgeM: edgeAt(pointAt(sg.pts, len(sg.pts) / 2)) })),
+    ix: (h.ix ?? []).filter((x) => !x.sys).map((x, j) => {
+      const seg = h.segs.findIndex((sg) => x.s >= sg.s0 - 1 && x.s <= sg.s1 + 1);
+      return { id: `${h.id}.x${j}`, seg: seg >= 0 ? `${h.id}.${seg}` : null, p: LL(x.p), edgeM: edgeAt(x.p) };
+    }),
+  }));
+  const arterials = [];
+  M.oldRoads.forEach((r, i) => {
+    let n = 0;
+    for (const run of keepRuns(r, (p) => !inTownC(p), 10)) {
+      const L = len(run), k = Math.max(1, Math.round(L / 1000));
+      for (let q = 0; q < k; q++) {
+        const pl = slicePl(run, (L * q) / k, (L * (q + 1)) / k);
+        if (pl.length < 2) continue;
+        arterials.push({ id: `A${i}.${n++}`, kind: "county", lenM: Math.round(len(pl)), pts: pl.map(LL), mid: LL(pointAt(pl, len(pl) / 2)), edgeM: edgeAt(pointAt(pl, len(pl) / 2)) });
+      }
+    }
+  });
+  M.secRoads.forEach((r, i) => {
+    const L = len(r), k = Math.max(1, Math.round(L / 1609));
+    for (let q = 0; q < k; q++) {
+      const pl = slicePl(r, (L * q) / k, (L * (q + 1)) / k);
+      arterials.push({ id: `S${i}.${q}`, kind: "section", lenM: Math.round(len(pl)), pts: pl.map(LL), mid: LL(pointAt(pl, len(pl) / 2)), edgeM: edgeAt(pointAt(pl, len(pl) / 2)) });
+    }
+  });
+  // the households out past the town at the opening: each neighbourhood's houses, and the rural homes
+  const homes = [];
+  for (const t of M.tracts) if (t.keep && t.keep.size) homes.push({ p: LL(t.c), n: t.keep.size, edgeM: edgeAt(t.c), id: `N${t.id}` });
+  for (const lot of M.outerLots) if (lot.tenure === "homes") homes.push({ p: LL(lot.anchor), n: lot.rects.filter((r) => r.kind === "house").length || 1, edgeM: edgeAt(lot.anchor) });
+  P = { seed, year0: PLAN_YEAR0, widths: ROAD_W, highways, arterials, homes, centre: LL(M.centre) };
+  if (PLANS.size > 2) PLANS.clear();
+  PLANS.set(seed, P);
+  return P;
 }
 
 /**

@@ -11,6 +11,7 @@ import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
+import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -38,7 +39,7 @@ export function zonePermits(
   return true;
 }
 /** Districts whose only permitted use is detached and two-family houses, built and sold through homes.ts. */
-export const HOMES_ONLY_ZONES: ReadonlySet<string> = new Set(["R-2"]);
+export const HOMES_ONLY_ZONES: ReadonlySet<string> = new Set(["R-2", "R-1"]);
 
 /**
  * THE SAME RULE, ASKED BY THE DEVELOP DESK — and why not, in words.
@@ -348,7 +349,16 @@ export function shopFrontMult(rec: { bldgArea: number; floors: number; lotFront?
   const capped = rec.lotDepth && rec.lotDepth > 0 ? Math.min(depth, rec.lotDepth) : depth;
   return clamp(zonedPerSf(capped) / zonedPerSf(REF_SHOP_DEPTH_FT), 0.3, 1.6);
 }
-export function plateRentMult(rec: { bldgArea: number; floors: number; lotFront?: number; lotDepth?: number }, use: BuiltClass): number {
+export function plateRentMult(rec: { bldgArea: number; floors: number; lotFront?: number; lotDepth?: number; product?: string }, use: BuiltClass): number {
+  // A CENTRE'S SHOPS FACE ITS CAR PARK, NOT THE LOT LINE: their depth is the
+  // product's inline depth [ICSC], read by the same zoning method.
+  // An industrial product is its own clear-span box: the plate premium is a
+  // town shed's, measured against town plates, and a distribution box is not
+  // one (its rent is the market's industrial rent, its form is in the table).
+  const prodT = rec.product ? productOf(rec.product) : undefined;
+  const pd = prodT?.shopDepthFt;
+  if (use === "retail" && pd) return clamp(zonedPerSf(pd) / zonedPerSf(REF_SHOP_DEPTH_FT), 0.3, 1.6);
+  if (use === "industrial" && prodT) return 1;
   if (use === "retail") {
     const f = shopFrontMult(rec);
     if (f !== null) return f;
@@ -732,6 +742,8 @@ export type ResidualScheme = {
    * bidder for nine lots in ten and office for none of them.
    */
   all: { use: BuiltClass; psf: number }[];
+  /** When the best scheme is a product type (products.ts): which. The desk and the street build that. */
+  product?: ProductKey;
 };
 
 export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): number {
@@ -851,8 +863,44 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
     }
     all.push({ use, psf: Number.isFinite(bestForUse) ? bestForUse : 0 });
   }
+  // AND THE PRODUCTS A BIG LOT CAN CARRY (products.ts). Off a downtown street
+  // a shop or a shed is a pad, a centre, a flex building or a box, each on its
+  // own site plan; pricing a ten-acre lot as an 85%-coverage shed priced
+  // ground its car park and truck court would never let it build on. The same
+  // pro forma, the same algebra, the product's own building. Only lots big
+  // enough for the smallest of them (a pad's half-acre outparcel) ask.
+  if (rec.lotArea >= PRODUCT_LOT_MIN_SF) {
+    for (const key of PRODUCT_KEYS) {
+      const p = PRODUCT_TYPES[key];
+      if (!zonePermits(rec.zoneDist, p.use, rec.demandScore, econ)) continue;
+      if (!layoutProduct(p, rec.lotArea)) continue;
+      const draw = p.tradeRadiusM && p.anchors.length ? rec.tradeDraw?.[p.tradeRadiusM] : undefined;
+      const pf = developmentProForma(rec, econ, {
+        use: p.use, floors: 1, coverage: 1, contract: "gmp", spec: 0.5,
+        envelopeFar: far, asIfVacant: true, rentMult, uw, quote,
+        custom: { product: { key, ...(draw !== undefined ? { draw } : {}) } },
+      });
+      if (!pf || !(pf.exitYieldPct > 0)) continue;
+      const value = pf.stabNoi / (pf.exitYieldPct / 100);
+      const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
+      const landTotal = nowTotal > 0 ? nowTotal * queueFactor(econ, p.use, nowTotal / rec.lotArea) : nowTotal;
+      const psf = landTotal / rec.lotArea;
+      const row = all.find((x) => x.use === p.use);
+      if (row && psf > row.psf) row.psf = psf;
+      if (!(landTotal > 0)) continue;
+      if (!best || psf > best.psf) {
+        best = {
+          psf, use: p.use, product: key,
+          valuePsf: value / pf.gsf, costPsf: pf.nonLandBasis / pf.gsf,
+          usable: pf.gsf / rec.lotArea, floors: 1, coverage: pf.coverage, all,
+        };
+      }
+    }
+  }
   return best && { ...best, all };
 }
+/** The smallest site any product comes on: a pad's half-acre outparcel, less the 20% layoutProduct allows. */
+const PRODUCT_LOT_MIN_SF = 0.5 * 43_560 * 0.8;
 
 /**
  * A RESIDUAL IS WORTH WHAT IT IS WORTH ON THE DAY IT CAN BE BUILT (2026-10-11).
@@ -1079,7 +1127,7 @@ export type LandRead = {
   holder: number;
   texture: number;
   /** Which bid set the price, and the scheme behind the builder's. */
-  winner: "builder" | "holder" | "texture" | "farm" | "homes";
+  winner: "builder" | "holder" | "texture" | "farm" | "homes" | "subdivider";
   scheme: ResidualScheme | null;
   /** A homebuilder's bid for a finished lot on a plat, $/sf (homeprice.ts homeLotBidPsf); 0 elsewhere. */
   homes?: number;
@@ -1327,6 +1375,8 @@ const LAND_SCALARS = [
   // the homes market (homeprice.ts homeLotBidPsf) reads econ.homes, wageIdx and
   // population; homes.ts bumps `homesStamp` whenever econ.homes is rewritten
   "homesStamp", "wageIdx", "population", "homesG12", "priceLevel",
+  // the land developers' bids for farm tracts (growth.ts tractBid); growth.ts bumps it on every rewrite
+  "growthStamp",
 ] as const;
 const LAND_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 const LAND_MKT_LEN = LAND_SCALARS.length + LAND_DICTS.length * (1 + LAND_CLASSES.length);
@@ -1589,6 +1639,13 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
     base = farm; winner = "farm";
     if (builder > base) { base = builder; winner = "builder"; }
     if (holder > base) { base = holder; winner = "holder"; }
+    // ...AND, WHERE THE TOWN HAS GROWN TO IT, THE LAND DEVELOPER (Phase 4): the
+    // residual of a subdivision on the whole tract — finished lots at the
+    // homebuilders' bid, less the board, the streets and the mains, the wait
+    // and the odds of refusal (growth.ts tractBid). That is the development
+    // option a fringe farm trades on, discovered, not stamped.
+    const sub = rec.tract ? econ.tractBid?.[rec.bbl] ?? 0 : 0;
+    if (sub > base) { base = sub; winner = "subdivider"; }
   } else if (farm > base) { base = farm; winner = "farm"; }
   // A FINISHED LOT ON A PLAT HAS A BUYER OF ITS OWN: the homebuilder, who
   // pays the residual on the house it carries, discounted for its place in
@@ -1793,7 +1850,8 @@ export function overallScore(rec: ParcelRecord, econ: Econ, use?: BuiltClass, co
   const b = ctx && rec.class !== "land" && rec.bldgArea
     ? buildingScoreOf(rec, condIdx, ctx)
     : 50;
-  return Math.max(1, Math.min(100, w * Math.max(0, Math.min(100, rec.demandScore ?? 50)) + (1 - w) * b));
+  const dem = cls === "retail" ? retailDemandOf(rec) : rec.demandScore;
+  return Math.max(1, Math.min(100, w * Math.max(0, Math.min(100, dem ?? 50)) + (1 - w) * b));
 }
 /**
  * `buildingScore(...).score` behind a one-entry memo on exactly what it reads
@@ -2096,11 +2154,12 @@ export function locationRentMult(rec: ParcelRecord, econ?: Econ, use?: BuiltClas
   //                land residual now depends on getting it right.
   // One-entry memo per class: a pure function of (class, demand, pivot), and
   // the pro forma asks it of the same lot and class many times running.
+  const dem = cls === "retail" ? retailDemandOf(rec) : rec.demandScore;
   const hit = LOC_MULT_MEMO[cls];
-  if (hit && Object.is(hit.d, rec.demandScore) && Object.is(hit.p, pivot)) return hit.v;
+  if (hit && Object.is(hit.d, dem) && Object.is(hit.p, pivot)) return hit.v;
   const shape = LOC_SPREAD[cls] ?? LOC_SPREAD.office;
-  const v = Math.min(shape.max, Math.max(shape.min, Math.pow(demandIdx(rec.demandScore) / pivot, shape.exp)));
-  LOC_MULT_MEMO[cls] = { d: rec.demandScore, p: pivot, v };
+  const v = Math.min(shape.max, Math.max(shape.min, Math.pow(demandIdx(dem) / pivot, shape.exp)));
+  LOC_MULT_MEMO[cls] = { d: dem, p: pivot, v };
   return v;
 }
 const LOC_MULT_MEMO: Record<string, { d: number; p: number; v: number }> = Object.create(null);
@@ -2171,16 +2230,33 @@ export function marketRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condit
   // plateRentMult: an office or a shed cares enormously about a big regular
   // floor, a flat does not care at all.
   // ...and each at its own place on that market's quality scale (TENANT_TIERS_PLAN.md).
-  return blendBy(rec, (u) => (econ.effRentIdx?.[u] ?? econ.rentIdx[u] ?? 0) * plateRentMult(rec, u) * locationRentMult(rec, econ, u) * scoreRentMult(econ, u, overallScore(rec, econ, u, condIdx)))
+  return blendBy(rec, (u) => marketLegRent(rec, econ, u, condIdx))
     * (condIdx !== undefined ? condMultAt(condIdx) : condMult(condition)) * specRentMult(rec.buildSpec);
+}
+
+/**
+ * ONE LEG'S MARKET, BEFORE CONDITION AND SPEC: the index, the plate, the
+ * address and the tier. Both rent readers below are this times the same two
+ * multipliers, so they cannot disagree.
+ *
+ * AN INDUSTRIAL PRODUCT LETS AT THE INDUSTRIAL RENT, office finish and all.
+ * Blending a flex building's office share at the engine's office rent was
+ * tried and refused (2026-10-22): the office index is the town's office
+ * market, and at an upper-quartile commercial lot it put flex at $38-50/sf
+ * (2024 $) against an observed $12-25 for US flex — a CBD price on a
+ * showroom. Flex's office finish is in its cost (products.ts tiPsf) and not
+ * yet in its rent; that is a known gap, not a number made up to close it.
+ */
+function marketLegRent(rec: ParcelRecord, econ: Econ, u: BuiltClass, condIdx?: number): number {
+  const leg = (econ.effRentIdx?.[u] ?? econ.rentIdx[u] ?? 0) * plateRentMult(rec, u) * locationRentMult(rec, econ, u) * scoreRentMult(econ, u, overallScore(rec, econ, u, condIdx));
+  return leg;
 }
 
 /** What one component of a building rents for, in its own market. */
 export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition, use: BuiltClass, condIdx?: number): number {
   // EFFECTIVE, not asking: everything that prices a deal or values an asset
   // reads what deals actually sign at. The Economy page shows both lines.
-  return (econ.effRentIdx?.[use] ?? econ.rentIdx[use] ?? 0) * plateRentMult(rec, use) * locationRentMult(rec, econ, use)
-    * scoreRentMult(econ, use, overallScore(rec, econ, use, condIdx))
+  return marketLegRent(rec, econ, use, condIdx)
     * (condIdx !== undefined ? condMultAt(condIdx) : condMult(condition)) * specRentMult(rec.buildSpec);
 }
 
@@ -2380,7 +2456,9 @@ export function resolveRec(parcels: Record<string, ParcelRecord>, s: GameState, 
   // one envelope rule (`heightCapFloors`) travel with the lot: the block's
   // cornice datum and the town's maturity. Every reader of the land price
   // then prices the building the city would actually permit here.
-  return { ...r, cornice: corniceDatum(s, parcels, r.block), maturity: townMaturity(s) };
+  // ...AND FOR A LOT BIG ENOUGH TO CARRY A CENTRE, THE ADDRESS ITS ANCHOR
+  // WOULD GIVE IT (tradeAreaDemand): the desk and the residual read one number.
+  return stampTradeDraw(s, parcels, { ...r, cornice: corniceDatum(s, parcels, r.block), maturity: townMaturity(s) });
 }
 
 /**
@@ -2543,8 +2621,94 @@ function resolveBase(s: GameState, rec: ParcelRecord): ParcelRecord | null {
     out.mix = b.mix;
     // ...and how you chose to cut it up, which decides the whole leasing story
     out.suites = b.suites;
+    // ...and what product it is (products.ts), and while its anchor trades,
+    // the address its inline shops trade at (retailDemandOf).
+    if (b.product) out.product = b.product;
+    if (b.draw !== undefined && anchorOpen(s, bbl, b.anchors)) out.retailDraw = b.draw;
   }
   return out;
+}
+
+/**
+ * IS THE ANCHOR STILL TRADING. Co-tenancy is a clause about occupation: the
+ * inline shops signed for the grocer's shoppers, and when the grocer's lease
+ * runs out and it goes, the draw goes with it. Read off the owner's roll; a
+ * building the player does not own is taken as it was delivered.
+ */
+function anchorOpen(s: GameState, bbl: string, names: string[] | undefined): boolean {
+  const h = s.holdings?.[bbl];
+  if (!h || !names?.length) return true;
+  for (const t of h.tenants ?? []) if (names.includes(t.name) && t.endM > s.month) return true;
+  return false;
+}
+
+/**
+ * THE ADDRESS A SHOP TRADES AT. Footfall is the product (locationRentMult),
+ * and an anchor manufactures footfall: a grocer pulls its shoppers from a
+ * three-mile trade area [ICSC], and the inline shops beside it trade on them
+ * rather than on the passing street. So an anchored centre's retail reads the
+ * better of the lot's own demand and its anchor's trade-area demand
+ * (`retailDraw`, measured by dev.ts tradeAreaDemand) — through the market's
+ * own location, tier and vacancy curves, which is where the higher inline
+ * rent and occupancy come from. An unanchored strip has no draw and lets on
+ * the street it stands on. Everything else reads the lot's own score.
+ */
+export function retailDemandOf(rec: { demandScore: number; retailDraw?: number }): number {
+  return rec.retailDraw !== undefined && rec.retailDraw > rec.demandScore ? rec.retailDraw : rec.demandScore;
+}
+
+/**
+ * THE ADDRESS AN ANCHOR GIVES ITS CENTRE: the demand of the trade area it
+ * pulls shoppers from, weighted by where the people are — the floor area of
+ * the buildings within `radiusM` [ICSC trade-area radii, products.ts], at each
+ * one's live demand. A grocer on a cheap edge-of-town lot draws the town; on
+ * the best block in town it draws nothing the block did not already have,
+ * which is why retailDemandOf takes the better of the two. A pure reader,
+ * memoised on exactly what it reads (module-level, like owners.register —
+ * never on the state).
+ */
+const DRAW_MEMO = new Map<string, number>();
+const DRAW_ON: unknown[] = [null, null, null, NaN];
+export function tradeAreaDemand(s: GameState, parcels: Record<string, ParcelRecord>, bbl: string, radiusM: number): number {
+  if (DRAW_ON[0] !== parcels || DRAW_ON[1] !== s.built || DRAW_ON[2] !== s.blockD || DRAW_ON[3] !== s.month) {
+    DRAW_MEMO.clear(); DRAW_ON[0] = parcels; DRAW_ON[1] = s.built; DRAW_ON[2] = s.blockD; DRAW_ON[3] = s.month;
+  }
+  const k = `${bbl}|${radiusM}`;
+  const hit = DRAW_MEMO.get(k);
+  if (hit !== undefined) return hit;
+  const me = parcels[bbl];
+  const c0 = me?.centroid;
+  if (!c0) return me?.demandScore ?? 50;
+  const mLon = M_PER_DEG_LAT * Math.cos((c0[1] * Math.PI) / 180);
+  let w = 0, d = 0;
+  for (const b in parcels) {
+    const p = parcels[b];
+    const c = p.centroid;
+    if (!c) continue;
+    if (Math.hypot((c[0] - c0[0]) * mLon, (c[1] - c0[1]) * M_PER_DEG_LAT) > radiusM) continue;
+    const area = s.built?.[b]?.bldgArea ?? p.bldgArea ?? 0;
+    if (!(area > 0)) continue;
+    w += area;
+    d += area * liveDemand(s, p.demandScore, p.block);
+  }
+  const out = +(w > 0 ? d / w : (me.demandScore ?? 50)).toFixed(2);
+  DRAW_MEMO.set(k, out);
+  return out;
+}
+
+/**
+ * The smallest lot an anchored centre fits on: a 30,000 sf neighbourhood
+ * centre at its solved site plan (products.ts) needs about 100,000 sf. Only
+ * vacant lots this big carry the trade-area reads, so the reader is never
+ * asked of an ordinary town lot.
+ */
+const ANCHORED_LOT_MIN_SF = 100_000;
+const ANCHOR_RADII = [...new Set(PRODUCT_KEYS.map((k) => PRODUCT_TYPES[k]).filter((p) => p.tradeRadiusM && p.anchors.length).map((p) => p.tradeRadiusM!))];
+function stampTradeDraw(s: GameState, parcels: Record<string, ParcelRecord>, r: ParcelRecord): ParcelRecord {
+  if (r.class !== "land" || !(r.lotArea >= ANCHORED_LOT_MIN_SF) || r.zoneDist === "AG" || r.bldgArea > 0) return r;
+  const draw: Record<number, number> = {};
+  for (const m of ANCHOR_RADII) draw[m] = tradeAreaDemand(s, parcels, r.bbl, m);
+  return { ...r, tradeDraw: draw };
 }
 
 /**
@@ -2727,7 +2891,7 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   // A shed competes with sheds, which is why the per-class pivot is the right
   // one and the town-wide `locIdxMean` is only the fallback.
   const locPivot = econ.locIdxMeanBy?.[use] ?? econ.locIdxMean ?? 0.62;
-  const loc = 0.22 * (demandIdx(rec.demandScore) - locPivot);
+  const loc = 0.22 * (demandIdx(use === "retail" ? retailDemandOf(rec) : rec.demandScore) - locPivot);
   // NO DRAWN CHARACTER (2026-10-16). This added a fixed per-building hash —
   // ±11pp of idiosyncrasy and one building in eight "troubled" — standing in
   // for what made one building fuller than another. Every standing building
@@ -3076,7 +3240,10 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, 
   const age = Math.max(0, START_YEAR + Math.floor((econ.m ?? 0) / 12) - (rec.yearBuilt || START_YEAR));
   const wearRatio = (COND_DECAY[cls] ?? 0.0024) * (1 + Math.min(0.50, age / 220)) / COND_WEAR_REF;
   const reserveSpread = 100 * CAP_PLAN_RATE * (specWearMult(rec.buildSpec) - 1) * wearRatio;
-  return clamp(base + locSpread + qualSpread + specSpread + reserveSpread, 3.2, 13);
+  // A PRODUCT'S BUYER POOL (products.ts capSpread): a fifteen-year credit pad
+  // trades inside a centre, a single-purpose plant well outside a box [CBRE-C] [BG].
+  const productSpread = rec.product ? (productOf(rec.product)?.capSpread ?? 0) : 0;
+  return clamp(base + locSpread + qualSpread + specSpread + reserveSpread + productSpread, 3.2, 13);
 }
 
 // Appraisals are opinions. Each parcel's appraisal carries a stable bias off

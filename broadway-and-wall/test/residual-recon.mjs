@@ -77,10 +77,10 @@ for (const seed of SEEDS) {
       // while value matched to the dollar, so the identity is asked at the
       // average bid (costMult 1), which is what the tape prices.
       const plan = E.planDevelopment(g, parcels, bbl, sc.use, sc.floors, cov, "gmp",
-        undefined, { costMult: 1 }, undefined, 0.5, sc.psf * rec.lotArea);
+        undefined, { costMult: 1, ...(sc.product ? { product: sc.product } : {}) }, undefined, 0.5, sc.psf * rec.lotArea);
       const h = plan ? plan.hurdleRatio : NaN;
       hs.push(h);
-      uses[sc.use] = (uses[sc.use] ?? 0) + 1;
+      uses[sc.product ?? sc.use] = (uses[sc.product ?? sc.use] ?? 0) + 1;
       const dev = Number.isFinite(h) ? Math.abs(h - 1) : Infinity;
       if (dev > worst.dev) worst = { dev, what: `seed ${seed} m${M} ${bbl} ${sc.use} ${sc.floors}fl @${(cov * 100).toFixed(0)}% residual $${sc.psf.toFixed(0)}/sf → hurdle ${Number.isFinite(h) ? h.toFixed(3) : "no plan"}` };
     }

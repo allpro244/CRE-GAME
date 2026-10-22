@@ -348,11 +348,11 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
       const r = rows[pickI] ?? rows[0];
       return (
         <ActionFooter
-          left={r ? <span className="mono nx-dim">{r.use} · {r.floors} fl · {r.hurdle.toFixed(2)}×</span> : undefined}
+          left={r ? <span className="mono nx-dim">{r.product ?? `${r.use} · ${r.floors} fl`} · {r.hurdle.toFixed(2)}×</span> : undefined}
           verbs={[{
             label: "Break ground", primary: true,
             disabled: !r ? "No scheme prices" : r.hurdle < 1 ? "Below hurdle" : undefined,
-            run: () => r && st.develop(bbl, r.use, r.floors, r.coverage, "gmp", r.ltcMax, undefined, r.lender),
+            run: () => r && st.develop(bbl, r.use, r.floors, r.coverage, "gmp", r.ltcMax, r.product ? { product: r.product } : undefined, r.lender),
           }]}
         />
       );

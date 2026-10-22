@@ -243,6 +243,8 @@ export function executePurchase(
     return { s, err: "That fee is still subject to a ground lease. It is not freehold inventory." };
   }
   if (isCivicLand(s, bbl)) {
+    const dev = s.growth?.held?.[bbl];
+    if (dev) return { s, err: `${dev} owns that farm and is taking it to the board. It is not for sale.` };
     return { s, err: "The city took that lot for a civic work. It is not for sale." };
   }
   const rec = resolveRec(parcels, s, bbl);

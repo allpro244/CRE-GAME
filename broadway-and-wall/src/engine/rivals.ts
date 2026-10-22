@@ -463,8 +463,16 @@ const BUILD_APPETITE: Record<RivalStyle, number> = {
   merchant: 1.35, pe: 0.50, reit: 0.14, vulture: 0.06,
   owneruser: 0.22, foreign: 0, slumlord: 0,
 };
-/** The parcel graph, handed over by the sim each month (tickRivalAssembly). */
+/**
+ * The parcel graph, handed over by the sim at the top of each month (sim.ts
+ * tickMonth, setRivalAdjacency). It used to be handed over by
+ * tickRivalAssembly, which runs AFTER tickRivals: so the first month of every
+ * game, and the first month after every Continue, read no graph at all, while
+ * the same month played straight through read last month's — a reloaded save
+ * diverged from the saved game in its first month (test/region-reload.mjs).
+ */
 let ADJ: Record<string, string[]> | null = null;
+export function setRivalAdjacency(adjacency: Record<string, string[]> | null): void { ADJ = adjacency; }
 
 /** Does this lot touch dirt the firm already owns — a lot, or a site it has assembled? */
 function adjoinsOwnDirt(s: GameState, parcels: ParcelTable, r: Rival, bbl: string): boolean {

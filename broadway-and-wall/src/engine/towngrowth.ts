@@ -33,8 +33,9 @@ import { resolveRec } from "./value";
 import { farMaxFor } from "./proforma";
 import { FAR_CEIL } from "./zoning";
 import { ownerOf } from "./rivals";
-import { startTradeAreaBuilding } from "./dev";
-import { roadPlan } from "./roads";
+import { startTradeAreaBuilding, underwriteDevelopment } from "./dev";
+import { roadPlan, countyEntries, COUNTY_TO_TOWN } from "./roads";
+import { tableVersion } from "./tableVersion";
 
 // ---------------------------------------------------------------- the facts
 /**
@@ -80,6 +81,8 @@ export interface TownState {
   lastStudyM?: Record<string, number>;
   /** a centre the street would not finance, and when (it is asked again in two years) */
   failedM?: Record<string, number>;
+  /** why the last centre that failed did */
+  failedWhy?: string;
 }
 function townOf(s: GameState): TownState {
   const g = s.growth!;
@@ -104,7 +107,7 @@ type Statics = {
 };
 let ST: Statics | null = null;
 function statics(s: GameState, parcels: ParcelTable, bbls: string[]): Statics {
-  const key = `${s.seed}:${bbls[0]}`;
+  const key = `${s.seed}:${bbls[0]}:${tableVersion(parcels)}`;
   if (ST?.key === key) return ST;
   const byD = new Map<string, { x: number; y: number; n: number; units: number }>();
   const districts = new Map<string, string[]>();
@@ -132,9 +135,9 @@ function statics(s: GameState, parcels: ParcelTable, bbls: string[]): Statics {
 }
 
 /** Where the town's households live this year, as points with counts. */
-function households(s: GameState, parcels: ParcelTable, st: Statics): { p: XY; n: number }[] {
+function households(s: GameState, parcels: ParcelTable, st: Statics): { p: XY; n: number; road?: string }[] {
   const e = s.econ;
-  const out: { p: XY; n: number }[] = [];
+  const out: { p: XY; n: number; road?: string }[] = [];
   // the town's flats: the opening's dwellings by district, scaled to the flats occupied now
   if (e.occupied?.multifamily && s.growth) {
     s.growth.mf0 ??= e.occupied.multifamily;
@@ -145,6 +148,12 @@ function households(s: GameState, parcels: ParcelTable, st: Statics): { p: XY; n
   const byPlat = new Map<string, number>();
   for (const u of Object.values(s.homes?.units ?? {})) if (u.closedM !== undefined) byPlat.set(u.parent, (byPlat.get(u.parent) ?? 0) + 1);
   for (const [parent, n] of byPlat) { const r = parcels[parent]; if (r) out.push({ p: r.centroid as XY, n }); }
+  // THE COUNTY BEYOND THE MAP SHOPS HERE TOO. A county seat is the county's
+  // market town: about half the trips of the households out past the map have
+  // an end in it (roads.ts COUNTY_TO_TOWN), and a family driving in on a county
+  // road shops at the first supermarket on its way. They are counted where
+  // they come in, on their road.
+  for (const x of countyEntries(s, parcels)) out.push({ p: x.p, n: x.n * COUNTY_TO_TOWN, road: x.road });
   return out;
 }
 
@@ -200,6 +209,11 @@ function tickCommerce(s: GameState, parcels: ParcelTable, bbls: string[], adjace
       s.news.unshift({ q: s.month, kind: "info", bbl: p.bbl, text: `${p.kind === "neighbourhood" ? "A grocery-anchored centre" : "A strip centre"} broke ground at ${rec?.address ?? p.bbl}: about ${Math.round((job?.sf ?? p.sf) / 1000)}k sf for the ${Math.round(p.households).toLocaleString()} households it will be nearest to. Opens ${job ? monthLabel(job.deliverM) : "in a year or so"}.` });
     } else {
       (T.failedM ??= {})[p.bbl] = s.month;
+      // say why: the centre's own pro forma, as the street read it
+      const u = underwriteDevelopment(s, parcels, p.bbl, "retail", 1, plate, undefined, 0.5, undefined, p.kind === "neighbourhood" ? "neighborhood" : "strip");
+      const why = !u ? "no scheme fits the site" : u.why ?? "no developer in town could carry it";
+      T.failedWhy = why;
+      s.news.unshift({ q: s.month, kind: "info", bbl: p.bbl, text: `${p.kind === "neighbourhood" ? "A grocery-anchored centre" : "A strip centre"} at ${rec?.address ?? p.bbl} did not get built: ${why}` });
     }
   }
   // THE TRADE AREAS, once a year
@@ -212,8 +226,11 @@ function tickCommerce(s: GameState, parcels: ParcelTable, bbls: string[], adjace
   for (const a of roadPlan(s).arterials) {
     const at = a.mid as XY;
     let nG = 0, nS = 0;
+    const road = a.kind === "county" ? a.id.split(".")[0] : null;
     for (let i = 0; i < hh.length; i++) {
       const d = meters(hh[i].p, at);
+      // a household from beyond the map: any site on its own road nearer than the grocer it drives to now
+      if (hh[i].road) { if (hh[i].road === road && d < dG[i]) nG += hh[i].n; continue; }
       if (d <= GROCERY.radiusM && d < dG[i]) nG += hh[i].n;
       if (d <= STRIP.radiusM && dS[i] > STRIP.radiusM) nS += hh[i].n;
     }
@@ -295,6 +312,9 @@ export function townSummary(s: GameState) {
   return {
     centres: t?.centres.length ?? 0,
     pendingCentres: t?.pending?.length ?? 0,
+    /** centre sites the street would not finance, or the board refused */
+    failedCentres: Object.keys(t?.failedM ?? {}).length,
+    failedWhy: t?.failedWhy,
     upzones: t?.upzoned.length ?? 0,
     studies: t?.studies?.length ?? 0,
     /** inner-ring houses torn down, folded into an assembled site or rebuilt since the opening */

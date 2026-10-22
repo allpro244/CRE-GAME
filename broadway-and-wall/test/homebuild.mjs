@@ -189,19 +189,28 @@ if (!closed.length) fail("no builder sold a house");
 const exits = (g.exits ?? []).filter((x) => mine.includes(x.bbl)).length;
 console.log(`  exits on the plat: ${exits}; ledger: worst unexplained month $${Math.round(worst).toLocaleString()}`);
 if (exits !== pl.lotsSold) fail(`${exits} exits for ${pl.lotsSold} lots sold`);
-// A SOLD HOUSE IS A HOUSE: standing on its lot, in the housing stock, an ordinary deed on the market again
+// A SOLD HOUSE IS A HOUSE: its own class, a household's (or a single-family-rental investor's),
+// no rent roll and no commercial income, on no firm's book, worth the going house price
 const fam = units.find((u) => u.closedM !== undefined);
 if (fam) {
   const r = E.resolveRec(parcels, g, fam.bbl);
-  console.log(`  a sold house: ${r.address}, ${r.class} ${r.bldgArea.toLocaleString()} sf, ${r.floors} fl, built ${r.yearBuilt}; on the market: ${!E.isCivicLand(g, fam.bbl)}`);
-  if (!g.built[fam.bbl]?.house || r.class !== "multifamily" || !(r.bldgArea > 0)) fail("a sold house does not stand on its lot");
-  if (E.isCivicLand(g, fam.bbl)) fail("a family's house is held off the market");
+  const closed = units.filter((u) => u.closedM !== undefined);
+  const sfr = closed.filter((u) => u.tenure === "sfr").length;
+  console.log(`  a sold house: ${r.address}, ${r.class} ${r.bldgArea.toLocaleString()} sf, ${r.floors} fl, built ${r.yearBuilt}, ${fam.tenure}; worth ${K(E.houseValue(g, parcels, fam.bbl))} (sold ${K(fam.price)}); of ${closed.length} closed, ${sfr} went to single-family-rental investors (${(sfr / Math.max(1, closed.length) * 100).toFixed(0)}%, sfrShare ${(E.sfrShare(2000 + Math.floor(g.month / 12)) * 100).toFixed(0)}%)`);
+  if (r.class !== "house" || !(r.bldgArea > 0)) fail(`a sold house reads as ${r.class}, ${r.bldgArea} sf`);
+  if (!fam.tenure) fail("a sold house has no buyer type");
+  if (g.econ.streetRolls?.[fam.bbl] || g.econ.flatRolls?.[fam.bbl]) fail("a house has a rent roll");
+  if (E.ownerOf(g, fam.bbl)) fail(`a house is on ${E.ownerOf(g, fam.bbl).name}'s book`);
+  if (!E.isCivicLand(g, fam.bbl)) fail("a house is on the commercial market");
+  if (Math.abs(E.houseValue(g, parcels, fam.bbl) - fam.price) > 0.25 * fam.price) fail("a house's value is not the house price");
   const rv = E.renderView(g);
-  if (!rv.lots.some((l) => l.bbl === fam.bbl && l.deco === "house")) fail("the render view does not draw the house");
+  const lot = rv.lots.find((l) => l.bbl === fam.bbl);
+  if (!lot || lot.deco !== "house" || lot.cls !== "house" || !(lot.sf > 0)) fail("the render view does not draw the house with its floor area");
 }
-// the houses joined the housing stock through the delivery queue
-console.log(`  multifamily stock ${Math.round(stock0).toLocaleString()} -> ${Math.round(g.econ.stock.multifamily).toLocaleString()} sf; houses delivered ${Math.round(units.filter((u) => u.builtM !== undefined).reduce((t, u) => t + u.sf, 0)).toLocaleString()} sf`);
+// a house is a household housed, not apartment floor space: the flats' stock is untouched, their demand lighter
+console.log(`  multifamily stock ${Math.round(stock0).toLocaleString()} -> ${Math.round(g.econ.stock.multifamily).toLocaleString()} sf; ${g.econ.newHomes ?? 0} households housed in new houses, ${Math.round((g.econ.newHomes ?? 0) * 900).toLocaleString()} sf of flats' demand`);
 if (!units.some((u) => u.builtM !== undefined)) fail("no house was finished");
+if (!(g.econ.newHomes > 0)) fail("no new house counted against the flats' demand");
 // the builders' money is on real books: a line at a desk, on that desk's loan book
 for (const b of Object.values(g.homes.builders)) console.log(`    ${b.name}: capital ${M(b.capital)}, cash ${M(b.cash)}, debt ${M(b.debt)} at ${b.lender ?? "no desk"}, interest paid ${M(b.interestPaid)}${b.failedM !== undefined ? ", FAILED" : ""}`);
 const book = E.cityLoanBook(g).filter((l) => l.borrower.startsWith("hb:"));

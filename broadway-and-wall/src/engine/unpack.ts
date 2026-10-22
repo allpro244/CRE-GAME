@@ -17,6 +17,7 @@
 // FAR 0.45 (proforma.ts LOW_DENSITY_ZONES "R-1").
 import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { GameState } from "./types";
+import { bumpTable } from "./tableVersion";
 import { neighbourhoodLots } from "@/citygen/index.mjs";
 
 /** The deed of house `n` in neighbourhood `id`: 7 + the tract's survey number (5 digits) + the house (4). */
@@ -58,15 +59,18 @@ function houseRecords(s: GameState, parcels: ParcelTable, id: number): ParcelRec
  */
 export function materializeNeighbourhoods(s: GameState, parcels: ParcelTable, bbls?: string[]): string[] {
   const added: string[] = [];
-  for (const k of Object.keys(s.growth?.unpacked ?? {})) {
-    const id = Number(k);
-    if (parcels[unpackedBbl(id, 1)]) continue;
-    for (const r of houseRecords(s, parcels, id)) {
-      if (parcels[r.bbl]) continue;
-      parcels[r.bbl] = r;
-      bbls?.push(r.bbl);
-      added.push(r.bbl);
-    }
+  for (const k of Object.keys(s.growth?.unpacked ?? {})) materializeNeighbourhood(s, parcels, bbls, Number(k), added);
+  return added;
+}
+/** One unpacked neighbourhood's houses into the table (sim.ts restoreCuts replays them in the order they were cut). */
+export function materializeNeighbourhood(s: GameState, parcels: ParcelTable, bbls: string[] | undefined, id: number, added: string[] = []): string[] {
+  if (s.growth?.unpacked?.[id] === undefined || parcels[unpackedBbl(id, 1)]) return added;
+  bumpTable(parcels);
+  for (const r of houseRecords(s, parcels, id)) {
+    if (parcels[r.bbl]) continue;
+    parcels[r.bbl] = r;
+    bbls?.push(r.bbl);
+    added.push(r.bbl);
   }
   return added;
 }
@@ -81,6 +85,7 @@ export function unpackNeighbourhood(s: GameState, parcels: ParcelTable, bbls: st
   const recs = houseRecords(s, parcels, id);
   if (!recs.length) return [];
   (s.growth.unpacked ??= {})[id] = s.month;
+  (s.cutOrder ??= []).push("u:" + id);
   const added = materializeNeighbourhoods(s, parcels, bbls);
   s.homes ??= { units: {}, builders: {} };
   for (const r of recs) {

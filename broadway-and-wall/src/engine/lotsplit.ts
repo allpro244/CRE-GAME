@@ -63,6 +63,7 @@ import { RELEASE_PREMIUM } from "./facility";
 import { ENTITLE_FIXED, ENTITLE_PER_LOT, ENTITLE_MONTHS, entitleOdds, REFILE_BAR_M } from "./landdev";
 import { hash01 } from "./competitorTraits";
 import { money } from "./money";
+import { bumpTable } from "./tableVersion";
 import { measurePieces, type SiteGeo, type SplitCut, type PieceGeo } from "./lotsplitGeom";
 
 // ---------------------------------------------------------------- the code
@@ -73,6 +74,8 @@ export interface SplitZoneRule {
   minFt: number;
   /** the side yard a building keeps from a new lot line, ft */
   sideFt: number;
+  /** the most of the lot buildings may cover (the district's lot coverage maximum) */
+  cov: number;
   /** a lot no deeper than this many times its width (nor wider than this many times its depth) */
   ratio: number;
   /** what kind of district, for the desk */
@@ -102,28 +105,36 @@ export interface SplitZoneRule {
  *             M-1 districts, 10,000-40,000 sf).
  *   I-1       an industrial park: an acre and 150 ft (landdev.ts isIndustrialLot,
  *             NAIOP business-park lots of two acres and up).
+ * LOT COVERAGE: commercial districts downtown have none (a commercial ground
+ * floor may run lot line to lot line, ZR 33-23); NYC's residential maxima are
+ * 55% in R4 (ZR 23-141), 65% in R6 and 70% in R8 (ZR 23-153, interior lots);
+ * suburban codes run 35% (R-1), 40% (R-2 and a neighbourhood business district,
+ * whose parking takes the rest) and 50% for industry (the truck court and the
+ * car park: landdev.ts I-1 carries its box at 35-50%). The building's lot is
+ * held to the lesser of this and the engine's own new-building coverage
+ * (proforma.ts MAX_COVERAGE).
  * DEPTH RATIO: suburban subdivision regulations commonly cap depth at three
  * times width; urban districts are platted in 20x100 and 25x100 lots (4-5:1),
  * so they cap at five.
  */
 export const SPLIT_RULES: Record<string, SplitZoneRule> = {
-  "C-4": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
-  "C-5": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
-  "C-6": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
-  "C-8": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
-  "C-1": { minSf: 2_500, minFt: 25, sideFt: 0, ratio: 5, family: "main street", src: "typical downtown business district, 25-ft lot" },
-  "C-2": { minSf: 2_500, minFt: 25, sideFt: 0, ratio: 5, family: "main street", src: "typical downtown business district, 25-ft lot" },
-  "C-N": { minSf: 10_000, minFt: 75, sideFt: 10, ratio: 3, family: "neighbourhood centre", src: "typical B-1 / C-N district" },
-  R6: { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, family: "dense residential", src: "NYC ZR 23-32 / 23-46" },
-  R8: { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, family: "dense residential", src: "NYC ZR 23-32 / 23-46" },
-  R4: { minSf: 3_800, minFt: 40, sideFt: 5, ratio: 5, family: "residential", src: "NYC ZR 23-32 / 23-461, detached" },
-  "R-1": { minSf: 7_500, minFt: 60, sideFt: 7.5, ratio: 3, family: "single-family", src: "typical suburban R-1" },
-  "R-2": { minSf: 5_000, minFt: 40, sideFt: 5, ratio: 3, family: "two-family", src: "typical R-2 (platdesign SPLIT_MIN)" },
-  M1: { minSf: 20_000, minFt: 100, sideFt: 10, ratio: 4, family: "industrial", src: "typical M-1" },
-  "I-1": { minSf: 43_560, minFt: 150, sideFt: 10, ratio: 4, family: "industrial park", src: "NAIOP park lots; landdev isIndustrialLot" },
+  "C-4": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 1, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
+  "C-5": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 1, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
+  "C-6": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 1, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
+  "C-8": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 1, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
+  "C-1": { minSf: 2_500, minFt: 25, sideFt: 0, ratio: 5, cov: 1, family: "main street", src: "typical downtown business district, 25-ft lot" },
+  "C-2": { minSf: 2_500, minFt: 25, sideFt: 0, ratio: 5, cov: 1, family: "main street", src: "typical downtown business district, 25-ft lot" },
+  "C-N": { minSf: 10_000, minFt: 75, sideFt: 10, ratio: 3, cov: 0.4, family: "neighbourhood centre", src: "typical B-1 / C-N district" },
+  R6: { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 0.65, family: "dense residential", src: "NYC ZR 23-32 / 23-46" },
+  R8: { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 0.7, family: "dense residential", src: "NYC ZR 23-32 / 23-46" },
+  R4: { minSf: 3_800, minFt: 40, sideFt: 5, ratio: 5, cov: 0.55, family: "residential", src: "NYC ZR 23-32 / 23-461, detached" },
+  "R-1": { minSf: 7_500, minFt: 60, sideFt: 7.5, ratio: 3, cov: 0.35, family: "single-family", src: "typical suburban R-1" },
+  "R-2": { minSf: 5_000, minFt: 40, sideFt: 5, ratio: 3, cov: 0.4, family: "two-family", src: "typical R-2 (platdesign SPLIT_MIN)" },
+  M1: { minSf: 20_000, minFt: 100, sideFt: 10, ratio: 4, cov: 0.5, family: "industrial", src: "typical M-1" },
+  "I-1": { minSf: 43_560, minFt: 150, sideFt: 10, ratio: 4, cov: 0.5, family: "industrial park", src: "NAIOP park lots; landdev isIndustrialLot" },
 };
 /** A district this table does not name: a middling suburban rule [S, typical]. */
-const DEFAULT_RULE: SplitZoneRule = { minSf: 5_000, minFt: 50, sideFt: 5, ratio: 4, family: "other", src: "typical" };
+const DEFAULT_RULE: SplitZoneRule = { minSf: 5_000, minFt: 50, sideFt: 5, ratio: 4, cov: 0.5, family: "other", src: "typical" };
 export const splitRule = (zone: string): SplitZoneRule => SPLIT_RULES[zone] ?? DEFAULT_RULE;
 
 /** A flag lot's access easement: 20 ft, the fire apparatus access width (IFC 503.2.1) [S]. */
@@ -147,6 +158,9 @@ export const LENDER_CONSENT_FEE = 2_500;
 export const MAX_SPLIT_LOTS = 24;
 
 const first8 = (n: number) => String(8e9 + n);
+/** The city's corner premium and demand curvature (citygen build.mjs cornerK, DEMAND_GAMMA): read, not chosen. */
+const CORNER_K = 1.18;
+const DEMAND_GAMMA = 1.05;
 
 // ---------------------------------------------------------------- the plan
 export interface SplitPlan {
@@ -271,8 +285,17 @@ export function splitRecords(P: ParcelRecord, sp: Pick<SplitRecord, "id" | "pare
     // easement takings]; the record carries the land its owner can use, so the
     // land read, the envelope and the lender all see the lot as it is.
     const usable = Math.max(1, pc.a - (pc.burden ?? 0));
+    // A LOT CUT OFF A CORNER IS NOT ON THE CORNER. The city put the corner into
+    // the parent's hedonic premium (citygen build.mjs: x1.18 in locPremium) and
+    // through it into the demand score (raised to DEMAND_GAMMA 1.05); a lot
+    // that lost the corner loses exactly that, and nothing else.
+    const lost = P.corner && !pc.corner;
     const base: ParcelRecord = {
       ...P,
+      ...(lost ? {
+        locPremium: P.locPremium !== undefined ? +(P.locPremium / CORNER_K).toFixed(4) : undefined,
+        demandScore: Math.max(4, Math.min(100, Math.round(P.demandScore * Math.pow(CORNER_K, -DEMAND_GAMMA)))),
+      } : {}),
       bbl: pc.bbl, lotArea: usable, lotFront: pc.f, lotDepth: pc.d, centroid: pc.c, corner: !!pc.corner,
       assessedLand: land,
       assessedTotal: keep ? Math.max(land, Math.round(P.assessedTotal - P.assessedLand * (1 - share))) : land,
@@ -337,10 +360,19 @@ export function splitQuote(s: GameState, parcels: ParcelTable, bbl: string, geo:
   const keepI = built ? Math.max(0, m.pieces.findIndex((p) => p.bldg)) : areas.indexOf(Math.max(...areas));
 
   // ACCESS: a lot on a street, or a flag lot over a neighbour that is on one
+  // ONE MEASURE, THE RECORD'S. The city stamped the parent's frontage and corner
+  // its own way (citygen: PLUTO's LotFront, its corner flag); measured here they
+  // can differ by a few feet or a street. Each lot is measured here and scaled to
+  // the record's frontage, and a split cannot make a corner the parent was not,
+  // or the lots would reprice on a change of ruler rather than of land.
+  const whole = measurePieces({ ...site, footprints: [] }, []).pieces[0];
+  const kf = whole && whole.frontFt > 1 && (rec.lotFront ?? 0) > 0 ? Math.min(2, Math.max(0.5, rec.lotFront! / whole.frontFt)) : 1;
+  const mostFront = m.pieces.reduce((bi, p, i) => (p.frontAllFt > m.pieces[bi].frontAllFt ? i : bi), 0);
+  const cornerOf = (p: PieceGeo, i: number) => !!rec.corner && ((whole?.streets ?? 0) >= 2 ? p.streets >= 2 : i === mostFront);
   const rows: SplitPieceRow[] = m.pieces.map((p: PieceGeo, i) => {
-    const a = areas[i], f = Math.round(p.frontFt);
+    const a = areas[i], f = Math.round(p.frontFt * kf);
     return {
-      i, keep: i === keepI, a, f, w: Math.round(p.widthFt), d: f > 0 ? Math.round(a / f) : Math.round(p.depthFt), corner: p.streets >= 2,
+      i, keep: i === keepI, a, f, w: Math.round(p.widthFt), d: f > 0 ? Math.round(a / f) : Math.round(p.depthFt), corner: cornerOf(p, i),
       access: f >= 1 ? "street" : "none", burden: 0,
       areaOk: a >= rule.minSf, frontOk: f >= rule.minFt, ratioOk: Math.max(p.depthFt / Math.max(1, p.widthFt), p.widthFt / Math.max(1, p.depthFt)) <= rule.ratio,
       bldg: p.bldg, conform: null, value: 0, ok: true, why: [],
@@ -372,7 +404,7 @@ export function splitQuote(s: GameState, parcels: ParcelTable, bbl: string, geo:
     const usable = Math.max(1, r.a - r.burden);
     const farMax = farMaxFor(rec);
     const far = rec.bldgArea / usable;
-    const covMax = coverageMax(rec);
+    const covMax = Math.min(coverageMax(rec), rule.cov);
     const covNow = rec.bldgArea / Math.max(1, rec.floors) / usable;
     const yardFt = m.pieces[keepI].yardFt;
     const cw: string[] = [];
@@ -407,7 +439,8 @@ export function splitQuote(s: GameState, parcels: ParcelTable, bbl: string, geo:
   for (const r of recs) if (r.bbl !== bbl) tmpHold[r.bbl] = landHolding(h, r, 0);
   const sT = { ...s, holdings: tmpHold } as GameState;
   const parentValue = Math.round(ownedHoldingValue(s, parcels, h));
-  rows.forEach((r, i) => {
+  // a line through the building is no plan: nothing to price (the building would be on no lot)
+  if (!m.crosses && !m.straddles) rows.forEach((r, i) => {
     const rr = resolveRec(tmpParcels, sT, recs[i].bbl);
     r.value = rr ? Math.round(ownedHoldingValueFromRec(sT, rr, tmpHold[recs[i].bbl])) : 0;
   });
@@ -415,7 +448,7 @@ export function splitQuote(s: GameState, parcels: ParcelTable, bbl: string, geo:
 
   // THE LENDER
   let debt: SplitQuote["debt"] = null;
-  if (h.loan && h.loan.balance > 0) {
+  if (h.loan && h.loan.balance > 0 && piecesValue > 0) {
     const L = h.loan;
     const B = Math.round(L.balance);
     const V = Math.max(1, piecesValue);
@@ -509,16 +542,20 @@ export function fileSplit(s: GameState, parcels: ParcelTable, bbl: string, geo: 
  */
 export function materializeSplits(s: GameState, parcels: ParcelTable, bbls?: string[]): string[] {
   const added: string[] = [];
-  for (const sp of s.splits ?? []) {
-    if (!sp.done) continue;
-    const P = parcels[sp.parent];
-    if (!P || (P.split ?? 0) >= sp.id) continue;
-    for (const r of splitRecords(P, sp)) {
-      if (r.bbl !== sp.parent && parcels[r.bbl]) continue;
-      const isNew = !parcels[r.bbl];
-      parcels[r.bbl] = r;
-      if (isNew) { bbls?.push(r.bbl); added.push(r.bbl); }
-    }
+  for (const sp of s.splits ?? []) materializeSplit(parcels, bbls, sp, added);
+  return added;
+}
+/** One recorded split's lots into the table (sim.ts restoreCuts replays them in the order they were cut). */
+export function materializeSplit(parcels: ParcelTable, bbls: string[] | undefined, sp: SplitRecord | undefined, added: string[] = []): string[] {
+  if (!sp?.done) return added;
+  const P = parcels[sp.parent];
+  if (!P || (P.split ?? 0) >= sp.id) return added;
+  bumpTable(parcels);
+  for (const r of splitRecords(P, sp)) {
+    if (r.bbl !== sp.parent && parcels[r.bbl]) continue;
+    const isNew = !parcels[r.bbl];
+    parcels[r.bbl] = r;
+    if (isNew) { bbls?.push(r.bbl); added.push(r.bbl); }
   }
   return added;
 }
@@ -540,6 +577,7 @@ function recordSplit(s: GameState, parcels: ParcelTable, bbls: string[], sp: Spl
   // THE RELEASE PAYMENT is due at recording, in cash
   const L = h.loan;
   sp.done = true;
+  (s.cutOrder ??= []).push("s:" + sp.id);
   materializeSplits(s, parcels, bbls);
   const recs = sp.pieces.map((p) => parcels[p.bbl]);
   for (const r of recs) if (r.bbl !== sp.parent) s.holdings[r.bbl] = landHolding(h, r, 0);
@@ -640,8 +678,10 @@ export function tickSplits(s: GameState, parcels: ParcelTable, bbls: string[]) {
       if (!(e instanceof SplitShort)) throw e;
       s.holdings = snap.holdings;
       for (const [b, r] of snap.parcelsBefore) { if (r) parcels[b] = r; else delete parcels[b]; }
+      bumpTable(parcels);
       bbls.length = snap.bbN;
       sp.done = undefined;
+      if (s.cutOrder?.at(-1) === "s:" + sp.id) s.cutOrder.pop();
       lapse(s, sp, `the lender's release payment of ${money(e.due)} was not there in cash`, true);
     }
   }
@@ -697,6 +737,7 @@ function recordRivalSplit(s: GameState, parcels: ParcelTable, bbls: string[], sp
   const r = s.rivals?.find((x) => x.id === sp.by);
   if (!r || !r.bbls.includes(sp.parent) || s.cityLoans?.[sp.parent] || s.developments[sp.parent] || s.listings.some((l) => l.bbl === sp.parent)) { lapse(s, sp, "the deed changed before recording", false); return; }
   sp.done = true;
+  (s.cutOrder ??= []).push("s:" + sp.id);
   materializeSplits(s, parcels, bbls);
   for (const p of sp.pieces) if (p.bbl !== sp.parent && !r.bbls.includes(p.bbl)) r.bbls.push(p.bbl);
   recordPropertyEvent(s, sp.parent, { kind: "planning", amount: sp.cost, outcome: `Split into ${sp.pieces.length} lots by ${r.name}` });

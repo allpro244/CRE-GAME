@@ -512,12 +512,14 @@ void FBWRetailBuilder::Dress(const FBWVolume& V, const FString& Name)
 		const bool bGrocery = V.Role == TEXT("grocery");
 		const double Se = F.L * (bGrocery ? (0.38 + 0.24 * ((H >> 4) % 2)) : 0.5);
 		const double Ez = (Ht + 450) / 1250.0;
-		const TArray<FBWSlotMat> EM = Mats({ { TEXT("wall"), SolidPath(S.Band == SEifsGrey ? SEifsSand : S.Band) }, { TEXT("trim"), SolidPath(SEifsWhite) } });
+		// clear-anodised framing at the doors, the canopy's fascia in the store's colour
+		const TArray<FBWSlotMat> EM = Mats({ { TEXT("wall"), SolidPath(S.Band == SEifsGrey ? SEifsSand : S.Band) }, { TEXT("trim"), SolidPath(SEifsWhite) },
+			{ TEXT("metal"), FGM("Metal", "Metal_Brushed") }, { TEXT("accent"), SolidPath(bGrocery ? SBrandGreen : S.Brand) } });
 		K.Add(RETM("SM_RK_Entry"), F.T(Se, 0, 0, FVector(1, 1, Ez)), EM);
 		// the name, big, across the portal's head
 		const FString Str = bGrocery ? Pick(Grocers, H >> 6) : V.Role == TEXT("dept") ? Pick(Depts, H >> 6) : V.Role == TEXT("mall") ? (Name.IsEmpty() ? FString(TEXT("MALL")) : Name.Left(Name.Find(TEXT("(")) > 0 ? Name.Find(TEXT("(")) : Name.Len()).TrimEnd().ToUpper()) : Pick(Boxes, H >> 6);
 		const FColor Col = bGrocery ? Pick(Letters, H >> 9) : Pick(Letters, H >> 10);
-		K.Text(Str, F.At(Se, 305, 905 * Ez), F.Out, 190, 1600, Col == FColor(250, 250, 245) ? FColor(196, 20, 18) : Col);
+		K.Text(Str, F.At(Se, 305, 1075 * Ez), F.Out, 190, 1600, Col == FColor(250, 250, 245) ? FColor(196, 20, 18) : Col);
 		// pilasters every 9-10 m clear of the portal, the cornice along the top
 		const TArray<FBWSlotMat> PM = Mats({ { TEXT("wall"), S.Pier } });
 		const int32 Np = FMath::Max(2, FMath::RoundToInt(F.L / 950.0));
@@ -575,6 +577,12 @@ void FBWRetailBuilder::Dress(const FBWVolume& V, const FString& Name)
 	}
 
 	// ---------------------------------------------------------------- PADS
+	// (a pad stands inside its own car park: the stalls keep off its walls, and off its front by a drive aisle)
+	if (IsPad(V.Role))
+	{
+		KeepOut.Add(BWInsetRing(V.Ring, -450));
+		KeepOut.Add(F.Rect(-300, F.L + 300, 0, 1000));
+	}
 	// THE PAD'S FRONT: storefront across the middle, piers at its ends
 	auto PadFront = [&](double Width, int32 Bays)
 	{

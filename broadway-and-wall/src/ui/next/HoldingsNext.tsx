@@ -98,7 +98,8 @@ export function HoldingsBuildings() {
 // ---------------------------------------------------------------- land
 export type LandStage = "farm" | "board" | "entitled" | "streets" | "lots";
 export interface LandRow {
-  key: string; bbl: string; addr: string; stage: LandStage; acres: number; lots: number | null;
+  /** acres: the tract's gross land, every stage; lotAcres: what its lots cover, once platted (net of streets, pond, open space) */
+  key: string; bbl: string; addr: string; stage: LandStage; acres: number; lotAcres: number | null; lots: number | null;
   when: number | null; odds: number | null; cost: number | null;
   owned: number | null; listed: number | null; sold: number | null; proceeds: number | null;
   offer: string | null; contract: string | null;
@@ -120,6 +121,7 @@ export function landRows(g: GameState, p: ParcelTable): LandRow[] {
       const stage: LandStage = plat ? "streets" : app ? "board" : rz ? "entitled" : "farm";
       out.push({
         key: h.bbl, bbl: h.bbl, addr: rec.address || h.bbl, stage, acres: acres(rec.lotArea),
+        lotAcres: plat ? acres(plat.lots.reduce((a, l) => a + l.a, 0)) : null,
         lots: plat ? plat.lots.length : app ? app.lots : null,
         when: plat ? plat.doneM : app ? app.decideM : rz ? rz.m : null,
         odds: app ? app.odds : null, cost: plat ? plat.cost : app ? app.cost : null,
@@ -137,7 +139,9 @@ export function landRows(g: GameState, p: ParcelTable): LandRow[] {
       if (!mine.length && !con && !offer) continue;
       out.push({
         key: plat.parent, bbl: mine[0] ?? plat.parent, addr: p[plat.parent]?.address ?? plat.parent, stage: "lots",
-        acres: acres(plat.lots.reduce((a, l) => a + l.a, 0)), lots: plat.lots.length, when: plat.doneM, odds: null, cost: plat.cost,
+        // the tract's gross acres, as at every other stage; the lots' own area is lotAcres
+        acres: acres(p[plat.parent]?.lotArea ?? plat.lots.reduce((a, l) => a + l.a, 0)),
+        lotAcres: acres(plat.lots.reduce((a, l) => a + l.a, 0)), lots: plat.lots.length, when: plat.doneM, odds: null, cost: plat.cost,
         owned: mine.length, listed: mine.filter((b) => g.holdings[b]?.sale).length,
         sold: pl?.lotsSold ?? 0, proceeds: pl?.lotProceeds ?? 0,
         offer: offer ? `${offer.lots} @ $${offer.psf.toFixed(0)}/sf` : null,
@@ -153,6 +157,7 @@ const lcols: Col<LandRow>[] = [
   { id: "addr", label: "Tract", get: (r) => r.addr, cell: (r) => <span className="nx-strong-cell">{r.addr}</span> },
   { id: "stage", label: "Stage", get: (r) => ["farm", "board", "entitled", "streets", "lots"].indexOf(r.stage), cell: (r) => <span className={"nx-stage nx-stage-" + r.stage}>{STAGE_LABEL[r.stage]}</span> },
   { id: "acres", label: "Acres", get: (r) => r.acres, fmt: "n", cell: (r) => <span>{r.acres.toFixed(1)}</span> },
+  { id: "lotac", label: "Lot ac", get: (r) => r.lotAcres, fmt: "n", cell: (r) => <span>{r.lotAcres !== null ? r.lotAcres.toFixed(1) : "—"}</span>, hidden: true },
   { id: "lots", label: "Lots", get: (r) => r.lots, fmt: "n" },
   { id: "when", label: "Date", get: (r) => r.when, cell: (r) => <span className="mono">{r.when !== null ? monthLabel(r.when) : "—"}</span> },
   { id: "odds", label: "Odds", get: (r) => r.odds, fmt: "pct" },

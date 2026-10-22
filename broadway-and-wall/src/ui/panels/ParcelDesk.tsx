@@ -40,6 +40,7 @@ import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, o
 import { Gloss } from "@/ui/Glossary";
 import { entitleQuote, platQuote, PLAT_LOT_SIZES } from "@/engine/landdev";
 import { platHomesView, tractLotQuote } from "@/engine/homes";
+import { adQuote } from "@/engine/adloan";
 import { platTractLots } from "@/citygen/index.mjs";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
@@ -145,6 +146,7 @@ function LandDevCard({ bbl }: { bbl: string }) {
   const parcels = useStore((s) => s.parcels);
   const fileRezoning = useStore((s) => s.fileRezoning);
   const buildPlat = useStore((s) => s.buildPlat);
+  const buildPlatFinanced = useStore((s) => s.buildPlatFinanced);
   const [lotSf, setLotSf] = useState<number>(7500);
   const rec = parcels?.[bbl];
   if (!game || !parcels || !rec?.ag || !rec.tract) return null;
@@ -193,7 +195,14 @@ function LandDevCard({ bbl }: { bbl: string }) {
             <Row k="Rezoned" v={`${rz.zone}, FAR ${rz.far}, ${lots.length} lots of ~${rz.lotSf.toLocaleString()} sf`} />
             <Row k="Streets, pipes and impact fees" v={`${usd(q.cost)} · ${usd(q.perLot)} a lot`} />
             <Row k="Built in" v={`${q.months} months`} />
-            <button type="button" className="btn btn-sm" onClick={() => buildPlat(bbl)}>Build the streets</button>
+            {(() => {
+              const ad = adQuote(game, parcels, bbl, lots);
+              return ad && ad.amount > 0 ? <Row k="A&D loan" v={`${usd(ad.amount)} · ${ad.ratePct.toFixed(2)}% · ${ad.lender ?? "—"} · ${Math.round((ad.amount / Math.max(1, ad.cost)) * 100)}% of cost`} /> : <Row k="A&D loan" v="none: the lots would not carry it" />;
+            })()}
+            <div className="btn-row">
+              <button type="button" className="btn btn-sm" onClick={() => buildPlat(bbl)}>Build the streets</button>
+              <button type="button" className="btn-mini" onClick={() => buildPlatFinanced(bbl)}>On a loan</button>
+            </div>
           </>
         );
       })()}
@@ -252,6 +261,7 @@ function HomesCard({ bbl }: { bbl: string }) {
       <Row k="Bid · whole plat" v={`$${b.bulkPsf.toFixed(2)}/sf · ${usd(b.bulkPsf * lotSf * Math.max(1, v.free))} for ${v.free}`} />
       <Row k="Mortgage · location" v={`${(((game.econ.indexRate ?? 5.4) / 100 + 0.017) * 100).toFixed(2)}% · ×${v.loc.toFixed(2)}`} />
       <Row k="Yours" v={`${v.mine} lots · ${v.free} free`} />
+      {game.adLoans?.[parent] && <Row k="Land loan" v={`${usd(game.adLoans[parent].balance)} · ${game.adLoans[parent].ratePct.toFixed(2)}% · due ${monthLabel(game.adLoans[parent].maturityM)} · ${usd(game.adLoans[parent].releasePsf * lotSf)}/lot release`} />}
       {v.builders.map((x) => <Row key={x.name} k={x.name} v={`${x.held} held · ${x.building} bldg · ${x.closed} sold · cash ${usd(x.cash)} · debt ${usd(x.debt)}${x.failed ? " · failed" : ""}`} />)}
       {v.pl && v.pl.lotsSold > 0 && (
         <Row k="Sold to date" v={`${v.pl.lotsSold} lots · ${usd(v.pl.lotRevenue)} · gain ${usd(v.pl.lotProceeds - v.pl.lotBasis)}`} />

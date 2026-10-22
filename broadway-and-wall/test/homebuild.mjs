@@ -95,7 +95,10 @@ for (const r of [pick, ...reads.filter((x) => x !== pick && x.lots >= 12 && x.lo
 }
 if (!tract) { fail("no rezoning approved"); process.exit(1); }
 const lots = platTractLots(parcels[tract].tract, g.rezoned[tract].lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
-const sp = E.startPlat(g, parcels, tract, lots);
+// the streets on an A&D loan (adloan.ts)
+const ad = E.adQuote(g, parcels, tract, lots);
+console.log(`  A&D quote: ${M(ad.amount)} at ${ad.ratePct}% from ${ad.lender} (cost ${M(ad.cost)}, lots worth ${M(ad.value)})`);
+const sp = ad.amount > 0 ? E.startPlatFinanced(g, parcels, tract, lots) : E.startPlat(g, parcels, tract, lots);
 if (sp.err) { fail(`plat: ${sp.err}`); process.exit(1); }
 g = sp.s; check(g, "plat");
 while (!g.plats[tract].done) g = tick(g);
@@ -124,7 +127,9 @@ const v0 = E.platHomesView(g, parcels, tract);
   const nw1 = E.netWorth(g, parcels), spent = cash0 - g.cash;
   // anything else still on the book (a farm the board refused), at its own mark
   const other = Object.values(g.holdings).filter((h) => !mine.includes(h.bbl)).reduce((t, h) => t + E.ownedHoldingValueFromRec(g, E.resolveRec(parcels, g, h.bbl), h), 0);
-  const want = honest + other - spent, got = nw1 - nw0;
+  const owedAD = g.adLoans?.[tract]?.balance ?? 0;
+  const want = honest + other - spent - owedAD, got = nw1 - nw0;
+  console.log(`  land loan owed ${M(owedAD)}; on the desk's book: ${M(E.cityLoanBook(g).filter((l) => l.borrower === "player" && l.bbl === tract).reduce((t, l) => t + l.balance, 0))}`);
   console.log(`  net worth ${M(nw0)} -> ${M(nw1)} (${M(got)}); cash spent ${M(spent)} (net of interest earned), lots honestly ${M(honest)}, other land ${M(other)} -> expected ${M(want)}`);
   if (Math.abs(got - want) > 0.05 * Math.max(honest, spent)) fail(`net worth moved ${M(got)}, the lots and the cash say ${M(want)}`);
 }
@@ -140,7 +145,7 @@ console.log(`  bids: takedown $${v0.bids.takedownPsf.toFixed(2)}/sf at ~${v0.bid
 
 const stock0 = g.econ.stock.multifamily;
 // sell: takedown to the first builder who offers; list the rest whole at the bid
-let months = 0, listed = false;
+let months = 0, listed = false, failChecked = false;
 while (months < HORIZON) {
   g = tick(g); months++;
   if (g.gameOver) { fail(`game over in month ${g.month}`); break; }
@@ -153,6 +158,21 @@ while (months < HORIZON) {
   if (!listed && v.contract && v.free > v.contract.left) {
     const r = E.listLotsToBuilders(g, parcels, tract, v.bids.bulkPsf * 0.98, true);
     if (!r.err) { g = r.s; listed = true; console.log(`  month ${g.month}: listed the rest whole at $${(v.bids.bulkPsf * 0.98).toFixed(2)}/sf`); }
+  }
+  // A BUILDER THAT CANNOT PAY ITS WAY FAILS, on a side copy: drain one with houses going up and run three months
+  if (!failChecked && Object.values(g.homes.units).some((u) => u.closedM === undefined && u.spent > 0)) {
+    failChecked = true;
+    let t = JSON.parse(JSON.stringify(g));
+    const by = Object.values(t.homes.units).find((u) => u.closedM === undefined).by;
+    const owed0 = t.homes.builders[by].debt, lender = t.homes.builders[by].lender;
+    const cap0 = t.lenders.find((l) => l.name === lender)?.capital ?? 0;
+    t.homes.builders[by].cash = -1e9;
+    for (let i = 0; i < 3; i++) t = E.advanceQuarter(t, parcels, bbls, city.adjacency);
+    const b = t.homes.builders[by], cap1 = t.lenders.find((l) => l.name === lender)?.capital ?? 0;
+    const heir = Object.values(t.homes.units).find((u) => u.closedM === undefined)?.by;
+    console.log(`  stress test: ${by} with ${M(owed0)} owed at ${lender}, drained -> ${b.failedM !== undefined ? `failed m${b.failedM}` : "still standing"}; its houses now ${heir ?? "none"}'s; the desk's capital ${M(cap0)} -> ${M(cap1)}; ${t.news.find((n) => /has failed/.test(n.text))?.text ?? ""}`);
+    if (b.failedM === undefined) fail("a builder three months unable to pay did not fail");
+    if (heir === by) fail("a failed builder kept its houses");
   }
   const units = Object.values(g.homes.units).filter((u) => u.parent === tract);
   if (!mine.some((b) => g.holdings[b]) && units.every((u) => u.closedM !== undefined) && !Object.values(g.homes.held ?? {}).length) break;
@@ -169,6 +189,8 @@ const closed = units.filter((u) => u.closedM !== undefined).map((u) => u.closedM
 if (closed.length) console.log(`  houses: ${closed.length} closed between ${mLabel(closed[0])} and ${mLabel(closed[closed.length - 1])} = ${(closed.length / Math.max(1, closed[closed.length - 1] - closed[0] + 1)).toFixed(2)} a month`);
 if (!(pl.lotsSold > 0)) fail("no lot sold");
 if (!closed.length) fail("no builder sold a house");
+console.log(`  land loan at the end: ${g.adLoans?.[tract] ? M(g.adLoans[tract].balance) + " still owed" : "repaid"}`);
+if (ad.amount > 0 && g.adLoans?.[tract] && pl.lotsSold === mine.length) fail("every lot sold and the land loan is not repaid");
 const exits = (g.exits ?? []).filter((x) => mine.includes(x.bbl)).length;
 console.log(`  exits on the plat: ${exits}; ledger: worst unexplained month $${Math.round(worst).toLocaleString()}`);
 if (exits !== pl.lotsSold) fail(`${exits} exits for ${pl.lotsSold} lots sold`);

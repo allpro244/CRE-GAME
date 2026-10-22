@@ -35,6 +35,7 @@ import { resolveRec, assetValue, initialCondition } from "./value";
 import { sweepLocIdleCash } from "./credit";
 import { pickConstructionDesk } from "./dev";
 import { lenderByName, chargeLenderLoss } from "./lenders";
+import { payRelease } from "./adloan";
 import { saleTaxQuote } from "./actions";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
@@ -406,8 +407,10 @@ function sellLot(s: GameState, parcels: ParcelTable, parent: string, builder: st
   if (!h || !rec) return 0;
   const price = Math.round(psf * rec.lotArea);
   const q = saleTaxQuote(h, price, s);
-  s.cash += q.net;
-  logBooks(s, "sold", q.net, bbl);
+  // the land loan's release price comes off the top, as a mortgage payoff does at any closing
+  const release = payRelease(s, parcels, bbl);
+  s.cash += q.net - release;
+  logBooks(s, "sold", q.net - release, bbl);
   if (q.tax > 0) { s.cash -= q.tax; s.taxesPaid = (s.taxesPaid ?? 0) + q.tax; logBooks(s, "taxes", q.tax); }
   const pl = plOf(homesOf(s), parent);
   pl.lotsSold++; pl.lotRevenue += price; pl.lotProceeds += q.net; pl.lotBasis += h.costBasis;

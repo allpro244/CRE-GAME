@@ -47,6 +47,7 @@ import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveFo
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, CITY_PLAN, platTractLots, type GeneratedCity } from "@/citygen/index.mjs";
 import { fileEntitlement, startPlat, materializePlats, lotBbl } from "@/engine/landdev";
+import { startPlatFinanced } from "@/engine/adloan";
 import { acceptLotOffer, declineLotOffer, listLotsToBuilders, delistLots as delistPlatLots } from "@/engine/homes";
 import { cutTownOffThread } from "@/state/townClient";
 import type { TownRequest } from "@/state/townWorker";
@@ -402,6 +403,8 @@ interface AppState {
   fileRezoning: (bbl: string, lotSf: number) => void;
   /** Region map: build the streets on a rezoned tract and cut it into lots. */
   buildPlat: (bbl: string) => void;
+  /** ...on an A&D loan from a construction desk (engine/adloan.ts). */
+  buildPlatFinanced: (bbl: string) => void;
   /** Region map, Phase 3 (engine/homes.ts): list your lots on the plat `parent` to the homebuilders at `askPsf`, as a takedown or whole. */
   listLots: (parent: string, askPsf: number, bulk: boolean) => void;
   delistLots: (parent: string) => void;
@@ -2042,6 +2045,18 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Filed.");
+    void persist(r.s);
+  },
+
+  buildPlatFinanced: (bbl) => {
+    const { game, parcels } = get();
+    const tract = parcels?.[bbl]?.tract, rz = game?.rezoned?.[bbl];
+    if (!game || !parcels || !tract || !rz) return;
+    const lots = platTractLots(tract, rz.lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
+    const r = startPlatFinanced(game, parcels, bbl, lots);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Under way.");
     void persist(r.s);
   },
 

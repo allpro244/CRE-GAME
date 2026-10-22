@@ -14,6 +14,7 @@ import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLandDev, materializePlats } from "./landdev";
 import { tickHomes } from "./homes";
+import { tickADLoans } from "./adloan";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
 import { settleLeasingPayables, tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
@@ -713,6 +714,8 @@ function tickMonth(
   tickFirmHeldLoans(s);
   tickPlanning(s, parcels, bbls);
   tickLandDev(s, parcels, bbls);
+  // the land loans on the plats: interest and maturities (adloan.ts)
+  if (s.adLoans) tickADLoans(s, parcels);
   // the plats' houses: draws, buyers, closings, the builders (homes.ts)
   tickHomes(s, parcels);
   // The rare thing that dates a city (blackswans.ts) — before the builders

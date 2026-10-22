@@ -1306,6 +1306,18 @@ export interface HomeBuilder {
   interestPaid: number; stressMs?: number; failedM?: number;
   lots: number; lotSpend: number; started: number; closed: number; revenue: number; cost: number;
 }
+/** A land developer's A&D loan on one tract (adloan.ts): repaid by a release price on each lot sold. */
+export interface ADLoan {
+  tract: string;
+  lender: string;
+  balance: number;
+  ratePct: number;
+  startM: number;
+  maturityM: number;
+  /** what each lot sold repays, $ per sf of lot */
+  releasePsf: number;
+  extended?: boolean;
+}
 export interface HomesState {
   units: Record<string, HomeUnit>;
   /** lots a builder owns and has not yet started a house on, by BBL: who, what it paid, and what it borrowed on it */
@@ -3941,6 +3953,8 @@ export interface GameState {
   plats?: Record<string, PlatRecord>;
   /** Parent tracts retired into their lots (a deed with no land left; resolveRec). */
   platted?: Record<string, number>;
+  /** Your acquisition-and-development loans, by tract (adloan.ts). */
+  adLoans?: Record<string, ADLoan>;
   /** ---- HOMEBUILDING (homes.ts; the region map, Phase 3) ---- the houses going up and sold on the plats, yours and the builders'. */
   homes?: HomesState;
   /** @deprecated legacy single-application save; migrated on the next filing/tick. */

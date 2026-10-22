@@ -1,0 +1,26 @@
+name: full suite
+
+# The whole suite, as a REPORT: nightly on main and on demand. It does not
+# gate merges (check.yml does, in minutes); a failure here is a bug to fix.
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+      - run: pnpm install
+      - run: pnpm engine
+      - run: pnpm check
+      - run: pnpm --dir broadway-and-wall no-playtest

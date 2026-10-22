@@ -3989,6 +3989,9 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     let nextUse = cand.probeUse;
     let lead = cand.probeLead;
     const bbl = rec.bbl;
+    // (tickTeardowns runs twice in a short month: a lot the first pass folded
+    // or broke ground on is no longer a candidate of its own)
+    if (s.merged?.[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     const oldSf = rec.bldgArea;
     const cls = rec.class;
     // When the standing class is pinned and still wanted, densify IN KIND.
@@ -4146,6 +4149,14 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   }
   for (const pick of chosen) {
   const { rec, ratio, bbl, oldSf, nextUse, lead, nsf, nfl, opportunityCost, plan, ltc, kids } = pick;
+  // THE PICKS WERE MADE BEFORE ANY OF THEM RAN. One month chose 1000740001
+  // as a teardown of its own AND 1000740002 with 1000740001 folded into its
+  // site; both went ahead, and an eight-storey office was built on a lot of
+  // zero square feet (city-accept M, plan 14, seed 0, month 88). A pick whose
+  // lot, or any lot it would fold in, an earlier pick has since built on or
+  // folded is dropped.
+  const gone = (b: string) => !!s.merged?.[b] || (s.cityJobs ?? []).some((j) => j.bbl === b);
+  if (gone(bbl) || kids.some(gone)) continue;
   const yr = yr0;
   const tprog = plan.mix;
   const months = plan.months;

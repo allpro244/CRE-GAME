@@ -91,6 +91,16 @@ export default function LandDesk({ bbl }: { bbl: string }) {
     [game, parcels, bbl, summary]);
   const ad = useMemo(() => (pnl ? adQuote(game, pnl, lev) : null), [game, pnl, lev]);
   if (!rec?.ag || !tract || !geo || !summary || !pnl) return null;
+  // A TRACT NO PLAT FITS: most of the land by town is the river's floodplain,
+  // and a plat of nothing is not a desk. Say so, once, and stop.
+  if (!plat && !app && pnl.lots < 4) {
+    return (
+      <div className="deal land-desk">
+        <div className="deal-head">Land development <span className="dim">· not developable</span></div>
+        <div className="hint">{(rec.lotArea / 43560).toFixed(0)} ac · {pnl.density.buildableAc.toFixed(1)} buildable{rec.floodShare ? ` · ${Math.round(rec.floodShare * 100)}% floodplain` : ""} · no plat fits. It trades as farmland.</div>
+      </div>
+    );
+  }
 
   const eq = !rz && !app ? entitleQuote(game, parcels, bbl, 7500, Math.max(4, pnl.lots)) : null;
   const tone = pnl.profit > 0 && (pnl.irr ?? 0) > 0.15 ? "good" : pnl.profit > 0 ? "warn" : "bad";

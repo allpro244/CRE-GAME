@@ -207,6 +207,7 @@ export function makeRegion(seed, opts = {}) {
         lotfront: Math.round(front / FT), lotdepth: Math.round(depth / FT),
       },
     });
+    for (const r of lot.rects) if (r.kind === "sign") houses3d.push({ bbl, r, year: lot.year, cls: "retail", deco: "sign" });   // the pylon sign
     for (const r of bldgs) {
       rawBuildings.features.push({ type: "Feature", geometry: polyLL(rectRing(r.c, r.u, r.w, r.d)), properties: { base_bbl: bbl, heightroof: +((r.z / 100) / FT).toFixed(1), cnstrct_yr: lot.year } });
     }
@@ -249,11 +250,12 @@ export function makeRegion(seed, opts = {}) {
     if (!out || out.m2 < (rest ? 4 : 2) * ACRE) continue;
     const share = (test) => { let n = 0, f = 0; const [x0, y0, x1, y1] = t.r; for (let x = x0 + 10; x < x1; x += 40) for (let y = y0 + 10; y < y1; y += 40) { const k = G.idx([x, y]); if (k < 0 || M.water[k]) continue; n++; if (test(k)) f++; } return n ? f / n : 0; };
     const fp = share((k) => M.flood[k]), wood = t.wood || share((k) => M.forestL[k]) > 0.5;
+    const buildM2 = buildableM2(M, t.r);
     const acres = out.m2 / ACRE, bbl = String(5e9 + t.id * 10 + (rest ? 1 : 0));
     const lotSf = sf(out.m2), stamp = wood ? FARM_STAMP.wood : FARM_STAMP.crop;
     const kc = G.idx(t.c);
     farms.push({
-      bbl, t, out, rest, wood, acres, fp,
+      bbl, t, out, rest, wood, acres, fp, buildM2,
       edgeM: Math.round(kc >= 0 && Number.isFinite(edgeD[kc]) ? edgeD[kc] : dist(t.c, M.centre)),
       address: `${wood ? "Woodlot" : "Farm"} tract ${t.id} (${Math.round(acres)} ac)`, stamp,
     });
@@ -288,6 +290,8 @@ export function makeRegion(seed, opts = {}) {
       ag: f.wood ? "wood" : "crop",
       ...(f.rest ? {} : { tract: { seed, r: f.t.r, id: f.t.id, bearing: f.t.recipe?.bearing ?? null, edgeM: f.edgeM } }),
       acres: +f.acres.toFixed(1), floodShare: +f.fp.toFixed(2), crop: f.wood ? null : ["row crop", "grain", "fallow"][f.t.crop % 3],
+      // the land a plat can use: dry, off the floodplain, the freeway and anything already standing (rec.lotArea counts the floodplain)
+      buildableSf: Math.round(f.buildM2 * SQFT_PER_M2),
     });
   }
   for (const ft of data.tileParcels.features) if (data.parcels[ft.properties.bbl]?.ag) ft.properties.ag = data.parcels[ft.properties.bbl].ag;
@@ -365,6 +369,7 @@ export function makeRegion(seed, opts = {}) {
     const ring = rectRing(r.c, r.u, r.w, r.d);
     if (r.kind === "pave") ground("pavement", ring);
     else if (r.kind === "lot") ground("apron", ring);   // a centre's car park: the surface parking layer
+    else if (r.kind === "walk") ground("sidewalk", ring);
     else if (r.kind === "park") ground("park", ring);
     else if (r.kind === "lawn") ground("yard", ring);
   }
@@ -427,7 +432,7 @@ export function makeRegion(seed, opts = {}) {
   const b3 = data.buildings3d;
   for (const h of houses3d) {
     const r = h.r, ring = rectRing(r.c, r.u, r.w, r.d).map(LL);
-    b3.push({ b: h.bbl, c: h.cls, y: h.year, t: 0, f: Math.max(1, Math.round(r.z / 355)), z0: 0, z1: +(r.z / 100).toFixed(1), d: 1, ...(h.house ? { dk: "house" } : {}), x: 1, r: ring });
+    b3.push({ b: h.bbl, c: h.cls, y: h.year, t: 0, f: Math.max(1, Math.round(r.z / 355)), z0: 0, z1: +(r.z / 100).toFixed(1), d: 1, ...(h.house ? { dk: "house" } : h.deco ? { dk: h.deco } : {}), x: 1, r: ring });
   }
   // the inner ring's houses draw as houses, not boxes; each stays its deed's building
   const houseLike = new Set([...housed].filter((b) => data.parcels[b]?.class === "multifamily"));
@@ -461,6 +466,16 @@ export function makeRegion(seed, opts = {}) {
 }
 
 // ---------------------------------------------------------------- platting a farm (Phase 2)
+/** The ground inside a survey tract that a plat can use: dry, off the floodplain and the freeway, not the town, not built. */
+function buildableM2(M, r) {
+  const G = M.G; let n = 0;
+  for (let y = Math.max(0, Math.floor(r[1] / CELL)); y <= Math.min(G.W - 1, Math.floor((r[3] - 1) / CELL)); y++)
+    for (let x = Math.max(0, Math.floor(r[0] / CELL)); x <= Math.min(G.W - 1, Math.floor((r[2] - 1) / CELL)); x++) {
+      const k = y * G.W + x;
+      if (M.free(G.ctr(k)) && !M.lotL[k] && !M.phase[k]) n++;
+    }
+  return n * CELL * CELL;
+}
 const MODELS = new Map();
 /** The region's land model for a seed (the river, the town, the outer lots), kept for platting. */
 function regionModel(seed) {
@@ -486,13 +501,18 @@ export function platTractLots(tract, lotSf) {
   const F = makeFrame(seed, M.S), proj = makeProjection(LONLAT[0], LONLAT[1]);
   const LL = (p) => { const q = proj.toLL(F.toW(p)); return [+q[0].toFixed(7), +q[1].toFixed(7)]; };
   const ok = (p) => { const k = G.idx(p); return k >= 0 && M.free(p) && !M.lotL[k] && !M.phase[k]; };
-  const plat = platFor({ seed, tract: tract.r, era: "grid", id: tract.id, bearing: tract.bearing ?? undefined, lotSf }, ok);
+  // a side with a road along it gives up half the road's 66 ft right-of-way and a 1 m verge; a side on a field gives up nothing
+  const [x0, y0, x1, y1] = tract.r, roads = M.oldRoads.concat(M.secRoads);
+  const onRoad = (a, b) => [0.2, 0.5, 0.8].some((t) => roads.some((pl) => distToLine([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], pl) < 25));
+  const side = (a, b) => (onRoad(a, b) ? 66 * FT / 2 + 1 : 1);
+  const insets = [side([x0, y0], [x0, y1]), side([x0, y0], [x1, y0]), side([x1, y0], [x1, y1]), side([x0, y1], [x1, y1])];
+  const plat = platFor({ seed, tract: tract.r, era: "grid", id: tract.id, bearing: tract.bearing ?? undefined, lotSf, insets }, ok);
   const lots = plat.lots.map((l) => {
     const a = ringAreaAbs(l.ring) * SQFT_PER_M2, f = dist(l.front[0], l.front[1]) / FT;
     return { ring: l.ring.map(LL), a: Math.round(a), f: Math.round(f), d: Math.round(a / Math.max(1, f)) };
   });
   const streets = plat.streets.map((s) => s.map(LL));
-  return { lots, streets };
+  return { lots, streets, buildableSf: Math.round(buildableM2(M, tract.r) * SQFT_PER_M2) };
 }
 
 /**

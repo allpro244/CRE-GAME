@@ -5,8 +5,8 @@ import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
 import { locLimit, locRate } from "@/engine/credit";
 import { availability } from "@/engine/space";
-import { netWorth } from "@/engine/value";
-import { streetStanding, ordinal } from "@/engine/standing";
+import { derive, nwOf, standingOf } from "@/ui/derive";
+import { ordinal, type Standing } from "@/engine/standing";
 import { openViewOn } from "@/ui/panels/shared";
 import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
 import { portfolioOccupancy, portfolioRentPsf } from "@/engine/leasing";
@@ -15,6 +15,7 @@ import { nextDue } from "./nextDue";
 import { DESKS, tabCounts, tabLabel, RAIL_GROUPS, PAGE_ICON, railEntry } from "./desks";
 import DeltaChip from "@/ui/vitals/DeltaChip";
 import Waterfall, { usablePrev } from "@/ui/vitals/Waterfall";
+import ClockProgress from "@/ui/ClockProgress";
 
 /** What to call each room in the Back button. Built from the nav itself so a
  *  renamed desk cannot drift out of sync with the label on the way back. */
@@ -148,18 +149,20 @@ export default function TopBar() {
         dNw: null as number | null, nwSpark: [] as number[],
         dCf: null as number | null, dCfSince: null as number | null,
         dRateBp: null as number | null,
-        standing: null as ReturnType<typeof streetStanding> | null,
+        standing: null as Standing | null,
         dRank: 0,
         due: null as ReturnType<typeof nextDue>,
       };
     }
     const parcels = useStore.getState().parcels;
-    const nw = parcels ? netWorth(deferredGame, parcels) : 0;
+    const nw = parcels ? nwOf(deferredGame, parcels) : 0;
     // THE FIRM'S CASH FLOW INCLUDES THE FIRM. This was deeds less debt, and
     // the office — ~$66K a year on a one-building book — came out of the
     // account every month without ever appearing here, so an $81K readout sat
     // over a firm clearing ~$30K. Same function the tick charges.
-    const firmCf = (g: typeof deferredGame) => portfolioMonthlyCF(g, parcels!) - firmOverheadMonthly(g, parcels!);
+    // Once per state: next month's ΔCF reads this month's back from the cache.
+    const firmCf = (g: typeof deferredGame) =>
+      derive(g, "topbar.firmCf", () => portfolioMonthlyCF(g, parcels!) - firmOverheadMonthly(g, parcels!), [parcels]);
     const cf = parcels ? firmCf(deferredGame) : 0;
     const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
     // Office availability vs twelve months ago — the tell that predicts real
@@ -205,10 +208,11 @@ export default function TopBar() {
     // YOUR PLACE ON THE STREET, always in sight. It was two tabs deep on
     // Research, which is to say the one number that says who is winning was
     // the one the player never saw. Same ranking the league table prints.
-    const standing = parcels && (deferredGame.rivals?.length ?? 0) > 0 ? streetStanding(deferredGame, parcels, nw) : null;
+    const standing = parcels && (deferredGame.rivals?.length ?? 0) > 0 ? standingOf(deferredGame, parcels) : null;
     // Places gained or lost since the last advance — the same ranking on the
-    // pre-advance snapshot the other deltas already read.
-    const standPrev = standing && prevOk && parcels ? streetStanding(prevOk, parcels) : null;
+    // pre-advance snapshot the other deltas already read. That snapshot was
+    // the state on screen last month, so its rank is kept, not re-ranked.
+    const standPrev = standing && prevOk && parcels ? standingOf(prevOk, parcels) : null;
     const dRank = standing && standPrev ? standPrev.rank - standing.rank : 0;
     const due = nextDue(deferredGame, parcels);
     return {
@@ -580,6 +584,7 @@ export default function TopBar() {
       {game && (
         <div className="nav-cluster nav-cluster-time" role="group" aria-label="Time controls">
           <PlayButton />
+          <ClockProgress />
           <button className={"advance-btn advance-main" + (advancing ? " advance-pulse" : "")} onClick={() => advance()} disabled={!!game.gameOver || advancing} title="One month">
             Advance <span className="advance-unit">1 mo</span>
           </button>

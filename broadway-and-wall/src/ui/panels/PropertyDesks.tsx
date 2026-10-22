@@ -738,6 +738,15 @@ export function canAssembleFromBook(
 }
 
 export function LandDesk({ bbl }: { bbl: string }) {
+  // (a farm's rezoning is the Land development card's: R-2 and a plat, not a FAR request)
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
+  if (rec && (rec.ag || rec.zoneDist === "AG")) return null;
+  return <LandDeskLive bbl={bbl} />;
+}
+
+function LandDeskLive({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const adjacency = useStore((s) => s.adjacency);

@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
+import { derive, nwOf } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import Fold from "@/ui/Fold";
 import { monthLabel, START_YEAR, sweepApy } from "@/engine/types";
 import type { BooksYear } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
-import { resolveRec, netWorth } from "@/engine/value";
+import { resolveRec } from "@/engine/value";
 import { deedMark } from "@/ui/deedMarks";
 import {
   balanceSnapshotView, buildBalanceSheet, booksMonthAsYear, pnlView,
@@ -32,7 +33,7 @@ export function BooksPage() {
   // bought or sold, the tile disagreed with the bar above it ($2.54M against
   // $2.15M on the owner's screen, after a levered purchase). Live, one
   // function, one answer.
-  const nw = useMemo(() => netWorth(game, parcels), [game, parcels]);
+  const nw = nwOf(game, parcels);
   const realized = game.exits.reduce((a, e) => a + e.gain, 0);
   const exits = game.exits ?? [];
   const achieved = MILESTONES.filter((m) => game.milestones?.[m.id] !== undefined);
@@ -237,7 +238,7 @@ function BalanceSheet() {
   const lastYear = [...history].reverse().find((b) => Math.floor(b.m / 12) < curYr) ?? null;
   const [view, setView] = useState<"today" | "yearEnd">("today");
 
-  const live = useMemo(() => buildBalanceSheet(game, parcels), [game, parcels]);
+  const live = derive(game, "books.balanceSheet", () => buildBalanceSheet(game, parcels), [parcels]);
   const sheet: BalanceSheetView = view === "yearEnd" && lastYear
     ? balanceSnapshotView(lastYear)
     : live;

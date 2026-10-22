@@ -63,6 +63,25 @@ d.volumes.filter((v) => v.role === "pylon").slice(0, 3).forEach((v, i) => {
   const [cx, cy] = cen(v.ring), [fx, fy] = v.front;
   views.push({ name: `pylon-${i}`, x: cx, y: cy, z: 550, yaw: deg(cx - fx, cy - fy) + 35, pitch: -6, dist: 3200 });
 });
+// HOUSES (HouseBuilder): a pre-war, a post-war and a late-century street, where houses stand thickest
+{
+  const houses = d.volumes.filter((v) => v.deco === "house").map((v) => ({ v, c: cen(v.ring) }));
+  const pick = (lo, hi) => {
+    const hs = houses.filter((h) => h.v.year >= lo && h.v.year < hi);
+    let best = null, bn = -1;
+    for (const h of hs.filter((_, i) => i % 3 === 0)) {
+      const n = hs.filter((o) => Math.hypot(o.c[0] - h.c[0], o.c[1] - h.c[1]) < 6000).length;
+      if (n > bn) { bn = n; best = h; }
+    }
+    return best;
+  };
+  for (const [name, lo, hi] of [["homes-prewar", 1900, 1946], ["homes-postwar", 1946, 1975], ["homes-late", 1975, 2030]]) {
+    const h = pick(lo, hi);
+    if (!h) continue;
+    views.push({ name: `${name}-oblique`, x: h.c[0], y: h.c[1], z: 200, yaw: 35, pitch: -16, dist: 3500 });
+    views.push({ name: `${name}-aerial`, x: h.c[0], y: h.c[1], z: 0, yaw: 20, pitch: -50, dist: 11000 });
+  }
+}
 const pp = parcels.find((q) => /\(power centre\)/.test(q.address)) ?? parcels[0];
 const [ax, ay] = cen(pp.ring);
 views.push({ name: "region-aerial", x: ax, y: ay, yaw: 30, pitch: -40, dist: 60000 });

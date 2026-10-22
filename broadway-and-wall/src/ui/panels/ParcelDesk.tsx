@@ -41,6 +41,8 @@ import { Gloss } from "@/ui/Glossary";
 import { entitleQuote, platQuote, PLAT_LOT_SIZES, INDUSTRIAL_LOT_SIZES } from "@/engine/landdev";
 import { platHomesView, tractLotQuote } from "@/engine/homes";
 import { platTractLots } from "@/citygen/index.mjs";
+import { SplitTab } from "@/ui/next/SplitTab";
+import { splittable } from "@/engine/lotsplit";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
 export {
@@ -447,6 +449,7 @@ function ParcelPanelInner({
       )}
 
       {on("summary") && holding && !dev && <AssembleCard bbl={selectedBBL} />}
+      {(on("summary") || on("build")) && holding && !dev && !parcels?.[selectedBBL]?.tract && <SplitCard key={selectedBBL} bbl={selectedBBL} />}
       {on("summary") && holding && !dev && (() => {
         const read = landRead(rec, game.econ);
         const room = farMax > 0 ? Math.max(0, 1 - builtFar / farMax) : 0;
@@ -1884,6 +1887,30 @@ function LegacyTiCapRow({ bbl }: { bbl: string }) {
     <div className="btn-row" style={{ alignItems: "center" }}>
       <span className="hint">Building fit-out cap ${cap.toFixed(2)}/sf per lease year (on top of the firm's limit)</span>
       <button className="btn btn-mini" onClick={() => useStore.getState().autoTiCap(bbl, undefined)}>Clear</button>
+    </div>
+  );
+}
+
+/**
+ * SPLIT THIS LOT (engine/lotsplit.ts): any deed you own, downtown or not, cut
+ * into lots that each meet the code. Folded until asked for; the tool itself
+ * is the building file's Split tab (ui/next/SplitTab.tsx).
+ */
+function SplitCard({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game);
+  const parcels = useStore((s) => s.parcels);
+  const [open, setOpen] = useState(false);
+  if (!game || !parcels) return null;
+  const pending = (game.splits ?? []).some((x) => x.parent === bbl && !x.done && !x.lapsed);
+  const deny = pending ? null : splittable(game, parcels, bbl);
+  return (
+    <div className="deal">
+      <div className="deal-head">
+        Split the lot <span className="dim">· {pending ? "filed" : deny ? "not now" : "minor 2-4 lots · plat 5+"}</span>
+        <button type="button" className="btn-mini" style={{ float: "right" }} onClick={() => setOpen(!open)}>{open ? "Close" : "Split…"}</button>
+      </div>
+      {!open && deny && <div className="hint">{deny}</div>}
+      {open && <SplitTab game={game} parcels={parcels} bbl={bbl} />}
     </div>
   );
 }

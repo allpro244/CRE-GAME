@@ -4435,6 +4435,17 @@ export function ownedHoldingValueFromRec(
   // before `landMark` existed, keep the cost carry.
   const dev = s.developments?.[h.bbl];
   if (dev && (rec.class === "land" || !rec.bldgArea) && h.costBasis > 0) return dev.landMark ?? h.costBasis;
+  // STREETS GOING IN ARE CONSTRUCTION IN PROGRESS TOO (2026-10-22). The whole
+  // horizontal — streets, pipes, impact fees, amenities — is paid the day the
+  // plat starts (landdev.ts startPlat, platdesign.ts startDesignedPlat), and the
+  // tract's mark ignored it: net worth fell by the full street budget for the
+  // months the works took and came back in one step when the lots became deeds.
+  // Measured by tools/playtest.mjs on a 157-lot plat: −$2.7M at the start,
+  // +$2.82M the month it finished, no cash either time. Carried at money sunk,
+  // as a building job is (portfolioMark); the lots' own marks take over at
+  // completion, so the step there is the plat's real gain or loss.
+  const plat = s.plats?.[h.bbl];
+  if (plat && !plat.done) return holdingValue(rec, s.econ, h, s.month) + plat.cost;
   let v = holdingValue(rec, s.econ, h, s.month);
   // A TENANT WHO HAS SAID THEY ARE GOING IS GONE (2026-10-15). The notice
   // lands six months out, and from then the space is known to go dark; the

@@ -28,8 +28,9 @@ import { bestSchemes, type SchemeRow } from "./bestScheme";
 import { buyPreview, buyDesks } from "./buy";
 import { useNext } from "./nextStore";
 import { MoneyTab, RefiTable, RentRollTab } from "./FileTabs";
+import { SplitTab } from "./SplitTab";
 
-type FileTab = "overview" | "leasing" | "money" | "build" | "deal" | "history";
+type FileTab = "overview" | "leasing" | "money" | "build" | "split" | "deal" | "history";
 const FROM_PROP: Partial<Record<PropertyTab, FileTab>> = {
   summary: "overview", leasing: "leasing", ops: "leasing", money: "money", build: "build", deal: "deal", history: "history",
 };
@@ -67,6 +68,8 @@ function FileFor({ bbl }: { bbl: string }) {
     ...(h && built ? [{ id: "leasing" as const, label: "Rent roll" }] : []),
     ...(h ? [{ id: "money" as const, label: "Money" }] : []),
     ...(h && !h.groundLeased ? [{ id: "build" as const, label: "Build" }] : []),
+    // any deed you own, downtown or not, can be cut into lots (engine/lotsplit.ts); a farm tract is platted instead
+    ...(h && !parcels[bbl]?.tract ? [{ id: "split" as const, label: "Split" }] : []),
     { id: "deal", label: h ? "Sell" : "Deal" },
     ...(timeline.length ? [{ id: "history" as const, label: "History" }] : []),
   ];
@@ -85,7 +88,7 @@ function FileFor({ bbl }: { bbl: string }) {
   if (game.workouts?.[bbl]) chips.push({ label: "Workout", tone: "red" });
   return (
     <Drawer
-      width={active === "leasing" || active === "money" || active === "build" || active === "deal" ? "wide" : "std"}
+      width={active === "leasing" || active === "money" || active === "build" || active === "split" || active === "deal" ? "wide" : "std"}
       crumbs={h ? ["Holdings"] : listing ? ["Market"] : undefined}
       title={rec.address || bbl}
       meta={meta}
@@ -100,6 +103,7 @@ function FileFor({ bbl }: { bbl: string }) {
       {active === "leasing" && h && <RentRollTab game={game} parcels={parcels} bbl={bbl} h={h} />}
       {active === "money" && h && <MoneyTab game={game} parcels={parcels} bbl={bbl} h={h} />}
       {active === "build" && <BuildTab game={game} parcels={parcels} bbl={bbl} />}
+      {active === "split" && <SplitTab game={game} parcels={parcels} bbl={bbl} />}
       {/* A PLAT'S LOT: the builders' bids, their offers, and listing the plat to them. The classic
           card lives on the summary tab, which this file does not host, so the new UI had no way to
           list lots at all (tools/playtest.mjs, 2026-10-22). */}

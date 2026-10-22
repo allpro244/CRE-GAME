@@ -468,6 +468,9 @@ bool ACityBuilder::BuildFromText(const FString& Text)
 		UE_LOG(LogTemp, Display, TEXT("facade families: %d mapped onto %d kits"), FamilyKits.Num(), Kits.Num());
 	}
 	if (bFacades) Facades = MakeUnique<FBWFacadeBuilder>(RootComponent);
+	// the region's stores from the retail kit (-NoRetailKit: the generic massing, for an A/B)
+	if (!FParse::Param(FCommandLine::Get(), TEXT("NoRetailKit")) && FPackageName::DoesPackageExist(TEXT("/Game/BW/Retail/SM_RK_Storefront"))) Retail = MakeUnique<FBWRetailBuilder>(RootComponent);
+	else Retail.Reset();
 	BuildGround();
 	Current = City.Volumes;
 	BuildVolumes();
@@ -1083,7 +1086,7 @@ void ACityBuilder::BuildVolumes()
 			H = HashCombine(H, HashCombine(GetTypeHash(V.Facade), GetTypeHash(V.Fam)));
 			H = HashCombine(H, HashCombine(GetTypeHash(V.Tint.ToFColor(false)), GetTypeHash(V.Look.Kit)));
 			H = HashCombine(H, HashCombine(GetTypeHash(V.Look.bTint ? V.Look.Tint.ToFColor(false) : FColor::Black), GetTypeHash(V.Look.Ground + TEXT("|") + V.Look.Top)));
-			H = HashCombine(H, GetTypeHash(V.Look.Bays));
+			H = HashCombine(H, HashCombine(GetTypeHash(V.Look.Bays), GetTypeHash(V.Role)));
 			FVector2D C(0, 0);
 			for (const FVector2D& P : V.Ring) { H = HashCombine(H, HashCombine(GetTypeHash(FMath::RoundToInt(P.X)), GetTypeHash(FMath::RoundToInt(P.Y)))); C += P; }
 			if (V.Ring.Num()) C /= V.Ring.Num();
@@ -1102,6 +1105,8 @@ void ACityBuilder::BuildVolumes()
 		for (UProceduralMeshComponent* Old : Chunks) if (Old) Old->DestroyComponent();
 		Chunks.Reset();
 		if (Facades) Facades->Reset();
+		if (Retail) Retail->Reset();
+		for (TPair<FString, FVolRec>& R : Recs) for (TWeakObjectPtr<USceneComponent>& C : R.Value.Extra) if (C.IsValid()) C->DestroyComponent();
 		ClearRoofProps();
 		Recs.Reset();
 		Garbage = 0;
@@ -1155,6 +1160,7 @@ void ACityBuilder::BuildVolumes()
 		static const FTransform Nothing(FQuat::Identity, FVector::ZeroVector, FVector::ZeroVector);
 		for (const TPair<UInstancedStaticMeshComponent*, int32>& P : R.Inst)
 			if (IsValid(P.Key) && P.Key->IsValidInstance(P.Value)) { P.Key->UpdateInstanceTransform(P.Value, Nothing, true, false, true); Touched.Add(P.Key); ++Garbage; }
+		for (const TWeakObjectPtr<USceneComponent>& C : R.Extra) if (C.IsValid()) C->DestroyComponent();
 	};
 	if (bFull) for (int32 v = 0; v < Nv; ++v) DirtyTiles.Add(TileOf[v]);
 	else
@@ -1205,6 +1211,9 @@ void ACityBuilder::BuildVolumes()
 	{
 		constexpr int32 NumRoofs = 8;
 		FMeshBuf M, Roofs[NumRoofs], Lots, Stone, Party[3];
+		TArray<FMeshBuf> Shops;
+		Shops.SetNum(Retail ? FBWRetailBuilder::NumMats() : 0);
+		for (FMeshBuf& Sb : Shops) Sb.UVScale = 300.0;
 		Stone.UVScale = 300.0;
 		Lots.UVScale = 400.0;
 		for (FMeshBuf& R : Roofs) R.UVScale = 300.0;
@@ -1231,6 +1240,29 @@ void ACityBuilder::BuildVolumes()
 			Rec.Tile = TileOf[i];
 			if (Facades) Facades->Record = bInst ? &Rec.Inst : nullptr;
 			PropRecord = bInst ? &Rec.Inst : nullptr;
+			// A REGION STORE (a shopping centre's anchor or shops, a pad, the pylon): the retail kit
+			// dresses it once per laying; its body is meshed into the tile every time
+			if (Retail && !Vol.Role.IsEmpty() && !Vol.bVacant && !Vol.bFrame && Vol.Ring.Num() >= 3)
+			{
+				if (bInst)
+				{
+					Retail->Kit.Record = &Rec.Inst;
+					Retail->Kit.Extra = &Rec.Extra;
+					const FBWParcel* Pc = City.FindParcel(Vol.Bbl);
+					Retail->Dress(Vol, Pc ? Pc->Address : FString());
+					Retail->Kit.Record = nullptr;
+					Retail->Kit.Extra = nullptr;
+				}
+				TArray<FBWSolid> Solids;
+				Retail->Mass(Vol, Solids);
+				for (const FBWSolid& So : Solids)
+				{
+					FMeshBuf& Sb = Shops[FMath::Clamp(So.Mat, 0, Shops.Num() - 1)];
+					Sb.AddWalls(So.Ring, So.Z0, So.Z1, FLinearColor::White);
+					if (So.bTop) Sb.AddCap(So.Ring, So.Z1, FLinearColor::White);
+				}
+				continue;
+			}
 			// A HOUSE (the region expansion's suburbs): one instance of a house
 			// mesh (tools/make-house.py, a unit footprint) sized to its ring, the
 			// ridge along the longer side; no facade kit, no massing
@@ -1408,6 +1440,14 @@ void ACityBuilder::BuildVolumes()
 			Party[r].Emit(Mesh, Sec, true);
 			UMaterialInterface* Brick = LoadObject<UMaterialInterface>(nullptr, PartyPaths[r]);
 			Mesh->SetMaterial(Sec++, Brick ? Brick : VertexColorMaterial.Get());
+		}
+		// the stores' bodies, parapets and roofs, in the retail kit's renders and masonry
+		for (int32 r = 0; r < Shops.Num(); ++r)
+		{
+			if (!Shops[r].V.Num()) continue;
+			Shops[r].Emit(Mesh, Sec, true);
+			UMaterialInterface* Mi = LoadObject<UMaterialInterface>(nullptr, FBWRetailBuilder::MatPath(r));
+			Mesh->SetMaterial(Sec++, Mi ? Mi : VertexColorMaterial.Get());
 		}
 		TileMesh.Add(Tile, Mesh);
 	}
@@ -1657,6 +1697,45 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 	BuildVolumes();
 	UE_LOG(LogBWBuilder, Display, TEXT("month %d (%d): %d frames rising, %d built, %d cleared, %d owned by the player"),
 		View.Month, View.Year, Frames, Built, Cleared, Player.Num());
+}
+
+void ACityBuilder::SetLens(const FString& Key, const TMap<FString, double>& Values)
+{
+	// ONE TINTED SHEET OVER THE LOTS, like a planner's info map: the page's
+	// number for each deed (ui/next/lensData.ts, the same function the browser
+	// map paints), coloured on one ramp. Buildings stand through it, so the
+	// sheet sits just over the lot covers and under every roof.
+	if (!LensMesh)
+	{
+		LensMesh = NewObject<UProceduralMeshComponent>(this, TEXT("Lens"));
+		LensMesh->SetupAttachment(RootComponent);
+		LensMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		LensMesh->SetCastShadow(false);
+		LensMesh->RegisterComponent();
+	}
+	LensMesh->ClearAllMeshSections();
+	if (Key.IsEmpty() || Key == TEXT("none") || Values.Num() == 0) { LensMesh->SetVisibility(false); return; }
+	// 0..100 on a cool-to-hot ramp; "pencils" is 0..200 around 100 (bid over price);
+	// "owners" is a firm's index (-1 you, -2 a private holder)
+	static const FLinearColor Ramp[5] = { { 0.10f, 0.25f, 0.65f }, { 0.10f, 0.55f, 0.60f }, { 0.35f, 0.70f, 0.25f }, { 0.95f, 0.75f, 0.15f }, { 0.85f, 0.20f, 0.12f } };
+	auto RampAt = [](double T) { T = FMath::Clamp(T, 0.0, 1.0) * 4.0; const int32 I = FMath::Min(3, int32(T)); return FMath::Lerp(Ramp[I], Ramp[I + 1], float(T - I)); };
+	const bool bOwners = Key == TEXT("owners"), bPencils = Key == TEXT("pencils");
+	FMeshBuf M;
+	for (const TPair<FString, double>& V : Values)
+	{
+		const FBWParcel* P = City.FindParcel(V.Key);
+		if (!P || P->Ring.Num() < 3) continue;
+		FLinearColor C;
+		if (bOwners)
+			C = V.Value == -1 ? FLinearColor(0.95f, 0.70f, 0.10f) : V.Value == -2 ? FLinearColor(0.55f, 0.55f, 0.55f)
+				: FLinearColor::MakeFromHSV8(uint8((int32(V.Value) * 47) % 255), 170, 220);
+		else C = RampAt(bPencils ? V.Value / 200.0 : V.Value / 100.0);
+		M.AddCap(P->Ring, 40, C);
+	}
+	if (!M.V.Num()) { LensMesh->SetVisibility(false); return; }
+	M.Emit(LensMesh, 0, false);
+	LensMesh->SetMaterial(0, VertexColorMaterial);
+	LensMesh->SetVisibility(true);
 }
 
 void ACityBuilder::SetHighlight(const FBWParcel* Sel, const FBWParcel* Hover, double ViewDist)
@@ -2575,7 +2654,7 @@ void ACityBuilder::BuildMarkings()
 		TArray<FVector2D> Stores;
 		for (const FBWVolume& V : City.Volumes)
 		{
-			if (V.bVacant || V.Ring.Num() < 3 || V.Z1 < 300 || (V.Cls != TEXT("retail") && V.Cls != TEXT("industrial"))) continue;
+			if (V.bVacant || V.Ring.Num() < 3 || V.Z1 < 300 || !V.Deco.IsEmpty() || (V.Cls != TEXT("retail") && V.Cls != TEXT("industrial"))) continue;
 			FVector2D C(0, 0); for (const FVector2D& P : V.Ring) C += P; Stores.Add(C / V.Ring.Num());
 		}
 		const FLinearColor Planting(0.10f, 0.20f, 0.06f), Kerb(0.62f, 0.61f, 0.58f);
@@ -2622,6 +2701,8 @@ void ACityBuilder::BuildMarkings()
 						const double A0 = SW + k * SW;
 						const bool bIsland = k == 0 || k == NSt || (k % 21) == 0;
 						if (!InsideRing(In, At(A0 + SW * 0.5, (Rb0 + Rb1) * 0.5))) continue;
+						// (the pads' canopies and drive-through lanes keep their ground: RetailBuilder's keep-outs)
+						if (Retail && Retail->KeepOut.ContainsByPredicate([&](const TArray<FVector2D>& Ko) { return InsideRing(Ko, At(A0 + SW * 0.5, (Rb0 + Rb1) * 0.5)); })) continue;
 						if (bIsland)
 						{
 							Quad(Green, A0 + 15, A0 + SW - 15, Rb0 + 15, Rb1 - 15, Z + 12, Planting);
@@ -2640,8 +2721,9 @@ void ACityBuilder::BuildMarkings()
 							++Parked;
 							const double Yaw = YawA + (Side ? 180 : 0) + Rng.FRandRange(-4, 4);
 							// (no cabs in a suburban lot: vehicle13 is City Sample's taxi, the one with a roof light)
-							int32 Pick = Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - 2);
-							if (Pick >= 6) ++Pick;
+							// (vehicle12 wears the cab livery and roof sign too: neither belongs in a shopping centre's lot)
+							int32 Pick = Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - 3);
+							if (Pick >= 5) Pick += 2;
 							AddProp(CarMeshes[Pick], FTransform(FRotator(0, Yaw, 0), FVector(At(A0 + SW * 0.5 + Rng.FRandRange(-20, 20), (Rb0 + Rb1) * 0.5), Z - 7)), true);
 						}
 					}

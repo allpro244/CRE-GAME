@@ -35,10 +35,10 @@ import { assertFreshBundle } from "./fresh.mjs";
 import { leaseAtMarket } from "./leasepolicy.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const E = await import(join(HERE, ".engine.mjs"));
-const { loadCity } = await import(join(HERE, "city.mjs"));
+const E = await import(pathToFileURL(join(HERE, ".engine.mjs")).href);   // a file URL: Windows paths are not import specifiers
+const { loadCity } = await import(pathToFileURL(join(HERE, "city.mjs")).href);
 
 const { parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 const SEEDS = (process.env.SEEDS ?? "550991,12007,73303,11,22,33,4242").split(",").map(Number);
@@ -83,7 +83,9 @@ for (const k of [...IN, ...OUT]) coverage[k] = 0;
 
 for (const seed of SEEDS) {
   const parcels = JSON.parse(JSON.stringify(P0));
-  let g = E.firstListings(E.newGame(seed, parcels, undefined, SETUP), parcels, bbls);
+  // the region map (BW_CITY=region) is a region game: its growth, homes and land developers run on it
+  const where = process.env.BW_CITY === "region" ? { citySize: "region", cityLots: bbls.length } : undefined;
+  let g = E.firstListings(E.newGame(seed, parcels, undefined, SETUP, where), parcels, bbls);
   const START = g.cash;
   let built = false;
   let prev = { cash: liquidity(g), books: bookTotals(g), loc: g.loc?.balance ?? 0, dep: depositsHeld(g) };

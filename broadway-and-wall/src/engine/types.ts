@@ -858,6 +858,8 @@ export interface DevDraft {
   groundRetail?: "auto" | "on" | "off";
   /** How the construction loan converts at delivery (MDGA phase 5). Absent = the lender's default. */
   takeout?: "float" | "cap" | "fixed";
+  /** A product type (products.ts) for a retail or industrial scheme; absent = a street building. */
+  product?: string;
 }
 
 export interface BtsCommitment {
@@ -885,6 +887,11 @@ export interface BtsCommitment {
 
 export interface Development {
   bbl: string;
+  /** A product type (products.ts), and the tenants it was let to before ground broke. */
+  product?: string;
+  anchors?: BtsCommitment[];
+  /** The anchor's trade-area demand, measured when the scheme was priced. */
+  draw?: number;
   /**
    * THE SITE'S MARK THE DAY GROUND BROKE (value.ts ownedHoldingValueFromRec):
    * the land under a ground-up job carries at this until the building stands,
@@ -1041,6 +1048,12 @@ export interface BuiltOverride {
    * footage, one wide and one tall, were drawn with a 2:1 difference in volume.
    */
   cov?: number;
+  /** A product type (products.ts), when the building is one. */
+  product?: string;
+  /** The anchor's trade-area demand, measured at delivery (dev.ts tradeAreaDemand). */
+  draw?: number;
+  /** The anchors' names: the draw holds while one of them is in occupation. */
+  anchors?: string[];
   /** A detached house (homes.ts): drawn as a house, not a block (renderView deco "house"). */
   house?: boolean;
 }
@@ -1251,8 +1264,8 @@ export interface PlatDesign {
  */
 export interface PlatRecord {
   parent: string;
-  /** "grid": the land card's plain grid (citygen platTractLots); "design": drawn on the design desk */
-  template: "grid" | "design";
+  /** "grid": the land card's plain grid (citygen platTractLots); "design": drawn on the design desk; "industrial": a park's spine road and 2-20 acre lots (products.ts) */
+  template: "grid" | "design" | "industrial";
   lotSf: number;
   startM: number;
   doneM: number;
@@ -1278,6 +1291,43 @@ export interface PlatRecord {
  * (`soldM`, `price`) and closes the month the house is finished (`closedM`);
  * the lot then leaves the market as a family's home.
  */
+/**
+ * ONE LOT SPLIT (lotsplit.ts). The parent keeps its BBL on the lot that keeps its
+ * building (on vacant land, the largest lot): the remainder parcel, as most
+ * counties' assessors carry it. The other lots are new deeds (BBL 8e9 + n).
+ * `cuts` redraw the rings from the parent's (lotsplitGeom.ts cutPieces); the
+ * numbers in `pieces` are what the engine reads, so a reload regenerates the
+ * same parcels without any geometry.
+ */
+export interface SplitRecord {
+  id: number;
+  parent: string;
+  cuts: [[number, number], [number, number]][];
+  /** no cuts drawn: N equal lots along the frontage (lotsplitGeom.ts equalCuts), a firm's split */
+  n?: number;
+  /** in cutPieces order: BBL, area (sf), frontage and depth (ft), centre, corner, and any easement */
+  pieces: {
+    bbl: string; a: number; f: number; d: number; c: [number, number]; corner?: boolean;
+    /** a lot reached by an access easement over another lot (a flag lot): that lot's BBL */
+    over?: string;
+    /** sf of this lot under another lot's access easement */
+    burden?: number;
+  }[];
+  /** minor: 2-4 lots, no new street, signed off by the planning staff; major: 5+ lots, a plat before the board */
+  kind: "minor" | "major";
+  filedM: number;
+  doneM: number;
+  cost: number;
+  odds: number;
+  /** the mortgage: split across the lots by value (land paper), or the new lots released for a release payment */
+  debt?: { mode: "allocate" | "release" };
+  /** who filed it: the player, or a rival's id */
+  by?: string;
+  done?: boolean;
+  /** refused by the board (major) or lapsed (the deed changed under it): why */
+  lapsed?: string;
+}
+
 export interface HomeUnit {
   bbl: string;
   parent: string;
@@ -2460,6 +2510,15 @@ export interface Econ {
   homesG12?: number;
   /** Bumped whenever `homes` is rewritten, so the land memo (value.ts LAND_SCALARS) never serves a stale lot price. */
   homesStamp?: number;
+  /**
+   * THE LAND DEVELOPER'S BID FOR A FARM TRACT, $/sf (growth.ts): what a
+   * subdivision on it is worth today net of the board, the streets and the
+   * sell-out, at the market's median developer. The land read prices a tract
+   * at the larger of this and its farm-use value. Rewritten each quarter.
+   */
+  tractBid?: Record<string, number>;
+  /** Bumped whenever `tractBid` is rewritten (value.ts LAND_SCALARS). */
+  growthStamp?: number;
   /** Real construction cost at the opening — the mainland's real rent anchor (`locEff`). */
   costAnchorReal?: number;
   /** Island-vs-mainland location choice per class, smoothed at lease rollover (market.ts). */
@@ -3858,6 +3917,8 @@ export interface GameState {
   }[];
   cityJobs?: {
     bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number;
+    /** A product type (products.ts) and its anchor's trade-area demand, when the firm built one. */
+    product?: string; draw?: number;
     /** The spec the developer built to (0..1, 0.5 = market) — see `developerLook`. */
     spec?: number;
     /**
@@ -3979,8 +4040,17 @@ export interface GameState {
   plats?: Record<string, PlatRecord>;
   /** Parent tracts retired into their lots (a deed with no land left; resolveRec). */
   platted?: Record<string, number>;
+  // ---- LOT SPLITS (lotsplit.ts): any deed cut by straight lines ----
+  /** Every split filed, in the order filed: the recipe (the cuts and each lot's numbers) that regenerates the lots on load. */
+  splits?: SplitRecord[];
+  /** The last split lot number handed out (lot BBLs are 8e9 + this). */
+  splitSeq?: number;
+  /** When the board last refused a major subdivision on each deed (the twelve-month resubmittal bar, landdev.ts REFILE_BAR_M). */
+  splitRefusedM?: Record<string, number>;
   /** ---- HOMEBUILDING (homes.ts; the region map, Phase 3) ---- the houses going up and sold on the plats, yours and the builders'. */
   homes?: HomesState;
+  /** ---- THE REGION GROWING (growth.ts, roads.ts; the region map, Phase 4) ---- */
+  growth?: import("./growth").GrowthState;
   /** @deprecated legacy single-application save; migrated on the next filing/tick. */
   varianceApp?: VarianceApplication;
   landmarks?: Record<string, number>;        // bbl -> month designated

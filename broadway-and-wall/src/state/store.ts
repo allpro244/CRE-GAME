@@ -49,6 +49,8 @@ import { cityList, CITY_PLAN, platTractLots, platTractDesign, platDesignLL, desi
 import { designRecipe, fileDesignedRezoning as fileDesignedRezoningE, startDesignedPlat } from "@/engine/platdesign";
 import type { PlatDesign } from "@/engine/types";
 import { fileEntitlement, startPlat, materializePlats, lotBbl } from "@/engine/landdev";
+import { roadFeatures } from "@/engine/roads";
+import { materializeNeighbourhoods } from "@/engine/unpack";
 import { acceptLotOffer, declineLotOffer, listLotsToBuilders, delistLots as delistPlatLots } from "@/engine/homes";
 import { cutTownOffThread } from "@/state/townClient";
 import type { TownRequest } from "@/state/townWorker";
@@ -361,7 +363,7 @@ interface AppState {
   recapBuyout: (bbl: string) => void;
   cancelRaise: (bbl: string) => void;
   closeRaiseNow: (bbl: string) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed"; syndicate?: { outside: number } }, lender?: string, spec?: number) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed"; syndicate?: { outside: number }; product?: import("@/engine/products").ProductKey }, lender?: string, spec?: number) => void;
   /** The scheme on the Build desk, drawn on its lot in the 3D city while you design it. */
   designPreview: DesignPreview | null;
   /** The landmark forms the previewed lot can hold, as the 3D city drew it (null until it has). */
@@ -2550,6 +2552,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (savedSeed === undefined) {
       // a land developer's finished plats are deeds: put their lots in the table before asking (engine/landdev.ts)
       if (saved.plats) materializePlats(saved, parcels);
+      if (saved.growth?.unpacked) materializeNeighbourhoods(saved, parcels);
       const fits = Object.keys(saved.holdings).every((b) => parcels[b])
         && saved.listings.every((l) => parcels[l.bbl]);
       if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -2937,5 +2940,32 @@ useStore.subscribe((st) => {
       ...(vols.length ? { buildings3d: [...((city as unknown as { buildings3d: unknown[] }).buildings3d ?? []), ...vols] } : {}),
     } as GeneratedCity,
     bbls: [...st.bbls],
+  });
+});
+
+// ROADS BUILT MID-GAME (engine/roads.ts, the region's growth): a widened arterial or a freeway segment
+// the state opened is drawn as a carriageway and its centreline, once, and the new city goes to Unreal
+// (unrealHost resends on a new `city`), the same way a plat's streets do. The city remembers what it drew.
+useStore.subscribe((st) => {
+  const g = st.game, city = st.city as (GeneratedCity & { roadsDrawn?: string[] }) | null;
+  if (!g?.growth?.roads?.opened.length || !city) return;
+  const drawn = new Set(city.roadsDrawn ?? []);
+  const todo = roadFeatures(g).filter((r) => !drawn.has(`${r.kind}:${r.id}`));
+  if (!todo.length) return;
+  const ctx = city.context as GeoJSON.FeatureCollection;
+  const add: GeoJSON.Feature[] = [];
+  for (const r of todo) {
+    add.push({ type: "Feature", geometry: { type: "LineString", coordinates: r.pts }, properties: { kind: "centerline", w: r.w, mk: 0, cls: r.cls, built: r.m } });
+    for (let k = 0; k + 1 < r.pts.length; k++) {
+      const a = r.pts[k], b = r.pts[k + 1];
+      const kx = 111320 * Math.cos((a[1] * Math.PI) / 180), ky = 111320;
+      const dx = (b[0] - a[0]) * kx, dy = (b[1] - a[1]) * ky, L = Math.hypot(dx, dy) || 1;
+      const ox = ((-dy / L) * r.w / 2) / kx, oy = ((dx / L) * r.w / 2) / ky;
+      const ring: [number, number][] = [[a[0] + ox, a[1] + oy], [b[0] + ox, b[1] + oy], [b[0] - ox, b[1] - oy], [a[0] - ox, a[1] - oy]];
+      add.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [[...ring, ring[0]]] }, properties: { kind: "pavement" } });
+    }
+  }
+  useStore.setState({
+    city: { ...city, roadsDrawn: [...drawn, ...todo.map((r) => `${r.kind}:${r.id}`)], context: { ...ctx, features: [...ctx.features, ...add] } } as GeneratedCity,
   });
 });

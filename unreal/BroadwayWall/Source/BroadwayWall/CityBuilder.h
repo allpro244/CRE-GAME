@@ -7,6 +7,7 @@
 #include "CityData.h"
 #include "RenderView.h"
 #include "FacadeBuilder.h"
+#include "RetailBuilder.h"
 #include "GameFramework/Actor.h"
 #include "CityBuilder.generated.h"
 
@@ -39,6 +40,8 @@ public:
 	 *  the lot line alone. Null clears. */
 	/** ViewDist: the camera's distance (cm), so the band keeps about the same width on screen. */
 	void SetHighlight(const FBWParcel* Selected, const FBWParcel* Hovered, double ViewDist = 0);
+	/** THE LENS (ui-revamp step 7): tint each lot by the page's number for it (ui/next/lensData.ts); "none" or empty clears. */
+	void SetLens(const FString& Key, const TMap<FString, double>& Values);
 
 	/** Redraw for this month: lots the economy changed replace the generator's buildings. */
 	void ApplyView(const FBWRenderView& View);
@@ -91,6 +94,8 @@ private:
 	TMap<FString, TArray<FString>> FamilyKits;
 	TMap<FString, FString> FamilyLike;
 	TUniquePtr<FBWFacadeBuilder> Facades;
+	/** The region's shopping centres, pads and pylons, from the kit (RetailBuilder). */
+	TUniquePtr<FBWRetailBuilder> Retail;
 	/** What stands now: the generator's volumes minus overridden lots, plus the economy's. */
 	TArray<FBWVolume> Current;
 	TArray<FVector> Sites;
@@ -100,6 +105,8 @@ private:
 	void SetPiece(const FBWVolume& V);
 	UPROPERTY()
 	TObjectPtr<class UProceduralMeshComponent> Highlight;
+	UPROPERTY()
+	TObjectPtr<class UProceduralMeshComponent> LensMesh;
 	const FBWParcel* HiSel = nullptr;
 	const FBWParcel* HiHover = nullptr;
 	double HiScale = 1;
@@ -126,6 +133,8 @@ private:
 		bool bDressed = false;
 		FIntPoint Tile = FIntPoint::ZeroValue;
 		TArray<TPair<UInstancedStaticMeshComponent*, int32>> Inst;
+		/** Components laid for it alone (a store's lettering), destroyed with it. */
+		TArray<TWeakObjectPtr<USceneComponent>> Extra;
 	};
 	TMap<FString, FVolRec> Recs;
 	/** Instances hidden (scaled to nothing) rather than removed, since removing renumbers the rest; a full rebuild compacts them. */

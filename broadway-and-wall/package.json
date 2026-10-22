@@ -39,6 +39,8 @@
     "land": "node test/land.mjs",
     "region": "node test/region.mjs",
     "landdev": "node test/landdev.mjs",
+    "lotsplit": "node test/lotsplit.mjs",
+    "products": "node test/products.mjs",
     "platdesign": "node test/platdesign.mjs",
     "homebuild": "node test/homebuild.mjs",
     "variety": "node test/citygen-variety.mjs",

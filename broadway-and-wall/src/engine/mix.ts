@@ -91,6 +91,13 @@ export function mixOf(rec: Pick<ParcelRecord, "class" | "bbl" | "floors" | "unit
   const cls = rec.class as string;
   if (cls === "land") return {};
   if (cls === "mixed") return deriveMix(rec as ParcelRecord);
+  // The same one-key object as `{ [cls]: 1 }`, as a literal shape (a computed key is the slow path).
+  switch (cls) {
+    case "office": return { office: 1 };
+    case "retail": return { retail: 1 };
+    case "multifamily": return { multifamily: 1 };
+    case "industrial": return { industrial: 1 };
+  }
   return { [cls as BuiltClass]: 1 };
 }
 

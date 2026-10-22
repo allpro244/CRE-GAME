@@ -56,7 +56,7 @@ public:
 	/** Ground point the camera looks at, and how it looks at it. */
 	FVector Focus = FVector::ZeroVector;
 	double Yaw = 0, Pitch = -45, Distance = 150000;
-	double MinDistance = 3000, MaxDistance = 600000;
+	double MinDistance = 3000, MaxDistance = 2500000;   // 25 km: the region expansion is 10 km across
 
 	/** Phase 4 camera modes: 1 strategy (orbit a focus), 2 drone (a slow circling
 	 *  flyover), 3 street (eye height, walk with WASD, look with right-drag). */

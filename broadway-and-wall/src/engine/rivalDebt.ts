@@ -85,6 +85,30 @@ function buildLoanIx(L: Record<string, CityLoan>): LoanIx {
   }
   return { book: L, rev: LOAN_REV, by };
 }
+/** An array-index key: for..in walks these first, in ascending numeric order. */
+const isIndexKey = (k: string) => /^(?:0|[1-9][0-9]*)$/.test(k) && Number(k) <= 4294967294;
+/**
+ * PUT A ROW ON THE RECORD, keeping the index current where that is the same
+ * as rebuilding it: a NEW numeric key (every BBL is one) sits among the
+ * numeric keys in ascending order, ahead of every other key, so it goes into
+ * its borrower's list at exactly that place. Anything else — a key already on
+ * the record, a non-numeric key, an index that was not current — just bumps.
+ */
+function loanPut(L: Record<string, CityLoan>, key: string, row: CityLoan): void {
+  const ix = LOAN_IX;
+  const current = !!ix && ix.book === L && ix.rev === LOAN_REV;
+  const existed = Object.prototype.hasOwnProperty.call(L, key);
+  L[key] = row;
+  if (!current || existed || !isIndexKey(key)) { loanBookTouched(); return; }
+  const n = Number(key);
+  const e = ix!.by.get(row.obligorId);
+  if (!e) { ix!.by.set(row.obligorId, { keys: [key], rows: [row] }); return; }
+  let i = 0;
+  while (i < e.keys.length && isIndexKey(e.keys[i]) && Number(e.keys[i]) < n) i++;
+  e.keys.splice(i, 0, key);
+  e.rows.splice(i, 0, row);
+}
+
 /** This firm's rows in record order, off the index; null when the record is empty or absent. */
 function obligorRows(s: GameState, id: string): CityLoan[] | null {
   const L = s.cityLoans;
@@ -196,6 +220,40 @@ export function deskRoom(s: GameState, l: Lender, obligorId: string, opening = f
   return Math.min(nameRoom, room);
 }
 
+/** `deskRoom(s, l, obligorId, opening)` for every desk in `s.lenders`, off one walk of the record. */
+function deskRooms(s: GameState, obligorId: string, opening: boolean): Map<Lender, number> {
+  const acc = new Map<string, { onDesk: number; exposure: number }>();
+  for (const l of s.lenders ?? []) if (!acc.has(l.name)) acc.set(l.name, { onDesk: 0, exposure: 0 });
+  const L = s.cityLoans;
+  if (L) for (const k in L) {
+    const x = L[k];
+    if (x.heldBy) continue;
+    const a = acc.get(x.lender);
+    if (!a) continue;
+    a.onDesk += x.balance;
+    if (x.obligorId === obligorId) a.exposure += x.balance;
+  }
+  for (const r of s.rivals ?? []) {
+    if ((r.lineBal ?? 0) > 0) {
+      const a = r.lineBank === undefined ? undefined : acc.get(r.lineBank);
+      if (!a) continue;
+      a.onDesk += r.lineBal!;
+      if (r.id === obligorId) a.exposure += r.lineBal!;
+    }
+  }
+  const out = new Map<Lender, number>();
+  for (const l of s.lenders ?? []) {
+    if (l.failedM !== undefined) { out.set(l, 0); continue; }
+    const a = acc.get(l.name)!;
+    const nameRoom = l.book * singleNameCap(l.kind) - a.exposure;
+    const room = opening
+      ? l.book * 0.75 - a.onDesk
+      : l.capital / Math.max(0.01, targetCapital(l.name)) - l.book;
+    out.set(l, Math.min(nameRoom, room));
+  }
+  return out;
+}
+
 /** The sheets a firm on this street calls for a mortgage, by what the collateral is. */
 function sheetsFor(noiYr: number): string[] {
   // The ladder the player's balloon walks (debt.ts balloonLadder).
@@ -218,6 +276,10 @@ export function pickDesk(
 ): Origination {
   type C = Origination & { principal: number; room: number };
   const cands: C[] = [];
+  // Every desk's `deskRoom` off one walk of the record, worked out the first
+  // time one is asked for: nothing below writes a loan, a line or a book.
+  let rooms: Map<Lender, number> | null = null;
+  const roomOf = (l: Lender) => (rooms ??= deskRooms(s, obligorId, o.opening ?? false)).get(l) ?? deskRoom(s, l, obligorId, o.opening);
   for (const id of sheetsFor(noiYr)) {
     const p = productById(id);
     if (!p || !windowOpen(s, p)) continue;
@@ -225,7 +287,7 @@ export function pickDesk(
     if (!l || l.failedM !== undefined) continue;
     const q = quote(s, p, value, Math.max(0, noiYr), o.klass, true, p.bridge ? o.stab : undefined, o.condition);
     if (!(q.principal > 0)) continue;
-    cands.push({ lender: p.lender, ratePct: q.ratePct, termM: p.termM, product: p.id, principal: q.principal, room: deskRoom(s, l, obligorId, o.opening) });
+    cands.push({ lender: p.lender, ratePct: q.ratePct, termM: p.termM, product: p.id, principal: q.principal, room: roomOf(l) });
   }
   const funds = cands.filter((c) => c.principal >= amount * 0.98 && c.room >= amount)
     .sort((a, b) => a.ratePct - b.ratePct);
@@ -237,7 +299,7 @@ export function pickDesk(
   // construction takeout already committed) sits with the desk with the most
   // room, at the street's coupon for that desk's benchmark.
   const live = (s.lenders ?? []).filter((l) => l.failedM === undefined && l.kind !== "fund");
-  const best = live.sort((a, b) => deskRoom(s, b, obligorId, o.opening) - deskRoom(s, a, obligorId, o.opening))[0];
+  const best = live.sort((a, b) => roomOf(b) - roomOf(a))[0];
   const fallback = noiYr > 0 ? productById("harbor") : productById("land");
   return {
     lender: best?.name ?? fallback.lender,
@@ -280,8 +342,7 @@ export function originateRow(
     row.spread = +(row.ratePct - idx).toFixed(2);
     row.cap = { strike: +(idx + 1.0).toFixed(2), expiresM: originM + Math.min(d.termM, CAP_TERM_M) };
   }
-  s.cityLoans[bbl] = row;
-  loanBookTouched();
+  loanPut(s.cityLoans, bbl, row);
   syncDebt(s, r);
   return row;
 }

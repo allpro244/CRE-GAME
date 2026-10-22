@@ -2488,6 +2488,7 @@ export function listForSale(
   if (h.renovatingUntilM !== undefined && s.month < h.renovatingUntilM) {
     return { s, err: "Can't market it mid-renovation — finish the work first." };
   }
+  if (s.homes?.units[bbl]) return { s, err: "A house is going up on it: it sells to a family with the house (the homes desk)." };
   if (s.developments[bbl]) return { s, err: "Can't sell with cranes on site — deliver the building first." };
   // It cannot be in two processes at once. A building shown to the market both
   // on its own and inside a bundle is a building whose seller does not know

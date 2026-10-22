@@ -11,6 +11,7 @@ import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
+import { homeLotBidPsf } from "./homeprice";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -1066,9 +1067,37 @@ export type LandRead = {
   holder: number;
   texture: number;
   /** Which bid set the price, and the scheme behind the builder's. */
-  winner: "builder" | "holder" | "texture";
+  winner: "builder" | "holder" | "texture" | "farm" | "homes";
   scheme: ResidualScheme | null;
+  /** A homebuilder's bid for a finished lot on a plat, $/sf (homeprice.ts homeLotBidPsf); 0 elsewhere. */
+  homes?: number;
 };
+
+/**
+ * WHAT AN ACRE IS WORTH AS A FARM, $/sf of land (a farm or woodlot tract, `rec.ag`; 0 for
+ * anything else). The income approach a farmland appraiser uses: the cash
+ * rent a tenant farmer pays, capitalised at the rent-to-value ratio farmland
+ * actually trades at.
+ *
+ *   Cropland cash rent, Illinois, 2024: $261/acre (USDA NASS, Cash Rents
+ *   Survey, Aug 2024). Pasture and woodland, Illinois, 2024: about $40/acre
+ *   (same survey, pasture).
+ *   Rent-to-value: Illinois cropland averaged $9,600/acre in 2024 (USDA NASS
+ *   Land Values Summary, Aug 2024): 261 / 9,600 = 2.7%.
+ *
+ * Both are calibrated facts, carried in today's dollars by the price level.
+ * The cap does not move with the policy rate here — farmland's ratio has been
+ * among the stickiest in real estate — which is a simplification, stated.
+ */
+const FARM_RENT_PER_ACRE = { crop: 261, wood: 40 };
+const FARM_CAP = 261 / 9600;
+export function farmUsePsf(rec: ParcelRecord, econ: Econ): number {
+  // a farm keeps its farm bid when rezoned: a rezoning permits building, it does not stop the corn
+  if (!rec.ag || !(rec.lotArea > 0)) return 0;
+  const rent = rec.ag === "wood" ? FARM_RENT_PER_ACRE.wood : FARM_RENT_PER_ACRE.crop;
+  // in this town's money: its price level (market.ts EVERY TOWN HAS ITS OWN DOLLARS) and the years since
+  return (rent / FARM_CAP / 43560) * (econ.priceLevel ?? 1) * (econ.cpi ?? 1);
+}
 
 /**
  * DOES BUILDING PAY, CITY-WIDE, CLASS BY CLASS — one pro forma, read by
@@ -1283,6 +1312,9 @@ const LAND_DICTS = [
 const LAND_SCALARS = [
   "locIdxMean", "landIdx", "cpi", "infillShare", "costIdx", "indexRate",
   "creditIdx", "phase", "constructionAppetite", "vintageMean",
+  // the homes market (homeprice.ts homeLotBidPsf) reads econ.homes, wageIdx and
+  // population; homes.ts bumps `homesStamp` whenever econ.homes is rewritten
+  "homesStamp", "wageIdx", "population", "homesG12",
 ] as const;
 const LAND_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 const LAND_MKT_LEN = LAND_SCALARS.length + LAND_DICTS.length * (1 + LAND_CLASSES.length);
@@ -1522,11 +1554,31 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
     base = floor;
     winner = "texture";
   }
+  // FARMLAND HAS AN INCOME OF ITS OWN (the region map). A tract zoned for
+  // agriculture carries no building envelope, so every bid above is near zero;
+  // what it does carry is a crop, and the farmer next door is a real buyer at
+  // the land's farm-use value. That bid stands under the others.
+  // For a farm the comparable sales ARE farm sales: the town's urban texture
+  // floor is not evidence about an acre of corn, so a farm prices at the best
+  // of its farm bid and what a builder or a holder would pay.
+  const farm = farmUsePsf(rec, econ);
+  if (rec.ag) {
+    base = farm; winner = "farm";
+    if (builder > base) { base = builder; winner = "builder"; }
+    if (holder > base) { base = holder; winner = "holder"; }
+  } else if (farm > base) { base = farm; winner = "farm"; }
+  // A FINISHED LOT ON A PLAT HAS A BUYER OF ITS OWN: the homebuilder, who
+  // pays the residual on the house it carries, discounted for its place in
+  // the plat's sell-out (homeprice.ts). Where no homes market reaches it the
+  // bid is 0 and the lot keeps the farm's texture, as it did in Phase 2.
+  const homes = rec.homeLot ? homeLotBidPsf(rec, econ) : 0;
+  if (homes > base) { base = homes; winner = "homes"; }
   return {
     psf: base,
     builder, holder, texture: floor,
     winner,
     scheme,
+    homes,
   };
 }
 
@@ -2339,8 +2391,14 @@ function childrenOf(m: Record<string, string>, bbl: string): readonly string[] {
 }
 
 function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl: string): ParcelRecord | null {
-  const rec = parcels[bbl];
+  let rec = parcels[bbl];
   if (!rec) return null;
+  // LAND DEVELOPMENT (landdev.ts). A tract the board rezoned carries its new
+  // district and envelope; a tract cut into lots has passed its land to them —
+  // a deed with no buildable area left, exactly as a lot folded into a site.
+  const rz = s.rezoned?.[bbl];
+  if (rz) rec = { ...rec, zoneDist: rz.zone, farMaxComm: rz.far, farMaxRes: rz.far };
+  if (s.platted?.[bbl]) return { ...(resolveBase(s, rec) ?? rec), lotArea: 0, farMaxComm: 0, farMaxRes: 0 };
   // ASSEMBLED SITES. A merged lot's land has moved into its parent: the parent
   // is as big as the sum of the deeds, and the child is a deed with no
   // buildable area left in it. Everything downstream — the envelope, the land
@@ -4446,6 +4504,14 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
     if (!rec) continue;
     const r = s.rivals?.find((x) => x.id === n.obligorId);
     nw += Math.min(n.basis, Math.round(collateralAsIs(rec, s.econ, r?.occ ?? 0.5)));
+  }
+  // HOUSES YOU ARE BUILDING OR HAVE NOT YET CLOSED CARRY AT COST (homes.ts):
+  // the lot is in its deed's mark above; the frame is the money sunk in it,
+  // which is what a homebuilder's balance sheet carries as inventory.
+  for (const u of Object.values(s.homes?.units ?? {})) {
+    if (u.by !== "you" || u.closedM !== undefined || !s.holdings[u.bbl]) continue;
+    nw += u.spent;
+    gav += u.spent;
   }
   nw -= s.loc?.balance ?? 0;   // the line is real money owed
   // SECURITY DEPOSITS ARE NOT YOUR MONEY. They arrive as cash at signing and

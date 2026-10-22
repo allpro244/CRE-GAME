@@ -32,10 +32,10 @@
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const E = await import(join(HERE, ".engine.mjs"));
-const { makeCity, REGION, platTractLots } = await import(join(HERE, "..", "src", "citygen", "index.mjs"));
+const E = await import(pathToFileURL(join(HERE, ".engine.mjs")).href);
+const { makeCity, REGION, platTractLots } = await import(pathToFileURL(join(HERE, "..", "src", "citygen", "index.mjs")).href);
 
 const seed = Number(process.env.BW_SEED ?? 1);
 const city = makeCity(REGION, seed);

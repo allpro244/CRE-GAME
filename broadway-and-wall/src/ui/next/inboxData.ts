@@ -402,6 +402,26 @@ export function buildInbox(g: GameState, parcels: ParcelTable | null): InboxItem
       verbs: [{ label: "File", run: () => S().select(p.parent) }],
     });
   }
+  // LOT SPLITS (lotsplit.ts): one filed and waiting, one just recorded (three months), one refused or lapsed
+  for (const sp of g.splits ?? []) {
+    if (sp.by) continue;
+    const at = sp.done ? sp.doneM : sp.lapsed ? sp.doneM : -1;
+    if (!sp.done && !sp.lapsed) {
+      items.push({
+        key: `split:${sp.id}`, sev: "info", bbl: sp.parent, dueM: sp.doneM,
+        subject: addr(sp.parent),
+        facts: `Split ${mo(sp.doneM)} · ${sp.pieces.length} lots · ${usd(sp.cost)}`,
+        verbs: [{ label: "File", run: () => S().openProperty(sp.parent, "summary") }],
+      });
+    } else if (g.month - at <= 3) {
+      items.push({
+        key: `split-${sp.done ? "rec" : "lapsed"}:${sp.id}`, sev: sp.done ? "info" : "decide", bbl: sp.parent, dueM: at,
+        subject: addr(sp.parent),
+        facts: sp.done ? `Split recorded · ${sp.pieces.length} deeds` : clipWords(`Split refused · ${sp.lapsed}`, 8),
+        verbs: [{ label: "File", run: () => S().openProperty(sp.parent, "summary") }],
+      });
+    }
+  }
   for (const r of rolls) {
     const ln = g.holdings[r.bbl]?.loan;
     const it: InboxItem = {

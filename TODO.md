@@ -4,6 +4,14 @@ Owner: chief of staff (Claude). Updated 2026-10-21 evening. Integration branch:
 `claude/region-preview` (region map, land dev, homebuilding, commerce, perf).
 Each item: **who** · status. "You" = the owner.
 
+## Now (2026-10-22)
+- Merged since the list was written: #411 #413 #414 #415 #417 #418 #419 #421 #422 #423 #425 #426 #427 #428 #429. CI is a ~35 s smoke test; I merge PRs myself.
+- In flight: product types #424 (conflict fix), growth #420 (after #424), UI steps 6–8, procedural retail building generator (then houses and industrial).
+- New gaps from the end-to-end check:
+  - Floodplain-only tracts (60–100% flood) offer a 0-lot plat. The land card should say "floodplain, not developable" and skip the desk.
+  - The design desk's default grid fits 10–25% fewer lots than the improved grid (plat-yield fix). Unify on the better layout.
+  - Plat profitability: some near-town tracts pay (IRR 20–70% on seeds 3 and 6); high-rate maps (index ~7%) lose everywhere. Measured, realistic, keep.
+
 ## A. Blocking / needs you
 1. **Merge PR #411 on GitHub** — its CI "smoke" job runs the whole suite and has sat >4 h; my merges are blocked by the CI gate. Everything behind it (#413 #414 #415 #416, the region branch) waits on it. · **You** (tap Merge) — or tell me to make CI fast (A2).
 2. **Make CI a smoke test, not the full suite** (minutes, not hours) so PRs can land. · Me · not started

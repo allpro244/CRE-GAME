@@ -2691,7 +2691,7 @@ export function retailDemandOf(rec: { demandScore: number; retailDraw?: number }
  * full walk did. Per table cut (tableVersion.ts).
  */
 const CELL_DEG = 0.003;
-type DrawGrid = { p: object; v: number; keys: string[]; cells: Map<string, number[]>; near: (lon: number, lat: number, dLon: number, dLat: number) => number[] };
+type DrawGrid = { p: object; v: number; lon0: number; lon1: number; lat0: number; lat1: number; keys: string[]; cells: Map<string, number[]>; near: (lon: number, lat: number, dLon: number, dLat: number) => number[] };
 let DRAW_GRID: DrawGrid | null = null;
 function drawGrid(parcels: Record<string, ParcelRecord>): DrawGrid {
   const v = tableVersion(parcels);
@@ -2699,12 +2699,14 @@ function drawGrid(parcels: Record<string, ParcelRecord>): DrawGrid {
   const keys: string[] = [];
   const cells = new Map<string, number[]>();
   let gx0 = Infinity, gx1 = -Infinity, gy0 = Infinity, gy1 = -Infinity;
+  let lon0 = Infinity, lon1 = -Infinity, lat0 = Infinity, lat1 = -Infinity;
   for (const b in parcels) {
     const c = parcels[b].centroid;
     if (!c) continue;
     const i = keys.length;
     keys.push(b);
     const cx = Math.floor(c[0] / CELL_DEG), cy = Math.floor(c[1] / CELL_DEG);
+    if (c[0] < lon0) lon0 = c[0]; if (c[0] > lon1) lon1 = c[0]; if (c[1] < lat0) lat0 = c[1]; if (c[1] > lat1) lat1 = c[1];
     if (cx < gx0) gx0 = cx; if (cx > gx1) gx1 = cx; if (cy < gy0) gy0 = cy; if (cy > gy1) gy1 = cy;
     const k = cx + ":" + cy;
     const l = cells.get(k);
@@ -2723,14 +2725,43 @@ function drawGrid(parcels: Record<string, ParcelRecord>): DrawGrid {
     return out.sort((a, b) => a - b);
   };
   const all = keys.map((_, i) => i);
-  DRAW_GRID = { p: parcels, v, keys, cells, near };
+  DRAW_GRID = { p: parcels, v, lon0, lon1, lat0, lat1, keys, cells, near };
   return DRAW_GRID;
 }
 const DRAW_MEMO = new Map<string, number>();
-const DRAW_ON: unknown[] = [null, null, null, NaN];
+const DRAW_ON: unknown[] = [null, null, null, NaN, NaN];
+/**
+ * THE TOWN AS THE MONTH'S FIRST TRADE-AREA READ FOUND IT: each deed's floor area and floor
+ * area x live demand, in grid order, and the whole table's two sums. Every trade area read
+ * in the month sums out of this.
+ *
+ * It used to read each deed's area and live demand afresh for every lot and radius, and
+ * memoise the answer per lot for the month — so a lot first asked after a house finished
+ * (homes.ts writes `built` in place, which the memo key cannot see) read a different town
+ * from a lot asked before it, and which lot was asked first was an accident of call order.
+ * Now the month's trade areas all read one town. A deliberate change (results move; see the
+ * commit), and the walk per lot is a sum over two arrays.
+ */
+let DRAW_SNAP: { area: Float64Array; ad: Float64Array; W: number; D: number } | null = null;
+function drawSnap(s: GameState, parcels: Record<string, ParcelRecord>, G: DrawGrid) {
+  if (DRAW_SNAP) return DRAW_SNAP;
+  const n = G.keys.length, area = new Float64Array(n), ad = new Float64Array(n);
+  let W = 0, D = 0;
+  for (let i = 0; i < n; i++) {
+    const b = G.keys[i], p = parcels[b];
+    const a = s.built?.[b]?.bldgArea ?? p.bldgArea ?? 0;
+    if (!(a > 0)) continue;
+    area[i] = a;
+    ad[i] = a * liveDemand(s, p.demandScore, p.block);
+    W += a; D += ad[i];
+  }
+  DRAW_SNAP = { area, ad, W, D };
+  return DRAW_SNAP;
+}
 export function tradeAreaDemand(s: GameState, parcels: Record<string, ParcelRecord>, bbl: string, radiusM: number): number {
-  if (DRAW_ON[0] !== parcels || DRAW_ON[1] !== s.built || DRAW_ON[2] !== s.blockD || DRAW_ON[3] !== s.month) {
-    DRAW_MEMO.clear(); DRAW_ON[0] = parcels; DRAW_ON[1] = s.built; DRAW_ON[2] = s.blockD; DRAW_ON[3] = s.month;
+  if (DRAW_ON[0] !== parcels || DRAW_ON[1] !== s.built || DRAW_ON[2] !== s.blockD || DRAW_ON[3] !== s.month || DRAW_ON[4] !== tableVersion(parcels)) {
+    DRAW_MEMO.clear(); DRAW_SNAP = null;
+    DRAW_ON[0] = parcels; DRAW_ON[1] = s.built; DRAW_ON[2] = s.blockD; DRAW_ON[3] = s.month; DRAW_ON[4] = tableVersion(parcels);
   }
   const k = `${bbl}|${radiusM}`;
   const hit = DRAW_MEMO.get(k);
@@ -2748,17 +2779,20 @@ export function tradeAreaDemand(s: GameState, parcels: Record<string, ParcelReco
   // distance settles every deed clearly inside or clearly outside (a relative margin far
   // above rounding), and hypot is asked only within a hair of the edge.
   const G = drawGrid(parcels);
+  const S = drawSnap(s, parcels, G);
+  const cand = G.near(c0[0], c0[1], radiusM / mLon, radiusM / M_PER_DEG_LAT);
   const r2lo = radiusM * radiusM * (1 - 1e-9), r2hi = radiusM * radiusM * (1 + 1e-9);
-  for (const i of G.near(c0[0], c0[1], radiusM / mLon, radiusM / M_PER_DEG_LAT)) {
-    const b = G.keys[i];
-    const p = parcels[b];
-    const c = p.centroid;
+  // a circle round the whole town is the whole town: the month's two sums, added in the same order
+  const fx = Math.max(Math.abs(G.lon0 - c0[0]), Math.abs(G.lon1 - c0[0])) * mLon;
+  const fy = Math.max(Math.abs(G.lat0 - c0[1]), Math.abs(G.lat1 - c0[1])) * M_PER_DEG_LAT;
+  if (fx * fx + fy * fy < r2lo) { w = S.W; d = S.D; }
+  else for (const i of cand) {
+    if (!(S.area[i] > 0)) continue;
+    const c = parcels[G.keys[i]].centroid;
     const dx = (c[0] - c0[0]) * mLon, dy = (c[1] - c0[1]) * M_PER_DEG_LAT, d2 = dx * dx + dy * dy;
     if (d2 > r2hi || (d2 >= r2lo && Math.hypot(dx, dy) > radiusM)) continue;
-    const area = s.built?.[b]?.bldgArea ?? p.bldgArea ?? 0;
-    if (!(area > 0)) continue;
-    w += area;
-    d += area * liveDemand(s, p.demandScore, p.block);
+    w += S.area[i];
+    d += S.ad[i];
   }
   const out = +(w > 0 ? d / w : (me.demandScore ?? 50)).toFixed(2);
   DRAW_MEMO.set(k, out);

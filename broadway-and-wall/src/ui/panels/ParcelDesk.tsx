@@ -39,7 +39,7 @@ import { DevelopSection, DevelopGlance, ReuseSection } from "@/ui/panels/Develop
 import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openViewOn, Neighbourhood, Row, STYLE_WORD, ShortBy } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
 import { entitleQuote, platQuote, PLAT_LOT_SIZES, INDUSTRIAL_LOT_SIZES } from "@/engine/landdev";
-import { platHomesView, tractLotQuote } from "@/engine/homes";
+import { platHomesView, tractLotQuote, houseValue, sfrRentMo } from "@/engine/homes";
 import { platTractLots } from "@/citygen/index.mjs";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
@@ -294,6 +294,44 @@ function HomesCard({ bbl }: { bbl: string }) {
   );
 }
 
+/**
+ * A HOUSE (engine homes.ts): a family's home or a single-family rental, never
+ * commercial space. What it is, who has it, what it is worth as a house.
+ */
+function HouseCard({ bbl, embedded }: { bbl: string; embedded?: boolean }) {
+  const game = useStore((s) => s.game);
+  const parcels = useStore((s) => s.parcels);
+  const select = useStore((s) => s.select);
+  const rec = parcels && game ? resolveRec(parcels, game, bbl) : null;
+  const u = game?.homes?.units[bbl];
+  if (!game || !parcels || !rec || !u) return null;
+  const owner = u.closedM === undefined ? `${u.by} (builder)` : u.tenure === "sfr" ? "a single-family-rental investor" : "a household, living in it";
+  return (
+    <div className={embedded ? "panel-embed" : "panel"}>
+      {!embedded && (
+        <div className="panel-head">
+          <div>
+            <div className="panel-address">{rec.address}</div>
+            <div className="panel-bbl mono">Parcel {rec.bbl}</div>
+          </div>
+          <button className="panel-close" onClick={() => select(null)} aria-label="Close">×</button>
+        </div>
+      )}
+      <div className="chip-row">
+        <span className="chip" style={{ background: CLASS_COLOR.house }}>HOUSE</span>
+        <span className="chip chip-zone mono">{rec.zoneDist}</span>
+        <span className="chip">NOT ON THE MARKET</span>
+      </div>
+      <Row k="House" v={`${sf(rec.bldgArea)} · ${rec.floors} fl · ${rec.yearBuilt} · lot ${sf(rec.lotArea)}`} strong />
+      <Row k="Owner" v={owner} />
+      {u.price ? <Row k="Sold" v={`${usd(u.price)}${u.closedM !== undefined ? ` · ${monthLabel(u.closedM)}` : " · signed"}`} /> : null}
+      <Row k="Worth today" v={usd(houseValue(game, parcels, bbl))} />
+      {u.tenure === "sfr" && <Row k="Lets for" v={`${usd(sfrRentMo(game))}/mo`} />}
+      <HomesCard bbl={bbl} />
+    </div>
+  );
+}
+
 function ParcelPanelInner({
   embedded = false, tab, selectedBBL,
 }: { embedded?: boolean; tab?: PropTab; selectedBBL: string }) {
@@ -322,6 +360,7 @@ function ParcelPanelInner({
   if (!parcels) return null;
   const rec = resolveRec(parcels, game, selectedBBL);
   if (!rec) return null;
+  if (rec.class === "house") return <HouseCard bbl={selectedBBL} embedded={embedded} />;
   const dev = game.developments[selectedBBL];
   // AN ASSEMBLED SITE'S NEIGHBOURS ARE THE SITE'S: every lot touching any of
   // its deeds, less the deeds themselves — not the parent lot's old neighbours,

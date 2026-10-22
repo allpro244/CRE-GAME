@@ -2499,6 +2499,15 @@ function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl
   // a deed with no buildable area left, exactly as a lot folded into a site.
   const rz = s.rezoned?.[bbl];
   if (rz) rec = { ...rec, zoneDist: rz.zone, farMaxComm: rz.far, farMaxRes: rz.far };
+  // A HOMEBUILDER'S FINISHED HOUSE (homes.ts) stands on its lot as a house:
+  // its own class, one dwelling, no commercial floor area to let.
+  const hu = s.homes?.units[bbl];
+  if (hu?.builtM !== undefined) {
+    return { ...rec, class: "house", bldgClass: "A1", bldgArea: hu.sf, floors: hu.sf > 1_800 ? 2 : 1,
+      yearBuilt: START_YEAR + Math.floor(hu.builtM / 12), unitsRes: 1, mix: undefined };
+  }
+  // ...and so is a family's house in an unpacked neighbourhood (unpack.ts): owner-occupied, its own facts
+  if (hu?.by === "family") return { ...rec, class: "house", bldgClass: "A1", unitsRes: 1, mix: undefined };
   if (s.platted?.[bbl]) return { ...(resolveBase(s, rec) ?? rec), lotArea: 0, farMaxComm: 0, farMaxRes: 0 };
   // ASSEMBLED SITES. A merged lot's land has moved into its parent: the parent
   // is as big as the sum of the deeds, and the child is a deed with no

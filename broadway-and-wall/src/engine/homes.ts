@@ -27,8 +27,6 @@
 import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { GameState, HomeUnit, HomesState, HomeBuilder, PlatPL, LotContract, LotOffer, LotListing, Exit } from "./types";
 import { cloneState, monthLabel, closeDeedLedger, logBooks, START_YEAR } from "./types";
-import { queueSupplyProject } from "./supply";
-import { rentableFromSpec } from "./value";
 import { ownerOf } from "./rivals";
 import { rng, HPI_CHASE_M } from "./market";
 import { resolveRec, assetValue, initialCondition, farmUsePsf } from "./value";
@@ -156,8 +154,9 @@ export function platLots(s: GameState, parcels: ParcelTable, parent: string): st
  * as the inner ring's houses do.
  */
 export function isHomeOffMarket(s: GameState, bbl: string): boolean {
-  const u = s.homes?.units[bbl];
-  return (!!u && u.closedM === undefined) || !!s.homes?.held?.[bbl];
+  // a house is never on the commercial market: a builder's until it closes,
+  // then a family's home or a single-family rental, priced as a house
+  return !!s.homes?.units[bbl] || !!s.homes?.held?.[bbl];
 }
 
 /** A house's storeys: one up to 1,800 sf, two above (Census: about half of new single-family houses are two-storey) [S, rounded]. */
@@ -171,14 +170,47 @@ export const houseFloors = (sf: number) => (sf > 1_800 ? 2 : 1);
  */
 function startUnit(s: GameState, u: HomeUnit): void {
   s.homes!.units[u.bbl] = u;
-  queueSupplyProject(s, { bbl: u.bbl, source: "homes", startM: u.startM, deliverM: u.doneM, sfByUse: { multifamily: rentableFromSpec(u.sf, houseFloors(u.sf)) } });
 }
-/** ...and is finished: it stands on its lot, a house (the map draws it as one). */
-function finishUnit(s: GameState, parcels: ParcelTable, u: HomeUnit): void {
+/**
+ * ...and is finished: it stands on its lot, a house (value.ts resolveRec reads
+ * the unit as one; the map draws it). A house is not rental floor space, so it
+ * never joins the apartment stock: the household that moves in is one fewer
+ * household renting a flat (market.ts reads `econ.newHomes`, see closeHouse).
+ */
+function finishUnit(s: GameState, _parcels: ParcelTable, u: HomeUnit): void {
   u.builtM = s.month;
-  const fl = houseFloors(u.sf);
-  const lot = parcels[u.bbl]?.lotArea ?? u.sf;
-  s.built[u.bbl] = { class: "multifamily", bldgArea: u.sf, floors: fl, yearBuilt: START_YEAR + Math.floor(s.month / 12), cov: +Math.min(0.6, u.sf / fl / Math.max(1, lot)).toFixed(3), house: true };
+  // a save from the first cut wrote the house to `built` as flats
+  if (s.built[u.bbl]?.house) delete s.built[u.bbl];
+}
+/**
+ * WHO BUYS A NEW HOUSE. Most new houses go to the households who will live
+ * in them; a share go to single-family-rental investors — built-for-rent
+ * starts were about 2-3% of single-family starts in the 2000s, 3-5% in the
+ * 2010s and 7-8% in 2021-24 (Census Survey of Construction, built-for-rent;
+ * NAHB), plus investors buying new for-sale houses, so about 10% of new
+ * houses in the 2020s [S].
+ */
+export function sfrShare(year: number): number {
+  return year < 2010 ? 0.03 : year < 2020 ? 0.05 : 0.10;
+}
+/**
+ * WHAT A SINGLE-FAMILY RENTAL LETS FOR: a house, rented by the month as a
+ * house — the town's apartment rent for an average 900-sf flat (RentCafe /
+ * Census: new US apartments average 880-900 sf), times the 1.25 premium a
+ * single-family rental commands per unit (Zillow ZORI 2023, single-family
+ * against multifamily) [S]. Not a $/sf flat rent on 2,200 sf.
+ */
+export function sfrRentMo(s: GameState): number {
+  const flatPsfYr = s.econ.effRentIdx?.multifamily ?? s.econ.rentIdx.multifamily;
+  return Math.round((flatPsfYr * 900 / 12) * 1.25);
+}
+/** A house's market value: the going new-house price here (homeprice.ts), not an income cap. */
+export function houseValue(s: GameState, parcels: ParcelTable, bbl: string): number {
+  const u = s.homes?.units[bbl];
+  const parent = u?.parent ?? parcels[bbl]?.block;
+  const hm = s.econ.homes, pm = parent ? hm?.plats[parent] : undefined;
+  if (!u || !hm || !pm) return 0;
+  return Math.round(hm.psf * pm.loc * u.sf);
 }
 
 // ---------------------------------------------------------------- the market
@@ -584,7 +616,7 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
       if (b && b.failedM === undefined) u.loan = (u.loan ?? 0) + builderPays(s, b, draw, HOUSE_ADVANCE);
       u.spent += draw;
     }
-    if (u.builtM === undefined && u.spent >= u.budget && s.month >= u.doneM) finishUnit(s, parcels, u);
+    if (u.by !== "family" && u.builtM === undefined && u.spent >= u.budget && s.month >= u.doneM) finishUnit(s, parcels, u);
   }
 
   // 2. THE BUYERS. Each builder with a house to sell draws this month's buyers.
@@ -607,6 +639,10 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
   for (const u of Object.values(h.units)) {
     if (u.soldM === undefined || u.closedM !== undefined || s.month < u.doneM || u.spent < u.budget) continue;
     u.closedM = s.month;
+    // who bought it, and the household it houses: one fewer renting a flat (market.ts)
+    u.tenure = rng(s, "homes") < sfrShare(START_YEAR + Math.floor(s.month / 12)) ? "sfr" : "owner";
+    s.econ.newHomes = (s.econ.newHomes ?? 0) + 1;
+    s.econ.newHomesRef ??= Math.max(1, s.econ.occupied?.multifamily ?? 1);
     const b = h.builders[u.by];
     if (!b) continue;
     // the buyer's money: commission and marketing off the top, the desk's release, the rest the builder's

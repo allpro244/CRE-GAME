@@ -192,7 +192,8 @@ function tickCommerce(s: GameState, parcels: ParcelTable, bbls: string[], adjace
     s.rezoned = { ...(s.rezoned ?? {}), [p.bbl]: { zone: "C-N", far: +Math.min(RETAIL_FAR, p.sf / Math.max(1, parcels[p.bbl]?.lotArea ?? 1)).toFixed(3), lotSf: 0, m: s.month } };
     const rec = parcels[p.bbl];
     const plate = Math.min(0.9, p.sf / Math.max(1, rec?.lotArea ?? 1));
-    const ok = startTradeAreaBuilding(s, parcels, adjacency, p.bbl, "retail", 1, plate);
+    // the centre as the product it is (products.ts): a grocery-anchored neighbourhood centre, or a strip
+    const ok = startTradeAreaBuilding(s, parcels, adjacency, p.bbl, "retail", 1, plate, p.kind === "neighbourhood" ? "neighborhood" : "strip");
     if (ok) {
       const job = (s.cityJobs ?? []).find((j) => j.bbl === p.bbl);
       T.centres.push({ bbl: p.bbl, kind: p.kind, m: s.month, sf: job?.sf ?? p.sf, households: Math.round(p.households), built: true });

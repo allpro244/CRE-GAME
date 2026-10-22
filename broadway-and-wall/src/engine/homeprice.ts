@@ -232,12 +232,31 @@ export type HomeMarket = {
  * house this lot carries, at this plat's going price, discounted for the
  * sell-out of the lots still unsold on the plat — a buyer of a lot is buying
  * its place in the queue. 0 where no homes market reaches the lot.
+ *
+ * A LOT BY A PARK SELLS A DEARER HOUSE. `homePrem` is the hedonic premium a
+ * household pays for the house on this lot because of the plat's amenities
+ * (platdesign.ts lotPremium: fronting a park, backing onto the greenway, the
+ * pool on every house); the builder's costs do not move with it, so most of
+ * it reaches the lot.
  */
-export function homeLotBidPsf(rec: { lotArea: number; block?: string; farMaxRes?: number }, e: Econ): number {
+export function homeLotBidPsf(rec: { lotArea: number; block?: string; farMaxRes?: number; homePrem?: number }, e: Econ): number {
   const hm = e.homes;
   const pm = hm && rec.block ? hm.plats[rec.block] : undefined;
   if (!hm || !pm || !(pm.disc > 0)) return 0;
-  return homeQuote(e, rec.lotArea, hm.psf * pm.loc, rec.farMaxRes ?? 0.6).residualPsf * pm.disc;
+  return homeQuote(e, rec.lotArea, hm.psf * pm.loc * (1 + (rec.homePrem ?? 0)), rec.farMaxRes ?? 0.6).residualPsf * pm.disc;
+}
+
+/**
+ * What a builder's per-foot price for a plat's lots comes to on THIS lot: its
+ * residual with its premium over its residual without (1 on a lot with none).
+ * A builder pricing a plat by the foot pays it on the standard lot and more on
+ * the lot by the park, because it sells that house for more (homes.ts sellLot).
+ */
+export function lotPremiumMult(e: Pick<Econ, "costIdx" | "indexRate">, lotSf: number, psfHere: number, far: number, prem: number): number {
+  if (!(prem > 0)) return 1;
+  const base = homeQuote(e, lotSf, psfHere, far).residual;
+  if (!(base > 0)) return 1;
+  return Math.max(1, homeQuote(e, lotSf, psfHere * (1 + prem), far).residual / base);
 }
 
 /**

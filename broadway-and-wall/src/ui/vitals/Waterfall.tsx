@@ -53,10 +53,10 @@ const CASH_SPECS: {
   { key: "lpDistributed", label: "LP distributions", sign: -1, note: "out of the vehicle — equity out, not expense" },
 ];
 
-interface WfCashRow { key: string; label: string; amount: number; note?: string }
-interface WfValueLine { key: string; label: string; amount: number }
+export interface WfCashRow { key: string; label: string; amount: number; note?: string }
+export interface WfValueLine { key: string; label: string; amount: number }
 
-interface WfModel {
+export interface WfModel {
   windowLabel: string;
   months: number;
   hasPrev: boolean;
@@ -71,7 +71,7 @@ interface WfModel {
   empty: boolean;
 }
 
-function buildModel(game: GameState, prevRaw: GameState | null, parcels: ParcelTable | null): WfModel {
+export function buildModel(game: GameState, prevRaw: GameState | null, parcels: ParcelTable | null): WfModel {
   const prev = usablePrev(game, prevRaw);
   const hasPrev = prev !== null;
   const booksAll = game.booksMonthly ?? [];

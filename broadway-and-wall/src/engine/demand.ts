@@ -50,6 +50,7 @@
 //   hiring; and whether the transit authority has funded a station within a
 //   five-minute walk. None of the three asks the player for anything.
 import { isHomeOffMarket } from "./homes";
+import { isHoaBbl } from "./landdev";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
 import { liveDemand, useOccupancy } from "./value";
@@ -973,9 +974,9 @@ export function isCivicLand(s: GameState, bbl: string): boolean {
   // ...and, on the region map, a lot a homebuilder has a house going up on or
   // a family has bought (homes.ts isHomeOffMarket): off the market like the
   // town's neighbourhoods, which every loop that asks this already respects.
-  // ...and a farm a land developer has bought to subdivide (growth.ts): off
-  // the market while the board hears it and the streets go in.
-  return !!s.civicLand?.[bbl] || isHomeOffMarket(s, bbl) || !!s.growth?.held?.[bbl];
+  // ...and a plat's common land, deeded to its homeowners' association (landdev.ts isHoaBbl),
+  // and a farm a land developer has bought to subdivide (growth.ts): off the market while the board hears it.
+  return !!s.civicLand?.[bbl] || isHomeOffMarket(s, bbl) || isHoaBbl(bbl) || !!s.growth?.held?.[bbl];
 }
 
 function takeCivicLots(s: GameState, model: DemandModel, parcels: ParcelTable) {

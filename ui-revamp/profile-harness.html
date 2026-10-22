@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8" /><title>B&W profile</title>
+<script>
+(function(){
+  const commits=[]; let on=true;
+  function nameOf(f){const t=f.type; if(!t) return null; if(typeof t==='function') return t.displayName||t.name||'anon';
+    if(t.displayName) return t.displayName; if(t.render) return t.render.displayName||t.render.name||'fwd'; if(t.type) return (t.type.displayName||t.type.name||'memo'); return null;}
+  const COMP=new Set([0,1,11,14,15]);
+  function walk(f, out){
+    while(f){
+      if(COMP.has(f.tag)){const n=nameOf(f); if(n){const fresh=!f.alternate; const did=fresh || (f.flags&1);
+        if(did){const e=out[n]||(out[n]={n:0,self:0,mount:0}); e.n++; e.self+=(f.selfBaseDuration||0); if(fresh)e.mount++;}}}
+      if(f.child && !(f.alternate && f.alternate.child===f.child)) walk(f.child,out);
+      f=f.sibling;
+    }
+  }
+  window.__REACT_DEVTOOLS_GLOBAL_HOOK__={renderers:new Map(),supportsFiber:true,isDisabled:false,
+    inject(r){const id=this.renderers.size+1;this.renderers.set(id,r);return id;},
+    checkDCE(){}, onScheduleFiberRoot(){}, onCommitFiberUnmount(){}, onPostCommitFiberRoot(){},
+    onCommitFiberRoot(id,root){ if(!on) return; const out={}; const t0=performance.now(); walk(root.current.child,out);
+      commits.push({t:performance.now(),dur:root.current.actualDuration||0,comps:out}); }};
+  window.__prof={commits, reset(){commits.length=0;}, pause(){on=false}, resume(){on=true},
+    report(top=25){const agg={};let total=0; for(const c of commits){total+=c.dur; for(const k in c.comps){const a=agg[k]||(agg[k]={n:0,self:0,mount:0}); a.n+=c.comps[k].n; a.self+=c.comps[k].self; a.mount+=c.comps[k].mount;}}
+      const rows=Object.entries(agg).sort((a,b)=>b[1].self-a[1].self).slice(0,top).map(([k,v])=>k+' renders='+v.n+' mounts='+v.mount+' selfms='+v.self.toFixed(1));
+      return {commits:commits.length,totalRenderMs:+total.toFixed(1),renders:Object.values(agg).reduce((s,v)=>s+v.n,0),top:rows};}};
+})();
+</script></head>
+<body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>

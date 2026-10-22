@@ -38,7 +38,7 @@ import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
 import { DevelopSection, DevelopGlance, ReuseSection } from "@/ui/panels/DevelopDesk";
 import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openViewOn, Neighbourhood, Row, STYLE_WORD, ShortBy } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
-import { entitleQuote, platQuote, PLAT_LOT_SIZES } from "@/engine/landdev";
+import { entitleQuote, platQuote, PLAT_LOT_SIZES, INDUSTRIAL_LOT_SIZES } from "@/engine/landdev";
 import { platHomesView, tractLotQuote } from "@/engine/homes";
 import { platTractLots } from "@/citygen/index.mjs";
 
@@ -157,7 +157,7 @@ function LandDevCard({ bbl }: { bbl: string }) {
     <div className="deal" style={{ marginTop: 6 }}>
       <div className="deal-head">Land development</div>
       <div className="hint">
-        {rec.ag === "wood" ? "Woodland" : "Farmland"}, {acres.toFixed(0)} acres, zoned for agriculture — priced at what it earns as a farm.
+        {rec.ag === "wood" ? "Woodland" : "Farmland"}, {acres.toFixed(0)} acres, {rz ? `rezoned ${rz.zone} (FAR ${rz.far}), farmed until the streets go in` : "zoned for agriculture — priced at what it earns as a farm"}.
         {" "}{((rec.buildableSf ?? rec.lotArea) / 43560).toFixed(0)} buildable acres{rec.buildableSf !== undefined && rec.buildableSf < rec.lotArea * 0.95 ? " (the rest is floodplain or taken)" : ""}; {(rec.tract.edgeM / 1000).toFixed(1)} km from the town's edge.
       </div>
       {!owned && <div className="hint">Buy it to rezone it and cut it into lots.</div>}
@@ -169,6 +169,11 @@ function LandDevCard({ bbl }: { bbl: string }) {
             <div className="btn-row">
               {PLAT_LOT_SIZES.map((v) => (
                 <button key={v} type="button" className={"btn-mini" + (v === lotSf ? " on" : "")} onClick={() => setLotSf(v)}>{v.toLocaleString()} sf lots</button>
+              ))}
+            </div>
+            <div className="btn-row" title="An industrial park: a truck-rated spine road and big lots for boxes, flex, plants or a centre.">
+              {INDUSTRIAL_LOT_SIZES.map((v) => (
+                <button key={v} type="button" className={"btn-mini" + (v === lotSf ? " on" : "")} onClick={() => setLotSf(v)}>{Math.round(v / 43560)} ac park lots</button>
               ))}
             </div>
             {q ? (
@@ -187,7 +192,7 @@ function LandDevCard({ bbl }: { bbl: string }) {
       {app && <Row k="Before the board" v={`decides ${monthLabel(app.decideM)} · ${app.lots} lots · ${Math.round(app.odds * 100)}% odds`} />}
       {owned && rz && !plat && (() => {
         const lots = platTractLots(rec.tract, rz.lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
-        const q = platQuote(game, lots, parcels, bbl);
+        const q = platQuote(game, lots, rz.lotSf, parcels, bbl);
         return (
           <>
             <Row k="Rezoned" v={`${rz.zone}, FAR ${rz.far}, ${lots.length} lots of ~${rz.lotSf.toLocaleString()} sf`} />
@@ -215,65 +220,75 @@ function LandDevCard({ bbl }: { bbl: string }) {
 }
 
 /**
- * THE HOMES DESK (region map, engine/homes.ts): one plat, as a homebuilder
- * reads it. Price, cost, residual, absorption and sales to date; build spec
- * houses on your lots, set your price, take a builder's takedown.
+ * THE LOTS DESK (region map, engine/homes.ts): one plat, as the homebuilders
+ * read it. The house, its cost and the residual left for the lot; what a
+ * builder would bid, how fast the plat sells out, who is building; and your
+ * lot sales — offers to sign or pass, and listing the plat to the builders.
  */
 function HomesCard({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game);
   const parcels = useStore((s) => s.parcels);
-  const buildHomes = useStore((s) => s.buildHomes);
-  const priceHomes = useStore((s) => s.priceHomes);
+  const listLots = useStore((s) => s.listLots);
+  const delistLots = useStore((s) => s.delistLots);
   const takeLotOffer = useStore((s) => s.takeLotOffer);
   const refuseLotOffer = useStore((s) => s.refuseLotOffer);
+  const [mark, setMark] = useState(1);
   const rec = parcels?.[bbl];
   if (!game || !parcels || !rec?.homeLot || !rec.block) return null;
   const parent = rec.block;
   const v = platHomesView(game, parcels, parent);
   if (!v) return null;
-  const q = v.quote;
+  const q = v.quote, b = v.bids;
   const unit = game.homes?.units[bbl];
-  const free = v.mine - v.building - v.forSale - v.signed;
+  const lotSf = q.residualPsf > 0 ? q.residual / q.residualPsf : rec.lotArea;
   const pct1 = (x: number) => `${(x * 100).toFixed(0)}%`;
+  const months = Number.isFinite(b.months) ? `${Math.ceil(b.months)} mo` : "never";
+  const askT = +(b.takedownPsf * mark).toFixed(2);
+  const askB = +(b.bulkPsf * mark).toFixed(2);
   return (
     <div className="deal" style={{ marginTop: 6 }}>
-      <div className="deal-head">Homes · {v.lots} lots</div>
-      {unit && <Row k="This lot" v={unit.closedM !== undefined ? `sold ${monthLabel(unit.closedM)} · ${usd(unit.price ?? 0)}` : `${unit.by === "you" ? "your" : unit.by} house · ${unit.soldM !== undefined ? "signed" : "for sale"} · done ${monthLabel(unit.doneM)}`} />}
-      <Row k="House" v={`${sf(q.sf)} · ${usd(q.price)} · $${(q.price / q.sf).toFixed(0)}/sf`} strong />
-      <Row k="Build" v={`${usd(q.vertical + q.overhead)}`} />
-      <Row k="Sell · carry · margin" v={`${usd(q.selling)} · ${usd(q.carry)} · ${usd(q.margin)}`} />
-      <Row k="Lot residual" v={`${usd(q.residual)} · ${pct1(q.residual / Math.max(1, q.price))}`} strong />
-      <Row k="Sell-out" v={`${v.left} left · ×${v.disc.toFixed(2)} → ${usd(Math.max(0, q.residual) * v.disc)}`} />
-      <Row k="Pace" v={`${v.pace.toFixed(1)}/mo · you ${v.yourPace.toFixed(1)}`} />
-      <Row k="Mortgage · loc" v={`${(((game.econ.indexRate ?? 5.4) / 100 + 0.017) * 100).toFixed(2)}% · ×${v.loc.toFixed(2)}`} />
-      <Row k="Yours" v={`${v.mine} lots · ${v.building} bldg · ${v.forSale} unsold · ${v.signed} signed · ${v.closed} closed`} />
-      {v.builders.map((b) => <Row key={b.name} k={b.name} v={`${b.building} bldg · ${b.closed} closed`} />)}
-      {v.pl && v.pl.closed + v.pl.lotsSold > 0 && (
-        <Row k="To date" v={`${v.pl.closed} homes ${usd(v.pl.revenue)} · P&L ${usd(v.pl.net - v.pl.cost - v.pl.lotCost)} · ${v.pl.lotsSold} lots ${usd(v.pl.lotProceeds)}`} />
+      <div className="deal-head">Lots · {v.lots} on the plat</div>
+      {unit && <Row k="This lot" v={unit.closedM !== undefined ? `a family's · sold ${monthLabel(unit.closedM)} · ${usd(unit.price ?? 0)}` : `${unit.by} · ${unit.soldM !== undefined ? "signed" : "for sale"} · done ${monthLabel(unit.doneM)}`} />}
+      <Row k="House" v={`${sf(q.sf)} · ${usd(q.price)} · $${(q.price / q.sf).toFixed(0)}/sf`} />
+      <Row k="Build · sell · carry · margin" v={`${usd(q.vertical + q.overhead)} · ${usd(q.selling)} · ${usd(q.carry)} · ${usd(q.margin)}`} />
+      <Row k="Lot residual" v={`${usd(q.residual)} · ${pct1(q.residual / Math.max(1, q.price))} of price`} strong />
+      <Row k="Sells" v={`${v.pace.toFixed(1)} houses/mo · ${v.left} lots left · ×${v.disc.toFixed(2)}`} />
+      <Row k="Bid · takedown" v={`$${b.takedownPsf.toFixed(2)}/sf · ${usd(b.takedownPsf * lotSf)} a lot · ~${b.pace.toFixed(1)}/mo · ${months}`} />
+      <Row k="Bid · whole plat" v={`$${b.bulkPsf.toFixed(2)}/sf · ${usd(b.bulkPsf * lotSf * Math.max(1, v.free))} for ${v.free}`} />
+      <Row k="Mortgage · location" v={`${(((game.econ.indexRate ?? 5.4) / 100 + 0.017) * 100).toFixed(2)}% · ×${v.loc.toFixed(2)}`} />
+      <Row k="Yours" v={`${v.mine} lots · ${v.free} free`} />
+      {v.builders.map((x) => <Row key={x.name} k={x.name} v={`${x.held} held · ${x.building} bldg · ${x.closed} sold · cash ${usd(x.cash)} · debt ${usd(x.debt)}${x.failed ? " · failed" : ""}`} />)}
+      {v.pl && v.pl.lotsSold > 0 && (
+        <Row k="Sold to date" v={`${v.pl.lotsSold} lots · ${usd(v.pl.lotRevenue)} · gain ${usd(v.pl.lotProceeds - v.pl.lotBasis)}`} />
       )}
-      {v.contract && <Row k="Takedown" v={`${v.contract.builder} · ${v.contract.left} left · $${v.contract.psf.toFixed(2)}/sf`} />}
+      {v.contract && <Row k="Takedown" v={`${v.contract.builder} · ${v.contract.taken} taken · ${v.contract.left} left · $${v.contract.psf.toFixed(2)}/sf`} />}
       {v.offer && (
         <>
-          <Row k="Offer" v={`${v.offer.builder} · ${v.offer.lots} lots · $${v.offer.psf.toFixed(2)}/sf · to ${monthLabel(v.offer.expiresM)}`} strong />
+          <Row k="Offer" v={`${v.offer.builder} · ${v.offer.kind === "bulk" ? "all" : "takedown"} ${v.offer.lots} · $${v.offer.psf.toFixed(2)}/sf · to ${monthLabel(v.offer.expiresM)}`} strong />
           <div className="btn-row">
             <button type="button" className="btn btn-sm" onClick={() => takeLotOffer(parent)}>Sign</button>
             <button type="button" className="btn-mini" onClick={() => refuseLotOffer(parent)}>Pass</button>
           </div>
         </>
       )}
-      {free > 0 && (
+      {v.listing && (
         <div className="btn-row">
-          {[1, 5, free].filter((n, i, a) => n <= free && a.indexOf(n) === i).map((n) => (
-            <button key={n} type="button" className="btn-mini" onClick={() => buildHomes(parent, n)}>Build {n === free ? "all" : n}</button>
-          ))}
+          <span className="hint">Listed {v.listing.bulk ? "whole" : "takedown"} at ${v.listing.askPsf.toFixed(2)}/sf</span>
+          <button type="button" className="btn-mini" onClick={() => delistLots(parent)}>Pull</button>
         </div>
       )}
-      {v.mine > 0 && (
-        <div className="btn-row">
-          {[-0.1, -0.05, 0, 0.05].map((a) => (
-            <button key={a} type="button" className={"btn-mini" + (Math.abs(v.adj - a) < 1e-6 ? " on" : "")} onClick={() => priceHomes(parent, a)}>{a === 0 ? "Market" : `${a > 0 ? "+" : ""}${Math.round(a * 100)}%`}</button>
-          ))}
-        </div>
+      {v.free > 0 && !v.listing && b.takedownPsf > 0 && (
+        <>
+          <div className="btn-row">
+            {[0.9, 1, 1.1].map((m) => (
+              <button key={m} type="button" className={"btn-mini" + (m === mark ? " on" : "")} onClick={() => setMark(m)}>{m === 1 ? "At bid" : `${m > 1 ? "+" : "−"}${Math.round(Math.abs(m - 1) * 100)}%`}</button>
+            ))}
+          </div>
+          <div className="btn-row">
+            {!v.contract && <button type="button" className="btn-mini" onClick={() => listLots(parent, askT, false)}>List takedown ${askT.toFixed(2)}</button>}
+            <button type="button" className="btn-mini" onClick={() => listLots(parent, askB, true)}>List whole ${askB.toFixed(2)}</button>
+          </div>
+        </>
       )}
     </div>
   );

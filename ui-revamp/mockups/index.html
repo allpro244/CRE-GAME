@@ -1,0 +1,745 @@
+<title>Broadway &amp; Wall UI Revamp</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a review sheet. Each screen is a fixed 1600x900 game frame scaled to the column, with terse notes below. */
+:root {
+  --bg: #f3efe4; --surface: #fbf8f0; --fg: #2b251a; --dim: #6b6250; --rule: #d9cfb8; --accent: #9a6c14; --good: #2f6f3c; --bad: #9c3b2a;
+  --display: "Newsreader", "Iowan Old Style", Palatino, Georgia, serif;
+  --body: "IBM Plex Sans", system-ui, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  /* game frame palette: fixed, it is a picture of the game */
+  --g-ink: #1d1a14; --g-ink2: #2b2619; --g-paper: #f6f1e2; --g-paper2: #ebe3cf; --g-line: #d4c7a6; --g-row: #e6dcc6; --g-dim: #6b6250; --g-gold: #c8952c; --g-teal: #2f7a72; --g-red: #a8402e; --g-green: #3a7d46;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #171510; --surface: #201d16; --fg: #ece5d3; --dim: #a69c86; --rule: #3a3428; --accent: #d9a648; --good: #79b884; --bad: #e08a74; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #171510; --surface: #201d16; --fg: #ece5d3; --dim: #a69c86; --rule: #3a3428; --accent: #d9a648; --good: #79b884; --bad: #e08a74; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 72px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(28px, 4vw, 42px); line-height: 1.1; }
+h2 { font-size: clamp(21px, 2.4vw, 26px); }
+h3 { font-size: 16px; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+header.top { display: grid; gap: 14px; padding-bottom: 22px; border-bottom: 1px solid var(--rule); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px 28px; }
+.cols > div { min-width: 0; }
+ol.rules { margin: 0; padding-left: 22px; display: grid; gap: 4px; }
+ol.rules b { font-weight: 600; }
+.tablebox { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+table.cmp { border-collapse: collapse; width: 100%; font-size: 14px; }
+table.cmp th, table.cmp td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+table.cmp th { font: 500 11px/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+table.cmp td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+table.cmp td.was { color: var(--bad); }
+table.cmp td.now { color: var(--good); font-weight: 600; }
+table.cmp tr:last-child td { border-bottom: 0; }
+nav.screens { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); display: flex; gap: 6px; overflow-x: auto; padding-block: 12px; border-bottom: 1px solid var(--rule); }
+nav.screens a { flex: none; font: 500 13px/1 var(--body); color: var(--fg); text-decoration: none; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface); }
+nav.screens a:hover, nav.screens a:focus-visible { border-color: var(--accent); outline: none; }
+nav.screens a .k { font-family: var(--mono); color: var(--accent); margin-right: 6px; }
+section.screen { padding-top: 36px; display: grid; gap: 12px; scroll-margin-top: 64px; }
+.screen-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.screen-head p { margin: 0; color: var(--dim); }
+.notes { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 14px; color: var(--dim); }
+.notes span b { color: var(--fg); font-weight: 600; }
+.ex { font-size: 12px; color: var(--dim); }
+
+/* ---------- game frame ---------- */
+.viewport { position: relative; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; border: 1px solid var(--rule); background: #39505a; }
+.frame { position: absolute; left: 0; top: 0; width: 1600px; height: 900px; transform: scale(var(--s, .5)); transform-origin: 0 0; font-family: var(--body); font-size: 13px; color: var(--g-ink); background: #39505a center / cover no-repeat; }
+.frame.city { background-image: url("city-downtown.jpg"); }
+.frame.city2 { background-image: url("city-oblique.jpg"); }
+.frame .n, .frame .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.fig { border-bottom: 1px dotted currentColor; cursor: pointer; }
+.fig.open { background: rgba(200,149,44,.28); border-bottom-style: solid; border-color: var(--g-gold); }
+.hud { position: absolute; left: 0; right: 0; top: 0; height: 52px; background: var(--g-ink); color: var(--g-paper); display: flex; align-items: stretch; }
+.hud .firm { width: 64px; display: grid; place-items: center; background: var(--g-ink2); }
+.logo { width: 30px; height: 30px; border-radius: 6px; background: var(--g-gold); color: var(--g-ink); display: grid; place-items: center; font: 600 13px/1 var(--display); }
+.hud .clock { display: flex; align-items: center; gap: 6px; padding: 0 14px; border-right: 1px solid #3a3326; }
+.hud .date { font: 600 18px/1 var(--display); margin-right: 6px; }
+.hbtn { height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #4a4230; color: var(--g-paper); font: 500 12px/1 var(--body); display: inline-flex; align-items: center; gap: 6px; }
+.hbtn.primary { background: var(--g-gold); border-color: var(--g-gold); color: var(--g-ink); font-weight: 600; }
+.hud .vitals { display: flex; flex: 1; }
+.vital { padding: 8px 14px; border-right: 1px solid #3a3326; display: grid; align-content: center; gap: 3px; }
+.vital small { font: 500 10px/1 var(--mono); letter-spacing: .08em; color: #b8ac90; text-transform: uppercase; }
+.vital b { font: 500 15px/1 var(--mono); font-variant-numeric: tabular-nums; }
+.vital i { font-style: normal; font-size: 11px; margin-left: 5px; }
+.up { color: #7fc38c; } .down { color: #e58c76; }
+.hud .right { display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+.scope { display: flex; border: 1px solid #4a4230; border-radius: 6px; overflow: hidden; }
+.scope span { padding: 7px 10px; font: 500 12px/1 var(--body); color: #b8ac90; }
+.scope span.on { background: #3a3326; color: var(--g-paper); }
+.search { width: 150px; height: 30px; border-radius: 6px; background: #2c271d; color: #b8ac90; display: flex; align-items: center; padding: 0 10px; font-size: 12px; justify-content: space-between; }
+.kbd { font: 500 10px/1 var(--mono); border: 1px solid #4a4230; border-radius: 4px; padding: 3px 4px; color: #b8ac90; }
+.badge { min-width: 17px; height: 17px; border-radius: 9px; background: var(--g-red); color: #fff; font: 600 10px/17px var(--mono); text-align: center; padding: 0 5px; display: inline-block; }
+.rail { position: absolute; left: 0; top: 52px; bottom: 0; width: 64px; background: var(--g-ink); display: flex; flex-direction: column; align-items: center; padding-top: 10px; gap: 4px; }
+.rail .it { width: 52px; padding: 8px 0 6px; border-radius: 8px; color: #b8ac90; display: grid; justify-items: center; gap: 4px; font: 500 10px/1 var(--body); position: relative; }
+.rail .it svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+.rail .it.on { background: #3a3326; color: var(--g-paper); }
+.rail .it .kk { position: absolute; top: 3px; right: 5px; font: 500 9px/1 var(--mono); color: #7d735d; }
+.rail .it .dot { position: absolute; top: 6px; left: 9px; width: 7px; height: 7px; border-radius: 50%; background: var(--g-red); }
+.rail .sep { width: 32px; height: 1px; background: #3a3326; margin: 6px 0; }
+.drawer { position: absolute; top: 52px; bottom: 0; right: 0; background: var(--g-paper); border-left: 1px solid var(--g-line); display: flex; flex-direction: column; box-shadow: -8px 0 24px rgba(0,0,0,.25); }
+.drawer.std { width: 540px; }
+.drawer.wide { width: 1060px; }
+.dhead { padding: 12px 18px 0; display: grid; gap: 3px; }
+.crumbs { font: 500 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--g-dim); }
+.dtitle { display: flex; align-items: center; gap: 8px; }
+.dtitle h4 { margin: 0; font: 600 22px/1.15 var(--display); }
+.meta { font: 400 12px/1.3 var(--mono); color: var(--g-dim); }
+.chip { font: 500 11px/1 var(--body); padding: 4px 7px; border-radius: 999px; border: 1px solid var(--g-line); background: #fffaf0; white-space: nowrap; }
+.chip.gold { background: rgba(200,149,44,.18); border-color: rgba(200,149,44,.6); }
+.chip.teal { background: rgba(47,122,114,.12); border-color: rgba(47,122,114,.5); color: #1f5a54; }
+.chip.red { background: rgba(168,64,46,.12); border-color: rgba(168,64,46,.5); color: #7f2c1e; }
+.chip.on { background: var(--g-ink); color: var(--g-paper); border-color: var(--g-ink); }
+.chip.ghost { border-style: dashed; color: var(--g-dim); background: transparent; }
+.x { margin-left: auto; width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--g-line); display: grid; place-items: center; color: var(--g-dim); }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--g-line); margin-top: 8px; }
+.tabs span { padding: 8px 12px; font: 500 12px/1 var(--body); color: var(--g-dim); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs span.on { color: var(--g-ink); border-color: var(--g-gold); }
+.dbody { flex: 1; overflow: hidden; padding: 12px 18px; display: grid; align-content: start; gap: 10px; position: relative; }
+.dfoot { border-top: 1px solid var(--g-line); background: var(--g-paper2); padding: 10px 18px; display: flex; align-items: center; gap: 8px; }
+.btn { height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--g-line); background: #fffaf0; font: 500 12px/1 var(--body); display: inline-flex; align-items: center; gap: 6px; color: var(--g-ink); white-space: nowrap; }
+.btn.primary { background: var(--g-ink); color: var(--g-paper); border-color: var(--g-ink); font-weight: 600; }
+.btn.sm { height: 24px; padding: 0 8px; font-size: 11px; }
+.kk2 { font: 500 10px/1 var(--mono); opacity: .7; }
+.strip { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--g-line); border-radius: 7px; background: #fffaf0; }
+.strip > div { padding: 8px 12px; border-right: 1px solid var(--g-line); display: grid; gap: 3px; }
+.strip > div:last-child { border-right: 0; }
+.strip small, .lbl { font: 500 10px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--g-dim); }
+.strip b { font: 500 17px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.strip em { font-style: normal; font-size: 11px; color: var(--g-dim); font-family: var(--mono); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.kv { display: grid; grid-template-columns: 1fr auto auto; gap: 5px 12px; font-size: 12px; align-items: center; }
+.kv .l { color: var(--g-dim); }
+.kv .n { text-align: right; }
+.kv svg { width: 70px; height: 16px; }
+.box { border: 1px solid var(--g-line); border-radius: 7px; background: #fffaf0; padding: 8px 10px; display: grid; gap: 6px; min-width: 0; }
+.filters { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.input { height: 28px; border: 1px solid var(--g-line); border-radius: 6px; background: #fffaf0; padding: 0 8px; display: flex; align-items: center; color: var(--g-dim); font-size: 12px; min-width: 190px; }
+table.dt { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.dt th { text-align: left; font: 500 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--g-dim); padding: 7px 8px; border-bottom: 1px solid var(--g-line); background: var(--g-paper2); white-space: nowrap; }
+table.dt th.s { color: var(--g-ink); }
+table.dt td { padding: 0 8px; height: 30px; border-bottom: 1px solid var(--g-row); white-space: nowrap; }
+table.dt td.n, table.dt th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+table.dt tr.sel td { background: rgba(200,149,44,.14); }
+table.dt td .sub { color: var(--g-dim); font-size: 11px; margin-left: 6px; }
+table.dt svg { width: 64px; height: 16px; vertical-align: middle; }
+.rowact { display: flex; gap: 4px; justify-content: flex-end; }
+.tfoot { display: flex; justify-content: space-between; font: 400 11px/1 var(--mono); color: var(--g-dim); }
+.neg { color: var(--g-red); } .pos { color: var(--g-green); }
+/* breakdown popover (the drill) */
+.bd { position: absolute; z-index: 4; width: 330px; background: #fffdf6; border: 1px solid var(--g-ink); border-radius: 8px; box-shadow: 0 12px 30px rgba(0,0,0,.35); font-size: 12px; overflow: hidden; }
+.bd .bh { background: var(--g-ink); color: var(--g-paper); padding: 7px 10px; display: flex; justify-content: space-between; align-items: center; font: 500 11px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.bd .bh b { font: 500 14px/1 var(--mono); letter-spacing: 0; text-transform: none; color: #e7c77d; }
+.bd .rows { padding: 6px 10px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
+.bd .rows .n { text-align: right; }
+.bd .rows .tot { border-top: 1px solid var(--g-ink); padding-top: 4px; font-weight: 600; }
+.bd .f { padding: 6px 10px; border-top: 1px solid var(--g-row); font: 400 11px/1.3 var(--mono); color: var(--g-dim); }
+.bd .go { padding: 7px 10px; border-top: 1px solid var(--g-row); font: 500 11px/1 var(--body); color: var(--g-teal); }
+/* inbox */
+.inbox { position: absolute; top: 62px; left: 74px; width: 440px; background: var(--g-paper); border: 1px solid var(--g-line); border-radius: 9px; box-shadow: 0 10px 30px rgba(0,0,0,.3); overflow: hidden; }
+.inbox .ih { padding: 9px 12px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--g-line); }
+.inbox .ih b { font: 600 16px/1 var(--display); margin-right: 4px; }
+.row { padding: 7px 12px; border-bottom: 1px solid var(--g-row); display: grid; grid-template-columns: 4px 1fr auto; gap: 2px 10px; align-items: center; }
+.row:last-child { border-bottom: 0; }
+.sev { width: 4px; height: 100%; min-height: 30px; border-radius: 2px; grid-row: span 2; }
+.sev.r { background: var(--g-red); } .sev.a { background: var(--g-gold); } .sev.t { background: var(--g-teal); }
+.row .t { font-size: 12px; font-weight: 600; }
+.row .m { font: 400 11px/1.2 var(--mono); color: var(--g-dim); grid-column: 2; }
+.row .a { grid-row: span 2; grid-column: 3; display: flex; gap: 4px; }
+.pick { position: absolute; border: 2px solid var(--g-gold); border-radius: 4px; box-shadow: 0 0 18px rgba(200,149,44,.8); }
+.pin { position: absolute; width: 13px; height: 13px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+.pin.sale { background: var(--g-gold); } .pin.mine { background: var(--g-teal); } .pin.dist { background: var(--g-red); }
+.lenses { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); background: var(--g-ink); border-radius: 9px; padding: 5px; display: flex; gap: 3px; }
+.frame .lenses { left: 560px; transform: none; }
+.lenses span { color: #b8ac90; font: 500 11px/1 var(--body); padding: 7px 10px; border-radius: 6px; display: flex; gap: 6px; align-items: center; }
+.lenses span.on { background: #3a3326; color: var(--g-paper); }
+.lenses i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.lane { background: var(--g-paper2); border-radius: 7px; padding: 6px; display: grid; align-content: start; gap: 6px; min-height: 92px; }
+.lane h5 { margin: 2px 4px; font: 500 10px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--g-dim); display: flex; justify-content: space-between; }
+.card { background: #fffaf0; border: 1px solid var(--g-line); border-radius: 6px; padding: 6px 8px; display: grid; gap: 3px; font-size: 11px; }
+.card b { font-size: 12px; }
+.card .r { display: flex; justify-content: space-between; color: var(--g-dim); font-family: var(--mono); }
+.card .r .num { color: var(--g-ink); }
+.bar { height: 4px; background: var(--g-row); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--g-teal); }
+.lanegroup { display: grid; gap: 5px; }
+.lanegroup > .lbl2 { font: 600 13px/1 var(--display); display: flex; gap: 8px; align-items: center; }
+.ghostlane { border: 1.5px dashed var(--g-line); border-radius: 7px; padding: 8px 10px; color: var(--g-dim); font-size: 11px; display: flex; gap: 8px; align-items: center; font-family: var(--mono); }
+.sm-mult { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.sm-mult .box { padding: 6px 8px; gap: 2px; }
+.sm-mult .top { display: flex; justify-content: space-between; align-items: baseline; }
+.sm-mult b { font: 500 14px/1 var(--mono); }
+.sm-mult svg { width: 100%; height: 30px; }
+.head-list { display: grid; border: 1px solid var(--g-line); border-radius: 7px; background: #fffaf0; }
+.head-list div { padding: 6px 10px; border-bottom: 1px solid var(--g-row); display: grid; grid-template-columns: 56px 1fr; gap: 8px; font-size: 12px; }
+.head-list div:last-child { border-bottom: 0; }
+.head-list small { font: 500 10px/1.4 var(--mono); color: var(--g-dim); text-transform: uppercase; }
+.seg { display: flex; border: 1px solid var(--g-line); border-radius: 6px; overflow: hidden; background: #fffaf0; width: max-content; }
+.seg span { padding: 6px 10px; font-size: 11px; border-right: 1px solid var(--g-line); }
+.seg span:last-child { border-right: 0; }
+.seg span.on { background: var(--g-ink); color: var(--g-paper); }
+.stepper { display: flex; gap: 5px; align-items: center; font: 500 11px/1 var(--mono); color: var(--g-dim); }
+.stepper i { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-style: normal; border: 1px solid var(--g-line); margin-right: 4px; }
+.stepper .on { color: var(--g-ink); }
+.stepper .on i { background: var(--g-ink); color: var(--g-paper); border-color: var(--g-ink); }
+.stepper .ln { width: 18px; height: 1px; background: var(--g-line); }
+.q { display: inline-grid; place-items: center; width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--g-line); font: 500 9px/1 var(--mono); color: var(--g-dim); margin-left: 4px; vertical-align: 1px; }
+.region-map { position: absolute; top: 52px; left: 64px; right: 0; bottom: 0; background: #b9cfd2; }
+.region-map svg { width: 100%; height: 100%; display: block; }
+</style>
+
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow">UI revamp · second pass · for review</div>
+  <h1>Broadway &amp; Wall: fewer words, more depth</h1>
+  <div class="cols">
+    <div>
+      <h3>Rules</h3>
+      <ol class="rules">
+        <li><b>Word budget.</b> Labels 1–3 words. No sentences on screen.</li>
+        <li><b>Numbers, not sentences.</b> Figures, deltas, sparklines, columns.</li>
+        <li><b>Every number drills.</b> Click any figure for its breakdown.</li>
+        <li><b>Dense tables.</b> 30px rows, every column sorts, sparkline columns.</li>
+        <li><b>Fewest clicks.</b> Defaults and keys for every frequent verb.</li>
+        <li><b>No handholding.</b> No onboarding, coaching or “start here”.</li>
+        <li><b>No decorative motion.</b> State changes are instant.</li>
+      </ol>
+    </div>
+    <div>
+      <h3>Clicks, before → after</h3>
+      <div class="tablebox"><table class="cmp">
+        <thead><tr><th>Job</th><th>Before</th><th>After</th></tr></thead>
+        <tbody>
+          <tr><td>Buy at ask</td><td class="n was">6–7</td><td class="n now">3</td></tr>
+          <tr><td>Cash + debt</td><td class="n was">1</td><td class="n now">0</td></tr>
+          <tr><td>Why NOI is X</td><td class="n was">3+</td><td class="n now">1</td></tr>
+          <tr><td>Land value</td><td class="n was">3+</td><td class="n now">1</td></tr>
+          <tr><td>Start a build</td><td class="n was">4–6</td><td class="n now">3</td></tr>
+          <tr><td>Tenant letter</td><td class="n was">3</td><td class="n now">1</td></tr>
+          <tr><td>Refinance</td><td class="n was">4–5</td><td class="n now">3</td></tr>
+          <tr><td>Yield ≥ 8% list</td><td class="n was">4+</td><td class="n now">2</td></tr>
+        </tbody></table></div>
+    </div>
+  </div>
+  <p class="ex">Frames are 1600×900 over Unreal city shots. Figures are examples from a test save (2012, 50 buildings). Dotted figures drill; one drill is shown open per screen.</p>
+</header>
+
+<nav class="screens" aria-label="Screens">
+  <a href="#city"><span class="k">1</span>City + Inbox</a>
+  <a href="#building"><span class="k">2</span>Building file</a>
+  <a href="#holdings"><span class="k">3</span>Holdings</a>
+  <a href="#pipeline"><span class="k">4</span>Pipeline</a>
+  <a href="#market"><span class="k">5</span>Market › Sites</a>
+  <a href="#capital"><span class="k">6</span>Capital</a>
+  <a href="#intel"><span class="k">7</span>City</a>
+  <a href="#region"><span class="k">8</span>Region</a>
+</nav>
+
+<!-- 1 -->
+<section class="screen" id="city">
+  <div class="screen-head"><span class="eyebrow">1</span><h2>City + Inbox</h2><p>Debt drill open from the HUD.</p></div>
+  <div class="viewport"><div class="frame city">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 mo</span><span class="hbtn">+1 yr</span></div>
+      <div class="vitals">
+        <div class="vital"><small>Cash</small><b class="fig">$78.1M</b></div>
+        <div class="vital"><small>Debt</small><b class="fig open">$64.0M</b></div>
+        <div class="vital"><small>Net worth</small><b class="fig">$221.9M<i class="up">+0.6M</i></b></div>
+        <div class="vital"><small>CF / yr</small><b class="fig">$7.16M<i class="down">−155K</i></b></div>
+        <div class="vital"><small>Rank</small><b class="fig">1 / 62</b></div>
+        <div class="vital"><small>Occ</small><b class="fig">82.0%</b></div>
+        <div class="vital"><small>10Y</small><b class="fig">4.86%<i class="down">−8bp</i></b></div>
+      </div>
+      <div class="right"><div class="scope"><span class="on">Island</span><span>Region</span></div><div class="search">Search <span class="kbd">Ctrl K</span></div></div>
+    </div>
+    <div class="bd" style="left:390px;top:56px">
+      <div class="bh">Debt <b>$64.0M</b></div>
+      <div class="rows">
+        <span>85 State St · Oct 12</span><span class="n neg">$11.2M · 6.1%</span>
+        <span>14 Water St · Mar 14</span><span class="n">$9.4M · 5.9%</span>
+        <span>18 Milk St · Mar 14</span><span class="n">$6.8M · 5.8%</span>
+        <span>6 other loans</span><span class="n">$32.6M · 6.4%</span>
+        <span>Line drawn</span><span class="n">$4.0M · 7.1%</span>
+        <span class="tot">Total · blended</span><span class="n tot">$64.0M · 6.3%</span>
+      </div>
+      <div class="f">LTV 22% · DSCR 2.4× · next maturity 5 mo</div>
+      <div class="go">Capital › Loans ›</div>
+    </div>
+    <div class="rail">
+      <div class="it on"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox<span class="kk">I</span></div>
+      <div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings<span class="kk">1</span></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline<span class="kk">2</span></div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market<span class="kk">3</span></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital<span class="kk">4</span></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City<span class="kk">5</span></div>
+    </div>
+    <div class="inbox" style="top:330px">
+      <div class="ih"><b>Inbox</b><span class="chip on">Needs you 5</span><span class="chip">Later 2</span><span class="chip">Done</span></div>
+      <div class="row"><span class="sev r"></span><span class="t">85 State St · balloon</span><div class="a"><span class="btn sm primary">Refinance</span><span class="btn sm">Later</span></div><span class="m">Oct · $11.2M · 6.1% → 7.4% quoted</span></div>
+      <div class="row"><span class="sev a"></span><span class="t">Harborcast · renewal 18.4k sf</span><div class="a"><span class="btn sm primary">Accept</span><span class="btn sm">Counter</span><span class="btn sm">✕</span></div><span class="m">$31.50 vs mkt $33.78 · 5y · 3 mo free</span></div>
+      <div class="row"><span class="sev a"></span><span class="t">418 Old Milk St · bid $9.6M</span><div class="a"><span class="btn sm primary">Take</span><span class="btn sm">Counter</span><span class="btn sm">✕</span></div><span class="m">Pell &amp; Ward · value $9.12M · ask $9.9M</span></div>
+      <div class="row"><span class="sev a"></span><span class="t">52 Front St · counter $4.80M</span><div class="a"><span class="btn sm primary">Take</span><span class="btn sm">Walk</span></div><span class="m">your bid $4.55M · 8.9% at $4.80M</span></div>
+      <div class="row"><span class="sev t"></span><span class="t">844 Old Trinity Pl · listed</span><div class="a"><span class="btn sm">Show</span><span class="btn sm">Open</span></div><span class="m">$342K · 11.4% · −24% vs value</span></div>
+    </div>
+    <span class="pin sale" style="left:880px;top:410px"></span><span class="pin mine" style="left:640px;top:300px"></span><span class="pin mine" style="left:1010px;top:520px"></span><span class="pin mine" style="left:760px;top:600px"></span><span class="pin dist" style="left:1240px;top:350px"></span>
+    <div class="lenses"><span class="on"><i style="background:#c8952c"></i>For sale</span><span class="on"><i style="background:#2f7a72"></i>Mine</span><span><i style="background:#a8402e"></i>Distressed</span><span>Sites</span><span>Rent</span><span>Vacancy</span><span>Demand</span></div>
+  </div></div>
+  <div class="notes"><span><b>Inbox rows</b> ≤ 8-word facts, verbs inline</span><span><b>HUD</b> adds Debt and Occ; every figure drills</span><span><b>Gone</b> docket prose, “Start here”, primer offer, card queue pill</span></div>
+</section>
+
+<!-- 2 -->
+<section class="screen" id="building">
+  <div class="screen-head"><span class="eyebrow">2</span><h2>Building file</h2><p>Listed building; NOI drill open.</p></div>
+  <div class="viewport"><div class="frame city">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 mo</span><span class="hbtn">+1 yr</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b class="fig">$78.1M</b></div><div class="vital"><small>Debt</small><b class="fig">$64.0M</b></div><div class="vital"><small>Net worth</small><b class="fig">$221.9M</b></div><div class="vital"><small>CF / yr</small><b class="fig">$7.16M</b></div></div>
+      <div class="right"><span class="hbtn">Inbox <span class="badge">5</span></span></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="pick" style="left:612px;top:262px;width:62px;height:98px"></div>
+    <div class="drawer std">
+      <div class="dhead">
+        <div class="crumbs">Market › For sale</div>
+        <div class="dtitle"><h4>844 Old Trinity Pl</h4><span class="chip gold">For sale</span><span class="x">✕</span></div>
+        <div class="meta">Office · 4 fl · 9,860 sf · 1961 · worn · Carrow Holdings</div>
+        <div class="tabs"><span class="on">Overview</span><span>Rent roll 4</span><span>Money</span><span>Build</span><span>History</span></div>
+      </div>
+      <div class="dbody">
+        <div class="strip"><div><small>Ask</small><b class="fig">$342K</b><em>$35/sf</em></div><div><small>Going-in</small><b class="fig">11.4%</b><em>mkt 7.9%</em></div><div><small>NOI</small><b class="fig open">$39.0K</b><em>in place</em></div><div><small>Value</small><b class="fig">$449K</b><em class="pos">ask −24%</em></div></div>
+        <div class="grid2">
+          <div class="box"><span class="lbl">Rent</span>
+            <div class="kv"><span class="l">In place</span><span class="n fig">$18.40</span><svg viewBox="0 0 70 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.5" points="1,10 15,9 29,9 43,8 57,8 69,8"/></svg>
+              <span class="l">Market</span><span class="n fig">$21.10</span><svg viewBox="0 0 70 16"><polyline fill="none" stroke="#2f7a72" stroke-width="1.5" points="1,3 15,4 29,5 43,8 57,10 69,11"/></svg>
+              <span class="l">Leased</span><span class="n fig">91%</span><svg viewBox="0 0 70 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.5" points="1,4 15,4 29,5 43,6 57,5 69,5"/></svg>
+              <span class="l">Roll 2y</span><span class="n fig neg">48%</span><span></span>
+              <span class="l">WALT</span><span class="n fig">2.1 y</span><span></span></div></div>
+          <div class="box"><span class="lbl">Asset</span>
+            <div class="kv"><span class="l">Condition</span><span class="n fig">0.77</span><span class="n" style="font-size:11px;color:var(--g-dim)">worn</span>
+              <span class="l">To fair</span><span class="n fig">$41K</span><span></span>
+              <span class="l">Demand</span><span class="n fig">77</span><svg viewBox="0 0 70 16"><polyline fill="none" stroke="#3a7d46" stroke-width="1.5" points="1,12 15,11 29,10 43,8 57,6 69,5"/></svg>
+              <span class="l">Land<span class="q">?</span></span><span class="n fig">$131/sf</span><span></span>
+              <span class="l">Listed</span><span class="n">3 mo · 9 left</span><span></span></div></div>
+        </div>
+        <span class="lbl">Financing</span>
+        <div class="seg"><span>Cash</span><span class="on">Bank 65% · 6.9%</span><span>Bridge 75%</span><span>Custom</span></div>
+        <div class="strip"><div><small>Equity</small><b class="fig">$128K</b></div><div><small>Debt svc</small><b class="fig">$19.6K</b></div><div><small>CoC yr 1</small><b class="fig pos">15.2%</b></div><div><small>DSCR</small><b class="fig">1.99×</b></div></div>
+        <div class="bd" style="left:150px;top:62px">
+          <div class="bh">NOI · in place <b>$39.0K</b></div>
+          <div class="rows">
+            <span>Rent roll · 4 leases · 8,970 sf</span><span class="n">$165.0K</span>
+            <span>Vacancy + credit · 9%</span><span class="n neg">−$14.9K</span>
+            <span>Property tax · 1.1%</span><span class="n neg">−$49.4K</span>
+            <span>Insurance</span><span class="n neg">−$9.9K</span>
+            <span>Management · 4%</span><span class="n neg">−$6.0K</span>
+            <span>Repairs + reserves</span><span class="n neg">−$45.8K</span>
+            <span class="tot">NOI</span><span class="n tot">$39.0K</span>
+          </div>
+          <div class="f">NOI ÷ ask = 39.0K ÷ 342K = 11.4%</div>
+          <div class="go">Rent roll ›</div>
+        </div>
+      </div>
+      <div class="dfoot">
+        <div class="stepper"><span class="on"><i>1</i>Price</span><span class="ln"></span><span><i>2</i>Confirm</span></div>
+        <div class="input" style="min-width:110px;margin-left:auto">$310,000</div><span class="btn">Offer</span><span class="btn primary">Pay ask <span class="kk2">B</span></span>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes"><span><b>Buy</b> click › Pay ask › Confirm = 3</span><span><b>Drills</b> NOI, value, rent, land, DSCR</span><span><b>Gone</b> “Why it is cheap”, earnest-money paragraph, seller story</span></div>
+</section>
+
+<!-- 3 -->
+<section class="screen" id="holdings">
+  <div class="screen-head"><span class="eyebrow">3</span><h2>Holdings</h2><p>Value drill open on a row.</p></div>
+  <div class="viewport"><div class="frame city2">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 mo</span><span class="hbtn">+1 yr</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b class="fig">$78.1M</b></div><div class="vital"><small>Debt</small><b class="fig">$64.0M</b></div><div class="vital"><small>Net worth</small><b class="fig">$221.9M</b></div><div class="vital"><small>CF / yr</small><b class="fig">$7.16M</b></div></div>
+      <div class="right"><span class="hbtn">Inbox <span class="badge">5</span></span></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it on"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="pick" style="left:300px;top:330px;width:46px;height:60px"></div>
+    <div class="drawer wide">
+      <div class="dhead">
+        <div class="dtitle"><h4>Holdings</h4><span class="chip">50 · 756,617 sf</span><span class="x">✕</span></div>
+        <div class="tabs"><span class="on">Buildings</span><span>Leasing 2</span><span>Returns</span></div>
+      </div>
+      <div class="dbody">
+        <div class="strip"><div><small>Equity</small><b class="fig">$152.7M</b></div><div><small>NOI / yr</small><b class="fig">$21.4M</b></div><div><small>CF / mo</small><b class="fig">$635K</b></div><div><small>Occ</small><b class="fig">82.0%</b><em>mkt 88%</em></div><div><small>Unreal. gain</small><b class="fig pos">+$9.76M</b></div><div><small>Roll 2y</small><b class="fig neg">48%</b></div><div><small>Top tenant</small><b class="fig">19%</b></div></div>
+        <div class="filters"><div class="input">Filter</div><span class="chip on">All 50</span><span class="chip">Office 31</span><span class="chip">Multi 9</span><span class="chip">Retail 7</span><span class="chip">Ind 3</span><span class="chip red">Flags 4</span><span style="margin-left:auto" class="btn sm">Columns</span><span class="btn sm">Show on city</span><span class="btn sm">Sell set</span></div>
+        <table class="dt">
+          <thead><tr><th>Property</th><th class="n">SF</th><th class="n">Occ</th><th>Occ 24m</th><th class="n">Rent</th><th class="n">Mkt</th><th class="n">NOI</th><th class="n">Cap</th><th class="s n">Value ▾</th><th class="n">Debt</th><th class="n">DSCR</th><th class="n">CF/mo</th><th>Flag</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>14 New Court St<span class="sub">MF</span></td><td class="n">92,308</td><td class="n fig">96%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.4" points="1,6 13,5 25,5 37,4 49,4 63,4"/></svg></td><td class="n fig">$33.78</td><td class="n">$34.10</td><td class="n fig">$1.42M</td><td class="n fig">2.9%</td><td class="n fig">$48.13M</td><td class="n">—</td><td class="n">—</td><td class="n fig">$118K</td><td></td><td><div class="rowact"><span class="btn sm">Refi</span><span class="btn sm">Sell</span></div></td></tr>
+            <tr class="sel"><td>18 Milk St<span class="sub">OFF</span></td><td class="n">71,339</td><td class="n fig">95%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.4" points="1,9 13,8 25,6 37,5 49,5 63,4"/></svg></td><td class="n fig">$21.24</td><td class="n">$21.10</td><td class="n fig">$994K</td><td class="n fig">8.1%</td><td class="n fig open">$12.31M</td><td class="n fig">$6.8M</td><td class="n fig">1.92×</td><td class="n fig">$43K</td><td></td><td><div class="rowact"><span class="btn sm">Refi</span><span class="btn sm">Sell</span></div></td></tr>
+            <tr><td>418 Old Milk St<span class="sub">OFF</span></td><td class="n">62,200</td><td class="n fig">97%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.4" points="1,5 13,5 25,4 37,4 49,4 63,4"/></svg></td><td class="n fig">$22.69</td><td class="n">$21.10</td><td class="n fig">$958K</td><td class="n fig">10.5%</td><td class="n fig">$9.12M</td><td class="n">—</td><td class="n">—</td><td class="n fig">$79K</td><td><span class="chip gold">Bid $9.6M</span></td><td></td></tr>
+            <tr><td>85 State St<span class="sub">OFF</span></td><td class="n">38,896</td><td class="n fig">100%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.4" points="1,4 13,4 25,4 37,4 49,4 63,4"/></svg></td><td class="n fig">$25.81</td><td class="n">$21.10</td><td class="n fig">$728K</td><td class="n fig">8.3%</td><td class="n fig">$8.81M</td><td class="n fig neg">$11.2M</td><td class="n fig neg">1.31×</td><td class="n fig">$18K</td><td><span class="chip red">Balloon 5m</span></td><td></td></tr>
+            <tr><td>14 Water St<span class="sub">OFF</span></td><td class="n">55,020</td><td class="n fig">89%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.4" points="1,3 13,4 25,6 37,7 49,7 63,8"/></svg></td><td class="n fig">$23.05</td><td class="n">$21.10</td><td class="n fig">$842K</td><td class="n fig">7.4%</td><td class="n fig">$11.40M</td><td class="n fig">$9.4M</td><td class="n fig">1.48×</td><td class="n fig">$22K</td><td></td><td><div class="rowact"><span class="btn sm">Refi</span><span class="btn sm">Sell</span></div></td></tr>
+            <tr><td>38 N Larkin St<span class="sub">RET</span></td><td class="n">24,150</td><td class="n fig">83%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.4" points="1,4 13,4 25,6 37,7 49,7 63,7"/></svg></td><td class="n fig">$29.40</td><td class="n">$30.20</td><td class="n fig">$512K</td><td class="n fig">8.0%</td><td class="n fig">$6.40M</td><td class="n fig">$3.9M</td><td class="n fig">1.66×</td><td class="n fig">$21K</td><td></td><td><div class="rowact"><span class="btn sm">Refi</span><span class="btn sm">Sell</span></div></td></tr>
+            <tr><td>211 Bayard Row<span class="sub">OFF</span></td><td class="n">31,400</td><td class="n fig neg">52%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2f7a72" stroke-width="1.4" points="1,15 13,14 25,12 37,10 49,9 63,8"/></svg></td><td class="n fig">$19.10</td><td class="n">$21.10</td><td class="n fig">$188K</td><td class="n fig">4.6%</td><td class="n fig">$4.05M</td><td class="n fig">$2.6M</td><td class="n fig neg">0.92×</td><td class="n fig neg">−$6K</td><td><span class="chip teal">Lease-up</span></td><td></td></tr>
+            <tr><td>9 Pine Alley<span class="sub">IND</span></td><td class="n">48,000</td><td class="n fig">100%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.4" points="1,4 13,4 25,4 37,4 49,4 63,4"/></svg></td><td class="n fig">$8.90</td><td class="n">$9.40</td><td class="n fig">$331K</td><td class="n fig">8.7%</td><td class="n fig">$3.80M</td><td class="n">—</td><td class="n">—</td><td class="n fig">$28K</td><td></td><td><div class="rowact"><span class="btn sm">Refi</span><span class="btn sm">Sell</span></div></td></tr>
+          </tbody>
+        </table>
+        <div class="tfoot"><span>8 / 50 · virtualised</span><span>Value ▾</span></div>
+        <div class="bd" style="left:520px;top:250px">
+          <div class="bh">Value · 18 Milk St <b>$12.31M</b></div>
+          <div class="rows">
+            <span>NOI · in place</span><span class="n">$994K</span>
+            <span>Cap · office, fair</span><span class="n">7.9%</span>
+            <span>Income value</span><span class="n">$12.58M</span>
+            <span>Appraisal range</span><span class="n">$11.6–13.0M</span>
+            <span>Replacement cost</span><span class="n">$14.9M</span>
+            <span class="tot">Mark</span><span class="n tot">$12.31M</span>
+          </div>
+          <div class="f">Comps: 22 Broad St Feb 12 · 7 Hanover Sq Nov 11</div>
+          <div class="go">Comps sheet ›</div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes"><span><b>14 columns</b>, all sort; column picker</span><span><b>Flags</b> are chips, linked to Inbox</span><span><b>Gone</b> Exposure prose, concentration essay, 165 per-row buttons (→ 2 + menu)</span></div>
+</section>
+
+<!-- 4 -->
+<section class="screen" id="pipeline">
+  <div class="screen-head"><span class="eyebrow">4</span><h2>Pipeline</h2><p>Stages; Land lane reserved for the region.</p></div>
+  <div class="viewport"><div class="frame city">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 mo</span><span class="hbtn">+1 yr</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b class="fig">$78.1M</b></div><div class="vital"><small>Debt</small><b class="fig">$64.0M</b></div><div class="vital"><small>Net worth</small><b class="fig">$221.9M</b></div><div class="vital"><small>CF / yr</small><b class="fig">$7.16M</b></div></div>
+      <div class="right"><span class="hbtn">Inbox <span class="badge">5</span></span></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="drawer wide">
+      <div class="dhead">
+        <div class="dtitle"><h4>Pipeline</h4><span class="chip">9 live · $38.4M</span><span class="x">✕</span></div>
+        <div class="tabs"><span class="on">All</span><span>Buying 3</span><span>Building 3</span><span>Selling 3</span><span style="opacity:.5">Land</span></div>
+      </div>
+      <div class="dbody" style="gap:12px">
+        <div class="lanegroup"><div class="lbl2">Buying</div>
+          <div class="board">
+            <div class="lane"><h5>Approached <span>1</span></h5><div class="card"><b>77 Pearl St</b><div class="r"><span>waiting</span><span class="num">2 mo</span></div></div></div>
+            <div class="lane"><h5>Bid out <span>1</span></h5><div class="card"><b>9 Cedar Ct</b><div class="r"><span>bid / ask</span><span class="num fig">$2.10 / 2.35M</span></div><div class="r"><span>yield</span><span class="num fig">8.6%</span></div></div></div>
+            <div class="lane"><h5>Countered <span>1</span></h5><div class="card" style="border-color:var(--g-gold)"><b>52 Front St</b><div class="r"><span>they want</span><span class="num fig">$4.80M</span></div><div class="r"><span>yield</span><span class="num fig">8.9%</span></div><span class="btn sm primary">Take $4.80M</span></div></div>
+            <div class="lane"><h5>Contract <span>0</span></h5></div>
+            <div class="lane"><h5>Closed 90d <span>2</span></h5><div class="card"><b>844 Old Trinity Pl</b><div class="r"><span>paid</span><span class="num">$342K</span></div></div></div>
+          </div></div>
+        <div class="lanegroup"><div class="lbl2">Building</div>
+          <div class="board">
+            <div class="lane"><h5>Planning <span>1</span></h5><div class="card"><b>1-0412 Water St</b><div class="r"><span>12 fl OFF</span><span class="num fig">YoC 6.8%</span></div></div></div>
+            <div class="lane"><h5>Permits <span>0</span></h5></div>
+            <div class="lane"><h5>Construction <span>1</span></h5><div class="card"><b>301 Hanover Sq</b><div class="r"><span>9 / 20 mo</span><span class="num fig">$14.2M</span></div><div class="bar"><i style="width:45%"></i></div><div class="r"><span>budget</span><span class="num fig neg">+3.1%</span></div></div></div>
+            <div class="lane"><h5>Lease-up <span>1</span></h5><div class="card"><b>211 Bayard Row</b><div class="r"><span>leased</span><span class="num fig">52%</span></div><div class="bar"><i style="width:52%"></i></div></div></div>
+            <div class="lane"><h5>Stable 90d <span>0</span></h5></div>
+          </div></div>
+        <div class="lanegroup"><div class="lbl2">Selling</div>
+          <div class="board">
+            <div class="lane"><h5>Listed <span>1</span></h5><div class="card"><b>9 Pine Alley</b><div class="r"><span>ask</span><span class="num fig">$4.10M</span></div></div></div>
+            <div class="lane"><h5>Bids <span>1</span></h5><div class="card" style="border-color:var(--g-gold)"><b>418 Old Milk St</b><div class="r"><span>bid / value</span><span class="num fig">$9.6 / 9.12M</span></div><span class="btn sm primary">Take $9.6M</span></div></div>
+            <div class="lane"><h5>Contract <span>1</span></h5><div class="card"><b>6 Garden Row</b><div class="r"><span>closes</span><span class="num">Jul</span></div></div></div>
+            <div class="lane"><h5>Closing <span>0</span></h5></div>
+            <div class="lane"><h5>Sold 90d <span>0</span></h5></div>
+          </div></div>
+        <div class="ghostlane">LAND · Bought › Entitled › Subdivided › Lots listed › Lots sold · region</div>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes"><span><b>One board</b> for buy, build, sell, land</span><span><b>Gold edge</b> = needs you; verb on the card</span><span><b>Replaces</b> Deals (6 sections), scheme-in-progress</span></div>
+</section>
+
+<!-- 5 -->
+<section class="screen" id="market">
+  <div class="screen-head"><span class="eyebrow">5</span><h2>Market › Sites</h2><p>Land residual drill open.</p></div>
+  <div class="viewport"><div class="frame city2">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 mo</span><span class="hbtn">+1 yr</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b class="fig">$78.1M</b></div><div class="vital"><small>Debt</small><b class="fig">$64.0M</b></div><div class="vital"><small>Net worth</small><b class="fig">$221.9M</b></div><div class="vital"><small>CF / yr</small><b class="fig">$7.16M</b></div></div>
+      <div class="right"><span class="hbtn">Inbox <span class="badge">5</span></span></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <span class="pin sale" style="left:200px;top:300px"></span><span class="pin sale" style="left:330px;top:420px"></span><span class="pin sale" style="left:150px;top:520px"></span><span class="pin sale" style="left:420px;top:250px"></span>
+    <div class="drawer wide">
+      <div class="dhead">
+        <div class="dtitle"><h4>Market</h4><span class="x">✕</span></div>
+        <div class="tabs"><span>For sale 30</span><span>All buildings</span><span class="on">Sites 41</span><span>Distressed 6</span><span>Books 2</span></div>
+      </div>
+      <div class="dbody">
+        <div class="filters"><div class="input">Filter</div><span class="chip on">Pencils 12</span><span class="chip">For sale 9</span><span class="chip">Mine 3</span><span class="chip">Office</span><span class="chip">Multi</span><span class="chip">Ind</span><span class="chip">Margin ≥ 15%</span><span style="margin-left:auto" class="btn sm primary">Show 12 on city</span></div>
+        <table class="dt">
+          <thead><tr><th>Lot</th><th class="n">Lot sf</th><th>Zoning</th><th>Best use</th><th class="n">FAR</th><th class="n">Ask</th><th class="s n">Land value ▾</th><th class="n">vs ask</th><th class="n">YoC</th><th class="n">Margin</th><th>Land 10y</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>1-0412 Water St</td><td class="n">14,800</td><td>C6</td><td>OFF 12 fl</td><td class="n">10.0</td><td class="n">mine</td><td class="n fig">$2.94M</td><td class="n">—</td><td class="n fig">6.8%</td><td class="n fig">16%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.4" points="1,13 13,12 25,10 37,8 49,7 63,6"/></svg></td><td><div class="rowact"><span class="btn sm primary">Plan</span></div></td></tr>
+            <tr class="sel"><td>66 N Ingram St</td><td class="n">6,100</td><td>C4</td><td>MF 6 fl</td><td class="n">4.2</td><td class="n">$196K</td><td class="n fig open">$799K</td><td class="n pos">−75%</td><td class="n fig">7.4%</td><td class="n fig">21%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.4" points="1,12 13,12 25,11 37,9 49,7 63,5"/></svg></td><td><div class="rowact"><span class="btn sm primary">Buy</span></div></td></tr>
+            <tr><td>12 Rope Walk</td><td class="n">22,400</td><td>M1</td><td>IND 1 fl</td><td class="n">1.0</td><td class="n">$610K</td><td class="n fig">$672K</td><td class="n">−9%</td><td class="n fig">8.1%</td><td class="n fig">12%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.4" points="1,8 13,8 25,9 37,9 49,8 63,8"/></svg></td><td><div class="rowact"><span class="btn sm">Buy</span></div></td></tr>
+            <tr><td>4 Tanner Ct</td><td class="n">9,300</td><td>R7</td><td>MF 8 fl</td><td class="n">3.4</td><td class="n">—</td><td class="n fig">$1.12M</td><td class="n">—</td><td class="n fig">6.9%</td><td class="n fig">14%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#2b251a" stroke-width="1.4" points="1,14 13,12 25,11 37,9 49,8 63,7"/></svg></td><td><div class="rowact"><span class="btn sm">Approach</span></div></td></tr>
+            <tr><td>230 Canal St</td><td class="n">31,000</td><td>M1</td><td>IND 2 fl</td><td class="n">2.0</td><td class="n">$1.40M</td><td class="n fig">$1.31M</td><td class="n neg">+7%</td><td class="n fig">7.2%</td><td class="n fig">9%</td><td><svg viewBox="0 0 64 16"><polyline fill="none" stroke="#a8402e" stroke-width="1.4" points="1,5 13,6 25,8 37,10 49,11 63,12"/></svg></td><td><div class="rowact"><span class="btn sm">Buy</span></div></td></tr>
+          </tbody>
+        </table>
+        <div class="tfoot"><span>5 / 12 pencil · 41 sites</span><span>Land value ▾</span></div>
+        <div class="bd" style="left:430px;top:150px">
+          <div class="bh">Land · residual <b>$799K</b></div>
+          <div class="rows">
+            <span>Scheme · MF 6 fl · 0.7 cov</span><span class="n">25,600 sf</span>
+            <span>Finished value · $268/sf</span><span class="n">$6.86M</span>
+            <span>Cost to build · $237/sf</span><span class="n neg">−$6.07M</span>
+            <span>Residual · builder</span><span class="n">$799K</span>
+            <span>Holder value</span><span class="n">$612K</span>
+            <span class="tot">Land · builder wins</span><span class="n tot">$799K · $131/sf</span>
+          </div>
+          <div class="f">landRead → scheme.valuePsf − scheme.costPsf</div>
+          <div class="go">Plan this scheme ›</div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes"><span><b>Every lot</b> priced by residual, sortable</span><span><b>Plan</b> opens Build with this scheme preset</span><span><b>Gone</b> “Where to start”, courthouse essay, brokers paragraph</span></div>
+</section>
+
+<!-- 6 -->
+<section class="screen" id="capital">
+  <div class="screen-head"><span class="eyebrow">6</span><h2>Capital</h2><p>Cash-flow waterfall drill open.</p></div>
+  <div class="viewport"><div class="frame city">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 mo</span><span class="hbtn">+1 yr</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b class="fig">$78.1M</b></div><div class="vital"><small>Debt</small><b class="fig">$64.0M</b></div><div class="vital"><small>Net worth</small><b class="fig">$221.9M</b></div><div class="vital"><small>CF / yr</small><b class="fig">$7.16M</b></div></div>
+      <div class="right"><span class="hbtn">Inbox <span class="badge">5</span></span></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="drawer wide">
+      <div class="dhead">
+        <div class="dtitle"><h4>Capital</h4><span class="x">✕</span></div>
+        <div class="tabs"><span class="on">Overview</span><span>Loans 9</span><span>Lenders 7</span><span>Investors</span><span>Books</span></div>
+      </div>
+      <div class="dbody">
+        <div class="strip"><div><small>Cash</small><b class="fig">$78.1M</b></div><div><small>Debt</small><b class="fig">$64.0M</b><em>6.3%</em></div><div><small>LTV</small><b class="fig">22%</b></div><div><small>Line left</small><b class="fig">$74.7M</b><em>of $80.0M</em></div><div><small>Debt svc</small><b class="fig">$5.1M</b></div><div><small>DSCR</small><b class="fig">2.4×</b></div><div><small>CF / yr</small><b class="fig open">$7.16M</b></div></div>
+        <div class="grid2">
+          <div class="box"><div style="display:flex;justify-content:space-between"><span class="lbl">Maturities</span><span class="n" style="font-size:11px;color:var(--g-red)">$11.2M · 2012</span></div>
+            <svg viewBox="0 0 460 128" role="img" aria-label="Principal due by year: 2012 11.2M, 2013 0, 2014 16.2M, 2015 18.0M, 2016 9.1M, 2017 9.5M">
+              <g stroke="#e3d9c2"><line x1="40" y1="12" x2="450" y2="12"/><line x1="40" y1="55" x2="450" y2="55"/><line x1="40" y1="98" x2="450" y2="98"/></g>
+              <g font-family="IBM Plex Mono, monospace" font-size="10" fill="#6b6250"><text x="34" y="15" text-anchor="end">$20M</text><text x="34" y="58" text-anchor="end">$10M</text><text x="34" y="101" text-anchor="end">0</text></g>
+              <rect x="55" y="49.8" width="44" height="48.2" fill="#a8402e"/><rect x="123" y="97" width="44" height="1" fill="#2f7a72"/><rect x="191" y="28.3" width="44" height="69.7" fill="#2f7a72"/><rect x="259" y="20.6" width="44" height="77.4" fill="#2f7a72"/><rect x="327" y="58.9" width="44" height="39.1" fill="#2f7a72"/><rect x="395" y="57.2" width="44" height="40.8" fill="#2f7a72"/>
+              <g font-family="IBM Plex Mono, monospace" font-size="10" fill="#6b6250" text-anchor="middle"><text x="77" y="114">12</text><text x="145" y="114">13</text><text x="213" y="114">14</text><text x="281" y="114">15</text><text x="349" y="114">16</text><text x="417" y="114">17</text></g>
+            </svg></div>
+          <div class="box"><div style="display:flex;justify-content:space-between"><span class="lbl">Rates · 5y</span><span class="n" style="font-size:11px">10Y 4.86 · book 6.30 · quote 7.40</span></div>
+            <svg viewBox="0 0 460 128" role="img" aria-label="10-year rate falling from 6.6% to 4.86%; book rate flat near 6.3%; quoted office rate 7.4%">
+              <g stroke="#e3d9c2"><line x1="40" y1="12" x2="450" y2="12"/><line x1="40" y1="55" x2="450" y2="55"/><line x1="40" y1="98" x2="450" y2="98"/></g>
+              <g font-family="IBM Plex Mono, monospace" font-size="10" fill="#6b6250"><text x="34" y="15" text-anchor="end">8%</text><text x="34" y="58" text-anchor="end">6%</text><text x="34" y="101" text-anchor="end">4%</text></g>
+              <polyline fill="none" stroke="#2b251a" stroke-width="2" points="45,42 105,36 165,31 225,50 285,66 345,77 405,83 445,81"/>
+              <polyline fill="none" stroke="#c8952c" stroke-width="2" stroke-dasharray="5 4" points="45,58 445,58"/>
+              <polyline fill="none" stroke="#a8402e" stroke-width="2" points="45,52 165,46 285,38 445,30"/>
+              <circle cx="445" cy="81" r="3.5" fill="#2b251a"/>
+              <g font-family="IBM Plex Mono, monospace" font-size="10" fill="#6b6250" text-anchor="middle"><text x="45" y="114">07</text><text x="245" y="114">10</text><text x="440" y="114">12</text></g>
+            </svg></div>
+        </div>
+        <table class="dt">
+          <thead><tr><th>Loan</th><th>Lender</th><th class="n">Balance</th><th class="n">Rate</th><th>Type</th><th class="s n">Matures ▴</th><th class="n">LTV</th><th class="n">DSCR</th><th class="n">Quote</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>85 State St</td><td>2nd Harbor Svgs</td><td class="n fig">$11.2M</td><td class="n fig">6.1%</td><td>fixed</td><td class="n neg">Oct 12</td><td class="n fig">127%</td><td class="n fig neg">1.31×</td><td class="n fig">7.4%</td><td><div class="rowact"><span class="btn sm primary">Refinance</span></div></td></tr>
+            <tr><td>14 Water St</td><td>Union Mutual</td><td class="n fig">$9.4M</td><td class="n fig">5.9%</td><td>fixed</td><td class="n">Mar 14</td><td class="n fig">82%</td><td class="n fig">1.48×</td><td class="n fig">7.1%</td><td></td></tr>
+            <tr><td>18 Milk St</td><td>Union Mutual</td><td class="n fig">$6.8M</td><td class="n fig">5.8%</td><td>fixed</td><td class="n">Mar 14</td><td class="n fig">55%</td><td class="n fig">1.92×</td><td class="n fig">6.9%</td><td></td></tr>
+          </tbody>
+        </table>
+        <div class="bd" style="left:690px;top:62px">
+          <div class="bh">Cash flow · 12 mo <b>$7.16M</b></div>
+          <div class="rows">
+            <span>NOI · 50 buildings</span><span class="n">$21.40M</span>
+            <span>Debt service</span><span class="n neg">−$5.10M</span>
+            <span>Leasing · TI + fees</span><span class="n neg">−$3.92M</span>
+            <span>Capex</span><span class="n neg">−$2.85M</span>
+            <span>Firm overhead</span><span class="n neg">−$1.47M</span>
+            <span>Interest on cash</span><span class="n pos">+$0.90M</span>
+            <span>Tax</span><span class="n neg">−$1.80M</span>
+            <span class="tot">Cash flow</span><span class="n tot">$7.16M</span>
+          </div>
+          <div class="f">vs prior 12 mo $7.32M · −$155K (leasing)</div>
+          <div class="go">Books › Cash ›</div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes"><span><b>Debt, line, maturities, quotes</b> on one screen</span><span><b>Books</b> keep Balance · P&amp;L · Cash · Tax</span><span><b>Gone</b> “Past a handful of buildings…”, maturity-rule paragraph</span></div>
+</section>
+
+<!-- 7 -->
+<section class="screen" id="intel">
+  <div class="screen-head"><span class="eyebrow">7</span><h2>City › Markets</h2><p>Small multiples, submarket table, headlines.</p></div>
+  <div class="viewport"><div class="frame city2">
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 mo</span><span class="hbtn">+1 yr</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b class="fig">$78.1M</b></div><div class="vital"><small>Debt</small><b class="fig">$64.0M</b></div><div class="vital"><small>Net worth</small><b class="fig">$221.9M</b></div><div class="vital"><small>CF / yr</small><b class="fig">$7.16M</b></div></div>
+      <div class="right"><span class="hbtn">Inbox <span class="badge">5</span></span></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="drawer wide">
+      <div class="dhead">
+        <div class="dtitle"><h4>City</h4><span class="chip red">Recession · m7</span><span class="x">✕</span></div>
+        <div class="tabs"><span class="on">Markets</span><span>News</span><span>Players</span><span>Rankings</span><span>Record</span></div>
+      </div>
+      <div class="dbody" style="grid-template-columns: 1.5fr 1fr; gap: 12px;">
+        <div style="display:grid;gap:8px;align-content:start;min-width:0">
+          <div class="filters"><span class="chip on">Office</span><span class="chip">Retail</span><span class="chip">Multi</span><span class="chip">Ind</span><span class="chip">Land</span><span class="seg" style="margin-left:auto"><span>5y</span><span class="on">20y</span><span>All</span></span></div>
+          <div class="sm-mult">
+            <div class="box"><div class="top"><span class="lbl">Vacancy</span><b class="fig neg">14.2%</b></div><svg viewBox="0 0 160 30" preserveAspectRatio="none"><polyline fill="none" stroke="#a8402e" stroke-width="1.6" points="0,24 20,20 40,22 60,15 80,18 100,22 120,17 140,10 160,5"/></svg></div>
+            <div class="box"><div class="top"><span class="lbl">Rent /sf</span><b class="fig">$21.10</b></div><svg viewBox="0 0 160 30" preserveAspectRatio="none"><polyline fill="none" stroke="#2b251a" stroke-width="1.6" points="0,22 20,20 40,17 60,15 80,12 100,9 120,7 140,11 160,15"/></svg></div>
+            <div class="box"><div class="top"><span class="lbl">Cap</span><b class="fig">7.9%</b></div><svg viewBox="0 0 160 30" preserveAspectRatio="none"><polyline fill="none" stroke="#2f7a72" stroke-width="1.6" points="0,10 20,12 40,15 60,18 80,20 100,21 120,19 140,14 160,9"/></svg></div>
+            <div class="box"><div class="top"><span class="lbl">Absorption</span><b class="fig neg">−184k sf</b></div><svg viewBox="0 0 160 30" preserveAspectRatio="none"><line x1="0" y1="15" x2="160" y2="15" stroke="#e3d9c2"/><polyline fill="none" stroke="#2b251a" stroke-width="1.6" points="0,10 20,8 40,12 60,9 80,11 100,13 120,16 140,22 160,25"/></svg></div>
+            <div class="box"><div class="top"><span class="lbl">Jobs yoy</span><b class="fig neg">−2.1%</b></div><svg viewBox="0 0 160 30" preserveAspectRatio="none"><line x1="0" y1="15" x2="160" y2="15" stroke="#e3d9c2"/><polyline fill="none" stroke="#a8402e" stroke-width="1.6" points="0,9 20,10 40,8 60,11 80,9 100,10 120,13 140,19 160,22"/></svg></div>
+            <div class="box"><div class="top"><span class="lbl">Real wage</span><b class="fig">+0.4%</b></div><svg viewBox="0 0 160 30" preserveAspectRatio="none"><polyline fill="none" stroke="#2b251a" stroke-width="1.6" points="0,20 20,18 40,17 60,15 80,14 100,12 120,12 140,13 160,14"/></svg></div>
+            <div class="box"><div class="top"><span class="lbl">Pipeline</span><b class="fig">410k sf</b></div><svg viewBox="0 0 160 30" preserveAspectRatio="none"><polyline fill="none" stroke="#2b251a" stroke-width="1.6" points="0,22 20,20 40,15 60,10 80,6 100,8 120,13 140,18 160,21"/></svg></div>
+            <div class="box"><div class="top"><span class="lbl">Credit</span><b class="fig">61%</b></div><svg viewBox="0 0 160 30" preserveAspectRatio="none"><polyline fill="none" stroke="#8a5620" stroke-width="1.6" points="0,5 20,5 40,6 60,6 80,7 100,9 120,15 140,21 160,24"/></svg></div>
+          </div>
+          <table class="dt">
+            <thead><tr><th>Submarket</th><th class="n">Stock</th><th class="s n">Vac ▾</th><th class="n">Δ12m</th><th class="n">Rent</th><th class="n">Δ12m</th><th class="n">Cap</th><th class="n">Mine</th></tr></thead>
+            <tbody>
+              <tr><td>Harbour Front</td><td class="n">1.9M</td><td class="n fig neg">16.9%</td><td class="n neg">+4.1</td><td class="n fig">$18.90</td><td class="n neg">−11%</td><td class="n fig">8.6%</td><td class="n">4</td></tr>
+              <tr><td>Financial Dist.</td><td class="n">4.2M</td><td class="n fig">11.8%</td><td class="n neg">+2.6</td><td class="n fig">$27.40</td><td class="n neg">−6%</td><td class="n fig">7.4%</td><td class="n">18</td></tr>
+              <tr><td>Old Milk / Larkin</td><td class="n">2.3M</td><td class="n fig">9.4%</td><td class="n neg">+1.2</td><td class="n fig">$22.70</td><td class="n neg">−2%</td><td class="n fig">7.8%</td><td class="n">11</td></tr>
+              <tr><td>Canal</td><td class="n">1.1M</td><td class="n fig">8.8%</td><td class="n pos">−0.4</td><td class="n fig">$16.30</td><td class="n pos">+1%</td><td class="n fig">8.1%</td><td class="n">2</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="display:grid;gap:8px;align-content:start;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px"><span class="lbl">Headlines</span><span class="chip" style="margin-left:auto">Mine</span><span class="chip">Deals</span><span class="chip">Banks</span></div>
+          <div class="head-list">
+            <div><small>May 10</small><span>Pell &amp; Ward bids $9.6M · 418 Old Milk St</span></div>
+            <div><small>May 08</small><span>2nd Harbor: office 60% LTV · 7.4%</span></div>
+            <div><small>May 04</small><span>Larkin Freight gives back 40k sf · Canal</span></div>
+            <div><small>May 02</small><span>Morrow lists 33 Exchange Alley · $11.8M</span></div>
+            <div><small>Apr 29</small><span>Fairbanks hands 44 Court St to Pelican Life</span></div>
+            <div><small>Apr 22</small><span>Harbour rezoning hearing · Sep</span></div>
+            <div><small>Apr 17</small><span>Bowline notices foreclosure · 7 Dock St</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes"><span><b>8 small multiples</b> per sector, 20-year</span><span><b>Headlines</b> one line; click opens the thing</span><span><b>Gone</b> “Employment decides…” (98 words), Pulse prose, story paragraphs</span></div>
+</section>
+
+<!-- 8 -->
+<section class="screen" id="region">
+  <div class="screen-head"><span class="eyebrow">8 · later</span><h2>Region</h2><p>Backdrop is a placeholder for the 3D metro scene in Unreal.</p></div>
+  <div class="viewport"><div class="frame">
+    <div class="region-map"><svg viewBox="0 0 1536 848" role="img" aria-label="Placeholder for the 3D metro scene: the island at left, mainland tracts in three counties, two owned, three for sale">
+      <rect width="1536" height="848" fill="#b9cfd2"/>
+      <path d="M560 0 C 620 160 600 300 680 420 C 740 520 700 700 760 848 L1536 848 L1536 0 Z" fill="#e4dcc4"/>
+      <path d="M90 300 C 140 180 300 160 380 220 C 450 280 470 420 420 520 C 370 620 220 640 150 580 C 80 520 60 400 90 300 Z" fill="#cfc4a6" stroke="#a89a78"/>
+      <text x="250" y="420" text-anchor="middle" font-family="Newsreader, Georgia, serif" font-size="22" fill="#4a4230">Denbourne Island</text>
+      <g font-family="IBM Plex Mono, monospace" font-size="13" fill="#6b6250"><text x="1000" y="80">ASHFORD CO.</text><text x="1230" y="560">KELL CO.</text><text x="780" y="700">MILL RIVER</text></g>
+      <path d="M430 400 C 600 380 900 360 1536 300" stroke="#8c7d58" stroke-width="5" fill="none"/>
+      <path d="M980 0 C 960 300 1000 600 1060 848" stroke="#8c7d58" stroke-width="4" fill="none"/>
+      <g stroke="#1d1a14" stroke-width="1.5">
+        <rect x="860" y="200" width="120" height="90" fill="#2f7a72" fill-opacity=".55"/><rect x="1130" y="420" width="160" height="110" fill="#2f7a72" fill-opacity=".55"/>
+        <rect x="1100" y="150" width="100" height="80" fill="#c8952c" fill-opacity=".6"/><rect x="820" y="520" width="140" height="100" fill="#c8952c" fill-opacity=".6"/><rect x="1330" y="220" width="110" height="90" fill="#c8952c" fill-opacity=".6"/>
+      </g>
+      <g font-family="IBM Plex Mono, monospace" font-size="12" fill="#1d1a14"><text x="866" y="218">Hollis · 210 ac</text><text x="1136" y="438">Kell Ridge · 340 ac</text><text x="1106" y="168">95 ac · $2.9M</text><text x="826" y="538">160 ac · $4.1M</text><text x="1336" y="238">120 ac · $3.3M</text></g>
+    </svg></div>
+    <div class="hud">
+      <div class="firm"><div class="logo">B&amp;W</div></div>
+      <div class="clock"><span class="date">May 2012</span><span class="hbtn">▶</span><span class="hbtn primary">+1 mo</span><span class="hbtn">+1 yr</span></div>
+      <div class="vitals"><div class="vital"><small>Cash</small><b class="fig">$78.1M</b></div><div class="vital"><small>Debt</small><b class="fig">$64.0M</b></div><div class="vital"><small>Net worth</small><b class="fig">$221.9M</b></div><div class="vital"><small>Land</small><b class="fig">550 ac</b></div></div>
+      <div class="right"><div class="scope"><span>Island</span><span class="on">Region</span></div><span class="hbtn">Inbox <span class="badge">5</span></span></div>
+    </div>
+    <div class="rail">
+      <div class="it"><span class="dot"></span><svg viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4z"/></svg>Inbox</div><div class="sep"></div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M4 20V9l5-3v14M9 20V4l7 3v13M16 20v-9l4 2v7M3 20h18"/></svg>Holdings</div>
+      <div class="it on"><svg viewBox="0 0 24 24"><path d="M4 6h5v12H4zM10 6h4v8h-4zM15 6h5v5h-5z"/></svg>Pipeline</div>
+      <div class="it"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Market</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>Capital</div>
+      <div class="it"><svg viewBox="0 0 24 24"><path d="M3 18l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>City</div>
+    </div>
+    <div class="drawer std" style="width:600px">
+      <div class="dhead">
+        <div class="dtitle"><h4>Pipeline · Land</h4><span class="x">✕</span></div>
+        <div class="tabs"><span>All</span><span>Buying</span><span>Building</span><span>Selling</span><span class="on">Land 2</span></div>
+      </div>
+      <div class="dbody">
+        <table class="dt">
+          <thead><tr><th>Tract</th><th class="n">Acres</th><th>Stage</th><th class="n">Basis</th><th class="n">Lots</th><th class="n">Sold</th><th class="n">$/lot</th><th class="n">IRR</th></tr></thead>
+          <tbody>
+            <tr><td>Hollis</td><td class="n">210</td><td>Entitle · Sep</td><td class="n fig">$6.3M</td><td class="n fig">620</td><td class="n">—</td><td class="n fig">$38K</td><td class="n fig">14%</td></tr>
+            <tr class="sel"><td>Kell Ridge</td><td class="n">340</td><td>Selling lots</td><td class="n fig">$9.8M</td><td class="n fig">880</td><td class="n fig">212</td><td class="n fig">$41K</td><td class="n fig">19%</td></tr>
+          </tbody>
+        </table>
+        <div class="box"><div style="display:flex;justify-content:space-between"><span class="lbl">Kell Ridge · takedowns</span><span class="n" style="font-size:11px">212 / 880</span></div><div class="bar"><i style="width:24%"></i></div>
+          <table class="dt"><thead><tr><th>Builder</th><th class="n">Lots</th><th class="n">$/lot</th><th>Terms</th><th></th></tr></thead><tbody>
+            <tr><td>Larch Homes</td><td class="n">120</td><td class="n fig">$41K</td><td>4 qtr</td><td><div class="rowact"><span class="btn sm primary">Accept</span><span class="btn sm">Counter</span></div></td></tr>
+            <tr><td>Stoneview</td><td class="n">60</td><td class="n fig">$43K</td><td>2 qtr</td><td><div class="rowact"><span class="btn sm">Accept</span><span class="btn sm">Counter</span></div></td></tr>
+          </tbody></table></div>
+        <div class="ex" style="color:var(--g-dim)">Stages and figures illustrative until REGION_PLAN settles.</div>
+      </div>
+    </div>
+  </div></div>
+  <div class="notes"><span><b>Scope switch</b> Island / Region</span><span><b>Same parts</b> table, stage, drill</span><span><b>3D metro</b> scene drawn by Unreal</span></div>
+</section>
+
+<section class="screen">
+  <div class="screen-head"><h2>Before</h2><p>Portfolio today in Unreal mode.</p></div>
+  <img src="before-portfolio-unreal-mode.jpg" alt="Current Portfolio page covering most of the screen, with a sixteen-entry labelled side rail" style="border-radius:8px;border:1px solid var(--rule)">
+  <p class="ex">Rules, prose audit and build spec: ui-revamp/PLAN.md and BUILD_SPEC.md.</p>
+</section>
+</div>
+
+<script>
+(function () {
+  var vps = document.querySelectorAll('.viewport');
+  function fit() { vps.forEach(function (v) { v.style.setProperty('--s', (v.clientWidth / 1600).toFixed(4)); }); }
+  fit();
+  if ('ResizeObserver' in window) { var ro = new ResizeObserver(fit); vps.forEach(function (v) { ro.observe(v); }); }
+  else window.addEventListener('resize', fit);
+})();
+</script>

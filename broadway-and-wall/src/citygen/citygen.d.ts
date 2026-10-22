@@ -77,6 +77,43 @@ declare module "@/citygen/index.mjs" {
     id: number; era: string; year: number;
     lots: { i: number; ring: [number, number][]; a: number; f: number; d: number; houseSf: number; storeys: number; c: [number, number] }[];
   } | null;
+  /** A designed plat's recipe as citygen reads it (engine/platdesign.ts designRecipe). */
+  export type DesignRecipe = import("@/engine/types").PlatDesign & { pondSf: number; amen: { k: import("@/engine/types").AmenityKind; at: [number, number] | null; sf: number }[] };
+  type Pt = [number, number];
+  export type DesignLot = {
+    ring: Pt[]; front: Pt[]; c: Pt; a: number; w: number; d: number; size: number; face: number; street: number;
+    sd?: number; pie?: boolean; base?: number[]; half?: boolean; near: [number, number][];
+  };
+  /** Region map: a farm tract as the player designed it, canonical metres (region/platdesign.mjs). */
+  export function platTractDesign(
+    tract: NonNullable<import("@/data/types").ParcelRecord["tract"]>, design: DesignRecipe,
+  ): {
+    layout: string; frame: { u: Pt; v: Pt; C: Pt; deg: number };
+    base: Omit<DesignLot, "near">[]; lots: DesignLot[];
+    streets: { pl: Pt[]; kind: "local" | "collector" | "court"; name: string; row: number }[];
+    bulbs: { c: Pt; r: number; street: number }[]; bulbR: number;
+    pond: { at: Pt; c: Pt; lots: number[]; sf: number; r: number };
+    amen: { k: import("@/engine/types").AmenityKind; at: Pt | null; lots: number[]; sf: number; ok: boolean; trail?: Pt[][] }[];
+    open: number[];
+    stats: { lotSf: number; streetSf: number; pondSf: number; amenSf: number; openSf: number };
+    ground: { outline: Pt[]; flood: Pt[][]; trail: Pt[][]; north: Pt; r: [number, number, number, number]; grossSf: number; floodSf: number; buildableSf: number; pondAt: Pt };
+  };
+  /** The same plat in lon/lat for the map and Unreal. */
+  export function platDesignLL(
+    tract: NonNullable<import("@/data/types").ParcelRecord["tract"]>, design: DesignRecipe,
+  ): {
+    lots: { ring: Pt[]; a: number; f: number; d: number; near: [number, number][] }[];
+    streets: Pt[][]; bulbs: Pt[][];
+    parks: { k: string; amen: number; ring: Pt[] }[]; pond: Pt[]; trails: Pt[][]; trees: Pt[];
+    volumes: { amen: number; ring: Pt[]; h: number }[];
+  };
+  /** What the engine is handed from a designed plat (engine/platdesign.ts DesignGeo). */
+  export function designSummary(geo: ReturnType<typeof platTractDesign>): import("@/engine/platdesign").DesignGeo;
+  export const DESIGN_LAYOUTS: string[];
+  export const DESIGN_SIZES: number[];
+  export const LOT_DIM_FT: Record<number, [number, number]>;
+  export const SPLIT_MIN: { sf: number; ft: number };
+  export function canSplit(l: { pie?: boolean; w: number; a: number }): boolean;
   /** The id of the written-down city. */
   export const MANHATTAN: string;
   /**

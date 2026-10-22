@@ -7,9 +7,11 @@ import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { dominantOf } from "@/engine/proforma";
+import { productOf, productsForUse, layoutProduct, type ProductKey, type ProductType } from "@/engine/products";
 import type { BuildingDesign, Contract, DevUse } from "@/engine/types";
 import { DesignPicker } from "@/ui/panels/DesignPicker";
 import SchemeViewer from "@/ui/panels/SchemeViewer";
+import LandDesk from "@/ui/panels/LandDesk";
 import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN, ownedHoldingValue } from "@/engine/value";
 import { ffAvailable, maxOutside, syndicateBar } from "@/engine/syndicate";
 import { playerTerms, termsLine } from "@/engine/reputation";
@@ -30,6 +32,7 @@ import {
   btsRentRead, BTS_FIT_PREMIUM, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY, groundbreakPurse,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
+import { sweepSchemes } from "@/ui/next/bestScheme";
 import { BUILD_TIERS, buildTier, specRentMult, specWearMult } from "@/engine/value";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { USE_WORD } from "@/engine/mix";
@@ -214,6 +217,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
+  // ...its desk is the land development desk: lay out the subdivision, entitle it, build its streets
+  if (rec && rec.ag && rec.tract) return <LandDesk bbl={bbl} />;
   if (rec && (rec.ag || rec.zoneDist === "AG")) {
     return (
       <div className="deal">
@@ -265,6 +270,11 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
   // WHAT IT LOOKS LIKE — yours to choose, and drawn on the lot as you choose
   // it. Looks only: nothing priced reads it (see BuildingDesign).
   const [design, setDesignRaw] = useState<BuildingDesign>(saved?.design ?? {});
+  // THE PRODUCT (products.ts): off a downtown street a shop or a shed is a pad,
+  // a centre, a flex building, a box or a plant on its own site plan. Opens on
+  // the one the tape priced, when it priced one.
+  const [product, setProductRaw] = useState<ProductKey | null>(() =>
+    (saved ? (productOf(saved.product)?.key ?? null) : (seedScheme?.product ?? null)));
   // HOW THE CONSTRUCTION LOAN COMES OUT (MDGA phase 5). Null = the lender's default.
   const [takeoutPick, setTakeoutRaw] = useState<"float" | "cap" | "fixed" | null>(saved?.takeout ?? null);
   // OUTSIDE EQUITY (syndicate.ts): the share of what friends and family could
@@ -277,8 +287,8 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
   const dirty = useRef(!!saved);
   useEffect(() => {
     if (!dirty.current) return;
-    useStore.getState().setDevDraft(bbl, { tab, use, cov: covDial, floors, contract, ltcWant, bank, spec, split, groundRetail, design, ...(takeoutPick ? { takeout: takeoutPick } : {}) });
-  }, [bbl, tab, use, covDial, floors, contract, ltcWant, bank, spec, split, groundRetail, design, takeoutPick]);
+    useStore.getState().setDevDraft(bbl, { tab, use, cov: covDial, floors, contract, ltcWant, bank, spec, split, groundRetail, design, ...(takeoutPick ? { takeout: takeoutPick } : {}), ...(product ? { product } : {}) });
+  }, [bbl, tab, use, covDial, floors, contract, ltcWant, bank, spec, split, groundRetail, design, takeoutPick, product]);
   const touch = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
     dirty.current = true;
     fn(...a);
@@ -294,6 +304,12 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
   const setSpec = touch(setSpecRaw);
   const setSplit = touch(setSplitRaw);
   const setGroundRetail = touch(setGroundRetailRaw);
+  const setProduct = touch(setProductRaw);
+  // The products this use comes in that this lot can carry (its site plan fits).
+  const productsHere = use === "retail" || use === "industrial"
+    ? productsForUse(use).filter((p) => !!layoutProduct(p, rec.lotArea)) : [];
+  const prodT = product ? productsHere.find((p) => p.key === product) ?? null : null;
+  const pcustom = prodT ? { product: prodT.key } : {};
   // THE FOOTPRINT IS THE USE'S TO TAKE (MAX_COVERAGE) — the limit the land
   // residual prices the dirt at. A held 85% dial on a switch to flats reads
   // as the 70% the flats may cover, and the slider ends there.
@@ -301,7 +317,7 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
     ? { retail: split.retail / 100, office: split.office / 100, multifamily: split.multifamily / 100 } : undefined);
   const cov = Math.max(MIN_COVERAGE, Math.min(covDial, covCap));
   const maxFl = maxFloorsFor(rec, cov, use);
-  const fl = Math.min(floors, maxFl);
+  const fl = prodT ? 1 : Math.min(floors, maxFl);
   // the scheme stands on its lot in the 3D city while the desk is open on
   // Design, and comes down when you leave the tab or the desk
   // leaving the desk takes the scheme down — unless you stepped out to look at it
@@ -328,7 +344,8 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
     ? { retail: stack.retail / 100, office: stack.office / 100, multifamily: stack.multifamily / 100 }
     : undefined;
   const prospect = game.btsProspects?.[bbl];
-  const bts = prospect?.use === use ? prospect : undefined;
+  // (a product's anchors are its pre-lets; the build-to-suit book is for a street building)
+  const bts = prospect?.use === use && !prodT ? prospect : undefined;
   const btsOffer = game.holdings[bbl]?.btsOffer;
   // The signed shell is the listing's programme; old saves carry only the use.
   const onTheirShell = !!prospect && prospect.use === use
@@ -352,9 +369,9 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [game.month, bbl, btsUse, fl, cov, basisKey, !!prospect, btsTermDial],
   );
-  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail, form: formOf(design) }, bank, spec);
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail, form: formOf(design), ...pcustom }, bank, spec);
   const plan = planDevelopment(game, parcels, bbl, use, fl, cov, contract,
-    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, bts, groundRetail, form: formOf(design) }, bank, spec);
+    planMax ? planMax.ltcMax * ltcWant : undefined, { mix: customMix, bts, groundRetail, form: formOf(design), ...pcustom }, bank, spec);
   // THE PREVIEW IS THE DELIVERY. The model on the desk is drawn from what the
   // engine will record when the building completes, not from the dials: the
   // class its mix makes it, whether that mix trades at street level, the
@@ -424,7 +441,7 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
           like the row above it. */}
       {plan && (
         <Verdict
-          label={`Yield on cost · ${devUseLabel(use)} · ${fl} fl · ${sf(plan.sf)}`}
+          label={`Yield on cost · ${prodT ? prodT.short : `${devUseLabel(use)} · ${fl} fl`} · ${sf(plan.sf)}`}
           value={`${plan.yieldOnCost.toFixed(2)}%`}
           tone={plan.hurdleRatio >= 1.08 ? "good" : plan.hurdleRatio >= 1 ? "warn" : "bad"}
           note={plan.hurdleRatio >= 1
@@ -451,7 +468,7 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
           />
           <Row
             k="Programme"
-            v={`${sf(plan.sf)} · ${fl} fl · ${devUseLabel(use)} · ${plan.months} mo`}
+            v={`${sf(plan.sf)} · ${prodT ? prodT.label : `${fl} fl · ${devUseLabel(use)}`} · ${plan.months} mo`}
           />
           {/* THE SCHEME IN DOLLARS. Yield on cost against the hurdle is the
               developer's read; what the player is deciding is whether to turn
@@ -478,24 +495,13 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
       )}
       {plan && <LocSplitHint need={closeCheque} game={game} parcels={parcels} />}
       <BestSchemes
-        onPick={(u, f) => { setUse(u); setFloors(f); }}
+        onPick={(u, f, pk) => { setUse(u); setFloors(f); setProduct(pk ?? null); }}
         sweep={() => {
           // Every use at a spread of heights up to its envelope, at the
           // dials already set (footprint, contract, lender, spec). Ranked
           // by the same hurdle ratio the verdict reads.
-          const out: { use: DevUse; floors: number; hurdle: number; equity: number; profit: number }[] = [];
-          for (const u of USES) {
-            const top = maxFloorsFor(rec, cov, u);
-            const steps = Array.from(new Set([2, 4, 6, 8, 12, 16, 20, 25, 30, 40, 50, top].filter((x) => x >= 1 && x <= top)));
-            for (const f of steps) {
-              const p = planDevelopment(game, parcels, bbl, u, f, cov, contract, undefined,
-                { mix: u === "mixed" ? customMix : undefined, groundRetail }, bank, spec);
-              if (!p) continue;
-              out.push({ use: u, floors: f, hurdle: p.hurdleRatio, equity: p.equity + p.pointsCost,
-                profit: p.exitYield > 0 ? p.stabNoi / (p.exitYield / 100) - p.basisTotal : 0 });
-            }
-          }
-          return out.sort((a, b) => b.hurdle - a.hurdle).slice(0, 3);
+          return sweepSchemes(game, parcels, bbl, USES, cov, contract,
+            (u) => ({ mix: u === "mixed" ? customMix : undefined, groundRetail }), bank, spec);
         }}
       />
 
@@ -536,6 +542,20 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
               );
             })}
           </div>
+          {productsHere.length > 0 && (
+            <div className="page-section" style={{ marginTop: 8 }}>
+              <div className="page-section-head">Product</div>
+              <div className="btn-row">
+                <button className={"btn" + (!prodT ? " btn-on" : "")} onClick={() => setProduct(null)}
+                  title="A shop or shed on the street, at the street's own massing.">Street building</button>
+                {productsHere.map((p) => (
+                  <button key={p.key} className={"btn" + (prodT?.key === p.key ? " btn-on" : "")} title={p.label}
+                    onClick={() => setProduct(p.key)}>{p.short}</button>
+                ))}
+              </div>
+              {prodT && <div className="hint">{prodT.blurb}</div>}
+            </div>
+          )}
           {(use === "office" || use === "multifamily") && fl >= 2 && (
             <div className="page-section" style={{ marginTop: 8 }}>
               <div className="page-section-head">Shops at grade</div>
@@ -553,7 +573,8 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
               </div>
             </div>
           )}
-          {(btsUse || prospect) && (
+          {prodT && plan?.product && <ProductSitePlan p={prodT} plan={plan} lotSf={rec.lotArea} />}
+          {(btsUse || prospect) && !prodT && (
             <div className="page-section" style={{ marginTop: 8 }}>
               <div className="page-section-head">Delivery strategy</div>
               {prospect ? (
@@ -664,7 +685,7 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
               )}
             </div>
           )}
-          <Slider
+          {!prodT && <Slider
             label="Stories"
             value={fl}
             min={1}
@@ -691,8 +712,8 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
                       : `The cap is ZONING: the envelope runs out at ${maxFl} floors on this footprint. Narrow the footprint and the same envelope goes higher.`
                 }`
                 : undefined}
-          />
-          <Slider
+          />}
+          {!prodT && <Slider
             label="Footprint"
             value={cov}
             min={MIN_COVERAGE}
@@ -725,7 +746,7 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
                   : `${maxFl} floors either way — you are between the two ceilings.`;
               return `${dir} On a big site you can put up something small and keep the rest of the land.${capNote}`;
             })()}
-          />
+          />}
           {/* WHAT THE SITE YIELDS, AND WHAT IT IMPLIES — see plateVerdict. The
               desk printed the plate and never said whether anybody leases one,
               or what the height-to-width of the result would be. Both are
@@ -1174,7 +1195,7 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
                   <button
                     className="btn btn-buy"
                     disabled={!canFund}
-                    onClick={() => useStore.getState().raiseAndBuild(bbl, { use, floors: fl, coverage: cov, contract, ltc: plan.ltcMax * ltcWant, custom: { mix: customMix, bts, groundRetail, design, takeout }, lender: plan.lender, spec, pitch: pitchStyle }, outside)}
+                    onClick={() => useStore.getState().raiseAndBuild(bbl, { use, floors: fl, coverage: cov, contract, ltc: plan.ltcMax * ltcWant, custom: { mix: customMix, bts, groundRetail, design, takeout, ...pcustom }, lender: plan.lender, spec, pitch: pitchStyle }, outside)}
                     title={`Your investors commit at the table and the crane goes up today. Counsel ${usd(raiseLegalCost(game, outside))}.`}
                   >
                     {canFund ? `Raise ${usd(outside)} and break ground · counsel ${usd(raiseLegalCost(game, outside))}` : `Cannot finish · short ${usd(fundShort)}`}
@@ -1183,7 +1204,7 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
                 <button
                   className="btn btn-buy"
                   disabled={!canFund || !!game.raises?.[bbl]}
-                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design, takeout }, plan.lender, spec)}
+                  onClick={() => useStore.getState().develop(bbl, use, fl, cov, contract, plan.ltcMax * ltcWant, { mix: customMix, bts, groundRetail, design, takeout, ...pcustom }, plan.lender, spec)}
                   title={purse.closed ?? (!canFund
                     ? `Short ${usd(fundShort)} — needs ${usd(need.whole)} fundable: ${usd(equityRequired)} equity all-in plus the ${usd(need.margin)} overrun cushion`
                     : `${usd(closeCheque)} at close, ${usd(plan.equity - plan.equityAtClose)} drawn during build${purse.fund ? ", paid by the fund" : ""}.`)}
@@ -1256,10 +1277,12 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
   const customMix = use === "mixed"
     ? { retail: stack.retail / 100, office: stack.office / 100, multifamily: stack.multifamily / 100 }
     : undefined;
-  const bts = game.btsProspects?.[bbl]?.use === use ? game.btsProspects[bbl] : undefined;
-  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail, form: formOf(saved?.design) }, bank, spec);
+  const gprod = productOf(saved?.product)?.use === use ? productOf(saved?.product) : undefined;
+  const pcustom = gprod ? { product: gprod.key } : {};
+  const bts = game.btsProspects?.[bbl]?.use === use && !gprod ? game.btsProspects[bbl] : undefined;
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail, form: formOf(saved?.design), ...pcustom }, bank, spec);
   const plan = planMax
-    ? planDevelopment(game, parcels, bbl, use, fl, cov, contract, planMax.ltcMax * (saved?.ltcWant ?? 1), { mix: customMix, bts, groundRetail, form: formOf(saved?.design) }, bank, spec)
+    ? planDevelopment(game, parcels, bbl, use, fl, cov, contract, planMax.ltcMax * (saved?.ltcWant ?? 1), { mix: customMix, bts, groundRetail, form: formOf(saved?.design), ...pcustom }, bank, spec)
     : null;
   const open = () => useStore.getState().openProperty(bbl, "build");
   const siteDebt = siteDebtAtGroundbreak(game, bbl).due;
@@ -1272,7 +1295,7 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
       </div>
       {plan ? (
         <Verdict
-          label={`Yield on cost · ${devUseLabel(use)} · ${fl} fl · ${sf(plan.sf)}`}
+          label={`Yield on cost · ${gprod ? gprod.short : `${devUseLabel(use)} · ${fl} fl`} · ${sf(plan.sf)}`}
           value={`${plan.yieldOnCost.toFixed(2)}%`}
           tone={plan.hurdleRatio >= 1.08 ? "good" : plan.hurdleRatio >= 1 ? "warn" : "bad"}
           note={plan.hurdleRatio >= 1
@@ -1296,8 +1319,8 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
  * lot whose default read 0.72. Computed on the click, not every render.
  */
 function BestSchemes({ sweep, onPick }: {
-  sweep: () => { use: DevUse; floors: number; hurdle: number; equity: number; profit: number }[];
-  onPick: (u: DevUse, f: number) => void;
+  sweep: () => { use: DevUse; floors: number; hurdle: number; equity: number; profit: number; product?: ProductKey }[];
+  onPick: (u: DevUse, f: number, product?: ProductKey) => void;
 }) {
   const [rows, setRows] = useState<ReturnType<typeof sweep> | null>(null);
   return (
@@ -1312,8 +1335,8 @@ function BestSchemes({ sweep, onPick }: {
             <thead><tr><th>Scheme</th><th className="num">vs hurdle</th><th className="num">Profit</th><th className="num">Equity all-in</th><th /></tr></thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={`${r.use}${r.floors}`} onClick={() => onPick(r.use, r.floors)}>
-                  <td>{devUseLabel(r.use)} · {r.floors} fl</td>
+                <tr key={`${r.use}${r.floors}${r.product ?? ""}`} onClick={() => onPick(r.use, r.floors, r.product)}>
+                  <td>{r.product ? productOf(r.product)?.short : `${devUseLabel(r.use)} · ${r.floors} fl`}</td>
                   <td className={"num" + (r.hurdle < 1 ? " neg" : "")}>{r.hurdle.toFixed(2)}×</td>
                   <td className={"num" + (r.profit < 0 ? " neg" : "")}>{usd(r.profit)}</td>
                   <td className="num">{usd(r.equity)}</td>
@@ -1323,6 +1346,47 @@ function BestSchemes({ sweep, onPick }: {
             </tbody>
           </table>
         ))}
+    </div>
+  );
+}
+
+/**
+ * A PRODUCT'S SITE PLAN AND LEASE, as the pro forma drew them: where the land
+ * went (the car park and the truck court take most of it), who is signed
+ * before the slab, and what the spec space lets on. Every figure is the
+ * plan's own (products.ts layoutProduct, proforma.ts), nothing re-derived.
+ */
+function ProductSitePlan({ p, plan, lotSf }: { p: ProductType; plan: NonNullable<ReturnType<typeof planDevelopment>>; lotSf: number }) {
+  const st = plan.product!.site;
+  const ac = (x: number) => `${(x / 43560).toFixed(1)} ac`;
+  const share = (x: number) => `${Math.round((x / Math.max(1, lotSf)) * 100)}%`;
+  const anchors = plan.product!.anchors;
+  const groups = p.anchors.map((a) => {
+    const of = anchors.filter((x) => x.termM === a.termY * 12 && x.credit === a.credit);
+    return { a, sf: of.reduce((t, x) => t + x.sf, 0), rent: of[0]?.rentPsf ?? 0 };
+  }).filter((g) => g.sf > 0);
+  return (
+    <div className="page-section" style={{ marginTop: 8 }}>
+      <div className="page-section-head">Site plan · {ac(lotSf)}</div>
+      <div className="grid">
+        <Row k="Building" v={`${sf(st.gsf)} · ${share(st.gsf)} of the lot${p.clearFt ? ` · ${p.clearFt[0]}-${p.clearFt[1]} ft clear` : ""}`} strong />
+        <Row k="Parking" v={`${st.stalls.toLocaleString()} stalls · ${p.parkPer1000}/1,000 sf · ${ac(st.parkingSf)}`} />
+        {st.doors > 0 && <Row k="Truck court" v={`${st.doors} doors · ${ac(st.courtSf)}`} />}
+        <Row k="Landscape, detention" v={`${ac(st.openSf)} · ${share(st.openSf)}`} />
+        {st.excessSf > 4356 && <Row k="Spare land" v={`${ac(st.excessSf)} — the lot is bigger than the product`} />}
+        {groups.map((g) => (
+          <Row key={g.a.label} k={g.a.n > 1 ? `${g.a.n} ${g.a.label}s` : g.a.label}
+            v={`${sf(g.sf)} · $${g.rent.toFixed(2)}/sf NNN · ${g.a.termY} yrs · +${g.a.bumpPct}%/yr · signed before the slab`} />
+        ))}
+        {groups.reduce((t, g) => t + g.sf, 0) < plan.rentable * 0.99 && (
+          <Row k={p.use === "retail" ? "Inline shops" : "Spec space"}
+            v={`${sf(Math.max(0, plan.rentable - anchors.reduce((t, x) => t + x.sf, 0)))} · ${p.lease.termY}-yr NNN, +${p.lease.bumpPct}%/yr · ~${p.leaseUpM} mo to fill`} />
+        )}
+        {plan.product!.draw !== undefined && (
+          <Row k="Anchor's trade area" v={`demand ${plan.product!.draw.toFixed(0)} within ${(p.tradeRadiusM! / 1609).toFixed(0)} mi — the address the shops trade at, if better than the lot's own`} />
+        )}
+        <Row k="Exit cap" v={`${plan.exitYield.toFixed(2)}% tax-loaded · ${p.capSpread >= 0 ? "+" : ""}${Math.round(p.capSpread * 100)} bp for the type`} />
+      </div>
     </div>
   );
 }

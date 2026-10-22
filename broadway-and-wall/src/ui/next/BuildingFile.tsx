@@ -24,6 +24,7 @@ import { Figure, Spark, fmtFig } from "./Figure";
 import { bestSchemes, type SchemeRow } from "./bestScheme";
 import { buyPreview, buyDesks } from "./buy";
 import { useNext } from "./nextStore";
+import { MoneyTab, RefiTable, RentRollTab } from "./FileTabs";
 
 type FileTab = "overview" | "leasing" | "money" | "build" | "deal" | "history";
 const FROM_PROP: Partial<Record<PropertyTab, FileTab>> = {
@@ -93,8 +94,8 @@ function FileFor({ bbl }: { bbl: string }) {
       footer={<FileFooter game={game} parcels={parcels} bbl={bbl} h={h} tab={active} setTab={setTab} />}
     >
       {active === "overview" && <Overview game={game} parcels={parcels} bbl={bbl} h={h} />}
-      {active === "leasing" && <div className="nx-hosted"><ParcelPanel embedded tab="leasing" /><ParcelPanel embedded tab="ops" /></div>}
-      {active === "money" && <div className="nx-hosted"><ParcelPanel embedded tab="money" /></div>}
+      {active === "leasing" && h && <RentRollTab game={game} parcels={parcels} bbl={bbl} h={h} />}
+      {active === "money" && h && <MoneyTab game={game} parcels={parcels} bbl={bbl} h={h} />}
       {active === "build" && <BuildTab game={game} parcels={parcels} bbl={bbl} />}
       {active === "deal" && <div className="nx-hosted"><ParcelPanel embedded tab="deal" /></div>}
       {active === "history" && (
@@ -264,6 +265,7 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
   const talks = game.talks?.[bbl];
   const rec = resolveRec(parcels, game, bbl);
   const [amt, setAmt] = useState<number | null>(null);
+  const [refiOpen, setRefiOpen] = useState(false);
   if (!rec) return null;
   const value = marketAppraisal(game, rec, bbl, h?.condition ?? initialCondition(rec));
   const amount = (initial: number) => (
@@ -275,7 +277,16 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
   // ---- you own it
   if (h) {
     const verbs: Verb[] = [];
-    if (h.loan) verbs.push({ label: "Refinance", run: () => setTab("money") });
+    // THE QUOTES IN THE FOOTER: the desks that will write today, cheapest first, one click to take.
+    if (refiOpen && h.loan) {
+      return (
+        <div className="nx-confirm">
+          <RefiTable game={game} parcels={parcels} bbl={bbl} max={3} />
+          <ActionFooter verbs={[{ label: "All quotes", run: () => { setRefiOpen(false); setTab("money"); } }, { label: "Close", run: () => setRefiOpen(false) }]} />
+        </div>
+      );
+    }
+    if (h.loan) verbs.push({ label: "Refinance", run: () => setRefiOpen(true) });
     if (rec.class === "land" || !rec.bldgArea) {
       if (game.developments[bbl]) return <ActionFooter verbs={[{ label: "Job file", run: () => setTab("build") }]} />;
       // the sweep is dozens of pro formas: run it only once the Build tab is asked for

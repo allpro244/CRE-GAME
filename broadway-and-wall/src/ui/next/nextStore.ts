@@ -45,6 +45,9 @@ interface NextState {
   /** The Inbox is a drawer, not a classic page. */
   inboxOpen: boolean;
   setInboxOpen: (v: boolean) => void;
+  /** A moment card asked for from its Inbox row (goal, exit). */
+  showMoment: "goal" | "exit" | null;
+  setShowMoment: (v: "goal" | "exit" | null) => void;
   /** The scheme row picked on a lot's Build tab. */
   schemePick: { bbl: string; i: number } | null;
   setSchemePick: (v: { bbl: string; i: number } | null) => void;
@@ -64,6 +67,8 @@ export const useNext = create<NextState>((set) => ({
   setBuyPreset: (p) => { write("bw:buy-preset", JSON.stringify(p)); set({ buyPreset: p }); },
   inboxOpen: false,
   setInboxOpen: (v) => set({ inboxOpen: v }),
+  showMoment: null,
+  setShowMoment: (v) => set({ showMoment: v }),
   schemePick: null,
   setSchemePick: (v) => set({ schemePick: v }),
   drill: null,

@@ -21,6 +21,7 @@
  * window.ue.bridge.city / view / select / input.
  */
 import { useNext } from "@/ui/next/nextStore";
+import { lensValues } from "@/ui/next/lensData";
 import { useStore } from "@/state/store";
 import { renderView, lookOf } from "@/engine/renderView";
 import { gfxString } from "./graphics";
@@ -89,6 +90,7 @@ export function startUnrealHost(): void {
   let lastSel: string | null | undefined;
   let lastGfx: string | undefined;
   let lastPreview: unknown = undefined;
+  let lastLens: string | undefined, lastLensGame: unknown = null, lastFly = 0;
   const push = () => {
     const b = bridge();
     if (!b) return false;
@@ -130,6 +132,19 @@ export function startUnrealHost(): void {
     if (s.selectedBBL !== lastSel) {
       lastSel = s.selectedBBL;
       void b.select(lastSel ?? "");
+    }
+    // THE LENS BRIDGE (ui-revamp step 7): the lens and its number per deed,
+    // from the same lensData the browser map paints; resent when the month
+    // moves. Unreal tints the lots (BWGame.cpp "lens", the C++ side's to add).
+    if (s.lens !== lastLens || (s.lens !== "none" && s.game !== lastLensGame)) {
+      lastLens = s.lens; lastLensGame = s.game;
+      const v = s.lens !== "none" && s.game && s.parcels ? Object.fromEntries(lensValues(s.game, s.parcels, s.lens)) : {};
+      sendInput({ t: "lens", k: s.lens, v });
+    }
+    // a row or a notice that names a building puts the camera on it
+    if (s.flyTo && s.flyTo.n !== lastFly) {
+      lastFly = s.flyTo.n;
+      sendInput({ t: "fly", bbl: s.flyTo.bbl });
     }
     return true;
   };

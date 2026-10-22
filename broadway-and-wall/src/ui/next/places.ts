@@ -5,12 +5,17 @@
  * `jump` scrolls the hosted page to a section by its heading.
  */
 import type { GameState } from "@/engine/types";
-import type { Page } from "@/state/store";
+import { useStore, type Page } from "@/state/store";
 
 export type PlaceId = "inbox" | "holdings" | "pipeline" | "market" | "capital" | "city";
-export interface PlaceTab { id: string; label: string; page: Page; jump?: string; width: "std" | "wide"; when?: (g: GameState) => boolean }
+export interface PlaceTab { id: string; label: string; page: Page; jump?: string; width: "std" | "wide"; when?: (g: GameState) => boolean;
+  /** A ui/next table drawn instead of the classic page (Shell NEXT_VIEW). */
+  view?: string }
 export interface Place { id: PlaceId; label: string; key: string; icon: string; tabs: PlaceTab[] }
 
+/** The region's land game: a tract held, at the board, platted, or lots on the book. */
+const hasLand = (g: GameState) => !!(g.entitlementApps || g.plats || g.rezoned || g.homes?.offers || g.homes?.contracts)
+  || Object.keys(g.holdings).some((b) => !!useStore.getState().parcels?.[b]?.tract);
 const hasNotes = (g: GameState) => (g.noteOffers?.length ?? 0) + (g.privateAsks?.length ?? 0) + (g.notes?.length ?? 0) > 0;
 
 export const PLACES: Place[] = [
@@ -25,7 +30,8 @@ export const PLACES: Place[] = [
   {
     id: "holdings", label: "Holdings", key: "1", icon: "▦",
     tabs: [
-      { id: "buildings", label: "Buildings", page: "portfolio", width: "wide" },
+      { id: "buildings", label: "Buildings", page: "portfolio", view: "holdings", width: "wide" },
+      { id: "land", label: "Land", page: "portfolio", view: "land", width: "wide", when: hasLand },
       { id: "leasing", label: "Leasing", page: "leasing", width: "wide" },
       { id: "returns", label: "Returns", page: "portfolio", jump: "Returns to date", width: "wide" },
     ],
@@ -37,7 +43,7 @@ export const PLACES: Place[] = [
   {
     id: "market", label: "Market", key: "3", icon: "◎",
     tabs: [
-      { id: "forsale", label: "For sale", page: "market", width: "wide" },
+      { id: "forsale", label: "For sale", page: "market", view: "forsale", width: "wide" },
       { id: "all", label: "All buildings", page: "buildings", width: "wide" },
       { id: "sites", label: "Sites", page: "market", jump: "Sites", width: "wide" },
       // The note desk once there is paper; until then the Marketplace's distress pipeline.
@@ -49,8 +55,9 @@ export const PLACES: Place[] = [
   {
     id: "capital", label: "Capital", key: "4", icon: "⚖",
     tabs: [
-      { id: "overview", label: "Overview", page: "debt", width: "wide" },
-      { id: "loans", label: "Loans", page: "debt", jump: "Loan by loan", width: "wide" },
+      { id: "overview", label: "Overview", page: "debt", view: "capital", width: "wide" },
+      { id: "loans", label: "Loans", page: "debt", view: "loans", width: "wide" },
+      { id: "debt", label: "Debt desk", page: "debt", width: "wide" },
       { id: "lenders", label: "Lenders", page: "banks", width: "wide" },
       { id: "investors", label: "Investors", page: "investors", width: "wide" },
       { id: "books", label: "Books", page: "books", width: "wide" },

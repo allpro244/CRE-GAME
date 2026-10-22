@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { InterfaceSwitch } from "@/ui/next/InterfaceSwitch";
+import { InterfaceSwitch, BuyingPreset } from "@/ui/next/InterfaceSwitch";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
@@ -221,6 +221,7 @@ export function SettingsPage() {
   return (
     <div>
       <InterfaceSwitch />
+      <BuyingPreset />
       <ThemePicker />
       <Toggle
         on={sound}

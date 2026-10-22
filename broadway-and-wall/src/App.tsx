@@ -20,6 +20,7 @@ import MapBoundary from "@/ui/MapBoundary";
 import UnrealSurface from "@/ui/UnrealSurface";
 import { UNREAL_HOST, startUnrealHost } from "@/state/unrealHost";
 import { useNext } from "@/ui/next/nextStore";
+import { toastFact } from "@/ui/next/words";
 import Shell from "@/ui/next/Shell";
 
 export default function App() {
@@ -168,7 +169,7 @@ function Toast() {
           }}
         >
           {t.kind === "critical" && <span className="toast-alarm" aria-hidden="true">⚠ </span>}
-          {t.text}
+          {next ? toastFact(t.text) : t.text}
           {(t.attnKey || t.yearReview) && <span className="toast-go" aria-hidden="true"> Open →</span>}
         </div>
       ))}

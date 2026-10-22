@@ -28,9 +28,17 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 export function zonePermits(
   zone: string | undefined, use: BuiltClass, demand = 100, econ?: Econ,
 ): boolean {
-  void zone; void use; void demand; void econ;
+  void use; void demand; void econ;
+  // ...EXCEPT WHERE A BOARD HAS ZONED IT. The region's rezonings (landdev.ts)
+  // are real use districts: R-2 grants houses and two-flats on a plat and
+  // nothing else, so no commercial class — flats, shops, offices, sheds — is
+  // a permitted use there. What a lot in it is worth is what a homebuilder
+  // pays for it (homeprice.ts), not a scheme the board never approved.
+  if (zone !== undefined && HOMES_ONLY_ZONES.has(zone)) return false;
   return true;
 }
+/** Districts whose only permitted use is detached and two-family houses, built and sold through homes.ts. */
+export const HOMES_ONLY_ZONES: ReadonlySet<string> = new Set(["R-2"]);
 
 /**
  * THE SAME RULE, ASKED BY THE DEVELOP DESK — and why not, in words.
@@ -56,8 +64,12 @@ export function zoneUseBar(
   rec: { zoneDist?: string; demandScore?: number }, use: BuiltClass | "mixed",
   econ?: Econ, mix?: UseMix, floors = 1,
 ): string | null {
-  // No zoning: no programme is barred. See zonePermits.
-  void rec; void use; void econ; void mix; void floors;
+  // No zoning: no programme is barred — except in a district a board has
+  // zoned for houses (zonePermits).
+  void use; void econ; void mix; void floors;
+  if (rec.zoneDist !== undefined && HOMES_ONLY_ZONES.has(rec.zoneDist)) {
+    return `Zoned ${rec.zoneDist}: single- and two-family houses only. Build them from the homes desk, or sell the lot to a homebuilder.`;
+  }
   return null;
 }
 
@@ -4504,14 +4516,6 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
     if (!rec) continue;
     const r = s.rivals?.find((x) => x.id === n.obligorId);
     nw += Math.min(n.basis, Math.round(collateralAsIs(rec, s.econ, r?.occ ?? 0.5)));
-  }
-  // HOUSES YOU ARE BUILDING OR HAVE NOT YET CLOSED CARRY AT COST (homes.ts):
-  // the lot is in its deed's mark above; the frame is the money sunk in it,
-  // which is what a homebuilder's balance sheet carries as inventory.
-  for (const u of Object.values(s.homes?.units ?? {})) {
-    if (u.by !== "you" || u.closedM !== undefined || !s.holdings[u.bbl]) continue;
-    nw += u.spent;
-    gav += u.spent;
   }
   nw -= s.loc?.balance ?? 0;   // the line is real money owed
   // SECURITY DEPOSITS ARE NOT YOUR MONEY. They arrive as cash at signing and

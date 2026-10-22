@@ -1,4 +1,4 @@
-// THE HOMEBUILDER'S GAME (the region map, Phase 3).
+// THE HOMEBUILDERS AND THE LOTS THEY BUY (the region map, Phase 3).
 //
 // A plat's finished lots become houses, and houses become closings, the way
 // they do in life:
@@ -7,46 +7,47 @@
 //              mortgage at today's rate (homeprice.ts), sticky the way house
 //              prices are, and placed by the resale houses round the plat and
 //              the drive into town;
-//   BUILD      a spec house goes up in about seven months, the draws paid as
-//              the frame rises;
+//   BUILD      a homebuilder's spec house goes up in about seven months;
 //   SELL       the town's households buy a few new houses a month — how many
 //              depends on how fast the town is growing, whether they can
-//              carry the price at today's rate, how many builders are
-//              selling, and whose house is cheaper; a buyer signs on a house
-//              and closes when it is finished;
+//              carry the price at today's rate, and how many builders are
+//              selling; a buyer signs on a house and closes when it is done;
 //   LOTS       homebuilders buy finished lots at the residual — on a takedown
-//              schedule, a few a month, as they start houses — so a plat sells
-//              out only as fast as its houses do, and a lot's price carries its
-//              place in that queue.
+//              schedule, a few a month, as they start houses, or the whole
+//              plat at once at a discount for carrying it — so a plat sells
+//              out only as fast as its houses do, and a lot's price carries
+//              its place in that queue.
 //
-// The player can do either half: build and sell the houses on their own lots,
-// or sell the lots to a builder who will. Every dollar of it goes through the
-// ledger (logBooks): draws as "dev", closings as "sold", the tax on the profit
+// THE PLAYER IS THE LAND DEVELOPER (owner's decision, Oct 2026): buy the
+// tract, entitle it, plat it, sell the finished lots to the homebuilders. The
+// houses are the builders' business. Every dollar the player sees goes
+// through the ledger (logBooks): each lot sale as "sold", the tax on the gain
 // as "taxes". A house that closes is a family's home: the lot leaves the
 // market for good (demand.ts isCivicLand), as the town's neighbourhoods do.
 import type { ParcelTable, ParcelRecord } from "@/data/types";
-import type { GameState, HomeUnit, HomesState, PlatPL, LotContract, Exit } from "./types";
+import type { GameState, HomeUnit, HomesState, PlatPL, LotContract, LotOffer, LotListing, Exit } from "./types";
 import { cloneState, monthLabel, closeDeedLedger, logBooks } from "./types";
 import { ownerOf } from "./rivals";
 import { rng, HPI_CHASE_M } from "./market";
 import { resolveRec, assetValue, initialCondition } from "./value";
-import { spendable, fundAndBook, sweepLocIdleCash } from "./credit";
+import { sweepLocIdleCash } from "./credit";
 import { saleTaxQuote } from "./actions";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
-import { INCOME_TAX_RATE } from "./tax";
 import { money } from "./money";
 import {
-  homeQuote, fundamentalHomePsf, commuteMult, salesPace, selloutDiscount, homeSfFor,
-  REF_HOME, BUILD_M, NAHB, type HomeMarket, type PlatMarket, type HomeQuote,
+  homeQuote, fundamentalHomePsf, commuteMult, salesPace, selloutDiscount, homeSfFor, lotPremiumMult,
+  REF_HOME, BUILD_M, type HomeMarket, type PlatMarket, type HomeQuote,
 } from "./homeprice";
 
-const YOU = "you";
 /**
- * A homebuilder notices a plat with lots to sell and a residual worth paying
- * within a few months: a quarter a month [K]. Their offer stands two months.
+ * A homebuilder notices a plat with lots for sale and a residual worth paying
+ * within a few months: a quarter a month [K]; twice that when the plat is
+ * listed to the builders, which is what a land broker is paid for. An offer
+ * stands two months.
  */
 const BUILDER_ENTRY_P = 0.25;
+const LISTED_ENTRY_P = 0.5;
 const OFFER_LIFE_M = 2;
 /**
  * A builder options a year and a half of its expected sales on a plat — the
@@ -63,6 +64,19 @@ const TAKEDOWN_MONTHS = 18;
 const PIPELINE_MONTHS = BUILD_M + 2;
 /** A builder walks away from a takedown when the lot's residual has fallen 30% under the contract price, as the public builders walked from options in 2007-09 [K]. */
 const WALK_AT = 0.7;
+/**
+ * WHAT ONE COMMUNITY CAN SELL. A builder's sales office on one plat — a model
+ * home or two, a sales agent, one product line — closes about 2-6 houses a
+ * month in an ordinary market, and above ~6 is the top decile of US
+ * communities (Zonda / John Burns community absorption surveys; the fastest
+ * single-builder communities in master plans reach 8-10). A town whose
+ * new-house demand runs past what one community can sell does not push it
+ * through one sales office: the buyers buy resale, or in the next town, until
+ * a second builder opens (the entry rule below brings one). 6 [S, top-decile
+ * pace]. It binds only in a fast-growing town with a single seller.
+ */
+export const COMMUNITY_SALES_CAP = 6;
+const communityPace = (...a: Parameters<typeof salesPace>) => Math.min(COMMUNITY_SALES_CAP, salesPace(...a));
 const BUILDER_WORDS = [["Prairie", "Meadowlark", "Cedar Point", "Heritage", "Stonegate", "Willow Creek", "Fairfield", "Brookside", "Oakmont", "Red Barn"], ["Homes", "Builders", "Homebuilders", "Communities", "Home Co."]];
 
 function hash01(s: string): number {
@@ -82,7 +96,8 @@ function homesOf(s: GameState): HomesState {
   return s.homes;
 }
 const plOf = (h: HomesState, parent: string): PlatPL =>
-  ((h.pl ??= {})[parent] ??= { started: 0, closed: 0, revenue: 0, net: 0, cost: 0, lotCost: 0, lotsSold: 0, lotProceeds: 0, lotBasis: 0 });
+  ((h.pl ??= {})[parent] ??= { lotsSold: 0, lotRevenue: 0, lotProceeds: 0, lotBasis: 0 });
+const newBuilder = (name: string, m: number) => ({ name, sinceM: m, lots: 0, lotSpend: 0, started: 0, closed: 0, revenue: 0, cost: 0 });
 
 /** The lots of a finished plat, by BBL (landdev.ts lotBbl). */
 export function platLots(s: GameState, parcels: ParcelTable, parent: string): string[] {
@@ -95,10 +110,9 @@ export function platLots(s: GameState, parcels: ParcelTable, parent: string): st
   return out;
 }
 
-/** Is this lot off the market as a house — a builder's, or a family's? (demand.ts isCivicLand reads it.) */
+/** Is this lot off the market — a homebuilder's, or a family's? (demand.ts isCivicLand reads it.) */
 export function isHomeOffMarket(s: GameState, bbl: string): boolean {
-  const u = s.homes?.units[bbl];
-  return !!u && (u.by !== YOU || u.closedM !== undefined);
+  return !!s.homes?.units[bbl] || !!s.homes?.held?.[bbl];
 }
 
 // ---------------------------------------------------------------- the market
@@ -109,12 +123,12 @@ export function isHomeOffMarket(s: GameState, bbl: string): boolean {
  * and three-family frames) as the engine values them, per foot, near the plat
  * against the whole town (geometric means — the values are skewed, and an
  * arithmetic mean against a median read every plat as a 20-40% premium): a
- * plat next to the dear end of town sells dearer. Weighted by distance (e-folding 1 km) and shrunk toward the town
- * (credibility W / (W + 3)), so a plat with no houses near it reads 1.
- * Only the RELATIVE reading is used: the inner ring's values carry the
- * town's land texture, which is struck in the reference table's dollars
- * rather than this town's (value.ts readLand), so their LEVEL is not
- * evidence about what a family here can pay — affordability is.
+ * plat next to the dear end of town sells dearer. Weighted by distance
+ * (e-folding 1 km) and shrunk toward the town (credibility W / (W + 3)), so a
+ * plat with no houses near it reads 1. Only the RELATIVE reading is used: a
+ * house's value is mostly the land under it, and the level of that is the
+ * land market's own reading (value.ts texture), while what a family here can
+ * pay is affordability's.
  *
  * THE DRIVE. The commute from the plat to the town's edge, capitalised
  * (homeprice.ts commuteMult).
@@ -132,7 +146,6 @@ export function platLocation(s: GameState, parcels: ParcelTable, parent: string,
     const w = Math.exp(-d / 1000);
     W += w; wp += w * Math.log(c.psf);
   }
-  // geometric means, so a skewed spread of values does not read as a premium
   const rel = W > 0 && comps.lnMean !== 0 ? Math.exp(wp / W - comps.lnMean) : 1;
   const cred = W / (W + 3);
   const fromComps = Math.max(0.7, Math.min(1.3, 1 + cred * (rel - 1)));
@@ -141,7 +154,7 @@ export function platLocation(s: GameState, parcels: ParcelTable, parent: string,
 /** The town's houses as comps, re-read once a year (and on a new state). */
 let COMPS: { key: string; list: { x: number; y: number; psf: number }[]; lnMean: number } | null = null;
 export function houseComps(s: GameState, parcels: ParcelTable) {
-  const key = `${s.seed}:${Math.floor(s.month / 12)}:${Object.keys(parcels).length > 0 ? 1 : 0}`;
+  const key = `${s.seed}:${Math.floor(s.month / 12)}`;
   if (COMPS?.key === key) return COMPS;
   const list: { x: number; y: number; psf: number }[] = [];
   for (const bbl in parcels) {
@@ -171,7 +184,7 @@ function sellers(h: HomesState): Map<string, { parent: string; by: string; units
   return out;
 }
 
-/** The median lot of a plat, sf, and its rezoned FAR. */
+/** The median lot of a plat, sf. */
 function platLotSf(s: GameState, parent: string): number {
   const lots = s.plats?.[parent]?.lots ?? [];
   if (!lots.length) return REF_HOME.lotSf;
@@ -180,17 +193,22 @@ function platLotSf(s: GameState, parent: string): number {
 }
 const platFar = (s: GameState, parent: string) => s.rezoned?.[parent]?.far ?? 0.6;
 
-/** Lots on the plat nobody has started a house on, and who holds them. */
-function freeLots(s: GameState, parcels: ParcelTable, parent: string): { mine: string[]; market: string[] } {
-  const mine: string[] = [], market: string[] = [];
+/**
+ * The plat's lots with no house on them, by who holds them: yours (free to
+ * sell: no loan, no listing on the street), a builder's, or the market's.
+ */
+function freeLots(s: GameState, parcels: ParcelTable, parent: string): { mine: string[]; held: string[]; market: string[] } {
+  const mine: string[] = [], held: string[] = [], market: string[] = [];
   for (const bbl of platLots(s, parcels, parent)) {
     if (s.homes?.units[bbl]) continue;
+    if (s.homes?.held?.[bbl]) { held.push(bbl); continue; }
     const h = s.holdings[bbl];
-    if (h) { mine.push(bbl); continue; }
+    // (a lot under an A&D note is free to sell: the note is released lot by lot, sellLot)
+    if (h) { if ((!h.loan || h.loan.ad) && !h.sale) mine.push(bbl); continue; }
     if (s.built?.[bbl] || s.developments?.[bbl] || ownerOf(s, bbl) || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     market.push(bbl);
   }
-  return { mine, market };
+  return { mine, held, market };
 }
 
 /**
@@ -204,22 +222,20 @@ export function refreshHomeMarket(s: GameState, parcels: ParcelTable): void {
   const prev = e.homes;
   const psf = prev?.psf ?? fund;
   const plats: Record<string, PlatMarket> = {};
-  const h = s.homes;
-  const sel = h ? sellers(h) : new Map();
+  const sel = s.homes ? sellers(s.homes) : new Map();
   const n = sel.size;
   for (const [parent, plat] of Object.entries(s.plats ?? {})) {
     if (!plat.done) continue;
     const { loc, commute } = prev?.plats[parent] && s.month % 12 !== 0 && prev.plats[parent].loc > 0
       ? prev.plats[parent] : platLocation(s, parcels, parent, psf);
     const q = homeQuote(e, platLotSf(s, parent), psf * loc, platFar(s, parent));
-    const here = [...sel.values()].filter((x) => x.parent === parent);
-    const adjOf = (by: string) => (by === YOU ? h?.adj?.[parent] ?? 0 : 0);
-    const pace = here.length
-      ? here.reduce((t, x) => t + salesPace(e, q.price / loc, adjOf(x.by), n), 0)
-      : salesPace(e, q.price / loc, 0, n + 1);
-    const { mine, market } = freeLots(s, parcels, parent);
-    const left = mine.length + market.length;
+    const here = [...sel.values()].filter((x) => x.parent === parent).length;
+    // the plat sells at its own builders' pace; with none, at one newcomer's
+    const pace = here ? here * communityPace(e, q.price / loc, 0, n) : communityPace(e, q.price / loc, 0, n + 1);
+    const f = freeLots(s, parcels, parent);
+    const left = platLots(s, parcels, parent).filter((b) => !s.homes?.units[b]).length;
     plats[parent] = { loc, commute, pace, disc: q.residual > 0 ? selloutDiscount(left, pace) : 0, left };
+    void f;
   }
   const next: HomeMarket = { psf, fund, stamp: (prev?.stamp ?? 0) + 1, plats };
   e.homes = next;
@@ -227,80 +243,129 @@ export function refreshHomeMarket(s: GameState, parcels: ParcelTable): void {
 }
 
 /** The going quote on a plat this month: the standard house on its median lot. */
-export function platQuoteNow(s: GameState, parent: string, adj = 0): (HomeQuote & { psfHere: number }) | null {
+export function platQuoteNow(s: GameState, parent: string): (HomeQuote & { psfHere: number }) | null {
   const hm = s.econ.homes, pm = hm?.plats[parent];
   if (!hm || !pm) return null;
   const psfHere = hm.psf * pm.loc;
-  return { ...homeQuote(s.econ, platLotSf(s, parent), psfHere, platFar(s, parent), adj), psfHere };
+  return { ...homeQuote(s.econ, platLotSf(s, parent), psfHere, platFar(s, parent)), psfHere };
 }
 
-// ---------------------------------------------------------------- the player builds
-/** Start `n` spec houses on your own finished lots on this plat. Self-funded: the whole budget must be in reach. */
-export function startHomes(s: GameState, parcels: ParcelTable, parent: string, n: number): { s: GameState; err?: string; msg?: string } {
-  const plat = s.plats?.[parent];
-  if (!plat?.done) return { s, err: "The streets are not in yet." };
-  if (!s.econ.homes?.plats[parent]) return { s, err: "No homes market reads this plat yet: advance a month." };
-  const contract = s.homes?.contracts?.[parent];
-  const free = freeLots(s, parcels, parent).mine.filter((b) => {
-    const h = s.holdings[b];
-    return h && !h.loan && !h.sale && !s.developments?.[b];
-  });
-  // lots already promised to a builder stay for the builder
-  const avail = free.slice(0, Math.max(0, free.length - (contract?.left ?? 0)));
-  const k = Math.min(Math.max(0, Math.floor(n)), avail.length);
-  if (!k) return { s, err: contract ? "Every free lot here is promised to a builder." : "You hold no free lots on this plat (a lot with a loan, a listing or a building on it is not free)." };
-  const hm = s.econ.homes!, pm = hm.plats[parent];
-  const adj = s.homes?.adj?.[parent] ?? 0;
-  const jobs = avail.slice(0, k).map((bbl) => {
-    const rec = parcels[bbl];
-    const q = homeQuote(s.econ, rec.lotArea, hm.psf * pm.loc, platFar(s, parent), adj);
-    return { bbl, q };
-  });
-  const total = jobs.reduce((t, j) => t + j.q.vertical + j.q.overhead, 0);
-  const room = spendable(s, parcels);
-  if (room.total < total) return { s, err: `${k} houses run ${money(total)} to build and you can raise ${money(room.total)}.` };
-  const next = cloneState(s);
-  const h = homesOf(next);
-  const pl = plOf(h, parent);
-  for (const { bbl, q } of jobs) {
-    h.units[bbl] = {
-      bbl, parent, by: YOU, sf: q.sf, startM: next.month, doneM: next.month + BUILD_M,
-      budget: q.vertical + q.overhead, spent: 0, lotCost: next.holdings[bbl].costBasis,
-    };
-    pl.started++;
-  }
-  refreshHomeMarket(next, parcels);
-  next.news.unshift({ q: next.month, kind: "info", text: `${k} spec house${k === 1 ? "" : "s"} going up at ${parcels[parent]?.address ?? parent}: ${money(total)} to build, finished ${monthLabel(next.month + BUILD_M)}.` });
-  return { s: next, msg: `${k} started.` };
+/**
+ * WHAT A HOMEBUILDER WOULD BID for your lots here today, $/sf of lot.
+ * Takedown: the residual itself — it pays as it takes, so it carries nothing.
+ * Bulk: the residual discounted for the sell-out of all `n` lots at the pace
+ * one builder sells at, at the land-development discount rate — what it costs
+ * the builder to own the lots it has not yet built on.
+ */
+export function builderBids(s: GameState, parent: string, n: number): { takedownPsf: number; bulkPsf: number; pace: number; months: number } {
+  const q = platQuoteNow(s, parent);
+  const pm = s.econ.homes?.plats[parent];
+  if (!q || !pm || !(q.residual > 0)) return { takedownPsf: 0, bulkPsf: 0, pace: pm?.pace ?? 0, months: Infinity };
+  const sel = s.homes ? sellers(s.homes).size : 0;
+  const pace = communityPace(s.econ, q.price / pm.loc, 0, sel + 1);
+  return {
+    takedownPsf: q.residualPsf,
+    bulkPsf: q.residualPsf * selloutDiscount(n, pace),
+    pace,
+    months: pace > 0 ? n / pace : Infinity,
+  };
 }
 
-/** Your price on the plat, against the going one (-15% .. +15%). Signed contracts keep their price. */
-export function setHomePrice(s: GameState, parcels: ParcelTable, parent: string, adj: number): GameState {
-  const next = cloneState(s);
-  const h = homesOf(next);
-  (h.adj ??= {})[parent] = Math.max(-0.15, Math.min(0.15, Math.round(adj * 100) / 100));
-  refreshHomeMarket(next, parcels);
-  return next;
-}
-
+// ---------------------------------------------------------------- your desk
 export function acceptLotOffer(s: GameState, parcels: ParcelTable, parent: string): { s: GameState; err?: string; msg?: string } {
   const o = s.homes?.offers?.[parent];
   if (!o || s.month > o.expiresM) return { s, err: "That offer has lapsed." };
-  if (s.homes?.contracts?.[parent]) return { s, err: "A builder already has a takedown here." };
-  const free = freeLots(s, parcels, parent).mine.filter((b) => !s.holdings[b]?.loan && !s.holdings[b]?.sale).length;
-  if (!free) return { s, err: "You have no free lots left on this plat to sell." };
-  const lots = Math.min(o.lots, free);
+  if (s.homes?.contracts?.[parent] && o.kind !== "bulk") return { s, err: "A builder already has a takedown here." };
+  if (freeLots(s, parcels, parent).mine.length <= (s.homes?.contracts?.[parent]?.left ?? 0)) return { s, err: "You have no free lots left on this plat to sell (a lot with a loan or a street listing is not free)." };
   const next = cloneState(s);
-  const h = homesOf(next);
+  const msg = signOffer(next, parcels, parent);
+  return { s: next, msg };
+}
+/** Sign the standing offer on this plat, in place: a bulk sale closes now, a takedown is booked. */
+function signOffer(s: GameState, parcels: ParcelTable, parent: string): string {
+  const h = homesOf(s);
+  const o = h.offers![parent];
+  const free = freeLots(s, parcels, parent).mine.slice(h.contracts?.[parent]?.left ?? 0);
+  const lots = Math.min(o.lots, free.length);
   delete h.offers![parent];
+  if (h.listings?.[parent]) delete h.listings[parent];
+  if (o.kind === "bulk") {
+    let gross = 0;
+    for (const bbl of free.slice(0, lots)) {
+      const p = sellLot(s, parcels, parent, o.builder, o.psf, bbl);
+      gross += p;
+      (h.held ??= {})[bbl] = { by: o.builder, cost: p };
+    }
+    const b = (h.builders[o.builder] ??= newBuilder(o.builder, s.month));
+    b.lots += lots; b.lotSpend += gross;
+    refreshHomeMarket(s, parcels);
+    sweepLocIdleCash(s);
+    s.news.unshift({ q: s.month, kind: "deal", text: `Sold: ${lots} lots at ${parcels[parent]?.address ?? parent} to ${o.builder} for ${money(gross)}, $${o.psf.toFixed(2)}/sf of lot.` });
+    return `Sold ${lots} lots.`;
+  }
   (h.contracts ??= {})[parent] = { ...o, lots, left: lots, taken: 0 };
-  next.news.unshift({ q: next.month, kind: "deal", text: `${o.builder} signed to take down ${lots} lots at ${parcels[parent]?.address ?? parent}, $${o.psf.toFixed(2)}/sf of lot, as it starts houses.` });
-  return { s: next, msg: "Signed." };
+  s.news.unshift({ q: s.month, kind: "deal", text: `${o.builder} signed to take down ${lots} lots at ${parcels[parent]?.address ?? parent}, $${o.psf.toFixed(2)}/sf of lot, as it starts houses.` });
+  return "Signed.";
 }
 export function declineLotOffer(s: GameState, parent: string): GameState {
   const next = cloneState(s);
   if (next.homes?.offers?.[parent]) delete next.homes.offers[parent];
   return next;
+}
+
+/**
+ * LIST THE PLAT TO THE HOMEBUILDERS at an asking price a square foot of lot,
+ * as a takedown (they buy as they build) or whole (they buy every free lot
+ * now). Builders come looking more often; one that would pay the ask signs at
+ * it, one that would not bids its own number, which you can take or leave.
+ */
+export function listLotsToBuilders(s: GameState, parcels: ParcelTable, parent: string, askPsf: number, bulk: boolean): { s: GameState; err?: string; msg?: string } {
+  if (!s.plats?.[parent]?.done) return { s, err: "The streets are not in yet." };
+  if (!(askPsf > 0) || !Number.isFinite(askPsf)) return { s, err: "Name a price." };
+  if (!freeLots(s, parcels, parent).mine.length) return { s, err: "You have no free lots on this plat." };
+  if (s.homes?.contracts?.[parent] && !bulk) return { s, err: "A builder already has a takedown here." };
+  const next = cloneState(s);
+  const h = homesOf(next);
+  (h.listings ??= {})[parent] = { parent, askPsf: +askPsf.toFixed(2), bulk, listedM: next.month } as LotListing;
+  return { s: next, msg: "Listed to the builders." };
+}
+export function delistLots(s: GameState, parent: string): GameState {
+  const next = cloneState(s);
+  if (next.homes?.listings?.[parent]) delete next.homes.listings[parent];
+  return next;
+}
+
+/** One of your lots sold to a homebuilder at `psf`: a land sale, through the ledger. Returns the gross price. */
+function sellLot(s: GameState, parcels: ParcelTable, parent: string, builder: string, psf: number, bbl: string): number {
+  const h = s.holdings[bbl];
+  const rec = resolveRec(parcels, s, bbl);
+  if (!h || !rec) return 0;
+  // a lot by a park fetches more of the builder's per-foot price (homeprice.ts lotPremiumMult)
+  const hmk = s.econ.homes, pmk = hmk?.plats[parent];
+  const mult = pmk && hmk ? lotPremiumMult(s.econ, rec.lotArea, hmk.psf * pmk.loc, platFar(s, parent), rec.homePrem ?? 0) : 1;
+  const price = Math.round(psf * rec.lotArea * mult);
+  const q = saleTaxQuote(h, price, s);
+  s.cash += q.net;
+  logBooks(s, "sold", q.net, bbl);
+  if (q.tax > 0) { s.cash -= q.tax; s.taxesPaid = (s.taxesPaid ?? 0) + q.tax; logBooks(s, "taxes", q.tax); }
+  // THE RELEASE. A lot under an A&D note closes only when the lender is paid its share (platdesign.ts):
+  // out of the price, at the closing table, through the ledger as the payoff it is.
+  if (h.loan?.ad && h.loan.balance > 0) {
+    const due = Math.round(h.loan.balance);
+    s.cash -= due;
+    logBooks(s, "debtSvc", due, bbl);
+    h.loan = null;
+  }
+  const pl = plOf(homesOf(s), parent);
+  pl.lotsSold++; pl.lotRevenue += price; pl.lotProceeds += q.net; pl.lotBasis += h.costBasis;
+  const ex: Exit = { bbl, address: rec.address, boughtM: h.boughtM, soldM: s.month, price, basis: h.costBasis, gain: q.gain };
+  closeDeedLedger(s, ex);
+  (s.exits ??= []).push(ex);
+  if (s.exits.length > 200) s.exits.shift();
+  recordComp(s, rec, price, builder, firmShort(s));
+  (s.lastTradeM ??= {})[bbl] = s.month;
+  delete s.holdings[bbl];
+  return price;
 }
 
 // ---------------------------------------------------------------- the tick
@@ -312,64 +377,10 @@ function poisson(s: GameState, lambda: number): number {
   return k - 1;
 }
 
-/** A finished house you sold closes: the proceeds, the tax on the profit, and the lot leaves the market as a family's home. */
-function closeYourHome(s: GameState, parcels: ParcelTable, u: HomeUnit) {
-  const h = s.holdings[u.bbl];
-  const homes = homesOf(s);
-  const pl = plOf(homes, u.parent);
-  u.closedM = s.month;
-  const price = u.price ?? 0;
-  const selling = Math.round((NAHB.commission + NAHB.marketing) * price);
-  const net = price - selling;
-  pl.closed++; pl.revenue += price; pl.net += net; pl.cost += u.spent; pl.lotCost += u.lotCost;
-  if (!h) return;
-  const basis = h.costBasis;
-  const gain = net - basis;
-  s.cash += net;
-  logBooks(s, "sold", net, u.bbl);
-  // A HOUSE IS A BUILDER'S INVENTORY, NOT AN INVESTMENT: the profit is
-  // ordinary income (a dealer's property, IRC §1221(a)(1)), taxed at the
-  // sponsor's blended rate (tax.ts INCOME_TAX_RATE), withheld at the close as
-  // the sale desk withholds a capital gain.
-  const tax = gain > 0 ? Math.round(gain * INCOME_TAX_RATE) : 0;
-  if (tax > 0) { s.cash -= tax; s.taxesPaid = (s.taxesPaid ?? 0) + tax; logBooks(s, "taxes", tax); }
-  const rec = resolveRec(parcels, s, u.bbl);
-  const ex: Exit = { bbl: u.bbl, address: rec?.address ?? u.bbl, boughtM: h.boughtM, soldM: s.month, price, basis, gain };
-  closeDeedLedger(s, ex);
-  (s.exits ??= []).push(ex);
-  if (s.exits.length > 200) s.exits.shift();
-  (s.lastTradeM ??= {})[u.bbl] = s.month;
-  delete s.holdings[u.bbl];
-}
-
-/** A builder takes down one of your lots under its contract: a land sale, at the contract price. */
-function takeDown(s: GameState, parcels: ParcelTable, c: LotContract, bbl: string): number {
-  const h = s.holdings[bbl];
-  const rec = resolveRec(parcels, s, bbl);
-  if (!h || !rec) return 0;
-  const price = Math.round(c.psf * rec.lotArea);
-  const q = saleTaxQuote(h, price, s);
-  s.cash += q.net;
-  logBooks(s, "sold", q.net, bbl);
-  if (q.tax > 0) { s.cash -= q.tax; s.taxesPaid = (s.taxesPaid ?? 0) + q.tax; logBooks(s, "taxes", q.tax); }
-  const pl = plOf(homesOf(s), c.parent);
-  pl.lotsSold++; pl.lotProceeds += q.net; pl.lotBasis += h.costBasis;
-  const ex: Exit = { bbl, address: rec.address, boughtM: h.boughtM, soldM: s.month, price, basis: h.costBasis, gain: q.gain };
-  closeDeedLedger(s, ex);
-  (s.exits ??= []).push(ex);
-  if (s.exits.length > 200) s.exits.shift();
-  recordComp(s, rec, price, c.builder, firmShort(s));
-  (s.lastTradeM ??= {})[bbl] = s.month;
-  delete s.holdings[bbl];
-  c.left--; c.taken++;
-  return price;
-}
-
-/** The month's homebuilding: draws, sales, closings, the builders, and the market they all read. */
+/** The month's homebuilding: the frames, the buyers, the closings, the builders' lots, and the market they all read. */
 export function tickHomes(s: GameState, parcels: ParcelTable): void {
   if (s.citySize !== "region" && !s.plats) return;
   const e = s.econ;
-  // the town's household growth, from its population a year ago
   {
     const hist = (homesOf(s).popHist ??= []);
     hist.push(e.population ?? 0);
@@ -380,55 +391,37 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
   const fund = fundamentalHomePsf(e);
   if (e.homes) e.homes.psf += (fund - e.homes.psf) / HPI_CHASE_M;
   refreshHomeMarket(s, parcels);
-  const h = s.homes;
-  if (!h) return;
+  const h = s.homes!;
+  const hm = e.homes!;
 
-  // 1. THE FRAMES GO UP: your draws, a month's share of the budget at a time.
-  for (const u of Object.values(h.units)) {
-    if (u.by !== YOU || u.closedM !== undefined || u.spent >= u.budget) continue;
-    if (!s.holdings[u.bbl]) continue;
-    const due = Math.min(u.budget - u.spent, Math.ceil(u.budget / BUILD_M));
-    const paid = fundAndBook(s, parcels, due, "dev", { bbl: u.bbl });
-    u.spent += paid;
-    s.holdings[u.bbl].costBasis += paid;
-    // a draw the account cannot meet stops the trades for the month
-    if (paid < due) u.doneM = Math.max(u.doneM, s.month + Math.ceil((u.budget - u.spent) / Math.max(1, u.budget / BUILD_M)));
-  }
-  // a builder's frames go up on its own money (off the player's books)
-  for (const u of Object.values(h.units)) if (u.by !== YOU && u.spent < u.budget) u.spent = Math.min(u.budget, u.spent + Math.ceil(u.budget / BUILD_M));
+  // 1. THE FRAMES GO UP, on the builders' money
+  for (const u of Object.values(h.units)) if (u.spent < u.budget) u.spent = Math.min(u.budget, u.spent + Math.ceil(u.budget / BUILD_M));
 
   // 2. THE BUYERS. Each builder with a house to sell draws this month's buyers.
-  const hm = e.homes!;
   const sel = sellers(h);
   const n = sel.size;
   for (const x of [...sel.values()].sort((a, b) => (a.parent + a.by).localeCompare(b.parent + b.by))) {
     const pm = hm.plats[x.parent];
     if (!pm) continue;
-    const adj = x.by === YOU ? h.adj?.[x.parent] ?? 0 : 0;
-    const std = homeQuote(e, platLotSf(s, x.parent), hm.psf * pm.loc, platFar(s, x.parent), 0);
-    const lambda = salesPace(e, std.price / pm.loc, adj, n);
-    let k = poisson(s, lambda);
-    const queue = x.units.slice().sort((a, b) => a.doneM - b.doneM || a.bbl.localeCompare(b.bbl));
-    for (const u of queue) {
+    const std = homeQuote(e, platLotSf(s, x.parent), hm.psf * pm.loc, platFar(s, x.parent));
+    let k = poisson(s, communityPace(e, std.price / pm.loc, 0, n));
+    for (const u of x.units.slice().sort((a, b) => a.doneM - b.doneM || a.bbl.localeCompare(b.bbl))) {
       if (k <= 0) break;
       u.soldM = s.month;
-      u.price = Math.round(hm.psf * pm.loc * u.sf * (1 + adj));
+      u.price = Math.round(hm.psf * pm.loc * (1 + (parcels[u.bbl]?.homePrem ?? 0)) * u.sf);
       k--;
     }
   }
 
   // 3. CLOSINGS: a signed house closes the month it is finished.
-  for (const u of Object.values(h.units).sort((a, b) => a.bbl.localeCompare(b.bbl))) {
+  for (const u of Object.values(h.units)) {
     if (u.soldM === undefined || u.closedM !== undefined || s.month < u.doneM || u.spent < u.budget) continue;
-    if (u.by === YOU) closeYourHome(s, parcels, u);
-    else {
-      u.closedM = s.month;
-      const b = h.builders[u.by];
-      if (b) { b.closed++; b.revenue += u.price ?? 0; b.cost += u.spent + u.lotCost; }
-    }
+    u.closedM = s.month;
+    const b = h.builders[u.by];
+    if (b) { b.closed++; b.revenue += u.price ?? 0; b.cost += u.spent + u.lotCost; }
   }
 
-  // 4. THE BUILDERS: start houses on lots they take down, and come looking for more.
+  // 4. THE BUILDERS: start houses on lots they hold or take down, and come looking for more.
   for (const [parent, plat] of Object.entries(s.plats ?? {})) {
     if (!plat.done || !hm.plats[parent]) continue;
     const pm = hm.plats[parent];
@@ -440,47 +433,83 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
       delete h.contracts![parent];
     }
     const contract = h.contracts?.[parent];
-    const { mine, market } = freeLots(s, parcels, parent);
-    // who is building here
-    const here = new Set(Object.values(h.units).filter((u) => u.parent === parent && u.by !== YOU && u.closedM === undefined).map((u) => u.by));
+    const f = freeLots(s, parcels, parent);
+    const heldBy = (by: string) => f.held.filter((b) => h.held?.[b]?.by === by);
+    const here = new Set(Object.values(h.units).filter((u) => u.parent === parent && u.closedM === undefined).map((u) => u.by));
+    for (const b of f.held) here.add(h.held![b].by);
     if (contract) here.add(contract.builder);
-    // A BUILDER COMES LOOKING where there are lots, a residual worth paying,
-    // and nobody building: it offers to take down yours, and starts on any
-    // the market holds.
-    const freeMine = mine.filter((b) => s.holdings[b] && !s.holdings[b].loan && !s.holdings[b].sale);
-    if (!here.size && q.residual > 0 && !h.offers?.[parent] && (freeMine.length || market.length) && rng(s, "homes") < BUILDER_ENTRY_P) {
-      const used = new Set(Object.keys(h.builders));
-      let k = 0, name = builderName(s, k);
-      while (used.has(name) && k < 40) name = builderName(s, ++k);
-      h.builders[name] ??= { name, sinceM: s.month, lots: 0, lotSpend: 0, started: 0, closed: 0, revenue: 0, cost: 0 };
-      if (market.length) here.add(name);
-      if (freeMine.length) {
-        const pace = salesPace(e, q.price / pm.loc, 0, n + 1);
-        const lots = Math.min(freeMine.length, Math.max(4, Math.round(pace * TAKEDOWN_MONTHS)));
-        (h.offers ??= {})[parent] = { parent, builder: name, lots, psf: +q.residualPsf.toFixed(2), madeM: s.month, expiresM: s.month + OFFER_LIFE_M };
-        s.news.unshift({ q: s.month, kind: "deal", text: `${name} offers to take down ${lots} of your lots at ${parcels[parent]?.address ?? parent} at $${q.residualPsf.toFixed(2)}/sf of lot (${money(q.residual)} a typical lot), a few a month as it starts houses. Open until ${monthLabel(s.month + OFFER_LIFE_M)}.` });
+
+    // A BUILDER COMES LOOKING where there are lots for sale and a residual
+    // worth paying: for yours it makes an offer (takedown, or the whole plat
+    // when you listed it whole), and on the market's it simply builds.
+    const listing = h.listings?.[parent];
+    // lots already promised on a takedown are the takedown builder's to take
+    const spare = f.mine.slice(contract?.left ?? 0);
+    // the town wants more houses than the communities selling can sell: room for another builder
+    const crowded = salesPace(e, q.price / pm.loc, 0, Math.max(1, n)) > COMMUNITY_SALES_CAP;
+    const canEnter = !here.size || crowded;
+    const want = spare.length > 0 && !h.offers?.[parent];
+    const entryP = listing ? LISTED_ENTRY_P : BUILDER_ENTRY_P;
+    if (q.residual > 0 && ((want && (listing || canEnter)) || (canEnter && f.market.length)) && rng(s, "homes") < entryP) {
+      let name: string;
+      const existing = [...here].sort()[0];
+      if (existing && !canEnter) name = existing;
+      else {
+        let k = 0; name = builderName(s, k);
+        while ((h.builders[name] || here.has(name)) && k < 40) name = builderName(s, ++k);
+        h.builders[name] = newBuilder(name, s.month);
+      }
+      if (!want) here.add(name);
+      else {
+        const bids = builderBids(s, parent, spare.length);
+        // with a takedown already signed here, a second builder buys what is left outright
+        const kind: LotOffer["kind"] = listing?.bulk || contract ? "bulk" : "takedown";
+        const bid = kind === "bulk" ? bids.bulkPsf : bids.takedownPsf;
+        const lots = kind === "bulk" ? spare.length : Math.min(spare.length, Math.max(4, Math.round(bids.pace * TAKEDOWN_MONTHS)));
+        // it pays your ask if the ask is under what the lots are worth to it; otherwise it names its own number
+        const psf = listing && listing.askPsf <= bid ? listing.askPsf : bid;
+        const offer: LotOffer = { parent, builder: name, kind, lots, psf: +psf.toFixed(2), madeM: s.month, expiresM: s.month + OFFER_LIFE_M };
+        (h.offers ??= {})[parent] = offer;
+        if (listing && listing.askPsf <= bid) {
+          // at your ask: signed on your standing instruction
+          signOffer(s, parcels, parent);
+        } else {
+          s.news.unshift({ q: s.month, kind: "deal", text: `${name} ${kind === "bulk" ? `bids for all ${lots}` : `offers to take down ${lots}`} of your lots at ${parcels[parent]?.address ?? parent}: $${psf.toFixed(2)}/sf of lot (${money(psf * platLotSf(s, parent))} a typical lot)${listing ? `, under your $${listing.askPsf.toFixed(2)} ask` : ""}. Open until ${monthLabel(s.month + OFFER_LIFE_M)}.` });
+        }
       }
     }
+
+    const cNow = h.contracts?.[parent];
+    const f2 = freeLots(s, parcels, parent);
     for (const by of [...here].sort()) {
       const unsold = Object.values(h.units).filter((u) => u.parent === parent && u.by === by && u.soldM === undefined).length;
-      const pace = salesPace(e, q.price / pm.loc, 0, Math.max(1, n));
-      const want = Math.min(Math.max(1, Math.ceil(pace * 2)), Math.ceil(pace * PIPELINE_MONTHS) - unsold);
-      // a house is started only where it pays for its frame (the lot is bought with it, at the residual)
-      if (want <= 0 || !(q.residual > 0)) continue;
-      for (let i = 0; i < want; i++) {
-        let bbl: string | undefined, lotCost = 0;
-        const fromYou = contract && contract.builder === by && contract.left > 0 ? mine.find((b) => s.holdings[b] && !s.holdings[b].loan && !s.holdings[b].sale && !h.units[b]) : undefined;
-        if (fromYou) { lotCost = takeDown(s, parcels, contract!, fromYou); if (lotCost > 0) bbl = fromYou; }
-        else {
-          const m = market.find((b) => !h.units[b]);
-          if (m) { bbl = m; lotCost = Math.round(q.residualPsf * (parcels[m]?.lotArea ?? 0) * pm.disc); }
+      const pace = communityPace(e, q.price / pm.loc, 0, Math.max(1, n));
+      const starts = Math.min(Math.max(1, Math.ceil(pace * 1.5)), Math.ceil(pace * PIPELINE_MONTHS) - unsold);
+      // a house is started only where it pays for its frame and the lot
+      if (starts <= 0 || !(q.residual > 0)) continue;
+      const own = heldBy(by).filter((b) => f2.held.includes(b));
+      for (let i = 0; i < starts; i++) {
+        let bbl: string | undefined, lotCost = 0, fromHeld = false;
+        if (own.length) {
+          fromHeld = true;
+          bbl = own.shift()!;
+          lotCost = h.held![bbl].cost;     // already in its book (lots, lotSpend) from the bulk purchase
+          delete h.held![bbl];
+        } else if (cNow && cNow.builder === by && cNow.left > 0 && f2.mine.length) {
+          bbl = f2.mine.shift()!;
+          lotCost = sellLot(s, parcels, parent, by, cNow.psf, bbl);
+          cNow.left--; cNow.taken++;
+          if (!(lotCost > 0)) bbl = undefined;
+        } else if (f2.market.length) {
+          bbl = f2.market.shift()!;
+          lotCost = Math.round(q.residualPsf * (parcels[bbl]?.lotArea ?? 0) * pm.disc);
         }
         if (!bbl) break;
-        const rec = parcels[bbl];
-        const qq = homeQuote(e, rec.lotArea, hm.psf * pm.loc, platFar(s, parent));
+        const qq = homeQuote(e, parcels[bbl].lotArea, hm.psf * pm.loc, platFar(s, parent));
         h.units[bbl] = { bbl, parent, by, sf: qq.sf, startM: s.month, doneM: s.month + BUILD_M, budget: qq.vertical + qq.overhead, spent: 0, lotCost };
-        const b = (h.builders[by] ??= { name: by, sinceM: s.month, lots: 0, lotSpend: 0, started: 0, closed: 0, revenue: 0, cost: 0 });
-        b.lots++; b.lotSpend += lotCost; b.started++;
+        const b = (h.builders[by] ??= newBuilder(by, s.month));
+        b.started++;
+        if (!fromHeld) { b.lots++; b.lotSpend += lotCost; }
       }
     }
   }
@@ -495,14 +524,15 @@ export type PlatHomesView = {
   quote: HomeQuote & { psfHere: number };
   fund: number; psfTown: number; loc: number; commute: number;
   pace: number; disc: number; left: number;
-  lots: number; mine: number; building: number; forSale: number; signed: number; closed: number;
-  builders: { name: string; building: number; closed: number }[];
-  adj: number; yourPace: number;
+  lots: number; mine: number; free: number; houses: number; closed: number;
+  builders: { name: string; building: number; closed: number; held: number }[];
+  bids: ReturnType<typeof builderBids>;
   pl: PlatPL | null;
-  offer: import("./types").LotOffer | null;
+  offer: LotOffer | null;
   contract: LotContract | null;
+  listing: LotListing | null;
 };
-/** Everything the homebuilding desk shows for one plat. */
+/** Everything the lots desk shows for one plat. */
 export function platHomesView(s: GameState, parcels: ParcelTable, parent: string): PlatHomesView | null {
   const quote = platQuoteNow(s, parent);
   const hm = s.econ.homes, pm = hm?.plats[parent];
@@ -510,36 +540,27 @@ export function platHomesView(s: GameState, parcels: ParcelTable, parent: string
   const all = platLots(s, parcels, parent);
   const h = s.homes;
   const units = Object.values(h?.units ?? {}).filter((u) => u.parent === parent);
-  const mineU = units.filter((u) => u.by === YOU);
-  const adj = h?.adj?.[parent] ?? 0;
-  const n = h ? sellers(h).size : 0;
-  const yourSelling = mineU.some((u) => u.soldM === undefined);
-  const byB = new Map<string, { name: string; building: number; closed: number }>();
-  for (const u of units) {
-    if (u.by === YOU) continue;
-    const b = byB.get(u.by) ?? { name: u.by, building: 0, closed: 0 };
-    if (u.closedM === undefined) b.building++; else b.closed++;
-    byB.set(u.by, b);
-  }
+  const f = freeLots(s, parcels, parent);
+  const byB = new Map<string, { name: string; building: number; closed: number; held: number }>();
+  const row = (by: string) => { const b = byB.get(by) ?? { name: by, building: 0, closed: 0, held: 0 }; byB.set(by, b); return b; };
+  for (const u of units) { const b = row(u.by); if (u.closedM === undefined) b.building++; else b.closed++; }
+  for (const bbl of f.held) row(h!.held![bbl].by).held++;
   return {
     quote, fund: hm.fund, psfTown: hm.psf, loc: pm.loc, commute: pm.commute,
     pace: pm.pace, disc: pm.disc, left: pm.left,
     lots: all.length,
     mine: all.filter((b) => s.holdings[b]).length,
-    building: mineU.filter((u) => u.closedM === undefined && (u.spent < u.budget || s.month < u.doneM)).length,
-    forSale: mineU.filter((u) => u.soldM === undefined).length,
-    signed: mineU.filter((u) => u.soldM !== undefined && u.closedM === undefined).length,
-    closed: mineU.filter((u) => u.closedM !== undefined).length,
+    free: f.mine.length,
+    houses: units.length,
+    closed: units.filter((u) => u.closedM !== undefined).length,
     builders: [...byB.values()],
-    adj,
-    yourPace: salesPace(s.econ, quote.price / pm.loc, adj, yourSelling ? Math.max(1, n) : n + 1),
+    bids: builderBids(s, parent, Math.max(1, f.mine.length)),
     pl: h?.pl?.[parent] ?? null,
     offer: h?.offers?.[parent] ?? null,
     contract: h?.contracts?.[parent] ?? null,
+    listing: h?.listings?.[parent] ?? null,
   };
 }
-export { homeSfFor };
-export type { ParcelRecord };
 
 /**
  * WHAT A FINISHED LOT HERE WOULD FETCH, for a tract not yet platted: the
@@ -554,7 +575,9 @@ export function tractLotQuote(s: GameState, parcels: ParcelTable, bbl: string, l
   const { loc, commute } = platLocation(s, parcels, bbl, psf);
   const quote = homeQuote(e, lotSf, psf * loc, 0.6);
   const n = s.homes ? sellers(s.homes).size : 0;
-  const pace = salesPace(e, quote.price / loc, 0, n + 1);
+  const pace = communityPace(e, quote.price / loc, 0, n + 1);
   const disc = quote.residual > 0 ? selloutDiscount(lots, pace) : 0;
   return { quote, loc, commute, pace, disc, lotValue: Math.max(0, quote.residual) * disc };
 }
+export { homeSfFor };
+export type { ParcelRecord };

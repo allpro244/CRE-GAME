@@ -22,7 +22,7 @@
 // The geometry — which street, which corner — is citygen's (region
 // platTractLots), drawn from the same tract and lot size.
 import type { ParcelTable, ParcelRecord } from "@/data/types";
-import type { GameState, EntitlementApplication, PlatRecord, Holding } from "./types";
+import type { GameState, EntitlementApplication, PlatRecord, Holding, Loan } from "./types";
 import { monthLabel, cloneState } from "./types";
 import { rng } from "./market";
 import { resolveRec } from "./value";
@@ -58,6 +58,14 @@ const entitleOdds = (edgeM: number) => clamp(0.80 - 0.35 * clamp(edgeM / 3000, 0
  * with a garage on a 5,000-sf lot or a fourplex on 7,500 [S, typical R-2].
  */
 const REZONE = { zone: "R-2", far: 0.6 };
+/**
+ * AFTER A REFUSAL, A YEAR. Zoning codes commonly bar a substantially similar
+ * application on the same land for twelve months after a denial (a standard
+ * provision of US municipal codes — e.g. the one-year resubmittal rule in many
+ * Illinois, Texas and Georgia cities, and the APA model codes) [S, typical];
+ * the applicant may come back sooner only with a materially different plan.
+ */
+export const REFILE_BAR_M = 12;
 /** Streets, stormwater ponds and required open space take 20-30% of a plat's gross land [S]; 25% here. */
 export const PLAT_STREET_SHARE = 0.25;
 /**
@@ -68,16 +76,16 @@ export const PLAT_STREET_SHARE = 0.25;
  * national average of $13,772 a single-family lot (Duncan Associates, 2019).
  * Carried by the construction-cost index.
  */
-const INFRA_PER_FRONT_FT = 40_000 / 65;
-const IMPACT_FEE = 13_772;
+export const INFRA_PER_FRONT_FT = 40_000 / 65;
+export const IMPACT_FEE = 13_772;
 /** Months to build a plat's infrastructure: about six for a small section, longer for a big one [S]. */
-const INFRA_MONTHS = (lots: number) => Math.round(clamp(6 + lots / 30, 6, 18));
+export const INFRA_MONTHS = (lots: number) => Math.round(clamp(6 + lots / 30, 6, 18));
 
 export const PLAT_LOT_SIZES = [5_000, 7_500, 10_000] as const;
 
 // ---------------------------------------------------------------- entitlement
 /** Can this tract be entitled and platted at all, and why not. */
-function plattable(s: GameState, parcels: ParcelTable, bbl: string): { rec: ParcelRecord } | { err: string } {
+export function plattable(s: GameState, parcels: ParcelTable, bbl: string): { rec: ParcelRecord } | { err: string } {
   const rec = parcels[bbl];
   if (!rec) return { err: "There is no parcel there." };
   if (!rec.ag || !rec.tract) return { err: "Only a whole farm or woodlot tract can be entitled and platted." };
@@ -107,6 +115,10 @@ export function fileEntitlement(s: GameState, parcels: ParcelTable, bbl: string,
   if ("err" in p) return { s, err: p.err };
   if (s.rezoned?.[bbl]) return { s, err: "The board has already rezoned it." };
   if (s.entitlementApps?.[bbl]) return { s, err: "The application is already in front of the board." };
+  const refused = s.rezoneRefusedM?.[bbl];
+  if (refused !== undefined && s.month - refused < REFILE_BAR_M) {
+    return { s, err: `The board refused this rezoning ${monthLabel(refused)}; a similar application cannot come back before ${monthLabel(refused + REFILE_BAR_M)}.` };
+  }
   const q = entitleQuote(s, parcels, bbl, lotSf, planned);
   if (!q) return { s, err: "The tract is too small to plat." };
   const room = spendable(s, parcels);
@@ -134,10 +146,11 @@ function decideEntitlements(s: GameState, parcels: ParcelTable) {
     const rec = resolveRec(parcels, s, app.bbl);
     recordPropertyEvent(s, app.bbl, { kind: "planning", amount: app.cost, outcome: granted ? `Rezoned ${REZONE.zone}: ${app.lots} lots approved` : "Rezoning refused" });
     if (granted) {
-      s.rezoned = { ...(s.rezoned ?? {}), [app.bbl]: { zone: REZONE.zone, far: REZONE.far, lotSf: app.lotSf, m: s.month } };
+      s.rezoned = { ...(s.rezoned ?? {}), [app.bbl]: { zone: REZONE.zone, far: REZONE.far, lotSf: app.lotSf, m: s.month, lots: app.lots, ...(app.design ? { design: app.design } : {}) } };
       s.news.unshift({ q: s.month, kind: "deal", text: `The board rezoned ${rec?.address ?? app.bbl} ${REZONE.zone}, ${app.lots} lots approved. Plat it when you are ready to build the streets.` });
     } else {
-      s.news.unshift({ q: s.month, kind: "warn", text: `The board refused the rezoning at ${rec?.address ?? app.bbl}. The fees are spent; it is still a farm.` });
+      s.rezoneRefusedM = { ...(s.rezoneRefusedM ?? {}), [app.bbl]: s.month };
+      s.news.unshift({ q: s.month, kind: "warn", text: `The board refused the rezoning at ${rec?.address ?? app.bbl}. The fees are spent; it is still a farm, and a similar application cannot be heard again for ${REFILE_BAR_M} months.` });
     }
   }
   if (!Object.keys(apps).length) delete s.entitlementApps;
@@ -208,7 +221,43 @@ function lotRecords(parent: ParcelRecord, plat: PlatRecord, rz: { zone: string; 
     lotFront: l.f, lotDepth: l.d, corner: false,
     ag: undefined, tract: undefined,
     homeLot: true,
+    ...(l.p ? { homePrem: l.p } : {}),
   }));
+}
+
+/**
+ * THE ASSOCIATION'S LAND. A designed plat's parks, its pond and the lots given
+ * to open space are deeded to the homeowners' association (platdesign.ts):
+ * one deed for each amenity (lot 9001 on) and one for the rest of the common
+ * land (lot 9000). Common land is not for sale and nobody else would pay for
+ * it — its value is already in the houses beside it (the premium) — so it
+ * carries no envelope (zone OS), no price and no market (demand.ts
+ * isCivicLand reads isHoaBbl).
+ */
+export const HOA_LOT0 = 9000;
+export function hoaBbl(parent: ParcelRecord, k: number): string {
+  return String(6e9 + (parent.tract!.id % 1e5) * 1e4 + HOA_LOT0 + k);
+}
+export const isHoaBbl = (bbl: string): boolean => {
+  const n = Number(bbl);
+  return n >= 6e9 && n < 7e9 && n % 1e4 >= HOA_LOT0;
+};
+function hoaRecords(parent: ParcelRecord, plat: PlatRecord): ParcelRecord[] {
+  if (plat.template !== "design") return [];
+  const base = parent.address.replace(/ \(.*\)$/, "").replace(/ tract$/, "");
+  const one = (k: number, sf: number, what: string, kind: string): ParcelRecord => ({
+    ...parent,
+    bbl: hoaBbl(parent, k), address: `${base} ${what}`, block: parent.bbl, lot: String(HOA_LOT0 + k),
+    zoneDist: "OS", farMaxComm: 0, farMaxRes: 0, bldgClass: "Q1", class: "land" as const, mix: undefined,
+    lotArea: Math.max(1, Math.round(sf)), bldgArea: 0, floors: 0, yearBuilt: 0, unitsRes: 0,
+    landPsf: 0, assessedLand: 0, assessedTotal: 0, landPsfHistory: [0], imputed: [],
+    corner: false, ag: undefined, tract: undefined, homeLot: undefined, hoa: kind,
+  });
+  const out: ParcelRecord[] = [];
+  const common = (plat.common?.pond ?? 0) + (plat.common?.open ?? 0);
+  if (common > 0) out.push(one(0, common, "common land", "common"));
+  (plat.amen ?? []).forEach((a, i) => { if (a.sf > 0) out.push(one(i + 1, a.sf, a.k === "pool" ? "clubhouse" : a.k === "entry" ? "entrance" : "park", a.k)); });
+  return out;
 }
 
 /**
@@ -224,7 +273,7 @@ export function materializePlats(s: GameState, parcels: ParcelTable, bbls?: stri
     if (!plat.done) continue;
     const parent = parcels[plat.parent];
     if (!parent?.tract) continue;
-    for (const r of lotRecords(parent, plat, s.rezoned?.[plat.parent])) {
+    for (const r of [...lotRecords(parent, plat, s.rezoned?.[plat.parent]), ...hoaRecords(parent, plat)]) {
       if (parcels[r.bbl]) continue;
       parcels[r.bbl] = r;
       bbls?.push(r.bbl);
@@ -248,12 +297,23 @@ function completePlats(s: GameState, parcels: ParcelTable, bbls: string[]) {
       // land, the hearings, the streets — is spread over its lots by area, and
       // the farm's own deed is retired into them.
       const total = plat.lots.reduce((t, l) => t + l.a, 0);
+      // AN A&D NOTE FOLLOWS THE LAND INTO ITS LOTS (platdesign.ts): split by area like the basis, the
+      // undrawn interest reserve with it, to the dollar; each lot's sale pays off its own share
+      const ad = parentH.loan?.ad ? parentH.loan : null;
+      let leftBal = ad?.balance ?? 0, leftPrin = ad?.principal ?? 0, leftRes = ad?.leaseUpRoom ?? 0;
       plat.lots.forEach((l, i) => {
         const share = l.a / Math.max(1, total);
+        const last = i === plat.lots.length - 1;
+        let loan: Loan | null = null;
+        if (ad) {
+          const bal = last ? leftBal : Math.round(ad.balance * share), prin = last ? leftPrin : Math.round(ad.principal * share), res = last ? leftRes : Math.round((ad.leaseUpRoom ?? 0) * share);
+          leftBal -= bal; leftPrin -= prin; leftRes -= res;
+          loan = { ...ad, balance: bal, principal: prin, monthlyPmt: Math.round(ad.monthlyPmt * share * 100) / 100, ...(res > 0 ? { leaseUpRoom: res } : { leaseUpRoom: undefined }) };
+        }
         const h: Holding = {
           ...parentH, bbl: mine[i], boughtM: s.month,
           costBasis: Math.round(parentH.costBasis * share), assessed: Math.round((parentH.assessed ?? 0) * share),
-          loan: null, tenants: [], cfHistory: [],
+          loan, tenants: [], cfHistory: [],
         };
         s.holdings[mine[i]] = h;
       });

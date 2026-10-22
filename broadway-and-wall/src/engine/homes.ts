@@ -41,6 +41,7 @@ import { saleTaxQuote } from "./actions";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { money } from "./money";
+import { tableVersion } from "./tableVersion";
 import {
   homeQuote, fundamentalHomePsf, commuteMult, salesPace, selloutDiscount, homeSfFor, lotPremiumMult, LOT_SELLOUT_RATE,
   REF_HOME, BUILD_M, NAHB, type HomeMarket, type PlatMarket, type HomeQuote,
@@ -221,11 +222,21 @@ export function platLocation(s: GameState, parcels: ParcelTable, parent: string,
   const fromComps = Math.max(0.7, Math.min(1.3, 1 + cred * (rel - 1)));
   return { loc: fromComps * commute, commute };
 }
-/** The town's houses as comps, re-read once a year (and on a new state). */
+/**
+ * The town's houses as comps, re-read each month (and on a new cut of the table).
+ *
+ * It was re-read once a year, which made the year's comps whatever the state
+ * was at the FIRST ask of that year — a fact about the run's history, not its
+ * state: a save Continued mid-year re-read them off the month it was loaded
+ * and played a different game from there (test/region-reload.mjs). Monthly,
+ * the first ask is always inside the tick at the same point, so the comps are
+ * a function of the state; the list is the inner ring's few hundred frames,
+ * a few milliseconds a month.
+ */
 let COMPS: { key: string; parcels: ParcelTable; list: { x: number; y: number; psf: number }[]; lnMean: number } | null = null;
 export function houseComps(s: GameState, parcels: ParcelTable) {
   // keyed on the table itself, not on Object.keys(parcels): this is asked once per tract per quarter (growth.ts readTract)
-  const key = `${s.seed}:${Math.floor(s.month / 12)}`;
+  const key = `${s.seed}:${s.month}:${tableVersion(parcels)}`;
   if (COMPS?.key === key && COMPS.parcels === parcels) return COMPS;
   const list: { x: number; y: number; psf: number }[] = [];
   for (const bbl in parcels) {

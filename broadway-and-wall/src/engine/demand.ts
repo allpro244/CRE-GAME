@@ -59,6 +59,7 @@ import { mixOf, type UseMix } from "./mix";
 import { SECTORS, INDUSTRY_LABEL } from "./market";
 import { BUILT_CLASSES, type Sector } from "./types";
 import { voidContract } from "./acquire";
+import { tableVersion } from "./tableVersion";
 
 /** What the neighbourhood panel can recommend: a use, or a mixed-use stack. */
 export type WantsKey = BuiltClass | "mixed";
@@ -397,7 +398,9 @@ function hash01(str: string): number {
 }
 
 // One model per parcel table. Static geometry, so it is computed once.
+// ...per cut of the table (tableVersion.ts): plats and splits add deeds mid-game
 const CACHE = new WeakMap<ParcelTable, DemandModel>();
+const CACHE_V = new WeakMap<ParcelTable, number>();
 
 const M_PER_DEG_LAT = 111_320;
 
@@ -489,7 +492,8 @@ const MIXED_PROBE: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.40 };
 
 export function demandModel(parcels: ParcelTable): DemandModel {
   const hit = CACHE.get(parcels);
-  if (hit) return hit;
+  if (hit && CACHE_V.get(parcels) === tableVersion(parcels)) return hit;
+  CACHE_V.set(parcels, tableVersion(parcels));
 
   const bbls = Object.keys(parcels);
   if (!bbls.length) {

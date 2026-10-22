@@ -15,7 +15,8 @@ import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECT
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, taxRate, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
-  mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier, tradeAreaDemand } from "./value";
+  mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier, tradeAreaDemand, HOMES_ONLY_ZONES } from "./value";
+import { isHoaBbl } from "./landdev";
 import { productOf, ANCHOR_NAMES, type ProductKey, type ProductSite } from "./products";
 export { zoneUseBar };
 export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
@@ -3897,6 +3898,33 @@ function classPinnedOwed(e: Econ, k: BuiltClass, slack = 0.02): boolean {
   return (e.structTight?.[k] ?? 0) > 0.06;
 }
 
+/**
+ * WHERE A REDEVELOPER LOOKS: the town's deeds. On the region map the parcel
+ * table also holds the farms, every lot of every plat and the houses on them,
+ * the plats' common ground and the unpacked neighbourhoods' family homes —
+ * none of which a teardown buyer scouts (a field has nothing to tear down; a
+ * plat's lots are held to houses by their covenants and its homes-only
+ * district, value.ts HOMES_ONLY_ZONES). Drawing the month's sample from all of
+ * them meant the looks at the town thinned as the county was platted: on seed 1
+ * the table grew 2,026 -> 4,589 deeds in thirty years, so the inner ring was
+ * looked at less than half as often by the end, just as its land rose 5x.
+ * An island has none of them, so its scope is its whole table, the same list,
+ * drawn the same way.
+ */
+let SCOPE: { n: number; first: string | undefined; list: string[] } | null = null;
+function teardownScope(parcels: ParcelTable, bbls: string[]): string[] {
+  if (SCOPE && SCOPE.n === bbls.length && SCOPE.first === bbls[0]) return SCOPE.list;
+  const list: string[] = [];
+  let all = true;
+  for (const b of bbls) {
+    const p = parcels[b];
+    if (p && (p.tract || p.ag || p.homeLot || isHoaBbl(b) || HOMES_ONLY_ZONES.has(p.zoneDist ?? ""))) { all = false; continue; }
+    list.push(b);
+  }
+  SCOPE = { n: bbls.length, first: bbls[0], list: all ? bbls : list };
+  return SCOPE.list;
+}
+
 function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null = null) {
   // A slow clock. Roughly one candidate examined a month, and only the worst
   // offender in a sample gets the notice — a city does not clear a block a
@@ -3978,8 +4006,9 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   // is on rentable. Underwriting only that lot is why L fell to ~0.04%/yr.
   // The sample is the candidate set — underwrite them in score order and
   // take the first whose replacement actually clears.
+  const scout = teardownScope(parcels, bbls);
   for (let i = 0; i < sampleN; i++) {
-    const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
+    const bbl = scout[Math.floor(rng(s, "dev") * scout.length)];
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
     if (s.holdings[bbl] || s.developments[bbl]) continue;        // never yours

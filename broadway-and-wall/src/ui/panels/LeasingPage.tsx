@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { derive } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec, autoLeaseOnClose } from "@/engine/types";
 import { isLeasedFee, marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
@@ -40,7 +41,8 @@ export function LeasingPage() {
     return [{ h, gl, rec }];
   });
 
-  const rows = Object.values(game.holdings).flatMap((h) => {
+  // Once per state (ui/derive): kept across visits in the same month.
+  const leaseRows = derive(game, "leasing.rows", () => Object.values(game.holdings).flatMap((h) => {
     // A lot folded into an assemblage is part of the site's deed now — its
     // building was demolished; listing it showed buildings that no longer exist.
     if (isLeasedFee(h) || game.merged?.[h.bbl]) return [];
@@ -62,9 +64,11 @@ export function LeasingPage() {
       + resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily", h.condIdx) * (h.occ ?? 0);
     const rolling = commercial ? h.tenants.filter((t) => t.endM - q <= 12).reduce((a, t) => a + t.sf, 0) : 0;
     return [{ h, rec, commercial, leased, notReady, occ, or, rentRoll, rolling }];
-  });
+  }), [parcels]);
+  // the table below sorts in place: a copy, so the cached order is never disturbed
+  const rows = [...leaseRows];
 
-  const ind = portfolioIndustries(game);
+  const ind = derive(game, "leasing.industries", () => portfolioIndustries(game));
 
   function LeasedFeeStrip() {
     if (!leasedFees.length) return null;

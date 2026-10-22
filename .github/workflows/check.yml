@@ -1,10 +1,15 @@
 name: check
 
+# THE GATE IS A SMOKE TEST, minutes not hours: the bundle builds, the types
+# check, nothing draws randomness it should not, the playable is current.
+# The whole suite (`pnpm check`, 1-2 h) is a report, not a gate (owner's
+# decision, Oct 2026): it runs nightly and on demand in full.yml, and its
+# failures are fixed as they surface rather than holding every merge.
 on:
   pull_request:
   push:
     branches:
-      - claude/realestate-game-claude-code-32bppd
+      - main
 
 concurrency:
   group: check-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -13,6 +18,7 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -24,5 +30,11 @@ jobs:
           cache: "pnpm"
       - run: pnpm install
       - run: pnpm engine
-      - run: pnpm check
-      - run: pnpm --dir broadway-and-wall no-playtest
+      - name: types
+        run: pnpm --dir broadway-and-wall exec tsc -b
+      - name: fresh bundle, rng discipline, playable current
+        working-directory: broadway-and-wall
+        run: node test/fresh.mjs && node test/rng-discipline.mjs && node test/playable-fresh.mjs
+      - name: rng audit
+        working-directory: broadway-and-wall
+        run: node tools/rng-audit.mjs

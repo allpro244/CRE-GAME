@@ -1,7 +1,10 @@
-// The town has no zoning (Houston rules): any use on any lot, an allowance
-// equal to what the lot's footprint can physically carry, no rezoning
-// process and no variance desk. Replaces test/zoning.mjs and
-// test/variance.mjs, whose subject no longer exists.
+// No USE zoning (Houston rules): any use on any lot, and the town never
+// rezones on its own. But a DENSITY limit (owner, 2026-10-12: "You can add
+// FAR limits"): a lot's allowance is its plat's FAR (`farMaxFor`, the larger
+// district figure, floored at 2 in town), and more envelope is what the
+// variance desk is for (mix.ts normalizeParcels). This file used to assert
+// the 2026-10-10 rule it replaced (allowance = physical capacity, no variance
+// desk) and had failed since.
 //   pnpm engine && pnpm zoning
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
@@ -27,18 +30,16 @@ for (const b of bbls) {
   if (!r || !(r.lotArea > 0)) continue;
   lots++;
   for (const u of USES) if (!E.zonePermits(r.zoneDist, u, r.demandScore, g.econ)) barred++;
-  const phys = +(E.physicalMaxFloors(r.lotArea * 0.85) * 0.85).toFixed(2);
-  if (Math.abs(E.farMaxFor(r) - Math.max(phys, 2)) > 0.01) { envOff++; worstEnv = `${b}: FAR ${E.farMaxFor(r)} vs physical ${phys}`; }
+  const plat = Math.max(r.farMaxComm, r.farMaxRes, 2);
+  if (Math.abs(E.farMaxFor(r) - plat) > 0.01) { envOff++; worstEnv = `${b}: FAR ${E.farMaxFor(r)} vs plat ${plat}`; }
 }
 ok("every use is permitted on every lot", barred === 0, `${lots} lots, ${barred} barred use-lot pairs`);
-ok("every lot's allowance is its physical capacity", envOff === 0, envOff ? worstEnv : `${lots} lots`);
+ok("every lot's allowance is its plat's FAR", envOff === 0, envOff ? worstEnv : `${lots} lots`);
 
 const sample = bbls.map((b) => E.resolveRec(parcels, g, b)).filter((r) => r && r.lotArea > 3000).slice(0, 40);
-const capOff = sample.filter((r) => E.cityInfillCap(g, parcels, r, "office") !== E.physicalMaxFloors(r.lotArea * 0.62)).length;
-ok("no context-height rule: the height cap is the engineering limit", capOff === 0, `${sample.length} lots checked`);
 
 const mine = sample[0].bbl;
-ok("there is no variance to ask for", E.varianceQuote(g, parcels, mine) === null);
+ok("more envelope is a variance to ask for", sample.some((r) => !!E.varianceQuote(g, parcels, r.bbl)));
 
 const adj0 = JSON.stringify(g.zoneAdj ?? {}), use0 = JSON.stringify(g.zoneUse ?? {});
 for (let m = 0; m < 120; m++) {

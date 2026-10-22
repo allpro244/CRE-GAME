@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { useEffect, useRef, useState, Fragment } from "react";
+import { derive, nwOf } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { distressTally } from "@/engine/history";
-import { resolveRec, netWorth, portfolioMark } from "@/engine/value";
+import { resolveRec, portfolioMark } from "@/engine/value";
 import { marketAppetite, markRival, rivalCondition, firmEntryPitch } from "@/engine/rivals";
 import { ownerById } from "@/engine/ownership";
 import { OwnerStatement } from "@/ui/panels/OwnersDesk";
@@ -52,22 +53,24 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
   // re-mark every rival's whole book and the player's own.
   // Same number as TopBar / Books — a street rank that re-derives equity is
   // one quantity with two answers (facility, loc, deposits, CIP, notes).
-  const playerEquity = useMemo(() => netWorth(game, parcels), [game, parcels]);
+  // Once per state for every screen that prints it (ui/derive), so a revisit
+  // in the same month marks nothing.
+  const playerEquity = nwOf(game, parcels);
   // YOUR FIRM ON THE BOARD, measured the rivals' way: gross assets marked,
   // net equity the Books page's own number, and the debt the identity between
   // them (assets + cash − equity) — so the row cannot disagree with the rank.
-  const mine = useMemo(() => {
+  const mine = derive(game, "street.mine", () => {
     const gav = portfolioMark(game, parcels).gav;
     const cash = Math.max(0, game.cash);
     const debt = Math.max(0, gav + game.cash - playerEquity);
     const buildings = Object.keys(game.holdings).filter((b) => !game.merged?.[b]).length;
     return { gav, cash, debt, buildings, ltv: gav > 0 ? debt / gav : 0 };
-  }, [game, parcels, playerEquity]);
-  const marked = useMemo(() => rivals.map((r) => ({ r, m: markRival(game, parcels, r) }))
+  }, [parcels]);
+  const marked = derive(game, "street.marked", () => rivals.map((r) => ({ r, m: markRival(game, parcels, r) }))
     // by net equity, the league table's own measure, so your row stands
     // exactly at your rank; failed firms at the foot
     .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || rivalEquity(b.m, b.r) - rivalEquity(a.m, a.r)),
-  [game, parcels, rivals]);
+  [parcels]);
   if (!rivals.length) return null;
   const needle = q.trim().toLowerCase();
   // Firms only (ECONOMY.md "Firms only"): the search reads firm names.

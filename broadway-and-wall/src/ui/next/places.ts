@@ -51,11 +51,11 @@ export const PLACES: Place[] = [
     tabs: [
       { id: "forsale", label: "For sale", page: "market", view: "forsale", width: "wide" },
       { id: "all", label: "All buildings", page: "buildings", width: "wide" },
-      { id: "sites", label: "Sites", page: "market", jump: "Sites", width: "wide" },
-      // The note desk once there is paper; until then the Marketplace's distress pipeline.
-      { id: "distressed", label: "Distressed", page: "notes", width: "wide", when: hasNotes },
-      { id: "distressed", label: "Distressed", page: "market", jump: "Distress", width: "wide", when: (g) => !hasNotes(g) },
-      { id: "books", label: "Books", page: "market", jump: "Books", width: "wide" },
+      { id: "sites", label: "Sites", page: "market", view: "sites", width: "wide" },
+      { id: "distressed", label: "Distressed", page: "market", view: "distressed", width: "wide" },
+      { id: "books", label: "Books", page: "market", view: "books", width: "wide" },
+      // the lender's desk on paper held or offered (private credit), hosted until it has its own table
+      { id: "notes", label: "Notes", page: "notes", width: "wide", when: hasNotes },
     ],
   },
   {

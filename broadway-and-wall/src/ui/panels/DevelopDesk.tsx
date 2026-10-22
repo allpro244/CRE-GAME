@@ -10,6 +10,7 @@ import { dominantOf } from "@/engine/proforma";
 import type { BuildingDesign, Contract, DevUse } from "@/engine/types";
 import { DesignPicker } from "@/ui/panels/DesignPicker";
 import SchemeViewer from "@/ui/panels/SchemeViewer";
+import LandDesk from "@/ui/panels/LandDesk";
 import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN, ownedHoldingValue } from "@/engine/value";
 import { ffAvailable, maxOutside, syndicateBar } from "@/engine/syndicate";
 import { playerTerms, termsLine } from "@/engine/reputation";
@@ -214,6 +215,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
+  // ...its desk is the land development desk: lay out the subdivision, entitle it, build its streets
+  if (rec && rec.ag && rec.tract) return <LandDesk bbl={bbl} />;
   if (rec && (rec.ag || rec.zoneDist === "AG")) {
     return (
       <div className="deal">

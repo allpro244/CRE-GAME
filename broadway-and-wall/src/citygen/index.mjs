@@ -28,7 +28,7 @@ export { SIZES, DEFAULT_SIZE };
 export { MANHATTAN, EXTENTS, DEFAULT_EXTENT, extentList };
 export { REGION, platTractLots };
 export { platTractDesign, platDesignLL } from "./region/index.mjs";
-export { DESIGN_LAYOUTS, DESIGN_SIZES, LOT_DIM_FT, SPLIT_MIN, canSplit } from "./region/platdesign.mjs";
+export { DESIGN_LAYOUTS, DESIGN_SIZES, LOT_DIM_FT, SPLIT_MIN, canSplit, designSummary } from "./region/platdesign.mjs";
 // for the town worker, which cannot fetch the plat itself from the single-file build
 export { loadManhattanPlat, setManhattanPlat };
 

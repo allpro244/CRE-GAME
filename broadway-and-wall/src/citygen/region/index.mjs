@@ -737,7 +737,7 @@ export function platDesignLL(tract, design) {
   for (const i of geo.open) parks.push({ k: "open", amen: -1, ring: B[i].ring.map(LL) });
   for (const i of geo.pond.lots) parks.push({ k: "pond", amen: -1, ring: B[i].ring.map(LL) });
   const pondRing = [];
-  if (geo.pond.lots.length) for (let t = 0; t < 24; t++) pondRing.push(LL(add(geo.pond.at, [geo.pond.r * Math.cos((t / 24) * 2 * Math.PI), geo.pond.r * Math.sin((t / 24) * 2 * Math.PI)])));
+  if (geo.pond.lots.length) for (let t = 0; t < 24; t++) pondRing.push(LL(add(geo.pond.c, [geo.pond.r * Math.cos((t / 24) * 2 * Math.PI), geo.pond.r * Math.sin((t / 24) * 2 * Math.PI)])));
   return {
     lots: geo.lots.map((l) => ({ ring: l.ring.map(LL), a: l.a, f: Math.round(l.w), d: Math.round(l.d), near: l.near })),
     streets: geo.streets.map((s) => s.pl.map(LL)),

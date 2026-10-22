@@ -22,7 +22,20 @@
 // 45 ft paved bulb in a 55 ft right-of-way radius.
 //
 // Coordinates are the region's canonical metres (frame.mjs: y down).
-import { FT, add, sub, mul, dist, norm, perp, dot, cumLen, pointAt, resample, makeRng, ringAreaAbs, SQFT_PER_M2 } from "./util.mjs";
+import { FT, add, sub, mul, dist, norm, perp, dot, cumLen, resample, makeRng, ringAreaAbs, SQFT_PER_M2 } from "./util.mjs";
+
+// a polyline's running length, kept: the desk redraws a plat on every drag, and util.mjs pointAt
+// re-measures the whole line at every call
+const CUM = new WeakMap();
+const cumOf = (pl) => { let c = CUM.get(pl); if (!c) { c = cumLen(pl); CUM.set(pl, c); } return c; };
+function pointAt(pl, s) {
+  const c = cumOf(pl);
+  let lo = 0, hi = c.length - 2;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (c[m] <= s) lo = m; else hi = m - 1; }
+  const i = Math.max(0, Math.min(c.length - 2, lo));
+  const t = Math.min(1, Math.max(0, (s - c[i]) / ((c[i + 1] - c[i]) || 1)));
+  return [pl[i][0] + (pl[i + 1][0] - pl[i][0]) * t, pl[i][1] + (pl[i + 1][1] - pl[i][1]) * t];
+}
 
 export const DESIGN_GEN = "region-plat-design/1";
 export const DESIGN_LAYOUTS = ["grid", "loops", "culdesac"];
@@ -121,7 +134,7 @@ export function designBase(spec, env) {
   /** Lots both sides of a polyline at a fixed frontage, from s0 to s1 along it, skipping gaps. */
   const lotsAlong = (pl, size, sides, R, street, s0 = 0, s1 = Infinity, gapAt = []) => {
     const [w, depth] = dims(size);
-    const Lf = cumLen(pl).at(-1), L = Math.min(s1, Lf);
+    const Lf = cumOf(pl).at(-1), L = Math.min(s1, Lf);
     // side lines run square to the street at each corner, so neighbours on a curve share them
     const nrm = (s, sd) => mul(perp(norm(sub(pointAt(pl, Math.min(Lf, s + 3)), pointAt(pl, Math.max(0, s - 3))))), sd);
     for (const sd of sides) {
@@ -349,7 +362,8 @@ export function designPlat(design, env) {
   const claimed = new Map();         // base index -> claim index (-1 the pond)
   const claimNearest = (at, sf, tag) => {
     if (!(sf > 0) || !at) return [];
-    const order = B.map((l, i) => i).filter((i) => !claimed.has(i)).sort((i, j) => dist(B[i].c, at) - dist(B[j].c, at) || i - j);
+    const d = B.map((l) => dist(l.c, at));
+    const order = B.map((l, i) => i).filter((i) => !claimed.has(i)).sort((i, j) => d[i] - d[j] || i - j);
     const out = []; let got = 0;
     for (const i of order) { if (got >= sf * 0.97) break; claimed.set(i, tag); out.push(i); got += B[i].a; }
     return out;
@@ -395,7 +409,8 @@ export function designPlat(design, env) {
     gen: DESIGN_GEN,
     layout: base.layout, frame: base.frame,
     base: B, lots, streets: base.streets, bulbs: base.bulbs, bulbR: BULB_R,
-    pond: { at: pondAt, lots: pondLots, sf: area(pondLots), r: Math.sqrt(Math.max(1, (env.pondSf ?? 0) / SQFT_PER_M2) / Math.PI) },
+    // the water sits in the middle of the land the pond took, about two-thirds of it (side slopes and a maintenance bench)
+    pond: { at: pondAt, c: pondLots.length ? centroid(pondLots.flatMap((i) => B[i].ring)) : pondAt, lots: pondLots, sf: area(pondLots), r: 0.8 * Math.sqrt(Math.max(1, area(pondLots) / SQFT_PER_M2) / Math.PI) },
     amen, open: [...openSet],
     stats: {
       lotSf: lots.reduce((t, l) => t + l.a, 0),
@@ -404,5 +419,22 @@ export function designPlat(design, env) {
       amenSf: amen.reduce((t, a) => t + a.sf, 0),
       openSf: area([...openSet]),
     },
+  };
+}
+
+/**
+ * WHAT THE ENGINE IS HANDED (engine/platdesign.ts DesignGeo): the lots, the length of street of each
+ * right-of-way (a bulb as the street its pavement equals), each amenity's land and trail, and the
+ * plat's land budget. Nothing in it is a position: the engine prices, the geometry places.
+ */
+export function designSummary(geo) {
+  const g = geo.ground ?? {};
+  const bulbFt = (Math.PI * (BULB_ROW_R / FT) ** 2) / 50;
+  return {
+    lots: geo.lots.map((l) => ({ a: l.a, w: l.w, d: l.d, near: l.near })),
+    streets: [...geo.streets.map((s) => ({ lenFt: cumLen(s.pl).at(-1) / FT, rowFt: s.row })), ...geo.bulbs.map(() => ({ lenFt: bulbFt, rowFt: 50 }))],
+    amen: geo.amen.map((a) => ({ k: a.k, sf: a.sf, trailFt: a.k === "greenway" ? a.trail.reduce((t, pl) => t + cumLen(pl).at(-1), 0) / FT : 0, ok: a.ok })),
+    grossSf: g.grossSf ?? 0, buildableSf: g.buildableSf ?? 0, floodSf: g.floodSf ?? 0,
+    lotSf: geo.stats.lotSf, streetSf: geo.stats.streetSf, pondSf: geo.stats.pondSf, amenSf: geo.stats.amenSf, openSf: geo.stats.openSf,
   };
 }

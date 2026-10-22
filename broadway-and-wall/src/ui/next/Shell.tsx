@@ -11,6 +11,7 @@ import { useStore, type Page } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { UNREAL_HOST } from "@/state/unrealHost";
 import Palette from "@/ui/Palette";
+import YearReview, { ExitCard, GoalCard } from "@/ui/YearReview";
 import ClockProgress from "@/ui/ClockProgress";
 import { LENSES } from "@/ui/MapControls";
 import { tabCounts } from "@/ui/desks";
@@ -40,6 +41,9 @@ import { Drawer } from "./Drawer";
 import { InboxDrawer, inboxBadge, useInbox } from "./Inbox";
 import { BuildingFile } from "./BuildingFile";
 import { openPlace, openTab, useNextKeys } from "./keys";
+import { HoldingsBuildings, HoldingsLand } from "./HoldingsNext";
+import { MarketForSale } from "./MarketNext";
+import { CapitalLoans, CapitalOverview } from "./CapitalNext";
 
 const PAGE_VIEW: Partial<Record<Page, ReactElement>> = {
   portfolio: <PortfolioPage />,
@@ -70,6 +74,9 @@ export default function Shell() {
   const gameOver = useStore((s) => !!s.game?.gameOver);
   const inboxOpen = useNext((s) => s.inboxOpen);
   const placeTab = useNext((s) => s.placeTab);
+  const moment = useNext((s) => s.showMoment);
+  const goalOn = useStore((s) => !!s.goalCard);
+  const exitOn = useStore((s) => !!s.exitCard);
   useLayoutEffect(() => {
     document.documentElement.classList.add("ui-next");
     return () => document.documentElement.classList.remove("ui-next");
@@ -111,6 +118,10 @@ export default function Shell() {
       <DefaultNoticeModal />
       <DecisionModal />
       <AuctionModal />
+      {/* the moments, drawn only when opened from their Inbox row (R6) */}
+      <YearReview />
+      {moment === "goal" && goalOn && <GoalCard />}
+      {moment === "exit" && exitOn && <ExitCard />}
       {gameOver && page !== "saves" && <GameOverPage />}
     </>
   );
@@ -214,15 +225,25 @@ function Rail() {
 
 // ---------------------------------------------------------------- Drawers
 const KEEP = 3;
-function useKept(page: Page): Page[] {
-  const recent = useRef<Page[]>([]);
-  if (PAGE_VIEW[page] && recent.current[recent.current.length - 1] !== page) {
+/** The new tables that replace a hosted classic page (PLAN §5 step 5), by PlaceTab.view. */
+const NEXT_VIEW: Record<string, ReactElement> = {
+  "v:holdings": <HoldingsBuildings />,
+  "v:land": <HoldingsLand />,
+  "v:forsale": <MarketForSale />,
+  "v:capital": <CapitalOverview />,
+  "v:loans": <CapitalLoans />,
+};
+const viewOf = (k: string): ReactElement | undefined => NEXT_VIEW[k] ?? PAGE_VIEW[k as Page];
+
+function useKept(page: string): string[] {
+  const recent = useRef<string[]>([]);
+  if (viewOf(page) && recent.current[recent.current.length - 1] !== page) {
     recent.current = [...recent.current.filter((p) => p !== page), page].slice(-KEEP);
   }
   return recent.current;
 }
 
-function useJump(body: React.RefObject<HTMLDivElement | null>, page: Page) {
+function useJump(body: React.RefObject<HTMLDivElement | null>, page: string) {
   const jump = useStore((s) => s.pageJump);
   useEffect(() => {
     if (!jump) return;
@@ -247,14 +268,15 @@ function PlaceDrawer({ place, tab, page }: { place: PlaceId; tab: string; page: 
   const p = placeById(place);
   const tabs = visibleTabs(p, game);
   const t = tabs.find((x) => x.id === tab) ?? tabs[0];
-  const kept = useKept(page);
+  const key = t?.view ? "v:" + t.view : page;
+  const kept = useKept(key);
   const body = useRef<HTMLDivElement>(null);
   // A new tab opens at its top; a jump then scrolls it to its section.
   useLayoutEffect(() => {
     const sc = body.current?.parentElement;
     if (sc) sc.scrollTop = 0;
   }, [page, t?.id]);
-  useJump(body, page);
+  useJump(body, key);
   return (
     <Drawer
       width={t?.width ?? "wide"}
@@ -266,8 +288,8 @@ function PlaceDrawer({ place, tab, page }: { place: PlaceId; tab: string; page: 
     >
       <div ref={body} className={`page nx-page page-${page}`}>
         {kept.map((k) => (
-          <Activity key={k} mode={k === page ? "visible" : "hidden"}>
-            <div className="page-view" data-page={k}>{PAGE_VIEW[k]}</div>
+          <Activity key={k} mode={k === key ? "visible" : "hidden"}>
+            <div className="page-view" data-page={k}>{viewOf(k)}</div>
           </Activity>
         ))}
       </div>

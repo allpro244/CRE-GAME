@@ -369,6 +369,39 @@ export function buildInbox(g: GameState, parcels: ParcelTable | null): InboxItem
     const key = `sweep-fold:${sweeps.sort().join(",")}`;
     items.push({ key, sev: "critical", pinned: true, subject: "Covenant sweep", facts: `${sweeps.length} deed${sweeps.length === 1 ? "" : "s"} · cash to lenders`, verbs: [{ label: "Loans", run: () => S().setPage("debt", "Loan by loan") }] });
   }
+  // THE REGION'S LAND BUSINESS (landdev.ts, homes.ts): the board's pending
+  // decisions, a builder's offer for a plat's lots, and the contract running.
+  const addr = (b: string) => parcels?.[b]?.address ?? b;
+  for (const app of Object.values(g.entitlementApps ?? {})) {
+    items.push({
+      key: `board:${app.bbl}:${app.decideM}`, sev: "info", bbl: app.bbl, dueM: app.decideM,
+      subject: addr(app.bbl),
+      facts: `Board ${mo(app.decideM)} · ${Math.round(app.odds * 100)}% · ${app.lots} lots`,
+      verbs: [{ label: "File", run: () => S().select(app.bbl) }],
+    });
+  }
+  for (const o of Object.values(g.homes?.offers ?? {})) {
+    const it: InboxItem = {
+      key: `lot-offer:${o.parent}:${o.madeM}`, sev: "decide", dueM: o.expiresM,
+      subject: addr(o.parent),
+      facts: `${o.lots} lots · $${o.psf.toFixed(0)}/sf · ${o.builder} · ${mo(o.expiresM)}`,
+      verbs: [],
+    };
+    it.verbs = [
+      answer(it, { label: "Take", primary: true, confirm: true, run: () => S().takeLotOffer(o.parent) }),
+      answer(it, { label: "Refuse", run: () => S().refuseLotOffer(o.parent) }),
+    ];
+    items.push(it);
+  }
+  for (const p of Object.values(g.plats ?? {})) {
+    if (p.done) continue;
+    items.push({
+      key: `plat:${p.parent}`, sev: "info", bbl: p.parent, dueM: p.doneM,
+      subject: addr(p.parent),
+      facts: `Streets ${mo(p.doneM)} · ${p.lots.length} lots · ${usd(p.cost)}`,
+      verbs: [{ label: "File", run: () => S().select(p.parent) }],
+    });
+  }
   for (const r of rolls) {
     const ln = g.holdings[r.bbl]?.loan;
     const it: InboxItem = {

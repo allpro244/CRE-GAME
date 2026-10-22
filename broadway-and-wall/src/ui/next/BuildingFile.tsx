@@ -16,6 +16,9 @@ import { occupancyRead, walt } from "@/engine/leasing";
 import { dscr as dscrOf, ltv as ltvOf, loanLender } from "@/engine/debt";
 import { demandNow } from "@/engine/demand";
 import { describePropertyEvent, propertyTimeline } from "@/engine/history";
+import { entitleQuote, platQuote } from "@/engine/landdev";
+import { tractLotQuote } from "@/engine/homes";
+import { platTractLots } from "@/citygen/index.mjs";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { ownerName } from "@/ui/derive";
 import { usd, sf } from "@/ui/format";
@@ -24,6 +27,7 @@ import { Figure, Spark, fmtFig } from "./Figure";
 import { bestSchemes, type SchemeRow } from "./bestScheme";
 import { buyPreview, buyDesks } from "./buy";
 import { useNext } from "./nextStore";
+import { MoneyTab, RefiTable, RentRollTab } from "./FileTabs";
 
 type FileTab = "overview" | "leasing" | "money" | "build" | "deal" | "history";
 const FROM_PROP: Partial<Record<PropertyTab, FileTab>> = {
@@ -81,7 +85,7 @@ function FileFor({ bbl }: { bbl: string }) {
   if (game.workouts?.[bbl]) chips.push({ label: "Workout", tone: "red" });
   return (
     <Drawer
-      width="std"
+      width={active === "leasing" || active === "money" || active === "build" || active === "deal" ? "wide" : "std"}
       crumbs={h ? ["Holdings"] : listing ? ["Market"] : undefined}
       title={rec.address || bbl}
       meta={meta}
@@ -93,8 +97,8 @@ function FileFor({ bbl }: { bbl: string }) {
       footer={<FileFooter game={game} parcels={parcels} bbl={bbl} h={h} tab={active} setTab={setTab} />}
     >
       {active === "overview" && <Overview game={game} parcels={parcels} bbl={bbl} h={h} />}
-      {active === "leasing" && <div className="nx-hosted"><ParcelPanel embedded tab="leasing" /><ParcelPanel embedded tab="ops" /></div>}
-      {active === "money" && <div className="nx-hosted"><ParcelPanel embedded tab="money" /></div>}
+      {active === "leasing" && h && <RentRollTab game={game} parcels={parcels} bbl={bbl} h={h} />}
+      {active === "money" && h && <MoneyTab game={game} parcels={parcels} bbl={bbl} h={h} />}
       {active === "build" && <BuildTab game={game} parcels={parcels} bbl={bbl} />}
       {active === "deal" && <div className="nx-hosted"><ParcelPanel embedded tab="deal" /></div>}
       {active === "history" && (
@@ -170,6 +174,7 @@ function Overview({ game, parcels, bbl, h }: { game: GameState; parcels: ParcelT
     <div className="nx-overview">
       <div className="nx-strip">{strip}</div>
       <div className="nx-cols">
+        {parcels[bbl]?.tract && <TractBox game={game} parcels={parcels} bbl={bbl} />}
         {built && (
           <div className="nx-box">
             <div className="nx-box-head">Rent</div>
@@ -229,6 +234,42 @@ function Overview({ game, parcels, bbl, h }: { game: GameState; parcels: ParcelT
   );
 }
 
+/**
+ * THE TRACT, IN NUMBERS (region). Where it stands — farm, at the board,
+ * entitled, streets going in — and what each next step costs and returns, from
+ * the engine's own quotes (landdev.ts entitleQuote / platQuote, homes.ts
+ * tractLotQuote) on the plat citygen draws for it (platTractLots), as the
+ * classic land card reads them.
+ */
+function TractBox({ game, parcels, bbl }: { game: GameState; parcels: ParcelTable; bbl: string }) {
+  const rec = parcels[bbl]!;
+  const tr = rec.tract!;
+  const app = game.entitlementApps?.[bbl], rz = game.rezoned?.[bbl], plat = game.plats?.[bbl];
+  const lotSf = rz?.lotSf ?? 7_500;
+  const lots = platTractLots(tr, lotSf).lots;
+  const eq = !app && !rz && game.holdings[bbl] ? entitleQuote(game, parcels, bbl, lotSf, lots.length) : null;
+  const pq = rz && !plat ? platQuote(game, lots.map(({ a, f, d }) => ({ a, f, d }))) : null;
+  const t = !plat ? tractLotQuote(game, parcels, bbl, lotSf, lots.length) : null;
+  const stage = plat ? (plat.done ? "Lots" : "Streets") : app ? "Board" : rz ? "Entitled" : "Farm";
+  const rows: [string, React.ReactNode][] = [
+    ["Stage", <span key="s" className={"nx-stage nx-stage-" + stage.toLowerCase()}>{stage}</span>],
+    ["Acres", <span key="a" className="nx-fig">{(rec.lotArea / 43_560).toFixed(1)}</span>],
+    ["Edge", <span key="e" className="nx-fig">{(tr.edgeM / 1000).toFixed(1)} km</span>],
+    ["Lots", <span key="l" className="nx-fig">{lots.length} × {lotSf.toLocaleString()} sf</span>],
+  ];
+  if (eq) rows.push(["Rezone cost", <span key="rc" className="nx-fig">{usd(eq.cost)}</span>], ["Board", <span key="bm" className="nx-fig">{eq.months} mo · {Math.round(eq.odds * 100)}%</span>]);
+  if (app) rows.push(["Board", <span key="bd" className="nx-fig">{monthLabel(app.decideM)} · {Math.round(app.odds * 100)}%</span>]);
+  if (pq) rows.push(["Streets", <span key="pc" className="nx-fig">{usd(pq.cost)} · {usd(pq.perLot)}/lot</span>], ["Built in", <span key="pm" className="nx-fig">{pq.months} mo</span>]);
+  if (plat && !plat.done) rows.push(["Streets done", <span key="pd" className="nx-fig">{monthLabel(plat.doneM)}</span>]);
+  if (t) rows.push(["House", <span key="h" className="nx-fig">{usd(t.quote.price)}</span>], ["Lot residual", <span key="r" className="nx-fig">{usd(t.quote.residual)}</span>], ["Sell-out", <span key="so" className="nx-fig">{t.pace.toFixed(1)}/mo · ×{t.disc.toFixed(2)}</span>], ["Lot value", <span key="lv" className="nx-fig">{usd(t.lotValue)}</span>]);
+  return (
+    <div className="nx-box">
+      <div className="nx-box-head">Tract</div>
+      <KV rows={rows} />
+    </div>
+  );
+}
+
 function BuildTab({ game, parcels, bbl }: { game: GameState; parcels: ParcelTable; bbl: string }) {
   const rows = useMemo(() => (game.developments[bbl] ? [] : bestSchemes(game, parcels, bbl)), [game, parcels, bbl]);
   const pick = useNext((s) => s.schemePick?.bbl === bbl ? s.schemePick.i : 0);
@@ -264,6 +305,7 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
   const talks = game.talks?.[bbl];
   const rec = resolveRec(parcels, game, bbl);
   const [amt, setAmt] = useState<number | null>(null);
+  const [refiOpen, setRefiOpen] = useState(false);
   if (!rec) return null;
   const value = marketAppraisal(game, rec, bbl, h?.condition ?? initialCondition(rec));
   const amount = (initial: number) => (
@@ -275,7 +317,26 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
   // ---- you own it
   if (h) {
     const verbs: Verb[] = [];
-    if (h.loan) verbs.push({ label: "Refinance", run: () => setTab("money") });
+    // THE QUOTES IN THE FOOTER: the desks that will write today, cheapest first, one click to take.
+    if (refiOpen && h.loan) {
+      return (
+        <div className="nx-confirm">
+          <RefiTable game={game} parcels={parcels} bbl={bbl} max={3} />
+          <ActionFooter verbs={[{ label: "All quotes", run: () => { setRefiOpen(false); setTab("money"); } }, { label: "Close", run: () => setRefiOpen(false) }]} />
+        </div>
+      );
+    }
+    if (h.loan) verbs.push({ label: "Refinance", run: () => setRefiOpen(true) });
+    // A FARM TRACT (region): rezone it, then build the streets (landdev.ts via the store)
+    const tr = parcels[bbl]?.tract;
+    if (tr) {
+      const app = game.entitlementApps?.[bbl], rz = game.rezoned?.[bbl], plat = game.plats?.[bbl];
+      const step: Verb[] = !app && !rz ? [{ label: "Rezone", primary: true, run: () => st.fileRezoning(bbl, 7_500) }]
+        : rz && !plat ? [{ label: "Build streets", primary: true, disabled: h.loan ? "Pay off the loan" : h.sale ? "Delist it first" : undefined, run: () => st.buildPlat(bbl) }]
+        : [];
+      const out: Verb[] = [{ label: "List", run: () => { st.listSale(bbl, n(value), "quiet"); setAmt(null); } }, ...verbs, ...step];
+      return <ActionFooter input={amount(value)} verbs={out} inputAt={0} />;
+    }
     if (rec.class === "land" || !rec.bldgArea) {
       if (game.developments[bbl]) return <ActionFooter verbs={[{ label: "Job file", run: () => setTab("build") }]} />;
       // the sweep is dozens of pro formas: run it only once the Build tab is asked for

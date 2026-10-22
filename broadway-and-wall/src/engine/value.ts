@@ -39,7 +39,7 @@ export function zonePermits(
   return true;
 }
 /** Districts whose only permitted use is detached and two-family houses, built and sold through homes.ts. */
-export const HOMES_ONLY_ZONES: ReadonlySet<string> = new Set(["R-2"]);
+export const HOMES_ONLY_ZONES: ReadonlySet<string> = new Set(["R-2", "R-1"]);
 
 /**
  * THE SAME RULE, ASKED BY THE DEVELOP DESK — and why not, in words.
@@ -1127,7 +1127,7 @@ export type LandRead = {
   holder: number;
   texture: number;
   /** Which bid set the price, and the scheme behind the builder's. */
-  winner: "builder" | "holder" | "texture" | "farm" | "homes";
+  winner: "builder" | "holder" | "texture" | "farm" | "homes" | "subdivider";
   scheme: ResidualScheme | null;
   /** A homebuilder's bid for a finished lot on a plat, $/sf (homeprice.ts homeLotBidPsf); 0 elsewhere. */
   homes?: number;
@@ -1375,6 +1375,8 @@ const LAND_SCALARS = [
   // the homes market (homeprice.ts homeLotBidPsf) reads econ.homes, wageIdx and
   // population; homes.ts bumps `homesStamp` whenever econ.homes is rewritten
   "homesStamp", "wageIdx", "population", "homesG12", "priceLevel",
+  // the land developers' bids for farm tracts (growth.ts tractBid); growth.ts bumps it on every rewrite
+  "growthStamp",
 ] as const;
 const LAND_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 const LAND_MKT_LEN = LAND_SCALARS.length + LAND_DICTS.length * (1 + LAND_CLASSES.length);
@@ -1637,6 +1639,13 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
     base = farm; winner = "farm";
     if (builder > base) { base = builder; winner = "builder"; }
     if (holder > base) { base = holder; winner = "holder"; }
+    // ...AND, WHERE THE TOWN HAS GROWN TO IT, THE LAND DEVELOPER (Phase 4): the
+    // residual of a subdivision on the whole tract — finished lots at the
+    // homebuilders' bid, less the board, the streets and the mains, the wait
+    // and the odds of refusal (growth.ts tractBid). That is the development
+    // option a fringe farm trades on, discovered, not stamped.
+    const sub = rec.tract ? econ.tractBid?.[rec.bbl] ?? 0 : 0;
+    if (sub > base) { base = sub; winner = "subdivider"; }
   } else if (farm > base) { base = farm; winner = "farm"; }
   // A FINISHED LOT ON A PLAT HAS A BUYER OF ITS OWN: the homebuilder, who
   // pays the residual on the house it carries, discounted for its place in

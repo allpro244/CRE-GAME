@@ -192,7 +192,7 @@ function LandDevCard({ bbl }: { bbl: string }) {
       {app && <Row k="Before the board" v={`decides ${monthLabel(app.decideM)} · ${app.lots} lots · ${Math.round(app.odds * 100)}% odds`} />}
       {owned && rz && !plat && (() => {
         const lots = platTractLots(rec.tract, rz.lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
-        const q = platQuote(game, lots, rz.lotSf);
+        const q = platQuote(game, lots, rz.lotSf, parcels, bbl);
         return (
           <>
             <Row k="Rezoned" v={`${rz.zone}, FAR ${rz.far}, ${lots.length} lots of ~${rz.lotSf.toLocaleString()} sf`} />
@@ -494,7 +494,7 @@ function ParcelPanelInner({
         const buildReachable = rec.class !== "multifamily" || !!holding.groundLeased
           || (adjacency?.[selectedBBL] ?? []).some((n) => !!game.holdings[n]);
         const dirtLine = `the land under it reads $${read.psf.toFixed(0)}/sf`
-          + (read.winner === "texture" ? " on its location alone" : ` on the ${read.winner === "homes" ? "homebuilder" : read.winner}'s bid`);
+          + (read.winner === "texture" ? " on its location alone" : ` on the ${read.winner === "homes" ? "homebuilder" : read.winner === "subdivider" ? "land developer" : read.winner}'s bid`);
         const hint = dirt
           ? (pencils
             ? `Builder residual $${read.builder.toFixed(0)}/sf · ${(room * 100).toFixed(0)}% of the envelope left. Open Build to break ground.`

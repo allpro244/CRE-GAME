@@ -2473,6 +2473,15 @@ export interface Econ {
   homesG12?: number;
   /** Bumped whenever `homes` is rewritten, so the land memo (value.ts LAND_SCALARS) never serves a stale lot price. */
   homesStamp?: number;
+  /**
+   * THE LAND DEVELOPER'S BID FOR A FARM TRACT, $/sf (growth.ts): what a
+   * subdivision on it is worth today net of the board, the streets and the
+   * sell-out, at the market's median developer. The land read prices a tract
+   * at the larger of this and its farm-use value. Rewritten each quarter.
+   */
+  tractBid?: Record<string, number>;
+  /** Bumped whenever `tractBid` is rewritten (value.ts LAND_SCALARS). */
+  growthStamp?: number;
   /** Real construction cost at the opening — the mainland's real rent anchor (`locEff`). */
   costAnchorReal?: number;
   /** Island-vs-mainland location choice per class, smoothed at lease rollover (market.ts). */
@@ -3996,6 +4005,8 @@ export interface GameState {
   platted?: Record<string, number>;
   /** ---- HOMEBUILDING (homes.ts; the region map, Phase 3) ---- the houses going up and sold on the plats, yours and the builders'. */
   homes?: HomesState;
+  /** ---- THE REGION GROWING (growth.ts, roads.ts; the region map, Phase 4) ---- */
+  growth?: import("./growth").GrowthState;
   /** @deprecated legacy single-application save; migrated on the next filing/tick. */
   varianceApp?: VarianceApplication;
   landmarks?: Record<string, number>;        // bbl -> month designated

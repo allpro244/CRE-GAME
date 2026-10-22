@@ -4944,6 +4944,9 @@ function developerLook(
     if (ownerOf(s, bbl)) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class !== "land" || rec.lotArea < 1500) continue;
+    // A LOT ON A PLAT IS A HOUSE LOT: the plat's covenants hold it to houses and
+    // the homebuilders (homes.ts), so a town developer does not spend a look on it.
+    if (rec.homeLot) continue;
     examined++;
     // Where this developer works: a prime-site developer passes over the fringe.
     if (demandIdx(rec.demandScore) < dev.minDemand) continue;
@@ -5239,7 +5242,7 @@ function developerLooksPerMonth(e: Econ): number {
 function breakCityGround(
   s: GameState, parcels: ParcelTable, adjacency: Record<string, string[]> | null,
   bbl: string, rec: NonNullable<ParcelTable[string]>, use: DevUse, floors: number, plate: number,
-  opts?: { backdate?: number; quiet?: boolean; spec?: number; ltc?: number; decided?: boolean; builderId?: string; firmId?: string; landBasis?: number },
+  opts?: { backdate?: number; quiet?: boolean; spec?: number; ltc?: number; decided?: boolean; builderId?: string; firmId?: string; landBasis?: number; product?: ProductKey },
 ): boolean {
   // NO GROUND, NO GROUNDBREAK. A lot folded into an assembled site reads as
   // land with no building, which is what a greenfield search looks for, and
@@ -5250,7 +5253,7 @@ function breakCityGround(
   if (s.merged?.[bbl] || !(rec.lotArea > 0)) return false;
   let sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   const lead = dominantOf(devMix(use));
-  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, opts?.landBasis, opts?.spec ?? 0.5, opts?.ltc);
+  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, opts?.landBasis, opts?.spec ?? 0.5, opts?.ltc, opts?.product);
   // The anonymous merchants build at the trade's margin, each on its own read
   // of rent (`anonHurdle`). Below that, the job goes ahead only if a named
   // firm that would build it takes it (`firmWouldBuild` in rivals.ts) —
@@ -5383,6 +5386,25 @@ function breakCityGround(
   }
   s.month = nowM;
   return true;
+}
+
+/**
+ * A BUILDING THE TRADE AREA CALLS FOR (the region map's growth, towngrowth.ts):
+ * a grocery-anchored centre where enough households live without one. The
+ * site and the size are the trade area's; everything else is the city's own
+ * groundbreak — underwritten at today's rents and costs, offered to the
+ * street's firms, financed, put in the supply queue and delivered like every
+ * other building in town. `decided`: the anchor's lease is the decision
+ * (a grocer signs before the centre is financed), so the anonymous merchant's
+ * margin test is not asked again; a firm still has to carry it.
+ */
+export function startTradeAreaBuilding(
+  s: GameState, parcels: ParcelTable, adjacency: Record<string, string[]> | null,
+  bbl: string, use: DevUse, floors: number, plate: number, product?: ProductKey,
+): boolean {
+  const rec = resolveRec(parcels, s, bbl);
+  if (!rec) return false;
+  return breakCityGround(s, parcels, adjacency, bbl, rec, use, floors, plate, { decided: true, product });
 }
 
 /**

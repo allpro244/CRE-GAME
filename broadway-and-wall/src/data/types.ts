@@ -116,6 +116,13 @@ export interface ParcelRecord {
   tract?: { seed: number; r: [number, number, number, number]; id: number; bearing: number | null; edgeM: number };
   /** A finished lot on a plat (landdev.ts lotRecords): homebuilders bid for it (homeprice.ts). */
   homeLot?: boolean;
+  /**
+   * The region's shopping centres and industrial sites (citygen/region commerce.mjs): which rung of the
+   * hierarchy this parcel belongs to — "neighbourhood", "community", "power", "mall", "strip", "gas",
+   * "rural", "flex", "industrial park", "truck stop". The growth simulation (towngrowth.ts) reads which
+   * households a grocery already serves.
+   */
+  centre?: string;
   /** The premium on the price of a house on this lot from its plat's amenities (engine/platdesign.ts lotPremium). */
   homePrem?: number;
   /** Common land of a plat's homeowners' association (a park, the pond, open space): not for sale, worth nothing to anyone else. */

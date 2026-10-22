@@ -78,7 +78,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
   function put(anchor, u, parcels, meta, slide = [0]) {
     for (const sl of slide) for (const sd of [1, -1]) {
       const v = mul(perp(u), sd), at = add(anchor, mul(u, sl));
-      const placeP = (pc) => ({ ...pc, u, c: add(add(at, mul(u, pc.a)), mul(v, 14 + pc.o + pc.d / 2)) });
+      const placeP = (pc) => ({ ...pc, u, v, c: add(add(at, mul(u, pc.a)), mul(v, 14 + pc.o + pc.d / 2)) });
       const ps = parcels.map((p) => ({ ...p, rects: p.rects.map(placeP) }));
       if (!fits(ps.flatMap((p) => p.rects))) continue;
       for (const p of ps) for (const r of p.rects) { G.disk(M.taken, r.c, Math.max(r.w, r.d) / 2 + 10); stampRect(M.lotL, rectRing(r.c, u, r.w, r.d)); }
@@ -96,9 +96,10 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
   const nameOf = (suffix) => { const free = NAMES.filter((n) => !used.has(n)); const n = free[Math.floor(rng() * free.length)] ?? `Route ${I(10, 99)}`; used.add(n); return `${n} ${suffix}`; };
 
   // ---- a retail site: the building row at the back, the car park in front, pads on the road
-  function retail({ boxes = [], inline = 0, pads = [], year, name, bldgclass = "K6" }) {
-    const row = boxes.map((sf) => { const m2 = sf * FT2, d = Math.min(115, Math.max(45, Math.sqrt(m2 * 0.9))); return { w: m2 / d, d, z: Math.round(R(820, 920)), sf }; });
-    if (inline > 0) row.push({ w: (inline * FT2) / 24, d: 24, z: Math.round(R(620, 720)), sf: inline });
+  function retail({ boxes = [], roles = [], inline = 0, pads = [], year, name, bldgclass = "K6" }) {
+    // role: what the renderer draws (unreal RetailBuilder): a grocery, a big box, a department store, the inline shops
+    const row = boxes.map((sf, i) => { const m2 = sf * FT2, d = Math.min(115, Math.max(45, Math.sqrt(m2 * 0.9))); return { w: m2 / d, d, z: Math.round(R(820, 920)), sf, role: roles[i] ?? "box" }; });
+    if (inline > 0) row.push({ w: (inline * FT2) / 24, d: 24, z: Math.round(R(620, 720)), sf: inline, role: "inline" });
     const gap = 5, rowLen = row.reduce((t, b) => t + b.w, 0) + gap * (row.length - 1), W = rowLen + 40;
     const gla = row.reduce((t, b) => t + b.sf, 0);
     const Dp = ((gla / 1000) * RETAIL_RATIO * SPACE_M2) / W;
@@ -112,21 +113,21 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
       { a: 0, o: P, w: W, d: Dp, kind: "lot" },                                      // the car park
       { a: 0, o: P + Dp, w: rowLen + 4, d: SW, kind: "walk" },                       // the sidewalk along the storefronts
       { a: 0, o: front, w: W, d: Db + 16, kind: "pave" },                           // service drive and docks behind (under the stores)
-      { a: W / 2 - 12, o: P - 4, w: 2.4, d: 0.8, kind: "sign", z: 900 },           // the pylon sign at the main entrance
+      { a: W / 2 - 12, o: P - 4, w: 2.4, d: 0.8, kind: "sign", z: 900, tenants: Math.min(8, row.length + (inline > 0 ? Math.round(inline / 6000) : 0)) },   // the pylon sign at the main entrance
     ];
     let x = -rowLen / 2;
-    for (const b of row) { main.push({ a: x + b.w / 2, o: front, w: b.w, d: b.d, kind: "bldg", z: b.z, cls: "retail", floors: 1 }); x += b.w + gap; }
+    for (const b of row) { main.push({ a: x + b.w / 2, o: front, w: b.w, d: b.d, kind: "bldg", z: b.z, cls: "retail", floors: 1, role: b.role, sf: Math.round(b.sf) }); x += b.w + gap; }
     const out = [{ rects: main, sf: gla, name, cls: "retail", bldgclass, year }];
     pads.forEach((pd, j) => {
       const a = -W / 2 + ((j + 0.5) * W) / pads.length, lw = Math.min(W / pads.length - 6, pd.gas ? 60 : 50);
       const m2 = pd.sf * FT2, bw = Math.sqrt(m2 * 1.4), bd = m2 / bw;
-      const rects = [{ a, o: 0, w: lw, d: P - 6, kind: "lot" }, { a: a + (pd.gas ? lw * 0.25 : 0), o: P - 6 - bd - 4, w: bw, d: bd, kind: "bldg", z: 580, cls: "retail", floors: 1 }];
+      const rects = [{ a, o: 0, w: lw, d: P - 6, kind: "lot" }, { a: a + (pd.gas ? lw * 0.25 : 0), o: P - 6 - bd - 4, w: bw, d: bd, kind: "bldg", z: 580, cls: "retail", floors: 1, role: pd.role, sf: Math.round(pd.sf) }];
       if (pd.gas) rects.push({ a: a - lw * 0.2, o: 6, w: lw * 0.45, d: 22, kind: "pave" });   // the fuel apron under the canopy
       out.push({ rects, sf: pd.sf, name: `${name}, ${pd.what}`, cls: "retail", bldgclass: "K1", year: Math.round(R(Math.max(year, 1980), 2015)) });
     });
     return { parcels: out, W };
   }
-  const PAD = () => [{ what: "fast food", sf: R(2800, 4000) }, { what: "bank", sf: R(3500, 5000) }, { what: "gas and convenience", sf: R(3000, 4500), gas: true }, { what: "restaurant", sf: R(5000, 7000) }];
+  const PAD = () => [{ what: "fast food", sf: R(2800, 4000), role: "qsr" }, { what: "bank", sf: R(3500, 5000), role: "bank" }, { what: "gas and convenience", sf: R(3000, 4500), gas: true, role: "gas" }, { what: "restaurant", sf: R(5000, 7000), role: "restaurant" }];
 
   // ---- 5. the power centre, at the best interchange
   const power = [];
@@ -135,7 +136,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
     let tot = boxes.reduce((a, b) => a + b, 0);
     const scale = tot > 520000 ? 520000 / tot : tot < 230000 ? 230000 / tot : 1; for (let i = 0; i < k; i++) boxes[i] *= scale;
     tot = boxes.reduce((a, b) => a + b, 0);
-    const site = retail({ boxes, inline: R(15000, 30000), pads: PAD().slice(0, I(2, 4)), year: Math.round(R(1995, 2010)), name: nameOf("Commons (power centre)") });
+    const site = retail({ boxes, roles: boxes.map(() => "box"), inline: R(15000, 30000), pads: PAD().slice(0, I(2, 4)), year: Math.round(R(1995, 2010)), name: nameOf("Commons (power centre)") });
     const off = 220 + site.W / 2;
     if (put(x.p, x.u, site.parcels, { type: "power", name: site.parcels[0].name }, [off, -off, off + 250, -off - 250, off + 500, -off - 500])) { power.push(x); break; }
   }
@@ -214,7 +215,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
     const rects = [
       { a: 0, o: 0, w: 260, d: 190, kind: "lawn" },
       { a: -55, o: 10, w: 120, d: 45, kind: "pave" },                                    // the fuel islands
-      { a: -55, o: 60, w: Math.sqrt(m2 * 1.6), d: m2 / Math.sqrt(m2 * 1.6), kind: "bldg", z: 650, cls: "retail", floors: 1 },
+      { a: -55, o: 60, w: Math.sqrt(m2 * 1.6), d: m2 / Math.sqrt(m2 * 1.6), kind: "bldg", z: 650, cls: "retail", floors: 1, role: "truckstop", sf: Math.round(sf) },
       { a: -55, o: 120, w: 120, d: 50, kind: "lot" },                                     // cars
       { a: 70, o: 10, w: 110, d: 170, kind: "pave" },                                     // truck parking, ~120 rigs
     ];
@@ -227,7 +228,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
     if (placed.filter((s) => s.type === "community").length >= nComm) break;
     if (anyNear(c.p, 700) || near(c.p, "community", 1800)) continue;
     const gla = R(150000, 300000), anchor = R(80000, 125000), grocery = R(45000, 65000);
-    const site = retail({ boxes: [anchor, grocery, ...(gla > 220000 ? [R(25000, 40000)] : [])], inline: Math.max(15000, gla - anchor - grocery), pads: PAD().slice(0, I(1, 3)), year: Math.round(R(1975, 2005)), name: nameOf("Plaza (community centre)") });
+    const site = retail({ boxes: [anchor, grocery, ...(gla > 220000 ? [R(25000, 40000)] : [])], roles: ["dept", "grocery", "box"], inline: Math.max(15000, gla - anchor - grocery), pads: PAD().slice(0, I(1, 3)), year: Math.round(R(1975, 2005)), name: nameOf("Plaza (community centre)") });
     put(c.p, c.u, site.parcels, { type: "community" }, [site.W / 2 + 25, -(site.W / 2 + 25)]);
   }
 
@@ -236,7 +237,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
     for (const c of shuffle(corners.filter((q) => q.old && edge(q.p) > 100 && edge(q.p) < 1200))) {
       if (anyNear(c.p, 800)) continue;
       const year = Math.round(R(1971, 1979)), gla = R(220000, 300000);
-      const site = retail({ boxes: [R(60000, 90000), R(50000, 70000), gla * 0.45], year, name: nameOf("Mall (enclosed, 1970s)"), bldgclass: "K6" });
+      const site = retail({ boxes: [R(60000, 90000), R(50000, 70000), gla * 0.45], roles: ["dept", "dept", "mall"], year, name: nameOf("Mall (enclosed, 1970s)"), bldgclass: "K6" });
       if (put(c.p, c.u, site.parcels, { type: "mall" }, [site.W / 2 + 25, -(site.W / 2 + 25)])) break;
     }
   }
@@ -247,7 +248,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
     if (placed.filter((s) => s.type === "neighbourhood").length >= nNbhd) break;
     if (anyNear(c.p, 450) || near(c.p, "neighbourhood", 1900) || near(c.p, "community", 800)) continue;
     const grocery = R(35000, 60000), inline = R(15000, 50000);
-    const site = retail({ boxes: [grocery], inline, pads: PAD().slice(0, I(0, 2)), year: Math.round(R(1960, 1995)), name: nameOf("Shopping Center (neighbourhood centre)") });
+    const site = retail({ boxes: [grocery], roles: ["grocery"], inline, pads: PAD().slice(0, I(0, 2)), year: Math.round(R(1960, 1995)), name: nameOf("Shopping Center (neighbourhood centre)") });
     put(c.p, c.u, site.parcels, { type: "neighbourhood" }, [site.W / 2 + 22, -(site.W / 2 + 22)]);
   }
 
@@ -258,7 +259,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
     if (anyNear(c.p, 350)) continue;
     if (rng() < 0.35) {
       const sf = R(2500, 4500), m2 = sf * FT2, bw = Math.sqrt(m2 * 1.5), bd = m2 / bw;
-      const rects = [{ a: 0, o: 0, w: 60, d: 55, kind: "lot" }, { a: -12, o: 4, w: 30, d: 22, kind: "pave" }, { a: 14, o: 55 - bd - 4, w: bw, d: bd, kind: "bldg", z: 520, cls: "retail", floors: 1 }];
+      const rects = [{ a: 0, o: 0, w: 60, d: 55, kind: "lot" }, { a: -12, o: 4, w: 30, d: 22, kind: "pave" }, { a: 14, o: 55 - bd - 4, w: bw, d: bd, kind: "bldg", z: 520, cls: "retail", floors: 1, role: "gas", sf: Math.round(sf) }];
       put(c.p, c.u, [{ rects, sf, name: `${["Casey's", "Shell", "Marathon", "BP", "Phillips 66"][I(0, 4)]} gas and convenience`, cls: "retail", bldgclass: "K1", year: Math.round(R(1970, 2015)) }], { type: "gas" }, [55, -55]);
     } else {
       const site = retail({ inline: R(9000, 28000), pads: rng() < 0.4 ? PAD().slice(0, 1) : [], year: Math.round(R(1965, 2010)), name: nameOf("Square (strip centre)"), bldgclass: "K1" });
@@ -283,7 +284,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
     if (rural >= (rng() < 0.5 ? 1 : 2)) break;
     if (anyNear(c.p, 1500)) continue;
     const sf = R(1800, 3200), m2 = sf * FT2, bw = Math.sqrt(m2 * 1.4), bd = m2 / bw;
-    const rects = [{ a: 0, o: 0, w: 50, d: 45, kind: "lot" }, { a: -10, o: 4, w: 22, d: 18, kind: "pave" }, { a: 12, o: 45 - bd - 4, w: bw, d: bd, kind: "bldg", z: 480, cls: "retail", floors: 1 }];
+    const rects = [{ a: 0, o: 0, w: 50, d: 45, kind: "lot" }, { a: -10, o: 4, w: 22, d: 18, kind: "pave" }, { a: 12, o: 45 - bd - 4, w: bw, d: bd, kind: "bldg", z: 480, cls: "retail", floors: 1, role: "general", sf: Math.round(sf) }];
     if (put(c.p, c.u, [{ rects, sf, name: `${NAMES[I(0, NAMES.length - 1)]} General Store`, cls: "retail", bldgclass: "K1", year: Math.round(R(1920, 1970)) }], { type: "rural" }, [45, -45])) rural++;
   }
 

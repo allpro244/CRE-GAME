@@ -13,6 +13,7 @@ import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, o
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLandDev, materializePlats } from "./landdev";
+import { tickSplits, tickRivalSplits, materializeSplits } from "./lotsplit";
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
 import { materializeNeighbourhoods } from "./unpack";
@@ -651,6 +652,7 @@ function tickMonth(
   if (s.gameOver) return;
   // a save's finished plats are lots before anything reads the table (landdev.ts)
   if (s.plats) materializePlats(s, parcels, bbls);
+  if (s.splits) materializeSplits(s, parcels, bbls);
   if (s.growth?.unpacked) materializeNeighbourhoods(s, parcels, bbls);
   s.month++;
   const drawnAtOpen = s.loc?.drawnTotal ?? 0;
@@ -716,6 +718,9 @@ function tickMonth(
   tickFirmHeldLoans(s);
   tickPlanning(s, parcels, bbls);
   tickLandDev(s, parcels, bbls);
+  // lot splits: the staff sign-offs and the board (lotsplit.ts), and a firm cutting an oversized lot
+  tickSplits(s, parcels, bbls);
+  tickRivalSplits(s, parcels);
   // the plats' houses: draws, buyers, closings, the builders (homes.ts)
   tickHomes(s, parcels);
   // the region growing: land developers, the roads, the town (growth.ts; region only)

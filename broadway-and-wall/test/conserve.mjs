@@ -35,10 +35,10 @@ import { assertFreshBundle } from "./fresh.mjs";
 import { leaseAtMarket } from "./leasepolicy.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const E = await import(join(HERE, ".engine.mjs"));
-const { loadCity } = await import(join(HERE, "city.mjs"));
+const E = await import(pathToFileURL(join(HERE, ".engine.mjs")).href);   // a file URL: Windows paths are not import specifiers
+const { loadCity } = await import(pathToFileURL(join(HERE, "city.mjs")).href);
 
 const { parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 const SEEDS = (process.env.SEEDS ?? "550991,12007,73303,11,22,33,4242").split(",").map(Number);

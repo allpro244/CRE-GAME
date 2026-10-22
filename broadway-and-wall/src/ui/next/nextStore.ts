@@ -21,7 +21,9 @@ function initialShell(): UiShell {
     const q = new URLSearchParams(location.search).get("ui");
     if (q === "next" || q === "classic") return q;
   } catch { /* no location */ }
-  return read("bw:ui-shell") === "next" ? "next" : "classic";
+  // THE NEW SHELL IS THE DEFAULT (PLAN §5 step 8). Classic stays a setting,
+  // and a browser that chose it keeps it.
+  return read("bw:ui-shell") === "classic" ? "classic" : "next";
 }
 
 function initialPreset(): BuyPreset {

@@ -55,6 +55,15 @@ struct FBWVolume
 	FString Fam;
 	FLinearColor Tint = FLinearColor::White;
 	FBWLook Look;
+	/** A region store (region/commerce.mjs, drawn by RetailBuilder): grocery, box, dept, mall, inline, qsr, bank,
+	 *  gas, truckstop, restaurant, general, or "pylon" for a centre's sign; empty for everything else. */
+	FString Role;
+	/** The middle of its storefront (cm), so the builder knows which face is the front. */
+	FVector2D Front = FVector2D::ZeroVector;
+	bool bFront = false;
+	/** Its floor area (sf), and a pylon's tenant panels. */
+	double Sf = 0;
+	int32 Panels = 0;
 	TArray<FVector2D> Ring;
 };
 

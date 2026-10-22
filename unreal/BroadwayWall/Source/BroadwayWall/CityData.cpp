@@ -93,6 +93,11 @@ bool FBWCity::LoadText(const FString& Text, const FString& Path)
 		if (O->TryGetArrayField(TEXT("tint"), Tint) && Tint->Num() == 3)
 			Vol.Tint = FLinearColor((float)(*Tint)[0]->AsNumber(), (float)(*Tint)[1]->AsNumber(), (float)(*Tint)[2]->AsNumber());
 		Vol.Ring = ReadRing(O);
+		O->TryGetStringField(TEXT("role"), Vol.Role);
+		const TArray<TSharedPtr<FJsonValue>>* Front;
+		if (O->TryGetArrayField(TEXT("front"), Front) && Front->Num() == 2) { Vol.Front = FVector2D((*Front)[0]->AsNumber(), (*Front)[1]->AsNumber()); Vol.bFront = true; }
+		O->TryGetNumberField(TEXT("sf"), Vol.Sf);
+		O->TryGetNumberField(TEXT("panels"), Vol.Panels);
 	}
 
 	for (const TSharedPtr<FJsonValue>& V : Root->GetArrayField(TEXT("water"))) Water.Add(ReadFlat(V->AsArray()));

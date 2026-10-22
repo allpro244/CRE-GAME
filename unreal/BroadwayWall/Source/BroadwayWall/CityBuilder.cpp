@@ -2461,7 +2461,10 @@ void ACityBuilder::ParkLot(const FBWVolume& V, uint32 Seed)
 		{
 			const FVector2D P = Ax * A + Ay * B;
 			if (!InsideRing(In, P) || Rng.FRand() > 0.45) continue;
-			AddProp(CarMeshes[Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - 1)], FTransform(FRotator(0, Yaw + (Row % 2 ? 0 : 180), 0), FVector(P, FootZ + 8)), true);
+			// (no cabs out in the region: vehicle12 and vehicle13, indices 5 and 6, wear the taxi livery)
+			int32 Pick = Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - (City.Size == TEXT("region") ? 3 : 1));
+			if (City.Size == TEXT("region") && Pick >= 5) Pick += 2;
+			AddProp(CarMeshes[Pick], FTransform(FRotator(0, Yaw + (Row % 2 ? 0 : 180), 0), FVector(P, FootZ + 8)), true);
 		}
 }
 
@@ -2652,6 +2655,12 @@ void ACityBuilder::BuildMarkings()
 		for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground) if (L.Key == TEXT("apron")) Aprons = &L.Value;
 		// the stores the lots serve: low wide boxes
 		TArray<FVector2D> Stores;
+		// the anchors' doors: shoppers leave carts in corrals in the rows nearest them
+		TArray<FVector2D> AnchorDoors;
+		for (const FBWVolume& V : City.Volumes)
+			if (V.bFront && (V.Role == TEXT("grocery") || V.Role == TEXT("box") || V.Role == TEXT("dept"))) AnchorDoors.Add(V.Front);
+		const bool bCorrals = Retail && FPackageName::DoesPackageExist(TEXT("/Game/BW/Retail/SM_RK_CartCorral"));
+		int32 Corrals = 0;
 		for (const FBWVolume& V : City.Volumes)
 		{
 			if (V.bVacant || V.Ring.Num() < 3 || V.Z1 < 300 || !V.Deco.IsEmpty() || (V.Cls != TEXT("retail") && V.Cls != TEXT("industrial"))) continue;
@@ -2716,6 +2725,17 @@ void ACityBuilder::BuildMarkings()
 						++Stalls;
 						// the stripe on the stall's far edge (10 cm paint)
 						Quad(White, A0 + SW - 5, A0 + SW + 5, Rb0 + (Side ? 0 : 30), Rb1 - (Side ? 30 : 0), Z, FLinearColor(0.85f, 0.85f, 0.82f));
+						// A CART CORRAL takes a stall every dozen or so in the first rows before an anchor's doors
+						if (bCorrals && Bay >= 1 && Bay <= 4 && Side == (Bay % 2) && k % 14 == 7)
+						{
+							const FVector2D Here = At(A0 + SW * 0.5, (Rb0 + Rb1) * 0.5);
+							if (AnchorDoors.ContainsByPredicate([&](const FVector2D& Dd) { return (Dd - Here).SizeSquared() < 7000.0 * 7000.0; }))
+							{
+								AddProp(TEXT("/Game/BW/Retail/SM_RK_CartCorral.SM_RK_CartCorral"), FTransform(FRotator(0, YawA, 0), FVector(Here, Z)), true);
+								++Corrals;
+								continue;
+							}
+						}
 						if (Rng.FRand() < Occ)
 						{
 							++Parked;
@@ -2732,7 +2752,7 @@ void ACityBuilder::BuildMarkings()
 			// the fire lane's edge: a painted line along the storefront
 			Quad(White, SW, Len - SW, Fire - 8, Fire + 8, Z, FLinearColor(0.85f, 0.85f, 0.82f));
 		}
-		UE_LOG(LogBWBuilder, Display, TEXT("car parks: %d stalls, %d parked"), Stalls, Parked);
+		UE_LOG(LogBWBuilder, Display, TEXT("car parks: %d stalls, %d parked, %d cart corrals"), Stalls, Parked, Corrals);
 	}
 
 	UProceduralMeshComponent* Marks = NewObject<UProceduralMeshComponent>(this, TEXT("Markings"));

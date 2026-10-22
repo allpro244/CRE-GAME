@@ -18,7 +18,6 @@ import { tabCounts } from "@/ui/desks";
 import FirmStanding from "@/ui/FirmStanding";
 import FirmTimeline from "@/ui/FirmTimeline";
 import { PortfolioPage } from "@/ui/panels/PortfolioPage";
-import { DealsPage } from "@/ui/panels/DealsPage";
 import { MarketPage, BuildingDatabase } from "@/ui/panels/MarketPage";
 import { PlayersPage } from "@/ui/panels/PlayersPage";
 import { NotesPage } from "@/ui/panels/NotesPage";
@@ -44,10 +43,10 @@ import { openPlace, openTab, useNextKeys } from "./keys";
 import { HoldingsBuildings, HoldingsLand } from "./HoldingsNext";
 import { MarketForSale } from "./MarketNext";
 import { CapitalLoans, CapitalOverview } from "./CapitalNext";
+import { PipelineBoard, PipelineBuilding, PipelineBuying, PipelineSelling } from "./PipelineNext";
 
 const PAGE_VIEW: Partial<Record<Page, ReactElement>> = {
   portfolio: <PortfolioPage />,
-  deals: <DealsPage />,
   market: <MarketPage />,
   pulse: <PulsePage />,
   players: <PlayersPage />,
@@ -229,6 +228,10 @@ const KEEP = 3;
 const NEXT_VIEW: Record<string, ReactElement> = {
   "v:holdings": <HoldingsBuildings />,
   "v:land": <HoldingsLand />,
+  "v:pipe-board": <PipelineBoard />,
+  "v:pipe-buy": <PipelineBuying />,
+  "v:pipe-build": <PipelineBuilding />,
+  "v:pipe-sell": <PipelineSelling />,
   "v:forsale": <MarketForSale />,
   "v:capital": <CapitalOverview />,
   "v:loans": <CapitalLoans />,

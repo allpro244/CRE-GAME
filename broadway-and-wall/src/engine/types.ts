@@ -1220,8 +1220,7 @@ export interface EntitlementApplication {
  */
 export interface PlatRecord {
   parent: string;
-  /** "grid": the first cut (Phase 2 saves); "grid2": the double-loaded plat (citygen plats.mjs, v 2) */
-  template: "grid" | "grid2";
+  template: "grid";
   lotSf: number;
   startM: number;
   doneM: number;

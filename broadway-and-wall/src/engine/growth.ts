@@ -378,7 +378,7 @@ function tickProjects(s: GameState, parcels: ParcelTable) {
       if (lots * Math.pow(1 + LOT_SELLOUT_RATE, -tI / 12) > horizontal) {
         s.plats = {
           ...(s.plats ?? {}),
-          [pr.bbl]: { parent: pr.bbl, template: "grid2", lotSf: pr.lotSf, startM: s.month, doneM: s.month + tI, cost: Math.round(horizontal), lots: g2.lots.map((l) => ({ ...l })) },
+          [pr.bbl]: { parent: pr.bbl, template: "grid", lotSf: pr.lotSf, startM: s.month, doneM: s.month + tI, cost: Math.round(horizontal), lots: g2.lots.map((l) => ({ ...l })) },
         };
         pr.stage = "plat";
         const d = g.devs[pr.by];

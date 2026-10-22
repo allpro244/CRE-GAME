@@ -134,10 +134,11 @@ export function lotsOn(lotArea: number, lotSf: number): number {
 export function entitleQuote(s: GameState, parcels: ParcelTable, bbl: string, lotSf = 7_500, planned?: number) {
   const p = plattable(s, parcels, bbl);
   if ("err" in p) return null;
-  const lots = planned ?? lotsOn(p.rec.lotArea, lotSf);
+  const buildable = p.rec.buildableSf ?? p.rec.lotArea;   // dry, off the floodplain and the freeway: the land a plat can use
+  const lots = planned ?? lotsOn(buildable, lotSf);
   if (lots < 4) return null;
   const cost = Math.round((ENTITLE_FIXED + ENTITLE_PER_LOT * lots) * s.econ.costIdx);
-  return { cost, months: ENTITLE_MONTHS(lots), odds: +entitleOdds(servedM(s, parcels, bbl)).toFixed(2), lots, lotSf, zone: REZONE.zone, far: REZONE.far };
+  return { cost, months: ENTITLE_MONTHS(lots), odds: +entitleOdds(servedM(s, parcels, bbl)).toFixed(2), lots, lotSf, zone: REZONE.zone, far: REZONE.far, acres: +(p.rec.lotArea / 43560).toFixed(1), buildableAcres: +(buildable / 43560).toFixed(1) };
 }
 
 export function fileEntitlement(s: GameState, parcels: ParcelTable, bbl: string, lotSf = 7_500, planned?: number): { s: GameState; err?: string; msg?: string } {
@@ -216,7 +217,7 @@ export function startPlat(s: GameState, parcels: ParcelTable, bbl: string, lots:
   const next = cloneState(s);
   fundAndBook(next, parcels, q.cost, "dev", { bbl });
   next.holdings[bbl].costBasis += q.cost;
-  const rec: PlatRecord = { parent: bbl, template: "grid2", lotSf: rz.lotSf, startM: next.month, doneM: next.month + q.months, cost: q.cost, lots: lots.map((l) => ({ a: Math.round(l.a), f: Math.round(l.f), d: Math.round(l.d) })) };
+  const rec: PlatRecord = { parent: bbl, template: "grid", lotSf: rz.lotSf, startM: next.month, doneM: next.month + q.months, cost: q.cost, lots: lots.map((l) => ({ a: Math.round(l.a), f: Math.round(l.f), d: Math.round(l.d) })) };
   next.plats = { ...(next.plats ?? {}), [bbl]: rec };
   next.news.unshift({ q: next.month, kind: "info", text: `Streets going in at ${p.rec.address}: ${lots.length} lots, ${money(q.cost)} of horizontal (${money(q.perLot)} a lot). Finished ${monthLabel(rec.doneM)}.` });
   return { s: next, msg: "Under way." };

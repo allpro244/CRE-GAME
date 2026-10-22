@@ -2862,7 +2862,7 @@ useStore.subscribe((st) => {
   const roads: GeoJSON.Feature[] = [];
   for (const plat of todo) {
     const parent = parcels[plat.parent];
-    const geo = platTractLots(parent.tract!, plat.lotSf, plat.template === "grid" ? 1 : 2);
+    const geo = platTractLots(parent.tract!, plat.lotSf);
     geo.lots.forEach((l, i) => {
       const bbl = lotBbl(parent, i + 1), rec = parcels[bbl];
       if (!rec) return;

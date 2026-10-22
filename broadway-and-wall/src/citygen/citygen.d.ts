@@ -60,7 +60,7 @@ declare module "@/citygen/index.mjs" {
   export const REGION: string;
   /** Region map: the grid plat of a farm tract at a lot size (region/index.mjs). */
   export function platTractLots(
-    tract: NonNullable<import("@/data/types").ParcelRecord["tract"]>, lotSf: number, v?: 1 | 2,
+    tract: NonNullable<import("@/data/types").ParcelRecord["tract"]>, lotSf: number,
   ): { lots: { ring: [number, number][]; a: number; f: number; d: number }[]; streets: [number, number][][] };
   /** Region map: the road network as a plan — highways (built and proposed), interchanges, arterial pieces (region/index.mjs). */
   export function regionRoadPlan(seed: number): RegionRoadPlan;

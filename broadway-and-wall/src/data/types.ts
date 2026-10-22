@@ -87,6 +87,8 @@ export interface ParcelRecord {
    * rezoning; a farm stays a farm until it is platted.
    */
   ag?: "crop" | "wood";
+  /** A farm tract's ground a plat can use (sf): dry, off the floodplain, the freeway and anything built. lotArea counts the floodplain. */
+  buildableSf?: number;
   /**
    * The survey tract under a farm (region map, canonical metres) and what it
    * takes to cut it into lots (citygen/region platTractLots). Absent where the

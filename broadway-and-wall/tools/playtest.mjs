@@ -47,6 +47,9 @@ const has = (n) => argv.includes("--" + n);
 const ALL = ["start", "land", "picker", "pages", "island"];
 const ONLY = (flag("only", "") || ALL.join(",")).split(",").filter(Boolean);
 const SEED = Number(flag("seed", 7));
+// the land loop needs the streets' equity: a plat runs $1-5M of horizontal, and the economy is dealt
+// fresh every game, so the region opens with $10M (the setup page's Custom cash) rather than $2.5M
+const REGION_CASH_M = Number(flag("cash", 10));
 const W = 1600, H = 1000;
 const BUDGET_S = Number(flag("budget", 300));
 const T0 = Date.now();
@@ -270,7 +273,7 @@ async function load(q = "?ui=next") {
   await js(HELPERS);
 }
 /** The start menu to a playing game, through the setup page, as a player would. */
-async function newGame(cityName, seed) {
+async function newGame(cityName, seed, cashM) {
   await load();
   // the menu opens the setup page (a first-time player lands on it directly)
   // (the button is disabled while the page boots: keep trying until the setup page is up)
@@ -281,12 +284,12 @@ async function newGame(cityName, seed) {
   }
   await sleep(300);
   await js(`const el = [...document.querySelectorAll("*")].filter((e) => e.childElementCount === 0 && e.textContent.trim() === ${S(cityName)}).pop(); el?.click(); return !!el;`);
-  if (seed) {
-    await js(`const i = document.querySelector("#setup-seed-in"); if (!i) return false;
-      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(i, ${S(String(seed))});
+  // typed into the setup page's own inputs (React reads the native setter)
+  const type = (sel, v) => js(`const i = document.querySelector(${S(sel)}); if (!i) return false;
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(i, ${S(String(v))});
       i.dispatchEvent(new Event("input", { bubbles: true })); i.dispatchEvent(new Event("change", { bubbles: true })); i.blur(); return true;`);
-    await sleep(200);
-  }
+  if (seed) { await type("#setup-seed-in", seed); await sleep(150); }
+  if (cashM) { await type("#setup-cash", cashM); await sleep(150); }
   await shot("setup");
   await js(`return __pt.click(/^Break ground/);`);
   const t = Date.now();
@@ -349,7 +352,7 @@ const stepProfile = (label, fn) => (has("profile-steps") ? profiled(label, fn) :
 // ---------------------------------------------------------------- flows
 let regionUp = false;
 await flow("start", async () => {
-  const ms = await newGame("Region (6 km)", SEED);
+  const ms = await newGame("Region (6 km)", SEED, REGION_CASH_M);
   regionUp = true;
   note(`region started in ${(ms / 1000).toFixed(1)} s · ${await st(`Object.keys(s.parcels).length`)} lots`);
   check(ms < 10000, "region start under 10 s", `${(ms / 1000).toFixed(1)} s`);
@@ -390,14 +393,17 @@ const LEDGER = `
   const IN = ["noi", "sold", "interest", "borrowed", "lpCalled", "fees"], OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga", "lpDistributed"];
   let flows = 0; for (const y of g.books ?? []) { for (const k of IN) flows += y[k] ?? 0; for (const k of OUT) flows -= y[k] ?? 0; }
   let dep = 0; for (const h of Object.values(g.holdings ?? {})) for (const t of h.tenants ?? []) dep += t.deposit ?? 0;
-  const nums = [g.cash, g.nwHistory?.at(-1), flows, g.loc?.balance ?? 0, dep];`;
+  // money turned into property this month (a purchase, works in the ground) and what the firm owes
+  let sunk = 0; for (const y of g.books ?? []) sunk += (y.dev ?? 0) + (y.bought ?? 0);
+  let debt = (g.facility?.balance ?? 0) + (g.loc?.balance ?? 0); for (const h of Object.values(g.holdings ?? {})) debt += (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0);
+  const nums = [g.cash, g.nwHistory?.at(-1), flows, g.loc?.balance ?? 0, dep, sunk, debt];`;
 // The tape's net worth is struck at month end; after a deal mid-month it is stale against live cash.
 // `live` reads the HUD's own NW readout instead (the same netWorth, to its three figures).
-const snap = (live = false) => js(`const s = window.__store.getState(), g = s.game; ${LEDGER}
+const snap = (live = false, parent = null) => js(`const s = window.__store.getState(), g = s.game; ${LEDGER}
   const hud = __pt.norm([...document.querySelectorAll(".nx-ro")].find((e) => /^NW/i.test(__pt.norm(e.querySelector(".nx-ro-label")?.textContent)))?.querySelector(".nx-fig")?.textContent);
   const m = /^([−-])?\\$?([\\d.,]+)([KMB])?/.exec(hud.replace(/\\u2060/g, ""));
   const hudNw = m ? (m[1] ? -1 : 1) * Number(m[2].replace(/,/g, "")) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[3]] ?? 1) : null;
-  return { m: g.month, cash: g.cash + (g.fund?.cash ?? 0), nw: ${live} && hudNw !== null ? hudNw : g.nwHistory?.at(-1) ?? null, flows, loc: g.loc?.balance ?? 0, dep, finite: nums.every(Number.isFinite), hud };`);
+  return { m: g.month, cash: g.cash + (g.fund?.cash ?? 0), nw: ${live} && hudNw !== null ? hudNw : g.nwHistory?.at(-1) ?? null, flows, sunk, debt, platDone: !!g.plats?.[${S(parent)}]?.done, loc: g.loc?.balance ?? 0, dep, finite: nums.every(Number.isFinite), hud };`);
 /** The lots' builder bids on this plat, in dollars: offers, contracts, else the desk's lot-sales line. */
 const lotBids = (parent) => js(`const s = window.__store.getState(), g = s.game, P = s.parcels;
   const mine = Object.values(P).filter((r) => r.homeLot && r.block === ${S(parent)} && g.holdings[r.bbl]);
@@ -411,7 +417,7 @@ async function monthChecked(ctx) {
   const t0 = Date.now();
   await advance(1);
   ctx.advMs = (ctx.advMs ?? 0) + (Date.now() - t0); ctx.months = (ctx.months ?? 0) + 1;
-  const b = await snap();
+  const b = await snap(false, ctx.parent);
   ctx.last = b;
   if (ctx.months % 6 === 0) log(`   month ${b.m} · ${((ctx.advMs) / ctx.months / 1000).toFixed(2)} s a month · NW ${(b.nw / 1e6).toFixed(2)}M · cash ${(b.cash / 1e6).toFixed(2)}M`);
   const dCash = b.cash - a.cash, dNw = b.nw - a.nw;
@@ -420,12 +426,16 @@ async function monthChecked(ctx) {
   check(Math.abs(resid) < 5, `month ${b.m}: the ledger balances (Δcash == books + Δline + Δdeposits)`, `residual ${resid.toFixed(0)} · Δcash ${dCash.toFixed(0)}`);
   const bids = ctx.parent ? (await lotBids(ctx.parent)).bid : 0;
   const ref = Math.max(bids || 0, Number.isFinite(ctx.lotSales) ? ctx.lotSales : 0);
-  const nonCash = dNw - dCash;
-  ctx.tape.push({ m: b.m, dNw: Math.round(dNw), dCash: Math.round(dCash), nonCash: Math.round(nonCash), ref: Math.round(ref) });
+  // THE HONEST CHANGE: cash, less what is owed, plus what was paid for property and works (carried at
+  // cost). What is left is a re-mark: a building's month, a plat finishing — or a pump.
+  const nonCash = dNw - (dCash - (b.debt - a.debt)) - (b.sunk - a.sunk);
+  // the month a plat finishes, the lots take their builder marks: the desk's own profit is due then
+  const allow = b.platDone && !a.platDone ? Math.max(0, ctx.deskProfit ?? 0) : 0;
+  ctx.tape.push({ m: b.m, dNw: Math.round(dNw), dCash: Math.round(dCash), dDebt: Math.round(b.debt - a.debt), sunk: Math.round(b.sunk - a.sunk), nonCash: Math.round(nonCash), ref: Math.round(ref) });
   // THE MONEY PUMP: net worth up by more than a tenth of what the builders bid for the lots, with no cash in
-  const cap = Math.max(0.10 * ref, 50000, (ctx.nwShare ?? 0) * Math.abs(b.nw));
+  const cap = allow + Math.max(0.10 * ref, 50000, (ctx.nwShare ?? 0) * Math.abs(b.nw));
   check(!(nonCash > cap), `month ${b.m}: net worth does not jump without cash (≤ 10% of the lots' builder bids)`,
-    `ΔNW ${(dNw / 1e6).toFixed(2)}M · Δcash ${(dCash / 1e6).toFixed(2)}M · non-cash ${(nonCash / 1e6).toFixed(2)}M against bids ${(ref / 1e6).toFixed(2)}M`);
+    `ΔNW ${(dNw / 1e6).toFixed(2)}M · Δcash ${(dCash / 1e6).toFixed(2)}M · Δdebt ${((b.debt - a.debt) / 1e6).toFixed(2)}M · into property ${((b.sunk - a.sunk) / 1e6).toFixed(2)}M · re-mark ${(nonCash / 1e6).toFixed(2)}M against bids ${(ref / 1e6).toFixed(2)}M${allow ? ` and the desk's profit ${(allow / 1e6).toFixed(2)}M` : ""}`);
   const bad = await js(`return __pt.bad(document.querySelector(".nx-hud"));`);
   check(!bad.length, `month ${b.m}: no NaN in the HUD`, bad.join(" ‖ "));
   if (pageErrors.length) { check(false, `month ${b.m}: no page exceptions`, pageErrors.join(" ‖ ")); pageErrors = []; }
@@ -433,7 +443,7 @@ async function monthChecked(ctx) {
 }
 
 await flow("land", async () => {
-  if (!regionUp) { await newGame("Region (6 km)", SEED); regionUp = true; }
+  if (!regionUp) { await newGame("Region (6 km)", SEED, REGION_CASH_M); regionUp = true; }
   // NEAR-TOWN TRACTS THAT ARE MOSTLY DRY LAND, nearest first; the file's Overview says whether a plat pencils
   const cands = await st(`Object.entries(s.parcels).filter(([b, r]) => r.ag && r.tract && !g.holdings[b] && (r.buildableSf ?? r.lotArea) / r.lotArea > 0.6)
     .sort((a, b) => a[1].tract.edgeM - b[1].tract.edgeM).slice(0, 10).map(([b]) => b)`);
@@ -503,8 +513,9 @@ await flow("land", async () => {
   await tap(`/Financing$/`, desk); await sleep(400);
   await tap(`/^All offered$/`, desk); await sleep(200);
   const strip = await js(`const o = {}; for (const c of document.querySelectorAll(".pnl-cell")) o[c.querySelector(".pnl-k").textContent.trim()] = c.querySelector(".pnl-v").textContent.trim(); return o;`);
-  const M = (t) => { const m = /(−|-)?\$?([\d.,]+)\s*([KMB])?/.exec(t ?? ""); return m ? (m[1] ? -1 : 1) * Number(m[2].replace(/,/g, "")) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[3]] ?? 1) : NaN; };
+  const M = (t) => { const m = /(−|-)?\$?([\d.,]+)\s*([KMBkmb])?/.exec(t ?? ""); return m ? (m[1] ? -1 : 1) * Number(m[2].replace(/,/g, "")) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[3]?.toUpperCase()] ?? 1) : NaN; };
   ctx.lotSales = M(strip["Lot sales"]);
+  ctx.deskProfit = M(await js(`return ${desk}.querySelector(".verdict-value")?.textContent ?? "";`));
   note(`desk P&L: ${Object.entries(strip).map(([k, v]) => k + " " + v).join(" · ")}`);
   check(Object.values(strip).every((v) => v && !/NaN|undefined|Infinity/.test(v)), "the desk's P&L strip is all numbers", JSON.stringify(strip));
   await screen("financing", ".land-desk");
@@ -558,8 +569,17 @@ await flow("land", async () => {
   note(`platted after ${ctx.months} months: ${lb.lots} lots are deeds`);
   check(lb.lots > 0, "the plat's lots are deeds on the books");
 
+  // A LOT'S FILE: the lots desk (the builders' bids, their offers, listing the plat) on its Sell tab
+  const lot = await st(`Object.values(s.parcels).find((r) => r.homeLot && r.block === ${S(bbl)} && g.holdings[r.bbl])?.bbl`);
+  await js(`window.__store.getState().select(${S(lot)}); return true;`); await sleep(700);
+  await tap(`/^Sell$/`, fileDrawer); await sleep(500);
+  await screen("lot-file-sell");
+  const lotsDesk = await js(`return /Bid · whole plat/.test(__pt.norm(${fileDrawer}?.innerText));`);
+  check(lotsDesk, "a lot's file shows the lots desk (the builders' bids, offers, List) on its Sell tab");
+  await js(`window.__store.getState().select(null); return true;`);
+
   // SELL: a builder's offer from Holdings › Land, else list the plat whole from a lot's card
-  let sold = false, listTried = false;
+  let sold = false, listTried = !lotsDesk;
   for (let i = 0; i < 8 && !sold; i++) {
     await js(`return __pt.click(/Holdings$/, document.querySelector(".nx-rail"));`); await sleep(400);
     await tap(`/^Land$/`, drawer("Holdings")); await sleep(500);
@@ -574,16 +594,14 @@ await flow("land", async () => {
       await screen("took-offer");
     } else if (i >= 2 && !listTried) {
       listTried = true;
-      // no offer yet: list the plat whole, from a lot's own card
-      const lot = await st(`Object.values(s.parcels).find((r) => r.homeLot && r.block === ${S(bbl)} && g.holdings[r.bbl])?.bbl`);
+      // no offer yet: list the plat whole, from a lot's own file
       await js(`window.__store.getState().select(${S(lot)}); return true;`); await sleep(700);
-      for (const t of ["Overview", "Deal", "Sell"]) { if (await js(`return !!__pt.find(/^List whole/);`)) break; await tap(`/^${t}$/`, fileDrawer); await sleep(400); }
-      const listed = await tap(`/^List whole/`);
+      await tap(`/^Sell$/`, fileDrawer); await sleep(500);
+      const listed = await tap(`/^List whole/`, fileDrawer);
       await sleep(300);
       await screen("listed");
       if (listed) note(`no offer after ${i} months: listed the plat whole (${listed})`);
-      check(!!listed, "a lot's file offers List takedown / List whole (the builders' bids)", "no List button on the lot's Overview, Deal or Sell tab");
-      if (listed) check(await st(`!!g.homes?.listings?.[${S(bbl)}]`), "listed the plat to the builders from a lot's card", await errToast(since));
+      check(!!listed && await st(`!!g.homes?.listings?.[${S(bbl)}]`), "listed the plat to the builders from a lot's file", listed ? await errToast(since) : "no List whole button (no bid today?)");
       await js(`window.__store.getState().select(null); return true;`);
       sold = !!listed;
     }
@@ -634,7 +652,7 @@ async function places() {
 }
 
 await flow("picker", async () => {
-  if (!regionUp) { await newGame("Region (6 km)", SEED); regionUp = true; }
+  if (!regionUp) { await newGame("Region (6 km)", SEED, REGION_CASH_M); regionUp = true; }
   // THE HIGHEST-DEMAND LARGE VACANT COMMERCIAL LOT the player can buy: large enough for the smallest
   // product (a pad, 0.4 ac; products.ts); the region's commercial dirt runs to about half an acre
   const lots = await st(`Object.values(s.parcels).filter((r) => r.class === "land" && !r.ag && /^C-/.test(r.zoneDist) && r.lotArea >= 17424 && !g.holdings[r.bbl])
@@ -676,7 +694,7 @@ await flow("picker", async () => {
 });
 
 await flow("pages", async () => {
-  if (!regionUp) { await newGame("Region (6 km)", SEED); regionUp = true; }
+  if (!regionUp) { await newGame("Region (6 km)", SEED, REGION_CASH_M); regionUp = true; }
   const seen = await places();
   note(`${seen.length} screens: ${seen.join(", ")}`);
   // Holdings › Land appears with the land game (places.ts hasLand): a tract, an application, a plat, lots
@@ -729,7 +747,7 @@ await flow("island", async () => {
 });
 
 if (has("eval")) {
-  if (!regionUp) { await newGame("Region (6 km)", SEED); regionUp = true; }
+  if (!regionUp) { await newGame("Region (6 km)", SEED, REGION_CASH_M); regionUp = true; }
   const { readFileSync } = await import("node:fs");
   console.log(JSON.stringify(await js(readFileSync(flag("eval"), "utf8"), 120000), null, 1));
   await shot("eval");

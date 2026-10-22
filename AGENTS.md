@@ -25,12 +25,15 @@ expected time. Never hand the owner something you could do yourself.
 **This repository is Broadway & Wall only.**
 
 **The game is moving to Unreal Engine 5.8 (owner's decision, 2026-10-19).
-Read `UE58_PLAN.md` first.** The web build in `broadway-and-wall/` is frozen:
-no new features, economy rounds or UI work. Its economy engine
-(`broadway-and-wall/src/engine/`), city generator and tests are reused
-unchanged by the Unreal game; touch them only when the Unreal work needs it,
-and keep `pnpm check` green when you do. The Unreal project lives in
-`unreal/`.
+Read `UE58_PLAN.md` first.** The React UI in `broadway-and-wall/` is the
+game's interface, hosted inside Unreal (`?host=unreal`); the new shell in
+`src/ui/next/` is the default. The engine (`src/engine/`), the city
+generator (`src/citygen/`, including the region map) and the UI are all
+actively developed. Land work as small PRs to main. The CI gate is a ~35 s smoke test
+(.github/workflows/check.yml: tsc, fresh bundle, rng discipline, playable,
+rng audit); the full suite (`pnpm check`, 1-2 h) runs nightly as a report
+(full.yml). Before a PR run targeted tests; `tools/start-probe.mjs` times a
+real browser start. The Unreal project lives in `unreal/`.
 
 - The game code is in **`broadway-and-wall/`**.
 - Do **not** create, restore, or work on Groundwork. That product is gone.

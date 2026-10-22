@@ -8,6 +8,7 @@
 #include "RenderView.h"
 #include "FacadeBuilder.h"
 #include "RetailBuilder.h"
+#include "HouseBuilder.h"
 #include "GameFramework/Actor.h"
 #include "CityBuilder.generated.h"
 
@@ -96,6 +97,8 @@ private:
 	TUniquePtr<FBWFacadeBuilder> Facades;
 	/** The region's shopping centres, pads and pylons, from the kit (RetailBuilder). */
 	TUniquePtr<FBWRetailBuilder> Retail;
+	/** Houses of their era from the house kit (HouseBuilder), in place of the one-mesh boxes. */
+	TUniquePtr<FBWHouseBuilder> Homes;
 	/** What stands now: the generator's volumes minus overridden lots, plus the economy's. */
 	TArray<FBWVolume> Current;
 	TArray<FVector> Sites;

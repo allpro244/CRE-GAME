@@ -4960,6 +4960,8 @@ function developerLook(
   const purse = firm ? Math.max(0, freeCash(s, firm)) : who ? Math.max(0, who.capital - who.committed) : Infinity;
   let best: { bbl: string; rec: (typeof parcels)[string]; use: DevUse; floors: number; plate: number; h: number; coInvest: number; kids: string[] } | null = null;
   let examined = 0;
+  // the lots tied up by a job or another developer's plan, once a look (the draws below start neither)
+  const jobAt = new Set(s.cityJobs.map((j) => j.bbl)), planAt = new Set((s.cityPlans ?? []).map((p) => p.bbl));
   for (let draw = 0; draw < SITES_PER_LOOK * 8 && examined < SITES_PER_LOOK; draw++) {
     const bbl = bbls[Math.floor(rng(s, "dev") * bbls.length)];
     // A lot that is land again — burned (blackswans.ts) or knocked down and
@@ -4967,8 +4969,10 @@ function developerLook(
     // building is not.
     const over = s.built[bbl] as { class?: string } | undefined;
     if (s.holdings[bbl] || (over && over.class !== "land") || s.developments[bbl]) continue;
-    if (s.cityJobs.some((j) => j.bbl === bbl)) continue;
-    if ((s.cityPlans ?? []).some((p) => p.bbl === bbl)) continue;   // tied up by another developer
+    // a plat lot is skipped below whatever it resolves to (its covenants); asked first, it costs nothing
+    if (parcels[bbl]?.homeLot) continue;
+    if (jobAt.has(bbl)) continue;
+    if (planAt.has(bbl)) continue;   // tied up by another developer
     if (isCivicLand(s, bbl)) continue;
     if (ownerOf(s, bbl)) continue;
     const rec = resolveRec(parcels, s, bbl);

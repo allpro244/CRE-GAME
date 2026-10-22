@@ -16,7 +16,8 @@ export const CONSTRUCTION_LENDER = "Alden Savings & Trust";
  */
 export type MarketPhase = "recovery" | "expansion" | "peak" | "recession" | "depression";
 
-export type BuiltClass = Exclude<AssetClass, "land">;
+/** The commercial classes: what is let, financed and traded as income property. A house is not one. */
+export type BuiltClass = Exclude<AssetClass, "land" | "house">;
 
 export type SupplySource =
   | "city"
@@ -1345,8 +1346,10 @@ export interface HomeUnit {
   price?: number;
   soldM?: number;
   closedM?: number;
-  /** the month the house stood finished: written to `built`, in the town's housing stock */
+  /** the month the house stood finished (value.ts resolveRec reads it as a house on the lot) */
   builtM?: number;
+  /** who bought it: a household to live in ("owner"), or a single-family-rental investor ("sfr") */
+  tenure?: "owner" | "sfr";
 }
 /**
  * A homebuilder's offer for your finished lots on one plat. "takedown": it
@@ -2506,6 +2509,9 @@ export interface Econ {
   priceLevel?: number;
   /** THE FOR-SALE HOUSING MARKET (region map, homes.ts / homeprice.ts): the going new-house $/sf and each plat's sell-out. */
   homes?: import("./homeprice").HomeMarket;
+  /** New houses closed on the plats (homes.ts), and the town's occupied flats when the first one closed: each house is a household no longer renting a flat. */
+  newHomes?: number;
+  newHomesRef?: number;
   /** Population growth over the last twelve months (homes.ts), the household growth the new-house demand reads. */
   homesG12?: number;
   /** Bumped whenever `homes` is rewritten, so the land memo (value.ts LAND_SCALARS) never serves a stale lot price. */
@@ -4045,6 +4051,15 @@ export interface GameState {
   splits?: SplitRecord[];
   /** The last split lot number handed out (lot BBLs are 8e9 + this). */
   splitSeq?: number;
+  /**
+   * THE ORDER THE TABLE WAS CUT IN (sim.ts restoreCuts): one entry per finished
+   * plat ("p:<tract>"), recorded split ("s:<id>") and unpacked neighbourhood
+   * ("u:<id>"), in the order each put its deeds into the parcel table. The BBL
+   * list's order is the order every loop in the engine walks the town, so a
+   * save rebuilt in any other order is a different game. Region only in
+   * practice; one short string per cut.
+   */
+  cutOrder?: string[];
   /** When the board last refused a major subdivision on each deed (the twelve-month resubmittal bar, landdev.ts REFILE_BAR_M). */
   splitRefusedM?: Record<string, number>;
   /** ---- HOMEBUILDING (homes.ts; the region map, Phase 3) ---- the houses going up and sold on the plats, yours and the builders'. */

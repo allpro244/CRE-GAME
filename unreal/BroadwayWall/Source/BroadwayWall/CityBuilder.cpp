@@ -471,6 +471,9 @@ bool ACityBuilder::BuildFromText(const FString& Text)
 	// the region's stores from the retail kit (-NoRetailKit: the generic massing, for an A/B)
 	if (!FParse::Param(FCommandLine::Get(), TEXT("NoRetailKit")) && FPackageName::DoesPackageExist(TEXT("/Game/BW/Retail/SM_RK_Storefront"))) Retail = MakeUnique<FBWRetailBuilder>(RootComponent);
 	else Retail.Reset();
+	// the houses from the house kit (-NoHouseKit: the old one-mesh houses, for an A/B)
+	if (!FParse::Param(FCommandLine::Get(), TEXT("NoHouseKit")) && FBWHouseBuilder::Available()) Homes = MakeUnique<FBWHouseBuilder>(RootComponent);
+	else Homes.Reset();
 	BuildGround();
 	Current = City.Volumes;
 	BuildVolumes();
@@ -1106,6 +1109,7 @@ void ACityBuilder::BuildVolumes()
 		Chunks.Reset();
 		if (Facades) Facades->Reset();
 		if (Retail) Retail->Reset();
+		if (Homes) Homes->Reset();
 		for (TPair<FString, FVolRec>& R : Recs) for (TWeakObjectPtr<USceneComponent>& C : R.Value.Extra) if (C.IsValid()) C->DestroyComponent();
 		ClearRoofProps();
 		Recs.Reset();
@@ -1152,6 +1156,7 @@ void ACityBuilder::BuildVolumes()
 		}
 		return Out;
 	};
+	if (Homes) Homes->Prepare(City, Current, FootZ);
 	TArray<bool> Dirty; Dirty.Init(bFull, Nv);
 	TSet<FIntPoint> DirtyTiles;
 	TSet<UInstancedStaticMeshComponent*> Touched;
@@ -1268,7 +1273,13 @@ void ACityBuilder::BuildVolumes()
 			// ridge along the longer side; no facade kit, no massing
 			if (Vol.Deco == TEXT("house"))
 			{
-				if (bInst && Vol.Ring.Num() >= 4)
+				if (bInst && Homes && Vol.Ring.Num() >= 3)
+				{
+					Homes->Kit.Record = &Rec.Inst;
+					Homes->Dress(Vol, GetTypeHash(Keys[i]));
+					Homes->Kit.Record = nullptr;
+				}
+				else if (bInst && Vol.Ring.Num() >= 4)
 				{
 					static const TCHAR* const Houses[] = {
 						TEXT("/Game/BW/Houses/SM_House_Cream.SM_House_Cream"), TEXT("/Game/BW/Houses/SM_House_Sage.SM_House_Sage"),
@@ -1454,6 +1465,7 @@ void ACityBuilder::BuildVolumes()
 	Recs = MoveTemp(NewRecs);
 	Chunks.Reset();
 	for (TPair<FIntPoint, TObjectPtr<UProceduralMeshComponent>>& T : TileMesh) Chunks.Add(T.Value);
+	if (Homes) UE_LOG(LogBWBuilder, Display, TEXT("house kit: %d houses, %d pieces in %d components"), Homes->Houses, Homes->Kit.Instances(), Homes->Kit.Components());
 	UE_LOG(LogBWBuilder, Display, TEXT("volumes: %d (%s), %d laid, %d of %d tiles re-meshed, %d hidden pieces, %.0f ms"),
 		Nv, bFull ? TEXT("full") : TEXT("changes"), Laid, DirtyTiles.Num(), TileMesh.Num(), Garbage, (FPlatformTime::Seconds() - T0) * 1000.0);
 }
@@ -1590,6 +1602,16 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 	{
 		const FBWParcel* P = City.FindParcel(L.Bbl);
 		if (!P || P->Ring.Num() < 3) continue;
+		// WHAT STANDS THERE NOW, for the parcel cards: the city file has a platted lot as
+		// vacant land, so a house built on it would read "bldg 0 sf" without this
+		if (L.Sf >= 0)
+		{
+			FBWParcel* Pm = const_cast<FBWParcel*>(P);
+			Pm->BldgArea = L.Sf;
+			Pm->Cls = L.Cls;
+			Pm->Floors = L.Floors;
+			Pm->YearBuilt = L.Year;
+		}
 		TArray<FVector2D> Ring = P->Ring;
 		if (const TArray<FString>* Kids = SiteDeeds.Find(L.Bbl))
 		{

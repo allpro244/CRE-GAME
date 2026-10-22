@@ -1353,7 +1353,26 @@ park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
   Measured house by house (residual of the best scheme against value standing),
   ~16% of ring houses pencil at the opening, ~8% at year 20, and those only by
   ~9%: the ring densifies slowly because it barely pays, which is the honest
-  answer. 30-year results are in the PR (#see git log).
+  answer. 30-year results are in PR #448.
+- **Land developers keep books (Oct 2026, claude/landdev-books).** The named
+  developers were counts with an unlimited purse: they bought every farm whose
+  read cleared, and one whose streets did not pay banked the land forever at no
+  cost. Now each is founded with its own money (homes.ts's purse) and a
+  construction desk: 65% against the land and 75% against the streets (12 CFR
+  34 App. A), interest out of cash every month at index + 2.4, the board's fees
+  and closing in cash, paid by the builders lot by lot (homes.ts `landDevSold`)
+  with a 120% release to the desk. It signs only a deal it can carry to the end
+  — its share of the land, fees AND streets, net of what it has promised its
+  other farms. A refused farm is sold back at the corn. Banked land costs the
+  coupon; three months unable to pay and it fails, its desk sells the farms
+  (keeping any zoning: an already-zoned farm reads with no board) and its
+  plats' lots go to the builders through the market, the shortfall the desk's
+  loss. They COMPETE WITH THE PLAYER: a farm the player is negotiating for (not
+  yet under contract) stays on their market, the seller's price is the
+  player's offer if that is higher, and a developer who reads it better buys it
+  out from under the player (`voidContract`, with the news).
+  `region-growth` prints each developer's cash, debt and lots sold and checks
+  the debt against its loans.
 - `pnpm region` (test/region.mjs): determinism, record sanity, reserved land
   never reaching the market, the island untouched by plan 15, month tick
   timing. `node test/bwcity-contract.mjs <file>` checks an Unreal export;

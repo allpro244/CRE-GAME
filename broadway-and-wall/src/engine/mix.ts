@@ -89,7 +89,7 @@ export function normalize(raw: UseMix): UseMix {
 export function mixOf(rec: Pick<ParcelRecord, "class" | "bbl" | "floors" | "unitsRes"> & { mix?: UseMix }): UseMix {
   if (rec.mix) return rec.mix;
   const cls = rec.class as string;
-  if (cls === "land") return {};
+  if (cls === "land" || cls === "house") return {};   // a house (homes.ts) lets no commercial floor area
   if (cls === "mixed") return deriveMix(rec as ParcelRecord);
   // The same one-key object as `{ [cls]: 1 }`, as a literal shape (a computed key is the slow path).
   switch (cls) {

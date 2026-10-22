@@ -21,10 +21,10 @@ import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const E = await import(join(HERE, ".engine.mjs"));
-const { makeCity, REGION, PROCEDURAL } = await import(join(HERE, "..", "src", "citygen", "index.mjs"));
+const E = await import(pathToFileURL(join(HERE, ".engine.mjs")).href);
+const { makeCity, REGION, PROCEDURAL } = await import(pathToFileURL(join(HERE, "..", "src", "citygen", "index.mjs")).href);
 
 const SEEDS = (process.env.SEEDS ?? "1,2,3").split(",").map(Number);
 const YEARS = Number(process.env.YEARS ?? 5);

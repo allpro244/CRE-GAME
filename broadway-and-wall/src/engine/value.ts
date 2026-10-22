@@ -196,6 +196,7 @@ export { physicalMaxFloors } from "./structure";
 import { physicalMaxFloors } from "./structure";
 import { purseOf, partnerShare } from "./vehicles";
 import { sponsorPosition } from "./waterfall";
+import { tableVersion } from "./tableVersion";
 
 /**
  * The plate a median NEW building in this city actually carries — measured at
@@ -2289,6 +2290,8 @@ export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition
 const COMP_RADIUS_M = 300;
 const M_PER_DEG_LAT = 111_320;
 type BlockGeo = {
+  /** the cut of the table it was built from (tableVersion.ts) */
+  v?: number;
   byBlock: Map<string, string[]>;
   neigh: Map<string, { b: string; w: number }[]>;
 };
@@ -2297,7 +2300,7 @@ const BLOCK_GEO = new WeakMap<Record<string, ParcelRecord>, BlockGeo>();
 
 function blockGeo(parcels: Record<string, ParcelRecord>): BlockGeo {
   const hit = BLOCK_GEO.get(parcels);
-  if (hit) return hit;
+  if (hit && hit.v === tableVersion(parcels)) return hit;
   const byBlock = new Map<string, string[]>();
   const acc = new Map<string, [number, number, number]>();
   for (const bbl in parcels) {
@@ -2331,7 +2334,7 @@ function blockGeo(parcels: Record<string, ParcelRecord>): BlockGeo {
     }
     neigh.set(b, out);
   }
-  const geo = { byBlock, neigh };
+  const geo = { byBlock, neigh, v: tableVersion(parcels) };
   BLOCK_GEO.set(parcels, geo);
   return geo;
 }
@@ -2491,6 +2494,19 @@ function childrenOf(m: Record<string, string>, bbl: string): readonly string[] {
   return list ?? NO_KIDS;
 }
 
+/**
+ * THE RECORD WITHOUT ITS STAMPS: what stands on the lot, its envelope and its
+ * live demand, but not the cornice datum, the town's maturity or an anchor's
+ * trade-area draw that resolveRec adds. For a reader that only asks WHAT the
+ * lot is (its class, its floor area, its mix) on every lot every month — the
+ * street's roll-call (streetRolls.ts) — and so must not pay for the trade-area
+ * walk resolveRec runs on every big vacant lot. Same object resolveRec starts
+ * from; nothing it returns differs in a field this reader is allowed to read.
+ */
+export function resolveRecBare(parcels: Record<string, ParcelRecord>, s: GameState, bbl: string): ParcelRecord | null {
+  return resolveRecOnly(parcels, s, bbl);
+}
+
 function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl: string): ParcelRecord | null {
   let rec = parcels[bbl];
   if (!rec) return null;
@@ -2499,6 +2515,15 @@ function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl
   // a deed with no buildable area left, exactly as a lot folded into a site.
   const rz = s.rezoned?.[bbl];
   if (rz) rec = { ...rec, zoneDist: rz.zone, farMaxComm: rz.far, farMaxRes: rz.far };
+  // A HOMEBUILDER'S FINISHED HOUSE (homes.ts) stands on its lot as a house:
+  // its own class, one dwelling, no commercial floor area to let.
+  const hu = s.homes?.units[bbl];
+  if (hu?.builtM !== undefined) {
+    return { ...rec, class: "house", bldgClass: "A1", bldgArea: hu.sf, floors: hu.sf > 1_800 ? 2 : 1,
+      yearBuilt: START_YEAR + Math.floor(hu.builtM / 12), unitsRes: 1, mix: undefined };
+  }
+  // ...and so is a family's house in an unpacked neighbourhood (unpack.ts): owner-occupied, its own facts
+  if (hu?.by === "family") return { ...rec, class: "house", bldgClass: "A1", unitsRes: 1, mix: undefined };
   if (s.platted?.[bbl]) return { ...(resolveBase(s, rec) ?? rec), lotArea: 0, farMaxComm: 0, farMaxRes: 0 };
   // ASSEMBLED SITES. A merged lot's land has moved into its parent: the parent
   // is as big as the sum of the deeds, and the child is a deed with no
@@ -4435,6 +4460,17 @@ export function ownedHoldingValueFromRec(
   // before `landMark` existed, keep the cost carry.
   const dev = s.developments?.[h.bbl];
   if (dev && (rec.class === "land" || !rec.bldgArea) && h.costBasis > 0) return dev.landMark ?? h.costBasis;
+  // STREETS GOING IN ARE CONSTRUCTION IN PROGRESS TOO (2026-10-22). The whole
+  // horizontal — streets, pipes, impact fees, amenities — is paid the day the
+  // plat starts (landdev.ts startPlat, platdesign.ts startDesignedPlat), and the
+  // tract's mark ignored it: net worth fell by the full street budget for the
+  // months the works took and came back in one step when the lots became deeds.
+  // Measured by tools/playtest.mjs on a 157-lot plat: −$2.7M at the start,
+  // +$2.82M the month it finished, no cash either time. Carried at money sunk,
+  // as a building job is (portfolioMark); the lots' own marks take over at
+  // completion, so the step there is the plat's real gain or loss.
+  const plat = s.plats?.[h.bbl];
+  if (plat && !plat.done) return holdingValue(rec, s.econ, h, s.month) + plat.cost;
   let v = holdingValue(rec, s.econ, h, s.month);
   // A TENANT WHO HAS SAID THEY ARE GOING IS GONE (2026-10-15). The notice
   // lands six months out, and from then the space is known to go dark; the

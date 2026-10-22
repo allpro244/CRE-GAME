@@ -48,7 +48,52 @@ const TRIPS_PER_HH = 9.43;
  * half their trips have an end in the county seat (journey-to-work flows for
  * a county seat's own county run 50-60%, ACS) [S, rounded].
  */
-const COUNTY_TO_TOWN = 0.5;
+export const COUNTY_TO_TOWN = 0.5;
+/**
+ * THE TOWN'S OWN HOUSEHOLDS DRIVE OUT TOO. A household in the town's flats and
+ * frame houses makes about 6.74 trips a weekday (ITE Trip Generation, 11th ed.,
+ * land use 220, multifamily low-rise) [S], and some of them leave the town —
+ * the job in the next county, the farm-supply store, the big box out at the
+ * interchange, the relatives: internal-external trips run about 10-25% of a
+ * small urban area's resident trips (NCHRP Report 716, 2012, §4.8 external
+ * travel; FHWA small-community travel models) [S, approximate: 0.2]. They
+ * leave on the old county roads, like the county's households come in.
+ */
+const MF_TRIPS_PER_HH = 6.74, TOWN_EXTERNAL = 0.2;
+/**
+ * COMMERCIAL VEHICLES: the vans, box trucks and semis that serve the town's
+ * businesses — trips a day per employee (FHWA Quick Response Freight Manual,
+ * 1996, Table 4.1, from the Phoenix commercial vehicle survey) [S]:
+ *                     4-tire  single-unit  combination
+ *   industrial         0.938    0.242        0.104     (manufacturing, TCU, wholesale)
+ *   retail             0.888    0.253        0.065
+ *   office / services  0.437    0.068        0.009
+ * The household and ITE rates above count people's own cars, not these.
+ * A county seat's freight comes from somewhere else — the regional
+ * distribution centres, the plants up the interstate — so about half of the
+ * trucks' trips cross the town line [K, a shape parameter: QRFM external
+ * truck shares for small urban areas run 40-70%]; the vans, like the town's
+ * own residents, mostly stay in town (TOWN_EXTERNAL).
+ */
+const QRFM: Record<"industrial" | "retail" | "office", { van: number; truck: number }> = {
+  industrial: { van: 0.938, truck: 0.242 + 0.104 },
+  retail: { van: 0.888, truck: 0.253 + 0.065 },
+  office: { van: 0.437, truck: 0.068 + 0.009 },
+};
+const TRUCK_EXTERNAL = 0.5;
+/** Square feet a worker takes, by class (market.ts SF_PER_JOB). */
+const SF_PER_JOB = { office: 230, retail: 420, industrial: 550 } as const;
+/**
+ * THE DESIGN YEAR. A road is designed for the traffic it will carry twenty
+ * years after it opens (AASHTO, A Policy on Geometric Design of Highways and
+ * Streets, 2018, §2.3.2: design traffic volumes are normally forecast 20 years
+ * from completion) [S]. A county puts a widening in its programme when the
+ * design-year forecast outgrows two lanes — not the year the road jams —
+ * and builds it as the fund allows, the worst-loaded road first. The forecast
+ * is today's count grown at the households' own ten-year rate, which is what
+ * generates the traffic here.
+ */
+const DESIGN_YEARS = 20;
 /**
  * WHAT A ROAD CARRIES at level of service D, AADT: a two-lane arterial about
  * 15,000 and a four-lane divided one about 33,000 (FDOT 2023 Generalized
@@ -107,6 +152,8 @@ export interface RoadsState {
   fund: number; levied: number; spent: number;
   /** last year's levy, $, and what upkeep of the network took of it */
   levyYr: number; upkeepYr?: number;
+  /** what the statutory road share would have raised and the budget did not need, cumulative, $ */
+  unlevied?: number;
   /** the state's segments: planned, funded, open or dropped */
   hwy: Record<string, { planM: number; status: "planned" | "funded" | "open" | "dropped"; slips: number; openM?: number }>;
   /** the county's pieces: lanes, this year's and the opening's traffic, and any widening under way */
@@ -201,10 +248,42 @@ function assignTraffic(s: GameState, parcels: ParcelTable): Record<string, numbe
   const roads = new Map<string, string[]>();
   for (const a of P.arterials) if (a.kind === "county") { const r = a.id.split(".")[0]; const l = roads.get(r); if (l) l.push(a.id); else roads.set(r, [a.id]); }
   if (roads.size) {
-    const perRoad = (beyond * TRIPS_PER_HH * COUNTY_TO_TOWN) / roads.size;
+    // ...and out of the town on the same roads: its own households' external
+    // trips, and the commercial vehicles serving its businesses
+    const occ = e.occupied ?? ({} as Record<string, number>);
+    let vans = 0, trucks = 0;
+    for (const k of ["industrial", "retail", "office"] as const) {
+      const jobs = (occ[k] ?? 0) / SF_PER_JOB[k];
+      vans += jobs * QRFM[k].van; trucks += jobs * QRFM[k].truck;
+    }
+    const out = renters * MF_TRIPS_PER_HH * TOWN_EXTERNAL + vans * TOWN_EXTERNAL + trucks * TRUCK_EXTERNAL;
+    const perRoad = (beyond * TRIPS_PER_HH * COUNTY_TO_TOWN + out) / roads.size;
     for (const ids of roads.values()) for (const id of ids) adt[id] += perRoad;
   }
   return adt;
+}
+
+/**
+ * THE COUNTY BEYOND THE MAP, WHERE IT COMES IN: the households the region
+ * holds that the map does not (the population over the household, less the
+ * town's flats and every household drawn or built on the map), one share per
+ * old county road, at the road's outermost piece — the way they arrive.
+ * towngrowth.ts counts them in the trade areas; assignTraffic loads them on the
+ * roads.
+ */
+export function countyEntries(s: GameState, parcels: ParcelTable): { road: string; p: XY; n: number }[] {
+  const P = roadPlan(s);
+  const e = s.econ;
+  const mapped = sources(s, parcels).reduce((t, x) => t + x.n, 0);
+  const beyond = Math.max(0, (e.population ?? 0) / HH_SIZE - (e.occupied?.multifamily ?? 0) / 900 - mapped);
+  const C = P.centre as XY;
+  const far = new Map<string, { p: XY; d: number }>();
+  for (const a of P.arterials) {
+    if (a.kind !== "county") continue;
+    const r = a.id.split(".")[0], d = meters(a.mid as XY, C);
+    if (!far.has(r) || d > far.get(r)!.d) far.set(r, { p: a.mid as XY, d });
+  }
+  return [...far.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([road, x]) => ({ road, p: x.p, n: beyond / far.size }));
 }
 
 // ---------------------------------------------------------------- the county's money
@@ -335,27 +414,46 @@ export function tickRoads(s: GameState, parcels: ParcelTable, bbls: string[]) {
   }
   // THE YEAR: the levy, the counts, the programme.
   if (s.month % 12 === 0) {
-    const levy = countyLevy(s, parcels, bbls) * ROAD_SHARE;
-    R.fund += levy; R.levied += levy; R.levyYr = Math.round(levy);
     // the upkeep of the network as it stands: the arterials' lanes, and the plats' streets (two lanes, along half their lots' frontage)
     let laneM = 0;
     for (const a of P.arterials) laneM += (R.art[a.id]?.lanes ?? 2) * a.lenM;
     for (const pl of Object.values(s.plats ?? {})) if (pl.done) laneM += 2 * pl.lots.reduce((t, l) => t + l.f, 0) * 0.3048 / 2;
     const upkeep = Math.round(MAINT_PER_LANE_M * laneM * s.econ.costIdx);
-    // a county that cannot keep its roads defers the upkeep; it does not borrow for it
-    const paid = Math.min(Math.max(0, R.fund), upkeep);
-    R.fund -= paid; R.spent += paid; R.upkeepYr = upkeep;
     const adt = assignTraffic(s, parcels);
     const first = !Object.values(R.art).some((a) => a.adt0 > 0);
     for (const [id, a] of Object.entries(R.art)) { a.adt = Math.round(adt[id] ?? 0); if (first) a.adt0 = a.adt; }
-    // the county's programme: the worst-overloaded two-lane pieces first, as the fund allows
+    // the county's programme: every two-lane piece whose design-year traffic outgrows two lanes,
+    // the worst-loaded today first, as the fund allows
+    const gr = Math.max(0, tenYearGrowth(s));
+    const growTo = Math.pow(1 + gr, (DESIGN_M + BUILD_M) / 12 + DESIGN_YEARS);
+    const widenCost = (id: string) => Math.round(WIDEN_PER_M * (P.arterials.find((x) => x.id === id)?.lenM ?? 0) * s.econ.costIdx);
     const warranted = Object.entries(R.art)
-      .filter(([, a]) => a.lanes === 2 && !a.status && a.adt > CAPACITY[2])
+      .filter(([, a]) => a.lanes === 2 && !a.status && a.adt * growTo > CAPACITY[2])
       .sort(([ia, a], [ib, b]) => b.adt - a.adt || ia.localeCompare(ib));
+    // THE LEVY IS THE BUDGET, UP TO ITS LIMIT. A county board levies what its road
+    // budget needs — the year's upkeep, the projects it has warranted, a working
+    // reserve — up to the statutory share, not the share whatever the budget
+    // (Illinois Truth in Taxation, 35 ILCS 200/18-55 ff.: the levy is adopted
+    // against the budget; the county highway and road district rates are ceilings, 605 ILCS 5/5-601 and 5/6-501).
+    // Levying the ceiling every year piled $19-64M in thirty years in a fund that
+    // had nothing to spend it on. The reserve is two months of the fund's own
+    // spending (GFOA best practice, unrestricted fund balance: no less than two
+    // months of regular operating expenditure) [S]. What the county does not levy
+    // stays with the taxpayers; the rate the engine charges the player
+    // (value.ts taxRate) is the whole bill's, of which this share is notional.
+    const capital = warranted.reduce((t, [id]) => t + widenCost(id), 0);
+    const need = Math.max(0, upkeep * (1 + 2 / 12) + capital - R.fund);
+    const ceiling = countyLevy(s, parcels, bbls) * ROAD_SHARE;
+    const levy = Math.min(ceiling, need);
+    R.fund += levy; R.levied += levy; R.levyYr = Math.round(levy);
+    R.unlevied = Math.round((R.unlevied ?? 0) + (ceiling - levy));
+    // a county that cannot keep its roads defers the upkeep; it does not borrow for it
+    const paid = Math.min(Math.max(0, R.fund), upkeep);
+    R.fund -= paid; R.spent += paid; R.upkeepYr = upkeep;
     for (const [id, a] of warranted) {
       const piece = P.arterials.find((x) => x.id === id);
       if (!piece) continue;
-      const cost = Math.round(WIDEN_PER_M * piece.lenM * s.econ.costIdx);
+      const cost = widenCost(id);
       if (R.fund < cost) break;
       R.fund -= cost; R.spent += cost;
       a.status = "programmed"; a.cost = cost; a.startM = s.month + DESIGN_M; a.openM = s.month + DESIGN_M + BUILD_M;
@@ -369,7 +467,7 @@ export function tickRoads(s: GameState, parcels: ParcelTable, bbls: string[]) {
 /** The roads at a glance, for the yearly record. */
 export function roadsSummary(s: GameState) {
   const R = s.growth?.roads;
-  if (!R) return { widened: 0, highway: 0, programmed: 0, overloaded: 0, maxAdt: 0, fund: 0, levy: 0, upkeep: 0 };
+  if (!R) return { widened: 0, highway: 0, programmed: 0, overloaded: 0, maxAdt: 0, fund: 0, levy: 0, upkeep: 0, unlevied: 0 };
   const art = Object.values(R.art);
   return {
     widened: R.opened.filter((o) => o.kind === "widen").length,
@@ -377,7 +475,7 @@ export function roadsSummary(s: GameState) {
     programmed: art.filter((a) => a.status).length,
     overloaded: art.filter((a) => a.adt > CAPACITY[a.lanes]).length,
     maxAdt: Math.max(0, ...art.map((a) => a.adt)),
-    fund: Math.round(R.fund), levy: R.levyYr, upkeep: R.upkeepYr ?? 0,
+    fund: Math.round(R.fund), levy: R.levyYr, upkeep: R.upkeepYr ?? 0, unlevied: R.unlevied ?? 0,
   };
 }
 

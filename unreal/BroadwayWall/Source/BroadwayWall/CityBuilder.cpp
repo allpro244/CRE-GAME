@@ -1590,6 +1590,16 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 	{
 		const FBWParcel* P = City.FindParcel(L.Bbl);
 		if (!P || P->Ring.Num() < 3) continue;
+		// WHAT STANDS THERE NOW, for the parcel cards: the city file has a platted lot as
+		// vacant land, so a house built on it would read "bldg 0 sf" without this
+		if (L.Sf >= 0)
+		{
+			FBWParcel* Pm = const_cast<FBWParcel*>(P);
+			Pm->BldgArea = L.Sf;
+			Pm->Cls = L.Cls;
+			Pm->Floors = L.Floors;
+			Pm->YearBuilt = L.Year;
+		}
 		TArray<FVector2D> Ring = P->Ring;
 		if (const TArray<FString>* Kids = SiteDeeds.Find(L.Bbl))
 		{

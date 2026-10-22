@@ -5571,7 +5571,13 @@ export function tickEcon(s: GameState) {
       const ref = (e.hhCreditRef ??= raw);
       e.hhCredit = (e.hhCredit ?? 1) + (raw / ref - (e.hhCredit ?? 1)) / 12;
     }
-    const driver = (k === "multifamily" ? hhIdx * (e.tenureIdx ?? 1)
+    // ...LESS THE HOUSEHOLDS THE NEW HOUSES TOOK (homes.ts). A new house is
+    // not a flat: it houses one household, owner or a single-family renter,
+    // that would otherwise rent an apartment, directly or down the vacancy
+    // chain a move-up purchase starts. Each one takes an average 900-sf flat
+    // (RentCafe / Census new-apartment average) out of the town's demand.
+    const housed = k === "multifamily" && e.newHomes ? (e.newHomes * 900) / Math.max(1, e.newHomesRef ?? 1) : 0;
+    const driver = (k === "multifamily" ? Math.max(0.05, hhIdx * (e.tenureIdx ?? 1) - housed)
       : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32) * (e.hhCredit ?? 1)
       : jobIdx * tradeMix) * secIdx;
     // A CLASS'S MOMENTUM IS ITS TENANTS' GROWTH AGAINST NORMAL. Monthly growth

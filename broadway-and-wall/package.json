@@ -38,6 +38,8 @@
     "sectorexit": "node test/sectorexit.mjs",
     "land": "node test/land.mjs",
     "region": "node test/region.mjs",
+    "region:reload": "node test/region-reload.mjs",
+    "region:longrun": "node --expose-gc test/region-longrun.mjs",
     "landdev": "node test/landdev.mjs",
     "lotsplit": "node test/lotsplit.mjs",
     "products": "node test/products.mjs",

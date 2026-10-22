@@ -12,11 +12,11 @@ import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParc
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLandDev, materializePlats } from "./landdev";
-import { tickSplits, tickRivalSplits, materializeSplits } from "./lotsplit";
+import { tickLandDev, materializePlats, materializePlat } from "./landdev";
+import { tickSplits, tickRivalSplits, materializeSplits, materializeSplit } from "./lotsplit";
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
-import { materializeNeighbourhoods } from "./unpack";
+import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
 import { settleLeasingPayables, tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
@@ -37,7 +37,7 @@ import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
 import { tickCorporate } from "./corporate";
-import { initRivals, tickRivals, tickRivalAssembly, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
+import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -641,6 +641,37 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
 }
 
 /**
+ * PUT THE CUT LOTS BACK: every finished plat, recorded split and unpacked
+ * neighbourhood into the parcel table and the BBL list, in place, IN THE ORDER
+ * THEY WERE CUT (s.cutOrder). Idempotent and a pure function of the state.
+ *
+ * The order is the point. The BBL list is the order every loop in the engine
+ * walks the town, and for a BBL past 2^32 (all cut lots) the parcel table's
+ * own key order is its insertion order too. A live game appends each plat's
+ * lots the month its streets finish; the per-kind materializers walk their
+ * records in the order they were FILED. Measured on the 100-year region runs
+ * (test/region-longrun.mjs): seeds 1-3 at year 25 rebuilt the same parcels in a
+ * different order, and twelve months on the reloaded game had diverged from
+ * the one that was saved. Saves from before the log replay by kind, as before.
+ */
+export function restoreCuts(s: GameState, parcels: ParcelTable, bbls?: string[]): string[] {
+  const added: string[] = [];
+  if (s.cutOrder?.length) {
+    const splits = new Map((s.splits ?? []).map((sp) => [String(sp.id), sp]));
+    for (const c of s.cutOrder) {
+      const k = c.slice(2);
+      if (c[0] === "p") materializePlat(s, parcels, bbls, s.plats?.[k], added);
+      else if (c[0] === "s") materializeSplit(parcels, bbls, splits.get(k), added);
+      else if (c[0] === "u") materializeNeighbourhood(s, parcels, bbls, Number(k), added);
+    }
+  }
+  if (s.plats) added.push(...materializePlats(s, parcels, bbls));
+  if (s.splits) added.push(...materializeSplits(s, parcels, bbls));
+  if (s.growth?.unpacked) added.push(...materializeNeighbourhoods(s, parcels, bbls));
+  return added;
+}
+
+/**
  * One month, mutating `s` in place. The public `advanceMonth` clones first;
  * `advanceUntilAttention` clones once and then ticks many months on the copy
  * — otherwise a year click paid for twelve deep-clones of a growing save, which
@@ -651,9 +682,8 @@ function tickMonth(
 ): void {
   if (s.gameOver) return;
   // a save's finished plats are lots before anything reads the table (landdev.ts)
-  if (s.plats) materializePlats(s, parcels, bbls);
-  if (s.splits) materializeSplits(s, parcels, bbls);
-  if (s.growth?.unpacked) materializeNeighbourhoods(s, parcels, bbls);
+  restoreCuts(s, parcels, bbls);
+  setRivalAdjacency(adjacency);
   s.month++;
   const drawnAtOpen = s.loc?.drawnTotal ?? 0;
 

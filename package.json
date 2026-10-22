@@ -7,6 +7,7 @@
     "check": "pnpm --dir broadway-and-wall check",
     "mdga": "pnpm --dir broadway-and-wall mdga",
     "gate": "pnpm --dir broadway-and-wall gate",
+    "playtest": "node broadway-and-wall/tools/playtest.mjs",
     "readiness": "pnpm --dir broadway-and-wall readiness",
     "engine": "pnpm --dir broadway-and-wall engine"
   },

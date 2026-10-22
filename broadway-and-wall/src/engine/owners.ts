@@ -60,6 +60,7 @@ import { resolveRec, holdingValue } from "./value";
 import { ownerOf, seatProfile, grudgeOf, NEVER_SELLS_TO_YOU } from "./rivals";
 import { PROFILE_OF } from "./competitorTraits";
 import { isCivicLand } from "./demand";
+import { tableVersion } from "./tableVersion";
 
 /** Deterministic 0..1 from a string. Never touches the RNG stream. */
 function hash01(str: string): number {
@@ -317,6 +318,7 @@ function tierOf(rec: ParcelRecord, r: number): HolderTier {
 // is immutable and identity-stable for the run, so a WeakMap is the exact key
 // and lets abandoned towns be collected without a manual size cap.
 const REGISTRY = new WeakMap<ParcelTable, Map<number, Holder[]>>();
+const REGISTRY_V = new WeakMap<ParcelTable, number>();
 const TIER_POOLS = new WeakMap<Holder[], { all: Record<HolderTier, Holder[]>; dirt: Record<HolderTier, Holder[]> }>();
 export function register(s: GameState, parcels: ParcelTable): Holder[] {
   const reg = baseRegister(s, parcels);
@@ -328,6 +330,9 @@ export function register(s: GameState, parcels: ParcelTable): Holder[] {
 /** The hash-derived register alone — the pools every unpinned deed is drawn from. */
 function baseRegister(s: GameState, parcels: ParcelTable): Holder[] {
   let bySeed = REGISTRY.get(parcels);
+  // per cut of the table (tableVersion.ts): an unpacked neighbourhood adds built deeds, and the register is sized on them
+  if (bySeed && REGISTRY_V.get(parcels) !== tableVersion(parcels)) bySeed = undefined;
+  REGISTRY_V.set(parcels, tableVersion(parcels));
   if (!bySeed) {
     bySeed = new Map<number, Holder[]>();
     REGISTRY.set(parcels, bySeed);

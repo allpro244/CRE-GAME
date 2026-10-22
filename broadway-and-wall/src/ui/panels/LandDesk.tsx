@@ -24,6 +24,7 @@ import {
   type DesignPnl,
 } from "@/engine/platdesign";
 import { entitleQuote } from "@/engine/landdev";
+import { spendable } from "@/engine/credit";
 import { usd } from "@/ui/format";
 import { Row, Verdict } from "@/ui/panels/shared";
 
@@ -175,15 +176,29 @@ export default function LandDesk({ bbl }: { bbl: string }) {
             </>
           )}
           {app && <div className="hint">Before the board: decides {monthLabel(app.decideM)}, {app.lots} lots, {Math.round(app.odds * 100)}% odds. The plat is on file and fixed until then.</div>}
-          {owned && rz && !plat && (
-            <>
-              {rz.lots !== undefined && pnl.lots > rz.lots && <div className="hint alarm">{pnl.lots} lots against {rz.lots} approved. Take lots out (merge, open space, an amenity) or file again.</div>}
-              <button type="button" className="btn btn-buy" disabled={rz.lots !== undefined && pnl.lots > rz.lots}
-                onClick={() => buildDesigned(bbl, design, lev)}>
-                Build the streets · {M(ad.equityNow)} yours{ad.loan > 0 && lev > 0 ? ` · ${M(ad.loan)} A&D` : ""}
-              </button>
-            </>
-          )}
+          {owned && rz && !plat && (() => {
+            // THE ENGINE'S OWN REFUSALS, SAID BEFORE THE CLICK (platdesign.ts startDesignedPlat). The
+            // button stayed lit over a tract bought on a land loan, or a plat the firm cannot fund,
+            // and the refusal arrived only as a toast (tools/playtest.mjs, 2026-10-22).
+            const h = game.holdings[bbl];
+            const purse = spendable(game, parcels).total;
+            const over = rz.lots !== undefined && pnl.lots > rz.lots;
+            const why = over ? null
+              : h?.loan ? "Pay off the loan on the tract first (the Money tab): the A&D lender takes the first lien."
+              : h?.sale ? "It is listed for sale. Take it off the market before you build streets on it."
+              : ad.equityNow > purse ? `You can raise ${M(purse)} of the ${M(ad.equityNow)} that is yours: take more of the A&D offer, or plat fewer lots.`
+              : null;
+            return (
+              <>
+                {over && <div className="hint alarm">{pnl.lots} lots against {rz.lots} approved. Take lots out (merge, open space, an amenity) or file again.</div>}
+                {why && <div className="hint alarm">{why}</div>}
+                <button type="button" className="btn btn-buy" disabled={over || !!why}
+                  onClick={() => buildDesigned(bbl, design, lev)}>
+                  Build the streets · {M(ad.equityNow)} yours{ad.loan > 0 && lev > 0 ? ` · ${M(ad.loan)} A&D` : ""}
+                </button>
+              </>
+            );
+          })()}
           {plat && <div className="hint">{plat.done ? "Platted: the lots are deeds. Sell them to the builders from a lot's card." : `Streets going in, finished ${monthLabel(plat.doneM)}.`}</div>}
         </div>
       )}

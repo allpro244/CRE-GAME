@@ -125,7 +125,7 @@ function privately<T>(s: GameState, key: string, fn: () => T): T {
 function eligible(s: GameState, parcels: ParcelTable, bbl: string) {
   if (s.holdings[bbl]) return null;
   const rec = resolveRec(parcels, s, bbl);
-  if (!rec || rec.class === "land" || !(rec.bldgArea > 0) || !isCommercial(rec)) return null;
+  if (!rec || rec.class === "land" || rec.class === "house" || !(rec.bldgArea > 0) || !isCommercial(rec)) return null;
   return rec;
 }
 
@@ -823,7 +823,7 @@ const MF_LEASEUP = 0.08;
 function flatsEligible(s: GameState, parcels: ParcelTable, bbl: string) {
   if (s.holdings[bbl]) return null;
   const rec = resolveRec(parcels, s, bbl);
-  if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) return null;
+  if (!rec || rec.class === "land" || rec.class === "house" || !(rec.bldgArea > 0)) return null;
   return useRentableSf(rec, "multifamily") > 0 ? rec : null;
 }
 

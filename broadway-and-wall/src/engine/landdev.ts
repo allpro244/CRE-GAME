@@ -24,6 +24,7 @@
 import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { GameState, EntitlementApplication, PlatRecord, Holding, Loan } from "./types";
 import { monthLabel, cloneState } from "./types";
+import { bumpTable } from "./tableVersion";
 import { rng } from "./market";
 import { resolveRec } from "./value";
 import { recordPropertyEvent } from "./history";
@@ -341,17 +342,26 @@ function hoaRecords(parent: ParcelRecord, plat: PlatRecord): ParcelRecord[] {
  */
 export function materializePlats(s: GameState, parcels: ParcelTable, bbls?: string[]): string[] {
   const added: string[] = [];
-  for (const plat of Object.values(s.plats ?? {})) {
-    if (!plat.done) continue;
-    const parent = parcels[plat.parent];
-    if (!parent?.tract) continue;
-    for (const r of [...lotRecords(parent, plat, s.rezoned?.[plat.parent]), ...hoaRecords(parent, plat)]) {
-      if (parcels[r.bbl]) continue;
-      parcels[r.bbl] = r;
-      bbls?.push(r.bbl);
-      added.push(r.bbl);
-    }
+  for (const plat of Object.values(s.plats ?? {})) materializePlat(s, parcels, bbls, plat, added);
+  return added;
+}
+/** One finished plat's lots into the table (sim.ts restoreCuts replays them in the order they were cut). */
+export function materializePlat(s: GameState, parcels: ParcelTable, bbls: string[] | undefined, plat: PlatRecord | undefined, added: string[] = []): string[] {
+  if (!plat?.done) return added;
+  const parent = parcels[plat.parent];
+  if (!parent?.tract) return added;
+  // a plat's records go in together, so its first lot standing means all of them do: this
+  // runs at the top of every month for every plat, and regenerating the records to find
+  // them all present was most of what it cost
+  if (plat.lots.length && parcels[lotBbl(parent, 1)]) return added;
+  const n0 = added.length;
+  for (const r of [...lotRecords(parent, plat, s.rezoned?.[plat.parent]), ...hoaRecords(parent, plat)]) {
+    if (parcels[r.bbl]) continue;
+    parcels[r.bbl] = r;
+    bbls?.push(r.bbl);
+    added.push(r.bbl);
   }
+  if (added.length > n0) bumpTable(parcels);
   return added;
 }
 
@@ -359,6 +369,7 @@ function completePlats(s: GameState, parcels: ParcelTable, bbls: string[]) {
   for (const plat of Object.values(s.plats ?? {})) {
     if (plat.done || s.month < plat.doneM) continue;
     plat.done = true;
+    (s.cutOrder ??= []).push("p:" + plat.parent);
     s.platted = { ...(s.platted ?? {}), [plat.parent]: s.month };
     const added = materializePlats(s, parcels, bbls);
     const parentH = s.holdings[plat.parent];

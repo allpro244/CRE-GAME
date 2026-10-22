@@ -50,6 +50,7 @@ bool FBWRenderView::Parse(const FString& Json)
 		L.Look = BWReadLook(O, TEXT("look"));
 		O->TryGetStringField(TEXT("form"), L.Form);
 		O->TryGetStringField(TEXT("deco"), L.Deco);
+		O->TryGetNumberField(TEXT("sf"), L.Sf);
 		L.Tiers = BWReadTiers(O);
 	}
 

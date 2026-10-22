@@ -44,6 +44,7 @@ import { HoldingsBuildings, HoldingsLand } from "./HoldingsNext";
 import { MarketForSale } from "./MarketNext";
 import { MarketBooks, MarketDistressed, MarketSites } from "./MarketMore";
 import { CapitalLoans, CapitalOverview } from "./CapitalNext";
+import { CapitalBooks, CapitalInvestors, CapitalLenders } from "./CapitalMore";
 import { PipelineBoard, PipelineBuilding, PipelineBuying, PipelineSelling } from "./PipelineNext";
 
 const PAGE_VIEW: Partial<Record<Page, ReactElement>> = {
@@ -239,6 +240,9 @@ const NEXT_VIEW: Record<string, ReactElement> = {
   "v:books": <MarketBooks />,
   "v:capital": <CapitalOverview />,
   "v:loans": <CapitalLoans />,
+  "v:lenders": <CapitalLenders />,
+  "v:investors": <CapitalInvestors />,
+  "v:fbooks": <CapitalBooks />,
 };
 const viewOf = (k: string): ReactElement | undefined => NEXT_VIEW[k] ?? PAGE_VIEW[k as Page];
 

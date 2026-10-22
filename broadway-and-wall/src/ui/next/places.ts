@@ -64,9 +64,9 @@ export const PLACES: Place[] = [
       { id: "overview", label: "Overview", page: "debt", view: "capital", width: "wide" },
       { id: "loans", label: "Loans", page: "debt", view: "loans", width: "wide" },
       { id: "debt", label: "Debt desk", page: "debt", width: "wide" },
-      { id: "lenders", label: "Lenders", page: "banks", width: "wide" },
-      { id: "investors", label: "Investors", page: "investors", width: "wide" },
-      { id: "books", label: "Books", page: "books", width: "wide" },
+      { id: "lenders", label: "Lenders", page: "banks", view: "lenders", width: "wide" },
+      { id: "investors", label: "Investors", page: "investors", view: "investors", width: "wide" },
+      { id: "books", label: "Books", page: "books", view: "fbooks", width: "wide" },
     ],
   },
   {

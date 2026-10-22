@@ -1319,6 +1319,60 @@ park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
   by the engine's own teardowns; counted. `unpackNeighbourhood(id)` redraws a
   reserved neighbourhood into deeds (7+id+n, R-1 FAR 0.45) as family homes —
   no automatic trigger yet. `node test/region-growth.mjs [seed]` (Y=years).
+- **Phase 4b, growth that shows (Oct 2026, claude/growth-tuning).** Measured
+  over 30 years on seeds 1-3 before: no county widening ever (peak 7.7-14K
+  AADT against 15K, the fund at $19-64M), no trade-area centre, upzoning 0-2,
+  inner ring rebuilt 9-52 houses. What was wrong, and what changed:
+  ROADS — the assignment loaded only the county's households coming IN, so
+  growth on the map moved households from "beyond" to the plats and peak
+  traffic FELL as the town grew (seed 1 9.9K -> 8.7K); the town's own flats and
+  its businesses' trucks drove nowhere. Now the town's households drive out
+  (ITE 220, 6.74 trips; 20% internal-external, NCHRP 716) and commercial
+  vehicles serve its jobs (FHWA QRFM Table 4.1 rates; half the trucks cross
+  the town line). The county programmes a widening on its DESIGN-YEAR forecast
+  (AASHTO: 20 years after opening, grown at the households' ten-year rate), and
+  it LEVIES THE BUDGET — upkeep, the warranted projects, a two-month reserve
+  (GFOA) — up to the statutory share, instead of the ceiling every year
+  (`roads.unlevied` records what it left with the taxpayers). Extensions and
+  intersection upgrades are NOT modelled: the plan has no unbuilt arterials and
+  access has no junction delay, so neither would change a commute — a citygen
+  change first. COMMERCE — the county beyond the map shops in town (half its
+  trips, COUNTY_TO_TOWN), counted where it drives in, on its own road
+  (`roads.ts countyEntries`). Centres now get proposed and mostly FAIL ON THE
+  PRO FORMA (news and `town.failedWhy` say so: 5-7% yield on cost against
+  8-9.7% required), because a fringe site's retail rent reads the demand score,
+  which has no car-access or rooftop term — the HANDOFF's open question above.
+  The honest next mechanism is the grocer as a build-to-suit tenant (anchor rent
+  set by its sales: households x food-at-home spend, BLS CEX), not a spec
+  centre. THE RING — zoning does not bind (R4-R8 at FAR 4-19 over 1-2-storey
+  frames), so there is nothing for the plan commission to upzone; the pressure
+  shows as teardowns. The teardown sample was drawn from every deed, and the
+  table fills with farms, plat lots and their houses (2,026 -> 4,589 on seed 1),
+  so the town was looked at less and less as its land rose; redevelopers now
+  scout the town's own deeds (`dev.ts teardownScope`, islands unchanged).
+  Measured house by house (residual of the best scheme against value standing),
+  ~16% of ring houses pencil at the opening, ~8% at year 20, and those only by
+  ~9%: the ring densifies slowly because it barely pays, which is the honest
+  answer. 30-year results are in PR #448.
+- **Land developers keep books (Oct 2026, claude/landdev-books).** The named
+  developers were counts with an unlimited purse: they bought every farm whose
+  read cleared, and one whose streets did not pay banked the land forever at no
+  cost. Now each is founded with its own money (homes.ts's purse) and a
+  construction desk: 65% against the land and 75% against the streets (12 CFR
+  34 App. A), interest out of cash every month at index + 2.4, the board's fees
+  and closing in cash, paid by the builders lot by lot (homes.ts `landDevSold`)
+  with a 120% release to the desk. It signs only a deal it can carry to the end
+  — its share of the land, fees AND streets, net of what it has promised its
+  other farms. A refused farm is sold back at the corn. Banked land costs the
+  coupon; three months unable to pay and it fails, its desk sells the farms
+  (keeping any zoning: an already-zoned farm reads with no board) and its
+  plats' lots go to the builders through the market, the shortfall the desk's
+  loss. They COMPETE WITH THE PLAYER: a farm the player is negotiating for (not
+  yet under contract) stays on their market, the seller's price is the
+  player's offer if that is higher, and a developer who reads it better buys it
+  out from under the player (`voidContract`, with the news).
+  `region-growth` prints each developer's cash, debt and lots sold and checks
+  the debt against its loans.
 - `pnpm region` (test/region.mjs): determinism, record sanity, reserved land
   never reaching the market, the island untouched by plan 15, month tick
   timing. `node test/bwcity-contract.mjs <file>` checks an Unreal export;

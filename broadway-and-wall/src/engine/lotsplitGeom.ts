@@ -193,7 +193,8 @@ export function cutPieces(ring: LL[], cuts: SplitCut[]): LL[][] {
 
 /** Street frontage of one ring, measured edge by edge (see the head of the file). */
 function frontage(fr: Frame, r: XY[], streets: { pts: XY[]; w: number; id: number }[]) {
-  const byStreet = new Map<number, number>();
+  // a run is one street on one bearing: a centreline drawn round a corner as one feature is still two fronts
+  const byStreet = new Map<string, number>();
   let best: { id: number; a: XY; b: XY; len: number } | null = null;
   for (let i = 0; i < r.length; i++) {
     const a = r[i], b = r[(i + 1) % r.length];
@@ -218,7 +219,9 @@ function frontage(fr: Frame, r: XY[], streets: { pts: XY[]; w: number; id: numbe
       if (hit >= 0) runs.set(hit, (runs.get(hit) ?? 0) + L / n);
     }
     for (const [id, len] of runs) {
-      byStreet.set(id, (byStreet.get(id) ?? 0) + len);
+      const bearing = Math.round((((Math.atan2(uy, ux) * 180) / Math.PI + 360) % 180) / 20) % 9;
+      const key = `${id}:${bearing}`;
+      byStreet.set(key, (byStreet.get(key) ?? 0) + len);
       if (!best || len > best.len) best = { id, a, b, len };
     }
   }
@@ -360,6 +363,30 @@ export function fracCut(geo: SiteGeo, frac: number, along: "width" | "depth"): S
   const t = Math.min(...ts) + (Math.max(...ts) - Math.min(...ts)) * Math.min(1, Math.max(0, frac));
   const o: XY = [ax[0] * t, ax[1] * t];
   return [roundLL(toLL(fr, o)), roundLL(toLL(fr, [o[0] + dir[0] * 10, o[1] + dir[1] * 10]))];
+}
+
+/**
+ * THE LAND BESIDE THE BUILDING: cut lines square to the frontage just clear of
+ * the building's side yard on either side, and parallel to it just clear of
+ * its rear — the excess land a building on an oversized lot does not use.
+ * Candidates only; the code decides (lotsplit.ts splitQuote).
+ */
+export function buildingCuts(geo: SiteGeo, yardFt: number): SplitCut[] {
+  if (!geo.footprints.length) return [];
+  const { fr, r, u } = mainFront(geo);
+  const n: XY = [-u[1], u[0]];
+  const pu = (p: XY) => p[0] * u[0] + p[1] * u[1], pv = (p: XY) => p[0] * n[0] + p[1] * n[1];
+  const fp = geo.footprints.flatMap((f) => f.map((p) => toXY(fr, p)));
+  const gap = yardFt * FT + 0.3;
+  const out: SplitCut[] = [];
+  const line = (o: XY, d: XY): SplitCut => [roundLL(toLL(fr, o)), roundLL(toLL(fr, [o[0] + d[0] * 10, o[1] + d[1] * 10]))];
+  const [U0, U1] = [Math.min(...r.map(pu)), Math.max(...r.map(pu))], [V0, V1] = [Math.min(...r.map(pv)), Math.max(...r.map(pv))];
+  const [u0, u1] = [Math.min(...fp.map(pu)), Math.max(...fp.map(pu))], [v0, v1] = [Math.min(...fp.map(pv)), Math.max(...fp.map(pv))];
+  if (u1 + gap < U1 - 1) out.push(line([u[0] * (u1 + gap), u[1] * (u1 + gap)], n));
+  if (u0 - gap > U0 + 1) out.push(line([u[0] * (u0 - gap), u[1] * (u0 - gap)], n));
+  if (v1 + gap < V1 - 1) out.push(line([n[0] * (v1 + gap), n[1] * (v1 + gap)], u));
+  if (v0 - gap > V0 + 1) out.push(line([n[0] * (v0 - gap), n[1] * (v0 - gap)], u));
+  return out;
 }
 
 /** The site in its frontage frame, for a desk to draw square to the street: corners and the frontage run, local metres. */

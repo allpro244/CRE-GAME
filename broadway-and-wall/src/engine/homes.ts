@@ -33,6 +33,7 @@ import { resolveRec, assetValue, initialCondition, farmUsePsf } from "./value";
 import { INFRA_PER_FRONT_FT, IMPACT_FEE, ENTITLE_PER_LOT, ENTITLE_FIXED, PLAT_STREET_SHARE } from "./landdev";
 import { sweepLocIdleCash } from "./credit";
 import { pickConstructionDesk } from "./dev";
+import { landDevSold } from "./growth";
 import { lenderByName, chargeLenderLoss } from "./lenders";
 import { saleTaxQuote } from "./actions";
 import { recordComp } from "./comps";
@@ -750,6 +751,8 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
         } else if (f2.market.length) {
           bbl = f2.market.shift()!;
           lotCost = Math.round(q.residualPsf * (parcels[bbl]?.lotArea ?? 0) * pm.disc);
+          // the land developer who platted it is paid, and its desk released (growth.ts)
+          landDevSold(s, parent, lotCost);
           loan = builderPays(s, b, lotCost, LOT_ADVANCE);
         }
         if (!bbl) break;

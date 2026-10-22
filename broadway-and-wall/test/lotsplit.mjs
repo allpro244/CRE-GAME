@@ -114,6 +114,8 @@ function builtScenarios(W, where) {
     const cands = [];
     for (const k of [2, 3, 4, 5]) for (const c of E.equalCuts(geo, k)) cands.push(c);
     for (const fr of [0.3, 0.5, 0.7]) cands.push(E.fracCut(geo, fr, "depth"));
+    // the desk's "Excess land": lines just clear of the building's yard
+    for (const c of E.buildingCuts(geo, E.splitRule(W.parcels[b].zoneDist).sideFt)) cands.unshift(c);
     const gT = asOwner(W, b);
     let got = false;
     for (const c of cands) {

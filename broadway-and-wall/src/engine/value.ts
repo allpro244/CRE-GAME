@@ -1326,7 +1326,7 @@ const LAND_SCALARS = [
   "creditIdx", "phase", "constructionAppetite", "vintageMean",
   // the homes market (homeprice.ts homeLotBidPsf) reads econ.homes, wageIdx and
   // population; homes.ts bumps `homesStamp` whenever econ.homes is rewritten
-  "homesStamp", "wageIdx", "population", "homesG12",
+  "homesStamp", "wageIdx", "population", "homesG12", "priceLevel",
 ] as const;
 const LAND_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 const LAND_MKT_LEN = LAND_SCALARS.length + LAND_DICTS.length * (1 + LAND_CLASSES.length);
@@ -1478,7 +1478,18 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   // quietly dissolved to nothing in real terms (measured: fringe lots pricing
   // at year-0 nominal dollars against a 6-7x price level). Dirt with no
   // income case still trades in the dollars of the day it trades.
-  const texture = rec.landPsf * econ.landIdx * level * envelopeRealisation(rec) * (econ.cpi ?? 1);
+  // ...AND IN THIS TOWN'S DOLLARS. `rec.landPsf` is stamped against the
+  // reference table, like RENT_BASE and HARD_COST_PSF; rents, construction and
+  // pay all carry the seed's `priceLevel` (market.ts EVERY TOWN HAS ITS OWN
+  // DOLLARS) and the farm bid below does too, but this floor did not — and
+  // `landIdx`, a ratio of rent to cost, cancels the level out. So in a town
+  // whose dollars buy four times what the table's do, dirt priced at the
+  // table's money: measured on the region map (seeds 1-3) the inner ring's
+  // houses, valued at the land under them, came to 12-23x the town's median
+  // household income, against 3-6x in American towns (NAR / Census). The
+  // floor is a location texture, and a location premium is a share of the
+  // town's prices, not of somebody else's.
+  const texture = rec.landPsf * econ.landIdx * level * envelopeRealisation(rec) * (econ.cpi ?? 1) * (econ.priceLevel ?? 1);
 
   // HIGHEST AND BEST USE, NOT THE MAX OF THREE APPRAISALS.
   //

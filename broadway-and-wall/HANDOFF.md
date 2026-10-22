@@ -1239,8 +1239,7 @@ park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
   is exactly what that buyer carries at 6.72%. Sticky: it chases at
   HPI_CHASE_M, so a rate shock hits sales first and prices later. Each plat
   carries a location multiple: inner-ring resale comps (geometric mean near
-  the plat against the town, RELATIVE only — their level carries land texture
-  in reference dollars and is ~10x local incomes, an open inconsistency) times
+  the plat against the town, RELATIVE only) times
   a capitalised commute. Vertical $123/sf x costIdx (NAHB 2024 construction
   share 64.4% on the Census median), overhead 5.2%, selling 4.6%, margin 11%,
   construction interest at index + 2.4 → the builder's residual, which
@@ -1249,14 +1248,39 @@ park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
   rng stream, households x 0.52%/yr (Census sales over households) x
   (0.4 + 0.6 x growth/0.77%) x affordability share / AFFORD_REF, split among
   sellers, elasticity 4 on a seller's price. A buyer signs on a house and
-  closes at completion (7 months). Your houses: draws "dev" into the lot's
-  basis, closings "sold" net of 4.6% selling, profit taxed at
-  INCOME_TAX_RATE, inventory carried at cost in portfolioMark. Builders
-  (named, off-book, `s.homes.builders`) offer to take down your lots at the
-  residual on an 18-month contract, take them as they start, and walk when
-  the residual falls 30% under the contract. A closed house, or a builder's
-  lot, is off the market through `isCivicLand`. `farMaxFor` no longer floors
-  R-2 at FAR 2 (`LOW_DENSITY_ZONES`). `pnpm homebuild`.
+  closes at completion (7 months); one community sells at most 6 a month
+  (COMMUNITY_SALES_CAP, top-decile absorption), and past that a second
+  builder may enter.
+- **Phase 3b (Oct 2026): the player is the land developer only** (owner's
+  decision). R-2 is a homes-only district (`value.ts HOMES_ONLY_ZONES`:
+  `zonePermits` / `zoneUseBar` refuse every commercial class there, so no
+  scheme, residual, holder bid, city start or develop desk puts flats on a
+  plat lot — the playtest found a lot marked at a flats residual 7x the
+  builder's bid, $5.3M of phantom net worth). Islands keep the Houston rule.
+  The lots desk sells to builders: takedown and whole-plat offers to Sign or
+  Pass, or list the plat at an ask (a builder whose residual clears it signs
+  at it). A refused rezoning waits 12 months (`REFILE_BAR_M`). The streets can
+  go in on an **A&D loan** (`adloan.ts`: 75% of finished-lot value and of
+  cost, index + 2.4, 36 months, a 120% release price per lot sold, one
+  extension, then the desk takes the lots). **Homebuilders keep books**
+  (`HomeBuilder`): founding capital, an AD&C line at a construction desk
+  (75% of lots, 85% of house draws — interagency supervisory LTVs) on that
+  desk's loan book, interest from cash, release at each closing; three
+  months short and a builder fails, its desk sells its book to another
+  builder 25% under mark and charges the loss. **Houses are real**: queued on
+  the delivery queue (source "homes") into the multifamily stock, standing as
+  `built` houses (`house: true`, renderView deco "house", Unreal lays the
+  house mesh), and once a family closes, ordinary houses on the market again.
+- **The land texture now carries the town's dollars** (`readLand`: `* priceLevel`).
+  It had none — `landIdx` is a rent/cost ratio, so the floor priced dirt in
+  the reference table's money — and the inner ring's houses came to 12-23x
+  the median household income on seeds 1-3 (4.4-6.4x after). Measured on the
+  baseline's six island seeds (medians, before -> after): land median
+  $118 -> $76/sf, affordable-lot share 0.23% -> 1.96%, floor area +4.9%,
+  employed +16%, population +12%, demolitions +41%, multifamily vacancy
+  6.1% -> 5.0%, and the multifamily occupancy-cap rail binding 5% -> 17% of
+  months — watch that rail. BASELINE.json was already stale (27 of 45
+  metrics off before this change) and was not regenerated.
 - **No transit.** The demand blend's transit and second-centre terms (44 of
   100 points) read zero on the region, so its demand scores run lower than an
   island's. Car access as a demand term is a later-phase question.

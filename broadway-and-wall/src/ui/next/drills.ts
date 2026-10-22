@@ -192,7 +192,7 @@ export const DRILLS: Record<DrillKey, (g: GameState, p: ParcelTable, a: DrillArg
       const os = operatingStatement(r.rec, g.econ, r.h, g.month);
       return {
         title: "NOI / yr",
-        total: usd(ip.noi),
+        total: usd(ownedHoldingNoiYr(g, p, r.h)),
         rows: [
           row("Base rent", os.baseRent),
           row("Recovered opex", os.recoveredOpex),

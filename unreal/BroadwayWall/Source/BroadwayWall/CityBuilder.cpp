@@ -1659,6 +1659,45 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		View.Month, View.Year, Frames, Built, Cleared, Player.Num());
 }
 
+void ACityBuilder::SetLens(const FString& Key, const TMap<FString, double>& Values)
+{
+	// ONE TINTED SHEET OVER THE LOTS, like a planner's info map: the page's
+	// number for each deed (ui/next/lensData.ts, the same function the browser
+	// map paints), coloured on one ramp. Buildings stand through it, so the
+	// sheet sits just over the lot covers and under every roof.
+	if (!LensMesh)
+	{
+		LensMesh = NewObject<UProceduralMeshComponent>(this, TEXT("Lens"));
+		LensMesh->SetupAttachment(RootComponent);
+		LensMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		LensMesh->SetCastShadow(false);
+		LensMesh->RegisterComponent();
+	}
+	LensMesh->ClearAllMeshSections();
+	if (Key.IsEmpty() || Key == TEXT("none") || Values.Num() == 0) { LensMesh->SetVisibility(false); return; }
+	// 0..100 on a cool-to-hot ramp; "pencils" is 0..200 around 100 (bid over price);
+	// "owners" is a firm's index (-1 you, -2 a private holder)
+	static const FLinearColor Ramp[5] = { { 0.10f, 0.25f, 0.65f }, { 0.10f, 0.55f, 0.60f }, { 0.35f, 0.70f, 0.25f }, { 0.95f, 0.75f, 0.15f }, { 0.85f, 0.20f, 0.12f } };
+	auto RampAt = [](double T) { T = FMath::Clamp(T, 0.0, 1.0) * 4.0; const int32 I = FMath::Min(3, int32(T)); return FMath::Lerp(Ramp[I], Ramp[I + 1], float(T - I)); };
+	const bool bOwners = Key == TEXT("owners"), bPencils = Key == TEXT("pencils");
+	FMeshBuf M;
+	for (const TPair<FString, double>& V : Values)
+	{
+		const FBWParcel* P = City.FindParcel(V.Key);
+		if (!P || P->Ring.Num() < 3) continue;
+		FLinearColor C;
+		if (bOwners)
+			C = V.Value == -1 ? FLinearColor(0.95f, 0.70f, 0.10f) : V.Value == -2 ? FLinearColor(0.55f, 0.55f, 0.55f)
+				: FLinearColor::MakeFromHSV8(uint8((int32(V.Value) * 47) % 255), 170, 220);
+		else C = RampAt(bPencils ? V.Value / 200.0 : V.Value / 100.0);
+		M.AddCap(P->Ring, 40, C);
+	}
+	if (!M.V.Num()) { LensMesh->SetVisibility(false); return; }
+	M.Emit(LensMesh, 0, false);
+	LensMesh->SetMaterial(0, VertexColorMaterial);
+	LensMesh->SetVisibility(true);
+}
+
 void ACityBuilder::SetHighlight(const FBWParcel* Sel, const FBWParcel* Hover, double ViewDist)
 {
 	if (Hover == Sel) Hover = nullptr;

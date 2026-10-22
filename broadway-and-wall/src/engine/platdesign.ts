@@ -163,18 +163,29 @@ export type DesignGeo = {
 
 /**
  * HORIZONTAL DEVELOPMENT, BY THE STREET. landdev.ts prices a plat at $40,000
- * a 65 ft lot (Zonda / John Burns finished-lot surveys) — $615 a foot of lot
- * frontage, or about $1,230 a foot of a double-loaded local street: pavement,
- * curb, water, sewer, storm and power run along the street, not the lot. A
- * drawn plat is priced on that same foot of street, so a collector no house
- * fronts, a cross street and a cul-de-sac's bulb are paid for, and a plat
- * that buys its lots with more street pays more per lot. Wider right-of-way
- * (a 66 ft collector against a 50 ft local) carries proportionally more
- * pavement. Plus the impact fee on every lot (landdev.ts).
+ * a 65 ft lot ($615 a foot of lot frontage), inside the $30-60k a lot that
+ * finished-lot development runs in the 2020s [S, approximate: developer pro
+ * formas cite $40-65k a lot; Midwest municipal assessment schedules put
+ * street, curb, sanitary and water alone at about $330-360 a front foot —
+ * Oshkosh WI 2024, Portage MI — before storm, grading, power and
+ * engineering]. That is per LOT on an ordinary plat, so it already pays for
+ * an ordinary plat's cross streets: a 65 x 115 ft lot on a double-loaded
+ * 50 ft street carries 32.5 ft of street, and a cross street every 1,200 ft
+ * (2 x 115 + 50 = 280 ft of it per 36 lots) adds 7.8 ft — 40.3 ft a lot. A
+ * foot of street therefore costs $40,000 / 40.3 = $993, derived from that
+ * geometry and not tuned. (This read $1,230 — two frontages a foot — which
+ * charged the cross streets twice.) A drawn plat pays for its own feet of
+ * street: a collector no house fronts, a single-loaded edge and a cul-de-sac
+ * bulb cost what they cost, so a plat that buys its lots with more street
+ * pays more a lot. A 66 ft collector carries proportionally more pavement
+ * than a 50 ft local. Plus the impact fee on every lot (landdev.ts). All in
+ * this town's construction dollars (costIdx).
  */
+const REF_STREET_FT_PER_LOT = 65 / 2 + (2 * 115 + 50) / (2 * Math.floor(1200 / 65));
+export const STREET_COST_PER_FT = (INFRA_PER_FRONT_FT * 65) / REF_STREET_FT_PER_LOT;
 export function designHorizontal(s: GameState, geo: Pick<DesignGeo, "streets" | "lots">) {
   const ci = s.econ.costIdx ?? 1;
-  const streets = Math.round(geo.streets.reduce((t, st) => t + st.lenFt * 2 * INFRA_PER_FRONT_FT * (st.rowFt / 50), 0) * ci);
+  const streets = Math.round(geo.streets.reduce((t, st) => t + st.lenFt * STREET_COST_PER_FT * (st.rowFt / 50), 0) * ci);
   const impact = Math.round(IMPACT_FEE * geo.lots.length * ci);
   return { streets, impact, months: INFRA_MONTHS(geo.lots.length) };
 }

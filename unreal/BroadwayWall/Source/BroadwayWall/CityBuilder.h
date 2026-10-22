@@ -39,6 +39,8 @@ public:
 	 *  the lot line alone. Null clears. */
 	/** ViewDist: the camera's distance (cm), so the band keeps about the same width on screen. */
 	void SetHighlight(const FBWParcel* Selected, const FBWParcel* Hovered, double ViewDist = 0);
+	/** THE LENS (ui-revamp step 7): tint each lot by the page's number for it (ui/next/lensData.ts); "none" or empty clears. */
+	void SetLens(const FString& Key, const TMap<FString, double>& Values);
 
 	/** Redraw for this month: lots the economy changed replace the generator's buildings. */
 	void ApplyView(const FBWRenderView& View);
@@ -100,6 +102,8 @@ private:
 	void SetPiece(const FBWVolume& V);
 	UPROPERTY()
 	TObjectPtr<class UProceduralMeshComponent> Highlight;
+	UPROPERTY()
+	TObjectPtr<class UProceduralMeshComponent> LensMesh;
 	const FBWParcel* HiSel = nullptr;
 	const FBWParcel* HiHover = nullptr;
 	double HiScale = 1;

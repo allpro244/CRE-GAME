@@ -72,11 +72,11 @@ export const PLACES: Place[] = [
   {
     id: "city", label: "City", key: "5", icon: "∿",
     tabs: [
-      { id: "markets", label: "Markets", page: "economy", width: "wide" },
-      { id: "news", label: "News", page: "news", width: "wide" },
-      { id: "players", label: "Players", page: "players", width: "wide" },
-      { id: "rankings", label: "Rankings", page: "rankings", width: "wide" },
-      { id: "record", label: "Record", page: "firm", width: "wide" },
+      { id: "markets", label: "Markets", page: "economy", view: "c-markets", width: "wide" },
+      { id: "news", label: "News", page: "news", view: "c-news", width: "wide" },
+      { id: "players", label: "Players", page: "players", view: "c-players", width: "wide" },
+      { id: "rankings", label: "Rankings", page: "rankings", view: "c-rankings", width: "wide" },
+      { id: "record", label: "Record", page: "firm", view: "c-record", width: "wide" },
     ],
   },
 ];

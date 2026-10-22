@@ -1291,6 +1291,43 @@ export interface PlatRecord {
  * (`soldM`, `price`) and closes the month the house is finished (`closedM`);
  * the lot then leaves the market as a family's home.
  */
+/**
+ * ONE LOT SPLIT (lotsplit.ts). The parent keeps its BBL on the lot that keeps its
+ * building (on vacant land, the largest lot): the remainder parcel, as most
+ * counties' assessors carry it. The other lots are new deeds (BBL 8e9 + n).
+ * `cuts` redraw the rings from the parent's (lotsplitGeom.ts cutPieces); the
+ * numbers in `pieces` are what the engine reads, so a reload regenerates the
+ * same parcels without any geometry.
+ */
+export interface SplitRecord {
+  id: number;
+  parent: string;
+  cuts: [[number, number], [number, number]][];
+  /** no cuts drawn: N equal lots along the frontage (lotsplitGeom.ts equalCuts), a firm's split */
+  n?: number;
+  /** in cutPieces order: BBL, area (sf), frontage and depth (ft), centre, corner, and any easement */
+  pieces: {
+    bbl: string; a: number; f: number; d: number; c: [number, number]; corner?: boolean;
+    /** a lot reached by an access easement over another lot (a flag lot): that lot's BBL */
+    over?: string;
+    /** sf of this lot under another lot's access easement */
+    burden?: number;
+  }[];
+  /** minor: 2-4 lots, no new street, signed off by the planning staff; major: 5+ lots, a plat before the board */
+  kind: "minor" | "major";
+  filedM: number;
+  doneM: number;
+  cost: number;
+  odds: number;
+  /** the mortgage: split across the lots by value (land paper), or the new lots released for a release payment */
+  debt?: { mode: "allocate" | "release" };
+  /** who filed it: the player, or a rival's id */
+  by?: string;
+  done?: boolean;
+  /** refused by the board (major) or lapsed (the deed changed under it): why */
+  lapsed?: string;
+}
+
 export interface HomeUnit {
   bbl: string;
   parent: string;
@@ -4003,6 +4040,13 @@ export interface GameState {
   plats?: Record<string, PlatRecord>;
   /** Parent tracts retired into their lots (a deed with no land left; resolveRec). */
   platted?: Record<string, number>;
+  // ---- LOT SPLITS (lotsplit.ts): any deed cut by straight lines ----
+  /** Every split filed, in the order filed: the recipe (the cuts and each lot's numbers) that regenerates the lots on load. */
+  splits?: SplitRecord[];
+  /** The last split lot number handed out (lot BBLs are 8e9 + this). */
+  splitSeq?: number;
+  /** When the board last refused a major subdivision on each deed (the twelve-month resubmittal bar, landdev.ts REFILE_BAR_M). */
+  splitRefusedM?: Record<string, number>;
   /** ---- HOMEBUILDING (homes.ts; the region map, Phase 3) ---- the houses going up and sold on the plats, yours and the builders'. */
   homes?: HomesState;
   /** ---- THE REGION GROWING (growth.ts, roads.ts; the region map, Phase 4) ---- */

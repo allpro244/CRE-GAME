@@ -38,18 +38,24 @@ export const PLACES: Place[] = [
   },
   {
     id: "pipeline", label: "Pipeline", key: "2", icon: "✎",
-    tabs: [{ id: "all", label: "All deals", page: "deals", width: "wide" }],
+    tabs: [
+      { id: "board", label: "Board", page: "deals", view: "pipe-board", width: "wide" },
+      { id: "buying", label: "Buying", page: "deals", view: "pipe-buy", width: "wide" },
+      { id: "building", label: "Building", page: "deals", view: "pipe-build", width: "wide" },
+      { id: "selling", label: "Selling", page: "deals", view: "pipe-sell", width: "wide" },
+      { id: "land", label: "Land", page: "deals", view: "land", width: "wide", when: hasLand },
+    ],
   },
   {
     id: "market", label: "Market", key: "3", icon: "◎",
     tabs: [
       { id: "forsale", label: "For sale", page: "market", view: "forsale", width: "wide" },
       { id: "all", label: "All buildings", page: "buildings", width: "wide" },
-      { id: "sites", label: "Sites", page: "market", jump: "Sites", width: "wide" },
-      // The note desk once there is paper; until then the Marketplace's distress pipeline.
-      { id: "distressed", label: "Distressed", page: "notes", width: "wide", when: hasNotes },
-      { id: "distressed", label: "Distressed", page: "market", jump: "Distress", width: "wide", when: (g) => !hasNotes(g) },
-      { id: "books", label: "Books", page: "market", jump: "Books", width: "wide" },
+      { id: "sites", label: "Sites", page: "market", view: "sites", width: "wide" },
+      { id: "distressed", label: "Distressed", page: "market", view: "distressed", width: "wide" },
+      { id: "books", label: "Books", page: "market", view: "books", width: "wide" },
+      // the lender's desk on paper held or offered (private credit), hosted until it has its own table
+      { id: "notes", label: "Notes", page: "notes", width: "wide", when: hasNotes },
     ],
   },
   {
@@ -58,19 +64,19 @@ export const PLACES: Place[] = [
       { id: "overview", label: "Overview", page: "debt", view: "capital", width: "wide" },
       { id: "loans", label: "Loans", page: "debt", view: "loans", width: "wide" },
       { id: "debt", label: "Debt desk", page: "debt", width: "wide" },
-      { id: "lenders", label: "Lenders", page: "banks", width: "wide" },
-      { id: "investors", label: "Investors", page: "investors", width: "wide" },
-      { id: "books", label: "Books", page: "books", width: "wide" },
+      { id: "lenders", label: "Lenders", page: "banks", view: "lenders", width: "wide" },
+      { id: "investors", label: "Investors", page: "investors", view: "investors", width: "wide" },
+      { id: "books", label: "Books", page: "books", view: "fbooks", width: "wide" },
     ],
   },
   {
     id: "city", label: "City", key: "5", icon: "∿",
     tabs: [
-      { id: "markets", label: "Markets", page: "economy", width: "wide" },
-      { id: "news", label: "News", page: "news", width: "wide" },
-      { id: "players", label: "Players", page: "players", width: "wide" },
-      { id: "rankings", label: "Rankings", page: "rankings", width: "wide" },
-      { id: "record", label: "Record", page: "firm", width: "wide" },
+      { id: "markets", label: "Markets", page: "economy", view: "c-markets", width: "wide" },
+      { id: "news", label: "News", page: "news", view: "c-news", width: "wide" },
+      { id: "players", label: "Players", page: "players", view: "c-players", width: "wide" },
+      { id: "rankings", label: "Rankings", page: "rankings", view: "c-rankings", width: "wide" },
+      { id: "record", label: "Record", page: "firm", view: "c-record", width: "wide" },
     ],
   },
 ];

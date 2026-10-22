@@ -127,6 +127,10 @@ export interface ParcelRecord {
   homePrem?: number;
   /** Common land of a plat's homeowners' association (a park, the pond, open space): not for sale, worth nothing to anyone else. */
   hoa?: string;
+  /** The lot split (engine/lotsplit.ts SplitRecord id) that last cut this record. */
+  split?: number;
+  /** A flag lot: no street frontage of its own, reached by a recorded access easement over a neighbour. */
+  flag?: boolean;
 }
 
 export type ParcelTable = Record<string, ParcelRecord>;

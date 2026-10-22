@@ -4051,6 +4051,15 @@ export interface GameState {
   splits?: SplitRecord[];
   /** The last split lot number handed out (lot BBLs are 8e9 + this). */
   splitSeq?: number;
+  /**
+   * THE ORDER THE TABLE WAS CUT IN (sim.ts restoreCuts): one entry per finished
+   * plat ("p:<tract>"), recorded split ("s:<id>") and unpacked neighbourhood
+   * ("u:<id>"), in the order each put its deeds into the parcel table. The BBL
+   * list's order is the order every loop in the engine walks the town, so a
+   * save rebuilt in any other order is a different game. Region only in
+   * practice; one short string per cut.
+   */
+  cutOrder?: string[];
   /** When the board last refused a major subdivision on each deed (the twelve-month resubmittal bar, landdev.ts REFILE_BAR_M). */
   splitRefusedM?: Record<string, number>;
   /** ---- HOMEBUILDING (homes.ts; the region map, Phase 3) ---- the houses going up and sold on the plats, yours and the builders'. */

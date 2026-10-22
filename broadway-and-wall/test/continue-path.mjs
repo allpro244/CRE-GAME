@@ -2,10 +2,10 @@
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const E = await import(join(HERE, ".engine.mjs"));
-const { loadCity } = await import(join(HERE, "city.mjs"));
+const E = await import(pathToFileURL(join(HERE, ".engine.mjs")).href);
+const { loadCity } = await import(pathToFileURL(join(HERE, "city.mjs")).href);
 const { parcels, adjacency, bbls, seed } = loadCity(0, E.normalizeParcels);
 
 let bad = 0;

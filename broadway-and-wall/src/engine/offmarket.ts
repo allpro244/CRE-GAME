@@ -44,6 +44,7 @@ import { holderOf } from "./owners";
 import { ownerAnswersCall } from "./actions";
 import { livingRivals, ownerOf, rivalBuys, firmMaxPrice, styleHunt, fitOf, deployPressure } from "./rivals";
 import { money } from "./money";
+import { tableVersion } from "./tableVersion";
 
 /**
  * Calls a month for a firm of appetite 1 in an ordinary credit market. A
@@ -62,16 +63,17 @@ const SAMPLE = 8;
 /** Styles that counter far under a number rather than walk away. */
 const FISHES: Partial<Record<RivalStyle, boolean>> = { opportunistic: true, pe: true, vulture: true };
 
-let keyCache: { p: ParcelTable; keys: string[]; byDistrict: Map<string, string[]> } | null = null;
+// per cut of the table (tableVersion.ts): a plat's lots and a split's pieces are deeds with owners to ring
+let keyCache: { p: ParcelTable; v: number; keys: string[]; byDistrict: Map<string, string[]> } | null = null;
 function lotKeys(parcels: ParcelTable): string[] {
   return lotIndex(parcels).keys;
 }
 function lotIndex(parcels: ParcelTable) {
-  if (keyCache?.p !== parcels) {
+  if (keyCache?.p !== parcels || keyCache.v !== tableVersion(parcels)) {
     const keys = Object.keys(parcels);
     const byDistrict = new Map<string, string[]>();
     for (const k of keys) { const d = parcels[k]?.district; if (d) (byDistrict.get(d) ?? byDistrict.set(d, []).get(d)!).push(k); }
-    keyCache = { p: parcels, keys, byDistrict };
+    keyCache = { p: parcels, v: tableVersion(parcels), keys, byDistrict };
   }
   return keyCache;
 }

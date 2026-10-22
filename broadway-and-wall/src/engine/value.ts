@@ -196,6 +196,7 @@ export { physicalMaxFloors } from "./structure";
 import { physicalMaxFloors } from "./structure";
 import { purseOf, partnerShare } from "./vehicles";
 import { sponsorPosition } from "./waterfall";
+import { tableVersion } from "./tableVersion";
 
 /**
  * The plate a median NEW building in this city actually carries — measured at
@@ -2289,6 +2290,8 @@ export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition
 const COMP_RADIUS_M = 300;
 const M_PER_DEG_LAT = 111_320;
 type BlockGeo = {
+  /** the cut of the table it was built from (tableVersion.ts) */
+  v?: number;
   byBlock: Map<string, string[]>;
   neigh: Map<string, { b: string; w: number }[]>;
 };
@@ -2297,7 +2300,7 @@ const BLOCK_GEO = new WeakMap<Record<string, ParcelRecord>, BlockGeo>();
 
 function blockGeo(parcels: Record<string, ParcelRecord>): BlockGeo {
   const hit = BLOCK_GEO.get(parcels);
-  if (hit) return hit;
+  if (hit && hit.v === tableVersion(parcels)) return hit;
   const byBlock = new Map<string, string[]>();
   const acc = new Map<string, [number, number, number]>();
   for (const bbl in parcels) {
@@ -2331,7 +2334,7 @@ function blockGeo(parcels: Record<string, ParcelRecord>): BlockGeo {
     }
     neigh.set(b, out);
   }
-  const geo = { byBlock, neigh };
+  const geo = { byBlock, neigh, v: tableVersion(parcels) };
   BLOCK_GEO.set(parcels, geo);
   return geo;
 }
@@ -2489,6 +2492,19 @@ function childrenOf(m: Record<string, string>, bbl: string): readonly string[] {
   let list = ix.kids.get(bbl);
   if (list && list.some((c) => m[c] !== bbl)) { ix = MERGE_IX = buildMergeIx(m); list = ix.kids.get(bbl); }
   return list ?? NO_KIDS;
+}
+
+/**
+ * THE RECORD WITHOUT ITS STAMPS: what stands on the lot, its envelope and its
+ * live demand, but not the cornice datum, the town's maturity or an anchor's
+ * trade-area draw that resolveRec adds. For a reader that only asks WHAT the
+ * lot is (its class, its floor area, its mix) on every lot every month — the
+ * street's roll-call (streetRolls.ts) — and so must not pay for the trade-area
+ * walk resolveRec runs on every big vacant lot. Same object resolveRec starts
+ * from; nothing it returns differs in a field this reader is allowed to read.
+ */
+export function resolveRecBare(parcels: Record<string, ParcelRecord>, s: GameState, bbl: string): ParcelRecord | null {
+  return resolveRecOnly(parcels, s, bbl);
 }
 
 function resolveRecOnly(parcels: Record<string, ParcelRecord>, s: GameState, bbl: string): ParcelRecord | null {

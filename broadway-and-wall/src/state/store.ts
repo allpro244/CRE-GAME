@@ -5,7 +5,7 @@ import { launchRaise, raiseAndBuild, cancelRaise, closeRaiseNow, type RaiseJob }
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions, BuildingDesign } from "@/engine/types";
-import { attentionItems, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
+import { attentionItems, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES, restoreCuts } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
 import { monthLabel, START_YEAR } from "@/engine/types";
@@ -48,10 +48,9 @@ import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, se
 import { cityList, CITY_PLAN, platTractLots, platTractDesign, platDesignLL, designSummary, type GeneratedCity } from "@/citygen/index.mjs";
 import { designRecipe, fileDesignedRezoning as fileDesignedRezoningE, startDesignedPlat } from "@/engine/platdesign";
 import type { PlatDesign } from "@/engine/types";
-import { fileEntitlement, startPlat, materializePlats, lotBbl } from "@/engine/landdev";
+import { fileEntitlement, startPlat, lotBbl } from "@/engine/landdev";
 import { roadFeatures } from "@/engine/roads";
-import { materializeNeighbourhoods } from "@/engine/unpack";
-import { fileSplit, materializeSplits, type SplitPlan } from "@/engine/lotsplit";
+import { fileSplit, type SplitPlan } from "@/engine/lotsplit";
 import { siteGeometry, applySplitFeatures, type SiteGeo } from "@/engine/lotsplitGeom";
 import { acceptLotOffer, declineLotOffer, listLotsToBuilders, delistLots as delistPlatLots } from "@/engine/homes";
 import { cutTownOffThread } from "@/state/townClient";
@@ -2531,6 +2530,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   loadFrom: async (slot) => {
+    const hasCuts = (g: GameState | null | undefined) => !!g && (!!g.cutOrder?.length
+      || Object.values(g.plats ?? {}).some((p) => p.done) || (g.splits ?? []).some((sp) => sp.done)
+      || Object.keys(g.growth?.unpacked ?? {}).length > 0);
     const { parcels } = get();
     const raw = await loadGame(slot);
     if (!raw || !parcels) { toast("That save wouldn't open.", "err"); return; }
@@ -2553,6 +2555,10 @@ export const useStore = create<AppState>((set, get) => ({
       || (saved.cityPlan ?? 1) !== (get().game?.cityPlan ?? 1)
       // and so is the same seed with more or fewer parks
       || (saved.cityParks ?? "medium") !== (get().game?.cityParks ?? "medium")
+      // and the live table holds this game's cut lots (plats, splits, unpacked houses):
+      // loaded over it, a save from earlier in the run would walk lots its plats have not
+      // cut yet, and in another order. A rebuilt town has exactly the save's.
+      || hasCuts(saved) || hasCuts(get().game)
     ) {
       toast(`Loading "${slot}" — rebuilding the town it was played in.`);
       try {
@@ -2567,9 +2573,7 @@ export const useStore = create<AppState>((set, get) => ({
     // save with two holdings can pass it.
     if (savedSeed === undefined) {
       // a land developer's finished plats are deeds: put their lots in the table before asking (engine/landdev.ts)
-      if (saved.plats) materializePlats(saved, parcels);
-      if (saved.growth?.unpacked) materializeNeighbourhoods(saved, parcels);
-      if (saved.splits) materializeSplits(saved, parcels);
+      restoreCuts(saved, parcels);
       const fits = Object.keys(saved.holdings).every((b) => parcels[b])
         && saved.listings.every((l) => parcels[l.bbl]);
       if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -2743,6 +2747,12 @@ export const useStore = create<AppState>((set, get) => ({
       setDev(r.dev);
       // an old save is a plan-1 town: rebuild the streets it was played on
       const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1, undefined, saved.cityParks);
+      // THE CUT LOTS FIRST (engine/sim.ts restoreCuts): a region save holds plat lots, split
+      // lots and unpacked houses that the generator does not cut, and its listings and deeds
+      // name them. Asked before they were put back, the gate below refused every region
+      // campaign with a lot on the tape (test/region-longrun.mjs: seeds 1 and 2 at year 25).
+      // In the order they were cut, because that order is the order the engine walks the town.
+      restoreCuts(saved, parcels);
       // A save only fits if every deed in it exists in THIS town. It should,
       // because the town was rebuilt from the save's own three fields — this
       // catches a generator change that moved the lot lines under an old
@@ -2897,7 +2907,7 @@ export async function bootMenu() {
 useStore.subscribe((st) => {
   const g = st.game, parcels = st.parcels, city = st.city as (GeneratedCity & { platsDrawn?: string[] }) | null;
   if (!g?.plats || !parcels || !city) return;
-  const added = materializePlats(g, parcels, st.bbls);
+  const added = restoreCuts(g, parcels, st.bbls);
   const drawn = new Set(city.platsDrawn ?? []);
   const todo = Object.values(g.plats).filter((pl) => pl.done && !drawn.has(pl.parent) && parcels[pl.parent]?.tract);
   if (!todo.length) { if (added.length) useStore.setState({ bbls: [...st.bbls] }); return; }
@@ -2973,7 +2983,7 @@ export function splitSite(city: GeneratedCity, bbl: string): SiteGeo | null {
 useStore.subscribe((st) => {
   const g = st.game, parcels = st.parcels, city = st.city as (GeneratedCity & { splitsDrawn?: number[] }) | null;
   if (!g?.splits?.length || !parcels || !city) return;
-  const added = materializeSplits(g, parcels, st.bbls);
+  const added = restoreCuts(g, parcels, st.bbls);
   const drawn = new Set(city.splitsDrawn ?? []);
   const todo = g.splits.filter((sp) => sp.done && !drawn.has(sp.id));
   if (!todo.length) { if (added.length) useStore.setState({ bbls: [...st.bbls] }); return; }

@@ -555,6 +555,23 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   // The street's buildings, listed once: the search below lets space and moves
   // tenants inside rolls, and never adds, removes or replaces a roll.
   const rollList = Object.entries(R);
+  // Each roll's empty space by use, remembered while its tenant list and its
+  // make-ready list are the arrays they were at the same lengths: in this
+  // search a roll changes only by a lease pushed on, a tenant filtered off
+  // (a new array) or a suite put to make-ready (pushed), never in place.
+  type AvailMemo = { t: Tenant[]; tl: number; r: StreetRoll["ready"]; rl: number; v: Partial<Record<Comm, number>> };
+  const availMemo = new Map<StreetRoll, AvailMemo>();
+  const availIn = (b: Bld, roll: StreetRoll, k: Comm) => {
+    const rl = roll.ready ? roll.ready.length : -1;
+    let e = availMemo.get(roll);
+    if (!e || e.t !== roll.t || e.tl !== roll.t.length || e.r !== roll.ready || e.rl !== rl) {
+      e = { t: roll.t, tl: roll.t.length, r: roll.ready, rl, v: {} };
+      availMemo.set(roll, e);
+    }
+    let v = e.v[k];
+    if (v === undefined) { v = availOf(b, roll, k); e.v[k] = v; }
+    return v;
+  };
   for (const sk of pool) {
     if (sk.tourM !== undefined && m - sk.tourM < 3) continue;          // in talks at one of the player's buildings
     if (rng(s, "leasing") > 1 / SEARCH_M[sk.use]) continue;            // still looking
@@ -572,7 +589,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       if (bbl === sk.from) continue;
       const b = blds.get(bbl) ?? bld(bbl);
       if (!b || !b.cap[k]) continue;
-      const avail = availOf(b, roll, k);
+      const avail = availIn(b, roll, k);
       const floor = minSfOf(b, k);
       if (avail < Math.max(floor, Math.min(sk.want * 0.5, avail + 1))) continue;
       const since = roll.vac?.[k];
@@ -931,15 +948,36 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       gap = 0;
     }
     // Movers and new households take the empty flats.
+    // Each block's weight in the draw, kept per block: a draw changes only the
+    // block it picks, so only that block's weight is worked out again — the
+    // same numbers, summed and walked in the same order, as recomputing every
+    // block every draw. (Two blocks sharing one roll would both move; then
+    // every weight is recomputed, as before.)
+    const nF = fs.length;
+    // (The sum counts a block when v > half a unit; the walk skips it only when
+    // v <= half a unit — the same blocks unless v is not a number.)
+    const inTot = new Uint8Array(nF), inPick = new Uint8Array(nF), termF = new Float64Array(nF);
+    const setTerm = (i: number) => {
+      const f = fs[i];
+      const v = Math.min(f.cap - f.roll.occ, f.lim - f.intake);
+      const half = f.unit * 0.5;
+      inTot[i] = v > half ? 1 : 0;
+      inPick[i] = v <= half ? 0 : 1;
+      termF[i] = v * f.w;
+    };
+    const sharedRoll = new Set(fs.map((f) => f.roll)).size !== nF;
+    for (let i = 0; i < nF; i++) setTerm(i);
     for (let guard = 0; guard < 2000 && gap > 1; guard++) {
+      if (sharedRoll) for (let i = 0; i < nF; i++) setTerm(i);
       let tot = 0;
-      for (const f of fs) { const v = Math.min(f.cap - f.roll.occ, f.lim - f.intake); if (v > f.unit * 0.5) tot += v * f.w; }
+      for (let i = 0; i < nF; i++) if (inTot[i]) tot += termF[i];
       if (!(tot > 0)) break;
-      let u = rng(s, "leasing") * tot, pick = fs[0];
-      for (const f of fs) { const v = Math.min(f.cap - f.roll.occ, f.lim - f.intake); if (v <= f.unit * 0.5) continue; u -= v * f.w; if (u <= 0) { pick = f; break; } }
+      let u = rng(s, "leasing") * tot, pick = fs[0], pickI = 0;
+      for (let i = 0; i < nF; i++) { if (!inPick[i]) continue; u -= termF[i]; if (u <= 0) { pick = fs[i]; pickI = i; break; } }
       const take = Math.min(gap, pick.cap - pick.roll.occ, pick.unit * 4, pick.lim - pick.intake);
       if (!(take > 0)) break;
       pick.roll.occ += take; pick.intake += take; gap -= take;
+      setTerm(pickI);
       // A new letting at the block's rent, as the last six months' deals have
       // moved it, less the concession a block that has stood empty gives.
       const rent = +(pick.mkt * dealSlack(e, "multifamily") * staleDiscount(pick.roll.vac === undefined ? 0 : m - pick.roll.vac)).toFixed(2);

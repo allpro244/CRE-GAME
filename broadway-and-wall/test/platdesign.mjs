@@ -8,7 +8,7 @@
 //   2. Amenities take land: every one that claims ground leaves fewer lots.
 //   3. A premium lands only where it is earned: no amenity, no premium; a park lifts the lots beside
 //      it and not the lots across the plat; the pool lifts every lot by its community-wide share.
-//   4. Committing a plat moves net worth by the cash it spends and nothing else; finishing it moves
+//   4. Committing a plat moves net worth by the fees it spends and nothing else (the works carry at money sunk); finishing it moves
 //      net worth by the honest change in what the land is worth (the lots at the builders' bid, the
 //      association's land at nothing) — and the desk's mark-at-finish is that same number.
 //   5. Every dollar goes through the ledger, month by month: the cash identity `conserve` asserts,
@@ -159,7 +159,13 @@ g = sp.s; check(g, "commit");
   const dNw = after.nw - before.nw, honest = (after.cash - before.cash) - (after.debt - before.debt) + (after.mark - before.mark);
   console.log(`  commit: cash ${M(after.cash - before.cash)}, debt ${M(after.debt - before.debt)}, the tract's mark ${M(after.mark - before.mark)} -> net worth ${M(dNw)}`);
   if (Math.abs(dNw - honest) > 1000) fail(`commit moved net worth ${M(dNw)}, cash and value say ${M(honest)}`);
-  if (Math.abs(after.mark - before.mark) > 1000) fail("drawing parks moved the tract's mark before a lot exists");
+  // The works carry at money sunk (value.ts ownedHoldingValueFromRec), as a building job does: the
+  // tract's mark rises by exactly what the streets, fees and amenities cost and by nothing more, so
+  // drawing parks does not lift the mark before a lot exists, and the spend does not vanish from net
+  // worth for the months the streets take only to come back in one step when they finish.
+  const cost = g.plats[tract].cost;
+  if (Math.abs(after.mark - before.mark - cost) > 1000) fail(`the tract's mark moved ${M(after.mark - before.mark)} on a ${M(cost)} commitment: the works are carried at money sunk`);
+  if (Math.abs(dNw) > ad.points + ad.cap + 1000) fail(`committing the plat moved net worth ${M(dNw)}: only the points and the cap are spent`);
 }
 const loan0 = g.holdings[tract].loan;
 if (ad.loan > 0 && !loan0?.ad) fail("no A&D note on the tract");

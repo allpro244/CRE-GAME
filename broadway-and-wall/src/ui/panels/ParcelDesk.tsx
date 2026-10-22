@@ -158,7 +158,7 @@ function LandDevCard({ bbl }: { bbl: string }) {
       <div className="deal-head">Land development</div>
       <div className="hint">
         {rec.ag === "wood" ? "Woodland" : "Farmland"}, {acres.toFixed(0)} acres, zoned for agriculture — priced at what it earns as a farm.
-        {" "}{(rec.tract.edgeM / 1000).toFixed(1)} km from the town's edge.
+        {" "}{((rec.buildableSf ?? rec.lotArea) / 43560).toFixed(0)} buildable acres{rec.buildableSf !== undefined && rec.buildableSf < rec.lotArea * 0.95 ? " (the rest is floodplain or taken)" : ""}; {(rec.tract.edgeM / 1000).toFixed(1)} km from the town's edge.
       </div>
       {!owned && <div className="hint">Buy it to rezone it and cut it into lots.</div>}
       {owned && !app && !rz && (() => {

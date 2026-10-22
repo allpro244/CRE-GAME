@@ -1232,10 +1232,10 @@ export interface PlatRecord {
 }
 
 /**
- * ONE HOUSE ON ONE LOT (homes.ts). `by` is "you" or a homebuilder's name.
- * Built: `spent` reaches `budget` and the month reaches `doneM`. Sold: a buyer
- * signs (`soldM`, `price`); closes the month the house is finished
- * (`closedM`), and the lot leaves the market as a family's home.
+ * ONE HOUSE ON ONE LOT (homes.ts), a homebuilder's (`by`). Built: `spent`
+ * reaches `budget` and the month reaches `doneM`. Sold: a buyer signs
+ * (`soldM`, `price`) and closes the month the house is finished (`closedM`);
+ * the lot then leaves the market as a family's home.
  */
 export interface HomeUnit {
   bbl: string;
@@ -1247,16 +1247,22 @@ export interface HomeUnit {
   /** vertical construction plus the builder's overhead */
   budget: number;
   spent: number;
-  /** what the lot cost the builder (your basis, or what a builder paid) */
+  /** what the lot cost the builder */
   lotCost: number;
   price?: number;
   soldM?: number;
   closedM?: number;
 }
-/** A homebuilder's standing offer for your finished lots on one plat: so many lots, taken down as it starts houses, at a fixed price a square foot of lot. */
+/**
+ * A homebuilder's offer for your finished lots on one plat. "takedown": it
+ * buys `lots` of them a few a month as it starts houses, at a fixed price a
+ * square foot of lot. "bulk": it buys them all now, at its residual
+ * discounted for the months it will carry them.
+ */
 export interface LotOffer {
   parent: string;
   builder: string;
+  kind: "takedown" | "bulk";
   lots: number;
   psf: number;
   madeM: number;
@@ -1267,21 +1273,27 @@ export interface LotContract extends LotOffer {
   left: number;
   taken: number;
 }
-/** Your homebuilding on one plat, to date. */
+/** Your plat listed to the homebuilders: the asking price a square foot of lot, and whether you want it sold whole. */
+export interface LotListing {
+  parent: string;
+  askPsf: number;
+  bulk: boolean;
+  listedM: number;
+}
+/** Your lot sales on one plat, to date. */
 export interface PlatPL {
-  started: number; closed: number;
-  /** gross sale prices, the net after commission and marketing, and the cost of the houses and lots sold */
-  revenue: number; net: number; cost: number; lotCost: number;
-  /** lots sold to builders: count, proceeds and basis */
-  lotsSold: number; lotProceeds: number; lotBasis: number;
+  lotsSold: number;
+  /** gross price, net after closing costs, and the basis of the lots sold */
+  lotRevenue: number; lotProceeds: number; lotBasis: number;
 }
 export interface HomesState {
   units: Record<string, HomeUnit>;
+  /** lots a builder owns and has not yet started a house on, by BBL: who, and what it paid */
+  held?: Record<string, { by: string; cost: number }>;
   builders: Record<string, { name: string; sinceM: number; lots: number; lotSpend: number; started: number; closed: number; revenue: number; cost: number }>;
-  /** your price on each plat against the going price, -0.15..0.15 */
-  adj?: Record<string, number>;
   offers?: Record<string, LotOffer>;
   contracts?: Record<string, LotContract>;
+  listings?: Record<string, LotListing>;
   pl?: Record<string, PlatPL>;
   /** the town's population, the last thirteen months */
   popHist?: number[];
@@ -3903,6 +3915,8 @@ export interface GameState {
   entitlementApps?: Record<string, EntitlementApplication>;
   /** Tracts the board rezoned: their new district and envelope (resolveRec applies it). */
   rezoned?: Record<string, { zone: string; far: number; lotSf: number; m: number }>;
+  /** When the board last refused a rezoning on each tract: a substantially similar application waits a year (landdev.ts REFILE_BAR_M). */
+  rezoneRefusedM?: Record<string, number>;
   /** Subdivisions, keyed by the parent tract: the recipe that regenerates the lots, and when they finish. */
   plats?: Record<string, PlatRecord>;
   /** Parent tracts retired into their lots (a deed with no land left; resolveRec). */

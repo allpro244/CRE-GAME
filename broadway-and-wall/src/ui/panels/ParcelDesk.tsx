@@ -225,7 +225,7 @@ function LandDevCard({ bbl }: { bbl: string }) {
  * builder would bid, how fast the plat sells out, who is building; and your
  * lot sales — offers to sign or pass, and listing the plat to the builders.
  */
-function HomesCard({ bbl }: { bbl: string }) {
+export function HomesCard({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game);
   const parcels = useStore((s) => s.parcels);
   const listLots = useStore((s) => s.listLots);

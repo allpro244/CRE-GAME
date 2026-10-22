@@ -19,7 +19,7 @@ import { describePropertyEvent, propertyTimeline } from "@/engine/history";
 import { entitleQuote, platQuote } from "@/engine/landdev";
 import { tractLotQuote } from "@/engine/homes";
 import { platTractLots } from "@/citygen/index.mjs";
-import { ParcelPanel } from "@/ui/panels/ParcelDesk";
+import { HomesCard, ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { ownerName } from "@/ui/derive";
 import { usd, sf } from "@/ui/format";
 import { ActionFooter, Drawer, type Verb } from "./Drawer";
@@ -100,7 +100,10 @@ function FileFor({ bbl }: { bbl: string }) {
       {active === "leasing" && h && <RentRollTab game={game} parcels={parcels} bbl={bbl} h={h} />}
       {active === "money" && h && <MoneyTab game={game} parcels={parcels} bbl={bbl} h={h} />}
       {active === "build" && <BuildTab game={game} parcels={parcels} bbl={bbl} />}
-      {active === "deal" && <div className="nx-hosted"><ParcelPanel embedded tab="deal" /></div>}
+      {/* A PLAT'S LOT: the builders' bids, their offers, and listing the plat to them. The classic
+          card lives on the summary tab, which this file does not host, so the new UI had no way to
+          list lots at all (tools/playtest.mjs, 2026-10-22). */}
+      {active === "deal" && <div className="nx-hosted">{rec.homeLot && <HomesCard bbl={bbl} />}<ParcelPanel embedded tab="deal" /></div>}
       {active === "history" && (
         <table className="nx-table">
           <thead><tr><th>When</th><th>Event</th><th>Detail</th></tr></thead>

@@ -97,6 +97,10 @@ export interface ParcelRecord {
   tract?: { seed: number; r: [number, number, number, number]; id: number; bearing: number | null; edgeM: number };
   /** A finished lot on a plat (landdev.ts lotRecords): homebuilders bid for it (homeprice.ts). */
   homeLot?: boolean;
+  /** The premium on the price of a house on this lot from its plat's amenities (engine/platdesign.ts lotPremium). */
+  homePrem?: number;
+  /** Common land of a plat's homeowners' association (a park, the pond, open space): not for sale, worth nothing to anyone else. */
+  hoa?: string;
 }
 
 export type ParcelTable = Record<string, ParcelRecord>;

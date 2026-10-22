@@ -35,13 +35,12 @@ import { resolveRec, assetValue, initialCondition } from "./value";
 import { sweepLocIdleCash } from "./credit";
 import { pickConstructionDesk } from "./dev";
 import { lenderByName, chargeLenderLoss } from "./lenders";
-import { payRelease } from "./adloan";
 import { saleTaxQuote } from "./actions";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { money } from "./money";
 import {
-  homeQuote, fundamentalHomePsf, commuteMult, salesPace, selloutDiscount, homeSfFor,
+  homeQuote, fundamentalHomePsf, commuteMult, salesPace, selloutDiscount, homeSfFor, lotPremiumMult,
   REF_HOME, BUILD_M, NAHB, type HomeMarket, type PlatMarket, type HomeQuote,
 } from "./homeprice";
 
@@ -269,7 +268,8 @@ function freeLots(s: GameState, parcels: ParcelTable, parent: string): { mine: s
     if (s.homes?.units[bbl]) continue;
     if (s.homes?.held?.[bbl]) { held.push(bbl); continue; }
     const h = s.holdings[bbl];
-    if (h) { if (!h.loan && !h.sale) mine.push(bbl); continue; }
+    // (a lot under an A&D note is free to sell: the note is released lot by lot, sellLot)
+    if (h) { if ((!h.loan || h.loan.ad) && !h.sale) mine.push(bbl); continue; }
     if (s.built?.[bbl] || s.developments?.[bbl] || ownerOf(s, bbl) || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     market.push(bbl);
   }
@@ -405,13 +405,22 @@ function sellLot(s: GameState, parcels: ParcelTable, parent: string, builder: st
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return 0;
-  const price = Math.round(psf * rec.lotArea);
+  // a lot by a park fetches more of the builder's per-foot price (homeprice.ts lotPremiumMult)
+  const hmk = s.econ.homes, pmk = hmk?.plats[parent];
+  const mult = pmk && hmk ? lotPremiumMult(s.econ, rec.lotArea, hmk.psf * pmk.loc, platFar(s, parent), rec.homePrem ?? 0) : 1;
+  const price = Math.round(psf * rec.lotArea * mult);
   const q = saleTaxQuote(h, price, s);
-  // the land loan's release price comes off the top, as a mortgage payoff does at any closing
-  const release = payRelease(s, parcels, bbl);
-  s.cash += q.net - release;
-  logBooks(s, "sold", q.net - release, bbl);
+  s.cash += q.net;
+  logBooks(s, "sold", q.net, bbl);
   if (q.tax > 0) { s.cash -= q.tax; s.taxesPaid = (s.taxesPaid ?? 0) + q.tax; logBooks(s, "taxes", q.tax); }
+  // THE RELEASE. A lot under an A&D note closes only when the lender is paid its share (platdesign.ts):
+  // out of the price, at the closing table, through the ledger as the payoff it is.
+  if (h.loan?.ad && h.loan.balance > 0) {
+    const due = Math.round(h.loan.balance);
+    s.cash -= due;
+    logBooks(s, "debtSvc", due, bbl);
+    h.loan = null;
+  }
   const pl = plOf(homesOf(s), parent);
   pl.lotsSold++; pl.lotRevenue += price; pl.lotProceeds += q.net; pl.lotBasis += h.costBasis;
   const ex: Exit = { bbl, address: rec.address, boughtM: h.boughtM, soldM: s.month, price, basis: h.costBasis, gain: q.gain };
@@ -542,7 +551,7 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     for (const u of x.units.slice().sort((a, b) => a.doneM - b.doneM || a.bbl.localeCompare(b.bbl))) {
       if (k <= 0) break;
       u.soldM = s.month;
-      u.price = Math.round(hm.psf * pm.loc * u.sf);
+      u.price = Math.round(hm.psf * pm.loc * (1 + (parcels[u.bbl]?.homePrem ?? 0)) * u.sf);
       k--;
     }
   }

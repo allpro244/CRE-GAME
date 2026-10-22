@@ -83,7 +83,9 @@ for (const k of [...IN, ...OUT]) coverage[k] = 0;
 
 for (const seed of SEEDS) {
   const parcels = JSON.parse(JSON.stringify(P0));
-  let g = E.firstListings(E.newGame(seed, parcels, undefined, SETUP), parcels, bbls);
+  // the region map (BW_CITY=region) is a region game: its growth, homes and land developers run on it
+  const where = process.env.BW_CITY === "region" ? { citySize: "region", cityLots: bbls.length } : undefined;
+  let g = E.firstListings(E.newGame(seed, parcels, undefined, SETUP, where), parcels, bbls);
   const START = g.cash;
   let built = false;
   let prev = { cash: liquidity(g), books: bookTotals(g), loc: g.loc?.balance ?? 0, dep: depositsHeld(g) };

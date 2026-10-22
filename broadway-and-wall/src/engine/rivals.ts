@@ -3247,7 +3247,10 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // game has no discretionary approvals; the envelope is the FAR and the
   // physics, and the pro forma decides within them.
   const basisOverride = opp;
-  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, basisOverride);
+  // A lot the land market priced as a product (a pad, a centre, a box) is
+  // built as that product: the scheme the firm paid for is the one it builds.
+  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, basisOverride, 0.5, undefined,
+    hbu && hbu.psf > 0 ? hbu.product : undefined);
   if (!underwriting?.clears) return;
   // Land-bank starts were ~1%/month even for a full-appetite developer — so a
   // firm sitting on dirt still almost never broke ground. Raise the monthly
@@ -3347,6 +3350,7 @@ export function breakGround(
     commitment: Math.round(Math.max(0, cost - dayOne) * 1.12),
     ratePct: plan.ratePct,
     lender: plan.lender,
+    ...(plan.product ? { product: plan.product.key, ...(plan.product.draw !== undefined ? { draw: plan.product.draw } : {}) } : {}),
   });
   noteRecordPlan(s, parcels, bbl, lead, sf, floors, r.name);
   // Into the one delivery queue the day the hole is dug, exactly like the city.
@@ -5286,7 +5290,7 @@ export function rivalBuys(
     if (dirt !== undefined) return dirt;
     const sc = landRead(rec, s.econ).scheme;
     const uw = sc && sc.psf > 0
-      ? underwriteDevelopment(s, parcels, rec.bbl, sc.use, sc.floors, sc.coverage, price)
+      ? underwriteDevelopment(s, parcels, rec.bbl, sc.use, sc.floors, sc.coverage, price, 0.5, undefined, sc.product)
       : null;
     dirt = uw ? { clears: uw.clears, cushionPp: uw.plan.yieldOnCost - uw.plan.requiredYield } : null;
     return dirt;

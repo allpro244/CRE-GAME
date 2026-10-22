@@ -1284,6 +1284,41 @@ park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
 - **No transit.** The demand blend's transit and second-centre terms (44 of
   100 points) read zero on the region, so its demand scores run lower than an
   island's. Car access as a demand term is a later-phase question.
+- **Phase 4, the region growing (`engine/growth.ts`, `roads.ts`, `towngrowth.ts`, `unpack.ts`; region only, its own rng channel "growth").**
+  Households are the engine's population / 2.51; nothing new drives them.
+  LAND DEVELOPERS (named, off-book) price every farm tract each quarter
+  (`readTract`): finished lots at the homebuilders' residual × the sell-out at
+  the pace one more community would get, less the board's fees, the streets, the
+  OFF-SITE MAINS to the nearest served land (`landdev servedM`, $250/ft), all
+  discounted at 19%/yr over the board and street months, × the odds (which now
+  read distance to SERVED land, plats included — that is what makes growth
+  contiguous). The median developer's bid is the tract's price where it beats
+  the corn (`econ.tractBid`, value.ts winner "subdivider"); a developer whose own
+  read (±10% lognormal) clears price + 3% closing buys, files, and builds the
+  streets through `s.plats` like the player; homes.ts builders take the lots.
+  Held tracts are off the market (`growth.held`, isCivicLand). Plat lots are
+  skipped by town developers' looks (covenants). SUPPLY FLOOR: the going house
+  price chases max(buyer capacity, cost of making a house incl. a developer-
+  returning lot) (`homes.ts supplyFloorPsf`) — without it seed 3 built nothing
+  for 7 years while costs outran wages. ROADS: county road & bridge fund = 10%
+  of the property-tax levy (sampled 1 parcel in 8), less upkeep at $20k/lane-mi;
+  ADT per arterial piece from households (ITE 9.43 trips) radially assigned;
+  2-lane pieces over 15k AADT are widened (24 + 18 months, $6M/mi × costIdx).
+  The state's master plan (citygen `regionRoadPlan`, years read as `year - 2026`
+  after the opening) is funded 4 years out at odds rising with household growth;
+  misses slip 2-6 years, a third miss may drop it. Tract access (`growth.access`,
+  read by homes.ts platLocation) = congested county road (BPR) or nearest open
+  interchange + freeway. The store draws opened roads (`roadFeatures`) into
+  `city.context` for the map and Unreal. TOWN: yearly trade areas — a
+  grocery-anchored centre where ≥4,000 households would be nearest to it within
+  1.5 mi, a strip at 1,500 with no shop within a mile; site = vacant commercial
+  lot or a rezoned farm (C-N, the centre's FAR), built via dev.ts
+  `startTradeAreaBuilding` (the city's own groundbreak). Plan commission: a
+  district whose last-10-year buildings mostly fill their envelope gets a 2-year
+  study, 65% pass, ×1.25 zoneAdj, 10-year cooldown. Inner-ring houses are rebuilt
+  by the engine's own teardowns; counted. `unpackNeighbourhood(id)` redraws a
+  reserved neighbourhood into deeds (7+id+n, R-1 FAR 0.45) as family homes —
+  no automatic trigger yet. `node test/region-growth.mjs [seed]` (Y=years).
 - `pnpm region` (test/region.mjs): determinism, record sanity, reserved land
   never reaching the market, the island untouched by plan 15, month tick
   timing. `node test/bwcity-contract.mjs <file>` checks an Unreal export;

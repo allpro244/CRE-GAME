@@ -974,8 +974,9 @@ export function isCivicLand(s: GameState, bbl: string): boolean {
   // ...and, on the region map, a lot a homebuilder has a house going up on or
   // a family has bought (homes.ts isHomeOffMarket): off the market like the
   // town's neighbourhoods, which every loop that asks this already respects.
-  // ...and a plat's common land, deeded to its homeowners' association (landdev.ts isHoaBbl).
-  return !!s.civicLand?.[bbl] || isHomeOffMarket(s, bbl) || isHoaBbl(bbl);
+  // ...and a plat's common land, deeded to its homeowners' association (landdev.ts isHoaBbl),
+  // and a farm a land developer has bought to subdivide (growth.ts): off the market while the board hears it.
+  return !!s.civicLand?.[bbl] || isHomeOffMarket(s, bbl) || isHoaBbl(bbl) || !!s.growth?.held?.[bbl];
 }
 
 function takeCivicLots(s: GameState, model: DemandModel, parcels: ParcelTable) {

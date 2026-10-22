@@ -405,8 +405,8 @@ export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number; zoneDist
   if (LOW_DENSITY_ZONES.has(rec.zoneDist ?? "")) return Math.max(rec.farMaxComm, rec.farMaxRes);
   return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
 }
-/** Districts whose stated envelope is the envelope: the region's suburban residential zones (landdev.ts). */
-export const LOW_DENSITY_ZONES: ReadonlySet<string> = new Set(["R-2"]);
+/** Districts whose stated envelope is the envelope: the region's suburban residential zones (landdev.ts; an unpacked neighbourhood's R-1, unpack.ts; a farm rezoned for a neighbourhood centre, C-N, towngrowth.ts). */
+export const LOW_DENSITY_ZONES: ReadonlySet<string> = new Set(["R-2", "R-1", "C-N"]);
 
 /**
  * THE SAME CAP, STATED AS A SHARE, so the dial and the planner cannot hold

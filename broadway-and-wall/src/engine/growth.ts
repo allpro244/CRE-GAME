@@ -82,8 +82,10 @@ export interface GrowthYear {
   lots: number; acres: number; plats: number;
   /** tracts the developers bought this year; rezonings refused this year */
   bought: number; refused: number;
-  /** the farm-tract price gradient: median $/acre by distance from served land (0-0.5, 0.5-1.5, 1.5-3, 3+ km) */
+  /** the farm-tract price gradient: mean $/acre of crop tracts by distance from served land (0-0.5, 0.5-1.5, 1.5-3, 3+ km) */
   gradient: number[];
+  /** farm tracts a developer would pay more for than the corn is worth */
+  bidding: number;
   /** farm-use value, $/acre (crop), for the gradient's floor */
   farmAcre: number;
   /** the going new house, $/sf at the town's edge */
@@ -104,6 +106,12 @@ export interface GrowthState {
   access?: Record<string, number>;
   roads?: RoadsState;
   town?: TownState;
+  /** the region map's own seed (a tract's survey carries it): the road plan and the neighbourhoods are drawn from it, not from the game's seed */
+  mapSeed?: number;
+  /** reserved neighbourhoods unpacked into deeds, by survey id, and when (unpack.ts) */
+  unpacked?: Record<number, number>;
+  /** the town's occupied flats at the first count, sf (towngrowth.ts scales the opening's dwellings by it) */
+  mf0?: number;
   /** the year's counters, reset at each annual record */
   yr: { bought: number; refused: number };
   hist: GrowthYear[];
@@ -389,15 +397,11 @@ function housesOn(s: GameState) {
   let closed = 0, startedY = 0, closedY = 0;
   const y0 = s.month - 12;
   for (const u of Object.values(s.homes?.units ?? {})) {
+    if (u.by === "family") continue;   // an unpacked neighbourhood's house (unpack.ts), not a new one
     if (u.closedM !== undefined) { closed++; if (u.closedM > y0) closedY++; }
     if (u.startM > y0) startedY++;
   }
   return { closed, startedY, closedY };
-}
-function median(a: number[]): number {
-  if (!a.length) return 0;
-  const b = a.slice().sort((x, y) => x - y);
-  return b[b.length >> 1];
 }
 function recordYear(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const g = growthOf(s);
@@ -412,12 +416,14 @@ function recordYear(s: GameState, parcels: ParcelTable, bbls: string[]) {
   }
   // THE LAND GRADIENT: what farms trade at, by how far they sit from served land.
   const bands: number[][] = [[], [], [], []];
+  let bidding = 0;
   for (const bbl of tractList(parcels, bbls)) {
     if (s.platted?.[bbl] || s.plats?.[bbl]) continue;
     const rec = parcels[bbl];
     if (!rec?.tract || rec.ag !== "crop") continue;
     const d = servedM(s, parcels, bbl);
     const psf = Math.max(farmUsePsf(rec, e), e.tractBid?.[bbl] ?? 0);
+    if ((e.tractBid?.[bbl] ?? 0) > farmUsePsf(rec, e)) bidding++;
     bands[d < 500 ? 0 : d < 1500 ? 1 : d < 3000 ? 2 : 3].push(psf * 43560);
   }
   const anyCrop = tractList(parcels, bbls).map((b) => parcels[b]).find((r) => r?.ag === "crop");
@@ -427,7 +433,8 @@ function recordYear(s: GameState, parcels: ParcelTable, bbls: string[]) {
     newHomes: h.closed, started: h.startedY, closed: h.closedY,
     lots, acres: +acres.toFixed(1), plats,
     bought: g.yr.bought, refused: g.yr.refused,
-    gradient: bands.map((b) => Math.round(median(b))),
+    gradient: bands.map((b) => Math.round(b.length ? b.reduce((x, y) => x + y, 0) / b.length : 0)),
+    bidding,
     farmAcre: anyCrop ? Math.round(farmUsePsf(anyCrop, e) * 43560) : 0,
     homePsf: +(e.homes?.psf ?? 0).toFixed(1),
     roads: roadsSummary(s),
@@ -441,7 +448,8 @@ function recordYear(s: GameState, parcels: ParcelTable, bbls: string[]) {
 export function tickGrowth(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null): void {
   if (s.citySize !== "region") return;
   if ((globalThis as { BW_NO_GROWTH?: boolean }).BW_NO_GROWTH) return;
-  growthOf(s);
+  const g = growthOf(s);
+  if (g.mapSeed === undefined) { const t = tractList(parcels, bbls)[0]; if (!t) return; g.mapSeed = parcels[t].tract!.seed; }
   tickProjects(s, parcels);
   tickRoads(s, parcels, bbls);
   if (s.month % 3 === 0) tickLandMarket(s, parcels, bbls);

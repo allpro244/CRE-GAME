@@ -15,6 +15,7 @@ import { tickPlanning } from "./zoning";
 import { tickLandDev, materializePlats } from "./landdev";
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
+import { materializeNeighbourhoods } from "./unpack";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
 import { settleLeasingPayables, tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
@@ -650,6 +651,7 @@ function tickMonth(
   if (s.gameOver) return;
   // a save's finished plats are lots before anything reads the table (landdev.ts)
   if (s.plats) materializePlats(s, parcels, bbls);
+  if (s.growth?.unpacked) materializeNeighbourhoods(s, parcels, bbls);
   s.month++;
   const drawnAtOpen = s.loc?.drawnTotal ?? 0;
 

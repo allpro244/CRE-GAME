@@ -52,11 +52,11 @@ for (const seed of seeds.length ? seeds : [1, 2, 3]) {
   const ms = (performance.now() - t0) / (YEARS * 12);
   console.log(`  timing: ${ms.toFixed(0)} ms a month`);
   const H = g.growth?.hist ?? [];
-  console.log("  yr    pop     hh  renters newHomes  lots  acres plats bought refused  $/sf  roads(w/h)  maxADT   centres redev upzones   farm $/ac by km from served: <0.5  0.5-1.5  1.5-3  3+");
+  console.log("  yr    pop     hh  renters newHomes  lots  acres plats bought refused  $/sf  roads(w/h)  maxADT   centres redev upzones   bid>farm  farm $/ac | mean ask by km from served: <0.5  0.5-1.5  1.5-3  3+");
   for (const r of H) {
     if (r.m % 60 !== 0 && r !== H.at(-1)) continue;
     const t = r.town ?? {};
-    console.log(`  ${String(r.m / 12).padStart(2)} ${String(r.pop).padStart(7)} ${String(r.households).padStart(6)} ${String(r.renters).padStart(6)} ${String(r.newHomes).padStart(7)} ${String(r.lots).padStart(6)} ${String(Math.round(r.acres)).padStart(6)} ${String(r.plats).padStart(4)} ${String(H.filter((x) => x.m <= r.m).reduce((a, x) => a + x.bought, 0)).padStart(5)} ${String(H.filter((x) => x.m <= r.m).reduce((a, x) => a + x.refused, 0)).padStart(5)} ${String(r.homePsf).padStart(7)}    ${r.roads.widened}/${r.roads.highway}      ${String(r.roads.maxAdt).padStart(6)}   ${String(t.centres ?? 0).padStart(4)} ${String(t.redev ?? 0).padStart(6)} ${String(t.upzones ?? 0).padStart(5)}      ${r.farmAcre.toLocaleString().padStart(7)} | ${r.gradient.map((x) => x.toLocaleString().padStart(7)).join(" ")}`);
+    console.log(`  ${String(r.m / 12).padStart(2)} ${String(r.pop).padStart(7)} ${String(r.households).padStart(6)} ${String(r.renters).padStart(6)} ${String(r.newHomes).padStart(7)} ${String(r.lots).padStart(6)} ${String(Math.round(r.acres)).padStart(6)} ${String(r.plats).padStart(4)} ${String(H.filter((x) => x.m <= r.m).reduce((a, x) => a + x.bought, 0)).padStart(5)} ${String(H.filter((x) => x.m <= r.m).reduce((a, x) => a + x.refused, 0)).padStart(5)} ${String(r.homePsf).padStart(7)}    ${r.roads.widened}/${r.roads.highway}      ${String(r.roads.maxAdt).padStart(6)}   ${String(t.centres ?? 0).padStart(4)} ${String(t.redev ?? 0).padStart(6)} ${String(t.upzones ?? 0).padStart(5)}   ${String(r.bidding ?? 0).padStart(4)}   ${r.farmAcre.toLocaleString().padStart(7)} | ${r.gradient.map((x) => x.toLocaleString().padStart(7)).join(" ")}`);
   }
   const last = H.at(-1), first = H[0];
   if (!last || !first) { fail(`seed ${seed}: no growth record`); continue; }

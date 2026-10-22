@@ -143,10 +143,11 @@ export function platLocation(s: GameState, parcels: ParcelTable, parent: string,
   return { loc: fromComps * commute, commute };
 }
 /** The town's houses as comps, re-read once a year (and on a new state). */
-let COMPS: { key: string; list: { x: number; y: number; psf: number }[]; lnMean: number } | null = null;
+let COMPS: { key: string; parcels: ParcelTable; list: { x: number; y: number; psf: number }[]; lnMean: number } | null = null;
 export function houseComps(s: GameState, parcels: ParcelTable) {
-  const key = `${s.seed}:${Math.floor(s.month / 12)}:${Object.keys(parcels).length > 0 ? 1 : 0}`;
-  if (COMPS?.key === key) return COMPS;
+  // keyed on the table itself, not on Object.keys(parcels): this is asked once per tract per quarter (growth.ts readTract)
+  const key = `${s.seed}:${Math.floor(s.month / 12)}`;
+  if (COMPS?.key === key && COMPS.parcels === parcels) return COMPS;
   const list: { x: number; y: number; psf: number }[] = [];
   for (const bbl in parcels) {
     const raw = parcels[bbl];
@@ -159,7 +160,7 @@ export function houseComps(s: GameState, parcels: ParcelTable) {
     list.push({ x: rec.centroid[0], y: rec.centroid[1], psf: v / rec.bldgArea });
   }
   const lnMean = list.length ? list.reduce((t, c) => t + Math.log(c.psf), 0) / list.length : 0;
-  COMPS = { key, list, lnMean };
+  COMPS = { key, parcels, list, lnMean };
   return COMPS;
 }
 

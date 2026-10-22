@@ -73,6 +73,14 @@ const DESIGN_M = 24, BUILD_M = 18;
  * extension reports, road and bridge plus township road district levies].
  */
 const ROAD_SHARE = 0.10;
+/**
+ * KEEPING WHAT IS THERE comes first: resurfacing a lane-mile every 15-20 years (about
+ * $200-250k a lane-mile, mill and overlay) and the patching, striping, signs and snow in
+ * between run about $20,000 a lane-mile a year [S, approximate: state DOT and county
+ * highway budget ratios]. The county pays it on its arterials and on every plat's local
+ * streets once they are dedicated to it, before anything is widened.
+ */
+const MAINT_PER_LANE_M = 20_000 / 1609;
 /** The levy's sample: one parcel in eight appraised each year (countyLevy). */
 const LEVY_STRIDE = 8;
 /** A freeway segment is funded about four years before it opens: final design, letting and three construction seasons [S]. */
@@ -97,8 +105,8 @@ const CORRIDOR_M = 600;
 export interface RoadsState {
   /** the county road and bridge fund, $; levied and spent to date */
   fund: number; levied: number; spent: number;
-  /** last year's levy, $ */
-  levyYr: number;
+  /** last year's levy, $, and what upkeep of the network took of it */
+  levyYr: number; upkeepYr?: number;
   /** the state's segments: planned, funded, open or dropped */
   hwy: Record<string, { planM: number; status: "planned" | "funded" | "open" | "dropped"; slips: number; openM?: number }>;
   /** the county's pieces: lanes, this year's and the opening's traffic, and any widening under way */
@@ -122,8 +130,10 @@ function toSegment(p: XY, a: XY, b: XY): number {
 }
 
 let PLAN: RegionRoadPlan | null = null;
+/** The region's road plan: the MAP's seed (the tracts carry it), which need not be the game's. */
 export function roadPlan(s: GameState): RegionRoadPlan {
-  if (!PLAN || PLAN.seed !== (s.seed >>> 0)) PLAN = regionRoadPlan(s.seed);
+  const seed = (s.growth?.mapSeed ?? s.seed) >>> 0;
+  if (!PLAN || PLAN.seed !== seed) PLAN = regionRoadPlan(seed);
   return PLAN;
 }
 
@@ -327,6 +337,14 @@ export function tickRoads(s: GameState, parcels: ParcelTable, bbls: string[]) {
   if (s.month % 12 === 0) {
     const levy = countyLevy(s, parcels, bbls) * ROAD_SHARE;
     R.fund += levy; R.levied += levy; R.levyYr = Math.round(levy);
+    // the upkeep of the network as it stands: the arterials' lanes, and the plats' streets (two lanes, along half their lots' frontage)
+    let laneM = 0;
+    for (const a of P.arterials) laneM += (R.art[a.id]?.lanes ?? 2) * a.lenM;
+    for (const pl of Object.values(s.plats ?? {})) if (pl.done) laneM += 2 * pl.lots.reduce((t, l) => t + l.f, 0) * 0.3048 / 2;
+    const upkeep = Math.round(MAINT_PER_LANE_M * laneM * s.econ.costIdx);
+    // a county that cannot keep its roads defers the upkeep; it does not borrow for it
+    const paid = Math.min(Math.max(0, R.fund), upkeep);
+    R.fund -= paid; R.spent += paid; R.upkeepYr = upkeep;
     const adt = assignTraffic(s, parcels);
     const first = !Object.values(R.art).some((a) => a.adt0 > 0);
     for (const [id, a] of Object.entries(R.art)) { a.adt = Math.round(adt[id] ?? 0); if (first) a.adt0 = a.adt; }
@@ -351,7 +369,7 @@ export function tickRoads(s: GameState, parcels: ParcelTable, bbls: string[]) {
 /** The roads at a glance, for the yearly record. */
 export function roadsSummary(s: GameState) {
   const R = s.growth?.roads;
-  if (!R) return { widened: 0, highway: 0, programmed: 0, overloaded: 0, maxAdt: 0, fund: 0, levy: 0 };
+  if (!R) return { widened: 0, highway: 0, programmed: 0, overloaded: 0, maxAdt: 0, fund: 0, levy: 0, upkeep: 0 };
   const art = Object.values(R.art);
   return {
     widened: R.opened.filter((o) => o.kind === "widen").length,
@@ -359,7 +377,7 @@ export function roadsSummary(s: GameState) {
     programmed: art.filter((a) => a.status).length,
     overloaded: art.filter((a) => a.adt > CAPACITY[a.lanes]).length,
     maxAdt: Math.max(0, ...art.map((a) => a.adt)),
-    fund: Math.round(R.fund), levy: R.levyYr,
+    fund: Math.round(R.fund), levy: R.levyYr, upkeep: R.upkeepYr ?? 0,
   };
 }
 

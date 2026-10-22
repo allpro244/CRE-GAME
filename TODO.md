@@ -28,6 +28,7 @@ Each item: **who** · status. "You" = the owner.
 17. **No regional mall ever spawns** (seed 3 qualifies, no site); seed 1 industrial park only 72 ac; gas stations crowded out by strips. · Region agent
 18. **Region demand misses transit/second-centre terms** (44 of 100 points read zero) — needs a car-access term. · Region agent
 19. **Freeway reuse through town** (verges, parking, 1970s buildings) not modelled. · Backlog
+19a. **Retail kit (RetailBuilder) rough edges** — pad stalls still park against store fronts; QSR/bank side lanes only partly kept clear; grocery vestibule reads dark; text is lit-colour not emissive at night; no cart corrals out in the lot; pylon only per centre (pads have pole signs). Next: same kit approach for houses and industrial (dock doors, trailers, columns already in /Game/BW/Kit). · Me
 20. **UI speed P5** (no blur/animation in Unreal) never measured inside Unreal. · UI agent
 21. **Streetscape leftovers** — pale-blue wedges near parks (cause unknown), signals are posts only (no mast arms), no snow. · Visuals pass (later)
 22. **Hedgerows and farmsteads** skipped. · Visuals pass (later)

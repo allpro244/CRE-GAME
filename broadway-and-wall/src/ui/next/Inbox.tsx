@@ -48,7 +48,7 @@ function useMoments(): InboxItem[] {
     if (y !== null) {
       const r = yearReview(game, y, MILESTONES, START_YEAR);
       out.push({
-        key: `year:${y}`, sev: "info", subject: `Year ${START_YEAR + y}`,
+        key: `year:${y}`, sev: "info", pinned: true, subject: `Year ${START_YEAR + y}`,
         facts: r ? `NW ${usd(r.nw1)} · ${pctSigned(r.nwPct)} · rank ${r.rank1}/${r.of}` : "Closed",
         verbs: [
           { label: "Open", primary: true, run: () => S().openYearReview() },
@@ -57,20 +57,20 @@ function useMoments(): InboxItem[] {
       });
     }
     if (goal && game.goal) {
-      out.push({ key: `goal:${goal}`, sev: "info", subject: "Goal", facts: goal === "done" ? "Met" : "Missed",
+      out.push({ key: `goal:${goal}`, sev: "info", pinned: true, subject: "Goal", facts: goal === "done" ? "Met" : "Missed",
         verbs: [{ label: "Open", primary: true, run: () => useNext.getState().setShowMoment("goal") }, { label: "OK", run: () => useStore.setState({ goalCard: null }) }] });
     }
     if (exit) {
       const e = game.exits?.[exit.i];
-      out.push({ key: `exit:${exit.i}`, sev: "info", subject: e?.address ?? "Sale", facts: e ? `Sold ${usd(e.price)} · gain ${usd(e.gain)}` : "Closed",
+      out.push({ key: `exit:${exit.i}`, sev: "info", pinned: true, subject: e?.address ?? "Sale", facts: e ? `Sold ${usd(e.price)} · gain ${usd(e.gain)}` : "Closed",
         verbs: [{ label: "Open", primary: true, run: () => useNext.getState().setShowMoment("exit") }, { label: "OK", run: () => S().dismissExitCard() }] });
     }
     if (dlv && !dlv.rival) {
-      out.push({ key: `dlv:${dlv.bbl}`, sev: "info", subject: dlv.address, facts: `Delivered · ${Math.round(dlv.sf).toLocaleString()} sf${dlv.value ? " · " + usd(dlv.value) : ""}`,
+      out.push({ key: `dlv:${dlv.bbl}`, sev: "info", pinned: true, subject: dlv.address, facts: `Delivered · ${Math.round(dlv.sf).toLocaleString()} sf${dlv.value ? " · " + usd(dlv.value) : ""}`,
         verbs: [{ label: "File", primary: true, run: () => S().select(dlv.bbl) }, { label: "OK", run: () => S().dismissDeliveryCeremony() }] });
     }
     if (flash?.length) {
-      out.push({ key: `milestone:${flash.join("|")}`, sev: "info", subject: "Milestone", facts: flash.join(" · "),
+      out.push({ key: `milestone:${flash.join("|")}`, sev: "info", pinned: true, subject: "Milestone", facts: flash.join(" · "),
         verbs: [{ label: "OK", run: () => useStore.setState({ milestoneFlash: null }) }] });
     }
     return out;

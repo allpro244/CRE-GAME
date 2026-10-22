@@ -31,7 +31,7 @@ export function listingRows(g: GameState, p: ParcelTable): ListingRow[] {
       const land = rec.class === "land" || !rec.bldgArea;
       const ip = inPlace(rec, g, l.bbl, l.ask);
       const value = marketAppraisal(g, rec, l.bbl, initialCondition(rec));
-      const tag = l.reason === "receiver" ? "bank" : l.distress ? "distress" : l.earlyUntilM !== undefined && g.month < l.earlyUntilM ? "first look" : g.watch?.includes(l.bbl) ? "watched" : "";
+      const tag = rec.tract ? "farm" : l.reason === "receiver" ? "bank" : l.distress ? "distress" : l.earlyUntilM !== undefined && g.month < l.earlyUntilM ? "first look" : g.watch?.includes(l.bbl) ? "watched" : "";
       out.push({
         bbl: l.bbl, addr: rec.address || l.bbl, cls: rec.class, sf: rec.bldgArea, lot: rec.lotArea, ask: l.ask,
         psf: !land && rec.bldgArea ? l.ask / rec.bldgArea : null,
@@ -44,7 +44,7 @@ export function listingRows(g: GameState, p: ParcelTable): ListingRow[] {
   }, [p]);
 }
 
-type F = "y8" | "under" | "land" | "bldg" | "distress";
+type F = "y8" | "under" | "land" | "bldg" | "distress" | "farm";
 
 export function MarketForSale() {
   const game = useStore((s) => s.game)!;
@@ -58,6 +58,7 @@ export function MarketForSale() {
     land: (r) => r.land,
     bldg: (r) => !r.land,
     distress: (r) => r.tag === "bank" || r.tag === "distress",
+    farm: (r) => r.tag === "farm",
   };
   const shown = rows.filter((r) => f.every((k) => tests[k](r)));
   const n = (k: F) => rows.filter(tests[k]).length;
@@ -95,6 +96,7 @@ export function MarketForSale() {
           { id: "bldg", label: "Buildings", n: n("bldg") },
           { id: "land", label: "Lots", n: n("land") },
           { id: "distress", label: "Distress", n: n("distress") },
+          ...(n("farm") ? [{ id: "farm" as const, label: "Farms", n: n("farm") }] : []),
         ]}
         on={f}
         set={setF}

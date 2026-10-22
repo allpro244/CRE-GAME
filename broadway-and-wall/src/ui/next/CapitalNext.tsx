@@ -101,7 +101,8 @@ export function CapitalOverview() {
         <Stat label="Avg life"><Figure value={wMat} fmt="n" text={wMat !== null ? wMat.toFixed(1) + " y" : "—"} drill="debt" /></Stat>
         <Stat label="Floating"><Figure value={bal > 0 ? floatBal / bal : null} fmt="pct" drill="debt" /></Stat>
         <Stat label="Line"><Figure value={game.loc?.balance ?? 0} fmt="usd" drill="debt" /></Stat>
-        <Stat label="Line limit"><Figure value={lim} fmt="usd" text={`${usd(lim)} · ${locRate(game).toFixed(2)}%`} /></Stat>
+        <Stat label="Line limit"><Figure value={lim} fmt="usd" /></Stat>
+        <Stat label="Line rate"><Figure value={locRate(game)} fmt="pctv" drill="rate" /></Stat>
       </StatStrip>
       <div className="nx-box">
         <div className="nx-box-head">Maturities</div>

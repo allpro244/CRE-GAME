@@ -444,4 +444,40 @@ box(m, METAL, -10, 10, -10, 10, 0, 60)
 box(m, METAL, -130, 130, -40, 40, 240, 255)
 save(m, RET, "SM_RK_MenuBoard", slots={"accent": "%s/MI_RK_GlowWhite.MI_RK_GlowWhite" % MATS})
 
+# ================================================================== industrial kit
+IND = "/Game/BW/Industrial"
+# SM_K_GradeDoor: a grade-level overhead door 370 wide, 420 tall, in its jamb, bollards either side
+m = mesh()
+box(m, TRIM, -200, 200, 0, 6, 0, 440)
+box(m, ACCENT, -185, 185, 4, 9, 0, 420)
+for z in range(60, 420, 60):
+    box(m, METAL, -185, 185, 8, 11, z, z + 3)
+for x in (-215, 215):
+    cyl(m, METAL, x, 40, 0, 10, 110, 10)
+save(m, KIT, "SM_K_GradeDoor", slots={"accent": fg("Paint", "PaintedMetal_White"), "metal": M("BrandYellow")})
+# SM_IK_Stack: a plant's exhaust stack, 90 across, 1,800 tall (scaled), on a base, a band near the top
+m = mesh()
+box(m, TRIM, -90, 90, -90, 90, 0, 60)
+cyl(m, METAL, 0, 0, 60, 45, 1740, 16)
+cyl(m, DARK, 0, 0, 1650, 48, 60, 16)
+save(m, IND, "SM_IK_Stack", slots={"metal": fg("Metal", "Metal_BrushedWorn")})
+# SM_IK_Silo: a bulk materials silo, 360 across, 1,400 to the eaves, a cone roof, a hopper on legs, a ladder
+m = mesh()
+for x, y in ((-140, -140), (140, -140), (-140, 140), (140, 140)):
+    box(m, METAL, x - 12, x + 12, y - 12, y + 12, 0, 300)
+cyl(m, ACCENT, 0, 0, 300, 180, 1100, 20)
+GS.append_cone(m, opts(ACCENT), unreal.Transform(location=[0, 0, 1400]), 185, 20, 160, 20, 0, True, unreal.GeometryScriptPrimitiveOriginMode.BASE)
+GS.append_cone(m, opts(METAL), unreal.Transform(location=[0, 0, 0]), 30, 120, 300, 12, 0, True, unreal.GeometryScriptPrimitiveOriginMode.BASE)
+box(m, METAL, 180, 186, -30, 30, 300, 1560)
+save(m, IND, "SM_IK_Silo", slots={"accent": fg("Metal", "Metal_Brushed"), "metal": fg("Paint", "PaintedMetal_Grey")})
+# SM_IK_Transformer: a pad-mount transformer and switchgear on a concrete pad, bollards round it
+m = mesh()
+box(m, TRIM, -250, 250, -150, 150, 0, 15)
+box(m, ACCENT, -200, -20, -100, 100, 15, 200)
+box(m, ACCENT, 20, 200, -90, 90, 15, 230)
+for x in (-240, 240):
+    for y in (-140, 140):
+        cyl(m, METAL, x, y, 0, 8, 100, 10)
+save(m, IND, "SM_IK_Transformer", slots={"accent": fg("Paint", "PaintedMetal_Green"), "metal": M("BrandYellow")})
+
 unreal.log("KIT built")

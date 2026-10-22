@@ -1,3 +1,4 @@
+import { debtBook } from "@/ui/next/derive";
 import type { GameState } from "@/engine/types";
 import type { Page } from "@/state/store";
 import { loiNeedsPrincipal } from "@/engine/leasing";
@@ -189,21 +190,10 @@ export function tabCounts(g: GameState): TabCounts {
   const notes = (g.noteOffers?.length ?? 0)
     + (g.privateAsks?.length ?? 0)
     + (g.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
-  let debtBal = 0, debtWall = 0;
-  for (const h of Object.values(g.holdings)) {
-    if (h.loan) {
-      debtBal += h.loan.balance;
-      if (h.loan.maturityM - g.month <= 36) debtWall += h.loan.balance;
-    }
-    if (h.mezz && h.mezz.balance > 0) {
-      debtBal += h.mezz.balance;
-      if (h.mezz.maturityM - g.month <= 36) debtWall += h.mezz.balance;
-    }
-  }
-  if (g.facility) {
-    debtBal += g.facility.balance;
-    if (g.facility.maturityM - g.month <= 36) debtWall += g.facility.balance;
-  }
+  // One debt list for the whole UI (ui/next/derive.ts debtBook), so the badge
+  // and the new HUD cannot disagree about what is owed.
+  const book = debtBook(g);
+  const debtBal = book.secured, debtWall = book.wall;
   const privateBorrowLive = g.privateBorrowQuotes?.length ?? 0;
   const debtWarn = g.facility?.breachedSince ? "swept"
     : privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35) ? "wall" : null;

@@ -458,6 +458,8 @@ export interface Loan {
    * the building covers its debt.
    */
   leaseUpRoom?: number;
+  /** An acquisition-and-development note (platdesign.ts): split across a plat's lots, each lot sale pays off its share. */
+  ad?: boolean;
   /**
    * WHO IS ACTUALLY HOLDING IT.
    *
@@ -1211,6 +1213,32 @@ export interface EntitlementApplication {
   lotSf: number;
   /** the lots the preliminary plat shows, as filed */
   lots: number;
+  /** the plat drawn on the design desk, filed with the application (platdesign.ts) */
+  design?: PlatDesign;
+}
+
+/** What the design desk's palette sets down on a plat (platdesign.ts AMENITIES). */
+export type AmenityKind = "pocket" | "park" | "greenway" | "playground" | "pool" | "entry" | "fields";
+/**
+ * A PLAT AS THE PLAYER DREW IT (the subdivision design desk; geometry
+ * citygen/region/platdesign.mjs, economics engine/platdesign.ts). Positions
+ * are the region's canonical metres. Lot edits name the BASE plat's lots —
+ * the lots the street pattern, mix, turn and shift produce before any claim —
+ * so they hold while amenities move.
+ */
+export interface PlatDesign {
+  layout: "grid" | "loops" | "culdesac";
+  /** share of 5,000 / 7,500 / 10,000 / 15,000 sf lots */
+  mix: Partial<Record<5000 | 7500 | 10000 | 15000, number>>;
+  /** degrees the street pattern is turned from the tract's long side, and metres it is slid */
+  rot: number;
+  shift: [number, number];
+  /** where the detention pond sits (absent: the dry ground nearest the water) */
+  pond?: [number, number];
+  amen: { k: AmenityKind; at: [number, number] | null }[];
+  open: number[];
+  merge: number[];
+  split: number[];
 }
 
 /**
@@ -1220,14 +1248,24 @@ export interface EntitlementApplication {
  */
 export interface PlatRecord {
   parent: string;
-  template: "grid";
+  /** "grid": the land card's plain grid (citygen platTractLots); "design": drawn on the design desk */
+  template: "grid" | "design";
   lotSf: number;
   startM: number;
   doneM: number;
-  /** horizontal development: streets, water, sewer, power, and the impact fees */
+  /** horizontal development: streets, water, sewer, power, and the impact fees (and a design's amenities) */
   cost: number;
-  /** each lot: area (sf), frontage and depth (ft) — the geometry is redrawn from the tract by citygen */
-  lots: { a: number; f: number; d: number }[];
+  /**
+   * each lot: area (sf), frontage and depth (ft) — the geometry is redrawn from the tract by citygen —
+   * and `p`, the premium on the price of a house there from the plat's amenities (platdesign.ts lotPremium)
+   */
+  lots: { a: number; f: number; d: number; p?: number }[];
+  /** the design that redraws it (template "design") */
+  design?: PlatDesign;
+  /** the amenities built, each a deed of the homeowners' association: land (sf) and what it cost */
+  amen?: { k: AmenityKind; sf: number; cost: number }[];
+  /** the association's other common land: the detention pond's, and lots given to open space (sf) */
+  common?: { pond: number; open: number };
   done?: boolean;
 }
 
@@ -3914,7 +3952,7 @@ export interface GameState {
   /** Rezoning applications in front of the board, keyed by tract. */
   entitlementApps?: Record<string, EntitlementApplication>;
   /** Tracts the board rezoned: their new district and envelope (resolveRec applies it). */
-  rezoned?: Record<string, { zone: string; far: number; lotSf: number; m: number }>;
+  rezoned?: Record<string, { zone: string; far: number; lotSf: number; m: number; lots?: number; design?: PlatDesign }>;
   /** When the board last refused a rezoning on each tract: a substantially similar application waits a year (landdev.ts REFILE_BAR_M). */
   rezoneRefusedM?: Record<string, number>;
   /** Subdivisions, keyed by the parent tract: the recipe that regenerates the lots, and when they finish. */

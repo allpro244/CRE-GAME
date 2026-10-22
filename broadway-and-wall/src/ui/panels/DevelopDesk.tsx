@@ -10,6 +10,7 @@ import { dominantOf } from "@/engine/proforma";
 import type { BuildingDesign, Contract, DevUse } from "@/engine/types";
 import { DesignPicker } from "@/ui/panels/DesignPicker";
 import SchemeViewer from "@/ui/panels/SchemeViewer";
+import LandDesk from "@/ui/panels/LandDesk";
 import { resolveRec, physicalMaxFloors, REF_PLATE_SF, landRead, DEV_MARGIN, ownedHoldingValue } from "@/engine/value";
 import { ffAvailable, maxOutside, syndicateBar } from "@/engine/syndicate";
 import { playerTerms, termsLine } from "@/engine/reputation";
@@ -30,6 +31,7 @@ import {
   btsRentRead, BTS_FIT_PREMIUM, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY, groundbreakPurse,
 } from "@/engine/dev";
 import { blockReport } from "@/engine/demand";
+import { sweepSchemes } from "@/ui/next/bestScheme";
 import { BUILD_TIERS, buildTier, specRentMult, specWearMult } from "@/engine/value";
 import { lenderBlurb, CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { USE_WORD } from "@/engine/mix";
@@ -214,6 +216,8 @@ export function DevelopSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
+  // ...its desk is the land development desk: lay out the subdivision, entitle it, build its streets
+  if (rec && rec.ag && rec.tract) return <LandDesk bbl={bbl} />;
   if (rec && (rec.ag || rec.zoneDist === "AG")) {
     return (
       <div className="deal">
@@ -483,19 +487,8 @@ function DevelopSectionLive({ bbl }: { bbl: string }) {
           // Every use at a spread of heights up to its envelope, at the
           // dials already set (footprint, contract, lender, spec). Ranked
           // by the same hurdle ratio the verdict reads.
-          const out: { use: DevUse; floors: number; hurdle: number; equity: number; profit: number }[] = [];
-          for (const u of USES) {
-            const top = maxFloorsFor(rec, cov, u);
-            const steps = Array.from(new Set([2, 4, 6, 8, 12, 16, 20, 25, 30, 40, 50, top].filter((x) => x >= 1 && x <= top)));
-            for (const f of steps) {
-              const p = planDevelopment(game, parcels, bbl, u, f, cov, contract, undefined,
-                { mix: u === "mixed" ? customMix : undefined, groundRetail }, bank, spec);
-              if (!p) continue;
-              out.push({ use: u, floors: f, hurdle: p.hurdleRatio, equity: p.equity + p.pointsCost,
-                profit: p.exitYield > 0 ? p.stabNoi / (p.exitYield / 100) - p.basisTotal : 0 });
-            }
-          }
-          return out.sort((a, b) => b.hurdle - a.hurdle).slice(0, 3);
+          return sweepSchemes(game, parcels, bbl, USES, cov, contract,
+            (u) => ({ mix: u === "mixed" ? customMix : undefined, groundRetail }), bank, spec);
         }}
       />
 

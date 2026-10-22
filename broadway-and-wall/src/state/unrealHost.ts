@@ -20,6 +20,8 @@
  * its UFUNCTIONs City, View, Select and Input arrive here as
  * window.ue.bridge.city / view / select / input.
  */
+import { useNext } from "@/ui/next/nextStore";
+import { lensValues } from "@/ui/next/lensData";
 import { useStore } from "@/state/store";
 import { renderView, lookOf } from "@/engine/renderView";
 import { gfxString } from "./graphics";
@@ -88,6 +90,7 @@ export function startUnrealHost(): void {
   let lastSel: string | null | undefined;
   let lastGfx: string | undefined;
   let lastPreview: unknown = undefined;
+  let lastLens: string | undefined, lastLensGame: unknown = null, lastFly = 0;
   const push = () => {
     const b = bridge();
     if (!b) return false;
@@ -130,6 +133,19 @@ export function startUnrealHost(): void {
       lastSel = s.selectedBBL;
       void b.select(lastSel ?? "");
     }
+    // THE LENS BRIDGE (ui-revamp step 7): the lens and its number per deed,
+    // from the same lensData the browser map paints; resent when the month
+    // moves. Unreal tints the lots (BWGame.cpp "lens", the C++ side's to add).
+    if (s.lens !== lastLens || (s.lens !== "none" && s.game !== lastLensGame)) {
+      lastLens = s.lens; lastLensGame = s.game;
+      const v = s.lens !== "none" && s.game && s.parcels ? Object.fromEntries(lensValues(s.game, s.parcels, s.lens)) : {};
+      sendInput({ t: "lens", k: s.lens, v });
+    }
+    // a row or a notice that names a building puts the camera on it
+    if (s.flyTo && s.flyTo.n !== lastFly) {
+      lastFly = s.flyTo.n;
+      sendInput({ t: "fly", bbl: s.flyTo.bbl });
+    }
     return true;
   };
   useStore.subscribe(() => { push(); });
@@ -143,9 +159,18 @@ export function startUnrealHost(): void {
 
   // camera keys go to Unreal unless the player is typing in a field
   const CAMERA = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "Digit1", "Digit2", "Digit3"]);
+  // THE NEW SHELL GIVES 1-5 TO THE PLACES (ui/next/keys.ts), so its camera
+  // presets are F1-F3. They reach Unreal under the preset names it already
+  // reads (BWGame.cpp: Digit1-3), so the C++ side needs no change.
+  const PRESET: Record<string, string> = { F1: "Digit1", F2: "Digit2", F3: "Digit3" };
   const key = (e: KeyboardEvent, down: boolean) => {
     const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || !CAMERA.has(e.code)) return;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (useNext.getState().uiShell === "next") {
+      if (PRESET[e.code]) { e.preventDefault(); sendInput({ t: down ? "kd" : "ku", k: PRESET[e.code] }); return; }
+      if (e.code.startsWith("Digit")) return;
+    }
+    if (!CAMERA.has(e.code)) return;
     sendInput({ t: down ? "kd" : "ku", k: e.code });
   };
   window.addEventListener("keydown", (e) => key(e, true));

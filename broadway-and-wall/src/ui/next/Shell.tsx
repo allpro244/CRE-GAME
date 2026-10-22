@@ -42,6 +42,7 @@ import { BuildingFile } from "./BuildingFile";
 import { openPlace, openTab, useNextKeys } from "./keys";
 import { HoldingsBuildings, HoldingsLand } from "./HoldingsNext";
 import { MarketForSale } from "./MarketNext";
+import { MarketBooks, MarketDistressed, MarketSites } from "./MarketMore";
 import { CapitalLoans, CapitalOverview } from "./CapitalNext";
 import { PipelineBoard, PipelineBuilding, PipelineBuying, PipelineSelling } from "./PipelineNext";
 
@@ -233,6 +234,9 @@ const NEXT_VIEW: Record<string, ReactElement> = {
   "v:pipe-build": <PipelineBuilding />,
   "v:pipe-sell": <PipelineSelling />,
   "v:forsale": <MarketForSale />,
+  "v:sites": <MarketSites />,
+  "v:distressed": <MarketDistressed />,
+  "v:books": <MarketBooks />,
   "v:capital": <CapitalOverview />,
   "v:loans": <CapitalLoans />,
 };

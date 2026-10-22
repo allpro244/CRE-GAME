@@ -63,6 +63,15 @@ d.volumes.filter((v) => v.role === "pylon").slice(0, 3).forEach((v, i) => {
   const [cx, cy] = cen(v.ring), [fx, fy] = v.front;
   views.push({ name: `pylon-${i}`, x: cx, y: cy, z: 550, yaw: deg(cx - fx, cy - fy) + 35, pitch: -6, dist: 3200 });
 });
+// INDUSTRIAL (RetailBuilder's industrial half): the biggest warehouse, a plant, a flex building; the park from above
+for (const role of ["bulk", "manufacturing", "flex"]) {
+  const v = d.volumes.filter((q) => q.role === role).sort((a, b) => area(b.ring) - area(a.ring))[0];
+  if (!v?.front) continue;
+  const [bx, by] = cen(v.ring), [fx, fy] = v.front, yaw = deg(bx - fx, by - fy);
+  const big = Math.sqrt(area(v.ring)) * 0.9;
+  views.push({ name: `ind-${role}-oblique`, x: fx, y: fy, z: 400, yaw: yaw + 30, pitch: -16, dist: Math.max(4500, big) });
+  views.push({ name: `ind-${role}-aerial`, x: bx, y: by, z: 0, yaw: yaw + 15, pitch: -50, dist: Math.max(9000, big * 2.4) });
+}
 // HOUSES (HouseBuilder): a pre-war, a post-war and a late-century street, where houses stand thickest
 {
   const houses = d.volumes.filter((v) => v.deco === "house").map((v) => ({ v, c: cen(v.ring) }));

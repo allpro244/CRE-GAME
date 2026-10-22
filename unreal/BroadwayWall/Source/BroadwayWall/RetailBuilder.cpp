@@ -274,6 +274,152 @@ namespace
 
 	bool IsAnchor(const FString& R) { return R == TEXT("grocery") || R == TEXT("box") || R == TEXT("dept") || R == TEXT("mall"); }
 	bool IsPad(const FString& R) { return R == TEXT("qsr") || R == TEXT("bank") || R == TEXT("gas") || R == TEXT("truckstop") || R == TEXT("restaurant") || R == TEXT("general"); }
+	bool IsIndustrial(const FString& R) { return R == TEXT("bulk") || R == TEXT("flex") || R == TEXT("manufacturing"); }
+
+	// ================================================================ THE INDUSTRIAL HALF
+	// Tilt-up concrete: panels 7.6 m wide (a crane pick, 24-30 ft) with their reveals, a painted band,
+	// clerestory lites high on the long walls, an office corner in glass; dock doors along the truck
+	// court with trailers backed to some and more staged at the court's edge; skylights over a
+	// warehouse's floor. Flex: storefront offices in front, roll-up doors behind. A plant: a high bay,
+	// stacks, silos and a pad-mount transformer.
+	const TCHAR* const Firms[] = { TEXT("MIDWEST LOGISTICS"), TEXT("PRAIRIE COLD STORAGE"), TEXT("HEARTLAND PLASTICS"), TEXT("TRI-COUNTY SUPPLY"),
+		TEXT("RIVERBEND DISTRIBUTION"), TEXT("ACME FABRICATION"), TEXT("CEDAR VALLEY FOODS"), TEXT("NORTHSTAR PACKAGING"), TEXT("GREAT PLAINS PARTS"), TEXT("KESTREL TOOL & DIE") };
+	const TCHAR* const FlexTenants[] = { TEXT("HVAC SERVICE"), TEXT("SIGNS & GRAPHICS"), TEXT("ELECTRIC"), TEXT("PLUMBING SUPPLY"), TEXT("CABINETS"), TEXT("AUTO GLASS"),
+		TEXT("PRINT SHOP"), TEXT("FLOORING"), TEXT("BREWING CO."), TEXT("POOL & SPA"), TEXT("GYM"), TEXT("MACHINE SHOP") };
+	struct FInd { int32 Body, Band, Office; double OfficeW; };
+	FInd IndOf(const FBWVolume& V, const FFace& F, uint32 H)
+	{
+		static const int32 Bodies[] = { SEifsWhite, SEifsGrey, SEifsSand, SConcrete, SEifsWhite };
+		static const int32 Bands[] = { SBrandBlue, SEifsGrey, SBronze, SBrandRed, SEifsTerracotta, SBrandGreen };
+		FInd I;
+		I.Body = V.Role == TEXT("flex") && (H >> 3) % 3 == 0 ? SBrickBrown : Bodies[H % 5];
+		I.Band = Bands[(H >> 5) % 6];
+		if (I.Band == SEifsGrey && I.Body == SEifsGrey) I.Band = SBrandBlue;
+		I.Office = (H >> 9) % 2 ? SEifsWhite : I.Band;
+		I.OfficeW = V.Role == TEXT("flex") ? 0 : FMath::Clamp(F.L * 0.18, 1500.0, 3000.0);
+		return I;
+	}
+	void MassIndustrial(const FBWVolume& V, TArray<FBWSolid>& Solids)
+	{
+		const uint32 H = GetTypeHash(V.Bbl);
+		const FFace F = FaceOf(V, FrontEdge(V));
+		const FInd I = IndOf(V, F, H);
+		auto Solid = [&](int32 Mat, TArray<FVector2D> Ring, double Z0, double Z1, bool bTop = true)
+		{ FBWSolid& O = Solids.AddDefaulted_GetRef(); O.Mat = Mat; O.Ring = MoveTemp(Ring); O.Z0 = Z0; O.Z1 = Z1; O.bTop = bTop; };
+		Solid(I.Body, V.Ring, V.Z0, V.Z1, false);
+		Solid(SMembrane, V.Ring, V.Z1 - 1, V.Z1);
+		// the painted band round the top (walls only: a top would paint the roof)
+		Solid(I.Band, BWInsetRing(V.Ring, -3), V.Z1 - 260, V.Z1 - 170, false);
+		if (V.Role == TEXT("flex"))
+		{
+			// a flex building's front: a raised fascia over its office fronts
+			Solid(I.Band, F.Rect(0, F.L, -40, 6), V.Z1 - 230, V.Z1 + 70);
+			return;
+		}
+		// THE OFFICE CORNER: its parapet stands above the warehouse's
+		const bool bLeft = (H >> 11) % 2 == 0;
+		const double S0 = bLeft ? 0 : F.L - I.OfficeW, S1 = bLeft ? I.OfficeW : F.L;
+		Solid(I.Office, F.Rect(S0, S1, -60, 8), V.Z1 - 120, V.Z1 + 180);
+		if (V.Role == TEXT("manufacturing"))
+		{
+			// the high bay over the back of the plant, 5 m above the rest
+			Solid(I.Body, F.Rect(F.L * 0.45, F.L, -F.D, -F.D * 0.4), V.Z1, V.Z1 + 500, false);
+			Solid(SMembrane, F.Rect(F.L * 0.45, F.L, -F.D, -F.D * 0.4), V.Z1 + 499, V.Z1 + 500);
+		}
+	}
+	void DressIndustrial(FBWRetailBuilder& RB, const FBWVolume& V)
+	{
+		const uint32 H = GetTypeHash(V.Bbl);
+		const int32 Fe = FrontEdge(V);
+		const FFace F = FaceOf(V, Fe), B = FaceOf(V, Fe + 2), L1 = FaceOf(V, Fe + 1), L3 = FaceOf(V, Fe + 3);
+		const FInd I = IndOf(V, F, H);
+		const double Ht = V.Z1 - V.Z0;
+		constexpr double G = 16;
+		FBWKitSet& K = RB.Kit;
+		FRandomStream Rng((int32)HashCombine(H, 0x1d0c));
+		auto Mats = [](std::initializer_list<FBWSlotMat> L) { return TArray<FBWSlotMat>(L); };
+		const TArray<FBWSlotMat> Reveal = Mats({ { TEXT("wall"), SolidPath(SBronze) } });
+		const TArray<FBWSlotMat> Lite = Mats({ { TEXT("wall"), TEXT("/Game/Building/Material/MI/Glass/MI_Bldg_glass_opaque.MI_Bldg_glass_opaque") } });
+		const bool bFlex = V.Role == TEXT("flex"), bPlant = V.Role == TEXT("manufacturing");
+		const bool bBig = V.Sf > 150000;
+		// PANEL REVEALS on every face, a clerestory lite in every other panel on the sides and back
+		for (const FFace* Fc : { &F, &B, &L1, &L3 })
+		{
+			const int32 N = FMath::Max(1, FMath::RoundToInt(Fc->L / 760.0));
+			const double Pw = Fc->L / N;
+			for (int32 i = 1; i < N; ++i) K.Add(KITM("SM_K_Unit"), Fc->T(Pw * i, 0, 0, FVector(0.05, 0.05, Ht / 100.0)), Reveal);
+			if (Fc != &F && !bFlex)
+				for (int32 i = 0; i < N; i += 2) K.Add(KITM("SM_K_Unit"), Fc->T(Pw * (i + 0.5), 0, Ht - 330, FVector((Pw - 220) / 100.0, 0.06, 0.9)), Lite);
+		}
+		if (bFlex)
+		{
+			// UNITS of 15-18 m: a storefront office and a door in front, a roll-up door behind each
+			const int32 N = FMath::Max(1, FMath::RoundToInt(F.L / 1650.0));
+			const double Uw = F.L / N;
+			for (int32 u = 0; u < N; ++u)
+			{
+				const double S0 = Uw * u, Mid = S0 + Uw * 0.5;
+				K.Add(RETM("SM_RK_Storefront"), F.T(S0 + 450, 14, 0, FVector(0.9, 1, 1)));
+				K.Add(RETM("SM_RK_Canopy"), F.T(S0 + 450, 18, 0, FVector(1.0, 1, 1)));
+				K.Add(RETM("SM_RK_Pier"), F.T(FMath::Max(35.0, S0), 0, 0, FVector(0.8, 1, (Ht + 40) / 650.0)), Mats({ { TEXT("wall"), SolidPath(I.Band) } }));
+				const uint32 Hu = Mix(H, u + 1);
+				K.Text(FlexTenants[Hu % UE_ARRAY_COUNT(FlexTenants)], F.At(S0 + 450, 10, Ht - 80), F.Out, 55, 800, FColor(250, 250, 245));
+				K.Add(KITM("SM_K_GradeDoor"), F.T(S0 + Uw - 330, 0, 0, FVector(0.85, 1, 0.8)));
+				K.Add(KITM("SM_K_GradeDoor"), B.T(B.L - Mid, 0, 0));
+				K.Add(KITM("SM_K_ManDoor"), B.T(B.L - Mid - 400, 0, 0));
+				K.Add(RoofUnit, F.T(Mid, -F.D * 0.4, Ht));
+				if (Rng.FRand() < 0.5) K.Add(Cars[Rng.RandRange(0, UE_ARRAY_COUNT(Cars) - 1)], B.T(B.L - Mid + 200, 650, G - 8, FVector(1), 90));
+			}
+			return;
+		}
+		// THE OFFICE CORNER in glass: two storeys of curtain wall, an entry canopy, the firm's name
+		const bool bLeft = (H >> 11) % 2 == 0;
+		const double O0 = bLeft ? 0 : F.L - I.OfficeW, O1 = bLeft ? I.OfficeW : F.L;
+		const int32 Nb = FMath::Max(2, FMath::RoundToInt((O1 - O0) / 600.0));
+		const double Bw = (O1 - O0) / Nb;
+		const TArray<FBWSlotMat> Clear = Mats({ { TEXT("metal"), FGM("Metal", "Metal_Brushed") } });
+		for (int32 b = 0; b < Nb; ++b)
+			for (int32 f = 0; f < 2; ++f)
+				K.Add(RETM("SM_RK_Storefront"), F.T(O0 + Bw * (b + 0.5), 14, f * 360, FVector(Bw / 600.0, 1, 1)), Clear);
+		K.Add(RETM("SM_RK_Canopy"), F.T((O0 + O1) * 0.5, 18, 0, FVector(0.8, 1.3, 1)), Clear);
+		K.Text(Firms[(H >> 4) % UE_ARRAY_COUNT(Firms)], F.At((O0 + O1) * 0.5, 12, Ht + 60), F.Out, 75, O1 - O0 - 100, FColor(250, 250, 245));
+		// THE DOCKS along the rest of the front, a drive-in door at the far end; trailers at some, more staged out on the court
+		const double D0 = bLeft ? O1 + 500 : 400, D1 = bLeft ? F.L - 600 : O0 - 500;
+		const int32 Want = FMath::Clamp(int32(V.Sf / 9000.0), bPlant ? 3 : 4, 70);
+		const int32 Nd = FMath::Min(Want, FMath::Max(0, int32((D1 - D0) / 400.0)));
+		const double Court = bBig ? 4400 : 2700;
+		for (int32 d = 0; d < Nd; ++d)
+		{
+			const double Sx = D0 + 200 + d * ((D1 - D0 - 400) / FMath::Max(1, Nd - 1));
+			K.Add(KITM("SM_K_DockDoor"), F.T(Sx, 0, 0));
+			const double U = Rng.FRand();
+			if (U < 0.35) K.Add(KITM("SM_K_Trailer"), F.T(Sx, 12, G, FVector(1), 90), Mats({ { TEXT("accent"), Rng.FRand() < 0.7 ? FGM("Paint", "PaintedMetal_White") : FGM("Paint", "PaintedMetal_Grey") } }));
+			else if (U < 0.6 && Court > 2000) K.Add(KITM("SM_K_Trailer"), F.T(Sx, Court - 1650, G, FVector(1), 90), Mats({ { TEXT("accent"), FGM("Paint", "PaintedMetal_White") } }));
+		}
+		K.Add(KITM("SM_K_GradeDoor"), F.T(bLeft ? F.L - 300 : 300, 0, 0));
+		// a man door or two round the back; a plant's yard
+		K.Add(KITM("SM_K_ManDoor"), B.T(B.L * 0.3, 0, 0));
+		K.Add(KITM("SM_K_ManDoor"), L1.T(L1.L * 0.5, 0, 0));
+		if (bPlant)
+		{
+			K.Add(TEXT("/Game/BW/Industrial/SM_IK_Stack.SM_IK_Stack"), F.T(F.L * 0.62, -F.D * 0.7, 0, FVector(1.8, 1.8, (Ht + 1400) / 1800.0)));
+			K.Add(TEXT("/Game/BW/Industrial/SM_IK_Stack.SM_IK_Stack"), F.T(F.L * 0.72, -F.D * 0.7, 0, FVector(1.4, 1.4, (Ht + 1000) / 1800.0)));
+			const int32 Ns = 2 + int32((H >> 6) % 2);
+			for (int32 i = 0; i < Ns; ++i) K.Add(TEXT("/Game/BW/Industrial/SM_IK_Silo.SM_IK_Silo"), L3.T(L3.L * 0.3 + i * 450, 320, G));
+			K.Add(TEXT("/Game/BW/Industrial/SM_IK_Transformer.SM_IK_Transformer"), L1.T(L1.L * 0.25, 300, G));
+		}
+		// THE ROOF: skylights in rows over a warehouse floor, rooftop units over the office and the plant
+		if (!bPlant && V.Sf > 40000)
+			for (double Sx = 1200; Sx < F.L - 900; Sx += 1500)
+				for (double Oy = -1200; Oy > -F.D + 900; Oy -= 1500)
+				{
+					if (Sx > O0 - 300 && Sx < O1 + 300 && Oy > -1500) continue;
+					K.Add(TEXT("/Game/BW/Roof/SM_Skylight.SM_Skylight"), F.T(Sx, Oy, Ht));
+				}
+		const int32 Units = bPlant ? 6 + int32(F.L * F.D / 1.0e7) : 2 + int32(I.OfficeW / 1000);
+		for (int32 u = 0; u < Units; ++u)
+			K.Add(RoofUnit, F.T(bPlant ? Rng.FRandRange(F.L * 0.1, F.L * 0.9) : Rng.FRandRange(O0 + 200, O1 - 200), bPlant ? -Rng.FRandRange(300, F.D * 0.4) : -Rng.FRandRange(300, 1200), Ht, FVector(1.3)));
+	}
 }
 
 int32 FBWRetailBuilder::NumMats() { return NumSolid; }
@@ -288,6 +434,7 @@ void FBWRetailBuilder::Mass(const FBWVolume& V, TArray<FBWSolid>& Solids) const
 	auto Solid = [&](int32 Mat, TArray<FVector2D> Ring, double Z0, double Z1, bool bTop = true)
 	{ FBWSolid& O = Solids.AddDefaulted_GetRef(); O.Mat = Mat; O.Ring = MoveTemp(Ring); O.Z0 = Z0; O.Z1 = Z1; O.bTop = bTop; };
 	if (V.Role == TEXT("pylon")) return;   // all kit
+	if (IsIndustrial(V.Role)) { MassIndustrial(V, Solids); return; }
 	const FFace F = FaceOf(V, FrontEdge(V));
 	const bool bOld = V.Year > 0 && V.Year < 1975;
 	// the body: its own walls (rear and sides in block or render), a membrane or gravel roof
@@ -339,6 +486,7 @@ void FBWRetailBuilder::Dress(const FBWVolume& V, const FString& Name)
 	constexpr double G = 16;   // the ground's top (the lot and the sidewalk), cm above the volume's base
 	FBWKitSet& K = Kit;
 	auto Mats = [](std::initializer_list<FBWSlotMat> L) { return TArray<FBWSlotMat>(L); };
+	if (IsIndustrial(V.Role)) { DressIndustrial(*this, V); return; }
 
 	// ---------------------------------------------------------------- THE PYLON SIGN
 	if (V.Role == TEXT("pylon"))

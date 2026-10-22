@@ -18,7 +18,6 @@ import { tabCounts } from "@/ui/desks";
 import FirmStanding from "@/ui/FirmStanding";
 import FirmTimeline from "@/ui/FirmTimeline";
 import { PortfolioPage } from "@/ui/panels/PortfolioPage";
-import { DealsPage } from "@/ui/panels/DealsPage";
 import { MarketPage, BuildingDatabase } from "@/ui/panels/MarketPage";
 import { PlayersPage } from "@/ui/panels/PlayersPage";
 import { NotesPage } from "@/ui/panels/NotesPage";
@@ -43,11 +42,14 @@ import { BuildingFile } from "./BuildingFile";
 import { openPlace, openTab, useNextKeys } from "./keys";
 import { HoldingsBuildings, HoldingsLand } from "./HoldingsNext";
 import { MarketForSale } from "./MarketNext";
+import { MarketBooks, MarketDistressed, MarketSites } from "./MarketMore";
 import { CapitalLoans, CapitalOverview } from "./CapitalNext";
+import { CapitalBooks, CapitalInvestors, CapitalLenders } from "./CapitalMore";
+import { CityMarkets, CityNews, CityPlayers, CityRankings, CityRecord } from "./CityNext";
+import { PipelineBoard, PipelineBuilding, PipelineBuying, PipelineSelling } from "./PipelineNext";
 
 const PAGE_VIEW: Partial<Record<Page, ReactElement>> = {
   portfolio: <PortfolioPage />,
-  deals: <DealsPage />,
   market: <MarketPage />,
   pulse: <PulsePage />,
   players: <PlayersPage />,
@@ -229,9 +231,24 @@ const KEEP = 3;
 const NEXT_VIEW: Record<string, ReactElement> = {
   "v:holdings": <HoldingsBuildings />,
   "v:land": <HoldingsLand />,
+  "v:pipe-board": <PipelineBoard />,
+  "v:pipe-buy": <PipelineBuying />,
+  "v:pipe-build": <PipelineBuilding />,
+  "v:pipe-sell": <PipelineSelling />,
   "v:forsale": <MarketForSale />,
+  "v:sites": <MarketSites />,
+  "v:distressed": <MarketDistressed />,
+  "v:books": <MarketBooks />,
   "v:capital": <CapitalOverview />,
   "v:loans": <CapitalLoans />,
+  "v:lenders": <CapitalLenders />,
+  "v:investors": <CapitalInvestors />,
+  "v:fbooks": <CapitalBooks />,
+  "v:c-markets": <CityMarkets />,
+  "v:c-news": <CityNews />,
+  "v:c-players": <CityPlayers />,
+  "v:c-rankings": <CityRankings />,
+  "v:c-record": <CityRecord />,
 };
 const viewOf = (k: string): ReactElement | undefined => NEXT_VIEW[k] ?? PAGE_VIEW[k as Page];
 

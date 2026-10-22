@@ -265,3 +265,24 @@ html.ui-next .map-root { left: var(--rail-w); top: var(--hud-h); }
 .nx-split .nx-table { font-size: 11.5px; }
 .nx-split .nx-table th, .nx-split .nx-table td { padding: 0 5px; white-space: nowrap; }
 .nx-split-rows { overflow-x: auto; }
+
+/* ---- pipeline board (step 6) ------------------------------------------ */
+.nx-lane { border: 1px solid var(--nx-line); background: #fbf8f0; }
+.nx-lane-name { font: 700 11px system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; padding: 5px 8px; border-bottom: 1px solid var(--nx-line); color: var(--nx-dim); }
+.nx-lane-cols { display: grid; gap: 1px; background: var(--nx-line); }
+.nx-col { background: #fbf8f0; padding: 4px; display: flex; flex-direction: column; gap: 3px; min-height: 52px; min-width: 0; }
+.nx-col-empty { background: var(--nx-paper-2); }
+.nx-col-head { display: flex; justify-content: space-between; font: 600 11px system-ui, sans-serif; color: var(--nx-ink); padding: 0 2px; }
+.nx-col-sum { font-size: 11px; color: var(--nx-dim); padding: 0 2px; }
+.nx-col-more { font-size: 11px; color: var(--nx-dim); padding: 0 2px; }
+.nx-card { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; width: 100%; padding: 3px 5px; border: 1px solid var(--nx-line); border-radius: 2px; background: #fff; cursor: pointer; font: 12px system-ui, sans-serif; color: var(--nx-ink); }
+.nx-card:hover { border-color: var(--nx-gold); }
+.nx-card-t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.nx-card-a { font-size: 12px; }
+.nx-card-b { font-size: 11px; color: var(--nx-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.nx-stat-sub { font-size: 11px; }
+.nx-stage-agreed, .nx-stage-contract, .nx-stage-offer { background: var(--nx-teal); color: #fff; }
+.nx-stage-stalled { background: var(--nx-red); color: #fff; }
+.nx-stage-talking, .nx-stage-bids, .nx-stage-draws { background: #f0d9b0; }
+.nx-stage-raising, .nx-stage-equity, .nx-stage-inbound { background: #e9dcc0; }
+.nx-stage-leaseup { background: #d8e6dc; }

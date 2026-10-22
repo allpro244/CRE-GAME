@@ -31,7 +31,8 @@ import { queueSupplyProject } from "./supply";
 import { rentableFromSpec } from "./value";
 import { ownerOf } from "./rivals";
 import { rng, HPI_CHASE_M } from "./market";
-import { resolveRec, assetValue, initialCondition } from "./value";
+import { resolveRec, assetValue, initialCondition, farmUsePsf } from "./value";
+import { INFRA_PER_FRONT_FT, IMPACT_FEE, ENTITLE_PER_LOT, ENTITLE_FIXED, PLAT_STREET_SHARE } from "./landdev";
 import { sweepLocIdleCash } from "./credit";
 import { pickConstructionDesk } from "./dev";
 import { lenderByName, chargeLenderLoss } from "./lenders";
@@ -40,7 +41,7 @@ import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { money } from "./money";
 import {
-  homeQuote, fundamentalHomePsf, commuteMult, salesPace, selloutDiscount, homeSfFor, lotPremiumMult,
+  homeQuote, fundamentalHomePsf, commuteMult, salesPace, selloutDiscount, homeSfFor, lotPremiumMult, LOT_SELLOUT_RATE,
   REF_HOME, BUILD_M, NAHB, type HomeMarket, type PlatMarket, type HomeQuote,
 } from "./homeprice";
 
@@ -201,7 +202,10 @@ function finishUnit(s: GameState, parcels: ParcelTable, u: HomeUnit): void {
 export function platLocation(s: GameState, parcels: ParcelTable, parent: string, psfEdge: number): { loc: number; commute: number } {
   const p = parcels[parent];
   if (!p?.tract) return { loc: 1, commute: 1 };
-  const commute = commuteMult(s.econ, p.tract.edgeM, psfEdge * REF_HOME.sf);
+  // THE DRIVE AS THE ROADS NOW RUN (roads.ts): the distance to town at the
+  // speed of an uncongested county road — shorter once an interchange opens
+  // near the plat, longer while its road into town is jammed.
+  const commute = commuteMult(s.econ, s.growth?.access?.[parent] ?? p.tract.edgeM, psfEdge * REF_HOME.sf);
   const comps = houseComps(s, parcels);
   let W = 0, wp = 0;
   const [lon, lat] = p.centroid;
@@ -217,10 +221,11 @@ export function platLocation(s: GameState, parcels: ParcelTable, parent: string,
   return { loc: fromComps * commute, commute };
 }
 /** The town's houses as comps, re-read once a year (and on a new state). */
-let COMPS: { key: string; list: { x: number; y: number; psf: number }[]; lnMean: number } | null = null;
+let COMPS: { key: string; parcels: ParcelTable; list: { x: number; y: number; psf: number }[]; lnMean: number } | null = null;
 export function houseComps(s: GameState, parcels: ParcelTable) {
+  // keyed on the table itself, not on Object.keys(parcels): this is asked once per tract per quarter (growth.ts readTract)
   const key = `${s.seed}:${Math.floor(s.month / 12)}`;
-  if (COMPS?.key === key) return COMPS;
+  if (COMPS?.key === key && COMPS.parcels === parcels) return COMPS;
   const list: { x: number; y: number; psf: number }[] = [];
   for (const bbl in parcels) {
     const raw = parcels[bbl];
@@ -233,9 +238,50 @@ export function houseComps(s: GameState, parcels: ParcelTable) {
     list.push({ x: rec.centroid[0], y: rec.centroid[1], psf: v / rec.bldgArea });
   }
   const lnMean = list.length ? list.reduce((t, c) => t + Math.log(c.psf), 0) / list.length : 0;
-  COMPS = { key, list, lnMean };
+  COMPS = { key, parcels, list, lnMean };
   return COMPS;
 }
+
+/**
+ * WHAT A NEW HOUSE CAN NOT SELL UNDER FOR LONG: THE COST OF MAKING ONE (Phase 4).
+ *
+ * The going price chases what the town's new-house buyer can carry
+ * (`fundamentalHomePsf`). That is the demand side, and on its own it let the
+ * price sit under the cost of producing a house for years: measured on seed 3,
+ * construction costs ran 48% in ten years against wages' 35%, the residual on
+ * a finished lot went under what the streets cost, nobody platted, and 1,900
+ * new households in seven years were met by no new house at any price. A
+ * market does not do that: when nobody builds, the houses there are bid up
+ * until somebody can — the long-run supply price of a house on the fringe is
+ * what it costs to make one (Glaeser & Gyourko 2018: new-house prices across
+ * US metros sit at or above the cost of construction plus land, rarely
+ * below it for long). And what changes is who can buy it: at the higher
+ * price fewer households qualify, so fewer houses sell (salesPace reads the
+ * affordability of the price, not of the fundamental).
+ *
+ * The cost of one, at the town's edge: the standard house's vertical,
+ * overhead, selling, margin and carry (homeQuote), on a finished lot that
+ * returns its land developer what the lot took — the farm under it at
+ * farm-use value (gross of the plat's streets, PLAT_STREET_SHARE), the
+ * rezoning (a 100-lot plat's fees, ENTITLE_*), the streets and the impact fee
+ * (INFRA_PER_FRONT_FT on the lot's frontage, IMPACT_FEE) — carried three years
+ * at the land-development rate, buy to the average lot's sale (eighteen months
+ * at the board, nine of streets, a year to sell through) [S, rounded].
+ */
+export function supplyFloorPsf(e: GameState["econ"]): number {
+  const lotSf = REF_HOME.lotSf;
+  const front = Math.sqrt(lotSf / 1.8);
+  const farm = farmUsePsf({ ag: "crop", lotArea: 1 } as ParcelRecord, e) * lotSf / (1 - PLAT_STREET_SHARE);
+  const dev = (INFRA_PER_FRONT_FT * front + IMPACT_FEE + ENTITLE_PER_LOT + ENTITLE_FIXED / 100) * (e.costIdx ?? 1);
+  const lotCost = (farm + dev) * Math.pow(1 + LOT_SELLOUT_RATE, 3);
+  // the residual is linear in the price: two quotes and the line through them
+  const p1 = 100, p2 = 400;
+  const r1 = homeQuote(e, lotSf, p1, 0.6).residual, r2 = homeQuote(e, lotSf, p2, 0.6).residual;
+  if (!(r2 > r1)) return 0;
+  return p1 + ((lotCost - r1) * (p2 - p1)) / (r2 - r1);
+}
+/** What the going price chases: the buyer's capacity, or the cost of a house, whichever is higher. */
+export const homeTargetPsf = (e: GameState["econ"]) => Math.max(fundamentalHomePsf(e), supplyFloorPsf(e));
 
 /** Who is selling houses in town this month: (plat, builder) with a house nobody has signed for. */
 function sellers(h: HomesState): Map<string, { parent: string; by: string; units: HomeUnit[] }> {
@@ -283,14 +329,15 @@ function freeLots(s: GameState, parcels: ParcelTable, parent: string): { mine: s
  */
 export function refreshHomeMarket(s: GameState, parcels: ParcelTable): void {
   const e = s.econ;
-  const fund = fundamentalHomePsf(e);
+  const fund = homeTargetPsf(e);
   const prev = e.homes;
   const psf = prev?.psf ?? fund;
   const plats: Record<string, PlatMarket> = {};
   const sel = s.homes ? sellers(s.homes) : new Map();
   const n = sel.size;
   for (const [parent, plat] of Object.entries(s.plats ?? {})) {
-    if (!plat.done) continue;
+    // an industrial park (landdev.ts) is not a housing plat: no homes market reads it
+    if (!plat.done || plat.template === "industrial") continue;
     const { loc, commute } = prev?.plats[parent] && s.month % 12 !== 0 && prev.plats[parent].loc > 0
       ? prev.plats[parent] : platLocation(s, parcels, parent, psf);
     const q = homeQuote(e, platLotSf(s, parent), psf * loc, platFar(s, parent));
@@ -516,7 +563,7 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     if (hist.length === 13 && hist[0] > 0) e.homesG12 = hist[12] / hist[0] - 1;
   }
   // the going price chases what the town's buyers can carry, a third of the gap a year (market.ts HPI_CHASE_M)
-  const fund = fundamentalHomePsf(e);
+  const fund = homeTargetPsf(e);
   if (e.homes) e.homes.psf += (fund - e.homes.psf) / HPI_CHASE_M;
   refreshHomeMarket(s, parcels);
   const h = s.homes!;
@@ -739,7 +786,7 @@ export function platHomesView(s: GameState, parcels: ParcelTable, parent: string
  */
 export function tractLotQuote(s: GameState, parcels: ParcelTable, bbl: string, lotSf: number, lots: number) {
   const e = s.econ;
-  const psf = e.homes?.psf ?? fundamentalHomePsf(e);
+  const psf = e.homes?.psf ?? homeTargetPsf(e);
   const { loc, commute } = platLocation(s, parcels, bbl, psf);
   const quote = homeQuote(e, lotSf, psf * loc, 0.6);
   const n = s.homes ? sellers(s.homes).size : 0;

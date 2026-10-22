@@ -10,8 +10,9 @@ import { planDevelopment, maxFloorsFor, zoneUseBar, devMix } from "@/engine/dev"
 import { landRead, resolveRec } from "@/engine/value";
 import { CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { derive } from "@/ui/derive";
+import { productsForUse, layoutProduct, type ProductKey } from "@/engine/products";
 
-export interface SchemeRow { use: DevUse; floors: number; coverage: number; hurdle: number; equity: number; profit: number; ltcMax: number; lender: string }
+export interface SchemeRow { use: DevUse; floors: number; coverage: number; hurdle: number; equity: number; profit: number; ltcMax: number; lender: string; product?: ProductKey }
 
 const DESK_USES: DevUse[] = ["office", "multifamily", "mixed", "retail", "industrial"];
 
@@ -34,6 +35,20 @@ export function sweepSchemes(
         use: u, floors: f, coverage: cov, hurdle: plan.hurdleRatio, equity: plan.equity + plan.pointsCost,
         profit: plan.exitYield > 0 ? plan.stabNoi / (plan.exitYield / 100) - plan.basisTotal : 0,
         ltcMax: plan.ltcMax, lender: plan.lender,
+      });
+    }
+  }
+  // ...and every product the lot can carry (engine/products.ts), each on its own site plan.
+  for (const u of ["retail", "industrial"] as const) {
+    if (!uses.includes(u)) continue;
+    for (const pt of productsForUse(u)) {
+      if (!layoutProduct(pt, rec.lotArea)) continue;
+      const plan = planDevelopment(g, p, bbl, u, 1, 1, contract, undefined, { product: pt.key }, bank, spec);
+      if (!plan) continue;
+      out.push({
+        use: u, floors: 1, coverage: plan.coverage, hurdle: plan.hurdleRatio, equity: plan.equity + plan.pointsCost,
+        profit: plan.exitYield > 0 ? plan.stabNoi / (plan.exitYield / 100) - plan.basisTotal : 0,
+        ltcMax: plan.ltcMax, lender: plan.lender, product: pt.key,
       });
     }
   }

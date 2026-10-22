@@ -138,6 +138,7 @@ console.log(`  bids: takedown $${v0.bids.takedownPsf.toFixed(2)}/sf at ~${v0.bid
   console.log(`  pace = ${Math.round(hh).toLocaleString()} households x ${(E.NEW_HOME_RATE * 100).toFixed(2)}%/yr / 12 x growth ${(0.4 + 0.6 * Math.max(0, Math.min(4, g12 / E.HH_GROWTH_NAT))).toFixed(2)} (pop ${(g12 * 100).toFixed(2)}%/yr) x afford ${aff.toFixed(2)} = ${v0.bids.pace.toFixed(1)}/mo`);
 }
 
+const stock0 = g.econ.stock.multifamily;
 // sell: takedown to the first builder who offers; list the rest whole at the bid
 let months = 0, listed = false;
 while (months < HORIZON) {
@@ -171,8 +172,24 @@ if (!closed.length) fail("no builder sold a house");
 const exits = (g.exits ?? []).filter((x) => mine.includes(x.bbl)).length;
 console.log(`  exits on the plat: ${exits}; ledger: worst unexplained month $${Math.round(worst).toLocaleString()}`);
 if (exits !== pl.lotsSold) fail(`${exits} exits for ${pl.lotsSold} lots sold`);
+// A SOLD HOUSE IS A HOUSE: standing on its lot, in the housing stock, an ordinary deed on the market again
 const fam = units.find((u) => u.closedM !== undefined);
-if (fam && !E.isCivicLand(g, fam.bbl)) fail("a sold house is still on the land market");
+if (fam) {
+  const r = E.resolveRec(parcels, g, fam.bbl);
+  console.log(`  a sold house: ${r.address}, ${r.class} ${r.bldgArea.toLocaleString()} sf, ${r.floors} fl, built ${r.yearBuilt}; on the market: ${!E.isCivicLand(g, fam.bbl)}`);
+  if (!g.built[fam.bbl]?.house || r.class !== "multifamily" || !(r.bldgArea > 0)) fail("a sold house does not stand on its lot");
+  if (E.isCivicLand(g, fam.bbl)) fail("a family's house is held off the market");
+  const rv = E.renderView(g);
+  if (!rv.lots.some((l) => l.bbl === fam.bbl && l.deco === "house")) fail("the render view does not draw the house");
+}
+// the houses joined the housing stock through the delivery queue
+console.log(`  multifamily stock ${Math.round(stock0).toLocaleString()} -> ${Math.round(g.econ.stock.multifamily).toLocaleString()} sf; houses delivered ${Math.round(units.filter((u) => u.builtM !== undefined).reduce((t, u) => t + u.sf, 0)).toLocaleString()} sf`);
+if (!units.some((u) => u.builtM !== undefined)) fail("no house was finished");
+// the builders' money is on real books: a line at a desk, on that desk's loan book
+for (const b of Object.values(g.homes.builders)) console.log(`    ${b.name}: capital ${M(b.capital)}, cash ${M(b.cash)}, debt ${M(b.debt)} at ${b.lender ?? "no desk"}, interest paid ${M(b.interestPaid)}${b.failedM !== undefined ? ", FAILED" : ""}`);
+const book = E.cityLoanBook(g).filter((l) => l.borrower.startsWith("hb:"));
+const owed = Object.values(g.homes.builders).filter((b) => b.failedM === undefined).reduce((t, b) => t + b.debt, 0);
+if (Math.abs(book.reduce((t, l) => t + l.balance, 0) - owed) > 10) fail("the builders' debt is not on the desks' books");
 {
   const fresh = makeCity(REGION, seed).parcels, fb = Object.keys(fresh);
   E.normalizeParcels(fresh);

@@ -151,6 +151,15 @@ export function reconcileSupplyQueue(s: GameState, parcels: ParcelTable): void {
 
   for (const p of q) {
     if (!p.bbl || p.source === "legacy") continue;
+    // A HOMEBUILDER'S HOUSE (homes.ts) has no development or city job: its
+    // physical record is the unit, finished on the unit's date.
+    if (p.source === "homes") {
+      const u = s.homes?.units[p.bbl];
+      if (!u) { p.status = "cancelled"; continue; }
+      p.deliverM = u.doneM;
+      p.status = "active";
+      continue;
+    }
     const d = s.developments[p.bbl];
     if (d) {
       p.deliverM = d.deliverM;

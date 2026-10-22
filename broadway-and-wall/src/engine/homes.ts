@@ -25,19 +25,23 @@
 // as "taxes". A house that closes is a family's home: the lot leaves the
 // market for good (demand.ts isCivicLand), as the town's neighbourhoods do.
 import type { ParcelTable, ParcelRecord } from "@/data/types";
-import type { GameState, HomeUnit, HomesState, PlatPL, LotContract, LotOffer, LotListing, Exit } from "./types";
-import { cloneState, monthLabel, closeDeedLedger, logBooks } from "./types";
+import type { GameState, HomeUnit, HomesState, HomeBuilder, PlatPL, LotContract, LotOffer, LotListing, Exit } from "./types";
+import { cloneState, monthLabel, closeDeedLedger, logBooks, START_YEAR } from "./types";
+import { queueSupplyProject } from "./supply";
+import { rentableFromSpec } from "./value";
 import { ownerOf } from "./rivals";
 import { rng, HPI_CHASE_M } from "./market";
 import { resolveRec, assetValue, initialCondition } from "./value";
 import { sweepLocIdleCash } from "./credit";
+import { pickConstructionDesk } from "./dev";
+import { lenderByName, chargeLenderLoss } from "./lenders";
 import { saleTaxQuote } from "./actions";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { money } from "./money";
 import {
   homeQuote, fundamentalHomePsf, commuteMult, salesPace, selloutDiscount, homeSfFor,
-  REF_HOME, BUILD_M, type HomeMarket, type PlatMarket, type HomeQuote,
+  REF_HOME, BUILD_M, NAHB, type HomeMarket, type PlatMarket, type HomeQuote,
 } from "./homeprice";
 
 /**
@@ -97,7 +101,41 @@ function homesOf(s: GameState): HomesState {
 }
 const plOf = (h: HomesState, parent: string): PlatPL =>
   ((h.pl ??= {})[parent] ??= { lotsSold: 0, lotRevenue: 0, lotProceeds: 0, lotBasis: 0 });
-const newBuilder = (name: string, m: number) => ({ name, sinceM: m, lots: 0, lotSpend: 0, started: 0, closed: 0, revenue: 0, cost: 0 });
+/**
+ * A HOMEBUILDER IS FOUNDED with its own money — lognormal round $3M in the
+ * town's opening prices, carried at inflation, the same purse the town's
+ * developers draw (dev.ts newBuilder; NAHB puts the typical single-family
+ * builder at a few million of revenue a year) — and a construction desk.
+ */
+function newBuilder(s: GameState, name: string): HomeBuilder {
+  const capital = Math.round(3_000_000 * Math.exp(0.9 * (hash01(`${s.seed}:hbcap:${name}`) * 2 - 1)) * (s.econ.priceLevel ?? 1) * (s.econ.cpi ?? 1));
+  return { name, sinceM: s.month, capital, cash: capital, debt: 0, lender: pickConstructionDesk(s, `hb:${name}`), interestPaid: 0,
+    lots: 0, lotSpend: 0, started: 0, closed: 0, revenue: 0, cost: 0 };
+}
+/**
+ * WHAT THE DESK ADVANCES. The interagency supervisory loan-to-value limits
+ * (12 CFR 34 App. A, OCC / FDIC / Fed): 75% for land development, 85% for
+ * one-to-four family residential construction — the most a regulated bank
+ * may lend against a finished lot and a house going up on it. The builder's
+ * own money is the rest. A desk that has failed advances nothing.
+ */
+const LOT_ADVANCE = 0.75, HOUSE_ADVANCE = 0.85;
+/** The construction desk's coupon: the loan index plus 2.4 points (proforma.ts CONSTR_SPREAD). */
+const builderRate = (s: GameState) => ((s.econ.indexRate ?? 5.4) + 2.4) / 100;
+const deskOpen = (s: GameState, b: HomeBuilder) => !!b.lender && lenderByName(s, b.lender)?.failedM === undefined;
+/** Can the builder fund `cost` of lot (and the cash share of the house it starts on it)? */
+function canFund(s: GameState, b: HomeBuilder, lotCost: number, houseBudget: number): boolean {
+  const adv = deskOpen(s, b);
+  const own = lotCost * (adv ? 1 - LOT_ADVANCE : 1) + houseBudget * (adv ? 1 - HOUSE_ADVANCE : 1);
+  return b.failedM === undefined && b.cash >= own;
+}
+/** Pay `amount`, the desk advancing `adv` of it while open; returns what it borrowed. */
+function builderPays(s: GameState, b: HomeBuilder, amount: number, adv: number): number {
+  const loan = deskOpen(s, b) ? Math.round(amount * adv) : 0;
+  b.debt += loan;
+  b.cash -= amount - loan;
+  return loan;
+}
 
 /** The lots of a finished plat, by BBL (landdev.ts lotBbl). */
 export function platLots(s: GameState, parcels: ParcelTable, parent: string): string[] {
@@ -110,9 +148,36 @@ export function platLots(s: GameState, parcels: ParcelTable, parent: string): st
   return out;
 }
 
-/** Is this lot off the market — a homebuilder's, or a family's? (demand.ts isCivicLand reads it.) */
+/**
+ * Is this lot off the market — a homebuilder's lot, or a house it has not yet
+ * closed? (demand.ts isCivicLand reads it.) A house a family has closed on is
+ * an ordinary house again, in the town's stock and on its market, and resells
+ * as the inner ring's houses do.
+ */
 export function isHomeOffMarket(s: GameState, bbl: string): boolean {
-  return !!s.homes?.units[bbl] || !!s.homes?.held?.[bbl];
+  const u = s.homes?.units[bbl];
+  return (!!u && u.closedM === undefined) || !!s.homes?.held?.[bbl];
+}
+
+/** A house's storeys: one up to 1,800 sf, two above (Census: about half of new single-family houses are two-storey) [S, rounded]. */
+export const houseFloors = (sf: number) => (sf > 1_800 ? 2 : 1);
+
+/**
+ * A HOUSE STARTS. Its square feet join the town's construction queue the day
+ * the frame goes up (supply.ts), so the space market sees it coming and books
+ * it into the housing stock the month it is finished — the same road every
+ * other building in town takes.
+ */
+function startUnit(s: GameState, u: HomeUnit): void {
+  s.homes!.units[u.bbl] = u;
+  queueSupplyProject(s, { bbl: u.bbl, source: "homes", startM: u.startM, deliverM: u.doneM, sfByUse: { multifamily: rentableFromSpec(u.sf, houseFloors(u.sf)) } });
+}
+/** ...and is finished: it stands on its lot, a house (the map draws it as one). */
+function finishUnit(s: GameState, parcels: ParcelTable, u: HomeUnit): void {
+  u.builtM = s.month;
+  const fl = houseFloors(u.sf);
+  const lot = parcels[u.bbl]?.lotArea ?? u.sf;
+  s.built[u.bbl] = { class: "multifamily", bldgArea: u.sf, floors: fl, yearBuilt: START_YEAR + Math.floor(s.month / 12), cov: +Math.min(0.6, u.sf / fl / Math.max(1, lot)).toFixed(3), house: true };
 }
 
 // ---------------------------------------------------------------- the market
@@ -290,12 +355,12 @@ function signOffer(s: GameState, parcels: ParcelTable, parent: string): string {
   if (h.listings?.[parent]) delete h.listings[parent];
   if (o.kind === "bulk") {
     let gross = 0;
+    const b = (h.builders[o.builder] ??= newBuilder(s, o.builder));
     for (const bbl of free.slice(0, lots)) {
       const p = sellLot(s, parcels, parent, o.builder, o.psf, bbl);
       gross += p;
-      (h.held ??= {})[bbl] = { by: o.builder, cost: p };
+      (h.held ??= {})[bbl] = { by: o.builder, cost: p, loan: builderPays(s, b, p, LOT_ADVANCE) };
     }
-    const b = (h.builders[o.builder] ??= newBuilder(o.builder, s.month));
     b.lots += lots; b.lotSpend += gross;
     refreshHomeMarket(s, parcels);
     sweepLocIdleCash(s);
@@ -365,6 +430,69 @@ function poisson(s: GameState, lambda: number): number {
   return k - 1;
 }
 
+/**
+ * WHAT A FAILED BUILDER'S BOOK FETCHES: its lots at today's bid and its
+ * frames at the money in them, less a distress discount — bank REO lots and
+ * unfinished houses cleared 20-30% under market in 2009-11, and the FDIC's
+ * loss severity on failed banks' AD&C loans ran about 40-50% (FDIC loss-share
+ * data) [S]; 25% here, on collateral already marked at the sell-out.
+ */
+const REO_DISCOUNT = 0.25;
+function failBuilder(s: GameState, parcels: ParcelTable, b: HomeBuilder): void {
+  const h = s.homes!;
+  b.failedM = s.month;
+  const mark = (bbl: string, parent: string) => {
+    const q = platQuoteNow(s, parent), pm = s.econ.homes?.plats[parent];
+    return q && pm ? Math.max(0, q.residualPsf * (parcels[bbl]?.lotArea ?? 0) * pm.disc) : 0;
+  };
+  const units = Object.values(h.units).filter((u) => u.by === b.name && u.closedM === undefined);
+  const held = Object.entries(h.held ?? {}).filter(([, x]) => x.by === b.name);
+  const worthOf = new Map<string, number>();
+  for (const u of units) worthOf.set(u.bbl, (mark(u.bbl, u.parent) + u.spent) * (1 - REO_DISCOUNT));
+  for (const [bbl] of held) {
+    const parent = parcels[bbl]?.block ?? "";
+    worthOf.set(bbl, mark(bbl, parent) * (1 - REO_DISCOUNT));
+  }
+  const price = Math.round([...worthOf.values()].reduce((t, v) => t + v, 0));
+  // the desk is repaid from the sale and whatever cash is left; the rest is its loss
+  const recovered = Math.min(b.debt, price + Math.max(0, b.cash));
+  const loss = Math.max(0, Math.round(b.debt - recovered));
+  if (b.lender && loss > 0) chargeLenderLoss(s, b.lender, loss);
+  const owed = b.debt;
+  b.debt = 0; b.cash = 0; b.stressMs = 0;
+  // the contracts it had with you die with it
+  for (const [p, c] of Object.entries(h.contracts ?? {})) if (c.builder === b.name) {
+    delete h.contracts![p];
+    s.news.unshift({ q: s.month, kind: "warn", text: `${b.name} has failed: its takedown of ${c.left} more of your lots at ${parcels[p]?.address ?? p} is void.` });
+  }
+  for (const [p, o] of Object.entries(h.offers ?? {})) if (o.builder === b.name) delete h.offers![p];
+  // ANOTHER BUILDER BUYS THE BOOK from the desk, on its own money and loan
+  let nb: HomeBuilder | undefined;
+  if (worthOf.size && price > 0) {
+    let k = 0, name = builderName(s, k);
+    while (h.builders[name] && k < 40) name = builderName(s, ++k);
+    nb = h.builders[name] = newBuilder(s, name);
+    for (const u of units) {
+      const paid = Math.round(worthOf.get(u.bbl) ?? 0);
+      u.by = name;
+      u.loan = builderPays(s, nb, paid, LOT_ADVANCE);
+      // its cost: what it paid for the frame and lot, plus the draws still to come
+      u.lotCost = paid - u.spent;
+      nb.lots++; nb.lotSpend += paid; nb.started++;
+    }
+    for (const [bbl, x] of held) {
+      const paid = Math.round(worthOf.get(bbl) ?? 0);
+      x.by = name; x.cost = paid; x.loan = builderPays(s, nb, paid, LOT_ADVANCE);
+      nb.lots++; nb.lotSpend += paid;
+    }
+  }
+  s.news.unshift({
+    q: s.month, kind: "warn",
+    text: `${b.name}, homebuilder, has failed: ${money(owed)} owed${b.lender ? ` to ${b.lender}` : ""} against ${units.length} houses and ${held.length} lots`
+      + (nb ? `, sold to ${nb.name} for ${money(price)}` : "") + (loss > 0 ? `; the desk takes a ${money(loss)} loss.` : "."),
+  });
+}
+
 /** The month's homebuilding: the frames, the buyers, the closings, the builders' lots, and the market they all read. */
 export function tickHomes(s: GameState, parcels: ParcelTable): void {
   if (s.citySize !== "region" && !s.plats) return;
@@ -382,8 +510,23 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
   const h = s.homes!;
   const hm = e.homes!;
 
-  // 1. THE FRAMES GO UP, on the builders' money
-  for (const u of Object.values(h.units)) if (u.spent < u.budget) u.spent = Math.min(u.budget, u.spent + Math.ceil(u.budget / BUILD_M));
+  // 0. THE BUILDERS' INTEREST, paid from their own money; a builder that
+  // cannot pay its way for three months fails (step 5)
+  for (const b of Object.values(h.builders)) {
+    if (b.failedM !== undefined || !(b.debt > 0)) continue;
+    const i = Math.round(b.debt * builderRate(s) / 12);
+    b.cash -= i; b.interestPaid += i;
+  }
+  // 1. THE FRAMES GO UP, the desk advancing its share of each draw, and the finished ones stand
+  for (const u of Object.values(h.units)) {
+    if (u.spent < u.budget) {
+      const b = h.builders[u.by];
+      const draw = Math.min(u.budget - u.spent, Math.ceil(u.budget / BUILD_M));
+      if (b && b.failedM === undefined) u.loan = (u.loan ?? 0) + builderPays(s, b, draw, HOUSE_ADVANCE);
+      u.spent += draw;
+    }
+    if (u.builtM === undefined && u.spent >= u.budget && s.month >= u.doneM) finishUnit(s, parcels, u);
+  }
 
   // 2. THE BUYERS. Each builder with a house to sell draws this month's buyers.
   const sel = sellers(h);
@@ -406,7 +549,20 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     if (u.soldM === undefined || u.closedM !== undefined || s.month < u.doneM || u.spent < u.budget) continue;
     u.closedM = s.month;
     const b = h.builders[u.by];
-    if (b) { b.closed++; b.revenue += u.price ?? 0; b.cost += u.spent + u.lotCost; }
+    if (!b) continue;
+    // the buyer's money: commission and marketing off the top, the desk's release, the rest the builder's
+    const net = Math.round((u.price ?? 0) * (1 - NAHB.commission - NAHB.marketing));
+    const release = Math.min(b.debt, u.loan ?? 0);
+    b.debt -= release; b.cash += net - release; u.loan = 0;
+    b.closed++; b.revenue += u.price ?? 0; b.cost += u.spent + u.lotCost;
+  }
+  // 5. A BUILDER THAT CANNOT PAY ITS WAY FAILS: three months short, and its
+  // desk takes what it built and holds, sells it to another builder at a
+  // distressed price, and charges what that leaves of the loan.
+  for (const b of Object.values(h.builders)) {
+    if (b.failedM !== undefined) continue;
+    b.stressMs = b.cash < 0 ? (b.stressMs ?? 0) + 1 : 0;
+    if ((b.stressMs ?? 0) >= 3) failBuilder(s, parcels, b);
   }
 
   // 4. THE BUILDERS: start houses on lots they hold or take down, and come looking for more.
@@ -445,7 +601,7 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
       else {
         let k = 0; name = builderName(s, k);
         while ((h.builders[name] || here.has(name)) && k < 40) name = builderName(s, ++k);
-        h.builders[name] = newBuilder(name, s.month);
+        h.builders[name] = newBuilder(s, name);
       }
       if (!want) here.add(name);
       else {
@@ -456,6 +612,9 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
         const lots = kind === "bulk" ? spare.length : Math.min(spare.length, Math.max(4, Math.round(bids.pace * TAKEDOWN_MONTHS)));
         // it pays your ask if the ask is under what the lots are worth to it; otherwise it names its own number
         const psf = listing && listing.askPsf <= bid ? listing.askPsf : bid;
+        // a builder bids for the whole plat only with the money to close it: its share, the desk the rest
+        const whole = spare.slice(0, lots).reduce((t, b) => t + psf * (parcels[b]?.lotArea ?? 0), 0);
+        if (kind === "bulk" && !canFund(s, h.builders[name], whole, 0)) continue;
         const offer: LotOffer = { parent, builder: name, kind, lots, psf: +psf.toFixed(2), madeM: s.month, expiresM: s.month + OFFER_LIFE_M };
         (h.offers ??= {})[parent] = offer;
         if (listing && listing.askPsf <= bid) {
@@ -477,25 +636,30 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
       if (starts <= 0 || !(q.residual > 0)) continue;
       const own = heldBy(by).filter((b) => f2.held.includes(b));
       for (let i = 0; i < starts; i++) {
-        let bbl: string | undefined, lotCost = 0, fromHeld = false;
+        let bbl: string | undefined, lotCost = 0, fromHeld = false, loan = 0;
+        const b = (h.builders[by] ??= newBuilder(s, by));
+        const lotNow = Math.round(q.residualPsf * platLotSf(s, parent));
+        if (!canFund(s, b, own.length ? 0 : lotNow, q.vertical + q.overhead)) break;
         if (own.length) {
           fromHeld = true;
           bbl = own.shift()!;
           lotCost = h.held![bbl].cost;     // already in its book (lots, lotSpend) from the bulk purchase
+          loan = h.held![bbl].loan ?? 0;
           delete h.held![bbl];
         } else if (cNow && cNow.builder === by && cNow.left > 0 && f2.mine.length) {
           bbl = f2.mine.shift()!;
           lotCost = sellLot(s, parcels, parent, by, cNow.psf, bbl);
           cNow.left--; cNow.taken++;
           if (!(lotCost > 0)) bbl = undefined;
+          else loan = builderPays(s, b, lotCost, LOT_ADVANCE);
         } else if (f2.market.length) {
           bbl = f2.market.shift()!;
           lotCost = Math.round(q.residualPsf * (parcels[bbl]?.lotArea ?? 0) * pm.disc);
+          loan = builderPays(s, b, lotCost, LOT_ADVANCE);
         }
         if (!bbl) break;
         const qq = homeQuote(e, parcels[bbl].lotArea, hm.psf * pm.loc, platFar(s, parent));
-        h.units[bbl] = { bbl, parent, by, sf: qq.sf, startM: s.month, doneM: s.month + BUILD_M, budget: qq.vertical + qq.overhead, spent: 0, lotCost };
-        const b = (h.builders[by] ??= newBuilder(by, s.month));
+        startUnit(s, { bbl, parent, by, sf: qq.sf, startM: s.month, doneM: s.month + BUILD_M, budget: qq.vertical + qq.overhead, spent: 0, lotCost, loan });
         b.started++;
         if (!fromHeld) { b.lots++; b.lotSpend += lotCost; }
       }
@@ -513,7 +677,7 @@ export type PlatHomesView = {
   fund: number; psfTown: number; loc: number; commute: number;
   pace: number; disc: number; left: number;
   lots: number; mine: number; free: number; houses: number; closed: number;
-  builders: { name: string; building: number; closed: number; held: number }[];
+  builders: { name: string; building: number; closed: number; held: number; cash: number; debt: number; failed: boolean }[];
   bids: ReturnType<typeof builderBids>;
   pl: PlatPL | null;
   offer: LotOffer | null;
@@ -529,8 +693,12 @@ export function platHomesView(s: GameState, parcels: ParcelTable, parent: string
   const h = s.homes;
   const units = Object.values(h?.units ?? {}).filter((u) => u.parent === parent);
   const f = freeLots(s, parcels, parent);
-  const byB = new Map<string, { name: string; building: number; closed: number; held: number }>();
-  const row = (by: string) => { const b = byB.get(by) ?? { name: by, building: 0, closed: 0, held: 0 }; byB.set(by, b); return b; };
+  const byB = new Map<string, PlatHomesView["builders"][number]>();
+  const row = (by: string) => {
+    const bk = h?.builders[by];
+    const b = byB.get(by) ?? { name: by, building: 0, closed: 0, held: 0, cash: bk?.cash ?? 0, debt: bk?.debt ?? 0, failed: bk?.failedM !== undefined };
+    byB.set(by, b); return b;
+  };
   for (const u of units) { const b = row(u.by); if (u.closedM === undefined) b.building++; else b.closed++; }
   for (const bbl of f.held) row(h!.held![bbl].by).held++;
   return {

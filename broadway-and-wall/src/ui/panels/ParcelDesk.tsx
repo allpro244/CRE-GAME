@@ -252,7 +252,7 @@ function HomesCard({ bbl }: { bbl: string }) {
       <Row k="Bid · whole plat" v={`$${b.bulkPsf.toFixed(2)}/sf · ${usd(b.bulkPsf * lotSf * Math.max(1, v.free))} for ${v.free}`} />
       <Row k="Mortgage · location" v={`${(((game.econ.indexRate ?? 5.4) / 100 + 0.017) * 100).toFixed(2)}% · ×${v.loc.toFixed(2)}`} />
       <Row k="Yours" v={`${v.mine} lots · ${v.free} free`} />
-      {v.builders.map((x) => <Row key={x.name} k={x.name} v={`${x.held} held · ${x.building} bldg · ${x.closed} sold`} />)}
+      {v.builders.map((x) => <Row key={x.name} k={x.name} v={`${x.held} held · ${x.building} bldg · ${x.closed} sold · cash ${usd(x.cash)} · debt ${usd(x.debt)}${x.failed ? " · failed" : ""}`} />)}
       {v.pl && v.pl.lotsSold > 0 && (
         <Row k="Sold to date" v={`${v.pl.lotsSold} lots · ${usd(v.pl.lotRevenue)} · gain ${usd(v.pl.lotProceeds - v.pl.lotBasis)}`} />
       )}

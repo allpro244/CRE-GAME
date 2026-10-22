@@ -25,6 +25,7 @@ export type SupplySource =
   | "rival"
   | "player"
   | "ground-lease"
+  | "homes"
   | "legacy";
 
 /** One physical project in the city's authoritative delivery queue. */
@@ -1038,6 +1039,8 @@ export interface BuiltOverride {
    * footage, one wide and one tall, were drawn with a 2:1 difference in volume.
    */
   cov?: number;
+  /** A detached house (homes.ts): drawn as a house, not a block (renderView deco "house"). */
+  house?: boolean;
 }
 
 export interface Listing {
@@ -1249,9 +1252,13 @@ export interface HomeUnit {
   spent: number;
   /** what the lot cost the builder */
   lotCost: number;
+  /** the builder's loan against this house and lot, released at the closing */
+  loan?: number;
   price?: number;
   soldM?: number;
   closedM?: number;
+  /** the month the house stood finished: written to `built`, in the town's housing stock */
+  builtM?: number;
 }
 /**
  * A homebuilder's offer for your finished lots on one plat. "takedown": it
@@ -1286,11 +1293,24 @@ export interface PlatPL {
   /** gross price, net after closing costs, and the basis of the lots sold */
   lotRevenue: number; lotProceeds: number; lotBasis: number;
 }
+/**
+ * A HOMEBUILDER'S BOOKS (homes.ts). Its own money (`cash`, from `capital` at
+ * founding), its acquisition, development and construction loan at a real
+ * desk (`debt` at `lender`, on that desk's book through loanbook.ts), and the
+ * months it has been unable to pay its way (`stressMs`); three of those and
+ * it fails, its lender takes the houses and lots and charges the shortfall.
+ */
+export interface HomeBuilder {
+  name: string; sinceM: number;
+  capital: number; cash: number; debt: number; lender?: string;
+  interestPaid: number; stressMs?: number; failedM?: number;
+  lots: number; lotSpend: number; started: number; closed: number; revenue: number; cost: number;
+}
 export interface HomesState {
   units: Record<string, HomeUnit>;
-  /** lots a builder owns and has not yet started a house on, by BBL: who, and what it paid */
-  held?: Record<string, { by: string; cost: number }>;
-  builders: Record<string, { name: string; sinceM: number; lots: number; lotSpend: number; started: number; closed: number; revenue: number; cost: number }>;
+  /** lots a builder owns and has not yet started a house on, by BBL: who, what it paid, and what it borrowed on it */
+  held?: Record<string, { by: string; cost: number; loan?: number }>;
+  builders: Record<string, HomeBuilder>;
   offers?: Record<string, LotOffer>;
   contracts?: Record<string, LotContract>;
   listings?: Record<string, LotListing>;

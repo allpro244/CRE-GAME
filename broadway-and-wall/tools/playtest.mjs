@@ -68,7 +68,8 @@ function killAll() {
       else k.kill("SIGKILL");
     } catch { /* gone */ }
   }
-  try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }); } catch { /* temp */ }
+  // Edge lets go of its profile a moment after taskkill: retry for ~5 s so no temp profile is left behind
+  try { rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 }); } catch { /* temp */ }
 }
 let finished = false;
 const bail = (code, msg) => { if (msg) console.error(msg); killAll(); process.exit(code); };

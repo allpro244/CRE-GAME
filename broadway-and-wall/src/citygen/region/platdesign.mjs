@@ -297,7 +297,9 @@ export function designBase(spec, env) {
   // NOBODY PAVES A STREET THAT SERVES NO LOT. Each street keeps only the runs that lie within reach
   // of a lot (a lot's centre is half its depth past the right-of-way), so a street the pattern laid
   // across the floodplain or off the tract's dry ground is not built, and not counted.
-  const reach = (s) => (s.kind === "collector" ? 75 : 45);
+  // a local street ends a few metres past its last lot's side line (a lot's centre is the half right-of-way and half its
+  // depth off the centreline, at most 31 m for a 15,000 sf lot); the collector runs on to the next court
+  const reach = (s) => (s.kind === "collector" ? 75 : 34);
   const cells = new Map(), CS = 50;
   for (const l of lots) { const k = `${Math.floor(l.c[0] / CS)},${Math.floor(l.c[1] / CS)}`; (cells.get(k) ?? cells.set(k, []).get(k)).push(l.c); }
   const nearLot = (p, r) => {

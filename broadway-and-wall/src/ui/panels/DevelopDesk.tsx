@@ -419,7 +419,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
           like the row above it. */}
       {plan && (
         <Verdict
-          label={`Yield on cost · ${devUseLabel(use)} · ${fl} fl · ${sf(plan.sf)}`}
+          label={`Yield on cost · ${prodT ? prodT.short : `${devUseLabel(use)} · ${fl} fl`} · ${sf(plan.sf)}`}
           value={`${plan.yieldOnCost.toFixed(2)}%`}
           tone={plan.hurdleRatio >= 1.08 ? "good" : plan.hurdleRatio >= 1 ? "warn" : "bad"}
           note={plan.hurdleRatio >= 1
@@ -446,7 +446,7 @@ export function DevelopSection({ bbl }: { bbl: string }) {
           />
           <Row
             k="Programme"
-            v={`${sf(plan.sf)} · ${fl} fl · ${devUseLabel(use)} · ${plan.months} mo`}
+            v={`${sf(plan.sf)} · ${prodT ? prodT.label : `${fl} fl · ${devUseLabel(use)}`} · ${plan.months} mo`}
           />
           {/* THE SCHEME IN DOLLARS. Yield on cost against the hurdle is the
               developer's read; what the player is deciding is whether to turn
@@ -1295,7 +1295,7 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
       </div>
       {plan ? (
         <Verdict
-          label={`Yield on cost · ${devUseLabel(use)} · ${fl} fl · ${sf(plan.sf)}`}
+          label={`Yield on cost · ${gprod ? gprod.short : `${devUseLabel(use)} · ${fl} fl`} · ${sf(plan.sf)}`}
           value={`${plan.yieldOnCost.toFixed(2)}%`}
           tone={plan.hurdleRatio >= 1.08 ? "good" : plan.hurdleRatio >= 1 ? "warn" : "bad"}
           note={plan.hurdleRatio >= 1

@@ -4098,7 +4098,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     // — supply answering the wrong demand, and (once the office book went
     // empty because nothing penciled) dismantling the class the city was
     // short of. classPinnedOwed now fires on the book OR on structTight.
-    if (cls !== "land" && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
+    if (cls !== "land" && cls !== "house" && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
       const standing = cls;
       const stStand = e.structTight?.[standing] ?? 0;
       if (classPinnedOwed(e, standing) && inKindRoll < Math.min(0.92, 0.70 + stStand * 1.2)) {

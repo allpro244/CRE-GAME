@@ -59,6 +59,30 @@ const entitleOdds = (edgeM: number) => clamp(0.80 - 0.35 * clamp(edgeM / 3000, 0
  */
 const REZONE = { zone: "R-2", far: 0.6 };
 /**
+ * AN INDUSTRIAL PARK (products.ts): the board's light-industrial district,
+ * lots of two to twenty acres on a truck-rated spine road. FAR 0.6 carries a
+ * one-storey box at the 35-50% coverage its truck court and car park leave
+ * (typical suburban M-1 / I-1 districts run FAR 0.5-1.0) [S]. R-2 is houses
+ * only (value.ts HOMES_ONLY_ZONES); I-1 is not, so a
+ * centre may go on a park lot as well as a box.
+ */
+const REZONE_INDUSTRIAL = { zone: "I-1", far: 0.6 };
+/** Lot sizes an industrial park is cut into: 2, 5, 10 and 20 acres [S, NAIOP business-park practice]. */
+export const INDUSTRIAL_LOT_SIZES = [87_120, 217_800, 435_600, 871_200] as const;
+/** An acre and up is a park lot, not a house lot (citygen region platTractLots draws it the same way). */
+export const isIndustrialLot = (lotSf: number) => lotSf >= 43_560;
+const rezoneFor = (lotSf: number) => (isIndustrialLot(lotSf) ? REZONE_INDUSTRIAL : REZONE);
+/**
+ * A TRUCK-RATED SPINE ROAD, per foot of lot frontage: a 70-80 ft
+ * right-of-way with a heavy pavement section, water, sewer, storm and
+ * three-phase power — about $1,500-2,500 a linear foot of road in the 2020s
+ * (state DOT and municipal bid tabulations for industrial collectors), serving
+ * lots on both sides: $1,000 a front foot. Non-residential impact fees are
+ * levied on the building at permit, per square foot, and sit in the
+ * development's soft cost, not here. Carried by the construction-cost index.
+ */
+const INFRA_PER_FRONT_FT_INDUSTRIAL = 1_000;
+/**
  * AFTER A REFUSAL, A YEAR. Zoning codes commonly bar a substantially similar
  * application on the same land for twelve months after a denial (a standard
  * provision of US municipal codes — e.g. the one-year resubmittal rule in many
@@ -104,9 +128,10 @@ export function entitleQuote(s: GameState, parcels: ParcelTable, bbl: string, lo
   if ("err" in p) return null;
   const buildable = p.rec.buildableSf ?? p.rec.lotArea;   // dry, off the floodplain and the freeway: the land a plat can use
   const lots = planned ?? lotsOn(buildable, lotSf);
-  if (lots < 4) return null;
+  if (lots < (isIndustrialLot(lotSf) ? 2 : 4)) return null;
   const cost = Math.round((ENTITLE_FIXED + ENTITLE_PER_LOT * lots) * s.econ.costIdx);
-  return { cost, months: ENTITLE_MONTHS(lots), odds: +entitleOdds(p.rec.tract!.edgeM).toFixed(2), lots, lotSf, zone: REZONE.zone, far: REZONE.far, acres: +(p.rec.lotArea / 43560).toFixed(1), buildableAcres: +(buildable / 43560).toFixed(1) };
+  const rz = rezoneFor(lotSf);
+  return { cost, months: ENTITLE_MONTHS(lots), odds: +entitleOdds(p.rec.tract!.edgeM).toFixed(2), lots, lotSf, zone: rz.zone, far: rz.far, kind: isIndustrialLot(lotSf) ? "industrial" as const : "residential" as const, acres: +(p.rec.lotArea / 43560).toFixed(1), buildableAcres: +(buildable / 43560).toFixed(1) };
 }
 
 export function fileEntitlement(s: GameState, parcels: ParcelTable, bbl: string, lotSf = 7_500, planned?: number): { s: GameState; err?: string; msg?: string } {
@@ -144,10 +169,11 @@ function decideEntitlements(s: GameState, parcels: ParcelTable) {
     if (!s.holdings[app.bbl]) continue;           // sold while the board deliberated
     const granted = rng(s) < app.odds;
     const rec = resolveRec(parcels, s, app.bbl);
-    recordPropertyEvent(s, app.bbl, { kind: "planning", amount: app.cost, outcome: granted ? `Rezoned ${REZONE.zone}: ${app.lots} lots approved` : "Rezoning refused" });
+    recordPropertyEvent(s, app.bbl, { kind: "planning", amount: app.cost, outcome: granted ? `Rezoned ${rezoneFor(app.lotSf).zone}: ${app.lots} lots approved` : "Rezoning refused" });
+    const rz = rezoneFor(app.lotSf);
     if (granted) {
-      s.rezoned = { ...(s.rezoned ?? {}), [app.bbl]: { zone: REZONE.zone, far: REZONE.far, lotSf: app.lotSf, m: s.month, lots: app.lots, ...(app.design ? { design: app.design } : {}) } };
-      s.news.unshift({ q: s.month, kind: "deal", text: `The board rezoned ${rec?.address ?? app.bbl} ${REZONE.zone}, ${app.lots} lots approved. Plat it when you are ready to build the streets.` });
+      s.rezoned = { ...(s.rezoned ?? {}), [app.bbl]: { zone: rz.zone, far: rz.far, lotSf: app.lotSf, m: s.month, lots: app.lots, ...(app.design ? { design: app.design } : {}) } };
+      s.news.unshift({ q: s.month, kind: "deal", text: `The board rezoned ${rec?.address ?? app.bbl} ${rz.zone}, ${app.lots} lots approved. Plat it when you are ready to build the streets.` });
     } else {
       s.rezoneRefusedM = { ...(s.rezoneRefusedM ?? {}), [app.bbl]: s.month };
       s.news.unshift({ q: s.month, kind: "warn", text: `The board refused the rezoning at ${rec?.address ?? app.bbl}. The fees are spent; it is still a farm, and a similar application cannot be heard again for ${REFILE_BAR_M} months.` });
@@ -158,9 +184,11 @@ function decideEntitlements(s: GameState, parcels: ParcelTable) {
 
 // ---------------------------------------------------------------- platting
 /** The horizontal: what the streets and pipes for these lots cost, and how long they take. */
-export function platQuote(s: GameState, lots: { a: number; f: number; d: number }[]) {
+export function platQuote(s: GameState, lots: { a: number; f: number; d: number }[], lotSf?: number) {
   const frontage = lots.reduce((t, l) => t + l.f, 0);
-  const cost = Math.round((INFRA_PER_FRONT_FT * frontage + IMPACT_FEE * lots.length) * s.econ.costIdx);
+  // A park's lots are an acre and up: the spine road's rate, and no per-lot residential impact fee.
+  const park = isIndustrialLot(lotSf ?? lots.reduce((t, l) => t + l.a, 0) / Math.max(1, lots.length));
+  const cost = Math.round((park ? INFRA_PER_FRONT_FT_INDUSTRIAL * frontage : INFRA_PER_FRONT_FT * frontage + IMPACT_FEE * lots.length) * s.econ.costIdx);
   return { cost, months: INFRA_MONTHS(lots.length), lots: lots.length, perLot: Math.round(cost / Math.max(1, lots.length)) };
 }
 
@@ -181,13 +209,13 @@ export function startPlat(s: GameState, parcels: ParcelTable, bbl: string, lots:
   if (h.sale) return { s, err: "It is listed for sale. Take it off the market before you build streets on it." };
   const area = lots.reduce((t, l) => t + l.a, 0);
   if (lots.length < 2 || !(area > 0) || area > p.rec.lotArea * 1.001) return { s, err: "That plat does not fit the tract." };
-  const q = platQuote(s, lots);
+  const q = platQuote(s, lots, rz.lotSf);
   const room = spendable(s, parcels);
   if (room.total < q.cost) return { s, err: `The streets, pipes and impact fees run ${money(q.cost)} and you can raise ${money(room.total)}.` };
   const next = cloneState(s);
   fundAndBook(next, parcels, q.cost, "dev", { bbl });
   next.holdings[bbl].costBasis += q.cost;
-  const rec: PlatRecord = { parent: bbl, template: "grid", lotSf: rz.lotSf, startM: next.month, doneM: next.month + q.months, cost: q.cost, lots: lots.map((l) => ({ a: Math.round(l.a), f: Math.round(l.f), d: Math.round(l.d) })) };
+  const rec: PlatRecord = { parent: bbl, template: isIndustrialLot(rz.lotSf) ? "industrial" : "grid", lotSf: rz.lotSf, startM: next.month, doneM: next.month + q.months, cost: q.cost, lots: lots.map((l) => ({ a: Math.round(l.a), f: Math.round(l.f), d: Math.round(l.d) })) };
   next.plats = { ...(next.plats ?? {}), [bbl]: rec };
   next.news.unshift({ q: next.month, kind: "info", text: `Streets going in at ${p.rec.address}: ${lots.length} lots, ${money(q.cost)} of horizontal (${money(q.perLot)} a lot). Finished ${monthLabel(rec.doneM)}.` });
   return { s: next, msg: "Under way." };

@@ -290,7 +290,8 @@ export function refreshHomeMarket(s: GameState, parcels: ParcelTable): void {
   const sel = s.homes ? sellers(s.homes) : new Map();
   const n = sel.size;
   for (const [parent, plat] of Object.entries(s.plats ?? {})) {
-    if (!plat.done) continue;
+    // an industrial park (landdev.ts) is not a housing plat: no homes market reads it
+    if (!plat.done || plat.template === "industrial") continue;
     const { loc, commute } = prev?.plats[parent] && s.month % 12 !== 0 && prev.plats[parent].loc > 0
       ? prev.plats[parent] : platLocation(s, parcels, parent, psf);
     const q = homeQuote(e, platLotSf(s, parent), psf * loc, platFar(s, parent));

@@ -858,6 +858,8 @@ export interface DevDraft {
   groundRetail?: "auto" | "on" | "off";
   /** How the construction loan converts at delivery (MDGA phase 5). Absent = the lender's default. */
   takeout?: "float" | "cap" | "fixed";
+  /** A product type (products.ts) for a retail or industrial scheme; absent = a street building. */
+  product?: string;
 }
 
 export interface BtsCommitment {
@@ -885,6 +887,11 @@ export interface BtsCommitment {
 
 export interface Development {
   bbl: string;
+  /** A product type (products.ts), and the tenants it was let to before ground broke. */
+  product?: string;
+  anchors?: BtsCommitment[];
+  /** The anchor's trade-area demand, measured when the scheme was priced. */
+  draw?: number;
   /**
    * THE SITE'S MARK THE DAY GROUND BROKE (value.ts ownedHoldingValueFromRec):
    * the land under a ground-up job carries at this until the building stands,
@@ -1041,6 +1048,12 @@ export interface BuiltOverride {
    * footage, one wide and one tall, were drawn with a 2:1 difference in volume.
    */
   cov?: number;
+  /** A product type (products.ts), when the building is one. */
+  product?: string;
+  /** The anchor's trade-area demand, measured at delivery (dev.ts tradeAreaDemand). */
+  draw?: number;
+  /** The anchors' names: the draw holds while one of them is in occupation. */
+  anchors?: string[];
   /** A detached house (homes.ts): drawn as a house, not a block (renderView deco "house"). */
   house?: boolean;
 }
@@ -1251,8 +1264,8 @@ export interface PlatDesign {
  */
 export interface PlatRecord {
   parent: string;
-  /** "grid": the land card's plain grid (citygen platTractLots); "design": drawn on the design desk */
-  template: "grid" | "design";
+  /** "grid": the land card's plain grid (citygen platTractLots); "design": drawn on the design desk; "industrial": a park's spine road and 2-20 acre lots (products.ts) */
+  template: "grid" | "design" | "industrial";
   lotSf: number;
   startM: number;
   doneM: number;
@@ -3858,6 +3871,8 @@ export interface GameState {
   }[];
   cityJobs?: {
     bbl: string; use: string; sf: number; floors: number; startM: number; deliverM: number;
+    /** A product type (products.ts) and its anchor's trade-area demand, when the firm built one. */
+    product?: string; draw?: number;
     /** The spec the developer built to (0..1, 0.5 = market) — see `developerLook`. */
     spec?: number;
     /**

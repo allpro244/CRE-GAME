@@ -507,7 +507,8 @@ export function platTractLots(tract, lotSf) {
   const onRoad = (a, b) => [0.2, 0.5, 0.8].some((t) => roads.some((pl) => distToLine([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], pl) < 25));
   const side = (a, b) => (onRoad(a, b) ? 66 * FT / 2 + 1 : 1);
   const insets = [side([x0, y0], [x0, y1]), side([x0, y0], [x1, y0]), side([x1, y0], [x1, y1]), side([x0, y1], [x1, y1])];
-  const plat = platFor({ seed, tract: tract.r, era: "grid", id: tract.id, bearing: tract.bearing ?? undefined, lotSf, insets }, ok);
+  // an acre and up is an industrial park's lot (landdev.ts INDUSTRIAL_LOT_SIZES): spine roads, deep lots
+  const plat = platFor({ seed, tract: tract.r, era: lotSf >= 43_560 ? "industrial" : "grid", id: tract.id, bearing: tract.bearing ?? undefined, lotSf, insets }, ok);
   const lots = plat.lots.map((l) => {
     const a = ringAreaAbs(l.ring) * SQFT_PER_M2, f = dist(l.front[0], l.front[1]) / FT;
     return { ring: l.ring.map(LL), a: Math.round(a), f: Math.round(f), d: Math.round(a / Math.max(1, f)) };

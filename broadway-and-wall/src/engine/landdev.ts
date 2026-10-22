@@ -40,10 +40,10 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
  * engineering of the plat itself at about $2-4k a lot. Approximate industry
  * ranges [S]; carried by the construction-cost index.
  */
-const ENTITLE_FIXED = 75_000;
-const ENTITLE_PER_LOT = 2_500;
+export const ENTITLE_FIXED = 75_000;
+export const ENTITLE_PER_LOT = 2_500;
 /** A rezoning and plat approval takes one to two years in most US suburbs [S]. */
-const ENTITLE_MONTHS = (lots: number) => Math.round(clamp(12 + lots / 25, 12, 24));
+export const ENTITLE_MONTHS = (lots: number) => Math.round(clamp(12 + lots / 25, 12, 24));
 /**
  * The odds a board says yes. Near the town's edge, where water and sewer reach
  * and annexation is routine, most applications pass (with conditions); a farm
@@ -51,13 +51,13 @@ const ENTITLE_MONTHS = (lots: number) => Math.round(clamp(12 + lots / 25, 12, 24
  * refused. A shape parameter [K], not a measurement: 0.80 at the edge, 0.45 at
  * 3 km and beyond.
  */
-const entitleOdds = (edgeM: number) => clamp(0.80 - 0.35 * clamp(edgeM / 3000, 0, 1), 0.45, 0.80);
+export const entitleOdds = (edgeM: number) => clamp(0.80 - 0.35 * clamp(edgeM / 3000, 0, 1), 0.45, 0.80);
 /**
  * What the board grants: a two-family residential district. A finished lot of
  * 5,000-10,000 sf carries a house or a two-flat; FAR 0.6 is a 2,500-sf house
  * with a garage on a 5,000-sf lot or a fourplex on 7,500 [S, typical R-2].
  */
-const REZONE = { zone: "R-2", far: 0.6 };
+export const REZONE = { zone: "R-2", far: 0.6 };
 /** Streets, stormwater ponds and required open space take 20-30% of a plat's gross land [S]; 25% here. */
 export const PLAT_STREET_SHARE = 0.25;
 /**
@@ -68,12 +68,52 @@ export const PLAT_STREET_SHARE = 0.25;
  * national average of $13,772 a single-family lot (Duncan Associates, 2019).
  * Carried by the construction-cost index.
  */
-const INFRA_PER_FRONT_FT = 40_000 / 65;
-const IMPACT_FEE = 13_772;
+export const INFRA_PER_FRONT_FT = 40_000 / 65;
+export const IMPACT_FEE = 13_772;
 /** Months to build a plat's infrastructure: about six for a small section, longer for a big one [S]. */
-const INFRA_MONTHS = (lots: number) => Math.round(clamp(6 + lots / 30, 6, 18));
+export const INFRA_MONTHS = (lots: number) => Math.round(clamp(6 + lots / 30, 6, 18));
 
 export const PLAT_LOT_SIZES = [5_000, 7_500, 10_000] as const;
+
+/**
+ * OFF-SITE MAINS (Phase 4). A plat's own pipes run along its own streets
+ * (INFRA_PER_FRONT_FT); getting water and sewer TO the plat is a main laid
+ * from the nearest point that already has them — the town's edge, or a plat
+ * whose mains are in or going in — at the developer's cost, as most US
+ * suburbs' extension policies require. An 8-12 inch sewer main and a water
+ * main beside it run about $250 a foot installed in the 2020s (RSMeans
+ * site-work unit costs, rounded) [S], carried by the construction-cost index.
+ * It is also why the board's odds read the distance to SERVED land rather
+ * than to the old town: a farm next to last year's subdivision is next to the
+ * mains. Together they are what makes growth contiguous.
+ */
+export const MAIN_PER_M = 250 / 0.3048;
+const M_PER_DEG_LAT = 110_540;
+/** Half the side of a tract, m: about how far its boundary sits from its centroid. */
+const halfSide = (lotAreaSf: number) => Math.sqrt(Math.max(0, lotAreaSf) * 0.092903) / 2;
+/**
+ * How far this tract's boundary is from land with water and sewer, m: the
+ * town's edge (`tract.edgeM` is measured from the tract's centre), or the
+ * nearest plat whose streets are in or going in. 0 where it touches served land.
+ */
+export function servedM(s: GameState, parcels: ParcelTable, bbl: string): number {
+  const rec = parcels[bbl];
+  if (!rec?.tract) return 0;
+  const r0 = halfSide(rec.lotArea);
+  let best = Math.max(0, rec.tract.edgeM - r0);
+  if (s.plats) {
+    const [lon, lat] = rec.centroid;
+    const kx = 111_320 * Math.cos((lat * Math.PI) / 180);
+    for (const pl of Object.values(s.plats)) {
+      if (pl.parent === bbl) continue;
+      const q = parcels[pl.parent];
+      if (!q) continue;
+      const d = Math.hypot((q.centroid[0] - lon) * kx, (q.centroid[1] - lat) * M_PER_DEG_LAT) - r0 - halfSide(q.lotArea);
+      if (d < best) best = Math.max(0, d);
+    }
+  }
+  return Math.round(best);
+}
 
 // ---------------------------------------------------------------- entitlement
 /** Can this tract be entitled and platted at all, and why not. */
@@ -97,7 +137,7 @@ export function entitleQuote(s: GameState, parcels: ParcelTable, bbl: string, lo
   const lots = planned ?? lotsOn(p.rec.lotArea, lotSf);
   if (lots < 4) return null;
   const cost = Math.round((ENTITLE_FIXED + ENTITLE_PER_LOT * lots) * s.econ.costIdx);
-  return { cost, months: ENTITLE_MONTHS(lots), odds: +entitleOdds(p.rec.tract!.edgeM).toFixed(2), lots, lotSf, zone: REZONE.zone, far: REZONE.far };
+  return { cost, months: ENTITLE_MONTHS(lots), odds: +entitleOdds(servedM(s, parcels, bbl)).toFixed(2), lots, lotSf, zone: REZONE.zone, far: REZONE.far };
 }
 
 export function fileEntitlement(s: GameState, parcels: ParcelTable, bbl: string, lotSf = 7_500, planned?: number): { s: GameState; err?: string; msg?: string } {
@@ -144,10 +184,13 @@ function decideEntitlements(s: GameState, parcels: ParcelTable) {
 
 // ---------------------------------------------------------------- platting
 /** The horizontal: what the streets and pipes for these lots cost, and how long they take. */
-export function platQuote(s: GameState, lots: { a: number; f: number; d: number }[]) {
+/** With `parcels` and `bbl`, the off-site mains from the nearest served land are in it too (MAIN_PER_M). */
+export function platQuote(s: GameState, lots: { a: number; f: number; d: number }[], parcels?: ParcelTable, bbl?: string) {
   const frontage = lots.reduce((t, l) => t + l.f, 0);
-  const cost = Math.round((INFRA_PER_FRONT_FT * frontage + IMPACT_FEE * lots.length) * s.econ.costIdx);
-  return { cost, months: INFRA_MONTHS(lots.length), lots: lots.length, perLot: Math.round(cost / Math.max(1, lots.length)) };
+  const mainsM = parcels && bbl ? servedM(s, parcels, bbl) : 0;
+  const offsite = Math.round(MAIN_PER_M * mainsM * s.econ.costIdx);
+  const cost = Math.round((INFRA_PER_FRONT_FT * frontage + IMPACT_FEE * lots.length) * s.econ.costIdx) + offsite;
+  return { cost, months: INFRA_MONTHS(lots.length), lots: lots.length, perLot: Math.round(cost / Math.max(1, lots.length)), offsite, mainsM };
 }
 
 /**
@@ -167,13 +210,13 @@ export function startPlat(s: GameState, parcels: ParcelTable, bbl: string, lots:
   if (h.sale) return { s, err: "It is listed for sale. Take it off the market before you build streets on it." };
   const area = lots.reduce((t, l) => t + l.a, 0);
   if (lots.length < 2 || !(area > 0) || area > p.rec.lotArea * 1.001) return { s, err: "That plat does not fit the tract." };
-  const q = platQuote(s, lots);
+  const q = platQuote(s, lots, parcels, bbl);
   const room = spendable(s, parcels);
   if (room.total < q.cost) return { s, err: `The streets, pipes and impact fees run ${money(q.cost)} and you can raise ${money(room.total)}.` };
   const next = cloneState(s);
   fundAndBook(next, parcels, q.cost, "dev", { bbl });
   next.holdings[bbl].costBasis += q.cost;
-  const rec: PlatRecord = { parent: bbl, template: "grid", lotSf: rz.lotSf, startM: next.month, doneM: next.month + q.months, cost: q.cost, lots: lots.map((l) => ({ a: Math.round(l.a), f: Math.round(l.f), d: Math.round(l.d) })) };
+  const rec: PlatRecord = { parent: bbl, template: "grid2", lotSf: rz.lotSf, startM: next.month, doneM: next.month + q.months, cost: q.cost, lots: lots.map((l) => ({ a: Math.round(l.a), f: Math.round(l.f), d: Math.round(l.d) })) };
   next.plats = { ...(next.plats ?? {}), [bbl]: rec };
   next.news.unshift({ q: next.month, kind: "info", text: `Streets going in at ${p.rec.address}: ${lots.length} lots, ${money(q.cost)} of horizontal (${money(q.perLot)} a lot). Finished ${monthLabel(rec.doneM)}.` });
   return { s: next, msg: "Under way." };
@@ -259,7 +302,8 @@ function completePlats(s: GameState, parcels: ParcelTable, bbls: string[]) {
       delete s.holdings[plat.parent];
     }
     recordPropertyEvent(s, plat.parent, { kind: "planning", amount: plat.cost, outcome: `Platted into ${plat.lots.length} lots` });
-    s.news.unshift({ q: s.month, kind: "deal", text: `The streets are in at ${parent?.address ?? plat.parent}: ${plat.lots.length} finished lots, each its own deed. Build on them, or sell them to the street.` });
+    // a land developer's plat (growth.ts) is the street's news, filed there
+    if (parentH) s.news.unshift({ q: s.month, kind: "deal", text: `The streets are in at ${parent?.address ?? plat.parent}: ${plat.lots.length} finished lots, each its own deed. Build on them, or sell them to the street.` });
   }
 }
 

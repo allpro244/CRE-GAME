@@ -60,8 +60,23 @@ declare module "@/citygen/index.mjs" {
   export const REGION: string;
   /** Region map: the grid plat of a farm tract at a lot size (region/index.mjs). */
   export function platTractLots(
-    tract: NonNullable<import("@/data/types").ParcelRecord["tract"]>, lotSf: number,
+    tract: NonNullable<import("@/data/types").ParcelRecord["tract"]>, lotSf: number, v?: 1 | 2,
   ): { lots: { ring: [number, number][]; a: number; f: number; d: number }[]; streets: [number, number][][] };
+  /** Region map: the road network as a plan — highways (built and proposed), interchanges, arterial pieces (region/index.mjs). */
+  export function regionRoadPlan(seed: number): RegionRoadPlan;
+  export type RoadPiece = { id: string; lenM: number; pts: [number, number][]; mid: [number, number]; edgeM: number };
+  export type RegionRoadPlan = {
+    seed: number; year0: number; widths: { highway: number; arterial: number; local: number };
+    highways: { id: string; kind: string; segs: (RoadPiece & { built: boolean; year: number })[]; ix: { id: string; seg: string | null; p: [number, number]; edgeM: number }[] }[];
+    arterials: (RoadPiece & { kind: "county" | "section" })[];
+    homes: { p: [number, number]; n: number; edgeM: number; id?: string }[];
+    centre: [number, number];
+  };
+  /** Region map: a reserved neighbourhood's built lots, redrawn from its recipe (region/index.mjs). */
+  export function neighbourhoodLots(seed: number, id: number): {
+    id: number; era: string; year: number;
+    lots: { i: number; ring: [number, number][]; a: number; f: number; d: number; houseSf: number; storeys: number; c: [number, number] }[];
+  } | null;
   /** The id of the written-down city. */
   export const MANHATTAN: string;
   /**

@@ -93,7 +93,39 @@ export function platFor(recipe, ok = () => true) {
     }
   };
 
-  if (era === "prewar" || era === "grid") {
+  if (era === "grid" && recipe.v === 2) {
+    // THE LAND DEVELOPER'S PLAT, SECOND CUT (Phase 4). The first cut ran a street down each edge of the
+    // tract with lots on its inner side only and a cross street every 600 ft, and put lots on a third to a
+    // half of the land: measured over seed 2's open farms, 27%, against the 70-80% a real subdivision nets
+    // (20-30% to streets, ponds and open space, landdev.ts PLAT_STREET_SHARE). A developer does not pave the
+    // tract's edge: the lots back onto the section road and the neighbours, every street is double-loaded,
+    // and blocks run 900 ft between cross streets (suburban codes cap them at 1,000-1,320) [S].
+    // The streets run the long way unless the land has a bearing of its own (an old road it fronts), and
+    // the lot depth is fitted to the tract so the last row is not a strip nobody can use: the lot keeps
+    // its area, trading depth for frontage within a quarter either way.
+    const deg2 = recipe.bearing ?? ((X1 - X0) >= (Y1 - Y0) ? 0 : 90);
+    const t2 = (deg2 * Math.PI) / 180, u2 = [Math.cos(t2), Math.sin(t2)], v2 = perp(u2);
+    const half2 = (Math.abs(dot([X1 - X0, 0], u2)) + Math.abs(dot([0, Y1 - Y0], u2))) / 2;
+    const halfV2 = (Math.abs(dot([X1 - X0, 0], v2)) + Math.abs(dot([0, Y1 - Y0], v2))) / 2;
+    const P2 = (a, b) => add(C, add(mul(u2, a), mul(v2, b)));
+    const gFront = Math.sqrt((recipe.lotSf ?? 7500) / 1.8);
+    const depth0 = gFront * 1.8 * FT, blockLen = 900 * FT, span = 2 * halfV2 - 2;   // a metre clear of each edge
+    const n = Math.max(1, Math.round(span / (2 * depth0 + ROW)));
+    const fit = Math.max(0.75, Math.min(1.25, ((span / n - ROW) / 2) / depth0));
+    const depth = depth0 * fit, front = (gFront * FT) / fit, pitch = 2 * depth + ROW;
+    const off = (2 * halfV2 - n * pitch) / 2;
+    const crossAt = [];
+    for (let s = -half2 + blockLen * rng.range(0.4, 0.6); s < half2 - 0.3 * blockLen; s += blockLen * rng.range(0.9, 1.1)) crossAt.push(s);
+    const rows = [];
+    for (let j = 0; j < n; j++) {
+      const b = -halfV2 + off + depth + ROW / 2 + j * pitch;
+      rows.push(b);
+      const pl = [P2(-half2, b), P2(half2, b)];
+      streets.push(pl);
+      lotsAlong(pl, front, depth, [1, -1], crossAt.map((a) => a + half2));
+    }
+    if (rows.length > 1) for (const a of crossAt) streets.push([P2(a, rows[0]), P2(a, rows.at(-1))]);
+  } else if (era === "prewar" || era === "grid") {
     // ("grid": the land developer's plat, landdev.ts — the player's chosen lot size, 1:1.8, 600 ft blocks, no alley)
     const G = era === "grid", gFront = G ? Math.sqrt((recipe.lotSf ?? 7500) / 1.8) : 0;
     // a grid with uneven blocks: block length and lot width per plat, the odd jogged cross street, alleys in most

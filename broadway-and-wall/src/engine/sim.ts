@@ -14,6 +14,7 @@ import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLandDev, materializePlats } from "./landdev";
 import { tickHomes } from "./homes";
+import { tickGrowth } from "./growth";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
 import { settleLeasingPayables, tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
@@ -715,6 +716,8 @@ function tickMonth(
   tickLandDev(s, parcels, bbls);
   // the plats' houses: draws, buyers, closings, the builders (homes.ts)
   tickHomes(s, parcels);
+  // the region growing: land developers, the roads, the town (growth.ts; region only)
+  tickGrowth(s, parcels, bbls, adjacency);
   // The rare thing that dates a city (blackswans.ts) — before the builders
   // look, so a district that burned this month is dirt they can see.
   tickBlackSwans(s, parcels, bbls, adjacency);

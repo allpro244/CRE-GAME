@@ -107,7 +107,7 @@ export const LOT_SELLOUT_RATE = 0.19;
  * buyer's cost of carrying it (Alonso-Muth: the house next to the job costs
  * what the commute saves).
  */
-const COMMUTE = { km: 2 * 1.3 * 1.25 * 250, perKm: 0.19, kmh: 50, vot: 0.5 };
+export const COMMUTE = { km: 2 * 1.3 * 1.25 * 250, perKm: 0.19, kmh: 50, vot: 0.5 };
 
 // ---------------------------------------------------------------- mortgage arithmetic
 export const mortgageRate = (e: Pick<Econ, "indexRate">): number => (e.indexRate ?? 5.4) / 100 + MORTGAGE_SPREAD;

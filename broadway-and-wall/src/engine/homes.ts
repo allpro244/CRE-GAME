@@ -393,7 +393,12 @@ export function refreshHomeMarket(s: GameState, parcels: ParcelTable): void {
     // the plat sells at its own builders' pace; with none, at one newcomer's
     const pace = here ? here * communityPace(e, q.price / loc, 0, n) : communityPace(e, q.price / loc, 0, n + 1);
     const left = platLots(s, parcels, parent).filter((b) => !s.homes?.units[b]).length;
-    plats[parent] = { loc, commute, pace, disc: q.residual > 0 ? selloutDiscount(left, pace) : 0, left };
+    const disc = q.residual > 0 ? selloutDiscount(left, pace) : 0;
+    // re-appraise at completion, each January 1, and when lots here trade (homeprice.ts PlatMarket.mark)
+    const was = prev?.plats[parent];
+    const reappraise = !was?.mark || s.month % 12 === 0 || left < was.left;
+    const mark = reappraise ? { psfHere: psf * loc, disc, costIdx: e.costIdx ?? 1, indexRate: e.indexRate } : was!.mark;
+    plats[parent] = { loc, commute, pace, disc, left, mark };
   }
   const next: HomeMarket = { psf, fund, stamp: (prev?.stamp ?? 0) + 1, plats };
   e.homes = next;

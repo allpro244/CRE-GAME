@@ -106,12 +106,16 @@ export interface ParcelRecord {
    * rezoning; a farm stays a farm until it is platted.
    */
   ag?: "crop" | "wood";
+  /** A farm tract's ground a plat can use (sf): dry, off the floodplain, the freeway and anything built. lotArea counts the floodplain. */
+  buildableSf?: number;
   /**
    * The survey tract under a farm (region map, canonical metres) and what it
    * takes to cut it into lots (citygen/region platTractLots). Absent where the
    * tract cannot be platted whole (the unbuilt remainder of a subdivision).
    */
   tract?: { seed: number; r: [number, number, number, number]; id: number; bearing: number | null; edgeM: number };
+  /** A finished lot on a plat (landdev.ts lotRecords): homebuilders bid for it (homeprice.ts). */
+  homeLot?: boolean;
 }
 
 export type ParcelTable = Record<string, ParcelRecord>;

@@ -12,6 +12,7 @@ import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTar
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
+import { homeLotBidPsf } from "./homeprice";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -1114,8 +1115,10 @@ export type LandRead = {
   holder: number;
   texture: number;
   /** Which bid set the price, and the scheme behind the builder's. */
-  winner: "builder" | "holder" | "texture" | "farm";
+  winner: "builder" | "holder" | "texture" | "farm" | "homes";
   scheme: ResidualScheme | null;
+  /** A homebuilder's bid for a finished lot on a plat, $/sf (homeprice.ts homeLotBidPsf); 0 elsewhere. */
+  homes?: number;
 };
 
 /**
@@ -1357,6 +1360,9 @@ const LAND_DICTS = [
 const LAND_SCALARS = [
   "locIdxMean", "landIdx", "cpi", "infillShare", "costIdx", "indexRate",
   "creditIdx", "phase", "constructionAppetite", "vintageMean",
+  // the homes market (homeprice.ts homeLotBidPsf) reads econ.homes, wageIdx and
+  // population; homes.ts bumps `homesStamp` whenever econ.homes is rewritten
+  "homesStamp", "wageIdx", "population", "homesG12",
 ] as const;
 const LAND_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 const LAND_MKT_LEN = LAND_SCALARS.length + LAND_DICTS.length * (1 + LAND_CLASSES.length);
@@ -1609,11 +1615,18 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
     if (builder > base) { base = builder; winner = "builder"; }
     if (holder > base) { base = holder; winner = "holder"; }
   } else if (farm > base) { base = farm; winner = "farm"; }
+  // A FINISHED LOT ON A PLAT HAS A BUYER OF ITS OWN: the homebuilder, who
+  // pays the residual on the house it carries, discounted for its place in
+  // the plat's sell-out (homeprice.ts). Where no homes market reaches it the
+  // bid is 0 and the lot keeps the farm's texture, as it did in Phase 2.
+  const homes = rec.homeLot ? homeLotBidPsf(rec, econ) : 0;
+  if (homes > base) { base = homes; winner = "homes"; }
   return {
     psf: base,
     builder, holder, texture: floor,
     winner,
     scheme,
+    homes,
   };
 }
 
@@ -4651,6 +4664,14 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
     if (!rec) continue;
     const r = s.rivals?.find((x) => x.id === n.obligorId);
     nw += Math.min(n.basis, Math.round(collateralAsIs(rec, s.econ, r?.occ ?? 0.5)));
+  }
+  // HOUSES YOU ARE BUILDING OR HAVE NOT YET CLOSED CARRY AT COST (homes.ts):
+  // the lot is in its deed's mark above; the frame is the money sunk in it,
+  // which is what a homebuilder's balance sheet carries as inventory.
+  for (const u of Object.values(s.homes?.units ?? {})) {
+    if (u.by !== "you" || u.closedM !== undefined || !s.holdings[u.bbl]) continue;
+    nw += u.spent;
+    gav += u.spent;
   }
   nw -= s.loc?.balance ?? 0;   // the line is real money owed
   // SECURITY DEPOSITS ARE NOT YOUR MONEY. They arrive as cash at signing and

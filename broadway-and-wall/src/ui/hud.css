@@ -542,3 +542,58 @@
    1440px ("Counter to my terms" is now "My terms", its tooltip says the rest). */
 .app .loi-grid .btn-row { gap: 6px; }
 .app :not(.btn-row) > .hint.short-by { display: block; margin-top: 4px; }
+
+/* ---------- a kept desk is a wrapper, not a box ------------------------
+   RightPanel keeps the last desks mounted, each in a `.page-view` that
+   <Activity> hides with display:none. Visible, it must lay out exactly as
+   the page did without it. */
+.app .page-view { display: contents; }
+
+/* ---------- inside Unreal: nothing to blur, nothing to animate -----------
+   Hosted in Unreal (state/unrealHost.ts) the page is a full-window
+   transparent browser texture drawn over the 3D city. The page cannot see the
+   city behind it, so a backdrop-filter has nothing to blur and only costs
+   raster time, and every frame of an arrival animation is a full-window
+   repaint copied into the engine. So in that host: no backdrop blur anywhere,
+   no arrival motion on rooms, docks, cards, panels or toasts, and no dim over
+   the city while a desk is open — the city is the point. Infinite "working"
+   pulses (the advance button, Play) are left alone: they say the clock is
+   running. The browser build is unchanged. */
+html.host-unreal *,
+html.host-unreal *::before,
+html.host-unreal *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html.host-unreal .page-backdrop,
+html.host-unreal .page-backdrop .page,
+html.host-unreal .page-dock .page,
+html.host-unreal .panel,
+html.host-unreal .year-rail,
+html.host-unreal .deal-stage,
+html.host-unreal .delivery-ceremony,
+html.host-unreal .delivery-ceremony > .delivery-stamp,
+html.host-unreal .milestone-flash,
+html.host-unreal .toast-stack .toast,
+html.host-unreal .at-risk,
+html.host-unreal .modal-backdrop > .modal,
+html.host-unreal .palette {
+  animation: none !important;
+}
+html.host-unreal .app .page-backdrop { background: transparent !important; }
+
+/* ---------- the clock is turning (ui/ClockProgress) --------------------
+   A hairline under the time controls while a month is out in the sim worker.
+   Absolutely placed, so it never moves the bar or the readouts beside it. */
+.app .nav-cluster-time { position: relative; }
+.app .clock-progress {
+  position: absolute; left: 0; right: 0; bottom: -6px; height: 3px;
+  border-radius: 2px; overflow: hidden; pointer-events: none;
+  background: color-mix(in srgb, var(--text-3) 22%, transparent);
+}
+.app .clock-progress-fill {
+  height: 100%; background: var(--accent-bright, #b08d3f);
+  transform-origin: left center; transform: scaleX(0.04);
+  animation: clock-fill 1s cubic-bezier(0.25, 0.6, 0.4, 1) forwards;
+}
+@keyframes clock-fill { from { transform: scaleX(0.04); } to { transform: scaleX(0.94); } }

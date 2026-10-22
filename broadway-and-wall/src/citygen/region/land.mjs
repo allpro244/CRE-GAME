@@ -267,7 +267,9 @@ export function generateLand(seed) {
   // interchanges at arterial and freeway crossings, at least a mile apart; each segment BUILT (year) or PROPOSED
   for (const h of highways) {
     const xs2 = [];
-    for (const o of highways) if (o !== h) for (const c of crossings(h.pts, o.pts)) xs2.push({ ...c, sys: true });
+    // a system interchange exists only between two freeways that are both being built: a proposed bypass
+    // reserves no interchange on the interstate (it used to, and took the only mile an arterial one could use)
+    for (const o of highways) if (o !== h && o.built !== "none" && h.built !== "none") for (const c of crossings(h.pts, o.pts)) xs2.push({ ...c, sys: true });
     if (h.id === "H2") xs2.push({ s: 0, p: h.pts[0], sys: true });
     for (const r of oldRoads) for (const c of crossings(h.pts, r)) xs2.push({ ...c, sys: false, old: true });
     for (const r of secRoads) for (const c of crossings(h.pts, r)) xs2.push({ ...c, sys: false });

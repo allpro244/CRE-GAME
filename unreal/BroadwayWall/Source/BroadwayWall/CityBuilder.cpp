@@ -657,6 +657,11 @@ void ACityBuilder::BuildGround()
 			if (N < 3) continue;
 			// (a farm on the market is zone "AG", a numeric deed since the land game: also drawn by its own layers)
 			if (bRegionMap && (P.Bbl.StartsWith(TEXT("N")) || P.Bbl.StartsWith(TEXT("F")) || P.Zone == TEXT("AG"))) continue;
+			// (a region site out past the town — a shopping centre, a pad, an industrial lot, deeds numbered
+			// 3xxxxxxxxx by the generator — brings its own ground: its car park as the apron layer, its yards
+			// and truck courts as pavement. A lot cover here painted over all of it, which is what drew the
+			// centres' car parks as worn tan concrete.)
+			if (bRegionMap && P.Bbl.Len() == 10 && P.Bbl[0] == TEXT('3')) continue;
 			const uint32 H = HashCombine(GetTypeHash(P.Bbl), 0x9e3779b9u);
 			const bool bRes = P.Cls == TEXT("multifamily"), bOff = P.Cls == TEXT("office"), bRet = P.Cls == TEXT("retail"), bInd = P.Cls == TEXT("industrial");
 			const TArray<FVector2D>* const* F = Foot.Find(P.Bbl);
@@ -2540,6 +2545,99 @@ void ACityBuilder::BuildMarkings()
 		++StopBars;
 	}
 
+	// A SUBURBAN CAR PARK (the region's shopping centres and industrial sites:
+	// the "apron" rings): double-loaded rows of 2.75 x 5.5 m stalls on a 7.3 m
+	// aisle (the US 90-degree standard, 18.3 m a bay), a 7.5 m fire lane along
+	// the storefront, planted islands at the row ends and every 20 stalls, a pole
+	// light every other island, and cars thickest by the doors: a weekday
+	// afternoon, near full in front of the anchor and thin at the back rows.
+	FMeshBuf Green;
+	if (City.Size == TEXT("region"))
+	{
+		const TArray<TArray<FVector2D>>* Aprons = nullptr;
+		for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground) if (L.Key == TEXT("apron")) Aprons = &L.Value;
+		// the stores the lots serve: low wide boxes
+		TArray<FVector2D> Stores;
+		for (const FBWVolume& V : City.Volumes)
+		{
+			if (V.bVacant || V.Ring.Num() < 3 || V.Z1 < 300 || (V.Cls != TEXT("retail") && V.Cls != TEXT("industrial"))) continue;
+			FVector2D C(0, 0); for (const FVector2D& P : V.Ring) C += P; Stores.Add(C / V.Ring.Num());
+		}
+		const FLinearColor Planting(0.10f, 0.20f, 0.06f), Kerb(0.62f, 0.61f, 0.58f);
+		int32 Stalls = 0, Parked = 0;
+		for (int32 r = 0; Aprons && r < Aprons->Num(); ++r)
+		{
+			const TArray<FVector2D>& R = (*Aprons)[r];
+			if (R.Num() < 3) continue;
+			const TArray<FVector2D> In = BWInsetRing(R, 150);
+			if (In.Num() < 3) continue;
+			// rows run along the ring's longest edge
+			int32 Long = 0; double LongL = 0;
+			for (int32 i = 0; i < R.Num(); ++i) { const double L = (R[(i + 1) % R.Num()] - R[i]).Size(); if (L > LongL) { LongL = L; Long = i; } }
+			const FVector2D Ax = (R[(Long + 1) % R.Num()] - R[Long]).GetSafeNormal();
+			FVector2D Ay(-Ax.Y, Ax.X);
+			FVector2D Cen(0, 0); for (const FVector2D& P : R) Cen += P; Cen /= R.Num();
+			// the storefront side: toward the nearest store (within 300 m)
+			double Best = 3.0e4 * 3.0e4; FVector2D Store = Cen;
+			for (const FVector2D& S : Stores) { const double D2 = (S - Cen).SizeSquared(); if (D2 < Best) { Best = D2; Store = S; } }
+			if (((Store - Cen) | Ay) > 0) Ay = -Ay;   // B grows away from the store
+			double MinA = 1e18, MaxA = -1e18, MinB = 1e18, MaxB = -1e18;
+			for (const FVector2D& P : In) { MinA = FMath::Min(MinA, P | Ax); MaxA = FMath::Max(MaxA, P | Ax); MinB = FMath::Min(MinB, P | Ay); MaxB = FMath::Max(MaxB, P | Ay); }
+			if (MaxA - MinA < 1500 || MaxB - MinB < 1500) continue;
+			FRandomStream Rng(int32(HashCombine(GetTypeHash(FMath::RoundToInt(Cen.X)), GetTypeHash(FMath::RoundToInt(Cen.Y)))));
+			const double Depth = MaxB - MinB;
+			const double YawA = FMath::RadiansToDegrees(FMath::Atan2(Ay.Y, Ay.X));
+			const FVector2D Corner = Ax * MinA + Ay * MinB;
+			auto At = [&](double A, double B) { return Corner + Ax * A + Ay * B; };
+			auto Quad = [&](FMeshBuf& M, double A0, double A1, double B0, double B1, double Zq, const FLinearColor& Col)
+			{ M.AddCap({ At(A0, B0), At(A1, B0), At(A1, B1), At(A0, B1) }, Zq, Col); };
+			const double SW = 275, SD = 550, Aisle = 730, Fire = 750;
+			const double Len = MaxA - MinA;
+			const int32 NSt = FMath::FloorToInt((Len - 2 * SW) / SW);
+			int32 Bay = 0;
+			for (double B0 = Fire; B0 + 2 * SD <= Depth; B0 += 2 * SD + Aisle, ++Bay)
+			{
+				// occupancy falls off with distance from the store: ~85% in the first bay, ~25% at 120 m
+				const double Occ = FMath::Clamp(0.85 - (B0 / 12000.0) * 0.6, 0.18, 0.85);
+				for (int32 Side = 0; Side < 2; ++Side)
+				{
+					const double Rb0 = B0 + Side * SD, Rb1 = Rb0 + SD;
+					for (int32 k = 0; k <= NSt; ++k)
+					{
+						const double A0 = SW + k * SW;
+						const bool bIsland = k == 0 || k == NSt || (k % 21) == 0;
+						if (!InsideRing(In, At(A0 + SW * 0.5, (Rb0 + Rb1) * 0.5))) continue;
+						if (bIsland)
+						{
+							Quad(Green, A0 + 15, A0 + SW - 15, Rb0 + 15, Rb1 - 15, Z + 12, Planting);
+							Quad(Green, A0, A0 + SW, Rb0, Rb1, Z + 1, Kerb);
+							if (Side == 0 && ((k / 21) % 2 == 0) && k != NSt)
+								AddProp(TEXT("/Game/Prop/Kit_StreetLamp_A/Mesh/SM_StreetLamp_A_Pole_Large.SM_StreetLamp_A_Pole_Large"), FTransform(FRotator(0, YawA, 0), FVector(At(A0 + SW * 0.5, Rb1), Z)), true);
+							else
+								AddProp(LeafTreeMeshes[Rng.RandRange(0, UE_ARRAY_COUNT(LeafTreeMeshes) - 1)], FTransform(FRotator(0, Rng.FRandRange(0, 360), 0), FVector(At(A0 + SW * 0.5, (Rb0 + Rb1) * 0.5), Z + 12), FVector(Rng.FRandRange(0.55, 0.8))), false);
+							continue;
+						}
+						++Stalls;
+						// the stripe on the stall's far edge (10 cm paint)
+						Quad(White, A0 + SW - 5, A0 + SW + 5, Rb0 + (Side ? 0 : 30), Rb1 - (Side ? 30 : 0), Z, FLinearColor(0.85f, 0.85f, 0.82f));
+						if (Rng.FRand() < Occ)
+						{
+							++Parked;
+							const double Yaw = YawA + (Side ? 180 : 0) + Rng.FRandRange(-4, 4);
+							// (no cabs in a suburban lot: vehicle13 is City Sample's taxi, the one with a roof light)
+							int32 Pick = Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - 2);
+							if (Pick >= 6) ++Pick;
+							AddProp(CarMeshes[Pick], FTransform(FRotator(0, Yaw, 0), FVector(At(A0 + SW * 0.5 + Rng.FRandRange(-20, 20), (Rb0 + Rb1) * 0.5), Z - 7)), true);
+						}
+					}
+				}
+			}
+			// the fire lane's edge: a painted line along the storefront
+			Quad(White, SW, Len - SW, Fire - 8, Fire + 8, Z, FLinearColor(0.85f, 0.85f, 0.82f));
+		}
+		UE_LOG(LogBWBuilder, Display, TEXT("car parks: %d stalls, %d parked"), Stalls, Parked);
+	}
+
 	UProceduralMeshComponent* Marks = NewObject<UProceduralMeshComponent>(this, TEXT("Markings"));
 	Marks->SetupAttachment(RootComponent);
 	Marks->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -2547,6 +2645,7 @@ void ACityBuilder::BuildMarkings()
 	Marks->RegisterComponent();
 	if (White.V.Num()) { White.Emit(Marks, 0, false); Marks->SetMaterial(0, VertexColorMaterial); }
 	if (Yellow.V.Num()) { Yellow.Emit(Marks, 1, false); Marks->SetMaterial(1, VertexColorMaterial); }
+	if (Green.V.Num()) { Green.Emit(Marks, 2, false); Marks->SetMaterial(2, VertexColorMaterial); }
 	UE_LOG(LogBWBuilder, Display, TEXT("markings: %d centrelines, %d of %d crossings painted (%d bars), %d stop bars, %d signal posts"), City.Centerlines.Num(), Keep.Num(), City.Zebras.Num(), Bars, StopBars, Signals);
 }
 

@@ -47,6 +47,7 @@ import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveFo
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, CITY_PLAN, platTractLots, type GeneratedCity } from "@/citygen/index.mjs";
 import { fileEntitlement, startPlat, materializePlats, lotBbl } from "@/engine/landdev";
+import { startHomes, setHomePrice, acceptLotOffer, declineLotOffer } from "@/engine/homes";
 import { cutTownOffThread } from "@/state/townClient";
 import type { TownRequest } from "@/state/townWorker";
 import { monthOffThread, spanOffThread } from "@/state/simClient";
@@ -401,6 +402,13 @@ interface AppState {
   fileRezoning: (bbl: string, lotSf: number) => void;
   /** Region map: build the streets on a rezoned tract and cut it into lots. */
   buildPlat: (bbl: string) => void;
+  /** Region map, Phase 3 (engine/homes.ts): start `n` spec houses on your lots on the plat `parent`. */
+  buildHomes: (parent: string, n: number) => void;
+  /** Your price on a plat against the going price (-0.15..0.15). */
+  priceHomes: (parent: string, adj: number) => void;
+  /** Take, or turn down, a homebuilder's offer for your lots on a plat. */
+  takeLotOffer: (parent: string) => void;
+  refuseLotOffer: (parent: string) => void;
   appealTax: (bbl: string) => void;
   prebuild: (bbl: string, use: string, sf: number) => void;
   extendLease: (bbl: string, idx: number) => void;
@@ -2048,6 +2056,42 @@ export const useStore = create<AppState>((set, get) => ({
     set({ game: r.s });
     toast(r.msg ?? "Under way.");
     void persist(r.s);
+  },
+
+  buildHomes: (parent, n) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = startHomes(game, parcels, parent, n);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Started.");
+    void persist(r.s);
+  },
+
+  priceHomes: (parent, adj) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const next = setHomePrice(game, parcels, parent, adj);
+    set({ game: next });
+    void persist(next);
+  },
+
+  takeLotOffer: (parent) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = acceptLotOffer(game, parcels, parent);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Signed.");
+    void persist(r.s);
+  },
+
+  refuseLotOffer: (parent) => {
+    const { game } = get();
+    if (!game) return;
+    const next = declineLotOffer(game, parent);
+    set({ game: next });
+    void persist(next);
   },
 
   applyVariance: (bbl, targetFar) => {

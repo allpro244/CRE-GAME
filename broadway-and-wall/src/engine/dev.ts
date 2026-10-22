@@ -1993,6 +1993,7 @@ export function startDevelopment(
   if (!s.holdings[bbl]) return { s, err: "Buy the dirt first." };
   if (rec.class !== "land") return { s, err: "Clear the site first — demolish what's standing before you build." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
+  if (s.homes?.units[bbl]) return { s, err: "A house is already going up on it." };
   // You cannot break ground on a site you are trying to sell. Somebody is
   // marketing this lot to buyers right now.
   if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the listing before you put a crane on it." };

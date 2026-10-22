@@ -42,10 +42,13 @@ export function platFor(recipe, ok = () => true) {
   const rng = makeRng(`plat:${id}:${era}:${seed}`);
   const [x0, y0, x1, y1] = tract;
   const inset = 66 * FT / 2 + 4;          // half a section-line road's ROW, and a verge
-  const X0 = x0 + inset, Y0 = y0 + inset, X1 = x1 - inset, Y1 = y1 - inset;
+  // (the land developer's grid gives up land only where a road runs along the tract's side: recipe.insets)
+  const ins = era === "grid" && recipe.insets ? recipe.insets : [inset, inset, inset, inset];
+  const X0 = x0 + ins[0], Y0 = y0 + ins[1], X1 = x1 - ins[2], Y1 = y1 - ins[3];
   const C = [(X0 + X1) / 2, (Y0 + Y1) / 2];
   // the plat's own frame: u along its streets, v across. Square to the survey, or turned to its road.
-  const deg = recipe.bearing ?? (rng() < 0.5 ? 0 : 90) + rng.range(-3, 3);
+  // (the land developer's grid runs along the tract's long side: a grid turned inside a rectangle wastes its corners)
+  const deg = era === "grid" ? (X1 - X0 >= Y1 - Y0 ? 0 : 90) : recipe.bearing ?? (rng() < 0.5 ? 0 : 90) + rng.range(-3, 3);
   const t = (deg * Math.PI) / 180, u = [Math.cos(t), Math.sin(t)], v = perp(u);
   const half = (Math.abs(dot([X1 - X0, 0], u)) + Math.abs(dot([0, Y1 - Y0], u))) / 2;   // reach of the tract along u
   const halfV = (Math.abs(dot([X1 - X0, 0], v)) + Math.abs(dot([0, Y1 - Y0], v))) / 2;
@@ -69,20 +72,33 @@ export function platFor(recipe, ok = () => true) {
   const good = (p) => inTract(p) && clearOfPonds(p) && ok(p);
 
   /** Lots both sides of a street polyline, frontage jittered lot to lot, skipping gaps (cross streets). */
-  const lotsAlong = (pl, front, depth, sides, gapAt = []) => {
+  // `fit` (the land developer's grid): a lot that runs into ground it cannot use is shortened to fit, down
+  // to 60% of its depth, rather than dropped; only a lot that cannot be fitted is skipped
+  const lotsAlong = (pl, front, depth, sides, gapAt = [], fit = false) => {
     const L = cumLen(pl).at(-1);
     for (const sd of sides) {
-      let s = front * 0.6;
-      while (s + front * 0.5 < L) {
-        const w = front * rng.range(0.88, 1.14);
+      let s = fit ? 1 : front * 0.6;
+      while (s + front * (fit ? 0.9 : 0.5) < L) {
+        const w = front * (fit ? rng.range(0.98, 1.02) : rng.range(0.88, 1.14));
         const sm = s + w / 2;
-        if (gapAt.some((g) => Math.abs(g - sm) < ROW / 2 + w / 2)) { s += w; continue; }
+        if (fit) {
+          // a lot may not cross a cross street: restart just past it, losing only the street itself
+          const g = gapAt.find((gg) => s < gg + ROW / 2 && s + w > gg - ROW / 2);
+          if (g !== undefined) { s = g + ROW / 2 + 0.5; continue; }
+        } else if (gapAt.some((g) => Math.abs(g - sm) < ROW / 2 + w / 2)) { s += w; continue; }
         const a = pointAt(pl, s), b = pointAt(pl, Math.min(L, s + w)), m = pointAt(pl, sm);
         const dir = norm(sub(b, a)), n = mul(perp(dir), sd);
         const f0 = add(a, mul(n, ROW / 2)), f1 = add(b, mul(n, ROW / 2));
-        const ring = [f0, f1, add(f1, mul(n, depth)), add(f0, mul(n, depth))];
+        let ring = [f0, f1, add(f1, mul(n, depth)), add(f0, mul(n, depth))];
         s += w;
-        if (!ring.every(good) || !good(m)) continue;
+        if (fit && good(f0) && good(f1)) {
+          ring = null;
+          for (const k of [1, 0.85, 0.72, 0.6]) {
+            const r = [f0, f1, add(f1, mul(n, depth * k)), add(f0, mul(n, depth * k))];
+            if (r.every(good) && good(add(m, mul(n, ROW / 2 + depth * k * 0.5)))) { ring = r; break; }
+          }
+        }
+        if (!ring || !ring.every(good) || !good(m)) continue;
         // the house: set back from the street, a little off-centre, its size varied
         const hw = Math.min(w * 0.75, hw0 * rng.range(0.9, 1.12)), hd = hd0 * rng.range(0.9, 1.12);
         const back = ROW / 2 + rng.range(5.5, 9) + hd / 2;
@@ -93,7 +109,24 @@ export function platFor(recipe, ok = () => true) {
     }
   };
 
-  if (era === "prewar" || era === "grid") {
+  if (era === "grid") {
+    // THE LAND DEVELOPER'S PLAT (landdev.ts): the player's lot size at 1:1.8, every street double-loaded, the
+    // first and last rows backing onto the tract's edge (no street wasted along the boundary road), a cross
+    // street every ~1,200 ft (the longest block suburban codes allow [S, 1,000-1,320 ft]). Rows stretch up
+    // to a quarter to fill the tract's depth exactly.
+    const lotM2 = (recipe.lotSf ?? 7500) * 0.09290304, d0 = Math.sqrt(lotM2 * 1.8), front = lotM2 / d0;
+    const span = 2 * halfV, n = Math.max(1, Math.round((span - ROW) / (2 * d0 + ROW)));
+    const depth = Math.max(d0 * 0.8, Math.min(d0 * 1.25, (span - n * ROW) / (2 * n)));
+    const nc = Math.floor((2 * half) / (1200 * FT)), crossAt = [];
+    for (let i = 1; i <= nc; i++) crossAt.push(-half + (i * 2 * half) / (nc + 1));
+    for (let j = 0; j < n; j++) {
+      const b = -halfV + depth + ROW / 2 + j * (2 * depth + ROW);
+      const pl = [P(-half, b), P(half, b)];
+      streets.push(pl);
+      lotsAlong(pl, front, depth, [1, -1], crossAt.map((a) => a + half), true);
+    }
+    for (const a of crossAt) streets.push([P(a, -halfV + depth + ROW / 2), P(a, -halfV + depth + ROW / 2 + (n - 1) * (2 * depth + ROW))]);
+  } else if (era === "prewar") {
     // ("grid": the land developer's plat, landdev.ts — the player's chosen lot size, 1:1.8, 600 ft blocks, no alley)
     const G = era === "grid", gFront = G ? Math.sqrt((recipe.lotSf ?? 7500) / 1.8) : 0;
     // a grid with uneven blocks: block length and lot width per plat, the odd jogged cross street, alleys in most

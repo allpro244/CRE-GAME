@@ -153,6 +153,8 @@ export function makeRegion(seed, opts = {}) {
     return best;
   };
   const reserved = {}, reservedFeatures = [], houses3d = [];
+  // THE RENDERER'S RETAIL BRIEF (unreal RetailBuilder): each store's role and its storefront's middle, by deed
+  const retailInfo = new Map();
   // which rung of the commerce hierarchy each centre and industrial lot is (commerce.mjs), for the engine
   const centreOf = new Map();
   let blockNo = 1, rid = 0;
@@ -212,7 +214,11 @@ export function makeRegion(seed, opts = {}) {
         lotfront: Math.round(front / FT), lotdepth: Math.round(depth / FT),
       },
     });
-    for (const r of lot.rects) if (r.kind === "sign") houses3d.push({ bbl, r, year: lot.year, cls: "retail", deco: "sign" });   // the pylon sign
+    for (const r of lot.rects) if (r.kind === "sign") houses3d.push({ bbl, r, year: lot.year, cls: "retail", deco: "sign", ...(r.v ? { rr: "pylon", rf: LL(sub(r.c, r.v)), rn: r.tenants ?? 1 } : {}) });   // the pylon sign, facing the road
+    for (const r of bldgs) if (r.role && r.v) {
+      if (!retailInfo.has(bbl)) retailInfo.set(bbl, []);
+      retailInfo.get(bbl).push({ c: LL(r.c), rr: r.role, rf: LL(sub(r.c, mul(r.v, r.d / 2))), rs: r.sf ?? 0 });   // the storefront faces the car park (-v)
+    }
     for (const r of bldgs) {
       rawBuildings.features.push({ type: "Feature", geometry: polyLL(rectRing(r.c, r.u, r.w, r.d)), properties: { base_bbl: bbl, heightroof: +((r.z / 100) / FT).toFixed(1), cnstrct_yr: lot.year } });
     }
@@ -438,7 +444,16 @@ export function makeRegion(seed, opts = {}) {
   const b3 = data.buildings3d;
   for (const h of houses3d) {
     const r = h.r, ring = rectRing(r.c, r.u, r.w, r.d).map(LL);
-    b3.push({ b: h.bbl, c: h.cls, y: h.year, t: 0, f: Math.max(1, Math.round(r.z / 355)), z0: 0, z1: +(r.z / 100).toFixed(1), d: 1, ...(h.house ? { dk: "house" } : h.deco ? { dk: h.deco } : {}), x: 1, r: ring });
+    b3.push({ b: h.bbl, c: h.cls, y: h.year, t: 0, f: Math.max(1, Math.round(r.z / 355)), z0: 0, z1: +(r.z / 100).toFixed(1), d: 1, ...(h.house ? { dk: "house" } : h.deco ? { dk: h.deco } : {}), ...(h.rr ? { rr: h.rr, rf: h.rf, rn: h.rn } : {}), x: 1, r: ring });
+  }
+  // each retail store's volume gets its role and storefront from the brief: the piece nearest it on its own deed
+  for (const b of b3) {
+    const info = !b.d && retailInfo.get(b.b);
+    if (!info) continue;
+    const c = b.r.reduce((a, p) => [a[0] + p[0] / b.r.length, a[1] + p[1] / b.r.length], [0, 0]);
+    let best = null, bd = Infinity;
+    for (const q of info) { const dd = (q.c[0] - c[0]) ** 2 + (q.c[1] - c[1]) ** 2; if (dd < bd) { bd = dd; best = q; } }
+    if (best) { b.rr = best.rr; b.rf = best.rf; b.rs = best.rs; }
   }
   // the inner ring's houses draw as houses, not boxes; each stays its deed's building
   const houseLike = new Set([...housed].filter((b) => data.parcels[b]?.class === "multifamily"));

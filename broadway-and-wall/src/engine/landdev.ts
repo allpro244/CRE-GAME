@@ -102,10 +102,11 @@ export function lotsOn(lotArea: number, lotSf: number): number {
 export function entitleQuote(s: GameState, parcels: ParcelTable, bbl: string, lotSf = 7_500, planned?: number) {
   const p = plattable(s, parcels, bbl);
   if ("err" in p) return null;
-  const lots = planned ?? lotsOn(p.rec.lotArea, lotSf);
+  const buildable = p.rec.buildableSf ?? p.rec.lotArea;   // dry, off the floodplain and the freeway: the land a plat can use
+  const lots = planned ?? lotsOn(buildable, lotSf);
   if (lots < 4) return null;
   const cost = Math.round((ENTITLE_FIXED + ENTITLE_PER_LOT * lots) * s.econ.costIdx);
-  return { cost, months: ENTITLE_MONTHS(lots), odds: +entitleOdds(p.rec.tract!.edgeM).toFixed(2), lots, lotSf, zone: REZONE.zone, far: REZONE.far };
+  return { cost, months: ENTITLE_MONTHS(lots), odds: +entitleOdds(p.rec.tract!.edgeM).toFixed(2), lots, lotSf, zone: REZONE.zone, far: REZONE.far, acres: +(p.rec.lotArea / 43560).toFixed(1), buildableAcres: +(buildable / 43560).toFixed(1) };
 }
 
 export function fileEntitlement(s: GameState, parcels: ParcelTable, bbl: string, lotSf = 7_500, planned?: number): { s: GameState; err?: string; msg?: string } {

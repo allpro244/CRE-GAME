@@ -1,5 +1,27 @@
 # Agents — read this first
 
+## Stay on course (owner's standing rule)
+
+Run the **course check** (`.claude/skills/course-check/SKILL.md`, the
+`course-check` skill) **often**:
+- before starting a task;
+- before waiting on anything slow;
+- every ~30 minutes of work;
+- after any surprise;
+- before saying something is done.
+
+At minimum, ask yourself:
+- **Am I doing this as efficiently as possible?**
+- **Will this get us to the end goal in the best way?**
+- **Could I be doing this better, or is there something more important?**
+- **Am I waiting on something?** What's the deadline, and what am I doing meanwhile?
+- **How do I know it works?** Seen, not assumed.
+- **Is finished work landing** (small PRs, merged), and does the owner know?
+
+Act on every "no" immediately. Never leave a job running past about 2× its
+expected time. Never hand the owner something you could do yourself.
+
+
 **This repository is Broadway & Wall only.**
 
 **The game is moving to Unreal Engine 5.8 (owner's decision, 2026-10-19).

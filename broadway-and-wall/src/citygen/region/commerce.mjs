@@ -103,13 +103,19 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
     const gla = row.reduce((t, b) => t + b.sf, 0);
     const Dp = ((gla / 1000) * RETAIL_RATIO * SPACE_M2) / W;
     const P = pads.length ? 60 : 10, Db = Math.max(...row.map((b) => b.d));
+    // THE FIELD RUNS TO THE STOREFRONT (owner, after the Unreal render): the car park faces the access road
+    // and ends at a ~3 m sidewalk on the stores' common front line (its fire lane is the apron's store-side
+    // aisle); landscaping only at the road edge and the sides; service and loading behind every store, however deep.
+    const SW = 3, front = P + Dp + SW;
     const main = [
-      { a: 0, o: P - 6, w: W + 8, d: Dp + Db + 22, kind: "lawn" },                 // the landscaped verge and buffers under it all
+      { a: 0, o: P - 6, w: W + 8, d: Dp + SW + Db + 22, kind: "lawn" },            // the verge at the road and the side buffers
       { a: 0, o: P, w: W, d: Dp, kind: "lot" },                                      // the car park
-      { a: 0, o: P + Dp + Db, w: W, d: 16, kind: "pave" },                           // the service drive and the docks behind
+      { a: 0, o: P + Dp, w: rowLen + 4, d: SW, kind: "walk" },                       // the sidewalk along the storefronts
+      { a: 0, o: front, w: W, d: Db + 16, kind: "pave" },                           // service drive and docks behind (under the stores)
+      { a: W / 2 - 12, o: P - 4, w: 2.4, d: 0.8, kind: "sign", z: 900 },           // the pylon sign at the main entrance
     ];
     let x = -rowLen / 2;
-    for (const b of row) { main.push({ a: x + b.w / 2, o: P + Dp + (Db - b.d), w: b.w, d: b.d, kind: "bldg", z: b.z, cls: "retail", floors: 1 }); x += b.w + gap; }
+    for (const b of row) { main.push({ a: x + b.w / 2, o: front, w: b.w, d: b.d, kind: "bldg", z: b.z, cls: "retail", floors: 1 }); x += b.w + gap; }
     const out = [{ rects: main, sf: gla, name, cls: "retail", bldgclass, year }];
     pads.forEach((pd, j) => {
       const a = -W / 2 + ((j + 0.5) * W) / pads.length, lw = Math.min(W / pads.length - 6, pd.gas ? 60 : 50);

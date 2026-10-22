@@ -72,13 +72,34 @@ const hashOf = (...vs) => {
   return h.digest("hex").slice(0, 16);
 };
 
-const { parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels);
+// REGION=1: the 6 km region map (seed CITY_SEED, default 1), built the way a
+// new region game builds it, with the start itself hashed and timed:
+// state after newGame, after firstListings, then every month.
+const REGION_MODE = process.env.REGION === "1";
+let P0, adjacency, bbls, startOpts;
+if (REGION_MODE) {
+  const { makeCity, REGION } = await import(join(HERE, "..", "src", "citygen", "index.mjs"));
+  const city = makeCity(REGION, Number(process.env.CITY_SEED ?? 1));
+  P0 = city.parcels; E.normalizeParcels(P0); bbls = Object.keys(P0); adjacency = city.adjacency ?? null;
+  startOpts = { citySize: "region", cityLots: bbls.length };
+} else {
+  ({ parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels));
+}
 const out = {};
 const times = [];
+const starts = [];
 for (const seed of SEEDS) {
   const parcels = JSON.parse(JSON.stringify(P0));
-  let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
-  const hs = [hashOf(g, parcels)];
+  const hs = [];
+  let t0 = performance.now();
+  let g = REGION_MODE ? E.newGame(seed, parcels, undefined, undefined, startOpts) : E.newGame(seed, parcels);
+  const tNew = performance.now() - t0;
+  if (REGION_MODE) hs.push(hashOf(g, parcels));
+  t0 = performance.now();
+  g = E.firstListings(g, parcels, bbls);
+  const tFirst = performance.now() - t0;
+  starts.push({ seed, newGame: tNew, firstListings: tFirst });
+  hs.push(hashOf(g, parcels));
   for (let m = 0; m < MONTHS; m++) {
     const t0 = performance.now();
     g = E.advanceMonth(g, parcels, bbls, adjacency);
@@ -91,9 +112,10 @@ for (const seed of SEEDS) {
 const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const steady = times.filter((_, i) => i % MONTHS !== 0);
 console.log(`${Object.keys(P0).length ?? "?"} parcels, ${SEEDS.length} seeds x ${MONTHS} months`);
-console.log(`ms/month  median ${q(steady, 0.5).toFixed(1)}  p90 ${q(steady, 0.9).toFixed(1)}  mean ${(steady.reduce((a, b) => a + b, 0) / steady.length).toFixed(1)}  total ${(times.reduce((a, b) => a + b, 0) / 1000).toFixed(2)}s`);
+if (steady.length) console.log(`ms/month  median ${q(steady, 0.5).toFixed(1)}  p90 ${q(steady, 0.9).toFixed(1)}  mean ${(steady.reduce((a, b) => a + b, 0) / steady.length).toFixed(1)}  total ${(times.reduce((a, b) => a + b, 0) / 1000).toFixed(2)}s`);
 
-const key = `${MONTHS}:${SEEDS.join(",")}`;
+for (const st of starts) console.log(`start seed ${st.seed}: newGame ${st.newGame.toFixed(0)} ms, firstListings ${st.firstListings.toFixed(0)} ms, total ${(st.newGame + st.firstListings).toFixed(0)} ms`);
+const key = `${REGION_MODE ? `region${process.env.CITY_SEED ?? 1}:` : ""}${MONTHS}:${SEEDS.join(",")}`;
 if (SAVE) {
   const all = existsSync(BASE) ? JSON.parse(readFileSync(BASE, "utf8")) : {};
   all[key] = out;

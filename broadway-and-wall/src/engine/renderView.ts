@@ -60,6 +60,8 @@ export interface RenderLot {
   form?: string;
   /** Its tiers, rings in cm, heights in cm (state/unrealHost.ts solves them). */
   tiers?: { ring: number[]; z0: number; z1: number }[];
+  /** "house": a detached house (homes.ts) — drawn with the house meshes, sized to `cov` of the lot, not as a block. */
+  deco?: "house";
 }
 
 export interface RenderOwner {
@@ -173,12 +175,20 @@ export function renderView(s: GameState, sinceMonth = s.month - 1): RenderView {
     lots.push({ bbl: j.bbl, cls: j.use, floors: j.floors, heightM: j.floors * FLOOR_M * progress, construction: true, progress, year: nowYear,
       ...(cov !== undefined ? { cov } : {}) });
   }
+  // A HOMEBUILDER'S HOUSE going up (homes.ts): a frame the size of the house, no tower crane
+  for (const u of Object.values(s.homes?.units ?? {})) {
+    if (u.builtM !== undefined || s.built?.[u.bbl]?.bldgArea) continue;
+    const fl = u.sf > 1_800 ? 2 : 1;
+    const progress = Math.min(1, Math.max(0.15, (s.month - u.startM + 1) / Math.max(1, u.doneM - u.startM)));
+    lots.push({ bbl: u.bbl, cls: "multifamily", floors: fl, heightM: fl * FLOOR_M * progress, construction: true, progress, year: nowYear, deco: "house" });
+  }
   const rising = new Set(lots.map((l) => l.bbl));
   for (const [bbl, b] of Object.entries(s.built ?? {})) {
     if (s.developments?.[bbl] || rising.has(bbl)) continue;
     const dM = s.holdings[bbl]?.deliveredM;
     lots.push({ bbl, cls: b.class, floors: b.floors, heightM: b.floors * FLOOR_M, construction: false, progress: 1, year: b.yearBuilt || nowYear,
       ...(b.cov !== undefined ? { cov: b.cov } : {}),
+      ...(b.house ? { deco: "house" as const } : {}),
       ...(dM !== undefined && s.month - dM <= 3 ? { fresh: true } : {}),
       ...(b.mix ? { shops: (b.mix.retail ?? 0) > 0.001 } : {}),
       ...(b.design?.facade ? { facade: b.design.facade.split("#")[0] } : {}),

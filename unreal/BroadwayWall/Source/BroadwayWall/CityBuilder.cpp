@@ -1652,14 +1652,29 @@ void ACityBuilder::ApplyView(const FBWRenderView& View)
 		FVector2D C(0, 0);
 		for (const FVector2D& Q : Ring) C += Q;
 		C /= Ring.Num();
-		const double B = L.Cov > 0 ? FMath::Min(0.97, FMath::Sqrt(L.Cov)) : 0.82;
+		// a homebuilder's house covers a fifth of its lot or so when the engine kept no coverage
+		const bool bHouse = L.Deco == TEXT("house");
+		const double B = L.Cov > 0 ? FMath::Min(0.97, FMath::Sqrt(L.Cov)) : bHouse ? 0.45 : 0.82;
 		for (FVector2D& Q : Ring) Q = C + (Q - C) * B;
 		V.Ring = MoveTemp(Ring);
 		V.Z0 = 0;
 		V.Z1 = FMath::Max(3.0, L.HeightM) * 100.0;
 		V.bFrame = L.bConstruction;
 		V.Progress = L.Progress;
-		if (L.bConstruction)
+		// A FINISHED HOUSE is one house mesh on its footprint (BuildVolumes, Deco "house"); while it
+		// goes up it is a timber frame inside a site fence, and no tower crane stands over a house
+		if (bHouse && !L.bConstruction) V.Deco = TEXT("house");
+		if (bHouse && L.bConstruction)
+		{
+			FBWVolume Fence;
+			Fence.Bbl = L.Bbl;
+			Fence.Deco = TEXT("hoarding");
+			Fence.bOpen = true;
+			Fence.Z1 = 180;
+			Fence.Ring = P->Ring;
+			Current.Add(MoveTemp(Fence));
+		}
+		else if (L.bConstruction)
 		{
 			// the site: a hoarding round the whole lot, and a crane over the frame
 			// topping out a few storeys above where the finished roof will be

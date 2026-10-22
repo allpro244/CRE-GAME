@@ -21,12 +21,12 @@ import { generateCity } from "./citygen.mjs";
 import { buildCityData } from "./build.mjs";
 import { SIZES, DEFAULT_SIZE, scaleCity } from "./cities.mjs";
 import { islandConfig, islandName } from "./island.mjs";
-import { makeRegion, regionName, REGION, platTractLots } from "./region/index.mjs";
+import { makeRegion, regionName, REGION, platTractLots, regionRoadPlan, neighbourhoodLots } from "./region/index.mjs";
 import { MANHATTAN, manhattanConfig, manhattanName, EXTENTS, DEFAULT_EXTENT, extentList, loadManhattanPlat, setManhattanPlat } from "./manhattan.mjs";
 
 export { SIZES, DEFAULT_SIZE };
 export { MANHATTAN, EXTENTS, DEFAULT_EXTENT, extentList };
-export { REGION, platTractLots };
+export { REGION, platTractLots, regionRoadPlan, neighbourhoodLots };
 export { platTractDesign, platDesignLL } from "./region/index.mjs";
 export { DESIGN_LAYOUTS, DESIGN_SIZES, LOT_DIM_FT, SPLIT_MIN, canSplit, designSummary } from "./region/platdesign.mjs";
 // for the town worker, which cannot fetch the plat itself from the single-file build

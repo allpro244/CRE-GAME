@@ -9,7 +9,7 @@ import type { GameState, Holding } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import {
-  initialCondition, inPlace, landRead, marketAppraisal, marketRentPsfYr, resolveRec,
+  initialCondition, inPlace, landRead, marketAppraisal, marketRentPsfYr, ownedHoldingNoiYrFromRec, resolveRec,
 } from "@/engine/value";
 import { replacementCost } from "@/engine/dev";
 import { occupancyRead, walt } from "@/engine/leasing";
@@ -144,17 +144,20 @@ function Overview({ game, parcels, bbl, h }: { game: GameState; parcels: ParcelT
   const args = { bbl, price: ask ?? undefined };
   const strip = h ? (() => {
     const debt = (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0);
-    const ds = (h.loan?.monthlyPmt ?? 0) * 12;
+    const ds = ((h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0)) * 12;
     const d = dscrOf(rec, game, h);
     const occ = built ? occupancyRead(rec, h).lettableOcc : null;
+    // The deed's NOI as the lender tests it and Holdings prints it (cash, after
+    // free rent); the contract NOI is a row in its drill (R8).
+    const noi = ownedHoldingNoiYrFromRec(game, rec, h);
     return (
       <>
         <Stat label="Value"><Figure value={value} fmt="usd" drill="value" args={args} /></Stat>
-        <Stat label="NOI"><Figure value={ip.noi} fmt="usd" drill="noi" args={args} tone={ip.noi < 0 ? "neg" : undefined} /></Stat>
+        <Stat label="NOI"><Figure value={noi} fmt="usd" drill="noi" args={args} tone={noi < 0 ? "neg" : undefined} /></Stat>
         <Stat label="Occ"><Figure value={occ} fmt="pct" drill="rent" args={args} /></Stat>
         <Stat label="Debt"><Figure value={debt} fmt="usd" drill="dscr" args={args} /></Stat>
         <Stat label="DSCR"><Figure value={d} fmt="x" drill="dscr" args={args} tone={d !== null && h.loan && d < h.loan.minDSCR ? "neg" : undefined} /></Stat>
-        <Stat label="CF / mo"><Figure value={(ip.noi - ds) / 12} fmt="usd" drill="noi" args={args} tone={ip.noi - ds < 0 ? "neg" : undefined} /></Stat>
+        <Stat label="CF / mo"><Figure value={(noi - ds) / 12} fmt="usd" drill="noi" args={args} tone={noi - ds < 0 ? "neg" : undefined} /></Stat>
       </>
     );
   })() : (
@@ -345,11 +348,11 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
       const r = rows[pickI] ?? rows[0];
       return (
         <ActionFooter
-          left={r ? <span className="mono nx-dim">{r.use} · {r.floors} fl · {r.hurdle.toFixed(2)}×</span> : undefined}
+          left={r ? <span className="mono nx-dim">{r.product ?? `${r.use} · ${r.floors} fl`} · {r.hurdle.toFixed(2)}×</span> : undefined}
           verbs={[{
             label: "Break ground", primary: true,
             disabled: !r ? "No scheme prices" : r.hurdle < 1 ? "Below hurdle" : undefined,
-            run: () => r && st.develop(bbl, r.use, r.floors, r.coverage, "gmp", r.ltcMax, undefined, r.lender),
+            run: () => r && st.develop(bbl, r.use, r.floors, r.coverage, "gmp", r.ltcMax, r.product ? { product: r.product } : undefined, r.lender),
           }]}
         />
       );

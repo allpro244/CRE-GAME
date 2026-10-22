@@ -678,9 +678,14 @@ function designEnv(tract) {
   const north = norm([-wy[0] / det, wx[0] / det]);
   const ok = (p) => { const k = G.idx(p); return k >= 0 && M.free(p) && !M.lotL[k] && !M.phase[k]; };
   const street = (p) => { const k = G.idx(p); return k >= 0 && !M.water[k] && !M.isSea(p) && !town0(k) && !M.hwL[k] && !M.lotL[k] && !M.phase[k]; };
+  // a side with a road along it gives up half the road's 66 ft right-of-way and a 1 m verge (as platTractLots)
+  const roads = M.oldRoads.concat(M.secRoads);
+  const onRoad = (a, b) => [0.2, 0.5, 0.8].some((t) => roads.some((pl) => distToLine([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], pl) < 25));
+  const side = (a, b) => (onRoad(a, b) ? 66 * FT / 2 + 1 : 1);
+  const insets = [side([x0, y0], [x0, y1]), side([x0, y0], [x1, y0]), side([x1, y0], [x1, y1]), side([x0, y1], [x1, y1])];
   const cellSf = CELL * CELL * SQFT_PER_M2;
   E = {
-    r: tract.r, id: tract.id, seed, bearing: tract.bearing ?? 0, ok, street, floodDist, trail, pondAt: pondAt ?? [(x0 + x1) / 2, (y0 + y1) / 2],
+    r: tract.r, id: tract.id, seed, bearing: null, insets, ok, street, floodDist, trail, pondAt: pondAt ?? [(x0 + x1) / 2, (y0 + y1) / 2],
     outline, flood, north,
     grossSf: Math.round(nLand * cellSf), floodSf: Math.round(nFlood * cellSf), buildableSf: Math.round((nLand - nFlood) * cellSf),
   };

@@ -30,7 +30,8 @@ export const DESIGN_SIZES = [5000, 7500, 10000, 15000];
 /** frontage x depth, ft, by nominal lot size [S, above] */
 export const LOT_DIM_FT = { 5000: [50, 100], 7500: [65, 115], 10000: [80, 125], 15000: [100, 150] };
 const ROW = { local: 50 * FT, collector: 66 * FT, court: 50 * FT };
-const BLOCK = 660 * FT;
+/** The longest block a subdivision code allows between cross streets, about 1,200-1,320 ft [S, typical codes]. */
+const BLOCK = 1200 * FT;
 const CDS_MAX = 600 * FT;
 const BULB_R = 45 * FT, BULB_ROW_R = 55 * FT;
 /** The smallest lot a split may leave: the R-2 minimum, 5,000 sf on 40 ft of frontage [S, typical R-2]. */
@@ -84,11 +85,14 @@ export function designBase(spec, env) {
   const shares = mixShares(spec.mix);
   const rng = makeRng(`plat-design:${env.id}:${layout}:${env.seed}`);
   const [x0, y0, x1, y1] = env.r;
-  const inset = 66 * FT / 2 + 4;          // half a section-line road's ROW and a verge (plats.mjs)
-  const X0 = x0 + inset, Y0 = y0 + inset, X1 = x1 - inset, Y1 = y1 - inset;
+  // a side with a road along it gives up half the road's 66 ft right-of-way and a verge; a side on a
+  // field gives up nothing (env.insets: west, north, east, south in the canonical frame; region/index.mjs)
+  const ins = env.insets ?? [66 * FT / 2 + 4, 66 * FT / 2 + 4, 66 * FT / 2 + 4, 66 * FT / 2 + 4];
+  const X0 = x0 + ins[0], Y0 = y0 + ins[1], X1 = x1 - ins[2], Y1 = y1 - ins[3];
   const shift = [Number(spec.shift?.[0] ?? 0), Number(spec.shift?.[1] ?? 0)];
   const C = add([(X0 + X1) / 2, (Y0 + Y1) / 2], shift);
-  const deg = (env.bearing ?? 0) + Number(spec.rot ?? 0);
+  // the pattern runs along the tract's long side unless turned: a grid turned in a rectangle wastes its corners
+  const deg = (env.bearing ?? (X1 - X0 >= Y1 - Y0 ? 0 : 90)) + Number(spec.rot ?? 0);
   const th = (deg * Math.PI) / 180, u = [Math.cos(th), Math.sin(th)], v = perp(u);
   const sl = Math.hypot(shift[0], shift[1]);
   const half = (Math.abs(dot([X1 - X0, 0], u)) + Math.abs(dot([0, Y1 - Y0], u))) / 2 + sl;
@@ -124,16 +128,26 @@ export function designBase(spec, env) {
       const f = face++;
       let s = s0;
       while (s + w <= L + 1e-6) {
+        // a lot may not cross a cross street: restart just past it, losing only the street itself
+        const g = gapAt.find((gg) => s < gg + R / 2 && s + w > gg - R / 2);
+        if (g !== undefined) { s = g + R / 2 + 0.5; continue; }
         const sm = s + w / 2;
-        if (gapAt.some((g) => Math.abs(g - sm) < R / 2 + w / 2)) { s += w; continue; }
         const a = pointAt(pl, s), b = pointAt(pl, s + w), m = pointAt(pl, sm);
         const n0 = nrm(s, sd), n1 = nrm(s + w, sd), n = nrm(sm, sd);
         const f0 = add(a, mul(n0, R / 2)), f1 = add(b, mul(n1, R / 2));
-        const ring = sd > 0 ? [f0, f1, add(f1, mul(n1, depth)), add(f0, mul(n0, depth))] : [f1, f0, add(f0, mul(n0, depth)), add(f1, mul(n1, depth))];
+        // where the street's own frontage is not usable ground, slide a quarter lot on and try again
+        if (!good(f0) || !good(f1)) { s += w / 4; continue; }
+        // a lot that runs into ground it cannot use is cut short to fit, to 60% of its depth and never
+        // under the district's minimum lot; past that it is not a lot
+        let ring = null, dd = depth;
+        for (const k of [1, 0.85, 0.72, 0.6]) {
+          dd = depth * k;
+          const r = sd > 0 ? [f0, f1, add(f1, mul(n1, dd)), add(f0, mul(n0, dd))] : [f1, f0, add(f0, mul(n0, dd)), add(f1, mul(n1, dd))];
+          if (r.every(good) && good(centroid(r)) && good(add(m, mul(n, R / 2 + dd / 2))) && sqft(ringAreaAbs(r)) >= SPLIT_MIN.sf * 0.98) { ring = r; break; }
+        }
+        if (!ring) { s += w / 4; continue; }
         s += w;
-        const c = centroid(ring);
-        if (!ring.every(good) || !good(c) || !good(add(m, mul(n, R / 2 + depth / 2)))) continue;
-        lots.push({ ring, front: [ring[0], ring[1]], c, a: Math.round(sqft(ringAreaAbs(ring))), w: w / FT, d: depth / FT, size, face: f, street, sd });
+        lots.push({ ring, front: [ring[0], ring[1]], c: centroid(ring), a: Math.round(sqft(ringAreaAbs(ring))), w: w / FT, d: dd / FT, size, face: f, street, sd });
         kept.set(size, kept.get(size) + 1);
       }
     }

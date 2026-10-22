@@ -97,7 +97,7 @@ export default function LandDesk({ bbl }: { bbl: string }) {
     return (
       <div className="deal land-desk">
         <div className="deal-head">Land development <span className="dim">· not developable</span></div>
-        <div className="hint">{(rec.lotArea / 43560).toFixed(0)} ac · {pnl.density.buildableAc.toFixed(1)} buildable{rec.floodShare ? ` · ${Math.round(rec.floodShare * 100)}% floodplain` : ""} · no plat fits. It trades as farmland.</div>
+        <div className="hint">{(rec.lotArea / 43560).toFixed(0)} ac · {pnl.density.buildableAc.toFixed(1)} buildable{` · ${Math.round(100 * (1 - pnl.density.buildableAc * 43560 / Math.max(1, rec.lotArea)))}% floodplain or taken`} · no plat fits. It trades as farmland.</div>
       </div>
     );
   }

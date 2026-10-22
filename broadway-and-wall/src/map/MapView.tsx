@@ -6,7 +6,8 @@ import { blocksPaint, parksPaint, groundGrain, composeStyle, gameLayers, landLen
 import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
 import { mergeLotFeatures } from "./real/siteRing";
-import { condIdxOf, liveDemand, occupancy, physicalOcc, resolveRec, useOccupancy, landRead } from "@/engine/value";
+import { lensValues } from "@/ui/next/lensData";
+import { condIdxOf, liveDemand, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { START_YEAR } from "@/engine/types";
 import type { BuildingDesign, GameState } from "@/engine/types";
@@ -1087,17 +1088,8 @@ export default function MapView() {
     const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "zoning") return;
-    const next = new Map<string, number>();
-    for (const bbl of Object.keys(parcels)) {
-      const rec = resolveRec(parcels, game, bbl);
-      if (!rec || !rec.lotArea) continue;
-      // The RESOLVED envelope: the district's multiplier, anything won at a
-      // hearing on this lot, and nothing at all if it has been landmarked.
-      const far = Math.max(rec.farMaxComm, rec.farMaxRes);
-      if (!(far > 0)) { next.set(bbl, 0); continue; }        // landmarked: no room, and that is the point
-      const used = rec.bldgArea / (rec.lotArea * far);
-      next.set(bbl, Math.round(100 * Math.max(0, Math.min(1, 1 - used))));
-    }
+    // the lens's numbers are ui/next/lensData: one read for this map and for Unreal (R8)
+    const next = new Map(lensValues(game, parcels, "zoning"));
     mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (zoneRef.current.get(bbl) === v) continue;
@@ -1117,18 +1109,8 @@ export default function MapView() {
     const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "leases") return;
-    const next = new Map<string, number>();
-    for (const h of Object.values(game.holdings)) {
-      if (h.groundLeased || !h.tenants?.length) continue;
-      let soonest = Infinity;
-      for (const t of h.tenants) {
-        const left = t.endM - game.month;
-        if (left >= 0 && left < soonest) soonest = left;
-      }
-      if (!Number.isFinite(soonest)) continue;
-      // 0–24 months mapped to 100–0 (bright when near). Beyond 24 → 0 (dark).
-      next.set(h.bbl, Math.round(100 * Math.max(0, 1 - Math.min(24, soonest) / 24)));
-    }
+    // the lens's numbers are ui/next/lensData: one read for this map and for Unreal (R8)
+    const next = new Map(lensValues(game, parcels, "leases"));
     mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (leaseRef.current.get(bbl) === v) continue;
@@ -1149,14 +1131,8 @@ export default function MapView() {
     const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "vacancy") return;
-    const next = new Map<string, number>();
-    for (const bbl of Object.keys(parcels)) {
-      const rec = resolveRec(parcels, game, bbl);
-      if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-      const h = game.holdings[bbl];
-      const occ = h && !h.groundLeased ? physicalOcc(rec, h) : occupancy(rec, game.econ);
-      next.set(bbl, Math.round(100 * Math.max(0, Math.min(1, occ))));
-    }
+    // the lens's numbers are ui/next/lensData: one read for this map and for Unreal (R8)
+    const next = new Map(lensValues(game, parcels, "vacancy"));
     mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (vacRef.current.get(bbl) === v) continue;
@@ -1179,17 +1155,8 @@ export default function MapView() {
     const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "pencils") return;
-    const asks = new Map(game.listings.map((l) => [l.bbl, l.ask] as const));
-    const next = new Map<string, number>();
-    for (const bbl of Object.keys(parcels)) {
-      if (game.holdings[bbl]) continue;
-      const rec = resolveRec(parcels, game, bbl);
-      if (!rec || rec.class !== "land" || !rec.lotArea) continue;
-      const read = landRead(rec, game.econ);
-      const price = asks.get(bbl) ?? read.psf * rec.lotArea;
-      const pay = Math.max(0, read.builder) * rec.lotArea;
-      next.set(bbl, Math.round(100 * Math.min(2, price > 0 ? pay / price : 0)));
-    }
+    // the lens's numbers are ui/next/lensData: one read for this map and for Unreal (R8)
+    const next = new Map(lensValues(game, parcels, "pencils"));
     mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (siteRef.current.get(bbl) === v) continue;

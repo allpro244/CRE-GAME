@@ -22,6 +22,7 @@
  */
 import { useStore } from "@/state/store";
 import { renderView, lookOf } from "@/engine/renderView";
+import { gfxString } from "./graphics";
 import { toBwCity } from "@/citygen/unrealExport.mjs";
 import { formTiers, formMetrics, formsFor } from "@/citygen/forms.mjs";
 import "@/map/real/patternbook/register";
@@ -109,9 +110,11 @@ export function startUnrealHost(): void {
       void b.view(JSON.stringify(view));
     }
     // the Settings page's graphics level drives Unreal's scalability (Phase 6)
-    if (s.graphics !== lastGfx) {
-      lastGfx = s.graphics;
-      void b.input(JSON.stringify({ t: "quality", k: s.graphics }));
+    // the full graphics settings, as Unreal's option string (state/graphics.ts)
+    const gfx = gfxString(s.gfx);
+    if (gfx !== lastGfx) {
+      lastGfx = gfx;
+      void b.input(JSON.stringify({ t: "gfx", k: gfx }));
     }
     // the Build desk's scheme: Unreal draws it on its lot (the desk's model box
     // is a window onto that view: ui/panels/SchemeViewer.tsx HostSchemeWindow)

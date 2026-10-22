@@ -85,13 +85,13 @@ export { HARD_COST_PSF, SOFT_COST, CONTINGENCY } from "./value";
 export {
   MIXED_STACK, normalizeMix, devMix, dominantOf, CONTRACT_PREMIUM, reserveFor, specCostMult,
   farMaxFor, maxRetailShare, withStreetRetail, capRetail, maxFloorsFor,
-  MAX_COVERAGE, maxCoverageFor,
+  MAX_COVERAGE, MIN_COVERAGE, maxCoverageFor, wreckCost,
 } from "./proforma";
 export type { ConstructionQuote } from "./proforma";
 import {
   devMix, dominantOf, overMix, leaseUpMarketAt, specShare, constructionDesks, deskQuote, clamp01, farMaxFor, maxFloorsFor,
   withStreetRetail, capRetail, reserveFor,
-  developmentProForma, landCarryFactor, MAX_COVERAGE, maxCoverageFor,
+  developmentProForma, landCarryFactor, MAX_COVERAGE, MIN_COVERAGE, maxCoverageFor, wreckCost,
 } from "./proforma";
 import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
@@ -744,7 +744,7 @@ export function buildClimate(s: GameState): number {
 /**
  * THE LARGEST BUILDING THE PLANNER WILL DRAW ON A LOT — the same
  * `min(plate x floors, envelope)` `planDevelopment` strikes, taken over the
- * footprints the Build desk offers (8% of the lot to each use's MAX_COVERAGE). Zoning alone
+ * footprints the Build desk offers (MIN_COVERAGE to each use's MAX_COVERAGE). Zoning alone
  * (lot x FAR) overstates a small lot several times over, because slenderness
  * and the core stop it going up long before the FAR runs out.
  */
@@ -755,7 +755,7 @@ export function maxBuildable(
   let best = { gsf: 0, floors: 1, coverage: 0.6 };
   // Each use at the footprints it may take (MAX_COVERAGE) and the height it stacks to.
   for (const use of BUILT_CLASSES) {
-    for (let c = 0.08; c <= MAX_COVERAGE[use] + 1e-4; c += 0.01) {
+    for (let c = MIN_COVERAGE; c <= MAX_COVERAGE[use] + 1e-4; c += 0.01) {
       const fl = maxFloorsFor(rec, c, use);
       const gsf = Math.min(rec.lotArea * c * fl, envelope);
       if (gsf > best.gsf + 1) best = { gsf: Math.round(gsf / 100) * 100, floors: fl, coverage: c };
@@ -2300,7 +2300,7 @@ export function takeoverDevelopment(
 // three-storey walk-up on a site that carries thirty floors is worth more as
 // a hole in the ground.
 export function demolitionCost(rec: { bldgArea: number }, s: GameState): number {
-  return Math.round(Math.max(60_000, rec.bldgArea * 14 * s.econ.costIdx));
+  return wreckCost(rec.bldgArea, s.econ.costIdx);
 }
 
 export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string } {
@@ -3988,6 +3988,9 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     let nextUse = cand.probeUse;
     let lead = cand.probeLead;
     const bbl = rec.bbl;
+    // (tickTeardowns runs twice in a short month: a lot the first pass folded
+    // or broke ground on is no longer a candidate of its own)
+    if (s.merged?.[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     const oldSf = rec.bldgArea;
     const cls = rec.class;
     // When the standing class is pinned and still wanted, densify IN KIND.
@@ -4144,6 +4147,14 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   }
   for (const pick of chosen) {
   const { rec, ratio, bbl, oldSf, nextUse, lead, nsf, nfl, opportunityCost, plan, ltc, kids } = pick;
+  // THE PICKS WERE MADE BEFORE ANY OF THEM RAN. One month chose 1000740001
+  // as a teardown of its own AND 1000740002 with 1000740001 folded into its
+  // site; both went ahead, and an eight-storey office was built on a lot of
+  // zero square feet (city-accept M, plan 14, seed 0, month 88). A pick whose
+  // lot, or any lot it would fold in, an earlier pick has since built on or
+  // folded is dropped.
+  const gone = (b: string) => !!s.merged?.[b] || (s.cityJobs ?? []).some((j) => j.bbl === b);
+  if (gone(bbl) || kids.some(gone)) continue;
   const yr = yr0;
   const tprog = plan.mix;
   const months = plan.months;
@@ -5154,6 +5165,13 @@ function breakCityGround(
   bbl: string, rec: NonNullable<ParcelTable[string]>, use: DevUse, floors: number, plate: number,
   opts?: { backdate?: number; quiet?: boolean; spec?: number; ltc?: number; decided?: boolean; builderId?: string; firmId?: string; landBasis?: number },
 ): boolean {
+  // NO GROUND, NO GROUNDBREAK. A lot folded into an assembled site reads as
+  // land with no building, which is what a greenfield search looks for, and
+  // its record keeps a lot area for the first month (the folding happens
+  // mid-tick): the town's growth started an eight-storey office on one beside
+  // the site it belonged to (city-accept M, plan 14, seed 0, month 88). Every
+  // city start passes here, so the guard lives here.
+  if (s.merged?.[bbl] || !(rec.lotArea > 0)) return false;
   let sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
   const lead = dominantOf(devMix(use));
   const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, opts?.landBasis, opts?.spec ?? 0.5, opts?.ltc);

@@ -69,12 +69,18 @@ function HostSchemeWindow({ height }: { height: number }) {
       sendInput({ t: "preview-rect", x: 0, y: 0, w: 0, h: 0 });
     };
   }, []);
-  const drag = useRef<number | null>(null);
+  // drag left/right to turn round the scheme, up/down to tilt (BWGame: the
+  // view holds where it is left; it no longer spins on its own)
+  const drag = useRef<{ x: number; y: number } | null>(null);
   return (
     <div className="scheme-viewer" style={{ position: "relative", marginBottom: 8 }}>
       <div ref={box} className="scheme-viewer-canvas" style={{ width: "100%", height, borderRadius: 8, background: "transparent", cursor: "grab", touchAction: "none", outline: "1px solid rgba(0,0,0,0.18)" }}
-        onPointerDown={(e) => { drag.current = e.clientX; (e.target as HTMLElement).setPointerCapture(e.pointerId); }}
-        onPointerMove={(e) => { if (drag.current === null) return; sendInput({ t: "preview-orbit", dx: e.clientX - drag.current }); drag.current = e.clientX; }}
+        onPointerDown={(e) => { drag.current = { x: e.clientX, y: e.clientY }; (e.target as HTMLElement).setPointerCapture(e.pointerId); }}
+        onPointerMove={(e) => {
+          if (drag.current === null) return;
+          sendInput({ t: "preview-orbit", dx: e.clientX - drag.current.x, dy: e.clientY - drag.current.y });
+          drag.current = { x: e.clientX, y: e.clientY };
+        }}
         onPointerUp={() => { drag.current = null; }} />
       <div style={{ position: "absolute", left: 8, top: 6, fontSize: 11, color: "#fff", textShadow: "0 0 3px rgba(0,0,0,0.9)" }}>
         {p ? `${p.floors} floors · ${Math.round(p.floors * FLOOR_M)} m` : "Choose a use and floors to see the building"}

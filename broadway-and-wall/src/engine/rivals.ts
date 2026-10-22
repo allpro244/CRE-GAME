@@ -2150,6 +2150,7 @@ export function tickRivalConversions(s: GameState, parcels: ParcelTable) {
     let pick: { bbl: string; rec: ParcelRecord; plan: DevPlan } | null = null;
     for (const bbl of r.bbls) {
       if ((s.cityJobs ?? []).some((j) => j.bbl === bbl) || s.landmarks?.[bbl] !== undefined) continue;
+      if (s.merged?.[bbl]) continue;   // folded into an assembled site (see startOwnJob)
       const rec = resolveRec(parcels, s, bbl);
       if (!rec || rec.class !== "office" || !rec.bldgArea) continue;
       const m = markAsset(s, r, rec);
@@ -3114,6 +3115,13 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   for (const bbl of r.bbls) {
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     if (s.developments[bbl] || s.holdings[bbl]) continue;
+    // A LOT FOLDED INTO SOMEBODY'S ASSEMBLED SITE HAS NO GROUND OF ITS OWN.
+    // A firm could come to hold the deed to one in the month it was folded
+    // (the site's builder takes the parent; the child's deed can still change
+    // hands) and then break ground on it: an eight-storey office stood on a
+    // lot of zero square feet beside the site it belonged to (city-accept M,
+    // plan 14, seed 0, month 88). The site is built as one, by its builder.
+    if (s.merged?.[bbl]) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.lotArea < 2500) continue;
     if (rec.class === "land") {

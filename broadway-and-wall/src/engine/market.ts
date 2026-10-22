@@ -2974,10 +2974,10 @@ export function tickNation(s: GameState) {
         && rng(s, "nation") > Math.exp((n.policy + step) / 0.35)) step = 0;
     const was = n.policy;
     n.policy = n.policy + step;
-    // A RATE DECISION STOPS THE GAME (owner, Oct 2026), like a new chair and
-    // a swan: the policy rate is what every floater resets on next month and
-    // what the bond market prices the fixed index off. Only a change raises a
-    // card; a meeting that holds passes in the news as before.
+    // A RATE DECISION IS NEWS. It once stopped the game like a new chair and
+    // a swan (the policy rate is what every floater resets on next month and
+    // what the bond market prices the fixed index off); see below for why it
+    // no longer does. A meeting that holds is not news at all.
     if (Math.abs(step) >= 0.01) {
       const up = step > 0;
       const infl = ((n.inflSm ?? n.infl ?? 0) * 100).toFixed(1), un = ((n.unemp ?? 0) * 100).toFixed(1);
@@ -2994,21 +2994,13 @@ export function tickNation(s: GameState) {
       // news. Everything else, a new cycle's first move included, is in the
       // news. (It used to stop on every turn of the cycle and every half
       // point, which in a recession was most meetings.)
-      const mag = Math.abs(step);
-      const calmYear = n.lastFedStopM === undefined || s.month - n.lastFedStopM >= 12;
-      const big = mag >= 1 - 1e-9 || (mag >= 0.75 - 1e-9 && calmYear);
-      if (big) {
-        n.lastFedStopM = s.month;
-        raiseAlert(s, {
-          kind: "fed",
-          tone: up ? "bad" : "good",
-          title,
-          body,
-          detail: "The committee's path, the curve and how far the market believes the bank are on Markets under Central bank.",
-        });
-      } else {
-        s.news.unshift({ q: s.month, kind: "info", text: `${title}. ${body}` });
-      }
+      //
+      // AND THEN NOT AT ALL (owner, Oct 2026: "it pops up almost every month,
+      // very annoying ... don't even show pop ups for when rates move, only
+      // when the fed changes"). In an inflation fight the committee moves a
+      // full point at meeting after meeting, and every one took the screen.
+      // A rate decision is news; only a new chair stops the game (above).
+      s.news.unshift({ q: s.month, kind: "info", text: `${title}. ${body}` });
       n.lastStep = step;
     }
   }

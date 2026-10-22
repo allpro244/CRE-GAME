@@ -31,6 +31,14 @@ public:
 	ACityLife();
 	virtual void Tick(float Dt) override;
 	void Build(const FBWCity& City, int32 Seed);
+	/**
+	 * THE STREET'S LIFE AS A SETTING (Settings > Graphics > City life): 0 off,
+	 * 1 light (walkers and moving cars drawn only near the camera), 2 full.
+	 * Draw distances only: the simulation underneath runs the same.
+	 */
+	void SetDensity(int32 Level);
+	/** The level last chosen, applied to a city built after the setting arrived. */
+	static int32 DensityLevel;
 	/** Where the person nearest P is now, and which way they face (for camera shots). */
 	bool PersonNear(const FVector& P, FVector& Out, FVector2D& Facing) const;
 
@@ -38,7 +46,7 @@ private:
 	// ---- roads
 	struct FNode { FVector2D P; TArray<int32> Out; bool bSignal = false; };
 	struct FLane { int32 From = 0, To = 0, Twin = -1; TArray<FVector2D> Pts; TArray<double> Cum; double Len = 0; int32 Axis = 0; TArray<int32> Cars; };
-	struct FCar { int32 Lane = 0, Mesh = 0, Inst = 0; double S = 0, V = 0, V0 = 0; };
+	struct FCar { int32 Lane = 0, Mesh = 0, Inst = 0; double S = 0, V = 0, V0 = 0, Len = 520; };
 	TArray<FNode> Nodes;
 	TArray<FLane> Lanes;
 	TArray<FCar> Cars;

@@ -347,7 +347,9 @@ export function plateRentMult(rec: { bldgArea: number; floors: number; lotFront?
   return clamp(1 + beta * (Math.log(p / REF_PLATE_SF) / Math.LN2), 0.85, 1.10);
 }
 
-const COVERAGE_LADDER = [0.35, 0.45, 0.55, 0.65, 0.75, 0.85];
+// the footprints a new building may take (proforma.ts MIN_COVERAGE to the
+// widest MAX_COVERAGE)
+const COVERAGE_LADDER = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85];
 /**
  * How much of its own zoning envelope this dirt can physically carry, at the
  * best coverage available to it. A 2,500 ft lot zoned for ten FAR cannot build

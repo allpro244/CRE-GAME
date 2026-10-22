@@ -581,6 +581,17 @@ html.host-unreal .palette {
   animation: none !important;
 }
 html.host-unreal .app .page-backdrop { background: transparent !important; }
+/* THE CITY STAYS IN VIEW (ui-revamp BUILD_SPEC 1a). In Unreal a desk docks
+   to the right edge instead of covering the window: the backdrop is only as
+   wide as the desk, so the 3D city to the left of it can still be picked. */
+html.host-unreal .app .page-backdrop {
+  inset: var(--topbar-h, 91px) 0 0 auto;
+  width: min(1060px, 66vw);
+  padding: 0;
+}
+html.host-unreal .app .page-backdrop > .page {
+  max-width: none; min-height: 100%; margin: 0; border-radius: 0;
+}
 
 /* ---------- the clock is turning (ui/ClockProgress) --------------------
    A hairline under the time controls while a month is out in the sim worker.

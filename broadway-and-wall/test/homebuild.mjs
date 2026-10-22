@@ -18,10 +18,10 @@
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const E = await import(join(HERE, ".engine.mjs"));
-const { makeCity, REGION, platTractLots } = await import(join(HERE, "..", "src", "citygen", "index.mjs"));
+const E = await import(pathToFileURL(join(HERE, ".engine.mjs")).href);
+const { makeCity, REGION, platTractLots } = await import(pathToFileURL(join(HERE, "..", "src", "citygen", "index.mjs")).href);
 
 const seed = Number(process.env.BW_SEED ?? 2);
 const HORIZON = Number(process.env.HZ ?? 72);
@@ -95,10 +95,8 @@ for (const r of [pick, ...reads.filter((x) => x !== pick && x.lots >= 12 && x.lo
 }
 if (!tract) { fail("no rezoning approved"); process.exit(1); }
 const lots = platTractLots(parcels[tract].tract, g.rezoned[tract].lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
-// the streets on an A&D loan (adloan.ts)
-const ad = E.adQuote(g, parcels, tract, lots);
-console.log(`  A&D quote: ${M(ad.amount)} at ${ad.ratePct}% from ${ad.lender} (cost ${M(ad.cost)}, lots worth ${M(ad.value)})`);
-const sp = ad.amount > 0 ? E.startPlatFinanced(g, parcels, tract, lots) : E.startPlat(g, parcels, tract, lots);
+// (the A&D note on a designed plat is platdesign.mjs's; this plat is paid in cash)
+const sp = E.startPlat(g, parcels, tract, lots);
 if (sp.err) { fail(`plat: ${sp.err}`); process.exit(1); }
 g = sp.s; check(g, "plat");
 while (!g.plats[tract].done) g = tick(g);
@@ -127,9 +125,8 @@ const v0 = E.platHomesView(g, parcels, tract);
   const nw1 = E.netWorth(g, parcels), spent = cash0 - g.cash;
   // anything else still on the book (a farm the board refused), at its own mark
   const other = Object.values(g.holdings).filter((h) => !mine.includes(h.bbl)).reduce((t, h) => t + E.ownedHoldingValueFromRec(g, E.resolveRec(parcels, g, h.bbl), h), 0);
-  const owedAD = g.adLoans?.[tract]?.balance ?? 0;
-  const want = honest + other - spent - owedAD, got = nw1 - nw0;
-  console.log(`  land loan owed ${M(owedAD)}; on the desk's book: ${M(E.cityLoanBook(g).filter((l) => l.borrower === "player" && l.bbl === tract).reduce((t, l) => t + l.balance, 0))}`);
+  const owed = Object.values(g.holdings).reduce((t, h) => t + (h.loan?.balance ?? 0), 0);
+  const want = honest + other - spent - owed, got = nw1 - nw0;
   console.log(`  net worth ${M(nw0)} -> ${M(nw1)} (${M(got)}); cash spent ${M(spent)} (net of interest earned), lots honestly ${M(honest)}, other land ${M(other)} -> expected ${M(want)}`);
   if (Math.abs(got - want) > 0.05 * Math.max(honest, spent)) fail(`net worth moved ${M(got)}, the lots and the cash say ${M(want)}`);
 }
@@ -189,8 +186,6 @@ const closed = units.filter((u) => u.closedM !== undefined).map((u) => u.closedM
 if (closed.length) console.log(`  houses: ${closed.length} closed between ${mLabel(closed[0])} and ${mLabel(closed[closed.length - 1])} = ${(closed.length / Math.max(1, closed[closed.length - 1] - closed[0] + 1)).toFixed(2)} a month`);
 if (!(pl.lotsSold > 0)) fail("no lot sold");
 if (!closed.length) fail("no builder sold a house");
-console.log(`  land loan at the end: ${g.adLoans?.[tract] ? M(g.adLoans[tract].balance) + " still owed" : "repaid"}`);
-if (ad.amount > 0 && g.adLoans?.[tract] && pl.lotsSold === mine.length) fail("every lot sold and the land loan is not repaid");
 const exits = (g.exits ?? []).filter((x) => mine.includes(x.bbl)).length;
 console.log(`  exits on the plat: ${exits}; ledger: worst unexplained month $${Math.round(worst).toLocaleString()}`);
 if (exits !== pl.lotsSold) fail(`${exits} exits for ${pl.lotsSold} lots sold`);

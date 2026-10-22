@@ -21,7 +21,7 @@ import { money } from "./money";
 
 export interface RaiseJob {
   use: DevUse; floors: number; coverage: number; contract: Contract; ltc?: number;
-  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: TakeoutKind };
+  custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: TakeoutKind; product?: import("./products").ProductKey };
   lender?: string; spec: number;
   /** How the offering is pitched (investors.ts PITCH_MULT); conservative if absent. */
   pitch?: PitchStyle;

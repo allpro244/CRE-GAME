@@ -38,7 +38,7 @@ import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
 import { DevelopSection, DevelopGlance, ReuseSection } from "@/ui/panels/DevelopDesk";
 import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openViewOn, Neighbourhood, Row, STYLE_WORD, ShortBy } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
-import { entitleQuote, platQuote, PLAT_LOT_SIZES } from "@/engine/landdev";
+import { entitleQuote, platQuote, PLAT_LOT_SIZES, INDUSTRIAL_LOT_SIZES } from "@/engine/landdev";
 import { platTractLots } from "@/citygen/index.mjs";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
@@ -170,6 +170,11 @@ function LandDevCard({ bbl }: { bbl: string }) {
                 <button key={v} type="button" className={"btn-mini" + (v === lotSf ? " on" : "")} onClick={() => setLotSf(v)}>{v.toLocaleString()} sf lots</button>
               ))}
             </div>
+            <div className="btn-row" title="An industrial park: a truck-rated spine road and big lots for boxes, flex, plants or a centre.">
+              {INDUSTRIAL_LOT_SIZES.map((v) => (
+                <button key={v} type="button" className={"btn-mini" + (v === lotSf ? " on" : "")} onClick={() => setLotSf(v)}>{Math.round(v / 43560)} ac park lots</button>
+              ))}
+            </div>
             {q ? (
               <>
                 <Row k="Lots on the plat" v={q.lots.toLocaleString()} />
@@ -186,7 +191,7 @@ function LandDevCard({ bbl }: { bbl: string }) {
       {app && <Row k="Before the board" v={`decides ${monthLabel(app.decideM)} · ${app.lots} lots · ${Math.round(app.odds * 100)}% odds`} />}
       {owned && rz && !plat && (() => {
         const lots = platTractLots(rec.tract, rz.lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
-        const q = platQuote(game, lots);
+        const q = platQuote(game, lots, rz.lotSf);
         return (
           <>
             <Row k="Rezoned" v={`${rz.zone}, FAR ${rz.far}, ${lots.length} lots of ~${rz.lotSf.toLocaleString()} sf`} />

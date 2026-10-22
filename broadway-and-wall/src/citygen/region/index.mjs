@@ -485,7 +485,9 @@ export function platTractLots(tract, lotSf) {
   const F = makeFrame(seed, M.S), proj = makeProjection(LONLAT[0], LONLAT[1]);
   const LL = (p) => { const q = proj.toLL(F.toW(p)); return [+q[0].toFixed(7), +q[1].toFixed(7)]; };
   const ok = (p) => { const k = G.idx(p); return k >= 0 && M.free(p) && !M.lotL[k] && !M.phase[k]; };
-  const plat = platFor({ seed, tract: tract.r, era: "grid", id: tract.id, bearing: tract.bearing ?? undefined, lotSf }, ok);
+  // an acre and up is an industrial park's lot (landdev.ts INDUSTRIAL_LOT_SIZES): spine roads, deep lots
+  const era = lotSf >= 43_560 ? "industrial" : "grid";
+  const plat = platFor({ seed, tract: tract.r, era, id: tract.id, bearing: tract.bearing ?? undefined, lotSf }, ok);
   const lots = plat.lots.map((l) => {
     const a = ringAreaAbs(l.ring) * SQFT_PER_M2, f = dist(l.front[0], l.front[1]) / FT;
     return { ring: l.ring.map(LL), a: Math.round(a), f: Math.round(f), d: Math.round(a / Math.max(1, f)) };

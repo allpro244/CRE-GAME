@@ -30,7 +30,7 @@ export const PLAT_GEN = "region-plat/1";
 export const ERA_YEARS = { prewar: [1905, 1939], postwar: [1946, 1975], recent: [1985, 2020] };
 // [S, approximate] two-storey share: pre-war foursquares and bungalows mixed, post-war mostly ranches, recent mostly two
 export const TWO_STOREY = { prewar: 0.6, postwar: 0.25, recent: 0.7 };
-const HOUSE = { prewar: [7, 11], postwar: [9, 13], recent: [10, 14], grid: [9, 13] };
+const HOUSE = { prewar: [7, 11], postwar: [9, 13], recent: [10, 14], grid: [9, 13], industrial: [9, 13] };
 
 /**
  * The plat for a recipe: { seed, tract: [x0,y0,x1,y1] (canonical m), era, id, bearing? }.
@@ -137,6 +137,22 @@ export function platFor(recipe, ok = () => true) {
     if (lines.length) {
       const m = lines[Math.floor(lines.length / 2)];
       streets.push([m[0], add(m[0], mul(u, -end * 2))], [m.at(-1), add(m.at(-1), mul(u, end * 2))]);
+    }
+  } else if (era === "industrial") {
+    // THE INDUSTRIAL PARK (landdev.ts, engine/products.ts): truck-rated spine roads through the tract, no
+    // cross streets and no alleys, the lots either side running back to the next spine or the tract line.
+    // A business-park lot is about 1:1.5 — the box, its truck court and its car park in depth [S: NAIOP].
+    const want = recipe.lotSf ?? 217_800;
+    const dFt = Math.sqrt(want * 1.5);
+    const nS = Math.max(1, Math.round((2 * halfV) / (2 * dFt * FT + ROW)));
+    const room = halfV / nS - ROW / 2 - 2;
+    const depth = Math.max(30, Math.min(dFt * FT, room));
+    const front = (want / (depth / FT)) * FT;
+    for (let k = 0; k < nS; k++) {
+      const b = -halfV + ((k + 0.5) * 2 * halfV) / nS;
+      const pl = [P(-half, b), P(half, b)];
+      streets.push(pl);
+      lotsAlong(pl, front, depth, [1, -1]);
     }
   } else {
     // a winding collector with cul-de-sacs of differing length, angle and spacing; lots back onto the collector

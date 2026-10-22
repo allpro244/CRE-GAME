@@ -358,7 +358,7 @@ interface AppState {
   recapBuyout: (bbl: string) => void;
   cancelRaise: (bbl: string) => void;
   closeRaiseNow: (bbl: string) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed"; syndicate?: { outside: number } }, lender?: string, spec?: number) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed"; syndicate?: { outside: number }; product?: import("@/engine/products").ProductKey }, lender?: string, spec?: number) => void;
   /** The scheme on the Build desk, drawn on its lot in the 3D city while you design it. */
   designPreview: DesignPreview | null;
   /** The landmark forms the previewed lot can hold, as the 3D city drew it (null until it has). */

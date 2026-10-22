@@ -15,7 +15,8 @@ import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECT
 import { firmShort } from "./firm";
 import { resolveRec, marketRentPsfYr, opexPsf, taxRate, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
-  mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier } from "./value";
+  mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier, tradeAreaDemand } from "./value";
+import { productOf, ANCHOR_NAMES, type ProductKey, type ProductSite } from "./products";
 export { zoneUseBar };
 export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from "./value";
 // The massing curve moved to value.ts, because land pricing needs to ask what
@@ -511,7 +512,30 @@ export interface DevPlan {
   bts?: BtsCommitment;
   btsShare?: number;
   lenderNote?: string;
+  /** A product scheme: its type, its site plan (parking and court land), and the tenants signed before the slab. */
+  product?: { key: ProductKey; site: ProductSite; anchors: BtsCommitment[]; draw?: number };
 }
+
+/**
+ * THE ANCHORS GET NAMES WHEN THE LEASES ARE SIGNED, at groundbreak. Picked by
+ * a hash of the site, the month and the slot, so naming them draws nothing
+ * from the world's random stream.
+ */
+export function nameAnchors(bbl: string, month: number, key: ProductKey, anchors: BtsCommitment[]): BtsCommitment[] {
+  const p = productOf(key);
+  if (!p) return anchors;
+  const labels: string[] = [];
+  for (const a of p.anchors) for (let i = 0; i < a.n; i++) labels.push(a.label);
+  const used = new Set<string>();
+  return anchors.map((x, i) => {
+    const pool = ANCHOR_NAMES[labels[i] ?? "single tenant"] ?? ANCHOR_NAMES["single tenant"];
+    let j = Math.floor(hash01(`${bbl}|${month}|${i}`) * pool.length) % pool.length;
+    for (let k = 0; k < pool.length && used.has(pool[j]); k++) j = (j + 1) % pool.length;
+    used.add(pool[j]);
+    return { ...x, name: pool[j], signedM: month };
+  });
+}
+
 
 /**
  * How high a building can PHYSICALLY go on this floor plate — zoning is one
@@ -799,6 +823,8 @@ export function planDevelopment(
     costMult?: number;
     /** A chosen building form's measured floor kept and facade per sf (BuildingDesign.form). */
     form?: { retained: number; skin: number };
+    /** A product type (products.ts): a pad, a centre, a flex building, a box, a plant. */
+    product?: ProductKey;
   },
   lender?: string,
   spec = 0.5,
@@ -843,7 +869,12 @@ export function planDevelopment(
   // nobody else was spared. The same draw applies to every plan now; it is
   // hashed on the lot and the season, so the design desk's number and the
   // contract are the same number.
-  const customC = { ...(custom ?? {}), costMult: custom?.costMult ?? projectCostMult(s, bbl, use) };
+  // A product reads the trade area its anchor would pull from (tradeAreaDemand).
+  const prodT = productOf(custom?.product);
+  const productIn = prodT
+    ? { key: prodT.key, ...(prodT.tradeRadiusM && prodT.anchors.length ? { draw: rec.tradeDraw?.[prodT.tradeRadiusM] ?? tradeAreaDemand(s, parcels, bbl, prodT.tradeRadiusM) } : {}) }
+    : undefined;
+  const customC = { ...(custom ?? {}), costMult: custom?.costMult ?? projectCostMult(s, bbl, use), product: productIn };
   const pf = developmentProForma(rec, s.econ, {
     use, floors, coverage, contract, spec, custom: customC, ltcWanted,
     quote: (mix, preReserve) => {
@@ -928,6 +959,7 @@ export function planDevelopment(
     // readers that call developmentHurdle(yoc, plan.exitCap) stay consistent.
     months, yieldOnCost, yieldOnCostExLand, exitCap: exitYieldPct, requiredYield, hurdleRatio, spec: clamp01(spec), bts, btsShare, lenderNote,
     rentable: pf.rentable,
+    ...(pf.product ? { product: pf.product } : {}),
   };
   // The second half of the NaN gate above. Bad inputs are one way to get a
   // plan full of nonsense; a divide by a zero lot, a mix that sums to nothing,
@@ -1193,10 +1225,12 @@ export function projectCostMult(s: GameState, bbl: string, use: DevUse): number 
 export function underwriteDevelopment(
   s: GameState, parcels: ParcelTable, bbl: string, use: DevUse,
   floors: number, coverage = 0.62, landBasisOverride?: number, spec = 0.5, ltcWanted?: number,
+  /** A product type (products.ts), when the land market priced the lot as one. */
+  product?: ProductKey,
 ): DevelopmentUnderwriting | null {
   const plan = planDevelopment(
     s, parcels, bbl, use, floors, coverage, "gmp",
-    ltcWanted, { costMult: projectCostMult(s, bbl, use) }, undefined, spec, landBasisOverride,
+    ltcWanted, { costMult: projectCostMult(s, bbl, use), ...(product ? { product } : {}) }, undefined, spec, landBasisOverride,
   );
   if (!plan) return null;
   const financeable = plan.ltcMax > 0 && plan.commitment > 0;
@@ -1943,6 +1977,8 @@ export function startDevelopment(
   contract: Contract = "gmp", ltcWanted?: number,
   custom?: {
     mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: TakeoutKind;
+    /** A product type (products.ts). */
+    product?: ProductKey;
     /** Raise `outside` of the job's cash equity from outside investors (syndicate.ts); `sources` says who, when a raise circled it (raise.ts). */
     syndicate?: { outside: number; sources?: Partial<Record<import("./investors").InvestorSource, number>>; clamp?: boolean; pitch?: import("./investors").PitchStyle };
   },
@@ -2182,6 +2218,11 @@ export function startDevelopment(
     piped: true,   // its cohort is in the market's queue, pushed above
     signed: [],
     bts: plan.bts,
+    ...(plan.product ? {
+      product: plan.product.key,
+      anchors: nameAnchors(bbl, next.month, plan.product.key, plan.product.anchors),
+      ...(plan.product.draw !== undefined ? { draw: plan.product.draw } : {}),
+    } : {}),
     events: 0,
     // the look is the player's; nothing priced reads it
     ...(custom?.design ? { design: { ...custom.design } } : {}),
@@ -2769,7 +2810,10 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     if (t < 0.35) continue;
     if (!d.signed) d.signed = [];
     const takenSf = d.signed.reduce((a, x) => a + x.sf, 0);
-    const leasable = Math.round(d.sf * specShare(d.mix ?? devMix(d.use)));
+    // (a product's anchors already hold their share of it)
+    const leasable = Math.round(d.sf * specShare(d.mix ?? devMix(d.use)))
+      - (d.anchors ?? []).reduce((a, x) => a + x.sf, 0);
+    if (leasable <= 0) continue;
 
     const lead = dominantOf(d.mix ?? devMix(d.use));
     const pre = PRELET[lead] ?? PRELET.office;
@@ -2831,6 +2875,16 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   s.delivered = (s.delivered ?? 0) + 1;
   const dmix = d.mix ?? devMix(d.use);
   s.built[d.bbl] = { class: dominantOf(dmix), mix: dmix, bldgArea: d.sf, floors: d.floors, yearBuilt: START_YEAR + Math.floor(s.month / 12), cov: d.coverage, ...(d.design ? { design: d.design } : {}) };
+  // A PRODUCT IS DELIVERED AS ITSELF: its type (shop depth, cap), its suites,
+  // and while its anchors trade, the address its shops trade at (value.ts).
+  const dprod = productOf(d.product);
+  if (dprod) {
+    const b = s.built[d.bbl];
+    b.product = dprod.key;
+    b.suites = { [dprod.use]: Math.min(dprod.suiteSf, d.sf) };
+    if (d.draw !== undefined) b.draw = +d.draw.toFixed(2);
+    if (d.anchors?.length) b.anchors = d.anchors.map((a) => a.name);
+  }
   const dBlock = demandModel(parcels).ofBbl.get(d.bbl);
   if (dBlock) nudgeBlockDemand(s, dBlock, Math.min(4, 1 + d.sf / 150_000));
   recordPropertyEvent(s, d.bbl, {
@@ -2909,6 +2963,21 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
       sf: d.bts.sf,
       amount: Math.round(d.bts.rentPsf * d.bts.sf),
       outcome: `${Math.round(d.bts.termM / 12)}-year build-to-suit`,
+    });
+  }
+  // The product's anchors move in on their signed terms, the same way.
+  for (const a of d.anchors ?? []) {
+    const deposit = depositFor(s, a.rentPsf, a.sf, a.credit);
+    moveDeposit(s, h, deposit);
+    h.tenants.push({
+      name: a.name, use: a.use, sector: a.sector, credit: a.credit, sf: a.sf, rentPsf: a.rentPsf,
+      net: true, recovery: a.recovery, startM: s.month, endM: s.month + a.termM,
+      ...(a.bumpPct !== undefined ? { bumpPct: a.bumpPct } : {}),
+      deposit, staff: 1,
+    });
+    recordPropertyEvent(s, d.bbl, {
+      kind: "major-lease", party: a.name, sf: a.sf, amount: Math.round(a.rentPsf * a.sf),
+      outcome: `${Math.round(a.termM / 12)}-year anchor lease`,
     });
   }
   // FLATS LEASE FROM A TRAILER. A block of flats does not pre-let the way an
@@ -4633,6 +4702,8 @@ export function tickCityGrowth(
       class: dominantOf(cmix), mix: cmix, bldgArea: j.sf, floors: j.floors,
       yearBuilt: START_YEAR + Math.floor(s.month / 12),
       ...(j.spec !== undefined ? { buildSpec: j.spec } : {}),
+      // a firm's product is delivered as itself, like the player's (deliver)
+      ...(productOf(j.product) ? { product: j.product, ...(j.draw !== undefined ? { draw: j.draw } : {}) } : {}),
     };
     const cBlock = demandModel(parcels).ofBbl.get(j.bbl);
     if (cBlock) nudgeBlockDemand(s, cBlock, Math.min(3, 0.8 + j.sf / 180_000));

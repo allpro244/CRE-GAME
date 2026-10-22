@@ -55,6 +55,25 @@ export interface ParcelRecord {
    */
   buildSpec?: number;
   demandScore: number;  // 0–100
+  /**
+   * A PRODUCT TYPE (engine/products.ts): a delivered pad, centre, flex
+   * building, distribution box or plant carries its type, which sets its shop
+   * depth and its cap-rate spread. Stamped by resolveRec from `built`.
+   */
+  product?: string;
+  /**
+   * AN ANCHOR'S DRAW: the demand score of the anchor's trade area, while the
+   * anchor is open. An anchored centre's inline shops trade at this address
+   * rather than the lot's own (value.ts retailDemandOf). Stamped by resolveRec.
+   */
+  retailDraw?: number;
+  /**
+   * ON A VACANT LOT BIG ENOUGH FOR A CENTRE: the demand of the trade area an
+   * anchor here would draw from, by trade-area radius in metres
+   * (value.ts tradeAreaDemand). Stamped by resolveRec; the desk and the land
+   * residual both read it.
+   */
+  tradeDraw?: Record<number, number>;
   /** Hedonic multiplier from waterfront / corridor / corner (mean 1). Appraisal only. */
   locPremium?: number;
   shoreM?: number;

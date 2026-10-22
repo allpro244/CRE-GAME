@@ -4,6 +4,14 @@ Owner: chief of staff (Claude). Updated 2026-10-21 evening. Integration branch:
 `claude/region-preview` (region map, land dev, homebuilding, commerce, perf).
 Each item: **who** · status. "You" = the owner.
 
+## Now (2026-10-22)
+- Merged since the list was written: #411 #413 #414 #415 #417 #418 #419 #421 #422 #423 #425 #426 #427 #428 #429. CI is a ~35 s smoke test; I merge PRs myself.
+- In flight: product types #424 (conflict fix), growth #420 (after #424), UI steps 6–8, procedural retail building generator (then houses and industrial).
+- New gaps from the end-to-end check:
+  - Floodplain-only tracts (60–100% flood) offer a 0-lot plat. The land card should say "floodplain, not developable" and skip the desk.
+  - The design desk's default grid fits 10–25% fewer lots than the improved grid (plat-yield fix). Unify on the better layout.
+  - Plat profitability: some near-town tracts pay (IRR 20–70% on seeds 3 and 6); high-rate maps (index ~7%) lose everywhere. Measured, realistic, keep.
+
 ## A. Blocking / needs you
 1. **Merge PR #411 on GitHub** — its CI "smoke" job runs the whole suite and has sat >4 h; my merges are blocked by the CI gate. Everything behind it (#413 #414 #415 #416, the region branch) waits on it. · **You** (tap Merge) — or tell me to make CI fast (A2).
 2. **Make CI a smoke test, not the full suite** (minutes, not hours) so PRs can land. · Me · not started
@@ -34,6 +42,15 @@ Each item: **who** · status. "You" = the owner.
 23. **Retail building detail** — real storefronts/signage, loading docks, pylon signs drawn (deco "sign" volumes exported, not yet drawn). · Visuals pass / assets
 24. **Houses look bad** — procedural stopgap until Fab pack. · Visuals pass / assets
 25. **Roads look bad** — region roads read brown; rural shoulders; markings. · Visuals pass / assets
+25a. **Product types (#424) gaps:**
+    - Flex rents at the plain industrial rent. Blending its office share at the town office rent gave $38–50/sf, which is CBD money, so I refused it.
+    - Pads get no drive-through or arterial premium.
+    - Inline tenants sign the leasing engine's generic terms, not the product's lease.
+    - There is no dark-anchor rent cut or termination right.
+    - Anchors always sign (no grocer-availability gate).
+    - The anonymous street growth path never builds products.
+    - Industrial plats put only ~39% of the tract into lots.
+    - DevelopDesk product picker not yet seen in a browser or Unreal. · Product-types agent
 
 ## D. Merges and builds
 26. Land #411 → #413 → #414 → #415 → #416, then a PR for `claude/region-preview` (with Phases 1–4, commerce, plat desk, product types) into main. · Me (after A1/A2)

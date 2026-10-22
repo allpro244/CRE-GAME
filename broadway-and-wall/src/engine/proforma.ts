@@ -59,6 +59,7 @@ import { deskRatePct } from "./pricing";
 import type { ParcelRecord } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "./types";
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
+import { productOf, layoutProduct, productHardCostBase, productBuildMonths, anchorShare, type ProductKey, type ProductSite } from "./products";
 import { NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, LEASE_TERM_M, forwardVacancy, concessionTarget, CONC_DEPTH, rentDriftAt } from "./market";
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
@@ -406,8 +407,8 @@ export function farMaxFor(rec: { farMaxComm: number; farMaxRes: number; zoneDist
   if (LOW_DENSITY_ZONES.has(rec.zoneDist ?? "")) return Math.max(rec.farMaxComm, rec.farMaxRes);
   return Math.max(rec.farMaxComm, rec.farMaxRes, 2);
 }
-/** Districts whose stated envelope is the envelope: the region's suburban residential zones (landdev.ts). */
-export const LOW_DENSITY_ZONES: ReadonlySet<string> = new Set(["R-2"]);
+/** Districts whose stated envelope is the envelope: the region's suburban residential zones (landdev.ts; an unpacked neighbourhood's R-1, unpack.ts; a farm rezoned for a neighbourhood centre, C-N, towngrowth.ts). */
+export const LOW_DENSITY_ZONES: ReadonlySet<string> = new Set(["R-2", "R-1", "C-N"]);
 
 /**
  * THE SAME CAP, STATED AS A SHARE, so the dial and the planner cannot hold
@@ -812,6 +813,14 @@ export interface ProFormaInput {
     costMult?: number;
     /** A chosen building form (BuildingDesign.form): floor area kept and facade per sf, against the plain block. */
     form?: { retained: number; skin: number };
+    /**
+     * A PRODUCT TYPE (products.ts): the scheme is that product's building on
+     * its own site plan — one storey, the coverage its car park and truck
+     * court leave, its own cost, lease, anchors and cap. `draw` is the demand
+     * score of the anchor's trade area (dev.ts tradeAreaDemand), the address
+     * an anchored centre's inline shops trade at.
+     */
+    product?: { key: ProductKey; draw?: number };
   };
   /**
    * The floor area the scheme may reach, as FAR. The desk plans against the
@@ -864,6 +873,8 @@ export interface ProForma {
   landCarryRate: number;
   bts?: BtsCommitment;
   btsShare: number;
+  /** A product scheme: the type, its site plan, and the tenants signed before ground breaks (unnamed; dev.ts names them). */
+  product?: { key: ProductKey; site: ProductSite; anchors: BtsCommitment[]; draw?: number };
 }
 
 export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaInput): ProForma | null {
@@ -872,16 +883,24 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const contract: Contract = o.contract ?? "gmp";
   if (!Number.isFinite(o.floors) || !Number.isFinite(o.coverage) || !Number.isFinite(spec)) return null;
   const custom = o.custom;
+  // A PRODUCT IS ITS OWN SITE PLAN (products.ts). One storey on the coverage
+  // its car park, truck court and open ground leave — the downtown massing
+  // rules below (the 60% street-wall base, the plate ladder) are about a
+  // building on a street, and a centre or a distribution box is not one.
+  const prod = custom?.product && !custom.shell ? productOf(custom.product.key) : undefined;
+  if (custom?.product && (!prod || prod.use !== o.use)) return null;
+  const site = prod ? layoutProduct(prod, rec.lotArea, o.coverage) : null;
+  if (prod && !site) return null;
   // The mix has to be known before the height, because a programme that is
   // all shops is a two-storey building whatever the envelope allows.
-  const raw = devMix(o.use, custom?.mix);
+  const raw = prod ? devMix(prod.use) : devMix(o.use, custom?.mix);
   // ...and before the footprint: the coverage limit is the use's (MAX_COVERAGE).
   // A shell that already stands keeps the footprint it has — a conversion or a
   // half-built takeover is not a new building's massing.
-  const cov = Math.max(custom?.shell ? 0.08 : MIN_COVERAGE, Math.min(custom?.shell ? 0.9 : maxCoverageFor(o.use, raw), o.coverage));
+  const cov = site ? site.coverage : Math.max(custom?.shell ? 0.08 : MIN_COVERAGE, Math.min(custom?.shell ? 0.9 : maxCoverageFor(o.use, raw), o.coverage));
   let retailOnly = true;
   for (const k in raw) if (k !== "retail" && raw[k as BuiltClass]) { retailOnly = false; break; }
-  const fl = Math.max(1, Math.min(Math.round(o.floors), maxFloorsFor(rec, cov, retailOnly ? "retail" : o.use)));
+  const fl = site ? 1 : Math.max(1, Math.min(Math.round(o.floors), maxFloorsFor(rec, cov, retailOnly ? "retail" : o.use)));
   // GROSS AND RENTABLE ARE NOT THE SAME NUMBER, and treating them as one was
   // why assembling paid nothing. Zoning counts gross and the contractor bills
   // gross; you let rentable. The core, the two stairs, the risers and the
@@ -892,42 +911,63 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // form's own tiers (citygen/forms.mjs formMetrics), 1 for the plain block
   // (never above 1: a podium that fills the lot past the scheme's coverage
   // is not floor area the coverage limit lets it have)
-  const formKept = custom?.form ? clampP(custom.form.retained, 0.3, 1) : 1;
-  const formSkin = custom?.form ? clampP(custom.form.skin, 0.8, 3) : 1;
+  // (a product's form is its site plan: no form, no facade multiplier)
+  const formKept = custom?.form && !site ? clampP(custom.form.retained, 0.3, 1) : 1;
+  const formSkin = custom?.form && !site ? clampP(custom.form.skin, 0.8, 3) : 1;
   const plate = rec.lotArea * cov * formKept;
   // GROSS is what we store and what zoning/cost read. Rentable is what you
   // let — `rentableRatio`, not the plate-efficiency INDEX (median = 1.0),
   // which is why every new building's income used to be struck on cores.
   const envelope = rec.lotArea * (o.envelopeFar ?? farMaxFor(rec));
-  const gsf = Math.round(Math.min(rec.lotArea * cov * fl * formKept, envelope) / 100) * 100;
+  // A product inside its envelope draws its site plan; one the envelope cannot
+  // hold (a farm, FAR 0) is not offered — shrinking it would be another building.
+  if (site && site.gsf > envelope + 1) return null;
+  const gsf = site ? site.gsf : Math.round(Math.min(rec.lotArea * cov * fl * formKept, envelope) / 100) * 100;
   const rentable = Math.round((gsf * rentableRatio(plate, fl)) / 100) * 100;
   if (rentable < 2000) return null;
 
   // Shops at grade wherever the street will carry them — see withStreetRetail —
   // or wherever the owner says: "on" programmes them regardless, "off" is a
   // lobby. Applied before the cap, so the cap still has the last word.
+  // (A product is single-use by definition: nothing is stapled to its ground floor.)
   const groundRetail = custom?.groundRetail ?? "auto";
-  const mix = capRetail(groundRetail === "off" ? raw : withStreetRetail(raw, fl, rec.demandScore ?? 50, econ, groundRetail === "on"), fl);
-  const proposedBts = custom?.bts;
+  const mix = prod ? raw : capRetail(groundRetail === "off" ? raw : withStreetRetail(raw, fl, rec.demandScore ?? 50, econ, groundRetail === "on"), fl);
+  const proposedBts = prod?.anchors.length ? undefined : custom?.bts;
   const bts = proposedBts
     && proposedBts.use !== "multifamily"
     && proposedBts.use in mix
     && proposedBts.sf > 0
     ? { ...proposedBts, sf: Math.min(rentable * (mix[proposedBts.use] ?? 0), proposedBts.sf) }
     : undefined;
-  const btsShare = bts ? Math.max(0, Math.min(1, bts.sf / Math.max(1, rentable))) : 0;
+  // A product's anchors (or its one tenant) are let before the slab, at the
+  // product's own share of the building (products.ts).
+  const preLet = prod ? Math.max(0, Math.min(1, anchorShare(prod))) : 0;
+  const btsShare = bts ? Math.max(0, Math.min(1, bts.sf / Math.max(1, rentable))) : preLet;
 
   // the budget is the sum of the jobs, not a number attached to a label
   // ...priced on GROSS. You pay for the core; you do not let it.
   const specK = specCostMult(spec);
-  const hardCost = Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl)) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK * (custom?.costMult ?? 1) * (1 + EXTERIOR_CLOSURE_SHARE * (formSkin - 1)));
+  // A product is priced as its own job — shell, power, the paved acres and the
+  // landscaped ones (products.ts) — and then exactly as every other building:
+  // the cost index, the contract, the spec, this site's own bid.
+  const hardCost = site && prod
+    ? Math.round(productHardCostBase(prod, site) * econ.costIdx * (1 + CONTRACT_PREMIUM[contract]) * specK * (custom?.costMult ?? 1))
+    : Math.round(gsf * overMix(mix, (u) => HARD_COST_PSF[u] * constructionTypeMult(u, fl)) * econ.costIdx * heightPremium(fl) * (1 + CONTRACT_PREMIUM[contract]) * specK * (custom?.costMult ?? 1) * (1 + EXTERIOR_CLOSURE_SHARE * (formSkin - 1)));
   const softCost = Math.round(hardCost * SOFT_COST);
   const demo = !o.asIfVacant ? wreckCost(rec.bldgArea, econ.costIdx) : 0;
   const contingency = Math.round((hardCost + softCost) * CONTINGENCY);
 
   // What the finished building will be underwritten on — see underwritingEcon.
   const uw = o.uw ?? underwritingEconOf(econ, o.rentMult ?? 1);
-  const asBuilt = asBuiltRec(rec, o.use, gsf, fl, spec, mix);
+  const asBuilt0 = asBuiltRec(rec, o.use, gsf, fl, spec, mix);
+  // The product travels on the record, as it will on the delivered building
+  // (value.ts reads it for the shop depth and the cap), and so does the
+  // anchor's draw: an anchored centre's inline shops trade at its trade
+  // area's address (value.ts retailDemandOf).
+  const draw = prod?.tradeRadiusM && prod.anchors.length ? custom?.product?.draw : undefined;
+  const asBuilt = prod
+    ? ({ ...asBuilt0, product: prod.key, ...(draw !== undefined ? { retailDraw: draw } : {}) } as ParcelRecord)
+    : asBuilt0;
 
   // THE LEASE-UP RESERVE.
   //
@@ -958,18 +998,23 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // reason a marginal deal does not pencil. That is the point.
   const openSf = rentable;
   // apartments have no fit-out, but they do have concessions and marketing
-  const tiPsf = overMix(mix, (u) => (u === "office" ? 32 : u === "retail" ? 22 : u === "industrial" ? 5 : 7));
+  const tiPsf = prod ? prod.tiPsf : overMix(mix, (u) => (u === "office" ? 32 : u === "retail" ? 22 : u === "industrial" ? 5 : 7));
   // Underwrite the rent tenants actually pay after market-wide concessions —
   // `marketRentPsfYr` already reads the EFFECTIVE index. This used to be
   // multiplied by effRentIdx/rentIdx a second time, so the desk's commissions
   // and its deficit were struck on a rent with the concessions taken off twice.
   const rentPsf0 = marketRentPsfYr(asBuilt, uw, "good");
-  const lcPsf = overMix(mix, (u) => (u === "multifamily" ? 0 : 1)) * rentPsf0 * 6 * 0.045;
+  // A product's spec space pays its own commission on its own term (products.ts lcPct x termY).
+  const lcPsf = prod
+    ? rentPsf0 * prod.lease.termY * prod.lcPct
+    : overMix(mix, (u) => (u === "multifamily" ? 0 : 1)) * rentPsf0 * 6 * 0.045;
   // LEASE-UP DURATION IS A MARKET NUMBER. The old reserve assumed 19 months
   // for every apartment project and 38 for every commercial project, whether
   // vacancy was 2% or 20%. Scale that observed base duration by availability
   // against natural vacancy: tight markets fill faster; gluts take longer.
-  const baseCarryMonths = overMix(mix, (u) => (u === "multifamily" ? 19 : 38));
+  // (A product carries its own observed base [ABS]: a box lets whole, a strip
+  // a shop at a time.)
+  const baseCarryMonths = prod ? Math.max(1, prod.leaseUpM) : overMix(mix, (u) => (u === "multifamily" ? 19 : 38));
   // ...AT DELIVERY, AND WITH THIS BUILDING IN IT (2026-10-12): the vacancy
   // the scheme will open into — the pipeline already in the ground and the
   // scheme's own floor area (`forwardVacancy`). A tower the size of half the
@@ -984,7 +1029,10 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // typical ~45k sf scheme, so ordinary jobs keep their carry to the digit.
   // The 3x bracket is a guard. (This lived only in the land residual; the desk
   // underwrote a 500k sf tower as if the market would swallow it in one gulp.)
-  const sizeFactor = gsf > 45_000 ? Math.min(3, Math.pow(gsf / 45_000, 0.7)) : 1;
+  // (A product's base duration is already for its own size [ABS] — a bulk box
+  // lets whole, in one deal — so it takes no size factor; the market's own
+  // absorption below still bounds it.)
+  const sizeFactor = !prod && gsf > 45_000 ? Math.min(3, Math.pow(gsf / 45_000, 0.7)) : 1;
   // ...AND NEVER FASTER THAN THE WHOLE MARKET TAKES UP SPACE (2026-10-11).
   // The size factor above is measured against a typical scheme, not against
   // the town, and its 3x bracket was binding exactly where it mattered: at an
@@ -1014,7 +1062,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     if (net === undefined) return 0;
     const occ = (econ.stock?.[u] ?? 0) * (1 - (econ.cityVac?.[u] ?? NATURAL_VAC[u]));
     const a = Math.max(0, net) + occ / (LEASE_TERM_M[u] / 12);
-    return a > 0 ? (rentable * (u === "multifamily" ? 0.95 : 0.9)) / (a / 12) : 0;
+    return a > 0 ? (rentable * (1 - preLet) * (u === "multifamily" ? 0.95 : 0.9)) / (a / 12) : 0;
   });
   const carryMonths = Math.round(Math.max(baseCarryMonths * leaseUpMarket * sizeFactor, fillMonths));
   const opex0 = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(rec, econ, u));
@@ -1066,6 +1114,41 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     const btsNoi = rentable * (egiPsf - opex - egiPsf * MGMT_FEE);
     stabNoi = marketStabNoi * (1 - btsShare) + btsNoi * btsShare;
   }
+  // THE ANCHORS SIGN BEFORE THE SLAB, AT THEIR OWN RENT (products.ts). A
+  // grocer pays about half what the shops behind it pay, for twenty years; a
+  // pad's one tenant pays the market for fifteen. Each is a lease like a
+  // build-to-suit's (the same NOI stack), and delivery hands each one its
+  // space (dev.ts deliver). The inline shops are let at the market — at the
+  // address the anchor gives them, which is the co-tenancy (asBuilt.retailDraw).
+  const anchors: BtsCommitment[] = [];
+  let anchorFree = 0;   // the fixturing months the anchors occupy rent-free, $
+  if (prod && site) {
+    for (const a of prod.anchors) {
+      const each = Math.floor((rentable * a.share) / a.n);
+      if (each <= 0) continue;
+      for (let i = 0; i < a.n; i++) {
+        anchors.push({
+          name: "", sector: prod.use === "industrial" ? "logistics" : a.label === "big box" ? "apparel" : "food",
+          credit: a.credit, use: prod.use, sf: each, rentPsf: +(rentPsf0 * a.rentRatio).toFixed(2),
+          termM: a.termY * 12, tiPsf: a.tiPsf, recovery: "nnn", signedM: econ.m ?? 0, bumpPct: a.bumpPct,
+          floors: 1, coverage: cov,
+        });
+        anchorFree += rentPsf0 * a.rentRatio * each * a.freeM / 12;
+      }
+    }
+  }
+  const anchorSf = anchors.reduce((t, x) => t + x.sf, 0);
+  if (anchorSf > 0) {
+    const opex = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(asBuilt, econ, u));
+    const recovery = overMix(mix, (u) => RECOVERY_RATE[u]);
+    let aNoi = 0;
+    for (const x of anchors) {
+      const egiPsf = x.rentPsf + opex * recovery;
+      aNoi += x.sf * (egiPsf - opex - egiPsf * MGMT_FEE);
+    }
+    const inlineShare = Math.max(0, 1 - anchorSf / Math.max(1, rentable));
+    stabNoi = marketStabNoi * inlineShare + aNoi;
+  }
   const exitCap = capRateFor(asBuilt, uw, "good");
   const exitYieldPct = exitCap + taxRate(uw) * 100 * taxBorneShare(asBuilt);
 
@@ -1098,6 +1181,13 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     const btsAdvance = (bts.credit === 2 ? 0.68 : 0.58) * btsShare + ltcMax * (1 - btsShare);
     ltcMax = Math.max(ltcMax, btsAdvance);
   }
+  // ...and so does a product's signed anchor paper, share by share.
+  const anchorLet = anchorSf / Math.max(1, rentable);
+  if (anchorSf > 0) {
+    let adv = 0;
+    for (const x of anchors) adv += (x.credit === 2 ? 0.68 : 0.58) * (x.sf / Math.max(1, rentable));
+    ltcMax = Math.max(ltcMax, adv + ltcMax * (1 - anchorLet));
+  }
   // Math.min(x, undefined) is NaN, and a NaN here does not throw — it becomes
   // the commitment, then the equity, then the firm's cash, and the first thing
   // anyone sees is a balance sheet reading NaN twenty months later. Anything
@@ -1108,8 +1198,10 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // lease is underwritten to the tenant, not to lease-up: pre-leased credit
   // deals are commonly quoted 50-100bp inside spec. Estimate, scaled by how
   // much of the building is let and how good the name is.
+  const anchorCut = anchors.reduce((t, x) => t + (x.credit === 2 ? 0.75 : 0.5) * (x.sf / Math.max(1, rentable)), 0);
   const ratePct = bts && bts.credit >= 1
     ? +(cq.ratePct - (bts.credit === 2 ? 0.75 : 0.5) * btsShare).toFixed(3)
+    : anchorSf > 0 ? +(cq.ratePct - anchorCut).toFixed(3)
     : cq.ratePct;
 
   // THE DEFICIT IS AN INTEGRAL, NOT AN AVERAGE.
@@ -1150,10 +1242,15 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // fifty-year lease paid a whole year's rent to the broker and the longest,
   // best paper on the desk penciled worst.
   const commissionYears = bts ? Math.min(bts.termM / 12, 10) + 0.5 * Math.max(0, Math.min(bts.termM / 12, 20) - 10) : 0;
+  // A product's anchors: the same allowance and stepped commission, and the
+  // fixturing months they occupy rent-free [LEASE].
+  const anchorYears = (termM: number) => Math.min(termM / 12, 10) + 0.5 * Math.max(0, Math.min(termM / 12, 20) - 10);
   const anchorCost = bts
     ? Math.round(bts.sf * bts.tiPsf * econ.costIdx
       + bts.rentPsf * bts.sf * commissionYears * 0.02)
-    : 0;
+    : anchors.length && prod
+      ? Math.round(anchorFree + anchors.reduce((t, x) => t + x.sf * x.tiPsf * econ.costIdx + x.rentPsf * x.sf * anchorYears(x.termM) * 0.02, 0))
+      : 0;
   const leaseUp = Math.round(specLeaseUp * (1 - btsShare));
   const costTotal = hardCost + softCost + demo + contingency + leaseUp + anchorCost;
 
@@ -1166,7 +1263,8 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const scheduleClass = dominantOf(mix);
   const [monthsLo, monthsHi] = BUILD_MONTHS[scheduleClass];
   const heightShare = Math.max(0, Math.min(1, (fl - 1) / 20));
-  const months = Math.round(monthsLo + (monthsHi - monthsLo) * heightShare);
+  // (A product keeps its own schedule [BUILD]: a tilt-up box is not a tower.)
+  const months = prod ? productBuildMonths(prod, gsf) : Math.round(monthsLo + (monthsHi - monthsLo) * heightShare);
 
   // THE INTEREST RESERVE, SIZED TO ACTUALLY DO ITS JOB.
   //
@@ -1200,5 +1298,6 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     stabNoi, exitCap, exitYieldPct,
     landCarryRate: landCarryFactor(months),
     bts, btsShare,
+    ...(prod && site ? { product: { key: prod.key, site, anchors, ...(draw !== undefined ? { draw } : {}) } } : {}),
   };
 }

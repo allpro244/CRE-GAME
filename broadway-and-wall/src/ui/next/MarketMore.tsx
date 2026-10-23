@@ -21,6 +21,7 @@ import { derive, ownerName } from "@/ui/derive";
 import { usd } from "@/ui/format";
 import { Chips, DataTable, Stat, StatStrip, type Col } from "./DataTable";
 import { Figure } from "./Figure";
+import { dealAct } from "./deal";
 
 const mo = (m: number | null | undefined) => <span className="mono">{m !== null && m !== undefined ? monthLabel(m) : "—"}</span>;
 const strong = (s: string) => <span className="nx-strong-cell">{s}</span>;
@@ -99,7 +100,7 @@ export function MarketSites() {
       <DataTable id="market-sites" cols={cols} rows={shown} rowKey={(r) => r.bbl} selected={sel} initialSort={{ col: "ratio", dir: -1 }} empty="No sites"
         onRow={(r) => useStore.getState().select(r.bbl)}
         actions={(r) => r.listed
-          ? <button type="button" className="nx-btn nx-sm" title={usd(r.price)} onClick={() => { const st = useStore.getState(); st.select(r.bbl); st.offer(r.bbl, r.price, false); }}>Pay ask</button>
+          ? <button type="button" className="nx-btn nx-sm" title={usd(r.price)} onClick={() => { useStore.getState().select(r.bbl); dealAct(r.bbl, "offer", r.price); }}>Pay ask</button>
           : <button type="button" className="nx-btn nx-sm" disabled={!!game.approaches[r.bbl]} title={game.approaches[r.bbl] ? "Already asked" : undefined} onClick={() => { const st = useStore.getState(); st.select(r.bbl); st.approach(r.bbl); }}>Ask owner</button>} />
     </div>
   );
@@ -167,7 +168,7 @@ export function MarketDistressed() {
         onRow={(r) => useStore.getState().select(r.bbl)}
         actions={(r) => {
           const st = useStore.getState();
-          if (r.kind === "reo") return <button type="button" className="nx-btn nx-sm" title={usd(r.price ?? 0)} onClick={() => { st.select(r.bbl); st.offer(r.bbl, r.price!, false); }}>Pay ask</button>;
+          if (r.kind === "reo") return <button type="button" className="nx-btn nx-sm" title={usd(r.price ?? 0)} onClick={() => { st.select(r.bbl); dealAct(r.bbl, "offer", r.price!); }}>Pay ask</button>;
           if (r.kind === "docket") return <button type="button" className="nx-btn nx-sm nx-primary" onClick={() => st.setAuctionOpen(true)}>Bid</button>;
           if (r.kind === "note" && r.noteId) return <button type="button" className="nx-btn nx-sm" title={usd(r.price ?? 0)} onClick={() => st.takeNote(r.noteId!)}>Buy</button>;
           return null;

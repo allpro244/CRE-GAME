@@ -2780,3 +2780,16 @@ html.host-unreal .app::after { display: none; }
 .seg-other { background: #efe9da; }
 .land-bar-key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--ink-dim); }
 .land-bar-key i { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
+
+/* Land development pro forma (ParcelDesk LandProForma) */
+.proforma { margin: 8px 0 10px; border: 1px solid var(--line, #ddd3bd); border-radius: 6px; padding: 8px 10px; }
+.proforma-head { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.proforma-tbl { width: 100%; }
+.proforma-tbl td { vertical-align: top; padding: 5px 0; }
+.proforma-tbl td.num { text-align: right; white-space: nowrap; padding-left: 10px; }
+.proforma-tbl .neg { color: #a8402e; } .proforma-tbl .pos { color: #3a7d46; }
+.proforma-bar { height: 5px; background: rgba(0, 0, 0, 0.08); border-radius: 3px; margin: 3px 0; max-width: 260px; }
+.proforma-bar i { display: block; height: 100%; border-radius: 3px; background: #b08a2e; }
+.proforma-bar i.done { background: #3a7d46; }
+.proforma-note { font-size: 11px; }
+.proforma-total td { border-top: 1px solid var(--line, #ddd3bd); font-weight: 600; }

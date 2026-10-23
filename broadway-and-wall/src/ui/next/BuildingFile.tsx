@@ -94,6 +94,9 @@ function FileFor({ bbl }: { bbl: string }) {
   const stage = !game.holdings[bbl] ? dealView(game, parcels, adjacency, bbl)?.stage : undefined;
   const talking = stage === "talks" || stage === "final" || stage === "agreed";
   useEffect(() => { if (talking) setTab("deal"); }, [talking, stage]);
+  // A CLOSED PURCHASE OPENS ON THE OVERVIEW (owner): the deal tab becomes "Sell" once the deed is yours
+  const owned = !!game.holdings[bbl];
+  useEffect(() => { if (owned) setTab((t) => (t === "deal" ? "overview" : t)); }, [owned]);
   const close = () => {
     const st = useStore.getState();
     if (st.page === "property") st.setPage("none");

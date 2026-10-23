@@ -108,6 +108,11 @@ export function makeRegion(seed, opts = {}) {
   // Sizes [S, approximate]: a pre-war house 6-9 m wide and 10-13 m deep; 60% two storeys; one family 60%,
   // a two-flat 30%, three flats 10%.
   const housed = new Set();
+  // HOW FAR OUT A LOT SITS IN ITS TOWN, 0 at the centre and 1 on the edge (owner: "downtown has
+  // such a clear defined limit"): the centre-to-edge share along the lot's own ray, so a lobe of town
+  // reads its own edge. The taper below and the houses pass both read it.
+  const ringW = W(M.townRing).concat([F.toW(M.townRing[0])]), centreW = F.toW(M.centre);
+  const outward = (q) => { const dc = dist(q, centreW), de = distToLine(q, ringW); return dc / Math.max(1, dc + de); };
   const h01 = (s, salt) => { let h = 2166136261 ^ salt; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } h ^= h >>> 13; h = Math.imul(h, 2246822507); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
   for (const tw of towns) {
     const resi = new Set(Object.entries(tw.cfg.districts).filter(([, d]) => d.flavor === "resi").map(([k]) => k));
@@ -116,11 +121,15 @@ export function makeRegion(seed, opts = {}) {
     const drop = new Set();
     for (const f of tw.city.parcels.features) {
       const p = f.properties;
-      if (!resi.has(p.district) || p.bldgclass !== "D0" || !(p.lotarea <= 9000) || (p.corridorm ?? 9999) < 12) continue;
-      if (p.corner === 1 && h01(p.bbl, 7) < 0.5) continue;   // half the corners keep their corner building
-      const bs = bldgOf.get(p.bbl);
-      if (!bs?.length || h01(p.bbl, 1) > 0.82) continue;
+      // toward the town's edge the houses take over: bigger lots qualify and fewer stay apartments
+      // (the fringe of a pre-war town is houses on their own lots, not walk-ups) [K, shape choice]
       const lot = f.geometry.coordinates[0].slice(0, -1).map(proj.toXY);
+      const t = tw.base === 1 ? outward(ringCentroid(lot)) : 0;
+      const fringe = Math.max(0, (t - 0.55) / 0.45);
+      if (!resi.has(p.district) || p.bldgclass !== "D0" || !(p.lotarea <= 9000 + 9000 * fringe) || (p.corridorm ?? 9999) < 12) continue;
+      if (p.corner === 1 && h01(p.bbl, 7) < 0.5 - 0.4 * fringe) continue;   // half the corners keep their corner building (fewer at the fringe)
+      const bs = bldgOf.get(p.bbl);
+      if (!bs?.length || h01(p.bbl, 1) > 0.82 + 0.15 * fringe) continue;
       // the lot's depth runs along its longest side
       let ax = [1, 0], best = 0;
       for (let i = 0; i < lot.length; i++) { const e = sub(lot[(i + 1) % lot.length], lot[i]), L = Math.hypot(e[0], e[1]); if (L > best) { best = L; ax = [e[0] / L, e[1] / L]; } }
@@ -140,6 +149,42 @@ export function makeRegion(seed, opts = {}) {
       housed.add(p.bbl);
     }
     if (drop.size) tw.city.buildings.features = tw.city.buildings.features.filter((f) => !drop.has(f));
+  }
+
+  // ---------------- THE TOWN TAPERS TO ITS EDGE (owner: "it needs to blend and mesh with the rest of
+  // the surrounding land"). The island generator fills its ring at one density right to the line, so the
+  // old city stood as a mid-rise block against the corn. A real town's heights fall off from the core:
+  // here a lot's storeys are capped by how far out it sits — no cap in the inner half, then down to
+  // two or three storeys at the edge (with a little per-lot jitter so the fall is not a contour). The
+  // floor area and the building's assessed value fall with the storeys; the lot and its land do not.
+  // The cap is a shape choice [K]: the shape of every small Midwest county seat's skyline.
+  for (const tw of towns) {
+    if (tw.base !== 1) continue;
+    const bldgOf = new Map();
+    for (const f of tw.city.buildings.features) { const b = f.properties.base_bbl; if (b) { const l = bldgOf.get(b); if (l) l.push(f); else bldgOf.set(b, [f]); } }
+    for (const f of tw.city.parcels.features) {
+      const p = f.properties;
+      if (housed.has(p.bbl) || !(p.numfloors > 0) || !(p.bldgarea > 0)) continue;
+      const t = outward(ringCentroid(f.geometry.coordinates[0].slice(0, -1).map(proj.toXY)));
+      if (t < 0.35) continue;
+      // storeys: 8 at a third of the way out, two or three over the outer third
+      const cap = Math.max(2, Math.round(8 - 15 * (t - 0.35) + 2 * (h01(p.bbl, 11) - 0.5)));
+      // SETBACKS: the fringe's buildings stand back on their lots (a yard, a side drive, a car park)
+      // instead of filling them to the line — the footprint shrinks about its own middle to as little as
+      // 55% of its area at the edge [K]
+      const fringe = Math.max(0, (t - 0.55) / 0.45), s = 1 - 0.26 * fringe * (0.8 + 0.4 * h01(p.bbl, 12));
+      const kF = p.numfloors > cap ? cap / p.numfloors : 1, kA = s * s;
+      if (kF === 1 && s > 0.995) continue;
+      if (s < 0.995) for (const b of bldgOf.get(p.bbl) ?? []) {
+        const r = b.geometry.coordinates[0].slice(0, -1).map(proj.toXY), c = ringCentroid(r);
+        const r2 = r.map((q) => add(c, mul(sub(q, c), s)));
+        b.geometry = { type: "Polygon", coordinates: [[...r2.map(LLw), LLw(r2[0])]] };
+      }
+      p.numfloors = Math.min(p.numfloors, cap);
+      p.bldgarea = Math.round(p.bldgarea * kF * kA);
+      p.assesstot = p.assessland + Math.round((p.assesstot - p.assessland) * kF * kA);
+      if (kF < 1) for (const b of bldgOf.get(p.bbl) ?? []) b.properties.heightroof = +Math.max(20, b.properties.heightroof * kF).toFixed(1);
+    }
   }
 
   // ---------------- the region's ordinary parcels: the market out past the town

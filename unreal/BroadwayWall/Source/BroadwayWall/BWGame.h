@@ -133,6 +133,7 @@ public:
 	/** Phase 5 map HUD: the lot under the pointer (page-forwarded in play mode), refreshed ~10x a second. */
 	const FBWParcel* Hovered = nullptr;
 	FVector2D HoverPx = FVector2D(-1, -1);
+	double PageHoverAge = 1e9;
 	/** The hover card's four numbers for one lot, from the page (map/hoverCard.ts hoverBasics). */
 	FString HoverAsked, InfoBbl;
 	double InfoAppraised = 0, InfoAcres = 0;

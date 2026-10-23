@@ -19,6 +19,7 @@ import { taxAppealQuote } from "@/engine/tax";
 import type { PortfolioQuote, PortfolioSettlement } from "@/engine/portfolio";
 import { FACILITY_MIN_ASSETS } from "@/engine/facility";
 import { usd, sf, usdSigned, pctSigned } from "@/ui/format";
+import { platHomesView } from "@/engine/homes";
 import { ListSection, GroundLeaseSection, describeInstructions } from "@/ui/panels/AcquireDesk";
 import { RefiSection } from "@/ui/panels/RefiDesk";
 import { AssembleSection, canAssembleFromBook } from "@/ui/panels/PropertyDesks";
@@ -171,7 +172,13 @@ export function PortfolioPage() {
     return ((av as number) - (bv as number)) * dir;
   };
   rows.sort(cmp);
-  const shown = rows;
+  // A SUBDIVISION IS ONE LINE (owner: platted lots were a holding each): every lot of a
+  // plat folds into one neighbourhood row — its lots, how many are still yours, and the
+  // sums — and the lot rows themselves leave the book. A click opens the first lot,
+  // whose card is the plat's Lots desk.
+  const hoods = new Map<string, PRow[]>();
+  for (const r of rows) if (r.rec?.homeLot && r.rec.block) hoods.set(r.rec.block, [...(hoods.get(r.rec.block) ?? []), r]);
+  const shown = rows.filter((r) => !(r.rec?.homeLot && r.rec.block));
   const totCF = portfolioPropertyMonthlyCF(game, parcels);
   const ranked = sort.key === "noi" && sort.dir === -1;
   // Property … buttons. Extra lead cells when ranking or bundling.
@@ -497,6 +504,32 @@ export function PortfolioPage() {
           </tr>
         </thead>
         <tbody>
+          {[...hoods].map(([block, lots]) => {
+            const sum = (f: (r: PRow) => number) => lots.reduce((a, r) => a + f(r), 0);
+            const v = platHomesView(game, parcels, block);
+            const name = parcels[block]?.address ?? "Subdivision";
+            return (
+              <tr key={"hood:" + block} onClick={() => go(lots[0].h.bbl)} className="book-hood">
+                {bundling && <td></td>}
+                {ranked && <td></td>}
+                <td>
+                  <div className="book-addr">{name} · neighbourhood</div>
+                  <div className="dim mono" style={{ fontSize: 11 }}>
+                    {lots.length} lots yours{v ? ` of ${v.lots} · ${v.lots - v.left} sold · ${v.pace.toFixed(1)}/mo` : ""}
+                  </div>
+                </td>
+                <td className="num mono">{sf(sum((r) => r.rec?.lotArea ?? 0))}</td>
+                <td className="num mono">{Math.round(sum((r) => r.demand ?? 0) / lots.length)}</td>
+                <td className="num mono">—</td>
+                <td className="num mono">—</td>
+                <td className="num mono">{usd(sum((r) => r.noi))}</td>
+                <td className="num mono">{usd(sum((r) => r.v))}</td>
+                <td className="num mono">{usd(sum((r) => r.debt))}</td>
+                <td className="num mono">{usd(sum((r) => r.cf))}</td>
+                <td></td>
+              </tr>
+            );
+          })}
           {shown.map(({ h, rec, v, noi, cf, occ, or, debt, ds, demand, demand0 }, i) => {
             const wk = game.workouts?.[h.bbl];
             // a crane on your own dirt is a status, not a secret

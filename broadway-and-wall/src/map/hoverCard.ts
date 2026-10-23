@@ -7,84 +7,46 @@
 // only when the owner has shown a rent roll (or it is yours), otherwise the
 // market's estimate — a glance must not leak what a buyer cannot know.
 import type { GameState } from "@/engine/types";
-import { monthLabel } from "@/engine/types";
 import type { ParcelRecord } from "@/data/types";
-import { initialCondition, liveDemand, marketAppraisal, marketRentPsfYr, resolveRec } from "@/engine/value";
-import { ownerAt } from "@/engine/ownership";
-import { goingIn, occRead, useLabel } from "@/ui/panels/shared";
+import { initialCondition, marketAppraisal, resolveRec } from "@/engine/value";
+import { goingIn, occRead } from "@/ui/panels/shared";
 import { usd } from "@/ui/format";
-import { deedMark, deedDebtService } from "@/ui/deedMarks";
 
 export const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 const row = (k: string, v: string, cls = "") =>
   `<div class="ht-row${cls ? " " + cls : ""}"><span>${esc(k)}</span><b>${esc(v)}</b></div>`;
 
-export function tipHtml(g: GameState, parcels: Record<string, ParcelRecord>, rec0: ParcelRecord): string {
+/**
+ * THE FOUR NUMBERS (owner, Oct 2026: "Appraised $, occupancy, building sqft,
+ * land acreage. Just those"). Read off the same functions the property panel
+ * prints, so the glance and the click agree. Occupancy is null on a vacant
+ * lot or a site under construction.
+ */
+export function hoverBasics(g: GameState, parcels: Record<string, ParcelRecord>, rec0: ParcelRecord) {
   const bbl = rec0.bbl;
   const rec = resolveRec(parcels, g, bbl) ?? rec0;
-  const out: string[] = [`<div class="ht-addr">${esc(rec.address)}</div>`];
   const own = g.holdings?.[bbl];
-  const o = own ? null : ownerAt(g, parcels, bbl);
-  const owner = own ? "You" : o ? o.name : "—";
-  // from the generated score: `rec` is resolved and already carries the drift
-  const dmd = Math.round(liveDemand(g, rec0.demandScore, rec0.block));
-
-  // A SITE WITH A CRANE ON IT IS NOT A VACANT LOT: the parcel stays class
-  // "land" until the day it delivers.
-  const job = g.developments?.[bbl];
-  const cityJob = !job ? (g.cityJobs ?? []).find((j) => j.bbl === bbl) : undefined;
-  if (job || cityJob) {
-    const j = (job ?? cityJob)!;
-    out.push(`<div class="ht-sub">Under construction · ${j.floors} fl ${esc(j.use)}</div>`);
-    // WHEN IT DELIVERS, said first: the month, how long to go, how far along
-    if (cityJob?.orphaned) out.push(row("Delivery", "stalled — work has stopped", "bad"));
-    else {
-      const left = Math.max(0, j.deliverM - g.month);
-      const total = Math.max(1, j.deliverM - j.startM);
-      const pct = Math.round(Math.min(1, Math.max(0, (g.month - j.startM) / total)) * 100);
-      out.push(row("Delivers", `${monthLabel(j.deliverM)} · ${left === 0 ? "this month" : `in ${left} month${left === 1 ? "" : "s"}`}`, "sale"));
-      out.push(row("Progress", `${pct}% built`));
-    }
-    out.push(row("Size", `${Math.round(j.sf).toLocaleString()} sf`));
-    const bld = cityJob?.builderId ? (g.builders ?? []).find((b) => b.id === cityJob.builderId) : undefined;
-    out.push(row("Builder", job ? "You" : cityJob!.firmId ? g.rivals.find((r) => r.id === cityJob!.firmId)?.name ?? "A competitor"
-      : bld ? `${esc(bld.name)}${bld.delivered ? ` · ${bld.delivered} built` : " · first building"}` : "A local developer"));
-    return out.join("");
-  }
-
-  const listing = g.listings?.find((l) => l.bbl === bbl);
   const cond = own?.condition ?? initialCondition(rec);
-  const value = marketAppraisal(g, rec, bbl, cond);
-  if (rec.class === "land" || rec.bldgArea <= 0) {
-    out.push(`<div class="ht-sub">Vacant lot · ${rec.lotArea.toLocaleString()} sf</div>`);
-    out.push(row("Owner", owner));
-    out.push(row("Value", usd(value)));
-  } else {
-    out.push(`<div class="ht-sub">${esc(useLabel(rec))} · ${rec.floors} fl · ${Math.round(rec.bldgArea).toLocaleString()} sf · ${rec.yearBuilt}</div>`);
-    if (!own) out.push(row("Owner", owner));
-    let occ: number, occK: string;
-    if (own) { occ = occRead(rec, own).lettableOcc; occK = "Occupancy"; }
-    else {
-      const ip = goingIn(g, bbl, value);
-      occ = ip.h ? occRead(rec, ip.h).lettableOcc : ip.occ;
-      occK = ip.disclosed ? "Occupancy (in place)" : "Occupancy (mkt est.)";
-    }
-    out.push(row(occK, `${Math.round(occ * 100)}%`, occ < 0.75 ? "bad" : ""));
-    // YOUR OWN BUILDING ANSWERS A DIFFERENT QUESTION: not what the market
-    // pays here, but what this deed puts in your account and when its paper
-    // comes due. Same walk as the Portfolio row.
-    if (own) {
-      const { dsMo } = deedDebtService(g, parcels, bbl);
-      const cf = deedMark(g, parcels, bbl).noi / 12 - dsMo;
-      out.push(row("Cash flow", `${usd(cf)} /mo`, cf < 0 ? "bad" : ""));
-      if (own.loan) out.push(row("Balloon", monthLabel(own.loan.maturityM), own.loan.maturityM - g.month <= 12 ? "bad" : ""));
-    } else {
-      out.push(row("Market rent", `$${marketRentPsfYr(rec, g.econ, cond).toFixed(0)} /sf/yr`));
-    }
-    out.push(row(own ? "Value (yours)" : "Value", usd(value)));
+  const appraised = marketAppraisal(g, rec, bbl, cond);
+  const building = rec.class !== "land" && rec.bldgArea > 0 && !g.developments?.[bbl];
+  let occ: number | null = null;
+  if (building) {
+    if (own) occ = occRead(rec, own).lettableOcc;
+    else { const ip = goingIn(g, bbl, appraised); occ = ip.h ? occRead(rec, ip.h).lettableOcc : ip.occ; }
   }
-  if (listing) out.push(row(listing.distress ? "For sale · motivated" : "For sale", usd(listing.ask), "sale"));
-  out.push(row("Demand", String(dmd)));
-  return out.join("");
+  return { address: rec.address, appraised, occ, bldgSf: building ? Math.round(rec.bldgArea) : 0, acres: rec.lotArea / 43560 };
+}
+
+export const acresText = (ac: number) => (ac >= 10 ? ac.toFixed(0) : ac >= 1 ? ac.toFixed(1) : ac.toFixed(2)) + " ac";
+
+export function tipHtml(g: GameState, parcels: Record<string, ParcelRecord>, rec0: ParcelRecord): string {
+  const b = hoverBasics(g, parcels, rec0);
+  return [
+    `<div class="ht-addr">${esc(b.address)}</div>`,
+    row("Appraised", usd(b.appraised)),
+    row("Occupancy", b.occ == null ? "—" : `${Math.round(b.occ * 100)}%`, b.occ != null && b.occ < 0.75 ? "bad" : ""),
+    row("Building", b.bldgSf ? `${b.bldgSf.toLocaleString()} sf` : "—"),
+    row("Land", acresText(b.acres)),
+  ].join("");
 }

@@ -29,9 +29,11 @@ export function useDealPx(bbl: string, v: DealView | null): number {
 }
 
 function Ladder({ v, px, onPx }: { v: DealView; px: number; onPx: (n: number) => void }) {
-  const pts = [v.ask, v.appraisal, v.theirs, v.yours, v.band?.lo, v.band?.hi, v.insult, px].filter((x): x is number => typeof x === "number" && x > 0);
+  const pts = [v.ask, v.appraisal, v.theirs, v.yours, v.band?.lo, v.band?.hi, v.insult,
+    // a blind bid has only the appraisal to stand on: give the dial room either side of it
+    ...(v.stage === "blind" ? [v.appraisal * 0.6, v.appraisal * 1.6] : [])].filter((x): x is number => typeof x === "number" && x > 0);
   const lo0 = Math.min(...pts), hi0 = Math.max(...pts);
-  const pad = (hi0 - lo0) * 0.08 || hi0 * 0.05;
+  const pad = Math.max((hi0 - lo0) * 0.08, hi0 * 0.04);
   const lo = Math.max(0, lo0 - pad), hi = hi0 + pad;
   const at = (x: number) => `${(((x - lo) / (hi - lo)) * 100).toFixed(2)}%`;
   const step = Math.max(1000, Math.round((hi - lo) / 400 / 1000) * 1000);
@@ -50,7 +52,7 @@ function Ladder({ v, px, onPx }: { v: DealView; px: number; onPx: (n: number) =>
             <span className="nx-pl-k">{m.k}</span><span className="nx-pl-v mono">{usd(m.x)}</span>
           </div>
         ))}
-        <div className="nx-pl-you" style={{ left: at(px) }}>
+        <div className="nx-pl-you" style={{ left: at(Math.min(hi, Math.max(lo, px))) }}>
           <span className="mono">{usd(px)}</span>
           {odds !== null && <span className={"nx-pl-odds " + (odds >= 0.6 ? "nx-pos" : odds < 0.25 ? "nx-neg" : "")}>{Math.round(odds * 100)}%</span>}
         </div>

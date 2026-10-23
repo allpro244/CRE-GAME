@@ -873,6 +873,8 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
   if (rec.lotArea >= PRODUCT_LOT_MIN_SF) {
     for (const key of PRODUCT_KEYS) {
       const p = PRODUCT_TYPES[key];
+      // the grocer's own store is priced where its sales are known (the region)
+      if (key === "grocery" && rec.grocerSales === undefined) continue;
       if (!zonePermits(rec.zoneDist, p.use, rec.demandScore, econ)) continue;
       if (!layoutProduct(p, rec.lotArea)) continue;
       const draw = p.tradeRadiusM && p.anchors.length ? rec.tradeDraw?.[p.tradeRadiusM] : undefined;

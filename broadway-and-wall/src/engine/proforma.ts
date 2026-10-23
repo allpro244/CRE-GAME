@@ -890,6 +890,8 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // rules below (the 60% street-wall base, the plate ladder) are about a
   // building on a street, and a centre or a distribution box is not one.
   const prod = custom?.product && !custom.shell ? productOf(custom.product.key) : undefined;
+  // the grocer's own store is underwritten on its sales; where they are not known (the islands) there is no such scheme
+  if (prod?.key === "grocery" && rec.grocerSales === undefined) return null;
   if (custom?.product && (!prod || prod.use !== o.use)) return null;
   const site = prod ? layoutProduct(prod, rec.lotArea, o.coverage) : null;
   if (prod && !site) return null;

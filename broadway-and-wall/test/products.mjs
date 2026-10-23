@@ -77,7 +77,7 @@ const commercial = vacant.filter((b) => /^C/.test(parcels[b].zoneDist ?? ""));
 const pool = commercial.length >= 10 ? commercial : vacant;
 const site = pool[Math.floor(pool.length * 0.75)];
 const orig = { ...parcels[site] };
-const ACRES = { pad: 1.2, strip: 3, neighborhood: 9, community: 28, power: 45, flex: 3.5, bulk: 25, manufacturing: 12 };
+const ACRES = { pad: 1.2, strip: 3, neighborhood: 9, grocery: 5, community: 28, power: 45, flex: 3.5, bulk: 25, manufacturing: 12 };
 const setLot = (acres) => {
   const a = Math.round(acres * 43560), side = Math.round(Math.sqrt(a));
   parcels[site] = { ...orig, lotArea: a, lotFront: side, lotDepth: side, bldgArea: 0, class: "land" };
@@ -90,6 +90,8 @@ for (const k of E.PRODUCT_KEYS) {
   const P = E.PRODUCT_TYPES[k];
   setLot(ACRES[k]);
   const p = E.planDevelopment(g, parcels, site, P.use, 1, 1, "gmp", undefined, { product: k }, undefined, 0.5, 0);
+  // the grocer's own store is priced on its sales, which only the region knows (towngrowth.ts grocerSales)
+  if (k === "grocery") { ok(!p, "grocery: a grocer's store with no trade-area sales is not a scheme"); continue; }
   if (!p?.product) { fail(`${k}: no plan on a ${ACRES[k]} acre lot`); continue; }
   const st = p.product.site, lot = parcels[site].lotArea;
   // SITE

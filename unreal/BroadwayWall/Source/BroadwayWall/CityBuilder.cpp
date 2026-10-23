@@ -626,7 +626,10 @@ void ACityBuilder::BuildGround()
 		static const TArray<FShare> Land = { { Gravel, 0.30f }, { Meadow, 0.30f }, { Dirt, 0.20f }, { Worn, 0.20f } };
 		// a small town's empty lots have gone back to weeds; the pale gravel
 		// slabs read as blanks across a low-rise grid
-		static const TArray<FShare> LandTown = { { Meadow, 0.70f }, { Dirt, 0.15f }, { Worn, 0.15f } };
+		static const TArray<FShare> LandTown = { { Meadow, 0.85f }, { Worn, 0.15f } };   // (owner: the town read as brown dirt; the dirt share went)
+		// A HOUSE'S LOT IS A LAWN (owner: "everything sits on brown dirt"): a one- or two-storey home in the
+		// region stands in grass, not on the apartment yard's concrete
+		static const TArray<FShare> YardHouse = { { Lawn, 0.85f }, { Meadow, 0.15f } };
 		// the front (the strip between the building and the street)
 		static const TArray<FShare> FrontResLow = { { Lawn, 0.70f }, { Plaza, 0.15f }, { ConcLight, 0.15f } };
 		static const TArray<FShare> FrontResHigh = { { Plaza, 0.55f }, { ConcLight, 0.25f }, { Lawn, 0.20f } };
@@ -719,7 +722,8 @@ void ACityBuilder::BuildGround()
 				}
 				continue;
 			}
-			Cov[Pick(bRes ? YardRes : bOff ? YardOff : bRet ? YardRet : YardInd, H)].AddCap(P.Ring, Zp, FLinearColor::White);
+			const bool bHouseLot = bRegionMap && bRes && P.Floors <= 2;
+			Cov[Pick(bHouseLot ? YardHouse : bRes ? YardRes : bOff ? YardOff : bRet ? YardRet : YardInd, H)].AddCap(P.Ring, Zp, FLinearColor::White);
 			const bool bHigh = P.Floors >= 6;
 			const ECover Front = Pick(bRes ? (bHigh ? FrontResHigh : FrontResLow) : bOff ? (bHigh ? FrontOffHigh : FrontOffLow) : bRet ? FrontRet : FrontInd, H >> 10);
 			double Area2 = 0;

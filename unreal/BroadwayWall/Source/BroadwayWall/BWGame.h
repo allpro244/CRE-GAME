@@ -115,6 +115,10 @@ public:
 	/** Phase 5 map HUD: the lot under the pointer (page-forwarded in play mode), refreshed ~10x a second. */
 	const FBWParcel* Hovered = nullptr;
 	FVector2D HoverPx = FVector2D(-1, -1);
+	/** The hover card's four numbers for one lot, from the page (map/hoverCard.ts hoverBasics). */
+	FString HoverAsked, InfoBbl;
+	double InfoAppraised = 0, InfoAcres = 0;
+	int32 InfoOcc = -1, InfoBldgSf = 0;
 	double HoverClock = 0;
 	void PageInput(const FString& Type, double X, double Y, double Dx, double Dy, double Wheel, const FString& Key);
 	/** Called when the player picks a lot in 3D (play mode tells the page). */
@@ -177,6 +181,10 @@ private:
 	// not StartPlay: that name is AGameModeBase's own virtual (it begins play)
 	void StartPlayHost();
 	TSharedPtr<SWebBrowser> Browser;
+public:
+	/** Run a line of script in the page (the hover card asks it for a lot's numbers). */
+	void PageJs(const FString& Js);
+private:
 	UPROPERTY()
 	TObjectPtr<UBWBridge> Bridge;
 	void SpawnSky();

@@ -235,6 +235,13 @@ void ABWPlayerController::PlayerTick(float Dt)
 		if (GetMousePosition(MX, MY)) HoverPx = FVector2D(MX, MY);
 		HoverClock += Dt;
 		if (HoverClock > 0.1 && HoverPx.X >= 0) { HoverClock = 0; Hovered = PickAt(HoverPx); if (City.IsValid()) City->SetHighlight(Selected, Hovered, (Cast<ABWCameraPawn>(GetPawn()) ? FVector::Dist(Cast<ABWCameraPawn>(GetPawn())->GetActorLocation(), Cast<ABWCameraPawn>(GetPawn())->Focus) : 0)); }
+		// ask the page for the hovered lot's four numbers, once per lot
+		if (Hovered && Hovered->Bbl != HoverAsked)
+		{
+			HoverAsked = Hovered->Bbl;
+			if (ABWGameMode* GM = GetWorld()->GetAuthGameMode<ABWGameMode>())
+				GM->PageJs(FString::Printf(TEXT("window.bwUnreal && window.bwUnreal.hover && window.bwUnreal.hover('%s')"), *Hovered->Bbl));
+		}
 	}
 	if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
 	{
@@ -418,14 +425,20 @@ void ABWHUD::DrawHUD()
 	// MAP HUD (Phase 5): a small native card beside the pointer, at frame rate
 	if (const FBWParcel* P = PC->Hovered; P && P != PC->Selected && PC->HoverPx.X >= 0)
 	{
-		const FString Own = GM->City->OwnerOf(P->Bbl);
-		const FString Line2 = P->Cls == TEXT("land") ? TEXT("vacant lot") : FString::Printf(TEXT("%s · %d fl · %d"), *P->Cls, P->Floors, P->YearBuilt);
-		const FString Line3 = Own == TEXT("player") ? TEXT("yours") : Own.IsEmpty() ? TEXT("") : TEXT("rival: ") + Own;
+		// THE FOUR NUMBERS (owner): appraised, occupancy, building sf, land acres — from the page
+		const bool bInfo = PC->InfoBbl == P->Bbl;
+		auto Money = [](double V) { return V >= 1e6 ? FString::Printf(TEXT("$%.2fM"), V / 1e6) : FString::Printf(TEXT("$%.0fK"), V / 1e3); };
+		const double Ac = bInfo ? PC->InfoAcres : P->LotArea / 43560.0;
+		const FString Acres = Ac >= 10 ? FString::Printf(TEXT("%.0f ac"), Ac) : Ac >= 1 ? FString::Printf(TEXT("%.1f ac"), Ac) : FString::Printf(TEXT("%.2f ac"), Ac);
+		const FString Rows[4] = {
+			FString::Printf(TEXT("Appraised   %s"), bInfo ? *Money(PC->InfoAppraised) : TEXT("…")),
+			FString::Printf(TEXT("Occupancy   %s"), !bInfo ? TEXT("…") : PC->InfoOcc < 0 ? TEXT("—") : *FString::Printf(TEXT("%d%%"), PC->InfoOcc)),
+			FString::Printf(TEXT("Building    %s"), !bInfo ? TEXT("…") : PC->InfoBldgSf <= 0 ? TEXT("—") : *(FText::AsNumber(PC->InfoBldgSf).ToString() + TEXT(" sf"))),
+			FString::Printf(TEXT("Land        %s"), *Acres) };
 		const float X = PC->HoverPx.X + 18 * S, Y = PC->HoverPx.Y + 14 * S;
-		Panel(X, Y, 230 * S, (Line3.IsEmpty() ? 52 : 74) * S);
+		Panel(X, Y, 240 * S, 118 * S);
 		Text(P->Address, X + 10 * S, Y + 6 * S, 1.05f, FLinearColor::White);
-		Text(Line2, X + 10 * S, Y + 28 * S, 0.9f, FLinearColor(0.75f, 0.78f, 0.82f));
-		if (!Line3.IsEmpty()) Text(Line3, X + 10 * S, Y + 50 * S, 0.9f, Own == TEXT("player") ? FLinearColor(1.f, 0.84f, 0.25f) : FLinearColor(0.85f, 0.55f, 0.45f));
+		for (int32 r = 0; r < 4; ++r) Text(Rows[r], X + 10 * S, Y + (30 + r * 21) * S, 0.9f, FLinearColor(0.82f, 0.85f, 0.88f));
 	}
 	if (const FBWParcel* P = PC->Selected)
 	{
@@ -1041,6 +1054,14 @@ void ABWGameMode::OnPageInput(const FString& Json)
 		return;
 	}
 	if (T == TEXT("preview-off") && City) { City->ClearPreview(); return; }
+	if (T == TEXT("hoverinfo"))
+	{
+		FString Bbl; double A = 0, Oc = -1, Sf = 0, Ac = 0;
+		O->TryGetStringField(TEXT("bbl"), Bbl); O->TryGetNumberField(TEXT("a"), A); O->TryGetNumberField(TEXT("o"), Oc);
+		O->TryGetNumberField(TEXT("s"), Sf); O->TryGetNumberField(TEXT("ac"), Ac);
+		PC->InfoBbl = Bbl; PC->InfoAppraised = A; PC->InfoOcc = int32(Oc); PC->InfoBldgSf = int32(Sf); PC->InfoAcres = Ac;
+		return;
+	}
 	// the lens: the page's number per deed, tinted on the lots (ui-revamp step 7)
 	if (T == TEXT("lens") && City)
 	{
@@ -1086,6 +1107,11 @@ void ABWGameMode::OnPageInput(const FString& Json)
 		return;
 	}
 	PC->PageInput(O->GetStringField(TEXT("t")), X, Y, Dx, Dy, W, K);
+}
+
+void ABWGameMode::PageJs(const FString& Js)
+{
+	if (Browser.IsValid()) Browser->ExecuteJavascript(Js);
 }
 
 void ABWGameMode::SetSeason(int32 Month)

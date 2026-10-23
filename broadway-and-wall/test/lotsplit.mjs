@@ -298,8 +298,16 @@ function builtScenarios(W, where) {
   const W = world(REGION);
   ledger(W.g, "open");
   builtScenarios(W, "region");
-  ok(done.good, "a built lot split, building conforming (2)");
-  ok(done.bad, "a non-conforming split refused (4)");
+  // ONLY BARE LAND IS SPLIT (owner, Oct 2026): every built deed the player holds is refused
+  {
+    // own one first, so the check cannot pass on an empty book
+    const l = (W.g.listings ?? []).find((x) => (E.resolveRec(W.parcels, W.g, x.bbl)?.bldgArea ?? 0) > 0 && !W.g.holdings[x.bbl]);
+    if (l) { const r = E.executePurchase(W.g, W.parcels, l.bbl, l.ask, "cash", false); if (!r.err) W.g = r.s; }
+    const built = Object.keys(W.g.holdings).filter((b) => (E.resolveRec(W.parcels, W.g, b)?.bldgArea ?? 0) > 0);
+    const why = built.map((b) => E.splittable(W.g, W.parcels, b));
+    console.log(`     ${built.length} built deeds held; split refused on ${why.filter((w) => /building on this lot/.test(w ?? "")).length}`);
+    ok(built.length > 0 && why.every((w) => /building on this lot/.test(w ?? "")), "a lot with a building is never split (2, 4)");
+  }
   if (!done.mort) {
     // no building here a desk will lend on and split: a land loan, which the lender splits across the lots
     console.log("\n5. a mortgaged split (land paper, split across the lots)");

@@ -25,6 +25,7 @@ import { lensValues } from "@/ui/next/lensData";
 import { useStore } from "@/state/store";
 import { renderView, lookOf } from "@/engine/renderView";
 import { gfxString } from "./graphics";
+import { hoverBasics } from "@/map/hoverCard";
 import { toBwCity } from "@/citygen/unrealExport.mjs";
 import { formTiers, formMetrics, formsFor } from "@/citygen/forms.mjs";
 import "@/map/real/patternbook/register";
@@ -155,6 +156,15 @@ export function startUnrealHost(): void {
 
   (window as unknown as { bwUnreal: unknown }).bwUnreal = {
     select: (bbl: string) => useStore.getState().select(bbl || null),
+    // THE HOVER CARD'S FOUR NUMBERS (map/hoverCard.ts hoverBasics), asked for
+    // one lot at a time as the pointer lands on it; Unreal draws them natively
+    hover: (bbl: string) => {
+      const { game, parcels } = useStore.getState();
+      const rec = bbl && parcels ? parcels[game?.merged?.[bbl] ?? bbl] : undefined;
+      if (!game || !parcels || !rec) return;
+      const h = hoverBasics(game, parcels, rec);
+      sendInput({ t: "hoverinfo", bbl, a: Math.round(h.appraised), o: h.occ == null ? -1 : Math.round(h.occ * 100), s: h.bldgSf, ac: +h.acres.toFixed(2) });
+    },
   };
 
   // camera keys go to Unreal unless the player is typing in a field

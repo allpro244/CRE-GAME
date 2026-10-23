@@ -11,6 +11,7 @@ import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
+import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
 
@@ -3850,6 +3851,47 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   };
 }
 
+/**
+ * EXCESS LAND (The Appraisal of Real Estate, Appraisal Institute, 15th ed.,
+ * ch. 12): land a building does not need that could be SOLD SEPARATELY is
+ * valued as land and added to the value of the building on the site it needs.
+ * SURPLUS land — beyond the building's needs but too small or too narrow to
+ * stand as a lot of its own — adds little and is not added here.
+ *
+ * What the building needs is the lot code's (lotcode.ts, the rules a lot split
+ * is held to): enough land that its plate stays inside the district's lot
+ * coverage maximum (which is where the parking, the truck court and the yards
+ * live) and its floor area inside the FAR, plus its side yard along the new
+ * line, and never less than the district's minimum lot. What is left is excess
+ * when it is a legal lot itself (the minimum area and, pro rata, the minimum
+ * frontage). It is worth the land read of that lot (no corner: the building
+ * keeps it), less what it costs to split it off — a minor split of two lots.
+ * Returns null where there is none, or none worth splitting off.
+ */
+export function excessLand(rec: ParcelRecord, econ: Econ): { sf: number; net: number; need: ParcelRecord } | null {
+  if (rec.class === "land" || !(rec.bldgArea > 0) || !(rec.lotArea > 0) || rec.ag || rec.tract || rec.hoa) return null;
+  const rule = splitRule(rec.zoneDist);
+  const far = farMaxFor(rec);
+  if (!(far > 0)) return null;
+  const plate = rec.bldgArea / Math.max(1, rec.floors);
+  const depth = rec.lotDepth ?? Math.sqrt(rec.lotArea);
+  const need = Math.max(rule.minSf, plate / Math.min(coverageMax(rec), rule.cov), rec.bldgArea / far) + rule.sideFt * depth;
+  const sf = rec.lotArea - need;
+  if (sf < rule.minSf) return null;
+  const front = (rec.lotFront ?? 0) * (sf / rec.lotArea);
+  if (front < rule.minFt) return null;
+  const lostCorner = !!rec.corner;
+  const lot: ParcelRecord = {
+    ...rec, bbl: `${rec.bbl}~excess`, class: "land", bldgClass: "V1", mix: undefined, suites: undefined, product: undefined,
+    bldgArea: 0, floors: 0, yearBuilt: 0, unitsRes: 0, buildSpec: undefined, lotArea: sf, lotFront: front, corner: false,
+    ...(lostCorner ? { demandScore: Math.max(4, Math.min(100, Math.round(rec.demandScore * Math.pow(CORNER_K, -DEMAND_GAMMA)))) } : {}),
+  };
+  const net = landValue(lot, econ) - (MINOR_FIXED + 2 * MINOR_PER_LOT) * econ.costIdx;
+  if (!(net > 0)) return null;
+  return { sf, net, need: { ...rec, lotArea: rec.lotArea - sf, lotFront: (rec.lotFront ?? 0) - front || rec.lotFront } };
+}
+
+/** The street's value of a parcel: the site whole (excess land is the owner's option to split, holdingValue). */
 export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
   const land = landValue(rec, econ);
   if (rec.class === "land" || !rec.bldgArea) return land;
@@ -4567,8 +4609,8 @@ export function ownedHoldingValueFromRec(
   // as a building job is (portfolioMark); the lots' own marks take over at
   // completion, so the step there is the plat's real gain or loss.
   const plat = s.plats?.[h.bbl];
-  if (plat && !plat.done) return holdingValue(rec, s.econ, h, s.month) + plat.cost;
-  let v = holdingValue(rec, s.econ, h, s.month);
+  if (plat && !plat.done) return holdingValue(rec, s.econ, h, s.month, true) + plat.cost;
+  let v = holdingValue(rec, s.econ, h, s.month, true);
   // A TENANT WHO HAS SAID THEY ARE GOING IS GONE (2026-10-15). The notice
   // lands six months out, and from then the space is known to go dark; the
   // mark carried the ordinary renewal odds (66-96%) to the last day and then
@@ -4581,7 +4623,7 @@ export function ownedHoldingValueFromRec(
     (t.nonRenewM !== undefined || !!t.leavingFor) && t.endM > s.month && !t.defaulted;
   if (rec.class !== "land" && rec.bldgArea > 0 && h.tenants?.some(leaving)) {
     const stay = { ...h, tenants: h.tenants.filter((t) => !leaving(t)) };
-    const dark = holdingValue(rec, s.econ, stay, s.month);
+    const dark = holdingValue(rec, s.econ, stay, s.month, true);
     const owed = h.tenants.filter(leaving).reduce((a, t) => a + t.rentPsf * t.sf * (t.endM - s.month) / 12, 0);
     v = Math.min(v, dark + owed);
   }
@@ -4611,7 +4653,25 @@ export function registerRolloverReader(fn: (s: GameState, rec: ParcelRecord, h: 
   rolloverReader = fn;
 }
 
-export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
+/**
+ * `excess`: value the excess land too (excessLand). Only YOUR deeds are marked
+ * with it, because only you can realise it: the split desk (lotsplit.ts) is
+ * how excess land is sold off, and the street has no split-and-infill path on
+ * a built lot yet. Measured, crediting it to the street's prices (its vessels:
+ * asks, sale marks, owners' books) without that path cost the baseline's six
+ * seeds employment -6.0% and floor area -3.0% (t -2.1 / -1.8): land priced
+ * for a split nobody on the street can make sits unbuilt. A buyer on the
+ * street pays for the site whole; the option to split it is yours.
+ */
+export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number, excess = false): number {
+  const whole = holdingValueOn(rec, econ, h, month);
+  if (h.groundLeased || !excess) return whole;
+  // the building on the land it needs, and the land it does not, sold apart (excessLand)
+  const ex = excessLand(rec, econ);
+  return ex ? Math.max(whole, holdingValueOn(ex.need, econ, h, month) + ex.net) : whole;
+}
+
+function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
   // Ground-leased fee: callers with the lease record should use leasedFeeValue.
   // Without it, never appraise the lessee's building as if it were yours.
   if (h.groundLeased) {

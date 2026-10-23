@@ -17,6 +17,7 @@ The Unreal Engine 5.8 side of Broadway & Wall. Plan and decisions: `../UE58_PLAN
 | `tools/package.ps1` | Builds the Windows game into `D:\Builds\BroadwayWall` (a packaged build starts the game; `-NoPlay` for the city tools). |
 | `tools/play-driver.js` | Scripted player (`-PlayScript=`): starts a campaign, buys the docket's first building, plays three years. |
 | `tools/build-driver.js` | Scripted Build desk test: buys a lot, walks the kit picker. |
+| `tools/desk-driver.js` | Scripted test of the simple Build desk: the city behind the page holds still, the model turns, a form and a look redraw it. |
 | `tools/facade-families.mjs` | Writes `Data/facade-families.json` (web facade families → kits) and reports kit shares. |
 | `tools/audit-streets.mjs` | Maps asphalt no street claims in an exported city. |
 | `tools/make-grass.py`, `tools/make-highlight.py` | Make the lawn and selection-band materials (`/Game/BW/Materials`). |

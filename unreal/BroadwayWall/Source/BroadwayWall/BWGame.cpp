@@ -42,6 +42,9 @@
 #include "PlayHost.h"
 #include "Scalability.h"
 #include "SWebBrowser.h"
+#include "Components/SceneCaptureComponent2D.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Widgets/Images/SImage.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -56,6 +59,16 @@ ABWCameraPawn::ABWCameraPawn()
 	Camera = CreateDefaultSubobject<UBWCameraComponent>(TEXT("Camera"));
 	RootComponent = Camera;
 	Camera->SetFieldOfView(50);
+	// the desk's model camera: placed in world space each frame, off until a desk opens
+	DeskCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("DeskCapture"));
+	DeskCapture->SetupAttachment(Camera);
+	DeskCapture->SetUsingAbsoluteLocation(true);
+	DeskCapture->SetUsingAbsoluteRotation(true);
+	DeskCapture->bCaptureEveryFrame = false;
+	DeskCapture->bCaptureOnMovement = false;
+	DeskCapture->bAlwaysPersistRenderingState = true;   // Lumen and TSR accumulate frame to frame
+	DeskCapture->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
+	DeskCapture->FOVAngle = 40;
 }
 
 void ABWCameraPawn::BeginPlay()
@@ -107,6 +120,7 @@ void ABWCameraPawn::Tick(float Dt)
 	// drags it (owner, Oct 2026: "instead of it rotating around the building
 	// automatically, make it so you can click and drag"); it used to spin slowly
 	// whenever the player let go.
+	bool bCapturing = false;
 	if (DeskRect.Z > 0)
 	{
 		FVector Base; double Hb = 0, Span = 0;
@@ -115,17 +129,31 @@ void ABWCameraPawn::Tick(float Dt)
 		{
 			DeskHeld = FMath::Max(0.0, DeskHeld - Dt);
 			const double Pt = DeskPitch != 0 ? DeskPitch : DeskZoom < 0.3 ? -6 : -20;   // the tightest close-up stands at the kerb
-			const double Aspect = Camera->AspectRatio > 0 ? Camera->AspectRatio : 16.0 / 9.0;
-			const double TanV = FMath::Tan(FMath::DegreesToRadians(Camera->FieldOfView * 0.5)) / Aspect;
 			const double Extent = FMath::Max(Hb, Span * 0.75) + 1500;
-			const double Dist = DeskZoom * Extent / (1.5 * FMath::Max(0.1, DeskRect.W) * TanV);
 			const FRotator Rot(Pt, DeskYaw, 0);
 			const FVector Look(Base.X, Base.Y, DeskZoom < 0.3 ? 300.0 : Hb * (DeskZoom < 1 ? 0.2 : 0.45));
-			SetActorLocationAndRotation(Look - Rot.Vector() * Dist, Rot);
-			Camera->Offset = FVector2D(1.0 - 2.0 * (DeskRect.X + DeskRect.Z * 0.5), 2.0 * (DeskRect.Y + DeskRect.W * 0.5) - 1.0);
-			return;
+			if (bDeskOnMain)
+			{
+				const double Aspect = Camera->AspectRatio > 0 ? Camera->AspectRatio : 16.0 / 9.0;
+				const double TanV = FMath::Tan(FMath::DegreesToRadians(Camera->FieldOfView * 0.5)) / Aspect;
+				const double Dist = DeskZoom * Extent / (1.5 * FMath::Max(0.1, DeskRect.W) * TanV);
+				SetActorLocationAndRotation(Look - Rot.Vector() * Dist, Rot);
+				Camera->Offset = FVector2D(1.0 - 2.0 * (DeskRect.X + DeskRect.Z * 0.5), 2.0 * (DeskRect.Y + DeskRect.W * 0.5) - 1.0);
+				return;
+			}
+			// the model camera frames the scheme in the box's own aspect; the main view is untouched
+			if (DeskTarget && DeskPx.X > 8 && DeskPx.Y > 8)
+			{
+				const double Aspect = double(DeskPx.X) / double(DeskPx.Y);
+				const double TanV = FMath::Tan(FMath::DegreesToRadians(DeskCapture->FOVAngle * 0.5)) / Aspect;
+				const double Dist = DeskZoom * Extent / (1.5 * TanV);
+				DeskCapture->SetWorldLocationAndRotation(Look - Rot.Vector() * Dist, Rot);
+				DeskCapture->bCaptureEveryFrame = true;
+				bCapturing = true;
+			}
 		}
 	}
+	if (!bCapturing && DeskCapture) DeskCapture->bCaptureEveryFrame = false;
 	Camera->Offset = FVector2D::ZeroVector;
 	if (Mode == EMode::Street)
 	{
@@ -151,9 +179,23 @@ void ABWCameraPawn::Tick(float Dt)
 void ABWCameraPawn::SetDeskRect(const FVector4& R)
 {
 	const bool bWas = DeskRect.Z > 0, bNow = R.Z > 0;
-	if (bNow && !bWas) { SavedFocus = Focus; SavedYaw = Yaw; SavedPitch = Pitch; SavedDistance = Distance; DeskYaw = Yaw + 30; }
-	if (!bNow && bWas) { Focus = SavedFocus; Yaw = SavedYaw; Pitch = SavedPitch; Distance = SavedDistance; }
+	if (bNow && !bWas) { DeskYaw = Yaw + 30; if (bDeskOnMain) { SavedFocus = Focus; SavedYaw = Yaw; SavedPitch = Pitch; SavedDistance = Distance; } }
+	if (!bNow && bWas && bDeskOnMain) { Focus = SavedFocus; Yaw = SavedYaw; Pitch = SavedPitch; Distance = SavedDistance; }
 	DeskRect = R;
+	if (bDeskOnMain || !bNow) return;
+	// the model's render target, the box's size in pixels (capped: it is a thumbnail-sized view)
+	FVector2D Vp(1920, 1080);
+	if (GEngine && GEngine->GameViewport) GEngine->GameViewport->GetViewportSize(Vp);
+	const FIntPoint Px(FMath::Clamp(int32(Vp.X * R.Z), 16, 2048), FMath::Clamp(int32(Vp.Y * R.W), 16, 2048));
+	if (!DeskTarget)
+	{
+		DeskTarget = NewObject<UTextureRenderTarget2D>(this);
+		DeskTarget->ClearColor = FLinearColor(0.8f, 0.82f, 0.85f, 1.f);
+		DeskTarget->InitCustomFormat(Px.X, Px.Y, PF_B8G8R8A8, false);
+		DeskCapture->TextureTarget = DeskTarget;
+	}
+	else if (FMath::Abs(Px.X - DeskPx.X) > 4 || FMath::Abs(Px.Y - DeskPx.Y) > 4) DeskTarget->ResizeTarget(Px.X, Px.Y);
+	DeskPx = Px;
 }
 
 void ABWCameraPawn::SetMode(EMode M)
@@ -884,6 +926,7 @@ void ABWGameMode::RunShots(const FString& Dir)
 			int32 TF = 6; FParse::Value(FCommandLine::Get(), TEXT("KitFloors="), TF);   // -KitFloors=N: thumbnails at another height
 			Self->City->SetPreview(S.Bbl, TF, 0.7, FString(), TEXT("office"), 1990, Look);
 			Cam->DeskSpin = 0;
+			Cam->bDeskOnMain = true;   // the thumbnails are window shots: frame the main camera
 			FParse::Value(FCommandLine::Get(), TEXT("KitZoom="), Cam->DeskZoom);
 			Cam->SetDeskRect(FVector4(0.08, 0.04, 0.84, 0.92));
 			// look the way the light travels, a little off it: the sunlit faces
@@ -981,6 +1024,19 @@ void ABWGameMode::StartPlayHost()
 		});
 	Browser->BindUObject(TEXT("bridge"), Bridge, true);
 	GEngine->GameViewport->AddViewportWidgetContent(Browser.ToSharedRef(), 100);
+	// THE BUILD DESK'S MODEL, under the page: the page cuts its box out of every
+	// panel above it (ui/panels/SchemeViewer.tsx), and the model camera's picture
+	// shows through it. Never takes the mouse; the page forwards drags.
+	SAssignNew(DeskCanvas, SConstraintCanvas)
+		.Visibility(EVisibility::HitTestInvisible)
+		+ SConstraintCanvas::Slot()
+			.Expose(DeskSlot)
+			.Anchors(FAnchors(0, 0, 0, 0))
+			.Offset(FMargin(0))
+			[
+				SAssignNew(DeskImage, SImage).Image(&DeskBrush).Visibility(EVisibility::Collapsed)
+			];
+	GEngine->GameViewport->AddViewportWidgetContent(DeskCanvas.ToSharedRef(), 90);
 	FSlateApplication::Get().SetKeyboardFocus(Browser);
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController()) { PC->bShowMouseCursor = true; PC->SetInputMode(FInputModeUIOnly()); }
 	UE_LOG(LogBW, Display, TEXT("PLAY serving the game from %s"), *Web);
@@ -1097,6 +1153,7 @@ void ABWGameMode::OnPageInput(const FString& Json)
 		double H = 0;
 		O->TryGetNumberField(TEXT("h"), H);
 		if (ABWCameraPawn* Pawn = Cast<ABWCameraPawn>(PC->GetPawn())) Pawn->SetDeskRect(FVector4(X, Y, W, H));
+		PlaceDeskModel(FVector4(X, Y, W, H));
 		return;
 	}
 	if (T == TEXT("preview-orbit"))
@@ -1111,6 +1168,21 @@ void ABWGameMode::OnPageInput(const FString& Json)
 		return;
 	}
 	PC->PageInput(O->GetStringField(TEXT("t")), X, Y, Dx, Dy, W, K);
+}
+
+void ABWGameMode::PlaceDeskModel(const FVector4& R)
+{
+	if (!DeskImage.IsValid() || !DeskSlot) return;
+	ABWPlayerController* PC = Cast<ABWPlayerController>(GetWorld()->GetFirstPlayerController());
+	ABWCameraPawn* Pawn = PC ? Cast<ABWCameraPawn>(PC->GetPawn()) : nullptr;
+	if (R.Z <= 0 || !Pawn || !Pawn->DeskTarget) { DeskImage->SetVisibility(EVisibility::Collapsed); return; }
+	if (DeskBrush.GetResourceObject() != Pawn->DeskTarget) DeskBrush.SetResourceObject(Pawn->DeskTarget);
+	DeskBrush.ImageSize = FVector2D(Pawn->DeskPx.X, Pawn->DeskPx.Y);
+	// the box, as fractions of the window: the canvas's own anchors
+	DeskSlot->SetAnchors(FAnchors(R.X, R.Y, R.X + R.Z, R.Y + R.W));
+	DeskSlot->SetOffset(FMargin(0));
+	DeskImage->SetVisibility(EVisibility::HitTestInvisible);
+	DeskImage->Invalidate(EInvalidateWidgetReason::Paint);
 }
 
 void ABWGameMode::PageJs(const FString& Js)

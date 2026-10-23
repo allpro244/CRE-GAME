@@ -2692,11 +2692,85 @@ export function retailDemandOf(rec: { demandScore: number; retailDraw?: number }
  * memoised on exactly what it reads (module-level, like owners.register —
  * never on the state).
  */
+/**
+ * THE TABLE ON A GRID, for tradeAreaDemand: each deed with a centroid, by its index in
+ * table (for..in) order, binned on a grid of CELL_DEG degrees. `near` returns every index
+ * whose cell meets the box (padded by a cell), sorted — a superset of the circle, in table
+ * order, so the exact distance test below sees the same deeds in the same order as the
+ * full walk did. Per table cut (tableVersion.ts).
+ */
+const CELL_DEG = 0.003;
+type DrawGrid = { p: object; v: number; lon0: number; lon1: number; lat0: number; lat1: number; keys: string[]; cells: Map<string, number[]>; near: (lon: number, lat: number, dLon: number, dLat: number) => number[] };
+let DRAW_GRID: DrawGrid | null = null;
+function drawGrid(parcels: Record<string, ParcelRecord>): DrawGrid {
+  const v = tableVersion(parcels);
+  if (DRAW_GRID && DRAW_GRID.p === parcels && DRAW_GRID.v === v) return DRAW_GRID;
+  const keys: string[] = [];
+  const cells = new Map<string, number[]>();
+  let gx0 = Infinity, gx1 = -Infinity, gy0 = Infinity, gy1 = -Infinity;
+  let lon0 = Infinity, lon1 = -Infinity, lat0 = Infinity, lat1 = -Infinity;
+  for (const b in parcels) {
+    const c = parcels[b].centroid;
+    if (!c) continue;
+    const i = keys.length;
+    keys.push(b);
+    const cx = Math.floor(c[0] / CELL_DEG), cy = Math.floor(c[1] / CELL_DEG);
+    if (c[0] < lon0) lon0 = c[0]; if (c[0] > lon1) lon1 = c[0]; if (c[1] < lat0) lat0 = c[1]; if (c[1] > lat1) lat1 = c[1];
+    if (cx < gx0) gx0 = cx; if (cx > gx1) gx1 = cx; if (cy < gy0) gy0 = cy; if (cy > gy1) gy1 = cy;
+    const k = cx + ":" + cy;
+    const l = cells.get(k);
+    if (l) l.push(i); else cells.set(k, [i]);
+  }
+  const near = (lon: number, lat: number, dLon: number, dLat: number) => {
+    const x0 = Math.floor((lon - dLon) / CELL_DEG) - 1, x1 = Math.floor((lon + dLon) / CELL_DEG) + 1;
+    const y0 = Math.floor((lat - dLat) / CELL_DEG) - 1, y1 = Math.floor((lat + dLat) / CELL_DEG) + 1;
+    // a box over the whole table (the wider anchor radii on a small town) is every deed, in order
+    if (x0 <= gx0 && x1 >= gx1 && y0 <= gy0 && y1 >= gy1) return all;
+    const out: number[] = [];
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+      const l = cells.get(x + ":" + y);
+      if (l) for (const i of l) out.push(i);
+    }
+    return out.sort((a, b) => a - b);
+  };
+  const all = keys.map((_, i) => i);
+  DRAW_GRID = { p: parcels, v, lon0, lon1, lat0, lat1, keys, cells, near };
+  return DRAW_GRID;
+}
 const DRAW_MEMO = new Map<string, number>();
-const DRAW_ON: unknown[] = [null, null, null, NaN];
+const DRAW_ON: unknown[] = [null, null, null, NaN, NaN];
+/**
+ * THE TOWN AS THE MONTH'S FIRST TRADE-AREA READ FOUND IT: each deed's floor area and floor
+ * area x live demand, in grid order, and the whole table's two sums. Every trade area read
+ * in the month sums out of this.
+ *
+ * It used to read each deed's area and live demand afresh for every lot and radius, and
+ * memoise the answer per lot for the month — so a lot first asked after a house finished
+ * (homes.ts writes `built` in place, which the memo key cannot see) read a different town
+ * from a lot asked before it, and which lot was asked first was an accident of call order.
+ * Now the month's trade areas all read one town. A deliberate change (results move; see the
+ * commit), and the walk per lot is a sum over two arrays.
+ */
+let DRAW_SNAP: { area: Float64Array; ad: Float64Array; W: number; D: number } | null = null;
+function drawSnap(s: GameState, parcels: Record<string, ParcelRecord>, G: DrawGrid) {
+  if (DRAW_SNAP) return DRAW_SNAP;
+  const n = G.keys.length, area = new Float64Array(n), ad = new Float64Array(n);
+  let W = 0, D = 0;
+  for (let i = 0; i < n; i++) {
+    const b = G.keys[i], p = parcels[b];
+    const a = s.built?.[b]?.bldgArea ?? p.bldgArea ?? 0;
+    if (!(a > 0)) continue;
+    area[i] = a;
+    ad[i] = a * liveDemand(s, p.demandScore, p.block);
+    W += a; D += ad[i];
+  }
+  DRAW_SNAP = { area, ad, W, D };
+  return DRAW_SNAP;
+}
 export function tradeAreaDemand(s: GameState, parcels: Record<string, ParcelRecord>, bbl: string, radiusM: number): number {
-  if (DRAW_ON[0] !== parcels || DRAW_ON[1] !== s.built || DRAW_ON[2] !== s.blockD || DRAW_ON[3] !== s.month) {
-    DRAW_MEMO.clear(); DRAW_ON[0] = parcels; DRAW_ON[1] = s.built; DRAW_ON[2] = s.blockD; DRAW_ON[3] = s.month;
+  if (DRAW_ON[0] !== parcels || DRAW_ON[1] !== s.built || DRAW_ON[2] !== s.blockD || DRAW_ON[3] !== s.month || DRAW_ON[4] !== tableVersion(parcels)) {
+    DRAW_MEMO.clear(); DRAW_SNAP = null;
+    DRAW_ON[0] = parcels; DRAW_ON[1] = s.built; DRAW_ON[2] = s.blockD; DRAW_ON[3] = s.month; DRAW_ON[4] = tableVersion(parcels);
   }
   const k = `${bbl}|${radiusM}`;
   const hit = DRAW_MEMO.get(k);
@@ -2706,15 +2780,28 @@ export function tradeAreaDemand(s: GameState, parcels: Record<string, ParcelReco
   if (!c0) return me?.demandScore ?? 50;
   const mLon = M_PER_DEG_LAT * Math.cos((c0[1] * Math.PI) / 180);
   let w = 0, d = 0;
-  for (const b in parcels) {
-    const p = parcels[b];
-    const c = p.centroid;
-    if (!c) continue;
-    if (Math.hypot((c[0] - c0[0]) * mLon, (c[1] - c0[1]) * M_PER_DEG_LAT) > radiusM) continue;
-    const area = s.built?.[b]?.bldgArea ?? p.bldgArea ?? 0;
-    if (!(area > 0)) continue;
-    w += area;
-    d += area * liveDemand(s, p.demandScore, p.block);
+  // Every deed in the table, in table order, as the walk always went — but only the ones
+  // in the cells the circle can touch (drawGrid): the same deeds, in the same order, so the
+  // same sum to the last bit. The walk over the whole table, for every big vacant lot in
+  // town at each anchor radius, every month, was a tenth of a grown region's month.
+  // The distance test is the walk's own Math.hypot wherever it could matter: the squared
+  // distance settles every deed clearly inside or clearly outside (a relative margin far
+  // above rounding), and hypot is asked only within a hair of the edge.
+  const G = drawGrid(parcels);
+  const S = drawSnap(s, parcels, G);
+  const cand = G.near(c0[0], c0[1], radiusM / mLon, radiusM / M_PER_DEG_LAT);
+  const r2lo = radiusM * radiusM * (1 - 1e-9), r2hi = radiusM * radiusM * (1 + 1e-9);
+  // a circle round the whole town is the whole town: the month's two sums, added in the same order
+  const fx = Math.max(Math.abs(G.lon0 - c0[0]), Math.abs(G.lon1 - c0[0])) * mLon;
+  const fy = Math.max(Math.abs(G.lat0 - c0[1]), Math.abs(G.lat1 - c0[1])) * M_PER_DEG_LAT;
+  if (fx * fx + fy * fy < r2lo) { w = S.W; d = S.D; }
+  else for (const i of cand) {
+    if (!(S.area[i] > 0)) continue;
+    const c = parcels[G.keys[i]].centroid;
+    const dx = (c[0] - c0[0]) * mLon, dy = (c[1] - c0[1]) * M_PER_DEG_LAT, d2 = dx * dx + dy * dy;
+    if (d2 > r2hi || (d2 >= r2lo && Math.hypot(dx, dy) > radiusM)) continue;
+    w += S.area[i];
+    d += S.ad[i];
   }
   const out = +(w > 0 ? d / w : (me.demandScore ?? 50)).toFixed(2);
   DRAW_MEMO.set(k, out);

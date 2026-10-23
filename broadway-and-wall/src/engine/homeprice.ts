@@ -216,6 +216,15 @@ export type PlatMarket = {
   pace: number; disc: number;
   /** unsold, unbuilt lots left on the plat */
   left: number;
+  /**
+   * THE APPRAISED MARK on the plat's unsold lots: the inputs of the builder's
+   * residual as they stood at the last appraisal — the plat's completion, each
+   * January 1 (the owner's annual appraisal, as for every other property) and
+   * any month lots on this plat change hands (a comp). A residual is a small
+   * difference of big numbers; re-deriving it from each month's rate, cost and
+   * sell-out pace swung 157 unsold lots by ±$2.5M a month with no cash moving.
+   */
+  mark?: { psfHere: number; disc: number; costIdx: number; indexRate: number };
 };
 export type HomeMarket = {
   /** the standard new house at the town's edge, $/sf — chases fundamentalHomePsf */
@@ -242,7 +251,11 @@ export type HomeMarket = {
 export function homeLotBidPsf(rec: { lotArea: number; block?: string; farMaxRes?: number; homePrem?: number }, e: Econ): number {
   const hm = e.homes;
   const pm = hm && rec.block ? hm.plats[rec.block] : undefined;
-  if (!hm || !pm || !(pm.disc > 0)) return 0;
+  if (!hm || !pm) return 0;
+  // a holding is marked at the plat's last appraisal (PlatMarket.mark); absent one, today's residual
+  const m = pm.mark;
+  if (m) return m.disc > 0 ? homeQuote({ costIdx: m.costIdx, indexRate: m.indexRate }, rec.lotArea, m.psfHere * (1 + (rec.homePrem ?? 0)), rec.farMaxRes ?? 0.6).residualPsf * m.disc : 0;
+  if (!(pm.disc > 0)) return 0;
   return homeQuote(e, rec.lotArea, hm.psf * pm.loc * (1 + (rec.homePrem ?? 0)), rec.farMaxRes ?? 0.6).residualPsf * pm.disc;
 }
 

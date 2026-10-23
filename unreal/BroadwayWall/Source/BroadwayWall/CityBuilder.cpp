@@ -471,6 +471,9 @@ bool ACityBuilder::BuildFromText(const FString& Text)
 	// the region's stores from the retail kit (-NoRetailKit: the generic massing, for an A/B)
 	if (!FParse::Param(FCommandLine::Get(), TEXT("NoRetailKit")) && FPackageName::DoesPackageExist(TEXT("/Game/BW/Retail/SM_RK_Storefront"))) Retail = MakeUnique<FBWRetailBuilder>(RootComponent);
 	else Retail.Reset();
+	// the houses from the house kit (-NoHouseKit: the old one-mesh houses, for an A/B)
+	if (!FParse::Param(FCommandLine::Get(), TEXT("NoHouseKit")) && FBWHouseBuilder::Available()) Homes = MakeUnique<FBWHouseBuilder>(RootComponent);
+	else Homes.Reset();
 	BuildGround();
 	Current = City.Volumes;
 	BuildVolumes();
@@ -1106,6 +1109,7 @@ void ACityBuilder::BuildVolumes()
 		Chunks.Reset();
 		if (Facades) Facades->Reset();
 		if (Retail) Retail->Reset();
+		if (Homes) Homes->Reset();
 		for (TPair<FString, FVolRec>& R : Recs) for (TWeakObjectPtr<USceneComponent>& C : R.Value.Extra) if (C.IsValid()) C->DestroyComponent();
 		ClearRoofProps();
 		Recs.Reset();
@@ -1152,6 +1156,7 @@ void ACityBuilder::BuildVolumes()
 		}
 		return Out;
 	};
+	if (Homes) Homes->Prepare(City, Current, FootZ);
 	TArray<bool> Dirty; Dirty.Init(bFull, Nv);
 	TSet<FIntPoint> DirtyTiles;
 	TSet<UInstancedStaticMeshComponent*> Touched;
@@ -1268,7 +1273,13 @@ void ACityBuilder::BuildVolumes()
 			// ridge along the longer side; no facade kit, no massing
 			if (Vol.Deco == TEXT("house"))
 			{
-				if (bInst && Vol.Ring.Num() >= 4)
+				if (bInst && Homes && Vol.Ring.Num() >= 3)
+				{
+					Homes->Kit.Record = &Rec.Inst;
+					Homes->Dress(Vol, GetTypeHash(Keys[i]));
+					Homes->Kit.Record = nullptr;
+				}
+				else if (bInst && Vol.Ring.Num() >= 4)
 				{
 					static const TCHAR* const Houses[] = {
 						TEXT("/Game/BW/Houses/SM_House_Cream.SM_House_Cream"), TEXT("/Game/BW/Houses/SM_House_Sage.SM_House_Sage"),
@@ -1454,6 +1465,7 @@ void ACityBuilder::BuildVolumes()
 	Recs = MoveTemp(NewRecs);
 	Chunks.Reset();
 	for (TPair<FIntPoint, TObjectPtr<UProceduralMeshComponent>>& T : TileMesh) Chunks.Add(T.Value);
+	if (Homes) UE_LOG(LogBWBuilder, Display, TEXT("house kit: %d houses, %d pieces in %d components"), Homes->Houses, Homes->Kit.Instances(), Homes->Kit.Components());
 	UE_LOG(LogBWBuilder, Display, TEXT("volumes: %d (%s), %d laid, %d of %d tiles re-meshed, %d hidden pieces, %.0f ms"),
 		Nv, bFull ? TEXT("full") : TEXT("changes"), Laid, DirtyTiles.Num(), TileMesh.Num(), Garbage, (FPlatformTime::Seconds() - T0) * 1000.0);
 }
@@ -2471,7 +2483,10 @@ void ACityBuilder::ParkLot(const FBWVolume& V, uint32 Seed)
 		{
 			const FVector2D P = Ax * A + Ay * B;
 			if (!InsideRing(In, P) || Rng.FRand() > 0.45) continue;
-			AddProp(CarMeshes[Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - 1)], FTransform(FRotator(0, Yaw + (Row % 2 ? 0 : 180), 0), FVector(P, FootZ + 8)), true);
+			// (no cabs out in the region: vehicle12 and vehicle13, indices 5 and 6, wear the taxi livery)
+			int32 Pick = Rng.RandRange(0, UE_ARRAY_COUNT(CarMeshes) - (City.Size == TEXT("region") ? 3 : 1));
+			if (City.Size == TEXT("region") && Pick >= 5) Pick += 2;
+			AddProp(CarMeshes[Pick], FTransform(FRotator(0, Yaw + (Row % 2 ? 0 : 180), 0), FVector(P, FootZ + 8)), true);
 		}
 }
 
@@ -2662,6 +2677,12 @@ void ACityBuilder::BuildMarkings()
 		for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground) if (L.Key == TEXT("apron")) Aprons = &L.Value;
 		// the stores the lots serve: low wide boxes
 		TArray<FVector2D> Stores;
+		// the anchors' doors: shoppers leave carts in corrals in the rows nearest them
+		TArray<FVector2D> AnchorDoors;
+		for (const FBWVolume& V : City.Volumes)
+			if (V.bFront && (V.Role == TEXT("grocery") || V.Role == TEXT("box") || V.Role == TEXT("dept"))) AnchorDoors.Add(V.Front);
+		const bool bCorrals = Retail && FPackageName::DoesPackageExist(TEXT("/Game/BW/Retail/SM_RK_CartCorral"));
+		int32 Corrals = 0;
 		for (const FBWVolume& V : City.Volumes)
 		{
 			if (V.bVacant || V.Ring.Num() < 3 || V.Z1 < 300 || !V.Deco.IsEmpty() || (V.Cls != TEXT("retail") && V.Cls != TEXT("industrial"))) continue;
@@ -2726,6 +2747,17 @@ void ACityBuilder::BuildMarkings()
 						++Stalls;
 						// the stripe on the stall's far edge (10 cm paint)
 						Quad(White, A0 + SW - 5, A0 + SW + 5, Rb0 + (Side ? 0 : 30), Rb1 - (Side ? 30 : 0), Z, FLinearColor(0.85f, 0.85f, 0.82f));
+						// A CART CORRAL takes a stall every dozen or so in the first rows before an anchor's doors
+						if (bCorrals && Bay >= 1 && Bay <= 4 && Side == (Bay % 2) && k % 14 == 7)
+						{
+							const FVector2D Here = At(A0 + SW * 0.5, (Rb0 + Rb1) * 0.5);
+							if (AnchorDoors.ContainsByPredicate([&](const FVector2D& Dd) { return (Dd - Here).SizeSquared() < 7000.0 * 7000.0; }))
+							{
+								AddProp(TEXT("/Game/BW/Retail/SM_RK_CartCorral.SM_RK_CartCorral"), FTransform(FRotator(0, YawA, 0), FVector(Here, Z)), true);
+								++Corrals;
+								continue;
+							}
+						}
 						if (Rng.FRand() < Occ)
 						{
 							++Parked;
@@ -2742,7 +2774,7 @@ void ACityBuilder::BuildMarkings()
 			// the fire lane's edge: a painted line along the storefront
 			Quad(White, SW, Len - SW, Fire - 8, Fire + 8, Z, FLinearColor(0.85f, 0.85f, 0.82f));
 		}
-		UE_LOG(LogBWBuilder, Display, TEXT("car parks: %d stalls, %d parked"), Stalls, Parked);
+		UE_LOG(LogBWBuilder, Display, TEXT("car parks: %d stalls, %d parked, %d cart corrals"), Stalls, Parked, Corrals);
 	}
 
 	UProceduralMeshComponent* Marks = NewObject<UProceduralMeshComponent>(this, TEXT("Markings"));

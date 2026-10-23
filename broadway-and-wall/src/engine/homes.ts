@@ -354,13 +354,15 @@ const platFar = (s: GameState, parent: string) => s.rezoned?.[parent]?.far ?? 0.
  */
 function freeLots(s: GameState, parcels: ParcelTable, parent: string): { mine: string[]; held: string[]; market: string[] } {
   const mine: string[] = [], held: string[] = [], market: string[] = [];
+  // the city's jobs as a set, once: asked per lot it was the plat's lots times the town's jobs
+  const jobs = s.cityJobs?.length ? new Set(s.cityJobs.map((j) => j.bbl)) : null;
   for (const bbl of platLots(s, parcels, parent)) {
     if (s.homes?.units[bbl]) continue;
     if (s.homes?.held?.[bbl]) { held.push(bbl); continue; }
     const h = s.holdings[bbl];
     // (a lot under an A&D note is free to sell: the note is released lot by lot, sellLot)
     if (h) { if ((!h.loan || h.loan.ad) && !h.sale) mine.push(bbl); continue; }
-    if (s.built?.[bbl] || s.developments?.[bbl] || ownerOf(s, bbl) || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
+    if (s.built?.[bbl] || s.developments?.[bbl] || ownerOf(s, bbl) || jobs?.has(bbl)) continue;
     market.push(bbl);
   }
   return { mine, held, market };
@@ -379,19 +381,24 @@ export function refreshHomeMarket(s: GameState, parcels: ParcelTable): void {
   const plats: Record<string, PlatMarket> = {};
   const sel = s.homes ? sellers(s.homes) : new Map();
   const n = sel.size;
+  const sellingAt = new Map<string, number>();
+  for (const x of sel.values()) sellingAt.set(x.parent, (sellingAt.get(x.parent) ?? 0) + 1);
   for (const [parent, plat] of Object.entries(s.plats ?? {})) {
     // an industrial park (landdev.ts) is not a housing plat: no homes market reads it
     if (!plat.done || plat.template === "industrial") continue;
     const { loc, commute } = prev?.plats[parent] && s.month % 12 !== 0 && prev.plats[parent].loc > 0
       ? prev.plats[parent] : platLocation(s, parcels, parent, psf);
     const q = homeQuote(e, platLotSf(s, parent), psf * loc, platFar(s, parent));
-    const here = [...sel.values()].filter((x) => x.parent === parent).length;
+    const here = sellingAt.get(parent) ?? 0;
     // the plat sells at its own builders' pace; with none, at one newcomer's
     const pace = here ? here * communityPace(e, q.price / loc, 0, n) : communityPace(e, q.price / loc, 0, n + 1);
-    const f = freeLots(s, parcels, parent);
     const left = platLots(s, parcels, parent).filter((b) => !s.homes?.units[b]).length;
-    plats[parent] = { loc, commute, pace, disc: q.residual > 0 ? selloutDiscount(left, pace) : 0, left };
-    void f;
+    const disc = q.residual > 0 ? selloutDiscount(left, pace) : 0;
+    // re-appraise at completion, each January 1, and when lots here trade (homeprice.ts PlatMarket.mark)
+    const was = prev?.plats[parent];
+    const reappraise = !was?.mark || s.month % 12 === 0 || left < was.left;
+    const mark = reappraise ? { psfHere: psf * loc, disc, costIdx: e.costIdx ?? 1, indexRate: e.indexRate } : was!.mark;
+    plats[parent] = { loc, commute, pace, disc, left, mark };
   }
   const next: HomeMarket = { psf, fund, stamp: (prev?.stamp ?? 0) + 1, plats };
   e.homes = next;
@@ -673,6 +680,12 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
   }
 
   // 4. THE BUILDERS: start houses on lots they hold or take down, and come looking for more.
+  // Each plat's houses, indexed once: nothing in this step moves a house between plats or
+  // builders, and the houses it starts on a plat are that plat's and its own builder's, so the
+  // index read below is exactly the filter over every house in town it replaces (that filter,
+  // per plat and per builder, was most of this tick on a grown region).
+  const unitsOf = new Map<string, HomeUnit[]>();
+  for (const u of Object.values(h.units)) { const l = unitsOf.get(u.parent); if (l) l.push(u); else unitsOf.set(u.parent, [u]); }
   for (const [parent, plat] of Object.entries(s.plats ?? {})) {
     if (!plat.done || !hm.plats[parent]) continue;
     const pm = hm.plats[parent];
@@ -686,7 +699,7 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     const contract = h.contracts?.[parent];
     const f = freeLots(s, parcels, parent);
     const heldBy = (by: string) => f.held.filter((b) => h.held?.[b]?.by === by);
-    const here = new Set(Object.values(h.units).filter((u) => u.parent === parent && u.closedM === undefined).map((u) => u.by));
+    const here = new Set((unitsOf.get(parent) ?? []).filter((u) => u.closedM === undefined).map((u) => u.by));
     for (const b of f.held) here.add(h.held![b].by);
     if (contract) here.add(contract.builder);
 
@@ -736,7 +749,7 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     const cNow = h.contracts?.[parent];
     const f2 = freeLots(s, parcels, parent);
     for (const by of [...here].sort()) {
-      const unsold = Object.values(h.units).filter((u) => u.parent === parent && u.by === by && u.soldM === undefined).length;
+      const unsold = (unitsOf.get(parent) ?? []).filter((u) => u.by === by && u.soldM === undefined).length;
       const pace = communityPace(e, q.price / pm.loc, 0, Math.max(1, n));
       const starts = Math.min(Math.max(1, Math.ceil(pace * 1.5)), Math.ceil(pace * PIPELINE_MONTHS) - unsold);
       // a house is started only where it pays for its frame and the lot

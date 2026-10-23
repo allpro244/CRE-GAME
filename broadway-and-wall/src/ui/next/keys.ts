@@ -84,7 +84,7 @@ export function useNextKeys() {
       const modal = onScreen(".modal-backdrop");
 
       if (e.code === "KeyI" && !modal) { e.preventDefault(); openPlace("inbox"); return; }
-      const digit = /^Digit([1-5])$/.exec(e.code);
+      const digit = /^Digit([1-7])$/.exec(e.code);
       if (digit && !modal) {
         const p = PLACES.find((x) => x.key === digit[1]);
         if (p) { e.preventDefault(); openPlace(p.id); }

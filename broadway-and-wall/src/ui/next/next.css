@@ -352,3 +352,47 @@ html.ui-next .map-root { left: var(--rail-w); top: var(--hud-h); }
 .nx-cap-bar::before { content: ""; position: absolute; left: 0; bottom: 3px; height: 3px; width: calc(var(--v) * 1%); background: var(--nx-gold); opacity: 0.55; }
 .nx-cap-progs, .nx-cap-years { border-top: 1px solid var(--nx-line-2); }
 .nx-cap-foot { padding: 5px 8px; font-size: 10.5px; text-align: right; }
+
+/* Markets overview (CityNext MarketsOverview) */
+.mk-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.mk-card { border: 1px solid var(--nx-line-2); border-top: 3px solid; border-radius: 6px; padding: 10px 12px; }
+.mk-card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.mk-state { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .8; }
+.mk-state.pos { color: #3a7d46; }
+.mk-state.neg { color: #a8402e; }
+.mk-figs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 6px; }
+.mk-figs small { display: block; font-size: 10px; opacity: .65; }
+.mk-note { font-size: 11.5px; line-height: 1.35; opacity: .8; margin-top: 6px; }
+.mk-legend { display: flex; gap: 14px; font-size: 12px; margin: 4px 0 8px; }
+.mk-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.nx-goto { margin-left: auto; margin-right: 8px; align-self: flex-start; font-size: 11.5px; padding: 3px 9px; border: 1px solid var(--nx-line-2); border-radius: 4px; background: none; cursor: pointer; color: inherit; }
+.nx-goto:hover { background: var(--nx-line-2); }
+
+.nx-lp { margin: 8px 0; padding-bottom: 6px; }
+.nx-lp-row { display: flex; align-items: center; gap: 10px; padding: 4px 10px; }
+.nx-lp-k { width: 64px; font-size: 11.5px; color: var(--nx-dim); }
+.nx-refi-ctl { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 6px 2px 8px; font-size: 12px; }
+.nx-refi-ctl input[type=range] { vertical-align: middle; margin-left: 8px; width: 180px; }
+
+/* Leasing place (LeasingNext) */
+.ls-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 10px; }
+.ls-card { border: 1px solid var(--nx-line-2); border-radius: 6px; padding: 10px 12px; }
+.ls-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.ls-sub { font-size: 11.5px; margin-top: 2px; }
+.ls-sub a, .ls-vac a { cursor: pointer; text-decoration: underline dotted; }
+.ls-verdict { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+.ls-verdict.pos, .ls-vs.pos, .ls-said.pos { color: #3a7d46; }
+.ls-verdict.neg, .ls-vs.neg, .ls-said.neg { color: #a8402e; }
+.ls-figs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 8px; margin: 8px 0; font-family: var(--nx-mono, monospace); font-size: 12.5px; }
+.ls-figs small { display: block; font-family: inherit; font-size: 10px; opacity: .6; text-transform: uppercase; }
+.ls-vs { margin-left: 5px; font-size: 10.5px; }
+.ls-bar { position: relative; height: 6px; background: var(--nx-line-2); border-radius: 3px; margin: 2px 0 10px; }
+.ls-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: #b08a2e; }
+.ls-bar i.pos { background: #3a7d46; } .ls-bar i.neg { background: #a8402e; }
+.ls-bar span { position: absolute; top: -3px; width: 2px; height: 12px; background: currentColor; opacity: .5; }
+.ls-acts { display: flex; align-items: center; gap: 6px; }
+.ls-acts > span { margin-right: auto; font-size: 11px; }
+.ls-said { font-size: 12.5px; padding: 4px 0; }
+.ls-vac { border-bottom: 1px solid var(--nx-line-2); padding: 8px 0; }
+.ls-vac-head { display: flex; gap: 16px; align-items: baseline; font-size: 12.5px; padding: 0 10px; }
+.ls-vac-head small { opacity: .6; font-size: 10px; text-transform: uppercase; }

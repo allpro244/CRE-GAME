@@ -25,10 +25,12 @@ export interface DrawerProps {
   onTab?: (id: string) => void;
   footer?: ReactNode;
   onClose: () => void;
+  /** A property's file: fly the camera to it (owner: a Go to on any open property). */
+  onGoto?: () => void;
   children: ReactNode;
 }
 
-export function Drawer({ width, crumbs, title, meta, chips, tabs, tab, onTab, footer, onClose, children }: DrawerProps) {
+export function Drawer({ width, crumbs, title, meta, chips, tabs, tab, onTab, footer, onClose, onGoto, children }: DrawerProps) {
   return (
     <section className={"nx-drawer nx-drawer-" + width} aria-label={title}>
       <header className="nx-dr-head">
@@ -40,6 +42,7 @@ export function Drawer({ width, crumbs, title, meta, chips, tabs, tab, onTab, fo
           </div>
           {meta && <div className="nx-dr-meta mono">{meta}</div>}
         </div>
+        {onGoto && <button type="button" className="nx-goto" onClick={onGoto}>Go to</button>}
         <button type="button" className="nx-x" aria-label="Close" onClick={onClose}>×</button>
       </header>
       {tabs && tabs.length > 1 && (

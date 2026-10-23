@@ -69,7 +69,7 @@ function ReservedFile({ rec }: { rec: ReservedParcel }) {
     ["Land", `${acres >= 20 ? acres.toFixed(0) : acres.toFixed(1)} ac`],
   ];
   return (
-    <Drawer width="std" title={rec.address || rec.bbl} meta={`${kind} · not for sale`} onClose={close}>
+    <Drawer width="std" title={rec.address || rec.bbl} meta={`${kind} · not for sale`} onClose={close} onGoto={() => useStore.getState().focus(rec.bbl)}>
       <table className="nx-table"><tbody>
         {rows.map(([k, v]) => <tr key={k}><td>{k}</td><td className="mono" style={{ textAlign: "right" }}>{v}</td></tr>)}
       </tbody></table>
@@ -141,7 +141,7 @@ function FileFor({ bbl }: { bbl: string }) {
       tabs={tabs}
       tab={active}
       onTab={(t) => setTab(t as FileTab)}
-      onClose={close}
+      onClose={close} onGoto={() => useStore.getState().focus(bbl)}
       footer={<FileFooter game={game} parcels={parcels} bbl={bbl} h={h} tab={active} setTab={setTab} />}
     >
       {active === "overview" && <Overview game={game} parcels={parcels} bbl={bbl} h={h} />}

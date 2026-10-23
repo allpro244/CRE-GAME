@@ -45,7 +45,8 @@ import { MarketForSale } from "./MarketNext";
 import { MarketBooks, MarketDistressed, MarketSites } from "./MarketMore";
 import { CapitalLoans, CapitalOverview } from "./CapitalNext";
 import { CapitalBooks, CapitalInvestors, CapitalLenders } from "./CapitalMore";
-import { CityMarkets, CityNews, CityPlayers, CityRankings, CityRecord } from "./CityNext";
+import { LeasingExpiring, LeasingOffers, LeasingVacancy } from "./LeasingNext";
+import { CityMarkets, MarketsOverview, CityNews, CityPlayers, CityRankings, CityRecord } from "./CityNext";
 import { PipelineBoard, PipelineBuilding, PipelineBuying, PipelineSelling } from "./PipelineNext";
 
 const PAGE_VIEW: Partial<Record<Page, ReactElement>> = {
@@ -244,7 +245,13 @@ const NEXT_VIEW: Record<string, ReactElement> = {
   "v:lenders": <CapitalLenders />,
   "v:investors": <CapitalInvestors />,
   "v:fbooks": <CapitalBooks />,
-  "v:c-markets": <CityMarkets />,
+  "v:c-markets": <CityMarkets part="sectors" />,
+  "v:m-overview": <MarketsOverview />,
+  "v:l-offers": <LeasingOffers />,
+  "v:l-expiring": <LeasingExpiring />,
+  "v:l-vacancy": <LeasingVacancy />,
+  "v:m-districts": <CityMarkets part="districts" />,
+  "v:m-building": <CityMarkets part="building" />,
   "v:c-news": <CityNews />,
   "v:c-players": <CityPlayers />,
   "v:c-rankings": <CityRankings />,

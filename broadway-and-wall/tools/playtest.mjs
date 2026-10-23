@@ -380,7 +380,7 @@ async function mouseClick(x, y, what = "a click on the plat") {
   timed(what, Date.now() - t);
 }
 // the building file is the drawer that is not a place's
-const fileDrawer = `[...document.querySelectorAll(".nx-drawer")].find((d) => !["Inbox", "Holdings", "Pipeline", "Market", "Capital", "City", "Saves", "Settings"].includes(d.getAttribute("aria-label")))`;
+const fileDrawer = `[...document.querySelectorAll(".nx-drawer")].find((d) => !["Inbox", "Holdings", "Pipeline", "Buy", "Leasing", "Markets", "Capital", "City", "Saves", "Settings"].includes(d.getAttribute("aria-label")))`;
 const drawer = (title) => title ? `[...document.querySelectorAll(".nx-drawer")].find((d) => (d.getAttribute("aria-label") || "").startsWith(${S(title)}))` : `document.querySelector(".nx-drawer")`;
 /** Click a button by its words inside the open drawer(s) (or the page). Returns its text or null. */
 const tap = async (re, scope = "") => {
@@ -737,12 +737,12 @@ await flow("island", async () => {
   note(`island started in ${(ms / 1000).toFixed(1)} s · ${await st(`Object.keys(s.parcels).length`)} lots`);
   await screen("playing");
   // BUY A BUILDING AT ASK: Market, Pay ask on the row, Confirm
-  await js(`return __pt.click(/Market$/, document.querySelector(".nx-rail"));`); await sleep(600);
-  await tap(`/^For sale$/`, drawer("Market")); await sleep(500);
+  await js(`return __pt.click(/Buy$/, document.querySelector(".nx-rail"));`); await sleep(600);
+  await tap(`/^For sale$/`, drawer("Buy")); await sleep(500);
   await screen("market");
   const cash = await st(`g.cash`);
   // the first row the firm can carry: the table is sorted by yield; take one priced under the cash
-  const row = await js(`const d = ${drawer("Market")}; if (!d) return null;
+  const row = await js(`const d = ${drawer("Buy")}; if (!d) return null;
     const btns = [...d.querySelectorAll("button")].filter((b) => __pt.norm(b.textContent) === "Pay ask");
     const ok = btns.find((b) => { const m = /\\$([\\d.]+)([KM])/.exec(b.title || ""); if (!m) return false; const v = Number(m[1]) * (m[2] === "M" ? 1e6 : 1e3); return v < ${cash} * 2.5; });
     if (!ok) return null; ok.scrollIntoView({ block: "center" }); ok.click(); return ok.title;`);

@@ -1326,8 +1326,8 @@ void ACityBuilder::BuildVolumes()
 					if (bInst && Vol.Z0 < 50 && (Vol.bFresh || Vol.Distress >= 2)) StreetMoment(Vol);
 					// the mass behind the facade: where a lot-line wall shows, this is it, so it is party-wall brick
 					Party[GetTypeHash(Vol.Bbl) % 3].AddWalls(BWInsetRing(Vol.Ring, 60), Vol.Z0, Vol.Z1, FLinearColor::White);
-					if (Vol.bPlayer) M.AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor(FColor(0xE8, 0xB8, 0x3A)));
-					else Roofs[RoofOf(Vol)].AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor::White);
+					// your buildings wear their real roofs; the Owners lens shows what is yours (owner: no yellow)
+					Roofs[RoofOf(Vol)].AddCap(Vol.Ring, Vol.Z1 - 5, FLinearColor::White);
 					continue;
 				}
 			}

@@ -7,7 +7,7 @@
 import type { GameState } from "@/engine/types";
 import { useStore, type Page } from "@/state/store";
 
-export type PlaceId = "inbox" | "holdings" | "pipeline" | "market" | "capital" | "city";
+export type PlaceId = "inbox" | "holdings" | "pipeline" | "leasing" | "market" | "capital" | "markets" | "city";
 export interface PlaceTab { id: string; label: string; page: Page; jump?: string; width: "std" | "wide"; when?: (g: GameState) => boolean;
   /** A ui/next table drawn instead of the classic page (Shell NEXT_VIEW). */
   view?: string }
@@ -32,7 +32,6 @@ export const PLACES: Place[] = [
     tabs: [
       { id: "buildings", label: "Buildings", page: "portfolio", view: "holdings", width: "wide" },
       { id: "land", label: "Land", page: "portfolio", view: "land", width: "wide", when: hasLand },
-      { id: "leasing", label: "Leasing", page: "leasing", width: "wide" },
       { id: "returns", label: "Returns", page: "portfolio", jump: "Returns to date", width: "wide" },
     ],
   },
@@ -47,7 +46,17 @@ export const PLACES: Place[] = [
     ],
   },
   {
-    id: "market", label: "Market", key: "3", icon: "◎",
+    // leases, its own place (owner): letters to sign, the roll, the empty space
+    id: "leasing", label: "Leasing", key: "3", icon: "✍",
+    tabs: [
+      { id: "offers", label: "Offers", page: "leasing", view: "l-offers", width: "wide" },
+      { id: "expiring", label: "Expiring", page: "leasing", view: "l-expiring", width: "wide" },
+      { id: "vacancy", label: "Vacancy", page: "leasing", view: "l-vacancy", width: "wide" },
+      { id: "desk", label: "Desk", page: "leasing", width: "wide" },
+    ],
+  },
+  {
+    id: "market", label: "Buy", key: "4", icon: "◎",
     tabs: [
       { id: "forsale", label: "For sale", page: "market", view: "forsale", width: "wide" },
       { id: "all", label: "All buildings", page: "buildings", width: "wide" },
@@ -59,7 +68,7 @@ export const PLACES: Place[] = [
     ],
   },
   {
-    id: "capital", label: "Capital", key: "4", icon: "⚖",
+    id: "capital", label: "Capital", key: "5", icon: "⚖",
     tabs: [
       { id: "overview", label: "Overview", page: "debt", view: "capital", width: "wide" },
       { id: "loans", label: "Loans", page: "debt", view: "loans", width: "wide" },
@@ -70,9 +79,18 @@ export const PLACES: Place[] = [
     ],
   },
   {
-    id: "city", label: "City", key: "5", icon: "∿",
+    // the economy, drawn (owner: its own place, out of City)
+    id: "markets", label: "Markets", key: "6", icon: "▲",
     tabs: [
-      { id: "markets", label: "Markets", page: "economy", view: "c-markets", width: "wide" },
+      { id: "overview", label: "Overview", page: "economy", view: "m-overview", width: "wide" },
+      { id: "sectors", label: "Sectors", page: "economy", view: "c-markets", width: "wide" },
+      { id: "districts", label: "Districts", page: "economy", view: "m-districts", width: "wide" },
+      { id: "building", label: "Construction", page: "economy", view: "m-building", width: "wide" },
+    ],
+  },
+  {
+    id: "city", label: "City", key: "7", icon: "∿",
+    tabs: [
       { id: "news", label: "News", page: "news", view: "c-news", width: "wide" },
       { id: "players", label: "Players", page: "players", view: "c-players", width: "wide" },
       { id: "rankings", label: "Rankings", page: "rankings", view: "c-rankings", width: "wide" },

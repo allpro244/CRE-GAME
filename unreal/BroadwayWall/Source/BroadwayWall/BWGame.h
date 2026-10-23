@@ -84,6 +84,7 @@ public:
 	/** The view to go back to when the desk closes (only when the desk moved the main camera). */
 	FVector SavedFocus = FVector::ZeroVector;
 	double SavedYaw = 0, SavedPitch = -45, SavedDistance = 150000;
+	bool bSavedView = false;
 	void SetDeskRect(const FVector4& R);
 	/**
 	 * THE DESK'S MODEL IS DRAWN OFF TO THE SIDE. A second camera on the scheme

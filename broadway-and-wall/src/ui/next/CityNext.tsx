@@ -39,6 +39,7 @@ import { boardClimate, pendingHearings, tradeRows } from "@/ui/panels/CityStance
 import { real, STYLE_WORD } from "@/ui/panels/shared";
 import { Chips, DataTable, Stat, StatStrip, type Col } from "./DataTable";
 import { Figure, Spark, fmtFig, type FigFmt } from "./Figure";
+import { BarChart, Gauge, LineChart } from "@/ui/Chart";
 
 const CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 const SPAN_M = 240;
@@ -244,7 +245,9 @@ const tradeCols: Col<TradeRow>[] = [
 
 type Hearing = ReturnType<typeof pendingHearings>[number];
 
-export function CityMarkets() {
+export type MarketsPart = "sectors" | "districts" | "building";
+
+export function CityMarkets({ part }: { part: MarketsPart }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const bbls = useStore((s) => s.bbls);
@@ -272,7 +275,7 @@ export function CityMarkets() {
   ];
   return (
     <div className="nx-place">
-      <StatStrip>
+      {part === "sectors" && <StatStrip>
         <Stat label="Phase"><Figure value={null} fmt="n" text={e.phase} /></Stat>
         {e.rumoredPhase && <Stat label="Rumored"><Figure value={null} fmt="n" text={e.rumoredPhase} /></Stat>}
         <Stat label="10Y"><Figure value={e.indexRate} fmt="pctv" drill="rate" /></Stat>
@@ -290,17 +293,19 @@ export function CityMarkets() {
         <Stat label="Build costs"><Figure value={e.costIdx * 100} fmt="n" /></Stat>
         <Stat label="Land"><Figure value={e.landIdx * 100} fmt="n" /></Stat>
         <Stat label="Board 5y"><Figure value={null} fmt="n" text={`${climate.up}↑ ${climate.down}↓`} /></Stat>
-      </StatStrip>
+      </StatStrip>}
+      {part === "sectors" && <>
       <DataTable id="city-classes" cols={classCols} rows={classes} rowKey={(r) => r.k} />
       {head("City series")}
       <DataTable id="city-series" cols={seriesCols} rows={series} rowKey={(r) => r.id} />
-      <Chips<BuiltClass>
+      </>}
+      {part !== "sectors" && <Chips<BuiltClass>
         chips={CLASSES.map((k) => ({ id: k, label: SECTOR_LABEL[k], n: subs.filter((r) => r.k === k).length }))}
         on={f}
         set={setF}
-      />
-      {head("Submarkets")}
-      <DataTable id="city-subs" cols={subCols} rows={subShown} rowKey={(r) => r.key} initialSort={{ col: "sf", dir: -1 }} />
+      />}
+      {part === "districts" && <DataTable id="city-subs" cols={subCols} rows={subShown} rowKey={(r) => r.key} initialSort={{ col: "sf", dir: -1 }} />}
+      {part === "building" && <>
       {head("Under construction")}
       <DataTable id="city-pipe" cols={pipeCols} rows={pipeShown} rowKey={(r) => r.key}
         initialSort={{ col: "deliver", dir: 1 }} onRow={(r) => sel(r.bbl)} />
@@ -310,6 +315,90 @@ export function CityMarkets() {
         {head("Your hearings")}
         <DataTable id="city-hearings" cols={hearCols} rows={hearings} rowKey={(r) => r.bbl} onRow={(r) => sel(r.bbl)} />
       </>}
+      </>}
+    </div>
+  );
+}
+
+// ============================================================ MARKETS OVERVIEW
+
+const CLASS_COLOR: Record<BuiltClass, string> = { office: "#3b6fb6", multifamily: "#8a4fb0", retail: "#d9822b", industrial: "#6b7280" };
+const BAL_TONE: Record<string, string> = { "acute shortage": "pos", "landlord's market": "pos", "tenant's market": "neg", glut: "neg" };
+
+/**
+ * THE MARKETS AT A GLANCE (owner: "much more digestible with graphs"). One
+ * card per use reads the balance in a word, the rent and the cap, with the
+ * engine's own sentence on what that balance means for an owner; the charts
+ * below are the same series the Sectors tables print, drawn.
+ */
+export function MarketsOverview() {
+  const game = useStore((s) => s.game)!;
+  const classes = useMemo(() => classRows(game), [game]);
+  const e = game.econ;
+  const tail = (e.history ?? []).slice(-SPAN_M);
+  if (tail.length < 2) return <div className="nx-place"><div className="hint">Not enough history yet — play a few months.</div></div>;
+  const x: [string, string] = [monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)];
+  const xAt = (i: number) => monthLabel(tail[i]?.q ?? 0);
+  const pct = (v: number) => `${v.toFixed(1)}%`;
+  const ser = (pick: (r: ClassRow) => number[], scale = 1) =>
+    classes.map((r) => ({ label: r.label, color: CLASS_COLOR[r.k], pts: pick(r).map((v) => v * scale) }));
+  // rents in different units per use read on one chart only as an index
+  const rentIdx = classes.map((r) => {
+    const base = r.rentS.find((v) => Number.isFinite(v) && v > 0) ?? 1;
+    return { label: r.label, color: CLASS_COLOR[r.k], pts: r.rentS.map((v) => (v / base) * 100) };
+  });
+  const years = ["Next 12m", "Year 2", "Year 3", "Year 4"];
+  const supply = years.map((label, i) => ({ label, bars: classes.map((r) => ({ v: (r.sched[i] ?? 0) / 1000, color: CLASS_COLOR[r.k] })) }));
+  return (
+    <div className="nx-place">
+      <div className="mk-cards">
+        {classes.map((r) => {
+          const bal = marketBalance(e, r.k);
+          return (
+            <div className="mk-card" key={r.k} style={{ borderTopColor: CLASS_COLOR[r.k] }}>
+              <div className="mk-card-head"><b>{r.label}</b><span className={`mk-state ${BAL_TONE[bal.state] ?? ""}`}>{bal.state}</span></div>
+              <div className="mk-figs">
+                <div><small>Available</small><Figure value={r.avail} fmt="pct" /></div>
+                <div><small>Rent</small><Figure value={r.rent} fmt="psf" /></div>
+                <div><small>Real 12m</small><Figure value={r.realYoy} fmt="pct" tone={r.realYoy < 0 ? "neg" : "pos"} /></div>
+                <div><small>Cap</small><Figure value={r.cap} fmt="pctv" /></div>
+              </div>
+              <Gauge value={r.avail} natural={r.nat} lo={0} hi={Math.max(0.3, r.avail * 1.2)} fmt={(v) => `${(v * 100).toFixed(1)}%`} />
+              <div className="mk-note">{bal.note}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mk-legend">{classes.map((r) => <span key={r.k}><i style={{ background: CLASS_COLOR[r.k] }} />{r.label}</span>)}</div>
+      <div className="chart-grid">
+        <div className="chart-cell">
+          <div className="chart-title">Availability — share of space empty or offered</div>
+          <LineChart series={ser((r) => r.availS, 100)} yFmt={pct} xLabels={x} xAt={xAt} zeroBase />
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Rents — indexed, 100 = {x[0]}</div>
+          <LineChart series={rentIdx} yFmt={(v) => v.toFixed(0)} xLabels={x} xAt={xAt} />
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Cap rates</div>
+          <LineChart series={ser((r) => r.capS)} yFmt={(v) => `${v.toFixed(2)}%`} xLabels={x} xAt={xAt} />
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">New supply delivering — thousand sf</div>
+          <BarChart groups={supply} />
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Interest rates</div>
+          <LineChart series={[
+            { label: "10Y", color: "#2f6f7a", pts: tail.map((h) => h.indexRate) },
+            { label: "Policy", color: "#a8402e", pts: tail.map((h) => h.policy ?? NaN), dashed: true },
+          ]} yFmt={(v) => `${v.toFixed(1)}%`} xLabels={x} xAt={xAt} />
+        </div>
+        <div className="chart-cell">
+          <div className="chart-title">Jobs — thousands</div>
+          <LineChart series={[{ label: "Jobs", color: "#3a7d46", pts: tail.map((h) => (h.jobs ?? 0) / 1000) }]} yFmt={(v) => `${v.toFixed(0)}k`} xLabels={x} xAt={xAt} />
+        </div>
+      </div>
     </div>
   );
 }

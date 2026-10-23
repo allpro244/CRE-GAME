@@ -80,6 +80,7 @@ export function RentRollTab({ game, parcels, bbl, h }: { game: GameState; parcel
         <Stat label="WALT"><Figure value={h.tenants.length ? walt(h, game.month) : null} fmt="n" text={h.tenants.length ? walt(h, game.month).toFixed(1) + " y" : "—"} drill="rent" args={args} /></Stat>
         <Stat label="Roll 12m"><Figure value={leased > 0 ? roll12 / leased : null} fmt="pct" drill="rent" args={args} /></Stat>
       </StatStrip>
+      <LeasingPlan h={h} bbl={bbl} />
       {lois.length > 0 && (
         <table className="nx-table">
           <thead><tr><th>Letter</th><th className="num">sf</th><th className="num">$/sf</th><th className="num">vs mkt</th><th className="num">Term</th><th className="num">To sign</th><th className="num">Answer by</th><th /></tr></thead>
@@ -114,6 +115,52 @@ export function RentRollTab({ game, parcels, bbl, h }: { game: GameState; parcel
   );
 }
 
+/**
+ * HOW THIS BUILDING IS LEASED (owner: the rent roll carries the choices, not
+ * a desk further down). The same four standing decisions the classic leasing
+ * desk sets — asking posture, letters answered for you, a listing broker, and
+ * a hold that lets the roll run off — each a labelled segmented control.
+ */
+export function LeasingPlan({ h, bbl }: { h: Holding; bbl: string }) {
+  const st = useStore.getState();
+  const seg = <T,>(label: string, now: T, opts: { v: T; label: string; tip: string }[], set: (v: T) => void) => (
+    <div className="nx-lp-row">
+      <span className="nx-lp-k">{label}</span>
+      <span className="seg" role="group" aria-label={label}>
+        {opts.map((o) => (
+          <button key={o.label} type="button" title={o.tip} className={"btn" + (o.v === now ? " btn-on" : "")} aria-pressed={o.v === now} onClick={() => set(o.v)}>{o.label}</button>
+        ))}
+      </span>
+    </div>
+  );
+  return (
+    <div className="nx-box nx-lp">
+      <div className="nx-box-head nx-sec">Leasing plan</div>
+      {seg("Asking", h.stance ?? 0, [
+        { v: 1 as const, label: "Push +8%", tip: "Higher asking rents, fewer letters, slower lease-up" },
+        { v: 0 as const, label: "Market", tip: "Ask the market rent" },
+        { v: -1 as const, label: "Fill −8%", tip: "Lower asking rents, faster lease-up" },
+      ], (v) => st.stance(bbl, v))}
+      {seg("Letters", h.autoLease ? "auto" : h.principalSigns ? "me" : "desk", [
+        { v: "me", label: "I sign", tip: "Every letter of intent pops up for you to sign, counter or decline" },
+        { v: "desk", label: "Leasing desk", tip: "Your leasing desk or agent answers what it covers; the rest come to you" },
+        { v: "auto", label: "Auto-answer", tip: "The building answers its own letters by the asking posture — same commission as signing yourself" },
+      ], (v) => {
+        if (!!h.autoLease !== (v === "auto")) st.autoLease(bbl, v === "auto");
+        if (!!h.principalSigns !== (v === "me")) st.setPrincipalSigns(bbl, v === "me");
+      })}
+      {seg("Broker", !!h.broker, [
+        { v: false, label: "In-house", tip: "Your own people: 4% on a new lease, 2% on a renewal" },
+        { v: true, label: "Listing exclusive", tip: "~45% more tenant traffic on vacant space; 6% of base rent over the term when a lease signs" },
+      ], (v) => st.broker(bbl, v))}
+      {seg("Letting", !!h.leasingHold, [
+        { v: false, label: "Open", tip: "Lease space as tenants come" },
+        { v: true, label: "Hold", tip: "Stop signing — the roll runs off (clearing it for a redevelopment)" },
+      ], (v) => st.holdLeasing(bbl, v))}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- money
 export function quotesFor(g: GameState, p: ParcelTable, bbl: string) {
   return derive(g, "next.refi:" + bbl, () => {
@@ -126,27 +173,45 @@ export function quotesFor(g: GameState, p: ParcelTable, bbl: string) {
 export function RefiTable({ game, parcels, bbl, max = 8 }: { game: GameState; parcels: ParcelTable; bbl: string; max?: number }) {
   const { live, payoff, value } = useMemo(() => quotesFor(game, parcels, bbl), [game, parcels, bbl]);
   const [ask, setAsk] = useState<string | null>(null);
+  // how much of each desk's maximum to draw, and which kind of paper (owner: a slider and options)
+  const [lev, setLev] = useState(1);
+  const [kind, setKind] = useState<"all" | "fixed" | "float">("all");
   if (!live.length) return <div className="nx-none">No quotes · value {usd(value)} · payoff {usd(payoff)}</div>;
+  const shown = live.filter((q) => kind === "all" || (kind === "float") === !!q.floating);
   const cols: Col<RefiQuote>[] = [
     { id: "lender", label: "Desk", get: (q) => q.lender },
     { id: "rate", label: "Rate", get: (q) => q.ratePct, fmt: "pctv", cell: (q) => <span>{q.ratePct.toFixed(2)}%{q.floating ? " fl" : ""}</span> },
     { id: "allin", label: "All-in", get: (q) => q.allInPct, fmt: "pctv" },
-    { id: "proceeds", label: "Proceeds", get: (q) => q.maxProceeds, fmt: "usd" },
-    { id: "net", label: "Net", get: (q) => q.maxProceeds - payoff, fmt: "usd", tone: (q) => (q.maxProceeds - payoff < 0 ? "neg" : "pos") },
-    { id: "ltv", label: "LTV", get: (q) => q.ltvAtMax, fmt: "pct" },
-    { id: "dscr", label: "DSCR", get: (q) => q.dscrAtMax, fmt: "x" },
+    { id: "proceeds", label: "Proceeds", get: (q) => q.maxProceeds * lev, fmt: "usd" },
+    { id: "net", label: "Net", get: (q) => q.maxProceeds * lev - payoff, fmt: "usd", tone: (q) => (q.maxProceeds * lev - payoff < 0 ? "neg" : "pos") },
+    { id: "ltv", label: "LTV", get: (q) => q.ltvAtMax * lev, fmt: "pct" },
+    // a smaller loan at the same terms carries proportionally less debt service
+    { id: "dscr", label: "DSCR", get: (q) => q.dscrAtMax / Math.max(0.05, lev), fmt: "x" },
     { id: "term", label: "Term", get: (q) => q.termM / 12, fmt: "n", cell: (q) => <span>{Math.round(q.termM / 12)}y{q.ioM ? ` · IO ${q.ioM}m` : ""}</span> },
     { id: "bind", label: "Binding", get: (q) => q.binding, hidden: true },
     { id: "points", label: "Points", get: (q) => q.points * 100, fmt: "pctv", hidden: true },
   ];
   return (
-    <DataTable id="file-refi" cols={cols} rows={live.slice(0, max)} rowKey={(q) => q.id} initialSort={{ col: "allin", dir: 1 }}
+    <>
+    <div className="nx-refi-ctl">
+      <label>Borrow <b className="mono">{Math.round(lev * 100)}%</b> of each desk's max
+        <input type="range" min={0.25} max={1} step={0.05} value={lev} onChange={(e) => setLev(+e.target.value)} />
+      </label>
+      <span className="seg" role="group" aria-label="Rate type">
+        {(["all", "fixed", "float"] as const).map((k) => (
+          <button key={k} type="button" className={"btn" + (kind === k ? " btn-on" : "")} onClick={() => setKind(k)}>{k === "all" ? "All" : k === "fixed" ? "Fixed" : "Floating"}</button>
+        ))}
+      </span>
+      <span className="nx-dim mono">payoff {usd(payoff)}</span>
+    </div>
+    <DataTable id="file-refi" cols={cols} rows={shown.slice(0, max)} rowKey={(q) => q.id} initialSort={{ col: "allin", dir: 1 }}
       actions={(q) => ask === q.id
         ? <span className="nx-row-verbs">
-            <VerbButton small v={{ label: `Sure? ${usd(q.maxProceeds)}`, primary: true, run: () => { useStore.getState().refi(bbl, q.id, 1); setAsk(null); } }} />
+            <VerbButton small v={{ label: `Sure? ${usd(q.maxProceeds * lev)}`, primary: true, run: () => { useStore.getState().refi(bbl, q.id, lev); setAsk(null); } }} />
             <VerbButton small v={{ label: "Cancel", run: () => setAsk(null) }} />
           </span>
         : <VerbButton small v={{ label: "Take", run: () => setAsk(q.id) }} />} />
+    </>
   );
 }
 

@@ -26,7 +26,7 @@ import { debtBook, firmCfMonthly } from "./derive";
 // ---------------------------------------------------------------- buildings
 interface BldgRow {
   bbl: string; addr: string; cls: string; sf: number; occ: number | null; rent: number | null; noi: number; value: number;
-  debt: number; dscr: number | null; cfMo: number; walt: number | null; listed: boolean; land: boolean; job: boolean;
+  debt: number; dscr: number | null; cfMo: number; walt: number | null; listed: boolean; land: boolean; job: boolean; doneM: number | null;
 }
 
 function bldgRows(g: GameState, p: ParcelTable): BldgRow[] {
@@ -46,7 +46,7 @@ function bldgRows(g: GameState, p: ParcelTable): BldgRow[] {
         rent: leased > 0 ? h.tenants.reduce((a, t) => a + t.sf * t.rentPsf, 0) / leased : null,
         noi, value: ownedHoldingValue(g, p, h), debt: (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0),
         dscr: h.loan ? dscr(rec, g, h) : null, cfMo: (noi - ds) / 12,
-        walt: h.tenants.length ? walt(h, g.month) : null, listed: !!h.sale, land, job: !!g.developments[h.bbl],
+        walt: h.tenants.length ? walt(h, g.month) : null, listed: !!h.sale, land, job: !!g.developments[h.bbl], doneM: g.developments[h.bbl]?.deliverM ?? null,
       });
     }
     return out;
@@ -54,8 +54,10 @@ function bldgRows(g: GameState, p: ParcelTable): BldgRow[] {
 }
 
 const bcols: Col<BldgRow>[] = [
-  { id: "addr", label: "Address", get: (r) => r.addr, cell: (r) => <span className="nx-strong-cell">{r.addr}{r.listed ? <span className="nx-chip nx-chip-teal">Listed</span> : null}{r.job ? <span className="nx-chip nx-chip-gold">Job</span> : null}</span> },
+  { id: "addr", label: "Address", get: (r) => r.addr, cell: (r) => <span className="nx-strong-cell">{r.addr}{r.listed ? <span className="nx-chip nx-chip-teal">Listed</span> : null}{r.job ? <span className="nx-chip nx-chip-gold">Under construction</span> : null}</span> },
   { id: "cls", label: "Use", get: (r) => r.cls },
+  // a job in the ground: the month it is due to deliver (it slips when the job does)
+  { id: "done", label: "Completes", get: (r) => r.doneM, cell: (r) => <span className="mono">{r.doneM === null ? "—" : monthLabel(r.doneM)}</span> },
   { id: "sf", label: "sf", get: (r) => r.sf, fmt: "n" },
   { id: "occ", label: "Occ", get: (r) => r.occ, fmt: "pct", tone: (r) => (r.occ !== null && r.occ < 0.75 ? "neg" : undefined) },
   { id: "rent", label: "Rent", get: (r) => r.rent, fmt: "psf" },
@@ -81,6 +83,7 @@ export function HoldingsBuildings() {
     <div className="nx-place">
       <StatStrip>
         <Stat label="Deeds"><Figure value={rows.length} fmt="n" /></Stat>
+        {rows.some((r) => r.job) && <Stat label="Building"><Figure value={rows.filter((r) => r.job).length} fmt="n" /></Stat>}
         <Stat label="Value"><Figure value={value} fmt="usd" drill="nw" /></Stat>
         <Stat label="NOI"><Figure value={noi} fmt="usd" drill="cf" /></Stat>
         <Stat label="Cap"><Figure value={value > 0 ? noi / value : null} fmt="pct" /></Stat>

@@ -695,7 +695,8 @@ function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOf
   // Desk-covered letters stay quiet (agent / exclusive / renewals).
   // Ground-leased fees never wake the modal — the lessee is the landlord.
   // A live plan works exceptions on the docket, not a per-letter modal stream.
-  if (g.lois.some((l) => loiNeedsPrincipal(g, l)) && !planIsLive(g)) return true;
+  // …except a building set to "I sign": its letters always come up (owner)
+  if (g.lois.some((l) => loiNeedsPrincipal(g, l) && (!planIsLive(g) || !!g.holdings[l.bbl]?.principalSigns))) return true;
   for (const h of Object.values(g.holdings)) {
     if (offerWantsAnswer(h.sale?.offer) && (opp || !h.sale!.unsolicited)) return true;
     // Live bids only — a best-and-final where everyone walked left bids.length

@@ -184,8 +184,9 @@ void ABWCameraPawn::Tick(float Dt)
 void ABWCameraPawn::SetDeskRect(const FVector4& R)
 {
 	const bool bWas = DeskRect.Z > 0, bNow = R.Z > 0;
-	if (bNow && !bWas) { DeskYaw = Yaw + 30; if (bDeskOnMain) { SavedFocus = Focus; SavedYaw = Yaw; SavedPitch = Pitch; SavedDistance = Distance; } }
-	if (!bNow && bWas && bDeskOnMain) { Focus = SavedFocus; Yaw = SavedYaw; Pitch = SavedPitch; Distance = SavedDistance; }
+	if (bNow && !bWas) { DeskYaw = Yaw + 30; bSavedView = bDeskOnMain; if (bDeskOnMain) { SavedFocus = Focus; SavedYaw = Yaw; SavedPitch = Pitch; SavedDistance = Distance; } }
+	// put the view back only if this desk took it: a stale save threw the camera far out
+	if (!bNow && bWas && bSavedView) { Focus = SavedFocus; Yaw = SavedYaw; Pitch = SavedPitch; Distance = SavedDistance; bSavedView = false; }
 	DeskRect = R;
 	if (bDeskOnMain || !bNow) return;
 	// the model's render target, the box's size in pixels (capped: it is a thumbnail-sized view)
@@ -264,9 +265,11 @@ void ABWPlayerController::PlayerTick(float Dt)
 	if (Down(EKeys::D, TEXT("KeyD")) || IsInputKeyDown(EKeys::Right)) Dir.X += 1;
 	if (Down(EKeys::A, TEXT("KeyA")) || IsInputKeyDown(EKeys::Left)) Dir.X -= 1;
 	if (!Dir.IsZero()) Cam->Pan(Dir.GetSafeNormal(), Dt);
-	if (WasInputKeyJustPressed(EKeys::One)) Cam->SetMode(ABWCameraPawn::EMode::Strategy);
-	if (WasInputKeyJustPressed(EKeys::Two)) Cam->SetMode(ABWCameraPawn::EMode::Drone);
-	if (WasInputKeyJustPressed(EKeys::Three)) Cam->SetMode(ABWCameraPawn::EMode::Street);
+	// camera modes on F1-F3: the digits open the page's places (1 Holdings, 2 Pipeline...),
+	// and 2 also flew the camera off into the drone circle (owner: "zooms way out")
+	if (WasInputKeyJustPressed(EKeys::F1)) Cam->SetMode(ABWCameraPawn::EMode::Strategy);
+	if (WasInputKeyJustPressed(EKeys::F2)) Cam->SetMode(ABWCameraPawn::EMode::Drone);
+	if (WasInputKeyJustPressed(EKeys::F3)) Cam->SetMode(ABWCameraPawn::EMode::Street);
 	if (Down(EKeys::Q, TEXT("KeyQ"))) Cam->Yaw -= 70 * Dt;
 	if (Down(EKeys::E, TEXT("KeyE"))) Cam->Yaw += 70 * Dt;
 	if (WasInputKeyJustPressed(EKeys::MouseScrollUp)) Cam->Zoom(1);
@@ -378,9 +381,9 @@ void ABWPlayerController::PageInput(const FString& Type, double X, double Y, dou
 	if (!Cam) return;
 	int32 W = 1, H = 1;
 	GetViewportSize(W, H);
-	if (Type == TEXT("kd") && Key == TEXT("Digit1")) Cam->SetMode(ABWCameraPawn::EMode::Strategy);
-	else if (Type == TEXT("kd") && Key == TEXT("Digit2")) Cam->SetMode(ABWCameraPawn::EMode::Drone);
-	else if (Type == TEXT("kd") && Key == TEXT("Digit3")) Cam->SetMode(ABWCameraPawn::EMode::Street);
+	if (Type == TEXT("kd") && Key == TEXT("F1")) Cam->SetMode(ABWCameraPawn::EMode::Strategy);
+	else if (Type == TEXT("kd") && Key == TEXT("F2")) Cam->SetMode(ABWCameraPawn::EMode::Drone);
+	else if (Type == TEXT("kd") && Key == TEXT("F3")) Cam->SetMode(ABWCameraPawn::EMode::Street);
 	else if (Type == TEXT("kd")) PageKeys.Add(Key);
 	else if (Type == TEXT("ku")) PageKeys.Remove(Key);
 	else if (Type == TEXT("hover")) HoverPx = FVector2D(X * W, Y * H);

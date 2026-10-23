@@ -11,6 +11,7 @@ import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
+import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
 
@@ -3728,7 +3729,55 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   };
 }
 
+/**
+ * EXCESS LAND (The Appraisal of Real Estate, Appraisal Institute, 15th ed.,
+ * ch. 12): land a building does not need that could be SOLD SEPARATELY is
+ * valued as land and added to the value of the building on the site it needs.
+ * SURPLUS land — beyond the building's needs but too small or too narrow to
+ * stand as a lot of its own — adds little and is not added here.
+ *
+ * What the building needs is the lot code's (lotcode.ts, the rules a lot split
+ * is held to): enough land that its plate stays inside the district's lot
+ * coverage maximum (which is where the parking, the truck court and the yards
+ * live) and its floor area inside the FAR, plus its side yard along the new
+ * line, and never less than the district's minimum lot. What is left is excess
+ * when it is a legal lot itself (the minimum area and, pro rata, the minimum
+ * frontage). It is worth the land read of that lot (no corner: the building
+ * keeps it), less what it costs to split it off — a minor split of two lots.
+ * Returns null where there is none, or none worth splitting off.
+ */
+export function excessLand(rec: ParcelRecord, econ: Econ): { sf: number; net: number; need: ParcelRecord } | null {
+  if (rec.class === "land" || !(rec.bldgArea > 0) || !(rec.lotArea > 0) || rec.ag || rec.tract || rec.hoa) return null;
+  const rule = splitRule(rec.zoneDist);
+  const far = farMaxFor(rec);
+  if (!(far > 0)) return null;
+  const plate = rec.bldgArea / Math.max(1, rec.floors);
+  const depth = rec.lotDepth ?? Math.sqrt(rec.lotArea);
+  const need = Math.max(rule.minSf, plate / Math.min(coverageMax(rec), rule.cov), rec.bldgArea / far) + rule.sideFt * depth;
+  const sf = rec.lotArea - need;
+  if (sf < rule.minSf) return null;
+  const front = (rec.lotFront ?? 0) * (sf / rec.lotArea);
+  if (front < rule.minFt) return null;
+  const lostCorner = !!rec.corner;
+  const lot: ParcelRecord = {
+    ...rec, bbl: `${rec.bbl}~excess`, class: "land", bldgClass: "V1", mix: undefined, suites: undefined, product: undefined,
+    bldgArea: 0, floors: 0, yearBuilt: 0, unitsRes: 0, buildSpec: undefined, lotArea: sf, lotFront: front, corner: false,
+    ...(lostCorner ? { demandScore: Math.max(4, Math.min(100, Math.round(rec.demandScore * Math.pow(CORNER_K, -DEMAND_GAMMA)))) } : {}),
+  };
+  const net = landValue(lot, econ) - (MINOR_FIXED + 2 * MINOR_PER_LOT) * econ.costIdx;
+  if (!(net > 0)) return null;
+  return { sf, net, need: { ...rec, lotArea: rec.lotArea - sf, lotFront: (rec.lotFront ?? 0) - front || rec.lotFront } };
+}
+
 export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
+  const whole = assetValueOn(rec, econ, condition, condIdx);
+  // the building on the land it needs, and the land it does not, sold apart (excessLand)
+  const ex = excessLand(rec, econ);
+  return ex ? Math.max(whole, assetValueOn(ex.need, econ, condition, condIdx) + ex.net) : whole;
+}
+
+/** The site valued whole, as one parcel, nothing split off: what assetValue was before excess land. */
+export function assetValueOn(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
   const land = landValue(rec, econ);
   if (rec.class === "land" || !rec.bldgArea) return land;
   const sinceM = rec.yearBuilt && econ.m !== undefined
@@ -4479,6 +4528,14 @@ export function registerRolloverReader(fn: (s: GameState, rec: ParcelRecord, h: 
 }
 
 export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
+  const whole = holdingValueOn(rec, econ, h, month);
+  if (h.groundLeased) return whole;
+  // the building on the land it needs, and the land it does not, sold apart (excessLand)
+  const ex = excessLand(rec, econ);
+  return ex ? Math.max(whole, holdingValueOn(ex.need, econ, h, month) + ex.net) : whole;
+}
+
+function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
   // Ground-leased fee: callers with the lease record should use leasedFeeValue.
   // Without it, never appraise the lessee's building as if it were yours.
   if (h.groundLeased) {

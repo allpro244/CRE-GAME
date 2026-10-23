@@ -50,10 +50,12 @@
 // The recipe (types.ts SplitRecord) is stored in the save; `materializeSplits`
 // regenerates the lots from it alone on every load, like the plats.
 import type { ParcelTable, ParcelRecord } from "@/data/types";
-import type { GameState, Holding, Loan, SplitRecord, BuiltClass } from "./types";
+import type { GameState, Holding, Loan, SplitRecord } from "./types";
 import { monthLabel, cloneState, logBooks } from "./types";
 import { resolveRec, ownedHoldingValue, ownedHoldingValueFromRec, initialCondition, landValue } from "./value";
-import { farMaxFor, MAX_COVERAGE } from "./proforma";
+import { farMaxFor } from "./proforma";
+import { SPLIT_RULES, splitRule, MINOR_FIXED, MINOR_PER_LOT, CORNER_K, DEMAND_GAMMA, coverageMax, type SplitZoneRule } from "./lotcode";
+export { SPLIT_RULES, splitRule, MINOR_FIXED, MINOR_PER_LOT, coverageMax, type SplitZoneRule };
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook, fundCashNeed } from "./credit";
 import { prepayPenalty, loanLender } from "./debt";
@@ -65,88 +67,9 @@ import { hash01 } from "./competitorTraits";
 import { money } from "./money";
 import { measurePieces, type SiteGeo, type SplitCut, type PieceGeo } from "./lotsplitGeom";
 
-// ---------------------------------------------------------------- the code
-export interface SplitZoneRule {
-  /** minimum lot area, sf */
-  minSf: number;
-  /** minimum lot width at the street, ft */
-  minFt: number;
-  /** the side yard a building keeps from a new lot line, ft */
-  sideFt: number;
-  /** the most of the lot buildings may cover (the district's lot coverage maximum) */
-  cov: number;
-  /** a lot no deeper than this many times its width (nor wider than this many times its depth) */
-  ratio: number;
-  /** what kind of district, for the desk */
-  family: string;
-  src: string;
-}
-/**
- * MINIMUM LOTS BY DISTRICT [S]. Typical US code values for districts of the
- * character this engine gives each zone (its FAR, its use):
- *   C-4..C-8  high-density downtown commercial (FAR 8-30): no lot minimum in
- *             most downtown codes beyond the residential one — NYC ZR 23-32,
- *             1,700 sf and 18 ft for any residence in R6-R10 and their
- *             commercial equivalents; zero side yard (ZR 33-25, none required).
- *   C-1, C-2  main-street and general commercial (FAR 1-5): 2,500 sf and 25 ft,
- *             the 25-ft storefront lot of most Midwestern downtown districts.
- *   C-N       a neighbourhood shopping district: 10,000 sf and 75 ft, 10 ft side
- *             yards (typical suburban B-1 / C-N districts run 7,500-20,000 sf).
- *   R6, R8    dense residential (FAR 6-11): 1,700 sf and 18 ft, no side yard for
- *             attached buildings (ZR 23-32, 23-46).
- *   R4        the old town's residential, houses and small flats: 3,800 sf and
- *             40 ft with 5-ft side yards, NYC's rule for detached houses in R4
- *             (ZR 23-32, 23-461).
- *   R-1       suburban single-family: 7,500 sf and 60 ft, 7.5-ft side yards.
- *   R-2       two-family: 5,000 sf on 40 ft, 5-ft side yards (the plat desk's
- *             own SPLIT_MIN, citygen region/platdesign.mjs).
- *   M1        light industrial: 20,000 sf and 100 ft, 10-ft side yards (typical
- *             M-1 districts, 10,000-40,000 sf).
- *   I-1       an industrial park: an acre and 150 ft (landdev.ts isIndustrialLot,
- *             NAIOP business-park lots of two acres and up).
- * LOT COVERAGE: commercial districts downtown have none (a commercial ground
- * floor may run lot line to lot line, ZR 33-23); NYC's residential maxima are
- * 55% in R4 (ZR 23-141), 65% in R6 and 70% in R8 (ZR 23-153, interior lots);
- * suburban codes run 35% (R-1), 40% (R-2 and a neighbourhood business district,
- * whose parking takes the rest) and 50% for industry (the truck court and the
- * car park: landdev.ts I-1 carries its box at 35-50%). The building's lot is
- * held to the lesser of this and the engine's own new-building coverage
- * (proforma.ts MAX_COVERAGE).
- * DEPTH RATIO: suburban subdivision regulations commonly cap depth at three
- * times width; urban districts are platted in 20x100 and 25x100 lots (4-5:1),
- * so they cap at five.
- */
-export const SPLIT_RULES: Record<string, SplitZoneRule> = {
-  "C-4": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 1, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
-  "C-5": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 1, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
-  "C-6": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 1, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
-  "C-8": { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 1, family: "downtown", src: "NYC ZR 23-32 / 33-25" },
-  "C-1": { minSf: 2_500, minFt: 25, sideFt: 0, ratio: 5, cov: 1, family: "main street", src: "typical downtown business district, 25-ft lot" },
-  "C-2": { minSf: 2_500, minFt: 25, sideFt: 0, ratio: 5, cov: 1, family: "main street", src: "typical downtown business district, 25-ft lot" },
-  "C-N": { minSf: 10_000, minFt: 75, sideFt: 10, ratio: 3, cov: 0.4, family: "neighbourhood centre", src: "typical B-1 / C-N district" },
-  R6: { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 0.65, family: "dense residential", src: "NYC ZR 23-32 / 23-46" },
-  R8: { minSf: 1_700, minFt: 18, sideFt: 0, ratio: 5, cov: 0.7, family: "dense residential", src: "NYC ZR 23-32 / 23-46" },
-  R4: { minSf: 3_800, minFt: 40, sideFt: 5, ratio: 5, cov: 0.55, family: "residential", src: "NYC ZR 23-32 / 23-461, detached" },
-  "R-1": { minSf: 7_500, minFt: 60, sideFt: 7.5, ratio: 3, cov: 0.35, family: "single-family", src: "typical suburban R-1" },
-  "R-2": { minSf: 5_000, minFt: 40, sideFt: 5, ratio: 3, cov: 0.4, family: "two-family", src: "typical R-2 (platdesign SPLIT_MIN)" },
-  M1: { minSf: 20_000, minFt: 100, sideFt: 10, ratio: 4, cov: 0.5, family: "industrial", src: "typical M-1" },
-  "I-1": { minSf: 43_560, minFt: 150, sideFt: 10, ratio: 4, cov: 0.5, family: "industrial park", src: "NAIOP park lots; landdev isIndustrialLot" },
-};
-/** A district this table does not name: a middling suburban rule [S, typical]. */
-const DEFAULT_RULE: SplitZoneRule = { minSf: 5_000, minFt: 50, sideFt: 5, ratio: 4, cov: 0.5, family: "other", src: "typical" };
-export const splitRule = (zone: string): SplitZoneRule => SPLIT_RULES[zone] ?? DEFAULT_RULE;
 
 /** A flag lot's access easement: 20 ft, the fire apparatus access width (IFC 503.2.1) [S]. */
 export const EASE_FT = 20;
-/**
- * WHAT A MINOR SPLIT COSTS: a boundary survey and the new legal descriptions
- * ($2-5k on a town lot), title and counsel ($1.5-4k), the planning
- * department's application fee and county recording ($0.5-2k) [S, typical
- * 2020s fee schedules and survey quotes]: about $9k for two lots, $14k for four,
- * carried by the construction-cost index.
- */
-export const MINOR_FIXED = 4_000;
-export const MINOR_PER_LOT = 2_500;
 /** Staff review and recording: one to three months [S]. */
 export const MINOR_MONTHS = (lots: number) => Math.round(Math.min(3, Math.max(1, 1 + ((lots - 1) * 2) / 3)));
 /** The most lots a minor (administrative) split may make; five and up is a subdivision [S, most US codes: 2-4]. */
@@ -157,9 +80,6 @@ export const LENDER_CONSENT_FEE = 2_500;
 export const MAX_SPLIT_LOTS = 24;
 
 const first8 = (n: number) => String(8e9 + n);
-/** The city's corner premium and demand curvature (citygen build.mjs cornerK, DEMAND_GAMMA): read, not chosen. */
-const CORNER_K = 1.18;
-const DEMAND_GAMMA = 1.05;
 
 // ---------------------------------------------------------------- the plan
 export interface SplitPlan {
@@ -247,15 +167,6 @@ export function splittable(s: GameState, parcels: ParcelTable, bbl: string): str
   return null;
 }
 
-/** The strictest new-building coverage of the uses in a building (proforma.ts MAX_COVERAGE). */
-function coverageMax(rec: ParcelRecord): number {
-  if (rec.mix) {
-    let c = 1;
-    for (const [k, v] of Object.entries(rec.mix)) if ((v ?? 0) > 0.03) c = Math.min(c, MAX_COVERAGE[k as BuiltClass] ?? 1);
-    return c;
-  }
-  return MAX_COVERAGE[rec.class as BuiltClass] ?? 1;
-}
 
 /** "16 Cortland St" -> "16A Cortland St"; an address without a number gets "lot B". */
 function pieceAddress(addr: string, k: number): string {
@@ -312,6 +223,23 @@ export function splitRecords(P: ParcelRecord, sp: Pick<SplitRecord, "id" | "pare
   });
 }
 
+/**
+ * WHAT STANDS ON THE LOT TODAY, as the split desk draws it and the code tests
+ * it: nothing, if the building came down; the city's own footprint for a
+ * building it drew; and for a building put up in play — which the city never
+ * drew — its plate on the lot's shape at the coverage it was built to (the
+ * delivery's `cov`, the same inset the map renders it with).
+ */
+export function siteAsBuilt(s: GameState, parcels: ParcelTable, bbl: string, geo: SiteGeo): SiteGeo {
+  const rec = resolveRec(parcels, s, bbl);
+  const built = !!rec && rec.class !== "land" && rec.bldgArea > 0;
+  if (!rec || !built) return { ...geo, footprints: [] };
+  const b = s.built?.[bbl];
+  if (!b && geo.footprints.length) return geo;
+  const cov = b?.cov ?? rec.bldgArea / Math.max(1, rec.floors) / rec.lotArea;
+  return { ...geo, footprints: [syntheticFootprint(geo.ring, cov)] };
+}
+
 /** A building's footprint where the city drew none (a building put up in play): its plate, centred, the lot's shape. */
 function syntheticFootprint(ring: [number, number][], cov: number): [number, number][] {
   const n = ring.length;
@@ -338,11 +266,7 @@ export function splitQuote(s: GameState, parcels: ParcelTable, bbl: string, geo:
   if (!rec || !P) return empty;
   const h = s.holdings[bbl];
   const built = rec.class !== "land" && rec.bldgArea > 0;
-  // what stands on the lot today: the city's drawing of it, or — for a building
-  // put up in play, which the city did not draw — its plate on the lot's shape
-  const cov = built ? rec.bldgArea / Math.max(1, rec.floors) / rec.lotArea : 0;
-  const site: SiteGeo = !built ? { ...geo, footprints: [] }
-    : s.built?.[bbl] || !geo.footprints.length ? { ...geo, footprints: [syntheticFootprint(geo.ring, cov)] } : geo;
+  const site = siteAsBuilt(s, parcels, bbl, geo);
   const m = measurePieces(site, plan.cuts);
   const n = m.pieces.length;
   empty.lots = n;

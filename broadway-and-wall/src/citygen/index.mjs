@@ -256,6 +256,12 @@ const LEGACY_DRAWN = new Set(["newalden", "kestrel"]);
  * round a small river city whose plats the island generator cuts. No island
  * rule reads plan 15, so plan-14 island saves rebuild their own town byte for
  * byte; a region campaign records plan 15.
+ *
+ * Plan 16: the REGION's demand surface reads CAR ACCESS (region/access.mjs)
+ * where an island reads transit and a second centre — the 44 accessibility
+ * points of the blend, which on a map with no stations read zero everywhere.
+ * Only the region reads plan 16; islands are byte-identical to plan 15, and a
+ * plan-15 region save rebuilds its own map.
  */
 /**
  * HOW MUCH OF THE TOWN IS PARK, from the setup page. A generated town draws a
@@ -271,7 +277,7 @@ export const PARK_AMOUNTS = [
 ];
 export const DEFAULT_PARKS = "medium";
 
-export const CITY_PLAN = 15;
+export const CITY_PLAN = 16;
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

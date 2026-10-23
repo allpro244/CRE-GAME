@@ -75,6 +75,13 @@ export interface ParcelRecord {
    * residual both read it.
    */
   tradeDraw?: Record<number, number>;
+  /**
+   * REGION ONLY, ON THE SAME LOTS: a grocer's yearly sales here, $ — the
+   * food-at-home spending of the households within a fifteen-minute drive it
+   * would win against the grocers already open (towngrowth.ts grocerSales).
+   * The pro forma sets the grocer's rent from it. Absent on islands.
+   */
+  grocerSales?: number;
   /** Hedonic multiplier from waterfront / corridor / corner (mean 1). Appraisal only. */
   locPremium?: number;
   shoreM?: number;

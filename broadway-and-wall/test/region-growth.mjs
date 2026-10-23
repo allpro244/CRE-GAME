@@ -71,7 +71,7 @@ const DECADE_HEAD = "  yr     pop  houses family plats roads hwy  maxADT fund$M 
 
 const all = [];
 for (const seed of seeds.length ? seeds : [1, 2, 3]) {
-  const city = makeCity(REGION, seed);
+  const city = makeCity(REGION, seed, process.env.PLAN ? { planV: Number(process.env.PLAN) } : undefined);
   const parcels = city.parcels, bbls = Object.keys(parcels);
   E.normalizeParcels(parcels);
   const lots0 = bbls.length;
@@ -115,7 +115,7 @@ for (const seed of seeds.length ? seeds : [1, 2, 3]) {
   const hw = Object.entries(R.hwy).filter(([, h]) => h.planM > 0);
   console.log(`  state plan: ${hw.map(([id, h]) => `${id} ${h.status}${h.openM ? ` ${ml(h.openM)}` : ` plan ${ml(h.planM)}`}${h.slips ? ` (${h.slips} slips)` : ""}`).join("; ") || "nothing proposed"}`);
   const T = g.growth.town;
-  if (T) console.log(`  town: ${JSON.stringify(E.townSummary(g))}${T.centres?.length ? `; centres ${T.centres.map((c) => `${c.kind} ${Math.round(c.sf / 1000)}k sf ${ml(c.m)} (${c.households} hh)`).join("; ")}` : ""}`);
+  if (T) console.log(`  town: ${JSON.stringify(E.townSummary(g))}${T.centres?.length ? `; centres ${T.centres.map((c) => { const P = E.roadPlan(g), C = P.centre, p = parcels[c.bbl]?.centroid ?? C; const km = Math.hypot((p[0] - C[0]) * 111320 * Math.cos((C[1] * Math.PI) / 180), (p[1] - C[1]) * 110540) / 1000; return `${c.kind} ${Math.round(c.sf / 1000)}k sf ${ml(c.m)} (${c.households} hh) ${km.toFixed(1)} km out${g.cityJobs?.some((j) => j.bbl === c.bbl) ? " building" : g.built[c.bbl]?.bldgArea > 0 ? " open" : ""}`; }).join("; ")}` : ""}`);
   console.log(`  month: ${ms.toFixed(0)} ms mean; parcels ${lots0} -> ${bbls.length}`);
   console.log(DECADE_HEAD);
   for (const r of dec) console.log(decadeLine(r));

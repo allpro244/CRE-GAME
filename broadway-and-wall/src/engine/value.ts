@@ -2816,11 +2816,19 @@ export function tradeAreaDemand(s: GameState, parcels: Record<string, ParcelReco
  */
 const ANCHORED_LOT_MIN_SF = 100_000;
 const ANCHOR_RADII = [...new Set(PRODUCT_KEYS.map((k) => PRODUCT_TYPES[k]).filter((p) => p.tradeRadiusM && p.anchors.length).map((p) => p.tradeRadiusM!))];
+/**
+ * The grocer's sales reader (towngrowth.ts grocerSales), handed in by
+ * towngrowth when it loads: value.ts importing towngrowth would close a module
+ * cycle through dev.ts whose top-level constants then initialise out of order.
+ */
+export const GROCER_SALES: { read?: (s: GameState, parcels: Record<string, ParcelRecord>, bbl: string) => number | undefined } = {};
 function stampTradeDraw(s: GameState, parcels: Record<string, ParcelRecord>, r: ParcelRecord): ParcelRecord {
   if (r.class !== "land" || !(r.lotArea >= ANCHORED_LOT_MIN_SF) || r.zoneDist === "AG" || r.bldgArea > 0) return r;
   const draw: Record<number, number> = {};
   for (const m of ANCHOR_RADII) draw[m] = tradeAreaDemand(s, parcels, r.bbl, m);
-  return { ...r, tradeDraw: draw };
+  // and on the region, the sales a grocer here would make (towngrowth.ts grocerSales)
+  const sales = s.citySize === "region" ? GROCER_SALES.read?.(s, parcels, r.bbl) : undefined;
+  return sales !== undefined ? { ...r, tradeDraw: draw, grocerSales: sales } : { ...r, tradeDraw: draw };
 }
 
 /**

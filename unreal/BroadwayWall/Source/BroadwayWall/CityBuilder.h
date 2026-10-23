@@ -165,6 +165,8 @@ private:
 	void DressParks(TArray<TArray<FVector2D>>& Paths);
 	/** The footway's top: the raised ground (sidewalks, lawns) props stand on, cm. */
 	double FootZ = 0;
+	/** The top of every ground layer (the hover outline draws above it). */
+	double GroundTopZ = 0;
 	/** Bus stops, news boxes, sign poles, bikes and cafe tables along one kerb edge. */
 	void StreetFurniture(const FVector2D& A, const FVector2D& Dir, const FVector2D& Out, double Len, FRandomStream& Rng);
 	void DressRoof(const FBWVolume& V, uint32 Seed);

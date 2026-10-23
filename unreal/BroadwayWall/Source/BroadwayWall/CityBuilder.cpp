@@ -598,6 +598,7 @@ void ACityBuilder::BuildGround()
 		// 1 cm a layer on the island; on the region, viewed from kilometres up, the
 		// depth buffer cannot part 1 cm and the overlapping layers flickered
 		Z += City.Size == TEXT("region") ? 8 : 1;
+		GroundTopZ = FMath::Max(GroundTopZ, Zl + 6);
 		if (bRaised) FootZ = FMath::Max(FootZ, Zl);
 	}
 	// THE OPEN PART OF A LOT. Every lot's ground used to be the same tan
@@ -1813,13 +1814,15 @@ void ACityBuilder::SetHighlight(const FBWParcel* Sel, const FBWParcel* Hover, do
 	};
 	FMeshBuf Gold, White;
 	// vertex colours stop at 1: the hue is here, the brightness is the material's Glow
-	const FLinearColor GoldC(1.0f, 0.55f, 0.06f), WhiteC(0.85f, 0.85f, 0.85f);
+	const FLinearColor GoldC(1.0f, 0.55f, 0.06f), WhiteC(1.0f, 1.0f, 1.0f);
 	if (Sel && Sel->Ring.Num() >= 3)
 	{
 		Band(Gold, Sel->Ring, FootZ + 4, 45 * Scale, false, GoldC);
 		// (one outline, on the lot line: the owner found the roof rims busy)
 	}
-	if (Hover && Hover->Ring.Num() >= 3) Band(White, Hover->Ring, FootZ + 3, 25 * Scale, false, WhiteC);
+	// THE HOVER OUTLINE (owner: "a white outline when you hover a building or parcel"): bright,
+	// as wide as the selection's, and above every ground layer so no field or lot cover hides it
+	if (Hover && Hover->Ring.Num() >= 3) Band(White, Hover->Ring, FMath::Max(FootZ + 3, GroundTopZ), 40 * Scale, false, WhiteC);
 	UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BW/Materials/M_BW_Highlight.M_BW_Highlight"));
 	if (!Mat) Mat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/EmissiveMeshMaterial.EmissiveMeshMaterial"));
 	int32 Sec = 0;

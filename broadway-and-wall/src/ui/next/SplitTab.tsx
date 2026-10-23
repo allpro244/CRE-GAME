@@ -11,7 +11,7 @@ import { useStore, splitSite } from "@/state/store";
 import type { GameState } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { monthLabel } from "@/engine/types";
-import { splitQuote, splittable, EASE_FT, type SplitPlan } from "@/engine/lotsplit";
+import { splitQuote, splittable, siteAsBuilt, EASE_FT, type SplitPlan } from "@/engine/lotsplit";
 import { buildingCuts, cutPieces, equalCuts, fracCut, siteFrame, snapCut, type LL, type SplitCut } from "@/engine/lotsplitGeom";
 import { usd } from "@/ui/format";
 
@@ -26,7 +26,8 @@ export function SplitTab({ game, parcels, bbl }: { game: GameState; parcels: Par
   const [plan, setPlanRaw] = useState<SplitPlan>(() => DRAFTS.get(bbl) ?? { cuts: [] });
   const [hist, setHist] = useState<SplitPlan[]>([]);
   const setPlan = (p: SplitPlan) => { setHist((h) => [...h.slice(-20), plan]); setPlanRaw(p); DRAFTS.set(bbl, p); };
-  const geo = useMemo(() => (city ? splitSite(city, bbl) : null), [city, bbl]);
+  // what stands there now: no outline for a building that came down, an outline for one put up in play
+  const geo = useMemo(() => { const g0 = city ? splitSite(city, bbl) : null; return g0 ? siteAsBuilt(game, parcels, bbl, g0) : null; }, [city, bbl, game, parcels]);
   const deny = splittable(game, parcels, bbl);
   const q = useMemo(() => (geo ? splitQuote(game, parcels, bbl, geo, plan) : null), [game, parcels, bbl, geo, plan]);
   const pending = (game.splits ?? []).filter((x) => x.parent === bbl && !x.done && !x.lapsed).at(-1);

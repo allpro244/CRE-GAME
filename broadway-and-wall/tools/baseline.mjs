@@ -69,7 +69,7 @@
 // wider seed set and compare the distributions, not the medians.
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execSync } from "node:child_process";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -80,8 +80,8 @@ const FILE = join(ROOT, "BASELINE.json");
 // `SEEDS=a,b,...` another seed set; `DUMP=out.json` writes every seed's row
 // rather than the median, and neither touches BASELINE.json. Two dumps on the
 // same seeds are what tools/baseline-paired.mjs compares.
-const E = await import(process.env.ENGINE ?? join(ROOT, "test", ".engine.mjs"));
-const { makeCity } = await import(join(ROOT, "src", "citygen", "index.mjs"));
+const E = await import(pathToFileURL(process.env.ENGINE ?? join(ROOT, "test", ".engine.mjs")).href);   // file URLs: Windows paths are not import specifiers
+const { makeCity } = await import(pathToFileURL(join(ROOT, "src", "citygen", "index.mjs")).href);
 
 const med = (a) => { const s = [...a].filter(Number.isFinite).sort((x, y) => x - y); return s.length ? s[Math.floor((s.length - 1) / 2)] : NaN; };
 const pct = (a, p) => { const s = [...a].filter(Number.isFinite).sort((x, y) => x - y); return s.length ? s[Math.floor(p * (s.length - 1))] : NaN; };

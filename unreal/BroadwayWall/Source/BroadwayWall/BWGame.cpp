@@ -417,8 +417,12 @@ void ABWHUD::DrawHUD()
 	};
 
 	const FBWCity& C = GM->City->GetCity();
-	Panel(16 * S, 16 * S, (GM->SimMonth >= 0 ? 440 : 300) * S, 34 * S);
-	Text(GM->SimMonth >= 0
+	// IN THE GAME THE PAGE IS THE HUD: its top bar and left rail sat over these
+	// native panels and cut them in half (owner screenshot). Only the hover card
+	// draws over a page; the city strip and the selected-lot panel are for -Shots.
+	const bool bPage = GM->bPlayMode;
+	if (!bPage) Panel(16 * S, 16 * S, (GM->SimMonth >= 0 ? 440 : 300) * S, 34 * S);
+	if (!bPage) Text(GM->SimMonth >= 0
 		? FString::Printf(TEXT("%s  ·  %d  ·  %s  ·  %d cranes"), *C.Name, GM->SimYear, *GM->SimPhase, GM->SimFrames)
 		: FString::Printf(TEXT("%s  ·  %d lots"), *C.Name, C.Parcels.Num()), 28 * S, 22 * S, 1.2f, FLinearColor::White);
 
@@ -440,7 +444,7 @@ void ABWHUD::DrawHUD()
 		Text(P->Address, X + 10 * S, Y + 6 * S, 1.05f, FLinearColor::White);
 		for (int32 r = 0; r < 4; ++r) Text(Rows[r], X + 10 * S, Y + (30 + r * 21) * S, 0.9f, FLinearColor(0.82f, 0.85f, 0.88f));
 	}
-	if (const FBWParcel* P = PC->Selected)
+	if (const FBWParcel* P = PC->Selected; P && !bPage)
 	{
 		const float X = 16 * S, Y = 58 * S;
 		Panel(X, Y, 300 * S, 132 * S);

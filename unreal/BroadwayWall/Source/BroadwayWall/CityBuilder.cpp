@@ -545,9 +545,47 @@ void ACityBuilder::BuildGround()
 			}
 		}
 	}
+	// THE COUNTRY GOES ON (owner: the region ended in a square slab over the sea). On every side of the
+	// region's window that is land at its edge, farmland runs on out to the horizon, a few cm under the
+	// map's own ground so the two never fight; a side that meets the sea is left to the sea.
+	FMeshBuf Country;
+	if (City.Size == TEXT("region"))
+	{
+		TArray<const TArray<FVector2D>*> LandRings;
+		for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
+			if (L.Key == TEXT("land")) for (const TArray<FVector2D>& R : L.Value) LandRings.Add(&R);
+		auto OnLand = [&](const FVector2D& Q)
+		{
+			if (!LandRings.Num()) return true;
+			for (const TArray<FVector2D>* Rp : LandRings)
+			{
+				const TArray<FVector2D>& R = *Rp;
+			{
+				bool b = false;
+				for (int32 i = 0, j = R.Num() - 1; i < R.Num(); j = i++)
+					if ((R[i].Y > Q.Y) != (R[j].Y > Q.Y) && Q.X < (R[j].X - R[i].X) * (Q.Y - R[i].Y) / (R[j].Y - R[i].Y) + R[i].X) b = !b;
+				if (b) return true;
+			}
+			}
+			return false;
+		};
+		const FBox2D W = City.Bounds, F = W.ExpandBy(6000000.0);   // 60 km: the haze has it by then
+		const FVector2D Wc[4] = { W.Min, FVector2D(W.Max.X, W.Min.Y), W.Max, FVector2D(W.Min.X, W.Max.Y) };
+		const FVector2D Fc[4] = { F.Min, FVector2D(F.Max.X, F.Min.Y), F.Max, FVector2D(F.Min.X, F.Max.Y) };
+		for (int32 e = 0; e < 4; ++e)
+		{
+			// a side is land if most of it is (sampled a little inside the edge)
+			int32 Dry = 0;
+			const FVector2D A = Wc[e], E = Wc[(e + 1) % 4], In = (W.GetCenter() - (A + E) * 0.5).GetSafeNormal() * 3000.0;
+			for (int32 k = 1; k < 20; ++k) if (OnLand(FMath::Lerp(A, E, k / 20.0) + In)) ++Dry;
+			if (Dry < 12) continue;
+			Country.AddCap({ A, Fc[e], Fc[(e + 1) % 4], E }, -30, FLinearColor::White);
+		}
+	}
 	Sea.Emit(Ground, 0, false);
 	TArray<UMaterialInterface*> Mats = { GroundMaterial(TEXT("sea")) };
 	if (Far.V.Num()) { Far.Emit(Ground, 1, false); Mats.Add(BWGrassMaterial()); }
+	if (Country.V.Num()) { Country.Emit(Ground, Mats.Num(), false); Mats.Add(GroundMaterial(TEXT("farm1"))); }
 
 	// land and its dressing, each layer a centimetre above the last so nothing
 	// fights. THE FOOTWAY IS A STEP UP: sidewalks, medians and lawns stand a

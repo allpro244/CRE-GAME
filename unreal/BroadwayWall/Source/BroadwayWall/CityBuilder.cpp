@@ -98,10 +98,11 @@ void ACityBuilder::SetSeasonGrass(int32 MonthOfYear)
 	// heat, a second green in September, browning from November. Multipliers on
 	// the lawn's own greens (M_BW_Grass "Season").
 	static const FLinearColor ByMonth[12] = {
-		{ 1.95f, 1.15f, 1.55f }, { 1.95f, 1.15f, 1.55f }, { 1.6f, 1.15f, 1.3f },   // Jan Feb Mar: dormant
+		// (dormant months softened: at 1.95 / 1.55 a January region read as bare dirt from the air — owner)
+		{ 1.35f, 1.12f, 1.15f }, { 1.35f, 1.12f, 1.15f }, { 1.2f, 1.15f, 1.05f },   // Jan Feb Mar: dormant
 		{ 1.15f, 1.2f, 1.0f },   { 1.0f, 1.12f, 0.95f },  { 1.0f, 1.0f, 1.0f },    // Apr May Jun
 		{ 1.12f, 1.0f, 0.9f },   { 1.3f, 1.05f, 0.9f },   { 1.05f, 1.02f, 0.95f }, // Jul Aug Sep
-		{ 1.2f, 1.05f, 0.95f },  { 1.55f, 1.12f, 1.25f }, { 1.85f, 1.15f, 1.5f } };// Oct Nov Dec
+		{ 1.2f, 1.05f, 0.95f },  { 1.25f, 1.1f, 1.05f }, { 1.35f, 1.12f, 1.12f } };// Oct Nov Dec
 	if (BWGrassMaterial()) Grass->SetVectorParameterValue(TEXT("Season"), ByMonth[((MonthOfYear % 12) + 12) % 12]);
 	// The street trees: April's fresh yellow-green, summer's full green, a
 	// little dusty by August, turning through October, russet and thinning in

@@ -466,7 +466,8 @@ await flow("land", async () => {
   if (!regionUp) { await newGame("Region (6 km)", SEED, REGION_CASH_M); regionUp = true; }
   // NEAR-TOWN TRACTS THAT ARE MOSTLY DRY LAND, nearest first; the file's Overview says whether a plat pencils
   const cands = await st(`Object.entries(s.parcels).filter(([b, r]) => r.ag && r.tract && !g.holdings[b] && (r.buildableSf ?? r.lotArea) / r.lotArea > 0.6)
-    .sort((a, b) => a[1].tract.edgeM - b[1].tract.edgeM).slice(0, 10).map(([b]) => b)`);
+    .sort((a, b) => a[1].tract.edgeM - b[1].tract.edgeM).slice(0, 25)
+    .sort((a, b) => (b[1].buildableSf ?? b[1].lotArea) - (a[1].buildableSf ?? a[1].lotArea)).map(([b]) => b)`);   // plan 17's suburbs take the nearest farms' edges: the 25 nearest, biggest first
   check(cands.length > 0, "the region has dry farm tracts by town");
   let bbl = null;
   let tries = 0;

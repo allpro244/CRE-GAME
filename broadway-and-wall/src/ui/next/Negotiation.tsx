@@ -126,7 +126,7 @@ export function NegotiationPanel({ game, parcels, bbl }: { game: GameState; parc
 }
 
 /** The file's footer while you are buying: one primary move, and the honest alternatives. */
-export function NegotiationFooter({ game, parcels, bbl, onDeal }: { game: GameState; parcels: ParcelTable; bbl: string; onDeal: () => void }) {
+export function NegotiationFooter({ game, parcels, bbl, onDeal, onOfferTab = true }: { game: GameState; parcels: ParcelTable; bbl: string; onDeal: () => void; onOfferTab?: boolean }) {
   const adjacency = useStore((s) => s.adjacency);
   const preset = useNext((s) => s.buyPreset);
   const v = dealView(game, parcels, adjacency, bbl);
@@ -200,6 +200,12 @@ export function NegotiationFooter({ game, parcels, bbl, onDeal }: { game: GameSt
       ];
       break;
     }
+  }
+  // OFF THE OFFER TAB A PRICE IS NOT SENT BLIND (owner: "no slider that I can see"):
+  // the footer opens the Offer tab, where the price is set on the slider
+  if (!onOfferTab && (v.stage === "listed" || v.stage === "named" || v.stage === "blind" || v.stage === "talks")) {
+    verbs = [{ label: v.stage === "talks" ? "Answer them" : "Make an offer", primary: true, run: onDeal }];
+    left = undefined; step = 0;
   }
   return <ActionFooter steps={steps} step={step} left={left} verbs={verbs} />;
 }

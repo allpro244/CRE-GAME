@@ -33,7 +33,7 @@ export function SplitTab({ game, parcels, bbl }: { game: GameState; parcels: Par
   const pending = (game.splits ?? []).filter((x) => x.parent === bbl && !x.done && !x.lapsed).at(-1);
   const last = (game.splits ?? []).filter((x) => x.parent === bbl || x.pieces.some((p) => p.bbl === bbl)).at(-1);
 
-  if (!geo) return <div className="nx-hosted"><div className="nx-dim">No outline on the map to cut.</div></div>;
+  if (!geo) return <div className="nx-hosted"><div className="nx-dim">No outline.</div></div>;
   if (pending) {
     return (
       <div className="nx-hosted">
@@ -52,8 +52,8 @@ export function SplitTab({ game, parcels, bbl }: { game: GameState; parcels: Par
   const addCut = (c: SplitCut) => setPlan({ ...plan, cuts: [...plan.cuts, c], ease: undefined });
   const tools: { label: string; run: () => void; on?: boolean; title?: string }[] = [
     ...[2, 3, 4].map((n) => ({ label: `${n} equal`, run: () => setPlan({ ...plan, cuts: equalCuts(geo, n), ease: undefined }), title: `${n} lots of equal area, square to the frontage` })),
-    { label: "Front / rear", run: () => setPlan({ ...plan, cuts: [fracCut(geo, 0.5, "depth")], ease: undefined }), title: "A line parallel to the street: the rear lot needs an easement" },
-    ...(geo.footprints.length && rule ? [{ label: "Excess land", run: () => { const best = buildingCuts(geo, rule.sideFt).map((c) => ({ c, q: splitQuote(game, parcels, bbl, geo, { cuts: [c] }) })).sort((x, y) => Number(y.q.ok) - Number(x.q.ok) || y.q.piecesValue - x.q.piecesValue)[0]; if (best) setPlan({ ...plan, cuts: [best.c], ease: undefined }); }, title: "The land beside or behind the building, clear of its yard" }] : []),
+    { label: "Front / rear", run: () => setPlan({ ...plan, cuts: [fracCut(geo, 0.5, "depth")], ease: undefined }), title: "Rear needs easement" },
+    ...(geo.footprints.length && rule ? [{ label: "Excess land", run: () => { const best = buildingCuts(geo, rule.sideFt).map((c) => ({ c, q: splitQuote(game, parcels, bbl, geo, { cuts: [c] }) })).sort((x, y) => Number(y.q.ok) - Number(x.q.ok) || y.q.piecesValue - x.q.piecesValue)[0]; if (best) setPlan({ ...plan, cuts: [best.c], ease: undefined }); }, title: "Beside the building" }] : []),
     { label: "Clear", run: () => setPlan({ cuts: [] }) },
     ...(hist.length ? [{ label: "Undo", run: () => { const h = hist.at(-1)!; setHist(hist.slice(0, -1)); setPlanRaw(h); DRAFTS.set(bbl, h); } }] : []),
   ];

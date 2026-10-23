@@ -92,7 +92,7 @@
 import type { BuiltClass } from "./types";
 
 export type ProductKey =
-  | "pad" | "strip" | "neighborhood" | "community" | "power"
+  | "pad" | "strip" | "neighborhood" | "community" | "power" | "grocery"
   | "flex" | "bulk" | "manufacturing";
 
 /** A tenant signed before the shell goes up: an anchor, a junior anchor, a big box, or the one tenant of a single-tenant building. */
@@ -235,6 +235,28 @@ export const PRODUCT_TYPES: Record<ProductKey, ProductType> = {
     anchors: [{ label: "big box", n: 4, share: 0.8, rentRatio: 0.55, termY: 10, bumpPct: 1.5, tiPsf: 25, freeM: 4, credit: 2 }],
     shopDepthFt: 80, tradeRadiusM: 12_000, capSpread: 0.5, leaseUpM: 15, buildM: [14, 18], suiteSf: 3_000,
     blurb: "Four category killers on ten-year leases; little inline, a regional draw, a wider cap.",
+  },
+  // THE GROCER'S OWN STORE: a free-standing supermarket built to suit for the
+  // grocer that signs before the slab, on a twenty-year net lease. This is how
+  // most new grocery stores get built in the 2020s (spec neighbourhood centres
+  // rarely pencil; shopping-centre construction has run near record lows): the grocer
+  // sizes the store to the trade area and the rent is what its sales carry
+  // (proforma.ts, rec.grocerSales). No inline space: shops and pads can follow
+  // on their own sites if they pencil. Region only (value.ts reads it where
+  // a grocer's sales are known).
+  grocery: {
+    key: "grocery", short: "Grocery store", label: "Grocery store (built to suit)", use: "retail",
+    // limited-assortment boxes run 12-20k sf, a conventional supermarket 40-50k (FMI median ~45k) [S, approximate]
+    sf: [12_000, 70_000], coverBand: [0.2, 0.33],
+    parkPer1000: 5, stallSf: RETAIL_STALL, doorsPer10k: 0, courtSfPerDoor: 0, fixedPavedSf: 0,
+    openShare: 0.2,
+    // [RSM] supermarket ~$195/sf building only
+    shellPsf: 195, powerPsf: 0, pavePsf: 10, openPsf: 3, tiPsf: 0, lcPct: 0.04,
+    lease: { recovery: "nnn", termY: 20, bumpPct: 1.0, freeMPerYr: 0 },
+    anchors: [{ label: "grocer", n: 1, share: 1, rentRatio: 0.5, termY: 20, bumpPct: 1.0, tiPsf: 40, freeM: 6, credit: 2 }],
+    // [BG] single-tenant net lease trades ~6.4-6.6% against grocery-anchored centres' 6.8-7.1% [CBRE-C]
+    capSpread: -0.5, leaseUpM: 0, buildM: [9, 12], suiteSf: 70_000,
+    blurb: "A supermarket built for its grocer on a twenty-year lease, its rent what its sales carry.",
   },
   flex: {
     key: "flex", short: "Flex", label: "Flex / light industrial", use: "industrial",

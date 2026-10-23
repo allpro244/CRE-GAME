@@ -1314,6 +1314,18 @@ park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
   The real route new grocery stores take is the grocer's own build-to-suit,
   sized to its trade area: equal sales in a 20k sf box clear the 4% occupancy
   ceiling where a 30k sf one does not. That is the next mechanism.
+- **The grocer builds its own store (claude/grocer-bts).** Where the spec
+  centre fails the board's site, the grocer builds to suit (`products.ts
+  grocery`: RSMeans $195/sf supermarket shell, 5/1000 parking, one 20-year
+  NNN tenant, Boulder net-lease cap spread -0.5), trying 45k / 30k / 18k sf
+  formats largest first (`towngrowth.ts GROCER_FORMATS`); its rent is the same
+  3.16%-of-sales less NNN. Region only: the pro forma refuses the product
+  without `rec.grocerSales`, so islands never see it (hash-identical).
+  Measured: seed 2 builds an 18k sf store in year 1 (1.0 km out), seed 3 one
+  in year 7 (0.8 km out); seed 1 builds none in 15 years (its two sites fail
+  as a centre and as every format). Only the 18k format has cleared so far.
+  NOT YET: pads and inline shops following on the leftover land of the same
+  site, junior anchors (community centres are never proposed by the town).
 - **Phase 4, the region growing (`engine/growth.ts`, `roads.ts`, `towngrowth.ts`, `unpack.ts`; region only, its own rng channel "growth").**
   Households are the engine's population / 2.51; nothing new drives them.
   LAND DEVELOPERS (named, off-book) price every farm tract each quarter

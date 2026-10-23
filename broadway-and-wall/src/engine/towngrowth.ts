@@ -53,6 +53,12 @@ const GROCERY = { hh: 4_000, radiusM: 2_400, sfPerHh: 15, minSf: 60_000, maxSf: 
  * under 30k sf, a one-mile trade area, about 1,500 households with no shop
  * that close (ICSC convenience centre) [S, rule of thumb].
  */
+/**
+ * THE GROCER'S FORMATS, largest first: a conventional supermarket (FMI: the
+ * median store runs ~40-50k sf), a small-format one, a limited-assortment box
+ * (12-20k sf) [S, approximate]. A grocer builds the largest its sales carry.
+ */
+const GROCER_FORMATS = [45_000, 30_000, 18_000];
 const STRIP = { hh: 1_500, radiusM: 1_600, sf: 20_000 };
 /** Suburban retail sites run FAR 0.2-0.3 with their car parks (commerce.mjs) [S]. */
 const RETAIL_FAR = 0.25;
@@ -73,7 +79,7 @@ const PLAN = { studyM: 24, odds: 0.65, step: 1.25, coolM: 120, binding: 0.85, mi
 // ---------------------------------------------------------------- the state
 export interface TownState {
   /** shopping centres the trade areas called for: where, what, when, for how many households */
-  centres: { bbl: string; kind: "neighbourhood" | "strip"; m: number; sf: number; households: number; built: boolean }[];
+  centres: { bbl: string; kind: "neighbourhood" | "strip" | "grocery"; m: number; sf: number; households: number; built: boolean }[];
   /** a centre's site in front of the board */
   pending?: { bbl: string; kind: "neighbourhood" | "strip"; sf: number; households: number; decideM: number; rezone: boolean }[];
   /** district rezoning studies before the council, and the decisions taken */
@@ -200,7 +206,7 @@ export function grocerSales(s: GameState, parcels: ParcelTable, bbl: string): nu
     const xy = (p: XY) => ({ x: (p[0] - C[0]) * kx, y: (p[1] - C[1]) * KY });
     const hh = households(s, parcels, st, true).map((h) => ({ ...xy(h.p), n: h.n }));
     const rivals: XY[] = [...st.grocers];
-    for (const c of T?.centres ?? []) if (c.kind === "neighbourhood" && parcels[c.bbl]) rivals.push(parcels[c.bbl].centroid as XY);
+    for (const c of T?.centres ?? []) if (c.kind !== "strip" && parcels[c.bbl]) rivals.push(parcels[c.bbl].centroid as XY);
     for (const c of T?.pending ?? []) if (c.kind === "neighbourhood" && parcels[c.bbl]) rivals.push(parcels[c.bbl].centroid as XY);
     const R = s.growth.roads;
     const ixs: [number, number][] = [];
@@ -276,7 +282,23 @@ function tickCommerce(s: GameState, parcels: ParcelTable, bbls: string[], adjace
     const rec = parcels[p.bbl];
     const plate = Math.min(0.9, p.sf / Math.max(1, rec?.lotArea ?? 1));
     // the centre as the product it is (products.ts): a grocery-anchored neighbourhood centre, or a strip
-    const ok = startTradeAreaBuilding(s, parcels, adjacency, p.bbl, "retail", 1, plate, p.kind === "neighbourhood" ? "neighborhood" : "strip");
+    let ok = startTradeAreaBuilding(s, parcels, adjacency, p.bbl, "retail", 1, plate, p.kind === "neighbourhood" ? "neighborhood" : "strip");
+    // NO CENTRE, BUT A GROCER. Where the spec centre does not pencil, the grocer
+    // the trade area needs builds its own store to suit (products.ts grocery),
+    // the largest format whose rent its sales can carry: the same households'
+    // food spending in a smaller box is more sales a foot (GROCER_FORMATS).
+    if (!ok && p.kind === "neighbourhood" && s.citySize === "region") {
+      for (const sf of GROCER_FORMATS) {
+        const pl = Math.min(0.9, sf / Math.max(1, rec?.lotArea ?? 1));
+        if (!startTradeAreaBuilding(s, parcels, adjacency, p.bbl, "retail", 1, pl, "grocery")) continue;
+        const job = (s.cityJobs ?? []).find((j) => j.bbl === p.bbl);
+        T.centres.push({ bbl: p.bbl, kind: "grocery", m: s.month, sf: job?.sf ?? sf, households: Math.round(p.households), built: true });
+        s.news.unshift({ q: s.month, kind: "info", bbl: p.bbl, text: `A grocer broke ground on its own store at ${rec?.address ?? p.bbl}: about ${Math.round((job?.sf ?? sf) / 1000)}k sf, built to suit on a twenty-year lease, for the ${Math.round(p.households).toLocaleString()} households it will be nearest to. A shopping centre here did not pencil; the store does. Opens ${job ? monthLabel(job.deliverM) : "in a year or so"}.` });
+        ok = true;
+        break;
+      }
+      if (ok) continue;
+    }
     if (ok) {
       const job = (s.cityJobs ?? []).find((j) => j.bbl === p.bbl);
       T.centres.push({ bbl: p.bbl, kind: p.kind, m: s.month, sf: job?.sf ?? p.sf, households: Math.round(p.households), built: true });
@@ -292,7 +314,7 @@ function tickCommerce(s: GameState, parcels: ParcelTable, bbls: string[], adjace
   }
   // THE TRADE AREAS, once a year
   const hh = households(s, parcels, st);
-  const grocers: XY[] = [...st.grocers, ...T.centres.filter((c) => c.kind === "neighbourhood").map((c) => parcels[c.bbl]?.centroid as XY).filter(Boolean)];
+  const grocers: XY[] = [...st.grocers, ...T.centres.filter((c) => c.kind !== "strip").map((c) => parcels[c.bbl]?.centroid as XY).filter(Boolean)];
   const shops: XY[] = [...st.shops, ...T.centres.map((c) => parcels[c.bbl]?.centroid as XY).filter(Boolean)];
   for (const p of T.pending ?? []) { const c = parcels[p.bbl]?.centroid as XY | undefined; if (c) { shops.push(c); if (p.kind === "neighbourhood") grocers.push(c); } }
   const dG = hh.map((h) => nearest(h.p, grocers)), dS = hh.map((h) => nearest(h.p, shops));

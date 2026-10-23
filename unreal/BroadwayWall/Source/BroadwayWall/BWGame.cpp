@@ -133,7 +133,14 @@ void ABWCameraPawn::Tick(float Dt)
 			const double Extent = FMath::Max(Hb, Span * 0.75) + 1500;
 			const FRotator Rot(Pt, DeskYaw, 0);
 			const FVector Look(Base.X, Base.Y, DeskZoom < 0.3 ? 300.0 : Hb * (DeskZoom < 1 ? 0.2 : 0.45));
-			if (bDeskOnMain)
+			// A SITE, NOT A BUILDING (a plat on a farm tract, a big assemblage): framing all of it
+			// threw the camera far out every frame the land panel was open (owner: "the camera
+			// still shoots to zoom out"). Past ~150 m the main view stays where the player put it.
+			if (bDeskOnMain && Span > 15000.0)
+			{
+				// leave the camera alone
+			}
+			else if (bDeskOnMain)
 			{
 				const double Aspect = Camera->AspectRatio > 0 ? Camera->AspectRatio : 16.0 / 9.0;
 				const double TanV = FMath::Tan(FMath::DegreesToRadians(Camera->FieldOfView * 0.5)) / Aspect;

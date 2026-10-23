@@ -4,7 +4,7 @@
  * desks until step 5 replaces them. Buying and selling are the footer.
  */
 import { LandDesk } from "@/ui/panels/PropertyDesks";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore, type PropertyTab } from "@/state/store";
 import type { GameState, Holding } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
@@ -21,16 +21,16 @@ import { entitleQuote, platQuote } from "@/engine/landdev";
 import { tractLotQuote } from "@/engine/homes";
 import { tractYield, plannedLots } from "@/engine/platdesign";
 import { HomesCard, ParcelPanel } from "@/ui/panels/ParcelDesk";
-import { heldScheme } from "@/ui/panels/DevelopDesk";
-import { productOf } from "@/engine/products";
+import { BuildDesk, breakGround, schemeName } from "./BuildDesk";
+import { deskScheme } from "./scheme";
+import PlatDesk, { platVerb } from "./PlatDesk";
+import { platScheme, platCommit, usePlatDrafts } from "./platScheme";
 import { ownerName } from "@/ui/derive";
 import { usd, sf } from "@/ui/format";
 import { ActionFooter, Drawer, type Verb } from "./Drawer";
 import { Figure, Spark, fmtFig } from "./Figure";
-import { bestSchemes, type SchemeRow } from "./bestScheme";
 import { NegotiationFooter, NegotiationPanel } from "./Negotiation";
 import { dealView } from "./deal";
-import { useNext } from "./nextStore";
 import { MoneyTab, RefiTable, RentRollTab } from "./FileTabs";
 import { SplitTab } from "./SplitTab";
 
@@ -294,35 +294,17 @@ function TractBox({ game, parcels, bbl }: { game: GameState; parcels: ParcelTabl
 }
 
 function BuildTab({ game, parcels, bbl }: { game: GameState; parcels: ParcelTable; bbl: string }) {
-  const rows = useMemo(() => (game.developments[bbl] ? [] : bestSchemes(game, parcels, bbl)), [game, parcels, bbl]);
-  const pick = useNext((s) => s.schemePick?.bbl === bbl ? s.schemePick.i : 0);
+  const rec = resolveRec(parcels, game, bbl);
+  const h = game.holdings[bbl];
+  // a vacant lot you own, not yet building: the simple Build desk (its commit is the footer's)
+  if (h && !game.developments[bbl] && rec?.class === "land" && !rec.tract && !rec.ag && rec.zoneDist !== "AG" && !h.groundLeased && !game.groundLeases?.[bbl]) {
+    return <div className="nx-hosted"><BuildDesk bbl={bbl} /></div>;
+  }
+  // a farm tract: the land desk (its commit is the footer's too)
+  if (h && rec?.tract && rec.ag) return <div className="nx-hosted"><PlatDesk bbl={bbl} /></div>;
   return (
     <div className="nx-hosted">
-      {rows.length > 0 && (
-        <table className="nx-table nx-pickable">
-          <thead><tr><th>Scheme</th><th className="num">Hurdle</th><th className="num">Profit</th><th className="num">Equity</th></tr></thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.use + r.floors + (r.product ?? "")} className={i === pick ? "on" : undefined} onClick={() => {
-                useNext.getState().setSchemePick({ bbl, i });
-                // THE PICK IS THE DESK'S SCHEME: the dials move to it, so the desk
-                // below and the footer read one building (use, floors, product).
-                useStore.getState().setDevDraft(bbl, {
-                  use: r.use, floors: r.floors, cov: r.coverage, contract: "gmp", bank: r.lender, spec: 0.5,
-                  product: r.product,
-                });
-              }}>
-                <td>{r.product ? productOf(r.product)?.short : `${r.use} · ${r.floors} fl`} · {Math.round(r.coverage * 100)}%</td>
-                <td className={"num mono" + (r.hurdle < 1 ? " nx-neg" : "")}>{r.hurdle.toFixed(2)}×</td>
-                <td className={"num mono" + (r.profit < 0 ? " nx-neg" : "")}>{usd(r.profit)}</td>
-                <td className="num mono">{usd(r.equity)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {/* re-mounted on a pick, so the desk opens on the dials the pick wrote */}
-      <ParcelPanel key={`build:${pick}`} embedded tab="build" />
+      <ParcelPanel embedded tab="build" />
     </div>
   );
 }
@@ -331,7 +313,7 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
   game: GameState; parcels: ParcelTable; bbl: string; h?: Holding; tab: FileTab; setTab: (t: FileTab) => void;
 }) {
   const st = useStore.getState();
-  const pickI = useNext((s) => s.schemePick?.bbl === bbl ? s.schemePick.i : 0);
+  usePlatDrafts();
   const rec = resolveRec(parcels, game, bbl);
   const [amt, setAmt] = useState<number | null>(null);
   const [refiOpen, setRefiOpen] = useState(false);
@@ -359,10 +341,10 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
     // A FARM TRACT (region): rezone it, then build the streets (landdev.ts via the store)
     const tr = parcels[bbl]?.tract;
     if (tr) {
-      const app = game.entitlementApps?.[bbl], rz = game.rezoned?.[bbl], plat = game.plats?.[bbl];
-      const step: Verb[] = !app && !rz ? [{ label: "Rezone", primary: true, run: () => st.fileRezoning(bbl, 7_500) }]
-        : rz && !plat ? [{ label: "Build streets", primary: true, disabled: h.loan ? "Pay off the loan" : h.sale ? "Delist it first" : undefined, run: () => st.buildPlat(bbl) }]
-        : [];
+      // THE DESK'S PLAT, filed or built as the desk shows it (platScheme)
+      const ps = platScheme(game, parcels, bbl);
+      const verb = platVerb(ps);
+      const step: Verb[] = verb ? [{ label: verb, primary: true, disabled: ps.why ?? undefined, run: () => platCommit(ps, bbl, st) }] : [];
       const out: Verb[] = [{ label: "List", run: () => { st.listSale(bbl, n(value), "quiet"); setAmt(null); } }, ...verbs, ...step];
       return <ActionFooter input={amount(value)} verbs={out} inputAt={0} />;
     }
@@ -370,35 +352,12 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
       if (game.developments[bbl]) return <ActionFooter verbs={[{ label: "Job file", run: () => setTab("build") }]} />;
       // the sweep is dozens of pro formas: run it only once the Build tab is asked for
       if (tab !== "build") return <ActionFooter verbs={[...verbs, { label: "Plan", primary: true, run: () => setTab("build") }]} />;
-      // ONE SCHEME. Once the desk holds dials (the player set them, or picked a
-      // row), the footer builds what the desk shows — use, height, product,
-      // contract, desk and leverage from the same reading (heldScheme). Before
-      // that, it offers the picked row of the sweep, as the table shows.
-      if (h?.devDraft) {
-        const hs = heldScheme(game, parcels, bbl);
-        const p = hs.plan;
-        const name = hs.gprod ? hs.gprod.short : `${hs.use} · ${p?.floors ?? hs.fl} fl`;
-        return (
-          <ActionFooter
-            left={p ? <span className="mono nx-dim">{name} · {p.hurdleRatio.toFixed(2)}×</span> : undefined}
-            verbs={[{
-              label: "Break ground", primary: true,
-              disabled: !p ? "No scheme prices" : p.hurdleRatio < 1 ? "Below hurdle" : undefined,
-              run: () => p && st.develop(bbl, hs.use, hs.fl, hs.cov, hs.contract, hs.ltc, { mix: hs.customMix, bts: hs.custom.bts, groundRetail: hs.custom.groundRetail, design: hs.saved?.design, ...(hs.gprod ? { product: hs.gprod.key } : {}) }, hs.bank, hs.spec),
-            }]}
-          />
-        );
-      }
-      const rows: SchemeRow[] = bestSchemes(game, parcels, bbl);
-      const r = rows[pickI] ?? rows[0];
+      // ONE SCHEME: the footer breaks ground on exactly what the desk shows (deskScheme)
+      const d = deskScheme(game, parcels, bbl);
       return (
         <ActionFooter
-          left={r ? <span className="mono nx-dim">{r.product ? productOf(r.product)?.short : `${r.use} · ${r.floors} fl`} · {r.hurdle.toFixed(2)}×</span> : undefined}
-          verbs={[{
-            label: "Break ground", primary: true,
-            disabled: !r ? "No scheme prices" : r.hurdle < 1 ? "Below hurdle" : undefined,
-            run: () => r && st.develop(bbl, r.use, r.floors, r.coverage, "gmp", r.ltcMax, r.product ? { product: r.product } : undefined, r.lender),
-          }]}
+          left={d.plan ? <span className="mono nx-dim">{schemeName(d)} · {d.plan.hurdleRatio.toFixed(2)}×</span> : undefined}
+          verbs={[{ label: "Break ground", primary: true, disabled: d.why ?? undefined, run: () => breakGround(d, bbl) }]}
         />
       );
     }

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import MapView from "@/map/MapView";
 import TopBar from "@/ui/TopBar";
 import RightPanel from "@/ui/RightPanel";
-import DesignPeekBar from "@/ui/DesignPeekBar";
 import StartMenu from "@/ui/StartMenu";
 import MapRail from "@/ui/MapRail";
 import MapControls from "@/ui/MapControls";
@@ -85,7 +84,6 @@ export default function App() {
       {playing && !photoFrame && !next && <TopBar />}
       {playing && !photoFrame && !next && <MapRail />}
       {playing && !photoFrame && !next && <MapControls />}
-      {playing && !photoFrame && <DesignPeekBar />}
       {!photoFrame && !(next && playing) && <RightPanel />}
       {!photoFrame && (card === "delivery" && !next || !playing) && <DeliveryCeremony />}
       {playing && !photoFrame && !next && card === "year" && <YearReview />}

@@ -1,6 +1,6 @@
-// Screenshot the land development desk (ui/panels/LandDesk.tsx) in a running
+// Screenshot the land development desk (ui/next/PlatDesk.tsx) in a running
 // dev server, driving it the way a player does: a region town, a farm bought,
-// the desk opened, amenities set down with the mouse, a lot hovered.
+// the desk opened, the amenities toggled on, a lot hovered, the street patterns.
 //
 //   node tools/shoot-plat.mjs http://localhost:5173 ../unreal/shots/plat-desk [--seed 1] [--tract 5000001260]
 //
@@ -91,29 +91,18 @@ console.log(await js(`
   return "bought " + st.parcels[b].address + " for " + price + " after " + (tries + 1) + " deal(s)";
 `));
 await shot("01-design-grid");
-// amenities from the palette, set down with the mouse
-// spread over the lots' own extent: the park in the middle, the pocket park and the pool towards the ends
-for (const [label, fx, fy] of [["Neighbourhood park", 0.5, 0.5], ["Pocket park", 0.88, 0.3], ["Pool & clubhouse", 0.15, 0.75], ["Entry monument", 0.02, 0.98], ["Greenway trail", 0.5, 0.5]]) {
-  await button(label);
-  const at = await js(`
-    document.querySelector(".plat-map").scrollIntoView({ block: "center" });
-    const rs = [...document.querySelectorAll(".plat-lot")].map((e) => e.getBoundingClientRect()).map((r) => [r.left + r.width / 2, r.top + r.height / 2]);
-    const xs = rs.map((p) => p[0]), ys = rs.map((p) => p[1]);
-    const t = [Math.min(...xs) + ${fx} * (Math.max(...xs) - Math.min(...xs)), Math.min(...ys) + ${fy} * (Math.max(...ys) - Math.min(...ys))];
-    return rs.reduce((b, p) => (Math.hypot(p[0] - t[0], p[1] - t[1]) < Math.hypot(b[0] - t[0], b[1] - t[1]) ? p : b));`);
-  await click(at[0], at[1]);
-}
-await button("Look");
+// the amenities, each a toggle: the geometry sets it where it serves most lots
+for (const label of ["Park", "Pool & club", "Entry", "Greenway"]) await button(label);
+await sleep(400);
 // hover a lot beside the park
 const hov = await js(`
   const lots = [...document.querySelectorAll(".plat-lot")].filter((e) => e.dataset.prem === "1");
-  const e = lots[Math.floor(lots.length / 2)] ?? document.querySelector(".plat-lot"); const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2];`);
+  const e = lots[Math.floor(lots.length / 2)] ?? document.querySelector(".plat-lot"); e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2];`);
 await mouse("mouseMoved", hov[0], hov[1]);
-await shot("02-design-amenities-hover");
-await button("Programme"); await shot("03-programme");
-await button("Financing"); await shot("04-financing");
-await button("Programme"); await button("Loops"); await button("Design"); await shot("05-design-loops");
-await button("Programme"); await button("Cul-de-sacs"); await button("Design"); await shot("06-design-culdesac");
+await shot("02-amenities-hover");
+await button("Loops"); await sleep(300); await shot("03-loops");
+await button("Cul-de-sacs"); await sleep(300); await shot("04-culdesac");
+await button("10K sf"); await sleep(300); await shot("05-culdesac-10k");
 if (errors.length) console.log("page errors:", errors.slice(0, 3).join(" | ").slice(0, 600));
 ws.close();
 chrome.kill();

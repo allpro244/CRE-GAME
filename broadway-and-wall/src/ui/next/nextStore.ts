@@ -52,9 +52,6 @@ interface NextState {
   /** A moment card asked for from its Inbox row (goal, exit). */
   showMoment: "goal" | "exit" | null;
   setShowMoment: (v: "goal" | "exit" | null) => void;
-  /** The scheme row picked on a lot's Build tab. */
-  schemePick: { bbl: string; i: number } | null;
-  setSchemePick: (v: { bbl: string; i: number } | null) => void;
   /** The open drill, by anchor id; one at a time. */
   drill: { id: string; key: string; args?: Record<string, unknown>; x: number; y: number } | null;
   setDrill: (d: NextState["drill"]) => void;
@@ -79,8 +76,6 @@ export const useNext = create<NextState>((set) => ({
   setInboxOpen: (v) => set({ inboxOpen: v }),
   showMoment: null,
   setShowMoment: (v) => set({ showMoment: v }),
-  schemePick: null,
-  setSchemePick: (v) => set({ schemePick: v }),
   drill: null,
   setDrill: (d) => set({ drill: d }),
   dealLog: {},

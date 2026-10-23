@@ -50,8 +50,7 @@ export {
   OfferDesk, BuyButtons, GroundLeaseSection, ListSection,
 } from "@/ui/panels/AcquireDesk";
 export { RefiSection } from "@/ui/panels/RefiDesk";
-export { DevelopSection, ReuseSection, capStack } from "@/ui/panels/DevelopDesk";
-export type { Stack } from "@/ui/panels/DevelopDesk";
+export { DevelopSection, ReuseSection } from "@/ui/panels/DevelopDesk";
 
 // WHAT EACH KIND OF SHOP WANTS, which is what decides whether they are your
 // competition on this building or your buyer for it next year. Lifted out of

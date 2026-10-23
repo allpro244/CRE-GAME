@@ -11,7 +11,6 @@
 // waterfront term) are the spike's shape parameters, chosen by eye [K]; they
 // are not calibrated, and in a later phase the growth sim owns them.
 import { makeRng, makeNoise, dist, sub, norm, dot, CELL, maskOutline, rdp, chaikinClosed, ringAreaAbs } from "./util.mjs";
-import { RINGS } from "./land.mjs";
 
 export function storyPrep(M) {
   const G = M.G, c = M.centre;
@@ -62,7 +61,7 @@ export function townFootprint(M) {
     if (p[0] < 150 || p[1] < 150 || p[0] > S - 150 || p[1] > S - 150) continue;
     if (M.isSea(p)) continue;
     const r = St.rS(p);
-    if (r <= RINGS.city || (St.mainL[k] && dist(p, c) < RINGS.mainStreet)) raw[k] = 1;
+    if (r <= M.rings.city || (St.mainL[k] && dist(p, c) < M.rings.mainStreet)) raw[k] = 1;
   }
   const R = 60;
   const keep = (L) => (k) => !!L[k];

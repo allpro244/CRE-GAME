@@ -13,7 +13,7 @@ import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec,
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, taxRate, landValue, landRead, assetValueOn, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
+import { resolveRec, marketRentPsfYr, opexPsf, taxRate, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
   mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier, tradeAreaDemand, HOMES_ONLY_ZONES } from "./value";
 import { isHoaBbl } from "./landdev";
@@ -4024,14 +4024,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     // already says no to a sound building without being told to.
     const cond = gradeOf(s, rec);
     const land = landValue(rec, e);
-    // THE WHOLE SITE, NOT THE BUILDING PLUS ITS EXCESS LAND (value.ts
-    // excessLand). Excess land is worth its land value only because somebody
-    // builds on it; the city's supply has no split-and-infill path, and this
-    // teardown test is how an oversized, underused lot gets built on in its
-    // place. Crediting the excess to the keep-it side here, without that path,
-    // left the land unbuilt: measured on the baseline's six seeds, floor area
-    // -3.3%, employment -6.7%, demolitions -11% (t -2.4 to -3.1).
-    const built = Math.max(1, assetValueOn(rec, e, cond));
+    const built = Math.max(1, assetValue(rec, e, cond));
     const ratio = land / built;
     const probeUse = useForZone(rec.zoneDist ?? "C", rec.demandScore, rng(s, "dev"), e);
     const probeLead = dominantOf(devMix(probeUse));

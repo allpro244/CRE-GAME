@@ -465,7 +465,9 @@ export function makeRegion(seed, opts = {}) {
   const inTownC = (p) => { const k = G.idx(p); return k >= 0 && (M.townMask[k] || M.townL[k]); };
   const road = (pl, cls, wm) => {
     if (pl.length < 2) return;
-    line("centerline", pl, { w: wm, mk: 0, cls });
+    // paint (plan 17; owner: "these streets look so boring"): a highway's double yellow and lane lines, a
+    // county road's dashed centre; a subdivision street is unpainted, as it is in life
+    line("centerline", pl, { w: wm, mk: planV >= 17 ? (cls === "highway" ? 2 : cls === "arterial" ? 1 : 0) : 0, cls });
     for (const cap of capsules(pl, wm / 2, 8)) ground("pavement", cap);
   };
   for (const h of M.highways) for (const s of h.segs) if (s.built) road(rdp(s.pts, 1), "highway", ROAD_W.highway);

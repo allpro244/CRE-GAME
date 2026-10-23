@@ -2382,6 +2382,28 @@ export function buyOffMarket(
 
 // One counter per approach, at YOUR number off the slider. The deeper you
 // cut, the worse the odds — they take it, hold firm, or hang up entirely.
+/**
+ * THE CHANCE THE OWNER TAKES YOUR ONE COUNTER at `px` against their named ask.
+ * counterOffMarket rolls against exactly this; the negotiation panel draws it.
+ */
+export function counterTakeOdds(
+  s: GameState, adjacency: Adjacency, bbl: string, a: { ask?: number; named?: boolean }, px: number,
+): number {
+  if (!a.ask) return 0;
+  const cut = Math.max(0, 1 - px / a.ask);                     // how deep you went
+  const pressure = assemblagePressure(s, adjacency, bbl);
+  const named = a.named === true;
+  const ref = named ? 0.03 : 0.12;
+  return Math.max(0.05, Math.min(0.8,
+    0.48
+    - (named ? 0.10 : 0)                                       // they know you want it
+    - (cut - ref) * 2.6                                        // the reference cut
+    - 0.35 * pressure                                          // holdouts don't blink
+    + 0.18 * cycleDown(s.econ)                                 // fear is your friend
+    - 0.08 * cycleHot(s.econ),
+  ));
+}
+
 export function counterOffMarket(
   s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbl: string, offerPx?: number,
 ): { s: GameState; err?: string; msg?: string } {
@@ -2403,7 +2425,6 @@ export function counterOffMarket(
   na.countered = true;
   const px = Math.round(offerPx ?? a.ask * 0.88);
   const cut = Math.max(0, 1 - px / a.ask);                     // how deep you went
-  const pressure = assemblagePressure(next, adjacency, bbl);
   // A NUMBER DRAGGED OUT OF THEM BY A BID IS NOT AN OPENING ASK.
   //
   // Two things are different about it and they pull opposite ways. It is close
@@ -2415,14 +2436,7 @@ export function counterOffMarket(
   // negotiation; cutting fifteen is asking them to forget the last six months.
   const named = a.named === true;
   const ref = named ? 0.03 : 0.12;
-  const pTake = Math.max(0.05, Math.min(0.8,
-    0.48
-    - (named ? 0.10 : 0)                                       // they know you want it
-    - (cut - ref) * 2.6                                        // the reference cut
-    - 0.35 * pressure                                          // holdouts don't blink
-    + 0.18 * cycleDown(next.econ)                              // fear is your friend
-    - 0.08 * cycleHot(next.econ),
-  ));
+  const pTake = counterTakeOdds(next, adjacency, bbl, a, px);
   // Split the old "hold firm" mass into a real soft counter and a true hold.
   // Owners who will not take your number still often move a little — that is
   // what a counter is. Binary take/hold/hang-up made every refusal read as

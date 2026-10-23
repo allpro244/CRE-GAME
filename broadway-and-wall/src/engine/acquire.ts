@@ -388,6 +388,16 @@ export function repFloorMult(s: GameState): number {
   return 1 + 0.025 * Math.min(4, Math.max(0, recentLowballs(s) - 1));
 }
 
+/**
+ * THE PUBLIC HALF OF THE INSULT LINE, as a share of the ask: an offer under
+ * this always ends the conversation (negotiate's `insultAt` is the larger of
+ * this and a share of the hidden reservation, so it can bite higher). The
+ * negotiation panel draws it; it never draws the reservation.
+ */
+export function insultShareOfAsk(distress: boolean, lenderSale: boolean): number {
+  return lenderSale ? 0.58 : distress ? 0.62 : 0.68;
+}
+
 export function negotiate(
   s: GameState, parcels: ParcelTable, bbl: string, price: number, finalOffer = false,
 ): { s: GameState; err?: string; msg?: string } {
@@ -525,11 +535,8 @@ export function negotiate(
   // makes it reachable, legible and graduated: a proud seller takes offence
   // sooner than a distressed one, because their number is nearer their floor.
   const lenderSale = !!li?.distress && (seller.kind === "lender" || li.reason === "receiver" || !!li.receiverFor || !!li.loanBasis);
-  const insultAt = lenderSale
-    ? Math.max(ask * 0.58, reservation * 0.82)
-    : li?.distress
-      ? Math.max(ask * 0.62, reservation * 0.84)
-      : Math.max(ask * 0.68, reservation * 0.80);
+  const insultAt = Math.max(ask * insultShareOfAsk(!!li?.distress, lenderSale),
+    reservation * (lenderSale ? 0.82 : li?.distress ? 0.84 : 0.80));
   if (px < insultAt) {
     delete next.talks[bbl];
     // The door shuts for a year or so, and their floor for YOU goes up for

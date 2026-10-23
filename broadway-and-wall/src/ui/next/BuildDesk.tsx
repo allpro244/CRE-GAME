@@ -14,7 +14,7 @@
  * footer's Break ground, which reads the same scheme. The model is the
  * building itself (SchemeViewer), redrawn on every choice.
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import Slider from "@/ui/Slider";
@@ -22,12 +22,12 @@ import SchemeViewer from "@/ui/panels/SchemeViewer";
 import { dominantOf } from "@/engine/proforma";
 import { BUILD_TIERS, buildTier } from "@/engine/value";
 import { START_YEAR, type DevDraft, type DevUse } from "@/engine/types";
-import { KITS } from "@/engine/renderView";
+import { KITS, KIT_GROUPS } from "@/engine/renderView";
 import { FACADE_STYLES } from "@/map/real/RealCity";
 import { UNREAL_HOST, formsForLot } from "@/state/unrealHost";
 import { usd, sf } from "@/ui/format";
 import { devUseLabel } from "@/ui/panels/shared";
-import { deskScheme, bestStarts, coverFor, LEVERAGE, productName, type DeskScheme } from "./scheme";
+import { deskScheme, bestStarts, coverFor, productName, type DeskScheme } from "./scheme";
 import "./desks.css";
 
 /**
@@ -45,7 +45,6 @@ const LOOKS: { id: string; label: string; kit?: string; facade?: string }[] = [
   { id: "glass", label: "Glass", kit: "B06", facade: "glass" },
   { id: "dark", label: "Dark glass", kit: "B20", facade: "blackglass" },
 ];
-const LEV_LABEL = ["None", "Half", "Max"];
 
 // the sweep is a hundred pro formas: once per lot per month
 const STARTS = new Map<string, ReturnType<typeof bestStarts>>();
@@ -121,17 +120,13 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forms, design.form]);
 
-  const looks = LOOKS.filter((l) => UNREAL_HOST ? !l.kit || KITS.some((k) => k.key === l.kit)
-    : !l.facade || (FACADE_STYLES.find((f) => f.key === l.facade)?.maxFloors ?? 0) >= floors);
-  const lookOn = (l: (typeof LOOKS)[number]) => !l.kit
-    ? !design.kit && !design.facade
-    : UNREAL_HOST ? design.kit === l.kit : design.facade?.split("#")[0] === l.facade;
   const pickLook = (l: (typeof LOOKS)[number]) => {
     const { kit: _k, facade: _f, kitColour: _c, ground: _g, top: _t, bays: _b, ...rest } = design;
     const kit = KITS.find((k) => k.key === l.kit);
     set({ design: !l.kit ? rest : UNREAL_HOST && kit ? { ...rest, kit: kit.key, facade: kit.family } : { ...rest, facade: l.facade } });
   };
   const tier = buildTier(d.spec);
+  const [lookEra, setLookEra] = useState<(typeof KITS)[number]["group"]>(() => KITS.find((k) => k.key === design.kit)?.group ?? "prewar");
 
   return (
     <div className="deal build-desk">
@@ -190,16 +185,27 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
               ))}
             </Row>
           )}
+          {/* THE FULL CATALOGUE (owner): every facade, by era — "Street" lets the block choose */}
           <Row k="Look">
-            {looks.map((l) => (
-              <Chip key={l.id} on={lookOn(l)} onClick={() => pickLook(l)}>{l.label}</Chip>
-            ))}
+            <Chip on={!design.kit && !design.facade} onClick={() => pickLook(LOOKS[0])}>Street</Chip>
+            {UNREAL_HOST
+              ? KIT_GROUPS.map((g) => <Chip key={g.key} on={lookEra === g.key} onClick={() => setLookEra(g.key)}>{g.name}</Chip>)
+              : null}
           </Row>
+          <Row k="">
+            {UNREAL_HOST
+              ? KITS.filter((k) => k.group === lookEra).map((k) => (
+                <Chip key={k.key} on={design.kit === k.key} title={k.era}
+                  onClick={() => { const { kit: _k, facade: _f, kitColour: _c, ground: _g, top: _t, bays: _b, ...rest } = design; set({ design: { ...rest, kit: k.key, facade: k.family } }); }}>{k.name}</Chip>))
+              : FACADE_STYLES.filter((f) => f.maxFloors >= floors).map((f) => (
+                <Chip key={f.key} on={design.facade?.split("#")[0] === f.key} title={f.era}
+                  onClick={() => { const { kit: _k, facade: _f, kitColour: _c, ground: _g, top: _t, bays: _b, ...rest } = design; set({ design: { ...rest, facade: f.key } }); }}>{f.name}</Chip>))}
+          </Row>
+          {/* THE LOAN, ANY AMOUNT (owner): 0 to all the lender offers, in 5% steps of its maximum */}
           <Row k="Loan">
-            {LEVERAGE.map((v, i) => (
-              <Chip key={v} on={Math.abs(d.ltcWant - v) < 1e-9} onClick={() => set({ ltcWant: v })}
-                disabled={!!plan && !(plan.ltcMax > 0) && v > 0}>{LEV_LABEL[i]}</Chip>
-            ))}
+            <input type="range" min={0} max={1} step={0.05} value={d.ltcWant} disabled={!!plan && !(plan.ltcMax > 0)}
+              onChange={(e) => set({ ltcWant: +e.target.value })} style={{ flex: 1 }} aria-label="Loan amount" />
+            <span className="mono">{plan && plan.ltcMax > 0 ? `${Math.round(plan.ltcMax * d.ltcWant * 100)}% LTC` : "—"}</span>
           </Row>
           {plan && <div className="bd-terms mono">{plan.commitment > 0
             ? `${plan.lender} · ${pct2(plan.ratePct)} · ${Math.round(plan.ltc * 100)}% LTC · ${usd(plan.commitment)} · ${(plan.points * 100).toFixed(1)} pts`
@@ -248,7 +254,7 @@ function Details({ d }: { d: DeskScheme }) {
     ...(st ? [["Site", `${st.stalls} stalls${st.doors ? ` · ${st.doors} doors` : ""} · ${Math.round((st.gsf / Math.max(1, d.rec.lotArea)) * 100)}% built`] as [string, string]] : []),
   ];
   return (
-    <details className="bd-details">
+    <details className="bd-details" open>
       <summary>Numbers</summary>
       <table className="bd-kv"><tbody>
         {rows.map(([k, v]) => <tr key={k}><td>{k}</td><td className="mono">{v}</td></tr>)}

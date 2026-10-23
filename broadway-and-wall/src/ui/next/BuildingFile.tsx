@@ -7,7 +7,7 @@ import { LandDesk } from "@/ui/panels/PropertyDesks";
 import { useEffect, useState } from "react";
 import { useStore, type PropertyTab } from "@/state/store";
 import type { GameState, Holding } from "@/engine/types";
-import type { ParcelTable } from "@/data/types";
+import type { ParcelTable, ReservedParcel } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import {
   initialCondition, inPlace, landRead, marketAppraisal, marketRentPsfYr, ownedHoldingNoiYrFromRec, resolveRec,
@@ -41,8 +41,40 @@ const FROM_PROP: Partial<Record<PropertyTab, FileTab>> = {
 
 export function BuildingFile() {
   const bbl = useStore((s) => (s.selectedBBL ? s.game?.merged?.[s.selectedBBL] ?? s.selectedBBL : null));
+  const reserved = useStore((s) => (bbl ? s.city?.reserved?.[bbl] : undefined));
   if (!bbl) return null;
+  if (reserved) return <ReservedFile key={bbl} rec={reserved} />;
   return <FileFor key={bbl} bbl={bbl} />;
+}
+
+/**
+ * A SUBDIVISION, AT A GLANCE (owner: "average home appraisal, number of lots,
+ * maybe one more thing"): homes, the average house at the town's going
+ * new-house $/sf (engine/homeprice.ts, econ.homes — the price the builders sell
+ * at, read off the same market), when it was built, and its land. Farms, rural
+ * homes and the parish get the same four lines where they apply.
+ */
+function ReservedFile({ rec }: { rec: ReservedParcel }) {
+  const game = useStore((s) => s.game);
+  const close = () => useStore.getState().select(null);
+  const acres = rec.acres ?? rec.lotArea / 43560;
+  const psf = game?.econ.homes?.psf;
+  const avg = rec.homes && rec.avgHouseSf && psf ? psf * rec.avgHouseSf : 0;
+  const built = rec.eraYears ? `${rec.eraYears[0]}–${rec.eraYears[1]}` : rec.yearBuilt > 0 ? String(rec.yearBuilt) : "—";
+  const kind = rec.kind === "neighbourhood" ? "subdivision" : rec.kind === "rural" ? "rural home" : rec.kind === "civic" ? "church and school" : rec.kind ?? "land";
+  const rows: [string, string][] = [
+    ...(rec.homes ? [["Homes", rec.homes.toLocaleString()] as [string, string]] : []),
+    ...(avg ? [["Avg home appraisal", usd(avg)] as [string, string]] : []),
+    ["Built", built],
+    ["Land", `${acres >= 20 ? acres.toFixed(0) : acres.toFixed(1)} ac`],
+  ];
+  return (
+    <Drawer width="std" title={rec.address || rec.bbl} meta={`${kind} · not for sale`} onClose={close}>
+      <table className="nx-table"><tbody>
+        {rows.map(([k, v]) => <tr key={k}><td>{k}</td><td className="mono" style={{ textAlign: "right" }}>{v}</td></tr>)}
+      </tbody></table>
+    </Drawer>
+  );
 }
 
 function FileFor({ bbl }: { bbl: string }) {
@@ -62,6 +94,9 @@ function FileFor({ bbl }: { bbl: string }) {
   const stage = !game.holdings[bbl] ? dealView(game, parcels, adjacency, bbl)?.stage : undefined;
   const talking = stage === "talks" || stage === "final" || stage === "agreed";
   useEffect(() => { if (talking) setTab("deal"); }, [talking, stage]);
+  // A CLOSED PURCHASE OPENS ON THE OVERVIEW (owner): the deal tab becomes "Sell" once the deed is yours
+  const owned = !!game.holdings[bbl];
+  useEffect(() => { if (owned) setTab((t) => (t === "deal" ? "overview" : t)); }, [owned]);
   const close = () => {
     const st = useStore.getState();
     if (st.page === "property") st.setPage("none");

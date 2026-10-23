@@ -137,7 +137,7 @@ function Verdict({ pnl, s }: { pnl: DesignPnl; s: PlatScheme }) {
   const tone = pnl.profit > 0 && (pnl.irr ?? 0) > 0.15 ? "good" : pnl.profit > 0 ? "warn" : "bad";
   return (
     <div className={"bd-verdict " + tone}>
-      <div className="bd-cell"><div className="bd-lab">Profit</div><div className="bd-big mono">{pnl.profit < 0 ? "−" : ""}{M(Math.abs(pnl.profit))}</div></div>
+      <div className="bd-cell"><div className="bd-lab">Profit</div><div className={"bd-big mono " + (pnl.profit < 0 ? "neg" : "pos")}>{pnl.profit < 0 ? "−" : ""}{M(Math.abs(pnl.profit))}</div></div>
       <div className="bd-cell"><div className="bd-lab">{lev ? "IRR · levered" : "IRR"}</div><div className="bd-mid mono">{irrText(irr)}</div></div>
       <div className="bd-cell"><div className="bd-lab">Lots</div><div className="bd-mid mono">{pnl.lots} · {M(pnl.revenue / Math.max(1, pnl.lots))}</div></div>
       <div className="bd-cell"><div className="bd-lab">Equity</div><div className="bd-mid mono">{s.ad ? M(s.ad.equityAll) : "—"}</div></div>

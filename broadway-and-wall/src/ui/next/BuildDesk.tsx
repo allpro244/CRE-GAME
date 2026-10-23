@@ -221,7 +221,7 @@ function Verdict({ d }: { d: DeskScheme }) {
   const all = p.equity + p.pointsCost + d.siteDebt;
   return (
     <div className={"bd-verdict " + tone}>
-      <div className="bd-cell"><div className="bd-lab">Profit</div><div className="bd-big mono">{d.profit < 0 ? "−" : ""}{usd(Math.abs(d.profit))}</div></div>
+      <div className="bd-cell"><div className="bd-lab">Profit</div><div className={"bd-big mono " + (d.profit < 0 ? "neg" : "pos")}>{d.profit < 0 ? "−" : ""}{usd(Math.abs(d.profit))}</div></div>
       <div className="bd-cell"><div className="bd-lab">Yield · hurdle</div><div className="bd-mid mono">{pct2(p.yieldOnCost)} · {pct2(p.requiredYield)}</div></div>
       <div className="bd-cell"><div className="bd-lab">Equity</div><div className="bd-mid mono">{usd(all)}</div></div>
       <div className="bd-cell"><div className="bd-lab">Build</div><div className="bd-mid mono">{p.months} mo</div></div>

@@ -287,6 +287,55 @@ html.ui-next .map-root { left: var(--rail-w); top: var(--hud-h); }
 .nx-stage-raising, .nx-stage-equity, .nx-stage-inbound { background: #e9dcc0; }
 .nx-stage-leaseup { background: #d8e6dc; }
 
+/* ---- negotiation panel (Negotiation.tsx) */
+.nx-deal { display: flex; flex-direction: column; gap: 12px; padding: 10px 12px 24px; }
+.nx-deal-banner { display: flex; align-items: baseline; gap: 12px; padding: 10px 12px; border: 1px solid var(--nx-line-2); border-left: 5px solid var(--nx-dim); background: #fbf8f0; }
+.nx-deal-ok { border-left-color: var(--nx-green); background: #eef5ee; }
+.nx-deal-warn { border-left-color: var(--nx-gold); background: #fbf2de; }
+.nx-deal-bad { border-left-color: var(--nx-red); background: #f8ebe7; }
+.nx-deal-info { border-left-color: var(--nx-teal, #2c6e6a); }
+.nx-deal-head { font: 700 18px Georgia, serif; }
+.nx-deal-px { font-size: 20px; font-weight: 700; }
+.nx-deal-ok .nx-deal-head, .nx-deal-ok .nx-deal-px { color: var(--nx-green); }
+.nx-deal-bad .nx-deal-head { color: var(--nx-red); }
+.nx-deal-next { font-size: 12.5px; color: var(--nx-ink); }
+.nx-deal-who { margin-left: auto; font-size: 11.5px; color: var(--nx-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+.nx-deal-note { font-size: 11.5px; }
+.nx-pl { padding: 62px 18px 6px; border: 1px solid var(--nx-line); background: #fbf8f0; }
+.nx-pl-track { position: relative; height: 14px; margin: 0 0 58px; background: linear-gradient(#e6dfcd, #e6dfcd) center / 100% 4px no-repeat; }
+.nx-pl-zone { position: absolute; top: 2px; height: 10px; border-radius: 2px; }
+.nx-pl-insult { background: repeating-linear-gradient(135deg, rgba(178, 59, 43, 0.35) 0 4px, rgba(178, 59, 43, 0.12) 4px 8px); }
+.nx-pl-band { background: rgba(58, 125, 70, 0.32); border: 1px solid rgba(58, 125, 70, 0.6); }
+.nx-pl-mark { position: absolute; top: -4px; width: 0; height: 22px; border-left: 2px solid var(--nx-ink); }
+.nx-pl-mark .nx-pl-k { position: absolute; top: -28px; left: 0; transform: translateX(-50%); font: 600 10px system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.05em; color: var(--nx-dim); white-space: nowrap; }
+.nx-pl-mark .nx-pl-v { position: absolute; top: -16px; left: 0; transform: translateX(-50%); font-size: 11px; white-space: nowrap; }
+.nx-pl-appr { border-left-color: var(--nx-teal, #2c6e6a); border-left-style: dashed; }
+.nx-pl-appr { height: 50px; }
+.nx-pl-appr .nx-pl-k { top: 52px; }
+.nx-pl-appr .nx-pl-v { top: 64px; }
+.nx-pl-theirs { border-left-color: var(--nx-gold); border-left-width: 3px; top: -30px; height: 48px; }
+.nx-pl-theirs .nx-pl-k { top: -26px; color: var(--nx-gold); }
+.nx-pl-theirs .nx-pl-v { top: -14px; font-weight: 700; }
+.nx-pl-you { position: absolute; top: -3px; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%; background: var(--nx-ink); border: 3px solid #fff; box-shadow: 0 0 0 1px var(--nx-ink); pointer-events: none; }
+.nx-pl-you span { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); font-size: 12px; font-weight: 700; white-space: nowrap; color: var(--nx-ink); }
+.nx-pl-you .nx-pl-odds { top: 34px; font-size: 11px; }
+.nx-pl-input { position: absolute; inset: -8px 0; width: 100%; height: 30px; margin: 0; opacity: 0; cursor: ew-resize; }
+.nx-pl-input:disabled { cursor: default; }
+.nx-pl-legend { display: flex; gap: 16px; font-size: 11px; color: var(--nx-dim); padding-top: 22px; }
+.nx-sw { display: inline-block; width: 12px; height: 8px; margin-right: 5px; vertical-align: middle; }
+.nx-sw-insult { background: rgba(178, 59, 43, 0.4); }
+.nx-sw-band { background: rgba(58, 125, 70, 0.4); }
+.nx-thread { list-style: none; margin: 0; padding: 0; border: 1px solid var(--nx-line); background: #fbf8f0; }
+.nx-thread li { display: grid; grid-template-columns: 52px 1fr 110px 80px; gap: 8px; align-items: center; height: 28px; padding: 0 10px; border-bottom: 1px solid var(--nx-line); font-size: 12.5px; }
+.nx-thread li:last-child { border-bottom: 0; }
+.nx-thread-who { font: 700 10.5px system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.05em; color: var(--nx-dim); }
+.nx-thread-them { background: #f6f1e4; }
+.nx-thread-px { text-align: right; font-weight: 600; }
+.nx-thread-m { text-align: right; font-size: 11px; }
+.nx-thread-ok .nx-thread-what, .nx-thread-ok .nx-thread-px { color: var(--nx-green); font-weight: 700; }
+.nx-thread-bad .nx-thread-what { color: var(--nx-red); font-weight: 700; }
+.nx-thread-warn .nx-thread-what { color: var(--nx-gold); font-weight: 700; }
+
 /* ---- capital plan desk (CapitalDesk.tsx) */
 .nx-cap { margin: 12px 0; }
 .nx-cap-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

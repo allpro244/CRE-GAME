@@ -14,7 +14,7 @@
 // Flows: start (region start < 10 s), land (buy a farm, plat it through the
 // desk, sell the lots; net worth honest every month), picker (the Build desk's
 // product picker on a commercial lot), pages (every place and building-file
-// tab), island (buy a building at ask, run a year).
+// tab), island (Pay ask on a building, take a counter if one comes, run a year).
 //
 // Every month it plays, the money is checked: the ledger balances (conserve's
 // identity: Δcash == books + Δline + Δdeposits), nothing is NaN, and net worth
@@ -388,6 +388,11 @@ const tap = async (re, scope = "") => {
   if (r.hit) timed(r.hit, r.ms);
   return r.hit;
 };
+/** The file footer's financing preset (Negotiation.tsx PresetPicker), set through its own select. */
+const pickPreset = (v) => js(`const sel = (${fileDrawer})?.querySelector('select[aria-label="Lender"]');
+  if (!sel) { window.__nextStore?.getState().setBuyPreset({ product: ${S(v)}, lev: 1 }); return false; }
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(sel, ${S(v)});
+  sel.dispatchEvent(new Event("change", { bubbles: true })); return true;`);
 const errToast = async (since) => st(`s.toast && s.toast.kind !== "ok" && s.toast.at >= ${since} ? s.toast.text : null`).catch(() => null);
 /** The ledger and the money, one month: what conserve.mjs checks, plus the net worth tape. */
 const LEDGER = `
@@ -491,15 +496,16 @@ await flow("land", async () => {
     const ap = await st(`g.approaches[${S(b)}] ?? null`);
     if (!ap || ap.refused) { note(`${b}: the owner would not talk${ap ? "" : " (" + (await errToast(since)) + ")"}`); continue; }
     if (ap.ask === undefined) { note(`${b}: the owner wants a blind bid`); continue; }
+    // THE NEGOTIATION PANEL (ui/next/Negotiation.tsx): the file is on Deal with their ask on the
+    // ladder; "Buy at" puts the dial on it and the footer turns to the financing
     await screen("owner-ask");
-    await tap(`/^Ask \\$/`, fileDrawer);
-    await sleep(400);
-    await tap(`/^Structure the stack/`, fileDrawer); await sleep(300);
+    await tap(`/^Buy at /`, fileDrawer);
+    await sleep(300);
     // all cash: the A&D lender will want the first lien when the streets go in (platdesign.ts)
-    await tap(`/^All cash$/`, fileDrawer); await sleep(200);
-    await tap(`/^Review & commit/`, fileDrawer); await sleep(300);
+    await pickPreset("cash");
     await screen("commit");
     const bought = await tap(`/^Buy at /`, fileDrawer);
+    await pickPreset("cheapest");
     await sleep(600);
     if (!bought || !(await st(`!!g.holdings[${S(b)}]`))) { note(`${b}: could not close (${bought ? await errToast(since) : "Buy button disabled or missing"})`); continue; }
     note(`bought ${b} at the owner's ask ${(ap.ask / 1e3).toFixed(0)}K (${lots} lots on its default plat)`);
@@ -683,9 +689,8 @@ await flow("picker", async () => {
     const ap = await st(`g.approaches[${S(l.b)}] ?? null`);
     if (!ap || ap.refused || ap.ask === undefined) continue;
     await js(`window.__store.getState().select(${S(l.b)}); return true;`); await sleep(600);
-    await tap(`/^Ask \\$/`, fileDrawer); await sleep(300);
-    await tap(`/^Structure the stack/`, fileDrawer); await sleep(300);
-    await tap(`/^Review & commit/`, fileDrawer); await sleep(300);
+    // the negotiation panel: "Buy at" sets the dial to their ask, then the same button closes on the preset
+    await tap(`/^Buy at /`, fileDrawer); await sleep(300);
     if (!(await tap(`/^Buy at /`, fileDrawer))) continue;
     await sleep(500);
     if (await st(`!!g.holdings[${S(l.b)}]`)) { bbl = l.b; note(`bought ${l.b} (${l.ac.toFixed(1)} ac, demand ${l.d.toFixed(0)}) at ${(ap.ask / 1e6).toFixed(2)}M`); break; }
@@ -751,10 +756,18 @@ await flow("island", async () => {
   await screen("agreed");
   const bbl = await st(`s.selectedBBL`);
   const since = Date.now();
+  // A SELLER WHO WANTS MORE THAN THE ASK COUNTERS (acquire.ts reservation, a firm market): the
+  // negotiation panel says so and its primary move is to take their number
+  const countered = await st(`!!g.talks?.[${S(bbl)}] && !g.talks[${S(bbl)}].agreed ? g.talks[${S(bbl)}].theirPrice : 0`);
+  if (countered) {
+    note(`Pay ask was countered at ${(countered / 1e6).toFixed(2)}M: took it`);
+    await screen("countered");
+    await tap(`/^Take /`, fileDrawer); await sleep(600);
+  }
   await tap(`/^Confirm$/`, fileDrawer); await sleep(800);
   const owned = await st(`!!g.holdings[${S(bbl)}]`);
   await screen("bought");
-  if (!check(owned, "bought a building at ask in three clicks (Market, Pay ask, Confirm)", `${row} · ${await errToast(since) ?? "not on the books"}`)) return;
+  if (!check(owned, "bought a building from Market › Pay ask (Take a counter, Confirm)", `${row} · ${await errToast(since) ?? "not on the books"}`)) return;
   note(`bought ${bbl} at ${row}`);
   note(`file tabs: ${(await fileTabs("island")).join(", ")}`);
   await js(`window.__store.getState().select(null); return true;`);

@@ -14,6 +14,7 @@ import { derive } from "@/ui/derive";
 import { usd } from "@/ui/format";
 import { Chips, DataTable, Stat, StatStrip, type Col } from "./DataTable";
 import { Figure } from "./Figure";
+import { dealAct } from "./deal";
 
 export interface ListingRow {
   bbl: string; addr: string; cls: string; sf: number; lot: number; ask: number; psf: number | null;
@@ -111,7 +112,7 @@ export function MarketForSale() {
         onRow={(r) => useStore.getState().select(r.bbl)}
         actions={(r) => (
           <button type="button" className="nx-btn nx-sm" title={usd(r.ask)}
-            onClick={() => { const st = useStore.getState(); st.select(r.bbl); st.offer(r.bbl, r.ask, false); }}>
+            onClick={() => { useStore.getState().select(r.bbl); dealAct(r.bbl, "offer", r.ask); }}>
             Pay ask
           </button>
         )}

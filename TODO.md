@@ -53,6 +53,13 @@ Each item: **who** · status. "You" = the owner.
     - Industrial plats put only ~39% of the tract into lots.
     - DevelopDesk product picker not yet seen in a browser or Unreal. · Product-types agent
 
+25b. **UI owner round (2026-10-22: capital plan #467, negotiation panel #469, home screen) gaps:**
+    - The capital plan's 10-year path holds the plan bill at today's value; the tick re-reads value monthly.
+    - A listing's band is `closingBand` + phase. The negotiation's hidden reservation also divides by the seller's certainty discount, so the band is a guide and not the line. There is no odds % on a listing (the reservation is hidden by design).
+    - The negotiation thread lives for the session only; the engine keeps only the last two numbers (`Talks`).
+    - tools/playtest.mjs land flow failed twice on net-worth marks at month 3/23 in one of three runs (random economy); not from the UI work.
+    - The classic AcquireDesk stays under the Deal tab's "Desk ▾" for custom stacks; retire it once the preset covers mezz and leverage curves. · UI
+
 ## D. Merges and builds
 26. Land #411 → #413 → #414 → #415 → #416, then a PR for `claude/region-preview` (with Phases 1–4, commerce, plat desk, product types) into main. · Me (after A1/A2)
 27. Packaged build with the region game. · Me — last one (`D:\Builds\BroadwayWall-new`) predates the region

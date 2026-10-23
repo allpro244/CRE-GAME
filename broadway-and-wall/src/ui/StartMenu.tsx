@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { cityList, cityName, sizeList, developmentList } from "@/citygen/index.mjs";
@@ -9,28 +9,14 @@ import { ordinal } from "@/engine/standing";
 import GameSetup from "./GameSetup";
 
 /**
- * THE START SCREEN.
+ * THE START SCREEN (revamped 2026-10-22, owner: "the home screen could use a
+ * revamp like the rest of the UI"). Three things, in the order a returning
+ * player wants them: Continue, New game, and the saves. The record of past
+ * runs sits under the saves. A first-time player has nothing to continue and
+ * nothing saved, and is taken straight to the setup, whose defaults are the
+ * standard game on the region.
  *
- * There was not one: the app generated a town on mount and the player woke up
- * in it, and the only way to ask for a different one was a dropdown hanging
- * off the top bar. With three sections in it — how big, how built up, which
- * island: fourteen options — that dropdown measured 973px tall at 1280x720,
- * putting its "Build …" confirm button 353px below the bottom of the window
- * with no way to scroll to it. A custom city was unreachable, which is to say
- * unbuildable.
- *
- * So the choice gets a room instead of a dropdown — and now a whole page: the
- * GAME SETUP (GameSetup.tsx) holds every choice a new campaign makes, from the
- * island to the era to the clock, with the confirm button in a footer OUTSIDE
- * the scroller so it cannot go off the bottom of anything.
- *
- * This screen is the lobby in front of it: Continue first, because for anyone
- * who has played before it is the only thing they came here to press; then
- * the record; then the door to a new campaign. A first-time player has none
- * of the first two and is taken straight to the setup, whose defaults are
- * the standard game.
- *
- * Nothing is generated until Break ground is pressed.
+ * Nothing is generated until Break ground is pressed on the setup page.
  */
 export default function StartMenu() {
   const phase = useStore((s) => s.phase);
@@ -38,7 +24,9 @@ export default function StartMenu() {
   const building = useStore((s) => s.building);
   const loadError = useStore((s) => s.loadError);
   const continueRun = useStore((s) => s.continueRun);
+  const slots = useStore((s) => s.slots);
   const [setup, setSetup] = useState(false);
+  useEffect(() => { if (phase === "menu") void useStore.getState().refreshSlots().catch(() => {}); }, [phase]);
 
   const sizes = sizeList();
   const devs = developmentList();
@@ -51,9 +39,7 @@ export default function StartMenu() {
       <div className="start" aria-busy="true">
         <div className="start-wait">
           <div className="start-title">{building ?? "The city"}</div>
-          <div className="start-wait-line">
-            Cutting the blocks, drawing the lot lines, putting up what was built before you got here.
-          </div>
+          <div className="start-wait-line">Cutting the blocks, drawing the lot lines.</div>
           <div className="start-bar"><span /></div>
         </div>
       </div>
@@ -61,87 +47,91 @@ export default function StartMenu() {
   }
 
   const runs = loadRuns();
-  const firstTime = phase === "menu" && !resume && runs.length === 0;
+  const firstTime = phase === "menu" && !resume && runs.length === 0 && slots.length === 0;
   if (phase === "menu" && (setup || firstTime)) {
     return <GameSetup onBack={firstTime ? undefined : () => setSetup(false)} />;
   }
 
   return (
-    <div className="start">
-      <div className="start-head">
-        <div className="start-title">Broadway &amp; Wall</div>
-        <div className="start-sub">A hundred years of somebody else&rsquo;s city, and whatever you can hold of it.</div>
-        <div className="start-sub start-ambition">
-          You open near the bottom of the street. Every firm above you started with a bankroll and a hundred years —
-          climb past them, and build a book the town will remember. Your place is in the top bar, and every January the year is told back to you.
-        </div>
-      </div>
+    <div className="start hm">
+      <div className="hm-wrap">
+        <header className="hm-brand">
+          <div className="start-title">Broadway &amp; Wall</div>
+          <div className="hm-tag">Build a real estate firm. A hundred years to do it.</div>
+        </header>
 
-      <div className="start-body">
-        <div className="start-inner">
-          {phase === "boot" ? (
-            <div className="start-boot">Looking for a game in progress&hellip;</div>
-          ) : (
-            <>
+        {phase === "boot" ? (
+          <div className="hm-boot">Looking for a game&hellip;</div>
+        ) : (
+          <div className="hm-grid">
+            <section className="hm-play">
               {resume && (
-                <button className="start-continue" onClick={() => void continueRun()}>
-                  <span className="start-continue-l">
-                    <span className="start-continue-head">Continue</span>
-                    <span className="start-continue-town">
-                      {townName(resume.island, resume.seed)}
-                      <span className="start-continue-dim">
-                        {" · "}{sizes.find((s) => s.id === resume.size)?.name ?? resume.size}
-                        {" · "}{devs.find((d) => d.id === resume.dev)?.name ?? resume.dev}
-                      </span>
-                    </span>
-                    <span className="start-continue-when">
-                      {monthLabel(resume.month)} · Year {Math.floor(resume.month / 12) + 1} · {usd(resume.cash)} in hand
-                    </span>
+                <button type="button" className="hm-continue" onClick={() => void continueRun()}>
+                  <span className="hm-k">Continue</span>
+                  <span className="hm-town">{townName(resume.island, resume.seed)}</span>
+                  <span className="hm-meta mono">
+                    {sizes.find((s) => s.id === resume.size)?.name ?? (resume.island === resume.size ? "6 km region" : resume.size)}
+                    {" · "}{devs.find((x) => x.id === resume.dev)?.name ?? resume.dev}
                   </span>
-                  <span className="start-continue-go">Resume ▸</span>
+                  <span className="hm-stats">
+                    <span><b className="mono">{monthLabel(resume.month)}</b><i>date</i></span>
+                    <span><b className="mono">{Math.floor(resume.month / 12) + 1}</b><i>year</i></span>
+                    <span><b className="mono">{usd(resume.cash)}</b><i>cash</i></span>
+                  </span>
+                  <span className="hm-go">Resume ▸</span>
                 </button>
               )}
+              <button type="button" className={"hm-new" + (resume ? "" : " hm-new-primary")} disabled={phase !== "menu"} onClick={() => setSetup(true)}>
+                <span className="hm-k">New game</span>
+                <span className="hm-new-line">Region, island or Manhattan · your firm · your seed</span>
+                <span className="hm-go">Set up ▸</span>
+              </button>
+              {loadError && <div className="start-err">{loadError}</div>}
+            </section>
 
+            <section className="hm-side">
+              <div className="hm-box">
+                <div className="hm-box-head">Saves<span className="hm-count mono">{slots.length}</span></div>
+                {slots.length === 0 ? <div className="hm-none">No named saves</div> : (
+                  <table className="hm-table">
+                    <thead><tr><th>Name</th><th className="num">Date</th><th className="num">Cash</th><th /></tr></thead>
+                    <tbody>
+                      {slots.slice(0, 8).map((m) => (
+                        <tr key={m.slot} title={m.setup}>
+                          <td className="hm-slot">{m.slot}{m.sandbox && <span className="hm-chip">sandbox</span>}</td>
+                          <td className="num mono">{monthLabel(m.month)}</td>
+                          <td className="num mono">{usd(m.cash)}</td>
+                          <td className="num"><button type="button" className="hm-load" disabled={phase !== "menu"} onClick={() => void useStore.getState().openSlot(m.slot)}>Load</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
               {runs.length > 0 && (
-                <div className="start-runs">
-                  <div className="start-or" style={{ marginTop: 0 }}>Your best runs</div>
-                  <table className="start-runs-tbl mono">
+                <div className="hm-box">
+                  <div className="hm-box-head">Best runs</div>
+                  <table className="hm-table">
+                    <thead><tr><th>Town</th><th className="num">Years</th><th className="num">Peak NW</th><th className="num">Best rank</th><th className="num">Goal</th></tr></thead>
                     <tbody>
                       {runs.slice(0, 5).map((r) => (
-                        <tr key={r.seed}>
-                          <td className="start-runs-town">{r.town}</td>
-                          <td>{r.years} yr{r.years === 1 ? "" : "s"}</td>
-                          <td>peak {usd(r.peakNw)}</td>
-                          <td>{r.bestRank !== null ? `best ${ordinal(r.bestRank)} of ${r.of} · ${r.bestYear}` : "—"}</td>
-                          <td>{r.goal ? `${r.goal}: ${r.goalResult === "met" ? "✓ met" : r.goalResult === "missed" ? "missed" : "open"}` : ""}</td>
-                          <td className="start-runs-setup">{r.setup ?? ""}</td>
-                          <td className="start-runs-state">{r.over ? "ended" : "in progress"}</td>
+                        <tr key={r.seed} title={r.setup ?? undefined}>
+                          <td className="hm-slot">{r.town}{!r.over && <span className="hm-chip">live</span>}</td>
+                          <td className="num mono">{r.years}</td>
+                          <td className="num mono">{usd(r.peakNw)}</td>
+                          <td className="num mono">{r.bestRank !== null ? `${ordinal(r.bestRank)} / ${r.of}` : "—"}</td>
+                          <td className="num mono">{r.goal ? (r.goalResult === "met" ? "✓" : r.goalResult === "missed" ? "✗" : "…") : ""}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               )}
-              {loadError && <div className="start-err">{loadError}</div>}
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="start-foot">
-        <div className="start-foot-sum">
-          <span className="start-foot-town">{resume ? "Or cut a new town" : "Cut a town and break ground"}</span>
-          <span className="start-foot-note">
-            The setup page chooses the island, the firm and the clock. The economy is drawn fresh every game.
-            {resume ? " Named saves stay on the Saves page." : ""}
-            {" · "}build {BUILD_STAMP.commit} · office base ${BUILD_STAMP.rentBaseOffice}
-          </span>
-        </div>
-        <button className="start-go" disabled={phase !== "menu"} onClick={() => setSetup(true)}>
-          New campaign ▸
-        </button>
+            </section>
+          </div>
+        )}
+        <footer className="hm-foot mono">build {BUILD_STAMP.commit} · the economy is drawn fresh every game</footer>
       </div>
     </div>
   );
 }
-

@@ -11,6 +11,8 @@ import type { PlaceId } from "./places";
 
 export type UiShell = "classic" | "next";
 export interface BuyPreset { product: string; lev: number }
+/** One line of a negotiation as the panel tells it: who said what, and what came of it. */
+export interface DealLine { who: "you" | "them"; px?: number; what: string; tone?: "ok" | "warn" | "bad"; m: number }
 export interface DoneRow { key: string; subject: string; facts: string; verb: string; m: number }
 
 const read = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -50,12 +52,15 @@ interface NextState {
   /** A moment card asked for from its Inbox row (goal, exit). */
   showMoment: "goal" | "exit" | null;
   setShowMoment: (v: "goal" | "exit" | null) => void;
-  /** The scheme row picked on a lot's Build tab. */
-  schemePick: { bbl: string; i: number } | null;
-  setSchemePick: (v: { bbl: string; i: number } | null) => void;
   /** The open drill, by anchor id; one at a time. */
   drill: { id: string; key: string; args?: Record<string, unknown>; x: number; y: number } | null;
   setDrill: (d: NextState["drill"]) => void;
+  /** The negotiation thread per deed, this session (the engine keeps only the last two numbers). */
+  dealLog: Record<string, DealLine[]>;
+  logDeal: (bbl: string, lines: DealLine[]) => void;
+  /** The price on the negotiation panel's dial, per deed. */
+  dealPx: Record<string, number>;
+  setDealPx: (bbl: string, px: number | null) => void;
 }
 
 export const useNext = create<NextState>((set) => ({
@@ -71,10 +76,16 @@ export const useNext = create<NextState>((set) => ({
   setInboxOpen: (v) => set({ inboxOpen: v }),
   showMoment: null,
   setShowMoment: (v) => set({ showMoment: v }),
-  schemePick: null,
-  setSchemePick: (v) => set({ schemePick: v }),
   drill: null,
   setDrill: (d) => set({ drill: d }),
+  dealLog: {},
+  logDeal: (bbl, lines) => set((s) => ({ dealLog: { ...s.dealLog, [bbl]: [...(s.dealLog[bbl] ?? []), ...lines].slice(-12) } })),
+  dealPx: {},
+  setDealPx: (bbl, px) => set((s) => {
+    const next = { ...s.dealPx };
+    if (px === null) delete next[bbl]; else next[bbl] = px;
+    return { dealPx: next };
+  }),
 }));
 
 // For the profiling harness and the screenshot driver, as `__store` is.

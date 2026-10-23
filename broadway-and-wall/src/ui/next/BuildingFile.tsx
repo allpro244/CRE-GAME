@@ -4,7 +4,7 @@
  * desks until step 5 replaces them. Buying and selling are the footer.
  */
 import { LandDesk } from "@/ui/panels/PropertyDesks";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore, type PropertyTab } from "@/state/store";
 import type { GameState, Holding } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
@@ -21,15 +21,16 @@ import { entitleQuote, platQuote } from "@/engine/landdev";
 import { tractLotQuote } from "@/engine/homes";
 import { tractYield, plannedLots } from "@/engine/platdesign";
 import { HomesCard, ParcelPanel } from "@/ui/panels/ParcelDesk";
-import { heldScheme } from "@/ui/panels/DevelopDesk";
-import { productOf } from "@/engine/products";
+import { BuildDesk, breakGround, schemeName } from "./BuildDesk";
+import { deskScheme } from "./scheme";
+import PlatDesk, { platVerb } from "./PlatDesk";
+import { platScheme, platCommit, usePlatDrafts } from "./platScheme";
 import { ownerName } from "@/ui/derive";
 import { usd, sf } from "@/ui/format";
 import { ActionFooter, Drawer, type Verb } from "./Drawer";
 import { Figure, Spark, fmtFig } from "./Figure";
-import { bestSchemes, type SchemeRow } from "./bestScheme";
-import { buyPreview, buyDesks } from "./buy";
-import { useNext } from "./nextStore";
+import { NegotiationFooter, NegotiationPanel } from "./Negotiation";
+import { dealView } from "./deal";
 import { MoneyTab, RefiTable, RentRollTab } from "./FileTabs";
 import { SplitTab } from "./SplitTab";
 
@@ -55,6 +56,12 @@ function FileFor({ bbl }: { bbl: string }) {
     useStore.setState({ propertyTab: null });
   }, [asked]);
   const rec = resolveRec(parcels, game, bbl);
+  // A LIVE CONVERSATION OPENS ON THE DEAL: an offer made from the Market row or
+  // the Overview footer lands the player on the answer, not on the brochure.
+  const adjacency = useStore((s) => s.adjacency);
+  const stage = !game.holdings[bbl] ? dealView(game, parcels, adjacency, bbl)?.stage : undefined;
+  const talking = stage === "talks" || stage === "final" || stage === "agreed";
+  useEffect(() => { if (talking) setTab("deal"); }, [talking, stage]);
   const close = () => {
     const st = useStore.getState();
     if (st.page === "property") st.setPage("none");
@@ -112,7 +119,8 @@ function FileFor({ bbl }: { bbl: string }) {
       {/* A PLAT'S LOT: the builders' bids, their offers, and listing the plat to them. The classic
           card lives on the summary tab, which this file does not host, so the new UI had no way to
           list lots at all (tools/playtest.mjs, 2026-10-22). */}
-      {active === "deal" && <div className="nx-hosted">{rec.homeLot && <HomesCard bbl={bbl} />}<ParcelPanel embedded tab="deal" /></div>}
+      {active === "deal" && !h && <NegotiationPanel game={game} parcels={parcels} bbl={bbl} />}
+      {active === "deal" && h && <div className="nx-hosted">{rec.homeLot && <HomesCard bbl={bbl} />}<ParcelPanel embedded tab="deal" /></div>}
       {active === "history" && (
         <table className="nx-table">
           <thead><tr><th>When</th><th>Event</th><th>Detail</th></tr></thead>
@@ -286,35 +294,17 @@ function TractBox({ game, parcels, bbl }: { game: GameState; parcels: ParcelTabl
 }
 
 function BuildTab({ game, parcels, bbl }: { game: GameState; parcels: ParcelTable; bbl: string }) {
-  const rows = useMemo(() => (game.developments[bbl] ? [] : bestSchemes(game, parcels, bbl)), [game, parcels, bbl]);
-  const pick = useNext((s) => s.schemePick?.bbl === bbl ? s.schemePick.i : 0);
+  const rec = resolveRec(parcels, game, bbl);
+  const h = game.holdings[bbl];
+  // a vacant lot you own, not yet building: the simple Build desk (its commit is the footer's)
+  if (h && !game.developments[bbl] && rec?.class === "land" && !rec.tract && !rec.ag && rec.zoneDist !== "AG" && !h.groundLeased && !game.groundLeases?.[bbl]) {
+    return <div className="nx-hosted"><BuildDesk bbl={bbl} /></div>;
+  }
+  // a farm tract: the land desk (its commit is the footer's too)
+  if (h && rec?.tract && rec.ag) return <div className="nx-hosted"><PlatDesk bbl={bbl} /></div>;
   return (
     <div className="nx-hosted">
-      {rows.length > 0 && (
-        <table className="nx-table nx-pickable">
-          <thead><tr><th>Scheme</th><th className="num">Hurdle</th><th className="num">Profit</th><th className="num">Equity</th></tr></thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.use + r.floors + (r.product ?? "")} className={i === pick ? "on" : undefined} onClick={() => {
-                useNext.getState().setSchemePick({ bbl, i });
-                // THE PICK IS THE DESK'S SCHEME: the dials move to it, so the desk
-                // below and the footer read one building (use, floors, product).
-                useStore.getState().setDevDraft(bbl, {
-                  use: r.use, floors: r.floors, cov: r.coverage, contract: "gmp", bank: r.lender, spec: 0.5,
-                  product: r.product,
-                });
-              }}>
-                <td>{r.product ? productOf(r.product)?.short : `${r.use} · ${r.floors} fl`} · {Math.round(r.coverage * 100)}%</td>
-                <td className={"num mono" + (r.hurdle < 1 ? " nx-neg" : "")}>{r.hurdle.toFixed(2)}×</td>
-                <td className={"num mono" + (r.profit < 0 ? " nx-neg" : "")}>{usd(r.profit)}</td>
-                <td className="num mono">{usd(r.equity)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {/* re-mounted on a pick, so the desk opens on the dials the pick wrote */}
-      <ParcelPanel key={`build:${pick}`} embedded tab="build" />
+      <ParcelPanel embedded tab="build" />
     </div>
   );
 }
@@ -323,10 +313,7 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
   game: GameState; parcels: ParcelTable; bbl: string; h?: Holding; tab: FileTab; setTab: (t: FileTab) => void;
 }) {
   const st = useStore.getState();
-  const preset = useNext((s) => s.buyPreset);
-  const pickI = useNext((s) => s.schemePick?.bbl === bbl ? s.schemePick.i : 0);
-  const listing = game.listings.find((l) => l.bbl === bbl);
-  const talks = game.talks?.[bbl];
+  usePlatDrafts();
   const rec = resolveRec(parcels, game, bbl);
   const [amt, setAmt] = useState<number | null>(null);
   const [refiOpen, setRefiOpen] = useState(false);
@@ -354,10 +341,10 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
     // A FARM TRACT (region): rezone it, then build the streets (landdev.ts via the store)
     const tr = parcels[bbl]?.tract;
     if (tr) {
-      const app = game.entitlementApps?.[bbl], rz = game.rezoned?.[bbl], plat = game.plats?.[bbl];
-      const step: Verb[] = !app && !rz ? [{ label: "Rezone", primary: true, run: () => st.fileRezoning(bbl, 7_500) }]
-        : rz && !plat ? [{ label: "Build streets", primary: true, disabled: h.loan ? "Pay off the loan" : h.sale ? "Delist it first" : undefined, run: () => st.buildPlat(bbl) }]
-        : [];
+      // THE DESK'S PLAT, filed or built as the desk shows it (platScheme)
+      const ps = platScheme(game, parcels, bbl);
+      const verb = platVerb(ps);
+      const step: Verb[] = verb ? [{ label: verb, primary: true, disabled: ps.why ?? undefined, run: () => platCommit(ps, bbl, st) }] : [];
       const out: Verb[] = [{ label: "List", run: () => { st.listSale(bbl, n(value), "quiet"); setAmt(null); } }, ...verbs, ...step];
       return <ActionFooter input={amount(value)} verbs={out} inputAt={0} />;
     }
@@ -365,35 +352,12 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
       if (game.developments[bbl]) return <ActionFooter verbs={[{ label: "Job file", run: () => setTab("build") }]} />;
       // the sweep is dozens of pro formas: run it only once the Build tab is asked for
       if (tab !== "build") return <ActionFooter verbs={[...verbs, { label: "Plan", primary: true, run: () => setTab("build") }]} />;
-      // ONE SCHEME. Once the desk holds dials (the player set them, or picked a
-      // row), the footer builds what the desk shows — use, height, product,
-      // contract, desk and leverage from the same reading (heldScheme). Before
-      // that, it offers the picked row of the sweep, as the table shows.
-      if (h?.devDraft) {
-        const hs = heldScheme(game, parcels, bbl);
-        const p = hs.plan;
-        const name = hs.gprod ? hs.gprod.short : `${hs.use} · ${p?.floors ?? hs.fl} fl`;
-        return (
-          <ActionFooter
-            left={p ? <span className="mono nx-dim">{name} · {p.hurdleRatio.toFixed(2)}×</span> : undefined}
-            verbs={[{
-              label: "Break ground", primary: true,
-              disabled: !p ? "No scheme prices" : p.hurdleRatio < 1 ? "Below hurdle" : undefined,
-              run: () => p && st.develop(bbl, hs.use, hs.fl, hs.cov, hs.contract, hs.ltc, { mix: hs.customMix, bts: hs.custom.bts, groundRetail: hs.custom.groundRetail, design: hs.saved?.design, ...(hs.gprod ? { product: hs.gprod.key } : {}) }, hs.bank, hs.spec),
-            }]}
-          />
-        );
-      }
-      const rows: SchemeRow[] = bestSchemes(game, parcels, bbl);
-      const r = rows[pickI] ?? rows[0];
+      // ONE SCHEME: the footer breaks ground on exactly what the desk shows (deskScheme)
+      const d = deskScheme(game, parcels, bbl);
       return (
         <ActionFooter
-          left={r ? <span className="mono nx-dim">{r.product ? productOf(r.product)?.short : `${r.use} · ${r.floors} fl`} · {r.hurdle.toFixed(2)}×</span> : undefined}
-          verbs={[{
-            label: "Break ground", primary: true,
-            disabled: !r ? "No scheme prices" : r.hurdle < 1 ? "Below hurdle" : undefined,
-            run: () => r && st.develop(bbl, r.use, r.floors, r.coverage, "gmp", r.ltcMax, r.product ? { product: r.product } : undefined, r.lender),
-          }]}
+          left={d.plan ? <span className="mono nx-dim">{schemeName(d)} · {d.plan.hurdleRatio.toFixed(2)}×</span> : undefined}
+          verbs={[{ label: "Break ground", primary: true, disabled: d.why ?? undefined, run: () => breakGround(d, bbl) }]}
         />
       );
     }
@@ -410,95 +374,6 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
     return <ActionFooter input={amount(value)} verbs={verbs} />;
   }
 
-  // ---- under contract: fund it with the preset
-  if (talks?.agreed) {
-    const price = talks.agreedPrice ?? talks.theirPrice;
-    const q = buyPreview(game, parcels, bbl, price, preset);
-    return (
-      <div className="nx-confirm">
-        <div className="nx-strip nx-strip-sm">
-          <Stat label="Price"><Figure value={price} fmt="usd" /></Stat>
-          <Stat label="Equity"><Figure value={q.equity} fmt="usd" drill="cash" /></Stat>
-          <Stat label="Loan"><Figure value={q.principal} fmt="usd" /></Stat>
-          <Stat label="Debt svc"><Figure value={q.ds} fmt="usd" /></Stat>
-          <Stat label="CoC"><Figure value={q.coc} fmt="pct" drill="noi" args={{ bbl, price }} tone={q.coc !== null && q.coc < 0 ? "neg" : undefined} /></Stat>
-          <Stat label="DSCR"><Figure value={q.dscr} fmt="x" drill="noi" args={{ bbl, price }} /></Stat>
-        </div>
-        <ActionFooter
-          steps={["Price", "Confirm"]} step={1}
-          left={<><PresetPicker isLand={rec.class === "land"} /><span className="nx-dim mono">{q.label}{q.principal ? ` · ${(q.ratePct).toFixed(2)}%` : ""}</span></>}
-          verbs={[
-            { label: "Custom", run: () => setTab("deal") },
-            { label: "Walk", run: () => st.walkAway(bbl) },
-            { label: "Confirm", primary: true, run: () => st.closeDeal(bbl, q.product, q.lev || 1) },
-          ]}
-        />
-      </div>
-    );
-  }
-
-  // ---- in talks: their number
-  if (talks) {
-    return (
-      <ActionFooter
-        steps={["Price", "Confirm"]} step={0}
-        input={talks.final ? undefined : amount(talks.yourPrice)}
-        inputAt={0}
-        verbs={[
-          ...(talks.final ? [] : [{ label: `Offer ${usd(n(talks.yourPrice))}`, run: () => { st.offer(bbl, n(talks.yourPrice)); setAmt(null); } }]),
-          { label: "Walk", run: () => st.walkAway(bbl) },
-          { label: `Take ${usd(talks.theirPrice)}`, primary: true, run: () => st.acceptCounter(bbl) },
-        ]}
-      />
-    );
-  }
-
-  // ---- listed: pay the ask or offer under it
-  if (listing) {
-    return (
-      <ActionFooter
-        steps={["Price", "Confirm"]} step={0}
-        input={amount(listing.ask * 0.95)}
-        inputAt={0}
-        verbs={[
-          { label: `Offer ${usd(n(listing.ask * 0.95))}`, run: () => { st.offer(bbl, n(listing.ask * 0.95)); setAmt(null); } },
-          { label: `Pay ask ${usd(listing.ask)}`, primary: true, key: "B", run: () => st.offer(bbl, listing.ask, false) },
-        ]}
-      />
-    );
-  }
-
-  // ---- not for sale
-  const ap = game.approaches[bbl];
-  if (ap?.ask && !ap.refused) {
-    return <ActionFooter verbs={[{ label: `Ask ${usd(ap.ask)}`, primary: true, run: () => setTab("deal") }]} />;
-  }
-  return (
-    <ActionFooter
-      input={amount(value)}
-      inputAt={0}
-      verbs={[
-        { label: `Bid ${usd(n(value))}`, run: () => { st.bidBlind(bbl, n(value)); setAmt(null); } },
-        { label: "Approach", primary: true, disabled: ap && (ap.refused || (ap.coldUntilM ?? 0) > game.month) ? "Owner said no" : undefined, run: () => st.approach(bbl) },
-      ]}
-    />
-  );
-}
-
-function PresetPicker({ isLand }: { isLand: boolean }) {
-  const preset = useNext((s) => s.buyPreset);
-  const set = useNext((s) => s.setBuyPreset);
-  const desks = buyDesks(isLand);
-  return (
-    <span className="nx-preset">
-      <select className="nx-select" value={preset.product} onChange={(e) => set({ ...preset, product: e.target.value })} aria-label="Lender">
-        <option value="cheapest">Cheapest</option>
-        <option value="cash">All cash</option>
-        {desks.map((d) => <option key={d.id} value={d.id}>{d.lender}</option>)}
-      </select>
-      <select className="nx-select" value={String(preset.lev)} onChange={(e) => set({ ...preset, lev: Number(e.target.value) })} aria-label="Leverage">
-        {[1, 0.85, 0.7, 0.5].map((l) => <option key={l} value={l}>{fmtFig(l, "pct")} of max</option>)}
-      </select>
-    </span>
-  );
+  // ---- buying: the negotiation's one move (Negotiation.tsx)
+  return <NegotiationFooter game={game} parcels={parcels} bbl={bbl} onDeal={() => setTab("deal")} />;
 }

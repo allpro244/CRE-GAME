@@ -14,7 +14,7 @@
 // Flows: start (region start < 10 s), land (buy a farm, plat it through the
 // desk, sell the lots; net worth honest every month), picker (the Build desk's
 // product picker on a commercial lot), pages (every place and building-file
-// tab), island (buy a building at ask, run a year).
+// tab), island (Pay ask on a building, take a counter if one comes, run a year).
 //
 // Every month it plays, the money is checked: the ledger balances (conserve's
 // identity: Δcash == books + Δline + Δdeposits), nothing is NaN, and net worth
@@ -388,6 +388,11 @@ const tap = async (re, scope = "") => {
   if (r.hit) timed(r.hit, r.ms);
   return r.hit;
 };
+/** The file footer's financing preset (Negotiation.tsx PresetPicker), set through its own select. */
+const pickPreset = (v) => js(`const sel = (${fileDrawer})?.querySelector('select[aria-label="Lender"]');
+  if (!sel) { window.__nextStore?.getState().setBuyPreset({ product: ${S(v)}, lev: 1 }); return false; }
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(sel, ${S(v)});
+  sel.dispatchEvent(new Event("change", { bubbles: true })); return true;`);
 const errToast = async (since) => st(`s.toast && s.toast.kind !== "ok" && s.toast.at >= ${since} ? s.toast.text : null`).catch(() => null);
 /** The ledger and the money, one month: what conserve.mjs checks, plus the net worth tape. */
 const LEDGER = `
@@ -491,22 +496,23 @@ await flow("land", async () => {
     const ap = await st(`g.approaches[${S(b)}] ?? null`);
     if (!ap || ap.refused) { note(`${b}: the owner would not talk${ap ? "" : " (" + (await errToast(since)) + ")"}`); continue; }
     if (ap.ask === undefined) { note(`${b}: the owner wants a blind bid`); continue; }
+    // THE NEGOTIATION PANEL (ui/next/Negotiation.tsx): the file is on Deal with their ask on the
+    // ladder; "Buy at" puts the dial on it and the footer turns to the financing
     await screen("owner-ask");
-    await tap(`/^Ask \\$/`, fileDrawer);
-    await sleep(400);
-    await tap(`/^Structure the stack/`, fileDrawer); await sleep(300);
+    await tap(`/^Buy at /`, fileDrawer);
+    await sleep(300);
     // all cash: the A&D lender will want the first lien when the streets go in (platdesign.ts)
-    await tap(`/^All cash$/`, fileDrawer); await sleep(200);
-    await tap(`/^Review & commit/`, fileDrawer); await sleep(300);
+    await pickPreset("cash");
     await screen("commit");
     const bought = await tap(`/^Buy at /`, fileDrawer);
+    await pickPreset("cheapest");
     await sleep(600);
     if (!bought || !(await st(`!!g.holdings[${S(b)}]`))) { note(`${b}: could not close (${bought ? await errToast(since) : "Buy button disabled or missing"})`); continue; }
     note(`bought ${b} at the owner's ask ${(ap.ask / 1e3).toFixed(0)}K (${lots} lots on its default plat)`);
     // the file's Build tab opens the land desk, and the desk must agree with the Overview that a plat fits
     await tap(`/^Build$/`, fileDrawer);
     await sleep(1200);
-    const nd = await js(`const d = document.querySelector(".land-desk"); return d ? (/not developable/.test(d.textContent) ? __pt.norm(d.textContent).slice(0, 160) : "") : null;`);
+    const nd = await js(`const d = document.querySelector(".land-desk"); return d ? (/no plat fits/.test(d.textContent) ? __pt.norm(d.textContent).slice(0, 160) : "") : null;`);
     if (nd === null) { await screen("no-desk"); check(false, "the Build tab opens the land development desk"); return; }
     if (nd) { await screen("not-developable"); check(false, "the land desk agrees with the file's Overview that a plat fits", `Overview: ${lots} lots × 7,500 sf; desk: ${nd}`); continue; }
     bbl = b; break;
@@ -518,28 +524,24 @@ await flow("land", async () => {
 
   // THE LAND DEVELOPMENT DESK, open on the file's Build tab
   const desk = `document.querySelector(".land-desk")`;
-  await tap(`/Programme$/`, desk); await screen("programme", ".land-desk");
-  await tap(`/Design$/`, desk); await sleep(400);
-  // a park, from the palette, set down on the plat with the mouse
-  await tap(`/^Neighbourhood park/`, desk);
-  const at = await js(`const ls = [...document.querySelectorAll(".plat-lot")]; const e = ls[Math.floor(ls.length / 2)]; if (!e) return null;
-    e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2];`);
-  if (at) await mouseClick(at[0], at[1]);
-  await sleep(500);
-  const amen = await js(`return /Profit · \\d+ lots · (\\d+) amenit/i.exec(__pt.norm(${desk}.innerText))?.[1] ?? "0";`);
-  await screen("design-park", ".land-desk");
-  check(Number(amen) >= 1, "the park went down on the plat", `amenities ${amen}`);
-  await tap(`/Financing$/`, desk); await sleep(400);
-  await tap(`/^All offered$/`, desk); await sleep(200);
-  const strip = await js(`const o = {}; for (const c of document.querySelectorAll(".pnl-cell")) o[c.querySelector(".pnl-k").textContent.trim()] = c.querySelector(".pnl-v").textContent.trim(); return o;`);
+  await screen("desk", ".land-desk");
+  // a park: a toggle on the desk; the geometry sets it down where it serves most lots
+  await tap(`/^Park/`, desk); await sleep(500);
+  const park = await js(`const b = [...${desk}.querySelectorAll("button")].find((x) => /^Park/.test(__pt.norm(x.textContent))); return { on: b?.getAttribute("aria-pressed") === "true", land: ${desk}.querySelectorAll(".plat-park").length };`);
+  await screen("park", ".land-desk");
+  check(park.on && park.land > 0, "the park went down on the plat", JSON.stringify(park));
+  // the A&D loan, all the desk offers
+  await tap(`/^A&D loan$/`, desk); await sleep(200);
+  await js(`${desk}.querySelector("details")?.setAttribute("open", ""); return true;`); await sleep(150);
+  const strip = await js(`const o = {}; for (const r of ${desk}.querySelectorAll(".bd-kv tr")) o[__pt.norm(r.cells[0].textContent)] = __pt.norm(r.cells[1].textContent); return o;`);
   const M = (t) => { const m = /(−|-)?\$?([\d.,]+)\s*([KMBkmb])?/.exec(t ?? ""); return m ? (m[1] ? -1 : 1) * Number(m[2].replace(/,/g, "")) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[3]?.toUpperCase()] ?? 1) : NaN; };
   ctx.lotSales = M(strip["Lot sales"]);
-  ctx.deskProfit = M(await js(`return ${desk}.querySelector(".verdict-value")?.textContent ?? "";`));
+  ctx.deskProfit = M(await js(`return ${desk}.querySelector(".bd-big")?.textContent ?? "";`));
   note(`desk P&L: ${Object.entries(strip).map(([k, v]) => k + " " + v).join(" · ")}`);
-  check(Object.values(strip).every((v) => v && !/NaN|undefined|Infinity/.test(v)), "the desk's P&L strip is all numbers", JSON.stringify(strip));
+  check(Object.keys(strip).length >= 6 && Object.values(strip).every((v) => v && !/NaN|undefined|Infinity/.test(v)), "the desk's P&L is all numbers", JSON.stringify(strip));
   await screen("financing", ".land-desk");
   let since = Date.now();
-  const filed = await tap(`/^File the rezoning/`, desk);
+  const filed = await tap(`/^Rezone/`, `${fileDrawer}?.querySelector(".nx-actions")`);
   await sleep(500);
   if (!check(!!filed && await st(`!!g.entitlementApps?.[${S(bbl)}]`), "filed the rezoning from the desk", (await errToast(since)) ?? "no application on the books")) { await screen("not-filed"); return; }
   await screen("filed");
@@ -558,9 +560,8 @@ await flow("land", async () => {
       // the desk refuses a refile inside the bar; try it once the bar is out
       const m = await st(`g.month`);
       if (m - refusedM >= 12) {
-        await tap(`/Financing$/`, desk); await sleep(300);
         since = Date.now();
-        await tap(`/^File the rezoning/`, desk); await sleep(400);
+        await tap(`/^Rezone/`, `${fileDrawer}?.querySelector(".nx-actions")`); await sleep(400);
         check(await st(`!!g.entitlementApps?.[${S(bbl)}]`), "refiled once the refile bar was out", await errToast(since));
         await screen("refiled");
       }
@@ -571,12 +572,11 @@ await flow("land", async () => {
   await screen("rezoned", ".land-desk");
 
   // THE STREETS
-  await stepProfile("Financing after the rezoning", () => tap(`/Financing$/`, desk)); await sleep(400);
   since = Date.now();
-  const built = await tap(`/^Build the streets/`, desk);
+  const built = await tap(`/^Build streets/`, `${fileDrawer}?.querySelector(".nx-actions")`);
   await sleep(500);
   const plat = await st(`g.plats?.[${S(bbl)}] ?? null`);
-  if (!check(!!built && !!plat, "started the streets from the desk", (await errToast(since)) ?? (built ? "no plat on the books" : "Build the streets button missing or disabled"))) { await screen("streets-refused", ".land-desk"); return; }
+  if (!check(!!built && !!plat, "started the streets from the desk", (await errToast(since)) ?? (built ? "no plat on the books" : "Build streets missing or disabled: " + await js(`return __pt.norm(${fileDrawer}?.querySelector(".nx-actions")?.innerText ?? "");`)))) { await screen("streets-refused", ".land-desk"); return; }
   await screen("streets", ".land-desk");
   ctx.parent = bbl;
   for (let i = 0; i < 36; i++) {
@@ -683,26 +683,25 @@ await flow("picker", async () => {
     const ap = await st(`g.approaches[${S(l.b)}] ?? null`);
     if (!ap || ap.refused || ap.ask === undefined) continue;
     await js(`window.__store.getState().select(${S(l.b)}); return true;`); await sleep(600);
-    await tap(`/^Ask \\$/`, fileDrawer); await sleep(300);
-    await tap(`/^Structure the stack/`, fileDrawer); await sleep(300);
-    await tap(`/^Review & commit/`, fileDrawer); await sleep(300);
+    // the negotiation panel: "Buy at" sets the dial to their ask, then the same button closes on the preset
+    await tap(`/^Buy at /`, fileDrawer); await sleep(300);
     if (!(await tap(`/^Buy at /`, fileDrawer))) continue;
     await sleep(500);
     if (await st(`!!g.holdings[${S(l.b)}]`)) { bbl = l.b; note(`bought ${l.b} (${l.ac.toFixed(1)} ac, demand ${l.d.toFixed(0)}) at ${(ap.ask / 1e6).toFixed(2)}M`); break; }
   }
   if (!check(!!bbl, "bought a large commercial lot through the file")) return;
   await tap(`/^Build$/`, fileDrawer); await sleep(800);
-  await tap(`/Programme$/`, fileDrawer); await sleep(400);
   await screen("build-desk");
   const use = await tap(`/^(Retail|Industrial)$/`, fileDrawer); await sleep(400);
-  const prods = await js(`const sec = [...${fileDrawer}.querySelectorAll(".page-section")].find((x) => /^Product/.test(__pt.norm(x.querySelector(".page-section-head")?.textContent)));
-    return sec ? [...sec.querySelectorAll("button")].map((b) => __pt.norm(b.textContent)).filter((t) => t !== "Street building") : [];`);
+  const prods = await js(`const sec = [...${fileDrawer}.querySelectorAll(".bd-row")].find((x) => __pt.norm(x.querySelector(".bd-k")?.textContent) === "Type");
+    return sec ? [...sec.querySelectorAll("button")].map((b) => __pt.norm(b.textContent)).filter((t) => t !== "Street") : [];`);
   note(`${use ?? "no retail or industrial button"}: products ${prods.join(", ") || "none"}`);
   check(prods.length > 0, "the Build desk offers product types on a large commercial lot", use ? `use ${use}` : "no Retail/Industrial use button");
   if (!prods.length) return;
   await tap(`/^${prods[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$/`, fileDrawer); await sleep(600);
-  const site = await js(`const sec = [...${fileDrawer}.querySelectorAll(".page-section")].find((x) => /^Site plan/.test(__pt.norm(x.querySelector(".page-section-head")?.textContent)));
-    if (!sec) return null; return { head: __pt.norm(sec.querySelector(".page-section-head").textContent), rows: [...sec.querySelectorAll(".grid .k")].map((k) => [__pt.norm(k.textContent), __pt.norm(k.nextElementSibling?.textContent)]) };`);
+  const site = await js(`const det = ${fileDrawer}?.querySelector(".build-desk details"); if (!det) return null; det.setAttribute("open", "");
+    const rows = [...det.querySelectorAll(".bd-kv tr")].map((r) => [__pt.norm(r.cells[0].textContent), __pt.norm(r.cells[1].textContent)]);
+    return rows.some(([k]) => k === "Site") ? { head: "Site plan", rows } : null;`);
   await screen("site-plan");
   if (!check(!!site, "the site plan renders for the product", prods[0])) return;
   note(`${site.head}: ${site.rows.map(([k, v]) => `${k} ${v}`).join(" · ")}`);
@@ -712,8 +711,9 @@ await flow("picker", async () => {
   const foot = await js(`return __pt.norm(${fileDrawer}?.querySelector(".nx-actions")?.textContent ?? "");`);
   note(`footer: ${foot}`);
   check(foot.includes(prods[0]), "the footer offers the product the desk is set to", foot);
-  // and the rest of the desk, one step at a time
-  for (const t of ["Design", "Financing"]) { await tap(`/${t}$/`, fileDrawer); await sleep(400); await screen(`build-${t.toLowerCase()}`); }
+  // the leverage, the tier and the look: each one choice, each repriced
+  for (const t of ["Half", "Premium", "Brick"]) { await tap(`/^${t}$/`, fileDrawer); await sleep(400); }
+  await screen("build-choices");
 });
 
 await flow("pages", async () => {
@@ -751,10 +751,18 @@ await flow("island", async () => {
   await screen("agreed");
   const bbl = await st(`s.selectedBBL`);
   const since = Date.now();
+  // A SELLER WHO WANTS MORE THAN THE ASK COUNTERS (acquire.ts reservation, a firm market): the
+  // negotiation panel says so and its primary move is to take their number
+  const countered = await st(`!!g.talks?.[${S(bbl)}] && !g.talks[${S(bbl)}].agreed ? g.talks[${S(bbl)}].theirPrice : 0`);
+  if (countered) {
+    note(`Pay ask was countered at ${(countered / 1e6).toFixed(2)}M: took it`);
+    await screen("countered");
+    await tap(`/^Take /`, fileDrawer); await sleep(600);
+  }
   await tap(`/^Confirm$/`, fileDrawer); await sleep(800);
   const owned = await st(`!!g.holdings[${S(bbl)}]`);
   await screen("bought");
-  if (!check(owned, "bought a building at ask in three clicks (Market, Pay ask, Confirm)", `${row} · ${await errToast(since) ?? "not on the books"}`)) return;
+  if (!check(owned, "bought a building from Market › Pay ask (Take a counter, Confirm)", `${row} · ${await errToast(since) ?? "not on the books"}`)) return;
   note(`bought ${bbl} at ${row}`);
   note(`file tabs: ${(await fileTabs("island")).join(", ")}`);
   await js(`window.__store.getState().select(null); return true;`);

@@ -37,7 +37,8 @@ export function toastFact(text: string): string {
   let s = text.trim();
   for (const [re, f] of REWRITES) {
     const m = s.match(re);
-    if (m) { s = s.replace(re, f(m)); break; }
+    // a function, not a string: "Counter $1.21M" as a replacement string reads "$1" as group one
+    if (m) { const out = f(m); s = s.replace(re, () => out); break; }
   }
   const parts = s.split(" · ").map((p) => p
     .split(/ — |\. |; /)[0]

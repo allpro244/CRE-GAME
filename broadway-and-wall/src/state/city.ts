@@ -16,7 +16,7 @@
 //
 // Nothing below knows which kind of island it is holding an id for, and nothing
 // below should.
-import { randomSeed, PROCEDURAL, MANHATTAN, DEFAULT_EXTENT } from "@/citygen/index.mjs";
+import { randomSeed, PROCEDURAL, MANHATTAN, DEFAULT_EXTENT, REGION } from "@/citygen/index.mjs";
 import { START_CASH_CHOICES, DEFAULT_START_CASH } from "@/engine/types";
 
 export interface CityInfo { id: string; name: string; tagline: string; lots: number }
@@ -25,6 +25,15 @@ const KEY = "bw:city";
 const SEED_KEY = "bw:seed:";
 // The one island a new run can be cut on. An old save carries its own.
 const DEFAULT_CITY = PROCEDURAL;
+
+/** The island a NEW game's setup opens on: the last one this browser started, else the region (owner, 2026-10-22). */
+export function setupCity(): string {
+  try {
+    return localStorage.getItem(KEY) ?? REGION;
+  } catch {
+    return REGION;
+  }
+}
 
 export function currentCity(): string {
   try {

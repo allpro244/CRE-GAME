@@ -30,7 +30,7 @@ import { buildCityData } from "../build.mjs";
 import { makeProjection } from "../geom.mjs";
 import {
   ACRE, FT, SQFT_PER_M2, makeRng, add, sub, mul, dist, norm, perp, resample, rdp, circle, capsules, hull,
-  rectRing, ringAreaAbs, ringCentroid, pointInRing, distToLine, maskOutline, CELL, cumLen, pointAt, slicePl,
+  rectRing, ringAreaAbs, ringCentroid, pointInRing, distToLine, maskOutline, chaikinClosed, CELL, cumLen, pointAt, slicePl,
 } from "./util.mjs";
 import { generateLand, NAME_A, NAME_B, SZ } from "./land.mjs";
 import { storyPrep, townFootprint } from "./story.mjs";
@@ -423,15 +423,18 @@ export function makeRegion(seed, opts = {}) {
   const dry = (ring) => coastY ? ring.map((p) => [p[0], Math.min(p[1], coastY(p[0]))]) : ring;
   // marsh: the floodplains
   const rs = M.river.pts;
-  for (let i = 0; i < rs.length - 8; i += 8) ground("marsh", dry(hull(circle(rs[i], M.river.fp[i], 16).concat(circle(rs[i + 8], M.river.fp[i + 8], 16)))));
-  for (const c of M.creeks) for (const cap of capsules(rdp(c.pts, 4), c.fp)) ground("marsh", dry(cap));
-  if (M.coast) { const L = M.coast.line; ground("marsh", L.concat(L.slice().reverse().map((p) => [p[0], p[1] - M.coast.band]))); }
+  // (plan 17: no floodplain, so no marsh along the river, the creeks or the coast)
+  if (planV < 17) for (let i = 0; i < rs.length - 8; i += 8) ground("marsh", dry(hull(circle(rs[i], M.river.fp[i], 16).concat(circle(rs[i + 8], M.river.fp[i + 8], 16)))));
+  if (planV < 17) for (const c of M.creeks) for (const cap of capsules(rdp(c.pts, 4), c.fp)) ground("marsh", dry(cap));
+  if (M.coast && planV < 17) { const L = M.coast.line; ground("marsh", L.concat(L.slice().reverse().map((p) => [p[0], p[1] - M.coast.band]))); }
   // fields, woods and yards from the raster, so nothing lands on the water or in the town
   const openCell = (k) => !M.water[k] && !M.isSea(G.ctr(k)) && !M.flood[k] && !town0(k);
-  for (const r of maskRects(G, [0, 0, S, S], (k) => M.forestL[k] === 1)) ground("woods", r);
+  // plan 17: traced and smoothed outlines instead of 20 m squares (owner: the comb-toothed edges were the ugliest thing on screen)
+  const shapes = planV >= 17 ? (box, ok) => maskShapes(G, box, ok) : (box, ok) => maskRects(G, box, ok);
+  for (const r of shapes([0, 0, S, S], (k) => M.forestL[k] === 1)) ground("woods", r);
   for (const t of M.tracts) {
-    for (const r of maskRects(G, t.r, (k) => openCell(k) && !M.forestL[k] && !M.phase[k] && !M.lotL[k] && !M.hwL[k])) ground(t.era ? "farm" : t.wood ? "woods" : "farm", r);
-    if (t.keep) for (const r of maskRects(G, t.r, (k) => openCell(k) && M.phase[k] && !M.hwL[k] && !M.lotL[k])) ground("yard", r);
+    for (const r of shapes(t.r, (k) => openCell(k) && !M.forestL[k] && !M.phase[k] && !M.lotL[k] && !M.hwL[k])) ground(t.era ? "farm" : t.wood ? "woods" : "farm", r);
+    if (t.keep) for (const r of shapes(t.r, (k) => openCell(k) && M.phase[k] && !M.hwL[k] && !M.lotL[k])) ground("yard", r);
   }
   // water: the river and the creeks (pavement drawn after, so the roads cross on bridges)
   for (let i = 0; i < rs.length - 2; i += 2) ground("stream", hull(circle(rs[i], M.river.half[i], 12).concat(circle(rs[i + 2], M.river.half[i + 2], 12))));
@@ -464,7 +467,18 @@ export function makeRegion(seed, opts = {}) {
   }
   // trees: one street tree per two houses, the woodlots and the forest belt on a jittered grid under a cap
   const trees = [];
-  for (const t of M.tracts) if (t.keep) for (const i of t.keep) if (i % 2 === 0) { const lot = t.plat.lots[i]; const m = lot.front[0].map((v, j) => (v + lot.front[1][j]) / 2); trees.push(add(m, mul(norm(sub(lot.house.c, m)), 3))); streetTrees++; }
+  for (const t of M.tracts) if (t.keep) for (const i of t.keep) if (i % 2 === 0 || planV >= 17) { const lot = t.plat.lots[i]; const m = lot.front[0].map((v, j) => (v + lot.front[1][j]) / 2); trees.push(add(m, mul(norm(sub(lot.house.c, m)), 3))); streetTrees++; }
+  // BACK-YARD CANOPY (plan 17; owner: the subdivisions read as bare ground): from the air a settled
+  // neighbourhood is mostly trees with roofs among them — two in each back yard, behind the house,
+  // to either side [K]. Placed before the woods so the cap spaces the woods out, never the yards.
+  if (planV >= 17) {
+    const yr = makeRng("yards:" + seed);
+    for (const t of M.tracts) if (t.keep) for (const i of t.keep) {
+      const lot = t.plat.lots[i], m = lot.front[0].map((v, j) => (v + lot.front[1][j]) / 2);
+      const back = norm(sub(lot.house.c, m)), side = perp(back);
+      for (const sd of [-1, 1]) trees.push(add(lot.house.c, add(mul(back, 9 + 4 * yr()), mul(side, sd * (3 + 3 * yr())))));
+    }
+  }
   const woodTr = M.tracts.filter((t) => !t.era && t.wood);
   const forestCells = M.forestL.reduce((a, v) => a + v, 0);
   const woodArea = woodTr.reduce((a, t) => a + (t.r[2] - t.r[0]) * (t.r[3] - t.r[1]), 0) + forestCells * CELL * CELL;
@@ -804,6 +818,54 @@ function maskRects(G, [x0, y0, x1, y1], ok) {
   }
   for (const r of open.values()) out.push(r);
   return out.map((r) => { const xa = Math.max(x0, r.a * C), xb = Math.min(x1, (r.b + 1) * C), ya = Math.max(y0, r.j0 * C), yb = Math.min(y1, (r.j1 + 1) * C); return [[xa, ya], [xb, ya], [xb, yb], [xa, yb]]; });
+}
+/**
+ * THE MASK AS SHAPES, NOT SQUARES (plan 17). Each 4-connected piece of the mask inside the box is traced
+ * as one ring, its 20 m staircase straightened (RDP at 0.7 of a cell) and its corners rounded (two Chaikin
+ * passes), so a wood's edge, a field cut by a diagonal road or the river's bank reads as a line and not a
+ * comb. A piece with a hole in it (a field round a farmstead) keeps its squares: the ground layer is drawn
+ * as simple rings, and a ring traced round a hole would paint over what is in it.
+ */
+function maskShapes(G, [x0, y0, x1, y1], ok) {
+  const C = CELL, i0 = Math.max(0, Math.floor(x0 / C)), i1 = Math.min(G.W - 1, Math.ceil(x1 / C) - 1);
+  const j0 = Math.max(0, Math.floor(y0 / C)), j1 = Math.min(G.W - 1, Math.ceil(y1 / C) - 1);
+  const W = G.W, seen = new Uint8Array(G.N), mine = new Uint8Array(G.N), out = [];
+  const inBox = (k) => { const i = k % W, j = (k - i) / W; return i >= i0 && i <= i1 && j >= j0 && j <= j1; };
+  const nb = (k) => { const i = k % W; return [i > i0 ? k - 1 : -1, i < i1 ? k + 1 : -1, k - W >= 0 ? k - W : -1, k + W < G.N ? k + W : -1]; };
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const k0 = j * W + i;
+    if (seen[k0] || !ok(k0)) continue;
+    const cells = [k0]; seen[k0] = 1;
+    let bi0 = i, bi1 = i, bj0 = j, bj1 = j;
+    for (let h = 0; h < cells.length; h++) for (const m of nb(cells[h])) {
+      if (m < 0 || seen[m] || !inBox(m) || !ok(m)) continue;
+      seen[m] = 1; cells.push(m);
+      const mi = m % W, mj = (m - mi) / W; bi0 = Math.min(bi0, mi); bi1 = Math.max(bi1, mi); bj0 = Math.min(bj0, mj); bj1 = Math.max(bj1, mj);
+    }
+    for (const c of cells) mine[c] = 1;
+    // a hole: a cell in the piece's box that is not in the piece and cannot reach the box's edge
+    const bw = bi1 - bi0 + 1, bh = bj1 - bj0 + 1, outside = new Uint8Array(bw * bh), q = [];
+    const at = (ii, jj) => (jj - bj0) * bw + (ii - bi0);
+    const seed = (ii, jj) => { const a = at(ii, jj); if (!mine[jj * W + ii] && !outside[a]) { outside[a] = 1; q.push([ii, jj]); } };
+    for (let ii = bi0; ii <= bi1; ii++) { seed(ii, bj0); seed(ii, bj1); }
+    for (let jj = bj0; jj <= bj1; jj++) { seed(bi0, jj); seed(bi1, jj); }
+    while (q.length) {
+      const [ii, jj] = q.pop();
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ni = ii + di, nj = jj + dj; if (ni >= bi0 && ni <= bi1 && nj >= bj0 && nj <= bj1) seed(ni, nj); }
+    }
+    let holes = false;
+    for (let jj = bj0; jj <= bj1 && !holes; jj++) for (let ii = bi0; ii <= bi1; ii++) if (!mine[jj * W + ii] && !outside[at(ii, jj)]) { holes = true; break; }
+    const ring = !holes && cells.length >= 3 ? maskOutline(G, mine, { i0: bi0, i1: bi1, j0: bj0, j1: bj1 }) : null;
+    if (ring && ring.length >= 4) {
+      let r = closedRdp(ring, C * 0.7);
+      if (r.length >= 3) r = chaikinClosed(r, 2);
+      if (r.length >= 3) out.push(r.map((p) => [Math.min(x1, Math.max(x0, p[0])), Math.min(y1, Math.max(y0, p[1]))]));
+    } else {
+      out.push(...maskRects(G, [Math.max(x0, bi0 * C), Math.max(y0, bj0 * C), Math.min(x1, (bi1 + 1) * C), Math.min(y1, (bj1 + 1) * C)], (k) => mine[k] === 1));
+    }
+    for (const c of cells) mine[c] = 0;
+  }
+  return out;
 }
 export { SZ, ROAD_W, pointInRing, cumLen, pointAt, perp };
 

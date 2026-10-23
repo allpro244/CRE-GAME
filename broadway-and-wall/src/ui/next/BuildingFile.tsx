@@ -18,8 +18,10 @@ import { demandNow } from "@/engine/demand";
 import { describePropertyEvent, propertyTimeline } from "@/engine/history";
 import { entitleQuote, platQuote } from "@/engine/landdev";
 import { tractLotQuote } from "@/engine/homes";
-import { platTractLots } from "@/citygen/index.mjs";
+import { tractYield, plannedLots } from "@/engine/platdesign";
 import { HomesCard, ParcelPanel } from "@/ui/panels/ParcelDesk";
+import { heldScheme } from "@/ui/panels/DevelopDesk";
+import { productOf } from "@/engine/products";
 import { ownerName } from "@/ui/derive";
 import { usd, sf } from "@/ui/format";
 import { ActionFooter, Drawer, type Verb } from "./Drawer";
@@ -248,24 +250,24 @@ function Overview({ game, parcels, bbl, h }: { game: GameState; parcels: ParcelT
  * THE TRACT, IN NUMBERS (region). Where it stands — farm, at the board,
  * entitled, streets going in — and what each next step costs and returns, from
  * the engine's own quotes (landdev.ts entitleQuote / platQuote, homes.ts
- * tractLotQuote) on the plat citygen draws for it (platTractLots), as the
+ * tractLotQuote) on the plat the desk draws by default (platdesign.ts tractYield), as the
  * classic land card reads them.
  */
 function TractBox({ game, parcels, bbl }: { game: GameState; parcels: ParcelTable; bbl: string }) {
   const rec = parcels[bbl]!;
   const tr = rec.tract!;
   const app = game.entitlementApps?.[bbl], rz = game.rezoned?.[bbl], plat = game.plats?.[bbl];
-  const lotSf = rz?.lotSf ?? 7_500;
-  const lots = platTractLots(tr, lotSf).lots;
-  const eq = !app && !rz && game.holdings[bbl] ? entitleQuote(game, parcels, bbl, lotSf, lots.length) : null;
+  const { n: nLots, lotSf } = plannedLots(game, parcels, bbl);
+  const lots = plat ? plat.lots : tractYield(rec, lotSf).lots;
+  const eq = !app && !rz && game.holdings[bbl] ? entitleQuote(game, parcels, bbl, lotSf, nLots) : null;
   const pq = rz && !plat ? platQuote(game, lots.map(({ a, f, d }) => ({ a, f, d }))) : null;
-  const t = !plat ? tractLotQuote(game, parcels, bbl, lotSf, lots.length) : null;
+  const t = !plat && nLots >= 4 ? tractLotQuote(game, parcels, bbl, lotSf, nLots) : null;
   const stage = plat ? (plat.done ? "Lots" : "Streets") : app ? "Board" : rz ? "Entitled" : "Farm";
   const rows: [string, React.ReactNode][] = [
     ["Stage", <span key="s" className={"nx-stage nx-stage-" + stage.toLowerCase()}>{stage}</span>],
     ["Acres", <span key="a" className="nx-fig">{(rec.lotArea / 43_560).toFixed(1)}</span>],
     ["Edge", <span key="e" className="nx-fig">{(tr.edgeM / 1000).toFixed(1)} km</span>],
-    ["Lots", <span key="l" className="nx-fig">{lots.length} × {lotSf.toLocaleString()} sf</span>],
+    ["Lots", <span key="l" className="nx-fig">{nLots >= 4 ? `${nLots} × ${lotSf.toLocaleString()} sf` : "none fit"}</span>],
   ];
   if (eq) rows.push(["Rezone cost", <span key="rc" className="nx-fig">{usd(eq.cost)}</span>], ["Board", <span key="bm" className="nx-fig">{eq.months} mo · {Math.round(eq.odds * 100)}%</span>]);
   if (app) rows.push(["Board", <span key="bd" className="nx-fig">{monthLabel(app.decideM)} · {Math.round(app.odds * 100)}%</span>]);
@@ -290,8 +292,16 @@ function BuildTab({ game, parcels, bbl }: { game: GameState; parcels: ParcelTabl
           <thead><tr><th>Scheme</th><th className="num">Hurdle</th><th className="num">Profit</th><th className="num">Equity</th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.use + r.floors} className={i === pick ? "on" : undefined} onClick={() => useNext.getState().setSchemePick({ bbl, i })}>
-                <td>{r.use} · {r.floors} fl · {Math.round(r.coverage * 100)}%</td>
+              <tr key={r.use + r.floors + (r.product ?? "")} className={i === pick ? "on" : undefined} onClick={() => {
+                useNext.getState().setSchemePick({ bbl, i });
+                // THE PICK IS THE DESK'S SCHEME: the dials move to it, so the desk
+                // below and the footer read one building (use, floors, product).
+                useStore.getState().setDevDraft(bbl, {
+                  use: r.use, floors: r.floors, cov: r.coverage, contract: "gmp", bank: r.lender, spec: 0.5,
+                  product: r.product,
+                });
+              }}>
+                <td>{r.product ? productOf(r.product)?.short : `${r.use} · ${r.floors} fl`} · {Math.round(r.coverage * 100)}%</td>
                 <td className={"num mono" + (r.hurdle < 1 ? " nx-neg" : "")}>{r.hurdle.toFixed(2)}×</td>
                 <td className={"num mono" + (r.profit < 0 ? " nx-neg" : "")}>{usd(r.profit)}</td>
                 <td className="num mono">{usd(r.equity)}</td>
@@ -300,7 +310,8 @@ function BuildTab({ game, parcels, bbl }: { game: GameState; parcels: ParcelTabl
           </tbody>
         </table>
       )}
-      <ParcelPanel embedded tab="build" />
+      {/* re-mounted on a pick, so the desk opens on the dials the pick wrote */}
+      <ParcelPanel key={`build:${pick}`} embedded tab="build" />
     </div>
   );
 }
@@ -351,11 +362,30 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
       if (game.developments[bbl]) return <ActionFooter verbs={[{ label: "Job file", run: () => setTab("build") }]} />;
       // the sweep is dozens of pro formas: run it only once the Build tab is asked for
       if (tab !== "build") return <ActionFooter verbs={[...verbs, { label: "Plan", primary: true, run: () => setTab("build") }]} />;
+      // ONE SCHEME. Once the desk holds dials (the player set them, or picked a
+      // row), the footer builds what the desk shows — use, height, product,
+      // contract, desk and leverage from the same reading (heldScheme). Before
+      // that, it offers the picked row of the sweep, as the table shows.
+      if (h?.devDraft) {
+        const hs = heldScheme(game, parcels, bbl);
+        const p = hs.plan;
+        const name = hs.gprod ? hs.gprod.short : `${hs.use} · ${p?.floors ?? hs.fl} fl`;
+        return (
+          <ActionFooter
+            left={p ? <span className="mono nx-dim">{name} · {p.hurdleRatio.toFixed(2)}×</span> : undefined}
+            verbs={[{
+              label: "Break ground", primary: true,
+              disabled: !p ? "No scheme prices" : p.hurdleRatio < 1 ? "Below hurdle" : undefined,
+              run: () => p && st.develop(bbl, hs.use, hs.fl, hs.cov, hs.contract, hs.ltc, { mix: hs.customMix, bts: hs.custom.bts, groundRetail: hs.custom.groundRetail, design: hs.saved?.design, ...(hs.gprod ? { product: hs.gprod.key } : {}) }, hs.bank, hs.spec),
+            }]}
+          />
+        );
+      }
       const rows: SchemeRow[] = bestSchemes(game, parcels, bbl);
       const r = rows[pickI] ?? rows[0];
       return (
         <ActionFooter
-          left={r ? <span className="mono nx-dim">{r.product ?? `${r.use} · ${r.floors} fl`} · {r.hurdle.toFixed(2)}×</span> : undefined}
+          left={r ? <span className="mono nx-dim">{r.product ? productOf(r.product)?.short : `${r.use} · ${r.floors} fl`} · {r.hurdle.toFixed(2)}×</span> : undefined}
           verbs={[{
             label: "Break ground", primary: true,
             disabled: !r ? "No scheme prices" : r.hurdle < 1 ? "Below hurdle" : undefined,

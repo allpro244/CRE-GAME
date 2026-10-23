@@ -19,6 +19,7 @@ import {
   makeProjection, polygonArea, centroid, bboxOfRing, sharedBoundaryLength,
 } from "./geom.mjs";
 import { massingStack } from "./massing.mjs";
+import { carAccessibility } from "./region/access.mjs";
 
 /**
  * @param {{rawParcels:object, rawBuildings:object, rawStations:object,
@@ -315,6 +316,28 @@ export function buildCityData(src) {
       + (thirdSt ? thirdSt.w * gauss(Math.hypot(l.c[0] - thirdSt.xy[0], l.c[1] - thirdSt.xy[1]), 260) : 0),
   }));
   const p95 = (arr) => { const s = [...arr].sort((a, b) => a - b); return s[Math.floor(s.length * 0.95)] || 1; };
+  // A COUNTY SEAT IS REACHED BY CAR (region plan 16, region/access.mjs). Where
+  // the manifest carries the map's drive-time network, each lot's
+  // accessibility is the Huff-weighted households and jobs within a fifteen-
+  // minute drive: the households drawn out past the town and the town's own
+  // flats (a unit a household), and the jobs the employment layer stamps.
+  // Islands carry no carAccess and never reach this.
+  const car = manifest?.carAccess ? (() => {
+    const ca = manifest.carAccess;
+    const origins = [];
+    for (const h of ca.homes ?? []) { const xy = proj.toXY(h.p); origins.push({ x: xy[0], y: xy[1], n: h.n }); }
+    for (const l of lots) {
+      const kind = assetClass(l.p.bldgclass, l.p.landuse, num(l.p.bldgarea) ?? 0);
+      if (kind !== "multifamily" && kind !== "stacked") continue;
+      const units = num(l.p.unitsres) ?? 0;
+      const n = units > 0 ? units : kind === "multifamily" ? (num(l.p.bldgarea) ?? 0) / 900 : 0;
+      if (n > 0) origins.push({ x: l.c[0], y: l.c[1], n });
+    }
+    for (const j of jobPts) origins.push({ x: j.xy[0], y: j.xy[1], n: (j.office ?? 0) + (j.industrial ?? 0) + (j.retail ?? 0) });
+    const ixs = (ca.ixs ?? []).map((q) => proj.toXY(q));
+    return carAccessibility(lots.map((l) => l.c), origins, ixs);
+  })() : null;
+  const car95 = car ? p95(car) : 1;
   const t95 = p95(raws.map((r) => r.transit));
   const o95 = p95(raws.map((r) => r.office)) || 1;
   const m95 = p95(raws.map((r) => r.mill)) || 1;
@@ -434,7 +457,15 @@ export function buildCityData(src) {
     // a mild exclusivity bend on a surface that already has a shape.
     // Keep in lockstep with DEMAND_GAMMA in src/engine/value.ts.
     const DEMAND_GAMMA = 1.05;
-    const blend = Math.min(1,
+    // ...and in a car town the 44 accessibility points (transit 30, the
+    // second centre 14) are its drive-time access, on its own p95 like
+    // every other term. The island's expression below is untouched.
+    const blend = car ? Math.min(1,
+      (44 * Math.min(1, car[i] / car95)
+        + 22 * Math.min(1, dem.office / o95)
+        + 16 * Math.min(1, dem.mill / m95)
+        + 8 * Math.min(1, dem.shop / k95)
+        + 10 * Math.min(1, dem.amen / a95)) / 100) : Math.min(1,
       (30 * Math.min(1, dem.transit / t95)
         + 22 * Math.min(1, dem.office / o95)
         + 16 * Math.min(1, dem.mill / m95)

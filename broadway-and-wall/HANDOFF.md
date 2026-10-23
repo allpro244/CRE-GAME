@@ -1281,9 +1281,39 @@ park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
   6.1% -> 5.0%, and the multifamily occupancy-cap rail binding 5% -> 17% of
   months — watch that rail. BASELINE.json was already stale (27 of 45
   metrics off before this change) and was not regenerated.
-- **No transit.** The demand blend's transit and second-centre terms (44 of
-  100 points) read zero on the region, so its demand scores run lower than an
-  island's. Car access as a demand term is a later-phase question.
+- **Car access, not transit (CITY_PLAN 16, Oct 2026, claude/suburban-demand).**
+  The demand blend's transit and second-centre terms (44 of 100 points) read
+  zero on the region: median raw demand 7 against an island's 44, max 45. On
+  a region map (`manifest.carAccess`, plan >= 16) build.mjs gives those 44
+  points to drive-time access instead (`citygen/region/access.mjs`): Huff-
+  weighted households + jobs (EPA SLD activity) within 15 minutes, surface
+  at 50 km/h x 1.2 circuity (Ballou 2002) or via the open interchanges at
+  100 km/h, decay (2 min / t)^2 [K, shape]. Seed 1 raw demand median 7 -> 43,
+  max 45 -> 97. Islands and plan-15 region saves are byte-identical (hash
+  referee on parcels+adjacency, and HASH=1 conserve end state). NOTE: rents
+  and land are pivoted on the town's own sf-weighted location mean
+  (`locIdxMean`), so this is a change of SHAPE, not level: fringe retail rent
+  at 1-2 km rose ~65% (2.52 -> 4.14 town $/sf), the downtown's retail premium
+  shrank (a car town's best retail is not its main street), and land medians
+  moved -20% to +10% by band. NOT YET: the yearly refresh with roads.ts
+  congestion, new interchanges and new rooftops (a drift term in demand.ts),
+  and AADT/frontage beyond the existing corridor premium.
+- **The grocer pays out of its sales (region only).** `towngrowth.ts
+  grocerSales`: the town's households (the trade-area list, county entries
+  included) x BLS CES 2023 food-at-home $6,053 x Huff capture among the open
+  and proposed grocers within 15 minutes. resolveRec stamps it on centre-
+  sized vacant lots (`rec.grocerSales`, via `value.ts GROCER_SALES` to avoid an
+  import cycle), and the pro forma sets the grocer's base rent to 3.16% of
+  sales (Karabus food-retail occupancy median, total occupancy) less the NNN
+  charges the building recovers. Measured on seed 1's proposals: $3.5-3.6M
+  sales (about $500/sf in real dollars), $2.5-2.7/sf base against the old
+  0.5 x inline rule's $2.53 — the old ratio was about right. Centres STILL do
+  not pencil: 3-5% yield on cost against 8%, because inline rent (~$5 town,
+  ~$21 real) does not carry a ~$59/sf town (~$245 real) neighbourhood centre.
+  That matches the 2020s market (spec centre construction near record lows).
+  The real route new grocery stores take is the grocer's own build-to-suit,
+  sized to its trade area: equal sales in a 20k sf box clear the 4% occupancy
+  ceiling where a 30k sf one does not. That is the next mechanism.
 - **Phase 4, the region growing (`engine/growth.ts`, `roads.ts`, `towngrowth.ts`, `unpack.ts`; region only, its own rng channel "growth").**
   Households are the engine's population / 2.51; nothing new drives them.
   LAND DEVELOPERS (named, off-book) price every farm tract each quarter

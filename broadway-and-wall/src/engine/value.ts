@@ -1646,7 +1646,7 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
     // homebuilders' bid, less the board, the streets and the mains, the wait
     // and the odds of refusal (growth.ts tractBid). That is the development
     // option a fringe farm trades on, discovered, not stamped.
-    const sub = rec.tract ? econ.tractBid?.[rec.bbl] ?? 0 : 0;
+    const sub = rec.tract ? econ.tractMark?.[rec.bbl] ?? econ.tractBid?.[rec.bbl] ?? 0 : 0;
     if (sub > base) { base = sub; winner = "subdivider"; }
   } else if (farm > base) { base = farm; winner = "farm"; }
   // A FINISHED LOT ON A PLAT HAS A BUYER OF ITS OWN: the homebuilder, who
@@ -2817,11 +2817,19 @@ export function tradeAreaDemand(s: GameState, parcels: Record<string, ParcelReco
  */
 const ANCHORED_LOT_MIN_SF = 100_000;
 const ANCHOR_RADII = [...new Set(PRODUCT_KEYS.map((k) => PRODUCT_TYPES[k]).filter((p) => p.tradeRadiusM && p.anchors.length).map((p) => p.tradeRadiusM!))];
+/**
+ * The grocer's sales reader (towngrowth.ts grocerSales), handed in by
+ * towngrowth when it loads: value.ts importing towngrowth would close a module
+ * cycle through dev.ts whose top-level constants then initialise out of order.
+ */
+export const GROCER_SALES: { read?: (s: GameState, parcels: Record<string, ParcelRecord>, bbl: string) => number | undefined } = {};
 function stampTradeDraw(s: GameState, parcels: Record<string, ParcelRecord>, r: ParcelRecord): ParcelRecord {
   if (r.class !== "land" || !(r.lotArea >= ANCHORED_LOT_MIN_SF) || r.zoneDist === "AG" || r.bldgArea > 0) return r;
   const draw: Record<number, number> = {};
   for (const m of ANCHOR_RADII) draw[m] = tradeAreaDemand(s, parcels, r.bbl, m);
-  return { ...r, tradeDraw: draw };
+  // and on the region, the sales a grocer here would make (towngrowth.ts grocerSales)
+  const sales = s.citySize === "region" ? GROCER_SALES.read?.(s, parcels, r.bbl) : undefined;
+  return sales !== undefined ? { ...r, tradeDraw: draw, grocerSales: sales } : { ...r, tradeDraw: draw };
 }
 
 /**

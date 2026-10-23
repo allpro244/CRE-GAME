@@ -38,7 +38,7 @@
 import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { GameState } from "./types";
 import { monthLabel } from "./types";
-import { platTractLots } from "@/citygen/index.mjs";
+import { tractYield } from "./platdesign";
 import { rng } from "./market";
 import { ownerOf } from "./rivals";
 import { farmUsePsf } from "./value";
@@ -206,16 +206,9 @@ function hashNormal(key: string): number {
 /** citygen's plat of a tract at a lot size, reduced to what the engine needs; memoised (the geometry is a pure function of the tract). */
 const GEO = new Map<string, { n: number; frontage: number; lots: { a: number; f: number; d: number }[] }>();
 export function tractPlat(rec: ParcelRecord, lotSf: number) {
-  const t = rec.tract!;
-  const key = `${t.seed}:${t.id}:${lotSf}`;
-  let g = GEO.get(key);
-  if (!g) {
-    const lots = platTractLots(t, lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
-    g = { n: lots.length, frontage: lots.reduce((x, l) => x + l.f, 0), lots };
-    if (GEO.size > 2000) GEO.clear();
-    GEO.set(key, g);
-  }
-  return g;
+  // the one lot count (platdesign.ts tractYield): the developers read the plat the player's desk draws
+  void GEO;
+  return tractYield(rec, lotSf);
 }
 
 /** Communities selling, or about to: finished plats with lots left, plats under way, and rezonings before the board. */
@@ -470,6 +463,19 @@ function tickLandMarket(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (tradableTract(s, parcels, bbl) && !(g.refusedM?.[bbl] !== undefined && s.month - g.refusedM[bbl] < REHEAR_M)) reads.push(rd);
   }
   e.tractBid = bids;
+  // THE APPRAISED MARK. The developers' bid is a residual of a residual — the
+  // finished lots less the streets, the mains and the board — so a quarter's
+  // change in the sell-out pace or the number of communities selling swings
+  // it by a third with nobody trading. What a farm is MARKED at moves the way
+  // land appraisals do: once a year (each January's appraisal, as homes.ts
+  // marks unsold lots), or the first time a developer bids for it at all.
+  // The developers still decide on this quarter's read (below).
+  {
+    const annual = s.month % 12 === 0 || !e.tractMark;
+    const marks: Record<string, number> = annual ? {} : { ...e.tractMark };
+    for (const [b, v] of Object.entries(bids)) if (annual || marks[b] === undefined) marks[b] = v;
+    e.tractMark = marks;
+  }
   e.growthStamp = (e.growthStamp ?? 0) + 1;
   // THE DEVELOPERS' OWN READS. Each tract this quarter has one developer
   // looking at it, with its own read of the lots and the costs; it buys if

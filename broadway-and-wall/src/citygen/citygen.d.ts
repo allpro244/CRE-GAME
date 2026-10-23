@@ -136,6 +136,15 @@ declare module "@/citygen/index.mjs" {
   export const REFERENCE_SEED: number;
 }
 
+declare module "@/citygen/region/access.mjs" {
+  /** Huff's weight of a place `t` minutes' drive away (0 past fifteen minutes). */
+  export function huffW(t: number): number;
+  /** Drive minutes between two points (local metres) over the surface network and the open interchanges `ixs`. */
+  export function driveTimer(ixs: [number, number][]): (ax: number, ay: number, bx: number, by: number) => number;
+  export function carAccessibility(sites: [number, number][], origins: { x: number; y: number; n: number }[], ixs: [number, number][]): number[];
+  export function surfaceMin(m: number): number;
+}
+
 declare module "@/citygen/platPreview.mjs" {
   import type { GeneratedCity } from "@/citygen/index.mjs";
   /** The town as a plat drawing for the setup screen: an SVG string, `w` px wide. */

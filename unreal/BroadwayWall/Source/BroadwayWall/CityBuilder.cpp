@@ -2378,15 +2378,26 @@ void ACityBuilder::DressRoof(const FBWVolume& V, uint32 Seed)
 		else if (V.bCrown && V.Z1 >= 6000 && V.Year >= 1985 && TopW >= 1200 && TopW <= 5000 && InsideRing(V.Ring, C))
 		{
 			const bool bGlass = Rng.FRand() < 0.45;
-			const double Hc = TopW * (bGlass ? 0.45 : 0.10) / 60.0;   // models stand 60-70 units tall
+			// models stand 60-70 units tall; a sloped glass top is two or three storeys, not half the tower's width
+			const double Hc = FMath::Min(TopW * (bGlass ? 0.45 : 0.10), bGlass ? 1100.0 : 500.0) / 60.0;
 			AddProp(bGlass ? TEXT("/Game/BW/Roof/SM_Crown_GlassSlope.SM_Crown_GlassSlope") : TEXT("/Game/BW/Roof/SM_Crown_Screen.SM_Crown_Screen"),
 				FTransform(Axis, FVector(C, Z), FVector((e1 - e0) * (bGlass ? 1.0 : 0.6) / 100.0, (n1 - n0) * (bGlass ? 1.0 : 0.6) / 100.0, Hc)), true);
 		}
 		else if (V.bCrown && V.Z1 >= 2500 && e1 - e0 >= 1500 && n1 - n0 >= 1500 && InsideRing(V.Ring, C))
 		{
-			const double Hp = 450 + Rng.FRandRange(0, 1) * (V.Z1 >= 12000 ? 700 : 300);
-			const FVector Scale((e1 - e0) * Rng.FRandRange(0.38, 0.55) / 100.0, (n1 - n0) * Rng.FRandRange(0.38, 0.55) / 100.0, Hp / 100.0);
-			AddProp(TEXT("/Game/BW/Roof/SM_Penthouse.SM_Penthouse"), FTransform(Axis, FVector(C, Z), Scale), true);
+			// THE MACHINE ROOM IS THE CORE'S, NOT THE ROOF'S. It sits over the lift
+			// shafts and the stairs: a lift overrun and machine room is about 4.5-6 m
+			// tall, and its plan is the core's — some 8 x 10 m on a mid-rise, up to
+			// about 12 x 20 m with the cooling plant on a big tower floor. It used to
+			// be 38-55% of the roof each way, so a broad mid-rise wore a box half its
+			// width and up to 7.5 m tall whatever its form (owner, Oct 2026: "an
+			// oversized topping-out box on every form"). Now it is sized from the
+			// core, and on a form's top tier from that tier's own narrower roof.
+			const bool bTower = V.Z1 >= 12000;
+			const double Le = FMath::Min((e1 - e0) * 0.45, Rng.FRandRange(800, bTower ? 2000 : 1200));
+			const double Ln = FMath::Min((n1 - n0) * 0.45, Rng.FRandRange(700, bTower ? 1200 : 1000));
+			const double Hp = Rng.FRandRange(450, bTower ? 650 : 550);
+			AddProp(TEXT("/Game/BW/Roof/SM_Penthouse.SM_Penthouse"), FTransform(Axis, FVector(C, Z), FVector(Le / 100.0, Ln / 100.0, Hp / 100.0)), true);
 		}
 		// ROOF LIFE by era and use, set off the roof's centre along its long axis
 		// (clear of the penthouse): a new apartment building's amenity deck, a

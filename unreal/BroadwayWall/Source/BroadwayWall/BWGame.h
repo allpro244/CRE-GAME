@@ -19,6 +19,8 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/CameraComponent.h"
+#include "Styling/SlateBrush.h"
+#include "Widgets/Layout/SConstraintCanvas.h"
 #include "BWGame.generated.h"
 
 class ACityBuilder;
@@ -79,10 +81,25 @@ public:
 	double DeskPitch = 0;
 	/** -KitZoom=F: the style renders move in to F of the framing distance, looking at the lower floors (a close-up of the texture) */
 	double DeskZoom = 1;
-	/** The view to go back to when the desk closes. */
+	/** The view to go back to when the desk closes (only when the desk moved the main camera). */
 	FVector SavedFocus = FVector::ZeroVector;
 	double SavedYaw = 0, SavedPitch = -45, SavedDistance = 150000;
 	void SetDeskRect(const FVector4& R);
+	/**
+	 * THE DESK'S MODEL IS DRAWN OFF TO THE SIDE. A second camera on the scheme
+	 * renders into DeskTarget, which the game mode shows in the desk's box under
+	 * the page; the main camera, and so the city behind the page, stays exactly
+	 * where the player left it (owner, Oct 2026: opening Design changed the
+	 * background). -KitThumbs frames the main camera instead (bDeskOnMain): its
+	 * thumbnails are window shots.
+	 */
+	UPROPERTY()
+	TObjectPtr<class USceneCaptureComponent2D> DeskCapture;
+	UPROPERTY()
+	TObjectPtr<class UTextureRenderTarget2D> DeskTarget;
+	bool bDeskOnMain = false;
+	/** The box's size in pixels, for the render target. */
+	FIntPoint DeskPx = FIntPoint(0, 0);
 
 	/** Phase 4 sound: a city bed that crossfades from street wash to high air with
 	 *  altitude, and a jackhammer that sits on the nearest site going up. */
@@ -181,6 +198,12 @@ private:
 	// not StartPlay: that name is AGameModeBase's own virtual (it begins play)
 	void StartPlayHost();
 	TSharedPtr<SWebBrowser> Browser;
+	/** The Build desk's model (the pawn's DeskTarget), laid under the page in the desk's box. */
+	TSharedPtr<class SConstraintCanvas> DeskCanvas;
+	TSharedPtr<class SImage> DeskImage;
+	SConstraintCanvas::FSlot* DeskSlot = nullptr;
+	FSlateBrush DeskBrush;
+	void PlaceDeskModel(const FVector4& R);
 public:
 	/** Run a line of script in the page (the hover card asks it for a lot's numbers). */
 	void PageJs(const FString& Js);

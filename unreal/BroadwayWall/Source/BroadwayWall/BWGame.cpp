@@ -1107,8 +1107,9 @@ void ABWGameMode::SetSeason(int32 Month)
 	const double Doy = 15 + 30.4 * M;
 	const double Decl = FMath::DegreesToRadians(23.44 * FMath::Sin(2 * PI * (Doy - 81) / 365.0));
 	const double Lat = FMath::DegreesToRadians(41.0);
-	// afternoon, 1:30 to 4:30: a sun low enough to model a facade, still plainly day
-	const double Hour = 13.5 + 3.0 * U(0);
+	// MIDDAY, 10:30 to 2:00 (owner: "too much evening light, more daytime"): the
+	// old 1:30-4:30 window put a winter sun 12 degrees up and read as dusk
+	const double Hour = 10.5 + 3.5 * U(0);
 	const double HA = FMath::DegreesToRadians(15.0 * (Hour - 12.0));
 	const double SinEl = FMath::Sin(Lat) * FMath::Sin(Decl) + FMath::Cos(Lat) * FMath::Cos(Decl) * FMath::Cos(HA);
 	const double El = FMath::Asin(SinEl);

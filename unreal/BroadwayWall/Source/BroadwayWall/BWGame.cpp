@@ -69,6 +69,7 @@ ABWCameraPawn::ABWCameraPawn()
 	DeskCapture->bAlwaysPersistRenderingState = true;   // Lumen and TSR accumulate frame to frame
 	DeskCapture->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
 	DeskCapture->FOVAngle = 40;
+	DeskCapture->LODDistanceFactor = 0.5f;   // full-detail meshes at the model's distance
 }
 
 void ABWCameraPawn::BeginPlay()
@@ -149,6 +150,10 @@ void ABWCameraPawn::Tick(float Dt)
 				const double Dist = DeskZoom * Extent / (1.5 * TanV);
 				DeskCapture->SetWorldLocationAndRotation(Look - Rot.Vector() * Dist, Rot);
 				DeskCapture->bCaptureEveryFrame = true;
+				// TEXTURE STREAMING ONLY KNEW THE MAIN CAMERA: the model's facades loaded at the
+				// mips the far-off main view asked for and read mushy (owner screenshot). Tell the
+				// streamer about the desk's camera too, at the target's width.
+				IStreamingManager::Get().AddViewInformation(DeskCapture->GetComponentLocation(), DeskPx.X > 0 ? DeskPx.X : 1600, DeskPx.X / FMath::Tan(FMath::DegreesToRadians(DeskCapture->FOVAngle * 0.5)));
 				bCapturing = true;
 			}
 		}
@@ -186,7 +191,9 @@ void ABWCameraPawn::SetDeskRect(const FVector4& R)
 	// the model's render target, the box's size in pixels (capped: it is a thumbnail-sized view)
 	FVector2D Vp(1920, 1080);
 	if (GEngine && GEngine->GameViewport) GEngine->GameViewport->GetViewportSize(Vp);
-	const FIntPoint Px(FMath::Clamp(int32(Vp.X * R.Z), 16, 2048), FMath::Clamp(int32(Vp.Y * R.W), 16, 2048));
+	// rendered at twice the box's pixels and filtered down: the capture gets no upscaler's
+	// anti-aliasing, and at 1:1 the model read soft and jagged beside the city (owner)
+	const FIntPoint Px(FMath::Clamp(int32(Vp.X * R.Z * 2), 16, 3200), FMath::Clamp(int32(Vp.Y * R.W * 2), 16, 3200));
 	if (!DeskTarget)
 	{
 		DeskTarget = NewObject<UTextureRenderTarget2D>(this);

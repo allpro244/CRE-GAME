@@ -161,7 +161,8 @@ function LandDevCard({ bbl }: { bbl: string }) {
         {rec.ag === "wood" ? "Woodland" : "Farmland"}, {acres.toFixed(0)} acres, {rz ? `rezoned ${rz.zone} (FAR ${rz.far}), farmed until the streets go in` : "zoned for agriculture — priced at what it earns as a farm"}.
         {" "}{((rec.buildableSf ?? rec.lotArea) / 43560).toFixed(0)} buildable acres{rec.buildableSf !== undefined && rec.buildableSf < rec.lotArea * 0.95 ? " (the rest is floodplain or taken)" : ""}; {(rec.tract.edgeM / 1000).toFixed(1)} km from the town's edge.
       </div>
-      {!owned && <div className="hint">Buy it to rezone it and cut it into lots.</div>}
+      <LandProForma bbl={bbl} lotSf={rz?.lotSf ?? lotSf} />
+      {!owned && <div className="hint">Buy it, apply for permits to rezone it, and cut it into lots.</div>}
       {owned && !app && !rz && (() => {
         const planned = tractYield(rec, lotSf).n;
         const q = entitleQuote(game, parcels, bbl, lotSf, planned);
@@ -184,13 +185,13 @@ function LandDevCard({ bbl }: { bbl: string }) {
                 <Row k="Counsel, studies, hearings" v={usd(q.cost)} />
                 <Row k="The board decides in" v={`${q.months} months`} />
                 <Row k="Applications like it pass" v={`${Math.round(q.odds * 100)}%`} />
-                <button type="button" className="btn btn-sm" onClick={() => fileRezoning(bbl, lotSf)}>File the rezoning</button>
+                <button type="button" className="btn btn-sm" onClick={() => fileRezoning(bbl, lotSf)}>Apply for permits · {usd(q.cost)}</button>
               </>
             ) : <div className="hint">Too little buildable ground on this tract for a plat at that lot size.</div>}
           </>
         );
       })()}
-      {app && <Row k="Before the board" v={`decides ${monthLabel(app.decideM)} · ${app.lots} lots · ${Math.round(app.odds * 100)}% odds`} />}
+      {app && <Row k="Permits under review" v={`board decides ${monthLabel(app.decideM)} · ${app.lots} lots · ${Math.round(app.odds * 100)}% odds`} />}
       {owned && rz && !plat && (() => {
         const lots = tractYield(rec, rz.lotSf).lots;
         const q = platQuote(game, lots, rz.lotSf, parcels, bbl);
@@ -216,6 +217,82 @@ function LandDevCard({ bbl }: { bbl: string }) {
           </>
         );
       })()}
+    </div>
+  );
+}
+
+/**
+ * THE LOT DEVELOPMENT PRO FORMA AND TIMELINE (owner: "a rough basic proforma
+ * before you start … how much each stage costs and the estimated timeline",
+ * and "how much longer is left for each stage as it progresses"). Three
+ * stages — permits (the rezoning), streets and utilities, lot sales — each
+ * with its cost or revenue, its length, and once under way a bar and the
+ * months left. Every figure is the engine's own quote (landdev.ts entitleQuote
+ * / platQuote, homes.ts tractLotQuote / platHomesView); once a stage has
+ * started its record's real dates replace the estimate.
+ */
+function LandProForma({ bbl, lotSf }: { bbl: string; lotSf: number }) {
+  const game = useStore((s) => s.game);
+  const parcels = useStore((s) => s.parcels);
+  const rec = parcels?.[bbl];
+  if (!game || !parcels || !rec?.tract) return null;
+  const m = game.month;
+  const app = game.entitlementApps?.[bbl];
+  const rz = game.rezoned?.[bbl];
+  const plat = game.plats?.[bbl];
+  const yld = tractYield(rec, lotSf);
+  const n = plat?.lots.length ?? yld.n;
+  if (n <= 0) return null;
+  const eq = entitleQuote(game, parcels, bbl, lotSf, yld.n);
+  const pq = platQuote(game, yld.lots, lotSf, parcels, bbl);
+  const tq = tractLotQuote(game, parcels, bbl, lotSf, n);
+  const hv = plat?.done ? platHomesView(game, parcels, bbl) : null;
+  const h = game.holdings[bbl];
+  const listing = game.listings.find((l) => l.bbl === bbl);
+  const land = h?.costBasis ?? listing?.ask ?? null;
+  const pace = hv?.pace ?? tq.pace;
+  const sellMo = pace > 0 ? Math.ceil(n / pace) : Infinity;
+  type St = { k: string; money: number; months: number; start?: number; end?: number; done: boolean; note?: string };
+  const stages: St[] = [
+    { k: "Permits (rezoning)", money: -(app?.cost ?? eq?.cost ?? 0), months: app ? app.decideM - app.filedM : eq?.months ?? 0,
+      start: app?.filedM ?? rz?.m, end: app?.decideM ?? rz?.m, done: !!rz,
+      note: rz ? `granted ${monthLabel(rz.m)}` : app ? `${Math.round(app.odds * 100)}% odds` : eq ? `${Math.round(eq.odds * 100)}% odds` : undefined },
+    { k: "Streets & utilities", money: -(plat?.cost ?? pq.cost), months: plat ? plat.doneM - plat.startM : pq.months,
+      start: plat?.startM, end: plat?.doneM, done: !!plat?.done },
+    { k: "Lot sales to builders", money: n * tq.lotValue, months: Number.isFinite(sellMo) ? sellMo : 0,
+      start: plat?.done ? plat.doneM : undefined, end: plat?.done && Number.isFinite(sellMo) ? plat.doneM + sellMo : undefined,
+      done: !!hv && hv.left === 0, note: hv ? `${n - hv.left} of ${n} sold · ${pace.toFixed(1)}/mo` : `${pace.toFixed(1)}/mo · ${usd(tq.lotValue)} a lot` },
+  ];
+  const cost = (land ?? 0) - stages[0].money - stages[1].money;
+  const rev = stages[2].money;
+  const totalMo = stages.reduce((a, x) => a + x.months, 0);
+  return (
+    <div className="proforma">
+      <div className="proforma-head">Pro forma · {n} lots · about {totalMo} months</div>
+      <table className="tbl proforma-tbl">
+        <tbody>
+          {stages.map((x) => {
+            const live = x.start !== undefined && !x.done && m >= x.start;
+            const span = Math.max(1, x.months);
+            const pct = x.done ? 1 : live ? Math.min(1, (m - x.start!) / span) : 0;
+            const left = live && x.end !== undefined ? Math.max(0, x.end - m) : null;
+            return (
+              <tr key={x.k}>
+                <td>
+                  <div>{x.done ? "✓ " : live ? "▶ " : ""}{x.k}</div>
+                  <div className="proforma-bar"><i style={{ width: `${(pct * 100).toFixed(0)}%` }} className={x.done ? "done" : ""} /></div>
+                  <div className="dim proforma-note">
+                    {x.done ? "done" : live ? `${left} mo left · ends ${monthLabel(x.end!)}` : `${x.months} mo`}{x.note ? ` · ${x.note}` : ""}
+                  </div>
+                </td>
+                <td className={"num mono " + (x.money < 0 ? "neg" : "pos")}>{x.money < 0 ? `−${usd(-x.money)}` : usd(x.money)}</td>
+              </tr>
+            );
+          })}
+          {land !== null && <tr><td>Land{h ? " (your basis)" : " (ask)"}</td><td className="num mono neg">−{usd(land)}</td></tr>}
+          <tr className="proforma-total"><td>Profit before tax{land === null ? " (ex land)" : ""}</td><td className={"num mono " + (rev - cost >= 0 ? "pos" : "neg")}>{usd(rev - cost)}</td></tr>
+        </tbody>
+      </table>
     </div>
   );
 }

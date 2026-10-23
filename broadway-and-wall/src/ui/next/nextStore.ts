@@ -20,12 +20,13 @@ const write = (k: string, v: string) => { try { localStorage.setItem(k, v); } ca
 
 function initialShell(): UiShell {
   try {
-    const q = new URLSearchParams(location.search).get("ui");
-    if (q === "next" || q === "classic") return q;
+    // ?ui=next survives a reload in this tab only (a new game reloads without the query)
+    const q = new URLSearchParams(location.search).get("ui") ?? sessionStorage.getItem("bw:ui");
+    if (q === "next" || q === "classic") { sessionStorage.setItem("bw:ui", q); return q; }
   } catch { /* no location */ }
-  // CLASSIC IS THE DEFAULT (owner, 2026-10-23: "focus on having the classic UI
-  // as the main thing"). The new shell stays a setting, and a browser that chose it keeps it.
-  return read("bw:ui-shell") === "next" ? "next" : "classic";
+  // CLASSIC ONLY (owner, 2026-10-23: "wipe the new UI ... save it in a hidden way").
+  // The new shell's code is kept; it opens only with ?ui=next in the address.
+  return "classic";
 }
 
 function initialPreset(): BuyPreset {

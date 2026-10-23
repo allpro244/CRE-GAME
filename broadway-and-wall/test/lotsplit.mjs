@@ -108,7 +108,7 @@ function builtScenarios(W, where) {
   const goods = [];
   let bad = null;
   for (const b of built) {
-    if (goods.length >= 6 && bad) break;
+    if (goods.length >= 12 && bad) break;
     const geo = geoOf(W, b);
     if (!geo || !geo.footprints.length) continue;
     const cands = [];
@@ -300,12 +300,46 @@ function builtScenarios(W, where) {
   builtScenarios(W, "region");
   ok(done.good, "a built lot split, building conforming (2)");
   ok(done.bad, "a non-conforming split refused (4)");
-  ok(done.mort, "a mortgaged split with a partial release (5)");
+  if (!done.mort) {
+    // no building here a desk will lend on and split: a land loan, which the lender splits across the lots
+    console.log("\n5. a mortgaged split (land paper, split across the lots)");
+    const free = freeOf(W);
+    for (const b of W.bbls) {
+      const r = W.parcels[b];
+      if (r.class !== "land" || r.ag || r.tract || r.lotArea < 9000 || !((r.lotFront ?? 0) >= 60) || !free(b)) continue;
+      const geo = geoOf(W, b);
+      if (!geo) continue;
+      const plan = { cuts: E.equalCuts(geo, 2) };
+      if (!E.splitQuote(asOwner(W, b), W.parcels, b, geo, plan).ok) continue;
+      const price = Math.round(E.marketAppraisal(W.g, E.resolveRec(W.parcels, W.g, b), b));
+      let bought = false;
+      for (const prod of ["land", "tideLand"]) {
+        const rr = E.executePurchase(W.g, W.parcels, b, price, prod, false, 1);
+        if (!rr.err && rr.s.holdings[b]?.loan) { W.g = rr.s; ledger(W.g, "purchase"); bought = true; break; }
+      }
+      if (!bought) continue;
+      const q = E.splitQuote(W.g, W.parcels, b, geo, plan);
+      if (!q.ok || !q.debt) continue;
+      const B0 = W.g.holdings[b].loan.balance;
+      console.log(`     ${W.parcels[b].address}: ${M(B0)} from ${q.debt.lender}; ${q.debt.mode}, ${M(q.debt.paydown)} paid down at recording`);
+      ok(q.debt.mode === "allocate", "land paper follows the land into its lots");
+      invariant(W, b, plan, W.g);
+      W.g = E.fileSplit(W.g, W.parcels, b, geo, plan).s; ledger(W.g, "file");
+      advanceTo(W, W.g.splits.at(-1).doneM);
+      const sp = W.g.splits.at(-1);
+      const loans = sp.pieces.map((p) => W.g.holdings[p.bbl]?.loan?.balance ?? 0);
+      console.log(`     recorded: loans ${loans.map(M).join(" + ")}`);
+      ok(sp.done && loans.every((x) => x > 0), "each lot carries its share of the note");
+      done.mort = true;
+      break;
+    }
+  }
+  ok(done.mort, "a mortgaged split with lender consent and a partial release or allocation (5)");
 
   console.log("\n8. BW_CITY=region conserve with a split, at $0 unexplained");
   const free = freeOf(W);
   const cand = W.bbls.filter((b) => { const r = W.parcels[b]; return r.class === "land" && !r.ag && !r.tract && r.lotArea >= 9000 && (r.lotFront ?? 0) >= 60 && free(b); });
-  let did = false;
+  let did = false, filedId = -1;
   for (const b of cand) {
     const geo = geoOf(W, b);
     if (!geo) continue;
@@ -314,14 +348,14 @@ function builtScenarios(W, where) {
     if (buy(W, b)) continue;
     const q = E.splitQuote(W.g, W.parcels, b, geo, plan);
     console.log(`     ${W.parcels[b].address} (${q.zone}): ${q.pieces.map((p) => `${p.a.toLocaleString()} sf ${M(p.value)}`).join(" + ")} vs ${M(q.parentValue)}`);
-    W.g = E.fileSplit(W.g, W.parcels, b, geo, plan).s; ledger(W.g, "file");
+    W.g = E.fileSplit(W.g, W.parcels, b, geo, plan).s; ledger(W.g, "file"); filedId = W.g.splits.at(-1).id;
     did = true;
     break;
   }
   ok(did, "a region lot split filed");
   const t0 = Date.now();
   advanceTo(W, W.g.month + 24);
-  ok((W.g.splits ?? []).filter((x) => x.done).length >= 2, `recorded (${(W.g.splits ?? []).filter((x) => x.done).length} splits on the region)`);
+  ok(!!(W.g.splits ?? []).find((x) => x.id === filedId)?.done, `recorded (${(W.g.splits ?? []).filter((x) => x.done).length} splits recorded on the region)`);
   const rival = (W.g.splits ?? []).filter((x) => x.by);
   console.log(`     firms' splits in two years: ${rival.length}${rival.length ? ` (${rival.map((x) => `${x.pieces.length} lots ${x.done ? "recorded" : x.lapsed ?? "pending"}`).join(", ")})` : ""}`);
   console.log(`  region: 24 months in ${((Date.now() - t0) / 1000).toFixed(1)}s; worst unexplained month $${Math.round(worst).toLocaleString()}`);

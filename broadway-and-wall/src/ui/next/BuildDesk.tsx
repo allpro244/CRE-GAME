@@ -129,7 +129,7 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
   const [lookEra, setLookEra] = useState<(typeof KITS)[number]["group"]>(() => KITS.find((k) => k.key === design.kit)?.group ?? "prewar");
 
   return (
-    <div className="deal build-desk">
+    <div className="deal deal-wide build-desk">
       <Verdict d={d} />
       <div className="bd-grid">
         <div className="bd-model">

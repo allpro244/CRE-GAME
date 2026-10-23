@@ -154,7 +154,10 @@ export function splittable(s: GameState, parcels: ParcelTable, bbl: string): str
   if (Object.values(s.merged ?? {}).includes(bbl)) return "This is an assembled site of several deeds. Its zoning lot is the whole of it; split it before assembling, not after.";
   if (!(rec.lotArea > 0)) return "There is no land in this deed to divide.";
   if (s.landmarks?.[bbl] !== undefined || h.landmarked) return "The lot is landmarked: the commission will not let the site be divided.";
-  if (s.developments[bbl]) return "Construction is under way. Split before you break ground or after delivery.";
+  // ONLY BARE LAND IS SPLIT (owner, Oct 2026): a lot with a building on it is
+  // one property; clear it, or split before you build.
+  if (rec.bldgArea > 0 || rec.class !== "land") return "There is a building on this lot. Only vacant land can be split.";
+  if (s.developments[bbl]) return "Construction is under way. Split before you break ground.";
   if (h.sale) return "It is listed for sale. Take it off the market first.";
   if (s.groundLeases?.[bbl] || h.groundLeased || h.groundRentOut) return "It is under a ground lease: the lessee's leasehold covers the whole lot.";
   if (s.facility?.bbls.includes(bbl)) return "It is pledged to your facility. Release it from the pool first — the pool lender's lien covers the whole deed.";

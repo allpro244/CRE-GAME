@@ -581,7 +581,9 @@ void ACityBuilder::BuildGround()
 			if ((bFarm || bMarsh) && R.Num())
 			{
 				const uint32 Hh = HashCombine(GetTypeHash(FMath::RoundToInt(R[0].X)), GetTypeHash(FMath::RoundToInt(R[0].Y)));
-				Crops[Hh % 3].AddCap(R, Zl, Col);
+				// (each patch kind on its own few cm: a floodplain's meadow, reed and scrub
+				// rings overlap, and at one height they z-fought — flicker from the air)
+				Crops[Hh % 3].AddCap(R, Zl + (City.Size == TEXT("region") ? (Hh % 3) * 2.0 : 0.0), Col);
 				continue;
 			}
 			M.AddCap(R, Zl, Col);
@@ -593,7 +595,9 @@ void ACityBuilder::BuildGround()
 		if (M.V.Num()) { M.Emit(Ground, Section++, false); Mats.Add(GroundMaterial(bMeadow ? FString(TEXT("yard")) : City.Size == TEXT("region") && L.Key == TEXT("apron") ? FString(TEXT("lotpave")) : L.Key)); }
 		for (int32 k = 0; k < 3; ++k)
 			if (Crops[k].V.Num()) { Crops[k].Emit(Ground, Section++, false); Mats.Add(GroundMaterial((bMarsh ? FString::Printf(TEXT("marsh%d"), k) : FString::Printf(TEXT("farm%d"), k)))); }
-		Z += 1;
+		// 1 cm a layer on the island; on the region, viewed from kilometres up, the
+		// depth buffer cannot part 1 cm and the overlapping layers flickered
+		Z += City.Size == TEXT("region") ? 8 : 1;
 		if (bRaised) FootZ = FMath::Max(FootZ, Zl);
 	}
 	// THE OPEN PART OF A LOT. Every lot's ground used to be the same tan

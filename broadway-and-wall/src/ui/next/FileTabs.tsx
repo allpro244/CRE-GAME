@@ -21,6 +21,7 @@ import { usd } from "@/ui/format";
 import { DataTable, Stat, StatStrip, type Col } from "./DataTable";
 import { Figure, fmtFig } from "./Figure";
 import { VerbButton } from "./Drawer";
+import { CapitalDesk } from "./CapitalDesk";
 
 /** "Desk": the classic tab, hosted, for everything the table does not carry. */
 function Desk({ tabs, force }: { tabs: ("leasing" | "ops" | "money")[]; force?: boolean }) {
@@ -172,6 +173,8 @@ export function MoneyTab({ game, parcels, bbl, h }: { game: GameState; parcels: 
         <Stat label="DSCR"><Figure value={d} fmt="x" drill="dscr" args={args} tone={d !== null && h.loan && d < h.loan.minDSCR ? "neg" : undefined} /></Stat>
         <Stat label="LTV"><Figure value={l} fmt="pct" drill="value" args={args} /></Stat>
       </StatStrip>
+      {os && rec.class !== "land" && rec.bldgArea > 0 && !(h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM)
+        && <CapitalDesk game={game} parcels={parcels} bbl={bbl} h={h} />}
       <div className="nx-cols">
         {os && (
           <div className="nx-box">

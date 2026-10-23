@@ -286,3 +286,20 @@ html.ui-next .map-root { left: var(--rail-w); top: var(--hud-h); }
 .nx-stage-talking, .nx-stage-bids, .nx-stage-draws { background: #f0d9b0; }
 .nx-stage-raising, .nx-stage-equity, .nx-stage-inbound { background: #e9dcc0; }
 .nx-stage-leaseup { background: #d8e6dc; }
+
+/* ---- capital plan desk (CapitalDesk.tsx) */
+.nx-cap { margin: 12px 0; }
+.nx-cap-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nx-seg { display: inline-flex; }
+.nx-seg .nx-btn { border-radius: 0; margin-left: -1px; }
+.nx-seg .nx-btn:first-child { border-radius: 3px 0 0 3px; margin-left: 0; }
+.nx-seg .nx-btn:last-child { border-radius: 0 3px 3px 0; }
+.nx-cap-now td { color: var(--nx-dim); font-style: italic; }
+.nx-cap-d { display: inline-block; min-width: 46px; margin-left: 6px; font-size: 10.5px; text-align: right; color: var(--nx-dim); }
+.nx-cap-d.nx-pos { color: var(--nx-green); }
+.nx-cap-d.nx-neg { color: var(--nx-red); }
+.nx-cap-years td, .nx-cap-years th { padding: 0 5px; font-size: 11.5px; }
+.nx-cap-bar { display: inline-block; position: relative; width: 100%; min-width: 34px; text-align: right; }
+.nx-cap-bar::before { content: ""; position: absolute; left: 0; bottom: 3px; height: 3px; width: calc(var(--v) * 1%); background: var(--nx-gold); opacity: 0.55; }
+.nx-cap-progs, .nx-cap-years { border-top: 1px solid var(--nx-line-2); }
+.nx-cap-foot { padding: 5px 8px; font-size: 10.5px; text-align: right; }

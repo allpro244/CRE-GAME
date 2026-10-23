@@ -406,8 +406,10 @@ function ParcelPanelInner({
   // Land desk: property-page Build tab always; docked card only when the lot
   // can assemble / is land / is already folded — not on every leased tower.
   // Ground-leased lots stay on this desk even after the lessee's frame rises.
-  const showLandDesk = !!holding && on("build") && (
-    tab === "build"
+  // (owner, Oct 2026: the land desk — FAR to request, the ground lease, assembly — is the
+  // property's Overview business, not the Build desk's)
+  const showLandDesk = !!holding && on("summary") && (
+    tab === "summary"
     || rec.class === "land"
     || !!holding.groundLeased
     || !!holding.groundOffer

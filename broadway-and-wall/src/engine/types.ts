@@ -2523,6 +2523,8 @@ export interface Econ {
    * at the larger of this and its farm-use value. Rewritten each quarter.
    */
   tractBid?: Record<string, number>;
+  /** The same bids as appraised: re-marked each January, or at a tract's first bid (growth.ts). What a farm is marked and asked at. */
+  tractMark?: Record<string, number>;
   /** Bumped whenever `tractBid` is rewritten (value.ts LAND_SCALARS). */
   growthStamp?: number;
   /** Real construction cost at the opening — the mainland's real rent anchor (`locEff`). */

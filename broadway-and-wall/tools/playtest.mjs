@@ -430,8 +430,22 @@ async function monthChecked(ctx) {
   // THE HONEST CHANGE: cash, less what is owed, plus what was paid for property and works (carried at
   // cost). What is left is a re-mark: a building's month, a plat finishing — or a pump.
   const nonCash = dNw - (dCash - (b.debt - a.debt)) - (b.sunk - a.sunk);
-  // the month a plat finishes, the lots take their builder marks: the desk's own profit is due then
-  const allow = b.platDone && !a.platDone ? Math.max(0, ctx.deskProfit ?? 0) : 0;
+  // the works the plat sank into the ground (carried at cost until the lots stand)
+  if (!b.platDone) ctx.works = (ctx.works ?? 0) + Math.max(0, b.sunk - a.sunk);
+  // THE MONTH A PLAT FINISHES the lots take their appraised marks in place of the works at cost: a real
+  // gain or loss, which may differ from the desk's estimate at filing (the market moves in the years the
+  // board and the streets take). It is allowed now and tested against the builders' own bids the first
+  // month they bid: the lots may not be marked above what the builders will pay for them, less the
+  // land and the works they cost (with the same 10% slack).
+  const finishing = b.platDone && !a.platDone;
+  const allow = finishing ? Math.max(0, ctx.deskProfit ?? 0, nonCash) : 0;
+  if (finishing) ctx.finishGain = nonCash;
+  if (ctx.finishGain !== undefined && !finishing && bids > 0) {
+    const room = bids - (ctx.land ?? 0) - (ctx.works ?? 0) + 0.10 * bids;
+    check(ctx.finishGain <= Math.max(room, Math.max(0, ctx.deskProfit ?? 0)), `month ${b.m}: the plat's completion mark is within the builders' bids`,
+      `marked up ${(ctx.finishGain / 1e6).toFixed(2)}M at completion; builders bid ${(bids / 1e6).toFixed(2)}M against land ${((ctx.land ?? 0) / 1e6).toFixed(2)}M and works ${((ctx.works ?? 0) / 1e6).toFixed(2)}M`);
+    ctx.finishGain = undefined;
+  }
   ctx.tape.push({ m: b.m, dNw: Math.round(dNw), dCash: Math.round(dCash), dDebt: Math.round(b.debt - a.debt), sunk: Math.round(b.sunk - a.sunk), nonCash: Math.round(nonCash), ref: Math.round(ref) });
   // THE MONEY PUMP: net worth up by more than a tenth of what the builders bid for the lots, with no cash in
   const cap = allow + Math.max(0.10 * ref, 50000, (ctx.nwShare ?? 0) * Math.abs(b.nw));
@@ -465,7 +479,9 @@ await flow("land", async () => {
     await sleep(700);
     const ov = await js(`const d = ${fileDrawer}; return d ? __pt.norm(d.innerText) : "";`);
     const lots = Number(/Lots\s+(\d+)\s*×/.exec(ov)?.[1] ?? 0), resid = /Lot residual\s+\$?([\d.]+)K/.exec(ov);
-    if (lots < 12 || !resid) { note(`${b}: passed over (${lots} lots, residual ${resid?.[1] ?? "none"})`); continue; }
+    // a 3-acre neighbourhood park (platdesign.ts) takes about seventeen 7,500-sf lots' land: the
+    // flow puts one down, so it wants a tract with room for the park and a plat around it
+    if (lots < 40 || !resid) { note(`${b}: passed over (${lots} lots, residual ${resid?.[1] ?? "none"})`); continue; }
     await screen("tract-file");
     const since = Date.now();
     if (tries === 1) {
@@ -496,7 +512,7 @@ await flow("land", async () => {
     bbl = b; break;
   }
   if (!check(!!bbl, "bought a plattable farm tract through the file")) return;
-  const ctx = { tape: [], parent: null, lotSales: 0 };
+  const ctx = { tape: [], parent: null, lotSales: 0, land: await st(`g.holdings[${S(bbl)}]?.costBasis ?? 0`) };
   await sleep(400);
   ctx.last = await snap(true);
 

@@ -18,7 +18,7 @@ import { demandNow } from "@/engine/demand";
 import { describePropertyEvent, propertyTimeline } from "@/engine/history";
 import { entitleQuote, platQuote } from "@/engine/landdev";
 import { tractLotQuote } from "@/engine/homes";
-import { platTractLots } from "@/citygen/index.mjs";
+import { tractYield, plannedLots } from "@/engine/platdesign";
 import { HomesCard, ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { ownerName } from "@/ui/derive";
 import { usd, sf } from "@/ui/format";
@@ -248,24 +248,24 @@ function Overview({ game, parcels, bbl, h }: { game: GameState; parcels: ParcelT
  * THE TRACT, IN NUMBERS (region). Where it stands — farm, at the board,
  * entitled, streets going in — and what each next step costs and returns, from
  * the engine's own quotes (landdev.ts entitleQuote / platQuote, homes.ts
- * tractLotQuote) on the plat citygen draws for it (platTractLots), as the
+ * tractLotQuote) on the plat the desk draws by default (platdesign.ts tractYield), as the
  * classic land card reads them.
  */
 function TractBox({ game, parcels, bbl }: { game: GameState; parcels: ParcelTable; bbl: string }) {
   const rec = parcels[bbl]!;
   const tr = rec.tract!;
   const app = game.entitlementApps?.[bbl], rz = game.rezoned?.[bbl], plat = game.plats?.[bbl];
-  const lotSf = rz?.lotSf ?? 7_500;
-  const lots = platTractLots(tr, lotSf).lots;
-  const eq = !app && !rz && game.holdings[bbl] ? entitleQuote(game, parcels, bbl, lotSf, lots.length) : null;
+  const { n: nLots, lotSf } = plannedLots(game, parcels, bbl);
+  const lots = plat ? plat.lots : tractYield(rec, lotSf).lots;
+  const eq = !app && !rz && game.holdings[bbl] ? entitleQuote(game, parcels, bbl, lotSf, nLots) : null;
   const pq = rz && !plat ? platQuote(game, lots.map(({ a, f, d }) => ({ a, f, d }))) : null;
-  const t = !plat ? tractLotQuote(game, parcels, bbl, lotSf, lots.length) : null;
+  const t = !plat && nLots >= 4 ? tractLotQuote(game, parcels, bbl, lotSf, nLots) : null;
   const stage = plat ? (plat.done ? "Lots" : "Streets") : app ? "Board" : rz ? "Entitled" : "Farm";
   const rows: [string, React.ReactNode][] = [
     ["Stage", <span key="s" className={"nx-stage nx-stage-" + stage.toLowerCase()}>{stage}</span>],
     ["Acres", <span key="a" className="nx-fig">{(rec.lotArea / 43_560).toFixed(1)}</span>],
     ["Edge", <span key="e" className="nx-fig">{(tr.edgeM / 1000).toFixed(1)} km</span>],
-    ["Lots", <span key="l" className="nx-fig">{lots.length} × {lotSf.toLocaleString()} sf</span>],
+    ["Lots", <span key="l" className="nx-fig">{nLots >= 4 ? `${nLots} × ${lotSf.toLocaleString()} sf` : "none fit"}</span>],
   ];
   if (eq) rows.push(["Rezone cost", <span key="rc" className="nx-fig">{usd(eq.cost)}</span>], ["Board", <span key="bm" className="nx-fig">{eq.months} mo · {Math.round(eq.odds * 100)}%</span>]);
   if (app) rows.push(["Board", <span key="bd" className="nx-fig">{monthLabel(app.decideM)} · {Math.round(app.odds * 100)}%</span>]);

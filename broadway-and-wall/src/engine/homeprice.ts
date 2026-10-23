@@ -206,6 +206,25 @@ export function homeQuote(e: Pick<Econ, "costIdx" | "indexRate">, lotSf: number,
   return { sf, price, vertical, overhead, selling, carry, margin, residual, residualPsf: Math.max(0, residual) / Math.max(1, lotSf) };
 }
 
+/**
+ * THE HOMES MARKET THE ENGINE EXPECTS `months` FROM NOW, for a forecast (a
+ * land developer pricing lots it will sell when its streets are in): the going
+ * new-house price closing its gap to the fundamental at the market's own
+ * speed (HPI_CHASE_M, 30 months — market.ts), the fundamental and the cost of
+ * building both carried at expected inflation (pay and construction move with
+ * the price level), and today's rates (the loan index is a forecast of itself
+ * no better than the market's). An estimate, not a promise: the board, the
+ * cycle and the rates will move it.
+ */
+export function forwardHomeEcon(e: Econ, months: number): { psf: number; costIdx: number; indexRate: number } {
+  const m = Math.max(0, months);
+  const infl = Math.pow(1 + ((e as { inflExp?: number }).inflExp ?? e.nat?.inflExp ?? 0.02), m / 12);
+  const fund = fundamentalHomePsf(e) * infl;
+  const now = e.homes?.psf ?? fundamentalHomePsf(e);
+  const psf = fund + (now - fundamentalHomePsf(e)) * Math.pow(1 - 1 / 30, m);
+  return { psf, costIdx: (e.costIdx ?? 1) * infl, indexRate: e.indexRate };
+}
+
 /** A plat's market, as homes.ts writes it each month. */
 export type PlatMarket = {
   /** location multiple on the town's new-house $/sf: resale comps nearby, and the commute */

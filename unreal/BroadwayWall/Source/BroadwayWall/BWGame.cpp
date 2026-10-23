@@ -285,7 +285,10 @@ void ABWPlayerController::PlayerTick(float Dt)
 	// hover card: own mouse when Unreal has it, the page's when it forwards it
 	{
 		float MX, MY;
-		if (GetMousePosition(MX, MY)) HoverPx = FVector2D(MX, MY);
+		// the page's pointer wins while it is sending: under the web layer Unreal's own
+		// mouse position is the last one it saw, and it kept dragging the hover back there
+		PageHoverAge += Dt;
+		if (PageHoverAge > 0.5 && GetMousePosition(MX, MY)) HoverPx = FVector2D(MX, MY);
 		HoverClock += Dt;
 		if (HoverClock > 0.1 && HoverPx.X >= 0) { HoverClock = 0; Hovered = PickAt(HoverPx); if (City.IsValid()) City->SetHighlight(Selected, Hovered, (Cast<ABWCameraPawn>(GetPawn()) ? FVector::Dist(Cast<ABWCameraPawn>(GetPawn())->GetActorLocation(), Cast<ABWCameraPawn>(GetPawn())->Focus) : 0)); }
 		// ask the page for the hovered lot's four numbers, once per lot
@@ -386,7 +389,7 @@ void ABWPlayerController::PageInput(const FString& Type, double X, double Y, dou
 	else if (Type == TEXT("kd") && Key == TEXT("F3")) Cam->SetMode(ABWCameraPawn::EMode::Street);
 	else if (Type == TEXT("kd")) PageKeys.Add(Key);
 	else if (Type == TEXT("ku")) PageKeys.Remove(Key);
-	else if (Type == TEXT("hover")) HoverPx = FVector2D(X * W, Y * H);
+	else if (Type == TEXT("hover")) { HoverPx = FVector2D(X * W, Y * H); PageHoverAge = 0; }
 	else if (Type == TEXT("quality") || Type == TEXT("gfx"))
 	{
 		// GRAPHICS, from the game's Settings page: a preset ("quality", key

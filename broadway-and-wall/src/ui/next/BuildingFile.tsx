@@ -20,6 +20,8 @@ import { entitleQuote, platQuote } from "@/engine/landdev";
 import { tractLotQuote } from "@/engine/homes";
 import { tractYield, plannedLots } from "@/engine/platdesign";
 import { HomesCard, ParcelPanel } from "@/ui/panels/ParcelDesk";
+import { heldScheme } from "@/ui/panels/DevelopDesk";
+import { productOf } from "@/engine/products";
 import { ownerName } from "@/ui/derive";
 import { usd, sf } from "@/ui/format";
 import { ActionFooter, Drawer, type Verb } from "./Drawer";
@@ -290,8 +292,16 @@ function BuildTab({ game, parcels, bbl }: { game: GameState; parcels: ParcelTabl
           <thead><tr><th>Scheme</th><th className="num">Hurdle</th><th className="num">Profit</th><th className="num">Equity</th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.use + r.floors} className={i === pick ? "on" : undefined} onClick={() => useNext.getState().setSchemePick({ bbl, i })}>
-                <td>{r.use} · {r.floors} fl · {Math.round(r.coverage * 100)}%</td>
+              <tr key={r.use + r.floors + (r.product ?? "")} className={i === pick ? "on" : undefined} onClick={() => {
+                useNext.getState().setSchemePick({ bbl, i });
+                // THE PICK IS THE DESK'S SCHEME: the dials move to it, so the desk
+                // below and the footer read one building (use, floors, product).
+                useStore.getState().setDevDraft(bbl, {
+                  use: r.use, floors: r.floors, cov: r.coverage, contract: "gmp", bank: r.lender, spec: 0.5,
+                  product: r.product,
+                });
+              }}>
+                <td>{r.product ? productOf(r.product)?.short : `${r.use} · ${r.floors} fl`} · {Math.round(r.coverage * 100)}%</td>
                 <td className={"num mono" + (r.hurdle < 1 ? " nx-neg" : "")}>{r.hurdle.toFixed(2)}×</td>
                 <td className={"num mono" + (r.profit < 0 ? " nx-neg" : "")}>{usd(r.profit)}</td>
                 <td className="num mono">{usd(r.equity)}</td>
@@ -300,7 +310,8 @@ function BuildTab({ game, parcels, bbl }: { game: GameState; parcels: ParcelTabl
           </tbody>
         </table>
       )}
-      <ParcelPanel embedded tab="build" />
+      {/* re-mounted on a pick, so the desk opens on the dials the pick wrote */}
+      <ParcelPanel key={`build:${pick}`} embedded tab="build" />
     </div>
   );
 }
@@ -351,11 +362,30 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
       if (game.developments[bbl]) return <ActionFooter verbs={[{ label: "Job file", run: () => setTab("build") }]} />;
       // the sweep is dozens of pro formas: run it only once the Build tab is asked for
       if (tab !== "build") return <ActionFooter verbs={[...verbs, { label: "Plan", primary: true, run: () => setTab("build") }]} />;
+      // ONE SCHEME. Once the desk holds dials (the player set them, or picked a
+      // row), the footer builds what the desk shows — use, height, product,
+      // contract, desk and leverage from the same reading (heldScheme). Before
+      // that, it offers the picked row of the sweep, as the table shows.
+      if (h?.devDraft) {
+        const hs = heldScheme(game, parcels, bbl);
+        const p = hs.plan;
+        const name = hs.gprod ? hs.gprod.short : `${hs.use} · ${p?.floors ?? hs.fl} fl`;
+        return (
+          <ActionFooter
+            left={p ? <span className="mono nx-dim">{name} · {p.hurdleRatio.toFixed(2)}×</span> : undefined}
+            verbs={[{
+              label: "Break ground", primary: true,
+              disabled: !p ? "No scheme prices" : p.hurdleRatio < 1 ? "Below hurdle" : undefined,
+              run: () => p && st.develop(bbl, hs.use, hs.fl, hs.cov, hs.contract, hs.ltc, { mix: hs.customMix, bts: hs.custom.bts, groundRetail: hs.custom.groundRetail, design: hs.saved?.design, ...(hs.gprod ? { product: hs.gprod.key } : {}) }, hs.bank, hs.spec),
+            }]}
+          />
+        );
+      }
       const rows: SchemeRow[] = bestSchemes(game, parcels, bbl);
       const r = rows[pickI] ?? rows[0];
       return (
         <ActionFooter
-          left={r ? <span className="mono nx-dim">{r.product ?? `${r.use} · ${r.floors} fl`} · {r.hurdle.toFixed(2)}×</span> : undefined}
+          left={r ? <span className="mono nx-dim">{r.product ? productOf(r.product)?.short : `${r.use} · ${r.floors} fl`} · {r.hurdle.toFixed(2)}×</span> : undefined}
           verbs={[{
             label: "Break ground", primary: true,
             disabled: !r ? "No scheme prices" : r.hurdle < 1 ? "Below hurdle" : undefined,

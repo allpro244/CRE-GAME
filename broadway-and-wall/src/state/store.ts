@@ -519,6 +519,8 @@ interface AppState {
   startRun: (island: string, size: string, dev: string, cash0?: number, setup?: Partial<GameSetup>, seed?: number) => Promise<void>;
   /** Rebuild the town in a named save and pick the campaign back up. */
   continueRun: () => Promise<void>;
+  /** From the start menu: open a named save, rebuilding its town (the Continue path, for any slot). */
+  openSlot: (slot: string) => Promise<void>;
   newRun: () => void;
   devGrant: () => void;
   saveTo: (slot: string) => Promise<void>;
@@ -2730,6 +2732,13 @@ export const useStore = create<AppState>((set, get) => ({
    * last chose — the two disagree the moment you start a run on the other
    * island and then come back.
    */
+  openSlot: async (slot) => {
+    const r = await resumeFromSlot(slot);
+    if (!r) { toast("That save wouldn't open.", "err"); return; }
+    set({ resume: r });
+    await get().continueRun();
+  },
+
   continueRun: async () => {
     const r = get().resume;
     if (!r) return;

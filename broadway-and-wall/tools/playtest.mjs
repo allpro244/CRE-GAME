@@ -68,7 +68,8 @@ function killAll() {
       else k.kill("SIGKILL");
     } catch { /* gone */ }
   }
-  try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }); } catch { /* temp */ }
+  // Edge lets go of its profile a moment after taskkill: retry for ~5 s so no temp profile is left behind
+  try { rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 }); } catch { /* temp */ }
 }
 let finished = false;
 const bail = (code, msg) => { if (msg) console.error(msg); killAll(); process.exit(code); };
@@ -691,6 +692,10 @@ await flow("picker", async () => {
   note(`${site.head}: ${site.rows.map(([k, v]) => `${k} ${v}`).join(" · ")}`);
   const blank = site.rows.filter(([, v]) => !v || !/\d/.test(v) || /NaN|undefined|Infinity/.test(v));
   check(site.rows.length >= 3 && !blank.length, "every site-plan row is a number", JSON.stringify(blank));
+  // the footer builds the scheme the desk is set to, not the sweep's top row
+  const foot = await js(`return __pt.norm(${fileDrawer}?.querySelector(".nx-actions")?.textContent ?? "");`);
+  note(`footer: ${foot}`);
+  check(foot.includes(prods[0]), "the footer offers the product the desk is set to", foot);
   // and the rest of the desk, one step at a time
   for (const t of ["Design", "Financing"]) { await tap(`/${t}$/`, fileDrawer); await sleep(400); await screen(`build-${t.toLowerCase()}`); }
 });

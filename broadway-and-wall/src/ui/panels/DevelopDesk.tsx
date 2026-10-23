@@ -8,7 +8,8 @@ import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { dominantOf } from "@/engine/proforma";
 import { productOf, productsForUse, layoutProduct, type ProductKey, type ProductType } from "@/engine/products";
-import type { BuildingDesign, Contract, DevUse } from "@/engine/types";
+import type { BuildingDesign, Contract, DevUse, GameState } from "@/engine/types";
+import type { ParcelTable } from "@/data/types";
 import { DesignPicker } from "@/ui/panels/DesignPicker";
 import SchemeViewer from "@/ui/panels/SchemeViewer";
 import LandDesk from "@/ui/panels/LandDesk";
@@ -1258,9 +1259,13 @@ function BtsRentRows({ read }: { read: { market: number; ceiling: number; need: 
  * pencils; the desk opens as a full page. Same `planDevelopment` call, same
  * draft, so the number here is the number the desk will show.
  */
-export function DevelopGlance({ bbl }: { bbl: string }) {
-  const game = useHeldGame(bbl);
-  const parcels = useStore((s) => s.parcels)!;
+/**
+ * THE SCHEME ON THE DIALS, read from the held draft exactly as the desk reads
+ * it: use, height, footprint, product, contract, desk, spec and the plan they
+ * price to. The map card and the building file's footer both ask this, so
+ * neither can offer a different building from the one the desk is set to.
+ */
+export function heldScheme(game: GameState, parcels: ParcelTable, bbl: string) {
   const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
   const saved = game.holdings[bbl]?.devDraft;
   const use: DevUse = saved?.use ?? deskZoning(rec, game.econ, undefined, 1).legal[0] ?? "office";
@@ -1280,10 +1285,19 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
   const gprod = productOf(saved?.product)?.use === use ? productOf(saved?.product) : undefined;
   const pcustom = gprod ? { product: gprod.key } : {};
   const bts = game.btsProspects?.[bbl]?.use === use && !gprod ? game.btsProspects[bbl] : undefined;
-  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, { mix: customMix, bts, groundRetail, form: formOf(saved?.design), ...pcustom }, bank, spec);
+  const custom = { mix: customMix, bts, groundRetail, form: formOf(saved?.design), ...pcustom };
+  const planMax = planDevelopment(game, parcels, bbl, use, fl, cov, contract, undefined, custom, bank, spec);
+  const ltc = planMax ? planMax.ltcMax * (saved?.ltcWant ?? 1) : undefined;
   const plan = planMax
-    ? planDevelopment(game, parcels, bbl, use, fl, cov, contract, planMax.ltcMax * (saved?.ltcWant ?? 1), { mix: customMix, bts, groundRetail, form: formOf(saved?.design), ...pcustom }, bank, spec)
+    ? planDevelopment(game, parcels, bbl, use, fl, cov, contract, ltc, custom, bank, spec)
     : null;
+  return { rec, saved, use, fl, cov, contract, bank, spec, custom, customMix, gprod, ltc, plan };
+}
+
+export function DevelopGlance({ bbl }: { bbl: string }) {
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const { rec, saved, use, fl, customMix, gprod, plan } = heldScheme(game, parcels, bbl);
   const open = () => useStore.getState().openProperty(bbl, "build");
   const siteDebt = siteDebtAtGroundbreak(game, bbl).due;
   const closeCheque = plan ? plan.equityAtClose + plan.pointsCost + siteDebt : 0;

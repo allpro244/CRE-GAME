@@ -2,7 +2,8 @@
 // mixed-use cap rate and no mixed-use tenant. A building that is part shops,
 // part offices and part apartments carries a `mix` and is described by it.
 // See engine/mix.ts.
-export type AssetClass = "office" | "retail" | "multifamily" | "industrial" | "land";
+/** "house": a detached single-family home (engine homes.ts) — owner-occupied or a single-family rental, never commercial space. */
+export type AssetClass = "office" | "retail" | "multifamily" | "industrial" | "land" | "house";
 
 export interface ParcelRecord {
   bbl: string;
@@ -17,7 +18,7 @@ export interface ParcelRecord {
   district: string;     // the neighbourhood — the unit of a submarket (a KEY: `thechange`)
   districtName?: string;  // what it is called on the map (`The Change`); absent on old saves
   class: AssetClass;              // the dominant use; the mix has the rest
-  mix?: Partial<Record<Exclude<AssetClass, "land">, number>>;  // shares of floor area by use
+  mix?: Partial<Record<Exclude<AssetClass, "land" | "house">, number>>;  // shares of floor area by use
   /**
    * HOW THE BUILDING IS CUT UP, in square feet per leasable space.
    *
@@ -29,7 +30,7 @@ export interface ParcelRecord {
    * consequences: small suites lease faster and cost far more to fit out and
    * to manage, big ones sit empty longer and never turn.
    */
-  suites?: Partial<Record<Exclude<AssetClass, "land">, number>>;
+  suites?: Partial<Record<Exclude<AssetClass, "land" | "house">, number>>;
   lotArea: number;      // sf
   bldgArea: number;     // sf
   /**
@@ -205,6 +206,7 @@ export const CLASS_LABEL: Record<AssetClass, string> = {
   multifamily: "Multifamily",
   industrial: "Industrial",
   land: "Vacant Land",
+  house: "House",
 };
 
 export const CLASS_COLOR: Record<AssetClass, string> = {
@@ -213,4 +215,5 @@ export const CLASS_COLOR: Record<AssetClass, string> = {
   multifamily: "#8aab8a",
   industrial: "#8f8f7a",
   land: "#b5a67f",
+  house: "#c9b38a",
 };

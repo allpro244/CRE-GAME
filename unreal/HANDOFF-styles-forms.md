@@ -208,7 +208,7 @@ Open questions and next ideas (visual):
   - desk camera holds and tilts;
   - collapsible kit shelves.
 - Asset scripts to run on a fresh checkout (Content/ is ignored), via UnrealEditor-Cmd -run=pythonscript:
-  - make-trees.py, make-ground.py, make-yard.py, make-harbour.py, make-fleet.py, make-kit.py (the building kit: /Game/BW/Kit, /Game/BW/Retail; RetailBuilder).
+  - make-trees.py, make-ground.py, make-yard.py, make-harbour.py, make-fleet.py, make-kit.py (the building kit: /Game/BW/Kit, /Game/BW/Retail; RetailBuilder), make-homes.py (/Game/BW/Homes; HouseBuilder; needs kitlib.py beside it).
 - GOTCHA: Megascans textures stream as virtual textures; a material sampling them needs SAMPLERTYPE_VIRTUAL_* or it falls back to the grid.
 - GOTCHA: `node <file>` from bash fails on Windows with ERR_UNSUPPORTED_ESM_URL_SCHEME for test imports; use `pnpm -s exec node`.
 - Engine month tick is ~0.4 s on the 1.45k-lot test city (flat profile: developmentProForma, tickFirms, ownerOf). Next target for speed.

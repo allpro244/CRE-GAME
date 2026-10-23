@@ -56,7 +56,7 @@ export function loiRead(game: GameState, parcels: ParcelTable, loi: LOI): string
     // renewal at -7% to asking with $4 of TI and no free rent, in a market
     // signing at -10%.
     const cls = parcels[loi.bbl]?.class;
-    const use = loi.use ?? (cls && cls !== "land" ? cls : "office");
+    const use = loi.use ?? (cls && cls !== "land" && cls !== "house" ? cls : "office");
     const ask = game.econ.rentIdx?.[use] ?? 0;
     const eff = game.econ.effRentIdx?.[use] ?? ask;
     const going = ask > 0 ? (eff / ask - 1) * 100 : 0;

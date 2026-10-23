@@ -775,6 +775,8 @@ function underwritingEconOf(econ: Econ, rentMult: number): Econ {
  * sits in the basis the yield is measured on, not in the budget.
  */
 export const LAND_CARRY_RATE = 0.12;
+/** A food retailer's total occupancy cost as a share of sales, median (Karabus survey: 2.43-4.88%, median 3.16%) [S]. */
+export const GROCER_OCCUPANCY = 0.0316;
 export function landCarryFactor(months: number): number {
   return Math.pow(1 + LAND_CARRY_RATE, Math.max(0, months) / 12) - 1;
 }
@@ -1126,14 +1128,28 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     for (const a of prod.anchors) {
       const each = Math.floor((rentable * a.share) / a.n);
       if (each <= 0) continue;
+      // A GROCER PAYS OUT OF ITS SALES (region: rec.grocerSales, towngrowth.ts).
+      // Where the trade area's food spending is known, the grocer's rent is
+      // what its sales carry: a food retailer's whole occupancy cost — base
+      // rent plus the NNN charges — runs a median 3.16% of sales (Karabus
+      // food-retail occupancy survey: 2.43-4.88%, median 3.16%; appraisal
+      // practice caps grocers' total occupancy near 4%) [S]. The NNN part is
+      // what this building recovers from it (the same opex and recovery the
+      // NOI stack below charges), so the base rent is the rest. Elsewhere
+      // (the islands) it is the inline rent times the product's ratio, as before.
+      let rentRaw = rentPsf0 * a.rentRatio;
+      if (a.label === "grocer" && rec.grocerSales !== undefined) {
+        const nnn = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(asBuilt, econ, u)) * overMix(mix, (u) => RECOVERY_RATE[u]);
+        rentRaw = Math.max(0, (GROCER_OCCUPANCY * rec.grocerSales) / (each * a.n) - nnn);
+      }
       for (let i = 0; i < a.n; i++) {
         anchors.push({
           name: "", sector: prod.use === "industrial" ? "logistics" : a.label === "big box" ? "apparel" : "food",
-          credit: a.credit, use: prod.use, sf: each, rentPsf: +(rentPsf0 * a.rentRatio).toFixed(2),
+          credit: a.credit, use: prod.use, sf: each, rentPsf: +rentRaw.toFixed(2),
           termM: a.termY * 12, tiPsf: a.tiPsf, recovery: "nnn", signedM: econ.m ?? 0, bumpPct: a.bumpPct,
           floors: 1, coverage: cov,
         });
-        anchorFree += rentPsf0 * a.rentRatio * each * a.freeM / 12;
+        anchorFree += rentRaw * each * a.freeM / 12;
       }
     }
   }

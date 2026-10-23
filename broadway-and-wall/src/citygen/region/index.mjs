@@ -283,6 +283,24 @@ export function makeRegion(seed, opts = {}) {
 
   // ---------------- the market's substrate: one buildCityData over every ordinary parcel
   const manifest0 = { ...town.manifest, seed, city: name, districts: { ...Object.assign({}, ...towns.map((t) => t.city.manifest.districts ?? {})), [OUTSKIRTS]: outskirtsName } };
+  // PLAN 16: A COUNTY SEAT IS REACHED BY CAR (region/access.mjs). The demand
+  // surface's accessibility points — an island's transit and second centre —
+  // are this map's drive-time access instead: the households the map draws out
+  // past the town (the same list regionRoadPlan hands the roads), the town's own
+  // flats and jobs (build.mjs counts those from the lots), and the interchanges
+  // open on day one. Plan-15 saves rebuild their own map without it.
+  if (planV >= 16) {
+    const homes = [];
+    for (const t of M.tracts) if (t.keep && t.keep.size) homes.push({ p: LL(t.c), n: t.keep.size });
+    for (const lot of M.outerLots) if (lot.tenure === "homes") homes.push({ p: LL(lot.anchor), n: lot.rects.filter((r) => r.kind === "house").length || 1 });
+    const ixs = [];
+    for (const h of M.highways) for (const x of h.ix ?? []) {
+      if (x.sys) continue;
+      const sg = h.segs.find((q) => x.s >= q.s0 - 1 && x.s <= q.s1 + 1);
+      if (sg?.built) ixs.push(LL(x.p));
+    }
+    manifest0.carAccess = { homes, ixs };
+  }
   // the greens, in the metres buildCityData measures in (its frame is centred on the parcels' mean vertex)
   let mx = 0, my = 0, mn = 0;
   for (const f of rawParcels.features) { const g = f.geometry; const ring = g.type === "MultiPolygon" ? g.coordinates[0][0] : g.coordinates[0]; for (const [x, y] of ring) { mx += x; my += y; mn++; } }

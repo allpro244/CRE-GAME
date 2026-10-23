@@ -29,13 +29,14 @@ import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { GameState } from "./types";
 import { monthLabel, START_YEAR } from "./types";
 import { rng } from "./market";
-import { resolveRec } from "./value";
+import { resolveRec, GROCER_SALES } from "./value";
 import { farMaxFor } from "./proforma";
 import { FAR_CEIL } from "./zoning";
 import { ownerOf } from "./rivals";
 import { startTradeAreaBuilding, underwriteDevelopment } from "./dev";
 import { roadPlan, countyEntries, COUNTY_TO_TOWN } from "./roads";
 import { tableVersion } from "./tableVersion";
+import { huffW, driveTimer } from "@/citygen/region/access.mjs";
 
 // ---------------------------------------------------------------- the facts
 /**
@@ -135,13 +136,14 @@ function statics(s: GameState, parcels: ParcelTable, bbls: string[]): Statics {
 }
 
 /** Where the town's households live this year, as points with counts. */
-function households(s: GameState, parcels: ParcelTable, st: Statics): { p: XY; n: number; road?: string }[] {
+function households(s: GameState, parcels: ParcelTable, st: Statics, readOnly = false): { p: XY; n: number; road?: string }[] {
   const e = s.econ;
   const out: { p: XY; n: number; road?: string }[] = [];
   // the town's flats: the opening's dwellings by district, scaled to the flats occupied now
+  // (a reader between the yearly ticks — grocerSales — does not set the opening's count)
   if (e.occupied?.multifamily && s.growth) {
-    s.growth.mf0 ??= e.occupied.multifamily;
-    const scale = e.occupied.multifamily / Math.max(1, s.growth.mf0);
+    if (!readOnly) s.growth.mf0 ??= e.occupied.multifamily;
+    const scale = e.occupied.multifamily / Math.max(1, s.growth.mf0 ?? e.occupied.multifamily);
     for (const f of st.flats) out.push({ p: f.p, n: f.units * 0.95 * scale });
   }
   for (const h of roadPlan(s).homes) out.push({ p: h.p as XY, n: h.n });
@@ -156,6 +158,78 @@ function households(s: GameState, parcels: ParcelTable, st: Statics): { p: XY; n
   for (const x of countyEntries(s, parcels)) out.push({ p: x.p, n: x.n * COUNTY_TO_TOWN, road: x.road });
   return out;
 }
+
+// ---------------------------------------------------------------- the grocer's sales
+/**
+ * WHAT A HOUSEHOLD SPENDS ON FOOD AT HOME: $6,053 a year per consumer unit
+ * (BLS Consumer Expenditure Survey 2023, released September 2024) [S], in the
+ * town's dollars (its price level and the years since, as farmUsePsf reads them).
+ */
+export const FOOD_AT_HOME = 6_053;
+type GrocerMemo = {
+  key: string; C: XY; kx: number;
+  hh: { x: number; y: number; n: number }[]; rivals: { x: number; y: number }[];
+  drive: (ax: number, ay: number, bx: number, by: number) => number;
+  out: Map<string, number>;
+};
+let GM: GrocerMemo | null = null;
+/**
+ * A GROCER'S SALES, $ a year, at `bbl`: every household the town counts this
+ * year (the households the trade areas are drawn from, the county beyond the
+ * map where it drives in) spending its food-at-home budget among the grocers
+ * it can reach in fifteen minutes, by Huff's (1963) gravity model — the share
+ * a store wins from a household is its pull over the sum of every store's pull,
+ * the pull falling with drive time (citygen region/access.mjs: the drive times
+ * the demand surface reads, through whichever interchanges are open now).
+ * Every grocer is given the same attractiveness (Huff weights it by floor
+ * area; the town's grocers are one format here) [K, stated simplification].
+ * Spending at stores the map does not draw — a supercenter past the edge, the
+ * dollar store — is not taken off, so this is the top of what the store could
+ * win. Region only; memoised for the month.
+ */
+export function grocerSales(s: GameState, parcels: ParcelTable, bbl: string): number | undefined {
+  if (s.citySize !== "region" || !s.growth) return undefined;
+  const at = parcels[bbl]?.centroid as XY | undefined;
+  if (!at) return undefined;
+  const T = s.growth.town;
+  const key = `${s.seed}:${s.month}:${tableVersion(parcels)}:${T?.centres.length ?? 0}:${T?.pending?.length ?? 0}`;
+  if (GM?.key !== key) {
+    const st = statics(s, parcels, Object.keys(parcels));
+    const P = roadPlan(s);
+    const C = P.centre as XY, kx = 111_320 * Math.cos((C[1] * Math.PI) / 180);
+    const xy = (p: XY) => ({ x: (p[0] - C[0]) * kx, y: (p[1] - C[1]) * KY });
+    const hh = households(s, parcels, st, true).map((h) => ({ ...xy(h.p), n: h.n }));
+    const rivals: XY[] = [...st.grocers];
+    for (const c of T?.centres ?? []) if (c.kind === "neighbourhood" && parcels[c.bbl]) rivals.push(parcels[c.bbl].centroid as XY);
+    for (const c of T?.pending ?? []) if (c.kind === "neighbourhood" && parcels[c.bbl]) rivals.push(parcels[c.bbl].centroid as XY);
+    const R = s.growth.roads;
+    const ixs: [number, number][] = [];
+    for (const h of P.highways) for (const x of h.ix) {
+      const open = x.seg && (R ? R.hwy[x.seg]?.status === "open" : h.segs.find((q) => q.id === x.seg)?.built);
+      if (open) { const q = xy(x.p as XY); ixs.push([q.x, q.y]); }
+    }
+    GM = { key, C, kx, hh, rivals: rivals.map(xy), drive: driveTimer(ixs), out: new Map() };
+  }
+  const hit = GM.out.get(bbl);
+  if (hit !== undefined) return hit;
+  const sx = (at[0] - GM.C[0]) * GM.kx, sy = (at[1] - GM.C[1]) * KY;
+  // a grocer already on (or proposed for) this site is this store, not a rival
+  const rivals = GM.rivals.filter((r) => Math.hypot(r.x - sx, r.y - sy) > 150);
+  const spend = FOOD_AT_HOME * (s.econ.priceLevel ?? 1) * (s.econ.cpi ?? 1);
+  let sales = 0;
+  for (const h of GM.hh) {
+    const w = huffW(GM.drive(sx, sy, h.x, h.y));
+    if (!(w > 0)) continue;
+    let tot = w;
+    for (const r of rivals) tot += huffW(GM.drive(r.x, r.y, h.x, h.y));
+    sales += h.n * spend * (w / tot);
+  }
+  const out = Math.round(sales);
+  GM.out.set(bbl, out);
+  return out;
+}
+
+GROCER_SALES.read = grocerSales;
 
 // ---------------------------------------------------------------- commerce
 function nearest(p: XY, pts: XY[]): number {

@@ -69,20 +69,41 @@ function HostSchemeWindow({ height }: { height: number }) {
       sendInput({ t: "preview-rect", x: 0, y: 0, w: 0, h: 0 });
     };
   }, []);
-  // drag left/right to turn round the scheme, up/down to tilt (BWGame: the
-  // view holds where it is left; it no longer spins on its own)
-  const drag = useRef<{ x: number; y: number } | null>(null);
+  // DRAG TO TURN ROUND THE SCHEME, up/down to tilt (BWGame preview-orbit). The
+  // hole cut for the box clips the panels above it — the box's own ancestors
+  // among them — and a clip-path takes hit-testing with it, so a press on the
+  // box never reached the box (owner, Oct 2026: "the preview can't be
+  // rotated"). The drag is read at the window instead, by the box's rectangle.
+  useEffect(() => {
+    let last: { x: number; y: number } | null = null;
+    const inBox = (e: PointerEvent) => {
+      const r = box.current?.getBoundingClientRect();
+      return !!r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    };
+    // (stopped here, so the map surface under the hole does not pan or pick as well)
+    const down = (e: PointerEvent) => { if (e.button === 0 && inBox(e)) { last = { x: e.clientX, y: e.clientY }; e.preventDefault(); e.stopPropagation(); } };
+    const move = (e: PointerEvent) => {
+      if (!last) return;
+      e.stopPropagation();
+      sendInput({ t: "preview-orbit", dx: e.clientX - last.x, dy: e.clientY - last.y });
+      last = { x: e.clientX, y: e.clientY };
+    };
+    const up = () => { last = null; };
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("blur", up);
+    return () => {
+      window.removeEventListener("pointerdown", down, true);
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("blur", up);
+    };
+  }, []);
   return (
     <div className="scheme-viewer" style={{ position: "relative", marginBottom: 8 }}>
-      <div ref={box} className="scheme-viewer-canvas" style={{ width: "100%", height, borderRadius: 8, background: "transparent", cursor: "grab", touchAction: "none", outline: "1px solid rgba(0,0,0,0.18)" }}
-        onPointerDown={(e) => { drag.current = { x: e.clientX, y: e.clientY }; (e.target as HTMLElement).setPointerCapture(e.pointerId); }}
-        onPointerMove={(e) => {
-          if (drag.current === null) return;
-          sendInput({ t: "preview-orbit", dx: e.clientX - drag.current.x, dy: e.clientY - drag.current.y });
-          drag.current = { x: e.clientX, y: e.clientY };
-        }}
-        onPointerUp={() => { drag.current = null; }} />
-      <div style={{ position: "absolute", left: 8, top: 6, fontSize: 11, color: "#fff", textShadow: "0 0 3px rgba(0,0,0,0.9)" }}>
+      <div ref={box} className="scheme-viewer-canvas" style={{ width: "100%", height, borderRadius: 8, background: "transparent", cursor: "grab", touchAction: "none", outline: "1px solid rgba(0,0,0,0.18)" }} />
+      <div style={{ position: "absolute", left: 8, top: 6, fontSize: 11, color: "#fff", textShadow: "0 0 3px rgba(0,0,0,0.9)", pointerEvents: "none" }}>
         {p ? `${p.floors} floors · ${Math.round(p.floors * FLOOR_M)} m` : "Choose a use and floors to see the building"}
       </div>
     </div>

@@ -31,6 +31,7 @@ struct FBWRenderLot
 	FBWLook Look;     // and the kit look they chose on the Build desk
 	FString Form;     // the building form the player chose (FORMS_PLAN.md), if any
 	FString Deco;     // "house": a homebuilder's detached house (engine homes.ts), drawn with the house meshes
+	double Sf = -1;   // floor area standing, when the engine sent it (< 0: keep the city file's)
 	TArray<FBWRenderTier> Tiers;   // its solved tiers; empty = one prism (the lot scaled by sqrt(cov))
 };
 

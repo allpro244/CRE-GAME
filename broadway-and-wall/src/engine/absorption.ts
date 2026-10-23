@@ -34,6 +34,7 @@ const clampA = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 // without importing this module); re-exported here unchanged.
 export { GROSS_TURNOVER } from "./turnover";
 import { GROSS_TURNOVER } from "./turnover";
+import { tableVersion } from "./tableVersion";
 
 
 /**
@@ -172,7 +173,7 @@ function nbTable(s: GameState, parcels: ParcelTable, use: BuiltClass): Map<strin
   const built = s.built ?? {};
   let n = 0, area = 0;
   for (const k in built) { n++; area += built[k].bldgArea || 0; }
-  const key = `${use}|${n}|${Math.round(area)}`;
+  const key = `${use}|${n}|${Math.round(area)}|${tableVersion(parcels)}`;
   const hit = per.get(key);
   if (hit) return hit;
 

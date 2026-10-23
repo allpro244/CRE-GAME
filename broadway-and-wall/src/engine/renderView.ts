@@ -62,6 +62,8 @@ export interface RenderLot {
   tiers?: { ring: number[]; z0: number; z1: number }[];
   /** "house": a detached house (homes.ts) — drawn with the house meshes, sized to `cov` of the lot, not as a block. */
   deco?: "house";
+  /** Floor area now standing, sf — the hover card's "bldg" (the city file has the lot as vacant). */
+  sf?: number;
 }
 
 export interface RenderOwner {
@@ -175,12 +177,18 @@ export function renderView(s: GameState, sinceMonth = s.month - 1): RenderView {
     lots.push({ bbl: j.bbl, cls: j.use, floors: j.floors, heightM: j.floors * FLOOR_M * progress, construction: true, progress, year: nowYear,
       ...(cov !== undefined ? { cov } : {}) });
   }
-  // A HOMEBUILDER'S HOUSE going up (homes.ts): a frame the size of the house, no tower crane
+  // A HOMEBUILDER'S HOUSE (homes.ts): a frame the size of the house while it goes up (no tower
+  // crane), then the house itself — class "house", a family's home or a single-family rental
   for (const u of Object.values(s.homes?.units ?? {})) {
-    if (u.builtM !== undefined || s.built?.[u.bbl]?.bldgArea) continue;
+    if (u.by === "family" || (s.built?.[u.bbl]?.bldgArea && !s.built[u.bbl].house)) continue;   // a neighbourhood house stands in the city file
     const fl = u.sf > 1_800 ? 2 : 1;
+    if (u.builtM !== undefined) {
+      lots.push({ bbl: u.bbl, cls: "house", floors: fl, heightM: fl * FLOOR_M, construction: false, progress: 1, year: START_YEAR + Math.floor(u.builtM / 12), deco: "house", sf: u.sf,
+        ...(s.month - u.builtM <= 3 ? { fresh: true } : {}) });
+      continue;
+    }
     const progress = Math.min(1, Math.max(0.15, (s.month - u.startM + 1) / Math.max(1, u.doneM - u.startM)));
-    lots.push({ bbl: u.bbl, cls: "multifamily", floors: fl, heightM: fl * FLOOR_M * progress, construction: true, progress, year: nowYear, deco: "house" });
+    lots.push({ bbl: u.bbl, cls: "house", floors: fl, heightM: fl * FLOOR_M * progress, construction: true, progress, year: nowYear, deco: "house", sf: 0 });
   }
   const rising = new Set(lots.map((l) => l.bbl));
   for (const [bbl, b] of Object.entries(s.built ?? {})) {

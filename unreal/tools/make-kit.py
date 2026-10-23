@@ -361,27 +361,44 @@ box(m, TRIM, -TW / 2 - 50, TW / 2 + 50, TY0 - 50, TY1 + 50, TH + 30, TH + 70)
 save(m, RET, "SM_RK_TowerFlat")
 
 # SM_RK_Entry: a grocery or big box's entrance: a portal 1,800 wide standing
-# 300 proud, 1,250 tall (scaled in Z with the box), the sign field across its
-# head, and under it a glazed vestibule with sliding doors
+# 300 proud, 1,250 tall (scaled in Z with the box). The sign field across its
+# head (900 up); under it a tall glazed band (the store's lit front, 560-900);
+# a flat canopy over a glazed vestibule with two pairs of sliding doors; planters
+# either side
 m = mesh()
 EW, EP, EH = 1800, 300, 1250
 box(m, WALL, -EW / 2, -EW / 2 + 180, -60, EP, 0, EH)       # portal legs
 box(m, WALL, EW / 2 - 180, EW / 2, -60, EP, 0, EH)
-box(m, WALL, -EW / 2, EW / 2, EP - 120, EP, 560, EH)        # the head (sign field)
+box(m, WALL, -EW / 2, EW / 2, EP - 120, EP, 900, EH)        # the head (sign field)
 box(m, WALL, -EW / 2, EW / 2, -60, EP - 120, 900, EH)
 box(m, TRIM, -EW / 2 - 25, EW / 2 + 25, -60, EP + 25, EH, EH + 45)   # cap
-# the vestibule: a glass box 1,440 wide, 300 out, 450 tall, with two sets of sliding doors
+box(m, TRIM, -EW / 2 + 180, EW / 2 - 180, EP - 125, EP - 5, 880, 900)  # the head's soffit band
 VX = EW / 2 - 180
-box(m, METAL, -VX, VX, 0, EP - 40, 450, 470)                # its roof edge
-box(m, GLASS, -VX, VX, EP - 46, EP - 40, 0, 450)
+# the tall glazed band over the vestibule: mullions every 240, a transom
+box(m, GLASS, -VX, VX, EP - 130, EP - 124, 500, 880)
 for x in range(int(-VX), int(VX) + 1, 240):
-    box(m, METAL, x - 6, x + 6, EP - 52, EP - 34, 0, 460)
-box(m, METAL, -VX, VX, EP - 52, EP - 34, 250, 262)
-for xc in (-VX / 2, VX / 2):                                # door headers and the floor mats
-    box(m, DARK, xc - 120, xc + 120, EP - 40, EP + 60, 0, 2)
-    box(m, METAL, xc - 125, xc + 125, EP - 54, EP - 30, 250, 280)
-box(m, GLASS, -VX, VX, -56, -50, 560, 900)                  # clerestory glazing over the vestibule
-box(m, DARK, -VX, VX, -50, EP - 40, 470, 476)
+    box(m, METAL, x - 5, x + 5, EP - 134, EP - 118, 500, 880)
+box(m, METAL, -VX, VX, EP - 134, EP - 118, 690, 700)
+# the canopy over the doors: a deck 200 out past the vestibule, its fascia
+box(m, METAL, -VX - 40, VX + 40, -60, EP + 200, 470, 500)
+box(m, ACCENT, -VX - 40, VX + 40, EP + 190, EP + 205, 455, 505)
+# the vestibule: glass and frame, 450 tall, two openings of sliding leaves
+box(m, GLASS, -VX, VX, EP - 46, EP - 40, 0, 450)
+for x in (-VX, -VX / 2 - 140, -VX / 2 + 140, VX / 2 - 140, VX / 2 + 140, VX):
+    box(m, METAL, x - 8, x + 8, EP - 54, EP - 30, 0, 460)   # jambs and corner posts
+for x in (-VX * 0.75, VX * 0.75):
+    box(m, METAL, x - 5, x + 5, EP - 52, EP - 34, 0, 460)
+box(m, METAL, -VX, VX, EP - 56, EP - 28, 270, 300)          # the door header and transom bar
+box(m, METAL, -VX, VX, EP - 56, EP - 28, 440, 460)
+for xc in (-VX / 2, VX / 2):
+    for side in (-1, 1):                                    # sliding leaves: a frame round each, a seam
+        x0, x1 = (xc - 135, xc - 2) if side < 0 else (xc + 2, xc + 135)
+        box(m, METAL, x0, x1, EP - 36, EP - 30, 0, 10)
+        box(m, METAL, x0, x0 + 8, EP - 36, EP - 30, 0, 270)
+        box(m, METAL, x1 - 8, x1, EP - 36, EP - 30, 0, 270)
+    box(m, DARK, xc - 150, xc + 150, EP - 40, EP + 120, 0, 2)  # floor mat
+for x in (-VX - 20, VX - 140):                              # planters
+    box(m, TRIM, x, x + 160, EP + 20, EP + 120, 0, 90)
 save(m, RET, "SM_RK_Entry")
 
 # SM_RK_Pylon: a centre's pylon sign, 300 wide, 900 tall (scaled), a masonry
@@ -426,5 +443,41 @@ box(m, ACCENT, -100, 100, 15, 17, 70, 230)
 box(m, METAL, -10, 10, -10, 10, 0, 60)
 box(m, METAL, -130, 130, -40, 40, 240, 255)
 save(m, RET, "SM_RK_MenuBoard", slots={"accent": "%s/MI_RK_GlowWhite.MI_RK_GlowWhite" % MATS})
+
+# ================================================================== industrial kit
+IND = "/Game/BW/Industrial"
+# SM_K_GradeDoor: a grade-level overhead door 370 wide, 420 tall, in its jamb, bollards either side
+m = mesh()
+box(m, TRIM, -200, 200, 0, 6, 0, 440)
+box(m, ACCENT, -185, 185, 4, 9, 0, 420)
+for z in range(60, 420, 60):
+    box(m, METAL, -185, 185, 8, 11, z, z + 3)
+for x in (-215, 215):
+    cyl(m, METAL, x, 40, 0, 10, 110, 10)
+save(m, KIT, "SM_K_GradeDoor", slots={"accent": fg("Paint", "PaintedMetal_White"), "metal": M("BrandYellow")})
+# SM_IK_Stack: a plant's exhaust stack, 90 across, 1,800 tall (scaled), on a base, a band near the top
+m = mesh()
+box(m, TRIM, -90, 90, -90, 90, 0, 60)
+cyl(m, METAL, 0, 0, 60, 45, 1740, 16)
+cyl(m, DARK, 0, 0, 1650, 48, 60, 16)
+save(m, IND, "SM_IK_Stack", slots={"metal": fg("Metal", "Metal_BrushedWorn")})
+# SM_IK_Silo: a bulk materials silo, 360 across, 1,400 to the eaves, a cone roof, a hopper on legs, a ladder
+m = mesh()
+for x, y in ((-140, -140), (140, -140), (-140, 140), (140, 140)):
+    box(m, METAL, x - 12, x + 12, y - 12, y + 12, 0, 300)
+cyl(m, ACCENT, 0, 0, 300, 180, 1100, 20)
+GS.append_cone(m, opts(ACCENT), unreal.Transform(location=[0, 0, 1400]), 185, 20, 160, 20, 0, True, unreal.GeometryScriptPrimitiveOriginMode.BASE)
+GS.append_cone(m, opts(METAL), unreal.Transform(location=[0, 0, 0]), 30, 120, 300, 12, 0, True, unreal.GeometryScriptPrimitiveOriginMode.BASE)
+box(m, METAL, 180, 186, -30, 30, 300, 1560)
+save(m, IND, "SM_IK_Silo", slots={"accent": fg("Metal", "Metal_Brushed"), "metal": fg("Paint", "PaintedMetal_Grey")})
+# SM_IK_Transformer: a pad-mount transformer and switchgear on a concrete pad, bollards round it
+m = mesh()
+box(m, TRIM, -250, 250, -150, 150, 0, 15)
+box(m, ACCENT, -200, -20, -100, 100, 15, 200)
+box(m, ACCENT, 20, 200, -90, 90, 15, 230)
+for x in (-240, 240):
+    for y in (-140, 140):
+        cyl(m, METAL, x, y, 0, 8, 100, 10)
+save(m, IND, "SM_IK_Transformer", slots={"accent": fg("Paint", "PaintedMetal_Green"), "metal": M("BrandYellow")})
 
 unreal.log("KIT built")

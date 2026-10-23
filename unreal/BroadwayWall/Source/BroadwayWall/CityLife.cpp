@@ -259,9 +259,14 @@ void ACityLife::Build(const FBWCity& City, int32 Seed)
 	// one component per model and paint (a paint is a material parameter, so it
 	// is per component); the body slots are the ones on the car-paint master
 	TMap<TPair<UMaterialInterface*, int32>, UMaterialInstanceDynamic*> Painted;
-	const int32 NumModels = UE_ARRAY_COUNT(Vehicles);
-	for (int32 Pass = 0; Pass < 2; ++Pass)
+	// (out in the region there are no cabs: vehicle12 and vehicle13 carry City Sample's taxi
+	// livery and roof sign whatever their paint, so a county town's traffic leaves them out)
+	TArray<const TCHAR*> Models;
 	for (const TCHAR* P : Vehicles)
+		if (City.Size != TEXT("region") || (!FCString::Strstr(P, TEXT("vehicle12")) && !FCString::Strstr(P, TEXT("vehicle13")))) Models.Add(P);
+	const int32 NumModels = Models.Num();
+	for (int32 Pass = 0; Pass < 2; ++Pass)
+	for (const TCHAR* P : Models)
 	for (int32 Paint = 0; Paint < NumPaints; ++Paint)
 	{
 		UInstancedStaticMeshComponent* I = NewObject<UInstancedStaticMeshComponent>(this);

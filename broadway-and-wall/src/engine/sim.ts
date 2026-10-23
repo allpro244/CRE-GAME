@@ -9,14 +9,14 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Listing } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleHot, cycleDown } from "./market";
-import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
+import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, resolveRecBare, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLandDev, materializePlats } from "./landdev";
-import { tickSplits, tickRivalSplits, materializeSplits } from "./lotsplit";
+import { tickLandDev, materializePlats, materializePlat } from "./landdev";
+import { tickSplits, tickRivalSplits, materializeSplits, materializeSplit } from "./lotsplit";
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
-import { materializeNeighbourhoods } from "./unpack";
+import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
 import { settleLeasingPayables, tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
@@ -37,7 +37,7 @@ import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
 import { tickCorporate } from "./corporate";
-import { initRivals, tickRivals, tickRivalAssembly, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
+import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -582,10 +582,16 @@ const RIPE_LIST_P = 0.25;
 // Forced land sales follow distress — slack and shrinking payrolls — at up to
 // 0.6% of vacant lots a month in a full downturn (the old depression row).
 function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: Set<string>) {
+  // WHICH LOTS ARE VACANT asks only what stands on each (the bare record, value.ts
+  // resolveRecBare) and whether a live job is on it (a set, built once: nothing in this
+  // walk starts or ends a job). It used to resolve every deed in full and scan every
+  // job for each: on a grown region, thousands of lots times hundreds of jobs a month.
+  // The few lots read or listed below are resolved in full when they are.
   const vacant: { bbl: string; rec: ParcelRecord }[] = [];
+  const jobs = new Set((s.cityJobs ?? []).filter((j) => !j.orphaned).map((j) => j.bbl));
   for (const bbl of bbls) {
     if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) continue;
-    if ((s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned)) continue;
+    if (jobs.has(bbl)) continue;
     // A FIRM'S DIRT IS NOT A PRIVATE OWNER'S TO SELL. These listings are
     // anonymous private sellers; a lot in a named firm's book goes to market
     // through that firm's own disposals (rivals.ts), or not at all. Listing it
@@ -594,11 +600,12 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
     if (ownerOf(s, bbl)) continue;
     const traded = s.lastTradeM?.[bbl];
     if (traded !== undefined && s.month - traded < 24) continue;
-    const rec = resolveRec(parcels, s, bbl);
+    const rec = resolveRecBare(parcels, s, bbl);
     if (!rec || rec.class !== "land" || !(rec.lotArea > 0)) continue;
     vacant.push({ bbl, rec });
   }
   if (!vacant.length) return;
+  const full = (v: { bbl: string }) => resolveRec(parcels, s, v.bbl)!;
   const put = (bbl: string, rec: ParcelRecord, distress: boolean) => {
     // A PUBLIC LISTING IS PRICED OFF COMPS, AND THE OWNER'S BELIEF IS A FLOOR.
     // A broker strikes the ask from comparable sales; what the owner believes
@@ -625,9 +632,10 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
   // ripe dirt finds its builder
   for (const v of vacant) {
     if (rng(s, "land") >= RIPE_CHECK_SHARE) continue;
-    const read = landRead(v.rec, s.econ);
+    const rec = full(v);
+    const read = landRead(rec, s.econ);
     if (!(read.builder > 0) || read.winner !== "builder") continue;
-    if (rng(s, "land") < RIPE_LIST_P) put(v.bbl, v.rec, false);
+    if (rng(s, "land") < RIPE_LIST_P) put(v.bbl, rec, false);
   }
   // forced sellers clear land through a slump
   const h = 0.006 * cycleDown(s.econ);
@@ -635,9 +643,40 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
     const want = Math.min(3, Math.floor(vacant.length * h + rng(s, "land")));
     for (let i = 0; i < want; i++) {
       const v = vacant[Math.floor(rng(s, "land") * vacant.length)];
-      if (!listed.has(v.bbl)) put(v.bbl, v.rec, true);
+      if (!listed.has(v.bbl)) put(v.bbl, full(v), true);
     }
   }
+}
+
+/**
+ * PUT THE CUT LOTS BACK: every finished plat, recorded split and unpacked
+ * neighbourhood into the parcel table and the BBL list, in place, IN THE ORDER
+ * THEY WERE CUT (s.cutOrder). Idempotent and a pure function of the state.
+ *
+ * The order is the point. The BBL list is the order every loop in the engine
+ * walks the town, and for a BBL past 2^32 (all cut lots) the parcel table's
+ * own key order is its insertion order too. A live game appends each plat's
+ * lots the month its streets finish; the per-kind materializers walk their
+ * records in the order they were FILED. Measured on the 100-year region runs
+ * (test/region-longrun.mjs): seeds 1-3 at year 25 rebuilt the same parcels in a
+ * different order, and twelve months on the reloaded game had diverged from
+ * the one that was saved. Saves from before the log replay by kind, as before.
+ */
+export function restoreCuts(s: GameState, parcels: ParcelTable, bbls?: string[]): string[] {
+  const added: string[] = [];
+  if (s.cutOrder?.length) {
+    const splits = new Map((s.splits ?? []).map((sp) => [String(sp.id), sp]));
+    for (const c of s.cutOrder) {
+      const k = c.slice(2);
+      if (c[0] === "p") materializePlat(s, parcels, bbls, s.plats?.[k], added);
+      else if (c[0] === "s") materializeSplit(parcels, bbls, splits.get(k), added);
+      else if (c[0] === "u") materializeNeighbourhood(s, parcels, bbls, Number(k), added);
+    }
+  }
+  if (s.plats) added.push(...materializePlats(s, parcels, bbls));
+  if (s.splits) added.push(...materializeSplits(s, parcels, bbls));
+  if (s.growth?.unpacked) added.push(...materializeNeighbourhoods(s, parcels, bbls));
+  return added;
 }
 
 /**
@@ -651,9 +690,8 @@ function tickMonth(
 ): void {
   if (s.gameOver) return;
   // a save's finished plats are lots before anything reads the table (landdev.ts)
-  if (s.plats) materializePlats(s, parcels, bbls);
-  if (s.splits) materializeSplits(s, parcels, bbls);
-  if (s.growth?.unpacked) materializeNeighbourhoods(s, parcels, bbls);
+  restoreCuts(s, parcels, bbls);
+  setRivalAdjacency(adjacency);
   s.month++;
   const drawnAtOpen = s.loc?.drawnTotal ?? 0;
 

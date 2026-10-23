@@ -181,7 +181,8 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
       const isDc = dcs.has(i), builtP = isDc ? 1 : 0.62 - 0.35 * (l.o / D);
       if (rng() >= builtP) return { rects: [{ a: l.a, o: l.o, w: l.w - 2, d: l.d - 2, kind: "lawn" }], sf: 0, name: `${name}, lot ${i + 1} (platted, vacant)`, cls: "land", bldgclass: "V1", year: 0 };
       const far = isDc ? R(0.38, 0.45) : R(0.3, 0.42), sf = Math.min(isDc ? 500000 : 120000, (l.w * l.d * far) / FT2);
-      return industrialLot(l, sf, isDc ? `${name}, lot ${i + 1} (distribution centre)` : `${name}, lot ${i + 1} (${rng() < 0.5 ? "warehouse" : "light manufacturing"})`, isDc);
+      const what = isDc ? "distribution centre" : rng() < 0.5 ? "warehouse" : "light manufacturing";
+      return industrialLot(l, sf, `${name}, lot ${i + 1} (${what})`, isDc, what === "light manufacturing" ? "manufacturing" : "bulk");
     });
     built.push(...out);
     const roads = (placeP) => {
@@ -194,7 +195,8 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
     return { list: out, roads, name };
   }
   /** One industrial lot: the building at the back, a truck court before it, a small car park by the road. */
-  function industrialLot(l, sf, name, isDc) {
+  // role: what the renderer draws (unreal RetailBuilder's industrial half), the engine's product keys (products.ts)
+  function industrialLot(l, sf, name, isDc, role = "bulk") {
     const m2 = sf * FT2, bd = Math.min(l.d * 0.62, Math.max(40, Math.sqrt(m2 / 2))), bw = Math.min(l.w * 0.92, m2 / bd);
     const real = bw * bd, court = isDc ? 45 : 28, park = ((real / FT2 / 1000) * IND_RATIO * SPACE_M2) / Math.max(20, bw);
     return {
@@ -202,7 +204,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
         { a: l.a, o: l.o, w: l.w - 2, d: l.d - 2, kind: "lawn" },
         { a: l.a, o: l.o + l.d - 2 - bd - court, w: Math.min(l.w - 4, bw + 20), d: court, kind: "pave" },
         { a: l.a, o: l.o + 4, w: Math.min(l.w - 6, bw), d: Math.min(park, Math.max(8, l.d - bd - court - 10)), kind: "lot" },
-        { a: l.a, o: l.o + l.d - 2 - bd, w: bw, d: bd, kind: "bldg", z: isDc ? Math.round(R(1100, 1300)) : Math.round(R(750, 950)), cls: "industrial", floors: 1 },
+        { a: l.a, o: l.o + l.d - 2 - bd, w: bw, d: bd, kind: "bldg", z: isDc ? Math.round(R(1100, 1300)) : Math.round(R(750, 950)), cls: "industrial", floors: 1, role, sf: Math.round(sf) },
       ],
       sf: real / FT2, name, cls: "industrial", bldgclass: isDc ? "E7" : rng() < 0.5 ? "E1" : "E9", year: Math.round(R(isDc ? 1995 : 1975, 2020)),
     };
@@ -274,7 +276,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
     if (anyNear(f.p, 250) || placed.some((s) => s.type !== "flex" && dist(s.at, f.p) < 450)) continue;
     const sf = R(10000, 40000), acres = Math.min(5, Math.max(1, (sf * FT2) / R(0.3, 0.45) / ACRE)), m2 = acres * ACRE;
     const w = Math.sqrt(m2 * 1.2), d = m2 / w;
-    const lot = industrialLot({ a: 0, o: 0, w, d }, sf, `${nameOf("Business Center")} (light industrial / flex)`, false);
+    const lot = industrialLot({ a: 0, o: 0, w, d }, sf, `${nameOf("Business Center")} (light industrial / flex)`, false, "flex");
     put(f.p, f.u, [lot], { type: "flex" }, [0, w * 0.6, -w * 0.6]);
   }
 

@@ -65,6 +65,7 @@ import { RELEASE_PREMIUM } from "./facility";
 import { ENTITLE_FIXED, ENTITLE_PER_LOT, ENTITLE_MONTHS, entitleOdds, REFILE_BAR_M } from "./landdev";
 import { hash01 } from "./competitorTraits";
 import { money } from "./money";
+import { bumpTable } from "./tableVersion";
 import { measurePieces, type SiteGeo, type SplitCut, type PieceGeo } from "./lotsplitGeom";
 
 
@@ -465,16 +466,20 @@ export function fileSplit(s: GameState, parcels: ParcelTable, bbl: string, geo: 
  */
 export function materializeSplits(s: GameState, parcels: ParcelTable, bbls?: string[]): string[] {
   const added: string[] = [];
-  for (const sp of s.splits ?? []) {
-    if (!sp.done) continue;
-    const P = parcels[sp.parent];
-    if (!P || (P.split ?? 0) >= sp.id) continue;
-    for (const r of splitRecords(P, sp)) {
-      if (r.bbl !== sp.parent && parcels[r.bbl]) continue;
-      const isNew = !parcels[r.bbl];
-      parcels[r.bbl] = r;
-      if (isNew) { bbls?.push(r.bbl); added.push(r.bbl); }
-    }
+  for (const sp of s.splits ?? []) materializeSplit(parcels, bbls, sp, added);
+  return added;
+}
+/** One recorded split's lots into the table (sim.ts restoreCuts replays them in the order they were cut). */
+export function materializeSplit(parcels: ParcelTable, bbls: string[] | undefined, sp: SplitRecord | undefined, added: string[] = []): string[] {
+  if (!sp?.done) return added;
+  const P = parcels[sp.parent];
+  if (!P || (P.split ?? 0) >= sp.id) return added;
+  bumpTable(parcels);
+  for (const r of splitRecords(P, sp)) {
+    if (r.bbl !== sp.parent && parcels[r.bbl]) continue;
+    const isNew = !parcels[r.bbl];
+    parcels[r.bbl] = r;
+    if (isNew) { bbls?.push(r.bbl); added.push(r.bbl); }
   }
   return added;
 }
@@ -496,6 +501,7 @@ function recordSplit(s: GameState, parcels: ParcelTable, bbls: string[], sp: Spl
   // THE RELEASE PAYMENT is due at recording, in cash
   const L = h.loan;
   sp.done = true;
+  (s.cutOrder ??= []).push("s:" + sp.id);
   materializeSplits(s, parcels, bbls);
   const recs = sp.pieces.map((p) => parcels[p.bbl]);
   for (const r of recs) if (r.bbl !== sp.parent) s.holdings[r.bbl] = landHolding(h, r, 0);
@@ -596,8 +602,10 @@ export function tickSplits(s: GameState, parcels: ParcelTable, bbls: string[]) {
       if (!(e instanceof SplitShort)) throw e;
       s.holdings = snap.holdings;
       for (const [b, r] of snap.parcelsBefore) { if (r) parcels[b] = r; else delete parcels[b]; }
+      bumpTable(parcels);
       bbls.length = snap.bbN;
       sp.done = undefined;
+      if (s.cutOrder?.at(-1) === "s:" + sp.id) s.cutOrder.pop();
       lapse(s, sp, `the lender's release payment of ${money(e.due)} was not there in cash`, true);
     }
   }
@@ -653,6 +661,7 @@ function recordRivalSplit(s: GameState, parcels: ParcelTable, bbls: string[], sp
   const r = s.rivals?.find((x) => x.id === sp.by);
   if (!r || !r.bbls.includes(sp.parent) || s.cityLoans?.[sp.parent] || s.developments[sp.parent] || s.listings.some((l) => l.bbl === sp.parent)) { lapse(s, sp, "the deed changed before recording", false); return; }
   sp.done = true;
+  (s.cutOrder ??= []).push("s:" + sp.id);
   materializeSplits(s, parcels, bbls);
   for (const p of sp.pieces) if (p.bbl !== sp.parent && !r.bbls.includes(p.bbl)) r.bbls.push(p.bbl);
   recordPropertyEvent(s, sp.parent, { kind: "planning", amount: sp.cost, outcome: `Split into ${sp.pieces.length} lots by ${r.name}` });

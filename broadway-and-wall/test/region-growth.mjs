@@ -15,10 +15,11 @@
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const E = await import(join(HERE, ".engine.mjs"));
-const { makeCity, REGION } = await import(join(HERE, "..", "src", "citygen", "index.mjs"));
+// file URLs: a bare Windows path ("D:\...") is not an import specifier
+const E = await import(pathToFileURL(join(HERE, ".engine.mjs")).href);
+const { makeCity, REGION } = await import(pathToFileURL(join(HERE, "..", "src", "citygen", "index.mjs")).href);
 
 const YEARS = Number(process.env.Y ?? 30);
 if (process.env.NOGROWTH) globalThis.BW_NO_GROWTH = true;
@@ -34,6 +35,40 @@ const finite = (o, path = "") => {
   }
 };
 
+// THE DECADE TABLE: the growth a visitor would see, at years 0, 10, 20, 30 —
+// and the land's price by distance from downtown (mean $/sf of land over every
+// town and fringe deed, farms apart, by km from the town's centre).
+const DT_BANDS = [500, 1000, 2000, 3000, Infinity];
+function decade(g, parcels, bbls) {
+  const P = E.roadPlan(g);
+  const C = P.centre;
+  const kx = 111320 * Math.cos((C[1] * Math.PI) / 180);
+  const sums = DT_BANDS.map(() => [0, 0]);
+  for (const b of bbls) {
+    const raw = parcels[b];
+    if (!raw || raw.ag || raw.tract || g.platted?.[b] || g.merged?.[b] || !(raw.lotArea > 0)) continue;
+    const rec = E.resolveRec(parcels, g, b);
+    if (!rec) continue;
+    const d = Math.hypot((rec.centroid[0] - C[0]) * kx, (rec.centroid[1] - C[1]) * 110540);
+    const k = DT_BANDS.findIndex((x) => d < x);
+    const v = E.landPsfNow(rec, g.econ);
+    if (Number.isFinite(v)) { sums[k][0] += v; sums[k][1]++; }
+  }
+  const R = g.growth?.roads, T = E.townSummary(g), H = g.growth?.hist ?? [];
+  const opened = R?.opened ?? [];
+  return {
+    yr: Math.round(g.month / 12), pop: Math.round(g.econ.population ?? 0),
+    houses: H.at(-1)?.newHomes ?? 0, family: Object.values(g.homes?.units ?? {}).filter((u) => u.by === "family").length,
+    plats: H.at(-1)?.plats ?? 0, roads: opened.filter((o) => o.kind !== "highway").length,
+    programmed: Object.values(R?.art ?? {}).filter((a) => a.status).length,
+    hwy: opened.filter((o) => o.kind === "highway").length, maxAdt: H.at(-1)?.roads?.maxAdt ?? 0, fund: Math.round((R?.fund ?? 0) / 1e6),
+    centres: T.centres, upzones: T.upzones, redev: T.redev, townBuilt: T.townBuilt, unpacked: Object.keys(g.growth?.unpacked ?? {}).length,
+    land: sums.map(([v, n]) => (n ? +(v / n).toFixed(1) : 0)),
+  };
+}
+const decadeLine = (r) => `  ${String(r.yr).padStart(2)} ${String(r.pop).padStart(7)} ${String(r.houses).padStart(6)} ${String(r.family).padStart(6)} ${String(r.plats).padStart(5)} ${String(r.roads).padStart(5)}+${r.programmed} ${String(r.hwy).padStart(3)} ${String(r.maxAdt).padStart(7)} ${String(r.fund).padStart(5)} ${String(r.centres).padStart(7)} ${String(r.upzones).padStart(7)} ${String(r.redev).padStart(5)} ${String(r.townBuilt).padStart(6)} ${String(r.unpacked).padStart(5)}  | ${r.land.map((x) => String(x).padStart(6)).join(" ")}`;
+const DECADE_HEAD = "  yr     pop  houses family plats roads hwy  maxADT fund$M centres upzones redev  built unpkd  | land $/sf by km from downtown: <0.5  0.5-1  1-2  2-3  3+";
+
 const all = [];
 for (const seed of seeds.length ? seeds : [1, 2, 3]) {
   const city = makeCity(REGION, seed);
@@ -45,10 +80,13 @@ for (const seed of seeds.length ? seeds : [1, 2, 3]) {
   const ring = bbls.filter((b) => { const p = parcels[b]; return p.class === "multifamily" && (p.unitsRes ?? 0) <= 3 && ["A1", "B1", "C0"].includes(p.bldgClass); });
   console.log(`\nseed ${seed} — ${city.name}: ${lots0} parcels, ${bbls.filter((b) => parcels[b].tract).length} farm tracts, ${ring.length} inner-ring houses, ${Math.round(g.econ.population).toLocaleString()} people`);
   const t0 = performance.now();
+  const dec = [];
   for (let m = 0; m < YEARS * 12; m++) {
+    if (m % 120 === 0) dec.push(decade(g, parcels, bbls));
     g = E.advanceQuarter(g, parcels, bbls, city.adjacency);
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
   }
+  dec.push(decade(g, parcels, bbls));
   const ms = (performance.now() - t0) / (YEARS * 12);
   console.log(`  timing: ${ms.toFixed(0)} ms a month`);
   const H = g.growth?.hist ?? [];
@@ -62,7 +100,14 @@ for (const seed of seeds.length ? seeds : [1, 2, 3]) {
   if (!last || !first) { fail(`seed ${seed}: no growth record`); continue; }
   finite(last, `seed ${seed} `);
   const devs = Object.values(g.growth.devs);
-  console.log(`  land developers: ${devs.map((d) => `${d.name} (${d.tracts} tracts, ${d.plats} plats, ${d.lots} lots, ${d.refused} refused)`).join("; ") || "none"}`);
+  console.log(`  land developers: ${devs.map((d) => `${d.name} (${d.tracts} tracts, ${d.plats} plats, ${d.lots} lots, ${d.refused} refused${d.cash !== undefined ? `; cash ${k$(d.cash)}, debt ${k$(d.debt ?? 0)}, ${d.lotsSold ?? 0} lots sold${d.failedM !== undefined ? `, FAILED ${ml(d.failedM)}` : ""}` : ""})`).join("; ") || "none"}`);
+  // the developers' books must add up: nobody owes a negative sum, and a failed one owes nothing
+  for (const d of devs) {
+    if ((d.debt ?? 0) < -1) fail(`seed ${seed}: ${d.name} owes ${d.debt}`);
+    if (d.failedM !== undefined && (d.debt ?? 0) > 0) fail(`seed ${seed}: failed ${d.name} still owes ${d.debt}`);
+    const loans = Object.values(d.loans ?? {}).reduce((t, l) => t + l.bal, 0);
+    if (d.debt !== undefined && Math.abs(loans - d.debt) > 2 + 1e-6 * d.debt) fail(`seed ${seed}: ${d.name} debt ${d.debt} != its loans ${loans}`);
+  }
   const builders = Object.values(g.homes?.builders ?? {});
   console.log(`  homebuilders: ${builders.map((b) => `${b.name} ${b.started} started, ${b.closed} closed`).join("; ") || "none"}`);
   const R = g.growth.roads;
@@ -72,6 +117,8 @@ for (const seed of seeds.length ? seeds : [1, 2, 3]) {
   const T = g.growth.town;
   if (T) console.log(`  town: ${JSON.stringify(E.townSummary(g))}${T.centres?.length ? `; centres ${T.centres.map((c) => `${c.kind} ${Math.round(c.sf / 1000)}k sf ${ml(c.m)} (${c.households} hh)`).join("; ")}` : ""}`);
   console.log(`  month: ${ms.toFixed(0)} ms mean; parcels ${lots0} -> ${bbls.length}`);
+  console.log(DECADE_HEAD);
+  for (const r of dec) console.log(decadeLine(r));
   all.push({ seed, first, last, ms });
   // ---- the bands
   const gr = Math.pow(last.households / first.households, 12 / Math.max(12, last.m - first.m)) - 1;

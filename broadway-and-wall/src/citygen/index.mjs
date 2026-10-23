@@ -277,7 +277,7 @@ export const PARK_AMOUNTS = [
 ];
 export const DEFAULT_PARKS = "medium";
 
-export const CITY_PLAN = 16;
+export const CITY_PLAN = 17;   // 17: the region town tapers into its suburbs, no floodplain, small strips (region/*)
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical

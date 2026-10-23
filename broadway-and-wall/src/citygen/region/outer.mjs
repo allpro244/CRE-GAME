@@ -11,7 +11,9 @@ import { tractShare, RINGS } from "./land.mjs";
 import { platFor, ERA_YEARS } from "./plats.mjs";
 import { placeCommerce } from "./commerce.mjs";
 
-const OUTER_HOUSES = 2400;   // [O] houses in the outer subdivisions at the opening: enough to ring the town so it meets the farms through its suburbs, not at a line (owner; was 600)
+// [O] houses in the outer subdivisions at the opening. Plan 17: enough to ring the town so it meets the farms
+// through its suburbs, not at a line (owner); plan 16 and before: 600.
+const outerHouses = (M) => (M.planV >= 17 ? 2400 : 600);
 
 export function placeOuter(M) {
   const G = M.G, St = M.story, rS = St.rS, rng = makeRng("outer:" + M.seed);
@@ -108,6 +110,7 @@ export function placeOuter(M) {
   const grow = G.layer();
   for (let k = 0; k < G.N; k++) if (M.townMask[k]) G.disk(grow, G.ctr(k), 200);
   let n = 0;
+  const OUTER_HOUSES = outerHouses(M);
   for (let added = 1; added && n < OUTER_HOUSES;) {
     added = 0;
     for (const a of all) {

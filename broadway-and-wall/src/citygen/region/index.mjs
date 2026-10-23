@@ -59,7 +59,9 @@ export function regionName(seed) {
 
 export function makeRegion(seed, opts = {}) {
   seed = seed >>> 0;
-  const M = generateLand(seed);
+  const planV = opts.planV ?? 15;
+  const M = generateLand(seed, planV);
+  SEED_PLAN.set(seed, planV);
   storyPrep(M);
   townFootprint(M);
   placeOuter(M);
@@ -81,7 +83,6 @@ export function makeRegion(seed, opts = {}) {
     land: { rS: (p) => M.story.rS(F.toC(p)), ind: (p) => M.story.ind(F.toC(p)) },
     center: LONLAT, name, abbr: "RG",
   });
-  const planV = opts.planV ?? 15;
   const density = opts.density;
   const town = generateCity({ ...cfg, seed: (seed ^ 0x52474e31) >>> 0, density, planV });
   const towns = [{ cfg, city: town, base: 1 }];
@@ -124,12 +125,25 @@ export function makeRegion(seed, opts = {}) {
       // toward the town's edge the houses take over: bigger lots qualify and fewer stay apartments
       // (the fringe of a pre-war town is houses on their own lots, not walk-ups) [K, shape choice]
       const lot = f.geometry.coordinates[0].slice(0, -1).map(proj.toXY);
-      const t = tw.base === 1 ? outward(ringCentroid(lot)) : 0;
+      const t = tw.base === 1 && planV >= 17 ? outward(ringCentroid(lot)) : 0;   // plan 17 on
       const fringe = Math.max(0, (t - 0.55) / 0.45);
-      if (!resi.has(p.district) || p.bldgclass !== "D0" || !(p.lotarea <= 9000 + 9000 * fringe) || (p.corridorm ?? 9999) < 12) continue;
+      // THE EMPTY BAND (measured, seed 2: ~600 of the town's outer lots were platted and vacant — the
+      // brown ring between downtown and the suburbs). A real town's outer additions are built up with
+      // houses; three in four of those vacant house lots get one, the rest stay land for sale [K].
+      const vacantHouseLot = p.bldgclass === "V1" && t > 0.45 && (resi.has(p.district) || String(p.district).startsWith("oldtown"))
+        && p.lotarea <= 18000 && h01(p.bbl, 9) < 0.75;
+      if (!vacantHouseLot && (!resi.has(p.district) || p.bldgclass !== "D0" || !(p.lotarea <= 9000 + 9000 * fringe))) continue;
+      if ((p.corridorm ?? 9999) < 12) continue;
       if (p.corner === 1 && h01(p.bbl, 7) < 0.5 - 0.4 * fringe) continue;   // half the corners keep their corner building (fewer at the fringe)
-      const bs = bldgOf.get(p.bbl);
-      if (!bs?.length || h01(p.bbl, 1) > 0.82 + 0.15 * fringe) continue;
+      let bs = bldgOf.get(p.bbl);
+      if (vacantHouseLot) {
+        // a house on an empty lot: a new building, built in the addition's own years (1900-1950, later outward)
+        const b = { type: "Feature", geometry: null, properties: { base_bbl: p.bbl, heightroof: 0, cnstrct_yr: 0 } };
+        tw.city.buildings.features.push(b); bs = [b];
+        p.yearbuilt = Math.round(1900 + 30 * t + 20 * h01(p.bbl, 10));
+        b.properties.cnstrct_yr = p.yearbuilt;
+        p.landuse = "01";
+      } else if (!bs?.length || h01(p.bbl, 1) > 0.82 + 0.15 * fringe) continue;
       // the lot's depth runs along its longest side
       let ax = [1, 0], best = 0;
       for (let i = 0; i < lot.length; i++) { const e = sub(lot[(i + 1) % lot.length], lot[i]), L = Math.hypot(e[0], e[1]); if (L > best) { best = L; ax = [e[0] / L, e[1] / L]; } }
@@ -159,7 +173,7 @@ export function makeRegion(seed, opts = {}) {
   // floor area and the building's assessed value fall with the storeys; the lot and its land do not.
   // The cap is a shape choice [K]: the shape of every small Midwest county seat's skyline.
   for (const tw of towns) {
-    if (tw.base !== 1) continue;
+    if (tw.base !== 1 || planV < 17) continue;   // plan 17 on: a plan-16 save rebuilds its town as it was
     const bldgOf = new Map();
     for (const f of tw.city.buildings.features) { const b = f.properties.base_bbl; if (b) { const l = bldgOf.get(b); if (l) l.push(f); else bldgOf.set(b, [f]); } }
     for (const f of tw.city.parcels.features) {
@@ -562,12 +576,15 @@ function buildableM2(M, r) {
 }
 const MODELS = new Map();
 /** The region's land model for a seed (the river, the town, the outer lots), kept for platting. */
+// the plan the seed's town was last cut under (makeRegion), so a farm is platted on the same land the game drew
+const SEED_PLAN = new Map();
 function regionModel(seed) {
-  let M = MODELS.get(seed);
+  const planV = SEED_PLAN.get(seed >>> 0) ?? 17, key = `${seed}:${planV}`;
+  let M = MODELS.get(key);
   if (!M) {
-    M = generateLand(seed); storyPrep(M); townFootprint(M); placeOuter(M);
+    M = generateLand(seed, planV); storyPrep(M); townFootprint(M); placeOuter(M);
     if (MODELS.size > 2) MODELS.clear();
-    MODELS.set(seed, M);
+    MODELS.set(key, M);
   }
   return M;
 }

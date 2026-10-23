@@ -39,16 +39,20 @@ export const SZ = {
 // [O] the town's reach in "story distance" (story.mjs): the built-up city, and
 // how far out the old main street carries it
 export const RINGS = { core: 260, mid: 480, city: 700, mainStreet: 1150 };
+// PLAN 17 (owner, 2026-10-23): the town grid grows out as its own pre-war ring of houses, not separate plats.
+// Every map change since plan 16 is gated on M.planV, so a save cut under plan 16 rebuilds the town it was played on.
+export const RINGS17 = { core: 260, mid: 480, city: 1000, mainStreet: 1450 };
+export const ringsFor = (planV) => (planV >= 17 ? RINGS17 : RINGS);
 
 const RIVERS = ["Kessaw", "Ottaquin", "Saline", "Big Muddy", "Tenmile", "Wabeno", "Paquette", "Cold Spring", "Vermilion", "Embarras", "Kaskaskia", "Little Wapsi"];
 export const NAME_A = ["Mill", "Ash", "Oak", "Cedar", "Fair", "Green", "Elm", "Brook", "Clay", "Stone", "Wal", "Hazel", "Red", "Kings", "Marsh", "Pine", "Har", "Lin", "Bel", "Hamp"];
 export const NAME_B = ["ford", "ton", "ville", "field", "burg", "wood", " Crossing", " Mills", "dale", "port", "ridge", " Ferry", "mont", "boro"];
 
 /** The land, the old settlements' sites, the roads, the highway plan and the survey tracts. */
-export function generateLand(seed) {
+export function generateLand(seed, planV = 17) {
   const S = SZ.window, rng = makeRng("region:" + seed), G = new Grid(S);
   const nz = makeNoise(rng, 900), nzFine = makeNoise(rng, 250);
-  const M = { seed, S, G };
+  const M = { seed, S, G, planV, rings: ringsFor(planV) };
 
   // ---------------- layer 1: land and water
   const coast = rng() < 0.5;
@@ -95,10 +99,10 @@ export function generateLand(seed) {
     river.forEach((p, i) => { G.disk(flood, p, fpHalf[i]); G.disk(water, p, rHalf[i]); G.disk(riverL, p, rHalf[i]); });
     for (const c of creeks) { G.line(flood, c.pts, c.fp); G.line(water, c.pts, c.w / 2 + 1); }
     if (coast) for (let k = 0; k < G.N; k++) { const p = G.ctr(k); if (isSea(p)) water[k] = 1; else if (p[1] > coastY(p[0]) - M.coast.band) flood[k] = 1; }
-    // NO FLOODPLAIN FOR NOW (owner, 2026-10-23: "get rid of floodplain land completely"): drawn and
+    // NO FLOODPLAIN (owner, 2026-10-23: "get rid of floodplain land completely"), plan 17 on: drawn and
     // then cleared, so the river, creeks and coast stand on dry ground — no marsh, no wet acres in a
-    // tract, nothing a plat keeps off. Delete this line to restore it.
-    flood.fill(0);
+    // tract, nothing a plat keeps off.
+    if (planV >= 17) flood.fill(0);
   };
   fillWater();
   const isWater = (p) => { const k = G.idx(p); return k >= 0 ? water[k] === 1 : isSea(p); };
@@ -148,7 +152,7 @@ export function generateLand(seed) {
   site.centre = add(site.c, mul(site.v, sd * (site.hw - 450)));
   const centre = site.centre;
   // creeks bend round the town (culverted, or the town grew round their valleys) and follow its edge to the river
-  const rOut = RINGS.city + 350;
+  const rOut = M.rings.city + 350;
   for (const c of creeks) {
     const inside = c.pts.map((p) => dist(p, centre) < rOut);
     if (!inside.some(Boolean)) continue;
@@ -175,7 +179,7 @@ export function generateLand(seed) {
   // first-pass settled area (the noisy town radius), for the road and highway costs
   const nzC = makeNoise(rng, 500);
   const settle0 = G.layer();
-  for (let k = 0; k < G.N; k++) if (M.cityBank[k] && dist(G.ctr(k), centre) * (0.85 + 0.3 * nzC(...G.ctr(k))) < RINGS.city + 150) settle0[k] = 1;
+  for (let k = 0; k < G.N; k++) if (M.cityBank[k] && dist(G.ctr(k), centre) * (0.85 + 0.3 * nzC(...G.ctr(k))) < M.rings.city + 150) settle0[k] = 1;
 
   // the river village: a ferry or mill village upriver, on one bank [O]
   const towns = [];

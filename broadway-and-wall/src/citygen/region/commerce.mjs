@@ -249,7 +249,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
   for (const c of shuffle(corners.filter((q) => edge(q.p) > 30 && edge(q.p) < 700)).concat(shuffle(front.filter((q) => edge(q.p) > 30 && edge(q.p) < 900)))) {
     if (placed.filter((s) => s.type === "neighbourhood").length >= nNbhd) break;
     if (anyNear(c.p, 450) || near(c.p, "neighbourhood", 1900) || near(c.p, "community", 800)) continue;
-    const grocery = R(35000, 60000), inline = R(10000, 30000);   // the shops beside the grocery, kept short (owner)
+    const grocery = R(35000, 60000), inline = M.planV >= 17 ? R(10000, 30000) : R(15000, 50000);   // the shops beside the grocery, kept short (owner, plan 17)
     const site = retail({ boxes: [grocery], roles: ["grocery"], inline, pads: PAD().slice(0, I(0, 2)), year: Math.round(R(1960, 1995)), name: nameOf("Shopping Center (neighbourhood centre)") });
     put(c.p, c.u, site.parcels, { type: "neighbourhood" }, [site.W / 2 + 22, -(site.W / 2 + 22)]);
   }
@@ -267,8 +267,9 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
       // MOST STRIPS ARE SMALL (owner: the long ones "look really weird"): the typical strip by the road is
       // 3-6 shops, 4-9k sf on a lot of about an acre [S, ICSC convenience centres run 10-30k but the
       // unanchored strips most towns are full of are smaller]; one in four is a longer 9-16k row
-      const inline = rng() < 0.75 ? R(4000, 9000) : R(9000, 16000);
-      const site = retail({ inline, pads: inline > 9000 && rng() < 0.4 ? PAD().slice(0, 1) : [], year: Math.round(R(1965, 2010)), name: nameOf("Square (strip centre)"), bldgclass: "K1" });
+      const plan17 = M.planV >= 17;
+      const inline = plan17 ? (rng() < 0.75 ? R(4000, 9000) : R(9000, 16000)) : R(9000, 28000);
+      const site = retail({ inline, pads: (!plan17 || inline > 9000) && rng() < 0.4 ? PAD().slice(0, 1) : [], year: Math.round(R(1965, 2010)), name: nameOf("Square (strip centre)"), bldgclass: "K1" });
       put(c.p, c.u, site.parcels, { type: "strip" }, [site.W / 2 + 20, -(site.W / 2 + 20)]);
     }
   }

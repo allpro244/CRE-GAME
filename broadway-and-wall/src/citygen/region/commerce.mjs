@@ -256,7 +256,9 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
 
   // ---- 3. strip and convenience centres, and gas stations, through the inner ring and along the roads out
   const nStrip = I(4, 8);
-  for (const c of shuffle(corners.filter((q) => edge(q.p) < 1800).concat(front.filter((q) => q.old && edge(q.p) < 1800)))) {
+  // (plan 17: within 900 m of the town, where the houses are — 1.8 km out they stood alone in the corn, owner)
+  const stripReach = M.planV >= 17 ? 900 : 1800;
+  for (const c of shuffle(corners.filter((q) => edge(q.p) < stripReach).concat(front.filter((q) => q.old && edge(q.p) < stripReach)))) {
     if (placed.filter((s) => s.type === "strip" || s.type === "gas").length >= nStrip) break;
     if (anyNear(c.p, 350)) continue;
     if (rng() < 0.35) {
@@ -276,7 +278,7 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
 
   // ---- industrial 2: light industrial and flex on the arterials at the town's edge
   const nFlex = I(5, 8);
-  for (const f of shuffle(front.filter((q) => edge(q.p) > 150 && edge(q.p) < 1600))) {
+  for (const f of shuffle(front.filter((q) => edge(q.p) > 150 && edge(q.p) < (M.planV >= 17 ? 1000 : 1600)))) {   // plan 17: on the town's edge, not out in the fields
     if (placed.filter((s) => s.type === "flex").length >= nFlex) break;
     if (anyNear(f.p, 250) || placed.some((s) => s.type !== "flex" && dist(s.at, f.p) < 450)) continue;
     const sf = R(10000, 40000), acres = Math.min(5, Math.max(1, (sf * FT2) / R(0.3, 0.45) / ACRE)), m2 = acres * ACRE;

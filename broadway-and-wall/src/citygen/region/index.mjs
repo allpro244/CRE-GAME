@@ -201,6 +201,28 @@ export function makeRegion(seed, opts = {}) {
     }
   }
 
+  // ---------------- NO LONE TOWERS (plan 17; owner: one tall slab stood alone over three-storey blocks). A
+  // county seat's tall buildings stand together — the courthouse square, a bank, a hotel. A building of ten
+  // storeys or more with fewer than two of six or more within 120 m comes down to twice its neighbours'
+  // median, at least six [K]. Floor area and assessed building value fall with the storeys.
+  if (planV >= 17) {
+    const tw = towns[0], bldgOf = new Map();
+    for (const f of tw.city.buildings.features) { const b = f.properties.base_bbl; if (b) { const l = bldgOf.get(b); if (l) l.push(f); else bldgOf.set(b, [f]); } }
+    const ps = tw.city.parcels.features.filter((f) => f.properties.numfloors > 0).map((f) => ({ p: f.properties, c: ringCentroid(f.geometry.coordinates[0].slice(0, -1).map(proj.toXY)) }));
+    for (const a of ps) {
+      if (a.p.numfloors < 10) continue;
+      const near = ps.filter((b) => b !== a && dist(a.c, b.c) < 120);
+      if (near.filter((b) => b.p.numfloors >= 6).length >= 2) continue;
+      const fl = near.map((b) => b.p.numfloors).sort((x, y) => x - y), med = fl.length ? fl[Math.floor(fl.length / 2)] : 3;
+      const cap = Math.max(6, 2 * med);
+      if (a.p.numfloors <= cap) continue;
+      const k = cap / a.p.numfloors;
+      a.p.numfloors = cap; a.p.bldgarea = Math.round(a.p.bldgarea * k);
+      a.p.assesstot = a.p.assessland + Math.round((a.p.assesstot - a.p.assessland) * k);
+      for (const b of bldgOf.get(a.p.bbl) ?? []) b.properties.heightroof = +Math.max(20, b.properties.heightroof * k).toFixed(1);
+    }
+  }
+
   // ---------------- the region's ordinary parcels: the market out past the town
   const rawParcels = { type: "FeatureCollection", features: towns.flatMap((t) => t.city.parcels.features) };
   const rawBuildings = { type: "FeatureCollection", features: towns.flatMap((t) => t.city.buildings.features) };

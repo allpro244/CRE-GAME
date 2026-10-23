@@ -1308,7 +1308,8 @@ void ABWGameMode::SetSeason(int32 Month)
 	}
 	if (Fog)
 	{
-		Fog->GetComponent()->SetFogDensity(Wx == Rain ? 0.005f : Wx == Overcast ? 0.0028f : bSummer ? 0.0012f : 0.0009f);
+		// (fair-weather fog halved: from the region's kilometre-up views it washed every colour to mud — owner)
+		Fog->GetComponent()->SetFogDensity(Wx == Rain ? 0.005f : Wx == Overcast ? 0.0028f : bSummer ? 0.0006f : 0.00045f);
 	}
 	if (Post)
 	{
@@ -1373,7 +1374,7 @@ void ABWGameMode::SetSeason(int32 Month)
 	// moisture and the far shore goes soft in it, while a winter high is crisp.
 	if (Atmosphere)
 	{
-		const float Haze = bSummer ? 1.5f : bWinter ? 1.0f : 1.25f;
+		const float Haze = bSummer ? 1.1f : bWinter ? 0.8f : 0.95f;   // was 1.5 / 1.0 / 1.25: the far ground went to milk
 		Atmosphere->SetMieScatteringScale(0.003996f * Haze * (Wx >= Overcast ? 1.4f : 1.f));
 	}
 	// streets wet in rain, damp for a while after it in the grey months

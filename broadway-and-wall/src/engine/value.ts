@@ -1645,7 +1645,7 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
     // homebuilders' bid, less the board, the streets and the mains, the wait
     // and the odds of refusal (growth.ts tractBid). That is the development
     // option a fringe farm trades on, discovered, not stamped.
-    const sub = rec.tract ? econ.tractBid?.[rec.bbl] ?? 0 : 0;
+    const sub = rec.tract ? econ.tractMark?.[rec.bbl] ?? econ.tractBid?.[rec.bbl] ?? 0 : 0;
     if (sub > base) { base = sub; winner = "subdivider"; }
   } else if (farm > base) { base = farm; winner = "farm"; }
   // A FINISHED LOT ON A PLAT HAS A BUYER OF ITS OWN: the homebuilder, who

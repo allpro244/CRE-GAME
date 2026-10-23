@@ -40,7 +40,7 @@ import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, o
 import { Gloss } from "@/ui/Glossary";
 import { entitleQuote, platQuote, PLAT_LOT_SIZES, INDUSTRIAL_LOT_SIZES } from "@/engine/landdev";
 import { platHomesView, tractLotQuote, houseValue, sfrRentMo } from "@/engine/homes";
-import { platTractLots } from "@/citygen/index.mjs";
+import { tractYield } from "@/engine/platdesign";
 import { SplitTab } from "@/ui/next/SplitTab";
 import { splittable } from "@/engine/lotsplit";
 
@@ -164,7 +164,7 @@ function LandDevCard({ bbl }: { bbl: string }) {
       </div>
       {!owned && <div className="hint">Buy it to rezone it and cut it into lots.</div>}
       {owned && !app && !rz && (() => {
-        const planned = platTractLots(rec.tract, lotSf).lots.length;
+        const planned = tractYield(rec, lotSf).n;
         const q = entitleQuote(game, parcels, bbl, lotSf, planned);
         return (
           <>
@@ -193,7 +193,7 @@ function LandDevCard({ bbl }: { bbl: string }) {
       })()}
       {app && <Row k="Before the board" v={`decides ${monthLabel(app.decideM)} · ${app.lots} lots · ${Math.round(app.odds * 100)}% odds`} />}
       {owned && rz && !plat && (() => {
-        const lots = platTractLots(rec.tract, rz.lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
+        const lots = tractYield(rec, rz.lotSf).lots;
         const q = platQuote(game, lots, rz.lotSf, parcels, bbl);
         return (
           <>
@@ -208,7 +208,7 @@ function LandDevCard({ bbl }: { bbl: string }) {
       {!plat && (() => {
         // what a finished lot here would fetch from a homebuilder today (engine/homes.ts)
         const lsf = rz?.lotSf ?? lotSf;
-        const n = platTractLots(rec.tract, lsf).lots.length;
+        const n = tractYield(rec, lsf).n;
         const t = tractLotQuote(game, parcels, bbl, lsf, n);
         return (
           <>

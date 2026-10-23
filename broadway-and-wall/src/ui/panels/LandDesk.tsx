@@ -20,7 +20,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, type PlatDesign, type AmenityKind } from "@/engine/types";
 import { platTractDesign, designSummary, LOT_DIM_FT, canSplit } from "@/citygen/index.mjs";
 import {
-  AMENITIES, AMENITY_KINDS, DESIGN_LOT_SIZES, defaultDesign, designRecipe, designPnl, adQuote, lotPremium,
+  AMENITIES, AMENITY_KINDS, DESIGN_LOT_SIZES, defaultDesign, designRecipe, designPnl, adQuote, lotPremium, tractYield,
   type DesignPnl,
 } from "@/engine/platdesign";
 import { entitleQuote } from "@/engine/landdev";
@@ -94,7 +94,9 @@ export default function LandDesk({ bbl }: { bbl: string }) {
   if (!rec?.ag || !tract || !geo || !summary || !pnl) return null;
   // A TRACT NO PLAT FITS: most of the land by town is the river's floodplain,
   // and a plat of nothing is not a desk. Say so, once, and stop.
-  if (!plat && !app && pnl.lots < 4) {
+  // whether a plat fits is the tract's yield (platdesign.ts tractYield), not this draft's: the
+  // same count the file's Overview shows; a draft that fits fewer lots is still a desk
+  if (!plat && !app && tractYield(rec, 7_500).n < 4 && pnl.lots < 4) {
     return (
       <div className="deal land-desk">
         <div className="deal-head">Land development <span className="dim">· not developable</span></div>
@@ -216,7 +218,7 @@ function PnlStrip({ pnl }: { pnl: DesignPnl }) {
     ["Impact", M(pnl.impact)],
     ["Amenities", M(pnl.amenTotal)],
     ["Lot sales", M(pnl.revenue)],
-    ["Margin", Number.isFinite(pnl.margin) ? P1(pnl.margin) : "—", pnl.margin < 0],
+    ["Margin", Number.isFinite(pnl.margin) ? P1(pnl.margin) : "—", Number.isFinite(pnl.margin) && pnl.margin < 0],
     ["IRR", irrText(pnl.irr), (pnl.irr ?? -1) < 0],
   ];
   return (

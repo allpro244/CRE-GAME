@@ -46,9 +46,9 @@ import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
 import { cityList, CITY_PLAN, platTractLots, platTractDesign, platDesignLL, designSummary, type GeneratedCity } from "@/citygen/index.mjs";
-import { designRecipe, fileDesignedRezoning as fileDesignedRezoningE, startDesignedPlat } from "@/engine/platdesign";
+import { designRecipe, designAt, tractYield, fileDesignedRezoning as fileDesignedRezoningE, startDesignedPlat } from "@/engine/platdesign";
 import type { PlatDesign } from "@/engine/types";
-import { fileEntitlement, startPlat, lotBbl } from "@/engine/landdev";
+import { lotBbl, fileEntitlement, startPlat, isIndustrialLot } from "@/engine/landdev";
 import { roadFeatures } from "@/engine/roads";
 import { fileSplit, type SplitPlan } from "@/engine/lotsplit";
 import { siteGeometry, applySplitFeatures, type SiteGeo } from "@/engine/lotsplitGeom";
@@ -2043,12 +2043,15 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
 
+  // THE CLASSIC STEPS FILE THE DESK'S DEFAULT PLAT (engine/platdesign.ts tractYield): one plat
+  // and one lot count, whichever button the player pressed.
+  // (an industrial park, acre lots and up, keeps citygen's spine-road plat: the house desk does not cut one)
   fileRezoning: (bbl, lotSf) => {
+    if (!isIndustrialLot(lotSf)) { get().fileDesignedRezoning(bbl, designAt(lotSf)); return; }
     const { game, parcels } = get();
-    const tract = parcels?.[bbl]?.tract;
-    if (!game || !parcels || !tract) return;
-    const planned = platTractLots(tract, lotSf).lots.length;
-    const r = fileEntitlement(game, parcels, bbl, lotSf, planned);
+    const rec = parcels?.[bbl];
+    if (!game || !parcels || !rec?.tract) return;
+    const r = fileEntitlement(game, parcels, bbl, lotSf, tractYield(rec, lotSf).n);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Filed.");
@@ -2057,10 +2060,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   buildPlat: (bbl) => {
     const { game, parcels } = get();
-    const tract = parcels?.[bbl]?.tract, rz = game?.rezoned?.[bbl];
-    if (!game || !parcels || !tract || !rz) return;
-    const lots = platTractLots(tract, rz.lotSf).lots.map(({ a, f, d }) => ({ a, f, d }));
-    const r = startPlat(game, parcels, bbl, lots);
+    const rec = parcels?.[bbl], rz = game?.rezoned?.[bbl];
+    if (!game || !parcels || !rec?.tract || !rz) return;
+    if (!isIndustrialLot(rz.lotSf)) { get().buildDesignedPlat(bbl, rz.design ?? designAt(rz.lotSf), 0); return; }
+    const r = startPlat(game, parcels, bbl, tractYield(rec, rz.lotSf).lots);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Under way.");

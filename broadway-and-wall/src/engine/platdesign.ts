@@ -16,10 +16,11 @@
 // most of which reaches the lot, because the build cost does not change. The
 // land the amenity takes is lots that are not there to sell, and its cost is
 // cash out on day one: whether a park pays is the arithmetic of those three.
-import type { ParcelTable } from "@/data/types";
+import type { ParcelTable, ParcelRecord } from "@/data/types";
+import { platTractDesign, designSummary, platTractLots } from "@/citygen/index.mjs";
 import type { GameState, PlatDesign, AmenityKind, PlatRecord, Loan } from "./types";
 import { cloneState, monthLabel, logBooks } from "./types";
-import { homeQuote, fundamentalHomePsf } from "./homeprice";
+import { homeQuote, forwardHomeEcon } from "./homeprice";
 import { tractLotQuote } from "./homes";
 import { entitleQuote, fileEntitlement, plattable, INFRA_PER_FRONT_FT, IMPACT_FEE, INFRA_MONTHS } from "./landdev";
 import { landValue, resolveRec } from "./value";
@@ -117,6 +118,47 @@ export const DESIGN_LOT_SIZES = [5_000, 7_500, 10_000, 15_000] as const;
 /** The design a fresh desk opens on: a grid of 7,500 sf lots, square to the tract, no amenities. */
 export function defaultDesign(): PlatDesign {
   return { layout: "grid", mix: { 7500: 1 }, rot: 0, shift: [0, 0], amen: [], open: [], merge: [], split: [] };
+}
+
+/**
+ * HOW MANY LOTS A TRACT YIELDS — the one count. The plat the desk draws by
+ * default (a grid of `lotSf` lots, no amenities: defaultDesign), kept off the
+ * floodplain, the pond and the streets by citygen's designPlat, on the
+ * tract's buildable land. The file's Overview, the land desk, a rezoning
+ * filed from either, and the land developers' reads (growth.ts) all count
+ * lots with this, so they cannot disagree. Pure in the tract: memoised.
+ */
+const YIELD = new Map<string, { n: number; frontage: number; lots: { a: number; f: number; d: number }[] }>();
+export function tractYield(rec: Pick<ParcelRecord, "tract" | "buildableSf" | "lotArea">, lotSf = 7_500) {
+  const t = rec.tract!;
+  const buildable = rec.buildableSf ?? rec.lotArea;
+  const key = `${t.seed}:${t.id}:${lotSf}:${Math.round(buildable)}`;
+  let y = YIELD.get(key);
+  if (!y) {
+    // an industrial park (acre lots and up) is cut by citygen's spine-road plat, not the house desk
+    const lots = lotSf >= 43_560
+      ? platTractLots(t, lotSf).lots.map(({ a, f, d }) => ({ a, f, d }))
+      : designSummary(platTractDesign(t, designRecipe({ ...defaultDesign(), mix: { [lotSf]: 1 } }, buildable))).lots
+        .map((l) => ({ a: Math.round(l.a), f: Math.round(l.w), d: Math.round(l.d) }));
+    y = { n: lots.length, frontage: lots.reduce((s, l) => s + l.f, 0), lots };
+    if (YIELD.size > 4000) YIELD.clear();
+    YIELD.set(key, y);
+  }
+  return y;
+}
+/** The default design at a lot size (what the classic Rezone / Build streets steps file). */
+export function designAt(lotSf: number): PlatDesign {
+  return { ...defaultDesign(), mix: { [lotSf]: 1 } };
+}
+/** The tract's lot count as things stand: the plat built, the plat before the board or approved, else its yield. */
+export function plannedLots(s: GameState, parcels: ParcelTable, bbl: string): { n: number; lotSf: number } {
+  const plat = s.plats?.[bbl], app = s.entitlementApps?.[bbl], rz = s.rezoned?.[bbl];
+  const lotSf = plat?.lotSf ?? rz?.lotSf ?? app?.lotSf ?? 7_500;
+  if (plat) return { n: plat.lots.length, lotSf };
+  if (app) return { n: app.lots, lotSf };
+  if (rz?.lots !== undefined) return { n: rz.lots, lotSf };
+  const rec = parcels[bbl];
+  return { n: rec?.tract ? tractYield(rec, lotSf).n : 0, lotSf };
 }
 
 /**
@@ -249,30 +291,36 @@ export function designPnl(s: GameState, parcels: ParcelTable, bbl: string, desig
   const sorted = geo.lots.map((l) => l.a).sort((a, b) => a - b);
   const median = sorted.length ? sorted[sorted.length >> 1] : 7_500;
   const tq = tractLotQuote(s, parcels, bbl, median, Math.max(1, n));
-  const psfEdge = e.homes?.psf ?? fundamentalHomePsf(e);
+  // THE SCHEDULE: the board (if it has not ruled), the streets, then the builders take lots at their pace
+  const eq0 = entitleQuote(s, parcels, bbl, median, Math.max(4, n));
+  const entitleM = rz ? 0 : s.entitlementApps?.[bbl] ? Math.max(0, s.entitlementApps[bbl].decideM - s.month) : eq0?.months ?? 12;
+  const hz = designHorizontal(s, geo);
+  const infraM = hz.months;
+  // A FORWARD VIEW. The builders bid for these lots when the streets are in,
+  // not today: priced on the market the engine expects then (homeprice.ts
+  // forwardHomeEcon) — the house price closing on what the town's buyers can
+  // carry, costs and pay carried at expected inflation, today's rates.
+  const fwd = forwardHomeEcon(e, entitleM + infraM);
+  const psfEdge = fwd.psf;
   const psfHere = psfEdge * tq.loc;
   const prem: number[] = [], resid: number[] = [], residStd: number[] = [];
   for (const l of geo.lots) {
     const p = lotPremium(l.near, kinds);
     prem.push(p);
-    resid.push(Math.max(0, homeQuote(e, l.a, psfHere * (1 + p), far).residual));
-    residStd.push(Math.max(0, homeQuote(e, l.a, psfHere, far).residual));
+    resid.push(Math.max(0, homeQuote(fwd, l.a, psfHere * (1 + p), far).residual));
+    residStd.push(Math.max(0, homeQuote(fwd, l.a, psfHere, far).residual));
   }
   const revenue = resid.reduce((a, b) => a + b, 0), revenueStd = residStd.reduce((a, b) => a + b, 0);
   // the land: what the tract stands you, or what it would cost to buy
   const h = s.holdings[bbl];
   const land = Math.round(h ? h.costBasis : landValue(resolveRec(parcels, s, bbl) ?? rec, e));
   const app = s.entitlementApps?.[bbl];
-  const eq = entitleQuote(s, parcels, bbl, median, Math.max(4, n));
+  const eq = eq0;
   const entitleSpent = !!(rz || app);
   const entitle = entitleSpent ? 0 : eq?.cost ?? 0;
-  const hz = designHorizontal(s, geo);
   const amenity = geo.amen.map((a) => ({ k: a.k, cost: a.ok ? amenityCost(s, a) : 0, sf: a.sf }));
   const amenTotal = amenity.reduce((t, a) => t + a.cost, 0);
   const cost = land + entitle + hz.streets + hz.impact + amenTotal;
-  // THE SCHEDULE: the board (if it has not ruled), the streets, then the builders take lots at their pace
-  const entitleM = rz ? 0 : app ? Math.max(0, app.decideM - s.month) : eq?.months ?? 12;
-  const infraM = hz.months;
   const pace = tq.pace;
   const selloutM = pace > 0 ? Math.ceil(n / pace) : Infinity;
   const flows: number[] = [-(land + entitle)];
@@ -287,7 +335,7 @@ export function designPnl(s: GameState, parcels: ParcelTable, bbl: string, desig
   const irr = irrOf(flows);
   const ac = (sf: number) => sf / 43_560;
   const G = Math.max(1, geo.grossSf);
-  const q0 = homeQuote(e, median, psfHere, far);
+  const q0 = homeQuote(fwd, median, psfHere, far);
   return {
     lots: n, prem, resid, residStd,
     premLots: prem.filter((p) => p >= 0.005).length,
@@ -298,7 +346,7 @@ export function designPnl(s: GameState, parcels: ParcelTable, bbl: string, desig
     revenue: Math.round(revenue), revenueStd: Math.round(revenueStd),
     pace, selloutM, entitleM, infraM,
     markAtFinish: Math.round(revenue * tq.disc),
-    profit: Math.round(revenue - cost), margin: revenue > 0 ? (revenue - cost) / revenue : -Infinity, irr,
+    profit: Math.round(revenue - cost), margin: revenue > 0.02 * cost ? (revenue - cost) / revenue : NaN, irr,
     flows,
     density: { gross: n / Math.max(1e-9, ac(geo.grossSf)), net: n / Math.max(1e-9, ac(geo.lotSf)), buildableAc: ac(geo.buildableSf) },
     shares: {

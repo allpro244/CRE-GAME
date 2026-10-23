@@ -238,6 +238,7 @@ ABWPlayerController::ABWPlayerController()
 void ABWPlayerController::PlayerTick(float Dt)
 {
 	Super::PlayerTick(Dt);
+	DropStale();
 	ABWCameraPawn* Cam = Cast<ABWCameraPawn>(GetPawn());
 	if (!Cam) return;
 	// the selection band keeps its width on screen as the camera zooms (cheap when nothing changed)
@@ -426,6 +427,24 @@ const FBWParcel* ABWPlayerController::PickAt(const FVector2D& ScreenPos)
 	return nullptr;
 }
 
+void ABWPlayerController::DropStale()
+{
+	// THE PLAYTEST CRASH (EXCEPTION_ACCESS_VIOLATION in ABWHUD::DrawHUD, 2026-10-23): the page resent the
+	// city after a lot split, the old city was destroyed, and the HUD printed the selected lot's district
+	// through a pointer into the freed parcel table. Every pointer is checked against the live city first.
+	const bool bCity = City.IsValid();
+	if (Selected && (!bCity || !City->Owns(Selected))) Selected = nullptr;
+	if (Hovered && (!bCity || !City->Owns(Hovered))) Hovered = nullptr;
+}
+
+void ABWPlayerController::RebindCity(ACityBuilder* NewCity, const FString& SelectedBbl)
+{
+	City = NewCity;
+	Hovered = nullptr;
+	Selected = NewCity && !SelectedBbl.IsEmpty() ? NewCity->GetCity().FindParcel(SelectedBbl) : nullptr;
+	if (NewCity) NewCity->SetHighlight(Selected, nullptr);
+}
+
 void ABWPlayerController::Select(const FBWParcel* P)
 {
 	Selected = P;
@@ -442,6 +461,7 @@ void ABWHUD::DrawHUD()
 	const ABWGameMode* GM = GetWorld()->GetAuthGameMode<ABWGameMode>();
 	const ABWPlayerController* PC = Cast<ABWPlayerController>(GetOwningPlayerController());
 	if (!GM || !GM->City || !PC) return;
+	const_cast<ABWPlayerController*>(PC)->DropStale();
 	UFont* Font = GEngine->GetMediumFont();
 	const float S = Canvas->ClipY / 900.f;
 
@@ -1061,12 +1081,16 @@ void ABWGameMode::StartPlayHost()
 
 void ABWGameMode::OnPageCity(const FString& Json)
 {
-	// a new town: throw the old one away and build the one the player cut
+	// a new town: throw the old one away and build the one the player cut (or the same town resent: a lot
+	// split or a plat redraws the parcels). The selection is carried over by BBL BEFORE the old city goes:
+	// the controller's parcel pointers point into its table.
+	ABWPlayerController* PC = Cast<ABWPlayerController>(GetWorld()->GetFirstPlayerController());
+	const FString SelBbl = PC && City && City->Owns(PC->Selected) ? PC->Selected->Bbl : FString();
+	if (PC) PC->RebindCity(nullptr, FString());
 	if (City) City->Destroy();
 	City = GetWorld()->SpawnActor<ACityBuilder>();
 	if (!City->BuildFromText(Json)) { UE_LOG(LogBW, Error, TEXT("PLAY the page sent a city that would not build")); return; }
-	ABWPlayerController* PC = Cast<ABWPlayerController>(GetWorld()->GetFirstPlayerController());
-	if (PC) PC->City = City;
+	if (PC) PC->RebindCity(City, SelBbl);
 	if (ABWCameraPawn* Cam = PC ? Cast<ABWCameraPawn>(PC->GetPawn()) : nullptr)
 	{
 		const FBox2D B = City->GetCity().Bounds;

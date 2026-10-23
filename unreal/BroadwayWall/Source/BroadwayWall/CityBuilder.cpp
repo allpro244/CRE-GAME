@@ -1766,6 +1766,9 @@ void ACityBuilder::SetLens(const FString& Key, const TMap<FString, double>& Valu
 
 void ACityBuilder::SetHighlight(const FBWParcel* Sel, const FBWParcel* Hover, double ViewDist)
 {
+	// (a pointer from a city since replaced is never read)
+	if (!Owns(Sel)) Sel = nullptr;
+	if (!Owns(Hover)) Hover = nullptr;
 	if (Hover == Sel) Hover = nullptr;
 	// about 3 px on a 1080-line screen: the band widens as the camera pulls back (1 below 180 m)
 	const double Scale = ViewDist > 0 ? FMath::Max(1.0, ViewDist / 14000.0) : HiScale;

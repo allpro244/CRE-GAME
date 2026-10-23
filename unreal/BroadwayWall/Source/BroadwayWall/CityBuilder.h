@@ -33,6 +33,9 @@ public:
 	const FBWParcel* ParcelFromHit(const FHitResult& Hit) const;
 	/** The parcel under a ground point (X north, Y east, cm). */
 	const FBWParcel* ParcelAt(const FVector2D& P) const;
+	/** Whether P points into THIS city's parcel table. A parcel pointer is only good while the city that
+	 *  handed it out stands: the page resends the city (a lot split, a plat recorded) and the old one goes. */
+	bool Owns(const FBWParcel* P) const { const TArray<FBWParcel>& Ps = City.Parcels; return P && Ps.Num() && P >= Ps.GetData() && P < Ps.GetData() + Ps.Num(); }
 	/** The tallest point of a parcel's volumes, in cm (for framing a selection). */
 	double ParcelTop(const FString& Bbl) const;
 

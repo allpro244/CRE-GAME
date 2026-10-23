@@ -142,6 +142,10 @@ public:
 	TFunction<void(const FBWParcel*)> OnPicked;
 	/** Select without telling anyone (the page asked for it). */
 	void ShowSelected(const FBWParcel* P);
+	/** A new city replaced the old: drop the hover, carry the selection over by its BBL (the old pointers point into a destroyed table). */
+	void RebindCity(class ACityBuilder* NewCity, const FString& SelectedBbl);
+	/** Drop any selection or hover that does not point into the current city's parcels. */
+	void DropStale();
 };
 
 UCLASS()

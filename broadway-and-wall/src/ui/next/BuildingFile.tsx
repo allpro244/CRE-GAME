@@ -3,6 +3,7 @@
  * new: figures that drill. Rent roll, Money, Build and Deal host the classic
  * desks until step 5 replaces them. Buying and selling are the footer.
  */
+import { LandDesk } from "@/ui/panels/PropertyDesks";
 import { useEffect, useMemo, useState } from "react";
 import { useStore, type PropertyTab } from "@/state/store";
 import type { GameState, Holding } from "@/engine/types";
@@ -102,6 +103,8 @@ function FileFor({ bbl }: { bbl: string }) {
       footer={<FileFooter game={game} parcels={parcels} bbl={bbl} h={h} tab={active} setTab={setTab} />}
     >
       {active === "overview" && <Overview game={game} parcels={parcels} bbl={bbl} h={h} />}
+      {/* the land desk — FAR to request, the ground lease, assembly — on the Overview (owner) */}
+      {active === "overview" && h && <div className="nx-hosted"><LandDesk bbl={bbl} /></div>}
       {active === "leasing" && h && <RentRollTab game={game} parcels={parcels} bbl={bbl} h={h} />}
       {active === "money" && h && <MoneyTab game={game} parcels={parcels} bbl={bbl} h={h} />}
       {active === "build" && <BuildTab game={game} parcels={parcels} bbl={bbl} />}

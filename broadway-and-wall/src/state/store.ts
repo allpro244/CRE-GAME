@@ -1,3 +1,4 @@
+import { useNext } from "@/ui/next/nextStore";
 import { startTransition } from "react";
 import { loadGfx, saveGfx, type GfxOptions } from "./graphics";
 import { recapBuyout } from "@/engine/recap";
@@ -173,7 +174,8 @@ interface AppState {
   /** The town being generated right now, so the screen can say what it is doing. */
   building: string | null;
   setData: (d: { parcels: ParcelTable; adjacency: Adjacency; manifest: DataManifest; city?: GeneratedCity }) => void;
-  select: (bbl: string | null) => void;
+  /** Select it; from anywhere but the map itself the camera goes there too (owner). */
+  select: (bbl: string | null, fromMap?: boolean) => void;
   hover: (bbl: string | null) => void;
   /** Select it AND take the camera there. */
   focus: (bbl: string, closePanel?: boolean) => void;
@@ -898,7 +900,8 @@ export const useStore = create<AppState>((set, get) => ({
   deliveryCeremony: null,
   auctionOpen: false,
   loiFocusId: null,
-  popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
+  // popups2: a fresh key, so a pop-up switch turned off in an older build starts on again (owner: on by default)
+  popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups2") === "off",
   hoverCard: (() => { try { return localStorage.getItem("bw:hovercard") !== "off"; } catch { return true; } })(),
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   mutedAlerts: (() => { try { const v = JSON.parse(localStorage.getItem("bw:alerts-muted") ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "swan" && x !== "fed") : []; } catch { return []; } })(),
@@ -942,7 +945,7 @@ export const useStore = create<AppState>((set, get) => ({
   building: null,
   slots: [],
   setData: (d) => set({ ...d, bbls: Object.keys(d.parcels) }),
-  select: (bbl0) => {
+  select: (bbl0, fromMap = false) => {
     // Keep the map click snappy: close overlays immediately, paint the heavy
     // parcel desk as a transition so React can yield to the pointer first.
     const st = get();
@@ -952,10 +955,13 @@ export const useStore = create<AppState>((set, get) => ({
     const bbl = bbl0 ? (st.game?.merged?.[bbl0] ?? bbl0) : bbl0;
     const page = bbl && st.page !== "property" ? "none" as const : st.page;
     const nav = pushNav(st, page, bbl);
+    // a click on a building in any list puts the camera on it; a click on the map already is there
+    // (the new shell only: the classic interface keeps its own behaviour — owner)
+    const fly = bbl && !fromMap && useNext.getState().uiShell === "next" ? { flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 } } : {};
     if (bbl !== st.selectedBBL) {
-      startTransition(() => set({ selectedBBL: bbl, page, ...(nav ?? {}) }));
+      startTransition(() => set({ selectedBBL: bbl, page, ...fly, ...(nav ?? {}) }));
     } else {
-      set({ selectedBBL: bbl, page, ...(nav ?? {}) });
+      set({ selectedBBL: bbl, page, ...fly, ...(nav ?? {}) });
     }
   },
   hover: (bbl) => {
@@ -1271,7 +1277,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ hoverCard: v });
   },
   setPopupsOff: (v) => {
-    try { localStorage.setItem("bw:popups", v ? "off" : "on"); } catch { /* private mode */ }
+    try { localStorage.setItem("bw:popups2", v ? "off" : "on"); } catch { /* private mode */ }
     set({ popupsOff: v });
   },
 

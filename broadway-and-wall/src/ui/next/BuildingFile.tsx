@@ -115,7 +115,7 @@ function FileFor({ bbl }: { bbl: string }) {
     ...(h && !h.groundLeased ? [{ id: "build" as const, label: "Build" }] : []),
     // any deed you own, downtown or not, can be cut into lots (engine/lotsplit.ts); a farm tract is platted instead
     ...(h && !parcels[bbl]?.tract ? [{ id: "split" as const, label: "Split" }] : []),
-    { id: "deal", label: h ? "Sell" : "Deal" },
+    { id: "deal", label: h ? "Sell" : "Offer" },
     ...(timeline.length ? [{ id: "history" as const, label: "History" }] : []),
   ];
   const active = tabs.some((t) => t.id === tab) ? tab : "overview";
@@ -410,5 +410,5 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
   }
 
   // ---- buying: the negotiation's one move (Negotiation.tsx)
-  return <NegotiationFooter game={game} parcels={parcels} bbl={bbl} onDeal={() => setTab("deal")} />;
+  return <NegotiationFooter game={game} parcels={parcels} bbl={bbl} onDeal={() => setTab("deal")} onOfferTab={tab === "deal"} />;
 }

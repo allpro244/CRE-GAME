@@ -155,7 +155,7 @@ export function startUnrealHost(): void {
   const wait = window.setInterval(() => { if (push()) window.clearInterval(wait); }, 250);
 
   (window as unknown as { bwUnreal: unknown }).bwUnreal = {
-    select: (bbl: string) => useStore.getState().select(bbl || null),
+    select: (bbl: string) => useStore.getState().select(bbl || null, true),
     // THE HOVER CARD'S FOUR NUMBERS (map/hoverCard.ts hoverBasics), asked for
     // one lot at a time as the pointer lands on it; Unreal draws them natively
     hover: (bbl: string) => {

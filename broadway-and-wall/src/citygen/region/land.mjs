@@ -95,6 +95,10 @@ export function generateLand(seed) {
     river.forEach((p, i) => { G.disk(flood, p, fpHalf[i]); G.disk(water, p, rHalf[i]); G.disk(riverL, p, rHalf[i]); });
     for (const c of creeks) { G.line(flood, c.pts, c.fp); G.line(water, c.pts, c.w / 2 + 1); }
     if (coast) for (let k = 0; k < G.N; k++) { const p = G.ctr(k); if (isSea(p)) water[k] = 1; else if (p[1] > coastY(p[0]) - M.coast.band) flood[k] = 1; }
+    // NO FLOODPLAIN FOR NOW (owner, 2026-10-23: "get rid of floodplain land completely"): drawn and
+    // then cleared, so the river, creeks and coast stand on dry ground — no marsh, no wet acres in a
+    // tract, nothing a plat keeps off. Delete this line to restore it.
+    flood.fill(0);
   };
   fillWater();
   const isWater = (p) => { const k = G.idx(p); return k >= 0 ? water[k] === 1 : isSea(p); };

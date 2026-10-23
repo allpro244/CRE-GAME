@@ -99,7 +99,11 @@ export function placeOuter(M) {
   const all = [];
   for (const t of cands) {
     t.era = rS(t.c) < 2000 && !nearHw[G.idx(t.c)] ? "prewar" : "postwar";
-    t.recipe = { seed: M.seed, tract: t.r, era: t.era, id: t.id, bearing: roadBearing(t), waterNear: waterNear(t), scale: scaleFor(t, t.era) };
+    // SQUARE TO THE SURVEY (plan 17; owner: the suburbs read as a patchwork). Out past the old town nearly
+    // every Midwest subdivision is laid on the section lines; only a pre-war addition hard by the town
+    // still takes the old road it was platted along [S, any county plat book].
+    const bearing = M.planV >= 17 && !(t.era === "prewar" && dist(t.c, M.centre) < 1400) ? undefined : roadBearing(t);
+    t.recipe = { seed: M.seed, tract: t.r, era: t.era, id: t.id, bearing, waterNear: waterNear(t), scale: scaleFor(t, t.era) };
     t.plat = platFor(t.recipe, ok);
     t.plat.lots.forEach((lot, i) => all.push({ t, i, m: lot.house.c, r: rS(lot.house.c) }));
   }

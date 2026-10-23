@@ -1,0 +1,27 @@
+{
+ "kit": "bgcity",
+ "roots": [
+  "/Game/Environment/Background_City/Mesh/SM_bgcitya",
+  "/Game/Environment/Background_City/Mesh/SM_bgcityb"
+ ],
+ "pieces": [],
+ "closure": [
+  "/Game/Environment/Background_City/Material/MI_BackgroundCity",
+  "/Game/Environment/Background_City/Material/M_BackgroundCity",
+  "/Game/Environment/Background_City/Mesh/SM_bgcitya",
+  "/Game/Environment/Background_City/Mesh/SM_bgcityb",
+  "/Game/Environment/Background_City/Texture/T_bgbuildingsa_D",
+  "/Game/Environment/Background_City/Texture/T_bgbuildingsa_E",
+  "/Game/Environment/Background_City/Texture/T_bgbuildingsa_R"
+ ],
+ "files": [
+  "Environment/Background_City/Material/MI_BackgroundCity.uasset",
+  "Environment/Background_City/Material/M_BackgroundCity.uasset",
+  "Environment/Background_City/Mesh/SM_bgcitya.uasset",
+  "Environment/Background_City/Mesh/SM_bgcityb.uasset",
+  "Environment/Background_City/Texture/T_bgbuildingsa_D.uasset",
+  "Environment/Background_City/Texture/T_bgbuildingsa_E.uasset",
+  "Environment/Background_City/Texture/T_bgbuildingsa_R.uasset"
+ ],
+ "bytes": 185326689
+}

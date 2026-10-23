@@ -512,6 +512,16 @@ export function ResidualRead({ bbl }: { bbl: string }) {
   const USE_LABEL: Record<string, string> = {
     office: "office", multifamily: "flats", retail: "shops", industrial: "industrial",
   };
+  if (rec.homeLot) {
+    // A PLAT LOT (zoned for houses): the homebuilder's residual is the market — see the homes desk.
+    return (
+      <div className="grid">
+        <Row k="Zoned" v={`${rec.zoneDist} · houses only`} strong />
+        <Row k="Homebuilder's bid" v={`${usd(Math.round((read.homes ?? 0) * lot))} · $${(read.homes ?? 0).toFixed(2)}/sf, after the sell-out`} />
+        <Row k="What it trades at" v={`${usd(Math.round(read.psf * lot))} · $${read.psf.toFixed(2)}/sf — ${read.winner === "homes" ? "a homebuilder is the high bidder" : "no builder pays more than the farm under it"}`} />
+      </div>
+    );
+  }
   if (read.winner === "builder" && s) {
     return (
       <div className="grid">
@@ -728,6 +738,15 @@ export function canAssembleFromBook(
 }
 
 export function LandDesk({ bbl }: { bbl: string }) {
+  // (a farm's rezoning is the Land development card's: R-2 and a plat, not a FAR request)
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
+  if (rec && (rec.ag || rec.zoneDist === "AG")) return null;
+  return <LandDeskLive bbl={bbl} />;
+}
+
+function LandDeskLive({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const adjacency = useStore((s) => s.adjacency);

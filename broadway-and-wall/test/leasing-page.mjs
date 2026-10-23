@@ -100,6 +100,29 @@ if (loi) {
   ok("the cards carry their actions", html.includes(">Accept<") || html.includes("Take their final"));
 }
 
+// SERVICE AND CAPITAL CARRY THEIR NUMBERS ON THE ROW: what each choice costs
+// against the one in force, and the reads (tenants' score, condition).
+{
+  const html = renderLeasing();
+  const scores = [...html.matchAll(/ops-score[^>]*>(\d+)(?:<!-- -->)?\/100</g)].map((m) => m[1]);
+  console.log("row scores (service, condition per building): " + scores.join(", ") + (scores.length ? "" : " — markup: " + (html.match(/ops-score[^<]*<[^<]*/)?.[0] ?? "none")));
+  ok("each row shows service and condition as a number out of 100", scores.length >= 2 && scores.length % 2 === 0);
+}
+
+// THE TEAM CARD: one concession limit for the firm and the year's scorecard.
+// Off auto it says so; on auto, after a year, it prints what the team signed.
+{
+  const html = renderLeasing();
+  ok("the auto-lease card renders with the firm's concession limit", html.includes("Auto-lease · your team answers") && html.includes("Concessions") && html.includes(">Lean<") && html.includes(">Generous<"));
+  for (const h of Object.values(g.holdings)) h.autoLease = true;
+  for (let m = 0; m < 12; m++) g = advanceMonth(g, parcels, bbls, adjacency);
+  const after = renderLeasing();
+  const settled = (g.autoLeaseLog ?? []).length;
+  const card = (after.match(/Last 12 months:[\s\S]*?<\/div>/)?.[0] ?? "").replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'");
+  console.log("a year on auto: " + settled + " letter(s) settled by the team" + (card ? " — " + card : ""));
+  ok("the scorecard prints the team's year", settled ? after.includes("Last 12 months:") : after.includes("Nothing settled in the last twelve months"));
+}
+
 // THE PORTFOLIO PAGE AGREES WITH THE TOP BAR. Same store, same game.
 useStore.setState({ game: g, parcels } as any);
 const book = renderToString(<PortfolioPage />);
@@ -118,14 +141,26 @@ if (po) {
 process.exit(fails ? 1 : 0);
 `);
 
-const build = spawnSync(join(APP, "node_modules", ".bin", "esbuild"), [
-  ENTRY, "--bundle", "--format=esm", "--platform=node", "--jsx=automatic", "--log-level=warning",
-  `--alias:@=${join(APP, "src")}`, "--loader:.css=empty",
-  "--external:react", "--external:react-dom", "--external:zustand",
-  "--external:maplibre-gl", "--external:three", "--external:pmtiles",
-  "--banner:js=globalThis.window = globalThis; globalThis.document = globalThis.document ?? { addEventListener() {}, removeEventListener() {} };",
-  `--outfile=${OUT}`,
-], { stdio: "inherit" });
-if (build.status) process.exit(build.status);
+// The API rather than the CLI, for one plugin: Vite's `?worker&inline`
+// imports (the sim and town workers) mean nothing to esbuild, and the page
+// never starts a worker under renderToString, so each resolves to an empty
+// class. The CLI cannot express that; it failed the whole harness instead.
+const { build } = await import("esbuild");
+try {
+  await build({
+    entryPoints: [ENTRY], bundle: true, format: "esm", platform: "node", jsx: "automatic", logLevel: "warning",
+    alias: { "@": join(APP, "src") }, loader: { ".css": "empty" },
+    external: ["react", "react-dom", "zustand", "maplibre-gl", "three", "pmtiles"],
+    banner: { js: "globalThis.window = globalThis; globalThis.addEventListener ??= () => {}; globalThis.removeEventListener ??= () => {}; globalThis.document = globalThis.document ?? { addEventListener() {}, removeEventListener() {} };" },
+    outfile: OUT,
+    plugins: [{
+      name: "vite-worker-stub",
+      setup(b) {
+        b.onResolve({ filter: /\?worker/ }, (a) => ({ path: a.path, namespace: "worker-stub" }));
+        b.onLoad({ filter: /.*/, namespace: "worker-stub" }, () => ({ contents: "export default class {}", loader: "js" }));
+      },
+    }],
+  });
+} catch { process.exit(1); }
 const run = spawnSync(process.execPath, [OUT], { stdio: "inherit", cwd: APP });
 process.exit(run.status ?? 1);

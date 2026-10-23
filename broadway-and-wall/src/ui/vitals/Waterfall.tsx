@@ -7,12 +7,13 @@
 // account (the same BooksMonth buckets the income statement reads) and the
 // marks (the same ownedHoldingValue every balance sheet and lender reads).
 // Nothing here is re-derived — one quantity, one function, everywhere.
-import { useDeferredValue, useMemo } from "react";
+import { useDeferredValue } from "react";
+import { derive, nwOf } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { BooksMonth, GameState } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
-import { netWorth, ownedHoldingValue, resolveRec } from "@/engine/value";
+import { ownedHoldingValue, resolveRec } from "@/engine/value";
 import { depositsHeld } from "@/engine/leasing";
 import { usd } from "@/ui/format";
 import "./vitals.css";
@@ -52,10 +53,10 @@ const CASH_SPECS: {
   { key: "lpDistributed", label: "LP distributions", sign: -1, note: "out of the vehicle — equity out, not expense" },
 ];
 
-interface WfCashRow { key: string; label: string; amount: number; note?: string }
-interface WfValueLine { key: string; label: string; amount: number }
+export interface WfCashRow { key: string; label: string; amount: number; note?: string }
+export interface WfValueLine { key: string; label: string; amount: number }
 
-interface WfModel {
+export interface WfModel {
   windowLabel: string;
   months: number;
   hasPrev: boolean;
@@ -70,7 +71,7 @@ interface WfModel {
   empty: boolean;
 }
 
-function buildModel(game: GameState, prevRaw: GameState | null, parcels: ParcelTable | null): WfModel {
+export function buildModel(game: GameState, prevRaw: GameState | null, parcels: ParcelTable | null): WfModel {
   const prev = usablePrev(game, prevRaw);
   const hasPrev = prev !== null;
   const booksAll = game.booksMonthly ?? [];
@@ -176,7 +177,7 @@ function buildModel(game: GameState, prevRaw: GameState | null, parcels: ParcelT
   // with two answers. With no snapshot the tape is all there is.
   let dNw: number | null = null;
   if (prev && parcels) {
-    dNw = netWorth(game, parcels) - netWorth(prev, parcels);
+    dNw = nwOf(game, parcels) - nwOf(prev, parcels);
   } else {
     const nh = game.nwHistory ?? [];
     const endM = span.length ? span[span.length - 1].m : game.month;
@@ -246,11 +247,10 @@ export default function Waterfall({ compact }: { compact?: boolean }) {
 
   // Two appraisals of the whole book. Keyed on the state references — an
   // advance always replaces them — and paid only while this card is mounted,
-  // which is only while the popover is open or the Books page is up.
-  const model = useMemo(
-    () => (game ? buildModel(game, prev, parcels) : null),
-    [game, prev, parcels],
-  );
+  // which is only while the popover is open or the Books page is up —
+  // Kept per state (ui/derive), so reopening the popover or the Books page in
+  // the same month reads the model back instead of appraising again.
+  const model = game ? derive(game, "waterfall", () => buildModel(game, prev, parcels), [prev, parcels]) : null;
   if (!game || !model) return null;
 
   // Compact keeps the loudest lines and folds the remainder into one honest

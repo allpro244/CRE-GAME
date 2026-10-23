@@ -20,7 +20,7 @@ import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
 import { siteOutline, ringCentroid } from "./siteRing";
 import { PostFX } from "./post";
-import { FlatBuf, TURF_U, bloomTex, inRing as inRingPk, longGrassTex, parkGeom, segDist, settsTex, turfMaterial, walkTex } from "./parks";
+import { FlatBuf, GRASS_U, TURF_U, bloomTex, grassMaterial, inRing as inRingPk, longGrassTex, parkGeom, segDist, settsTex, turfMaterial, walkTex } from "./parks";
 import { Traffic, type Car, type Crosser, type NetRaw } from "./traffic";
 import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
 import { BOOK_PICKER } from "./patternbook/register";
@@ -950,6 +950,12 @@ function addSway(mat: THREE.Material) {
   };
   mat.customProgramCacheKey = () => k0 + "+sway";
 }
+// FLICKER PROBE. Address-bar switches that each take one suspect out of
+// the picture, for hunting a flicker on the owner's own machine:
+//   ?noclouds   no cloud shadows       ?noshadows  no sun shadows
+//   ?notraffic  cars and people still  (?post=off already drops the finishing pass)
+const PROBE = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
+const NO_CLOUDS = PROBE.has("noclouds"), NO_SHADOWS = PROBE.has("noshadows"), NO_TRAFFIC = PROBE.has("notraffic");
 const hazed = new WeakSet<THREE.Material>();
 function addHaze(mat: THREE.Material) {
   if (hazed.has(mat)) return;
@@ -1083,8 +1089,13 @@ export function facadeSwatches(keys: string[]): Record<string, string> {
 // ---- geometry accumulation -------------------------------------------------
 
 /** Parts with fixed vertex colours, merged into one non-indexed geometry. */
-/** Lawn tones, multiplying the season's grass colour: lush, two ordinary, dry, yellowing, blue-green, sun-bleached, patchy dark. */
-const LAWN_TONES = [[0.92, 1.06, 0.88], [1, 1, 1], [1.02, 0.99, 0.95], [1.14, 1.06, 0.82], [1.22, 1.1, 0.74], [0.86, 0.98, 1.06], [1.16, 1.14, 1.0], [0.84, 0.9, 0.82]];
+/**
+ * Lawn tones, multiplying the season's grass colour: one lot watered a little
+ * more than the next, one a little drier. They were a swing from lush to
+ * sun-bleached, and a block of them read as a patchwork of painted cards; the
+ * big variation is now the grass shader's, in world space, across lot lines.
+ */
+const LAWN_TONES = [[0.97, 1.02, 0.98], [1, 1, 1], [1.02, 1.0, 0.96], [1.04, 1.02, 0.92], [0.96, 0.99, 1.02], [1.01, 1.01, 0.98]];
 
 function mergeColored(parts: [THREE.BufferGeometry, number[]][]): THREE.BufferGeometry {
   const pos: number[] = [], nrm: number[] = [], col: number[] = [];
@@ -1455,6 +1466,8 @@ export let activeCity: RealCityLayer | null = null;
 interface ParkInfo {
   ring: P2[]; inner: P2[]; holes: P2[][]; flavour: string; area: number; cx: number; cy: number; ux: number; uy: number;
   walks: [P2, P2][]; ponds: P2[][]; plazaR: number; pondOver?: boolean;
+  /** the creeks, canals and mill ponds that run through it */
+  wet: P2[][];
   entrances: { at: P2; tx: number; ty: number }[];
   features: { kind: string; x: number; y: number; rot: number }[];
 }
@@ -1522,27 +1535,9 @@ export class RealCityLayer {
   private barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 1 });
   private pineMat = new THREE.MeshStandardMaterial({ color: 0x2e4a32, roughness: 1, flatShading: true, envMapIntensity: 0.08 });
   private bedMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
-  private meadowMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1 });
+  private meadowMat = grassMaterial("rough");
   /** The open ground of a built lot (round 25): a mown lawn, plaza paving, a paved yard, an asphalt work yard. */
-  private lotLawnMat = (() => {
-    const m = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
-    // GROUND THAT VARIES LIKE GROUND (round 28): two octaves of soft value
-    // noise in world space, tens of metres across, lighten and darken the
-    // grass across lot lines, the way sun, soil and wear vary a real city's
-    m.onBeforeCompile = (sh) => {
-      sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vGw;")
-        .replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvGw = (modelMatrix * vec4(transformed, 1.0)).xy;");
-      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>
-varying vec2 vGw;
-float gH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(gH(i), gH(i + vec2(1.0, 0.0)), f.x), mix(gH(i + vec2(0.0, 1.0)), gH(i + vec2(1.0, 1.0)), f.x), f.y); }`)
-        .replace("#include <color_fragment>", `#include <color_fragment>
-{ float n = gN(vGw / 38.0) * 0.65 + gN(vGw / 11.0) * 0.35;
-  diffuseColor.rgb *= mix(vec3(0.84, 0.86, 0.9), vec3(1.12, 1.1, 0.94), n); }`);
-    };
-    return m;
-  })();
+  private lotLawnMat = grassMaterial("lawn");
   private lotPlazaMat = new THREE.MeshStandardMaterial({ roughness: 0.8, envMapIntensity: 0.25, vertexColors: true });
   private lotPaveMat = new THREE.MeshStandardMaterial({ roughness: 0.9, envMapIntensity: 0.2, vertexColors: true });
   private lotWorkMat = new THREE.MeshStandardMaterial({ roughness: 0.95, envMapIntensity: 0.15, vertexColors: true });
@@ -1681,6 +1676,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       await this.breathe(true);
       this.buildChannels();
       this.buildBridges();
+      this.buildCrossings();
       await this.breathe(true);
       await this.buildStreetLife();
     } catch (e) {
@@ -1790,7 +1786,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     this.camera.matrix.makeTranslation(eye.x, eye.y, eye.z);
     this.camera.matrixWorldNeedsUpdate = true;
 
-    this.fitShadow(fx, fy, distM);
+    this.fitShadow(fx, fy, distM, eye);
     // from the whole-island camera a person, a lamp or a car is a fraction of
     // a pixel: stop drawing them there rather than paying for grain
     // The graphics setting pulls that horizon in, and on Medium and Low takes
@@ -1811,7 +1807,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const cafe = this.inst.get("cafe");
     if (cafe) cafe.visible = this.month >= 3 && this.month <= 9 && !far;
     this.renderer.resetState();
-    if ((this.fleets.length || this.cranes) && !this.paused && typeof document !== "undefined" && !document.hidden) {
+    if ((this.fleets.length || this.cranes) && !this.paused && !NO_TRAFFIC && typeof document !== "undefined" && !document.hidden) {
       const now = performance.now();
       this.stepTraffic(now / 1000);
       // ~30 fps for the traffic; MapLibre only paints on demand
@@ -1901,14 +1897,17 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     if (!this.hazeSheet) {
       // MapLibre's ground is not ours to shade: a sheet over it carries the
       // same fade, so a far street hazes with the buildings standing on it
+      // lifted clear of the ground and drawn a little forward, like the
+      // shadow catcher and for the same reason: a centimetre over the lot
+      // grounds, it hazed them twice or once at random from far off
       const mat = new THREE.ShaderMaterial({
-        uniforms: HAZE, transparent: true, depthWrite: false,
+        uniforms: HAZE, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,
         vertexShader: "varying vec3 vP; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vP = mv.xyz; gl_Position = projectionMatrix * mv; }",
         fragmentShader: "uniform vec3 hazeCol; uniform float hazeNear, hazeFar, hazeCap; varying vec3 vP; void main() { gl_FragColor = vec4(hazeCol, smoothstep(hazeNear, hazeFar, length(vP)) * hazeCap); }",
       });
       hazed.add(mat);
       this.hazeSheet = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000, 8, 8), mat);
-      this.hazeSheet.position.z = 0.035; this.hazeSheet.renderOrder = -2; this.hazeSheet.frustumCulled = false;
+      this.hazeSheet.position.z = 0.19; this.hazeSheet.renderOrder = -2; this.hazeSheet.frustumCulled = false;
       this.scene.add(this.hazeSheet);
     }
     this.scene.traverse((o) => {
@@ -1920,7 +1919,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
 
   // ---- lights & shadow ---------------------------------------------------
   private setupLights() {
-    this.sun.castShadow = this.quality !== "low";
+    this.sun.castShadow = this.quality !== "low" && !NO_SHADOWS;
     const sz = this.preferFps ? 2048 : 4096;
     this.sun.shadow.mapSize.set(sz, sz);
     this.sun.shadow.bias = -0.0003;
@@ -1940,22 +1939,62 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   // quarter-octave apart), so the texel size only changes on a real zoom; and
   // the box is moved in whole texels of the light's own view, so a pan
   // re-renders the same edges onto the same pixels.
-  private fitShadow(fx: number, fy: number, distM: number) {
-    // the box covers what the camera frames, not a margin round it: half
-    // the old texel size at the default camera
-    const raw = Math.max(220, Math.min(2400, distM * 1.15));
-    const span = 260 * Math.pow(2, Math.ceil(Math.log2(raw / 260) * 4) / 4);
-    const moved = Math.hypot(fx - this.shadowFocus.x, fy - this.shadowFocus.y);
-    if (moved < span * 0.12 && span === this.shadowSpan) return;
-    // the light's right and up axes, as the shadow camera will see them
-    const eye = new THREE.Vector3().copy(this.sunDir).multiplyScalar(2500);
-    const look = new THREE.Matrix4().lookAt(eye, new THREE.Vector3(), this.sun.shadow.camera.up);
+  //
+  // AND OVER EVERYTHING ON SCREEN. The box used to be a square round the
+  // focus, 1.15x the camera distance across, and refit only once the focus had
+  // moved an eighth of it. A pitched camera sees far past that — the top of
+  // the frame at 60 degrees lies ~1.6 camera-distances beyond the focus — and
+  // what falls outside the box has no shadow at all, so as the view panned or
+  // zoomed whole blocks lost their shadows and got them back each time the box
+  // jumped: the flicker the owner saw. Now the box is fitted to the ground the
+  // frame actually shows (its corners cast onto the street, capped where the
+  // haze has the city anyway), with a margin, and refit only when that ground
+  // leaves the box or the box could be a step smaller.
+  //
+  // ONE BOX FOR THE WHOLE ISLAND. Fitting the box to the view (to the focus
+  // and then to the frame's footprint, #307 and #318) meant a redraw of the
+  // shadow map, and a shift of every shadow edge, whenever the camera moved
+  // enough — and the owner kept seeing the shadows flicker as the view moved
+  // (?noshadows took it away). The box now covers the island and its shore
+  // once, and is redrawn only when the sun moves (the month), the quality
+  // changes or a building is built or flattened: nothing about the camera
+  // touches it. The price is texel size, ~1 m on a 4096 map over a 4 km
+  // island, which the soft-filtered edge carries.
+  private shadowBox = { cx: 1e9, cy: 0, span: 0 };
+  private fitShadow(fx: number, fy: number, _distM: number, _eye: THREE.Vector3) {
+    if (this.shadowSpan !== 0 && this.shadowBox.span !== 0) return;
+    const sunEye = new THREE.Vector3().copy(this.sunDir).multiplyScalar(2500);
+    const look = new THREE.Matrix4().lookAt(sunEye, new THREE.Vector3(), this.sun.shadow.camera.up);
     const right = new THREE.Vector3().setFromMatrixColumn(look, 0);
     const up = new THREE.Vector3().setFromMatrixColumn(look, 1);
+    // the island's extent in the light's right/up axes (the land ring, or the
+    // buildings if there is none), with room for the tallest towers' shadows
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    const take = (x: number, y: number) => {
+      const u = x * right.x + y * right.y, v = x * up.x + y * up.y;
+      u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+    };
+    const landLL = (this.ctx as { land?: P2[] }).land;
+    if (landLL && landLL.length >= 3) for (const q of landLL) { const [x, y] = this.project(q); take(x, y); }
+    else for (const v of this.volumes) for (const q of v.r) { const [x, y] = this.project(q); take(x, y); }
+    if (!Number.isFinite(u0)) { take(fx - 1500, fy - 1500); take(fx + 1500, fy + 1500); }
+    const pad = 250;
+    u0 -= pad; u1 += pad; v0 -= pad; v1 += pad;
+    const span = Math.max(300, Math.max(u1 - u0, v1 - v0) / 2);
     const texel = (2 * span) / this.sun.shadow.mapSize.x;
-    const f = new THREE.Vector3(fx, fy, 0);
-    const x = f.dot(right), y = f.dot(up);
-    f.addScaledVector(right, Math.round(x / texel) * texel - x).addScaledVector(up, Math.round(y / texel) * texel - y);
+    const cu = Math.round(((u0 + u1) / 2) / texel) * texel, cv = Math.round(((v0 + v1) / 2) / texel) * texel;
+    // SHADOW ACNE. A surface tests its own depth against a map texel that
+    // covers ~1 m (High) or ~2 m (Medium) of the island, so without enough
+    // offset it shadows itself in fine stripes whose pattern swims as the
+    // camera moves: the flicker left once the box stopped moving. The offset
+    // along the surface normal is scaled to the texel (the 0.6 m it had was
+    // sized for the old ~0.3 m view-fitted texels); the depth bias steps with
+    // the map's depth range over the island.
+    this.sun.shadow.normalBias = Math.max(0.6, texel * 1.4);
+    this.sun.shadow.bias = -0.0006;
+    const f = new THREE.Vector3(0, 0, 0);
+    f.addScaledVector(right, cu).addScaledVector(up, cv);
+    this.shadowBox = { cx: cu, cy: cv, span };
     this.shadowFocus.set(fx, fy, 0);
     this.shadowSpan = span;
     const cam = this.sun.shadow.camera;
@@ -1963,8 +2002,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     cam.near = 10; cam.far = 6000;
     cam.updateProjectionMatrix();
     this.sun.target.position.copy(f);
-    this.sun.position.copy(f).add(eye);
+    this.sun.position.copy(f).add(sunEye);
     this.sun.target.updateMatrixWorld();
+    this.sun.updateMatrixWorld();
     this.renderer.shadowMap.needsUpdate = true;
   }
 
@@ -2455,9 +2495,55 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const form = SIGNATURE_BY_KEY.get(key);
     if (!form || ring0.length < 3 || H < 20) return false;
     if (ringArea(ring0) < 0) ring0 = ring0.slice().reverse();
+    // The AREA centroid for a non-convex site: a vertex average drifts toward
+    // whichever side of an assembled site has the most corners.
     let cx = 0, cy = 0;
-    for (const [x, y] of ring0) { cx += x / ring0.length; cy += y / ring0.length; }
+    {
+      let a2 = 0;
+      for (let i = 0; i < ring0.length; i++) {
+        const [x0, y0] = ring0[i], [x1, y1] = ring0[(i + 1) % ring0.length];
+        const c = x0 * y1 - x1 * y0;
+        a2 += c; cx += (x0 + x1) * c; cy += (y0 + y1) * c;
+      }
+      if (Math.abs(a2) > 1e-6) { cx /= 3 * a2; cy /= 3 * a2; } else { cx = 0; cy = 0; for (const [x, y] of ring0) { cx += x / ring0.length; cy += y / ring0.length; } }
+    }
     if (!PolyGrid.inRing(ring0, cx, cy)) return false;
+    // A NON-CONVEX SITE IS MEASURED ON ITS REAL EDGES (owner, Oct 2026: "choosing
+    // a landmark tower doesn't work"). Reach used to be read off each edge's
+    // infinite line, which is exact on a convex lot and wrong on an assembled
+    // L or T: the line through an inside corner passes beside the centre, the
+    // reach came out near nothing and every form was refused. Distances are to
+    // the segments, and reach along an axis is a ray cast to the boundary.
+    const segDist = (a: P2, b: P2) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+      const s = L2 > 0 ? Math.max(0, Math.min(1, ((cx - a[0]) * dx + (cy - a[1]) * dy) / L2)) : 0;
+      return Math.hypot(cx - (a[0] + s * dx), cy - (a[1] + s * dy));
+    };
+    const ray = (ux: number, uy: number) => {
+      let best = Infinity;
+      for (let i = 0; i < ring0.length; i++) {
+        const a = ring0[i], b = ring0[(i + 1) % ring0.length];
+        const ex = b[0] - a[0], ey = b[1] - a[1];
+        const den = ux * ey - uy * ex;
+        if (Math.abs(den) < 1e-9) continue;
+        const qx = a[0] - cx, qy = a[1] - cy;
+        const tt = (qx * ey - qy * ex) / den, s = (qx * uy - qy * ux) / den;
+        if (tt > 1e-6 && s >= 0 && s <= 1) best = Math.min(best, tt);
+      }
+      return best;
+    };
+    const convex = (() => {
+      let sgn = 0;
+      for (let i = 0; i < ring0.length; i++) {
+        const a = ring0[i], b = ring0[(i + 1) % ring0.length], c = ring0[(i + 2) % ring0.length];
+        const z = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+        if (Math.abs(z) < 1e-6) continue;
+        if (sgn === 0) sgn = Math.sign(z); else if (Math.sign(z) !== sgn) return false;
+      }
+      return true;
+    })();
+    // A convex lot keeps the centre it always had, so every tower already in town is drawn as before.
+    if (convex) { cx = 0; cy = 0; for (const [x, y] of ring0) { cx += x / ring0.length; cy += y / ring0.length; } }
     let li = 0, ll = -1;
     for (let i = 0; i < ring0.length; i++) { const a = ring0[i], b = ring0[(i + 1) % ring0.length]; const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > ll) { ll = L; li = i; } }
     let bear = Math.atan2(ring0[(li + 1) % ring0.length][1] - ring0[li][1], ring0[(li + 1) % ring0.length][0] - ring0[li][0]);
@@ -2474,6 +2560,12 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const nu = Math.abs(n[0] * U[0] + n[1] * U[1]), nv = Math.abs(n[0] * V[0] + n[1] * V[1]);
       if (nu > 0.5) A = Math.min(A, d / nu);
       if (nv > 0.5) B = Math.min(B, d / nv);
+    }
+    if (!convex) {
+      R = Infinity;
+      for (let i = 0; i < ring0.length; i++) R = Math.min(R, segDist(ring0[i], ring0[(i + 1) % ring0.length]));
+      A = Math.min(ray(U[0], U[1]), ray(-U[0], -U[1]));
+      B = Math.min(ray(V[0], V[1]), ray(-V[0], -V[1]));
     }
     if (!isFinite(A)) A = R;
     if (!isFinite(B)) B = R;
@@ -4610,12 +4702,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       {
         const bn = "lot:" + back, BB = this.buf(bn), b0 = BB.count;
         if (back === "lawn") {
-          // NO TWO LAWNS ALIKE (round 28): each lot its own grass, from lush to
-          // dry, blue-green to sun-bleached, and its texture turned and shifted
-          // so the pattern never lines up with the neighbour's
-          const tone = LAWN_TONES[Math.floor(hash01(k ^ 0x1a3d, 5) * LAWN_TONES.length)];
-          const a = hash01(k ^ 0x1a3e, 5) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), ox = hash01(k ^ 0x1a3f, 5) * 3, oy = hash01(k ^ 0x1a40, 5) * 3;
-          lay(BB, ring, 0.022, [tone[0] * j, tone[1] * j, tone[2] * j], (q) => [(q[0] * ca - q[1] * sa) * 0.25 + ox, (q[0] * sa + q[1] * ca) * 0.25 + oy]);
+          // NO TWO LAWNS ALIKE (round 28): each lot its own grass, a shade
+          // off its neighbour's (the grass shader carries the rest)
+          const tone = LAWN_TONES[Math.floor(hash01(k ^ 0x1a3d, 5) * LAWN_TONES.length)], jl = 0.98 + (j - 1) * 0.3;
+          lay(BB, ring, 0.022, [tone[0] * jl, tone[1] * jl, tone[2] * jl]);
         } else lay(BB, ring, 0.02, [j, j, j]);
         this.note(bbl, bn, b0);
       }
@@ -4683,9 +4773,9 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     // the surfaces' textures, made once. tri() lays uv at one unit per four
     // metres, so a repeat of 4 / m makes a texture one tile per m metres
-    if (!this.lotLawnMat.map) {
+    if (!this.lotPlazaMat.map) {
       const tex = (t: THREE.Texture, m: number) => { t.repeat.set(4 / m, 4 / m); return t; };
-      this.lotLawnMat.map = tex(this.lawnTex(), 12); this.lotPlazaMat.map = tex(this.plazaTex(), 6);
+      this.lotPlazaMat.map = tex(this.plazaTex(), 6);
       this.lotPaveMat.map = tex(this.pavingTex(), 1.5); this.lotWorkMat.map = tex(this.parkingTex(), 5);
     }
   }
@@ -4871,7 +4961,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     if (lotMeadow.count) {
       const m = new THREE.Mesh(lotMeadow.geometry(), this.meadowMat);
-      this.meadowMat.map = this.meadowTex();
       m.receiveShadow = true; this.scene.add(m);
     }
     if (lotCrop.count) {
@@ -5006,8 +5095,18 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // a shadow catcher over MapLibre's ground: transparent except where a
     // building or a tree stands between it and the sun
     const catcher = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), this.catcherMat);
-    catcher.position.z = 0.04; catcher.receiveShadow = true; catcher.renderOrder = -1;
-    catcher.visible = this.quality !== "low";
+    // THE FLICKER. The catcher stood at 4 cm, a centimetre over the lot
+    // grounds and yards (2-3 cm) and UNDER the park turf (4.6 cm). From a few
+    // hundred metres the depth buffer cannot part surfaces a centimetre
+    // apart, so pixel by pixel and frame by frame the catcher won or lost
+    // against the ground under it, and the ground's shadows came and went as
+    // the camera moved (the owner found it with ?noshadows, which hides the
+    // catcher). It now floats 20 cm up, clear of every flat ground surface
+    // (kerbs are 15 cm), and is drawn a little forward in the depth test, so
+    // it wins over the ground outright and still loses to anything standing
+    // on it.
+    catcher.position.z = 0.2; catcher.receiveShadow = true; catcher.renderOrder = -1;
+    catcher.visible = this.quality !== "low" && !NO_SHADOWS;
     this.catcher = catcher;
     this.scene.add(catcher);
     // THE HARBOUR. MapLibre paints the water flat; over it, the land cut out,
@@ -6021,7 +6120,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     }
     return out;
   }
-  private catcherMat = new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c2433 });
+  private catcherMat = new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c2433, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
   private wetMat = new THREE.MeshStandardMaterial({ color: 0x1e2329, roughness: 0.12, metalness: 0, transparent: true, opacity: 0, depthWrite: false });
   private wetSheet: THREE.Mesh | null = null;
   private precip: THREE.LineSegments | null = null;
@@ -6075,7 +6174,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         this.scene.add(this.precip);
       }
     }
-    // the fields and rough grass under snow
+    // the fields and rough grass under snow, which buries their variety too
+    GRASS_U.uSnow.value = snowG;
     this.meadowMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
     this.lotLawnMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
     this.turfMat.color.lerp(new THREE.Color(1.15, 1.17, 1.2), snowG * 0.85);
@@ -6132,29 +6232,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     return t;
   }
 
-  /** Rough grass on unbuilt land: tussocks, a worn path, the odd bare patch. */
-  /** Overgrown grass (round 29): green with straw, clumps of taller tussock, seed heads, bare patches (5 m tile). */
-  private meadowTex(): THREE.CanvasTexture {
-    const N = 256;
-    const { c, g } = makeCanvas(N, N);
-    let s = 613; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    g.fillStyle = "#7d9358"; g.fillRect(0, 0, N, N);
-    const blob = (x: number, y: number, r: number, col: string) => {
-      for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) {
-        const gr = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
-        gr.addColorStop(0, col); gr.addColorStop(1, "rgba(0,0,0,0)");
-        g.fillStyle = gr; g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
-      }
-    };
-    for (let i = 0; i < 30; i++) blob(rnd() * N, rnd() * N, 20 + rnd() * 40, rnd() < 0.5 ? "rgba(170,160,95,0.35)" : "rgba(70,95,45,0.35)");
-    for (let i = 0; i < 6; i++) blob(rnd() * N, rnd() * N, 8 + rnd() * 12, "rgba(140,120,85,0.45)");
-    // tussocks: tight dark clumps with a lit top
-    for (let i = 0; i < 220; i++) { const x = rnd() * N, y = rnd() * N, r = 2 + rnd() * 4; blob(x, y, r, "rgba(55,75,35,0.55)"); blob(x - r * 0.3, y - r * 0.3, r * 0.5, "rgba(170,175,110,0.35)"); }
-    // blades and seed heads
-    for (let i = 0; i < 9000; i++) { const v = rnd(); g.fillStyle = v < 0.45 ? "rgba(50,70,30,0.3)" : v < 0.85 ? "rgba(175,180,115,0.25)" : "rgba(210,195,140,0.4)"; g.fillRect(rnd() * N, rnd() * N, 1, 2 + rnd() * 2); }
-    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
-    return t;
-  }
   /** A parking lot gone to seed (round 29): faded, patched asphalt, cracks, weeds in them, ghost bay lines (5 m tile). */
   private oldLotTex(): THREE.CanvasTexture {
     const N = 256;
@@ -6202,30 +6279,6 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     return t;
   }
 
-  /**
-   * A city lawn (round 27): not a mown pitch. Soft clumps of darker and
-   * lighter green at two scales, a few worn patches, a fine grain of blades;
-   * white-based so the material colour carries the season. 256 px over 12 m.
-   */
-  private lawnTex(): THREE.CanvasTexture {
-    const N = 256;
-    const { c, g } = makeCanvas(N, N);
-    let s = 2111; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    g.fillStyle = "#ffffff"; g.fillRect(0, 0, N, N);
-    const blob = (x: number, y: number, r: number, col: string) => {
-      for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) {
-        const gr = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
-        gr.addColorStop(0, col); gr.addColorStop(1, "rgba(255,255,255,0)");
-        g.fillStyle = gr; g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
-      }
-    };
-    for (let i = 0; i < 26; i++) blob(rnd() * N, rnd() * N, 30 + rnd() * 50, rnd() < 0.55 ? "rgba(70,80,50,0.22)" : "rgba(255,255,240,0.22)");
-    for (let i = 0; i < 70; i++) blob(rnd() * N, rnd() * N, 6 + rnd() * 14, rnd() < 0.6 ? "rgba(60,75,40,0.25)" : "rgba(255,255,235,0.2)");
-    for (let i = 0; i < 5; i++) blob(rnd() * N, rnd() * N, 10 + rnd() * 16, "rgba(235,210,150,0.35)");
-    for (let i = 0; i < 9000; i++) { const d = rnd() < 0.5; g.fillStyle = d ? "rgba(40,50,25,0.12)" : "rgba(255,255,230,0.1)"; g.fillRect(rnd() * N, rnd() * N, 1, 1.5 + rnd()); }
-    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
-    return t;
-  }
   /** Plaza paving: large pale granite flags, 1.5 m by 3 m, in running bond (6 m tile). */
   private plazaTex(): THREE.CanvasTexture {
     const { c, g } = makeCanvas(128, 128);
@@ -6366,6 +6419,58 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const sm = new THREE.Mesh(stone.geometry(), new THREE.MeshStandardMaterial({ color: 0xb5ab98, roughness: 0.8, vertexColors: true, envMapIntensity: 0.3 }));
     sm.castShadow = sm.receiveShadow = true;
     this.scene.add(wm, sm);
+  }
+
+  /**
+   * THE STREET GOES OVER THE WATER. Where a street meets a creek or canal
+   * the generator records the crossing (citygen.mjs STREETS THAT MEET THE
+   * WATER CROSS IT), and nothing drew it: the asphalt ran to the bank, the
+   * water ran under where the road should be, and the asphalt carried on from
+   * the far bank. Each crossing is a deck the street's width, flush with the
+   * roadway, its asphalt carrying straight on, with a dressed stone fascia
+   * over the water, a footway strip each side and a stone parapet along both
+   * edges, ending a few metres onto each bank as an abutment would.
+   */
+  private buildCrossings() {
+    const list = (this.ctx as { crossings?: { line: P2[]; w: number }[] }).crossings ?? [];
+    if (!list.length) return;
+    const road = new Buf(), stone = new Buf(), walk = new Buf();
+    const one = [1, 1, 1];
+    const TOP = 0.07, FOOT = 0.2, SOFFIT = -0.75, PAR = 1.15;
+    // a box from a to b, `w` wide, between z0 and z1, offset `o` across
+    const slab = (B: Buf, A: P2, C: P2, o: number, w: number, z0: number, z1: number, sides = true) => {
+      const L = Math.hypot(C[0] - A[0], C[1] - A[1]); if (L < 0.1) return;
+      const ux = (C[0] - A[0]) / L, uy = (C[1] - A[1]) / L, nx = -uy, ny = ux;
+      const p = (t: number, s: number, z: number) => [A[0] + ux * t + nx * (o + s), A[1] + uy * t + ny * (o + s), z];
+      const h = w / 2;
+      B.quad(p(0, -h, z1), p(L, -h, z1), p(L, h, z1), p(0, h, z1), [0, 0, 1], [[0, 0], [L, 0], [L, w], [0, w]], one);
+      if (!sides) return;
+      B.quad(p(L, -h, z0), p(0, -h, z0), p(0, -h, z1), p(L, -h, z1), [-nx, -ny, 0], [[L, 0], [0, 0], [0, z1 - z0], [L, z1 - z0]], one);
+      B.quad(p(0, h, z0), p(L, h, z0), p(L, h, z1), p(0, h, z1), [nx, ny, 0], [[0, 0], [L, 0], [L, z1 - z0], [0, z1 - z0]], one);
+      B.quad(p(0, -h, z0), p(0, h, z0), p(0, h, z1), p(0, -h, z1), [-ux, -uy, 0], [[0, 0], [w, 0], [w, z1 - z0], [0, z1 - z0]], one);
+      B.quad(p(L, h, z0), p(L, -h, z0), p(L, -h, z1), p(L, h, z1), [ux, uy, 0], [[0, 0], [w, 0], [w, z1 - z0], [0, z1 - z0]], one);
+      B.quad(p(0, h, z0), p(0, -h, z0), p(L, -h, z0), p(L, h, z0), [0, 0, -1], [[0, 0], [w, 0], [w, L], [0, L]], one);
+    };
+    for (const cr of list) {
+      if (cr.line.length < 2) continue;
+      const A = this.project(cr.line[0]), C = this.project(cr.line[cr.line.length - 1]);
+      const W = Math.max(7, cr.w);
+      const fw = Math.min(2.4, W * 0.18);        // the footway each side
+      const cw = W - 2 * fw;                     // the carriageway
+      // the deck: stone fascia all round, asphalt carriageway flush with the street
+      slab(stone, A, C, 0, W + 0.6, SOFFIT, TOP - 0.02);
+      slab(road, A, C, 0, cw, TOP - 0.02, TOP, false);
+      // the footways, a kerb up, and a parapet on the outer edge of each
+      for (const sd of [-1, 1]) {
+        slab(walk, A, C, sd * (cw / 2 + fw / 2), fw, TOP - 0.02, FOOT);
+        slab(stone, A, C, sd * (W / 2 + 0.05), 0.4, FOOT, PAR);
+        slab(stone, A, C, sd * (W / 2 + 0.05), 0.55, PAR, PAR + 0.12);
+      }
+    }
+    const add = (b: Buf, mat: THREE.Material) => { if (!b.count) return; const m = new THREE.Mesh(b.geometry(), mat); m.castShadow = true; m.receiveShadow = true; this.scene.add(m); };
+    add(road, new THREE.MeshStandardMaterial({ color: 0x3e3f42, roughness: 0.9, envMapIntensity: 0.2 }));
+    add(walk, this.paveMat ?? new THREE.MeshStandardMaterial({ color: 0xa6a39c, roughness: 0.86 }));
+    add(stone, new THREE.MeshStandardMaterial({ color: 0xb2a690, roughness: 0.8, envMapIntensity: 0.3 }));
   }
 
   /**
@@ -6656,6 +6761,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       for (let i = 0; i + 1 < q.length; i++) if (Math.hypot(q[i + 1][0] - q[i][0], q[i + 1][1] - q[i][1]) > 0.5) segs.push([q[i], q[i + 1]]);
     }
     const ponds = ((this.ctx as { ponds?: P2[][] }).ponds ?? []).map((r) => r.map((q) => this.project(q))).filter((r) => r.length >= 3);
+    const streamsP = ((this.ctx as { streams?: { ring: P2[] }[] }).streams ?? []).map((st) => st.ring.map((q) => this.project(q))).filter((r) => r.length >= 3);
     for (const pk of (this.ctx.parks ?? []) as ({ ring: P2[]; holes?: P2[][]; flavour?: string } | P2[])[]) {
       const ringLL = Array.isArray(pk) ? pk : pk.ring;
       if (!ringLL || ringLL.length < 3) continue;
@@ -6702,14 +6808,20 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           // out to the footway: the inner edge pushed back across the footway band (outward normal of a CCW ring)
           const out: P2 = [E[0] + ty * (PARK_WALK - 0.4), E[1] - tx * (PARK_WALK - 0.4)];
           const mid: P2 = [(N[0] + E[0]) / 2, (N[1] + E[1]) / 2];
-          if (pds.some((pd) => inRingPk(mid[0], mid[1], pd) || inRingPk(E[0], E[1], pd))) continue;
+          if ([...pds, ...streamsP].some((pd) => inRingPk(mid[0], mid[1], pd) || inRingPk(E[0], E[1], pd) || inRingPk(N[0], N[1], pd))) continue;
           walks.push([N, out]);
           entrances.push({ at: E, tx, ty });
         }
       }
       // the paved round where the walks meet: under the column of a big park, the fountain of a square
       const plazaR = flavour === "park" ? (area > 9000 ? 10 : area > 1800 ? 8 : 0) : 0;
-      out.push({ ring, inner, holes, flavour, area, cx, cy, ux, uy, walks, ponds: pds, plazaR, features: [], entrances });
+      // A CREEK THROUGH THE PARK. The generator lets a stream run through an
+      // ordinary park (and culverts it under a paved square); the turf, the
+      // walks' furniture and the trees all have to keep out of its channel
+      let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+      for (const [x, y] of ring) { bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x); by1 = Math.max(by1, y); }
+      const wet = streamsP.filter((r) => r.some(([x, y]) => x > bx0 && x < bx1 && y > by0 && y < by1) && r.some(([x, y]) => inRingPk(x, y, ring)));
+      out.push({ ring, inner, holes, flavour, area, cx, cy, ux, uy, walks, ponds: pds, plazaR, features: [], entrances, wet });
     }
     return (this.parkInfoC = out);
   }
@@ -6717,9 +6829,18 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   private parkReserved(x: number, y: number, pad: number): boolean {
     for (const r of this.parkReserves) if (Math.hypot(x - r.x, y - r.y) < r.r + pad) return true;
     for (const p of this.parkInfoC ?? []) for (const pd of p.ponds) if (inRingPk(x, y, pd)) return true;
+    for (const p of this.parkInfoC ?? []) if (p.wet.length && this.nearWet(p, x, y, pad)) return true;
     return false;
   }
 
+  /** Whether a point is in (or within d metres of) a stream running through the park. */
+  private nearWet(p: ParkInfo, x: number, y: number, d: number): boolean {
+    for (const r of p.wet) {
+      if (inRingPk(x, y, r)) return true;
+      for (let i = 0; i < r.length; i++) if (segDist(x, y, r[i], r[(i + 1) % r.length]) < d) return true;
+    }
+    return false;
+  }
   /** The ground of the parks: turf (or a market's setts), the gravel walks and their edging, the paved round. */
   private async buildParkGround() {
     const turf = new FlatBuf(), walks = new FlatBuf(), plaza = new FlatBuf(), setts = new FlatBuf();
@@ -6738,9 +6859,13 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       const tint = TINT[p.flavour] ?? TINT.park;
       const uvOf = (v: P2): [number, number] => [v[0] / 12, v[1] / 12];
       const stOf = p.flavour === "park" ? (v: P2) => v[0] * nx + v[1] * ny : () => 2;
-      if (!turf.poly(p.inner, [...p.holes, ...p.ponds], 0.05, tint, uvOf, stOf)) {
+      // The generator's holes are whole stream rings that cross the park's
+      // edge — not a polygon the triangulator can cut. Streams come out of
+      // the turf through the water mask (TURF_U.uWet) instead; ponds, which
+      // sit wholly inside, stay holes.
+      if (!turf.poly(p.inner, p.ponds, 0.05, tint, uvOf, stOf)) {
         // a pond touching the edge defeats the triangulator; the pond is drawn over the turf instead
-        turf.poly(p.inner, p.holes, 0.05, tint, uvOf, stOf);
+        turf.poly(p.inner, [], 0.05, tint, uvOf, stOf);
         p.pondOver = true;
       }
       const w = p.flavour === "cemetery" ? 2.4 : p.flavour === "battery" ? 3.6 : 3.2;
@@ -6754,11 +6879,11 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         walks.annulus([p.cx, p.cy], R, R + 0.5, 0.088, [0.66, 0.64, 0.6], 4, 40);
       }
     }
+    this.buildWetMask();
     if (!this.walkMat.map) {
       this.walkMat.map = walkTex();
       const pt = this.plazaTex(); this.parkPlazaMat.map = pt;
       this.settsMat.map = settsTex();
-      this.turfMat.map = this.lawnTex();
     }
     for (const [b, mat, st] of [[turf, this.turfMat, true], [walks, this.walkMat, false], [plaza, this.parkPlazaMat, false], [setts, this.settsMat, false]] as [FlatBuf, THREE.Material, boolean][]) {
       if (!b.count) continue;
@@ -6777,6 +6902,35 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       pm.position.z = 0.055; pm.receiveShadow = true;
       this.scene.add(pm);
     }
+  }
+
+  /**
+   * THE WATER MASK. Every stream that runs through a park, painted into one
+   * world-space texture (about a metre a pixel, a little proud of the bank so
+   * no blade of turf overhangs the wall), which the turf shader discards
+   * against. Cheaper and sturdier than clipping a lawn polygon by a creek
+   * that enters on one side and leaves by another.
+   */
+  private buildWetMask() {
+    const wet = this.parkInfo().flatMap((p) => p.wet);
+    if (!wet.length) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const r of wet) for (const [x, y] of r) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    x0 -= 4; y0 -= 4; x1 += 4; y1 += 4;
+    const N = Math.min(4096, Math.max(256, 2 ** Math.ceil(Math.log2(Math.max(x1 - x0, y1 - y0)))));
+    const { c, g } = makeCanvas(N, N);
+    const sx = N / (x1 - x0), sy = N / (y1 - y0);
+    g.fillStyle = "#000"; g.fillRect(0, 0, N, N);
+    g.fillStyle = "#fff"; g.strokeStyle = "#fff"; g.lineWidth = Math.max(1, 0.8 * sx); g.lineJoin = "round";
+    for (const r of wet) {
+      g.beginPath();
+      r.forEach(([x, y], i) => { const px = (x - x0) * sx, py = (y - y0) * sy; if (i) g.lineTo(px, py); else g.moveTo(px, py); });
+      g.closePath(); g.fill(); g.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.flipY = false; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false;
+    TURF_U.uWet.value = t;
+    TURF_U.uWetBox.value.set(x0, y0, x1 - x0, y1 - y0);
   }
 
   /** Before the trees go in: where each park's bandstand, playground and kiosk will stand, so no tree is planted through them. */
@@ -6798,7 +6952,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
           for (let k = 0; k < 8 && ok; k++) {
             const rr = hw ? hw + 1 : r + 2;
             const qx = x + Math.cos(k * 0.785) * rr, qy = y + Math.sin(k * 0.785) * rr;
-            if (!inRingPk(qx, qy, p.inner) || p.ponds.some((pd) => inRingPk(qx, qy, pd))) ok = false;
+            if (!inRingPk(qx, qy, p.inner) || p.ponds.some((pd) => inRingPk(qx, qy, pd)) || (p.wet.length && this.nearWet(p, qx, qy, 2))) ok = false;
           }
           if (!ok || p.walks.some(([a, b]) => segDist(x, y, a, b) < (hw ? hw + 2.4 : r + 2.4))) continue;
           if (this.parkReserves.some((q) => Math.hypot(q.x - x, q.y - y) < q.r + r + 3)) continue;
@@ -6847,7 +7001,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
             const blob: P2[] = [];
             const ph = rnd() * 6.28, ph2 = rnd() * 6.28;
             for (let j = 0; j < 20; j++) { const a = (j / 20) * Math.PI * 2, rr = r * (1 + 0.22 * Math.sin(a * 2 + ph) + 0.12 * Math.sin(a * 5 + ph2)); blob.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr]); }
-            if (blob.some(([bx, by]) => !inRingPk(bx, by, insetRing(p.inner, 4) ?? p.inner) || p.ponds.some((pd) => inRingPk(bx, by, pd)) || p.walks.some(([a, b]) => segDist(bx, by, a, b) < 3)) || p.walks.some(([a, b]) => segDist(x, y, a, b) < r + 2)) continue;
+            if (blob.some(([bx, by]) => !inRingPk(bx, by, insetRing(p.inner, 4) ?? p.inner) || p.ponds.some((pd) => inRingPk(bx, by, pd)) || (p.wet.length > 0 && this.nearWet(p, bx, by, 2)) || p.walks.some(([a, b]) => segDist(bx, by, a, b) < 3)) || p.walks.some(([a, b]) => segDist(x, y, a, b) < r + 2)) continue;
             if (this.parkReserves.some((q) => blob.some(([bx, by]) => Math.hypot(bx - q.x, by - q.y) < q.r + 1))) continue;
             meadows.push(blob);
             break;
@@ -6888,7 +7042,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       await this.breathe();
       const w = p.flavour === "cemetery" ? 2.4 : p.flavour === "battery" ? 3.6 : 3.2;
       const onWalk = (x: number, y: number, pad: number) => p.walks.some(([a, b]) => segDist(x, y, a, b) < w / 2 + pad);
-      const inPond = (x: number, y: number) => p.ponds.some((pd) => inRingPk(x, y, pd));
+      const inPond = (x: number, y: number) => p.ponds.some((pd) => inRingPk(x, y, pd)) || (p.wet.length > 0 && this.nearWet(p, x, y, 1.2));
       const free = (x: number, y: number, r: number) => inRingPk(x, y, p.inner) && !onWalk(x, y, r) && !inPond(x, y) && !this.parkReserved(x, y, r);
       // ALONG THE WALKS: benches facing the walk, a lamp every 26 m on the
       // other side, a bin by every third bench, people sitting, people walking
@@ -7630,15 +7784,28 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     return ring;
   }
 
+  /**
+   * WHAT A FLATTENED BUILDING LOOKED LIKE, so it can stand again. Flattening
+   * collapses the street's own geometry in place, and it used to be one-way:
+   * load a save from before a demolition (or before a delivery, or rewind) and
+   * the game had the building back while the map still showed dirt. Nothing
+   * else ever un-flattens, so the original vertices and instance matrices are
+   * kept here and put back by `unflatten` when no new stock covers the lot.
+   */
+  private flatSaved = new Map<string, { ranges: { pa: THREE.BufferAttribute; start: number; data: Float32Array }[]; inst: { mesh: THREE.InstancedMesh; i: number; m: THREE.Matrix4 }[] }>();
+
   private flatten(bbl: string) {
     if (this.flattened.has(bbl)) return;
     this.flattened.add(bbl);
     const d = this.deeds.get(bbl);
     if (!d) return;
+    const saved: { ranges: { pa: THREE.BufferAttribute; start: number; data: Float32Array }[]; inst: { mesh: THREE.InstancedMesh; i: number; m: THREE.Matrix4 }[] } = { ranges: [], inst: [] };
+    this.flatSaved.set(bbl, saved);
     for (const r of d.ranges) {
       const pa = r.mesh?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
       if (!pa) continue;
       const arr = pa.array as Float32Array;
+      saved.ranges.push({ pa, start: r.start, data: arr.slice(r.start * 3, (r.start + r.count) * 3) });
       // a demolished building's ground shade goes with it: collapse the band to a point
       if (r.buf === "contact" || r.buf.startsWith("lot:")) { for (let i = r.start; i < r.start + r.count; i++) { arr[i * 3] = arr[r.start * 3]; arr[i * 3 + 1] = arr[r.start * 3 + 1]; } }
       for (let i = r.start; i < r.start + r.count; i++) arr[i * 3 + 2] = Math.min(arr[i * 3 + 2], 0.01);
@@ -7648,9 +7815,27 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     for (const it of d.inst) {
       const mesh = this.inst.get(it.mesh);
       if (!mesh) continue;
-      mesh.getMatrixAt(it.i, m4); m4.scale(new THREE.Vector3(0, 0, 0)); mesh.setMatrixAt(it.i, m4);
+      mesh.getMatrixAt(it.i, m4); saved.inst.push({ mesh, i: it.i, m: m4.clone() });
+      m4.scale(new THREE.Vector3(0, 0, 0)); mesh.setMatrixAt(it.i, m4);
       mesh.instanceMatrix.needsUpdate = true;
     }
+    this.renderer && (this.renderer.shadowMap.needsUpdate = true);
+  }
+
+  /** Put a flattened street building back exactly as it was. */
+  private unflatten(bbl: string) {
+    if (!this.flattened.delete(bbl)) return;
+    const saved = this.flatSaved.get(bbl);
+    this.flatSaved.delete(bbl);
+    if (saved) {
+      for (const r of saved.ranges) {
+        (r.pa.array as Float32Array).set(r.data, r.start * 3);
+        r.pa.addUpdateRange(r.start * 3, r.data.length); r.pa.needsUpdate = true;
+      }
+      for (const it of saved.inst) { it.mesh.setMatrixAt(it.i, it.m); it.mesh.instanceMatrix.needsUpdate = true; }
+    }
+    this.applyBays(bbl);
+    this.refreshDeed(bbl);
     this.renderer && (this.renderer.shadowMap.needsUpdate = true);
   }
 
@@ -7738,6 +7923,8 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   }
   private preview: PlayerItem | null = null;
   private previewSig = "";
+  /** Told which landmark forms the previewed lot can hold, each time the preview is drawn. */
+  onPreviewFits: ((keys: string[]) => void) | null = null;
   private lastItems: PlayerItem[] = [];
 
   /** One player or rival building into the current buffers: a job site by stage, or the finished building in its design. */
@@ -7782,6 +7969,18 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // A LANDMARK: the form the developer named, or, on a tower nobody
     // designed, one the city does not have yet (autoSignature). A preview or
     // the desk's model only looks; it never claims a form.
+    // THE DESK ASKS WHICH LANDMARKS THIS LOT HOLDS (owner, Oct 2026: "choosing
+    // a landmark tower doesn't work"). A form the footprint cannot hold drew
+    // nothing and the tower stood in its ordinary massing while the picker
+    // still showed the form as chosen. The preview now runs every form dry on
+    // the lot as drawn and tells the desk which fit, so it can say so.
+    if (this.preview && it.bbl === this.preview.bbl && this.onPreviewFits) {
+      const fitsNow = SIGNATURE_FORMS.filter((f) => formFits(f, h) && this.signatureTower(ring, h, fam, tint, it.bbl, k, shop, it.cls, f.key, ov, true)).map((f) => f.key);
+      // ...and whether it can carry a pitched roof: the gable and hip are cut
+      // on a four-cornered footprint and anything else is drawn flat.
+      if (ring.length === 4) fitsNow.push("roof:gable", "roof:hip");
+      this.onPreviewFits(fitsNow);
+    }
     const named = d?.signature ? SIGNATURE_BY_KEY.get(d.signature as SignatureKey) : undefined;
     const sigKey = named && formFits(named, h) ? named.key
       : !ov && !d?.crown && !d?.signature && TOWER_FAMS.has(fam) && fam !== "brutalist"
@@ -7881,6 +8080,10 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const done = items.filter((i) => !(i.construction || i === pv));
     const rebuilt = [this.buildDyn(this.dynDone, done, force), this.buildDyn(this.dynSite, site, force)].filter((l): l is DynLayer => !!l);
     if (!rebuilt.length) return;
+    // A lot that no new stock stands on any more — a save loaded from before
+    // it was cleared or built on — gets the street's own building back.
+    const covered = new Set(items.flatMap((i) => this.siteOf(i.bbl)));
+    for (const b of [...this.flattened]) if (!covered.has(b)) this.unflatten(b);
     this.dynDeeds = new Map([...this.dynDone.deeds, ...this.dynSite.deeds]);
     this.dynHeight = new Map([...this.dynDone.heights, ...this.dynSite.heights]);
     this.cranes = this.dynSite.cranes ?? this.dynDone.cranes;
@@ -8199,13 +8402,14 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const ripe = [0, 0, 0, 0, 0, 0, 0.1, 0.45, 0.85, 0.3, 0, 0][this.month];
     this.cropMat.color.setRGB(0.9 + vig * 0.1 + ripe * 0.35, 0.82 + vig * 0.18 + ripe * 0.15, 0.78 + vig * 0.05 - ripe * 0.3);
     // overgrown grass: straw-brown in winter, a rough green in summer
-    this.meadowMat.color.setRGB(1.2 - vig * 0.22, 1.05 - vig * 0.09, 0.8 - vig * 0.12);
+    // (the grass colours below are the albedo itself now; the grass shader varies it)
+    this.meadowMat.color.setRGB(0.36 - vig * 0.21, 0.31 - vig * 0.11, 0.16 - vig * 0.085);
     // a mown lawn: dormant straw-green in winter, full green in summer
     // (lit by the sun, unlike the flat park fill, so it is set darker to read a step below a park)
-    this.lotLawnMat.color.setRGB(0.27 - vig * 0.07, 0.26 + vig * 0.03, 0.17 - vig * 0.05);
+    this.lotLawnMat.color.setRGB(0.25 - vig * 0.085, 0.235 - vig * 0.01, 0.15 - vig * 0.065);
     // the park turf: kept and watered, so a step greener than a yard all season,
     // and a dull winter green rather than straw when it rests
-    this.turfMat.color.setRGB(0.25 - vig * 0.065, 0.255 + vig * 0.04, 0.165 - vig * 0.05);
+    this.turfMat.color.setRGB(0.22 - vig * 0.075, 0.235 + vig * 0.01, 0.14 - vig * 0.065);
     for (const m of [this.walkMat, this.parkPlazaMat, this.settsMat]) m.color.setRGB(1, 1, 1);
     // long grass: straw in winter, a deep summer green, seeding gold in August
     const seed = [0, 0, 0, 0, 0, 0, 0.2, 0.55, 0.4, 0.1, 0, 0][this.month];
@@ -8334,7 +8538,7 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     // fair weather: a scatter of cumulus; as the sky fills in, more of it;
     // under a full overcast there is no direct sun left for a cloud to take
     CLOUD.cloudCover.value = 0.22 + 0.3 * smooth(0.0, 0.6, oc);
-    this.cloudK0 = this.quality === "low" ? 0 : 0.45 * (1 - smooth(0.45, 0.95, oc));
+    this.cloudK0 = this.quality === "low" || NO_CLOUDS ? 0 : 0.45 * (1 - smooth(0.45, 0.95, oc));
     this.map?.triggerRepaint();
   }
 
@@ -8461,11 +8665,11 @@ float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     this.setPreferFps(q !== "high");
     this.crowdK = q === "high" ? 1 : q === "medium" ? 0.6 : 0.3;
     this.cullM = q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
-    this.sun.castShadow = q !== "low";
+    this.sun.castShadow = q !== "low" && !NO_SHADOWS;
     // the finishing pass: all of it on High, the grade alone on Medium, none on Low
     this.post.level = q === "high" ? "full" : q === "medium" ? "grade" : "off";
     if (q === "high" && this.live && !this.reflEnv) this.probeDue = true;
-    if (this.catcher) this.catcher.visible = q !== "low";
+    if (this.catcher) this.catcher.visible = q !== "low" && !NO_SHADOWS;
     // the ground contact shade is transparent overdraw under every building
     const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";
     // the window sills and lintels (round 21): High and Medium

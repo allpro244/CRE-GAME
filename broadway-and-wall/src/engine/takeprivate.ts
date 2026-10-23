@@ -41,7 +41,7 @@ import { conveyedDeed, depositsOn } from "./leasing";
 import { assetGrade, livingRivals, marketAppetite, markRival, paramsOf, tie, transferDeed } from "./rivals";
 import { observe } from "./competitorReads";
 import { sheetOf } from "./rivals";
-import { assumeBook, syncDebt } from "./rivalDebt";
+import { assumeBook, loanBookTouched, syncDebt } from "./rivalDebt";
 import { buyQuote, executePurchase, TRANSFER_TAX } from "./actions";
 import { fundableNow, fundAndBook } from "./credit";
 import { isCivicLand } from "./demand";
@@ -325,7 +325,7 @@ function bestProduct(s: GameState, parcels: ParcelTable, bbl: string, price: num
   let best = { id: "cash", principal: 0, equity: cash.equity, allIn: Infinity };
   for (const p of PRODUCTS) {
     if (p.mezz || p.bridge) continue;
-    if (land ? p.id !== "land" : p.id === "land") continue;
+    if (land ? p.uwDscr > 0 : p.uwDscr <= 0) continue;   // land loans have no income test
     const q = buyQuote(s, parcels, bbl, price, p.id, 1);
     if (!(q.principal > 0)) continue;
     const allIn = allInCostPct(productById(p.id), q.ratePct);
@@ -445,6 +445,7 @@ function runClose(
   r.bbls = [];
   // Every mortgage and the line repaid at the closing.
   for (const x of Object.values(cur.cityLoans ?? {})) if (x.obligorId === r.id) delete cur.cityLoans![x.bbl];
+  loanBookTouched();
   r.lineBal = 0;
   r.debt = 0;
   r.cash = 0;
@@ -455,6 +456,7 @@ function runClose(
   delete r.extendedTo;
   delete r.deliveredM;
   r.failedM = cur.month;
+  r.endReason = "takenPrivate";
   r.takenPrivateM = cur.month;
   // A firm that was bought is not a firm that failed: no courthouse-steps
   // epilogue years later. -1 never matches a month, and setting it means the
@@ -662,6 +664,7 @@ export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
     t.heldSince = {};
     delete t.extendedTo; delete t.deliveredM;
     t.failedM = s.month;
+    t.endReason = "absorbed";
     t.takenOverBy = raider.id;
     t.epilogueM = -1;
     // A takeover is public: what it paid says how the raider prices.

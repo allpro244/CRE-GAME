@@ -90,7 +90,12 @@ const pc = (x) => `${(x * 100).toFixed(0)}%`;
   let bad = 0, n = 0; const lines = [];
   // Five towns, not four: the four sat on exactly the five-building minimum,
   // so the sample size was a function of where each era opened its asks.
-  for (const seed of [12007, 4242, 11, 550991, 7919]) {
+  // Ten, not five (2026-10-13): street plan 11 re-cut the reference town's
+  // canal side and re-dealt its listings. Most opening tapes on it carry no
+  // stabilised building over $1.5M at all, and the five seeds read four
+  // buildings (all from 12007), none of them mis-sized — the same fault, a
+  // town later. Ten seeds read eight: 4, 1, 1 and 2 from 12007, 20603, 22, 33.
+  for (const seed of [12007, 4242, 11, 550991, 7919, 91117, 20603, 22, 33, 44]) {
     let g = E.firstListings(E.newGame(seed, parcels, 400_000_000), parcels, bbls);
     const cands = g.listings.map((li) => { const r = E.resolveRec(parcels, g, li.bbl); if (!r || r.class === "land" || !r.bldgArea || li.halfBuilt) return null; const ip = E.inPlace(r, g, li.bbl, li.ask); return { bbl: li.bbl, ask: li.ask, noi: ip.noi, occ: ip.occ, y: ip.noi / li.ask }; })
       .filter((x) => x && x.noi > 0 && x.ask > 1.5e6 && x.occ >= 0.85).sort((a, b) => b.y - a.y).slice(0, 5);

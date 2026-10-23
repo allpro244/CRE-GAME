@@ -3,18 +3,19 @@ import { headlineEpithet } from "@/engine/firm";
 import { useStore, type Page } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
-import { locLimit } from "@/engine/credit";
+import { locLimit, locRate } from "@/engine/credit";
 import { availability } from "@/engine/space";
-import { netWorth } from "@/engine/value";
-import { streetStanding, ordinal } from "@/engine/standing";
+import { derive, nwOf, standingOf } from "@/ui/derive";
+import { ordinal, type Standing } from "@/engine/standing";
 import { openViewOn } from "@/ui/panels/shared";
 import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
-import { portfolioOccupancy } from "@/engine/leasing";
+import { portfolioOccupancy, portfolioRentPsf } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { nextDue } from "./nextDue";
-import { DESKS, deskOf, deskCount, deskLanding, tabCounts, tabLabel, visibleTabs } from "./desks";
+import { DESKS, tabCounts, tabLabel, RAIL_GROUPS, PAGE_ICON, railEntry } from "./desks";
 import DeltaChip from "@/ui/vitals/DeltaChip";
 import Waterfall, { usablePrev } from "@/ui/vitals/Waterfall";
+import ClockProgress from "@/ui/ClockProgress";
 
 /** What to call each room in the Back button. Built from the nav itself so a
  *  renamed desk cannot drift out of sync with the label on the way back. */
@@ -107,7 +108,11 @@ export default function TopBar() {
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
   }, []);
-  const railCompact = railPref === "auto" ? narrow : railPref === "compact";
+  // Labels unless the player asks for icons: a rail of bare symbols at
+  // laptop widths left people guessing what each one opened. Narrow windows
+  // get a slimmer labelled rail instead (shell.css).
+  const railCompact = railPref === "compact";
+  void narrow;
   const setRailCompact = (v: boolean) => {
     const next = v ? "compact" : "full";
     setRailPref(next);
@@ -139,23 +144,25 @@ export default function TopBar() {
   const vitals = useMemo(() => {
     if (!deferredGame) {
       return {
-        nw: 0, cf: 0, occ: null as number | null, vacDpp: null as number | null,
+        nw: 0, cf: 0, occ: null as number | null, rentPsf: null as number | null, vacDpp: null as number | null,
         line: 0, counts: {} as ReturnType<typeof tabCounts>,
         dNw: null as number | null, nwSpark: [] as number[],
         dCf: null as number | null, dCfSince: null as number | null,
         dRateBp: null as number | null,
-        standing: null as ReturnType<typeof streetStanding> | null,
+        standing: null as Standing | null,
         dRank: 0,
         due: null as ReturnType<typeof nextDue>,
       };
     }
     const parcels = useStore.getState().parcels;
-    const nw = parcels ? netWorth(deferredGame, parcels) : 0;
+    const nw = parcels ? nwOf(deferredGame, parcels) : 0;
     // THE FIRM'S CASH FLOW INCLUDES THE FIRM. This was deeds less debt, and
     // the office — ~$66K a year on a one-building book — came out of the
     // account every month without ever appearing here, so an $81K readout sat
     // over a firm clearing ~$30K. Same function the tick charges.
-    const firmCf = (g: typeof deferredGame) => portfolioMonthlyCF(g, parcels!) - firmOverheadMonthly(g, parcels!);
+    // Once per state: next month's ΔCF reads this month's back from the cache.
+    const firmCf = (g: typeof deferredGame) =>
+      derive(g, "topbar.firmCf", () => portfolioMonthlyCF(g, parcels!) - firmOverheadMonthly(g, parcels!), [parcels]);
     const cf = parcels ? firmCf(deferredGame) : 0;
     const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
     // Office availability vs twelve months ago — the tell that predicts real
@@ -176,6 +183,8 @@ export default function TopBar() {
     // here while Leasing called it full. One function now, shared with the
     // Leasing total: leased over lettable, operated deeds only.
     const occ = parcels ? (portfolioOccupancy(deferredGame, parcels)?.occ ?? null) : null;
+    // What the leased feet pay on average — same deeds as occupancy.
+    const rentPsf = parcels ? portfolioRentPsf(deferredGame, parcels) : null;
     // Badges: one counter shared with the desk tabs, so the rail and the
     // tab inside the desk cannot disagree about what is waiting.
     const counts = tabCounts(deferredGame);
@@ -191,26 +200,29 @@ export default function TopBar() {
     const prevOk = usablePrev(deferredGame, deferredPrev);
     const dCf = prevOk && parcels ? cf - firmCf(prevOk) : null;
     const dCfSince = prevOk ? prevOk.month : null;
+    // the ten-year against a year ago
     const rateThen = hist.length > 12 ? hist[hist.length - 13]?.indexRate : undefined;
-    const dRateBp = rateThen === undefined ? null
-      : Math.round((deferredGame.econ.indexRate - rateThen) * 100);
+    const rateNow = deferredGame.econ.indexRate;
+    const dRateBp = rateThen === undefined || rateNow === undefined ? null
+      : Math.round((rateNow - rateThen) * 100);
     // YOUR PLACE ON THE STREET, always in sight. It was two tabs deep on
     // Research, which is to say the one number that says who is winning was
     // the one the player never saw. Same ranking the league table prints.
-    const standing = parcels && (deferredGame.rivals?.length ?? 0) > 0 ? streetStanding(deferredGame, parcels, nw) : null;
+    const standing = parcels && (deferredGame.rivals?.length ?? 0) > 0 ? standingOf(deferredGame, parcels) : null;
     // Places gained or lost since the last advance — the same ranking on the
-    // pre-advance snapshot the other deltas already read.
-    const standPrev = standing && prevOk && parcels ? streetStanding(prevOk, parcels) : null;
+    // pre-advance snapshot the other deltas already read. That snapshot was
+    // the state on screen last month, so its rank is kept, not re-ranked.
+    const standPrev = standing && prevOk && parcels ? standingOf(prevOk, parcels) : null;
     const dRank = standing && standPrev ? standPrev.rank - standing.rank : 0;
     const due = nextDue(deferredGame, parcels);
     return {
       standing, dRank, due,
-      nw, cf, occ, vacDpp, line, counts,
+      nw, cf, occ, rentPsf, vacDpp, line, counts,
       dNw, nwSpark, dCf, dCfSince, dRateBp,
     };
   }, [deferredGame, deferredPrev]);
   const {
-    nw, cf, occ, vacDpp, line, counts, dNw, dCf, dCfSince, dRateBp, standing, dRank, due,
+    nw, cf, occ, rentPsf, vacDpp, line, counts, dNw, dCf, dCfSince, dRateBp, standing, dRank, due,
   } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
@@ -382,11 +394,13 @@ export default function TopBar() {
               const drawn = game.loc?.balance ?? 0;
               const left = Math.max(0, line - drawn);
               const tight = line <= 0 || drawn > 0.6 * line;
+              // Drawn, the line costs money every month: show what it charges.
+              const rate = locRate(game);
               return (
                 <Stat label="Line left" value={usd(left)} n={left} bad={tight} w={72} keep
-                  delta={drawn > 0 ? <span className={"tstat-of" + (tight ? " neg" : "")}>{usd(drawn)} drawn</span> : null}
+                  delta={drawn > 0 ? <span className={"tstat-of" + (tight ? " neg" : "")}>{usd(drawn)} drawn · {rate.toFixed(2)}%</span> : null}
                   onClick={() => setPage("debt", "Line of credit")}
-                  title={`Undrawn revolver: ${usd(left)} of a ${usd(line)} line sized against net worth${drawn > 0 ? `; ${usd(drawn)} drawn` : ""}. It draws on its own when cash runs short. Click for the line on Capital → Debt.`} />
+                  title={`Undrawn revolver: ${usd(left)} of a ${usd(line)} line sized against net worth${drawn > 0 ? `; ${usd(drawn)} drawn at ${rate.toFixed(2)}%` : ""}. It draws on its own when cash runs short. Click for the line on Capital → Debt.`} />
               );
             })()}
             {game.fund && !game.fund.settled && (
@@ -448,14 +462,14 @@ export default function TopBar() {
                 normal screen. Vitals stay up. */}
             {standing && (
               <Stat
-                label="Rank"
+                label="Size rank"
                 value={`${ordinal(standing.rank)} / ${standing.of}`}
                 delta={dRank !== 0 ? <span className={"tstat-rank " + (dRank > 0 ? "up" : "down")}>{dRank > 0 ? `▲${dRank}` : `▼${-dRank}`}</span> : null}
                 drop={3}
                 w={72}
                 bad={dRank < 0}
                 title={standing.above
-                  ? `${ordinal(standing.rank)} of ${standing.of} firms by equity. Next up: ${standing.above.name} at ${usd(standing.above.eq)} — ${usd(standing.above.eq - standing.equity)} ahead. The biggest book is ${standing.leader.name} at ${usd(standing.leader.eq)}. Click for the league table.`
+                  ? `${ordinal(standing.rank)} of ${standing.of} firms by equity — how big you are. How investors rank your record is on the Capital page. Next up: ${standing.above.name} at ${usd(standing.above.eq)} — ${usd(standing.above.eq - standing.equity)} ahead. The biggest book is ${standing.leader.name} at ${usd(standing.leader.eq)}. Click for the league table.`
                   : `The biggest book in town, of ${standing.of} firms. Click for the league table.`}
                 onClick={() => { openViewOn("players", "street"); useStore.getState().setPage("players"); }}
               />
@@ -510,31 +524,45 @@ export default function TopBar() {
                 : "Portfolio occupancy — appears once you own an operated building."}
             />
             )}
+            {rentPsf !== null && (
+            <Stat
+              label="Avg $ psf"
+              value={`$${rentPsf.toFixed(2)}`}
+              drop={2}
+              w={64}
+              title={`Average in-place rent across your leased feet: $${rentPsf.toFixed(2)} per square foot a year. Commercial tenants at their contract rent, apartments at the rent their leases hold. Leased space only — the occupancy beside it carries the vacancy.`}
+            />
+            )}
             {/* ONE READOUT FOR THE STREET. Base rate, vacancy change, the phase
                 and the era used to be four separate readouts across the bar and
                 the rail. They are one question — what is money and space doing
                 — so they are one readout: the phase and the rate, with the
                 vacancy tell turning it red when the market is softening. The
-                full picture is a click away on City → Pulse. */}
+                full picture is a click away on City → Markets (the owner asked for Markets
+                to open, not Pulse). */}
             <span className="vital-pair">
               <Stat
                 label="Market"
-                value={`${pct(game.econ.indexRate)} · ${game.econ.phase}`}
+                // THE TEN-YEAR (owner, Oct 2026: one rate on the bar). The yield
+                // fixed loans, mezzanine and prepayment price off, and the one
+                // cap rates spread over. Floating loans and the line reset on the
+                // short index (SOFR) instead; it and the Fed are on hover.
+                value={`10Y ${pct(game.econ.indexRate)} · ${game.econ.phase}`}
                 bad={vacDpp !== null && vacDpp >= 2}
                 drop={1}
-                w={128}
-                onClick={() => setPage("pulse")}
+                w={150}
+                onClick={() => setPage("economy")}
                 delta={dRateBp !== null ? (
                   <DeltaChip
                     value={dRateBp}
                     fmt={(n) => `${Math.round(n)}bp`}
                     epsilon={4}
                     goodWhenUp={false}
-                    title="Base rate vs twelve months ago. Dearer money reprices every floating loan and every new quote, so up reads as the bad direction."
+                    title="10-year vs a year ago. Up means dearer fixed loans and wider cap rates."
                   />
                 ) : null}
                 title={[
-                  `City cycle: ${game.econ.phase}. Loan index ${pct(game.econ.indexRate)} — what fixed loans price off. Short index ${pct(game.econ.shortIndex ?? game.econ.indexRate)} — what floating loans price off and reprice to monthly (through the cap strike, if there is one). The gap is what the bond market expects policy to do over ten years plus the term premium, what certainty costs — and when cuts are expected the loan index sits under the short one.`,
+                  `10-year ${pct(game.econ.indexRate)} (fixed loans, cap rates) · SOFR ${pct(game.econ.shortIndex ?? game.econ.indexRate)} (floating loans) · Fed ${pct(game.econ.nat?.policy ?? game.econ.indexRate)} · ${game.econ.phase}.`,
                   vacDpp === null
                     ? "Office vacancy change appears after the first year of tape."
                     : vacDpp >= 2
@@ -556,6 +584,7 @@ export default function TopBar() {
       {game && (
         <div className="nav-cluster nav-cluster-time" role="group" aria-label="Time controls">
           <PlayButton />
+          <ClockProgress />
           <button className={"advance-btn advance-main" + (advancing ? " advance-pulse" : "")} onClick={() => advance()} disabled={!!game.gameOver || advancing} title="One month">
             Advance <span className="advance-unit">1 mo</span>
           </button>
@@ -632,46 +661,49 @@ export default function TopBar() {
           </div>
         </div>
         <div className="siderail-scroll">
-          {/* SIX DESKS. Each is a job, and the rooms that serve it are tabs
-              inside (see desks.ts). The badge is everything waiting across the
-              desk's tabs; the tab strip at the top of the desk says where. */}
-          <div className="rail-group" role="group" aria-label="Desks">
-            {DESKS.map((d) => {
-              const on = deskOf(page)?.id === d.id;
-              const n = deskCount(d, counts);
-              const warn = d.id === "capital" ? counts.debtWarn : null;
-              const debtBal = counts.debtBal ?? 0, debtWall = counts.debtWall ?? 0;
-              const title = [
-                `${d.label} — ${d.note} (${d.key})`,
-                visibleTabs(d, game, page).length > 1 ? `Tabs: ${visibleTabs(d, game, page).map((t) => t.label).join(", ")}.` : "",
-                d.id === "market" && (counts.market ?? 0) > 0 && counts.bcallSoon !== undefined
-                  ? `${counts.market} file${counts.market === 1 ? "" : "s"} waiting; the soonest off-market call lapses in ${counts.bcallSoon} mo.` : "",
-                d.id === "capital" && debtBal > 0
-                  ? `${(debtBal / 1e6).toFixed(1)}M outstanding${warn ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% matures inside 3y` : ""}.` : "",
-              ].filter(Boolean).join(" ");
-              return (
-                <button
-                  key={d.id}
-                  type="button"
-                  className={"rail-item" + (on ? " on" : "")}
-                  aria-current={on ? "page" : undefined}
-                  title={title}
-                  onClick={() => setPage(on && page !== "property" ? "none" : deskLanding(d, counts, game))}
-                >
-                  <span className="rail-ico" aria-hidden="true">{d.icon}</span>
-                  <span className="rail-label">{d.label}</span>
-                  {/* A NUMBER MEANS AN ANSWER IS OWED. City's count was this
-                      month's news — lit on nearly every screen, which teaches a
-                      player that badges are wallpaper. News is unread, not
-                      waiting: a dot here, the count on the News tab inside. */}
-                  {n > 0 && d.id === "city" ? <span className="rail-dot" aria-label="new on the tape" />
-                    : n > 0 ? <span className="rail-badge" aria-label={`${n} waiting`}>{n}</span>
-                    : warn ? <span className="rail-badge rail-badge-warn" aria-label={warn === "swept" ? "cash sweep on" : "maturity wall"}>{warn === "swept" ? "⚠" : "!"}</span>
-                    : <kbd className="rail-key" aria-hidden="true">{d.key}</kbd>}
-                </button>
-              );
-            })}
-          </div>
+          {/* EVERY ROOM, NAMED, UNDER THE JOB IT SERVES (desks.ts RAIL_GROUPS).
+              It was six bare icons over seventeen rooms; now each room is its
+              own labelled line and carries its own badge. */}
+          {RAIL_GROUPS.map((grp) => (
+            <div key={grp.label} className="rail-group" role="group" aria-label={grp.label}>
+              <div className="rail-group-label">{grp.label}</div>
+              {grp.pages.map((p) => {
+                const e = railEntry(p);
+                if (!e) return null;
+                if (e.tab.when && page !== p && !(game && e.tab.when(game))) return null;
+                const on = page === p || (p === "portfolio" && page === "property");
+                const n = counts[p] ?? 0;
+                const warn = p === "debt" ? counts.debtWarn : null;
+                const debtBal = counts.debtBal ?? 0, debtWall = counts.debtWall ?? 0;
+                const label = e.tab.label === "Holdings" ? "Portfolio" : e.tab.label;
+                const title = [
+                  `${label} — ${e.tab.note}`,
+                  p === "market" && n > 0 && counts.bcallSoon !== undefined
+                    ? `${n} file${n === 1 ? "" : "s"} waiting; the soonest off-market call lapses in ${counts.bcallSoon} mo.` : "",
+                  p === "debt" && debtBal > 0
+                    ? `${(debtBal / 1e6).toFixed(1)}M outstanding${warn ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% matures inside 3y` : ""}.` : "",
+                ].filter(Boolean).join(" ");
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    className={"rail-item" + (on ? " on" : "")}
+                    aria-current={on ? "page" : undefined}
+                    title={title}
+                    onClick={() => setPage(on && page !== "property" ? "none" : p)}
+                  >
+                    <span className="rail-ico" aria-hidden="true">{PAGE_ICON[p] ?? e.desk.icon}</span>
+                    <span className="rail-label">{label}</span>
+                    {/* A NUMBER MEANS AN ANSWER IS OWED; the tape's news is unread, not owed — a dot. */}
+                    {n > 0 && p === "news" ? <span className="rail-dot" aria-label="new on the tape" />
+                      : n > 0 ? <span className="rail-badge" aria-label={`${n} waiting`}>{n}</span>
+                      : warn ? <span className="rail-badge rail-badge-warn" aria-label={warn === "swept" ? "cash sweep on" : "maturity wall"}>{warn === "swept" ? "⚠" : "!"}</span>
+                      : null}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
         {/* THE TOOLS, ONE ROW. Saves, the primer, settings and the view modes
             are things you reach for, not places you work — icons with their
@@ -708,7 +740,7 @@ export default function TopBar() {
             title="Map only — hide firm pages and watch the skyline (M). Inbox and glance cards stay."
             onClick={() => setMapOnly(!mapOnly)}
           >
-            <span className="rail-ico" aria-hidden="true">◈</span><span className="rail-label">Map only</span><kbd className="rail-key" aria-hidden="true">M</kbd>
+            <span className="rail-ico" aria-hidden="true">◈</span><span className="rail-label">Map</span><kbd className="rail-key" aria-hidden="true">M</kbd>
           </button>
           <button
             type="button"
@@ -716,7 +748,7 @@ export default function TopBar() {
             title="Photo frame — hide all chrome for a clean skyline still (P)"
             onClick={() => useStore.getState().setPhotoFrame(true)}
           >
-            <span className="rail-ico" aria-hidden="true">◻</span><span className="rail-label">Photo frame</span><kbd className="rail-key" aria-hidden="true">P</kbd>
+            <span className="rail-ico" aria-hidden="true">◻</span><span className="rail-label">Photo</span><kbd className="rail-key" aria-hidden="true">P</kbd>
           </button>
           {/* No window.confirm: a two-click arm-then-fire needs nothing from the
               browser. It erases this campaign and goes back to the start
@@ -732,7 +764,7 @@ export default function TopBar() {
                 useStore.getState().newRun();
               }}
             >
-              <span className="rail-ico" aria-hidden="true">↺</span><span className="rail-label">{armNewRun ? "Erase this game?" : "New city"}</span>
+              <span className="rail-ico" aria-hidden="true">↺</span><span className="rail-label">{armNewRun ? "Erase?" : "New city"}</span>
             </button>
           </div>
           {fpsOn && (

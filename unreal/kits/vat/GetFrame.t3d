@@ -1,0 +1,323 @@
+Begin Object Class=/Script/Engine.MaterialFunction Name="GetFrame" ExportPath="/Script/Engine.MaterialFunction'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame'"
+   Begin Object Class=/Script/Engine.MaterialFunctionEditorOnlyData Name="GetFrameEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:GetFrameEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionAdd Name="MaterialExpressionAdd_0" ExportPath="/Script/Engine.MaterialExpressionAdd'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionAdd_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionClamp Name="MaterialExpressionClamp_0" ExportPath="/Script/Engine.MaterialExpressionClamp'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionClamp_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionClamp Name="MaterialExpressionClamp_1" ExportPath="/Script/Engine.MaterialExpressionClamp'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionClamp_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_0" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionComment_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionComment Name="MaterialExpressionComment_1" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionComment_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionConstant Name="MaterialExpressionConstant_1" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionConstant_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFmod Name="MaterialExpressionFmod_0" ExportPath="/Script/Engine.MaterialExpressionFmod'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFmod_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_3" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_3'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_4" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_4'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_5" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_5'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_6" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_6'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionInput Name="MaterialExpressionFunctionInput_8" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_8'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionFunctionOutput Name="MaterialExpressionFunctionOutput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionOutput_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionLinearInterpolate Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionLinearInterpolate_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMax Name="MaterialExpressionMax_1" ExportPath="/Script/Engine.MaterialExpressionMax'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionMax_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_0" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionMultiply_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionMultiply Name="MaterialExpressionMultiply_1" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionMultiply_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionReroute_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionReroute_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionReroute Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionReroute_2'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticBool Name="MaterialExpressionStaticBool_0" ExportPath="/Script/Engine.MaterialExpressionStaticBool'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionStaticBool_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionStaticSwitch Name="MaterialExpressionStaticSwitch_0" ExportPath="/Script/Engine.MaterialExpressionStaticSwitch'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionStaticSwitch_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSubtract Name="MaterialExpressionSubtract_0" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionSubtract_0'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionSubtract Name="MaterialExpressionSubtract_1" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionSubtract_1'"
+   End Object
+   Begin Object Class=/Script/Engine.MaterialExpressionTime Name="MaterialExpressionTime_0" ExportPath="/Script/Engine.MaterialExpressionTime'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionTime_0'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="GetFrameEditorOnlyData" ExportPath="/Script/Engine.MaterialFunctionEditorOnlyData'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:GetFrameEditorOnlyData'"
+      ExpressionCollection=(Expressions=("/Script/Engine.MaterialExpressionFunctionOutput'GetFrame:MaterialExpressionFunctionOutput_0'","/Script/Engine.MaterialExpressionTime'GetFrame:MaterialExpressionTime_0'","/Script/Engine.MaterialExpressionFmod'GetFrame:MaterialExpressionFmod_0'","/Script/Engine.MaterialExpressionStaticSwitch'GetFrame:MaterialExpressionStaticSwitch_0'","/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_2'","/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_3'","/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_5'","/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_0'","/Script/Engine.MaterialExpressionAdd'GetFrame:MaterialExpressionAdd_0'","/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_8'","/Script/Engine.MaterialExpressionSubtract'GetFrame:MaterialExpressionSubtract_0'","/Script/Engine.MaterialExpressionStaticBool'GetFrame:MaterialExpressionStaticBool_0'","/Script/Engine.MaterialExpressionConstant'GetFrame:MaterialExpressionConstant_1'","/Script/Engine.MaterialExpressionMax'GetFrame:MaterialExpressionMax_1'","/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_1'","/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_6'","/Script/Engine.MaterialExpressionMultiply'GetFrame:MaterialExpressionMultiply_0'","/Script/Engine.MaterialExpressionLinearInterpolate'GetFrame:MaterialExpressionLinearInterpolate_0'","/Script/Engine.MaterialExpressionReroute'GetFrame:MaterialExpressionReroute_0'","/Script/Engine.MaterialExpressionClamp'GetFrame:MaterialExpressionClamp_0'","/Script/Engine.MaterialExpressionSubtract'GetFrame:MaterialExpressionSubtract_1'","/Script/Engine.MaterialExpressionReroute'GetFrame:MaterialExpressionReroute_1'","/Script/Engine.MaterialExpressionReroute'GetFrame:MaterialExpressionReroute_2'","/Script/Engine.MaterialExpressionMultiply'GetFrame:MaterialExpressionMultiply_1'","/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_4'","/Script/Engine.MaterialExpressionClamp'GetFrame:MaterialExpressionClamp_1'"),EditorComments=("/Script/Engine.MaterialExpressionComment'GetFrame:MaterialExpressionComment_0'","/Script/Engine.MaterialExpressionComment'GetFrame:MaterialExpressionComment_1'"))
+   End Object
+   Begin Object Name="MaterialExpressionAdd_0" ExportPath="/Script/Engine.MaterialExpressionAdd'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionAdd_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionLinearInterpolate'GetFrame:MaterialExpressionLinearInterpolate_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_0'")
+      MaterialExpressionEditorX=-528
+      MaterialExpressionEditorY=192
+      MaterialExpressionGuid=9D6BA5AA47FA7C8CA5195195401D9379
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionClamp_0" ExportPath="/Script/Engine.MaterialExpressionClamp'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionClamp_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'GetFrame:MaterialExpressionReroute_0'")
+      Max=(Expression="/Script/Engine.MaterialExpressionSubtract'GetFrame:MaterialExpressionSubtract_1'")
+      MaterialExpressionEditorX=-1040
+      MaterialExpressionEditorY=32
+      MaterialExpressionGuid=D4D8E0004F53252A2B976690722A945B
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionClamp_1" ExportPath="/Script/Engine.MaterialExpressionClamp'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionClamp_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionSubtract'GetFrame:MaterialExpressionSubtract_0'")
+      ClampMode=CMODE_ClampMin
+      MaterialExpressionEditorX=-1958
+      MaterialExpressionEditorY=-239
+      MaterialExpressionGuid=26E1CCDA40BD97FD534D4BB10D281DA0
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_0" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionComment_0'"
+      SizeX=368
+      SizeY=160
+      Text="Shouldnt this be before fmod ?"
+      MaterialExpressionEditorX=-864
+      MaterialExpressionEditorY=384
+      MaterialExpressionGuid=71F40FA34719EEA20D6FCEA7F13793AB
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionComment_1" ExportPath="/Script/Engine.MaterialExpressionComment'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionComment_1'"
+      SizeX=976
+      SizeY=544
+      Text="TODO: This won\'t hold play position if playrate is changed"
+      MaterialExpressionEditorX=-2667
+      MaterialExpressionEditorY=-486
+      MaterialExpressionGuid=F51424BB47C4E329228DA990196BAA15
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionConstant_1" ExportPath="/Script/Engine.MaterialExpressionConstant'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionConstant_1'"
+      R=1.000000
+      MaterialExpressionEditorX=-1840
+      MaterialExpressionEditorY=528
+      MaterialExpressionGuid=7F5AB4404B914873801A7580EB25BC62
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionFmod_0" ExportPath="/Script/Engine.MaterialExpressionFmod'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFmod_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionReroute'GetFrame:MaterialExpressionReroute_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionMax'GetFrame:MaterialExpressionMax_1'")
+      MaterialExpressionEditorX=-1008
+      MaterialExpressionEditorY=192
+      MaterialExpressionGuid=57E2358F410C0EE8AD41D381104D7D62
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_0'"
+      InputName="FrameOffset"
+      Id=864770724595B5A62EB1C5810992C6EA
+      InputType=FunctionInput_Scalar
+      SortPriority=1
+      MaterialExpressionEditorX=-800
+      MaterialExpressionEditorY=448
+      MaterialExpressionGuid=1199A02C4F9E66B59C12B59CADC822DF
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_1" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_1'"
+      InputName="Playrate"
+      Id=1AB8769B4029482FA6FE8CA66F0A12B9
+      InputType=FunctionInput_Scalar
+      PreviewValue=(X=1.000000,Y=1.000000,Z=1.000000,W=1.000000)
+      SortPriority=5
+      MaterialExpressionEditorX=-2272
+      MaterialExpressionEditorY=-96
+      MaterialExpressionGuid=86B5013A4AC3A3A6E4ABBD86243C97DE
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_2" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_2'"
+      Preview=(Expression="/Script/Engine.MaterialExpressionStaticBool'GetFrame:MaterialExpressionStaticBool_0'")
+      InputName="Animate"
+      Id=8DB9237F47D9DFF113987B8A13C33F08
+      InputType=FunctionInput_StaticBool
+      SortPriority=3
+      MaterialExpressionEditorX=-1824
+      MaterialExpressionEditorY=400
+      MaterialExpressionGuid=EC32D24C44F93F5D77DBE286826D2737
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_3" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_3'"
+      InputName="Frame"
+      Id=CA9BF19E42CDD1C76DE18383E39B0648
+      InputType=FunctionInput_Scalar
+      MaterialExpressionEditorX=-1792
+      MaterialExpressionEditorY=224
+      MaterialExpressionGuid=1199A02C4F9E66B59C12B59CADC822DF
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_4" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_4'"
+      InputName="SampleRate"
+      Id=6472691043B6EB256B7CC796C3946E83
+      InputType=FunctionInput_Scalar
+      PreviewValue=(X=1.000000,Y=1.000000,Z=1.000000,W=1.000000)
+      SortPriority=5
+      MaterialExpressionEditorX=-2288
+      MaterialExpressionEditorY=-32
+      MaterialExpressionGuid=86B5013A4AC3A3A6E4ABBD86243C97DE
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_5" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_5'"
+      Preview=(Expression="/Script/Engine.MaterialExpressionConstant'GetFrame:MaterialExpressionConstant_1'")
+      InputName="NumFrames"
+      Id=388340D14A08CF17754D738C7CFAD4BD
+      InputType=FunctionInput_Scalar
+      SortPriority=2
+      MaterialExpressionEditorX=-1712
+      MaterialExpressionEditorY=528
+      MaterialExpressionGuid=AA11F14B45BF6E62F19A719BA9DF108D
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_6" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_6'"
+      InputName="Looping"
+      Id=D6E1E228489907C11E08EBA92138C960
+      InputType=FunctionInput_Scalar
+      PreviewValue=(X=1.000000,Y=1.000000,Z=1.000000,W=1.000000)
+      bUsePreviewValueAsDefault=True
+      SortPriority=5
+      MaterialExpressionEditorX=-1968
+      MaterialExpressionEditorY=720
+      MaterialExpressionGuid=86B5013A4AC3A3A6E4ABBD86243C97DE
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionInput_8" ExportPath="/Script/Engine.MaterialExpressionFunctionInput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionInput_8'"
+      InputName="TimeStartOffset"
+      Id=DFCF1FDB47FBDC4622AC76AC21285CE1
+      InputType=FunctionInput_Scalar
+      bUsePreviewValueAsDefault=True
+      SortPriority=5
+      MaterialExpressionEditorX=-2672
+      MaterialExpressionEditorY=-336
+      MaterialExpressionGuid=86B5013A4AC3A3A6E4ABBD86243C97DE
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+      bCollapsed=True
+   End Object
+   Begin Object Name="MaterialExpressionFunctionOutput_0" ExportPath="/Script/Engine.MaterialExpressionFunctionOutput'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionFunctionOutput_0'"
+      OutputName="Frame"
+      A=(Expression="/Script/Engine.MaterialExpressionAdd'GetFrame:MaterialExpressionAdd_0'")
+      bLastPreviewed=True
+      Id=14D48EDD45132E036F48219F06C82ACF
+      MaterialExpressionEditorX=-336
+      MaterialExpressionEditorY=160
+      MaterialExpressionGuid=6226D1E745877DC60D189AB480016954
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionLinearInterpolate_0" ExportPath="/Script/Engine.MaterialExpressionLinearInterpolate'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionLinearInterpolate_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionClamp'GetFrame:MaterialExpressionClamp_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionFmod'GetFrame:MaterialExpressionFmod_0'")
+      Alpha=(Expression="/Script/Engine.MaterialExpressionReroute'GetFrame:MaterialExpressionReroute_2'")
+      MaterialExpressionEditorX=-752
+      MaterialExpressionEditorY=160
+      MaterialExpressionGuid=71DBCE674813F79A1516F69C6081D7AF
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionMax_1" ExportPath="/Script/Engine.MaterialExpressionMax'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionMax_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_5'")
+      MaterialExpressionEditorX=-1456
+      MaterialExpressionEditorY=528
+      MaterialExpressionGuid=2527F3A5453B3026D8A817A699A9F299
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+      Desc="Make sure we have "
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_0" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionMultiply_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_4'")
+      MaterialExpressionEditorX=-1840
+      MaterialExpressionEditorY=-64
+      MaterialExpressionGuid=83538B984F296ACA51EE24B698C954E6
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionMultiply_1" ExportPath="/Script/Engine.MaterialExpressionMultiply'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionMultiply_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionClamp'GetFrame:MaterialExpressionClamp_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionMultiply'GetFrame:MaterialExpressionMultiply_0'")
+      MaterialExpressionEditorX=-1640
+      MaterialExpressionEditorY=-86
+      MaterialExpressionGuid=594EF4E9462B836F42FE1996EFE4649A
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_0" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionReroute_0'"
+      Input=(Expression="/Script/Engine.MaterialExpressionStaticSwitch'GetFrame:MaterialExpressionStaticSwitch_0'")
+      MaterialExpressionEditorX=-1209
+      MaterialExpressionEditorY=221
+      MaterialExpressionGuid=8AE5242242E281FC1F24FE97E643104B
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_1" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionReroute_1'"
+      Input=(Expression="/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_6'")
+      MaterialExpressionEditorX=-1648
+      MaterialExpressionEditorY=720
+      MaterialExpressionGuid=0711361848B86B5152E79E977166233C
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionReroute_2" ExportPath="/Script/Engine.MaterialExpressionReroute'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionReroute_2'"
+      Input=(Expression="/Script/Engine.MaterialExpressionReroute'GetFrame:MaterialExpressionReroute_1'")
+      MaterialExpressionEditorX=-1152
+      MaterialExpressionEditorY=720
+      MaterialExpressionGuid=E5F02A1044037339EA9AE7AD091680B3
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticBool_0" ExportPath="/Script/Engine.MaterialExpressionStaticBool'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionStaticBool_0'"
+      MaterialExpressionEditorX=-2064
+      MaterialExpressionEditorY=384
+      MaterialExpressionGuid=6C2F7A6D48F0CFE6DD323E985C370CA0
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionStaticSwitch_0" ExportPath="/Script/Engine.MaterialExpressionStaticSwitch'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionStaticSwitch_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionMultiply'GetFrame:MaterialExpressionMultiply_1'")
+      B=(Expression="/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_3'")
+      Value=(Expression="/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_2'")
+      MaterialExpressionEditorX=-1344
+      MaterialExpressionEditorY=192
+      MaterialExpressionGuid=EE5DC6094655232EB4E20BB0557E3A4F
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionSubtract_0" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionSubtract_0'"
+      A=(Expression="/Script/Engine.MaterialExpressionTime'GetFrame:MaterialExpressionTime_0'")
+      B=(Expression="/Script/Engine.MaterialExpressionFunctionInput'GetFrame:MaterialExpressionFunctionInput_8'")
+      MaterialExpressionEditorX=-2352
+      MaterialExpressionEditorY=-416
+      MaterialExpressionGuid=9B2704A64649F7255F876482B66B1FA9
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionSubtract_1" ExportPath="/Script/Engine.MaterialExpressionSubtract'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionSubtract_1'"
+      A=(Expression="/Script/Engine.MaterialExpressionMax'GetFrame:MaterialExpressionMax_1'")
+      MaterialExpressionEditorX=-1216
+      MaterialExpressionEditorY=496
+      MaterialExpressionGuid=1302B067408F0322918A2C9ED212847E
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="MaterialExpressionTime_0" ExportPath="/Script/Engine.MaterialExpressionTime'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:MaterialExpressionTime_0'"
+      MaterialExpressionEditorX=-2592
+      MaterialExpressionEditorY=-432
+      MaterialExpressionGuid=8938A1B840B77ADEADF2A28F3E46DCB4
+      Function="/Script/Engine.MaterialFunction'GetFrame'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Crowd/VAT/MaterialFunctions/GetFrame.GetFrame:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   EditorOnlyData="/Script/Engine.MaterialFunctionEditorOnlyData'GetFrameEditorOnlyData'"
+   StateId=E8FE31C2443F6C6632288395707A1834
+   CombinedInputTypes=271
+   CombinedOutputTypes=15
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+End Object

@@ -6,8 +6,8 @@ import type { BuiltClass } from "@/engine/types";
 import { holdingNOIYr, resolveRec, asIfOwned, recoveryOf } from "@/engine/value";
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
-import { bumpOf, loiSigningCost, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow, previewTray } from "@/engine/leasing";
-import { saleTaxQuote } from "@/engine/actions";
+import { bumpOf, loiSigningCash, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow, previewTray } from "@/engine/leasing";
+import { sellerCashAtClose } from "@/engine/actions";
 import { usd, sf, pctSigned } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
 import { liveBrokerCalls } from "@/ui/panels/broker";
@@ -99,7 +99,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
   const h = game.holdings[loi.bbl];
   const market = loiMarketPsf(game, parcels, loi);
   const fee = exclusiveFeeRate(h);
-  const cost = loiSigningCost(loi, fee);
+  const cost = loiSigningCash(loi, fee);
   // Whether signing draws the line — the same cash test the interrupt modal
   // passes to respondLoi. `fund: true` unconditionally was drawing the
   // revolver for players whose cash already covered the letter.
@@ -175,7 +175,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         {!final && Math.abs(theirNe - nowNe) > 0.05 ? ` · opened NE $${theirNe.toFixed(2)}` : ""}
       </div>
       <div className="loi-line mono dim">
-        signing costs {usd(cost)}{h?.broker ? " incl. the 6% exclusive" : ""} · answer by {monthLabel(loi.expiresM - 1)}
+        cash to sign {usd(cost)} net of the deposit · the broker{h?.broker ? "'s 6% exclusive" : "'s commission"} is paid when you have it · answer by {monthLabel(loi.expiresM - 1)}
       </div>
       {(() => {
         // The desk's one line on the letter — same helpers as the lines
@@ -240,10 +240,9 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
     .filter(({ b }) => !b.dropped);
   const suggested = offer ? Math.round(offer.price * 1.06) : 0;
   const value = h && parcels ? apMid(bbl, ask) : ask;
-  const closeNet = (px: number) => {
-    if (!h) return 0;
-    const q = saleTaxQuote(h, px);
-    return q.net - (h.loan?.balance ?? 0) - q.tax;
+  const closeNet = (px: number, ex = false) => {
+    if (!h || !parcels) return 0;
+    return sellerCashAtClose(game, parcels, h, px, ex);
   };
   const counterBounds = offer
     ? (() => {
@@ -261,8 +260,9 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
           <SaleAcceptConfirm
             address={parcels?.[bbl]?.address ?? bbl}
             price={px}
-            net={closeNet(px)}
+            net={closeNet(px, !!acceptConfirm.exchange)}
             exchange={acceptConfirm.exchange}
+            contract={acceptConfirm.bidIndex !== undefined}
             onCancel={() => setAcceptConfirm(null)}
             onConfirm={() => {
               if (acceptConfirm.bidIndex !== undefined) takeBid(bbl, acceptConfirm.bidIndex);

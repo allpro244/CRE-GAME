@@ -210,3 +210,36 @@ what the test computes):
 
 Already failing on `main` before this work, and untouched by it:
 `rival-husks.mjs`, `offmarket.mjs` and `floating.mjs`.
+
+## Seeing it: Capital → Banks
+
+Every lender's books are open on one page (`src/ui/panels/BankProfile.tsx`,
+page `"banks"`, a tab on the Capital desk; the palette and every lender name in
+Debt and Markets link to it). Per desk: balance sheet (named book split into
+yours / street mortgages / street lines / construction, anonymous book, capital
+against target and seizure), an income statement this year against last
+(`Lender.incYr` / `incPrevYr`, accumulated in `tickLenders` from the same
+interest, funding, borne loss, opex and tax lines that move capital — nothing
+on the page is computed separately from the engine), credit quality, every
+product it will write today with live coupon, sizing and covenants, the
+single-name limit and its biggest borrowers, your file and workout mood, its
+named loan book, and its capital history and news. `lenderConstitution(l)`
+exposes the kind constants the page quotes.
+
+## The facility: a covenant miss is a trap, not a foreclosure (2026-10-14)
+
+A crossed facility used to accelerate twelve months after a coverage test
+failed, on a pool paying every dollar on time — reported in play as a 1.25x
+pool against a 1.30x covenant at 58% LTV going to a receiver while the owner
+had an open line. Now it matches the single mortgage: a covenant breach on a
+current pool sweeps every building's surplus into principal until the test
+passes, and never accelerates by itself. Only unpaid debt service
+(`accelWhy: "arrears"`) or an unpaid called maturity (`"maturity"`) accelerate.
+Old saves with an acceleration and no recorded reason are withdrawn if the pool
+was current and unmatured.
+
+The owner's exits now all work: pay down any amount, cure to the covenant in
+one click, or repay in full, all drawing the line beyond cash (the automatic
+cure still pays only from cash). An accelerated pool can be redeemed whole, or
+taken out by any desk other than the one that called it, up to the receiver's
+sale.

@@ -2,7 +2,8 @@
 // mixed-use cap rate and no mixed-use tenant. A building that is part shops,
 // part offices and part apartments carries a `mix` and is described by it.
 // See engine/mix.ts.
-export type AssetClass = "office" | "retail" | "multifamily" | "industrial" | "land";
+/** "house": a detached single-family home (engine homes.ts) — owner-occupied or a single-family rental, never commercial space. */
+export type AssetClass = "office" | "retail" | "multifamily" | "industrial" | "land" | "house";
 
 export interface ParcelRecord {
   bbl: string;
@@ -17,7 +18,7 @@ export interface ParcelRecord {
   district: string;     // the neighbourhood — the unit of a submarket (a KEY: `thechange`)
   districtName?: string;  // what it is called on the map (`The Change`); absent on old saves
   class: AssetClass;              // the dominant use; the mix has the rest
-  mix?: Partial<Record<Exclude<AssetClass, "land">, number>>;  // shares of floor area by use
+  mix?: Partial<Record<Exclude<AssetClass, "land" | "house">, number>>;  // shares of floor area by use
   /**
    * HOW THE BUILDING IS CUT UP, in square feet per leasable space.
    *
@@ -29,7 +30,7 @@ export interface ParcelRecord {
    * consequences: small suites lease faster and cost far more to fit out and
    * to manage, big ones sit empty longer and never turn.
    */
-  suites?: Partial<Record<Exclude<AssetClass, "land">, number>>;
+  suites?: Partial<Record<Exclude<AssetClass, "land" | "house">, number>>;
   lotArea: number;      // sf
   bldgArea: number;     // sf
   /**
@@ -55,6 +56,32 @@ export interface ParcelRecord {
    */
   buildSpec?: number;
   demandScore: number;  // 0–100
+  /**
+   * A PRODUCT TYPE (engine/products.ts): a delivered pad, centre, flex
+   * building, distribution box or plant carries its type, which sets its shop
+   * depth and its cap-rate spread. Stamped by resolveRec from `built`.
+   */
+  product?: string;
+  /**
+   * AN ANCHOR'S DRAW: the demand score of the anchor's trade area, while the
+   * anchor is open. An anchored centre's inline shops trade at this address
+   * rather than the lot's own (value.ts retailDemandOf). Stamped by resolveRec.
+   */
+  retailDraw?: number;
+  /**
+   * ON A VACANT LOT BIG ENOUGH FOR A CENTRE: the demand of the trade area an
+   * anchor here would draw from, by trade-area radius in metres
+   * (value.ts tradeAreaDemand). Stamped by resolveRec; the desk and the land
+   * residual both read it.
+   */
+  tradeDraw?: Record<number, number>;
+  /**
+   * REGION ONLY, ON THE SAME LOTS: a grocer's yearly sales here, $ — the
+   * food-at-home spending of the households within a fifteen-minute drive it
+   * would win against the grocers already open (towngrowth.ts grocerSales).
+   * The pro forma sets the grocer's rent from it. Absent on islands.
+   */
+  grocerSales?: number;
   /** Hedonic multiplier from waterfront / corridor / corner (mean 1). Appraisal only. */
   locPremium?: number;
   shoreM?: number;
@@ -72,9 +99,95 @@ export interface ParcelRecord {
   landPsfHistory: number[];
   imputed: string[];
   centroid: [number, number];
+  /**
+   * NOT IN THE COMMERCIAL MARKET (the region map, Phase 1). Absent on every
+   * parcel the engine holds — and that is the rule, not a convention: a
+   * parcel with a tenure lives in the city's `reserved` table, never in the
+   * parcel table the engine is handed, so no listing, rival bid, teardown,
+   * street roll, city growth or land valuation can reach it. See
+   * citygen/region/index.mjs.
+   */
+  tenure?: Tenure;
+  /**
+   * A FARM OR WOODLOT TRACT (the region map): farmed land with a farm-use value
+   * of its own (value.ts farmUsePsf), "crop" or "wood". Kept through a
+   * rezoning; a farm stays a farm until it is platted.
+   */
+  ag?: "crop" | "wood";
+  /** A farm tract's ground a plat can use (sf): dry, off the floodplain, the freeway and anything built. lotArea counts the floodplain. */
+  buildableSf?: number;
+  /**
+   * The survey tract under a farm (region map, canonical metres) and what it
+   * takes to cut it into lots (citygen/region platTractLots). Absent where the
+   * tract cannot be platted whole (the unbuilt remainder of a subdivision).
+   */
+  tract?: { seed: number; r: [number, number, number, number]; id: number; bearing: number | null; edgeM: number };
+  /** A finished lot on a plat (landdev.ts lotRecords): homebuilders bid for it (homeprice.ts). */
+  homeLot?: boolean;
+  /**
+   * The region's shopping centres and industrial sites (citygen/region commerce.mjs): which rung of the
+   * hierarchy this parcel belongs to — "neighbourhood", "community", "power", "mall", "strip", "gas",
+   * "rural", "flex", "industrial park", "truck stop". The growth simulation (towngrowth.ts) reads which
+   * households a grocery already serves.
+   */
+  centre?: string;
+  /** The premium on the price of a house on this lot from its plat's amenities (engine/platdesign.ts lotPremium). */
+  homePrem?: number;
+  /** Common land of a plat's homeowners' association (a park, the pond, open space): not for sale, worth nothing to anyone else. */
+  hoa?: string;
+  /** The lot split (engine/lotsplit.ts SplitRecord id) that last cut this record. */
+  split?: number;
+  /** A flag lot: no street frontage of its own, reached by a recorded access easement over a neighbour. */
+  flag?: boolean;
 }
 
 export type ParcelTable = Record<string, ParcelRecord>;
+
+/**
+ * Who holds land the commercial market does not reach in Phase 1 of the region:
+ * "homes" — households (a neighbourhood parcel, or a rural home on its acre);
+ * "farm" — a farm or woodlot tract, agricultural and unbuildable until Phase 2;
+ * "civic" — a church, a school.
+ */
+export type Tenure = "homes" | "farm" | "civic";
+
+/** A reserved parcel: drawn, labelled and clickable, with its numbers; never traded in Phase 1. */
+export interface ReservedParcel {
+  bbl: string;
+  address: string;
+  tenure: Tenure;
+  class: AssetClass;
+  zoneDist: string;
+  district: string;
+  districtName?: string;
+  lotArea: number;      // sf
+  bldgArea: number;     // sf
+  floors: number;
+  yearBuilt: number;
+  centroid: [number, number];
+  kind: "neighbourhood" | "rural" | "civic" | "farm" | "woodlot";
+  name?: string;
+  /** a neighbourhood or a rural home: how many houses stand on it */
+  homes?: number;
+  era?: "prewar" | "postwar" | "recent";
+  eraYears?: [number, number];
+  avgHouseSf?: number;
+  avgLotSf?: number;
+  /** how many lots the subdivision's plat holds, built or not */
+  platLots?: number;
+  leapfrog?: boolean;
+  /**
+   * THE RECIPE that redraws a neighbourhood lot for lot (citygen/region/plats.mjs
+   * platFor): a later phase unpacks the parcel into individual deeds from
+   * exactly these lots, `built` (a base64url bitset over the plat's lots) naming
+   * the ones standing.
+   */
+  recipe?: { gen: string; seed: number; tract: [number, number, number, number]; era: string; id: number; bearing: number | null; waterNear?: [number, number]; scale?: number; built: string };
+  acres?: number;
+  floodShare?: number;
+  wood?: boolean;
+  crop?: string | null;
+}
 export type Adjacency = Record<string, string[]>;
 
 export interface DataManifest {
@@ -93,6 +206,7 @@ export const CLASS_LABEL: Record<AssetClass, string> = {
   multifamily: "Multifamily",
   industrial: "Industrial",
   land: "Vacant Land",
+  house: "House",
 };
 
 export const CLASS_COLOR: Record<AssetClass, string> = {
@@ -101,4 +215,5 @@ export const CLASS_COLOR: Record<AssetClass, string> = {
   multifamily: "#8aab8a",
   industrial: "#8f8f7a",
   land: "#b5a67f",
+  house: "#c9b38a",
 };

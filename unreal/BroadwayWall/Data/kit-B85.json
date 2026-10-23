@@ -1,0 +1,144 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B85",
+ "grammar": "generated",
+ "label": "Brick warehouse with docks",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 620.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_Ground_0.SM_B85_Ground_0",
+     "width": 420.0,
+     "depth": 50.0,
+     "y0": -420.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_Ground_1.SM_B85_Ground_1",
+     "width": 336.0,
+     "depth": 50.0,
+     "y0": -336.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_Ground_2.SM_B85_Ground_2",
+     "width": 504.0,
+     "depth": 50.0,
+     "y0": -504.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_Entrance.SM_B85_Entrance",
+     "width": 420.0,
+     "depth": 50.0,
+     "y0": -420.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_GroundCorner.SM_B85_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 420.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_Typical_0.SM_B85_Typical_0",
+     "width": 420.0,
+     "depth": 50.0,
+     "y0": -420.0,
+     "y1": 0,
+     "mix": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_Typical_1.SM_B85_Typical_1",
+     "width": 420.0,
+     "depth": 50.0,
+     "y0": -420.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_Typical_0_v1.SM_B85_Typical_0_v1",
+     "width": 420.0,
+     "depth": 50.0,
+     "y0": -420.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_Typical_0_v2.SM_B85_Typical_0_v2",
+     "width": 420.0,
+     "depth": 50.0,
+     "y0": -420.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_Typical_0_v3.SM_B85_Typical_0_v3",
+     "width": 420.0,
+     "depth": 50.0,
+     "y0": -420.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_TypicalCorner.SM_B85_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 140,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_Top.SM_B85_Top",
+     "width": 420.0,
+     "depth": 50.0,
+     "y0": -420.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B85/v1021050443/SM_B85_TopCorner.SM_B85_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

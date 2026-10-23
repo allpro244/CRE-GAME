@@ -19,7 +19,7 @@
 import type { GameState } from "./types";
 import { logBooks, BUILT_CLASSES } from "./types";
 import { PRODUCTS, underwritingStandards, windowOpen } from "./debt";
-import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE, labourSlack } from "./market";
+import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE, labourSlack, shortIndexOf } from "./market";
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export type LenderKind = "bank" | "life" | "conduit" | "fund";
@@ -47,6 +47,22 @@ export interface Deposits {
   total: number;
   /** Share of it above the insurance limit — see insuredLimit. */
   uninsuredShare: number;
+  /** The rate this bank posts for deposits, % a year — what it competes on. See tickDeposits. */
+  rate?: number;
+  /** Borrowed money funding what deposits do not: FHLB advances, brokered CDs, repo. */
+  wholesale?: number;
+  /** Cash and securities held against withdrawals. */
+  liquid?: number;
+  /** Net deposit flow over the last twelve months, as a share of deposits a year ago. */
+  flowYr?: number;
+  /** Deposits twelve months ago, for flowYr. */
+  hist?: number[];
+}
+
+export interface LenderIncome {
+  interest: number; funding: number; losses: number; opex: number; tax: number;
+  /** Named loans resolved at a loss (a deed in lieu, the auction, a street failure) — straight to capital. */
+  writeOffs?: number;
 }
 
 export interface Lender {
@@ -83,6 +99,8 @@ export interface Lender {
   netIncomeYr: number;
   /** How much they want to lend right now, 0-1. Everything above decides it. */
   appetite: number;
+  /** Points this desk adds to (or, negative, takes off) its sheet to manage its share of the town's book — see lenderChase. */
+  chase?: number;
   /** Out of the market entirely, and the month it happened. */
   /**
    * The panic surcharge on this desk's funding today, in points, while another
@@ -104,6 +122,14 @@ export interface Lender {
   fundCost?: number;
   /** Capital returned to the owners this year — a bank manages to a ratio, not a pile. */
   divYr?: number;
+  /**
+   * THE INCOME STATEMENT, line by line, this calendar year and the last full
+   * one — what the Banks page prints. Net income alone said whether a desk
+   * was earning; these say why: interest on the performing book, what the
+   * money cost, the losses it booked, the cost of running it, and the tax.
+   */
+  incYr?: LenderIncome;
+  incPrevYr?: LenderIncome & { netIncome: number; dividends: number; chargeOffs: number };
   /** Capital ratio, sampled quarterly. The statement's history. */
   capHist?: number[];
   /** What this desk holds against this town, by asset class. Rebuilt monthly by ledger.ts. */
@@ -127,25 +153,71 @@ export interface Lender {
  * mechanism and the reason the regional dies in a hiking cycle while the
  * hometown bank merely has a bad year.
  */
-const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: number; wholesale: number; blurb: string }> = {
+/**
+ * `adc` is the share of the desk's book in acquisition, development and
+ * construction loans — land and buildings that do not yet earn. It is the
+ * book that went bad in 2008-10: noncurrent construction loans at US banks
+ * reached ~16% (FDIC QBP, 2009-10) as land values fell 20-30% a year, against
+ * ~4% on income property, and the banks that failed were the ones that held
+ * it at three to five times capital. A typical bank carried 5-10% of its
+ * book there; the 2008-10 failures carried 30-50%.
+ */
+const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: number; wholesale: number; adc: number; uninsured?: number; blurb: string }> = {
   "First Harbor Bank": {
-    kind: "bank", capitalRatio: 0.11, brittle: 0.5, wholesale: 0.2,
+    kind: "bank", capitalRatio: 0.11, brittle: 0.5, wholesale: 0.2, adc: 0.08, uninsured: 0.30,
     blurb: "Deposits fund the book, so the losses have to be very bad before the lights go out. Small, local, and they remember who paid them in the bad years.",
   },
   "Alden Savings & Trust": {
-    kind: "bank", capitalRatio: 0.095, brittle: 0.8, wholesale: 0.65,
+    kind: "bank", capitalRatio: 0.095, brittle: 0.8, wholesale: 0.65, adc: 0.15, uninsured: 0.40,
     blurb: "A regional with a regional's problem: big enough to have made every mistake in the cycle, small enough that three of them matter.",
   },
   "Pelican Life Insurance": {
-    kind: "life", capitalRatio: 0.18, brittle: 0.25, wholesale: 0.1,
+    kind: "life", capitalRatio: 0.18, brittle: 0.25, wholesale: 0.1, adc: 0,
     blurb: "Insurance float against long paper. The most patient money in the city and the most conservative — they are never the reason a crunch happens and never the ones who end it.",
   },
   "Meridian Street Capital": {
-    kind: "conduit", capitalRatio: 0.04, brittle: 2.4, wholesale: 1.0,
+    kind: "conduit", capitalRatio: 0.04, brittle: 2.4, wholesale: 1.0, adc: 0,
     blurb: "They do not hold the loan; they sell it. Which is fine until nobody is buying, and then this desk is not tightening — it is closed.",
   },
+  // THE BANK THAT GREW ON CRANES (2026-10-13). A small community bank whose
+  // book is mostly construction and land — the profile of the ~500 US banks
+  // that failed in 2008-12 (FDIC OIG material loss reviews: ADC loans at
+  // several times capital, growth funded with brokered deposits, capital
+  // managed to the regulatory line). It prices construction a shade under
+  // the regional to win the business, lends further on dirt than the
+  // hometown bank will, and holds a large share of each job. In a boom it is
+  // the cheapest crane in town; in a land-price collapse it is the first
+  // name on the receiver's list.
+  "Tidewater Community Bank": {
+    kind: "bank", capitalRatio: 0.09, brittle: 1.4, wholesale: 0.5, adc: 0.45, uninsured: 0.25,
+    blurb: "A small bank that grew fast on construction and land loans, funded by brokered deposits. The cheapest construction money in a boom — and the first desk the regulator visits when land stops selling.",
+  },
+  // A THICKER MARKET (2026-10-14). Six desks were the whole lending market of
+  // a city — one life company, so one allocation committee's mood was the
+  // market's. A metro is lent into by dozens; three more of the kinds that
+  // actually carry it:
+  //   a money-centre bank — national, wholesale-funded, writes the big
+  //   tickets the local banks cannot hold, and is the first to pull back in
+  //   a panic because its funding is the market's;
+  "Bowline National Bank": {
+    kind: "bank", capitalRatio: 0.12, brittle: 0.9, wholesale: 0.8, adc: 0.10, uninsured: 0.55,
+    blurb: "A money-centre bank lending into the city from out of town: the biggest checks a bank will write here, funded in the money markets — so when those markets seize, so does Bowline.",
+  },
+  //   a second life company, so the insurers are a market and not a mood;
+  "Ashford Life & Annuity": {
+    kind: "life", capitalRatio: 0.17, brittle: 0.3, wholesale: 0.1, adc: 0,
+    blurb: "A second insurer's general account: long fixed money for well-kept buildings, a little more leverage than Pelican and a little less patience.",
+  },
+  //   and the agency desk — the government-sponsored apartment lender, which
+  //   kept writing when everybody else stopped (it wrote most multifamily
+  //   paper in 2009-10). It cannot fail in this game for the reason it did
+  //   not in that one: the guarantee behind its bonds is the Treasury's.
+  "Keystone Agency Finance": {
+    kind: "life", capitalRatio: 0.20, brittle: 0.05, wholesale: 0, adc: 0,
+    blurb: "The agency apartment desk: fixed and floating money for flats only, non-recourse, and still writing in a crisis — that is what it is for.",
+  },
   "Cordage Debt Partners": {
-    kind: "fund", capitalRatio: 0.22, brittle: 1.1, wholesale: 0.3,
+    kind: "fund", capitalRatio: 0.22, brittle: 1.1, wholesale: 0.3, adc: 0,   // bridge and mezz; no sourced ADC share
     blurb: "A fund with committed capital and no depositors to answer to. They lend into a crisis at crisis prices, which is the entire business model.",
   },
 };
@@ -192,6 +264,23 @@ import { cityLoanBook, deskTotals } from "./loanbook";
 import type { DeskTotals } from "./loanbook";
 export { CONSTRUCTION_LENDER };
 
+/**
+ * WHAT KIND OF INSTITUTION THIS IS — the constants behind its behaviour, for
+ * the Banks page: how it is funded, how much hot money it carries, what it
+ * runs at, what it costs to run, what it is taxed, and what it normally earns.
+ * Nothing here is new; it is the table every tick already reads, shown.
+ */
+export function lenderConstitution(l: Lender): {
+  target: number; wholesale: number; brittle: number; adc: number; opexPct: number; taxRate: number; bookSpread: number; normalNim: number;
+} {
+  const k = KIND[l.name] ?? { capitalRatio: 0.1, brittle: 1, wholesale: 0.5, adc: 0 };
+  return {
+    target: k.capitalRatio, wholesale: k.wholesale, brittle: k.brittle, adc: k.adc ?? 0,
+    opexPct: OPEX_PCT[l.kind] ?? 0, taxRate: TAX_RATE[l.kind] ?? 0,
+    bookSpread: BOOK_SPREAD[l.kind] ?? 1.9, normalNim: NORMAL_NIM[l.kind] ?? 4.1,
+  };
+}
+
 export function lenderBlurb(name: string): string {
   return KIND[name]?.blurb ?? "";
 }
@@ -210,9 +299,45 @@ export function lenderNames(): string[] {
  * company, a regional, a small local, a fund — is a fact about the business.
  * What is no longer asserted is how big the market is; see initLenders.
  */
-const BOOK_SHARE: Record<LenderKind | "firstharbor", number> = {
-  conduit: 900 / 2410, life: 640 / 2410, fund: 310 / 2410, bank: 420 / 2410, firstharbor: 140 / 2410,
+const BOOK_SHARE_BY_NAME: Record<string, number> = {
+  // The conduit's agency apartment paper moves to the agency desk, and the
+  // insurers' share is split between two; the money-centre bank is ADDED
+  // capacity, like Tidewater — national money that was not in this town's
+  // books before.
+  "Meridian Street Capital": 650 / 2410, "Keystone Agency Finance": 250 / 2410,
+  "Pelican Life Insurance": 400 / 2410, "Ashford Life & Annuity": 240 / 2410,
+  "Bowline National Bank": 250 / 2410,
 };
+const BOOK_SHARE: Record<LenderKind | "firstharbor" | "tidewater", number> = {
+  // Tidewater's book is ADDED (+70, ~3% more property debt), not carved out of
+  // the regional: shrinking the regional pushed the street's loans past its
+  // single-name limits onto the hometown bank, which then failed of
+  // concentration in two of four measured centuries — a side effect, not the
+  // mechanism this desk exists to add.
+  conduit: 900 / 2410, life: 640 / 2410, fund: 310 / 2410, bank: 420 / 2410, firstharbor: 140 / 2410, tidewater: 70 / 2410,
+};
+
+/** A desk's ordinary share of the town's property debt (the weights above). */
+export function bookShareOf(name: string, kind: LenderKind): number {
+  return BOOK_SHARE_BY_NAME[name] ?? (name === "First Harbor Bank" ? BOOK_SHARE.firstharbor
+    : name === "Tidewater Community Bank" ? BOOK_SHARE.tidewater : BOOK_SHARE[kind]);
+}
+
+/**
+ * DESKS COMPETE FOR THE BUSINESS (2026-10-14). Every desk quoted its own sheet
+ * and the cheapest won the deal, but a desk that kept losing did nothing about
+ * it and one that won everything did not notice it was full. A lending desk
+ * has an origination budget: behind it, it sharpens its pencil to win the
+ * next file; over its normal weight in a market, it widens to slow down. The
+ * spread a desk gives away or adds, in points, glides with its share of the
+ * town's book against its ordinary share — up to a quarter point sharper,
+ * three tenths wider. Shape parameters, stated as such; the direction is the
+ * one every origination desk runs on, and it is what compressed spreads in
+ * 2005-07 when every desk was behind on volume at once.
+ */
+export function lenderChase(s: GameState, name: string): number {
+  return lenderByName(s, name)?.chase ?? 0;
+}
 
 /**
  * WHAT THE PROPERTY IN THIS TOWN IS WORTH, roughly, from its own rents.
@@ -263,8 +388,8 @@ export function initLenders(stock?: Record<string, number>, priceLevel = 1): Len
   const SYSTEM_LTV = 0.55;
   const total = stock ? cityPropertyValue(stock, priceLevel) * SYSTEM_LTV : 2_410_000_000 * priceLevel;
   return lenderNames().map((name, i) => {
-    const k = KIND[name] ?? { kind: "bank" as LenderKind, capitalRatio: 0.10, brittle: 1 };
-    const share = name === "First Harbor Bank" ? BOOK_SHARE.firstharbor : BOOK_SHARE[k.kind];
+    const k = KIND[name] ?? { kind: "bank" as LenderKind, capitalRatio: 0.10, brittle: 1, adc: 0.08 };
+    const share = bookShareOf(name, k.kind);
     const book = Math.max(20_000_000 * priceLevel, Math.round(total * share));
     return {
       id: "L" + i, name, kind: k.kind,
@@ -359,7 +484,9 @@ export function insuredLimit(s: GameState): number {
  */
 function maybeRaiseInsurance(s: GameState, failing: Lender) {
   if ((s.depositCover ?? 1) > 1 || failing.kind !== "bank") return;
-  const systemic = s.econ.phase === "recession" || s.econ.phase === "depression"
+  // A national recession, not the town's descriptive label (2026-10-13): the
+  // phase is dated from local payrolls for the reader and drives nothing.
+  const systemic = (s.econ.nat?.recM ?? 0) > 0
     || (s.lenders ?? []).some((x) => x !== failing && x.failedM !== undefined);
   if (!systemic) return;
   s.depositCover = 2.5;
@@ -386,7 +513,13 @@ function maybeRaiseInsurance(s: GameState, failing: Lender) {
 
 /** Commercial operating balances price ~100-200bp under fed funds (earnings-credit and MMDA rates); 150bp, floored at zero. */
 export const DEPOSIT_SPREAD_PCT = 1.5;
-export function depositApy(econ: { nat?: { policy?: number } } | undefined): number {
+export const OPERATING_DISCOUNT_PCT = 0.5;
+export function depositApy(econ: { nat?: { policy?: number } } | undefined, bank?: Lender): number {
+  // AN OPERATING ACCOUNT EARNS WHAT ITS BANK POSTS, less what a business
+  // account gets under the retail rate (earnings credit, analysis fees): the
+  // posted rate is ~0.6 of policy, so at a 4% policy rate this is ~1.75%,
+  // and more at a bank paying up for money.
+  if (bank?.dep?.rate !== undefined) return Math.max(0, (bank.dep.rate - OPERATING_DISCOUNT_PCT) / 100);
   const pol = econ?.nat?.policy;
   if (!Number.isFinite(pol)) return 0.005;
   return Math.max(0, ((pol as number) - DEPOSIT_SPREAD_PCT) / 100);
@@ -607,7 +740,7 @@ export function lenderHealth(l: Lender, econ?: { creditIdx?: number; phase?: str
   }
   const cr = capitalRatio(l);
   const target = KIND[l.name]?.capitalRatio ?? 0.1;
-  if (l.kind === "conduit" && econ && ((econ.creditIdx ?? 1) < 0.78 || econ.phase === "recession")) return { word: "the bond window is shut — not writing", bad: true };
+  if (l.kind === "conduit" && econ && ((econ as { nat?: { creditNat?: number } }).nat?.creditNat ?? econ.creditIdx ?? 1) < 0.6) return { word: "the bond window is shut — not writing", bad: true };
   if (cr < target * 0.45) return { word: "undercapitalised — not lending to anybody", bad: true };
   if (cr < target * 0.7) return { word: "impaired — rationing hard", bad: true };
   if (l.delinquent > 0.055) return { word: "working out problem loans", bad: true };
@@ -624,6 +757,31 @@ export function lenderHealth(l: Lender, econ?: { creditIdx?: number; phase?: str
  * at all. It is not a hidden index — you can read exactly this on Research a
  * quarter before it bites.
  */
+/**
+ * STAYING POWER, IN ONE WORD — will this desk still be there in a crunch, and
+ * still be funding your job when it is half built? Read off the same numbers
+ * as lenderHealth (capital against the desk's own target, the share of its
+ * book not paying, whether it is quoting at all), collapsed to four words a
+ * borrower can choose by. The point is the trade it exposes: the cheapest
+ * construction money in a boom often comes from the desk with the least
+ * behind it.
+ */
+export type StayingPower = "solid" | "stretched" | "at risk" | "closed";
+export function stayingPower(s: GameState, l: Lender): { word: StayingPower; why: string } {
+  if (l.failedM !== undefined) return { word: "closed", why: "In receivership." };
+  if (l.appetite < 0.12) return { word: "closed", why: "Not quoting — its capital will not carry new loans." };
+  if (l.kind === "conduit" && (s.econ.nat?.creditNat ?? s.econ.creditIdx ?? 1) < 0.6) return { word: "closed", why: "The bond market it sells into is shut." };
+  const mult = capitalRatio(l) / Math.max(0.01, KIND[l.name]?.capitalRatio ?? 0.1);
+  const adc = KIND[l.name]?.adc ?? 0;
+  const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+  const base = `Capital at ${mult.toFixed(2)}x its own target; ${pct(l.delinquent)} of its book not paying.`;
+  if (mult < 0.7 || l.delinquent > 0.10) return { word: "at risk", why: base + " Examiners close a bank near 0.22x." };
+  if (mult < 0.95 || l.delinquent > 0.04 || adc >= 0.3) {
+    return { word: "stretched", why: base + (adc >= 0.3 ? ` ${Math.round(adc * 100)}% of its book is construction and land — the first loans to go bad when land prices fall.` : "") };
+  }
+  return { word: "solid", why: base };
+}
+
 export function lenderAppetite(s: GameState, name: string): number {
   const l = lenderByName(s, name);
   if (!l) return 1;
@@ -641,6 +799,145 @@ export function lenderAppetite(s: GameState, name: string): number {
  * what anybody in this city can borrow, which is what makes a crunch a real
  * event with a cause instead of a slider.
  */
+
+// ---- THE DEPOSIT MARKET (2026-10-14) ---------------------------------------
+//
+// A bank's funding was a formula: deposits at the index less 2.2 points, the
+// same for every bank in town, and no depositor ever moved. So nobody competed
+// for money, a bank short of funding paid what a flush one did, and a run was
+// a surcharge rather than money leaving. The deposits are now a market.
+//
+// THE TOWN'S DEPOSITS. Loans create deposits — the money a bank lends lands in
+// somebody's account — so the system's deposit base follows the banks' own
+// lending (a core-funded share of each book, at a ~85% loan-to-deposit ratio,
+// the FDIC aggregate in 2005-07). It DRAINS when the banks' posted rates lag
+// the money-market rate by more than usual: the "deposits channel"
+// (Drechsler, Savov & Schnabl, QJE 2017 — core deposits shrink a few per cent
+// for each point the deposit spread widens; 1980-81, 1994, 2022-23 when money
+// funds took in a trillion dollars).
+//
+// WHO HOLDS THEM. Each bank posts a rate. Depositors drift toward the better
+// rate, slowly — deposit relationships are sticky, which is the franchise
+// value of a bank (a share moves ~3% of the way to where rates point each
+// month) — and AWAY from a bank that looks unsafe, fast, in proportion to how
+// much of its money is over the insurance limit: SVB's uninsured deposits
+// left at a quarter of the bank in a day; a community bank whose money is
+// three-quarters insured barely noticed 2008. What leaves a weak bank lands
+// at the strong ones (the flight to quality of March 2023).
+//
+// WHAT A BANK POSTS. Its rate sits under the policy rate by a spread that
+// widens as rates rise (a deposit beta of 0.6: DSS 2017), plus what it
+// needs: a bank leaning on borrowed money beyond its usual mix pays up for
+// deposits; a bank sitting on idle cash cuts. Rates go up slowly and down
+// fast (Neumark & Sharpe, QJE 1992). A bank under its capital target may not
+// pay more than 75bp over the market — the brokered-deposit rate cap on
+// banks that are not well capitalised (FDIA §29; 12 CFR 337.6).
+//
+// WHAT FUNDS THE GAP. Whatever the book needs that deposits do not supply is
+// borrowed — FHLB advances, brokered CDs, repo — at the short rate plus a
+// spread, and it is the borrowed money that a panic reprices. Cash and
+// securities, ~12% of deposits, earn the bill rate. A bank's cost of funds is
+// therefore what its own deposits, its own borrowing and its own liquidity
+// cost it — and differs bank to bank.
+const LDR = 0.85;              // loan-to-deposit, core-funded share
+const LIQ_TARGET = 0.12;       // cash and securities, share of deposits
+const WHOLESALE_SPREAD = 0.2;  // FHLB/brokered over the short rate
+const RATE_PULL = 0.5;         // share preference per point of rate gap (log)
+const STICKY = 0.03;           // monthly share adjustment toward where rates point
+// A deposit beta of 0.6: banks pass on about six tenths of a policy move to
+// depositors (DSS 2017 measure ~0.5-0.6 across cycles; the average cost of
+// interest-bearing deposits was ~3.3% with fed funds at 5.25% in 2007, and
+// ~0.3% at the zero bound in 2013).
+function postedBase(policy: number): number {
+  return Math.max(0.05, 0.6 * policy - 0.15);
+}
+function fundable(l: Lender): number { return Math.max(0, l.book - Math.max(0, l.capital)); }
+/** Deposits a bank's book would carry at its usual funding mix. */
+function coreNeed(l: Lender): number {
+  const k = KIND[l.name] ?? { wholesale: 0.5 };
+  return fundable(l) * (1 - k.wholesale) / LDR;
+}
+/** The deposit-weighted rate the town's banks are posting — what a depositor shops against. */
+export function marketDepositRate(s: GameState): number | undefined {
+  const b = (s.lenders ?? []).filter((l) => l.kind === "bank" && l.failedM === undefined && l.dep?.rate !== undefined);
+  const T = b.reduce((a, l) => a + (l.dep?.total ?? 0), 0);
+  return T > 0 ? b.reduce((a, l) => a + (l.dep!.total * l.dep!.rate!), 0) / T : undefined;
+}
+function tickDeposits(s: GameState, panic: number) {
+  const e = s.econ;
+  const policy = e.nat?.policy ?? Math.max(0.05, shortIndexOf(e) - 0.15);
+  const banks = (s.lenders ?? []).filter((l) => l.kind === "bank" && l.failedM === undefined);
+  if (!banks.length) return;
+  for (const l of banks) {
+    if (l.dep?.rate !== undefined) continue;
+    const k = KIND[l.name] ?? { uninsured: 0.35 };
+    const D = coreNeed(l);
+    l.dep = { total: Math.round(D), uninsuredShare: k.uninsured ?? 0.35, rate: +postedBase(policy).toFixed(3) };
+  }
+  const T = banks.reduce((a, l) => a + l.dep!.total, 0);
+  const rbar = T > 0 ? banks.reduce((a, l) => a + l.dep!.total * l.dep!.rate!, 0) / T : postedBase(policy);
+  // the pool: follows lending, drains when bank rates lag the money funds by more than usual
+  const usualGap = policy - postedBase(policy);
+  const drain = Math.exp(-0.04 * Math.max(0, (policy - rbar) - usualGap));
+  const need = banks.reduce((a, l) => a + coreNeed(l), 0);
+  const Tnext = T + (need * drain - T) / 12;
+  // the shares
+  const safety = new Map<Lender, number>();
+  let wsum = 0, nsum = 0;
+  for (const l of banks) nsum += coreNeed(l);
+  const want = new Map<Lender, number>();
+  for (const l of banks) {
+    const k = KIND[l.name] ?? { capitalRatio: 0.1 };
+    const weak = Math.max(0, Math.min(1, 1 - capitalRatio(l) / Math.max(0.01, k.capitalRatio)));
+    const fear = 1.5 * weak + (panic > 0 ? panic * (0.35 + weak) * 0.5 : 0);
+    const sf = Math.max(0.15, 1 - l.dep!.uninsuredShare * fear);
+    safety.set(l, sf);
+    const w = (nsum > 0 ? coreNeed(l) / nsum : 1 / banks.length) * Math.exp(RATE_PULL * (l.dep!.rate! - rbar)) * sf;
+    want.set(l, w); wsum += w;
+  }
+  const share = new Map<Lender, number>();
+  let ssum = 0;
+  for (const l of banks) {
+    const cur = T > 0 ? l.dep!.total / T : 1 / banks.length;
+    const tgt = wsum > 0 ? want.get(l)! / wsum : cur;
+    // a bank that looks unsafe loses its uninsured money fast; a rate gap moves money slowly
+    const speed = tgt < cur ? STICKY + 0.25 * (1 - safety.get(l)!) : STICKY;
+    const sh = Math.max(0, cur + speed * (tgt - cur));
+    share.set(l, sh); ssum += sh;
+  }
+  for (const l of banks) {
+    const d = l.dep!;
+    const D = Math.round(Tnext * (ssum > 0 ? share.get(l)! / ssum : 0));
+    d.hist = [...(d.hist ?? []), D].slice(-13);
+    d.flowYr = d.hist.length >= 13 && d.hist[0] > 0 ? +(D / d.hist[0] - 1).toFixed(4) : d.flowYr;
+    d.total = D;
+    const F = fundable(l);
+    d.wholesale = Math.round(Math.max(0, F + LIQ_TARGET * D - D));
+    d.liquid = Math.round(D + d.wholesale - F);
+    // next month's posted rate
+    const k = KIND[l.name] ?? { wholesale: 0.5, capitalRatio: 0.1 };
+    const lean = F > 0 ? d.wholesale / F - k.wholesale : 0;
+    const idle = D > 0 ? Math.max(0, d.liquid / D - 0.2) : 0;
+    let adj = Math.max(-0.5, Math.min(1.25, 1.5 * lean - 2 * idle));
+    if (capitalRatio(l) < k.capitalRatio * 0.8) adj = Math.min(adj, (rbar - postedBase(policy)) + 0.75);
+    const tgt = Math.max(0.05, postedBase(policy) + adj);
+    const r = d.rate!;
+    d.rate = +(r + (tgt > r ? 0.15 : 0.3) * (tgt - r)).toFixed(3);
+  }
+}
+
+/** A bank's all-in cost of funds this month, % of its book a year, and the share of the book borrowed (what a panic reprices). */
+function bankFunding(s: GameState, l: Lender): { cost: number; borrowed: number } | undefined {
+  const d = l.dep;
+  if (l.kind !== "bank" || !d || d.rate === undefined || !(l.book > 0)) return undefined;
+  const e = s.econ;
+  const short = shortIndexOf(e);
+  const bills = Math.max(0, (e.nat?.policy ?? short) - 0.1);
+  const W = d.wholesale ?? 0, L = d.liquid ?? 0;
+  const annual = d.total * d.rate + W * (short + WHOLESALE_SPREAD) - L * bills;
+  return { cost: annual / l.book, borrowed: W / l.book };
+}
+
 export function tickLenders(s: GameState) {
   // CLOSED IS WHAT LENDERS DO, NOT WHAT THEY HAVE LOST (2026-10-13). This
   // fired when half the town's book sat at desks too impaired to quote, and
@@ -674,6 +971,19 @@ export function tickLenders(s: GameState) {
     s.lenders = initLenders(s.econ?.stock, s.econ?.priceLevel ?? 1);
   }
   const desks = recountYours(s);
+  // THE ORIGINATION BUDGET — see lenderChase. Shares read off last month's
+  // books; the chase glides a twelfth of the way each month.
+  {
+    const live = s.lenders.filter((l) => l.failedM === undefined);
+    const tot = live.reduce((a, l) => a + Math.max(0, l.book), 0);
+    const tgt = live.reduce((a, l) => a + bookShareOf(l.name, l.kind), 0);
+    for (const l of live) {
+      if (!(tot > 0) || !(tgt > 0)) continue;
+      const rel = (Math.max(0, l.book) / tot) / (bookShareOf(l.name, l.kind) / tgt);
+      const want = Math.max(-0.25, Math.min(0.30, 0.35 * (rel - 1)));
+      l.chase = +((l.chase ?? 0) + (want - (l.chase ?? 0)) / 12).toFixed(4);
+    }
+  }
   const e = s.econ;
   const vac = e.cityVac ?? {};
   // The average excess vacancy across the city: the single best predictor of
@@ -727,6 +1037,10 @@ export function tickLenders(s: GameState) {
     panic = Math.max(0.25, Math.exp(-since / PANIC_HALFLIFE)) * Math.min(1.6, 0.75 + 0.45 * down.length);
   }
   stress = n ? stress / n : 0;
+  tickDeposits(s, panic);
+  // How far land has fallen over the trailing year (0 when it has risen).
+  const h13 = e.history?.[e.history.length - 13];
+  const landFall12 = h13?.landIdx ? Math.max(0, 1 - (e.landIdx ?? h13.landIdx) / h13.landIdx) : 0;
 
   for (const l of s.lenders) {
     // --- RESOLUTION ---------------------------------------------------------
@@ -750,6 +1064,7 @@ export function tickLenders(s: GameState) {
         // on it are still the named loans (still paying, or still not).
         l.anonBook = Math.round((l.anonBook ?? l.book) * 0.55);
         l.anonDelinq = 0.004;                                     // the bad paper stayed with the receiver
+        if (l.dep) l.dep.total = Math.round(l.dep.total * 0.55);  // and the franchise's deposits with the smaller book
         l.book = l.anonBook + (desks[l.name]?.named ?? 0);
         l.capital = Math.round(l.book * k.capitalRatio * 1.15);   // a resolved bank opens overcapitalised
         l.delinquent = (l.anonBook * l.anonDelinq + (desks[l.name]?.defaulted ?? 0)) / Math.max(1, l.book);
@@ -767,7 +1082,7 @@ export function tickLenders(s: GameState) {
       }
       continue;
     }
-    const k = KIND[l.name] ?? { capitalRatio: 0.1, brittle: 1, wholesale: 0.5 };
+    const k = KIND[l.name] ?? { capitalRatio: 0.1, brittle: 1, wholesale: 0.5, adc: 0.08 };
     // --- THE BOOK IS THE LOANS ----------------------------------------------
     // Named paper (loanbook.ts: yours, the street's, the cranes) plus the
     // anonymous book of borrowers the game does not run as firms. A loan you
@@ -842,7 +1157,8 @@ export function tickLenders(s: GameState) {
     // seizures in 360 city-years, 7 of them with delinquency under 5%. When
     // the window shuts the warehouse is stuck on repo and the old funding law
     // is exactly right.
-    const conduitOpen = l.kind === "conduit" && (e.creditIdx ?? 1) >= 0.78 && e.phase !== "recession";
+    const natWin = e.nat?.creditNat ?? e.creditIdx ?? 1;
+    const conduitOpen = l.kind === "conduit" && natWin >= 0.6;   // = windowOpen (debt.ts): the national bond market
     const fundTarget = conduitOpen ? (l.bookYield ?? e.indexRate + spread) - (NORMAL_NIM.conduit ?? 1.6) : baseFund + hot * k.wholesale;
     if (l.fundCost === undefined) l.fundCost = baseFund;
     // AN INSURER'S MONEY IS AS LONG AS ITS LOANS. The general account is
@@ -853,7 +1169,9 @@ export function tickLenders(s: GameState) {
     // quoting for a year at a time (appetite 0.2 through two rate spikes in
     // one thirty-year playthrough), which is the one thing a life company
     // famously does not do.
-    l.fundCost = conduitOpen ? +fundTarget.toFixed(4)
+    const bf = bankFunding(s, l);
+    l.fundCost = bf ? +bf.cost.toFixed(4)
+      : conduitOpen ? +fundTarget.toFixed(4)
       : l.kind === "life" ? +(l.fundCost + 0.025 * (fundTarget - l.fundCost)).toFixed(4)
       : +(l.fundCost + (fundTarget > l.fundCost ? 0.22 : 0.07) * (fundTarget - l.fundCost)).toFixed(4);
     // The panic surcharge, priced off how much this desk resembles the one in
@@ -862,7 +1180,8 @@ export function tickLenders(s: GameState) {
     // The ratio the market can SEE — the one on the last statement, entering
     // this month. It cannot price a number the desk has not booked yet.
     const weak = Math.max(0, Math.min(1.5, 1 - capitalRatio(l) / Math.max(0.01, k.capitalRatio)));
-    l.panicBps = panic > 0 ? +(PANIC_PEAK * panic * k.wholesale * (0.35 + weak)).toFixed(3) : 0;
+    // A bank's panic lands on what it actually borrows this month; the others on their structural mix.
+    l.panicBps = panic > 0 ? +(PANIC_PEAK * panic * (bf ? bf.borrowed : k.wholesale) * (0.35 + weak)).toFixed(3) : 0;
     const allIn = Math.max(0, l.fundCost + (l.panicBps ?? 0));
     const funding = (l.book * allIn) / 100 / 12;
 
@@ -875,7 +1194,16 @@ export function tickLenders(s: GameState) {
       // borrowers whose tenants are laying off: 0.6 x slack reads 1.8% at a
       // three-point recession trough, as the old recession term did
       + 0.6 * Math.max(0, labourSlack(e)) * k.brittle
-      + Math.max(0, 1 - (e.creditIdx ?? 1)) * 0.03 * k.brittle;
+      + Math.max(0, 1 - (e.creditIdx ?? 1)) * 0.03 * k.brittle
+      // ...and the construction and land book goes bad with the price of dirt
+      // (2026-10-13): noncurrent ADC loans reached ~16% as land fell 20-30% a
+      // year (FDIC QBP 2009-10), so 0.65 per unit of the trailing year's land
+      // fall, on the desk's ADC share.
+      // Construction loans are now settled scheme by scheme at delivery
+      // (settleMerchant in dev.ts; named firms' loans in the loan book), so
+      // this term carries the land and A&D share of the ADC book only —
+      // about 40% of it in FDIC call reports — not the whole of it twice.
+      + k.adc * 0.65 * 0.4 * landFall12;
     const ad = l.anonDelinq ?? l.delinquent;
     l.anonDelinq = Math.max(0.002, Math.min(0.35, ad + 0.10 * (badTarget - ad) + rrange(s, -0.0015, 0.0015, "lenders")));
     // THE NAMED BOOK IS COUNTED. A loan the engine runs is either being paid
@@ -898,7 +1226,14 @@ export function tickLenders(s: GameState) {
     l.chargeOffsTotal += chargeOff;
     const opex = (l.book * (OPEX_PCT[l.kind] ?? 0)) / 100 / 12;
     // Taxed symmetrically: a loss month books a tax asset (carrybacks).
-    const net = Math.round((interest - funding - borneLoss(l, chargeOff) - opex) * (1 - (TAX_RATE[l.kind] ?? 0)));
+    const pre = interest - funding - borneLoss(l, chargeOff) - opex;
+    const net = Math.round(pre * (1 - (TAX_RATE[l.kind] ?? 0)));
+    {
+      const y = (l.incYr ??= { interest: 0, funding: 0, losses: 0, opex: 0, tax: 0 });
+      y.interest += Math.round(interest); y.funding += Math.round(funding);
+      y.losses += Math.round(borneLoss(l, chargeOff)); y.opex += Math.round(opex);
+      y.tax += Math.round(pre - net);
+    }
     l.netIncomeYr += net;
     l.capital = Math.round(l.capital + net);
 
@@ -911,6 +1246,19 @@ export function tickLenders(s: GameState) {
     // pays the excess out, which is what keeps a loss in year forty as
     // dangerous as one in year four.
     const target = k.capitalRatio;
+    // THE CONDUIT BUSINESS IS RECAPITALISED BY THE BOND MARKET (2026-10-14). A
+    // conduit is never seized, so a desk whose thin first-loss capital had
+    // been eaten sat at zero appetite for decades while the bond window was
+    // open — measured, 48% of all months over fifty years, and with it the one
+    // desk with no hold size. That is not the business: after 2009 new sponsors
+    // and recapitalised shelves were issuing again inside two years (CMBS 2.0,
+    // 2010-12). While the national window is open, the desk is brought back
+    // toward its target over about a year. Measured over fifty years: the
+    // conduit unable to quote fell from 54% of months to 10%, nearly all of
+    // them the national window itself shut (9%).
+    if (l.kind === "conduit" && conduitOpen && l.capital < l.book * target) {
+      l.capital = Math.round(l.capital + (l.book * target - Math.max(l.capital, 0)) / 12 + Math.max(0, -l.capital) / 12);
+    }
     const buffer = l.book * target * 1.15;
     if (l.capital > buffer) {
       const div = Math.round((l.capital - buffer) * 0.08);
@@ -942,7 +1290,7 @@ export function tickLenders(s: GameState) {
     const nimRel = nim / (NORMAL_NIM[l.kind] ?? 4.1);
     const nimFac = Math.max(0.25, Math.min(1, 0.35 + 0.65 * (nimRel - 0.195) / 0.683));
     l.appetite = Math.max(0, Math.min(1.15,
-      (raw - 0.55) / 0.6 * nimFac * (l.kind === "conduit" ? Math.max(0.25, e.creditIdx ?? 1) : 1)));
+      (raw - 0.55) / 0.6 * nimFac * (l.kind === "conduit" ? Math.max(0.25, Math.min(1, natWin)) : 1)));
     // Growth at 0.35%/mo compounded to an 8x book over fifty years while the
     // town's whole rival debt stayed under a quarter of one desk — the banks
     // outgrew the city they lend to. Half that pace keeps them in it.
@@ -950,12 +1298,19 @@ export function tickLenders(s: GameState) {
     // book is whatever the named borrowers have actually taken.
     // The $20M floor is on the desk's whole book, as it always was — flooring
     // the anonymous half alone re-inflated a small town's desk past the book
-    // its capital was sized for.
-    anon = Math.max(Math.max(0, 20_000_000 - named.named), Math.round(anon * (1 + (l.appetite > 0.8 ? 0.0017 : l.appetite > 0.4 ? 0 : -0.006))));
+    // its capital was sized for. And it is the SAME floor initLenders opened
+    // the desk with — $20M in the town's own prices. Unscaled, a town opening
+    // at half the reference price level had its smallest desk's book doubled
+    // the first month with no capital behind it (Tidewater: 9.0% to 4.4%).
+    anon = Math.max(Math.max(0, 20_000_000 * (e.priceLevel ?? 1) - named.named), Math.round(anon * (1 + (l.appetite > 0.8 ? 0.0017 : l.appetite > 0.4 ? 0 : -0.006))));
     l.book = Math.round(anon + named.named);
     if (s.cityLoans) l.anonBook = anon;
 
-    if (s.month % 12 === 0 && s.month > 0) { l.chargeOffsYr = 0; l.netIncomeYr = 0; l.divYr = 0; }
+    if (s.month % 12 === 0 && s.month > 0) {
+      if (l.incYr) l.incPrevYr = { ...l.incYr, netIncome: l.netIncomeYr, dividends: l.divYr ?? 0, chargeOffs: l.chargeOffsYr };
+      l.incYr = { interest: 0, funding: 0, losses: 0, opex: 0, tax: 0 };
+      l.chargeOffsYr = 0; l.netIncomeYr = 0; l.divYr = 0;
+    }
 
     // --- and sometimes it ends, ON A FRIDAY ----------------------------------
     // The regulator does not wait for zero. A desk critically under its own
@@ -1022,6 +1377,7 @@ export function tickLenders(s: GameState) {
       // they do about it — what this desk was lending THEM.
       raiseAlert(s, {
         kind: "bank", tone: "bad",
+        stops: (l.yours ?? 0) > 0 || wasOurs,
         title: `${l.name} has been closed`,
         body: l.kind === "bank"
           ? `The examiners closed them on Friday and the deposit insurer sold the franchise to an acquirer the same `
@@ -1131,6 +1487,8 @@ export function chargeLenderLoss(s: GameState, lender: string, loss: number) {
   const l = lenderByName(s, lender);
   if (!l || loss <= 0) return;
   l.capital = Math.round(l.capital - borneLoss(l, loss));
+  const y = (l.incYr ??= { interest: 0, funding: 0, losses: 0, opex: 0, tax: 0 });
+  y.writeOffs = (y.writeOffs ?? 0) + Math.round(borneLoss(l, loss));
   l.chargeOffsYr += loss;
   l.chargeOffsTotal += loss;
   l.yours = Math.max(0, l.yours - loss);

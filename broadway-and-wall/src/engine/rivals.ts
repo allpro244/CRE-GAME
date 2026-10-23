@@ -29,18 +29,21 @@
 // now claims jobs out of the city's own pipeline: buys the dirt, writes the
 // equity, carries the loan through the cycle, and either owns a building at
 // the end of it or hands a frame to a receiver.
-import { fieldRoster } from "./setup";
+import { drawRivalRaise, poolLeft, PITCH_MULT } from "./investors";
+import { fieldRoster, rivalCapitalMult, type RivalCapital } from "./setup";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
-import { dollarLevel, rng, newsChance, rrange, frictionFloor, NATURAL_VAC, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
-import { DEV_MARGIN, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
+import { dollarLevel, rng, newsChance, rrange, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
+import { mergedTouched, DEV_MARGIN, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec } from "./value";
 import type { DevPlan } from "./dev";
-import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar } from "./dev";
+import { lpNetIrr } from "./waterfall";
+import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
+import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar, projectedDevIrr } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, stabViewFor } from "./debt";
-import { stampApproach, conveyedValue } from "./leasing";
+import { stampApproach, conveyedValue, conveyedDeed } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
 import { programmeSf, queueSupplyProject, rescheduleSupplyProject, stallSupplyProject } from "./supply";
@@ -49,9 +52,11 @@ import { sizeAreaScale } from "./cityscale";
 import { money } from "./money";
 import { FUND_INVEST_M, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { observe, yearOfWatching } from "./competitorReads";
-import { assembledBlock, reviewThesis, thesisFit, thesisSellMult } from "./strategy";
+import { logFirm, milestone } from "./firmLog";
+const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
+import { assembledBlock, reviewThesis, thesisFit, thesisLabel, thesisSellMult } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
-import { deskWithRoom, renewRow, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
+import { deskWithRoom, loanBookTouched, renewRow, streetLoanCost, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
 import {
   paramsFrom, siteFit, dealsPerYear, misreadPp, drawSheet, profilesForStyle, hash01, GRADE_NUM,
   PROFILE_OF, PROFILES, inv as invTrait, LEVERAGE_RANGE, sheetFromStyle, classTrait, nearestProfile,
@@ -458,6 +463,138 @@ const BUILD_APPETITE: Record<RivalStyle, number> = {
   merchant: 1.35, pe: 0.50, reit: 0.14, vulture: 0.06,
   owneruser: 0.22, foreign: 0, slumlord: 0,
 };
+/**
+ * The parcel graph, handed over by the sim at the top of each month (sim.ts
+ * tickMonth, setRivalAdjacency). It used to be handed over by
+ * tickRivalAssembly, which runs AFTER tickRivals: so the first month of every
+ * game, and the first month after every Continue, read no graph at all, while
+ * the same month played straight through read last month's — a reloaded save
+ * diverged from the saved game in its first month (test/region-reload.mjs).
+ */
+let ADJ: Record<string, string[]> | null = null;
+export function setRivalAdjacency(adjacency: Record<string, string[]> | null): void { ADJ = adjacency; }
+
+/** Does this lot touch dirt the firm already owns — a lot, or a site it has assembled? */
+function adjoinsOwnDirt(s: GameState, parcels: ParcelTable, r: Rival, bbl: string): boolean {
+  if (!ADJ) return false;
+  for (const n of ADJ[bbl] ?? []) {
+    const root = s.merged?.[n] ?? n;
+    if (root === bbl || !r.bbls.includes(root)) continue;
+    if (resolveRec(parcels, s, root)?.class === "land") return true;
+  }
+  return false;
+}
+
+/**
+ * THE STREET ASSEMBLES TOO (owner, Oct 2026: "I definitely do want rivals to
+ * have the ability to assemble lots"). A builder that owns two or more lots of
+ * dirt that touch folds them into one site — the same survey, title and
+ * counsel the player pays (actions.ts mergeCost) — when the site holds the
+ * value of its lots apart: a bigger plate carries one taller, better building
+ * instead of several small ones. The folded lots
+ * leave the firm's deed list and live on the parent (`s.merged`), so every
+ * path that moves a rival's deed — a sale, a seizure, a receiver, a failure —
+ * moves the whole site by moving its parent. Quarterly, builders only, empty
+ * dirt only (a lot with a building, a job, a listing or a land loan on it is
+ * not folded).
+ */
+export function tickRivalAssembly(s: GameState, parcels: ParcelTable, adjacency: Record<string, string[]> | null) {
+  ADJ = adjacency;
+  if (!adjacency || s.month % 3 !== 1) return;
+  const kids = new Map<string, string[]>();
+  for (const [c, p] of Object.entries(s.merged ?? {})) { const k = kids.get(p) ?? []; k.push(c); kids.set(p, k); }
+  const busy = new Set((s.cityJobs ?? []).map((j) => j.bbl));
+  const listed = new Set(s.listings.map((l) => l.bbl));
+  for (const r of livingRivals(s)) {
+    if (paramsOf(r).build <= 0 || r.stressMs) continue;
+    const dirt = r.bbls.filter((b) => {
+      if (busy.has(b) || listed.has(b) || s.holdings[b] || s.developments[b] || s.merged?.[b] || s.cityLoans?.[b]) return false;
+      const rec = resolveRec(parcels, s, b);
+      return !!rec && rec.class === "land" && rec.lotArea > 0;
+    });
+    if (dirt.length < 2) continue;
+    const pool = new Set(dirt);
+    const seen = new Set<string>();
+    for (const start of dirt) {
+      if (seen.has(start)) continue;
+      const comp = [start];
+      seen.add(start);
+      for (let i = 0; i < comp.length; i++) {
+        for (const d of [comp[i], ...(kids.get(comp[i]) ?? [])]) {
+          for (const n of adjacency[d] ?? []) {
+            const root = s.merged?.[n] ?? n;
+            if (pool.has(root) && !seen.has(root)) { seen.add(root); comp.push(root); }
+          }
+        }
+      }
+      if (comp.length < 2) continue;
+      const apart = comp.reduce((a, b) => a + landValue(resolveRec(parcels, s, b)!, s.econ), 0);
+      const bySize = comp.map((b) => ({ b, area: resolveRec(parcels, s, b)!.lotArea })).sort((a, b) => b.area - a.area || (a.b < b.b ? -1 : 1));
+      const parent = bySize[0].b;
+      const children = bySize.slice(1).map((x) => x.b);
+      const deeds = comp.reduce((a, b) => a + 1 + (kids.get(b)?.length ?? 0), 0);
+      const cost = Math.round((45_000 + 30_000 * deeds) * s.econ.costIdx);
+      if (r.cash < cost) continue;
+      const before = { ...(s.merged ?? {}) };
+      s.merged ??= {};
+      for (const c of children) {
+        s.merged[c] = parent;
+        for (const k of kids.get(c) ?? []) s.merged[k] = parent;
+        mergedTouched();
+      }
+      const site = resolveRec(parcels, s, parent)!;
+      // Dirt prices close to additively (measured: a merged site at 99.6% of
+      // its lots apart), so "worth more" would never be met; the builder folds
+      // when the site holds its value, within the filing's own cost.
+      if (landValue(site, s.econ) < apart * 0.98) { s.merged = before; continue; }
+      r.cash -= cost;
+      r.bbls = r.bbls.filter((b) => !children.includes(b));
+      for (const c of children) {
+        forgetDeed(r, c);
+        const k = kids.get(parent) ?? [];
+        k.push(c, ...(kids.get(c) ?? []));
+        kids.set(parent, k);
+        kids.delete(c);
+        pool.delete(c);
+      }
+      logFirm(s, r, "plan", `assembled ${deeds} lots at ${site.address} into one site of ${Math.round(site.lotArea).toLocaleString()} sf`, parent);
+      if (stakeIn(s, parcels, site, r.id) || deeds >= 4) {
+        s.news.unshift({
+          q: s.month, kind: "info",
+          text: `${r.name} has assembled ${deeds} lots at ${site.address} into one site of ${Math.round(site.lotArea).toLocaleString()} sf. `
+            + `One plate, one core — expect something bigger than anything on the block.`,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * A FIRM'S SMALLEST CHEQUE (owner, Oct 2026: "more rivals should develop high
+ * quality buildings instead of acquiring a ton of them"). An investment
+ * committee has a minimum deal size, and it grows with the fund: a platform
+ * with $400M of equity does not underwrite a $900K walk-up, because the work
+ * of closing it is the same as the work of closing a $20M tower and it moves
+ * nothing. The deal-count capacity below counted deals, not dollars, so the
+ * biggest firms filled their eight a year with whatever was on the tape and
+ * held a hundred small buildings by mid-century while the player, building a
+ * few good ones, held five. The ticket is a share of the firm's own equity, by
+ * style: institutions and offshore money the largest, family offices and
+ * small landlords the smallest, owner-users none (they buy premises, not a
+ * portfolio). A small firm's ticket is under any building in town, so the
+ * young firms still buy what young firms buy.
+ */
+const TICKET_PCT: Record<RivalStyle, number> = {
+  core: 0.02, reit: 0.02, foreign: 0.025, pe: 0.015,
+  opportunistic: 0.01, developer: 0.01, merchant: 0.01,
+  vulture: 0.006, family: 0.006, slumlord: 0.004, owneruser: 0,
+};
+/** Dirt is a fifth or so of what goes up on it: a lot is judged by the job it carries. */
+const LAND_SHARE_OF_JOB = 0.2;
+export function minTicket(r: Rival): number {
+  const eq = Math.max(0, (r.aum ?? 0) - r.debt + r.cash);
+  return (TICKET_PCT[r.style] ?? 0) * eq;
+}
 const CONSTR_SPREAD_R = 2.6;   // construction paper is dearer than term paper
 
 // ---------------------------------------------------------------- deal equity
@@ -495,20 +632,99 @@ export function sponsorShare(style: RivalStyle): number {
   return SYNDICATES[style] ? SPONSOR_COINVEST : 1;
 }
 /**
+ * THE SHARE A FIRM WRITES ITSELF ON ITS NEXT DEAL, ON ITS RECORD (§3.4,
+ * "rival ratings gate rival raising"; GameState.rivalReputation). The deal's
+ * investors sign the same terms table the player raises on (reputation.ts
+ * BAND_TERMS): at most `perOwn` dollars of theirs per dollar of the
+ * sponsor's. The 90/10 above is $9 per $1 — the Institutional row; a builder
+ * the street reads as Unknown raises $1 per $1, one that is Questioned fifty
+ * cents, and a Toxic one nothing. Off, every deal-by-deal builder raises
+ * 90/10 as before.
+ *
+ * ON BY DEFAULT since Oct 2026 (owner: "shouldn't this be a default, almost
+ * not even an option? If we are going for realism"); GameState.rivalDealTerms
+ * stays a setup choice that can be turned off. Measured on the
+ * baseline's seeds against 90/10 for everybody: city floor area −4.0%,
+ * median land −15.5%, employment −3.7%, vacancy up in office, retail and
+ * apartments — most builders the street ranks sit at Unknown or below, so a
+ * capital-starved street builds and bids less, and the simulated economy
+ * shrinks with it. Realistic, and a different city; the owner chooses.
+ * Re-measured with the town's builders as firms (Oct 2026): floor area −7%
+ * against 90/10, employment −3% — still a smaller city, still a choice.
+ */
+export function sponsorShareOf(s: GameState, r: Rival): number {
+  if (!SYNDICATES[r.style]) return 1;
+  if (!s.rivalDealTerms) return SPONSOR_COINVEST;
+  const per = BAND_TERMS[rivalBand(s, r)].perOwn;
+  return per > 0 ? 1 / (1 + per) : 1;
+}
+/**
  * The deal investors write their share of an equity cheque the firm is about
  * to pay on this job. Returns what came in. `inKind` is what the sponsor
  * contributes besides cash — its own land or standing building, at the basis
  * the job was underwritten on — which counts toward its share of the deal.
  */
-function jvFund(s: GameState, r: Rival, bbl: string, cheque: number, inKind = 0): number {
-  const g = sponsorShare(r.style);
+function jvFund(s: GameState, r: Rival, bbl: string, cheque: number, inKind = 0, plan?: DevPlan): number {
+  // The terms are set when the deal is formed; later draws are called on them.
+  const open = r.jvs?.[bbl];
+  const g = open ? (open.g ?? SPONSOR_COINVEST) : sponsorShareOf(s, r);
   if (g >= 1 || !(cheque > 0)) return 0;
   const lp = Math.round(cheque * (1 - g));
-  const jv = ((r.jvs ??= {})[bbl] ??= { lp: 0, gp: Math.max(0, Math.round(inKind)), m: s.month });
+  const jv = ((r.jvs ??= {})[bbl] ??= { lp: 0, gp: Math.max(0, Math.round(inKind)), m: s.month, g });
+  // THE OFFERING. The job's own projection — the same one the player's
+  // groundbreaking is judged on (dev.ts projectedDevIrr) — put to the deal's
+  // investors net of the sponsor's promote (waterfall.ts lpNetIrr), on the
+  // terms jvLpTake pays: the pref, then the excess less the promote.
+  // Pitched the way most sponsors pitch, and the player's default: conservatively (investors.ts PITCH_MULT).
+  if (plan && jv.pitch === undefined) jv.pitch = lpNetIrr(projectedDevIrr(plan), Math.max(1, plan.months + 12) / 12, [FUND_PREF], [FUND_PROMOTE]) * PITCH_MULT.conservative;
+  jv.mw = jv.lp + lp > 0 ? ((jv.mw ?? jv.m) * jv.lp + s.month * lp) / (jv.lp + lp) : s.month;
   jv.lp += lp;
   jv.gp += cheque - lp;
   r.cash += lp;
   return lp;
+}
+/**
+ * A DEAL REALISED, ON THE FIRM'S RECORD (Rival.realised; reputation.ts).
+ *
+ * The record carries what the street can actually see. A syndicated deed is
+ * judged on what its deal investors got back — their take over what they paid
+ * in, a real number. A deed lost to its lender is a loss of the deal, 0x. A
+ * deed sold on the firm's own money has no per-building cost on file (the
+ * book's basis is aggregate, and buildings differ tenfold in size: reading a
+ * deed's share of it as its cost put 70% of the street's sales under 1x,
+ * measured, and was noise), so it is judged on what investors read off it
+ * instead — a sale on the firm's own schedule, or a sale made while the firm
+ * was in trouble (`forced`). Its size is the equity it carried at the sale,
+ * the price at the firm's target leverage; that is an estimate, and only its
+ * cube root is read.
+ */
+export function noteRealised(s: GameState, r: Rival, jv: { lp: number; gp: number; m: number; mw?: number; pitch?: number } | undefined, price: number, lpOut: number, lost = false): void {
+  const rows = (r.realised ??= []);
+  if (jv && jv.lp > 0) {
+    const mult = lost ? 0 : Math.max(0, lpOut) / jv.lp;
+    // Their realised IRR: one cheque at the money-weighted month in, one out today.
+    const yrs = Math.max(1, s.month - (jv.mw ?? jv.m)) / 12;
+    const irr = mult > 0 ? Math.pow(mult, 1 / yrs) - 1 : -1;
+    rows.push({ m: s.month, eq: Math.round(jv.lp + jv.gp), mult: Math.round(mult * 100) / 100, lp: true, irr: Math.round(irr * 1000) / 1000, ...(jv.pitch !== undefined ? { pitch: Math.round(jv.pitch * 1000) / 1000 } : {}) });
+  } else {
+    const eq = Math.round(Math.max(0, price) * (1 - Math.max(0, Math.min(0.95, r.targetLtv))));
+    if (!(eq > 0)) return;
+    if (lost) rows.push({ m: s.month, eq, mult: 0 });
+    else if (r.stressMs) rows.push({ m: s.month, eq, forced: true });
+    else rows.push({ m: s.month, eq });
+  }
+  while (rows.length && s.month - rows[0].m > 360) rows.shift();
+}
+/**
+ * A DEED LOST TO ITS LENDER (a handback, a foreclosure, a note's receiver), on
+ * the firm's record at 0x, sized at what the debt was written against. Call it
+ * before the deed's papers are forgotten.
+ */
+export function noteLost(s: GameState, r: Rival, bbl: string): void {
+  const loan = s.cityLoans?.[bbl];
+  const debt = loan && loan.obligorId === r.id ? loan.balance : 0;
+  const value = debt / Math.max(0.05, Math.min(0.95, r.targetLtv));
+  noteRealised(s, r, r.jvs?.[bbl], value, 0, true);
 }
 /** The deal investors' interest in a deed, removed — read it before the deed moves. */
 function takeJv(r: Rival, bbl: string): { lp: number; gp: number; m: number } | undefined {
@@ -586,8 +802,11 @@ export function transferDeed(s: GameState, bbl: string, to: Rival, price: number
     // secured stays owed, on the line.
     const relief = settleSale(s, r, bbl, Math.max(0, price));
     if (price > 0) {
-      r.cash += price - relief;
-      r.cash -= jvLpTake(jv, price - relief, s.month);
+      const costs = streetSaleCost(price);
+      const lpOut = jvLpTake(jv, price - relief - costs, s.month);
+      r.cash += price - relief - costs;
+      r.cash -= lpOut;
+      noteRealised(s, r, jv, price, lpOut);
     }
   }
   if (!to.bbls.includes(bbl)) to.bbls.push(bbl);
@@ -675,6 +894,14 @@ export function claimJob(
   // call site, where the adjacency table is already in scope.
   nearPlayer = false,
   underwriting?: DevPlan,
+  /**
+   * A BUILDER FIRM THAT DREW THIS DEAL ITSELF (dev.ts developerLook, with
+   * GameState.builderFirms): it has already run the scheme against its own
+   * bar, so there is no contest and no coin — only whether its balance sheet
+   * can carry it, the same tests every firm passes. The groundbreaking news is
+   * the caller's, with the market's context.
+   */
+  only?: Rival,
 ): Rival | null {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return null;
@@ -721,10 +948,10 @@ export function claimJob(
   const equityOf = (r: Rival) => Math.round(projectCost * (1 - ltcOf(r)));
   const dayOneOf = (r: Rival) => Math.round(equityOf(r) * 0.40);
 
-  const runners = livingRivals(s).filter((r) => {
-    const want = paramsOf(r).build;
+  const runners = (only ? [only] : livingRivals(s)).filter((r) => {
+    const want = only ? 1 : paramsOf(r).build;
     if (want <= 0) return false;
-    if (!firmWouldBuild(s, r, plan, use, financeable)) return false;
+    if (!only && !firmWouldBuild(s, r, plan, use, financeable)) return false;
     if (!canCarryAnother(s, r)) return false;
     // A firm with a sheet also runs no more jobs than its Capacity allows.
     if (r.sheet && (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length >= paramsOf(r).jobs) return false;
@@ -735,15 +962,16 @@ export function claimJob(
     // The firm's own cheque: all of the day-one equity, or a deal-by-deal
     // sponsor's co-invest (sponsorShare) with the deal's investors writing the
     // rest.
-    const need = Math.round(dayOneOf(r) * sponsorShare(r.style)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.04);
+    const need = Math.round(dayOneOf(r) * sponsorShareOf(s, r)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.04);
     if (freeCash(s, r) + lineDrawFor(s, parcels, r, need) < need) return false;
     // A firm building mostly with its own money has to HAVE it: the whole of
     // its equity, called or callable, not only the first draw.
-    if (ltcOf(r) < ltc && r.cash + (r.uncalled ?? 0) < equityOf(r) * sponsorShare(r.style)) return false;
+    if (ltcOf(r) < ltc && r.cash + (r.uncalled ?? 0) < equityOf(r) * sponsorShareOf(s, r)) return false;
     // THE SITE HAS TO SUIT THE BUILDER: a trophy builder does not put a
     // warehouse on the fringe because the city's pipeline offered one.
     const suit = r.sheet ? Math.min(1.6, fitOf(s, parcels, r, { ...rec, class: use === "mixed" ? "retail" : use } as ParcelRecord)) : 1;
     if (suit <= 0) return false;
+    if (only) return true;
     // Named builders should claim a real share of the pipeline. Near the
     // player is still hotter (comp + tenant risk), but far sites are no longer
     // a coin-flip against a 0.5× haircut that left them at ~3%.
@@ -754,8 +982,8 @@ export function claimJob(
 
   // the hungriest of the firms that can actually fund it
   let best = runners[0], bestW = -Infinity;
-  for (const r of runners) {
-    const w = paramsOf(r).build * (r.cash / Math.max(1, dayOneOf(r) * sponsorShare(r.style))) * (0.6 + rng(s, "rivals") * 0.8);
+  if (!only) for (const r of runners) {
+    const w = paramsOf(r).build * (r.cash / Math.max(1, dayOneOf(r) * sponsorShareOf(s, r))) * (0.6 + rng(s, "rivals") * 0.8);
     if (w > bestW) { bestW = w; best = r; }
   }
 
@@ -763,14 +991,15 @@ export function claimJob(
   observe(s, best, sheetOf(best), ["build", "scale", "quality"], 0.08);
   const dayOneEquity = dayOneOf(best);
   const bestLtc = ltcOf(best);
-  drawLine(s, best, lineDrawFor(s, parcels, best, Math.round(dayOneEquity * sponsorShare(best.style)) + Math.max(400_000 * dollarLevel(s.econ), best.cash * 0.04)));
-  best.cash -= dayOneEquity - jvFund(s, best, bbl, dayOneEquity);
+  drawLine(s, best, lineDrawFor(s, parcels, best, Math.round(dayOneEquity * sponsorShareOf(s, best)) + Math.max(400_000 * dollarLevel(s.econ), best.cash * 0.04)));
+  best.cash -= dayOneEquity - jvFund(s, best, bbl, dayOneEquity, 0, plan);
   best.basis = Math.round((best.basis ?? 0) + land);
   transferDeed(s, bbl, best, land);
   const job = (s.cityJobs ?? []).find((j) => j.bbl === bbl);
   if (job) {
     job.firmId = best.id;
     best.lastBuildM = s.month;
+    logFirm(s, best, "build", `Took the site at ${rec.address} and broke ground: ${floors} floors of ${use}`, bbl, projectCost);
     job.cost = projectCost;
     // Day-one equity is in. Remaining work draws the construction facility —
     // leaving a multi-million equityLeft balance orphaned every claimed job
@@ -796,6 +1025,7 @@ export function claimJob(
     }
   }
   poachForBuildToSuit(s, parcels, best, rec, use === "mixed" ? "retail" : use, sf, deliverM);
+  if (only) return best;
   s.news.unshift({
     q: s.month, kind: "event",
     text: nearPlayer
@@ -845,7 +1075,11 @@ function orphanCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]>[numbe
   // investors: their equity is in the ground and the receiver takes the site.
   if (j.firmId) {
     const r = (s.rivals ?? []).find((x) => x.id === j.firmId);
-    if (r) takeJv(r, j.bbl);
+    if (r) {
+      const jv = r.jvs?.[j.bbl];
+      if (jv) noteRealised(s, r, jv, 0, 0, true);
+      takeJv(r, j.bbl);
+    }
   }
   if (j.bbl) stallSupplyProject(s, j.bbl);
 }
@@ -922,7 +1156,7 @@ export function fundJobs(s: GameState) {
     // buying window in the game — it is not a bonus, it is somebody's job.
     if (j.repudiatedM !== undefined) {
       const carry = Math.round(((j.debt ?? 0) * (j.ratePct ?? 8)) / 100 / 12);
-      const partnersIn = r.jvs?.[j.bbl] ? Math.round((spend + carry) * (1 - sponsorShare(r.style))) : 0;
+      const partnersIn = r.jvs?.[j.bbl] ? Math.round((spend + carry) * (1 - (r.jvs[j.bbl].g ?? SPONSOR_COINVEST))) : 0;
       if (r.cash + partnersIn < spend + carry) {
         orphanCityJob(s, j);
         s.news.unshift({
@@ -975,7 +1209,7 @@ export function fundJobs(s: GameState) {
       const capitalCall = afterEquity - fromDebt;
       const cashNeed = fromEquity + capitalCall;
       // A syndicated job's investors meet their share of every call.
-      const partnersIn = r.jvs?.[j.bbl] ? Math.round(cashNeed * (1 - sponsorShare(r.style))) : 0;
+      const partnersIn = r.jvs?.[j.bbl] ? Math.round(cashNeed * (1 - (r.jvs[j.bbl].g ?? SPONSOR_COINVEST))) : 0;
       if (r.cash + partnersIn < cashNeed) {
         // Prefer a month of schedule slip over a standing skeleton when the
         // sponsor is only short this draw — orphans were eating most named
@@ -1142,6 +1376,7 @@ export function jobDelivered(s: GameState, parcels: ParcelTable, bbl: string, fi
   }
   (r.deliveredM ??= {})[bbl] = s.month;
   const rec = resolveRec(parcels, s, bbl);
+  logFirm(s, r, "open", `Opened ${rec?.address ?? bbl}${rec && rec.bldgArea ? ` — ${Math.round(rec.bldgArea / 1000)}k sf of ${CLASS_NOUN[rec.class] ?? rec.class}` : ""}`, bbl, cost);
   // A ROUTINE OPENING IS NOT NEWS. "It is competing with you tomorrow" is only
   // true if it is anywhere near you — see stakeIn. The square feet reach the
   // market either way, through the delivery cohort.
@@ -1223,10 +1458,10 @@ function orphanToTape(s: GameState, parcels: ParcelTable) {
  * draw, the typical firm (the roster's median at the middle of the draw), and
  * roughly where a given bankroll would open on the league table.
  */
-export function competitorOpeningRange(citySize: string, field?: Parameters<typeof fieldRoster>[0]): {
+export function competitorOpeningRange(citySize: string, field?: Parameters<typeof fieldRoster>[0], capital?: RivalCapital): {
   lo: number; hi: number; typical: number; firms: number; rankOf: (cash: number) => number;
 } {
-  const area = sizeAreaScale({ citySize });
+  const area = sizeAreaScale({ citySize }) * rivalCapitalMult(capital);
   const pool = fieldRoster(field, FIRMS);
   const eq = pool.map((f) => f.equity * area).sort((a, b) => a - b);
   const round = (v: number) => Math.round(v / 100_000) * 100_000;
@@ -1244,7 +1479,10 @@ function rosterFor(s: GameState): typeof FIRMS {
   // Powder scales with the map's land area (k²). Same RNG draws as before —
   // only the multiply after the raise changes — so Hamlet / Great City do not
   // re-roll the field, they resize the cheques against a bigger or smaller pond.
-  const area = sizeAreaScale(s);
+  // ...and by how much the town's incumbents raised (the setup page's choice).
+  // `land` is the map alone: it sets how MANY firms; `area` sets their cheques.
+  const land = sizeAreaScale(s);
+  const area = land * rivalCapitalMult(s.setup?.rivalCapital);
   const out: typeof FIRMS = [];
   // WHO OWNS THIS TOWN, if the setup page said (setup.ts FIELDS). The default
   // field is the whole roster and takes exactly the draws it always took; a
@@ -1275,8 +1513,8 @@ function rosterFor(s: GameState): typeof FIRMS {
   // square root of the area, the rest of the gap left for entry to fill as
   // the tape shows it. Maps at or under the standard city draw nothing here
   // and open exactly as they did.
-  if (area > 1) {
-    const extra = Math.round(field.length * (Math.sqrt(area) - 1));
+  if (land > 1) {
+    const extra = Math.round(field.length * (Math.sqrt(land) - 1));
     const used = new Set(field.map((f) => f.name));
     for (let i = 0; i < extra; i++) {
       const fresh = NEW_FIRMS.filter((f) => !used.has(f.name));
@@ -1602,14 +1840,21 @@ export function markRival(s: GameState, parcels: ParcelTable, r: Rival): { aum: 
  * `debtReleasedOnSale`. The sum of these over `r.bbls` is `markRival`, by
  * construction rather than by agreement.
  */
-export function markAsset(s: GameState, r: Rival, rec: ParcelRecord): { v: number; noi: number; occ?: number } {
+export function markAsset(s: GameState, r: Rival, rec: ParcelRecord, fresh = false): { v: number; noi: number; occ?: number } {
   const cond = assetGrade(r, rec);
-  const v = assetValue(rec, s.econ, cond);
+  // The book carries its last appraisal (appraiseBooks), not a monthly mark to
+  // market; a deal orders a new one (`fresh`), as a lender does.
+  const held = r.marks?.[rec.bbl];
+  const v = !fresh && held && held.k === markKey(rec, cond) ? held.v : assetValue(rec, s.econ, cond);
   if (rec.class === "land" || !rec.bldgArea) return { v, noi: noiAfterTaxYr(rec, s.econ, cond, v) };
   // Start with THIS building's modeled occupancy, then carry only the firm's
   // portfolio-wide operating delta onto it. A weak location stays weak even
   // when the rest of the book is full; a good operator can still outperform
   // the market by a few points across the portfolio.
+  // A BUILDING ON THE STREET HAS ITS OWN ROLL (streetRolls.ts): the value
+  // and the income above already read the tenants actually in it, and the
+  // firm's leasing shows up as who signs where. Nothing to carry on top.
+  if (s.econ.streetRolls?.[rec.bbl]) return { v, noi: noiAfterTaxYr(rec, s.econ, cond, v), occ: occupancy(rec, s.econ) };
   const bookMkt = Math.max(0.35, r.mktOcc ?? 0.88);
   const localMkt = Math.max(0.20, occupancy(rec, s.econ));
   const actual = Math.max(0.15, Math.min(0.995, localMkt + (r.occ ?? bookMkt) - bookMkt));
@@ -1811,7 +2056,7 @@ function driftYear(s: GameState, r: Rival) {
   // on its record, so its character has a history you can read.
   const y = START_YEAR + Math.floor(s.month / 12) - 1;
   const lev = (r.aum ?? 0) > 0 ? r.debt / r.aum! : 0;
-  const learn = (text: string) => { (r.lessons ??= []).push({ y, text }); if (r.lessons.length > 6) r.lessons.shift(); };
+  const learn = (text: string) => { (r.lessons ??= []).push({ y, text }); if (r.lessons.length > 6) r.lessons.shift(); logFirm(s, r, "event", text); };
   const delivered = Object.values(r.deliveredM ?? {}).some((m) => m > s.month - 12);
   const burned = (r.yrStressMax ?? 0) >= 3 || ch < -0.25;
   const distressYear = (r.yrDistressBuys ?? 0) >= 2;
@@ -1917,6 +2162,7 @@ export function tickRivalConversions(s: GameState, parcels: ParcelTable) {
     let pick: { bbl: string; rec: ParcelRecord; plan: DevPlan } | null = null;
     for (const bbl of r.bbls) {
       if ((s.cityJobs ?? []).some((j) => j.bbl === bbl) || s.landmarks?.[bbl] !== undefined) continue;
+      if (s.merged?.[bbl]) continue;   // folded into an assembled site (see startOwnJob)
       const rec = resolveRec(parcels, s, bbl);
       if (!rec || rec.class !== "office" || !rec.bldgArea) continue;
       const m = markAsset(s, r, rec);
@@ -1927,7 +2173,7 @@ export function tickRivalConversions(s: GameState, parcels: ParcelTable) {
       if (!pick || plan.hurdleRatio > pick.plan.hurdleRatio) pick = { bbl, rec, plan };
     }
     if (!pick) continue;
-    const need = Math.round(pick.plan.equity * 0.40 * sponsorShare(r.style)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
+    const need = Math.round(pick.plan.equity * 0.40 * sponsorShareOf(s, r)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
     const draw = lineDrawFor(s, parcels, r, need);
     if (r.cash + draw < need) continue;
     drawLine(s, r, draw);
@@ -1979,10 +2225,12 @@ export function tickRivalRetirements(s: GameState, _parcels: ParcelTable) {
     r.cash -= r.debt;
     r.distributed = (r.distributed ?? 0) + Math.max(0, r.cash);
     for (const x of rowsOf(s, r)) delete s.cityLoans![x.bbl];
+    loanBookTouched();
     r.lineBal = 0;
     r.debt = 0; r.cash = 0; r.bbls = []; r.uncalled = 0; r.aum = 0;
     r.heldSince = {};
     r.failedM = s.month;
+    r.endReason = "retired";
     r.retiredM = s.month;
     r.epilogueM = -1;
     s.news.unshift({
@@ -2078,40 +2326,56 @@ function castRoster(s: GameState, roster: { name: string; style: RivalStyle }[])
 function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   if (!r.bbls.length) { r.occ = undefined; return; }
   const care = paramsOf(r).care;
-  // where the market says their book should sit
-  let target = 0, n = 0, bookSf = 0;
+  // WHAT THEIR BUILDINGS ACTUALLY HOLD (streetRolls.ts), against where the
+  // market alone would put the same buildings. The book's occupancy was a
+  // number walked toward the market with a random anchor loss at a fixed
+  // hazard; it is now the tenants in their buildings, and an anchor walks
+  // when an anchor tenant's own books fail or its lease runs out.
+  const noRoll = { ...s.econ, streetRolls: undefined, flatRolls: undefined } as typeof s.econ;
+  let mkt = 0, act = 0, n = 0, bookSf = 0;
   for (const bbl of r.bbls) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-    target += occupancy(rec, s.econ); n++;
+    mkt += occupancy(rec, noRoll); act += occupancy(rec, s.econ); n++;
     bookSf += rec.bldgArea;
   }
   if (!n) { r.occ = undefined; return; }
-  r.mktOcc = target / n;
+  r.mktOcc = mkt / n;
+  r.occ = act / n;
   // A BOOK BIGGER THAN THE FIRM CAN RUN. Capacity is people as well as
   // deals: past `manageable` buildings (6 + 0.4 x Capacity — 26 at 50, 42 at
-  // 90) leasing slips half a point of occupancy a building, up to eight.
+  // 90) its leasing desk falls behind, and the street's tenants feel it as a
+  // weaker draw to its buildings (streetRolls.ts reads `leaseW`).
   const manageable = r.sheet ? 6 + 0.4 * r.sheet.capacity : Infinity;
   const stretched = Math.min(0.08, 0.005 * Math.max(0, r.bbls.length - manageable));
-  target = r.mktOcc * (0.965 + 0.05 * care.lease) - stretched;
-  if (r.occ === undefined) r.occ = target;
-  r.occ += (target - r.occ) * 0.055 + rrange(s, -0.004, 0.004, "rivals");
-  // AN ANCHOR WALKS. Rare, expensive, and the reason a portfolio occupancy is
-  // a story rather than a number that tracks the index.
-  if (rng(s, "rivals") < 0.006 / Math.max(1, Math.sqrt(r.bbls.length) / 2)) {
-    const drop = rrange(s, 0.05, 0.14, "rivals");
-    r.occ -= drop;
-    // The size is the book's own: the occupancy that left, times the floor
-    // area it left from. No name — a rival's book has none to give.
-    noteTenantMove(s, { kind: "walk", who: r.name, sf: Math.round(drop * bookSf), pts: +(drop * 100).toFixed(1) });
-    if (newsChance(s, "tenant:" + r.id, 0.35)) {
-      s.news.unshift({
-        q: s.month, kind: "event",
-        text: `${r.name} has lost a major tenant. Their book is running at ${(Math.max(0, r.occ) * 100).toFixed(0)}% — somebody in this town is about to have space to fill.`,
-      });
+  const lagNow = (r.mktOcc ?? 0) - (r.occ ?? 0);
+  const pushing = lagNow > 0.03 && !r.stressMs && (r.aum ?? 0) > 0 && r.cash > 0;
+  r.leaseW = (0.85 + 0.3 * (care.lease ?? 0.5)) * (1 - 6 * stretched) * (pushing ? 1 + 0.35 * care.lease * Math.min(1.5, lagNow / 0.06) : 1);
+  // AN ANCHOR WALKS — a real one now: the biggest of their tenants who went
+  // dark or moved out this month (streetRolls.ts streetFailed), if it held a
+  // real share of the building.
+  {
+    const own = new Set(r.bbls);
+    let big: { bbl: string; name: string; sf: number; why?: string } | null = null;
+    for (let i = (s.econ.streetFailed?.length ?? 0) - 1; i >= 0; i--) {
+      const f = s.econ.streetFailed![i];
+      if (f.m < s.month) break;
+      if (!own.has(f.bbl)) continue;
+      const rec = resolveRec(parcels, s, f.bbl);
+      if (!rec || f.sf < Math.max(8000, 0.2 * (rec.bldgArea || 0))) continue;
+      if (!big || f.sf > big.sf) big = f;
+    }
+    if (big) {
+      noteTenantMove(s, { kind: "walk", who: r.name, sf: Math.round(big.sf), pts: +(100 * big.sf / Math.max(1, bookSf)).toFixed(1) });
+      if (newsChance(s, "tenant:" + r.id, 0.35)) {
+        const rec = resolveRec(parcels, s, big.bbl);
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `${big.name} ${big.why === "left" ? "is moving out of" : "has gone dark at"} ${rec?.address ?? "one of their buildings"}, handing ${r.name} back ${Math.round(big.sf / 1000)}k sf. Their book is running at ${(Math.max(0, r.occ) * 100).toFixed(0)}% — somebody in this town is about to have space to fill.`,
+        });
+      }
     }
   }
-  r.occ = Math.max(0.2, Math.min(0.99, r.occ));
 
   // the bricks
   if (r.condIdx === undefined) r.condIdx = 0.72;
@@ -2122,13 +2386,12 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   // LEASING BEFORE BRICKS when the book is behind the market. Capex alone
   // could not fill empty floors — Wrenfield's century tutorial was a giant
   // that sat dark. A firm that is short of tenants spends on leasing first.
+  // The spend behind the leasing push above (`leaseW`): brokers' fees, a
+  // marketing budget, the free months that win the tenant.
   const lag = (r.mktOcc ?? 0) - (r.occ ?? 0);
   if (lag > 0.03 && !r.stressMs && aum > 0) {
     const leaseSpend = Math.round((0.0018 * aum * care.lease * Math.min(1.2, lag / 0.08)) / 12);
-    if (leaseSpend > 0 && r.cash > leaseSpend * 4) {
-      r.cash -= leaseSpend;
-      r.occ = Math.min(0.99, r.occ + 0.005 * care.lease * Math.min(1.5, lag / 0.06));
-    }
+    if (leaseSpend > 0 && r.cash > leaseSpend * 4) r.cash -= leaseSpend;
   }
   // a capital plan is roughly 30bps of gross assets a year, and it is the
   // first line cut when a firm is short
@@ -2169,6 +2432,9 @@ export function marketAppetite(s: GameState): number {
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   let a = 0, n = 0;
   for (const r of livingRivals(s)) {
+    // How hard the street bids for BUILDINGS: the town's builders
+    // (GameState.builderFirms) bid for dirt through their own schemes.
+    if (r.builderProf) continue;
     const st = paramsOf(r);
     // a firm with no dry powder is not a bidder, however loudly it talks
     const dry = Math.max(0, Math.min(1.5, r.cash / Math.max(1, 0.04 * Math.max(1, r.aum ?? r.debt))));
@@ -2192,8 +2458,29 @@ const NEUTRAL_APPETITE = 0.43;
 
 /** The firm that owns this parcel, if any. */
 export function ownerOf(s: GameState, bbl: string): Rival | null {
-  for (const r of s.rivals ?? []) if (r.bbls.includes(bbl)) return r;
-  return null;
+  // The first firm whose book lists the deed — answered off an index of every
+  // book, rebuilt whenever any book or the roster is not the one it was built
+  // from. Books change by push or by replacement (never by writing a slot), so
+  // a book that is the same array at the same length lists the same deeds.
+  const rs = s.rivals ?? [];
+  let ix = OWNER_IX;
+  if (!ix || !ownerIxValid(ix, rs)) ix = OWNER_IX = buildOwnerIx(rs);
+  return ix.map.get(bbl) ?? null;
+}
+type OwnerIx = { roster: Rival[]; rivals: Rival[]; books: string[][]; lens: number[]; map: Map<string, Rival> };
+let OWNER_IX: OwnerIx | null = null;
+function ownerIxValid(ix: OwnerIx, rs: Rival[]): boolean {
+  if (ix.roster !== rs || ix.rivals.length !== rs.length) return false;
+  for (let i = 0; i < rs.length; i++) {
+    const r = rs[i];
+    if (r !== ix.rivals[i] || r.bbls !== ix.books[i] || r.bbls.length !== ix.lens[i]) return false;
+  }
+  return true;
+}
+function buildOwnerIx(rs: Rival[]): OwnerIx {
+  const map = new Map<string, Rival>();
+  for (const r of rs) for (const b of r.bbls) if (!map.has(b)) map.set(b, r);
+  return { roster: rs, rivals: [...rs], books: rs.map((r) => r.bbls), lens: rs.map((r) => r.bbls.length), map };
 }
 
 /**
@@ -2341,6 +2628,21 @@ const RAISE_M = 14;
 // six centuries read that spread positive in 95.2% of months, p50 +1.98, and
 // p90 of the positive months +3.53 (+3.39 on #164). 3.5 is that percentile.
 const SPREAD_FULL = 3.5;
+/**
+ * DISTRESS CAPITAL RAISES WHEN LEVERAGE DOES NOT (Oct 2026). With the coupon
+ * over the total return no levered fund can pitch, and the entry hazard was
+ * zero — for years at a time in a high-rate world (163 of 360 months on one
+ * seed, 6 new firms in thirty years against 20+ in calm ones). But the funds
+ * that raise in exactly those years are the ones that do not need positive
+ * leverage: vulture, contrarian and loan-to-own money that buys at a discount
+ * (the RTC-era opportunity funds of 1990-95, the distressed raises of 2009).
+ * They pitch at this share of a full window. Shape parameter, stated as such.
+ * Measured on twelve seeds: new firms in thirty years went from 2-25 to 6-25
+ * (4242, shut 176 months: 2 -> 15; the calm seeds unchanged, draw for draw).
+ * The money is real, so the towns it reaches build more: on the five seeds
+ * it touched, jobs +6% and office rent +7% on the 12-seed paired baseline.
+ */
+const DISTRESS_PITCH = 0.3;
 
 // HOW MUCH PRODUCT ONE SHOP NEEDS A YEAR TO BE A SHOP.
 //
@@ -2442,6 +2744,8 @@ const DEPLOY_YR = 2;
  */
 export function firmEntryPitch(s: GameState): {
   leverage: number; product: number; thin: number; pitch: number; traded: number; firms: number; slots: number;
+  /** The coupon is over the total return: only distress capital raises (DISTRESS_PITCH). */
+  distress: boolean;
 } {
   const c = s.econ.capRate;
   const cap = (c.office + c.retail + c.multifamily + c.industrial) / 4;
@@ -2449,17 +2753,23 @@ export function firmEntryPitch(s: GameState): {
   // See SPREAD_FULL for why the going-in yield alone was the wrong pitch.
   const spread = cap + underwrittenGrowthPct(s.econ) - (s.econ.indexRate + RATE_SPREAD);
   const leverage = spread <= 0 ? 0 : Math.min(1, spread / SPREAD_FULL);
+  // Shut to levered money, the window is distress capital's (DISTRESS_PITCH).
+  const distress = !(leverage > 0);
   let traded = 0;
   for (const m of Object.values(s.lastTradeM ?? {})) if (s.month - m < 12) traded++;
   for (const j of s.cityJobs ?? []) if (s.month - j.startM < 12) traded++;
-  const firms = livingRivals(s).length;
+  // The town's builders (GameState.builderFirms) are not funds chasing the
+  // tape's deals: they work their own schemes. Counted here they halved the
+  // product term and shut fund entry — measured, a 30-year seed went from 9
+  // first closes to 2 when the builders became firms.
+  const firms = livingRivals(s).filter((r) => !r.builderProf).length;
   const product = Math.min(1, traded / Math.max(1, firms) / DEPLOY_YR);
   const thin = Math.min(1.5, 1 / Math.max(0.2, marketAppetite(s)));
-  const pitch = Math.min(1, leverage * product * thin);
+  const pitch = Math.min(1, (distress ? DISTRESS_PITCH : leverage) * product * thin);
   // How many shops the tape carries that the town does not have: the year's
   // product at DEPLOY_YR a shop, less the shops standing.
   const slots = Math.max(0, traded / DEPLOY_YR - firms);
-  return { leverage, product, thin, pitch, traded, firms, slots };
+  return { leverage, product, thin, pitch, traded, firms, slots, distress };
 }
 
 function styleFromFounderRole(role: FounderBid["role"]): RivalStyle {
@@ -2540,14 +2850,17 @@ function tickRivalSpinouts(s: GameState) {
 // on an empty tape, a shut credit market or a crowded street, and still
 // lagging a bust, because the leverage term closes in one.
 function maybeNewFirm(s: GameState) {
-  const { leverage, product, pitch, slots } = firmEntryPitch(s);
+  const { leverage, product, pitch, slots, distress } = firmEntryPitch(s);
+  // Open to levered funds — founders' spinouts and anonymous raises alike —
+  // or, with the coupon over the return, to distress capital only.
   const streetOpen = leverage > 0 && product > 0 && pitch > 0;
+  const distressOpen = distress && product > 0 && pitch > 0;
 
   // Genealogy proposes first. A ready founder bid takes this month's raise
   // slot — anonymous capital only enters when nobody is waiting to spin out.
   const bids = s.founderBids ?? [];
   const readyIdx = bids.findIndex((b) => b.readyM <= s.month);
-  const founder = readyIdx >= 0 ? bids[readyIdx] : null;
+  let founder = readyIdx >= 0 ? bids[readyIdx] : null;
   /** Open-market months a ready founder keeps pitching before the street closes. */
   const FOUNDER_WINDOW_M = 18;
 
@@ -2556,9 +2869,40 @@ function maybeNewFirm(s: GameState) {
   // month leverage turns positive.
   if (founder && streetOpen) founder.openMs = (founder.openMs ?? 0) + 1;
 
-  if (!streetOpen) return;
+  if (!streetOpen && !distressOpen) return;
+  // A spinout is a levered fund: it waits out a distress window (its pitching
+  // clock above only runs while the street is open to it).
+  if (!streetOpen) founder = null;
 
-  if (rng(s, "rivals") > Math.min(1, pitch * Math.max(1, slots) / RAISE_M)) {
+  // FIRM ENTRY READS THE POOL (CAPITAL_RAISING_PLAN.md §0.5 5.5), on for new
+  // games (`poolEntry`; the setup can turn it off). Measured, it slows entry
+  // in 22-55% of months on City and damps the boom-era surge of new firms
+  // (one seed's 42 living firms became 20): easy money in a boom builds
+  // firms, and a finite pool is what stops a boom compounding on itself —
+  // the owner's call, Oct 2026 ("it should dampen booms"). A first close is raised from the city's
+  // local and family-office money (investors.ts); when this year's has mostly
+  // gone — to firms already raised, or to the player — fewer first closes
+  // clear, in proportion to what is left against a typical raise. With money
+  // to spare the factor is 1 and entry is exactly what it was (the same
+  // single draw).
+  const poolOn = !!s.poolEntry;
+  // A SPINOUT RAISES ON ITS TEAM'S RECORD (reputation.ts inheritRecord;
+  // GameState.rivalReputation). A new name is Unknown and raises as every new
+  // name does. A team carrying a record its investors can read raises a larger
+  // first close — +15% a band above Unknown, a shape parameter — and from
+  // Institutional the endowments take its meeting too, from Blue-chip the
+  // pensions (investors.ts, the same bands that open them to the player).
+  const parentEarly = founder && s.rivalReputation ? (s.rivals ?? []).find((x) => x.id === founder.fromFirmId) : undefined;
+  const heritage = parentEarly ? inheritRecord(s, parentEarly) : [];
+  const raiseBand: Band = heritage.length ? floorBand(scoreOf(heritage.map((h) => ({ ...h, kind: "derived" as const, label: "" })), s.month)) : "Unknown";
+  const raiseIds: ("local" | "family" | "endowment" | "pension")[] = ["local", "family"];
+  if (bandIdx(raiseBand) >= bandIdx("Institutional")) raiseIds.push("endowment");
+  if (bandIdx(raiseBand) >= bandIdx("Blue-chip")) raiseIds.push("pension");
+  const poolAvail = poolOn ? raiseIds.reduce((a, id) => a + poolLeft(s, id), 0) : Infinity;
+  const typicalRaise = 7_000_000 * sizeAreaScale(s) * (s.econ.cpi ?? 1);
+  const poolFactor = poolOn ? Math.min(1, poolAvail / Math.max(1, typicalRaise)) : 1;
+  if (poolFactor < 1) s.poolBindMs = (s.poolBindMs ?? 0) + 1;
+  if (rng(s, "rivals") > Math.min(1, pitch * Math.max(1, slots) / RAISE_M) * poolFactor) {
     // Not this month. Founders keep the slot and try again — a single roll
     // must not erase a career. Only the window expiring sends them elsewhere.
     if (founder && (founder.openMs ?? 0) >= FOUNDER_WINDOW_M) {
@@ -2609,12 +2953,28 @@ function maybeNewFirm(s: GameState) {
   const ciNow = s.econ.creditIdx ?? 1;
   const parentFirm = founder ? (s.rivals ?? []).find((x) => x.id === founder.fromFirmId) : undefined;
   const pool: ProfileId[] = founder ? ["spinout"]
+    // A distress window (DISTRESS_PITCH) is raised by money that buys at a
+    // discount and needs no positive leverage — not the converters and
+    // value-add shops a merely tight credit window also brings.
+    : distress ? ["vulture", "contrarian", "loanToOwn"]
     : ciNow < 0.85 ? ["vulture", "contrarian", "loanToOwn", "valueAdd", "converter"]
       : ciNow > 1.05 ? ["flipper", "merchant", "valueAdd", "ego", "industrialEdge", "rentalBuilder"]
         : PROFILES.filter((p) => p.id !== "spinout").map((p) => p.id);
   const profile = PROFILE_OF[pool[Math.floor(hash01(`${s.seed}:raise:${s.month}:${name}`) * pool.length)]];
   if (!founder) style = profile.style;
-  const equity = Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s));
+  // ...IN TODAY'S DOLLARS (2026-10-14). Not richer than the founders of forty
+  // years ago, but not poorer either: the band is the opening year's, carried
+  // at the town's own inflation. Read in nominal dollars, a fund raised in
+  // year eighty at a price level five times the opening one was a fifth of
+  // the size of every firm it was meant to compete with.
+  // It raises what it raises — and no more than the city has left to give.
+  const repMult = 1 + 0.15 * Math.max(0, bandIdx(raiseBand) - bandIdx("Unknown"));
+  const equity = Math.min(Math.round(rrange(s, 4_000_000, 10_000_000, "rivals") * sizeAreaScale(s) * (s.econ.cpi ?? 1) * repMult), poolOn ? Math.max(Math.round(poolAvail), 0) : Infinity);
+  // A first close too small to be a firm is not a first close.
+  if (equity < 0.25 * typicalRaise) return;
+  // Its investors' money comes out of the city's pool (investors.ts): the
+  // player raises from what the rivals leave.
+  drawRivalRaise(s, equity, raiseIds);
   const ltv = STYLE[style].maxLtv * rrange(s, 0.68, 0.88, "rivals");
   /**
    * A FIRST CLOSE IS COMMITMENTS, NOT CASH. The LPs sign for the fund; the
@@ -2651,9 +3011,11 @@ function maybeNewFirm(s: GameState) {
   });
   {
     const born = s.rivals[s.rivals.length - 1];
+    milestone(s, born, `Founded${parentFirm ? ` by partners out of ${parentFirm.name}` : ""}, with ${money(equity)} raised`);
     seatProfile(s, born, profile, parentFirm?.sheet);
     if (founder) born.style = style;
     born.home = parentFirm?.home;
+    if (heritage.length) born.heritage = heritage;
     // A spinout knows its parent's book and bids against it (§3.1, #28).
     if (parentFirm) { born.feud = parentFirm.id; if (!born.quirks?.includes("feuding")) (born.quirks ??= []).push("feuding"); }
     born.targetLtv = Math.min(born.targetLtv, +(paramsOf(born).maxLtv * 0.9).toFixed(2));
@@ -2708,7 +3070,7 @@ function gainsTaxOn(r: Rival, price: number): number {
  * the player paid on every disposal. Charged at the same rate the player pays.
  * Call it BEFORE the deed comes off `r.bbls`; see basisShare.
  */
-function gainsTax(r: Rival, price: number): number {
+export function gainsTax(r: Rival, price: number): number {
   const share = basisShare(r);
   const tax = gainsTaxOn(r, price);
   r.basis = Math.max(0, Math.round((r.basis ?? 0) - share));
@@ -2736,7 +3098,7 @@ function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
   const toFinish = Math.max(0, (j.cost ?? 0) - (j.spent ?? 0));
   const taker = livingRivals(s).find((r) =>
     paramsOf(r).build >= 0.3
-    && r.cash > price + toFinish * 0.4 + 2_000_000
+    && r.cash > price + toFinish * 0.4 + 2_000_000 * (s.econ.cpi ?? 1)
     && rng(s, "rivals") < 0.10 * paramsOf(r).build * ci);
   if (!taker) return;
   taker.cash -= price;
@@ -2787,6 +3149,13 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   for (const bbl of r.bbls) {
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     if (s.developments[bbl] || s.holdings[bbl]) continue;
+    // A LOT FOLDED INTO SOMEBODY'S ASSEMBLED SITE HAS NO GROUND OF ITS OWN.
+    // A firm could come to hold the deed to one in the month it was folded
+    // (the site's builder takes the parent; the child's deed can still change
+    // hands) and then break ground on it: an eight-storey office stood on a
+    // lot of zero square feet beside the site it belonged to (city-accept M,
+    // plan 14, seed 0, month 88). The site is built as one, by its builder.
+    if (s.merged?.[bbl]) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.lotArea < 2500) continue;
     if (rec.class === "land") {
@@ -2817,8 +3186,11 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     if (useProbe === "retail" && retailWantsMixed(rec)) useProbe = "mixed";
     const leadProbe = dominantOf(devMix(useProbe));
     const st = s.econ.structTight?.[leadProbe] ?? 0;
-    const vac = s.econ.cityVac?.[leadProbe] ?? NATURAL_VAC[leadProbe];
-    if (st < 0.05 && vac > frictionFloor(leadProbe) + 0.02) continue;
+    // (2026-10-13) A shortage gate stood here: no redevelopment unless the
+    // class was already short (structTight over 5%, or vacancy on its floor).
+    // The pro forma below prices delivery vacancy, rent and lease-up, so the
+    // gate decided nothing it does not — except that a firm could never
+    // build ahead of a shortage, only into one, so no firm ever overbuilt.
     const infillProbe = cityInfillCap(s, parcels, rec, leadProbe);
     const targetSf = rec.lotArea * cityCoverage(useProbe) * infillProbe;
     if (targetSf < rec.bldgArea * 1.15) continue;
@@ -2883,7 +3255,10 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // game has no discretionary approvals; the envelope is the FAR and the
   // physics, and the pro forma decides within them.
   const basisOverride = opp;
-  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, basisOverride);
+  // A lot the land market priced as a product (a pad, a centre, a box) is
+  // built as that product: the scheme the firm paid for is the one it builds.
+  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, basisOverride, 0.5, undefined,
+    hbu && hbu.psf > 0 ? hbu.product : undefined);
   if (!underwriting?.clears) return;
   // Land-bank starts were ~1%/month even for a full-appetite developer — so a
   // firm sitting on dirt still almost never broke ground. Raise the monthly
@@ -2891,8 +3266,21 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // Redevelopment was rarer than land-bank starts; push densify harder so the
   // city renews itself (same roll count — higher gate pass rate only).
   const startGate = redev ? 0.12 : 0.055;
-  if (startsRoll >= startGate * paramsOf(r).build * ci * underwriting.appetite) return;
+  // ONE BUILDER DOES NOT BUILD THE WHOLE TOWN EITHER. The street's mandate
+  // limit (rivalBuys: appetite halved at 15% of the street's book) was only
+  // ever applied to buying, so a builder that got ahead compounded on its own
+  // dirt without one: measured, one developer went $158M → $10B in thirty
+  // years, 360 buildings, the city's largest owner by a factor of eight. The
+  // same fade gates a start. A builder at a few per cent of the street builds
+  // as before; one that owns a fifth of it breaks ground a third as often.
+  const streetAum = livingRivals(s).reduce((a, x) => a + Math.max(0, x.aum ?? 0), 0);
+  const share = streetAum > 0 ? Math.max(0, r.aum ?? 0) / streetAum : 0;
+  const mandate = 1 / (1 + (share / 0.15) ** 2);
+  if (startsRoll >= startGate * paramsOf(r).build * ci * underwriting.appetite * mandate) return;
   const plan = underwriting.plan;
+  // ...and its construction lender has a house limit on one name, like every
+  // acquisition desk (deskWithRoom): no desk with room, no start.
+  if (plan.commitment > 0 && !deskWithRoom(s, r.id, plan.commitment)) return;
   sf = plan.sf;
   floors = plan.floors;
   if (redev && sf < rec.bldgArea * 1.08) return;
@@ -2900,7 +3288,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (cost > (r.aum ?? 0) * 0.9 + r.cash * 5) return;
   // Dirt is already theirs — first equity draw only (loan follows over the job).
   const dayOneNeed = Math.round(plan.equity * 0.40);
-  const needWithReserve = Math.round(dayOneNeed * sponsorShare(r.style)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
+  const needWithReserve = Math.round(dayOneNeed * sponsorShareOf(s, r)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
   const draw = lineDrawFor(s, parcels, r, needWithReserve);
   if (r.cash + draw < needWithReserve) return;
   const formerDurationRoll = rng(s, "rivals");
@@ -2925,6 +3313,7 @@ export function breakGround(
   const sf = plan.sf;
   const floors = plan.floors;
   const cost = plan.costTotal;
+  logFirm(s, r, "build", `Broke ground at ${rec.address}: ${floors} floors of ${use}${reuse ? " (a conversion)" : redev ? " (a teardown)" : ""}`, bbl, cost);
   const dayOneNeed = Math.round(plan.equity * 0.40);
   const lead = dominantOf(devMix(use));
   const months = plan.months;
@@ -2960,7 +3349,7 @@ export function breakGround(
   const dayOne = dayOneNeed;
   // The deal's investors write their share of the cheque; the sponsor's own
   // dirt (or the building it is replacing) is its in-kind contribution.
-  jvFund(s, r, bbl, dayOne, plan.landBasis);
+  jvFund(s, r, bbl, dayOne, plan.landBasis, plan);
   r.cash -= dayOne;
   s.cityJobs.push({
     bbl, use, sf, floors, startM: s.month, deliverM, mix: prog,
@@ -2969,6 +3358,7 @@ export function breakGround(
     commitment: Math.round(Math.max(0, cost - dayOne) * 1.12),
     ratePct: plan.ratePct,
     lender: plan.lender,
+    ...(plan.product ? { product: plan.product.key, ...(plan.product.draw !== undefined ? { draw: plan.product.draw } : {}) } : {}),
   });
   noteRecordPlan(s, parcels, bbl, lead, sf, floors, r.name);
   // Into the one delivery queue the day the hole is dug, exactly like the city.
@@ -3201,7 +3591,14 @@ function recallable(r: Rival): number {
   // distributions second, at the style's clause. The opening roster carries no
   // uncalled tranche (their vehicles are fully invested; that is what makes
   // them the incumbents), so for them this is exactly the old expression.
-  return Math.floor((r.uncalled ?? 0) + Math.max(0, r.distributed ?? 0) * RECALL[r.style]);
+  // ...but only RECENT distributions. A recallable-distribution clause reaches
+  // back over a window (typically the last two to three years of returned
+  // capital), not over every dollar the vehicle has ever paid out: measured,
+  // small firms carried $15-27M of lifetime distributions against $1-3M of
+  // equity, a recall well several times the firm, and capital calls cured
+  // 60-75% of every month in arrears. `distRecent` decays with a two-year
+  // memory; old saves start with none.
+  return Math.floor((r.uncalled ?? 0) + Math.max(0, Math.min(r.distributed ?? 0, r.distRecent ?? 0)) * RECALL[r.style]);
 }
 
 /**
@@ -3332,7 +3729,10 @@ function callCapital(r: Rival, want: number): number {
   // The clawback goes back where it came from. `distributed` becomes cash NET
   // returned to the partners, which is what it should always have meant, and
   // the well cannot be drawn twice.
-  if (rest > 0) r.distributed = Math.round((r.distributed ?? 0) - rest);
+  if (rest > 0) {
+    r.distributed = Math.round((r.distributed ?? 0) - rest);
+    r.distRecent = Math.max(0, Math.round((r.distRecent ?? 0) - rest));
+  }
   return got;
 }
 
@@ -3409,7 +3809,7 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
     // disposal nets and both ends read it" while two expressions stood. The
     // agreement it reported (+0.01% over 291 sales) was the formula compared
     // against itself — a test that cannot fail.
-    const px = markAsset(s, r, rec).v * DURESS_MID;
+    const px = markAsset(s, r, rec, true).v * DURESS_MID;
     const net = disposalNet(s, r, bbl, px);
     if (!biggest || net > biggest.net) biggest = { bbl, rec, net };
     if (net >= need && (!pick || net < pick.net)) pick = { bbl, rec, net };
@@ -3423,14 +3823,26 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
 
 /** Put one named building on the tape at a motivated seller's price. */
 function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: string, rec: ParcelRecord) {
-  const sell = { bbl, rec };
+  // the deed that conveys is the canonical record, not the firm's copy of it
+  const sell = { bbl, rec: resolveRec(parcels, s, bbl) ?? rec };
   // PRICED ON THE DEED THAT CONVEYS, not the firm's class-model mark. The
   // duress discount is off what a buyer gets — this roll, this grade, less the
   // distress notch (conveyedValue) — and the class mark ran up to 2.6x the
   // market appraisal on an emptied building, so a "motivated" seller asked
   // over the tape (test/appraisal.mjs; the voluntary listing made this move
   // long ago, HANDOFF 0f).
-  const v = conveyedValue(s, sell.rec, sell.bbl, true, assetGrade(r, sell.rec));
+  // ...AND ON THE ROLL THAT CONVEYS. The deed's value rests on a drawn rent
+  // roll; pricing on one draw and stamping the listing with another (sim.ts
+  // stampListing at month end) gave the buyer a different building from the
+  // one priced: a "motivated" quiet sale asked 105% of the deed it handed
+  // over. The vessel the ask is struck on is the roll the listing carries.
+  const deed = conveyedDeed(s, sell.rec, sell.bbl, true, assetGrade(r, sell.rec));
+  // priced on the deed as disclosed, which is what the buyer's appraisal
+  // reads (asIfOwned over the listing's roll): the pricing vessel's space
+  // blocks are not part of the disclosure, and they alone put it 16% over
+  const v = holdingValue(sell.rec, s.econ, { ...deed.vessel, blocks: undefined } as typeof deed.vessel, s.month);
+  const disclosed = { cond: deed.vessel.condition, condIdx: deed.vessel.condIdx, roll: deed.vessel.tenants, resRentPsf: deed.vessel.resRentPsf,
+    ...(deed.vessel.occ !== undefined ? { occ: deed.vessel.occ } : {}) };
   // THE QUIET CALL FIRST. A sponsor with a few weeks of road left would rather
   // sell to one buyer it can name than put "motivated" on the tape and have
   // every vulture in town price its failure. If you are a buyer it can name —
@@ -3444,15 +3856,19 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
   const credible = Object.keys(s.holdings).length > 0 || !!t?.deals;
   const secrecy = (r.sheet?.secrecy ?? 50) / 100;
   if (credible && !(t?.insults) && !r.rules?.includes("neverSellsToPlayer")
-    && rng(s, "rivals") < 0.25 + 0.45 * secrecy) {
+    && rng(s, "rivals") < 0.25 + 0.45 * secrecy
+    // After the draw, so the phones being off moves no stream.
+    && !s.brokersOff) {
     const lev = (r.aum ?? 0) > 0 ? r.debt / r.aum! : 1;
     const desperate = Math.max(0, Math.min(1, (r.stressMs ?? 0) / 8 + Math.max(0, lev - paramsOf(r).maxLtv) * 2));
     const ask = Math.round(v * (0.95 - 0.20 * desperate) / 1000) * 1000;
     r.dumped = (r.dumped ?? 0) + 1;
     s.listings.push({
-      bbl: sell.bbl, ask, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id,
+      bbl: sell.bbl, ask, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id, ...disclosed,
+      askFactor: 0.95 - 0.20 * desperate,
       earlyUntilM: s.month + 2, quietFrom: r.name,
     });
+    logFirm(s, r, "event", `Squeezed — offered ${sell.rec.address} to you privately`, sell.bbl, ask);
     s.news.unshift({
       q: s.month, kind: "deal", bbl: sell.bbl,
       text: `${r.name} rang you directly. They need money and they would rather not say so on the tape: `
@@ -3466,7 +3882,8 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
   r.dumped = (r.dumped ?? 0) + 1;
   // The deed stays with them until somebody buys it — a firm selling under
   // pressure is still the owner, and that is the whole point of the trade.
-  s.listings.push({ bbl: sell.bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id });
+  s.listings.push({ bbl: sell.bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id, ...disclosed });
+  logFirm(s, r, "event", `Short of cash — put ${sell.rec.address} on the tape under appraisal`, sell.bbl, px);
   // A FIRM SELLING UNDER PRESSURE IS ALWAYS RECORDED, AND INTERRUPTS WHEN IT IS
   // ABOUT YOU. This had no gate at all — every distress listing in the city
   // filed as an `event`, 0.81 a year, most of them buildings the player had
@@ -3556,6 +3973,7 @@ function reoWindow(s: GameState, lender: string): number {
 function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, only?: string): boolean {
   const st = paramsOf(r);
   let worst: { bbl: string; rec: ParcelRecord; v: number; ratio: number } | null = null;
+  let fore: { bbl: string; rec: ParcelRecord; v: number; ratio: number; cov: number } | null = null;
   // A MATURITY DEFAULT HANDS BACK THE BUILDING THAT DEFAULTED. The desk that
   // will not renew a loan takes THAT deed; giving it the firm's least-liked
   // building instead left the matured note outstanding and handed an unrelated
@@ -3568,7 +3986,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
     if (!row || row.heldBy || !(row.balance > 0)) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    const { v, noi } = markAsset(s, r, rec);
+    const { v, noi } = markAsset(s, r, rec, true);   // a deal: a fresh appraisal
     if (v <= 0) continue;
     // ONLY A BUILDING UNDER WATER GOES BACK. A squeezed sponsor hands the keys
     // over on a loan a forced sale would not cover; on one it would, the sale
@@ -3577,13 +3995,38 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
     // squeeze path used to hand back the building the desks liked least
     // whether or not it had equity in it — 20 of 27 handbacks in a thirty-
     // year playthrough read "the $0 it is short is the bank's problem".
-    if (!only && row.balance < v * DURESS_MID) continue;
     const ratio = streetRefiProceeds(s, v, noi, st.maxLtv).principal / v;
+    if (!only && row.balance < v * DURESS_MID) {
+      // Not under water: kept as the foreclosure candidate (below).
+      const cov = noi / Math.max(1, row.balance);
+      if (!fore || cov < fore.cov) fore = { bbl, rec, v, ratio, cov };
+      continue;
+    }
     if (!worst || ratio < worst.ratio) worst = { bbl, rec, v, ratio };
+  }
+  // THE LOAN IN DEFAULT IS FORECLOSED, NOT THE FIRM (2026-10-14). A building
+  // with equity in it is not handed back — and a forced sale that nets no cash
+  // after the corporate line takes its share is refused (marketAssetToRaise)
+  // — so a firm at 60-78% loan-to-value fell between the two and held
+  // everything until the whole book went to one desk fourteen months later.
+  // Measured: 2-10 rival distressed listings in sixty years against hundreds
+  // of receiver sales. That is not what default looks like: the lender on
+  // the note that is not being paid forecloses on THAT building; it is sold
+  // at the courthouse at a distressed price, the debt is paid out of the
+  // proceeds and the surplus goes to the borrower (UCC/state foreclosure
+  // law — the surplus belongs to the owner). One building at a time, the
+  // weakest coverage first, and the rest of the book lives or dies on its own.
+  let surplus = 0;
+  if (!worst && fore && !only) {
+    worst = fore;
+    surplus = 1;
   }
   if (!worst) return false;
   const desk = deskFor(s, r, worst.bbl);
+  noteLost(s, r, worst.bbl);
   const owed = dropDeed(s, r, worst.bbl);
+  logFirm(s, r, "event", `Handed ${worst.rec.address} back to ${desk}`, worst.bbl, owed);
+  milestone(s, r, surplus ? `Lost ${worst.rec.address} to foreclosure (${desk})` : `Handed ${worst.rec.address} back to ${desk}`);
 
   r.bbls = r.bbls.filter((b) => b !== worst!.bbl);
   forgetDeed(r, worst.bbl);
@@ -3600,17 +4043,26 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   const deedV = conveyedValue(s, worst.rec, worst.bbl, true, assetGrade(r, worst.rec));
   const ask = reoAsk(s, deedV, owed, desk);
   const loanBasis = Math.min(deedV, Math.max(0, owed));
+  // The courthouse price, and the borrower's surplus over the debt.
+  if (surplus) {
+    const sale = deedV * DURESS_MID;
+    surplus = Math.max(0, Math.round(sale - Math.max(0, owed)));
+    r.cash += surplus;
+  }
   s.listings.push({
     bbl: worst.bbl, ask, listedM: s.month,
     expiresM: s.month + reoWindow(s, desk), distress: true, receiverFor: desk, reason: "receiver",
-    loanBasis,
+    loanBasis, mark: Math.round(deedV),
   });
   chargeLenderLoss(s, desk, Math.max(0, owed - ask));
   const off = Math.max(0, 1 - ask / Math.max(1, deedV));
   s.news.unshift({
     q: s.month, kind: "warn",
-    text: `${r.name} has handed ${worst.rec.address} back to ${desk}. ${why} `
-      + `The paper was non-recourse, so the ${money(Math.max(0, owed - ask))} it is short is the bank's problem, not theirs. `
+    text: (surplus > 0
+      ? `${desk} has foreclosed on ${r.name}'s ${worst.rec.address}. ${why} The debt was paid out of the courthouse price and `
+        + `${money(surplus)} of surplus went back to the firm — a fraction of what it was marked at. `
+      : `${r.name} has handed ${worst.rec.address} back to ${desk}. ${why} `
+      + `The paper was non-recourse, so the ${money(Math.max(0, owed - ask))} it is short is the bank's problem, not theirs. `)
       + (off > 0.06
         ? `${desk} has put it straight out at ${money(ask)} — ${(off * 100).toFixed(0)}% under the mark, which is the loan and not the value. `
           + `They are not pricing the building, they are clearing the balance sheet. `
@@ -3621,7 +4073,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
     kind: "default",
     party: `${r.name} / ${desk}`,
     amount: owed,
-    outcome: `deed in lieu; ${desk} took title`,
+    outcome: surplus > 0 ? `foreclosed; ${desk} took title, surplus to the borrower` : `deed in lieu; ${desk} took title`,
   });
   return true;
 }
@@ -3676,7 +4128,7 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     } else if (s.month < x.maturityM) continue;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    const { v, noi } = markAsset(s, r, rec);
+    const { v, noi } = markAsset(s, r, rec, true);   // a deal: a fresh appraisal
     const due = x.balance;
     if (due <= 0) continue;
     const refi = streetRefiProceeds(s, v, noi, st.maxLtv);
@@ -3825,7 +4277,7 @@ function cashOutRefi(s: GameState, parcels: ParcelTable, r: Rival, room: number,
     if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) continue;
     const row = rowOn(s, r, bbl);
     if (row?.heldBy) continue;
-    const { v, noi } = markAsset(s, r, rec);
+    const { v, noi } = markAsset(s, r, rec, true);   // a deal: a fresh appraisal
     const head = Math.round(Math.min(ltvCap * v, streetRefiProceeds(s, v, noi, ltvCap).principal) - (row?.balance ?? 0));
     if (head > 250_000) opts.push({ bbl, rec, v, noi, head });
   }
@@ -3834,9 +4286,49 @@ function cashOutRefi(s: GameState, parcels: ParcelTable, r: Rival, room: number,
   for (const o of opts) {
     if (left <= 250_000) break;
     const take = Math.min(left, o.head);
-    originateRow(s, r, o.bbl, take, o.v, o.noi, { klass: o.rec.class, condition: assetGrade(r, o.rec) });
-    r.cash += take;
+    const row = originateRow(s, r, o.bbl, take, o.v, o.noi, { klass: o.rec.class, condition: assetGrade(r, o.rec) });
+    // A cash-out is a refinancing: the fee on the whole new balance, the new
+    // desk's points on what is drawn, a cap on floating paper — as the
+    // player's refinance charges.
+    r.cash += take - (row ? streetLoanCost(row, take, row.balance) : 0);
     left -= take;
+  }
+}
+
+/** What an appraisal was struck on: a different building (bought, delivered, razed, regraded) needs a new one. */
+function markKey(rec: ParcelRecord, cond: Condition): string {
+  return `${rec.class}|${rec.bldgArea}|${cond}`;
+}
+
+/**
+ * THE BOOKS ARE APPRAISED ONCE A YEAR (owner, Oct 2026: "everything can be
+ * reappraised January 1st along with rival firms"). A private owner's
+ * portfolio is valued by an annual appraisal, and its lender reads that value
+ * until the next one or until a deal orders a new one (the open-end funds of
+ * the NCREIF index appraise quarterly; the owner-operators and closed-end
+ * books this street is made of, yearly). So a firm's book, its leverage and
+ * its loan tests move in January steps and lag a turning market, which is the
+ * appraisal lag real books have. Struck here, inside the tick only, so a
+ * screen that reads a firm's book never changes it.
+ *
+ * It was also the single largest repeat in the month: every firm marked every
+ * building every month (about a tenth of the tick).
+ */
+function appraiseBooks(s: GameState, parcels: ParcelTable) {
+  const jan = s.month % 12 === 0;
+  for (const r of s.rivals ?? []) {
+    const held = new Set(r.bbls);
+    const out: NonNullable<Rival["marks"]> = {};
+    for (const bbl of r.bbls) {
+      const rec = resolveRec(parcels, s, bbl);
+      if (!rec) continue;
+      const cond = assetGrade(r, rec);
+      const k = markKey(rec, cond);
+      const was = r.marks?.[bbl];
+      out[bbl] = !jan && was && was.k === k ? was : { v: assetValue(rec, s.econ, cond), m: s.month, k };
+    }
+    if (r.marks) for (const b of Object.keys(r.marks)) if (!held.has(b)) delete r.marks[b];
+    r.marks = out;
   }
 }
 
@@ -3845,6 +4337,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   tickRivalSpinouts(s);
   maybeNewFirm(s);
+  appraiseBooks(s, parcels);
   // fundJobs runs earlier in tickMonth — before tickEcon settles deliveries —
   // so schedule slips and orphans are visible to the space market. Cash draws
   // already landed; the solvency test below reads the same balances.
@@ -3920,7 +4413,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           listedM: s.month, expiresM: s.month + reoWindow(s, desk), distress: true,
           sellerId: r.id, receiverFor: r.name,
           reason: "receiver",
-          loanBasis,
+          loanBasis, mark: Math.round(v),
         });
       }
       continue;
@@ -3941,6 +4434,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         const pr = paramsOf(r);
         const line = reviewThesis(s, parcels, r, { maxLtv: pr.maxLtv, lev: aum > 0 ? r.debt / aum : 0, classes: pr.classes, builds: pr.build > 0 });
         if (line) s.news.unshift({ q: s.month, kind: "info", text: line });
+        if (r.thesis && r.thesis.fromM === s.month) logFirm(s, r, "plan", `New plan: ${thesisLabel(r.thesis)}`);
       }
     }
     // Absorption / rivalBuys used to call markRival again for every bidder on
@@ -3983,6 +4477,13 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     if (s.month > 0 && s.month % 12 === 0) {
       // THE RACE CHART'S POINT, and a year of watching them. Display only.
       (r.eqHist ??= []).push([s.month / 12, Math.round(aum - r.debt + r.cash)]);
+      {
+        const eqNow = aum - r.debt + r.cash;
+        if (eqNow > 0 && eqNow > (r.peakEq ?? 0) * 1.25) {
+          if (r.peakEq) milestone(s, r, `A new high: worth ${money(eqNow)}, ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}`);
+          r.peakEq = eqNow;
+        }
+      }
       if (r.eqHist.length > 150) r.eqHist.shift();
       yearOfWatching(s, r, sheetOf(r));
       driftYear(s, r);
@@ -3993,6 +4494,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           maxLtv: pr.maxLtv, lev: aum > 0 ? r.debt / aum : 0, classes: pr.classes, builds: pr.build > 0,
         });
         if (line) s.news.unshift({ q: s.month, kind: "info", text: line });
+        if (r.thesis && r.thesis.fromM === s.month) logFirm(s, r, "plan", `New plan: ${thesisLabel(r.thesis)}`);
       }
       r.rateYr = s.econ.indexRate;
       const depr = (r.basis ?? aum) * 0.7 / 33;
@@ -4057,7 +4559,8 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     const contrarianHold = r.sheet && r.sheet.cycle < 40 && (s.econ.creditIdx ?? 1) >= 0.95
       ? 1 + (40 - r.sheet.cycle) / 20 : 1;
     const reserve = contrarianHold * Math.min(
-      r.style === "developer" ? 45_000_000 : 30_000_000,
+      // The ceiling on dry powder is a real amount, carried at inflation.
+      (r.style === "developer" ? 45_000_000 : 30_000_000) * (s.econ.cpi ?? 1),
       Math.max(2_000_000 * dollarLevel(s.econ), aum * (
         r.style === "developer" ? 0.16 : r.style === "family" ? 0.09 : r.style === "core" ? 0.06 : 0.045)),
     );
@@ -4083,10 +4586,18 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // vehicles raised on this street carry `uncalled`; the opening roster are
     // established operators whose current fund is already mid-life.
     const investing = r.uncalled !== undefined && s.month - (r.bornM ?? 0) < FUND_INVEST_M;
+    if (r.distRecent) r.distRecent = Math.round(r.distRecent * Math.exp(-1 / 24));
+    // A TENTH OF THE SURPLUS A MONTH, about 70% of it a year (2026-10-14).
+    // This paid 35% a month — 99% of everything above the reserve inside a
+    // year — so a small firm could never accumulate the next equity cheque
+    // and the lower half of the street shrank 2-6% a year in real terms
+    // while the incumbents compounded. Operating partnerships and REITs pay
+    // out most, not all, of their free cash and keep the rest to grow.
     if (r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
-      const out = Math.round((r.cash - reserve) * 0.35);
+      const out = Math.round((r.cash - reserve) * 0.10);
       r.cash -= out;
       r.distributed = (r.distributed ?? 0) + out;
+      r.distRecent = (r.distRecent ?? 0) + out;
     }
 
     // --- the overreach ---------------------------------------------------
@@ -4156,6 +4667,24 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         }
       }
     }
+    // RECYCLING. A firm that has outgrown its oldest small buildings sells
+    // them to fund what it does now — the non-core disposal every grown
+    // platform runs. Twice a year, the smallest seasoned deed under a third of
+    // its ticket goes to the tape, so a big book concentrates into its best
+    // buildings rather than carrying the tail it bought when it was small.
+    let recycle = false;
+    if (!forcedBbl && !r.stressMs && s.month % 6 === 0) {
+      const floor = minTicket(r) / 3;
+      let smallest = Infinity;
+      for (const bbl of r.bbls) {
+        const v = byBbl[bbl]?.v ?? 0;
+        const held = s.month - (r.heldSince?.[bbl] ?? r.bornM ?? 0);
+        if (v <= 0 || v >= floor || held < 24 || v >= smallest) continue;
+        if (s.holdings[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
+        if (s.developments?.[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
+        smallest = v; forcedBbl = bbl; recycle = true;
+      }
+    }
     if (forcedBbl) {
       const rec = resolveRec(parcels, s, forcedBbl);
       if (rec) {
@@ -4187,7 +4716,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
               ask: Math.round(v * rrange(s, 0.94, 1.04, "rivals") / 1000) * 1000,
               listedM: s.month, expiresM: s.month + Math.round(rrange(s, 9, 16, "rivals")),
               sellerId: r.id,
-              reason: "fund-life",
+              reason: recycle ? "non-core" : "fund-life",
             });
           }
         } else {
@@ -4197,7 +4726,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
             ask: Math.round(v * rrange(s, 0.94, 1.04, "rivals") / 1000) * 1000,
             listedM: s.month, expiresM: s.month + Math.round(rrange(s, 9, 16, "rivals")),
             sellerId: r.id,
-            reason: r.style === "merchant" ? "merchant" : "fund-life",
+            reason: recycle ? "non-core" : r.style === "merchant" ? "merchant" : "fund-life",
           });
           // AND A ROUTINE LISTING IS NOT NEWS EITHER. A fund reaching the end of
           // its hold and putting a building up is the most ordinary thing on this
@@ -4402,6 +4931,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       && !(s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned);
     if (r.cash < 0 || calledShort) {
       r.stressMs = (r.stressMs ?? 0) + 1;
+      if (r.stressMs === 1) milestone(s, r, `Fell behind on its debt with ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} on the book`);
       // 0. THE DEEP-POCKETED BACKER (a quirk, hidden until used): a parent
       //    company or an old fortune behind the firm commits fresh equity once,
       //    the first time it misses a payment. It arrives as commitment the
@@ -4443,13 +4973,17 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       //    only ever accelerate. Giving the keys back removes the asset AND the
       //    loan AND the interest on it in one move, and on non-recourse paper
       //    the shortfall stops being the borrower's problem at the door.
-      if ((r.stressMs === NOTICE_M || r.stressMs === NOTICE_M * 2) && r.bbls.length) {
+      //    Each note in default is its own lender's case, so after notice one
+      //    goes every quarter, not just twice (2026-10-14).
+      if (r.stressMs >= NOTICE_M && (r.stressMs - NOTICE_M) % 3 === 0 && r.bbls.length) {
         deedInLieu(s, parcels, r, `They have missed ${r.stressMs} months of debt service and could not cure.`);
       }
       // 4. AND WHEN THE CALENDAR RUNS OUT, the desks stop taking assets one at
       //    a time and take the relationship. Same clock as the player's.
       if (r.stressMs > NOTICE_M + FORECLOSE_M) {
         r.failedM = s.month;
+        r.endReason = "failed";
+        milestone(s, r, `Went under — ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} to the lenders`);
         chargeSponsorFailure(s, parcels, r);
         s.news.unshift({
           q: s.month, kind: "warn",
@@ -4468,6 +5002,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       // the tape, so `dumped` ran to 22 on a shop with money in the bank and
       // the news line called it "their 22nd building on the tape this stretch".
       // The branch that did that is gone; this is the belt to its braces.
+      if ((r.stressMs ?? 0) > 1) milestone(s, r, `Caught up on its debt after ${r.stressMs} months behind`);
       r.stressMs = 0;
       r.dumped = 0;
     }
@@ -4479,13 +5014,19 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // tests. Give them two years to redeploy (or burn remaining dry powder),
     // then wind the vehicle up. New funds start empty: they are exempt until
     // they have either held a deed or exhausted their uncalled capital.
-    if (r.failedM === undefined && r.bbls.length === 0 && (r.debt ?? 0) <= 0 && (r.cash ?? 0) >= 0 && !(r.stressMs)) {
+    // A BUILDER BETWEEN SCHEMES IS NOT A HUSK: a merchant sells what it built
+    // and waits for the next site. It retires the way the builder register's
+    // founders do — fifteen years without breaking ground.
+    if (r.builderProf && r.failedM === undefined && r.bbls.length === 0 && s.month - (r.lastBuildM ?? r.bornM) <= 180) {
+      r.emptyMs = 0;
+    } else if (r.failedM === undefined && r.bbls.length === 0 && (r.debt ?? 0) <= 0 && (r.cash ?? 0) >= 0 && !(r.stressMs)) {
       const everDeployed = (r.basis ?? 0) > 0 || (r.distributed ?? 0) > 0 || (r.aum ?? 0) > 0;
       const dryPowderGone = (r.uncalled ?? 0) <= 0 && (s.month - (r.bornM ?? 0)) > 36;
       if (everDeployed || dryPowderGone) {
         r.emptyMs = (r.emptyMs ?? 0) + 1;
         if (r.emptyMs > 24) {
           r.failedM = s.month;
+          r.endReason = "woundUp";
           s.news.unshift({
             q: s.month, kind: "event",
             text: `${r.name} has wound up. The last building is gone, the debt is clear, `
@@ -4696,6 +5237,10 @@ export function rivalBuys(
     if (st.classes && !st.classes.includes(rec.class)) return false;
     // CAPACITY: a small shop digests two deals a year, a platform eight.
     if (r.sheet && boughtLastYear(r, s.month) >= dealsPerYear(r.sheet)) return false;
+    // ...AND NOT BELOW ITS TICKET. A lot is sized by the job it carries.
+    // A lot that grows a site the builder already holds is bought for the site.
+    if ((rec.class === "land" ? price / LAND_SHARE_OF_JOB : price) < minTicket(r)
+      && !(rec.class === "land" && paramsOf(r).build > 0 && adjoinsOwnDirt(s, parcels, r, rec.bbl))) return false;
     const { debt, need, draw, aum } = drawFor(r);
     if (r.cash + draw < need) return false;
     const aumAfter = aum + price;
@@ -4753,13 +5298,27 @@ export function rivalBuys(
     if (dirt !== undefined) return dirt;
     const sc = landRead(rec, s.econ).scheme;
     const uw = sc && sc.psf > 0
-      ? underwriteDevelopment(s, parcels, rec.bbl, sc.use, sc.floors, sc.coverage, price)
+      ? underwriteDevelopment(s, parcels, rec.bbl, sc.use, sc.floors, sc.coverage, price, 0.5, undefined, sc.product)
       : null;
     dirt = uw ? { clears: uw.clears, cushionPp: uw.plan.yieldOnCost - uw.plan.requiredYield } : null;
     return dirt;
   };
   let best = candidates[0], bestW = -Infinity;
   if (prefer) bestW = 1;
+  // ONE OWNER DOES NOT BUY THE WHOLE TOWN (2026-10-14). Measured, the largest
+  // firm held 32-45% of all the street's equity at its peak and the top five
+  // 66-79% by year sixty, while the lower half shrank in real terms. Real
+  // metros do not concentrate like that: the largest office owners in
+  // Manhattan hold single-digit shares of the inventory, and institutional
+  // capital runs under single-market concentration limits — a firm whose
+  // book is already mostly one city sends the next dollar to another one. So
+  // a firm's appetite here fades with its share of the street's book:
+  // halved at 15%, a fifth at 30%. A shape parameter for a mandate limit.
+  // Tightening it to 8% moved nothing (top five 70-77% either way): what is
+  // left is the size distribution itself, and firm sizes are Zipf-like
+  // (Axtell 2001, Science) — with ~30 firms Zipf alone puts the largest at
+  // ~25% and the top five at ~57% of the total.
+  const streetAum = livingRivals(s).reduce((a, x) => a + Math.max(0, x.aum ?? 0), 0);
   for (const r of prefer ? [] : candidates) {
     const st = paramsOf(r);
     const builds = land && paramsOf(r).build > 0;
@@ -4803,7 +5362,11 @@ export function rivalBuys(
     // A GRUDGE (§5): a firm that holds one leans into a listing you are
     // already talking about — inside its own price discipline, never past it.
     const spite = s.talks?.[rec.bbl] && r.sheet ? 1 + Math.min(1, Math.max(0, grudgeOf(s, r)) * 0.12) : 1;
-    const w = st.appetite * Math.max(0.05, cyc) * spite * deployPressure(s, r)
+    const share = streetAum > 0 ? Math.max(0, r.aum ?? 0) / streetAum : 0;
+    const mandate = 1 / (1 + (share / 0.15) ** 2);
+    // THE LOT NEXT DOOR IS WORTH MORE TO THE BUILDER WHO OWNS THIS ONE.
+    const assembling = builds && adjoinsOwnDirt(s, parcels, r, rec.bbl) ? 1.8 : 1;
+    const w = st.appetite * Math.max(0.05, cyc) * spite * deployPressure(s, r) * mandate * assembling
       // squared: a vulture is not a little keener on a receiver's ticket, it
       // is the room's first call (Distress 90: ~5x a firm at 30).
       * (isDistress ? st.distressBias * st.distressBias : 1)
@@ -4851,9 +5414,11 @@ export function rivalBuys(
     // Same event, same rule — a firm selling to another firm and a firm selling
     // to Hartford both retire the loan that was on the building, then the line.
     const relief = settleSale(s, seller, rec.bbl, price);
-    seller.cash += price - relief - tax;
-    const partnersOut = jvLpTake(jv, price - relief - tax, s.month);
+    const costs = streetSaleCost(price);
+    seller.cash += price - relief - tax - costs;
+    const partnersOut = jvLpTake(jv, price - relief - tax - costs, s.month);
     seller.cash -= partnersOut;
+    noteRealised(s, seller, jv, price, partnersOut);
     settleEmptyBook(s, seller);
   }
   const fin = drawFor(best);
@@ -4865,16 +5430,25 @@ export function rivalBuys(
   // THE ACQUISITION MORTGAGE, written by the desk that will take it
   // (rivalDebt.originateRow) — sized above on the deal's own income.
   if (fin.debt > 0) {
-    originateRow(s, best, rec.bbl, fin.debt, price, goingInNoi, {
+    const row = originateRow(s, best, rec.bbl, fin.debt, price, goingInNoi, {
       klass: rec.class, condition: initialCondition(rec),
       stab: stabViewFor(rec, s.econ, initialCondition(rec), price),
     });
+    // ...and pays for it at the table, as the player does (points, a cap).
+    if (row) best.cash -= streetLoanCost(row, fin.debt);
   }
   best.basis = Math.round((best.basis ?? 0) + fin.equity + closing);
   best.aum = Math.round((best.aum ?? 0) + price);
   transferDeed(s, rec.bbl, best, 0);   // the seller was already paid above
+  const wasDistress = !!s.listings.find((l) => l.bbl === rec.bbl)?.distress;
   recordComp(s, rec, price, best.name, seller?.name ?? sellerName ?? "a private owner",
-    s.listings.find((l) => l.bbl === rec.bbl)?.distress, seller ? assetGrade(seller, rec) : undefined, offMarket);
+    wasDistress, seller ? assetGrade(seller, rec) : undefined, offMarket);
+  {
+    const what = rec.class === "land" || !rec.bldgArea ? "a site" : CLASS_NOUN[rec.class] ?? rec.class;
+    const how = wasDistress ? " — a distress sale" : offMarket ? " — never listed" : "";
+    logFirm(s, best, "buy", `Bought ${rec.address} (${what}) from ${seller?.name ?? sellerName ?? "a private owner"}${how}`, rec.bbl, price);
+    if (seller) logFirm(s, seller, "sell", `Sold ${rec.address} to ${best.name}`, rec.bbl, price);
+  }
   return best;
 }
 
@@ -4907,9 +5481,12 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
   const jv = takeJv(seller, bbl);
   forgetDeed(seller, bbl);
   const relief = settleSale(s, seller, bbl, price);
-  seller.cash += price - relief - tax;
-  const partnersOut = jvLpTake(jv, price - relief - tax, s.month);
+  const costs = streetSaleCost(price);
+  seller.cash += price - relief - tax - costs;
+  const partnersOut = jvLpTake(jv, price - relief - tax - costs, s.month);
   seller.cash -= partnersOut;
+  noteRealised(s, seller, jv, price, partnersOut);
+  logFirm(s, seller, "sell", `Sold a building to money from out of town`, bbl, price);
   settleEmptyBook(s, seller);
   return true;
 }
@@ -4992,8 +5569,19 @@ export function rivalAsk(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
  * syndicated. The one expression the disposal decision and every settlement
  * (rivalBuys, sellToOutsider) read.
  */
+/**
+ * A SELLER ON THE STREET PAYS WHAT THE PLAYER PAYS TO SELL: the sell-side
+ * brokerage, the transfer tax, and legal, title and diligence — the same
+ * rates as actions.ts (SALE_BROKERAGE, TRANSFER_TAX, SALE_FRICTION), about
+ * 3.3% of the price. Rivals used to keep the whole price.
+ */
+const STREET_SALE_COST = 0.015 + 0.006 + 0.012;
+export function streetSaleCost(price: number): number {
+  return Math.round(Math.max(0, price) * STREET_SALE_COST);
+}
+
 function disposalNet(s: GameState, r: Rival, bbl: string, px: number): number {
-  const gross = px - saleRelief(s, r, bbl, px) - gainsTaxOn(r, px);
+  const gross = px - saleRelief(s, r, bbl, px) - gainsTaxOn(r, px) - streetSaleCost(px);
   return gross - jvLpTake(r.jvs?.[bbl], gross, s.month);
 }
 

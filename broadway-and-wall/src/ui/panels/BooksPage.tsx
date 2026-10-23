@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
+import { derive, nwOf } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import Fold from "@/ui/Fold";
 import { monthLabel, START_YEAR, sweepApy } from "@/engine/types";
 import type { BooksYear } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
-import { resolveRec, netWorth } from "@/engine/value";
+import { resolveRec } from "@/engine/value";
 import { deedMark } from "@/ui/deedMarks";
 import {
   balanceSnapshotView, buildBalanceSheet, booksMonthAsYear, pnlView,
@@ -14,6 +15,7 @@ import {
 import { taxAppealQuote, INCOME_TAX_RATE, NOL_SHELTER_CAP } from "@/engine/tax";
 import { compFlows } from "@/engine/comps";
 import { usd, pct } from "@/ui/format";
+import { syndicateView } from "@/engine/syndicate";
 import { NWChart, Big, openViewOn } from "@/ui/panels/shared";
 import Waterfall from "@/ui/vitals/Waterfall";
 
@@ -31,7 +33,7 @@ export function BooksPage() {
   // bought or sold, the tile disagreed with the bar above it ($2.54M against
   // $2.15M on the owner's screen, after a levered purchase). Live, one
   // function, one answer.
-  const nw = useMemo(() => netWorth(game, parcels), [game, parcels]);
+  const nw = nwOf(game, parcels);
   const realized = game.exits.reduce((a, e) => a + e.gain, 0);
   const exits = game.exits ?? [];
   const achieved = MILESTONES.filter((m) => game.milestones?.[m.id] !== undefined);
@@ -236,7 +238,7 @@ function BalanceSheet() {
   const lastYear = [...history].reverse().find((b) => Math.floor(b.m / 12) < curYr) ?? null;
   const [view, setView] = useState<"today" | "yearEnd">("today");
 
-  const live = useMemo(() => buildBalanceSheet(game, parcels), [game, parcels]);
+  const live = derive(game, "books.balanceSheet", () => buildBalanceSheet(game, parcels), [parcels]);
   const sheet: BalanceSheetView = view === "yearEnd" && lastYear
     ? balanceSnapshotView(lastYear)
     : live;
@@ -361,7 +363,8 @@ function BalanceSheet() {
                       const eq = v - debt;
                       const ltv = v > 0 ? debt / v : 0;
                       const jv = h.jv?.share ?? 0;
-                      const mine = g.key === "fund" ? null : eq * (1 - jv);
+                      const syn = syndicateView(game, parcels, h.bbl);
+                      const mine = g.key === "fund" ? null : syn ? syn.yours : eq * (1 - jv);
                       totEq += eq;
                       if (mine !== null) totMine += mine;
                       return (
@@ -473,7 +476,8 @@ function IncomeStatementTab() {
             </thead>
             <tbody>
               {years.map((b) => {
-                const net = b.noi + (b.interest ?? 0) + (b.borrowed ?? 0) - b.debtSvc - b.leasing - b.capex - (b.ga ?? 0) - b.dev - b.taxes - b.bought + b.sold;
+                const net = b.noi + (b.interest ?? 0) + (b.borrowed ?? 0) - b.debtSvc - b.leasing - b.capex - (b.ga ?? 0) - b.dev - b.taxes - b.bought + b.sold
+                  + (b.lpCalled ?? 0) + (b.fees ?? 0) - (b.lpDistributed ?? 0);
                 return (
                   <tr key={b.yr} style={{ cursor: "default" }}>
                     <td className="mono">{START_YEAR + b.yr}</td>
@@ -579,7 +583,12 @@ export function IncomeStatement() {
   const opCf = (b: BooksYear) => b.noi - b.leasing - b.capex - b.ga;
   const afterDebt = (b: BooksYear) => opCf(b) - b.debtSvc + (b.interest ?? 0) + (b.borrowed ?? 0);
   const investing = (b: BooksYear) => b.sold - b.bought - b.dev;
-  const bottom = (b: BooksYear) => afterDebt(b) + investing(b) - b.taxes;
+  // INVESTORS' MONEY MOVES THE ACCOUNT TOO: capital called in from syndicate
+  // and fund investors, distributions paid out to them, and the deal fees the
+  // sponsor charges (which development booked as spend). The same identity the
+  // conservation test reconciles against cash (test/conserve.mjs IN / OUT).
+  const investors = (b: BooksYear) => (b.lpCalled ?? 0) + (b.fees ?? 0) - (b.lpDistributed ?? 0);
+  const bottom = (b: BooksYear) => afterDebt(b) + investing(b) - b.taxes + investors(b);
 
   const L = ({ k, v, sub, strong, rule, note }: {
     k: string; v: number; sub?: boolean; strong?: boolean; rule?: boolean; note?: string;
@@ -680,6 +689,9 @@ export function IncomeStatement() {
               <L k="Acquisitions" v={-cur.bought} sub note="equity out the door at closing" />
               <L k="Disposition proceeds" v={cur.sold} sub note="net of loan payoff and penalties" />
               <L k="Taxes" v={-cur.taxes} sub note={`${(INCOME_TAX_RATE * 100).toFixed(0)}% blended personal rate on income · §1250 recapture and gains on exits`} />
+              {investors(cur) !== 0 && (
+                <L k="Investors and fees" v={investors(cur)} sub note="capital your investors paid in, less what was distributed to them, plus the deal fees you charge" />
+              )}
               <L k="Change in cash" v={bottom(cur)} strong rule />
             </tbody>
           </table>
@@ -786,6 +798,7 @@ function ProfitAndLoss() {
         <tbody>
           {line("Rental revenue", "rev", { sub: true, note: "rent, recoveries and other income billed" })}
           {line("Interest on cash", "intInc", { sub: true })}
+          {years.some((y) => y.fees) && line("Fees from your syndicates", "fees", { sub: true, note: "development and asset management — your investors pay their share" })}
           {line("Total revenue", "totalRev", { strong: true, rule: true })}
           {line("Property operating costs", "propOpex", { sign: -1, sub: true, note: "opex, management, property tax, ground rent" })}
           {line("Leasing costs", "leasing", { sign: -1, sub: true, note: "TI and commissions, expensed as signed" })}

@@ -1,14 +1,22 @@
 // Permanent debt desk for a single deed — refinance / mezz / payoff.
 // Extracted from ParcelDesk; also embedded from Portfolio and Debt pages.
+import { consentFor } from "@/engine/vehicles";
 import { useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
-import { monthLabel } from "@/engine/types";
+import { monthLabel, type GameState, type Holding } from "@/engine/types";
 import { resolveRec, isVacantLandLoanCollateral, physicalOcc } from "@/engine/value";
 import { refiQuotes, prepayPenalty, mezzQuote, rateCapCost, deskAdvice, capPremiumOn } from "@/engine/debt";
 import { usd, pct } from "@/ui/format";
 import { annualPayment, Row, Verdict } from "@/ui/panels/shared";
+
+/** Both liens' prepayment penalties at today's rates — what `refinance` adds to the fee. */
+function breakCost(game: GameState, h: Holding | undefined): number {
+  if (!h) return 0;
+  return (h.loan ? prepayPenalty(h.loan, game.month, game.econ) : 0)
+    + (h.mezz && h.mezz.balance > 0 ? prepayPenalty(h.mezz, game.month, game.econ) : 0);
+}
 
 export function RefiSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
@@ -28,7 +36,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
   const fundableQuotes = quotes.filter((x) => x.available && x.maxProceeds > 0);
   const deskQuotes = showAllQuotes ? quotes : fundableQuotes;
   const cur = game.holdings[bbl]?.loan;
-  const existing = cur ? prepayPenalty(cur, game.month, game.econ) : 0;
+  // Breaking the stack costs both liens' penalties — `refinance` charges both.
+  const existing = breakCost(game, holding);
   if (!quotes.length && !privateQuotes.length) {
     return (
       <div className="refi">
@@ -47,10 +56,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
         <div className="hint">Appraised at {usd(value)}; {usd(payoff)} to pay off. The banks are silent — private paper below.</div>
         {privateQuotes.map((pq) => {
           const pts = Math.round(pq.principal * pq.points);
-          const mezzPen = holding?.mezz && holding.mezz.balance > 0
-            ? prepayPenalty(holding.mezz, game.month, game.econ) : 0;
           // payoff from refiQuotes is already senior + mezz balance
-          const net = pq.principal - payoff - pts - existing - mezzPen;
+          const net = pq.principal - payoff - pts - existing;
           return (
             <div key={pq.id} className="hint" style={{ marginBottom: 8, borderLeft: "3px solid #8a5620", paddingLeft: 8 }}>
               <div>
@@ -139,7 +146,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
       {existing > 0 && (
         <div className="hint">
           {existing > 0
-            ? `Breaking the loan you have costs ${usd(existing)} in ${game.holdings[bbl]?.loan?.prepay === "yieldmaint" ? "yield maintenance" : "prepayment penalty"}.`
+            ? `Breaking the loan${holding?.mezz ? "s" : ""} you have costs ${usd(existing)} in ${game.holdings[bbl]?.loan?.prepay === "yieldmaint" ? "yield maintenance" : "prepayment penalty"}.`
             : ""}
         </div>
       )}
@@ -147,10 +154,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
       <div className="refi-pick">
       {privateQuotes.map((pq) => {
         const pts = Math.round(pq.principal * pq.points);
-        const mezzPen = holding?.mezz && holding.mezz.balance > 0
-          ? prepayPenalty(holding.mezz, game.month, game.econ) : 0;
         // payoff from refiQuotes is already senior + mezz balance
-        const net = pq.principal - payoff - pts - existing - mezzPen;
+        const net = pq.principal - payoff - pts - existing;
         return (
           <div key={pq.id} className="hint" style={{ marginBottom: 8, borderLeft: "3px solid #8a5620", paddingLeft: 8 }}>
             <div>
@@ -184,7 +189,9 @@ export function RefiSection({ bbl }: { bbl: string }) {
             A second lien, not a refinance. The coupon is why nobody does this twice.
           </div>
           <div className="btn-row" style={{ marginTop: 6 }}>
-            <button className="btn" onClick={() => placeMezz(bbl)}>Place mezz · {usd(mq.principal)}</button>
+            <button className="btn" disabled={!!consentFor(game, holding, "debt")}
+              title={consentFor(game, holding, "debt") ?? undefined}
+              onClick={() => placeMezz(bbl)}>Place mezz · {usd(mq.principal)}</button>
           </div>
         </div>
       )}
@@ -325,7 +332,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
         <Row
           k="Prepayment"
           v={q.prepay === "open" ? "open — leave any time"
-            : q.prepay === "stepdown" ? `step-down, ${q.prepayM / 12} yrs (5% falling to 1%)`
+            : q.prepay === "stepdown" ? `step-down, ${q.prepayM / 12} yrs (${Math.min(5, Math.ceil(q.prepayM / 12))}% falling a point a year${Math.min(5, Math.ceil(q.prepayM / 12)) > 1 ? " to 1%" : ""})`
             : `yield maintenance, ${q.prepayM / 12} yrs`}
           bad={q.prepay === "yieldmaint"}
         />
@@ -504,7 +511,7 @@ export function RefiGlance({ bbl }: { bbl: string }) {
   const net = (x: (typeof live)[number]) => {
     const px = Math.round(x.maxProceeds);
     const cap = x.floating ? capPremiumOn(px) : 0;
-    const f = Math.round(Math.max(px, payoff) * 0.01) + Math.round(px * x.points) + cap;
+    const f = Math.round(Math.max(px, payoff) * 0.01) + Math.round(px * x.points) + cap + breakCost(game, holding);
     return px - payoff - f;
   };
   const clears = live.filter((x) => net(x) >= 0).sort((a, b) => a.allInPct - b.allInPct);

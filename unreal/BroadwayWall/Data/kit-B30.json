@@ -1,0 +1,144 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B30",
+ "grammar": "generated",
+ "label": "Brutalist concrete",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 560.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_Ground_0.SM_B30_Ground_0",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_Ground_1.SM_B30_Ground_1",
+     "width": 288.0,
+     "depth": 50.0,
+     "y0": -288.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_Ground_2.SM_B30_Ground_2",
+     "width": 432.0,
+     "depth": 50.0,
+     "y0": -432.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_Entrance.SM_B30_Entrance",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_GroundCorner.SM_B30_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "S",
+   "height": 380.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_Typical_0.SM_B30_Typical_0",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0,
+     "mix": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_Typical_1.SM_B30_Typical_1",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_Typical_0_v1.SM_B30_Typical_0_v1",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_Typical_0_v2.SM_B30_Typical_0_v2",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_Typical_0_v3.SM_B30_Typical_0_v3",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_TypicalCorner.SM_B30_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 280,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_Top.SM_B30_Top",
+     "width": 360.0,
+     "depth": 50.0,
+     "y0": -360.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B30/v1021050443/SM_B30_TopCorner.SM_B30_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

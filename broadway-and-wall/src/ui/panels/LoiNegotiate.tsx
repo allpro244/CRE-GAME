@@ -9,7 +9,7 @@ import { CREDIT_LABEL, monthLabel } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { managedRentPsfYr, resolveRec } from "@/engine/value";
 import {
-  bumpOf, DEFAULT_BUMP_PCT, loiSigningCost, netEffectivePsf,
+  bumpOf, DEFAULT_BUMP_PCT, loiSigningCost, loiSigningCash, depositAtSigning, netEffectivePsf,
   termBandM, termPushBands,
 } from "@/engine/leasing";
 import { usd, sf, pctSigned } from "@/ui/format";
@@ -124,7 +124,7 @@ export function LoiCounterDraft({
   // Signing cost follows the TI and the term on the dials — cutting fit-out or
   // stretching the paper has to show up in the cash line before you send, or
   // the player cannot learn the trade.
-  const costNow = loiSigningCost({ ...view, tiPsf: cTiC, rentPsf: cRent, freeM: cFreeC }, feeRate);
+  const costNow = loiSigningCash({ ...view, tiPsf: cTiC, rentPsf: cRent, freeM: cFreeC }, feeRate);
   const pushy = vsMkt > 8;
   const soft = vsMkt < -2;
   const openBump = loi.openBumpPct ?? bumpOf(loi);
@@ -299,7 +299,8 @@ export function LoiTermsGrid({
 }) {
   const h = game.holdings[loi.bbl];
   const annual = loi.rentPsf * loi.sf;
-  const cost = loiSigningCost(loi, feeRate);
+  const cost = loiSigningCash(loi, feeRate);
+  const dep = depositAtSigning(loi);
   const prevRent = loi.kind === "renewal" && loi.tenantIdx !== undefined
     ? h?.tenants[loi.tenantIdx]?.rentPsf : undefined;
   const isFinal = loi.stage === "countered";
@@ -368,7 +369,8 @@ export function LoiTermsGrid({
         strong
         bad={nowNe < market * 0.9}
       />
-      <Row k="Cash to sign" v={usd(cost)} bad={cost > game.cash} strong />
+      <Row k="Cash to sign" v={usd(cost) + (dep > 0 ? ` · after their ${usd(dep)} deposit` : "")} bad={cost > game.cash} strong />
+      <Row k="Broker's commission" v={`${usd(Math.max(0, loiSigningCost(loi, feeRate) - Math.round(loi.tiPsf * loi.sf)))} · paid at signing if you have it, otherwise owed until you do`} />
       {/* "Answer by Jan 2008" in January read like a date, not a deadline. */}
       <Row k="Answer by" v={monthLabel(loi.expiresM - 1) + (loi.expiresM - 1 <= game.month ? " — this month, or it lapses" : loi.expiresM - 2 === game.month ? " — next month" : "")} bad={loi.expiresM - 1 <= game.month} />
       {recov === "gross" && <Row k="Recovery" v="full gross — every expense is yours" bad />}

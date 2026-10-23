@@ -510,6 +510,9 @@ export default function FirmTimeline() {
         <button className="btn" onClick={() => useStore.getState().setPage("market")}>
           Open the Marketplace →
         </button>
+        {/* The street's year is the town's, not the firm's: a shop with no
+            deed yet still watches who broke ground and who folded. */}
+        {game.month >= 12 && <StreetYear game={game} />}
       </div>
     );
   }
@@ -583,6 +586,8 @@ export default function FirmTimeline() {
         </div>
       </div>
 
+      <StreetYear game={game} />
+
       <div className="page-section">
         <div className="page-section-head">Net worth since founding</div>
         <NetWorthLine game={game} />
@@ -632,6 +637,71 @@ export default function FirmTimeline() {
             summarized from what the record kept.
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+
+// THE STREET THIS YEAR (2026-10-14). The review above is the firm's own year;
+// this is the city's, read off state the engine already keeps — the monthly
+// market history, the developers' register, the competitors, the banks and
+// the swans — so a year played at speed still reads as a year: what rents
+// did, what was built and taken up, and who went under.
+const CLASSES = ["office", "multifamily", "industrial", "retail"] as const;
+const CLASS_WORD: Record<(typeof CLASSES)[number], string> = { office: "Office", multifamily: "Flats", industrial: "Industrial", retail: "Retail" };
+function StreetYear({ game }: { game: GameState }) {
+  const m = game.month;
+  const start = m - 11;
+  const hist = game.econ.history ?? [];
+  const then = hist.find((h) => h.q >= start) ?? hist[0];
+  const now = hist[hist.length - 1];
+  const win = hist.filter((h) => h.q >= start);
+  if (!then || !now || !win.length) return null;
+  const sum = (k: "abs" | "comp", c: (typeof CLASSES)[number]) => win.reduce((a, h) => a + (h[k]?.[c] ?? 0), 0);
+  const inWin = (x?: number) => x !== undefined && x >= start && x <= m;
+  const folded = (game.builders ?? []).filter((b) => b.endReason === "folded" && inWin(b.failedM));
+  const founded = (game.builders ?? []).filter((b) => inWin(b.bornM) && b.bornM > 0);
+  const failedFirms = (game.rivals ?? []).filter((r) => inWin(r.failedM) && r.endReason === "failed");
+  const absorbed = (game.rivals ?? []).filter((r) => inWin(r.failedM) && r.endReason === "absorbed");
+  const banks = (game.bankFails ?? []).filter((b) => inWin((b as { m?: number; month?: number }).m ?? (b as { month?: number }).month));
+  const swans = (game.econ.blackSwans ?? []).filter((w) => inWin(w.m));
+  const events: string[] = [];
+  for (const w of swans) events.push(w.title ? `${w.title[0].toUpperCase()}${w.title.slice(1)}` : `A ${w.kind}`);
+  for (const b of banks) events.push(`${(b as { lender: string }).lender} was seized by the examiners`);
+  for (const r of failedFirms) events.push(`${r.name} went under`);
+  for (const r of absorbed) events.push(`${r.name} was absorbed by a rival`);
+  for (const b of folded) events.push(`${b.name} folded after ${b.delivered} building${b.delivered === 1 ? "" : "s"}`);
+  if (founded.length) events.push(`${founded.length} new developer${founded.length === 1 ? "" : "s"} set up shop`);
+  return (
+    <div className="page-section">
+      <div className="page-section-head">The street this year</div>
+      <table className="tbl">
+        <thead>
+          <tr><th>Market</th><th className="num">Effective rent</th><th className="num">Vacancy</th><th className="num">Delivered</th><th className="num">Taken up</th></tr>
+        </thead>
+        <tbody>
+          {CLASSES.map((c) => {
+            const r0 = then.effRent?.[c] ?? then.rent?.[c], r1 = now.effRent?.[c] ?? now.rent?.[c];
+            const v0 = then.vac?.[c], v1 = now.vac?.[c];
+            const comp = sum("comp", c), abs = sum("abs", c);
+            return (
+              <tr key={c}>
+                <td>{CLASS_WORD[c]}</td>
+                <td className="num">{r0 && r1 ? pctSigned(r1 / r0 - 1) : "—"}</td>
+                <td className={"num" + (v0 !== undefined && v1 !== undefined && v1 > v0 + 0.005 ? " neg" : "")}>
+                  {v1 !== undefined ? `${(v1 * 100).toFixed(1)}%` : "—"}
+                  {v0 !== undefined && v1 !== undefined ? <span className="dim"> ({v1 >= v0 ? "+" : ""}{((v1 - v0) * 100).toFixed(1)})</span> : null}
+                </td>
+                <td className="num">{comp > 0 ? fmtSf(comp) : "—"}</td>
+                <td className={"num" + (abs < 0 ? " neg" : "")}>{abs !== 0 ? fmtSf(abs) : "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="tl-lede" style={{ marginTop: 6 }}>
+        {events.length ? events.join(" · ") + "." : "A quiet year on the street: nobody failed, nobody new set up, no bank closed."}
       </div>
     </div>
   );

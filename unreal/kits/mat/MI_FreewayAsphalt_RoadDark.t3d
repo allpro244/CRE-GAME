@@ -1,0 +1,86 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="MI_FreewayAsphalt_RoadDark" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Road/Material/MI/MI_FreewayAsphalt_RoadDark.MI_FreewayAsphalt_RoadDark'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="MI_FreewayAsphalt_RoadDarkEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Road/Material/MI/MI_FreewayAsphalt_RoadDark.MI_FreewayAsphalt_RoadDark:MI_FreewayAsphalt_RoadDarkEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Road/Material/MI/MI_FreewayAsphalt_RoadDark.MI_FreewayAsphalt_RoadDark:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="MI_FreewayAsphalt_RoadDarkEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Road/Material/MI/MI_FreewayAsphalt_RoadDark.MI_FreewayAsphalt_RoadDark:MI_FreewayAsphalt_RoadDarkEditorOnlyData'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Road/Material/MI/MI_FreewayAsphalt_RoadDark.MI_FreewayAsphalt_RoadDark:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=9D8067C74EECBA08236A288E317D30D6
+   Parent="/Script/Engine.Material'/Game/Road/Material/M_Freeway_Asphalt.M_Freeway_Asphalt'"
+   bHasStaticPermutationResource=True
+   ScalarParameterValues(0)=(ParameterInfo=(Name="BaseRoughnessMult"),ParameterValue=0.580000,ExpressionGUID=775B8AD64DDAB5639D87878DFCEFF86F)
+   ScalarParameterValues(1)=(ParameterInfo=(Name="Roughness 3O"),ParameterValue=0.500000,ExpressionGUID=61451BEB48EA50A16DF306BBA6E3818C)
+   ScalarParameterValues(2)=(ParameterInfo=(Name="Rough Mult 4G"),ParameterValue=0.800000,ExpressionGUID=1587E39C414128C5B0C7E29AFF6DB683)
+   ScalarParameterValues(3)=(ParameterInfo=(Name="MV_LargeScale"),ParameterValue=0.000005,ExpressionGUID=A81179DC4A6E35DABE2234969745301B)
+   ScalarParameterValues(4)=(ParameterInfo=(Name="MV_NoisePower"),ParameterValue=2.000000,ExpressionGUID=61BF9F3B4844410EFCBF609A5049D7E8)
+   ScalarParameterValues(5)=(ParameterInfo=(Name="MV_DetailIntensity"),ParameterValue=0.500000,ExpressionGUID=A48F48EE4D08C042905A7691F39A340B)
+   ScalarParameterValues(6)=(ParameterInfo=(Name="MV_DetailScale"),ParameterValue=1.500000,ExpressionGUID=D316C33347AB0A1598B95D90B4D8B0DF)
+   ScalarParameterValues(7)=(ParameterInfo=(Name="MV_PatchMult"),ParameterValue=0.500000,ExpressionGUID=D6187155467D2AEFD153C5A98F03923A)
+   ScalarParameterValues(8)=(ParameterInfo=(Name="MV_PatchScale"),ParameterValue=0.020000,ExpressionGUID=575012634B89EF846D6262A1A8D3D632)
+   ScalarParameterValues(9)=(ParameterInfo=(Name="MV_TintAmount"),ParameterValue=0.600000,ExpressionGUID=C48CD8BF4AFD39BC05A88184BF54242C)
+   ScalarParameterValues(10)=(ParameterInfo=(Name="Col Var Bias Pow 6P"),ParameterValue=1.000000,ExpressionGUID=BF3E937C490C290F2350CDADB071CB33)
+   ScalarParameterValues(11)=(ParameterInfo=(Name="Col Var Max 6P"),ParameterValue=1.000000,ExpressionGUID=744E4D7D45CE3EDDF792248472B51D48)
+   ScalarParameterValues(12)=(ParameterInfo=(Name="Col Var Min 6P"),ParameterValue=1.000000,ExpressionGUID=DE009D074D7A8104E08112B9A51FF45E)
+   ScalarParameterValues(13)=(ParameterInfo=(Name="Color Tex Scale 6P"),ParameterValue=0.001000,ExpressionGUID=8CF65DCF44585871C8B74284E0E1D3EC)
+   ScalarParameterValues(14)=(ParameterInfo=(Name="Edge Col Mult 6P"),ParameterValue=0.500000,ExpressionGUID=3DA1968B4EC00D51DF584F88DDEBE2D9)
+   ScalarParameterValues(15)=(ParameterInfo=(Name="P1 Col Mult 6P"),ParameterValue=1.000000,ExpressionGUID=E723D3AC4ABB182D56E9E7B373281E3C)
+   ScalarParameterValues(16)=(ParameterInfo=(Name="P2 Col Mult 6P"),ParameterValue=0.600000,ExpressionGUID=C513EAED4C245222E2481DA068CCC7CF)
+   ScalarParameterValues(17)=(ParameterInfo=(Name="Seam Roughness 6P"),ParameterValue=0.250000,ExpressionGUID=B23BC2314321E11D6647DF92E2CD2F34)
+   ScalarParameterValues(18)=(ParameterInfo=(Name="UV Offset X 6P"),ParameterValue=0.470000,ExpressionGUID=B29C48D946432A1C40631E95687F231E)
+   ScalarParameterValues(19)=(ParameterInfo=(Name="UV Offset Y 6P"),ParameterValue=0.228571,ExpressionGUID=3D17F85F4DFC31C18F7933AD92FEC5BD)
+   ScalarParameterValues(20)=(ParameterInfo=(Name="UV Scale 6P"),ParameterValue=0.200000,ExpressionGUID=B6C0FAD14AD7F590B3189E8933D5C433)
+   ScalarParameterValues(21)=(ParameterInfo=(Name="UV Variation 6P"),ParameterValue=1.000000,ExpressionGUID=E659345E4F1C603CA61745810E46204F)
+   ScalarParameterValues(22)=(ParameterInfo=(Name="Col Mult 7C"),ParameterValue=0.800000,ExpressionGUID=3D485C854B663E88B969D58E04C05FA7)
+   ScalarParameterValues(23)=(ParameterInfo=(Name="UV Scale 7C"),ParameterValue=1.200000,ExpressionGUID=09B0ECEF4A6C55D7892A7D914569685B)
+   ScalarParameterValues(24)=(ParameterInfo=(Name="LM_Mask_XScale"),ParameterValue=1.000000,ExpressionGUID=4AD645224803B163A0C00FBE96A06197)
+   ScalarParameterValues(25)=(ParameterInfo=(Name="LM_Mask_YScale"),ParameterValue=2.500000,ExpressionGUID=F96AB6354378C9861B9AFFAD7BF15859)
+   ScalarParameterValues(26)=(ParameterInfo=(Name="LM_UVwobble_NoiseAmount"),ParameterValue=0.060000,ExpressionGUID=1514218243723EB12B2661BCB2712F02)
+   ScalarParameterValues(27)=(ParameterInfo=(Name="LM_UVwobble_NoiseScale"),ParameterValue=0.050000,ExpressionGUID=4A37D55E4D44849328BBA5945CCED4F5)
+   ScalarParameterValues(28)=(ParameterInfo=(Name="Puddle Height MFPD"),ParameterValue=0.400000,ExpressionGUID=767E59A14D61757D94433296F13A0910)
+   ScalarParameterValues(29)=(ParameterInfo=(Name="Edge Height MFPD"),ParameterValue=0.600000,ExpressionGUID=FDB879194E4A776F35BCE7B569074F1D)
+   ScalarParameterValues(30)=(ParameterInfo=(Name="Breakup Amt PD"),ParameterValue=0.100000,ExpressionGUID=8BDB0B2C42F4BDF637A5A6AADC4C8E9A)
+   ScalarParameterValues(31)=(ParameterInfo=(Name="Height Tire Lane Amt MFPD"),ParameterValue=0.900000,ExpressionGUID=78630D1B44DC6D218F3427B14ABFE93F)
+   ScalarParameterValues(32)=(ParameterInfo=(Name="Road Section End Mask High"),ParameterValue=1.000000,ExpressionGUID=F79B90DA42DB0BE4058537977604FA11)
+   ScalarParameterValues(33)=(ParameterInfo=(Name="Road Section End Mask Low"),ParameterValue=0.500000,ExpressionGUID=D23F009E4BA2F03143F69EA5512CC28E)
+   ScalarParameterValues(34)=(ParameterInfo=(Name="roadLaneMasks LaneScaleForBlueChannel UV0"),ParameterValue=1.000000,ExpressionGUID=560287DB4908EE40CE5CECBFADE4BD14)
+   ScalarParameterValues(35)=(ParameterInfo=(Name="roadLaneMasks LaneScaleForBlueChannel UV1"),ParameterValue=0.270000,ExpressionGUID=95544A3E4974AB44D67EE99F1BF0A2C5)
+   ScalarParameterValues(36)=(ParameterInfo=(Name="roadLaneMasks OffsetX UV1"),ParameterValue=0.242000,ExpressionGUID=E9B90C3E47D7757EF506E093D13C2247)
+   ScalarParameterValues(37)=(ParameterInfo=(Name="roadLaneMasks OffsetY UV1"),ParameterValue=0.805000,ExpressionGUID=BF373D324B7F09F34FC850B684B0BDF4)
+   ScalarParameterValues(38)=(ParameterInfo=(Name="roadLaneMasks SectionSeam V Slice UV1"),ParameterValue=0.332000,ExpressionGUID=0CCC800F46E2D34F11210AA80EE2110D)
+   ScalarParameterValues(39)=(ParameterInfo=(Name="Roughness Mask Power MFPD"),ParameterValue=1.000000,ExpressionGUID=CAFB416349272F0F13FF288E7B167DE1)
+   ScalarParameterValues(40)=(ParameterInfo=(Name="Wetness Road Edge Amt MFPD"),ParameterValue=1.000000,ExpressionGUID=187B0A984E46EC3C4B07E18184081F26)
+   ScalarParameterValues(41)=(ParameterInfo=(Name="EP_Mask_ME_halfWidth"),ParameterValue=0.250000,ExpressionGUID=1B83B3F249ECDFC7CFDC61B294C5EAAB)
+   ScalarParameterValues(42)=(ParameterInfo=(Name="EP_Mask_ME_NoiseAmt"),ParameterValue=0.500000,ExpressionGUID=60E965AB4976E9B9718850BEB450C0E4)
+   ScalarParameterValues(43)=(ParameterInfo=(Name="EP_Mask_ME_posHigh"),ParameterValue=0.850000,ExpressionGUID=DA6BBBF74FFA97870930D8B5B2DEB846)
+   ScalarParameterValues(44)=(ParameterInfo=(Name="EP_Mask_ME_posLow"),ParameterValue=0.600000,ExpressionGUID=C6666B774C118629ABFF31874A55BC02)
+   ScalarParameterValues(45)=(ParameterInfo=(Name="EP_Mask_ME_Pow"),ParameterValue=4.000000,ExpressionGUID=31132FF54582D5E10038CBBF8ECAA3B5)
+   ScalarParameterValues(46)=(ParameterInfo=(Name="EP_Mask_Noise"),ExpressionGUID=FCC10F6B4AA0A679C863BD829A5D3366)
+   ScalarParameterValues(47)=(ParameterInfo=(Name="EP_Mask_WetCreep"),ExpressionGUID=5F6DCED6492F82C581886A89EE1604BC)
+   ScalarParameterValues(48)=(ParameterInfo=(Name="RefractionDepthBias"))
+   VectorParameterValues(0)=(ParameterInfo=(Name="Width Grad Params 0aI"),ParameterValue=(R=0.800000,G=0.850000,B=2.000000,A=0.800000),ExpressionGUID=B441FE4542F5827B9A5F479288A029D7)
+   VectorParameterValues(1)=(ParameterInfo=(Name="BaseColor Tint"),ParameterValue=(R=0.580000,G=0.580000,B=0.580000,A=1.000000),ExpressionGUID=58B495CD456A52FFCEC89FA15ECB1714)
+   VectorParameterValues(2)=(ParameterInfo=(Name="Rubble_Tint"),ParameterValue=(R=1.000000,G=1.000000,B=1.000000,A=1.000000),ExpressionGUID=E040B2DA4D8D03E68F5938BC118015ED)
+   VectorParameterValues(3)=(ParameterInfo=(Name="Tint 3O"),ParameterValue=(R=0.450000,G=0.461136,B=0.500000,A=0.000000),ExpressionGUID=75A26F034CEA1201271422A851BBB102)
+   VectorParameterValues(4)=(ParameterInfo=(Name="GrimeTint"),ParameterValue=(R=0.500000,G=0.500000,B=0.500000,A=0.000000),ExpressionGUID=27070AFA415DAD0A1E58BCBAC411FE50)
+   VectorParameterValues(5)=(ParameterInfo=(Name="MV_Tint_Hi"),ParameterValue=(R=0.000000,G=0.000000,B=0.000000,A=1.000000),ExpressionGUID=B06F174A46D2643BBD125EAF953EBF2C)
+   VectorParameterValues(6)=(ParameterInfo=(Name="MV_Tint_Lo"),ParameterValue=(R=3.000000,G=2.948822,B=2.921875,A=1.000000),ExpressionGUID=E3493E2F4568626F5F07ACBB50D81A4A)
+   VectorParameterValues(7)=(ParameterInfo=(Name="Patches_Tint"),ParameterValue=(R=0.800000,G=0.800000,B=0.800000,A=1.000000),ExpressionGUID=D352D6994A8F7A142F1348BCDE54B556)
+   VectorParameterValues(8)=(ParameterInfo=(Name="WearMarking_Tint"),ParameterValue=(R=1.400000,G=1.299567,B=1.197402,A=1.000000),ExpressionGUID=4563B31D4EE42D43FE76B8B8A00DCA41)
+   TextureParameterValues(0)=(ParameterInfo=(Name="Base_Albedo"),ParameterValue="/Script/Engine.Texture2D'/Game/Megascans/Surfaces/Cast_In_Situ_Concrete_Wall_vcfice0/Asphalt_Road_2x2_M_02/tiggcjdo_8K_Albedo.tiggcjdo_8K_Albedo'",ExpressionGUID=C98B133A45B5594905EAAA870B97018E)
+   TextureParameterValues(1)=(ParameterInfo=(Name="Tex Color 7C"),ParameterValue="/Script/Engine.Texture2D'/Game/Textures/SurfaceFeature/T_CrackTileLarge_C.T_CrackTileLarge_C'",ExpressionGUID=FD1F45BB40DF83F9F3DC8FB54855E4C2)
+   TextureParameterValues(2)=(ParameterInfo=(Name="Tex Normal 7C"),ParameterValue="/Script/Engine.Texture2D'/Game/Textures/SurfaceFeature/T_CrackTileLarge_N.T_CrackTileLarge_N'",ExpressionGUID=1DAE0B594CFDBE3D5A2978A89559504C)
+   TextureParameterValues(3)=(ParameterInfo=(Name="gradientLines_packed"),ParameterValue="/Script/Engine.Texture2D'/Game/Road/Textures/freeway_gradientLines_packed_v03a_v03b_circleAlpha.freeway_gradientLines_packed_v03a_v03b_circleAlpha'",ExpressionGUID=9BC2A8A643828DC2F1DEF395D156FAA5)
+   BasePropertyOverrides=(bOverride_BlendMode=True,bOverride_ShadingModel=True,OpacityMaskClipValue=0.333300,UsageFlags=4460928)
+   StaticParametersRuntime=(StaticSwitchParameters=((ParameterInfo=(Name="Debug MFMA"),bOverride=True,ExpressionGUID=49257716474AEE6C1E13A697C54A66B6),(Value=True,ParameterInfo=(Name="Do Rubble"),bOverride=True,ExpressionGUID=C9B63C0E4218BE79F5172FAC5D297836),(Value=True,ParameterInfo=(Name="Do OilSpill"),bOverride=True,ExpressionGUID=D422C2264A704FAEC8E09C9F5BEFAA29),(Value=True,ParameterInfo=(Name="Do Grime"),bOverride=True,ExpressionGUID=D7EC7DAC46C8DC309351CFA725893EF7),(Value=True,ParameterInfo=(Name="Do MacroVary"),bOverride=True,ExpressionGUID=FB8929DA46E0BF03A16E27A9BD5A2796),(Value=True,ParameterInfo=(Name="Do Patches"),bOverride=True,ExpressionGUID=142B74DC4985CCDB15C7128C49E48B3A),(Value=True,ParameterInfo=(Name="Do Cracks"),bOverride=True,ExpressionGUID=7C4C8A4141C99F0F9245088921DB42F1),(ParameterInfo=(Name="UseLaneMarkers"),bOverride=True,ExpressionGUID=BFC4172D4C2963AEC6B374A026AC9D22),(ParameterInfo=(Name="IsShoulder"),bOverride=True,ExpressionGUID=1D892BE6462E434E7071B7A7FC2BAA81),(ParameterInfo=(Name="UseWearMarkings"),bOverride=True,ExpressionGUID=002A890346DA63D9D6C4609CAF10C0DD),(Value=True,ParameterInfo=(Name="Enable Puddle MFPD"),bOverride=True,ExpressionGUID=F40748D240368CD36CDB15B87A795742),(Value=True,ParameterInfo=(Name="roadLaneMasks Flip U UV1"),bOverride=True,ExpressionGUID=9250C26A445D6598AD4C4A9A31F26F89),(Value=True,ParameterInfo=(Name="roadLaneMasks LaneScale UV1"),bOverride=True,ExpressionGUID=D7E1A31D423B62389C0789B5721B6107),(Value=True,ParameterInfo=(Name="roadLaneMasks PIRand Offset Y UV1"),bOverride=True,ExpressionGUID=C49D8E564FA7917AF8BF23832C333D96),(Value=True,ParameterInfo=(Name="Use UV1 92E"),bOverride=True,ExpressionGUID=B4234C8D478EA08504440D88106E3598)))
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'MI_FreewayAsphalt_RoadDarkEditorOnlyData'"
+   TextureStreamingDataVersion=1
+   TextureStreamingData(0)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="freeway_AsphaltNoise_packedA",TextureReference="/Game/Textures/SurfaceFeature/T_AsphaltNoise_packedA.T_AsphaltNoise_packedA")
+   TextureStreamingData(1)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="patch_04",TextureReference="/Game/Road/Textures/patch_04.patch_04")
+   TextureStreamingData(2)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="tiggcjdo_8K_Albedo",TextureReference="/Game/Megascans/Surfaces/Cast_In_Situ_Concrete_Wall_vcfice0/Asphalt_Road_2x2_M_02/tiggcjdo_8K_Albedo.tiggcjdo_8K_Albedo")
+   TextureStreamingData(3)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="tlomaeady_8K_Albedo",TextureReference="/Game/Road/Textures/tlomaeady_8K_Albedo.tlomaeady_8K_Albedo")
+   TextureStreamingData(4)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="uchfff3ka_8K_Normal",TextureReference="/Game/Megascans/Atlases/Road_Debris_01/uchfff3ka_8K_Normal.uchfff3ka_8K_Normal")
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LightingGuid=2B32B1154E056DD54326329909DE9A5A
+End Object

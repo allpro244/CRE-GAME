@@ -1,0 +1,34 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="MI_Bldg_Brick" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Building/Material/MI/MI_Bldg_Brick.MI_Bldg_Brick'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="MI_Bldg_BrickEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Building/Material/MI/MI_Bldg_Brick.MI_Bldg_Brick:MI_Bldg_BrickEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Building/Material/MI/MI_Bldg_Brick.MI_Bldg_Brick:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="MI_Bldg_BrickEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Building/Material/MI/MI_Bldg_Brick.MI_Bldg_Brick:MI_Bldg_BrickEditorOnlyData'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Building/Material/MI/MI_Bldg_Brick.MI_Bldg_Brick:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=7E9AF5204B31BE9330818E9A5AA66BBA
+   Parent="/Script/Engine.Material'/Game/Building/Material/M_Bldg_Block.M_Bldg_Block'"
+   bHasStaticPermutationResource=True
+   ScalarParameterValues(0)=(ParameterInfo=(Name="Amt BNB"),ParameterValue=0.020000,ExpressionGUID=27F12B744EEAAEA727FF17A12EBF2B1D)
+   ScalarParameterValues(1)=(ParameterInfo=(Name="Normal Inten M1"),ParameterValue=2.000000,ExpressionGUID=42A37BC94FE52D4DF794FBBB24F55852)
+   ScalarParameterValues(2)=(ParameterInfo=(Name="RefractionDepthBias"))
+   VectorParameterValues(0)=(ParameterInfo=(Name="Hue Params BHSV"),ParameterValue=(R=1.000000,G=0.000000,B=0.000000,A=1.000000),ExpressionGUID=7D2BE9AE49CFC87D577E21A70B108978)
+   VectorParameterValues(1)=(ParameterInfo=(Name="Sat Params BHSV"),ParameterValue=(R=1.000000,G=0.000000,B=1.000000,A=1.000000),ExpressionGUID=E1F94DD34616CD846FB0D09CB05B84FB)
+   VectorParameterValues(2)=(ParameterInfo=(Name="Val Params BHSV"),ParameterValue=(R=1.000000,G=0.200000,B=1.000000,A=1.000000),ExpressionGUID=9EA12986487CE4AE8BABDF982FA71494)
+   TextureParameterValues(0)=(ParameterInfo=(Name="Tex Albedo M1"),ParameterValue="/Script/Engine.Texture2D'/Game/Building/Texture/BrickOffset/T_BrickOffset_Red_C.T_BrickOffset_Red_C'",ExpressionGUID=A6F930F54EF987BF0524EA86F153192E)
+   TextureParameterValues(1)=(ParameterInfo=(Name="Tex AORMD M1"),ParameterValue="/Script/Engine.Texture2D'/Game/Building/Texture/BrickOffset/T_BrickOffset_AORMD.T_BrickOffset_AORMD'",ExpressionGUID=82E2F54342F5300DC0392E9424CC554E)
+   TextureParameterValues(2)=(ParameterInfo=(Name="Tex Normal M1"),ParameterValue="/Script/Engine.Texture2D'/Game/Building/Texture/BrickOffset/T_BrickOffset_N.T_BrickOffset_N'",ExpressionGUID=5CA1CCD24358792A20A1AF86C0331547)
+   TextureParameterValues(3)=(ParameterInfo=(Name="PackedB Tex"),ParameterValue="/Script/Engine.Texture2D'/Game/Building/Texture/Brick/T_Brick_PackedB.T_Brick_PackedB'",ExpressionGUID=0F5346094BF10A09C9AC718946E96A00)
+   BasePropertyOverrides=(OpacityMaskClipValue=0.333300,UsageFlags=4456848)
+   StaticParametersRuntime=(StaticSwitchParameters=((Value=True,ParameterInfo=(Name="Grime/Wear/Variation"),bOverride=True,ExpressionGUID=FB12293F403ABB3E693E489B855BFCEC),(ParameterInfo=(Name="Enable BGR"),bOverride=True,ExpressionGUID=B0C151454DDD358E1D0D4E962241E2CF),(ParameterInfo=(Name="Enable GT"),bOverride=True,ExpressionGUID=D2D4727E424DE573BB3EEBB9CB365F03),(Value=True,ParameterInfo=(Name="UV Set 2"),bOverride=True,ExpressionGUID=62CD57134A7586A687A110A3808EEF9E)))
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'MI_Bldg_BrickEditorOnlyData'"
+   TextureStreamingDataVersion=1
+   TextureStreamingData(0)=(SamplingScale=1.000000,UVChannelIndex=1,TextureName="T_Brick_PackedB",TextureReference="/Game/Building/Texture/Brick/T_Brick_PackedB.T_Brick_PackedB")
+   TextureStreamingData(1)=(SamplingScale=1.000000,UVChannelIndex=1,TextureName="T_BrickOffset_AORMD",TextureReference="/Game/Building/Texture/BrickOffset/T_BrickOffset_AORMD.T_BrickOffset_AORMD")
+   TextureStreamingData(2)=(SamplingScale=1.000000,UVChannelIndex=1,TextureName="T_BrickOffset_N",TextureReference="/Game/Building/Texture/BrickOffset/T_BrickOffset_N.T_BrickOffset_N")
+   TextureStreamingData(3)=(SamplingScale=1.000000,UVChannelIndex=1,TextureName="T_BrickOffset_Red_C",TextureReference="/Game/Building/Texture/BrickOffset/T_BrickOffset_Red_C.T_BrickOffset_Red_C")
+   TextureStreamingData(4)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="T_SFJ_genBlocks_packedA",TextureReference="/Game/Building/Texture/Gen/T_default_packedA.T_default_packedA")
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LightingGuid=E6EAAC8D462ABFFF05E0A2A92FD2A86A
+End Object

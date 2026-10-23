@@ -8,6 +8,8 @@ import { capitalRatio, targetCapital } from "@/engine/lenders";
 import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
+import { bandTable } from "@/engine/bands";
+import { sizeMean } from "@/engine/plates";
 import type { BarGroup } from "@/ui/Chart";
 import { pctSigned } from "@/ui/format";
 import { TheBanks } from "@/ui/panels/BanksDesk";
@@ -76,6 +78,10 @@ export function realRentYoy(e: Econ, k: BuiltClass): number {
  */
 
 export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; spanYrs: number }) {
+  // The wage and output indices open at the town's own dollars (`wage0` —
+  // density premium x price level, 0.26 on one measured town), not at 1, so
+  // "1.00 = year 2000" needs them divided by where they started (2026-10-13).
+  const w0 = useStore((s) => s.game?.econ.wage0) ?? 1;
   if (tail.length < 2) return <div className="hint">Not enough history yet — advance a few quarters.</div>;
   const x: [string, string] = [monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)];
   const kFmt = (v: number) => `${v.toFixed(0)}k`;
@@ -126,7 +132,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
               did not exist anywhere in the game — the line was dropped for a
               good reason and the number that was meant to replace it was never
               written — and it is true now. */}
-          <LineChart height={108} series={[{ label: "real wage", color: "#3a7d46", pts: tail.map((h) => real(h.wageIdx, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
+          <LineChart height={108} series={[{ label: "real wage", color: "#3a7d46", pts: tail.map((h) => real((h.wageIdx ?? w0) / w0, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
             What a paycheque buys, with inflation actually taken out. It gives ground about one year in six —
             firms freeze pay rather than cut it, so the cutting is done by the price-level chart below instead.
@@ -136,7 +142,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
         </div>
         <div className="chart-cell">
           <div className="chart-title">Real output — index, 1.00 = year 2000</div>
-          <LineChart height={108} series={[{ label: "real output", color: "#3d6f9e", pts: tail.map((h) => real(h.outputIdx, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
+          <LineChart height={108} series={[{ label: "real output", color: "#3d6f9e", pts: tail.map((h) => real((h.outputIdx ?? w0) / w0, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">
             Jobs times productivity, in real terms — the city's whole product on one line. When it grows faster
             than the standing stock of space, somebody has to build; when it does not, somebody already did.
@@ -186,6 +192,34 @@ export function CityFigures() {
   // Twelve months back, on the same series the chart above draws — not a
   // separate estimate of the same growth rate.
   const jobsYr = n > 12 && h[n - 13].jobs ? (h[n - 1].jobs! / h[n - 13].jobs! - 1) * 100 : 0;
+  // THE WAGE AGAINST ITS OWN YEAR AND AGAINST THE COUNTRY (2026-10-13).
+  // Same series as the chart: the year-on-year change in what pay buys; then
+  // pay against the national pay path — what employers compare when they
+  // decide where to hire (`wageDemand`) — as a LEVEL, because the town opened
+  // at its density premium (`wage0`) over the national reference and the
+  // national path is carried in the town's own units from there; and real pay
+  // against real national pay — what movers compare (`realPremEma`) — as a
+  // change since the opening only, because the engine does not record the
+  // town's opening cost of living against the nation (cpi and natCpi both
+  // open at 1), so a level would be a guess.
+  // Every wage figure below is read against the opening (`wage0`), which is in
+  // the town's own dollars; the rows used to compare against 1.0 and printed
+  // "-74% against the year 2000" on a town whose real pay had grown.
+  const w0 = e.wage0 ?? 1;
+  const realYr = n > 12 && h[n - 13].wageIdx && h[n - 13].cpi
+    ? (real(h[n - 1].wageIdx, h[n - 1].cpi) / real(h[n - 13].wageIdx, h[n - 13].cpi) - 1) * 100 : 0;
+  const natW = e.natWageIdx ?? e.wageIdx ?? 1;
+  // The opening premium over national pay is wage0 net of the town's price
+  // level (density and dearness — what a dense, dear town pays above the
+  // reference); the national path then carries it forward in this town's units.
+  const payVsNation = (w0 / Math.max(1e-6, e.priceLevel ?? 1) * (e.wageIdx ?? w0) / Math.max(1e-6, natW) - 1) * 100;
+  const realVsNationChg = (real(e.wageIdx, e.cpi) / Math.max(1e-6, real(natW, e.natCpi)) - 1) * 100;
+  // ...and as a LEVEL where the save carries the opening cost of living
+  // against the nation (`col0`, struck at the opening with the CPI's own
+  // weights): cost of living today = col0 x local prices / national prices,
+  // and real pay against the nation = pay against the nation / that.
+  const col = e.col0 !== undefined ? e.col0 * (e.cpi ?? 1) / Math.max(1e-6, e.natCpi ?? e.cpi ?? 1) : undefined;
+  const realVsNation = col !== undefined ? ((1 + payVsNation / 100) / col - 1) * 100 : undefined;
   return (
     <>
       <div className="page-section" style={{ marginTop: 14 }}>Where the city stands today</div>
@@ -205,15 +239,31 @@ export function CityFigures() {
             missing, so eight and a half is about three points of slack above
             where this town sits when nothing is wrong. */}
         <Row k="Unemployment" v={`${((e.unemployment ?? 0) * 100).toFixed(1)}%`} bad={(e.unemployment ?? 0) > 0.085} />
-        <Row k="Real wage" v={`${((real(e.wageIdx, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
+        <Row k="Real wage" v={`${((real((e.wageIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
         {/* THE ROW THE CHART ABOVE PROMISED. Its own note records why the line
             was dropped — nominal measured at 4.5x over a campaign against
             real's 1.35x, so a shared axis flattens the series that matters —
             and that is exactly why the figure has to be said SOMEWHERE, or the
             player has no way to see the gap between what they are paid and
             what it buys. */}
-        <Row k="Nominal wage" v={`${(((e.wageIdx ?? 1) - 1) * 100).toFixed(0)}% against the year 2000`} />
-        <Row k="Real output" v={`${((real(e.outputIdx, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
+        <Row k="Nominal wage" v={`${(((e.wageIdx ?? w0) / w0 - 1) * 100).toFixed(0)}% against the year 2000`} />
+        <Row k="Real wage, last 12 months" v={pctSigned(realYr / 100, 1)} bad={realYr < 0}
+          title="What a paycheque buys now against a year ago — pay is rarely cut, so a fall here is prices outrunning pay." />
+        <Row k="Pay vs the nation" v={`${payVsNation >= 0 ? "+" : ""}${payVsNation.toFixed(0)}% ${payVsNation >= 0 ? "above" : "below"} national pay`}
+          title="What employers here pay against the national average. Dear labour trims hiring and pushes work to other cities; cheap labour draws it in." />
+        {col !== undefined && (
+          <Row k="Cost of living vs the nation" v={`${col >= 1 ? "+" : ""}${((col - 1) * 100).toFixed(0)}% ${col >= 1 ? "dearer" : "cheaper"}`}
+            title="Housing, local services and goods together, weighted as the local price index weights them, against the national average." />
+        )}
+        {realVsNation !== undefined ? (
+          <Row k="Real pay vs the nation" v={`${realVsNation >= 0 ? "+" : ""}${realVsNation.toFixed(0)}% (${realVsNationChg >= 0 ? "+" : ""}${realVsNationChg.toFixed(0)} pts since 2000)`}
+            bad={realVsNation < 0}
+            title="Pay here after the cost of living here, against the national average — what people deciding whether to move in or out compare." />
+        ) : (
+          <Row k="Real pay vs the nation" v={`${realVsNationChg >= 0 ? "+" : ""}${realVsNationChg.toFixed(0)}% since the year 2000`}
+            title="Local pay after local prices, against national pay after national prices. This save predates the opening cost-of-living record, so only the change since the opening is shown." />
+        )}
+        <Row k="Real output" v={`${((real((e.outputIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
         <Row k="Price level" v={`${(((e.cpi ?? 1) - 1) * 100).toFixed(0)}% of cumulative inflation`} />
       </div>
     </>
@@ -492,7 +542,7 @@ export function EconomyPage() {
       const who = p.source === "player" || p.source === "reuse" ? "You"
         : j?.firmId ? (game.rivals.find((r) => r.id === j.firmId)?.name ?? "A competitor")
         : p.source === "rival" ? "A competitor"
-        : "The city";
+        : (j?.builderId && (game.builders ?? []).find((b) => b.id === j.builderId)?.name) || "A local developer";
       const floors = d?.floors ?? j?.floors ?? 0;
       const legs = Object.values(p.sfByUse).filter((v) => (v ?? 0) > 0).length;
       rows.push({
@@ -808,7 +858,10 @@ export function EconomyPage() {
       {(sel === "general" || isClass) && spanSwitch("Every chart below shows")}
 
       {/* ---- the general view: the city's six series, or one class in depth ---- */}
-      {(sel === "general" || isClass) && (
+      {/* The four stock-vs-leased charts are the city's view: all four
+          markets side by side belong under The city, not repeated under each
+          class's own card (the owner's call, 2026-10-15). */}
+      {sel === "general" && (
         <StockVsLeased tail={tail} live={e} xFrom={xFrom} xTo={xTo} spanYrs={spanYrs} />
       )}
       {sel === "general" && <>{rateChart}<CityEconCharts tail={tail} spanYrs={spanYrs} /></>}
@@ -963,6 +1016,47 @@ export function EconomyPage() {
             space already on the sublet market; that is what a tenant can take and what rents price off. Direct
             vacancy is the landlord empty-floor rate and will sit on its frictional floor through a shortage.
           </div>
+          {/* THE MARKET BY QUALITY (TENANT_TIERS_PLAN.md): which floors the vacancy is in. */}
+          {(() => {
+            const rows = bandTable(game.econ, focus).filter((r) => r.stock > 0);
+            if (!rows.length) return null;
+            return (
+              <>
+                <div className="hint" style={{ marginTop: 8 }}>By building score — the street's buildings (yours are your own)</div>
+                {focus !== "multifamily" && (() => {
+                  // How many firms that floor is: occupied over the average lease (plates.ts sizeMean).
+                  const avg = sizeMean(focus);
+                  const n = Math.round((game.econ.occupied?.[focus] ?? 0) / avg);
+                  const pop = Math.max(1, game.econ.population ?? 1);
+                  return (
+                    <div className="hint">
+                      About {n.toLocaleString()} {focus === "retail" ? "shops" : "firms"} occupy it, averaging {Math.round(avg).toLocaleString()} sf
+                      {" "}— {(1000 * n / pop).toFixed(1)} per 1,000 residents.
+                    </div>
+                  );
+                })()}
+                <table className="mini-table mono" style={{ width: "100%", fontSize: 12 }}>
+                  <thead><tr><th style={{ textAlign: "left" }}>Score</th><th>Floor</th><th>Vacant</th><th>Normal</th><th>Rent vs class</th></tr></thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.lo}>
+                        <td style={{ textAlign: "left" }}>{r.lo}–{r.lo + 10}</td>
+                        <td style={{ textAlign: "right" }}>{sfFmt(r.stock)}</td>
+                        <td style={{ textAlign: "right" }} className={r.vac > r.nat + 0.03 ? "neg" : ""}>{(r.vac * 100).toFixed(1)}%</td>
+                        <td style={{ textAlign: "right" }}>{(r.nat * 100).toFixed(1)}%</td>
+                        <td style={{ textAlign: "right" }}>{pctSigned(r.rent - 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="chart-note">
+                  Every building has one score, 1-100 — its address and the building itself — and every tenant shops
+                  for the best score it can afford. When good space gets cheap, tenants in ordinary space trade up and
+                  the vacancy lands at the bottom of the scale; when the best space is dear, they stay or trade down.
+                </div>
+              </>
+            );
+          })()}
         </div>
         <div className="chart-cell">
           <div className="chart-title">What is coming, and when</div>
@@ -997,6 +1091,107 @@ export function EconomyPage() {
               </div>
             </>
           )}
+          {/* PERMITS FILED. A scheme is decided months before the hole is dug —
+              design, permits, the loan — and a permit is public record, so the
+              broker's pipeline report lists it. The developers themselves only
+              count what has started (that blindness is how markets overbuild);
+              you get the permit list, the way a careful owner does. */}
+          {(() => {
+            const plans = (game.cityPlans ?? []).filter((p) => p.use === focus || (p.use === "mixed" && (focus === "retail" || focus === "multifamily")))
+              .sort((a, b) => a.breakM - b.breakM);
+            if (!plans.length) return null;
+            return (
+              <>
+                <div className="hint" style={{ marginTop: 8 }}>
+                  Permits filed, not yet started: {plans.length} scheme{plans.length === 1 ? "" : "s"}
+                </div>
+                <div className="mini-list">
+                  {plans.slice(0, 5).map((p) => {
+                    const b = (game.builders ?? []).find((x) => x.id === p.builderId) ?? game.rivals.find((r) => r.id === p.firmId);
+                    return (
+                      <button key={p.bbl} className="neighbor" onClick={() => flyTo(p.bbl, true)}>
+                        <span className="neighbor-addr">{parcels[p.bbl]?.address ?? p.bbl}</span>
+                        <span className="neighbor-meta mono">
+                          {b?.name ?? "A local developer"} · {p.floors} fl {p.use} · breaks ground ~{monthLabel(p.breakM)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
+          {/* THE TOWN'S DEVELOPERS. Who builds here, what they have delivered,
+              how it opened — and who has folded. */}
+          {game.builderFirms && (() => {
+            // The town's builders are firms on the street: who owns what it built, what is under way, who went under.
+            const firms = game.rivals.filter((r) => r.builderProf);
+            const live = firms.filter((r) => r.failedM === undefined && r.retiredM === undefined);
+            const top = [...live].sort((a, b) => b.bbls.length - a.bbls.length || b.cash - a.cash).slice(0, 6);
+            const failed = firms.filter((r) => r.failedM !== undefined).sort((a, b) => (b.failedM ?? 0) - (a.failedM ?? 0)).slice(0, 3);
+            if (!top.length && !failed.length) return null;
+            return (
+              <>
+                <div className="hint" style={{ marginTop: 8 }}>
+                  The town's builders: {live.length} firms{failed.length ? ` · ${firms.filter((r) => r.failedM !== undefined).length} gone under` : ""}
+                </div>
+                <div className="mini-list">
+                  {top.map((r) => {
+                    const building = (game.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length;
+                    return (
+                      <div key={r.id} className="neighbor">
+                        <span className="neighbor-addr">{r.name}</span>
+                        <span className="neighbor-meta mono">
+                          {r.style === "developer" ? "builds to hold" : "merchant builder"} · owns {r.bbls.length}{building ? ` · ${building} under way` : ""}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {failed.map((r) => (
+                    <div key={r.id} className="neighbor">
+                      <span className="neighbor-addr neg">✕ {r.name}</span>
+                      <span className="neighbor-meta mono">went under {monthLabel(r.failedM ?? 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
+          {!game.builderFirms && (() => {
+            const all = game.builders ?? [];
+            const live = all.filter((b) => b.failedM === undefined && b.starts > 0)
+              .sort((a, b) => b.sfDelivered - a.sfDelivered).slice(0, 6);
+            const folded = all.filter((b) => b.endReason === "folded").sort((a, b) => (b.failedM ?? 0) - (a.failedM ?? 0)).slice(0, 3);
+            if (!live.length && !folded.length) return null;
+            return (
+              <>
+                <div className="hint" style={{ marginTop: 8 }}>
+                  The town's developers: {all.filter((b) => b.failedM === undefined).length} active
+                  {all.some((b) => b.endReason === "folded") ? ` · ${all.filter((b) => b.endReason === "folded").length} folded in the last twenty years` : ""}
+                </div>
+                <div className="mini-list">
+                  {live.map((b) => {
+                    const building = (game.cityJobs ?? []).filter((j) => j.builderId === b.id && !j.firmId).length;
+                    return (
+                      <div key={b.id} className="neighbor">
+                        <span className="neighbor-addr">{b.name}</span>
+                        <span className="neighbor-meta mono">
+                          {b.delivered} built · {sfFmt(b.sfDelivered)} sf{building ? ` · ${building} under way` : ""}
+                          {b.worst !== undefined ? ` · openings ${Math.round(b.worst * 100)}–${Math.round((b.best ?? b.worst) * 100)}% of cost` : ""}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {folded.map((b) => (
+                    <div key={b.id} className="neighbor">
+                      <span className="neighbor-addr neg">✕ {b.name}</span>
+                      <span className="neighbor-meta mono">folded {monthLabel(b.failedM ?? 0)} · {b.delivered} built · {b.handedBack} handed back</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </div>
         <div className="chart-cell">
           <div className="chart-title">Absorption vs completions, per year</div>

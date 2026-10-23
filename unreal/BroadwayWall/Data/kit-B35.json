@@ -1,0 +1,167 @@
+{
+ "format": "bw-kit/1",
+ "kit": "B35",
+ "grammar": "generated",
+ "label": "Beige brick co-op",
+ "bands": [
+  {
+   "symbol": "F",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "G",
+   "height": 440.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_Ground_0.SM_B35_Ground_0",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_Ground_1.SM_B35_Ground_1",
+     "width": 256.0,
+     "depth": 50.0,
+     "y0": -256.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_Ground_2.SM_B35_Ground_2",
+     "width": 384.0,
+     "depth": 50.0,
+     "y0": -384.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_Entrance.SM_B35_Entrance",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    }
+   ],
+   "corner": {
+    "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_GroundCorner.SM_B35_GroundCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "P",
+   "height": 340.0,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_Second.SM_B35_Second",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_SecondCorner.SM_B35_SecondCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "S",
+   "height": 320.0,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_Typical_0.SM_B35_Typical_0",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "mix": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_Typical_1.SM_B35_Typical_1",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    },
+    {
+     "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_Typical_0_v1.SM_B35_Typical_0_v1",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_Typical_0_v2.SM_B35_Typical_0_v2",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    },
+    {
+     "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_Typical_0_v3.SM_B35_Typical_0_v3",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0,
+     "mix": 0,
+     "variant": true
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_TypicalCorner.SM_B35_TypicalCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  },
+  {
+   "symbol": "T",
+   "height": 210,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_Top.SM_B35_Top",
+     "width": 320.0,
+     "depth": 50.0,
+     "y0": -320.0,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/BW/Styles/B35/v1021050443/SM_B35_TopCorner.SM_B35_TopCorner",
+    "width": 100,
+    "depth": 50.0,
+    "y0": -100,
+    "y1": 0
+   },
+   "inner": null
+  }
+ ]
+}

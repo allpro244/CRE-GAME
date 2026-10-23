@@ -1,0 +1,14 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "",
+	"Description": "Phase 0 spikes: web game in a browser widget (A), engine sidecar over WebSocket (B), MCP.",
+	"Modules": [ { "Name": "BWSpike", "Type": "Runtime", "LoadingPhase": "Default" } ],
+	"Plugins": [
+		{ "Name": "WebBrowserWidget", "Enabled": true },
+		{ "Name": "ModelContextProtocol", "Enabled": true },
+		{ "Name": "AllToolsets", "Enabled": true },
+		{ "Name": "PythonScriptPlugin", "Enabled": true },
+		{ "Name": "EditorScriptingUtilities", "Enabled": true }
+	]
+}

@@ -33,6 +33,84 @@ import {
 
 // --- small helpers ----------------------------------------------------------
 
+/** A footprint's narrow width, in its own units: the short side of its minimum-area bounding rectangle (rotating calipers over the edges). */
+export function narrowWidth(ring) {
+  let best = Infinity, bestArea = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (L < 1e-6) continue;
+    const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+    let s0 = Infinity, s1 = -Infinity, t0 = Infinity, t1 = -Infinity;
+    for (const [x, y] of ring) {
+      const s = x * ux + y * uy, t = -x * uy + y * ux;
+      if (s < s0) s0 = s; if (s > s1) s1 = s; if (t < t0) t0 = t; if (t > t1) t1 = t;
+    }
+    const area = (s1 - s0) * (t1 - t0);
+    if (area < bestArea) { bestArea = area; best = Math.min(s1 - s0, t1 - t0); }
+  }
+  return best;
+}
+
+// A PLATE HAS TO HOLD A CORE (plan 12). A building above six storeys has a lift,
+// and a lift building needs two remote stairs, the shaft and a corridor, plus a
+// rentable depth either side of them. Below about ten metres across there is no
+// floor left to let, which is why a 25-foot lot carries a walk-up and not a
+// tower: the tall building on a narrow lot is the assembled site's job, not the
+// row lot's. Above that, height is held to 4.5 times the plate's narrow side:
+// the slenderness of the ordinary tall building (a 60-storey tower on a 45 m
+// plate is 4.7). The pencil tower past that is a post-2005 luxury product on
+// the costliest ground in the world, not the stock of a harbour city. Both
+// numbers are facts about buildings, not tuning: the 10 m is the core plus a
+// single-loaded floor; the 4.5 is the median slenderness of the tall building.
+const LIFT_MIN_PLATE_M = 10, MAX_SLENDER = 4.5, WALKUP_FLOORS = 6, STOREY_M = 3.55;
+// THE STREET FLOOR TAKES THE LOT (plan 12). Coverage was drawn the same way
+// for every use, 55-78% of the lot, so a downtown of shops and offices stood
+// on 38% open ground: a car park's worth of bare paving behind every
+// storefront. A commercial ground floor covers its lot. Zoning lets it
+// (New York's commercial districts allow 100% coverage up to the first
+// storey, and the rear-yard rule bites only above it), and the rent per foot
+// of street floor is why it always does: what is left is a light well or a
+// loading bay. Warehouses and garages cover theirs for the same reason. A
+// house or an apartment building keeps the rear yard its light and air
+// rules require (30 ft on a 100 ft lot, 65-75%), which the draw already
+// gives. The bands are those facts; the lot's own draw places it in them.
+export function streetCover(cls, coverage, lo, hi) {
+  const u = Math.max(0, Math.min(1, (coverage - lo) / (hi - lo)));
+  if (cls[0] === "O" || cls === "K2") return 0.86 + 0.09 * u;          // office, shop: light well or loading bay
+  if (cls === "G1") return 0.90 + 0.08 * u;                             // garage: ramps inside
+  if (cls === "E9" || cls[0] === "M") return 0.80 + 0.12 * u;           // warehouse, works: docks on the street side
+  if (cls === "S1") return 0.78 + 0.10 * u;                             // shop under flats: full street floor, a yard above
+  return coverage;                                                      // housing keeps its yard
+}
+// PLAN 13: A LIFT BUILDING NEEDS A LETTABLE PLATE, not just room for the lift.
+// An office floor above a side core is about 8-9 m of lettable depth beside a
+// 3-4 m core: 12 m across at the least, which is the 40 ft lot the side-street
+// lofts and office buildings of Midtown stand on to twelve and sixteen floors.
+// Flats behind a single-loaded corridor need about 11 m (the 35-40 ft lot of
+// the prewar elevator apartment house). Ten metres (plan 12) let slabs stand
+// on plates that hold the lift and little else. The slenderness cap below
+// (MAX_SLENDER) is what stops the pencils: a 12 m plate stops near 15 floors.
+// (15/12 was tried first and measured too blunt: it took the metro town's
+// seven-to-nine-floor buildings from 132 to 53 and its 10-19 from 25 to 4,
+// a downtown of walk-ups with almost nothing standing above them.)
+const PLATE_MIN_M = { office: 12, other: 11 };
+// THE LEAST OF ITS LOT A BUILDING COVERS AT GRADE (plan 14). New York has no
+// lot-coverage minimum by that name, but its towers stand on bases: the
+// street-wall rules of the contextual and tower-on-base districts bring the
+// building out to the sidewalk, and commercial floor area has no coverage
+// maximum at all, so a Manhattan lot is built over most of its area. The
+// tower-in-a-plaza of the 1961 bonus is the exception, and the owner's call
+// (Oct 2026) is that a thin shaft on an empty lot reads as a bug: 60%.
+const MIN_COVER = 0.6;
+export function plateFloors(footprint, floors, cls = "", planV = 12) {
+  if (!footprint || floors <= WALKUP_FLOORS) return floors;
+  const w = narrowWidth(footprint);
+  const need = planV >= 13 ? (cls[0] === "O" ? PLATE_MIN_M.office : PLATE_MIN_M.other) : LIFT_MIN_PLATE_M;
+  if (w < need) return WALKUP_FLOORS;
+  return Math.max(WALKUP_FLOORS, Math.min(floors, Math.floor((MAX_SLENDER * w) / STOREY_M)));
+}
+
 const TAU_ = Math.PI * 2;
 
 export function chaikin(ring, iterations) {
@@ -2433,24 +2511,27 @@ export function generateCity(cfg) {
           // District with five buildings past fifty against MapPLUTO's
           // fifteen. Calibrated, as TOWER_P_CORE_* are.
           floors = Math.round((rr(7, 12) + h * h * rr(10, assembled ? TOWER_H_CORE : 23)) * DZ.tower * (0.86 + 0.20 * Math.min(2.4, plate)));
-          coverage = rr(0.42, 0.58);
+          coverage = PLAN_V >= 14 ? rr(MIN_COVER, 0.72) : rr(0.42, 0.58);
           isTower = true;
         } else if (fl.maxFloors > 5 && rand() < 0.18 + h * 0.34) {
           floors = Math.round(rr(3, 6) * (DZ.base ?? 1) * baseLift(h) + mat * rr(0.55, 1.25));
           floors = Math.max(1, Math.round(floors * 0.22 + blockDatum * 1.20 * 0.78 + rr(-0.7, 0.7) * hSpread));
           coverage = rr(0.55, 0.72);
+          if (PLAN_V >= 12) coverage = streetCover(cls, coverage, 0.55, 0.72);
         } else {
           floors = Math.round((fl.maxFloors <= 5 ? rr(1, 3) : rr(2, 4)) * (DZ.base ?? 1) * baseLift(h) + mat * rr(0.22, 0.78));
           floors = Math.max(1, Math.round(floors * 0.20 + blockDatum * 0.80 + rr(-0.6, 0.6) * hSpread));
           coverage = rr(0.6, 0.78);
+          if (PLAN_V >= 12) coverage = streetCover(cls, coverage, 0.6, 0.78);
         }
         // Industrial yards read wide and low; office cores read narrower plates.
         const massAspect = fl.massAspect ?? 1;
         if (massAspect > 1.05) coverage = Math.min(0.88, coverage * massAspect);
-        else if (massAspect < 0.95) coverage = Math.max(0.48, coverage * massAspect);
+        else if (massAspect < 0.95) coverage = Math.max(PLAN_V >= 14 ? MIN_COVER : 0.48, coverage * massAspect);
         // A tall building does not cover its lot the way a walk-up does: the
         // core, the light and the setback all take plate off it as it climbs.
         if (floors > 6) coverage *= Math.max(0.72, 1.0 - (floors - 6) * 0.012);
+        if (PLAN_V >= 14) coverage = Math.max(MIN_COVER, coverage);
         floors = Math.min(floors, fl.maxFloors);
         // AND THE PRESET'S CEILING IS A CEILING. `peakCap` used to bind only on
         // the landmark pass, so an ordinary tower roll could sail past it: the
@@ -2563,6 +2644,17 @@ export function generateCity(cfg) {
         return fp;
         };
         footprint = solveFoot(coverage);
+        if (PLAN_V >= 12) {
+          const want = floors;
+          floors = plateFloors(footprint, floors, cls, PLAN_V);
+          if (isTower && floors < want && floors <= 12) {
+            // no draw: the tower's own coverage places it in its use's band
+            isTower = false;
+            coverage = PLAN_V >= 14 ? streetCover(cls, coverage, MIN_COVER, 0.72) : streetCover(cls, coverage, 0.42 * 0.72, 0.58);
+            footprint = solveFoot(coverage);
+            floors = plateFloors(footprint, Math.min(floors, Math.max(1, Math.floor(Math.max(zone.commfar, zone.resfar) / coverage))), cls, PLAN_V);
+          }
+        }
         if (isTower && PLAN_V >= 7) towerSolves.set(bbl, { solveFoot, areaM2, lotArea, floors, zone, side, assembled: PLAN_V >= 10 && !!cfg.districts[d].assembled });
         const realCov = footprint ? polygonArea([footprint]) / areaM2 : coverage;
         bldgArea = Math.round(lotArea * realCov * floors);
@@ -2695,9 +2787,10 @@ export function generateCity(cfg) {
       // base covers the lot, the setback tower above it is slimmer), so the
       // economics read the same building; only the chop goes.
       const keepHeight = t.assembled;
-      const fl = keepHeight ? t.floors
+      let fl = keepHeight ? t.floors
         : Math.max(1, Math.min(t.floors, Math.floor(Math.max(t.zone.commfar, t.zone.resfar) / realCov)));
-      const bldg = keepHeight ? (pp.bldgarea || 1) : Math.round(t.lotArea * realCov * fl);
+      if (PLAN_V >= 12) fl = plateFloors(fp, fl, pp.bldgclass ?? "", PLAN_V);
+      const bldg = keepHeight && fl === t.floors ? (pp.bldgarea || 1) : Math.round(t.lotArea * realCov * fl);
       const bldgOld = pp.bldgarea || 1;
       pp.assesstot = pp.assessland + Math.round((pp.assesstot - pp.assessland) * (bldg / bldgOld));
       if (pp.unitsres) pp.unitsres = Math.max(1, Math.round(pp.unitsres * (bldg / bldgOld)));
@@ -2886,7 +2979,9 @@ export function generateCity(cfg) {
       const c = centroid(r);
       let nx = -uy, ny = ux;
       if ((a[0] - c[0]) * nx + (a[1] - c[1]) * ny < 0) { nx = -nx; ny = -ny; }
-      const road = 9;                                  // reach across the carriageway
+      // reach across the carriageway: the measured street (plan 12; it was a
+      // fixed 9 m, short of an avenue's far kerb and past a lane's)
+      const road = PLAN_V >= 12 ? Math.max(6, 2 * ringDist([(a[0] + bb[0]) / 2, (a[1] + bb[1]) / 2], b.ring)) : 9;
       for (const end of [0, 1]) {
         const t = end === 0 ? 4.2 : len - 4.2;
         const px = a[0] + ux * t, py = a[1] + uy * t;
@@ -2944,10 +3039,38 @@ export function generateCity(cfg) {
       // nine-metre residential lane gets no paint at all, a working street a
       // dashed centre line, an avenue the double yellow.
       const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
-      const w = b.inset ? 2 * ringDist(mid, b.inset) : 0;
+      let w = b.inset ? 2 * ringDist(mid, b.inset) : 0;
+      let A = a, C = c;
+      if (PLAN_V >= 12 && b.inset) {
+        // PLAN 12: THE STREET IS WHERE THE STREET IS. The cell edge is a
+        // street's middle only when the far side is another block paying the
+        // same half-width. Two cases where it is not:
+        //  - a diagonal's clearance line is the kerb of the boulevard's own
+        //    carriageway, 2 m off the lot line: no street of its own, so no
+        //    centre line (the boulevard carries its own, below);
+        //  - a park's frontage: the cell stops PARK_CLEAR (12 m) off the park
+        //    and the block pays its half street on top, so the road runs from
+        //    this block's kerb line all the way to the lawn. Its middle is
+        //    halfway across THAT, and its width is all of it — the centre line
+        //    used to sit on the cell edge with the park side's 12 m left as
+        //    unmarked asphalt.
+        const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        let nx = -(c[1] - a[1]) / L, ny = (c[0] - a[0]) / L;
+        if (ringDist([mid[0] + nx, mid[1] + ny], b.inset) < ringDist([mid[0] - nx, mid[1] - ny], b.inset)) { nx = -nx; ny = -ny; }
+        if (DIAG_M.some((rd) => inRing([mid[0] + nx * 2.5, mid[1] + ny * 2.5], rd))) continue;
+        let dPark = Infinity, pk = -1;
+        for (let q = 0; q < PARKS_M.length; q++) { const dd = distToRing(mid, PARKS_M[q]); if (dd < dPark) { dPark = dd; pk = q; } }
+        if (pk >= 0 && dPark < PARK_CLEAR + 1.5 && inRing([mid[0] + nx * (dPark + 1), mid[1] + ny * (dPark + 1)], PARKS_M[pk])) {
+          const half = w / 2;
+          const shift = (dPark - half) / 2;
+          A = [a[0] + nx * shift, a[1] + ny * shift];
+          C = [c[0] + nx * shift, c[1] + ny * shift];
+          w = half + dPark;
+        }
+      }
       centerFeatures.push({
         type: "Feature",
-        geometry: { type: "LineString", coordinates: [proj.toLL(a), proj.toLL(c)] },
+        geometry: { type: "LineString", coordinates: [proj.toLL(A), proj.toLL(C)] },
         properties: {
           kind: "centerline", cls: b.u !== undefined ? "grid" : "lane",
           w: Math.round(w * 10) / 10,
@@ -3009,6 +3132,7 @@ export function generateCity(cfg) {
   const sidewalkFeatures = [];
   const curbFeatures = [];
   const zebraFeatures = [];
+  const parkFootFeatures = [];
   for (const b of drawn) {
     const r = b.inset;
     const cell = b.ring;
@@ -3029,7 +3153,11 @@ export function generateCity(cfg) {
       // an edge with no street in front of it (a party line inside a
       // superblock, the lot line against a park or the water) gets none
       const wet = !edgeClear(a, q) || inWater([mx + nx * (half + 1), my + ny * (half + 1)]);
-      E.push({ ux, uy, nx, ny, L, half, sw: half > 2.6 && !wet ? swOf(half) : 0 });
+      // PLAN 12: a face on a diagonal's clearance line has 2 m to that line and
+      // the carriageway's kerb 1.5 m past it — a 3.5 m footway, where the
+      // half-width rule (2 m: "no street") gave the boulevard's blocks none
+      const onDiag = PLAN_V >= 12 && DIAG_M.some((rd) => inRing([mx + nx * (half + 2.5), my + ny * (half + 2.5)], rd));
+      E.push({ ux, uy, nx, ny, L, half, sw: onDiag && !wet ? half + 1.5 : half > 2.6 && !wet ? swOf(half) : 0 });
     }
     const outer = [];
     for (let i = 0; i < n; i++) {
@@ -3132,6 +3260,38 @@ export function generateCity(cfg) {
       half(prev, e, 1, p);      // on along prev's footway, across e's street
     }
   }
+  // PLAN 12: THE PARK HAS A SIDEWALK. Its lawn ran straight out onto the
+  // frontage road's asphalt, kerbed by a line and nothing else. A city park is
+  // walked round on a footway of its own — 4 m from the lawn's edge, kerbed at
+  // the road — the way every block is; the frontage road starts at that kerb.
+  // A surveyed park keeps its own property line (its kerb is already the
+  // street's), and a ring the dilation cannot handle keeps the old edge.
+  if (PLAN_V >= 12) {
+    const PARK_SW = 4;
+    cfg.parks.forEach((pk, i) => {
+      if (pk.real) return;
+      const green = PARK_GREEN_M[i];
+      const outer = dilateConvex(PARKS_M[i], PARK_SW - PARK_KERB);
+      if (!green || !outer || outer.length < 3) return;
+      parkFootFeatures.push({
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [[...outer.map(proj.toLL), proj.toLL(outer[0])], [...green.map(proj.toLL), proj.toLL(green[0])]] },
+        properties: { kind: "sidewalk", park: 1 },
+      });
+      let run = [];
+      const flushP = () => {
+        if (run.length >= 2) curbFeatures.push({ type: "Feature", geometry: { type: "LineString", coordinates: run.map(proj.toLL) }, properties: { kind: "curb" } });
+        run = [];
+      };
+      for (let k = 0; k < outer.length; k++) {
+        const p = outer[k], q = outer[(k + 1) % outer.length];
+        if (inWater([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2])) { flushP(); continue; }
+        if (!run.length) run.push(p);
+        run.push(q);
+      }
+      flushP();
+    });
+  }
   // STREETS THAT MEET THE WATER CROSS IT. The cells tile the land straight
   // over the creek, so every cell edge — a street's middle line — that runs
   // into a channel and out the other bank is a street the river cuts. It was
@@ -3191,6 +3351,112 @@ export function generateCity(cfg) {
           }
         }
       }
+    }
+  }
+  // PLAN 11: A STREET THAT RUNS INTO THE WATER IS CARRIED OVER IT. The lots
+  // are cut back from every channel, so no cell edge spans one and the loop
+  // above found no crossings at all (0 in 18 watered Metropolis islands): the
+  // only bridges were the ones island.mjs stood in dry gaps by spacing, which
+  // rarely met a street. Now every street that runs up to a channel is
+  // followed straight across, and where the same street (or one in line with
+  // it) comes down to the far bank, the two ends are joined by a crossing —
+  // the bridge goes where the road actually is.
+  if (PLAN_V >= 11 && CH_M.length) {
+    // creeks and canals only: a harbour slip is a dock, and a street does
+    // not cross a dock on a deck over the moored boats
+    const RUN_M = (cfg.streams ?? [])
+      .filter((st) => !st.cut && st.paint !== false && st.kind !== "pond" && st.kind !== "slip" && st.ring && st.ring.length >= 3)
+      .map((st) => st.ring);
+    const inRun = (p) => RUN_M.some((r) => inRing(p, r));
+    const wetOrBank = (p) => inChannel(p) || CUT_M.some((r) => inRing(p, r));
+    // street ends that point into the water: the end of a street-middle edge
+    // whose continuation, a few metres on, is channel or its cleared bank
+    const ends = [];
+    const seenE = new Set();
+    for (const b of blocks) {
+      const r = b.ring;
+      if (!r || r.length < 3 || Math.abs(ringArea(r)) < 380) continue;
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i], c = r[(i + 1) % r.length];
+        const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        if (len < 20) continue;
+        const k = edgeKey(a, c);
+        if (seenE.has(k)) continue;
+        seenE.add(k);
+        if (!edgeClear(a, c)) continue;
+        const ux = (c[0] - a[0]) / len, uy = (c[1] - a[1]) / len;
+        const mid = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
+        const w = b.inset ? 2 * ringDist(mid, b.inset) : 12;
+        for (const [p, dx, dy] of [[c, ux, uy], [a, -ux, -uy]]) {
+          // the street stops at the cleared bank, which can be a block deep:
+          // it points at the water if the channel lies dead ahead within 40 m
+          let hit = false;
+          for (let t = 2; t <= 40 && !hit; t += 2) if (inRun([p[0] + dx * t, p[1] + dy * t])) hit = true;
+          if (hit) ends.push({ p, dx, dy, w });
+        }
+      }
+    }
+    const used = new Set();
+    const laid = [];
+    // the kerbed ground of the blocks: where a bridge must not come down
+    const insets = blocks.filter((b) => b.inset && b.inset.length >= 3).map((b) => ({ r: b.inset, bb: bboxOfRing(b.inset) }));
+    const onLot = (q) => insets.some(({ r, bb }) => q[0] >= bb[0] && q[0] <= bb[2] && q[1] >= bb[1] && q[1] <= bb[3] && inRing(q, r));
+    for (let i = 0; i < ends.length; i++) {
+      if (used.has(i)) continue;
+      const e = ends[i];
+      // walk across: it must reach water, and come out dry within a span a bridge can make
+      let sawWater = false, out = -1, wetRun = 0;
+      for (let t = 2; t <= 110; t += 1) {
+        const q = [e.p[0] + e.dx * t, e.p[1] + e.dy * t];
+        if (inChannel(q)) { sawWater = true; wetRun++; }
+        else if (sawWater && !wetOrBank(q)) { out = t; break; }
+      }
+      if (out < 0) continue;
+      // over the water at most about twice a wide canal's width: past that it
+      // is a street meeting the channel at a glancing angle, which stops at the bank
+      if (wetRun > 70) continue;
+      // the far bank's street end, in line and facing back
+      let best = -1, bestD = Infinity;
+      for (let j = 0; j < ends.length; j++) {
+        if (j === i || used.has(j)) continue;
+        const f = ends[j];
+        if (f.dx * e.dx + f.dy * e.dy > -0.94) continue;
+        const vx = f.p[0] - e.p[0], vy = f.p[1] - e.p[1];
+        const along = vx * e.dx + vy * e.dy, across = Math.abs(-vx * e.dy + vy * e.dx);
+        if (along < out - 8 || along > out + 45 || across > Math.max(6, Math.min(e.w, f.w) * 0.6)) continue;
+        if (across + Math.abs(along - out) < bestD) { bestD = across + Math.abs(along - out); best = j; }
+      }
+      let to = null, w = e.w;
+      if (best >= 0) {
+        const f = ends[best];
+        used.add(best);
+        to = f.p; w = Math.min(e.w, f.w);
+      } else {
+        // no street comes down to meet it: carry it over onto the far bank's
+        // road (a quay street along the water) — but never onto a lot
+        const land = [e.p[0] + e.dx * (out + 3), e.p[1] + e.dy * (out + 3)];
+        if (onLot(land) || onLot([e.p[0] + e.dx * (out + 8), e.p[1] + e.dy * (out + 8)])) continue;
+        to = land;
+      }
+      used.add(i);
+      // a street that meets the water at a glancing angle would need a skew
+      // bridge longer than the channel is wide several times over: it stops at the bank
+      if (Math.hypot(to[0] - e.p[0], to[1] - e.p[1]) > 90) continue;
+      if (inPark(e.p) || inPark(to)) continue;
+      // one bridge to a street: two in line within a few metres are the same crossing
+      const mx = (e.p[0] + to[0]) / 2, my = (e.p[1] + to[1]) / 2;
+      // and no two bridges cross each other over the water
+      const cross = (p1, p2, p3, p4) => {
+        const d = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+        return d(p1, p2, p3) * d(p1, p2, p4) < 0 && d(p3, p4, p1) * d(p3, p4, p2) < 0;
+      };
+      if (laid.some((q) => Math.hypot(q.m[0] - mx, q.m[1] - my) < 18 || cross(q.a, q.b, e.p, to))) continue;
+      laid.push({ m: [mx, my], a: e.p, b: to });
+      crossingFeatures.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: [proj.toLL(e.p), proj.toLL(to)] },
+        properties: { kind: "crossing", w: Math.round(Math.max(7, Math.min(28, w)) * 10) / 10 },
+      });
     }
   }
   const shoreRoad = {
@@ -4051,6 +4317,20 @@ export function generateCity(cfg) {
       for (const [a, b] of minusSpans(u0, u1, roadSpans)) {
         for (const [v0, v1] of bands) {
           apronPaintM.push([at(a, v0), at(b, v0), at(b, v1), at(a, v1)]);
+          // PLAN 12: A CARRIAGEWAY IS A STREET. The boulevard's roadways were
+          // asphalt with no line of their own (its one street line runs down
+          // the median), so they drew unmarked and carried no traffic. Each
+          // band gets a centre line between its kerbs: the median's edge, and
+          // 1.5 m inside the clearance line where the blocks' footway ends.
+          if (PLAN_V >= 12 && b - a >= 12) {
+            const lo = Math.max(v0, -D.halfV + 1.5), hi = Math.min(v1, D.halfV - 1.5);
+            const w = hi - lo, vc = (lo + hi) / 2;
+            if (w >= 5) centerFeatures.push({
+              type: "Feature",
+              geometry: { type: "LineString", coordinates: [proj.toLL(at(a + 1, vc)), proj.toLL(at(b - 1, vc))] },
+              properties: { kind: "centerline", cls: med ? "boulevard" : "seam", w: Math.round(w * 10) / 10, mk: med ? 1 : w >= 21 ? 2 : w >= 13 ? 1 : 0 },
+            });
+          }
         }
       }
     }
@@ -4286,6 +4566,7 @@ export function generateCity(cfg) {
       ...centerFeatures,
       ...streetFeatures,
       ...sidewalkFeatures,
+      ...parkFootFeatures,
       ...curbFeatures,
       ...zebraFeatures,
       ...crossingFeatures,
@@ -4351,10 +4632,28 @@ export function generateCity(cfg) {
     }
     let land = 0, covered = 0;
     const voids = [];
+    // inRing(p, innerRing) by row: each row's crossings once, the same
+    // arithmetic, so the same answer at every sample without walking the
+    // outline's every edge per sample
+    const rows = new Map();
+    const inInner = (x, y) => {
+      let xs = rows.get(y);
+      if (!xs) {
+        xs = [];
+        for (let i = 0, j = innerRing.length - 1; i < innerRing.length; j = i++) {
+          const [xi, yi] = innerRing[i], [xj, yj] = innerRing[j];
+          if (yi > y !== yj > y) xs.push(((xj - xi) * (y - yi)) / (yj - yi) + xi);
+        }
+        rows.set(y, xs);
+      }
+      let n = 0;
+      for (const c of xs) if (x < c) n++;
+      return (n & 1) === 1;
+    };
     for (let x = minX; x <= maxX; x += STEP) {
       for (let y = minY; y <= maxY; y += STEP) {
         const p = [x, y];
-        if (!inRing(p, innerRing)) continue;
+        if (!inInner(x, y)) continue;
         land++;
         const near = buckets.get(key(Math.floor(x / GRID), Math.floor(y / GRID))) ?? [];
         if (near.some((r) => inRing(p, r))) { covered++; continue; }

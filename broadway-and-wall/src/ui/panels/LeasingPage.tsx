@@ -1,11 +1,12 @@
-import { OPS_SERVICE, OPS_PLAN } from "@/engine/types";
 import { useState } from "react";
+import { derive } from "@/ui/derive";
 import { useStore } from "@/state/store";
-import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec } from "@/engine/types";
+import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec, autoLeaseOnClose } from "@/engine/types";
 import { isLeasedFee, marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
 import {
   isCommercial, walt, notReadySf,
   deskHoldsPen, deskMonthNow, loiNeedsPrincipal, portfolioOccupancy, autoTiCapToday, autoLeaseRule,
+  AUTO_CONCESSIONS, autoConcessionsOf, autoLeaseYear,
 } from "@/engine/leasing";
 import { PlanEditor, PlanDigest } from "@/ui/panels/PlanSheet";
 import { useSf } from "@/engine/mix";
@@ -17,6 +18,7 @@ import { LoiCard, TrayClear } from "@/ui/panels/DealsPage";
 import { useLabel, occRead, occLabel, occTitle, Big } from "@/ui/panels/shared";
 import Fold from "@/ui/Fold";
 import { Rollover } from "@/ui/rollups/Rollover";
+import { OpsChoices } from "@/ui/panels/OpsChoices";
 
 export function LeasingPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -39,7 +41,8 @@ export function LeasingPage() {
     return [{ h, gl, rec }];
   });
 
-  const rows = Object.values(game.holdings).flatMap((h) => {
+  // Once per state (ui/derive): kept across visits in the same month.
+  const leaseRows = derive(game, "leasing.rows", () => Object.values(game.holdings).flatMap((h) => {
     // A lot folded into an assemblage is part of the site's deed now — its
     // building was demolished; listing it showed buildings that no longer exist.
     if (isLeasedFee(h) || game.merged?.[h.bbl]) return [];
@@ -61,9 +64,11 @@ export function LeasingPage() {
       + resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily", h.condIdx) * (h.occ ?? 0);
     const rolling = commercial ? h.tenants.filter((t) => t.endM - q <= 12).reduce((a, t) => a + t.sf, 0) : 0;
     return [{ h, rec, commercial, leased, notReady, occ, or, rentRoll, rolling }];
-  });
+  }), [parcels]);
+  // the table below sorts in place: a copy, so the cached order is never disturbed
+  const rows = [...leaseRows];
 
-  const ind = portfolioIndustries(game);
+  const ind = derive(game, "leasing.industries", () => portfolioIndustries(game));
 
   function LeasedFeeStrip() {
     if (!leasedFees.length) return null;
@@ -97,6 +102,12 @@ export function LeasingPage() {
   if (!rows.length) {
     return (
       <div>
+        {/* The house policy belongs here even with an empty book, because
+            its other half is the deeds you have not closed yet: set it now and
+            everything you buy arrives configured instead of being corrected
+            afterwards. That is the whole argument for a default. It leads the
+            page, as it does once there is a book. */}
+        <HousePolicy />
         <AgentBar />
         <RenewalBar />
         <DeskActivity />
@@ -107,11 +118,6 @@ export function LeasingPage() {
         <button className="btn btn-buy" onClick={() => setPage("market")}>
           Browse buildings in Marketplace →
         </button>
-        {/* …but the house policy belongs here even with an empty book, because
-            its other half is the deeds you have not closed yet: set it now and
-            everything you buy arrives configured instead of being corrected
-            afterwards. That is the whole argument for a default. */}
-        <HousePolicy />
       </div>
     );
   }
@@ -203,6 +209,94 @@ export function LeasingPage() {
   }
 
   /**
+   * THE TEAM, IN ONE CARD. An owner of two hundred buildings does not set a
+   * fit-out number per building and does not read two hundred news lines;
+   * they set how much the team may give away, switch the book on, and look at
+   * a scorecard. Rent posture stays per building (Fill / Market / Push on the
+   * rows below) because how hard to hold is a question about one building's
+   * lease-up; the concession limit is the firm's.
+   */
+  function TeamLeasing() {
+    const book = rows.filter((r) => r.commercial);
+    if (!book.length) return null;
+    const on = book.filter((r) => r.h.autoLease).length;
+    const allOn = on === book.length;
+    const conc = autoConcessionsOf(game);
+    const yr = autoLeaseYear(game);
+    const settled = yr.signed + yr.passed + yr.walked + yr.referred;
+    const pctOf = (x: number) => `${Math.round(x * 100)}%`;
+    return (
+      <div className="agent-bar" style={{ display: "block" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div className="agent-title">
+            Auto-lease · your team answers the letters on {on} of {book.length} building{book.length === 1 ? "" : "s"}
+          </div>
+          <button
+            type="button"
+            className={"btn btn-mini" + (allOn ? " btn-on" : "")}
+            title={allOn
+              ? "Every building is answering its own letters. Click to take them all back."
+              : "Put every building on auto-lease: each answers its letters by its own Fill / Market / Push posture and the concession limit here, and none of them pop up."}
+            onClick={() => {
+              // the whole book on (or off) is the instruction for the next deed too
+              useStore.getState().autoLease(book.map((r) => r.h.bbl), !allOn);
+              useStore.getState().autoLeaseNew(!allOn);
+            }}
+          >{allOn ? "All on ✓" : "Auto-lease every building"}</button>
+        </div>
+        <div className="lease-ctl" style={{ marginTop: 6 }}>
+          <span className="lease-ctl-label">Concessions</span>
+          <span className="seg" role="group" aria-label="Most fit-out and free rent the team may give">
+            {AUTO_CONCESSIONS.map((o) => (
+              <button
+                key={o.key}
+                type="button"
+                className={"btn btn-mini" + (conc === o.key ? " btn-on" : "")}
+                aria-pressed={conc === o.key}
+                title={`${o.label}: ${o.blurb}.`}
+                onClick={() => useStore.getState().autoConcessions(o.key)}
+              >{o.label}</button>
+            ))}
+          </span>
+          <button
+            type="button"
+            className={"btn btn-mini" + (game.autoRentFloor ? " btn-on" : "")}
+            aria-pressed={!!game.autoRentFloor}
+            title={game.autoRentFloor
+              ? "The team will not sign any lease, renewal or rent relief under the space's market rent. Click to let each building's posture decide again."
+              : "Never sign a face rent under the space's market rent: lowballs are countered up to market, and tenants who won't pay it are passed. Slower to fill, never cheap."}
+            onClick={() => useStore.getState().autoRentFloor(!game.autoRentFloor)}
+          >{game.autoRentFloor ? "Never below market rent ✓" : "Never below market rent"}</button>
+          <button
+            type="button"
+            className={"btn btn-mini" + (autoLeaseOnClose(game) ? " btn-on" : "")}
+            aria-pressed={autoLeaseOnClose(game)}
+            title={autoLeaseOnClose(game)
+              ? "Every building you buy closes on auto-lease, at the house rent posture. Click to have new buildings' letters come to you instead."
+              : "Have every building you buy close on auto-lease, so its letters never reach your desk."}
+            onClick={() => useStore.getState().autoLeaseNew(!autoLeaseOnClose(game))}
+          >{autoLeaseOnClose(game) ? "New buildings join auto-lease ✓" : "New buildings join auto-lease"}</button>
+        </div>
+        <div className="agent-sub" style={{ marginTop: 4 }}>
+          Fit-out and free rent: {AUTO_CONCESSIONS.find((o) => o.key === conc)!.blurb}. Measured against the market's
+          package for each space, so it follows the cycle, the lease term and new shells on its own.
+          How hard to hold on rent is each building's Fill / Market / Push below. Leases of a quarter of a
+          building (10,000 sf and up) come to you.
+        </div>
+        <div className="hint" style={{ marginTop: 6 }}>
+          {!settled
+            ? "Nothing settled in the last twelve months yet — the team's record shows here as letters arrive."
+            : <>
+                Last 12 months: <b>{yr.signed} signed</b>
+                {yr.signed > 0 && <> at <b>{pctOf(yr.deal)} of a market deal</b> on average ({pctOf(yr.ne)} of market rent after fit-out and free rent{yr.under ? `; ${yr.under} under 90% of a market deal` : ""})</>}
+                {" · "}{yr.passed} passed · {yr.walked} walked after a counter · {yr.referred} sent to you
+              </>}
+        </div>
+      </div>
+    );
+  }
+
+  /**
    * THE LETTERS THEMSELVES, ON THE LEASING PAGE.
    *
    * An LOI or a renewal used to reach the player as an interrupt card and as a
@@ -286,6 +380,10 @@ export function LeasingPage() {
     : "you hold the pen";
   return (
     <div>
+      {/* The house policy is the control on this page that gets used most —
+          one setting across the whole book — so it leads, above the numbers
+          it moves. */}
+      <HousePolicy />
       <div className="stat-strip">
         <Big
           label="Portfolio occupancy"
@@ -305,25 +403,13 @@ export function LeasingPage() {
         />
       </div>
 
+      <TeamLeasing />
+
       <div className="page-section">
         <div className="page-section-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <span>By building</span>
           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <MinLeaseAll />
-          {(() => {
-            const all = rows.map((r) => r.h.bbl);
-            const allOn = all.length > 0 && rows.every((r) => r.h.autoLease);
-            return all.length > 0 && (
-              <button
-                type="button"
-                className={"btn btn-mini" + (allOn ? " btn-on" : "")}
-                title={allOn
-                  ? "Every building is answering its own letters by its rent posture. Click to take them all back."
-                  : "Put every building on auto-lease: each answers its letters by its own Fill / Market / Push posture, and none of them pop up."}
-                onClick={() => useStore.getState().autoLease(all, !allOn)}
-              >{allOn ? "Auto-lease: all on ✓" : "Auto-lease every building"}</button>
-            );
-          })()}
           </span>
         </div>
         <div>
@@ -377,7 +463,7 @@ export function LeasingPage() {
                       <button
                         type="button"
                         className={"btn btn-mini" + (r.h.autoLease ? " btn-on" : "")}
-                        title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to take the letters back. Set the fit-out cap on the building.` : "Let this building answer its own letters by its rent posture and fit-out cap — no pop-ups."}
+                        title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to take the letters back.` : "Let this building answer its own letters by its rent posture and the team's concession limit — no pop-ups."}
                         onClick={(e) => { e.stopPropagation(); useStore.getState().autoLease(r.h.bbl, !r.h.autoLease); }}
                         aria-pressed={!!r.h.autoLease}
                       >{r.h.autoLease ? "Auto-answer ✓" : "Auto-answer"}</button>
@@ -396,31 +482,13 @@ export function LeasingPage() {
                     </div>
                     {/* HOW IT IS RUN, FROM THE ROW. Service and the capital plan
                         lived only on each building's Operations tab — a click
-                        into every deed to set the book. Same settings, same
-                        store action as the property page. */}
-                    <div className="lease-ctl" onClick={(e) => e.stopPropagation()}>
-                      <span className="lease-ctl-label">Service</span>
-                      <span className="seg" role="group" aria-label={`Service level at ${r.rec.address}`}>
-                        {OPS_SERVICE.map((o) => (
-                          <button key={o.key} type="button"
-                            className={"btn btn-mini" + ((r.h.service ?? 0) === o.key ? " btn-on" : "")}
-                            aria-pressed={(r.h.service ?? 0) === o.key}
-                            title={o.blurb + " — three years to matter, three years to undo"}
-                            onClick={(e) => { e.stopPropagation(); useStore.getState().ops(r.h.bbl, { service: o.key }); }}
-                          >{o.label}</button>
-                        ))}
-                      </span>
-                      <span className="lease-ctl-label">Capital</span>
-                      <span className="seg" role="group" aria-label={`Capital plan at ${r.rec.address}`}>
-                        {OPS_PLAN.map((o) => (
-                          <button key={o.key} type="button"
-                            className={"btn btn-mini" + ((r.h.plan ?? 1) === o.key ? " btn-on" : "")}
-                            aria-pressed={(r.h.plan ?? 1) === o.key}
-                            title={o.blurb}
-                            onClick={(e) => { e.stopPropagation(); useStore.getState().ops(r.h.bbl, { plan: o.key }); }}
-                          >{o.label}</button>
-                        ))}
-                      </span>
+                        into every deed to set the book. The same component as
+                        the property page and Portfolio, so the row carries the
+                        same numbers: what each choice costs a year against the
+                        one in force, how tenants read the service, and the
+                        building's condition and reserve. */}
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <OpsChoices bbl={r.h.bbl} h={r.h} compact />
                     </div>
                   </td>
                   <td>{useLabel(r.rec)}</td>
@@ -505,7 +573,6 @@ export function LeasingPage() {
       {/* Which YEAR the leases roll — the chart lived on Portfolio, but the
           roll is this desk's business, so this is its home. */}
       <Rollover />
-      <HousePolicy />
 
       <LeasedFeeStrip />
 
@@ -534,7 +601,7 @@ export function LeasingPage() {
                     <td>
                       <div>{t.name}</div>
                       <div className="dim" style={{ fontSize: 11 }}>
-                        {t.sector} · {CREDIT_LABEL[t.credit]} · {recov === "nnn" ? "NNN" : recov === "base" ? "base yr" : "gross"}
+                        {t.sector}{t.quality !== undefined ? ` · q${t.quality}` : ""} · {CREDIT_LABEL[t.credit]} · {recov === "nnn" ? "NNN" : recov === "base" ? "base yr" : "gross"}
                         {recov === "base" ? ` · stop $${(t.baseStopPsf ?? 0).toFixed(2)}` : ""}
                       </div>
                     </td>

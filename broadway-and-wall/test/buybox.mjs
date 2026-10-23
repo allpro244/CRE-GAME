@@ -18,7 +18,17 @@ const check = (ok, msg) => { console.log(`  ${ok ? "OK  " : "FAIL"}  ${msg}`); i
 const lookKeys = (g) => E.attentionItems(g, parcels).filter((a) => a.key.startsWith("early-look:") || a.key.startsWith("broker:")).map((a) => a.key);
 
 console.log("\nBUY BOX — only what matches stops the clock\n");
-let g = E.firstListings(E.newGame(31337, parcels, 40_000_000), parcels, bbls);
+// The world this filter is tested in: deal-by-deal builders raising 90/10, as
+// before rivalDealTerms became the default (Oct 2026). On this seed the
+// capital-starved street of the new default sells nothing a broker shows
+// early inside twenty years, and this file is about the box, not the street.
+let g = E.firstListings(E.newGame(31337, parcels, 40_000_000, { rivalDealTerms: false }), parcels, bbls);
+// A firm that has closed through the town's brokers. First looks go to the
+// buyers a shop has earned fees from (broker.ts EARLY_FEES), and cold calls to
+// an idle desk with nothing owned are rare by design (actions.ts
+// tickBrokerCalls) — so an idle player with no history may wait decades for
+// one. The relationship is seeded as a working firm would have it.
+for (const b of bbls) for (let k = 0; k < E.EARLY_FEES; k++) E.creditBrokerFee(g, b);
 let found = null;
 for (let m = 0; m < 240 && !found; m++) {
   g = E.advanceMonth(g, parcels, bbls, adjacency);
@@ -31,8 +41,12 @@ if (found) {
   const tight = { ...found, buyBox: { maxAsk: 1 } };
   check(lookKeys(tight).length === 0, `a box no deal fits silences them (${keys.length} → ${lookKeys(tight).length})`);
   check(tight.listings.length === found.listings.length, "the tape itself is untouched");
+  // A price ceiling alone admits every building; dirt is in a box only when
+  // land was asked for and the lot pencils (inBuyBox), so the check is read on
+  // the standing buildings.
+  const built = (k) => { const b = k.split(":")[1]; const r = E.resolveRec(parcels, found, b); return !!r && r.class !== "land" && r.bldgArea > 0; };
   const wide = { ...found, buyBox: { maxAsk: 1e12 } };
-  check(lookKeys(wide).length === keys.length, "a box every deal fits changes nothing");
+  check(lookKeys(wide).filter(built).length === keys.filter(built).length, `a box every building fits changes nothing for buildings (${keys.filter(built).length} → ${lookKeys(wide).filter(built).length})`);
   const li = found.listings[0];
   check(E.inBuyBox({ ...found, buyBox: undefined }, parcels, li.bbl, li.ask), "no box means everything is in it");
   const rec = E.resolveRec(parcels, found, li.bbl);

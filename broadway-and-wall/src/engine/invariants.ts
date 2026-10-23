@@ -193,8 +193,11 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
   for (const [child, parent] of Object.entries(s.merged ?? {})) {
     const at = `assemblage ${child}`;
     if (child === parent) bad("merge", at, "a lot merged into itself");
-    if (!s.holdings[child]) bad("merge", at, "a merged deed you do not own");
-    if (!s.holdings[parent]) bad("merge", at, `merged into ${parent}, which you do not own`);
+    // Two shapes: your site keeps its lots as deeds; a firm's or the street's
+    // site (or one you bought from either) has absorbed them. Either way the
+    // lot is nobody else's.
+    if (s.holdings[child] && !s.holdings[parent]) bad("merge", at, "a merged deed you hold under a parent you do not");
+    if ((s.rivals ?? []).some((r) => r.bbls.includes(child))) bad("merge", at, "a firm still lists a lot folded into a site");
     if (s.merged![parent]) bad("merge", at, `merged into ${parent}, which is itself merged into something else`);
   }
   for (const [bbl, gl] of Object.entries(s.groundLeases ?? {})) {
@@ -771,6 +774,60 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
         bad("duress", `month ${s.month}`,
           `${levied.map((e) => e.address).join(", ")} was levied and the account rose `
           + `${(rose / 1e6).toFixed(2)}M against ${(ceiling / 1e6).toFixed(2)}M of equity, rent and borrowings`);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------- vehicle
+  // THE RIGHT PURSE (CAPITAL_RAISING_PLAN.md §0.5). `conserve` reconciles the
+  // TOTAL of the sponsor's cash and the vehicle's, so a dollar that lands in
+  // the wrong one of the two — the LPs' sale proceeds in the sponsor's account,
+  // the sponsor paying the LPs' leasing — balances perfectly and is invisible
+  // there. Two identities close that:
+  //   - the vehicle's cash is the sum of its own ledger (`flows`): nothing
+  //     writes to it without saying why;
+  //   - what was booked to a live fund deed equals what the vehicle settled
+  //     for it (`deedTagged` == `deedSettled`), GP advances included.
+  // Both skip a fund written before the ledger existed (no `flows`).
+  // And a deed flagged `fundOwned` must sit in a LIVE fund: the ownership
+  // layer (vehicles.ts) reads the flag only through a live fund, and a few
+  // callers with no state to hand (debt.ts leaseUpRoom) read it bare. They
+  // agree only while this holds.
+  // A SYNDICATE'S BOOKS (syndicate.ts). What was booked to the deed is what
+  // was settled plus what is still open; the investors' cash-flow record is
+  // their distributions less their calls; they are never called past their
+  // commitment; the deal sits on a deed nobody else co-owns; and once the
+  // month has closed, a deal whose deed has gone has been wound up.
+  for (const w of Object.values(s.syndications ?? {})) {
+    const open = w.tagged - w.settled - w.pending;
+    if (!fin(open) || Math.abs(open) > 1) bad("vehicle", w.bbl, `syndicate booked ${Math.round(w.tagged)} but settled ${Math.round(w.settled)} with ${Math.round(w.pending)} open`);
+    let flows = 0;
+    for (let i = 1; i < w.lpFlows.length; i += 2) flows += w.lpFlows[i];
+    if (Math.abs(flows - (w.lpDist - w.lpCalled)) > 1) bad("vehicle", w.bbl, `syndicate investors' record ${Math.round(flows)} against ${Math.round(w.lpDist - w.lpCalled)} paid less called`);
+    if (w.lpCalled > w.lpCommit + 1) bad("vehicle", w.bbl, `syndicate called ${Math.round(w.lpCalled)} on a ${Math.round(w.lpCommit)} commitment`);
+    const h = s.holdings[w.bbl];
+    if (h?.fundOwned || h?.jv) bad("vehicle", w.bbl, "syndicated deed also in the fund or a JV");
+    if (!h && w.goneM !== undefined && s.month > w.goneM) bad("vehicle", w.bbl, "syndicate outlived its deed past its last settlement");
+  }
+  for (const h of Object.values(s.holdings)) {
+    if (h.fundOwned && !(s.fund && !s.fund.settled)) {
+      bad("vehicle", h.bbl, `flagged as a fund deed with no live fund (${s.fund ? "settled" : "none"})`);
+    }
+  }
+  {
+    const f = s.fund;
+    if (f && f.flows) {
+      const sum = Object.values(f.flows).reduce((a, v) => a + (v ?? 0), 0);
+      const gap = f.cash - sum;
+      if (!fin(gap) || Math.abs(gap) > 1_000) {
+        bad("vehicle", "fund", `cash ${Math.round(f.cash)} against its own ledger ${Math.round(sum)} — ${Math.round(gap)} moved without a kind`);
+      }
+      if (!f.settled && f.deedTagged !== undefined) {
+        const purse = (f.deedTagged ?? 0) - (f.deedSettled ?? 0);
+        const tol = Math.max(1_000, 1e-6 * Math.abs(f.deedTagged ?? 0));
+        if (!fin(purse) || Math.abs(purse) > tol) {
+          bad("vehicle", "fund", `booked to fund deeds ${Math.round(f.deedTagged ?? 0)} but the vehicle settled ${Math.round(f.deedSettled ?? 0)} — ${Math.round(purse)} in the wrong purse`);
+        }
       }
     }
   }

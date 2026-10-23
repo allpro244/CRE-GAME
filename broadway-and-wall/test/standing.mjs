@@ -32,7 +32,7 @@ check(st.rank === 1 ? st.above === null : !!st.above && st.above.eq >= st.equity
 const r1 = E.yearReview(g, 1, E.MILESTONES, E.START_YEAR);
 check(!!r1 && r1.year === E.START_YEAR + 1, `a review of ${r1?.year}: "${r1?.verdict}"`);
 const b1 = g.books.find((e) => e.yr === 1);
-check(r1 && Math.abs(r1.cashFromBuildings - Math.round(b1.noi - b1.debtSvc)) <= 1 && r1.overhead === Math.round(b1.ga), "its cash and overhead are the year's ledger");
+check(r1 && Math.abs(r1.cashFromBuildings - Math.round(b1.noi - b1.leasing - b1.capex - b1.debtSvc)) <= 1 && r1.overhead === Math.round(b1.ga), "its cash and overhead are the year's ledger");
 check(r1 && r1.nw0 === marks[1].nw && r1.nw1 === marks[2].nw, "its net worth runs December to December");
 check(E.yearReview(g, 7, E.MILESTONES, E.START_YEAR) === null, "no review of a year that has not closed");
 const r0 = E.yearReview(g, 0, E.MILESTONES, E.START_YEAR);

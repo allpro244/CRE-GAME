@@ -1,0 +1,645 @@
+{
+ "format": "bw-kit/1",
+ "kit": "SFA",
+ "grammar": "L00, L01, L02, L03, L04, L05*, L06, L07, L08, L09",
+ "bands": [
+  {
+   "symbol": "L00",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L01",
+   "height": 1275,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L1_A/Mesh/SM_BLDG_SFA_L1_A_Wall_01_N1.SM_BLDG_SFA_L1_A_Wall_01_N1",
+     "width": 325,
+     "depth": 129,
+     "y0": -325.9,
+     "y1": 0.9
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L1_A/Mesh/SM_BLDG_SFA_L1_A_Wall_02_N1.SM_BLDG_SFA_L1_A_Wall_02_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L1_A/Mesh/SM_BLDG_SFA_L1_A_Wall_03_N1.SM_BLDG_SFA_L1_A_Wall_03_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L1_A/Mesh/SM_BLDG_SFA_L1_A_Wall_04_N1.SM_BLDG_SFA_L1_A_Wall_04_N1",
+     "width": 650,
+     "depth": 125,
+     "y0": -650,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L1_A/Mesh/SM_BLDG_SFA_L1_A_Wall_05_N1.SM_BLDG_SFA_L1_A_Wall_05_N1",
+     "width": 975,
+     "depth": 121,
+     "y0": -974.8,
+     "y1": 0.2
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L1_A/Mesh/SM_BLDG_SFA_L1_A_Wall_06_N1.SM_BLDG_SFA_L1_A_Wall_06_N1",
+     "width": 850,
+     "depth": 121,
+     "y0": -849.9,
+     "y1": -0.1
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L1_A/Mesh/SM_BLDG_SFA_L1_A_Wall_07_N1.SM_BLDG_SFA_L1_A_Wall_07_N1",
+     "width": 850,
+     "depth": 121,
+     "y0": -850,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L1_A/Mesh/SM_BLDG_SFA_L1_A_Wall_05_N1.SM_BLDG_SFA_L1_A_Wall_05_N1",
+     "width": 975,
+     "depth": 121,
+     "y0": -974.8,
+     "y1": 0.2
+    }
+   ],
+   "corner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L1_A/Mesh/SM_BLDG_SFA_L1_A_CornerEx_01_N1.SM_BLDG_SFA_L1_A_CornerEx_01_N1",
+    "width": 150,
+    "depth": 150,
+    "y0": -93.9,
+    "y1": 150
+   },
+   "inner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L1_A/Mesh/SM_BLDG_SFA_L1_A_CornerIn_01_N1.SM_BLDG_SFA_L1_A_CornerIn_01_N1",
+    "width": 150,
+    "depth": 150,
+    "y0": -150,
+    "y1": 150
+   },
+   "ground": true
+  },
+  {
+   "symbol": "L02",
+   "height": 750,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L2_A/Mesh/SM_BLDG_SFA_L2_A_Wall_01_N1.SM_BLDG_SFA_L2_A_Wall_01_N1",
+     "width": 325,
+     "depth": 129,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L2_A/Mesh/SM_BLDG_SFA_L2_A_Wall_02_N1.SM_BLDG_SFA_L2_A_Wall_02_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L2_A/Mesh/SM_BLDG_SFA_L2_A_Wall_03_N1.SM_BLDG_SFA_L2_A_Wall_03_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L2_A/Mesh/SM_BLDG_SFA_L2_A_Wall_04_N1.SM_BLDG_SFA_L2_A_Wall_04_N1",
+     "width": 650,
+     "depth": 125,
+     "y0": -650,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L2_A/Mesh/SM_BLDG_SFA_L2_A_Wall_05_N1.SM_BLDG_SFA_L2_A_Wall_05_N1",
+     "width": 975,
+     "depth": 147,
+     "y0": -974,
+     "y1": -1
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L2_A/Mesh/SM_BLDG_SFA_L2_A_Wall_06_N1.SM_BLDG_SFA_L2_A_Wall_06_N1",
+     "width": 850,
+     "depth": 147,
+     "y0": -850,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L2_A/Mesh/SM_BLDG_SFA_L2_A_Wall_07_N1.SM_BLDG_SFA_L2_A_Wall_07_N1",
+     "width": 850,
+     "depth": 125,
+     "y0": -850,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L2_A/Mesh/SM_BLDG_SFA_L2_A_Wall_05_N1.SM_BLDG_SFA_L2_A_Wall_05_N1",
+     "width": 975,
+     "depth": 147,
+     "y0": -974,
+     "y1": -1
+    }
+   ],
+   "corner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L2_A/Mesh/SM_BLDG_SFA_L2_A_CornerEx_01_N1.SM_BLDG_SFA_L2_A_CornerEx_01_N1",
+    "width": 150,
+    "depth": 150,
+    "y0": -61.6,
+    "y1": 150
+   },
+   "inner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L2_A/Mesh/SM_BLDG_SFA_L2_A_CornerIn_01_N1.SM_BLDG_SFA_L2_A_CornerIn_01_N1",
+    "width": 150,
+    "depth": 147,
+    "y0": -147.1,
+    "y1": 150
+   }
+  },
+  {
+   "symbol": "L03",
+   "height": 1125,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L3_A/Mesh/SM_BLDG_SFA_L3_A_Wall_01_N1.SM_BLDG_SFA_L3_A_Wall_01_N1",
+     "width": 325,
+     "depth": 123,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L3_A/Mesh/SM_BLDG_SFA_L3_A_Wall_02_N1.SM_BLDG_SFA_L3_A_Wall_02_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L3_A/Mesh/SM_BLDG_SFA_L3_A_Wall_03_N1.SM_BLDG_SFA_L3_A_Wall_03_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L3_A/Mesh/SM_BLDG_SFA_L3_A_Wall_04_N1.SM_BLDG_SFA_L3_A_Wall_04_N1",
+     "width": 650,
+     "depth": 125,
+     "y0": -650,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L3_A/Mesh/SM_BLDG_SFA_L3_A_Wall_05_N1.SM_BLDG_SFA_L3_A_Wall_05_N1",
+     "width": 975,
+     "depth": 134,
+     "y0": -975,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L3_A/Mesh/SM_BLDG_SFA_L3_A_Wall_06_N1.SM_BLDG_SFA_L3_A_Wall_06_N1",
+     "width": 850,
+     "depth": 134,
+     "y0": -850,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L3_A/Mesh/SM_BLDG_SFA_L3_A_Wall_07_N1.SM_BLDG_SFA_L3_A_Wall_07_N1",
+     "width": 850,
+     "depth": 125,
+     "y0": -850,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L3_A/Mesh/SM_BLDG_SFA_L3_A_CornerEx_01_N1.SM_BLDG_SFA_L3_A_CornerEx_01_N1",
+    "width": 150,
+    "depth": 150,
+    "y0": -65.3,
+    "y1": 150
+   },
+   "inner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L3_A/Mesh/SM_BLDG_SFA_L3_A_CornerIn_01_N1.SM_BLDG_SFA_L3_A_CornerIn_01_N1",
+    "width": 150,
+    "depth": 150,
+    "y0": -150,
+    "y1": 150
+   }
+  },
+  {
+   "symbol": "L04",
+   "height": 375,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L4_A/Mesh/SM_BLDG_SFA_L4_A_Wall_01_N1.SM_BLDG_SFA_L4_A_Wall_01_N1",
+     "width": 325,
+     "depth": 130,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L4_A/Mesh/SM_BLDG_SFA_L4_A_Wall_02_N1.SM_BLDG_SFA_L4_A_Wall_02_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L4_A/Mesh/SM_BLDG_SFA_L4_A_Wall_03_N1.SM_BLDG_SFA_L4_A_Wall_03_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L4_A/Mesh/SM_BLDG_SFA_L4_A_Wall_04_N1.SM_BLDG_SFA_L4_A_Wall_04_N1",
+     "width": 650,
+     "depth": 125,
+     "y0": -650,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L4_A/Mesh/SM_BLDG_SFA_L4_A_Wall_06_N1.SM_BLDG_SFA_L4_A_Wall_06_N1",
+     "width": 850,
+     "depth": 128,
+     "y0": -850,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L4_A/Mesh/SM_BLDG_SFA_L4_A_Wall_07_N1.SM_BLDG_SFA_L4_A_Wall_07_N1",
+     "width": 850,
+     "depth": 125,
+     "y0": -850,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L4_A/Mesh/SM_BLDG_SFA_L4_A_CornerEx_01_N1.SM_BLDG_SFA_L4_A_CornerEx_01_N1",
+    "width": 150,
+    "depth": 150,
+    "y0": 0,
+    "y1": 150
+   },
+   "inner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L4_A/Mesh/SM_BLDG_SFA_L4_A_CornerIn_01_N1.SM_BLDG_SFA_L4_A_CornerIn_01_N1",
+    "width": 150,
+    "depth": 132,
+    "y0": -132.3,
+    "y1": 150
+   }
+  },
+  {
+   "symbol": "L05",
+   "height": 375,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L5_A/Mesh/SM_BLDG_SFA_L5_A_Wall_01_N1.SM_BLDG_SFA_L5_A_Wall_01_N1",
+     "width": 325,
+     "depth": 130,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L5_A/Mesh/SM_BLDG_SFA_L5_A_Wall_02_N1.SM_BLDG_SFA_L5_A_Wall_02_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L5_A/Mesh/SM_BLDG_SFA_L5_A_Wall_04_N1.SM_BLDG_SFA_L5_A_Wall_04_N1",
+     "width": 650,
+     "depth": 125,
+     "y0": -650,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L5_A/Mesh/SM_BLDG_SFA_L5_A_Wall_05_N1.SM_BLDG_SFA_L5_A_Wall_05_N1",
+     "width": 975,
+     "depth": 128,
+     "y0": -975,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L5_A/Mesh/SM_BLDG_SFA_L5_A_Wall_06_N1.SM_BLDG_SFA_L5_A_Wall_06_N1",
+     "width": 850,
+     "depth": 128,
+     "y0": -850,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L5_A/Mesh/SM_BLDG_SFA_L5_A_Wall_07_N1.SM_BLDG_SFA_L5_A_Wall_07_N1",
+     "width": 850,
+     "depth": 125,
+     "y0": -850,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L5_A/Mesh/SM_BLDG_SFA_L5_A_CornerEx_01_N1.SM_BLDG_SFA_L5_A_CornerEx_01_N1",
+    "width": 150,
+    "depth": 150,
+    "y0": 0,
+    "y1": 150
+   },
+   "inner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L5_A/Mesh/SM_BLDG_SFA_L5_A_CornerIn_01_N1.SM_BLDG_SFA_L5_A_CornerIn_01_N1",
+    "width": 150,
+    "depth": 132,
+    "y0": -132.3,
+    "y1": 150
+   }
+  },
+  {
+   "symbol": "L06",
+   "height": 375,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L6_A/Mesh/SM_BLDG_SFA_L6_A_Wall_01_N1.SM_BLDG_SFA_L6_A_Wall_01_N1",
+     "width": 325,
+     "depth": 130,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L6_A/Mesh/SM_BLDG_SFA_L6_A_Wall_02_N1.SM_BLDG_SFA_L6_A_Wall_02_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L6_A/Mesh/SM_BLDG_SFA_L6_A_Wall_03_N1.SM_BLDG_SFA_L6_A_Wall_03_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L6_A/Mesh/SM_BLDG_SFA_L6_A_Wall_04_N1.SM_BLDG_SFA_L6_A_Wall_04_N1",
+     "width": 650,
+     "depth": 125,
+     "y0": -650,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L6_A/Mesh/SM_BLDG_SFA_L6_A_Wall_05_N1.SM_BLDG_SFA_L6_A_Wall_05_N1",
+     "width": 975,
+     "depth": 128,
+     "y0": -975,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L6_A/Mesh/SM_BLDG_SFA_L6_A_Wall_06_N1.SM_BLDG_SFA_L6_A_Wall_06_N1",
+     "width": 850,
+     "depth": 128,
+     "y0": -849.8,
+     "y1": -0.2
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L6_A/Mesh/SM_BLDG_SFA_L6_A_Wall_07_N1.SM_BLDG_SFA_L6_A_Wall_07_N1",
+     "width": 850,
+     "depth": 125,
+     "y0": -850,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L6_A/Mesh/SM_BLDG_SFA_L6_A_CornerEx_01_N1.SM_BLDG_SFA_L6_A_CornerEx_01_N1",
+    "width": 150,
+    "depth": 150,
+    "y0": -40.5,
+    "y1": 150
+   },
+   "inner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L6_A/Mesh/SM_BLDG_SFA_L6_A_CornerIn_01_N1.SM_BLDG_SFA_L6_A_CornerIn_01_N1",
+    "width": 150,
+    "depth": 132,
+    "y0": -132.4,
+    "y1": 150
+   }
+  },
+  {
+   "symbol": "L07",
+   "height": 700,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L7_A/Mesh/SM_BLDG_SFA_L7_A_Wall_01_N1.SM_BLDG_SFA_L7_A_Wall_01_N1",
+     "width": 325,
+     "depth": 155,
+     "y0": -325.1,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L7_A/Mesh/SM_BLDG_SFA_L7_A_Wall_02_N1.SM_BLDG_SFA_L7_A_Wall_02_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L7_A/Mesh/SM_BLDG_SFA_L7_A_Wall_03_N1.SM_BLDG_SFA_L7_A_Wall_03_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L7_A/Mesh/SM_BLDG_SFA_L7_A_Wall_04_N1.SM_BLDG_SFA_L7_A_Wall_04_N1",
+     "width": 650,
+     "depth": 125,
+     "y0": -650,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L7_A/Mesh/SM_BLDG_SFA_L7_A_Wall_05_N1.SM_BLDG_SFA_L7_A_Wall_05_N1",
+     "width": 975,
+     "depth": 131,
+     "y0": -975,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L7_A/Mesh/SM_BLDG_SFA_L7_A_Wall_06_N1.SM_BLDG_SFA_L7_A_Wall_06_N1",
+     "width": 850,
+     "depth": 131,
+     "y0": -850,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L7_A/Mesh/SM_BLDG_SFA_L7_A_Wall_07_N1.SM_BLDG_SFA_L7_A_Wall_07_N1",
+     "width": 850,
+     "depth": 125,
+     "y0": -850,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L7_A/Mesh/SM_BLDG_SFA_L7_A_CornerEx_01_N1.SM_BLDG_SFA_L7_A_CornerEx_01_N1",
+    "width": 150,
+    "depth": 150,
+    "y0": 0,
+    "y1": 150
+   },
+   "inner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L7_A/Mesh/SM_BLDG_SFA_L7_A_CornerIn_01_N1.SM_BLDG_SFA_L7_A_CornerIn_01_N1",
+    "width": 150,
+    "depth": 132,
+    "y0": -132.3,
+    "y1": 150
+   }
+  },
+  {
+   "symbol": "L08",
+   "height": 200,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L8_A/Mesh/SM_BLDG_SFA_L8_A_Wall_01_N1.SM_BLDG_SFA_L8_A_Wall_01_N1",
+     "width": 325,
+     "depth": 157,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L8_A/Mesh/SM_BLDG_SFA_L8_A_Wall_02_N1.SM_BLDG_SFA_L8_A_Wall_02_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L8_A/Mesh/SM_BLDG_SFA_L8_A_Wall_03_N1.SM_BLDG_SFA_L8_A_Wall_03_N1",
+     "width": 325,
+     "depth": 125,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L8_A/Mesh/SM_BLDG_SFA_L8_A_Wall_04_N1.SM_BLDG_SFA_L8_A_Wall_04_N1",
+     "width": 650,
+     "depth": 125,
+     "y0": -650,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L8_A/Mesh/SM_BLDG_SFA_L8_A_Wall_05_N1.SM_BLDG_SFA_L8_A_Wall_05_N1",
+     "width": 975,
+     "depth": 128,
+     "y0": -975,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L8_A/Mesh/SM_BLDG_SFA_L8_A_Wall_06_N1.SM_BLDG_SFA_L8_A_Wall_06_N1",
+     "width": 850,
+     "depth": 128,
+     "y0": -850,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L8_A/Mesh/SM_BLDG_SFA_L8_A_CornerEx_01_N1.SM_BLDG_SFA_L8_A_CornerEx_01_N1",
+    "width": 150,
+    "depth": 150,
+    "y0": -43.9,
+    "y1": 150
+   },
+   "inner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L8_A/Mesh/SM_BLDG_SFA_L8_A_CornerIn_01_N1.SM_BLDG_SFA_L8_A_CornerIn_01_N1",
+    "width": 150,
+    "depth": 128,
+    "y0": -128.3,
+    "y1": 150
+   }
+  },
+  {
+   "symbol": "L09",
+   "height": 100,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L9_A/Mesh/SM_BLDG_SFA_L9_A_Wall_01_N1.SM_BLDG_SFA_L9_A_Wall_01_N1",
+     "width": 325,
+     "depth": 113,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L9_A/Mesh/SM_BLDG_SFA_L9_A_Wall_02_N1.SM_BLDG_SFA_L9_A_Wall_02_N1",
+     "width": 325,
+     "depth": 119,
+     "y0": -325,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L9_A/Mesh/SM_BLDG_SFA_L9_A_Wall_04_N1.SM_BLDG_SFA_L9_A_Wall_04_N1",
+     "width": 650,
+     "depth": 119,
+     "y0": -650,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L9_A/Mesh/SM_BLDG_SFA_L9_A_Wall_05_N1.SM_BLDG_SFA_L9_A_Wall_05_N1",
+     "width": 975,
+     "depth": 128,
+     "y0": -975.1,
+     "y1": 0.1
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L9_A/Mesh/SM_BLDG_SFA_L9_A_Wall_06_N1.SM_BLDG_SFA_L9_A_Wall_06_N1",
+     "width": 850,
+     "depth": 128,
+     "y0": -850,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L9_A/Mesh/SM_BLDG_SFA_L9_A_Wall_07_N1.SM_BLDG_SFA_L9_A_Wall_07_N1",
+     "width": 850,
+     "depth": 119,
+     "y0": -850,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L9_A/Mesh/SM_BLDG_SFA_L9_A_CornerEx_01_N1.SM_BLDG_SFA_L9_A_CornerEx_01_N1",
+    "width": 150,
+    "depth": 150,
+    "y0": 0,
+    "y1": 150
+   },
+   "inner": {
+    "path": "/Game/Building/SF/A/Kit_Bldg_SFA_L9_A/Mesh/SM_BLDG_SFA_L9_A_CornerIn_01_N1.SM_BLDG_SFA_L9_A_CornerIn_01_N1",
+    "width": 150,
+    "depth": 132,
+    "y0": -132.3,
+    "y1": 150
+   }
+  }
+ ],
+ "grid": 975
+}

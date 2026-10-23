@@ -1,4 +1,5 @@
-import { useMemo, useState, Fragment } from "react";
+import { useState, Fragment } from "react";
+import { derive } from "@/ui/derive";
 import type { ReactNode } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { returnsToDate } from "@/engine/standing";
@@ -76,6 +77,9 @@ export function PortfolioPage() {
       </div>
     );
   }
+  // THE BOOK, ONCE PER STATE (ui/derive): every deed marked, its debt walked
+  // and its occupancy read — kept across visits and re-sorts in the same month.
+  const book = derive(game, "portfolio.rows", () => {
   let totV = 0, totD = 0;
   const rows = holdings.map((h) => {
     const rec = resolveRec(parcels, game, h.bbl);
@@ -147,6 +151,11 @@ export function PortfolioPage() {
       ds: dsMo,
     };
   });
+  return { rows, totV, totD };
+  }, [parcels]);
+  const { totV, totD } = book;
+  // sorted below, in place: a copy, so the cached order is never disturbed
+  const rows = [...book.rows];
   type PRow = (typeof rows)[number];
   // THE BOOK SORTS BY ITS OWN COLUMNS. It had two buttons — by value, by income
   // — and a top-50 slice on one of them. Anything else you wanted to rank the
@@ -964,6 +973,7 @@ export function PortfolioBidActions({
   rowClass?: string;
 }) {
   const { counterPortfolioBid, acceptPortfolio } = useStore.getState();
+  const exchangeLive = useStore((s) => !!s.game?.exchange);
   const [countering, setCountering] = useState(false);
   const [counter, setCounter] = useState(0);
   const pb = counterPriceBounds(bid.price, sumOfParts);
@@ -979,9 +989,10 @@ export function PortfolioBidActions({
           Close it · net {usd(book.netToYou)}{book.toFund ? " to the fund" : ""}
         </button>
         <button className="btn" onClick={() => { acceptPortfolio(true); onDone?.(); }}
-          disabled={book.toFund}
+          disabled={book.toFund || exchangeLive}
           title={book.toFund
             ? "The fund's gain belongs to the vehicle — it cannot roll into your own 1031"
+            : exchangeLive ? "One exchange at a time — the live 1031 has to close first"
             : "Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due"}>
           Close into a 1031{book.tax > 0 ? ` · defer ${usd(book.tax)}` : ""}
         </button>
@@ -1213,7 +1224,7 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
 function ReturnsToDate() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
-  const rows = useMemo(() => returnsToDate(game, parcels), [game, parcels]);
+  const rows = derive(game, "portfolio.returnsToDate", () => returnsToDate(game, parcels), [parcels]);
   if (!rows.length) return null;
   const pct = (x: number | null) => (x === null ? "—" : `${x >= 0 ? "" : "−"}${Math.abs(x * 100).toFixed(1)}%`);
   return (

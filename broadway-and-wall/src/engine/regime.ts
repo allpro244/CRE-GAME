@@ -90,7 +90,9 @@ const pick = (r: number, lo: number, hi: number) => lo + r * (hi - lo);
  * averaged about five years; eight is where they start being called old.
  */
 export function nationPhase(n: NonNullable<Econ["nat"]>): MarketPhase {
-  if ((n.recM ?? 0) > 0) return n.deep ? "depression" : "recession";
+  // `deep` is 2008's class (+5 points of unemployment) and it is a recession.
+  // A depression is a labour market headed for 12% or worse (2026-10-14).
+  if ((n.recM ?? 0) > 0) return (n.uPeak ?? 0) >= 0.12 ? "depression" : "recession";
   const exp = n.expM ?? 0;
   if (exp < 24) return "recovery";
   if (exp > 96 && n.unemp < 0.048) return "peak";
@@ -138,6 +140,9 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
       shockM: 0, shockSev: 0, recM: 0, expM: 60, deep: false, pressureM: 0,
     },
     creditIdx: 1, phase: "expansion" as MarketPhase, unemployment: 0.048,
+    // The history's first month must not read the town it is about to make:
+    // the corporate debt ladder (tickNation) remembers the long rate it opens on.
+    indexRate: +(100 * (anchor + 0.02) + 1).toFixed(2),
   } as Econ;
   const streams = initStreams(burnSeed);
   const s = { econ: scratchEcon, seed: burnSeed, month: -months, streams, rng: streams.econ, news: [] } as unknown as GameState;
@@ -253,5 +258,5 @@ export function driftInflTarget(econ: Econ, rnd: number) {
  * follows the committee, it does not trade like a ten-year.
  */
 export function shortIndexFor(policy: number, creditIdx: number): number {
-  return +Math.max(0.05, Math.min(23, policy + 0.15 + 0.75 * Math.max(0, 1 - creditIdx))).toFixed(2);
+  return +Math.max(0.05, (policy + 0.15 + 0.75 * Math.max(0, 1 - creditIdx))).toFixed(2);
 }

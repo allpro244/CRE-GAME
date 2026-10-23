@@ -45,11 +45,11 @@
 // selling ends it. Nothing here can turn into a monthly rhythm of clicks.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Holding, Note, Rival } from "./types";
-import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState} from "./types";
+import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, autoLeaseOnClose } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
-import { assetGrade, clearRivalClaims, fitOf, forgetDeed } from "./rivals";
+import { assetGrade, clearRivalClaims, fitOf, forgetDeed, noteLost } from "./rivals";
 import { addToLine, dropDeed, syncDebt } from "./rivalDebt";
 import { hash01 } from "./competitorTraits";
 import { genRentRoll } from "./leasing";
@@ -341,11 +341,13 @@ export function takeDeed(s: GameState, parcels: ParcelTable, n: Note, how: "fore
     tenants: [],
     cfHistory: [],
     ...(s.landmarks?.[n.bbl] !== undefined ? { landmarked: true } : {}),
+    ...(autoLeaseOnClose(s) ? { autoLease: true } : {}),
   };
   wreckedRoll(s, rec, h, occ);
   s.holdings[n.bbl] = h;
   if (r) {
     r.bbls = r.bbls.filter((b) => b !== n.bbl);
+    noteLost(s, r, n.bbl);
     forgetDeed(r, n.bbl);
     dropDeed(s, r, n.bbl);   // the debt went with the deed
   }
@@ -509,6 +511,7 @@ function takeRivalNotes(s: GameState, parcels: ParcelTable) {
     const from = s.rivals?.find((x) => x.bbls.includes(rn.bbl));
     if (!from || from.id === to.id) continue;
     from.bbls = from.bbls.filter((b) => b !== rn.bbl);
+    noteLost(s, from, rn.bbl);
     forgetDeed(from, rn.bbl);
     dropDeed(s, from, rn.bbl);
     to.bbls.push(rn.bbl);

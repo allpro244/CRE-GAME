@@ -20,6 +20,7 @@ import { inPlace, resolveRec, ownedHoldingValue } from "./value";
 import { deedIrr } from "./types";
 import { buyQuote } from "./actions";
 import { PRODUCTS } from "./debt";
+import { purseOf, partnerShare } from "./vehicles";
 
 /** A rival's net equity — gross assets as marked, less debt, plus cash. The one expression. */
 export const rivalEquity = (m: { aum: number }, r: { debt: number; cash: number }) => m.aum - r.debt + r.cash;
@@ -145,7 +146,9 @@ export function yearReview(
   }
   const nwPct = start.nw > 0 ? (end.nw / start.nw - 1) * 100 : 0;
   const streetPct = start.medianRival > 0 ? (end.medianRival / start.medianRival - 1) * 100 : 0;
-  const cash = b ? Math.round(b.noi - b.debtSvc) : 0;
+  // The Books page's own buildings line: income less leasing and capital
+  // spend, less debt service (overhead and tax are shown on their own rows).
+  const cash = b ? Math.round(b.noi - b.leasing - b.capex - b.debtSvc) : 0;
   const up = start.rank - end.rank;
   const beat = nwPct - streetPct;
   const verdict =
@@ -213,7 +216,7 @@ export function positiveLeverage(s: GameState, parcels: ParcelTable): { count: n
     const cap = (inPlace(rec, s, li.bbl, li.ask).noi / li.ask) * 100;
     let coupon = Infinity;
     for (const p of PRODUCTS) {
-      if (p.mezz || p.id === "land") continue;
+      if (p.mezz || p.uwDscr <= 0) continue;
       const q = buyQuote(s, parcels, li.bbl, li.ask, p.id, 1);
       if (q.principal > 0 && q.allInPct < coupon) coupon = q.allInPct;
     }
@@ -306,7 +309,7 @@ export interface DeedReturn { bbl: string; equityIn: number; cashBack: number; e
 export function returnsToDate(s: GameState, parcels: ParcelTable): DeedReturn[] {
   const out: DeedReturn[] = [];
   for (const h of Object.values(s.holdings)) {
-    if (h.fundOwned) continue;
+    if (purseOf(s, h) === "fund") continue;
     const l = s.deedCf?.[h.bbl];
     if (!l || l.pooled || l.from === undefined || l.from > h.boughtM) continue;
     let inn = 0, back = 0;
@@ -316,7 +319,7 @@ export function returnsToDate(s: GameState, parcels: ParcelTable): DeedReturn[] 
     // hand back the keys, so the mark on what they hold floors at nothing.
     // Recourse debt can take them below zero, and then it does.
     const rawEq = ownedHoldingValue(s, parcels, h) - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0);
-    const eqNow = (h.loan?.recourse ? rawEq : Math.max(0, rawEq)) * (1 - (h.jv?.share ?? 0));
+    const eqNow = (h.loan?.recourse ? rawEq : Math.max(0, rawEq)) * (1 - partnerShare(s, h));
     const cf = [...l.cf];
     const last = cf.length - 2;
     if (cf[last] === s.month) cf[last + 1] += eqNow; else cf.push(s.month, eqNow);
@@ -328,4 +331,28 @@ export function returnsToDate(s: GameState, parcels: ParcelTable): DeedReturn[] 
     });
   }
   return out.sort((a, b) => (b.irr ?? -9) - (a.irr ?? -9));
+}
+
+/**
+ * WHAT THE INVESTOR RECORD READS OF THE BOOK STILL HELD (reputation.ts
+ * UNREALISED_WEIGHT). Deeds with their own ledger read their levered returns
+ * (returnsToDate). A deed the ledger cannot speak for — pooled in the
+ * facility, merged into a site, bought before the ledger — still has a price
+ * paid and a mark: it reads the UNLEVERED multiple, today's value over its
+ * cost basis, which understates a levered win and so errs low. Its size is
+ * read at a typical 35% equity cheque. Fund deeds are the LPs' record.
+ */
+export function recordMarks(s: GameState, parcels: ParcelTable): DeedReturn[] {
+  const rows = returnsToDate(s, parcels);
+  const have = new Set(rows.map((r) => r.bbl));
+  for (const h of Object.values(s.holdings)) {
+    if (have.has(h.bbl) || purseOf(s, h) === "fund" || !(h.costBasis > 0)) continue;
+    const value = ownedHoldingValue(s, parcels, h);
+    const share = 1 - partnerShare(s, h);
+    rows.push({
+      bbl: h.bbl, equityIn: 0.35 * h.costBasis * share, cashBack: 0, equityNow: value * share,
+      multiple: value / h.costBasis, irr: null, years: (s.month - h.boughtM) / 12,
+    });
+  }
+  return rows;
 }

@@ -1181,3 +1181,241 @@ fixed/floating gap is the term premium alone. Test: `test/floating.mjs`.
   of appraisal, REO ~1.0 at a flush desk, under it at an impaired one.
 - `test/buybox.mjs`'s land-pencils fixture searches seeds 777 / 12007 /
   550991 — the criterion is unchanged, the re-roll moved which lot pencils.
+
+---
+
+## 13. THE REGION MAP (region expansion Phase 1, Oct 2026)
+
+`makeCity("region", seed)` (`src/citygen/region/`) is a 6 x 6 km piece of
+country round a small river city, in the same contract an island returns plus
+one table, `reserved`. Picked on the setup page as "Region (6 km)"; size and
+park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
+
+- **The city is the island generator's.** `region/town.mjs` builds a
+  generateCity config for a mainland town: the outline is the town's story
+  distance (`story.mjs`), the district plan is a BSP of historic plats (the
+  landing, downtown, the mill district, additions each on its own bearing,
+  block size, alleys or none, gridded / curving / organic), and the old
+  country roads, the main street and the interstate's cut are diagonal
+  reservations. The river village is a second, small generateCity.
+- **The inner ring is houses, and they are ordinary parcels.** An addition's
+  small apartment lot becomes the house that stood there (`index.mjs` THE
+  INNER RING IS HOUSES): multifamily, 1-3 units, R4/R6 zoning with FAR far
+  above what is built — so the engine's own assembly, teardown and growth
+  can buy and rebuild them. Drawn in Unreal as instanced houses (deco
+  "house"), still their deed's building.
+- **Reserved land never enters an engine table.** Outer neighbourhoods (one
+  parcel per subdivision: homes, sizes, era, and a `recipe` that redraws its
+  lots via `plats.mjs platFor` — `built` is a bitset — so a later phase can
+  unpack it), farm and woodlot tracts, rural homes and the parish carry
+  `tenure` and live only in `city.reserved`. The engine is handed
+  `city.parcels`, so every loop is safe by construction; the parcel card shows
+  a reserved parcel's numbers and no desk. No price is shown: nothing in the
+  engine prices an owner-occupied house or farmland yet.
+- **Phase 2, the land developer's slice (`engine/landdev.ts`).** Farm and
+  woodlot tracts are MARKET parcels now (numeric BBLs 5xxxxxxxxx, zone "AG",
+  `rec.ag`, `rec.tract`): `farMaxFor` gives AG no envelope at all, so nobody
+  builds on a field, and the land read prices it at farm-use value
+  (`value.ts farmUsePsf`: USDA 2024 Illinois cash rent over the 2.7%
+  rent-to-value ratio, in the town's price level). An owned tract can be
+  rezoned (`fileEntitlement`: fees, 12-24 months, odds 0.80 at the town's
+  edge to 0.45 at 3 km) and platted (`startPlat`: $40k per 65 ft of frontage
+  plus a $13,772 impact fee a lot, by the cost index; 6-18 months). The plat
+  is a recipe in `s.plats`; `materializePlats` puts its lots (BBL 6 + tract +
+  lot) into the parcel table and BBL list from the state alone — sim.ts at
+  the top of every month, the store on load and on every new state — and the
+  tract retires into its lots (`s.platted`, a deed with no land, like a
+  merged child). Geometry: `citygen platTractLots`. The store draws the lots
+  and streets on the map and resends the city to Unreal. `pnpm landdev`.
+  At the opening the builder residual on a fringe lot is zero (no for-sale
+  housing market yet — Phase 3's homebuilders), so a plat loses money until
+  demand reaches it: an honest result, not a fault to tune. (Superseded by
+  Phase 3, below: the homebuilder is that demand.)
+- **Phase 3, the homebuilder's slice (`engine/homeprice.ts`, `engine/homes.ts`).**
+  The going new house ($/sf, `econ.homes.psf`) is what the town's new-house
+  buyer qualifies for at today's mortgage (index + 1.7) at 28% DTI, 10% down,
+  1.5% tax and insurance. The buyer is 1.58x the median household (`wageIdx`
+  x $80,610), derived so the Census 2024 median new house ($420k, 2,200 sf)
+  is exactly what that buyer carries at 6.72%. Sticky: it chases at
+  HPI_CHASE_M, so a rate shock hits sales first and prices later. Each plat
+  carries a location multiple: inner-ring resale comps (geometric mean near
+  the plat against the town, RELATIVE only) times
+  a capitalised commute. Vertical $123/sf x costIdx (NAHB 2024 construction
+  share 64.4% on the Census median), overhead 5.2%, selling 4.6%, margin 11%,
+  construction interest at index + 2.4 → the builder's residual, which
+  `readLand` bids on `rec.homeLot` lots (winner "homes") times the plat's
+  sell-out discount (19%/yr over left / pace). Sales: Poisson on the "homes"
+  rng stream, households x 0.52%/yr (Census sales over households) x
+  (0.4 + 0.6 x growth/0.77%) x affordability share / AFFORD_REF, split among
+  sellers, elasticity 4 on a seller's price. A buyer signs on a house and
+  closes at completion (7 months); one community sells at most 6 a month
+  (COMMUNITY_SALES_CAP, top-decile absorption), and past that a second
+  builder may enter.
+- **Phase 3b (Oct 2026): the player is the land developer only** (owner's
+  decision). R-2 is a homes-only district (`value.ts HOMES_ONLY_ZONES`:
+  `zonePermits` / `zoneUseBar` refuse every commercial class there, so no
+  scheme, residual, holder bid, city start or develop desk puts flats on a
+  plat lot — the playtest found a lot marked at a flats residual 7x the
+  builder's bid, $5.3M of phantom net worth). Islands keep the Houston rule.
+  The lots desk sells to builders: takedown and whole-plat offers to Sign or
+  Pass, or list the plat at an ask (a builder whose residual clears it signs
+  at it). A refused rezoning waits 12 months (`REFILE_BAR_M`). The streets can
+  go in on an **A&D loan** (`adloan.ts`: 75% of finished-lot value and of
+  cost, index + 2.4, 36 months, a 120% release price per lot sold, one
+  extension, then the desk takes the lots). **Homebuilders keep books**
+  (`HomeBuilder`): founding capital, an AD&C line at a construction desk
+  (75% of lots, 85% of house draws — interagency supervisory LTVs) on that
+  desk's loan book, interest from cash, release at each closing; three
+  months short and a builder fails, its desk sells its book to another
+  builder 25% under mark and charges the loss. **Houses are real**: queued on
+  the delivery queue (source "homes") into the multifamily stock, standing as
+  `built` houses (`house: true`, renderView deco "house", Unreal lays the
+  house mesh), and once a family closes, ordinary houses on the market again.
+- **The land texture now carries the town's dollars** (`readLand`: `* priceLevel`).
+  It had none — `landIdx` is a rent/cost ratio, so the floor priced dirt in
+  the reference table's money — and the inner ring's houses came to 12-23x
+  the median household income on seeds 1-3 (4.4-6.4x after). Measured on the
+  baseline's six island seeds (medians, before -> after): land median
+  $118 -> $76/sf, affordable-lot share 0.23% -> 1.96%, floor area +4.9%,
+  employed +16%, population +12%, demolitions +41%, multifamily vacancy
+  6.1% -> 5.0%, and the multifamily occupancy-cap rail binding 5% -> 17% of
+  months — watch that rail. BASELINE.json was already stale (27 of 45
+  metrics off before this change) and was not regenerated.
+- **Car access, not transit (CITY_PLAN 16, Oct 2026, claude/suburban-demand).**
+  The demand blend's transit and second-centre terms (44 of 100 points) read
+  zero on the region: median raw demand 7 against an island's 44, max 45. On
+  a region map (`manifest.carAccess`, plan >= 16) build.mjs gives those 44
+  points to drive-time access instead (`citygen/region/access.mjs`): Huff-
+  weighted households + jobs (EPA SLD activity) within 15 minutes, surface
+  at 50 km/h x 1.2 circuity (Ballou 2002) or via the open interchanges at
+  100 km/h, decay (2 min / t)^2 [K, shape]. Seed 1 raw demand median 7 -> 43,
+  max 45 -> 97. Islands and plan-15 region saves are byte-identical (hash
+  referee on parcels+adjacency, and HASH=1 conserve end state). NOTE: rents
+  and land are pivoted on the town's own sf-weighted location mean
+  (`locIdxMean`), so this is a change of SHAPE, not level: fringe retail rent
+  at 1-2 km rose ~65% (2.52 -> 4.14 town $/sf), the downtown's retail premium
+  shrank (a car town's best retail is not its main street), and land medians
+  moved -20% to +10% by band. NOT YET: the yearly refresh with roads.ts
+  congestion, new interchanges and new rooftops (a drift term in demand.ts),
+  and AADT/frontage beyond the existing corridor premium.
+- **The grocer pays out of its sales (region only).** `towngrowth.ts
+  grocerSales`: the town's households (the trade-area list, county entries
+  included) x BLS CES 2023 food-at-home $6,053 x Huff capture among the open
+  and proposed grocers within 15 minutes. resolveRec stamps it on centre-
+  sized vacant lots (`rec.grocerSales`, via `value.ts GROCER_SALES` to avoid an
+  import cycle), and the pro forma sets the grocer's base rent to 3.16% of
+  sales (Karabus food-retail occupancy median, total occupancy) less the NNN
+  charges the building recovers. Measured on seed 1's proposals: $3.5-3.6M
+  sales (about $500/sf in real dollars), $2.5-2.7/sf base against the old
+  0.5 x inline rule's $2.53 — the old ratio was about right. Centres STILL do
+  not pencil: 3-5% yield on cost against 8%, because inline rent (~$5 town,
+  ~$21 real) does not carry a ~$59/sf town (~$245 real) neighbourhood centre.
+  That matches the 2020s market (spec centre construction near record lows).
+  The real route new grocery stores take is the grocer's own build-to-suit,
+  sized to its trade area: equal sales in a 20k sf box clear the 4% occupancy
+  ceiling where a 30k sf one does not. That is the next mechanism.
+- **The grocer builds its own store (claude/grocer-bts).** Where the spec
+  centre fails the board's site, the grocer builds to suit (`products.ts
+  grocery`: RSMeans $195/sf supermarket shell, 5/1000 parking, one 20-year
+  NNN tenant, Boulder net-lease cap spread -0.5), trying 45k / 30k / 18k sf
+  formats largest first (`towngrowth.ts GROCER_FORMATS`); its rent is the same
+  3.16%-of-sales less NNN. Region only: the pro forma refuses the product
+  without `rec.grocerSales`, so islands never see it (hash-identical).
+  Measured: seed 2 builds an 18k sf store in year 1 (1.0 km out), seed 3 one
+  in year 7 (0.8 km out); seed 1 builds none in 15 years (its two sites fail
+  as a centre and as every format). Only the 18k format has cleared so far.
+  NOT YET: pads and inline shops following on the leftover land of the same
+  site, junior anchors (community centres are never proposed by the town).
+- **Phase 4, the region growing (`engine/growth.ts`, `roads.ts`, `towngrowth.ts`, `unpack.ts`; region only, its own rng channel "growth").**
+  Households are the engine's population / 2.51; nothing new drives them.
+  LAND DEVELOPERS (named, off-book) price every farm tract each quarter
+  (`readTract`): finished lots at the homebuilders' residual × the sell-out at
+  the pace one more community would get, less the board's fees, the streets, the
+  OFF-SITE MAINS to the nearest served land (`landdev servedM`, $250/ft), all
+  discounted at 19%/yr over the board and street months, × the odds (which now
+  read distance to SERVED land, plats included — that is what makes growth
+  contiguous). The median developer's bid is the tract's price where it beats
+  the corn (`econ.tractBid`, value.ts winner "subdivider"); a developer whose own
+  read (±10% lognormal) clears price + 3% closing buys, files, and builds the
+  streets through `s.plats` like the player; homes.ts builders take the lots.
+  Held tracts are off the market (`growth.held`, isCivicLand). Plat lots are
+  skipped by town developers' looks (covenants). SUPPLY FLOOR: the going house
+  price chases max(buyer capacity, cost of making a house incl. a developer-
+  returning lot) (`homes.ts supplyFloorPsf`) — without it seed 3 built nothing
+  for 7 years while costs outran wages. ROADS: county road & bridge fund = 10%
+  of the property-tax levy (sampled 1 parcel in 8), less upkeep at $20k/lane-mi;
+  ADT per arterial piece from households (ITE 9.43 trips) radially assigned;
+  2-lane pieces over 15k AADT are widened (24 + 18 months, $6M/mi × costIdx).
+  The state's master plan (citygen `regionRoadPlan`, years read as `year - 2026`
+  after the opening) is funded 4 years out at odds rising with household growth;
+  misses slip 2-6 years, a third miss may drop it. Tract access (`growth.access`,
+  read by homes.ts platLocation) = congested county road (BPR) or nearest open
+  interchange + freeway. The store draws opened roads (`roadFeatures`) into
+  `city.context` for the map and Unreal. TOWN: yearly trade areas — a
+  grocery-anchored centre where ≥4,000 households would be nearest to it within
+  1.5 mi, a strip at 1,500 with no shop within a mile; site = vacant commercial
+  lot or a rezoned farm (C-N, the centre's FAR), built via dev.ts
+  `startTradeAreaBuilding` (the city's own groundbreak). Plan commission: a
+  district whose last-10-year buildings mostly fill their envelope gets a 2-year
+  study, 65% pass, ×1.25 zoneAdj, 10-year cooldown. Inner-ring houses are rebuilt
+  by the engine's own teardowns; counted. `unpackNeighbourhood(id)` redraws a
+  reserved neighbourhood into deeds (7+id+n, R-1 FAR 0.45) as family homes —
+  no automatic trigger yet. `node test/region-growth.mjs [seed]` (Y=years).
+- **Phase 4b, growth that shows (Oct 2026, claude/growth-tuning).** Measured
+  over 30 years on seeds 1-3 before: no county widening ever (peak 7.7-14K
+  AADT against 15K, the fund at $19-64M), no trade-area centre, upzoning 0-2,
+  inner ring rebuilt 9-52 houses. What was wrong, and what changed:
+  ROADS — the assignment loaded only the county's households coming IN, so
+  growth on the map moved households from "beyond" to the plats and peak
+  traffic FELL as the town grew (seed 1 9.9K -> 8.7K); the town's own flats and
+  its businesses' trucks drove nowhere. Now the town's households drive out
+  (ITE 220, 6.74 trips; 20% internal-external, NCHRP 716) and commercial
+  vehicles serve its jobs (FHWA QRFM Table 4.1 rates; half the trucks cross
+  the town line). The county programmes a widening on its DESIGN-YEAR forecast
+  (AASHTO: 20 years after opening, grown at the households' ten-year rate), and
+  it LEVIES THE BUDGET — upkeep, the warranted projects, a two-month reserve
+  (GFOA) — up to the statutory share, instead of the ceiling every year
+  (`roads.unlevied` records what it left with the taxpayers). Extensions and
+  intersection upgrades are NOT modelled: the plan has no unbuilt arterials and
+  access has no junction delay, so neither would change a commute — a citygen
+  change first. COMMERCE — the county beyond the map shops in town (half its
+  trips, COUNTY_TO_TOWN), counted where it drives in, on its own road
+  (`roads.ts countyEntries`). Centres now get proposed and mostly FAIL ON THE
+  PRO FORMA (news and `town.failedWhy` say so: 5-7% yield on cost against
+  8-9.7% required), because a fringe site's retail rent reads the demand score,
+  which has no car-access or rooftop term — the HANDOFF's open question above.
+  The honest next mechanism is the grocer as a build-to-suit tenant (anchor rent
+  set by its sales: households x food-at-home spend, BLS CEX), not a spec
+  centre. THE RING — zoning does not bind (R4-R8 at FAR 4-19 over 1-2-storey
+  frames), so there is nothing for the plan commission to upzone; the pressure
+  shows as teardowns. The teardown sample was drawn from every deed, and the
+  table fills with farms, plat lots and their houses (2,026 -> 4,589 on seed 1),
+  so the town was looked at less and less as its land rose; redevelopers now
+  scout the town's own deeds (`dev.ts teardownScope`, islands unchanged).
+  Measured house by house (residual of the best scheme against value standing),
+  ~16% of ring houses pencil at the opening, ~8% at year 20, and those only by
+  ~9%: the ring densifies slowly because it barely pays, which is the honest
+  answer. 30-year results are in PR #448.
+- **Land developers keep books (Oct 2026, claude/landdev-books).** The named
+  developers were counts with an unlimited purse: they bought every farm whose
+  read cleared, and one whose streets did not pay banked the land forever at no
+  cost. Now each is founded with its own money (homes.ts's purse) and a
+  construction desk: 65% against the land and 75% against the streets (12 CFR
+  34 App. A), interest out of cash every month at index + 2.4, the board's fees
+  and closing in cash, paid by the builders lot by lot (homes.ts `landDevSold`)
+  with a 120% release to the desk. It signs only a deal it can carry to the end
+  — its share of the land, fees AND streets, net of what it has promised its
+  other farms. A refused farm is sold back at the corn. Banked land costs the
+  coupon; three months unable to pay and it fails, its desk sells the farms
+  (keeping any zoning: an already-zoned farm reads with no board) and its
+  plats' lots go to the builders through the market, the shortfall the desk's
+  loss. They COMPETE WITH THE PLAYER: a farm the player is negotiating for (not
+  yet under contract) stays on their market, the seller's price is the
+  player's offer if that is higher, and a developer who reads it better buys it
+  out from under the player (`voidContract`, with the news).
+  `region-growth` prints each developer's cash, debt and lots sold and checks
+  the debt against its loans.
+- `pnpm region` (test/region.mjs): determinism, record sanity, reserved land
+  never reaching the market, the island untouched by plan 15, month tick
+  timing. `node test/bwcity-contract.mjs <file>` checks an Unreal export;
+  `node unreal/tools/export-city.mjs --city region --seed N` writes one.

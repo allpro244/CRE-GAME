@@ -104,15 +104,18 @@ for (const seed of SEEDS) {
   // regulator closes it, then three years for the receiver and the reopening.
   let b = JSON.parse(JSON.stringify(g));
   const L = [...b.lenders].filter((l) => l.kind === "bank").sort((x, y) => y.book - x.book)[0];
-  for (let i = 0; i < 60 && !(b.bankFails ?? []).length; i++) {
+  // A desk may already have failed on its own in the thirty years above, so
+  // look for THIS one's record, not the first on the log.
+  const mine = () => (b.bankFails ?? []).find((x) => x.lender === L.name && x.m >= g.month);
+  for (let i = 0; i < 60 && !mine(); i++) {
     b.lenders.find((l) => l.id === L.id).capital = -1e9;
     b = E.advanceMonth(b, parcels, bbls, adjacency);
   }
-  const f0 = (b.bankFails ?? [])[0];
+  const f0 = mine();
   ok("a closed bank is logged", !!f0 && f0.lender === L.name, JSON.stringify(f0 ?? null));
   ok("its story runs the month after", E.writePaper({ ...b, month: b.month + 1 }, parcels).stories.some((x) => x.id === `bank:${L.name}:${f0?.m}`));
   for (let i = 0; i < 36; i++) b = E.advanceMonth(b, parcels, bbls, adjacency);
-  const f1 = (b.bankFails ?? []).find((x) => x.lender === L.name);
+  const f1 = (b.bankFails ?? []).find((x) => x.lender === L.name && x.m === f0?.m);
   ok("the reopening is stamped on the record", f1?.reopenedM !== undefined, JSON.stringify(f1 ?? null));
   ok("and the failure log survives the reopening", !b.lenders.find((l) => l.id === L.id).failedM && !!f1);
 }

@@ -1014,6 +1014,11 @@ body {
 .prop-cols { margin-top: 6px; }
 .panel-embed { background: none; border: none; padding: 0; }
 .panel-embed .deal { border-top: 1px solid rgba(146,110,40,0.22); }
+/* The design step on the full property page takes the whole width: the model
+   on the left, held in view, and the facade / base / top choices beside it. */
+.panel-embed > .deal.dev-wide { grid-column: 1 / -1; }
+.panel-embed .dev-design { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.panel-embed .dev-design-model { position: sticky; top: 8px; }
 /* Two columns only inside a real room — not a 560px dock pretending to be wide
    because the viewport was ≥900px. */
 /* Masonry, not CSS columns — see ui/useMasonry.ts and the rules in hud.css. */
@@ -2696,3 +2701,82 @@ html, body, #root { overflow-x: hidden; }
   .chart-grid.chart-masonry { grid-auto-rows: 4px; row-gap: 0; align-items: start; }
   .chart-grid.chart-masonry > .chart-cell { margin-bottom: 16px; }
 }
+
+/* INSIDE UNREAL (state/unrealHost.ts): no map of our own, the 3D city is drawn
+   by Unreal behind a transparent page; the surface sheet takes the pointer. */
+html.host-unreal, html.host-unreal body, html.host-unreal #root, html.host-unreal .app { background: transparent !important; }
+html.host-unreal .app::after { display: none; }
+.unreal-surface { position: absolute; inset: 0; z-index: 0; touch-action: none; }
+
+/* ---------------------------------------------------------------- THE LAND DEVELOPMENT DESK (ui/panels/LandDesk.tsx)
+   A plat is drawn the way a surveyor draws one: ink on paper, thin lines, the
+   right-of-way as two lines, lot numbers, street names along the street. */
+.land-desk .deal-head .dim { font-size: 12px; color: var(--ink-dim); }
+.pnl-strip { display: flex; flex-wrap: wrap; gap: 0; margin: 6px 0 8px; border: 1px solid var(--card-line); border-radius: var(--r-sm); overflow: hidden; }
+.pnl-cell { flex: 1 1 70px; padding: 4px 8px; border-left: 1px solid rgba(146,110,40,0.22); min-width: 64px; }
+.pnl-cell:first-child { border-left: 0; }
+.pnl-k { font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-dim); }
+.pnl-v { font-size: 13px; color: var(--ink); white-space: nowrap; }
+.pnl-v.neg, .plat-amen .neg { color: var(--danger); }
+.land-design { margin-top: 6px; }
+.panel-embed .land-design { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+.plat-wrap { position: relative; }
+.plat-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-bottom: 4px; }
+.plat-tools .btn-mini, .plat-palette .btn-mini { margin-left: 0; margin-right: 3px; font-size: 11px; padding: 3px 8px; }
+.plat-ms { margin-left: auto; font-size: 10px; }
+.app .page-backdrop .panel-embed > .land-desk { columns: auto !important; grid-column: 1 / -1; }
+.plat-map { display: block; width: 100%; height: auto; min-height: 300px; max-height: 72vh; border: 1px solid var(--card-line); border-radius: var(--r-sm); background: #fbf8ef; touch-action: none; user-select: none; }
+.plat-map.tool-hand { cursor: grab; }
+.plat-map.tool-move { cursor: move; }
+.plat-map.tool-merge, .plat-map.tool-split, .plat-map.tool-open, .plat-map.tool-pond { cursor: crosshair; }
+.plat-paper { fill: #fbf8ef; }
+.plat-boundary { fill: none; stroke: #2b251a; stroke-dasharray: 14 3 2 3; vector-effect: non-scaling-stroke; stroke-width: 1.6px; }
+.plat-flood { stroke: none; }
+.plat-hatch { stroke: #6f8fa8; }
+.plat-flood-label { fill: #4d6b82; font-family: var(--serif); letter-spacing: 0.2em; font-style: italic; }
+.plat-row-edge { fill: none; stroke: #2b251a; stroke-linecap: butt; }
+.plat-row-edge-fill { fill: #2b251a; }
+.plat-row { fill: none; stroke: #fbf8ef; stroke-linecap: square; }
+.plat-row-fill { fill: #fbf8ef; }
+.plat-cl { fill: none; stroke: rgba(43,37,26,0.45); }
+.plat-lot { fill: #b07f1e; fill-opacity: 0; stroke: #2b251a; vector-effect: non-scaling-stroke; stroke-width: 0.6px; }
+.plat-lot.hov { fill: #d19a32; fill-opacity: 0.28 !important; stroke-width: 1.4px; }
+.plat-lot.merged { stroke-dasharray: 6 2; }
+.plat-lot.half { stroke: #8a5620; }
+.plat-park { fill: #cfe0c2; stroke: #4c7a4f; vector-effect: non-scaling-stroke; stroke-width: 0.5px; }
+.plat-open { stroke: #6b7a52; vector-effect: non-scaling-stroke; stroke-width: 0.5px; }
+.plat-dot { fill: #6b7a52; }
+.plat-pondland { fill: #e3ecde; stroke: #6f8fa8; vector-effect: non-scaling-stroke; stroke-width: 0.5px; }
+.plat-pond { fill: #bcd3e3; stroke: #4d6b82; }
+.plat-pond-label { fill: #36536b; font-family: var(--serif); letter-spacing: 0.12em; }
+.plat-trail { fill: none; stroke: #4c7a4f; stroke-linecap: round; }
+.plat-num { fill: #2b251a; font-family: var(--mono); pointer-events: none; }
+.plat-street { fill: #2b251a; font-family: var(--serif); letter-spacing: 0.18em; pointer-events: none; }
+.plat-amen-label { fill: #2f5a35; font-family: var(--serif); letter-spacing: 0.08em; pointer-events: none; }
+.plat-dim path { stroke: #a8402e; fill: none; }
+.plat-dim circle { fill: #a8402e; }
+.plat-dim text { fill: #a8402e; font-family: var(--mono); pointer-events: none; }
+.plat-handle path { stroke: #2f7a72; fill: none; }
+.plat-handle circle { fill: #fbf8ef; stroke: #2f7a72; cursor: grab; }
+.plat-handle text { fill: #2f7a72; font-family: var(--mono); }
+.plat-north path { fill: #fbf8ef; stroke: #2b251a; }
+.plat-north path.fill { fill: #2b251a; stroke: none; }
+.plat-north text, .plat-scale text, .plat-title text { fill: #2b251a; font-family: var(--serif); letter-spacing: 0.06em; }
+.plat-scale rect { fill: #fbf8ef; stroke: #2b251a; }
+.plat-scale rect.fill { fill: #2b251a; }
+.plat-tip { position: absolute; pointer-events: none; z-index: 3; background: var(--paper); border: 1px solid var(--card-line); border-radius: var(--r-sm); box-shadow: var(--lift-1); padding: 4px 8px; font-size: 11px; color: var(--ink); white-space: nowrap; }
+.plat-side .grid { margin-top: 4px; }
+.plat-palette { display: flex; flex-wrap: wrap; gap: 3px 0; margin-bottom: 6px; }
+.plat-amen td, .plat-amen th { padding: 4px 6px 4px 0; font-size: 12px; }
+.land-mix td, .land-mix th { padding: 4px 6px 4px 0; font-size: 12px; }
+.land-mix input[type="range"] { width: 110px; vertical-align: middle; accent-color: var(--gold); }
+.land-bar { display: flex; height: 10px; margin: 8px 0 4px; border-radius: 3px; overflow: hidden; border: 1px solid var(--card-line); }
+.land-bar-seg { min-width: 1px; }
+.seg-lots { background: #e9d9a8; }
+.seg-streets { background: #8d857a; }
+.seg-open { background: #9cc39a; }
+.seg-pond { background: #9dbad0; }
+.seg-flood { background: repeating-linear-gradient(45deg, #c7d6e2 0 3px, #eef3f6 3px 6px); }
+.seg-other { background: #efe9da; }
+.land-bar-key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--ink-dim); }
+.land-bar-key i { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }

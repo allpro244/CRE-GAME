@@ -1,0 +1,11 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+const HERE = dirname(fileURLToPath(import.meta.url));
+const E = await import(join(HERE, ".engine.mjs"));
+const { makeCity, REGION } = await import(join(HERE, "..", "src", "citygen", "index.mjs"));
+let t = performance.now(); const city = makeCity(REGION, 1); const a = performance.now() - t;
+const parcels = city.parcels, bbls = Object.keys(parcels);
+t = performance.now(); E.normalizeParcels(parcels); const b = performance.now() - t;
+t = performance.now(); let g = E.newGame(1, parcels, undefined, undefined, { citySize: "region", cityLots: bbls.length }); const c = performance.now() - t;
+t = performance.now(); g = E.firstListings(g, parcels, bbls); const d = performance.now() - t;
+console.log(`makeCity ${a|0} ms, normalize ${b|0}, newGame ${c|0}, firstListings ${d|0}`);

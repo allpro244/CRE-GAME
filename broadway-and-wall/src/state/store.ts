@@ -1,8 +1,11 @@
 import { startTransition } from "react";
+import { loadGfx, saveGfx, type GfxOptions } from "./graphics";
+import { recapBuyout } from "@/engine/recap";
+import { launchRaise, raiseAndBuild, cancelRaise, closeRaiseNow, type RaiseJob } from "@/engine/raise";
 import { create } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions, BuildingDesign } from "@/engine/types";
-import { attentionItems, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES } from "@/engine/sim";
+import { attentionItems, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES, restoreCuts } from "@/engine/sim";
 import { deliveriesThisMonth, cityDeliveriesThisMonth } from "@/engine/cycleDigest";
 import { deliveryWorthCeremony } from "@/engine/deliveryNotice";
 import { monthLabel, START_YEAR } from "@/engine/types";
@@ -11,7 +14,7 @@ import { openViewOn } from "@/ui/deskView";
 import { buyListing, buyOffMarket, submitBlindBid, approachOwner, counterOffMarket, listForSale, delist, acceptSaleOffer, declineSaleOffer, setSaleInstructions, counterSale, counterBid, repriceListing, startRenovation,  setBroker, setBrokerAll, assembleLots, offerGroundLease, pullGroundOffer, bestAndFinal, acceptBid, type BuyProduct } from "@/engine/actions";
 import { negotiate, acceptCounter, walkAway, closeDeal } from "@/engine/acquire";
 import {
-  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, setMinLeaseSfAll, setAutoLease, setAutoTiCap, workLeasingDesk,
+  respondLOI, answerAsk, buildSpecSuites, blendExtend, buyOutTenants, setLeasingHold, setMinLeaseSf, setMinLeaseSfAll, setAutoLease, setAutoTiCap, setAutoConcessions, setAutoRentFloor, workLeasingDesk,
   patchPlanRow, setPlanAuthority as writePlanAuthority, patchPlanOptions, setPrincipalSigns as writePrincipalSigns, clearTrayAgainstPlan, type LOIAction,
 } from "@/engine/leasing";
 import { cureWorkout, requestForbearance, deedInLieu, serviceWorkout } from "@/engine/workout";
@@ -42,7 +45,14 @@ import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
-import { cityList, CITY_PLAN, type GeneratedCity } from "@/citygen/index.mjs";
+import { cityList, CITY_PLAN, platTractLots, platTractDesign, platDesignLL, designSummary, type GeneratedCity } from "@/citygen/index.mjs";
+import { designRecipe, designAt, tractYield, fileDesignedRezoning as fileDesignedRezoningE, startDesignedPlat } from "@/engine/platdesign";
+import type { PlatDesign } from "@/engine/types";
+import { lotBbl, fileEntitlement, startPlat, isIndustrialLot } from "@/engine/landdev";
+import { roadFeatures } from "@/engine/roads";
+import { fileSplit, type SplitPlan } from "@/engine/lotsplit";
+import { siteGeometry, applySplitFeatures, type SiteGeo } from "@/engine/lotsplitGeom";
+import { acceptLotOffer, declineLotOffer, listLotsToBuilders, delistLots as delistPlatLots } from "@/engine/homes";
 import { cutTownOffThread } from "@/state/townClient";
 import type { TownRequest } from "@/state/townWorker";
 import { monthOffThread, spanOffThread } from "@/state/simClient";
@@ -50,7 +60,7 @@ import { monthOffThread, spanOffThread } from "@/state/simClient";
 export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "reset";
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "pencils" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
-export type MapFilter = "all" | "owned" | "construction";
+export type MapFilter = "all" | "owned" | "construction" | "firm";
 export type GraphicsQuality = "low" | "medium" | "high";
 /** A scheme being designed: drawn finished, on its lot, in the 3D city. */
 export interface DesignPreview {
@@ -61,7 +71,7 @@ export interface DesignPreview {
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings";
+export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "investors" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -265,6 +275,14 @@ interface AppState {
   alertsOff: boolean;
   setAlertsOff: (v: boolean) => void;
   /**
+   * ONE KIND AT A TIME (owner, Oct 2026). Rather than silence every card
+   * because one kind is tedious, a card can be told "don't stop me for these":
+   * that kind passes as a line in the toast lane and in the news. A swan can
+   * never be muted. Cleared with the master switch at every new game.
+   */
+  mutedAlerts: string[];
+  muteAlertKind: (kind: string, on: boolean) => void;
+  /**
    * THE FRAME COUNTER IS A QA INSTRUMENT AND IT WAS ALWAYS ON SCREEN.
    * It sat in the top-right corner of a shipped game reading "4 fps" at people
    * who had not asked. Off by default now, with a switch in Settings for when
@@ -284,6 +302,9 @@ interface AppState {
   /** Graphics quality (Settings -> Display). preferFps is derived: anything below High. */
   graphics: GraphicsQuality;
   setGraphics: (q: GraphicsQuality) => void;
+  /** The Unreal game's full graphics settings (state/graphics.ts): a preset, then any option changed. */
+  gfx: GfxOptions;
+  setGfx: (o: GfxOptions) => void;
   setPreferFps: (v: boolean) => void;
   /**
    * The real-geometry city renderer (map/real/RealCity.ts) instead of the
@@ -304,6 +325,10 @@ interface AppState {
   setPhotoFrame: (v: boolean) => void;
   /** Request MapView to fit the holdings bounding box. */
   showBookOnMap: () => void;
+  /** The competitor the map is showing on its own (mapFilter "firm"). */
+  mapFirm?: string;
+  /** Close the desk and show one competitor's buildings on the map, everything else dimmed. */
+  showFirmOnMap: (id: string) => void;
   /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
@@ -333,9 +358,17 @@ interface AppState {
   sellStake: (bbl: string, share: number) => void;
   buyOutPartner: (bbl: string) => void;
   buyLandBack: (bbl: string) => void;
-  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed" }, lender?: string, spec?: number) => void;
+  launchRaise: (bbl: string, job: RaiseJob, target: number) => void;
+  /** Raise the outside equity and break ground in one step (raise.ts raiseAndBuild). */
+  raiseAndBuild: (bbl: string, job: RaiseJob, target: number) => void;
+  recapBuyout: (bbl: string) => void;
+  cancelRaise: (bbl: string) => void;
+  closeRaiseNow: (bbl: string) => void;
+  develop: (bbl: string, use: DevUse, floors: number, coverage: number, contract: Contract, ltcWanted?: number, custom?: { mix?: UseMix; suites?: Partial<Record<BuiltClass, number>>; bts?: BtsCommitment; groundRetail?: "auto" | "on" | "off"; design?: BuildingDesign; takeout?: "float" | "cap" | "fixed"; syndicate?: { outside: number }; product?: import("@/engine/products").ProductKey }, lender?: string, spec?: number) => void;
   /** The scheme on the Build desk, drawn on its lot in the 3D city while you design it. */
   designPreview: DesignPreview | null;
+  /** The landmark forms the previewed lot can hold, as the 3D city drew it (null until it has). */
+  designSigFits: string[] | null;
   setDesignPreview: (p: DesignPreview | null) => void;
   /** Stepped out of the Build desk to look at the scheme on the map (DesignPeekBar). */
   designPeek: boolean;
@@ -370,6 +403,21 @@ interface AppState {
   runBestAndFinal: (bbl: string) => void;
   takeBid: (bbl: string, index: number) => void;
   applyVariance: (bbl: string, targetFar?: number) => void;
+  /** Region map: ask the board to rezone a farm tract you own for lots of `lotSf` (engine/landdev.ts). */
+  fileRezoning: (bbl: string, lotSf: number) => void;
+  /** Region map: build the streets on a rezoned tract and cut it into lots. */
+  buildPlat: (bbl: string) => void;
+  /** Any deed you own: file a lot split cut by `plan` (engine/lotsplit.ts), measured on the city as drawn now. */
+  fileLotSplit: (bbl: string, plan: SplitPlan) => void;
+  /** Region map, the design desk (engine/platdesign.ts): file the rezoning with a drawn plat; build its streets, with `lev` of the A&D loan the desk offers. */
+  fileDesignedRezoning: (bbl: string, design: PlatDesign) => void;
+  buildDesignedPlat: (bbl: string, design: PlatDesign, lev: number) => void;
+  /** Region map, Phase 3 (engine/homes.ts): list your lots on the plat `parent` to the homebuilders at `askPsf`, as a takedown or whole. */
+  listLots: (parent: string, askPsf: number, bulk: boolean) => void;
+  delistLots: (parent: string) => void;
+  /** Take, or turn down, a homebuilder's offer for your lots on a plat. */
+  takeLotOffer: (parent: string) => void;
+  refuseLotOffer: (parent: string) => void;
   appealTax: (bbl: string) => void;
   prebuild: (bbl: string, use: string, sf: number) => void;
   extendLease: (bbl: string, idx: number) => void;
@@ -406,6 +454,11 @@ interface AppState {
   autoLease: (bbl: string | string[], on: boolean) => void;
   /** Auto-lease fit-out cap, today's $/sf per lease year; undefined lifts it. */
   autoTiCap: (bbl: string, psfYr: number | undefined) => void;
+  autoConcessions: (c: import("@/engine/types").AutoConcessions) => void;
+  /** Auto-lease never signs under market rent, firm-wide. */
+  autoRentFloor: (on: boolean) => void;
+  /** Buildings you buy from here close on auto-lease (on) or off it. */
+  autoLeaseNew: (on: boolean) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
   /** The same minimum new lease on every building, and the house default for new ones. */
@@ -451,7 +504,7 @@ interface AppState {
   /** Pay the facility down out of cash. */
   /** Re-quote the pool at today's rates and values and pay off the old paper. */
   refiFacility: (productId: string, lev?: number) => void;
-  repayFacility: (amount: number) => void;
+  repayFacility: (amount: number, useLine?: boolean) => void;
   /** Buy one deed back out of the pool at the release price. */
   releaseFacility: (bbl: string) => void;
   /** Close a player fund vintage (earned — never a menu size). */
@@ -466,6 +519,8 @@ interface AppState {
   startRun: (island: string, size: string, dev: string, cash0?: number, setup?: Partial<GameSetup>, seed?: number) => Promise<void>;
   /** Rebuild the town in a named save and pick the campaign back up. */
   continueRun: () => Promise<void>;
+  /** From the start menu: open a named save, rebuilding its town (the Continue path, for any slot). */
+  openSlot: (slot: string) => Promise<void>;
   newRun: () => void;
   devGrant: () => void;
   saveTo: (slot: string) => Promise<void>;
@@ -724,8 +779,8 @@ function painted(): Promise<void> {
  * dealt there too when `deal` asks for it: on a big map the two together held
  * the page for tens of seconds.
  */
-async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"]) {
-  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal });
+async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"], parks?: string) {
+  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal, parks: parks === "medium" ? undefined : parks });
   // normalised in the worker, in place: the table is built.parcels
   return { built, parcels: built.parcels as ParcelTable, game };
 }
@@ -846,12 +901,16 @@ export const useStore = create<AppState>((set, get) => ({
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
   hoverCard: (() => { try { return localStorage.getItem("bw:hovercard") !== "off"; } catch { return true; } })(),
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
+  mutedAlerts: (() => { try { const v = JSON.parse(localStorage.getItem("bw:alerts-muted") ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "swan" && x !== "fed") : []; } catch { return []; } })(),
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
   // THE GRAPHICS DIAL. An old "prefer smoother frames" on reads as Medium.
   graphics: (() => {
     try {
       const g = localStorage.getItem("bw:graphics");
       if (g === "low" || g === "medium" || g === "high") return g;
+      // In Unreal, medium is DLSS Quality: 50 fps at 1080p on an RTX 2080
+      // against 37 at native (UE58_PLAN.md), so a first run starts there
+      if (new URLSearchParams(location.search).get("host") === "unreal") return "medium";
       return localStorage.getItem("bw:prefer-fps") === "on" ? "medium" : "high";
     } catch { return "high"; }
   })() as GraphicsQuality,
@@ -861,8 +920,10 @@ export const useStore = create<AppState>((set, get) => ({
       return g ? g !== "high" : localStorage.getItem("bw:prefer-fps") === "on";
     } catch { return false; }
   })(),
+  gfx: loadGfx((() => { try { const g = localStorage.getItem("bw:graphics"); return g === "low" || g === "high" ? g : "medium"; } catch { return "medium"; } })()),
   designPreview: null,
-  setDesignPreview: (p) => set({ designPreview: p }),
+  designSigFits: null,
+  setDesignPreview: (p) => set(p ? { designPreview: p } : { designPreview: p, designSigFits: null }),
   designPeek: false,
   setDesignPeek: (v) => set(v ? { designPeek: true } : { designPeek: false, designSpin: false }),
   designCam: null,
@@ -910,12 +971,15 @@ export const useStore = create<AppState>((set, get) => ({
     docketSnooze: { ...st.docketSnooze, [key]: untilMonth },
   })),
   markCardSeen: (key) => set((st) => (st.cardSeen.includes(key) ? {} : { cardSeen: [...st.cardSeen.slice(-199), key] })),
-  focus: (bbl, closePanel = false) => set((st) => ({
+  focus: (bbl0, closePanel = false) => set((st) => {
+    const bbl = st.game?.merged?.[bbl0] ?? bbl0;
+    return {
     selectedBBL: bbl,
     flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 },
     ...(closePanel ? { page: "none" as Page } : {}),
     ...(pushNav(st, closePanel ? "none" : st.page, bbl) ?? {}),
-  })),
+    };
+  }),
   openAttention: (key) => {
     const st0 = get();
     const route = routeAttention(key, st0.game);
@@ -963,8 +1027,11 @@ export const useStore = create<AppState>((set, get) => ({
     }
     startTransition(() => set({ page, pageJump, ...(nav ?? {}) }));
   },
-  openProperty: (bbl, tab) => {
+  openProperty: (bbl0, tab) => {
     const st = get();
+    // A folded lot of an assemblage IS its site, as on a map click (select):
+    // a list, link or docket row naming the old lot used to open a 0 sf page.
+    const bbl = st.game?.merged?.[bbl0] ?? bbl0;
     const nav = pushNav(st, "property", bbl);
     if (st.mapOnly) {
       try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
@@ -1212,6 +1279,12 @@ export const useStore = create<AppState>((set, get) => ({
     try { localStorage.setItem("bw:alerts", v ? "off" : "on"); } catch { /* private mode */ }
     set({ alertsOff: v });
   },
+  muteAlertKind: (kind, on) => {
+    if (kind === "swan" || kind === "fed") return;
+    const next = on ? [...new Set([...get().mutedAlerts, kind])] : get().mutedAlerts.filter((k) => k !== kind);
+    try { localStorage.setItem("bw:alerts-muted", JSON.stringify(next)); } catch { /* private mode */ }
+    set({ mutedAlerts: next });
+  },
 
   setFpsOn: (v) => {
     try { localStorage.setItem("bw:fps", v ? "on" : "off"); } catch { /* private mode */ }
@@ -1225,6 +1298,10 @@ export const useStore = create<AppState>((set, get) => ({
   setGraphics: (q) => {
     try { localStorage.setItem("bw:graphics", q); } catch { /* private mode */ }
     set({ graphics: q, preferFps: q !== "high" });
+  },
+  setGfx: (o) => {
+    saveGfx(o);
+    set({ gfx: o });
   },
 
 
@@ -1241,6 +1318,18 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setMapFilter: (f) => set({ mapFilter: f }),
+
+  showFirmOnMap: (id) => {
+    const st = get();
+    set({
+      page: "none" as Page,
+      lens: "owners" as Lens,
+      mapFilter: "firm" as MapFilter,
+      mapFirm: id,
+      mapOnly: true,
+      fitBook: st.fitBook + 1,
+    });
+  },
 
   showBookOnMap: () => {
     const st = get();
@@ -1363,6 +1452,50 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
+  launchRaise: (bbl, job, target) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = launchRaise(game, parcels, bbl, job, target);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Raise launched.");
+    void persist(r.s);
+  },
+  raiseAndBuild: (bbl, job, target) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = raiseAndBuild(game, parcels, bbl, job, target);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Raised — ground broken.");
+    void persist(r.s);
+  },
+  recapBuyout: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = recapBuyout(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Bought out.");
+    void persist(r.s);
+  },
+  cancelRaise: (bbl) => {
+    const { game } = get();
+    if (!game) return;
+    const r = cancelRaise(game, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    void persist(r.s);
+  },
+  closeRaiseNow: (bbl) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = closeRaiseNow(game, parcels, bbl);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast("Raise closed. Ground broken.");
+    void persist(r.s);
+  },
   develop: (bbl, use, floors, coverage, contract, ltcWanted, custom, lender, spec = 0.5) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
@@ -1839,8 +1972,37 @@ export const useStore = create<AppState>((set, get) => ({
     if (next === game) return;
     set({ game: next });
     toast(on
-      ? "Auto-lease on. Letters there are answered by the rent posture and fit-out cap — nothing will pop up."
+      ? "Auto-lease on. Letters there are answered by the rent posture and the team's concession limit — nothing will pop up."
       : "Auto-lease off. Those letters come to you again.");
+    void persist(next);
+  },
+
+  autoLeaseNew: (on) => {
+    const { game } = get();
+    if (!game || game.autoLeaseNew === on) return;
+    const next: GameState = { ...game, autoLeaseNew: on };
+    set({ game: next });
+    void persist(next);
+  },
+
+  autoRentFloor: (on) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const next = setAutoRentFloor(game, parcels, on);
+    if (next === game) return;
+    set({ game: next });
+    toast(on
+      ? "Auto-lease will not sign under market rent. Lowballs are countered up to it; tenants who won't pay it are passed."
+      : "Market-rent floor off. Each building's Fill / Market / Push decides the rent again.");
+    void persist(next);
+  },
+
+  autoConcessions: (c) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const next = setAutoConcessions(game, parcels, c);
+    if (next === game) return;
+    set({ game: next });
     void persist(next);
   },
 
@@ -1882,6 +2044,105 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
 
+
+  // THE CLASSIC STEPS FILE THE DESK'S DEFAULT PLAT (engine/platdesign.ts tractYield): one plat
+  // and one lot count, whichever button the player pressed.
+  // (an industrial park, acre lots and up, keeps citygen's spine-road plat: the house desk does not cut one)
+  fileRezoning: (bbl, lotSf) => {
+    if (!isIndustrialLot(lotSf)) { get().fileDesignedRezoning(bbl, designAt(lotSf)); return; }
+    const { game, parcels } = get();
+    const rec = parcels?.[bbl];
+    if (!game || !parcels || !rec?.tract) return;
+    const r = fileEntitlement(game, parcels, bbl, lotSf, tractYield(rec, lotSf).n);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Filed.");
+    void persist(r.s);
+  },
+
+  buildPlat: (bbl) => {
+    const { game, parcels } = get();
+    const rec = parcels?.[bbl], rz = game?.rezoned?.[bbl];
+    if (!game || !parcels || !rec?.tract || !rz) return;
+    if (!isIndustrialLot(rz.lotSf)) { get().buildDesignedPlat(bbl, rz.design ?? designAt(rz.lotSf), 0); return; }
+    const r = startPlat(game, parcels, bbl, tractYield(rec, rz.lotSf).lots);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Under way.");
+    void persist(r.s);
+  },
+
+  fileLotSplit: (bbl, plan) => {
+    const { game, parcels, city } = get();
+    if (!game || !parcels || !city) return;
+    const geo = splitSite(city, bbl);
+    if (!geo) { toast("This lot has no outline on the map to cut.", "err"); return; }
+    const r = fileSplit(game, parcels, bbl, geo, plan);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Filed.");
+    void persist(r.s);
+  },
+
+  fileDesignedRezoning: (bbl, design) => {
+    const { game, parcels } = get();
+    const rec = parcels?.[bbl];
+    if (!game || !parcels || !rec?.tract) return;
+    const geo = designSummary(platTractDesign(rec.tract, designRecipe(design, rec.buildableSf ?? rec.lotArea)));
+    const r = fileDesignedRezoningE(game, parcels, bbl, design, geo);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Filed.");
+    void persist(r.s);
+  },
+
+  buildDesignedPlat: (bbl, design, lev) => {
+    const { game, parcels } = get();
+    const rec = parcels?.[bbl];
+    if (!game || !parcels || !rec?.tract) return;
+    const geo = designSummary(platTractDesign(rec.tract, designRecipe(design, rec.buildableSf ?? rec.lotArea)));
+    const r = startDesignedPlat(game, parcels, bbl, design, geo, lev);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Under way.");
+    void persist(r.s);
+  },
+
+  listLots: (parent, askPsf, bulk) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = listLotsToBuilders(game, parcels, parent, askPsf, bulk);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Listed.");
+    void persist(r.s);
+  },
+
+  delistLots: (parent) => {
+    const { game } = get();
+    if (!game) return;
+    const next = delistPlatLots(game, parent);
+    set({ game: next });
+    void persist(next);
+  },
+
+  takeLotOffer: (parent) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = acceptLotOffer(game, parcels, parent);
+    if (r.err) { toast(r.err, "err"); return; }
+    set({ game: r.s });
+    toast(r.msg ?? "Signed.");
+    void persist(r.s);
+  },
+
+  refuseLotOffer: (parent) => {
+    const { game } = get();
+    if (!game) return;
+    const next = declineLotOffer(game, parent);
+    set({ game: next });
+    void persist(next);
+  },
 
   applyVariance: (bbl, targetFar) => {
     const { game, parcels } = get();
@@ -2093,10 +2354,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  repayFacility: (amount) => {
-    const { game } = get();
-    if (!game) return;
-    const r = repayFacility(game, amount);
+  repayFacility: (amount, useLine = false) => {
+    const { game, parcels } = get();
+    if (!game || !parcels) return;
+    const r = repayFacility(game, amount, parcels, useLine);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     void persist(r.s);
@@ -2274,6 +2535,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   loadFrom: async (slot) => {
+    const hasCuts = (g: GameState | null | undefined) => !!g && (!!g.cutOrder?.length
+      || Object.values(g.plats ?? {}).some((p) => p.done) || (g.splits ?? []).some((sp) => sp.done)
+      || Object.keys(g.growth?.unpacked ?? {}).length > 0);
     const { parcels } = get();
     const raw = await loadGame(slot);
     if (!raw || !parcels) { toast("That save wouldn't open.", "err"); return; }
@@ -2294,6 +2558,12 @@ export const useStore = create<AppState>((set, get) => ({
       || savedIsland !== hereIsland
       // the same seed cut with a different street plan is a different town
       || (saved.cityPlan ?? 1) !== (get().game?.cityPlan ?? 1)
+      // and so is the same seed with more or fewer parks
+      || (saved.cityParks ?? "medium") !== (get().game?.cityParks ?? "medium")
+      // and the live table holds this game's cut lots (plats, splits, unpacked houses):
+      // loaded over it, a save from earlier in the run would walk lots its plats have not
+      // cut yet, and in another order. A rebuilt town has exactly the save's.
+      || hasCuts(saved) || hasCuts(get().game)
     ) {
       toast(`Loading "${slot}" — rebuilding the town it was played in.`);
       try {
@@ -2307,6 +2577,8 @@ export const useStore = create<AppState>((set, get) => ({
     // across seeds, so this is a weak check and only a fallback — a foreign
     // save with two holdings can pass it.
     if (savedSeed === undefined) {
+      // a land developer's finished plats are deeds: put their lots in the table before asking (engine/landdev.ts)
+      restoreCuts(saved, parcels);
       const fits = Object.keys(saved.holdings).every((b) => parcels[b])
         && saved.listings.every((l) => parcels[l.bbl]);
       if (!fits) { toast("That save was made on a different city — it can't be loaded here.", "err"); return; }
@@ -2383,7 +2655,11 @@ export const useStore = create<AppState>((set, get) => ({
    * one leaves the pair (island, seed) pointing at a town nobody asked for.
    */
   startRun: async (island, size, dev, cash0, setupIn, seedIn) => {
-    set({ phase: "generating", building: islandName(island), loadError: null });
+    // EVERY NEW GAME STARTS WITH THE CARDS ON (owner, Oct 2026): a switch
+    // turned off in a past campaign, or a kind muted there, does not follow
+    // the player into the next town.
+    try { localStorage.setItem("bw:alerts", "on"); localStorage.setItem("bw:alerts-muted", "[]"); } catch { /* private mode */ }
+    set({ phase: "generating", building: islandName(island), loadError: null, alertsOff: false, mutedAlerts: [] });
     await painted();
     try {
       setCity(island);
@@ -2415,7 +2691,8 @@ export const useStore = create<AppState>((set, get) => ({
       if (!setup.firmName) setup.firmName = generateFirmName(seed).name;
       const runSeed = (crypto.getRandomValues(new Uint32Array(1))[0] || 1) >>> 0;
       // the town and its opening market, dealt together off the page's thread
-      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup });
+      const parks = setupIn?.parks && setupIn.parks !== "medium" ? setupIn.parks : undefined;
+      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup }, parks);
       get().setData({
         parcels,
         adjacency: built.adjacency as Adjacency,
@@ -2428,12 +2705,19 @@ export const useStore = create<AppState>((set, get) => ({
       g.citySize = size;
       g.cityDev = dev;
       g.cityPlan = CITY_PLAN;
+      if (parks) g.cityParks = parks;
       // HOW BIG THIS MARKET IS, counted rather than declared. A generated island
       // announces its scale through the size preset it was cut at; a
       // written-down city has no preset to read, so the economy sizes rivals
       // and lender hold caps off the plat itself. See engine/cityscale.ts.
       g.cityLots = Object.keys(parcels).length;
       if (pendingGoal.id) g.goal = newGoal(pendingGoal.id, g.month, g);
+      // A NEW FIRM'S BUILDINGS LEASE THEMSELVES until it says otherwise. An
+      // owner who never answered a renewal lost stabilised buildings in five
+      // to ten years (buy-and-hold playthrough, Oct 2026) — the game reading
+      // as rigged to a player who had not found the switch. Leasing → "New
+      // buildings join auto-lease" turns it off; every deed can be taken back.
+      g.autoLeaseNew = true;
       set({ game: g, phase: "playing", building: null, resume: null, yearReviewY: null });
       persist(g);
     } catch (e) {
@@ -2448,6 +2732,13 @@ export const useStore = create<AppState>((set, get) => ({
    * last chose — the two disagree the moment you start a run on the other
    * island and then come back.
    */
+  openSlot: async (slot) => {
+    const r = await resumeFromSlot(slot);
+    if (!r) { toast("That save wouldn't open.", "err"); return; }
+    set({ resume: r });
+    await get().continueRun();
+  },
+
   continueRun: async () => {
     const r = get().resume;
     if (!r) return;
@@ -2467,7 +2758,13 @@ export const useStore = create<AppState>((set, get) => ({
       setSize(r.size, r.island);
       setDev(r.dev);
       // an old save is a plan-1 town: rebuild the streets it was played on
-      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1);
+      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1, undefined, saved.cityParks);
+      // THE CUT LOTS FIRST (engine/sim.ts restoreCuts): a region save holds plat lots, split
+      // lots and unpacked houses that the generator does not cut, and its listings and deeds
+      // name them. Asked before they were put back, the gate below refused every region
+      // campaign with a lot on the tape (test/region-longrun.mjs: seeds 1 and 2 at year 25).
+      // In the order they were cut, because that order is the order the engine walks the town.
+      restoreCuts(saved, parcels);
       // A save only fits if every deed in it exists in THIS town. It should,
       // because the town was rebuilt from the save's own three fields — this
       // catches a generator change that moved the lot lines under an old
@@ -2614,3 +2911,130 @@ export async function bootMenu() {
     await useStore.getState().continueRun();
   }
 }
+
+// LOTS CUT MID-GAME (engine/landdev.ts). When a plat finishes, the engine puts its lots in the
+// worker's parcel table; this puts them in the page's, draws them and their streets on the map, and
+// hands Unreal the new city (unrealHost resends on a new `city`). Per plat, once: a reload, whose
+// table already holds the lots, still gets them drawn. The city remembers which plats it has drawn.
+useStore.subscribe((st) => {
+  const g = st.game, parcels = st.parcels, city = st.city as (GeneratedCity & { platsDrawn?: string[] }) | null;
+  if (!g?.plats || !parcels || !city) return;
+  const added = restoreCuts(g, parcels, st.bbls);
+  const drawn = new Set(city.platsDrawn ?? []);
+  const todo = Object.values(g.plats).filter((pl) => pl.done && !drawn.has(pl.parent) && parcels[pl.parent]?.tract);
+  if (!todo.length) { if (added.length) useStore.setState({ bbls: [...st.bbls] }); return; }
+  const fc = city.parcelFeatures as GeoJSON.FeatureCollection, ctx = city.context as GeoJSON.FeatureCollection;
+  const retired = new Set(Object.keys(g.platted ?? {}));
+  const feats = fc.features.filter((f) => !retired.has(String(f.properties?.bbl)));
+  const roads: GeoJSON.Feature[] = [];
+  const vols: unknown[] = [];
+  for (const plat of todo) {
+    const parent: import("@/data/types").ParcelRecord = parcels[plat.parent];
+    // A DESIGNED PLAT is redrawn from its design (engine/platdesign.ts, citygen platDesignLL): the same
+    // lots, and what its amenities put on the ground — the association's parks as park ground with trees,
+    // the pond, the trail, the clubhouse as a small volume — for the map and for Unreal alike
+    const designed = plat.template === "design" && plat.design
+      ? platDesignLL(parent.tract!, designRecipe(plat.design, parent.buildableSf ?? parent.lotArea)) : null;
+    const geo = designed ?? platTractLots(parent.tract!, plat.lotSf);
+    if (designed) {
+      const ring = (r: [number, number][]) => [[...r, r[0]]];
+      const byAmen = new Map<number, [number, number][][]>();
+      for (const pk of designed.parks) {
+        roads.push({ type: "Feature", geometry: { type: "Polygon", coordinates: ring(pk.ring) }, properties: { kind: "park" } });
+        const k = pk.amen < 0 ? 0 : pk.amen + 1;
+        (byAmen.get(k) ?? byAmen.set(k, []).get(k)!).push(pk.ring);
+      }
+      for (const [k, rings] of byAmen) {
+        const bbl = String(6e9 + (parent.tract!.id % 1e5) * 1e4 + 9000 + k), rec = parcels[bbl];
+        if (rec) feats.push({ type: "Feature", id: Number(bbl), geometry: { type: "MultiPolygon", coordinates: rings.map(ring) }, properties: { bbl, address: rec.address, class: rec.class, zone: rec.zoneDist, landpsf: 0 } });
+      }
+      if (designed.pond.length) roads.push({ type: "Feature", geometry: { type: "Polygon", coordinates: ring(designed.pond) }, properties: { kind: "pond" } });
+      for (const b of designed.bulbs) roads.push({ type: "Feature", geometry: { type: "Polygon", coordinates: ring(b) }, properties: { kind: "pavement" } });
+      for (const t of designed.trails) roads.push({ type: "Feature", geometry: { type: "LineString", coordinates: t }, properties: { kind: "parkpath" } });
+      for (const t of designed.trees) roads.push({ type: "Feature", geometry: { type: "Point", coordinates: t }, properties: { kind: "tree" } });
+      const yr = START_YEAR + Math.floor(g.month / 12);
+      designed.volumes.forEach((v) => vols.push({ b: String(6e9 + (parent.tract!.id % 1e5) * 1e4 + 9000 + v.amen + 1), c: "retail", y: yr, z0: 0, z1: v.h, r: v.ring, t: 1 }));
+    }
+    geo.lots.forEach((l, i) => {
+      const bbl = lotBbl(parent, i + 1), rec = parcels[bbl];
+      if (!rec) return;
+      feats.push({ type: "Feature", id: Number(bbl), geometry: { type: "Polygon", coordinates: [[...l.ring, l.ring[0]]] }, properties: { bbl, address: rec.address, class: rec.class, demand: rec.demandScore, landpsf: rec.landPsf, zone: rec.zoneDist } });
+    });
+    // the local streets: a 9 m carriageway (the region's local street) and its centreline
+    for (const line of geo.streets) {
+      roads.push({ type: "Feature", geometry: { type: "LineString", coordinates: line }, properties: { kind: "centerline", w: 9, mk: 0, cls: "local" } });
+      for (let k = 0; k + 1 < line.length; k++) {
+        const a = line[k], b = line[k + 1];
+        const kx = 111320 * Math.cos((a[1] * Math.PI) / 180), ky = 111320;
+        const dx = (b[0] - a[0]) * kx, dy = (b[1] - a[1]) * ky, L = Math.hypot(dx, dy) || 1;
+        const ox = ((-dy / L) * 4.5) / kx, oy = ((dx / L) * 4.5) / ky;
+        const ring: [number, number][] = [[a[0] + ox, a[1] + oy], [b[0] + ox, b[1] + oy], [b[0] - ox, b[1] - oy], [a[0] - ox, a[1] - oy]];
+        roads.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [[...ring, ring[0]]] }, properties: { kind: "pavement" } });
+      }
+    }
+  }
+  useStore.setState({
+    city: {
+      ...city, platsDrawn: [...drawn, ...todo.map((pl) => pl.parent)], parcelFeatures: { ...fc, features: feats }, context: { ...ctx, features: [...ctx.features, ...roads] },
+      ...(vols.length ? { buildings3d: [...((city as unknown as { buildings3d: unknown[] }).buildings3d ?? []), ...vols] } : {}),
+    } as GeneratedCity,
+    bbls: [...st.bbls],
+  });
+});
+
+/** The site a lot split is measured on: the deed as the map draws it now (a lot cut before is cut from its own ring). */
+export function splitSite(city: GeneratedCity, bbl: string): SiteGeo | null {
+  type FC = Parameters<typeof siteGeometry>[0];
+  return siteGeometry(city.parcelFeatures as FC, city.buildingFeatures as FC, city.context as FC, bbl);
+}
+
+// LOTS SPLIT MID-GAME (engine/lotsplit.ts). A recorded split's lots go into the page's parcel table and
+// BBL list (the worker's own table did this at the top of the month), its rings replace the parent's
+// on the map — cut from the parent's ring by the recipe's lines, in the order recorded — and Unreal is
+// handed the new city (unrealHost resends on a new `city`). Per split, once; a reload redraws them all.
+useStore.subscribe((st) => {
+  const g = st.game, parcels = st.parcels, city = st.city as (GeneratedCity & { splitsDrawn?: number[] }) | null;
+  if (!g?.splits?.length || !parcels || !city) return;
+  const added = restoreCuts(g, parcels, st.bbls);
+  const drawn = new Set(city.splitsDrawn ?? []);
+  const todo = g.splits.filter((sp) => sp.done && !drawn.has(sp.id));
+  if (!todo.length) { if (added.length) useStore.setState({ bbls: [...st.bbls] }); return; }
+  const fc = city.parcelFeatures as GeoJSON.FeatureCollection;
+  const props = (b: string) => {
+    const r = parcels[b];
+    return r ? { bbl: b, address: r.address, class: r.class, demand: r.demandScore, landpsf: r.landPsf, zone: r.zoneDist } : null;
+  };
+  type FC = Parameters<typeof siteGeometry>[0];
+  const feats = applySplitFeatures(fc.features as unknown as FC["features"], todo, props, city.context as FC) as unknown as GeoJSON.Feature[];
+  useStore.setState({
+    city: { ...city, splitsDrawn: [...drawn, ...todo.map((x) => x.id)], parcelFeatures: { ...fc, features: feats } } as GeneratedCity,
+    bbls: [...st.bbls],
+  });
+});
+
+// ROADS BUILT MID-GAME (engine/roads.ts, the region's growth): a widened arterial or a freeway segment
+// the state opened is drawn as a carriageway and its centreline, once, and the new city goes to Unreal
+// (unrealHost resends on a new `city`), the same way a plat's streets do. The city remembers what it drew.
+useStore.subscribe((st) => {
+  const g = st.game, city = st.city as (GeneratedCity & { roadsDrawn?: string[] }) | null;
+  if (!g?.growth?.roads?.opened.length || !city) return;
+  const drawn = new Set(city.roadsDrawn ?? []);
+  const todo = roadFeatures(g).filter((r) => !drawn.has(`${r.kind}:${r.id}`));
+  if (!todo.length) return;
+  const ctx = city.context as GeoJSON.FeatureCollection;
+  const add: GeoJSON.Feature[] = [];
+  for (const r of todo) {
+    add.push({ type: "Feature", geometry: { type: "LineString", coordinates: r.pts }, properties: { kind: "centerline", w: r.w, mk: 0, cls: r.cls, built: r.m } });
+    for (let k = 0; k + 1 < r.pts.length; k++) {
+      const a = r.pts[k], b = r.pts[k + 1];
+      const kx = 111320 * Math.cos((a[1] * Math.PI) / 180), ky = 111320;
+      const dx = (b[0] - a[0]) * kx, dy = (b[1] - a[1]) * ky, L = Math.hypot(dx, dy) || 1;
+      const ox = ((-dy / L) * r.w / 2) / kx, oy = ((dx / L) * r.w / 2) / ky;
+      const ring: [number, number][] = [[a[0] + ox, a[1] + oy], [b[0] + ox, b[1] + oy], [b[0] - ox, b[1] - oy], [a[0] - ox, a[1] - oy]];
+      add.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [[...ring, ring[0]]] }, properties: { kind: "pavement" } });
+    }
+  }
+  useStore.setState({
+    city: { ...city, roadsDrawn: [...drawn, ...todo.map((r) => `${r.kind}:${r.id}`)], context: { ...ctx, features: [...ctx.features, ...add] } } as GeneratedCity,
+  });
+});

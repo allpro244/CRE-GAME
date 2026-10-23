@@ -6,3 +6,30 @@ bundle.html
 # agent worktrees — never part of the repo
 .claude/worktrees/
 node_modules
+
+# Unreal: build products and local state never go in git (UE58_PLAN.md §2)
+unreal/**/Binaries/
+unreal/**/Intermediate/
+unreal/**/Saved/
+unreal/**/DerivedDataCache/
+unreal/**/.vs/
+unreal/**/*.sln
+# screenshots: full-size shots stay local; only the phase summaries are committed
+unreal/shots/**/*.png
+unreal/shots/**/*.txt
+unreal/BroadwayWall/Data/*.json
+unreal/BroadwayWall/Content/Building/
+unreal/BroadwayWall/Content/Material/
+unreal/BroadwayWall/Content/Textures/
+!unreal/BroadwayWall/Data/kit-*.json
+!unreal/BroadwayWall/Data/facade-families.json
+unreal/BroadwayWall/Content/Road/
+unreal/BroadwayWall/Content/Prop/
+unreal/BroadwayWall/Content/Environment/
+unreal/BroadwayWall/Content/Vehicle/
+unreal/BroadwayWall/Content/Megascans/
+unreal/BroadwayWall/Content/
+unreal/BroadwayWall/Data/web/
+# NVIDIA DLSS plugin (3 GB of binaries): not committed; see unreal/ASSETS.md
+unreal/BroadwayWall/Plugins/
+unreal/BroadwayWall/Data/kit-thumbs/

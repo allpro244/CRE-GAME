@@ -1,3 +1,4 @@
+import { debtBook } from "@/ui/next/derive";
 import type { GameState } from "@/engine/types";
 import type { Page } from "@/state/store";
 import { loiNeedsPrincipal } from "@/engine/leasing";
@@ -62,9 +63,17 @@ export const DESKS: readonly Desk[] = [
   },
   {
     id: "capital", label: "Capital", icon: "⚖", key: "4",
-    note: "Loans, the line, the fund, and the ledger",
+    note: "Loans, investors, the fund, and the ledger",
     tabs: [
-      { page: "debt", label: "Debt", note: "Loans, refinancing, the line and the fund" },
+      { page: "debt", label: "Debt", note: "Loans, refinancing and the line" },
+      // EQUITY IS NOT DEBT. Your standing with investors, every deal you
+      // raised and the fund sat at the bottom of the Debt page, under the
+      // mortgages — the one room a small developer needs to find first.
+      { page: "investors", label: "Investors", note: "Your standing with investors, outside equity deal by deal, and the fund" },
+      // EVERY LENDER'S BOOKS, ALWAYS OPEN. The desks' statements had been an
+      // expandable row at the bottom of City → Markets → The banks; a borrower
+      // choosing where to go needs them where the borrowing is.
+      { page: "banks", label: "Banks", note: "Every lender's books — capital, income, losses, terms, limits and its loans" },
       { page: "books", label: "Books", note: "Cash movement, income statement and balance sheet" },
     ],
   },
@@ -93,6 +102,31 @@ export const DESKS: readonly Desk[] = [
     ],
   },
 ];
+
+/**
+ * THE RAIL, ONE ROOM PER LINE (owner, Oct 2026: six icons hid seventeen
+ * rooms, and a rail that is only symbols tells nobody what they are clicking).
+ * Every room is its own named line, grouped under the job it serves. The
+ * desks above still own the rooms — the page header, the digit keys and the
+ * palette read them — the rail just stops making you open a desk to find one.
+ */
+export const RAIL_GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
+  { label: "Your firm", pages: ["portfolio", "leasing", "deals", "firm"] },
+  { label: "Buy", pages: ["market", "buildings", "notes"] },
+  { label: "Capital", pages: ["debt", "investors", "banks", "books"] },
+  { label: "The city", pages: ["economy", "pulse", "players", "news", "rankings"] },
+];
+export const PAGE_ICON: Partial<Record<Page, string>> = {
+  portfolio: "▦", leasing: "⊟", deals: "✎", firm: "☺",
+  market: "◎", buildings: "▥", notes: "✉",
+  debt: "⚖", investors: "◆", banks: "⌂", books: "≡",
+  economy: "∿", pulse: "♥", players: "♟", news: "☰", rankings: "★",
+};
+/** A room's own line on the rail: its tab (label, note, when) and the desk it belongs to. */
+export function railEntry(page: Page): { tab: DeskTab; desk: Desk } | null {
+  for (const d of DESKS) for (const t of d.tabs) if (t.page === page) return { tab: t, desk: d };
+  return null;
+}
 
 /** The property file belongs to the Portfolio desk even though it is not a tab. */
 export function deskOf(page: Page): Desk | null {
@@ -156,21 +190,10 @@ export function tabCounts(g: GameState): TabCounts {
   const notes = (g.noteOffers?.length ?? 0)
     + (g.privateAsks?.length ?? 0)
     + (g.notes ?? []).filter((n) => n.perf === "nonperforming" && n.filedM === undefined).length;
-  let debtBal = 0, debtWall = 0;
-  for (const h of Object.values(g.holdings)) {
-    if (h.loan) {
-      debtBal += h.loan.balance;
-      if (h.loan.maturityM - g.month <= 36) debtWall += h.loan.balance;
-    }
-    if (h.mezz && h.mezz.balance > 0) {
-      debtBal += h.mezz.balance;
-      if (h.mezz.maturityM - g.month <= 36) debtWall += h.mezz.balance;
-    }
-  }
-  if (g.facility) {
-    debtBal += g.facility.balance;
-    if (g.facility.maturityM - g.month <= 36) debtWall += g.facility.balance;
-  }
+  // One debt list for the whole UI (ui/next/derive.ts debtBook), so the badge
+  // and the new HUD cannot disagree about what is owed.
+  const book = debtBook(g);
+  const debtBal = book.secured, debtWall = book.wall;
   const privateBorrowLive = g.privateBorrowQuotes?.length ?? 0;
   const debtWarn = g.facility?.breachedSince ? "swept"
     : privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35) ? "wall" : null;

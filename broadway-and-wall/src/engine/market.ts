@@ -1,9 +1,11 @@
 // The market: mean-reverting rate walk, rate-linked cap rates, cyclical
 // rents, and a phase machine whose turns are rumored before they land.
 // Randomness creates situations, never verdicts.
+import { tickBands } from "./bands";
 import type { ParcelTable } from "@/data/types";
-import type { BuiltClass, Econ, GameState, MarketPhase, NewsItem, Sector } from "./types";
+import type { BuiltClass, Econ, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
+import { tickStreetTenants } from "./tenantBooks";
 import { simulateHistory, driftInflTarget, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { settleSupplyDeliveries } from "./supply";
@@ -23,7 +25,7 @@ export function mulberry32Step(a: number): { state: number; value: number } {
  *
  * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
  */
-export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation";
+export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation" | "shock" | "capital" | "homes" | "growth";
 /**
  * THE RENT GROWTH A BUYER UNDERWRITES, in percentage points a year.
  *
@@ -45,7 +47,7 @@ export function underwrittenGrowthPct(e: { nat?: { inflExp?: number } }): number
   return CONTRACT_BUMP_PCT + inflationOverBumpPct(e);
 }
 
-export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners", "indust"];
+export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners", "indust", "shock"];
 
 /** Seed independent streams from the campaign seed. Called from newGame. */
 export function initStreams(seed: number): Record<RngChannel, number> {
@@ -279,6 +281,8 @@ const MOVE_OUT_M: Record<BuiltClass, number> = { office: 24, retail: 18, industr
 /** The typical lease term by class, months — eight years of office paper,
  *  seven of retail, six of industrial, one of housing. */
 export const LEASE_TERM_M: Record<BuiltClass, number> = { office: 96, retail: 84, industrial: 72, multifamily: 12 };
+/** Months before a building not yet started can deliver: six of planning and the middle of its build (BUILD_MONTHS). */
+const SUPPLY_LAG_M: Record<BuiltClass, number> = { office: 27, retail: 29, industrial: 22, multifamily: 30 };
 const AFFORD_ROLL: Record<BuiltClass, number> = {
   office: 1 / LEASE_TERM_M.office,
   retail: 1 / LEASE_TERM_M.retail,
@@ -288,8 +292,6 @@ const AFFORD_ROLL: Record<BuiltClass, number> = {
 /** Households form and split over years, not at each lease: a two-year
  *  half-life on flats' price response (see `affordRaw`). Shape parameter. */
 const HH_FORM_ROLL = Math.LN2 / 24;
-/** Renter households lost per unit of unemployment over the natural rate (see flats' `affordRaw`). */
-const HH_U_SENS = 1.2;
 
 /** HOW MUCH SPACE A SECTOR'S CYCLE ACTUALLY MOVES. Demand for space is
  *  headcount times feet per head, so this multiplier is sized to the
@@ -348,6 +350,42 @@ const HH_U_SENS = 1.2;
  *  labour block). So the bracket is now a guard outside anything a market
  *  has recorded: 0.45 is a rent 7x the opening in real terms, 2.2 one-seventh. */
 const AFFORD_BAND: [number, number] = [0.45, 2.2];
+/**
+ * The substitution response flattens toward AFFORD_BAND rather than stopping
+ * at it: a tenant economises on dear space less and less the further it has
+ * already gone (in logs, a tanh toward the band's edge).
+ */
+function affordSoft(v: number): number {
+  const y = Math.log(Math.max(1e-9, v));
+  const b = y < 0 ? Math.log(AFFORD_BAND[0]) : Math.log(AFFORD_BAND[1]);
+  return Math.exp(b * Math.tanh(y / b));
+}
+/**
+ * Elasticity of substitution between floor space and labour in a firm's
+ * costs (estimates for commercial space run 0.3-0.7: e.g. Eppli & Tu 1999 on
+ * office space per worker); the opening's space share of space-and-staff
+ * costs by class, from the trades' profiles (rent / (rent + wages)), until the
+ * street's books report their own.
+ */
+const SIGMA_KL = 0.5;
+const SPACE_SHARE0: Record<BuiltClass, number> = { office: 0.14, retail: 0.2, industrial: 0.23, multifamily: 0 };
+/** A household's minimum home against the opening's average, and the share of income renters spend on rent (ACS). */
+const HH_MIN = 0.5;
+const HH_RENT_SHARE0 = 0.30;
+/** Online selling (see ONLINE in the secular block). */
+const ONLINE_0 = 0.02;      // share of store-type sales online at the opening (US 2000)
+const ONLINE_MAX = 0.4;     // the most of it that can ship (2026-10-17: 0.5 saturated by year 60 in a playthrough)
+const ONLINE_TECH = 10;     // logit points per log point of technology: ~11% at year 20 (US 2019), ~24% at 30, ~37% at 50
+const ONLINE_COST = 1.5;    // logit points per log point of a shop's rent over a shed's
+const ONLINE_GOODS = 0.4;   // share of retail floor selling shippable goods
+const ONLINE_SHED = 0.8;    // shed floor gained per unit of online share
+const MANUF_FX = 0.1;       // share of factory floor sent abroad a year per unit of log dear dollar
+/** Flats per adult: the national headship trend, its response to local job growth over the nation's, and that national job growth (a year). */
+const HEADSHIP_TREND = 0.0015;
+const HEADSHIP_JOBS = 0.5;
+const NAT_JOB_TREND = 0.008;
+/** A market's normal availability: monthly weight on this month's (twenty-year half-life). */
+const NATVAC_RATE = 1 - Math.exp(-Math.LN2 / 240);
 
 /**
  * THE INCOME ELASTICITY OF DEMAND FOR SPACE — the argument this model did not have.
@@ -413,9 +451,22 @@ const AFFORD_BAND: [number, number] = [0.45, 2.2];
  */
 /** Renter demand per point of the loan index over the town's opening rate.
  *  See the tenure note at the multifamily demand driver. */
-const TENURE_PER_PT = 0.008;
+/** Renter households per log point of owning cost over renting cost (~0.8% per mortgage point / ~9% cost). */
+const TENURE_PER_LOG = 0.09;
+// OFFICE 0.45 -> 0 (2026-10-14). The 0.45 rested on one unverified London
+// estimate of total occupancy demand, which the note above already says is
+// mostly a QUALITY effect. The quantity record runs the other way: US office
+// space per worker fell from ~250 sf to ~190 sf over 1990-2019 while real
+// income per worker rose ~1.5%/yr — a quantity income elasticity at or below
+// zero, as retail's is. With the secular eras' own space-per-worker
+// compression this left office demand per job RISING +0.15%/yr on net, and
+// office demand per job outgrowing the record. (Real office rent on this
+// island still rises ~0.5%/yr over a century, and should: Manhattan asking
+// rents went ~$5/sf in 1950 to ~$75-85 in 2019 against 10.6x CPI — about
+// +0.5-0.7%/yr real on a supply-constrained island, where the US average
+// is ~0.)
 const INCOME_ELAST: Record<BuiltClass, number> = {
-  office: 0.45, retail: 0.00, multifamily: 0.25, industrial: 0.40,
+  office: 0.00, retail: 0.00, multifamily: 0.00, industrial: 0.40,   // flats: in the households' budgets now
 };
 
 /**
@@ -589,7 +640,7 @@ export function developerOptimism(e: Econ, k: BuiltClass): number {
 // version's whole defect was that it did not need to: it worked from index
 // RATIOS against a single class-blind BASE_YOC and never touched a real
 // number. See `devPencils` in value.ts.
-import { devPencils, rentableSf } from "./value";
+import { devPencils, rentableSf, hashNormal } from "./value";
 export { devPencils };
 
 // Each rebased DOWN by the average value of the new vacancy term below, so
@@ -966,7 +1017,7 @@ export function frictionFloor(k: BuiltClass): number {
  * project itself; so does every reader of this — the class pencil, the site
  * pro forma and the land residual (2026-10-12).
  */
-export function forwardVacancy(e: Econ, k: BuiltClass, extraSf = 0): number {
+export function forwardVacancy(e: Econ, k: BuiltClass, extraSf = 0, monthsAhead = 18): number {
   const nat = NATURAL_VAC[k];
   const vacNow = e.cityVac?.[k] ?? nat;
   if (!e.stock?.[k]) return vacNow;
@@ -974,7 +1025,9 @@ export function forwardVacancy(e: Econ, k: BuiltClass, extraSf = 0): number {
   const pipe = Math.max(0, e.pipeline?.[k] ?? 0) + Math.max(0, extraSf);
   const occNow = stkNow * (1 - vacNow);
   const queue = Math.max(0, e.structTight?.[k] ?? 0) * stkNow;
-  const trendGrowth = Math.max(0, (e.classDrvTrend?.[k] ?? 0) * 18) * occNow;
+  // `monthsAhead`: 18 for a reader pricing the market in general; a developer
+  // deciding whether to build reads to its own delivery date (`developerLook`).
+  const trendGrowth = Math.max(0, (e.classDrvTrend?.[k] ?? 0) * monthsAhead) * occNow;
   return clamp((stkNow + pipe - occNow - queue - trendGrowth) / (stkNow + pipe), 0, 1);
 }
 
@@ -1049,6 +1102,18 @@ const TURNOVER_YR: Record<BuiltClass, number> = {
 };
 
 /**
+ * ...AND, ONCE THE TOWN HAS A RECORD, WHAT ITS OWN TENANTS DID (2026-10-16):
+ * the share of let space the street's firms and households actually handed
+ * back over the last two years (streetRolls `turnMeas`) — failures, moves
+ * and non-renewals as they happened — rather than the national renewal
+ * studies above, which are where a town starts.
+ */
+export function turnoverYr(e: Econ | undefined, k: BuiltClass): number {
+  const m = e?.turnMeas?.[k];
+  return m !== undefined && m > 0 ? m : TURNOVER_YR[k];
+}
+
+/**
  * Space that is standing but not yet a suite: new deliveries in lease-up.
  * One function so the pool cap, the occupancy cap and a demolition all
  * read the same remaining capacity.
@@ -1068,7 +1133,7 @@ export function housableStock(e: Econ, k: BuiltClass): number {
  * book, because only occupied space can roll.
  */
 export function betweenTenantsSf(occupied: number, k: BuiltClass, e?: Econ): number {
-  return Math.max(0, occupied) * (TURNOVER_YR[k] / 12) * reletMonths(k) * reletLag(e, k);
+  return Math.max(0, occupied) * (turnoverYr(e, k) / 12) * reletMonths(k) * reletLag(e, k);
 }
 
 /**
@@ -1104,12 +1169,12 @@ export function reletLag(e: Econ | undefined, k: BuiltClass): number {
   if (!e?.stock || !e.occupied) return 1;
   const stk = Math.max(1, e.stock[k] ?? 0);
   const occ = Math.max(0, e.occupied[k] ?? 0);
-  const nat = NATURAL_VAC[k];
-  const movers = occ * (TURNOVER_YR[k] / 12);
+  const nat = e.natVac?.[k] ?? NATURAL_VAC[k];
+  const movers = occ * (turnoverYr(e, k) / 12);
   const unhoused = Math.max(0, (e.pool?.[k] ?? occ) - occ);
   const vacant = Math.max(stk * 0.001, housableStock(e, k) - occ);
   const theta = (movers + unhoused) / vacant;
-  const theta0 = (stk * (1 - nat) * (TURNOVER_YR[k] / 12)) / (stk * nat);
+  const theta0 = (stk * (1 - nat) * (turnoverYr(e, k) / 12)) / (stk * nat);
   const ratio = Math.max(theta, theta0 / 4) / theta0;
   const d0 = reletMonths(k), dm = Math.min(d0, MAKE_READY_M[k]);
   return (dm + (d0 - dm) * Math.pow(ratio, -0.5)) / d0;
@@ -1145,6 +1210,10 @@ export function classIsShort(e: Econ, k: BuiltClass, slack = 0.02): boolean {
  * taken comes out of the looking book. Occupied still walks via absorb.
  */
 export function noteTenantSfChange(s: GameState, use: BuiltClass, deltaSf: number) {
+  // Superseded (2026-10-14): the player's occupied space is reconciled into
+  // `occupied` monthly (playerSpace in sim.ts), which is the real draw on the
+  // pool. Nudging the pool as well would count every signing twice.
+  if (s.econ.playerNow) return;
   if (!Number.isFinite(deltaSf) || Math.abs(deltaSf) < 2_000) return;
   if (use === "multifamily") return; // flats are aggregate, not named suites
   const e = s.econ;
@@ -1230,13 +1299,47 @@ export const CONSTRUCTION_CLOSE_M = 2;
  * is 550, a shop is 420. Flats employ nobody; they house people, and people
  * arrive here through the labour force rather than through the roof.
  */
-const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, retail: 420, multifamily: 0 };
+export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, retail: 420, multifamily: 0 };
 /** Share of the population in the labour force. See the note at the unemployment term. */
 const PARTICIPATION = 0.58;
 /** The rate the city opens at, which is what makes the opening state consistent. */
 const OPENING_UNEMP = 0.052;
 /** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay. */
 const NAT_U_STAR = 0.048;
+/** How far below zero the price level can fall a year, asymptotically (pay is not cut). */
+const DEFLATION_FLOOR = 0.02;
+/** Retail spending lost per point of real money over neutral (household credit channel). */
+const HH_CREDIT_PER_PT = 0.015;
+/** Credit gap built per month per point of real money under neutral (share of GDP). */
+const CRED_PER_EASY_PT = 0.0008;
+/** ...per unit of the lenders' window over normal, and per unit of output over potential. */
+const CRED_PER_WINDOW = 0.004, CRED_PER_GAP = 0.03;
+/** Written down per month per two points of unemployment over natural-plus-one (defaults). */
+const CRED_RECESSION_WRITEOFF = 0.0010;
+/** Months for the trend to catch up with the stock (a decade, as the BIS one-sided filter). */
+const CRED_TREND_M = 120;
+/** The spread a bank's margin is normal at: this economy's own average (~2.5 points). */
+const CURVE_NORMAL = 2.5;
+/** A fall of this much off the output peak is a contraction (2001's was ~0.3%). */
+const REC_DROP = 0.006;
+/** Share of corporate debt that floats, and the fixed ladder's average life in months. */
+const CORP_FLOAT = 0.35, CORP_LADDER_M = 72;
+/**
+ * Okun's coefficient: points of output per point of unemployment. 1.2 is the
+ * recession-era ratio (1990-92: CBO gap +0.6 to -2.6, unemployment +2.6).
+ */
+const OKUN = 1.2;
+/** Unemployment closes this share of its gap to Okun's level a month — faster up than down. */
+const U_UP_SPEED = 0.15, U_DOWN_SPEED = 0.12;
+/*
+ * Calibration (national block alone, 30 centuries, tools in the session notes):
+ * unemployment mean 6.1 / p50 5.8 / p10 3.6 / p90 9.1 (US 1948-2024: 5.7 /
+ * 5.5 / 3.9 / ~8.5); output gap sd 2.8 (CBO ~2.2); in recession 15% of months
+ * (US ~14%), median length 12 months (US ~10). The depth now depends on the
+ * money: median unemployment rise 1.4 points when policy was at or under
+ * neutral the year before, 2.3 at 0-1 points over, 2.9 at 1-3, 5.3 above 3.
+ * The drawn model gave 3.2-3.5 whatever the money did.
+ */
 
 /**
  * THE TOWN'S OPENING SIZE, derived rather than declared.
@@ -1502,7 +1605,9 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     const [lo, hi] = PHASE_CFG[econ.phase].nextM;
     const u = mulberry32Step(((s.seed ^ 0x3c6ef372) >>> 0) || 1).value;
     econ.phaseMLeft = (econ.phase === "recession" || econ.phase === "depression") && (n.recM ?? 0) > 0
-      ? Math.max(3, n.recM ?? 0)
+      // recM counts months INTO the recession now (it is dated, not drawn):
+      // a post-war contraction runs about a year.
+      ? Math.max(3, 12 - (n.recM ?? 0))
       : Math.max(3, Math.round(u * (lo + (hi - lo) * 0.5)));
   }
   // EVERY TOWN OPENS ON ITS OWN SUPPLY PRICE (2026-10-12).
@@ -1592,6 +1697,16 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     econ.wageIdx = (econ.wageIdx ?? 1) * w;
     econ.outputIdx = (econ.outputIdx ?? 1) * w;
     econ.wage0 = (econ.wage0 ?? 1) * w;
+    // THE OPENING COST OF LIVING AGAINST THE NATION (2026-10-13), struck with
+    // the same weights the local CPI moves by (SHELTER_W 0.33 on housing,
+    // SERVICES_W 0.25 on local pay, the rest national goods): this town's
+    // opening flat rent and pay against the national reference, both net of
+    // the price level. Stored so real pay against the nation can be read as
+    // a level, not only as a change since the opening. Read by the display;
+    // nothing in the simulation uses it.
+    const shelterGap = econ.rentIdx.multifamily / Math.max(1e-6, RENT_BASE.multifamily * P) - 1;
+    const servicesGap = econ.wage0 / Math.max(1e-6, P) - 1;
+    econ.col0 = +(1 + 0.33 * shelterGap + 0.25 * servicesGap).toFixed(4);
   }
   // THE TOWN OPENS MID-CYCLE, SO ITS CONCESSIONS DO TOO.
   //
@@ -1640,6 +1755,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   return econ;
 }
 
+export function pushNewsPublic(s: GameState, kind: NewsItem["kind"], text: string) { pushNews(s, kind, text); }
 function pushNews(s: GameState, kind: NewsItem["kind"], text: string) {
   s.news.unshift({ q: s.month, kind, text });
   if (s.news.length > 120) s.news.length = 120;
@@ -1704,7 +1820,23 @@ export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0
   // predictor of it (Plazzi, Torous & Valkanov 2010): buyers believe some
   // of the trend, not all of it. Real growth only: the inflation part is
   // already in `capIndex`.
-  const base = CAP_BASE[k] + 0.55 * (capIndex - 5.4) - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk;
+  // THE RATE PASS-THROUGH FLATTENS TOWARD ZERO (2026-10-13). It was a
+  // straight 0.55 of cap per point of index at every level, so a decade of
+  // 1% long rates priced flats at 2.5% and the normalisation that followed
+  // doubled every cap in town. The record bends: 1990-2007, the ten-year
+  // fell ~4 points and caps ~3 (a slope of 0.6-0.75); 2007-21 it fell ~3
+  // more and office caps did not move, apartments fell ~1.2 (0.0-0.4) — the
+  // spread over Treasuries went to records. Equity risk premia run high
+  // exactly when risk-free yields are low (Duarte & Rosa 2015), so a buyer
+  // does not capitalise the last points of a falling rate. The slope here is
+  // 0.55 x (1 - e^(-index/2)): ~0.51 at the 5.4 anchor, 0.29 at 1.5,
+  // integrated from the anchor so every level above ~5 is where it was.
+  const RATE_BEND = 2;
+  const rateTerm = 0.55 * ((capIndex - 5.4) + RATE_BEND * (Math.exp(-capIndex / RATE_BEND) - Math.exp(-5.4 / RATE_BEND)));
+  // A CAPITAL WAVE (blackswans.ts): foreign money bidding every cap down,
+  // then leaving. Points of cap, signed; zero when no wave is running.
+  const wave = e.capitalWave ?? 0;
+  const base = CAP_BASE[k] + rateTerm - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk + wave;
   // ONE TREND, PRICED ONCE (2026-10-11). `flows` reads `retExp`, which is
   // trailing RENT growth plus yield — the same signal `growthExp` carries,
   // on a four-year memory instead of ten. Added separately, the two priced
@@ -1811,7 +1943,10 @@ export function stepCredit(s: GameState) {
   // (Adrian, Estrella & Shin 2019; SLOOS tightening leads every post-war
   // inversion). Centred on the US average ten-year-less-policy spread, ~1.2.
   const curve = e.nat ? 0.04 * ((e.indexRate - e.nat.policy) - 1.2) : 0;
-  const creditTarget = clamp(1.0 + 6 * g12 - 14 * Math.max(0, natUnempRise12(e)) + curve, 0.4, 1.25);
+  // A PANIC (blackswans.ts) shuts the window whatever the cycle says: 2008's
+  // SLOOS reading arrived months before the payrolls that would justify it.
+  const panic = 0.7 * (e.panic?.force ?? 0);
+  const creditTarget = clamp(1.0 + 6 * g12 - 14 * Math.max(0, natUnempRise12(e)) + curve - panic, 0.4, 1.25);
   const creditSpeed = creditTarget < e.creditIdx ? 0.16 : 0.055;   // slams shut, reopens slowly
   e.creditIdx = clamp(e.creditIdx + creditSpeed * (creditTarget - e.creditIdx) + rrange(s, -0.012, 0.012), 0.4, 1.25);
 }
@@ -1835,7 +1970,11 @@ const INDEX_HORIZON_M = 120;
  * are because it has lived through them: model-consistent expectations, not
  * a chosen speed.
  */
-const RULE_GAP_RHO = 0.974;
+// RE-MEASURED 2026-10-15 on the simulated national economy (20 centuries,
+// tools in the session notes): autocorrelation 0.76 at a year, 0.05 at
+// three, negative by five — cycles turn faster than the drawn model's did
+// (0.974 was fitted on that one).
+const RULE_GAP_RHO = 0.85;
 
 /**
  * WHAT THE BOND MARKET THINKS POLICY WILL AVERAGE over the index's life.
@@ -1893,13 +2032,30 @@ export function expectedPolicyAvg(
  * Plus the credit term this line always had: when the window is frightened
  * the premium a LOAN index carries widens even while policy is being cut.
  */
-export function termPremBase(credibility: number, creditIdx: number): number {
+export function termPremBase(credibility: number, creditIdx: number, inflExp = 0.02, target = 0.02): number {
   // RECALIBRATED 2026-10-13: the believed-bank end was the 2010s' ~0, which
   // is what a decade of central-bank bond buying did to the premium — QE,
   // which this game does not have. A believed bank WITHOUT it is 1995-2007:
   // ACM ten-year premium about 1.0-1.5. With the premium at zero the curve
   // sat inverted 28-78% of months against the US record of ~15%.
-  return 1.0 + 4.4 * (1 - credibility) + 1.85 * Math.max(0, 1 - creditIdx);
+  // ...AND 0.6, NOT 1.0 (2026-10-15): with credibility judged on the year
+  // against the bank's own target, a believed bank is believed most of the
+  // time, and 0.6 puts the median premium at 1.3 (ACM 1961-2024 ~1.2), the
+  // curve inverted 18% of months and inversion ahead of 75% of recessions
+  // (US ~15-21% and 8 of the last 10).
+  // THE PREMIUM PRICES THE RISK OF MORE INFLATION, NOT OF LESS (2026-10-18).
+  // A bank that has lost belief by UNDERSHOOTING — a recession's inflation
+  // below target — does not make a ten-year bond riskier: with expectations
+  // under target, long bonds hedge the downturn and the inflation-risk
+  // premium falls (ACM: the premium went negative in the low-inflation 2010s
+  // and around 2020). Read symmetrically, a recession's undershoot cost belief
+  // and DOUBLED the premium exactly when policy was at zero — measured over
+  // 20 centuries, policy under 0.5% came with a 2.8-point premium and a 5.65%
+  // ten-year, above the 5.09% of all months. So the credibility term weighs
+  // in full once expectations sit at or over target and fades to a quarter as
+  // they fall a point under it.
+  const upside = Math.max(0.25, Math.min(1, 1 + (inflExp - target) / 0.01));
+  return 0.6 + 4.4 * (1 - credibility) * upside + 1.85 * Math.max(0, 1 - creditIdx);
 }
 
 /**
@@ -1907,7 +2063,7 @@ export function termPremBase(credibility: number, creditIdx: number): number {
  * where policy sits. The committee uses it, and so does the bond market's
  * forecast of the committee (`expectedPolicyAvg`) — one rule, one answer.
  */
-function bankStep(gap: number, restoring: boolean, pressured: boolean): number {
+function bankStep(gap: number, restoring: boolean, pressured: boolean, uRise6 = 0): number {
   const abs = Math.abs(gap);
   let step = 0;
   if (abs >= 0.15) {
@@ -1924,7 +2080,20 @@ function bankStep(gap: number, restoring: boolean, pressured: boolean): number {
     // while the inflation is still rising, which is the only reason
     // the peak is lower.
     const frightened = abs > 7 || restoring;
-    const unit = restoring ? 1.5 : frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
+    // ...and a bank far behind a runaway does not crawl to it at a fixed
+    // pace: the restore step is a quarter of the gap when that is larger
+    // (Volcker's October 1979 move was ~4 points inside a month; the
+    // stabilisations that ended Israel's 1985 and Brazil's 1994 inflations
+    // moved rates tens of points at once).
+    let unit = restoring ? Math.max(1.5, 0.25 * abs) : frightened ? 0.75 : abs > 3 ? 0.50 : 0.25;
+    // RISK MANAGEMENT ON THE WAY DOWN (2026-10-17). A committee watching
+    // payrolls roll over does not ease in quarter points: with unemployment up
+    // half a point in six months it cuts by halves, and by three-quarters once
+    // it is up a point — the Fed of 2001 (eleven cuts, 4.75 points in a year)
+    // and of 2007-08 (with intermeeting moves). Easing at a quarter a meeting
+    // left recessions running 19-21 months against ~10 in the US record and
+    // unemployment rising 4-5 points against ~3.6.
+    if (gap < 0 && !restoring && uRise6 >= 0.005) unit = Math.max(unit, uRise6 >= 0.01 ? 0.75 : 0.5);
     step = Math.sign(gap) * unit;
     if (Math.abs(step) > abs) step = gap;
   }
@@ -2002,6 +2171,316 @@ function centralBankChair(s: GameState, n: NonNullable<Econ["nat"]>): { untilM: 
   return n.chair;
 }
 
+/**
+ * HOUSEHOLDS OWN HOMES AND OWE MORTGAGES (2026-10-15).
+ *
+ * Real home prices chase a fundamental value: real income (national pay
+ * against prices) over the user cost of owning — the mortgage rate (the long
+ * rate plus a 1.7-point spread), upkeep and property tax (2.5%), less the
+ * appreciation buyers expect (last three years' real growth, damped). Prices
+ * are sticky and carry momentum — the Case-Shiller index autocorrelates at
+ * about 0.5 a year (Case & Shiller 1989) — so they overshoot and correct over
+ * years. A point on mortgage rates takes ~9% off the fundamental.
+ *
+ * Two flows reach spending. Wealth: households spend about four cents a year
+ * of each dollar of housing wealth gained or lost (Case, Quigley & Shiller
+ * 2005; Mian, Rao & Sufi 2013), and housing is about 1.5x a year's output.
+ * Refinancing: when mortgage rates fall below what the stock pays, owners
+ * refinance within a couple of years and spend part of the interest saved;
+ * when rates rise, the stock reprices only as people move (~1/15 a year).
+ */
+function tickHouseholds(e: Econ, n: NonNullable<Econ["nat"]>, gapPrev: number) {
+  void gapPrev;
+  const mort = (e.indexRate ?? 5.4) / 100 + 0.017;
+  n.mortCoupon ??= mort;
+  n.mortCoupon += (mort - n.mortCoupon) * (mort < n.mortCoupon ? 1 / 24 : 1 / 180);
+  n.mortRef = (n.mortRef ?? n.mortCoupon) + (n.mortCoupon - (n.mortRef ?? n.mortCoupon)) / 60;
+  // National real income: the model's own output index (potential ~2%/yr
+  // plus the gap), at the ~0.4 income elasticity of real house prices that
+  // gives the long-run ~0.8%/yr the US real index has shown.
+  const realPay = Math.exp(0.4 * (n.lnY ?? 0));
+  n.hpi ??= 1;
+  n.hpiPay0 ??= realPay;
+  const g3 = n.hpiG3 ?? 0;
+  const userCost = hhUserCost(mort, g3, n.inflExp ?? 0.02);
+  n.hpiUc0 ??= userCost;
+  const fundamental = (realPay / n.hpiPay0) * Math.pow(n.hpiUc0 / userCost, HPI_UC_ELAST)
+    * (1 + 0.5 * Math.max(-0.2, Math.min(0.2, n.credGap ?? 0)));
+  const prev = n.hpiPrev ?? n.hpi;
+  n.hpiPrev = n.hpi;
+  // Sticky: a third of the gap a year. The momentum is in the expectations
+  // (g3 lowers the user cost while prices rise), which is the bubble channel.
+  n.hpi = Math.max(0.2, n.hpi + (fundamental - n.hpi) / HPI_CHASE_M);
+  // Expected appreciation: the last three years' real growth, annualised.
+  n.hpiG3 = g3 + ((n.hpi / Math.max(1e-6, prev) - 1) * 12 - g3) / 36;
+  // The trend the wealth effect is measured from: income-driven, slow.
+  n.hpiTrend = (n.hpiTrend ?? n.hpi) + (n.hpi - (n.hpiTrend ?? n.hpi)) / 120;
+}
+
+/** Real user cost of owning: mortgage rate + upkeep and tax - expected real appreciation - expected inflation. */
+function hhUserCost(mort: number, g3: number, inflExp: number): number {
+  return Math.max(0.035, mort + 0.025 - 0.3 * Math.max(-0.03, Math.min(0.05, g3)) - inflExp);
+}
+/** Elasticity of the price fundamental to the user cost (~7% off per mortgage point near 6%). */
+const HPI_UC_ELAST = 0.5;
+/** Months for prices to close their gap to the fundamental. */
+export const HPI_CHASE_M = 30;
+
+/** The cost of owning a home against the opening, real (house price x user cost). */
+export function ownCostIdx(e: Econ): number {
+  const n = e.nat;
+  if (!n) return 1;
+  const mort = (e.indexRate ?? 5.4) / 100 + 0.017;
+  const uc = hhUserCost(mort, n.hpiG3 ?? 0, n.inflExp ?? 0.02);
+  return (n.hpi ?? 1) * uc / Math.max(1e-6, n.hpiUc0 ?? uc);
+}
+
+/**
+ * THE NATION'S SPENDING (2026-10-16). Output is what the country buys, built
+ * up from who buys it — not a fitted autoregression with demand noise on top.
+ *
+ *   consumption  households spend out of their income, smoothed toward what
+ *                they think they earn over a couple of years (permanent
+ *                income), plus their housing wealth (~4c a year per dollar,
+ *                Case-Quigley-Shiller), less when real rates are high, more
+ *                when a refinancing wave frees cash, and less when the job
+ *                market turns (precautionary saving: rising unemployment is
+ *                the best predictor of a consumer pull-back). Taxes come out
+ *                and unemployment insurance goes in, so the government
+ *                cushions every slump automatically.
+ *   investment   firms hold a stock of capital sized to the output they
+ *                expect, at the cost of carrying it — the long rate they
+ *                borrow at, less inflation, plus wear (Jorgenson's user cost)
+ *                — and close the gap over a few years; credit conditions,
+ *                the banks' margin and a panic move what they can finance.
+ *                Because investment answers the CHANGE in expected output,
+ *                a slowdown cuts it hard (the accelerator).
+ *   inventories  firms keep about six weeks of sales on hand; when sales fall
+ *                the shelves are over-full and orders are cut below sales
+ *                until they clear (the inventory cycle — most of the swing in
+ *                a mild recession).
+ *   housing      home building follows home prices against their trend and
+ *                the mortgage rate against what borrowers are used to.
+ *   government   spends a steady share, plus what politics adds (a fiscal
+ *                expansion under pressure on the bank) and what it does when
+ *                the bank is stuck at zero.
+ *   the world    exports ride the rest of the world's cycle — the one part of
+ *                demand that IS outside the model, and so the one that is drawn.
+ *   imports      a share of everything bought leaks abroad.
+ *
+ * Shares of output at rest are the US's (BEA NIPA, 1990-2019): consumption 68%,
+ * business investment 14%, residential 4%, government 17%, net exports -3%.
+ * The cycle comes out of the stocks — capital, inventories, what households
+ * think they earn — answering each other, not out of a lag polynomial.
+ */
+/** The rest of the world (see THE WORLD IS AN ECONOMY TOO in tickDemand). */
+const ROW = {
+  /** its gap's persistence, monthly; output per unit of its real rate gap, a month; its shocks */
+  RHO: 0.985, RATE: 0.02, SIG: 0.0035,
+  /** its central bank: real rate per unit of gap, months to get there */
+  POL: 1.0, POL_M: 6,
+  /** log exchange rate per unit of real-rate differential; months to get there */
+  UIP: 4, Q_M: 12,
+  /** export income and price elasticities; import price elasticity */
+  X_INC: 1.5, X_PRICE: 0.5, M_PRICE: 0.3,
+};
+/*
+ * THE CYCLE'S SHAPE, RECALIBRATED (2026-10-17). Measured over 40 simulated
+ * centuries of this block alone, the cycle had the right number of recessions
+ * but the wrong kind: 21 months long against ~10 in the post-war US record,
+ * unemployment up 4.8 points against ~3.6, an output gap swinging 3.6 points
+ * (US ~2.2), and expansions running 20 years in a typical century (34 in one
+ * in ten; the longest on the US record is 11). Real recessions are sharp and
+ * short: inventories liquidated inside two quarters, investment plans cut
+ * and restored, and a Fed easing in half points. So:
+ *   confidence moods are larger and shorter-lived (monthly persistence 0.85,
+ *     a half-life of four months, not two years);
+ *   shelves are restocked over six months, not twelve; investment plans lag
+ *     six months and capital gaps close over 40;
+ *   households cut half as hard on a rise in unemployment, and the profit
+ *     squeeze bites three-quarters as hard;
+ *   the bank eases in halves and three-quarters once payrolls roll over
+ *     (bankStep), and a recession is dated from a 0.6% fall in output, not
+ *     every 0.3% wobble.
+ * Measured after (40 centuries): 1.7 recessions a decade (US ~1.6), median
+ * length 13 months, unemployment up 3.0 points (p25 1.4, p75 5.0), the
+ * longest expansion in a century 17 years at the median and 23 at the 90th
+ * percentile, inflation above 6% in 8% of months.
+ */
+const DEM = {
+  C0: 0.68, I0: 0.14, IH0: 0.04, G0: 0.17, IMP: 0.15, TAX: 0.25,
+  /** transfers per unit of unemployment over natural (UI, SNAP, Medicaid: ~0.4% of output a point) */
+  TR_U: 0.4,
+  /** depreciation and potential growth, a year */
+  DELTA: 0.10, GROW: 0.02,
+  /** months for consumption to follow its target; for perceived income to follow income */
+  TAU_C: 3, YP_M: 48,
+  /** share of spending that follows this year's income rather than what households expect to earn (hand-to-mouth, Campbell-Mankiw ~0.2-0.3) */
+  C_NOW: 0.2,
+  /** months over which firms read the output they plan for; to close a capital gap; investment plans lag */
+  YE_M: 12, TAU_K: 40, I_LAG: 6,
+  /** how far the output firms plan capital for follows recent output rather than the trend (Survey of CFOs: plans are mostly trend) */
+  YE_W: 0.3,
+  /** wage share per unit of unemployment under natural, months to get there, capital wanted per unit of wage share */
+  WS_U: 1.0, WS_M: 18, PROF: 1.5,
+  /** user-cost elasticity of capital (Chirinko 1993: 0.25-0.5) */
+  SIGMA_K: 0.4,
+  /** consumption per point of real rate over neutral (intertemporal substitution, ~0.3-0.6) */
+  C_RATE: 0.6,
+  /** months over which households read the real rate */
+  RR_M: 12,
+  /** consumption pulled back per point of unemployment rise over six months */
+  PREC: 0.4,
+  /** inventory to annual sales (~6 weeks), months to restock */
+  NU: 0.12, TAU_N: 6,
+  /** months for home building to follow; starts per unit of mortgage rate over what borrowers are used to (a 3-point jump takes 30-50% off starts) */
+  IH_M: 9, IH_RATE: 6,
+  /** consumer and business confidence: monthly shock to the log of what households spend and firms plan */
+  CONF_SIG: 0.0035, INV_SIG: 0.006, CONF_RHO: 0.85,
+  /** spending out of new borrowing (the credit impulse, ~0.2 of it in total: Biggs, Mayer & Pick 2010) */
+  CRED_C: 0.1, CRED_I: 0.1,
+  /** capital wanted per unit of the lenders' window off normal (financing constraints) */
+  WIN_K: 0.32,
+};
+
+function spendNation(
+  s: GameState, e: Econ, n: NonNullable<Econ["nat"]>,
+  x: { rAvg: number; rStar: number; corpRate: number; corpNeutral: number; shock: number; lbTools: number },
+): number {
+  const P = DEM;
+  const X0 = 1 - (P.C0 + P.I0 + P.IH0 + P.G0) * (1 - P.IMP);
+  const K0 = P.I0 / (P.DELTA + P.GROW);
+  if (!n.dem) {
+    const y = 1 + (n.gap ?? 0);
+    n.dem = { C: P.C0 * y, K: K0 * y, I: P.I0 * y, Ih: P.IH0 * y, N: P.NU * y, Yp: y * (1 - P.TAX), Ye: y, Se: y, f: 0, Y: y, sup: 0, uH: [] };
+  }
+  const d = n.dem;
+  const Yprev = d.Y;
+  const u = n.unemp;
+  const infl = n.inflExp ?? 0.02;
+  // HOUSEHOLDS
+  const Yd = Yprev * (1 - P.TAX) + P.TR_U * (u - NAT_U_STAR);
+  d.Yp += (Yd - d.Yp) / P.YP_M;
+  d.uH.push(u); if (d.uH.length > 7) d.uH.shift();
+  const du6 = u - d.uH[0];
+  const lnH = Math.log((n.hpi ?? 1) / (n.hpiTrend ?? n.hpi ?? 1));
+  const refi = (n.mortRef ?? n.mortCoupon ?? 0) - (n.mortCoupon ?? n.mortRef ?? 0);
+  // New borrowing is spending while the stock grows faster than output; paying it down is not (Biggs & Mayer 2010).
+  const credFlow = ((n.credGap ?? 0) - (n.credGapPrev ?? n.credGap ?? 0)) * 12;
+  const panic = e.panic?.force ?? 0;
+  // CONFIDENCE. What households and firms believe about the years ahead is
+  // the one input to spending no model of this economy can derive — news
+  // about the future, a war, an election — so it is drawn, but persistent
+  // (monthly 0.97: a mood lasts a few years) and it works only through the
+  // spending decisions above: what households set aside, what capital firms
+  // plan for. Smets & Wouters (2007) need the same two shocks to fit the US.
+  const zc = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
+  const zk = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
+  d.cc = P.CONF_RHO * (d.cc ?? 0) + P.CONF_SIG * zc;
+  d.kc = P.CONF_RHO * (d.kc ?? 0) + P.INV_SIG * zk;
+  // Households answer the real rate over the year or two it takes to show up
+  // in what they borrow and save — car loans, card balances, deposits.
+  d.rr = (d.rr ?? 0) + ((x.rAvg - x.rStar) - (d.rr ?? 0)) / P.RR_M;
+  const cT = P.C0 / (1 - P.TAX) * ((1 - P.C_NOW) * d.Yp + P.C_NOW * Yd)
+    * Math.exp(d.cc - P.C_RATE * d.rr + 0.088 * lnH + 0.6 * refi - P.PREC * Math.max(0, du6) - 0.03 * panic)
+    + P.CRED_C * credFlow;
+  d.C += (cT - d.C) / P.TAU_C;
+  // FIRMS: capital for the output they expect, at what it costs to carry
+  d.Ye += (Yprev - d.Ye) / P.YE_M;
+  const uc = Math.max(0.03, x.corpRate - infl + P.DELTA);
+  const uc0 = Math.max(0.03, x.corpNeutral - infl + P.DELTA);
+  const fin = (1 + P.WIN_K * ((n.creditNat ?? 1) - 1))
+    * (1 + 0.02 * Math.max(-5, Math.min(1, (n.curveSm ?? CURVE_NORMAL) - CURVE_NORMAL)))
+    * (1 - 0.2 * panic);
+  // THE PROFIT SQUEEZE. A labour market held tight bids pay up faster than
+  // output per worker, the wage share climbs and margins thin; firms that
+  // earn less on capital want less of it. US corporate profits have peaked
+  // and turned down ahead of every post-war recession, usually after two or
+  // three years of unemployment under its natural rate (BEA NIPA; Kalecki,
+  // Goodwin). Labour's share drifts up about a point of output per point of
+  // unemployment held under natural, over a year and a half.
+  d.ws = (d.ws ?? 0) + (P.WS_U * (NAT_U_STAR - u) - (d.ws ?? 0)) / P.WS_M;
+  const kStar = K0 * (1 + P.YE_W * (d.Ye - 1)) * Math.pow(uc0 / uc, P.SIGMA_K) * fin * Math.exp(d.kc - P.PROF * d.ws);
+  const dep = (P.DELTA + P.GROW) * d.K;
+  // Capital is easier to stop buying than to sell: gross investment does not fall below a third of replacement.
+  const iWant = Math.max(dep * 0.35, dep + (kStar - d.K) / (P.TAU_K / 12)) + P.CRED_I * credFlow;
+  d.I += (iWant - d.I) / P.I_LAG;
+  d.K += (d.I - dep) / 12;
+  // HOMES
+  const mortNow = (e.indexRate ?? 5.4) / 100 + 0.017;
+  const ihT = P.IH0 * Math.pow((n.hpi ?? 1) / (n.hpiTrend ?? n.hpi ?? 1), 1.5) * Math.exp(-P.IH_RATE * (mortNow - (n.mortRef ?? mortNow)));
+  d.Ih += (ihT - d.Ih) / P.IH_M;
+  // GOVERNMENT: a steady share, a fiscal expansion under political pressure, the tools at the floor
+  const G = P.G0 + ((n.pressureM ?? 0) > 0 && x.shock !== 0 ? 0.6 * Math.abs(x.shock) : 0) + 0.009 * x.lbTools;
+  // THE WORLD IS AN ECONOMY TOO (2026-10-16). Exports rode a drawn AR(1)
+  // standing in for the rest of the world. Now the rest of the world has its
+  // own output gap (`d.f`), which its own spending shocks move and its own
+  // central bank leans against (a real policy-rate gap `d.wr` that follows
+  // its gap over half a year), and the two economies meet in the exchange
+  // rate (`d.q`, log real, + is a dear dollar): money flows to the higher
+  // real rate, so a home rate a point over the world's lifts the dollar about
+  // 4% over a year (uncovered interest parity with the persistence measured
+  // in it — Engel 2014). Exports sell into the world's demand (income
+  // elasticity 1.5, Houthakker-Magee) at the exchange rate (price elasticity
+  // 0.5); imports get cheaper as the dollar rises (0.3). A tight Fed therefore
+  // hurts exporters twice — through the dollar as well as through the rate.
+  const z = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
+  d.wr = (d.wr ?? 0) + (ROW.POL * d.f - (d.wr ?? 0)) / ROW.POL_M;
+  d.f = ROW.RHO * d.f - ROW.RATE * (d.wr ?? 0) + ROW.SIG * z;
+  const homeReal = (n.policy ?? 4) / 100 - (n.inflExp ?? 0.02) - (n.neutralReal ?? 0.019);
+  d.q = (d.q ?? 0) + (ROW.UIP * (homeReal - (d.wr ?? 0)) - (d.q ?? 0)) / ROW.Q_M;
+  const X = X0 * Math.exp(ROW.X_INC * d.f - ROW.X_PRICE * (d.q ?? 0));
+  const M = P.IMP * (d.C + d.I + d.Ih + G) * Math.exp(ROW.M_PRICE * (d.q ?? 0));
+  const S = d.C + d.I + d.Ih + G + X - M;
+  // INVENTORIES: shelves follow sales; production is sales plus restocking
+  d.Se += (S - d.Se) / 3;
+  const invInv = Math.max(-0.06, Math.min(0.06, (P.NU * d.Se - d.N) / (P.TAU_N / 12)));
+  d.N += invInv / 12;
+  // SUPPLY: an oil shock takes real output while it runs (an adverse one; a favourable one gives it)
+  const supShock = (n.pressureM ?? 0) > 0 ? 0 : x.shock;
+  d.sup += (0.5 * supShock - d.sup) / 6;
+  d.Y = S + invInv - d.sup;
+  return d.Y - 1;
+}
+
+/**
+ * RENTS ARE WHAT LEASES SIGN AT (2026-10-16). The office and shop rent indices
+ * used to move on an equation of the market's vacancy; every lease was then
+ * priced off the index, and no lease ever moved it. Now every lease signed —
+ * the street's new leases and renewals (streetRolls.ts) and the player's
+ * (leasing.ts) — is a comp, and the index follows the comps.
+ *
+ * A deal reads the market's slack the month it signs: the vacancy equation's
+ * pressure is now what a tenant's alternatives are worth at the table, carried
+ * as `DEAL_H` months of it (in a soft market a tenant signs under the index
+ * today, and the index follows over the months after). Each deal also carries
+ * its own terms — space marked down for how long it sat, a tenant stretching up
+ * or settling down, a landlord in trouble, the bargaining — which reach that
+ * deal's rent. The index moves by the slack the last six months' comps were
+ * struck at, weighted by the space they let: a market with few deals moves on
+ * few deals, and on the ones that happened.
+ *
+ * (Measured and dropped: moving the index on the comps' mix as well — how far
+ * their markdowns sat from the usual — needs a "usual", and every baseline
+ * learned in the first years carried the opening's stale space with it and
+ * pushed rents up for years.)
+ */
+export const DEAL_H = 6;
+/** What the market's slack does to a deal signed this month, against the index. */
+export function dealSlack(e: Econ, k: BuiltClass): number {
+  return Math.exp(DEAL_H * (e.dealPress?.[k] ?? 0));
+}
+/** A lease signed: `rel` is its rent over the building's market rent (the index's, for that building). */
+export function recordDeal(e: Econ, k: BuiltClass, m: number, rel: number, sf: number, renewal = false) {
+  if ((k !== "office" && k !== "retail" && k !== "multifamily") || !(rel > 0) || !(sf > 0)) return;
+  const p = e.dealPress?.[k] ?? 0;
+  const list = ((e.deals ??= {})[k] ??= []);
+  list.push({ m, c: +(Math.log(rel) - DEAL_H * p).toFixed(5), p: +p.toFixed(6), sf: Math.round(sf), ...(renewal ? { r: 1 } : {}) });
+  while (list.length && list[0].m < m - 6) list.shift();
+  // (shift, not splice: the same array, and V8 trims the front in place.)
+  while (list.length > 400) list.shift();
+}
+
 export function tickNation(s: GameState) {
   const e = s.econ;
   if (!e.nat) {
@@ -2026,10 +2505,10 @@ export function tickNation(s: GameState) {
   if (n.neutralAnchor === undefined) n.neutralAnchor = n.neutralReal;
   n.neutralAnchor = clamp(
     n.neutralAnchor + 0.0009 * (0.014 - n.neutralAnchor) + rrange(s, -0.00035, 0.00035, "nation"),
-    0.004, 0.032,
+    -Infinity, Infinity,
   );
   n.neutralReal = clamp(n.neutralReal + 0.004 * (n.neutralAnchor - n.neutralReal)
-    + rrange(s, -0.00020, 0.00020, "nation"), 0.001, 0.034);
+    + rrange(s, -0.00020, 0.00020, "nation"), -Infinity, Infinity);
   // Deterministic in (seed, month) rather than a draw from the shared
   // stream: consuming s.rng here would re-roll the whole century and any
   // movement in the acceptance gates would then be reshuffling rather than
@@ -2119,105 +2598,131 @@ export function tickNation(s: GameState) {
   // recession, the recession opens a labour-market gap, the gap kills the
   // inflation, and the bank spends the next decade earning back its word.
   const realPolicy = n.policy / 100 - n.infl;
-  if ((n.recM ?? 0) > 0) {
-    n.recM = (n.recM ?? 0) - 1;
-    if (n.recM === 0) {
-      n.expM = 0; n.deep = false;
-      pushNews(s, "event", "The national recession is over on paper. Nobody in the room feels it yet.");
+
+  // --- THE NATIONAL ECONOMY IS SIMULATED, NOT DRAWN (2026-10-15) -------------
+  //
+  // A recession used to be a dice roll: a monthly hazard read off the yield
+  // curve, then a depth and a length drawn from the post-war record. The same
+  // depth was expected whether money stood at 6% or at 20%, and nothing about
+  // rates touched output except the odds of the roll.
+  //
+  // Now the output gap is a state and spending moves it. The core is the
+  // Rudebusch-Svensson (1999) demand equation fitted on US data 1961-96 —
+  //   y(t) = 1.16 y(t-1) - 0.26 y(t-2) - 0.09 (i - pi - r*)(4-qtr avg, lagged)
+  // — restated monthly with the same roots (0.95 and 0.67 a month) and the
+  // same long-run multiplier (0.9 points of output per point of real rate held
+  // over neutral). Higher money slows spending with a hump-shaped lag of about
+  // a year; held long enough it tips output into decline, and that decline is
+  // what a recession IS — dated afterwards from output, as the NBER dates one.
+  //
+  // Split across the channels rates actually travel through:
+  //  · the real short rate, averaged over the last year (consumers, inventory,
+  //    housing turnover, the bank-lending margin);
+  //  · what companies PAY on their debt — about a third floats and reprices
+  //    every month, the rest is fixed and rolls over a six-year ladder at the
+  //    long rate of the day (Fed Z.1 nonfinancial corporate debt; Compustat
+  //    maturity profiles). A spike that reverses costs little; years of high
+  //    rates walk through the whole book. Same multiplier in total.
+  //  · credit availability (the national window: a crunch cuts lending to
+  //    anyone who needs it — Bernanke-Gertler's financial accelerator, since
+  //    the window itself tightens as unemployment rises);
+  //  · a bank panic, an oil shock (supply: prices up AND output down), a
+  //    fiscal expansion (demand: both up), and ordinary demand noise.
+  // Unemployment follows output by Okun's law (two points of output a point
+  // of unemployment), rising fast and falling slowly — firms fire in weeks and
+  // hire over years.
+  const rStar = n.neutralReal;
+  const exAnte = n.policy / 100 - (n.inflExp ?? n.infl);
+  (n.rHist ??= []).push(exAnte);
+  if (n.rHist.length > 13) n.rHist.shift();
+  const rAvg = n.rHist.length > 1
+    ? n.rHist.slice(0, -1).reduce((acc, v) => acc + v, 0) / (n.rHist.length - 1) : exAnte;
+  // The corporate book: floating legs at the short index plus a credit spread,
+  // the fixed ladder rolling 1/72 a month at the long rate plus a spread.
+  const longRate = (e.indexRate ?? 5.4) / 100;
+  const shortRate = n.policy / 100;
+  n.corpFixed ??= longRate + 0.015;
+  n.corpFixed += (longRate + 0.015 - n.corpFixed) / CORP_LADDER_M;
+  const corpRate = CORP_FLOAT * (shortRate + 0.02) + (1 - CORP_FLOAT) * n.corpFixed;
+  n.corpRate = corpRate;
+  // Against what that book would cost at neutral money: r* plus expected
+  // inflation, plus the same blended spread.
+  const corpNeutral = rStar + (n.inflExp ?? 0.02) + CORP_FLOAT * 0.02 + (1 - CORP_FLOAT) * 0.015;
+  if (n.gap === undefined) { n.gap = -2 * (n.unemp - NAT_U_STAR); n.gap1 = n.gap; }
+  const y1 = n.gap;
+  // THE OTHER TOOLS. A bank at its floor whose rule wants far lower does not
+  // sit still and neither does the government: asset purchases, forward
+  // guidance and fiscal stimulus (2009-14, Japan after 2013) push demand
+  // where the rate cannot — about a point of output per point the rule sits
+  // under the floor, at most five.
+  const lbTools = n.policy <= 0.5 ? Math.min(5, Math.max(0, n.policy - (n.ruleRate ?? n.policy) - 1)) : 0;
+  n.gap1 = y1;
+  n.gap = spendNation(s, e, n, { rAvg, rStar, corpRate, corpNeutral, shock, lbTools });
+  // THE CREDIT CYCLE (2026-10-15). Private credit against its trend, as a
+  // share of output (the BIS credit-to-GDP gap; US range roughly -10 to +12
+  // points, +12 at the 2007 top). It builds while money is cheap against
+  // neutral, lenders' standards are loose and the economy runs hot; it is
+  // written down in recessions as loans default; and the trend catches up
+  // with it over about a decade. A bank panic's odds read it
+  // (blackswans.ts): credit booms are the best single predictor of financial
+  // crises there is (Schularick & Taylor 2012).
+  {
+    const g0 = n.credGap ?? 0;
+    n.credGapPrev = g0;
+    const build = CRED_PER_EASY_PT * Math.max(-3, Math.min(4, (rStar - rAvg) * 100))
+      + CRED_PER_WINDOW * ((n.creditNat ?? 1) - 1)
+      + CRED_PER_GAP * Math.max(0, y1);
+    // Defaults follow the labour market: about 1.5% of output a year per two
+    // points of unemployment over its natural rate (US charge-offs 2009-10
+    // ran ~2.5-3% of loans, loans ~1.5x GDP... less recoveries).
+    const writeOff = CRED_RECESSION_WRITEOFF * Math.max(0, n.unemp - NAT_U_STAR - 0.01) / 0.02;
+    n.credGap = g0 + build - writeOff - g0 / CRED_TREND_M;
+  }
+  tickHouseholds(e, n, y1);
+  // The curve banks lend on: long minus short, smoothed over a year (loan
+  // books reprice slowly, and a bank's margin is its whole book's).
+  n.curveSm = (n.curveSm ?? ((e.indexRate ?? 5.4) - n.policy)) + (((e.indexRate ?? 5.4) - n.policy) - (n.curveSm ?? 0)) / 12;
+  // Output itself — potential grows ~2%/yr — so the cycle can be dated.
+  n.lnY = (n.lnY ?? 0) + 0.02 / 12 + (n.gap - y1);
+  const inRecNow = (n.recM ?? 0) > 0;
+  if (!inRecNow) {
+    n.expM = (n.expM ?? 0) + 1;
+    n.yPeak = Math.max(n.yPeak ?? n.lnY, n.lnY);
+    // Half a per cent off the peak is a contraction, not a soft quarter.
+    if (n.lnY < (n.yPeak ?? n.lnY) - REC_DROP) {
+      n.recM = 1; n.uStart = n.unemp; n.uPeak = n.unemp; n.yTrough = n.lnY; n.deep = false;
+      pushNews(s, "warn", "The national economy has turned. Output is falling, payrolls are next, "
+        + "and everyone is revising their numbers down.");
     }
   } else {
-    n.expM = (n.expM ?? 0) + 1;
-    // One recession about every six years at neutral money — the post-war
-    // average is 12 in 75 years — and far more often when the real policy
-    // rate is punitive. At Volcker's ten points of real money the hazard is
-    // better than one in ten a month, which is why 1980 and 1981-82 were two
-    // recessions inside three years.
-    // A HAZARD, NOT A CAPPED PROBABILITY (2026-10-13). The punitive-money
-    // term was clamped at 0.09/month; it is now an intensity, and the monthly
-    // chance is 1 - exp(-intensity), which stays below one by arithmetic
-    // rather than by a stop. Below neutral, money adds nothing (a hinge, not
-    // a rail: cheap money does not prevent the other causes).
-    //
-    // THE CURVE, NOT A RULE OF THUMB ON REAL RATES (2026-10-13). Tight money
-    // enters through the yield curve: banks fund short and lend long, so an
-    // inverted curve squeezes the margin on every new loan and lending
-    // dries up (Adrian, Estrella & Shin 2019). The term spread is the best
-    // single recession predictor there is (Estrella & Mishkin 1998): about
-    // 10% odds of a recession within a year at a +1 point spread, about 45%
-    // at -1. As a monthly intensity that is 0.0088 x e^(-0.86 (spread - 1)),
-    // with no cap — a Volcker curve at -5 makes a recession all but certain
-    // within months, as 1980 and 1981 were. A steep curve makes one rare.
-    // (This replaces the real-policy-rate term, which never saw the curve:
-    // 9% against 7% on the ten-year for a decade read as neutral.)
-    const spread = (e.indexRate ?? 5.4) - n.policy;
-    const intensity = 0.0088 * Math.exp(-0.86 * (spread - 1))
-      + (shock > 0.02 ? 0.010 : 0)
-      + ((n.expM ?? 0) > 110 ? 0.004 : 0);
-    if (rng(s, "nation") < 1 - Math.exp(-intensity)) {
-      // ONE DISTRIBUTION, FITTED TO THE RECORD (2026-10-13). This was a 93/7
-      // mixture — ordinary recessions centred on +2.6 points, a 7% "deep"
-      // branch on +6 — shape parameters chosen from a few episodes. Against
-      // the whole post-war record it was too gentle: the twelve US recessions
-      // 1948-2020 raised unemployment by +4.1 (1949), +3.6 (1954), +3.8
-      // (1958), +2.3 (1961), +2.7 (1970), +4.4 (1975), +2.2 (1980), +3.6
-      // (1982), +2.8 (1991), +2.5 (2001), +5.6 (2009) and +11.3 (2020) points
-      // (BLS U-3, peak-to-trough). Their log has mean 1.29 and sd 0.45: a
-      // median of +3.6 points with a quarter of recessions at +4.4 or worse.
-      // The mixture drew a median near +2.6 and about one in ten that severe.
-      // Depth is drawn from that fit directly, with no cap; a "deep" recession
-      // is simply one that draws 2008's class, five points or more, and runs
-      // the longer 26-48 month course.
-      // EVERY RECESSION IS AIMED, not integrated: the labour market approaches
-      // the drawn depth and decelerates into it (see `uMove`), which is why a
-      // long draw and a fast draw no longer compound into a third die.
-      const zU = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
-      const depth = 0.0364 * Math.exp(0.45 * zU);
-      n.deep = depth >= 0.05;
-      n.recM = Math.round(n.deep ? rrange(s, 26, 48, "nation") : rrange(s, 7, 19, "nation"));
-      n.uPeak = n.unemp + depth;
-      pushNews(s, "warn", n.deep
-        ? "The country has fallen off a cliff. This is not a soft patch — payrolls are "
-          + "collapsing nationally and nobody can say where the bottom is."
-        : "The national economy has turned. The recession call is official and everyone "
-          + "is revising their numbers down.");
+    n.recM = (n.recM ?? 0) + 1;
+    n.yTrough = Math.min(n.yTrough ?? n.lnY, n.lnY);
+    // Over once output has climbed back half a per cent off the trough.
+    if (n.lnY > (n.yTrough ?? n.lnY) + 0.005) {
+      n.recM = 0; n.expM = 0; n.deep = false; n.yPeak = n.lnY;
+      pushNews(s, "event", "The national recession is over on paper. Nobody in the room feels it yet.");
     }
   }
-  const inRec = (n.recM ?? 0) > 0;
 
-  // UNEMPLOYMENT RISES LIKE A ROCKET AND FALLS LIKE A FEATHER. That asymmetry
-  // is the single most robust fact about the series — 5% to 10% in twenty
-  // months in 2008, then ten years to walk back down — and a symmetric
-  // mean-reverting process cannot produce it. Firms fire in weeks and hire
-  // over years.
-  // ...AND IT KEEPS FALLING UNTIL SOMETHING ENDS THE EXPANSION (2026-10-10).
-  // The pull aimed at 4.2%, the AVERAGE late-cycle low, and an exponential
-  // approach never reaches its target, so expansions ended with unemployment
-  // at 5.9% on average against 4.7% at US cycle peaks (1948-2020), and only
-  // 20% of them ended under 4.5% (US: half). The lows themselves run to
-  // 3.4-3.8% (1969, 2000, 2019) and 2.5% (1953): a long expansion keeps
-  // drawing people in until the recession comes. Aimed at 3.5%, the national
-  // block alone (40 seeds x 100 years, tools/econprobe/nation.mjs) reads mean
-  // 5.84% / p50 5.3% / p10 3.8% / 38% of months under 4.8%, against the US
-  // 1948-2024 record of 5.7% / 5.5% / 3.9% / ~33%. Was 6.35% / 5.7% / 4.4%
-  // / 25%, which held the nation 1.5 points over its natural rate on average.
-  // THE LABOUR MARKET LAGS THE CYCLE (2026-10-13). Unemployment chased the
-  // drawn depth only while the recession was on and turned the month it
-  // ended, so a 7-19 month draw reached half its depth: mild recessions rose
-  // +1.1-1.4 points against +2.2-2.7 in every US one since 1970. Firms keep
-  // shedding after output turns — unemployment peaked 15 months after the
-  // 1991 trough and 19 after 2001's (BLS; NBER dates) — so the climb runs on
-  // until the depth is reached, then the feather-fall begins.
-  const chasing = inRec || (n.uPeak !== undefined && n.unemp < n.uPeak - 0.001);
-  if (!chasing) n.uPeak = undefined;
-  const uMove = chasing
-    ? Math.max(0.0008, 0.115 * ((n.uPeak ?? n.unemp + 0.02) - n.unemp))
-    : 0.025 * (0.035 - n.unemp);
+  // Okun's law, with the labour market's own asymmetry.
+  // ...WHICH BENDS AT THE BOTTOM. A boom cannot hire people who are not
+  // there: past ~3.5% the remaining unemployed are between jobs, and the
+  // post-war lows were 2.5% (1953) and 3.4-3.5% (1969, 2000, 2019). Below
+  // 3.5% Okun's level approaches 2.5% and never passes it; the excess demand
+  // goes into pay and prices instead (the Phillips curve already sees it).
+  const okunRaw = NAT_U_STAR - n.gap / OKUN;
+  const uTarget = okunRaw >= 0.035 ? okunRaw : 0.025 + 0.01 * Math.exp((okunRaw - 0.035) / 0.01);
+  const uMove = (uTarget - n.unemp) * (uTarget > n.unemp ? U_UP_SPEED : U_DOWN_SPEED);
   n.unemp = clamp(n.unemp + uMove
-    + 0.004 * ((e.unemployment ?? 0.055) - n.unemp)   // one city, one per cent of a nation
-    + (shock > 0.02 ? 0.0006 : 0) + rrange(s, -0.0007, 0.0007, "nation"), 0, 1);
-  // (No 2.6%/26% rails: the expansion pull aims at 3.5% and every recession
-  // is aimed at a drawn depth, so the series holds its range by its own
-  // dynamics. The 0-1 bound is what a rate is.)
+    + (shock > 0.02 && !((n.pressureM ?? 0) > 0) ? 0.0003 : 0) + rrange(s, -0.0004, 0.0004, "nation"), 0, 1);
+  if ((n.recM ?? 0) > 0) {
+    n.uPeak = Math.max(n.uPeak ?? n.unemp, n.unemp);
+    if (!n.deep && n.unemp - (n.uStart ?? n.unemp) >= 0.05) {
+      n.deep = true;
+      pushNews(s, "warn", "This is not a soft patch. Payrolls are collapsing nationally and nobody "
+        + "can say where the bottom is.");
+    }
+  }
 
   // National inflation: expectations, plus a Phillips term, plus the shock.
   // THE PHILLIPS CURVE IS CONVEX. Slack disinflates weakly — you cannot get
@@ -2273,8 +2778,33 @@ export function tickNation(s: GameState) {
   // which leaves 2009-15 (about three points of slack) near target, and the
   // 1970s and 2021 — easy money into a tight labour market — at full force.
   const passThrough = Math.exp(-Math.max(0, n.unemp - NAT_U_STAR) / 0.02);
-  const easy = 0.55 * (n.easeEma >= 0 ? Math.min(n.easeEma, 0.10) * passThrough : 0.5 * Math.max(n.easeEma, -0.05));
-  n.infl = clamp(n.inflExp + phillips + easy + shock + rrange(s, -0.004, 0.004, "nation"), -0.06, 0.22);
+  const easy = 0.55 * (n.easeEma >= 0 ? n.easeEma * passThrough : 0.5 * n.easeEma);
+  // DOWNWARD NOMINAL RIGIDITY BENDS THE CURVE AT ZERO (2026-10-13). Pay and
+  // contract rents are rarely cut in nominal terms, so the forces pulling
+  // inflation DOWN — slack and dear money — lose their grip as inflation
+  // nears zero and past it (Akerlof, Dickens & Perry 1996; Daly & Hobijn
+  // 2014, "Downward nominal wage rigidities bend the Phillips curve"). The
+  // record: Volcker's disinflation landed at ~3%, not below zero; 2009 ran
+  // -0.4% at 10% unemployment; Japan's lost decades -0.3%/yr. Without the
+  // bend, a low-credibility disinflation overshot to -3% with unemployment
+  // at 4.3% (12 deflation years in one measured century against 3 in the US
+  // since 1945). The downward terms are scaled by e^((last inflation - 1%)
+  // / 1%) below 1%: whole at 1% and above, about a third at zero, a seventh
+  // at -1%. Deflation stays possible; a spiral at full employment does not.
+  const down = Math.min(0, phillips) + Math.min(0, easy);
+  const bend = n.infl >= 0.01 ? 1 : Math.exp((n.infl - 0.01) / 0.01);
+  const inflRaw = n.inflExp + (phillips - Math.min(0, phillips)) + (easy - Math.min(0, easy)) + down * bend
+    + shock + rrange(s, -0.004, 0.004, "nation");
+  // PRICES FOLLOW PAY, AND PAY IS NOT CUT (2026-10-15). With the bank's word
+  // gone, expectations could follow realised deflation down without limit: one
+  // measured century ran -6%/yr for a decade at 7-8% unemployment while
+  // nominal pay sat frozen (downward rigidity), so real pay rose 75% in a
+  // slump. Post-war deflations under fiat money were shallow — Japan
+  // 1998-2012 about -0.3%/yr, the US 2009 -0.4%, Hong Kong 1999-2003 about
+  // -2% at worst — because the largest cost in every price is a wage that is
+  // not cut. Below zero the price level falls toward a soft floor near -2%:
+  // deflation stays possible, a spiral does not.
+  n.infl = inflRaw >= 0 ? inflRaw : -DEFLATION_FLOOR * (1 - Math.exp(inflRaw / DEFLATION_FLOOR));
 
   // EXPECTATIONS UNANCHOR WHEN THE BANK IS NOT BELIEVED — and that is what
   // makes an inflation a decade rather than a year. Credibility is spent in
@@ -2287,7 +2817,15 @@ export function tickNation(s: GameState) {
   // from a collapse to a believed bank in about twenty years rather than
   // thirty-five — the US re-anchored long-run expectations within a decade
   // or so of 1983 (Michigan 5-10yr expectations ~3% by the mid-1990s).
-  const miss = n.infl - 0.02;
+  // JUDGED ON THE YEAR, AGAINST THE BANK'S OWN TARGET (2026-10-15). This read
+  // the month's print — which carries +/-0.4 points of noise by itself — against
+  // a hard-coded 2%, so a bank sitting on its own drifting target lost belief
+  // most months by arithmetic: measured over 30 centuries, credibility under
+  // 0.5 in 51% of months and a median ten-year term premium of 3.4 points
+  // (ACM 1961-2024: median ~1.2, p90 ~3.5; low credibility was ~1970-85). The
+  // public reads inflation as a year-on-year rate and measures the bank
+  // against the target it has announced.
+  const miss = (n.inflSm ?? n.infl) - (n.inflTarget ?? 0.02);
   const am = Math.abs(miss);
   // NO STOPS (2026-10-13). This was clamped to 0.10..0.99 and rested on the
   // 0.99 stop 47% of months. The walk is unchanged wherever belief is more
@@ -2299,16 +2837,16 @@ export function tickNation(s: GameState) {
   const c = n.credibility;
   n.credibility = c + (am < 0.010
     ? (0.0035 + (realPolicy > 0.03 ? 0.0022 : 0)) * (n.chair?.resolve ?? 1) * (1 - c) / (1 - c + 0.02)
-    : -(0.0018 + 0.110 * (am - 0.010)) * c / (c + 0.02));
+    : c * Math.expm1(-(0.003 + 0.20 * (am - 0.010)) / (c + 0.02)));
   // A believed bank's anchor beats the pass-through and expectations sit at
   // target; a disbelieved one's does not, and then last year's inflation
   // becomes next year's baseline. Those two regimes are the Great Moderation
   // and the Great Inflation, and the same four lines produce both.
-  const anchorPull = 0.004 + 0.030 * n.credibility;
+  const anchorPull = 0.034 * n.credibility;
   n.inflExp = clamp(
-    n.inflExp + (1 - 0.70 * n.credibility) * 0.055 * (n.infl - n.inflExp)
+    n.inflExp + (1 - 0.70 * n.credibility) * 0.08 * (n.infl - n.inflExp)
       - anchorPull * (n.inflExp - 0.02),
-    -0.005, 0.16);
+    -Infinity, Infinity);
 
   // THE REACTION FUNCTION — the classic Taylor rule, and it reproduces the
   // history. At 2% inflation and full employment it wants 4%, which is the
@@ -2342,9 +2880,9 @@ export function tickNation(s: GameState) {
   if (n.uStarBelief === undefined) n.uStarBelief = uStar;
   n.uStarBelief = clamp(
     n.uStarBelief + 0.006 * (uStar - n.uStarBelief)
-      + 0.011 * clamp(n.inflSm - 0.02, -0.012, 0.045)
+      + 0.011 * 0.045 * Math.tanh((n.inflSm - 0.02) / 0.045)
       + rrange(s, -0.0018, 0.0018, "nation"),
-    0.028, 0.075);
+    0.005, Infinity);
 
   const okunGap = -2.0 * (n.unemp - n.uStarBelief);
   // The level term reads what the bank BELIEVES trend inflation to be, not
@@ -2407,6 +2945,13 @@ export function tickNation(s: GameState) {
   // the bank has to break the labour market to undo it.
   if (n.pressureM === undefined) n.pressureM = 0;
   if (n.pressureM > 0) {
+    // INFLATION ENDS FISCAL DOMINANCE (2026-10-14). A government leans on
+    // its central bank only while cheap money is popular; once inflation is
+    // the country's problem, the politics flip and the bank is set free —
+    // the 1951 Treasury-Fed Accord came after 1950-51 inflation near 9%, and
+    // Volcker was appointed in 1979 with it running 11-13%. Without this the
+    // pressure ran its full term into a 70% inflation and a 105% policy rate.
+    if ((n.inflSm ?? n.infl) > 0.10) n.pressureM = 1;
     n.pressureM--;
     if (n.pressureM === 0) {
       pushNews(s, "event",
@@ -2415,7 +2960,8 @@ export function tickNation(s: GameState) {
     }
   }
   if (meeting) {
-    let step = bankStep(want - n.policy, restore > 0, n.pressureM > 0);
+    const uRise6 = n.uHist && n.uHist.length >= 7 ? n.unemp - n.uHist[n.uHist.length - 7] : 0;
+    let step = bankStep(want - n.policy, restore > 0, n.pressureM > 0, uRise6);
     // No floor (2026-10-13): the rule may take the rate below zero, as the
     // ECB, the SNB and the Bank of Japan did — but each cut below zero is
     // harder to make than the last, because cash pays zero. Past the cost of
@@ -2427,7 +2973,37 @@ export function tickNation(s: GameState) {
     // -0.75, one in eighteen at -1. A lower bound that emerges, not a stop.
     if (step < 0 && n.policy + step < 0
         && rng(s, "nation") > Math.exp((n.policy + step) / 0.35)) step = 0;
+    const was = n.policy;
     n.policy = n.policy + step;
+    // A RATE DECISION IS NEWS. It once stopped the game like a new chair and
+    // a swan (the policy rate is what every floater resets on next month and
+    // what the bond market prices the fixed index off); see below for why it
+    // no longer does. A meeting that holds is not news at all.
+    if (Math.abs(step) >= 0.01) {
+      const up = step > 0;
+      const infl = ((n.inflSm ?? n.infl ?? 0) * 100).toFixed(1), un = ((n.unemp ?? 0) * 100).toFixed(1);
+      const turn = n.lastStep !== undefined && n.lastStep !== 0 && Math.sign(n.lastStep) !== Math.sign(step);
+      const title = `The central bank ${up ? "raises" : "cuts"} rates ${Math.abs(step).toFixed(2)} to ${n.policy.toFixed(2)}%${turn ? ` — the first ${up ? "hike" : "cut"} of a new cycle` : ""}`;
+      const body = `${up ? "Tightening" : "Easing"} from ${was.toFixed(2)}% with inflation at ${infl}% and unemployment at ${un}%. `
+        + `Floating loans reset on the new rate next month (through any cap you bought); the short index is now ${shortIndexFor(n.policy, e.creditIdx ?? 1).toFixed(2)}%. `
+        + (up ? "Dearer money reaches cap rates and lending before it reaches rents." : "Cheaper money reaches refinancing and land bids first, rents later.");
+      // ONLY THE MASSIVE MOVES STOP THE GAME (owner, Oct 2026: "it should only
+      // pop up when something massive happens or the chair's switched"). A
+      // point or more in one meeting — the Volcker-scale moves — always takes
+      // the screen; a crisis-sized three-quarters takes it once, the first
+      // time after a calm year, and the meetings that follow it are in the
+      // news. Everything else, a new cycle's first move included, is in the
+      // news. (It used to stop on every turn of the cycle and every half
+      // point, which in a recession was most meetings.)
+      //
+      // AND THEN NOT AT ALL (owner, Oct 2026: "it pops up almost every month,
+      // very annoying ... don't even show pop ups for when rates move, only
+      // when the fed changes"). In an inflation fight the committee moves a
+      // full point at meeting after meeting, and every one took the screen.
+      // A rate decision is news; only a new chair stops the game (above).
+      s.news.unshift({ q: s.month, kind: "info", text: `${title}. ${body}` });
+      n.lastStep = step;
+    }
   }
 
   // THE LOAN INDEX IS A FORECAST, PLUS A PRICE FOR BEING WRONG ABOUT IT.
@@ -2458,7 +3034,18 @@ export function tickNation(s: GameState) {
   // premium's: the LEVEL it reverts to moves on credibility's own decade-long
   // clock. Bounds -1.5..6 bracket the observed range (ACM: about -1 in 2020,
   // about 5 in 1981) — guards, not rails.
-  const premBase = termPremBase(n.credibility, e.creditIdx ?? 1);
+  // THE NATION'S CREDIT, NOT THIS TOWN'S (2026-10-14). The premium read the
+  // city's credit index, which reads the city's payrolls — so a developer's
+  // cranes moved the ten-year yield, and through the curve the recession
+  // hazard. The national window is the same equation as `stepCredit` on
+  // national inputs only: the unemployment rise, the curve, a panic.
+  {
+    const curveN = 0.08 * (((e.indexRate ?? 5.4) - n.policy) - 1.2);
+    const tgt = clamp(1.0 - 14 * Math.max(0, natUnempRise12(e)) + curveN - 0.7 * (e.panic?.force ?? 0), 0.4, 1.25);
+    const cn = n.creditNat ?? 1;
+    n.creditNat = clamp(cn + (tgt < cn ? 0.16 : 0.055) * (tgt - cn), 0.4, 1.25);
+  }
+  const premBase = termPremBase(n.credibility, n.creditNat ?? 1, n.inflExp, n.inflTarget ?? 0.02);
   if (n.termPrem === undefined) n.termPrem = premBase;
   n.termPrem = n.termPrem + 0.10 * (premBase - n.termPrem) + rrange(s, -0.30, 0.30, "nation");
   // THE MARKET LEARNS WHERE THE BANK RESTS (2026-10-13). The forecast assumed
@@ -2508,10 +3095,199 @@ const INDUSTRY_TREND: Record<Sector, number> = {      // per year
   finance: 0.008, law: 0.005, tech: 0.025, media: -0.005, insurance: 0.005,
   logistics: 0.015, apparel: -0.015, food: 0.012, medical: 0.020, design: 0.008,
 };
+/**
+ * EACH TRADE KEEPS BOOKS (2026-10-15).
+ *
+ * A trade in town is the sum of its firms, and it now carries their accounts
+ * in aggregate — an income statement and a balance sheet, in real terms, with
+ * the opening month's sales as 1:
+ *
+ *   sales              what it sells: national cycle, trend, shocks, money
+ *   - wages            staff x what local pay costs against national pay
+ *   - rent             staff x what its space costs against the opening
+ *   - other costs      materials, services, upkeep — scale with sales
+ *   = EBITDA
+ *   - interest         debt x the rate the trade's debt actually carries:
+ *                      a floating share reprices each month off the short
+ *                      rate; the rest is fixed and rolls over a five-year
+ *                      ladder at the long rate of the day
+ *   - tax
+ *   = cash flow        into cash; surplus cash is paid out; debt is drawn
+ *                      when the lenders' window is open and repaid when not
+ *
+ * Staff follow sales, are trimmed when margins thin and cut hard when cash
+ * runs short; firms whose interest cover collapses fail — their jobs go and
+ * their debt is written off — and new firms enter as margins recover. So the
+ * same rise in rates hits a thin-margin, floating-rate, levered trade (apparel,
+ * logistics) through its interest bill and its customers, and barely touches a
+ * cash-rich one (law): the difference is in the books, not in a table of
+ * sensitivities.
+ *
+ * Profiles are rounded US industry figures — payroll and occupancy as a share
+ * of revenue (BLS / Census Economic Census), EBITDA margins and net debt to
+ * EBITDA (Damodaran industry data, 2000-2024 averages), floating share from
+ * bank-loan vs bond mix. `rateDem` is how much the trade's own CUSTOMERS
+ * borrow to buy from it, per point of real money over neutral, on top of the
+ * national cycle: architects sell to builders, freight to inventory.
+ */
+export interface FirmProfile { wage: number; rent: number; margin: number; lev: number; float: number; spread: number; rateDem: number; space: Partial<Record<BuiltClass, number>> }
+export const FIRM_PROFILE: Record<Sector, FirmProfile> = {
+  finance:   { wage: 0.35, rent: 0.06, margin: 0.28, lev: 2.0, float: 0.50, spread: 0.020, rateDem: 0.6, space: { office: 1 } },
+  law:       { wage: 0.45, rent: 0.08, margin: 0.25, lev: 0.5, float: 0.70, spread: 0.020, rateDem: 0.0, space: { office: 1 } },
+  tech:      { wage: 0.40, rent: 0.05, margin: 0.22, lev: 1.2, float: 0.40, spread: 0.030, rateDem: 0.6, space: { office: 1 } },
+  media:     { wage: 0.35, rent: 0.05, margin: 0.20, lev: 2.8, float: 0.40, spread: 0.030, rateDem: 0.3, space: { office: 1 } },
+  insurance: { wage: 0.25, rent: 0.04, margin: 0.15, lev: 1.0, float: 0.20, spread: 0.015, rateDem: 0.0, space: { office: 1 } },
+  logistics: { wage: 0.33, rent: 0.10, margin: 0.12, lev: 3.0, float: 0.45, spread: 0.030, rateDem: 0.8, space: { industrial: 1 } },
+  apparel:   { wage: 0.22, rent: 0.09, margin: 0.10, lev: 3.0, float: 0.55, spread: 0.035, rateDem: 1.0, space: { retail: 0.6, industrial: 0.4 } },
+  food:      { wage: 0.32, rent: 0.09, margin: 0.11, lev: 2.8, float: 0.45, spread: 0.030, rateDem: 0.2, space: { retail: 0.7, industrial: 0.3 } },
+  medical:   { wage: 0.50, rent: 0.06, margin: 0.15, lev: 2.2, float: 0.30, spread: 0.025, rateDem: 0.0, space: { retail: 1 } },
+  design:    { wage: 0.45, rent: 0.08, margin: 0.14, lev: 1.2, float: 0.50, spread: 0.030, rateDem: 1.0, space: { office: 1 } },
+};
+/** The interest cover a lender underwrites new debt to (bank leveraged-loan practice ~3x). */
+export const LENDER_COVER = 3;
+/** Share of non-rent, non-wage costs that follow last year's sales rather than this month's. */
+const STICKY = 0.4;
+/** Months of sales a trade keeps in cash before it pays the surplus out. */
+const FIRM_CASH_TARGET = 1.5;
+/** The fixed ladder's average life, months. */
+const FIRM_LADDER_M = 60;
+/** Baseline share of a trade's jobs in firms that fail each month: ~1.5%/yr of employment. */
+const FIRM_FAIL_BASE = 0.00125;
+
+/** What every trade's books read this month: rates, pay and money. */
+function firmBookInputs(e: Econ) {
+  const n = e.nat;
+  const short = (n?.policy ?? 4) / 100;
+  const long = (e.indexRate ?? 5.4) / 100;
+  const infl = n?.infl ?? 0.02;
+  const rStar = n?.neutralReal ?? 0.014;
+  const rAvg = n?.rHist && n.rHist.length > 1
+    ? n.rHist.slice(0, -1).reduce((a, v) => a + v, 0) / (n.rHist.length - 1)
+    : short - (n?.inflExp ?? infl);
+  // Points of real money over (or under) neutral, bent past four either way.
+  const raw = (rAvg - rStar) * 100;
+  const ratePts = 4 * Math.tanh(raw / 4);
+  // Local pay against national pay — national productivity cancels — and the
+  // same for the space a trade rents, read against national real pay.
+  const wageRel = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
+  const realNatPay = (e.natWageIdx ?? e.wageIdx ?? 1) / Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
+  return { short, long, infl, ratePts, wageRel, realNatPay, credit: clamp(e.creditIdx ?? 1, 0.25, 1.25) };
+}
+
+/**
+ * One month of one trade's accounts. Returns its employment index.
+ * `salesGrowth` is the month's growth in what it sells.
+ */
+function tickFirmBook(e: Econ, k: Sector, salesGrowth: number, inp: ReturnType<typeof firmBookInputs>): number {
+  const P = FIRM_PROFILE[k];
+  e.firmRef ??= { wageRel: inp.wageRel, realNatPay: inp.realNatPay, rent: { ...(e.inPlaceReal ?? e.effRentIdx) } };
+  e.firmBooks ??= {} as Record<Sector, FirmBook>;
+  let b = e.firmBooks[k];
+  if (!b) {
+    b = e.firmBooks[k] = {
+      sales: e.indIdx?.[k] ?? 1, emp: e.indIdx?.[k] ?? 1,
+      cash: FIRM_CASH_TARGET * (e.indIdx?.[k] ?? 1),
+      debt: Math.min(P.lev, 1 / ((inp.long + P.spread) * LENDER_COVER)) * 12 * P.margin * (e.indIdx?.[k] ?? 1),
+      fixed: inp.long + P.spread, fail: 0, cover: 0, margin: P.margin,
+    };
+  }
+  b.sales *= 1 + salesGrowth;
+  // Last year's sales, smoothed: what the cost base was built for.
+  b.salesRef = (b.salesRef ?? b.sales) + (b.sales - (b.salesRef ?? b.sales)) / 12;
+  // Unit costs against the opening: pay relative to the nation, rent relative
+  // to national real pay (a town whose rents outrun what the country earns
+  // is a dearer place to do business).
+  const wageCost = inp.wageRel / Math.max(1e-6, e.firmRef.wageRel);
+  let rentCost = 0;
+  for (const [c, w] of Object.entries(P.space) as [BuiltClass, number][]) {
+    const now = e.inPlaceReal?.[c] ?? 1, then = e.firmRef.rent[c] ?? now;
+    rentCost += w * (now / Math.max(1e-9, then));
+  }
+  rentCost /= inp.realNatPay / Math.max(1e-6, e.firmRef.realNatPay);
+  // Costs are sticky: about 40% of them (overhead, contracts, salaried staff
+  // beyond the headcount line) were set for last year's sales and adjust over
+  // the year — the operating leverage that turns a sales drop into a profit
+  // collapse.
+  const other = (1 - P.wage - P.rent - P.margin) * (STICKY * (b.salesRef ?? b.sales) + (1 - STICKY) * b.sales);
+  const ebitda = b.sales - P.wage * b.emp * wageCost - P.rent * b.emp * rentCost - other;
+  // The debt book: floating legs at the short rate, the ladder rolling.
+  b.fixed += (inp.long + P.spread - b.fixed) / FIRM_LADDER_M;
+  const rate = P.float * (inp.short + P.spread) + (1 - P.float) * b.fixed;
+  const interest = b.debt * rate / 12;
+  const tax = 0.21 * Math.max(0, ebitda - interest);
+  b.cash += ebitda - interest - tax;
+  // Debt is nominal: inflation wears it down in real terms.
+  b.debt *= 1 - inp.infl / 12;
+  // Borrow toward the trade's normal leverage while lenders are open; repay
+  // out of cash when over it. A shut window means no new money.
+  const ebitdaAnn = Math.max(0, ebitda) * 12;
+  // Lenders size a loan on cover as well as on leverage: no more debt than
+  // keeps interest covered LENDER_COVER times at today's rate. So firms carry
+  // less debt when money is dear — the leverage norms are not fixed.
+  const targetDebt = Math.min(P.lev, 1 / (Math.max(0.01, rate) * LENDER_COVER))
+    * Math.max(ebitdaAnn, 12 * P.margin * b.sales * 0.5);
+  if (b.debt < targetDebt) {
+    const draw = (targetDebt - b.debt) / 36 * clamp((inp.credit - 0.5) / 0.5, 0, 1.2);
+    b.debt += draw; b.cash += draw;
+  } else if (b.cash > 0) {
+    const pay = Math.min(b.cash * 0.5, (b.debt - targetDebt) / 24);
+    b.debt -= pay; b.cash -= pay;
+  }
+  // Surplus cash goes to the owners.
+  const target = FIRM_CASH_TARGET * b.sales;
+  if (b.cash > target) b.cash -= (b.cash - target) * 0.15;
+  // How the trade is doing, in the two numbers its lenders read.
+  b.margin = ebitda / Math.max(1e-9, b.sales);
+  b.cover = interest > 0 ? ebitda / interest : 99;
+  const liquidity = b.cash / Math.max(1e-9, b.sales);   // months of sales in the bank
+  // FAILURES: interest cover under ~2x and cash under a month are where firms
+  // go under; a trade burning through its cash loses the weakest first.
+  // The trade is an average of its firms: as its interest cover thins toward
+  // the lenders' line, more of the weak tail is under it, and a trade whose
+  // sales are falling loses the firms that were built for the old volume.
+  const coverStress = Math.max(0, Math.min(5, 3 - b.cover));
+  const cashStress = Math.max(0, 1 - liquidity);
+  const salesDrop = Math.max(0, 1 - b.sales / Math.max(1e-9, b.salesRef ?? b.sales));
+  const fail = FIRM_FAIL_BASE * Math.exp(0.6 * coverStress + 1.6 * cashStress + 12 * salesDrop) * (b.cash < 0 ? 2 : 1);
+  b.fail = fail;
+  b.emp *= 1 - fail; b.debt *= 1 - fail * 1.5; if (b.cash < 0) b.cash *= 1 - fail;
+  // STAFFING: jobs follow sales, trimmed as margins thin and cut hard when
+  // the cash is going. Firms fire faster than they hire.
+  const marginGap = clamp((b.margin - P.margin) / P.margin, -1, 1);
+  const want = b.sales * (1 + 0.25 * marginGap) * (1 - 0.35 * Math.min(1, cashStress));
+  const gap = want - b.emp;
+  b.emp += gap * (gap > 0 ? 0.03 : 0.07);
+  return b.emp;
+}
+/**
+ * A TOWN'S SHARE OF EACH NATIONAL TRADE WANDERS, FOR DECADES (2026-10-15).
+ * Every town grew each trade at the nation's own trend, so sixty-year job
+ * growth ran 1.16x-1.79x across seeds — 0.25-1%/yr — and no town ever shrank.
+ * Metros spread far wider: state employment growth differs by about 1%/yr
+ * over forty-year spans and the gaps last (Blanchard & Katz 1992), and the
+ * spread comes from what a place makes — Detroit's cars, Pittsburgh's steel,
+ * Manhattan's garment trade (-20% city jobs 1969-77) against Seattle's
+ * software. Each trade's local trend now carries its own mean-reverting
+ * offset: stationary spread 2%/yr, twenty-year memory. Shape parameters,
+ * stated; the cost brake (`regionalPull`) still answers a town that grows
+ * dear or cheap.
+ */
+/** Labour-augmenting technology: stationary spread of its growth, a year, and its memory. */
+const TFP_SD = 0.005;
+const TFP_TAU_M = 240;
+/** Capital's share of output (BLS multifactor productivity accounts). */
+const CAPITAL_SHARE = 0.33;
+const FORTUNE_SD = 0.02;
+const FORTUNE_TAU_M = 240;
+/** Each trade's national trend: spread around its 1990-2019 mean, and its memory. */
+const NAT_TREND_SD = 0.008;
+const NAT_TREND_TAU_M = 360;
 const INDUSTRY_BETA: Record<Sector, number> = {
   finance: 1.0, law: 0.5, tech: 1.3, media: 1.0, insurance: 0.5,
   logistics: 1.4, apparel: 1.6, food: 1.1, medical: 0.2, design: 1.4,
 };
+/** Points of a trade's sales per point of the national output gap, before its cycle beta. */
+const NAT_SALES_PER_GAP = 1.25;
 /** Local-serving jobs per tradable job (Moretti 2010, "Local Multipliers"). */
 const LOCAL_MULT = 1.6;
 /** Months for local-serving employment to close half its gap to the base. */
@@ -2572,6 +3348,7 @@ const REGION_YOUTH_SLOPE = 0.03;      // per unit of vacant-lot share over 0.2
 const REGION_SD = 0.008;              // per year, across towns
 const LOCATION_PULL = 0.04;           // per year, per unit of log cost gap
 const REGION_TREND_DECAY = Math.exp(-Math.LN2 / 240);   // the town's edge, 20-year half-life
+const REGION_EDGE_SD = 0.012;                             // per year, stationary spread of the edge
 const AGGLOM = 0.04;                  // output elasticity to employment
 const WAGE_CURVE = -0.10;             // pay level to local unemployment (Blanchflower & Oswald 1994)
 const WAGE_GAP_HALF_M = 24;           // months for the town's pay to close half its gap to the wage-curve level
@@ -2613,12 +3390,28 @@ export function islandResidents(e: Econ): { residents: number; homes: number; co
   return { residents, homes: Math.round(homes), commuters };
 }
 
-export function regionalPull(e: Econ): number {
-  const wageRatio = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
+/** Business rent against the nation's (offices and sheds, geometric mean), RENT_BASE at national prices. */
+function businessRentVsNation(e: Econ): number {
   const natP = Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
   const rentOf = (k: "office" | "industrial") =>
     Math.max(0.05, (e.effRentIdx?.[k] ?? e.rentIdx[k]) / (RENT_BASE[k] * natP));
-  const rentRatio = Math.sqrt(rentOf("office") * rentOf("industrial"));
+  return Math.sqrt(rentOf("office") * rentOf("industrial"));
+}
+
+export function regionalPull(e: Econ): number {
+  const wageRatio = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
+  // AGAINST THIS TOWN'S OWN OPENING, NOT THE REFERENCE TABLE (2026-10-13).
+  // Rent was read against RENT_BASE at national prices, and towns open at
+  // 22-43% of that table (a low-density town's rents print low), so every
+  // town read 60-80% cheaper than the nation on its first day and every day
+  // after, and drew +0.3 to +1.0%/yr of employer growth out of that mismatch
+  // for most of a century — demand that never let a shortage end. The space-
+  // cost term below (`costOfSpace`) was moved to opening parity for exactly
+  // this reason. A town opens in spatial equilibrium: its low rents are what
+  // its location is worth (Roback 1982), not a bargain nobody has noticed.
+  // What moves employers is the town growing dearer or cheaper than that.
+  // The persistent pull a young region does have is `regionTrend`.
+  const rentRatio = businessRentVsNation(e) / Math.max(0.05, e.regionRent0 ?? businessRentVsNation(e));
   const scale = Math.max(0.2, (e.jobs ?? 1) / Math.max(1, e.jobs0 ?? e.jobs ?? 1));
   const logCost = WAGE_SHARE * Math.log(wageRatio) + (1 - WAGE_SHARE) * Math.log(rentRatio) - AGGLOM * Math.log(scale);
   return (e.regionTrend ?? 0) - LOCATION_PULL * logCost;
@@ -2638,10 +3431,26 @@ export function tickIndustryCycle(s: GameState) {
   const uPrev = e.natUnempPrev ?? uNow;
   e.natUnempPrev = uNow;
   const natDev = -NAT_EMP_PER_U * (uNow - uPrev);
+  // WHAT THE TRADES SELL MOVES WITH OUTPUT, NOT WITH PAYROLLS (2026-10-15).
+  // Sales follow the nation's output gap this month; the jobs follow the
+  // sales through each trade's own books (hire slowly, fire faster), so the
+  // payroll lag behind output — firms keep shedding after the trough — comes
+  // out of the accounts instead of being read off national unemployment.
+  // 1.25 points of sales per point of gap is the same swing the payroll
+  // proxy carried (1.5 per point of unemployment over Okun's 1.2).
+  const gapNow = n?.gap ?? 0, gapPrev = n?.gap1 ?? gapNow;
+  const gapMove = gapNow - gapPrev;
+  // What money costs this month, for the trades' books below.
+  const books = firmBookInputs(e);
 
   if (!e.indIdx) e.indIdx = Object.fromEntries(SECTORS.map((k) => [k, 1])) as Record<Sector, number>;
   if (!e.indShock) e.indShock = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
   if (!e.industryMom) e.industryMom = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
+  // A TOWN OPENS PART-WAY THROUGH ITS STORY (2026-10-16): each trade's local
+  // fortune and its national trend are drawn from where their own processes
+  // spend their time, not set to the textbook mean on day one.
+  if (!e.indFortune) e.indFortune = Object.fromEntries(SECTORS.map((k) => [k, FORTUNE_SD * hashNormal(`${s.seed}|fortune|${k}`)])) as Record<Sector, number>;
+  if (!e.natTrend) e.natTrend = Object.fromEntries(SECTORS.map((k) => [k, INDUSTRY_TREND[k] + NAT_TREND_SD * hashNormal(`${s.seed}|trend|${k}`)])) as Record<Sector, number>;
   if (!e.industryPhase) e.industryPhase = Object.fromEntries(SECTORS.map((k) => [k, "steady"])) as Record<Sector, "boom" | "steady" | "bust">;
   const decay = Math.exp(-Math.LN2 / IND_SHOCK_HALF_M);
   // THE EDGE FADES (2026-10-12). A town's regional trend was drawn once at
@@ -2655,9 +3464,21 @@ export function tickIndustryCycle(s: GameState) {
   // West and South grew while young and slowed as they filled. A twenty-year
   // half-life is a shape parameter from that persistence, stated as such: a
   // boom town is a boom town for a generation.
-  if (e.regionTrend) e.regionTrend *= REGION_TREND_DECAY;
-  const pull = clamp(regionalPull(e), -0.03, 0.05);
+  // ...AND IT KEEPS MOVING (2026-10-16). The edge decayed to nothing on a
+  // fixed clock and was never redrawn, so after a generation every town grew at
+  // the nation's trend plus its trades — and every one of eight 60-year towns
+  // grew 1.5-2.4x; none shrank. Places gain and lose their edge for reasons of
+  // their own (a port silts, a university grows, an interstate arrives):
+  // the edge is now a mean-reverting process with the same twenty-year memory
+  // and a stationary spread of 1.2%/yr, about the dispersion of metro
+  // employment growth over twenty-year spans (Blanchard & Katz 1992).
+  e.regionTrend = (e.regionTrend ?? 0) * REGION_TREND_DECAY
+    + REGION_EDGE_SD * Math.sqrt(1 - REGION_TREND_DECAY * REGION_TREND_DECAY) * Math.sqrt(3) * rrange(s, -1, 1);
+  if (e.regionRent0 === undefined) e.regionRent0 = businessRentVsNation(e);
+  const pull = regionalPull(e);
   e.regionPull = pull;
+  tickBoomBust(s);
+  const bb = e.boomBust;
   let base = 0, wsum = 0;
   for (const k of SECTORS) {
     const vol = INDUSTRY_VOL[k];
@@ -2674,8 +3495,25 @@ export function tickIndustryCycle(s: GameState) {
         ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
         : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
     }
-    const dev = INDUSTRY_BETA[k] * natDev + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol;
-    e.indIdx[k] *= 1 + (INDUSTRY_TREND[k] + pull) / 12 + dev;
+    // DEMAND for what the trade sells: its national cycle, its trend and
+    // the town's edge, its own shocks, and — for the trades whose customers
+    // borrow to buy (freight, inventory, building design) — the price of money.
+    const demand = INDUSTRY_BETA[k] * NAT_SALES_PER_GAP * gapMove + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol
+      + (bb && bb.sec === k && bb.phase !== "hold" ? bb.rate : 0)
+      - FIRM_PROFILE[k].rateDem * 0.008 * books.ratePts / 12;
+    e.indFortune[k] += -e.indFortune[k] / FORTUNE_TAU_M
+      + FORTUNE_SD * Math.sqrt(2 / FORTUNE_TAU_M) * Math.sqrt(3) * rrange(s, -1, 1);
+    // THE NATION'S TRADES HAVE LIFE CYCLES TOO: the 1990-2019 trends are
+    // where each trade's national trend centres, and it wanders around that
+    // with a thirty-year memory (manufacturing grew for a century and then
+    // shrank for half of one; media went the other way and back).
+    e.natTrend![k] += (INDUSTRY_TREND[k] - e.natTrend![k]) / NAT_TREND_TAU_M
+      + NAT_TREND_SD * Math.sqrt(2 / NAT_TREND_TAU_M) * Math.sqrt(3) * rrange(s, -1, 1);
+    const growth = (e.natTrend![k] + e.indFortune[k] + pull) / 12;
+    // ...and the trade's own books decide how many people it keeps.
+    const empBefore = e.indIdx[k];
+    e.indIdx[k] = tickFirmBook(e, k, growth + demand, books);
+    const dev = e.indIdx[k] / Math.max(1e-9, empBefore) - 1 - growth;
     // Momentum is smoothed excess hiring, in the units its readers expect.
     e.industryMom[k] = clamp(e.industryMom[k] + (MOM_UNITS * dev - e.industryMom[k]) / 6, -0.05, 0.05);
     const was = e.industryPhase[k];
@@ -2699,6 +3537,70 @@ export function tickIndustryCycle(s: GameState) {
   e.cycIdx = comp;
   e.cycDrift = prevComp > 0 ? comp / prevComp - 1 : 0;
   derivePhase(s);
+}
+
+/**
+ * A TRADE'S BOOM, AND USUALLY ITS BUST (2026-10-14).
+ *
+ * The industry clocks above turn: a trade has a good few years and a bad few
+ * and comes back to its trend. What they cannot produce is the episode that
+ * made and broke real property markets — one trade the town depends on
+ * growing far faster than anything around it for years, every landlord and
+ * developer underwriting that it continues, and then the trade breaking.
+ * Houston: oil and gas payrolls ran up through 1982, the city built 50
+ * million square feet of office, oil fell, the region lost ~13% of its jobs by
+ * 1987 and office vacancy reached ~30%. San Francisco: information employment
+ * up ~60% 1995-2000, down ~30% by 2003, office vacancy 3% -> 20%+. Austin and
+ * Charlotte are the other ending — the boom that held.
+ *
+ * About one such episode every quarter-century per city (a reading of the
+ * metro record, stated as a shape parameter), falling on a trade with odds in
+ * proportion to its share of the town's jobs and its volatility (a town's
+ * dominant volatile trade is its likeliest Houston). The boom runs three to
+ * six years at 6-12% a year over trend; seven in ten end in a bust that takes
+ * 30-50% of the trade's peak employment over two to three years; the rest
+ * hold. It enters only through the trade's employment index — the jobs, the
+ * space its firms take, the wages and everything downstream answer to it as
+ * they answer to any hiring — so nothing here sets a rent.
+ */
+const BOOM_HAZ_M = 1 / (25 * 12);
+function tickBoomBust(s: GameState) {
+  const e = s.econ;
+  const bb = e.boomBust;
+  if (bb) {
+    bb.leftM -= 1;
+    if (bb.leftM > 0) return;
+    if (bb.phase === "boom") {
+      const label = INDUSTRY_LABEL[bb.sec];
+      if (rng(s, "shock") < 0.7) {
+        // 30-50% of the peak: with three in ten booms holding their ~+40%,
+        // an episode's expected net is about nil, so the shocks widen the
+        // spread of a town's century without smuggling in a trend. Houston's
+        // oil payrolls ended the 1980s below where the boom began.
+        const fall = 0.30 + 0.20 * rng(s, "shock");
+        const months = Math.round(24 + 12 * rng(s, "shock"));
+        e.boomBust = { ...bb, phase: "bust", leftM: months, rate: Math.pow(1 - fall, 1 / months) - 1 };
+        pushNews(s, exposureToTrade(s, bb.sec) > 0.10 ? "warn" : "event",
+          `The ${label.toLowerCase()} boom has broken. The firms that were hiring are laying off, and the space they took on the way up is about to come back to market.`);
+      } else {
+        e.boomBust = undefined;
+        pushNews(s, "info", `${label} has stopped growing at boom pace — and kept what it gained. This is a ${label.toLowerCase()} town now.`);
+      }
+      return;
+    }
+    e.boomBust = undefined;
+    return;
+  }
+  if (rng(s, "shock") >= BOOM_HAZ_M) return;
+  const w = SECTORS.map((k) => (e.sectorShare?.[k] ?? 1 / SECTORS.length) * INDUSTRY_VOL[k]);
+  const tot = w.reduce((a, b) => a + b, 0);
+  let u = rng(s, "shock") * tot, sec: Sector = SECTORS[0];
+  for (let i = 0; i < SECTORS.length; i++) { u -= w[i]; if (u <= 0) { sec = SECTORS[i]; break; } }
+  const months = Math.round(36 + 36 * rng(s, "shock"));
+  const yr = 0.06 + 0.06 * rng(s, "shock");
+  e.boomBust = { sec, phase: "boom", leftM: months, rate: yr / 12, startM: s.month };
+  pushNews(s, exposureToTrade(s, sec) > 0.10 ? "event" : "info",
+    `${INDUSTRY_LABEL[sec]} is booming here — hiring far ahead of the nation and of every other trade in town. Everyone is underwriting that it lasts.`);
 }
 
 /**
@@ -2733,7 +3635,13 @@ function derivePhase(s: GameState) {
   switch (e.phase) {
     case "expansion": if (dwell && g6 < 0.004) next = "peak"; break;
     case "peak": if (dwell && g6 < -0.005) next = "recession"; else if (g6 > 0.012) next = "expansion"; break;
-    case "recession": if (dwell && g6 > 0.002) next = "recovery"; else if (dd > 0.05 && e.phaseAge >= 12) next = "depression"; break;
+    // A DEPRESSION IS NOT A BAD RECESSION (2026-10-14). The bar was five per
+    // cent off the peak after a year, which is 2008-09 (US payrolls -6.3%) —
+    // the worst recession since the war, and still a recession. Playthroughs
+    // put the label on episodes of 8-12% unemployment. A city in depression
+    // has lost one job in ten and is still losing them after eighteen months:
+    // the 1930s (US payrolls about -20%), Detroit 2008-10, Flint.
+    case "recession": if (dwell && g6 > 0.002) next = "recovery"; else if (dd > 0.10 && e.phaseAge >= 18) next = "depression"; break;
     case "depression": if (dwell && g6 > 0.002) next = "recovery"; break;
     case "recovery": if (T >= (e.cycPeak ?? T)) next = "expansion"; else if (dwell && g6 < -0.005) next = "recession"; break;
   }
@@ -2757,7 +3665,7 @@ function derivePhase(s: GameState) {
       peak: "The market has topped out. Everything is priced to perfection.",
       recession: "The turn is here: tenants retrench, lenders retreat.",
       recovery: "The bleeding has stopped. Recovery begins at the bottom of the stack.",
-      depression: "This is not a recovery — the city has lost more than one job in twenty and is still losing them.",
+      depression: "This is not a recovery — the city has lost more than one job in ten and is still losing them.",
     };
     pushNews(s, "event", label[e.phase]);
   }
@@ -2806,7 +3714,6 @@ export function tickEcon(s: GameState) {
   // Great Moderation was thirty years of a central bank being believed.
   tickNation(s);
   tickIndustryCycle(s);
-  const c2 = PHASE_CFG[e.phase];
 
   // (retired) THE OLD CITY-LEVEL POLICY RATE read the CITY's unemployment, so
   // a player who wrecked his own city was handed a rate cut for it. The nation
@@ -2819,7 +3726,6 @@ export function tickEcon(s: GameState) {
   // same sentiment now builds at 1.8x trailing-year payroll growth, which is
   // those two numbers at +1.5%/yr and -3%/yr, continuously. It feeds cap
   // rates and land through `cycleDev`, so that channel is now caused.
-  void c2;
   const step = clamp(1.8 * payrollGrowth12(e), -0.08, 0.06) + rrange(s, -0.03, 0.03);
   const spring = -0.048 * e.cycleDev;
   e.cycleDev = clamp(e.cycleDev + step + spring, -1, 1);
@@ -2995,7 +3901,9 @@ export function tickEcon(s: GameState) {
   // work, housing demand following population, the Phillips term — is the
   // machinery that was already here, answering a shock it can now see.
   // Zero in every month in which no level event is currently landing.
-  const swanPull = e.swanJobDrift ?? 0;
+  // ...and the black swans' (blackswans.ts): a broke city's layoffs, an
+  // anchor's campus hiring.
+  const swanPull = (e.swanJobDrift ?? 0) + (e.bsJobPull ?? 0);
   // A FIRM THAT CANNOT STAFF A CITY STOPS TRYING TO GROW IN IT.
   //
   // `employIdx` is desire and it had no idea whether the desire was being met.
@@ -3149,6 +4057,17 @@ export function tickEcon(s: GameState) {
     const premRaw = (e.wageIdx ?? 1) / Math.max(0.1, e.natWageIdx ?? (e.wageIdx ?? 1));
     e.wagePremEma = (e.wagePremEma ?? premRaw) + (premRaw - (e.wagePremEma ?? premRaw)) / 24;
     const wageDemand = Math.pow(Math.max(0.3, e.wagePremEma), -0.5);
+    // THE TOWN'S PAYROLL IS ITS FIRMS' (2026-10-16). Where the town keeps
+    // firms (streetRolls.ts), what employers want to hire is what its firms
+    // employ — each moving with its trade's demand, its own sales and its own
+    // margins, firms forming and closing — scaled for the jobs that sit
+    // outside the commercial floors (public, home-based, the sites). The
+    // employment index is restated to it, so everything that reads it reads
+    // the firms.
+    if (e.firmJobs && e.firmJobs > 0) {
+      if (!(e.firmJobs0 && e.firmJobs0 > 0)) { e.firmJobs0 = e.firmJobs; e.firmEmp0 = e.employIdx; }
+      e.employIdx = (e.firmEmp0 ?? 1) * e.firmJobs / e.firmJobs0;
+    }
     const wanted = Math.round((e.jobs0 ?? 132_000) * e.employIdx * wageDemand * (1 - CONSTRUCTION_JOB_SHARE + trades));
     // PARTICIPATION ANSWERS THE MARKET. People come back to work when jobs are
     // easy to find and stop looking when they are not — the discouraged-
@@ -3299,6 +4218,11 @@ export function tickEcon(s: GameState) {
       const share = clamp(islandResidents(e).residents / Math.max(1, e.population ?? 1), 0, 1);
       migration *= 1 - share * (1 - (0.20 + 0.80 * slack));
     }
+    // A WAVE OF NEWCOMERS (blackswans.ts) does not wait for a flat: it lands
+    // after the housing choke above, because refugees double up rather than
+    // go to the next town.
+    migration += e.bsMigPull ?? 0;
+    e.migRate = migration;
     // RETIRED (2026-10-09): out-migration on a rent-burden threshold
     // (`mfBurden > 1.25` against the global RENT_BASE table, capped at
     // 0.25%/mo). Rent now reaches movers through the real wage — it is a third
@@ -3484,15 +4408,21 @@ export function tickEcon(s: GameState) {
     // nation's — above San Francisco, for a town of 50-70k, where the BEA's
     // price parities put small metros at 0.88-0.95 of the US.
     const natShelter12 = natWage12;
-    const inflM = natInfl / 12
-      + (SHELTER_W * (shelter12 - natShelter12) + SERVICES_W * (wage12 - natWage12)) / 12;
     void cost12;
     // The old monthly floor (-0.05%/mo unless the nation deflated) and the
     // 1.15%/mo ceiling were there to stop the labour term running away. With
     // the price level built from traded goods and two local relatives, those
     // are wide guards: a month the town deflates faster than 1% is a month
     // its rents fell by a third.
-    e.cpi = clamp(e.cpi! * (1 + clamp(inflM, -0.01, 0.02)), 0.5, 1000);
+    // THE NATION'S RATE PASSES THROUGH WHOLE (2026-10-14). The guard was on
+    // the whole monthly rate (+2%), sized for a national rate that could not
+    // pass 22%. With the national model uncapped, a fiscal-dominance century
+    // ran the nation at 70-100% a year while this town's prices were held at
+    // 26.8% — and pay, which follows the nation's, ran six times ahead of the
+    // town's prices: real wages, jobs and real rents exploded. Only the LOCAL
+    // difference is guarded now (a point a month either way).
+    const localM = (SHELTER_W * (shelter12 - natShelter12) + SERVICES_W * (wage12 - natWage12)) / 12;
+    e.cpi = e.cpi! * (1 + natInfl / 12 + localM);
     // ...AND THE SAME BASKET WITHOUT THE RENT, which is what rents escalate
     // by (see `escalation` in the rent block). Asking rents marked to a price
     // level that contains them index themselves: measured over 4 worlds x 50
@@ -3506,7 +4436,7 @@ export function tickEcon(s: GameState) {
     // that keeps the spiral from either exploding or dying: fast enough that a
     // decade of 6% becomes the new normal, slow enough that one bad year is
     // not a regime.
-    e.inflExp = clamp(e.inflExp + 0.020 * (infl12 - e.inflExp), -0.008, 0.14);
+    e.inflExp = e.inflExp + 0.020 * (infl12 - e.inflExp);
 
     // WAGES ARE NOMINAL AND THEY TRACK PRICES. A worker whose pay does not
     // move with the price level is a worker who cannot pay next year's rent —
@@ -3565,10 +4495,31 @@ export function tickEcon(s: GameState) {
     // So the centre stays exactly where it was and only the variation is new.
     // The amplitude is the measured era spread: roughly +/-0.8 points between
     // the 1.3-1.4%/yr regimes and the 2.8-2.9% ones.
+    // NOW TWO MOVING PARTS, NEITHER OF THEM A CLOCK (2026-10-16). The era
+    // was a sine wave keyed on the seed: every town passed through the same
+    // regimes in the same order at the same pace. Labour productivity grows
+    // by (a) the technology a worker has to hand — a persistent process with a
+    // generation's memory centred on the 1.1%/yr this economy is balanced
+    // against, its stationary spread the era spread above (±0.5 points one sd,
+    // so the 1.3% and 2.9% regimes are both ordinary draws) — and (b) capital
+    // per worker, from the nation's own investment (the capital stock in the
+    // spending block, against its trend): output per hour rises a third of a
+    // point for each point capital grows faster than its trend (capital's
+    // share, about a third: BLS multifactor productivity accounts). An
+    // investment boom raises pay a few years on; an investment bust that
+    // leaves the stock short of trend holds it back.
     const PRODUCTIVITY = 0.011;    // ~1.1%/yr real, the long-run US figure
-    const prodEra = PRODUCTIVITY + 0.0075 * Math.sin(
-      (s.seed % 1000) / 159.1549 + s.month / 47.75,   // ~25-year regimes, seeded phase
-    );
+    const nn = e.nat!;
+    nn.tfpG ??= PRODUCTIVITY + TFP_SD * hashNormal(`${s.seed}|tfp`);
+    nn.tfpG += (PRODUCTIVITY - nn.tfpG) / TFP_TAU_M
+      + TFP_SD * Math.sqrt(2 / TFP_TAU_M) * Math.sqrt(3) * (2 * rng(s, "nation") - 1);
+    const kNow = nn.dem?.K;
+    const kDeep = kNow && nn.kSeen ? clamp(12 * Math.log(kNow / nn.kSeen), -0.05, 0.05) : 0;
+    if (kNow) nn.kSeen = kNow;
+    const prodEra = nn.tfpG + CAPITAL_SHARE * kDeep;
+    // The level of the technology a worker has to hand (log, from the opening):
+    // what the cost of selling at a distance falls with (see ONLINE below).
+    nn.techLn = (nn.techLn ?? 0) + nn.tfpG / 12;
     // Labour hoarding: firms carry staff they cannot use into a downturn, so
     // output per worker falls first and rebounds in the recovery.
     //
@@ -3587,7 +4538,7 @@ export function tickEcon(s: GameState) {
     // construction and cannot smuggle in a trend. It is also the honest read:
     // 2022's -1.7% was a labour-hoarding year, not a slack-labour-market year.
     const hoarding = -((e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? 0.021 : 0.011) : 0);
-    const productivity = clamp(prodEra + hoarding, -0.028, 0.042);
+    const productivity = prodEra + hoarding;
     // AND NOMINAL PAY DOES NOT GET CUT. It gets FROZEN, and inflation does the
     // rest — which is the whole reason real wages fall while nominal ones do
     // not, and the mechanism behind 1974-75 and 2021-22 alike.
@@ -3846,12 +4797,22 @@ export function tickEcon(s: GameState) {
         [-0.009, 3],   // slow space-per-worker compression
         [0.0, 2],      // steady state
         [0.008, 2],    // services boom pulls desks
+        // EVERY CLASS CAN WIN A CENTURY (owner, 2026-10-15: "any of the 4
+        // asset types could be the winner or loser"). The office menu only
+        // ran from compression to an ordinary boom; the towns that became
+        // headquarters towns — finance, law, HQ relocations — had an era of
+        // their own. Mean now ~0 (was -0.16%/yr).
+        [0.014, 1],    // headquarters town
       ],
+      // Retail keeps a lean down (e-commerce is real) but no longer a certain
+      // loser: a downtown renaissance or a destination-retail boom is as
+      // likely as the browser era. Mean -0.28%/yr (was -0.74%).
       retail: [
-        [-0.02, 2],    // the browser eats the high street
-        [-0.008, 3],   // slow erosion
+        [-0.02, 1.5],  // the browser eats the high street
+        [-0.008, 2],   // slow erosion
         [0.0, 2],      // steady state
-        [0.005, 1],    // urban retail renaissance
+        [0.005, 2],    // urban retail renaissance
+        [0.012, 1],    // destination / experiential retail boom
       ],
       // Weighted to the record (2026-10-09). These are demand for flats PER
       // ADULT — the adults themselves come from the age model — so their
@@ -3861,17 +4822,29 @@ export function tickEcon(s: GameState) {
       // three times that, and measured over 4 worlds x 50 years they added
       // +0.11 to +0.37 log points of flat demand per adult — a trend nobody
       // had observed. Same eras, weights 2/3/2/0.5: mean +0.17%/yr.
+      // AND A CITY'S FLATS CAN HAVE A BAD GENERATION TOO (2026-10-16). The
+      // deepest era here was -0.4%/yr while offices, shops and sheds each had
+      // one of -0.9 to -2%/yr, so flats were the one class that could not lose
+      // a century. Cities did lose theirs: 1950-80 central-city renters left
+      // for the suburbs — New York lost a tenth of its people in the 1970s,
+      // St Louis, Cleveland and Detroit a third or more over three decades
+      // (Census). Urban flight is that era. The formation wave is weighted up
+      // a step to hold the mean near the headship trend (+0.08%/yr).
       multifamily: [
+        [-0.012, 1],   // urban flight
         [-0.004, 2],   // suburban exodus
         [0.0, 3],      // steady state
-        [0.007, 2],    // household-formation wave
+        [0.007, 3],    // household-formation wave
         [0.013, 0.5],  // urbanization surge
       ],
+      // A shed town is as likely to be a fulfilment hub as a rust belt: the
+      // logistics boom weighs what the manufacturing exodus does. Mean
+      // -0.12%/yr (was -0.44%).
       industrial: [
-        [-0.0172, 3],  // the manufacturing exodus (the old constant, now one era)
+        [-0.0172, 2],  // the manufacturing exodus (the old constant, now one era)
         [-0.006, 2],   // slow thinning
         [0.0, 2],      // steady state
-        [0.012, 2],    // logistics / fulfilment boom
+        [0.012, 3],    // logistics / fulfilment boom
       ],
     };
     let retailErosion = 0;
@@ -3887,6 +4860,41 @@ export function tickEcon(s: GameState) {
         sec.leftM = Math.round(rrange(s, 144, 300));
       }
       sec.leftM--;
+      // FLATS FOLLOW THE TOWN, NOT A MENU (2026-10-16). Demand for flats per
+      // adult drew its eras independently of the town, so a town losing a
+      // sixth of its people drew a household-formation wave and an
+      // urbanisation surge and its flats ran 37% fuller per adult (measured).
+      // Household formation is local: young adults form households where the
+      // jobs are and double up or leave where they are not (headship falls
+      // in a weak local labour market and recovers with it — Haurin & Rosenthal
+      // 2007; Paciorek 2016). The drift is the national headship trend
+      // (+0.15%/yr, 1960-2020) plus half of the town's job growth over the
+      // nation's, read over five years; the menu above stays only for what
+      // a menu still stands for elsewhere.
+      // OFFICES, SHOPS AND SHEDS FOLLOW THEIR CAUSES, NOT A MENU (2026-10-16).
+      // The eras above were drawn: a town rolled "the browser eats the high
+      // street" or "a logistics boom" whether or not anything in it had
+      // happened. Each is now the thing that made the era:
+      //  - offices: no era. What an office is wanted for is the firms in it —
+      //    their headcount, their trades and what space costs them (affordEff
+      //    off their own cost shares); a headquarters town is a finance and
+      //    law town, which the trades already are.
+      //  - shops lose the goods that go online, and ONLINE (below) grows as the
+      //    technology of selling at a distance improves (this town's own
+      //    productivity path, market.ts tfpG) and as a shop's rent rises
+      //    against a shed's.
+      //  - sheds gain the fulfilment floor those online sales need, and lose
+      //    the factories a dear dollar sends abroad (the exchange rate of the
+      //    world block) — and win them back when it is cheap.
+      if (k === "office") sec.drift = 0;
+      if (k === "retail" || k === "industrial") sec.drift = 0;
+      if (k === "multifamily") {
+        const lj = Math.log(Math.max(1, e.jobs ?? 1));
+        e.jobsLogRef ??= lj;
+        e.jobsLogRef += (lj - e.jobsLogRef) / 60;
+        const g = (lj - e.jobsLogRef) / 5;
+        sec.drift = HEADSHIP_TREND + HEADSHIP_JOBS * (g - NAT_JOB_TREND);
+      }
       if (k === "retail" && sec.drift < -0.005) retailErosion = -sec.drift;
       const coupled = k === "industrial" ? sec.drift + 0.6 * retailErosion : sec.drift;
       // A SHARE DECELERATES AS IT APPROACHES ITS IRREDUCIBLE CORE. THIS WAS AN
@@ -3923,7 +4931,43 @@ export function tickEcon(s: GameState) {
       // That is the honest trade for a bound that is a guard again.
       const span = coupled < 0 ? (sec.idx - 0.45) / (1 - 0.45)
                                : (2.2 - sec.idx) / (2.2 - 1);
+      if (k === "office") { sec.idx = 1; continue; }
+      if (k === "retail" || k === "industrial") continue;
       sec.idx = clamp(sec.idx * (1 + (coupled / 12) * Math.max(0, span)), 0.45, 2.2);
+    }
+    // ONLINE. The share of the town's shop-type sales made at a distance runs
+    // toward the share at which shopping online and in a shop cost the same,
+    // given (a) the technology of selling at a distance, which improves with
+    // this economy's own technology level — log points since the opening,
+    // times ONLINE_TECH — and (b) what a shop's floor costs against a shed's
+    // (both real, against the opening). Measured US anchors: about 2% of
+    // store-type sales online in 2000 and 15% by 2020 (Census e-commerce
+    // series), which ONLINE_TECH reproduces at this economy's central
+    // technology growth; at most about two fifths of what a high street sells
+    // can ship at all (groceries, services, food and drink, the clinic), so the
+    // share runs toward ONLINE_MAX, and only goods leave the shop: about
+    // ONLINE_GOODS of retail floor sells shippable goods. Households move
+    // their buying over about five years. A sale online needs about three
+    // times the warehouse floor a sale in a shop does (Prologis 2020), so
+    // the sheds gain ONLINE_SHED of their floor per unit of share.
+    {
+      const nn = e.nat;
+      const techLn = nn?.techLn ?? 0;
+      const realOf = (k: "retail" | "industrial") =>
+        Math.log(Math.max(1e-6, ((e.effRentIdx?.[k] ?? e.rentIdx[k]) / Math.max(1e-6, e.cpi ?? 1))
+          / Math.max(1e-6, (e.effAnchor?.[k] ?? e.rentAnchor?.[k] ?? e.rentIdx[k]))));
+      const adv = ONLINE_TECH * techLn + ONLINE_COST * (realOf("retail") - realOf("industrial"));
+      const z0 = Math.log(ONLINE_0 / (ONLINE_MAX - ONLINE_0));
+      const target = ONLINE_MAX / (1 + Math.exp(-(z0 + adv)));
+      e.online = (e.online ?? ONLINE_0) + (target - (e.online ?? ONLINE_0)) / 60;
+      const lost = ONLINE_GOODS * (e.online - ONLINE_0) / (1 - ONLINE_0);
+      e.secular.retail.idx = Math.max(0.3, 1 - lost);
+      // Factories follow the exchange rate: a 10% dear dollar sends about 1%
+      // of manufacturing floor a year abroad (the 1980s and 2000s episodes).
+      const q = nn?.dem?.q ?? 0;
+      e.manufIdx = Math.max(0.3, (e.manufIdx ?? 1) * (1 - MANUF_FX * q / 12));
+      e.secular.industrial.idx = e.manufIdx * (1 + ONLINE_SHED * (e.online - ONLINE_0));
+      void retailErosion;
     }
     // (The extra industrial stop at INDUST_COMP_FLOOR is gone, 2026-10-13: the
     // `span` deceleration above already approaches the bound without reaching it.)
@@ -3986,7 +5030,18 @@ export function tickEcon(s: GameState) {
     // anyway. `rawSites === undefined` is the first year before the annual
     // refresh has run — treat as unconstrained so the book can form.
     const rawSites = e.sitePencil?.[k];
-    const sites = rawSites === undefined ? 1 : Math.max(0, rawSites);
+    // A RAMP, NOT A SWITCH (2026-10-15). `sitePencil` is zero unless the best
+    // sampled site clears the full hurdle, so construction flipped on and off
+    // from one annual refresh to the next (measured: apartment starts 0, 9,650,
+    // 0, 3,430 in alternate years on one seed). Builders do not share one
+    // hurdle — a merchant builder holding land, a family office, a pension fund
+    // with a lower cost of capital will each go a little under the street's
+    // line — so when the best sites stand within a tenth of clearing
+    // (`siteHurdle`, the same P97 including the ones that fail), some still
+    // start, in proportion to how close they are. Continuous at the hurdle.
+    const nearH = e.siteHurdle?.[k];
+    const ramp = nearH !== undefined && nearH < 1 ? Math.max(0, (nearH - 0.9) / 0.1) : 0;
+    const sites = rawSites === undefined ? 1 : Math.max(0, rawSites > 0 ? rawSites : ramp);
     // ONE ANSWER TO "DOES IT PAY" (2026-10-13). This multiplied two of them:
     // `devPencils` (a generic scheme on a top-decile corner, no land, ~0.66 in
     // an ordinary month) times `sites` (the best real sites' own
@@ -4167,34 +5222,40 @@ export function tickEcon(s: GameState) {
     const burden = relRent;
     let affordRaw: number;
     if (k === "multifamily") {
-      const u = e.unemployment ?? 0.055;
-      const low = clamp(0.30 + (u - 0.05) * 1.5, 0.22, 0.48);
-      const hi = clamp(0.28 - (u - 0.05) * 0.8, 0.15, 0.35);
-      const mid = Math.max(0.15, 1 - low - hi);
-      // HOUSEHOLDS, NOT SQUARE FEET (2026-10-13). A flat is a fixed unit: a
-      // household cannot take 40% more floor without moving, and the stock's
-      // unit mix does not change. What cheap rent buys in housing is MORE
-      // HOUSEHOLDS — young adults moving out, roommates and doubled-up families
-      // splitting — and that margin is smaller and slower. Headship
-      // elasticities to rent run about -0.1 to -0.4 (Börsch-Supan 1986;
-      // Haurin, Hendershott & Kim 1993), highest for the young and the poor.
-      // These were -0.70/-0.50/-0.35 at lease-rollover speed — the space
-      // margin of a commercial tenant — and doubling the flats stock was
-      // absorbed in five years with each household renting 40% more.
-      affordRaw = low * clamp(Math.pow(burden, -0.35), AFFORD_BAND[0], AFFORD_BAND[1])
-        + mid * clamp(Math.pow(burden, -0.25), AFFORD_BAND[0], AFFORD_BAND[1])
-        + hi * clamp(Math.pow(burden, -0.15), AFFORD_BAND[0], AFFORD_BAND[1]);
-      // ...AND A JOB LOST IS A HOUSEHOLD UNFORMED (2026-10-13). People out of
-      // work double up, move back with parents and take roommates; flats
-      // demand read population and pay and never the jobless rate, so a
-      // depression left apartment vacancy at 2.8% while real rents rose. The
-      // US "lost" about 2.5 million households to 2008-11 (Paciorek 2013),
-      // mostly renters, on +5 points of unemployment — about 1.2% of renter
-      // households per point. Symmetric about the town's own natural rate,
-      // through the same household-formation clock.
-      affordRaw *= Math.exp(-HH_U_SENS * ((e.unemployment ?? OPENING_UNEMP) - OPENING_UNEMP));
+      // FROM HOUSEHOLDS' BUDGETS (2026-10-16). This was three income tiers
+      // with headship elasticities of -0.35/-0.25/-0.15 taken from the
+      // literature, a jobless rate read at 1.2% of renter households a point,
+      // and an income elasticity of 0.25 on top — four numbers from studies.
+      // Each is now what a household's budget does. A household needs at
+      // least HH_MIN of the opening's average home (the smallest flat people
+      // take before they double up instead: a studio is about half of the
+      // 900 sf the generator builds) and spends a fixed share of what it has
+      // left over on more (Stone 1954; Geary 1950). Its income is pay times
+      // the share of the town in work: a jobless household has less, and
+      // doubles up because of it. The one level that fixes the budget is a
+      // measured fact — US renters spend about 30% of income on rent
+      // (HH_RENT_SHARE0, ACS) — and from that and the minimum, every
+      // elasticity follows and moves with the town: at the opening, income
+      // 0.6 and price -0.4, falling as a town gets richer.
+      const realWage = (e.wageIdx ?? 1) / cpiNow;
+      const rw = realWage / Math.max(1e-6, e.wage0 ?? realWage);
+      const u = e.unemployment ?? OPENING_UNEMP;
+      const Y = rw * (1 - u) / (1 - OPENING_UNEMP) / HH_RENT_SHARE0;
+      const beta = (1 - HH_MIN) / (1 / HH_RENT_SHARE0 - HH_MIN);
+      const p = Math.max(0.05, burden);
+      affordRaw = Math.max(0.3, HH_MIN + beta * (Y - p * HH_MIN) / p);
     } else {
-      affordRaw = clamp(Math.pow(burden, -0.40), AFFORD_BAND[0], AFFORD_BAND[1]);
+      // FROM THE FIRMS' OWN COSTS (2026-10-16). The exponent was -0.40 for
+      // every commercial class. A firm trades floor against people at the
+      // relative cost of each: with an elasticity of substitution SIGMA_KL
+      // between space and labour, its space per worker answers its rent at
+      // -SIGMA_KL x (1 - space's share of what it pays for space and staff) —
+      // and that share is read off the street's own books (streetRolls
+      // spaceShare), so a dear town, where rent has grown into a bigger slice
+      // of every firm's costs, economises proportionally less on each further
+      // point (the Cobb-Douglas limit is SIGMA_KL = 1).
+      const sh = e.spaceShare?.[k] ?? SPACE_SHARE0[k];
+      affordRaw = affordSoft(Math.pow(burden, -SIGMA_KL * (1 - sh)));
     }
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
     // At the lease-rollover rate of THIS class, not of an office. See AFFORD_ROLL.
@@ -4427,7 +5488,16 @@ export function tickEcon(s: GameState) {
     // space is demand from people who turned up, and `e.jobs` — the same
     // number the unemployment rate and the wage bill are struck on — is that
     // number. One quantity, one answer.
-    const jobs0 = e.jobs0 ?? 132_000;
+    // ...AGAINST THE PAYROLL THE LABOUR MARKET ACTUALLY FILLED (2026-10-14).
+    // `jobs0` is the size the town was drawn at, and the first month's labour
+    // solve moves it 2-5% (derivePhase says so) — so every town opened with
+    // its space positioned for tenants that the first solve then removed,
+    // and gave the floors back over the next two years. Measured across
+    // twelve seeds: office vacancy up 3-10 points and real office rent down
+    // 22-34% by year five, in every seed, whatever the opening vacancy. The
+    // space market is indexed to the first filled payroll instead.
+    if (e.jobsFilled0 === undefined && (e.history?.length ?? 0) > 1 && (e.jobs ?? 0) > 0) e.jobsFilled0 = e.jobs;
+    const jobs0 = e.jobsFilled0 ?? e.jobs0 ?? 132_000;
     const jobIdx = (e.jobs ?? jobs0) / jobs0;
     // Sheds are leased by industrial firms. Total jobs is the right scale for
     // office; for industrial it has to be multiplied by the secular share of
@@ -4474,12 +5544,41 @@ export function tickEcon(s: GameState) {
     // is decided at moves, not monthly: rolled over three years, which is
     // also how long the 1980s shift took to show in the survey.
     if (k === "multifamily") {
-      const ref = (e.tenureRef ??= e.indexRate ?? 5.4);
-      const raw = 1 + TENURE_PER_PT * ((e.indexRate ?? ref) - ref);
+      // OWN OR RENT, ON WHAT EACH COSTS (2026-10-15). This read the loan index
+      // alone. A household chooses on the user cost of owning — the house
+      // price times (mortgage rate + upkeep and tax - expected appreciation)
+      // (Poterba 1984; Himmelberg, Mayer & Sinai 2005) — against the rent. The
+      // elasticity keeps the old calibration: a point on mortgage rates moves
+      // owning cost ~9% and renter households ~0.8%, so ~0.09 per log point.
+      const own = ownCostIdx(e);
+      const rentRel = (e.effRentIdx?.multifamily ?? 1) / Math.max(0.1, e.cpi ?? 1);
+      const rel = Math.log(own / Math.max(1e-6, rentRel));
+      const ref = (e.tenureOwnRef ??= rel);
+      const raw = Math.exp(TENURE_PER_LOG * (rel - ref));
       e.tenureIdx = (e.tenureIdx ?? 1) + (raw - (e.tenureIdx ?? 1)) / 36;
     }
-    const driver = (k === "multifamily" ? hhIdx * (e.tenureIdx ?? 1)
-      : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32)
+    // HOUSEHOLDS BORROW TO SHOP (2026-10-15). Cars, furniture, appliances and
+    // a good deal of everything else go on credit, so dear money cuts what
+    // households spend on goods before it costs anyone a job: durables fall
+    // roughly 3-5% per point of real rates and they are about a third of
+    // store sales, so ~1.5% of retail spending per point held over neutral
+    // (Mishkin 1976; Bernanke & Gertler 1995's household credit channel).
+    // Read against the town's opening, rolled over a year as card and auto
+    // rates reprice.
+    if (k === "retail") {
+      const pts = firmBookInputs(e).ratePts;
+      const raw = Math.exp(-HH_CREDIT_PER_PT * pts);
+      const ref = (e.hhCreditRef ??= raw);
+      e.hhCredit = (e.hhCredit ?? 1) + (raw / ref - (e.hhCredit ?? 1)) / 12;
+    }
+    // ...LESS THE HOUSEHOLDS THE NEW HOUSES TOOK (homes.ts). A new house is
+    // not a flat: it houses one household, owner or a single-family renter,
+    // that would otherwise rent an apartment, directly or down the vacancy
+    // chain a move-up purchase starts. Each one takes an average 900-sf flat
+    // (RentCafe / Census new-apartment average) out of the town's demand.
+    const housed = k === "multifamily" && e.newHomes ? (e.newHomes * 900) / Math.max(1, e.newHomesRef ?? 1) : 0;
+    const driver = (k === "multifamily" ? Math.max(0.05, hhIdx * (e.tenureIdx ?? 1) - housed)
+      : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32) * (e.hhCredit ?? 1)
       : jobIdx * tradeMix) * secIdx;
     // A CLASS'S MOMENTUM IS ITS TENANTS' GROWTH AGAINST NORMAL. Monthly growth
     // of the driver less its own five-year average, smoothed over six months,
@@ -4551,6 +5650,16 @@ export function tickEcon(s: GameState) {
     // friction)` made every delivery raise the cap and occupy the same
     // month. Dark floor keeps the looking book from counting a crane's
     // last pour as already let.
+    // What the town's firms want of this class at reference rents, and the
+    // rent response today — the street's firms form, size and resize off it
+    // (streetRolls.ts).
+    if (k !== "multifamily") {
+      // ...and the space a worker takes beyond the rent: the island against the
+      // mainland, income, and the structural shifts (remote work after a swan).
+      const lvl = (e.locEff?.[k] ?? 1) * (e.incomeEff?.[k] ?? 1) * swanClassLevel(e, k)
+        * (k === "retail" ? (e.secular?.retail?.idx ?? 1) : 1);
+      (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw, lvl };
+    }
     if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     const housable = housableStock(e, k);
     const searchFringe = e.stock[k] * NATURAL_VAC[k] * 0.25;
@@ -4572,6 +5681,20 @@ export function tickEcon(s: GameState) {
     if (k === "office" && targetRaw > housable + searchFringe) {
       const excess = (targetRaw - housable - searchFringe) / Math.max(1, targetRaw);
       e.employIdx = Math.max(0.55, (e.employIdx ?? 1) * (1 - Math.min(0.0015, excess * 0.004)));
+    }
+    // ...AND SHEDS THE SAME WAY, THROUGH THE TRADES THAT USE THEM (2026-10-13).
+    // A distributor that cannot find a shed here opens the next one across
+    // the water, and its payroll goes with it. Nothing said so: logistics,
+    // food and apparel kept hiring at their national trend against an island
+    // with no sheds left, industrial sat at 0.3% vacancy for decades with
+    // nothing in the pipeline (no site pencils for a shed at island land
+    // prices), and the unhoused demand pressed rents forever. Same rate as
+    // offices, on the shed trades' own employment rather than every
+    // employer's, so it reaches the town's jobs through exportIdx.
+    if (k === "industrial" && targetRaw > housable + searchFringe && e.indIdx) {
+      const excess = (targetRaw - housable - searchFringe) / Math.max(1, targetRaw);
+      const cut = 1 - Math.min(0.0015, excess * 0.004);
+      for (const sec of SECTOR_CLASSES.industrial ?? []) e.indIdx[sec] = (e.indIdx[sec] ?? 1) * cut;
     }
     // ABSORPTION IS FINITE, and it is a property of TENANTS, not buildings.
     // The clamps and the noise used to scale with stock — a bigger city of
@@ -4602,8 +5725,73 @@ export function tickEcon(s: GameState) {
     // absorption is limited by how many tenants there are, which is the gap
     // itself. The old caps become a guard at 3% of occupied a month, a pace no
     // market has sustained.
+    // THE PLAYER'S LEASING MOVES THE CITY TOTAL (see playerSpace, sim.ts): the
+    // change in what the player's buildings actually hold since last month is
+    // the city's change too, before the street's absorption runs on the gap.
+    const pNow = e.playerNow?.occ?.[k];
+    // THE STREET'S FIRMS DECIDE WHAT IS LET (streetRolls.ts, 2026-10-16).
+    // Offices and shops are all on the map: what is occupied is what the
+    // town's firms hold — the street's rolls and the player's — and what is
+    // looking is the firms still searching. Sheds run half and half: the
+    // region's off the map stays on the aggregate below (`aggOcc`), the
+    // mapped ones are the firms'.
+    const firms = k !== "multifamily" ? e.streetSpace?.[k] : undefined;
+    const offShare = firms ? Math.max(0, 1 - (firms.cap + (e.playerNow?.sf?.[k] ?? 0)) / Math.max(1, e.stock[k])) : 0;
+    // The class's ledger and the map drift a few per cent apart over decades
+    // (deliveries and demolitions are booked to the stock as they happen);
+    // at 2% that sliver alone sent the shops back to the aggregate equation,
+    // which no longer describes the town's firms, and it read a 10-40%
+    // shortage at 4-13% vacancy (retail rents x2.7 in six years, measured).
+    // The offices and shops stay the firms' market; the sliver off the map is
+    // let as the street is.
+    // ALWAYS, for offices and shops (2026-10-16): even a 10% threshold was
+    // crossed in a boom (seed 32, year 54: the ledger ran ahead of the map as
+    // the town grew 30% in seven years), the shops fell back to the aggregate
+    // equation and read a 98% shortage at 12% vacancy, and real shop rents
+    // went 11 -> 85 in five years. Sheds stay split (most are off the map).
+    const firmsOnly = !!firms && (k === "office" || k === "retail" || offShare < 0.10);
+    void offShare;
+    if (firms && !firmsOnly) e.occupied[k] = (e.aggOcc ??= {})[k] ?? e.occupied[k];
+    let absorb = 0;
+    if (firmsOnly) {
+      const before = e.occupied[k];
+      const onMap = firms!.cap + (e.playerNow?.sf?.[k] ?? 0), letMap = firms!.let + (pNow ?? 0);
+      e.occupied[k] = Math.min(e.stock[k], letMap + Math.max(0, e.stock[k] - onMap) * Math.min(1, letMap / Math.max(1, onMap)));
+      absorb = e.occupied[k] - before;
+      e.pool[k] = e.occupied[k] + firms!.seek;
+      if (pNow !== undefined) (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;
+    } else if (pNow !== undefined) {
+      const pPrev = e.playerOcc?.[k];
+      if (pPrev !== undefined) e.occupied[k] = Math.max(0, e.occupied[k] + (pNow - pPrev));
+      // The first count (a new game, or a save from before this): the total
+      // still assumes the player's floors are let at the market's rate —
+      // swap that assumption for what they actually hold, once.
+      else e.occupied[k] = Math.max(0, e.occupied[k] + pNow
+        - (e.playerNow?.sf?.[k] ?? 0) * (e.occupied[k] / Math.max(1, e.stock[k])));
+      (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;
+    }
+    if (!firmsOnly) {
+    // STREET TENANTS FAIL OFF THEIR OWN BOOKS (2026-10-15): representative
+    // tenants per trade and covenant (tenantBooks.ts), the same accounts the
+    // player's tenants keep. Their failures above the background the churn
+    // already carries hand space back at once, and are gone as demand too.
+    if (k !== "multifamily") {
+      // From the street's own rolls when it keeps them (streetRolls.ts); the
+      // representative cohorts only for a town with no mapped commercial stock.
+      // The street's own firms fail off their own books (streetRolls.ts); the
+      // representative cohorts only for a town with no mapped commercial stock.
+      const share = e.streetRolls ? 0
+        : tickStreetTenants(e, k, SECTOR_CLASSES[k] ?? [], e.sectorShare ?? {}, s.month);
+      if (share > 0) {
+        const street = Math.max(0, e.occupied[k] - (pNow ?? 0));
+        const shed = street * share;
+        e.occupied[k] -= shed;
+        e.pool[k] = Math.max(0, e.pool[k] - shed);
+        (e.failedSf ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] += shed;
+      }
+    }
     const gapSf = e.pool[k] - e.occupied[k];
-    const absorb = clamp(gapSf / (gapSf > 0 ? MOVE_IN_M[k] : MOVE_OUT_M[k]), -0.03 * e.occupied[k], 0.03 * e.occupied[k])
+    absorb = clamp(gapSf / (gapSf > 0 ? MOVE_IN_M[k] : MOVE_OUT_M[k]), -0.03 * e.occupied[k], 0.03 * e.occupied[k])
       + e.occupied[k] * rrange(s, -0.0005, 0.0005);
     // FRICTIONAL VACANCY IS RESIDENCE TIME, not a rail. Suites sit dark
     // between tenants for `reletMonths`; new floor sits dark until it
@@ -4611,7 +5799,25 @@ export function tickEcon(s: GameState) {
     // fast a market can empty is still the -0.006 × occupied absorb bound;
     // vacancy itself is 1 − occ/stock, allowed to print what the flows did.
     const inTransit = betweenTenantsSf(e.occupied[k], k, e);
-    e.occupied[k] = clamp(e.occupied[k] + absorb, 0, Math.max(0, housable - inTransit));
+    // ...and the street cannot move its tenants into the player's empty floors.
+    const playerDark = pNow !== undefined ? Math.max(0, (e.playerNow?.sf?.[k] ?? 0) - pNow) : 0;
+    const streetCap = Math.max(pNow ?? 0, housable - inTransit - playerDark);
+    // ABOVE THE CAP, TENANTS STILL MOVE OUT (2026-10-15). This held occupied
+    // wherever it already was once it sat over the cap, so a flat market
+    // could stay fuller than physically possible: measured, apartment vacancy
+    // 0.12% against a 1.9% residence floor (the flats between tenants), i.e.
+    // nobody moving for a year. The suites in transit are empty by
+    // definition; occupied above the cap now drains to it at half the gap a
+    // month, as leases turn — not in one step, so a demolition or a stock
+    // count does not print a cliff.
+    const next = clamp(e.occupied[k] + absorb, 0, Math.max(streetCap, Math.min(e.occupied[k], housable)));
+    e.occupied[k] = next > streetCap ? next - 0.5 * (next - streetCap) : next;
+    if (firms) {
+      // The region's sheds keep the aggregate; the mapped ones are the firms'.
+      e.aggOcc![k] = e.occupied[k];
+      e.occupied[k] = Math.min(e.stock[k], e.occupied[k] * offShare + firms.let + (pNow ?? 0));
+    }
+    }
 
     // THE GIVE-BACK. What a tenant would take AT TODAY'S RENT, against what it
     // is contractually sitting in — and the difference goes on the market at
@@ -4677,6 +5883,26 @@ export function tickEcon(s: GameState) {
     e.sublet[k] = clamp(e.sublet[k], 0, e.occupied[k]);
 
     e.cityVac[k] = clamp(1 - e.occupied[k] / e.stock[k], 0, 0.45);
+    // THE STREET'S VACANCY, WHICH IS NOT THE CITY'S WHEN YOU OWN PART OF IT
+    // (2026-10-15). Every building the player does not own read the CITY
+    // rate — which counts the player's empty floors. So a player who built a
+    // million empty feet marked every incumbent in town as if it shared them,
+    // and when those floors filled by taking the incumbents' tenants, the
+    // city rate did not move and nobody else felt a thing. Measured on a
+    // town overbuilt by the player: new core towers at 22-54% leased for a
+    // decade while the street's books held 85-89%. Real overbuilding runs the
+    // other way — the new Class A fills out of the old stock and the old stock
+    // empties (Houston 1983-88, Manhattan 1990-93). The market's read on a
+    // building it does not own is the vacancy of the buildings like it.
+    {
+      const pSf = e.playerNow?.sf?.[k] ?? 0, pOcc = e.playerNow?.occ?.[k] ?? 0;
+      const streetSf = e.stock[k] - pSf;
+      (e.streetVac ??= { ...e.cityVac })[k] = streetSf > e.stock[k] * 0.05
+        ? clamp(1 - Math.max(0, e.occupied[k] - pOcc) / streetSf, 0, 0.45)
+        : e.cityVac[k];
+    }
+    // ...and the street by quality (bands.ts): which of its floors the vacancy is in.
+    tickBands(e, k);
     // New deliveries age out of lease-up on the same clock a vacated suite
     // does. No draw: the months are a property of the use, already named.
     e.darkSf[k] = Math.max(0, (e.darkSf[k] ?? 0) * (1 - 1 / Math.max(1, reletMonths(k))));
@@ -4817,6 +6043,11 @@ export function tickEcon(s: GameState) {
     // So the queue is `wantedNow` (today's price, today's income) over what
     // the city can house.
     e.structTight[k] = Math.max(0, (wantedNow - housable) / Math.max(1, e.stock[k]));
+    // Where the town's firms ARE the market (streetRolls.ts), the queue is the
+    // firms actually looking that the empty floors could not take — not the
+    // aggregate equation's wish list. In a glut that is nothing, and rents
+    // fall as a glut's should.
+    if (firmsOnly) e.structTight[k] = Math.max(0, (firms!.seek - Math.max(0, housable - e.occupied[k])) / Math.max(1, e.stock[k]));
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;
     monthAbs[k] = absorb;
     monthComp[k] = delivered;
@@ -4868,9 +6099,24 @@ export function tickEcon(s: GameState) {
     // while its vacancy sat welded to a frictional floor — the floor is a
     // statement about DIRECT vacancy and it was never a statement about how
     // much space you could go and lease.
-    const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k])
-      + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k])
-      - NATURAL_VAC[k];
+    // ...AGAINST THE RATE THIS MARKET IS USED TO (2026-10-16). The natural
+    // rate was one number per class for every town and every decade. It is
+    // not one number: it differs across metros by several points and drifts
+    // within one (Voith & Crone 1988; Gabriel & Nothaft 2001), and the way
+    // the people in a market know it is the way they know anything else
+    // about it — what availability has run at, over a long memory. The
+    // national figures are where a town starts; from there each market's
+    // normal is its own twenty-year history (half-life).
+    const avail = (e.cityVac?.[k] ?? NATURAL_VAC[k])
+      + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
+    const nv = (e.natVac ??= { ...NATURAL_VAC });
+    // ...BUT NOT FROM A SHORTAGE. A month the market spends on its
+    // between-tenants floor with tenants still queueing (`structTight`) is not
+    // evidence of what normal is: it is the shortage itself, and learning from
+    // it taught a market short for eighty years that short was normal (natural
+    // vacancy 4.3% → 3.1%, the gap that should have raised rents erased).
+    if (!((e.structTight?.[k] ?? 0) > 0.005)) nv[k] += (avail - nv[k]) * NATVAC_RATE;
+    const gap = avail - nv[k];
 
     // WHERE THE VACANCY-TO-RENT LAG IS NOT (OBSERVATION). `pnpm leadlag` says
     // this leg runs SIMULTANEOUS (0 months) where a real one runs 3 to 24, and
@@ -5241,7 +6487,19 @@ export function tickEcon(s: GameState) {
     const siteHk = e.siteHurdle?.[k];
     const eqGap = siteHk !== undefined && siteHk > 1 ? -Math.log(siteHk) : 0;   // ln(r*/r), only when r > r*
     const RENT_EQ_PULL = 0.20 / 12;
-    const instant = vacTerm + RENT_EQ_PULL * eqGap;
+    // ...WEIGHTED BY HOW MUCH OF THE LEASE THE NEXT BUILDING CAN REACH
+    // (2026-10-17). The pull toward the supply price is the tenant pricing in
+    // the building that is coming: a lease prices the rent it expects over its
+    // term, and a building not yet started arrives a planning period plus a
+    // build away (SUPPLY_LAG_M). Of an eight-year office lease most of the term
+    // lies after that, so most of the pull applies; a one-year apartment lease
+    // ends before any crane now unstarted can deliver, so its rent is today's
+    // scarcity and nothing else. Applied at full weight to flats it held their
+    // rents at the cost of building through 80 years of shortage — vacancy
+    // pinned at the between-tenants floor while builders ran flat out at
+    // twice the supply price (measured, metro Frontier, seed 655720).
+    const leaseReach = Math.max(0, (LEASE_TERM_M[k] - SUPPLY_LAG_M[k]) / LEASE_TERM_M[k]);
+    const instant = vacTerm + RENT_EQ_PULL * eqGap * leaseReach;
     const tau = RENT_PRESS_TAU[k];
     e.rentPress[k] += (instant - e.rentPress[k]) / tau;
     const pressEma = e.rentPress[k];
@@ -5270,7 +6528,8 @@ export function tickEcon(s: GameState) {
     // queue joining the gap it would have been the number doing the work.
     // At 3%/mo either way it is a statement that no asking sheet moves 40% in
     // a year, which none has.
-    e.rentPress[k] = clamp(e.rentPress[k], -0.03, 0.03);
+    // (The 3%-a-month guard on the press is gone, 2026-10-16: it bound in no
+    // month of 3 towns x 60 years.)
 
     // THE INCOME ANCHOR AND ITS EARNED PREMIUM — RETIRED (2026-10-09).
     //
@@ -5354,7 +6613,21 @@ export function tickEcon(s: GameState) {
     // or cuts it while CPI runs, which is how real rents fall, and the
     // glut clears through cheap space being taken up (`affordEff`) and
     // through supply leaving — not through a floor under the quote.
-    const escalGate = firmW * railEscal;
+    // ONE GAP, ONE TERM (2026-10-15). This was `firmW * railEscal`: a market
+    // one point over natural passed on two-thirds of inflation, three points
+    // over none — and the same gap was already cutting rent through `vacTerm`.
+    // The gap priced twice. Measured: a town sitting 1-2 points soft (no glut
+    // at all) lost 2.5%/yr of real office rent for seventeen years, and a
+    // long glut kept bleeding the full rate of inflation every year after
+    // `capitulation` had finished repricing it (real effective -76% and
+    // still falling at year 16). The rent adjustment literature has REAL
+    // rent answer the vacancy gap (Wheaton & Torto 1988; Hendershott 1996):
+    // nominal = inflation + the gap term. So asking carries the price level
+    // and `vacTerm` alone decides whether the real rent falls — in a glut it
+    // falls hard and then sits at the bottom until the space is taken up,
+    // which is the shape of Houston 1983-90 and Manhattan 1990-96.
+    void firmW;
+    const escalGate = railEscal;
     // THE PRICE LEVEL THE RENT IS PAID IN, AS IT WAS (2026-10-08). This read
     // EXPECTED inflation, which the central bank anchors near 2%, while the
     // city's own price level ran 0.3-0.8 points a year faster (measured over
@@ -5418,7 +6691,7 @@ export function tickEcon(s: GameState) {
     void liftGate; void jobDrift;
     const cycleJobs = 0;
     const cycleMom = 0;
-    const drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
+    let drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
     // THE HALF-OF-BASE FLOOR IS NOW A GUARD AGAIN, WHICH IS ALL IT WAS EVER
     // MEANT TO BE. It used to be load-bearing and it used to be the reason the
     // amplitude above looked survivable: removing it took office peak-to-trough
@@ -5427,8 +6700,26 @@ export function tickEcon(s: GameState) {
     // channel: it binds 0.0% of months in every class over 6 seeds x 50 years,
     // and deleting it entirely reproduces every statistic in this file to the
     // digit. Left in place because a guard that never fires is a guard.
+    let noise = rrange(s, -vol, vol);
+    // FROM THE COMPS, where the town's firms are the market (see recordDeal):
+    // the slack the last six months' leases signed in, and how far their mix
+    // sat from the usual one. The market's pressure this month is what the
+    // next month's deals will read.
+    {
+      const list = ((k === "office" || k === "retail") && e.streetSpace?.[k]) || (k === "multifamily" && e.flatRolls) ? e.deals?.[k] : undefined;
+      while (list && list.length && list[0].m < s.month - 6) list.shift();
+      const sf = list ? list.reduce((a, d) => a + d.sf, 0) : 0;
+      if (list && sf > 0) {
+        const pD = list.reduce((a, d) => a + d.p * d.sf, 0) / sf;
+        drift = pD + escalation;
+        noise = 0;
+      }
+      (e.dealPress ??= {})[k] = press;
+    }
     const beforeRent = e.rentIdx[k];
-    e.rentIdx[k] = Math.max(RENT_BASE[k] * 0.5 * (e.priceLevel ?? 1), e.rentIdx[k] * (1 + drift + rrange(s, -vol, vol)));
+    // (The floor at half the base rent is gone, 2026-10-16: measured over
+    // 3 towns x 60 years it bound in no month.)
+    e.rentIdx[k] = e.rentIdx[k] * (1 + drift + noise);
     if (!e.rentPath) e.rentPath = {} as NonNullable<Econ["rentPath"]>;
     e.rentPath[k] = {
       gap, vacTerm, instant, pressEma, pressClamped: press, clampBound,
@@ -5555,7 +6846,26 @@ export function tickEcon(s: GameState) {
     // matches that without ever being the largest term in the sum.
     const flows = capFlowsOf(e.retExp!, k);
     const target = capTargetOf(e, k, capIndex, sector, flows);
-    e.capRate[k] = e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045);
+    // WHAT INVESTORS REQUIRE (the target: rates, expected returns, the
+    // sector) is what bidders read (actions.ts tickListingAbsorption); WHERE
+    // THE INDEX SITS is where the last year's arm's-length sales cleared
+    // against it (2026-10-16). Each print says how far under or over the
+    // index's own value it traded, restated for how far the index has moved
+    // since. With fewer than three prints in a year the market has no
+    // evidence and the index drifts toward what investors require.
+    (e.capTarget ??= {})[k] = target;
+    let capNext = e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045);
+    {
+      const since = s.month - 12;
+      let w = 0, dv = 0, n = 0;
+      for (const c of s.comps ?? []) {
+        if (c.cls !== k || c.m < since || c.distress || c.offMarket || !(c.mv && c.mv > 0) || !(c.capAt && c.capAt > 0) || !(c.price > 0)) continue;
+        const dev = Math.log(c.mv * (c.capAt / Math.max(0.5, e.capRate[k])) / c.price);
+        w += c.price; dv += c.price * clamp(dev, -0.5, 0.5); n++;
+      }
+      if (n >= 3 && w > 0) capNext = e.capRate[k] * Math.exp(0.1 * dv / w);
+    }
+    e.capRate[k] = capNext;
     // THE EXIT CAP A DEVELOPER UNDERWRITES, which is not this month's.
     //
     // Land is bought against a sale three or four years out, so the yield that
@@ -5585,8 +6895,21 @@ export function tickEcon(s: GameState) {
   // inflation alone, so a century of ordinary CPI pinned the landIdx rail at
   // 40 even before real rents overheated — a load-bearing clamp, which is a
   // fake (CLAUDE.md). The residual is rent against construction cost.
-  const target = Math.pow(rentLevel / costLevel, 1.15) * (1 + 0.16 * e.cycleDev) * Math.max(0.25, vacDisc);
-  e.landIdx = clamp(e.landIdx + 0.024 * (target - e.landIdx) + e.landIdx * rrange(s, -0.003, 0.003), 0.05, 80);
+  // ...AND DIRT IS WORTH WHAT SOMEBODY WILL PAY FOR IT TODAY (2026-10-14).
+  // The residual says what a lot is worth to a builder; how many builders are
+  // bidding says whether anyone pays it. With nobody building, a lot has no
+  // buyer but a patient one at a deep discount (US land prices fell 40-60%
+  // over 2007-11, raw land more), and when builders crowd back in they bid
+  // past the residual for the right sites. `buildDemand` is that book, read
+  // against this town's own decade (`buildNorm`): one is a normal year; nil
+  // is no bidders, which leaves about a third of the
+  // residual — what a lot fetches held for parking and patience. Prices
+  // discover in log terms, ~40% of the gap a year, with no rail: the guard is
+  // only that a price is positive.
+  const bookVsNormal = Math.max(0, e.buildDemand ?? 1) / Math.max(1e-6, e.buildNorm ?? e.buildDemand ?? 1);
+  const bidders = Math.pow((bookVsNormal + 0.2) / 1.2, 0.6);
+  const target = Math.pow(rentLevel / costLevel, 1.15) * (1 + 0.16 * e.cycleDev) * Math.max(0.25, vacDisc) * bidders;
+  e.landIdx = Math.max(1e-3, e.landIdx * Math.exp(0.04 * Math.log(Math.max(1e-6, target) / Math.max(1e-6, e.landIdx)) + rrange(s, -0.003, 0.003)));
 
   // COSTS INFLATE AT LEAST AS FAST AS RENTS.
   //
@@ -5746,7 +7069,25 @@ export function tickEcon(s: GameState) {
     // permanent downward drift on real cost, because it cut the top off every
     // boom while leaving the busts intact, which is the same fault the stale
     // pivot had and arriving through a different door.
-    const heat = clamp(((e.crewUtil ?? 1) - 1) * 3.5, -1.9, 3.1);
+    // A DEEPER LULL (2026-10-14). The idle floor (-1.9 here, -4.8%/yr real)
+    // was shallower than the record: the Turner Building Cost Index fell ~7%
+    // nominal in 2009 (~9% real) and again in 2010, contractors' bids came in
+    // 10-15% lower through 2009-11 as builders cut margin to keep crews, and
+    // construction costs fell about a quarter over 1929-33. At -4 the deepest
+    // lull runs ~-10%/yr real before wages; the busy ceiling is unchanged.
+    //
+    // A MARGIN, NOT A DRIFT (2026-10-14). `heat` was a monthly RATE of change
+    // clamped to -1.9..+3.1, so the deepest lull could only ever shave ~5%/yr
+    // off real cost, a boom could only add ~8%/yr, and a long lull compounded
+    // into a permanently cheaper industry. A contractor's bid is inputs plus a
+    // margin, and the margin is a LEVEL set by the order book: bids came in
+    // 10-15% under cost through 2009-11 (and fell about a quarter over
+    // 1929-33) and ran 15-30% over it in 2021-22. So cost = inputs x (1 +
+    // premium), the premium chases 0.35 per unit of excess utilisation with no
+    // bound, and it gets there within about a year — bids reprice on every
+    // tender. A deep lull is a quick 10-20% drop; firms bidding under cost go
+    // under (`tickCrews`), and the order book comes back to a smaller trade.
+    const premiumTarget = 0.35 * ((e.crewUtil ?? 1) - 1);
     // ONE SLOPE (2026-10-09). This was 0.0026 below full employment and 0.0016
     // above, each set so its own extreme hit an ENR figure. Two gains on one
     // signal make the MEAN of an oscillating utilisation a drift: a market
@@ -5754,7 +7095,6 @@ export function tickEcon(s: GameState) {
     // that reason alone. The midpoint keeps the extremes in the record's range
     // (-4.8%/yr real at the idle floor, +7.8%/yr at the ceiling — 2009-10 and
     // 2021-22) and puts zero drift where utilisation averages one.
-    const slope = 0.0021;
     // WHAT A BUILDING COSTS IS WHAT ITS INPUTS COST (2026-10-08). The base
     // drift was EXPECTED inflation, which sits near its 2% anchor while
     // realised CPI ran 1.9-3.8%/yr across four 50-year worlds, and it gave
@@ -5765,32 +7105,41 @@ export function tickEcon(s: GameState) {
     // index slid 0.5-0.7%/yr whenever the trades were not fully booked, and
     // the office-rent catch-up below had been propping it up. Realised
     // inputs, not a target: a wage boom makes building dearer, a deflation
-    // cheaper. `heat` stays the premium for how busy the trades are.
+    // cheaper. `bidPremium` stays the premium for how busy the trades are.
     const LABOUR_SHARE = 0.45;
     // Materials are traded goods: they cost what they cost nationally
     // (2026-10-09; this read the local CPI, which now carries local rent, so a
     // housing shortage would have raised the price of steel).
     const cpiNow = Math.max(0.35, e.natCpi ?? e.cpi ?? 1), wageNow = Math.max(0.1, e.wageIdx ?? 1);
     const prevIn = e.costInputsPrev;
+    // ...LESS WHAT THE TRADES LEARN (2026-10-14). Pay rises with the town's
+    // productivity; a site crew's output rises far more slowly — the Baumol
+    // problem, and the reason real construction cost rose 27-35% over sixty
+    // years here and apartment rent (which tracks replacement cost) with it.
+    // Construction labour productivity grew ~1-2%/yr in the first half of the
+    // last century and has been flat-to-falling in the US since about 1970
+    // (Goolsbee & Syverson 2023); 0.7%/yr is a mid-century reading of that
+    // range, applied to the labour share only.
+    const TRADES_PRODUCTIVITY = 0.007;
     const inputGrowth = prevIn
-      ? (1 - LABOUR_SHARE) * (cpiNow / prevIn.cpi - 1) + LABOUR_SHARE * (wageNow / prevIn.wage - 1)
+      ? (1 - LABOUR_SHARE) * (cpiNow / prevIn.cpi - 1) + LABOUR_SHARE * ((wageNow / prevIn.wage - 1) - TRADES_PRODUCTIVITY / 12)
       : (e.inflExp ?? 0.02) / 12;
     e.costInputsPrev = { cpi: cpiNow, wage: wageNow };
     // The recession term (-0.0004/mo whenever the label read recession) is
-    // gone: an idle trade is already in `heat`, and a label is not a cost.
-    const costDrift = inputGrowth + heat * slope;
+    // gone: an idle trade is already in `bidPremium`, and a label is not a cost.
+    const costDrift = inputGrowth;
     // RETIRED (2026-10-08): the office-rent catch-up. This pulled the cost
     // index toward the OFFICE asking level whenever rents ran a quarter ahead
     // of it, for every class — flats and sheds priced their concrete off
     // office quotes. Nothing in the world does that: a contractor's bid is
     // materials, labour and how busy the trades are, which is `costDrift`
-    // above (inflation plus `heat`, the share of the city under
+    // above (inflation plus `bidPremium`, the share of the city under
     // construction). Measured over four 50-year worlds it fired in 22-63% of
     // months, and it fired exactly when a shortage lifted rents — so the
     // margin a shortage should open for builders was handed to the cost
     // index instead, the residual stayed flat, and the class stayed on its
     // vacancy floor. When rents outrun cost now, the residual rises, land
-    // pencils, cranes go up, and THEN the trades get dear through `heat`.
+    // pencils, cranes go up, and THEN the trades get dear through `bidPremium`.
     const catchUp = 0;
     // RETIRED (2026-10-09): the "fair real cost" path. Real cost was pulled
     // toward an asserted 1.004^years whenever it strayed 20-25% off it — a
@@ -5803,11 +7152,20 @@ export function tickEcon(s: GameState) {
     // The guards are in this town's dollars (`priceLevel`, drawn at the
     // opening): an absolute 0.6 floor lifted a cheap town's construction to
     // twice its own price level on the first tick (2026-10-12).
-    const pl = e.priceLevel ?? 1;
-    e.costIdx = clamp(
-      e.costIdx * (1 + costDrift + catchUp + realPull + rrange(s, -0.0012, 0.0012)),
-      0.6 * pl, 400 * pl,
-    );
+    // The 0.6x-400x guards on `costIdx` are gone with the drift form: inputs
+    // follow prices and wages, and the margin follows the order book.
+    if (e.bidPremium === undefined || e.costInputIdx === undefined) {
+      e.bidPremium = premiumTarget;
+      e.costInputIdx = e.costIdx / (1 + premiumTarget);
+    }
+    e.costInputIdx = e.costInputIdx * Math.max(0.5,
+      // ...and a swan's materials shock (the embargo, blackswans.ts), whatever
+      // landed this month; consumed here so it is counted once.
+      1 + costDrift + catchUp + realPull + (e.costShock ?? 0) + rrange(s, -0.0012, 0.0012));
+    e.bidPremium += 0.12 * (premiumTarget - e.bidPremium);
+    // A bid can be under cost, never under nothing.
+    e.costIdx = e.costInputIdx * Math.max(0.2, 1 + e.bidPremium);
+    e.costShock = 0;
   }
 
   recordHistory(e, s.month, monthAbs, monthComp);
@@ -5886,6 +7244,7 @@ function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: 
   e.history.push({
     q,
     indexRate: +e.indexRate.toFixed(2),
+    ...(e.nat?.policy !== undefined ? { policy: +e.nat.policy.toFixed(2) } : {}),
     // The era the index is orbiting. Recorded because the GAP between the two
     // is the readable thing — a 6% rate is cheap money inside a 1970s and dear
     // money inside a 2010s — and a chart of the base rate alone cannot show it.

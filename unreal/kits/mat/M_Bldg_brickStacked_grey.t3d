@@ -1,0 +1,16 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="M_Bldg_brickStacked_grey" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Building/NY/A/Kit_Bldg_NYA_L1_A/Material/M_Bldg_brickStacked_grey.M_Bldg_brickStacked_grey'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="M_Bldg_brickStacked_greyEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Building/NY/A/Kit_Bldg_NYA_L1_A/Material/M_Bldg_brickStacked_grey.M_Bldg_brickStacked_grey:M_Bldg_brickStacked_greyEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Building/NY/A/Kit_Bldg_NYA_L1_A/Material/M_Bldg_brickStacked_grey.M_Bldg_brickStacked_grey:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="M_Bldg_brickStacked_greyEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Building/NY/A/Kit_Bldg_NYA_L1_A/Material/M_Bldg_brickStacked_grey.M_Bldg_brickStacked_grey:M_Bldg_brickStacked_greyEditorOnlyData'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Building/NY/A/Kit_Bldg_NYA_L1_A/Material/M_Bldg_brickStacked_grey.M_Bldg_brickStacked_grey:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=960CC4B7491BA15F9E1D069C80D5E0CD
+   Parent="/Script/Engine.MaterialInstanceConstant'/Game/Building/NY/A/Material/MI_Bldg_BrickStacked_Grey.MI_Bldg_BrickStacked_Grey'"
+   BasePropertyOverrides=(OpacityMaskClipValue=0.333300,UsageFlags=4456848)
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'M_Bldg_brickStacked_greyEditorOnlyData'"
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LightingGuid=DBF10272418E997DEF0C83B2DC72734C
+End Object

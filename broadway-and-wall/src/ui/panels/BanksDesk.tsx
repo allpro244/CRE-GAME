@@ -3,13 +3,16 @@ import { districtLabelOf } from "@/engine/mix";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec } from "@/engine/value";
-import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, cashSplit, depositApy, insuredLimit } from "@/engine/lenders";
+import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, cashSplit, depositApy, insuredLimit, stayingPower } from "@/engine/lenders";
+import { deskRatePct } from "@/engine/pricing";
+import { relCurve, lenderRelOf } from "@/engine/debt";
 import { sweepApy } from "@/engine/types";
 import { PRODUCTS, advanceFactor, statedLtv, underwritingStandards, standardsWord } from "@/engine/debt";
 import { LineChart } from "@/ui/Chart";
 import { usd } from "@/ui/format";
 import { bankStatement, CapSpark } from "@/ui/panels/NotesPage";
 import { lineLender } from "@/engine/credit";
+import { BankLink } from "@/ui/panels/BankProfile";
 import { appetiteAdvance } from "@/engine/pricing";
 
 export function TheBanks() {
@@ -33,7 +36,13 @@ export function TheBanks() {
   return (
     <>
       <YourCash />
+      <LenderCards />
       <div className="page-section">The banks</div>
+      <div className="hint">
+        <b><a className="lnk" onClick={() => useStore.getState().setPage("banks")}>Open every lender's full books →</a></b>{" "}
+        Capital → Banks has each desk's balance sheet, income statement, credit quality, terms today, limits, your
+        file with them and every loan on their book. Click a lender's name below to go straight to it.
+      </div>
       <div className="hint">
         <b>Underwriting standards today: {standardsWord(standards)}</b> ({standards >= 0 ? "+" : ""}{standards.toFixed(2)} on a −1 to +1 scale).
         {" "}The credit window and the desks' own appetite move every sheet in town, both ways: at the top of the
@@ -109,9 +118,9 @@ export function TheBanks() {
             return (
               <Fragment key={l.id}>
                 <tr onClick={() => setOpen(open === l.id ? null : l.id)} style={{ cursor: "pointer" }}>
-                  <td>{open === l.id ? "▾ " : "▸ "}{l.name}</td>
+                  <td>{open === l.id ? "▾ " : "▸ "}<BankLink name={l.name} /></td>
                   <td className="dim">
-                    {l.kind === "bank" ? "deposits" : l.kind === "life" ? "insurance float"
+                    {l.kind === "bank" ? (l.dep?.rate !== undefined ? `deposits ${usd(l.dep.total)} at ${l.dep.rate.toFixed(2)}%` : "deposits") : l.kind === "life" ? "insurance float"
                       : l.kind === "conduit" ? "selling the paper on" : "committed capital"}
                   </td>
                   <td className="num">{usd(l.book)}</td>
@@ -323,7 +332,7 @@ function YourCash() {
       <div className="deal-head">Your cash</div>
       <div className="grid">
         <Row2 k="Cash" v={`${usd(Math.max(0, game.cash))} · safe from any bank failure`} />
-        <Row2 k="Operating account" v={`${usd(cs.atBank)} · inside the ${usd(insuredLimit(game))} insurance limit · earns ${pct(depositApy(game.econ))}`} />
+        <Row2 k="Operating account" v={`${usd(cs.atBank)} · inside the ${usd(insuredLimit(game))} insurance limit · earns ${pct(depositApy(game.econ, cs.bank))} at ${cs.bank?.name ?? "the bank"}`} />
         <Row2 k="In Treasury bills" v={`${usd(cs.inBills)} · earns ${pct(sweepApy(game.econ))}`} />
       </div>
       <div className="hint">
@@ -335,4 +344,65 @@ function YourCash() {
 }
 function Row2({ k, v, bad }: { k: string; v: React.ReactNode; bad?: boolean }) {
   return (<><div className="k">{k}</div><div className={"v mono v-long" + (bad ? " v-bad" : "")}>{v}</div></>);
+}
+
+/**
+ * WHO TO GO WITH, AT A GLANCE (2026-10-13). The table below is the whole
+ * statement; this is the four things a borrower actually chooses on, in
+ * words: what it costs today, how far they will go, whether they will still
+ * be there in a crunch, and how they treat you. Every word moves — price with
+ * the credit window and the desk's appetite, reach with standards, staying
+ * power with its capital and its bad loans, standing with your history.
+ */
+export function LenderCards() {
+  const game = useStore((s) => s.game)!;
+  const lenders = (game.lenders ?? []);
+  if (!lenders.length) return null;
+  const rows = lenders.map((l) => {
+    const p = PRODUCTS.find((x) => x.lender === l.name && !x.mezz && x.uwDscr > 0)
+      ?? PRODUCTS.find((x) => x.lender === l.name && !x.mezz);
+    const sp = stayingPower(game, l);
+    const open = sp.word !== "closed";
+    const rate = p ? deskRatePct(game.econ.indexRate, p.spread, { ci: game.econ.creditIdx ?? 1, app: l.appetite, rel: relCurve(game, l.name) }) : null;
+    const reach = p ? statedLtv(game, p).ltv * advanceFactor(game, l.name) : null;
+    return { l, p, sp, open, rate, reach };
+  });
+  const quoting = rows.filter((r) => r.open && r.rate !== null).map((r) => r.rate!).sort((a, b) => a - b);
+  const priceWord = (r: number | null) => {
+    if (r === null || quoting.length < 2) return "—";
+    const rank = quoting.indexOf(r) / (quoting.length - 1);
+    return rank <= 0.34 ? "cheap" : rank >= 0.67 ? "dear" : "market";
+  };
+  const standingWord = (rel: number) => rel >= 80 ? "friend of the bank" : rel >= 55 ? "good customer" : rel >= 30 ? "known" : "stranger";
+  const kindWord: Record<string, string> = { bank: "Bank", life: "Insurer", conduit: "Bond conduit", fund: "Debt fund" };
+  const spColor: Record<string, string> = { solid: "#4a7d5a", stretched: "#a8862e", "at risk": "#a8402e", closed: "#6b6b6b" };
+  return (
+    <>
+      <div className="page-section">Who to go with</div>
+      <div className="hint">
+        Price, reach, staying power and your standing — the four things a borrower chooses on. All of them move:
+        the cheapest desk in a boom is often the one with the least behind it, and a desk that fails mid-build stops
+        funding your job.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 8, margin: "6px 0 12px" }}>
+        {rows.map(({ l, p, sp, open, rate, reach }) => (
+          <div key={l.id} style={{ border: "1px solid var(--line, #333)", borderRadius: 6, padding: "8px 10px", opacity: open ? 1 : 0.6 }}
+            title={lenderBlurb(l.name)}>
+            <div style={{ fontWeight: 600 }}>{l.name}</div>
+            <div className="hint" style={{ margin: "2px 0 6px" }}>{kindWord[l.kind] ?? l.kind}{p ? ` · ${p.label.split(" · ").slice(1).join(" · ")}` : ""}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 10, rowGap: 2, fontSize: 12 }}>
+              <span className="hint">Price</span>
+              <span>{open && rate !== null ? `${priceWord(rate)} · ${rate.toFixed(2)}%` : "not quoting"}</span>
+              <span className="hint">Reach</span>
+              <span>{open && reach !== null ? `${Math.round(reach * 100)}% of value` : "—"}</span>
+              <span className="hint">Staying power</span>
+              <span title={sp.why} style={{ color: spColor[sp.word], fontWeight: 600 }}>{sp.word}</span>
+              <span className="hint">Your standing</span>
+              <span>{standingWord(lenderRelOf(game, l.name))}{l.yours > 0 ? ` · you owe ${usd(l.yours)}` : ""}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
 }

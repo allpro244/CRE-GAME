@@ -17,7 +17,7 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 let bad = 0;
 const check = (ok, msg) => { console.log(`  ${ok ? "OK  " : "FAIL"}  ${msg}`); if (!ok) bad++; };
 const K = (x) => `$${Math.round(x / 1e3).toLocaleString()}K`;
-const IN = ["noi", "sold", "interest", "borrowed", "lpCalled"];
+const IN = ["noi", "sold", "interest", "borrowed", "lpCalled", "fees"];
 const OUT = ["debtSvc", "leasing", "capex", "dev", "taxes", "bought", "ga", "lpDistributed"];
 const ledger = (g) => { let t = 0; for (const e of g.books ?? []) { for (const k of IN) t += e[k] ?? 0; for (const k of OUT) t -= e[k] ?? 0; } return t; };
 const deposits = (g) => Object.values(g.holdings).reduce((a, h) => a + h.tenants.reduce((b, t) => b + (t.deposit ?? 0), 0), 0);

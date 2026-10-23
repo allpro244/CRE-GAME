@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DESKS as DESK_TABLE } from "@/ui/desks";
 import { districtLabel } from "@/engine/mix";
 import { useStore, type Lens, type Page } from "@/state/store";
+import { onScreen } from "@/ui/onScreen";
 import { openViewOn } from "@/ui/deskView";
 import type { GameState } from "@/engine/types";
 import { CLASS_LABEL, type ParcelTable } from "@/data/types";
@@ -65,7 +66,8 @@ const DESKS: readonly { id: Page; label: string; note: string; jump?: string }[]
     note: t.note,
   }))),
   { id: "debt", label: "Capital · Refinance", note: "Every loan, and what the desks would write against it today", jump: "Loan by loan" },
-  { id: "debt", label: "Capital · Fund", note: "Raise LP capital, invest it, and return it", jump: "The fund" },
+  { id: "investors", label: "Capital · Fund", note: "Raise LP capital, invest it, and return it", jump: "The fund" },
+  { id: "investors", label: "Capital · Raise equity", note: "Friends and family, family offices, institutions — and your record with them" },
   { id: "debt", label: "Capital · Line of credit", note: "Draw and repay the revolver", jump: "Line of credit" },
   { id: "saves", label: "Saves", note: "Named snapshots; the live campaign autosaves" },
   { id: "settings", label: "Settings", note: "Pop-up cards, broker calls, the auction card" },
@@ -109,7 +111,7 @@ function mk(e: Omit<Entry, "lower" | "subLower">): Entry {
 // Same rule and the same words as the keyboard clock in GamePanels: an
 // undismissed card on the desk outranks the calendar, however you reach for it.
 function clockClear(): boolean {
-  if (document.querySelector(".modal-backdrop")) {
+  if (onScreen(".modal-backdrop")) {
     useStore.setState({
       toast: { text: "Answer or dismiss the card on your desk before advancing time.", kind: "err", at: Date.now() },
     });
@@ -217,7 +219,7 @@ function buildIndex(game: GameState, parcels: ParcelTable): Entry[] {
     out.push(mk({
       id: `ln:${l.id}`, kind: "lender", label: l.name, tag: "lender",
       sub: l.failedM !== undefined ? `${word} — in receivership` : word,
-      run: () => st().setPage("debt"),
+      run: () => { openViewOn("banks", l.name); st().setPage("banks"); },
     }));
   }
 

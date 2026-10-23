@@ -332,11 +332,11 @@ Phases 3–4–5–6 can overlap **measurement** (Phase 3.0, 4.1) in one agent t
 ```
 [ ] Branch off claude/realestate-game-claude-code-32bppd
 [ ] pnpm install && pnpm engine && pnpm check
-[ ] Phase 1 — verify pnpm holder on merged tip
-[ ] Phase 2 — CI + attention-route + rng-audit
-[ ] Phase 3 — measure rails, then one rail per PR
-[ ] Phase 4 — seller-stats + predictability
-[ ] Phase 5 — zoning.mjs + desk hooks
-[ ] Phase 6 — firms harness + genealogy UI
-[ ] Phase 7 — silhouettes (optional)
+[x] Phase 1 — verify pnpm holder on merged tip
+[x] Phase 2 — CI (.github/workflows/check.yml) + attention-route + rng-discipline (test/rng-discipline.mjs, in `pnpm check`)
+[x] Phase 3 — rails retired; firm count is an output of deal flow (rivals.ts firmEntryPitch), no 24-firm cap
+[x] Phase 4 — seller-stats + per-kind reservation (reserveMidOf); offer desk shows the kind's closing band
+[ ] Phase 5 — zoning: OUT OF SCOPE by the owner's rule (no new zoning/entitlement work)
+[x] Phase 6 — firms harness green (century survival, no zombies, spinout genealogy on the Street desk)
+[ ] Phase 7 — silhouettes (optional, not started)
 ```

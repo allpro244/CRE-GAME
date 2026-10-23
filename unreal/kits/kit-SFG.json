@@ -1,0 +1,16 @@
+{
+ "kit": "SFG",
+ "root": "/Game/Building/SF/G",
+ "pieces": [],
+ "closure": [
+  "/Game/Building/SF/G/Kit_Bldg_SFG_L2_A/Texture/T_Building_SFG_L2_A_AOMRD",
+  "/Game/Building/SF/G/Kit_Bldg_SFG_L2_A/Texture/T_Building_SFG_L2_A_C",
+  "/Game/Building/SF/G/Kit_Bldg_SFG_L2_A/Texture/T_Building_SFG_L2_A_N"
+ ],
+ "files": [
+  "Building/SF/G/Kit_Bldg_SFG_L2_A/Texture/T_Building_SFG_L2_A_AOMRD.uasset",
+  "Building/SF/G/Kit_Bldg_SFG_L2_A/Texture/T_Building_SFG_L2_A_C.uasset",
+  "Building/SF/G/Kit_Bldg_SFG_L2_A/Texture/T_Building_SFG_L2_A_N.uasset"
+ ],
+ "bytes": 84779536
+}

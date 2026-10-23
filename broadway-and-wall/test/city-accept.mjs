@@ -91,6 +91,13 @@ for (let i = 0; i < SEEDS; i++) {
     const rec = E.resolveRec(parcels, g, bbl);
     if (!rec) continue;
     // M's checks, gathered on the same pass.
+    // A lot folded into an assembled site (a builder firm's, rivals and
+    // dev.ts) has given its land to the site: it must have none of its own,
+    // and nothing standing on it.
+    if (g.merged?.[bbl]) {
+      if (rec.lotArea !== 0 || rec.bldgArea > 0 || rec.class !== "land") bad++;
+      continue;
+    }
     if (!Number.isFinite(rec.bldgArea) || rec.bldgArea < 0) bad++;
     if (!Number.isFinite(rec.lotArea) || rec.lotArea <= 0) bad++;
     if (rec.bldgArea > 0 && rec.class === "land") bad++;   // a building on no land

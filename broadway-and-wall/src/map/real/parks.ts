@@ -69,43 +69,122 @@ export function settsTex(): THREE.CanvasTexture {
   return finish(c);
 }
 
-/**
- * The turf material: the lawn texture, multiplied by two octaves of soft
- * world-space noise (sun, soil and wear vary across a common), and the
- * mower's stripes — light and dark bands 4 m wide laid along each park's own
- * long axis, read from the `stripe` attribute (metres across the stripes).
- */
 /** How much of the lawn is under fallen leaves (0-1), set by the season. */
-export const TURF_U = { uLeaves: { value: 0 } };
-export function turfMaterial(): THREE.MeshStandardMaterial {
+export const TURF_U = {
+  uLeaves: { value: 0 },
+  /** the streams through the parks (RealCityLayer.buildWetMask): white is water, and the park turf is cut away there */
+  uWet: { value: (() => { const t = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1); t.needsUpdate = true; return t as THREE.Texture; })() },
+  uWetBox: { value: new THREE.Vector4(0, 0, 1, 1) },
+};
+/** How deep the snow lies on the grass (0-1): it buries the green's variety along with the green. */
+export const GRASS_U = { uSnow: { value: 0 } };
+
+/**
+ * GRASS THAT IS GRASS (grass revamp). The lawns were a 256 px canvas of soft
+ * blobs tiled every twelve metres, and every lot was handed one of eight
+ * tones from lush to sun-bleached, so a block read as a patchwork of felt
+ * cards: lime next to bottle green, the same blob repeating across each.
+ *
+ * Now the grass is drawn per pixel in world space, so nothing tiles and
+ * nothing stops at a lot line. What varies, and at what size, is what varies
+ * on real turf seen from a roof:
+ *  - tens of metres: water and sun. Hue, not only value: the low ground is a
+ *    deeper blue-green, the dry crowns of a lawn go toward straw-yellow;
+ *  - a few metres: soil and wear. Darker clover and rye patches, and now and
+ *    then a thin spot where the earth shows through;
+ *  - a metre and a half: clumps; a third of a metre: the grain of the sward.
+ *    Both fade out once they are smaller than a pixel or two, so the far city
+ *    is a calm green and not a shimmer.
+ * The clumps and the grain also tilt the normal a little, so the sun picks
+ * out a nap on the lit side and the grass has a surface rather than a tint.
+ *
+ * Three cuts of it, by `kind`:
+ *  - "lawn": a yard or a building's lawn (lot ground);
+ *  - "turf": a park's kept grass, a step finer, with the mower's stripes,
+ *    light and dark bands 4 m wide along the park's long axis (the `stripe`
+ *    attribute, metres across the stripes);
+ *  - "rough": unbuilt land gone to grass: tussocks, straw through the green,
+ *    seed heads, bare earth.
+ * The material colour is the season's grass; vertex colour is the lot's or
+ * the park's own tone; fallen leaves (TURF_U) lie on lawns and turf alike.
+ */
+export function grassMaterial(kind: "lawn" | "turf" | "rough"): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.1, vertexColors: true });
+  const turf = kind === "turf", rough = kind === "rough";
+  // amounts per cut: the hue swing across the broad scale, the clump and grain
+  // contrast, how much bare earth, how much straw
+  const f = (x: number) => x.toFixed(3);
+  const HUE = f(rough ? 1.2 : turf ? 0.75 : 1.0), CLUMP = f(rough ? 0.42 : turf ? 0.16 : 0.22), GRAIN = f(rough ? 0.34 : turf ? 0.2 : 0.26);
+  const BARE = f(rough ? 0.75 : turf ? 0.18 : 0.4), STRAW = f(rough ? 0.42 : 0.0), BUMP = f(rough ? 0.9 : 0.55);
   m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, TURF_U);
-    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float stripe;\nvarying float vStripe;\nvarying vec2 vTw;")
-      .replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvStripe = stripe;\nvTw = (modelMatrix * vec4(transformed, 1.0)).xy;");
+    Object.assign(sh.uniforms, TURF_U, GRASS_U);
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\nvarying vec2 vGw;${turf ? "\nattribute float stripe;\nvarying float vStripe;" : ""}`)
+      .replace("#include <worldpos_vertex>", `#include <worldpos_vertex>\nvGw = (modelMatrix * vec4(transformed, 1.0)).xy;${turf ? "\nvStripe = stripe;" : ""}`);
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>
-varying float vStripe;
-varying vec2 vTw;
+varying vec2 vGw;${turf ? "\nvarying float vStripe;" : ""}
 uniform float uLeaves;
-float tH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float tN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(tH(i), tH(i + vec2(1.0, 0.0)), f.x), mix(tH(i + vec2(0.0, 1.0)), tH(i + vec2(1.0, 1.0)), f.x), f.y); }`)
+uniform float uSnow;${turf ? "\nuniform sampler2D uWet;\nuniform vec4 uWetBox;" : ""}
+// a hash that holds its precision far from the origin (no sin of a big number)
+float gH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float gN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(gH(i), gH(i + vec2(1.0, 0.0)), f.x), mix(gH(i + vec2(0.0, 1.0)), gH(i + vec2(1.0, 1.0)), f.x), f.y); }
+// three octaves, each turned against the last so no grid shows
+float gF(vec2 p) { const mat2 R = mat2(0.8, -0.6, 0.6, 0.8);
+  float a = gN(p) * 0.57; p = R * p * 2.03 + 17.1; a += gN(p) * 0.29; p = R * p * 2.01 + 5.3; a += gN(p) * 0.14; return a; }
+float gGrassH;`)
       .replace("#include <color_fragment>", `#include <color_fragment>
-{ float n = tN(vTw / 46.0) * 0.6 + tN(vTw / 13.0) * 0.4;
-  diffuseColor.rgb *= mix(vec3(0.82, 0.86, 0.9), vec3(1.14, 1.1, 0.92), n);
-  // the mower's stripes, softened at their edges and fading where the grass is worn
+${turf ? "if (texture2D(uWet, (vGw - uWetBox.xy) / uWetBox.zw).r > 0.5) discard;   // a creek through the park" : ""}
+{ vec2 p = vGw;
+  float live = 1.0 - uSnow;
+  float px = max(length(fwidth(p)), 1e-4);                 // metres per pixel
+  float fC = 1.0 - smoothstep(0.35, 0.9, px / 1.4);        // clumps fade below ~2 px
+  float fG = 1.0 - smoothstep(0.35, 0.9, px / 0.33);       // the grain, likewise
+  // tens of metres: deep blue-green in the hollows, straw-yellow on the dry crowns
+  float broad = gF(p / 36.0 + 3.7);
+  float dry = smoothstep(0.36, 0.78, broad);
+  vec3 tint = mix(vec3(0.82, 0.98, 1.0), vec3(1.13, 1.06, 0.8), dry);
+  diffuseColor.rgb *= mix(vec3(1.0), tint, ${HUE} * live);
+  // a few metres: soil and wear, value only
+  float mid = gF(p / 6.5 + 11.3);
+  diffuseColor.rgb *= 1.0 + (mid - 0.5) * 0.36 * live;
+  // clover and rye: darker, bluer drifts
+  float clov = smoothstep(0.58, 0.74, gN(p / 2.4 + 41.0)) * fC;
+  diffuseColor.rgb *= mix(vec3(1.0), vec3(0.8, 0.9, 0.86), clov * 0.7 * live);
+  // clumps and the grain of the sward, which also tilt the normal (below)
+  float cl = gN(p / 1.4 + 7.0), gr = gN(p / 0.33) * 0.6 + gN(p / 0.17 + 3.0) * 0.4;
+  gGrassH = (cl - 0.5) * fC + (gr - 0.5) * 0.6 * fG;
+  diffuseColor.rgb *= 1.0 + ((cl - 0.5) * ${CLUMP} * fC + (gr - 0.5) * ${GRAIN} * 2.0 * fG) * live;
+  ${rough ? `// straw through the green, and seed heads catching the light
+  float straw = smoothstep(0.4, 0.75, gF(p / 3.1 + 23.0) * 0.7 + gr * 0.3 * fG);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.42, 0.36, 0.2) * (0.8 + 0.4 * cl), straw * ${STRAW} * live);
+  float seed = step(0.93, gH(floor(p / 0.25))) * fG;
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.55, 0.38), seed * 0.5 * live);` : ""}
+  // thin spots, where the earth shows
+  float bare = smoothstep(0.66, 0.8, gF(p / 4.2 + 57.0) * 0.75 + mid * 0.25) * ${BARE};
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.15, 0.09) * (0.85 + 0.3 * gr), bare * 0.55 * live);
+  ${turf ? `// the mower's stripes, softened at their edges and fading where the grass is worn
   float st = smoothstep(-0.25, 0.25, sin(vStripe * 3.14159265 / 4.0));
-  diffuseColor.rgb *= mix(0.93, 1.05, st);
-  // fallen leaves: small drifts, thicker in hollows (the low-frequency noise), in three autumn colours
-  float lf = tH(floor(vTw * 5.0)), drift = tN(vTw / 9.0);
-  if (uLeaves > 0.0 && lf < uLeaves * (0.15 + 0.6 * drift)) {
-    float k = tH(floor(vTw * 5.0) + 7.0);
+  diffuseColor.rgb *= mix(1.0, mix(0.92, 1.06, st), (1.0 - bare) * live);` : ""}
+  ${rough ? "" : `// fallen leaves: small drifts, thicker in hollows, in three autumn colours
+  float lf = gH(floor(p * 5.0)), drift = gN(p / 9.0);
+  if (uLeaves > 0.0 && lf < uLeaves * (0.15 + 0.6 * drift) * live) {
+    float k = gH(floor(p * 5.0) + 7.0);
     diffuseColor.rgb = k < 0.4 ? vec3(0.62, 0.32, 0.1) : k < 0.75 ? vec3(0.7, 0.5, 0.14) : vec3(0.42, 0.22, 0.1);
-  } }`);
+  }`} }`)
+      // the nap: tilt the normal by the screen-space slope of the clumps and grain
+      .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
+{ vec3 sx = dFdx(-vViewPosition), sy = dFdy(-vViewPosition);
+  float h = gGrassH * ${BUMP} * 0.06 * (1.0 - uSnow);
+  vec3 r1 = cross(sy, normal), r2 = cross(normal, sx);
+  float det = dot(sx, r1);
+  vec3 g = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
+  normal = normalize(abs(det) * normal - g); }`);
   };
-  m.customProgramCacheKey = () => "park-turf";
+  m.customProgramCacheKey = () => "grass-" + kind;
   return m;
 }
+/** The park turf (kept for its callers): the "turf" cut of the grass. */
+export function turfMaterial(): THREE.MeshStandardMaterial { return grassMaterial("turf"); }
 
 /** Point-in-polygon, even-odd. */
 export function inRing(x: number, y: number, ring: P2[]): boolean {

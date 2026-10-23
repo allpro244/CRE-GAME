@@ -25,7 +25,7 @@
 // months after everybody has worked that out.
 import type { ParcelTable } from "@/data/types";
 import type { Exit, GameState, Holding } from "./types";
-import { logBooks, moveDeposit, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
+import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
 import { sweepLocIdleCash } from "./credit";
@@ -36,6 +36,7 @@ import { EXCHANGE_WINDOW_M, transferGroundLeaseOffBook, saleProceedsToSeller } f
 import { FACILITY_MIN_ASSETS } from "./facility";
 import { sponsorStanding } from "./sponsor";
 import { money } from "./money";
+import { purseOf, partnerShare } from "./vehicles";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -70,11 +71,13 @@ const BUYERS = [
 ];
 
 /** How many named buyers can underwrite a book of this size. */
-export function portfolioBuyerDepth(sumOfParts: number): number {
-  const raw = BUYERS.filter((b) => sumOfParts >= b.min).length;
+export function portfolioBuyerDepth(sumOfParts: number, infl = 1): number {
+  // The buyers' minimums are opening-year cheques, carried at inflation.
+  const real = sumOfParts / Math.max(0.01, infl);
+  const raw = BUYERS.filter((b) => real >= b.min).length;
   // Past a certain cheque the room thins — the same three institutions who
   // could write $40M cannot all write $200M in the same city the same year.
-  const crowdedOut = sumOfParts > 200_000_000 ? 2 : sumOfParts > 90_000_000 ? 1 : 0;
+  const crowdedOut = real > 200_000_000 ? 2 : real > 90_000_000 ? 1 : 0;
   return Math.max(0, raw - crowdedOut);
 }
 
@@ -189,7 +192,7 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   }
 
   // --- who can actually write this cheque ----------------------------------
-  const depth = portfolioBuyerDepth(sumOfParts);
+  const depth = portfolioBuyerDepth(sumOfParts, s.econ.cpi ?? 1);
   if (depth <= 0) {
     why.push({
       label: "No buyer in this city can fund a book this small as a portfolio — sell them one at a time",
@@ -268,7 +271,7 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
 /** Take a bundle to market. */
 /** Is this deed on the live fund's book (rather than the sponsor's balance sheet)? */
 export function onFundBook(s: GameState, bbl: string): boolean {
-  return !!(s.holdings[bbl]?.fundOwned && s.fund && !s.fund.settled);
+  return purseOf(s, s.holdings[bbl]) === "fund";
 }
 
 /** A bundle with deeds on both the fund's book and the sponsor's. */
@@ -303,7 +306,7 @@ export function listPortfolio(
     return { s, err: "That bundle mixes the fund's buildings with your own. One price across both is a conflict the LPs' advisory committee would refuse — sell the fund's deeds as their own book." };
   }
   // A partner's building does not go into somebody else's package without them.
-  if (clean.some((b) => s.holdings[b]?.jv)) return { s, err: "One of those has a JV partner — they have consent on a sale in a package. Sell it on its own, or buy them out first." };
+  if (clean.some((b) => partnerShare(s, s.holdings[b]) > 0)) return { s, err: "One of those has a JV partner — they have consent on a sale in a package. Sell it on its own, or buy them out first." };
   if (clean.length < 2) return { s, err: "A portfolio is two buildings or more. One building is a listing." };
   if (clean.some((b) => s.workouts?.[b])) {
     return { s, err: "One of these is in default. A lender in a workout controls that deed — clear the file first." };
@@ -674,9 +677,11 @@ export function acceptPortfolioBid(
     if (next.groundLeases?.[bbl]) transferGroundLeaseOffBook(next, bbl);
     // The deposits go with the deed, out of the purse the sale lands in.
     moveDeposit(next, h, -depositsOn(h));
+    // AN ASSEMBLED SITE SELLS AS ONE SITE. The lots stay folded into it — the
+    // building, if one stands, stands across all of them — and leave your book
+    // with the parent.
     for (const [child, parent] of Object.entries(next.merged ?? {})) {
-      if (parent !== bbl) continue;
-      delete next.merged![child];
+      if (parent !== bbl || !next.holdings[child]) continue;
       moveDeposit(next, next.holdings[child], -depositsOn(next.holdings[child]));
       delete next.holdings[child];
       if (next.workouts?.[child]) delete next.workouts[child];
@@ -706,7 +711,7 @@ export function acceptPortfolioBid(
   }
   while (next.exits.length > 200) next.exits.shift();
   next.cash += cashToYou;
-  if (intoFund && next.fund) next.fund.cash += toFund;
+  if (intoFund && next.fund) moveFundCash(next.fund, toFund, "sale");
   // `sold` and the fees were booked leg by leg above, and the pool payoff
   // against `sold` with them.
   if (exchange && taxTotal > 0) {

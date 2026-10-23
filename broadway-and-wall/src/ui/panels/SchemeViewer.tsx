@@ -12,12 +12,105 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { activeCity, skyEnvironment, type SchemeModel } from "@/map/real/RealCity";
 import { useStore, type DesignPreview } from "@/state/store";
 import { START_YEAR } from "@/engine/types";
+import { UNREAL_HOST, sendInput } from "@/state/unrealHost";
 
 const FLOOR_M = 3.55;   // the storey the map draws player stock at (MapView)
 
 interface View { az: number; el: number; dist: number; spin: boolean }
 
 export default function SchemeViewer({ height = 300 }: { height?: number }) {
+  return UNREAL_HOST ? <HostSchemeWindow height={height} /> : <WebSchemeViewer height={height} />;
+}
+
+// IN UNREAL THE MODEL IS THE CITY ITSELF. The page is drawn over Unreal's view;
+// the scheme is built on its lot there with the real facade kit (unrealHost
+// sends the design), and this box is cut out of every panel above it so the
+// view shows through. Unreal frames the camera into the box's rectangle and
+// turns it slowly; a drag here turns it by hand.
+function HostSchemeWindow({ height }: { height: number }) {
+  const p = useStore((s) => s.designPreview);
+  const box = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const clipped = new Map<HTMLElement, string>();
+    let last = "", raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const r = el.getBoundingClientRect();
+      const W = window.innerWidth, H = window.innerHeight;
+      const key = [r.left, r.top, r.width, r.height, W, H].map((v) => Math.round(v)).join(",");
+      if (key === last) return;
+      last = key;
+      sendInput({ t: "preview-rect", x: r.left / W, y: r.top / H, w: r.width / W, h: r.height / H });
+      // every opaque layer stacked over the box, the box itself excepted, gets a hole the box's size
+      for (const [e, prev] of clipped) e.style.clipPath = prev;
+      clipped.clear();
+      // sampled over the box (a card can overlap one corner and not the middle)
+      const over = new Set<HTMLElement>();
+      for (const fx of [0.05, 0.5, 0.95]) for (const fy of [0.05, 0.5, 0.95])
+        for (const e of document.elementsFromPoint(r.left + r.width * fx, r.top + r.height * fy) as HTMLElement[]) over.add(e);
+      for (const e of over) {
+        if (e === el || el.contains(e) || e === document.documentElement || e === document.body) continue;
+        const cs = getComputedStyle(e);
+        const bg = cs.backgroundColor;
+        const opaque = (bg && bg !== "transparent" && !/rgba\(.*,\s*0\)$/.test(bg)) || cs.backdropFilter !== "none" || cs.backgroundImage !== "none";
+        if (!opaque) continue;
+        const b = e.getBoundingClientRect();
+        const x = r.left - b.left, y = r.top - b.top;
+        clipped.set(e, e.style.clipPath);
+        e.style.clipPath = `path(evenodd, "M0 0H${b.width}V${b.height}H0Z M${x} ${y}h${r.width}v${r.height}h${-r.width}Z")`;
+      }
+    };
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      for (const [e, prev] of clipped) e.style.clipPath = prev;
+      sendInput({ t: "preview-rect", x: 0, y: 0, w: 0, h: 0 });
+    };
+  }, []);
+  // DRAG TO TURN ROUND THE SCHEME, up/down to tilt (BWGame preview-orbit). The
+  // hole cut for the box clips the panels above it — the box's own ancestors
+  // among them — and a clip-path takes hit-testing with it, so a press on the
+  // box never reached the box (owner, Oct 2026: "the preview can't be
+  // rotated"). The drag is read at the window instead, by the box's rectangle.
+  useEffect(() => {
+    let last: { x: number; y: number } | null = null;
+    const inBox = (e: PointerEvent) => {
+      const r = box.current?.getBoundingClientRect();
+      return !!r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    };
+    // (stopped here, so the map surface under the hole does not pan or pick as well)
+    const down = (e: PointerEvent) => { if (e.button === 0 && inBox(e)) { last = { x: e.clientX, y: e.clientY }; e.preventDefault(); e.stopPropagation(); } };
+    const move = (e: PointerEvent) => {
+      if (!last) return;
+      e.stopPropagation();
+      sendInput({ t: "preview-orbit", dx: e.clientX - last.x, dy: e.clientY - last.y });
+      last = { x: e.clientX, y: e.clientY };
+    };
+    const up = () => { last = null; };
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("blur", up);
+    return () => {
+      window.removeEventListener("pointerdown", down, true);
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("blur", up);
+    };
+  }, []);
+  return (
+    <div className="scheme-viewer" style={{ position: "relative", marginBottom: 8 }}>
+      <div ref={box} className="scheme-viewer-canvas" style={{ width: "100%", height, borderRadius: 8, background: "transparent", cursor: "grab", touchAction: "none", outline: "1px solid rgba(0,0,0,0.18)" }} />
+      <div style={{ position: "absolute", left: 8, top: 6, fontSize: 11, color: "#fff", textShadow: "0 0 3px rgba(0,0,0,0.9)", pointerEvents: "none" }}>
+        {p ? `${p.floors} floors · ${Math.round(p.floors * FLOOR_M)} m` : "Choose a use and floors to see the building"}
+      </div>
+    </div>
+  );
+}
+
+function WebSchemeViewer({ height = 300 }: { height?: number }) {
   const p = useStore((s) => s.designPreview);
   const month = useStore((s) => s.game?.month ?? 0);
   const box = useRef<HTMLDivElement | null>(null);

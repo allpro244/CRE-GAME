@@ -2922,3 +2922,584 @@ the 1-2% of lots near feasibility. **Industrial still never does**: the rent a
 new shed needs runs 1.7-2.6x market on every lot measured, so no spec or
 anchored shed pencils on vacant land. That is the development economy, not
 BTS, and it is left for its own investigation.
+
+---
+
+# The economy is simulated, not drawn (2026-10-15)
+
+**Before.** A national recession was a dice roll: a monthly hazard read off the
+yield curve, then a depth and length drawn from the post-war record. Depth did
+not depend on money (median unemployment rise 3.2-3.5 points whether policy had
+been at neutral or four points over). Trades moved with one national number
+times a beta. Tenants defaulted on a formula of the labour market and their
+grade.
+
+**Now, three layers, each with books:**
+
+1. **The nation** (`tickNation`). The output gap is a state, moved by the
+   Rudebusch-Svensson (1999) demand equation restated monthly: lagged real
+   policy rate over neutral, the corporate sector's interest bill (35% floating,
+   the rest a six-year ladder at the long rate), the credit window, panics,
+   oil and fiscal shocks, and persistent demand waves. Unemployment follows by
+   Okun's law, fast up and slow down. A recession is dated from output.
+   Measured (30 centuries): unemployment 6.1 / 5.8 / 3.6 / 9.1 (mean, p50,
+   p10, p90; US 5.7 / 5.5 / 3.9 / ~8.5); 15% of months in recession (US ~14%).
+   Depth now follows the money: median unemployment rise 1.4 points with policy
+   at or under neutral the year before, 5.3 points with more than three points
+   over. Policy held for ten years: 4% -> unemployment 5.5%, 5% -> 6.2%,
+   6% -> 6.9%, 8% -> 8.2%, 12% -> 10.8%, 20% -> 15.5% (curve -9.5 inverted).
+2. **The town's ten trades** (`tickFirmBook`). Each carries aggregate books:
+   sales, wages (local pay against national), rent (its own space), sticky
+   costs, interest on a floating share plus a five-year fixed ladder, tax, cash,
+   debt drawn while the lenders' window is open and capped at 3x interest cover.
+   Staff follow sales and margins and are cut when cash runs short; firms fail
+   when cover thins, cash runs out or sales fall. `FIRM_PROFILE` holds payroll,
+   occupancy, margin, leverage, floating share and customer rate-sensitivity
+   per trade. Under a 19.5% hold: apparel -34%, logistics -28%, finance -16%,
+   medical flat, law up.
+3. **Every tenant** (`tenantBooks.ts`). Hidden books drawn at signing from the
+   trade's profile and the credit grade: revenue sized off the rent agreed, a
+   fixed rent against moving revenue, its own debt at its own rate, cash.
+   Default, relief letters and credit migration read cover and cash.
+   Measured over 4 seeds x 12 years: annual default IG 0.4%, mid 2.3%, weak
+   ~10%; under the 20% hold IG 0.8%, mid 2.7%, weak 15.6%.
+
+## Round two of the simulated economy (2026-10-15)
+
+Long-run validation (8 seeds x 60 years) found, and this round fixes:
+
+- **A deflation trap.** One century's bank lost its credibility and expectations
+  followed realised deflation down to -6%/yr for a decade while nominal pay sat
+  frozen, so real pay rose 4.5x in sixty years. Two real limits are now in:
+  inflation below zero approaches a soft floor near -2%/yr (pay is not cut;
+  post-war fiat deflations ran -0.3% to -2%), and at the lower bound the other
+  tools (asset purchases, fiscal stimulus) push demand in proportion to how far
+  the rule sits under the floor.
+- **The bond market's model of the cycle** (`RULE_GAP_RHO`) was fitted on the
+  drawn economy; re-measured on the simulated one (0.974 -> 0.9445). The curve
+  now inverts 11-12% of months (was 7%) and inversion precedes 55% of
+  recessions (was 40%).
+- **Labour markets bottom out.** Okun's level bends below 3.5% toward 2.5%
+  (the post-war lows), so a boom goes into pay and prices, not into a 1.5%
+  unemployment rate.
+- **Street tenants fail.** Trade failures above the background now hand space
+  back on everyone's buildings (`failedSf`), not only the player's. Under a 20%
+  hold, peak annual failures return 2.5% of industrial stock, 1.6% of retail,
+  0.8% of office.
+- **Households borrow to shop.** Retail space demand carries a consumer-credit
+  term: ~1.5% of spending per point of real money over neutral (`hhCredit`).
+- Demand noise trimmed; weak-tenant background defaults lowered to small-firm
+  norms.
+
+Measured after: national unemployment 6.0 / 5.7 / 3.7 / 8.7 (mean / p50 / p10 /
+p90; US 5.7 / 5.5 / 3.9 / ~8.5); output gap sd 2.6; policy over 10% in 10% of
+months and inflation over 6% in 11% (US 1948-2024: ~9% and ~20%). Tenant
+defaults (4 seeds x 12 years): weak 4.5%/yr, mid 1.6%, IG ~0; under a 20% hold
+8.8 / 2.5 / 0.5%. Engine cost: ~10% more per month.
+
+## Round three: what makes a recession, and what the bond market sees (2026-10-15)
+
+- **Credibility is judged on the year, against the bank's own target.** It read
+  each month's print (+/-0.4 points of noise) against a hard-coded 2%, so the
+  bank lost belief by arithmetic: credibility under 0.5 in 51% of months and a
+  median term premium of 3.4 points. Now 23% of months (the US: roughly the
+  1966-85 stretch) and a median premium of 1.3 (ACM ~1.2), with the
+  believed-bank premium at 0.6.
+- **The banks' margin is the curve** (Adrian, Estrella & Shin 2019): a smoothed
+  spread under its normal ~2.5 points slows lending and output a year on.
+- **Demand noise trimmed** so more downturns are made by money than by chance;
+  a recession is dated from a 0.3% fall off the output peak (2001's was ~0.3%).
+- **Trades sell with output.** Their sales follow the national output gap;
+  payrolls follow sales through each trade's books, so the lag of jobs behind
+  output comes out of the accounts.
+
+Measured (30 centuries): curve inverted 18% of months (US ~15-21%), inversion
+ahead of 75% of recessions (US 8 of the last 10), 13% of months in recession
+(US ~14%), about one recession a decade (US since 1983: one a decade; 1948-82
+nearer 1.6), output gap sd 2.3 (CBO ~2.2), unemployment mean 6.2 / p90 8.3.
+8 seeds x 60 years: real pay 1.5-1.8x, prices 2.3-4.8%/yr, jobs 1.06-2.8x.
+
+## Round four: taking out what was still artificial (2026-10-15)
+
+1. **The apartment "cap".** Flats sold out ~26-48% of months with a queue of
+   1-4% of stock while real rents rose 3-7%/yr — a shortage clearing through
+   price, which is real. Two artefacts it exposed are fixed: occupied space
+   could stay above the cap, so vacancy fell to 0.12% against a 1.9% floor of
+   flats between tenants (it now drains to the cap as leases turn); and
+   construction switched on and off yearly on whether one best site cleared
+   its hurdle (it now ramps up as the best sites come within a tenth of
+   clearing — builders do not share one hurdle).
+2. **Street tenants keep the same books as the player's.** Representative
+   tenants per trade and covenant, six each, sized off the street's let space,
+   on the player's tenants' accounts (tenantBooks.ts). Their failures above
+   the background hand space back; the failed share re-lets to newcomers
+   borrowing at today's lender limits. Peak annual failures under a 20% hold:
+   2.2% of industrial stock, 1.5% retail, 0.3% office. In the process every
+   tenant book moved to dollars of the day: revenue had been frozen in
+   nominal terms while rents escalated, so a long inflation (prices x32)
+   bankrupted the street. Tenants now keep ~1.5 months of costs in cash
+   (US small-business median ~27 days) and re-lever as earnings grow.
+3. **Panics are grown, not drawn.** A national private credit gap (BIS
+   credit-to-GDP) builds with cheap money, loose lenders and a hot economy and
+   is written down in slumps; its growth adds to spending (the credit
+   impulse) and its unwinding subtracts. A bank panic's odds scale with it
+   (Schularick & Taylor). Median recession unemployment rise 3.1 points
+   (US 3.6), p75 4.8 (US 4.4).
+4. **Households.** Real home prices chase income over the user cost of owning
+   (mortgage rate + upkeep - expected appreciation - expected inflation),
+   slowly; households spend ~4c/$ of housing wealth; refinancing waves when
+   rates fall; renting vs owning reads the full cost of owning against rent.
+   Real home prices: yoy sd 3.5%, worst century drawdown median ~28%
+   (US 2006-12 ~35%).
+
+Tenant defaults (4 seeds x 12 years): weak 4.8%/yr, mid 1.5%, IG 0.6%; under a
+20% hold 16.5 / 5.8 / 2.4%. 8 seeds x 60 years: real pay 1.4-1.7x, no class on
+the vacancy bound.
+
+## Every building on the street has tenants (2026-10-16)
+
+The street's tenants were representative cohorts — six per trade and covenant,
+sized off the street's let space — and a building the player did not own had
+no tenants at all: its occupancy was the street-wide figure plus a fixed hash
+for its character, and a rival firm's book was one number walked toward the
+market with an anchor loss drawn at a fixed hazard.
+
+Now every standing commercial building the player does not own keeps a real
+rent roll (streetRolls.ts): named tenants with leases, bumps, covenants and the
+same hidden books the player's tenants keep. About 1,700-1,850 tenants on the
+small map; +6% per simulated month.
+
+- **Tenants live a month**: books run, failures are drawn off them (hashed on
+  the tenant, so the world's dice do not move), leases expire and renew about
+  55% of office, 65% of shop and 75% of shed space (CBRE/JLL; Prologis), or
+  the tenant leaves.
+- **The market says how much, the rolls say where.** The city's space market
+  stays the calibrated aggregate (it carries the regional stock off the map);
+  each month the street leases newcomers into vacant suites, weighted by
+  vacant space x the building's draw (overall score, its own character — the
+  dark lobby — and its owner's leasing desk), or sheds the space the market no
+  longer holds, tilted toward the weakest buildings. The rolls track the
+  market within ~0.5pt.
+- **What a buyer sees is what is there.** A listing, an appraisal and a deed
+  read the building's roll; as-is occupancy is the roll. A building the
+  player buys leaves the street; one they sell carries its tenants back, books
+  and all. A fresh delivery opens empty and leases up.
+- **Rival books are their buildings.** A firm's occupancy is its buildings'
+  rolls; its leasing care, an overstretched desk and a leasing push change
+  how strongly its buildings draw tenants. "Lost a major tenant" now names the
+  tenant and the building, from a real failure or move-out.
+- The street's failures above the background feed the space market as space
+  handed back, replacing the cohorts (still the fallback in a scratch economy).
+
+Measured: small buildings run lumpier than the model's hash did — a two-suite
+building with one suite empty is 50% let — so about a quarter of office
+buildings under 10k sf sit below 60% while the sf-weighted share below 60% is
+~8%. Larger buildings track the market. Also fixed on the way: the band
+stamp's mean premium went NaN when one lot had no reading.
+
+## The town's firms decide what is let (2026-10-16)
+
+The street's rolls (previous section) were still shared out from the city's
+aggregate: the space market decided how much was let and the rolls decided
+where, newcomers were conjured to fill the gap, and a tenant who left
+vanished. Now the firms are the market (streetRolls.ts).
+
+- **Firms, not leases.** Every tenant is a firm with an id that it keeps when
+  it moves. Its headcount follows its trade's payroll; the space it needs is
+  that headcount at the space per head it chose when it signed, scaled by how
+  today's rent compares (the same rent response as the city's demand
+  equation).
+- **Expiries are decisions.** A firm renews in place, resized to its need if
+  the building has the room. Or it goes looking while it holds over: because
+  it has outgrown the building, because it can afford better (flight to
+  quality), because it must cut its rent, or for the ordinary reasons a share
+  of every roll moves. In a town with more firms than its payrolls support,
+  more of them close or leave. A firm that outgrows its suite mid-lease takes
+  the space next door or looks.
+- **Formation.** New firms form, and arrive from outside, at the pace the
+  town's payrolls (and location, income and long-run shifts) call for more
+  space than its firms hold. Half are sized by the suites actually on offer,
+  as start-ups are.
+- **One pool, one search.** Every firm looking tours the empty suites, the
+  street's and the player's. Your leasing desk's prospects are firms from this
+  pool, and a firm you turn down may sign down the street. It signs where the
+  building's quality is closest to what it shops for, the space is there and
+  the price is keen. Each building's ask is its market rent, marked down for
+  how long the space has sat, with free rent at the market's concession level
+  and a discount from a landlord in trouble. A firm that finds nothing within
+  its patience leaves town. A tenant that leaves your building goes looking,
+  and the paper reports where it lands. The old "they are taking space at
+  (a random building)" line is gone.
+- **Vacancy is what is left.** Office and shop occupancy is the sum of what
+  the town's firms hold; nothing reconciles it to an aggregate. Sheds are
+  half and half: the mapped ones are the firms', the region's off-map stock
+  stays on the aggregate. The quality bands' stock and tenants are measured
+  off the buildings.
+- **Failures are the books.** Each firm's sales run on its trade's plus a
+  persistent shock of its own (monthly persistence 0.985; about ±19% for a
+  small unrated firm, less for bigger, investment-grade names, which sell to
+  more customers). The fixed background failure odds are gone, apart from a
+  few hundredths of a per cent for fraud or a founder's death. Measured, 2
+  seeds x 12 years: weak 5.3-6.0%/yr, mid 0.9-1.6%, investment grade
+  0.3-0.5%, several times higher in recession years.
+- **Blocks of flats keep their households.** Renters move out at about 45% a
+  year; movers and new households choose a block by quality, how keen its
+  rent is and its owner's letting. A new block leases at most ~8% of its
+  units, or two flats, a month. The number of households housed is the
+  city's household and tenure arithmetic; where they live is these flows.
+- **No drawn character.** The per-building hash (±11pp, "one building in
+  eight troubled") is gone. A building is 68% let because of who left it and
+  who would not come.
+- **The opening street is grown.** Before the first listing is written, the
+  town's firms and households live four years on the opening economy. The
+  opening tape discloses the tenants actually in each building.
+
+## The nation's output is what the country buys (2026-10-16)
+
+The national output gap was a fitted autoregression (Rudebusch-Svensson
+restated monthly, roots 0.95 and 0.67) with rate, credit, housing and
+demand-noise impulses added on. Its persistence was two coefficients, and
+its cycle came from those coefficients and a drawn demand shock.
+
+Now output is the sum of what each part of the economy buys, at US shares
+(BEA NIPA 1990-2019), each with its own state (market.ts `spendNation`):
+
+- **Consumption (68%)** follows what households expect to earn: income
+  smoothed over about four years, with a fifth hand-to-mouth. It moves with
+  housing wealth (~4c/$), refinancing gains, the real rate over the past year
+  or two, new borrowing (the credit impulse), and precautionary saving when
+  unemployment starts to rise. Taxes come out and unemployment insurance goes
+  in, so the government cushions every slump automatically.
+- **Business investment (14%)** builds a capital stock toward what firms
+  want: sized to the output they plan for (mostly trend, partly recent),
+  scaled by the user cost of capital (the corporate book's rate less
+  inflation plus wear, elasticity 0.4), what lenders will finance (the
+  national window), and how much labour's share has squeezed margins after
+  years of tight labour markets. Gross investment cannot fall below a third
+  of replacement.
+- **Inventories** are kept at about six weeks of sales; when sales fall,
+  orders are cut below sales until the shelves clear.
+- **Home building (4%)** follows home prices against their trend and the
+  mortgage rate against what borrowers are used to.
+- **Government (17%)** is a steady share, plus fiscal expansions under
+  political pressure on the bank and what is done at the zero bound.
+- **Exports** ride the rest of the world's cycle, the one part of demand
+  outside the model. Imports leak 15% of everything bought.
+- **Confidence**: consumer and business moods are persistent drawn states
+  (as in Smets & Wouters 2007). They work only through what households set
+  aside and what capital firms plan for.
+
+The cycle comes out of the stocks answering each other: capital, shelves,
+perceived income and the credit window. The bank-margin channel is
+strengthened: an inverted curve shuts the national lending window twice as
+hard as before. The bond market's forecast of policy normalising was re-fit
+to the new dynamics (persistence 0.85).
+
+Measured, 30 centuries (national block alone), old model then new:
+unemployment mean 6.1 then 5.5 (US 5.7); output gap sd 2.87 then 2.85; months
+in recession 15.8% then 15.0% (US ~14%); recessions per decade 1.05 then
+1.06; median unemployment rise in a recession 3.2 then 3.7 (US 3.6);
+preceded by an inversion 72% then 60% (US ~80%); depth by how tight money
+was at the start 1.9 to 6.4 points, then 0.5 to 5.1. A one-point hike held a
+year takes 1.5% off output at the trough, 20 months later, and unemployment
+peaks about a point higher at two years.
+
+## Rents come from deals, prices from bids, jobs from firms (2026-10-16)
+
+**Rents from deals.** The office and shop rent index no longer follows an
+equation of vacancy. Every lease signed in town — the player's, the street's
+new leases and its renewals — is recorded as a deal at its rent relative to
+the index, and each deal carries the market slack it was struck under. Each
+month the index moves by what the last six months of deals say landlords are
+getting, plus the contractual escalation. Each negotiation in turn reads the
+recent deals: when tenants have been winning, the next asking rent opens
+lower. Where no deal has been struck for six months, the index falls back to
+the old vacancy reading. Apartments and sheds keep the aggregate reading
+(sheds are mostly off-map).
+
+**Prices from bids.** A building sold on the open market now draws one to
+five bids from the buyers who qualify. Each bid is that buyer's own read of
+value at the market's going cap rate, with about 7% disagreement between
+buyers. The building clears at the second-best bid, above a reserve of 92%
+of asking. If no bid clears the reserve, the listing stays on the market and
+the seller re-prices toward the best bid, cutting at most 5% a round. The
+town's cap rate then follows the recorded sales: with three or more
+arm's-length sales in a year, it moves a tenth of the way toward what those
+sales paid against what the model valued them at. A town with no sales holds
+its last cap rate. Markets with few sales are sticky, as they are in reality.
+
+**Jobs from firms.** Each firm sets its own headcount from three things:
+half of its trade's swing in payroll, its own run of sales, and its margins.
+New firms replace closures and carry the other half of the trades' net
+change, in both directions. The town's employment is the space its firms
+occupy divided by space per worker (office 230 sf, shops 420, sheds 550),
+scaled to the opening job count. Population and household spending follow
+from that, so the town's jobs are the sum of what its firms decide.
+
+What the 60-year runs caught, and what changed:
+
+- **Sheds stay a regional market.** Most industrial floor is off the map and
+  its tenants are the region's distributors. When industrial firms formed
+  only from the town's own trades, new sheds on the map stood empty while the
+  region read short of space. Four of eight towns showed 37–45% vacancy with
+  rents tripling. The sheds on the street now fill to their share of the
+  region's demand.
+- **The ledger's drift no longer switches markets.** Over decades the class
+  stock ledger runs 2–4% ahead of the floors on the map. At a 2% threshold,
+  that sliver alone sent shops back to the old aggregate equation, which read
+  a 10–40% shortage at 4–13% vacancy. Offices and shops now stay the firms'
+  market up to 10% off the map, with the sliver let at the street's own rate.
+- **Entry reads the cost of space.** A firm's books open at the rent it
+  signs, so they cannot tell an entrant that the town has become dear. Firms
+  forced out by rent were being replaced one for one at the same rent, and
+  shop rents tripled over 25 years at 3–7% vacancy. New firms now come in
+  proportion to how affordable the class's rent is against the incomes that
+  pay it. That is the same burden that sets space per worker, applied at unit
+  elasticity: half the entrants where space costs twice as much, more where
+  it is cheap (Hopenhayn 1992).
+- **A start-up that never found a floor is not a closure.** New firms that
+  run out of patience settle elsewhere. They were being counted as exits and
+  replaced, which kept the queue of unhoused firms topped up indefinitely.
+  On one run, 400k sf of searchers stood beside 360k sf of empty shops and
+  read as a shortage. A firm that traded here and then gave up looking is
+  still an exit.
+
+## Taking out what was still artificial in demand and rents (2026-10-16)
+
+- **Town fortunes.** Each trade's national trend is no longer a fixed number
+  that is the same in every town. It wanders around its 1990–2019 mean, with a
+  0.8%/yr spread and a 30-year memory. Each town's fortune in each trade
+  starts partway through its story, not at zero. The town's own edge is now a
+  continuing process (1.2%/yr spread, 20-year memory) instead of a draw that
+  fades on a clock. Towns can now shrink.
+- **Productivity.** The fixed 1.1%/yr plus a sine-wave era is gone. Labour
+  productivity is technology growth, a persistent process centred on 1.1%/yr
+  with a 0.5-point spread and a 20-year memory, plus a third of the growth of
+  the nation's own capital stock over its trend.
+- **Flats on leases.** Every block on the street carries one-year lease
+  cohorts. About 55% renew at the block's rent less a sitting-tenant discount.
+  A renter whose lease sits well under the market stays more often, and one
+  asked for much more leaves. Each renewal and each new letting is a deal,
+  and apartment rents follow the deals as offices and shops do. Flats per
+  adult no longer draw from an era menu. They follow the national headship
+  trend plus half of the town's job growth over the nation's, so a weak
+  local labour market forms fewer households.
+- **Firm revenue is what it sells.** A firm's sales are its people times its
+  trade's sales per head, carried forward by productivity and prices. They
+  are no longer read back from its rent. Firms sort into buildings by what
+  they sell, so a dear town squeezes every firm's margin. New firms start in
+  proportion to what a start-up would clear today against its trade's normal
+  margin, which replaces the affordability rule.
+- **Sheds are a matching market.** The region's distributors move as leases
+  end (30% of expiries relocate). Movers, closures and the region's net new
+  demand take empty floor wherever it is, and the map's sheds get movers in
+  proportion to their share of the region's empty floor. There is no quota.
+- **The world is an economy.** The rest of the world has its own output gap
+  and central bank, and the two economies meet in the exchange rate. A point
+  of real-rate differential moves the dollar about 4% over a year. Exports
+  answer world demand (elasticity 1.5) and the dollar (0.5). Imports get
+  cheaper as the dollar rises (0.3).
+- **Natural vacancy is learned.** Each market's normal availability is its
+  own history, with a 20-year half-life, starting from the national figures.
+- **Guards.** These limits bound in no month over 3 towns × 60 years and are
+  removed:
+  - the rent floor at half the base rent;
+  - the 3%-a-month press guard;
+  - the regional-pull limit;
+  - the local-inflation limit;
+  - the inflation-expectations limit;
+  - the employment limit;
+  - the productivity limit (bound 2 months).
+
+  The affordability band is now a smooth saturation rather than a hard stop.
+- **Offices and shops are always the firms' market.** Even a 10% threshold
+  on off-map stock was crossed in a boom (seed 32, year 54). Shops fell back to
+  the aggregate equation, which read a 98% shortage at 12% vacancy, and real
+  shop rents went from 11 to 85 in five years.
+
+Measured, 16 towns × 60 years, real rent at year 60 (the four classes), and
+population:
+
+| | Office | Apartments | Industrial | Retail | Population |
+|---|---|---|---|---|---|
+| Before | 0.72–1.76 | 1.42–1.91 | 0.41–1.64 | 0.58–1.59 | 1.49–2.39 (8 towns) |
+| Now | 0.53–2.84 | 0.99–2.68 | 0.37–3.25 | 0.46–2.20 | 1.31–3.16 |
+
+Apartments still fall less often than the other classes, as they do in the US
+record. Real incomes rise in nearly every town and housing demand rises with
+them, while supply holds rents near what it costs to build. A town has to
+lose its jobs before its flats lose their rent.
+
+## No drawn eras; behaviour from budgets, costs and flows (2026-10-17)
+
+**The eras are gone.** Offices, shops and sheds each drew a demand "era" every
+12–25 years from a menu: "the browser eats the high street", "logistics
+boom", "headquarters town". Each is now the thing that made it.
+
+- **Offices:** no era. An office is wanted for the firms in it: their
+  headcount, their trades and what space costs them. A headquarters town is a
+  finance and law town, which its trades already are.
+- **Online selling:** the share of store-type sales made at a distance moves
+  over about five years toward the share at which buying online and in a
+  shop cost the same. Two things set that share:
+  - the technology of selling at a distance, which improves with this
+    economy's own simulated technology level;
+  - a shop's rent against a shed's.
+
+  Anchors (US Census e-commerce series): 2% in 2000 and about 15% by 2020 at
+  central technology growth. At most about half of what a high street sells
+  can ship (groceries, services, food and drink, the clinic stay), and about
+  40% of retail floor sells shippable goods.
+- **Shops** lose that floor.
+- **Sheds** gain about three times the warehouse space per online sale
+  (Prologis). They also lose factories to a dear dollar, about 1% of factory
+  floor a year per 10% of dear dollar, read from the world block's exchange
+  rate, and win them back when it is cheap.
+
+**Behaviour from what agents face:**
+
+- **Firms' response to rent.** A firm's space per worker answers its rent at
+  −σ × (1 − space's share of what it pays for space and staff). The share is
+  read off the street firms' own books each month, and σ = 0.5 is the
+  space–labour substitution elasticity. The fixed −0.40 for every class is
+  gone. A dear town, where rent is a bigger slice of costs, economises
+  proportionally less on each further point.
+- **Apartment demand from household budgets** (Stone–Geary). A household
+  needs at least half the opening's average home (a studio against the 900 sf
+  the generator builds) and spends a share of what is left on more. Its
+  income is pay times the share of the town in work. The budget is fixed by
+  one measured fact: renters spend about 30% of income on rent (ACS).
+
+  Every elasticity then follows and moves with the town: income about 0.6
+  and price about −0.4 at the opening. This replaces:
+  - the three income tiers;
+  - the 1.2%-per-point jobless rule;
+  - the 0.25 income elasticity.
+- **Renter move-outs from flows.** Renters move out by leaving town (half
+  again as mobile as everyone, carrying net out-migration), by buying (8% a
+  year, falling as owning gets dear against renting), for a job (10% a year,
+  more when the town is hiring), or through family life (22%, the CPS rate).
+  These replace a flat 45%.
+- **Turnover is measured.** Once a town has a record, frictional vacancy and
+  search times read the share of let space its own tenants actually handed
+  back over the last two years, not the national renewal studies.
+- **Lease terms.** Within its covenant's band, a firm in a fast-growing
+  trade signs shorter (the option to move), and one in a shrinking trade
+  signs longer (Grenadier 1995).
+
+**What remains a primitive, stated:**
+- σ for substitution;
+- the minimum home and the 30% rent share;
+- the online anchors;
+- the mobility rates by reason;
+- the covenant term bands;
+- the income elasticity of shed demand (0.4).
+
+These are measured facts or technology and preference parameters, which any
+model of behaviour has to start from. The elasticities that used to be typed
+in now come out of them.
+
+## Flats' vacancy floor, online ceiling, national cycle (2026-10-17)
+
+**Flats pinned at the vacancy floor.** In the 100-year playthrough, apartment
+vacancy sat at the transit floor for decades while rents ran far above the
+cost of building. There were two causes:
+- *The supply-price pull took a full step every month.* A landlord's asking
+  rent was pulled toward the price of new supply. A 12-month flat lease is
+  over long before a new building, 30 months away, can compete for the
+  tenant. The pull is now weighted by the share of a lease that the next
+  building can reach, `(lease − supply lag) / lease`:
+  - zero for flats;
+  - about 0.6–0.7 for office, retail and sheds, on 6- to 8-year leases.
+
+  Flats now price today's scarcity, and office, retail and sheds still
+  price tomorrow's competition.
+- *Natural vacancy learned from shortages.* The town's sense of "normal"
+  vacancy followed actual vacancy down, even when the market was short
+  because of a supply lag. It no longer learns while the structural
+  shortage indicator is on.
+
+Result: in the probe town's depression, apartment vacancy went from 3.7% to
+9.2%. Across 8 towns over 60 years, apartment vacancy ranges from 2.3% to
+13% through cycles.
+
+**Online selling** is capped at 40% of goods spending. Its response to
+technology is slower, so the share keeps climbing through the century
+instead of saturating by mid-century.
+
+**National cycle recalibrated.** Before, recessions averaged 21 months and
+the longest expansion in a century had a median of about 20 years. The
+post-war US record is 11 months, with expansions of up to 10–12 years.
+
+Changes:
+- confidence moods are shorter-lived (persistence 0.85, innovation sd
+  0.35%);
+- restocking (6 months) and investment plans (40-month capital adjustment,
+  6-month lag) are faster;
+- profit and precautionary-saving channels are stronger;
+- the central bank follows risk management: once unemployment has risen
+  0.5 points in six months, it eases in half-point steps, or 0.75 after a
+  1-point rise (as in 2001, 2008 and 2020);
+- recessions are dated from a 0.6% fall from the peak.
+
+Over 40 simulated centuries:
+
+| Measure | Result | US post-war |
+|---|---|---|
+| Recessions per decade | 1.7 | about 1.6 |
+| Length, median (90th percentile) | 13 (23) months | 11 months |
+| Unemployment rise, quartiles | 1.5 / 2.7 / 5.0 points | — |
+| Output-gap sd | 3.1% | — |
+| Months in recession | 19% | about 14% |
+| Longest expansion per century, median (max) | 16 (27) years | — |
+| Yield curve inverted before a recession | 57% | — |
+
+**Flats' quality bands are measured off the blocks.** Offices and shops
+already measured their quality bands (stock and let space by score) from the
+street's real rent rolls. Flats still kept them as bookkeeping:
+- new floor arrived empty in the top band;
+- households were spread across bands by room.
+
+In the playthrough town, a band of new blocks that was 95% let read as 30%
+empty. Its rent swing fell to 0.26, and the player's first block of flats let
+at a third of the rent its desk had planned. The bands now read the blocks'
+own rolls each month.
+
+Over 8 towns × 60 years, apartment rents and vacancy keep their ranges: real
+rent 1.1–2.0× by year 60, and vacancy cycling between 2% and 12%.
+
+## Floating margins lock at signing; the premium prices upside inflation (2026-10-18)
+
+**Floating loans.** A floater resets every month to the short index plus
+its spread. The spread stored on the loan was the sheet spread. The coupon
+signed at closing also carries that day's adjustments:
+- the credit-window premium;
+- the desk's appetite;
+- the borrower's standing and relationship.
+
+So all of those fell away the month after closing: a floater signed in a
+crunch dropped a point or more while the fixed loan beside it stayed put. The
+spread is now the one signed (`coupon − index`), as the facility's already
+was. Only the index moves.
+
+**The ten-year at zero.** Over 20 simulated centuries, policy under 0.5% came
+with a 10-year rate of 5.65%, above the 5.09% of all months. The cause: a
+recession's inflation undershoot cost the bank credibility, and the term
+premium read credibility symmetrically, so the premium doubled to 2.8 exactly
+when policy was at zero.
+
+The term premium mostly prices the risk of more inflation, not less. With
+expectations under target, long bonds hedge the downturn, and the ACM premium
+fell, even going negative, in low-inflation years. The credibility term now
+applies in full when expectations are at or above target, and fades to a
+quarter as they fall a point under it.
+
+| Measure | Before | After |
+|---|---|---|
+| 10-year at zero policy | 5.65% | 4.5% |
+| Term premium, median | 1.43 | 1.21 (ACM ~1.2) |
+| Term premium, 90th percentile | 4.86 | 2.80 (ACM ~3.5) |
+| Months with credibility under 0.5 | 28% | 18% |
+
+Recessions (1.7 a decade, median 12 months) and curve inversion (14% of
+months) are unchanged.

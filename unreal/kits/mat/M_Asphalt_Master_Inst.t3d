@@ -1,0 +1,48 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="M_Asphalt_Master_Inst" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Road/Material/MI/M_Asphalt_Master_Inst.M_Asphalt_Master_Inst'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="M_Asphalt_Master_InstEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Road/Material/MI/M_Asphalt_Master_Inst.M_Asphalt_Master_Inst:M_Asphalt_Master_InstEditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Road/Material/MI/M_Asphalt_Master_Inst.M_Asphalt_Master_Inst:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="M_Asphalt_Master_InstEditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Road/Material/MI/M_Asphalt_Master_Inst.M_Asphalt_Master_Inst:M_Asphalt_Master_InstEditorOnlyData'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Road/Material/MI/M_Asphalt_Master_Inst.M_Asphalt_Master_Inst:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=C4C9BDD9419CC75A91B59298B539189F
+   Parent="/Script/Engine.MaterialInstanceConstant'/Game/Road/Material/MI/MI_FreewayAsphalt_RoadDark.MI_FreewayAsphalt_RoadDark'"
+   bHasStaticPermutationResource=True
+   ScalarParameterValues(0)=(ParameterInfo=(Name="Roughness 3O"),ParameterValue=0.220000,ExpressionGUID=61451BEB48EA50A16DF306BBA6E3818C)
+   ScalarParameterValues(1)=(ParameterInfo=(Name="TCB ScaleGlobal 3O"),ParameterValue=0.050000,ExpressionGUID=096C66334B0682942D200B823BA191BF)
+   ScalarParameterValues(2)=(ParameterInfo=(Name="TCB ScaleGlobal 4G"),ParameterValue=0.001000,ExpressionGUID=3D0BF8DB4224040B699094B0F0700FD5)
+   ScalarParameterValues(3)=(ParameterInfo=(Name="MV_LargeScale"),ParameterValue=0.000150,ExpressionGUID=A81179DC4A6E35DABE2234969745301B)
+   ScalarParameterValues(4)=(ParameterInfo=(Name="UV Scale 7C"),ParameterValue=2.000000,ExpressionGUID=09B0ECEF4A6C55D7892A7D914569685B)
+   ScalarParameterValues(5)=(ParameterInfo=(Name="LM_Mask_XScale"),ParameterValue=1.000000,ExpressionGUID=4AD645224803B163A0C00FBE96A06197)
+   ScalarParameterValues(6)=(ParameterInfo=(Name="LM_Mask_YScale"),ParameterValue=1.000000,ExpressionGUID=F96AB6354378C9861B9AFFAD7BF15859)
+   ScalarParameterValues(7)=(ParameterInfo=(Name="Edge Height MFPD"),ParameterValue=0.500000,ExpressionGUID=FDB879194E4A776F35BCE7B569074F1D)
+   ScalarParameterValues(8)=(ParameterInfo=(Name="EP_Color_FadeToBlackAmt"),ParameterValue=0.500000,ExpressionGUID=C59B98CC434493F60ABB6AA0D5D575C0)
+   ScalarParameterValues(9)=(ParameterInfo=(Name="RefractionDepthBias"))
+   VectorParameterValues(0)=(ParameterInfo=(Name="Tint 3O"),ParameterValue=(R=0.450000,G=0.461136,B=0.500000,A=0.000000),ExpressionGUID=75A26F034CEA1201271422A851BBB102)
+   VectorParameterValues(1)=(ParameterInfo=(Name="GrimeTint"),ParameterValue=(R=0.500000,G=0.500000,B=0.500000,A=0.000000),ExpressionGUID=27070AFA415DAD0A1E58BCBAC411FE50)
+   VectorParameterValues(2)=(ParameterInfo=(Name="MV_Tint_Hi"),ParameterValue=(R=0.546875,G=0.470628,B=0.393066,A=0.000000),ExpressionGUID=B06F174A46D2643BBD125EAF953EBF2C)
+   BasePropertyOverrides=(OpacityMaskClipValue=0.333300,UsageFlags=4460928)
+   StaticParametersRuntime=(StaticSwitchParameters=((Value=True,ParameterInfo=(Name="Do_EdgePuddles"),bOverride=True,ExpressionGUID=F4F79500458BE7750AC037BC0FAB4D41)))
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'M_Asphalt_Master_InstEditorOnlyData'"
+   TextureStreamingDataVersion=1
+   TextureStreamingData(0)=(SamplingScale=0.015625,UVChannelIndex=0,TextureName="freeway_AsphaltNoise_packedA",TextureReference="/Game/Textures/SurfaceFeature/T_AsphaltNoise_packedA.T_AsphaltNoise_packedA")
+   TextureStreamingData(1)=(SamplingScale=0.375000,UVChannelIndex=2,TextureName="freeway_AsphaltNoise_packedB",TextureReference="/Game/Textures/SurfaceFeature/T_AsphaltNoise_packedB.T_AsphaltNoise_packedB")
+   TextureStreamingData(2)=(SamplingScale=2.000000,UVChannelIndex=1,TextureName="freeway_crackTileLarge_C",TextureReference="/Game/Textures/SurfaceFeature/T_CrackTileLarge_C.T_CrackTileLarge_C")
+   TextureStreamingData(3)=(SamplingScale=2.000000,UVChannelIndex=1,TextureName="freeway_crackTileLarge_N",TextureReference="/Game/Textures/SurfaceFeature/T_CrackTileLarge_N.T_CrackTileLarge_N")
+   TextureStreamingData(4)=(SamplingScale=0.250000,UVChannelIndex=1,TextureName="freeway_gradientLines_packed_v03a_v02_circleAlpha",TextureReference="/Game/Road/Textures/freeway_gradientLines_packed_v03a_v02_circleAlpha.freeway_gradientLines_packed_v03a_v02_circleAlpha")
+   TextureStreamingData(5)=(SamplingScale=0.031250,UVChannelIndex=0,TextureName="freeway_HeightPuddles_4k",TextureReference="/Game/Textures/SurfaceFeature/T_Puddles_4k.T_Puddles_4k")
+   TextureStreamingData(6)=(SamplingScale=0.203125,UVChannelIndex=1,TextureName="Patch",TextureReference="/Game/Road/Textures/Patch.Patch")
+   TextureStreamingData(7)=(SamplingScale=0.015625,UVChannelIndex=1,TextureName="patch_04",TextureReference="/Game/Road/Textures/patch_04.patch_04")
+   TextureStreamingData(8)=(SamplingScale=0.015625,UVChannelIndex=1,TextureName="sl3badpc_4K_Mask",TextureReference="/Game/Megascans/Surfaces/Frost_00/sl3badpc_4K_Mask.sl3badpc_4K_Mask")
+   TextureStreamingData(9)=(SamplingScale=1.281250,UVChannelIndex=0,TextureName="sl3badpc_4K_Roughness",TextureReference="/Game/Megascans/Surfaces/Frost_00/sl3badpc_4K_Roughness.sl3badpc_4K_Roughness")
+   TextureStreamingData(10)=(SamplingScale=0.125000,UVChannelIndex=0,TextureName="tiggcjdo_8K_Albedo",TextureReference="/Game/Megascans/Surfaces/Cast_In_Situ_Concrete_Wall_vcfice0/Asphalt_Road_2x2_M_02/tiggcjdo_8K_Albedo.tiggcjdo_8K_Albedo")
+   TextureStreamingData(11)=(SamplingScale=0.640442,UVChannelIndex=0,TextureName="tiggcjdo_8K_Normal",TextureReference="/Game/Megascans/Surfaces/Cast_In_Situ_Concrete_Wall_vcfice0/Asphalt_Road_2x2_M_02/tiggcjdo_8K_Normal.tiggcjdo_8K_Normal")
+   TextureStreamingData(12)=(SamplingScale=0.640442,UVChannelIndex=0,TextureName="tiggcjdo_8K_Roughness",TextureReference="/Game/Megascans/Surfaces/Cast_In_Situ_Concrete_Wall_vcfice0/Asphalt_Road_2x2_M_02/tiggcjdo_8K_Roughness.tiggcjdo_8K_Roughness")
+   TextureStreamingData(13)=(SamplingScale=0.125000,UVChannelIndex=0,TextureName="tlomaeady_8K_Albedo",TextureReference="/Game/Road/Textures/tlomaeady_8K_Albedo.tlomaeady_8K_Albedo")
+   TextureStreamingData(14)=(SamplingScale=0.187500,UVChannelIndex=0,TextureName="uchfff3ka_8K_AlbedoOpacity",TextureReference="/Game/Megascans/Atlases/Road_Debris_01/uchfff3ka_8K_AlbedoOpacity.uchfff3ka_8K_AlbedoOpacity")
+   TextureStreamingData(15)=(SamplingScale=0.187500,UVChannelIndex=0,TextureName="uchfff3ka_8K_Normal",TextureReference="/Game/Megascans/Atlases/Road_Debris_01/uchfff3ka_8K_Normal.uchfff3ka_8K_Normal")
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LightingGuid=D4E12F0D4DD63E95C9D83AAE35760E2B
+End Object

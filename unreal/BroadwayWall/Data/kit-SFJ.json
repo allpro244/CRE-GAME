@@ -1,0 +1,92 @@
+{
+ "format": "bw-kit/1",
+ "kit": "SFJ",
+ "grammar": "L00, L01, L02, L03*, L04",
+ "bands": [
+  {
+   "symbol": "L00",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L01",
+   "height": 1250,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/J/Kit_Bldg_SFJ_L1_A/Mesh/SM_BLDG_SFJ_L1_A1_Wall_01_N1.SM_BLDG_SFJ_L1_A1_Wall_01_N1",
+     "width": 400,
+     "depth": 131,
+     "y0": -405.9,
+     "y1": 87.3
+    },
+    {
+     "path": "/Game/Building/SF/J/Kit_Bldg_SFJ_L1_A/Mesh/SM_BLDG_SFJ_L1_A1_WallCap_01_R_N1.SM_BLDG_SFJ_L1_A1_WallCap_01_R_N1",
+     "width": 275,
+     "depth": 131,
+     "y0": -325.8,
+     "y1": 87.3
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/Building/SF/J/Kit_Bldg_SFJ_L1_A/Mesh/SM_BLDG_SFJ_L1_A1_Entrance_01_N1.SM_BLDG_SFJ_L1_A1_Entrance_01_N1",
+     "width": 1200,
+     "depth": 397,
+     "y0": -1206.9,
+     "y1": 87.3
+    }
+   ],
+   "corner": null,
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "L02",
+   "height": 400,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/J/Kit_Bldg_SFJ_L2_A/Mesh/SM_BLDG_SFJ_L2_A1_Wall_01_N1.SM_BLDG_SFJ_L2_A1_Wall_01_N1",
+     "width": 400,
+     "depth": 72,
+     "y0": -400,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L03",
+   "height": 800,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/Building/SF/J/Kit_Bldg_SFJ_L3_A/Mesh/SM_BLDG_SFJ_L3_A1_Wall_01_N1.SM_BLDG_SFJ_L3_A1_Wall_01_N1",
+     "width": 400,
+     "depth": 50,
+     "y0": -400,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L04",
+   "height": 900,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  }
+ ]
+}

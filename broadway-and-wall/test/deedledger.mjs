@@ -217,7 +217,18 @@ for (const seed of SEEDS) {
     // deed's — its deeds must come out with no equity multiple at all).
     if (!mezzDone && m > 24 && m % 6 === 3) {
       for (const bbl of Object.keys(g.holdings)) {
-        const r = E.placeMezz(g, parcels, bbl);
+        let r = E.placeMezz(g, parcels, bbl);
+        // Mezz only stacks behind a bank senior, and this bot's own refi door
+        // reaches for Cordage first. Put a bank first mortgage on the deed and
+        // try again; keep it only if the junior closes behind it.
+        if (r.err) {
+          for (const desk of ["harbor", "savings"]) {
+            const rf = E.refinance(g, parcels, bbl, desk, 0.6);
+            if (rf.err) continue;
+            const r2 = E.placeMezz(rf.s, parcels, bbl);
+            if (!r2.err) { r = r2; break; }
+          }
+        }
         if (!r.err) { g = r.s; mezzDone = true; mezzN++; break; }
       }
     }

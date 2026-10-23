@@ -28,7 +28,7 @@
 // here ever asks for a second click.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding, Rival } from "./types";
-import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
+import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger, autoLeaseOnClose } from "./types";
 import { rng, rrange, cycleHot, cycleDown } from "./market";
 import { openReoPortfolio } from "./portfoliosale";
 import { collateralAsIs, ownedHoldingValue, resolveRec } from "./value";
@@ -40,12 +40,12 @@ import { genRentRoll, depositsOn } from "./leasing";
 import { bumpLenderRel } from "./debt";
 import { saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
-import { clearRivalClaims, fitOf, forgetDeed } from "./rivals";
+import { clearRivalClaims, fitOf, forgetDeed, noteLost } from "./rivals";
 import { dropDeed, originateRow } from "./rivalDebt";
 import { reinstateFundedForeclosures } from "./workout";
 import { spendable, fundAndBook } from "./credit";
-import { ownersShareOfProceeds } from "./jv";
 import { money } from "./money";
+import { routeProceeds } from "./vehicles";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -289,6 +289,7 @@ function playerTakes(s: GameState, parcels: ParcelTable, lot: AuctionLot, paid: 
     assessed: Math.round(collateralAsIs(rec, s.econ, occ)),
     loan: null, condition: "worn", tenants: [], cfHistory: [],
     ...(s.landmarks?.[lot.bbl] !== undefined ? { landmarked: true } : {}),
+    ...(autoLeaseOnClose(s) ? { autoLease: true } : {}),
   };
   genRentRoll(s, rec, h);
   const total = h.tenants.reduce((a, t) => a + t.sf, 0);
@@ -340,7 +341,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     const w = lot.kind === "yours" ? s.workouts?.[lot.bbl] : undefined;
     const live =
       lot.kind === "note" ? !!note && note.perf === "nonperforming" && note.filedM !== undefined
-      : lot.kind === "yours" ? !!w && w.stage === "foreclosure" && !!s.holdings[lot.bbl]?.loan
+      // a mezz-only stack forecloses too (the docket admits it; see above)
+      : lot.kind === "yours" ? !!w && w.stage === "foreclosure"
+        && (!!s.holdings[lot.bbl]?.loan || (s.holdings[lot.bbl]?.mezz?.balance ?? 0) > 0)
       : lot.kind === "bank" ? (s.bankFcls ?? []).some((f) => f.bbl === lot.bbl) && !s.holdings[lot.bbl]
         && !!s.rivals?.find((r) => r.id === lot.borrowerId)?.bbls.includes(lot.bbl)
       : !s.holdings[lot.bbl] && !!s.rivals?.find((r) => r.id === lot.borrowerId)?.bbls.includes(lot.bbl);
@@ -370,7 +373,10 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     // your own note's lot the cash you owe is only the part above your debt
     const owedAtHammer = lot.kind === "note" ? Math.max(0, bid - lot.debt) : bid;
     let yours = bid;
-    if (yours > 0 && s.cash + deposit < owedAtHammer) {
+    // THE SAME PURSE AS REGISTRATION: cash plus the undrawn line. Winning
+    // debits the price and month-end draws the line for any gap, so a firm
+    // with room on its revolver could always close — and was told it could not.
+    if (yours > 0 && spendable(s, parcels).total + deposit < owedAtHammer) {
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `You could not close on ${lot.address} — the balance was due at the hammer and the cash was not there. `
@@ -385,7 +391,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     }
 
     const bestCash = Math.max(room, yours);
-    const youWin = yours > 0 && yours >= room && bestCash > protect
+    // AT the posted minimum is a sale: "minimum is X — bid that" has to win.
+    const youWin = yours > 0 && yours >= room && bestCash >= protect
       && !(lot.kind === "note");       // your own lot: handled below, credit bid first
     const notePlayerWins = lot.kind === "note" && (yours >= Math.max(room, lot.debt) || room <= lot.debt);
 
@@ -401,6 +408,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         const buyer = thirdPartyTakes(s, parcels, rec, paid);
         if (r) {
           r.bbls = r.bbls.filter((b) => b !== n.bbl);
+          noteLost(s, r, n.bbl);
           forgetDeed(r, n.bbl);
           dropDeed(s, r, n.bbl);       // the debt went with the deed
           r.cash += surplus;           // the law hands the wiped borrower the rest
@@ -452,7 +460,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       const { net } = saleTaxQuote(h, gross, s);
       const shortfall = Math.max(0, bal - net);
       // The law hands the surplus to the owners — a JV partner takes its share.
-      const surplus = ownersShareOfProceeds(h, Math.max(0, net - bal));
+      const rp = routeProceeds(s, h, Math.max(0, net - bal));
+      const surplus = rp.toSponsor + rp.toVehicle;
       if (surplus > 0) { s.cash += surplus; logBooks(s, "sold", surplus, lot.bbl); }
       if (shortfall > 0) {
         if (recourse) { s.cash -= shortfall; logBooks(s, "debtSvc", shortfall, lot.bbl); }
@@ -525,6 +534,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       const occ = Math.max(0.15, Math.min(0.95, r?.occ ?? 0.4));
       if (r) {
         r.bbls = r.bbls.filter((b) => b !== lot.bbl);
+        noteLost(s, r, lot.bbl);
         forgetDeed(r, lot.bbl);
         dropDeed(s, r, lot.bbl);
         r.cash += Math.max(0, paid - lot.debt);
@@ -550,6 +560,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         `The room went past you. Your deposit came back.`);
       if (r) {
         r.bbls = r.bbls.filter((b) => b !== lot.bbl);
+        noteLost(s, r, lot.bbl);
         forgetDeed(r, lot.bbl);
         dropDeed(s, r, lot.bbl);
         r.cash += Math.max(0, paid - lot.debt);
@@ -571,6 +582,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         const f = (s.bankFcls ?? []).find((x) => x.bbl === lot.bbl);
         if (f && r) {
           r.bbls = r.bbls.filter((b) => b !== lot.bbl);
+          noteLost(s, r, lot.bbl);
           forgetDeed(r, lot.bbl);
           dropDeed(s, r, lot.bbl);
           s.bankFcls = s.bankFcls!.filter((x) => x.bbl !== lot.bbl);
@@ -592,6 +604,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         }
       }
       // receiver lots that fail simply stay with the receiver for the drip
+      // ...and a bid that did not reach the holder's number is in the results.
+      if (yours > 0) said(lot.bbl, lot.address, "outbid", bid, 0, lot.holder,
+        `No bid reached ${lot.holder}'s number (${money(protect)}); it stays with them.`);
     }
   }
   // A BANK THAT TOOK MORE THAN ONE BUILDING OFF THE SAME BORROWER DOES NOT WANT

@@ -6,7 +6,8 @@ import { blocksPaint, parksPaint, groundGrain, composeStyle, gameLayers, landLen
 import type { BuildingVolume } from "./volume";
 import { RealCityLayer } from "./real/RealCity";
 import { mergeLotFeatures } from "./real/siteRing";
-import { condIdxOf, occupancy, physicalOcc, resolveRec, useOccupancy, landRead } from "@/engine/value";
+import { lensValues } from "@/ui/next/lensData";
+import { condIdxOf, liveDemand, resolveRec, useOccupancy } from "@/engine/value";
 import { useSf } from "@/engine/mix";
 import { START_YEAR } from "@/engine/types";
 import type { BuildingDesign, GameState } from "@/engine/types";
@@ -18,6 +19,21 @@ import { siteDeeds } from "@/engine/actions";
 import type { ParcelTable } from "@/data/types";
 import Badges from "./Badges";
 import { esc, tipHtml } from "./hoverCard";
+
+/**
+ * AN ASSEMBLED SITE PAINTS AS ONE (owner, Oct 2026). A folded deed keeps its
+ * shape on the map but its land, value and envelope have moved to the site
+ * (GameState.merged), so every lens that reads a lot on its own painted the
+ * pieces as if they had never been joined — "no room", no occupancy, the old
+ * lot's demand. Each piece takes the site's value, or none if the site has none.
+ */
+function mirrorSites(next: Map<string, number>, game: GameState): Map<string, number> {
+  for (const [child, site] of Object.entries(game.merged ?? {})) {
+    const v = next.get(site);
+    if (v === undefined) next.delete(child); else next.set(child, v);
+  }
+  return next;
+}
 
 /**
  * Where a site is on the ground: an assembled site's middle is the area-weighted
@@ -295,6 +311,18 @@ function hoodBoundaries(
   return { type: "FeatureCollection", features };
 }
 
+/**
+ * A MAP WITH NO STYLE IS NOT A MAP. When the browser takes the WebGL context
+ * away, MapLibre destroys the style at once (`map.style = null`), and the
+ * rebuild below waits a few seconds for the context to come back. Every
+ * effect that touched the map in that window — the month-end repaint, a
+ * selection, a lens — threw from inside MapLibre and put up the
+ * "city could not be drawn" card. The effects treat such a map as absent;
+ * the rebuild re-runs them.
+ */
+const liveMap = (m: maplibregl.Map | null): maplibregl.Map | null =>
+  m && (m as unknown as { style?: unknown }).style ? m : null;
+
 export default function MapView() {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -384,6 +412,7 @@ export default function MapView() {
       // state is unchanged — the features carry the same numeric ids they
       // carried as tiles, because the ids come from the BBL either way.
       const setState = (bbl: string, state: Record<string, boolean>) => {
+        if (!liveMap(map)) return;              // context lost: hover waits for the rebuild
         const id = featureIdsFor(bbl);
         map.setFeatureState({ source: "bw-parcels", id }, state);
         map.setFeatureState({ source: "bw-buildings", id }, state);
@@ -492,6 +521,10 @@ export default function MapView() {
                   rw: Number(f.properties?.rw ?? 0),
                   cw: Number(f.properties?.cw ?? 0),
                 })),
+              // where a street meets a channel and crosses it: bank to bank plus an abutment
+              crossings: (ctx?.features ?? [])
+                .filter((f) => f.properties?.kind === "crossing" && f.geometry.type === "LineString")
+                .map((f) => ({ line: (f.geometry as GeoJSON.LineString).coordinates as [number, number][], w: Number(f.properties?.w ?? 12) })),
               paths: (ctx?.features ?? [])
                 .filter((f) => f.properties?.kind === "parkpath" && f.geometry.type === "LineString")
                 .map((f) => (f.geometry as GeoJSON.LineString).coordinates as [number, number][]),
@@ -588,6 +621,7 @@ export default function MapView() {
         const pickAt = (pt: { x: number; y: number }): string | null => {
           const three = threeRef.current;
           if (three?.ready) return three.pickAt(pt.x, pt.y);
+          if (!liveMap(map)) return null;
           const fs = map.queryRenderedFeatures(
             [[pt.x - 8, pt.y - 8], [pt.x + 8, pt.y + 8]], { layers: ["bw-parcel-fill"] });
           return (fs[0]?.properties?.bbl as string | undefined) ?? null;
@@ -667,7 +701,7 @@ export default function MapView() {
   // lots it used to be.
   const mergedSig = useStore((s) => Object.entries(s.game?.merged ?? {}).map(([c, p]) => c + ">" + p).sort().join("|"));
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     const city = useStore.getState().city;
     const fc = city?.parcelFeatures as GeoJSON.FeatureCollection | undefined;
     const src = map?.getSource("bw-parcels") as maplibregl.GeoJSONSource | undefined;
@@ -679,7 +713,7 @@ export default function MapView() {
     });
   }, [mapReady, mergedSig]);
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !map.isStyleLoaded()) {
       // style may still be loading during the first selection — retry shortly
       const t = setTimeout(() => useStore.setState({ selectedBBL }), 150);
@@ -760,7 +794,7 @@ export default function MapView() {
   //             the part of the map you can see
   const flyTo = useStore((s) => s.flyTo);
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !flyTo || !parcels) return;
     const rec = parcels[flyTo.bbl];
     if (!rec) return;
@@ -846,11 +880,14 @@ export default function MapView() {
   const fitBook = useStore((s) => s.fitBook);
   useEffect(() => {
     if (!fitBook) return;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     const game = useStore.getState().game;
     if (!map || !parcels || !game) return;
     const pts: [number, number][] = [];
-    for (const bbl of Object.keys(game.holdings)) {
+    // One competitor's book when the map was asked to show that firm.
+    const st = useStore.getState();
+    const firm = st.mapFilter === "firm" ? game.rivals.find((r) => r.id === st.mapFirm) : undefined;
+    for (const bbl of firm ? firm.bbls : Object.keys(game.holdings)) {
       if (game.merged?.[bbl]) continue;
       const c = parcels[bbl]?.centroid;
       if (c) pts.push(c);
@@ -883,9 +920,11 @@ export default function MapView() {
   // ownership + listings → feature-state and rooftop markers
   // Subscribe to a paint signature, not `game` identity — see mapPaintSig.
   const paintSig = useStore((s) => mapPaintSig(s.game));
+  const pinFilter = useStore((s) => s.mapFilter);
+  const pinFirm = useStore((s) => s.mapFirm);
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     const setState = (bbl: string, state: Record<string, boolean>) => {
       const id = Number(bbl);
@@ -970,6 +1009,24 @@ export default function MapView() {
       }),
     });
 
+    // One competitor's book, pinned, while the map is showing that firm.
+    {
+      const st = useStore.getState();
+      const firm = st.mapFilter === "firm" ? game.rivals.find((r) => r.id === st.mapFirm) : undefined;
+      const pins = map.getSource("bw-firm") as maplibregl.GeoJSONSource | undefined;
+      pins?.setData({
+        type: "FeatureCollection",
+        features: firm ? [
+          ...firm.bbls.map((bbl) => ({ bbl, kind: "deed" })),
+          ...(game.cityJobs ?? []).filter((j) => j.firmId === firm.id && !j.orphaned && !firm.bbls.includes(j.bbl)).map((j) => ({ bbl: j.bbl, kind: "crane" })),
+        ].map(({ bbl, kind }) => ({
+          type: "Feature" as const,
+          geometry: { type: "Point" as const, coordinates: parcels[bbl]?.centroid ?? [0, 0] },
+          properties: { bbl, kind },
+        })) : [],
+      });
+    }
+
     const civic = map.getSource("bw-civic") as maplibregl.GeoJSONSource | undefined;
     civic?.setData(civicCollection(
       game,
@@ -977,7 +1034,7 @@ export default function MapView() {
       city?.parcelFeatures as GeoJSON.FeatureCollection | undefined,
       city?.context as GeoJSON.FeatureCollection | null,
     ) as never);
-  }, [paintSig, parcels, mapReady, city]);
+  }, [paintSig, parcels, mapReady, city, pinFilter, pinFirm]);
 
   const lens = useStore((s) => s.lens);
 
@@ -988,7 +1045,7 @@ export default function MapView() {
   const dmdRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "demand" && lens !== "land") return;
     const drift = game.blockD ?? {};
@@ -997,8 +1054,9 @@ export default function MapView() {
       const r = parcels[bbl];
       const d = drift[r.block];
       if (!d) continue;
-      next.set(bbl, Math.max(2, Math.min(100, r.demandScore + d)));
+      next.set(bbl, liveDemand(game, r.demandScore, r.block));
     }
+    mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (dmdRef.current.get(bbl) === v) continue;
       map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { dmd: v });
@@ -1027,20 +1085,12 @@ export default function MapView() {
   const zoneRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "zoning") return;
-    const next = new Map<string, number>();
-    for (const bbl of Object.keys(parcels)) {
-      const rec = resolveRec(parcels, game, bbl);
-      if (!rec || !rec.lotArea) continue;
-      // The RESOLVED envelope: the district's multiplier, anything won at a
-      // hearing on this lot, and nothing at all if it has been landmarked.
-      const far = Math.max(rec.farMaxComm, rec.farMaxRes);
-      if (!(far > 0)) { next.set(bbl, 0); continue; }        // landmarked: no room, and that is the point
-      const used = rec.bldgArea / (rec.lotArea * far);
-      next.set(bbl, Math.round(100 * Math.max(0, Math.min(1, 1 - used))));
-    }
+    // the lens's numbers are ui/next/lensData: one read for this map and for Unreal (R8)
+    const next = new Map(lensValues(game, parcels, "zoning"));
+    mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (zoneRef.current.get(bbl) === v) continue;
       map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { room: v });
@@ -1056,21 +1106,12 @@ export default function MapView() {
   const leaseRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "leases") return;
-    const next = new Map<string, number>();
-    for (const h of Object.values(game.holdings)) {
-      if (h.groundLeased || !h.tenants?.length) continue;
-      let soonest = Infinity;
-      for (const t of h.tenants) {
-        const left = t.endM - game.month;
-        if (left >= 0 && left < soonest) soonest = left;
-      }
-      if (!Number.isFinite(soonest)) continue;
-      // 0–24 months mapped to 100–0 (bright when near). Beyond 24 → 0 (dark).
-      next.set(h.bbl, Math.round(100 * Math.max(0, 1 - Math.min(24, soonest) / 24)));
-    }
+    // the lens's numbers are ui/next/lensData: one read for this map and for Unreal (R8)
+    const next = new Map(lensValues(game, parcels, "leases"));
+    mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (leaseRef.current.get(bbl) === v) continue;
       map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { leaseSoon: v });
@@ -1087,17 +1128,12 @@ export default function MapView() {
   const vacRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "vacancy") return;
-    const next = new Map<string, number>();
-    for (const bbl of Object.keys(parcels)) {
-      const rec = resolveRec(parcels, game, bbl);
-      if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-      const h = game.holdings[bbl];
-      const occ = h && !h.groundLeased ? physicalOcc(rec, h) : occupancy(rec, game.econ);
-      next.set(bbl, Math.round(100 * Math.max(0, Math.min(1, occ))));
-    }
+    // the lens's numbers are ui/next/lensData: one read for this map and for Unreal (R8)
+    const next = new Map(lensValues(game, parcels, "vacancy"));
+    mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (vacRef.current.get(bbl) === v) continue;
       map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { occPct: v });
@@ -1116,20 +1152,12 @@ export default function MapView() {
   const siteRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady || !game || !parcels) return;
     if (lens !== "pencils") return;
-    const asks = new Map(game.listings.map((l) => [l.bbl, l.ask] as const));
-    const next = new Map<string, number>();
-    for (const bbl of Object.keys(parcels)) {
-      if (game.holdings[bbl]) continue;
-      const rec = resolveRec(parcels, game, bbl);
-      if (!rec || rec.class !== "land" || !rec.lotArea) continue;
-      const read = landRead(rec, game.econ);
-      const price = asks.get(bbl) ?? read.psf * rec.lotArea;
-      const pay = Math.max(0, read.builder) * rec.lotArea;
-      next.set(bbl, Math.round(100 * Math.min(2, price > 0 ? pay / price : 0)));
-    }
+    // the lens's numbers are ui/next/lensData: one read for this map and for Unreal (R8)
+    const next = new Map(lensValues(game, parcels, "pencils"));
+    mirrorSites(next, game);
     for (const [bbl, v] of next) {
       if (siteRef.current.get(bbl) === v) continue;
       map.setFeatureState({ source: "bw-parcels", id: Number(bbl) }, { sitePct: v });
@@ -1161,7 +1189,7 @@ export default function MapView() {
   const photoFrame = useStore((s) => s.photoFrame);
   const labelsRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady) return;
     const live = labelsRef.current;
     const want = new Map<string, { name: string; cls: string; ll: [number, number] }>();
@@ -1312,6 +1340,7 @@ export default function MapView() {
   // it used to re-run on every mouse move because hover was one of its keys.
   const hoveredBBL = useStore((s) => s.hoveredBBL);
   const mapFilter = useStore((s) => s.mapFilter);
+  const mapFirm = useStore((s) => s.mapFirm);
   useEffect(() => {
     const layer = threeRef.current;
     if (!layer || !mapReady) return;
@@ -1389,18 +1418,33 @@ export default function MapView() {
       const keep = new Set<string>();
       if (mapFilter === "owned") {
         for (const bbl of Object.keys(game.holdings)) keep.add(bbl);
+      } else if (mapFilter === "firm") {
+        // one competitor's book, and its cranes, with yours kept for reference
+        const r = game.rivals.find((x) => x.id === useStore.getState().mapFirm);
+        for (const bbl of r?.bbls ?? []) keep.add(bbl);
+        for (const j of game.cityJobs ?? []) if (j.firmId === r?.id) keep.add(j.bbl);
+        for (const bbl of Object.keys(game.holdings)) keep.add(bbl);
       } else {
         for (const d of Object.values(game.developments ?? {})) keep.add(d.bbl);
         for (const j of game.cityJobs ?? []) keep.add(j.bbl);
       }
+      // ONE FIRM, LIT: its buildings bright orange, yours gold, everything
+      // else dimmed harder than the ordinary filters so the book reads at a
+      // glance across the whole town.
+      const firm = mapFilter === "firm" ? game.rivals.find((x) => x.id === useStore.getState().mapFirm) : undefined;
+      if (firm) {
+        for (const bbl of firm.bbls) tints.set(bbl, [1.65, 0.95, 0.3]);
+        for (const bbl of Object.keys(game.holdings)) tints.set(bbl, [1.45, 1.25, 0.5]);
+      }
+      const dim = firm ? 0.42 : 0.55;
       for (const bbl of layer.rangesByBBL.keys()) {
         if (keep.has(bbl)) continue;
         const cur = tints.get(bbl) ?? [1, 1, 1];
-        tints.set(bbl, [cur[0] * 0.55, cur[1] * 0.55, cur[2] * 0.55]);
+        tints.set(bbl, [cur[0] * dim, cur[1] * dim, cur[2] * dim]);
       }
     }
     layer.setTints(tints);
-  }, [selectedBBL, adjacency, paintSig, mapReady, lens, mapFilter, parcels]);
+  }, [selectedBBL, adjacency, paintSig, mapReady, lens, mapFilter, mapFirm, parcels]);
 
   // THE CITY'S VACANCY, ON THE CITY.
   //
@@ -1593,7 +1637,7 @@ export default function MapView() {
     // the 3D lawns and trees read off the month
     const LEAF = [0, 0, 0.12, 0.55, 0.9, 1, 1, 0.96, 0.82, 0.52, 0.16, 0.02];
     const mo = ((Math.floor(gameMonth) % 12) + 12) % 12;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     // the snowpack, not this month's flurry (cityVisuals snowCoverAt)
     const snowLying = cityVisual.snowCover;
     if (map?.getLayer("blocks")) map.setPaintProperty("blocks", "fill-color", blocksPaint(LEAF[mo], snowLying) as never);
@@ -1619,8 +1663,12 @@ export default function MapView() {
   const designPreview = useStore((s) => s.designPreview);
   useEffect(() => {
     if (!mapReady) return;
-    const layer = threeRef.current as unknown as { setPreview?: (i: unknown) => void } | null;
+    const layer = threeRef.current as unknown as { setPreview?: (i: unknown) => void; onPreviewFits?: ((k: string[]) => void) | null } | null;
     if (!layer?.setPreview) return;
+    layer.onPreviewFits = (keys) => {
+      const cur = useStore.getState().designSigFits;
+      if (!cur || cur.join() !== keys.join()) useStore.setState({ designSigFits: keys });
+    };
     const p = designPreview;
     const month = useStore.getState().game?.month ?? 0;
     const FLOOR_M = 3.55;   // the storey the skyline effect below draws player stock at
@@ -1641,7 +1689,7 @@ export default function MapView() {
   const schemeBbl = designPreview?.bbl ?? null;
   const schemeFloors = designPreview?.floors ?? 0;
   const orbitCam = (bearing: number, pitch: number, zoom: number) => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     const rec = schemeBbl ? parcels?.[schemeBbl] : null;
     if (!map || !rec) return null;
     const height = threeRef.current?.buildingFrame(schemeBbl!)?.height || schemeFloors * 3.55;
@@ -1657,7 +1705,7 @@ export default function MapView() {
     return { center, bearing, pitch, zoom };
   };
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !designCam || !designPeek || !schemeBbl) return;
     if (designCam.op === "reset") {
       useStore.getState().setDesignSpin(false);
@@ -1678,7 +1726,7 @@ export default function MapView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designCam]);
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !designSpin || !designPeek || !schemeBbl) return;
     let raf = 0, last = performance.now();
     const stop = () => useStore.getState().setDesignSpin(false);
@@ -1712,7 +1760,7 @@ export default function MapView() {
   // until you leave, or until "Pan the map" on the bar hands them back.
   const designOrbit = useStore((s) => s.designOrbit);
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !designPeek || !schemeBbl || !designOrbit) return;
     const handlers = [map.dragPan, map.dragRotate, map.scrollZoom, map.touchZoomRotate, map.doubleClickZoom];
     const was = handlers.map((h) => h.isEnabled());
@@ -1764,7 +1812,7 @@ export default function MapView() {
   const graphics = useStore((s) => s.graphics);
   useEffect(() => {
     if (!mapReady) return;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     threeRef.current?.setQuality(graphics);
     // The pixel ratio is pinned explicitly, so MapLibre will NOT follow the
     // display on its own: browser zoom, or dragging the window to a screen of
@@ -1790,7 +1838,7 @@ export default function MapView() {
       cityVisual.overcast,
       cityVisual.snowCover,
     );
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (map) {
       // one sky, one light — the constants live in style.ts beside the style
       // that opens on them, so a weather tick can never revert a sky retune
@@ -1819,7 +1867,7 @@ export default function MapView() {
   // no lens at all. Reset, then override: a lens is only ever its own paint.
   useEffect(() => {
     const game = useStore.getState().game;
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     if (!map || !mapReady) return;
     const layer = threeRef.current;
     if (layer?.ready) {
@@ -1901,20 +1949,34 @@ export default function MapView() {
     };
 
     if (lens === "demand" && parcels) {
-      const stops = [5, 30, 50, 70, 92];
-      const ramp = ["#eef0e8", "#cfe0d5", "#93c4b1", "#4f9887", "#1e6a60"];
-      map.setPaintProperty("bw-parcel-fill", "fill-color", [
-        "interpolate", ["linear"], LIVE_DEMAND,
-        ...stops.flatMap((s, i) => [s, ramp[i]]),
-      ] as never);
-      map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
       // the same live figure the fill reads: the parcel's score plus its
-      // block's drift, on the engine's own clamp
+      // block's drift, on the engine's own bounded scale
       const vals = new Map<string, number>();
       for (const bbl of Object.keys(parcels)) {
         const r = parcels[bbl];
-        vals.set(bbl, Math.max(2, Math.min(100, r.demandScore + (game?.blockD?.[r.block] ?? 0))));
+        vals.set(bbl, liveDemand(game, r.demandScore, r.block));
       }
+      if (game) mirrorSites(vals, game);
+      // THIS CITY'S OWN SPREAD, AND MOST OF THE RAMP AT THE TOP (owner, Oct
+      // 2026). Fixed stops ended at 92, so a core where most blocks score
+      // 80-100 painted one flat dark green — exactly where the player is
+      // choosing between sites. The stops are this town's percentiles, packed
+      // toward the top.
+      // RED IS WEAK, BLUE IS STRONG (owner, Oct 2026: "the more red the more
+      // demand ... should be flipped"). The weakest blocks read red and
+      // orange, the middle of town a neutral sand, and the ramp deepens
+      // through blue to the hottest blocks of the core.
+      const sorted = [...vals.values()].filter(Number.isFinite).sort((x, y) => x - y);
+      const pct = (p: number) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))] : p * 100;
+      const qs = [0.05, 0.30, 0.55, 0.72, 0.85, 0.93, 0.975, 0.995];
+      const stops: number[] = [];
+      for (const q of qs) stops.push(Math.max(pct(q), (stops[stops.length - 1] ?? -Infinity) + 0.01));
+      const ramp = ["#b8242c", "#e0702e", "#ead9b0", "#eef0e8", "#a9cbe0", "#5b9bd0", "#2a6bb3", "#123f80"];
+      map.setPaintProperty("bw-parcel-fill", "fill-color", [
+        "interpolate", ["linear"], LIVE_DEMAND,
+        ...stops.flatMap((st, i) => [st, ramp[i]]),
+      ] as never);
+      map.setPaintProperty("bw-parcel-fill", "fill-opacity", 0.82 as never);
       roofLens(vals, stops, ramp);
       return;
     }
@@ -2008,7 +2070,7 @@ export default function MapView() {
       // percentile stops over CURRENT land $/sf so the ramp stays contrasty
       const nowPsf = (bbl: string) => {
         const r = parcels[bbl];
-        const d = Math.max(2, Math.min(100, r.demandScore + (game.blockD?.[r.block] ?? 0)));
+        const d = liveDemand(game, r.demandScore, r.block);
         return r.landPsf * game.econ.landIdx * (1 + 0.22 * (0.25 + 0.9 * (d / 100)) * game.econ.cycleDev);
       };
       const vals: number[] = [];
@@ -2036,7 +2098,7 @@ export default function MapView() {
   const tipRef = useRef<HTMLDivElement>(null);
   const hoverCardOn = useStore((s) => s.hoverCard);
   useEffect(() => {
-    const map = mapRef.current;
+    const map = liveMap(mapRef.current);
     const tip = tipRef.current;
     if (!map || !mapReady || !tip) return;
     if (photoFrame || !hoverCardOn) {
@@ -2046,8 +2108,13 @@ export default function MapView() {
     const container = map.getContainer();
     let tipKey = "";
     const onMove = (e: MouseEvent) => {
-      const { hoveredBBL, parcels: table, selectedBBL, game: g, hoverCard } = useStore.getState();
-      const rec = hoverCard && hoveredBBL && hoveredBBL !== selectedBBL ? table?.[hoveredBBL] : null;
+      const { hoveredBBL: hov0, parcels: table, selectedBBL, game: g, hoverCard } = useStore.getState();
+      // AN ASSEMBLED LOT IS THE SITE. Hovering a folded deed read its own
+      // static record — the old lot's size, value and zoning, as if it had
+      // never been merged. Read the site's live record instead, as a click does.
+      const hoveredBBL = hov0 ? (g?.merged?.[hov0] ?? hov0) : hov0;
+      const rec = hoverCard && hoveredBBL && hoveredBBL !== selectedBBL && table
+        ? (g ? resolveRec(table, g, hoveredBBL) : null) ?? table[hoveredBBL] : null;
       if (!rec) { tip.style.display = "none"; return; }
       // One card per lot and month: the same numbers the property panel
       // prints, read off the same functions, so the glance and the click agree.

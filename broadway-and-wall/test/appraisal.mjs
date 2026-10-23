@@ -51,8 +51,25 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
   const below = at(0.5195), above = at(0.5205);
   ok(Math.abs(above / below - 1) < 0.01, `${li.rec.address}: value at 0.5195 ${Math.round(below / 1e3)}K vs at 0.5205 ${Math.round(above / 1e3)}K (${pc(above / below - 1)}) — no step at the band edge`);
   ok(E.capRateFor(li.rec, g.econ, "standard", 0.5205) - E.capRateFor(li.rec, g.econ, "worn", 0.5195) < 0.02, `the cap rate is continuous across worn→standard`);
-  const good = at(0.865), worn = at(0.43);
-  ok(good > worn * 1.25, `and the grades still price apart: good ${Math.round(good / 1e3)}K vs worn ${Math.round(worn / 1e3)}K`);
+  // AND THE GRADES STILL PRICE APART — across the let stock on all four tapes,
+  // not on whichever block of flats came first. Condition prices the building,
+  // not the dirt, so a two-storey shop on a dear lot moves little between good
+  // and worn (measured: 1.00× on plan 11, 1.05× on plan 12) while a full
+  // building moves a third or more; the claim is about the stock, so it is
+  // measured on the stock's median. Plan 11 read 1.44×, plan 12 1.36×.
+  const spread = [];
+  for (const seed of [550991, 12007, 11, 7919]) {
+    const g2 = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
+    for (const l of g2.listings) {
+      const rec = E.resolveRec(parcels, g2, l.bbl);
+      if (!rec || !l.roll || !(rec.bldgArea > 0)) continue;
+      const h2 = E.asIfOwned(g2, l.bbl, l.ask, E.disclosureFor(g2, l.bbl), rec);
+      const v = (idx) => E.holdingValue(rec, g2.econ, { ...h2, condIdx: idx, condition: E.condGrade(idx) }, g2.month);
+      spread.push(v(0.865) / v(0.43));
+    }
+  }
+  const med = pct(spread, 0.5);
+  ok(spread.length >= 10 && med > 1.25, `and the grades still price apart: good over worn ${med.toFixed(2)}× at the median of ${spread.length} let listings (need > 1.25×)`);
 }
 
 // --- 2. the tape, the desk, the lender and the deed read one number ----------

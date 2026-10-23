@@ -4,29 +4,30 @@
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import { districtLabel } from "./mix";
 import type { Bid, BuiltClass, Condition, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, Rival, RivalStyle, SaleInstructions } from "./types";
-import { logBooks, moveDeposit, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger } from "./types";
+import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger, autoLeaseOnClose } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
-import { assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
+import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
-import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake } from "./rivals";
+import { clearRivalClaims, fitOf, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
 import { payOffDue, payOffLoan } from "./debt";
 import { settleSale } from "./rivalDebt";
 import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen, loanMin } from "./debt";
-import { takeoverDevelopment, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
+import { takeoverDevelopment, takeoverEquityNeed, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
 import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
-import { ownersShareOfProceeds, jvConsent } from "./jv";
-import { gpCapitalShare } from "./fund";
 import { money } from "./money";
+import { consentFor, purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
+import { investorsTakeOfExit } from "./waterfall";
+import { heldByRaises } from "./investors";
 
 /**
  * WHO BUYS THE BUILDINGS THE PLAYER DOES NOT.
@@ -242,6 +243,8 @@ export function executePurchase(
     return { s, err: "That fee is still subject to a ground lease. It is not freehold inventory." };
   }
   if (isCivicLand(s, bbl)) {
+    const dev = s.growth?.held?.[bbl];
+    if (dev) return { s, err: `${dev} owns that farm and is taking it to the board. It is not for sale.` };
     return { s, err: "The city took that lot for a civic work. It is not for sale." };
   }
   const rec = resolveRec(parcels, s, bbl);
@@ -310,10 +313,10 @@ export function executePurchase(
     if (call > 0) {
       next.fund.uncalled -= call;
       next.fund.called += call;
-      next.fund.cash += call;
+      moveFundCash(next.fund, call, "call");
       logBooks(next, "lpCalled", call); // LP equity in for this deal — not income
     }
-    next.fund.cash -= bq.equity;
+    moveFundCash(next.fund, -bq.equity, "purchase");
   } else fundCashNeed(next, parcels, bq.equity);
   // Points are a financing cost, not purchase consideration — same split
   // refinance and the facility use (debtSvc vs borrowed/bought). Deposits
@@ -323,21 +326,31 @@ export function executePurchase(
   // the fee found its way to a named shop, and the shop will remember
   if (!entity) creditBrokerFee(next, bbl);
   if (pointsFee > 0) logBooks(next, "debtSvc", pointsFee, bbl, fromFund);
+  // The vehicle took the tenants' deposits on as a liability rather than in
+  // cash: `bought` above is gross of them, so they are consideration the
+  // vehicle settled without a cheque (the right-purse identity, invariants.ts).
+  if (fromFund && next.fund && (bq.deposits ?? 0) > 0) next.fund.deedSettled = (next.fund.deedSettled ?? 0) - (bq.deposits ?? 0);
   // If a named firm owned it, they are the seller — the money and the deed
   // both move, and their balance sheet is one building lighter.
   {
     const seller = ownerOf(next, bbl);
     if (seller) {
+      // Struck while the deed is still theirs (rivals.ts basisShare).
+      const tax = gainsTax(seller, price);
       seller.bbls = seller.bbls.filter((b) => b !== bbl);
       const jv = seller.jvs?.[bbl];
       forgetDeed(seller, bbl);
-      // The mortgage on the building is paid at the closing, then their line.
+      // The mortgage on the building is paid at the closing, then their line;
+      // the seller pays its own selling costs and gains tax, as on every other
+      // sale on the street.
       const relief = settleSale(next, seller, bbl, price);
-      seller.cash += price - relief;
+      const costs = streetSaleCost(price);
+      seller.cash += price - relief - costs - tax;
       // A syndicated deed pays its deal investors out of the closing — see
       // jvLpTake (rivals.ts).
-      const partnersOut = jvLpTake(jv, price - relief, next.month);
+      const partnersOut = jvLpTake(jv, price - relief - costs - tax, next.month);
       seller.cash -= partnersOut;
+      noteRealised(next, seller, jv, price, partnersOut);
     }
   }
   clearRivalClaims(next, bbl);
@@ -359,6 +372,8 @@ export function executePurchase(
     service: s.opsPolicy?.service ?? 0,
     stance: s.opsPolicy?.stance ?? 0,
     plan: s.opsPolicy?.plan ?? 1,
+    // ...on auto-lease when the firm runs its book on auto
+    ...(autoLeaseOnClose(s) ? { autoLease: true } : {}),
     // ...and the house minimum new lease, when one is set
     ...(s.minLeaseDefault ? { minLeaseSf: s.minLeaseDefault } : {}),
     svcIdx: SVC_START,
@@ -411,7 +426,9 @@ export function executePurchase(
     }
   }
   // a live 1031: this purchase completes the exchange if it's big enough
-  if (!entity && next.exchange && price >= next.exchange.minPrice * 0.8) {
+  // Not on a fund deed: the vehicle's purchase cannot complete the sponsor's
+  // own exchange (its basis is the LPs' too).
+  if (!entity && !fromFund && next.exchange && price >= next.exchange.minPrice * 0.8) {
     holding.costBasis -= next.exchange.rolledGain; // deferred gain carries into the new basis
     next.news.unshift({
       q: next.month, kind: "deal",
@@ -481,7 +498,7 @@ export function executePurchase(
     // buyQuote already netted the disclosed roll out of the cheque — only the
     // remainder (a preview that grew, or a quote that missed the paper) moves.
     const extra = depositsOn(holding) - (bq.deposits ?? 0);
-    if (fromFund && next.fund) next.fund.cash += extra;
+    if (fromFund && next.fund) moveFundCash(next.fund, extra, "deposit");
     else next.cash += extra;
   } else {
     // genRentRoll settles the deposits through moveDeposit, which already puts
@@ -505,7 +522,26 @@ export function executePurchase(
       + `${holding.loan ? ` on $${(holding.loan.principal / 1e6).toFixed(1)}M of ${productById(holding.loan.product).lender} paper at ${holding.loan.ratePct}%` : ", all cash"}`
       + `${offMarket ? ", off-market" : ""}.`,
   });
-  if (halfBuilt) takeoverDevelopment(next, parcels, bbl, halfBuilt);
+  // THE PLAN A PURCHASE IS JUDGED AGAINST (reputation.ts): its going-in yield
+  // on the price — what an income buyer underwrites first. Land and a husk
+  // with no income have no going-in yield; their plan is the job built on them.
+  {
+    const noi = ownedHoldingNoiYr(next, parcels, holding);
+    const l = next.deedCf?.[bbl];
+    if (l && noi > 0 && price > 0) l.plan = { irr: noi / price };
+  }
+  if (halfBuilt) {
+    // BUYING THE SITE IS TAKING THE JOB ON, and the job has to be fundable:
+    // a $23M site with a half-built 32-storey tower on it carried $64M of
+    // equity to finish that nothing checked, and a $40M firm bought it and
+    // was bankrupt inside two years.
+    const need = takeoverEquityNeed(next, parcels, bbl, halfBuilt);
+    const have = fundableNow(next, parcels) - heldByRaises(next);
+    if (!entity && need > have) {
+      return { s, err: `This site comes with a half-built job: ${money(need)} of equity to finish it and open it, and after the purchase you could fund ${money(Math.max(0, have))}.` };
+    }
+    takeoverDevelopment(next, parcels, bbl, halfBuilt);
+  }
   if (!entity) {
     recordComp(next, rec, price, firmShort(s), ownerOf(s, bbl)?.name ?? (offMarket ? "a private owner" : "a listed seller"),
       s.listings.find((l) => l.bbl === bbl)?.distress, holding.condition, offMarket);
@@ -611,7 +647,13 @@ export function buyListing(
   // missing `err` as "deed recorded," so a lowball that the seller waved off
   // still printed as a closing. `refused` carries the news / listing pull
   // without pretending the deed changed hands — same shape as approachOwner.
-  if (roll < p + 0.45) {
+  // AN INSULT IS A NUMBER NOWHERE NEAR THEIRS. Every refusal used to carry the
+  // same slice of insult — so a bid at 95% of the ask, a coin flip on the
+  // seller's own curve, could end the relationship across the owner's whole
+  // book. Only a bid this seller would almost never take (under 2% on the
+  // curve: about a fifth under the ask for a typical owner, further for a
+  // forced one) can offend; anything closer is a plain no.
+  if (roll < p + 0.45 || p >= 0.02) {
     next.news.unshift({ q: next.month, kind: "info", text: `Your ${money(price)} on ${parcels[bbl]?.address} was refused — the ask stands.` });
     return { s: next, msg: "Refused. The ask stands.", refused: true };
   }
@@ -759,6 +801,9 @@ function assembleBlocker(
 ): string | null {
   const root = siteRoot(s, bbl);
   for (const d of siteDeeds(s, root)) {
+    // A lot a firm folded into this site before you bought it is part of the
+    // site, not a deed of its own (rivals.ts tickRivalAssembly).
+    if (!s.holdings[d] && d !== root && s.merged?.[d] === root && s.holdings[root]) continue;
     if (!s.holdings[d]) return "You have to own every lot in the assemblage.";
     const rec = resolveRec(parcels, s, d);
     // Children already have lotArea 0 on the resolved record — vacancy is
@@ -815,7 +860,7 @@ export function assembleLots(
   if (roots.length < 2) return { s, err: "Assemblage takes at least two lots." };
   for (const r of roots) {
     if (!s.holdings[r]) return { s, err: "You have to own every lot in the assemblage." };
-    { const why = jvConsent(s.holdings[r]); if (why) return { s, err: why }; }
+    { const why = consentFor(s, s.holdings[r], "assemble"); if (why) return { s, err: why }; }
     if (s.holdings[r].groundRentOut) return { s, err: "You sold the land under this building — the fee owner's consent is not on offer. Buy the land back first." };
     const why = assembleBlocker(s, parcels, r, !!opts.payoff);
     if (why) return { s, err: why };
@@ -898,8 +943,12 @@ export function assembleLots(
       // which is one of the deeds being folded here.
       if (!next.merged[d]) mergeDeedLedger(next, d, parent, next.holdings[d].boughtM);
       next.merged[d] = parent;
-      next.holdings[parent].costBasis += next.holdings[d].costBasis;
-      next.holdings[d].costBasis = 0;
+      mergedTouched();
+      // an absorbed lot (a firm's site you bought) has no deed of its own
+      if (next.holdings[d]) {
+        next.holdings[parent].costBasis += next.holdings[d].costBasis;
+        next.holdings[d].costBasis = 0;
+      }
     }
   }
 
@@ -1043,7 +1092,7 @@ export function offerGroundLease(
   s: GameState, parcels: ParcelTable, bbl: string, years: number, review: GroundReview = "fixed",
 ): { s: GameState; err?: string; msg?: string } {
   if (!s.holdings[bbl]) return { s, err: "You don't own that." };
-  { const why = jvConsent(s.holdings[bbl]); if (why) return { s, err: why }; }
+  { const why = consentFor(s, s.holdings[bbl], "groundLease"); if (why) return { s, err: why }; }
   if (s.holdings[bbl].groundRentOut) return { s, err: "You are the ground lessee here — the land is somebody else's to lease." };
   if (s.groundLeases?.[bbl]) return { s, err: "It is already ground-leased." };
   if (s.holdings[bbl].groundOffer) return { s, err: "It is already on offer. A ground lessee comes when one comes." };
@@ -1308,6 +1357,7 @@ export function defaultGroundLease(
       raiseAlert(s, {
         kind: "ground",
         tone: "bad",
+        stops: true,
         title: `${gl.tenant} defaulted at ${address}`,
         body: `The ground rent has stopped and the lease has terminated. You now control the land and the `
           + `${standing.floors}-floor ${standing.class} building standing on it — that is what long paper secured.`,
@@ -1333,6 +1383,7 @@ export function defaultGroundLease(
         raiseAlert(s, {
           kind: "ground",
           tone: "bad",
+          stops: true,
           title: `${gl.tenant} defaulted at ${address}`,
           body: `Short ground paper does not gift the tower. You funded a ${money(buyout)} leasehold buyout `
             + `and took the ${standing.floors}-floor ${standing.class} vacant.`,
@@ -1350,6 +1401,7 @@ export function defaultGroundLease(
         raiseAlert(s, {
           kind: "ground",
           tone: "bad",
+          stops: true,
           title: `${gl.tenant} defaulted at ${address}`,
           body: buyout > 0
             ? `The ground rent has stopped. Short paper does not hand you the building — a ${money(buyout)} `
@@ -1371,6 +1423,7 @@ export function defaultGroundLease(
     raiseAlert(s, {
       kind: "ground",
       tone: "bad",
+      stops: true,
       title: `${gl.tenant} defaulted at ${address}`,
       body: duringBuild
         ? "They walked the job. The ground rent has stopped, the frame is cancelled, and full control of the site is back with you."
@@ -1492,13 +1545,25 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
     const revWord = review === "fixed" ? `+${q.stepPct}% every ten`
       : review === "cpi" ? "CPI each year (2–4%)"
       : "FMV every twenty, capped";
-    s.news.unshift({
-      q: s.month, kind: "deal",
-      text: `A ground lessee at last: ${who.name} signs at ${rec.address} — `
-        + `${money(q.rentYr)} a year for ${offer.years} years (${revWord}), `
-        + `after ${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`} on the offer book. `
-        + `They break ground on ${prog.floors} fl of ${prog.use} (${Math.round(prog.sf).toLocaleString()} sf); `
-        + `you do not touch the dirt again until ${monthLabel(s.month + offer.years * 12)}.`,
+    // A CARD, NOT A LINE IN THE PAPER (owner, Oct 2026): "I got offered a
+    // ground lease but thought it was a regular lease." This signs itself off
+    // the offer book and hands the land away for decades, and it used to land
+    // as one news line in the same voice as every suite lease. It takes the
+    // screen now, as a ground default already does, and the card says in plain
+    // words what kind of paper it is (modals.tsx, the ground-lease card).
+    raiseAlert(s, {
+      kind: "ground",
+      tone: "good",
+      bbl: h.bbl,
+      title: `${who.name} has ground-leased the land at ${rec.address}`,
+      body: `A ground lease, not a space lease: they take the whole lot for ${offer.years} years, `
+        + `build their own ${prog.floors}-floor ${prog.use} on it (${Math.round(prog.sf).toLocaleString()} sf), and run it. `
+        + `You collect ${money(q.rentYr)} a year of ground rent (${revWord}) and do not touch the dirt again until `
+        + `${monthLabel(s.month + offer.years * 12)}. It came off the offer book after `
+        + `${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`}.`,
+      detail: groundLeaseFreeReversion(s.groundLeases[h.bbl])
+        ? `${offer.years} years is long paper: when it runs out, their building comes back to you with the land.`
+        : `${offer.years} years is short paper: when it runs out you buy their building out, or it is cleared and you get the dirt back.`,
     });
   }
 
@@ -1691,7 +1756,7 @@ function levelRatioSinceLooking(econ: Econ, rec: ParcelRecord, ageM: number): nu
   const level = (i: number): number => {
     const h = hist[i];
     if (!h) return NaN;
-    if (rec.class === "land" || !rec.bldgArea) return h.landIdx;
+    if (rec.class === "land" || rec.class === "house" || !rec.bldgArea) return h.landIdx;
     const rent = h.effRent?.[rec.class] ?? h.rent?.[rec.class];
     const cap = h.cap?.[rec.class];
     return rent && cap ? rent / cap : h.landIdx;
@@ -2317,6 +2382,28 @@ export function buyOffMarket(
 
 // One counter per approach, at YOUR number off the slider. The deeper you
 // cut, the worse the odds — they take it, hold firm, or hang up entirely.
+/**
+ * THE CHANCE THE OWNER TAKES YOUR ONE COUNTER at `px` against their named ask.
+ * counterOffMarket rolls against exactly this; the negotiation panel draws it.
+ */
+export function counterTakeOdds(
+  s: GameState, adjacency: Adjacency, bbl: string, a: { ask?: number; named?: boolean }, px: number,
+): number {
+  if (!a.ask) return 0;
+  const cut = Math.max(0, 1 - px / a.ask);                     // how deep you went
+  const pressure = assemblagePressure(s, adjacency, bbl);
+  const named = a.named === true;
+  const ref = named ? 0.03 : 0.12;
+  return Math.max(0.05, Math.min(0.8,
+    0.48
+    - (named ? 0.10 : 0)                                       // they know you want it
+    - (cut - ref) * 2.6                                        // the reference cut
+    - 0.35 * pressure                                          // holdouts don't blink
+    + 0.18 * cycleDown(s.econ)                                 // fear is your friend
+    - 0.08 * cycleHot(s.econ),
+  ));
+}
+
 export function counterOffMarket(
   s: GameState, parcels: ParcelTable, adjacency: Adjacency, bbl: string, offerPx?: number,
 ): { s: GameState; err?: string; msg?: string } {
@@ -2338,7 +2425,6 @@ export function counterOffMarket(
   na.countered = true;
   const px = Math.round(offerPx ?? a.ask * 0.88);
   const cut = Math.max(0, 1 - px / a.ask);                     // how deep you went
-  const pressure = assemblagePressure(next, adjacency, bbl);
   // A NUMBER DRAGGED OUT OF THEM BY A BID IS NOT AN OPENING ASK.
   //
   // Two things are different about it and they pull opposite ways. It is close
@@ -2350,14 +2436,7 @@ export function counterOffMarket(
   // negotiation; cutting fifteen is asking them to forget the last six months.
   const named = a.named === true;
   const ref = named ? 0.03 : 0.12;
-  const pTake = Math.max(0.05, Math.min(0.8,
-    0.48
-    - (named ? 0.10 : 0)                                       // they know you want it
-    - (cut - ref) * 2.6                                        // the reference cut
-    - 0.35 * pressure                                          // holdouts don't blink
-    + 0.18 * cycleDown(next.econ)                              // fear is your friend
-    - 0.08 * cycleHot(next.econ),
-  ));
+  const pTake = counterTakeOdds(next, adjacency, bbl, a, px);
   // Split the old "hold firm" mass into a real soft counter and a true hold.
   // Owners who will not take your number still often move a little — that is
   // what a counter is. Binary take/hold/hang-up made every refusal read as
@@ -2425,6 +2504,7 @@ export function listForSale(
   if (h.renovatingUntilM !== undefined && s.month < h.renovatingUntilM) {
     return { s, err: "Can't market it mid-renovation — finish the work first." };
   }
+  if (s.homes?.units[bbl]) return { s, err: "A house is going up on it: it sells to a family with the house (the homes desk)." };
   if (s.developments[bbl]) return { s, err: "Can't sell with cranes on site — deliver the building first." };
   // It cannot be in two processes at once. A building shown to the market both
   // on its own and inside a bundle is a building whose seller does not know
@@ -2441,35 +2521,25 @@ export function listForSale(
     // everybody who might buy it. Two to four months, then offers are due on a
     // date everyone knows, which is the entire mechanism by which a marketed
     // sale finds a price a quiet one never will.
-    // A CAMPAIGN IS NOT A FREE OPTION ON SIX DRAWS.
+    // LISTING IS FREE; THE FEE IS PAID WHEN IT TRADES (owner, Oct 2026: "it
+    // costs absolutely $0 to sell a property and you only pay if a property
+    // transacts, like real life"). An investment-sales broker takes the book,
+    // the photography and the mailing on the commission and is paid at
+    // closing, out of the proceeds; a seller who pulls the deal owes nothing.
+    // This used to charge 35bp of the ask up front, whether or not it traded.
     //
-    // Listing cost nothing and delisting cost nothing — the fee only bit on a
-    // close. So the optimal play was to run a process, read up to six bids,
-    // walk away unless one landed in the tail, and rerun it next year.
-    // Measured: 557 campaigns, 427 walked away from at zero cost, 98 sales at
-    // a realised median 1.21x appraisal. You sold at the ceiling of the
-    // distribution every single time and paid nothing for the misses.
-    //
-    // In life you pay the broker's marketing budget up front — the book, the
-    // photography, the mailing — and you pay it whether or not it trades. And
-    // a building the market has already been shown twice is a building
-    // everyone has already passed on.
+    // What still prices the option is the market's memory, not a fee: a
+    // building that has been shown and pulled is a building every buyer has
+    // already passed on, so the same process cannot be rerun for two years.
+    // (Measured before any up-front fee existed: 557 campaigns, 427 walked
+    // away from, 98 sales at a median 1.21x appraisal, because a campaign
+    // could be rerun every year. The cooling-off is what stops that.)
     const since = next.month - (next.holdings[bbl].lastCampaignM ?? -999);
     if (since < 24) {
       return { s, err: `You ran a process on this one ${since} months ago and pulled it. `
         + `Every buyer in town has seen the book — going back out now tells them only that nobody bid. `
         + `Wait until ${monthLabel((next.holdings[bbl].lastCampaignM ?? 0) + 24)}, or sell it quietly.` };
     }
-    const marketing = Math.round(ask * 0.0035);
-    // The book, the photography and the mailing are a marketing spend against
-    // a sale you are about to make — the shortest-dated use a revolver has,
-    // repaid out of the proceeds. What was priced here is the OPTION: 35bps
-    // whether or not it trades, and the two-year cooling-off on a pulled
-    // campaign. Both stand.
-    if (fundableNow(next, parcels) < marketing) {
-      return { s, err: `A campaign costs $${(marketing / 1000).toFixed(0)}K in marketing up front. You do not have it.` };
-    }
-    fundAndBook(next, parcels, marketing, "ga");
     const weeks = Math.round(rrange(next, 2, 4));
     next.holdings[bbl].sale = {
       ask: Math.round(ask), listedM: next.month, mode: "marketed",
@@ -2521,7 +2591,9 @@ export function listForSale(
  * because every caller asks the same question — what does this sale cost.
  */
 export function quietFeeRate(s: GameState): number {
-  const firms = livingRivals(s);
+  // The buyers for a building: investors and operators, not the town's
+  // builders (GameState.builderFirms), who buy dirt for their own schemes.
+  const firms = livingRivals(s).filter((r) => !r.builderProf);
   if (!firms.length) return SALE_BROKERAGE;
   let known = 0;
   for (const r of firms) if ((s.street?.[r.id]?.deals ?? 0) > 0) known++;
@@ -2586,8 +2658,12 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
   // who outbid you on the Drydock block in 2009, is a story.
   //
   // Who actually turns up is filtered by who can pay: a firm bids on your
-  // building only if it has the cash and is not already in trouble.
-  const live = livingRivals(s).filter((r) => !r.stressMs && r.cash > value * 0.22);
+  // building only if it has the cash and is not already in trouble — and only
+  // if the building is one its own rules let it own. A firm whose mandate
+  // excludes it used to bid, win, and then fail the same rule at the close
+  // (rivalBuys), so the deed went to nobody in its name (test/deed-goes.mjs).
+  const live = livingRivals(s).filter((r) => !r.stressMs && r.cash > value * 0.22
+    && (!r.sheet || fitOf(s, parcels, r, rec) > 0));
   for (let i = 0; i < n; i++) {
     // roughly half the room is the street, by name, when the street is liquid
     const firm = live.length && rng(s, "sales") < 0.55
@@ -2881,9 +2957,24 @@ export function saleTaxQuote(h: Holding, price: number, s?: GameState): { net: n
  * sponsor owes only its co-invest share of it (gpCapitalShare). The LPs'
  * shares are taxed on the LPs' returns, off this book.
  */
+/**
+ * THE GAIN ON A JV DEED IS THE OWNER'S SHARE OF THE PRICE OVER THE OWNER'S
+ * BASIS. Selling a stake cuts `costBasis` to the owner's share (jv.ts), so the
+ * full price over it overstated the gain shown, the 1031 roll and the kicker.
+ * `owner` is what the owner is taxed on and rolls; `property` is the whole
+ * building's gain, which is what a participating lender takes its cut of.
+ */
+export function saleGains(s: GameState, h: Holding, price: number): { owner: number; property: number } {
+  const ps = partnerShare(s, h);
+  if (!(ps > 0)) { const g = saleTaxQuote(h, price, s).gain; return { owner: g, property: g }; }
+  const owner = saleTaxQuote(h, Math.round(price * (1 - ps)), s).gain;
+  return { owner, property: Math.round(owner / Math.max(1e-6, 1 - ps)) };
+}
+
 export function sponsorsSaleTax(s: GameState, h: Holding, price: number): number {
-  const tax = h.jv ? saleTaxQuote(h, Math.round(price * (1 - h.jv.share)), s).tax : saleTaxQuote(h, price, s).tax;
-  if (h.fundOwned && s.fund && !s.fund.settled) return Math.round(tax * gpCapitalShare(s.fund));
+  const ps = partnerShare(s, h);
+  const tax = ps > 0 ? saleTaxQuote(h, Math.round(price * (1 - ps)), s).tax : saleTaxQuote(h, price, s).tax;
+  if (purseOf(s, h) === "fund" || s.syndications?.[h.bbl]) return Math.round(tax * taxShare(s, h));
   return tax;
 }
 
@@ -2900,17 +2991,35 @@ export function saleProceedsToSeller(
 ): {
   net: number; gain: number; tax: number; kick: number; breakFee: number;
   release: number; loanPayoff: number; toSeller: number; partner: number;
+  /** A syndicate's investors' share of `toSeller`, paid from it at the month's settlement. */
+  investors: number;
 } {
-  const { net, gain } = saleTaxQuote(h, price, s);
+  const { net } = saleTaxQuote(h, price, s);
+  const { owner: gain, property: propGain } = saleGains(s, h, price);
   const tax = sponsorsSaleTax(s, h, price);
-  const kick = h.loan?.kicker && gain > 0 ? Math.round(gain * h.loan.kicker) : 0;
+  // The lender's kicker is a share of the BUILDING's gain, partner's half included.
+  const kick = h.loan?.kicker && propGain > 0 ? Math.round(propGain * h.loan.kicker) : 0;
   const stack = stackPayoff(h, s.month, s.econ);
   const breakFee = stack.penalty;
   const release = releaseCost(s, parcels, h.bbl);
   const loanPayoff = stack.balance;
   const toOwners = net - loanPayoff - kick - breakFee - release;
-  const toSeller = ownersShareOfProceeds(h, toOwners);
-  return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller, partner: toOwners - toSeller };
+  // What reaches the owners' side: the sponsor, or its vehicle (routed below).
+  const rp = routeProceeds(s, h, toOwners);
+  const toSeller = rp.toSponsor + rp.toVehicle;
+  const deal = s.syndications?.[h.bbl];
+  const investors = deal ? investorsTakeOfExit(deal, toOwners, s.month) : 0;
+  return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller, partner: toOwners - toSeller, investors };
+}
+
+/** Cash that lands in the sponsor's own account if `price` closes today —
+ *  the offer modal's "net to you", shared with the sale desks. */
+export function sellerCashAtClose(s: GameState, parcels: ParcelTable, h: Holding, price: number, intoExchange = false): number {
+  const p = saleProceedsToSeller(s, parcels, h, price);
+  const onFund = !!(h.fundOwned && s.fund && !s.fund.settled);
+  // The tax is withheld at the close unless THIS sale rolls into a 1031
+  // (acceptSaleOffer) — not "unless an exchange happens to be running".
+  return (onFund ? 0 : p.toSeller) - p.investors - (intoExchange ? 0 : p.tax);
 }
 
 export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string, exchange = false): { s: GameState; err?: string } {
@@ -2920,15 +3029,13 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (s.month > offer.expiresM) return { s, err: "That offer lapsed." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  const { gain } = saleTaxQuote(h, offer.price, s);
+  const gain = saleGains(s, h, offer.price).owner;
   const tax = sponsorsSaleTax(s, h, offer.price);
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
   if (exchange && tax <= 0) return { s, err: "No gain to shelter — just take the cash." };
   // The vehicle's gain is the vehicle's: rolling it into the sponsor's own
   // exchange would move the fund's tax bill onto the GP's next purchase.
-  if (exchange && h.fundOwned && s.fund && !s.fund.settled) {
-    return { s, err: "A fund deed's gain belongs to the vehicle — it cannot roll into your own 1031." };
-  }
+  { const why = exchange ? consentFor(s, h, "exchange") : null; if (why) return { s, err: why }; }
   const next = clone(s);
   // Participating paper takes its cut here, and only here. That is the whole
   // trade: you borrowed at a third of a point over the index for years, and
@@ -2942,8 +3049,8 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // Vehicle deed: the proceeds sit on fund.cash so the promote has a
   // counterparty. The vehicle pays no tax on them — the sponsor's share of
   // the gain is taxed on the sponsor, below.
-  const intoFund = !!(h.fundOwned && next.fund && !next.fund.settled);
-  if (intoFund && next.fund) next.fund.cash += toSeller;
+  const intoFund = purseOf(next, h) === "fund";
+  if (intoFund && next.fund) moveFundCash(next.fund, toSeller, "sale");
   else next.cash += toSeller;
   // THE FEE COMES OUT OF THE PROCEEDS ONCE, NOT TWICE.
   //
@@ -2994,10 +3101,11 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   if (next.exits.length > 200) next.exits.shift();
   // AN ASSEMBLED SITE SELLS AS ONE SITE. The child deeds go with it — their
   // land, their basis and their value were folded into this one the day it was
-  // assembled, and the buyer is paying for all of it.
+  // assembled, and the buyer is paying for all of it. The lots stay folded
+  // into the site the buyer takes (a building, if one stands, stands across
+  // them); a lot a firm had already absorbed has no deed of yours to move.
   for (const [child, parent] of Object.entries(next.merged ?? {})) {
-    if (parent !== bbl) continue;
-    delete next.merged![child];
+    if (parent !== bbl || !next.holdings[child]) continue;
     // ...AND THEIR TENANTS' DEPOSITS GO WITH THEM. This deleted the child deed
     // and left the deposits behind as a liability that simply stopped existing:
     // money the player was holding for somebody else, released with no entry
@@ -3299,9 +3407,13 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   // level drops. One consistent RNG draw either way, so a save replays the
   // same whether or not the phone is switched on.
   const QUIETER = 0.25;
-  const p = (quiet > 0
-    ? Math.min(0.85, Math.max(base, 0.12 * (1 + quiet / 1.6)) * dry)
-    : base) * rep * QUIETER;
+  // NO DROUGHT FLOOR (owner, 2026-10-14: "the player should have less of
+  // their hand held"). The phone rang MORE the longer the desk sat idle — a
+  // pity timer no firm on the street was ever given. A broker calls the buyer
+  // with the book, the money and the name, at the rate above; a principal who
+  // does nothing hears nothing, and the public tape is where they go to work.
+  void quiet;
+  const p = base * dry * rep * QUIETER;
   const roll = rng(s, "sales");
   if (s.brokersOff) return;
   if (roll >= p) return;
@@ -3783,6 +3895,32 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
     if (rng(s, "sales") < base * priceFactor * contested * Math.max(0.25, marketAppetite(s)) * (talk ? 1.7 : 1)) {
       // And whoever comes over the top pays for the privilege of ending it.
       let px = talk ? Math.max(li.ask, Math.round(talk.yourPrice * rrange(s, 1.04, 1.12, "sales"))) : li.ask;
+      // THE PRICE IS THE BIDS (2026-10-16). The buyers who can close on it
+      // each value the building at what investors require of the class today
+      // (market.ts capTarget) and their own read of it; it clears at the
+      // second-best bid, above the seller's reserve, or it does not clear this
+      // month. The cap-rate index then follows where these sales cleared.
+      if (!talk && !li.distress && rec.class !== "land" && rec.bldgArea > 0) {
+        const k = rec.class as "office";
+        const tgt = s.econ.capTarget?.[k], idx = s.econ.capRate?.[k];
+        const atReq = value * (tgt && idx && tgt > 0 ? idx / tgt : 1);
+        const n = Math.max(1, Math.min(5, qualifiedBuyers(s, rec, li.ask)));
+        const bids: number[] = [];
+        for (let i = 0; i < n; i++) {
+          const z = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "sales")))) * Math.cos(2 * Math.PI * rng(s, "sales"));
+          bids.push(atReq * Math.exp(0.07 * z));
+        }
+        bids.sort((a, b) => b - a);
+        const reserve = li.ask * 0.92;
+        // A round that misses the reserve teaches the seller what the room
+        // will pay: the ask comes down toward the best bid (at most a twentieth
+        // a round), as a listing that sits does.
+        if (bids[0] < reserve) {
+          survivors.push({ ...li, ask: Math.round(Math.max(li.ask * 0.95, bids[0] * 1.04) / 1000) * 1000 });
+          continue;
+        }
+        px = Math.round(Math.max(reserve, Math.min(bids[0], bids[1] ?? reserve)));
+      }
       if (!talk && li.distress && depth > 1) {
         // Each additional real bidder closes part of the gap between the
         // receiver's number and what the building is worth. Five serious
@@ -3854,8 +3992,8 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         // conveying the deed left the seller owning a building they had just
         // sold, free to list it again next quarter and print the sale a second
         // time, and a third. See sellToOutsider.
-        sellToOutsider(s, li.bbl, li.ask);
-        recordComp(s, rec, li.ask, b, "a listed seller", li.distress, initialCondition(rec));
+        sellToOutsider(s, li.bbl, px);
+        recordComp(s, rec, px, b, "a listed seller", li.distress, initialCondition(rec));
         // THE TAPE IS NOT NEWS. Measured over 25 years, "Sold: X went to a 1031
         // buyer at $Y" was the single most common line in the paper — 23.6 news
         // items a year and ordinary trades were the largest bucket of them,
@@ -3953,7 +4091,7 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
     return { s, err: "The ground lessee controls the improvement — you do not gut their building." };
   }
   if (!rec || rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to renovate on this lot." };
-  { const why = jvConsent(h); if (why) return { s, err: why }; }
+  { const why = consentFor(s, h, "redevelop"); if (why) return { s, err: why }; }
   if (h.condition === "good") return { s, err: "Already in top condition." };
   if (h.renovatingUntilM !== undefined) return { s, err: "Crews are already on site." };
   if (isCommercial(rec)) {

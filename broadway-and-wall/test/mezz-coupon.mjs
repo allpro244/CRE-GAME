@@ -60,5 +60,22 @@ const paid = book(next) - d0 - (next.loc?.interestPaid ?? 0) + (g.loc?.interestP
 const want = seniorPmt + coupon;
 check(Math.abs(paid - want) <= 2, `one month of debt service is the senior payment plus one junior coupon: booked ${Math.round(paid).toLocaleString()} against ${want.toLocaleString()} (${seniorPmt.toLocaleString()} + ${coupon.toLocaleString()})`);
 
+// THE JUNIOR'S FILE IS THE JUNIOR'S. Three missed mezz coupons with the senior
+// current used to open a file in the senior bank's name, asking for the whole
+// mezz balance as the "cure" for three coupons.
+{
+  const g2 = structuredClone(g);
+  g2.holdings[bbl].mezz.arrearsMs = 2;
+  g2.cash = -50_000_000;                       // nothing in the account or on the line
+  const g3 = E.advanceMonth(g2, parcels, bbls, adjacency);
+  const w = g3.workouts?.[bbl];
+  const mz = g3.holdings[bbl]?.mezz;
+  const c = mz?.monthlyPmt ?? coupon;
+  check(!!w && w.junior === true, `three missed mezz coupons open a junior file${w ? "" : " — none opened"}`);
+  check(!!w && w.lender === (mz?.holder ?? "Cordage Debt Partners"), `the file is the mezz holder's, not the senior bank's (${w?.lender})`);
+  check(!!w && w.cure <= c * 4 + 2, `the cure is the missed coupons (${w ? Math.round(w.cure).toLocaleString() : "-"} ≈ 3 × ${c.toLocaleString()}), not the mezz balance`);
+  check((g3.holdings[bbl]?.loan?.arrearsMs ?? 0) === 0, "the senior is not marked late for the junior's arrears");
+}
+
 console.log(bad ? `\n${bad} FAILED` : "\nall clear");
 process.exit(bad ? 1 : 0);

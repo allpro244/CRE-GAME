@@ -6,12 +6,13 @@
 import type { ParcelTable } from "@/data/types";
 import type { BooksYear, GameState } from "./types";
 import { logBooks, cloneState} from "./types";
-import { netWorth } from "./value";
+import { netWorth, ownedHoldingNoiYr, ownedHoldingValue, resolveRec } from "./value";
 import { sponsorStanding } from "./sponsor";
 import { money } from "./money";
 import { deskRatePct, appetiteAdvance } from "./pricing";
 import { shortIndexOf } from "./market";
 import type { Lender } from "./lenders";
+import { purseOf } from "./vehicles";
 
 /**
  * THE ADVANCE RATE, against net worth.
@@ -26,6 +27,8 @@ import type { Lender } from "./lenders";
  */
 export const LOC_LTV = 0.60;      // against net worth
 export const LOC_SPREAD = 4.0;    // prime + 400bps
+/** The line's floor over the LOAN index: a commercial bank's five-year fixed mortgage spread (debt.ts product sheet, 1.55). */
+export const LOC_FLOOR_SPREAD = 1.55;
 /**
  * Operating float left on hand when idle cash pays the revolver.
  * Everything above this goes to the most expensive money first.
@@ -129,11 +132,24 @@ export function lineLender(s: GameState): Lender | undefined {
  */
 export function locRate(s: GameState): number {
   const bank = lineLender(s);
-  return deskRatePct(shortIndexOf(s.econ), LOC_SPREAD, {
+  const terms = {
     ci: s.econ.creditIdx ?? 1,
     app: bank ? (bank.failedM !== undefined ? 0 : bank.appetite) : 1,
     standingAdd: sponsorStanding(s).spreadAdd,
-  });
+  };
+  // NEVER UNDER THE BANK'S OWN MORTGAGE. A revolver is the riskier paper —
+  // undrawn until you are short, recourse to the firm rather than one
+  // building — so no bank lends it cheaper than it lends against a building.
+  // Off the short index alone it could: when the curve is steep (policy cut
+  // to the floor, the loan index still near four) index + 400 fell under the
+  // loan index itself, 0.4 points under at worst over a thirty-year run, and
+  // the line read as cheaper than the market's own mortgage rate. The floor
+  // is the bank's five-year fixed sheet (LOC_FLOOR_SPREAD), priced through the
+  // same law so it widens in a crunch the way the line does.
+  return Math.max(
+    deskRatePct(shortIndexOf(s.econ), LOC_SPREAD, terms),
+    deskRatePct(s.econ.indexRate, LOC_FLOOR_SPREAD, terms),
+  );
 }
 
 /**
@@ -210,7 +226,26 @@ export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): nu
   if (bank?.failedM !== undefined) return Math.max(0, Math.round(s.loc?.balance ?? 0));
   const appFac = bank ? appetiteAdvance(bank.appetite) : 1;
   const advance = LOC_LTV * Math.max(0.35, Math.min(1.15, ci)) * (1 - Math.min(0.6, 1.6 * st.advanceCut)) * appFac;
-  return Math.max(0, Math.round(nw * advance));
+  // ...AND IT HAS TO BE SERVICED (2026-10-14). Sixty per cent of net worth was
+  // the whole test, so a book of empty buildings and dirt marked up on paper
+  // carried a revolver its income could not pay a month of — and the line was
+  // drawn automatically to cover every shortfall. A street firm's line is the
+  // lesser of its covenant and what its income will carry (rivals.ts
+  // lineRoom); a corporate revolver has the same pair of tests, leverage AND
+  // coverage. Income after the mortgages must cover the line's interest
+  // 1.25 times, and the dirt gets the land desk's borrowing base — a third of
+  // its value — because land carries debt on value, not on income.
+  const rate = Math.max(1, (s.econ.indexRate ?? 5) + LOC_SPREAD) / 100;
+  let free = 0, land = 0;
+  for (const h of Object.values(s.holdings)) {
+    if (purseOf(s, h) === "fund") continue;
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (rec && (rec.class === "land" || !rec.bldgArea) && !h.groundLeased) { land += ownedHoldingValue(s, parcels, h); continue; }
+    const ds = (h.loan?.monthlyPmt ?? 0) * 12 + (h.mezz?.monthlyPmt ?? 0) * 12;
+    free += ownedHoldingNoiYr(s, parcels, h) - ds;
+  }
+  const serviceable = Math.max(0, free) / (1.25 * rate) + land / 3;
+  return Math.max(0, Math.round(Math.min(nw * advance, serviceable * appFac)));
 }
 
 /**

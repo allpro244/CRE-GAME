@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { useEffect, useRef, useState, Fragment } from "react";
+import { derive, nwOf } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { resolveRec, netWorth, portfolioMark } from "@/engine/value";
+import { distressTally } from "@/engine/history";
+import { resolveRec, portfolioMark } from "@/engine/value";
 import { marketAppetite, markRival, rivalCondition, firmEntryPitch } from "@/engine/rivals";
 import { ownerById } from "@/engine/ownership";
 import { OwnerStatement } from "@/ui/panels/OwnersDesk";
@@ -10,7 +12,8 @@ import { usd, sf } from "@/ui/format";
 import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
 import { TakePrivateDesk, TakenPrivateRecord } from "@/ui/panels/TakePrivateDesk";
 import { poss } from "@/engine/takeprivate";
-import { HeadlinerStrip, RaceChart, FirmSheet } from "@/ui/panels/CompetitorCards";
+import { HeadlinerStrip, RaceChart, FirmPage, SignatureTraits, StreetTicker } from "@/ui/panels/CompetitorCards";
+import { labelOf } from "@/engine/storyline";
 import Fold from "@/ui/Fold";
 
 // THE STREET. Who else is buying, what they own, and how much rope they have
@@ -27,6 +30,8 @@ import Fold from "@/ui/Fold";
  */
 export { rivalEquity } from "@/engine/standing";
 import { rivalEquity } from "@/engine/standing";
+import { targetCapital } from "@/engine/lenders";
+import { NOTICE_M, FORECLOSE_M } from "@/engine/workout";
 
 /** `q` filters the table by firm or principal name (City → Players' search
  *  box); the league-table summary above it always counts everyone. */
@@ -34,7 +39,8 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const focus = useStore((s) => s.focus);
-  const [open, setOpen] = useState<string | null>(null);
+  // Coming back from "show on the map", their row is open again.
+  const [open, setOpen] = useState<string | null>(() => useStore.getState().mapFilter === "firm" ? useStore.getState().mapFirm ?? null : null);
   // YOU ARE THE ROW YOU CAME FOR. The top bar's Street readout opens this
   // table, and in most of a career your row is twenty-odd firms down — below
   // the fold, under the leaders. Bring it into view when a link brought you
@@ -47,22 +53,24 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
   // re-mark every rival's whole book and the player's own.
   // Same number as TopBar / Books — a street rank that re-derives equity is
   // one quantity with two answers (facility, loc, deposits, CIP, notes).
-  const playerEquity = useMemo(() => netWorth(game, parcels), [game, parcels]);
+  // Once per state for every screen that prints it (ui/derive), so a revisit
+  // in the same month marks nothing.
+  const playerEquity = nwOf(game, parcels);
   // YOUR FIRM ON THE BOARD, measured the rivals' way: gross assets marked,
   // net equity the Books page's own number, and the debt the identity between
   // them (assets + cash − equity) — so the row cannot disagree with the rank.
-  const mine = useMemo(() => {
+  const mine = derive(game, "street.mine", () => {
     const gav = portfolioMark(game, parcels).gav;
     const cash = Math.max(0, game.cash);
     const debt = Math.max(0, gav + game.cash - playerEquity);
     const buildings = Object.keys(game.holdings).filter((b) => !game.merged?.[b]).length;
     return { gav, cash, debt, buildings, ltv: gav > 0 ? debt / gav : 0 };
-  }, [game, parcels, playerEquity]);
-  const marked = useMemo(() => rivals.map((r) => ({ r, m: markRival(game, parcels, r) }))
+  }, [parcels]);
+  const marked = derive(game, "street.marked", () => rivals.map((r) => ({ r, m: markRival(game, parcels, r) }))
     // by net equity, the league table's own measure, so your row stands
     // exactly at your rank; failed firms at the foot
     .sort((a, b) => (a.r.failedM !== undefined ? 1 : 0) - (b.r.failedM !== undefined ? 1 : 0) || rivalEquity(b.m, b.r) - rivalEquity(a.m, a.r)),
-  [game, parcels, rivals]);
+  [parcels]);
   if (!rivals.length) return null;
   const needle = q.trim().toLowerCase();
   // Firms only (ECONOMY.md "Firms only"): the search reads firm names.
@@ -128,6 +136,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
       <TakenPrivateRecord />
       {/* THE CAST FIRST (COMPETITORS_PLAN.md §6): who matters right now and
           what is about to happen to them, then the race, then the full table. */}
+      <StreetTicker onOpen={(id) => setOpen(id)} />
       <HeadlinerStrip onOpen={(id) => setOpen(id)} />
       <RaceChart />
       {/* THE LEAGUE TABLE. They started where you started — five to eighteen
@@ -149,6 +158,41 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
           );
         })()}
       </div>
+      {/* THE DISTRESS BOARD (2026-10-14). Where the next forced sale comes
+          from, before it is on the tape: firms behind on their paper and how
+          close the desks are to filing, lenders under their capital target,
+          and what the receivers are selling now. */}
+      {(() => {
+        const stressed = rivals.filter((r) => r.failedM === undefined && (r.stressMs ?? 0) > 0)
+          .sort((a, b) => (b.stressMs ?? 0) - (a.stressMs ?? 0));
+        const weakDesks = (game.lenders ?? []).filter((l) => l.failedM === undefined && l.kind !== "conduit"
+          && l.book > 0 && l.capital / l.book < targetCapital(l.name) * 0.8);
+        const receiverSales = (game.listings ?? []).filter((l) => l.reason === "receiver" || l.receiverFor);
+        const yr = distressTally(game, 12);
+        const n = stressed.length + weakDesks.length + receiverSales.length + yr.defaults + yr.firms + yr.banks;
+        return (
+          <Fold id="competitors:distress" title="Distress board" summary={n ? `${stressed.length} firm${stressed.length === 1 ? "" : "s"} behind on their debt · ${weakDesks.length} lender${weakDesks.length === 1 ? "" : "s"} under target · ${receiverSales.length} receiver sale${receiverSales.length === 1 ? "" : "s"} on the market` : "Nobody in trouble today"} defaultOpen={n > 0}>
+            <Row k="The last twelve months"
+              v={`${yr.defaults} building${yr.defaults === 1 ? "" : "s"} back to the lenders · ${yr.firms} firm${yr.firms === 1 ? "" : "s"} gone under · ${yr.banks} bank${yr.banks === 1 ? "" : "s"} closed`}
+              bad={yr.defaults + yr.firms + yr.banks > 0} />
+            {stressed.map((r) => (
+              <Row key={r.id} k={r.name}
+                v={`${r.stressMs} month${r.stressMs === 1 ? "" : "s"} behind · ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}`
+                  + ((r.stressMs ?? 0) < NOTICE_M ? ` · the desks file in ${NOTICE_M - (r.stressMs ?? 0)} month${NOTICE_M - (r.stressMs ?? 0) === 1 ? "" : "s"}`
+                    : ` · filed — a note is foreclosed every quarter; the whole book goes in ${Math.max(0, NOTICE_M + FORECLOSE_M - (r.stressMs ?? 0) + 1)} months`)}
+                bad />
+            ))}
+            {weakDesks.map((l) => (
+              <Row key={l.id} k={l.name} v={`capital ${(100 * l.capital / l.book).toFixed(1)}% against a ${(100 * targetCapital(l.name)).toFixed(1)}% target — it will sell loans and buildings to get back`} bad />
+            ))}
+            {receiverSales.slice(0, 8).map((l) => (
+              <Row key={l.bbl} k={resolveRec(parcels, game, l.bbl)?.address ?? l.bbl}
+                v={`${l.receiverFor ?? "a receiver"} is selling · ask ${usd(l.ask)} · on the market until ${monthLabel(l.expiresM)}`} />
+            ))}
+            {!n && <div className="hint">No competitor is behind on its debt, every lender is above its target, and no receiver is selling.</div>}
+          </Fold>
+        );
+      })()}
       <Fold id="competitors:table" title="Every competitor" summary={`${marked.filter((x) => x.r.failedM === undefined).length} firms in business, ranked by net equity`} defaultOpen>
       <table className="tbl">
         <thead>
@@ -162,7 +206,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                 three expressions for one quantity is how a table comes to
                 disagree with the row it expands into, so all three now read
                 the same `eq` off `markRival` and the firm's own balance. */}
-            <th>Firm</th><th>Style</th><th className="num">Buildings</th><th className="num">Gross assets</th>
+            <th>Firm</th><th>Who they are</th><th className="num">Buildings</th><th className="num">Gross assets</th>
             <th className="num">Debt</th><th className="num">Net equity</th>
             <th className="num">Leverage</th><th className="num">Dry powder</th><th>Read</th>
           </tr>
@@ -209,7 +253,10 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                   {isOpen ? "▾ " : "▸ "}{r.name}
                   {r.spawnedFrom ? <span className="dim"> · from {r.spawnedFrom.firmName}</span> : null}
                 </td>
-                <td className="dim">{STYLE_WORD[r.style]}</td>
+                <td>
+                  <div style={{ fontSize: 12 }}>{r.sheet ? labelOf(r) : STYLE_WORD[r.style]}</div>
+                  {!dead && r.sheet && <SignatureTraits r={r} />}
+                </td>
                 <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
                 <td className="num">{dead ? "—" : usd(m.aum)}</td>
                 <td className={"num" + (!dead && r.debt > 0 ? " dim" : "")}>{dead ? "—" : usd(r.debt)}</td>
@@ -261,7 +308,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                       onFocus={(b) => focus(b, true)}
                       extra={
                         <>
-                          <FirmSheet r={r} />
+                          <FirmPage r={r} />
                         </>
                       }
                       extraLate={

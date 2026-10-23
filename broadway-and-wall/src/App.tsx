@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import MapView from "@/map/MapView";
 import TopBar from "@/ui/TopBar";
 import RightPanel from "@/ui/RightPanel";
-import DesignPeekBar from "@/ui/DesignPeekBar";
 import StartMenu from "@/ui/StartMenu";
 import MapRail from "@/ui/MapRail";
 import MapControls from "@/ui/MapControls";
@@ -17,6 +16,11 @@ import { bootMenu, useStore } from "@/state/store";
 import AtRiskBanner from "@/ui/AtRiskBanner";
 import CardQueue from "@/ui/CardQueue";
 import MapBoundary from "@/ui/MapBoundary";
+import UnrealSurface from "@/ui/UnrealSurface";
+import { UNREAL_HOST, startUnrealHost } from "@/state/unrealHost";
+import { useNext } from "@/ui/next/nextStore";
+import { toastFact } from "@/ui/next/words";
+import Shell from "@/ui/next/Shell";
 
 export default function App() {
   const loadError = useStore((s) => s.loadError);
@@ -26,6 +30,10 @@ export default function App() {
   // it waits on `city`, which is null until somebody breaks ground.
   const playing = useStore((s) => s.phase === "playing");
   const photoFrame = useStore((s) => s.photoFrame);
+  // THE NEW INTERFACE (ui-revamp), behind Settings › Interface. It replaces the
+  // top bar, the desks, the map rail and the map controls; the moments are
+  // not mounted in it (PLAN R6) and their events still reach the news.
+  const next = useNext((s) => s.uiShell === "next");
   // ONE CARD AT A TIME. The year's review, a goal verdict, an exit and a
   // delivery are each a moment, and one advance can produce all four — they
   // used to arrive stacked on top of each other. They queue now, in the order
@@ -53,6 +61,7 @@ export default function App() {
   });
   useEffect(() => {
     void bootMenu();
+    startUnrealHost();
   }, []);
   // RightPanel (and its keybindings) unmount in photo frame — keep P/Esc here.
   useEffect(() => {
@@ -70,23 +79,23 @@ export default function App() {
   }, [photoFrame]);
   return (
     <div className={"app" + (photoFrame ? " photo-frame" : "")}>
-      <MapBoundary><MapView /></MapBoundary>
-      {playing && !photoFrame && <TopBar />}
-      {playing && !photoFrame && <MapRail />}
-      {playing && !photoFrame && <MapControls />}
-      {playing && !photoFrame && <DesignPeekBar />}
-      {!photoFrame && <RightPanel />}
-      {!photoFrame && (card === "delivery" || !playing) && <DeliveryCeremony />}
-      {playing && !photoFrame && card === "year" && <YearReview />}
-      {playing && !photoFrame && <MilestoneFlash />}
-      {playing && !photoFrame && card === "exit" && <ExitCard />}
-      {playing && !photoFrame && card === "goal" && <GoalCard />}
+      {UNREAL_HOST ? <UnrealSurface /> : <MapBoundary><MapView /></MapBoundary>}
+      {playing && !photoFrame && next && <Shell />}
+      {playing && !photoFrame && !next && <TopBar />}
+      {playing && !photoFrame && !next && <MapRail />}
+      {playing && !photoFrame && !next && <MapControls />}
+      {!photoFrame && !(next && playing) && <RightPanel />}
+      {!photoFrame && (card === "delivery" && !next || !playing) && <DeliveryCeremony />}
+      {playing && !photoFrame && !next && card === "year" && <YearReview />}
+      {playing && !photoFrame && !next && <MilestoneFlash />}
+      {playing && !photoFrame && !next && card === "exit" && <ExitCard />}
+      {playing && !photoFrame && !next && card === "goal" && <GoalCard />}
       {playing && <Shortcuts />}
       {playing && <AutoPlay />}
       {playing && <Sounds />}
       {playing && <RunRecorder />}
-      {playing && !photoFrame && <PrimerOffer />}
-      {playing && !photoFrame && <CardQueue extra={momentsWaiting} />}
+      {playing && !photoFrame && !next && <PrimerOffer />}
+      {playing && !photoFrame && !next && <CardQueue extra={momentsWaiting} />}
       {photoFrame && <PhotoFrameHint />}
       <Toast />
       {!playing && <StartMenu />}
@@ -137,10 +146,11 @@ function Toast() {
     setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), ms);
   }, [toast]);
   const playing = useStore((s) => s.phase === "playing" && !s.photoFrame);
+  const next = useNext((s) => s.uiShell === "next");
   if (!items.length && !playing) return null;
   return (
     <div className="toast-stack">
-      {playing && <AtRiskBanner />}
+      {playing && !next && <AtRiskBanner />}
       {items.map((t) => (
         <div
           key={t.id}
@@ -157,7 +167,7 @@ function Toast() {
           }}
         >
           {t.kind === "critical" && <span className="toast-alarm" aria-hidden="true">⚠ </span>}
-          {t.text}
+          {next ? toastFact(t.text) : t.text}
           {(t.attnKey || t.yearReview) && <span className="toast-go" aria-hidden="true"> Open →</span>}
         </div>
       ))}

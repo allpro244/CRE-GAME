@@ -9,6 +9,7 @@ import { walt, unitStatus } from "@/engine/leasing";
 import { taxAppealQuote } from "@/engine/tax";
 import { describePropertyEvent, propertyTimeline } from "@/engine/history";
 import { usd, sf, pctSigned } from "@/ui/format";
+import { syndicateView } from "@/engine/syndicate";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { AssetHistory, WorkoutDesk } from "@/ui/panels/PropertyDesks";
 import { useLabel, band, PropTab, Big, Row, occRead, occLabel, occTitle, ShortBy } from "@/ui/panels/shared";
@@ -32,7 +33,8 @@ export function PropertyPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const adjacency = useStore((s) => s.adjacency);
-  const bbl = useStore((s) => s.selectedBBL);
+  // A folded lot reads as its site wherever the selection came from (back/forward, a stale link).
+  const bbl = useStore((s) => (s.selectedBBL ? s.game?.merged?.[s.selectedBBL] ?? s.selectedBBL : s.selectedBBL));
   const [tab, setTab] = useState<PropTab>("summary");
   const fundingDue = !!bbl && !game.holdings[bbl] && !!game.talks?.[bbl]?.agreed;
   // The desk the map card asked for by name ("Open the Build desk"), read once.
@@ -185,7 +187,12 @@ export function PropertyPage() {
             />
           );
         })()}
-        <Big label={h?.jv ? `Equity · yours ${Math.round((1 - h.jv.share) * 100)}%` : "Equity"} value={h ? usd((value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) * (1 - (h.jv?.share ?? 0))) : "—"} />
+        {(() => {
+          // A syndicated deed: the sponsor's equity is what the waterfall pays it.
+          const syn = h ? syndicateView(game, parcels, bbl) : null;
+          if (syn) return <Big label="Equity · yours, through the waterfall" value={usd(syn.yours)} title={`Of ${usd(syn.equity)} at the mark — ${usd(syn.theirs)} is your investors'.`} />;
+          return <Big label={h?.jv ? `Equity · yours ${Math.round((1 - h.jv.share) * 100)}%` : "Equity"} value={h ? usd((value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) * (1 - (h.jv?.share ?? 0))) : "—"} />;
+        })()}
         {h && (() => {
           // The same ledger read the Portfolio's "Returns to date" prints.
           const r = returnsToDate(game, parcels).find((x) => x.bbl === bbl);

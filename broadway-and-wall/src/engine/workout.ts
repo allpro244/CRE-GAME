@@ -26,7 +26,7 @@
 // The lender's own book decides which of these is even on offer, which is the
 // entire reason engine/lenders.ts exists.
 import type { ParcelTable } from "@/data/types";
-import type { Exit, GameState, Workout } from "./types";
+import type { Exit, GameState, Holding, Workout } from "./types";
 import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
 import { rrange } from "./market";
@@ -259,7 +259,7 @@ export function workoutMood(s: GameState, lenderName: string, bbl?: string): {
 
 /** Open a file on a loan that has stopped working. */
 export function openWorkout(
-  s: GameState, bbl: string, cause: Workout["cause"], cure: number,
+  s: GameState, bbl: string, cause: Workout["cause"], cure: number, junior = false,
 ) {
   if (s.workouts?.[bbl]) return;
   const h = s.holdings[bbl];
@@ -269,11 +269,12 @@ export function openWorkout(
   // WHOEVER IS HOLDING IT TODAY. A loan can be sold, and the firm that bought
   // your mortgage at a discount is not the bank you signed with. See notes.ts.
   // Mezz-only files name Cordage (or the junior holder).
-  const lender = h.loan
+  // A junior's file is the junior holder's, whoever holds the senior.
+  const lender = h.loan && !(junior && h.mezz)
     ? (h.loan.holder ?? productById(h.loan.product).lender)
     : (h.mezz!.holder ?? "Cordage Debt Partners");
   s.workouts[bbl] = {
-    bbl, lender, startM: s.month, stage: "notice", cause,
+    bbl, lender, startM: s.month, stage: "notice", cause, ...(junior && h.mezz ? { junior: true } : {}),
     cure: Math.round(cure), decideM: s.month + NOTICE_M, asks: 0, missedMs: 0,
   };
   bumpLenderRel(s, lender, -6);
@@ -330,6 +331,8 @@ function applyCurePayment(
       h.loan.breachMs = 0;
       h.loan.arrearsMs = 0;
     }
+  } else if (w.junior && h.mezz) {
+    h.mezz.arrearsMs = 0;          // the junior's coupons caught up; the senior was never late
   } else if (h.loan) {
     h.loan.sweep = false;
     h.loan.cleanQs = 0;
@@ -349,6 +352,12 @@ function applyCurePayment(
 function refreshCureAmount(s: GameState, parcels: ParcelTable, w: Workout): void {
   const h = s.holdings[w.bbl];
   const rec = resolveRec(parcels, s, w.bbl);
+  // The junior's arrears are the junior's coupons, not the senior's payment.
+  if (w.junior && h?.mezz && rec) {
+    const coupon = h.mezz.monthlyPmt || Math.ceil((h.mezz.balance * h.mezz.ratePct) / 100 / 12);
+    w.cure = Math.round(coupon * Math.max(3, h.mezz.arrearsMs ?? 3) + (w.accrued ?? 0));
+    return;
+  }
   if (!h?.loan || !rec) return;
   if (w.cause === "covenant") {
     w.cure = Math.max(equityCureNeed(rec, s, h), Math.round(h.loan.balance * 0.03));
@@ -379,13 +388,19 @@ export function couponFundable(
   return !!h.loan && fundableNow(s, parcels) >= h.loan.monthlyPmt;
 }
 
+/** The note a file is about: the junior's on a mezz file, the senior's otherwise. */
+function fileLoan(h: Holding | undefined, w: Workout) {
+  return (w.junior ? h?.mezz : h?.loan) ?? null;
+}
+
 /** Cure cheque OR monthly coupon — either keeps the deed off the steps. */
 export function canDefendWorkout(
   s: GameState, parcels: ParcelTable, w: Workout,
 ): boolean {
   const h = s.holdings[w.bbl];
-  if (!h?.loan) return false;
-  if (couponFundable(s, parcels, h)) return true;
+  const L = fileLoan(h, w);
+  if (!L) return false;
+  if (couponFundable(s, parcels, { loan: L })) return true;
   refreshCureAmount(s, parcels, w);
   return fundableNow(s, parcels, { allowLoc: true }) >= w.cure;
 }
@@ -687,7 +702,10 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
   for (const w of Object.values(s.workouts)) {
     const h = s.holdings[w.bbl];
     const rec = resolveRec(parcels, s, w.bbl);
-    if (!h?.loan || !rec) { delete s.workouts[w.bbl]; continue; }
+    // A junior file lives on the mezz; a deed with no senior is not a closed one.
+    const L = fileLoan(h, w);
+    if (!h || !L || !rec) { delete s.workouts[w.bbl]; continue; }
+    const paying = () => couponFundable(s, parcels, { loan: L });
 
     // A file where the loan has quietly started performing again closes itself.
     // A MATURED NOTE IS A BALLOON FILE, WHATEVER THE FILE STARTED AS. A
@@ -697,7 +715,7 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     // with no file at all until the ladder noticed it a month later. Once the
     // date has passed, the file is about the balloon: it stays open, the
     // holdover clock runs, and the desk extends or files inside a year.
-    if (w.cause !== "balloon" && s.month >= h.loan.maturityM) {
+    if (w.cause !== "balloon" && s.month >= L.maturityM) {
       w.cause = "balloon";
       w.servicing = true;
       w.servicedMs = 0;
@@ -709,7 +727,7 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       });
     }
 
-    if (w.cause === "covenant" && !h.loan.sweep) {
+    if (w.cause === "covenant" && !L.sweep) {
       delete s.workouts[w.bbl];
       s.news.unshift({ q: s.month, kind: "info", text: `${rec.address} is performing again — ${w.lender} has closed the file.` });
       continue;
@@ -726,7 +744,7 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     // extension this note gets already spent (holdoverDecision reads it).
     // Ahead of the servicing branch on purpose: the month it matures is the
     // ladder's, not the holdover clock's.
-    if (w.stage === "forbearance" && (h.loan.extensions ?? 0) >= 1 && s.month >= h.loan.maturityM) {
+    if (w.stage === "forbearance" && (L.extensions ?? 0) >= 1 && s.month >= L.maturityM) {
       delete s.workouts[w.bbl];
       continue;
     }
@@ -734,14 +752,14 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     // KEEPING IT CURRENT (opt-in). Charged here at the default rate; monthCF
     // still books the note coupon while the file is in notice — that premium
     // is the price of asking the desk to wait. See Workout.servicing.
-    const due = Math.round(h.loan.monthlyPmt * 1.15);
+    const due = Math.round(L.monthlyPmt * 1.15);
     if (w.servicing && w.stage !== "foreclosure" && h.loan) {
       if (fundableNow(s, parcels) >= due) {
         const paid = fundCashNeed(s, parcels, due);
         logBooks(s, "debtSvc", paid, w.bbl);
         w.servicedMs = (w.servicedMs ?? 0) + 1;
         w.decideM = s.month + 1;
-        h.loan.arrearsMs = 0;
+        L.arrearsMs = 0;
         if ((w.servicedMs ?? 0) >= 12 && w.cause !== "balloon") {
           delete s.workouts[w.bbl];
           bumpLenderRel(s, w.lender, 6);
@@ -750,7 +768,7 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
             text: `${w.lender} has closed the file on ${rec.address}. A year of payments arriving on time is `
               + `the only argument that ever worked on a credit committee.`,
           });
-        } else if (w.cause === "balloon" && s.month - h.loan.maturityM >= 12) {
+        } else if (w.cause === "balloon" && s.month - L.maturityM >= 12) {
           // Holdover is months PAST MATURITY, not months serviced: an
           // extended note is current again until its new date.
           holdoverDecision(s, parcels, w, rec.address);
@@ -782,8 +800,8 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     // purchase in that harness's receivership scenario reached maturity). A
     // year past the date, the desk extends once or files, whoever is paying.
     if (w.cause === "balloon" && w.stage !== "foreclosure" && !w.servicing
-      && s.month - h.loan.maturityM >= 12) {
-      if (couponFundable(s, parcels, h)) {
+      && s.month - L.maturityM >= 12) {
+      if (paying()) {
         holdoverDecision(s, parcels, w, rec.address);
         continue;
       }
@@ -796,9 +814,9 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       // notice branch below runs its last-look cure and then files.
       w.decideM = Math.min(w.decideM, s.month);
     }
-    if (w.stage !== "foreclosure" && couponFundable(s, parcels, h)) {
+    if (w.stage !== "foreclosure" && paying()) {
       w.decideM = Math.max(w.decideM, s.month + 1);
-      if (h.loan) h.loan.arrearsMs = 0;
+      L.arrearsMs = 0;
     }
 
     if (s.month < w.decideM) continue;
@@ -815,9 +833,9 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       // take my building?" report, repeated. Lenders trap cash and demand a
       // cure (or a takeout on a balloon); they do not auction a note that is
       // being paid. Roll the window and keep asking for the cheque.
-      if (couponFundable(s, parcels, h)) {
+      if (paying()) {
         w.decideM = w.cause === "covenant" ? s.month + NOTICE_M : s.month + 1;
-        if (h.loan) h.loan.arrearsMs = 0;
+        L.arrearsMs = 0;
         if (w.cause === "covenant" && (s.month - w.startM) % 6 === 0) {
           s.news.unshift({
             q: s.month, kind: "warn",
@@ -853,13 +871,13 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
     // a coupon-current file is pulled back to notice so the steps never see it.
     //
     // ...except a matured note past its holdover year (holdoverSpentOnFiling).
-    if (w.stage === "foreclosure" && couponFundable(s, parcels, h)
+    if (w.stage === "foreclosure" && paying()
       && holdoverSpentOnFiling(s, parcels, w, rec.address)) continue;
-    if (w.stage === "foreclosure" && couponFundable(s, parcels, h)) {
+    if (w.stage === "foreclosure" && paying()) {
       w.stage = "notice";
       delete w.saleM;
       w.decideM = s.month + NOTICE_M;
-      h.loan.arrearsMs = 0;
+      L.arrearsMs = 0;
       s.news.unshift({
         q: s.month, kind: "info",
         text: `${w.lender} pulled ${rec.address} back from foreclosure — the monthly debt service is fundable. `

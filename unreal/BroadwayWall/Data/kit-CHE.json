@@ -1,0 +1,252 @@
+{
+ "format": "bw-kit/1",
+ "kit": "CHE",
+ "grammar": "L00, L01, L02, L03, L04, L05, L06*, L07, L08, L09",
+ "bands": [
+  {
+   "symbol": "L00",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L01",
+   "height": 400,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L1_A/Mesh/SM_BLDG_CHE_L1_A_Wall_04_N1.SM_BLDG_CHE_L1_A_Wall_04_N1",
+     "width": 450,
+     "depth": 157,
+     "y0": -450,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L1_A/Mesh/SM_BLDG_CHE_L1_A_Wall_01_N1.SM_BLDG_CHE_L1_A_Wall_01_N1",
+     "width": 325,
+     "depth": 150,
+     "y0": -325.1,
+     "y1": 0.3
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "L02",
+   "height": 625,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L2_A/Mesh/SM_BLDG_CHE_L2_A_Wall_04_N1.SM_BLDG_CHE_L2_A_Wall_04_N1",
+     "width": 450,
+     "depth": 150,
+     "y0": -450,
+     "y1": 0.8
+    },
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L2_A/Mesh/SM_BLDG_CHE_L2_A_Wall_01_N1.SM_BLDG_CHE_L2_A_Wall_01_N1",
+     "width": 325,
+     "depth": 150,
+     "y0": -325,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L03",
+   "height": 425,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L3_A/Mesh/SM_BLDG_CHE_L3_A_Wall_04_N1.SM_BLDG_CHE_L3_A_Wall_04_N1",
+     "width": 450,
+     "depth": 150,
+     "y0": -450,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L3_A/Mesh/SM_BLDG_CHE_L3_A_Wall_01_N1.SM_BLDG_CHE_L3_A_Wall_01_N1",
+     "width": 325,
+     "depth": 149,
+     "y0": -325,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L04",
+   "height": 400,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L4_A/Mesh/SM_BLDG_CHE_L4_A_Wall_04_N1.SM_BLDG_CHE_L4_A_Wall_04_N1",
+     "width": 450,
+     "depth": 150,
+     "y0": -450,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L4_A/Mesh/SM_BLDG_CHE_L4_A_Wall_01_N1.SM_BLDG_CHE_L4_A_Wall_01_N1",
+     "width": 325,
+     "depth": 148,
+     "y0": -325,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L05",
+   "height": 400,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L5_B/Mesh/SM_BLDG_CHE_L5_B_Wall_03_N1.SM_BLDG_CHE_L5_B_Wall_03_N1",
+     "width": 525,
+     "depth": 200,
+     "y0": -525,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L5_B/Mesh/SM_BLDG_CHE_L5_B_Wall_01_N1.SM_BLDG_CHE_L5_B_Wall_01_N1",
+     "width": 225,
+     "depth": 75,
+     "y0": -225,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L06",
+   "height": 400,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L6_B/Mesh/SM_BLDG_CHE_L6_B_Wall_05_N1.SM_BLDG_CHE_L6_B_Wall_05_N1",
+     "width": 625,
+     "depth": 200,
+     "y0": -625,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L6_B/Mesh/SM_BLDG_CHE_L6_B_Wall_01_N1.SM_BLDG_CHE_L6_B_Wall_01_N1",
+     "width": 225,
+     "depth": 75,
+     "y0": -225,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L07",
+   "height": 400,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L7_B/Mesh/SM_BLDG_CHE_L7_B_Wall_05_N1.SM_BLDG_CHE_L7_B_Wall_05_N1",
+     "width": 625,
+     "depth": 200,
+     "y0": -625,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L7_B/Mesh/SM_BLDG_CHE_L7_B_Wall_01_N1.SM_BLDG_CHE_L7_B_Wall_01_N1",
+     "width": 225,
+     "depth": 75,
+     "y0": -225,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L08",
+   "height": 400,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L8_B/Mesh/SM_BLDG_CHE_L8_B_Wall_05_N1.SM_BLDG_CHE_L8_B_Wall_05_N1",
+     "width": 625,
+     "depth": 200,
+     "y0": -625,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L8_B/Mesh/SM_BLDG_CHE_L8_B_Wall_02_N1.SM_BLDG_CHE_L8_B_Wall_02_N1",
+     "width": 450,
+     "depth": 98,
+     "y0": -450,
+     "y1": 0.1
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L09",
+   "height": 160,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L9_B/Mesh/SM_BLDG_CHE_L9_B_Wall_01_N1.SM_BLDG_CHE_L9_B_Wall_01_N1",
+     "width": 225,
+     "depth": 108,
+     "y0": -225,
+     "y1": 0
+    },
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L9_B/Mesh/SM_BLDG_CHE_L9_B_Wall_02_N1.SM_BLDG_CHE_L9_B_Wall_02_N1",
+     "width": 450,
+     "depth": 108,
+     "y0": -450,
+     "y1": 0.4
+    },
+    {
+     "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L9_B/Mesh/SM_BLDG_CHE_L9_B_Wall_06_N1.SM_BLDG_CHE_L9_B_Wall_06_N1",
+     "width": 775,
+     "depth": 108,
+     "y0": -775,
+     "y1": 0.7
+    }
+   ],
+   "entrances": [],
+   "corner": {
+    "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L9_B/Mesh/SM_BLDG_CHE_L9_B_CornerEx_01_N1.SM_BLDG_CHE_L9_B_CornerEx_01_N1",
+    "width": 100,
+    "depth": 100,
+    "y0": 0,
+    "y1": 100
+   },
+   "inner": {
+    "path": "/Game/Building/CH/E/Kit_Bldg_CHE_L9_B/Mesh/SM_BLDG_CHE_L9_B_CornerIn_02_N1.SM_BLDG_CHE_L9_B_CornerIn_02_N1",
+    "width": 75,
+    "depth": 108,
+    "y0": -108.4,
+    "y1": 75
+   }
+  }
+ ]
+}

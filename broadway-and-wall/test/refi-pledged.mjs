@@ -39,7 +39,7 @@ function book(seed, poolN) {
   return r.err ? null : { g: r.s, parcels };
 }
 
-for (const [poolN, label] of [[5, "a five-deed pool releases one deed"], [3, "a pool at its minimum is repaid in full"]]) {
+for (const [poolN, label] of [[5, "a five-deed pool releases one deed"], [E.FACILITY_MIN_ASSETS, "a pool at its minimum is repaid in full"]]) {
   let done = false;
   for (let seed = 0; seed < 6 && !done; seed++) {
     const b = book(seed, poolN);
@@ -56,7 +56,7 @@ for (const [poolN, label] of [[5, "a five-deed pool releases one deed"], [3, "a 
       console.log(`  ${label}: $${(q.maxProceeds / 1e6).toFixed(2)}M ${q.id}, release $${(rel.price / 1e6).toFixed(2)}M`);
       ok(!!rel, "the deed was pledged going in");
       ok(!n.facility || !n.facility.bbls.includes(bbl), "the deed is out of the pool");
-      if (poolN === 3) ok(!n.facility, "the facility is gone — every deed is free");
+      if (poolN === E.FACILITY_MIN_ASSETS) ok(!n.facility, "the facility is gone — every deed is free");
       else ok(n.facility && Math.abs((g.facility.balance - n.facility.balance) - rel.price) < 2, `the facility balance fell by the release price (${((g.facility.balance - (n.facility?.balance ?? 0)) / 1e6).toFixed(2)}M)`);
       ok(!!n.holdings[bbl].loan && n.holdings[bbl].loan.balance > 0, "the new mortgage is on the deed");
       const fee = (n.holdings[bbl].loan.balance - rel.price) - (n.cash - g.cash) - (g.holdings[bbl].loan?.balance ?? 0);

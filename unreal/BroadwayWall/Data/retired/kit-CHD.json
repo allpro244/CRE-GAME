@@ -1,0 +1,195 @@
+{
+ "format": "bw-kit/1",
+ "kit": "CHD",
+ "grammar": "L00, L01, L02, L03, L04, L05, L05, L05, L06, L08*, L03",
+ "bands": [
+  {
+   "symbol": "L00",
+   "height": 0.5,
+   "repeat": false,
+   "walls": [],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L01",
+   "height": 800,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/D/Kit_Bldg_CHD_L1_A/Mesh/SM_BLDG_CHD_L1_A_Wall_01_N1.SM_BLDG_CHD_L1_A_Wall_01_N1",
+     "width": 825,
+     "depth": 186,
+     "y0": -825,
+     "y1": 0
+    }
+   ],
+   "entrances": [
+    {
+     "path": "/Game/Building/CH/D/Kit_Bldg_CHD_L1_A/Mesh/SM_BLDG_CHD_L1_A_Entrance_01_N1.SM_BLDG_CHD_L1_A_Entrance_01_N1",
+     "width": 625,
+     "depth": 178,
+     "y0": -625.1,
+     "y1": 0.3
+    }
+   ],
+   "corner": null,
+   "inner": null,
+   "ground": true
+  },
+  {
+   "symbol": "L02",
+   "height": 850,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/D/Kit_Bldg_CHD_L2_A/Mesh/SM_BLDG_CHD_L2_A_Wall_01_N1.SM_BLDG_CHD_L2_A_Wall_01_N1",
+     "width": 825,
+     "depth": 188,
+     "y0": -825,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L03",
+   "height": 300,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/D/Kit_Bldg_CHD_L201_A/Mesh/SM_BLDG_CHD_L201_A_Wall_01_N1.SM_BLDG_CHD_L201_A_Wall_01_N1",
+     "width": 825,
+     "depth": 238,
+     "y0": -825,
+     "y1": 75
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L04",
+   "height": 925,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/D/Kit_Bldg_CHD_L3_A/Mesh/SM_BLDG_CHD_L3_A_Wall_01_N1.SM_BLDG_CHD_L3_A_Wall_01_N1",
+     "width": 825,
+     "depth": 421,
+     "y0": -825,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L05",
+   "height": 550,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/D/Kit_Bldg_CHD_L4_A/Mesh/SM_BLDG_CHD_L4_A_Wall_01_N1.SM_BLDG_CHD_L4_A_Wall_01_N1",
+     "width": 825,
+     "depth": 421,
+     "y0": -825,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L05",
+   "height": 550,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/D/Kit_Bldg_CHD_L4_A/Mesh/SM_BLDG_CHD_L4_A_Wall_01_N1.SM_BLDG_CHD_L4_A_Wall_01_N1",
+     "width": 825,
+     "depth": 421,
+     "y0": -825,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L05",
+   "height": 550,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/D/Kit_Bldg_CHD_L4_A/Mesh/SM_BLDG_CHD_L4_A_Wall_01_N1.SM_BLDG_CHD_L4_A_Wall_01_N1",
+     "width": 825,
+     "depth": 421,
+     "y0": -825,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L06",
+   "height": 950,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/D/Kit_Bldg_CHD_L5_A/Mesh/SM_BLDG_CHD_L5_A_Wall_01_N1.SM_BLDG_CHD_L5_A_Wall_01_N1",
+     "width": 825,
+     "depth": 421,
+     "y0": -825,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L08",
+   "height": 850,
+   "repeat": true,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/D/Kit_Bldg_CHD_L2_A/Mesh/SM_BLDG_CHD_L2_A_Wall_01_N1.SM_BLDG_CHD_L2_A_Wall_01_N1",
+     "width": 825,
+     "depth": 188,
+     "y0": -825,
+     "y1": 0
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  },
+  {
+   "symbol": "L03",
+   "height": 300,
+   "repeat": false,
+   "walls": [
+    {
+     "path": "/Game/Building/CH/D/Kit_Bldg_CHD_L201_A/Mesh/SM_BLDG_CHD_L201_A_Wall_01_N1.SM_BLDG_CHD_L201_A_Wall_01_N1",
+     "width": 825,
+     "depth": 238,
+     "y0": -825,
+     "y1": 75
+    }
+   ],
+   "entrances": [],
+   "corner": null,
+   "inner": null
+  }
+ ]
+}

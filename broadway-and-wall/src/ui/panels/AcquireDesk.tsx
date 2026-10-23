@@ -1,5 +1,6 @@
 // Buy, sell, list, ground lease, disclosed roll, vacant possession.
 // Extracted from ParcelDesk so the property shell stays readable.
+import { consentFor } from "@/engine/vehicles";
 import { useState } from "react";
 import Slider, { widePriceBounds, counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
@@ -11,13 +12,14 @@ import {
   recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr, useRentableSf } from "@/engine/value";
 import { demolitionCost } from "@/engine/dev";
 import {
-  buyQuote, saleTaxQuote, quietFeeRate, groundLeaseQuote,
+  buyQuote, quietFeeRate, saleFeeRate, sellerCashAtClose, saleProceedsToSeller, groundLeaseQuote,
   GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN,
 } from "@/engine/actions";
 import { sellerOf, sellerProfile, closingBand, phaseShift, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { PRODUCTS, deskAdvice } from "@/engine/debt";
+import { stayingPower, lenderByName } from "@/engine/lenders";
 import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
 import { uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
@@ -310,11 +312,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const sale = holding.sale;
   const exchangeBusy = !!game.exchange;
   if (sale) {
-    const tq = sale.offer ? saleTaxQuote(holding, sale.offer.price) : null;
-    const closeNet = (px: number) => {
-      const q = saleTaxQuote(holding, px);
-      return q.net - (holding.loan?.balance ?? 0) - q.tax;
-    };
+    // Same waterfall the close runs — stack, kicker, break fee, release, investors, tax.
+    const tq = sale.offer && parcels ? saleProceedsToSeller(game, parcels, holding, sale.offer.price) : null;
+    const closeNet = (px: number, ex = false) => (parcels ? sellerCashAtClose(game, parcels, holding, px, ex) : 0);
     const counterBounds = sale.offer
       ? (() => {
           const b = counterPriceBounds(sale.offer.price, apMid(bbl, value));
@@ -336,8 +336,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
             <SaleAcceptConfirm
               address={parcels[bbl]?.address ?? bbl}
               price={px}
-              net={closeNet(px)}
+              net={closeNet(px, !!acceptConfirm.exchange)}
               exchange={acceptConfirm.exchange}
+              contract={acceptConfirm.bidIndex !== undefined}
               onCancel={() => setAcceptConfirm(null)}
               onConfirm={() => {
                 if (acceptConfirm.bidIndex !== undefined) takeBid(bbl, acceptConfirm.bidIndex);
@@ -351,7 +352,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
         <div className="grid">
           <Row k={sale.mode === "marketed" ? "Whisper price" : "Your ask"} v={usd(sale.ask)} strong />
           <Row k="vs. appraisal" v={pctSigned(sale.ask / apMid(bbl, value) - 1)} />
-          <Row k="Process" v={sale.mode === "marketed" ? "Marketed campaign · 2.5% fee" : "Quiet listing · 1.5% fee"} />
+          <Row k="Process" v={`${sale.mode === "marketed" ? "Marketed campaign" : "Quiet listing"} · ${(saleFeeRate(holding, game) * 100).toFixed(2).replace(/\.?0+$/, "")}% fee`} />
           {sale.callM !== undefined && <Row k="Offers due" v={monthLabel(sale.callM)} strong />}
           {describeInstructions(sale.instructions) && (
             <Row k="Broker's instructions" v={describeInstructions(sale.instructions)!} />
@@ -488,9 +489,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
             })()}
             <div className="btn-row">
               <button className="btn btn-buy" onClick={() => setAcceptConfirm({})}>
-                {sale.offer.contract && !sale.offer.held ? "Close now" : "Accept"} · net {usd(tq.net - (holding.loan?.balance ?? 0) - tq.tax)}
+                {sale.offer.contract && !sale.offer.held ? "Close now" : "Accept"} · net {usd(closeNet(sale.offer.price))}
               </button>
-              {tq.tax > 0 && !exchangeBusy && (
+              {tq.tax > 0 && !exchangeBusy && !consentFor(game, holding, "exchange") && (
                 <button
                   className="btn btn-buy"
                   title={`Roll the gain into your next purchase: defer ${usd(tq.tax)} of tax, but you must buy for ≥ 80% of this price within 6 months`}
@@ -1152,7 +1153,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     if (!q) { q = buyQuote(game, parcels, bbl, offerPrice, id, 1); qCache.set(id, q); }
     return q;
   };
-  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.id === "land" : p.id !== "land"))
+  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.uwDscr <= 0 : p.uwDscr > 0))
     .map((p) => ({ p, q: quoteOf(p.id) }))
     .sort((a, b) => (b.q.principal > 0 ? 1 : 0) - (a.q.principal > 0 ? 1 : 0) || a.q.allInPct - b.q.allInPct)
     .map((x) => x.p);
@@ -1209,7 +1210,10 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     && game.month <= game.fund.investEndM);
   // The vehicle calls capital as the deal closes (executePurchase): its purse
   // is the cash it holds plus the commitments still to call.
-  const closePurse = fromFund ? (game.fund?.cash ?? 0) + (game.fund?.uncalled ?? 0) : spendable(game, parcels).total;
+  // Earnest money already posted under contract comes back at the table
+  // (acquire.ts closeAgreed), so it counts toward the cheque.
+  const postedDeposit = game.talks?.[bbl]?.agreed ? (game.talks[bbl].deposit ?? 0) : 0;
+  const closePurse = (fromFund ? (game.fund?.cash ?? 0) + (game.fund?.uncalled ?? 0) : spendable(game, parcels).total) + postedDeposit;
   const noi = ip?.noi ?? 0;
   const stab = rec ? proFormaNOIYr(rec, game.econ, ip?.h?.condition ?? initialCondition(rec), offerPrice) : 0;
   // ACTUAL first-year debt service — amortizing payment for amortizing paper,
@@ -1280,6 +1284,8 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
           <div className="btn-row lender-list" style={{ marginTop: 4 }}>
             {productChoices.map((p) => {
               const pq = quoteOf(p.id);
+              const desk = lenderByName(game, p.lender);
+              const sp = desk ? stayingPower(game, desk) : null;
               return (
                 <button
                   key={p.id}
@@ -1288,10 +1294,11 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                   style={pq.principal <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
                   title={pq.principal <= 0
                     ? `${p.label} will not lend against this building today — ${p.blurb}`
-                    : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term`}
+                    : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term${sp ? `\nStaying power: ${sp.word}. ${sp.why}` : ""}`}
                   onClick={() => setProduct(p.id)}
                 >
                   {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% (${pq.allInPct.toFixed(2)}% all in) · ${(pq.ltvCap * 100).toFixed(0)}% sheet` : " · won't quote"}
+                  {sp && sp.word !== "solid" && pq.principal > 0 ? <span style={{ marginLeft: 6, color: sp.word === "at risk" ? "#c0563e" : "#b8962e" }}>· {sp.word}</span> : null}
                 </button>
               );
             })}
@@ -1390,7 +1397,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 <Row k={<Gloss term="cash-on-cash">Cash-on-cash</Gloss>} v={`${coc.toFixed(1)}%`} bad={coc < 0} />
               </>
             )}
-            <Row k="Equity to close" v={usd(equity)} strong bad={equity > closePurse} />
+            <Row k="Equity to close" v={postedDeposit > 0 ? `${usd(equity)} · ${usd(postedDeposit)} already posted` : usd(equity)} strong bad={equity > closePurse} />
           </div>
           {!fromFund && <LocSplitHint need={equity} game={game} parcels={parcels} />}
           <div className="btn-row">

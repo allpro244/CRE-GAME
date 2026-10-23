@@ -549,6 +549,10 @@ function skylineStories(g: GameState, parcels: Parcels, hist: Map<string, Proper
     const ago = g.month - sw.m;
     if (ago > 0 && ago % 12 === 0) almanac.push({ m: sw.m, text: `${Math.round(ago / 12)} years ago this month: ${sw.title}.` });
   }
+  for (const sw of g.econ?.blackSwans ?? []) {
+    const ago = g.month - sw.m;
+    if (ago > 0 && ago % 12 === 0 && sw.title) almanac.push({ m: sw.m, text: `${Math.round(ago / 12)} years ago this month: ${sw.title}.`, ...(sw.bbls?.[0] ? { bbl: sw.bbls[0] } : {}) });
+  }
   for (const yAgo of [5, 10, 20, 25, 30, 40, 50]) {
     const m = g.month - yAgo * 12;
     const then = all.filter((e) => e.m === m);

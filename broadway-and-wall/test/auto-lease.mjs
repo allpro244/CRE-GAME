@@ -7,6 +7,9 @@
 //   - every letter on an auto building is settled the month it lands
 //   - a letter inside the policy is signed as written
 //   - the cap is stored in opening dollars and read back in today's
+//   - the firm's concession limit: nothing signed over the street's package
+//     (top on Market, middle on Lean); Generous signs the package as asked
+//   - a counter asks for the whole target: nothing signs under the floor
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -50,8 +53,9 @@ const letter = (id, over) => ({
   rentPsf: +market.toFixed(2), termM: 120, tiPsf: 40, freeM: 0, net: true,
   expiresM: g0.month + 3, arrivedM: g0.month, ...over,
 });
-const fresh = (stance, capToday, l, seed) => {
+const fresh = (stance, capToday, l, seed, conc) => {
   let g = structuredClone(g0);
+  if (conc) g.autoConcessions = conc;
   // each trial its own world draw, or every clone replays one tenant reaction
   if (seed !== undefined) { if (g.streams) g.streams.econ = (g.streams.econ ?? g.rng) ^ (seed * 2654435761); else g.rng ^= seed * 2654435761; }
   g.holdings[bbl].stance = stance;
@@ -73,7 +77,7 @@ const signedTi = (g) => {
   check(Math.abs(E.autoTiCapToday(g, g.holdings[bbl]) - 4) < 1e-9, "cap reads back as $4.00 today");
   const off = E.setAutoTiCap(g, parcels, bbl, undefined);
   check(off.holdings[bbl].autoTiCapPsfYr === undefined, "No cap lifts it");
-  check(/fit-out up to \$4\.00/.test(E.autoLeaseRule(g, g.holdings[bbl])), "the one-line rule names the cap");
+  check(/\$4\.00\/sf of fit-out per lease year/.test(E.autoLeaseRule(g, g.holdings[bbl])), "the one-line rule names the cap");
 }
 
 // inside the policy: signed as written
@@ -86,8 +90,50 @@ const signedTi = (g) => {
   check(signedTi(g) === ti && g.lois.length === 0, `Market, $${ti} TI under the cap, 5% over market → signed as written (got ${signedTi(g)})`);
 }
 {
-  const g = fresh(-1, undefined, letter(2, { tiPsf: Math.round(market * 2), rentPsf: +(market * 0.7).toFixed(2) }));
-  check(signedTi(g) === Math.round(market * 2), `Fill, no cap, rich TI at 70% of market → signed as written (got ${signedTi(g)})`);
+  const g = fresh(-1, undefined, letter(2, { tiPsf: Math.round(market * 2), rentPsf: +(market * 0.7).toFixed(2) }), undefined, "generous");
+  check(signedTi(g) === Math.round(market * 2), `Fill, Generous, rich TI at 70% of market → signed as written (got ${signedTi(g)})`);
+}
+// THE FIRM'S CONCESSION LIMIT, against the street's package for the letter
+{
+  const pkgOf = (g, l) => E.streetPackage(g, rec, g.holdings[bbl], l);
+  for (const conc of ["market", "lean"]) {
+    let n = 0, signedN = 0, overTi = 0, overFree = 0;
+    for (let i = 0; i < 60; i++) {
+      const termM = 36 + 12 * (i % 8);
+      const l = letter(2000 + i, {
+        termM, credit: i % 3,
+        tiPsf: Math.round(market * (0.3 + 0.15 * (i % 7)) * termM / 12),   // from modest to outsized
+        freeM: Math.round((termM / 12) * (0.2 + 0.3 * (i % 5))),
+        rentPsf: +(market * (0.9 + 0.04 * (i % 5))).toFixed(2),
+      });
+      const g = fresh(i % 3 - 1, undefined, l, 7 + i, conc);
+      const pkg = pkgOf(g0, l);
+      const lim = conc === "lean" ? { ti: pkg.tiMid, free: pkg.freeMid } : { ti: pkg.tiTop, free: pkg.freeTop };
+      n++;
+      const ti = signedTi(g);
+      if (ti === null) continue;
+      signedN++;
+      const t = g.holdings[bbl].tenants.find((x) => x.name === l.name);
+      const free = t ? Math.max(0, (t.freeUntilM ?? t.startM) - t.startM) : 0;
+      if (ti > Math.ceil(lim.ti)) overTi++;
+      if (free > Math.ceil(lim.free - 1e-9)) overFree++;
+    }
+    check(overTi === 0 && overFree === 0, `${conc}: ${signedN} of ${n} letters signed; none over the street's ${conc === "lean" ? "typical" : "top-of-range"} package (${overTi} over on fit-out, ${overFree} on free rent)`);
+  }
+}
+// THE COUNTER ASKS FOR THE WHOLE TARGET: lowballs on Push never sign under its floor
+{
+  let n = 0, under = 0;
+  for (let i = 0; i < 80; i++) {
+    const l = letter(3000 + i, { tiPsf: 0, freeM: 0, rentPsf: +(market * (0.35 + 0.01 * (i % 30))).toFixed(2) });
+    const g = fresh(1, undefined, l, 11 + i);
+    const line = g.news.find((x) => x.text.startsWith("Auto-lease signed"));
+    if (!line) continue;
+    n++;
+    const nets = Number(line.text.match(/nets (\d+)% of a market deal/)?.[1]);
+    if (!(nets >= 100)) under++;
+  }
+  check(under === 0, `Push, lowballs at 35-64% of market: ${n} of 80 signed, none under a market deal (${under} under)`);
 }
 
 // over the cap: never signed above it, always settled
@@ -113,6 +159,51 @@ for (const stance of [-1, 0, 1]) {
 check(over === 0, `${signed} of ${trials} over-cap letters signed; none above the cap (${over} over)`);
 check(open === 0, `every letter settled the month it landed (${open} left on the desk)`);
 check(signed > 0, "some over-cap tenants take the trimmed allowance");
+
+// NEVER BELOW MARKET RENT: on every posture, Fill included, nothing signs under the space's market rent
+{
+  let n = 0, under = 0, signedN = 0;
+  for (const stance of [-1, 0, 1]) {
+    for (let i = 0; i < 40; i++) {
+      const l = letter(4000 + i + 100 * (stance + 1), { tiPsf: 0, freeM: 0, rentPsf: +(market * (0.6 + 0.012 * i)).toFixed(2) });
+      let g = structuredClone(g0);
+      if (g.streams) g.streams.econ = (g.streams.econ ?? g.rng) ^ ((900 + i + 50 * stance) * 2654435761); else g.rng ^= (900 + i + 50 * stance) * 2654435761;
+      g.holdings[bbl].stance = stance;
+      g.lois = [l];
+      g.autoRentFloor = true;
+      const floorPsf = E.autoMarketRentPsf(g, rec, g.holdings[bbl], l);
+      g = E.setAutoLease(g, parcels, bbl, true);
+      n++;
+      const line = g.news.find((x) => x.text.startsWith("Auto-lease signed"));
+      if (!line) continue;
+      signedN++;
+      const rent = Number(line.text.match(/sf at \$([\d.]+)\/sf/)?.[1]);
+      if (!(rent + 0.005 >= floorPsf)) under++;
+    }
+  }
+  check(under === 0 && signedN > 0, `never below market rent: ${signedN} of ${n} lowballs (60-107% of market, all three postures) signed, none under the market rent (${under} under)`);
+}
+
+// NEW BUILDINGS JOIN AUTO-LEASE when the book runs on auto
+{
+  const buyNext = (g) => {
+    for (const L of g.listings ?? []) {
+      if (g.holdings[L.bbl] || L.bbl === bbl) continue;
+      const r2 = E.resolveRec(parcels, g, L.bbl);
+      if (!r2 || r2.class === "land" || !(r2.bldgArea > 0)) continue;
+      const r = E.executePurchase(g, parcels, L.bbl, L.ask, "cash", false, 1);
+      if (!r.err && r.s.holdings[L.bbl]) return r.s.holdings[L.bbl];
+    }
+    return null;
+  };
+  const onBook = structuredClone(g0); onBook.holdings[bbl].autoLease = true; onBook.cash = 1e9;
+  const offBook = structuredClone(g0); offBook.holdings[bbl].autoLease = false; offBook.cash = 1e9;
+  const optedOut = structuredClone(onBook); optedOut.autoLeaseNew = false;
+  const a = buyNext(onBook), b = buyNext(offBook), c = buyNext(optedOut);
+  check(!!a && a.autoLease === true, "a building bought while the book is on auto closes on auto-lease");
+  check(!!b && !b.autoLease, "a building bought while nothing is on auto does not");
+  check(!!c && !c.autoLease, "\"new buildings join auto-lease\" switched off wins over the book");
+}
 
 console.log(bad ? `\n${bad} FAILED\n` : "\nall OK\n");
 process.exit(bad ? 1 : 0);

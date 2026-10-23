@@ -18,7 +18,10 @@ function Delta({ d, on }: { d: number; on: boolean }) {
  * the two cannot drift apart again (the row put all six buttons on one line
  * with a "|" between them).
  */
-export function OpsChoices({ bbl, h }: { bbl: string; h: Holding }) {
+export function OpsChoices({ bbl, h, compact = false }: { bbl: string; h: Holding; compact?: boolean }) {
+  // COMPACT, for a row in a list of buildings (Leasing): the choices and the
+  // two numbers out of 100 — service as tenants read it, condition — with the
+  // costs on hover and no building-score line. The property page keeps the lot.
   const ops = useStore((s) => s.ops);
   const parcels = useStore((s) => s.parcels);
   const game = useStore((s) => s.game);
@@ -53,10 +56,12 @@ export function OpsChoices({ bbl, h }: { bbl: string; h: Holding }) {
               title={o.blurb + " — three years to matter, three years to undo"
                 + (live ? `. Net operating cost ${usd(noiNow - noiAt(o.key))}/yr against today's setting, after tenant recoveries.` : "")}
               onClick={() => ops(bbl, { service: o.key })}
-            >{o.label}{live && <Delta d={noiNow - noiAt(o.key)} on={(h.service ?? 0) === o.key} />}</button>
+            >{o.label}{live && !compact && <Delta d={noiNow - noiAt(o.key)} on={(h.service ?? 0) === o.key} />}</button>
           ))}
         </span>
-        <span className="ops-choice-read">tenants read it as {Math.round(100 * (h.svcIdx ?? SVC_START))} of 100</span>
+        {compact
+          ? <span className="ops-choice-read ops-score" title="How tenants rate the service here, out of 100">{Math.round(100 * (h.svcIdx ?? SVC_START))}/100</span>
+          : <span className="ops-choice-read">tenants read it as {Math.round(100 * (h.svcIdx ?? SVC_START))} of 100</span>}
       </div>
       <div className="ops-choice">
         <span className="ops-choice-k">Capital plan</span>
@@ -69,12 +74,14 @@ export function OpsChoices({ bbl, h }: { bbl: string; h: Holding }) {
               aria-pressed={(h.plan ?? 1) === o.key}
               title={o.blurb + (live ? `. About ${usd(planYr(o.mult))}/yr into the reserve at this building's value and wear.` : "")}
               onClick={() => ops(bbl, { plan: o.key })}
-            >{o.label}{live && <Delta d={planYr(o.mult) - planNow} on={(h.plan ?? 1) === o.key} />}</button>
+            >{o.label}{live && !compact && <Delta d={planYr(o.mult) - planNow} on={(h.plan ?? 1) === o.key} />}</button>
           ))}
         </span>
-        <span className="ops-choice-read">condition {Math.round(100 * (h.condIdx ?? 0.6))} of 100{h.condition ? ` (${h.condition})` : ""}{live && planNow > 0 ? ` · ${usd(planNow)}/yr` : ""}</span>
+        {compact
+          ? <span className="ops-choice-read ops-score" title={`The building's condition, out of 100${h.condition ? ` (${h.condition})` : ""}${live && planNow > 0 ? ` — ${usd(planNow)}/yr into the reserve` : ""}`}>{Math.round(100 * (h.condIdx ?? 0.6))}/100</span>
+          : <span className="ops-choice-read">condition {Math.round(100 * (h.condIdx ?? 0.6))} of 100{h.condition ? ` (${h.condition})` : ""}{live && planNow > 0 ? ` · ${usd(planNow)}/yr` : ""}</span>}
       </div>
-      {sc && rec && (
+      {!compact && sc && rec && (
         <div className="ops-choice">
           <span className="ops-choice-k">Building score</span>
           <span className="ops-choice-read" title="The building only: its bones, its condition, and how new it is against the city's own stock. Location is priced separately.">

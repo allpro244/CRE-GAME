@@ -32,7 +32,7 @@
 //
 // Nothing here draws on the RNG stream.
 import type { CityLoan, GameState, Rival } from "./types";
-import { productById, quote, REFI_FEE, singleNameCap, windowOpen, type StabView } from "./debt";
+import { productById, quote, REFI_FEE, singleNameCap, windowOpen, CAP_TERM_M, type StabView } from "./debt";
 import { capPremiumOn } from "./amortize";
 import { targetCapital } from "./lenders";
 import type { Lender } from "./lenders";
@@ -59,11 +59,76 @@ export function fileSpreadAdj(r: Rival): number {
 
 // ------------------------------------------------------------------ reading
 
-/** This firm's mortgages on the record. */
+/**
+ * THE RECORD BY BORROWER. Every firm's service, amortisation, payment status
+ * and debt total reads its own rows, and the record is keyed by BBL — numeric
+ * keys, which every walk has to collect and sort — so a walk per firm per
+ * reader was a tenth of the month. The index is the walk done once: each
+ * firm's rows in record order, rebuilt whenever the record is a different
+ * object or anything has put a row on it, taken one off or moved one to
+ * another borrower. Every such write in the engine calls `loanBookTouched()`;
+ * and as a backstop for any writer that does not (a harness deleting a row),
+ * a firm's rows are checked on every read — each still on the record under
+ * its key and still this firm's — and any miss rebuilds. (Balances, rates and
+ * statuses are read off the rows themselves and need no bump.)
+ */
+let LOAN_REV = 0;
+export function loanBookTouched(): void { LOAN_REV++; }
+type LoanIx = { book: Record<string, CityLoan>; rev: number; by: Map<string, { keys: string[]; rows: CityLoan[] }> };
+let LOAN_IX: LoanIx | null = null;
+function buildLoanIx(L: Record<string, CityLoan>): LoanIx {
+  const by: LoanIx["by"] = new Map();
+  for (const k in L) {
+    const x = L[k];
+    const e = by.get(x.obligorId);
+    if (e) { e.keys.push(k); e.rows.push(x); } else by.set(x.obligorId, { keys: [k], rows: [x] });
+  }
+  return { book: L, rev: LOAN_REV, by };
+}
+/** An array-index key: for..in walks these first, in ascending numeric order. */
+const isIndexKey = (k: string) => /^(?:0|[1-9][0-9]*)$/.test(k) && Number(k) <= 4294967294;
+/**
+ * PUT A ROW ON THE RECORD, keeping the index current where that is the same
+ * as rebuilding it: a NEW numeric key (every BBL is one) sits among the
+ * numeric keys in ascending order, ahead of every other key, so it goes into
+ * its borrower's list at exactly that place. Anything else — a key already on
+ * the record, a non-numeric key, an index that was not current — just bumps.
+ */
+function loanPut(L: Record<string, CityLoan>, key: string, row: CityLoan): void {
+  const ix = LOAN_IX;
+  const current = !!ix && ix.book === L && ix.rev === LOAN_REV;
+  const existed = Object.prototype.hasOwnProperty.call(L, key);
+  L[key] = row;
+  if (!current || existed || !isIndexKey(key)) { loanBookTouched(); return; }
+  const n = Number(key);
+  const e = ix!.by.get(row.obligorId);
+  if (!e) { ix!.by.set(row.obligorId, { keys: [key], rows: [row] }); return; }
+  let i = 0;
+  while (i < e.keys.length && isIndexKey(e.keys[i]) && Number(e.keys[i]) < n) i++;
+  e.keys.splice(i, 0, key);
+  e.rows.splice(i, 0, row);
+}
+
+/** This firm's rows in record order, off the index; null when the record is empty or absent. */
+function obligorRows(s: GameState, id: string): CityLoan[] | null {
+  const L = s.cityLoans;
+  if (!L) return null;
+  let ix = LOAN_IX;
+  if (!ix || ix.book !== L || ix.rev !== LOAN_REV) ix = LOAN_IX = buildLoanIx(L);
+  let e = ix.by.get(id);
+  if (e) {
+    for (let i = 0; i < e.rows.length; i++) {
+      const x = e.rows[i];
+      if (L[e.keys[i]] !== x || x.obligorId !== id) { ix = LOAN_IX = buildLoanIx(L); e = ix.by.get(id); break; }
+    }
+  }
+  return e ? e.rows : null;
+}
+
+/** This firm's mortgages on the record, in record order (a fresh array the caller may sort). */
 export function rowsOf(s: GameState, r: Rival): CityLoan[] {
-  const out: CityLoan[] = [];
-  for (const x of Object.values(s.cityLoans ?? {})) if (x.obligorId === r.id) out.push(x);
-  return out;
+  const rows = obligorRows(s, r.id);
+  return rows ? rows.slice() : [];
 }
 /** The mortgage on one of this firm's deeds, if it has one. */
 export function rowOn(s: GameState, r: Rival, bbl: string): CityLoan | undefined {
@@ -72,7 +137,8 @@ export function rowOn(s: GameState, r: Rival, bbl: string): CityLoan | undefined
 }
 export function termDebtOf(s: GameState, r: Rival): number {
   let t = 0;
-  for (const x of Object.values(s.cityLoans ?? {})) if (x.obligorId === r.id) t += x.balance;
+  const rows = obligorRows(s, r.id);
+  if (rows) for (const x of rows) t += x.balance;
   return t;
 }
 export function jobDebtOf(s: GameState, r: Rival): number {
@@ -98,13 +164,45 @@ export function syncDebt(s: GameState, r: Rival) {
  */
 /** Some live desk would take `amount` more against this name. */
 export function deskWithRoom(s: GameState, obligorId: string, amount: number): boolean {
-  return (s.lenders ?? []).some((l) => l.failedM === undefined && deskRoom(s, l, obligorId) >= amount);
+  // `deskRoom` for every live desk off ONE pass over the record: each desk's
+  // totals accumulate in the same order, so each is the number deskRoom gives.
+  const lenders = s.lenders ?? [];
+  const acc = new Map<string, { onDesk: number; exposure: number }>();
+  for (const l of lenders) if (l.failedM === undefined && !acc.has(l.name)) acc.set(l.name, { onDesk: 0, exposure: 0 });
+  if (!acc.size) return false;
+  const L = s.cityLoans;
+  if (L) for (const k in L) {
+    const x = L[k];
+    if (x.heldBy) continue;
+    const a = acc.get(x.lender);
+    if (!a) continue;
+    a.onDesk += x.balance;
+    if (x.obligorId === obligorId) a.exposure += x.balance;
+  }
+  for (const r of s.rivals ?? []) {
+    if ((r.lineBal ?? 0) > 0) {
+      const a = r.lineBank === undefined ? undefined : acc.get(r.lineBank);
+      if (!a) continue;
+      a.onDesk += r.lineBal!;
+      if (r.id === obligorId) a.exposure += r.lineBal!;
+    }
+  }
+  for (const l of lenders) {
+    if (l.failedM !== undefined) continue;
+    const a = acc.get(l.name)!;
+    const nameRoom = l.book * singleNameCap(l.kind) - a.exposure;
+    const room = l.capital / Math.max(0.01, targetCapital(l.name)) - l.book;
+    if (Math.min(nameRoom, room) >= amount) return true;
+  }
+  return false;
 }
 
 export function deskRoom(s: GameState, l: Lender, obligorId: string, opening = false): number {
   if (l.failedM !== undefined) return 0;
   let exposure = 0, onDesk = 0;
-  for (const x of Object.values(s.cityLoans ?? {})) {
+  const L = s.cityLoans;
+  if (L) for (const k in L) {
+    const x = L[k];
     if (x.lender !== l.name || x.heldBy) continue;
     onDesk += x.balance;
     if (x.obligorId === obligorId) exposure += x.balance;
@@ -122,10 +220,44 @@ export function deskRoom(s: GameState, l: Lender, obligorId: string, opening = f
   return Math.min(nameRoom, room);
 }
 
+/** `deskRoom(s, l, obligorId, opening)` for every desk in `s.lenders`, off one walk of the record. */
+function deskRooms(s: GameState, obligorId: string, opening: boolean): Map<Lender, number> {
+  const acc = new Map<string, { onDesk: number; exposure: number }>();
+  for (const l of s.lenders ?? []) if (!acc.has(l.name)) acc.set(l.name, { onDesk: 0, exposure: 0 });
+  const L = s.cityLoans;
+  if (L) for (const k in L) {
+    const x = L[k];
+    if (x.heldBy) continue;
+    const a = acc.get(x.lender);
+    if (!a) continue;
+    a.onDesk += x.balance;
+    if (x.obligorId === obligorId) a.exposure += x.balance;
+  }
+  for (const r of s.rivals ?? []) {
+    if ((r.lineBal ?? 0) > 0) {
+      const a = r.lineBank === undefined ? undefined : acc.get(r.lineBank);
+      if (!a) continue;
+      a.onDesk += r.lineBal!;
+      if (r.id === obligorId) a.exposure += r.lineBal!;
+    }
+  }
+  const out = new Map<Lender, number>();
+  for (const l of s.lenders ?? []) {
+    if (l.failedM !== undefined) { out.set(l, 0); continue; }
+    const a = acc.get(l.name)!;
+    const nameRoom = l.book * singleNameCap(l.kind) - a.exposure;
+    const room = opening
+      ? l.book * 0.75 - a.onDesk
+      : l.capital / Math.max(0.01, targetCapital(l.name)) - l.book;
+    out.set(l, Math.min(nameRoom, room));
+  }
+  return out;
+}
+
 /** The sheets a firm on this street calls for a mortgage, by what the collateral is. */
 function sheetsFor(noiYr: number): string[] {
   // The ladder the player's balloon walks (debt.ts balloonLadder).
-  return noiYr > 0 ? ["pelican", "conduit", "savings25", "savings", "harbor", "cordage"] : ["land"];
+  return noiYr > 0 ? ["pelican", "ashford", "agencyFixed", "conduit", "bowline", "savings25", "savings", "harbor", "cordage"] : ["land", "tideLand"];
 }
 
 export interface Origination { lender: string; ratePct: number; termM: number; product: string }
@@ -144,6 +276,10 @@ export function pickDesk(
 ): Origination {
   type C = Origination & { principal: number; room: number };
   const cands: C[] = [];
+  // Every desk's `deskRoom` off one walk of the record, worked out the first
+  // time one is asked for: nothing below writes a loan, a line or a book.
+  let rooms: Map<Lender, number> | null = null;
+  const roomOf = (l: Lender) => (rooms ??= deskRooms(s, obligorId, o.opening ?? false)).get(l) ?? deskRoom(s, l, obligorId, o.opening);
   for (const id of sheetsFor(noiYr)) {
     const p = productById(id);
     if (!p || !windowOpen(s, p)) continue;
@@ -151,7 +287,7 @@ export function pickDesk(
     if (!l || l.failedM !== undefined) continue;
     const q = quote(s, p, value, Math.max(0, noiYr), o.klass, true, p.bridge ? o.stab : undefined, o.condition);
     if (!(q.principal > 0)) continue;
-    cands.push({ lender: p.lender, ratePct: q.ratePct, termM: p.termM, product: p.id, principal: q.principal, room: deskRoom(s, l, obligorId, o.opening) });
+    cands.push({ lender: p.lender, ratePct: q.ratePct, termM: p.termM, product: p.id, principal: q.principal, room: roomOf(l) });
   }
   const funds = cands.filter((c) => c.principal >= amount * 0.98 && c.room >= amount)
     .sort((a, b) => a.ratePct - b.ratePct);
@@ -163,7 +299,7 @@ export function pickDesk(
   // construction takeout already committed) sits with the desk with the most
   // room, at the street's coupon for that desk's benchmark.
   const live = (s.lenders ?? []).filter((l) => l.failedM === undefined && l.kind !== "fund");
-  const best = live.sort((a, b) => deskRoom(s, b, obligorId, o.opening) - deskRoom(s, a, obligorId, o.opening))[0];
+  const best = live.sort((a, b) => roomOf(b) - roomOf(a))[0];
   const fallback = noiYr > 0 ? productById("harbor") : productById("land");
   return {
     lender: best?.name ?? fallback.lender,
@@ -198,9 +334,30 @@ export function originateRow(
     origValue: Math.round(Math.max(value, 1)), klass: o.klass ?? old?.klass ?? "land",
     status: "current", product: d.product,
   };
-  s.cityLoans[bbl] = row;
+  // A floater is written at the short index plus the desk's margin, with a
+  // cap bought at the table (debt.ts originate: struck a point over today's
+  // index, for the loan's term or three years, whichever is shorter).
+  if (productById(d.product ?? "harbor")?.floating) {
+    const idx = shortIndexOf(s.econ);
+    row.spread = +(row.ratePct - idx).toFixed(2);
+    row.cap = { strike: +(idx + 1.0).toFixed(2), expiresM: originM + Math.min(d.termM, CAP_TERM_M) };
+  }
+  loanPut(s.cityLoans, bbl, row);
   syncDebt(s, r);
   return row;
+}
+
+/**
+ * WHAT A STREET LOAN COSTS AT THE TABLE, the player's own closing costs: the
+ * desk's points on what is borrowed, the rate cap no desk writes a floater
+ * without, and on a refinance the 1% fee on the whole new balance. Rivals'
+ * acquisitions and cash-outs used to close free while the player paid all of
+ * it on the same desks (renewRow already charged it).
+ */
+export function streetLoanCost(row: CityLoan, borrowed: number, refiBalance = 0): number {
+  const p = productById(row.product ?? "harbor");
+  const base = Math.max(borrowed, refiBalance);
+  return Math.round(borrowed * (p?.points ?? 0) + refiBalance * REFI_FEE) + (p?.floating ? capPremiumOn(base) : 0);
 }
 
 /**
@@ -218,6 +375,7 @@ export function renewRow(
   if (!x) return 0;
   const bal = x.balance;
   delete s.cityLoans![bbl];
+  loanBookTouched();
   const row = originateRow(s, r, bbl, bal, value, noiYr, { ...o, klass: x.klass });
   if (!row) return 0;
   row.arrearsMs = x.arrearsMs;
@@ -292,7 +450,7 @@ export function payDown(s: GameState, r: Rival, amt: number): number {
       const take = Math.min(left, x.balance);
       x.balance -= take;
       left -= take;
-      if (x.balance <= 0) delete s.cityLoans![x.bbl];
+      if (x.balance <= 0) { delete s.cityLoans![x.bbl]; loanBookTouched(); }
     }
   }
   syncDebt(s, r);
@@ -310,6 +468,7 @@ export function dropDeed(s: GameState, r: Rival | undefined, bbl: string): numbe
   // noticed, measured by test/rival-loans.mjs.
   if (!x || x.obligorId !== r.id) { syncDebt(s, r); return 0; }
   delete s.cityLoans![bbl];
+  loanBookTouched();
   syncDebt(s, r);
   return x.balance;
 }
@@ -337,6 +496,7 @@ export function settleSale(s: GameState, r: Rival, bbl: string, price: number): 
   const row = rowOn(s, r, bbl);
   if (row) {
     delete s.cityLoans![bbl];
+    loanBookTouched();
     if (row.balance > price) addToLine(s, r, row.balance - price);
   }
   const fromLine = relief - Math.min(price, row?.balance ?? 0);
@@ -364,6 +524,7 @@ export function financePackage(
 /** One firm takes another's book: every mortgage, the line and the jobs move with the deeds. */
 export function assumeBook(s: GameState, from: Rival, to: Rival) {
   for (const x of rowsOf(s, from)) x.obligorId = to.id;
+  loanBookTouched();
   if ((from.lineBal ?? 0) > 0) { addToLine(s, to, from.lineBal!); from.lineBal = 0; }
   syncDebt(s, from);
   syncDebt(s, to);
@@ -385,11 +546,40 @@ export function resyncAll(s: GameState) {
  * firm's account counted it twice. Returns what was owed by loan, for the
  * payment test.
  */
+/**
+ * FLOATING PAPER FLOATS (2026-10-15). The street's floaters — bank five-years,
+ * bridges, construction takeouts — were charged the coupon they were written
+ * at for their whole term, so a firm on floating debt paid 7% through a 20%
+ * index and never missed a payment: measured, delinquency on the desks ran to
+ * 14-30% in a glut while not one firm fell behind. The player's floater has
+ * always reset every month off the short index, through its cap until the cap
+ * runs out (debt.ts). The street's does the same now. A row written before
+ * this carries no margin: it is read off its current coupon the first time,
+ * uncapped.
+ */
+export function repriceFloating(s: GameState, r: Rival) {
+  repriceRows(s, rowsOf(s, r));
+}
+/** Reprices rows in place; it moves no row on or off the record and changes no obligor. */
+function repriceRows(s: GameState, rows: CityLoan[]) {
+  const idx = shortIndexOf(s.econ);
+  for (const x of rows) {
+    if (!productById(x.product ?? "harbor")?.floating) continue;
+    if (x.spread === undefined) x.spread = +(x.ratePct - idx).toFixed(2);
+    if (x.cap && s.month >= x.cap.expiresM) delete x.cap;
+    const eff = x.cap ? Math.min(idx, x.cap.strike) : idx;
+    x.ratePct = +(eff + x.spread).toFixed(2);
+  }
+}
+
 export function monthlyService(s: GameState, r: Rival, amortShare: number): { interest: number; amort: number; byRow: Record<string, number> } {
+  // Repricing leaves the firm's rows the rows they were, so one read serves both.
+  const rows = rowsOf(s, r);
+  repriceRows(s, rows);
   const adj = fileSpreadAdj(r);
   let interest = 0, amort = 0;
   const byRow: Record<string, number> = {};
-  for (const x of rowsOf(s, r)) {
+  for (const x of rows) {
     const i = (x.balance * (x.ratePct + adj)) / 100 / 12;
     const a = (x.balance * amortShare) / (30 * 12);
     interest += i; amort += a;
@@ -400,11 +590,15 @@ export function monthlyService(s: GameState, r: Rival, amortShare: number): { in
 }
 /** Book the scheduled principal: each row comes down by its own share. */
 export function amortizeRows(s: GameState, r: Rival, amortShare: number) {
+  // The rows that remain are these rows in the same order, less the ones paid
+  // to zero — which add nothing — so their sum is termDebtOf's, without a rescan.
+  let term = 0;
   for (const x of rowsOf(s, r)) {
     x.balance = Math.max(0, Math.round(x.balance - (x.balance * amortShare) / (30 * 12)));
-    if (x.balance <= 0) delete s.cityLoans![x.bbl];
+    if (x.balance <= 0) { delete s.cityLoans![x.bbl]; loanBookTouched(); }
+    else term += x.balance;
   }
-  syncDebt(s, r);
+  r.debt = Math.round(term + (r.lineBal ?? 0) + jobDebtOf(s, r));
 }
 
 /**

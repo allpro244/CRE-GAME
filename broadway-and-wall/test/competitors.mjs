@@ -270,7 +270,13 @@ console.log("\nPLANS, QUIET CALLS, FAMILIES\n");
     quiet ? `${quiet.quietFrom}, ${quiet.earlyUntilM - g.month} months to decide` : "no quiet call in two years of squeezed firms");
   if (quiet) {
     const rec = E.resolveRec(parcels, g, quiet.bbl);
-    const v = E.conveyedValue(g, rec, quiet.bbl, true);
+    // the deed as it conveys: the roll, grade and condition the listing
+    // discloses (the roll the buyer will hold), on the standing assessment, as
+    // conveyedDeed strikes it. A fresh conveyedValue would draw another roll.
+    const vessel = { bbl: quiet.bbl, boughtM: g.month, costBasis: 0, assessed: E.assetValue(rec, g.econ, quiet.cond), loan: null,
+      condition: quiet.cond, condIdx: quiet.condIdx, tenants: quiet.roll ?? [], cfHistory: [],
+      ...(quiet.resRentPsf !== undefined ? { resRentPsf: quiet.resRentPsf } : {}), ...(quiet.occ !== undefined ? { occ: quiet.occ } : {}) };
+    const v = E.holdingValue(rec, g.econ, vessel, g.month);
     ok("priced under what it would appraise at", quiet.ask < v * 1.0, `${Math.round(100 * quiet.ask / v)}% of the deed's value`);
   }
 }

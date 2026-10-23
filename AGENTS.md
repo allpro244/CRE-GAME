@@ -1,6 +1,39 @@
 # Agents — read this first
 
+## Stay on course (owner's standing rule)
+
+Run the **course check** (`.claude/skills/course-check/SKILL.md`, the
+`course-check` skill) **often**:
+- before starting a task;
+- before waiting on anything slow;
+- every ~30 minutes of work;
+- after any surprise;
+- before saying something is done.
+
+At minimum, ask yourself:
+- **Am I doing this as efficiently as possible?**
+- **Will this get us to the end goal in the best way?**
+- **Could I be doing this better, or is there something more important?**
+- **Am I waiting on something?** What's the deadline, and what am I doing meanwhile?
+- **How do I know it works?** Seen, not assumed.
+- **Is finished work landing** (small PRs, merged), and does the owner know?
+
+Act on every "no" immediately. Never leave a job running past about 2× its
+expected time. Never hand the owner something you could do yourself.
+
+
 **This repository is Broadway & Wall only.**
+
+**The game is moving to Unreal Engine 5.8 (owner's decision, 2026-10-19).
+Read `UE58_PLAN.md` first.** The React UI in `broadway-and-wall/` is the
+game's interface, hosted inside Unreal (`?host=unreal`); the new shell in
+`src/ui/next/` is the default. The engine (`src/engine/`), the city
+generator (`src/citygen/`, including the region map) and the UI are all
+actively developed. Land work as small PRs to main. The CI gate is a ~35 s smoke test
+(.github/workflows/check.yml: tsc, fresh bundle, rng discipline, playable,
+rng audit); the full suite (`pnpm check`, 1-2 h) runs nightly as a report
+(full.yml). Before a PR run targeted tests; `tools/start-probe.mjs` times a
+real browser start. The Unreal project lives in `unreal/`.
 
 - The game code is in **`broadway-and-wall/`**.
 - Do **not** create, restore, or work on Groundwork. That product is gone.

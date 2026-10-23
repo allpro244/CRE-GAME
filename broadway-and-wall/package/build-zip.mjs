@@ -37,7 +37,13 @@ for (const f of ["play.command", "play.sh", "serve.py"]) {
 
 const zipPath = join(OUT, "broadway-and-wall-playable.zip");
 // -r recurse, -q quiet, -9 max compression; run from OUT so paths are relative
-execFileSync("zip", ["-rq9", zipPath, "broadway-and-wall"], { cwd: OUT });
+if (process.platform === "win32") {
+  // no Info-ZIP on Windows; its own bsdtar writes zips (-a: format from the extension)
+  if (existsSync(zipPath)) rmSync(zipPath);
+  execFileSync(join(process.env.SystemRoot ?? "C:\Windows", "System32", "tar.exe"), ["-a", "-cf", zipPath, "broadway-and-wall"], { cwd: OUT });
+} else {
+  execFileSync("zip", ["-rq9", zipPath, "broadway-and-wall"], { cwd: OUT });
+}
 
 function tree(dir, depth = 0) {
   let bytes = 0;

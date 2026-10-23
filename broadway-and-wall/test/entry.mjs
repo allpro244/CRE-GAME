@@ -16,12 +16,14 @@
 export const MODULES = [
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",
   "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market",
-  "zoning", "lenders", "proforma", "workout", "portfolio", "portfoliosale", "auction", "notes",
-  "privateCredit", "broker", "loanbook", "amortize", "pricing", "ledger", "rivalDebt", "strategy", "corporate",
+  "zoning", "landdev", "lotcode", "lotsplit", "lotsplitGeom", "products", "platdesign", "homes", "homeprice", "growth", "roads", "towngrowth", "unpack", "lenders", "proforma", "workout", "portfolio", "portfoliosale", "auction", "notes",
+  "privateCredit", "broker", "loanbook", "amortize", "pricing", "ledger", "rivalDebt", "strategy", "corporate", "firmLog",
   // absorption carries staleDiscount and leasingOdds — how an owner's ask falls
   // on space that will not let, which the harness bots have to read rather than
   // guess at. space carries the submarket roll-up.
-  "absorption", "space",
+  "absorption", "space", "bands",
+  // blackswans: the rare city-dating events (fire, surge, capital wave).
+  "blackswans",
   // plates is floorplate inventory — stacks, vacant blocks, size draws.
   "plates",
   // regime is the pre-history: nationPhase and simulateHistory, so a harness
@@ -33,6 +35,18 @@ export const MODULES = [
   "leasehold",
   // jv is a minority partner in one deed; fund.ts carries the waterfall.
   "jv",
+  // vehicles is the one answer to "whose equity is inside this deed" — fund,
+  // JV partner, later deal vehicles (CAPITAL_RAISING_PLAN.md §12.1a).
+  "vehicles",
+  // waterfall is the deal waterfall (pure); syndicate is deal-by-deal outside
+  // equity on one job (CAPITAL_RAISING_PLAN.md §4).
+  "waterfall", "syndicate",
+  // reputation: the investor track-record score, the street's rank and bands.
+  "reputation",
+  // investors: the city's investor pool; raise: a deal-by-deal raise over time.
+  "investors", "raise",
+  // recap: buying a syndicate's investors out at the waterfall's value.
+  "recap",
   // standing is the reading of the score: the street ranking, the year marks, the reviews.
   "standing",
   // buybox is the sponsor's standing acquisition criteria (what a first look must match).
@@ -81,6 +95,8 @@ export const MODULES = [
   "deliveryNotice",
   // takeprivate — buying a rival firm whole (test/take-private.mjs).
   "takeprivate",
+  // renderView — the render contract Unreal draws from (test/render-view.mjs).
+  "renderView",
 ];
 
 export function writeEntry(path) {

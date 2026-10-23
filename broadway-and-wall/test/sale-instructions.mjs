@@ -56,7 +56,11 @@ function setUp(seed, instructions) {
   return { g: l.s, bbl, ask };
 }
 
-const SEED = 4242;
+// THE FIRST OF THESE WHOSE TAPE CARRIES A SMALL OFFICE, and every scenario on
+// it. 4242 alone was the seed until street plan 11 re-dealt the reference
+// town (2026-10-13), after which its sixth-month tape had no office under $4M
+// and the run threw before checking anything.
+const SEED = [4242, 12007, 11, 550991, 7919, 91117, 20603].find((sd) => { try { setUp(sd); return true; } catch { return false; } }) ?? 4242;
 const HZ = 60;
 console.log("\nSTANDING SALE INSTRUCTIONS — the broker takes the call\n");
 

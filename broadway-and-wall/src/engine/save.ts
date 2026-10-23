@@ -175,7 +175,9 @@ const GROUND_MOVED_AT: Record<string, number> = {
  * from citygen for the same reason PROCEDURAL_ISLAND is: the engine does not
  * depend on the generator.
  */
-const KNOWN_ISLANDS = new Set([PROCEDURAL_ISLAND, "manhattan"]);
+// "region": the region map (citygen/region), born at the save version current when it arrived — no region
+// save can predate its own ground, so it needs no GROUND_MOVED_AT row until its plat moves.
+const KNOWN_ISLANDS = new Set([PROCEDURAL_ISLAND, "manhattan", "region"]);
 
 /**
  * Phase 5 of the leasing overhaul. Old saves stored four mandate dials on
@@ -234,7 +236,7 @@ function migrateFloatingBench(state: GameState): void {
   const gap = e.indexRate - shortIndexOf(e);
   for (const h of Object.values(state.holdings ?? {})) {
     const l = h.loan;
-    if (!l || !(l.floating ?? l.product === "float") || l.bench === "short") continue;
+    if (!l || !(l.floating ?? l.product === "float") || l.bench !== undefined) continue;
     l.spread = +((l.spread ?? 0) + gap).toFixed(2);
     if (l.cap) l.cap = { ...l.cap, strike: +(l.cap.strike - gap).toFixed(2) };
     l.bench = "short";

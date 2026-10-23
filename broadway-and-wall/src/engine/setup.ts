@@ -64,8 +64,36 @@ export interface GameSetup {
   clock?: "decisions" | "opportunities" | "everything";
   /** "never" keeps broker first looks off the clock (GameState.brokerStops). */
   brokerStops?: "affordable" | "never";
+  /** Rival firm entry waits on the city's investor pool (GameState.poolEntry). On unless turned off. */
+  poolEntry?: boolean;
+  /** Rivals raise on their investor record (GameState.rivalReputation). On unless turned off. */
+  rivalReputation?: boolean;
+  /** Deal-by-deal rivals raise each job on their band's terms (GameState.rivalDealTerms). On unless turned off (owner, Oct 2026: a realistic street is the default). */
+  rivalDealTerms?: boolean;
+  /** The town's builders are competitor firms (GameState.builderFirms). On unless turned off. */
+  builderFirms?: boolean;
   spectator?: boolean;
+  /** How much the town's competitors raised before you arrived (RIVAL_CAPITAL). Absent = medium. */
+  rivalCapital?: RivalCapital;
+  /** How much of the town is park (citygen PARK_AMOUNTS). Absent = the usual. The store applies it. */
+  parks?: "low" | "medium" | "high";
 }
+
+/**
+ * HOW MUCH THE COMPETITORS START WITH. Which town you play in: one whose
+ * incumbents raised a fraction of the usual, or one full of deep pockets.
+ * It scales each opening firm's raise (and so its opening book and cash) and
+ * nothing else — funds raised later are raised from the market as it is.
+ */
+export type RivalCapital = "vlow" | "low" | "medium" | "high" | "vhigh";
+export const RIVAL_CAPITAL: { id: RivalCapital; label: string; mult: number; note: string }[] = [
+  { id: "vlow", label: "Very low", mult: 0.35, note: "Small local shops. A good bankroll is a top-five firm on day one." },
+  { id: "low", label: "Low", mult: 0.6, note: "Thinly capitalised incumbents." },
+  { id: "medium", label: "Medium", mult: 1, note: "The usual town." },
+  { id: "high", label: "High", mult: 1.6, note: "Well-funded firms with real books." },
+  { id: "vhigh", label: "Very high", mult: 2.5, note: "Deep pockets everywhere. You start small and stay small for a while." },
+];
+export const rivalCapitalMult = (c?: RivalCapital) => RIVAL_CAPITAL.find((x) => x.id === c)?.mult ?? 1;
 
 export const DEFAULT_SETUP: GameSetup = {
   v: 1, field: "standard", inherit: 0, home: "any", sandbox: false,
@@ -126,6 +154,7 @@ export function normalizeSetup(p: Partial<GameSetup> | undefined): GameSetup {
   if (!HOME_OPTIONS.some((h) => h.id === s.home)) s.home = "any";
   s.firmName = s.firmName?.trim().slice(0, 48) || undefined;
   s.sandbox = !!s.sandbox;
+  if (s.rivalCapital === "medium" || !RIVAL_CAPITAL.some((c) => c.id === s.rivalCapital)) delete s.rivalCapital;
   s.v = 1;
   return s;
 }
@@ -141,7 +170,7 @@ export function shortFirmName(name: string): string {
 /** True when nothing on this setup moves the world off the standard draw. */
 export function isDefaultWorld(s: GameSetup | undefined): boolean {
   if (!s) return true;
-  return s.field === "standard" && !s.inherit && !s.sandbox;
+  return s.field === "standard" && !s.inherit && !s.sandbox && !s.rivalCapital;
 }
 
 /** One line for a save row or a run record. */
@@ -150,6 +179,7 @@ export function describeSetup(s: GameSetup | undefined): string {
   const bits: string[] = [];
   if (s.field !== "standard") bits.push(FIELDS.find((f) => f.id === s.field)?.label.toLowerCase() ?? s.field);
   if (s.inherit) bits.push(`${s.inherit} family buildings`);
+  if (s.rivalCapital) bits.push(`competitors' money ${RIVAL_CAPITAL.find((c) => c.id === s.rivalCapital)?.label.toLowerCase()}`);
   if (s.sandbox) bits.push("SANDBOX");
   return bits.join(" · ");
 }

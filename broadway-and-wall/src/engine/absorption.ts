@@ -23,30 +23,19 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, Holding } from "./types";
 import { CITY_STOCK, NATURAL_VAC, rng } from "./market";
-import { resolveRec, useOccupancy, demandIdx, managedRentPsfYr, useRentableSf, qualityCycle } from "./value";
+import { resolveRec, useOccupancy, demandIdx, managedRentPsfYr, useRentableSf, qualityCycle, overallScore, initialCondIdx } from "./value";
+import { scoreDraw } from "./bands";
+import { sizeMean, sizeScale } from "./plates";
 import { demandModel } from "./demand";
 
 const clampA = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-/**
- * GROSS NEW-LEASE VOLUME, as a share of citywide stock per year.
- *
- * Not net absorption — that is the change in occupied space, and it is a small
- * residual of a much larger churn. In a real market five to ten per cent of
- * the stock signs a NEW lease every year (relocations, expansions, arrivals,
- * backfill) while net absorption is a point or two either way. Renewals in
- * place are excluded: an incumbent renewing is not in the market and is not
- * touring your building.
- *
- * Shops turn over fastest and sheds slower than the headline suggests, because
- * an industrial lease is long but a shed changes hands whole.
- */
-// Rebased for the churn base moving stock -> OCCUPIED (ECONOMY.md): empty
-// buildings do not generate move-outs, and the rebase keeps citywide letter
-// volume bit-identical at natural vacancy (old x stock = new x occupied).
-export const GROSS_TURNOVER: Record<BuiltClass, number> = {
-  office: 0.099, retail: 0.079, industrial: 0.091, multifamily: 0,
-};
+// GROSS_TURNOVER lives in turnover.ts (a leaf, so bands.ts can read it
+// without importing this module); re-exported here unchanged.
+export { GROSS_TURNOVER } from "./turnover";
+import { GROSS_TURNOVER } from "./turnover";
+import { tableVersion } from "./tableVersion";
+
 
 /**
  * SPACE THAT IS NOT EMPTY YET AND IS ALREADY ON THE MARKET.
@@ -184,14 +173,14 @@ function nbTable(s: GameState, parcels: ParcelTable, use: BuiltClass): Map<strin
   const built = s.built ?? {};
   let n = 0, area = 0;
   for (const k in built) { n++; area += built[k].bldgArea || 0; }
-  const key = `${use}|${n}|${Math.round(area)}`;
+  const key = `${use}|${n}|${Math.round(area)}|${tableVersion(parcels)}`;
   const hit = per.get(key);
   if (hit) return hit;
 
   const model = demandModel(parcels);
   // At a neutral cycle and with no lease-up curve, so the shape is the
   // building stock's own and the cycle is added back analytically below.
-  const neutral = { ...s.econ, cycleDev: 0, m: undefined } as Econ;
+  const neutral = { ...s.econ, cycleDev: 0, m: undefined, streetRolls: undefined, flatRolls: undefined } as Econ;
   const bSf = new Map<string, number>(), bOcc = new Map<string, number>();
   for (const bbl of Object.keys(parcels)) {
     const rec = resolveRec(parcels, s, bbl);
@@ -576,6 +565,7 @@ export function leasingOdds(
   const marketedSf = availSf > 0 ? ref * Math.pow(availSf / ref, MARKETED_ALPHA) : 0;
   const { sf: compete, lm } = competingSf(s, parcels, rec, use);
   const requirementSf = marketRequirement(s.econ, use);
+
   const factors = leaseFactors(s, rec, h, use);
   let weight = 1;
   for (const f of factors) weight *= f.mult;
@@ -583,9 +573,23 @@ export function leasingOdds(
   // be the only name on the board, and a building with a rent roll shows
   // better than a building with a security desk and an echo.
   const dark = 0.85 + 0.15 * (taken / Math.max(1, legSf));
-  const shareOfMarket = (marketedSf * weight * dark) / compete;
+  // ...AND WHO WANTS IT AT ITS PRICE (TENANT_TIERS_PLAN.md). The movers in
+  // the market weigh every empty floor's quality score against its rent, on
+  // a scale (bands.ts moveOdds): a building that is better than its rent
+  // draws more of them per empty foot than the average floor in town, and one
+  // that is dear for what it is draws fewer. In a glut of new towers whose
+  // rents have come down, tenants paying for ordinary space trade up and the
+  // ordinary space is what goes dark.
+  const cIdx = h.condIdx ?? initialCondIdx(rec, s.month);
+  const draw = scoreDraw(s.econ, use, overallScore(rec, s.econ, use, cIdx));
+  const shareOfMarket = (marketedSf * weight * dark) / compete * draw;
   const captureSf = requirementSf * shareOfMarket;
-  const typicalDealSf = Math.max(1, Math.min(availSf, REQ_MEAN[use] ?? REQ_MEAN.office));
+  // THE SIZE OF A LETTER IS THE SIZE OF A LETTER. This read REQ_MEAN — 19,450
+  // sf for office, the mean of a requirement draw nothing sizes a lease from —
+  // while the letters that arrive are drawn from SIZE_DIST (plates.ts), a
+  // third of that. Capture in feet was being turned into a rate of letters
+  // three times too low, and every building leased up three times too slowly.
+  const typicalDealSf = Math.max(1, Math.min(availSf, sizeMean(use) * sizeScale(overallScore(rec, s.econ, use, h.condIdx ?? initialCondIdx(rec, s.month)))));
   // SOFT SATURATION. min() pinned at 0.85 for ANY sizeable vacancy anywhere,
   // which made arrival odds location-blind at exactly the scale the game is
   // played at — the measured cause of the fringe tower filling before the

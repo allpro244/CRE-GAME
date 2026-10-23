@@ -31,6 +31,19 @@ const m$ = (n) => "$" + (n / 1e6).toFixed(2) + "M";
 // off an empty number is not measuring the thing in its name. This lands the
 // seizure in the middle of the draw period, with the job delivering at m32.
 const PRERUN = 16;
+// ...AND THE BANK'S FIRST DOLLAR MOVES WITH THE DEAL. The equity share now
+// depends on the loan-to-value cap and the job's own cost draw, so a fixed
+// sixteen months can land before the loan has advanced anything. Run at least
+// PRERUN, then until the facility is genuinely drawing (or a year more).
+function toMidDraw(g, bbl, parcels, bbls, adjacency) {
+  for (let i = 0; i < PRERUN + 12; i++) {
+    const d = g.developments[bbl];
+    if (i >= PRERUN && (!d || (d.drawn > 0 && d.loanBalance > 0))) break;
+    g = E.advanceQuarter(g, parcels, bbls, adjacency);
+    g.insolventMs = 0; g.gameOver = null;
+  }
+  return g;
+}
 let failed = 0;
 const ok = (name, pass, detail) => {
   if (!pass) failed++;
@@ -55,20 +68,45 @@ function siteWithAJob(runIndex, lender) {
   // so far outside normal play that nothing it proves would transfer.
   const lots = bbls
     .map((b) => E.resolveRec(parcels, g, b))
-    .filter((r) => r && r.class === "land" && r.lotArea > 9_000 && r.lotArea < 22_000)
+    .filter((r) => r && r.class === "land" && r.lotArea > 9_000 && r.lotArea < 120_000)
     .sort((a, b) => a.bbl.localeCompare(b.bbl));
   if (!lots.length) return null;
 
   // Bought through the real purchase path, all cash — a hand-rolled holding
   // is missing half its fields and blows up three ticks later in sim.ts.
+  // THE LONGEST JOB ON OFFER, not the first: the seizure lands on a 35% roll
+  // a month after the loan starts drawing, then three to nine months of
+  // paperwork, so a short job can deliver before any of it happens.
+  let bestSite = null, bestLen = -1;
   for (const rec of lots.slice(0, 40)) {
     const price = Math.max(500_000, Math.round(E.landValue(rec, g.econ)));
     const bought = E.executePurchase(g, parcels, rec.bbl, price, "cash", false, 1);
     if (bought.err || !bought.s.holdings[rec.bbl]) continue;
-    const r = E.startDevelopment(bought.s, parcels, rec.bbl, "office", 26, 0.6, "gmp", undefined, undefined, lender);
-    if (!r.err) return { g: r.s, parcels, bbls, adjacency, bbl: rec.bbl };
-    g = bought.s;
-    delete g.holdings[rec.bbl];
+    // AS MUCH LEVERAGE AS THE DESK WILL WRITE. Equity goes in first, so at a
+    // modest loan-to-cost the facility only funds the last few months of the
+    // job — too late to seize a desk in the middle of. Asking for the most
+    // the desk will lend (it clamps to its own ceiling) starts the draws
+    // early enough that the seizure lands with real undrawn room behind it.
+    const r = E.startDevelopment(bought.s, parcels, rec.bbl, "office", 26, 0.6, "gmp", 0.8, undefined, lender);
+    const d = r.s?.developments?.[rec.bbl];
+    const len = (d?.doneM ?? d?.deliverM ?? 0) - (r.s?.month ?? 0);
+    if (!r.err && len > bestLen) { bestLen = len; bestSite = { g: r.s, parcels, bbls, adjacency, bbl: rec.bbl }; }
+  }
+  // A LEVERED JOB, ON PURPOSE. At the debt fund's rate the lease-up reserve
+  // is a third of the budget and the equity covers nearly all of the
+  // construction spend, so the loan only advances in the last months — too
+  // late to seize a desk in the middle of. The fixture keeps the equity
+  // already in (no cash moves, so the ledger checks below stay honest) and
+  // puts the rest of the job on the facility, which is the ordinary shape of
+  // a spec office loan and starts the draws about halfway through the build.
+  if (bestSite) {
+    const d = bestSite.g.developments[bestSite.bbl];
+    const keep = Math.max(d.equitySpent ?? 0, d.equityPrefunded ?? 0);
+    if (d.equityBudget > keep) {
+      d.commitment += d.equityBudget - keep;
+      d.equityBudget = keep;
+    }
+    return bestSite;
   }
   return null;
 }
@@ -114,10 +152,7 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
     let { g, parcels, bbls, adjacency, bbl } = site;
     // Run a year so the S-curve is genuinely mid-job and there is real undrawn
     // room to kill. A job that has drawn everything is not harmed by this.
-    for (let i = 0; i < PRERUN; i++) {
-      g = E.advanceQuarter(g, parcels, bbls, adjacency);
-      g.insolventMs = 0; g.gameOver = null;
-    }
+    g = toMidDraw(g, bbl, parcels, bbls, adjacency);
     const before = g.developments[bbl];
     const roomBefore = before ? Math.max(0, before.commitment - before.drawn) : 0;
     ok("the job is mid-draw with room still in the facility",
@@ -143,8 +178,12 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
         const drawn0 = d.drawn;
         const bal0 = d.loanBalance;
         d.replaceM = g.month + 240;
-        const cashA = g.cash;
+        // Net of interest EARNED on the firm's cash: the fixture holds $400M,
+        // and a month of Treasury yield on that dwarfs the construction bill.
+        const intA = (g.books ?? []).reduce((a, e) => a + (e.interest ?? 0), 0);
+        const cashA0 = g.cash;
         g = E.advanceQuarter(g, parcels, bbls, adjacency);
+        const cashA = cashA0 + ((g.books ?? []).reduce((a, e) => a + (e.interest ?? 0), 0) - intA);
         const e = g.developments[bbl];
         ok("not one further dollar was advanced", !!e && e.drawn === drawn0 && drawn0 > 0,
           e ? `drawn ${m$(drawn0)} -> ${m$(e.drawn)}` : "the job vanished");
@@ -167,10 +206,7 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
   const site = siteWithAJob(0, "Cordage Debt Partners");
   if (site) {
     let { g, parcels, bbls, adjacency, bbl } = site;
-    for (let i = 0; i < PRERUN; i++) {
-      g = E.advanceQuarter(g, parcels, bbls, adjacency);
-      g.insolventMs = 0; g.gameOver = null;
-    }
+    g = toMidDraw(g, bbl, parcels, bbls, adjacency);
     if (g.developments[bbl]) {
       g = seizeAndTick(g, "Cordage Debt Partners", parcels, bbls, adjacency).g;
       const d0 = g.developments[bbl];
@@ -180,6 +216,12 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
       // the very first loop iteration and means nothing at all.
       ok("the job under test was actually repudiated", !!d0 && d0.repudiatedM !== undefined,
         d0?.repudiatedM === undefined ? "nothing to refinance — the rest of this block is meaningless" : "");
+      // The paperwork is a 3-9 month draw; the job delivers a few months after
+      // the seizure, so on a long draw there is nothing left to take out. This
+      // block asks whether a desk WILL take the job, not how long the lawyers
+      // take, so the paperwork is done next month (the mirror of the dead-
+      // period block above, which pushes it out).
+      if (d0 && d0.replaceM !== undefined) d0.replaceM = Math.min(d0.replaceM, g.month + 1);
       let out = null;
       // Give it a year and a half — longer than the outside of the paperwork
       // draw — and see whether any desk in town takes the job out.
@@ -233,7 +275,7 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
   const site = siteWithAJob(0, "Cordage Debt Partners");
   if (site) {
     let { g, parcels, bbls, adjacency, bbl } = site;
-    for (let i = 0; i < PRERUN; i++) { g = E.advanceQuarter(g, parcels, bbls, adjacency); g.insolventMs = 0; g.gameOver = null; }
+    g = toMidDraw(g, bbl, parcels, bbls, adjacency);
     g = seizeAndTick(g, "Cordage Debt Partners", parcels, bbls, adjacency).g;
     const cash0 = g.cash;
     const dep0 = Object.values(g.holdings).reduce((a, h) => a + (h.tenants ?? []).reduce((x, t) => x + (t.deposit ?? 0), 0), 0);
@@ -245,9 +287,11 @@ console.log("\nREPUDIATED COMMITMENTS — a receiver does not advance\n");
 
     const sum = (books, key) => books.reduce((a, e) => a + (e[key] ?? 0), 0);
     const delta = (key) => sum(g.books ?? [], key) - sum(yr0, key);
+    // The same ledger lines conserve.mjs reconciles on — a replacement loan's
+    // proceeds are "borrowed", and leaving them out read as money appearing.
     const modelled =
-      (delta("noi") + delta("sold") + delta("interest"))
-      - (delta("debtSvc") + delta("leasing") + delta("capex") + delta("dev") + delta("taxes") + delta("bought") + delta("ga"))
+      (delta("noi") + delta("sold") + delta("interest") + delta("borrowed") + delta("lpCalled"))
+      - (delta("debtSvc") + delta("leasing") + delta("capex") + delta("dev") + delta("taxes") + delta("bought") + delta("ga") + delta("lpDistributed"))
       + (loc1 - loc0) + (dep1 - dep0);
     const actual = g.cash - cash0;
     const resid = Math.round(actual - modelled) || 0;   // || 0 kills a -0 that reads as a fault

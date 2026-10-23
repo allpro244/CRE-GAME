@@ -3,18 +3,27 @@
 //
 // Historical name `advanceQuarter` is kept as an alias: the tick has always
 // been monthly; the name was a lie that trained the wrong instinct.
+import { distressTally } from "./history";
+import { stampBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Listing } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleHot, cycleDown } from "./market";
-import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, condCeiling, condGrade, cityLoanScale } from "./value";
+import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, resolveRecBare, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
-import { tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCost, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
+import { tickLandDev, materializePlats, materializePlat } from "./landdev";
+import { tickSplits, tickRivalSplits, materializeSplits, materializeSplit } from "./lotsplit";
+import { tickHomes } from "./homes";
+import { tickGrowth } from "./growth";
+import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
+import { useRentableSf, overallScore, N_BANDS } from "./value";
+import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
+import { settleLeasingPayables, tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { tickLeaseholds } from "./leasehold";
-import { stampYearMark } from "./standing";
-import { splitMonthCf, jvShare, ownersShareOfProceeds } from "./jv";
+import { stampYearMark, recordMarks } from "./standing";
+import { splitMonthCf } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
 import { tickLoan, productById, loanLender, stackPayoff, balloonLadder, drawLeaseUpReserve, leaseUpRoom } from "./debt";
 import { distressPrice, markSponsor } from "./sponsor";
@@ -28,7 +37,7 @@ import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
 import { tickCorporate } from "./corporate";
-import { initRivals, tickRivals, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
+import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -41,12 +50,17 @@ import { tickNotes, maybeSellYourLoan, tickFirmHeldLoans } from "./notes";
 import { tickPrivateCredit, tickPrivateBorrow } from "./privateCredit";
 import { tickAuction } from "./auction";
 import { tickPortfolio } from "./portfolio";
-import { reconcileSupplyQueue, clawbackSlippedDeliveries } from "./supply";
+import { reconcileSupplyQueue, clawbackSlippedDeliveries, stallSupplyProject } from "./supply";
 import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "./tax";
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
+import { tickBlackSwans } from "./blackswans";
 import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
+import { purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
+import { settleSyndications, reviewSyndications } from "./syndicate";
+import { tickRaises } from "./raise";
+import { updateReputation } from "./reputation";
 
 const LISTING_LIFE_M: [number, number] = [6, 12];
 
@@ -226,6 +240,11 @@ export function newGame(
   if (setup?.firmName) { s.firm = { ...s.firm!, name: setup.firmName, short: shortFirmName(setup.firmName) }; }
   if (setup?.clock === "everything" || setup?.clock === "opportunities") s.clockStops = setup.clock;
   if (setup?.brokerStops === "never") s.brokerStops = "never";
+  // One capital market (rivals.ts): on unless the setup turned it off.
+  if (setup?.poolEntry !== false) s.poolEntry = true;
+  if (setup?.rivalReputation !== false) s.rivalReputation = true;
+  if (setup?.rivalDealTerms !== false) s.rivalDealTerms = true;
+  if (setup?.builderFirms !== false) s.builderFirms = true;
   s.econ = initEcon(s, parcels);
   // ...and the banks are sized in this town's own dollars, which the opening
   // only knows once the economy has drawn its price level.
@@ -405,6 +424,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     // the withdraw test cannot drift away from the number they are guarding.
     const v = rec ? conveyedValue(s, rec, li.bbl, !!li.distress) : 0;
     const floor = v * ASK_FLOOR;
+    // a motivated seller's ask is struck now, on the closing appraisal (see Listing.askFactor)
+    if (li.askFactor && li.listedM === s.month && v > 0) li.ask = Math.round((v * li.askFactor) / 1000) * 1000;
     if (s.month - li.listedM >= 4) li.ask = Math.round(li.ask * 0.985 / 1000) * 1000;
     // Nor from under a buyer across the table: a seller in a live negotiation
     // has a number in play and does not pull the listing mid-conversation —
@@ -438,7 +459,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   let rejects = 0;
   while (s.listings.length < target && guard++ < 4000 && rejects < 250) {
     const bbl = bbls[Math.floor(rng(s) * bbls.length)];
-    if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) { rejects++; continue; }
+    if (listed.has(bbl) || s.holdings[bbl] || s.merged?.[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) { rejects++; continue; }
     // A LOT WITH A CRANE ON IT IS NOT FOR SALE AS DIRT. A merchant builder's
     // live job stayed in `cityJobs` while the tape sold the lot underneath it;
     // the buyer's own development then queued a second delivery on the same
@@ -561,10 +582,16 @@ const RIPE_LIST_P = 0.25;
 // Forced land sales follow distress — slack and shrinking payrolls — at up to
 // 0.6% of vacant lots a month in a full downturn (the old depression row).
 function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: Set<string>) {
+  // WHICH LOTS ARE VACANT asks only what stands on each (the bare record, value.ts
+  // resolveRecBare) and whether a live job is on it (a set, built once: nothing in this
+  // walk starts or ends a job). It used to resolve every deed in full and scan every
+  // job for each: on a grown region, thousands of lots times hundreds of jobs a month.
+  // The few lots read or listed below are resolved in full when they are.
   const vacant: { bbl: string; rec: ParcelRecord }[] = [];
+  const jobs = new Set((s.cityJobs ?? []).filter((j) => !j.orphaned).map((j) => j.bbl));
   for (const bbl of bbls) {
     if (listed.has(bbl) || s.holdings[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) continue;
-    if ((s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned)) continue;
+    if (jobs.has(bbl)) continue;
     // A FIRM'S DIRT IS NOT A PRIVATE OWNER'S TO SELL. These listings are
     // anonymous private sellers; a lot in a named firm's book goes to market
     // through that firm's own disposals (rivals.ts), or not at all. Listing it
@@ -573,11 +600,12 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
     if (ownerOf(s, bbl)) continue;
     const traded = s.lastTradeM?.[bbl];
     if (traded !== undefined && s.month - traded < 24) continue;
-    const rec = resolveRec(parcels, s, bbl);
+    const rec = resolveRecBare(parcels, s, bbl);
     if (!rec || rec.class !== "land" || !(rec.lotArea > 0)) continue;
     vacant.push({ bbl, rec });
   }
   if (!vacant.length) return;
+  const full = (v: { bbl: string }) => resolveRec(parcels, s, v.bbl)!;
   const put = (bbl: string, rec: ParcelRecord, distress: boolean) => {
     // A PUBLIC LISTING IS PRICED OFF COMPS, AND THE OWNER'S BELIEF IS A FLOOR.
     // A broker strikes the ask from comparable sales; what the owner believes
@@ -604,9 +632,10 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
   // ripe dirt finds its builder
   for (const v of vacant) {
     if (rng(s, "land") >= RIPE_CHECK_SHARE) continue;
-    const read = landRead(v.rec, s.econ);
+    const rec = full(v);
+    const read = landRead(rec, s.econ);
     if (!(read.builder > 0) || read.winner !== "builder") continue;
-    if (rng(s, "land") < RIPE_LIST_P) put(v.bbl, v.rec, false);
+    if (rng(s, "land") < RIPE_LIST_P) put(v.bbl, rec, false);
   }
   // forced sellers clear land through a slump
   const h = 0.006 * cycleDown(s.econ);
@@ -614,9 +643,40 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
     const want = Math.min(3, Math.floor(vacant.length * h + rng(s, "land")));
     for (let i = 0; i < want; i++) {
       const v = vacant[Math.floor(rng(s, "land") * vacant.length)];
-      if (!listed.has(v.bbl)) put(v.bbl, v.rec, true);
+      if (!listed.has(v.bbl)) put(v.bbl, full(v), true);
     }
   }
+}
+
+/**
+ * PUT THE CUT LOTS BACK: every finished plat, recorded split and unpacked
+ * neighbourhood into the parcel table and the BBL list, in place, IN THE ORDER
+ * THEY WERE CUT (s.cutOrder). Idempotent and a pure function of the state.
+ *
+ * The order is the point. The BBL list is the order every loop in the engine
+ * walks the town, and for a BBL past 2^32 (all cut lots) the parcel table's
+ * own key order is its insertion order too. A live game appends each plat's
+ * lots the month its streets finish; the per-kind materializers walk their
+ * records in the order they were FILED. Measured on the 100-year region runs
+ * (test/region-longrun.mjs): seeds 1-3 at year 25 rebuilt the same parcels in a
+ * different order, and twelve months on the reloaded game had diverged from
+ * the one that was saved. Saves from before the log replay by kind, as before.
+ */
+export function restoreCuts(s: GameState, parcels: ParcelTable, bbls?: string[]): string[] {
+  const added: string[] = [];
+  if (s.cutOrder?.length) {
+    const splits = new Map((s.splits ?? []).map((sp) => [String(sp.id), sp]));
+    for (const c of s.cutOrder) {
+      const k = c.slice(2);
+      if (c[0] === "p") materializePlat(s, parcels, bbls, s.plats?.[k], added);
+      else if (c[0] === "s") materializeSplit(parcels, bbls, splits.get(k), added);
+      else if (c[0] === "u") materializeNeighbourhood(s, parcels, bbls, Number(k), added);
+    }
+  }
+  if (s.plats) added.push(...materializePlats(s, parcels, bbls));
+  if (s.splits) added.push(...materializeSplits(s, parcels, bbls));
+  if (s.growth?.unpacked) added.push(...materializeNeighbourhoods(s, parcels, bbls));
+  return added;
 }
 
 /**
@@ -629,6 +689,9 @@ function tickMonth(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
 ): void {
   if (s.gameOver) return;
+  // a save's finished plats are lots before anything reads the table (landdev.ts)
+  restoreCuts(s, parcels, bbls);
+  setRivalAdjacency(adjacency);
   s.month++;
   const drawnAtOpen = s.loc?.drawnTotal ?? 0;
 
@@ -644,7 +707,13 @@ function tickMonth(
   reconcileSupplyQueue(s, parcels);
   refreshDevelopmentFeasibility(s, parcels, bbls);
   refreshLandQueue(s, parcels, bbls);
+  s.econ.playerNow = playerSpace(s, parcels);
+  // The street's tenants: who is where, and who failed (streetRolls.ts).
+  syncStreetRolls(s, parcels, bbls);
+  tickStreetRolls(s, parcels);
   tickEcon(s);
+  // ...and the town's renters move, to the households the city houses.
+  tickStreetFlats(s, parcels);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.
@@ -660,6 +729,7 @@ function tickMonth(
   tickPortfolio(s, parcels);
   tickFirm(s, parcels);
   tickRivals(s, parcels);
+  tickRivalAssembly(s, parcels, adjacency);
   tickRivalTakeovers(s, parcels);
   tickRivalConversions(s, parcels);
   tickRivalRetirements(s, parcels);
@@ -685,6 +755,17 @@ function tickMonth(
   maybeSellYourLoan(s, parcels);
   tickFirmHeldLoans(s);
   tickPlanning(s, parcels, bbls);
+  tickLandDev(s, parcels, bbls);
+  // lot splits: the staff sign-offs and the board (lotsplit.ts), and a firm cutting an oversized lot
+  tickSplits(s, parcels, bbls);
+  tickRivalSplits(s, parcels);
+  // the plats' houses: draws, buyers, closings, the builders (homes.ts)
+  tickHomes(s, parcels);
+  // the region growing: land developers, the roads, the town (growth.ts; region only)
+  tickGrowth(s, parcels, bbls, adjacency);
+  // The rare thing that dates a city (blackswans.ts) — before the builders
+  // look, so a district that burned this month is dirt they can see.
+  tickBlackSwans(s, parcels, bbls, adjacency);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
   // Player site-risk can slip a job after econ settled it. Put the SF back
@@ -692,6 +773,23 @@ function tickMonth(
   clawbackSlippedDeliveries(s);
   tickConstructionLeasing(s, parcels);
   if (!s.stockVintage || s.month % 12 === 0) stampStockVintage(s, parcels);
+  if (!s.econ.bandStamp || s.month % 12 === 0) stampBands(s, parcels);
+  // A FORECLOSURE WAVE IS NEWS (2026-10-15). One handback is a line on the
+  // tape; a quarter in which the desks take back a run of buildings is the
+  // story of the year, and it was arriving as the same one-line items.
+  if (s.month % 3 === 0) {
+    const q3 = distressTally(s, 3);
+    const quiet = s.month - (s.distressWaveM ?? -999) >= 12;
+    if (q3.defaults >= 5 && quiet) {
+      s.distressWaveM = s.month;
+      s.news.unshift({
+        q: s.month, kind: "warn",
+        text: `A foreclosure wave: ${q3.defaults} buildings went back to their lenders this quarter`
+          + `${q3.firms ? `, ${q3.firms} firm${q3.firms === 1 ? "" : "s"} went under` : ""}${q3.banks ? ` and ${q3.banks} bank${q3.banks === 1 ? "" : "s"} closed` : ""}.`
+          + ` The receivers will be selling into a market with no buyers — see the distress board.`,
+      });
+    }
+  }
   tickPrograms(s, parcels);
   tickLeasing(s, parcels);
   applyReliefRule(s, parcels);
@@ -919,9 +1017,18 @@ function tickMonth(
   // below, because money-fund interest is ordinary income in life too.
   // THE OPERATING ACCOUNT EARNS THE DEPOSIT RATE, the swept balance the bill
   // rate (cashSplit in lenders.ts) — and only the first is the bank's risk.
+  // AN OVERDRAWN BALANCE IS BORROWED MONEY (2026-10-14). Negative cash paid
+  // nothing, so a firm could run underwater for months on what was in effect
+  // a free unsecured loan from its creditors. Whoever is carrying that hole
+  // charges for it, at the price of unsecured paper — the short index plus
+  // six points, about where a business overdraft sits over prime.
+  if (s.cash < 0 && !s.setup?.sandbox) {
+    const od = Math.round(-s.cash * ((s.econ.shortIndex ?? s.econ.indexRate) + 6) / 100 / 12);
+    if (od > 0) { s.cash -= od; logBooks(s, "debtSvc", od); }
+  }
   if (s.cash > 0) {
     const split = cashSplit(s);
-    const interest = Math.round((split.inBills * sweepApy(s.econ) + split.atBank * depositApy(s.econ)) / 12);
+    const interest = Math.round((split.inBills * sweepApy(s.econ) + split.atBank * depositApy(s.econ, split.bank)) / 12);
     if (interest > 0) {
       s.cash += interest; logBooks(s, "interest", interest);
       s.depositInterestYr = (s.depositInterestYr ?? 0) + interest;
@@ -994,7 +1101,9 @@ function tickMonth(
       // NOI the header and the debt page use. Vacant freehold dirt still has
       // no taxable NOI here (carry is not income).
       const noi = ownedHoldingNoiYr(s, parcels, h);
-      const interest = h.loan ? (h.loan.balance * h.loan.ratePct) / 100 : 0;
+      // The junior coupon is interest too — mezz is deductible like the senior.
+      const interest = (h.loan ? (h.loan.balance * h.loan.ratePct) / 100 : 0)
+        + (h.mezz && h.mezz.balance > 0 ? (h.mezz.balance * h.mezz.ratePct) / 100 : 0);
       // Straight-line over the statutory life, on the IMPROVEMENTS only —
       // land is never depreciable. Residential rental property runs 27.5
       // years and everything else 39, which is why an apartment building
@@ -1012,16 +1121,34 @@ function tickMonth(
       const depr = Math.max(0, Math.min(improvements / life, deprCapacity));
       h.deprTaken = (h.deprTaken ?? 0) + depr;
       h.deprYr = Math.round(depr);
-      if (!(liveFund && h.fundOwned)) firmDepr += depr;
+      const inFund = purseOf(s, h) === "fund";
+      if (!inFund) firmDepr += depr;
       // A partnership passes its income through: on a JV deed the owner is
       // taxed on their share (depreciation already runs on their basis alone).
-      if (liveFund && h.fundOwned) { fundTaxable += noi - interest - depr; continue; }
-      taxable += (noi - interest) * (1 - jvShare(h)) - depr; // losses net against gains across the portfolio
+      if (inFund) { fundTaxable += noi - interest - depr; continue; }
+      // A syndicated deed's basis is the whole deal's, so its depreciation
+      // passes through at the sponsor's share like the income does.
+      if (s.syndications?.[h.bbl]) { taxable += (noi - interest - depr) * taxShare(s, h); continue; }
+      taxable += (noi - interest) * (1 - partnerShare(s, h)) - depr; // losses net against gains across the portfolio
     }
     if (liveFund) taxable += fundTaxable * gpCapitalShare(liveFund);
+    // THE FIRM'S OWN COSTS ARE DEDUCTIBLE. Overhead (last year's G&A), the
+    // pooled facility's interest (its deeds carry no loan of their own) and
+    // the revolver's were never taken off, so a firm running a facility, a
+    // line or an office was taxed on income it had spent.
+    {
+      const lastYr = s.month / 12 - 1;
+      const ga = (s.books ?? []).find((b) => b.yr === lastYr)?.ga ?? 0;
+      const facInt = s.facility && s.facility.balance > 0 ? (s.facility.balance * s.facility.ratePct) / 100 : 0;
+      const locInt = (s.loc?.balance ?? 0) > 0 ? ((s.loc!.balance) * locRate(s)) / 100 : 0;
+      taxable -= ga + facInt + locInt;
+    }
     // Carried interest received this year — the sponsor's own income.
     taxable += s.promoteIncomeYr ?? 0;
     s.promoteIncomeYr = 0;
+    // Fees from the sponsor's own syndicates — earned income (syndicate.ts).
+    taxable += s.feeIncomeYr ?? 0;
+    s.feeIncomeYr = 0;
     // Deposit interest is ordinary income — the money fund sends a 1099. It
     // was invisible to the taxman when the deposit paid a flat 1%; now that
     // the sweep reads the policy rate, the after-tax yield is the honest one:
@@ -1050,7 +1177,7 @@ function tickMonth(
           : "";
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `Tax season: ${M(yr.tax)} due on last year's portfolio income (after interest and depreciation).${shel}`,
+        text: `Tax season: ${M(yr.tax)} due on last year's income (after interest, overhead and depreciation).${shel}`,
       });
     } else if (yr.carry > priorCarry + 100_000) {
       // A sheltered year used to pass in silence, which is how a player learns
@@ -1075,8 +1202,11 @@ function tickMonth(
   // and could end the run while credit remained. Real sponsors draw the
   // revolver before they are insolvent; the month has to do the same.
   tickLoc(s, parcels);   // interest, sweeps, over-advance call, and the safety draw
+  // Brokers owed a commission from a lease signed short are paid the first
+  // month the account or the line can cover it.
+  settleLeasingPayables(s, parcels);
 
-  // insolvency: after a year underwater the creditors don't end you — they
+  // insolvency: after six months underwater the creditors don't end you — they
   // start taking things. One asset a month, sold at a distressed bid, until the
   // balance is square. You only lose when the line is exhausted and there is
   // nothing left to take.
@@ -1091,15 +1221,20 @@ function tickMonth(
   if (s.cash < 0 && !s.setup?.sandbox) {
     s.insolventMs++;
     s.underwaterMs = (s.underwaterMs ?? 0) + 1;
-    if (s.insolventMs === 6) {
-      s.news.unshift({ q: s.month, kind: "warn", text: "Your lenders have noticed the negative balance. Six more months of this and they start seizing assets." });
+    // THE SAME CLOCK THE STREET RUNS ON (2026-10-14). The player had a year
+    // before anything was seized and eight years before the run ended; a firm
+    // on the street hands back its first building at six months and is
+    // finished at fourteen. Creditors do not wait longer for one borrower than
+    // for another: seizures from six months, the end at two years.
+    if (s.insolventMs === 3) {
+      s.news.unshift({ q: s.month, kind: "warn", text: "Your creditors have noticed the negative balance. Three more months of this and they start seizing assets." });
     }
-    if ((s.underwaterMs ?? 0) >= 96) {
+    if ((s.underwaterMs ?? 0) >= 24) {
       s.gameOver = {
-        cause: "Insolvency: eight years underwater without a month above water, and the hole still grows. The run ends here.",
+        cause: "Insolvency: two years underwater without a month above water, and the hole still grows. The run ends here.",
       };
       s.news.unshift({ q: s.month, kind: "warn", text: "The run is over — the creditors have waited long enough." });
-    } else if (s.insolventMs >= 12) {
+    } else if (s.insolventMs >= 6) {
       // Last draw before the bailiff — if the line still covers the hole,
       // there is nothing to seize.
       coverCashShortfall(s, parcels);
@@ -1133,9 +1268,13 @@ function tickMonth(
       // the hole. Only a book with nothing saleable at all ends the run.
       if (!owned.length && locAvailable(s, parcels) <= 0 && fundableNow(s, parcels) <= 0) owned = seizable(true);
       if (owned.length) {
-        // creditors take the most valuable thing you own
-        let pick = owned[0], pickV = -Infinity;
-        for (const h of owned) {
+        // creditors take the most valuable thing you own — of what is yours
+        // alone first. A syndicated deed is the deal's, not the sponsor's:
+        // its creditors can reach the sponsor's interest in it, not the
+        // investors' building, so it is the last thing they go after.
+        const mine = owned.filter((h) => !s.syndications?.[h.bbl]);
+        let pick = (mine.length ? mine : owned)[0], pickV = -Infinity;
+        for (const h of (mine.length ? mine : owned)) {
           const rec = resolveRec(parcels, s, h.bbl);
           const v = rec ? ownedHoldingValue(s, parcels, h) : 0;
           if (v > pickV) { pickV = v; pick = h; }
@@ -1143,7 +1282,13 @@ function tickMonth(
         const rec = resolveRec(parcels, s, pick.bbl)!;
         // Creditors liquidating a distressed borrower get the distressed bid,
         // not a polite 15% off — and every seizure goes on the sponsor's record.
-        const gross = Math.round(pickV * Math.min(0.85, distressPrice(s)));
+        // On a syndicated deed it is not a fire sale: the investors replace
+        // their sponsor as manager and take out its interest at the
+        // appraisal, less the costs of the change (3%), and the deal's
+        // waterfall pays them their share first. The sponsor's creditors get
+        // what the sponsor's interest was worth.
+        const gpOut = !!s.syndications?.[pick.bbl];
+        const gross = Math.round(pickV * (gpOut ? 0.97 : Math.min(0.85, distressPrice(s))));
         // A SEIZURE IS STILL A SALE, AND A SALE HAS A WATERFALL.
         //
         // The whole gross used to land in the account. Measured on a
@@ -1173,7 +1318,8 @@ function tickMonth(
         // pump a voluntary sale pays releaseCost to stop.
         const release = releaseCost(s, parcels, pick.bbl);
         // A JV partner takes its share of any surplus that reaches the owners.
-        const toBorrower = ownersShareOfProceeds(pick, net - lien - breakFee - release);
+        const rpB = routeProceeds(s, pick, net - lien - breakFee - release);
+        const toBorrower = rpB.toSponsor + rpB.toVehicle;
         const shortfall = Math.max(0, lien + breakFee - net);
         // toBorrower can go negative when the release premium exceeds net —
         // same as acceptSaleOffer: the lien settles even if cash deepens.
@@ -1185,7 +1331,7 @@ function tickMonth(
         // is the reason handing back the keys beats being levied.
         // A vehicle deed's gain passes through: the sponsor pays its
         // co-invest share, the vehicle pays nothing (sponsorsSaleTax).
-        const owed = pick.fundOwned && s.fund && !s.fund.settled ? Math.round(tax * gpCapitalShare(s.fund)) : tax;
+        const owed = purseOf(s, pick) === "fund" ? Math.round(tax * taxShare(s, pick)) : tax;
         if (owed > 0) {
           s.cash -= owed;
           s.taxesPaid = (s.taxesPaid ?? 0) + owed;
@@ -1230,7 +1376,9 @@ function tickMonth(
         coverCashShortfall(s, parcels);
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `The creditors took ${rec.address} — sold at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `
+          text: (gpOut
+            ? `Your creditors took your interest in ${rec.address}. The investors replaced you as manager and took the building at ${money(gross)}, the appraisal less the costs of the change; their share came off first. `
+            : `The creditors took ${rec.address} — sold at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `)
             + (lien > 0 || release > 0
               ? shortfall > 0
                 ? `It did not cover the ${money(lien)} mortgage${pick.loan?.recourse ? `, and you signed for the ${money(shortfall)} shortfall` : `, and the paper was non-recourse`}. `
@@ -1238,12 +1386,54 @@ function tickMonth(
               : `${money(Math.max(0, toBorrower))} reached you after the costs of the sale${owed > 0 ? ` and ${money(owed)} of tax on the gain` : ``}. `)
             + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
         });
-        s.insolventMs = s.cash < 0 ? 12 : 0;
+        s.insolventMs = s.cash < 0 ? 6 : 0;
       } else if (locAvailable(s, parcels) > 0 || fundableNow(s, parcels) > 0) {
         // Book empty of seizable deeds (everything in workout / development /
         // coupon-current) but liquidity remains — keep the run alive.
         coverCashShortfall(s, parcels);
         if (s.cash >= 0) s.insolventMs = 0;
+      } else if (Object.values(s.developments).some((d) => s.holdings[d.bbl])) {
+        // A JOB IN THE GROUND IS STILL AN ASSET. The run used to end here with
+        // a half-built building on the book — net worth positive, "the
+        // creditors took everything" — because the bailiff could not reach a
+        // job. The receiver takes the site and the frame, pays off the
+        // construction lender from what a stranger will give for them (the
+        // land and about half of what was sunk, as a rival's stalled frame
+        // goes to the tape: rivals.ts orphanToTape), and puts it on the tape
+        // for someone else to finish. A syndicated job lost this way broke
+        // its completion guarantee (syndicate.ts closeSyndication).
+        const d = Object.values(s.developments).filter((x) => s.holdings[x.bbl])
+          .sort((a, b) => (b.equitySpent + b.drawn) - (a.equitySpent + a.drawn))[0];
+        const h = s.holdings[d.bbl];
+        const rec = resolveRec(parcels, s, d.bbl)!;
+        const sunk = Math.max(0, Math.round(d.equitySpent + d.drawn));
+        const gross = Math.round(landValue(rec, s.econ) + sunk * 0.55);
+        const net = Math.round(gross * 0.95);
+        const lien = Math.round(d.loanBalance + (h.loan?.balance ?? 0));
+        const surplus = Math.max(0, net - lien), shortfall = Math.max(0, lien - net);
+        s.cash += surplus;
+        if (surplus > 0) logBooks(s, "sold", surplus, d.bbl);
+        if (shortfall > 0) chargeLenderLoss(s, d.lender ?? "the construction lender", shortfall);
+        (s.cityJobs ??= []).push({ bbl: d.bbl, use: d.use, sf: d.sf, floors: d.floors ?? 1, startM: d.startM, deliverM: d.deliverM, cost: Math.round(d.costTotal), spent: sunk, orphaned: true });
+        stallSupplyProject(s, d.bbl);
+        {
+          const ex: Exit = { bbl: d.bbl, address: rec.address, boughtM: h.boughtM, soldM: s.month, price: gross, basis: h.costBasis, gain: gross - h.costBasis, forced: true };
+          closeDeedLedger(s, ex);
+          s.exits.push(ex);
+        }
+        moveDeposit(s, h, -depositsOn(h));
+        delete s.developments[d.bbl];
+        delete s.holdings[d.bbl];
+        if (s.workouts?.[d.bbl]) delete s.workouts[d.bbl];
+        markSponsor(s, "seized", rec.address, shortfall);
+        coverCashShortfall(s, parcels);
+        s.news.unshift({
+          q: s.month, kind: "warn",
+          text: `The receiver took your job at ${rec.address} — the site and a frame ${Math.round(100 * sunk / Math.max(1, d.costTotal))}% built, valued at ${money(gross)}. `
+            + (surplus > 0 ? `After the construction lender, ${money(surplus)} reached you. ` : `It did not cover the construction lender. `)
+            + `It goes to the tape for somebody else to finish. ${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
+        });
+        s.insolventMs = s.cash < 0 ? 6 : 0;
       } else {
         s.gameOver = {
           cause: "Insolvency: the creditors took everything, and it wasn't enough. A hundred-year town remembers a bankruptcy.",
@@ -1275,6 +1465,15 @@ function tickMonth(
     }
   }
 
+  // The month's settlement with every syndicate's investors (syndicate.ts):
+  // after every flow the month booked to their deeds, before it is marked.
+  // Deal-by-deal raises circle, close or fail (raise.ts) — before the month
+  // settles, so a raise that closed today settles with everything else.
+  tickRaises(s, parcels);
+  settleSyndications(s, parcels);
+  // The quarterly investor read (reputation.ts): the record, the street's
+  // ranking, and the band the next raise is priced in.
+  if (s.month % 3 === 0) { reviewSyndications(s, parcels); updateReputation(s, recordMarks(s, parcels)); }
   // the record book — one appraisal for NW history, milestones, and next month's overhead base
   const { nw, gav } = portfolioMark(s, parcels);
   s.prevGav = Math.round(gav);
@@ -1346,9 +1545,15 @@ function tickMonth(
   for (const bbl of Object.keys(s.groundLeases ?? {})) {
     if (!s.holdings[bbl]) transferGroundLeaseOffBook(s, bbl);
   }
+  // AN ASSEMBLED SITE STAYS ONE SITE WHOEVER OWNS IT. A player's site keeps
+  // its lots as deeds (actions.ts assembleLots); a firm's or the street's has
+  // absorbed them. A site goes as a whole, by any door — a sale, a seizure, a
+  // receiver: a lot of yours left behind under a site you no longer hold
+  // leaves your book with it, deposits and all. The lots never fall back out:
+  // a building, if one stands, stands across all of them.
   for (const [child, parent] of Object.entries(s.merged ?? {})) {
-    if (s.holdings[child] && s.holdings[parent]) continue;
-    delete s.merged![child];
+    if (s.holdings[parent] || !s.holdings[child]) continue;
+    moveDeposit(s, s.holdings[child], -depositsOn(s.holdings[child]));
     delete s.holdings[child];
   }
   // The same for a workout file. A deed that left the book by any route takes
@@ -1451,7 +1656,7 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
     return {
       label: "insolvent",
       bad: true,
-      title: `Insolvency month ${s.insolventMs} of 12 — the city cycle is still ${s.econ.phase}; your book is not.`,
+      title: `Insolvency month ${s.insolventMs} of 6 — the city cycle is still ${s.econ.phase}; your book is not.`,
     };
   }
   if (workouts > 0) {
@@ -1483,7 +1688,7 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
     };
   }
   const monthlyDebt = Object.values(s.holdings).reduce(
-    (a, h) => a + (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0), 0,
+    (a, h) => purseOf(s, h) === "fund" ? a : a + (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0), 0,
   )
     + (s.facility?.monthlyPmt ?? 0)
     + ((s.loc?.balance ?? 0) * ((s.econ.indexRate ?? 0) + 4)) / 100 / 12;
@@ -1603,7 +1808,46 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   // key carries the listing month, so a relist is news again.
   for (const li of s.listings ?? []) {
     if (!s.watch?.includes(li.bbl)) continue;
-    out.push({ key: `watch:${li.bbl}:${li.listedM}`, label: `★ ${addr(li.bbl)} is on the tape` });
+    // one row per building: a starred bank-owned listing says both in this one
+    out.push({
+      key: `watch:${li.bbl}:${li.listedM}`,
+      label: li.reason === "receiver"
+        ? `★ ${addr(li.bbl)} is on the tape — bank-owned at ${money(li.ask)}${li.receiverFor ? ` (${li.receiverFor})` : ""}`
+        : `★ ${addr(li.bbl)} is on the tape`,
+    });
+  }
+  // THE FUND'S WINDOW IS CLOSING WITH MONEY UNSPENT. After the investment
+  // period a vehicle cannot start anything new, and committed capital that was
+  // never put to work earns its LPs nothing. Told at a year, six months, three
+  // and one; the six-month notice stops the clock once, the rest are docket lines.
+  {
+    const f = s.fund;
+    if (f && !f.settled && s.month <= f.investEndM) {
+      const left = f.investEndM - s.month;
+      const idle = Math.max(0, f.cash) + Math.max(0, f.uncalled);
+      if ([12, 6, 3, 1].includes(left) && f.size > 0 && idle > 0.25 * f.size) {
+        out.push({
+          soft: left !== 6,
+          key: `fund-idle:${f.raisedM}:${left}`,
+          label: `Your fund has ${money(idle)} (${Math.round((idle / f.size) * 100)}%) not yet invested — `
+            + `${left} month${left === 1 ? "" : "s"} left in its investment period`,
+          lastM: f.investEndM,
+        });
+      }
+    }
+  }
+  // A BANK HAS PUT A BUILDING OUT. The month a desk lists what it took back,
+  // the docket says so — on the docket, never a stop (an opportunity), so a
+  // player with every card off still sees it in Next due and on Marketplace.
+  for (const li of s.listings ?? []) {
+    if (li.reason !== "receiver" || li.listedM !== s.month || s.holdings[li.bbl] || s.watch?.includes(li.bbl)) continue;
+    const off = li.mark && li.mark > 0 ? Math.round((1 - li.ask / li.mark) * 100) : 0;
+    out.push({
+      soft: true,
+      key: `reo:${li.bbl}:${li.listedM}`,
+      label: `Bank-owned: ${addr(li.bbl)} for sale at ${money(li.ask)}${off >= 3 ? `, ${off}% under the mark` : ""}`
+        + `${li.receiverFor ? ` (${li.receiverFor})` : ""}`,
+    });
   }
   // YOUR BUILDING IS FINISHED. Years of construction end in one month, and
   // the lease-up starts the same day: the empty building costs its tax,
@@ -1804,6 +2048,43 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
           + `${loanLender(h.loan!)} files at three`,
       });
     }
+    // THE JUNIOR HAS A CLOCK TOO. Mezz misses and its balloon used to reach the
+    // player only as a news line the month the file opened.
+    if (h.mezz && h.mezz.balance > 0 && !s.workouts?.[h.bbl]) {
+      const m = h.mezz;
+      const holder = m.holder ?? "Cordage Debt Partners";
+      if ((m.arrearsMs ?? 0) > 0) {
+        out.push({
+          critical: true,
+          key: `mezz-arrears:${h.bbl}:${m.arrearsMs}`,
+          label: `${addr(h.bbl)} mezz has missed ${m.arrearsMs} coupon${m.arrearsMs === 1 ? "" : "s"} — ${holder} files at three`,
+        });
+      }
+      const mo = m.maturityM - s.month;
+      if (mo > 0 && mo <= 12) {
+        const covered = (parcels ? fundableNow(s, parcels) : s.cash) >= m.balance;
+        out.push({
+          // Retired from liquidity at maturity when the firm can: then it is a notice.
+          soft: covered,
+          key: `mezz-balloon:${h.bbl}:${covered ? "paid" : "short"}`,
+          label: `${addr(h.bbl)}: mezz balloon due ${monthLabel(m.maturityM)} — ${money(m.balance)} to ${holder}`
+            + (covered ? ", retired from cash" : " and you cannot clear it today"),
+          lastM: m.maturityM,
+        });
+      }
+    }
+    // A TENANT THAT FILED AND WENT DARK: on the docket, never a stop (owner,
+    // Oct 2026: "when you have 300 tenants you really don't care"). The
+    // consequences that matter — a sweep, arrears, thin cash — stop on their own.
+    if (h.wentDark && h.wentDark.q === s.month) {
+      const d = h.wentDark;
+      out.push({
+        soft: true,
+        key: `tenant-dark:${h.bbl}:${s.month}`,
+        label: `${d.name} filed and went dark at ${addr(h.bbl)} — ${Math.round(d.sf / 1000)}k sf, `
+          + `${Math.round(d.share * 100)}% of the building, back mid-lease`,
+      });
+    }
     // A BALLOON THAT RENEWED. New lender, new coupon, new term on the largest
     // liability against a building — announced once, in the month it happened.
     if (h.loan && (h.loan as { renewedM?: number }).renewedM === s.month) {
@@ -1848,7 +2129,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     if (s.facility.sweep || s.facility.breachedSince !== undefined) {
       out.push({
         key: "facility-sweep",
-        label: `${s.facility.lender} facility covenant breach — portfolio cash flow at risk`,
+        label: `${s.facility.lender} facility covenant breach — every building's cash flow swept into principal`,
       });
     }
     // THE POOL IS SHORT ON ITS COUPON. Same clock as a single loan and a great
@@ -1887,7 +2168,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
         label: left <= 0
           ? `${s.facility.lender} has accelerated — the receiver is selling all ${s.facility.bbls.length} buildings now`
           : `${s.facility.lender} has accelerated the facility — a receiver sells all ${s.facility.bbls.length} `
-            + `buildings in ${left} month${left === 1 ? "" : "s"} unless $${(s.facility.balance / 1e6).toFixed(1)}M is paid`,
+            + `buildings in ${left} month${left === 1 ? "" : "s"} unless $${(s.facility.balance / 1e6).toFixed(1)}M is repaid or another desk refinances it`,
       });
     }
     // …and the pool renewing is news the docket should carry too.
@@ -2022,14 +2303,15 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       critical: true,
       key: "cash",
       label: ms > 0
-        ? `Cash is negative — insolvency month ${ms} of 12 before lender seizure`
+        ? `Cash is negative — insolvency month ${ms} of 6 before lender seizure`
         : "Cash is negative — the insolvency clock has started",
     });
   } else {
     // Forward runway: cash still positive but less than three months of
     // contractual debt service. Waiting for cash < 0 is waiting for the clock.
     const monthlyDebt = Object.values(s.holdings).reduce(
-      (a, h) => a + (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0), 0,
+      // A fund deed's debt is paid from the fund's purse, not the sponsor's.
+      (a, h) => purseOf(s, h) === "fund" ? a : a + (h.loan?.monthlyPmt ?? 0) + (h.mezz?.monthlyPmt ?? 0), 0,
     )
       // Use the contractual facility coupon, not an IO proxy off balance×rate —
       // post-IO amortizing paper is larger, and the runway warning was quiet
@@ -2054,7 +2336,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
   {
     let committed = 0, vehicle = 0;
     for (const l of s.lois ?? []) {
-      const c = loiSigningCost(l, exclusiveFeeRate(s.holdings[l.bbl]));
+      const c = loiSigningCash(l, exclusiveFeeRate(s.holdings[l.bbl]));
       if (vehicleSigns(s, s.holdings[l.bbl])) vehicle += c;
       else committed += Math.max(0, c - leaseUpRoom(s.holdings[l.bbl]));
     }
@@ -2137,6 +2419,11 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
   const f = s.fund;
   if (!f || f.settled || f.extendedTo === undefined || s.month < f.extendedTo) return;
   const deeds = Object.values(s.holdings).filter((h) => h.fundOwned);
+  // NOBODY LIQUIDATES A HALF-BUILT BUILDING. A NAV for a job in the ground is
+  // its land mark plus money sunk, not a price anyone pays, and a deed in kind
+  // would leave the job behind with no owner. The LPs wait for delivery —
+  // what any LPA's extension clause is for — and the wind-down runs then.
+  if (deeds.some((h) => s.developments?.[h.bbl])) return;
   let boughtIn = 0, inKind = 0, paidTotal = 0, trustNav = 0;
   for (const h of deeds) {
     const rec = resolveRec(parcels, s, h.bbl);
@@ -2149,11 +2436,11 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
     // stop, downward. It goes in kind to the LPs' trust with its mortgage.
     const paid = price > 0 ? fundCashNeed(s, parcels, price, { allowLoc: true }) : 0;
     if (price > 0 && paid >= price) {
-      f.cash += paid;
+      moveFundCash(f, paid, "buyIn");
       // The tenants' deposits come across with the deed: the vehicle held
       // them, the sponsor owes them from here on.
       const dep = depositsOn(h);
-      f.cash -= dep;
+      moveFundCash(f, -dep, "deposit");
       s.cash += dep;
       paidTotal += paid;
       delete h.fundOwned;
@@ -2217,7 +2504,7 @@ const TYPICAL_LTV = 0.65;
  */
 export const OPPORTUNITY_KEYS = new Set([
   "watch", "portfolio-bid", "broker", "early-look", "offer", "sale-bids", "talks", "note", "private-ask", "street-book",
-  "take-private", "auction", "private-borrow",
+  "take-private", "auction", "private-borrow", "reo",
 ]);
 
 /**
@@ -2226,6 +2513,20 @@ export const OPPORTUNITY_KEYS = new Set([
  * a broker's call, a first look, another firm's repossessed book, a board
  * that wants to sell, the county docket — all wait on the docket.
  */
+/**
+ * AN ANSWER TO SOMETHING YOU STARTED IS NOT AN OPPORTUNITY. A bid on a deed
+ * you listed, or on a book you put up, is the reply the firm asked for and
+ * lapses if unread — the default clock stops for it, as Settings promise.
+ * An unsolicited approach on a deed you never listed still waits on Deals.
+ */
+function answersYourListing(s: GameState, key: string): boolean {
+  const [head, bbl] = key.split(":");
+  if (head === "portfolio-bid") return !!s.portfolioSale;
+  if (head !== "offer" && head !== "sale-bids") return false;
+  const sale = s.holdings[bbl]?.sale;
+  return !!sale && !sale.unsolicited;
+}
+
 export function opportunitiesStop(s: GameState): boolean {
   return s.clockStops === "everything" || s.clockStops === "opportunities";
 }
@@ -2251,15 +2552,34 @@ export function stopRule(s: GameState, parcels: ParcelTable, seen?: ReadonlySet<
   // the stops that did. "opportunities" lets those stop it too; "everything"
   // adds the soft notices. A critical item stops it in every mode.
   const mode = s.clockStops;
-  const counts = (a: AttentionItem) => a.critical ? true
+  const counts = (a: AttentionItem, st: GameState) => a.critical ? true
     : seenSet?.has(a.key) ? false
     : mode === "everything" ? true
     : mode === "opportunities" ? !a.soft
-    : !a.soft && !OPPORTUNITY_KEYS.has(a.key.split(":")[0]);
+    : !a.soft && (!OPPORTUNITY_KEYS.has(a.key.split(":")[0]) || answersYourListing(st, a.key));
   // Critical first: if a foreclosure and a broker's call land the same month,
   // the stop names the foreclosure.
+  // A SWAN STOPS THE CLOCK, IN EVERY MODE (owner, Oct 2026: "I missed a
+  // black swan"). The level event the city will date itself by used to stop
+  // nothing — the stop rule reads the docket and swans are alerts, so a Year
+  // click ran on eleven months past one. Any swan raised during the run ends
+  // it that month, whatever the clock or card settings.
+  // ...and so does the central bank: a rate decision or a new chair (owner,
+  // Oct 2026, "changes to the fed stop the game as well").
+  // A ground tenant's default or the failure of a bank holding your debt or
+  // deposits (`Alert.stops`) is the firm's own money: it stops the clock the
+  // way a docket item does, in every mode but after the swan and the Fed.
+  const stops = (a: { kind: string; stops?: boolean }) => a.kind === "swan" || a.kind === "fed" || !!a.stops;
+  const swansBefore = new Set((s.alerts ?? []).filter(stops).map((a) => a.id));
   return (cur) => {
-    const due = attentionItems(cur, parcels).filter((a) => counts(a) && (a.lastM !== undefined
+    const fresh = (cur.alerts ?? []).filter((a) => stops(a) && !swansBefore.has(a.id));
+    const swan = fresh.find((a) => a.kind === "swan" || a.kind === "fed") ?? fresh[0];
+    if (swan) return {
+      key: `${swan.kind}:${swan.id}`,
+      label: swan.kind !== "swan" ? swan.title : `${swan.tone === "good" ? "A white swan" : "A black swan"} — ${swan.title}`,
+      critical: swan.kind === "swan" && swan.tone !== "good",
+    };
+    const due = attentionItems(cur, parcels).filter((a) => counts(a, cur) && (a.lastM !== undefined
       ? cur.month >= a.lastM && !dueAtStart.has(a.key)
       : !before.has(a.key)));
     return due.find((a) => a.critical) ?? due[0];
@@ -2388,6 +2708,10 @@ export function firstListings(s: GameState, parcels: ParcelTable, bbls: string[]
   next.loanScale = cityLoanScale(next, parcels);
   // The cranes first, so the tape does not offer a lot with a frame on it.
   seedOpeningPipeline(next, parcels, bbls);
+  // The street's firms and households, grown before the first listing is
+  // written, so the tape discloses the tenants who are actually there.
+  next.econ.playerNow ??= playerSpace(next, parcels);
+  syncStreetRolls(next, parcels, bbls);
   refreshListings(next, parcels, bbls);
   return next;
 }
@@ -2413,4 +2737,48 @@ export function stampStockVintage(s: GameState, parcels: ParcelTable) {
   const out: Partial<Record<BuiltClass, number>> = {};
   for (const c in w) out[c as BuiltClass] = +((sum[c as BuiltClass] ?? 0) / (w[c as BuiltClass] || 1)).toFixed(1);
   s.stockVintage = out;
+}
+
+/**
+ * THE PLAYER'S TENANTS ARE THE CITY'S TENANTS (2026-10-14). The city's
+ * occupied space is one finite pool of space users per class, and the
+ * player's buildings are part of the stock it fills — but the player's
+ * tenants lived in a second ledger: a signing only dented the looking pool,
+ * the dent refilled in six to nine months, and after two years the player's
+ * leasing sat ON TOP of the city's occupancy instead of being taken from it.
+ * Measured: 138k sf of office signed by the player took 9.6k sf from the
+ * street; flats, pre-lets and build-to-suit anchors took nothing at all; and
+ * the city model went on counting the player's empty floors as let at the
+ * market rate. So each month the player's actual occupied space by class —
+ * named suites, and the flats' occupancy — is counted here, and tickEcon
+ * moves the city total by its change and keeps the street out of the
+ * player's empty floors. A tenant who signs with the player is one the
+ * street does not get; one who leaves is a searcher again.
+ */
+function playerSpace(s: GameState, parcels: ParcelTable): NonNullable<GameState["econ"]["playerNow"]> {
+  const occ: Record<BuiltClass, number> = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  const sf: Record<BuiltClass, number> = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  // ...and by quality score (TENANT_TIERS_PLAN.md), so the tenants moving up
+  // or down the scale see the street's empty floors and yours together.
+  const z = () => ({ sf: new Array(N_BANDS).fill(0) as number[], occ: new Array(N_BANDS).fill(0) as number[] });
+  const band: Record<BuiltClass, { sf: number[]; occ: number[] }> = { office: z(), retail: z(), multifamily: z(), industrial: z() };
+  for (const h of Object.values(s.holdings)) {
+    if (s.developments[h.bbl]) continue;
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (!rec || !(rec.bldgArea > 0)) continue;
+    const bOf = (k: BuiltClass) => Math.min(N_BANDS - 1, Math.floor(overallScore(rec, s.econ, k, h.condIdx) / 10));
+    for (const k of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
+      const r = useRentableSf(rec, k);
+      if (!(r > 0)) continue;
+      const bi = bOf(k);
+      sf[k] += r; band[k].sf[bi] += r;
+      if (k === "multifamily") { const o = r * Math.max(0, Math.min(1, h.occ ?? 0)); occ[k] += o; band[k].occ[bi] += o; }
+    }
+    for (const t of h.tenants) {
+      const k = (t.use ?? rec.class) as BuiltClass;
+      if (k === "multifamily" || !(k in occ)) continue;
+      occ[k] += Math.max(0, t.sf); band[k].occ[bOf(k)] += Math.max(0, t.sf);
+    }
+  }
+  return { occ, sf, band };
 }

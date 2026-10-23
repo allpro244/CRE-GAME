@@ -1,17 +1,18 @@
 import { useState, Fragment } from "react";
+import { consentFor } from "@/engine/vehicles";
+import { BankLink } from "@/ui/panels/BankProfile";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import { ownedHoldingValue, resolveRec, ownedContractNoiYr } from "@/engine/value";
-import { PRODUCTS, productById, payOffDue, rateCapCost } from "@/engine/debt";
-import { fundableNow, locRate } from "@/engine/credit";
+import { PRODUCTS, productById, payOffDue, rateCapCost, capStrikeFor, loanLender } from "@/engine/debt";
+import { fundableNow, locRate, spendable } from "@/engine/credit";
 import type { FacilityQuote } from "@/engine/facility";
-import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, FACILITY_CURE_M, RELEASE_PREMIUM } from "@/engine/facility";
+import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, RELEASE_PREMIUM } from "@/engine/facility";
 import { usd } from "@/ui/format";
 import { RefiSection } from "@/ui/panels/RefiDesk";
 import { Big, Row } from "@/ui/panels/shared";
-import { FundDesk } from "@/ui/panels/FundDesk";
 import { CreditLine } from "@/ui/panels/CreditLineDesk";
 import { MaturityWall } from "@/ui/rollups/MaturityWall";
 import { tabCounts } from "@/ui/desks";
@@ -113,7 +114,7 @@ function drawHint(qt: FacilityQuote, draw: number): string {
   const t = facilityDrawTerms(draw, qt.ratePct, qt.ioM, qt.amortYears, qt.quality.noi, qt.quality.value);
   if (t.dscr < qt.minDSCR) {
     return `At this draw the pool covers ${t.dscr.toFixed(2)}x against a ${qt.minDSCR.toFixed(2)}x covenant — `
-      + `it would open in default, swept, with ${FACILITY_CURE_M} months to cure. Draw less.`;
+      + `it would open in breach, with every building's cash flow swept into principal. Draw less.`;
   }
   return `${usd(t.monthlyPmt)} a month, ${t.dscr.toFixed(2)}x covered. `
     + "Drawing less than the base is the room you will have when the market turns — the covenant is tested against what you drew.";
@@ -139,6 +140,7 @@ export function DebtPage() {
   // The pool's own refinancing desk — open on demand, because re-quoting a pool
   // walks every pledged deed and there is no reason to pay for it on every render.
   const [refiFac, setRefiFac] = useState(false);
+  const [payAmt, setPayAmt] = useState(0);
   const [refiProd, setRefiProd] = useState<string>("");
   const [refiLev, setRefiLev] = useState(1);
 
@@ -285,7 +287,6 @@ export function DebtPage() {
       {/* THE REVOLVER BELONGS WITH THE REST OF THE DEBT, not under the ledger.
           Books still shows the drawn balance as a liability; draw and repay live
           here with the mortgages and the facility. */}
-      <FundDesk />
       <CreditLine />
 
       {(game.privateBorrowQuotes?.length ?? 0) > 0 && (
@@ -384,17 +385,53 @@ export function DebtPage() {
             <Row k="Recourse" v={fac.recourse ? "yes — you signed personally" : "non-recourse"} bad={fac.recourse} />
           </div>
           <div className="btn-row">
-            <button className="btn" disabled={game.cash < 1_000_000} title={game.cash < 1_000_000 ? `A paydown needs at least $1.00M in cash — you have ${usd(game.cash)}` : undefined} onClick={() => payFac(Math.min(fac.balance, Math.floor(game.cash * 0.5)))}>
-              Pay down {usd(Math.min(fac.balance, Math.floor(game.cash * 0.5)))}
-            </button>
-            <button className="btn" disabled={game.cash < fac.balance} title={game.cash < fac.balance ? `Short ${usd(fac.balance - game.cash)} of the balance` : undefined} onClick={() => payFac(fac.balance)}>
-              Repay in full · {usd(fac.balance)}
-            </button>
-            <button className={"btn" + (refiFac ? " btn-on" : "")} disabled={fac.accelM !== undefined}
+            {(() => {
+              // WHAT THE OWNER CAN ACTUALLY PAY WITH. The paydown used to need
+              // $1M of cash before it would even offer half of it, and the
+              // full repayment ignored the line — so a swept or accelerated pool
+              // with an open revolver had no buttons that worked.
+              const room = spendable(game, parcels);
+              const accel = fac.accelM !== undefined;
+              const cureNeed = (() => {
+                if (fac.breachedSince === undefined || accel) return 0;
+                let target = fac.balance;
+                if (facM.dscr !== null && facM.dscr < fac.minDSCR) target = Math.min(target, fac.balance * (facM.dscr / fac.minDSCR));
+                if (facM.ltv !== null && facM.ltv > fac.maxLTV && facM.value > 0) target = Math.min(target, fac.maxLTV * facM.value);
+                return Math.min(fac.balance, Math.ceil(fac.balance - Math.max(0, target)));
+              })();
+              const amt = Math.min(fac.balance, Math.max(0, payAmt));
+              const short = (need: number) => need > room.total ? `You can raise ${usd(room.total)} — ${usd(room.cash)} cash and ${usd(room.line)} on the line` : undefined;
+              return (
+                <>
+                  {cureNeed > 0 && (
+                    <button className="btn btn-buy" disabled={cureNeed > room.total} title={short(cureNeed) ?? (cureNeed > room.cash ? `Draws ${usd(cureNeed - room.cash)} on the line` : undefined)}
+                      onClick={() => payFac(cureNeed, true)}>
+                      Cure the covenant · {usd(cureNeed)}
+                    </button>
+                  )}
+                  {!accel && (
+                    <>
+                      <input className="input" type="number" min={0} step={10000} style={{ width: 120 }} value={payAmt || ""} placeholder="amount"
+                        onChange={(e) => setPayAmt(Math.max(0, Math.floor(+e.target.value || 0)))} />
+                      <button className="btn" disabled={amt <= 0 || amt > room.total} title={amt > 0 ? short(amt) ?? (amt > room.cash ? `Draws ${usd(amt - room.cash)} on the line` : undefined) : "Enter an amount"}
+                        onClick={() => payFac(amt, true)}>
+                        Pay down{amt > 0 ? ` ${usd(amt)}` : ""}
+                      </button>
+                    </>
+                  )}
+                  <button className="btn" disabled={fac.balance > room.total} title={short(fac.balance) ?? (fac.balance > room.cash ? `Draws ${usd(fac.balance - room.cash)} on the line` : undefined)}
+                    onClick={() => payFac(fac.balance, true)}>
+                    Repay in full · {usd(fac.balance)}
+                  </button>
+                </>
+              );
+            })()}
+            <button className={"btn" + (refiFac ? " btn-on" : "")}
+              title={fac.accelM !== undefined ? "Another desk can take out the accelerated balance before the receiver sells." : undefined}
               onClick={() => setRefiFac(!refiFac)}>
               Refinance the pool
             </button>
-            <button className="btn" disabled={fac.accelM !== undefined}
+            <button className="btn"
               title="Keep the crossed deeds, add free-and-clear or separately mortgaged ones, and replace the paper in one closing."
               onClick={() => {
                 setBuilding(true);
@@ -427,6 +464,7 @@ export function DebtPage() {
                       </button>
                     ))}
                   </div>
+                  <PoolRefusal quotes={facQuotes} refi />
                   {rqt && (() => {
                     const draw = Math.floor(rqt.base * refiLev);
                     const fees = Math.round(draw * 0.01) + Math.round(draw * rqt.points);
@@ -611,6 +649,7 @@ export function DebtPage() {
                   </button>
                 ))}
               </div>
+              <PoolRefusal quotes={quotes} />
               <div className="grid">
                 <Row k="The pool" v={`${pool.length} buildings · ${usd(Math.round(qt.quality.value))} · ${qt.quality.why}`} />
                 <Row k="Diversification" v={`${(qt.quality.score * 100).toFixed(0)} of 100 — worth ${((qt.advance - PRODUCTS.find((p) => p.id === qt.productId)!.ltv) * 100).toFixed(1)} points of advance and ${(qt.spreadCut * 100).toFixed(0)}bp of coupon`} />
@@ -670,7 +709,8 @@ export function DebtPage() {
               const lv = v > 0 ? l.balance / v : null;
               const near = l.maturityM - game.month <= 24;
               const due = payOffDue(l, game.month, game.econ);
-              const canPay = !pledged(game, h.bbl) && fundableNow(game, parcels) >= due.due;
+              const jvBlock = consentFor(game, h, "debt");
+              const canPay = !pledged(game, h.bbl) && !jvBlock && fundableNow(game, parcels) >= due.due;
               const crumb = due.balance > 0 && due.balance < 25_000;
               return (
                 <Fragment key={h.bbl}>
@@ -680,7 +720,7 @@ export function DebtPage() {
                     {pledged(game, h.bbl) ? <span className="dim"> · pledged</span> : null}
                   </td>
                   <td className="dim">
-                    {p.lender}
+                    <BankLink name={loanLender(l)} />
                     <div style={{ fontSize: 11 }}>
                       {[l.sweep ? "swept" : null, game.month < l.ioUntilM ? "IO" : null, p.recourse ? "recourse" : null,
                         l.prepay === "yieldmaint" ? "YM" : null].filter(Boolean).join(" · ")}
@@ -697,7 +737,7 @@ export function DebtPage() {
                       <button
                         className={"btn btn-sm" + (crumb ? " btn-buy" : "")}
                         disabled={!canPay}
-                        title={pledged(game, h.bbl)
+                        title={jvBlock ? jvBlock : pledged(game, h.bbl)
                           ? "Pledged to the facility — release it there first."
                           : !canPay
                             ? `Need ${usd(due.due)}${due.penalty > 0 ? ` incl. ${usd(due.penalty)} break fee` : ""} — short ${usd(due.due - fundableNow(game, parcels))}.`
@@ -711,7 +751,7 @@ export function DebtPage() {
                       {(l.floating ?? l.product === "float") && !l.cap && (
                         <button
                           className="btn btn-sm"
-                          title={`Index capped at ${(game.econ.indexRate + 0.5).toFixed(2)}% for three years.`}
+                          title={`Index capped at ${capStrikeFor(game, l).toFixed(2)}% for three years.`}
                           onClick={() => useStore.getState().rateCap(h.bbl)}
                         >
                           Cap · {usd(rateCapCost(l))}
@@ -750,7 +790,7 @@ export function DebtPage() {
                     <div className="dim" style={{ fontSize: 11 }}>construction · {dv.use}</div>
                   </td>
                   <td className="dim">
-                    {dv.lender ?? "construction"}
+                    {dv.lender ? <BankLink name={dv.lender} /> : "construction"}
                     <div style={{ fontSize: 11 }}>
                       {[dv.contract === "gmp" ? "GMP" : "cost-plus", "IO", dv.repudiatedM !== undefined ? "repudiated" : null]
                         .filter(Boolean).join(" · ")}
@@ -773,7 +813,7 @@ export function DebtPage() {
               <tr>
                 <td><strong>The facility</strong> <span className="dim">· {fac.bbls.length} deeds crossed</span></td>
                 <td className="dim">
-                  {fac.lender}
+                  <BankLink name={fac.lender} />
                   <div style={{ fontSize: 11 }}>
                     {[fac.sweep ? "swept" : null, game.month < fac.ioUntilM ? "IO" : null, "recourse", "crossed"].filter(Boolean).join(" · ")}
                   </div>
@@ -792,6 +832,25 @@ export function DebtPage() {
             )}
           </tbody>
         </table>
+    </div>
+  );
+}
+
+/**
+ * WHEN NO DESK WILL WRITE THE POOL, SAY SO ON THE PAGE. Every button greyed
+ * out with its reason in a tooltip read as a broken screen — most often a pool
+ * whose borrowing base has fallen under the smallest facility anybody
+ * documents, where the only exits are paying it down or off, or releasing
+ * buildings and refinancing them one at a time (a pledged deed has no
+ * single-asset quote while it is in the pool).
+ */
+function PoolRefusal({ quotes, refi = false }: { quotes: { available: boolean; why?: string; lender: string }[]; refi?: boolean }) {
+  if (!quotes.length || quotes.some((q) => q.available)) return null;
+  const whys = [...new Set(quotes.map((q) => q.why).filter(Boolean))] as string[];
+  return (
+    <div className="hint neg" style={{ margin: "6px 0" }}>
+      <strong>No desk will write this pool today.</strong> {whys.slice(0, 3).join(" ")}
+      {refi && " To get out: repay the balance from cash and the line, or release buildings one at a time below and refinance each on its own."}
     </div>
   );
 }

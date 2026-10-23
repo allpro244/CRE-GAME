@@ -21,13 +21,16 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState, Rival } from "./types";
 import { START_YEAR } from "./types";
 import { hash01 } from "./competitorTraits";
+import { logFirm, milestone } from "./firmLog";
 import { livingRivals, markRival, paramsOf, transferDeed } from "./rivals";
-import { assumeBook, rowOn, syncDebt } from "./rivalDebt";
+import { assumeBook, loanBookTouched, rowOn, syncDebt } from "./rivalDebt";
 
 const year = (s: GameState) => START_YEAR + Math.floor(s.month / 12);
 
 /** Everything the absorbed firm had in motion goes with the company. */
 function absorb(s: GameState, from: Rival, into: Rival) {
+  milestone(s, into, `Absorbed ${from.name} and its ${from.bbls.length} building${from.bbls.length === 1 ? "" : "s"}`);
+  milestone(s, from, `Absorbed into ${into.name}`);
   for (const li of s.listings) if (li.sellerId === from.id) li.sellerId = into.id;
   for (const rn of s.rivalNotes ?? []) if (rn.firmId === from.id) { rn.firmId = into.id; rn.firm = into.name; }
   if (s.portfolios) s.portfolios = s.portfolios.filter((p) => !p.bbls.some((b) => from.bbls.includes(b)));
@@ -42,6 +45,7 @@ function absorb(s: GameState, from: Rival, into: Rival) {
   from.heldSince = {};
   delete from.extendedTo; delete from.deliveredM;
   from.failedM = s.month;
+  from.endReason = "absorbed";
   from.takenOverBy = into.id;
   from.epilogueM = -1;
 }
@@ -78,7 +82,7 @@ function mergers(s: GameState, parcels: ParcelTable) {
   }
   absorb(s, from, into);
   into.aum = Math.round(markRival(s, parcels, into).aum);
-  (into.lessons ??= []).push({ y: year(s), text: `Merged with ${from.name} in ${year(s)}` });
+  ((into.lessons ??= []).push({ y: year(s), text: `Merged with ${from.name} in ${year(s)}` }), logFirm(s, into, "event", `Merged with ${from.name} in ${year(s)}`));
   s.news.unshift({
     q: s.month, kind: "event",
     text: `${into.name} and ${from.name} have merged. They were buying the same buildings in the same streets, and one of them `
@@ -115,7 +119,7 @@ function salesToInstitutions(s: GameState) {
     sh.capacity = Math.min(100, sh.capacity + 10);
     r.rules = (r.rules ?? []).filter((x) => x !== "alwaysCourthouse");
     r.thesis = undefined;   // the new owners set the plan at the next review
-    (r.lessons ??= []).push({ y: year(s), text: `Sold to ${buyer} in ${year(s)} — an institution's money now` });
+    ((r.lessons ??= []).push({ y: year(s), text: `Sold to ${buyer} in ${year(s)} — an institution's money now` }), logFirm(s, r, "event", `Sold to ${buyer} in ${year(s)} — an institution's money now`));
     s.news.unshift({
       q: s.month, kind: "event",
       text: `${was} has sold itself to ${buyer}. Ten years of doubling its money made it the platform an institution wanted; `
@@ -153,14 +157,14 @@ function successions(s: GameState, parcels: ParcelTable) {
       r.feud = id;
       for (const b of half) {
         const row = rowOn(s, r, b);
-        if (row) row.obligorId = id;    // the mortgage goes with its building
+        if (row) { row.obligorId = id; loanBookTouched(); }    // the mortgage goes with its building
         transferDeed(s, b, twin, 0);
       }
       twin.basis = Math.round((r.basis ?? 0) * half.length / Math.max(1, half.length + r.bbls.length));
       r.basis = Math.max(0, (r.basis ?? 0) - twin.basis);
       syncDebt(s, r); syncDebt(s, twin);
       twin.aum = Math.round(markRival(s, parcels, twin).aum);
-      (r.lessons ??= []).push({ y: year(s), text: `Split between the heirs in ${year(s)} — the other half is ${name}` });
+      ((r.lessons ??= []).push({ y: year(s), text: `Split between the heirs in ${year(s)} — the other half is ${name}` }), logFirm(s, r, "event", `Split between the heirs in ${year(s)} — the other half is ${name}`));
       s.news.unshift({
         q: s.month, kind: "event",
         text: `The ${base} family could not agree on what to do with the business, so they have halved it: ${half.length} buildings `
@@ -171,7 +175,7 @@ function successions(s: GameState, parcels: ParcelTable) {
       sh.leverage = Math.min(100, sh.leverage + 6);
       sh.capacity = Math.min(100, sh.capacity + 6);
       sh.hold = Math.max(1, sh.hold - 5);
-      (r.lessons ??= []).push({ y: year(s), text: `A new generation took over in ${year(s)}` });
+      ((r.lessons ??= []).push({ y: year(s), text: `A new generation took over in ${year(s)}` }), logFirm(s, r, "event", `A new generation took over in ${year(s)}`));
       s.news.unshift({
         q: s.month, kind: "info",
         text: `${r.name} has passed to the next generation. They are keeping the buildings, and they are going to want more of them.`,
@@ -180,7 +184,7 @@ function successions(s: GameState, parcels: ParcelTable) {
       // SELLING UP: the heirs never loved it. The book goes out over a few years.
       r.thesis = { kind: "harvest", fromM: s.month, untilM: s.month + 48, why: "heirs selling" };
       sh.hold = Math.min(sh.hold, 20);
-      (r.lessons ??= []).push({ y: year(s), text: `The heirs decided to sell, in ${year(s)}` });
+      ((r.lessons ??= []).push({ y: year(s), text: `The heirs decided to sell, in ${year(s)}` }), logFirm(s, r, "event", `The heirs decided to sell, in ${year(s)}`));
       s.news.unshift({
         q: s.month, kind: "deal",
         text: `The heirs at ${r.name} have decided they do not want to be landlords. ${r.bbls.length} buildings will come to market `

@@ -40,8 +40,14 @@ const buy = (fromFund, maxAsk) => {
     const rec = E.resolveRec(parcels, g, li.bbl);
     if (!rec || rec.class === "land" || !rec.bldgArea || li.halfBuilt || li.ask > maxAsk) continue;
     const s0 = { ...g, fundPay: fromFund };
-    const r = E.executePurchase(s0, parcels, li.bbl, li.ask, "savings", false, 1);
-    if (!r.err && r.s.holdings[li.bbl]) { g = { ...r.s, fundPay: false }; return li.bbl; }
+    // the regional's loan where it sizes, cash where it does not: what is
+    // under test is whose deed it is, not how it was paid for (street plan 11
+    // re-dealt the reference town, and no listing left under $8M took the
+    // regional's loan after the vehicle's two)
+    for (const fin of ["savings", "cash"]) {
+      const r = E.executePurchase(s0, parcels, li.bbl, li.ask, fin, false, 1);
+      if (!r.err && r.s.holdings[li.bbl]) { g = { ...r.s, fundPay: false }; return li.bbl; }
+    }
   }
   return null;
 };

@@ -1,0 +1,39 @@
+Begin Object Class=/Script/Engine.MaterialInstanceConstant Name="M_Sidewalk_Master_Inst_3" ExportPath="/Script/Engine.MaterialInstanceConstant'/Game/Road/Material/MI/M_Sidewalk_Master_Inst_3.M_Sidewalk_Master_Inst_3'"
+   Begin Object Class=/Script/Engine.MaterialInstanceEditorOnlyData Name="M_Sidewalk_Master_Inst_3EditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Road/Material/MI/M_Sidewalk_Master_Inst_3.M_Sidewalk_Master_Inst_3:M_Sidewalk_Master_Inst_3EditorOnlyData'"
+   End Object
+   Begin Object Class=/Script/UnrealEd.SceneThumbnailInfoWithPrimitive Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Road/Material/MI/M_Sidewalk_Master_Inst_3.M_Sidewalk_Master_Inst_3:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   Begin Object Name="M_Sidewalk_Master_Inst_3EditorOnlyData" ExportPath="/Script/Engine.MaterialInstanceEditorOnlyData'/Game/Road/Material/MI/M_Sidewalk_Master_Inst_3.M_Sidewalk_Master_Inst_3:M_Sidewalk_Master_Inst_3EditorOnlyData'"
+   End Object
+   Begin Object Name="SceneThumbnailInfoWithPrimitive_0" ExportPath="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'/Game/Road/Material/MI/M_Sidewalk_Master_Inst_3.M_Sidewalk_Master_Inst_3:SceneThumbnailInfoWithPrimitive_0'"
+   End Object
+   ParameterStateId=AA60F66D468ABEE8A365418B25AE9B78
+   Parent="/Script/Engine.MaterialInstanceConstant'/Game/Road/Material/MI/MI_Sidewalk.MI_Sidewalk'"
+   bHasStaticPermutationResource=True
+   ScalarParameterValues(0)=(ParameterInfo=(Name="Position Variation Scale"),ParameterValue=3970.688477,ExpressionGUID=2829A9614CF4C0B3B3CED3BBDDAB0E6B)
+   ScalarParameterValues(1)=(ParameterInfo=(Name="BaseNormal_FlattenAmt"),ParameterValue=2.500000,ExpressionGUID=F923F66E484797B01B2AE9AE913C9E2E)
+   ScalarParameterValues(2)=(ParameterInfo=(Name="BaseRough_MultAmt"),ParameterValue=0.800000,ExpressionGUID=122B21134D96D00AB70CC0BC13E21475)
+   ScalarParameterValues(3)=(ParameterInfo=(Name="PatchScale"),ParameterValue=0.000250,ExpressionGUID=E3970D10476AEB9014F01D83F723D48A)
+   ScalarParameterValues(4)=(ParameterInfo=(Name="CracklScale"),ParameterValue=0.001000,ExpressionGUID=EA473C2943079E1B4EDC12B44661C202)
+   ScalarParameterValues(5)=(ParameterInfo=(Name="Cracks_ColorMaskMult"),ExpressionGUID=94763AAA49C6CA02E4FC458CDF8E5860)
+   ScalarParameterValues(6)=(ParameterInfo=(Name="cracks_RoughnessVal"),ParameterValue=0.900000,ExpressionGUID=E289A5DD4A501CCFE180E985B5D91F7A)
+   ScalarParameterValues(7)=(ParameterInfo=(Name="cracksMult_Amt"),ParameterValue=1.000000,ExpressionGUID=49280F85490736E798F2A9B63FDC74D0)
+   ScalarParameterValues(8)=(ParameterInfo=(Name="RefractionDepthBias"))
+   VectorParameterValues(0)=(ParameterInfo=(Name="Position Variation Primes"),ParameterValue=(R=131.000000,G=23.000000,B=131.000000,A=1.000000),ExpressionGUID=76291A60446A7F4175A590869888CB08)
+   VectorParameterValues(1)=(ParameterInfo=(Name="BaseColor_Tint"),ParameterValue=(R=0.671875,G=0.671875,B=0.671875,A=1.000000),ExpressionGUID=A645F0BF41420881F94F99817D7BC1BA)
+   VectorParameterValues(2)=(ParameterInfo=(Name="Tint Hi 2GR"),ParameterValue=(R=1.113143,G=1.199304,B=1.500000,A=0.000000),ExpressionGUID=72488AFA4746672F7BE23AA9FB6EE0CE)
+   VectorParameterValues(3)=(ParameterInfo=(Name="Tint Lo 2GR"),ParameterValue=(R=0.526042,G=0.441916,B=0.375353,A=0.000000),ExpressionGUID=70A5AB8D4DC019EDB5D5B5AB581E3944)
+   VectorParameterValues(4)=(ParameterInfo=(Name="AlbedoTint"),ParameterValue=(R=1.400000,G=1.300347,B=1.254167,A=1.000000),ExpressionGUID=BD16534F433E82CDA0854CBD2BFFA314)
+   TextureParameterValues(0)=(ParameterInfo=(Name="baseColor"),ParameterValue="/Script/Engine.Texture2D'/Game/Road/Textures/Sidewalks/T_sidewalk_concreteNoLines_Color.T_sidewalk_concreteNoLines_Color'",ExpressionGUID=76180A514CC87EE0C92F1E8285E19C33)
+   TextureParameterValues(1)=(ParameterInfo=(Name="baseNormal"),ParameterValue="/Script/Engine.Texture2D'/Game/Road/Textures/Sidewalks/T_sidewalk_concreteNoLines_Normal.T_sidewalk_concreteNoLines_Normal'",ExpressionGUID=E7DC2BDE44D902087657C1AB15DD0A85)
+   TextureParameterValues(2)=(ParameterInfo=(Name="basePacked"),ParameterValue="/Script/Engine.Texture2D'/Game/Road/Textures/Sidewalks/T_sidewalk_concreteNoLines_AOR.T_sidewalk_concreteNoLines_AOR'",ExpressionGUID=2ECD130A4E987A5946ADFA80CC664833)
+   BasePropertyOverrides=(OpacityMaskClipValue=0.333300,UsageFlags=4456592)
+   StaticParametersRuntime=(StaticSwitchParameters=((ParameterInfo=(Name="BaseScale_DoRotateUVs"),bOverride=True,ExpressionGUID=9A8A182744D887A5D4341B8C1B649F64),(ParameterInfo=(Name="BaseScale_doWSP"),bOverride=True,ExpressionGUID=51EAA50B473EF713F7B4598F5FEFC237),(Value=True,ParameterInfo=(Name="base_UsePacked"),bOverride=True,ExpressionGUID=5DB9D0BF4A0CEB26978C04AAF9CEFEC9)))
+   EditorOnlyData="/Script/Engine.MaterialInstanceEditorOnlyData'M_Sidewalk_Master_Inst_3EditorOnlyData'"
+   TextureStreamingDataVersion=1
+   TextureStreamingData(0)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="T_sidewalk_concreteNoLines_AOR",TextureReference="/Game/Road/Textures/Sidewalks/T_sidewalk_concreteNoLines_AOR.T_sidewalk_concreteNoLines_AOR")
+   TextureStreamingData(1)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="T_sidewalk_concreteNoLines_Color",TextureReference="/Game/Road/Textures/Sidewalks/T_sidewalk_concreteNoLines_Color.T_sidewalk_concreteNoLines_Color")
+   TextureStreamingData(2)=(SamplingScale=1.000000,UVChannelIndex=0,TextureName="T_sidewalk_concreteNoLines_Normal",TextureReference="/Game/Road/Textures/Sidewalks/T_sidewalk_concreteNoLines_Normal.T_sidewalk_concreteNoLines_Normal")
+   ThumbnailInfo="/Script/UnrealEd.SceneThumbnailInfoWithPrimitive'SceneThumbnailInfoWithPrimitive_0'"
+   LightingGuid=B8BD70ED42F93931CC2D03B69A124E39
+End Object

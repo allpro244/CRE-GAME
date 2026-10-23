@@ -3,29 +3,32 @@
 //   AcquireDesk   buy / sell / list / ground lease / disclosed roll / vacant possession
 //   RefiDesk      permanent debt on a deed
 //   DevelopDesk   ground-up + adaptive reuse (Programme · Design · Financing)
+import { consentFor } from "@/engine/vehicles";
 import { marketAppraisal } from "@/engine/value";
 import { memo, useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
 import { useMasonry } from "@/ui/useMasonry";
-import { CLASS_COLOR, CLASS_LABEL } from "@/data/types";
+import { CLASS_COLOR, CLASS_LABEL, type ReservedParcel } from "@/data/types";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { OpsChoices } from "@/ui/panels/OpsChoices";
 import type { BuiltClass } from "@/engine/types";
-import { initialCondition, recoveryOf, marketRentPsfYr, managedRentPsfYr, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
-import { PROGRAMS, programCost, demolitionCost } from "@/engine/dev";
+import { initialCondition, recoveryOf, marketRentPsfYr, flatsRollPsf, flatsMarkPsf, renovationCost, resolveRec, propertyTaxYr, useRentPsfYr, operatingStatement, landValue, proFormaNOIYr, remainingAbatement, landRead, rentableSf, rentableRatio, plateOf, useRentableSf } from "@/engine/value";
+import { PROGRAMS, programCost, demolitionCost, takeoverEquityNeed } from "@/engine/dev";
 import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/actions";
 import { currentAskPsfYr } from "@/engine/absorption";
-import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, leasableUses, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive, autoLeaseRule, autoTiCapToday, marketTiPsfYr } from "@/engine/leasing";
+import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive, autoLeaseRule, autoTiCapToday } from "@/engine/leasing";
 import { StackingList } from "@/ui/panels/StackingList";
 import { stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
-import { dscr, ltv, payOffDue, rateCapCost, prepayPenalty, equityCureNeed } from "@/engine/debt";
+import { dscr, ltv, payOffDue, rateCapCost, capStrikeFor, prepayPenalty, equityCureNeed } from "@/engine/debt";
 import { fundableNow } from "@/engine/credit";
 import { demandNow } from "@/engine/demand";
 import { leaseholdQuote, landBuybackCost, LEASEHOLD_STEP } from "@/engine/leasehold";
 import { stakeQuote, buyoutCost, JV_SHARES, JV_MINORITY_DISCOUNT } from "@/engine/jv";
-import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD } from "@/engine/mix";
+import { syndicateView } from "@/engine/syndicate";
+import { recapQuote } from "@/engine/recap";
+import { isMixedUse, mixLabel, mixOf, uses as usesOf, useSf, USE_WORD, dominantUse } from "@/engine/mix";
 import { ownerAt } from "@/engine/ownership";
 import { taxAppealQuote } from "@/engine/tax";
 import { usd, sf, pct, termLeft, pctSigned } from "@/ui/format";
@@ -35,6 +38,11 @@ import { RefiSection, RefiGlance } from "@/ui/panels/RefiDesk";
 import { DevelopSection, DevelopGlance, ReuseSection } from "@/ui/panels/DevelopDesk";
 import { useLabel, occRead, occLabel, occTitle, goingIn, band, apMid, PropTab, openViewOn, Neighbourhood, Row, STYLE_WORD, ShortBy } from "@/ui/panels/shared";
 import { Gloss } from "@/ui/Glossary";
+import { entitleQuote, platQuote, PLAT_LOT_SIZES, INDUSTRIAL_LOT_SIZES } from "@/engine/landdev";
+import { platHomesView, tractLotQuote, houseValue, sfrRentMo } from "@/engine/homes";
+import { tractYield } from "@/engine/platdesign";
+import { SplitTab } from "@/ui/next/SplitTab";
+import { splittable } from "@/engine/lotsplit";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
 export {
@@ -42,8 +50,7 @@ export {
   OfferDesk, BuyButtons, GroundLeaseSection, ListSection,
 } from "@/ui/panels/AcquireDesk";
 export { RefiSection } from "@/ui/panels/RefiDesk";
-export { DevelopSection, ReuseSection, capStack } from "@/ui/panels/DevelopDesk";
-export type { Stack } from "@/ui/panels/DevelopDesk";
+export { DevelopSection, ReuseSection } from "@/ui/panels/DevelopDesk";
 
 // WHAT EACH KIND OF SHOP WANTS, which is what decides whether they are your
 // competition on this building or your buyer for it next year. Lifted out of
@@ -66,12 +73,264 @@ function ParcelPanelShell({ embedded = false, tab }: { embedded?: boolean; tab?:
   // Closed card: do not subscribe to `game` at all — every LOI/cash write used
   // to rebuild this whole file for a panel that was not on screen.
   const selectedBBL = useStore((s) => s.selectedBBL);
+  // the region's reserved land (a neighbourhood, a farm, the parish) has a card of its own: no desk can trade it
+  const reserved = useStore((s) => (s.selectedBBL ? s.city?.reserved?.[s.selectedBBL] : undefined));
   if (!selectedBBL) return null;
+  if (reserved) return <ReservedCard rec={reserved} embedded={embedded} />;
   // Keyed on the deed: a new building is a new card. The card kept the last
   // one's scroll offset, so clicking a second building after reading the foot
   // of the first opened it at "Adjoining lots", and per-building drafts (an
   // offer half typed) could carry across.
   return <ParcelPanelInner key={selectedBBL} embedded={embedded} tab={tab} selectedBBL={selectedBBL} />;
+}
+
+/**
+ * LAND THE MARKET DOES NOT REACH (the region map, Phase 1). A neighbourhood is
+ * one parcel for a whole subdivision, a farm tract is farmland, the parish is
+ * the parish: the card says what is there, in the generator's own numbers. It
+ * carries no price — no mechanism in this engine prices an owner-occupied
+ * house or an acre of corn yet, and a number with nothing behind it would be a
+ * fake (CLAUDE.md). Homebuilders, land development and the farmland market are
+ * later phases.
+ */
+function ReservedCard({ rec, embedded }: { rec: ReservedParcel; embedded: boolean }) {
+  const select = useStore((s) => s.select);
+  const acres = rec.acres ?? rec.lotArea / 43560;
+  const kind = rec.kind === "neighbourhood" ? "Neighbourhood" : rec.kind === "rural" ? "Rural home" : rec.kind === "civic" ? "Church and school" : rec.kind === "woodlot" ? "Woodlot" : "Farm";
+  const era = rec.era === "prewar" ? "pre-war streetcar suburb" : rec.era === "postwar" ? "post-war subdivision" : rec.era === "recent" ? "1980s-and-after subdivision" : null;
+  const why = rec.tenure === "homes"
+    ? "Owned house by house by the households who live in them. Not for sale to a firm in this phase: homebuilding and land development come later."
+    : rec.tenure === "farm"
+      ? "Agricultural land, not buildable until the land-development phase, and not traded on this market."
+      : "Held by the parish and the school district, not by the market.";
+  return (
+    <div className={embedded ? "panel-embed" : "panel"}>
+      {!embedded && (
+        <div className="panel-head">
+          <div>
+            <div className="panel-address">{rec.address}</div>
+            <div className="panel-bbl mono">Parcel {rec.bbl}</div>
+          </div>
+          <button className="panel-close" onClick={() => select(null)} aria-label="Close">×</button>
+        </div>
+      )}
+      <div className="chip-row">
+        <span className="chip" style={{ background: CLASS_COLOR[rec.class] }}>{kind}</span>
+        <span className="chip chip-zone mono">{rec.zoneDist}</span>
+        <span className="chip">NOT ON THE MARKET</span>
+      </div>
+      <div className="hint" style={{ marginBottom: 8 }}>{why}</div>
+      {rec.homes ? <Row k="Homes" v={rec.homes.toLocaleString()} strong /> : null}
+      {era && <Row k="Built as" v={`${era}, ${rec.eraYears?.[0] ?? rec.yearBuilt}–${rec.eraYears?.[1] ?? rec.yearBuilt}`} />}
+      {rec.yearBuilt > 0 && !era && <Row k="Built" v={String(rec.yearBuilt)} />}
+      {rec.avgHouseSf ? <Row k="Average house" v={sf(rec.avgHouseSf)} /> : null}
+      {rec.avgLotSf ? <Row k="Average lot" v={sf(rec.avgLotSf)} /> : null}
+      {rec.platLots && rec.homes ? <Row k="Platted lots" v={`${rec.platLots.toLocaleString()} (${(rec.platLots - rec.homes).toLocaleString()} not built yet)`} /> : null}
+      {rec.leapfrog && <Row k="Leapfrog" v="built out past farms still holding out" />}
+      <Row k="Land" v={acres >= 2 ? `${acres.toFixed(acres >= 20 ? 0 : 1)} acres` : sf(rec.lotArea)} />
+      {rec.bldgArea > 0 && <Row k="Floor area" v={sf(rec.bldgArea)} />}
+      {rec.crop && <Row k="This season" v={rec.crop} />}
+      {rec.floodShare ? <Row k="In the floodplain" v={`${Math.round(rec.floodShare * 100)}%`} /> : null}
+      {rec.districtName && <Row k="Area" v={rec.districtName} />}
+    </div>
+  );
+}
+
+/**
+ * THE LAND DEVELOPER'S DESK (region map, engine/landdev.ts): a farm tract you
+ * own — rezone it, then build its streets and cut it into lots. Every number
+ * on it is the engine's own quote.
+ */
+function LandDevCard({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game);
+  const parcels = useStore((s) => s.parcels);
+  const fileRezoning = useStore((s) => s.fileRezoning);
+  const buildPlat = useStore((s) => s.buildPlat);
+  const [lotSf, setLotSf] = useState<number>(7500);
+  const rec = parcels?.[bbl];
+  if (!game || !parcels || !rec?.ag || !rec.tract) return null;
+  const owned = !!game.holdings[bbl];
+  const app = game.entitlementApps?.[bbl];
+  const rz = game.rezoned?.[bbl];
+  const plat = game.plats?.[bbl];
+  const acres = rec.lotArea / 43560;
+  return (
+    <div className="deal" style={{ marginTop: 6 }}>
+      <div className="deal-head">Land development</div>
+      <div className="hint">
+        {rec.ag === "wood" ? "Woodland" : "Farmland"}, {acres.toFixed(0)} acres, {rz ? `rezoned ${rz.zone} (FAR ${rz.far}), farmed until the streets go in` : "zoned for agriculture — priced at what it earns as a farm"}.
+        {" "}{((rec.buildableSf ?? rec.lotArea) / 43560).toFixed(0)} buildable acres{rec.buildableSf !== undefined && rec.buildableSf < rec.lotArea * 0.95 ? " (the rest is floodplain or taken)" : ""}; {(rec.tract.edgeM / 1000).toFixed(1)} km from the town's edge.
+      </div>
+      {!owned && <div className="hint">Buy it to rezone it and cut it into lots.</div>}
+      {owned && !app && !rz && (() => {
+        const planned = tractYield(rec, lotSf).n;
+        const q = entitleQuote(game, parcels, bbl, lotSf, planned);
+        return (
+          <>
+            <div className="btn-row">
+              {PLAT_LOT_SIZES.map((v) => (
+                <button key={v} type="button" className={"btn-mini" + (v === lotSf ? " on" : "")} onClick={() => setLotSf(v)}>{v.toLocaleString()} sf lots</button>
+              ))}
+            </div>
+            <div className="btn-row" title="An industrial park: a truck-rated spine road and big lots for boxes, flex, plants or a centre.">
+              {INDUSTRIAL_LOT_SIZES.map((v) => (
+                <button key={v} type="button" className={"btn-mini" + (v === lotSf ? " on" : "")} onClick={() => setLotSf(v)}>{Math.round(v / 43560)} ac park lots</button>
+              ))}
+            </div>
+            {q ? (
+              <>
+                <Row k="Lots on the plat" v={q.lots.toLocaleString()} />
+                <Row k="Rezoning to" v={`${q.zone}, FAR ${q.far}`} />
+                <Row k="Counsel, studies, hearings" v={usd(q.cost)} />
+                <Row k="The board decides in" v={`${q.months} months`} />
+                <Row k="Applications like it pass" v={`${Math.round(q.odds * 100)}%`} />
+                <button type="button" className="btn btn-sm" onClick={() => fileRezoning(bbl, lotSf)}>File the rezoning</button>
+              </>
+            ) : <div className="hint">Too little buildable ground on this tract for a plat at that lot size.</div>}
+          </>
+        );
+      })()}
+      {app && <Row k="Before the board" v={`decides ${monthLabel(app.decideM)} · ${app.lots} lots · ${Math.round(app.odds * 100)}% odds`} />}
+      {owned && rz && !plat && (() => {
+        const lots = tractYield(rec, rz.lotSf).lots;
+        const q = platQuote(game, lots, rz.lotSf, parcels, bbl);
+        return (
+          <>
+            <Row k="Rezoned" v={`${rz.zone}, FAR ${rz.far}, ${lots.length} lots of ~${rz.lotSf.toLocaleString()} sf`} />
+            <Row k="Streets, pipes and impact fees" v={`${usd(q.cost)} · ${usd(q.perLot)} a lot`} />
+            <Row k="Built in" v={`${q.months} months`} />
+            <button type="button" className="btn btn-sm" onClick={() => buildPlat(bbl)}>Build the streets</button>
+          </>
+        );
+      })()}
+      {plat && !plat.done && <Row k="Streets going in" v={`${plat.lots.length} lots, finished ${monthLabel(plat.doneM)}`} />}
+      {!plat && (() => {
+        // what a finished lot here would fetch from a homebuilder today (engine/homes.ts)
+        const lsf = rz?.lotSf ?? lotSf;
+        const n = tractYield(rec, lsf).n;
+        const t = tractLotQuote(game, parcels, bbl, lsf, n);
+        return (
+          <>
+            <Row k="House · lot residual" v={`${usd(t.quote.price)} · ${usd(t.quote.residual)}`} />
+            <Row k="Sell-out" v={`${t.pace.toFixed(1)}/mo · ×${t.disc.toFixed(2)} → ${usd(t.lotValue)} a lot`} />
+          </>
+        );
+      })()}
+    </div>
+  );
+}
+
+/**
+ * THE LOTS DESK (region map, engine/homes.ts): one plat, as the homebuilders
+ * read it. The house, its cost and the residual left for the lot; what a
+ * builder would bid, how fast the plat sells out, who is building; and your
+ * lot sales — offers to sign or pass, and listing the plat to the builders.
+ */
+export function HomesCard({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game);
+  const parcels = useStore((s) => s.parcels);
+  const listLots = useStore((s) => s.listLots);
+  const delistLots = useStore((s) => s.delistLots);
+  const takeLotOffer = useStore((s) => s.takeLotOffer);
+  const refuseLotOffer = useStore((s) => s.refuseLotOffer);
+  const [mark, setMark] = useState(1);
+  const rec = parcels?.[bbl];
+  if (!game || !parcels || !rec?.homeLot || !rec.block) return null;
+  const parent = rec.block;
+  const v = platHomesView(game, parcels, parent);
+  if (!v) return null;
+  const q = v.quote, b = v.bids;
+  const unit = game.homes?.units[bbl];
+  const lotSf = q.residualPsf > 0 ? q.residual / q.residualPsf : rec.lotArea;
+  const pct1 = (x: number) => `${(x * 100).toFixed(0)}%`;
+  const months = Number.isFinite(b.months) ? `${Math.ceil(b.months)} mo` : "never";
+  const askT = +(b.takedownPsf * mark).toFixed(2);
+  const askB = +(b.bulkPsf * mark).toFixed(2);
+  return (
+    <div className="deal" style={{ marginTop: 6 }}>
+      <div className="deal-head">Lots · {v.lots} on the plat</div>
+      {unit && <Row k="This lot" v={unit.closedM !== undefined ? `a family's · sold ${monthLabel(unit.closedM)} · ${usd(unit.price ?? 0)}` : `${unit.by} · ${unit.soldM !== undefined ? "signed" : "for sale"} · done ${monthLabel(unit.doneM)}`} />}
+      <Row k="House" v={`${sf(q.sf)} · ${usd(q.price)} · $${(q.price / q.sf).toFixed(0)}/sf`} />
+      <Row k="Build · sell · carry · margin" v={`${usd(q.vertical + q.overhead)} · ${usd(q.selling)} · ${usd(q.carry)} · ${usd(q.margin)}`} />
+      <Row k="Lot residual" v={`${usd(q.residual)} · ${pct1(q.residual / Math.max(1, q.price))} of price`} strong />
+      <Row k="Sells" v={`${v.pace.toFixed(1)} houses/mo · ${v.left} lots left · ×${v.disc.toFixed(2)}`} />
+      <Row k="Bid · takedown" v={`$${b.takedownPsf.toFixed(2)}/sf · ${usd(b.takedownPsf * lotSf)} a lot · ~${b.pace.toFixed(1)}/mo · ${months}`} />
+      <Row k="Bid · whole plat" v={`$${b.bulkPsf.toFixed(2)}/sf · ${usd(b.bulkPsf * lotSf * Math.max(1, v.free))} for ${v.free}`} />
+      <Row k="Mortgage · location" v={`${(((game.econ.indexRate ?? 5.4) / 100 + 0.017) * 100).toFixed(2)}% · ×${v.loc.toFixed(2)}`} />
+      <Row k="Yours" v={`${v.mine} lots · ${v.free} free`} />
+      {v.builders.map((x) => <Row key={x.name} k={x.name} v={`${x.held} held · ${x.building} bldg · ${x.closed} sold · cash ${usd(x.cash)} · debt ${usd(x.debt)}${x.failed ? " · failed" : ""}`} />)}
+      {v.pl && v.pl.lotsSold > 0 && (
+        <Row k="Sold to date" v={`${v.pl.lotsSold} lots · ${usd(v.pl.lotRevenue)} · gain ${usd(v.pl.lotProceeds - v.pl.lotBasis)}`} />
+      )}
+      {v.contract && <Row k="Takedown" v={`${v.contract.builder} · ${v.contract.taken} taken · ${v.contract.left} left · $${v.contract.psf.toFixed(2)}/sf`} />}
+      {v.offer && (
+        <>
+          <Row k="Offer" v={`${v.offer.builder} · ${v.offer.kind === "bulk" ? "all" : "takedown"} ${v.offer.lots} · $${v.offer.psf.toFixed(2)}/sf · to ${monthLabel(v.offer.expiresM)}`} strong />
+          <div className="btn-row">
+            <button type="button" className="btn btn-sm" onClick={() => takeLotOffer(parent)}>Sign</button>
+            <button type="button" className="btn-mini" onClick={() => refuseLotOffer(parent)}>Pass</button>
+          </div>
+        </>
+      )}
+      {v.listing && (
+        <div className="btn-row">
+          <span className="hint">Listed {v.listing.bulk ? "whole" : "takedown"} at ${v.listing.askPsf.toFixed(2)}/sf</span>
+          <button type="button" className="btn-mini" onClick={() => delistLots(parent)}>Pull</button>
+        </div>
+      )}
+      {v.free > 0 && !v.listing && b.takedownPsf > 0 && (
+        <>
+          <div className="btn-row">
+            {[0.9, 1, 1.1].map((m) => (
+              <button key={m} type="button" className={"btn-mini" + (m === mark ? " on" : "")} onClick={() => setMark(m)}>{m === 1 ? "At bid" : `${m > 1 ? "+" : "−"}${Math.round(Math.abs(m - 1) * 100)}%`}</button>
+            ))}
+          </div>
+          <div className="btn-row">
+            {!v.contract && <button type="button" className="btn-mini" onClick={() => listLots(parent, askT, false)}>List takedown ${askT.toFixed(2)}</button>}
+            <button type="button" className="btn-mini" onClick={() => listLots(parent, askB, true)}>List whole ${askB.toFixed(2)}</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A HOUSE (engine homes.ts): a family's home or a single-family rental, never
+ * commercial space. What it is, who has it, what it is worth as a house.
+ */
+function HouseCard({ bbl, embedded }: { bbl: string; embedded?: boolean }) {
+  const game = useStore((s) => s.game);
+  const parcels = useStore((s) => s.parcels);
+  const select = useStore((s) => s.select);
+  const rec = parcels && game ? resolveRec(parcels, game, bbl) : null;
+  const u = game?.homes?.units[bbl];
+  if (!game || !parcels || !rec || !u) return null;
+  const owner = u.closedM === undefined ? `${u.by} (builder)` : u.tenure === "sfr" ? "a single-family-rental investor" : "a household, living in it";
+  return (
+    <div className={embedded ? "panel-embed" : "panel"}>
+      {!embedded && (
+        <div className="panel-head">
+          <div>
+            <div className="panel-address">{rec.address}</div>
+            <div className="panel-bbl mono">Parcel {rec.bbl}</div>
+          </div>
+          <button className="panel-close" onClick={() => select(null)} aria-label="Close">×</button>
+        </div>
+      )}
+      <div className="chip-row">
+        <span className="chip" style={{ background: CLASS_COLOR.house }}>HOUSE</span>
+        <span className="chip chip-zone mono">{rec.zoneDist}</span>
+        <span className="chip">NOT ON THE MARKET</span>
+      </div>
+      <Row k="House" v={`${sf(rec.bldgArea)} · ${rec.floors} fl · ${rec.yearBuilt} · lot ${sf(rec.lotArea)}`} strong />
+      <Row k="Owner" v={owner} />
+      {u.price ? <Row k="Sold" v={`${usd(u.price)}${u.closedM !== undefined ? ` · ${monthLabel(u.closedM)}` : " · signed"}`} /> : null}
+      <Row k="Worth today" v={usd(houseValue(game, parcels, bbl))} />
+      {u.tenure === "sfr" && <Row k="Lets for" v={`${usd(sfrRentMo(game))}/mo`} />}
+      <HomesCard bbl={bbl} />
+    </div>
+  );
 }
 
 function ParcelPanelInner({
@@ -102,6 +361,7 @@ function ParcelPanelInner({
   if (!parcels) return null;
   const rec = resolveRec(parcels, game, selectedBBL);
   if (!rec) return null;
+  if (rec.class === "house") return <HouseCard bbl={selectedBBL} embedded={embedded} />;
   const dev = game.developments[selectedBBL];
   // AN ASSEMBLED SITE'S NEIGHBOURS ARE THE SITE'S: every lot touching any of
   // its deeds, less the deeds themselves — not the parent lot's old neighbours,
@@ -145,8 +405,10 @@ function ParcelPanelInner({
   // Land desk: property-page Build tab always; docked card only when the lot
   // can assemble / is land / is already folded — not on every leased tower.
   // Ground-leased lots stay on this desk even after the lessee's frame rises.
-  const showLandDesk = !!holding && on("build") && (
-    tab === "build"
+  // (owner, Oct 2026: the land desk — FAR to request, the ground lease, assembly — is the
+  // property's Overview business, not the Build desk's)
+  const showLandDesk = !!holding && on("summary") && (
+    tab === "summary"
     || rec.class === "land"
     || !!holding.groundLeased
     || !!holding.groundOffer
@@ -185,6 +447,8 @@ function ParcelPanelInner({
         {holding?.loan?.sweep && <span className="chip chip-sweep">CASH SWEEP</span>}
         {game.landmarks?.[selectedBBL] !== undefined && <span className="chip chip-reno">LANDMARKED</span>}
       </div>}
+      {on("summary") && rec.ag && <LandDevCard bbl={selectedBBL} />}
+      {on("summary") && rec.homeLot && <HomesCard bbl={selectedBBL} />}
 
       {on("summary") && !embedded && (
         <div className="btn-row" style={{ marginBottom: 8 }}>
@@ -225,6 +489,7 @@ function ParcelPanelInner({
       )}
 
       {on("summary") && holding && !dev && <AssembleCard bbl={selectedBBL} />}
+      {(on("summary") || on("build")) && holding && !dev && !parcels?.[selectedBBL]?.tract && <SplitCard key={selectedBBL} bbl={selectedBBL} />}
       {on("summary") && holding && !dev && (() => {
         const read = landRead(rec, game.econ);
         const room = farMax > 0 ? Math.max(0, 1 - builtFar / farMax) : 0;
@@ -272,7 +537,7 @@ function ParcelPanelInner({
         const buildReachable = rec.class !== "multifamily" || !!holding.groundLeased
           || (adjacency?.[selectedBBL] ?? []).some((n) => !!game.holdings[n]);
         const dirtLine = `the land under it reads $${read.psf.toFixed(0)}/sf`
-          + (read.winner === "texture" ? " on its location alone" : ` on the ${read.winner}'s bid`);
+          + (read.winner === "texture" ? " on its location alone" : ` on the ${read.winner === "homes" ? "homebuilder" : read.winner === "subdivider" ? "land developer" : read.winner}'s bid`);
         const hint = dirt
           ? (pencils
             ? `Builder residual $${read.builder.toFixed(0)}/sf · ${(room * 100).toFixed(0)}% of the envelope left. Open Build to break ground.`
@@ -403,12 +668,19 @@ function ParcelPanelInner({
             that market's own rent, so a shop roll is never marked against an
             office number. */}
         {isBuilt && holding && (() => {
-          const legs = leasableUses(rec);
+          // EVERY USE, FLATS INCLUDED. This read `leasableUses`, which is the
+          // uses with named commercial leases and leaves flats out by design,
+          // so the flats branch below never ran: a 30-storey apartment tower
+          // with one empty shop said "no tenants" over 114 let flats.
+          const legs = usesOf(rec);
           const inPlace = (u: BuiltClass): number | null => {
+            if (u === "multifamily") {
+              // The roll the flats hold (Holding.resRentPsf), at market until one is written.
+              return (holding.occ ?? 0) > 0 ? flatsRollPsf(rec, game.econ, holding) : null;
+            }
             const ts = holding.tenants.filter((t) => (t.use ?? rec.class) === u);
             const sfLet = ts.reduce((a, t) => a + t.sf, 0);
             if (sfLet > 0) return ts.reduce((a, t) => a + t.rentPsf * t.sf, 0) / sfLet;
-            if (u === "multifamily" && (occRead(rec, holding)?.lettableOcc ?? 0) > 0) return managedRentPsfYr(rec, game.econ, holding, u);
             return null;
           };
           const rows = legs.map((u) => ({ u, ip: inPlace(u), mkt: legs.length <= 1 ? marketRentPsfYr(rec, game.econ, cond) : useRentPsfYr(rec, game.econ, cond, u) }));
@@ -429,7 +701,7 @@ function ParcelPanelInner({
           );
         })()}
         {isBuilt && (() => {
-          const legs = leasableUses(rec);
+          const legs = usesOf(rec);
           if (legs.length <= 1) {
             return <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />;
           }
@@ -514,10 +786,25 @@ function ParcelPanelInner({
           const or = occRead(rec, holding);
           return <Row k="Occupancy" v={occLabel(or)} title={occTitle(or)} />;
         })()}
-        {holding && isBuilt && unitStatus(rec, holding, game.month).byUse.map((u) => (
+        {holding && isBuilt && unitStatus(rec, holding, game.month).byUse.map((u) => u.use !== "multifamily" ? (() => {
+          // OFFICES AND SHOPS LET BY THE FOOT, NOT BY THE SUITE (owner, Oct
+          // 2026). Tenants take whatever size they need, so the row reads feet
+          // let of feet rentable and how many tenants hold them.
+          const ts = holding.tenants.filter((t) => (t.use ?? dominantUse(rec)) === u.use);
+          const let_ = ts.reduce((a, t) => a + t.sf, 0);
+          const all = Math.round(useRentableSf(rec, u.use));
+          return (
+            <Row
+              key={u.use}
+              k={`${USE_WORD[u.use][0].toUpperCase()}${USE_WORD[u.use].slice(1)} let`}
+              v={`${sf(Math.round(let_))} of ${sf(all)} · ${ts.length} tenant${ts.length === 1 ? "" : "s"}`}
+              bad={let_ < all * 0.6}
+            />
+          );
+        })() : (
           <Row
             key={u.use}
-            k={u.use === "multifamily" ? "Apartments let" : `${USE_WORD[u.use][0].toUpperCase()}${USE_WORD[u.use].slice(1)} spaces let`}
+            k="Apartments let"
             /* Flats quote the average of the leg, not the demise: the leg is
                divided into a whole number of apartments and they occupy all of
                it, so a 1,412 sf residential leg is two flats of 706 and saying
@@ -586,11 +873,12 @@ function ParcelPanelInner({
         const j = (game.cityJobs ?? []).find((x) => x.bbl === selectedBBL);
         if (!j) return null;
         const firm = game.rivals?.find((r) => r.id === j.firmId);
+        const bld = !firm && j.builderId ? (game.builders ?? []).find((b) => b.id === j.builderId) : undefined;
         const pct = Math.min(100, Math.max(0, ((game.month - j.startM) / Math.max(1, j.deliverM - j.startM)) * 100));
         return (
           <div className="deal">
             <div className="deal-head">
-              {j.orphaned ? "A stalled building" : firm ? `${firm.name} is building here` : "Under construction"}
+              {j.orphaned ? "A stalled building" : firm ? `${firm.name} is building here` : bld ? `${bld.name} is building here` : "Under construction"}
             </div>
             <div className="grid">
               <Row k="Programme" v={`${sf(j.sf)} of ${j.use} · ${j.floors} floors`} strong />
@@ -599,6 +887,10 @@ function ParcelPanelInner({
                 v={j.orphaned ? "The sponsor is gone — the receiver holds it" : monthLabel(j.deliverM)}
                 bad={j.orphaned} />
               {j.firmId && !j.orphaned && j.cost !== undefined && <Row k="Their budget" v={usd(j.cost)} />}
+              {bld && <Row k="Developer" v={`${bld.founder}'s firm, since ${monthLabel(bld.bornM)} · ${bld.delivered} delivered`
+                + (bld.handedBack ? ` · ${bld.handedBack} handed back to a lender` : bld.underwater ? ` · ${bld.underwater} opened under cost` : "")}
+                bad={bld.handedBack > 0} />}
+              {j.merchant?.lender && !j.firmId && <Row k="Construction loan" v={`${j.merchant.lender} · ${Math.round(100 * j.merchant.loan / Math.max(1, j.merchant.basis))}% of cost`} />}
             </div>
             {j.orphaned && (
               <div className="hint">
@@ -846,18 +1138,20 @@ function ParcelPanelInner({
             {(() => {
               const due = payOffDue(holding.loan, game.month, game.econ);
               const facPledged = !!game.facility?.bbls?.includes(selectedBBL);
-              const canPay = !facPledged && fundableNow(game, parcels) >= due.due;
+              // A JV partner has consent over the debt (vehicles.ts): the button says so rather than erroring.
+              const jvBlock = consentFor(game, holding, "debt");
+              const canPay = !facPledged && !jvBlock && fundableNow(game, parcels) >= due.due;
               return (
                 <button
                   className="btn btn-buy"
                   disabled={!canPay}
-                  title={facPledged
+                  title={jvBlock ?? (facPledged
                     ? "Pledged to the facility — release it there first."
                     : !canPay
                       ? `Need ${usd(due.due)} to retire this loan.`
                       : due.penalty > 0
                         ? `Pay ${usd(due.balance)} + ${usd(due.penalty)} break fee. Required before a ground lease.`
-                        : `Pay ${usd(due.due)}. Deed free and clear — required before a ground lease.`}
+                        : `Pay ${usd(due.due)}. Deed free and clear — required before a ground lease.`)}
                   onClick={() => useStore.getState().payOffLoan(selectedBBL)}
                 >
                   Pay off · {usd(due.due)}
@@ -874,7 +1168,7 @@ function ParcelPanelInner({
             {(holding.loan.floating ?? holding.loan.product === "float") && !holding.loan.cap && (
               <button
                 className="btn"
-                title={`Base rate capped at ${(game.econ.indexRate + 0.5).toFixed(2)}% for 3 years`}
+                title={`Base rate capped at ${capStrikeFor(game, holding.loan).toFixed(2)}% for 3 years`}
                 onClick={() => useStore.getState().rateCap(selectedBBL)}
               >
                 Buy rate cap · {usd(rateCapCost(holding.loan))}
@@ -949,6 +1243,18 @@ function ParcelPanelInner({
                 );
               })()}
               {!isBuilt && <Row k="Land" v={"$" + ((contract?.agreedPrice ?? listing.ask) / rec.lotArea).toFixed(0) + " /sf of lot"} />}
+              {listing.halfBuilt && (() => {
+                // A RECEIVER'S SITE WITH A FRAME ON IT IS A JOB, NOT A LOT: the
+                // buyer takes the construction on at the closing, and the
+                // purchase is refused unless the rest can be funded.
+                const hb = listing.halfBuilt;
+                const need = takeoverEquityNeed(game, parcels, selectedBBL, hb);
+                return (
+                  <Row k="Comes with a half-built job"
+                    v={`${Math.round(hb.progress * 100)}% built · ${hb.floors} floors of ${hb.use} · ${usd(need)} of your equity to finish and open it`}
+                    bad strong title="Buying the site takes the job on. The purchase is refused unless you can fund this after paying the price." />
+                );
+              })()}
             </div>
             {/* TWO ACTS, and never both at once. Before a handshake there is
                 only a price; after one there is only the money. */}
@@ -1137,11 +1443,14 @@ function ParcelPanelInner({
                 this building at a time; this row averaged the legs together
                 and called the result the asking rent, so on a mixed building
                 the number on the screen was one nobody was ever quoted. */}
-            {leasableUses(rec).map((u) => (
+            {/* Flats too: the asking posture moves what they re-let at
+                (flatsMarkPsf), not only the shops' and offices' letters. */}
+            {usesOf(rec).map((u) => (
               <Row
                 key={u}
-                k={leasableUses(rec).length > 1 ? `Asking · ${CLASS_LABEL[u] ?? u}` : "Asking rent"}
-                v={"$" + currentAskPsfYr(rec, game.econ, holding, u).toFixed(2) + " /sf on new leases"}
+                k={usesOf(rec).length > 1 ? `Asking · ${CLASS_LABEL[u] ?? u}` : "Asking rent"}
+                v={"$" + (u === "multifamily" ? flatsMarkPsf(rec, game.econ, holding) : currentAskPsfYr(rec, game.econ, holding, u)).toFixed(2)
+                  + (u === "multifamily" ? " /sf as flats turn over" : " /sf on new leases")}
               />
             ))}
           </div>
@@ -1177,8 +1486,10 @@ function ParcelPanelInner({
           </div>
           {holding.autoLease && (
             <>
-              <AutoTiCapRow bbl={selectedBBL} />
-              <div className="hint" style={{ fontSize: 11 }}>{autoLeaseRule(game, holding)}</div>
+              <LegacyTiCapRow bbl={selectedBBL} />
+              <div className="hint" style={{ fontSize: 11 }}>
+                {autoLeaseRule(game, holding)} The concession limit is the firm's, on the Leasing page.
+              </div>
             </>
           )}
           <OpsChoices bbl={selectedBBL} h={holding} />
@@ -1273,7 +1584,7 @@ function ParcelPanelInner({
       {on("deal") && !holding && isBuilt && <DisclosedRoll bbl={selectedBBL} />}
 
       {on("deal") && holding && <SaleSection bbl={selectedBBL} value={value} />}
-      {on("deal") && holding && isBuilt && !holding.groundLeased && <StakeSection bbl={selectedBBL} />}
+      {on("deal") && holding && ((isBuilt && !holding.groundLeased) || !!game.syndications?.[selectedBBL]) && <StakeSection bbl={selectedBBL} />}
       {on("deal") && holding && isBuilt && !holding.groundLeased && <LeaseholdSection bbl={selectedBBL} />}
 
       {on("summary") && holding && (
@@ -1393,6 +1704,7 @@ function PaydownRow({ bbl }: { bbl: string }) {
   const valid = amt > 0 && amt < bal;
   const pen = valid ? prepayPenalty({ ...loan, balance: amt }, game.month, game.econ) : 0;
   const tooMuch = valid && amt + pen > game.cash;
+  const jvBlock = consentFor(game, game.holdings[bbl], "debt");
   return (
     <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
       <input
@@ -1407,8 +1719,8 @@ function PaydownRow({ bbl }: { bbl: string }) {
       <button className="btn" onClick={() => setTxt(String(Math.round(bal * 0.1)))}>10%</button>
       <button className="btn" onClick={() => setTxt(String(Math.round(bal * 0.25)))}>25%</button>
       <button
-        className="btn btn-buy" disabled={!valid || tooMuch}
-        title={!valid ? "Less than the balance — Pay off retires the whole note." : tooMuch ? `Needs ${usd(amt + pen)} in cash.` : undefined}
+        className="btn btn-buy" disabled={!valid || tooMuch || !!jvBlock}
+        title={jvBlock ? jvBlock : !valid ? "Less than the balance — Pay off retires the whole note." : tooMuch ? `Needs ${usd(amt + pen)} in cash.` : undefined}
         onClick={() => { useStore.getState().paydownLoan(bbl, amt); setTxt(""); }}
       >
         Pay down{valid ? ` · ${usd(amt + pen)}` : ""}
@@ -1487,12 +1799,63 @@ function LeaseholdSection({ bbl }: { bbl: string }) {
  * fund their share of every call, and the big decisions wait on them. On a JV
  * deed: who, how much, and what buying them out costs today.
  */
+/** A fraction as a whole percent. */
+const pc = (x: number) => `${Math.round(x * 100)}%`;
+
 function StakeSection({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const [share, setShare] = useState(JV_SHARES[0]);
   const h = game.holdings[bbl];
   if (!h) return null;
+  const syn = syndicateView(game, parcels, bbl);
+  if (syn) {
+    const pastPref = syn.owedAtPref <= 0;
+    const pastHurdle = syn.owedAtHurdle <= 0;
+    return (
+      <div className="deal">
+        <div className="deal-head">Syndicated · {syn.investor} since {monthLabel(syn.formedM)}</div>
+        <div className="hint">
+          Every month the cash this deed makes, or needs, settles with them: a surplus is paid through the waterfall — their capital and a {pc(syn.pref)} pref
+          first, pari passu with yours, then {pc(syn.promote)} of what is above a {pc(syn.hurdle)} IRR to you — and a shortfall is a call, their
+          {" "}{pc(syn.lpShare)} share until their commitment is in. Overruns past it are yours. Refinancing is yours to run; changing the plan,
+          the land or the title needs them, and they will not agree.
+        </div>
+        <div className="grid">
+          <Row k="Committed · called" v={`${usd(syn.lpCommit)} · ${usd(syn.lpCalled)}`} />
+          <Row k="Paid to them so far" v={usd(syn.lpDist)} />
+          {syn.flags.length > 0 && (
+            <Row k="Their report flags" bad
+              v={syn.flags.map((f) => ({ late: "behind schedule", over: "over budget", leaseup: "short of the pitched income", dist: "no distributions in a year" } as Record<string, string>)[f] ?? f).join(" · ")}
+              title="Each flag is −3 on your record with every investor until the deal's real result replaces it (at most −10 a deal)." />
+          )}
+          <Row k="Their share of the capital" v={pc(syn.capShare)} />
+          <Row k="Owed them before any promote" v={pastPref ? "nothing — the pref is paid" : usd(syn.owedAtPref)} />
+          <Row k={`To their ${pc(syn.hurdle)} hurdle`} v={pastHurdle ? "cleared — you earn the promote" : usd(syn.owedAtHurdle)} />
+          <Row k="Equity at the mark · yours · theirs" v={`${usd(syn.equity)} · ${usd(syn.yours)} · ${usd(syn.theirs)}`} title="Liquidated through the waterfall today: what each side would take of the deal's equity at its mark." />
+        </div>
+        {(() => {
+          // REFINANCE THEM OUT AND KEEP IT (recap.ts): their waterfall take on
+          // a sale at the appraisal, no broker, plus the band's fairness premium.
+          const q = recapQuote(game, parcels, bbl);
+          if (!q.ok) return <div className="hint">Buy them out: {q.why}</div>;
+          const can = fundableNow(game, parcels) >= q.total;
+          return (
+            <>
+              <div className="grid" style={{ marginTop: 6 }}>
+                <Row k="Buy them out today" v={`${usd(q.price)}${q.premium ? ` (incl. ${usd(q.premium)} fairness premium)` : ""}${q.transferTax ? ` + ${usd(q.transferTax)} transfer tax` : ""}`}
+                  title={`What a sale at the ${usd(q.appraisal)} appraisal would pay them through the waterfall — capital, pref and tiers — with no broker. Sell it within two years for 15% more than that and investors will say you bought them out cheap.`} />
+              </div>
+              <div className="btn-row">
+                <button className="btn" disabled={!can} onClick={() => useStore.getState().recapBuyout(bbl)}>Buy them out · {usd(q.total)}</button>
+                <ShortBy need={q.total} have={fundableNow(game, parcels)} />
+              </div>
+            </>
+          );
+        })()}
+      </div>
+    );
+  }
   if (h.jv) {
     const cost = buyoutCost(game, parcels, h);
     return (
@@ -1549,45 +1912,45 @@ function StakeSection({ bbl }: { bbl: string }) {
 }
 
 /**
- * THE AUTO-LEASE FIT-OUT CAP — the second of auto-lease's two instructions.
- * Three presets read off today's market band for the building's main use, a
- * box for your own number, and No cap. $/sf per year of term, the unit TI is
- * quoted and rolled in, so one number covers a ten-year lease and a renewal.
+ * A PER-BUILDING FIT-OUT CAP FROM BEFORE THE FIRM-WIDE LIMIT. Saves that set
+ * one keep it — it still binds, on top of the team's concession limit — and
+ * the row says so and offers to clear it. New buildings never show it: the
+ * firm's limit reads the market for each space, which a $/sf-per-lease-year
+ * figure typed into each deed could not.
  */
-function AutoTiCapRow({ bbl }: { bbl: string }) {
+function LegacyTiCapRow({ bbl }: { bbl: string }) {
   const game = useStore((s) => s.game)!;
-  const parcels = useStore((s) => s.parcels)!;
-  const [txt, setTxt] = useState("");
   const h = game.holdings[bbl];
-  const rec = resolveRec(parcels, game, bbl);
-  if (!h || !rec) return null;
-  const use = leasableUses(rec)[0] ?? "office";
-  const [lo, hi] = marketTiPsfYr(game, use, rec, h);
-  const cap = autoTiCapToday(game, h);
-  const set = (v: number | undefined) => useStore.getState().autoTiCap(bbl, v);
-  const near = (v: number) => cap !== undefined && Math.abs(cap - v) < 0.01;
-  const presets: [string, number, string][] = [
-    ["Lean", lo, "the bottom of what tenants ask — fewer deals, cheaper ones"],
-    ["Typical", (lo + hi) / 2, "the middle of the market band"],
-    ["Generous", hi, "the top of the band — most second-generation asks clear it"],
-  ];
-  const typed = Number(txt.replace(/[^0-9.]/g, ""));
+  const cap = h ? autoTiCapToday(game, h) : undefined;
+  if (cap === undefined) return null;
   return (
-    <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-      <span className="hint" title={`Most fit-out auto-lease will fund, per year of lease term. Tenants here ask about $${lo.toFixed(2)}–$${hi.toFixed(2)}/sf per year today, shell floors included.`}>TI cap</span>
-      <button className={"btn btn-mini" + (cap === undefined ? " btn-on" : "")} onClick={() => set(undefined)}>No cap</button>
-      {presets.map(([label, v, why]) => (
-        <button key={label} className={"btn btn-mini" + (near(v) ? " btn-on" : "")} title={`$${v.toFixed(2)}/sf per lease year — ${why}`} onClick={() => set(+v.toFixed(2))}>
-          {label} ${v.toFixed(2)}
-        </button>
-      ))}
-      <input
-        className="mono" style={{ width: 70 }} inputMode="decimal"
-        placeholder={cap !== undefined ? cap.toFixed(2) : "$/sf·yr"}
-        value={txt} onChange={(e) => setTxt(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && txt.trim() && Number.isFinite(typed)) { set(typed); setTxt(""); } }}
-      />
-      <button className="btn btn-mini" disabled={!txt.trim() || !Number.isFinite(typed)} onClick={() => { set(typed); setTxt(""); }}>Set</button>
+    <div className="btn-row" style={{ alignItems: "center" }}>
+      <span className="hint">Building fit-out cap ${cap.toFixed(2)}/sf per lease year (on top of the firm's limit)</span>
+      <button className="btn btn-mini" onClick={() => useStore.getState().autoTiCap(bbl, undefined)}>Clear</button>
+    </div>
+  );
+}
+
+/**
+ * SPLIT THIS LOT (engine/lotsplit.ts): any deed you own, downtown or not, cut
+ * into lots that each meet the code. Folded until asked for; the tool itself
+ * is the building file's Split tab (ui/next/SplitTab.tsx).
+ */
+function SplitCard({ bbl }: { bbl: string }) {
+  const game = useStore((s) => s.game);
+  const parcels = useStore((s) => s.parcels);
+  const [open, setOpen] = useState(false);
+  if (!game || !parcels) return null;
+  const pending = (game.splits ?? []).some((x) => x.parent === bbl && !x.done && !x.lapsed);
+  const deny = pending ? null : splittable(game, parcels, bbl);
+  return (
+    <div className="deal">
+      <div className="deal-head">
+        Split the lot <span className="dim">· {pending ? "filed" : deny ? "not now" : "minor 2-4 lots · plat 5+"}</span>
+        <button type="button" className="btn-mini" style={{ float: "right" }} onClick={() => setOpen(!open)}>{open ? "Close" : "Split…"}</button>
+      </div>
+      {!open && deny && <div className="hint">{deny}</div>}
+      {open && <SplitTab game={game} parcels={parcels} bbl={bbl} />}
     </div>
   );
 }

@@ -16,7 +16,7 @@ import { cloneState, logBooks, monthLabel } from "./types";
 import { dollarLevel, rng, rrange } from "./market";
 import { assetValue, collateralAsIs, netWorth, resolveRec } from "./value";
 import { assetGrade } from "./rivals";
-import { syncDebt } from "./rivalDebt";
+import { loanBookTouched, syncDebt } from "./rivalDebt";
 import { firmShort } from "./firm";
 import { lenderByName } from "./lenders";
 import { coverCashShortfall, fundableNow, sweepLocIdleCash } from "./credit";
@@ -131,7 +131,7 @@ export function releasePrivateStreetRecord(s: GameState, n: Note, newLender?: st
   const row = s.cityLoans?.[n.bbl];
   if (!row || !s.cityLoans || row.lender !== firmShort(s)) return;
   if (newLender) row.lender = newLender;
-  else delete s.cityLoans[n.bbl];
+  else { delete s.cityLoans[n.bbl]; loanBookTouched(); }
 }
 
 /** Extinguish the claim — rival debt down and street record cleared. */
@@ -161,8 +161,10 @@ function rivalNeedsPrivate(
   // Size: bridge, not a permanent takeout — 55–68% of as-is, capped.
   const ltv = cl(0.45, 0.72, privateAdvance(s) + ((r.stressMs ?? 0) > 8 ? 0.08 : 0));
   let face = Math.round(asIs * ltv / 25_000) * 25_000;
-  face = cl(250_000, 12_000_000, face);
-  if (face < 250_000 || asIs < face / 0.7) return null;
+  // A bridge desk's ticket band, carried at the town's inflation.
+  const infl = s.econ.cpi ?? 1;
+  face = cl(250_000 * infl, 12_000_000 * infl, face);
+  if (face < 250_000 * infl || asIs < face / 0.7) return null;
 
   // The volume bank is the one a stressed sponsor calls first. This looked up
   // "Alden National", a desk that has never existed, so `bankShut` was always
@@ -317,6 +319,7 @@ export function fundPrivateAsk(
   if ((rival.stressMs ?? 0) > 0) rival.stressMs = Math.max(0, (rival.stressMs ?? 0) - 2);
 
   if (!next.cityLoans) next.cityLoans = {};
+  loanBookTouched();
   next.cityLoans[ask.bbl] = {
     bbl: ask.bbl,
     lender: firmShort(next),
@@ -439,7 +442,7 @@ function playerNeedsPrivateBorrow(
 
   const ltv = cl(0.45, 0.72, privateAdvance(s) + 0.03 + (balloonFile ? 0.06 : 0));
   let principal = Math.round((asIs * ltv) / 25_000) * 25_000;
-  principal = cl(250_000, 12_000_000, principal);
+  principal = cl(250_000 * (s.econ.cpi ?? 1), 12_000_000 * (s.econ.cpi ?? 1), principal);
   // A quote that cannot touch the balloon is noise — size at least toward payoff.
   if (payoff > 0) principal = Math.max(principal, Math.min(Math.round(payoff / 25_000) * 25_000, Math.round(asIs * 0.7)));
   if (principal < 250_000) return null;
@@ -539,6 +542,7 @@ function buildPrivateLoan(s: GameState, q: PrivateBorrowQuote): Loan {
     product: "private",
     holder: q.lenderName,
     floating: true,
+    bench: "long",   // spread struck off the loan index; see save.ts migrateFloatingBench
     points: q.points,
     recourse: false,
     prepay: "open",

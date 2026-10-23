@@ -135,6 +135,9 @@ export function formInEra(f: SignatureForm, year: number) {
 
 /** Does a building of this many metres read as the form? */
 export function formFits(f: SignatureForm, heightM: number) {
-  return heightM >= f.minFloors * FLOOR;
+  // Half a storey's grace: the city draws player stock at 3.55 m a storey, so
+  // a 25-storey tower stood 88.75 m against a 90 m bar and the form the
+  // picker offered at 25 floors was refused, silently, at exactly 25.
+  return heightM + 0.5 * FLOOR >= f.minFloors * FLOOR;
 }
 

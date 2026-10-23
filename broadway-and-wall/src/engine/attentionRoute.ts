@@ -7,7 +7,7 @@ import type { GameState } from "./types";
 export type AttentionPage =
   | "none" | "portfolio" | "deals" | "market" | "players" | "economy" | "books"
   | "news" | "leasing" | "debt" | "property" | "saves" | "notes" | "settings"
-  | "primer";
+  | "primer" | "investors";
 
 export type AttentionRoute = {
   page?: AttentionPage;
@@ -34,6 +34,13 @@ export function routeAttention(key: string, game: GameState | null): AttentionRo
     const bbl = key.split(":")[1];
     return { page: "market", bbl };
   }
+  if (head === "fund-idle") return { page: "investors" };
+  // A delivered building is leased up from its own desk; a bank failure and
+  // the fund's TI book are read where those live.
+  if (head === "delivered") { const bbl = key.split(":")[1]; return { page: "leasing", bbl }; }
+  if (head === "bank-seized") return { page: "debt" };
+  if (head === "ti-book-fund") return { page: "leasing" };
+  if (head === "reo") return { page: "market", bbl: key.split(":")[1] };
   if (head === "early-look") {
     const bbl = key.split(":")[1];
     return { page: "market", bbl };
@@ -42,13 +49,14 @@ export function routeAttention(key: string, game: GameState | null): AttentionRo
     const bbl = key.split(":")[1];
     return { page: "portfolio", bbl };
   }
-  if (head === "nonrenew" || head === "lease-roll" || head === "capital-plan") {
+  if (head === "nonrenew" || head === "lease-roll" || head === "capital-plan" || head === "tenant-dark") {
     const bbl = key.split(":")[1];
     return { page: "leasing", bbl };
   }
   // Arrears and a renewed balloon are both answered on the debt desk: one
   // needs the refinance / payoff buttons, the other is the record of them.
-  if (head === "balloon" || head === "sweep" || head === "arrears" || head === "renewed") {
+  if (head === "balloon" || head === "sweep" || head === "arrears" || head === "renewed"
+    || head === "mezz-arrears" || head === "mezz-balloon") {
     const bbl = key.split(":")[1];
     return { page: "debt", bbl };
   }

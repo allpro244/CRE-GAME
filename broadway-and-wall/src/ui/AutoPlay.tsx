@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useStore } from "@/state/store";
+import { onScreen } from "@/ui/onScreen";
 import { stopRule } from "@/engine/sim";
 import { beatsBetween } from "@/engine/storyline";
 
@@ -31,11 +32,11 @@ export default function AutoPlay() {
       if (!st.autoplay || !st.game || !st.parcels) return;
       if (st.game.gameOver) { useStore.setState({ autoplay: 0 }); return; }
       // A spectator is not at the desk; a card about the world does not stop the match.
-      const blocking = st.game.spectator ? null : document.querySelector(".modal-backdrop, .delivery-ceremony");
+      const blocking = st.game.spectator ? null : onScreen(".modal-backdrop, .delivery-ceremony");
       if (st.advancing || st.paletteOpen || blocking) {
         // A card on the desk: wait for it rather than stop, unless it is a
         // decision — those stop the clock like they stop Yr.
-        if (document.querySelector(".modal-backdrop")) {
+        if (onScreen(".modal-backdrop")) {
           // Name the card: "a card on your desk" said nothing the card did not.
           const t = document.querySelector(".app > .modal-backdrop .modal-title")?.textContent?.trim();
           pause(t ? `${t} is waiting on your answer` : "a card on your desk needs an answer");

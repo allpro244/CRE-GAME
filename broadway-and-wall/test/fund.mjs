@@ -91,17 +91,19 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   ok("raiseFund refuses", !!r.err);
 }
 
-// Raise works with standing + exits + expansion.
+// Raise works for a sponsor investors read as Institutional, in an open window,
+// sized by the investor money the city has left this year (investors.ts).
 {
   let g = E.firstListings(E.newGame(12007, parcels, 20_000_000), parcels, bbls);
   g.econ.phase = "expansion";
-  g.exits = [
-    { bbl: "x", address: "x", boughtM: 0, soldM: 1, price: 2, basis: 1, gain: 1, forced: false },
-    { bbl: "y", address: "y", boughtM: 0, soldM: 2, price: 2, basis: 1, gain: 1, forced: false },
-  ];
+  // The raise reads the credit window, not the label (fund.ts): an open one.
+  g.econ.creditIdx = 1;
+  g.reputation = { band: "Institutional", score: 45, rank: 2, of: 30, m: 0 };
   g.sponsor = { events: [] };
+  const open0 = ["local", "family", "endowment"].reduce((a, id) => a + E.poolLeft(g, id), 0);
   const q = E.fundRaiseQuote(g);
   ok("eligible to raise", q.ok, q.reason);
+  ok("sized by the open investor pools", Math.abs(q.size - open0) <= 100_000, `${q.size} vs ${open0}`);
   const cash0 = g.cash;
   const r = E.raiseFund(g);
   ok("raise closes", !r.err, r.err);
@@ -111,6 +113,29 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   ok("uncalled positive", g.fund.uncalled > 0);
   ok("lpCalled on books", (g.books?.reduce((a, y) => a + (y.lpCalled ?? 0), 0) ?? 0) > 0);
   ok("fundPay default on after raise", g.fundPay === true);
+  const open1 = ["local", "family", "endowment"].reduce((a, id) => a + E.poolLeft(g, id), 0);
+  ok("the raise drew the LPs' money out of the pool", open1 <= open0 - (g.fund.size - g.fund.gpCommit) + 1, `${open0} → ${open1}`);
+  // A month of the management fee: on commitments through the investment period.
+  const c0 = g.cash, f0 = g.fund.cash;
+  E.tickFund(g);
+  const fee = Math.round(g.fund.size * E.FUND_MGMT_FEE / 12);
+  ok("the management fee moves from the vehicle to the sponsor", g.cash - c0 === fee && Math.abs((f0 - g.fund.cash) - fee) <= 1, `${g.cash - c0} vs ${fee}`);
+}
+
+// A fund that returned its capital is good evidence on the record.
+{
+  let g = E.newGame(4246, parcels);
+  g.fundHistory = [{ raisedM: -120, closedM: 0, size: 20_000_000, called: 18_000_000, distributed: 30_000_000, gpCommit: 600_000 }];
+  const ev = E.playerEvidence(g).find((e) => /Your fund/.test(e.label));
+  ok("a returned fund is positive evidence, sized by its commitments", ev && ev.ev > 4 && ev.size > 1, ev ? `${ev.ev.toFixed(1)} at size ${ev.size.toFixed(2)}` : "none");
+}
+
+// An Unknown sponsor cannot raise a blind pool, however rich.
+{
+  let g = E.firstListings(E.newGame(12007, parcels, 20_000_000), parcels, bbls);
+  g.econ.creditIdx = 1;
+  const q = E.fundRaiseQuote(g);
+  ok("an Unknown sponsor is refused", !q.ok && /Institutional/.test(q.reason), q.reason);
 }
 
 // IT BITES — a fund that cannot return capital stamps the second death.
@@ -125,8 +150,10 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   E.settleFund(g);
   ok("failed fund settled", g.fund.settled && g.fund.failed);
   ok("fundFailedM stamped", g.fundFailedM === 10);
+  ok("the failed fund is on the record", (g.fundHistory ?? []).length === 1 && E.playerEvidence(g).some((e) => /Your fund/.test(e.label) && e.ev < 0));
+  E.updateReputation(g);
   const q = E.fundRaiseQuote(g);
-  ok("nobody will back you again", !q.ok && /Nobody will back you again/.test(q.reason), q.reason);
+  ok("investors will not back the next one", !q.ok, q.reason);
   const r = E.raiseFund(g);
   ok("raiseFund refuses after failure", !!r.err);
 }

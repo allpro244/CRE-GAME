@@ -1,13 +1,14 @@
 import { Fragment, useEffect, useState } from "react";
+import { consentFor } from "@/engine/vehicles";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore, rewindPrefix } from "@/state/store";
 import { listSaves, type SaveMeta } from "@/engine/save";
 import { monthLabel, CREDIT_LABEL, START_YEAR } from "@/engine/types";
 import { ownedHoldingValue, ownedMonthlyNoi, resolveRec, collateralAsIs, capRateFor } from "@/engine/value";
 import { ordinal } from "@/engine/standing";
-import { saleProceedsToSeller } from "@/engine/actions";
+import { groundLeaseFreeReversion, saleProceedsToSeller, sellerCashAtClose } from "@/engine/actions";
 import { MILESTONES, opportunitiesStop } from "@/engine/sim";
-import { loiSigningCost, exclusiveFeeRate, loiNeedsPrincipal, planIsLive } from "@/engine/leasing";
+import { loiSigningCash, exclusiveFeeRate, loiNeedsPrincipal, planIsLive } from "@/engine/leasing";
 import { depositFor as auctionDepositFor } from "@/engine/auction";
 import { portfolioQuote, portfolioSettlement } from "@/engine/portfolio";
 import { fundableNow, locAvailable } from "@/engine/credit";
@@ -210,6 +211,8 @@ function AuctionBody({
 }) {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels);
+  // Registration and the hammer both read cash plus the undrawn line (auction.ts).
+  const purse = parcels ? fundableNow(game, parcels) : game.cash;
   const focus = useStore((s) => s.focus);
   const auctionOpen = useStore((s) => s.auctionOpen);
   const popupsOff = useStore((s) => s.popupsOff);
@@ -330,8 +333,11 @@ function AuctionBody({
                     return (<><td className="num dim">site</td><td className="num dim">—</td></>);
                   }
                   const borrower = game.rivals?.find((x) => x.id === l.borrowerId);
-                  const occ = l.kind === "yours"
-                    ? physicalOcc(rec as never, game.holdings[l.bbl]!)
+                  // Your building may have left the book since the docket was posted
+                  // (sold out of default, deed in lieu): read the borrower's estimate then.
+                  const yoursNow = l.kind === "yours" ? game.holdings[l.bbl] : undefined;
+                  const occ = yoursNow
+                    ? physicalOcc(rec as never, yoursNow)
                     : Math.max(0.15, Math.min(0.95, borrower?.occ ?? 0.4));
                   // The engine's own receiver basis: worn condition, scaled by
                   // the borrower's occupancy. Capitalised back through the
@@ -376,13 +382,13 @@ function AuctionBody({
         </table>
         <div className="dim" style={{ marginTop: 6 }}>
           {Object.keys(parsed).length
-            ? <>Deposits due today: <b className="mono">{usd(dep)}</b> against {usd(game.cash)} of cash.</>
+            ? <>Deposits due today: <b className="mono">{usd(dep)}</b> against {usd(purse)} of cash and line.</>
             : a.lots.some((l) => l.kind === "note")
               ? "Your debt already bids on your own lots — enter a number only to protect the building above it."
               : "Enter a number to bid, or watch from the back. Most years, watching is right."}
         </div>
         <div className="modal-actions">
-          <button className="btn btn-buy" disabled={!Object.keys(parsed).length || dep > game.cash}
+          <button className="btn btn-buy" disabled={!Object.keys(parsed).length || dep > purse}
             onClick={() => { bidAuction(parsed); setSeenM(a.m); setAuctionOpen(false); }}>
             Register bids{dep > 0 ? ` · ${usd(dep)} down` : ""}
           </button>
@@ -455,8 +461,10 @@ function AuctionBody({
  * failure in year nine most needs to stop.
  */
 export function AlertModal() {
+  // A SWAN ALWAYS TAKES THE SCREEN — no switch silences it (owner, Oct 2026:
+  // with the cards off a black swan went by unseen).
   const awake = useStore((s) =>
-    !s.alertsOff && !s.game?.gameOver && (s.game?.alerts?.length ?? 0) > 0);
+    !s.game?.gameOver && (s.game?.alerts ?? []).some((a) => ALWAYS_STOP.has(a.kind) || (!s.alertsOff && !s.mutedAlerts.includes(a.kind))));
   // THE WORLD'S NEWS NO LONGER TAKES THE SCREEN (owner, Oct 2026): "a lot of
   // stuff stops the game that shouldn't, like when portfolios are taken back
   // by the bank." A rival's book repossessed, a bank closed, a swan, a buyer
@@ -468,15 +476,16 @@ export function AlertModal() {
   // the screen; "Opportunities too" or "Everything" restores the cards.
   const stray = useStore((s) => {
     const g = s.game;
-    if (s.alertsOff || !g?.alerts?.length || g.gameOver) return 0;
-    return g.alerts.filter((a) => !alertTakesScreen(g, a)).length;
+    if (!g?.alerts?.length || g.gameOver) return 0;
+    return g.alerts.filter((a) => !cardStays(g, a, s.alertsOff, s.mutedAlerts)).length;
   });
   useEffect(() => {
     if (!stray) return;
-    const g = useStore.getState().game;
+    const st = useStore.getState();
+    const g = st.game;
     if (!g?.alerts) return;
-    const pass = g.alerts.filter((a) => !alertTakesScreen(g, a));
-    const keep = g.alerts.filter((a) => alertTakesScreen(g, a));
+    const pass = g.alerts.filter((a) => !cardStays(g, a, st.alertsOff, st.mutedAlerts));
+    const keep = g.alerts.filter((a) => cardStays(g, a, st.alertsOff, st.mutedAlerts));
     useStore.setState({
       game: { ...g, alerts: keep },
       toast: { text: pass.map((a) => a.title).join(" · "), kind: "ok", at: Date.now() },
@@ -487,10 +496,24 @@ export function AlertModal() {
 }
 
 type AlertRow = NonNullable<NonNullable<ReturnType<typeof useStore.getState>["game"]>["alerts"]>[number];
+/** Does this card stay on screen? A swan always; anything else unless the cards are off, its kind is muted, or it does not take the screen. */
+/** Cards no setting silences: a swan, and the central bank moving (owner, Oct 2026). */
+const ALWAYS_STOP = new Set<string>(["swan", "fed"]);
+function cardStays(g: NonNullable<ReturnType<typeof useStore.getState>["game"]>, a: AlertRow, off: boolean, muted: string[]): boolean {
+  if (ALWAYS_STOP.has(a.kind)) return true;
+  if (off || muted.includes(a.kind)) return false;
+  return alertTakesScreen(g, a);
+}
+/** What "don't stop me for these" mutes, in the player's words. */
+const MUTE_LABEL: Record<string, string> = {
+  bank: "bank failures", portfolio: "books and portfolio offers", ground: "ground-lease defaults",
+  sale: "bid lists on your sales", delivered: "deliveries",
+};
 function alertTakesScreen(g: NonNullable<ReturnType<typeof useStore.getState>["game"]>, a: AlertRow): boolean {
   if (opportunitiesStop(g)) return true;
   // A new central-bank chair stops the game (owner, Oct 2026).
-  if (a.kind === "ground" || a.kind === "sale" || a.kind === "fed") return true;
+  // A swan is the event the city will date itself by — it takes the screen.
+  if (a.kind === "ground" || a.kind === "sale" || a.kind === "fed" || a.kind === "delivered" || a.kind === "swan") return true;
   return a.kind === "portfolio" && a.tone === "good" && !!g.portfolioSale && !g.portfolioSale.unsolicited;
 }
 
@@ -511,9 +534,10 @@ function AlertBody() {
     swan: ["A black swan", "A white swan"],
     bank: ["A desk has gone down", "The credit window"],
     portfolio: ["The book has been taken", "Your portfolio"],
-    ground: ["Ground-lease default", "Your leased fee"],
+    ground: ["Ground-lease default", "Your land is leased out"],
     sale: ["A sale fell apart", "Bids are in"],
     fed: ["A new chair at the central bank", "A new chair at the central bank"],
+    delivered: ["Your building is up", "Your building is up"],
   };
   let kicker = (KICKER[a.kind] ?? ["Something has happened", "Something has happened"])[bad ? 0 : 1];
   // "Your portfolio" over a call you did not make reads as though the game has
@@ -532,22 +556,53 @@ function AlertBody() {
   // to the list the body says is waiting.
   const goSale = a.kind === "sale" && !bad;
   const goFed = a.kind === "fed";
+  const goBuilt = a.kind === "delivered" && !!a.bbl;
+  // A fire or a campus has a place; show it.
+  const goSwan = a.kind === "swan" && !!a.bbl;
+  // A GROUND LEASE MUST NOT LOOK LIKE A LEASE (owner, Oct 2026): "I got
+  // offered a ground lease but thought it was a regular lease." Every ground
+  // card — a lessee signing off your offer book, or one defaulting — gets its
+  // own banner, colour and a plain-words panel of what the paper is.
+  const ground = a.kind === "ground";
+  const gl = ground && a.bbl ? game.groundLeases?.[a.bbl] : undefined;
+  const glYears = gl ? Math.round((gl.endM - gl.startM) / 12) : 0;
+  const glReview = gl ? (gl.review === "cpi" ? "CPI each year, 2–4%" : gl.review === "fmv" ? "Market reset every 20 years, capped" : `+${gl.stepPct}% every ${Math.round(gl.stepEveryM / 12)} years`) : "";
   return (
-    <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "")} data-queue={queued + 1}>
-      <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good")} role="dialog" aria-modal="true">
+    <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "") + (ground ? " alert-tint-ground" : "")} data-queue={queued + 1}>
+      <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good") + (ground ? " alert-ground" : "")} role="dialog" aria-modal="true">
+        {ground && (
+          <div className="ground-banner" aria-hidden="true">
+            <span className="ground-banner-word">Ground lease</span>
+            <span className="ground-banner-sub">the land itself — not space in a building</span>
+          </div>
+        )}
         <div className="alert-kicker">{kicker}</div>
         <div className="modal-title">{a.title}</div>
         <div className="modal-sub">{monthLabel(a.q)}</div>
         <div className="alert-body">{a.body}</div>
+        {gl && !bad && (
+          <div className="ground-terms">
+            <div><span>Term</span><b>{glYears} years · to {monthLabel(gl.endM)}</b></div>
+            <div><span>Ground rent</span><b>{usd(gl.rentYr)} / yr</b></div>
+            <div><span>Rent review</span><b>{glReview}</b></div>
+            <div><span>Who builds</span><b>They do{gl.floors && gl.use ? ` — ${gl.floors} fl of ${gl.use}` : ""}</b></div>
+            <div><span>Who runs it</span><b>They do — no tenants, letters or capital plan for you</b></div>
+            <div><span>At the end</span><b>{groundLeaseFreeReversion(gl) ? "Their building reverts to you" : "You buy their building out, or it is cleared"}</b></div>
+          </div>
+        )}
         {a.detail && <div className="alert-detail">{a.detail}</div>}
         <div className="alert-foot">
-          {goBooks
+          {ground && !bad
+            ? "Nothing to sign — it signed itself off the offer book you set. Pull a lot off that book before a lessee comes if you mean to build on it yourself."
+            : goBooks
             ? "The book is for sale on Marketplace under Books for sale — one cash cheque for the whole package. Competitors are looking at it too."
             : goOwnBook
               ? game.portfolioSale?.unsolicited
                 ? "Nothing of yours has been listed. The deeds they asked for, what each one nets you, and the three "
                   + "answers — take it, counter it, tell them no — are on the Portfolio and Deals desks."
                 : "Open Portfolio or Deals to answer the indication. It will not wait forever."
+              : goBuilt
+                ? "It opens on auto-lease at your rent posture. The lease-up, the tenants and the mini-perm are on its page."
               : goFed
                 ? "Nothing to sign. The rate the bank steers to, how hard it leans on inflation and how far it is believed are what your lenders and buyers will price from here."
               : goSale
@@ -569,6 +624,16 @@ function AlertBody() {
               {game.portfolioSale?.unsolicited ? "See which buildings" : "Open Portfolio"}
             </button>
           )}
+          {goBuilt && (
+            <button className="btn btn-buy" onClick={() => { dismissAlert(); useStore.getState().focus(a.bbl!); setPage("property"); }}>
+              Go to the building
+            </button>
+          )}
+          {goSwan && (
+            <button className="btn" onClick={() => { dismissAlert(); useStore.getState().focus(a.bbl!); setPage("property"); }}>
+              Show me where
+            </button>
+          )}
           {goFed && (
             <button className="btn" onClick={() => { dismissAlert(); setPage("economy"); }}>
               See the central bank
@@ -584,8 +649,19 @@ function AlertBody() {
               Open the bid list
             </button>
           )}
-          <button className={"btn" + (!goBooks && !goOwnBook && !goSale && !bad ? " btn-buy" : "")} data-esc onClick={dismissAlert}>
-            {bad && !goBooks ? "Understood" : goBooks || goOwnBook || goSale ? "Later" : "Good."}
+          {ground && a.bbl && (
+            <button className="btn" onClick={() => { dismissAlert(); useStore.getState().focus(a.bbl!); setPage("property"); }}>
+              Go to the lot
+            </button>
+          )}
+          {!ALWAYS_STOP.has(a.kind) && (
+            <button className="btn" title="This kind will pass as a line at the top of the screen and in the news instead of stopping the game. Undo it in Settings. Black swans always stop the game."
+              onClick={() => { useStore.getState().muteAlertKind(a.kind, true); dismissAlert(); }}>
+              Don't stop me for {MUTE_LABEL[a.kind] ?? "these"}
+            </button>
+          )}
+          <button className={"btn" + (!goBooks && !goOwnBook && !goSale && !goBuilt && !bad ? " btn-buy" : "")} data-esc onClick={dismissAlert}>
+            {(bad && !goBooks) || ground ? "Understood" : goBooks || goOwnBook || goSale || goBuilt ? "Later" : "Good."}
           </button>
         </div>
         {queued > 0 && (
@@ -619,7 +695,8 @@ function decisionAwake(g: ReturnType<typeof useStore.getState>["game"], popupsOf
   // Desk-covered letters stay quiet (agent / exclusive / renewals).
   // Ground-leased fees never wake the modal — the lessee is the landlord.
   // A live plan works exceptions on the docket, not a per-letter modal stream.
-  if (g.lois.some((l) => loiNeedsPrincipal(g, l)) && !planIsLive(g)) return true;
+  // …except a building set to "I sign": its letters always come up (owner)
+  if (g.lois.some((l) => loiNeedsPrincipal(g, l) && (!planIsLive(g) || !!g.holdings[l.bbl]?.principalSigns))) return true;
   for (const h of Object.values(g.holdings)) {
     if (offerWantsAnswer(h.sale?.offer) && (opp || !h.sale!.unsolicited)) return true;
     // Live bids only — a best-and-final where everyone walked left bids.length
@@ -828,7 +905,7 @@ function DecisionBody({
     // as DealsPage (LoiNegotiate), so the modal and the page never disagree.
     const market = loiMarketPsf(game, parcels, loi);
     const fee = exclusiveFeeRate(h);
-    const cost = loiSigningCost(loi, fee);
+    const cost = loiSigningCash(loi, fee);
     const live = game.lois.filter(loiOnDesk);
     const idx = live.findIndex((l) => l.id === loi.id) + 1;
     const short = Math.max(0, Math.ceil((cost - game.cash) / 1000) * 1000);
@@ -859,7 +936,7 @@ function DecisionBody({
           </div>
           <div className="modal-title">{loi.name}</div>
           <div className="modal-sub">
-            {loi.sector} · credit {CREDIT_LABEL[loi.credit]} · {rec.address}
+            {loi.sector}{loi.quality !== undefined ? ` · shops for quality ${loi.quality}/100` : ""} · credit {CREDIT_LABEL[loi.credit]} · {rec.address}
           </div>
           <LoiTermsGrid loi={loi} game={game} market={market} feeRate={fee} />
           {(() => {
@@ -934,7 +1011,9 @@ function DecisionBody({
   // Same waterfall acceptSaleOffer runs — loan, kicker, break fee, facility release, tax.
   const proceeds = saleProceedsToSeller(game, parcels, h, offer.price);
   const onFund = !!(h.fundOwned && game.fund && !game.fund.settled);
-  const cashAtClose = (onFund ? 0 : proceeds.toSeller) - (game.exchange ? 0 : proceeds.tax);
+  // A syndicate's investors are paid out of the closing at the month's end:
+  // what is yours is what is left after their waterfall share.
+  const cashAtClose = sellerCashAtClose(game, parcels, h, offer.price);
   const value = ownedHoldingValue(game, parcels, h);
   const counterBounds = (() => {
     const b = counterPriceBounds(offer.price, apMid(offerBbl!, value));
@@ -945,7 +1024,7 @@ function DecisionBody({
       <SaleAcceptConfirm
         address={rec.address}
         price={offer.price}
-        net={cashAtClose}
+        net={sellerCashAtClose(game, parcels, h, offer.price, !!saleAcceptConfirm.exchange)}
         exchange={saleAcceptConfirm.exchange}
         onCancel={() => setSaleAcceptConfirm(null)}
         onConfirm={() => {
@@ -988,6 +1067,7 @@ function DecisionBody({
           {proceeds.kick > 0 && <Row k="Lender kicker" v={usd(proceeds.kick)} bad />}
           {proceeds.release > 0 && <Row k="Facility release" v={usd(proceeds.release)} bad />}
           {proceeds.partner > 0 && <Row k={`To ${h.jv?.partner ?? "your partner"} (${Math.round((h.jv?.share ?? 0) * 100)}%)`} v={usd(proceeds.partner)} bad />}
+          {proceeds.investors > 0 && <Row k="To your investors, through the waterfall" v={usd(proceeds.investors)} bad title="Their capital, their 12% pref and their share above it — paid from the proceeds at the month's settlement." />}
           <Row k="Gain over basis" v={usd(proceeds.gain)} bad={proceeds.gain < 0} />
           {/* A fund deed's gain passes through the vehicle: the proceeds go to
               the fund, and the sponsor's own tax is its co-invest share. */}
@@ -1009,7 +1089,7 @@ function DecisionBody({
           <button className="btn btn-buy" onClick={() => setSaleAcceptConfirm({})}>
             Accept · net {usd(cashAtClose)}
           </button>
-          {proceeds.tax > 0 && !game.exchange && !onFund && (
+          {proceeds.tax > 0 && !game.exchange && !onFund && !consentFor(game, h, "exchange") && (
             <button className="btn btn-buy" title="Roll the gain into your next purchase within 6 months" onClick={() => setSaleAcceptConfirm({ exchange: true })}>
               1031 · defer {usd(proceeds.tax)}
             </button>
@@ -1175,10 +1255,21 @@ function PostMortem() {
           backwards halfway down. */}
       {(forced.length > 0 || events.length > 0) && (
         <ul className="gameover-events">
-          {[
-            ...forced.map((e) => ({ m: e.soldM, k: `f${e.bbl}${e.soldM}`, text: `${e.address} sold under duress for ${usd(e.price)} against ${usd(e.basis)} basis.` })),
-            ...events.map((e, i) => ({ m: e.m, k: `s${i}`, text: `${e.address}: ${e.kind === "seized" ? "taken by the lender" : e.kind === "deficiency" ? "a deficiency judgment" : e.kind === "dpo" ? "a discounted payoff" : "a forced sale"}${e.amount > 0 ? `, ${usd(e.amount)} left behind` : ""}.` })),
-          ].sort((a, b) => a.m - b.m).map((r) => (
+          {(() => {
+            // ONE SALE, ONE LINE. A creditors' sale is recorded twice — as the
+            // exit and as the lender's mark on the sponsor — and the list said
+            // the same building was "sold under duress" and "taken by the
+            // lender" in the same month. The mark rides on the sale's line.
+            const what = (e: (typeof events)[number]) =>
+              `${e.kind === "seized" ? "taken by the lender" : e.kind === "deficiency" ? "a deficiency judgment" : e.kind === "dpo" ? "a discounted payoff" : "a forced sale"}${e.amount > 0 ? `, ${usd(e.amount)} left behind` : ""}`;
+            const used = new Set<number>();
+            const sales = forced.map((e) => {
+              const j = events.findIndex((x, i) => !used.has(i) && x.m === e.soldM && x.address === e.address);
+              if (j >= 0) used.add(j);
+              return { m: e.soldM, k: `f${e.bbl}${e.soldM}`, text: `${e.address} sold under duress for ${usd(e.price)} against ${usd(e.basis)} basis${j >= 0 ? ` — ${what(events[j])}` : ""}.` };
+            });
+            return [...sales, ...events.flatMap((e, i) => used.has(i) ? [] : [{ m: e.m, k: `s${i}`, text: `${e.address}: ${what(e)}.` }])];
+          })().sort((a, b) => a.m - b.m).map((r) => (
             <li key={r.k}><span className="mono dim">{monthLabel(r.m)}</span> {r.text}</li>
           ))}
         </ul>

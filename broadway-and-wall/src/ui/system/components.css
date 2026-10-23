@@ -458,6 +458,51 @@
 .app .alert-good .alert-detail { background: var(--teal-soft); border-color: color-mix(in srgb, var(--teal) 30%, transparent); }
 .app .alert-foot { font-style: normal; color: var(--text-3); }
 
+/* A GROUND LEASE MUST NOT LOOK LIKE A LEASE (owner, Oct 2026: "I got offered a
+   ground lease but thought it was a regular lease"). Every other card is the
+   same surface with a coloured edge; this one is earth — an ochre-and-umber
+   striped banner across the top, a heavy umber edge, a parchment sheet and a
+   dark-earth backdrop — in both themes, so it cannot be read at a glance as a
+   tenant signing for a suite. The colours are fixed rather than themed for
+   exactly that reason: it is meant to look like nothing else in the game. */
+.app .alert-back.alert-tint-ground { background: rgba(52, 36, 14, 0.74); }
+.app .alert-card.alert-ground {
+  border-left: 9px solid #6b4a1c;
+  background: #efe3c8; color: #2b2112;
+  padding-top: 0;
+}
+.app .alert-ground .ground-banner {
+  margin: 0 calc(-1 * var(--sp-6)) var(--sp-4);
+  padding: 12px var(--sp-6) 11px;
+  background: repeating-linear-gradient(-45deg, #6b4a1c 0 14px, #8c6526 14px 28px);
+  color: #fbf3df;
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  border-bottom: 3px solid #3e2a0e;
+}
+.app .ground-banner-word {
+  font-family: var(--font-display); font-size: 26px; font-weight: 700;
+  letter-spacing: 3px; text-transform: uppercase; text-shadow: 0 1px 0 #3e2a0e;
+}
+.app .ground-banner-sub { font-size: 12px; letter-spacing: 0.6px; text-transform: uppercase; opacity: 0.92; }
+.app .alert-ground .alert-kicker { color: #6b4a1c; }
+.app .alert-ground .modal-title,
+.app .alert-ground .alert-body { color: #2b2112; }
+.app .alert-ground .modal-sub,
+.app .alert-ground .alert-foot { color: #5a4a30; }
+.app .alert-ground .alert-detail {
+  background: rgba(107, 74, 28, 0.12); border: 1px solid rgba(107, 74, 28, 0.42); color: #2b2112;
+}
+.app .alert-ground .modal-actions { background: #e3d3ad; border-top-color: rgba(107, 74, 28, 0.35); }
+.app .ground-terms {
+  margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px;
+  padding: 10px 12px; border: 1px dashed #8c6526; border-radius: var(--radius-sm, 4px);
+  background: rgba(255, 250, 236, 0.6);
+}
+.app .ground-terms > div { display: flex; flex-direction: column; gap: 1px; }
+.app .ground-terms span { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: #6b4a1c; font-weight: 700; }
+.app .ground-terms b { font-family: var(--font-mono, monospace); font-size: 12.5px; font-weight: 600; color: #2b2112; }
+@media (max-width: 560px) { .app .ground-terms { grid-template-columns: 1fr; } }
+
 /* ---------- toasts ---------- */
 .app .toast-stack { top: calc(var(--topbar-h, 56px) + 12px); left: calc(50% + var(--rail-w, 0px) / 2); }
 .app .toast {

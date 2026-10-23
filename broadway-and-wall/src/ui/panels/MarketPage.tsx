@@ -1,5 +1,8 @@
 import { marketAppraisal } from "@/engine/value";
 import { useMemo, useState } from "react";
+import type { GameState } from "@/engine/types";
+import type { ParcelTable } from "@/data/types";
+import { derive, ownerName } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { marketRentPsfYr, resolveRec, landPsfNow, inPlace, landRead } from "@/engine/value";
@@ -17,6 +20,76 @@ import { BrokerCalls, liveBrokerCalls } from "@/ui/panels/broker";
 import { useLabel, Big, Row } from "@/ui/panels/shared";
 import { SiteFinder } from "@/ui/panels/SiteFinder";
 
+type DbBase = { bbl: string; addr: string; cls: string; sf: number; fl: number; yr: number; owner: string; dmd: number };
+type DbFull = { occ: number; known: boolean; rent: number; noi: number; val: number; psf: number };
+type DbRow = DbBase & DbFull;
+/** The columns that need an appraisal; sorting on one of them appraises every row. */
+const DB_COSTLY = new Set(["occ", "rent", "noi", "val", "psf"]);
+
+/** Every standing building's cheap columns, once per game state. */
+function dbBase(game: GameState, parcels: ParcelTable): DbBase[] {
+  return derive(game, "buildings.base", () => {
+    const out: DbBase[] = [];
+    for (const bbl in parcels) {
+      const rec = resolveRec(parcels, game, bbl);
+      if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+      const h = game.holdings[bbl];
+      // NOBODY IS CALLED "PRIVATE". Rival firms have names and so does every
+      // private holder in the register — which is the whole point of it: a
+      // list of the fifty biggest buildings in town used to be fifty rows of
+      // the same word. The fallback is gone rather than merely unlikely:
+      // `ownerAt` answers for every deed in the city, so a row that cannot
+      // name an owner is a bug to be seen and not a word to be printed.
+      const own = h ? "You" : (ownerName(game, parcels, bbl) ?? "—");
+      out.push({
+        bbl, addr: rec.address, cls: rec.class, sf: rec.bldgArea, fl: rec.floors,
+        yr: rec.yearBuilt, owner: own,
+        // resolveRec has already applied the block's drift
+        dmd: Math.round(rec.demandScore),
+      });
+    }
+    return out;
+  }, [parcels]);
+}
+
+/**
+ * One building's appraised columns, once per game state and only when a row
+ * needs them. Pages unmount on every desk switch, so the table used to
+ * appraise every deed in town (1.2 s on a 2012 save) on every visit. Now a
+ * sort on size or address appraises the fifty rows on screen, and a sort on
+ * value appraises the town once a month rather than once a visit. Same
+ * appraiser, same numbers — only how often they are worked out has changed.
+ */
+function dbFull(game: GameState, parcels: ParcelTable, bbl: string): DbFull {
+  const memo = derive(game, "buildings.full", () => new Map<string, DbFull>(), [parcels]);
+  let f = memo.get(bbl);
+  if (f) return f;
+  const rec = resolveRec(parcels, game, bbl)!;
+  const h = game.holdings[bbl];
+  // Your own buildings price on the condition you have actually let them
+  // drift to; everyone else's on the street's grade, as before.
+  const cond = h?.condition ?? gradeOf(game, rec);
+  // the same appraiser the desk and the lender read: the disclosed roll where there is one
+  const val = marketAppraisal(game, rec, bbl, cond);
+  // In-place rent where a roll exists — your own commercial leases,
+  // weighted by the square feet each one covers — and the market's
+  // estimate for the rest of town, which is the same model the engine
+  // signs leases at. A mixed-use roll reads its commercial paper only;
+  // the flats have no individual leases to read.
+  const rollSf = h ? h.tenants.reduce((a, t) => a + t.sf, 0) : 0;
+  const rent = h && rollSf > 0
+    ? h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0) / rollSf
+    : marketRentPsfYr(rec, game.econ, cond);
+  // NOI from the actual roll wherever there is one — yours, or the one the
+  // seller has disclosed on a building that is for sale. For the rest of
+  // the town's stock, which nobody has shown you and you cannot buy, it is
+  // the market model net of the tax a buyer would carry at this value.
+  const ip = inPlace(rec, game, bbl, val);
+  f = { occ: ip.occ, known: ip.disclosed, rent, noi: ip.noi, val, psf: val / Math.max(1, rec.bldgArea) };
+  memo.set(bbl, f);
+  return f;
+}
+
 export function BuildingDatabase() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
@@ -28,61 +101,24 @@ export function BuildingDatabase() {
   const [cls, setCls] = useState<string>("all");
   const [q, setQ] = useState("");
   const [pg, setPg] = useState(0);
-  const rows = useMemo(() => {
-    const out: { bbl: string; addr: string; cls: string; sf: number; fl: number; yr: number;
-                 owner: string; occ: number; known: boolean; rent: number; noi: number; dmd: number; val: number; psf: number }[] = [];
-    for (const bbl in parcels) {
-      const rec = resolveRec(parcels, game, bbl);
-      if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-      const h = game.holdings[bbl];
-      // NOBODY IS CALLED "PRIVATE". Rival firms have names and so does every
-      // private holder in the register — which is the whole point of it: a
-      // list of the fifty biggest buildings in town used to be fifty rows of
-      // the same word. The fallback is gone rather than merely unlikely:
-      // `ownerAt` answers for every deed in the city, so a row that cannot
-      // name an owner is a bug to be seen and not a word to be printed.
-      const own = h ? "You" : (ownerAt(game, parcels, bbl)?.name ?? "—");
-      // Your own buildings price on the condition you have actually let them
-      // drift to; everyone else's on the street's grade, as before.
-      const cond = h?.condition ?? gradeOf(game, rec);
-      // the same appraiser the desk and the lender read: the disclosed roll where there is one
-      const val = marketAppraisal(game, rec, bbl, cond);
-      // In-place rent where a roll exists — your own commercial leases,
-      // weighted by the square feet each one covers — and the market's
-      // estimate for the rest of town, which is the same model the engine
-      // signs leases at. A mixed-use roll reads its commercial paper only;
-      // the flats have no individual leases to read.
-      const rollSf = h ? h.tenants.reduce((a, t) => a + t.sf, 0) : 0;
-      const rent = h && rollSf > 0
-        ? h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0) / rollSf
-        : marketRentPsfYr(rec, game.econ, cond);
-      // NOI from the actual roll wherever there is one — yours, or the one the
-      // seller has disclosed on a building that is for sale. For the rest of
-      // the town's stock, which nobody has shown you and you cannot buy, it is
-      // the market model net of the tax a buyer would carry at this value.
-      const ip = inPlace(rec, game, bbl, val);
-      const noi = ip.noi;
-      out.push({
-        bbl, addr: rec.address, cls: rec.class, sf: rec.bldgArea, fl: rec.floors,
-        yr: rec.yearBuilt, owner: own,
-        occ: ip.occ, known: ip.disclosed,
-        rent, noi,
-        dmd: Math.round(rec.demandScore + (game.blockD?.[rec.block] ?? 0)),
-        val, psf: val / Math.max(1, rec.bldgArea),
-      });
-    }
-    return out;
-  }, [parcels, game]);
+  const rows = dbBase(game, parcels);
   const shown = useMemo(() => {
     let r = rows;
-    if (cls !== "all") r = r.filter((x: (typeof rows)[number]) => x.cls === cls);
-    if (q.trim()) { const t = q.trim().toLowerCase(); r = r.filter((x: (typeof rows)[number]) => x.addr.toLowerCase().includes(t) || x.owner.toLowerCase().includes(t)); }
-    const k = sortK as keyof (typeof rows)[number];
+    if (cls !== "all") r = r.filter((x) => x.cls === cls);
+    if (q.trim()) { const t = q.trim().toLowerCase(); r = r.filter((x) => x.addr.toLowerCase().includes(t) || x.owner.toLowerCase().includes(t)); }
+    // An appraised column sorts on the appraisal, which then has to be
+    // worked out for every row the filter left in.
+    if (DB_COSTLY.has(sortK)) {
+      const k = sortK as keyof DbFull;
+      return r.map((x) => ({ x, v: dbFull(game, parcels, x.bbl)[k] as number }))
+        .sort((a, b) => (a.v - b.v) * dir).map((e) => e.x);
+    }
+    const k = sortK as keyof DbBase;
     return [...r].sort((a, b) => {
       const av = a[k], bv = b[k];
       return (typeof av === "string" ? (av as string).localeCompare(bv as string) : (av as number) - (bv as number)) * dir;
     });
-  }, [rows, sortK, dir, cls, q]);
+  }, [rows, sortK, dir, cls, q, game, parcels]);
   const H = ({ k, label, num }: { k: string; label: string; num?: boolean }) => (
     <th className={num ? "num" : undefined} style={{ cursor: "pointer", whiteSpace: "nowrap" }}
         onClick={() => { if (sortK === k) setDir((d) => (d === 1 ? -1 : 1)); else { setSortK(k); setDir(-1); } setPg(0); }}>
@@ -142,7 +178,7 @@ export function BuildingDatabase() {
           </tr>
         </thead>
         <tbody>
-          {shown.slice(at * PER, (at + 1) * PER).map((r: (typeof rows)[number]) => (
+          {shown.slice(at * PER, (at + 1) * PER).map((b): DbRow => ({ ...b, ...dbFull(game, parcels, b.bbl) })).map((r) => (
             <tr key={r.bbl} onClick={() => open(r.bbl)} onKeyDown={(e) => { if (e.key === "Enter") open(r.bbl); }}
               tabIndex={0} title={`Open the property file for ${r.addr}`} style={{ cursor: "pointer" }}>
               <td>{r.addr} <span className="dim row-open">· Open →</span></td>
@@ -266,6 +302,15 @@ export function MarketPage() {
   // books banks put out after a seizure; they used to raise an alert with no desk.
   const streetBooks = (game.portfolios ?? []).filter((p) => !p.player);
   const bankFcls = game.bankFcls ?? [];
+  // BANK-OWNED, FOR SALE NOW (owner, Oct 2026: "when players lose their
+  // properties to the bank I can't see them getting sold"). They are on the
+  // tape, but a building a bank took back is usually half empty and sorted
+  // to the bottom of a yield-ordered table; the distress section said
+  // "nothing is on the steps" while a dozen sat there. Deepest discount first.
+  const reo = game.listings
+    .filter((l) => l.reason === "receiver" && !game.holdings[l.bbl])
+    .map((l) => ({ l, off: l.mark && l.mark > 0 ? 1 - l.ask / l.mark : 0 }))
+    .sort((a, b) => b.off - a.off);
   const { buyStreetBook, offerStreetBook, acceptStreetBook } = useStore.getState();
   return (
     <div>
@@ -534,7 +579,29 @@ export function MarketPage() {
         // COLLAPSIBLE, AND OPEN WHEN IT MATTERS. Opens on a live docket, when
         // banks have noticed sales, or when a receiver book is upstairs —
         // otherwise eleven months of watchlist stays tucked away.
-        const open = distressOpen ?? !!(liveDocket || bankFcls.length || streetBooks.length);
+        const open = distressOpen ?? !!(liveDocket || bankFcls.length || streetBooks.length || reo.length);
+        const reoList = reo.length > 0 && (
+          <>
+            <div className="page-section" style={{ marginTop: 4 }}>Bank-owned, for sale now · {reo.length}</div>
+            <div className="hint" style={{ marginTop: 0 }}>
+              Buildings lenders took back, listed by the desk to clear its balance sheet — the ask follows the loan, not the value.
+              Rival firms buy most of them within a few months.
+            </div>
+            <div className="mini-list">
+              {reo.slice(0, 15).map(({ l, off }) => {
+                const rec = resolveRec(parcels, game, l.bbl);
+                return (
+                  <button key={`${l.bbl}:${l.listedM}`} className="neighbor" onClick={() => go(l.bbl)}>
+                    <span className="neighbor-addr">{rec?.address ?? l.bbl}</span>
+                    <span className="neighbor-meta mono">
+                      {l.receiverFor ?? "a receiver"} · ask {usd(l.ask)}{off >= 0.03 ? ` · ${Math.round(off * 100)}% under the mark` : ""} · until {monthLabel(l.expiresM)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        );
         return (
           <div className="deal" style={{ marginBottom: 10 }}>
             <div className="deal-head" style={{ cursor: "pointer", userSelect: "none" }}
@@ -543,10 +610,11 @@ export function MarketPage() {
               <span className="dim" style={{ marginRight: 6 }}>{open ? "▾" : "▸"}</span>
               {liveDocket
                 ? `The county foreclosure docket · ${game.auction!.lots.length} lot${game.auction!.lots.length === 1 ? "" : "s"} · the hammer falls ${monthLabel(game.auction!.m)}`
-                : `Distress pipeline · ${bankFcls.length} noticed for sale, ${inWorkout.length} in workout, ${onWatch.length} on watch · next docket ${monthLabel(nextDocket)}`}
+                : `Distress pipeline · ${reo.length ? `${reo.length} bank-owned for sale, ` : ""}${bankFcls.length} noticed for sale, ${inWorkout.length} in workout, ${onWatch.length} on watch · next docket ${monthLabel(nextDocket)}`}
             </div>
             {!open ? null : liveDocket ? (
               <>
+                {reoList}
                 <div className="hint">
                   As-is, ten per cent down the day you register, no financing and no warranty. Nobody on this list
                   chose to sell. Receiver <b>books</b> (whole relationships) are under Books for sale above —
@@ -558,9 +626,10 @@ export function MarketPage() {
               </>
             ) : (
               <>
+                {reoList}
                 <div className="hint">
-                  Nothing is on the steps this month. The county calls its list every July and sells the month
-                  after. A loan goes on <b>watch</b>, into <b>workout</b>, then a bank <b>notices a sale</b>
+                  Nothing is on the courthouse steps this month. The county calls its list every July and sells the month
+                  after. A loan goes on <b>watch</b>, into <b>workout</b>, then a bank <b>notices a sale</b>{" "}
                   toward the docket. Whole books seized from failed firms are under Books for sale above —
                   not here — because a package is one cheque, not a courthouse lot.
                 </div>
@@ -723,12 +792,14 @@ export function MarketPage() {
                           title={li.reason === "merchant" ? "A merchant builder selling what it built — the business plan was always to sell on completion"
                             : li.reason === "fund-life" ? "A closed-end fund reaching the end of its life: it has to sell to return its investors' capital, whatever the market"
                               : li.reason === "estate" ? "A property held in an estate — the executors are selling to settle it"
+                                : li.reason === "non-core" ? "A large firm selling a small building it has outgrown, to fund bigger work"
                                 : li.reason === "receiver" ? "A lender took it back and a receiver is clearing it off the balance sheet"
                                   : "The owner simply decided to sell"}>
                           {li.reason === "merchant" ? "MERCHANT EXIT"
                             : li.reason === "fund-life" ? "FUND CLOCK"
                               : li.reason === "estate" ? "ESTATE"
-                                : li.reason === "receiver" ? "RECEIVER" : "VOLUNTARY"}
+                                : li.reason === "non-core" ? "NON-CORE"
+                                : li.reason === "receiver" ? "BANK-OWNED" : "VOLUNTARY"}
                         </span>
                       )}
                       {yours && <span className="chip" style={{ marginRight: 6 }}>YOURS</span>}

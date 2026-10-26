@@ -7640,16 +7640,37 @@ export class RealCityLayer {
   private lastTick = 0;
 
   // ---- state on the buildings ---------------------------------------------
-  private refreshDeed(bbl: string) {
-    for (const d of [this.deeds.get(bbl), this.dynDeeds.get(bbl)]) if (d) this.paintDeed(bbl, d);
+  private refreshDeed(bbl: string, roofsOnly = false) {
+    for (const d of [this.deeds.get(bbl), this.dynDeeds.get(bbl)]) if (d) this.paintDeed(bbl, d, roofsOnly);
+  }
+  /** Colour attributes a bulk repaint wrote to, and the span it wrote (floats), uploaded once it is done (repaint). */
+  private bulk: Map<THREE.BufferAttribute, [number, number]> | null = null;
+  /**
+   * REPAINT MANY DEEDS AS ONE UPLOAD. Each deed marked its own slice of the
+   * colour buffers, and three.js sends every unmerged slice as its own
+   * bufferSubData: a lens switch repaints every building, thousands of calls,
+   * and the map froze for seconds on each click of the bottom bar (owner, Oct
+   * 2026). Past a handful of deeds, each buffer sends the one span written, once.
+   */
+  private repaint(bbls: Iterable<string>, roofsOnly = false) {
+    const list = Array.isArray(bbls) ? bbls : [...bbls];
+    if (list.length < 64) { for (const b of list) this.refreshDeed(b, roofsOnly); return; }
+    this.bulk = new Map();
+    try { for (const b of list) this.refreshDeed(b, roofsOnly); }
+    finally {
+      for (const [a, [lo, hi]] of this.bulk) { a.clearUpdateRanges(); a.addUpdateRange(lo, hi - lo); a.needsUpdate = true; }
+      this.bulk = null;
+    }
   }
 
-  private paintDeed(bbl: string, d: Deed) {
+  /** roofsOnly: a lens change, which colours the roofs and nothing else, leaves the walls' buffers alone. */
+  private paintDeed(bbl: string, d: Deed, roofsOnly = false) {
     const own = this.owned.has(bbl), sel = this.selected.has(bbl), hov = this.hover === bbl;
     const lv = this.lens?.get(bbl);
     const tint = this.tints.get(bbl);
     for (const r of d.ranges) {
       if (!r.mesh || !r.base || r.buf === "contact") continue;
+      if (roofsOnly && r.buf !== "roof") continue;
       const col = r.mesh.geometry.getAttribute("color") as THREE.BufferAttribute;
       const arr = col.array as Float32Array;
       const base = r.base;
@@ -7696,7 +7717,11 @@ export class RealCityLayer {
           for (let i = 0; i < r.count * 3; i++) arr[r.start * 3 + i] = base[i] * k[i % 3] * h;
         }
       }
-      col.addUpdateRange(r.start * 3, r.count * 3); col.needsUpdate = true;
+      if (this.bulk) {
+        const sp = this.bulk.get(col), lo = r.start * 3, hi = (r.start + r.count) * 3;
+        if (sp) { sp[0] = Math.min(sp[0], lo); sp[1] = Math.max(sp[1], hi); } else this.bulk.set(col, [lo, hi]);
+      }
+      else { col.addUpdateRange(r.start * 3, r.count * 3); col.needsUpdate = true; }
     }
   }
 
@@ -7712,7 +7737,7 @@ export class RealCityLayer {
     if (this.defer("setOwned", () => this.setOwned(owned, _status))) return;
     const touched = new Set<string>([...this.owned, ...owned]);
     this.owned = new Set(owned);
-    for (const b of touched) this.refreshDeed(b);
+    this.repaint(touched);
     this.map?.triggerRepaint();
   }
   setHighlight(selected: string[], hover: string | null) {
@@ -7722,7 +7747,7 @@ export class RealCityLayer {
     if (hover) touched.add(hover);
     this.selected = new Set(selected);
     this.hover = hover;
-    for (const b of touched) this.refreshDeed(b);
+    this.repaint(touched);
     this.map?.triggerRepaint();
   }
   setLens(values: Map<string, number> | null, ramp: string[] = []) {
@@ -7732,14 +7757,14 @@ export class RealCityLayer {
     this.lensRamp = ramp.map((h) => new THREE.Color(h));
     const touched = new Set<string>([...(had?.keys() ?? []), ...(values?.keys() ?? [])]);
     if (!!had !== !!values) for (const b of this.deeds.keys()) touched.add(b);
-    for (const b of touched) this.refreshDeed(b);
+    this.repaint(touched, true);
     this.map?.triggerRepaint();
   }
   setTints(tints: Map<string, [number, number, number]>) {
     if (this.defer("setTints", () => this.setTints(tints))) return;
     const touched = new Set<string>([...this.tints.keys(), ...tints.keys()]);
     this.tints = new Map(tints);
-    for (const b of touched) this.refreshDeed(b);
+    this.repaint(touched);
     this.map?.triggerRepaint();
   }
 
@@ -8099,7 +8124,7 @@ export class RealCityLayer {
     this.dynHeight = new Map([...this.dynDone.heights, ...this.dynSite.heights]);
     this.cranes = this.dynSite.cranes ?? this.dynDone.cranes;
     this.pickGrid = null;
-    for (const l of rebuilt) for (const [b] of l.deeds) this.refreshDeed(b);
+    this.repaint(rebuilt.flatMap((l) => [...l.deeds.keys()]));
     if (this.renderer) this.renderer.shadowMap.needsUpdate = true;
     this.map?.triggerRepaint();
   }
@@ -8566,7 +8591,7 @@ export class RealCityLayer {
   setCondition(c: Map<string, number>) {
     if (this.defer("setCondition", () => this.setCondition(c))) return;
     const touched = RealCityLayer.settle(this.cond, c, (a, b) => Math.abs(a - b) > COND_EPS);
-    for (const b of touched) this.refreshDeed(b);
+    this.repaint(touched);
     if (touched.length) this.map?.triggerRepaint();
   }
   /**

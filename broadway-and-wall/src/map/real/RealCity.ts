@@ -1835,6 +1835,15 @@ export class RealCityLayer {
       for (const w of this.waves) w.tex.offset.set((tt * 0.5) / w.tile, (tt * 0.12) / w.tile);
       SEA.seaTime.value = tt % 3600;
     }
+    // THE FRAME IS THE CANVAS AS IT IS NOW. The renderer shares MapLibre's
+    // canvas and only learnt its size at load; a new pixel ratio (Max, a
+    // browser zoom, another screen) left the scene and the finishing pass
+    // drawing into the old rectangle (owner, Oct 2026: "super bugged out").
+    // The viewport follows the drawing buffer; the canvas is never resized here.
+    {
+      const gl = this.renderer.getContext(), pr = this.renderer.getPixelRatio();
+      this.renderer.setViewport(0, 0, gl.drawingBufferWidth / pr, gl.drawingBufferHeight / pr);
+    }
     this.renderer.render(this.scene, this.camera);
     // the finishing pass over the whole frame: grade, bloom, tilt-shift (post.ts)
     this.post.apply(this.renderer, pitch, distM, this.scene, this.camera, [this.hazeSheet, this.precip]);

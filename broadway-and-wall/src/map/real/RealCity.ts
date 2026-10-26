@@ -1600,6 +1600,8 @@ export class RealCityLayer {
   private quality: "low" | "medium" | "high" = "high";
   private crowdK = 1;
   private cullM = 2600;
+  /** Max: High with a sharper sun shadow and props drawn farther (setQuality). */
+  private maxQ = false;
   private catcher: THREE.Mesh | null = null;
   private lotRingLL: Record<string, P2[]>;
   private visibleOn = true;
@@ -1920,7 +1922,7 @@ export class RealCityLayer {
   // ---- lights & shadow ---------------------------------------------------
   private setupLights() {
     this.sun.castShadow = this.quality !== "low" && !NO_SHADOWS;
-    const sz = this.preferFps ? 2048 : 4096;
+    const sz = this.preferFps ? 2048 : this.maxQ ? 8192 : 4096;
     this.sun.shadow.mapSize.set(sz, sz);
     this.sun.shadow.bias = -0.0003;
     this.sun.shadow.normalBias = 0.6;
@@ -8645,7 +8647,7 @@ export class RealCityLayer {
   setPreferFps(on: boolean) {
     if (this.defer("setPreferFps", () => this.setPreferFps(on))) return;
     this.preferFps = on;
-    const sz = on ? 2048 : 4096;
+    const sz = on ? 2048 : this.maxQ ? 8192 : 4096;
     if (this.sun.shadow.mapSize.x !== sz) {
       this.sun.shadow.mapSize.set(sz, sz);
       this.sun.shadow.map?.dispose();
@@ -8659,12 +8661,14 @@ export class RealCityLayer {
    * shadows and the falling rain and snow. Looks only — nothing here reads the
    * game state, and the city underneath is the same city.
    */
-  setQuality(q: "low" | "medium" | "high") {
-    if (this.defer("setQuality", () => this.setQuality(q))) return;
+  setQuality(q0: "low" | "medium" | "high" | "max") {
+    if (this.defer("setQuality", () => this.setQuality(q0))) return;
+    const q = q0 === "max" ? "high" : q0;
+    this.maxQ = q0 === "max";
     this.quality = q;
     this.setPreferFps(q !== "high");
     this.crowdK = q === "high" ? 1 : q === "medium" ? 0.6 : 0.3;
-    this.cullM = q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
+    this.cullM = this.maxQ ? 4200 : q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
     this.sun.castShadow = q !== "low" && !NO_SHADOWS;
     // the finishing pass: all of it on High, the grade alone on Medium, none on Low
     this.post.level = q === "high" ? "full" : q === "medium" ? "grade" : "off";

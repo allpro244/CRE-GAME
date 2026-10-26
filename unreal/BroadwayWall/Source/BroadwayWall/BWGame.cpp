@@ -314,7 +314,7 @@ void ABWPlayerController::PlayerTick(float Dt)
 }
 
 /**
- * THE PRESETS, as option strings (the Settings page offers the same four and
+ * THE PRESETS, as option strings (the Settings page offers the same five and
  * lets every option be changed after). Measured on the metro city at 1080p,
  * RTX 2080 (see UE58_PLAN.md for the table): the render resolution and the
  * lighting method are the two big levers; the rest are a few ms each.
@@ -324,6 +324,7 @@ FString BWGraphicsPreset(const FString& Name)
 	// (Low keeps Lumen at its lowest: the screen-space fallback measured slower here)
 	if (Name == TEXT("low"))    return TEXT("res=50;up=auto;gi=lumen;giq=2;refl=ssr;shadow=1;view=1;tex=2;fx=1;post=1;clouds=1;life=1;fps=0;vsync=0;blur=0");
 	if (Name == TEXT("medium")) return TEXT("res=67;up=auto;gi=lumen;giq=2;refl=lumen;shadow=2;view=2;tex=3;fx=2;post=2;clouds=1;life=2;fps=0;vsync=0;blur=0");
+	if (Name == TEXT("max"))    return TEXT("res=100;up=auto;gi=lumen;giq=4;refl=lumen;shadow=4;view=4;tex=4;fx=4;post=4;clouds=2;life=3;fps=0;vsync=0;blur=0");
 	if (Name == TEXT("ultra"))  return TEXT("res=100;up=auto;gi=lumen;giq=4;refl=lumen;shadow=4;view=4;tex=3;fx=3;post=3;clouds=2;life=2;fps=0;vsync=0;blur=0");
 	return TEXT("res=100;up=auto;gi=lumen;giq=3;refl=lumen;shadow=3;view=3;tex=3;fx=3;post=3;clouds=2;life=2;fps=0;vsync=0;blur=0");   // high
 }
@@ -400,7 +401,7 @@ void ABWPlayerController::PageInput(const FString& Type, double X, double Y, dou
 	else if (Type == TEXT("quality") || Type == TEXT("gfx"))
 	{
 		// GRAPHICS, from the game's Settings page: a preset ("quality", key
-		// low|medium|high|ultra) or the full set of choices ("gfx", key
+		// low|medium|high|ultra|max) or the full set of choices ("gfx", key
 		// "res=67;gi=lumen;..."); see ApplyGraphics.
 		BWApplyGraphics(GetWorld(), Type == TEXT("quality") ? BWGraphicsPreset(Key) : Key);
 	}

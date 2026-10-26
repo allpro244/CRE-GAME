@@ -112,7 +112,9 @@ export function deskScheme(game: GameState, parcels: ParcelTable, bbl: string, o
   const short = Math.max(0, need.whole - have, need.dayOne - have);
   const worth = plan && plan.exitYield > 0 ? plan.stabNoi / (plan.exitYield / 100) : 0;
   const profit = plan ? worth - plan.basisTotal : 0;
-  const quote = plan ? constructionQuotes(game, plan.mix, plan.costTotal).find((q) => q.lender === plan.lender) : undefined;
+  // every desk's terms on this job, for the lender choice
+  const quotes = planMax ? constructionQuotes(game, planMax.mix, planMax.costTotal) : [];
+  const quote = plan ? quotes.find((q) => q.lender === plan.lender) : undefined;
   const why = !plan ? (bar ?? "No scheme prices here")
     : purse.closed ? purse.closed
     : game.raises?.[bbl] ? "A raise is open on this lot"
@@ -121,7 +123,7 @@ export function deskScheme(game: GameState, parcels: ParcelTable, bbl: string, o
   const commitArgs = [use, floors, cov, "gmp", ltc, { ...custom, design, takeout }, plan?.lender ?? bank, spec] as const;
   return {
     rec, draft, use, legal, prods, product, floors, top, cov, spec, ltcWant, design, plan, planMax, bar, prospect: bts,
-    siteDebt, takeout, hedge, need, have, short, worth, profit, quote, why, purse, commitArgs,
+    siteDebt, takeout, hedge, need, have, short, worth, profit, quote, quotes, bank, why, purse, commitArgs,
   };
 }
 export type DeskScheme = ReturnType<typeof deskScheme>;

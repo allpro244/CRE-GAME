@@ -7,6 +7,7 @@
  *   Size    one dial: storeys, at the widest footprint that height allows
  *   Tier    the four build qualities (BUILD_TIERS)
  *   Look    a form the lot takes (Unreal) and a facade from a short list
+ *   Lender  which construction desk, each with its rate and most it lends
  *   Loan    none, half or all the construction lender offers, terms shown
  *
  * The verdict — profit, yield against the hurdle, the cheque — is the
@@ -23,7 +24,7 @@ import { dominantOf } from "@/engine/proforma";
 import { BUILD_TIERS, buildTier } from "@/engine/value";
 import { START_YEAR, type DevDraft, type DevUse } from "@/engine/types";
 import { KITS, KIT_GROUPS } from "@/engine/renderView";
-import { FACADE_STYLES } from "@/map/real/RealCity";
+import { FACADE_STYLES, FACADE_GROUPS, type FacadeGroup } from "@/map/real/RealCity";
 import { UNREAL_HOST, formsForLot } from "@/state/unrealHost";
 import { usd, sf } from "@/ui/format";
 import { devUseLabel } from "@/ui/panels/shared";
@@ -49,9 +50,9 @@ const LOOKS: { id: string; label: string; kit?: string; facade?: string }[] = [
 // the sweep is a hundred pro formas: once per lot per month
 const STARTS = new Map<string, ReturnType<typeof bestStarts>>();
 
-function Chip({ on, onClick, children, title, disabled }: { on: boolean; onClick: () => void; children: React.ReactNode; title?: string; disabled?: boolean }) {
+function Chip({ on, onClick, children, title, disabled, tab }: { on: boolean; onClick: () => void; children: React.ReactNode; title?: string; disabled?: boolean; tab?: boolean }) {
   return (
-    <button type="button" className={"bd-chip" + (on ? " on" : "")} onClick={onClick} title={title} disabled={disabled} aria-pressed={on}>
+    <button type="button" className={"bd-chip" + (tab ? " tab" : "") + (on ? " on" : "")} onClick={onClick} title={title} disabled={disabled} aria-pressed={on}>
       {children}
     </button>
   );
@@ -127,6 +128,11 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
   };
   const tier = buildTier(d.spec);
   const [lookEra, setLookEra] = useState<(typeof KITS)[number]["group"]>(() => KITS.find((k) => k.key === design.kit)?.group ?? "prewar");
+  // the web catalogue is ~100 facades: one category at a time (owner, Oct 2026: "right now its crazy")
+  const styles = FACADE_STYLES.filter((f) => f.maxFloors >= floors);
+  const groups = FACADE_GROUPS.filter((g) => styles.some((f) => f.group === g.key));
+  const [lookGroup, setLookGroup] = useState<FacadeGroup>(() => FACADE_STYLES.find((f) => f.key === design.facade?.split("#")[0])?.group ?? "street");
+  const groupNow = groups.some((g) => g.key === lookGroup) ? lookGroup : groups[0]?.key;
 
   return (
     <div className="deal deal-wide build-desk">
@@ -185,22 +191,32 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
               ))}
             </Row>
           )}
-          {/* THE FULL CATALOGUE (owner): every facade, by era — "Street" lets the block choose */}
+          {/* THE FULL CATALOGUE (owner): every facade, one category at a time — "Street" lets the block choose */}
           <Row k="Look">
             <Chip on={!design.kit && !design.facade} onClick={() => pickLook(LOOKS[0])}>Street</Chip>
             {UNREAL_HOST
-              ? KIT_GROUPS.map((g) => <Chip key={g.key} on={lookEra === g.key} onClick={() => setLookEra(g.key)}>{g.name}</Chip>)
-              : null}
+              ? KIT_GROUPS.map((g) => <Chip key={g.key} tab on={lookEra === g.key} onClick={() => setLookEra(g.key)}>{g.name}</Chip>)
+              : groups.map((g) => <Chip key={g.key} tab on={groupNow === g.key} onClick={() => setLookGroup(g.key)}>{g.name}</Chip>)}
           </Row>
           <Row k="">
             {UNREAL_HOST
               ? KITS.filter((k) => k.group === lookEra).map((k) => (
                 <Chip key={k.key} on={design.kit === k.key} title={k.era}
                   onClick={() => { const { kit: _k, facade: _f, kitColour: _c, ground: _g, top: _t, bays: _b, ...rest } = design; set({ design: { ...rest, kit: k.key, facade: k.family } }); }}>{k.name}</Chip>))
-              : FACADE_STYLES.filter((f) => f.maxFloors >= floors).map((f) => (
+              : styles.filter((f) => f.group === groupNow).map((f) => (
                 <Chip key={f.key} on={design.facade?.split("#")[0] === f.key} title={f.era}
                   onClick={() => { const { kit: _k, facade: _f, kitColour: _c, ground: _g, top: _t, bays: _b, ...rest } = design; set({ design: { ...rest, facade: f.key } }); }}>{f.name}</Chip>))}
           </Row>
+          {/* THE LENDER (owner, Oct 2026: "you can't choose your lender"): every
+              construction desk's terms on this job; one that will not write it says why */}
+          {d.quotes.length > 0 && <Row k="Lender">
+            {d.quotes.map((q) => (
+              <Chip key={q.lender} on={(plan?.lender ?? d.bank) === q.lender} disabled={!q.open || !(q.ltcMax > 0)}
+                title={q.why ?? `${q.lender}: at most ${Math.round(q.ltcMax * 100)}% of cost, less if the building is worth less, at ${pct2(q.ratePct)}, ${(q.points * 100).toFixed(1)} pts`}
+                onClick={() => set({ bank: q.lender })}>
+                {q.lender} <span className="bd-sub">{q.open && q.ltcMax > 0 ? pct2(q.ratePct) : "closed"}</span>
+              </Chip>))}
+          </Row>}
           {/* THE LOAN, ANY AMOUNT (owner): 0 to all the lender offers, in 5% steps of its maximum */}
           <Row k="Loan">
             <input type="range" min={0} max={1} step={0.05} value={d.ltcWant} disabled={!!plan && !(plan.ltcMax > 0)}

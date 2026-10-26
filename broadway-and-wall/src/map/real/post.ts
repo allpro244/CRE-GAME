@@ -150,7 +150,6 @@ export class PostFX {
   // the ground is MapLibre's, not ours: the distance pass stands its own
   // street-level plane under the city, or nothing would meet the pavement
   private readonly ground = (() => { const m = new THREE.Mesh(new THREE.PlaneGeometry(60000, 60000), this.distMat); m.frustumCulled = false; return m; })();
-  private size = new THREE.Vector2();
   private readonly scene = new THREE.Scene();
   private readonly cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly mat: THREE.ShaderMaterial;
@@ -199,8 +198,9 @@ export class PostFX {
         this.lastDist = now;
       }
     }
-    renderer.getDrawingBufferSize(this.size);
-    const w = Math.floor(this.size.x), h = Math.floor(this.size.y);
+    // the canvas as it is now, not the size the renderer was made at (it shares MapLibre's canvas)
+    const gl = renderer.getContext();
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
     if (w < 2 || h < 2) return;
     if (!this.tex || this.tex.image.width !== w || this.tex.image.height !== h) {
       this.tex?.dispose();
@@ -238,8 +238,8 @@ export class PostFX {
    * drew a blocky ring round each tree crown and building edge.
    */
   private distPass(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, hide: (THREE.Object3D | null)[]) {
-    renderer.getDrawingBufferSize(this.size);
-    const w = Math.max(2, Math.floor(this.size.x)), h = Math.max(2, Math.floor(this.size.y));
+    const gl = renderer.getContext();
+    const w = Math.max(2, gl.drawingBufferWidth), h = Math.max(2, gl.drawingBufferHeight);
     if (!this.distRT || this.distRT.width !== w || this.distRT.height !== h) {
       this.distRT?.dispose();
       this.distRT = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true });

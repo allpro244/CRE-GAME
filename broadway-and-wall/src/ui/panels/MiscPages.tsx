@@ -314,6 +314,7 @@ export function SettingsPage() {
       <div className="page-section" style={{ marginTop: 10 }}>Graphics</div>
       <div className="btn-row">
         {([
+          ["max", "Max", "For a strong graphics card: drawn at 1.5x your screen's pixels and scaled down, the sharpest sun shadows, props drawn twice as far."],
           ["high", "High", "The full picture: sharp shadows, native pixel density, every prop and passer-by."],
           ["medium", "Medium", "Softer shadows, capped pixel density, fewer people and cars; small props drop out sooner as you zoom out."],
           ["low", "Low", "For laptops without a graphics card: no shadows, standard pixel density, a light crowd, small props only up close, no falling rain or snow."],
@@ -480,6 +481,7 @@ function UnrealGraphics() {
     ["medium", "Medium", "Two-thirds resolution upscaled with DLSS or TSR, full lighting at a lower quality. The best balance on most cards."],
     ["high", "High", "Native resolution, full lighting, shadows and clouds. For strong cards (RTX 3070 and up at 1080p)."],
     ["ultra", "Ultra", "Cinematic lighting, shadows and draw distance. For the strongest cards, and screenshots."],
+    ["max", "Max", "Everything at Cinematic, including textures, effects and post-processing, with walkers drawn twice as far. For RTX 4070 / 5070 Ti class cards and up."],
   ];
   return (
     <>
@@ -491,7 +493,7 @@ function UnrealGraphics() {
         {!preset && <span className="hint" style={{ alignSelf: "center" }}>Custom</span>}
       </div>
       <div className="hint">
-        Measured on an RTX 2080 at 1080p: Low about 68 fps, Medium 63, High 36, Ultra 17. A newer card runs each about twice as fast.
+        Measured on an RTX 2080 at 1080p: Low about 68 fps, Medium 63, High 36, Ultra 17. A newer card runs each about twice as fast. Max is not measured yet; it costs more than Ultra.
         Looks only: the city, its numbers and your save are the same at every setting.
       </div>
       <button type="button" className="btn btn-sm" onClick={() => setOpen(!open)} style={{ margin: "6px 0" }}>{open ? "Hide advanced" : "Advanced settings"}</button>
@@ -525,11 +527,11 @@ function UnrealGraphics() {
             <button type="button" className={chip(gfx.clouds === 2)} onClick={() => set({ clouds: 2 })}>Full, with shadows</button>
           </Opt>
           <Opt label="View distance" hint="How far small things (props, trees) are drawn."><Level k="view" /></Opt>
-          <Opt label="Textures" hint="Texture detail; lower it on a card with little memory."><Level k="textures" max={3} /></Opt>
-          <Opt label="Effects" hint="Rain, snow, haze and material detail."><Level k="effects" max={3} /></Opt>
-          <Opt label="Post-processing" hint="Exposure, bloom and colour grade quality."><Level k="post" max={3} /></Opt>
-          <Opt label="City life" hint="Walkers and moving traffic. Light draws them only near the camera.">
-            {(["Off", "Light", "Full"] as const).map((n, i) => (
+          <Opt label="Textures" hint="Texture detail; lower it on a card with little memory."><Level k="textures" /></Opt>
+          <Opt label="Effects" hint="Rain, snow, haze and material detail."><Level k="effects" /></Opt>
+          <Opt label="Post-processing" hint="Exposure, bloom and colour grade quality."><Level k="post" /></Opt>
+          <Opt label="City life" hint="Walkers and moving traffic. Light draws them only near the camera; Far draws walkers twice as far.">
+            {(["Off", "Light", "Full", "Far"] as const).map((n, i) => (
               <button key={n} type="button" className={chip(gfx.life === i)} onClick={() => set({ life: i })}>{n}</button>
             ))}
           </Opt>

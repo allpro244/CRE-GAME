@@ -62,7 +62,7 @@ export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "res
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "pencils" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
 export type MapFilter = "all" | "owned" | "construction" | "firm";
-export type GraphicsQuality = "low" | "medium" | "high";
+export type GraphicsQuality = "low" | "medium" | "high" | "max";
 /** A scheme being designed: drawn finished, on its lot, in the 3D city. */
 export interface DesignPreview {
   bbl: string; use: DevUse; floors: number; cov: number; design: BuildingDesign;
@@ -910,7 +910,7 @@ export const useStore = create<AppState>((set, get) => ({
   graphics: (() => {
     try {
       const g = localStorage.getItem("bw:graphics");
-      if (g === "low" || g === "medium" || g === "high") return g;
+      if (g === "low" || g === "medium" || g === "high" || g === "max") return g;
       // In Unreal, medium is DLSS Quality: 50 fps at 1080p on an RTX 2080
       // against 37 at native (UE58_PLAN.md), so a first run starts there
       if (new URLSearchParams(location.search).get("host") === "unreal") return "medium";
@@ -920,10 +920,10 @@ export const useStore = create<AppState>((set, get) => ({
   preferFps: (() => {
     try {
       const g = localStorage.getItem("bw:graphics");
-      return g ? g !== "high" : localStorage.getItem("bw:prefer-fps") === "on";
+      return g ? g === "low" || g === "medium" : localStorage.getItem("bw:prefer-fps") === "on";
     } catch { return false; }
   })(),
-  gfx: loadGfx((() => { try { const g = localStorage.getItem("bw:graphics"); return g === "low" || g === "high" ? g : "medium"; } catch { return "medium"; } })()),
+  gfx: loadGfx((() => { try { const g = localStorage.getItem("bw:graphics"); return g === "low" || g === "high" || g === "max" ? g : "medium"; } catch { return "medium"; } })()),
   designPreview: null,
   designSigFits: null,
   setDesignPreview: (p) => set(p ? { designPreview: p } : { designPreview: p, designSigFits: null }),
@@ -1303,7 +1303,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
   setGraphics: (q) => {
     try { localStorage.setItem("bw:graphics", q); } catch { /* private mode */ }
-    set({ graphics: q, preferFps: q !== "high" });
+    set({ graphics: q, preferFps: q === "low" || q === "medium" });
   },
   setGfx: (o) => {
     saveGfx(o);

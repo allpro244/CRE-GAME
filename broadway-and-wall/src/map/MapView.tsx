@@ -112,10 +112,10 @@ function mapPaintSig(g: GameState | null | undefined): string {
  * constant, which is nothing subtle. Generated islands are all cut around
  * [-70.9, 41.1] so nothing moves for them, and the fallback keeps that.
  */
-/** Canvas pixel density per graphics setting: High is native, Medium caps a
- *  retina screen at 1.25x, Low draws at 1x. */
-const ratioFor = (q: "low" | "medium" | "high", dpr: number) =>
-  q === "low" ? 1 : q === "medium" ? Math.min(dpr, 1.25) : dpr;
+/** Canvas pixel density per graphics setting: Max supersamples at 1.5x native
+ *  (to 3x), High is native, Medium caps a retina screen at 1.25x, Low draws at 1x. */
+const ratioFor = (q: "low" | "medium" | "high" | "max", dpr: number) =>
+  q === "low" ? 1 : q === "medium" ? Math.min(dpr, 1.25) : q === "max" ? Math.min(3, dpr * 1.5) : dpr;
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
 

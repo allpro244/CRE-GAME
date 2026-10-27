@@ -9,6 +9,7 @@
 import type { GameState } from "@/engine/types";
 import type { ParcelRecord } from "@/data/types";
 import { initialCondition, marketAppraisal, resolveRec } from "@/engine/value";
+import { demandNow } from "@/engine/demand";
 import { goingIn, occRead } from "@/ui/panels/shared";
 import { usd } from "@/ui/format";
 
@@ -35,7 +36,9 @@ export function hoverBasics(g: GameState, parcels: Record<string, ParcelRecord>,
     if (own) occ = occRead(rec, own).lettableOcc;
     else { const ip = goingIn(g, bbl, appraised); occ = ip.h ? occRead(rec, ip.h).lettableOcc : ip.occ; }
   }
-  return { address: rec.address, appraised, occ, bldgSf: building ? Math.round(rec.bldgArea) : 0, acres: rec.lotArea / 43560 };
+  // the demand score the property desk prints (owner, Oct 2026: "when you hover over a parcel, it should show its demand score")
+  const demand = Math.round(demandNow(g, rec));
+  return { address: rec.address, appraised, occ, demand, bldgSf: building ? Math.round(rec.bldgArea) : 0, acres: rec.lotArea / 43560 };
 }
 
 export const acresText = (ac: number) => (ac >= 10 ? ac.toFixed(0) : ac >= 1 ? ac.toFixed(1) : ac.toFixed(2)) + " ac";
@@ -45,6 +48,7 @@ export function tipHtml(g: GameState, parcels: Record<string, ParcelRecord>, rec
   return [
     `<div class="ht-addr">${esc(b.address)}</div>`,
     row("Appraised", usd(b.appraised)),
+    row("Demand", `${b.demand} / 100`),
     row("Occupancy", b.occ == null ? "—" : `${Math.round(b.occ * 100)}%`, b.occ != null && b.occ < 0.75 ? "bad" : ""),
     row("Building", b.bldgSf ? `${b.bldgSf.toLocaleString()} sf` : "—"),
     row("Land", acresText(b.acres)),

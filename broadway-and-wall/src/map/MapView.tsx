@@ -353,6 +353,16 @@ export default function MapView() {
   // polygons, the footprints, the water and the parks are all generated in
   // `loadData` and handed over here, so the map cannot mount until they exist.
   const city = useStore((s) => s.city);
+  // THE SAME CITY, GROWN. A plat, a lot split or a new road hands the store a
+  // new `city` object with the same manifest; the map is built once per
+  // manifest and takes those in place (the effect after this one). It used to
+  // be keyed on the object: every year's growth tore the map down, rebuilt
+  // the whole 3D city and flew the camera back to the opening shot (owner,
+  // Oct 2026: "once a year ... resets your view and reloads the entire game").
+  const cityKey = city?.manifest ?? null;
+  const builtCityRef = useRef<typeof city>(null);
+  const plantRef = useRef<((c: NonNullable<typeof city>) => void) | null>(null);
+  const [layerGen, setLayerGen] = useState(0);
   useEffect(() => {
     if (!el.current || mapRef.current || !city) return;
     let disposed = false;
@@ -421,9 +431,12 @@ export default function MapView() {
       map.on("load", () => {
         setMapReady(true);
         // the beautiful-buildings renderer: meshes with procedural facades
-        Promise.resolve([city.buildings3d as BuildingVolume[], city.context as GeoJSON.FeatureCollection | null] as const)
-          .then(([volumes, ctx]: readonly [BuildingVolume[], GeoJSON.FeatureCollection | null]) => {
+        // the 3D city, planted once here and again, in place, when the city grows
+        const plant = (cityNow: NonNullable<typeof city>) => {
+            const volumes = cityNow.buildings3d as BuildingVolume[], ctx = cityNow.context as GeoJSON.FeatureCollection | null;
             if (disposed || !volumes?.length) return;
+            // the layer being replaced stays on screen until its successor is built
+            const old = threeRef.current;
             const curbFeats = (ctx?.features ?? [])
               .filter((f) => f.properties?.kind === "street"
                 && (f.properties?.cls === "grid" || f.properties?.cls === "lane")
@@ -538,7 +551,7 @@ export default function MapView() {
               // MapLibre paints the parcel fill from.
               lots: (() => {
                 const out: Record<string, [number, number][]> = {};
-                const fc = city.parcelFeatures as GeoJSON.FeatureCollection | undefined;
+                const fc = cityNow.parcelFeatures as GeoJSON.FeatureCollection | undefined;
                 for (const f of fc?.features ?? []) {
                   const bbl = f.properties?.bbl as string | undefined;
                   if (!bbl || f.geometry?.type !== "Polygon") continue;
@@ -560,7 +573,9 @@ export default function MapView() {
               }
             }
             layer.setQuality(useStore.getState().graphics);
+            if (old) layer.id = `bw-three-buildings-${Date.now()}`;
             threeRef.current = layer;
+            setLayerGen((n) => n + 1);
             // A handle for automated playtests, same as window.__map. The 3D
             // layer is the one part of this game whose correctness cannot be
             // asserted from state alone — you have to be able to ask the
@@ -570,15 +585,16 @@ export default function MapView() {
             // while to build (RealCityLayer.buildAll), and the map is live the
             // whole time: the plain extrusions hold the buildings' places until
             // the real ones are ready to take over.
-            map.setLayoutProperty("bw-bldg-3d", "visibility", "visible");
+            if (!old) map.setLayoutProperty("bw-bldg-3d", "visibility", "visible");
             layer.onReady = () => {
               if (disposed) return;
+              if (old && map.getLayer(old.id)) map.removeLayer(old.id);
               map.setLayoutProperty("bw-bldg-3d", "visibility", "none");
               // the 3D city paints its own lane markings (RealCity.buildMarkings)
               for (const id of ["lane-divider", "lane-double-a", "lane-double-b"]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
               setThreeReady(true);
             };
-            map.addLayer(layer);
+            map.addLayer(layer, old && map.getLayer(old.id) ? old.id : undefined);
             // THE LOT LINE ABOVE THE MODEL. The parcel outline is drawn under
             // the 3D layer, and on a vacant lot the mesh lays grass and hedges
             // right over it — a selected empty lot showed no edge at all, and
@@ -603,11 +619,13 @@ export default function MapView() {
                 },
               });
             }
-          })
-          .catch(() => {
-            // no mesh feed — fall back to the flat extrusions
-            map.setLayoutProperty("bw-bldg-3d", "visibility", "visible");
-          });
+        };
+        plantRef.current = plant;
+        builtCityRef.current = city;
+        try { plant(city); } catch {
+          // no mesh feed — fall back to the flat extrusions
+          map.setLayoutProperty("bw-bldg-3d", "visibility", "visible");
+        }
         // the cinematic fly-in — or, rebuilding after a lost context, straight back where the camera was
         const resume = resumeCamRef.current;
         resumeCamRef.current = null;
@@ -685,9 +703,28 @@ export default function MapView() {
       labelsRef.current.clear();
       setMapReady(false);
       setThreeReady(false);
+      plantRef.current = null;
+      builtCityRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city, glReset]);
+  }, [cityKey, glReset]);
+
+  // THE CITY GREW (see cityKey): the flat sources take the new features and
+  // the 3D city is replanted behind the old one, the camera where it was.
+  useEffect(() => {
+    const map = liveMap(mapRef.current);
+    if (!map || !mapReady || !city || city === builtCityRef.current || !builtCityRef.current) return;
+    builtCityRef.current = city;
+    const empty = { type: "FeatureCollection", features: [] } as GeoJSON.FeatureCollection;
+    (map.getSource("bw-context") as maplibregl.GeoJSONSource | undefined)?.setData((city.context ?? empty) as GeoJSON.FeatureCollection);
+    (map.getSource("bw-buildings") as maplibregl.GeoJSONSource | undefined)?.setData((city.buildingFeatures ?? empty) as GeoJSON.FeatureCollection);
+    const fc = city.parcelFeatures as GeoJSON.FeatureCollection | undefined;
+    if (fc) (map.getSource("bw-parcels") as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: mergeLotFeatures(fc.features as never[], useStore.getState().game?.merged ?? {}) as GeoJSON.Feature[],
+    });
+    plantRef.current?.(city);
+  }, [city, mapReady]);
 
   // reflect selection + neighbor highlight into feature-state
   const selectedBBL = useStore((s) => s.selectedBBL);
@@ -764,7 +801,7 @@ export default function MapView() {
   const pageOpen = useStore((s) => s.page !== "none");
   useEffect(() => {
     threeRef.current?.setPaused(pageOpen);
-  }, [pageOpen, mapReady]);
+  }, [pageOpen, mapReady, layerGen]);
 
   // GO TO PROPERTY. An explicit request from a list somewhere in the panel —
   // unlike the gentle ease above, this one always moves, and it FRAMES the
@@ -1034,7 +1071,7 @@ export default function MapView() {
       city?.parcelFeatures as GeoJSON.FeatureCollection | undefined,
       city?.context as GeoJSON.FeatureCollection | null,
     ) as never);
-  }, [paintSig, parcels, mapReady, city, pinFilter, pinFirm]);
+  }, [paintSig, parcels, mapReady, city, pinFilter, pinFirm, layerGen]);
 
   const lens = useStore((s) => s.lens);
 
@@ -1347,7 +1384,7 @@ export default function MapView() {
     const game = useStore.getState().game;
     const site = selectedBBL ? (game ? siteDeeds(game, selectedBBL) : [selectedBBL]) : [];
     layer.setHighlight(site, hoveredBBL && !site.includes(hoveredBBL) ? hoveredBBL : null);
-  }, [selectedBBL, hoveredBBL, mapReady, mergedN]);
+  }, [selectedBBL, hoveredBBL, mapReady, mergedN, layerGen]);
 
   // mesh tints: teal neighbors, the owners lens, the market. Ownership is the
   // gilt band on the building itself, not a yellow wash — a building you own
@@ -1444,7 +1481,7 @@ export default function MapView() {
       }
     }
     layer.setTints(tints);
-  }, [selectedBBL, adjacency, paintSig, mapReady, lens, mapFilter, mapFirm, parcels]);
+  }, [selectedBBL, adjacency, paintSig, mapReady, lens, mapFilter, mapFirm, parcels, layerGen]);
 
   // THE CITY'S VACANCY, ON THE CITY.
   //
@@ -1531,7 +1568,7 @@ export default function MapView() {
       .filter((h) => h.sale && !h.sale.unsolicited && h.sale.mode === "marketed")
       .map((h) => h.bbl);
     layer.setForSale(onTape.sort(), mine.sort());
-  }, [paintSig, mapReady, parcels, city]);
+  }, [paintSig, mapReady, parcels, city, layerGen]);
 
   // player construction and city growth onto the skyline
   const dynSigRef = useRef("");
@@ -1623,7 +1660,7 @@ export default function MapView() {
         cityNow?.context as GeoJSON.FeatureCollection | null,
       ));
     }
-  }, [paintSig, mapReady]);
+  }, [paintSig, mapReady, layerGen]);
 
   const gameMonth = useStore((s) => s.game?.month ?? 0);
   const visualGame = useStore.getState().game;
@@ -1653,11 +1690,11 @@ export default function MapView() {
       const m0 = [0xa8, 0xbd, 0x93], sn = [234, 238, 241];
       map.setPaintProperty("median", "fill-color", "#" + m0.map((v, i) => Math.round(v + (sn[i] - v) * snowLying).toString(16).padStart(2, "0")).join(""));
     }
-  }, [gameMonth, mapReady, cityVisual.snowCover]);
+  }, [gameMonth, mapReady, cityVisual.snowCover, layerGen]);
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setActivity(cityVisual.activity);
-  }, [cityVisual.activity, mapReady]);
+  }, [cityVisual.activity, mapReady, layerGen]);
   // THE SCHEME ON THE DESK: while the Build desk's Design tab is open, the
   // building is drawn finished on its lot in the look being chosen.
   const designPreview = useStore((s) => s.designPreview);
@@ -1676,7 +1713,7 @@ export default function MapView() {
       bbl: p.bbl, cls: p.cls ?? p.use, heightM: p.floors * FLOOR_M, floors: p.floors, construction: false,
       cov: p.cov, year: p.year ?? START_YEAR + Math.floor(month / 12), design: p.design, shops: p.shops,
     } : null);
-  }, [designPreview, mapReady]);
+  }, [designPreview, mapReady, layerGen]);
 
   // THE SCHEME VIEWER'S CAMERA. Stepped out of the Build desk, the bar's
   // orbit / tilt / zoom buttons and the turntable all turn the camera ROUND
@@ -1829,7 +1866,7 @@ export default function MapView() {
     };
     apply();
     return () => mq?.removeEventListener("change", apply);
-  }, [graphics, mapReady]);
+  }, [graphics, mapReady, layerGen]);
   useEffect(() => {
     if (!mapReady) return;
     threeRef.current?.setWeather(
@@ -1846,7 +1883,7 @@ export default function MapView() {
       map.setSky(skySpec(cloud) as never);
       map.setLight(lightSpec(cloud) as never);
     }
-  }, [cityVisual.weather, cityVisual.precipitation, cityVisual.overcast, cityVisual.snowCover, mapReady]);
+  }, [cityVisual.weather, cityVisual.precipitation, cityVisual.overcast, cityVisual.snowCover, mapReady, layerGen]);
 
   // lenses — repaint when toggled and as the market moves
   //
@@ -2090,7 +2127,7 @@ export default function MapView() {
     }
     // no lens (or owners, which paints through the tints): the city's own face
     layer?.setLens(null);
-  }, [lens, paintSig, parcels, mapReady, threeReady]);
+  }, [lens, paintSig, parcels, mapReady, threeReady, layerGen]);
 
   // hover tooltip: address before you commit to a click. Photo frame drops it
   // with the labels — the effect re-runs on toggle, so it detaches cleanly and

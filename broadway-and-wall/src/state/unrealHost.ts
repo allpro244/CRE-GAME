@@ -163,7 +163,7 @@ export function startUnrealHost(): void {
       const rec = bbl && parcels ? parcels[game?.merged?.[bbl] ?? bbl] : undefined;
       if (!game || !parcels || !rec) return;
       const h = hoverBasics(game, parcels, rec);
-      sendInput({ t: "hoverinfo", bbl, a: Math.round(h.appraised), o: h.occ == null ? -1 : Math.round(h.occ * 100), s: h.bldgSf, ac: +h.acres.toFixed(2) });
+      sendInput({ t: "hoverinfo", bbl, a: Math.round(h.appraised), o: h.occ == null ? -1 : Math.round(h.occ * 100), d: h.demand, s: h.bldgSf, ac: +h.acres.toFixed(2) });
     },
   };
 

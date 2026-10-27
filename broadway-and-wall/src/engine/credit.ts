@@ -235,16 +235,29 @@ export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): nu
   // coverage. Income after the mortgages must cover the line's interest
   // 1.25 times, and the dirt gets the land desk's borrowing base — a third of
   // its value — because land carries debt on value, not on income.
+  //
+  // THE BUILDINGS' OWN VALUE IS A FLOOR UNDER THE COVERAGE TEST (owner, Oct
+  // 2026: "the line of credit should be giving you more"). A young firm with
+  // millions in unlevered buildings that have not let yet had a line of a
+  // third of its dirt and nothing else: coverage reads income, and there was
+  // none. A bank lends against the equity in its borrower's real estate as
+  // well as against its rent — the same third the land desk advances on dirt,
+  // on the equity above each building's own mortgage and mezz. Deeds pledged
+  // to the facility are the facility's collateral and do not count twice.
+  // Cash is deliberately not in the base: the line is drawn to cover cash
+  // shortfalls, so a base that fell as cash was spent would call the line at
+  // the moment it was being used.
   const rate = Math.max(1, (s.econ.indexRate ?? 5) + LOC_SPREAD) / 100;
-  let free = 0, land = 0;
+  let free = 0, land = 0, equity = 0;
   for (const h of Object.values(s.holdings)) {
     if (purseOf(s, h) === "fund") continue;
     const rec = resolveRec(parcels, s, h.bbl);
     if (rec && (rec.class === "land" || !rec.bldgArea) && !h.groundLeased) { land += ownedHoldingValue(s, parcels, h); continue; }
     const ds = (h.loan?.monthlyPmt ?? 0) * 12 + (h.mezz?.monthlyPmt ?? 0) * 12;
     free += ownedHoldingNoiYr(s, parcels, h) - ds;
+    if (!s.facility?.bbls.includes(h.bbl)) equity += Math.max(0, ownedHoldingValue(s, parcels, h) - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0));
   }
-  const serviceable = Math.max(0, free) / (1.25 * rate) + land / 3;
+  const serviceable = Math.max(Math.max(0, free) / (1.25 * rate), equity / 3) + land / 3;
   return Math.max(0, Math.round(Math.min(nw * advance, serviceable * appFac)));
 }
 

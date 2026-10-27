@@ -137,6 +137,7 @@ public:
 	/** The hover card's four numbers for one lot, from the page (map/hoverCard.ts hoverBasics). */
 	FString HoverAsked, InfoBbl;
 	double InfoAppraised = 0, InfoAcres = 0;
+	int32 InfoDemand = -1;
 	int32 InfoOcc = -1, InfoBldgSf = 0;
 	double HoverClock = 0;
 	void PageInput(const FString& Type, double X, double Y, double Dx, double Dy, double Wheel, const FString& Key);

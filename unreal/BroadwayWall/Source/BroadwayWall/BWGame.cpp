@@ -512,20 +512,21 @@ void ABWHUD::DrawHUD()
 	// MAP HUD (Phase 5): a small native card beside the pointer, at frame rate
 	if (const FBWParcel* P = PC->Hovered; P && P != PC->Selected && PC->HoverPx.X >= 0)
 	{
-		// THE FOUR NUMBERS (owner): appraised, occupancy, building sf, land acres — from the page
+		// THE FIVE NUMBERS (owner): appraised, demand, occupancy, building sf, land acres — from the page
 		const bool bInfo = PC->InfoBbl == P->Bbl;
 		auto Money = [](double V) { return V >= 1e6 ? FString::Printf(TEXT("$%.2fM"), V / 1e6) : FString::Printf(TEXT("$%.0fK"), V / 1e3); };
 		const double Ac = bInfo ? PC->InfoAcres : P->LotArea / 43560.0;
 		const FString Acres = Ac >= 10 ? FString::Printf(TEXT("%.0f ac"), Ac) : Ac >= 1 ? FString::Printf(TEXT("%.1f ac"), Ac) : FString::Printf(TEXT("%.2f ac"), Ac);
-		const FString Rows[4] = {
+		const FString Rows[5] = {
 			FString::Printf(TEXT("Appraised   %s"), bInfo ? *Money(PC->InfoAppraised) : TEXT("…")),
+			FString::Printf(TEXT("Demand      %s"), !bInfo || PC->InfoDemand < 0 ? TEXT("…") : *FString::Printf(TEXT("%d / 100"), PC->InfoDemand)),
 			FString::Printf(TEXT("Occupancy   %s"), !bInfo ? TEXT("…") : PC->InfoOcc < 0 ? TEXT("—") : *FString::Printf(TEXT("%d%%"), PC->InfoOcc)),
 			FString::Printf(TEXT("Building    %s"), !bInfo ? TEXT("…") : PC->InfoBldgSf <= 0 ? TEXT("—") : *(FText::AsNumber(PC->InfoBldgSf).ToString() + TEXT(" sf"))),
 			FString::Printf(TEXT("Land        %s"), *Acres) };
 		const float X = PC->HoverPx.X + 18 * S, Y = PC->HoverPx.Y + 14 * S;
-		Panel(X, Y, 240 * S, 118 * S);
+		Panel(X, Y, 240 * S, 139 * S);
 		Text(P->Address, X + 10 * S, Y + 6 * S, 1.05f, FLinearColor::White);
-		for (int32 r = 0; r < 4; ++r) Text(Rows[r], X + 10 * S, Y + (30 + r * 21) * S, 0.9f, FLinearColor(0.82f, 0.85f, 0.88f));
+		for (int32 r = 0; r < 5; ++r) Text(Rows[r], X + 10 * S, Y + (30 + r * 21) * S, 0.9f, FLinearColor(0.82f, 0.85f, 0.88f));
 	}
 	if (const FBWParcel* P = PC->Selected; P && !bPage)
 	{
@@ -1161,10 +1162,10 @@ void ABWGameMode::OnPageInput(const FString& Json)
 	if (T == TEXT("preview-off") && City) { City->ClearPreview(); return; }
 	if (T == TEXT("hoverinfo"))
 	{
-		FString Bbl; double A = 0, Oc = -1, Sf = 0, Ac = 0;
+		FString Bbl; double A = 0, Oc = -1, Sf = 0, Ac = 0, Dm = -1;
 		O->TryGetStringField(TEXT("bbl"), Bbl); O->TryGetNumberField(TEXT("a"), A); O->TryGetNumberField(TEXT("o"), Oc);
-		O->TryGetNumberField(TEXT("s"), Sf); O->TryGetNumberField(TEXT("ac"), Ac);
-		PC->InfoBbl = Bbl; PC->InfoAppraised = A; PC->InfoOcc = int32(Oc); PC->InfoBldgSf = int32(Sf); PC->InfoAcres = Ac;
+		O->TryGetNumberField(TEXT("s"), Sf); O->TryGetNumberField(TEXT("ac"), Ac); O->TryGetNumberField(TEXT("d"), Dm);
+		PC->InfoBbl = Bbl; PC->InfoAppraised = A; PC->InfoOcc = int32(Oc); PC->InfoBldgSf = int32(Sf); PC->InfoAcres = Ac; PC->InfoDemand = int32(Dm);
 		return;
 	}
 	// the lens: the page's number per deed, tinted on the lots (ui-revamp step 7)

@@ -228,7 +228,7 @@ export function LeasingPage() {
       <div className="agent-bar" style={{ display: "block" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div className="agent-title">
-            Auto-lease · {on} of {book.length} building{book.length === 1 ? "" : "s"}
+            Auto-lease · your team answers {on} of {book.length} building{book.length === 1 ? "" : "s"}
           </div>
           <button
             type="button"
@@ -282,7 +282,7 @@ export function LeasingPage() {
         </div>
         <div className="hint" style={{ marginTop: 6 }}>
           {!settled
-            ? "No LOIs settled in 12 mo."
+            ? "Nothing settled in the last twelve months."
             : <>
                 Last 12 months: <b>{yr.signed} signed</b>
                 {yr.signed > 0 && <> at <b>{pctOf(yr.deal)} of market deal</b> avg ({pctOf(yr.ne)} net effective vs market{yr.under ? `; ${yr.under} under 90%` : ""})</>}
@@ -316,7 +316,7 @@ export function LeasingPage() {
     return (
       <div className="page-section">
         <div className="page-section-head">
-          Pending · {desk.length} LOI{desk.length === 1 ? "" : "s"}
+          On your desk · {desk.length} LOI{desk.length === 1 ? "" : "s"}
           {renewals ? ` · ${renewals} renewal${renewals === 1 ? "" : "s"}` : ""}
           {quiet ? " · referred" : ""}
         </div>

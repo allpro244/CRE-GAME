@@ -371,7 +371,7 @@ const SIGMA_KL = 0.5;
 const SPACE_SHARE0: Record<BuiltClass, number> = { office: 0.14, retail: 0.2, industrial: 0.23, multifamily: 0 };
 /** A household's minimum home against the opening's average, and the share of income renters spend on rent (ACS). */
 const HH_MIN = 0.5;
-const HH_RENT_SHARE0 = 0.30;
+export const HH_RENT_SHARE0 = 0.30;
 /** Online selling (see ONLINE in the secular block). */
 const ONLINE_0 = 0.02;      // share of store-type sales online at the opening (US 2000)
 const ONLINE_MAX = 0.4;     // the most of it that can ship (2026-10-17: 0.5 saturated by year 60 in a playthrough)

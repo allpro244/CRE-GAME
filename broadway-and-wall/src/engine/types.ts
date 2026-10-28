@@ -73,6 +73,25 @@ export type Credit = 0 | 1 | 2; // C, B, A
 export const CREDIT_LABEL = ["C", "B", "A"];
 
 /** One trade's accounts, real terms, opening month's sales = 1. */
+/** The money loop's month, as the engine reads it (Econ.eco; economy.ts `economyToEngine`). */
+export interface EcoDrive {
+  m: number;
+  /** The register: earners in work, the labour force, the jobless rate, people, households, the age mix, renter households (island and region). */
+  jobs: number; lf: number; unemp: number; persons: number; households: number;
+  ages: { kids: number; work: number; old: number };
+  renters: number;
+  /** Households arrived for work and left out of work this month (weighted). */
+  arrived: number; left: number;
+  /** The firms' heads (labour demand); 0 before the books open. */
+  heads: number;
+  /** Floor the firms' heads take, by class (sf): on the floor, not at home, not in a building of their own. */
+  floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>;
+  /** Each industry's employment now and a month ago, and the heads the island's named firms are formed toward (its share at the opening). */
+  emp?: number[]; empPrev?: number[]; target?: number[];
+  /** Each trade's employment and real sales against the opening: its industries', by the heads it had in each. */
+  trade?: Partial<Record<Sector, { sales: number; emp: number; margin: number }>>;
+}
+
 export interface FirmBook {
   sales: number; emp: number; cash: number; debt: number;
   /** last year's sales, smoothed — what the cost base was built for */
@@ -92,12 +111,20 @@ export interface Tenant {
    * books when it moves between buildings — the street's, or the player's.
    */
   fid?: number;
+  /**
+   * The industry a firm was formed in (index into industries.ts INDUSTRY_IDS):
+   * the street forms firms for the work its industries add (streetRolls.ts),
+   * and the city's books put it there (economy.ts). Unset: drawn from its trade.
+   */
+  ind?: number;
   /** Space the firm wanted at signing, at reference rents, per unit of `staffSign` — its headcount in feet. */
   hcRef?: number;
   /** Headcount (`staff`) when it last signed — the space it took was sized for these people. */
   staffSign?: number;
   /** Its trade's payroll index last month — headcount moves with the trade. */
   empRef?: number;
+  /** Its industry's employment when it last staffed (economy.ts `staff`; streetRolls.ts), in heads. */
+  empInd?: number;
   /** The quality the tenant shopped for, 1-100 (TENANT_TIERS_PLAN.md). */
   quality?: number;
   // Which part of the building they are in. A shop under a block of flats is
@@ -2287,6 +2314,14 @@ export interface Econ {
   demandLvl0?: Partial<Record<BuiltClass, number>>;
   /** The town's firms' jobs (streetRolls.ts), at the first count, and the employment index then. */
   firmJobs?: number; firmJobs0?: number; firmEmp0?: number;
+  /**
+   * WHAT THE MONEY LOOP TELLS THE ENGINE (economy.ts `economyToEngine`, ONE
+   * ECONOMY step 2), written once a month after the household register has
+   * filled the firms' heads and read by the engine the month after.
+   */
+  eco?: EcoDrive;
+  /** The first month's drivers, which the space market's indices are read against. */
+  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number };
   /** Each trade's payroll last month, for the firms' month-on-month change. */
   tradeEmpPrev?: Partial<Record<string, number>>;
   /** each trade's mean firm-specific sales change last month (streetRolls) */
@@ -2554,6 +2589,8 @@ export interface Econ {
   // to five law firms and one let to five startups are different assets, and
   // this is the difference.
   industryMom?: Record<Sector, number>;
+  /** Each trade's monthly employment growth rolled over five years: what its momentum is read against (market.ts tickIndustryCycle). */
+  indTrend?: Partial<Record<Sector, number>>;
   industryPhase?: Record<Sector, "boom" | "steady" | "bust">;
   industryPhaseM?: Record<Sector, number>;
   // ---------------------------------------------------------------------

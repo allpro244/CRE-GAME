@@ -4,10 +4,11 @@
 import { tickBands } from "./bands";
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
+import { OFF_FLOOR_SHARE_NAT } from "./industries";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { tickStreetTenants } from "./tenantBooks";
 import { simulateHistory, driftInflTarget, shortIndexFor } from "./regime";
-import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
+import { swanClassLevel, swanTradeWave, tickSwans } from "./swans";
 import { settleSupplyDeliveries } from "./supply";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
@@ -1360,6 +1361,16 @@ export function citySize(stock: Record<BuiltClass, number>): { jobs0: number; po
     const per = SF_PER_JOB[k];
     if (per > 0) jobs += (stock[k] ?? 0) / per;
   }
+  // ...AND THE WORK THAT IS NOT ON A COMMERCIAL FLOOR (2026-10-28, ONE
+  // ECONOMY step 2). The ratios above count the desks, counters and sheds;
+  // a region also has its hospitals, schools, nursing homes and public
+  // payroll, in proportion to its size whatever its floors hold — about a
+  // quarter of US jobs (industries.ts OFF_FLOOR_SHARE_NAT: health and
+  // education's off-floor part and government's, CES 2023). Counting only the
+  // floors put 92% of the town's jobs in street firms against the nation's
+  // ~64%, and a region that size short of the people its schools and
+  // hospitals employ.
+  jobs /= 1 - OFF_FLOOR_SHARE_NAT;
   // A town with no commercial stock at all is still a town — the floor keeps
   // every ratio downstream finite rather than pretending the place is empty.
   jobs = Math.max(2_000, Math.round(jobs));
@@ -1572,7 +1583,6 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // a NaN in the year-zero column of the null-player table, and which anything
   // reading population before the first tick would have inherited.
   econ.jobs0 = SIZE.jobs0; econ.pop0 = SIZE.pop0;
-  econ.regionTrend = parcels ? openingRegionTrend(s.seed, parcels) : 0;
   econ.population = SIZE.pop0; econ.jobs = SIZE.jobs0; econ.unemployment = OPENING_UNEMP;
   // Wage (and cost) open at the density premium; output follows jobs × wage.
   econ.wageIdx = dens.wage; econ.outputIdx = dens.wage; econ.cpi = 1;
@@ -3119,30 +3129,21 @@ export function tickNation(s: GameState) {
 
 
 // ---------------------------------------------------------------------------
-// THE CITY'S INDUSTRIES, AND THE CYCLE THEY MAKE (2026-10-08).
+// THE CITY'S INDUSTRIES, AND THE CYCLE THEY MAKE.
 //
-// An export-base city. Its tradable industries — the ten trades its tenants
-// work in — sell outside the city, so their employment follows the NATION by
-// each trade's own cyclical sensitivity, grows at its own long-run trend, and
-// takes its own shocks (a plant closes, a sector booms). Local-serving work —
-// shops, schools, trades, government — follows the export base with a lag:
-// Moretti (2010) finds about 1.6 local jobs for each tradable one, which is
-// where a downturn in one industry spreads to the whole town. The city's
-// demand for workers moves with that composite, and the PHASE is read off
-// it afterwards, the way a statistician dates a cycle: nothing here consults
-// a label to decide what jobs do.
-//
-// INDUSTRY_TREND and INDUSTRY_BETA are stated facts about US industries,
-// rounded: long-run payroll growth by sector (BLS CES, 1990-2019) and the
-// sector's employment swing per unit of the national swing (BLS recession
-// employment declines by industry, 1990-91, 2001, 2008-09). Medical barely
-// moves; logistics, apparel and design swing harder than the nation.
-// INDUSTRY_VOL keeps its role as relative idiosyncratic volatility.
+// RETIRED 2026-10-28 (ONE ECONOMY step 2): the ten trades' national trends,
+// cycle betas, shocks, local fortunes, the composite of export and local
+// work at a fixed multiplier (Moretti's 1.6), the boom/bust episodes and the
+// trades' own aggregate books. The town's work is its industries' now
+// (economy.ts): what the nation buys of each — its CES trend and its cycle
+// (industries.ts NAT_TREND, CYCLE_BETA), the town's share of it moving with
+// what the town costs and its firms' fortunes — and what the town and its
+// people buy, through the input-output table and the register's spending.
+// The multiplier is what the leaks leave, not a constant. Each trade's
+// employment and sales are its industries' (`tickIndustryCycle`, a read-out);
+// the phase is still dated off the payroll. The constants that moved with the
+// trades into the industries' export side are below.
 // ---------------------------------------------------------------------------
-const INDUSTRY_TREND: Record<Sector, number> = {      // per year
-  finance: 0.008, law: 0.005, tech: 0.025, media: -0.005, insurance: 0.005,
-  logistics: 0.015, apparel: -0.015, food: 0.012, medical: 0.020, design: 0.008,
-};
 /**
  * THE WORKERS THOSE TRENDS WERE HIRING HAVE STOPPED ARRIVING (2026-10-28).
  *
@@ -3162,8 +3163,7 @@ const INDUSTRY_TREND: Record<Sector, number> = {      // per year
  * no longer exists, so nearly every decade brought the town another tenth of
  * its size in new demand.
  */
-const LABOUR_FORCE_SLOWDOWN = 0.005;
-const natTrendCentre = (k: Sector) => INDUSTRY_TREND[k] - LABOUR_FORCE_SLOWDOWN;
+export const LABOUR_FORCE_SLOWDOWN = 0.005;
 /**
  * EACH TRADE KEEPS BOOKS (2026-10-15).
  *
@@ -3214,17 +3214,8 @@ export const FIRM_PROFILE: Record<Sector, FirmProfile> = {
 };
 /** The interest cover a lender underwrites new debt to (bank leveraged-loan practice ~3x). */
 export const LENDER_COVER = 3;
-/** Share of non-rent, non-wage costs that follow last year's sales rather than this month's. */
-const STICKY = 0.4;
-/** Months of sales a trade keeps in cash before it pays the surplus out. */
-const FIRM_CASH_TARGET = 1.5;
-/** The fixed ladder's average life, months. */
-const FIRM_LADDER_M = 60;
-/** Baseline share of a trade's jobs in firms that fail each month: ~1.5%/yr of employment. */
-const FIRM_FAIL_BASE = 0.00125;
-
-/** What every trade's books read this month: rates, pay and money. */
-function firmBookInputs(e: Econ) {
+/** What money costs this month, as a business and its customers read it: rates, pay and credit. */
+export function firmBookInputs(e: Econ) {
   const n = e.nat;
   const short = (n?.policy ?? 4) / 100;
   const long = (e.indexRate ?? 5.4) / 100;
@@ -3244,91 +3235,6 @@ function firmBookInputs(e: Econ) {
 }
 
 /**
- * One month of one trade's accounts. Returns its employment index.
- * `salesGrowth` is the month's growth in what it sells.
- */
-function tickFirmBook(e: Econ, k: Sector, salesGrowth: number, inp: ReturnType<typeof firmBookInputs>): number {
-  const P = FIRM_PROFILE[k];
-  e.firmRef ??= { wageRel: inp.wageRel, realNatPay: inp.realNatPay, rent: { ...(e.inPlaceReal ?? e.effRentIdx) } };
-  e.firmBooks ??= {} as Record<Sector, FirmBook>;
-  let b = e.firmBooks[k];
-  if (!b) {
-    b = e.firmBooks[k] = {
-      sales: e.indIdx?.[k] ?? 1, emp: e.indIdx?.[k] ?? 1,
-      cash: FIRM_CASH_TARGET * (e.indIdx?.[k] ?? 1),
-      debt: Math.min(P.lev, 1 / ((inp.long + P.spread) * LENDER_COVER)) * 12 * P.margin * (e.indIdx?.[k] ?? 1),
-      fixed: inp.long + P.spread, fail: 0, cover: 0, margin: P.margin,
-    };
-  }
-  b.sales *= 1 + salesGrowth;
-  // Last year's sales, smoothed: what the cost base was built for.
-  b.salesRef = (b.salesRef ?? b.sales) + (b.sales - (b.salesRef ?? b.sales)) / 12;
-  // Unit costs against the opening: pay relative to the nation, rent relative
-  // to national real pay (a town whose rents outrun what the country earns
-  // is a dearer place to do business).
-  const wageCost = inp.wageRel / Math.max(1e-6, e.firmRef.wageRel);
-  let rentCost = 0;
-  for (const [c, w] of Object.entries(P.space) as [BuiltClass, number][]) {
-    const now = e.inPlaceReal?.[c] ?? 1, then = e.firmRef.rent[c] ?? now;
-    rentCost += w * (now / Math.max(1e-9, then));
-  }
-  rentCost /= inp.realNatPay / Math.max(1e-6, e.firmRef.realNatPay);
-  // Costs are sticky: about 40% of them (overhead, contracts, salaried staff
-  // beyond the headcount line) were set for last year's sales and adjust over
-  // the year — the operating leverage that turns a sales drop into a profit
-  // collapse.
-  const other = (1 - P.wage - P.rent - P.margin) * (STICKY * (b.salesRef ?? b.sales) + (1 - STICKY) * b.sales);
-  const ebitda = b.sales - P.wage * b.emp * wageCost - P.rent * b.emp * rentCost - other;
-  // The debt book: floating legs at the short rate, the ladder rolling.
-  b.fixed += (inp.long + P.spread - b.fixed) / FIRM_LADDER_M;
-  const rate = P.float * (inp.short + P.spread) + (1 - P.float) * b.fixed;
-  const interest = b.debt * rate / 12;
-  const tax = 0.21 * Math.max(0, ebitda - interest);
-  b.cash += ebitda - interest - tax;
-  // Debt is nominal: inflation wears it down in real terms.
-  b.debt *= 1 - inp.infl / 12;
-  // Borrow toward the trade's normal leverage while lenders are open; repay
-  // out of cash when over it. A shut window means no new money.
-  const ebitdaAnn = Math.max(0, ebitda) * 12;
-  // Lenders size a loan on cover as well as on leverage: no more debt than
-  // keeps interest covered LENDER_COVER times at today's rate. So firms carry
-  // less debt when money is dear — the leverage norms are not fixed.
-  const targetDebt = Math.min(P.lev, 1 / (Math.max(0.01, rate) * LENDER_COVER))
-    * Math.max(ebitdaAnn, 12 * P.margin * b.sales * 0.5);
-  if (b.debt < targetDebt) {
-    const draw = (targetDebt - b.debt) / 36 * clamp((inp.credit - 0.5) / 0.5, 0, 1.2);
-    b.debt += draw; b.cash += draw;
-  } else if (b.cash > 0) {
-    const pay = Math.min(b.cash * 0.5, (b.debt - targetDebt) / 24);
-    b.debt -= pay; b.cash -= pay;
-  }
-  // Surplus cash goes to the owners.
-  const target = FIRM_CASH_TARGET * b.sales;
-  if (b.cash > target) b.cash -= (b.cash - target) * 0.15;
-  // How the trade is doing, in the two numbers its lenders read.
-  b.margin = ebitda / Math.max(1e-9, b.sales);
-  b.cover = interest > 0 ? ebitda / interest : 99;
-  const liquidity = b.cash / Math.max(1e-9, b.sales);   // months of sales in the bank
-  // FAILURES: interest cover under ~2x and cash under a month are where firms
-  // go under; a trade burning through its cash loses the weakest first.
-  // The trade is an average of its firms: as its interest cover thins toward
-  // the lenders' line, more of the weak tail is under it, and a trade whose
-  // sales are falling loses the firms that were built for the old volume.
-  const coverStress = Math.max(0, Math.min(5, 3 - b.cover));
-  const cashStress = Math.max(0, 1 - liquidity);
-  const salesDrop = Math.max(0, 1 - b.sales / Math.max(1e-9, b.salesRef ?? b.sales));
-  const fail = FIRM_FAIL_BASE * Math.exp(0.6 * coverStress + 1.6 * cashStress + 12 * salesDrop) * (b.cash < 0 ? 2 : 1);
-  b.fail = fail;
-  b.emp *= 1 - fail; b.debt *= 1 - fail * 1.5; if (b.cash < 0) b.cash *= 1 - fail;
-  // STAFFING: jobs follow sales, trimmed as margins thin and cut hard when
-  // the cash is going. Firms fire faster than they hire.
-  const marginGap = clamp((b.margin - P.margin) / P.margin, -1, 1);
-  const want = b.sales * (1 + 0.25 * marginGap) * (1 - 0.35 * Math.min(1, cashStress));
-  const gap = want - b.emp;
-  b.emp += gap * (gap > 0 ? 0.03 : 0.07);
-  return b.emp;
-}
-/**
  * A TOWN'S SHARE OF EACH NATIONAL TRADE WANDERS, FOR DECADES (2026-10-15).
  * Every town grew each trade at the nation's own trend, so sixty-year job
  * growth ran 1.16x-1.79x across seeds — 0.25-1%/yr — and no town ever shrank.
@@ -3338,42 +3244,22 @@ function tickFirmBook(e: Econ, k: Sector, salesGrowth: number, inp: ReturnType<t
  * Manhattan's garment trade (-20% city jobs 1969-77) against Seattle's
  * software. Each trade's local trend now carries its own mean-reverting
  * offset: stationary spread 2%/yr, twenty-year memory. Shape parameters,
- * stated; the cost brake (`regionalPull`) still answers a town that grows
- * dear or cheap.
+ * stated; the cost brake (`locationCost`) still answers a town that grows
+ * dear or cheap. (Since step 2, each INDUSTRY's share of the nation's demand
+ * for it carries them: economy.ts `tickExports`.)
  */
 /** Labour-augmenting technology: stationary spread of its growth, a year, and its memory. */
 const TFP_SD = 0.005;
 const TFP_TAU_M = 240;
 /** Capital's share of output (BLS multifactor productivity accounts). */
 const CAPITAL_SHARE = 0.33;
-const FORTUNE_SD = 0.02;
-const FORTUNE_TAU_M = 240;
+export const FORTUNE_SD = 0.02;
+export const FORTUNE_TAU_M = 240;
 /** Each trade's national trend: spread around its 1990-2019 mean, and its memory. */
-const NAT_TREND_SD = 0.008;
-const NAT_TREND_TAU_M = 360;
-const INDUSTRY_BETA: Record<Sector, number> = {
-  finance: 1.0, law: 0.5, tech: 1.3, media: 1.0, insurance: 0.5,
-  logistics: 1.4, apparel: 1.6, food: 1.1, medical: 0.2, design: 1.4,
-};
+export const NAT_TREND_SD = 0.008;
+export const NAT_TREND_TAU_M = 360;
 /** Points of a trade's sales per point of the national output gap, before its cycle beta. */
-const NAT_SALES_PER_GAP = 1.25;
-/** Local-serving jobs per tradable job (Moretti 2010, "Local Multipliers"). */
-const LOCAL_MULT = 1.6;
-/** Months for local-serving employment to close half its gap to the base. */
-const LOCAL_HALF_M = 12;
-/**
- * Local-serving payrolls' DIRECT swing per unit of the national swing. A
- * national recession is consumers everywhere spending less, so the town's
- * shops, restaurants and services lose work at once, not a year later via
- * its export trades. BLS CES 2007-09 peak-to-trough by supersector against
- * total nonfarm (-6.3%): retail 1.25x, leisure & hospitality 0.7x, other
- * services 0.65x, health ~0, government ~0; weighted by local-serving
- * employment, construction excluded (the game counts building trades from
- * its own pipeline), about 0.45.
- */
-const LOCAL_BETA = 0.45;
-/** A trade's own shocks: about one notable one a decade at unit volatility (more often for volatile trades), half-life 18 months. */
-const IND_SHOCK_HAZ = 1 / 120, IND_SHOCK_HALF_M = 18;
+export const NAT_SALES_PER_GAP = 1.25;
 /**
  * `industryMom`'s readers (tenant staffing, default stress, renewals, the
  * comps tape) were calibrated in "boom units", where 0.016 x vol was a trade
@@ -3412,32 +3298,18 @@ const MOM_UNITS = 4;
 // 1996 ~5% for density; Combes et al. 2008 2-4% after sorting). A town that
 // grows dear stops being chosen; one that grows big and stays cheap keeps
 // being chosen. Shape parameters with sources, stated as such.
+//
+// RETIRED 2026-10-28 (step 2): the drawn regional trend and its wandering
+// edge. A town grows now as its export industries do — the nation's demand
+// for them and its share of it — and the cost brake below moves that share
+// (economy.ts `tickExports`).
 // ---------------------------------------------------------------------------
-const REGION_YOUTH_SLOPE = 0.03;      // per unit of vacant-lot share over 0.2
-const REGION_SD = 0.008;              // per year, across towns
-const LOCATION_PULL = 0.04;           // per year, per unit of log cost gap
-const REGION_TREND_DECAY = Math.exp(-Math.LN2 / 240);   // the town's edge, 20-year half-life
-const REGION_EDGE_SD = 0.012;                             // per year, stationary spread of the edge
+export const LOCATION_PULL = 0.04;           // per year, per unit of log cost gap
 const AGGLOM = 0.04;                  // output elasticity to employment
 const WAGE_CURVE = -0.10;             // pay level to local unemployment (Blanchflower & Oswald 1994)
 const WAGE_GAP_HALF_M = 24;           // months for the town's pay to close half its gap to the wage-curve level
 const WAGE_SHARE = 0.85;
 
-function openingRegionTrend(seed: number, parcels: ParcelTable): number {
-  let lots = 0, vacant = 0;
-  for (const r of Object.values(parcels)) {
-    if (!r || !(r.lotArea > 0)) continue;
-    lots++;
-    if (r.class === "land" || !(r.bldgArea > 0)) vacant++;
-  }
-  const youth = lots ? vacant / lots : 0.2;
-  const u1 = Math.max(1e-9, mulberry32Step(((seed ^ 0x51ed270b) >>> 0) || 1).value);
-  const u2 = mulberry32Step(((seed ^ 0x2b1f6a3d) >>> 0) || 1).value;
-  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  return clamp(REGION_YOUTH_SLOPE * (youth - 0.2) + REGION_SD * z, -0.015, 0.04);
-}
-
-/** The town's pull on employers over the nation's trend, per year, after the cost brake. */
 /**
  * THE REGION AND THE ISLAND (2026-10-10). The town's population is a region:
  * it is derived from the island's jobs (citySize), and most of it lives on the
@@ -3467,209 +3339,63 @@ function businessRentVsNation(e: Econ): number {
   return Math.sqrt(rentOf("office") * rentOf("industrial"));
 }
 
-export function regionalPull(e: Econ): number {
+/**
+ * WHAT THIS TOWN COSTS AN EMPLOYER AGAINST THE NATION, in log points against
+ * its own opening: pay against national pay (WAGE_SHARE of the bill), rent on
+ * offices and sheds against the opening's (the rest), less what its size adds
+ * to output (AGGLOM). `regionalPull` and the export share (economy.ts) read it.
+ */
+export function locationCost(e: Econ): number {
   const wageRatio = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
-  // AGAINST THIS TOWN'S OWN OPENING, NOT THE REFERENCE TABLE (2026-10-13).
-  // Rent was read against RENT_BASE at national prices, and towns open at
-  // 22-43% of that table (a low-density town's rents print low), so every
-  // town read 60-80% cheaper than the nation on its first day and every day
-  // after, and drew +0.3 to +1.0%/yr of employer growth out of that mismatch
-  // for most of a century — demand that never let a shortage end. The space-
-  // cost term below (`costOfSpace`) was moved to opening parity for exactly
-  // this reason. A town opens in spatial equilibrium: its low rents are what
-  // its location is worth (Roback 1982), not a bargain nobody has noticed.
-  // What moves employers is the town growing dearer or cheaper than that.
-  // The persistent pull a young region does have is `regionTrend`.
-  const rentRatio = businessRentVsNation(e) / Math.max(0.05, e.regionRent0 ?? businessRentVsNation(e));
-  const scale = Math.max(0.2, (e.jobs ?? 1) / Math.max(1, e.jobs0 ?? e.jobs ?? 1));
-  const logCost = WAGE_SHARE * Math.log(wageRatio) + (1 - WAGE_SHARE) * Math.log(rentRatio) - AGGLOM * Math.log(scale);
-  return (e.regionTrend ?? 0) - LOCATION_PULL * logCost;
-}
-
-export function tickIndustryCycle(s: GameState) {
-  const e = s.econ;
-  const n = e.nat;
-  // The nation's employment swing this month, against its trend. Payrolls
-  // fall about 1.5% for each point unemployment rises, because people also
-  // leave the labour force: 2008-10 took 6.3% off US payrolls against a 2%
-  // trend while unemployment rose 5.5 points. One-for-one was tried first
-  // and a 6-point national recession left this city flat — the trend growth
-  // simply cancelled it.
-  const NAT_EMP_PER_U = 1.5;
-  const uNow = n?.unemp ?? 0.05;
-  const uPrev = e.natUnempPrev ?? uNow;
-  e.natUnempPrev = uNow;
-  const natDev = -NAT_EMP_PER_U * (uNow - uPrev);
-  // WHAT THE TRADES SELL MOVES WITH OUTPUT, NOT WITH PAYROLLS (2026-10-15).
-  // Sales follow the nation's output gap this month; the jobs follow the
-  // sales through each trade's own books (hire slowly, fire faster), so the
-  // payroll lag behind output — firms keep shedding after the trough — comes
-  // out of the accounts instead of being read off national unemployment.
-  // 1.25 points of sales per point of gap is the same swing the payroll
-  // proxy carried (1.5 per point of unemployment over Okun's 1.2).
-  const gapNow = n?.gap ?? 0, gapPrev = n?.gap1 ?? gapNow;
-  const gapMove = gapNow - gapPrev;
-  // What money costs this month, for the trades' books below.
-  const books = firmBookInputs(e);
-
-  if (!e.indIdx) e.indIdx = Object.fromEntries(SECTORS.map((k) => [k, 1])) as Record<Sector, number>;
-  if (!e.indShock) e.indShock = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
-  if (!e.industryMom) e.industryMom = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
-  // A TOWN OPENS PART-WAY THROUGH ITS STORY (2026-10-16): each trade's local
-  // fortune and its national trend are drawn from where their own processes
-  // spend their time, not set to the textbook mean on day one.
-  if (!e.indFortune) e.indFortune = Object.fromEntries(SECTORS.map((k) => [k, FORTUNE_SD * hashNormal(`${s.seed}|fortune|${k}`)])) as Record<Sector, number>;
-  if (!e.natTrend) e.natTrend = Object.fromEntries(SECTORS.map((k) => [k, natTrendCentre(k) + NAT_TREND_SD * hashNormal(`${s.seed}|trend|${k}`)])) as Record<Sector, number>;
-  if (!e.industryPhase) e.industryPhase = Object.fromEntries(SECTORS.map((k) => [k, "steady"])) as Record<Sector, "boom" | "steady" | "bust">;
-  const decay = Math.exp(-Math.LN2 / IND_SHOCK_HALF_M);
-  // THE EDGE FADES (2026-10-12). A town's regional trend was drawn once at
-  // founding and ran for the whole game, so a +1.1%/yr young town was still
-  // +1.1%/yr young at year 100 and the only brake on a century of compounding
-  // growth was its own rent: measured on seed 209, regional jobs x6, and
-  // every attempt to cheapen the island (more supply, firms to the mainland)
-  // bought faster growth (x8-9) at the same real rent. Growth differentials
-  // across US states and metros persist for decades and then fade toward the
-  // nation (Blanchard & Katz 1992; Glaeser, Scheinkman & Shleifer 1995) — the
-  // West and South grew while young and slowed as they filled. A twenty-year
-  // half-life is a shape parameter from that persistence, stated as such: a
-  // boom town is a boom town for a generation.
-  // ...AND IT KEEPS MOVING (2026-10-16). The edge decayed to nothing on a
-  // fixed clock and was never redrawn, so after a generation every town grew at
-  // the nation's trend plus its trades — and every one of eight 60-year towns
-  // grew 1.5-2.4x; none shrank. Places gain and lose their edge for reasons of
-  // their own (a port silts, a university grows, an interstate arrives):
-  // the edge is now a mean-reverting process with the same twenty-year memory
-  // and a stationary spread of 1.2%/yr, about the dispersion of metro
-  // employment growth over twenty-year spans (Blanchard & Katz 1992).
-  e.regionTrend = (e.regionTrend ?? 0) * REGION_TREND_DECAY
-    + REGION_EDGE_SD * Math.sqrt(1 - REGION_TREND_DECAY * REGION_TREND_DECAY) * Math.sqrt(3) * rrange(s, -1, 1);
   if (e.regionRent0 === undefined) e.regionRent0 = businessRentVsNation(e);
-  const pull = regionalPull(e);
-  e.regionPull = pull;
-  tickBoomBust(s);
-  const bb = e.boomBust;
-  let base = 0, wsum = 0;
-  for (const k of SECTORS) {
-    const vol = INDUSTRY_VOL[k];
-    e.indShock[k] *= decay;
-    if (rng(s) < IND_SHOCK_HAZ * vol) {
-      const up = rng(s) < 0.5;
-      // A shock's whole effect is about 26x its first month (18-month half-
-      // life), so this moves a unit-volatility trade 4-12% of its local
-      // employment — a plant closing, a sector boom — and tech up to ~16%.
-      const size = Math.sqrt(vol) * rrange(s, 0.0015, 0.0045);
-      e.indShock[k] += up ? size : -size;
-      const exposed = exposureToTrade(s, k) > 0.10;
-      pushNews(s, exposed ? (up ? "event" : "warn") : "info", up
-        ? `${INDUSTRY_LABEL[k]} hiring strongly; good for landlords leasing to that sector.`
-        : `${INDUSTRY_LABEL[k]} in decline; check your rent roll exposure to it.`);
-    }
-    // DEMAND for what the trade sells: its national cycle, its trend and
-    // the town's edge, its own shocks, and — for the trades whose customers
-    // borrow to buy (freight, inventory, building design) — the price of money.
-    const demand = INDUSTRY_BETA[k] * NAT_SALES_PER_GAP * gapMove + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol
-      + (bb && bb.sec === k && bb.phase !== "hold" ? bb.rate : 0)
-      - FIRM_PROFILE[k].rateDem * 0.008 * books.ratePts / 12;
-    e.indFortune[k] += -e.indFortune[k] / FORTUNE_TAU_M
-      + FORTUNE_SD * Math.sqrt(2 / FORTUNE_TAU_M) * Math.sqrt(3) * rrange(s, -1, 1);
-    // THE NATION'S TRADES HAVE LIFE CYCLES TOO: the 1990-2019 trends are
-    // where each trade's national trend centres, and it wanders around that
-    // with a thirty-year memory (manufacturing grew for a century and then
-    // shrank for half of one; media went the other way and back).
-    e.natTrend![k] += (natTrendCentre(k) - e.natTrend![k]) / NAT_TREND_TAU_M
-      + NAT_TREND_SD * Math.sqrt(2 / NAT_TREND_TAU_M) * Math.sqrt(3) * rrange(s, -1, 1);
-    const growth = (e.natTrend![k] + e.indFortune[k] + pull) / 12;
-    // ...and the trade's own books decide how many people it keeps.
-    const empBefore = e.indIdx[k];
-    e.indIdx[k] = tickFirmBook(e, k, growth + demand, books);
-    const dev = e.indIdx[k] / Math.max(1e-9, empBefore) - 1 - growth;
-    // Momentum is smoothed excess hiring, in the units its readers expect.
-    e.industryMom[k] = clamp(e.industryMom[k] + (MOM_UNITS * dev - e.industryMom[k]) / 6, -0.05, 0.05);
-    const was = e.industryPhase[k];
-    const m = e.industryMom[k];
-    e.industryPhase[k] = m > 0.008 * vol ? "boom" : m < -0.0075 * vol ? "bust" : "steady";
-    void was;
-    const w = e.sectorShare?.[k] ?? 1 / SECTORS.length;
-    base += w * e.indIdx[k];
-    wsum += w;
-  }
-  const exportIdx = wsum > 0 ? base / wsum : 1;
-  e.exportIdx = exportIdx;
-  const local = e.localIdx ?? exportIdx;
-  // (2026-10-13) ...and it takes the national swing directly too. Without
-  // this a national recession reached 62% of the town's jobs only through a
-  // one-year lag on its exports, and local payrolls fell year on year in 4
-  // of 15 national recessions measured — against ~9 metros in 10 in 2008-09.
-  e.localIdx = (local + (exportIdx - local) * (1 - Math.exp(-Math.LN2 / LOCAL_HALF_M))) * (1 + LOCAL_BETA * natDev);
-  const comp = (exportIdx + LOCAL_MULT * e.localIdx) / (1 + LOCAL_MULT);
-  const prevComp = e.cycIdx ?? comp;
-  e.cycIdx = comp;
-  e.cycDrift = prevComp > 0 ? comp / prevComp - 1 : 0;
-  derivePhase(s);
+  const rentRatio = businessRentVsNation(e) / Math.max(0.05, e.regionRent0);
+  const scale = Math.max(0.2, (e.jobs ?? 1) / Math.max(1, e.jobs0 ?? e.jobs ?? 1));
+  return WAGE_SHARE * Math.log(wageRatio) + (1 - WAGE_SHARE) * Math.log(rentRatio) - AGGLOM * Math.log(scale);
 }
 
 /**
- * A TRADE'S BOOM, AND USUALLY ITS BUST (2026-10-14).
- *
- * The industry clocks above turn: a trade has a good few years and a bad few
- * and comes back to its trend. What they cannot produce is the episode that
- * made and broke real property markets — one trade the town depends on
- * growing far faster than anything around it for years, every landlord and
- * developer underwriting that it continues, and then the trade breaking.
- * Houston: oil and gas payrolls ran up through 1982, the city built 50
- * million square feet of office, oil fell, the region lost ~13% of its jobs by
- * 1987 and office vacancy reached ~30%. San Francisco: information employment
- * up ~60% 1995-2000, down ~30% by 2003, office vacancy 3% -> 20%+. Austin and
- * Charlotte are the other ending — the boom that held.
- *
- * About one such episode every quarter-century per city (a reading of the
- * metro record, stated as a shape parameter), falling on a trade with odds in
- * proportion to its share of the town's jobs and its volatility (a town's
- * dominant volatile trade is its likeliest Houston). The boom runs three to
- * six years at 6-12% a year over trend; seven in ten end in a bust that takes
- * 30-50% of the trade's peak employment over two to three years; the rest
- * hold. It enters only through the trade's employment index — the jobs, the
- * space its firms take, the wages and everything downstream answer to it as
- * they answer to any hiring — so nothing here sets a rent.
+ * THE TRADES, READ OFF THE INDUSTRIES (2026-10-28, ONE ECONOMY step 2). Each
+ * trade's employment and real sales against the opening are its industries'
+ * (economy.ts `economyToEngine`, by the heads the trade's own firms had in
+ * each), written into `firmBooks` and `indIdx` for everything that reads a
+ * trade — the street's firms' sales per head, a starting firm's margin, the
+ * renewal term — and its momentum is its growth against its own five-year
+ * trend, in the units its readers were calibrated in (MOM_UNITS). The
+ * cycle's index is the town's payroll against the first filled one, and the
+ * phase is dated off it. Before the books open (the opening months) the
+ * opening's trades stand.
  */
-const BOOM_HAZ_M = 1 / (25 * 12);
-function tickBoomBust(s: GameState) {
+export function tickIndustryCycle(s: GameState) {
   const e = s.econ;
-  const bb = e.boomBust;
-  if (bb) {
-    bb.leftM -= 1;
-    if (bb.leftM > 0) return;
-    if (bb.phase === "boom") {
-      const label = INDUSTRY_LABEL[bb.sec];
-      if (rng(s, "shock") < 0.7) {
-        // 30-50% of the peak: with three in ten booms holding their ~+40%,
-        // an episode's expected net is about nil, so the shocks widen the
-        // spread of a town's century without smuggling in a trend. Houston's
-        // oil payrolls ended the 1980s below where the boom began.
-        const fall = 0.30 + 0.20 * rng(s, "shock");
-        const months = Math.round(24 + 12 * rng(s, "shock"));
-        e.boomBust = { ...bb, phase: "bust", leftM: months, rate: Math.pow(1 - fall, 1 / months) - 1 };
-        pushNews(s, exposureToTrade(s, bb.sec) > 0.10 ? "warn" : "event",
-          `${label} boom over: layoffs under way; expect space back on the market.`);
-      } else {
-        e.boomBust = undefined;
-        pushNews(s, "info", `${label} growth slowed to normal, gains retained. ${label} is now a core local industry.`);
-      }
-      return;
+  if (!e.indIdx) e.indIdx = Object.fromEntries(SECTORS.map((k) => [k, 1])) as Record<Sector, number>;
+  if (!e.industryMom) e.industryMom = Object.fromEntries(SECTORS.map((k) => [k, 0])) as Record<Sector, number>;
+  if (!e.industryPhase) e.industryPhase = Object.fromEntries(SECTORS.map((k) => [k, "steady"])) as Record<Sector, "boom" | "steady" | "bust">;
+  if (e.regionRent0 === undefined) locationCost(e);
+  const tr = e.eco?.trade;
+  if (tr) {
+    e.firmBooks ??= {} as Record<Sector, FirmBook>;
+    const trend = (e.indTrend ??= {});
+    for (const k of SECTORS) {
+      const t = tr[k];
+      if (!t) continue;
+      const before = e.indIdx[k] ?? t.emp;
+      const b = (e.firmBooks[k] ??= { sales: t.sales, emp: t.emp, cash: 0, debt: 0, fixed: 0, fail: 0, cover: 0, margin: t.margin });
+      b.sales = t.sales; b.emp = t.emp; b.margin = t.margin;
+      e.indIdx[k] = t.emp;
+      const g = before > 0 ? t.emp / before - 1 : 0;
+      const g0 = trend[k] ?? g;
+      trend[k] = g0 + (g - g0) / 60;
+      e.industryMom[k] = clamp(e.industryMom[k] + (MOM_UNITS * (g - g0) - e.industryMom[k]) / 6, -0.05, 0.05);
+      const vol = INDUSTRY_VOL[k], m = e.industryMom[k];
+      e.industryPhase[k] = m > 0.008 * vol ? "boom" : m < -0.0075 * vol ? "bust" : "steady";
     }
-    e.boomBust = undefined;
-    return;
   }
-  if (rng(s, "shock") >= BOOM_HAZ_M) return;
-  const w = SECTORS.map((k) => (e.sectorShare?.[k] ?? 1 / SECTORS.length) * INDUSTRY_VOL[k]);
-  const tot = w.reduce((a, b) => a + b, 0);
-  let u = rng(s, "shock") * tot, sec: Sector = SECTORS[0];
-  for (let i = 0; i < SECTORS.length; i++) { u -= w[i]; if (u <= 0) { sec = SECTORS[i]; break; } }
-  const months = Math.round(36 + 36 * rng(s, "shock"));
-  const yr = 0.06 + 0.06 * rng(s, "shock");
-  e.boomBust = { sec, phase: "boom", leftM: months, rate: yr / 12, startM: s.month };
-  pushNews(s, exposureToTrade(s, sec) > 0.10 ? "event" : "info",
-    `${INDUSTRY_LABEL[sec]} boom: hiring far ahead of the nation and other local sectors.`);
+  const jobs0 = e.jobsFilled0 ?? e.jobs0 ?? e.jobs ?? 1;
+  const comp = (e.jobs ?? jobs0) / Math.max(1, jobs0);
+  const prevComp = e.cycIdx ?? comp;
+  e.cycIdx = comp; e.exportIdx = comp; e.localIdx = comp;
+  e.cycDrift = prevComp > 0 ? comp / prevComp - 1 : 0;
+  derivePhase(s);
 }
 
 /**
@@ -3810,189 +3536,19 @@ export function tickEcon(s: GameState) {
   // off the desks' own standards and the securitisation window.)
 
   // --- employment: the demand behind every lease -----------------------------
-  // A LOCAL PROPERTY SLUMP IS NOT A LOCAL DEPRESSION. The phase machine is a
-  // property cycle — vacancy, rents, capital — and its "recession" and
-  // "depression" phases bled jobs at 3.7% and 1.2% a year whether or not the
-  // nation was in one. A city whose glut kept the phase machine in
-  // "depression" for twelve years (harness seed 20603: office vacancy 30%,
-  // national recession in two of those years) lost 28% of its jobs and 22%
-  // of its people while the country expanded, and that is not what a glut
-  // does — Houston in 1986 and Dallas in 1988 lost jobs with the oil bust
-  // and the S&L failures, and recovered on the national cycle inside six
-  // years with their vacancy still in the twenties. The local phase's job
-  // drift now runs at less than half its rate when the nation is expanding;
-  // the national recession (`natPull`, below) is what costs a city jobs.
-  // Job growth is what the city's industries are doing, export and local
-  // (`tickIndustryCycle`). It replaces a table of rates by phase label.
-  const jobDrift = e.cycDrift ?? 0;
-  // THE RETURN WIRE. Jobs drove rents and rents drove nothing back, so the
-  // causal graph had a dead end where its most important feedback belongs: a
-  // city that becomes ruinously expensive relative to what it pays its
-  // workers LOSES employers, and a city with cheap space wins them. That is
-  // the mechanism by which an overbuilt city eventually recovers (empty space
-  // is cheap space, cheap space attracts firms, firms fill the space) and by
-  // which an expensive one stagnates. Without it, "the rent is too high" was
-  // a fact about the player's spreadsheet and about nothing else in the world.
-  // ...MEASURED AGAINST THIS TOWN'S OWN OPENING, NOT A GLOBAL TABLE
-  // (2026-10-09). This was rent over RENT_BASE over the wage index — so a town
-  // whose opening rents print at ~58% of the reference table (a low-density
-  // one) read as 40% "cheap" on its first day and every day after, and drew
-  // a standing employer subsidy out of a table mismatch. The rent block moved
-  // its parity to `rentAnchor` for exactly this reason. Rent-to-pay against
-  // the opening's rent-to-pay is the question an employer is asking.
-  const incomeNow = Math.max(0.35, e.wageIdx ?? 1);
-  const wageOpen = Math.max(0.35, e.history?.[0]?.wageIdx ?? incomeNow);
-  // WHAT FIRMS PAY FOR THE SPACE THEY HOLD (2026-10-11): the in-place rent,
-  // against the opening's effective parity — the same measure the relocation
-  // ratchet reads. This read the ASKING face rate, which since round 12 holds
-  // up through a glut while concessions do the cutting, so it told employers
-  // space was dear exactly when it was cheapest; and a quote on space a firm
-  // does not occupy is not a cost it carries.
-  const inPlaceOffice = (e.inPlaceReal?.office ?? (e.effRentIdx?.office ?? e.rentIdx.office) / Math.max(0.35, e.cpi ?? 1)) * Math.max(0.35, e.cpi ?? 1);
-  const costOfSpace = (inPlaceOffice / Math.max(1e-6, e.effAnchor?.office ?? e.rentAnchor?.office ?? RENT_BASE.office)) / (incomeNow / wageOpen);
-  // ...AND THE RETURN WIRE SATURATED, WHICH IS THE SAME BUG THE GLUT SIDE OF
-  // THE RENT TERM ALREADY HAD.
-  //
-  // This was clamped at -0.0013/month. Rent-to-income reaches that rail at
-  // about 1.6x, and every further point of expensiveness then cost the city
-  // nothing: a town at 2.1x shed employers no faster than one at 1.6x, so the
-  // brake stopped braking exactly where it was needed. Measured over sixteen
-  // seeds, that is precisely where rents ended up — beating the wages that pay
-  // them by 0.94pp a year, forever, with the anchor pinned and unable to
-  // answer. `sim:accept` F is that number.
-  //
-  // Leaving a city because the rent is impossible is not a linear decision. A
-  // firm paying twenty per cent over what it can afford negotiates; one paying
-  // double does not renew, and neither does the firm that would have moved in.
-  // Superlinear on the expensive side, and no rail — the same shape, and for
-  // the same reason, as the capitulation term in the rent block above.
-  //
-  // The cheap side keeps its cap: empty space is genuinely a magnet, but a
-  // town cannot hire faster than it can find people, and that ceiling is real.
-  // ...AND A CITY CANNOT EMPTY OUT AT ANY SPEED IT LIKES.
-  //
-  // The first cut of this removed the rail entirely and was three to five times
-  // too hot: at rent-to-income 1.8x it ran -6.5%/yr, and compounded, so a town
-  // shed 37,000 jobs — 24% of its employment — in five years. Rents then
-  // collapsed 191 to 31 behind it, occupancy went to 15%, and it killed an
-  // ALL-CASH owner, which is not something a market is able to do to somebody
-  // with no debt. Measured in the tournament: the safest posture in the game
-  // went from $116.8M real with zero wipeouts to -$14.6M with three.
-  //
-  // Firms cannot leave that fast and neither can people. A lease has a term, a
-  // relocation costs money and takes a year to plan, and the staff have houses.
-  // The worst year any large metro has ever had is about four per cent, and
-  // that is a floor on the RATE, not on the pressure — the term still grows
-  // with the overshoot right through the range any real city occupies, and
-  // only meets the rail past 2.2x, which is past anywhere that has existed.
-  //
-  //   1.5x rent-to-income  ->  -1.2%/yr   an expensive city, losing a little
-  //   2.0x                 ->  -3.3%/yr   a city genuinely hollowing out
-  //   3.0x                 ->  -4.1%/yr   the rail: nobody leaves faster
-  // AND THE CHEAP SIDE IS CONSTRAINED BY PEOPLE, NOT BY A NUMBER.
-  //
-  // Fixing the expensive side left the cheap one saturating in exactly the way
-  // I had just condemned: a flat +0.0016/month cap, applied at full strength
-  // for as long as space stayed cheap, regardless of whether the city had
-  // anybody left to hire. Traced through H's glut: rents collapse 78 to 31,
-  // the pull pins at its cap and holds there, and the town absorbs the shock
-  // in under two years — city unemployment at 2.0%, which is its own floor,
-  // and fifteen thousand JOBS ADDED while 37% of the offices stand empty.
-  //
-  // Cheap space really does attract employers; that is the mechanism that ends
-  // a glut and it stays. What it cannot do is conjure workers. A city at full
-  // employment absorbs firms at the rate it can staff them, which is why a
-  // boom in a tight labour market shows up as wages rather than as headcount.
-  // So the pull is gated on the slack that actually exists — full strength
-  // with people to spare, and nothing at all against the unemployment floor.
-  const slack = clamp((((e.unemployment ?? 0.055) - 0.018) / 0.04), 0, 1);
-  const overCost = Math.max(0, costOfSpace - 1);
-  // AND THE CHEAP SIDE IS FAR SMALLER THAN THE DEAR SIDE, because leaving is
-  // easier than arriving.
-  //
-  // This ran at (1 - costOfSpace) * 0.0022 capped at 0.0016/month — up to
-  // 1.9%/yr of employment growth, sustained, purely because rents were low.
-  // That is a whole city's trend growth rate arriving from a property glut,
-  // and it inverted the macro loop: a glut cut rents, cheap rents pulled firms
-  // in, employment rose, the labour market tightened, and the CENTRAL BANK
-  // RAISED INTO A PROPERTY BUST.
-  //
-  // Measured through sim:accept H over 30 seeds: glut-attributable drift in
-  // the loan index of +0.79pp against a +0.50 bar, of which the term premium
-  // accounted for -0.06pp and the policy rate for +1.24pp. The spread was
-  // innocent; the rate was doing it, and this is why.
-  //
-  // Two things are wrong with the old number and only one of them is size.
-  //
-  // SIZE: rent is roughly 7% of an office employer's cost base, so even a 50%
-  // rent collapse is a ~3.5% saving on total costs. The employment response to
-  // that is a few tenths of a per cent a year, not two per cent.
-  //
-  // SHAPE: relocation is ASYMMETRIC and well documented as such. A firm priced
-  // out of a city leaves on its own schedule; a firm tempted by cheap space
-  // has to want to be here for other reasons first, and mostly does not move
-  // at all. So the dear side keeps its magnitude and the cheap side gets about
-  // a fifth of it. Cheap space still ends a glut — that mechanism is real and
-  // stays — it just no longer ends it by turning a bust into a hiring boom.
-  //
-  // Houston in the 1980s and New York in the early 1990s both had office
-  // gluts AND job losses. Nowhere has had a glut-driven employment boom.
-  const spacePull = costOfSpace <= 1
-    ? clamp((1 - costOfSpace) * 0.0005, 0, 0.00035) * slack
-    : Math.max(-0.0035, -(overCost * 0.0012 + overCost * overCost * 0.0016));
-  // A national recession costs this city jobs whether or not the local property
-  // cycle has caught up to it yet — payrolls are cut at head office.
-  //
-  // ...AND IT HAS TO COST MORE THAN THE TREND GIVES. The old −0.0013/mo
-  // (−1.6%/yr) sat almost exactly on top of trend job growth (+1–2%/yr), so a
-  // national recession netted to ZERO here: measured over 3 seeds × 50y,
-  // 12-month city job growth in recession months ran +0.4% to +1.9% — the sign
-  // never turned — tenants never handed space back, and the deepest rent fall
-  // any recession window could produce was 3.9% while gluts alone did 17.7%
-  // (econ:accept C, the audit's [9] found effective rents falling in only
-  // 14.9% of recession months). Recessions were a label on rents, not an event
-  // in demand.
-  //
-  // The record (BLS payrolls, against ~+1.5%/yr trend): 1990–91 and 2001 shed
-  // ~1.5–2% net over ~a year — a gross cyclical shock near −3.5%/yr; 2008–09
-  // shed 6.3% net over two years; the deep-flag episodes here run 26–48
-  // months, the 1930s class, where −4 to −5%/yr gross for the duration is the
-  // measured shape. Sized so the trend PAUSES AND TURNS, which is what the
-  // word recession means on a payroll chart.
-  // The national recession reaches the city through each industry's beta
-  // (tickIndustryCycle); a second flat pull here would count it twice.
-  const natPull = 0;
-  // ...AND THE PAYROLL A TRADE TAKES WITH IT WHEN IT GOES, or brings when it
-  // arrives. This is the only place a level event touches the aggregate
-  // economy, and it is the one that has to exist: without it a trade could
-  // leave town and the unemployment rate, migration, wages and the price level
-  // would never hear about it. Everything downstream — population following
-  // work, housing demand following population, the Phillips term — is the
-  // machinery that was already here, answering a shock it can now see.
-  // Zero in every month in which no level event is currently landing.
-  // ...and the black swans' (blackswans.ts): a broke city's layoffs, an
-  // anchor's campus hiring.
-  const swanPull = (e.swanJobDrift ?? 0) + (e.bsJobPull ?? 0);
-  // A FIRM THAT CANNOT STAFF A CITY STOPS TRYING TO GROW IN IT.
-  //
-  // `employIdx` is desire and it had no idea whether the desire was being met.
-  // The labour block caps hiring at what the town can staff and files the
-  // remainder as `jobVac`, and nothing anywhere reduced the desire — so
-  // unfilled demand accumulated month after month, for decades, to a quarter
-  // of the labour force. No labour market does that. What happens in life is
-  // that the second distribution centre opens in the next state, the back
-  // office goes where the graduates are, and the expansion that could not be
-  // staffed here simply happens somewhere else.
-  //
-  // So sustained unfilled demand is a drag on further growth, proportional to
-  // how bad the shortage is. It is not a cap and it does not reverse anything
-  // already hired: at a 2% vacancy gap it removes a fifth of a point of annual
-  // job growth, and at 10% it removes most of what a boom was adding. That is
-  // the negative feedback the block was missing, and with it `jobVac`
-  // equilibrates instead of compounding.
-  const staffDrag = 0.55 * (e.jobVac ?? 0) * Math.abs(jobDrift + spacePull > 0 ? jobDrift + spacePull : 0);
-  e.employIdx = clamp(
-    e.employIdx * (1 + jobDrift + spacePull + natPull + swanPull - staffDrag + rrange(s, -0.0012, 0.0012)), 0.55, 12);
+  // THE TOWN'S JOBS ARE ITS FIRMS' (2026-10-28, ONE ECONOMY step 2). This
+  // block drifted an employment index by the trades' composite cycle, a rent
+  // pull, a swan pull and a staffing drag, and the labour block below turned
+  // it into jobs by matching flows, with migration, participation and an age
+  // model of its own. All of that is the household register's now: the firms'
+  // heads (economy.ts — what the nation buys of the town's exports and what
+  // the town and its people buy of each other) are the labour demand, the
+  // register's earners fill them, its households arrive for the work and
+  // leave without it, age, have children and retire (households.ts). The
+  // index is read off the payroll it fills, for the screens that chart it.
+  // (Each retired mechanism's measurement is in the commit history: the
+  // return wire on rent, the staffing drag, the construction level, the
+  // matching function, the housing choke on migration.)
 
   // --- THE CITY UNDERNEATH THE PROPERTY MARKET -------------------------------
   //
@@ -4006,344 +3562,24 @@ export function tickEcon(s: GameState) {
       e.population = e.pop0 ?? 240_000; e.jobs = e.jobs0 ?? 132_000; e.unemployment = OPENING_UNEMP;
       e.wageIdx = 1; e.outputIdx = 1; e.cpi = 1;
     }
-    const prevJobs = e.jobs!;
-    // BUILDING IS A JOB, and it was the one job in this city nobody had.
-    //
-    // Jobs tracked the employment index and nothing else, so the construction
-    // industry — the most violently cyclical employer in any real city, and
-    // the one this entire game is about commissioning — did not exist as
-    // employment. A town could stop building altogether and its labour market
-    // would not notice. That is why `sim:accept` H could drop four million
-    // square feet of empty office on the city, collapse the rent index from 78
-    // to 31, and watch the place ADD fifteen thousand jobs: the only wire from
-    // property to payroll was "empty space is cheap space, cheap space
-    // attracts firms", which is true and is half the story. The other half is
-    // that the crash which produced the empty space put the trades out of work.
-    //
-    // It is a LEVEL, not a trend. When the cranes stop those jobs are gone;
-    // they do not keep going away every month afterwards, and they come back
-    // when the cranes do. So it multiplies the index rather than drifting it.
-    //
-    // Sized on the real thing: construction runs about 5% of employment in a
-    // city of this kind, and it is the share that halves in a bust. At the
-    // reference pipeline the term is exactly 1.0, so nothing about the
-    // existing calibration moves; a full stop costs 4.8% of the city's jobs,
-    // which is the order of what 2008-2011 actually did to it.
-    let pipeSf = 0, stockSf = 0;
-    for (const k of BUILT_CLASSES) {
-      pipeSf += e.pipeline?.[k] ?? 0;
-      stockSf += e.stock?.[k] ?? 0;
-    }
-    const pipeShare = stockSf > 0 ? pipeSf / stockSf : REF_PIPE_SHARE;
-    const trades = clamp(CONSTRUCTION_JOB_SHARE * (pipeShare / REF_PIPE_SHARE), 0, 0.11);
-    // A JOB NOBODY CAN FILL IS A VACANCY, NOT A JOB.
-    //
-    // This expression is labour DEMAND — what the city's employers want, driven
-    // by the employment index and the trades. It was being written straight
-    // into `e.jobs` and read everywhere as employment, and it never once looked
-    // at whether there was anybody to do the work.
-    //
-    // `pnpm rails` found it from the other end. `slackTarget` at line 1413 is
-    // `clamp(1 - jobs/labourForce, 0.018, 0.24)` and it sat on its floor in
-    // 47.7% of all months. Measured raw, before the clamp, over 4 towns x 50
-    // years:
-    //
-    //     months with slack below the 1.8% floor      37.0%
-    //     months with slack below ZERO                21.8%
-    //     worst reading                               jobs = 107% of the labour force
-    //
-    // For a fifth of its life this city employed more people than lived in it,
-    // and a clamp reported 1.8% unemployment while it happened. The cause is a
-    // speed mismatch that no floor can fix: jobs grow at a median 1.88%/yr and
-    // reach 9.6% in a boom, while population manages 0.89% and tops out at
-    // 3.2%, because people have to move house and hiring only has to sign a
-    // contract. Raising the floor would have hidden it again.
-    //
-    // So employment is what it is in life: the smaller of what employers want
-    // and what the town can staff. The frictional share is people between jobs
-    // at any instant and is why even the tightest real labour market has some —
-    // US metro unemployment bottomed near 3.4% in 1969 and 3.5% in 2019, and
-    // nothing sustained below about 2.5% has ever been recorded, so 2.8% is the
-    // floor of the observed range rather than a number picked to make this come
-    // out.
-    //
-    // The demand that cannot be met is not discarded, which is the part that
-    // makes this a mechanism rather than a rail: it becomes UNFILLED VACANCIES,
-    // and vacancies are how a labour market that has run out of people goes on
-    // transmitting pressure to wages and to migration. See `e.jobVac` at the
-    // Phillips term below.
-    // ...AND THEN THE FLOOR ITSELF WAS THE RAIL (2026-10-08). `min(wanted,
-    // force x (1 - 0.028))` put local unemployment on exactly 2.80% in 8-48%
-    // of months over four 50-year worlds, and at exactly 2.80% at its lowest
-    // in every one. No labour market sits on a number. What a real one does
-    // as it tightens is make each additional hire harder: openings go
-    // unfilled, pay rises, people come back into the labour force and move
-    // to town. So employment is now a stock moved by FLOWS, the way the
-    // labour statistics measure it:
-    //
-    //   separations   s x E a month                      SEPARATION_RATE
-    //   openings      V = (positions wanted - E) + separations
-    //   hires         H = min(V, f(theta) x U),  theta = V / U
-    //                 f(theta) = 1 - exp(-lambda x sqrt(theta))
-    //   employment    E' = E - separations + hires
-    //
-    // The job-finding rate f rises with tightness at the square-root
-    // elasticity of the empirical matching function (Petrongolo & Pissarides
-    // 2001) and saturates below one, the urn-ball shape: no labour market
-    // hires every searcher in a month. A plain Cobb-Douglas was tried first
-    // and does exactly that once openings pass about twice the searchers —
-    // unemployment then sat on s/(s+1) = 2.52% in 10-27% of months, a new
-    // floor made of the formula. `lambda` is not tuned: it is solved so the
-    // opening town, whose unemployment is OPENING_UNEMP, is a steady state —
-    // hires exactly replace separations. That gives a job-finding rate of
-    // about 47% a month at the opening, against roughly 45% in US data
-    // (Shimer 2005), which is a check, not a fit. Unemployment then
-    // bottoms out wherever the pace of hiring and the pool of searchers
-    // leave it: a fast boom runs into ever-harder hires and unfilled
-    // openings, which bid up pay (`jobVac` in the Phillips term) and pull in
-    // movers (migration, below). The Beveridge curve falls out of this; it is
-    // not written anywhere.
-    //
-    // Layoffs are immediate (positions wanted below employment), because
-    // firms cut payroll faster than they can hire it back — the asymmetry
-    // every recession shows.
-    const SEPARATION_RATE = 0.026;   // monthly employment-to-unemployment flow, CPS (Shimer 2005)
-    // At the opening steady state openings are just replacements (V = sE),
-    // so theta0 = s(1-u0)/u0 and the finding rate must equal it too.
-    const THETA0 = SEPARATION_RATE * (1 - OPENING_UNEMP) / OPENING_UNEMP;
-    const MATCH_LAMBDA = -Math.log(1 - THETA0) / Math.sqrt(THETA0);
-    // A DEAR WORKFORCE IS HIRED LESS (2026-10-08). Employers here compare
-    // what this town pays with what the same worker costs elsewhere (the
-    // national wage path: expected inflation plus productivity, with none of
-    // this town's tightness — `natWageIdx`, below). Local pay above it trims
-    // how many they want, and local pay below it draws work in. Without this
-    // the only answer to a labour shortage was migration, and unfilled
-    // openings ran to 7-17% of the labour force against a US maximum of
-    // about 7.4%, so national recessions trimmed vacancies and cost nobody a
-    // job. Elasticity 0.5: Hamermesh (1993) surveys -0.15 to -0.75, and a
-    // firm that can also hire in another city sits in the upper half. Read
-    // through a two-year average, because hiring plans move slowly.
-    const premRaw = (e.wageIdx ?? 1) / Math.max(0.1, e.natWageIdx ?? (e.wageIdx ?? 1));
-    e.wagePremEma = (e.wagePremEma ?? premRaw) + (premRaw - (e.wagePremEma ?? premRaw)) / 24;
-    const wageDemand = Math.pow(Math.max(0.3, e.wagePremEma), -0.5);
-    // THE TOWN'S PAYROLL IS ITS FIRMS' (2026-10-16). Where the town keeps
-    // firms (streetRolls.ts), what employers want to hire is what its firms
-    // employ — each moving with its trade's demand, its own sales and its own
-    // margins, firms forming and closing — scaled for the jobs that sit
-    // outside the commercial floors (public, home-based, the sites). The
-    // employment index is restated to it, so everything that reads it reads
-    // the firms.
-    if (e.firmJobs && e.firmJobs > 0) {
-      if (!(e.firmJobs0 && e.firmJobs0 > 0)) { e.firmJobs0 = e.firmJobs; e.firmEmp0 = e.employIdx; }
-      e.employIdx = (e.firmEmp0 ?? 1) * e.firmJobs / e.firmJobs0;
-    }
-    const wanted = Math.round((e.jobs0 ?? 132_000) * e.employIdx * wageDemand * (1 - CONSTRUCTION_JOB_SHARE + trades));
-    // PARTICIPATION ANSWERS THE MARKET. People come back to work when jobs are
-    // easy to find and stop looking when they are not — the discouraged-
-    // worker effect. About 0.3 points of participation per point of
-    // unemployment against normal, adjusting over a year (Erceg & Levin 2014
-    // put the cyclical response at 0.2-0.4). The guard is wider than any
-    // US metro has recorded and should never bind.
-    const partPrev = e.participation ?? PARTICIPATION;
-    // ...and on WHO lives here: a working-age adult participates at about 80%,
-    // a retiree at about 19% (BLS CPS), children not at all. An ageing town
-    // works less per head without anything telling it to.
-    const ag = e.ages;
-    const ageMix = ag ? (0.80 * ag.work + 0.19 * ag.old) / Math.max(1, ag.kids + ag.work + ag.old) : 0.80 * 0.61 + 0.19 * 0.17;
-    const ageFactor = ageMix / (0.80 * 0.61 + 0.19 * 0.17);
-    const partAim = PARTICIPATION * ageFactor + 0.3 * (OPENING_UNEMP - (e.unemployment ?? OPENING_UNEMP));
-    e.participation = clamp(partPrev + (partAim - partPrev) / 12, 0.50, 0.66);
-    const force = e.population! * e.participation;
-    const empStart = Math.min(prevJobs, wanted);                 // layoffs first
-    const seps = SEPARATION_RATE * empStart;
-    const searchers = Math.max(0, force - empStart);
-    const openings = Math.max(0, wanted - empStart) + seps;
-    const theta = searchers > 0 ? openings / searchers : 0;
-    const finding = 1 - Math.exp(-MATCH_LAMBDA * Math.sqrt(theta));
-    const hires = Math.min(openings, finding * searchers);
-    // People leaving town take their jobs with them: employment cannot exceed
-    // the labour force. A guard — the flows above cannot reach it unless the
-    // population falls faster than firms shed staff.
-    e.jobs = Math.round(clamp(empStart - seps + hires, 0, force));
-    // Unfilled positions beyond ordinary turnover, as a share of the labour
-    // force — what the Phillips term and migration read as tightness.
-    e.jobVac = Math.max(0, (wanted - e.jobs) / Math.max(1, force));
-    const jobGrowth = prevJobs > 0 ? e.jobs / prevJobs - 1 : 0;
-
-    // UNEMPLOYMENT IS WHAT THE FLOWS LEAVE. It still lags the cycle — the
-    // labour force does not shrink the month the jobs go; people look for a
-    // year before they stop or leave town — but the lag is now participation
-    // and migration doing it, not a smoothing coefficient on the rate.
-    const labourForce = force;
-    e.unemployment = clamp(1 - e.jobs / Math.max(1, labourForce), 0, 0.5);
-
-    // POPULATION FOLLOWS WORK, slowly and asymmetrically. People move to a
-    // boom within a couple of years; they leave a bust over a decade, because
-    // leaving means selling a house and telling your family. That asymmetry is
-    // why cities hollow out rather than empty.
-    //
-    // AND MIGRATION ANSWERS THE LABOUR MARKET, which is the loop that was
-    // missing. Population carried an unconditional +0.42%/yr while jobs
-    // carried nothing of the sort, so the city accumulated permanent
-    // unemployment: measured over fifty years, 240k people and 132k jobs
-    // became 364k people and 160k jobs — a 24% unemployment rate nobody chose
-    // and nothing corrected. It was invisible while unemployment was a
-    // read-out; the moment prices and the policy rate began reading it, the
-    // whole economy deflated into its floor. People do not move to a city
-    // with no work, and they leave one that has run out — that is what keeps
-    // a labour market anchored, and it is now in the model.
-    const pull = jobGrowth > 0 ? 0.35 : 0.09;
-    // AGAINST THE NATION, NOT AGAINST 5.5% (2026-10-09). People leave a town
-    // whose unemployment is worse than elsewhere and come to one where it is
-    // better; Blanchard & Katz (1992) measure exactly that relative rate. A
-    // fixed 5.5% pivot read a town at 4.4% as permanently attractive even
-    // while the whole nation sat at 4%.
-    const uGapPop = e.unemployment! - (e.nat?.unemp ?? OPENING_UNEMP);
-    // PEOPLE MOVE TO WHERE THE UNFILLED JOBS ARE, and this was the wire the
-    // block above already claimed to have — "vacancies are how a labour market
-    // that has run out of people goes on transmitting pressure to wages and to
-    // migration" — while `jobVac` was in fact read in exactly one place, the
-    // Phillips term, and never touched population at all.
-    //
-    // It matters because `jobGrowth` is measured on FILLED jobs, and filled
-    // jobs are pinned to the labour force the moment the town runs out of
-    // people. So in the one situation where a city most needs to attract
-    // workers, the only signal pulling them in had gone flat: the shortage
-    // could not call anybody. A tenth of the vacancy gap a year is a slow
-    // answer, which is right — moving house takes a year — and it is enough to
-    // close a shortage over a decade instead of never.
-    // UNFILLED JOBS DRAW PEOPLE. A local boom is staffed mostly by movers:
-    // Blanchard & Katz (1992) find a state's employment shock is absorbed
-    // largely by migration with a half-life of a few years, so the pull of
-    // unfilled openings closes the gap at ln2/36 a month. It used to be a
-    // tenth a year, which left the labour cap to do the work.
-    // (2026-10-13) The shortage pulls workers in proportion to its size; it was
-    // capped at a 4% vacancy rate, and towns sat at 4-9% unfilled openings for
-    // decades with unemployment near 3% — a labour market so short that a
-    // national recession only trimmed vacancies and cost nobody a job.
-    const vacPull = (e.jobVac ?? 0) * (Math.LN2 / 36);
-    // PEOPLE MOVE FOR REAL PAY (2026-10-09). Migration read jobs, unfilled
-    // jobs and unemployment, and never the wage: measured over 4 worlds x 50
-    // years the town's nominal pay ended 1.24-2.08x the nation's, with
-    // nobody moving in for it, and local prices 1.39-1.42x. In the spatial
-    // equilibrium every urban model rests on (Rosen 1979; Roback 1982),
-    // movers equalise REAL wages net of amenity — what pay buys after rent —
-    // and the premium closes because the inflow loosens the labour market.
-    // The real premium here is local pay over local prices against national
-    // pay over national prices, and the price level now carries the town's
-    // rent (see the CPI block), so a dear-to-live-in town is correctly a
-    // less attractive one. Shape parameter, stated: a 10% real premium draws
-    // about 1% of population a year, the order of the migration responses in
-    // Blanchard & Katz (1992) and Kennan & Walker (2011). Read through the
-    // same two-year average the employers use.
-    const realPrem = ((e.wageIdx ?? 1) / Math.max(0.1, e.cpi ?? 1))
-      / Math.max(1e-6, (e.natWageIdx ?? e.wageIdx ?? 1) / Math.max(0.1, e.natCpi ?? e.cpi ?? 1));
-    e.realPremEma = (e.realPremEma ?? realPrem) + (realPrem - (e.realPremEma ?? realPrem)) / 24;
-    const premPull = 0.10 * Math.log(Math.max(0.2, e.realPremEma)) / 12;
-    let migration = jobGrowth * pull + vacPull + premPull - uGapPop * 0.020;
-
-    // ...AND PEOPLE CANNOT MOVE INTO HOUSING THAT DOES NOT EXIST.
-    //
-    // This read the labour market and nothing else, so the city admitted
-    // everyone the jobs attracted regardless of whether there was a flat for
-    // them. Measured over sixty years on the shipped island: population +86%
-    // against a housing stock of +40%, housing per head down from 106 to 73 sf,
-    // multifamily vacancy driven through its frictional floor and PINNED at
-    // 1.35% for fifty of those sixty years, and real housing rent up 3.3x. A
-    // variable resting on its rail in normal play is the rail holding up the
-    // model — and since land is the residual after construction cost, rents
-    // that compound like that are what detonate land prices. This is the third
-    // and last mechanism behind that.
-    //
-    // The constraint is real and it is one-sided. A town with no empty flats
-    // does not stop being attractive; it stops being ENTERABLE, and the people
-    // who would have come go somewhere else or double up. So in-migration is
-    // choked as vacancy approaches the frictional floor and is untouched when
-    // there is slack. Out-migration is NOT gated: nothing about a housing
-    // shortage keeps anybody from leaving.
-    //
-    // It is also the loop that closes the system. Scarce housing slows the
-    // inflow, which lets the builders catch up, which lifts vacancy off the
-    // floor, which stops rent compounding — without anybody being told to stop
-    // it. Widening crewCapacity alone did not do this: more housing simply let
-    // more people in and the vacancy stayed on the rail.
-    if (migration > 0) {
-      const floor = NATURAL_VAC.multifamily * 0.30;         // the frictional rail in tickSpace
-      const slack = clamp(((e.cityVac?.multifamily ?? NATURAL_VAC.multifamily) - floor)
-        / Math.max(1e-6, NATURAL_VAC.multifamily - floor), 0, 1);
-      // At the floor a fifth of the inflow still arrives — people do double up,
-      // convert lofts and take the spare room, and a city with no vacancy has
-      // never had literally zero net in-migration.
-      // ...BUT ONLY THE ISLAND'S SHARE OF THE REGION IS ISLAND (2026-10-10).
-      // The region's people live mostly on the mainland the island anchors
-      // (`islandResidents`: about one in six at the opening), whose housing
-      // is built at its own cost and is not short because the island is. A
-      // full island sends newcomers to the mainland and the commute; it does
-      // not stop them coming to the region. Measured after flats demand began
-      // moving one-for-one with households: the island's tighter vacancy
-      // throttled the whole region's in-migration and population at year 100
-      // fell from 63.6k to 54.9k over six Frontier towns. The choke now
-      // weighs the island's share of the region's homes.
-      const share = clamp(islandResidents(e).residents / Math.max(1, e.population ?? 1), 0, 1);
-      migration *= 1 - share * (1 - (0.20 + 0.80 * slack));
-    }
-    // A WAVE OF NEWCOMERS (blackswans.ts) does not wait for a flat: it lands
-    // after the housing choke above, because refugees double up rather than
-    // go to the next town.
-    migration += e.bsMigPull ?? 0;
-    e.migRate = migration;
-    // RETIRED (2026-10-09): out-migration on a rent-burden threshold
-    // (`mfBurden > 1.25` against the global RENT_BASE table, capped at
-    // 0.25%/mo). Rent now reaches movers through the real wage — it is a third
-    // of the price level the premium is deflated by — continuously and in both
-    // directions, rather than through a step at a ratio nobody measured.
-    // THE BOUNDS ARE A SHARE OF THIS TOWN, NOT A NUMBER OF PEOPLE, and that
-    // distinction was load-bearing the moment the town's size stopped being a
-    // constant. This read `clamp(…, 60_000, 4_000_000)`. The old hardcoded
-    // opening population was 240,000, so the floor sat a long way below and
-    // never bound — it was a guard. Deriving the population from the buildings
-    // actually standing put the standard island at 43,735, i.e. BELOW ITS OWN
-    // FLOOR: population pinned at 60,000 against 24,000 jobs, the labour force
-    // came out at 34,800, slack railed at its 24% ceiling, and the Phillips
-    // term died. Measured, that alone took the fifty-year price level from
-    // 2.015 to 1.147 — three quarters of the city's inflation, removed by a
-    // clamp nobody had looked at, in a change that was supposed to be neutral.
-    //
-    // A city can lose three quarters of its people over a century — Detroit
-    // did — and it can grow many times over. What it cannot do is go to zero,
-    // and that is all a bound here is for.
-    const popFloor = Math.max(1_000, (e.pop0 ?? 240_000) * 0.25);
-    const popCeil = Math.max(popFloor * 4, (e.pop0 ?? 240_000) * 16);
-    // PEOPLE ARE BORN, AGE AND DIE (2026-10-08). Natural increase was a
-    // constant 0.016% a month for a population with no ages. Now the city has
-    // three groups and the vital rates of the US, rounded: births 11 per 1,000
-    // people a year, all to the working-age group (CDC NVSS 2019); deaths 0.3,
-    // 3 and 45 per 1,000 among children, working-age and over-65s (CDC
-    // age-specific mortality); children reach working age over 18 years and
-    // workers retire over 47. The opening mix is the 2020 Census (22 / 61 / 17).
-    // Movers are mostly working-age adults, some with children (Census CPS
-    // mobility): 75 / 20 / 5. Natural increase is now an outcome — about
-    // +0.15%/yr at the opening, falling as the town ages, rising when young
-    // movers arrive — and so is the age mix that participation and household
-    // formation read.
-    {
-      const pop = e.population!;
-      if (!e.ages) e.ages = { kids: pop * 0.22, work: pop * 0.61, old: pop * 0.17 };
-      if (e.adults0 === undefined) e.adults0 = (e.pop0 ?? pop) * 0.78;
-      const a = e.ages;
-      const births = a.work * (0.011 / 0.61) / 12;
-      const grow = a.kids / 18 / 12, retire = a.work / 47 / 12;
-      const mig = pop * migration;
-      a.kids += births + 0.20 * mig - grow - a.kids * 0.0003 / 12;
-      a.work += grow + 0.75 * mig - retire - a.work * 0.003 / 12;
-      a.old += retire + 0.05 * mig - a.old * 0.045 / 12;
-      a.kids = Math.max(0, a.kids); a.work = Math.max(0, a.work); a.old = Math.max(0, a.old);
-      const total = a.kids + a.work + a.old;
-      // The guard below is a share of this town (see above); if it ever binds,
-      // every group is scaled alike.
-      const bounded = clamp(total, popFloor, popCeil);
-      if (total > 0 && bounded !== total) { const f = bounded / total; a.kids *= f; a.work *= f; a.old *= f; }
-      e.population = Math.round(bounded);
+    // THE REGISTER IS THE TOWN'S PEOPLE AND ITS LABOUR MARKET (2026-10-28,
+    // step 2): last month's earners in work are the town's jobs, its jobless
+    // its unemployment, its labour force over its people its participation,
+    // its households' members its population and age mix, its arrivals and
+    // departures its migration (economy.ts `economyToEngine`). Unfilled
+    // heads are the vacancies the Phillips term reads. Before the register
+    // exists (the opening month) the opening's numbers stand.
+    const d = e.eco;
+    if (d && d.persons > 0) {
+      e.jobs = Math.round(d.jobs);
+      e.unemployment = clamp(d.unemp, 0, 0.5);
+      e.participation = d.lf / d.persons;
+      e.population = Math.round(d.persons);
+      e.ages = { ...d.ages };
+      e.adults0 ??= d.ages.work + d.ages.old;
+      e.jobVac = d.heads > 0 ? Math.max(0, (d.heads - d.jobs) / Math.max(1, d.lf)) : 0;
+      e.migRate = (d.arrived - d.left) / Math.max(1, d.households);
+      e.employIdx = e.jobs / Math.max(1, e.jobsFilled0 ?? e.jobs0 ?? e.jobs);
     }
 
     // --- THE WAGE-PRICE SYSTEM ---------------------------------------------
@@ -4728,7 +3964,7 @@ export function tickEcon(s: GameState) {
 
     // Output is what the place makes: people working, times what each of them
     // produces. It is the broadest number in the game and the slowest to move.
-    e.outputIdx = +((e.jobs / (e.jobs0 ?? 132_000)) * e.wageIdx!).toFixed(4);
+    e.outputIdx = +(((e.jobs ?? 0) / (e.jobs0 ?? 132_000)) * e.wageIdx!).toFixed(4);
   }
 
   // --- each class runs its own cycle -----------------------------------------
@@ -5568,32 +4804,20 @@ export function tickEcon(s: GameState) {
     if (e.jobsFilled0 === undefined && (e.history?.length ?? 0) > 1 && (e.jobs ?? 0) > 0) e.jobsFilled0 = e.jobs;
     const jobs0 = e.jobsFilled0 ?? e.jobs0 ?? 132_000;
     const jobIdx = (e.jobs ?? jobs0) / jobs0;
-    // Sheds are leased by industrial firms. Total jobs is the right scale for
-    // office; for industrial it has to be multiplied by the secular share of
-    // employment that still wants a shed — see `industComp` / INDUST_COMP_MONTH.
-    // Without that factor, a growing services city manufactures warehouse
-    // demand it cannot supply and the vacancy floor becomes load-bearing.
-    // WHO LEASES THIS CLASS, AND HOW MANY OF THEM THERE ARE. Office is let to
-    // finance, law, tech, media, insurance and design; sheds to logistics,
-    // food and apparel. Their employment moves with the city's industries
-    // (`tickIndustryCycle`), so a class's driver is the city's jobs times how
-    // its tenant trades are doing against the city as a whole: a tech bust
-    // empties offices, a logistics boom fills sheds. This replaces adding
-    // industry MOMENTUM on top of job counts, which, now that jobs come from
-    // the same industries, would count one cycle twice.
-    const tradeMix = (() => {
-      const trades = SECTOR_CLASSES[k] ?? [];
-      if (!trades.length || !e.indIdx) return 1;
-      let w = 0, acc = 0;
-      for (const sec of trades) {
-        const share = e.sectorShare?.[sec] ?? (1 / Math.max(1, trades.length));
-        acc += share * (e.indIdx[sec] ?? 1);
-        w += share;
-      }
-      const own = w > 0 ? acc / w : 1;
-      return own / Math.max(0.05, e.exportIdx ?? 1);
-    })();
-    const secIdx = e.secular?.[k]?.idx ?? (k === "industrial" ? (e.industComp ?? 1) : 1);
+    // WHO LEASES THIS CLASS, AND HOW MUCH OF IT THEY NEED (2026-10-28, ONE
+    // ECONOMY step 2). The driver was the town's jobs times how the class's
+    // trades were doing against the town, times a secular index (the online
+    // shift, the factories the dollar sends abroad), and for shops a blend of
+    // people and jobs with a household-credit term. It is the firms' own
+    // floor now: every industry's heads on the floor it rents — offices,
+    // shops, sheds — not at home and not in a hospital, school, depot or yard
+    // (industries.ts OFF_FLOOR, REMOTE), at its feet a worker, against the
+    // first month's (economy.ts `economyToEngine`). A shop's heads are what
+    // its sales pay for, so shops follow the register's spending (and the
+    // share of it that ships from a shed, `online`); a plant's are what the
+    // nation buys of it (and what a dear dollar sends abroad); an office's are
+    // its industry's sales. Flats follow the register's renter households.
+    // Before the books open (the opening months) the opening's level stands.
     // Flats are rented by HOUSEHOLDS, and households are formed by adults —
     // an ageing town with fewer children forms more, smaller households per
     // head. Adults against the opening's adults.
@@ -5645,10 +4869,13 @@ export function tickEcon(s: GameState) {
     // that would otherwise rent an apartment, directly or down the vacancy
     // chain a move-up purchase starts. Each one takes an average 900-sf flat
     // (RentCafe / Census new-apartment average) out of the town's demand.
-    const housed = k === "multifamily" && e.newHomes ? (e.newHomes * 900) / Math.max(1, e.newHomesRef ?? 1) : 0;
-    const driver = (k === "multifamily" ? Math.max(0.05, hhIdx * (e.tenureIdx ?? 1) - housed)
-      : k === "retail" ? Math.pow(popIdx, 0.68) * Math.pow(jobIdx, 0.32) * (e.hhCredit ?? 1)
-      : jobIdx * tradeMix) * secIdx;
+    // (The register's buyers take the plats' houses — households.ts — so the
+    // households the new houses took are out of its renters already.)
+    const eco = e.eco, eco0 = e.eco0;
+    const driver = k === "multifamily"
+      ? (eco && eco0?.renters ? Math.max(0.05, eco.renters / eco0.renters) : 1)
+      : (eco?.floorSf && eco0?.floorSf?.[k] ? Math.max(0.05, (eco.floorSf[k] ?? 0) / eco0.floorSf[k]!) : 1);
+    void hhIdx; void popIdx; void jobIdx;
     // A CLASS'S MOMENTUM IS ITS TENANTS' GROWTH AGAINST NORMAL. Monthly growth
     // of the driver less its own five-year average, smoothed over six months,
     // in the "boom units" its readers (rents, cap rates, absorption, tenant
@@ -5725,8 +4952,10 @@ export function tickEcon(s: GameState) {
     if (k !== "multifamily") {
       // ...and the space a worker takes beyond the rent: the island against the
       // mainland, income, and the structural shifts (remote work after a swan).
-      const lvl = (e.locEff?.[k] ?? 1) * (e.incomeEff?.[k] ?? 1) * swanClassLevel(e, k)
-        * (k === "retail" ? (e.secular?.retail?.idx ?? 1) : 1);
+      // (Not the online shift since step 2: a shop's sales that ship from a
+      // shed are the fulfilment industry's, so the shops' heads already fall
+      // with it — economy.ts `spendVector`. Counting it here too took it twice.)
+      const lvl = (e.locEff?.[k] ?? 1) * (e.incomeEff?.[k] ?? 1) * swanClassLevel(e, k);
       (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw, lvl };
     }
     if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
@@ -5740,31 +4969,12 @@ export function tickEcon(s: GameState) {
     // floor. See DEMAND_FORM_M.
     e.pool[k] += (poolTarget - e.pool[k]) / DEMAND_FORM_M[k];
     e.pool[k] -= 0.25 * Math.max(0, e.pool[k] - housable * 1.02);
-    // SPACE CAPS PAYROLL DESIRE. Jobs drove the looking pool with no return
-    // wire from "there is no floor left" — only from rent via spacePull. So a
-    // city could staff 2× the desks it can house, keep those jobs on the books,
-    // and have the truncated pool still press rents while headcount marched on.
-    // Desired demand that exceeds the housable search fringe is firms that will
-    // not grow payroll here; bleed that excess out of employIdx at lease-plan
-    // speed (capped — not the uncapped spacePull disaster at 1.8× RTI).
-    if (k === "office" && targetRaw > housable + searchFringe) {
-      const excess = (targetRaw - housable - searchFringe) / Math.max(1, targetRaw);
-      e.employIdx = Math.max(0.55, (e.employIdx ?? 1) * (1 - Math.min(0.0015, excess * 0.004)));
-    }
-    // ...AND SHEDS THE SAME WAY, THROUGH THE TRADES THAT USE THEM (2026-10-13).
-    // A distributor that cannot find a shed here opens the next one across
-    // the water, and its payroll goes with it. Nothing said so: logistics,
-    // food and apparel kept hiring at their national trend against an island
-    // with no sheds left, industrial sat at 0.3% vacancy for decades with
-    // nothing in the pipeline (no site pencils for a shed at island land
-    // prices), and the unhoused demand pressed rents forever. Same rate as
-    // offices, on the shed trades' own employment rather than every
-    // employer's, so it reaches the town's jobs through exportIdx.
-    if (k === "industrial" && targetRaw > housable + searchFringe && e.indIdx) {
-      const excess = (targetRaw - housable - searchFringe) / Math.max(1, targetRaw);
-      const cut = 1 - Math.min(0.0015, excess * 0.004);
-      for (const sec of SECTOR_CLASSES.industrial ?? []) e.indIdx[sec] = (e.indIdx[sec] ?? 1) * cut;
-    }
+    // (RETIRED 2026-10-28, step 2: "space caps payroll desire" bled the
+    // employment index, and the trades' indices for sheds, when the class's
+    // demand ran past what the island could house. A firm that cannot find a
+    // floor here now stays off the map — the region's — and its heads are
+    // the off-map firms' (economy.ts); the island's floor caps the island's
+    // firms, not the region's payroll.)
     // ABSORPTION IS FINITE, and it is a property of TENANTS, not buildings.
     // The clamps and the noise used to scale with stock — a bigger city of
     // buildings signed leases faster. Now they scale with occupied: a bigger
@@ -6757,7 +5967,7 @@ export function tickEcon(s: GameState) {
     // Torto 1988; Hendershott 1996) has rent answer the vacancy gap and the
     // gap to equilibrium rent, not employment directly; demand reaches rent
     // here the same way, through absorption, the queue and `effGap`.
-    void liftGate; void jobDrift;
+    void liftGate;
     const cycleJobs = 0;
     const cycleMom = 0;
     let drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;

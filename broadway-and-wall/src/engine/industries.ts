@@ -437,6 +437,141 @@ export const SPEND_BRIDGE: Record<SpendCategory, Bridge> = {
   education: { healthedu: 1 },
 };
 
+// ---------------------------------------------------------------- where the work sits (step 2)
+/**
+ * WHERE EACH INDUSTRY'S WORKERS SIT (2026-10-28, ONE_ECONOMY_PLAN.md step 2).
+ *
+ * Step 1b found the engine sizing about 92% of the town's jobs as street firms
+ * on commercial floors, when health and education, government and
+ * construction are about 36% of US employment (CES 2023: 25,450k + 22,950k +
+ * 7,950k of 157,000k) and mostly do not rent commercial floor at all. Each
+ * industry's heads are split three ways:
+ *
+ *   offFloor   on property of its own that is not the leasable stock: the
+ *              hospital, the school, the nursing home; City Hall, the police
+ *              station, the depot; the contractor's yard and the site [S~]:
+ *     health & education  0.75 — ambulatory practices that do rent office or
+ *              shop floor (offices of physicians 2,950k, dentists 1,060k, other
+ *              practitioners 1,170k, outpatient centres 1,070k: ~6,250k, CES
+ *              2023) are a quarter of the industry; hospitals, nursing and
+ *              residential care, private schools and colleges, social
+ *              assistance and home health are the rest.
+ *     government  0.95 — state and local government (20,000k of 22,950k, CES
+ *              2023) works in publicly owned schools, offices, stations and
+ *              yards; the federal civilian workforce outside the Postal
+ *              Service (~2,400k) sits about half in leased space (GSA FY2023:
+ *              177M of 363M rentable sf leased) — 2,400 x 0.49 / 22,950 = 0.05
+ *              of the industry in leased office.
+ *     construction  1.0 — yards, depots and the sites themselves.
+ *   remote     whose workplace is their home: ACS 2019 (1-year), 5.7% of
+ *              workers worked from home (Census, "The Number of People
+ *              Primarily Working From Home Tripled Between 2019 and 2021",
+ *              2022); the industry split leans on BLS, "Job Flexibilities and
+ *              Work Schedules 2017-18" (USDL-19-1691), where the share able to
+ *              work at home runs about 50% in financial activities and
+ *              professional services against about 10% in retail and leisure
+ *              — the 5.7% shared in that proportion, rounded [S~]. Space is
+ *              not taken for them. (A pandemic's shift is a swan's, swans.ts.)
+ *   the rest   on the floor its industry rents (`space`): office, shop or shed.
+ */
+export const OFF_FLOOR: Record<IndustryId, number> = {
+  food: 0, apparel: 0, printing: 0, metals: 0, machinery: 0, electronics: 0, chemicals: 0, wood: 0, bldgmat: 0,
+  wholesale: 0, fulfil: 0, transport: 0, shops: 0, restaurants: 0, personal: 0,
+  finance: 0, insurance: 0, realestate: 0, professional: 0, techmedia: 0, hq: 0,
+  healthedu: 0.75, construction: 1, government: 0.95,
+};
+export const REMOTE: Record<IndustryId, number> = {
+  food: 0.02, apparel: 0.02, printing: 0.03, metals: 0.02, machinery: 0.03, electronics: 0.04, chemicals: 0.03, wood: 0.02, bldgmat: 0.02,
+  wholesale: 0.05, fulfil: 0.01, transport: 0.03, shops: 0.02, restaurants: 0.01, personal: 0.08,
+  finance: 0.09, insurance: 0.10, realestate: 0.10, professional: 0.11, techmedia: 0.12, hq: 0.08,
+  healthedu: 0.03, construction: 0.04, government: 0.03,
+};
+/** The leasable class each industry's on-floor workers rent. */
+export function floorOf(i: IndustryId): Floor {
+  const sp = INDUSTRIES[i].space;
+  return sp === "retail" ? "retail" : sp.startsWith("industrial") ? "industrial" : "office";
+}
+/**
+ * THE TOWN'S JOBS OFF THE COMMERCIAL FLOORS, as a share of all its jobs: the
+ * national share of the industries that serve a region's people from their
+ * own buildings — health and education's off-floor part and government's —
+ * which every region has in proportion to its size, whatever its floors hold
+ * [D]: (25,450 x 0.75 + 22,950 x 0.95) / 157,000 = 0.26. Construction is left
+ * to its demand (economy.ts `openingConstruction`), and the off-map plants and
+ * sheds rent the region's industrial floor.
+ */
+export const OFF_FLOOR_SHARE_NAT = (() => {
+  const tot = INDUSTRY_IDS.reduce((a, k) => a + INDUSTRIES[k].empK, 0);
+  return (INDUSTRIES.healthedu.empK * OFF_FLOOR.healthedu + INDUSTRIES.government.empK * OFF_FLOOR.government) / tot;
+})();
+
+// ---------------------------------------------------------------- what the rest of the country buys (step 2)
+/**
+ * THE NATION'S DEMAND FOR EACH INDUSTRY, as employment: the town is a small
+ * open economy and sells its exports into the national market for them, so an
+ * export industry's jobs here follow that industry's jobs in the nation —
+ * through its trend, its cycle — and the town's share of them.
+ *
+ * NAT_TREND: US payroll growth, a year, 1990 to 2019, BLS CES annual averages
+ * (thousands, rounded) [S~]: food manufacturing 1,510 -> 1,620; textiles and
+ * apparel 1,630 -> 320; paper and printing 1,460 -> 790; primary and fabricated
+ * metals 2,300 -> 1,820; machinery and transport equipment 3,540 -> 2,780;
+ * computers, electronics and electrical 2,530 -> 1,470; chemicals, plastics and
+ * petroleum 2,020 -> 1,690; wood, furniture and miscellaneous 1,830 -> 1,400;
+ * nonmetallic minerals 530 -> 410; wholesale 5,270 -> 5,900; warehousing 410 ->
+ * 1,180; transport and utilities 3,810 -> 5,020; retail 13,180 -> 15,620;
+ * accommodation and food 8,160 -> 13,750; other services, arts and waste 5,600
+ * -> 8,840; credit, securities and funds 2,950 -> 3,740; insurance 2,020 ->
+ * 2,800; real estate and leasing 1,640 -> 2,250; professional (less computer
+ * design) and administrative services 8,800 -> 16,200; information and
+ * computer design 3,100 -> 5,060; management of companies 1,670 -> 2,420;
+ * health and education 10,980 -> 24,160; construction 5,260 -> 7,490;
+ * government 18,410 -> 22,600. These carry the labour-force growth of their
+ * years (0.9% a year, 1990-2019); market.ts LABOUR_FORCE_SLOWDOWN takes the
+ * half point that has stopped arriving (CBO 2024), the same correction the
+ * engine's trades carried.
+ *
+ * CYCLE_BETA: each industry's payroll swing per unit of the nation's, BLS CES
+ * December 2007 to its trough against total nonfarm (-6.3%) [S~]: durable
+ * manufacturing about -21% (3.4), nondurable -9% (1.5; food barely moved, 0.3);
+ * construction -27% (4.3); wholesale -8% (1.3); transport and warehousing -10%
+ * (1.6); retail -8% (1.3); leisure and hospitality -4% (0.7); other services
+ * -4% (0.6); information -8% (1.3); financial activities -7% (1.1);
+ * professional and business services -9% (1.4); management of companies -3%
+ * (0.5); education and health +3% (0); government +1% (0). It moves what the
+ * nation buys of the town's exports; what the town buys of itself moves with
+ * the town's own incomes.
+ */
+export const NAT_TREND: Record<IndustryId, number> = {
+  food: 0.0024, apparel: -0.056, printing: -0.021, metals: -0.008, machinery: -0.008, electronics: -0.019, chemicals: -0.006, wood: -0.009, bldgmat: -0.009,
+  wholesale: 0.004, fulfil: 0.036, transport: 0.0095, shops: 0.006, restaurants: 0.018, personal: 0.016,
+  finance: 0.008, insurance: 0.011, realestate: 0.011, professional: 0.021, techmedia: 0.017, hq: 0.013,
+  healthedu: 0.027, construction: 0.012, government: 0.007,
+};
+export const CYCLE_BETA: Record<IndustryId, number> = {
+  food: 0.3, apparel: 1.5, printing: 1.5, metals: 3.4, machinery: 3.4, electronics: 3.4, chemicals: 1.5, wood: 3.4, bldgmat: 3.4,
+  wholesale: 1.3, fulfil: 1.6, transport: 1.6, shops: 1.3, restaurants: 0.7, personal: 0.6,
+  finance: 1.1, insurance: 1.1, realestate: 1.1, professional: 1.4, techmedia: 1.3, hq: 0.5,
+  healthedu: 0, construction: 4.3, government: 0,
+};
+
+// ---------------------------------------------------------------- who pays for health care (step 2)
+/**
+ * HEALTH CARE IS MOSTLY PAID BY SOMEONE ELSE. The household budget (CE_2023)
+ * carries what households pay themselves — premiums and out of pocket — but
+ * BEA's personal consumption of health care counts the care itself, most of
+ * it paid by employers' insurance and by Washington. Without those two the
+ * town's hospitals had a seventh of their customers. CMS National Health
+ * Expenditure Accounts 2023 [S]: Medicare $1,029.8bn; Medicaid $871.7bn, of
+ * which the federal share ~64% (MACPAC FMAP, FY2023) = $558bn; over 334.9M
+ * people (Census) = $4,742 a person a year paid from outside the town. An
+ * employer's insurance contribution (PAY_SPLIT.insurance) buys care at the
+ * medical loss ratio — 80-85% of premium paid out in claims (ACA MLR rule; 85%
+ * large group) — the rest is the insurer's [S].
+ */
+export const FED_HEALTH_PER_PERSON_2023 = (1029.8 + 0.64 * 871.7) * 1e9 / 334.9e6;
+export const MLR = 0.85;
+
 // ---------------------------------------------------------------- pay, tax and owners
 /**
  * WHERE A DOLLAR OF COMPENSATION GOES. BLS Employer Costs for Employee

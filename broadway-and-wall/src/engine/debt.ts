@@ -885,7 +885,7 @@ export function payOffLoan(
   if (!rec) return { s, err: "Unknown parcel." };
   { const why = consentFor(s, h, "debt"); if (why) return { s, err: why }; }
   if (next.facility?.bbls.includes(bbl)) {
-    return { s, err: "This deed is pledged to your facility. Release it there, or repay the facility — a mortgage payoff does not cut the crossed lien." };
+    return { s, err: "Pledged to your facility. Release it or repay the facility first." };
   }
   const senior = payOffDue(h.loan, next.month, next.econ);
   const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, next.month, next.econ) : null;
@@ -896,7 +896,7 @@ export function payOffLoan(
     h.loan = null;
     if (h.mezz) h.mezz = null;
     if (next.workouts?.[bbl]) delete next.workouts[bbl];
-    return { s: next, msg: "Cleared — nothing was left on the note." };
+    return { s: next, msg: "Loan cleared; balance was zero." };
   }
   if (fundableNow(next, parcels) < due) {
     const short = due - fundableNow(next, parcels);
@@ -925,10 +925,10 @@ export function payOffLoan(
     text: penalty > 0
       ? `Paid off ${addr}: $${balance.toLocaleString()} to ${lender}`
         + (mezz ? " and Cordage mezz" : "")
-        + ` plus $${penalty.toLocaleString()} to break the paper. The deed is free and clear.`
+        + ` plus $${penalty.toLocaleString()} prepayment penalty. Free and clear.`
       : `Paid off ${addr}: $${balance.toLocaleString()} to ${lender}`
         + (mezz ? " and Cordage mezz" : "")
-        + `. The deed is free and clear.`,
+        + `. Free and clear.`,
   });
   return {
     s: next,
@@ -960,12 +960,12 @@ export function paydownLoan(
   { const why = consentFor(s, h0, "debt"); if (why) return { s, err: why }; }
   if (!resolveRec(parcels, s, bbl)) return { s, err: "Unknown parcel." };
   if (s.facility?.bbls.includes(bbl)) {
-    return { s, err: "This deed is pledged to your facility. Pay the facility down there — the mortgage is not what holds the lien." };
+    return { s, err: "Pledged to your facility. Pay down the facility instead." };
   }
   const amt = Math.round(amount);
   if (!Number.isFinite(amt) || amt <= 0) return { s, err: "Pay down a positive amount." };
   const bal = Math.round(h0.loan.balance);
-  if (amt >= bal) return { s, err: "That is the whole balance — use Pay off, which releases the lien." };
+  if (amt >= bal) return { s, err: "That is the full balance. Use Pay off." };
   const next = cloneState(s);
   const h = next.holdings[bbl]!;
   const loan = h.loan!;
@@ -1457,7 +1457,7 @@ export function tickLoan(
   if (loan.floating ?? loan.product === "float") {
     if (loan.cap && q >= loan.cap.expiresM) {
       delete loan.cap;
-      s.news.unshift({ q, kind: "info", text: `The rate cap at ${rec.address} expired — you're floating naked again.` });
+      s.news.unshift({ q, kind: "info", text: `Rate cap expired · ${rec.address}. Loan floating unhedged.` });
     }
     const idx = loan.bench === "short" ? shortIndexOf(s.econ) : s.econ.indexRate;
     const effIndex = loan.cap ? Math.min(idx, loan.cap.strike) : idx;
@@ -1550,8 +1550,7 @@ export function tickLoan(
         if (loan.sweep || (loan.breachMs ?? 0) > 0) {
           s.news.unshift({
             q, kind: "info",
-            text: `Covenant cured at ${rec.address} — ${pay >= 1e6 ? `${money(pay)}` : `$${Math.round(pay / 1000)}K`} of equity into the loan, and the test passes again. `
-              + `A sponsor with the money does not hand back a building over a technical default.`,
+            text: `Covenant cured at ${rec.address} — ${pay >= 1e6 ? `${money(pay)}` : `$${Math.round(pay / 1000)}K`} equity paydown; test passes.`,
           });
         }
         loan.sweep = false;
@@ -1566,7 +1565,7 @@ export function tickLoan(
     if (!loan.sweep) {
       s.news.unshift({
         q, kind: "warn",
-        text: `Covenant breach at ${rec.address} (${d !== null && d < loan.minDSCR ? `DSCR ${d.toFixed(2)}` : `LTV ${(100 * (l ?? 0)).toFixed(0)}%`}) — the lender trapped the cash flow.`,
+        text: `Covenant breach at ${rec.address} (${d !== null && d < loan.minDSCR ? `DSCR ${d.toFixed(2)}` : `LTV ${(100 * (l ?? 0)).toFixed(0)}%`}) — cash flow trapped.`,
       });
     }
     if (!loan.sweep) bumpLenderRel(s, loanLender(loan), -3);  // a tripped covenant sours the coffee
@@ -1589,10 +1588,10 @@ export function tickLoan(
       openWorkout(s, h.bbl, "covenant", cure);
       s.news.unshift({
         q, kind: "warn",
-        text: `Two years of broken covenants at ${rec.address} and no sign of a cure. `
-          + `${loanLender(loan)} has moved it to their workout desk — inject `
-          + `${cure >= 1e6 ? `${money(cure)}` : `$${Math.round(cure / 1000)}K`} of equity, ask them `
-          + `to restructure, or hand back the deed. They will not file while the note stays current.`,
+        text: `Workout · ${rec.address}: covenants broken for two years. `
+          + `${loanLender(loan)} options: inject `
+          + `${cure >= 1e6 ? `${money(cure)}` : `$${Math.round(cure / 1000)}K`} of equity, `
+          + `restructure, or hand back the deed. No filing while payments are current.`,
       });
     }
   } else if (loan.sweep) {
@@ -1601,7 +1600,7 @@ export function tickLoan(
     if (loan.cleanQs >= 2) {
       loan.sweep = false;
       loan.breachMs = 0;
-      s.news.unshift({ q, kind: "info", text: `Covenants cured at ${rec.address} — the sweep is off.` });
+      s.news.unshift({ q, kind: "info", text: `Covenants cured at ${rec.address}; cash sweep lifted.` });
     }
   }
   // sweep: surplus asset cash flow pays down principal instead of reaching you
@@ -1629,9 +1628,9 @@ export function tickLoan(
   if (short && (loan.arrearsMs ?? 0) < 3) {
     s.news.unshift({
       q, kind: "warn",
-      text: `${rec.address} did not cover its debt service and there is nothing left to make it up with — `
-        + `$${Math.round(gap / 1000)}K short, month ${loan.arrearsMs} of it. `
-        + `${loanLender(loan)} opens a file at three, and from there it is a notice period and an auction.`,
+      text: `Missed payment · ${rec.address}: debt service not covered and no cash to fund it — `
+        + `$${Math.round(gap / 1000)}K short, month ${loan.arrearsMs}. `
+        + `${loanLender(loan)} files at three months, then notice and auction.`,
     });
   }
   if ((loan.arrearsMs ?? 0) >= 3 && !s.workouts?.[h.bbl]) {
@@ -1639,8 +1638,8 @@ export function tickLoan(
     s.news.unshift({
       q, kind: "warn",
       text: `Three months of missed payments at ${rec.address}. ${loanLender(loan)} has `
-        + `opened a file — the arrears are ${Math.round(loan.monthlyPmt * (loan.arrearsMs ?? 3) / 1000)}K and they `
-        + `want them, or they want the building.`,
+        + `opened a default file; arrears ${Math.round(loan.monthlyPmt * (loan.arrearsMs ?? 3) / 1000)}K `
+        + `due or foreclosure follows.`,
     });
   }
 
@@ -1722,10 +1721,10 @@ export function tickLoan(
         (fresh as { renewedM?: number }).renewedM = q;
         s.news.unshift({
           q, kind: "deal",
-          text: `The balloon at ${rec.address} renewed with ${product.lender} — the same `
+          text: `Balloon renewed · ${rec.address} · ${product.lender} · `
             + `${money(rolled)} at ${qd.ratePct.toFixed(2)}% for ${Math.round(product.termM / 12)} years, `
-            + `$${fresh.monthlyPmt.toLocaleString()} a month, $${(fee / 1000).toFixed(0)}K of fee. `
-            + `Nothing came out and nothing went in: a bank does not hand you equity unasked, and cash-out is a refi you choose.`,
+            + `$${fresh.monthlyPmt.toLocaleString()}/month, $${(fee / 1000).toFixed(0)}K fee. `
+            + `No cash out; refinance separately for that.`,
         });
       }
     }
@@ -1743,8 +1742,8 @@ export function tickLoan(
         if (h.mezz) h.mezz = null;
         s.news.unshift({
           q, kind: "deal",
-          text: `Balloon at ${rec.address}: no clean refinancing, so you retired the `
-            + `${money(payoff)} note${mezzDue ? ` and ${money((mezzDue))} of mezz` : ""} out of firm liquidity. The building is free and clear.`,
+          text: `Balloon at ${rec.address}: no refinance available; repaid the `
+            + `${money(payoff)} loan${mezzDue ? ` and ${money((mezzDue))} of mezz` : ""} from firm liquidity. Free and clear.`,
         });
       } else if (fundableNow(s, parcels) >= shortfall) {
         const paid = fundCashNeed(s, parcels, shortfall);
@@ -1769,7 +1768,7 @@ export function tickLoan(
         }
         s.news.unshift({
           q, kind: "warn",
-          text: `Balloon at ${rec.address}: today's market only refinances $${(qd.principal / 1e6).toFixed(1)}M — you wrote a ${money(shortfall)} check to close the gap.`,
+          text: `Balloon at ${rec.address}: refinanced $${(qd.principal / 1e6).toFixed(1)}M; paid ${money(shortfall)} to close the gap.`,
         });
       } else {
         // NOT A SALE — A DEFAULT, WHICH IS A CONVERSATION.
@@ -1782,12 +1781,12 @@ export function tickLoan(
         const room = fundableNow(s, parcels);
         s.news.unshift({
           q, kind: "warn",
-          text: `The balloon came due at ${rec.address} and no desk will refinance the whole of it — today's market writes `
-            + `${money(qd.principal)} against a ${money(loan.balance)} balance plus a `
-            + `$${(fee / 1000).toFixed(0)}K fee: ${money(shortfall)} short, and you can raise `
-            + `${money(room)} of it from cash and the line. `
-            + `${loanLender(loan)} has put it in workout: you have until ${monthLabel(s.month + 6)} to `
-            + `pay the difference, ask them to extend, sell it, or hand back the deed before they file.`,
+          text: `Balloon due · ${rec.address}: no full refinance. Market sizes `
+            + `${money(qd.principal)} vs ${money(loan.balance)} balance plus `
+            + `$${(fee / 1000).toFixed(0)}K fee: ${money(shortfall)} short; available `
+            + `${money(room)} (cash and line). `
+            + `${loanLender(loan)} put it in workout. By ${monthLabel(s.month + 6)}: `
+            + `pay the gap, request an extension, sell, or hand back the deed.`,
         });
       }
     }
@@ -1834,7 +1833,7 @@ function serviceMezz(
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `Mezz at ${rec.address} has missed three coupons. ${m.holder ?? "Cordage Debt Partners"} `
-          + `has opened a file — the senior is still current, but the junior is not.`,
+          + `opened a default file; senior loan still current.`,
       });
     }
   }
@@ -1852,8 +1851,8 @@ function serviceMezz(
       openWorkout(s, h.bbl, "balloon", m.balance);
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `The mezz balloon came due at ${rec.address} and you cannot clear `
-          + `${money(m.balance)}. Cordage has put the junior in workout.`,
+        text: `Mezz balloon due at ${rec.address}; cannot repay `
+          + `${money(m.balance)}. Cordage put the mezz in workout.`,
       });
     }
   }
@@ -1962,9 +1961,9 @@ export function placeMezz(
   bumpLenderRel(next, "Cordage Debt Partners", 2);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Cordage stacked ${money(q.principal)} of mezz behind the senior at ${rec.address} — `
+    text: `Mezz closed · ${rec.address} · Cordage · ${money(q.principal)} — `
       + `${q.ratePct.toFixed(2)}%, ${(q.points * 100).toFixed(1)} points, due ${monthLabel(next.month + q.termM)}. `
-      + `You cleared ${money(net)}. The coupon is why nobody does this twice.`,
+      + `Net proceeds ${money(net)}.`,
   });
   sweepLocIdleCash(next, { announce: true });
   return { s: next, msg: `Mezz closed — ${money(q.principal)}.` };
@@ -1979,8 +1978,8 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
   const h = next.holdings[bbl];
   const rec = resolveRec(parcels, next, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
-  if (!h.loan || !(h.loan.floating ?? h.loan.product === "float")) return { s, err: "Caps hedge floating debt — this loan is fixed." };
-  if (h.loan.cap) return { s, err: "This loan already carries a live cap." };
+  if (!h.loan || !(h.loan.floating ?? h.loan.product === "float")) return { s, err: "Fixed-rate loan; a cap only hedges floating debt." };
+  if (h.loan.cap) return { s, err: "This loan already has a rate cap." };
   const cost = rateCapCost(h.loan);
   // A cap premium is a financing cost on paper the firm already owns, and the
   // revolver is what a sponsor funds financing costs with. Refusing it for want
@@ -1990,8 +1989,8 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
   if (room.total < cost) {
     return {
       s,
-      err: `The cap desk wants ${money(cost)} premium and you can raise `
-        + `${money(room.total)} — ${money(room.cash)} of cash and ${money(room.line)} on the line.`,
+      err: `Rate cap premium is ${money(cost)}; available `
+        + `${money(room.total)} (${money(room.cash)} cash, ${money(room.line)} on the line).`,
     };
   }
   const strike = capStrikeFor(next, h.loan);
@@ -2417,10 +2416,10 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const release = refiFacilityRelease(next, parcels, bbl);
   const product = productById(productId);
   if (product.mezz) {
-    return { s, err: "Mezzanine sits behind a senior — use Place mezz, do not replace the first lien." };
+    return { s, err: "Mezz is subordinate. Use Place mezz instead." };
   }
   if (!productOpen(next, product)) {
-    return { s, err: `${product.label} won't quote you — ${sponsorStanding(next).label}. Bridge money will still talk.` };
+    return { s, err: `${product.label} declined: ${sponsorStanding(next).label}. Bridge lenders may still quote.` };
   }
   const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(next, parcels, h, rec);
   if (product.uwDscr <= 0 && !vacantDirt) {
@@ -2429,7 +2428,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
       : "Land money is for dirt. This one has a building on it." };
   }
   if (product.uwDscr > 0 && vacantDirt) {
-    return { s, err: "No income to underwrite — a vacant site only gets a land loan." };
+    return { s, err: "No income to underwrite. Vacant land qualifies only for a land loan." };
   }
   // Same quote the card showed — haircut, stabilised bridge leg, and all.
   const full = quote(next, product, value, noi, quoteClass, false, stab, h.condition, { nw: netWorth(next, parcels) });
@@ -2501,9 +2500,9 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
     q: next.month, kind: "deal",
     text: `Refinanced ${rec.address}: ${money(qd.principal)} at ${qd.ratePct.toFixed(2)}% (${product.label})`
       + (mezzBal > 0 ? `, retiring ${money(mezzBal)} of mezz` : "")
-      + (penalty > 0 ? `, after ${money(penalty)} to break the old paper` : "")
+      + (penalty > 0 ? `, ${money(penalty)} prepayment penalty` : "")
       + (capPremium > 0 ? `, plus ${money(capPremium)} for the rate cap` : "")
-      + (release ? (release.unwind ? `, repaying the facility in full (${money(releasePrice)}) — the pool is unencumbered` : `, paying the facility ${money(releasePrice)} to release the deed`) : "")
+      + (release ? (release.unwind ? `, repaying the facility in full (${money(releasePrice)})` : `, facility release ${money(releasePrice)}`) : "")
       + ".",
   });
   // Cash-out proceeds pay the revolver before they sit idle.

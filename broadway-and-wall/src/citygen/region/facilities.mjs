@@ -434,7 +434,7 @@ export function placeFacilities(M, seed) {
         let s1 = s0;
         for (let s = 20; s < 700; s += 20) { const q = add(s0, mul(r.v, -s)); const k = idx(q); s1 = q; if (k >= 0 && (grid[k] & (WATER | SEA)) && wetAt(add(q, mul(r.v, sh.sea ? -60 : 0))) === 0 && s > (sh.sea ? 160 : sh.half + 90 - 2 * sh.half / 2)) break; }
         parts.push({ t: "line", k: "jetty", pts: [s0, s1], w: 10 });
-        parts.push({ t: "pad", k: "pier", ring: rectRing(s1, r.u, 140, 22) });
+        parts.push({ t: "box", k: "pier", c: s1, u: r.u, w: 140, d: 22, h: 3, z0: 0 });
         parts.push({ t: "inst", k: "vessel", at: [[...add(s1, mul(r.v, -24)), r.u[0], r.u[1], sh.sea ? 1 : 0.55, 0, 0, sh.sea ? "tanker" : "barge"]] });
       }
       // the crude line arriving overland: a cleared right-of-way to the edge of the country
@@ -515,7 +515,8 @@ export function placeFacilities(M, seed) {
       const bR = -D / 2 + 260, bT = bR + 180;
       parts.push({ t: "pad", k: "runway", ring: rectRing(at(r, 0, B$(bR)), r.u, L, 45), u: r.u, len: L });
       parts.push({ t: "pad", k: "taxiway", ring: rectRing(at(r, 0, B$(bT)), r.u, L - 120, 23) });
-      for (const f of [-0.5, -0.25, 0, 0.25, 0.5]) parts.push({ t: "pad", k: "taxiway", ring: rectRing(at(r, f * (L - 140), B$((bR + bT) / 2)), r.v, bT - bR, 23) });
+      // the connectors run from the runway's edge to the taxiway's, not over either
+      for (const f of [-0.5, -0.25, 0, 0.25, 0.5]) parts.push({ t: "pad", k: "taxiway", ring: rectRing(at(r, f * (L - 140), B$((bR + 22.5 + bT - 11.5) / 2)), r.v, bT - bR - 34, 23) });
       const aT = (rng() - 0.5) * L * 0.4, bA = bT + 12 + 75;
       parts.push({ t: "pad", k: "apron", ring: rectRing(at(r, aT, B$(bA)), r.u, 460, 150) });
       const bTerm = bA + 75 + 22;
@@ -730,7 +731,7 @@ export function placeFacilities(M, seed) {
   const SEC_BLOCK = WATER | SEA | FAC;
   const secRun = (a, b) => {
     let run = [];
-    const flush = () => { if (run.length > 6) roads.push({ pts: [run[0], run.at(-1)], w: 9, kind: "section" }); run = []; };
+    const flush = () => { if (run.length > 6) roads.push({ pts: [run[0], run.at(-1)], w: 14, kind: "section" }); run = []; };
     for (const p of resample([a, b], 25)) { const k = idx(p); if (k < 0 || inWindow(p, -0.5) || (grid[k] & SEC_BLOCK)) flush(); else run.push(p); }
     flush();
   };

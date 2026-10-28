@@ -201,7 +201,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                 the same `eq` off `markRival` and the firm's own balance. */}
             <th>Firm</th><th>Type</th><th className="num">Buildings</th><th className="num">Gross assets</th>
             <th className="num">Debt</th><th className="num">Net equity</th>
-            <th className="num">Leverage</th><th className="num">Dry powder</th><th>Read</th>
+            <th className="num">Leverage</th><th className="num">Cash</th><th>Status</th>
           </tr>
         </thead>
         <tbody>

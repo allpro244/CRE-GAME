@@ -912,7 +912,7 @@ export function EconomyPage() {
         <Row
           k="Months of supply"
           v={mos === null
-            ? "— negative absorption"
+            ? "n/a · negative absorption"
             : `${mos.toFixed(0)} months (vacancy + pipeline)`}
           bad={mos === null || mos > 60}
         />

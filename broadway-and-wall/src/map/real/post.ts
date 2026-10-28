@@ -32,6 +32,7 @@ uniform float uBand;       // the sharp band's half-height, in uv
 uniform float uBloom;      // bloom strength (0: none)
 uniform float uGrade;      // grade strength (0: none)
 uniform float uToy;        // the diorama look (0: classic, 1: toy city)
+uniform float uClarity;    // local contrast (0: none)
 uniform sampler2D tDist;   // distance to the eye, packed (aoPass); none when uAO is 0
 uniform vec2 uDistTexel;
 uniform float uAO;         // ambient-occlusion strength (0: none)
@@ -98,13 +99,22 @@ void main() {
     c = acc / w;
   }
 
-  // bloom: the bright part of a wide neighbourhood, added back softly
+  // bloom: the bright part of a wide neighbourhood, added back softly;
+  // CLARITY from the same taps: the local mean is the wall's flat tone, and
+  // what a pixel differs from it by is its detail (mullions, sills, joints),
+  // given back a little so it survives the tone curve and the screen's
+  // downsampling. Kept out of the blurred bands and off the far haze.
   if (uBloom > 0.0) {
-    vec3 b = vec3(0.0);
+    vec3 b = vec3(0.0), m = vec3(0.0);
     for (int i = 0; i < 12; i++) {
       vec3 s = tap(vUv + disc(i) * 7.0 * uTexel);
       b += max(s - vec3(0.9), 0.0);
+      m += s;
     }
+    m /= 12.0;
+    float sharp = 1.0 - smoothstep(0.35, 1.5, r);
+    vec3 dtl = clamp(c - m, -0.12, 0.12);
+    c += dtl * uClarity * sharp;
     c += b / 12.0 * uBloom;
   }
 
@@ -114,8 +124,8 @@ void main() {
     // saturation
     g = mix(vec3(l), g, 1.0 + (0.22 + 0.26 * uToy) * uGrade);
     // warm highlights, a little blue in the shadows (the diorama: more of both)
-    vec3 warm = mix(vec3(1.025, 1.0, 0.965), vec3(1.05, 1.0, 0.93), uToy);
-    vec3 cool = mix(vec3(0.96, 0.99, 1.04), vec3(0.9, 0.97, 1.12), uToy);
+    vec3 warm = mix(vec3(1.035, 1.0, 0.95), vec3(1.05, 1.0, 0.93), uToy);
+    vec3 cool = mix(vec3(0.95, 0.99, 1.06), vec3(0.9, 0.97, 1.12), uToy);
     g *= mix(cool, warm, smoothstep(0.15, 0.75, l));
     // THE DIORAMA'S SOFT SHADOW: the dark end lifted toward a sky blue, as a
     // model under a big soft lamp — no shadow goes muddy
@@ -170,7 +180,7 @@ export class PostFX {
       uniforms: {
         tFrame: { value: null }, uTexel: { value: new THREE.Vector2() },
         uTilt: { value: 0 }, uFocus: { value: 0.45 }, uBand: { value: 0.12 },
-        uBloom: { value: 0 }, uGrade: { value: 1 }, uToy: { value: 1 },
+        uBloom: { value: 0 }, uGrade: { value: 1 }, uToy: { value: 1 }, uClarity: { value: 0 },
         tDist: { value: null }, uDistTexel: { value: new THREE.Vector2() }, uAO: { value: 0 }, uAOView: { value: 0 },
       },
       vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
@@ -232,6 +242,8 @@ export class PostFX {
     u.uBand.value = (0.2 + 0.08 * (1 - close)) * (1 - 0.25 * toy);
     u.uToy.value = toy;
     u.uBloom.value = full ? 0.35 : 0;
+    // the diorama keeps its soft model look; the classic look a crisper print
+    u.uClarity.value = full ? 0.55 - 0.2 * toy : 0;
     u.uGrade.value = 1;
     u.uAO.value = ao ? 0.65 + 0.2 * toy : 0;
     u.uAOView.value = this.aoView ? 1 : 0;

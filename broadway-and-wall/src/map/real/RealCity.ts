@@ -8702,8 +8702,12 @@ export class RealCityLayer {
     // SKYLINE_LOOK_PLAN step 2. A warm sun and a shadow side filled by the
     // blue of the open sky rather than left grey: what makes a sunny city
     // read as sunny. The ground bounce is warm (pavement and brick).
-    this.sun.intensity = 3.25 * sunK;
-    this.sun.color.setRGB(1, 0.88, 0.72);
+    // THE SUN'S COLOUR FOLLOWS ITS HEIGHT. Through more air the low winter
+    // sun is a deeper gold and a little weaker; the high June sun whiter.
+    // Between ~20 and ~40 degrees (applyMonth), so always an afternoon light.
+    const hi = Math.max(0, Math.min(1, (this.sunDir.z - 0.34) / 0.3));
+    this.sun.intensity = (3.05 + 0.4 * hi) * sunK;
+    this.sun.color.setRGB(1, 0.85 + 0.06 * hi, 0.66 + 0.1 * hi);
     // the toy city: shadows filled bright and blue, as a model under a soft lamp
     this.hemi.intensity = (this.toy ? 0.98 : 0.74) + this.overcast * 0.25;
     this.hemi.color.setRGB(this.toy ? 0.62 : 0.66, this.toy ? 0.77 : 0.78, this.toy ? 1.0 : 0.98);

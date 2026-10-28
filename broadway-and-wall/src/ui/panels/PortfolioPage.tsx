@@ -1,3 +1,4 @@
+import { FirmLink } from "@/ui/FirmLink";
 import { useState, Fragment } from "react";
 import { derive } from "@/ui/derive";
 import type { ReactNode } from "react";
@@ -1114,7 +1115,7 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
         {bid ? (
           <>
             <div className="hint" style={{ marginTop: 10 }}>
-              <strong>{bid.name}</strong> · {usd(bid.price)} · {((1 - bid.price / Math.max(1, q.sumOfParts)) * 100).toFixed(1)}%
+              <strong><FirmLink name={bid.name} id={bid.firmId} /></strong> · {usd(bid.price)} · {((1 - bid.price / Math.max(1, q.sumOfParts)) * 100).toFixed(1)}%
               under sum of marks · expires {monthLabel(bid.expiresM)}
               {bid.countered && " · already countered"}
             </div>

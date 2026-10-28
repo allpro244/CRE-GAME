@@ -1,3 +1,4 @@
+import { FirmLink } from "@/ui/FirmLink";
 import { Fragment, useEffect, useState } from "react";
 import { consentFor } from "@/engine/vehicles";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
@@ -770,7 +771,7 @@ function DecisionBody({
               ? `◆ UNSOLICITED BID · ${live.bbls.length} BUILDINGS · NOT LISTED`
               : `◆ PORTFOLIO BID · ${live.bbls.length} BUILDINGS`}
           </div>
-          <div className="modal-title">{usd(pb.price)} from {pb.name}</div>
+          <div className="modal-title">{usd(pb.price)} from <FirmLink name={pb.name} id={pb.firmId} /></div>
           <div className="modal-sub">
             {inbound
               ? `Expires ${monthLabel(pb.expiresM)}`
@@ -821,7 +822,7 @@ function DecisionBody({
       <div className="modal-backdrop modal-layer-decision">
         <div className="modal" role="dialog" aria-modal="true">
           <div className="modal-kicker">◆ BIDS IN · {live.length} bidder{live.length === 1 ? "" : "s"}</div>
-          <div className="modal-title">{usd(top.b.price)} from {top.b.name}</div>
+          <div className="modal-title">{usd(top.b.price)} from <FirmLink name={top.b.name} id={top.b.firmId} /></div>
           <div className="modal-sub">
             {rec?.address ?? bidBbl} · whisper {usd(sale.ask)}
             {second ? ` · second ${usd(second.b.price)}` : ""}
@@ -1031,7 +1032,7 @@ function DecisionBody({
             player never listed. The number is theirs; say so. */}
         <div className="modal-sub">
           {h.sale!.unsolicited
-            ? `Expires ${monthLabel(offer.expiresM)}${offer.from ? ` · ${offer.from}` : ""}`
+            ? <>Expires {monthLabel(offer.expiresM)}{offer.from ? <> · <FirmLink name={offer.from} id={offer.firmId} /></> : null}</>
             : `Expires ${monthLabel(offer.expiresM)} · ask ${usd(h.sale!.ask)}`}
         </div>
         <div className="grid">

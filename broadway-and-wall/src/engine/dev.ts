@@ -26,7 +26,8 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, pickName, pickSector, useVacantSf } from "./leasing";
-import { claimJob, jobDelivered, ownerOf, gradeOf, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash } from "./rivals";
+import { claimJob, jobDelivered, ownerOf, gradeOf, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash, transferDeed } from "./rivals";
+import { logFirm } from "./firmLog";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER, reoAsk, chargeLenderLoss } from "./lenders";
@@ -5384,6 +5385,7 @@ function breakCityGround(
   // in claimJob. An unclaimed job used to deliver on schedule with no capital
   // at all — the largest remaining competitor asymmetry. Stamp the same
   // underwriting ledger; fundJobs draws it from the city construction pool.
+  let openingFirm: Rival | undefined;
   if (!claimed) {
     const job = (s.cityJobs ?? []).find((j) => j.bbl === bbl);
     if (job && !(job.cost ?? 0)) {
@@ -5401,13 +5403,31 @@ function breakCityGround(
       job.ratePct = plan.ratePct;
       job.lender = "Merchant builders";
     }
+    // THE FRAMES STANDING ON DAY ONE HAVE A BUILDER YOU CAN SEE. With the
+    // town's builders as firms, nothing is built anonymously — including what
+    // was already in the ground when the game opened. The frame belongs to
+    // one of the opening builder firms: the deed is on its book, the equity
+    // it put in before the bell is in its basis, the construction loan drawn
+    // so far is its debt, and the rest it funds month by month like any job
+    // it starts later (rivals.ts fundJobs). It opens into the firm's book
+    // (jobDelivered), not into the register.
+    const firm = openingFirm = opening && s.builderFirms && job ? pickBuilderFirm(s) : undefined;
+    if (firm && job) {
+      job.firmId = firm.id;
+      delete job.merchant; delete job.builderId; delete job.coInvest;
+      job.lender = plan.lender;
+      transferDeed(s, bbl, firm, 0);
+      firm.basis = Math.round((firm.basis ?? 0) + (plan.landBasis ?? 0) + Math.max(0, (job.spent ?? 0) - (job.debt ?? 0)));
+      firm.lastBuildM = startM;
+      logFirm(s, firm, "build", `Building at ${rec.address} when the game opened: ${floors} floors of ${use}`, bbl, plan.costTotal);
+    }
   }
   recordPropertyEvent(s, bbl, {
     kind: "build-start",
     use,
     sf,
     floors,
-    party: claimed?.name ?? "The city",
+    party: claimed?.name ?? openingFirm?.name ?? "The city",
   });
   if (!claimed && !opts?.quiet && rng(s, "dev") < 0.4) {
     s.news.unshift({
@@ -5469,6 +5489,10 @@ export function seedOpeningPipeline(s: GameState, parcels: ParcelTable, bbls: st
   slack /= BUILT_CLASSES.length;
   const util = Math.max(0.18, Math.min(1, 1 - slack * 7));
   const want = Math.round(crewCapacity(bbls, e) * util);
+  // THE TOWN'S BUILDERS ARE ON THE STREET FROM THE FIRST DAY. They were
+  // founded on the first tick, so the opening Players list had no developers
+  // on it and the frames already standing had nobody's name on them.
+  if (s.builderFirms) tickBuilderFirms(s, developerLooksPerMonth(e));
   let started = 0;
   for (let i = 0; i < want * 4 && started < want; i++) {
     if (developerLook(s, parcels, bbls, null, { backdate: rng(s, "dev"), quiet: true })) started++;

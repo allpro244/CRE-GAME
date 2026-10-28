@@ -6,7 +6,7 @@
 import { distressTally } from "./history";
 import { stampBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { BuiltClass, Exit, GameState, Listing } from "./types";
+import type { BuiltClass, Exit, GameState, Listing, Rival } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleHot, cycleDown } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, resolveRecBare, condCeiling, condGrade, cityLoanScale } from "./value";
@@ -17,6 +17,7 @@ import { tickSplits, tickRivalSplits, materializeSplits, materializeSplit } from
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
 import { tickHouseholdRegister } from "./households";
+import { tickFirms, tickEconomy } from "./economy";
 import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
@@ -38,7 +39,7 @@ import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
 import { tickCorporate } from "./corporate";
-import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
+import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -716,9 +717,13 @@ function tickMonth(
   tickEcon(s);
   // ...and the town's renters move, to the households the city houses.
   tickStreetFlats(s, parcels);
-  // ...and the household register follows them (households.ts). A shadow:
-  // nothing reads it yet, and it draws only on its own stream.
+  // ...the city's firms set their heads (economy.ts, the labour demand), the
+  // household register follows the flats and fills those jobs (households.ts),
+  // and the firms' books are kept (economy.ts). Shadows, each on its own
+  // stream: nothing in the world reads them yet (ONE_ECONOMY_PLAN.md steps 1-1b).
+  tickFirms(s);
   tickHouseholdRegister(s, parcels);
+  tickEconomy(s);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.
@@ -1364,7 +1369,6 @@ function tickMonth(
           s.facility.bbls = s.facility.bbls.filter((b) => b !== pick.bbl);
           if (s.facility.balance <= 0) delete s.facility;
         }
-        recordComp(s, rec, gross, "a distressed buyer", firmShort(s), true, pick.condition);
         {
           const ex: Exit = { bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true };
           closeDeedLedger(s, ex);
@@ -1376,6 +1380,25 @@ function tickMonth(
         s.lastTradeM[pick.bbl] = s.month;
         delete s.holdings[pick.bbl];
         if (s.workouts?.[pick.bbl]) delete s.workouts[pick.bbl];
+        // THE FIRE-SALE BUYER IS A FIRM ON THE STREET. "A distressed buyer"
+        // paid for the deed and took it into no book at all. The creditors'
+        // sale goes to the firm keenest on distress among those that can pay
+        // the price (cash or line); if none can, the creditors hold the deed
+        // and put it on the tape as a distress listing for the street to buy.
+        let fireBuyer: string | null = null;
+        if (!gpOut) {
+          const keen = (r: Rival) => (r.sheet ? r.sheet.distress : 50) * Math.max(0, r.cash);
+          const able = rivalsWhoCanClose(s, parcels, rec, gross).sort((a, b) => keen(b) - keen(a))[0];
+          const took = able ? rivalBuys(s, parcels, rec, gross, able, firmShort(s)) : null;
+          if (took) fireBuyer = took.name;
+          else {
+            recordComp(s, rec, gross, "your creditors", firmShort(s), true, pick.condition);
+            s.listings = s.listings.filter((l) => l.bbl !== pick.bbl);
+            s.listings.push({ bbl: pick.bbl, ask: gross, listedM: s.month, expiresM: s.month + 12, distress: true });
+          }
+        } else {
+          recordComp(s, rec, gross, "the deal's investors", firmShort(s), true, pick.condition);
+        }
         markSponsor(s, shortfall > 0 && pick.loan?.recourse ? "deficiency" : "seized", rec.address, shortfall);
         s.lois = s.lois.filter((l) => l.bbl !== pick.bbl);
         // A seizure can leave cash still short while the revolver still has
@@ -1386,7 +1409,7 @@ function tickMonth(
           q: s.month, kind: "warn",
           text: (gpOut
             ? `Your creditors took your interest in ${rec.address}. Investors replaced you as manager and took the building at ${money(gross)} (appraisal less transfer costs; their share first). `
-            : `The creditors took ${rec.address} — sold at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `)
+            : `The creditors took ${rec.address} — sold ${fireBuyer ? `to ${fireBuyer} ` : "on credit and listed for the street "}at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `)
             + (lien > 0 || release > 0
               ? shortfall > 0
                 ? `Did not cover the ${money(lien)} mortgage${pick.loan?.recourse ? `; recourse shortfall ${money(shortfall)}` : `; loan was non-recourse`}. `

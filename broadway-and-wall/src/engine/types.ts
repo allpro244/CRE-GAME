@@ -735,7 +735,8 @@ export interface Holding {
      * account short, in which case it is `held` for your signature. You can
      * still close early, or elect a 1031, from the card.
      */
-    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; retrade?: string; held?: boolean; contract?: boolean };
+    /** `firmId`: the street firm behind `from` — every buyer is one. `pkg`: one deed of a package close; the package books the buyer. */
+    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; firmId?: string; retrade?: string; held?: boolean; contract?: boolean; pkg?: boolean };
     /**
      * STANDING INSTRUCTIONS TO THE BROKER. A seller does not take every call
      * personally — they tell the broker "anything at or over this, take it;
@@ -1445,6 +1446,8 @@ export interface PortfolioSale {
   sumOfParts: number;
   bids: {
     name: string; price: number; expiresM: number; countered?: boolean;
+    /** The street firm making the indication — it pays and takes the deeds. */
+    firmId?: string;
     /**
      * HOW FAR PAST THEIR NUMBER THIS PARTICULAR BUYER WILL GO, as a multiple of
      * their bid. Drawn per bidder rather than shared, because a single figure
@@ -1460,6 +1463,8 @@ export interface PortfolioSale {
 
 export interface Bid {
   name: string;
+  /** The street firm bidding — every bidder is one, and it pays from its own book. */
+  firmId?: string;
   price: number;
   credibility: number;   // 0-1
   note: string;
@@ -3669,6 +3674,8 @@ export interface GameState {
   streams?: Partial<Record<string, number>>;
   /** THE HOUSEHOLD REGISTER (households.ts): every island renter household and a sample of the region's. Stage 1 is a shadow — nothing reads it. */
   households?: import("./households").HouseholdRegister;
+  /** THE CITY'S FIRM BOOKS AND LEDGER (economy.ts, sfc.ts): every named firm and a sample of the off-map ones, by industry. Step 1 is a shadow — nothing reads it. */
+  economy?: import("./economy").EconomyState;
   month: number;
   cash: number;
   econ: Econ;
@@ -4090,6 +4097,8 @@ export interface GameState {
   blockE?: Record<string, number>;
   /** a block's employment advantage in demand points — its trades against the city's */
   blockJ?: Record<string, number>;
+  /** a block's drive-time access to the households added since the first count, in demand points (towngrowth.ts tickRooftops; region only) */
+  blockR?: Record<string, number>;
   /**
    * Civic works. A station, a park, a bridge — rumoured first, argued over,
    * funded, opened; the ground reprices at each step, and buying on the rumour

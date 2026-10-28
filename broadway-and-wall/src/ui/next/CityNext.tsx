@@ -338,7 +338,7 @@ export function MarketsOverview() {
   const classes = useMemo(() => classRows(game), [game]);
   const e = game.econ;
   const tail = (e.history ?? []).slice(-SPAN_M);
-  if (tail.length < 2) return <div className="nx-place"><div className="hint">Not enough history yet — play a few months.</div></div>;
+  if (tail.length < 2) return <div className="nx-place"><div className="hint">History: few months</div></div>;
   const x: [string, string] = [monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)];
   const xAt = (i: number) => monthLabel(tail[i]?.q ?? 0);
   const pct = (v: number) => `${v.toFixed(1)}%`;
@@ -379,7 +379,7 @@ export function MarketsOverview() {
       <div className="mk-legend">{classes.map((r) => <span key={r.k}><i style={{ background: CLASS_COLOR[r.k] }} />{r.label}</span>)}</div>
       <div className="chart-grid">
         <div className="chart-cell">
-          <div className="chart-title">Availability — share of space empty or offered</div>
+          <div className="chart-title">Availability · % of space</div>
           <LineChart series={ser((r) => r.availS, 100)} yFmt={pct} xLabels={x} xAt={xAt} zeroBase />
         </div>
         <div className="chart-cell">
@@ -391,7 +391,7 @@ export function MarketsOverview() {
           <LineChart series={ser((r) => r.capS)} yFmt={(v) => `${v.toFixed(2)}%`} xLabels={x} xAt={xAt} />
         </div>
         <div className="chart-cell">
-          <div className="chart-title">New supply delivering — thousand sf</div>
+          <div className="chart-title">Deliveries · k sf</div>
           <BarChart groups={supply} />
         </div>
         <div className="chart-cell">

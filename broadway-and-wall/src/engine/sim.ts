@@ -17,6 +17,7 @@ import { tickSplits, tickRivalSplits, materializeSplits, materializeSplit } from
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
 import { tickHouseholdRegister } from "./households";
+import { tickEconomy } from "./economy";
 import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
@@ -718,6 +719,9 @@ function tickMonth(
   // ...and the household register follows them (households.ts). A shadow:
   // nothing reads it yet, and it draws only on its own stream.
   tickHouseholdRegister(s, parcels);
+  // ...and the city's firm books (economy.ts), a shadow on its own stream:
+  // nothing reads them yet (ONE_ECONOMY_PLAN.md step 1).
+  tickEconomy(s);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.

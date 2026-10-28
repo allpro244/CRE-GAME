@@ -14,6 +14,8 @@
 // reporting a stale expression's bind rate after the engine's had been fixed,
 // because it had its own copy of the arithmetic.
 export const MODULES = [
+  // economy, industries and sfc: the city's firm books, industries and ledger (ONE_ECONOMY_PLAN.md steps 0-1).
+  "economy", "industries", "sfc",
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",
   "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market",
   "zoning", "landdev", "lotcode", "lotsplit", "lotsplitGeom", "products", "platdesign", "homes", "homeprice", "growth", "roads", "towngrowth", "unpack", "lenders", "proforma", "workout", "portfolio", "portfoliosale", "auction", "notes",

@@ -3661,6 +3661,8 @@ export interface GameState {
    * from market.ts (`econ` | `leasing` | `rivals` | `sales` | `dev` | …).
    */
   streams?: Partial<Record<string, number>>;
+  /** THE HOUSEHOLD REGISTER (households.ts): every island renter household and a sample of the region's. Stage 1 is a shadow — nothing reads it. */
+  households?: import("./households").HouseholdRegister;
   month: number;
   cash: number;
   econ: Econ;
@@ -4912,8 +4914,8 @@ export function cloneState<T>(s: T): T {
     // the tick pays once a month on the whole state. It keeps
     // structuredClone's result on plain data exactly: shared references stay
     // shared, array holes stay holes, undefined-valued keys are kept, key
-    // order is kept. Anything that is not plain data (a Map, a Date, a typed
-    // array, a class instance, a function) sends the whole clone back to
+    // order is kept. Anything that is not plain data (a Map, a Date, a class
+    // instance, a function) sends the whole clone back to
     // structuredClone.
     try {
       return plainClone(s);
@@ -4935,6 +4937,13 @@ function plainClone<T>(root: T): T {
   const copy = (x: object): unknown => {
     const hit = seen.get(x);
     if (hit !== undefined) return hit;
+    // A typed array (the household register's columns, households.ts) is
+    // plain data too: copied whole, as structuredClone would.
+    if (ArrayBuffer.isView(x) && !(x instanceof DataView)) {
+      const out = (x as unknown as Uint8Array).slice();
+      seen.set(x, out);
+      return out;
+    }
     if (Array.isArray(x)) {
       if (Object.getPrototypeOf(x) !== Array.prototype) throw NOT_PLAIN;
       const n = x.length;

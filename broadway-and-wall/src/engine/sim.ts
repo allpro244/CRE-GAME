@@ -16,6 +16,7 @@ import { tickLandDev, materializePlats, materializePlat } from "./landdev";
 import { tickSplits, tickRivalSplits, materializeSplits, materializeSplit } from "./lotsplit";
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
+import { tickHouseholdRegister } from "./households";
 import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
@@ -714,6 +715,9 @@ function tickMonth(
   tickEcon(s);
   // ...and the town's renters move, to the households the city houses.
   tickStreetFlats(s, parcels);
+  // ...and the household register follows them (households.ts). A shadow:
+  // nothing reads it yet, and it draws only on its own stream.
+  tickHouseholdRegister(s, parcels);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.

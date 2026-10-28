@@ -922,7 +922,7 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       const stale = staleDiscount(roll.vac === undefined ? 0 : m - roll.vac);
       const sc = overallScore(rec, e, "multifamily");
       const w = Math.exp((sc - 55) / 25) * Math.pow(1 / stale, 2) * care;
-      const unit = Math.max(300, avgUnit(rec, cap));
+      const unit = Math.max(300, flatUnitSf(rec, cap));
       // A month's lettings: ~8% of the units of a big block, two flats of a small one.
       fs.push({ roll, cap, w, unit, intake: 0, lim: Math.max(cap * MF_LEASEUP, unit * 2), mkt, sc });
       after += roll.occ;
@@ -1017,7 +1017,8 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
   });
 }
 
-function avgUnit(rec: ParcelRecord, cap: number): number {
+/** A flat's size in this block: its residential feet over its units (households.ts reads the same). */
+export function flatUnitSf(rec: ParcelRecord, cap: number): number {
   const units = Math.max(1, rec.unitsRes || Math.round(cap / 850));
   return cap / units;
 }

@@ -37,28 +37,17 @@ export function TheBanks() {
     <>
       <YourCash />
       <LenderCards />
-      <div className="page-section">The banks</div>
+      <div className="page-section">Lenders</div>
       <div className="hint">
-        <b><a className="lnk" onClick={() => useStore.getState().setPage("banks")}>Open every lender's full books →</a></b>{" "}
-        Capital → Banks has each desk's balance sheet, income statement, credit quality, terms today, limits, your
-        file with them and every loan on their book. Click a lender's name below to go straight to it.
+        <b><a className="lnk" onClick={() => useStore.getState().setPage("banks")}>Full lender financials →</a></b>
       </div>
       <div className="hint">
-        <b>Underwriting standards today: {standardsWord(standards)}</b> ({standards >= 0 ? "+" : ""}{standards.toFixed(2)} on a −1 to +1 scale).
-        {" "}The credit window and the desks' own appetite move every sheet in town, both ways: at the top of the
-        cycle the banks write five or six points over their mid-cycle rate at a notch less coverage, and at the
-        bottom ten to twelve under at a notch more — the same survey the Fed takes of loan officers, as a number
-        you can read a quarter early. On top of that, apartments get five points, warehouses two, shops two under;
-        a worn building has three held back for the repairs on the engineer's report; and a desk you have paid
-        for years stretches up to four for you. The "Sheet today" column is that number for an office building
-        with a clean file, before this desk's own appetite is taken off it.
+        <b>Underwriting standards: {standardsWord(standards)}</b> ({standards >= 0 ? "+" : ""}{standards.toFixed(2)}, −1 to +1)
+        {" "}· LTV adj: peak +5-6 pts, trough −10-12 · multifamily +5, industrial +2, retail −2, worn −3, relationship up to +4
+        {" "}· "Sheet today": office, clean file, before desk appetite
       </div>
       <div className="hint">
-        Every desk on this street has its own balance sheet, and when it goes wrong it goes wrong at a name, not
-        at the market. Capital ratio is what they have behind the book; appetite is what is left of their advance
-        rate. Below about 0.12 they stop quoting entirely — and unlike the cycle, you can watch this coming.
-        {" "}<b>Click a bank to open its statement</b> — every loan on that desk, yours and the street's,
-        property by property, with the funding margin and the capital history behind it.
+        Appetite below ~0.12: stops quoting · click a row for its loan book
       </div>
       {/* EVERY DESK ON ONE AXIS. The sparkline inside a statement answers
           "how is this desk"; opened one at a time it cannot answer "WHICH
@@ -94,9 +83,7 @@ export function TheBanks() {
                   {l.name}
                 </span>
               ))}
-              — quarterly, as a multiple of each desk's own capital target. A line walking down toward the
-              seizure band is the most readable warning in the game: refinance away from that desk while it
-              still quotes.
+              · capital ÷ target, quarterly · seized at 0.22×
             </div>
           </>
         );
@@ -121,7 +108,7 @@ export function TheBanks() {
                   <td>{open === l.id ? "▾ " : "▸ "}<BankLink name={l.name} /></td>
                   <td className="dim">
                     {l.kind === "bank" ? (l.dep?.rate !== undefined ? `deposits ${usd(l.dep.total)} at ${l.dep.rate.toFixed(2)}%` : "deposits") : l.kind === "life" ? "insurance float"
-                      : l.kind === "conduit" ? "selling the paper on" : "committed capital"}
+                      : l.kind === "conduit" ? "securitization" : "committed capital"}
                   </td>
                   <td className="num">{usd(l.book)}</td>
                   <td className={"num" + (l.capital <= 0 ? " neg" : "")}>{usd(l.capital)}</td>
@@ -135,7 +122,7 @@ export function TheBanks() {
                       year to date — so it resets each January and a desk read
                       in February is showing you one month. */}
                   <td className={"num" + (l.netIncomeYr < 0 ? " neg" : "")}
-                      title="Interest earned less funding cost less charge-offs, this calendar year to date. Resets each January.">
+                      title="Interest − funding cost − charge-offs, YTD">
                     {l.failedM !== undefined ? "—" : usd(l.netIncomeYr)}
                   </td>
                   <td className={"num" + (l.delinquent > 0.045 ? " neg" : "")}>{(l.delinquent * 100).toFixed(2)}%</td>
@@ -148,7 +135,7 @@ export function TheBanks() {
                     const shut = l.failedM !== undefined || l.appetite < 0.12;
                     return (
                       <td className={"num" + (shut ? " neg" : "")}
-                        title={sh ? `${sh.sheet.why.join(", ")}; then ${l.name}'s own appetite and the credit window — they write about ${(sh.today * 100).toFixed(0)}% of value on an office building today. Coverage and debt yield can size it smaller.` : undefined}>
+                        title={sh ? `${sh.sheet.why.join(", ")} · after appetite and credit window: ~${(sh.today * 100).toFixed(0)}% LTV (office) · DSCR or debt yield may bind` : undefined}>
                         {shut ? "not quoting" : sh ? `${(sh.sheet.ltv * 100).toFixed(0)}% → ${(sh.today * 100).toFixed(0)}%` : "—"}
                       </td>
                     );
@@ -162,8 +149,8 @@ export function TheBanks() {
                       <div style={{ marginBottom: 6 }}>{lenderBlurb(l.name)}</div>
                       <div>
                         Net income this year {usd(l.netIncomeYr)} · losses since inception {usd(l.chargeOffsTotal)}
-                        {l.yours > 0 && <> · you are {(conc * 100).toFixed(2)}% of their book</>}
-                        {conc > 0.06 && <span className="neg"> — big enough that your problems are theirs</span>}
+                        {l.yours > 0 && <> · your share of book {(conc * 100).toFixed(2)}%</>}
+                        {conc > 0.06 && <span className="neg"> · concentrated</span>}
                       </div>
                       {/* WHAT THE BOOK IS MADE OF. The named loans are counted
                           (engine/loanbook.ts) — yours, the street's, the cranes —
@@ -172,22 +159,22 @@ export function TheBanks() {
                           owners, whose losses are modelled as a population. */}
                       {l.namedBook !== undefined && (
                         <div style={{ marginTop: 6 }}>
-                          Book: {usd(l.namedBook)} to borrowers you can name ({usd(l.yours)} of it yours)
-                          {" "}and {usd(Math.max(0, l.book - l.namedBook))} to the town's other owners.
+                          Book: {usd(l.namedBook)} named ({usd(l.yours)} yours)
+                          {" "}· {usd(Math.max(0, l.book - l.namedBook))} other
                           {(l.namedDefault ?? 0) > 0
-                            ? <span className="neg"> {usd(l.namedDefault ?? 0)} of the named paper has stopped paying.</span>
-                            : " Every named loan is paying."}
-                          {lineLender(game)?.id === l.id && (game.loc?.balance ?? 0) > 0 && <> They write your line: {usd(game.loc.balance)} drawn.</>}
+                            ? <span className="neg"> · {usd(l.namedDefault ?? 0)} named in default</span>
+                            : " · named loans current"}
+                          {lineLender(game)?.id === l.id && (game.loc?.balance ?? 0) > 0 && <> · your line: {usd(game.loc.balance)} drawn</>}
                         </div>
                       )}
                       <div style={{ marginTop: 6 }}>
                         {l.failedM !== undefined
-                          ? "In receivership. Loans they wrote still have to be repaid; nothing new is being written, ever."
+                          ? "Receivership · existing loans still due · no new lending"
                           : l.appetite < 0.12
-                            ? "Not quoting. Nothing you bring them gets underwritten until the capital comes back."
+                            ? "Not quoting"
                             : l.appetite < 0.6
-                              ? `Rationing — the advance rate on anything they write is about ${(100 * appetiteAdvance(l.appetite)).toFixed(0)}% of their stated sheet, and the coupon carries about ${(Math.max(0, 1 - l.appetite) * 80).toFixed(0)}bps of extra spread.`
-                              : "Writing at their stated terms."}
+                              ? `Rationing · advance ~${(100 * appetiteAdvance(l.appetite)).toFixed(0)}% of sheet · +${(Math.max(0, 1 - l.appetite) * 80).toFixed(0)}bps spread`
+                              : "Lending at stated terms"}
                       </div>
                       {(() => {
                         const book = bankStatement(game, parcels, l.name);
@@ -209,40 +196,39 @@ export function TheBanks() {
                           <div style={{ marginTop: 10, paddingLeft: 12, borderLeft: "2px solid rgba(120,100,70,0.28)" }}>
                             {l.bookYield !== undefined && l.fundCost !== undefined && l.failedM === undefined && (
                               <div style={{ marginBottom: 6 }}>
-                                The book earns <b className="mono">{l.bookYield.toFixed(2)}%</b> against funding at{" "}
-                                <b className="mono">{Math.max(0, l.fundCost).toFixed(2)}%</b> — a{" "}
-                                <b className={"mono" + (nim < 1.5 ? " neg" : "")}>{nim.toFixed(2)}pt</b> margin.{" "}
+                                Book yield <b className="mono">{l.bookYield.toFixed(2)}%</b> · funding{" "}
+                                <b className="mono">{Math.max(0, l.fundCost).toFixed(2)}%</b> · NIM{" "}
+                                <b className={"mono" + (nim < 1.5 ? " neg" : "")}>{nim.toFixed(2)}pt</b>{" "}
                                 {nim < 1.5
-                                  ? <span className="neg">The funding has repriced and the book has not. This is how a lender dies without writing a single bad loan — the advance rates go first.</span>
+                                  ? <span className="neg">· negative carry risk</span>
                                   : nim < 2.5
-                                    ? "Compressed — loans written in a cheaper era against money priced in this one. They ration before it heals."
-                                    : "A healthy spread; the desk earns its way out of ordinary losses."}
-                                {(l.divYr ?? 0) > 0 && <span className="dim"> Paid {usd(l.divYr!)} out to the owners this year — capital above the buffer does not sit.</span>}
+                                    ? "· compressed"
+                                    : "· healthy"}
+                                {(l.divYr ?? 0) > 0 && <span className="dim"> · dividends {usd(l.divYr!)} YTD</span>}
                               </div>
                             )}
                             {(l.capHist?.length ?? 0) > 1 && (
                               <div style={{ marginBottom: 6 }}>
                                 <CapSpark hist={l.capHist} target={target} />
                                 <span className="dim" style={{ marginLeft: 8 }}>
-                                  capital ratio, quarterly · the dashed line is their {(target * 100).toFixed(1)}% target — a desk
-                                  walking toward it is a desk to refinance away from
+                                  capital ratio, quarterly · dashed: {(target * 100).toFixed(1)}% target
                                 </span>
                               </div>
                             )}
                             {cityTotal > 0 && (
                               <div style={{ marginBottom: 6 }}>
-                                <span className="dim">In this town: </span>
+                                <span className="dim">Local book: </span>
                                 {shares.map(([k, v]) => `${k} ${(100 * v / cityTotal).toFixed(0)}%`).join(" · ")}
-                                {districts.length > 1 && <span className="dim"> — by district {districts.map(([k, v]) => `${districtLabelOf(parcels, k)} ${(100 * v / cityTotal).toFixed(0)}%`).join(", ")}</span>}
+                                {districts.length > 1 && <span className="dim"> · by district {districts.map(([k, v]) => `${districtLabelOf(parcels, k)} ${(100 * v / cityTotal).toFixed(0)}%`).join(", ")}</span>}
                                 {full.length > 0 && (
-                                  <span className="neg"> — full on {full.map(([k]) => k).join(" and ")} against their {(classCap * 100).toFixed(0)}% limit; new paper in that class is cut, whoever brings it</span>
+                                  <span className="neg"> · at {(classCap * 100).toFixed(0)}% limit on {full.map(([k]) => k).join(" and ")} · new loans cut</span>
                                 )}
                               </div>
                             )}
                             {book.length > 0 && (
                               <>
                                 <div style={{ margin: "8px 0 4px", letterSpacing: "0.04em", textTransform: "uppercase", fontSize: "0.82em" }}>
-                                  The loan book — {book.length} loan{book.length === 1 ? "" : "s"} against deeds in this town, {usd(cityTotal)}
+                                  Local loans · {book.length} · {usd(cityTotal)}
                                 </div>
                                 <table className="tbl">
                                   <thead>
@@ -283,15 +269,12 @@ export function TheBanks() {
                             )}
                             {l.book > cityTotal && (
                               <div className="dim" style={{ marginTop: 4 }}>
-                                Plus {usd(l.book - cityTotal)} lent outside this town. The examiners see that book; you cannot —
-                                the delinquency figure above is the only window into it.
+                                Plus {usd(l.book - cityTotal)} outside the city (reflected in delinquency only)
                               </div>
                             )}
                             {stranded.length > 0 && (
                               <div className="alarm" style={{ marginTop: 6 }}>
-                                {stranded.length === 1 ? "One balloon" : `${stranded.length} balloons`} of yours inside five years
-                                at a desk that is {h.word}. A maturity here is a maturity that may not get refinanced —
-                                move it while somebody else is still quoting.
+                                {stranded.length === 1 ? "1 maturity" : `${stranded.length} maturities`} of yours within 5 yrs · lender {h.word} · refi risk
                               </div>
                             )}
                           </div>
@@ -307,8 +290,7 @@ export function TheBanks() {
       </table>
       {yoursTotal > 0 && (
         <div className="hint">
-          You owe {usd(yoursTotal)} across these desks. Where it sits matters as much as what it costs: a
-          maturity at an impaired lender is a maturity that does not get refinanced.
+          Your debt: {usd(yoursTotal)}
         </div>
       )}
     </>
@@ -329,16 +311,13 @@ function YourCash() {
   const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
   return (
     <div className="deal" style={{ marginBottom: 12 }}>
-      <div className="deal-head">Your cash</div>
+      <div className="deal-head">Cash</div>
       <div className="grid">
-        <Row2 k="Cash" v={`${usd(Math.max(0, game.cash))} · safe from any bank failure`} />
-        <Row2 k="Operating account" v={`${usd(cs.atBank)} · inside the ${usd(insuredLimit(game))} insurance limit · earns ${pct(depositApy(game.econ, cs.bank))} at ${cs.bank?.name ?? "the bank"}`} />
-        <Row2 k="In Treasury bills" v={`${usd(cs.inBills)} · earns ${pct(sweepApy(game.econ))}`} />
+        <Row2 k="Cash" v={`${usd(Math.max(0, game.cash))} · not exposed to bank failure`} />
+        <Row2 k="Operating account" v={`${usd(cs.atBank)} · insured to ${usd(insuredLimit(game))} · ${pct(depositApy(game.econ, cs.bank))} at ${cs.bank?.name ?? "bank"}`} />
+        <Row2 k="Treasury bills" v={`${usd(cs.inBills)} · ${pct(sweepApy(game.econ))}`} />
       </div>
-      <div className="hint">
-        Your money is never a deposit at risk: operating cash stays insured and the rest is held in Treasury bills.
-        A lender that fails still stops lending on the loans and construction commitments it wrote — watch the capital chart below for that.
-      </div>
+      <div className="hint">A failed lender stops funding its loans and construction commitments.</div>
     </div>
   );
 }
@@ -373,17 +352,12 @@ export function LenderCards() {
     const rank = quoting.indexOf(r) / (quoting.length - 1);
     return rank <= 0.34 ? "cheap" : rank >= 0.67 ? "dear" : "market";
   };
-  const standingWord = (rel: number) => rel >= 80 ? "friend of the bank" : rel >= 55 ? "good customer" : rel >= 30 ? "known" : "stranger";
+  const standingWord = (rel: number) => rel >= 80 ? "strong" : rel >= 55 ? "good" : rel >= 30 ? "known" : "new";
   const kindWord: Record<string, string> = { bank: "Bank", life: "Insurer", conduit: "Bond conduit", fund: "Debt fund" };
   const spColor: Record<string, string> = { solid: "#4a7d5a", stretched: "#a8862e", "at risk": "#a8402e", closed: "#6b6b6b" };
   return (
     <>
-      <div className="page-section">Who to go with</div>
-      <div className="hint">
-        Price, reach, staying power and your standing — the four things a borrower chooses on. All of them move:
-        the cheapest desk in a boom is often the one with the least behind it, and a desk that fails mid-build stops
-        funding your job.
-      </div>
+      <div className="page-section">Lender comparison</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 8, margin: "6px 0 12px" }}>
         {rows.map(({ l, p, sp, open, rate, reach }) => (
           <div key={l.id} style={{ border: "1px solid var(--line, #333)", borderRadius: 6, padding: "8px 10px", opacity: open ? 1 : 0.6 }}
@@ -393,12 +367,12 @@ export function LenderCards() {
             <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 10, rowGap: 2, fontSize: 12 }}>
               <span className="hint">Price</span>
               <span>{open && rate !== null ? `${priceWord(rate)} · ${rate.toFixed(2)}%` : "not quoting"}</span>
-              <span className="hint">Reach</span>
-              <span>{open && reach !== null ? `${Math.round(reach * 100)}% of value` : "—"}</span>
-              <span className="hint">Staying power</span>
+              <span className="hint">Max LTV</span>
+              <span>{open && reach !== null ? `${Math.round(reach * 100)}%` : "—"}</span>
+              <span className="hint">Stability</span>
               <span title={sp.why} style={{ color: spColor[sp.word], fontWeight: 600 }}>{sp.word}</span>
-              <span className="hint">Your standing</span>
-              <span>{standingWord(lenderRelOf(game, l.name))}{l.yours > 0 ? ` · you owe ${usd(l.yours)}` : ""}</span>
+              <span className="hint">Relationship</span>
+              <span>{standingWord(lenderRelOf(game, l.name))}{l.yours > 0 ? ` · owed ${usd(l.yours)}` : ""}</span>
             </div>
           </div>
         ))}

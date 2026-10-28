@@ -7,29 +7,38 @@
 //
 //   revenue      by buyer: households, other firms, government, building
 //                projects, the rest of the country
-//   - wages      its heads at its industry's pay (BEA compensation per worker)
+//   - wages      its industry's payroll as the household register's earners
+//                are paid (households.ts `registerPayroll`), shared by heads
 //   - inputs     bought from the other industries by the IO table's row, the
 //                local share from local firms, the rest from outside
 //   - rent       a named firm's lease; an off-map firm's market rent
 //   - production tax, interest, income tax
 //   = cash, debt, equity
 //
-// Each month (sim.ts, after the household register) the industries' output
-// is SOLVED from the demand the engine already has — the household
-// register's spending, the government's own provision, the building pipeline
-// at the cost of building it, and exports moving with the trades' sales and
-// the nation's output — through the input-output table, every purchase either
-// made in town (the local purchase coefficient) or leaking out. Each
-// industry's output is the revenue of its firms, shared by size and fortune.
+// Each month runs in two halves round the household register (sim.ts):
+//   tickFirms     firms open and close and every industry's heads are set —
+//                 the named firms' the engine's own, the rest from what their
+//                 industry sold last month (`demandHeads`); that is the labour
+//                 demand the register's earners are matched to (step 1b);
+//   tickEconomy   the industries' output is SOLVED from final demand — the
+//                 register's spending, the government's own provision, what
+//                 the town buys of the trades (new building, houses, repairs
+//                 to the standing stock, public works) and exports moving with
+//                 the trades' sales or the nation's output and the factory
+//                 index — through the input-output table, every purchase
+//                 either made in town (the local purchase coefficient) or
+//                 leaking out. Each industry's output is the revenue of its
+//                 firms, shared by size and fortune.
 // Every dollar moves through the ledger (sfc.ts), so the whole city
 // reconciles: the sum of every account is zero.
 //
-// STEP 1 IS A SHADOW. Nothing in the world reads these books. The tick reads
-// the state and writes only `s.economy` and its own random stream
+// STEPS 1-1b ARE A SHADOW. Nothing in the world reads these books. The ticks
+// read the state and write only `s.economy` and its own random stream
 // (`s.streams.economy`), so the world it shadows is byte for byte the world
 // without it (BASELINE.json does not move). `tools/economy.mjs` holds its
-// answers against the engine's: employment by industry, the multiplier its
-// leakages imply, the share of output exported, margins against the BEA's.
+// answers against the engine's: employment by industry, the payroll against
+// the register's wages, the multiplier its leakages imply, the share of
+// output exported, margins against the BEA's, the oil price.
 //
 // STORAGE: the firms are columns (typed arrays) beside the ledger's slot
 // columns of cash and debt — firm n is ledger slot n — so a month allocates
@@ -43,7 +52,9 @@ import { BUILT_CLASSES } from "./types";
 import {
   INDUSTRIES, INDUSTRY_IDS, N_IND, INDUSTRY_INDEX, IO_A, IO_ROW_SUM, NAT_EMP_SHARE, TRADE_TO_INDUSTRY, FLOOR_DEFAULT,
   HQ_SHARE, FINANCE_LIKE, SPEND_SHARE, SPEND_BRIDGE, PAY_SPLIT, PROD_TAX_LOCAL, CORP_TAX, LOCAL_OWNER_SHARE,
-  COMP_PER_WORKER_2023, BUYER_TYPES, type IndustryId, type Floor, type BuyerType, type SpendCategory,
+  COMP_PER_WORKER_2023, BUYER_TYPES, REPAIR_PER_COMMERCIAL_RENT, REPAIR_PER_FLAT_RENT, REPAIR_OWNER_PER_VALUE_YR,
+  OIL_PRICE_2000, OIL_PER_SHOCK, OIL_RISE_M, OIL_HALF_LIFE_M,
+  type IndustryId, type Floor, type BuyerType, type SpendCategory,
 } from "./industries";
 import {
   type Ledger, newLedger, transfer, lend, repay, chargeOff, openDebt, sellBond, ledgerSum, ledgerGross, newMonth, ACCOUNTS,
@@ -51,7 +62,7 @@ import {
 } from "./sfc";
 import { SF_PER_JOB, FIRM_PROFILE, LENDER_COVER, shortIndexOf, CONSTRUCTION_JOB_SHARE, REF_PIPE_SHARE, BUILD_MONTHS, SECTORS } from "./market";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
-import { householdMoney } from "./households";
+import { householdMoney, registerPayroll } from "./households";
 
 // ---------------------------------------------------------------- the facts
 /** Off-map firms kept per industry: the sample each industry's off-map employment is shared over. [K] (precision, not a fact) */
@@ -103,6 +114,12 @@ export interface EconomyMonth {
   /** The ledger's identity residual and the market clearing account after the month. */
   ledgerSum: number; ledgerGross: number; market: number;
   iters: number;
+  /** The engine's way of sizing each industry (named heads plus the off-map residual of its jobs), the town's jobs, and the register's earners by industry. */
+  engHeads?: number[]; jobsEngine?: number; regEarners?: number[];
+  /** What construction was bought for, a month. */
+  con?: ConstructionDemand;
+  /** The nation's oil price, $ a barrel, and its real level against the opening. */
+  oil?: number; oilReal?: number;
 }
 
 export interface EconomyState {
@@ -123,6 +140,14 @@ export interface EconomyState {
   /** Engine trades behind each industry's exports: heads at the opening. */
   sigW: Partial<Record<Sector, number>>[];
   last: EconomyMonth | null;
+  /** The nation's technology level at the opening (market.ts nat.techLn): off-map exports are priced at unit labour cost against it. */
+  tech0?: number;
+  /** This month's labour demand (tickFirms, read by the household register): heads by industry, the named firms' part, and the engine's way of sizing them. */
+  cur?: { m: number; heads: number[]; named: number[]; eng: number[] };
+  /** The public payroll and the register's people at the opening: government heads follow the people (demandHeads). */
+  gov0?: number; persons0?: number;
+  /** The oil price (tickOil): its real log level, the nation's prices at the opening, and $ a barrel. */
+  lnOil?: number; natCpi0?: number; oil?: number;
 }
 
 function allocCols(cap: number): FirmColumns {
@@ -380,9 +405,11 @@ function closeBooks(L: Ledger, n: number) {
 }
 
 /**
- * THE OFF-MAP FIRMS. The town's employment (e.jobs) less the named firms'
- * heads: first the engine's own construction jobs, then the rest toward the
- * nation's industry mix (CES), to the industries the street leaves short.
+ * THE OFF-MAP FIRMS, THE ENGINE'S WAY. The town's employment (e.jobs) less the
+ * named firms' heads: first the engine's own construction jobs, then the rest
+ * toward the nation's industry mix (CES), to the industries the street leaves
+ * short. The opening is sized this way (construction apart); afterwards it is
+ * the reference the demand-led heads are measured against (`engHeads`).
  */
 function offMapHeads(s: GameState, named: Float64Array): Float64Array {
   const jobs = s.econ.jobs ?? 0;
@@ -437,32 +464,157 @@ function tradeProductivity(s: GameState, E: Pick<EconomyState, "sigW">, i: numbe
   return Number.isFinite(town) ? town : 1;
 }
 
-// ---------------------------------------------------------------- the month
+// ---------------------------------------------------------------- construction's buyers
+/** The homebuilders' draws this month: every house going up on the plats (homes.ts), its budget spread over its build. */
+function homeBuilding(s: GameState): number {
+  const units = s.homes?.units;
+  if (!units) return 0;
+  let out = 0;
+  for (const u of Object.values(units)) {
+    if (!(u.startM <= s.month && s.month < u.doneM)) continue;
+    out += u.budget / Math.max(1, u.doneM - u.startM);
+  }
+  return out;
+}
 /**
- * ONE MONTH OF THE CITY'S BOOKS. Called from sim.ts after the household
- * register. Reads the world; writes `s.economy` and `s.streams.economy` only.
+ * PUBLIC WORKS: the city's own building — streets, schools, the water main.
+ * Zero until the city's budget exists (citygov.ts, ONE_ECONOMY_PLAN.md step
+ * 6); this is where its capital programme will be read. The off-map
+ * government industry already buys its repairs through the IO table.
  */
-export function tickEconomy(s: GameState): void {
+function publicWorks(s: GameState): number {
+  void s;
+  return 0;
+}
+export interface ConstructionDemand {
+  /** New commercial building (the pipeline), houses on the plats, repairs to let commercial floors, to let flats, to owner-occupied homes, public works — a month. */
+  pipeline: number; homes: number; repairCommercial: number; repairFlats: number; repairOwners: number; publicWorks: number;
+}
+const conTotal = (c: ConstructionDemand) => c.pipeline + c.homes + c.repairCommercial + c.repairFlats + c.repairOwners + c.publicWorks;
+/**
+ * WHAT THE TOWN BUYS FROM THE TRADES THIS MONTH, beyond what firms buy
+ * through the IO table: the commercial pipeline at the cost of building it,
+ * the houses going up on the plats, the repair of the standing stock — let
+ * commercial floors and let flats by their landlords, owner-occupied homes by
+ * their owners (industries.ts REPAIR_*, BEA 2017) — and public works.
+ */
+function constructionBought(s: GameState, hm: { rent: number; ownerValue: number }, firmRent: number): ConstructionDemand {
+  return {
+    pipeline: buildingSpend(s), homes: homeBuilding(s),
+    repairCommercial: REPAIR_PER_COMMERCIAL_RENT * firmRent,
+    repairFlats: REPAIR_PER_FLAT_RENT * hm.rent,
+    repairOwners: REPAIR_OWNER_PER_VALUE_YR / 12 * hm.ownerValue,
+    publicWorks: publicWorks(s),
+  };
+}
+
+// ---------------------------------------------------------------- the price of oil
+/**
+ * THE NATION'S OIL PRICE, a month on (industries.ts OIL_*): its real level
+ * runs toward OIL_PER_SHOCK x the supply shock in force (market.ts — a shock
+ * under fiscal pressure is demand and moves no oil, as the engine's own
+ * output block reads it), fast on the way up and back with a three-year
+ * half-life; the dollar price is that times the nation's prices since the
+ * opening. Deterministic; reads the nation, writes only the books.
+ */
+function tickOil(s: GameState, E: EconomyState): void {
+  const n = s.econ.nat;
+  const sup = n && (n.shockM ?? 0) > 0 && !((n.pressureM ?? 0) > 0) ? (n.shockSev ?? 0) : 0;
+  const target = OIL_PER_SHOCK * sup;
+  const cur = E.lnOil ?? 0;
+  const k = target > cur ? 1 / OIL_RISE_M : 1 - Math.pow(0.5, 1 / OIL_HALF_LIFE_M);
+  E.lnOil = cur + (target - cur) * k;
+  const natCpi = s.econ.natCpi ?? s.econ.cpi ?? 1;
+  E.natCpi0 ??= natCpi;
+  E.oil = OIL_PRICE_2000 * (natCpi / Math.max(1e-6, E.natCpi0)) * Math.exp(E.lnOil);
+}
+
+// ---------------------------------------------------------------- the month, first half: who employs whom
+/**
+ * EACH INDUSTRY'S HEADS, the labour demand the household register fills.
+ * Named firms are the engine's own (their headcount on the street). The rest:
+ *   government    the opening's public payroll per resident, so it follows
+ *                 the register's people (the city's budget will replace it,
+ *                 citygov.ts);
+ *   the rest      its own demand: the output the books solved last month
+ *                 (households' spending, other firms' orders through the IO
+ *                 table, building, exports with the nation's output and the
+ *                 factory index) over output per worker, less the named
+ *                 firms' heads. Orders become hires a month on. That
+ *                 includes CONSTRUCTION: the engine's trades (market.ts
+ *                 `constructionJobs`, the BUILDING IS A JOB block) are
+ *                 CONSTRUCTION_JOB_SHARE of the town's jobs scaled by the
+ *                 commercial pipeline alone, so at an empty pipeline they are
+ *                 zero — no repairs, no houses — and they swing with it many
+ *                 times over (tools/economy.mjs measures it). The books keep
+ *                 that figure as the reference, not as the trades' payroll.
+ * At the opening every off-map industry but construction is sized the
+ * engine's way (offMapHeads), which is what the opening's local purchase and
+ * export coefficients are calibrated on; construction opens at what the town
+ * buys of it (`openingConstruction`).
+ */
+function demandHeads(E: EconomyState, named: Float64Array, eng: Float64Array, persons: number, conOpen: number): Float64Array {
+  const out = new Float64Array(N_IND);
+  if (!E.last) { out.set(eng); out[IND_CON] = conOpen; return out; }
+  for (let i = 0; i < N_IND; i++) {
+    if (i === IND_GOV) out[i] = (E.gov0 ?? eng[i]) * (persons / Math.max(1, E.persons0 ?? persons));
+    else out[i] = Math.max(0, E.last.impliedHeads[i] - named[i]);
+  }
+  return out;
+}
+
+/**
+ * CONSTRUCTION AT THE OPENING: what the town buys of it — its own building
+ * and repairs (constructionBought) and what every other industry, sized the
+ * engine's way, buys through the IO table — over output per worker. A
+ * building is built where it stands, so the town's purchases of construction
+ * are made in town (BEA: no construction is imported or exported, Use table
+ * F040/F050 = 0) and the trades' heads are what those purchases pay for.
+ */
+function openingConstruction(s: GameState, E: EconomyState, hm: { rent: number; ownerValue: number }, named: Float64Array, eng: Float64Array, opw: Float64Array): number {
+  const F = E.f;
+  let firmRent = 0;
+  for (let n = 0; n < E.L.slot.n; n++) if (F.id[n] >= 0) firmRent += F.rent[n];
+  let D = 0;
+  for (let i = 0; i < N_IND; i++) {
+    if (i === IND_CON) continue;
+    firmRent += eng[i] * INDUSTRIES[INDUSTRY_IDS[i]].sfPerWorker * marketRent(s, i) / 12;
+    D += A_FLAT[i * N_IND + IND_CON] * (named[i] + eng[i]) * opw[i];
+  }
+  D += conTotal(constructionBought(s, hm, firmRent));
+  return D / (1 - A_FLAT[IND_CON * N_IND + IND_CON]) / opw[IND_CON];
+}
+
+/**
+ * THE MONTH'S FIRST HALF, before the household register (sim.ts): firms that
+ * closed or left the engine's sight close their books, new ones open theirs,
+ * and every industry's heads are set (`demandHeads`) — the labour demand the
+ * register's earners are matched to. Writes `s.economy` and
+ * `s.streams.economy` only. Opens the books the month after the register is
+ * seeded.
+ */
+export function tickFirms(s: GameState): void {
   const e = s.econ;
-  if (!e) return;
+  if (!e || !s.households) return;
   const hm = householdMoney(s);
-  if (!hm || !(hm.spend > 0)) return;          // the register's first month has no flows yet
+  if (!hm) return;
   const R = stream(s);
   const seen = readFirms(s);
   const opening = !s.economy;
   const E: EconomyState = s.economy ??= {
     v: 1, openM: s.month, f: allocCols(0), nextOff: -1, L: newLedger("firm", 0),
-    w0: e.wageIdx ?? 1, lnY0: e.nat?.lnY ?? 0, manuf0: e.manufIdx ?? 1,
+    w0: e.wageIdx ?? 1, lnY0: e.nat?.lnY ?? 0, manuf0: e.manufIdx ?? 1, tech0: e.nat?.techLn ?? 0,
     rpc: [], X0: [], sig0: [], prod0: [], sigW: [], last: null,
   };
   reviveEconomy(E);
+  E.tech0 ??= e.nat?.techLn ?? 0;
   const L = E.L, c = E.f;
   newMonth(L);
+  tickOil(s, E);
   const short = shortIndexOf(e) / 100;
-  const w = e.wageIdx ?? 1;
-  const { opw, pay } = perHead(w);
+  const { opw } = perHead(e.wageIdx ?? 1);
 
-  // ---- 1. the named firms: gone ones close, new ones get an industry and books
+  // ---- the named firms: gone ones close, new ones get an industry and books
   {
     const n0 = L.slot.n, keep = new Array<boolean>(n0);
     const have = new Set<number>();
@@ -471,7 +623,7 @@ export function tickEconomy(s: GameState): void {
       if (id < 0) { keep[n] = true; continue; }
       const sn = seen.get(id);
       if (!sn) { closeBooks(L, n); keep[n] = false; continue; }
-      c.hc[n] = sn.hc; c.z[n] = sn.z; have.add(id); keep[n] = true;
+      c.hc[n] = sn.hc; c.z[n] = sn.z; c.rent[n] = sn.rentMo; have.add(id); keep[n] = true;
     }
     if (keep.some((k) => !k)) {
       const map = compactSlots(L, keep);
@@ -482,6 +634,7 @@ export function tickEconomy(s: GameState): void {
       if (have.has(fid)) continue;
       const ind = assign(R, sn.sec, sn.floor);
       const n = addFirm(E, fid, ind, SECTORS.indexOf(sn.sec), sn.hc, sn.z, s.month);
+      E.f.rent[n] = sn.rentMo;
       openBooks(E, n, opw[ind], short, opening);
     }
   }
@@ -489,8 +642,11 @@ export function tickEconomy(s: GameState): void {
   const named = new Float64Array(N_IND);
   for (let n = 0; n < N(); n++) if (f.id[n] >= 0) named[f.ind[n]] += f.hc[n];
 
-  // ---- 2. the off-map sample
-  const off = offMapHeads(s, named);
+  // ---- the off-map sample: the engine's way of sizing it (the reference), and the demand's
+  const eng = offMapHeads(s, named);
+  if (opening) E.gov0 = eng[IND_GOV];
+  const conOpen = opening ? openingConstruction(s, E, hm, named, eng, opw) : 0;
+  const off = demandHeads(E, named, eng, hm.persons, conOpen);
   if (opening) {
     for (let i = 0; i < N_IND; i++) for (let k = 0; k < OFF_PER; k++) {
       const n = addFirm(E, E.nextOff--, i, NO_SEC, off[i] / OFF_PER, Z_SIG * R.n() / Math.sqrt(1 - Z_RHO * Z_RHO), s.month);
@@ -499,21 +655,52 @@ export function tickEconomy(s: GameState): void {
   } else {
     for (let n = 0; n < N(); n++) if (E.f.id[n] < 0) { E.f.hc[n] = off[E.f.ind[n]] / OFF_PER; E.f.z[n] = Z_RHO * E.f.z[n] + Z_SIG * R.n(); }
   }
-  const F = E.f, nF = N();
-  const heads = new Float64Array(N_IND);
-  for (let i = 0; i < N_IND; i++) heads[i] = named[i] + off[i];
+  const heads: number[] = [], engHeads: number[] = [];
+  for (let i = 0; i < N_IND; i++) { heads.push(named[i] + off[i]); engHeads.push(named[i] + eng[i]); }
+  E.cur = { m: s.month, heads, named: Array.from(named), eng: engHeads };
+  R.done();
+}
+
+// ---------------------------------------------------------------- the month, second half: the money
+/**
+ * THE MONTH'S MONEY, after the household register has been matched to the
+ * heads (sim.ts). Reads the world; writes `s.economy` only. A month whose
+ * first half did not run (no books yet) does nothing.
+ */
+export function tickEconomy(s: GameState): void {
+  const e = s.econ;
+  const E = s.economy;
+  if (!e || !E || !E.cur || E.cur.m !== s.month) return;
+  const hm = householdMoney(s);
+  if (!hm) return;
+  reviveEconomy(E);
+  const opening = E.last === null;
+  const L = E.L;
+  const short = shortIndexOf(e) / 100;
+  const w = e.wageIdx ?? 1;
+  const { opw, pay } = perHead(w);
+  const F = E.f, nF = L.slot.n;
+  const heads = Float64Array.from(E.cur.heads);
+  const rentMkt = new Float64Array(N_IND);
+  for (let i = 0; i < N_IND; i++) rentMkt[i] = INDUSTRIES[INDUSTRY_IDS[i]].sfPerWorker * marketRent(s, i) / 12;
+  const rentOf = (n: number) => F.id[n] >= 0 ? F.rent[n] : F.hc[n] * rentMkt[F.ind[n]];
 
   // ---- 3. final demand
   const sv = spendVector(e.online ?? 0);
   const C = hm.spend;
   const G = heads[IND_GOV] * opw[IND_GOV];
-  const P = buildingSpend(s);
+  let firmRent = 0;
+  for (let n = 0; n < nF; n++) firmRent += rentOf(n);
+  const con = constructionBought(s, hm, firmRent);
+  const P = conTotal(con);
   const fH = new Float64Array(N_IND), fG = new Float64Array(N_IND), fC = new Float64Array(N_IND), fd = new Float64Array(N_IND);
   for (let j = 0; j < N_IND; j++) fH[j] = C * sv.v[j];
   fG[IND_GOV] = G; fC[IND_CON] = P;
   for (let j = 0; j < N_IND; j++) fd[j] = fH[j] + fG[j] + fC[j];
 
   if (opening) {
+    // the register's people once the opening's jobs are filled: government follows them from here
+    E.persons0 = hm.persons;
     // CALIBRATION: at the opening the town makes what its heads make (x = S).
     // The town supplies its own use of a commodity up to what its firms make
     // of it, after what comes from abroad (the supply-demand pool method;
@@ -538,11 +725,18 @@ export function tickEconomy(s: GameState): void {
   }
   const X = new Float64Array(N_IND);
   // Exports in dollars: the real quantity (the signal) at the price of a unit
-  // of it, which is pay over output per worker — the wage index over the
-  // trades' own productivity (their books' sales per job). Pricing them at
-  // pay alone counted the productivity in the quantity and again in the price.
+  // of it, which is unit labour cost — pay over output per worker. For an
+  // industry with trades on the street, output per worker is those trades'
+  // own books' sales per job; for one with none, the nation's own (its
+  // technology level, market.ts `techLn`), so that a plant's export jobs grow
+  // with the nation's output less the nation's productivity — the town keeps
+  // its share of the industry's national employment — and the factory index
+  // sends some of them abroad.
+  const techGain = Math.exp((e.nat?.techLn ?? 0) - (E.tech0 ?? 0));
   for (let j = 0; j < N_IND; j++) {
-    const price = (w / E.w0) / Math.max(1e-6, tradeProductivity(s, E, j) / Math.max(1e-9, E.prod0[j]));
+    const own = Object.keys(E.sigW[j]).length > 0;
+    const prodGain = own ? tradeProductivity(s, E, j) / Math.max(1e-9, E.prod0[j]) : techGain;
+    const price = (w / E.w0) / Math.max(1e-6, prodGain);
     X[j] = E.X0[j] * (exportSignal(s, E, j) / Math.max(1e-9, E.sig0[j])) * price;
   }
 
@@ -550,30 +744,41 @@ export function tickEconomy(s: GameState): void {
   const { x, iters } = solve(E.rpc, fd, X, opening ? null : E.last?.x ?? null);
   const buy: number[][] = [];
   for (let j = 0; j < N_IND; j++) {
-    let firms = 0, con = 0;
-    for (let i = 0; i < N_IND; i++) { const a = A_FLAT[i * N_IND + j] * x[i]; if (i === IND_CON) con += a; else firms += a; }
+    let firms = 0, conB = 0;
+    for (let i = 0; i < N_IND; i++) { const a = A_FLAT[i * N_IND + j] * x[i]; if (i === IND_CON) conB += a; else firms += a; }
     const r = E.rpc[j];
-    buy.push([r * fH[j], r * firms, r * fG[j], r * (fC[j] + con), X[j]]);
+    buy.push([r * fH[j], r * firms, r * fG[j], r * (fC[j] + conB), X[j]]);
   }
 
   // ---- 5. the buyers pay the market
   const M = ACCOUNTS.market;
-  let cLocal = 0, gLocal = 0, pLocal = 0, xTot = 0;
-  for (let j = 0; j < N_IND; j++) { cLocal += buy[j][0]; gLocal += buy[j][2]; pLocal += E.rpc[j] * fC[j]; xTot += X[j]; }
+  const rCon = E.rpc[IND_CON];
+  let cLocal = 0, gLocal = 0, xTot = 0;
+  for (let j = 0; j < N_IND; j++) { cLocal += buy[j][0]; gLocal += buy[j][2]; xTot += X[j]; }
+  const landBuild = con.pipeline + con.homes + con.repairCommercial + con.repairFlats;
   transfer(L, ACCOUNTS.households, M, cLocal, "spend", "hh>mkt:spend");
   transfer(L, ACCOUNTS.households, ACCOUNTS.rest, C - cLocal, "imports", "hh>row:imports");
+  transfer(L, ACCOUNTS.households, M, rCon * con.repairOwners, "building", "hh>mkt:home repairs");
+  transfer(L, ACCOUNTS.households, ACCOUNTS.rest, (1 - rCon) * con.repairOwners, "imports", "hh>row:home repairs");
   transfer(L, ACCOUNTS.government, M, gLocal, "provision", "gov>mkt:provision");
   transfer(L, ACCOUNTS.government, ACCOUNTS.rest, G - gLocal, "imports", "gov>row:imports");
-  transfer(L, ACCOUNTS.landlords, M, pLocal, "building", "land>mkt:building");
-  transfer(L, ACCOUNTS.landlords, ACCOUNTS.rest, P - pLocal, "imports", "land>row:imports");
+  transfer(L, ACCOUNTS.government, M, rCon * con.publicWorks, "building", "gov>mkt:public works");
+  transfer(L, ACCOUNTS.government, ACCOUNTS.rest, (1 - rCon) * con.publicWorks, "imports", "gov>row:public works");
+  transfer(L, ACCOUNTS.landlords, M, rCon * landBuild, "building", "land>mkt:building and repairs");
+  transfer(L, ACCOUNTS.landlords, ACCOUNTS.rest, (1 - rCon) * landBuild, "imports", "land>row:imports");
   transfer(L, ACCOUNTS.rest, M, xTot, "exports", "row>mkt:exports");
 
-  // ---- 6. every firm's month
+  // ---- 6. every firm's month. Its payroll is its industry's earners' pay in
+  // the household register (registerPayroll), shared over the industry's
+  // firms by heads — so what the firms pay and what the households are paid
+  // are one number. The register is a weighted sample, so an industry's
+  // earners sit within half an agent's weight of its heads and its pay per
+  // head moves with who they are; the industry's BEA pay is what they are
+  // hired at.
+  const pr = registerPayroll(s);
   const { loc, imp } = inputSplit(E.rpc);
   const wsum = new Float64Array(N_IND), nInd = new Float64Array(N_IND), wt = new Float64Array(nF);
   for (let n = 0; n < nF; n++) { wt[n] = F.hc[n] * Math.exp(F.z[n]); wsum[F.ind[n]] += wt[n]; nInd[F.ind[n]]++; }
-  const rentMkt = new Float64Array(N_IND);
-  for (let i = 0; i < N_IND; i++) rentMkt[i] = INDUSTRIES[INDUSTRY_IDS[i]].sfPerWorker * marketRent(s, i) / 12;
   const credit = Math.max(0, Math.min(1, ((e.creditIdx ?? 1) - 0.5) / 0.5));
   let wagesCash = 0;
   for (let n = 0; n < nF; n++) {
@@ -581,10 +786,9 @@ export function tickEconomy(s: GameState): void {
     const share = wsum[i] > 0 ? wt[n] / wsum[i] : 1 / nInd[i];
     const rev = x[i] * share;
     const hc = F.hc[n];
-    const wages = hc * pay[i];
+    const wages = pr ? (heads[i] > 0 ? pr.wages[i] / PAY_SPLIT.cash * hc / heads[i] : 0) : hc * pay[i];
     const inLoc = rev * loc[i], inImp = rev * imp[i];
-    const sn = F.id[n] >= 0 ? seen.get(F.id[n]) : undefined;
-    const rent = sn ? sn.rentMo : hc * rentMkt[i];
+    const rent = rentOf(n);
     const prodTax = rev * I.prodTax;
     const debt = debtOf(L, n);
     const P0 = financing(i);
@@ -645,11 +849,12 @@ export function tickEconomy(s: GameState): void {
 
   E.last = {
     m: s.month, C, G, P, X: xTot, hhWagesRegister: hm.wages, hhWagesFirms: wagesCash,
-    x: Array.from(x), buy, heads: Array.from(heads), namedHeads: Array.from(named),
+    x: Array.from(x), buy, heads: Array.from(heads), namedHeads: E.cur.named.slice(),
     impliedHeads: Array.from(x, (v, i) => v / Math.max(1e-9, opw[i])),
+    engHeads: E.cur.eng.slice(), regEarners: pr ? Array.from(pr.earners) : [], jobsEngine: e.jobs ?? 0,
+    con, oil: E.oil ?? OIL_PRICE_2000, oilReal: Math.exp(E.lnOil ?? 0),
     ledgerSum: ledgerSum(L), ledgerGross: ledgerGross(L), market: cashOf(L, M), iters,
   };
-  R.done();
 }
 
 // ---------------------------------------------------------------- reading it
@@ -738,5 +943,9 @@ export function economyByIndustry(s: GameState) {
     namedFirms: namedFirms[i], firms: firms[i],
     output: l.x[i], exports: l.buy[i][4], exportShare: l.x[i] > 0 ? l.buy[i][4] / l.x[i] : 0,
     margin: rev[i] > 0 ? ebitda[i] / rev[i] : NaN, marginBEA: INDUSTRIES[k].gos, rpc: E.rpc[i],
+    /** the engine's way of sizing it, and the register's earners in it */
+    engHeads: l.engHeads?.[i] ?? NaN, regEarners: l.regEarners?.[i] ?? NaN,
+    /** its oil and refined-fuel bill per dollar of output at today's real oil price (BEA 2023 coefficient x the real price against the opening) — read, not yet paid */
+    oilBill: INDUSTRIES[k].exposure.oil * (l.oilReal ?? 1),
   }));
 }

@@ -194,7 +194,7 @@ export function RefiTable({ game, parcels, bbl, max = 8 }: { game: GameState; pa
   return (
     <>
     <div className="nx-refi-ctl">
-      <label>Borrow <b className="mono">{Math.round(lev * 100)}%</b> of each desk's max
+      <label>Borrow <b className="mono">{Math.round(lev * 100)}%</b> of desk max
         <input type="range" min={0.25} max={1} step={0.05} value={lev} onChange={(e) => setLev(+e.target.value)} />
       </label>
       <span className="seg" role="group" aria-label="Rate type">

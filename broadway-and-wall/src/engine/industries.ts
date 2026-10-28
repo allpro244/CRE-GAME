@@ -459,3 +459,52 @@ export const HH_LOCAL_TAX = 0.04;
  * whole country, of which one town holds a negligible slice [D~].
  */
 export const LOCAL_OWNER_SHARE = 0.37;
+
+// ---------------------------------------------------------------- what the trades are paid for (step 1b)
+/**
+ * MAINTENANCE AND REPAIR OF THE STANDING STOCK. In the BEA's accounts the
+ * repair of a building is construction output bought as an intermediate
+ * input by whoever owns it — commodities 230301 (nonresidential maintenance
+ * and repair, $204.4bn in 2017) and 230302 (residential, $84.5bn): about a
+ * fifth of the construction industry's output, and none of it in the
+ * pipeline of new building. The industries in IO_A already buy their own
+ * share through the table's construction column; the buildings' OWNERS are
+ * not an industry here (they are the landlords' account, and owner-occupiers
+ * are households), so their repairs are what the first cut was missing.
+ * BEA Input-Output, Use Before Redefinitions, Producers' Prices, 2017 detail
+ * (IOUse_Before_Redefinitions_PRO_2017_Detail.xlsx, the 2017 sheet; the
+ * benchmark year — the summary table does not split the construction row):
+ *   commercial landlords  531ORE (other real estate: lessors of nonresidential
+ *                         buildings and the rest) buys $43,151M of 230301 on
+ *                         an output of $1,265,027M — 3.41 cents a dollar of rent  [D]
+ *   flats let to tenants  531HST (tenant-occupied housing) buys $3,791M of 230302
+ *                         on $480,396M — 0.79 cents a dollar of rent (improvements
+ *                         to rental housing are investment, F02R, not repair)       [D]
+ *   owner-occupiers       531HSO buys $71,972M of 230302; over owner-occupied real
+ *                         estate at market value, $26,664,700M at end-2017 (Federal
+ *                         Reserve Z.1, FL155035015) — 0.27% of the house's value a year [D]
+ */
+export const REPAIR_PER_COMMERCIAL_RENT = 43151 / 1265027;
+export const REPAIR_PER_FLAT_RENT = 3791 / 480396;
+export const REPAIR_OWNER_PER_VALUE_YR = 71972 / 26664700;
+
+/**
+ * THE PRICE OF OIL. The town opens in 2000 (types.ts START_YEAR) at that
+ * year's WTI average, $30.38 a barrel (EIA, Cushing spot, annual) [S]; it
+ * moves with the nation's prices (`natCpi`) and, in real terms, with the
+ * nation's supply shocks — the same shocks the engine's inflation already
+ * runs (market.ts, SUPPLY SHOCKS; the embargo swan sets one), read the same
+ * way the engine reads them (a shock under fiscal pressure is demand, not
+ * supply). OIL_PER_SHOCK is the real price, in log points, that a supply
+ * shock of one point of annual inflation carries, calibrated to the two
+ * oil-led episodes [K, calibrated]: 1973-74, real crude about x3 (+1.1 log;
+ * EIA refiner acquisition cost) against about 7 points of excess CPI
+ * inflation; 1979-80, about x2.5 (+0.9) against about 4.5 points — 16 and
+ * 20, so 18. A favourable shock (a decade of cheap oil: 1986, 1998) runs it
+ * the other way. The price rises over a quarter and gives back half of a
+ * shock's real rise in three years [K]: real oil stayed high for a decade
+ * after 1974 and fell back within months after 1990.
+ */
+export const OIL_PRICE_2000 = 30.38;
+export const OIL_PER_SHOCK = 18;
+export const OIL_RISE_M = 3, OIL_HALF_LIFE_M = 36;

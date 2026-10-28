@@ -17,7 +17,7 @@ import { tickSplits, tickRivalSplits, materializeSplits, materializeSplit } from
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
 import { tickHouseholdRegister } from "./households";
-import { tickEconomy } from "./economy";
+import { tickFirms, tickEconomy } from "./economy";
 import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
@@ -717,11 +717,12 @@ function tickMonth(
   tickEcon(s);
   // ...and the town's renters move, to the households the city houses.
   tickStreetFlats(s, parcels);
-  // ...and the household register follows them (households.ts). A shadow:
-  // nothing reads it yet, and it draws only on its own stream.
+  // ...the city's firms set their heads (economy.ts, the labour demand), the
+  // household register follows the flats and fills those jobs (households.ts),
+  // and the firms' books are kept (economy.ts). Shadows, each on its own
+  // stream: nothing in the world reads them yet (ONE_ECONOMY_PLAN.md steps 1-1b).
+  tickFirms(s);
   tickHouseholdRegister(s, parcels);
-  // ...and the city's firm books (economy.ts), a shadow on its own stream:
-  // nothing reads them yet (ONE_ECONOMY_PLAN.md step 1).
   tickEconomy(s);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and

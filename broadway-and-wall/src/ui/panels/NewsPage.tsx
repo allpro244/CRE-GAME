@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { WhyButton } from "@/ui/WhyChain";
 import type { ReactNode } from "react";
 import { useStore } from "@/state/store";
 import { monthLabel, type GameState, type NewsItem } from "@/engine/types";
@@ -131,7 +132,7 @@ function FrontPage({ onWire }: { onWire: () => void }) {
               className={"news-item news-" + n.kind + (n.bbl ? " news-clickable" : "")}
               onClick={n.bbl ? () => useStore.getState().focus(n.bbl!, true) : undefined}
             >
-              <NewsText text={n.text} />{n.bbl ? " ✈" : ""}
+              <NewsText text={n.text} />{n.bbl ? " ✈" : ""}<WhyButton id={n.why} />
             </div>
           ))}
         </div>
@@ -343,7 +344,7 @@ function Headlines({ switcher }: { switcher: ReactNode }) {
                 className={"news-item news-" + n.kind + (n.bbl ? " news-clickable" : "") + (isMine(n) ? " news-mine" : "")}
                 onClick={n.bbl ? () => { useStore.getState().focus(n.bbl!, true); } : undefined}
               >
-                <NewsText text={n.text} />{n.bbl ? " ✈" : ""}
+                <NewsText text={n.text} />{n.bbl ? " ✈" : ""}<WhyButton id={n.why} />
                 {(repeats.get(n) ?? 0) > 0 && (
                   <span className="news-repeat" title="The same line ran in earlier months too; only the newest is shown.">
                     {" "}· also {repeats.get(n)} earlier {repeats.get(n) === 1 ? "time" : "times"}

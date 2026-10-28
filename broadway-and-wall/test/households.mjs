@@ -11,7 +11,9 @@
 //   - a save (base64 columns, through JSON) loads back to the same register,
 //     and the loaded game and the running one stay identical for a year;
 //   - its sums sit on the engine's aggregates: the region's households, the
-//     island's renter households, the jobless rate, the opening rent burden.
+//     island's renter households, the jobless rate, the opening rent burden —
+//     until the firm books open (stage 1b): from then its households are who
+//     came for the work, and its jobless rate is its own flows', held to 3-10%.
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -51,7 +53,7 @@ console.log("\nHOUSEHOLD REGISTER\n");
 // two runs, same seed
 let a = start(), b = start();
 const hashesA = [], hashesB = [];
-let stats0 = null, sumsOk = true, worst = "";
+let stats0 = null, sumsOk = true, worst = "", booksFrom = 1, hGap = NaN, uGap = NaN;
 for (let m = 1; m <= MONTHS; m++) {
   const streamsBefore = { ...a.streams };
   a = tick(a); b = tick(b);
@@ -63,12 +65,23 @@ for (let m = 1; m <= MONTHS; m++) {
   const dH = Math.abs(st.households / st.engineHouseholds - 1);
   const dR = Math.abs(st.islandRenters / Math.max(1, rent) - 1);
   const dU = Math.abs(st.unemployment - (a.econ.unemployment ?? 0));
-  if (dH > 0.005 || dR > 0.03 || dU > 0.025) { sumsOk = false; worst ||= `month ${m}: households ${(100 * dH).toFixed(2)}%, renters ${(100 * dR).toFixed(2)}%, unemployment ${(100 * dU).toFixed(2)}pp`; }
+  // Before the firm books open the region's households are weighted to the
+  // engine's; from then (stage 1b) they are who came for the work and stayed
+  // — the gap is a measurement (tools/economy.mjs), and the register's
+  // earners in work are held to the books' heads instead (test/economy.mjs).
+  const books = a.economy?.cur?.m === a.month;
+  if (!books) booksFrom = m + 1;
+  // unemployment: the engine's, before the books; after, what the register's own flows leave (separations, the CPS finding rate,
+  // the vacancies) — held to the band ONE_ECONOMY_PLAN.md sets for step 3, 3-10%
+  const uBad = books ? !(st.unemployment >= 0.03 && st.unemployment <= 0.10) : dU > 0.025;
+  if (books) uGap = st.unemployment - (a.econ.unemployment ?? 0);
+  if ((!books && dH > 0.005) || dR > 0.03 || uBad) { sumsOk = false; worst ||= `month ${m}: households ${(100 * dH).toFixed(2)}%, renters ${(100 * dR).toFixed(2)}%, unemployment ${(100 * st.unemployment).toFixed(2)}% (engine ${(100 * (a.econ.unemployment ?? 0)).toFixed(2)}%)`; }
+  if (books) hGap = st.households / st.engineHouseholds - 1;
   void streamsBefore;
 }
 check(hashesA.every((h, i) => h === hashesB[i]), `deterministic: ${MONTHS} months, the same register from the same seed (${hashesA.at(-1)})`);
 check(new Set(hashesA).size === hashesA.length, "and it moves: no two months' registers alike");
-check(sumsOk, `every month the sums sit on the engine's: households within 0.5%, island renter households within 3%, unemployment within 2.5pp${worst ? " — " + worst : ""}`);
+check(sumsOk, `every month the sums sit on the engine's: households within 0.5% until the firm books open (month ${booksFrom}; then they are who came for the work: ${(100 * hGap).toFixed(1)}% on the engine's now), island renter households within 3%, unemployment within 2.5pp of the engine's until then and 3-10% after (now ${(100 * uGap).toFixed(1)}pp off the engine's)${worst ? " — " + worst : ""}`);
 check(stats0.agents > 3000 && stats0.wIsland === 1, `island renters one for one at the opening: ${stats0.agents} agents (${Math.round(stats0.islandRenters)} island renters + the region's ${stats0.agents - Math.round(stats0.islandRenters)})`);
 check(stats0.medianBurden > 0.25 && stats0.medianBurden < 0.36, `the opening's median rent burden ${(100 * stats0.medianBurden).toFixed(1)}% (the engine's flats are built on 30%)`);
 check(Math.abs(stats0.persons / a.econ.population - 1) < 0.08, `persons ${Math.round(stats0.persons)} against a population of ${Math.round(a.econ.population)} (within 8%)`);

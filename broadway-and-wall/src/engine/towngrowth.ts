@@ -293,7 +293,7 @@ function tickCommerce(s: GameState, parcels: ParcelTable, bbls: string[], adjace
         if (!startTradeAreaBuilding(s, parcels, adjacency, p.bbl, "retail", 1, pl, "grocery")) continue;
         const job = (s.cityJobs ?? []).find((j) => j.bbl === p.bbl);
         T.centres.push({ bbl: p.bbl, kind: "grocery", m: s.month, sf: job?.sf ?? sf, households: Math.round(p.households), built: true });
-        s.news.unshift({ q: s.month, kind: "info", bbl: p.bbl, text: `A grocer broke ground on its own store at ${rec?.address ?? p.bbl}: about ${Math.round((job?.sf ?? sf) / 1000)}k sf, built to suit on a twenty-year lease, for the ${Math.round(p.households).toLocaleString()} households it will be nearest to. A shopping centre here did not pencil; the store does. Opens ${job ? monthLabel(job.deliverM) : "in a year or so"}.` });
+        s.news.unshift({ q: s.month, kind: "info", bbl: p.bbl, text: `A grocer broke ground on its own store at ${rec?.address ?? p.bbl}: about ${Math.round((job?.sf ?? sf) / 1000)}k sf, built to suit on a twenty-year lease, for the ${Math.round(p.households).toLocaleString()} households it will be nearest to. A shopping centre here was not feasible; the store is. Opens ${job ? monthLabel(job.deliverM) : "in a year or so"}.` });
         ok = true;
         break;
       }

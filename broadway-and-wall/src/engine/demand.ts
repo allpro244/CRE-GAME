@@ -917,22 +917,22 @@ function tickEmployment(s: GameState, model: DemandModel) {
 /** The copy for each stage of each kind. `name` is the street the work sits on. */
 const WORK_COPY: Record<WorkKind, { rumor: (n: string, yrs: number) => string; funded: (n: string, yrs: number) => string; shelved: (n: string) => string; opened: (n: string, since: number) => string }> = {
   station: {
-    rumor: (n, y) => `City Hall is circulating plans for a new station near ${n}. Alignments are being argued over and nothing is funded — a decision is ${y} years out, and the ground has not moved yet. It will.`,
-    funded: (n, y) => `The transit authority has funded the new station at ${n}. First trains in ${y} years. Everything within a five-minute walk of that head-house is about to be worth more than it is today — and the people who own it already know.`,
-    shelved: (n) => `The station plan at ${n} died in committee this morning. Whoever bought the rumour owns ordinary dirt again.`,
-    opened: (n, y) => `The ${n} station opened this morning. Years of hoardings, and the ground around it is not the ground it was in ${y}.`,
+    rumor: (n, y) => `City Hall is circulating plans for a new station near ${n}. Unfunded; decision ${y} years out.`,
+    funded: (n, y) => `The transit authority funded the new station at ${n}. Service in ${y} years; values within a five-minute walk should rise.`,
+    shelved: (n) => `The station plan at ${n} died in committee this morning. Speculative land values reset.`,
+    opened: (n, y) => `The ${n} station opened this morning (first proposed ${y}).`,
   },
   park: {
-    rumor: (n, y) => `The parks department is sketching a new park at ${n}. It is a drawing, not a budget — the vote is ${y} years out — but the blocks that would face it are worth watching.`,
-    funded: (n, y) => `The city has funded the new park at ${n}. Ground broken this year, gates open in ${y}. A front-row address on a park is a different kind of address.`,
-    shelved: (n) => `The park at ${n} was cut from the budget. The drawing goes in a drawer, and the frontage goes back to being frontage.`,
-    opened: (n, y) => `The park at ${n} opened its gates this morning. The blocks that face it have not been ordinary since ${y}, and now everybody can see why.`,
+    rumor: (n, y) => `The parks department is sketching a new park at ${n}. Unfunded; vote ${y} years out.`,
+    funded: (n, y) => `The city funded the new park at ${n}. Construction this year; opens in ${y}. Park frontage should reprice.`,
+    shelved: (n) => `The park at ${n} was cut from the budget.`,
+    opened: (n, y) => `The park at ${n} opened this morning (first proposed ${y}).`,
   },
   bridge: {
-    rumor: (n, y) => `Engineers have been seen surveying at ${n} — the bridge is back on the table. Nothing is funded and the argument is ${y} years from a vote, but a crossing changes what a whole quarter is attached to.`,
-    funded: (n, y) => `The bridge at ${n} is funded. ${y} years of falsework, and then a quarter that used to be the far side of the water stops being far.`,
-    shelved: (n) => `The bridge at ${n} was voted down. The far bank stays the far bank, and the rumour money goes home.`,
-    opened: (n, y) => `The ${n} bridge carried its first traffic this morning. The far side has been repricing since ${y}; today it finished.`,
+    rumor: (n, y) => `Engineers surveying at ${n} for a bridge. Unfunded; vote ${y} years out.`,
+    funded: (n, y) => `The bridge at ${n} is funded; opens in ${y} years.`,
+    shelved: (n) => `The bridge at ${n} was voted down.`,
+    opened: (n, y) => `The ${n} bridge opened this morning (first proposed ${y}).`,
   },
 };
 
@@ -1270,8 +1270,8 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
     if (addr && Math.abs(next) > Math.abs(now) && Math.floor(Math.abs(next) / 10) > Math.floor(Math.abs(now) / 10)) {
       const step = Math.floor(Math.abs(next) / 10) * 10;
       s.news.unshift(next > 0
-        ? { q: s.month, kind: "deal", text: `The blocks around ${addr} have gained ${step} points of demand since you came in — rents, tenant quality and land are all repricing off it.` }
-        : { q: s.month, kind: "warn", text: `The blocks around ${addr} have lost ${step} points of demand — space is emptying out around you, and the appraisal follows.` });
+        ? { q: s.month, kind: "deal", text: `Demand up ${step} points around ${addr} since you entered; rents, tenant quality and land values rising.` }
+        : { q: s.month, kind: "warn", text: `Demand down ${step} points around ${addr}; vacancy rising and values falling.` });
     }
   }
 

@@ -16,6 +16,7 @@ import { tickLandDev, materializePlats, materializePlat } from "./landdev";
 import { tickSplits, tickRivalSplits, materializeSplits, materializeSplit } from "./lotsplit";
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
+import { tickHouseholdRegister } from "./households";
 import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
@@ -545,7 +546,7 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     // A shop that knows you rings before the tape prints. Seed-hashed, no draw.
     maybeEarlyLook(s, listing, rec.address);
     if (distress && newsChance(s, "motivated:" + bbl, 0.6)) {
-      s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: ${rec.address} hits the tape at ${money(ask)} — well under appraisal. It won't last.` });
+      s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: ${rec.address} listed at ${money(ask)}, well under appraisal.` });
     }
   }
   landSales(s, parcels, bbls, listed);
@@ -626,7 +627,7 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
     });
     listed.add(bbl);
     if (distress && newsChance(s, "motivated:" + bbl, 0.4)) {
-      s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: the lot at ${rec.address} is on the tape at ${money(ask)} — well under appraisal.` });
+      s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: lot at ${rec.address} listed at ${money(ask)}, well under appraisal.` });
     }
   };
   // ripe dirt finds its builder
@@ -714,6 +715,9 @@ function tickMonth(
   tickEcon(s);
   // ...and the town's renters move, to the households the city houses.
   tickStreetFlats(s, parcels);
+  // ...and the household register follows them (households.ts). A shadow:
+  // nothing reads it yet, and it draws only on its own stream.
+  tickHouseholdRegister(s, parcels);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.
@@ -786,7 +790,7 @@ function tickMonth(
         q: s.month, kind: "warn",
         text: `A foreclosure wave: ${q3.defaults} buildings went back to their lenders this quarter`
           + `${q3.firms ? `, ${q3.firms} firm${q3.firms === 1 ? "" : "s"} went under` : ""}${q3.banks ? ` and ${q3.banks} bank${q3.banks === 1 ? "" : "s"} closed` : ""}.`
-          + ` The receivers will be selling into a market with no buyers — see the distress board.`,
+          + ` Receiver sales ahead; see the distress board.`,
       });
     }
   }
@@ -813,7 +817,7 @@ function tickMonth(
     logBooks(s, "taxes", s.exchange.deferredTax);
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `The 1031 clock ran out — ${money(s.exchange.deferredTax)} of deferred capital-gains tax comes due.`,
+      text: `1031 window expired · ${money(s.exchange.deferredTax)} deferred capital-gains tax now due.`,
     });
     s.exchange = null;
   }
@@ -844,7 +848,7 @@ function tickMonth(
       h.condition = condGrade(h.condIdx);
       h.lastCapM = s.month;
       delete h.renovatingUntilM;
-      s.news.unshift({ q: s.month, kind: "deal", text: `Renovation complete at ${rec.address} — space re-opens at the new rent.` });
+      s.news.unshift({ q: s.month, kind: "deal", text: `Renovation complete · ${rec.address}. Space back on the market at the new rent.` });
     }
     // Deed NOI — building roll OR the absolutely-net ground coupon. holdingNOIYr
     // is correctly zero on a leased fee (opex sits with the lessee); cash still
@@ -872,7 +876,7 @@ function tickMonth(
         delete h.loan.leaseUpRoom;
         s.news.unshift({
           q: s.month, kind: "info",
-          text: `${rec.address} is let and carrying its loan — the lender has closed the lease-up reserve with ${money(left)} undrawn, never borrowed.`,
+          text: `Lease-up reserve closed · ${rec.address}: leased and covering debt service. ${money(left)} undrawn.`,
         });
       }
     }
@@ -945,8 +949,8 @@ function tickMonth(
         s.loc.payingNotes = true;
         s.news.unshift({
           q: s.month, kind: "info",
-          text: `You are out of operating cash. Your line of credit drew $${Math.round(lineDrew / 1000).toLocaleString()}K `
-            + `to keep your notes current and will keep paying them while it has room — at ${locRate(s).toFixed(2)}%.`,
+          text: `Operating cash exhausted. Your line of credit drew $${Math.round(lineDrew / 1000).toLocaleString()}K `
+            + `to keep notes current; it will keep paying while it has room, at ${locRate(s).toFixed(2)}%.`,
         });
       }
     } else if (s.loc.payingNotes && s.cash > 0) {
@@ -1002,7 +1006,7 @@ function tickMonth(
     if (cut > 0) {
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `The capital plan went unfunded on ${cut} building${cut > 1 ? "s" : ""} this year. Deferred maintenance is the cheapest money you will ever borrow and the dearest you will ever repay — those assets are ageing faster than the rest of the book.`,
+        text: `Capital plan unfunded on ${cut} building${cut > 1 ? "s" : ""} this year. Deferred maintenance: those buildings age faster.`,
       });
     }
   }
@@ -1060,7 +1064,7 @@ function tickMonth(
       delete s.approaches[bbl];
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `${rec.address}: the owner has withdrawn their number. The ground has moved since they gave it to you.`,
+        text: `${rec.address}: owner withdrew their asking price (market moved).`,
       });
     }
   }
@@ -1184,7 +1188,7 @@ function tickMonth(
       // nothing from the best tax outcome the business offers.
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `Tax season: no income tax due — depreciation and interest ran the book to a paper loss. `
+        text: `Tax season: no income tax due — depreciation and interest produced a taxable loss. `
           + `${M(yr.carry - priorCarry)} banked against future income; ${M(yr.carry)} carried forward in all.`,
       });
     }
@@ -1227,13 +1231,13 @@ function tickMonth(
     // finished at fourteen. Creditors do not wait longer for one borrower than
     // for another: seizures from six months, the end at two years.
     if (s.insolventMs === 3) {
-      s.news.unshift({ q: s.month, kind: "warn", text: "Your creditors have noticed the negative balance. Three more months of this and they start seizing assets." });
+      s.news.unshift({ q: s.month, kind: "warn", text: "Cash negative for three months. Creditors begin seizing assets in three more." });
     }
     if ((s.underwaterMs ?? 0) >= 24) {
       s.gameOver = {
-        cause: "Insolvency: two years underwater without a month above water, and the hole still grows. The run ends here.",
+        cause: "Insolvency: two years with negative net worth and no recovery. Game over.",
       };
-      s.news.unshift({ q: s.month, kind: "warn", text: "The run is over — the creditors have waited long enough." });
+      s.news.unshift({ q: s.month, kind: "warn", text: "Game over: creditors foreclosed after two years of insolvency." });
     } else if (s.insolventMs >= 6) {
       // Last draw before the bailiff — if the line still covers the hole,
       // there is nothing to seize.
@@ -1395,14 +1399,14 @@ function tickMonth(
         s.news.unshift({
           q: s.month, kind: "warn",
           text: (gpOut
-            ? `Your creditors took your interest in ${rec.address}. The investors replaced you as manager and took the building at ${money(gross)}, the appraisal less the costs of the change; their share came off first. `
-            : `The creditors took ${rec.address} — sold ${fireBuyer ? `to ${fireBuyer} ` : "on credit, and on the tape for the street, "}at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `)
+            ? `Your creditors took your interest in ${rec.address}. Investors replaced you as manager and took the building at ${money(gross)} (appraisal less transfer costs; their share first). `
+            : `The creditors took ${rec.address} — sold ${fireBuyer ? `to ${fireBuyer} ` : "on credit and listed for the street "}at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `)
             + (lien > 0 || release > 0
               ? shortfall > 0
-                ? `It did not cover the ${money(lien)} mortgage${pick.loan?.recourse ? `, and you signed for the ${money(shortfall)} shortfall` : `, and the paper was non-recourse`}. `
-                : `Liens of $${(((lien + release) / 1e6)).toFixed(2)}M came off the top and ${money(Math.max(0, toBorrower))} of surplus reached you. `
-              : `${money(Math.max(0, toBorrower))} reached you after the costs of the sale${owed > 0 ? ` and ${money(owed)} of tax on the gain` : ``}. `)
-            + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
+                ? `Did not cover the ${money(lien)} mortgage${pick.loan?.recourse ? `; recourse shortfall ${money(shortfall)}` : `; loan was non-recourse`}. `
+                : `Liens of $${(((lien + release) / 1e6)).toFixed(2)}M repaid; surplus to you ${money(Math.max(0, toBorrower))}. `
+              : `Net to you ${money(Math.max(0, toBorrower))} after sale costs${owed > 0 ? ` and ${money(owed)} tax on the gain` : ``}. `)
+            + `${s.cash < 0 ? "Cash still negative." : "Cash back to positive."}`,
         });
         s.insolventMs = s.cash < 0 ? 6 : 0;
       } else if (locAvailable(s, parcels) > 0 || fundableNow(s, parcels) > 0) {
@@ -1447,16 +1451,16 @@ function tickMonth(
         coverCashShortfall(s, parcels);
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `The receiver took your job at ${rec.address} — the site and a frame ${Math.round(100 * sunk / Math.max(1, d.costTotal))}% built, valued at ${money(gross)}. `
-            + (surplus > 0 ? `After the construction lender, ${money(surplus)} reached you. ` : `It did not cover the construction lender. `)
-            + `It goes to the tape for somebody else to finish. ${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
+          text: `Receiver took your project at ${rec.address}: site and frame ${Math.round(100 * sunk / Math.max(1, d.costTotal))}% built, valued at ${money(gross)}. `
+            + (surplus > 0 ? `Surplus after the construction lender: ${money(surplus)}. ` : `Did not cover the construction loan. `)
+            + `${s.cash < 0 ? "Cash still negative." : "Cash back to positive."}`,
         });
         s.insolventMs = s.cash < 0 ? 6 : 0;
       } else {
         s.gameOver = {
-          cause: "Insolvency: the creditors took everything, and it wasn't enough. A hundred-year town remembers a bankruptcy.",
+          cause: "Insolvency: creditors seized all assets and debts remain. Game over.",
         };
-        s.news.unshift({ q: s.month, kind: "warn", text: "The run is over — the creditors own it now." });
+        s.news.unshift({ q: s.month, kind: "warn", text: "Game over: creditors seized all assets." });
       }
       } // cash still negative after the last draw
     }
@@ -1478,7 +1482,7 @@ function tickMonth(
     if (emptySf > 8000 && liquid < Math.max(400_000, emptySf * 0.35) && s.month % 6 === 0) {
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `You have ${(emptySf / 1000).toFixed(0)}k sf waiting on leases and only ${liquid >= 1e6 ? `${money(liquid)}` : `$${(liquid / 1000).toFixed(0)}k`} of cash and line — signing costs land before rent does.`,
+        text: `${(emptySf / 1000).toFixed(0)}k sf vacant vs ${liquid >= 1e6 ? `${money(liquid)}` : `$${(liquid / 1000).toFixed(0)}k`} of cash and line. TI and commissions are due at signing.`,
       });
     }
   }
@@ -1547,7 +1551,7 @@ function tickMonth(
     const empty0 = Math.round(100 * (1 - s.builtAtStart / Math.max(1, s.totalLots)));
     s.news.unshift({
       q: s.month, kind: "event",
-      text: `◆ A hundred years. The place you arrived in was ${empty0}% empty lots; ${built}% of it stands built today, and ${Object.keys(s.holdings).length} of those buildings are yours. The clock keeps running.`,
+      text: `◆ 100 years. Vacant lots then: ${empty0}%; built today: ${built}%; your buildings: ${Object.keys(s.holdings).length}.`,
     });
   }
 
@@ -1688,7 +1692,7 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
     return {
       label: "over line",
       bad: true,
-      title: `Credit line over-advanced ${s.locOverMs} months — the bank has stopped asking politely. City phase: ${s.econ.phase}.`,
+      title: `Credit line over-advanced ${s.locOverMs} months; default risk. City phase: ${s.econ.phase}.`,
     };
   }
   if ((s.locOverMs ?? 0) > 0) {
@@ -1720,7 +1724,7 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
   return {
     label: "steady",
     bad: false,
-    title: `Your book is current. City cycle: ${s.econ.phase} — that label is about the street, not your firm.`,
+    title: `All loans current. City cycle: ${s.econ.phase} (market, not your firm).`,
   };
 }
 
@@ -1830,8 +1834,8 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     out.push({
       key: `watch:${li.bbl}:${li.listedM}`,
       label: li.reason === "receiver"
-        ? `★ ${addr(li.bbl)} is on the tape — bank-owned at ${money(li.ask)}${li.receiverFor ? ` (${li.receiverFor})` : ""}`
-        : `★ ${addr(li.bbl)} is on the tape`,
+        ? `★ ${addr(li.bbl)} listed — bank-owned at ${money(li.ask)}${li.receiverFor ? ` (${li.receiverFor})` : ""}`
+        : `★ ${addr(li.bbl)} listed`,
     });
   }
   // THE FUND'S WINDOW IS CLOSING WITH MONEY UNSPENT. After the investment
@@ -2158,7 +2162,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
         critical: true,
         key: `facility-arrears:${ms}`,
         label: `${s.facility.lender} facility payment short ${ms} month${ms === 1 ? "" : "s"} — `
-          + `${s.facility.bbls.length} buildings stand behind it`,
+          + `${s.facility.bbls.length} buildings pledged`,
       });
     }
     // THE MATURITY HAS BEEN CALLED and the cure window is running. Keyed on the
@@ -2390,7 +2394,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       out.push({
         key: `sheet-review:${s.month}`,
         lastM: s.month + 2,
-        label: `Leasing review: ${rev.map((r) => `${r.use} at ${(r.target * 100).toFixed(0)}% against the street's ${(r.street * 100).toFixed(0)}%`).join(", ")}`
+        label: `Leasing review: ${rev.map((r) => `${r.use} at ${(r.target * 100).toFixed(0)}% vs market ${(r.street * 100).toFixed(0)}%`).join(", ")}`
           + (d ? ` — last quarter ${d.signed} signed, ${d.vacMonths} vacant-months` : ""),
       });
     }
@@ -2500,13 +2504,13 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
   if (boughtIn + inKind > 0) {
     s.news.unshift({
       q: s.month, kind: inKind ? "warn" : "deal",
-      text: `The fund's extension ran out. ${boughtIn ? `You bought in ${boughtIn} building${boughtIn === 1 ? "" : "s"} at NAV for ${money(paidTotal)}, paid through the waterfall.` : ""}`
-        + `${inKind ? ` ${inKind} went to the LPs' liquidating trust in kind — underwater or beyond what you could fund, they leave with their mortgages.` : ""}`
+      text: `Fund extension expired. ${boughtIn ? `You bought ${boughtIn} building${boughtIn === 1 ? "" : "s"} at NAV for ${money(paidTotal)}, through the waterfall.` : ""}`
+        + `${inKind ? ` ${inKind} distributed in kind to the LPs' liquidating trust with their mortgages.` : ""}`
         + (toGp && toGp.total > 0
-          ? ` Your share of the trust — ${money(toGp.advance)} of GP advances, senior, and ${money(toGp.coinvest)} for your co-invest`
-            + `${toGp.promote > 0 ? ` and ${money(toGp.promote)} of promote` : ""} — is a note on the trust, paid as it sells over ${TRUST_NOTE_M} months.`
+          ? ` Your trust share: ${money(toGp.advance)} GP advances (senior), ${money(toGp.coinvest)} co-invest`
+            + `${toGp.promote > 0 ? `, ${money(toGp.promote)} promote` : ""}; paid as a note over ${TRUST_NOTE_M} months.`
           : "")
-        + (toGp && toGp.writtenOff > 0 ? ` ${money(toGp.writtenOff)} of GP advances is more than the trust is worth and is written off.` : ""),
+        + (toGp && toGp.writtenOff > 0 ? ` ${money(toGp.writtenOff)} of GP advances written off.` : ""),
     });
   }
   settleFund(s);

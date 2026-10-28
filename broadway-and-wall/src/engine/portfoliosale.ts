@@ -230,7 +230,7 @@ export function listStreetPortfolio(
 ): { s: GameState; err?: string; msg?: string } {
   const clean = [...new Set(bbls)].filter((b) => s.holdings[b] && !s.listings.some((l) => l.bbl === b));
   if (clean.length < 2) return { s, err: "A portfolio sale needs at least two buildings you own and have not already listed." };
-  if ((s.portfolios ?? []).some((p) => p.player)) return { s, err: "You already have a package on the market. One at a time." };
+  if ((s.portfolios ?? []).some((p) => p.player)) return { s, err: "A package is already listed. One at a time." };
   // Same crossed-deed wall as portfolio.listPortfolio — a package close is one
   // trade with no per-deed release table, so pledging facility collateral into
   // it used to walk the deeds off and leave the facility balance behind.
@@ -240,10 +240,10 @@ export function listStreetPortfolio(
   }
   const inWorkout = clean.filter((b) => s.workouts?.[b]);
   if (inWorkout.length > 0) {
-    return { s, err: `${inWorkout.length} of these are in workout. Cure or deed them back before packaging.` };
+    return { s, err: `${inWorkout.length} of these are in workout. Resolve them first.` };
   }
   const gross = grossOf(s, parcels, clean);
-  if (gross <= 0) return { s, err: "Those parcels are not worth anything to package." };
+  if (gross <= 0) return { s, err: "Those parcels have no package value." };
   const disc = sizeDiscount(clean.length, s.econ.creditIdx ?? 1);
   const guide = Math.round(gross * (1 - disc) / 1000) * 1000;
   const ask = askOverride && askOverride > 0 ? Math.round(askOverride / 1000) * 1000 : guide;
@@ -257,9 +257,8 @@ export function listStreetPortfolio(
   for (const b of clean) { const h = s.holdings[b]; if (h) h.inPackage = true; }
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `You have taken ${clean.length} buildings to market as one package at ${money(ask)}. `
-      + `The parts appraise at ${money(gross)}; a book this size trades ${(disc * 100).toFixed(0)}% back from that, `
-      + `because the list of people who can close it in one go is short and every one of them knows it.`,
+    text: `Package listed · ${clean.length} buildings · ${money(ask)}. `
+      + `Appraised ${money(gross)}; ${(disc * 100).toFixed(0)}% bulk discount.`,
   });
   return { s, msg: `${clean.length} buildings offered as one package at ${money(ask)}.` };
 }
@@ -309,7 +308,7 @@ export function buyPortfolio(
   const closing = Math.round(struck * 0.02);
   const purse = fundableNow(s, parcels);
   if (purse < struck + closing) {
-    return { s, err: `You are ${money(struck + closing - purse)} short, counting cash and the undrawn line. A package is one cheque — nobody lends against a book you do not own yet.` };
+    return { s, err: `${money(struck + closing - purse)} short (cash plus undrawn line). Packages are all-cash.` };
   }
   const seller = p.sellerId ? (s.rivals ?? []).find((r) => r.id === p.sellerId) : null;
   const sellerName = seller?.name ?? p.sellerLender ?? "a receiver";
@@ -331,7 +330,7 @@ export function buyPortfolio(
     if (r.err) {
       return {
         s,
-        err: `Could not convey every deed in the package (${r.err}). Nothing has closed — raise the cash or leave the book.`,
+        err: `Could not convey every building (${r.err}). Nothing closed.`,
       };
     }
     cur = r.s;
@@ -356,9 +355,8 @@ export function buyPortfolio(
   cur.portfolios = (cur.portfolios ?? []).filter((x) => x.id !== id);
   cur.news.unshift({
     q: cur.month, kind: "deal",
-    text: `You have bought ${taken.length} buildings from ${sellerName} in one transaction at ${money(struck)}. `
-      + `The parts appraise at ${money(p.gross)} — ${((1 - struck / Math.max(1, p.gross)) * 100).toFixed(0)}% back. `
-      + `Nobody else in town could write that cheque this month.`,
+    text: `Package bought · ${taken.length} buildings from ${sellerName} · ${money(struck)}. `
+      + `Appraised ${money(p.gross)} (${((1 - struck / Math.max(1, p.gross)) * 100).toFixed(0)}% discount).`,
   });
   return { s: cur, msg: `${taken.length} buildings, one closing, ${money(struck)}.` };
 }
@@ -388,7 +386,7 @@ export function offerStreetBook(
   }
   const insult = Math.round(reservation * 0.82);
   if (px < insult) {
-    return { s, err: "Too far from their number. They will wait for the next quarterly cut." };
+    return { s, err: "Too far below their price. They will wait for the next quarterly cut." };
   }
   const prev = p.talks?.theirPrice ?? ask;
   const theirs = Math.max(reservation, Math.round((prev + px) / 2));
@@ -608,8 +606,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
           s.news.unshift({
             q: s.month, kind: "deal",
             text: `${winner.name} has bought your ${conveyed}-building package at ${money(p.ask)} — one closing, `
-              + `${money(debtOff)} of debt retired out of the proceeds, ${money(toYou)} net cash movement. `
-              + `You will not see those buildings on the tape again for a while.`,
+              + `${money(debtOff)} of debt retired from proceeds, ${money(toYou)} net cash.`,
           });
           winner.cash -= winEq;
           financePackage(s, winner, winDebt, marks);
@@ -626,7 +623,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
         s.news.unshift({
           q: s.month, kind: "event",
           text: `${winner.name} has bought ${p.bbls.length} buildings from ${seller?.name ?? p.sellerLender ?? "a receiver"} in a single transaction at ${money(p.ask)}. `
-            + `That is ${((1 - p.ask / Math.max(1, p.gross)) * 100).toFixed(0)}% back from what the buildings appraise at individually — the price of needing one cheque.`,
+            + `${((1 - p.ask / Math.max(1, p.gross)) * 100).toFixed(0)}% under individual appraisals.`,
         });
         continue;
       }
@@ -653,7 +650,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
             q: s.month, kind: "warn",
             text: `${p.sellerLender} has cut the ${p.bbls.length}-building ${p.reoBorrower ? `${p.reoBorrower} ` : ""}book again, to ${money(p.ask)} — `
               + `${((1 - p.ask / Math.max(1, p.gross)) * 100).toFixed(0)}% under appraisal now. `
-              + `They have been carrying it for ${Math.round(age / 12)} years and the examiners have noticed.`,
+              + `Held ${Math.round(age / 12)} years.`,
           });
         }
         // AND EVENTUALLY IT BREAKS UP. A book nobody wants whole gets sold in
@@ -671,8 +668,8 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
           s.portfolios = s.portfolios.filter((x) => x.id !== p.id);
           s.news.unshift({
             q: s.month, kind: "warn",
-            text: `${p.sellerLender} has given up on selling the ${p.reoBorrower ?? "receivership"} book whole. `
-              + `All ${p.bbls.length} buildings are on the tape individually now, and they are priced to go.`,
+            text: `${p.sellerLender} broke up the ${p.reoBorrower ?? "receivership"} package. `
+              + `All ${p.bbls.length} buildings listed individually at discounted prices.`,
           });
         }
       } else if (p.ask > p.gross * 0.72) {
@@ -688,7 +685,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
         for (const b of p.bbls) { const h = s.holdings[b]; if (h) delete h.inPackage; }
         s.news.unshift({
           q: s.month, kind: "info",
-          text: `Your ${p.bbls.length}-building package came off the market unsold. Nobody in town could write that cheque this year.`,
+          text: `Package withdrawn unsold · ${p.bbls.length} buildings. No buyer this year.`,
         });
       }
       s.portfolios = s.portfolios.filter((x) => x.id !== p.id);
@@ -729,10 +726,9 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
       kind: "portfolio", tone: "bad",
       title: `${desk} has taken back the whole of ${r.name}`,
       body: `${take.length} buildings went to the lenders this month — everything ${r.name} still owned. `
-        + `${desk} is not a landlord and does not want to be one, so the book is out whole rather than one at a time, `
-        + `and the number it opens at is the loan and not the value. `
-        + `The package is on Marketplace under Books for sale — one cheque, cash, no financing at the table. `
-        + `If nobody bids it comes down every quarter until somebody does.`,
+        + `${desk} is selling them as one package, priced to the loan rather than value. `
+        + `On Marketplace under Books for sale; all cash, no financing. `
+        + `Price cut each quarter until it sells.`,
       detail: p
         ? `${money(p.ask)} for the package against ${money(p.gross)} of buildings — ${((1 - p.ask / Math.max(1, p.gross)) * 100).toFixed(0)}% back from the sum of the parts.`
         : `${money(owed)} of debt against ${take.length} buildings.`,
@@ -760,7 +756,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
         s.news.unshift({
           q: s.month, kind: "deal",
           text: `${r.name} has put ${take.length} buildings on the market as one package at ${money(Math.round(gross * (1 - disc)))}. `
-            + `The fund is at the end of its life. Whoever can write that cheque gets ${(disc * 100).toFixed(0)}% off the sum of the parts.`,
+            + `Fund-life sale; ${(disc * 100).toFixed(0)}% off the sum of the parts.`,
         });
       }
     }
@@ -823,7 +819,7 @@ export function openReoPortfolio(
   s.news.unshift({
     q: s.month, kind: "warn",
     text: `${lender} has taken ${clean.length} buildings${borrower ? ` off ${borrower}` : ""} into receivership and put the book out whole at ${money(open)}. `
-      + `A bank does not want to own buildings — the package is on Marketplace under Books for sale. `
-      + `If nobody bids, that number comes down every quarter until somebody does.`,
+      + `Package on Marketplace under Books for sale. `
+      + `Price cut each quarter until it sells.`,
   });
 }

@@ -448,6 +448,14 @@ export function DealsPage() {
           onClick={() => setDesk("sales")}>
           Your sales · {saleCount}
         </button>
+        <button type="button"
+          className={"btn btn-mini" + (game.noUnsolicited ? " btn-on" : "")}
+          style={{ marginLeft: "auto" }}
+          aria-pressed={!!game.noUnsolicited}
+          title={game.noUnsolicited ? "Rivals can't ring with offers for your buildings. Click to allow." : "Stop rivals ringing with offers for your buildings."}
+          onClick={() => useStore.getState().setNoUnsolicited(!game.noUnsolicited)}>
+          {game.noUnsolicited ? "No unsolicited offers ✓" : "No unsolicited offers"}
+        </button>
       </div>
       {/* One column: the live desk is a single <section>, and the two-column
           grid left the right half of the room empty. */}

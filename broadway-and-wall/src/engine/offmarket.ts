@@ -163,8 +163,8 @@ function callOwner(
     });
     s.news.unshift({
       q: s.month, kind: "deal",
-      text: `${r.name} bought ${rec.address} from ${held.name} for ${money(price)} while you were still talking to them. `
-        + `It never listed. Your conversation is over.`,
+      text: `${r.name} bought ${rec.address} from ${held.name} for ${money(price)} during your negotiation. `
+        + `Never listed. Your negotiation is closed.`,
     });
   } else if (rng(s, "rivals") < 0.3) {
     s.news.unshift({

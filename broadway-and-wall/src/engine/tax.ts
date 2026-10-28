@@ -67,8 +67,8 @@ export function fileTaxAppeal(
   if (room.total < q.fee) {
     return {
       s,
-      err: `The appraisal and tax counsel require ${money(q.fee)} up front and you can raise `
-        + `${money(room.total)} — ${money(room.cash)} of cash and ${money(room.line)} on the line.`,
+      err: `Appeal costs ${money(q.fee)} up front; available `
+        + `${money(room.total)} (${money(room.cash)} cash, ${money(room.line)} on the line).`,
     };
   }
   const next = cloneState(s);

@@ -238,7 +238,7 @@ function settleMerchant(s: GameState, parcels: ParcelTable, bbl: string, m: Merc
   }
   s.news.unshift({
     q: s.month, kind: "warn",
-    text: `${who ? who.name : "The builder"}${who ? `, builder of the new ${rec.address},` : ` of the new ${rec.address}`} handed back the keys the month it opened — ${money(m.loan)} owed against a building worth ${money(worth)} into this market. ${m.lender} has it on the tape at ${money(ask)}.`,
+    text: `${who ? who.name : "The builder"}${who ? `, builder of the new ${rec.address},` : ` of the new ${rec.address}`} handed back the keys at opening — ${money(m.loan)} owed vs ${money(worth)} value. ${m.lender} is selling it at ${money(ask)}.`,
   });
   return worth;
 }
@@ -343,7 +343,7 @@ function tickBuilderFirms(s: GameState, looksF: number) {
   if (!live.length && !(s.rivals ?? []).some(isBuilderFirm)) for (let i = 0; i < target; i++) newBuilderFirm(s);
   else if (live.length < target && rng(s, "dev") < 0.25 * Math.max(0.3, Math.min(1.5, s.econ.creditIdx ?? 1))) {
     const r = newBuilderFirm(s);
-    s.news.unshift({ q: s.month, kind: "info", text: `${r.name} has set up as a ${r.style === "developer" ? "developer" : "builder"} in town — ${r.founder}, with ${money(r.cash)} of the firm's own money.` });
+    s.news.unshift({ q: s.month, kind: "info", text: `New ${r.style === "developer" ? "developer" : "builder"} · ${r.name} · founder ${r.founder} · ${money(r.cash)} equity.` });
   }
   // Fifteen years without breaking ground and nothing on the book: the founder retires.
   for (const r of livingBuilderFirms(s)) {
@@ -435,10 +435,10 @@ function settleBuilder(s: GameState, b: Builder, j: { coInvest?: number; sf: num
     b.failedM = s.month; b.endReason = "folded";
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `${b.name} has folded. ${b.founder}'s firm delivered ${b.delivered} building${b.delivered === 1 ? "" : "s"} `
-        + `(${Math.round(b.sfDelivered / 1000).toLocaleString()}k sf) since ${monthLabel(b.bornM)}; the last, ${address}, `
+      text: `${b.name} has folded. Delivered ${b.delivered} building${b.delivered === 1 ? "" : "s"} `
+        + `(${Math.round(b.sfDelivered / 1000).toLocaleString()}k sf) since ${monthLabel(b.bornM)}; last, ${address}, `
         + `opened at ${Math.round(ratio * 100)}% of what it cost${b.handedBack ? `, and ${b.handedBack === 1 ? "one has" : `${b.handedBack} have`} gone back to the lender` : ""}. `
-        + `Whatever it still had in the ground goes with it.`,
+        + `Projects under way go with it.`,
     });
   }
 }
@@ -452,10 +452,10 @@ export function constructionQuotes(s: GameState, mix: UseMix, costTotal: number)
     // writes reads (relCurve) — not a private linear one.
     const rel = d.fund ? 0 : relCurve(s, d.name);
     const q = deskQuote(s.econ, d, mix, costTotal, app, rel, maxCommit);
-    const why = bank?.failedM !== undefined ? `${d.name} is in receivership — nobody is answering the phone.`
-      : app < 0.12 ? `${d.name} has stopped writing new paper — their capital will not carry it.`
-      : q.ltcMax <= 0.02 ? `${d.name} will not touch spec construction in this market.`
-      : maxCommit && q.held ? `A job this size is past ${d.name}'s hold — they will only fund $${(maxCommit / 1e6).toFixed(0)}M of it.`
+    const why = bank?.failedM !== undefined ? `${d.name} is in receivership.`
+      : app < 0.12 ? `${d.name} has stopped new lending (capital constrained).`
+      : q.ltcMax <= 0.02 ? `${d.name} is not lending on spec construction in this market.`
+      : maxCommit && q.held ? `Over ${d.name}'s hold limit; max $${(maxCommit / 1e6).toFixed(0)}M.`
       : undefined;
     return { lender: q.lender, ratePct: q.ratePct, ltcMax: q.ltcMax, points: q.points, open: q.open, why };
   });
@@ -924,7 +924,7 @@ export function planDevelopment(
   const { requiredYield, hurdleRatio } = developmentHurdle(yieldOnCost, exitYieldPct);
 
   const lenderNote = ltc === 0
-    ? "No construction lender will touch spec commercial in a recession. Pre-lease it, or fund the whole thing yourself."
+    ? "No construction lender funds spec commercial in a recession. Pre-lease it or fund it all with equity."
     : hurdleRatio < 1
       ? `Yield on cost is ${yieldOnCost.toFixed(2)}% against a ${requiredYield.toFixed(2)}% required yield `
         + `(${exitCap.toFixed(2)}% exit, tax-loaded to ${exitYieldPct.toFixed(2)}%, plus the developer margin). `
@@ -940,8 +940,8 @@ export function planDevelopment(
         // would lose money.
         + (hurdleRatio * (1 + DEV_MARGIN) >= 1
           ? `Finished, it would be worth ${((hurdleRatio * (1 + DEV_MARGIN) - 1) * 100).toFixed(0)}% more than it cost — `
-            + `short of the ${(DEV_MARGIN * 100).toFixed(0)}% margin a merchant builder needs, which is why nobody else is building it.`
-          : `That is a way to build a building for more than it is worth.`)
+            + `short of the ${(DEV_MARGIN * 100).toFixed(0)}% developer margin.`
+          : `Cost exceeds completed value.`)
       : undefined;
 
   const plan: DevPlan = {
@@ -1107,7 +1107,7 @@ export function startAdaptiveReuse(
   target: "multifamily" | "mixed" = "multifamily", customMix?: UseMix,
 ): { s: GameState; err?: string; msg?: string } {
   { const why = consentFor(s, s.holdings[bbl], "redevelop"); if (why) return { s, err: why }; }
-  if (s.holdings[bbl]?.groundRentOut) return { s, err: "You sold the land under this building — the fee owner's consent is not on offer. Buy the land back first." };
+  if (s.holdings[bbl]?.groundRentOut) return { s, err: "You sold the land under this building. Buy the land back first." };
   const eligible = adaptiveReuseEligibility(s, parcels, bbl);
   if (!eligible.ok) return { s, err: eligible.why };
   const rec = resolveRec(parcels, s, bbl)!;
@@ -1617,23 +1617,23 @@ export function proposeBuildToSuit(
 ): { s: GameState; err?: string; msg?: string } {
   const termY = btsTermY(termYears);
   if (use !== "office" && use !== "retail" && use !== "industrial") {
-    return { s, err: "Build-to-suit is for an office headquarters, anchor retail or an industrial user." };
+    return { s, err: "Build-to-suit is for office HQ, anchor retail or industrial users." };
   }
-  if (!s.holdings[bbl]) return { s, err: "Buy the site before shopping it to an occupier." };
+  if (!s.holdings[bbl]) return { s, err: "Buy the site before marketing a build-to-suit." };
   if (s.developments[bbl]) return { s, err: "Construction is already under way." };
   if (s.btsProspects?.[bbl]) {
-    return { s, err: "You already have signed terms on this site. Take them or return to spec before shopping it again." };
+    return { s, err: "Build-to-suit terms already signed. Accept them or return to spec first." };
   }
-  if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the sale listing before you shop it to an occupier." };
-  if (s.holdings[bbl].groundOffer) return { s, err: "It is on offer for a ground lease. Pull that before you shop a build-to-suit." };
-  if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased. Somebody else builds on it." };
-  if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — shop the whole site." };
+  if (s.holdings[bbl].sale) return { s, err: "It is listed for sale. Withdraw the listing first." };
+  if (s.holdings[bbl].groundOffer) return { s, err: "It is offered for ground lease. Withdraw that first." };
+  if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased; the lessee builds." };
+  if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage. Market the whole site." };
   const rec = resolveRec(parcels, s, bbl);
-  if (!rec || rec.class !== "land" || rec.bldgArea > 0) return { s, err: "Build-to-suit starts on clear land." };
+  if (!rec || rec.class !== "land" || rec.bldgArea > 0) return { s, err: "Build-to-suit requires a vacant site." };
   const barred = zoneUseBar(rec, use, s.econ);
   if (barred) return { s, err: barred };
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
-  if (!plan) return { s, err: "That programme cannot be built on this site." };
+  if (!plan) return { s, err: "That program does not fit this site." };
   const next = clone(s);
   const prev = next.holdings[bbl].btsOffer;
   const same = prev
@@ -1649,7 +1649,7 @@ export function proposeBuildToSuit(
     s: next,
     msg: same
       ? "Still on the book — an anchor comes when one comes."
-      : `Listed ${plan.floors} fl of ${use} (${Math.round(plan.sf).toLocaleString()} sf) for a ${termY}-year build-to-suit. Now you wait.`,
+      : `Build-to-suit listed · ${plan.floors} fl of ${use} · ${Math.round(plan.sf).toLocaleString()} sf · ${termY}-year term.`,
   };
 }
 
@@ -1737,8 +1737,8 @@ export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
       const rec = resolveRec(parcels, s, bbl);
       s.news.unshift({
         q: s.month, kind: "deal",
-        text: `${bts.name} has walked from the build-to-suit at ${rec?.address ?? bbl}: the lease gave you until `
-          + `${monthLabel(bts.startByM)} to start construction and nothing is in the ground. The site is back on spec.`,
+        text: `${bts.name} walked from the build-to-suit at ${rec?.address ?? bbl}: construction did not start by `
+          + `${monthLabel(bts.startByM)}. Site back to spec.`,
       });
     }
   }
@@ -1776,10 +1776,10 @@ export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
       offer.lastWalk = { m: s.month, name: w.name, needPsf: w.needPsf, ceilingPsf: w.ceilingPsf };
       s.news.unshift({
         q: s.month, kind: "deal",
-        text: `${w.name} looked at your build-to-suit listing at ${rec.address} and passed. The shell needs `
+        text: `${w.name} passed on the build-to-suit at ${rec.address}. The shell needs `
           + (Number.isFinite(w.needPsf) ? `$${w.needPsf.toFixed(2)}/sf` : "more rent than any tenant pays")
-          + ` to clear its hurdle; they will pay $${w.ceilingPsf.toFixed(2)}/sf at most for new ${offer.use} here. `
-          + `The listing stays up — a cheaper shell, or a better market, is what closes that gap.`,
+          + ` to clear its hurdle; their max is $${w.ceilingPsf.toFixed(2)}/sf for new ${offer.use} here. `
+          + `Listing stays active.`,
       });
       continue;
     }
@@ -1790,13 +1790,13 @@ export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
     const waited = Math.max(1, s.month - offer.sinceM);
     s.news.unshift({
       q: s.month, kind: "deal",
-      text: `Build-to-suit at last: ${bts.name} will take ${Math.round(bts.sf).toLocaleString()} sf `
+      text: `Build-to-suit signed · ${bts.name} · ${Math.round(bts.sf).toLocaleString()} sf `
         + `of ${bts.use} at ${rec.address} for ${Math.round(bts.termM / 12)} years from delivery at $${bts.rentPsf.toFixed(2)}/sf, `
         + `${bts.bumpPct}% a year `
         + `(credit ${bts.credit === 2 ? "strong" : "solid"}), after `
-        + `${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`} on the book. `
-        + `Break ground on their ${offer.floors}-storey shell by ${monthLabel(bts.startByM!)} or they walk — `
-        + `or send them away and go back to spec.`,
+        + `${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`} listed. `
+        + `Start the ${offer.floors}-storey shell by ${monthLabel(bts.startByM!)} or they walk; `
+        + `or decline and return to spec.`,
     });
   }
 }
@@ -1992,16 +1992,16 @@ export function startDevelopment(
   if (outside > 0) { const bar = syndicateBar(s, bbl); if (bar) return { s, err: bar }; }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  if (!s.holdings[bbl]) return { s, err: "Buy the dirt first." };
-  if (rec.class !== "land") return { s, err: "Clear the site first — demolish what's standing before you build." };
+  if (!s.holdings[bbl]) return { s, err: "Buy the land first." };
+  if (rec.class !== "land") return { s, err: "Demolish the existing building first." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   if (s.homes?.units[bbl]) return { s, err: "A house is already going up on it." };
   // You cannot break ground on a site you are trying to sell. Somebody is
   // marketing this lot to buyers right now.
-  if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the listing before you put a crane on it." };
-  if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked — the envelope is what is already standing." };
-  if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased. Somebody else builds on it until the term runs out." };
-  if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — build on the site, not the piece." };
+  if (s.holdings[bbl].sale) return { s, err: "It is listed for sale. Withdraw the listing first." };
+  if (s.landmarks?.[bbl] !== undefined) return { s, err: "Landmarked: the existing building cannot be replaced." };
+  if (s.groundLeases?.[bbl]) return { s, err: "That site is ground-leased; the lessee builds until the term ends." };
+  if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage. Build on the whole site." };
   // Same rule, same answer, said before the arithmetic so the refusal names
   // the zoning rather than reading as "too small".
   const barred = zoneUseBar(rec, use, s.econ, devMix(use, custom?.mix),
@@ -2018,7 +2018,7 @@ export function startDevelopment(
   if (custom?.design?.form && !(custom as { form?: unknown }).form)
     custom = { ...custom, form: { retained: custom.design.formRetained ?? 1, skin: custom.design.formSkin ?? 1 } } as typeof custom;
   const plan = planDevelopment(s, parcels, bbl, use, floors, coverage, contract, ltcWanted, custom, lender, spec);
-  if (!plan) return { s, err: "That's too small to be worth building — add floors or cover more of the lot." };
+  if (!plan) return { s, err: "Too small to build. Add floors or lot coverage." };
   // AND NOTHING UNPRICEABLE CLOSES. planDevelopment refuses a design it cannot
   // draw; this refuses a budget it cannot add up, whatever made it unaddable.
   // Every test below this line is a comparison, and a comparison is exactly
@@ -2027,7 +2027,7 @@ export function startDevelopment(
   const unpriced = [plan.sf, plan.floors, plan.costTotal, plan.commitment, plan.interestReserve,
     plan.equity, plan.equityAtClose, plan.pointsCost, plan.months, plan.ratePct]
     .some((n) => !Number.isFinite(n));
-  if (unpriced) return { s, err: "The numbers on that job do not add up — nobody can price it, so nobody will fund it." };
+  if (unpriced) return { s, err: "The pro forma does not compute; no lender will fund it." };
   // YOU HAVE TO BE ABLE TO FUND THE WHOLE THING.
   //
   // This used to test only the day-one cheque, which is 55% of the equity —
@@ -2047,7 +2047,7 @@ export function startDevelopment(
   let takeoutKind: TakeoutKind = custom?.takeout ?? (required ? "cap" : "float");
   if (!(plan.commitment > 0)) takeoutKind = "float";
   if (required && takeoutKind === "float") {
-    return { s, err: `The construction lender wants a rate cap or a forward lock on a loan over ${Math.round(TAKEOUT_HEDGE_LTC * 100)}% of cost — floating naked into the mini-perm is not on their term sheet.` };
+    return { s, err: `Above ${Math.round(TAKEOUT_HEDGE_LTC * 100)}% LTC the construction lender requires a rate cap or forward lock.` };
   }
   const hedgeCost = takeoutHedgeCost(plan, takeoutKind);
   const need = devFundingNeed(plan, hedgeCost);   // equity, points, the hedge, and a margin for change orders
@@ -2056,7 +2056,7 @@ export function startDevelopment(
   // closing table like everything else on it.
   const site = siteDebtAtGroundbreak(s, bbl);
   if (site.due > 0 && s.facility?.bbls.includes(bbl)) {
-    return { s, err: "This site is pledged to your facility. Release it there before a construction lender will take first lien." };
+    return { s, err: "Site is pledged to your facility. Release it first; the construction lender needs first lien." };
   }
   if (site.due > 0) { const why = consentFor(s, s.holdings[bbl], "redevelop"); if (why) return { s, err: why }; }
   const siteNote = site.due > 0 ? ` and the ${money(site.due)} land loan, which the construction lender requires repaid at close` : "";
@@ -2086,7 +2086,7 @@ export function startDevelopment(
       // money up to it, pro rata across who circled, rather than sending
       // everyone home over the excess.
       if (!custom?.syndicate?.clamp || !(most >= 1)) {
-        return { s, err: `Friends and family can put at most ${money(most)} into this job — no more than your own money in it, and only what your network has not already committed.` };
+        return { s, err: `Friends-and-family max ${money(most)} (capped at your own equity, less prior commitments).` };
       }
       const k = Math.floor(most) / outside;
       outside = Math.floor(most);
@@ -2102,10 +2102,10 @@ export function startDevelopment(
     const short = commitCap - fundable;
     return {
       s,
-      err: `Equity short ${money(short)} to finish this job. `
+      err: `Equity short ${money(short)} to complete. `
         + `Needs ${money(plan.equity)} equity all-in (${money(plan.equityAtClose)} at close) `
         + `plus change-order margin${siteNote}; ${purseWords} ${money(fundable)}${purseNote}. `
-        + `Cut floors or coverage, buy cash-flowing buildings first, or bring more capital — no lender closes without evidence you can finish.`,
+        + `Reduce floors or coverage, or add capital.`,
     };
   }
   // AND THE DAY-ONE CHEQUE IS ASKED OF THE SAME PURSE. The whole-job test
@@ -2122,8 +2122,8 @@ export function startDevelopment(
     return {
       s,
       err: `Equity short ${money(short)} at close. `
-        + `The bank funds nothing until ${money(dayOne)} is in the ground (equity plus origination) `
-        + `of ${money((plan.equity + plan.pointsCost))} total${siteNote}. Cut the massing or raise cash first.`,
+        + `Day-one equity plus origination is ${money(dayOne)} `
+        + `of ${money((plan.equity + plan.pointsCost))} total${siteNote}. Reduce the program or raise cash.`,
     };
   }
   const next = clone(s);
@@ -2169,8 +2169,8 @@ export function startDevelopment(
     if (site.lender) bumpLenderRel(next, site.lender, 0.5);
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `The land loan on ${rec.address} — ${money(site.balance)}${site.penalty > 0 ? ` plus ${money(site.penalty)} to break it` : ""} — `
-        + `was repaid at the construction closing. The construction lender takes first lien on the site.`,
+      text: `Land loan repaid · ${rec.address} · ${money(site.balance)}${site.penalty > 0 ? ` + ${money(site.penalty)} prepayment` : ""} `
+        + `at construction closing. Construction lender takes first lien.`,
     });
   }
   if (plan.commitment > 0) bumpLenderRel(next, plan.lender, 2);   // a closed loan starts a file
@@ -2241,7 +2241,7 @@ export function startDevelopment(
   });
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Ground broken at ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use === "mixed" ? "mixed-use" : use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded by ${plan.lender}, ${plan.bts ? `for ${plan.bts.name} on a ${Math.round(plan.bts.termM / 12)}-year build-to-suit` : "on spec"}. Delivery ${monthLabel(next.month + plan.months)}.`,
+    text: `Groundbreaking · ${rec.address}: ${plan.floors} floors, ${(plan.sf / 1000).toFixed(0)}k sf of ${use === "mixed" ? "mixed-use" : use} at ${plan.far} FAR on a ${contract === "gmp" ? "guaranteed max price" : "cost-plus"} contract. $${(plan.costTotal / 1e6).toFixed(1)}M budget, ${(plan.ltc * 100).toFixed(0)}% funded by ${plan.lender}, ${plan.bts ? `for ${plan.bts.name} on a ${Math.round(plan.bts.termM / 12)}-year build-to-suit` : "on spec"}. Delivery ${monthLabel(next.month + plan.months)}.`,
   });
   if (outside > 0) {
     settleSyndications(next, parcels, false, bbl);
@@ -2249,9 +2249,9 @@ export function startDevelopment(
     const w = next.syndications![bbl];
     next.news.unshift({
       q: next.month, kind: "deal",
-      text: `${w.investor} are in: ${money(w.lpCommit)} committed to ${rec.address}, ${Math.round(w.lpShare * 100)}% of every equity call, `
-        + `on a ${Math.round(w.hurdles[0] * 100)}% preferred return. You put in the site and the rest, and you guarantee completion — `
-        + `an overrun past their commitment is yours alone.`,
+      text: `LP commitment · ${rec.address} · ${w.investor} · ${money(w.lpCommit)}, ${Math.round(w.lpShare * 100)}% of equity calls, `
+        + `${Math.round(w.hurdles[0] * 100)}% preferred return. You contribute the site and guarantee completion; `
+        + `overruns beyond their commitment are yours.`,
     });
   }
   return { s: next };
@@ -2335,9 +2335,8 @@ export function takeoverDevelopment(
   s.cityJobs = (s.cityJobs ?? []).filter((j) => j.bbl !== bbl);
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `You have taken over the job at ${rec.address} — ${(done * 100).toFixed(0)}% built, `
-      + `$${(remaining / 1e6).toFixed(1)}M to finish and open, delivery ${monthLabel(s.month + months)}. `
-      + `Somebody else paid for the hole in the ground.`,
+    text: `Construction takeover · ${rec.address} · ${(done * 100).toFixed(0)}% built, `
+      + `$${(remaining / 1e6).toFixed(1)}M to complete, delivery ${monthLabel(s.month + months)}.`,
   });
 }
 
@@ -2353,16 +2352,16 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
   if (h.groundLeased || s.groundLeases?.[bbl]) {
-    return { s, err: "The ground lessee controls the improvement. You cannot demolish their building." };
+    return { s, err: "The ground lessee controls the building; it cannot be demolished." };
   }
   { const why = consentFor(s, h, "redevelop"); if (why) return { s, err: why }; }
-  if (h.groundRentOut) return { s, err: "You sold the land under this building — the fee owner's consent is not on offer. Buy the land back first." };
-  if (rec.class === "land" || !rec.bldgArea) return { s, err: "There's nothing standing on it." };
-  if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. Nobody knocks that down, including you." };
+  if (h.groundRentOut) return { s, err: "You sold the land under this building. Buy the land back first." };
+  if (rec.class === "land" || !rec.bldgArea) return { s, err: "No building to demolish." };
+  if (s.landmarks?.[bbl] !== undefined) return { s, err: "Landmarked; demolition not permitted." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
-  if (h.sale) return { s, err: "It's on the market — pull the listing first." };
+  if (h.sale) return { s, err: "It is listed for sale. Withdraw the listing first." };
   if (h.loan || (h.mezz?.balance ?? 0) > 0) {
-    return { s, err: "Pay off the mortgage first — nobody demolishes under a lien." };
+    return { s, err: "Pay off the mortgage before demolishing." };
   }
   // OCCUPIED SPACE IS OCCUPIED SPACE — including the flats, which this used to
   // ignore entirely, so a full apartment block with no commercial roll could be
@@ -2372,7 +2371,7 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   if (leased / Math.max(1, rentableSf(rec)) > 0.2) {
     return {
       s,
-      err: "You can't demolish over occupied space. Stop letting it and wait the roll out, or buy the leases out — both are on the leasing desk.",
+      err: "Cannot demolish occupied space. Halt leasing and let leases expire, or buy them out (Leasing).",
     };
   }
   const cost = demolitionCost(rec, s);
@@ -2385,8 +2384,8 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   if (liq.total < cost) {
     return {
       s,
-      err: `Demolition runs ${money(cost)} and you can raise ${money(liq.total)} — `
-        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
+      err: `Demolition costs ${money(cost)}; available ${money(liq.total)} `
+        + `(${money(liq.cash)} cash, ${money(liq.line)} on the line).`,
     };
   }
   const next = clone(s);
@@ -2407,7 +2406,7 @@ export function demolish(s: GameState, parcels: ParcelTable, bbl: string): { s: 
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({
     q: next.month, kind: "warn",
-    text: `${rec.address} came down — ${money(cost)} to clear it. The site is dirt again.`,
+    text: `Demolished · ${rec.address} · ${money(cost)}. Vacant site.`,
   });
   return { s: next };
 }
@@ -2490,13 +2489,13 @@ function tickRepudiation(s: GameState, d: Development, rec: { address: string },
       s.news.unshift({
         q: s.month, kind: "warn",
         text: short
-          ? `The desks will look at ${rec.address} and none of them will write enough. The job is `
-            + `${(progress * 100).toFixed(0)}% built, $${(d.loanBalance / 1e6).toFixed(1)}M is owed to a receiver and `
-            + `$${(toComplete / 1e6).toFixed(1)}M of cost is still ahead of it — a facility that does not cover both `
-            + `buys nobody a building. Find the difference or find a partner.`
-          : `Nobody will refinance ${rec.address}. The job is ${(progress * 100).toFixed(0)}% built with `
-            + `$${(d.loanBalance / 1e6).toFixed(1)}M outstanding to a receiver, and no desk in town is quoting `
-            + `against that at any price. Until one is, every dollar of work in place is yours.`,
+          ? `Refinance short · ${rec.address}: no lender sizes enough. `
+            + `${(progress * 100).toFixed(0)}% built, $${(d.loanBalance / 1e6).toFixed(1)}M owed to a receiver, `
+            + `$${(toComplete / 1e6).toFixed(1)}M to complete. `
+            + `Fund the gap or bring a partner.`
+          : `No refinance available · ${rec.address}. ${(progress * 100).toFixed(0)}% built, `
+            + `$${(d.loanBalance / 1e6).toFixed(1)}M owed to a receiver; `
+            + `no lender quoting.`,
       });
     }
     return;
@@ -2525,9 +2524,9 @@ function tickRepudiation(s: GameState, d: Development, rec: { address: string },
   if (s.holdings[d.bbl]) {
     s.news.unshift({
       q: s.month, kind: "deal",
-      text: `${q.lender} has refinanced ${rec.address} at ${q.ratePct.toFixed(2)}% — $${(gross / 1e6).toFixed(1)}M, of which `
-        + `$${(payoff / 1e6).toFixed(1)}M goes straight to the receiver and $${(toBuild / 1e6).toFixed(1)}M is left to finish with. `
-        + `$${(points / 1e3).toFixed(0)}k of points, and a coupon you would not have signed a year ago. The crane turns again.`,
+      text: `Construction refinanced · ${rec.address} · ${q.lender} · ${q.ratePct.toFixed(2)}% · $${(gross / 1e6).toFixed(1)}M: `
+        + `$${(payoff / 1e6).toFixed(1)}M to the receiver, $${(toBuild / 1e6).toFixed(1)}M to complete, `
+        + `$${(points / 1e3).toFixed(0)}k points. Work resumes.`,
     });
   }
 }
@@ -2638,10 +2637,10 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         s.news.unshift({
           q: s.month,
           kind: "warn",
-          text: `${rec.address} called ${unfunded >= 1_000_000
+          text: `Equity call · ${rec.address} · ${unfunded >= 1_000_000
             ? `$${(unfunded / 1_000_000).toFixed(2)}M`
-            : `$${Math.round(unfunded / 1000)}K`} of additional equity this month. `
-            + `The construction budget has outrun its remaining equity and loan commitment; cash funded the gap.`,
+            : `$${Math.round(unfunded / 1000)}K`}. `
+            + `Budget exceeded remaining equity and loan commitment; funded from cash.`,
         });
       }
     }
@@ -2676,7 +2675,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         d.commitment += extra;
         s.news.unshift({
           q: s.month, kind: "info",
-          text: `The schedule at ${rec.address} has run past its interest reserve. The lender topped it up — it goes on the balance the takeout has to cover, not on your cheque book.`,
+          text: `Interest reserve exhausted · ${rec.address}. Lender topped it up; added to the loan balance.`,
         });
       }
       d.reserveUsed += interest;
@@ -2718,14 +2717,14 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         s.news.unshift({
           q: s.month, kind: overrun > 0 ? "warn" : "info",
           text: overrun > 0
-            ? `Change orders at ${rec.address}: ${money(extra)}, of which ${money(overrun)} is past the contingency and lands on you.`
+            ? `Change orders at ${rec.address}: ${money(extra)}; ${money(overrun)} over contingency, funded by you.`
             : `Change orders at ${rec.address}: ${money(extra)}, absorbed by the contingency.`,
         });
       } else if (roll < 0.055) {
         d.deliverM += 1 + Math.round(rng(s, "dev"));
         syncDevCohorts(s, d);
         d.events++;
-        s.news.unshift({ q: s.month, kind: "warn", text: `Weather and inspections at ${rec.address} — delivery moves to ${monthLabel(d.deliverM)}.` });
+        s.news.unshift({ q: s.month, kind: "warn", text: `Delay · ${rec.address} · weather and inspections · delivery now ${monthLabel(d.deliverM)}.` });
       } else if (roll < 0.062) {
         // a sub goes under: time AND money, and the GMP does not help much.
         // Pre-qualification is most of what stops this one, which is why the
@@ -2740,7 +2739,7 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
         d.events++;
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `A subcontractor at ${rec.address} defaulted. Re-tendering costs ${money(extra)} and pushes delivery to ${monthLabel(d.deliverM)}.`,
+          text: `Subcontractor default · ${rec.address} · ${money(extra)} to re-tender · delivery now ${monthLabel(d.deliverM)}.`,
         });
       }
     }
@@ -2858,8 +2857,8 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     d.signed.push({ sf: sfLet, use: lead, discount, name: "" });
     s.news.unshift({
       q: s.month, kind: "deal",
-      text: `Let before it opens: ${(sfLet / 1000).toFixed(0)}k sf at ${rec.address}, ${((1 - discount) * 100).toFixed(0)}% under market for taking delivery risk. `
-        + `${(((takenSf + sfLet) / Math.max(1, leasable)) * 100).toFixed(0)}% of the building is spoken for.`,
+      text: `Let before it opens: ${(sfLet / 1000).toFixed(0)}k sf at ${rec.address}, ${((1 - discount) * 100).toFixed(0)}% under market (delivery risk). `
+        + `${(((takenSf + sfLet) / Math.max(1, leasable)) * 100).toFixed(0)}% pre-leased.`,
     });
   }
 }
@@ -3048,12 +3047,12 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     s.news.unshift({
       q: s.month, kind: advance < lease ? "warn" : "info",
       text: advance < lease
-        ? `The lease-up reserve at ${rec.address} was ${money(lease)}, and only ${money(advance)} of it `
-          + `is still fundable. The fit-out and the leasing commissions on the rest come out of your own account.`
+        ? `Lease-up reserve short · ${rec.address}: ${money(advance)} of ${money(lease)} `
+          + `fundable. Remaining TI and leasing commissions come from your cash.`
         : inFund
-          ? `The lease-up reserve at ${rec.address} — ${money(lease)} — is released. That is what fits out the first tenants.`
-          : `The lease-up reserve at ${rec.address} — ${money(lease)} — stays with the lender and is drawn as tenants are fitted out `
-            + `and while the building cannot carry its loan. Your own cash is not touched until it runs out.`,
+          ? `Lease-up reserve at ${rec.address} (${money(lease)}) is released for first-tenant TI.`
+          : `Lease-up reserve · ${rec.address} · ${money(lease)} held by the lender; drawn for TI `
+            + `and debt service shortfalls before your cash.`,
     });
   }
 
@@ -3078,8 +3077,8 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   if (lostSf > 0) {
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `${rec.address} opened with ${(lostSf / 1000).toFixed(1)}k sf of construction pre-lets that could not take possession — `
-        + `the space will not demise under the floor. ${placed} pre-let${placed === 1 ? "" : "s"} did move in.`,
+      text: `${rec.address} opened; ${(lostSf / 1000).toFixed(1)}k sf of pre-leases could not take possession `
+        + `(space below minimum size). ${placed} pre-lease${placed === 1 ? "" : "s"} moved in.`,
     });
   }
 
@@ -3228,7 +3227,7 @@ export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, pr
   const p = PROGRAMS.find((x) => x.id === programId);
   if (!h || !rec || !p) return { s, err: "No such program." };
   if (h.groundLeased || s.groundLeases?.[bbl]) {
-    return { s, err: "The ground lessee controls the improvement — their capital plan, not yours." };
+    return { s, err: "The ground lessee controls the building and its capital plan." };
   }
   if (rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to improve on a vacant lot." };
   { const why = consentFor(s, h, "redevelop"); if (why) return { s, err: why }; }
@@ -3239,7 +3238,7 @@ export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, pr
   // rent roll forbids. Real capital is a cycle, and this is its period.
   const last = h.programsDone?.[programId];
   if (last !== undefined && s.month - last < (PROGRAM_CYCLE_M[programId] ?? 240)) {
-    return { s, err: `${p.label} was done here in ${monthLabel(last)}. It does not need doing again yet.` };
+    return { s, err: `${p.label} done here in ${monthLabel(last)}; not needed yet.` };
   }
   const cost = programCost(rec, s, p);
   // A facade, a plant replacement or a new lobby is capital spend on a
@@ -3251,15 +3250,15 @@ export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, pr
   if (liq.total < cost) {
     return {
       s,
-      err: `${p.label} costs ${money(cost)} and you can raise ${money(liq.total)} — `
-        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
+      err: `${p.label} costs ${money(cost)}; available ${money(liq.total)} `
+        + `(${money(liq.cash)} cash, ${money(liq.line)} on the line).`,
     };
   }
   const next = clone(s);
   fundAndBook(next, parcels, cost, "capex", { bbl });
   const nh = next.holdings[bbl];
   nh.program = { id: programId, untilM: next.month + p.months };
-  next.news.unshift({ q: next.month, kind: "info", text: `${p.label} underway at ${rec.address} (${money(cost)}).` });
+  next.news.unshift({ q: next.month, kind: "info", text: `${p.label} started · ${rec.address} · ${money(cost)}.` });
   return { s: next };
 }
 
@@ -3278,7 +3277,7 @@ export function tickPrograms(s: GameState, parcels: ParcelTable) {
         h.condition = condGrade(h.condIdx);
         h.lastCapM = s.month;
       }
-      if (rec && p) s.news.unshift({ q: s.month, kind: "info", text: `${p.label} complete at ${rec.address} — the building reads as ${h.condition} now.` });
+      if (rec && p) s.news.unshift({ q: s.month, kind: "info", text: `${p.label} complete · ${rec.address} · condition now ${h.condition}.` });
       delete h.program;
     }
   }
@@ -3340,7 +3339,7 @@ export function setOpsPolicy(
       q: next.month, kind: "info",
       text: `House policy: ${st > 0 ? "push rents" : st < 0 ? "fill space" : "ask the market"}, `
         + `buildings run ${serviceSpec(ops.service).label.toLowerCase()}, capital plan ${planSpec(ops.plan).label.toLowerCase()}. `
-        + `It applies to everything on the book from this month.`,
+        + `Applies to all holdings from this month.`,
     });
   }
   return next;
@@ -3611,9 +3610,8 @@ export function noteRecordPlan(
   const rec = resolveRec(parcels, s, bbl);
   s.news.unshift({
     q: s.month, kind: "event", bbl,
-    text: `${who} filed plans for the largest ${SECTOR_LABEL[use].toLowerCase()} building this city has ever ` +
-      `seen: ${Math.round(sf).toLocaleString()} sf, ${floors} floors, at ${rec?.address ?? bbl}. ` +
-      `Every landlord in the class just read the same paragraph you did.`,
+    text: `Record filing · ${who} · largest ${SECTOR_LABEL[use].toLowerCase()} building in the city: ` +
+      `${Math.round(sf).toLocaleString()} sf, ${floors} floors, at ${rec?.address ?? bbl}.`,
   });
 }
 
@@ -4369,17 +4367,17 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     const yoursHere = Object.keys(s.holdings).some((b) => parcels[b]?.block === rec.block);
     const densifyX = nsf / Math.max(1, oldSf);
     const why = densifyX >= 1.25
-      ? `the site densifies ${(densifyX).toFixed(1)}x under a ${lead} shortage`
+      ? `${(densifyX).toFixed(1)}x densification, ${lead} shortage`
       : ratio >= 0.85
-        ? `the land under it is worth ${ratio.toFixed(1)}x the standing building`
-        : `the replacement clears its full hurdle after charging $${(opportunityCost / 1e6).toFixed(1)}M for the building being sacrificed`;
+        ? `land worth ${ratio.toFixed(1)}x the building`
+        : `replacement clears hurdle after $${(opportunityCost / 1e6).toFixed(1)}M for the existing building`;
     const yoursNext = kids.some((kk) => Object.keys(s.holdings).some((b) => parcels[b]?.block === parcels[kk]?.block));
     s.news.unshift({
       q: s.month, kind: yoursHere || yoursNext ? "event" : "info",
       text: kids.length && teardownFirm
-        ? `${teardownFirm.name} has bought ${rec.address} and ${kids.length} lot${kids.length > 1 ? "s" : ""} beside it and is clearing all of it for one building. `
+        ? `${teardownFirm.name} bought ${rec.address} and ${kids.length} adjacent lot${kids.length > 1 ? "s" : ""}; clearing for one building. `
           + `${(nsf / 1000).toFixed(0)}k sf of ${nextUse}, ${nfl} floors, opening ${monthLabel(s.month + months)}.`
-        : `${rec.address} is coming down. It went up in ${rec.yearBuilt}, and ${why}. `
+        : `Teardown · ${rec.address} (built ${rec.yearBuilt}): ${why}. `
           + `${(nsf / 1000).toFixed(0)}k sf of ${nextUse} replaces it, opening ${monthLabel(s.month + months)}.`,
     });
   }
@@ -4498,8 +4496,8 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   if (rng(s, "indust") < 0.18) {
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `${rec.address} is coming down empty. The manufacturing that filled it is gone, `
-        + `and nothing has taken the bay. The lot waits.`,
+      text: `Teardown · ${rec.address} · vacant industrial, `
+        + `no replacement tenant. Lot held vacant.`,
     });
   }
 }
@@ -4619,8 +4617,8 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (rng(s, "exit") < 0.18) {
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `${rec.address} is coming down empty. ${use === "multifamily" ? "The flats" : "The floors"} `
-          + `have sat dark for years and nobody is coming back for them. The lot waits.`,
+        text: `Teardown · ${rec.address} · ${use === "multifamily" ? "apartments" : "floors"} `
+          + `vacant for years. Lot held vacant.`,
       });
     }
   }
@@ -4765,8 +4763,8 @@ export function tickCityGrowth(
       if (s.groundLeases?.[j.bbl]) {
         s.news.unshift({
           q: s.month, kind: "info",
-          text: `Your ground lessee topped out at ${rec.address}: ${j.floors} fl of ${dominantOf(cmix)} `
-            + `(${Math.round(j.sf).toLocaleString()} sf). The coupon does not change — the bones revert with the land.`,
+          text: `Ground lessee completed · ${rec.address}: ${j.floors} fl of ${dominantOf(cmix)} `
+            + `(${Math.round(j.sf).toLocaleString()} sf). Ground rent unchanged; building reverts with the land.`,
         });
       }
     } else if (j.firmId) {
@@ -4785,7 +4783,7 @@ export function tickCityGrowth(
           q: s.month, kind: r >= 1 ? "info" : "warn", bbl: j.bbl,
           text: `${b.name} opened ${rec.address} — ${Math.round(j.sf).toLocaleString()} sf of ${lead} into `
             + `${((s.econ.cityVac?.[lead] ?? 0) * 100).toFixed(1)}% vacancy, worth ${Math.round(r * 100)}% of what it cost to build`
-            + (r >= 1.15 ? ". A good one." : r < 1 ? ". The partners will not be pleased." : "."),
+            + (r >= 1.15 ? "." : r < 1 ? " (loss)." : "."),
         });
       }
     } else if (j.builderId) {
@@ -4813,8 +4811,8 @@ export function tickCityGrowth(
       s.news.unshift({
         q: s.month, kind: "info",
         text: near
-          ? `${j.floors} floors of ${j.use} opened at ${rec.address}, in ${districtLabel(rec)} — that is space competing with yours.`
-          : `A ${j.floors}-story ${j.use} building opened at ${rec.address}, the tallest thing to top out in a while.`,
+          ? `Delivered · ${rec.address} · ${j.floors} floors of ${j.use} · ${districtLabel(rec)} (competes with yours).`
+          : `Delivered · ${rec.address} · ${j.floors}-story ${j.use}, tallest completion in a while.`,
       });
     }
   }
@@ -5245,8 +5243,8 @@ function breakCommittedPlans(s: GameState, parcels: ParcelTable, adjacency: Reco
       if ((adjacency?.[p.bbl] ?? []).some((a) => !!s.holdings[a]) || kids.length >= 2) {
         s.news.unshift({
           q: s.month, kind: "info", bbl: p.bbl,
-          text: `${firm.name} bought ${kids.length} lot${kids.length > 1 ? "s" : ""} next to ${rec.address} and is building on all of it: `
-            + `${Math.round(rec.lotArea).toLocaleString()} sf of dirt under one ${p.floors}-storey building.`,
+          text: `${firm.name} bought ${kids.length} lot${kids.length > 1 ? "s" : ""} next to ${rec.address} to build on: `
+            + `${Math.round(rec.lotArea).toLocaleString()} sf site, one ${p.floors}-storey building.`,
         });
       }
     } else fail();
@@ -5434,7 +5432,7 @@ function breakCityGround(
   if (!claimed && !opts?.quiet && rng(s, "dev") < 0.4) {
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `Ground broken at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, due ${monthLabel(deliverM)}.`,
+      text: `Groundbreaking · ${rec.address} · ${(sf / 1000).toFixed(0)}k sf of ${use} · due ${monthLabel(deliverM)}.`,
     });
   }
   s.month = nowM;

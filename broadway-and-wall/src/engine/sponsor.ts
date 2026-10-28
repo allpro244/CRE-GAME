@@ -88,7 +88,7 @@ export function markSponsor(s: GameState, kind: "forced" | "deficiency" | "seize
   if (before.institutional && !after.institutional) {
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: "The institutional desks have stopped returning your calls. Agency and insurance money is closed to you until this ages off the record — bridge lenders will still talk, at bridge prices.",
+      text: "Lost institutional standing: agency and life-company lenders closed to you until this ages off your record. Bridge lenders still available at bridge rates.",
     });
   }
 }

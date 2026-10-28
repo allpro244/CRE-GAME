@@ -207,11 +207,11 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
       clearPrivateOrigination(s, n);
       s.news.unshift({
         q: s.month, kind: got >= n.basis ? "deal" : "warn",
-        text: `${n.address} changed hands and your loan was paid off out of the proceeds — ${money(got)} `
-          + `against ${money(n.face)} of face. You put ${money(n.basis)} in. `
+        text: `Note repaid on sale · ${n.address} · ${money(got)} `
+          + `vs ${money(n.face)} face; your basis ${money(n.basis)}. `
           + (got >= n.basis
-            ? `The paper did what paper does.`
-            : `The sale did not cover you and there was nothing left to chase.`),
+            ? `Repaid in full.`
+            : `Sale proceeds fell short; no recovery.`),
       });
       s.notes!.splice(i, 1); continue;
     }
@@ -228,8 +228,8 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
           clearPrivateOrigination(s, n);
           s.news.unshift({
             q: s.month, kind: "deal",
-            text: `${n.obligor} repaid the loan on ${n.address} at maturity — ${money(n.face)} back against `
-              + `${money(n.basis)} in and ${money(n.collected)} of coupon collected along the way. A bond is a bond.`,
+            text: `Note repaid at maturity · ${n.address} · ${n.obligor} · ${money(n.face)} vs `
+              + `${money(n.basis)} basis, ${money(n.collected)} interest collected.`,
           });
           s.notes!.splice(i, 1); continue;
         }
@@ -270,10 +270,9 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
         n.filedM = undefined; n.saleM = undefined; n.toldM = undefined;
         s.news.unshift({
           q: s.month, kind: "deal",
-          text: `${n.obligor} has reinstated on ${n.address} — ${money(reinstate)} of arrears${legal ? " and your legal" : ""} `
-            + `paid in one cheque, and the loan is current again. `
-            + (legal ? `The foreclosure file is closed; there is nothing to sell in July. ` : ``)
-            + `You are back to owning a bond, which was never the worst outcome.`,
+          text: `Loan reinstated · ${n.address} · ${n.obligor} paid ${money(reinstate)} of arrears${legal ? " and legal costs" : ""}; `
+            + `loan current. `
+            + (legal ? `Foreclosure withdrawn.` : ``),
         });
         continue;
       }
@@ -283,8 +282,7 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
       clearPrivateOrigination(s, n);
       s.news.unshift({
         q: s.month, kind: "deal",
-        text: `${n.obligor} has paid you out on ${n.address} — ${money(px)} against ${money(n.basis)} in, arrears and all. `
-          + `You bought the building and got the money instead, which is the risk you take at that price.`,
+        text: `Note paid off · ${n.address} · ${n.obligor} · ${money(px)} incl. arrears vs ${money(n.basis)} basis.`,
       });
       s.notes!.splice(i, 1); continue;
     }
@@ -311,9 +309,8 @@ function goBad(s: GameState, n: Note, what: string) {
   n.toldM = s.month;
   s.news.unshift({
     q: s.month, kind: "warn",
-    text: `${what}. You hold ${money(n.face)} of face against it and you paid ${money(n.basis)}. `
-      + `You can extend them once, you can file, or you can sell the paper on — and doing nothing is `
-      + `a position too, until somebody else sells the building.`,
+    text: `${what}. Your note: ${money(n.face)} face, ${money(n.basis)} basis. `
+      + `Options: extend once, foreclose or sell the note.`,
   });
 }
 
@@ -363,12 +360,11 @@ export function takeDeed(s: GameState, parcels: ParcelTable, n: Note, how: "fore
   s.news.unshift({
     q: s.month, kind: "deal",
     text: how === "deed"
-      ? `${n.obligor} handed you the deed to ${n.address} rather than fight the foreclosure. `
-        + `It is yours at ${money(n.basis)} of basis, it is worn, and ${rec.bldgArea > 0 ? `${Math.round(100 * leased / Math.max(1, rec.bldgArea))}% of it is let` : "it is a site"}. `
-        + `The mark today is ${money(mark)}.`
-      : `The hammer fell on ${n.address} and nobody bid against you. It is yours at ${money(h.costBasis)} all in — `
-        + `worn, ${rec.bldgArea > 0 ? `${Math.round(100 * leased / Math.max(1, rec.bldgArea))}% let` : "a site"}, and marked at ${money(mark)} today. `
-        + `You did not buy a building at a discount; you bought a job.`,
+      ? `Deed in lieu · ${n.address} from ${n.obligor}. `
+        + `Basis ${money(n.basis)}, worn condition, ${rec.bldgArea > 0 ? `${Math.round(100 * leased / Math.max(1, rec.bldgArea))}% leased` : "vacant site"}. `
+        + `Marked at ${money(mark)}.`
+      : `Won at foreclosure auction · ${n.address} · credit bid unopposed. Basis ${money(h.costBasis)} all in, `
+        + `worn, ${rec.bldgArea > 0 ? `${Math.round(100 * leased / Math.max(1, rec.bldgArea))}% leased` : "vacant site"}, marked at ${money(mark)}.`,
   });
 }
 
@@ -433,7 +429,7 @@ function loanToOwnBids(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: "event",
       text: `${buyer.name} bought the defaulted loan on ${o.address} off ${o.lender} at ${(100 * o.askPct).toFixed(0)} cents before anyone else moved. `
-        + `They want the building, not the coupon — ${o.obligor} has about a year.`,
+        + `Loan-to-own; ${o.obligor} has about a year.`,
     });
   }
 }
@@ -469,7 +465,7 @@ function expireOffers(s: GameState, parcels: ParcelTable) {
       s.news.unshift({
         q: s.month, kind: "event",
         text: `${bb.name} bought the performing loan on ${o.address} off ${o.lender} at `
-          + `${(100 * o.askPct).toFixed(0)} cents. A bond changed hands — ${o.obligor} still owns the deed.`,
+          + `${(100 * o.askPct).toFixed(0)} cents. ${o.obligor} keeps the deed.`,
       });
       continue;
     }
@@ -494,7 +490,7 @@ function expireOffers(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: "event",
       text: `${buyer.name} bought the loan on ${o.address} off ${o.lender} at ${(100 * o.askPct).toFixed(0)} cents. `
-        + `They are not buying a bond. ${o.obligor} has about a year to find the money.`,
+        + `Loan-to-own; ${o.obligor} has about a year to repay.`,
     });
   }
 }
@@ -523,8 +519,8 @@ function takeRivalNotes(s: GameState, parcels: ParcelTable) {
     s.lastTradeM[rn.bbl] = s.month;
     s.news.unshift({
       q: s.month, kind: "event",
-      text: `${to.name} has taken ${rec.address} off ${from.name} through the paper. No auction, no listing, `
-        + `and no chance for anybody else to bid — which is the whole reason to own somebody's mortgage.`,
+      text: `${to.name} took ${rec.address} from ${from.name} by foreclosing on the loan it bought. `
+        + `No auction or listing.`,
     });
   }
 }
@@ -592,8 +588,7 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
       s.news.unshift({
         q: s.month, kind: "deal",
         text: `The receiver for ${l.name} is selling the loan on ${rec.address} — ${money(x.balance)} of face at `
-          + `${(100 * s.noteOffers![s.noteOffers!.length - 1].askPct).toFixed(0)} cents. Nobody at that desk is `
-          + `paid to wait any more.`,
+          + `${(100 * s.noteOffers![s.noteOffers!.length - 1].askPct).toFixed(0)} cents.`,
       });
       return;
     }
@@ -673,7 +668,7 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
       q: s.month, kind: "deal",
       text: `${l.name} is offering the ${kind === "nonperforming" ? "defaulted " : ""}loan on ${rec.address} — `
         + `${money(face)} of face at ${(100 * s.noteOffers![s.noteOffers!.length - 1].askPct).toFixed(0)} cents. `
-        + `The borrower is ${r.name}. You would not be buying a building; you would be buying their mortgage.`,
+        + `Borrower: ${r.name}.`,
     });
     return;   // one a month, city-wide
   }
@@ -683,7 +678,7 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
 
 export function buyNote(s: GameState, parcels: ParcelTable, id: string): { s: GameState; err?: string; msg?: string } {
   const o = s.noteOffers?.find((x) => x.id === id);
-  if (!o) return { s, err: "That paper is gone." };
+  if (!o) return { s, err: "That note is no longer offered." };
   const px = Math.round(o.face * o.askPct);
   // NOBODY LENDS AGAINST THE NOTE. That has not changed and it is the honest
   // part of the old refusal — there is no repo line on a defaulted mortgage
@@ -696,14 +691,14 @@ export function buyNote(s: GameState, parcels: ParcelTable, id: string): { s: Ga
   if (liq.total < px) {
     return {
       s,
-      err: `That is ${money(px)} and you can raise ${money(liq.total)} — ${money(liq.cash)} of cash and `
-        + `${money(liq.line)} on the line. Nobody finances the note itself.`,
+      err: `Costs ${money(px)}; available ${money(liq.total)} — ${money(liq.cash)} cash, `
+        + `${money(liq.line)} on the line. Notes cannot be financed.`,
     };
   }
   // Phase C — purchased paper counts against the combined credit book.
   const room = creditBookRoom(s, parcels);
   if (px > room) {
-    return { s, err: `Your credit book will only carry another ${money(room)} — originated sleeve plus purchased notes share one rail.` };
+    return { s, err: `Credit book limit: ${money(room)} more (originated and purchased notes share one limit).` };
   }
   const next = clone(s);
   fundAndBook(next, parcels, px, "bought");
@@ -720,7 +715,7 @@ export function buyNote(s: GameState, parcels: ParcelTable, id: string): { s: Ga
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `${firmShort(next)} has bought the loan on ${o.address} from ${o.lender} — ${money(o.face)} of face for `
-      + `${money(px)}. ${o.obligor} owes the money to you now, and they will find that out this month.`,
+      + `${money(px)}. ${o.obligor} now owes you.`,
   });
   return { s: next, msg: `Bought at ${(100 * o.askPct).toFixed(0)} cents.` };
 }
@@ -736,9 +731,9 @@ export function buyNote(s: GameState, parcels: ParcelTable, id: string): { s: Ga
  */
 export function modifyNote(s: GameState, _parcels: ParcelTable, id: string): { s: GameState; err?: string; msg?: string } {
   const n = s.notes?.find((x) => x.id === id);
-  if (!n) return { s, err: "You do not hold that paper." };
-  if (n.mods >= 1) return { s, err: "You have already restructured this one. Nobody extends twice — that is how a note buyer becomes a landlord by accident." };
-  if (n.filedM !== undefined) return { s, err: "You have filed. That conversation is over." };
+  if (!n) return { s, err: "You do not hold that note." };
+  if (n.mods >= 1) return { s, err: "Already restructured once; no second extension." };
+  if (n.filedM !== undefined) return { s, err: "Foreclosure already filed." };
   const next = clone(s);
   const nn = next.notes!.find((x) => x.id === id)!;
   const r = obligorOf(next, nn.obligorId);
@@ -748,8 +743,8 @@ export function modifyNote(s: GameState, _parcels: ParcelTable, id: string): { s
   if (!canPay) {
     next.news.unshift({
       q: next.month, kind: "warn",
-      text: `${nn.obligor} could not fund the five per cent paydown on ${nn.address}. There is no restructuring here — `
-        + `they do not have the money, and now you know it.`,
+      text: `${nn.obligor} could not fund the 5% paydown on ${nn.address}. `
+        + `Restructuring failed.`,
     });
     return { s: next, msg: "They could not fund it." };
   }
@@ -765,7 +760,7 @@ export function modifyNote(s: GameState, _parcels: ParcelTable, id: string): { s
   next.news.unshift({
     q: next.month, kind: "info",
     text: `You extended ${nn.obligor} on ${nn.address} to ${monthLabel(nn.maturityM)} — ${money(paydown)} down, `
-      + `coupon to ${nn.ratePct.toFixed(2)}%. You are the patient lender now, which is a position and not a favour.`,
+      + `rate to ${nn.ratePct.toFixed(2)}%.`,
   });
   return { s: next, msg: "Restructured." };
 }
@@ -773,8 +768,8 @@ export function modifyNote(s: GameState, _parcels: ParcelTable, id: string): { s
 /** File to foreclose. Legal money out, and then you wait. */
 export function fileOnNote(s: GameState, parcels: ParcelTable, id: string): { s: GameState; err?: string; msg?: string } {
   const n = s.notes?.find((x) => x.id === id);
-  if (!n) return { s, err: "You do not hold that paper." };
-  if (n.perf === "performing") return { s, err: "It is paying. You cannot foreclose on a loan that is current, however much you want the building." };
+  if (!n) return { s, err: "You do not hold that note." };
+  if (n.perf === "performing") return { s, err: "Loan is current; cannot foreclose." };
   if (n.filedM !== undefined) return { s, err: "You have already filed." };
   const cost = Math.round(n.face * FILE_COST);
   // Foreclosure counsel is a legal fee on paper you already own, and a note
@@ -785,8 +780,8 @@ export function fileOnNote(s: GameState, parcels: ParcelTable, id: string): { s:
   if (liq.total < cost) {
     return {
       s,
-      err: `Filing costs ${money(cost)} in legal and you can raise ${money(liq.total)} — `
-        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
+      err: `Filing costs ${money(cost)} in legal; available ${money(liq.total)} `
+        + `(${money(liq.cash)} cash, ${money(liq.line)} on the line).`,
     };
   }
   const next = clone(s);
@@ -798,9 +793,9 @@ export function fileOnNote(s: GameState, parcels: ParcelTable, id: string): { s:
   nn.saleM = nextJulyAfter(next.month, Math.round(rrange(next, FILE_MIN_M, FILE_MAX_M)) - 5);
   next.news.unshift({
     q: next.month, kind: "warn",
-    text: `You have filed to foreclose on ${nn.address}. The referee has set it down for the ${monthLabel(nn.saleM)} auction. `
-      + `Between now and then you collect nothing, ${nn.obligor} can still reinstate right up to the hammer — `
-      + `and if somebody outbids your debt on the steps, you get paid off and they get the building.`,
+    text: `Foreclosure filed · ${nn.address} · auction ${monthLabel(nn.saleM)}. `
+      + `No interest until then; ${nn.obligor} may reinstate before the sale. `
+      + `If outbid at auction, you are repaid and the bidder gets the building.`,
   });
   return { s: next, msg: "Filed." };
 }
@@ -821,9 +816,9 @@ export function noteBid(s: GameState, parcels: ParcelTable, n: Note): { px: numb
 
 export function sellNote(s: GameState, parcels: ParcelTable, id: string): { s: GameState; err?: string; msg?: string } {
   const n = s.notes?.find((x) => x.id === id);
-  if (!n) return { s, err: "You do not hold that paper." };
+  if (!n) return { s, err: "You do not hold that note." };
   const { px, buyer } = noteBid(s, parcels, n);
-  if (!buyer) return { s, err: "There is no bid. Everybody who buys paper in this town is dealing with their own balance sheet this month." };
+  if (!buyer) return { s, err: "No bid for the note this month." };
   const next = clone(s);
   const b = next.rivals!.find((x) => x.name === buyer)!;
   b.cash -= px;
@@ -835,9 +830,8 @@ export function sellNote(s: GameState, parcels: ParcelTable, id: string): { s: G
   const g = px - n.basis;
   next.news.unshift({
     q: next.month, kind: g >= 0 ? "deal" : "warn",
-    text: `You sold the ${n.address} paper to ${buyer} at ${money(px)} — ${g >= 0 ? "a" : "a"} `
-      + `${g >= 0 ? "gain" : "loss"} of ${money(Math.abs(g))} on a ${money(n.basis)} basis. `
-      + `They want the building; you wanted the money.`,
+    text: `Note sold · ${n.address} · ${buyer} · ${money(px)} — ${g >= 0 ? "a" : "a"} `
+      + `${g >= 0 ? "gain" : "loss"} of ${money(Math.abs(g))} on a ${money(n.basis)} basis.`,
   });
   return { s: next, msg: `Sold at ${money(px)}.` };
 }
@@ -898,7 +892,7 @@ export function discountedPayoff(s: GameState, parcels: ParcelTable, bbl: string
   const q = payoffQuote(s, parcels, bbl);
   const h = s.holdings[bbl];
   const w = s.workouts?.[bbl];
-  if (!q || !h?.loan || !w) return { s, err: "There is nothing in default there." };
+  if (!q || !h?.loan || !w) return { s, err: "No loan in default there." };
   if (!q.open) return { s, err: q.why };
   // A DPO IS A CURE, NOT A VOLUNTARY PAYDOWN. The rule against funding debt
   // reduction on the revolver is about retiring cheap term paper you were
@@ -914,8 +908,8 @@ export function discountedPayoff(s: GameState, parcels: ParcelTable, bbl: string
   if (liq.total < q.px) {
     return {
       s,
-      err: `A discounted payoff is money on the table: ${money(q.px)}, against ${money(liq.total)} you can raise — `
-        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
+      err: `Discounted payoff is ${money(q.px)}; available ${money(liq.total)} `
+        + `(${money(liq.cash)} cash, ${money(liq.line)} on the line).`,
     };
   }
   const rec = resolveRec(parcels, s, bbl);
@@ -933,9 +927,8 @@ export function discountedPayoff(s: GameState, parcels: ParcelTable, bbl: string
   markSponsor(next, "dpo", rec.address, discount);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `${lender} took ${money(q.px)} to release the mortgage on ${rec.address} — ${money(discount)} less than `
-      + `you owed them. You kept the building and you wrote down somebody else's capital to do it, and the `
-      + `next credit committee in this town will have read about it.`,
+    text: `Discounted payoff · ${rec.address} · ${lender} took ${money(q.px)}, ${money(discount)} below `
+      + `the balance. Expect tighter terms from lenders.`,
   });
   return { s: next, msg: `Paid off at ${(100 * q.px / q.bal).toFixed(0)} cents.` };
 }
@@ -1001,8 +994,8 @@ function sellYourDefaultToACompetitor(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: "warn", bbl: w.bbl,
       text: `${bank} has sold your defaulted loan on ${rec.address} to ${buyer.name}, at ${(pct * 100).toFixed(0)} cents. `
-        + `${buyer.name} did not buy a coupon; it bought a road to your building. It will not extend, and if the July auction `
-        + `ends at its credit bid the deed is theirs. Cure it, refinance it, sell it — or pay them off for less than you owe.`,
+        + `Loan-to-own buyer: no extensions; if the July auction `
+        + `ends at its credit bid it takes the deed. Cure, refinance, sell or negotiate a discounted payoff.`,
     });
   }
 }
@@ -1069,9 +1062,8 @@ export function maybeSellYourLoan(s: GameState, parcels: ParcelTable) {
     const rec = resolveRec(parcels, s, h.bbl);
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `${from} has sold your loan on ${rec?.address ?? h.bbl} to ${to.name}. Same balance, same coupon, `
-        + `different counterparty — and a fund that bought your mortgage at a discount is not in the business `
-        + `of granting extensions.`,
+      text: `${from} sold your loan on ${rec?.address ?? h.bbl} to ${to.name}. Same balance and rate; `
+        + `new holder unlikely to grant extensions.`,
     });
   }
 }

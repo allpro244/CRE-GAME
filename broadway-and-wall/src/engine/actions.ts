@@ -221,19 +221,19 @@ export function executePurchase(
 ): { s: GameState; err?: string } {
   const entity = !!opts?.entity;
   if (s.cityGroundLeases?.[bbl]) {
-    return { s, err: "That fee is still subject to a ground lease. It is not freehold inventory." };
+    return { s, err: "That land is under a ground lease. Not for sale as freehold." };
   }
   if (isCivicLand(s, bbl)) {
     const dev = s.growth?.held?.[bbl];
-    if (dev) return { s, err: `${dev} owns that farm and is taking it to the board. It is not for sale.` };
-    return { s, err: "The city took that lot for a civic work. It is not for sale." };
+    if (dev) return { s, err: `${dev} owns that farm and is seeking approvals. Not for sale.` };
+    return { s, err: "The city took that lot for a public project. Not for sale." };
   }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (s.holdings[bbl]) return { s, err: "You already own it." };
   // see refreshListings: a live city job is somebody else's construction site
   if ((s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned)) {
-    return { s, err: "There is a crane on that lot — somebody else's job is under way. It is not for sale until it tops out or the receiver takes it." };
+    return { s, err: "Crane on site: another owner is building. Not for sale until it completes or goes to a receiver." };
   }
   const bq = buyQuote(s, parcels, bbl, price, product, lev);
   // Vehicle path: fundPay + live investment period draws `fund.cash`.
@@ -268,10 +268,10 @@ export function executePurchase(
       s,
       err: `${prod.lender} will not write a loan on this. `
         + (min > 0 && price * prod.ltv < min
-          ? `Their minimum cheque in this town is ${money(min)} — this building is too small for that desk. `
-          : !windowOpen(s, prod) ? `They are not writing anything this month. `
-          : `The building does not pass their underwriting today. `)
-        + `Close all cash, or try another desk.`,
+          ? `Their minimum loan is ${money(min)}; this building is too small. `
+          : !windowOpen(s, prod) ? `They are not lending this month. `
+          : `The building fails their underwriting. `)
+        + `Close all cash or try another lender.`,
     };
   }
   const purse = fromFund ? (s.fund?.cash ?? 0) + (s.fund?.uncalled ?? 0) : fundableNow(s, parcels);
@@ -397,8 +397,8 @@ export function executePurchase(
     // not fire — it is the guard that refuses rather than pumps if they ever
     // drift apart again.
     if (!holding.loan) {
-      return { s, err: `${prod.lender} will not fund the ${money(bq.principal)} it quoted at the closing — `
-        + `close on another desk or all cash.` };
+      return { s, err: `${prod.lender} will not fund the ${money(bq.principal)} it quoted. `
+        + `Close with another lender or all cash.` };
     }
     // Belt: if float still drifts a dollar, the written balance is the quoted one.
     if (holding.loan && bq.principal > 0 && holding.loan.balance !== bq.principal) {
@@ -413,7 +413,7 @@ export function executePurchase(
     holding.costBasis -= next.exchange.rolledGain; // deferred gain carries into the new basis
     next.news.unshift({
       q: next.month, kind: "deal",
-      text: `1031 completed: ${money(next.exchange.rolledGain)} of gain rolled into ${rec.address} — ${money(next.exchange.deferredTax)} of tax deferred.`,
+      text: `1031 completed · ${rec.address} · ${money(next.exchange.rolledGain)} gain rolled · ${money(next.exchange.deferredTax)} tax deferred.`,
     });
     next.exchange = null;
   }
@@ -500,7 +500,7 @@ export function executePurchase(
     // filing receipt. Now the paper covers them too, and the clause is earned:
     // every epithet behind it is a fact the player could have looked up.
     text: `${describeFirm(s)} has taken ${rec.address} at ${money(price)}`
-      + `${holding.loan ? ` on $${(holding.loan.principal / 1e6).toFixed(1)}M of ${productById(holding.loan.product).lender} paper at ${holding.loan.ratePct}%` : ", all cash"}`
+      + `${holding.loan ? ` with a $${(holding.loan.principal / 1e6).toFixed(1)}M ${productById(holding.loan.product).lender} loan at ${holding.loan.ratePct}%` : ", all cash"}`
       + `${offMarket ? ", off-market" : ""}.`,
   });
   // THE PLAN A PURCHASE IS JUDGED AGAINST (reputation.ts): its going-in yield
@@ -519,7 +519,7 @@ export function executePurchase(
     const need = takeoverEquityNeed(next, parcels, bbl, halfBuilt);
     const have = fundableNow(next, parcels) - heldByRaises(next);
     if (!entity && need > have) {
-      return { s, err: `This site comes with a half-built job: ${money(need)} of equity to finish it and open it, and after the purchase you could fund ${money(Math.max(0, have))}.` };
+      return { s, err: `Half-built site: needs ${money(need)} of equity to finish; you could fund ${money(Math.max(0, have))} after the purchase.` };
     }
     takeoverDevelopment(next, parcels, bbl, halfBuilt);
   }
@@ -614,7 +614,7 @@ export function buyListing(
   // Same purse the closing uses — an offer you could fund at the table is an
   // offer worth making, and testing it against cash alone stopped bids the
   // firm could plainly have honoured.
-  if (fundableNow(s, parcels) < q.equity) return { s, err: `That bid still needs ${money(q.equity)} of equity — you're short.` };
+  if (fundableNow(s, parcels) < q.equity) return { s, err: `That bid needs ${money(q.equity)} of equity; you are short.` };
 
   const next = clone(s);
   const p = bidOdds(next, parcels, bbl, listing, price);
@@ -635,7 +635,7 @@ export function buyListing(
   // curve: about a fifth under the ask for a typical owner, further for a
   // forced one) can offend; anything closer is a plain no.
   if (roll < p + 0.45 || p >= 0.02) {
-    next.news.unshift({ q: next.month, kind: "info", text: `Your ${money(price)} on ${parcels[bbl]?.address} was refused — the ask stands.` });
+    next.news.unshift({ q: next.month, kind: "info", text: `Offer refused · ${parcels[bbl]?.address} · ${money(price)}. Ask unchanged.` });
     return { s: next, msg: "Refused. The ask stands.", refused: true };
   }
   // insulted: the listing goes away — and the person remembers across their book
@@ -644,8 +644,8 @@ export function buyListing(
     if (held) offend(next, held.id, 14, parcels);
   }
   next.listings = next.listings.filter((l) => l.bbl !== bbl);
-  next.news.unshift({ q: next.month, kind: "warn", text: `The seller at ${parcels[bbl]?.address} took the listing elsewhere after your offer.` });
-  return { s: next, msg: "They walked, and pulled the listing.", refused: true };
+  next.news.unshift({ q: next.month, kind: "warn", text: `Listing withdrawn · ${parcels[bbl]?.address}. Seller walked after your offer.` });
+  return { s: next, msg: "They walked and pulled the listing.", refused: true };
 }
 
 // ---- off-market: approach the owner ---------------------------------------
@@ -842,7 +842,7 @@ export function assembleLots(
   for (const r of roots) {
     if (!s.holdings[r]) return { s, err: "You have to own every lot in the assemblage." };
     { const why = consentFor(s, s.holdings[r], "assemble"); if (why) return { s, err: why }; }
-    if (s.holdings[r].groundRentOut) return { s, err: "You sold the land under this building — the fee owner's consent is not on offer. Buy the land back first." };
+    if (s.holdings[r].groundRentOut) return { s, err: "You sold the land under this building. Buy the land back first." };
     const why = assembleBlocker(s, parcels, r, !!opts.payoff);
     if (why) return { s, err: why };
   }
@@ -860,7 +860,7 @@ export function assembleLots(
     }
   }
   if (seen.size !== roots.length) {
-    return { s, err: "Those lots do not touch. An assemblage has to be one contiguous site." };
+    return { s, err: "Lots are not contiguous. An assemblage must be one site." };
   }
 
   // THE POOL LENDER CONSENTS TO A REPLAT OF ITS OWN COLLATERAL. Lots pledged
@@ -872,7 +872,7 @@ export function assembleLots(
   if (fac && pooled.length && fac.balance > 0) {
     const after = fac.bbls.length - pooled.length + 1;
     if (after < FACILITY_MIN_ASSETS) {
-      return { s, err: `The pool lender will consent to merging the lots, but not to a pool of ${after} — a facility needs at least ${FACILITY_MIN_ASSETS} deeds behind it. Pledge another building or repay the balance first.` };
+      return { s, err: `Merge would leave the facility with ${after} assets; it needs at least ${FACILITY_MIN_ASSETS}. Pledge another building or repay the balance first.` };
     }
   }
 
@@ -944,12 +944,11 @@ export function assembleLots(
   const deedsN = siteDeeds(next, parent).length;
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Assembled: ${deedsN} lots at ${rec.address} are now one site of ${Math.round(rec.lotArea).toLocaleString()} sf, `
-      + `${(rec.lotArea * Math.max(rec.farMaxComm, rec.farMaxRes) / 1000).toFixed(0)}k sf buildable on a `
-      + `${Math.round(rec.lotArea * 0.7).toLocaleString()} sf plate. One core, one lobby, and a floor somebody will take `
-      + `a whole of. The dirt underneath reprices this morning at ${landPsfNow(rec, next.econ).toFixed(0)}/sf. `
-      + `That is what all those premiums were for.`
-      + (pooled.length ? ` The site stays in the portfolio facility as one deed; the pool lender signed the replat.` : ""),
+    text: `Assembled · ${rec.address} · ${deedsN} lots merged into one ${Math.round(rec.lotArea).toLocaleString()} sf site, `
+      + `${(rec.lotArea * Math.max(rec.farMaxComm, rec.farMaxRes) / 1000).toFixed(0)}k sf buildable, `
+      + `${Math.round(rec.lotArea * 0.7).toLocaleString()} sf floor plate. `
+      + `Land now marked at $${landPsfNow(rec, next.econ).toFixed(0)}/sf.`
+      + (pooled.length ? ` The merged site stays pledged to the facility.` : ""),
   });
   return { s: next, msg: `${deedsN} lots merged into one site at ${rec.address}.` };
 }
@@ -1054,13 +1053,13 @@ export function groundLeaseQuote(
     padOnly,
     cashFlow: groundLeaseExpenseBreakdown(rentYr),
     reviewNote: review === "fixed"
-      ? `+${stepPct}% every ten years — the leasehold lender's favourite`
+      ? `+${stepPct}% every ten years (preferred by leasehold lenders)`
       : review === "cpi"
-        ? "Annual CPI (2% floor, 4% cap) — you keep up with inflation, not with the corner"
-        : "FMV reset every 20 years, capped at 3.5%/yr compounded from day one — you share the land's appreciation",
+        ? "Annual CPI (2% floor, 4% cap); tracks inflation, not land value"
+        : "FMV reset every 20 years, capped at 3.5%/yr compounded; shares land appreciation",
     termNote: padOnly
-      ? `Under ${GROUND_TOWER_TERM_MIN} years: pads only (shops, storage, dealerships). Towers need a longer lease — and at term the bones do not come free.`
-      : `${GROUND_TOWER_TERM_MIN}+ years: a tower can rise, and the aged improvement reverts with the dirt.`,
+      ? `Under ${GROUND_TOWER_TERM_MIN} years: pad sites only (shops, storage, dealerships). Towers need a longer term; improvements do not revert free.`
+      : `${GROUND_TOWER_TERM_MIN}+ years: towers allowed; improvements revert with the land.`,
   };
 }
 
@@ -1074,15 +1073,15 @@ export function offerGroundLease(
 ): { s: GameState; err?: string; msg?: string } {
   if (!s.holdings[bbl]) return { s, err: "You don't own that." };
   { const why = consentFor(s, s.holdings[bbl], "groundLease"); if (why) return { s, err: why }; }
-  if (s.holdings[bbl].groundRentOut) return { s, err: "You are the ground lessee here — the land is somebody else's to lease." };
+  if (s.holdings[bbl].groundRentOut) return { s, err: "You are the ground lessee; you do not own the land." };
   if (s.groundLeases?.[bbl]) return { s, err: "It is already ground-leased." };
-  if (s.holdings[bbl].groundOffer) return { s, err: "It is already on offer. A ground lessee comes when one comes." };
+  if (s.holdings[bbl].groundOffer) return { s, err: "Already offered for ground lease." };
   if (s.holdings[bbl].btsOffer || s.btsProspects?.[bbl]) {
-    return { s, err: "It is being shopped for a build-to-suit. Pull that before you offer a ground lease." };
+    return { s, err: "It is marketed for a build-to-suit. Withdraw that before offering a ground lease." };
   }
-  if (s.holdings[bbl].sale) return { s, err: "It's on the market — pull the listing before you encumber it." };
-  if (s.developments[bbl]) return { s, err: "Construction is already underway." };
-  if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage — lease the whole site or none of it." };
+  if (s.holdings[bbl].sale) return { s, err: "It is listed for sale. Withdraw the listing first." };
+  if (s.developments[bbl]) return { s, err: "Construction is already under way." };
+  if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage. Ground-lease the whole site." };
   // A land loan and a ground lease cannot share the same dirt: the land desk
   // underwrites vacant carry, and the moment a coupon appears the collateral
   // is income paper. Clear the lien before you encumber the fee.
@@ -1092,30 +1091,30 @@ export function offerGroundLease(
     );
     return {
       s,
-      err: `Pay off the mortgage first (Debt → Pay off — $${bal.toLocaleString()} left) — a land lender will not sit under a ground lease.`,
+      err: `Pay off the mortgage first ($${bal.toLocaleString()} left, Debt → Pay off). A lender will not sit under a ground lease.`,
     };
   }
   if (s.facility?.bbls?.includes(bbl)) {
-    return { s, err: "Release it from the facility first — the line is secured by vacant dirt, not a leased fee." };
+    return { s, err: "Release it from the facility first. The facility does not lend against a leased fee." };
   }
   const term = Math.round(years);
   if (term < GROUND_TERM_MIN) {
     return {
       s,
-      err: `A ground lease has to run at least ${GROUND_TERM_MIN} years — shorter paper is a construction loan, not a ground lease.`,
+      err: `A ground lease must run at least ${GROUND_TERM_MIN} years.`,
     };
   }
   const q = groundLeaseQuote(s, parcels, bbl, term, review);
-  if (!q || q.rentYr <= 0) return { s, err: "Nobody will ground-lease that." };
+  if (!q || q.rentYr <= 0) return { s, err: "No ground tenant will take that site." };
   const next = clone(s);
   next.holdings[bbl].groundOffer = { years: term, sinceM: next.month, review };
   return {
     s: next,
     msg: `Offered a ${term}-year ground lease (${GROUND_REVIEW_LABEL[review]})`
       + (q.padOnly
-        ? ` — pads only until year ${GROUND_TOWER_TERM_MIN}; the bones will not revert for free.`
-        : ` — long enough for a tower, and the aged improvement comes back with the dirt.`)
-      + ` Now you wait for somebody who wants this corner that badly.`,
+        ? `. Pad sites only until year ${GROUND_TOWER_TERM_MIN}; improvements do not revert free.`
+        : `. Long enough for a tower; improvements revert with the land.`)
+      + ` Awaiting a ground tenant.`,
   };
 }
 
@@ -1144,10 +1143,10 @@ export function liveGroundLease(s: GameState, bbl: string): GroundLease | undefi
 
 /** Withdraw the offer. Nothing has signed, so nothing unwinds. */
 export function pullGroundOffer(s: GameState, bbl: string): { s: GameState; err?: string; msg?: string } {
-  if (!s.holdings[bbl]?.groundOffer) return { s, err: "It is not on offer." };
+  if (!s.holdings[bbl]?.groundOffer) return { s, err: "It is not offered for ground lease." };
   const next = clone(s);
   delete next.holdings[bbl].groundOffer;
-  return { s: next, msg: "Offer withdrawn. The dirt goes back to plain carry." };
+  return { s: next, msg: "Ground lease offer withdrawn." };
 }
 
 const GROUND_TENANTS: { name: string; use: BuiltClass; lead: "fast" | "mid" | "slow" }[] = [
@@ -1340,10 +1339,10 @@ export function defaultGroundLease(
         tone: "bad",
         stops: true,
         title: `${gl.tenant} defaulted at ${address}`,
-        body: `The ground rent has stopped and the lease has terminated. You now control the land and the `
-          + `${standing.floors}-floor ${standing.class} building standing on it — that is what long paper secured.`,
+        body: `Ground rent stopped and the lease terminated. The land and the `
+          + `${standing.floors}-floor ${standing.class} building revert to you.`,
         detail: `${Math.round(standing.bldgArea).toLocaleString()} sf reverted vacant`
-          + ` (${standing.yearBuilt} building). It is now yours to operate, lease, finance, sell or redevelop.`,
+          + ` (${standing.yearBuilt} building).`,
       });
     } else {
       const buyout = groundLeaseImprovementBuyout(s, parcels, bbl, standing);
@@ -1366,9 +1365,9 @@ export function defaultGroundLease(
           tone: "bad",
           stops: true,
           title: `${gl.tenant} defaulted at ${address}`,
-          body: `Short ground paper does not gift the tower. You funded a ${money(buyout)} leasehold buyout `
-            + `and took the ${standing.floors}-floor ${standing.class} vacant.`,
-          detail: `${Math.round(standing.bldgArea).toLocaleString()} sf at depreciated replacement — the residual was never free on this term.`,
+          body: `Short-term ground lease: paid a ${money(buyout)} leasehold buyout `
+            + `for the ${standing.floors}-floor ${standing.class}, now vacant.`,
+          detail: `${Math.round(standing.bldgArea).toLocaleString()} sf at depreciated replacement cost.`,
         });
       } else {
         delete s.built[bbl];
@@ -1385,10 +1384,10 @@ export function defaultGroundLease(
           stops: true,
           title: `${gl.tenant} defaulted at ${address}`,
           body: buyout > 0
-            ? `The ground rent has stopped. Short paper does not hand you the building — a ${money(buyout)} `
-              + `leasehold buyout was due and you could not fund it, so the improvement is gone and the vacant site is yours.`
-            : "The ground rent has stopped. Short paper does not hand you the building — the vacant site is yours.",
-          detail: "Carry resumes on dirt. Offer a longer ground lease next time if you want the reversion.",
+            ? `Ground rent stopped. The ${money(buyout)} `
+              + `leasehold buyout went unfunded; the building is removed and the land reverts vacant.`
+            : "Ground rent stopped. Short-term lease: the building does not revert; the land reverts vacant.",
+          detail: "Land carry resumes. A longer term gets the building at expiry.",
         });
       }
     }
@@ -1407,11 +1406,11 @@ export function defaultGroundLease(
       stops: true,
       title: `${gl.tenant} defaulted at ${address}`,
       body: duringBuild
-        ? "They walked the job. The ground rent has stopped, the frame is cancelled, and full control of the site is back with you."
-        : "The ground rent has stopped and the lease has terminated. Full control of the site is back with you.",
+        ? "Construction abandoned. Ground rent stopped and the lease terminated; the site reverts to you."
+        : "Ground rent stopped and the lease terminated; the site reverts to you.",
       detail: duringBuild
-        ? "No completed improvement stood on the land. The vacant site is yours again — carry resumes."
-        : "No completed improvement stood on the land. The vacant site is yours to lease, sell or develop.",
+        ? "No completed building. Vacant land; carry resumes."
+        : "No completed building. Vacant land.",
     });
   }
   return true;
@@ -1471,7 +1470,7 @@ function stepGroundRent(s: GameState, parcels: ParcelTable, bbl: string, gl: Gro
     const word = review === "cpi" ? "CPI review" : review === "fmv" ? "FMV reappraisal" : "Rent review";
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `${word} at ${rec?.address ?? bbl}: the ground rent moves to ${money(gl.rentYr)}`
+      text: `${word} · ${rec?.address ?? bbl} · ground rent now ${money(gl.rentYr)}`
         + (gl.rentYr > prev ? ` (+${(((gl.rentYr / prev) - 1) * 100).toFixed(1)}%)` : "") + `.`,
     });
   }
@@ -1537,14 +1536,14 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
       tone: "good",
       bbl: h.bbl,
       title: `${who.name} has ground-leased the land at ${rec.address}`,
-      body: `A ground lease, not a space lease: they take the whole lot for ${offer.years} years, `
-        + `build their own ${prog.floors}-floor ${prog.use} on it (${Math.round(prog.sf).toLocaleString()} sf), and run it. `
-        + `You collect ${money(q.rentYr)} a year of ground rent (${revWord}) and do not touch the dirt again until `
-        + `${monthLabel(s.month + offer.years * 12)}. It came off the offer book after `
-        + `${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`}.`,
+      body: `Ground lease (not a space lease): whole lot for ${offer.years} years; `
+        + `they build and run a ${prog.floors}-floor ${prog.use} (${Math.round(prog.sf).toLocaleString()} sf). `
+        + `Ground rent ${money(q.rentYr)}/yr (${revWord}) through `
+        + `${monthLabel(s.month + offer.years * 12)}. Signed after `
+        + `${waited >= 24 ? `${Math.round(waited / 12)} years` : `${waited} month${waited === 1 ? "" : "s"}`} on offer.`,
       detail: groundLeaseFreeReversion(s.groundLeases[h.bbl])
-        ? `${offer.years} years is long paper: when it runs out, their building comes back to you with the land.`
-        : `${offer.years} years is short paper: when it runs out you buy their building out, or it is cleared and you get the dirt back.`,
+        ? `${offer.years}-year term: at expiry the building reverts to you with the land.`
+        : `${offer.years}-year term: at expiry you buy out the building, or it is removed and the land reverts.`,
     });
   }
 
@@ -1573,10 +1572,10 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
           revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
           s.news.unshift({
             q: s.month, kind: "event",
-            text: `The ground lease at ${rec?.address ?? bbl} has run out. `
+            text: `Ground lease expired · ${rec?.address ?? bbl}. `
               + `${standing.floors} floors of ${standing.class} (${Math.round(standing.bldgArea).toLocaleString()} sf`
               + (ageYrs >= 1 ? `, ${ageYrs}-year-old` : "")
-              + `) revert with the land — vacant, and yours to let.`,
+              + `) revert to you vacant.`,
           });
         } else {
           // Short paper: residual is not a gift. Fund the leasehold buyout or
@@ -1588,9 +1587,9 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
             revertLesseeImprovement(s, parcels, bbl, h, standing, gl);
             s.news.unshift({
               q: s.month, kind: "event",
-              text: `The ground lease at ${rec?.address ?? bbl} has run out. `
-                + `Short paper — you paid ${money(buyout)} for the leasehold and took `
-                + `${standing.floors} floors of ${standing.class} vacant`
+              text: `Ground lease expired · ${rec?.address ?? bbl}. `
+                + `Paid ${money(buyout)} leasehold buyout; `
+                + `${standing.floors} floors of ${standing.class} revert vacant`
                 + (ageYrs >= 1 ? ` (${ageYrs}-year-old)` : "")
                 + `.`,
             });
@@ -1598,11 +1597,11 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
             delete s.built[bbl];
             s.news.unshift({
               q: s.month, kind: "event",
-              text: `The ground lease at ${rec?.address ?? bbl} has run out. `
+              text: `Ground lease expired · ${rec?.address ?? bbl}. `
                 + (buyout > 0
-                  ? `Short paper does not gift the building — a ${money(buyout)} leasehold buyout `
-                    + `went unfunded, so the improvement is gone and the vacant land is yours again.`
-                  : `Short paper does not gift the building — the vacant land is yours again.`),
+                  ? `The ${money(buyout)} leasehold buyout went unfunded; `
+                    + `the building is removed and the land reverts vacant.`
+                  : `The building does not revert; the land reverts vacant.`),
             });
           }
         }
@@ -1610,7 +1609,7 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
         if (s.built?.[bbl]) delete s.built[bbl];
         s.news.unshift({
           q: s.month, kind: "event",
-          text: `The ground lease at ${rec?.address ?? bbl} has run out. The land is yours again — they never finished a building on it.`,
+          text: `Ground lease expired · ${rec?.address ?? bbl}. Land reverts; no building was completed.`,
         });
       }
       continue;
@@ -1943,7 +1942,7 @@ export function approachOwner(
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   if (s.holdings[bbl]) return { s, err: "You own it." };
-  if (s.listings.some((l) => l.bbl === bbl)) return { s, err: "It's already listed — hit the Market tab." };
+  if (s.listings.some((l) => l.bbl === bbl)) return { s, err: "Already listed. See the Market tab." };
   const prior = s.approaches[bbl];
   // A refusal runs its OWN clock when it recorded one; everything else, and
   // every save written before doors had lengths, keeps the flat six months.
@@ -2066,13 +2065,13 @@ export function approachOwner(
       q: next.month, kind: "info",
       text: owner
         ? `${rec.address}: ${owner.name} is not selling`
-          + (pressure > 0.4 ? " — and they know exactly what you are assembling." : ".")
-          + (owner.style === "family" ? " They have owned it for two generations and do not need the money." : "")
+          + (pressure > 0.4 ? " — aware of your assemblage." : ".")
+          + (owner.style === "family" ? " Family-held for two generations." : "")
         : held
           ? `${rec.address}: ${held.name} is not selling`
-            + (pressure > 0.4 ? " — and they know exactly what you are assembling." : ".")
-            + (held.kind === "local" ? ` They have been on this side of town since ${held.since} and do not need the money.` : "")
-          : `${rec.address}: the owner isn't selling${pressure > 0.4 ? " — they know what you're assembling" : ""}.`,
+            + (pressure > 0.4 ? " — aware of your assemblage." : ".")
+            + (held.kind === "local" ? ` Local owner since ${held.since}.` : "")
+          : `${rec.address}: owner not selling${pressure > 0.4 ? " — aware of your assemblage" : ""}.`,
     });
     return { s: next, refused: true };
   }
@@ -2131,21 +2130,20 @@ export function approachOwner(
     next.approaches[bbl] = stampApproach(next, rec, { q: next.month, refused: false, mode: "offer", reserve: number });
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `${rec.address}: ${(owner?.name ?? held?.name ?? "the owner")} will talk — and will not put a number on it. `
-        + `"Make me an offer." `
-        + (ageM > 120 ? "Nobody has valued that building in a very long time, which cuts both ways. " : "")
-        + `They will listen for six months.`,
+      text: `${rec.address}: ${(owner?.name ?? held?.name ?? "the owner")} will take offers; no asking price. `
+        + (ageM > 120 ? "No appraisal in over ten years. " : "")
+        + `Open for six months.`,
     });
     return { s: next, blind: true };
   }
   next.approaches[bbl] = stampApproach(next, rec, { q: next.month, refused: false, mode: "ask", ask: number });
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `${rec.address}: ${(owner?.name ?? held?.name ?? "the owner")} would take ${money(number)}`
-      + (stressed ? " — they are under pressure and it shows in the number."
-        : number > value * 1.5 ? " — which is not a price, it is a way of saying no politely."
-        : "")
-      + " The number holds for six months.",
+    text: `${rec.address}: ${(owner?.name ?? held?.name ?? "the owner")} asks ${money(number)}`
+      + (stressed ? " (motivated seller)."
+        : number > value * 1.5 ? " (over 1.5x value)."
+        : ".")
+      + " Good for six months.",
   });
   return { s: next, ask: number };
 }
@@ -2202,9 +2200,9 @@ export function submitBlindBid(
   if (cold) return { s, err: coldRefuseMsg(cold) };
   const a = s.approaches[bbl];
   if (!a || a.refused || a.ask !== undefined || a.reserve === undefined) {
-    return { s, err: "There is no live 'make me an offer' conversation on that building." };
+    return { s, err: "No open offer request on that building." };
   }
-  if (s.month > a.q + 6) return { s, err: "That conversation has gone cold." };
+  if (s.month > a.q + 6) return { s, err: "That offer request has expired." };
   return bidBlind(s, parcels, bbl, bid);
 }
 
@@ -2214,7 +2212,7 @@ function bidBlind(
   const a = s.approaches[bbl]!;
   const reserve = a.reserve!;
   const price = Math.round(bid ?? 0);
-  if (!Number.isFinite(price) || price <= 0) return { s, err: "They asked you for a number. Name one." };
+  if (!Number.isFinite(price) || price <= 0) return { s, err: "Enter a price." };
   const next = clone(s);
   const na = next.approaches[bbl];
   na.lastBid = price;
@@ -2235,13 +2233,12 @@ function bidBlind(
     struck.s.news.unshift({
       q: struck.s.month, kind: eager ? "warn" : "deal",
       text: eager
-        ? `${addr}: they took your number the same afternoon, without a counter and without a lawyer's argument. `
-          + `Nobody does that on a number that hurt. You are under contract — place the debt and close.`
-        : `${addr}: they took it, after a week of thinking about it. Under contract — fund it.`,
+        ? `${addr}: offer accepted same day, no counter. Possible overpay. Under contract; arrange financing and close.`
+        : `${addr}: offer accepted. Under contract; fund it.`,
     });
     return {
       s: struck.s,
-      msg: `Under contract at ${money(price)} — now structure the stack and close.`,
+      msg: `Under contract at ${money(price)}. Structure the stack and close.`,
     };
   }
 
@@ -2284,17 +2281,16 @@ function bidBlind(
     na.named = true;
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `${addr}: your ${money(price)} got a real answer out of them at last — `
-        + `${money(na.ask)}, and now they know you want it.`,
+      text: `${addr}: owner answered your ${money(price)} bid with an ask of ${money(na.ask)}.`,
     });
-    return { s: next, msg: "They finally named a number." };
+    return { s: next, msg: "Owner named a price." };
   }
   if (roll < 1 - pWalk) {
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `${addr}: no. They did not say what yes would be, either.`,
+      text: `${addr}: bid declined, no counter.`,
     });
-    return { s: next, msg: "They said no, and nothing else." };
+    return { s: next, msg: "Owner declined." };
   }
   // HOW BADLY IT ENDED, out of the two numbers this branch already has: how
   // far under their reserve the bid was, and how many times you had been back.
@@ -2305,10 +2301,10 @@ function bidBlind(
   delete na.ask;
   next.news.unshift({
     q: next.month, kind: "warn",
-    text: `${addr}: the owner ended the conversation`
-      + ((na.coldUntilM ?? 0) - next.month > 18 ? ", and they will not be taking your call again for a long time." : "."),
+    text: `${addr}: owner ended talks`
+      + ((na.coldUntilM ?? 0) - next.month > 18 ? " for 18+ months." : "."),
   });
-  return { s: next, msg: "They ended the conversation." };
+  return { s: next, msg: "Owner ended talks." };
 }
 
 export function buyOffMarket(
@@ -2317,14 +2313,14 @@ export function buyOffMarket(
   const cold = coldOnDeed(s, parcels, bbl);
   if (cold) return { s, err: coldRefuseMsg(cold) };
   const a = s.approaches[bbl];
-  if (!a || a.refused) return { s, err: "No live ask — approach the owner first." };
+  if (!a || a.refused) return { s, err: "No asking price. Approach the owner first." };
   // Blind "make me an offer" is a bid, not a financed close. The stack comes
   // after they take a number (under contract → closeDeal).
   if (a.ask === undefined && a.reserve !== undefined) {
     return submitBlindBid(s, parcels, bbl, bid ?? 0);
   }
-  if (!a.ask) return { s, err: "No live ask — approach the owner first." };
-  if (s.month > a.q + 6) return { s, err: "That number expired." };
+  if (!a.ask) return { s, err: "No asking price. Approach the owner first." };
+  if (s.month > a.q + 6) return { s, err: "That price has expired." };
   const price = Math.round(bid ?? a.ask);
   if (price >= a.ask) return executePurchase(s, parcels, bbl, a.ask, product, true, lev);
 
@@ -2332,7 +2328,7 @@ export function buyOffMarket(
   // Same purse the closing uses — an offer you could fund at the table is an
   // offer worth making, and testing it against cash alone stopped bids the
   // firm could plainly have honoured.
-  if (fundableNow(s, parcels) < q.equity) return { s, err: `That bid still needs ${money(q.equity)} of equity — you're short.` };
+  if (fundableNow(s, parcels) < q.equity) return { s, err: `That bid needs ${money(q.equity)} of equity; you are short.` };
   const next = clone(s);
   // an owner who wasn't selling in the first place has no reason to bend:
   // off-market discounts come much harder than they do on the open tape
@@ -2345,8 +2341,8 @@ export function buyOffMarket(
     return { s: done.s, msg: `Done at ${money(price)}, off-market.` };
   }
   if (roll < p + 0.4) {
-    next.news.unshift({ q: next.month, kind: "info", text: `${parcels[bbl]?.address}: the owner didn't move off ${money(a.ask)}.` });
-    return { s: next, msg: "They held their number." };
+    next.news.unshift({ q: next.month, kind: "info", text: `${parcels[bbl]?.address}: owner held at ${money(a.ask)}.` });
+    return { s: next, msg: "Owner held the ask." };
   }
   const na = next.approaches[bbl];
   // `disc` is how far under their own stated number you came, which is the
@@ -2355,10 +2351,10 @@ export function buyOffMarket(
   delete na.ask;
   next.news.unshift({
     q: next.month, kind: "warn",
-    text: `${parcels[bbl]?.address}: the owner ended the conversation`
-      + ((na.coldUntilM ?? 0) - next.month > 18 ? " and took the building off the table for good." : "."),
+    text: `${parcels[bbl]?.address}: owner ended talks`
+      + ((na.coldUntilM ?? 0) - next.month > 18 ? " for 18+ months." : "."),
   });
-  return { s: next, msg: "They ended the conversation." };
+  return { s: next, msg: "Owner ended talks." };
 }
 
 // One counter per approach, at YOUR number off the slider. The deeper you
@@ -2396,11 +2392,11 @@ export function counterOffMarket(
   // waiting for a bid, and the bid is the whole negotiation — routing them
   // through here would quietly invent an ask for the counter to cut against.
   if (a && !a.refused && a.ask === undefined && a.reserve !== undefined) {
-    return { s, err: "There is nothing to counter — they asked YOU for a number. Put a bid in." };
+    return { s, err: "Nothing to counter. The owner wants a bid from you." };
   }
-  if (!a || a.refused || !a.ask || !rec) return { s, err: "No live ask to counter." };
-  if (a.countered) return { s, err: "You already countered — the number on the table is the number." };
-  if (s.month > a.q + 6) return { s, err: "That number expired." };
+  if (!a || a.refused || !a.ask || !rec) return { s, err: "No asking price to counter." };
+  if (a.countered) return { s, err: "You already countered. The current price is final." };
+  if (s.month > a.q + 6) return { s, err: "That price has expired." };
   const next = clone(s);
   const na = next.approaches[bbl];
   na.countered = true;
@@ -2427,8 +2423,8 @@ export function counterOffMarket(
   const roll = rng(next);
   if (roll < pTake) {
     na.ask = Math.round(px / 1000) * 1000;
-    next.news.unshift({ q: next.month, kind: "deal", text: `${rec.address}: the owner grumbled and took your number — ${money(na.ask)}.` });
-    return { s: next, msg: "They took it." };
+    next.news.unshift({ q: next.month, kind: "deal", text: `${rec.address}: owner accepted your ${money(na.ask)} counter.` });
+    return { s: next, msg: "Owner accepted." };
   }
   if (roll < pTake + pSoft) {
     // Meet partway: more of the gap on an open ask, less once they have already
@@ -2440,16 +2436,15 @@ export function counterOffMarket(
       na.ask = softened;
       next.news.unshift({
         q: next.month, kind: "info",
-        text: `${rec.address}: the owner came off ${money(a.ask)} to ${money(softened)}. `
-          + `That is their number now — one counter is all you get.`,
+        text: `${rec.address}: owner cut ask to ${money(softened)} from ${money(a.ask)}. Final; no further counters.`,
       });
-      return { s: next, msg: `They came down to ${money(softened)}.` };
+      return { s: next, msg: `Owner came down to ${money(softened)}.` };
     }
     // Degenerate gap (you were already a rounding error under) — fall through to hold.
   }
   if (roll < pTake + pSoft + pHold) {
-    next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: the owner didn't move. ${money(a.ask)} stands.` });
-    return { s: next, msg: "They held firm." };
+    next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: owner held at ${money(a.ask)}.` });
+    return { s: next, msg: "Owner held firm." };
   }
   // `cut` is how deep the counter went off their own ask. A shave they will
   // forgive; halving their number in a single counter they will not.
@@ -2458,10 +2453,10 @@ export function counterOffMarket(
   const shutFor = (na.coldUntilM ?? 0) - next.month;
   next.news.unshift({
     q: next.month, kind: shutFor > 18 ? "warn" : "info",
-    text: `${rec.address}: the owner hung up. `
+    text: `${rec.address}: owner ended talks`
       + (shutFor > 18
-        ? "That number insulted them and they will remember it — do not expect to be able to ring back."
-        : "The door is closed for a while."),
+        ? " for 18+ months."
+        : " for now."),
   });
   return { s: next, msg: "They walked." };
 }
@@ -2477,25 +2472,25 @@ export function listForSale(
   const instr = instructions ? cleanInstructions(instructions) : undefined;
   // A merged deed has no land left in it — selling it alone would hand over a
   // piece of paper and keep the dirt. The site sells as a site.
-  if (s.merged?.[bbl]) return { s, err: "That deed is part of an assemblage. Sell the site, not the piece." };
+  if (s.merged?.[bbl]) return { s, err: "That lot is part of an assemblage. Sell the whole site." };
   // The leased fee trades — it is a bond with a deed attached. What you cannot
   // do is pretend the lot is free and clear; the ask is against leasedFeeValue.
   const h = s.holdings[bbl];
   if (!h) return { s, err: "You don't own that parcel." };
   if (h.renovatingUntilM !== undefined && s.month < h.renovatingUntilM) {
-    return { s, err: "Can't market it mid-renovation — finish the work first." };
+    return { s, err: "Cannot list during a renovation. Finish the work first." };
   }
-  if (s.homes?.units[bbl]) return { s, err: "A house is going up on it: it sells to a family with the house (the homes desk)." };
-  if (s.developments[bbl]) return { s, err: "Can't sell with cranes on site — deliver the building first." };
+  if (s.homes?.units[bbl]) return { s, err: "A house is under construction. Sell it with the house on the Homes desk." };
+  if (s.developments[bbl]) return { s, err: "Cannot sell during construction. Deliver the building first." };
   // It cannot be in two processes at once. A building shown to the market both
   // on its own and inside a bundle is a building whose seller does not know
   // what he is selling, and every buyer works that out in an afternoon.
   if (s.portfolioSale?.bbls.includes(bbl)) {
-    return { s, err: "That one is inside the portfolio you have in the market. Pull it out of the bundle first." };
+    return { s, err: "It is part of a portfolio you have listed. Remove it from the portfolio first." };
   }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
-  if (!Number.isFinite(ask) || ask <= 0) return { s, err: "Name a real number." };
+  if (!Number.isFinite(ask) || ask <= 0) return { s, err: "Enter a valid price." };
   const next = clone(s);
   if (mode === "marketed") {
     // A campaign takes as long as it takes to get the book in front of
@@ -2517,9 +2512,9 @@ export function listForSale(
     // could be rerun every year. The cooling-off is what stops that.)
     const since = next.month - (next.holdings[bbl].lastCampaignM ?? -999);
     if (since < 24) {
-      return { s, err: `You ran a process on this one ${since} months ago and pulled it. `
-        + `Every buyer in town has seen the book — going back out now tells them only that nobody bid. `
-        + `Wait until ${monthLabel((next.holdings[bbl].lastCampaignM ?? 0) + 24)}, or sell it quietly.` };
+      return { s, err: `Marketed and withdrawn ${since} months ago. `
+        + `A broker campaign is available again in `
+        + `${monthLabel((next.holdings[bbl].lastCampaignM ?? 0) + 24)}; list it quietly meanwhile.` };
     }
     const weeks = Math.round(rrange(next, 2, 4));
     next.holdings[bbl].sale = {
@@ -2529,13 +2524,13 @@ export function listForSale(
     };
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `${rec.address} is on the market properly: a whisper of ${money(ask)}, `
-        + `offers due ${monthLabel(next.month + weeks)}. The broker takes 2.5% and earns it if the book is any good.`,
+      text: `Listed with broker · ${rec.address} · guidance ${money(ask)} · `
+        + `offers due ${monthLabel(next.month + weeks)} · 2.5% fee.`,
     });
     return { s: next };
   }
   next.holdings[bbl].sale = { ask: Math.round(ask), listedM: next.month, mode: "quiet", ...(instr ? { instructions: instr } : {}) };
-  next.news.unshift({ q: next.month, kind: "info", text: `${rec.address} goes to market at ${money(ask)}. No broker, no campaign — you wait for the phone.` });
+  next.news.unshift({ q: next.month, kind: "info", text: `Listed quietly · ${rec.address} · ask ${money(ask)} · no broker.` });
   return { s: next };
 }
 
@@ -2701,7 +2696,7 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
   if (!bids.length) {
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `Offers were due at ${rec.address} and nobody bid. The book went out to the whole market and the whole market passed — that is information about your number, or about the building.`,
+      text: `No bids · ${rec.address}. Offer date passed without a bid; consider the price or the building.`,
     });
     return;
   }
@@ -2746,8 +2741,8 @@ export function rankBids(bids: Bid[]): Bid[] {
 export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string; msg?: string } {
   const h = s.holdings[bbl];
   const sale = h?.sale;
-  if (!sale?.bids?.length) return { s, err: "There is no bid list to go back to." };
-  if ((sale.round ?? 0) > 0) return { s, err: "You have already been back to them once. Twice and you are the story, not the building." };
+  if (!sale?.bids?.length) return { s, err: "No bids to go back to." };
+  if ((sale.round ?? 0) > 0) return { s, err: "You already called for best and final once." };
   const next = clone(s);
   const ns = next.holdings[bbl].sale!;
   const live = (ns.bids ?? []).filter((b) => !b.dropped).slice(0, 3);
@@ -2767,9 +2762,9 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
   const best = ns.bids.find((b) => !b.dropped);
   next.news.unshift({
     q: next.month, kind: best ? "deal" : "warn",
-    text: `Best and final at ${rec?.address ?? bbl}: ${lifted} sharpened, ${walked} walked. `
-      + (best ? `The number to beat is ${money(best.price)} from ${best.name}.`
-        : `Everybody left the table. That was the risk and it came in.`),
+    text: `Best and final · ${rec?.address ?? bbl}: ${lifted} raised, ${walked} walked. `
+      + (best ? `High bid ${money(best.price)} from ${best.name}.`
+        : `All bidders withdrew.`),
   });
   return { s: next, msg: best ? "Bids refreshed." : "They all walked." };
 }
@@ -2811,14 +2806,16 @@ export function acceptBid(
       "they read the rent roll properly and did not like the rollover",
       "their committee would not approve the number",
       "the environmental report came back with a question",
-    ];
+    ].filter((r) => !b.countered || !r.includes("committee"));
+    // A buyer who just agreed your counter took that number to committee to
+    // agree it; only what diligence finds can move them now.
     const reason = reasons[Math.floor(rng(next) * reasons.length)];
     ns.offer = { price, expiresM: next.month + 2, from: b.name, firmId: b.firmId, retrade: reason };
     delete ns.bids;
     next.news.unshift({
       q: next.month, kind: "warn",
       text: `${b.name} has retraded ${rec?.address ?? bbl} — ${reason}. `
-        + `They are at ${money(price)} now, down from ${money(b.price)}. Take it, counter it, or tell them no.`,
+        + `Now ${money(price)}, down from ${money(b.price)}. Accept, counter or decline.`,
     });
     return { s: next, msg: "They retraded you." };
   }
@@ -2826,7 +2823,7 @@ export function acceptBid(
   delete ns.bids;
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `${b.name} is under contract at ${rec?.address ?? bbl} for ${money(b.price)}, clean. It closes ${monthLabel(next.month + 2)} — nothing for you to do unless you want to close early or roll it into a 1031.`,
+    text: `Under contract · ${rec?.address ?? bbl} · ${b.name} · ${money(b.price)}. Closes ${monthLabel(next.month + 2)}; close early or start a 1031 if you want.`,
   });
   return { s: next, msg: `Under contract with ${b.name} at ${money(b.price)} — it closes ${monthLabel(next.month + 2)} on its own.` };
 }
@@ -2878,16 +2875,14 @@ function unsolicitedBidder(
   if (neighbour && rec.class === "land") {
     return {
       firm: neighbour, name: neighbour.name,
-      why: `They own ${neighbour.bbls.filter((b) => nbrs.has(b)).length} of the lots around it and they are assembling a site. `
-        + `This is the number somebody pays when your dirt is the last piece.`,
+      why: `They own ${neighbour.bbls.filter((b) => nbrs.has(b)).length} adjacent lots and are assembling a site.`,
       mult: rrange(s, 1.22, 1.55, "sales"),
     };
   }
   if (neighbour) {
     return {
       firm: neighbour, name: neighbour.name,
-      why: `They have the deeds either side. A building on the corner of somebody else's assemblage is worth more to `
-        + `them than it is to the market, and they have just told you how much more.`,
+      why: `They own the adjacent lots; assemblage premium.`,
       mult: rrange(s, 1.12, 1.34, "sales"),
     };
   }
@@ -2902,7 +2897,7 @@ function unsolicitedBidder(
   if (collector && rng(s, "sales") < 0.7) {
     return {
       firm: collector.r, name: collector.r.name,
-      why: `They already own ${collector.n} like it and would rather buy yours quietly than bid against the city for the next one.`,
+      why: `They own ${collector.n} similar buildings.`,
       mult: rrange(s, 1.04, 1.16, "sales"),
     };
   }
@@ -2913,8 +2908,8 @@ function unsolicitedBidder(
   const firm = firms[Math.floor(rng(s, "sales") * firms.length)];
   const who = firm.name;
   return occ < 0.7
-    ? { firm, name: who, why: "They have read the rent roll and they are pricing the empty floors, not the building.", mult: rrange(s, 0.84, 0.96, "sales") }
-    : { firm, name: who, why: "No particular reason beyond wanting it. Those are the ones worth listening to.", mult: rrange(s, 0.98, 1.14, "sales") };
+    ? { firm, name: who, why: "Priced on the vacancy.", mult: rrange(s, 0.84, 0.96, "sales") }
+    : { firm, name: who, why: "Strategic buyer.", mult: rrange(s, 0.98, 1.14, "sales") };
 }
 
 export function delist(s: GameState, bbl: string): GameState {
@@ -3100,8 +3095,8 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
     next.facility.bbls = next.facility.bbls.filter((b: string) => b !== bbl);
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `${money(release)} of the sale went to release ${rec.address} from the facility — `
-        + `its allocated share at ${Math.round((RELEASE_PREMIUM - 1) * 100)}% over. Balance $${(next.facility.balance / 1e6).toFixed(1)}M.`,
+      text: `Facility release · ${rec.address} · ${money(release)} `
+        + `(allocated share + ${Math.round((RELEASE_PREMIUM - 1) * 100)}%). Balance $${(next.facility.balance / 1e6).toFixed(1)}M.`,
     });
     if (next.facility.balance <= 0) delete next.facility;
   }
@@ -3181,9 +3176,9 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Closed: ${rec.address} at ${money(offer.price)}${offer.from ? ` to ${offer.from}` : ""} — ${gain >= 0 ? "a gain" : "a loss"} of ${money(Math.abs(gain))} against basis`
-      + (kick > 0 ? `. Your lender took ${money(kick)} of the gain` : "")
-      + (breakFee > 0 ? `, and ${money(breakFee)} to break the loan early` : "")
-      + (exchange ? `. 1031 clock running: buy for ≥ $${(offer.price * 0.8 / 1e6).toFixed(1)}M by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or ${money(tax)} of tax comes due.`
+      + (kick > 0 ? `. Lender participation ${money(kick)}` : "")
+      + (breakFee > 0 ? `, prepayment ${money(breakFee)}` : "")
+      + (exchange ? `. 1031 open: buy ≥ $${(offer.price * 0.8 / 1e6).toFixed(1)}M by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or ${money(tax)} tax is due.`
         : tax > 0 ? ` (${money(tax)} capital-gains tax withheld).` : "."),
   });
   // Sale proceeds pay the revolver now — not on the next Advance.
@@ -3225,7 +3220,7 @@ export function setSaleInstructions(
 ): { s: GameState; err?: string } {
   const h = s.holdings[bbl];
   if (!h?.sale) return { s, err: "That is not on the market." };
-  if (h.sale.unsolicited) return { s, err: "They rang you — there is no listing to instruct a broker on." };
+  if (h.sale.unsolicited) return { s, err: "Unsolicited offer; there is no listing to instruct a broker on." };
   const err = ins ? saleInstructionsError(ins) : null;
   if (err) return { s, err };
   const next = clone(s);
@@ -3282,9 +3277,9 @@ export function applySaleInstructions(s: GameState, parcels: ParcelTable) {
         offer.expiresM = s.month + 1;
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `The ${money(offer.price)} sale of ${address} is ready to close, but `
+          text: `Sale held · ${address} · ${money(offer.price)}: `
             + (r.err ? r.err : "after the payoff and the tax it would leave you short")
-            + ` — it needs your signature by ${monthLabel(s.month + 1)}.`,
+            + `. Sign by ${monthLabel(s.month + 1)}.`,
         });
         continue;
       }
@@ -3312,9 +3307,9 @@ export function applySaleInstructions(s: GameState, parcels: ParcelTable) {
         offer.held = true;
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `${px} on ${address} clears your standing number, but the broker will not sign it for you — `
+          text: `Offer held · ${address} · ${px} meets your standing price, but `
             + (r.err ? r.err : "after the payoff and the tax it would leave you short.")
-            + " It is on your desk.",
+            + " Needs your signature.",
         });
         continue;
       }
@@ -3546,8 +3541,8 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     const motivated = rrange(s, 0.84 - 0.06 * dnM, 0.92 - 0.02 * dnM, "sales") + idle;
     ask = Math.round(value * motivated / 1000) * 1000;
     who = held && (relOf(s, held.id).deals ?? 0) > 0
-      ? `${held.name} gave your broker the first look because you have closed together before.`
-      : "Their client needs it done this quarter — that is why you are hearing about it.";
+      ? `First look from ${held.name}: prior deals together.`
+      : "Seller needs to close this quarter.";
   }
   // A GATE THAT REJECTED EVERYTHING. This asked for a price under 92% of
   // appraisal, and measured across 150 live rival-owned buildings the asks
@@ -3588,7 +3583,7 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
   }
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `A broker called about ${best.address} — ${best.bldgArea.toLocaleString()} sf, off market, whisper number ${money(ask)} against roughly ${money(value)} of value. ${who}`,
+    text: `Off-market · ${best.address} · ${best.bldgArea.toLocaleString()} sf · ask ${money(ask)} vs ~${money(value)} value. ${who}`,
   });
 }
 
@@ -3620,7 +3615,7 @@ export function counterSale(
 ): { s: GameState; err?: string; msg?: string } {
   const h0 = s.holdings[bbl];
   if (!h0?.sale?.offer) return { s, err: "There is no offer to counter." };
-  if (h0.sale.offer.countered) return { s, err: "You have already been back to them once on this offer." };
+  if (h0.sale.offer.countered) return { s, err: "You already countered this offer." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const px = Math.round(price);
@@ -3628,7 +3623,7 @@ export function counterSale(
   const h = next.holdings[bbl]!;
   const sale = h.sale!;
   const offer = sale.offer!;
-  if (px <= offer.price) return { s, err: "That is not a counter — it is an acceptance at a worse price." };
+  if (px <= offer.price) return { s, err: "A counter must be above the offer. Accept it instead." };
 
   const value = ownedHoldingValue(next, parcels, h);
   // how far a buyer will stretch past appraisal: a boom with open credit buys
@@ -3646,7 +3641,7 @@ export function counterSale(
       q: next.month, kind: "deal",
       text: `They took your counter at ${rec.address}: ${money(px)}, up from ${money(was)}.`,
     });
-    return { s: next, msg: `Countered and taken — ${money(px)}.` };
+    return { s: next, msg: `Counter accepted · ${money(px)}` };
   }
   if (px <= reservation * 1.06) {
     const split = Math.round((px + reservation) / 2);
@@ -3655,9 +3650,9 @@ export function counterSale(
     offer.expiresM = next.month + 2;
     next.news.unshift({
       q: next.month, kind: "deal",
-      text: `They came back at ${rec.address}: ${money(split)} and no further. Good until ${monthLabel(offer.expiresM)}.`,
+      text: `Counter · ${rec.address} · ${money(split)}, final. Good until ${monthLabel(offer.expiresM)}.`,
     });
-    return { s: next, msg: `They split it — ${money(split)}.` };
+    return { s: next, msg: `Split the difference · ${money(split)}` };
   }
   // too far. They are gone.
   const wasUnsolicited = sale.unsolicited;
@@ -3665,8 +3660,8 @@ export function counterSale(
   if (wasUnsolicited) delete h.sale;
   next.news.unshift({
     q: next.month, kind: "warn",
-    text: `Your counter at ${rec.address} ended it — they walked.`
-      + (wasUnsolicited ? " They were never on the market for it; they just wanted the building." : ""),
+    text: `Buyer walked · ${rec.address} after your counter.`
+      + (wasUnsolicited ? " Unsolicited offer withdrawn." : ""),
   });
   return { s: next, msg: "They walked." };
 }
@@ -3698,7 +3693,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       // one that wants the block at any price. It rings on its own clock
       // (hashed, so no other buyer's call is moved), and if you say no it
       // builds around you.
-      if (rec0 && !anyLive && s.month - h.boughtM > 6) {
+      if (rec0 && !anyLive && !s.noUnsolicited && s.month - h.boughtM > 6) {
         const asm = holdoutAssembler(s, adjacency, rec0, h.bbl);
         const v = asm ? ownedHoldingValue(s, parcels, h) : 0;
         const prem = asm ? 1.15 + 0.5 * (1 - asm.r.sheet!.discipline / 100) : 1;
@@ -3710,9 +3705,8 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
           h.sale.offer = { price: px, expiresM: s.month + 3, from: asm.r.name, firmId: asm.r.id };
           s.news.unshift({
             q: s.month, kind: "deal",
-            text: `${asm.r.name} owns ${asm.n} of the lots around ${rec0.address} and yours is the piece they are missing. `
-              + `They are offering ${money(px)} — ${Math.round((prem - 1) * 100)}% over appraisal — for three months. `
-              + `Say no and they will build around you.`,
+            text: `Assemblage offer · ${rec0.address} · ${asm.r.name} · ${money(px)} (${Math.round((prem - 1) * 100)}% over appraisal). `
+              + `They own ${asm.n} adjacent lots. Good for three months.`,
           });
           continue;
         }
@@ -3735,15 +3729,18 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
           // they are not buying the same thing. They are buying the block.
           const bidder = unsolicitedBidder(s, parcels, adjacency, rec0, h, v);
           const px = bidder ? Math.round(v * bidder.mult * (() => { const hw = cycleHot(s.econ); return rrange(s, 0.86 + 0.14 * hw, 0.98 + 0.12 * hw, "sales"); })()) : 0;
+          // Declined at the switchboard: the draws above still run so no
+          // stream shifts with the setting.
+          if (s.noUnsolicited) continue;
           // Nobody on the street can pay it: the phone does not ring.
           if (!bidder || !rivalCanClose(s, parcels, bidder.firm, rec0, px)) continue;
           h.sale = { ask: px, listedM: s.month, unsolicited: true };
           h.sale.offer = { price: px, expiresM: s.month + 2, from: bidder.name, firmId: bidder.firm.id };
           s.news.unshift({
             q: s.month, kind: "deal",
-            text: `${bidder.name} rang about ${rec0.address}: ${money(px)}, `
+            text: `Unsolicited offer · ${rec0.address} · ${bidder.name} · ${money(px)}, `
               + `${px >= v ? `${Math.round((px / Math.max(1, v) - 1) * 100)}% over` : `${Math.round((1 - px / Math.max(1, v)) * 100)}% under`} appraisal. `
-              + `${bidder.why} It's good for two months.`,
+              + `${bidder.why} Good for two months.`,
           });
         }
       }
@@ -3769,7 +3766,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
         delete h.sale;
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `The bids on ${rec0?.address ?? h.bbl} have expired. You sat on the list too long and the buyers moved on.`,
+          text: `Bids expired · ${rec0?.address ?? h.bbl}. Left unanswered too long.`,
         });
       }
       continue;
@@ -3786,8 +3783,8 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
         q: s.month, kind: "warn",
         text: `The ${money(px)} offer on ${rec0?.address ?? h.bbl} lapsed unanswered.`
           + (sale.unsolicited || !h.sale
-            ? " They were never on the market for it."
-            : " The listing is still live — cut the ask or wait for the next call."),
+            ? " Unsolicited; no listing."
+            : " Listing still active."),
       });
       continue;
     }
@@ -3808,7 +3805,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
           sale.offer = { price: bumped, expiresM: s.month + 2, from: rival2.name, firmId: rival2.id };
           s.news.unshift({
             q: s.month, kind: "deal",
-            text: `${rival2.name} came in over the first bid at ${rec.address} — the offer moves to ${money(bumped)}.`,
+            text: `${rival2.name} · ${rec.address} · offer raised to ${money(bumped)}.`,
           });
         }
       }
@@ -3981,12 +3978,11 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         // The relationship, in one line where it matters (§5).
         const lastBeat = (s.beaten ?? []).slice(1).find((b) => b.firmId === buyer.id);
         const history = beatBefore > 0 && lastBeat
-          ? ` It is the ${["", "", "second", "third", "fourth", "fifth"][beatBefore + 1] ?? `${beatBefore + 1}th`} time — they have been bidding against you since ${lastBeat.bbl === li.bbl ? "this same corner" : "the last one they took off you"}.`
+          ? ` ${["", "", "Second", "Third", "Fourth", "Fifth"][beatBefore + 1] ?? `${beatBefore + 1}th`} time they have outbid you.`
           : "";
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `${buyer.name} came over the top of you at ${rec.address} — ${money(px)} against your ${money(talk.yourPrice)}. `
-            + `Your number was on the street the day you made it. It is their corner now.${history}`,
+          text: `Outbid · ${rec.address} · ${buyer.name} paid ${money(px)} vs your ${money(talk.yourPrice)}.${history}`,
         });
         continue;
       }
@@ -4021,8 +4017,8 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
           s.news.unshift({
             q: s.month, kind: "info",
             text: yours.has(rec.block)
-              ? `${buyer.name} took ${rec.address} at ${money(px)} — that is your block.`
-              : `${buyer.name} took ${rec.address} at ${money(px)}. You have dealt with them before.`,
+              ? `${buyer.name} took ${rec.address} at ${money(px)} — on your block.`
+              : `${buyer.name} took ${rec.address} at ${money(px)}. Prior counterparty.`,
           });
         }
       }
@@ -4038,16 +4034,16 @@ export function setBroker(s: GameState, parcels: ParcelTable, bbl: string, on: b
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
-  if (h.groundLeased) return { s, err: "The ground lessee lets that building — you have no exclusive to grant." };
-  if (on && !isCommercial(rec)) return { s, err: "Brokers work commercial space — multifamily leases itself." };
+  if (h.groundLeased) return { s, err: "The ground lessee leases that building." };
+  if (on && !isCommercial(rec)) return { s, err: "Leasing brokers cover commercial space only." };
   const next = clone(s);
   const nh = next.holdings[bbl];
   if (on) nh.broker = true; else delete nh.broker;
   next.news.unshift({
     q: next.month, kind: "info",
     text: on
-      ? `Leasing exclusive signed at ${rec.address} — the house works the phones and takes 6% of the base rent over the term of everything you sign while they hold the file. They do not negotiate or sign for you.`
-      : `Broker dismissed at ${rec.address} — what you sign from here costs the ordinary 4% on a new lease, 2% on a renewal.`,
+      ? `Leasing exclusive · ${rec.address} · 6% of base rent over term on leases signed. You still negotiate and sign.`
+      : `Leasing exclusive ended · ${rec.address}. Commissions back to 4% new, 2% renewal.`,
   });
   return { s: next };
 }
@@ -4077,13 +4073,13 @@ export function setBrokerAll(s: GameState, parcels: ParcelTable, on: boolean): {
     if (on) h.broker = true; else delete h.broker;
     n++;
   }
-  if (!n) return { s, err: on ? "Every commercial building already has the house on it." : "Nobody is on an exclusive." };
+  if (!n) return { s, err: on ? "Every commercial building already has a leasing broker." : "No building has a leasing broker." };
   next.news.unshift({
     q: next.month, kind: "info",
     text: on
-      ? `Leasing exclusive signed across the book — ${n} building${n === 1 ? "" : "s"} listed. They work the phones; you still take every letter. 6% of the base rent over the term of everything signed while they hold the file.`
-        + (skipped ? ` The ${skipped} residential building${skipped === 1 ? "" : "s"} ${skipped === 1 ? "is" : "are"} not on it: flats let themselves.` : "")
-      : `Exclusives ended on ${n} building${n === 1 ? "" : "s"}. What you sign from here costs the ordinary 4% on a new lease, 2% on a renewal.`,
+      ? `Leasing exclusive · ${n} building${n === 1 ? "" : "s"} · 6% of base rent over term on leases signed. You still review every LOI.`
+        + (skipped ? ` ${skipped} residential building${skipped === 1 ? "" : "s"} excluded.` : "")
+      : `Leasing exclusive ended · ${n} building${n === 1 ? "" : "s"}. Commissions back to 4% new, 2% renewal.`,
   });
   return { s: next, msg: on ? `${n} listing exclusive${n === 1 ? "" : "s"}. Brokers source; you sign.` : `${n} exclusive${n === 1 ? "" : "s"} ended.` };
 }
@@ -4093,16 +4089,16 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
   if (!h) return { s, err: "You don't own that parcel." };
   const rec = resolveRec(parcels, s, bbl);
   if (h.groundLeased || s.groundLeases?.[bbl]) {
-    return { s, err: "The ground lessee controls the improvement — you do not gut their building." };
+    return { s, err: "The ground lessee controls the building." };
   }
   if (!rec || rec.class === "land" || !rec.bldgArea) return { s, err: "Nothing to renovate on this lot." };
   { const why = consentFor(s, h, "redevelop"); if (why) return { s, err: why }; }
   if (h.condition === "good") return { s, err: "Already in top condition." };
-  if (h.renovatingUntilM !== undefined) return { s, err: "Crews are already on site." };
+  if (h.renovatingUntilM !== undefined) return { s, err: "Renovation already under way." };
   if (isCommercial(rec)) {
     const leased = h.tenants.reduce((sum, t) => sum + t.sf, 0);
     if (leased / rec.bldgArea > 0.35) {
-      return { s, err: "Too much of the building is under lease to gut it — let the roll burn down below 35% first." };
+      return { s, err: "Too much of the building is leased to renovate. Occupancy must fall below 35%." };
     }
   }
   const cost = renovationCost(rec, s.econ);
@@ -4115,8 +4111,8 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
   if (liq.total < cost) {
     return {
       s,
-      err: `Renovation costs ${money(cost)} and you can raise ${money(liq.total)} — `
-        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
+      err: `Renovation costs ${money(cost)}; available ${money(liq.total)} (`
+        + `${money(liq.cash)} cash, ${money(liq.line)} on the line).`,
     };
   }
   const next = clone(s);
@@ -4130,7 +4126,7 @@ export function startRenovation(s: GameState, parcels: ParcelTable, bbl: string)
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `Scaffolding up at ${rec.address} — ${money(cost)} gut renovation, ${RENO_MONTHS} quarters.`,
+    text: `Renovation started · ${rec.address} · ${money(cost)} · ${RENO_MONTHS} quarters.`,
   });
   return { s: next };
 }
@@ -4157,12 +4153,12 @@ export function counterBid(
   const h0 = s.holdings[bbl];
   const b0 = h0?.sale?.bids?.[index];
   if (!h0?.sale || !b0) return { s, err: "There is no bid there." };
-  if (b0.dropped) return { s, err: "They already walked." };
-  if (b0.countered) return { s, err: "You have been back to them once. That is what the etiquette allows." };
+  if (b0.dropped) return { s, err: "That bidder has withdrawn." };
+  if (b0.countered) return { s, err: "You already went back to that bidder once." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const px = Math.round(price);
-  if (px <= b0.price) return { s, err: "That is not a counter — it is an acceptance at a worse price." };
+  if (px <= b0.price) return { s, err: "A counter must be above the offer. Accept it instead." };
 
   const next = clone(s);
   const nsale = next.holdings[bbl]!.sale!;
@@ -4182,7 +4178,7 @@ export function counterBid(
     rankBids(nsale.bids!);
     next.news.unshift({
       q: next.month, kind: "deal",
-      text: `${b0.name} came up to ${money(px)} at ${rec.address}, from ${money(b0.price)}.`,
+      text: `Bid raised · ${rec.address} · ${b0.name} · ${money(px)} from ${money(b0.price)}.`,
     });
     return { s: next, msg: `They came up — ${money(px)}.` };
   }
@@ -4193,16 +4189,16 @@ export function counterBid(
     rankBids(nsale.bids!);
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `${b0.name} split it at ${rec.address}: ${money(split)} and no further.`,
+      text: `Counter · ${rec.address} · ${b0.name} · ${money(split)}, final.`,
     });
-    return { s: next, msg: `They split it — ${money(split)}.` };
+    return { s: next, msg: `Split the difference · ${money(split)}` };
   }
   bid.dropped = true;
-  bid.note = "Walked when you went back to them.";
+  bid.note = "Walked after your counter.";
   rankBids(nsale.bids!);
   next.news.unshift({
     q: next.month, kind: "warn",
-    text: `${b0.name} walked at ${rec.address}. You went back to them for ${money(px)} and they were done.`,
+    text: `${b0.name} walked · ${rec.address} · after your ${money(px)} counter.`,
   });
   return { s: next, msg: `${b0.name} walked.` };
 }
@@ -4224,8 +4220,8 @@ export function repriceListing(
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const px = Math.round(ask);
-  if (!Number.isFinite(px) || px <= 0) return { s, err: "Name a real number." };
-  if (px === h0.sale.ask) return { s, err: "That is the number you are already asking." };
+  if (!Number.isFinite(px) || px <= 0) return { s, err: "Enter a valid price." };
+  if (px === h0.sale.ask) return { s, err: "That is already the asking price." };
 
   const next = clone(s);
   const sale = next.holdings[bbl]!.sale!;
@@ -4249,8 +4245,8 @@ export function repriceListing(
   next.news.unshift({
     q: next.month, kind: cut ? "info" : "warn",
     text: cut
-      ? `Cut the ask at ${rec.address} to ${money(px)} from ${money(was)}. The phone starts again — and everybody now knows you want out.`
-      : `Raised the ask at ${rec.address} to ${money(px)} from ${money(was)}. Anyone who was close to the old number has other buildings to look at.`,
+      ? `Ask cut · ${rec.address} · ${money(px)} from ${money(was)}.`
+      : `Ask raised · ${rec.address} · ${money(px)} from ${money(was)}.`,
   });
   return { s: next, msg: cut ? "Repriced down." : "Repriced up." };
 }

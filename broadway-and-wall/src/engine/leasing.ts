@@ -1220,10 +1220,10 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   // meeting across town first. Two years of memory, like the strain itself.
   const fStrain = t.strainedM !== undefined && s.month - t.strainedM < 24 ? 0.72 : 1;
   const why: { s: string; w: number }[] = [];
-  if (fFull < 0.97) why.push({ s: "this address was always a reach for them", w: 1 - fFull });
-  if (fStrain < 1) why.push({ s: "you turned them down when they asked for relief, and they did not forget", w: 1 - fStrain });
-  if (fSvc < 0.95) why.push({ s: "the building is not being run to their standard", w: 1 - fSvc });
-  if (fSvc > 1.10) why.push({ s: "they like the way the building is run", w: fSvc - 1 });
+  if (fFull < 0.97) why.push({ s: "rent was a stretch for them", w: 1 - fFull });
+  if (fStrain < 1) why.push({ s: "their rent relief request was declined", w: 1 - fStrain });
+  if (fSvc < 0.95) why.push({ s: "unhappy with building operations", w: 1 - fSvc });
+  if (fSvc > 1.10) why.push({ s: "satisfied with building operations", w: fSvc - 1 });
   if (fCond < 0.98) why.push({ s: `the plant is ${h.condition}`, w: 1 - fCond });
   if (fRent < 1) why.push({ s: `they are ${Math.round((over - 1) * 100)}% over market`, w: 1 - fRent });
   if (fInd < 0.95) why.push({ s: `${INDUSTRY_LABEL[t.sector].toLowerCase()} is contracting`, w: 1 - fInd });
@@ -1271,7 +1271,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const rec = resolveRec(parcels, s, a.bbl);
       s.news.unshift({
         q, kind: "info",
-        text: `${a.name}'s relief letter at ${rec?.address ?? a.bbl} has lapsed unanswered. They will finish the term at the full rate — watch the credit.`,
+        text: `Rent relief request lapsed unanswered · ${a.name} · ${rec?.address ?? a.bbl}. Lease stays at full rent; credit risk elevated.`,
       });
     }
     if (!s.asks.length) delete s.asks;
@@ -1311,8 +1311,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const rec = resolveRec(parcels, s, l.bbl);
       s.news.unshift({
         q, kind: "info",
-        text: `${l.name} have withdrawn from ${rec?.address ?? "your building"} — the space they were looking at `
-          + `let while they were deciding, and what is left will not demise.`,
+        text: `LOI withdrawn · ${l.name} · ${rec?.address ?? "your building"}. `
+          + `Their space leased to another tenant; the remainder is below minimum size.`,
       });
     }
   }
@@ -1529,9 +1529,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         s.news.unshift({
           q, kind: "warn",
           text: h.condition === "obsolete"
-            ? `${rec.address} has aged out of the market. The plant is finished, the plan is not enough to bring it back, and until somebody spends real money on it nobody will lease it and no institution will lend on it.`
-            : `${rec.address} has slipped to ${h.condition} condition — the systems are dated and the brokers have noticed. Rents will follow.`
-              + (h.planCutM !== undefined && q - h.planCutM < 24 ? " The capital plan there has been going unfunded." : ""),
+            ? `${rec.address} is now obsolete. Building systems at end of life; no new leasing or institutional lending until it is renovated.`
+            : `${rec.address} downgraded to ${h.condition} condition. Expect lower rents.`
+              + (h.planCutM !== undefined && q - h.planCutM < 24 ? " Capital plan unfunded." : ""),
         });
       }
     }
@@ -1594,12 +1594,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         if (yrsIn >= 8 || notable.sf >= 8000) {
           // Where it goes is not known yet: it is looking (streetRolls.ts),
           // and the paper reports it when it signs somewhere.
-          gone = ` ${notable.name}${yrsIn >= 8 ? `, here ${yrsIn} years,` : ""} is gone, looking for space elsewhere.`;
+          gone = ` ${notable.name}${yrsIn >= 8 ? ` (${yrsIn} years)` : ""} moved out; seeking space elsewhere.`;
         }
       }
       s.news.unshift({
         q, kind: "info",
-        text: `${(outSf / 1000).toFixed(1)}k sf back at ${rec.address} — $${(turnCost / 1000).toFixed(0)}K make-ready, ${down} months before it can be shown.${gone}`,
+        text: `Lease expiry · ${rec.address} · ${(outSf / 1000).toFixed(1)}k sf vacant · $${(turnCost / 1000).toFixed(0)}K make-ready · ${down} months to market.${gone}`,
       });
     }
     // finished turns come off the books
@@ -1691,7 +1691,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const tenure = yrsIn >= 8 ? `, ${yrsIn} years in the building,` : "";
       s.news.unshift({
         q, kind: "warn",
-        text: `${t.name}${tenure} filed and went dark at ${rec.address} — ${(t.sf / 1000).toFixed(1)}k sf back with ${(t.endM - q) / 12 > 1 ? `${((t.endM - q) / 12).toFixed(1)} years` : `${t.endM - q} months`} left on the lease. You kept their $${(kept / 1000).toFixed(0)}K deposit — which is a month of the hole, not a year of it.`,
+        text: `${t.name}${tenure} filed and went dark at ${rec.address} — ${(t.sf / 1000).toFixed(1)}k sf vacant with ${(t.endM - q) / 12 > 1 ? `${((t.endM - q) / 12).toFixed(1)} years` : `${t.endM - q} months`} left on the lease. Deposit retained: $${(kept / 1000).toFixed(0)}K.`,
       });
     }
 
@@ -1746,9 +1746,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         s.news.unshift({
           q, kind: "warn", bbl: h.bbl,
           text: `${t.name}${yrsIn >= 8 ? `, your tenant of ${yrsIn} years at ${rec.address},` : ` at ${rec.address}`} `
-            + `wants to hand back ${(freed / 1000).toFixed(1)}k sf — the headcount is gone and they are paying for empty floors. `
-            + `Take the space and re-let it, or hold them to the paper and hope the business outlives the lease. `
-            + `The letter is on your desk until ${monthLabel(q + 3)}.`,
+            + `wants to hand back ${(freed / 1000).toFixed(1)}k sf (downsizing). `
+            + `Accept the surrender or hold them to the lease. `
+            + `Respond by ${monthLabel(q + 3)}.`,
         });
         break;
       }
@@ -1803,10 +1803,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         s.news.unshift({
           q, kind: "warn",
           text: `${t.name}${yrsIn >= 8 ? `, your tenant of ${yrsIn} years at ${rec.address},` : ` at ${rec.address}`} `
-            + `is asking for relief — ${INDUSTRY_LABEL[t.sector].toLowerCase()} has turned and the `
-            + `$${t.rentPsf.toFixed(0)}/sf is more than the business can carry (the market here is $${market.toFixed(0)}). `
-            + `They will sign to $${askPsf.toFixed(0)}/sf for ${Math.round(addM / 12)} more years of term. `
-            + `The letter is on your desk until ${monthLabel(q + 3)}.`,
+            + `requests rent relief (${INDUSTRY_LABEL[t.sector].toLowerCase()} downturn). `
+            + `Paying $${t.rentPsf.toFixed(0)}/sf vs $${market.toFixed(0)} market. `
+            + `Offers $${askPsf.toFixed(0)}/sf for ${Math.round(addM / 12)} more years of term. `
+            + `Respond by ${monthLabel(q + 3)}.`,
         });
         break;
       }
@@ -1894,10 +1894,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         });
         s.news.unshift({
           q, kind: "deal", bbl: h.bbl,
-          text: `${t.name} has outgrown their space at ${rec.address} and will take on the `
-            + `${remnant.toLocaleString()} sf remainder next door — it is under the `
-            + `${minLettableSf(rec, use).toLocaleString()} sf minimum tenancy here, so nobody else can lease it at all. `
-            + `Coterminous with the lease they are on; the letter is on your desk.`,
+          text: `Expansion request · ${t.name} · ${rec.address} · ${remnant.toLocaleString()} sf remainder next door `
+            + `(below the ${minLettableSf(rec, use).toLocaleString()} sf minimum, unleasable otherwise). `
+            + `Coterminous with their lease. Awaiting your answer.`,
         });
         continue;
       }
@@ -1964,7 +1963,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         t.nonRenewWhy = t.leavingFor;
         s.news.unshift({
           q, kind: "warn",
-          text: `${t.name} is not renewing at ${rec.address} — ${t.leavingFor}. ${(t.sf / 1000).toFixed(1)}k sf comes available ${monthLabel(t.endM)}.`,
+          text: `Non-renewal · ${t.name} · ${rec.address} — ${t.leavingFor}. ${(t.sf / 1000).toFixed(1)}k sf available ${monthLabel(t.endM)}.`,
         });
         continue;
       }
@@ -1978,9 +1977,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const yrsIn = Math.floor((q - t.startM) / 12);
         s.news.unshift({
           q, kind: "warn",
-          text: `${t.name}${yrsIn >= 8 ? `, ${yrsIn} years in the building,` : ""} is not renewing at ${rec.address} — ${ri.why[0]}. `
-            + `${(t.sf / 1000).toFixed(1)}k sf comes available ${monthLabel(t.endM)}.`
-            + ` They are looking at other space.`,
+          text: `Non-renewal · ${t.name}${yrsIn >= 8 ? ` (${yrsIn} years)` : ""} · ${rec.address} — ${ri.why[0]}. `
+            + `${(t.sf / 1000).toFixed(1)}k sf available ${monthLabel(t.endM)}.`,
         });
         continue;
       }
@@ -2371,11 +2369,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           q, kind: "info",
           text: nTour > 1
             ? (cover
-              ? `${nTour} parties are chasing the same ${(sf / 1000).toFixed(1)}k sf at ${rec.address} — ${cover.who.toLowerCase()} is picking a winner.`
-              : `${nTour} parties are chasing the same ${(sf / 1000).toFixed(1)}k sf at ${rec.address} — you can only have one of them.`)
+              ? `${nTour} LOIs for the same ${(sf / 1000).toFixed(1)}k sf at ${rec.address}; ${cover.who.toLowerCase()} will pick one.`
+              : `${nTour} LOIs for the same ${(sf / 1000).toFixed(1)}k sf at ${rec.address}; only one can sign.`)
             : (cover
-              ? `LOI in at ${rec.address} — ${cover.who.toLowerCase()} is working it.`
-              : `LOI in at ${rec.address} — check the Deals desk.`),
+              ? `LOI received · ${rec.address} · handled by ${cover.who.toLowerCase()}.`
+              : `LOI received · ${rec.address}. See Deals.`),
         });
       }
     }
@@ -2673,7 +2671,7 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
       logAuto(s, { m: s.month, bbl: h.bbl, v: "referred", sf: mine.sf });
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `${AUTO_WHO} referred ${mine.name} at ${rec.address} to you — ${Math.round(mine.sf).toLocaleString()} sf is a major lease, and that is the owner's call.`,
+        text: `${AUTO_WHO} referred ${mine.name} at ${rec.address} to you — ${Math.round(mine.sf).toLocaleString()} sf major lease needs owner approval.`,
       });
       continue;
     }
@@ -2681,7 +2679,7 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
     const lim = autoLimits(s, rec, h, pol, mine);
     const rentFloor = s.autoRentFloor ? autoMarketRentPsf(s, rec, h, mine) : 0;
     const miss = () => autoMiss(pol, lim, mine, autoScore(s, rec, h, mine), rentFloor);
-    const cantFund = "the cash and the line cannot cover the fit-out and commission";
+    const cantFund = "cash and line cannot cover TI and commission";
     // sign inside the policy, pass outside it — the end of every path below
     const settle = (prefix: string) => {
       const why = miss();
@@ -2986,11 +2984,11 @@ export function buildSpecSuites(
   const h = s.holdings[bbl];
   const rec = h ? resolveRec(parcels, s, bbl) : null;
   if (!h || !rec) return { s, err: "You don't own that." };
-  if (h.groundLeased) return { s, err: "The ground lessee controls the improvement — you do not fit out their space." };
-  if (h.specSuites) return { s, err: "There is already pre-built space going in here." };
+  if (h.groundLeased) return { s, err: "The ground lessee controls the building." };
+  if (h.specSuites) return { s, err: "Spec suites already under construction here." };
   if (s.developments[bbl]) return { s, err: "Construction is already underway." };
   const q = specSuiteQuote(s, rec, h, use, sf);
-  if (!q) return { s, err: "There is not enough open space to pre-build, or this class does not fit out." };
+  if (!q) return { s, err: "Not enough vacant space for spec suites, or this building type does not support them." };
   // Fit-out is the textbook revolver draw: money out now against rent that
   // signs later, which is the whole reason a landlord keeps a line open. The
   // premium over an allowance, the four-month build and the risk that nobody
@@ -3000,9 +2998,9 @@ export function buildSpecSuites(
   if (liq.total < q.cost) {
     return {
       s,
-      err: `Pre-building that runs ${money(q.cost)} and you can raise `
-        + `${money(liq.total)} — ${money(liq.cash)} of cash and `
-        + `${money(liq.line)} on the line.`,
+      err: `Spec suites cost ${money(q.cost)}; available `
+        + `${money(liq.total)} (${money(liq.cash)} cash, `
+        + `${money(liq.line)} on the line).`,
     };
   }
   const next: GameState = cloneState(s);
@@ -3013,10 +3011,9 @@ export function buildSpecSuites(
   };
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Pre-building ${(q.sf / 1000).toFixed(0)}k sf of ${use} at ${rec.address} — ${money(q.cost)}, ready ${monthLabel(q.readyM)}. `
-      + `Turnkey space leases faster and dearer, and it is your money sitting in an empty suite until it does.`,
+    text: `Spec suites · ${rec.address} · ${(q.sf / 1000).toFixed(0)}k sf of ${use} · ${money(q.cost)} · ready ${monthLabel(q.readyM)}.`,
   });
-  return { s: next, msg: "Pre-build under way." };
+  return { s: next, msg: "Spec suites under way." };
 }
 
 /**
@@ -3043,10 +3040,10 @@ export function answerAsk(
 ): { s: GameState; msg: string; err?: string } {
   const next: GameState = cloneState(s);
   const a = next.asks?.find((x) => x.id === id);
-  if (!a) return { s, msg: "", err: "That letter is gone." };
+  if (!a) return { s, msg: "", err: "That request has expired." };
   const held = next.holdings[a.bbl];
   if (held?.groundLeased) {
-    return { s, msg: "", err: "The ground lessee lets that building — this relief letter is not yours to answer." };
+    return { s, msg: "", err: "The ground lessee leases that building; the request is theirs to answer." };
   }
   next.asks = next.asks!.filter((x) => x.id !== id);
   if (!next.asks.length) delete next.asks;
@@ -3059,20 +3056,20 @@ export function answerAsk(
       t.strainedM = next.month;
       next.news.unshift({
         q: next.month, kind: "info",
-        text: `You held ${t.name} to the lease at ${rec.address} — all ${(t.sf / 1000).toFixed(1)}k sf of it, `
-          + `to ${monthLabel(t.endM)}. They will keep paying for floors nobody sits on, for as long as the business lasts.`,
+        text: `Surrender declined · ${t.name} · ${rec.address}. Lease on all ${(t.sf / 1000).toFixed(1)}k sf `
+          + `runs to ${monthLabel(t.endM)}.`,
       });
-      return { s: next, msg: "Declined. The lease stands, all of it." };
+      return { s: next, msg: "Declined. Lease unchanged." };
     }
     const freed = Math.min(a.giveSf ?? 0, t.sf - 1);
-    if (freed <= 0) return { s: next, msg: "", err: "There is no space left to take back." };
+    if (freed <= 0) return { s: next, msg: "", err: "No space to take back." };
     // the lawyer papers the surrender; the space turns like any other giveback
     const legal = Math.max(8_000, Math.round(t.rentPsf * freed * 0.01));
     // Eight thousand dollars of lawyer against a tenancy you are restructuring
     // to keep. A landlord does not lose a covenant over the retainer, and the
     // line pays it like any other professional fee.
     if (fundableNow(next, parcels) < legal) {
-      return { s, msg: "", err: `Papering the surrender costs $${(legal / 1000).toFixed(0)}K — you're short.` };
+      return { s, msg: "", err: `Surrender legal costs $${(legal / 1000).toFixed(0)}K; not enough cash.` };
     }
     fundAndBook(next, parcels, legal, "leasing", { bbl: a.bbl });
     const use = (t.use ?? (rec.class as BuiltClass)) as BuiltClass;
@@ -3096,8 +3093,7 @@ export function answerAsk(
     next.news.unshift({
       q: next.month, kind: "deal",
       text: `Surrender signed at ${rec.address}: ${t.name} hands back ${(freed / 1000).toFixed(1)}k sf and keeps `
-        + `${(t.sf / 1000).toFixed(1)}k at $${t.rentPsf.toFixed(0)}/sf. The space turns to make-ready — `
-        + `a smaller covenant that fits beats a bigger one that fails.`,
+        + `${(t.sf / 1000).toFixed(1)}k at $${t.rentPsf.toFixed(0)}/sf. Returned space goes to make-ready.`,
     });
     return { s: next, msg: "Space taken back." };
   }
@@ -3105,8 +3101,8 @@ export function answerAsk(
     t.strainedM = next.month;
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `You held the paper on ${t.name} at ${rec.address} — the rent stays $${t.rentPsf.toFixed(0)}/sf `
-        + `to ${monthLabel(t.endM)}. They will run lean to make it, and lean businesses have accidents.`,
+      text: `Relief declined · ${t.name} · ${rec.address}. Rent stays $${t.rentPsf.toFixed(0)}/sf `
+        + `to ${monthLabel(t.endM)}; elevated default risk.`,
     });
     return { s: next, msg: "Declined. The rent stands." };
   }
@@ -3115,7 +3111,7 @@ export function answerAsk(
   // Same retainer, same reasoning as the surrender above — a legal fee on a
   // deal that keeps a paying tenant in the building is funded from liquidity.
   if (fundableNow(next, parcels) < legal) {
-    return { s, msg: "", err: `Papering the amendment costs $${(legal / 1000).toFixed(0)}K — you're short.` };
+    return { s, msg: "", err: `Amendment legal costs $${(legal / 1000).toFixed(0)}K; not enough cash.` };
   }
   fundAndBook(next, parcels, legal, "leasing", { bbl: a.bbl });
   const oldRent = t.rentPsf;
@@ -3126,8 +3122,7 @@ export function answerAsk(
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Relief granted at ${rec.address}: ${t.name} goes to $${a.askPsf.toFixed(0)}/sf from $${oldRent.toFixed(0)} `
-      + `and the lease runs to ${monthLabel(t.endM)}. You traded rent for term with a tenant who asked — `
-      + `cheaper than the vacancy they were about to become, if you read them right.`,
+      + `and the lease runs to ${monthLabel(t.endM)}.`,
   });
   return { s: next, msg: "Relief granted." };
 }
@@ -3159,7 +3154,7 @@ export function applyReliefRule(s: GameState, parcels: ParcelTable): void {
     Object.assign(s, r.s);
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `Your relief rule ${grant ? "granted" : "declined"} ${a.name}'s letter`
+      text: `Relief rule ${grant ? "granted" : "declined"} ${a.name}'s request`
         + ` (${use} vacancy ${(vac * 100).toFixed(0)}%, ${CREDIT_LABEL[t.credit]} credit, a ${(cut * 100).toFixed(0)}% cut).`,
     });
   }
@@ -3195,13 +3190,13 @@ export function blendExtend(
   const h = s.holdings[bbl];
   const rec = h ? resolveRec(parcels, s, bbl) : null;
   if (!h || !rec) return { s, err: "You don't own that." };
-  if (h.groundLeased) return { s, err: "The ground lessee lets that building — you have no lease to reopen." };
+  if (h.groundLeased) return { s, err: "The ground lessee leases that building." };
   const q = blendExtendQuote(s, rec, h, idx);
-  if (!q) return { s, err: "There is no deal to do with that tenant right now." };
+  if (!q) return { s, err: "No blend-and-extend available with that tenant now." };
   // A leasing commission is a signing cost, and signing costs are what a
   // revolver bridges until the rent arrives. The rent given up to buy the term
   // is the price of this trade and it has not moved.
-  if (fundableNow(s, parcels) < q.cost) return { s, err: "You cannot cover the commission on that." };
+  if (fundableNow(s, parcels) < q.cost) return { s, err: "Not enough cash for the commission." };
   const next: GameState = cloneState(s);
   const t = next.holdings[bbl].tenants[idx];
   fundAndBook(next, parcels, q.cost, "leasing", { bbl });
@@ -3210,8 +3205,7 @@ export function blendExtend(
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Blend and extend at ${rec.address}: ${t.name} goes to $${q.newRent.toFixed(0)}/sf from $${q.current.toFixed(0)} `
-      + `and adds ${(q.addM / 12).toFixed(0)} years, out to ${monthLabel(q.newEndM)}. `
-      + `You bought term with rent — whether that was clever depends on what the market does next.`,
+      + `and adds ${(q.addM / 12).toFixed(0)} years, out to ${monthLabel(q.newEndM)}.`,
   });
   return { s: next, msg: "Extended." };
 }
@@ -3885,7 +3879,7 @@ export function clearAgainstPlan(
 } {
   const { rec, h } = ctx;
   const row = planRowFor(plan, loi);
-  if (!row) return { verdict: "decline", why: "no sheet for this use", quotePsf: 0 };
+  if (!row) return { verdict: "decline", why: "no leasing guidelines for this use", quotePsf: 0 };
 
   const feeRate = ctx.feeRate ?? AGENT_FEE;
   const market = loiMarket(s, rec, h, loi);
@@ -3896,7 +3890,7 @@ export function clearAgainstPlan(
   const base = { quotePsf, row, neScore, neFloor: floor, neAsk: ask };
 
   if (loi.kind === "expansion" && !isMustTake(loi, rec)) {
-    return { verdict: "docket", why: "an incumbent expansion changes how you program the building", ...base };
+    return { verdict: "docket", why: "incumbent expansion needs owner approval", ...base };
   }
   if (
     !ctx.ignoreTour
@@ -3906,16 +3900,16 @@ export function clearAgainstPlan(
     return { verdict: "docket", why: "multiple tenants are competing for the same space; you choose the winner", ...base };
   }
   if (holdBlocksConflict(s, loi, row, rec, h)) {
-    return { verdict: "docket", why: "the letter breaks a contiguity hold on the sheet", ...base };
+    return { verdict: "docket", why: "LOI breaks a contiguity hold", ...base };
   }
   if (!ctx.principal && overDeskAuthority(s, loi)) {
     return { verdict: "docket", why: authorityWhy(s, loi), ...base };
   }
   if (!ctx.principal && planDealValue(loi, quotePsf) > plan.authority + 0.5) {
-    return { verdict: "docket", why: `lease value is over the ${money(plan.authority)} authority on the sheet`, ...base };
+    return { verdict: "docket", why: `lease value exceeds the ${money(plan.authority)} approval limit`, ...base };
   }
   if ((row.minCredit ?? 0) > 0 && loi.credit < (row.minCredit ?? 0) && !((row.minCreditSf ?? 0) > 0 && loi.sf < (row.minCreditSf ?? 0))) {
-    return { verdict: "decline", why: `credit below the sheet's ${CREDIT_LABEL[row.minCredit ?? 0]} minimum`, ...base };
+    return { verdict: "decline", why: `credit below the ${CREDIT_LABEL[row.minCredit ?? 0]} minimum`, ...base };
   }
   const signAsIs = neScore + 0.005 >= ask
     && !((row.maxCashPerDeal ?? 0) > 0 && loiSigningCash(loi, feeRate) > (row.maxCashPerDeal ?? 0) + 0.5);
@@ -3924,7 +3918,7 @@ export function clearAgainstPlan(
     return {
       verdict: "docket",
       why: `signing would leave less than ${signingReserve(s, loi).whose} ${money(signingReserve(s, loi).reserve)} reserve`
-        + ((plan.lineForFitOut ?? 0) > 0 ? "" : " — let the desk draw the line for fit-out on the sheet if you want these signed"),
+        + ((plan.lineForFitOut ?? 0) > 0 ? "" : " — allow line draws for fit-out in the leasing guidelines to auto-sign these"),
       ...base,
     };
   }
@@ -4036,8 +4030,8 @@ function planDeclineLoi(
   s.news.unshift({
     q: s.month, kind: "info",
     text: who === PRINCIPAL_PEN
-      ? `You passed on ${loi.name} at ${rec.address} — the letter could not reach your number.`
-      : `${who} declined ${loi.name} at ${rec.address} — the letter cannot reach the sheet.`,
+      ? `You passed on ${loi.name} at ${rec.address} — below your terms.`
+      : `${who} declined ${loi.name} at ${rec.address} — below the leasing guidelines.`,
   });
 }
 
@@ -4105,7 +4099,7 @@ function executePlanLetter(
     return;
   }
   if (cleared.verdict === "docket" || !cleared.row) {
-    planDocketLoi(s, loi, rec, cleared.why ?? "the sheet left this for you", who);
+    planDocketLoi(s, loi, rec, cleared.why ?? "outside the leasing guidelines", who);
     return;
   }
   if (cleared.signAsIs || !cleared.counter) {
@@ -4119,7 +4113,7 @@ function executePlanLetter(
     if (!s.lois.some((l) => l.id === loi.id)) {
       s.news.unshift({
         q: s.month, kind: "deal",
-        text: `${who} countered ${loi.name} at ${rec.address} to the sheet ($${loi.rentPsf.toFixed(2)}/sf) and they took it.`,
+        text: `${who} countered ${loi.name} at ${rec.address} at guideline rent ($${loi.rentPsf.toFixed(2)}/sf); they took it.`,
       });
     }
     return;
@@ -4130,7 +4124,7 @@ function executePlanLetter(
     s.lois = s.lois.filter((l) => l.id !== loi.id);
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `${who} held the sheet at ${rec.address} and ${loi.name} walked.`,
+      text: `${who} held guideline rent at ${rec.address}; ${loi.name} walked.`,
     });
     return;
   }
@@ -4145,7 +4139,7 @@ function executePlanLetter(
       s.news.unshift({
         q: s.month, kind: "deal",
         text: `${who} took ${loi.name}'s final at ${rec.address}: $${loi.rentPsf.toFixed(2)}/sf `
-          + `(${(score * 100).toFixed(0)}% of market net effective) — inside your ${(floor * 100).toFixed(0)}% floor.`,
+          + `(${(score * 100).toFixed(0)}% of market net effective; floor ${(floor * 100).toFixed(0)}%).`,
       });
     }
     return;
@@ -4153,7 +4147,7 @@ function executePlanLetter(
   if (who === PRINCIPAL_PEN) {
     // Your own pass: a final under your number is still a final you may
     // take — it stays on your desk, with what it nets, rather than vanishing.
-    loi.docketReason = `their final nets ${(score * 100).toFixed(0)}% of market — under your ${(floor * 100).toFixed(0)}%; take it or pass`;
+    loi.docketReason = `final offer nets ${(score * 100).toFixed(0)}% of market, under your ${(floor * 100).toFixed(0)}% floor; accept or pass`;
     return;
   }
   planDeclineLoi(s, loi, rec, who);
@@ -4206,7 +4200,7 @@ export function previewTray(s: GameState, parcels: ParcelTable): TrayRow[] {
       const row = planRowFor(plan, l);
       const sc = loiMandateScore(l, market);
       const fl = row ? planTargets(s, l, row, rec, h).floor : 1;
-      out.push({ loi: l, pile: sc + 0.005 >= fl ? "sign" : "yours", why: sc + 0.005 >= fl ? undefined : "their final is under your number", neScore: sc, neFloor: fl });
+      out.push({ loi: l, pile: sc + 0.005 >= fl ? "sign" : "yours", why: sc + 0.005 >= fl ? undefined : "final offer below your floor", neScore: sc, neFloor: fl });
       continue;
     }
     const party = l.tourId !== undefined ? tours.get(l.tourId) ?? [] : [];
@@ -4359,7 +4353,7 @@ function runPlanDesk(
       s.lois = s.lois.filter((l) => !lost.includes(l.id));
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `${cover.who} chose ${best.name} at ${rec.address} over ${ranked.slice(1).map((x) => x.l.name).join(" and ")} — the better net effective.`,
+        text: `${cover.who} chose ${best.name} at ${rec.address} over ${ranked.slice(1).map((x) => x.l.name).join(" and ")} on net effective rent.`,
       });
     }
   }
@@ -4485,9 +4479,9 @@ function tenantCounterOutcome(
 /** Why a letter came back untouched — the authority limit, in the player's own numbers. */
 function authorityWhy(s: GameState, l: LOI): string {
   return s.signOwnAll
-    ? "you have kept the pen on every letter in the book — nobody else signs"
+    ? "you sign every LOI yourself"
     : `${Math.round(l.sf).toLocaleString()} sf is over the `
-      + `${Math.round(s.deskMaxSf ?? 0).toLocaleString()} sf a desk may sign for you`;
+      + `${Math.round(s.deskMaxSf ?? 0).toLocaleString()} sf agent signing limit`;
 }
 
 function agentReferLoi(
@@ -4497,7 +4491,7 @@ function agentReferLoi(
   loi.referred = true;
   s.news.unshift({
     q: s.month, kind: "warn",
-    text: `${who} referred ${loi.name} at ${rec.address} back to you — ${why}. It is on your desk.`,
+    text: `${who} referred ${loi.name} at ${rec.address} back to you — ${why}.`,
   });
 }
 
@@ -4716,13 +4710,13 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     if (add < Math.min(l.sf, minLettableSf(rec, use))) {
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `${l.name} lost the expansion space at ${rec.address} — the other letter signed first, and what is left will not demise.`,
+        text: `${l.name} lost the expansion space at ${rec.address}: another LOI signed first; remainder below minimum size.`,
       });
       // Same flag as the new-lease branch. An expansion that signs nothing has
       // to come back to the player as an error rather than as silence.
       (s as GameState & { _signFailed?: string })._signFailed =
-        `${l.name} lost the expansion space — the other letter signed first, and `
-        + `the ${Math.round(add).toLocaleString()} sf left will not demise.`;
+        `${l.name} lost the expansion space: another LOI signed first; `
+        + `the ${Math.round(add).toLocaleString()} sf remainder is below minimum size.`;
       return;
     }
     charge(add);
@@ -4834,13 +4828,12 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
       // into one — see respondLOI.
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `${l.name} lost the space at ${rec.address} — the other letter signed first and what is left `
-          + `(${Math.round(sf).toLocaleString()} sf) is under the ${floorSf.toLocaleString()} sf minimum. `
-          + `Two live letters on one floor is a race, and somebody always loses it.`,
+        text: `${l.name} lost the space at ${rec.address}: another LOI signed first; the remainder `
+          + `(${Math.round(sf).toLocaleString()} sf) is under the ${floorSf.toLocaleString()} sf minimum.`,
       });
       (s as GameState & { _signFailed?: string })._signFailed =
-        `${l.name} lost the space — the other letter signed first, and the `
-        + `${Math.round(sf).toLocaleString()} sf left will not demise.`;
+        `${l.name} lost the space: another LOI signed first; the `
+        + `${Math.round(sf).toLocaleString()} sf remainder is below minimum size.`;
       return;
     }
     charge(sf);
@@ -4894,7 +4887,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
   const leasedSf = h.tenants.reduce((a, t) => a + t.sf, 0);
   const occPct = rec.bldgArea > 0 ? Math.min(100, (100 * leasedSf) / rec.bldgArea) : 0;
   const freeNote = l.freeM
-    ? ` Free rent through ${monthLabel(s.month + l.freeM)} — base rent is on the roll but not yet in NOI.`
+    ? ` Free rent through ${monthLabel(s.month + l.freeM)}; not yet in NOI.`
     : "";
   s.news.unshift({
     q: s.month, kind: "deal",
@@ -4945,13 +4938,13 @@ export function respondLOI(
 ): { s: GameState; msg: string; err?: string } {
   const next: GameState = cloneState(s);
   const loi = next.lois.find((l) => l.id === id);
-  if (!loi) return { s, msg: "", err: "That LOI is gone." };
+  if (!loi) return { s, msg: "", err: "That LOI has expired." };
   const h = next.holdings[loi.bbl];
   const rec = resolveRec(parcels, next, loi.bbl);
   if (!h || !rec) return { s, msg: "", err: "You no longer control that building." };
   if (h.groundLeased) {
     next.lois = next.lois.filter((l) => l.id !== id);
-    return { s: next, msg: "", err: "That fee is ground-leased — the lessee lets the building, not you." };
+    return { s: next, msg: "", err: "Ground-leased: the lessee leases the building." };
   }
 
   let drawn = 0;
@@ -4976,8 +4969,8 @@ export function respondLOI(
         // fit-out, and a tenant who builds their own space at a lower rent is
         // the ordinary answer when the landlord cannot write it.
         const ti = Math.round(l.tiPsf * l.sf);
-        return `Signing costs ${money(cost)}. You're short ${money(short)} and the line only has ${money(avail)} left.`
-          + (ti > 0 ? ` ${money(ti)} of it is the fit-out — counter with "They build it" and the tenant funds their own space at a lower rent.` : "");
+        return `Signing costs ${money(cost)}: short ${money(short)}, line has ${money(avail)} left.`
+          + (ti > 0 ? ` TI is ${money(ti)}; counter with "They build it" so the tenant funds TI at a lower rent.` : "");
       }
       const d = drawLoc(next, parcels, short);
       if (d.err) return d.err;
@@ -5020,8 +5013,8 @@ export function respondLOI(
     next.lois = next.lois.filter((o) => o.tourId !== l.tourId || o.id === l.id);
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `${lost.map((o) => o.name).join(" and ")} ${lost.length > 1 ? "were" : "was"} chasing the same space at `
-        + `${rec.address}. You gave it to ${l.name}; they have gone elsewhere.`,
+      text: `${lost.map((o) => o.name).join(" and ")} lost the space at `
+        + `${rec.address} to ${l.name}.`,
     });
   };
 
@@ -5045,8 +5038,8 @@ export function respondLOI(
   if (action === "counter") {
     // Once they have countered back, the number on the table is final —
     // accept it or lose them. No third round; nobody negotiates forever.
-    if (loi.stage === "countered") return { s, msg: "", err: "Their counter was final. Take it or pass." };
-    if (loi.countered) return { s, msg: "", err: "You already countered — they're deciding." };
+    if (loi.stage === "countered") return { s, msg: "", err: "Their counter was final. Accept or pass." };
+    if (loi.countered) return { s, msg: "", err: "You already countered; awaiting their reply." };
     loi.countered = true;
     // GOING BACK TO ONE PARTY COSTS YOU THE PATIENCE OF THE OTHERS.
     //
@@ -5167,7 +5160,7 @@ export function respondLOI(
           return { s: next, msg: "", err };
         }
         next.lois = next.lois.filter((l) => l.id !== id);
-        next.news.unshift({ q: next.month, kind: "warn", text: `${loi.name} took your counter at ${rec.address} and you could not fund the fit-out. The deal died.` });
+        next.news.unshift({ q: next.month, kind: "warn", text: `${loi.name} took your counter at ${rec.address}, but the fit-out could not be funded. Deal dead.` });
         return { s: next, msg: "", err };
       }
       next.lois = next.lois.filter((l) => l.id !== id);
@@ -5204,15 +5197,15 @@ export function respondLOI(
           + (askFree !== openFree || askTi !== openTi || askBump !== openBump || askTerm !== openTerm
             ? ` ($${neAsk.toFixed(2)}/sf net effective over ${years.toFixed(0)} years)`
             : "")
-          + ` was more than the space was worth to them (market ~$${market.toFixed(2)}). `
-          + `You had $${openedAt.toFixed(2)} on the table`
+          + ` vs market ~$${market.toFixed(2)}. `
+          + `Their offer was $${openedAt.toFixed(2)}`
           + (openFree > 0 ? ` with ${openFree} mo free` : "")
           + (askTerm !== openTerm
-            ? ` and they came in wanting ${(openTerm / 12).toFixed(1)} years, not ${(askTerm / 12).toFixed(1)}`
+            ? `, ${(openTerm / 12).toFixed(1)} years (you asked ${(askTerm / 12).toFixed(1)})`
             : "")
           + `.`,
       });
-      return { s: next, msg: `${loi.name} walked. You asked $${neAsk.toFixed(2)}/sf net effective against a $${market.toFixed(2)} market.` };
+      return { s: next, msg: `${loi.name} walked. Asked $${neAsk.toFixed(2)}/sf net effective vs $${market.toFixed(2)} market.` };
     }
     // they counter back once — final. Rent floor uses their OPENER, not the
     // ask we just wrote onto loi.rentPsf (that overwrite made every counter-
@@ -5247,7 +5240,7 @@ export function respondLOI(
         + (loi.counterFreeM > 0 ? ` and ${loi.counterFreeM} mo free` : "")
         + ` and ${loi.counterBumpPct.toFixed(2)}%/yr`
         + (askTerm !== openTerm ? ` on ${(loi.termM / 12).toFixed(1)} years` : "")
-        + `. Final answer — take it or lose them.`,
+        + `. Final; accept or lose them.`,
     });
     return { s: next, msg: `${loi.name} came back at $${loi.counterRentPsf.toFixed(2)}/sf — final.` };
   }
@@ -5298,24 +5291,24 @@ export function buyOutTenants(
 ): { s: GameState; err?: string; msg?: string } {
   const h0 = s.holdings[bbl];
   if (!h0) return { s, err: "You don't own that." };
-  if (h0.groundLeased) return { s, err: "The ground lessee lets that building — there is no roll of yours to buy out." };
+  if (h0.groundLeased) return { s, err: "The ground lessee leases that building; no leases of yours to buy out." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const q = buyoutQuote(s, bbl);
-  if (!q || (!q.tenants && !(h0.occ ?? 0))) return { s, err: "Nobody to buy out — it is already empty." };
+  if (!q || (!q.tenants && !(h0.occ ?? 0))) return { s, err: "No tenants to buy out; already vacant." };
   // Flats run on aggregate occupancy rather than named leases, so the cost of
   // clearing them is a year of the residential income at the same premium.
   const resSf = useRentableSf(rec, "multifamily") * (h0.occ ?? 0);
   const resCost = Math.round(resSf * useRentPsfYr(rec, s.econ, h0.condition, "multifamily") * BUYOUT_PREMIUM);
   const total = q.cost + resCost;
-  if (total <= 0) return { s, err: "Nobody to buy out — it is already empty." };
+  if (total <= 0) return { s, err: "No tenants to buy out; already vacant." };
   // Emptying a building is the first cheque of a redevelopment, and nobody
   // funds a site assembly out of petty cash. The 25% premium over the
   // remaining contracts, the leasing hold and the dark building you are left
   // holding are the price and they have not moved.
   const liq = spendable(s, parcels);
   if (liq.total < total) {
-    return { s, err: `Clearing the building costs ${money(total)} — you can raise ${money(liq.total)}.` };
+    return { s, err: `Lease buyouts cost ${money(total)}; available ${money(liq.total)}.` };
   }
   const next: GameState = cloneState(s);
   const h = next.holdings[bbl]!;
@@ -5334,11 +5327,11 @@ export function buyOutTenants(
   next.lois = next.lois.filter((l) => l.bbl !== bbl);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Bought out every lease at ${rec.address}: ${n} tenant${n === 1 ? "" : "s"} and `
+    text: `Lease buyouts · ${rec.address} · ${n} tenant${n === 1 ? "" : "s"}, `
       + `${(sf / 1000).toFixed(1)}k sf for ${money(total)}, at ${((BUYOUT_PREMIUM - 1) * 100).toFixed(0)}% over the remaining contracts. `
-      + `The building is empty and letting is stopped — it is a site now.`,
+      + `Building vacant; leasing halted.`,
   });
-  return { s: next, msg: `Empty. ${money(total)} to clear it.` };
+  return { s: next, msg: `Vacated · ${money(total)}` };
 }
 
 /** Stop or restart letting a building — the switch you throw before a demolition. */

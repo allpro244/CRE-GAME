@@ -76,6 +76,8 @@
     "holder": "node test/holder-listing.mjs",
     "attention": "node test/attention-route.mjs",
     "rng-audit": "node tools/rng-audit.mjs",
+    "households": "node tools/households.mjs",
+    "households:test": "node test/households.mjs",
     "ui-words": "node tools/ui-words.mjs",
     "seller-stats": "node test/seller-stats.mjs",
     "zoning": "node test/unzoned.mjs",

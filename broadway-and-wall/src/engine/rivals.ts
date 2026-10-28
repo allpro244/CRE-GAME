@@ -561,8 +561,7 @@ export function tickRivalAssembly(s: GameState, parcels: ParcelTable, adjacency:
       if (stakeIn(s, parcels, site, r.id) || deeds >= 4) {
         s.news.unshift({
           q: s.month, kind: "info",
-          text: `${r.name} has assembled ${deeds} lots at ${site.address} into one site of ${Math.round(site.lotArea).toLocaleString()} sf. `
-            + `One plate, one core — expect something bigger than anything on the block.`,
+          text: `${r.name} assembled ${deeds} lots at ${site.address} into one ${Math.round(site.lotArea).toLocaleString()} sf site.`,
         });
       }
     }
@@ -1030,10 +1029,10 @@ export function claimJob(
   s.news.unshift({
     q: s.month, kind: "event",
     text: nearPlayer
-      ? `${best.name} has broken ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, ${money(cost)}, `
-        + `due ${START_YEAR + Math.floor(deliverM / 12)}. That is next door to yours. Your corner is worth more the day it tops out and your tenants have somewhere else to go the day it opens.`
-      : `${best.name} has broken ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `
-        + `${money(cost)}, due ${START_YEAR + Math.floor(deliverM / 12)}. That space is coming whether you want it or not.`,
+      ? `${best.name} broke ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, ${money(cost)}, `
+        + `due ${START_YEAR + Math.floor(deliverM / 12)}. Adjacent to your building: new competing supply.`
+      : `${best.name} broke ground at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `
+        + `${money(cost)}, due ${START_YEAR + Math.floor(deliverM / 12)}.`,
   });
   return best;
 }
@@ -1114,8 +1113,8 @@ function fundAnonymousCityJob(s: GameState, j: NonNullable<GameState["cityJobs"]
     orphanCityJob(s, j);
     s.news.unshift({
       q: s.month, kind: "event",
-      text: `Merchant builders have stopped work on an anonymous job — the loan is drawn, ${money(overrun)} more is due, `
-        + `and nobody will put fresh equity into a hole in this credit market.`,
+      text: `Merchant builders stopped work on a construction job: loan fully drawn, ${money(overrun)} more due, `
+        + `no new equity available in this credit market.`,
     });
     return;
   }
@@ -1162,8 +1161,8 @@ export function fundJobs(s: GameState) {
         orphanCityJob(s, j);
         s.news.unshift({
           q: s.month, kind: "event",
-          text: `${r.name} has stopped work. Their construction lender was seized, nobody would refinance the job, `
-            + `and they have run out of cash to carry it themselves. The frame stands where it stands.`,
+          text: `${r.name} stopped work: construction lender seized, no refinance available, `
+            + `cash exhausted. Project stalled.`,
         });
         continue;
       }
@@ -1342,9 +1341,8 @@ function chargeSponsorFailure(s: GameState, parcels: ParcelTable, r: Rival): { d
   if (wl && worst.amt > wl.book * 0.02) {
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `${worst.name} is carrying the biggest piece of the ${r.name} failure — about `
-        + `$${(worst.amt / 1e6).toFixed(1)}M of a $${(loss / 1e6).toFixed(1)}M hole. `
-        + `Somebody lent them that money, and this is the month it stops being an asset.`,
+      text: `${worst.name} has the largest exposure to the ${r.name} failure: about `
+        + `$${(worst.amt / 1e6).toFixed(1)}M of a $${(loss / 1e6).toFixed(1)}M loss.`,
     });
   }
   // WHOSE PROBLEM THE BOOK IS NOW. The desk with the largest exposure is the
@@ -1384,7 +1382,7 @@ export function jobDelivered(s: GameState, parcels: ParcelTable, bbl: string, fi
   if (rec && stakeIn(s, parcels, rec, firmId) && rng(s, "rivals") < 0.7) {
     s.news.unshift({
       q: s.month, kind: "event",
-      text: `${r.name} has opened ${rec.address}. It is empty today and it is competing with you tomorrow.`,
+      text: `${r.name} delivered ${rec.address}. Vacant; new competing supply.`,
     });
   }
 }
@@ -1423,9 +1421,9 @@ function orphanToTape(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: "event",
       text: relist
-        ? `The stalled frame at ${rec.address} is back on the tape at ${money(ask)}. Nobody wanted it last time and the steel has not got any newer.`
-        : `The receiver is clearing a half-finished building at ${rec.address} — ${(progress * 100).toFixed(0)}% complete, `
-          + `${money(ask)} for the site and the frame. Somebody else's problem is on the market.`,
+        ? `Stalled project relisted · ${rec.address} · ${money(ask)}. No buyer last time.`
+        : `Receiver sale · ${rec.address} · ${(progress * 100).toFixed(0)}% complete, `
+          + `${money(ask)} for the site and frame.`,
     });
   }
 }
@@ -2083,8 +2081,8 @@ function driftYear(s: GameState, r: Rival) {
     s.news.unshift({
       q: s.month, kind: "info",
       text: ch < 0
-        ? `${r.name} lost a third of its equity last year and is not the firm it was — the market now reads it as a ${after.toLowerCase()}.`
-        : `${r.name} had the year of its life and is acting like it — the market now reads it as a ${after.toLowerCase()}.`,
+        ? `${r.name} lost a third of its equity last year; now classed as a ${after.toLowerCase()}.`
+        : `${r.name} had a record year; now classed as a ${after.toLowerCase()}.`,
     });
   }
 }
@@ -2139,7 +2137,7 @@ export function poachForBuildToSuit(
   s.news.unshift({
     q: s.month, kind: "warn",
     text: `${pick.t.name} has signed with ${r.name} for a build-to-suit at ${rec.address ?? rec.bbl}. `
-      + `Their lease at ${pick.addr} runs out ${monthLabel(pick.t.endM)}, and they will not be renewing it.`,
+      + `Their lease at ${pick.addr} expires ${monthLabel(pick.t.endM)}; they will not renew.`,
   });
 }
 
@@ -2215,7 +2213,7 @@ export function tickRivalRetirements(s: GameState, _parcels: ParcelTable) {
       id, name: `${base} Family Holdings`, kind: "local" as const,
       tier: r.bbls.length >= 4 ? "major" as const : "middle" as const,
       since: START_YEAR + Math.floor(Math.max(0, r.bornM ?? 0) / 12),
-      note: `Ran as ${r.name} until ${START_YEAR + Math.floor(s.month / 12)}, then wound the firm up and kept the buildings. Family money now — it does not bid.`,
+      note: `Operated as ${r.name} until ${START_YEAR + Math.floor(s.month / 12)}; wound up and kept the buildings. Family office; does not bid.`,
     };
     (s.retiredHolders ??= []).push(holder);
     for (const b of r.bbls) {
@@ -2236,8 +2234,8 @@ export function tickRivalRetirements(s: GameState, _parcels: ParcelTable) {
     r.epilogueM = -1;
     s.news.unshift({
       q: s.month, kind: "event",
-      text: `${r.name} has wound itself up. The paper is paid off and the family is keeping all ${n} building${n === 1 ? "" : "s"} as ${holder.name} — `
-        + `one fewer bidder on the tape, and one more name that sells only when it has to.`,
+      text: `${r.name} has wound itself up. Debt repaid; the family keeps all ${n} building${n === 1 ? "" : "s"} as ${holder.name}, `
+        + `a long-term holder that no longer bids.`,
     });
   }
 }
@@ -2372,7 +2370,7 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
         const rec = resolveRec(parcels, s, big.bbl);
         s.news.unshift({
           q: s.month, kind: "event",
-          text: `${big.name} ${big.why === "left" ? "is moving out of" : "has gone dark at"} ${rec?.address ?? "one of their buildings"}, handing ${r.name} back ${Math.round(big.sf / 1000)}k sf. Their book is running at ${(Math.max(0, r.occ) * 100).toFixed(0)}% — somebody in this town is about to have space to fill.`,
+          text: `${big.name} ${big.why === "left" ? "is moving out of" : "has gone dark at"} ${rec?.address ?? "one of their buildings"}, handing ${r.name} back ${Math.round(big.sf / 1000)}k sf. Portfolio occupancy ${(Math.max(0, r.occ) * 100).toFixed(0)}%.`,
         });
       }
     }
@@ -2833,8 +2831,7 @@ function tickRivalSpinouts(s: GameState) {
     });
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `The acquisitions team at ${r.name} is leaving after ${(Math.round((s.month - (r.bornM ?? 0)) / 12))} years to raise its own vehicle. `
-        + `Whether the market clears a first close is another question.`,
+      text: `${r.name}'s acquisitions team is leaving after ${(Math.round((s.month - (r.bornM ?? 0)) / 12))} years to raise its own fund.`,
     });
   }
 }
@@ -2911,7 +2908,7 @@ function maybeNewFirm(s: GameState) {
       s.news.unshift({
         q: s.month, kind: "info",
         text: `The team leaving ${founder.fromFirmName} could not raise — `
-          + `the market would not clear a first close, and they went back to other seats.`,
+          + `no first close; the spinout is off.`,
       });
     }
     return;
@@ -3025,8 +3022,8 @@ function maybeNewFirm(s: GameState) {
     q: s.month, kind: "event",
     text: founder
       ? `${name} has raised $${(equity / 1e6).toFixed(0)}M, spinning out of ${founder.fromFirmName}. `
-        + `There is competition on the tape again — and it knows its parent's book.`
-      : `${name} has raised $${(equity / 1e6).toFixed(0)}M and is looking for buildings. There is competition on the tape again.`,
+        + `New buyer in the market.`
+      : `${name} has raised $${(equity / 1e6).toFixed(0)}M to buy buildings. New buyer in the market.`,
   });
 }
 
@@ -3121,8 +3118,8 @@ function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
   const rec = resolveRec(parcels, s, j.bbl);
   s.news.unshift({
     q: s.month, kind: "event",
-    text: `${taker.name} has taken out the stalled building at ${rec?.address ?? j.bbl} for ${money(price)}. `
-      + `The cranes are back and that space is coming after all.`,
+    text: `${taker.name} bought the stalled project at ${rec?.address ?? j.bbl} for ${money(price)}. `
+      + `Construction resumes.`,
   });
 }
 
@@ -3391,13 +3388,12 @@ export function breakGround(
   s.news.unshift({
     q: s.month, kind: "event",
     text: reuse
-      ? `${r.name} is converting ${rec.address} — ${(oldSf / 1000).toFixed(0)}k sf of tired ${rec.class} becoming ${(sf / 1000).toFixed(0)}k sf of ${use}. `
-        + `A building the office market gave up on is going back to work.`
+      ? `${r.name} is converting ${rec.address} — ${(oldSf / 1000).toFixed(0)}k sf of obsolete ${rec.class} to ${(sf / 1000).toFixed(0)}k sf of ${use}.`
       : redev
       ? `${r.name} is tearing down ${rec.address} for ${(sf / 1000).toFixed(0)}k sf of ${use} `
-        + `(was ${(oldSf / 1000).toFixed(0)}k). The book needed the floor area.`
+        + `(was ${(oldSf / 1000).toFixed(0)}k).`
       : `${r.name} is building on their own land at ${rec.address} — ${(sf / 1000).toFixed(0)}k sf of ${use}, `
-        + `$${(cost / 1e6).toFixed(1)}M. They have been sitting on that corner waiting for this market.`,
+        + `$${(cost / 1e6).toFixed(1)}M.`,
   });
 }
 
@@ -3869,13 +3865,13 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
       askFactor: 0.95 - 0.20 * desperate,
       earlyUntilM: s.month + 2, quietFrom: r.name,
     });
-    logFirm(s, r, "event", `Squeezed — offered ${sell.rec.address} to you privately`, sell.bbl, ask);
+    logFirm(s, r, "event", `Under pressure — offered ${sell.rec.address} to you privately`, sell.bbl, ask);
     s.news.unshift({
       q: s.month, kind: "deal", bbl: sell.bbl,
-      text: `${r.name} rang you directly. They need money and they would rather not say so on the tape: `
-        + `${sell.rec.address} is yours at ${money(ask)}, ${Math.round((1 - ask / Math.max(1, v)) * 100)}% under what it would appraise at, `
-        + `for two months before anybody else hears the address. `
-        + (desperate > 0.6 ? `They sounded like people with a date on the calendar.` : `They sounded tired, not desperate — yet.`),
+      text: `Off-market offer · ${sell.rec.address} · ${r.name} · ${money(ask)}, `
+        + `${Math.round((1 - ask / Math.max(1, v)) * 100)}% under appraisal. `
+        + `Exclusive for two months. `
+        + (desperate > 0.6 ? `Seller is distressed.` : `Seller needs liquidity.`),
     });
     return true;
   }
@@ -3884,7 +3880,7 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
   // The deed stays with them until somebody buys it — a firm selling under
   // pressure is still the owner, and that is the whole point of the trade.
   s.listings.push({ bbl: sell.bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id, ...disclosed });
-  logFirm(s, r, "event", `Short of cash — put ${sell.rec.address} on the tape under appraisal`, sell.bbl, px);
+  logFirm(s, r, "event", `Short of cash — listed ${sell.rec.address} under appraisal`, sell.bbl, px);
   // A FIRM SELLING UNDER PRESSURE IS ALWAYS RECORDED, AND INTERRUPTS WHEN IT IS
   // ABOUT YOU. This had no gate at all — every distress listing in the city
   // filed as an `event`, 0.81 a year, most of them buildings the player had
@@ -3896,8 +3892,8 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
   s.news.unshift({
     q: s.month, kind: (yourStreet || known) ? "event" : "info",
     text: (r.dumped ?? 1) <= 1
-      ? `${r.name} is selling. ${sell.rec.address} hits the tape at ${money(px)} — ${Math.round((1 - px / Math.max(1, v)) * 100)}% under appraisal. They are short of cash and the market knows it.`
-      : `${r.name}, again: ${sell.rec.address} at ${money(px)}. That is their ${r.dumped === 2 ? "second" : r.dumped === 3 ? "third" : `${r.dumped}th`} building on the tape this stretch.`,
+      ? `Listed · ${sell.rec.address} · ${r.name} · ${money(px)}, ${Math.round((1 - px / Math.max(1, v)) * 100)}% under appraisal. Seller short of cash.`
+      : `Listed · ${sell.rec.address} · ${r.name} · ${money(px)}. Their ${r.dumped === 2 ? "second" : r.dumped === 3 ? "third" : `${r.dumped}th`} forced listing this cycle.`,
   });
 }
 
@@ -4060,15 +4056,14 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   s.news.unshift({
     q: s.month, kind: "warn",
     text: (surplus > 0
-      ? `${desk} has foreclosed on ${r.name}'s ${worst.rec.address}. ${why} The debt was paid out of the courthouse price and `
-        + `${money(surplus)} of surplus went back to the firm — a fraction of what it was marked at. `
-      : `${r.name} has handed ${worst.rec.address} back to ${desk}. ${why} `
-      + `The paper was non-recourse, so the ${money(Math.max(0, owed - ask))} it is short is the bank's problem, not theirs. `)
+      ? `${desk} foreclosed on ${r.name}'s ${worst.rec.address}. ${why} Debt repaid from the foreclosure sale; `
+        + `${money(surplus)} surplus to the borrower. `
+      : `${r.name} handed ${worst.rec.address} back to ${desk}. ${why} `
+      + `Non-recourse: the ${money(Math.max(0, owed - ask))} shortfall is the lender's loss. `)
       + (off > 0.06
-        ? `${desk} has put it straight out at ${money(ask)} — ${(off * 100).toFixed(0)}% under the mark, which is the loan and not the value. `
-          + `They are not pricing the building, they are clearing the balance sheet. `
-        : `${desk} has the capital to market it properly, so it goes out at ${money(ask)} and there is no bargain in it. `)
-      + `They still own ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}.`,
+        ? `${desk} listed it at ${money(ask)}, ${(off * 100).toFixed(0)}% under the mark (priced to the loan). `
+        : `${desk} listed it at ${money(ask)}, near value. `)
+      + `${r.name} still owns ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}.`,
   });
   recordPropertyEvent(s, worst.bbl, {
     kind: "default",
@@ -4211,9 +4206,9 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
       if (newsChance(s, "refi:" + r.id, 0.25)) {
         s.news.unshift({
           q: s.month, kind: "event",
-          text: `${r.name} could not refinance ${rec.address} in full — ${desk} would write ${money(refi.principal)} against ${money(due)} outstanding, `
-            + `bound by ${refi.binding}. The desk re-papered it to ${monthLabel(until)} rather than take the keys, and the cash flow is swept until then. `
-            + `They are ${money(gap)} short and they have bought ${Math.round((until - s.month) / 12 * 10) / 10} years, not a solution.`,
+          text: `Refinance short · ${rec.address} · ${r.name}: ${desk} sized ${money(refi.principal)} vs ${money(due)} outstanding `
+            + `(${refi.binding} binding). Extended to ${monthLabel(until)} with a cash sweep. `
+            + `${money(gap)} gap remains.`,
         });
       }
       continue;
@@ -4233,8 +4228,7 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
         if (newsChance(s, "balloon:" + bbl, 0.4)) {
           s.news.unshift({
             q: s.month, kind: "event",
-            text: `${r.name} has called ${money(got)} from their partners to clear the balloon on ${rec.address}. `
-              + `The money that went out over the years is going back in. That is what an investor base is FOR, and it is why the old houses outlast the clever ones.`,
+            text: `Capital call · ${r.name} · ${money(got)} from partners to repay the balloon on ${rec.address}.`,
           });
         }
         continue;
@@ -4261,7 +4255,7 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     //    the bank's — which is what non-recourse means.
     clearExtended(r, bbl);
     deedInLieu(s, parcels, r,
-      `The balloon came due and nobody would refinance it: ${money(refi.principal)} against ${money(due)} outstanding.`, bbl);
+      `Balloon due, no full refinance: ${money(refi.principal)} available vs ${money(due)} outstanding.`, bbl);
     return;   // one workout at a time; the rest of the ladder is next month's problem
   }
 }
@@ -4366,8 +4360,8 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       if (s.month === r.epilogueM) {
         s.news.unshift({
           q: s.month, kind: "info",
-          text: `The old partners of ${r.name}, wound up in ${START_YEAR + Math.floor(r.failedM / 12)}, `
-            + `have been seen at the courthouse steps, bidding small and paying cash. The market has a long memory, and so, apparently, do they.`,
+          text: `Former partners of ${r.name} (wound up ${START_YEAR + Math.floor(r.failedM / 12)}) `
+            + `are bidding at foreclosure auctions, small and all cash.`,
         });
       }
       if (!r.bbls.length) continue;
@@ -4740,9 +4734,9 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
               q: s.month, kind: "deal",
               text: `${r.name} has put ${rec.address} on the market. `
                 + (r.style === "merchant"
-                  ? "They build to sell; they were never going to keep it."
-                  : `The fund is ${Math.round((s.month - (r.heldSince?.[forcedBbl] ?? 0)) / 12)} years into this one and the clock has run out — `
-                    + `they are selling into ${cycleDown(s.econ) > 0.5 ? "a market that does not want it" : "this market"} because the mandate says so.`),
+                  ? "Merchant builder exit."
+                  : `Fund-life sale after ${Math.round((s.month - (r.heldSince?.[forcedBbl] ?? 0)) / 12)} years`
+                    + `${cycleDown(s.econ) > 0.5 ? ", into a weak market" : ""}.`),
             });
           }
         }
@@ -4824,8 +4818,8 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           if (!worthTheCall(s, parcels, rec, bbl, ask, v)) { delete s.approaches[bbl]; continue; }
           s.news.unshift({
             q: s.month, kind: "deal",
-            text: `${r.name} is letting go of ${rec.address} — the corner they came over the top of you for in ${monthLabel(beat.m)}. `
-              + `They paid ${money(beat.theirs)}; they will take ${money(ask)}, and they are showing it to you before the tape.`,
+            text: `${r.name} offers you ${rec.address} (they outbid you in ${monthLabel(beat.m)}). `
+              + `Paid ${money(beat.theirs)}; asking ${money(ask)}. First look before the tape.`,
           });
           continue;
         }
@@ -4943,7 +4937,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         r.uncalled = (r.uncalled ?? 0) + Math.round(Math.max(aum * 0.08, -r.cash * 2));
         s.news.unshift({
           q: s.month, kind: "event",
-          text: `${r.name} missed a payment — and somebody behind it wrote a cheque. The backer nobody knew about has committed fresh equity.`,
+          text: `${r.name} missed a payment — and somebody behind it wrote a cheque. A silent backer committed fresh equity.`,
         });
       }
       // 1. RING THE INVESTORS FIRST, because a protective call is cheaper than
@@ -4959,7 +4953,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       if (got > 0 && r.cash >= 0 && newsChance(s, "call:" + r.id, 0.2)) {
         s.news.unshift({
           q: s.month, kind: "event",
-          text: `${r.name} has called ${money(got)} from their partners. They were not going to sell a building over a bad year, and they did not have to.`,
+          text: `Capital call · ${r.name} · ${money(got)} from partners; no forced sale.`,
         });
       }
       // 2. SELL SOMETHING. The one that covers the hole, not one drawn out of a
@@ -4990,9 +4984,9 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           q: s.month, kind: "warn",
           text: r.bbls.length
             ? `${r.name} is finished — ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"} go to the lenders. `
-              + `They have not made a payment in ${r.stressMs} months, the partners stopped answering and no desk would extend again. The receiver will be selling for years.`
-            : `${r.name} is wound up. They handed back the last building months ago and went on paying interest on what was left until they could not — `
-              + `${r.stressMs} months in arrears with nothing behind it, and no collateral for the receiver to take.`,
+              + `No payment in ${r.stressMs} months; partners stopped answering; no extension. Receiver sales to follow.`
+            : `${r.name} is wound up. Last building handed back earlier; `
+              + `${r.stressMs} months in arrears, no collateral left for the receiver.`,
         });
       }
     } else if (r.stressMs || r.dumped) {
@@ -5030,8 +5024,8 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           r.endReason = "woundUp";
           s.news.unshift({
             q: s.month, kind: "event",
-            text: `${r.name} has wound up. The last building is gone, the debt is clear, `
-              + `and after two years with nothing left to buy they returned what remained to their partners.`,
+            text: `${r.name} has wound up. Last building sold, debt clear; `
+              + `remaining capital returned to partners.`,
           });
         }
       } else {
@@ -5449,12 +5443,12 @@ export function rivalBuys(
       const t = won.thesis;
       const what = t?.cls ? (t.cls === "multifamily" ? "apartment buildings" : `${t.cls} buildings`) : "buildings";
       const text = won.sheet && won.sheet.cycle < 35 && ciNow < 0.92
-        ? `${won.name} sat on its cash through the good years and has just bought three ${what} in a month, with the credit window shut. This is what it was waiting for.`
+        ? `${won.name} bought three ${what} this month with credit tight, after holding cash through the boom.`
         : t?.kind === "distress"
-          ? `${won.name} has taken three buildings off the receivers' lists this month. It said it would work the distress while credit was shut; it is.`
+          ? `${won.name} bought three receiver listings this month.`
           : t?.kind === "assemble"
-            ? `${won.name} has bought three more lots around its block this month. Somebody is putting a site together.`
-            : `${won.name} closed on three ${what} this month${t?.districtName ? ` — ${t.districtName} again` : ""}. ${t ? "It is doing exactly what it told its investors it would." : ""}`;
+            ? `${won.name} bought three more lots around its block this month (assemblage).`
+            : `${won.name} closed on three ${what} this month${t?.districtName ? ` — ${t.districtName} again` : ""}. ${t ? "On strategy." : ""}`;
       s.news.unshift({ q: s.month, kind: "info", text: text.trim() });
     }
     const loc = demandLinear(rec.demandScore) >= 50 ? "prime" : "edge";
@@ -5603,23 +5597,23 @@ export function rivalAsk(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
   const known = t ? Math.min(0.05, 0.018 * t.deals) - Math.min(0.06, 0.03 * t.insults) : 0;
   const st = paramsOf(r);
   if (r.stressMs && r.stressMs > 4) {
-    return { ask: Math.round(v * rrange(s, 0.80, 0.95, "rivals") * (1 - known)), note: `${r.name} needs the money — they are inside appraisal and they know you know.` };
+    return { ask: Math.round(v * rrange(s, 0.80, 0.95, "rivals") * (1 - known)), note: `${r.name} needs liquidity; priced under appraisal.` };
   }
   // A FIRM THAT DOES NOT NEED TO SELL prices like it: the old families, and
   // anybody whose sheet holds for a generation or carries NEVER sells.
   const patientHolder = r.sheet ? (r.sheet.hold >= 90 || !!r.rules?.includes("neverSells")) : r.style === "family";
   if (ltv < st.maxLtv * 0.6 && patientHolder) {
-    return { ask: Math.round(v * rrange(s, 1.18, 1.45, "rivals")), note: `${r.name} has owned it for two generations and does not need to sell. That is the number.` };
+    return { ask: Math.round(v * rrange(s, 1.18, 1.45, "rivals")), note: `${r.name}: family-held for two generations, no need to sell.` };
   }
   // A patient seller lists high and waits (a quirk).
   const patientQ = r.quirks?.includes("patientSeller") ? 1.08 : 1;
   return {
     ask: Math.round(v * rrange(s, st.patience - 0.04, st.patience + 0.12, "rivals") * (1 - known) * patientQ),
     note: (t?.deals ?? 0) >= 2
-      ? `${r.name} have made money with you ${t!.deals === 2 ? "twice" : `${t!.deals} times`}. The number is friendlier than it needs to be, and they know it.`
+      ? `${r.name}: ${t!.deals === 2 ? "two" : `${t!.deals}`} prior deals with you; friendlier price.`
       : (t?.insults ?? 0) > 0
-        ? `${r.name} have not forgotten the last number you put to them. It is priced in.`
-        : `${r.name} will trade at the right price.`,
+        ? `${r.name}: priced up after your last lowball.`
+        : `${r.name}: will trade at the right price.`,
   };
 }
 

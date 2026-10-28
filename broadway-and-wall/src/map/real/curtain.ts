@@ -53,52 +53,52 @@ export interface CurtainSys {
  */
 export const CURTAIN: Record<string, CurtainSys[]> = {
   glass: [
-    { kind: "stick", cap: 5, transom: 0.72, refl: [0.26, 0.09, 0.03, 0.5] },
-    { kind: "stick", cap: 6, lites: 2, refl: [0.22, 0.08, 0.04, 0.4] },
-    { kind: "stick", cap: 4, transom: 0.5, refl: [0.34, 0.1, 0.02, 0.3] },
-    { kind: "stick", cap: 5, lites: 2, transom: 0.7, refl: [0.24, 0.08, 0.03, 0.65] },
+    { kind: "stick", cap: 5, transom: 0.72, refl: [0.26, 0.045, 0.03, 0.5] },
+    { kind: "stick", cap: 6, lites: 2, refl: [0.22, 0.04, 0.04, 0.4] },
+    { kind: "stick", cap: 4, transom: 0.5, refl: [0.34, 0.05, 0.02, 0.3] },
+    { kind: "stick", cap: 5, lites: 2, transom: 0.7, refl: [0.24, 0.04, 0.03, 0.65] },
   ],
   bronze: [
-    { kind: "band", cap: 7, refl: [0.32, 0.07, 0.02, 0.85] },
-    { kind: "band", cap: 8, refl: [0.36, 0.06, 0.02, 0.9] },
-    { kind: "band", cap: 6, lites: 2, refl: [0.3, 0.07, 0.02, 0.6] },
-    { kind: "band", cap: 7, refl: [0.4, 0.06, 0.01, 0.5] },
+    { kind: "band", cap: 7, refl: [0.32, 0.035, 0.02, 0.85] },
+    { kind: "band", cap: 8, refl: [0.36, 0.03, 0.02, 0.9] },
+    { kind: "band", cap: 6, lites: 2, refl: [0.3, 0.035, 0.02, 0.6] },
+    { kind: "band", cap: 7, refl: [0.4, 0.03, 0.01, 0.5] },
   ],
   blueglass: [
-    { kind: "ssg", refl: [0.3, 0.05, 0.02, 0.75] },
-    { kind: "ssg", lites: 2, refl: [0.28, 0.05, 0.02, 0.85] },
-    { kind: "ssg", transom: 0.5, refl: [0.3, 0.05, 0.02, 0.8] },
-    { kind: "ssg", lites: 2, refl: [0.42, 0.06, 0.01, 0.45] },
+    { kind: "ssg", refl: [0.3, 0.025, 0.02, 0.75] },
+    { kind: "ssg", lites: 2, refl: [0.28, 0.025, 0.02, 0.85] },
+    { kind: "ssg", transom: 0.5, refl: [0.3, 0.025, 0.02, 0.8] },
+    { kind: "ssg", lites: 2, refl: [0.42, 0.03, 0.01, 0.45] },
   ],
   blackglass: [
-    { kind: "ibeam", cap: 7, refl: [0.16, 0.04, 0.01, 0.35] },
-    { kind: "ibeam", cap: 6, refl: [0.2, 0.04, 0.01, 0.2] },
-    { kind: "ibeam", cap: 8, refl: [0.16, 0.04, 0.01, 0.5] },
-    { kind: "ibeam", cap: 6, lites: 2, refl: [0.18, 0.04, 0.01, 0.45] },
+    { kind: "ibeam", cap: 7, refl: [0.16, 0.02, 0.01, 0.35] },
+    { kind: "ibeam", cap: 6, refl: [0.2, 0.02, 0.01, 0.2] },
+    { kind: "ibeam", cap: 8, refl: [0.16, 0.02, 0.01, 0.5] },
+    { kind: "ibeam", cap: 6, lites: 2, refl: [0.18, 0.02, 0.01, 0.45] },
   ],
   greenglass: [
-    { kind: "band", cap: 5, lites: 2, transom: 0.3, refl: [0.26, 0.06, 0.02, 0.8] },
-    { kind: "band", cap: 5, transom: 0.3, refl: [0.26, 0.06, 0.02, 0.9] },
-    { kind: "ssg", lites: 2, refl: [0.24, 0.05, 0.02, 0.75] },
-    { kind: "band", cap: 6, refl: [0.22, 0.06, 0.02, 0.9] },
+    { kind: "band", cap: 5, lites: 2, transom: 0.3, refl: [0.26, 0.03, 0.02, 0.8] },
+    { kind: "band", cap: 5, transom: 0.3, refl: [0.26, 0.03, 0.02, 0.9] },
+    { kind: "ssg", lites: 2, refl: [0.24, 0.025, 0.02, 0.75] },
+    { kind: "band", cap: 6, refl: [0.22, 0.03, 0.02, 0.9] },
   ],
   silverglass: [
-    { kind: "mirror", refl: [0.62, 0.15, 0.01, 0.2] },
-    { kind: "mirror", lites: 2, refl: [0.66, 0.16, 0.01, 0.15] },
-    { kind: "mirror", refl: [0.58, 0.14, 0.01, 0.45] },
-    { kind: "mirror", lites: 2, refl: [0.6, 0.15, 0.01, 0.35] },
+    { kind: "mirror", refl: [0.62, 0.05, 0.01, 0.2] },
+    { kind: "mirror", lites: 2, refl: [0.66, 0.05, 0.01, 0.15] },
+    { kind: "mirror", refl: [0.58, 0.05, 0.01, 0.45] },
+    { kind: "mirror", lites: 2, refl: [0.6, 0.05, 0.01, 0.35] },
   ],
   fins: [
-    { kind: "fin", cap: 5, refl: [0.2, 0.05, 0.04, 0.5] },
-    { kind: "fin", cap: 6, refl: [0.18, 0.05, 0.04, 0.5] },
-    { kind: "fin", cap: 6, refl: [0.24, 0.05, 0.03, 0.6] },
-    { kind: "fin", cap: 7, refl: [0.18, 0.05, 0.04, 0.4] },
+    { kind: "fin", cap: 5, refl: [0.2, 0.025, 0.04, 0.5] },
+    { kind: "fin", cap: 6, refl: [0.18, 0.025, 0.04, 0.5] },
+    { kind: "fin", cap: 6, refl: [0.24, 0.025, 0.03, 0.6] },
+    { kind: "fin", cap: 7, refl: [0.18, 0.025, 0.04, 0.4] },
   ],
   diagrid: [
-    { kind: "stick", cap: 2, transom: 0.5, refl: [0.3, 0.06, 0.02, 0.55] },
+    { kind: "stick", cap: 2, transom: 0.5, refl: [0.3, 0.03, 0.02, 0.55] },
   ],
   pixel: [
-    { kind: "frit", cap: 3, refl: [0.16, 0.05, 0.08, 0.4] },
+    { kind: "frit", cap: 3, refl: [0.16, 0.025, 0.08, 0.4] },
   ],
 };
 
@@ -114,9 +114,9 @@ export function curtainOf(spec: FamilySpec): CurtainSys | null {
 export function glassReflOf(spec: FamilySpec): [number, number, number, number] {
   const c = curtainOf(spec);
   if (c) return c.refl;
-  if (spec.glass) return [0.12 + 0.4 * spec.glassMetal * spec.glassMetal, 0.07, 0.02, 0.6];
+  if (spec.glass) return [0.12 + 0.4 * spec.glassMetal * spec.glassMetal, 0.04, 0.02, 0.6];
   // the glass of a ribbon window or a modern panel: a clear lite, not a coat
-  if (spec.key.startsWith("ribbon")) return [0.18, 0.05, 0.03, 0.5];
+  if (spec.key.startsWith("ribbon")) return [0.18, 0.03, 0.03, 0.5];
   return [0, 0, 0, 0];
 }
 

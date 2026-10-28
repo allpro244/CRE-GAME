@@ -524,7 +524,7 @@ export function requestForbearance(
 
   if (!mood.willExtend) {
     next.news.unshift({ q: next.month, kind: "warn", text: `${w.lender} refused to extend at ${rec.address}. ${mood.why}` });
-    return { s: next, msg: "Extension refused." };
+    return { s: next, msg: "Lender said no to an extension." };
   }
   const bal = h.loan.balance;
   const fee = Math.round(bal * mood.feePct);

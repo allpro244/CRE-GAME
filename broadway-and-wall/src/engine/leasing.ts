@@ -2,6 +2,7 @@
 // counters, TI/LC signing costs, renewals where the incumbent weighs the
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
+import { why, whyTenantBooks } from "./why";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
@@ -1597,9 +1598,20 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           gone = ` ${notable.name}${yrsIn >= 8 ? ` (${yrsIn} years)` : ""} moved out; seeking space elsewhere.`;
         }
       }
+      // WHY: each firm that left at term, largest first, read from its own books.
+      const leftIds = [...movedOut].sort((a, b) => b.sf * b.rentPsf - a.sf * a.rentPsf).slice(0, 4).map((mo) => why(s, {
+        k: "tenant.left", a: "tenant", name: mo.name, bbl: rec.bbl,
+        n: { sf: mo.sf, rentYr: Math.round(mo.rentPsf * mo.sf) },
+        t: `${mo.name} left at lease end · ${(mo.sf / 1000).toFixed(1)}k sf · −$${Math.round(mo.rentPsf * mo.sf / 1000)}k/yr`,
+      }, [whyTenantBooks(s, mo, tenantFin(s.econ, { ...mo }))]));
       s.news.unshift({
         q, kind: "info",
         text: `Lease expiry · ${rec.address} · ${(outSf / 1000).toFixed(1)}k sf vacant · $${(turnCost / 1000).toFixed(0)}K make-ready · ${down} months to market.${gone}`,
+        why: why(s, {
+          k: "building.rollover", a: "player", bbl: rec.bbl,
+          n: { sf: outSf, firms: movedOut.length, monthsToMarket: down },
+          t: `${rec.address} · ${movedOut.length} lease${movedOut.length === 1 ? "" : "s"} ended · ${(outSf / 1000).toFixed(1)}k sf empty`,
+        }, leftIds),
       });
     }
     // finished turns come off the books
@@ -1651,6 +1663,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // months of contract rent as if the deposit were arriving now. You were
       // paid twice, and the news reported the phantom number as the deposit.
       const kept = Math.round(t.deposit ?? 0);
+      // WHY (why.ts): the books that failed it, read before it leaves the roll.
+      const whyBooks = whyTenantBooks(s, t, fin);
       h.tenants.splice(i, 1);
       // ...AND THE FORFEITURE IS INCOME, even though no cash moves.
       //
@@ -1692,6 +1706,11 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       s.news.unshift({
         q, kind: "warn",
         text: `${t.name}${tenure} filed and went dark at ${rec.address} — ${(t.sf / 1000).toFixed(1)}k sf vacant with ${(t.endM - q) / 12 > 1 ? `${((t.endM - q) / 12).toFixed(1)} years` : `${t.endM - q} months`} left on the lease. Deposit retained: $${(kept / 1000).toFixed(0)}K.`,
+        why: why(s, {
+          k: "tenant.dark", a: "tenant", name: t.name, bbl: rec.bbl,
+          n: { sf: t.sf, rentYr: Math.round(t.rentPsf * t.sf), monthsLeft: t.endM - q },
+          t: `${t.name} went dark · ${(t.sf / 1000).toFixed(1)}k sf · rent roll −$${Math.round(t.rentPsf * t.sf / 1000)}k/yr`,
+        }, [whyBooks]),
       });
     }
 

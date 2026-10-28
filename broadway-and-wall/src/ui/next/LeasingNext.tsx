@@ -61,7 +61,7 @@ function OfferCard({ game, parcels, loi }: { game: GameState; parcels: ParcelTab
         <div><small>Rent / yr</small>{usd(loi.rentPsf * loi.sf)}</div>
         <div><small>To sign</small>{usd(cost)}</div>
       </div>
-      <div className="ls-bar" title="Their rent against the market rent for this space">
+      <div className="ls-bar" title="Rent vs market">
         <i style={{ width: `${Math.max(4, Math.min(100, (loi.rentPsf / Math.max(market, 0.01)) * 66))}%` }} className={tone} />
         <span style={{ left: "66%" }} />
       </div>
@@ -96,7 +96,7 @@ export function LeasingOffers() {
         <Stat label="Space asked"><Figure value={sf} fmt="n" text={`${Math.round(sf).toLocaleString()} sf`} /></Stat>
         <Stat label="Rent / yr"><Figure value={rent} fmt="usd" /></Stat>
       </StatStrip>
-      {lois.length === 0 && <div className="nx-none">No letters on the desk. Tenants write when you have space and the asking rent is right — see Vacancy.</div>}
+      {lois.length === 0 && <div className="nx-none">No letters yet</div>}
       <div className="ls-cards">
         {lois.map((l) => <OfferCard key={l.id} game={game} parcels={parcels} loi={l} />)}
       </div>
@@ -155,7 +155,7 @@ export function LeasingVacancy() {
   }).sort((a, b) => b.rec.bldgArea - a.rec.bldgArea);   // biggest building first (owner)
   return (
     <div className="nx-place">
-      {bldgs.length === 0 && <div className="nx-none">No leasable buildings yet.</div>}
+      {bldgs.length === 0 && <div className="nx-none">No leasable buildings</div>}
       {bldgs.map(({ h, rec, vac, occ, mkt }) => (
         <div className="ls-vac" key={h.bbl}>
           <div className="ls-vac-head">

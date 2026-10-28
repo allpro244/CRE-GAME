@@ -3696,7 +3696,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       // one that wants the block at any price. It rings on its own clock
       // (hashed, so no other buyer's call is moved), and if you say no it
       // builds around you.
-      if (rec0 && !anyLive && s.month - h.boughtM > 6) {
+      if (rec0 && !anyLive && !s.noUnsolicited && s.month - h.boughtM > 6) {
         const asm = holdoutAssembler(s, adjacency, rec0, h.bbl);
         if (asm && hash01(`${s.seed}:holdout:${h.bbl}:${s.month}`) < 0.05) {
           s.lastUnsolicitedM = s.month;
@@ -3732,6 +3732,9 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
           // they are not buying the same thing. They are buying the block.
           const bidder = unsolicitedBidder(s, parcels, adjacency, rec0, h);
           const px = Math.round(v * bidder.mult * (() => { const hw = cycleHot(s.econ); return rrange(s, 0.86 + 0.14 * hw, 0.98 + 0.12 * hw, "sales"); })());
+          // Declined at the switchboard: the draws above still run so no
+          // stream shifts with the setting.
+          if (s.noUnsolicited) continue;
           h.sale = { ask: px, listedM: s.month, unsolicited: true };
           h.sale.offer = { price: px, expiresM: s.month + 2, from: bidder.name };
           s.news.unshift({

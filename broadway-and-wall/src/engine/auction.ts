@@ -252,18 +252,31 @@ function roomBid(s: GameState, est: number): { px: number; heads: number } {
   return { px: Math.round(best), heads };
 }
 
-/** A named buyer if one on the street can carry it; out-of-town money if not. */
-function thirdPartyTakes(s: GameState, parcels: ParcelTable, rec: ParcelRecord, px: number): string {
-  // WHO IS IN THE ROOM: firms whose sheet hunts distress (Distress 55+), the
-  // building fitting what they buy, and the keenest of them takes it — the
-  // ALWAYS-at-the-courthouse shop first. A firm with no sheet keeps its style.
+/**
+ * WHO IS IN THE ROOM: firms whose sheet hunts distress (Distress 55+), the
+ * building fitting what they buy, and the keenest of them takes it — the
+ * ALWAYS-at-the-courthouse shop first. A firm with no sheet keeps its style.
+ * It has to bring the third of the price a courthouse sale wants in cash; the
+ * rest is a desk's money on the deed. Reads no dice and moves nothing.
+ *
+ * Nobody else is in the room. The fallback was "money from out of town",
+ * which outbid the player on the steps and took deeds into no book anyone
+ * could see; with no firm on the street able to pay, the room is empty and
+ * the holder's credit bid takes it.
+ */
+function thirdPartyFor(s: GameState, parcels: ParcelTable, rec: ParcelRecord, px: number): Rival | undefined {
   const keen = (x: Rival) => x.sheet
     ? (x.sheet.distress >= 55 ? (x.sheet.distress / 100) ** 2 * (x.rules?.includes("alwaysCourthouse") ? 2 : 1) * fitOf(s, parcels, x, rec, true) : 0)
     : (x.style === "opportunistic" || x.style === "core" ? 0.5 : 0);
-  const r = (s.rivals ?? [])
-    .filter((x) => x.failedM === undefined && !x.stressMs && x.cash > px * 0.3 && keen(x) > 0)
+  return (s.rivals ?? [])
+    .filter((x) => x.failedM === undefined && !x.stressMs && !x.bbls.includes(rec.bbl)
+      && x.cash >= Math.round(px * 0.35) && keen(x) > 0)
     .sort((a, b) => keen(b) * b.cash - keen(a) * a.cash)[0];
-  if (r) {
+}
+
+/** The firm in the room takes the deed onto its own book, on its own money. */
+function thirdPartyTakes(s: GameState, _parcels: ParcelTable, rec: ParcelRecord, px: number, r: Rival): string {
+  {
     const equity = Math.min(r.cash, Math.round(px * 0.35));
     r.cash -= equity;
     r.bbls.push(rec.bbl);
@@ -278,7 +291,6 @@ function thirdPartyTakes(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     r.basis = Math.round((r.basis ?? 0) + px);
     return r.name;
   }
-  return "money from out of town";     // the building leaves the street's books
 }
 
 /** The player takes a lot for cash: worn bones, the roll the borrower left. */
@@ -362,7 +374,12 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     }
 
     // ---- the room, the credit bid, and your number ------------------------
-    const { px: room, heads } = roomBid(s, lot.est);
+    let { px: room, heads } = roomBid(s, lot.est);
+    // The room is the street. A price nobody on it can pay is no price.
+    const roomFirm = room > 0
+      ? thirdPartyFor(s, parcels, rec, lot.kind === "note" ? Math.max(room, Math.round(lot.debt * 1.01)) : room)
+      : undefined;
+    if (!roomFirm) { room = 0; heads = 0; }
     // an impaired holder does not protect its whole debt — cash beats REO
     const holderL = lot.kind === "yours" || lot.kind === "bank" ? lenderByName(s, lot.holder) : undefined;
     const protect = lot.kind === "note" ? lot.debt
@@ -404,7 +421,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         const paid = Math.round(Math.max(room, lot.debt * 1.01));
         s.cash += lot.debt; logBooks(s, "sold", lot.debt);
         const surplus = Math.max(0, paid - lot.debt);
-        const buyer = thirdPartyTakes(s, parcels, rec, paid);
+        const buyer = thirdPartyTakes(s, parcels, rec, paid, roomFirm!);
         if (r) {
           r.bbls = r.bbls.filter((b) => b !== n.bbl);
           noteLost(s, r, n.bbl);
@@ -494,7 +511,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
           held.payoff = Math.min(bal, net + (recourse ? shortfall : 0));
         }
       }
-      recordComp(s, rec, gross, toREO ? lot.holder : "the courthouse steps", firmShort(s), true, h.condition);
+      // Outbid: the firm in the room takes the deed onto its own book.
+      const roomBuyer = toREO ? null : thirdPartyTakes(s, parcels, rec, gross, roomFirm!);
+      recordComp(s, rec, gross, toREO ? lot.holder : roomBuyer!, firmShort(s), true, h.condition);
       if (s.groundLeases?.[lot.bbl]) transferGroundLeaseOffBook(s, lot.bbl);
       moveDeposit(s, h, -depositsOn(h));
       s.lastTradeM = s.lastTradeM ?? {};
@@ -502,7 +521,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       delete s.holdings[lot.bbl];
       delete s.workouts![lot.bbl];
       s.lois = s.lois.filter((l) => l.bbl !== lot.bbl);
-      said(lot.bbl, lot.address, "lostyours", 0, gross, toREO ? lot.holder : "the room",
+      said(lot.bbl, lot.address, "lostyours", 0, gross, toREO ? lot.holder : roomBuyer!,
         shortfall > 0
           ? (recourse ? `You signed for this one — the ${money(shortfall)} shortfall came out of your account.`
                       : `Non-recourse, so ${lot.holder} ate the ${money(shortfall)}.`)
@@ -512,7 +531,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       sold++;
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `${lot.address} crossed the block at ${money(gross)}${toREO ? ` — no bid met ${lot.holder}'s credit bid, so it is their REO now` : ` to the room`}. `
+        text: `${lot.address} crossed the block at ${money(gross)}${toREO ? ` — no bid met ${lot.holder}'s credit bid, so it is their REO now` : ` to ${roomBuyer}`}. `
           + (shortfall > 0
             ? recourse
               ? `Recourse: ${money(shortfall)} shortfall charged to you.`
@@ -552,7 +571,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     }
     if (room > protect && room >= lot.upset) {
       const paid = room;
-      const buyer = thirdPartyTakes(s, parcels, rec, paid);
+      const buyer = thirdPartyTakes(s, parcels, rec, paid, roomFirm!);
       if (bid > 0) said(lot.bbl, lot.address, "outbid", bid, paid, buyer,
         `The room went past you. Your deposit came back.`);
       if (r) {

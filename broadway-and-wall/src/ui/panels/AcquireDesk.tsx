@@ -60,39 +60,39 @@ export function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => v
 
   return (
     <div className="deal">
-      <div className="deal-head">Emptying the building</div>
+      <div className="deal-head">Vacate</div>
       <div className="grid">
-        <Row k="Letting" v={h.leasingHold ? "STOPPED — nobody new, nobody renewed" : "Open — new tenants and renewals"} bad={h.leasingHold} />
+        <Row k="Leasing" v={h.leasingHold ? "STOPPED · no new leases or renewals" : "Open"} bad={h.leasingHold} />
         <Row k="Occupied" v={(occNow * 100).toFixed(0) + "%"} />
-        {occupied && <Row k="In place" v={`${bq?.tenants ?? 0} lease${(bq?.tenants ?? 0) === 1 ? "" : "s"}${resSf > 900 ? ` · ${sf(Math.round(resSf))} of let flats` : ""}`} />}
+        {occupied && <Row k="In place" v={`${bq?.tenants ?? 0} lease${(bq?.tenants ?? 0) === 1 ? "" : "s"}${resSf > 900 ? ` · ${sf(Math.round(resSf))} leased apartments` : ""}`} />}
         {occupied && h.tenants.length > 0 && (
-          <Row k="Longest lease runs to" v={monthLabel(Math.max(...h.tenants.map((t) => t.endM)))} />
+          <Row k="Last lease expiry" v={monthLabel(Math.max(...h.tenants.map((t) => t.endM)))} />
         )}
-        {occupied && <Row k="Cost to buy them all out" v={usd(clearCost)} strong />}
+        {occupied && <Row k="Lease buyout cost" v={usd(clearCost)} strong />}
         <Row k="Demolition" v={usd(demoCost)} />
-        {occupied && <Row k="Vacant dirt costs you" v={usd(clearCost + demoCost)} strong bad={clearCost + demoCost > purse} />}
+        {occupied && <Row k="Total to vacant land" v={usd(clearCost + demoCost)} strong bad={clearCost + demoCost > purse} />}
       </div>
       <div className="btn-row">
         <button className={"btn" + (h.leasingHold ? " btn-on" : "")}
           onClick={() => useStore.getState().holdLeasing(bbl, !h.leasingHold)}
           title={h.leasingHold
-            ? "Start letting again — new prospects and renewals resume next month"
-            : "Sign nobody new and renew nobody. The roll runs off and the income with it."}>
-          {h.leasingHold ? "Resume letting" : "Stop letting"}
+            ? "Resume new leases and renewals next month"
+            : "No new leases or renewals; roll expires."}>
+          {h.leasingHold ? "Resume leasing" : "Stop leasing"}
         </button>
         {occupied && clearCost > 0 && (
           <button className="btn btn-sell" disabled={clearCost > purse}
             onClick={() => useStore.getState().buyOutLeases(bbl)}
-            title={`Every remaining month of every contract, plus ${((BUYOUT_PREMIUM - 1) * 100).toFixed(0)}% for making them move`}>
-            Buy out every lease · {usd(clearCost)}
+            title={`Remaining rent on all leases + ${((BUYOUT_PREMIUM - 1) * 100).toFixed(0)}% premium`}>
+            Buy out all leases · {usd(clearCost)}
           </button>
         )}
         <button
           className="btn btn-sell"
           disabled={!canRaze}
           title={canRaze
-            ? "Clear the site back to dirt so you can rebuild to the full envelope."
-            : `The building is ${(occNow * 100).toFixed(0)}% let. Nobody signs a wrecking permit over sitting tenants — it has to be under 20%.`}
+            ? "Clear to vacant land."
+            : `${(occNow * 100).toFixed(0)}% occupied; must be under 20% to demolish.`}
           onClick={onRaze}
         >
           Demolish · {usd(demoCost)}
@@ -114,7 +114,7 @@ export function VacantPossession({ bbl, onRaze }: { bbl: string; onRaze: () => v
         </table>
       )}
       {clearCost > purse && occupied && (
-        <div className="hint">Short {usd(clearCost - purse)} of what it takes to clear it, counting cash and the line.</div>
+        <div className="hint">Short {usd(clearCost - purse)} (cash + line).</div>
       )}
     </div>
   );
@@ -148,9 +148,7 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
       <div className="deal">
         <div className="deal-head">No rent roll</div>
         <div className="hint">
-          Nobody is selling this building and nobody has shown you anything. The occupancy and income
-          on this page are the class model's read on a building like this one, not a fact about this
-          one. Ring the owner and the paper comes over with the conversation.
+          Not disclosed. Occupancy and income shown are market estimates. Approach the owner for the rent roll.
         </div>
       </div>
     );
@@ -175,12 +173,10 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
   return (
     <div className="deal">
       <div className="deal-head">
-        The rent roll, as disclosed · {(physicalOcc(rec as never, h) * 100).toFixed(0)}% let
+        Disclosed rent roll · {(physicalOcc(rec as never, h) * 100).toFixed(0)}% leased
       </div>
       <div className="hint">
-        {li ? "Off the offering memorandum." : "The owner's roll, sent over with the conversation."}{" "}
-        This is what the deed conveys — the same leases, the same rents, the same dates.
-        Whether any of them renews is not in here, and that is the deal you are being offered.
+        {li ? "Source: offering memorandum." : "Source: owner."} Conveys with the deed. Renewals not guaranteed.
       </div>
       {roll.length > 0 && (
         <div className="roll">
@@ -215,7 +211,7 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
         </div>
       )}
       {roll.length === 0 && resSf === 0 && (
-        <div className="hint">Not one square foot of it is let. That is the whole of the disclosure.</div>
+        <div className="hint">0% leased.</div>
       )}
       {/* THE TRAILING TWELVE, LINE BY LINE. Same statement the engine runs on a
           building you own — see operatingStatement — so the income you are
@@ -230,12 +226,12 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
         <Row k="Management" v={usd(-st.mgmt)} />
         <Row k={`Property tax at ${usd(px)}`} v={usd(-st.tax)} />
         <Row k="In-place NOI / yr" v={usd(st.noi)} strong bad={st.noi < 0} />
-        <Row k="Going-in cap at that price" v={px > 0 ? ((st.noi / px) * 100).toFixed(2) + "%" : "—"} strong />
+        <Row k="Going-in cap" v={px > 0 ? ((st.noi / px) * 100).toFixed(2) + "%" : "—"} strong />
       </div>
       {/* a sentence, so it reads as one — in the value column it wrapped
           into four lines of monospace beside a single figure */}
       {Math.abs(px - standingAssessed) > px * 0.05 && (
-        <div className="hint dim">The sale resets the tax assessment from {usd(standingAssessed)} to the price paid.</div>
+        <div className="hint dim">Assessment resets from {usd(standingAssessed)} to sale price.</div>
       )}
     </div>
   );
@@ -269,19 +265,17 @@ function InstructionFields({ accept, decline, setAccept, setDecline }: {
   return (
     <>
       <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-        <span className="dim">Accept any offer at or above $</span>
+        <span className="dim">Auto-accept at or above $</span>
         <input className="mono" style={{ width: 120 }} inputMode="numeric" placeholder="optional"
           value={accept} onChange={(e) => setAccept(e.target.value)} />
       </div>
       <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-        <span className="dim">Decline anything below $</span>
+        <span className="dim">Auto-decline below $</span>
         <input className="mono" style={{ width: 120 }} inputMode="numeric" placeholder="optional"
           value={decline} onChange={(e) => setDecline(e.target.value)} />
       </div>
       <div className="hint">
-        Standing instructions: the broker acts on these the month an offer lands, without stopping the clock.
-        A take closes as an ordinary sale (never a 1031) unless it would leave you short after tax and payoff;
-        anything between the two numbers still comes to you, and so does a marketed bid list. Leave both blank to take every call yourself.
+        Broker applies these on arrival. Auto-accepts close as ordinary sales (no 1031) unless short after tax and payoff. Offers between, and marketed bid lists, come to you. Blank = review all.
       </div>
     </>
   );
@@ -366,7 +360,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
         {sale.bids?.length ? (
           <>
             <div className="page-section" style={{ marginTop: 2 }}>
-              Bids · {sale.bids.filter((b) => !b.dropped).length} live{(sale.round ?? 0) > 0 ? " · best and final done" : ""}
+              Bids · {sale.bids.filter((b) => !b.dropped).length} live{(sale.round ?? 0) > 0 ? " · best and final complete" : ""}
             </div>
             <table className="tbl">
               <thead>
@@ -378,7 +372,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                     <td>{b.name}</td>
                     <td className="num">{usd(b.price)}</td>
                     <td className="num">{((b.price / apMid(bbl, value) - 1) * 100).toFixed(0)}%</td>
-                    <td className="dim">{b.dropped ? "Walked at best and final." : b.note}</td>
+                    <td className="dim">{b.dropped ? "Dropped at best and final" : b.note}</td>
                     <td>
                       {!b.dropped && (
                         <div className="btn-row" style={{ gap: 4, margin: 0 }}>
@@ -389,7 +383,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                               would take five per cent more of. One per bid. */}
                           {!b.countered && (
                             <button className={"btn-mini" + (counterOn === i ? " on" : "")}
-                              title={`Go back to ${b.name} alone with a number of your own`}
+                              title={`Private counter to ${b.name}`}
                               onClick={() => { setCounterOn(counterOn === i ? null : i); setCounterPx(Math.round(b.price * 1.06)); }}>
                               counter
                             </button>
@@ -412,7 +406,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               return (
               <div className="page-section" style={{ marginTop: 6 }}>
                 <Slider
-                  label={`Back to ${sale.bids![counterOn].name} at`}
+                  label={`Counter ${sale.bids![counterOn].name}`}
                   value={counterPx}
                   min={bb.min}
                   max={bb.max}
@@ -422,20 +416,19 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                   editable="price"
                   onChange={setCounterPx}
                   format={(v: number) => usd(v)}
-                  hint={`Name a counter above ${usd(sale.bids![counterOn!].price)}. Too far past their bid and they walk.`}
+                  hint={`Above ${usd(sale.bids![counterOn!].price)}. Higher counters risk the bidder walking.`}
                 />
                 <div className="btn-row">
                   <button className="btn" onClick={() => { useStore.getState().counterBid(bbl, counterOn!, counterPx); setCounterOn(null); }}>
-                    Send it — {usd(counterPx)}
+                    Send · {usd(counterPx)}
                   </button>
-                  <button className="btn" onClick={() => setCounterOn(null)}>Leave it</button>
+                  <button className="btn" onClick={() => setCounterOn(null)}>Cancel</button>
                 </div>
               </div>
               );
             })()}
             <div className="hint">
-              Taking a bid is not a closing. The weaker the covenant behind a number, the likelier they come back
-              with a reason it should be lower once they have been through the building.
+              Accepted bids can be retraded in diligence; weaker buyer credit, higher risk.
             </div>
             {(sale.round ?? 0) === 0 && sale.bids.filter((b) => !b.dropped).length > 1 && (
               <div className="btn-row">
@@ -450,11 +443,11 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           <>
             <div className="hint">
               {sale.offer.retrade
-                ? <>{sale.offer.from ?? "The buyer"} has <b>retraded</b> you — {sale.offer.retrade}. They are at <b className="mono">{usd(sale.offer.price)}</b> now, good until {monthLabel(sale.offer.expiresM)}.</>
+                ? <><b>Retrade</b>{sale.offer.from ? ` · ${sale.offer.from}` : ""} · {sale.offer.retrade} · now <b className="mono">{usd(sale.offer.price)}</b> · expires {monthLabel(sale.offer.expiresM)}.</>
                 : sale.offer.contract && !sale.offer.held
-                  ? <>Under contract{sale.offer.from ? ` with ${sale.offer.from}` : ""} at <b className="mono">{usd(sale.offer.price)}</b> — it closes {monthLabel(sale.offer.expiresM)} on its own. Close early, or roll it into a 1031, only if you want to.</>
-                  : <>Offer on the table{sale.offer.from ? ` from ${sale.offer.from}` : ""}: <b className="mono">{usd(sale.offer.price)}</b> — good until {monthLabel(sale.offer.expiresM)}.</>}
-              {tq.tax > 0 && <> Gain of {usd(tq.gain)} over depreciated basis owes <b className="mono">{usd(tq.tax)}</b> in tax.</>}
+                  ? <>Under contract{sale.offer.from ? ` · ${sale.offer.from}` : ""} · <b className="mono">{usd(sale.offer.price)}</b> · auto-closes {monthLabel(sale.offer.expiresM)}.</>
+                  : <>Offer{sale.offer.from ? ` · ${sale.offer.from}` : ""} · <b className="mono">{usd(sale.offer.price)}</b> · expires {monthLabel(sale.offer.expiresM)}.</>}
+              {tq.tax > 0 && <> Gain {usd(tq.gain)} over depreciated basis · tax <b className="mono">{usd(tq.tax)}</b>.</>}
             </div>
             {/* WHAT THEY ARE ACTUALLY BUYING. A price is a price; the cap rate
                 they are getting and the occupancy they are getting it on are
@@ -476,14 +469,14 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               const u = unitStatus(orec, holding, game.month);
               return (
                 <div className="grid">
-                  <Row k="Cap rate they are buying at" v={`${cap.toFixed(2)}%`} strong bad={cap > mkt + 0.4} />
+                  <Row k="Buyer cap rate" v={`${cap.toFixed(2)}%`} strong bad={cap > mkt + 0.4} />
                   <Row
-                    k="Against the market"
-                    v={`${mkt.toFixed(2)}% for ${useLabel(orec)} — ${cap < mkt - 0.25 ? "they are paying up" : cap > mkt + 0.25 ? "that is a discount to the market" : "about where the market is"}`}
+                    k="Market cap rate"
+                    v={`${mkt.toFixed(2)}% ${useLabel(orec)} · ${cap < mkt - 0.25 ? "premium" : cap > mkt + 0.25 ? "discount" : "at market"}`}
                   />
-                  <Row k="NOI they are underwriting" v={usd(noi)} />
-                  <Row k="Occupancy today" v={`${(occ * 100).toFixed(0)}% · ${u.leased} of ${u.total} spaces`} bad={occ < 0.75} />
-                  <Row k="Against your ask" v={`${((sale.offer!.price / sale.ask - 1) * 100).toFixed(1)}%`} bad={sale.offer!.price < sale.ask * 0.92} />
+                  <Row k="Underwritten NOI" v={usd(noi)} />
+                  <Row k="Occupancy" v={`${(occ * 100).toFixed(0)}% · ${u.leased} of ${u.total} spaces`} bad={occ < 0.75} />
+                  <Row k="vs. ask" v={`${((sale.offer!.price / sale.ask - 1) * 100).toFixed(1)}%`} bad={sale.offer!.price < sale.ask * 0.92} />
                 </div>
               );
             })()}
@@ -494,7 +487,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               {tq.tax > 0 && !exchangeBusy && !consentFor(game, holding, "exchange") && (
                 <button
                   className="btn btn-buy"
-                  title={`Roll the gain into your next purchase: defer ${usd(tq.tax)} of tax, but you must buy for ≥ 80% of this price within 6 months`}
+                  title={`Defer ${usd(tq.tax)} tax. Must buy ≥ 80% of price within 6 mo.`}
                   onClick={() => setAcceptConfirm({ exchange: true })}
                 >
                   1031 · defer {usd(tq.tax)}
@@ -520,7 +513,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
                     { at: Math.round(sale.offer.price * 1.08), label: "+8%" },
                     { at: sale.ask, label: "ask" },
                   ]}
-                  hint="Name any price above their bid. Well over appraisal and they may walk — that is the negotiation."
+                  hint="Above their bid. Far over appraisal risks a walk."
                 />
                 <div className="btn-row">
                   <button className="btn" onClick={() => counterSale(bbl, counter || Math.round(sale.offer!.price * 1.06))}>
@@ -533,8 +526,8 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
         ) : (
           <div className="hint">
             {sale.callM !== undefined
-              ? `The book is out. Nothing happens until offers are due in ${monthLabel(sale.callM)} — that is the point of a date.`
-              : "No offers yet. Overpriced listings sit; the market talks back slowly."}
+              ? `Offers due ${monthLabel(sale.callM)}.`
+              : "No offers yet."}
           </div>
         )}
         {!sale.unsolicited && (() => {
@@ -546,7 +539,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               <div className="btn-row">
                 <button className="btn" disabled={bad || !ins}
                   onClick={() => { useStore.getState().setSaleInstructions(bbl, ins); setInsAccept(""); setInsDecline(""); }}>
-                  Give the broker these numbers
+                  Set instructions
                 </button>
                 {sale.instructions && (
                   <button className="btn" onClick={() => useStore.getState().setSaleInstructions(bbl, null)}>
@@ -576,10 +569,10 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           hint={(() => {
             const want = ask ? Number(ask) : sale.ask;
             return want < sale.ask
-              ? `Cutting ${usd(sale.ask - want)} off. A price cut brings the phone back — it also tells every bidder you are motivated.`
+              ? `−${usd(sale.ask - want)}. Cuts draw offers; signal motivation.`
               : want > sale.ask
-                ? `Asking ${usd(want - sale.ask)} more than you were. Raising an ask mid-campaign loses the buyers who were nearly there.`
-                : "The number you are asking today.";
+                ? `+${usd(want - sale.ask)}. Raising mid-campaign loses buyers.`
+                : "Current ask.";
           })()}
         />
         <div className="btn-row">
@@ -622,7 +615,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   return (
     <div className="deal">
       <div className="deal-head">Sell</div>
-      <div className="hint">Price it and let the market answer. Appraisal: {band(bbl, value)}.</div>
+      <div className="hint">Appraisal: {band(bbl, value)}.</div>
       <Slider
         label="Your ask"
         value={price}
@@ -636,9 +629,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           { at: Math.round(mid), label: "fair" },
           { at: Math.round(mid * 1.15), label: "reach" },
         ]}
-        hint={price < mid * 0.95 ? "Priced to move — expect offers within months."
-          : price > mid * 1.12 ? "Above the market. It may sit a long time."
-          : "About right; offers should come."}
+        hint={price < mid * 0.95 ? "Below market: fast sale."
+          : price > mid * 1.12 ? "Above market: slow sale."
+          : "At market."}
       />
       {/* WHAT YOU ARE ACTUALLY ASKING. A price is a number; a cap rate is the
           number every buyer on the other side will convert it to before they
@@ -646,16 +639,15 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           serious. */}
       {askCap !== null && (
         <div className="hint">
-          At {usd(price)} you are asking a <b className="mono">{askCap.toFixed(2)}%</b> cap on
-          {" "}{usd(saleNoi)} of {fee ? "ground rent" : "NOI"}
+          Ask cap <b className="mono">{askCap.toFixed(2)}%</b> on {usd(saleNoi)} {fee ? "ground rent" : "NOI"}
           {fee
-            ? " — buyers underwrite a leased fee as a bond with a reversion, not a vacant building."
-            : ` — the market is paying about ${game.econ.capRate[saleClass].toFixed(2)}% for this class today.`}
+            ? " (leased fee, priced as bond + reversion)."
+            : ` · market ${game.econ.capRate[saleClass].toFixed(2)}%.`}
           {!fee && (askCap < game.econ.capRate[saleClass] - 0.4
-            ? " You are asking a premium to the market; it will take a buyer who wants this building specifically."
+            ? " Premium to market."
             : askCap > game.econ.capRate[saleClass] + 0.4
-              ? " That is a discount to the market — it should go quickly."
-              : " That is where the market is.")}
+              ? " Discount to market."
+              : " At market.")}
         </div>
       )}
       {/* TWO WAYS TO SELL, and they are genuinely different trades. A sign on
@@ -676,22 +668,20 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
       <div className="btn-row">
         <button className="btn btn-buy" disabled={instructionsFrom(insAccept, insDecline).bad}
           onClick={() => listSale(bbl, price, "marketed", instructionsFrom(insAccept, insDecline).ins ?? undefined)}>
-          Run a process · {usd(price)} less {usd(Math.round(price * 0.025))} fee
+          Marketed sale · {usd(price)} less {usd(Math.round(price * 0.025))} fee
         </button>
         <button className="btn" disabled={instructionsFrom(insAccept, insDecline).bad}
           onClick={() => listSale(bbl, price, "quiet", instructionsFrom(insAccept, insDecline).ins ?? undefined)}>
-          Sell it quietly · {usd(price)}
+          Off-market sale · {usd(price)}
           {quietFeeRate(game) <= 0.0001 ? " · no fee" : ` less ${usd(Math.round(price * quietFeeRate(game)))} fee`}
         </button>
       </div>
       <div className="hint">
-        The campaign costs {usd(Math.round(price * (0.025 - quietFeeRate(game))))} more and two to four months, and
-        ends with every bid on your desk on the same day — plus one go back to the top of the list. That is what
-        the extra buys: not a better building, a better-tested price. A quiet sale finds you one buyer at a time,
-        whoever happens to ring, and you never learn what the best buyer in the city would have paid.
+        Marketed: +{usd(Math.round(price * (0.025 - quietFeeRate(game))))}, 2-4 mo, all bids on one date, one best-and-final round.
+        Off-market: one buyer at a time, no price discovery.
         {quietFeeRate(game) <= 0.0001
-          ? " It costs you nothing in fees today, because enough of the competitors have traded with you that you can find that buyer yourself."
-          : ` The quiet fee is ${(quietFeeRate(game) * 100).toFixed(2)}% and falls toward nothing as more of the named firms in town have actually dealt with you.`}
+          ? " Off-market fee: none (relationships)."
+          : ` Off-market fee ${(quietFeeRate(game) * 100).toFixed(2)}%; falls with more firms traded.`}
       </div>
     </div>
   );
@@ -713,7 +703,7 @@ export function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
   return (
     <>
       <Slider
-        label="Counter their number"
+        label="Counter"
         value={frac}
         min={0.7}
         max={0.98}
@@ -721,7 +711,7 @@ export function OffMarketCounter({ bbl, ask }: { bbl: string; ask: number }) {
         onChange={setFrac}
         format={() => `${usd(px)} · ${((frac - 1) * 100).toFixed(0)}%`}
         marks={[{ at: 0.88, label: "−12%" }, { at: 0.95, label: "−5%" }]}
-        hint={`One shot. Shallow cuts often land, or they come off their number a little. Deep cuts get the phone hung up. ${(() => { const sk = sellerOf(game, parcels, bbl); const b = closingBand(sk.kind, {}); const lbl = sellerProfile(sk.kind).label; return `${lbl[0].toUpperCase()}${lbl.slice(1)} typically closes at ${(b.lo * 100).toFixed(0)}–${(b.hi * 100).toFixed(0)}% of the ask${phaseShift(game) ? ` (${phaseShift(game) > 0 ? "firmer" : "softer"} in this phase)` : ""}.`; })()}`}
+        hint={`One counter. Small cuts usually land; deep cuts end talks. ${(() => { const sk = sellerOf(game, parcels, bbl); const b = closingBand(sk.kind, {}); const lbl = sellerProfile(sk.kind).label; return `${lbl[0].toUpperCase()}${lbl.slice(1)} typically closes at ${(b.lo * 100).toFixed(0)}–${(b.hi * 100).toFixed(0)}% of the ask${phaseShift(game) ? ` (${phaseShift(game) > 0 ? "firmer" : "softer"} in this phase)` : ""}.`; })()}`}
       />
       <div className="btn-row">
         <button className="btn" onClick={() => useStore.getState().counterOff(bbl, px)}>
@@ -781,13 +771,12 @@ export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach
             never bid would be reading the wrong field out loud. */}
         <div className="hint">
           {probes > 0
-            ? `You bid ${live.lastBid ? usd(live.lastBid) : "once"} and never went back.`
-            : "They asked you for a number and you never put one in."}
-          {" "}That conversation is cold — six months is as long as anybody holds a door open for a buyer
-          who is thinking about it.
+            ? `Last bid ${live.lastBid ? usd(live.lastBid) : "—"}.`
+            : "No bid made."}
+          {" "}Expired after 6 months.
         </div>
         <div className="btn-row">
-          <button className="btn" onClick={() => useStore.getState().approach(bbl)}>Ring them again</button>
+          <button className="btn" onClick={() => useStore.getState().approach(bbl)}>Approach again</button>
         </div>
       </>
     );
@@ -795,16 +784,15 @@ export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach
   return (
     <>
       <div className="hint">
-        They took the call — and they will not put a price on it. <em>"Make me an offer."</em>
-        {" "}There is no asking number to display; the only move is yours.
+        Owner will not name a price. Bid blind.
       </div>
       <div className="grid">
-        <Row k="Asking price" v="they will not name one" strong />
+        <Row k="Asking price" v="Not disclosed" strong />
         <Row k="Appraisal" v={band(bbl, value)} />
-        <Row k="They will listen until" v={monthLabel(live.q + 6)} />
+        <Row k="Open until" v={monthLabel(live.q + 6)} />
         {probes > 0 && (
           <Row
-            k="Bids you have made"
+            k="Bids made"
             v={`${probes}${live.lastBid ? ` · last ${usd(live.lastBid)}` : ""}`}
             bad={probes >= 3}
           />
@@ -819,22 +807,18 @@ export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach
         onChange={setMult}
         format={() => `${usd(bid)} · ${mult.toFixed(2)}× appraisal`}
         marks={[{ at: 0.8, label: "0.8×" }, { at: 1, label: "appraisal" }, { at: 1.5, label: "1.5×" }, { at: 2, label: "2×" }]}
-        hint="Nothing on this screen knows what they want. The dial is measured against the appraisal because that is the only number anybody in this conversation has."
+        hint="Multiple of appraisal. Seller reserve not shown."
       />
       {/* WHAT EACH OUTCOME MEANS, because a blind bid has four of them and
           three look like failure. Written from bidBlind's branches, in the
           order they are checked, and deliberately without odds attached: the
           player is not entitled to the shape of the distribution either. */}
       <div className="hint">
-        Over their number and it is done <strong>at yours</strong> — and nobody will ever tell you that you
-        were twenty points high. Close under it and they may finally name a figure, which costs you the fact
-        that they now know you want it. Well under and you get a no with nothing attached. Insulting and the
-        conversation ends.
+        Above reserve: deal <strong>at your bid</strong>. Just below: seller may name an ask. Well below: declined. Far below: talks end.
       </div>
       {probes >= 2 && (
         <div className="hint">
-          {probes} bids in. Their patience is finite and this panel does not know how much of it is left —
-          by the third number you have stopped being a buyer and started being a process.
+          {probes} bids. Seller patience is limited.
         </div>
       )}
       {/* A NUMBER ONLY. Financing used to sit in front of this button — Thesis →
@@ -849,8 +833,7 @@ export function BlindBidDesk({ bbl, appr, value }: { bbl: string; appr: Approach
         </button>
       </div>
       <div className="hint dim">
-        No lender, no leverage, no stack — just the number. If they take it, {usd(Math.round(bid * DEPOSIT_PCT))} of
-        earnest money goes hard and you get three months to structure the debt and close.
+        Price only. If accepted: {usd(Math.round(bid * DEPOSIT_PCT))} deposit goes hard; 3 mo to finance and close.
       </div>
     </>
   );
@@ -903,7 +886,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
       <div className="hint neg" style={{ marginTop: 6 }}>
         <strong>Not to you.</strong> {coldRefuseMsg(cold)}
         <div className="dim" style={{ marginTop: 4 }}>
-          Ask stays {usd(price)}. Somebody else can buy it; you cannot until they take your call again.
+          Ask {usd(price)}. Not available to you.
         </div>
       </div>
     );
@@ -934,9 +917,8 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
     <>
       {earlyLeft > 0 && (
         <div className="hint" style={{ marginTop: 6 }}>
-          <strong>First look.</strong> {earlyShop ?? "A house broker"} rang you before the tape.
-          Nobody else in town can take this building for {earlyLeft} more month{earlyLeft === 1 ? "" : "s"}.
-          {early?.quietFrom ? "They are short of money and this is the price of keeping it quiet. After the window it goes on the tape." : "Let the window lapse and the shop notices."}
+          <strong>First look.</strong> From {earlyShop ?? "broker"} · exclusive {earlyLeft} mo.
+          {early?.quietFrom ? " Seller distressed; public listing after window." : " Lapsing hurts broker relationship."}
         </div>
       )}
       <Slider
@@ -953,11 +935,11 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
         marks={[{ at: Math.round(price * 0.85), label: "−15%" }, { at: Math.round(price * 0.95), label: "−5%" }, { at: price, label: "ask" }]}
         hint={talks
           ? (offerPriceRounded >= talks.theirPrice
-            ? `You are at or above their ${usd(talks.theirPrice)} — send it and you are under contract.`
-            : `They are at ${usd(talks.theirPrice)}, ${usd(talks.theirPrice - offerPriceRounded)} above you${talks.final ? ". This is their last word." : `. Round ${talks.round} of ${talks.maxRounds}.`}`)
+            ? `At or above seller ${usd(talks.theirPrice)}: goes under contract.`
+            : `Seller ${usd(talks.theirPrice)} · gap ${usd(talks.theirPrice - offerPriceRounded)}${talks.final ? " · final" : ` · round ${talks.round}/${talks.maxRounds}`}`)
           : distress
-            ? `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}.${loanBasis ? ` The desk is clearing ${usd(loanBasis)} of debt` : " Motivated seller"} — ${sellerProfile(seller.kind).label} typically closes around ${Math.round(band.lo * 100)}–${Math.round(band.hi * 100)}% of ask.`
-            : `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}. ${sellerProfile(seller.kind).label} typically closes around ${Math.round(band.lo * 100)}–${Math.round(band.hi * 100)}% of ask.`}
+            ? `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}.${loanBasis ? ` Loan basis ${usd(loanBasis)}.` : " Motivated seller."} ${sellerProfile(seller.kind).label}: typical close ${Math.round(band.lo * 100)}–${Math.round(band.hi * 100)}% of ask.`
+            : `${((offerPriceRounded / Math.max(1, price) - 1) * 100).toFixed(1)}% vs ask ${usd(price)}. ${sellerProfile(seller.kind).label}: typical close ${Math.round(band.lo * 100)}–${Math.round(band.hi * 100)}% of ask.`}
       />
       {/* What the number MEANS, before anybody talks about debt. A going-in cap
           is the only thing you need to know to decide whether a price is a
@@ -966,7 +948,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
       {goingInPct !== null && (
         <div className="grid">
           <Row k={ip?.disclosed ? "In-place NOI / yr, after taxes" : "NOI / yr (mkt est.)"} v={usd(noi)} />
-          <Row k={<><Gloss term="going-in cap">Going-in cap</Gloss> at your number</>} v={`${goingInPct.toFixed(2)}%`} strong />
+          <Row k={<><Gloss term="going-in cap">Going-in cap</Gloss></>} v={`${goingInPct.toFixed(2)}%`} strong />
           {/* Stabilised beside it and never instead of it. If this line is far
               above the one at the top, you are buying a leasing job. */}
           <Row k={<Gloss term="stabilised pro-forma">Stabilised pro-forma</Gloss>} v={`${usd(stab)} · ${offerPrice > 0 ? ((stab / offerPrice) * 100).toFixed(2) : "—"}%`} />
@@ -979,7 +961,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
             if (!(mkt > 0)) return null;
             const d = goingInPct - mkt;
             return (
-              <Row k="The market pays" v={`${mkt.toFixed(2)}% for ${rec.class} today — ${d > 0.4 ? "your number buys the income cheap" : d < -0.4 ? "your number is rich for the income in place" : "your number is about market"}`} />
+              <Row k="Market cap rate" v={`${mkt.toFixed(2)}% ${rec.class} · ${d > 0.4 ? "below market price" : d < -0.4 ? "above market price" : "at market"}`} />
             );
           })()}
           {/* CAN YOU CLOSE IT. Earnest money goes hard when the price is
@@ -989,7 +971,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
             const outright = Math.round(offerPriceRounded * 1.02);
             const levered = Math.round(offerPriceRounded * 0.37);
             return (
-              <Row k="Money to close" v={`${usd(outright)} outright · ~${usd(levered)} on a typical 65% loan · you can raise ${usd(purse)}`} bad={purse < levered} />
+              <Row k="Cash to close" v={`${usd(outright)} all-cash · ~${usd(levered)} at 65% LTV · available ${usd(purse)}`} bad={purse < levered} />
             );
           })()}
           {/* WHETHER TENANTS WILL COME — the leasing desk's own pace, read on
@@ -998,7 +980,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
             const odds = leasingOdds(game, parcels, rec, ip.h, rec.class as BuiltClass);
             if (!odds || odds.availSf <= 0) return null;
             return (
-              <Row k="Letting prospects" v={`${Math.round(odds.availSf).toLocaleString()} sf vacant · ~${Math.round(odds.loiOdds * 100)}% chance of a letter a month${odds.monthsToLet !== null ? ` · ~${Math.max(1, Math.round(odds.monthsToLet))} mo to 85% let` : " · not reaching 85% at today's pace"}`} bad={odds.loiOdds < 0.05} />
+              <Row k="Leasing outlook" v={`${Math.round(odds.availSf).toLocaleString()} sf vacant · ~${Math.round(odds.loiOdds * 100)}% LOI odds/mo${odds.monthsToLet !== null ? ` · ~${Math.max(1, Math.round(odds.monthsToLet))} mo to 85%` : " · 85% not reached"}`} bad={odds.loiOdds < 0.05} />
             );
           })()}
         </div>
@@ -1010,15 +992,15 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           whether they need this deal. Both halves used to exist only for the
           dozen firms on the street. */}
       <div className="hint" style={{ marginTop: 6 }}>
-        Across the table: <strong>{seller.name}</strong>{seller.name.endsWith(".") ? "" : "."} {sellerProfile(seller.kind).blurb}
+        Seller: <strong>{seller.name}</strong>{seller.name.endsWith(".") ? "" : "."} {sellerProfile(seller.kind).blurb}
         {(() => {
           const o = ownerAt(game, parcels, bbl);
           if (!o || o.publicOwner) return null;
           return (
             <div className="dim mono" style={{ marginTop: 3 }}>
-              {o.book.length} deed{o.book.length === 1 ? "" : "s"} · {usd(o.sheet.assets)} of property ·{" "}
+              {o.book.length} propert{o.book.length === 1 ? "y" : "ies"} · {usd(o.sheet.assets)} assets ·{" "}
               {o.sheet.debt > 0 ? `${(o.sheet.ltv * 100).toFixed(0)}% LTV` : "no debt"} ·{" "}
-              <span className={o.income.net < 0 ? "neg" : ""}>{usd(o.income.net)} a year after debt</span>
+              <span className={o.income.net < 0 ? "neg" : ""}>{usd(o.income.net)}/yr after debt service</span>
             </div>
           );
         })()}
@@ -1026,24 +1008,24 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
       {talks && (
         <>
           <div className="grid" style={{ marginTop: 6 }}>
-            <Row k="They want" v={usd(talks.theirPrice)} strong />
-            <Row k="You offered" v={usd(talks.yourPrice)} />
-            <Row k="Apart" v={usd(Math.max(0, talks.theirPrice - talks.yourPrice))}
+            <Row k="Seller price" v={usd(talks.theirPrice)} strong />
+            <Row k="Your offer" v={usd(talks.yourPrice)} />
+            <Row k="Gap" v={usd(Math.max(0, talks.theirPrice - talks.yourPrice))}
               bad={talks.theirPrice - talks.yourPrice > talks.yourPrice * 0.08} />
-            <Row k="Rounds" v={talks.final ? "their final word" : `${talks.round} of ${talks.maxRounds}`} bad={talks.final} />
+            <Row k="Rounds" v={talks.final ? "Seller final" : `${talks.round} of ${talks.maxRounds}`} bad={talks.final} />
             <Row
-              k="Waiting"
+              k="Status"
               v={(() => {
                 const idleM = Math.max(0, game.month - talks.openedM);
                 if (talks.agreed && talks.closeByM !== undefined) {
                   const left = talks.closeByM - game.month;
                   return left <= 0
-                    ? "closing window — fund now"
-                    : `${left} month${left === 1 ? "" : "s"} left to fund · open ${idleM} mo`;
+                    ? "Fund now"
+                    : `${left} mo to fund · open ${idleM} mo`;
                 }
-                if (idleM <= 0) return "opened this month — Advance for their next move";
-                if (idleM === 1) return "1 month on the table — Advance when you want their answer";
-                return `${idleM} months on the table — nothing moves until you Advance`;
+                if (idleM <= 0) return "Opened this month · reply on Advance";
+                if (idleM === 1) return "Open 1 mo · reply on Advance";
+                return `Open ${idleM} mo · reply on Advance`;
               })()}
               strong={!!talks.agreed}
               bad={!!talks.agreed && (talks.closeByM ?? game.month) - game.month <= 1}
@@ -1052,20 +1034,20 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           <div className="hint">{talks.note}</div>
           {distress && !talks.agreed && (
             <div className="hint">
-              Motivated sellers move on Advance, not on a clock you can sit out — a counter sits until you step the month.
+              Seller replies on Advance.
             </div>
           )}
         </>
       )}
       {distress && !talks && (
         <div className="hint" style={{ marginTop: 4 }}>
-          Distressed ask — send a number below ask; their answer lands when you Advance, not while you wait on this card.
+          Distressed seller. Reply on Advance.
         </div>
       )}
       {others.length > 0 && (
         <div className="hint">
-          Also on the table: {others.map((t) => `${parcels[t.bbl]?.address ?? t.bbl} at ${usd(t.agreedPrice ?? t.theirPrice)}${t.agreed ? " (under contract)" : ""}`).join(" · ")}.
-          {atLimit && " That is as many as you can hold — close one or walk away before opening another."}
+          Other negotiations: {others.map((t) => `${parcels[t.bbl]?.address ?? t.bbl} at ${usd(t.agreedPrice ?? t.theirPrice)}${t.agreed ? " (under contract)" : ""}`).join(" · ")}.
+          {atLimit && ` Limit ${MAX_TALKS} reached.`}
         </div>
       )}
       {/* THEIR LAST WORD LEAVES TWO MOVES. Once the seller is final a counter
@@ -1075,7 +1057,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
       {!talks?.final && (
         <label className="hint" style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
           <input type="checkbox" checked={isFinal} onChange={(e) => setIsFinal(e.target.checked)} />
-          Best and final — they answer once, and a no ends it for both sides
+          Best and final (rejection ends talks)
         </label>
       )}
       <div className="btn-row">
@@ -1089,7 +1071,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
         {!talks && (
           <button
             className="btn"
-            title="Offer the posted ask. Most sellers take it; one who thinks the tape is light may still counter."
+            title="Offer at ask. Seller may still counter."
             onClick={() => useStore.getState().offer(bbl, price, false)}
           >
             Pay ask · {usd(price)}
@@ -1098,7 +1080,7 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
         {talks && (
           <>
             <button className="btn btn-buy" onClick={() => useStore.getState().acceptCounter(bbl)}
-              title={`Take their number and go under contract. ${usd(Math.round(talks.theirPrice * DEPOSIT_PCT))} of earnest money goes hard today; the rest is due in three months.`}>
+              title={`Under contract. ${usd(Math.round(talks.theirPrice * DEPOSIT_PCT))} deposit hard today; balance due in 3 mo.`}>
               Take {usd(talks.theirPrice)}
             </button>
             <button className="btn" onClick={() => useStore.getState().walkAway(bbl)}>Walk away</button>
@@ -1106,12 +1088,10 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
         )}
       </div>
       {talks?.final && (
-        <div className="hint">They have stopped moving. Take {usd(talks.theirPrice)} or walk.</div>
+        <div className="hint">Seller final: {usd(talks.theirPrice)}.</div>
       )}
       <div className="hint dim">
-        Agreeing a price puts you under contract and {usd(Math.round(offerPriceRounded * DEPOSIT_PCT))} of earnest money
-        goes hard the same day. The lender, the leverage and the cheque come after that, and you get three months
-        to arrange them — miss it and the deposit is theirs.
+        Agreed price: under contract, {usd(Math.round(offerPriceRounded * DEPOSIT_PCT))} deposit hard. 3 mo to finance and close or forfeit deposit.
       </div>
     </>
   );
@@ -1256,7 +1236,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
 
       {stage === "thesis" && (
         <div className="deal-stage" role="tabpanel">
-          <div className="hint">What you are buying at {usd(offerPrice)} — income first, leverage later.</div>
+          <div className="hint">Unlevered at {usd(offerPrice)}.</div>
           <div className="grid">
             {rec && rec.class !== "land" && rec.bldgArea > 0 ? (
               <>
@@ -1293,7 +1273,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                   disabled={pq.principal <= 0}
                   style={pq.principal <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
                   title={pq.principal <= 0
-                    ? `${p.label} will not lend against this building today — ${p.blurb}`
+                    ? `${p.label}: no quote. ${p.blurb}`
                     : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term${sp ? `\nStaying power: ${sp.word}. ${sp.why}` : ""}`}
                   onClick={() => setProduct(p.id)}
                 >
@@ -1302,15 +1282,14 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 </button>
               );
             })}
-            <button className={"btn" + (picked === "cash" ? " btn-on" : "")} title="No debt at all." onClick={() => setProduct("cash")}>
+            <button className={"btn" + (picked === "cash" ? " btn-on" : "")} title="No debt" onClick={() => setProduct("cash")}>
               All cash
             </button>
           </div>
           {advice && <div className="hint" style={{ marginTop: 6 }}>{advice}</div>}
           {allNegLev && (
             <div className="hint neg" style={{ marginTop: 4 }}>
-              Every desk that will write this costs more than it yields: the cheapest is {cheapestLoan!.allInPct.toFixed(2)}% all-in against a {goingIn.toFixed(2)}% going-in yield.
-              Borrowing lowers your return on this building{canCash ? " — the desk opens on cash for that reason" : ""}. A loan still buys you a bigger book with the same money, at a thinner margin.
+              Negative leverage on all lenders: cheapest {cheapestLoan!.allInPct.toFixed(2)}% all-in vs {goingIn.toFixed(2)}% going-in yield.{canCash ? " Defaulted to all cash." : ""}
             </div>
           )}
           {max.principal > 0 ? (
@@ -1329,28 +1308,26 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
           {max.principal > 0 && (
             <div className="hint">
               {max.bind === "guarantor"
-                ? `${max.guarantorWhy ?? "The desk has capped the loan at what your balance sheet will carry."} Bank paper is recourse: they have your signature as well as the deed, and the signature has to be worth half the loan. Non-recourse desks size on the building alone.`
+                ? `${max.guarantorWhy ?? "Capped by sponsor balance sheet."} Recourse: guarantor net worth must cover 50% of loan. Non-recourse lenders size on the asset only.`
                 : max.bind === "appraisal"
-                ? `The lender underwrote ${usd(max.uwBasis ?? 0)}, not your ${usd(offerPrice)} — they ordered their own appraisal and it came back at ${usd(max.appraised ?? 0)}. `
-                  + `They advance against the LESSER of that and what you agreed to pay, so the ${usd(max.overpay ?? 0)} above it is entirely yours. `
-                  + `Their collateral is the building, not your enthusiasm for it.`
+                ? `Lender appraisal ${usd(max.appraised ?? 0)}; sized on ${usd(max.uwBasis ?? 0)} (lesser of appraisal and ${usd(offerPrice)}). `
+                  + `${usd(max.overpay ?? 0)} above appraisal is all equity.`
                 : max.bind === "ltv"
-                ? `Sized at this lender's ${(max.ltvCap * 100).toFixed(0)}% advance rate today (${max.sheetWhy ?? "their sheet"}) — the ceiling, and the income clears it comfortably.`
+                ? `LTV-constrained: ${(max.ltvCap * 100).toFixed(0)}% max (${max.sheetWhy ?? "lender terms"}).`
                 : max.bind === "dscr"
-                  ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but you are getting ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% — COVERAGE is binding, not leverage. `
-                    + `At a ${max.ratePct}% coupon the income only services ${(max.principal / Math.max(1, offerPrice) * 100).toFixed(0)}% of the price at ${max.uwDscr.toFixed(2)}x. `
-                    + `That is what a high index does: the cap rate you buy at has to carry the coupon you borrow at, and when it cannot, the loan shrinks.`
+                  ? `DSCR-constrained: ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV vs ${(max.ltvCap * 100).toFixed(0)}% max. `
+                    + `${max.ratePct}% coupon at ${max.uwDscr.toFixed(2)}x min DSCR.`
                   : max.bind === "dy"
-                    ? `Their advance rate is ${(max.ltvCap * 100).toFixed(0)}%, but the DEBT YIELD test is binding — the income is too thin against the loan for this desk, regardless of what the building is worth.`
-                    : `Their sheet says ${(max.ltvCap * 100).toFixed(0)}% today (${max.sheetWhy ?? "their sheet"}), and you are getting ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% — ${max.advanceWhy ?? "cut back by the credit window and your own record"}. Leverage comes back when money does.`}
+                    ? `Debt-yield constrained: ${(max.ltvCap * 100).toFixed(0)}% max LTV not reached.`
+                    : `${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV vs ${(max.ltvCap * 100).toFixed(0)}% max (${max.sheetWhy ?? "lender terms"}) · ${max.advanceWhy ?? "reduced by credit conditions and track record"}.`}
             </div>
           )}
           {max.principal <= 0 && (
-            <div className="hint">{picked === "cash" ? "Buying it outright."
-              : max.bind === "condition" ? "This desk will not lend on a building in the condition the deed conveys at — all cash or another desk."
-              : max.bind === "closed" ? "This desk is not writing today — all cash or another desk."
-              : max.bind === "minloan" ? "The loan this income supports is under the smallest cheque any desk writes ($100K) — all cash or nothing."
-              : "No lender will size a loan against this income — all cash or nothing."}</div>
+            <div className="hint">{picked === "cash" ? "All cash."
+              : max.bind === "condition" ? "Lender declines on property condition. All cash or another lender."
+              : max.bind === "closed" ? "Lender not quoting. All cash or another lender."
+              : max.bind === "minloan" ? "Supportable loan below $100K minimum. All cash only."
+              : "Income supports no loan. All cash only."}</div>
           )}
           {/* THE ANSWER FOR THE STACK ON THE DIAL: what the money costs all
               in against what the building earns going in. Positive leverage
@@ -1362,10 +1339,10 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               value={`${max.allInPct.toFixed(2)}% all-in`}
               tone={negLev || cf < 0 ? "bad" : dscrNow !== null && dscrNow < 1.25 ? "warn" : "good"}
               note={(negLev
-                ? `Negative leverage: the money costs more than the ${goingInPct.toFixed(2)}% the building earns going in — every dollar borrowed lowers your return.`
-                : `Positive leverage over a ${goingInPct.toFixed(2)}% going-in cap.`)
+                ? `Negative leverage vs ${goingInPct.toFixed(2)}% going-in cap.`
+                : `Positive leverage vs ${goingInPct.toFixed(2)}% going-in cap.`)
                 + (dscrNow !== null ? ` DSCR ${dscrNow.toFixed(2)}x` : "")
-                + ` · year-one cash-on-cash ${coc.toFixed(1)}% on ${usd(equity)} of equity.`}
+                + ` · yr-1 cash-on-cash ${coc.toFixed(1)}% on ${usd(equity)} equity.`}
             />
           )}
           <div className="btn-row" style={{ marginTop: 10 }}>
@@ -1416,8 +1393,8 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
             </button>
             {!off && (
               <button className="btn" onClick={() => useStore.getState().walkAway(bbl)}
-                title="Tear up the contract. The building goes back on the market and the seller keeps the deposit.">
-                Tear it up
+                title="Terminate contract. Seller keeps deposit.">
+                Terminate
               </button>
             )}
           </div>
@@ -1425,8 +1402,8 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               <div className="hint">
                 Short {usd(equity - closePurse)}
                 {fromFund
-                  ? " — call more capital, or buy from firm cash on Capital → Debt."
-                  : " — raise cash or free room on the line."}
+                  ? " · call capital or use firm cash (Capital → Debt)."
+                  : " · raise cash or free line capacity."}
               </div>
             )}
         </div>
@@ -1470,13 +1447,13 @@ export function GroundLeaseSection({ bbl, onDone }: { bbl: string; onDone?: () =
   const oq = offer && vacant
     ? groundLeaseQuote(game, parcels, bbl, offer.years, offer.review ?? "fixed") : null;
   const blocked = !vacant
-    ? "Only vacant dirt can be offered for ground lease."
-    : h.sale ? "Pull the listing first — you cannot encumber a marketed lot."
-    : game.developments[bbl] ? "Construction is already underway."
-    : game.merged?.[bbl] ? "That lot is part of an assemblage — lease the whole site."
-    : h.loan ? "Pay off the mortgage first — a land lender will not sit under a ground lease."
+    ? "Vacant land only."
+    : h.sale ? "Delist first."
+    : game.developments[bbl] ? "Under construction."
+    : game.merged?.[bbl] ? "Part of an assemblage; lease the whole site."
+    : h.loan ? "Pay off the mortgage first."
     : game.facility?.bbls?.includes(bbl)
-      ? "Release it from the facility first — the line is secured by vacant dirt, not a leased fee."
+      ? "Release from the credit facility first."
       : null;
   const q = vacant && !offer && !blocked
     ? groundLeaseQuote(game, parcels, bbl, years, review) : null;
@@ -1486,19 +1463,19 @@ export function GroundLeaseSection({ bbl, onDone }: { bbl: string; onDone?: () =
       <div style={{ padding: "8px 2px" }}>
         <div className="deal-head">Offered for ground lease</div>
         <div className="grid">
-          <Row k="On the book since" v={`${monthLabel(offer.sinceM)}${game.month - offer.sinceM > 0 ? ` · ${game.month - offer.sinceM} month${game.month - offer.sinceM === 1 ? "" : "s"} waiting` : ""}`} />
+          <Row k="Offered since" v={`${monthLabel(offer.sinceM)}${game.month - offer.sinceM > 0 ? ` · ${game.month - offer.sinceM} mo` : ""}`} />
           <Row k="Structure" v={GROUND_REVIEW_LABEL[offer.review ?? "fixed"]} />
-          <Row k="Terms as of today" v={oq
+          <Row k="Current terms" v={oq
             ? `${usd(oq.rentYr)} / yr · ${offer.years} years · ${oq.reviewNote}`
             : "—"} strong />
           {oq && <Row k="Net cash income" v={`${usd(oq.cashFlow.netRentYr)} / yr`} strong />}
         </div>
         <div className="hint">
-          Ground lessees are scarce. The deal signs at the terms quoted the month they arrive.
+          Lessees are scarce. Signs at terms quoted in the month one arrives.
         </div>
         <div className="btn-row" style={{ marginTop: 6 }}>
           <button className="btn" onClick={() => { pullGroundOffer(bbl); onDone?.(); }}>
-            Pull the offer
+            Withdraw offer
           </button>
         </div>
       </div>
@@ -1509,7 +1486,7 @@ export function GroundLeaseSection({ bbl, onDone }: { bbl: string; onDone?: () =
     return (
       <div style={{ padding: "8px 2px" }}>
         <div className="deal-head">Ground lease</div>
-        <div className="hint">{blocked ?? "Nobody will ground-lease that today."}</div>
+        <div className="hint">{blocked ?? "No lessee demand."}</div>
       </div>
     );
   }
@@ -1536,14 +1513,14 @@ export function GroundLeaseSection({ bbl, onDone }: { bbl: string; onDone?: () =
       />
       <div className="grid">
         <Row k="Gross ground rent" v={`${usd(q.cashFlow.grossRentYr)} / yr · ${q.capPct}% of land value`} />
-        <Row k="Owner expenses" v="$0 tax · $0 opex · $0 TI · $0 signing — lessee pays" />
+        <Row k="Owner expenses" v="$0 tax · $0 opex · $0 TI · $0 leasing · lessee pays" />
         <Row k="Net cash income" v={`${usd(q.cashFlow.netRentYr)} / yr`} strong />
         <Row k="At term" v={q.padOnly
-          ? "Dirt back — bones only if you fund a leasehold buyout"
-          : `Aged vacant improvement reverts · ${monthLabel(game.month + years * 12)}`} />
+          ? "Land reverts; improvements only via leasehold buyout"
+          : `Vacant improvement reverts · ${monthLabel(game.month + years * 12)}`} />
       </div>
       <div className="hint">
-        Absolutely-net form. {q.termNote} Fixed places faster; FMV opens cheaper and slower.
+        Absolute net. {q.termNote} Fixed: faster to place. FMV: lower rent, slower.
       </div>
       <div className="btn-row" style={{ marginTop: 6 }}>
         <button className="btn btn-buy" onClick={() => { groundLease(bbl, years, review); onDone?.(); }}>
@@ -1568,8 +1545,7 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
     <div style={{ padding: "8px 2px" }}>
       {leasedFee && (
         <div className="hint" style={{ marginBottom: 8 }}>
-          This is the leased fee — the coupon and the reversion, not free-and-clear dirt. Buyers underwrite it as a
-          bond, and the ground lease goes with the deed.
+          Leased fee: ground rent + reversion. Ground lease conveys with the deed.
         </div>
       )}
       <Slider
@@ -1581,24 +1557,24 @@ export function ListSection({ bbl, appraisal, onDone }: { bbl: string; appraisal
         onChange={setAsk}
         format={(v) => `${usd(v)} · ${over >= 0 ? "+" : ""}${(over * 100).toFixed(0)}% vs appraisal`}
         hint={over > 0.12
-          ? "Well over the appraisal. It can sit there a long time, and a listing that goes stale is read as a building nobody wanted."
+          ? "Above appraisal: slow sale; stale listings lose value."
           : over < -0.06
-            ? "Under appraisal. It will go quickly, and every buyer in town will know why."
-            : "About where the market is."}
+            ? "Below appraisal: fast sale."
+            : "At market."}
       />
       <InstructionFields accept={insAccept} decline={insDecline} setAccept={setInsAccept} setDecline={setInsDecline} />
       <div className="btn-row" style={{ marginTop: 6 }}>
         <button className="btn btn-buy" disabled={instr.bad} onClick={() => { listSale(bbl, ask, "marketed", instr.ins ?? undefined); onDone(); }}>
-          Run a process · less {usd(Math.round(ask * 0.025))} fee
+          Marketed sale · less {usd(Math.round(ask * 0.025))} fee
         </button>
         <button className="btn" disabled={instr.bad} onClick={() => { listSale(bbl, ask, "quiet", instr.ins ?? undefined); onDone(); }}>
-          Sell it quietly · {quiet <= 0.0001 ? "no fee" : `less ${usd(Math.round(ask * quiet))} fee`}
+          Off-market sale · {quiet <= 0.0001 ? "no fee" : `less ${usd(Math.round(ask * quiet))} fee`}
         </button>
       </div>
       <div className="hint">
         {quiet <= 0.0001
-          ? "Your name is worth the brokerage on this one: enough of the competitors have traded with you that you can sell it off-market yourself, and there is nobody in the room to pay."
-          : `A quiet sale costs ${(quiet * 100).toFixed(2)}% today. That falls as more of the named firms in town have actually traded with you — a building sold off-market is sold to somebody who already knew you had it — and it goes straight back up if the street decides you are a lowballer.`}
+          ? "Off-market fee: none (relationships)."
+          : `Off-market fee ${(quiet * 100).toFixed(2)}%. Falls with more firms traded; rises with a lowball reputation.`}
       </div>
     </div>
   );

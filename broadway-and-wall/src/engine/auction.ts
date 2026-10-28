@@ -99,7 +99,7 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
       s.news.unshift({
         q: s.month, kind: "info",
         text: `${r.name} paid $${(cure / 1000).toFixed(0)}K to reinstate at ${rec.address}; ${f.lender} has withdrawn the sale. `
-          + `Most of the foreclosures this town starts end exactly like this, which is worth remembering in July.`,
+          + `Sale cancelled.`,
       });
     }
   }
@@ -134,7 +134,7 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
       q: s.month, kind: "event",
       text: `${l.name} has noticed a foreclosure sale on ${r.name}'s building at ${rec.address} — `
         + `${money(debt)} owed, down for the ${monthLabel(nextJulyAfter(s.month, 5))} auction. `
-        + `${r.name} has until the hammer to find the arrears, and firms in a squeeze this deep usually do not.`,
+        + `${r.name} can reinstate until the sale.`,
     });
     return;
   }
@@ -230,8 +230,8 @@ function buildDocket(s: GameState, parcels: ParcelTable) {
   s.auction = { m: july + 1, lots, deposit: 0 };
   s.news.unshift({
     q: july, kind: "event",
-    text: `The county's foreclosure docket is out: ${lots.length} lot${lots.length === 1 ? "" : "s"} cross the block this month. `
-      + `As-is, ten per cent down, no financing and no warranty — the hammer falls at the end of July.`,
+    text: `County foreclosure auction: ${lots.length} lot${lots.length === 1 ? "" : "s"} this month. `
+      + `As-is, 10% down, all cash, no warranty. Sale at the end of July.`,
   });
 }
 
@@ -356,8 +356,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       }
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `Lot at ${lot.address} was pulled on the courthouse steps — the borrower reinstated, or the file died first. `
-          + `That is most of what happens to foreclosures, and it happened to this one at the last minute.`,
+        text: `Lot at ${lot.address} was pulled on the courthouse steps — borrower reinstated or the case was dropped.`,
       });
       continue;
     }
@@ -379,8 +378,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     if (yours > 0 && spendable(s, parcels).total + deposit < owedAtHammer) {
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `You could not close on ${lot.address} — the balance was due at the hammer and the cash was not there. `
-          + `The referee kept your ${money(deposit)} deposit, which is what the deposit is for.`,
+        text: `Auction default · ${lot.address}: balance unfunded at the sale. `
+          + `${money(deposit)} deposit forfeited.`,
       });
       said(lot.bbl, lot.address, "nocash", bid, 0, undefined,
         `The balance was due at the hammer and the cash was not there. The referee kept your ${money(deposit)} deposit.`);
@@ -423,9 +422,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
           `Over your debt, so you were paid off in full — ${money(lot.debt)} against ${money(n.basis)} in.`);
         s.news.unshift({
           q: s.month, kind: "deal",
-          text: `${buyer} took ${lot.address} on the steps at ${money(paid)} — over your debt, so you were paid off in full: `
-            + `${money(lot.debt)} against ${money(n.basis)} in. ${surplus > 0 ? `The ${money(surplus)} above the debt went to ${n.obligor}, because that is the law. ` : ``}`
-            + `You held the mortgage; the room decided you got the money, not the keys.`,
+          text: `${buyer} took ${lot.address} on the steps at ${money(paid)}, over your debt; note repaid in full: `
+            + `${money(lot.debt)} vs ${money(n.basis)} basis.${surplus > 0 ? ` Surplus ${money(surplus)} to ${n.obligor}.` : ``}`,
         });
       } else {
         // the room stopped under your debt — or you overbid to be sure
@@ -517,9 +515,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         text: `${lot.address} crossed the block at ${money(gross)}${toREO ? ` — no bid met ${lot.holder}'s credit bid, so it is their REO now` : ` to the room`}. `
           + (shortfall > 0
             ? recourse
-              ? `You signed for this one: the ${money(shortfall)} shortfall came out of your account.`
-              : `The paper was non-recourse, so ${lot.holder} ate the ${money(shortfall)}.`
-            : `It cleared the debt and ${money(surplus)} came back to you — the steps owe you nothing further.`),
+              ? `Recourse: ${money(shortfall)} shortfall charged to you.`
+              : `Non-recourse: ${lot.holder} absorbs the ${money(shortfall)} shortfall.`
+            : `Debt cleared; surplus to you ${money(surplus)}.`),
       });
       continue;
     }
@@ -547,9 +545,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       const leased = s.holdings[lot.bbl]!.tenants.reduce((x, t) => x + t.sf, 0);
       s.news.unshift({
         q: s.month, kind: "deal",
-        text: `The hammer fell to YOU at ${lot.address} — ${money(paid)}, as-is, ${heads} other head${heads === 1 ? "" : "s"} in the room. `
-          + `It is worn, ${rec.bldgArea > 0 ? `${Math.round(100 * leased / Math.max(1, rec.bldgArea))}% of it is let` : "it is a site"}, `
-          + `and nobody is coming to fix either of those but you.`,
+        text: `The hammer fell to YOU at ${lot.address} — ${money(paid)}, as-is, ${heads} other bidder${heads === 1 ? "" : "s"}. `
+          + `Worn condition, ${rec.bldgArea > 0 ? `${Math.round(100 * leased / Math.max(1, rec.bldgArea))}% leased` : "vacant site"}.`,
       });
       continue;
     }
@@ -598,8 +595,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
           s.lastTradeM[lot.bbl] = s.month;
           s.news.unshift({
             q: s.month, kind: "event",
-            text: `No bid reached ${lot.holder}'s number on ${lot.address}. It is their REO now, and it is already `
-              + `back on the tape at ${money(lst)} — a bank is not in the landlord business and does not want to be.`,
+            text: `No bid reached ${lot.holder}'s number on ${lot.address}. It is their REO now, `
+              + `listed at ${money(lst)}.`,
           });
         }
       }
@@ -633,7 +630,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: "info",
       text: `The July sale is done: ${sold} lot${sold === 1 ? "" : "s"} hammered${reo ? `, ${reo} struck to the lender` : ""}`
-        + `${pulled ? `, ${pulled} pulled by reinstatement` : ""}. The county will do it all again next year.`,
+        + `${pulled ? `, ${pulled} pulled by reinstatement` : ""}.`,
     });
   }
 }
@@ -674,7 +671,7 @@ export function tickAuction(s: GameState, parcels: ParcelTable) {
 export function registerAuctionBids(
   s: GameState, parcels: ParcelTable, bids: Record<string, number>,
 ): { s: GameState; err?: string; msg?: string } {
-  if (!s.auction) return { s, err: "There is no sale on the calendar. The county's docket comes out in July." };
+  if (!s.auction) return { s, err: "No auction scheduled. The county docket is published in July." };
   const next = clone(s);
   const a = next.auction!;
   // hand back whatever was already down
@@ -686,10 +683,10 @@ export function registerAuctionBids(
     const lot = a.lots.find((x) => x.id === id);
     if (!lot || !(amt > 0)) continue;
     if (lot.kind === "yours") {
-      return { s, err: `That is your own foreclosure. You do not bid on it — you cure it, hand back the keys, or let the room decide.` };
+      return { s, err: `Your own foreclosure; you cannot bid. Cure it or hand back the keys.` };
     }
     if (lot.kind !== "note" && amt < lot.upset) {
-      return { s, err: `The referee's minimum on ${lot.address} is ${money(lot.upset)}. Bid that or stay home.` };
+      return { s, err: `Minimum bid on ${lot.address} is ${money(lot.upset)}.` };
     }
     lot.yourBid = Math.round(amt);
     dep += depositFor(lot, Math.round(amt));
@@ -712,8 +709,8 @@ export function registerAuctionBids(
   if (dep > liq.total) {
     return {
       s,
-      err: `Registering these bids takes ${money(dep)} down today and you can raise ${money(liq.total)} — `
-        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
+      err: `Bid deposits total ${money(dep)}; available ${money(liq.total)} `
+        + `(${money(liq.cash)} cash, ${money(liq.line)} on the line).`,
     };
   }
   if (dep) fundAndBook(next, parcels, dep, "bought");

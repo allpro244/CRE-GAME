@@ -174,14 +174,14 @@ function rivalNeedsPrivate(
   const cordage = lenderByName(s, "Cordage Debt Partners");
   const bankShut = !alden || (alden.appetite ?? 1) < 0.2 || alden.failedM !== undefined;
   const why = bankShut
-    ? "The banks have stopped answering. They need a cheque that clears this month."
+    ? "Banks not lending; needs funding this month."
     : balloonSoon
-      ? "A balloon is inside six months and the cheap desks will not re-paper it in time."
+      ? "Balloon due within six months; banks will not refinance in time."
       : cordage && (s.econ.creditIdx ?? 1) < 0.85
-        ? "Cordage would do it — at a coupon that eats the deal. They are asking if you will."
+        ? "Cordage's rate is uneconomic; asking you instead."
         : stressed
-          ? "They are in a squeeze. Sponsor standing and cash both look wrong to a bank."
-          : "Cash is thin against the book and they will not sell the trophy to raise it.";
+          ? "Borrower under stress; does not qualify at a bank."
+          : "Low liquidity; prefers to borrow rather than sell an asset.";
   return { face, why };
 }
 
@@ -198,8 +198,7 @@ export function tickPrivateCredit(s: GameState, parcels: ParcelTable) {
     if (rng(s) < 0.4) {
       s.news.unshift({
         q: s.month, kind: "rumor",
-        text: `${a.rivalName} found money elsewhere for ${a.address} — or did not. `
-          + `The ask to ${firmShort(s)} lapsed.`,
+        text: `Loan request lapsed · ${a.rivalName} · ${a.address}.`,
       });
     }
   }
@@ -253,7 +252,7 @@ export function tickPrivateCredit(s: GameState, parcels: ParcelTable) {
   s.privateAsks.push(ask);
   s.news.unshift({
     q: s.month, kind: "rumor",
-    text: `${ask.rivalName} is asking ${firmShort(s)} for ${money(ask.face)} against ${ask.address} `
+    text: `Loan request · ${ask.rivalName} asks ${firmShort(s)} for ${money(ask.face)} against ${ask.address} `
       + `— ${ask.ratePct.toFixed(2)}%, ${(ask.points * 100).toFixed(1)} points, ${ask.termM} months. `
       + ask.why,
   });
@@ -266,8 +265,8 @@ export function fundPrivateAsk(
   s: GameState, parcels: ParcelTable, id: string,
 ): { s: GameState; err?: string; msg?: string } {
   const ask = s.privateAsks?.find((a) => a.id === id);
-  if (!ask) return { s, err: "That ask is gone." };
-  if (s.month > ask.expiresM) return { s, err: "That ask has lapsed." };
+  if (!ask) return { s, err: "That loan request is no longer open." };
+  if (s.month > ask.expiresM) return { s, err: "That loan request has lapsed." };
   const r = s.rivals?.find((x) => x.id === ask.rivalId);
   if (!r || r.failedM !== undefined) return { s, err: "The borrower is no longer a going concern." };
   if (!r.bbls.includes(ask.bbl)) return { s, err: "They no longer own the collateral." };
@@ -300,7 +299,7 @@ export function fundPrivateAsk(
   if (ask.face > obligorCap) {
     return {
       s,
-      err: `You already have enough paper on ${ask.rivalName} — single-obligor cap leaves ${money(obligorCap)}.`,
+      err: `Single-borrower limit on ${ask.rivalName}: ${money(obligorCap)} left.`,
     };
   }
 
@@ -357,9 +356,9 @@ export function fundPrivateAsk(
   next.privateAsks = (next.privateAsks ?? []).filter((a) => a.id !== ask.id);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `${firmShort(next)} has written ${money(ask.face)} of private paper on ${ask.address} to ${rival.name} — `
+    text: `Private loan funded · ${firmShort(next)} to ${rival.name} · ${ask.address} · ${money(ask.face)} — `
       + `${ask.ratePct.toFixed(2)}%, ${(ask.points * 100).toFixed(1)} points, due ${monthLabel(next.month + ask.termM)}. `
-      + `They cleared ${money(netToBorrower)} after points. You are the lender of record.`,
+      + `Net to borrower ${money(netToBorrower)}.`,
   });
   return {
     s: next,
@@ -369,13 +368,12 @@ export function fundPrivateAsk(
 
 export function declinePrivateAsk(s: GameState, id: string): { s: GameState; err?: string; msg?: string } {
   const ask = s.privateAsks?.find((a) => a.id === id);
-  if (!ask) return { s, err: "That ask is gone." };
+  if (!ask) return { s, err: "That loan request is no longer open." };
   const next = clone(s);
   next.privateAsks = (next.privateAsks ?? []).filter((a) => a.id !== id);
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `${firmShort(next)} passed on ${ask.rivalName}'s ask against ${ask.address}. `
-      + `They will try Cordage, sell something, or eat the balloon.`,
+    text: `${firmShort(next)} declined ${ask.rivalName}'s loan request on ${ask.address}.`,
   });
   return { s: next, msg: "Passed." };
 }
@@ -448,14 +446,14 @@ function playerNeedsPrivateBorrow(
   if (principal < 250_000) return null;
 
   const why = balloonFile
-    ? "The balloon file is open and the cheap desks will not clear it."
+    ? "Balloon in default; banks will not refinance."
     : shutOut
-      ? "Institutional desks will not look at you. Somebody with a cheque still will."
+      ? "Institutional lenders declined; private lender available."
       : cheapGap
-        ? `The banks top out around ${money(bestCheap)} against ${money(payoff)} due — a hold size or a coverage wall.`
+        ? `Banks max out near ${money(bestCheap)} vs ${money(payoff)} due (hold size or DSCR limit).`
         : dueSoon
-          ? "A maturity is inside six months and the permanent market is not covering the takeout."
-          : "The cheap paper is gone; this is bridge money.";
+          ? "Maturity within six months; permanent lenders will not cover the takeout."
+          : "Bank financing unavailable; bridge loan.";
   // Prefer not to spam when Cordage already fully covers — still allow if the
   // file is open (speed / certainty) or Cordage itself is short.
   if (!balloonFile && cordagePx >= payoff && payoff > 0 && rng(s) > 0.35) return null;
@@ -482,7 +480,7 @@ export function tickPrivateBorrow(s: GameState, parcels: ParcelTable) {
       s.news.unshift({
         q: s.month, kind: "rumor",
         text: `${q.lenderName}'s private quote on ${q.address} lapsed. `
-          + `Cordage, a sale, or the cure cheque — those are what is left.`,
+          + `Remaining options: Cordage, a sale, or a cure payment.`,
       });
     }
   }
@@ -530,7 +528,7 @@ export function tickPrivateBorrow(s: GameState, parcels: ParcelTable) {
   s.privateBorrowQuotes.push(quote);
   s.news.unshift({
     q: s.month, kind: "rumor",
-    text: `${quote.lenderName} will write ${money(quote.principal)} of private paper on ${quote.address} — `
+    text: `Private loan quote · ${quote.lenderName} · ${quote.address} · ${money(quote.principal)} — `
       + `${quote.ratePct.toFixed(2)}%, ${(quote.points * 100).toFixed(1)} points, ${quote.termM} months. `
       + quote.why,
   });
@@ -573,7 +571,7 @@ export function acceptPrivateBorrowQuote(
   s: GameState, parcels: ParcelTable, id: string,
 ): { s: GameState; err?: string; msg?: string } {
   const quote = s.privateBorrowQuotes?.find((q) => q.id === id);
-  if (!quote) return { s, err: "That quote is gone." };
+  if (!quote) return { s, err: "That quote is no longer open." };
   if (s.month > quote.expiresM) return { s, err: "That quote has lapsed." };
   const h = s.holdings[quote.bbl];
   const rec = resolveRec(parcels, s, quote.bbl);
@@ -583,10 +581,10 @@ export function acceptPrivateBorrowQuote(
   }
   const lender = s.rivals?.find((r) => r.id === quote.lenderId);
   if (!lender || lender.failedM !== undefined) {
-    return { s, err: "That lender is no longer writing paper." };
+    return { s, err: "That lender is no longer lending." };
   }
   if (!rivalCanLend(lender, quote.principal)) {
-    return { s, err: `${lender.name} no longer has the powder to fund this.` };
+    return { s, err: `${lender.name} lacks the capital to fund this.` };
   }
 
   const pointsFee = Math.round(quote.principal * quote.points);
@@ -634,10 +632,10 @@ export function acceptPrivateBorrowQuote(
 
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `${quote.lenderName} has written ${money(quote.principal)} of private paper on ${quote.address} to ${firmShort(next)} — `
+    text: `Private loan closed · ${quote.lenderName} · ${quote.address} · ${money(quote.principal)} — `
       + `${quote.ratePct.toFixed(2)}%, ${(quote.points * 100).toFixed(1)} points, due ${monthLabel(next.month + quote.termM)}. `
-      + (penalty > 0 ? `Breaking the old loan cost ${money(penalty)}. ` : "")
-      + `You cleared ${money(Math.max(0, netToYou - oldBal - penalty))} after the takeout.`,
+      + (penalty > 0 ? `Prepayment ${money(penalty)}. ` : "")
+      + `Net to you ${money(Math.max(0, netToYou - oldBal - penalty))} after payoff.`,
   });
   sweepLocIdleCash(next, { announce: true });
   return {
@@ -650,14 +648,14 @@ export function declinePrivateBorrowQuote(
   s: GameState, id: string,
 ): { s: GameState; err?: string; msg?: string } {
   const quote = s.privateBorrowQuotes?.find((q) => q.id === id);
-  if (!quote) return { s, err: "That quote is gone." };
+  if (!quote) return { s, err: "That quote is no longer open." };
   const next = clone(s);
   next.privateBorrowQuotes = (next.privateBorrowQuotes ?? []).filter((q) => q.id !== id);
   (next.privateQuoteCool ??= {})[quote.bbl] = next.month + PRIVATE_QUOTE_COOL_M;
   next.news.unshift({
     q: next.month, kind: "info",
     text: `${firmShort(next)} passed on ${quote.lenderName}'s private quote against ${quote.address}. `
-      + `The banks, Cordage, or the cure cheque — pick one before the file hardens.`,
+      + `Remaining options: banks, Cordage, or a cure payment.`,
   });
   return { s: next, msg: "Passed." };
 }

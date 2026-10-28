@@ -264,7 +264,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
             contract={acceptConfirm.bidIndex !== undefined}
             onCancel={() => setAcceptConfirm(null)}
             onConfirm={() => {
-              if (acceptConfirm.bidIndex !== undefined) takeBid(bbl, acceptConfirm.bidIndex);
+              if (acceptConfirm.bidIndex !== undefined) takeBid(bbl, acceptConfirm.bidIndex, h?.sale?.bids?.[acceptConfirm.bidIndex]?.name);
               else acceptOffer(bbl, acceptConfirm.exchange);
               setAcceptConfirm(null);
             }}
@@ -446,6 +446,14 @@ export function DealsPage() {
           className={"btn" + (desk === "sales" ? " btn-on" : "")}
           onClick={() => setDesk("sales")}>
           Your sales · {saleCount}
+        </button>
+        <button type="button"
+          className={"btn btn-mini" + (game.noUnsolicited ? " btn-on" : "")}
+          style={{ marginLeft: "auto" }}
+          aria-pressed={!!game.noUnsolicited}
+          title={game.noUnsolicited ? "Rivals can't ring with offers for your buildings. Click to allow." : "Stop rivals ringing with offers for your buildings."}
+          onClick={() => useStore.getState().setNoUnsolicited(!game.noUnsolicited)}>
+          {game.noUnsolicited ? "No unsolicited offers ✓" : "No unsolicited offers"}
         </button>
       </div>
       {/* One column: the live desk is a single <section>, and the two-column

@@ -21,7 +21,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import Slider from "@/ui/Slider";
 import SchemeViewer from "@/ui/panels/SchemeViewer";
 import { dominantOf } from "@/engine/proforma";
-import { planDevelopment, takeoutHedgeCost, takeoutHedgeRequired, maxRetailShare, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY } from "@/engine/dev";
+import { planDevelopment, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, maxRetailShare, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY } from "@/engine/dev";
 import { maxOutside, syndicateBar } from "@/engine/syndicate";
 import { raisePreview, type RaiseJob } from "@/engine/raise";
 import { committedTotal, type PitchStyle } from "@/engine/investors";
@@ -29,12 +29,23 @@ import { ownedHoldingValue } from "@/engine/value";
 import { BUILD_TIERS, buildTier } from "@/engine/value";
 import { START_YEAR, type DevDraft, type DevUse } from "@/engine/types";
 import { KITS, KIT_GROUPS } from "@/engine/renderView";
-import { FACADE_STYLES, FACADE_GROUPS, type FacadeGroup } from "@/map/real/RealCity";
+import { FACADE_STYLES, FACADE_GROUPS, TRIM_PAINTS, ROOF_CHOICES, CROWN_CHOICES, CROWN_MIN_FLOORS, type FacadeGroup } from "@/map/real/RealCity";
+import { SIGNATURE_FORMS, SIGNATURE_MIN_FLOORS } from "@/map/real/signature";
+import type { BuildingDesign } from "@/engine/types";
 import { UNREAL_HOST, formsForLot } from "@/state/unrealHost";
 import { usd, sf } from "@/ui/format";
 import { devUseLabel } from "@/ui/panels/shared";
 import { deskScheme, bestStarts, coverFor, productName, type DeskScheme } from "./scheme";
 import "./desks.css";
+
+/** The ground storey (BuildingDesign.base). A trading ground floor keeps its shops: arcade only. */
+const BASES: { key: NonNullable<BuildingDesign["base"]>; name: string; blurb: string; minFloors: number; shops: boolean }[] = [
+  { key: "lobby", name: "Glass lobby", blurb: "Double-height glass lobby", minFloors: 3, shops: false },
+  { key: "stone", name: "Stone base", blurb: "Rusticated stone ground storey, round-headed openings", minFloors: 3, shops: false },
+  { key: "columns", name: "Columns", blurb: "Building on columns, lobby set back", minFloors: 3, shops: false },
+  { key: "arcade", name: "Arcade", blurb: "Round arches along the street", minFloors: 2, shops: true },
+  { key: "plain", name: "Same as facade", blurb: "Facade runs to the pavement", minFloors: 1, shops: false },
+];
 
 /**
  * THE LOOK, FROM A SHORT LIST. One facade of each kind a developer actually
@@ -129,12 +140,14 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
   useEffect(() => () => { if (!useStore.getState().designPeek) useStore.getState().setDesignPreview(null); }, []);
 
   // THE FORMS THIS LOT TAKES at this height (Unreal solves them on the lot's ring)
-  const forms = useMemo(() => (UNREAL_HOST && !d.product ? formsForLot(bbl, floors, cov, cls, year) : []),
+  const forms = useMemo(() => (d.product ? []
+    : UNREAL_HOST ? formsForLot(bbl, floors, cov, cls, year)
+      : (() => { try { return (window as unknown as { __three?: { formsOn?: (b: string, f: number, c: number, k: string, y: number) => ReturnType<typeof formsForLot> } }).__three?.formsOn?.(bbl, floors, cov, cls, year) ?? []; } catch { return []; } })()),
     [bbl, floors, cov, cls, year, d.product]);
   const formNow = design.form ? forms.find((f) => f.key === design.form) : undefined;
   useEffect(() => {
     // a form the lot no longer takes goes; one it still takes is re-measured
-    if (!design.form || !UNREAL_HOST) return;
+    if (!design.form) return;
     if (!formNow) set({ design: { ...design, form: undefined, formRetained: undefined, formSkin: undefined } });
     else if (Math.abs((design.formRetained ?? 1) - formNow.retained) > 0.005 || Math.abs((design.formSkin ?? 1) - formNow.skin) > 0.005)
       set({ design: { ...design, formRetained: formNow.retained, formSkin: formNow.skin } });
@@ -153,6 +166,25 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
   const groups = FACADE_GROUPS.filter((g) => styles.some((f) => f.group === g.key));
   const [lookGroup, setLookGroup] = useState<FacadeGroup>(() => FACADE_STYLES.find((f) => f.key === design.facade?.split("#")[0])?.group ?? "street");
   const groupNow = groups.some((g) => g.key === lookGroup) ? lookGroup : groups[0]?.key;
+  // THE REST OF THE DESIGN (owner, Oct 2026: "there used to be more options
+  // ... like the setback"): colourway, ground storey, top, landmark form and
+  // trim, cut with the old Design tab and still drawn by the renderer.
+  const setDesign = (patch: Partial<BuildingDesign>) => {
+    const nd = { ...design, ...patch } as BuildingDesign;
+    for (const k of Object.keys(nd) as (keyof BuildingDesign)[]) if (nd[k] === undefined) delete nd[k];
+    set({ design: nd });
+  };
+  const styleNow = FACADE_STYLES.find((f) => f.key === design.facade?.split("#")[0]);
+  const variantNow = +(design.facade?.split("#")[1] ?? 0);
+  const bases = BASES.filter((b) => floors >= b.minFloors && (!shops || b.shops));
+  const tops = [
+    ...ROOF_CHOICES.filter((r) => floors <= r.maxFloors && !(r.key === "flat" && floors >= CROWN_MIN_FLOORS))
+      .map((r) => ({ id: `roof:${r.key}`, name: r.name, patch: { roof: r.key, crown: undefined, signature: undefined } as Partial<BuildingDesign> })),
+    ...(floors >= CROWN_MIN_FLOORS ? CROWN_CHOICES : [])
+      .map((c) => ({ id: `crown:${c.key}`, name: c.name, patch: { crown: c.key, roof: undefined, signature: undefined } as Partial<BuildingDesign> })),
+  ];
+  const topNow = design.signature ? "signature" : design.crown ? `crown:${design.crown}` : design.roof ? `roof:${design.roof}` : "auto";
+  const landmarks = floors >= SIGNATURE_MIN_FLOORS ? SIGNATURE_FORMS.filter((f) => floors >= f.minFloors && year >= f.from) : [];
 
   return (
     <div className="deal deal-wide build-desk">
@@ -193,11 +225,17 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
             <Row k="Size">
               <Slider label="Floors" value={floors} min={1} max={Math.max(1, d.top)} step={1} onChange={setSize}
                 format={() => `${floors} fl${plan ? ` · ${sf(plan.sf)} · ${Math.round(cov * 100)}% lot` : ""}`} />
-              {/* THE ENVELOPE IS FULL (owner: "the sqft stops growing"): past the
-                  district's FAR, more floors only slim the floorplate */}
-              {plan && plan.far >= plan.farMax - 0.05 && <div className="bd-terms" style={{ paddingLeft: 0 }}>FAR max {plan.farMax.toFixed(1)} — taller only slims the floorplate</div>}
             </Row>
           )}
+          {/* THE ENVELOPE IS FULL (owner: "the sqft stops growing"): past the
+              district's FAR more floors only slim the floorplate; the way out is a FAR filing */}
+          {!d.product && plan && plan.far >= plan.farMax - 0.05 && <div className="bd-terms">
+            FAR max {plan.farMax.toFixed(1)} · more floors only slim the floorplate ·{" "}
+            <button type="button" className="bd-link" onClick={() => {
+              useStore.getState().openProperty(bbl, "summary");
+              window.setTimeout(() => useStore.setState({ pageJump: "Zoning variance" }), 120);
+            }}>File for more FAR</button>
+          </div>}
           <Row k="Tier">
             {BUILD_TIERS.map((t) => (
               <Chip key={t.key} on={tier.key === t.key} title={t.blurb} onClick={() => set({ spec: t.spec })}>{t.label}</Chip>
@@ -230,6 +268,30 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
                 <Chip key={f.key} on={design.facade?.split("#")[0] === f.key} title={f.era}
                   onClick={() => { const { kit: _k, facade: _f, kitColour: _c, ground: _g, top: _t, bays: _b, ...rest } = design; set({ design: { ...rest, facade: f.key } }); }}>{f.name}</Chip>))}
           </Row>
+          {!UNREAL_HOST && !d.product && <>
+            {styleNow && styleNow.variants.length > 1 && <Row k="Colour">
+              {styleNow.variants.map((v, i) => (
+                <Chip key={v} on={variantNow === i} onClick={() => setDesign({ facade: i ? `${styleNow.key}#${i}` : styleNow.key })}>{v}</Chip>
+              ))}
+            </Row>}
+            <Row k="Ground">
+              <Chip on={!design.base} onClick={() => setDesign({ base: undefined })}>{shops ? "Shopfronts" : "Auto"}</Chip>
+              {bases.map((b) => <Chip key={b.key} on={design.base === b.key} title={b.blurb} onClick={() => setDesign({ base: b.key })}>{b.name}</Chip>)}
+            </Row>
+            <Row k="Top">
+              <Chip on={topNow === "auto"} onClick={() => setDesign({ roof: undefined, crown: undefined, signature: undefined })}>Auto</Chip>
+              {tops.map((o) => <Chip key={o.id} on={topNow === o.id} onClick={() => setDesign(o.patch)}>{o.name}</Chip>)}
+            </Row>
+            {landmarks.length > 0 && <Row k="Landmark">
+              <Chip on={!design.signature} onClick={() => setDesign({ signature: undefined })}>None</Chip>
+              {landmarks.map((f) => <Chip key={f.key} on={design.signature === f.key} title={f.blurb}
+                onClick={() => setDesign({ signature: f.key, crown: undefined, roof: undefined })}>{f.name}</Chip>)}
+            </Row>}
+            <Row k="Trim">
+              <Chip on={design.trim === undefined} onClick={() => setDesign({ trim: undefined })}>Auto</Chip>
+              {TRIM_PAINTS.map((p, i) => <Chip key={p.name} on={design.trim === i} onClick={() => setDesign({ trim: i })}>{p.name}</Chip>)}
+            </Row>
+          </>}
           {/* THE LENDER (owner, Oct 2026: "you can't choose your lender"): every
               construction desk's terms on this job; one that will not write it says why */}
           {d.quotes.length > 0 && <Row k="Lender">
@@ -249,6 +311,26 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
           {plan && <div className="bd-terms mono">{plan.commitment > 0
             ? `${plan.lender} · ${pct2(plan.ratePct)} · ${Math.round(plan.ltc * 100)}% LTC · ${usd(plan.commitment)} · ${(plan.points * 100).toFixed(1)} pts`
             : plan.ltcMax > 0 ? `All equity · ${plan.lender} offers ${Math.round(plan.ltcMax * 100)}% at ${pct2(plan.ratePct)}` : (plan.lenderNote ?? "No lender quotes")}</div>}
+          {/* THE REST OF THE DEBT (owner, Oct 2026: "you should be able to add a rate cap"):
+              the takeout hedge, the fees and the loan the building inherits at delivery */}
+          {plan && plan.commitment > 0 && <>
+            <Row k="Rate">
+              {(["float", "cap", "fixed"] as const).map((k) => (
+                <Chip key={k} on={d.takeout === k} disabled={k === "float" && takeoutHedgeRequired(plan)}
+                  title={k === "float" ? (takeoutHedgeRequired(plan) ? "The lender requires a cap or a lock at this loan size" : "Float at index + spread")
+                    : k === "cap" ? "Rate cap: the index is capped 1.5 pts over today's until the mini-perm matures" : "Lock the takeout rate today"}
+                  onClick={() => set({ takeout: k })}>
+                  {k === "float" ? "Float" : k === "cap" ? "Rate cap" : "Fixed lock"}<span className="bd-sub"> {k === "float" ? "$0" : usd(takeoutHedgeCost(plan, k))}</span>
+                </Chip>))}
+            </Row>
+            {(() => {
+              const t = takeoutRead(game.econ, plan, d.takeout);
+              const x = (v: number) => (Number.isFinite(v) ? `${v.toFixed(2)}×` : "—");
+              return <div className="bd-terms mono">
+                {`Fee ${usd(plan.pointsCost)} · interest reserve ${usd(plan.interestReserve)} · at delivery ${pct2(t.ratePct)}, DSCR ${x(t.dscr)} (${x(t.dscrStress)} if rates +3)`}
+              </div>;
+            })()}
+          </>}
           {d.prospect && <div className="bd-terms">Anchor: {d.prospect.name}</div>}
           <More d={d} bbl={bbl} set={set} />
           <Details d={d} />
@@ -300,8 +382,6 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
   const outMax = plan && !synBar ? maxOutside(game, d.need.whole, landEquity) : 0;
   const outside = Math.round(outMax * share / 10_000) * 10_000;
   const pv = plan && outside > 0 ? raisePreview(game, plan, landEquity, d.need.whole, outside, pitch) : null;
-  const hedgeOn = !!plan && plan.commitment > 0;
-  const mustHedge = !!plan && takeoutHedgeRequired(plan);
   const split = d.draft.split ?? { retail: 15, office: 45, multifamily: 40 };
   const retailCap = Math.max(0, Math.floor(maxRetailShare(floors) * 100));
   const nonRetail = Math.max(1, split.office + split.multifamily);
@@ -315,14 +395,6 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
           <Chip on={contract === "gmp"} title="Guaranteed maximum price: the builder carries most overruns" onClick={() => set({ contract: "gmp" })}>GMP</Chip>
           <Chip on={contract === "costplus"} title="Cost-plus: a cheaper bid, but overruns are yours" onClick={() => set({ contract: "costplus" })}>Cost-plus</Chip>
         </Row>
-        {hedgeOn && plan && <Row k="Rate">
-          {(["float", "cap", "fixed"] as const).map((k) => (
-            <Chip key={k} on={d.takeout === k} disabled={k === "float" && mustHedge}
-              title={k === "float" && mustHedge ? "The lender requires a cap or a lock at this loan size" : undefined}
-              onClick={() => set({ takeout: k })}>
-              {k === "float" ? "Float" : k === "cap" ? "Cap" : "Fixed"}<span className="bd-sub"> {k === "float" ? "$0" : usd(takeoutHedgeCost(plan, k))}</span>
-            </Chip>))}
-        </Row>}
         {(use === "office" || use === "multifamily") && !d.product && <Row k="Shops">
           {(["auto", "on", "off"] as const).map((k) => (
             <Chip key={k} on={d.groundRetail === k} onClick={() => set({ groundRetail: k })}>{k === "auto" ? "Auto" : k === "on" ? "Ground floor" : "None"}</Chip>))}

@@ -2741,6 +2741,18 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
 }
 
 /**
+ * THE LIST IS ALWAYS BEST-FIRST. Every "take the best bid" control in the game
+ * (the building file's footer, the pipeline, the inbox, the bids-are-in card,
+ * the Deals desk) takes index 0, so anything that moves a price or drops a
+ * bidder re-ranks: live bids first, highest price first. counterBid used not
+ * to, and a bidder who came up past the field on a private call sat second
+ * while "Take best" signed the old leader at their first number.
+ */
+export function rankBids(bids: Bid[]): Bid[] {
+  return bids.sort((a, b) => (a.dropped ? 1 : 0) - (b.dropped ? 1 : 0) || b.price - a.price);
+}
+
+/**
  * BEST AND FINAL.
  *
  * Go back to the top of the list and tell them there is another number they
@@ -2769,7 +2781,7 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
     if (b.price > before) lifted++;
   }
   ns.round = 1;
-  ns.bids = (ns.bids ?? []).sort((a, b) => (a.dropped ? 1 : 0) - (b.dropped ? 1 : 0) || b.price - a.price);
+  ns.bids = rankBids(ns.bids ?? []);
   const best = ns.bids.find((b) => !b.dropped);
   next.news.unshift({
     q: next.month, kind: best ? "deal" : "warn",
@@ -2789,9 +2801,18 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
  * new offer at a worse number, and you already have the machinery to accept it,
  * counter it, or tell them to go away.
  */
-export function acceptBid(s: GameState, parcels: ParcelTable, bbl: string, index: number): { s: GameState; err?: string; msg?: string } {
+export function acceptBid(
+  s: GameState, parcels: ParcelTable, bbl: string, index: number, name?: string,
+): { s: GameState; err?: string; msg?: string } {
   const h = s.holdings[bbl];
   const sale = h?.sale;
+  // A screen that names the bidder it is showing gets that bidder, even if the
+  // list re-ranked between the render and the click.
+  if (name !== undefined && sale?.bids?.[index]?.name !== name) {
+    const at = sale?.bids?.findIndex((b) => b.name === name) ?? -1;
+    if (at < 0) return { s, err: "That bid is not on the table." };
+    index = at;
+  }
   const bid = sale?.bids?.[index];
   if (!bid || bid.dropped) return { s, err: "That bid is not on the table." };
   const next = clone(s);
@@ -2808,7 +2829,9 @@ export function acceptBid(s: GameState, parcels: ParcelTable, bbl: string, index
       "they read the rent roll properly and did not like the rollover",
       "their committee would not approve the number",
       "the environmental report came back with a question",
-    ];
+    ].filter((r) => !b.countered || !r.includes("committee"));
+    // A buyer who just agreed your counter took that number to committee to
+    // agree it; only what diligence finds can move them now.
     const reason = reasons[Math.floor(rng(next) * reasons.length)];
     ns.offer = { price, expiresM: next.month + 2, from: b.name, retrade: reason };
     delete ns.bids;
@@ -3668,7 +3691,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       // one that wants the block at any price. It rings on its own clock
       // (hashed, so no other buyer's call is moved), and if you say no it
       // builds around you.
-      if (rec0 && !anyLive && s.month - h.boughtM > 6) {
+      if (rec0 && !anyLive && !s.noUnsolicited && s.month - h.boughtM > 6) {
         const asm = holdoutAssembler(s, adjacency, rec0, h.bbl);
         if (asm && hash01(`${s.seed}:holdout:${h.bbl}:${s.month}`) < 0.05) {
           s.lastUnsolicitedM = s.month;
@@ -3703,6 +3726,9 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
           // they are not buying the same thing. They are buying the block.
           const bidder = unsolicitedBidder(s, parcels, adjacency, rec0, h);
           const px = Math.round(v * bidder.mult * (() => { const hw = cycleHot(s.econ); return rrange(s, 0.86 + 0.14 * hw, 0.98 + 0.12 * hw, "sales"); })());
+          // Declined at the switchboard: the draws above still run so no
+          // stream shifts with the setting.
+          if (s.noUnsolicited) continue;
           h.sale = { ask: px, listedM: s.month, unsolicited: true };
           h.sale.offer = { price: px, expiresM: s.month + 2, from: bidder.name };
           s.news.unshift({
@@ -4151,7 +4177,8 @@ export function counterBid(
   if (px <= b0.price) return { s, err: "A counter must be above the offer. Accept it instead." };
 
   const next = clone(s);
-  const bid = next.holdings[bbl]!.sale!.bids![index];
+  const nsale = next.holdings[bbl]!.sale!;
+  const bid = nsale.bids![index];
   bid.countered = true;
 
   // How far this buyer will actually stretch. Credibility is the whole read:
@@ -4164,6 +4191,7 @@ export function counterBid(
   if (px <= limit) {
     bid.price = px;
     bid.note = "Came up on a private call.";
+    rankBids(nsale.bids!);
     next.news.unshift({
       q: next.month, kind: "deal",
       text: `Bid raised · ${rec.address} · ${b0.name} · ${money(px)} from ${money(b0.price)}.`,
@@ -4174,6 +4202,7 @@ export function counterBid(
     const split = Math.round((px + limit) / 2);
     bid.price = split;
     bid.note = "Split the difference and stopped.";
+    rankBids(nsale.bids!);
     next.news.unshift({
       q: next.month, kind: "info",
       text: `Counter · ${rec.address} · ${b0.name} · ${money(split)}, final.`,
@@ -4182,6 +4211,7 @@ export function counterBid(
   }
   bid.dropped = true;
   bid.note = "Walked after your counter.";
+  rankBids(nsale.bids!);
   next.news.unshift({
     q: next.month, kind: "warn",
     text: `${b0.name} walked · ${rec.address} · after your ${money(px)} counter.`,
@@ -4223,6 +4253,7 @@ export function repriceListing(
       if (b.dropped) continue;
       if (b.price < px * 0.9 && rng(next) < 0.5) { b.dropped = true; b.note = "Left when the ask went up."; }
     }
+    rankBids(sale.bids);
   }
   if (!cut && sale.offer && sale.offer.price < px * 0.92 && rng(next) < 0.45) {
     delete sale.offer;

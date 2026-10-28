@@ -409,7 +409,8 @@ interface AppState {
   /** Standing instructions to the listing broker; null withdraws them. */
   setSaleInstructions: (bbl: string, instructions: SaleInstructions | null) => void;
   runBestAndFinal: (bbl: string) => void;
-  takeBid: (bbl: string, index: number) => void;
+  /** `name`: the bidder the screen showed — taken even if the list re-ranked under the click. */
+  takeBid: (bbl: string, index: number, name?: string) => void;
   applyVariance: (bbl: string, targetFar?: number) => void;
   /** Region map: ask the board to rezone a farm tract you own for lots of `lotSf` (engine/landdev.ts). */
   fileRezoning: (bbl: string, lotSf: number) => void;
@@ -467,6 +468,7 @@ interface AppState {
   autoRentFloor: (on: boolean) => void;
   /** Buildings you buy from here close on auto-lease (on) or off it. */
   autoLeaseNew: (on: boolean) => void;
+  setNoUnsolicited: (on: boolean) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
   /** The same minimum new lease on every building, and the house default for new ones. */
@@ -1732,10 +1734,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  takeBid: (bbl, index) => {
+  takeBid: (bbl, index, name) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = acceptBid(game, parcels, bbl, index);
+    const r = acceptBid(game, parcels, bbl, index, name);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Under contract.", r.msg === "They retraded you." ? "err" : undefined);
@@ -2005,6 +2007,14 @@ export const useStore = create<AppState>((set, get) => ({
     const { game } = get();
     if (!game || game.autoLeaseNew === on) return;
     const next: GameState = { ...game, autoLeaseNew: on };
+    set({ game: next });
+    void persist(next);
+  },
+
+  setNoUnsolicited: (on) => {
+    const { game } = get();
+    if (!game || !!game.noUnsolicited === on) return;
+    const next: GameState = { ...game, noUnsolicited: on };
     set({ game: next });
     void persist(next);
   },

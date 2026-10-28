@@ -1,0 +1,11 @@
+.why { display: inline; }
+.why-btn {
+  margin-left: 6px; padding: 0 6px; font-size: 11px; line-height: 16px;
+  border: 1px solid currentColor; border-radius: 8px; background: transparent;
+  color: inherit; opacity: 0.75; cursor: pointer;
+}
+.why-btn:hover, .why-btn[aria-expanded="true"] { opacity: 1; }
+.why-chain { list-style: none; margin: 6px 0 2px 0; padding: 6px 8px; border-left: 2px solid currentColor; font-size: 12px; opacity: 0.95; }
+.why-step { padding: 2px 0; }
+.why-arrow { margin-right: 6px; opacity: 0.6; }
+.why-when { opacity: 0.6; font-size: 11px; }

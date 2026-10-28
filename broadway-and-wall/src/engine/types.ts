@@ -1650,6 +1650,8 @@ export interface NewsItem {
   text: string;
   /** A story about a place can put the camera on the place. */
   bbl?: string;
+  /** The event in the cause ledger (why.ts) behind this line: its "Why?" chain. */
+  why?: number;
 }
 
 export type PropertyEventKind =
@@ -4469,6 +4471,8 @@ export interface GameState {
   /** Lifetime closed consideration (nominal $). Same reason as `compsTotal`. */
   compsVolume?: number;
   news: NewsItem[];
+  /** THE CAUSE LEDGER (why.ts): what happened and why, for the player's "Why?" chains. Records only; nothing reads it to decide. */
+  why?: import("./why").WhyLedger;
   /** Buildings the player has starred to follow (UI only — nothing in the economy reads it). */
   watch?: string[];
   /**

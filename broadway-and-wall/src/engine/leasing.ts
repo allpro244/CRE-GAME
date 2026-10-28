@@ -1603,7 +1603,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         k: "tenant.left", a: "tenant", name: mo.name, bbl: rec.bbl,
         n: { sf: mo.sf, rentYr: Math.round(mo.rentPsf * mo.sf) },
         t: `${mo.name} left at lease end · ${(mo.sf / 1000).toFixed(1)}k sf · −$${Math.round(mo.rentPsf * mo.sf / 1000)}k/yr`,
-      }, [whyTenantBooks(s, mo, tenantFin(s.econ, mo))]));
+      }, [whyTenantBooks(s, mo, tenantFin(s.econ, { ...mo }))]));
       s.news.unshift({
         q, kind: "info",
         text: `Lease expiry · ${rec.address} · ${(outSf / 1000).toFixed(1)}k sf vacant · $${(turnCost / 1000).toFixed(0)}K make-ready · ${down} months to market.${gone}`,

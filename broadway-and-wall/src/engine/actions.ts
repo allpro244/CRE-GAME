@@ -252,7 +252,7 @@ export function executePurchase(
   if (s.holdings[bbl]) return { s, err: "You already own it." };
   // see refreshListings: a live city job is somebody else's construction site
   if ((s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned)) {
-    return { s, err: "Under construction by another owner. Not for sale until it completes or goes to a receiver." };
+    return { s, err: "Crane on site: another owner is building. Not for sale until it completes or goes to a receiver." };
   }
   const bq = buyQuote(s, parcels, bbl, price, product, lev);
   // Vehicle path: fundPay + live investment period draws `fund.cash`.

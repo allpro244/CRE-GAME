@@ -5173,6 +5173,60 @@ export function styleHunt(r: Rival): { appetite: number; procyclical: number; co
   return { appetite: st.appetite, procyclical: st.procyclical, contra: st.contra };
 }
 
+/**
+ * WHAT A FIRM NEEDS AT THE TABLE, AND WHERE IT COMES FROM. The equity over
+ * the acquisition loan, a reserve, and the 2% closing; the corporate line
+ * covers what the operating account cannot. One answer for every path that
+ * asks whether a firm can close — `rivalBuys` and `rivalCanClose` both read it.
+ */
+function closingFinance(s: GameState, parcels: ParcelTable, r: Rival, price: number, debt: number) {
+  const closing = Math.round(price * 0.02);
+  const equity = price - debt;
+  const reserve = Math.max(500_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
+  // Prefer this month's tickRivals mark. Remaking the whole book here was
+  // the cost of every contested sale and the main spike inside a Year click.
+  let aum = r.aum, noiYr = r.markNoi, landV = r.markLand;
+  if (aum === undefined || noiYr === undefined || landV === undefined) {
+    const m = markRival(s, parcels, r);
+    aum = m.aum; noiYr = m.noiYr; landV = m.landV;
+  }
+  const room = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
+  const need = equity + reserve + closing;
+  return { debt, equity, reserve, need, draw: Math.max(0, Math.min(room, need - r.cash)), aum };
+}
+
+/**
+ * CAN THIS FIRM CLOSE ON THIS BUILDING AT THIS PRICE — the same test
+ * `rivalBuys` puts a named bidder through at the closing: alive, not in
+ * trouble, not the seller, the building inside its rules, and the equity in
+ * the account or on the line. Reads no dice and moves nothing, so a bid list
+ * can ask it of every firm on the street before anybody bids.
+ *
+ * EVERY BUYER IS SOMEBODY ON THE STREET. Bids, approaches, portfolio
+ * indications and fire-sale buyers used to come from lists of strings ("a
+ * family office", "Kestrel Core Fund") — counterparties with no balance sheet,
+ * paying with money that did not exist and taking deeds into books nobody
+ * could see. Only firms that pass this test bid now; when none does, nobody
+ * bids, which is what a thin market is.
+ */
+export function rivalCanClose(
+  s: GameState, parcels: ParcelTable, r: Rival, rec: ParcelRecord, price: number, distress = false,
+): boolean {
+  if (r.failedM !== undefined || r.stressMs) return false;
+  if (ownerOf(s, rec.bbl) === r) return false;
+  if (r.sheet && fitOf(s, parcels, r, rec, distress) <= 0) return false;
+  const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
+  const fin = closingFinance(s, parcels, r, price, acquisitionLoan(s, rec, price)(r, ci));
+  return r.cash + fin.draw >= fin.need;
+}
+
+/** Every firm on the street that could close on this building at this price. */
+export function rivalsWhoCanClose(
+  s: GameState, parcels: ParcelTable, rec: ParcelRecord, price: number, distress = false,
+): Rival[] {
+  return livingRivals(s).filter((r) => rivalCanClose(s, parcels, r, rec, price, distress));
+}
+
 export function rivalBuys(
   s: GameState, parcels: ParcelTable, rec: ParcelRecord, price: number,
   // THE FIRM THAT BID IS THE FIRM THAT BUYS. When the player takes a named
@@ -5202,21 +5256,7 @@ export function rivalBuys(
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const loan = acquisitionLoan(s, rec, price);
   const closing = Math.round(price * 0.02);
-  const drawFor = (r: Rival) => {
-    const debt = loan(r, ci);
-    const equity = price - debt;
-    const reserve = Math.max(500_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
-    // Prefer this month's tickRivals mark. Remaking the whole book here was
-    // the cost of every contested sale and the main spike inside a Year click.
-    let aum = r.aum, noiYr = r.markNoi, landV = r.markLand;
-    if (aum === undefined || noiYr === undefined || landV === undefined) {
-      const m = markRival(s, parcels, r);
-      aum = m.aum; noiYr = m.noiYr; landV = m.landV;
-    }
-    const room = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
-    const need = equity + reserve + closing;
-    return { debt, equity, reserve, need, draw: Math.max(0, Math.min(room, need - r.cash)), aum };
-  };
+  const drawFor = (r: Rival) => closingFinance(s, parcels, r, price, loan(r, ci));
   // A firm that bid closes on its own cheque: the yield hurdle and the
   // committee's appetite were passed when it bid. What it cannot skip is the
   // money — a bidder who cannot fund the close does not close, and the deed

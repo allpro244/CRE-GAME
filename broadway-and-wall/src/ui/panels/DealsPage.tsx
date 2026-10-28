@@ -1,3 +1,4 @@
+import { FirmLink } from "@/ui/FirmLink";
 import { useEffect, useState } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
@@ -301,7 +302,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
         <>
           <div className="loi-line mono">
             <b>{liveBids.length} bid{liveBids.length === 1 ? "" : "s"}</b>
-            {" "}· best <b>{usd(liveBids[0].b.price)}</b> from {liveBids[0].b.name}
+            {" "}· best <b>{usd(liveBids[0].b.price)}</b> from <FirmLink name={liveBids[0].b.name} id={liveBids[0].b.firmId} />
             {liveBids.length > 1 ? ` · second ${usd(liveBids[1].b.price)}` : ""}
             {" "}· {((liveBids[0].b.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% vs whisper
           </div>
@@ -318,7 +319,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
         <>
           <div className="loi-line mono">
             {offer.retrade ? <b className="neg">retraded · </b> : null}
-            <b>{usd(offer.price)}</b> offered{offer.from ? ` by ${offer.from}` : ""} · expires {monthLabel(offer.expiresM)}
+            <b>{usd(offer.price)}</b> offered{offer.from ? <> by <FirmLink name={offer.from} id={offer.firmId} /></> : ""} · expires {monthLabel(offer.expiresM)}
             {" "}· {((offer.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% vs ask
           </div>
           {h && parcels && (() => {

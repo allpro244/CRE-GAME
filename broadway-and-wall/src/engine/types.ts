@@ -733,7 +733,8 @@ export interface Holding {
      * account short, in which case it is `held` for your signature. You can
      * still close early, or elect a 1031, from the card.
      */
-    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; retrade?: string; held?: boolean; contract?: boolean };
+    /** `firmId`: the street firm behind `from` — every buyer is one. `pkg`: one deed of a package close; the package books the buyer. */
+    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; firmId?: string; retrade?: string; held?: boolean; contract?: boolean; pkg?: boolean };
     /**
      * STANDING INSTRUCTIONS TO THE BROKER. A seller does not take every call
      * personally — they tell the broker "anything at or over this, take it;
@@ -1441,6 +1442,8 @@ export interface PortfolioSale {
   sumOfParts: number;
   bids: {
     name: string; price: number; expiresM: number; countered?: boolean;
+    /** The street firm making the indication — it pays and takes the deeds. */
+    firmId?: string;
     /**
      * HOW FAR PAST THEIR NUMBER THIS PARTICULAR BUYER WILL GO, as a multiple of
      * their bid. Drawn per bidder rather than shared, because a single figure
@@ -1456,6 +1459,8 @@ export interface PortfolioSale {
 
 export interface Bid {
   name: string;
+  /** The street firm bidding — every bidder is one, and it pays from its own book. */
+  firmId?: string;
   price: number;
   credibility: number;   // 0-1
   note: string;

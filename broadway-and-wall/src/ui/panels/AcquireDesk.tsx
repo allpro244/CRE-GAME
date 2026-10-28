@@ -1,3 +1,4 @@
+import { FirmLink } from "@/ui/FirmLink";
 // Buy, sell, list, ground lease, disclosed roll, vacant possession.
 // Extracted from ParcelDesk so the property shell stays readable.
 import { consentFor } from "@/engine/vehicles";
@@ -369,7 +370,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               <tbody>
                 {sale.bids.map((b, i) => (
                   <tr key={b.name + i} className={b.dropped ? "dim" : ""}>
-                    <td>{b.name}</td>
+                    <td><FirmLink name={b.name} id={b.firmId} /></td>
                     <td className="num">{usd(b.price)}</td>
                     <td className="num">{((b.price / apMid(bbl, value) - 1) * 100).toFixed(0)}%</td>
                     <td className="dim">{b.dropped ? "Dropped at best and final" : b.note}</td>
@@ -443,10 +444,10 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           <>
             <div className="hint">
               {sale.offer.retrade
-                ? <><b>Retrade</b>{sale.offer.from ? ` · ${sale.offer.from}` : ""} · {sale.offer.retrade} · now <b className="mono">{usd(sale.offer.price)}</b> · expires {monthLabel(sale.offer.expiresM)}.</>
+                ? <><b>Retrade</b>{sale.offer.from ? <> · <FirmLink name={sale.offer.from} id={sale.offer.firmId} /></> : ""} · {sale.offer.retrade} · now <b className="mono">{usd(sale.offer.price)}</b> · expires {monthLabel(sale.offer.expiresM)}.</>
                 : sale.offer.contract && !sale.offer.held
-                  ? <>Under contract{sale.offer.from ? ` · ${sale.offer.from}` : ""} · <b className="mono">{usd(sale.offer.price)}</b> · auto-closes {monthLabel(sale.offer.expiresM)}.</>
-                  : <>Offer{sale.offer.from ? ` · ${sale.offer.from}` : ""} · <b className="mono">{usd(sale.offer.price)}</b> · expires {monthLabel(sale.offer.expiresM)}.</>}
+                  ? <>Under contract{sale.offer.from ? <> · <FirmLink name={sale.offer.from} id={sale.offer.firmId} /></> : ""} · <b className="mono">{usd(sale.offer.price)}</b> · auto-closes {monthLabel(sale.offer.expiresM)}.</>
+                  : <>Offer{sale.offer.from ? <> · <FirmLink name={sale.offer.from} id={sale.offer.firmId} /></> : ""} · <b className="mono">{usd(sale.offer.price)}</b> · expires {monthLabel(sale.offer.expiresM)}.</>}
               {tq.tax > 0 && <> Gain {usd(tq.gain)} over depreciated basis · tax <b className="mono">{usd(tq.tax)}</b>.</>}
             </div>
             {/* WHAT THEY ARE ACTUALLY BUYING. A price is a price; the cap rate

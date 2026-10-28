@@ -230,11 +230,11 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
           {/* THE ENVELOPE IS FULL (owner: "the sqft stops growing"): past the
               district's FAR more floors only slim the floorplate; the way out is a FAR filing */}
           {!d.product && plan && plan.far >= plan.farMax - 0.05 && <div className="bd-terms">
-            FAR max {plan.farMax.toFixed(1)} · more floors only slim the floorplate ·{" "}
+            FAR max {plan.farMax.toFixed(1)} · <span className="mono">plate shrinks</span> ·{" "}
             <button type="button" className="bd-link" onClick={() => {
               useStore.getState().openProperty(bbl, "summary");
               window.setTimeout(() => useStore.setState({ pageJump: "Zoning variance" }), 120);
-            }}>File for more FAR</button>
+            }}>Seek more FAR</button>
           </div>}
           <Row k="Tier">
             {BUILD_TIERS.map((t) => (
@@ -392,8 +392,8 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
       <summary>More</summary>
       <div className="bd-choices" style={{ marginTop: 6 }}>
         <Row k="Contract">
-          <Chip on={contract === "gmp"} title="Guaranteed maximum price: the builder carries most overruns" onClick={() => set({ contract: "gmp" })}>GMP</Chip>
-          <Chip on={contract === "costplus"} title="Cost-plus: a cheaper bid, but overruns are yours" onClick={() => set({ contract: "costplus" })}>Cost-plus</Chip>
+          <Chip on={contract === "gmp"} title="Builder carries overruns" onClick={() => set({ contract: "gmp" })}>GMP</Chip>
+          <Chip on={contract === "costplus"} title="Cheaper; overruns yours" onClick={() => set({ contract: "costplus" })}>Cost-plus</Chip>
         </Row>
         {(use === "office" || use === "multifamily") && !d.product && <Row k="Shops">
           {(["auto", "on", "off"] as const).map((k) => (
@@ -414,7 +414,7 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
             ? <><span className="bd-terms" style={{ paddingLeft: 0 }}>{d.prospect.name}</span><Chip on={false} onClick={() => useStore.getState().clearBts(bbl)}>Back to spec</Chip></>
             : <>
               <Slider label="Lease term" value={termY} min={BTS_TERM_MIN_Y} max={BTS_TERM_MAX_Y} step={1} onChange={setTermY} format={(v) => `${v} yrs`} />
-              <Chip on={!!offer} title="List the building for a build-to-suit tenant before groundbreak"
+              <Chip on={!!offer} title="Lease before building"
                 onClick={() => useStore.getState().proposeBts(bbl, use, floors, cov, termY)}>{offer ? "Update listing" : "List"}</Chip>
               {offer && <Chip on={false} onClick={() => useStore.getState().clearBts(bbl)}>Pull</Chip>}
             </>}
@@ -423,7 +423,7 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
           {raise
             ? <>
               <span className="bd-terms mono" style={{ paddingLeft: 0 }}>Raising {usd(committedTotal(raise))} of {usd(raise.target)}</span>
-              <Chip on={false} disabled={committedTotal(raise) < raise.target / 2} title="Needs half the target" onClick={() => useStore.getState().closeRaiseNow(bbl)}>Close now</Chip>
+              <Chip on={false} disabled={committedTotal(raise) < raise.target / 2} title="Needs half raised" onClick={() => useStore.getState().closeRaiseNow(bbl)}>Close now</Chip>
               <Chip on={false} onClick={() => useStore.getState().cancelRaise(bbl)}>Cancel</Chip>
             </>
             : synBar || !plan || !(outMax > 0)
@@ -431,7 +431,7 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
               : <>
                 <Slider label="Raise" value={share} min={0} max={1} step={0.1} onChange={setShare} format={() => `${usd(outside)} of ${usd(outMax)}`} />
                 {(["conservative", "base", "aggressive"] as const).map((k) => (
-                  <Chip key={k} on={pitch === k} title="How the return is pitched to investors" onClick={() => setPitch(k)}>{k === "conservative" ? "Low pitch" : k === "base" ? "Base" : "High pitch"}</Chip>))}
+                  <Chip key={k} on={pitch === k} title="Promised investor return" onClick={() => setPitch(k)}>{k === "conservative" ? "Low pitch" : k === "base" ? "Base" : "High pitch"}</Chip>))}
               </>}
         </Row>
         {!raise && pv && <div className="bd-terms mono">
@@ -439,7 +439,7 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
         </div>}
         {!raise && outside > 0 && (pv && pv.pitchIrr <= 0
           // investors do not fund a projected loss (raise.ts raiseQuote): say so before the click
-          ? <div className="bd-warn">Projects a loss ({pct(pv.pitchIrr)} a year) — investors will not fund it</div>
+          ? <div className="bd-warn">Loss {pct(pv.pitchIrr)}/yr · <b>unfundable</b></div>
           : <div className="bd-v" style={{ paddingLeft: 60 }}>
             <button type="button" className="btn" onClick={() => useStore.getState().launchRaise(bbl, job, outside)}>Open raise · {usd(outside)}</button>
             <button type="button" className="btn btn-buy" onClick={() => useStore.getState().raiseAndBuild(bbl, job, outside)}>Raise and build</button>

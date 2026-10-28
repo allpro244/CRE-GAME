@@ -468,6 +468,7 @@ interface AppState {
   autoRentFloor: (on: boolean) => void;
   /** Buildings you buy from here close on auto-lease (on) or off it. */
   autoLeaseNew: (on: boolean) => void;
+  setNoUnsolicited: (on: boolean) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
   /** The same minimum new lease on every building, and the house default for new ones. */
@@ -2006,6 +2007,14 @@ export const useStore = create<AppState>((set, get) => ({
     const { game } = get();
     if (!game || game.autoLeaseNew === on) return;
     const next: GameState = { ...game, autoLeaseNew: on };
+    set({ game: next });
+    void persist(next);
+  },
+
+  setNoUnsolicited: (on) => {
+    const { game } = get();
+    if (!game || !!game.noUnsolicited === on) return;
+    const next: GameState = { ...game, noUnsolicited: on };
     set({ game: next });
     void persist(next);
   },

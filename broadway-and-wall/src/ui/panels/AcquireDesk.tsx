@@ -341,7 +341,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               contract={acceptConfirm.bidIndex !== undefined}
               onCancel={() => setAcceptConfirm(null)}
               onConfirm={() => {
-                if (acceptConfirm.bidIndex !== undefined) takeBid(bbl, acceptConfirm.bidIndex);
+                if (acceptConfirm.bidIndex !== undefined) takeBid(bbl, acceptConfirm.bidIndex, sale.bids?.[acceptConfirm.bidIndex]?.name);
                 else acceptOffer(bbl, acceptConfirm.exchange);
                 setAcceptConfirm(null);
               }}

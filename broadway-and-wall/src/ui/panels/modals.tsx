@@ -858,7 +858,7 @@ function DecisionBody({
             Sitting on it too long is how the whole campaign dies.
           </div>
           <div className="modal-actions">
-            <button className="btn btn-buy" onClick={() => { takeBid(bidBbl, top.i); setDeferred((d) => new Set(d).add(-3)); }}>
+            <button className="btn btn-buy" onClick={() => { takeBid(bidBbl, top.i, top.b.name); setDeferred((d) => new Set(d).add(-3)); }}>
               Sell to {top.b.name} · {usd(top.b.price)}
             </button>
             <button className="btn" onClick={() => {

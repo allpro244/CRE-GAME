@@ -347,7 +347,12 @@ export function PipelineSelling() {
               <button type="button" className="nx-btn nx-sm" onClick={() => st.declineOffer(r.bbl!)}>Decline</button>
             </span>
           );
-          if (r.stage === "bids") return <button type="button" className="nx-btn nx-sm nx-primary" title={usd(r.best ?? 0)} onClick={() => st.takeBid(r.bbl!, 0)}>Take best</button>;
+          if (r.stage === "bids") return <button type="button" className="nx-btn nx-sm nx-primary" title={usd(r.best ?? 0)} onClick={() => {
+            // the bidder at the price this row shows, by name — not whoever sits at index 0
+            const live = (st.game?.holdings[r.bbl!]?.sale?.bids ?? []).filter((b) => !b.dropped);
+            const top = live.reduce<(typeof live)[number] | undefined>((m, b) => (!m || b.price > m.price ? b : m), undefined);
+            st.takeBid(r.bbl!, 0, top?.name);
+          }}>Take best</button>;
           return <button type="button" className="nx-btn nx-sm" onClick={() => st.delistSale(r.bbl!)}>Delist</button>;
         }} />
     </div>

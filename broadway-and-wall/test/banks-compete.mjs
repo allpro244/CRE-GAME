@@ -156,6 +156,9 @@ for (let m = 0; m < 8; m++) g = tick(g);
     `${x.lender} charges off ${hit ? `$${(hit.amount / 1e6).toFixed(2)}M` : "nothing"} against ${hit?.borrower ?? "?"} at ${hit?.bbl ?? "?"} (${hit?.how ?? "?"})`);
   check(l.capital < cap0, `...and it comes out of that desk's capital (${(cap0 / 1e6).toFixed(1)}M → ${(l.capital / 1e6).toFixed(1)}M)`);
   check(s2.listings.some((li) => li.bbl === x.bbl && li.receiverFor === x.lender), "...and the building is on the tape as the desk's REO");
+  const line = s2.news.find((n) => n.bbl === x.bbl && n.why);
+  const chain = line ? E.whyChain(s2, line.why) : [];
+  check(chain.length > 0 && chain[0].t.includes(x.holder), `...and the news line's "why" names the borrower: ${chain[0]?.t ?? "none"}`);
 }
 
 // ---- the credit window tightens after real losses ---------------------------
@@ -175,6 +178,10 @@ for (let m = 0; m < 8; m++) g = tick(g);
   check(losses(hurt) > losses(calm) * 2 + 1e6, `real foreclosures: $${(losses(hurt) / 1e6).toFixed(0)}M charged off vs $${(losses(calm) / 1e6).toFixed(0)}M`);
   check(hurt.econ.creditIdx < calm.econ.creditIdx - 0.02,
     `the window tightens: ${ci0.toFixed(3)} → ${hurt.econ.creditIdx.toFixed(3)} with the losses vs ${calm.econ.creditIdx.toFixed(3)} without (appetite ${hurt.bankApp} vs ${calm.bankApp})`);
+  const ev = (hurt.why?.ev ?? []).filter((x) => x.k === "credit.tighten" && x.m >= g.month);
+  const cause = ev.length ? E.whyGet(hurt, ev[0].c?.[0]) : undefined;
+  check(ev.length > 0 && cause?.k === "bank.appetite",
+    `the cause ledger says which desk shut it: ${ev[0]?.t ?? "no event"} <- ${cause?.t ?? "?"}`);
   const sp = (s) => E.liveSpread(s.econ.deskPx["Alden Savings & Trust"], 1.7, "income");
   check(sp(hurt) > sp(calm), `...and the desks price it: Alden's 1.70 sheet at ${sp(hurt).toFixed(2)} vs ${sp(calm).toFixed(2)}`);
 }

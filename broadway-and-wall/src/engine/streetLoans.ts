@@ -62,6 +62,9 @@ import { NOTICE_M, FORECLOSE_M } from "./workout";
 import { shortIndexOf } from "./market";
 import { money } from "./money";
 import { bankRatePct, liveSpread } from "./pricing";
+import { why } from "./why";
+
+const usdK = (n: number) => `$${Math.round(n / 1000).toLocaleString("en-US")}k`;
 
 function hash01(str: string): number {
   let h = 2166136261;
@@ -134,8 +137,9 @@ function foreclose(s: GameState, x: StreetLoan, addr: string) {
   const ask = reoAsk(s, x.value, x.balance, x.lender);
   const loss = Math.max(0, Math.round(x.balance - ask));
   chargeLenderLoss(s, x.lender, loss, {
-    borrower: x.holder, id: "h:" + x.holderId, bbl: x.bbl, cls: x.klass === "land" ? "land" : "income", how: "foreclosure",
+    borrower: x.holder, id: "h:" + x.holderId, bbl: x.bbl, cls: x.klass === "land" ? "land" : "income", how: "foreclosure", why: x.whyId,
   });
+  const lossWhy = s.lenders?.find((l) => l.name === x.lender)?.lossWhy;
   delete s.streetLoans![x.bbl];
   // The building has a new owner: whoever buys it from the desk. The register
   // draws them afresh from today (owners.ts deedSalt), and the desk puts it
@@ -149,7 +153,7 @@ function foreclose(s: GameState, x: StreetLoan, addr: string) {
     });
   }
   s.news.unshift({
-    q: s.month, kind: "info",
+    q: s.month, kind: "info", bbl: x.bbl, why: lossWhy ?? x.whyId,
     text: `${x.lender} foreclosed on ${x.holder} at ${addr}: ${money(x.balance)} owed, `
       + `listed at ${money(ask)}${loss > 0 ? `, a ${money(loss)} loss to the bank` : ""}.`,
   });
@@ -285,6 +289,15 @@ function payMonth(s: GameState, parcels: ParcelTable) {
         continue;
       }
       if (missed.has(x)) {
+        // THE CAUSE LEDGER: the month a named owner first misses, and why —
+        // what its buildings paid against what it owed.
+        if (x.arrearsMs === 0) {
+          x.whyId = why(s, {
+            k: "loan.default", a: "household", aid: "h:" + x.holderId, name: x.holder, bbl: x.bbl,
+            n: { owedMo: Math.round(d.interest + d.amort), buildingNoiMo: Math.round(x.noiYr / 12), holderCfadsMo: Math.round((flow?.cfads ?? 0) / 12), holderDueMo: Math.round(due), balance: x.balance },
+            t: `${x.holder} missed its payment to ${x.lender} · its buildings clear ${usdK((flow?.cfads ?? 0) / 12)}/mo before debt against ${usdK(due)}/mo owed · cash gone`,
+          });
+        }
         x.arrearsMs += 1;
         x.balance = Math.round(x.balance + d.interest);   // unpaid interest is still owed
       } else {
@@ -340,7 +353,15 @@ function rollBalloon(s: GameState, x: StreetLoan) {
     }
   }
   // No takeout, no extension: the balloon is not paid, and the clock starts.
-  if (x.balloonM === undefined) { x.balloonM = s.month; x.arrearsMs = Math.max(1, x.arrearsMs); }
+  if (x.balloonM === undefined) {
+    x.balloonM = s.month; x.arrearsMs = Math.max(1, x.arrearsMs);
+    const most = deskQuotes(s, x.value, x.noiYr, { klass: x.klass }).reduce((a, q) => Math.max(a, q.principal), 0);
+    x.whyId = why(s, {
+      k: "loan.default", a: "household", aid: "h:" + x.holderId, name: x.holder, bbl: x.bbl,
+      n: { balance: x.balance, bestTakeout: Math.round(most), value: x.value, noiYr: x.noiYr, holderCash: Math.round(cash[x.holderId] ?? 0) },
+      t: `${x.holder}'s balloon with ${x.lender} came due unpaid · owes ${usdK(x.balance)} · the most any desk will lend on it is ${usdK(most)} · building worth ${usdK(x.value)}`,
+    });
+  }
   x.status = "default";
   x.maturityM = s.month + 1;
 }

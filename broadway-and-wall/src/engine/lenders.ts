@@ -21,6 +21,7 @@ import { logBooks, BUILT_CLASSES } from "./types";
 import { PRODUCTS, underwritingStandards, windowOpen } from "./debt";
 import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE, shortIndexOf } from "./market";
 import type { DeskPx, LossClass } from "./pricing";
+import { why } from "./why";
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export type LenderKind = "bank" | "life" | "conduit" | "fund";
@@ -118,6 +119,11 @@ export interface Lender {
   usualShare?: number;
   /** This desk's live pricing, as published on econ.deskPx. */
   px?: DeskPx;
+  /** The pitch (its price over its sheet) last written to the cause ledger, and that event. */
+  pitchNoted?: number;
+  pitchWhy?: number;
+  /** The cause-ledger event of its most recent charge-off. */
+  lossWhy?: number;
   /** Named dollars out, and of them not paying — last month's count, for the statement. */
   namedBook?: number;
   namedDefault?: number;
@@ -1444,6 +1450,36 @@ export function tickLenders(s: GameState) {
     const want = 0.4 + 0.6 * sysApp;
     const ci = e.creditIdx ?? 1;
     e.creditIdx = Math.max(0.4, Math.min(1.25, ci + (want < ci ? 0.16 : 0.055) * (want - ci)));
+    // THE CAUSE LEDGER (why.ts): a window that has shut by a twentieth since it
+    // was last written down says which desks shut it and why — capital
+    // against target, the watch list, losses, deposits. Records; decides
+    // nothing; one event per move, so it stays bounded.
+    const noted = s.creditNoted ?? e.creditIdx;
+    if (e.creditIdx < noted - 0.05 || e.creditIdx > noted + 0.08) {
+      const tight = e.creditIdx < noted;
+      const culprits = s.lenders
+        .map((l) => ({ l, gap: (l.failedM !== undefined ? targetCapital(l.name) * Math.max(0, l.book) : Math.max(0, l.capital)) * (1 - Math.min(1, l.failedM !== undefined ? 0 : l.appetite)) }))
+        .sort((a, b) => b.gap - a.gap).slice(0, 2).filter((x) => x.gap > 0);
+      const causes = culprits.map(({ l }) => why(s, {
+        k: "bank.appetite", a: "bank", aid: l.id, name: l.name,
+        n: { appetite: +l.appetite.toFixed(2), capVsTarget: +(capitalRatio(l) / Math.max(0.01, targetCapital(l.name))).toFixed(2), delinquent: +l.delinquent.toFixed(3), chargeOffsYr: Math.round(l.chargeOffsYr), depositFlowYr: +(l.dep?.flowYr ?? 0).toFixed(3) },
+        t: l.failedM !== undefined ? `${l.name} is in receivership and lends nothing`
+          : `${l.name} appetite ${l.appetite.toFixed(2)} · capital ${(capitalRatio(l) / Math.max(0.01, targetCapital(l.name))).toFixed(2)}x its target · ${(l.delinquent * 100).toFixed(1)}% of its book not paying`
+            + (l.chargeOffsYr > 0 ? ` · ${usdShort(l.chargeOffsYr)} charged off this year` : ""),
+      }, [l.lossWhy, l.pitchWhy]));
+      const id = why(s, {
+        k: tight ? "credit.tighten" : "credit.ease", a: "bank",
+        n: { creditIdx: +e.creditIdx.toFixed(3), was: +noted.toFixed(3), bankApp: s.bankApp ?? 0 },
+        t: `Credit window ${tight ? "tightens" : "eases"} to ${e.creditIdx.toFixed(2)} (from ${noted.toFixed(2)}) · the desks' appetite ${sysApp.toFixed(2)}`,
+      }, causes);
+      if (tight) {
+        s.news.unshift({
+          q: s.month, kind: "info", why: id,
+          text: `Lenders tightening: ${culprits.map(({ l }) => l.name).join(" and ") || "the desks"} pulling back — credit window ${noted.toFixed(2)} → ${e.creditIdx.toFixed(2)}.`,
+        });
+      }
+      s.creditNoted = +e.creditIdx.toFixed(3);
+    } else if (s.creditNoted === undefined) s.creditNoted = +e.creditIdx.toFixed(3);
   }
   // The volume construction desk's appetite, published for the land market.
   // Every builder in town borrows from the same desks the player does, so the
@@ -1500,7 +1536,7 @@ function borneLoss(l: Lender, loss: number): number {
  */
 export function chargeLenderLoss(
   s: GameState, lender: string, loss: number,
-  who?: { borrower: string; id?: string; bbl?: string; cls?: LossClass; how?: string },
+  who?: { borrower: string; id?: string; bbl?: string; cls?: LossClass; how?: string; why?: number },
 ) {
   const l = lenderByName(s, lender);
   if (!l || loss <= 0) return;
@@ -1519,6 +1555,14 @@ export function chargeLenderLoss(
     m: s.month, borrower: who?.borrower ?? "unattributed", id: who?.id, bbl: who?.bbl, cls,
     amount: Math.round(loss), how: who?.how,
   });
+  // ...and the cause ledger: this charge-off, caused by the default behind it.
+  if (who) {
+    l.lossWhy = why(s, {
+      k: "bank.chargeoff", a: "bank", aid: l.id, name: l.name, bbl: who.bbl,
+      n: { loss: Math.round(loss) },
+      t: `${l.name} charges off ${usdShort(loss)} on ${who.borrower}${who.how ? ` (${who.how})` : ""}`,
+    }, [who.why]);
+  }
   if (l.lossLog.length > 40) l.lossLog.length = 40;
 }
 
@@ -1706,5 +1750,28 @@ export function priceDesks(s: GameState) {
   }
   const out: Record<string, DeskPx> = {};
   for (const l of lenders) { l.px = px.get(l)!; out[l.name] = l.px; }
+  // THE CAUSE LEDGER: a desk whose price over its sheet has moved a quarter
+  // point since it was last written down says why, part by part. Bounded by
+  // the threshold; records only.
+  for (const l of live) {
+    const q = l.px!;
+    const pitch = q.dFund + (q.dEl.income ?? 0) + q.pull + q.chase;
+    if (l.pitchNoted === undefined) { l.pitchNoted = +pitch.toFixed(3); continue; }
+    const d = pitch - l.pitchNoted;
+    if (Math.abs(d) < 0.25) continue;
+    const parts: [string, number][] = [["its funding", q.dFund], ["its losses", q.dEl.income ?? 0], ["rationing its capital", q.pull], ["pitching for share", q.chase]];
+    const top = [...parts].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
+    const id = why(s, {
+      k: d > 0 ? "bank.widen" : "bank.sharpen", a: "bank", aid: l.id, name: l.name,
+      n: { delta: +d.toFixed(2), fund: q.dFund, loss: q.dEl.income ?? 0, ration: q.pull, compete: q.chase, won: l.wonShare ?? 0, usual: l.usualShare ?? 0 },
+      t: `${l.name} ${d > 0 ? "widens" : "sharpens"} its loan pricing ${Math.abs(d).toFixed(2)} pts · funding ${q.dFund >= 0 ? "+" : ""}${q.dFund.toFixed(2)} · losses ${(q.dEl.income ?? 0) >= 0 ? "+" : ""}${(q.dEl.income ?? 0).toFixed(2)} · rationing +${q.pull.toFixed(2)} · competition ${q.chase >= 0 ? "+" : ""}${q.chase.toFixed(2)}`,
+    }, [Math.abs(q.dEl.income ?? 0) > 0.05 ? l.lossWhy : undefined]);
+    s.news.unshift({
+      q: s.month, kind: "info", why: id,
+      text: `${l.name} ${d > 0 ? "widens" : "cuts"} its loan pricing by ${Math.abs(d).toFixed(2)} points — mostly ${top[0]}.`,
+    });
+    l.pitchNoted = +pitch.toFixed(3);
+    l.pitchWhy = id;
+  }
   s.econ.deskPx = out;
 }

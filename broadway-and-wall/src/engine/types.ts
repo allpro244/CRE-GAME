@@ -4177,6 +4177,8 @@ export interface GameState {
   firmLog?: import("./firmLog").FirmLogEntry[];
   /** Book-weighted appetite of the live desks — the banking system in one number. */
   bankApp?: number;
+  /** The credit window as last written to the cause ledger (lenders.ts). */
+  creditNoted?: number;
   /**
    * THE SIZE OF A LOAN IN THIS TOWN. Every desk's minimum cheque was a number
    * written for a city of $4M buildings; in a city whose median building is
@@ -5454,6 +5456,8 @@ export interface StreetLoan {
   extensions?: number;
   /** The month the balloon fell due and was not repaid — a maturity default, until refinanced. */
   balloonM?: number;
+  /** The cause-ledger event of its default (why.ts). */
+  whyId?: number;
 }
 
 export interface Workout {

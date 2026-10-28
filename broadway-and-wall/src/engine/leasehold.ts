@@ -148,7 +148,7 @@ export function buyLandBack(
   const h0 = s.holdings[bbl];
   if (!h0?.groundRentOut) return { s, err: "You own the land here." };
   const cost = landBuybackCost(s, h0);
-  if (fundableNow(s, parcels) < cost) return { s, err: `The fee costs $${cost.toLocaleString()} today — you cannot raise it.` };
+  if (fundableNow(s, parcels) < cost) return { s, err: `Land buyback costs $${cost.toLocaleString()}; not enough cash or line.` };
   const next = cloneState(s);
   const paid = fundCashNeed(next, parcels, cost);
   if (paid < cost) return { s, err: `Could not raise the $${cost.toLocaleString()}.` };

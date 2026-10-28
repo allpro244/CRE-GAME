@@ -594,8 +594,8 @@ export function updateReputation(s: GameState, held?: { bbl: string; equityIn: n
     s.news.unshift({
       q: s.month, kind: bandIdx(band) > bandIdx(cur.band) ? "deal" : "warn",
       text: bandIdx(band) > bandIdx(cur.band)
-        ? `Investors have started to read you as ${band}: #${r.rank} of ${r.of} on the street, a record scoring ${r.score.toFixed(0)}. Better terms, and more people who will take the call.`
-        : `Investors now read you as ${band} (#${r.rank} of ${r.of}, score ${r.score.toFixed(0)}). The money that was there last quarter is asking harder questions.`,
+        ? `Reputation up: ${band} (#${r.rank} of ${r.of}, score ${r.score.toFixed(0)}). Better terms and more access.`
+        : `Reputation down: ${band} (#${r.rank} of ${r.of}, score ${r.score.toFixed(0)}). Tighter terms.`,
     });
   }
   const street: Record<string, Band> = {};

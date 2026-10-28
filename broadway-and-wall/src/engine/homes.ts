@@ -439,7 +439,7 @@ export function acceptLotOffer(s: GameState, parcels: ParcelTable, parent: strin
   const o = s.homes?.offers?.[parent];
   if (!o || s.month > o.expiresM) return { s, err: "That offer has lapsed." };
   if (s.homes?.contracts?.[parent] && o.kind !== "bulk") return { s, err: "A builder already has a takedown here." };
-  if (freeLots(s, parcels, parent).mine.length <= (s.homes?.contracts?.[parent]?.left ?? 0)) return { s, err: "You have no free lots left on this plat to sell (a lot with a loan or a street listing is not free)." };
+  if (freeLots(s, parcels, parent).mine.length <= (s.homes?.contracts?.[parent]?.left ?? 0)) return { s, err: "No free lots left on this plat (lots with a loan or a listing are not free)." };
   const next = cloneState(s);
   const msg = signOffer(next, parcels, parent);
   return { s: next, msg };
@@ -599,7 +599,7 @@ function failBuilder(s: GameState, parcels: ParcelTable, b: HomeBuilder): void {
   s.news.unshift({
     q: s.month, kind: "warn",
     text: `${b.name}, homebuilder, has failed: ${money(owed)} owed${b.lender ? ` to ${b.lender}` : ""} against ${units.length} houses and ${held.length} lots`
-      + (nb ? `, sold to ${nb.name} for ${money(price)}` : "") + (loss > 0 ? `; the desk takes a ${money(loss)} loss.` : "."),
+      + (nb ? `, sold to ${nb.name} for ${money(price)}` : "") + (loss > 0 ? `; lender loss ${money(loss)}.` : "."),
   });
 }
 
@@ -693,7 +693,7 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     const c = h.contracts?.[parent];
     // the builder walks when the lots are no longer worth what it agreed to pay
     if (c && (c.left <= 0 || q.residualPsf < WALK_AT * c.psf)) {
-      if (c.left > 0) s.news.unshift({ q: s.month, kind: "warn", text: `${c.builder} walked from its takedown at ${parcels[parent]?.address ?? parent}: ${c.left} lots left untaken. Houses here no longer pay $${c.psf.toFixed(2)}/sf for the dirt.` });
+      if (c.left > 0) s.news.unshift({ q: s.month, kind: "warn", text: `${c.builder} walked from its takedown at ${parcels[parent]?.address ?? parent}: ${c.left} lots left untaken. Houses here no longer support $${c.psf.toFixed(2)}/sf for the land.` });
       delete h.contracts![parent];
     }
     const contract = h.contracts?.[parent];

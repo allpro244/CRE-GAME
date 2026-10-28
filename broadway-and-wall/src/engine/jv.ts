@@ -145,7 +145,7 @@ export function sellStake(
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `${partner} bought ${Math.round(share * 100)}% of ${addr} for $${q.price.toLocaleString()} — `
-      + `${Math.round(JV_MINORITY_DISCOUNT * 100)}% under its share of the equity, the price of a seat with no vote. They fund their share of every call and take their share of every cheque.`,
+      + `${Math.round(JV_MINORITY_DISCOUNT * 100)}% minority discount to equity, no vote. Pro rata on capital calls and distributions.`,
   });
   return { s: next, msg: `Sold ${Math.round(share * 100)}% to ${partner} — $${Math.round(q.toOwner).toLocaleString()} to you after tax.` };
 }
@@ -162,7 +162,7 @@ export function buyOutPartner(
   const h0 = s.holdings[bbl];
   if (!h0?.jv) return { s, err: "There is no partner in it." };
   const cost = buyoutCost(s, parcels, h0);
-  if (fundableNow(s, parcels) < cost) return { s, err: `Their share costs $${cost.toLocaleString()} today — you cannot raise it.` };
+  if (fundableNow(s, parcels) < cost) return { s, err: `Partner buyout costs $${cost.toLocaleString()}; not enough cash or line.` };
   const next = cloneState(s);
   const paid = fundCashNeed(next, parcels, cost);
   if (paid < cost) return { s, err: `Could not raise the $${cost.toLocaleString()}.` };
@@ -171,6 +171,6 @@ export function buyOutPartner(
   const partner = h.jv!.partner;
   h.costBasis += cost;
   delete h.jv;
-  next.news.unshift({ q: next.month, kind: "deal", text: `Bought ${partner} out of ${resolveRec(parcels, next, bbl)?.address ?? bbl} for $${cost.toLocaleString()}. It is all yours again.` });
+  next.news.unshift({ q: next.month, kind: "deal", text: `Bought ${partner} out of ${resolveRec(parcels, next, bbl)?.address ?? bbl} for $${cost.toLocaleString()}. 100% owned.` });
   return { s: next, msg: `Bought ${partner} out for $${cost.toLocaleString()}.` };
 }

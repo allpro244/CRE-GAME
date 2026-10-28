@@ -85,9 +85,9 @@ function mergers(s: GameState, parcels: ParcelTable) {
   ((into.lessons ??= []).push({ y: year(s), text: `Merged with ${from.name} in ${year(s)}` }), logFirm(s, into, "event", `Merged with ${from.name} in ${year(s)}`));
   s.news.unshift({
     q: s.month, kind: "event",
-    text: `${into.name} and ${from.name} have merged. They were buying the same buildings in the same streets, and one of them `
-      + `would have lost the next deal to the other; now ${into.name} owns ${into.bbls.length} buildings, ${n} of them ${from.name}'s, `
-      + `and there is one fewer bidder on the tape.`,
+    text: `Merger · ${into.name} and ${from.name}. `
+      + `${into.name} now owns ${into.bbls.length} buildings, ${n} from ${from.name}. `
+      + `One fewer competing bidder.`,
   });
 }
 
@@ -122,8 +122,8 @@ function salesToInstitutions(s: GameState) {
     ((r.lessons ??= []).push({ y: year(s), text: `Sold to ${buyer} in ${year(s)} — an institution's money now` }), logFirm(s, r, "event", `Sold to ${buyer} in ${year(s)} — an institution's money now`));
     s.news.unshift({
       q: s.month, kind: "event",
-      text: `${was} has sold itself to ${buyer}. Ten years of doubling its money made it the platform an institution wanted; `
-        + `the founders are out, the name stays, and the leverage, the hurry and the appetite for anybody else's trouble go with them.`,
+      text: `${was} sold itself to ${buyer} after a decade of strong returns. `
+        + `Founders out; name retained; expect a more conservative strategy.`,
     });
   }
 }
@@ -167,8 +167,8 @@ function successions(s: GameState, parcels: ParcelTable) {
       ((r.lessons ??= []).push({ y: year(s), text: `Split between the heirs in ${year(s)} — the other half is ${name}` }), logFirm(s, r, "event", `Split between the heirs in ${year(s)} — the other half is ${name}`));
       s.news.unshift({
         q: s.month, kind: "event",
-        text: `The ${base} family could not agree on what to do with the business, so they have halved it: ${half.length} buildings `
-          + `go to ${name}. The two branches will be bidding against each other within the year.`,
+        text: `${base} family split the firm: ${half.length} buildings `
+          + `go to ${name}. Two competing bidders now.`,
       });
     } else if (sh.hold >= 75) {
       // CARRYING ON, a little bolder: the next generation always is.
@@ -178,7 +178,7 @@ function successions(s: GameState, parcels: ParcelTable) {
       ((r.lessons ??= []).push({ y: year(s), text: `A new generation took over in ${year(s)}` }), logFirm(s, r, "event", `A new generation took over in ${year(s)}`));
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `${r.name} has passed to the next generation. They are keeping the buildings, and they are going to want more of them.`,
+        text: `${r.name} passed to the next generation; keeping the buildings and looking to grow.`,
       });
     } else {
       // SELLING UP: the heirs never loved it. The book goes out over a few years.
@@ -187,8 +187,8 @@ function successions(s: GameState, parcels: ParcelTable) {
       ((r.lessons ??= []).push({ y: year(s), text: `The heirs decided to sell, in ${year(s)}` }), logFirm(s, r, "event", `The heirs decided to sell, in ${year(s)}`));
       s.news.unshift({
         q: s.month, kind: "deal",
-        text: `The heirs at ${r.name} have decided they do not want to be landlords. ${r.bbls.length} buildings will come to market `
-          + `over the next few years — family buildings, held a generation, on whatever terms the estate can get.`,
+        text: `${r.name} heirs are exiting: ${r.bbls.length} buildings to be sold `
+          + `over the next few years.`,
       });
     }
   }

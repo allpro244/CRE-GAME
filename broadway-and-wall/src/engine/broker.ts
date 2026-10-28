@@ -99,8 +99,8 @@ export function maybeEarlyLook(s: GameState, li: Listing, address: string) {
   li.via = id;
   s.news.unshift({
     q: s.month, kind: "deal", bbl: li.bbl,
-    text: `${rel.name} rang you before the tape: ${address} is coming to market at ${money(li.ask)}. `
-      + `You have ${EARLY_WINDOW_M} months before anybody else hears the address.`,
+    text: `${rel.name} called before the tape: ${address} coming to market at ${money(li.ask)}. `
+      + `${EARLY_WINDOW_M}-month exclusive look.`,
   });
 }
 

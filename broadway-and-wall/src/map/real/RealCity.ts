@@ -13,7 +13,8 @@
  */
 import { formsFor, formTiers } from "@/citygen/forms.mjs";
 import * as THREE from "three";
-import { CLOUD, CLOUD_GLSL } from "./clouds";
+import { CLOUD, CLOUD_GLSL, CLOUD_BASE } from "./clouds";
+import { curtainOf, glassReflOf, paintCurtain } from "./curtain";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import maplibregl from "maplibre-gl";
 import type { BuildingVolume } from "../volume";
@@ -552,7 +553,97 @@ vec3 paneCol = diffuseColor.rgb * (1.0 + (wh2 - 0.5) * mix(0.36, 0.03, uGlassy))
 paneCol = mix(paneCol, blindCol * 0.42, blindK);
 paneCol = mix(paneCol, curtCol * 0.4, curtK * (1.0 - blindK));
 diffuseColor.rgb = mix(diffuseColor.rgb, paneCol, winM * (1.0 - farK * 0.7));
-roughnessFactor = mix(roughnessFactor, mix(clamp(roughnessFactor + (wh2 - 0.5) * mix(0.14, 0.01, uGlassy), 0.02, 1.0), 0.85, winShade), winM);
+roughnessFactor = mix(roughnessFactor, mix(clamp(roughnessFactor + (wh2 - 0.5) * max(mix(0.14, 0.01, uGlassy), uGlassP.z * 2.0), 0.02, 1.0), 0.85, winShade), winM);
+`;
+
+/**
+ * WHAT A GLASS WALL REFLECTS (graphics pass, Oct 2026: "I wish the glass could
+ * reflect better"). The curtain walls were tinted metal: the same mirror at
+ * every angle, its reflection multiplied by the glass colour, so a blue, a
+ * bronze and a silver tower were one dark mirror in three shades. Coated glass
+ * is a dielectric with a reflective coat, and it behaves like one:
+ *
+ * - **Fresnel.** A lite reflects its coat's share face-on (uGlassP.x — ~0.15
+ *   for a dark low-e, ~0.3 for a pyrolytic reflective coat, ~0.6 for a mirror)
+ *   and nearly everything at a grazing angle, so a tower's far faces turn to
+ *   sky while the face toward you shows its tint and the dark floors behind.
+ * - **The coat tints the reflection** by its own share (uGlassP.w): a bronze
+ *   coat makes the sky bronze; a silver one barely colours it.
+ * - **What it reflects.** The environment (the reflection probe of the real
+ *   skyline on High and Max, the painted sky elsewhere), with two things the
+ *   prefiltered map cannot hold: the CLOUDS — the same field whose shadows
+ *   cross the streets, seen up the reflected ray at the cloud base — and,
+ *   where no probe has been taken, a far skyline at the horizon, so a glass
+ *   tower on Medium still mirrors a city rather than a grey band.
+ * - **Spandrels.** A curtain wall's spandrel glass carries the same coat as the
+ *   vision lite (marked 0.43 in the material's R channel by curtain.ts) and
+ *   reflects the same, over an opaque back-pan instead of a room.
+ *
+ * Shape parameters by eye against photographs of the type; looks only.
+ */
+const GLASS_U = {
+  gProbe: { value: 0 },
+  gEye: CLOUD.cloudEye, gOff: CLOUD.cloudOff, gCover: CLOUD.cloudCover, gCloudK: CLOUD.cloudK, gSun: CLOUD.cloudSun,
+};
+const GLASS_PARS = `
+uniform float gProbe, gCover, gCloudK;
+uniform vec3 gEye, gSun;
+uniform vec2 gOff;
+float gHash(vec2 p) { p = 50.0 * fract(p * 0.3183099 + vec2(0.71, 0.113)); return fract(p.x * p.y * (p.x + p.y)); }
+float gNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(gHash(i), gHash(i + vec2(1.0, 0.0)), u.x), mix(gHash(i + vec2(0.0, 1.0)), gHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+// the cloud field of clouds.ts, at a point of the cloud base
+float gCloud(vec2 q) {
+  vec2 p = q / 420.0 + gOff;
+  return 0.5 * gNoise(p) + 0.25 * gNoise(p * 2.07 + vec2(5.2, 1.3)) + 0.15 * gNoise(p * 4.3 + vec2(1.7, 9.2)) + 0.1 * gNoise(p * 9.1 + vec2(3.3, 7.7));
+}
+`;
+const GLASS_FRAG = `
+{
+  float gK = uGlassP.x > 0.0 ? smoothstep(0.3, 0.45, winM) : 0.0;
+  if (gK > 0.0) {
+    vec3 gN = normal, gV = geometryViewDir;
+    float nv = clamp(dot(gN, gV), 0.0, 1.0);
+    float F = uGlassP.x + (1.0 - uGlassP.x) * pow(1.0 - nv, 5.0);
+    vec3 gR = reflect(-gV, gN);
+    float rr = material.roughness;
+    vec3 L = vec3(0.75, 0.8, 0.85);
+    #ifdef USE_ENVMAP
+      L = getIBLRadiance(gV, gN, rr) / max(envMapIntensity, 0.01);
+    #endif
+    vec3 gP = gEye - vViewPosition;
+    // no probe: a far skyline along the horizon, hazed into the sky
+    if (gProbe < 0.5) {
+      float az = atan(gR.y, gR.x);
+      float sk = 0.03 + 0.11 * pow(gNoise(vec2(az * 14.0, 3.7)), 2.0) + 0.05 * step(0.82, gNoise(vec2(az * 41.0, 9.1)));
+      float bld = smoothstep(sk + 0.004, sk - 0.004, gR.z) * smoothstep(-0.25, -0.02, gR.z);
+      vec3 bc = mix(vec3(0.62, 0.66, 0.72), vec3(0.78, 0.8, 0.82), gNoise(vec2(az * 60.0, 1.0)));
+      L = mix(L, bc * 1.25, bld);
+    }
+    // the clouds, up the reflected ray at the cloud base
+    if (gR.z > 0.02 && gCloudK > 0.0) {
+      float t = (${CLOUD_BASE.toFixed(1)} - gP.z) / gR.z;
+      vec2 q = gP.xy + gR.xy * t;
+      float e = 0.5 + (0.5 - gCover) * 0.36;
+      float c = smoothstep(e - 0.05, e + 0.09, gCloud(q)) * (1.0 - smoothstep(5000.0, 16000.0, t)) * smoothstep(0.02, 0.14, gR.z);
+      // lit tops toward the sun, a grey underside away from it
+      float lit = 0.5 + 0.5 * dot(normalize(gR.xy + 1e-4), normalize(gSun.xy + 1e-4));
+      vec3 cc = mix(vec3(1.25, 1.3, 1.38), vec3(2.0, 1.96, 1.88), lit);
+      L = mix(L, cc, c * clamp(1.0 - rr * 2.0, 0.0, 1.0));
+    }
+    vec3 dc = diffuseColor.rgb;
+    vec3 tn = dc / max(max(dc.r, max(dc.g, dc.b)), 0.02);
+    vec3 coat = mix(vec3(1.0), tn, uGlassP.w);
+    reflectedLight.indirectSpecular = mix(reflectedLight.indirectSpecular, L * coat * F, gK);
+    // behind the vision lite: dark rooms, the coat's tint; behind a spandrel, its back-pan
+    float vis = smoothstep(0.6, 0.9, winM);
+    vec3 body = mix(dc * 0.05, tn * 0.035, vis);
+    reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, body * (1.0 - F), gK);
+    reflectedLight.directDiffuse *= 1.0 - gK * 0.85;
+  }
+}
 `;
 
 /**
@@ -745,6 +836,9 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       hgt.g.fillStyle = "#3a3a3a"; shape(hgt.g, a, b); hgt.g.fill();
     }
   }
+  // the curtain wall's own system: caps, bands, joints, fins, frit (curtain.ts)
+  const sys = curtainOf(spec);
+  if (sys) paintCurtain(spec, sys, alb.g, msk.g, hgt.g, orm.g);
   // what stands in front of the glass: cast-iron columns, a diagrid, fins
   spec.over?.(alb.g, W, H, rnd, pc);
   const trimLum = spec.trim ? meanLum(alb.g, msk.g, 1, W, H) : 0.5;
@@ -773,6 +867,7 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   });
   const winU = new THREE.Vector4(spec.win.x0, spec.win.x1, spec.win.y0, spec.win.y1);
   const seedU = new THREE.Vector2((seed % 997) / 7.3, (seed % 613) / 5.1);
+  const glassPU = new THREE.Vector4(...glassReflOf(spec));
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uWin = { value: winU };
     sh.uniforms.uSeed = { value: seedU };
@@ -781,6 +876,8 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     sh.uniforms.uAccLum = { value: accLum };
     sh.uniforms.uGlassy = { value: glassy ? 1 : 0 };
     sh.uniforms.uBay = { value: new THREE.Vector2(spec.bayW, spec.floorH) };
+    sh.uniforms.uGlassP = { value: glassPU };
+    Object.assign(sh.uniforms, GLASS_U);
     // a masonry wall is deep, a panel or a timber frame shallow
     sh.uniforms.uReveal = { value: spec.glass ? 0 : spec.masonry ? 0.24 : 0.12 };
     sh.vertexShader = sh.vertexShader
@@ -788,7 +885,7 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGz = position.z;\nvAoH = aoh;\nvPaint = paint;\nvTrimC = trimc;\nvAccC = accent;")
       .replace("attribute float aoh;", "attribute float aoh;\nvarying float vGz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum, uGlassy, uReveal;\nuniform vec2 uBay;")
+      .replace("#include <common>", "#include <common>\nvarying float vGz;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;\nuniform vec4 uWin;\nuniform vec2 uSeed;\nuniform float uWallLum, uTrimLum, uAccLum, uGlassy, uReveal;\nuniform vec2 uBay;\nuniform vec4 uGlassP;\n" + GLASS_PARS)
       // the street darkens the foot of every wall: bounce light from the sky
       // is blocked by the pavement and the buildings across the way. How far
       // up it climbs is the street's own: a few metres on an open avenue,
@@ -796,6 +893,7 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       // The first metre is darkest, where wall meets pavement.
       .replace("#include <color_fragment>", PAINT_FRAG + "#include <color_fragment>\ndiffuseColor.rgb *= mix(0.6, 1.0, smoothstep(0.0, max(vAoH, 1.0), vGz)) * mix(0.82, 1.0, smoothstep(0.0, 1.2, vGz));")
       .replace("#include <emissivemap_fragment>", "")
+      .replace("#include <lights_fragment_end>", "#include <lights_fragment_end>\n" + GLASS_FRAG)
       // FAR AWAY, CALM DOWN. Past a few hundred metres a window is a pixel,
       // and its relief and mirror-glass reflection alias into shimmering
       // stripes. Fade the normal map out and rough the glass up with
@@ -808,9 +906,9 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
         // into a faint grid of slightly different images, pane by pane.
         // Glass fronts only, on the panes, gone with the rest of the relief
         // past ~320 m (where it would shimmer). ~2.5 degrees at most.
-        "normal = normalize(normal + vec3(wh1 - 0.5, wh2 - 0.5, fract(wh1 * 7.31) - 0.5) * 0.09 * uGlassy * winM * (1.0 - farK));");
+        "normal = normalize(normal + vec3(wh1 - 0.5, wh2 - 0.5, fract(wh1 * 7.31) - 0.5) * (uGlassP.x > 0.0 ? uGlassP.y : 0.09) * uGlassy * winM * (1.0 - farK));");
   };
-  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint-reveal-oil";
+  mat.customProgramCacheKey = () => "bw-real-facade-lit-ao-far-win-paint-reveal-oil-glass2";
   return { key: spec.key, bayW: spec.bayW, floorH: spec.floorH, mat, masonry: spec.masonry, glass: spec.glass,
     win: spec.win, lintel: spec.lintel, winStyle: spec.winStyle,
     // a window in a wall, not a wall of glass: what can carry a sill
@@ -1651,7 +1749,7 @@ export class RealCityLayer {
     this.scene.add(this.dyn);
     const measure = () => { this.viewH = map.getContainer().clientHeight || 900; };
     measure(); map.on("resize", measure);
-    map.on("moveend", () => this.map.triggerRepaint());
+    map.on("moveend", () => { if (this.maxQ && this.live) this.probeFocusDue = true; this.map.triggerRepaint(); });
     this.queue = new Map();
     void this.buildAll();
   }
@@ -1829,6 +1927,13 @@ export class RealCityLayer {
       CLOUD.cloudK.value = this.cloudK0 * (0.35 + 0.65 * smooth(450, 1500, distM));
     }
     if (this.probeDue) this.captureReflections();
+    else if (this.probeFocusDue) {
+      // MAX: the probe follows the view, so the towers on screen mirror their
+      // own neighbours rather than the skyline round the tallest lot. Taken
+      // only once the camera has settled, and only when it has moved on.
+      this.probeFocusDue = false;
+      if (Math.hypot(fx - this.probeAt[0], fy - this.probeAt[1]) > 500) this.captureReflections([fx, fy]);
+    }
     if (this.precip) this.stepPrecip(fx, fy, distM, performance.now() / 1000);
     if (this.waves.length) {
       // about half a metre a second downwind, a little across
@@ -1867,14 +1972,19 @@ export class RealCityLayer {
    */
   private probeDue = false;
   private reflEnv: THREE.Texture | null = null;
-  private captureReflections() {
+  private probeFocusDue = false;
+  private probeAt: [number, number] = [1e9, 1e9];
+  private captureReflections(at?: [number, number]) {
     this.probeDue = false;
     if (this.quality !== "high" || !this.renderer) return;
     let best: Deed | null = null;
     for (const d of this.deeds.values()) if (d.ring && (!best || d.height > best.height)) best = d;
     let px = 0, py = 0;
     if (best?.ring) { for (const [x, y] of best.ring) { px += x / best.ring.length; py += y / best.ring.length; } }
-    const pz = Math.max(40, Math.min(160, (best?.height ?? 60) * 0.6));
+    let pz = Math.max(40, Math.min(160, (best?.height ?? 60) * 0.6));
+    // Max: at the view's focus, a little above mid-height of a tower
+    if (at) { [px, py] = at; pz = 55; }
+    this.probeAt = [px, py];
     // the painted sky round the probe, far enough out to sit behind the city
     const sky = skyEnvironment();
     sky.children.forEach((o) => { o.scale.setScalar(55); o.position.add(new THREE.Vector3(px, py, pz)); });
@@ -1882,12 +1992,13 @@ export class RealCityLayer {
     for (const o of kids) this.scene.add(o);
     const pm = new THREE.PMREMGenerator(this.renderer);
     this.renderer.resetState();
-    const rt = pm.fromScene(this.scene, 0.015, 2, 7000, { size: 256, position: new THREE.Vector3(px, py, pz) });
+    const rt = pm.fromScene(this.scene, 0.015, 2, 7000, { size: this.maxQ ? 512 : 256, position: new THREE.Vector3(px, py, pz) });
     pm.dispose();
     for (const o of kids) this.scene.remove(o);
     this.renderer.resetState();
     this.reflEnv?.dispose();
     this.reflEnv = rt.texture;
+    GLASS_U.gProbe.value = 1;
     for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv;
   }
   // the water's ripple maps, drifting downwind (UV units per tile differ by mesh)
@@ -8732,6 +8843,7 @@ export class RealCityLayer {
   setQuality(q0: "low" | "medium" | "high" | "max") {
     if (this.defer("setQuality", () => this.setQuality(q0))) return;
     const q = q0 === "max" ? "high" : q0;
+    const wasMax = this.maxQ;
     this.maxQ = q0 === "max";
     this.quality = q;
     this.setPreferFps(q !== "high");
@@ -8740,7 +8852,7 @@ export class RealCityLayer {
     this.sun.castShadow = q !== "low" && !NO_SHADOWS;
     // the finishing pass: all of it on High, the grade alone on Medium, none on Low
     this.post.level = q === "high" ? "full" : q === "medium" ? "grade" : "off";
-    if (q === "high" && this.live && !this.reflEnv) this.probeDue = true;
+    if (q === "high" && this.live && (!this.reflEnv || wasMax !== this.maxQ)) this.probeDue = true;
     if (this.catcher) this.catcher.visible = q !== "low" && !NO_SHADOWS;
     // the ground contact shade is transparent overdraw under every building
     const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";

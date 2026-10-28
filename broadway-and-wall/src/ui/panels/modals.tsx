@@ -105,47 +105,36 @@ function DefaultNoticeBody({
       <div className="modal" role="dialog" aria-modal="true" style={{ maxWidth: 660 }}>
         <div className="modal-kicker">{open.lender} · {monthLabel(game.month)}</div>
         <div className="modal-title">
-          {filed ? `They have filed on ${rec.address}` : `Notice of default — ${rec.address}`}
+          {filed ? `Foreclosure filed · ${rec.address}` : `Notice of default · ${rec.address}`}
         </div>
         <div className="modal-sub">
           {filed
-            ? `It is down for the ${monthLabel(deadline)} auction. From here a payment is not a cure — it takes the
-               arrears in full, a deed in lieu, or the hammer.`
-            : couponOk
-              ? `${open.cause === "balloon" ? "The loan has matured without a takeout."
-                 : open.cause === "covenant" ? "The building has breached its covenants."
-                 : "The payments have been late."} The monthly coupon is fundable — they will not file
-                 while you keep it current. Cure it, refinance, or sell in this window.`
-              : `${open.cause === "balloon" ? "The loan has matured and there is nothing to repay it with."
-                 : open.cause === "covenant" ? "The building has breached its covenants."
-                 : "The payments have stopped."} You have ${monthsLeft} month${monthsLeft === 1 ? "" : "s"} before
-                 ${open.lender} can file. A building takes six to nine months to sell properly, so this is the window.`}
+            ? `Auction ${monthLabel(deadline)} · options: full arrears, deed in lieu, or auction`
+            : `${open.cause === "balloon" ? "Matured, no takeout"
+                 : open.cause === "covenant" ? "Covenant breach"
+                 : couponOk ? "Late payments" : "Payments stopped"} · ${couponOk
+                 ? "coupon current, no filing while paid"
+                 : `can file in ${monthsLeft} month${monthsLeft === 1 ? "" : "s"}`}`}
         </div>
         <div className="grid" style={{ marginTop: 10 }}>
-          <Row k="What they want" v={usd(open.cure)} strong />
-          <Row k="The building is worth" v={usd(value)} />
-          <Row k={equity >= 0 ? "Your equity in it" : "It is under water by"} v={usd(Math.abs(equity))} bad={equity < 0} />
+          <Row k="Cure" v={usd(open.cure)} strong />
+          <Row k="Value" v={usd(value)} />
+          <Row k={equity >= 0 ? "Equity" : "Underwater by"} v={usd(Math.abs(equity))} bad={equity < 0} />
           <Row k={allowLoc ? "Liquidity (cash + line)" : "Cash on hand"} v={usd(liquidity)} bad={liquidity < open.cure} />
-          <Row k="The rest of the book earns" v={`${usd(otherCF)} / mo`} />
-          <Row k="Keeping this one current costs" v={`${usd(monthly)} / mo at the default rate`}
+          <Row k="Rest of book NOI" v={`${usd(otherCF)} / mo`} />
+          <Row k="Default-rate payment" v={`${usd(monthly)} / mo`}
                bad={monthly > otherCF} />
         </div>
-        <div className="hint" style={{ marginTop: 8 }}>
-          {equity > 0
-            ? `There is equity here. Selling it yourself beats the steps by a wide margin — the auction is a legal
-               process with a calendar and it gets less than a distress sale does.`
-            : `There is no equity left. A deed in lieu hands it back with a smaller mark than a foreclosure and no
-               deficiency, which is usually the right answer on paper like this.`}
-          {!filed && otherCF > monthly
-            ? ` The rest of the book covers the payment ${(otherCF / Math.max(1, monthly)).toFixed(1)} times over —
-                you can carry it while you find a buyer.`
-            : ""}
-        </div>
+        {!filed && otherCF > monthly && (
+          <div className="hint" style={{ marginTop: 8 }}>
+            Rest of book covers the payment {(otherCF / Math.max(1, monthly)).toFixed(1)}×
+          </div>
+        )}
         {(() => {
           const read = workoutRead(game, parcels, open, h);
           return read ? (
             <div className="advisor-line">
-              {read} <span className="advisor-desk">— The workout desk</span>
+              {read} <span className="advisor-desk">· Workout desk</span>
             </div>
           ) : null;
         })()}
@@ -157,16 +146,16 @@ function DefaultNoticeBody({
             <button
               className={"btn" + (couponOk ? " btn-primary" : "")}
               disabled={!couponOk}
-              title={couponOk ? undefined : `Not fundable today — the firm can find ${usd(fundableNow(game, parcels))} against ${usd(h.loan.monthlyPmt)} a month. Sell, or raise cash first.`}
+              title={couponOk ? undefined : `Have ${usd(fundableNow(game, parcels))} · need ${usd(h.loan.monthlyPmt)}/mo`}
               onClick={() => { serviceWorkout(open.bbl, true); dismiss(); }}
             >
               Keep it current · {usd(monthly)}/mo
             </button>
           )}
           <button className="btn" onClick={() => { select(open.bbl); focus(open.bbl, true); setPage("property"); dismiss(); }}>
-            Open the file
+            Open property
           </button>
-          <button className="btn" data-esc onClick={dismiss}>Not now</button>
+          <button className="btn" data-esc onClick={dismiss}>Close</button>
         </div>
       </div>
     </div>
@@ -226,21 +215,21 @@ function AuctionBody({
   const res = game.auctionResults;
   if (res && res.rows.length && seenResM !== res.m && !popupsOff) {
     const WORD: Record<string, [string, string]> = {
-      won: ["YOU TOOK IT", ""],
+      won: ["WON", ""],
       outbid: ["OUTBID", " neg"],
       paidoff: ["PAID OFF IN FULL", ""],
-      nocash: ["YOU COULD NOT CLOSE", " neg"],
-      pulled: ["PULLED FROM THE DOCKET", ""],
-      lostyours: ["YOUR BUILDING WAS SOLD", " neg"],
+      nocash: ["FAILED TO CLOSE", " neg"],
+      pulled: ["PULLED", ""],
+      lostyours: ["YOUR BUILDING SOLD", " neg"],
     };
     return (
       <div className="modal-backdrop modal-layer-auction">
         <div className="modal" role="dialog" aria-modal="true" style={{ maxWidth: 660 }}>
-          <div className="modal-kicker">The hammer fell · {monthLabel(res.m)}</div>
-          <div className="modal-title">{res.rows.length} lot{res.rows.length === 1 ? "" : "s"} you had a number on</div>
+          <div className="modal-kicker">Auction results · {monthLabel(res.m)}</div>
+          <div className="modal-title">{res.rows.length} lot{res.rows.length === 1 ? "" : "s"} bid</div>
           <table className="tbl" style={{ marginTop: 8 }}>
             <thead>
-              <tr><th>Lot</th><th>Outcome</th><th className="num">Your bid</th><th className="num">Hammer</th><th>Who took it</th></tr>
+              <tr><th>Lot</th><th>Outcome</th><th className="num">Your bid</th><th className="num">Price</th><th>Winner</th></tr>
             </thead>
             <tbody>
               {res.rows.map((r) => (
@@ -255,11 +244,11 @@ function AuctionBody({
             </tbody>
           </table>
           {res.rows.map((r) => r.note && (
-            <div key={r.bbl} className="hint" style={{ marginTop: 6 }}><b>{r.address}</b> — {r.note}</div>
+            <div key={r.bbl} className="hint" style={{ marginTop: 6 }}><b>{r.address}</b> · {r.note}</div>
           ))}
           <div className="modal-actions">
             <button className="btn btn-buy" data-esc onClick={() => { setSeenResM(res.m); useStore.setState({ game: { ...game, auctionResults: undefined } }); }}>
-              Right
+              OK
             </button>
           </div>
         </div>
@@ -287,26 +276,24 @@ function AuctionBody({
   }
   const dep = a.lots.reduce((acc, l) => acc + (parsed[l.id] ? auctionDepositFor(l, parsed[l.id]) : 0), 0);
   const kindWord = (k: string) =>
-    k === "note" ? "your foreclosure" : k === "yours" ? "YOUR BUILDING" : k === "bank" ? "bank foreclosure" : "receiver's lot";
+    k === "note" ? "your foreclosure" : k === "yours" ? "YOUR BUILDING" : k === "bank" ? "bank foreclosure" : "receiver sale";
   return (
     <div className="modal-backdrop modal-layer-auction">
       <div className="modal" role="dialog" aria-modal="true" style={{ maxWidth: 720 }}>
-        <div className="modal-kicker">The county foreclosure auction · {monthLabel(game.month)}</div>
+        <div className="modal-kicker">Foreclosure auction · {monthLabel(game.month)}</div>
         <div className="modal-title">
-          {a.lots.length} lot{a.lots.length === 1 ? "" : "s"} cross the block
+          {a.lots.length} lot{a.lots.length === 1 ? "" : "s"}
           {/* THE ONE NUMBER YOU BID AGAINST. It was buried under the table in a
               dim line that only appeared once you had typed something, so the
               sheet asked for a number while hiding the constraint on it. */}
           <span className="mono dim" style={{ float: "right", fontSize: 15 }}>cash {usd(game.cash)}</span>
         </div>
         <div className="modal-sub">
-          As-is, where-is. Ten per cent down when you register, the balance at the hammer, no financing and no
-          warranty. A lender's debt bids for it without cash — beat the debt and the lender is simply paid off,
-          with anything above it going to the borrower who just lost the building.
+          All cash · 10% at registration · as-is · lender credit-bids the debt; surplus to borrower
         </div>
         <table className="tbl" style={{ marginTop: 8 }}>
           <thead>
-            <tr><th>Lot</th><th>What it is</th><th className="num">NOI / yr</th><th className="num">Occ</th>
+            <tr><th>Lot</th><th>Type</th><th className="num">NOI / yr</th><th className="num">Occ</th>
               <th className="num">Debt / floor</th><th className="num">Flyer est.</th><th className="num">Your bid ($M)</th></tr>
           </thead>
           <tbody>
@@ -348,7 +335,7 @@ function AuctionBody({
                   const noi = cap > 0 ? Math.round(asIs * cap / 100) : 0;
                   return (
                     <>
-                      <td className="num" title="Underwritten worn and at the borrower's occupancy — what a receiver's building actually earns, not the clean appraisal">
+                      <td className="num" title="Worn condition at borrower's occupancy">
                         {noi > 0 ? usd(noi) : <span className="neg">{usd(noi)}</span>}
                       </td>
                       <td className={"num" + (occ < 0.6 ? " neg" : "")}>{(occ * 100).toFixed(0)}%</td>
@@ -359,7 +346,7 @@ function AuctionBody({
                 <td className="num">{usd(l.est)}</td>
                 <td className="num">
                   {l.kind === "yours"
-                    ? <span className="dim" title="You do not bid on your own foreclosure — cure it, hand back the keys, or let the room decide.">—</span>
+                    ? <span className="dim" title="Cannot bid on your own foreclosure">—</span>
                     : <input className="mono" style={{ width: 72, textAlign: "right" }} inputMode="decimal"
                         placeholder={l.kind === "note" ? "credit" : (l.upset / 1e6).toFixed(2)}
                         value={bids[l.id] ?? ""}
@@ -370,7 +357,7 @@ function AuctionBody({
                 <tr className="advisor-row">
                   <td colSpan={7}>
                     <div className="advisor-line">
-                      {read} <span className="advisor-desk">— Your broker</span>
+                      {read} <span className="advisor-desk">· Broker</span>
                     </div>
                   </td>
                 </tr>
@@ -382,17 +369,17 @@ function AuctionBody({
         </table>
         <div className="dim" style={{ marginTop: 6 }}>
           {Object.keys(parsed).length
-            ? <>Deposits due today: <b className="mono">{usd(dep)}</b> against {usd(purse)} of cash and line.</>
+            ? <>Deposits due: <b className="mono">{usd(dep)}</b> · cash + line {usd(purse)}</>
             : a.lots.some((l) => l.kind === "note")
-              ? "Your debt already bids on your own lots — enter a number only to protect the building above it."
-              : "Enter a number to bid, or watch from the back. Most years, watching is right."}
+              ? "Your notes credit-bid automatically."
+              : "Enter bids in $M."}
         </div>
         <div className="modal-actions">
           <button className="btn btn-buy" disabled={!Object.keys(parsed).length || dep > purse}
             onClick={() => { bidAuction(parsed); setSeenM(a.m); setAuctionOpen(false); }}>
             Register bids{dep > 0 ? ` · ${usd(dep)} down` : ""}
           </button>
-          <button className="btn" data-esc onClick={() => { setSeenM(a.m); setAuctionOpen(false); }}>Watch from the back</button>
+          <button className="btn" data-esc onClick={() => { setSeenM(a.m); setAuctionOpen(false); }}>Pass</button>
           {/* THE CARD IS NOT THE AUCTION. Turning this off stops the interruption
               and nothing else — so it has to say, in the same breath, where the
               docket went and how to get the card back. An opt-out that leaves
@@ -400,7 +387,7 @@ function AuctionBody({
           {!game.auctionQuiet && (
             <button
               className="btn"
-              title="The docket still runs every July. You just read it on your own time."
+              title="Auction still runs every July · see Marketplace"
               onClick={() => {
                 const st = useStore.getState();
                 useStore.setState({ game: { ...st.game!, auctionQuiet: true } });
@@ -408,14 +395,12 @@ function AuctionBody({
                 setAuctionOpen(false);
               }}
             >
-              Don't show me this again
+              Hide this card
             </button>
           )}
         </div>
         <div className="modal-queue">
-          The hammer falls at the end of the month. Results come through the news, win or lose.
-          {" "}The docket is always on <b>Marketplace</b> while it is live, and the switch for this card sits
-          beside it there — so turning it off costs you nothing but the interruption.
+          Sale at month end · also on <b>Marketplace</b>
         </div>
       </div>
     </div>
@@ -531,18 +516,18 @@ function AlertBody() {
   const bad = a.tone !== "good";
   const KICKER: Record<string, [string, string]> = {
     // [what a bad one is called, what a good one is called]
-    swan: ["A black swan", "A white swan"],
-    bank: ["A desk has gone down", "The credit window"],
-    portfolio: ["The book has been taken", "Your portfolio"],
-    ground: ["Ground-lease default", "Your land is leased out"],
-    sale: ["A sale fell apart", "Bids are in"],
-    fed: ["A new chair at the central bank", "A new chair at the central bank"],
-    delivered: ["Your building is up", "Your building is up"],
+    swan: ["Black swan", "White swan"],
+    bank: ["Bank failure", "Credit"],
+    portfolio: ["Portfolio seized", "Portfolio bid"],
+    ground: ["Ground-lease default", "Ground lease signed"],
+    sale: ["Sale failed", "Bids in"],
+    fed: ["New central bank chair", "New central bank chair"],
+    delivered: ["Building delivered", "Building delivered"],
   };
-  let kicker = (KICKER[a.kind] ?? ["Something has happened", "Something has happened"])[bad ? 0 : 1];
+  let kicker = (KICKER[a.kind] ?? ["Alert", "Alert"])[bad ? 0 : 1];
   // "Your portfolio" over a call you did not make reads as though the game has
   // put your book on the market. It has not: they chose the deeds and rang.
-  if (a.kind === "portfolio" && !bad && game.portfolioSale?.unsolicited) kicker = "Somebody has approached you";
+  if (a.kind === "portfolio" && !bad && game.portfolioSale?.unsolicited) kicker = "Unsolicited bid";
   const queued = (game.alerts?.length ?? 1) - 1;
   // A seized rival book is inventory, not scenery — the package is on Marketplace.
   const streetBooks = (game.portfolios ?? []).filter((p) => !p.player);
@@ -573,7 +558,7 @@ function AlertBody() {
         {ground && (
           <div className="ground-banner" aria-hidden="true">
             <span className="ground-banner-word">Ground lease</span>
-            <span className="ground-banner-sub">the land itself — not space in a building</span>
+            <span className="ground-banner-sub">land only · not building space</span>
           </div>
         )}
         <div className="alert-kicker">{kicker}</div>
@@ -585,58 +570,53 @@ function AlertBody() {
             <div><span>Term</span><b>{glYears} years · to {monthLabel(gl.endM)}</b></div>
             <div><span>Ground rent</span><b>{usd(gl.rentYr)} / yr</b></div>
             <div><span>Rent review</span><b>{glReview}</b></div>
-            <div><span>Who builds</span><b>They do{gl.floors && gl.use ? ` — ${gl.floors} fl of ${gl.use}` : ""}</b></div>
-            <div><span>Who runs it</span><b>They do — no tenants, letters or capital plan for you</b></div>
-            <div><span>At the end</span><b>{groundLeaseFreeReversion(gl) ? "Their building reverts to you" : "You buy their building out, or it is cleared"}</b></div>
+            <div><span>Builds</span><b>Lessee{gl.floors && gl.use ? ` · ${gl.floors} fl ${gl.use}` : ""}</b></div>
+            <div><span>Operates</span><b>Lessee</b></div>
+            <div><span>At expiry</span><b>{groundLeaseFreeReversion(gl) ? "Building reverts to you" : "Buy out the building, or it is cleared"}</b></div>
           </div>
         )}
         {a.detail && <div className="alert-detail">{a.detail}</div>}
         <div className="alert-foot">
           {ground && !bad
-            ? "Nothing to sign — it signed itself off the offer book you set. Pull a lot off that book before a lessee comes if you mean to build on it yourself."
+            ? "Signed from your ground-lease offer list."
             : goBooks
-            ? "The book is for sale on Marketplace under Books for sale — one cash cheque for the whole package. Competitors are looking at it too."
+            ? "For sale on Marketplace · Books for sale · all cash."
             : goOwnBook
               ? game.portfolioSale?.unsolicited
-                ? "Nothing of yours has been listed. The deeds they asked for, what each one nets you, and the three "
-                  + "answers — take it, counter it, tell them no — are on the Portfolio and Deals desks."
-                : "Open Portfolio or Deals to answer the indication. It will not wait forever."
+                ? "Not listed · accept, counter or decline on Portfolio or Deals."
+                : "Respond on Portfolio or Deals before it expires."
               : goBuilt
-                ? "It opens on auto-lease at your rent posture. The lease-up, the tenants and the mini-perm are on its page."
+                ? "Auto-lease on at your rent setting."
               : goFed
-                ? "Nothing to sign. The rate the bank steers to, how hard it leans on inflation and how far it is believed are what your lenders and buyers will price from here."
+                ? "Rates and inflation policy may change."
               : goSale
-                ? "These are bids on your building. Take the top name, go back for best-and-final, or work a lower one — on Deals, under Your sales."
-              : bad
-                ? "This is not a decision and there is nothing on this card to accept. It has happened; "
-                  + "what it does to your rents, your lenders and your book is the rest of the game."
-                : "Nobody rings a bell for one of these either. It is on the tape and in the history, and the "
-                  + "people who make money on it are the ones already standing where it lands."}
+                ? "Accept, call best-and-final, or counter · Deals → Your sales."
+              : "No action required."}
         </div>
         <div className="modal-actions">
           {goBooks && (
             <button className="btn btn-buy" onClick={() => { dismissAlert(); setPage("market"); }}>
-              Open Marketplace · Books for sale
+              Books for sale
             </button>
           )}
           {goOwnBook && (
             <button className="btn btn-buy" onClick={() => { dismissAlert(); setPage("portfolio"); }}>
-              {game.portfolioSale?.unsolicited ? "See which buildings" : "Open Portfolio"}
+              {game.portfolioSale?.unsolicited ? "View buildings" : "Open Portfolio"}
             </button>
           )}
           {goBuilt && (
             <button className="btn btn-buy" onClick={() => { dismissAlert(); useStore.getState().focus(a.bbl!); setPage("property"); }}>
-              Go to the building
+              Open building
             </button>
           )}
           {goSwan && (
             <button className="btn" onClick={() => { dismissAlert(); useStore.getState().focus(a.bbl!); setPage("property"); }}>
-              Show me where
+              Show on map
             </button>
           )}
           {goFed && (
             <button className="btn" onClick={() => { dismissAlert(); setPage("economy"); }}>
-              See the central bank
+              Central bank
             </button>
           )}
           {goNotes && (
@@ -646,27 +626,27 @@ function AlertBody() {
           )}
           {goSale && (
             <button className="btn btn-buy" onClick={() => { dismissAlert(); setPage("deals"); }}>
-              Open the bid list
+              Open bids
             </button>
           )}
           {ground && a.bbl && (
             <button className="btn" onClick={() => { dismissAlert(); useStore.getState().focus(a.bbl!); setPage("property"); }}>
-              Go to the lot
+              Open lot
             </button>
           )}
           {!ALWAYS_STOP.has(a.kind) && (
-            <button className="btn" title="This kind will pass as a line at the top of the screen and in the news instead of stopping the game. Undo it in Settings. Black swans always stop the game."
+            <button className="btn" title="Show as a toast instead · undo in Settings"
               onClick={() => { useStore.getState().muteAlertKind(a.kind, true); dismissAlert(); }}>
-              Don't stop me for {MUTE_LABEL[a.kind] ?? "these"}
+              Mute {MUTE_LABEL[a.kind] ?? "these"}
             </button>
           )}
           <button className={"btn" + (!goBooks && !goOwnBook && !goSale && !goBuilt && !bad ? " btn-buy" : "")} data-esc onClick={dismissAlert}>
-            {(bad && !goBooks) || ground ? "Understood" : goBooks || goOwnBook || goSale || goBuilt ? "Later" : "Good."}
+            {(bad && !goBooks) || ground ? "OK" : goBooks || goOwnBook || goSale || goBuilt ? "Later" : "OK"}
           </button>
         </div>
         {queued > 0 && (
           <div className="modal-queue">
-            {queued} more {queued === 1 ? "thing" : "things"} happened this month.
+            {queued} more this month
           </div>
         )}
       </div>
@@ -725,11 +705,11 @@ export function DecisionModal() {
       <div className="modal-backdrop modal-layer-decision">
         <div className="modal" role="dialog" aria-modal="true">
           <div className={"modal-kicker" + (outcome.ok ? "" : " kicker-inbound")}>
-            {outcome.ok ? "Their answer" : "It did not go through"}
+            {outcome.ok ? "Response" : "Failed"}
           </div>
           <div className="modal-title" style={{ fontSize: 20, lineHeight: 1.35 }}>{outcome.text}</div>
           <div className="modal-actions">
-            <button className="btn btn-buy" data-esc onClick={() => setOutcome(null)}>Right</button>
+            <button className="btn btn-buy" data-esc onClick={() => setOutcome(null)}>OK</button>
           </div>
         </div>
       </div>
@@ -787,23 +767,23 @@ function DecisionBody({
         <div className="modal" role="dialog" aria-modal="true">
           <div className="modal-kicker">
             {inbound
-              ? `◆ AN APPROACH FOR ${live.bbls.length} OF YOUR BUILDINGS — you have not listed anything`
-              : `◆ AN INDICATION ON YOUR PORTFOLIO — ${live.bbls.length} buildings, one ticket`}
+              ? `◆ UNSOLICITED BID · ${live.bbls.length} BUILDINGS · NOT LISTED`
+              : `◆ PORTFOLIO BID · ${live.bbls.length} BUILDINGS`}
           </div>
           <div className="modal-title">{usd(pb.price)} from {pb.name}</div>
           <div className="modal-sub">
             {inbound
-              ? `They rang unprompted and want an answer by ${monthLabel(pb.expiresM)}. These are the deeds they asked for.`
-              : `Good until ${monthLabel(pb.expiresM)}. Your ask is ${usd(live.ask)}.`}
+              ? `Expires ${monthLabel(pb.expiresM)}`
+              : `Expires ${monthLabel(pb.expiresM)} · ask ${usd(live.ask)}`}
           </div>
           <div className="grid">
-            <Row k="Their number" v={usd(pb.price)} strong />
+            <Row k="Bid" v={usd(pb.price)} strong />
             {!inbound && <Row k="vs. your ask" v={pctSigned(pb.price / Math.max(1, live.ask) - 1)} />}
-            <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
-            <Row k="Inside the parts" v={`${inside.toFixed(1)}%`} bad={inside > 10} />
+            <Row k="Sum of marks" v={usd(q.sumOfParts)} />
+            <Row k="Discount to marks" v={`${inside.toFixed(1)}%`} bad={inside > 10} />
             <PortfolioProceeds book={book} />
             <PortfolioCap q={q} ask={pb.price} bbls={live.bbls} />
-            {pb.countered && <Row k="Rounds" v="you have been back to them once" bad />}
+            {pb.countered && <Row k="Rounds" v="countered once" bad />}
           </div>
           {/* WHICH BUILDINGS. The card carried a count and nothing else, so on
               an approach — where the buyer picked the deeds — there was no way
@@ -840,22 +820,18 @@ function DecisionBody({
     return (
       <div className="modal-backdrop modal-layer-decision">
         <div className="modal" role="dialog" aria-modal="true">
-          <div className="modal-kicker">◆ BIDS ARE IN — {live.length} name{live.length === 1 ? "" : "s"} on the list</div>
+          <div className="modal-kicker">◆ BIDS IN · {live.length} bidder{live.length === 1 ? "" : "s"}</div>
           <div className="modal-title">{usd(top.b.price)} from {top.b.name}</div>
           <div className="modal-sub">
-            {rec?.address ?? bidBbl} · your whisper {usd(sale.ask)}
+            {rec?.address ?? bidBbl} · whisper {usd(sale.ask)}
             {second ? ` · second ${usd(second.b.price)}` : ""}
           </div>
           <div className="grid">
             <Row k="Best bid" v={usd(top.b.price)} strong />
             <Row k="vs. whisper" v={pctSigned(top.b.price / Math.max(1, sale.ask) - 1)}
               bad={top.b.price < sale.ask} />
-            <Row k="On the list" v={`${live.length} bidder${live.length === 1 ? "" : "s"}`} />
-            {top.b.note && <Row k="Their paper" v={top.b.note} />}
-          </div>
-          <div className="hint">
-            A bid list lives on the property desk — take the top number, go back for best-and-final, or work a lower name.
-            Sitting on it too long is how the whole campaign dies.
+            <Row k="Bidders" v={`${live.length} bidder${live.length === 1 ? "" : "s"}`} />
+            {top.b.note && <Row k="Terms" v={top.b.note} />}
           </div>
           <div className="modal-actions">
             <button className="btn btn-buy" onClick={() => { takeBid(bidBbl, top.i); setDeferred((d) => new Set(d).add(-3)); }}>
@@ -866,7 +842,7 @@ function DecisionBody({
               focus(bidBbl, true);
               setPage("property");
             }}>
-              Open the list…
+              All bids…
             </button>
             <button className="btn" data-esc onClick={() => setDeferred((d) => new Set(d).add(-3))}>Decide later</button>
           </div>
@@ -929,14 +905,14 @@ function DecisionBody({
         <div className="modal" role="dialog" aria-modal="true">
           <div className="modal-kicker">
             {loi.referred ? "Referred by your desk · " : ""}
-            {loi.kind === "renewal" ? "Renewal on the table"
+            {loi.kind === "renewal" ? "Renewal"
               : loi.kind === "expansion" ? "Incumbent expansion"
                 : "Letter of intent"}
-            {isFinal ? " · their final answer" : ""}
+            {isFinal ? " · final" : ""}
           </div>
           <div className="modal-title">{loi.name}</div>
           <div className="modal-sub">
-            {loi.sector}{loi.quality !== undefined ? ` · shops for quality ${loi.quality}/100` : ""} · credit {CREDIT_LABEL[loi.credit]} · {rec.address}
+            {loi.sector}{loi.quality !== undefined ? ` · quality ${loi.quality}/100` : ""} · credit {CREDIT_LABEL[loi.credit]} · {rec.address}
           </div>
           <LoiTermsGrid loi={loi} game={game} market={market} feeRate={fee} />
           {(() => {
@@ -945,7 +921,7 @@ function DecisionBody({
             const read = loiRead(game, parcels, loi);
             return read ? (
               <div className="advisor-line">
-                {read} <span className="advisor-desk">— {leasingDeskName(game, loi.bbl)}</span>
+                {read} <span className="advisor-desk">· {leasingDeskName(game, loi.bbl)}</span>
               </div>
             ) : null;
           })()}
@@ -954,13 +930,13 @@ function DecisionBody({
               <button
                 className="btn btn-buy"
                 disabled={short > 0 && !fundable}
-                title={short > 0 ? (fundable ? `Draws ${usd(short)} on your line to cover the fit-out` : `You are short ${usd(short)} and the line only has ${usd(line)} left`) : undefined}
+                title={short > 0 ? (fundable ? `Draws ${usd(short)} on the line for fit-out` : `Short ${usd(short)} · line has ${usd(line)}`) : undefined}
                 onClick={() => act("accept")}
               >
-                {short > 0 && fundable ? `Draw ${usd(short)} and sign` : isFinal ? `Take their final · ${usd(cost)}` : `Sign the lease · ${usd(cost)}`}
+                {short > 0 && fundable ? `Draw ${usd(short)} and sign` : isFinal ? `Accept final · ${usd(cost)}` : `Sign · ${usd(cost)}`}
               </button>
               {!isFinal && !loi.countered && (
-                <button className="btn" title="Name your own rent, TI, free months and annual bump." onClick={() => setModalCounter(true)}>
+                <button className="btn" title="Rent, TI, free months, annual bump" onClick={() => setModalCounter(true)}>
                   Counter…
                 </button>
               )}
@@ -968,7 +944,7 @@ function DecisionBody({
               <button
                 className="btn"
                 data-esc
-                title="Leave it on the desk — it stays on Deals and the docket until it expires, and the clock will not stop for it again."
+                title="Stays on Deals until it expires"
                 onClick={() => {
                   setDeferred((d) => new Set(d).add(loi.id));
                   // Seen and put off: the deadline does not stop the clock again.
@@ -994,10 +970,10 @@ function DecisionBody({
             />
           )}
           <div className="modal-queue">
-            {idx} of {live.length} on the desk
+            {idx} of {live.length}
             {short > 0 && (fundable
-              ? ` · the fit-out is ${usd(short)} more than your cash, so signing draws it on the line`
-              : ` · you are ${usd(short)} short and the line has ${usd(line)} left — counter or sell something`)}
+              ? ` · fit-out exceeds cash by ${usd(short)} · draws on the line`
+              : ` · short ${usd(short)} · line has ${usd(line)}`)}
           </div>
         </div>
       </div>
@@ -1045,8 +1021,8 @@ function DecisionBody({
             of it because nothing on screen led up to them. */}
         <div className={"modal-kicker" + (h.sale!.unsolicited ? " kicker-inbound" : "")}>
           {h.sale!.unsolicited
-            ? "◆ SOMEBODY WANTS TO BUY THIS FROM YOU — you did not list it"
-            : "Offer in hand — they are buying, you are selling"}
+            ? "◆ UNSOLICITED OFFER · NOT LISTED"
+            : "Offer to buy · you are selling"}
         </div>
         <div className="modal-title">{usd(offer.price)} for {rec.address}</div>
         {/* AN UNSOLICITED APPROACH HAS NO ASK TO COMPARE TO. The engine parks
@@ -1055,8 +1031,8 @@ function DecisionBody({
             player never listed. The number is theirs; say so. */}
         <div className="modal-sub">
           {h.sale!.unsolicited
-            ? `Good until ${monthLabel(offer.expiresM)}. You had not listed it — the number is theirs${offer.from ? `, and it is ${offer.from} asking` : ""}.`
-            : `Good until ${monthLabel(offer.expiresM)}. Your ask is ${usd(h.sale!.ask)}.`}
+            ? `Expires ${monthLabel(offer.expiresM)}${offer.from ? ` · ${offer.from}` : ""}`
+            : `Expires ${monthLabel(offer.expiresM)} · ask ${usd(h.sale!.ask)}`}
         </div>
         <div className="grid">
           <Row k="Offer" v={usd(offer.price)} strong />
@@ -1067,11 +1043,11 @@ function DecisionBody({
           {proceeds.kick > 0 && <Row k="Lender kicker" v={usd(proceeds.kick)} bad />}
           {proceeds.release > 0 && <Row k="Facility release" v={usd(proceeds.release)} bad />}
           {proceeds.partner > 0 && <Row k={`To ${h.jv?.partner ?? "your partner"} (${Math.round((h.jv?.share ?? 0) * 100)}%)`} v={usd(proceeds.partner)} bad />}
-          {proceeds.investors > 0 && <Row k="To your investors, through the waterfall" v={usd(proceeds.investors)} bad title="Their capital, their 12% pref and their share above it — paid from the proceeds at the month's settlement." />}
+          {proceeds.investors > 0 && <Row k="To investors (waterfall)" v={usd(proceeds.investors)} bad title="Capital, 12% pref and promote split · paid at month-end" />}
           <Row k="Gain over basis" v={usd(proceeds.gain)} bad={proceeds.gain < 0} />
           {/* A fund deed's gain passes through the vehicle: the proceeds go to
               the fund, and the sponsor's own tax is its co-invest share. */}
-          {proceeds.tax > 0 && <Row k={onFund ? "Your share of the gains tax" : "Capital-gains tax"} v={usd(proceeds.tax)} bad />}
+          {proceeds.tax > 0 && <Row k={onFund ? "Your share of gains tax" : "Capital-gains tax"} v={usd(proceeds.tax)} bad />}
           {onFund && <Row k="To the fund" v={usd(proceeds.toSeller)} />}
           <Row k="Net to you" v={usd(cashAtClose)} strong bad={cashAtClose < 0} />
         </div>
@@ -1081,7 +1057,7 @@ function DecisionBody({
           const read = saleOfferRead(game, parcels, h, offer);
           return read ? (
             <div className="advisor-line">
-              {read} <span className="advisor-desk">— Your broker</span>
+              {read} <span className="advisor-desk">· Broker</span>
             </div>
           ) : null;
         })()}
@@ -1090,7 +1066,7 @@ function DecisionBody({
             Accept · net {usd(cashAtClose)}
           </button>
           {proceeds.tax > 0 && !game.exchange && !onFund && !consentFor(game, h, "exchange") && (
-            <button className="btn btn-buy" title="Roll the gain into your next purchase within 6 months" onClick={() => setSaleAcceptConfirm({ exchange: true })}>
+            <button className="btn btn-buy" title="Defer the gain · buy within 6 months" onClick={() => setSaleAcceptConfirm({ exchange: true })}>
               1031 · defer {usd(proceeds.tax)}
             </button>
           )}
@@ -1100,12 +1076,12 @@ function DecisionBody({
             </button>
           )}
           <button className="btn" onClick={() => declineOffer(offerBbl!)}>Decline</button>
-          <button className="btn" data-esc title="Leave it — it stays live until it expires." onClick={() => setDeferred((d) => new Set(d).add(-1))}>
+          <button className="btn" data-esc title="Stays live until it expires" onClick={() => setDeferred((d) => new Set(d).add(-1))}>
             Decide later
           </button>
         </div>
         {offer.countered && (
-          <div className="modal-queue">You have been back to them once. This number is the number.</div>
+          <div className="modal-queue">Already countered · final.</div>
         )}
         {saleCounter && !offer.countered && (
           <>
@@ -1119,13 +1095,13 @@ function DecisionBody({
               typedMax={counterBounds.typedMax}
               editable="price"
               onChange={setScPx}
-              format={(v) => `${usd(v)} · +${((v / offer.price - 1) * 100).toFixed(1)}% on their bid`}
+              format={(v) => `${usd(v)} · +${((v / offer.price - 1) * 100).toFixed(1)}% vs bid`}
               marks={[
                 { at: Math.round(offer.price * 1.03), label: "+3%" },
                 { at: Math.round(offer.price * 1.08), label: "+8%" },
                 { at: h.sale!.ask, label: "ask" },
               ]}
-              hint="Name any price above their bid. Well over appraisal and they may walk."
+              hint="Above their bid · far over appraisal and they may walk"
             />
             <div className="modal-actions">
               <button className="btn" onClick={() => { counterSale(offerBbl!, scPx || Math.round(offer.price * 1.06)); setSaleCounter(false); }}>
@@ -1160,7 +1136,7 @@ export function GameOverPage() {
             in sim.ts, "It used to set gameOver and stop the run cold"), and
             this branch was left behind. The only way the run ends is
             insolvency, so that is the only title there is. */}
-        <div className="page-title">The run is over.</div>
+        <div className="page-title">Game over</div>
         <p style={{ maxWidth: 640, margin: "10px auto" }}>{over.cause}</p>
         <NWChart data={game.nwHistory} height={140} />
         <div className="stat-strip gameover-stats" style={{ justifyContent: "center", marginTop: 14 }}>
@@ -1170,8 +1146,8 @@ export function GameOverPage() {
           <Big label="Exits" value={String(game.exits.length)} />
           <Big label="Taxes paid" value={usd(game.taxesPaid ?? 0)} />
           <Big label="Milestones" value={`${miles} / ${MILESTONES.length}`} />
-          {best && <Big label="Best place among competitors" value={`${ordinal(best.rank)} of ${best.of} · ${START_YEAR + best.y}`} />}
-          <Big label="Years in town" value={String(years)} />
+          {best && <Big label="Best rank" value={`${ordinal(best.rank)} of ${best.of} · ${START_YEAR + best.y}`} />}
+          <Big label="Years" value={String(years)} />
         </div>
         {/* THE RUN IS OVER IS NOT THE SAME AS THE CITY IS OVER.
             The only way out of this screen was "Start a new run", which rerolls
@@ -1185,13 +1161,13 @@ export function GameOverPage() {
         <RewindRow seed={game.seed} month={game.month} />
         <div className="btn-row" style={{ marginTop: 16, justifyContent: "center" }}>
           <button className="btn" onClick={() => useStore.getState().setPage("saves")}
-            title="Go back to an earlier save of this same town">
+            title="Load an earlier save of this city">
             ⛁ Load an earlier save
           </button>
           <button className="btn btn-buy" onClick={() => useStore.getState().newRun()}>Start a new run</button>
         </div>
         <div className="hint" style={{ textAlign: "center", marginTop: 10 }}>
-          Starting a new run rolls a new town. An earlier save of THIS town rebuilds it exactly as it was.
+          New run = new city. Earlier saves restore this city.
         </div>
       </div>
     </div>
@@ -1221,7 +1197,7 @@ function PostMortem() {
   const [bigName, bigAmt] = big(worst);
   return (
     <div className="page-section gameover-postmortem" style={{ marginTop: 16, maxWidth: 980, marginLeft: "auto", marginRight: "auto" }}>
-      <div className="page-section-head">What happened — the last {yrs.length} year{yrs.length === 1 ? "" : "s"} of operating cash</div>
+      <div className="page-section-head">Operating cash · last {yrs.length} year{yrs.length === 1 ? "" : "s"}</div>
       <table className="tbl tbl-static">
         <thead>
           <tr><th>Year</th><th className="num">Rent in (NOI)</th><th className="num">Interest earned</th><th className="num">Debt service</th><th className="num">Leasing &amp; capex</th><th className="num">Development</th><th className="num">Overhead</th><th className="num">Tax</th><th className="num">Operating cash</th></tr>
@@ -1246,9 +1222,8 @@ function PostMortem() {
         </tbody>
       </table>
       <div className="hint">
-        Operating cash is rent and interest in, less everything the books paid out to run the firm — before
-        any purchase, sale or new borrowing. The worst year was {START_YEAR + worst.yr}, and its largest
-        outflow was {bigName} at {usd(bigAmt)}.
+        NOI + interest − operating outflows, excl. purchases, sales, borrowing. Worst year {START_YEAR + worst.yr} ·
+        largest outflow {bigName} {usd(bigAmt)}.
       </div>
       {/* One list in date order: the forced sales and the lender's actions
           were two runs of Jan–Mar one after the other, so the story read
@@ -1261,14 +1236,14 @@ function PostMortem() {
             // the same building was "sold under duress" and "taken by the
             // lender" in the same month. The mark rides on the sale's line.
             const what = (e: (typeof events)[number]) =>
-              `${e.kind === "seized" ? "taken by the lender" : e.kind === "deficiency" ? "a deficiency judgment" : e.kind === "dpo" ? "a discounted payoff" : "a forced sale"}${e.amount > 0 ? `, ${usd(e.amount)} left behind` : ""}`;
+              `${e.kind === "seized" ? "seized by lender" : e.kind === "deficiency" ? "deficiency judgment" : e.kind === "dpo" ? "discounted payoff" : "forced sale"}${e.amount > 0 ? ` · ${usd(e.amount)} shortfall` : ""}`;
             const used = new Set<number>();
             const sales = forced.map((e) => {
               const j = events.findIndex((x, i) => !used.has(i) && x.m === e.soldM && x.address === e.address);
               if (j >= 0) used.add(j);
-              return { m: e.soldM, k: `f${e.bbl}${e.soldM}`, text: `${e.address} sold under duress for ${usd(e.price)} against ${usd(e.basis)} basis${j >= 0 ? ` — ${what(events[j])}` : ""}.` };
+              return { m: e.soldM, k: `f${e.bbl}${e.soldM}`, text: `${e.address} · forced sale ${usd(e.price)} · basis ${usd(e.basis)}${j >= 0 ? ` · ${what(events[j])}` : ""}` };
             });
-            return [...sales, ...events.flatMap((e, i) => used.has(i) ? [] : [{ m: e.m, k: `s${i}`, text: `${e.address}: ${what(e)}.` }])];
+            return [...sales, ...events.flatMap((e, i) => used.has(i) ? [] : [{ m: e.m, k: `s${i}`, text: `${e.address} · ${what(e)}` }])];
           })().sort((a, b) => a.m - b.m).map((r) => (
             <li key={r.k}><span className="mono dim">{monthLabel(r.m)}</span> {r.text}</li>
           ))}
@@ -1298,11 +1273,11 @@ function RewindRow({ seed, month }: { seed: number; month: number }) {
   if (!points.length) return null;
   return (
     <div style={{ marginTop: 16, textAlign: "center" }}>
-      <div className="page-section" style={{ textAlign: "center" }}>Rewind this run</div>
+      <div className="page-section" style={{ textAlign: "center" }}>Rewind</div>
       <div className="btn-row" style={{ justifyContent: "center", flexWrap: "wrap" }}>
         {points.map((m) => (
           <button key={m.slot} className="btn" onClick={() => void useStore.getState().loadFrom(m.slot)}
-            title={`Cash then: ${usd(m.cash)}`}>
+            title={`Cash ${usd(m.cash)}`}>
             ↺ {monthLabel(m.month)}
           </button>
         ))}

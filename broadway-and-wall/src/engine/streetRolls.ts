@@ -1025,7 +1025,10 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       // the CPS records it (about 22% of renters a year). At the opening that
       // adds up to about the old 45%; after it, it moves with the town.
       const out = Math.max(0, -(e.migRate ?? 0)) * 12 * 1.5;
-      const buy = 0.08 * Math.exp(-10 * ((e.tenureIdx ?? 1) - 1));
+      // (since ONE ECONOMY step 2, the household register's own buyers: the
+      // share of its renter households that bought last month, a year —
+      // households.ts `tickTenure` — not a second tenure margin)
+      const buy = e.eco?.buyRate ?? 0.08 * Math.exp(-10 * ((e.tenureIdx ?? 1) - 1));
       const jobs = 0.10 * Math.max(0.5, Math.min(2, ((e.jobs ?? 1) / Math.max(1, e.jobsPrevYr ?? e.jobs ?? 1)) ** 10));
       const moveOut = Math.min(0.85, 0.22 + out + buy + jobs);
       for (const x of roll.l) {

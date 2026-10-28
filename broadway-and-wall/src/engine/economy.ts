@@ -731,6 +731,18 @@ export function tickFirms(s: GameState): void {
     E.emp0 = E.emp.slice(); E.empPrev = E.emp.slice();
   } else staff(E, hm.persons);
   const emp = E.emp;
+  // A SAVE FROM BEFORE STEP 2 kept its books in the shadow's terms: its
+  // exports in dollars at the opening's pay, no island shares, no opening
+  // output. Read them into this step's once, from what the save holds.
+  if (!opening && E.last && !E.XJ0) {
+    const opw0 = perHead(E.w0 || 1).opw;
+    E.XJ0 = E.X0.map((v, j) => v / Math.max(1e-9, opw0[j]));
+  }
+  if (!opening && E.last) {
+    E.sigma ??= emp.map((v, i) => (v > 0 ? Math.min(1, named[i] / v) : 0));
+    E.x0 ??= emp.map((v, i) => v * opw[i]);
+    E.emp0 ??= emp.slice();
+  }
   const off = Float64Array.from(emp, (v, i) => Math.max(0, v - named[i]));
   if (opening) {
     for (let i = 0; i < N_IND; i++) for (let k = 0; k < OFF_PER; k++) {
@@ -999,6 +1011,7 @@ export function economyToEngine(s: GameState): void {
     renters: lab.islandRenters + lab.mainlandRenters,
     arrived: fl?.arrived ?? 0, left: fl?.left ?? 0, heads: 0,
   };
+  if (s.economy?.last && fl?.bought !== undefined && d.renters > 0) d.buyRate = 12 * fl.bought / d.renters;
   const E = s.economy;
   if (E?.last && E.cur?.m === s.month && E.emp && E.emp0 && E.x0) {
     reviveEconomy(E);

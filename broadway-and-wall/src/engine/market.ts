@@ -3218,26 +3218,6 @@ export const FIRM_PROFILE: Record<Sector, FirmProfile> = {
 };
 /** The interest cover a lender underwrites new debt to (bank leveraged-loan practice ~3x). */
 export const LENDER_COVER = 3;
-/** What money costs this month, as a business and its customers read it: rates, pay and credit. */
-export function firmBookInputs(e: Econ) {
-  const n = e.nat;
-  const short = (n?.policy ?? 4) / 100;
-  const long = (e.indexRate ?? 5.4) / 100;
-  const infl = n?.infl ?? 0.02;
-  const rStar = n?.neutralReal ?? 0.014;
-  const rAvg = n?.rHist && n.rHist.length > 1
-    ? n.rHist.slice(0, -1).reduce((a, v) => a + v, 0) / (n.rHist.length - 1)
-    : short - (n?.inflExp ?? infl);
-  // Points of real money over (or under) neutral, bent past four either way.
-  const raw = (rAvg - rStar) * 100;
-  const ratePts = 4 * Math.tanh(raw / 4);
-  // Local pay against national pay — national productivity cancels — and the
-  // same for the space a trade rents, read against national real pay.
-  const wageRel = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
-  const realNatPay = (e.natWageIdx ?? e.wageIdx ?? 1) / Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
-  return { short, long, infl, ratePts, wageRel, realNatPay, credit: clamp(e.creditIdx ?? 1, 0.25, 1.25) };
-}
-
 /**
  * A TOWN'S SHARE OF EACH NATIONAL TRADE WANDERS, FOR DECADES (2026-10-15).
  * Every town grew each trade at the nation's own trend, so sixty-year job

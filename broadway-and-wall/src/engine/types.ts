@@ -80,8 +80,8 @@ export interface EcoDrive {
   jobs: number; lf: number; unemp: number; persons: number; households: number;
   ages: { kids: number; work: number; old: number };
   renters: number;
-  /** Households arrived for work and left out of work this month (weighted). */
-  arrived: number; left: number;
+  /** Households arrived for work and left out of work this month (weighted); renter households that bought, as a share a year. */
+  arrived: number; left: number; buyRate?: number;
   /** The firms' heads (labour demand); 0 before the books open. */
   heads: number;
   /** Floor the firms' heads take, by class (sf): on the floor, not at home, not in a building of their own. */

@@ -4089,6 +4089,8 @@ export interface GameState {
   blockE?: Record<string, number>;
   /** a block's employment advantage in demand points — its trades against the city's */
   blockJ?: Record<string, number>;
+  /** a block's drive-time access to the households added since the first count, in demand points (towngrowth.ts tickRooftops; region only) */
+  blockR?: Record<string, number>;
   /**
    * Civic works. A station, a park, a bridge — rumoured first, argued over,
    * funded, opened; the ground reprices at each step, and buying on the rumour

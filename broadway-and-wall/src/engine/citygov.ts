@@ -275,7 +275,7 @@ const addLines = (a: BudgetLines, b: BudgetLines) => {
   a.principal += b.principal; a.notesRepaid += b.notesRepaid; a.borrowed += b.borrowed;
 };
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-export const debtOf = (g: CityGov, kind?: CityBond["kind"]) => g.bonds.reduce((a, b) => a + (!kind || b.kind === kind ? b.face : 0), 0);
+export const cityDebt = (g: CityGov, kind?: CityBond["kind"]) => g.bonds.reduce((a, b) => a + (!kind || b.kind === kind ? b.face : 0), 0);
 
 // ---------------------------------------------------------------- policy readers (used across the engine)
 /** The deed-transfer tax a seller pays at closing, this month. */
@@ -396,7 +396,7 @@ function scheduled12(g: CityGov, m: number): number {
 function updateSpread(s: GameState, g: CityGov) {
   const e = s.econ;
   const rev = Math.max(1, g.rev12);
-  const debtRatio = debtOf(g) / rev;
+  const debtRatio = cityDebt(g) / rev;
   const payables = Math.max(0, -g.cash) / rev;
   const penGap = Math.max(0, g.pension.liab - g.pension.assets) / rev;
   const raw = SPREAD.base + SPREAD.perDebt * Math.max(0, debtRatio - SPREAD.debtNorm) + SPREAD.perDeficit * g.defShare
@@ -606,7 +606,7 @@ function fiscalYear(s: GameState, g: CityGov) {
     g.lastFy = { ...JSON.parse(JSON.stringify(g.fy)), yr };
     const rev = revTotal(g.fy), op = opSpend(g.fy);
     g.hist.push({ yr, rev, spend: op + g.fy.spend.capital, deficit: rev - op - (g.fy.principal - g.fy.notesRepaid),
-      debt: debtOf(g), spread: +g.spread.toFixed(2), propRate: P.propRate, wageRate: P.wageRate, service: +P.service.toFixed(3), platform: g.mayor.platform, control: !!g.control });
+      debt: cityDebt(g), spread: +g.spread.toFixed(2), propRate: P.propRate, wageRate: P.wageRate, service: +P.service.toFixed(3), platform: g.mayor.platform, control: !!g.control });
     if (g.hist.length > 150) g.hist.shift();
   }
   g.fy = zeroLines();
@@ -620,7 +620,7 @@ function fiscalYear(s: GameState, g: CityGov) {
 
   // THE GAP: next year's operating bill and principal against this year's
   // revenue, plus a third of the way back to a two-month reserve.
-  const notes = debtOf(g, "note");
+  const notes = cityDebt(g, "note");
   const target = g.op12 * RESERVE_MONTHS / 12;
   const gap = g.op12 + scheduled12(g, m) - g.rev12 + (target - (g.cash - notes)) / 3;
 

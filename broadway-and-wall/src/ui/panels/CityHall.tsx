@@ -1,6 +1,6 @@
 import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
-import { PLATFORM_LABEL, PLATFORM_PARTY, revTotal, opSpend, debtOf, type BudgetLines } from "@/engine/citygov";
+import { PLATFORM_LABEL, PLATFORM_PARTY, revTotal, opSpend, cityDebt, type BudgetLines } from "@/engine/citygov";
 import { TAX_RATE } from "@/engine/value";
 import { Row } from "@/ui/panels/shared";
 
@@ -22,7 +22,7 @@ export function CityHallBox({ open = false }: { open?: boolean }) {
   const rev = revTotal(fy) * k, op = opSpend(fy) * k;
   const serial = (fy.principal - fy.notesRepaid) * k;
   const bal = rev - op - serial;
-  const debt = debtOf(g), notes = debtOf(g, "note"), state = debtOf(g, "state");
+  const debt = cityDebt(g), notes = cityDebt(g, "note"), state = cityDebt(g, "state");
   const pol = g.policy;
   const yr = (m: number) => START_YEAR + Math.floor(m / 12);
   const fyLabel = g.lastFy ? `FY${g.lastFy.yr}` : "this month, annualised";

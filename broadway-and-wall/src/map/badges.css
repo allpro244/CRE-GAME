@@ -31,6 +31,10 @@
 
 .map-badge-glyph { font-size: 12px; line-height: 1; color: var(--ink-dim); }
 .map-badge-n { font-size: 10px; color: var(--ink-dim); }
+/* the meaning, shown on hover or keyboard focus */
+.map-badge-words { display: none; font-family: var(--font-ui, system-ui, sans-serif); font-size: 11px; color: var(--ink); }
+.map-badge:hover .map-badge-words, .map-badge:focus-visible .map-badge-words { display: inline; }
+.map-badge:hover { z-index: 3; }
 
 /* Severity tints pair with the glyph, never replace it — the tiers stay
    legible in monochrome. */

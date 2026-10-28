@@ -80,14 +80,14 @@ export function badgesFor(g: GameState, parcels: ParcelTable): Badge[] {
     if (w) {
       put({
         bbl: h.bbl, glyph: "!", cls: "danger", route: "property", rank: RANK_WORKOUT,
-        label: `in workout — ${w.cause} · decides ${monthLabel(w.decideM)}`,
+        label: `Loan in default (${w.cause}) · lender decides ${monthLabel(w.decideM)} · click for options`,
       });
     }
     if (h.loan) {
       if (h.loan.sweep || (h.loan.breachMs ?? 0) > 0) {
         put({
           bbl: h.bbl, glyph: "⚖", cls: "danger", route: "debt", rank: RANK_COVENANT,
-          label: "covenant — cash swept",
+          label: "Loan covenant breached · lender is taking the cash flow · click for Debt",
         });
       }
       const mo = h.loan.maturityM - m;
@@ -98,12 +98,12 @@ export function badgesFor(g: GameState, parcels: ParcelTable): Badge[] {
       if (mo <= 6) {
         put({
           bbl: h.bbl, glyph: "◷", cls: "danger", route: "debt", rank: RANK_BALLOON_NEAR,
-          count: mo, label: "balloon " + monthLabel(h.loan.maturityM),
+          count: mo, label: `Loan due in ${mo} mo (${monthLabel(h.loan.maturityM)}) · refinance or repay · click for Debt`,
         });
       } else if (mo <= 18) {
         put({
           bbl: h.bbl, glyph: "◷", cls: "warn", route: "debt", rank: RANK_BALLOON_FAR,
-          count: mo, label: "balloon " + monthLabel(h.loan.maturityM),
+          count: mo, label: `Loan due in ${mo} mo (${monthLabel(h.loan.maturityM)}) · plan the refinance · click for Debt`,
         });
       }
     }
@@ -119,7 +119,7 @@ export function badgesFor(g: GameState, parcels: ParcelTable): Badge[] {
       if (leased > 0 && ending / leased > 0.35) {
         put({
           bbl: h.bbl, glyph: "⟳", cls: "warn", route: "leasing", rank: RANK_ROLLOVER,
-          label: "rollover " + Math.round((100 * ending) / leased) + "%",
+          label: `${Math.round((100 * ending) / leased)}% of leased space expires within 12 mo · click for Leasing`,
         });
       }
     }
@@ -134,14 +134,14 @@ export function badgesFor(g: GameState, parcels: ParcelTable): Badge[] {
   for (const [bbl, n] of letters) {
     put({
       bbl, glyph: "✉", cls: "accent", route: "deals", rank: RANK_LOI, count: n,
-      label: n === 1 ? "1 letter" : `${n} letters`,
+      label: `${n === 1 ? "1 lease offer (LOI)" : `${n} lease offers (LOIs)`} waiting for your answer · click to review`,
     });
   }
 
   for (const d of Object.values(g.developments ?? {})) {
     put({
       bbl: d.bbl, glyph: "▲", cls: "neutral", route: "focus", rank: RANK_DELIVERY,
-      label: "delivers " + monthLabel(d.deliverM),
+      label: `Your building under construction · delivers ${monthLabel(d.deliverM)}`,
     });
   }
 
@@ -246,6 +246,12 @@ function BadgesBody({ mapRef }: { mapRef: RefObject<maplibregl.Map | null> }) {
       glyph.setAttribute("aria-hidden", "true");
       glyph.textContent = b.glyph;
       el.appendChild(glyph);
+      // WHAT IT MEANS, ON HOVER (owner, Oct 2026: "i have no clue what this
+      // means"): the sentence slides out beside the icon, no tooltip delay
+      const words = document.createElement("span");
+      words.className = "map-badge-words";
+      words.textContent = b.label;
+      el.appendChild(words);
       if (b.count !== undefined && b.count > 1) {
         const n = document.createElement("span");
         n.className = "map-badge-n mono";

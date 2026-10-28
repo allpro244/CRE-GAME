@@ -383,7 +383,9 @@ const MANUF_FX = 0.1;       // share of factory floor sent abroad a year per uni
 /** Flats per adult: the national headship trend, its response to local job growth over the nation's, and that national job growth (a year). */
 const HEADSHIP_TREND = 0.0015;
 const HEADSHIP_JOBS = 0.5;
-const NAT_JOB_TREND = 0.008;
+// The nation's payroll growth a year: the trades' 1990-2019 mean less the
+// labour-force slowdown (LABOUR_FORCE_SLOWDOWN, below).
+const NAT_JOB_TREND = 0.003;
 /** A market's normal availability: monthly weight on this month's (twenty-year half-life). */
 const NATVAC_RATE = 1 - Math.exp(-Math.LN2 / 240);
 
@@ -1974,7 +1976,14 @@ const INDEX_HORIZON_M = 120;
 // tools in the session notes): autocorrelation 0.76 at a year, 0.05 at
 // three, negative by five — cycles turn faster than the drawn model's did
 // (0.974 was fitted on that one).
-const RULE_GAP_RHO = 0.85;
+// RE-MEASURED 2026-10-28 (40 national centuries x 100 years, the fit this
+// comment describes: least squares of rho^h on the autocorrelation of
+// ruleRate less the long-run level, h = 1..120): 0.90, with the 2.0 inflation
+// response and the wider r* below; 0.90 on main before them as well, 0.85
+// was not the fit. Autocorrelation 0.45 at a year, -0.2 at two. At 0.85 the
+// bond market expected every move to be undone inside a few months, so the
+// ten-year moved 0.14 points per point of policy over a year (US 0.32).
+const RULE_GAP_RHO = 0.90;
 
 /**
  * WHAT THE BOND MARKET THINKS POLICY WILL AVERAGE over the index's life.
@@ -2502,9 +2511,22 @@ export function tickNation(s: GameState) {
   // and near 0.5% after 2010, and it moves on a multi-decade clock, not a
   // business cycle. So the ANCHOR wanders slowly between those two poles and
   // neutralReal reverts to wherever the anchor currently is.
+  // ...AND IT ACTUALLY GETS THERE (2026-10-28). The walk above pulled toward
+  // 1.4% at 0.0009 a month (a 64-year half-life) on noise of +/-0.035 points,
+  // a stationary spread of about half a point: measured over 40 national
+  // centuries the ten-year index never went under 2.6% in nine of ten, and a
+  // whole century could run its policy rate between 2% and 7% (market seed
+  // 550991, 100 years: sd 0.9 points). Laubach-Williams r* fell about three
+  // points between the 1960s and the 2010s — a 25-year clock, not a 64-year
+  // one — and it is that wander, not inflation, that gives a century a
+  // high-rate era and a zero-rate era with ordinary inflation in both.
+  // Reversion 0.0023 a month is a 25-year half-life; noise +/-0.13 points a
+  // month holds a stationary spread of about 1.1 points round 1.4%, so the
+  // anchor spends most of its time inside Laubach-Williams' 0-3.5% and a
+  // century can visit either end. Shape parameters read off that record.
   if (n.neutralAnchor === undefined) n.neutralAnchor = n.neutralReal;
   n.neutralAnchor = clamp(
-    n.neutralAnchor + 0.0009 * (0.014 - n.neutralAnchor) + rrange(s, -0.00035, 0.00035, "nation"),
+    n.neutralAnchor + 0.0023 * (0.014 - n.neutralAnchor) + rrange(s, -0.0013, 0.0013, "nation"),
     -Infinity, Infinity,
   );
   n.neutralReal = clamp(n.neutralReal + 0.004 * (n.neutralAnchor - n.neutralReal)
@@ -2825,7 +2847,22 @@ export function tickNation(s: GameState) {
   // (ACM 1961-2024: median ~1.2, p90 ~3.5; low credibility was ~1970-85). The
   // public reads inflation as a year-on-year rate and measures the bank
   // against the target it has announced.
-  const miss = (n.inflSm ?? n.infl) - (n.inflTarget ?? 0.02);
+  // A DISINFLATION TOWARD PRICE STABILITY IS NOT A MISS (2026-10-28). The
+  // target drifts toward realised inflation while the bank is disbelieved
+  // (regime.ts driftInflTarget), so after an inflation it sits at 4-6%. Read
+  // symmetrically against that drifted target, a bank that then brought
+  // inflation DOWN to 1-2% was "missing" by three or four points and kept
+  // spending belief it did not have: measured on the national block alone
+  // (market seed 73303), credibility sat under 0.1 for thirty years straight
+  // through a decade of 1% inflation, and every supply shock in that stretch
+  // became a 10-16% inflation because nobody believed anything. The public
+  // judges an overshoot against what the bank has let itself drift to, and an
+  // undershoot against price stability (2%): the Volcker disinflation BOUGHT
+  // credibility, it did not cost it (Michigan long-run expectations fell from
+  // ~9% in 1980 to ~3% by the mid-1990s as inflation came down).
+  const tgtNow = n.inflTarget ?? 0.02;
+  const inflSeen = n.inflSm ?? n.infl;
+  const miss = inflSeen >= tgtNow ? inflSeen - tgtNow : Math.min(0, inflSeen - Math.min(tgtNow, 0.02));
   const am = Math.abs(miss);
   // NO STOPS (2026-10-13). This was clamped to 0.10..0.99 and rested on the
   // 0.99 stop 47% of months. The walk is unchanged wherever belief is more
@@ -2921,7 +2958,18 @@ export function tickNation(s: GameState) {
   // regime.ts: 0.02 was written here as a constant and it is the reason a
   // century could not contain two different monetary worlds.
   const tgt = n.inflTarget ?? 0.02;
-  const want = 100 * (n.neutralReal + seen + 0.5 * (seen - tgt) + 0.5 * okunGap) + restore;
+  // THE BANK LEANS ON INFLATION HARDER THAN TAYLOR'S 1993 HALF (2026-10-28).
+  // Taylor's rule put 1.5 on inflation in all; estimated on the record since
+  // 1979 the Fed's response is about 2 (Clarida, Gali & Gertler 2000: 2.15
+  // for Volcker-Greenspan, 0.83 before). At 1.5 the bank moved so little that
+  // measured over 40 national centuries the policy rate spent 1.6% of months
+  // under 1% and a median century never saw it below zero or above 12%:
+  // shocks were absorbed by inflation and unemployment instead of by the
+  // price of money. At 2.0, the same century's rate cuts toward zero in a
+  // slump and hikes into a boom (policy under 1% in 6-9% of months; US
+  // 1954-2024 ~15%), with inflation no higher on average and its worst
+  // centuries lower.
+  const want = 100 * (n.neutralReal + seen + 1.0 * (seen - tgt) + 0.5 * okunGap) + restore;
   n.ruleRate = +want.toFixed(3);
   // Gradualism, except when it is not: a bank moves in quarter points at
   // eight meetings a year, and in three-quarter points when it is frightened.
@@ -3095,6 +3143,27 @@ const INDUSTRY_TREND: Record<Sector, number> = {      // per year
   finance: 0.008, law: 0.005, tech: 0.025, media: -0.005, insurance: 0.005,
   logistics: 0.015, apparel: -0.015, food: 0.012, medical: 0.020, design: 0.008,
 };
+/**
+ * THE WORKERS THOSE TRENDS WERE HIRING HAVE STOPPED ARRIVING (2026-10-28).
+ *
+ * The 1990-2019 payroll trends above carry the labour force growth of their
+ * years: the US civilian labour force grew about 0.9% a year over 1990-2019
+ * (BLS CPS, 125.8M to 163.5M), the tail of the baby boom and of women joining
+ * the workforce. That supply is spent. CBO's long-term outlook (2024) has the
+ * potential labour force growing about 0.3-0.4% a year over 2024-54, as the
+ * boomers retire and fertility sits under replacement. A trade cannot grow its
+ * payroll at 1990s rates on 2030s labour supply, so each trade's national
+ * trend centres half a point under its 1990-2019 rate: the trades keep their
+ * order (tech and medical up, apparel and media down), the nation's payrolls
+ * grow at what its people allow.
+ *
+ * Measured before this (4 region towns x 100 years): jobs grew 2.3-3.2x, and
+ * of forty decades four shrank — every trade compounding a labour supply that
+ * no longer exists, so nearly every decade brought the town another tenth of
+ * its size in new demand.
+ */
+const LABOUR_FORCE_SLOWDOWN = 0.005;
+const natTrendCentre = (k: Sector) => INDUSTRY_TREND[k] - LABOUR_FORCE_SLOWDOWN;
 /**
  * EACH TRADE KEEPS BOOKS (2026-10-15).
  *
@@ -3450,7 +3519,7 @@ export function tickIndustryCycle(s: GameState) {
   // fortune and its national trend are drawn from where their own processes
   // spend their time, not set to the textbook mean on day one.
   if (!e.indFortune) e.indFortune = Object.fromEntries(SECTORS.map((k) => [k, FORTUNE_SD * hashNormal(`${s.seed}|fortune|${k}`)])) as Record<Sector, number>;
-  if (!e.natTrend) e.natTrend = Object.fromEntries(SECTORS.map((k) => [k, INDUSTRY_TREND[k] + NAT_TREND_SD * hashNormal(`${s.seed}|trend|${k}`)])) as Record<Sector, number>;
+  if (!e.natTrend) e.natTrend = Object.fromEntries(SECTORS.map((k) => [k, natTrendCentre(k) + NAT_TREND_SD * hashNormal(`${s.seed}|trend|${k}`)])) as Record<Sector, number>;
   if (!e.industryPhase) e.industryPhase = Object.fromEntries(SECTORS.map((k) => [k, "steady"])) as Record<Sector, "boom" | "steady" | "bust">;
   const decay = Math.exp(-Math.LN2 / IND_SHOCK_HALF_M);
   // THE EDGE FADES (2026-10-12). A town's regional trend was drawn once at
@@ -3507,7 +3576,7 @@ export function tickIndustryCycle(s: GameState) {
     // where each trade's national trend centres, and it wanders around that
     // with a thirty-year memory (manufacturing grew for a century and then
     // shrank for half of one; media went the other way and back).
-    e.natTrend![k] += (INDUSTRY_TREND[k] - e.natTrend![k]) / NAT_TREND_TAU_M
+    e.natTrend![k] += (natTrendCentre(k) - e.natTrend![k]) / NAT_TREND_TAU_M
       + NAT_TREND_SD * Math.sqrt(2 / NAT_TREND_TAU_M) * Math.sqrt(3) * rrange(s, -1, 1);
     const growth = (e.natTrend![k] + e.indFortune[k] + pull) / 12;
     // ...and the trade's own books decide how many people it keeps.

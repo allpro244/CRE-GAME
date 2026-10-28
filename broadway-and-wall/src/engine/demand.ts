@@ -1260,7 +1260,11 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
 
     const anchor = s.blockA?.[b.id] ?? 0;
     const now = s.blockD[b.id] ?? 0;
-    const next = +clamp(anchor + e, -TOTAL_CAP, TOTAL_CAP).toFixed(2);
+    // ...and the households that moved within reach since the first count
+    // (towngrowth.ts tickRooftops): access is anchor-like, not relative to
+    // the neighbours, so it sits beside the centred drift rather than in it.
+    const roof = s.blockR?.[b.id] ?? 0;
+    const next = +clamp(anchor + e + roof, -TOTAL_CAP, TOTAL_CAP).toFixed(2);
     if (next === 0) delete s.blockD[b.id];
     else s.blockD[b.id] = next;
 

@@ -90,6 +90,9 @@ export interface TownState {
   failedM?: Record<string, number>;
   /** why the last centre that failed did */
   failedWhy?: string;
+  /** each block's drive-time access to the town's households at the first count, and that count's 95th percentile (tickRooftops) */
+  acc0?: Record<string, number>;
+  accRef?: number;
 }
 function townOf(s: GameState): TownState {
   const g = s.growth!;
@@ -390,8 +393,107 @@ export function tickTownGrowth(s: GameState, parcels: ParcelTable, bbls: string[
   townOf(s);
   if (s.month % 12 !== 6) return;
   const st = statics(s, parcels, bbls);
+  tickRooftops(s, parcels, bbls, st);
   tickCommerce(s, parcels, bbls, adjacency, st);
   tickPlanning(s, parcels, st);
+}
+
+// ---------------------------------------------------------------- rooftops
+/**
+ * NEW ROOFTOPS MAKE THE EDGE A BETTER ADDRESS (2026-10-28).
+ *
+ * On a region map the generator gives 44 of every lot's 100 demand points to
+ * drive-time access: the Huff-weighted households (and jobs) within fifteen
+ * minutes (citygen build.mjs, region/access.mjs). It is computed once, from the
+ * households standing on day one, and nothing ever recomputed it — HANDOFF's
+ * "NOT YET: ... new rooftops (a drift term in demand.ts)". So a century of
+ * houses closing on the plats round a village left the village's own lots
+ * exactly as far from anybody as they were in year one. Measured over four
+ * 100-year region towns before this: 5.6-9.7 thousand houses closed out past
+ * the town, and the commercial and apartment space built out there in the same
+ * century came to 0.15-0.8M sf of 36-54M (1-2%) — nearly every shop, office
+ * and flat went into the town, because the location every pro forma reads still said the
+ * outskirts had nobody in them.
+ *
+ * Once a year each block's access is counted again on the same measure, from
+ * the households the town counts now (its flats, its rural homes and every
+ * house closed on a plat), and the growth since the first count is worth what
+ * access is worth at generation: 44 points per 95th-percentile of opening
+ * access. It is centred on the standing stock (square-foot weighted), so the
+ * town's buildings keep their average location — the rent level stays the
+ * macro engine's — and only where location is paid moves: toward the places
+ * the households went (Alonso-Muth-Mills: the bid-rent curve follows the
+ * population out). The county's households beyond the map drive in on fixed
+ * roads and are left out: they did not move. Jobs, the other half of the
+ * generator's activity count, are left out too — they mostly stay downtown,
+ * and the surface already prices what is built and occupied (demand.ts).
+ */
+const ACCESS_PTS = 44;
+function tickRooftops(s: GameState, parcels: ParcelTable, bbls: string[], st: Statics) {
+  if (s.citySize !== "region" || !s.growth) return;
+  const T = townOf(s);
+  const P = roadPlan(s);
+  const C = P.centre as XY, kx = 111_320 * Math.cos((C[1] * Math.PI) / 180);
+  const xy = (p: XY) => [(p[0] - C[0]) * kx, (p[1] - C[1]) * KY] as [number, number];
+  // households, pooled on a 200 m grid as carAccessibility pools them
+  const cells = new Map<string, { x: number; y: number; n: number }>();
+  for (const h of households(s, parcels, st, true)) {
+    if (h.road || !(h.n > 0)) continue;
+    const [x, y] = xy(h.p);
+    const k = `${Math.floor(x / 200)}:${Math.floor(y / 200)}`;
+    const c = cells.get(k);
+    if (c) { c.x += x * h.n; c.y += y * h.n; c.n += h.n; } else cells.set(k, { x: x * h.n, y: y * h.n, n: h.n });
+  }
+  const pts = [...cells.values()].map((c) => ({ x: c.x / c.n, y: c.y / c.n, n: c.n }));
+  const R = s.growth.roads;
+  const ixs: [number, number][] = [];
+  for (const h of P.highways) for (const x of h.ix) {
+    const open = x.seg && (R ? R.hwy[x.seg]?.status === "open" : h.segs.find((q) => q.id === x.seg)?.built);
+    if (open) ixs.push(xy(x.p as XY));
+  }
+  const drive = driveTimer(ixs);
+  // blocks: their centroid (by lot area) and the floor standing on them
+  const blk = new Map<string, { x: number; y: number; a: number; sf: number }>();
+  for (const bbl of bbls) {
+    const p = parcels[bbl];
+    if (!p?.centroid || !p.block || !(p.lotArea > 0)) continue;
+    const [x, y] = xy(p.centroid as XY);
+    const b = blk.get(p.block) ?? { x: 0, y: 0, a: 0, sf: 0 };
+    b.x += x * p.lotArea; b.y += y * p.lotArea; b.a += p.lotArea;
+    const r = resolveRec(parcels, s, bbl);
+    if (r && r.class !== "land") b.sf += Math.max(0, r.bldgArea ?? 0);
+    blk.set(p.block, b);
+  }
+  const acc: Record<string, number> = {};
+  for (const [id, b] of blk) {
+    const bx = b.x / b.a, by = b.y / b.a;
+    let v = 0;
+    for (const q of pts) { const w = huffW(drive(bx, by, q.x, q.y)); if (w > 0) v += q.n * w; }
+    acc[id] = v;
+  }
+  if (!T.acc0) {
+    T.acc0 = Object.fromEntries(Object.entries(acc).map(([k, v]) => [k, Math.round(v)]));
+    const sorted = Object.values(acc).sort((a, b) => a - b);
+    T.accRef = Math.max(1, sorted[Math.floor(sorted.length * 0.95)] ?? 1);
+    return;
+  }
+  const ref = Math.max(1, T.accRef ?? 1);
+  const lift: Record<string, number> = {};
+  let num = 0, den = 0;
+  for (const [id, v] of Object.entries(acc)) {
+    // a block the first count never saw (a plat cut since) starts from its own first reading
+    const v0 = T.acc0[id] ??= Math.round(v);
+    lift[id] = ACCESS_PTS * (v - v0) / ref;
+    const sf = blk.get(id)?.sf ?? 0;
+    num += lift[id] * sf; den += sf;
+  }
+  const centre = den > 0 ? num / den : 0;
+  const out: Record<string, number> = {};
+  for (const [id, l] of Object.entries(lift)) {
+    const v = +(l - centre).toFixed(2);
+    if (Math.abs(v) >= 0.05) out[id] = v;
+  }
+  s.blockR = out;
 }
 
 /** The town at a glance, for the yearly record. */

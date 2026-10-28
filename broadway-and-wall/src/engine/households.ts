@@ -675,13 +675,24 @@ function moveIn(R: Rand, r: HouseholdRegister, b: Block, e: Econ, m: number, poo
   r.flow.movedIn += w;
 }
 
-/** An island household that leaves its flat for the region's rented homes: its weight goes back to the pool across the water. */
+/**
+ * An island household that leaves its flat for the region's rented homes:
+ * its weight goes back to the pool across the water — onto a household like
+ * it (its first earner's industry, else its status: in work, retired, out of
+ * work), since it keeps its jobs when it moves. Joining whoever came first
+ * moved working households' weight onto jobless ones a few at a time, which
+ * over decades is a leak of jobs into joblessness.
+ */
 function toMainland(R: Rand, r: HouseholdRegister, i: number, pool: number[], gone: Uint8Array) {
   const a = r.a!;
   gone[i] = 1; r.flow.movedOut += a.wt[i];
-  for (let k = 0; k < 4 && pool.length; k++) {
+  const kindOf = (x: number, ind: number) => x === EMP_RETIRED ? "r" : x === EMP_UNEMP ? "u" : x === EMP_NONE ? "n" : `w${ind}`;
+  const mine = kindOf(a.emp1[i], a.ind1[i]);
+  for (let k = 0; k < 24 && pool.length; k++) {
     const j = pool[Math.floor(R.u() * pool.length)];
     if ((j < gone.length && gone[j]) || a.ten[j] !== TEN_MAINLAND) continue;
+    const theirs = kindOf(a.emp1[j], a.ind1[j]);
+    if (k < 16 ? theirs !== mine : theirs[0] !== mine[0]) continue;
     a.wt[j] += a.wt[i];
     return;
   }
@@ -727,41 +738,78 @@ function tickTenure(R: Rand, r: HouseholdRegister, e: Econ, gone: Uint8Array, po
     r.homesSeen = e.newHomes ?? 0;
   }
   const hBuy = r.hBuy0 * Math.exp(-BUY_ELAST * (rel - (r.tenRef ?? rel)));
-  const owners: number[] = [];
-  let ownW = 0, mainW = 0;
-  for (let i = 0; i < n; i++) {
-    if (gone[i]) continue;
-    if (a.ten[i] === TEN_OWN) { owners.push(i); ownW += a.wt[i]; }
-    else if (a.ten[i] === TEN_MAINLAND) mainW += a.wt[i];
-  }
-  // owners who sell
-  let toRent = 0;
-  for (const i of owners) { const d = a.wt[i] * sellM; a.wt[i] -= d; toRent += d; }
-  // renters who buy: the region's with work, a share of each; the island's one by one
-  let toOwn = 0;
+  // WHO THE MOVERS ARE. A household that buys or sells keeps its earners, its
+  // jobs and its pensions, so the weight that moves lands on households like
+  // it — the same work in the same industries, or the same retirement — on
+  // the other side of the tenure line. (The first cut spread it over every
+  // household there by weight; sellers' weight reached the jobless renters,
+  // who never bought it back, and over a century the region filled with
+  // jobless households — measured, unemployment 21-35% from year 70.) A
+  // household's kind is its earners' industries or status; a kind with no
+  // household on the other side lands on its first earner's alone, then on
+  // its status, and a weight with nowhere like it to go does not move.
+  const slotKind = (x: number, ind: number) => x === EMP_RETIRED ? "r" : x === EMP_UNEMP ? "u" : x === EMP_NONE ? "n" : isPlaced(x) && ind !== IND_NONE ? `w${ind}` : "w";
+  const kinds = (i: number) => {
+    const k1 = slotKind(a.emp1[i], a.ind1[i]);
+    return [`${k1}|${slotKind(a.emp2[i], a.ind2[i])}`, k1, k1[0]];
+  };
+  type Side = Map<string, { idx: number[]; w: number }>;
+  const index = (pick: (i: number) => boolean): Side => {
+    const m: Side = new Map();
+    for (let i = 0; i < n; i++) {
+      if (gone[i] || !pick(i)) continue;
+      for (const k of kinds(i)) { const b = m.get(k) ?? { idx: [], w: 0 }; b.idx.push(i); b.w += a.wt[i]; m.set(k, b); }
+    }
+    return m;
+  };
+  const owners = index((i) => a.ten[i] === TEN_OWN);
+  const renters = index((i) => a.ten[i] === TEN_MAINLAND);
+  const toOwn = new Map<number, number>(), toRent = new Map<number, number>();   // agent -> weight to add
+  let bought = 0, sold = 0;
+  // lands `d` of a household of kind `ks` on the other side, by weight; false when there is nobody like it
+  const land = (side: Side, ks: string[], d: number, out: Map<number, number>) => {
+    for (const k of ks) {
+      const b = side.get(k);
+      if (!b || !(b.w > 0)) continue;
+      for (const j of b.idx) out.set(j, (out.get(j) ?? 0) + d * a.wt[j] / b.w);
+      return true;
+    }
+    return false;
+  };
+  const sellM2 = sellM;
   for (let i = 0; i < n; i++) {
     if (gone[i]) continue;
     const t = a.ten[i];
+    if (t === TEN_OWN) {
+      // owners who sell
+      const d = a.wt[i] * sellM2;
+      if (land(renters, kinds(i), d, toRent)) { a.wt[i] -= d; sold += d; }
+      continue;
+    }
     if (t !== TEN_RENT && t !== TEN_MAINLAND) continue;
     const working = isWorking(a.emp1[i]) || isWorking(a.emp2[i]);
-    if (t === TEN_MAINLAND) { if (working) { const d = a.wt[i] * hBuy; a.wt[i] -= d; toOwn += d; } continue; }
-    if (R.u() < hBuy && working) { gone[i] = 1; r.flow.movedOut += a.wt[i]; toOwn += a.wt[i]; }
+    if (!working) continue;
+    // renters who buy: the region's with work, a share of each; the island's one by one (and it leaves its flat)
+    if (t === TEN_MAINLAND) { const d = a.wt[i] * hBuy; if (land(owners, kinds(i), d, toOwn)) { a.wt[i] -= d; bought += d; } continue; }
+    if (R.u() < hBuy && land(owners, kinds(i), a.wt[i], toOwn)) { gone[i] = 1; r.flow.movedOut += a.wt[i]; bought += a.wt[i]; }
   }
-  // the plats' houses, each to a household across the water
-  const sold = Math.max(0, (e.newHomes ?? 0) - (r.homesSeen ?? 0));
+  // the plats' houses, each to a household across the water with work
+  const sales = Math.max(0, (e.newHomes ?? 0) - (r.homesSeen ?? 0));
   r.homesSeen = e.newHomes ?? 0;
-  let mainNow = 0;
-  for (const i of pool) if (!gone[i] && a.ten[i] === TEN_MAINLAND) mainNow += a.wt[i];
-  const plat = Math.min(sold, 0.5 * mainNow);
-  if (plat > 0) for (const i of pool) if (!gone[i] && a.ten[i] === TEN_MAINLAND) a.wt[i] -= plat * a.wt[i] / mainNow;
-  toOwn += plat;
-  // ...and the movers land: buyers among the owners, sellers among the renters, each by weight
-  const ownAfter = ownW - toRent, mainAfter = mainNow - plat;
-  if (ownAfter > 0) { const f = (ownAfter + toOwn) / ownAfter; for (const i of owners) a.wt[i] *= f; }
-  if (mainAfter > 0) { const f = (mainAfter + toRent) / mainAfter; for (const i of pool) if (!gone[i] && a.ten[i] === TEN_MAINLAND) a.wt[i] *= f; }
-  r.flow.bought = (r.flow.bought ?? 0) + toOwn;
-  r.flow.sold = (r.flow.sold ?? 0) + toRent;
-  void mainW;
+  if (sales > 0) {
+    let wW = 0;
+    for (const i of pool) if (!gone[i] && a.ten[i] === TEN_MAINLAND && (isWorking(a.emp1[i]) || isWorking(a.emp2[i]))) wW += a.wt[i];
+    const plat = Math.min(sales, 0.5 * wW);
+    if (plat > 0) for (const i of pool) {
+      if (gone[i] || a.ten[i] !== TEN_MAINLAND || !(isWorking(a.emp1[i]) || isWorking(a.emp2[i]))) continue;
+      const d = plat * a.wt[i] / wW;
+      if (land(owners, kinds(i), d, toOwn)) { a.wt[i] -= d; bought += d; }
+    }
+  }
+  for (const [j, d] of toOwn) a.wt[j] += d;
+  for (const [j, d] of toRent) a.wt[j] += d;
+  r.flow.bought = (r.flow.bought ?? 0) + bought;
+  r.flow.sold = (r.flow.sold ?? 0) + sold;
 }
 
 /**
@@ -1118,8 +1166,9 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     if (a.age[i] >= 65 && R.u() < dissolveM(a.age[i])) {
       // the household ends and a young one forms in its place, renting across
       // the water (an island one's flat is let again from the region's renters)
-      if (a.ten[i] === TEN_RENT) { if (!gone[i]) toMainland(R, r, i, pool, gone); }
-      else if (!gone[i]) { formRegional(R, r, i, e); a.wt[i] = w; }
+      // (an island household's flat is let again from the region's renters)
+      if (a.ten[i] === TEN_RENT && !gone[i]) r.flow.movedOut += w;
+      if (!gone[i]) { formRegional(R, r, i, e); a.wt[i] = w; }
     }
   }
 

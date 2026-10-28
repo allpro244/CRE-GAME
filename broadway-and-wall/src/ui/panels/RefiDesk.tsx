@@ -43,8 +43,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
       <div className="refi">
         <div className="deal-head">Refinance</div>
         <div className="hint">
-          No desk will quote against this today. Appraised at {usd(value)}{payoff > 0 ? `, ${usd(payoff)} outstanding` : ""} —
-          the income is not there, or the credit window is shut.
+          No quotes · appraisal {usd(value)}{payoff > 0 ? ` · ${usd(payoff)} outstanding` : ""} · insufficient income or credit window shut
         </div>
       </div>
     );
@@ -53,7 +52,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
     return (
       <div className="refi">
         <div className="deal-head">Refinance</div>
-        <div className="hint">Appraised at {usd(value)}; {usd(payoff)} to pay off. The banks are silent — private paper below.</div>
+        <div className="hint">Appraisal {usd(value)} · payoff {usd(payoff)} · no bank quotes, private only</div>
         {privateQuotes.map((pq) => {
           const pts = Math.round(pq.principal * pq.points);
           // payoff from refiQuotes is already senior + mezz balance
@@ -66,7 +65,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
               </div>
               <div className="dim" style={{ marginTop: 4 }}>{pq.why}</div>
               <div style={{ marginTop: 4 }}>
-                After payoff and points:{" "}
+                Net after payoff and points:{" "}
                 <b className={net >= 0 ? "mono" : "mono neg"}>{net >= 0 ? "+" : ""}{usd(net)}</b>
               </div>
               <div className="btn-row" style={{ marginTop: 6 }}>
@@ -124,16 +123,16 @@ export function RefiSection({ bbl }: { bbl: string }) {
       <div className="refi-intro">
       {cur && (cur.floating ?? cur.product === "float") && !cur.cap && (
         <div className="hint" style={{ marginBottom: 8 }}>
-          This paper floats and has no cap.
+          Floating rate · no cap
           <button type="button" className="btn-mini" style={{ marginLeft: 8 }}
             onClick={() => useStore.getState().rateCap(bbl)}>
-            Buy a three-year cap · {usd(rateCapCost(cur))}
+            Buy 3-yr cap · {usd(rateCapCost(cur))}
           </button>
         </div>
       )}
       {quotes.length > fundableQuotes.length && (
         <div className="hint" style={{ marginBottom: 6 }}>
-          {fundableQuotes.length} of {quotes.length} desks will quote this building.
+          {fundableQuotes.length} of {quotes.length} lenders quoting
           {!showAllQuotes && (
             <> <button type="button" className="btn-mini" onClick={() => setShowAllQuotes(true)}>Show all</button></>
           )}
@@ -142,11 +141,11 @@ export function RefiSection({ bbl }: { bbl: string }) {
           )}
         </div>
       )}
-      <div className="hint">Appraised at {usd(value)}; {usd(payoff)} to pay off.</div>
+      <div className="hint">Appraisal {usd(value)} · payoff {usd(payoff)}</div>
       {existing > 0 && (
         <div className="hint">
           {existing > 0
-            ? `Breaking the loan${holding?.mezz ? "s" : ""} you have costs ${usd(existing)} in ${game.holdings[bbl]?.loan?.prepay === "yieldmaint" ? "yield maintenance" : "prepayment penalty"}.`
+            ? `${game.holdings[bbl]?.loan?.prepay === "yieldmaint" ? "Yield maintenance" : "Prepayment penalty"}: ${usd(existing)}`
             : ""}
         </div>
       )}
@@ -161,13 +160,13 @@ export function RefiSection({ bbl }: { bbl: string }) {
             <div>
               <strong>{pq.lenderName}</strong> · private bridge ·{" "}
               <b className="mono">{usd(pq.principal)}</b> at <b className="mono">{pq.ratePct.toFixed(2)}%</b>,{" "}
-              {(pq.points * 100).toFixed(1)} points, {pq.termM} months · {(100 * pq.ltv).toFixed(0)}% of as-is
+              {(pq.points * 100).toFixed(1)} pts, {pq.termM} mo · {(100 * pq.ltv).toFixed(0)}% LTV as-is
             </div>
             <div className="dim" style={{ marginTop: 4 }}>{pq.why}</div>
             <div style={{ marginTop: 4 }}>
-              After payoff and points:{" "}
+              Net after payoff and points:{" "}
               <b className={net >= 0 ? "mono" : "mono neg"}>{net >= 0 ? "+" : ""}{usd(net)}</b>
-              {" · "}lapses {monthLabel(pq.expiresM)}.
+              {" · "}lapses {monthLabel(pq.expiresM)}
             </div>
             <div className="btn-row" style={{ marginTop: 6 }}>
               <button className="btn" onClick={() => acceptPrivateBorrowQuote(pq.id)}>
@@ -181,13 +180,11 @@ export function RefiSection({ bbl }: { bbl: string }) {
       {mq.available && (
         <div className="hint" style={{ marginBottom: 8, borderLeft: "3px solid #7a6a45", paddingLeft: 8 }}>
           <div>
-            <strong>Cordage mezz</strong> · behind your senior ·{" "}
+            <strong>Cordage mezz</strong> · subordinate ·{" "}
             <b className="mono">{usd(mq.principal)}</b> at <b className="mono">{mq.ratePct.toFixed(2)}%</b>,{" "}
-            {(mq.points * 100).toFixed(1)} points · stack to {(100 * mq.ltvCombined).toFixed(0)}% LTV
+            {(mq.points * 100).toFixed(1)} pts · combined LTV {(100 * mq.ltvCombined).toFixed(0)}%
           </div>
-          <div className="dim" style={{ marginTop: 4 }}>
-            A second lien, not a refinance. The coupon is why nobody does this twice.
-          </div>
+          <div className="dim" style={{ marginTop: 4 }}>Second lien · senior loan unchanged</div>
           <div className="btn-row" style={{ marginTop: 6 }}>
             <button className="btn" disabled={!!consentFor(game, holding, "debt")}
               title={consentFor(game, holding, "debt") ?? undefined}
@@ -206,10 +203,10 @@ export function RefiSection({ bbl }: { bbl: string }) {
           wall instead of four different ones with four different ways round.
           Reading them one at a time by clicking each button is not a market;
           this is the market. Sorted by what actually reaches your account. */}
-      <div className="page-section" style={{ marginTop: 8 }}>The market for this building</div>
+      <div className="page-section" style={{ marginTop: 8 }}>Lender quotes</div>
         <table className="tbl">
           <thead>
-            <tr><th>Desk</th><th className="num">Rate</th><th className="num" title="Coupon plus points and the cap premium, spread over the hold the paper runs">All-in</th><th className="num">Advance</th><th className="num">Write</th><th className="num">To you</th></tr>
+            <tr><th>Lender</th><th className="num">Rate</th><th className="num" title="Coupon + points + cap premium, over the term">All-in</th><th className="num">LTV</th><th className="num">Loan</th><th className="num">Net to you</th></tr>
           </thead>
           <tbody>
             {[...deskQuotes]
@@ -244,14 +241,14 @@ export function RefiSection({ bbl }: { bbl: string }) {
                   <td>
                     {x.id === picked ? "▸ " : ""}{x.label}
                     <div className="dim" style={{ fontSize: 11, fontWeight: 400 }}>
-                      {x.why ?? (px > 0 ? x.binding + (x.bindingWhy ? ` — ${x.bindingWhy}` : "") : "nothing to lend against")}
+                      {x.why ?? (px > 0 ? x.binding + (x.bindingWhy ? ` · ${x.bindingWhy}` : "") : "no loan")}
                     </div>
                     {/* A desk whose `why` already names the rent-roll haircut
                         was dropping the other half of the story — the credit
                         window or its own appetite cutting the stated advance.
                         Both reasons, or the player fixes the wrong one. */}
                     {x.why && px > 0 && x.advanceWhy && (
-                      <div className="dim" style={{ fontSize: 11, fontWeight: 400 }}>…and {x.advanceWhy}</div>
+                      <div className="dim" style={{ fontSize: 11, fontWeight: 400 }}>· {x.advanceWhy}</div>
                     )}
                   </td>
                   <td className="num">{x.available ? pct(x.ratePct) : "—"}</td>
@@ -285,8 +282,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
           return adv ? <div className="hint" style={{ marginTop: 6 }}>{adv}</div> : null;
         })()}
       <div className="grid" style={{ marginTop: 12 }}>
-        <Row k="Desk" v={`${q.label} · ${pct(q.ratePct)}`} strong />
-        <Row k="Lender's maximum" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV against a ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance (${(q.maxLTV * 100).toFixed(0)}% covenant)`} />
+        <Row k="Lender" v={`${q.label} · ${pct(q.ratePct)}`} strong />
+        <Row k="Max loan" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV · ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance · ${(q.maxLTV * 100).toFixed(0)}% covenant`} />
         {/* THE THREE NUMBERS THE COVERAGE RATIO IS MADE OF, at the amount the
             dial is actually set to.
             This row printed `dscrAtMax` — the coverage at the LENDER'S maximum
@@ -298,21 +295,21 @@ export function RefiSection({ bbl }: { bbl: string }) {
             stabilised-less-holdback rather than what the building earns today,
             and that distinction belongs in front of the person signing. */}
         <Row
-          k="Income underwritten"
-          v={q.noiUw > 0 ? `${usd(Math.round(q.noiUw))} NOI a year` : "— no income to lend against"}
+          k="Underwritten NOI"
+          v={q.noiUw > 0 ? `${usd(Math.round(q.noiUw))}/yr` : "—"}
         />
         <Row
           k="Debt service"
-          v={proceeds > 0 ? `${usd(Math.round(annualDs))} a year on ${usd(proceeds)}${amortises && q.ioM > 0 ? ` once it amortises (${usd(Math.round(annualDsIo))} in the ${Math.round(q.ioM / 12)}-yr interest-only period)` : ""}` : "—"}
+          v={proceeds > 0 ? `${usd(Math.round(annualDs))}/yr on ${usd(proceeds)}${amortises && q.ioM > 0 ? ` amortizing (${usd(Math.round(annualDsIo))} during ${Math.round(q.ioM / 12)}-yr IO)` : ""}` : "—"}
         />
         <Row
-          k="Coverage / debt yield"
+          k="DSCR / debt yield"
           v={proceeds > 0 && annualDs > 0 && q.noiUw > 0
-            ? `DSCR ${(q.noiUw / annualDs).toFixed(2)}${amortises && q.ioM > 0 ? ` on the amortising payment (${(q.noiUw / annualDsIo).toFixed(2)} interest-only)` : ""} · DY ${((q.noiUw / proceeds) * 100).toFixed(1)}%`
-            : "— no income to cover it"}
+            ? `DSCR ${(q.noiUw / annualDs).toFixed(2)}${amortises && q.ioM > 0 ? ` amortizing (${(q.noiUw / annualDsIo).toFixed(2)} IO)` : ""} · DY ${((q.noiUw / proceeds) * 100).toFixed(1)}%`
+            : "—"}
           bad={proceeds > 0 && annualDs > 0 && q.noiUw > 0 && q.noiUw / annualDs < 1.20}
         />
-        <Row k="What caps it" v={q.maxProceeds > 0 ? q.binding : "nothing to lend against"} bad={q.binding === "debt yield" && q.maxProceeds > 0} />
+        <Row k="Binding constraint" v={q.maxProceeds > 0 ? q.binding : "no loan"} bad={q.binding === "debt yield" && q.maxProceeds > 0} />
         {q.maxProceeds > 0 && q.bindingWhy && (
           // a sentence, not a value: across both columns, never as a cell in
           // the label column (which sizes to its widest cell, and squeezed
@@ -323,26 +320,26 @@ export function RefiSection({ bbl }: { bbl: string }) {
           k="Structure"
           v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, `
             + (q.maxProceeds > 0 && Math.abs(q.advanceToday - q.advanceLtv) > 0.02
-              ? `sized at ${(q.advanceToday * 100).toFixed(0)}% today (sheet ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}%${q.sheetWhy ? `: ${q.sheetWhy}` : ""})`
-              : `${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance today${q.sheetWhy ? ` (${q.sheetWhy})` : ""}`)
+              ? `sized at ${(q.advanceToday * 100).toFixed(0)}% (sheet ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}%${q.sheetWhy ? `: ${q.sheetWhy}` : ""})`
+              : `${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance${q.sheetWhy ? ` (${q.sheetWhy})` : ""}`)
             + ` / ${(q.maxLTV * 100).toFixed(0)}% covenant, ${q.floating ? "floating" : "fixed"}`}
         />
         <Row k="Origination" v={`${(q.points * 100).toFixed(1)} pts · ${usd(Math.round(proceeds * q.points))}`} />
         {capPremium > 0 && <Row k="Rate cap at close" v={usd(capPremium)} />}
         <Row
           k="Prepayment"
-          v={q.prepay === "open" ? "open — leave any time"
-            : q.prepay === "stepdown" ? `step-down, ${q.prepayM / 12} yrs (${Math.min(5, Math.ceil(q.prepayM / 12))}% falling a point a year${Math.min(5, Math.ceil(q.prepayM / 12)) > 1 ? " to 1%" : ""})`
+          v={q.prepay === "open" ? "open"
+            : q.prepay === "stepdown" ? `step-down, ${q.prepayM / 12} yrs (${Math.min(5, Math.ceil(q.prepayM / 12))}%${Math.min(5, Math.ceil(q.prepayM / 12)) > 1 ? "→1%, −1/yr" : ""})`
             : `yield maintenance, ${q.prepayM / 12} yrs`}
           bad={q.prepay === "yieldmaint"}
         />
-        <Row k="Recourse" v={q.recourse ? "yes — you sign personally" : "non-recourse"} bad={q.recourse} />
-        {q.kicker !== undefined && <Row k="Lender's share of gain" v={`${(q.kicker * 100).toFixed(0)}% on sale`} bad />}
+        <Row k="Recourse" v={q.recourse ? "full recourse" : "non-recourse"} bad={q.recourse} />
+        {q.kicker !== undefined && <Row k="Lender participation" v={`${(q.kicker * 100).toFixed(0)}% on sale`} bad />}
       </div>
       </div>
       <div className="refi-terms">
       <Slider
-        label="Take"
+        label="Loan amount"
         value={lev}
         min={0}
         max={1}
@@ -351,8 +348,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
         format={() => `${usd(proceeds)} · ${((proceeds / Math.max(1, value)) * 100).toFixed(0)}% LTV`
           + (proceeds > 0 && annualDs > 0 && q.noiUw > 0 ? ` · DSCR ${(q.noiUw / annualDs).toFixed(2)}` : "")}
         marks={[{ at: 0.5, label: "half" }, { at: 0.8, label: "80%" }, { at: 1, label: "max" }]}
-        hint={`${usd(annualDs)} a year of debt service against ${usd(Math.round(q.noiUw))} of NOI. `
-          + `${toYou >= 0 ? `Cash out ${usd(toYou)} after the ${usd(fee)} fee.` : `You'd write a cheque for ${usd(-toYou)}.`}`}
+        hint={`Debt service ${usd(annualDs)}/yr · NOI ${usd(Math.round(q.noiUw))} · `
+          + `${toYou >= 0 ? `cash out ${usd(toYou)} after ${usd(fee)} fees` : `pay in ${usd(-toYou)}`}`}
       />
       {/* THE ANSWER, AT THE AMOUNT ON THE DIAL. Coverage after the refinance
           is what a lender tests and what a borrower loses sleep over; the
@@ -371,13 +368,13 @@ export function RefiSection({ bbl }: { bbl: string }) {
             value={dscrAfter !== null ? `${dscrAfter.toFixed(2)}x · ${pct(q.allInPct)} all-in` : `${pct(q.allInPct)} all-in`}
             tone={tone}
             note={(cfAfter < 0
-              ? `The building does not cover this debt service — ${usd(Math.abs(Math.round(cfAfter / 12)))} a month from elsewhere.`
+              ? `Negative cash flow · ${usd(Math.abs(Math.round(cfAfter / 12)))}/mo shortfall`
               : dscrAfter !== null && dscrAfter < q.minDSCR
-                ? `In breach the day it funds${room}.`
+                ? `Covenant breach at funding${room}`
                 : dscrAfter !== null && dscrAfter < q.minDSCR * 1.15
-                  ? `Thin: one tenant leaving takes you through the covenant${room}.`
-                  : `Coverage with room to lose a tenant${room}.`)
-              + ` ${toYou >= 0 ? `${usd(toYou)} to you at closing.` : `${usd(-toYou)} to pay in at closing.`}`}
+                  ? `Thin cushion${room}`
+                  : `Adequate cushion${room}`)
+              + ` · ${toYou >= 0 ? `${usd(toYou)} to you at closing` : `${usd(-toYou)} to pay in at closing`}`}
           />
         );
       })()}
@@ -422,18 +419,18 @@ export function RefiSection({ bbl }: { bbl: string }) {
                 <tr><th>At {usd(proceeds)}</th><th className="num">Today</th><th className="num">After</th></tr>
               </thead>
               <tbody>
-                {cell("Debt on the building", cur ? usd(cur.balance) : "none", usd(proceeds))}
+                {cell("Debt", cur ? usd(cur.balance) : "none", usd(proceeds))}
                 {cell("LTV", cur ? `${(ltvNow * 100).toFixed(0)}%` : "0%",
                   `${((proceeds / Math.max(1, value)) * 100).toFixed(0)}%`,
                   proceeds / Math.max(1, value) > 0.75)}
-                {cell("Coverage (DSCR)", dscrNow !== null ? `${dscrNow.toFixed(2)}x` : "—",
+                {cell("DSCR", dscrNow !== null ? `${dscrNow.toFixed(2)}x` : "—",
                   dscrAfter !== null ? `${dscrAfter.toFixed(2)}x` : "—",
                   dscrAfter !== null && dscrAfter < 1.25)}
                 {cell("Debt yield", cur && cur.balance > 0 ? `${((noi / cur.balance) * 100).toFixed(1)}%` : "—",
                   dyAfter !== null ? `${(dyAfter * 100).toFixed(1)}%` : "—",
                   dyAfter !== null && dyAfter < 0.08)}
                 {cell("Debt service / yr", cur ? `−${usd(Math.round(curDs))}` : "—", `−${usd(Math.round(annualDs))}`)}
-                {cell("Cash flow after debt / yr", `${cfNow < 0 ? "−" : ""}${usd(Math.abs(Math.round(cfNow)))}`,
+                {cell("Cash flow after debt service / yr", `${cfNow < 0 ? "−" : ""}${usd(Math.abs(Math.round(cfNow)))}`,
                   `${cfAfter < 0 ? "−" : ""}${usd(Math.abs(Math.round(cfAfter)))}`, cfAfter < 0)}
                 {cell("...per month", `${cfNow < 0 ? "−" : ""}${usd(Math.abs(Math.round(cfNow / 12)))}`,
                   `${cfAfter < 0 ? "−" : ""}${usd(Math.abs(Math.round(cfAfter / 12)))}`, cfAfter < 0)}
@@ -449,18 +446,15 @@ export function RefiSection({ bbl }: { bbl: string }) {
           const dscrAfter = annualDs > 0 ? noi / annualDs : null;
           if (proceeds <= 0) return "Nothing drawn.";
           if (cfAfter < 0) {
-            return `At this number the building does not cover its own debt service — ${usd(Math.abs(Math.round(cfAfter / 12)))} a month `
-              + `has to come from somewhere else, every month, until something changes. That is a decision, not an accident.`;
+            return `Shortfall ${usd(Math.abs(Math.round(cfAfter / 12)))}/mo after debt service.`;
           }
           if (dscrAfter !== null && dscrAfter < q.minDSCR) {
-            return `Coverage lands at ${dscrAfter.toFixed(2)}x against this desk's ${q.minDSCR.toFixed(2)}x covenant. `
-              + `You would be signing a loan that is in breach the day it funds — they sweep the cash flow and start the clock.`;
+            return `DSCR ${dscrAfter.toFixed(2)}x vs ${q.minDSCR.toFixed(2)}x covenant · breach at funding · cash sweep.`;
           }
           if (dscrAfter !== null && dscrAfter < q.minDSCR * 1.15) {
-            return `Coverage lands at ${dscrAfter.toFixed(2)}x against a ${q.minDSCR.toFixed(2)}x covenant. That is not much room: `
-              + `one tenant leaving takes you through it.`;
+            return `DSCR ${dscrAfter.toFixed(2)}x vs ${q.minDSCR.toFixed(2)}x covenant · thin cushion.`;
           }
-          return `Coverage at ${dscrAfter?.toFixed(2)}x with the covenant at ${q.minDSCR.toFixed(2)}x — room to lose a tenant.`;
+          return `DSCR ${dscrAfter?.toFixed(2)}x vs ${q.minDSCR.toFixed(2)}x covenant.`;
         })()}
       </div>
       <div className="btn-row">
@@ -500,11 +494,11 @@ export function RefiGlance({ bbl }: { bbl: string }) {
       <div className="refi">
         <div className="deal-head">Refinance</div>
         <div className="hint">
-          No desk will quote against this today
-          {privateN ? ` — ${privateN} private bridge${privateN === 1 ? "" : "s"} on offer` : ""}. Appraised at {usd(value)}
-          {payoff > 0 ? `, ${usd(payoff)} outstanding` : ""}.
+          No bank quotes
+          {privateN ? ` · ${privateN} private bridge${privateN === 1 ? "" : "s"}` : ""} · appraisal {usd(value)}
+          {payoff > 0 ? ` · ${usd(payoff)} outstanding` : ""}
         </div>
-        <div className="btn-row"><button className="btn btn-sm" onClick={open}>Open the refinance desk →</button></div>
+        <div className="btn-row"><button className="btn btn-sm" onClick={open}>Refinance →</button></div>
       </div>
     );
   }
@@ -525,14 +519,14 @@ export function RefiGlance({ bbl }: { bbl: string }) {
     <div className="refi">
       <div className="deal-head">Refinance</div>
       <Verdict
-        label={`Best money today · ${best.label}`}
+        label={`Best quote · ${best.label}`}
         value={`${usd(Math.round(best.maxProceeds))} at ${pct(best.allInPct)}`}
         tone={tone}
-        note={`${best.dscrAtMax.toFixed(2)}x coverage at the maximum · ${(best.ltvAtMax * 100).toFixed(0)}% LTV · ${toYou >= 0 ? `${usd(toYou)} to you` : `${usd(-toYou)} to pay in`} after the payoff and fees. ${live.length} of ${quotes.length} desks will quote.`}
+        note={`DSCR ${best.dscrAtMax.toFixed(2)}x at max · ${(best.ltvAtMax * 100).toFixed(0)}% LTV · ${toYou >= 0 ? `${usd(toYou)} to you` : `${usd(-toYou)} to pay in`} after payoff and fees · ${live.length} of ${quotes.length} lenders quoting`}
       />
       {advice && <div className="hint">{advice}</div>}
       <div className="btn-row">
-        <button className="btn btn-sm" onClick={open}>Open the refinance desk →</button>
+        <button className="btn btn-sm" onClick={open}>Refinance →</button>
       </div>
     </div>
   );

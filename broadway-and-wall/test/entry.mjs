@@ -97,6 +97,8 @@ export const MODULES = [
   "takeprivate",
   // renderView — the render contract Unreal draws from (test/render-view.mjs).
   "renderView",
+  // households — the household register (stage 1 shadow; tools/households.mjs).
+  "households",
 ];
 
 export function writeEntry(path) {

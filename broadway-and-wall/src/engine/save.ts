@@ -4,6 +4,7 @@ import type { Credit, GameState, PlanRow } from "./types";
 import { ensureLeasingPlan, starterPlan } from "./leasing";
 import { describeSetup } from "./setup";
 import { shortIndexOf } from "./market";
+import { packHouseholdsForSave, unpackHouseholds } from "./households";
 
 const DB = "broadway-and-wall";
 const STORE = "saves";
@@ -31,7 +32,7 @@ async function tx<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => ID
 }
 
 export async function saveGame(slot: string, state: GameState): Promise<void> {
-  await tx("readwrite", (s) => s.put({ state, savedAt: Date.now() }, slot));
+  await tx("readwrite", (s) => s.put({ state: packHouseholdsForSave(state), savedAt: Date.now() }, slot));
 }
 
 /**
@@ -295,6 +296,8 @@ function groundMovedUnder(state: { v?: unknown; cityIsland?: string }): boolean 
 
 /** Pure save-shape migrations, also exported for a fast round-trip harness. */
 export function migrateSaveState(state: GameState): GameState {
+  // the household register travels as base64 columns (households.ts)
+  if (state.households) unpackHouseholds(state.households);
   migrateExtendedPaper(state);
   if (state.varianceApp) {
     state.varianceApps = {

@@ -2834,7 +2834,9 @@ export function acceptBid(
       "they read the rent roll properly and did not like the rollover",
       "their committee would not approve the number",
       "the environmental report came back with a question",
-    ];
+    ].filter((r) => !b.countered || !r.includes("committee"));
+    // A buyer who just agreed your counter took that number to committee to
+    // agree it; only what diligence finds can move them now.
     const reason = reasons[Math.floor(rng(next) * reasons.length)];
     ns.offer = { price, expiresM: next.month + 2, from: b.name, retrade: reason };
     delete ns.bids;

@@ -831,6 +831,8 @@ export interface ProFormaInput {
    * inside both, so the desk draws the same building from it.
    */
   envelopeFar?: number;
+  /** The tax abatement to price (citygov.ts); omitted = the council's current one, null = none. */
+  abate?: { pct: number; years: number } | null;
   /** The construction desk's quote, sized on the pre-reserve cost. */
   quote: (mix: UseMix, preReserve: number) => ConstructionQuote;
   ltcWanted?: number;
@@ -871,6 +873,9 @@ export interface ProForma {
   /** Bare exit cap, % — and the tax-loaded yield the mark and the hurdle use. */
   exitCap: number;
   exitYieldPct: number;
+  /** The landlord's tax in the first stabilised year after any abatement, and the abatement priced (citygov.ts). */
+  taxYr1: number;
+  abate: { pct: number; years: number } | null;
   /** Land carry to completion, as a share of the land basis. */
   landCarryRate: number;
   bts?: BtsCommitment;
@@ -1168,7 +1173,26 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     stabNoi = marketStabNoi * inlineShare + aNoi;
   }
   const exitCap = capRateFor(asBuilt, uw, "good");
-  const exitYieldPct = exitCap + taxRate(uw) * 100 * taxBorneShare(asBuilt);
+  const taxLoad = taxRate(uw) * taxBorneShare(asBuilt);
+  const fullYieldPct = exitCap + taxLoad * 100;
+  // AN ABATEMENT IS WORTH WHAT IT FORGIVES (citygov.ts: 421-a / ICAP). The
+  // building is assessed at full value and billed `1 - pct` of the tax for
+  // `years`; a buyer pays the full-tax value plus the present value of the
+  // tax not charged, discounted at the building's own all-in yield:
+  //   V' = V (1 + t·pct·a(years, y))  =>  y' = y / (1 + t·pct·a)
+  // so every reader of the exit yield — the desk's hurdle, the lender's 75%
+  // of value, the land residual — sees the same abated value. A job carries
+  // the abatement in force when it was planned (`o.abate`, else the
+  // council's current one).
+  const abate = o.abate !== undefined ? o.abate : econ.gov?.policy.abate ?? null;
+  let exitYieldPct = fullYieldPct;
+  if (abate && abate.pct > 0 && abate.years > 0 && taxLoad > 0) {
+    const y = fullYieldPct / 100;
+    const ann = y > 0 ? (1 - Math.pow(1 + y, -abate.years)) / y : abate.years;
+    exitYieldPct = fullYieldPct / (1 + taxLoad * abate.pct * ann);
+  }
+  // The tax the finished building pays in its first stabilised year, after any abatement.
+  const taxYr1 = fullYieldPct > 0 ? (stabNoi / (fullYieldPct / 100)) * taxLoad * (1 - (abate?.pct ?? 0)) : 0;
 
   const cq = o.quote(mix, preReserve);
   let ltcMax = cq.open ? cq.ltcMax : 0;
@@ -1313,7 +1337,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     hardCost, softCost, demo, contingency, leaseUp, anchorCost, costTotal, months,
     ltc, ltcMax, ratePct, lender: cq.lender, points: cq.points, commitment, interestReserve, pointsCost,
     nonLandBasis: costTotal + interestReserve + pointsCost,
-    stabNoi, exitCap, exitYieldPct,
+    stabNoi, exitCap, exitYieldPct, taxYr1, abate,
     landCarryRate: landCarryFactor(months),
     bts, btsShare,
     ...(prod && site ? { product: { key: prod.key, site, anchors, ...(draw !== undefined ? { draw } : {}) } } : {}),

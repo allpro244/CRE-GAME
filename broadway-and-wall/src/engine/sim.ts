@@ -56,6 +56,7 @@ import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
 import { tickBlackSwans } from "./blackswans";
+import { tickCityGov } from "./citygov";
 import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 import { purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
@@ -770,6 +771,9 @@ function tickMonth(
   // The rare thing that dates a city (blackswans.ts) — before the builders
   // look, so a district that burned this month is dirt they can see.
   tickBlackSwans(s, parcels, bbls, adjacency);
+  // City Hall: the budget, the bonds, the mayor — after the swans have reset
+  // the month's job and migration pulls it adds to (citygov.ts).
+  tickCityGov(s);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
   // Player site-risk can slip a job after econ settled it. Put the SF back

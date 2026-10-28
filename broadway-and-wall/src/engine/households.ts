@@ -809,6 +809,44 @@ export function householdStats(s: GameState) {
   };
 }
 
+/**
+ * THE REGISTER'S MONTH IN MONEY, weighted, read off its state after the tick:
+ * what its households earn (pay, pensions, unemployment insurance), pay in
+ * tax, pay for their homes (rent; a mortgage's principal and interest; the
+ * owner's property tax and insurance, TAX_INS) and spend on everything else
+ * (`flow.spend`). The economy's ledger (economy.ts) books these; nothing here
+ * writes. Pure.
+ */
+export function householdMoney(s: GameState): {
+  wages: number; pensions: number; ui: number; tax: number; taxLocal: number;
+  rent: number; mortgage: number; propertyTax: number; homeInsurance: number; spend: number; households: number;
+} | null {
+  const r = s.households;
+  if (!r || !s.econ) return null;
+  if (!r.a) unpackHouseholds(r);
+  const a = r.a!, e = s.econ;
+  let wages = 0, pensions = 0, ui = 0, tax = 0, taxLocal = 0, rent = 0, mortgage = 0, ownerCost = 0, hh = 0;
+  const slot = (x: number, wage: number, un: number, w: number) => {
+    if (x === EMP_NONE) return 0;
+    if (x === EMP_RETIRED) { pensions += w * wage / 12; return wage / 12; }
+    if (x === EMP_UNEMP) { const v = un <= UI_MONTHS ? (UI_REPLACE * wage) / 12 : 0; ui += w * v; return v; }
+    wages += w * wage / 12; return wage / 12;
+  };
+  for (let i = 0; i < r.n; i++) {
+    const w = a.wt[i];
+    hh += w;
+    const gross = slot(a.emp1[i], a.wage1[i], a.un1[i], w) + slot(a.emp2[i], a.wage2[i], a.un2[i], w);
+    const t = taxRate(gross * 12, e);
+    tax += w * gross * t;
+    taxLocal += w * gross * Math.min(t, 0.04);   // the state-and-local part of TAX_RATES (ITEP, above)
+    const ten = a.ten[i];
+    if (ten === TEN_RENT || ten === TEN_MAINLAND) rent += w * a.rent[i];
+    else if (ten === TEN_OWN) { if (a.mort[i] > 0) mortgage += w * a.mortPmt[i]; ownerCost += w * (TAX_INS / 12) * a.hval[i]; }
+  }
+  // TAX_INS is ~1.0 points of property tax and ~0.5 of insurance (homeprice.ts)
+  return { wages, pensions, ui, tax, taxLocal, rent, mortgage, propertyTax: ownerCost * (1 / 1.5), homeInsurance: ownerCost * (0.5 / 1.5), spend: r.flow.spend, households: hh };
+}
+
 // ---------------------------------------------------------------- saves
 function toB64(u8: Uint8Array): string {
   let out = "";

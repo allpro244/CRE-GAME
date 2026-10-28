@@ -3668,6 +3668,8 @@ export interface GameState {
   streams?: Partial<Record<string, number>>;
   /** THE HOUSEHOLD REGISTER (households.ts): every island renter household and a sample of the region's. Stage 1 is a shadow — nothing reads it. */
   households?: import("./households").HouseholdRegister;
+  /** THE CITY'S FIRM BOOKS AND LEDGER (economy.ts, sfc.ts): every named firm and a sample of the off-map ones, by industry. Step 1 is a shadow — nothing reads it. */
+  economy?: import("./economy").EconomyState;
   month: number;
   cash: number;
   econ: Econ;

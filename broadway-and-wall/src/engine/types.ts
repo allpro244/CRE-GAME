@@ -125,6 +125,8 @@ export interface Tenant {
   empRef?: number;
   /** Its industry's employment when it last staffed (economy.ts `staff`; streetRolls.ts), in heads. */
   empInd?: number;
+  /** A shop's walking catchment's share of the town's people when it last staffed (streetRolls.ts CATCHMENT). */
+  catch?: number;
   /** The quality the tenant shopped for, 1-100 (TENANT_TIERS_PLAN.md). */
   quality?: number;
   // Which part of the building they are in. A shop under a block of flats is
@@ -2321,7 +2323,7 @@ export interface Econ {
    */
   eco?: EcoDrive;
   /** The first month's drivers, which the space market's indices are read against. */
-  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number };
+  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number };
   /** Each trade's payroll last month, for the firms' month-on-month change. */
   tradeEmpPrev?: Partial<Record<string, number>>;
   /** each trade's mean firm-specific sales change last month (streetRolls) */
@@ -4126,6 +4128,8 @@ export interface GameState {
   blockA?: Record<string, number>;
   /** the emergent drift since 2000: what has been built, who is hiring, what opened. */
   blockE?: Record<string, number>;
+  /** the people within a walk of each block, working or living there (demand.ts) — a shop's catchment (streetRolls.ts) */
+  blockFoot?: Record<string, number>;
   /** a block's employment advantage in demand points — its trades against the city's */
   blockJ?: Record<string, number>;
   /** a block's drive-time access to the households added since the first count, in demand points (towngrowth.ts tickRooftops; region only) */

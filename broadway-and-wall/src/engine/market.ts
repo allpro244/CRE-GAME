@@ -452,10 +452,14 @@ const NATVAC_RATE = 1 - Math.exp(-Math.LN2 / 240);
  * turned until a harness passes: `pnpm income` reports the consequence, and a
  * consequence outside its band is a finding about the rest of the model.
  */
-/** Renter demand per point of the loan index over the town's opening rate.
- *  See the tenure note at the multifamily demand driver. */
-/** Renter households per log point of owning cost over renting cost (~0.8% per mortgage point / ~9% cost). */
-const TENURE_PER_LOG = 0.09;
+/**
+ * Renter households per log point of owning cost over renting cost: ~1.1%
+ * per mortgage point on the 1978-85 episode (homeownership 65.6% -> 63.9% as
+ * mortgage rates went ~9.6% -> 13-16%, Census HVS), ~0.8% reading 2022-24
+ * too; a point moves owning cost ~9%, so ~0.09. The household register's
+ * buyers answer it (households.ts BUY_ELAST, step 2).
+ */
+export const TENURE_PER_LOG = 0.09;
 // OFFICE 0.45 -> 0 (2026-10-14). The 0.45 rested on one unverified London
 // estimate of total occupancy demand, which the note above already says is
 // mostly a QUALITY effect. The quantity record runs the other way: US office
@@ -1311,8 +1315,6 @@ const OPENING_UNEMP = 0.052;
 const NAT_U_STAR = 0.048;
 /** How far below zero the price level can fall a year, asymptotically (pay is not cut). */
 const DEFLATION_FLOOR = 0.02;
-/** Retail spending lost per point of real money over neutral (household credit channel). */
-const HH_CREDIT_PER_PT = 0.015;
 /** Credit gap built per month per point of real money under neutral (share of GDP). */
 const CRED_PER_EASY_PT = 0.0008;
 /** ...per unit of the lenders' window over normal, and per unit of output over potential. */
@@ -4276,8 +4278,14 @@ export function tickEcon(s: GameState) {
     }
     // (The extra industrial stop at INDUST_COMP_FLOOR is gone, 2026-10-13: the
     // `span` deceleration above already approaches the bound without reaching it.)
-    // legacy mirror, for anything that still reads it
-    e.industComp = e.secular.industrial.idx;
+    // THE SHARE OF THE TOWN'S WORK THAT WANTS A SHED, for the developers who
+    // read it (dev.ts): since step 2 the firms' own — the floor the
+    // industrial industries' heads take per job, against the first month's
+    // (economy.ts) — not the secular index above. One answer.
+    const ec = e.eco, ec0 = e.eco0;
+    e.industComp = ec?.floorSf?.industrial && ec0?.floorSf?.industrial && ec0.jobs && ec.jobs > 0
+      ? (ec.floorSf.industrial / ec.jobs) / (ec0.floorSf.industrial / ec0.jobs)
+      : e.secular.industrial.idx;
   }
 
   // UNREAD AS OF THIS COMMIT. `unmet` is written once per class per month at
@@ -4757,125 +4765,37 @@ export function tickEcon(s: GameState) {
         if (net > 0) e.baseStock[k] = Math.min(e.baseStock[k], e.baseStock[k] * (1 - net));
       }
     }
-    // WHAT EACH KIND OF SPACE IS ACTUALLY DEMANDED BY, and this was the single
-    // largest hole the economy audit found.
+    // WHAT EACH KIND OF SPACE IS ACTUALLY DEMANDED BY.
     //
-    // Every class's demand was driven by `employIdx` — jobs — including
-    // housing and including shops. So a city whose population rose eighteen per
-    // cent saw NO new demand for flats, and the audit measured exactly the
-    // absurdity that implies: population +18% moved multifamily rent DOWN
-    // 23.9% and retail rent DOWN 67.1%, because the extra people raised
-    // unemployment, unemployment cut wages, and the affordability term then
-    // rationed demand. More people made housing cheaper. That is backwards in
-    // a way no amount of tuning fixes, because the wire itself was wrong.
+    // History, each step a measured fault: every class once read jobs, so a
+    // town whose people rose 18% saw no new demand for flats (the economy
+    // audit); then flats read adults and the tenure margin, shops a blend of
+    // people and jobs, offices and sheds jobs times how their trades were
+    // doing, all of them against the first FILLED payroll (`jobsFilled0`,
+    // 2026-10-14: the drawn size opened every town with space for tenants the
+    // first labour solve removed).
     //
-    // Offices and sheds are leased by FIRMS, so jobs is right for them. Flats
-    // are rented by HOUSEHOLDS, so housing reads population. Shops are a
-    // blend: most trade is residents spending near where they live, and the
-    // rest is the daytime population of workers — which is why a retail
-    // parade in a business district dies at six o'clock and one in a
-    // residential quarter does not.
-    const pop0 = e.pop0 ?? 240_000;   // this town's opening population, so popIdx opens at exactly 1
-    const popIdx = (e.population ?? pop0) / pop0;
-    // ...AND IT IS THE JOBS THAT EXIST, NOT THE JOBS SOMEBODY WANTED.
-    //
-    // This read `employIdx`, which is what employers WANT to hire. Since the
-    // labour block above caps actual employment at what the town can staff,
-    // the two numbers separate the moment a boom outruns the population — and
-    // they separated permanently. Measured over the first ten years on three
-    // seeds, unfilled positions ran from nothing to 8-24% OF THE LABOUR FORCE
-    // and never came back, which means a fifth of the office demand pricing
-    // this city's rents was demand from desks that had nobody to sit at them.
-    // Office vacancy fell to 3.7% by year five, rents went 2.4x in ten years
-    // and the median lot went 4.8x.
-    //
-    // A firm does not lease a floor for a headcount it cannot hire. Demand for
-    // space is demand from people who turned up, and `e.jobs` — the same
-    // number the unemployment rate and the wage bill are struck on — is that
-    // number. One quantity, one answer.
-    // ...AGAINST THE PAYROLL THE LABOUR MARKET ACTUALLY FILLED (2026-10-14).
-    // `jobs0` is the size the town was drawn at, and the first month's labour
-    // solve moves it 2-5% (derivePhase says so) — so every town opened with
-    // its space positioned for tenants that the first solve then removed,
-    // and gave the floors back over the next two years. Measured across
-    // twelve seeds: office vacancy up 3-10 points and real office rent down
-    // 22-34% by year five, in every seed, whatever the opening vacancy. The
-    // space market is indexed to the first filled payroll instead.
-    if (e.jobsFilled0 === undefined && (e.history?.length ?? 0) > 1 && (e.jobs ?? 0) > 0) e.jobsFilled0 = e.jobs;
-    const jobs0 = e.jobsFilled0 ?? e.jobs0 ?? 132_000;
-    const jobIdx = (e.jobs ?? jobs0) / jobs0;
     // WHO LEASES THIS CLASS, AND HOW MUCH OF IT THEY NEED (2026-10-28, ONE
-    // ECONOMY step 2). The driver was the town's jobs times how the class's
-    // trades were doing against the town, times a secular index (the online
-    // shift, the factories the dollar sends abroad), and for shops a blend of
-    // people and jobs with a household-credit term. It is the firms' own
-    // floor now: every industry's heads on the floor it rents — offices,
-    // shops, sheds — not at home and not in a hospital, school, depot or yard
-    // (industries.ts OFF_FLOOR, REMOTE), at its feet a worker, against the
-    // first month's (economy.ts `economyToEngine`). A shop's heads are what
-    // its sales pay for, so shops follow the register's spending (and the
-    // share of it that ships from a shed, `online`); a plant's are what the
-    // nation buys of it (and what a dear dollar sends abroad); an office's are
-    // its industry's sales. Flats follow the register's renter households.
+    // ECONOMY step 2). It is the firms' own floor now: every industry's heads
+    // on the floor it rents — offices, shops, sheds — not at home and not in a
+    // hospital, school, depot or yard (industries.ts OFF_FLOOR, REMOTE), at its
+    // feet a worker, against the first month's (economy.ts `economyToEngine`).
+    // A shop's heads are what its sales pay for, so shops follow the register's
+    // spending (and the share of it that ships from a shed, `online`); a
+    // plant's are what the nation buys of it (and what a dear dollar sends
+    // abroad); an office's are its industry's sales. Flats follow the
+    // register's renter households — who rent rather than own, household by
+    // household, on what each costs (households.ts `tickTenure`), and less the
+    // ones the plats' new houses took. Retired with it: the secular indices
+    // as demand (the online shift and the factory floor are the industries'
+    // now), the tenure index and the household-credit term (the register's
+    // households carry their own card rates and their own choice to buy).
     // Before the books open (the opening months) the opening's level stands.
-    // Flats are rented by HOUSEHOLDS, and households are formed by adults —
-    // an ageing town with fewer children forms more, smaller households per
-    // head. Adults against the opening's adults.
-    const hhIdx = e.ages && e.adults0 ? (e.ages.work + e.ages.old) / e.adults0 : popIdx;
-    // ...AND HOW MANY OF THOSE HOUSEHOLDS RENT RATHER THAN BUY (2026-10-09).
-    // A flat competes with a mortgage. When the mortgage rate rises the
-    // first-time buyer's monthly payment rises with it, and the marginal
-    // household keeps renting; when it falls, it buys and moves out. Nothing
-    // in this model read that, so flats were the one class whose demand never
-    // heard of the bond market. Calibrated on the cleanest episode in the US
-    // record: as mortgage rates went from ~9.6% (1978) to 13-16% (1980-85),
-    // the homeownership rate fell 65.6% -> 63.9% (Census HVS) — renter
-    // households up ~5% of themselves on ~4.5 points, about 1.1% per point.
-    // 2022-24 (+4 points, ownership roughly flat while renter formation rose)
-    // reads lower, so 0.8% per point of the loan index against the town's
-    // opening rate (1.0 in month zero, like every demand argument). Tenure
-    // is decided at moves, not monthly: rolled over three years, which is
-    // also how long the 1980s shift took to show in the survey.
-    if (k === "multifamily") {
-      // OWN OR RENT, ON WHAT EACH COSTS (2026-10-15). This read the loan index
-      // alone. A household chooses on the user cost of owning — the house
-      // price times (mortgage rate + upkeep and tax - expected appreciation)
-      // (Poterba 1984; Himmelberg, Mayer & Sinai 2005) — against the rent. The
-      // elasticity keeps the old calibration: a point on mortgage rates moves
-      // owning cost ~9% and renter households ~0.8%, so ~0.09 per log point.
-      const own = ownCostIdx(e);
-      const rentRel = (e.effRentIdx?.multifamily ?? 1) / Math.max(0.1, e.cpi ?? 1);
-      const rel = Math.log(own / Math.max(1e-6, rentRel));
-      const ref = (e.tenureOwnRef ??= rel);
-      const raw = Math.exp(TENURE_PER_LOG * (rel - ref));
-      e.tenureIdx = (e.tenureIdx ?? 1) + (raw - (e.tenureIdx ?? 1)) / 36;
-    }
-    // HOUSEHOLDS BORROW TO SHOP (2026-10-15). Cars, furniture, appliances and
-    // a good deal of everything else go on credit, so dear money cuts what
-    // households spend on goods before it costs anyone a job: durables fall
-    // roughly 3-5% per point of real rates and they are about a third of
-    // store sales, so ~1.5% of retail spending per point held over neutral
-    // (Mishkin 1976; Bernanke & Gertler 1995's household credit channel).
-    // Read against the town's opening, rolled over a year as card and auto
-    // rates reprice.
-    if (k === "retail") {
-      const pts = firmBookInputs(e).ratePts;
-      const raw = Math.exp(-HH_CREDIT_PER_PT * pts);
-      const ref = (e.hhCreditRef ??= raw);
-      e.hhCredit = (e.hhCredit ?? 1) + (raw / ref - (e.hhCredit ?? 1)) / 12;
-    }
-    // ...LESS THE HOUSEHOLDS THE NEW HOUSES TOOK (homes.ts). A new house is
-    // not a flat: it houses one household, owner or a single-family renter,
-    // that would otherwise rent an apartment, directly or down the vacancy
-    // chain a move-up purchase starts. Each one takes an average 900-sf flat
-    // (RentCafe / Census new-apartment average) out of the town's demand.
-    // (The register's buyers take the plats' houses — households.ts — so the
-    // households the new houses took are out of its renters already.)
+    if (e.jobsFilled0 === undefined && (e.history?.length ?? 0) > 1 && (e.jobs ?? 0) > 0) e.jobsFilled0 = e.jobs;
     const eco = e.eco, eco0 = e.eco0;
     const driver = k === "multifamily"
       ? (eco && eco0?.renters ? Math.max(0.05, eco.renters / eco0.renters) : 1)
       : (eco?.floorSf && eco0?.floorSf?.[k] ? Math.max(0.05, (eco.floorSf[k] ?? 0) / eco0.floorSf[k]!) : 1);
-    void hhIdx; void popIdx; void jobIdx;
     // A CLASS'S MOMENTUM IS ITS TENANTS' GROWTH AGAINST NORMAL. Monthly growth
     // of the driver less its own five-year average, smoothed over six months,
     // in the "boom units" its readers (rents, cap rates, absorption, tenant

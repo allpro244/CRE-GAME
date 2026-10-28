@@ -52,6 +52,7 @@ import { tenantQualityTerms } from "./bands";
 import { drawTenantSf, sizeScale } from "./plates";
 import { noteTenantMove } from "./history";
 import { INDUSTRY_IDS, N_IND, TRADE_TO_INDUSTRY, floorOf } from "./industries";
+import { demandModel } from "./demand";
 
 export interface StreetRoll {
   t: Tenant[];
@@ -104,6 +105,20 @@ const EXIT_BASE: Record<Comm, number> = { office: 0.05, retail: 0.07, industrial
 const FORM_M: Record<Comm, number> = { office: 9, retail: 6, industrial: 6 };
 /** Score points between the space a firm shops for and a building, per e-fold of its interest. */
 const FIT_W = 12;
+
+/**
+ * HOW MUCH OF A SHOP'S TRADE IS ITS WALKING CATCHMENT: half. A shop sells to
+ * the people who work and live within a walk of it (demand.ts `blockFoot`, a
+ * few hundred metres) and to everyone else who comes; convenience retail and
+ * restaurants draw most of their sales from a primary trade area of a few
+ * blocks to a mile, so a neighbourhood's share of a shop's sales is about
+ * half [K, shape parameter: the ICSC / Huff trade-area convention that the
+ * primary area is 50-70% of a centre's sales]. A shop's staff move with its
+ * catchment's share of the town's people at this elasticity, on top of its
+ * industry's employment — so a factory that closes takes trade from the shops
+ * around it (step 2), and the town's spending as a whole stays the industry's.
+ */
+const CATCHMENT = 0.5;
 
 /** A uniform [0,1) from a key — the same tenant in the same month always draws the same number. */
 function hashU(seed: number, key: string): number {
@@ -322,6 +337,15 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   // Headcount that closed or left town this month, by class — what new firms replace.
   const lost: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
   const eco = e.eco, indOf = industryMap(s);
+  // each street building's block and its catchment's share of the town's people now
+  const foot = s.blockFoot, ofBbl = foot ? demandModel(parcels).ofBbl : undefined;
+  let footTot = 0;
+  if (foot) for (const v of Object.values(foot)) footTot += v;
+  const catchOf = (bbl: string) => {
+    const id = ofBbl?.get(bbl);
+    const v = id !== undefined ? foot?.[id] : undefined;
+    return v !== undefined && footTot > 0 ? v / footTot : undefined;
+  };
   const dzAcc: Record<string, [number, number]> = {};
   // ---- 1. the firms in the street's buildings: books, failures, expiries
   for (const [bbl, roll] of Object.entries(R)) {
@@ -348,12 +372,25 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       const emp = known ? iEmp : 1;
       const prev = known ? (t.empInd ?? emp) : 1;
       if (known) t.empInd = emp;
+      // a shop: and its walking catchment's share of the town's people
+      let catchR = 1;
+      if (k === "retail") {
+        const c = catchOf(bbl);
+        if (c !== undefined && c > 0) { if (t.catch !== undefined && t.catch > 0) catchR = Math.pow(c / t.catch, CATCHMENT); t.catch = c; }
+      }
       const zNow = t.fin?.z ?? 0;
       const dz = zNow - ((t as Tenant & { zSeen?: number }).zSeen ?? zNow);
       (t as Tenant & { zSeen?: number }).zSeen = zNow;
       const za = (dzAcc[t.sector] ??= [0, 0]), hw = firmHc(t);
       za[0] += hw * dz; za[1] += hw;
-      t.staff = Math.max(0.05, Math.min(60, (t.staff ?? 1) * Math.sqrt(emp / Math.max(1e-6, prev)) * Math.exp(0.7 * (dz - (e.dzBar?.[t.sector] ?? 0)))));
+      // (Half of a growing industry's new heads are new firms', so a sitting
+      // firm takes the square root of the rise; a shrinking one has no
+      // entrants to share the fall with, so its firms take all of it —
+      // step 2: the sitting firms' heads ARE the industry's on the island,
+      // and a square root both ways left them holding staff its sales no
+      // longer paid for.)
+      const r = emp / Math.max(1e-6, prev);
+      t.staff = Math.max(0.05, Math.min(60, (t.staff ?? 1) * (r >= 1 ? Math.sqrt(r) : r) * catchR * Math.exp(0.7 * (dz - (e.dzBar?.[t.sector] ?? 0)))));
       // The contractual bump on each anniversary.
       const age = m - t.startM;
       if (age > 0 && age % 12 === 0) t.rentPsf = +(t.rentPsf * (1 + bumpOf(t) / 100)).toFixed(2);

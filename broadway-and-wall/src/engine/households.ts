@@ -11,17 +11,16 @@
 // lease or a mortgage, up to two earners with an employer and a wage, savings,
 // card debt at its own rate, and a credit record that remembers arrears.
 //
-// STAGE 1 IS A SHADOW. Nothing in the world reads this register yet. It is
-// seeded from the opening and ticked every month after the town's renters
-// have moved (sim.ts, after tickStreetFlats), it follows the aggregates the
-// engine already keeps — the flats let in each block, the region's
-// households, the town's jobless rate, its wage index — and it draws on its
-// own random stream (`s.streams.households`), so the world it shadows is byte
-// for byte the world without it (BASELINE.json does not move). Stage 2 turns
-// it round: the flats' occupancy, MF absorption and the tenure margin read
-// the register instead of the indices it now copies. `householdStats` is the
-// read stage 2 starts from, and `tools/households.mjs` holds the two answers
-// against each other until then.
+// STAGE 1 WAS A SHADOW (it followed the engine's aggregates). SINCE ONE
+// ECONOMY STEP 2 (2026-10-28) THE REGISTER IS THE TOWN'S PEOPLE: its earners
+// in work are the town's jobs, its jobless its unemployment, its households'
+// members its population and age mix, its renter households what the flats'
+// demand reads (economy.ts `economyToEngine`, read by market.ts a month on).
+// The island's renters are one for one with the flats the street's rolls have
+// let, drawn from — and returned to — the region's renter households across
+// the water; households buy and sell homes (`tickTenure`); they arrive for the
+// work the town's own people did not take and leave when out of it. It draws
+// on its own random stream (`s.streams.households`).
 //
 // STORAGE is struct-of-arrays (typed arrays, one per field), so a month over
 // ten thousand households is a few milliseconds and a save is a few hundred
@@ -32,7 +31,7 @@
 // they are a shape parameter, stated as such (CLAUDE.md).
 import type { ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
-import { HH_RENT_SHARE0, shortIndexOf, ownCostIdx } from "./market";
+import { HH_RENT_SHARE0, shortIndexOf, ownCostIdx, TENURE_PER_LOG } from "./market";
 import { resolveRecBare, useRentableSf } from "./value";
 import { flatUnitSf } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, medianIncome, mortgageRate } from "./homeprice";
@@ -103,7 +102,7 @@ const SELL_YR = 0.017;
  * HVS) over the steady state's elasticity of the renter share to the buying
  * hazard, about 0.65 at the opening's flows [D]: 0.09 / 0.65 = 0.14.
  */
-const BUY_ELAST = 0.14;
+const BUY_ELAST = TENURE_PER_LOG / 0.65;
 /** Monthly employed-to-unemployed flow, about 1.4% (BLS CPS labour-force flows, 2015-19 average). [S] */
 const SEP_RATE = 0.014;
 /** Monthly unemployed-to-employed flow, about a quarter of the jobless a month (BLS CPS labour-force flows, 2015-19 average) — when there is a vacancy to take. [S] */
@@ -691,16 +690,25 @@ function toMainland(R: Rand, r: HouseholdRegister, i: number, pool: number[], go
 }
 
 /**
- * OWN OR RENT, HOUSEHOLD BY HOUSEHOLD (2026-10-28, step 2). Renters with work
- * buy at the month's hazard — the opening's (solved so the opening's owners
- * are a steady state: their sales and their dissolutions over the renters)
- * moved by what owning costs against renting (market.ts `ownCostIdx` against
- * the flats' real rent, BUY_ELAST) — on a mortgage of a fifth of their income
- * (AHS) at the month's rate, with a tenth down; owners sell and rent again at
- * SELL_YR. The plats' new houses (homes.ts) are sold to the region's renters,
- * one household each. An island renter who buys leaves its flat. It replaces
- * the engine's tenure index as what the flats' demand reads (market.ts: the
- * register's renter households).
+ * OWN OR RENT (2026-10-28, step 2). Renters with work buy at the month's
+ * hazard — the opening's (solved so the opening's owners are a steady state:
+ * their sales and their dissolutions over the renters) moved by what owning
+ * costs against renting (market.ts `ownCostIdx` against the flats' real rent,
+ * BUY_ELAST); owners sell and rent again at SELL_YR; the plats' new houses
+ * (homes.ts) are sold to the region's renters, one household each. It
+ * replaces the engine's tenure index as what the flats' demand reads
+ * (market.ts: the register's renter households).
+ *
+ * THE REGION'S HOUSEHOLDS MOVE AS SHARES OF THEIR WEIGHT, NOT AS AGENTS. A
+ * regional agent stands for ~20 households, so converting whole agents at a
+ * monthly hazard made the region's renter count a random walk in steps of 20
+ * — measured, twin worlds differed by ±5% in renter households within a year
+ * with nothing different in them, and that walk was the flats' demand. So
+ * each month a share of each working renter agent's weight passes to the
+ * owners (spread over them by weight) and a share of each owner agent's
+ * weight to the renters: the households the hazards say move, moved, with no
+ * sampling noise. An island renter (one household an agent) still buys one
+ * by one, and leaves its flat.
  */
 function tickTenure(R: Rand, r: HouseholdRegister, e: Econ, gone: Uint8Array, pool: number[]) {
   const a = r.a!, n = gone.length;
@@ -720,42 +728,40 @@ function tickTenure(R: Rand, r: HouseholdRegister, e: Econ, gone: Uint8Array, po
   }
   const hBuy = r.hBuy0 * Math.exp(-BUY_ELAST * (rel - (r.tenRef ?? rel)));
   const owners: number[] = [];
-  for (let i = 0; i < n; i++) if (!gone[i] && a.ten[i] === TEN_OWN) owners.push(i);
-  const toOwner = (w: number) => { if (owners.length) a.wt[owners[Math.floor(R.u() * owners.length)]] += w; };
-  const mRate = mortgageRate(e);
+  let ownW = 0, mainW = 0;
   for (let i = 0; i < n; i++) {
     if (gone[i]) continue;
-    const t = a.ten[i], u = R.u();
-    if (t === TEN_OWN) {
-      if (u < sellM) {
-        a.sav[i] += Math.max(0, a.hval[i] - a.mort[i]) * 0.94;   // less the agent's 6%
-        a.ten[i] = TEN_MAINLAND; a.mort[i] = 0; a.mortPmt[i] = 0; a.hval[i] = 0;
-        a.rent[i] = mainlandRent(R, r.mainRent, a, i);
-        r.flow.sold = (r.flow.sold ?? 0) + a.wt[i];
-      }
-      continue;
-    }
+    if (a.ten[i] === TEN_OWN) { owners.push(i); ownW += a.wt[i]; }
+    else if (a.ten[i] === TEN_MAINLAND) mainW += a.wt[i];
+  }
+  // owners who sell
+  let toRent = 0;
+  for (const i of owners) { const d = a.wt[i] * sellM; a.wt[i] -= d; toRent += d; }
+  // renters who buy: the region's with work, a share of each; the island's one by one
+  let toOwn = 0;
+  for (let i = 0; i < n; i++) {
+    if (gone[i]) continue;
+    const t = a.ten[i];
     if (t !== TEN_RENT && t !== TEN_MAINLAND) continue;
-    if (!(u < hBuy) || !(isWorking(a.emp1[i]) || isWorking(a.emp2[i]))) continue;
-    r.flow.bought = (r.flow.bought ?? 0) + a.wt[i];
-    if (t === TEN_RENT) { gone[i] = 1; r.flow.movedOut += a.wt[i]; toOwner(a.wt[i]); continue; }
-    const income = a.wage1[i] + a.wage2[i];
-    const mo = mRate / 12, pmt = 0.20 * income / 12;
-    a.ten[i] = TEN_OWN; a.rent[i] = 0;
-    a.mortRate[i] = mRate; a.mortPmt[i] = pmt;
-    a.mort[i] = mo > 0 ? (pmt * (1 - Math.pow(1 + mo, -360))) / mo : pmt * 360;
-    a.hval[i] = a.mort[i] / 0.9;
-    a.sav[i] = Math.max(0, a.sav[i] - 0.1 * a.hval[i]);
+    const working = isWorking(a.emp1[i]) || isWorking(a.emp2[i]);
+    if (t === TEN_MAINLAND) { if (working) { const d = a.wt[i] * hBuy; a.wt[i] -= d; toOwn += d; } continue; }
+    if (R.u() < hBuy && working) { gone[i] = 1; r.flow.movedOut += a.wt[i]; toOwn += a.wt[i]; }
   }
   // the plats' houses, each to a household across the water
   const sold = Math.max(0, (e.newHomes ?? 0) - (r.homesSeen ?? 0));
   r.homesSeen = e.newHomes ?? 0;
-  for (let k = 0; k < sold && pool.length; k++) {
-    const j = pool[Math.floor(R.u() * pool.length)];
-    if (gone[j] || a.ten[j] !== TEN_MAINLAND || a.wt[j] < 1) continue;
-    a.wt[j] -= 1; toOwner(1);
-    r.flow.bought = (r.flow.bought ?? 0) + 1;
-  }
+  let mainNow = 0;
+  for (const i of pool) if (!gone[i] && a.ten[i] === TEN_MAINLAND) mainNow += a.wt[i];
+  const plat = Math.min(sold, 0.5 * mainNow);
+  if (plat > 0) for (const i of pool) if (!gone[i] && a.ten[i] === TEN_MAINLAND) a.wt[i] -= plat * a.wt[i] / mainNow;
+  toOwn += plat;
+  // ...and the movers land: buyers among the owners, sellers among the renters, each by weight
+  const ownAfter = ownW - toRent, mainAfter = mainNow - plat;
+  if (ownAfter > 0) { const f = (ownAfter + toOwn) / ownAfter; for (const i of owners) a.wt[i] *= f; }
+  if (mainAfter > 0) { const f = (mainAfter + toRent) / mainAfter; for (const i of pool) if (!gone[i] && a.ten[i] === TEN_MAINLAND) a.wt[i] *= f; }
+  r.flow.bought = (r.flow.bought ?? 0) + toOwn;
+  r.flow.sold = (r.flow.sold ?? 0) + toRent;
+  void mainW;
 }
 
 /**

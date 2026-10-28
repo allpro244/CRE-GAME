@@ -9,7 +9,8 @@
 // building materials, world-led machinery and electronics) — and the facts
 // each one carries. ONE_ECONOMY_PLAN.md §2.
 //
-// NOTHING IN THE WORLD READS THIS YET (step 1 is a shadow, economy.ts).
+// Since step 2 (2026-10-28) the town's jobs and its demand for space are these
+// industries' (economy.ts), so every number here bears load.
 //
 // WHERE THE NUMBERS COME FROM. Constants carry [S] when they are a measured
 // fact with a source, [D] when they are DERIVED here from such a fact by
@@ -53,7 +54,8 @@
 //  - BLS Current Employment Statistics, 2023 annual averages, thousands,
 //    rounded to the nearest 5-50k (empK). Output per worker and pay per worker
 //    are BEA output and compensation over these heads.                            [S]
-//  - Space per worker (sfPerWorker). NOT YET LOAD-BEARING: step 4 reads it.
+//  - Space per worker (sfPerWorker). Load-bearing since step 2: each class's
+//    demand driver is its industries' heads on the floor at these feet a head.
 //    Office: CBRE and BOMA occupier surveys put US office space at about
 //    150-250 sf per worker (CBRE ~194 average, 2018-19), dense for tech and
 //    back offices, roomy for law and headquarters — each industry's place in
@@ -61,9 +63,10 @@
 //    BLS manufacturing employment runs ~500-1,500 sf a worker, heavy process
 //    industries at the top; warehouses and retail: EIA CBECS 2018 floorspace
 //    per worker by building activity. Rounded to 50-100 sf and approximate —
-//    [S~], to be checked against the tables before step 4 makes them bear load.
-//    The engine's own SF_PER_JOB (market.ts: 230 / 420 / 550) is what turns a
-//    STREET firm's feet into heads today, and stays so in step 1.
+//    [S~], to be checked against the tables (the drivers are indexed to the
+//    opening, so a level error cancels; a mix error does not). The engine's own
+//    SF_PER_JOB (market.ts: 230 / 420 / 550) still turns a STREET firm's feet
+//    into heads.
 import type { Sector } from "./types";
 
 export type IndustryId =

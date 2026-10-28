@@ -1009,7 +1009,7 @@ export function economyToEngine(s: GameState): void {
     d.trade = trade;
   }
   e.eco = d;
-  if (d.floorSf) (e.eco0 ??= {}).floorSf ??= { ...d.floorSf };
+  if (d.floorSf && !e.eco0?.floorSf) { (e.eco0 ??= {}).floorSf = { ...d.floorSf }; e.eco0.jobs = d.jobs; }
   (e.eco0 ??= {}).renters ??= d.renters;
 }
 

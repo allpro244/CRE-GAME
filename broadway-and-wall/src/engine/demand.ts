@@ -759,7 +759,32 @@ function tradesOf(id: string, sf: Partial<Record<BuiltClass, number>>): Partial<
  * `s.blockD` never re-enters. Do not swap in a resolved record: the whole
  * feedback structure of this file depends on that being the static number.
  */
-function occupiedStock(s: GameState, parcels: ParcelTable, model: DemandModel): Map<string, Partial<Record<BuiltClass, number>>> {
+/**
+ * THE PEOPLE WITHIN A WALK OF EACH BLOCK, working or living there, from what
+ * the buildings around it actually hold this month — each street building's
+ * own roll, the player's tenants — at the same ratios as the neighbourhood's
+ * emergence (`contribution`). What a shop on the block sells to
+ * (streetRolls.ts CATCHMENT, ONE ECONOMY step 2): a factory that empties
+ * takes its workers out of the catchment of every shop around it. (The
+ * emergence above reads each building's stabilised occupancy, which a single
+ * closure does not move.)
+ */
+function catchments(s: GameState, parcels: ParcelTable, model: DemandModel): Record<string, number> {
+  const occ = occupiedStock(s, parcels, model, false);
+  const out: Record<string, number> = {};
+  for (const b of model.blocks.values()) {
+    let p = 0;
+    for (const n of b.neighbours) {
+      const st = occ.get(n.id);
+      if (!st) continue;
+      for (const k of Object.keys(st) as BuiltClass[]) { const c = contribution(k, (st[k] ?? 0) * n.w); p += c.j + c.r; }
+    }
+    out[b.id] = p;
+  }
+  return out;
+}
+
+function occupiedStock(s: GameState, parcels: ParcelTable, model: DemandModel, stabilised = true): Map<string, Partial<Record<BuiltClass, number>>> {
   const out = new Map<string, Partial<Record<BuiltClass, number>>>();
   const bump = (id: string | undefined, cls: BuiltClass, sf: number) => {
     if (!id) return;
@@ -789,7 +814,7 @@ function occupiedStock(s: GameState, parcels: ParcelTable, model: DemandModel): 
         ? (cls === "multifamily"
           ? (h.occ ?? useOccupancy(rec as ParcelRecord, s.econ, cls, true))
           : Math.min(1, h.tenants.filter((tn) => (tn.use ?? cls) === cls).reduce((n, tn) => n + tn.sf, 0) / compSf))
-        : useOccupancy(rec as ParcelRecord, s.econ, cls, true);
+        : useOccupancy(rec as ParcelRecord, s.econ, cls, stabilised);
       bump(id, cls, compSf * occ);
     }
   }
@@ -1202,6 +1227,7 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
     raw.set(b.id, RESPONSE * lr + (s.blockJ?.[b.id] ?? 0) + poleLift(s, b) + constructionLift(s, model, b) + spill(b));
     civic.set(b.id, transitLift(s, b));
   }
+  s.blockFoot = catchments(s, parcels, model);
 
   // ---- DEMAND IS REDISTRIBUTIVE, NOT ADDITIVE -----------------------------
   //

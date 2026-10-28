@@ -1846,6 +1846,10 @@ export default function MapView() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designPeek, schemeBbl, designOrbit]);
+  const diorama = useStore((s) => s.diorama);
+  useEffect(() => {
+    if (mapReady) threeRef.current?.setLook(diorama);
+  }, [diorama, mapReady, layerGen]);
   const graphics = useStore((s) => s.graphics);
   useEffect(() => {
     if (!mapReady) return;

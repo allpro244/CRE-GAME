@@ -15,6 +15,7 @@ import { formsFor, formTiers } from "@/citygen/forms.mjs";
 import * as THREE from "three";
 import { CLOUD, CLOUD_GLSL, CLOUD_BASE } from "./clouds";
 import { curtainOf, glassReflOf, paintCurtain } from "./curtain";
+import { detailOf, paintDetail, revealDepth } from "./facadeDetail";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import maplibregl from "maplibre-gl";
 import type { BuildingVolume } from "../volume";
@@ -742,6 +743,9 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
   const pc = { m: msk.g, hg: hgt.g };
   spec.wall(alb.g, W, H, rnd, pc);
   const wallLum = meanLum(alb.g, null, -1, W, H);
+  // the lines along the floors and down the piers (facadeDetail.ts)
+  const det = detailOf(spec);
+  if (det) paintDetail(spec, det, alb.g, msk.g, hgt.g, false);
   // both canvases at once: the colour, and the same shape in the mask
   const both = (col: string, mk: string, draw: (g: CanvasRenderingContext2D) => void) => {
     alb.g.fillStyle = col; draw(alb.g);
@@ -836,6 +840,8 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
       hgt.g.fillStyle = "#3a3a3a"; shape(hgt.g, a, b); hgt.g.fill();
     }
   }
+  // the joinery round each opening: sill, head, casing
+  if (det) paintDetail(spec, det, alb.g, msk.g, hgt.g, true);
   // the curtain wall's own system: caps, bands, joints, fins, frit (curtain.ts)
   const sys = curtainOf(spec);
   if (sys) paintCurtain(spec, sys, alb.g, msk.g, hgt.g, orm.g);
@@ -879,7 +885,7 @@ function buildFamily(spec: FamilySpec, seed: number): Family {
     sh.uniforms.uGlassP = { value: glassPU };
     Object.assign(sh.uniforms, GLASS_U);
     // a masonry wall is deep, a panel or a timber frame shallow
-    sh.uniforms.uReveal = { value: spec.glass ? 0 : spec.masonry ? 0.24 : 0.12 };
+    sh.uniforms.uReveal = { value: revealDepth(spec) };
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", "#include <common>\nattribute float aoh;\nattribute vec4 paint;\nattribute vec3 trimc;\nattribute vec3 accent;\nvarying float vLit;\nvarying float vAoH;\nvarying vec4 vPaint;\nvarying vec3 vTrimC;\nvarying vec3 vAccC;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGz = position.z;\nvAoH = aoh;\nvPaint = paint;\nvTrimC = trimc;\nvAccC = accent;")

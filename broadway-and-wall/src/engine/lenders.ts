@@ -1568,7 +1568,15 @@ function trackLosses(l: Lender, named: DeskTotals) {
 function expectedLoss(l: Lender, c: LossClass): number {
   const b = l.balEw?.[c] ?? 0;
   const own = b > 1 ? 100 * (l.lossEw?.[c] ?? 0) / b : PRIOR_EL[c];
-  return PRIOR_EL[c] / 3 + (2 / 3) * own;
+  // CREDIBILITY: a desk's experience on a kind of loan counts in proportion to
+  // how much of that paper it has carried (Bühlmann credibility, the actuarial
+  // rule for exactly this). Two-thirds weight at most; a class that is a tenth
+  // of its book gets half of that. One loss on a book that has since run off
+  // is not a loss rate.
+  let tot = 0;
+  for (const k of CLASSES) tot += l.balEw?.[k] ?? 0;
+  const w = (2 / 3) * (b / Math.max(1, b + 0.1 * tot));
+  return (1 - w) * PRIOR_EL[c] + w * own;
 }
 
 /**
@@ -1604,14 +1612,18 @@ export function deskPricing(s: GameState, l: Lender): DeskPx {
     const usual = (1 - k.wholesale) * base + k.wholesale * (short + WHOLESALE_SPREAD);
     fund = marg - short;
     dFund = marg - usual;
-  } else if (l.kind === "conduit") {
-    const open = (e.nat?.creditNat ?? e.creditIdx ?? 1) >= 0.6;
-    fund = open ? 0.3 + panic : (l.fundCost ?? e.indexRate + 0.3) + panic - e.indexRate;
-    dFund = fund - 0.3;
   } else {
-    const ref = l.kind === "life" ? -0.3 : l.kind === "fund" ? 1.1 : -2.2;
-    const mkt = l.kind === "fund" ? short : e.indexRate;
-    fund = (l.fundCost ?? mkt + ref) + panic - mkt;
+    // THE MARGINAL DOLLAR again: an insurer credits new annuity money at
+    // today's rates, a fund levers at today's repo and CLO spreads, a conduit
+    // sells today's bonds (or, with the window shut, warehouses on repo) —
+    // whatever its old book cost. Priced off the lagged average, a life
+    // company quoted nine points under the market after a rate spike because
+    // its general account had not caught up (measured, seed 73303).
+    const then = e.history[e.history.length - 13]?.indexRate ?? e.indexRate;
+    const hot = Math.max(0, e.indexRate - then - 0.6) * k.wholesale;
+    const ref = l.kind === "life" ? -0.3 : l.kind === "fund" ? 1.1 : l.kind === "conduit" ? 0.3 : -2.2;
+    const shut = l.kind === "conduit" && (e.nat?.creditNat ?? e.creditIdx ?? 1) < 0.6;
+    fund = ref + (l.kind === "conduit" && !shut ? 0 : hot) + panic;
     dFund = fund - ref;
   }
   const el: DeskPx["el"] = {}, dEl: DeskPx["dEl"] = {}, cap: DeskPx["cap"] = {};

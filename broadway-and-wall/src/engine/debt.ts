@@ -8,7 +8,7 @@ import { commercialShare } from "./mix";
 import type { Condition, Econ, GameState, Holding, Loan } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { openWorkout } from "./workout";
-import { lenderAppetite, lenderChase } from "./lenders";
+import { lenderAppetite } from "./lenders";
 import {
   ownedHoldingNoiYrFromRec, ownedHoldingValue, ownedContractNoiYr,
   ownedHoldingValueFromRec, proFormaNOIYr, capRateFor,
@@ -21,7 +21,7 @@ import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash, spenda
 import { sizeAreaScale } from "./cityscale";
 import { money } from "./money";
 import { monthlyPayment, scheduledPayment, recastPayment, CAP_PREMIUM_PCT, capPremiumOn } from "./amortize";
-import { deskRatePct, appetiteAdvance } from "./pricing";
+import { appetiteAdvance, bankRatePct, liveSpread, lossClassOf } from "./pricing";
 import { CONSTRUCTION_LENDER } from "./types";
 export { monthlyPayment, scheduledPayment, recastPayment, CAP_PREMIUM_PCT, capPremiumOn };
 import { releaseCost, FACILITY_MIN_ASSETS } from "./facility";
@@ -1128,8 +1128,14 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   const strongName = !street && guarantor && product.recourse && guarantor.nw >= 3 * product.ltv * price ? 0.10 : 0;
   // Fixed paper prices off the loan index; floating off the short index.
   const bench = product.floating ? shortIndexOf(s.econ) : s.econ.indexRate;
-  const ratePct = deskRatePct(bench, product.spread, {
-    ci, app, ease: crunchEase, standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongName + lenderChase(s, product.lender),
+  // THE DESK'S OWN PRICE (pricing.ts liveSpread): its sheet, moved by its
+  // own funding, its own loss experience on this kind of loan, what a desk
+  // short of capital charges, and where it is pitching against its rivals.
+  // `app` still sizes the advance (advanceFactor) below; it prices through
+  // the rationing charge inside the live spread.
+  void app;
+  const ratePct = bankRatePct(bench, liveSpread(s.econ.deskPx?.[product.lender], product.spread, lossClassOf(product), crunchEase), {
+    standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongName,
   });
   const adv = advanceFactor(s, product.lender);
   // THE SHEET TODAY, not the sheet on the brochure — see statedLtv.
@@ -1904,9 +1910,7 @@ export function mezzQuote(s: GameState, parcels: ParcelTable, bbl: string): Mezz
   // half again — the junior got relatively cheaper, which is backwards: mezz
   // spreads roughly doubled in 2008-09 while senior spreads widened by half.
   // A desk's spread widens in proportion to itself, so the junior moves most.
-  const ratePct = deskRatePct(s.econ.indexRate, product.spread, {
-    ci: s.econ.creditIdx ?? 1,
-    app: lenderAppetite(s, product.lender),
+  const ratePct = bankRatePct(s.econ.indexRate, liveSpread(s.econ.deskPx?.[product.lender], product.spread, "junior"), {
     standingAdd: sponsorStanding(s).spreadAdd,
   });
   return {

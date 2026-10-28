@@ -16,7 +16,7 @@ import { capitalRatio, lenderConstitution, lenderHealth, lenderPressure, staying
 import {
   PRODUCTS, advanceFactor, holdMaxOf, loanMin, relCurve, singleNameCap, statedLtv, underwritingStandards, standardsWord, windowOpen,
 } from "@/engine/debt";
-import { deskRatePct } from "@/engine/pricing";
+import { bankRatePct, liveSpread, lossClassOf, type DeskPx, type LossClass } from "@/engine/pricing";
 import { shortIndexOf } from "@/engine/market";
 import { lineLender } from "@/engine/credit";
 import { ffAvailable, syndicateView } from "@/engine/syndicate";
@@ -39,12 +39,23 @@ const Box = ({ head, children }: { head: string; children: ReactNode }) => (
 );
 
 // ---------------------------------------------------------------- lenders
-interface LRow { l: Lender; kind: string; open: boolean; ratio: number; vsTarget: number; book: number; capital: number; delinq: number; nim: number | null; net: number; appetite: number; pressure: number; yours: number; room: number; state: string; line: boolean }
+const TYPE_WORD: Record<LossClass, string> = {
+  income: "Mortgages on income property", construction: "Construction", land: "Land", junior: "Bridge and mezzanine",
+};
+interface LRow { l: Lender; kind: string; open: boolean; ratio: number; vsTarget: number; book: number; capital: number; delinq: number; nim: number | null; net: number; appetite: number; pressure: number; yours: number; room: number; state: string; line: boolean; depRate: number | null; vsMkt: number | null; won: number | null; usual: number | null }
 
 function lenderRows(g: GameState): LRow[] {
   return derive(g, "next.lenders", () => {
     const yourLine = lineLender(g)?.id;
+    // Where each desk is pitching: its price over its own sheet (funding,
+    // losses, rationing, competition) against the other open desks' average.
+    const px = g.econ.deskPx ?? {};
+    const pitch = (q?: DeskPx) => (q ? q.dFund + (q.dEl.income ?? 0) + q.pull + q.chase : null);
+    const live = (g.lenders ?? []).filter((x) => x.failedM === undefined && px[x.name]);
     return (g.lenders ?? []).map((l) => {
+      const mine = pitch(px[l.name]);
+      const others = live.filter((o) => o !== l);
+      const mkt = others.length ? others.reduce((a, o) => a + (pitch(px[o.name]) ?? 0), 0) / others.length : null;
       const c = lenderConstitution(l);
       const cr = capitalRatio(l);
       const failed = l.failedM !== undefined;
@@ -53,6 +64,8 @@ function lenderRows(g: GameState): LRow[] {
         delinq: l.delinquent, nim: l.bookYield !== undefined ? l.bookYield - Math.max(0, (l.fundCost ?? 0) + (l.panicBps ?? 0)) : null,
         net: l.netIncomeYr, appetite: failed ? 0 : l.appetite, pressure: lenderPressure(l), yours: l.yours,
         room: Math.max(0, l.book * singleNameCap(l.kind) - l.yours), state: failed ? "closed" : stayingPower(g, l).word, line: yourLine === l.id,
+        depRate: l.dep?.rate ?? null, vsMkt: mine !== null && mkt !== null && !failed ? mine - mkt : null,
+        won: l.wonShare ?? null, usual: l.usualShare ?? null,
       };
     });
   }, []);
@@ -75,6 +88,10 @@ export function CapitalLenders() {
     { id: "delinq", label: "Late", get: (r) => r.delinq, fmt: "pct", tone: (r) => (r.delinq > 0.045 ? "neg" : undefined) },
     { id: "nim", label: "NIM", get: (r) => r.nim, fmt: "pctv" },
     { id: "net", label: "Net YTD", get: (r) => r.net, fmt: "usd", tone: (r) => (r.net < 0 ? "neg" : undefined) },
+    { id: "dep", label: "Deposit rate", get: (r) => r.depRate, fmt: "pctv" },
+    { id: "vsmkt", label: "Quote vs mkt", get: (r) => r.vsMkt, fmt: "pctv", tone: (r) => (r.vsMkt !== null && r.vsMkt > 0.25 ? "neg" : r.vsMkt !== null && r.vsMkt < -0.1 ? "pos" : undefined) },
+    { id: "won", label: "Won (12m)", get: (r) => r.won, fmt: "pct", tone: (r) => (r.won !== null && r.usual !== null && r.won < r.usual * 0.5 ? "neg" : undefined) },
+    { id: "usual", label: "Usual share", get: (r) => r.usual, fmt: "pct", hidden: true },
     { id: "app", label: "Appetite", get: (r) => r.appetite, fmt: "x" },
     { id: "press", label: "Pressure", get: (r) => r.pressure, fmt: "pct", tone: (r) => (r.pressure > 0.4 ? "neg" : undefined), hidden: true },
     { id: "yours", label: "You owe", get: (r) => r.yours, fmt: "usd" },
@@ -106,7 +123,7 @@ function LenderTerms({ g, r }: { g: GameState; r: LRow }) {
   const rows: PRow[] = PRODUCTS.filter((p) => p.lender === l.name).map((p) => {
     const sheet = statedLtv(g, p, "office", "standard").ltv;
     const bench = p.floating ? shortIndexOf(e) : e.indexRate;
-    const rate = deskRatePct(bench, p.spread, { ci: e.creditIdx ?? 1, app: failed ? 0 : l.appetite, rel: relCurve(g, l.name) });
+    const rate = bankRatePct(bench, liveSpread(e.deskPx?.[l.name], p.spread, lossClassOf(p)), { rel: relCurve(g, l.name) });
     return {
       id: p.id, paper: p.label.split(" · ").slice(1).join(" · ") || p.label, sheet, after: sheet * adv, rate, spread: rate - bench, floating: !!p.floating,
       dscr: p.uwDscr > 0 ? p.uwDscr : null, dy: p.uwDscr > 0 ? p.debtYield : null,
@@ -143,6 +160,26 @@ function LenderTerms({ g, r }: { g: GameState; r: LRow }) {
         <Stat label="Advance"><Figure value={adv} fmt="pct" /></Stat>
       </StatStrip>
       <DataTable id="capital-lender-terms" cols={cols} rows={rows} rowKey={(x) => x.id} empty="Construction only" />
+      <DataTable id="capital-lender-book" cols={[
+        { id: "type", label: "Book by type", get: (x) => x.label, cell: (x) => strong(x.label) },
+        { id: "n", label: "Loans", get: (x) => x.n, fmt: "n" },
+        { id: "bal", label: "Balance", get: (x) => x.bal, fmt: "usd" },
+        { id: "share", label: "Of book", get: (x) => (l.book > 0 ? x.bal / l.book : null), fmt: "pct" },
+        { id: "def", label: "Not paying", get: (x) => (x.bal > 0 ? x.def / x.bal : null), fmt: "pct", tone: (x) => (x.def > 0 ? "neg" : undefined) },
+        { id: "watch", label: "On watch", get: (x) => (x.bal > 0 ? x.watch / x.bal : null), fmt: "pct" },
+        { id: "el", label: "Loss it prices", get: (x) => x.el, fmt: "pctv" },
+      ]} rows={(["income", "construction", "land", "junior"] as LossClass[]).map((c) => ({
+        c, label: TYPE_WORD[c], n: l.typeBook?.[c]?.n ?? 0, bal: l.typeBook?.[c]?.bal ?? 0, def: l.typeBook?.[c]?.def ?? 0,
+        watch: l.typeBook?.[c]?.watch ?? 0, el: e.deskPx?.[l.name]?.el[c] ?? null,
+      })).filter((x) => x.n > 0)} rowKey={(x) => x.c} empty="No loans" />
+      {(l.lossLog?.length ?? 0) > 0 && (
+        <DataTable id="capital-lender-losses" cols={[
+          { id: "m", label: "Charged off", get: (x) => x.m, cell: (x) => mo(x.m) },
+          { id: "who", label: "Borrower", get: (x) => x.borrower, cell: (x) => strong(x.borrower) },
+          { id: "how", label: "How", get: (x) => x.how ?? TYPE_WORD[x.cls] },
+          { id: "amt", label: "Loss", get: (x) => x.amount, fmt: "usd", tone: () => "neg" },
+        ]} rows={(l.lossLog ?? []).slice(0, 12).map((x, i) => ({ ...x, i }))} rowKey={(x) => String(x.i)} initialSort={{ col: "m", dir: -1 }} />
+      )}
       {(l.capHist?.length ?? 0) > 2 && (
         <div className="nx-with-spark nx-box-foot"><span className="nx-dim">Capital</span><Spark pts={l.capHist!.map((x) => (typeof x === "number" ? x : (x as { v?: number; capital?: number }).capital ?? (x as { v?: number }).v ?? NaN))} /></div>
       )}

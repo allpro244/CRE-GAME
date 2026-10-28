@@ -9,7 +9,8 @@ import {
   PRODUCTS, statedLtv, advanceFactor, windowOpen, loanMin, holdMaxOf, singleNameCap, lenderRelOf, relCurve, relAdvance,
   underwritingStandards, standardsWord,
 } from "@/engine/debt";
-import { deskRatePct } from "@/engine/pricing";
+import { bankRatePct, liveSpread, lossClassOf, costFloor } from "@/engine/pricing";
+import type { LossClass } from "@/engine/pricing";
 import { shortIndexOf } from "@/engine/market";
 import { cityLoanBook } from "@/engine/loanbook";
 import { lineLender } from "@/engine/credit";
@@ -125,7 +126,23 @@ function BankFile({ l }: { l: Lender }) {
   const cranes = sum((x) => x.kind === "construction");
   const defaulted = sum((x) => x.status === "default");
   const watch = sum((x) => x.status === "watch");
-  const anon = l.anonBook ?? Math.max(0, l.book - named);
+  const px = e.deskPx?.[l.name];
+  const TYPE_WORD: Record<LossClass, string> = {
+    income: "Mortgages on income property", construction: "Construction", land: "Land", junior: "Bridge and mezzanine",
+  };
+  const types = (["income", "construction", "land", "junior"] as LossClass[]).map((c) => {
+    const xs = book.filter((x) => x.cls === c);
+    const bal = xs.reduce((a, x) => a + x.balance, 0);
+    const def = xs.filter((x) => x.status === "default").reduce((a, x) => a + x.balance, 0);
+    const wat = xs.filter((x) => x.status === "watch").reduce((a, x) => a + x.balance, 0);
+    return { c, n: xs.length, bal, def, wat };
+  }).filter((t) => t.n > 0);
+  // Where this desk is pitching against the town: its live price on its own
+  // flagship sheet against the same sheet's spread at the market's average pitch.
+  const flagship = PRODUCTS.find((p) => p.lender === l.name && lossClassOf(p) === "income");
+  const others = (game.lenders ?? []).filter((o) => o.name !== l.name && o.failedM === undefined && e.deskPx?.[o.name]);
+  const pitch = (q?: typeof px) => q ? q.dFund + (q.dEl.income ?? 0) + q.pull + q.chase : 0;
+  const mktPitch = others.length ? others.reduce((a, o) => a + pitch(e.deskPx![o.name]), 0) / others.length : 0;
   const nim = (l.bookYield ?? 0) - Math.max(0, (l.fundCost ?? 0) + (l.panicBps ?? 0));
   const yourLine = lineLender(game)?.id === l.id;
   const isBank = game.bankId === l.id;
@@ -139,7 +156,8 @@ function BankFile({ l }: { l: Lender }) {
   const nameLimit = l.book * singleNameCap(l.kind);
   const byBorrower = new Map<string, number>();
   for (const x of book) byBorrower.set(x.borrower, (byBorrower.get(x.borrower) ?? 0) + x.balance);
-  const borrowerName = (id: string) => id === "player" ? "You" : (game.rivals ?? []).find((r) => r.id === id)?.name ?? id;
+  const borrowerName = (id: string) => id === "player" ? "You"
+    : (game.rivals ?? []).find((r) => r.id === id)?.name ?? book.find((x) => x.borrower === id)?.name ?? id;
   const topBorrowers = [...byBorrower.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
   const classTot = Object.values(l.classBook ?? {}).reduce((a, b) => a + b, 0);
 
@@ -190,7 +208,7 @@ function BankFile({ l }: { l: Lender }) {
         <div className="grid">
           <Row k="Total book" v={usd(l.book)} />
           <Row k="Named loans" v={`${usd(named)} · yours ${usd(yours)} · other mortgages ${usd(streetTerm)}${streetLines ? ` · other lines ${usd(streetLines)}` : ""}${cranes ? ` · construction ${usd(cranes)}` : ""}`} />
-          <Row k="Other loans (unnamed)" v={`${usd(anon)} (${pc(l.book > 0 ? anon / l.book : 0, 0)} of book)`} />
+          <Row k="Private owners' mortgages" v={`${usd(sum((x) => x.borrower.startsWith("h:")))} · families, partnerships and institutions on the deed register`} />
           <Row k="Capital" v={usd(l.capital)} bad={l.capital <= 0} />
           <Row k="Capital ratio" v={`${pc(cr, 2)} vs ${pc(c.target, 1)} target · ${(cr / Math.max(0.01, c.target)).toFixed(2)}× · `
             + `${l.kind === "conduit" ? "conduits not seized" : `seized near ${pc(c.target * 0.22, 1)}`}`}
@@ -229,11 +247,11 @@ function BankFile({ l }: { l: Lender }) {
             <tbody>
               <tr><td>Interest income</td><td className="num">{cur(inc.interest)}</td><td className="num">{prv(prev?.interest)}</td></tr>
               <tr><td>Cost of funds{(l.panicBps ?? 0) > 0 ? " (incl. panic surcharge)" : ""}</td><td className="num">{cur(inc.funding, true)}</td><td className="num">{prv(prev?.funding, true)}</td></tr>
-              <tr><td>Credit losses (unnamed loans)</td><td className="num">{cur(inc.losses, true)}</td><td className="num">{prv(prev?.losses, true)}</td></tr>
+              <tr><td>Charge-offs, named borrowers (below)</td><td className="num">{cur(inc.losses, true)}</td><td className="num">{prv(prev?.losses, true)}</td></tr>
               <tr><td>Operating costs ({c.opexPct.toFixed(2)}% of book/yr)</td><td className="num">{cur(inc.opex, true)}</td><td className="num">{prv(prev?.opex, true)}</td></tr>
               <tr><td>Tax ({pc(c.taxRate, 0)})</td><td className="num">{cur(inc.tax, true)}</td><td className="num">{prv(prev?.tax, true)}</td></tr>
               <tr><td><b>Net income</b></td><td className={"num" + (l.netIncomeYr < 0 ? " neg" : "")}><b>{cur(l.netIncomeYr)}</b></td><td className={"num" + ((prev?.netIncome ?? 0) < 0 ? " neg" : "")}><b>{prv(prev?.netIncome)}</b></td></tr>
-              <tr><td>Named write-offs (to capital)</td><td className="num">{(inc.writeOffs ?? 0) > 0 ? cur(inc.writeOffs!, true) : "—"}</td><td className="num">{prev?.writeOffs ? prv(prev.writeOffs, true) : "—"}</td></tr>
+              <tr><td>Older write-offs (to capital)</td><td className="num">{(inc.writeOffs ?? 0) > 0 ? cur(inc.writeOffs!, true) : "—"}</td><td className="num">{prev?.writeOffs ? prv(prev.writeOffs, true) : "—"}</td></tr>
               <tr><td>Dividends</td><td className="num">{(l.divYr ?? 0) > 0 ? cur(l.divYr!) : "—"}</td><td className="num">{prev?.dividends ? prv(prev.dividends) : "—"}</td></tr>
             </tbody>
           </table>
@@ -254,11 +272,76 @@ function BankFile({ l }: { l: Lender }) {
           <Row k="Delinquent (total)" v={pc(l.delinquent, 2)} bad={l.delinquent > 0.045} />
           <Row k="Named in default" v={`${usd(defaulted)}${named > 0 ? ` · ${pc(defaulted / named, 1)} of named` : ""}`} bad={defaulted > 0} />
           <Row k="Named on watch" v={usd(watch)} />
-          <Row k="Unnamed delinquent" v={l.anonDelinq !== undefined ? pc(l.anonDelinq, 2) : "—"} />
           <Row k="Charge-offs this year" v={usd(l.chargeOffsYr)} />
           <Row k="Lifetime losses" v={usd(l.chargeOffsTotal)} />
         </div>
+        {types.length > 0 && (
+          <table className="tbl" style={{ marginTop: 6 }}>
+            <thead><tr><th>Loans by type</th><th className="num">Loans</th><th className="num">Balance</th><th className="num">% of book</th><th className="num">Not paying</th><th className="num">On watch</th><th className="num">Loss rate it prices</th></tr></thead>
+            <tbody>
+              {types.map((t) => (
+                <tr key={t.c}>
+                  <td>{TYPE_WORD[t.c]}</td>
+                  <td className="num">{t.n}</td>
+                  <td className="num">{usd(t.bal)}</td>
+                  <td className="num">{pc(l.book > 0 ? t.bal / l.book : 0, 0)}</td>
+                  <td className={"num" + (t.def > 0 ? " neg" : "")}>{t.bal > 0 ? pc(t.def / t.bal, 1) : "—"}</td>
+                  <td className="num">{t.bal > 0 ? pc(t.wat / t.bal, 1) : "—"}</td>
+                  <td className="num">{px?.el[t.c] !== undefined ? `${px.el[t.c]!.toFixed(2)}% / yr` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {(l.lossLog ?? []).length > 0 && (
+          <table className="tbl" style={{ marginTop: 6 }}>
+            <thead><tr><th>Recent charge-offs</th><th>Borrower</th><th>Property</th><th>How</th><th className="num">Loss</th></tr></thead>
+            <tbody>
+              {(l.lossLog ?? []).slice(0, 10).map((x, i) => (
+                <tr key={i} onClick={() => x.bbl && focus(x.bbl, true)} style={{ cursor: x.bbl ? "pointer" : undefined }}>
+                  <td className="dim mono">{monthLabel(x.m)}</td>
+                  <td>{x.borrower}</td>
+                  <td>{x.bbl ? resolveRec(parcels, game, x.bbl)?.address ?? x.bbl : "—"}</td>
+                  <td className="dim">{x.how ?? TYPE_WORD[x.cls]}</td>
+                  <td className="num neg">{usd(x.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Section>
+
+      {/* -------------------------------------------------------- what it charges */}
+      {px && (
+        <Section title="What it charges, and why" note={<>
+          Points a year over the market rate. The sheet is the desk's rate card in an ordinary year; the rest is this desk's own books today.
+        </>}>
+          <div className="grid">
+            <Row k="Funding" v={`${px.fund >= 0 ? "+" : ""}${px.fund.toFixed(2)} vs the market rate · ${px.dFund >= 0 ? "+" : ""}${px.dFund.toFixed(2)} vs its usual mix`} bad={px.dFund > 0.25} good={px.dFund < -0.1} />
+            <Row k="Running cost" v={`${px.opex.toFixed(2)} of book a year`} />
+            <Row k="Rationing" v={px.pull > 0.005 ? `+${px.pull.toFixed(2)} · appetite ${l.appetite.toFixed(2)}` : "none · lending freely"} bad={px.pull > 0.3} />
+            <Row k="Competition" v={`${px.chase >= 0 ? "+" : ""}${px.chase.toFixed(2)} · won ${l.wonShare !== undefined ? pc(l.wonShare, 0) : "—"} of the town's new loans in the last year vs ${l.usualShare !== undefined ? pc(l.usualShare, 0) : "—"} usual`}
+              good={px.chase < -0.05} bad={px.chase > 0.05} />
+            <Row k="Quote vs market" v={`${pitch(px) - mktPitch >= 0 ? "+" : "−"}${Math.abs(pitch(px) - mktPitch).toFixed(2)} pts against the other desks' average pitch`}
+              bad={pitch(px) - mktPitch > 0.25} good={pitch(px) - mktPitch < -0.1} />
+          </div>
+          <table className="tbl" style={{ marginTop: 6 }}>
+            <thead><tr><th>Loan type</th><th className="num">Expected loss</th><th className="num">Capital</th><th className="num">Floor</th>{flagship && <th className="num">{flagship.label.split(" · ").slice(1).join(" · ") || "Sheet"} today</th>}</tr></thead>
+            <tbody>
+              {(["income", "construction", "land", "junior"] as LossClass[]).map((c) => (
+                <tr key={c}>
+                  <td>{TYPE_WORD[c]}</td>
+                  <td className={"num" + ((px.dEl[c] ?? 0) > 0.25 ? " neg" : "")}>{(px.el[c] ?? 0).toFixed(2)}{(px.dEl[c] ?? 0) !== 0 ? <span className="dim"> ({(px.dEl[c] ?? 0) >= 0 ? "+" : ""}{(px.dEl[c] ?? 0).toFixed(2)})</span> : null}</td>
+                  <td className="num">{(px.cap[c] ?? 0).toFixed(2)}</td>
+                  <td className="num">{costFloor(px, c).toFixed(2)}</td>
+                  {flagship && <td className="num">{c === "income" ? `${flagship.spread.toFixed(2)} → ${liveSpread(px, flagship.spread, c).toFixed(2)}` : ""}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="hint">Expected loss is two-thirds this desk's own loss experience and a third the industry's long-run rate. Capital is what it holds per dollar at its target × the return its owners want. Floor: funding + loss + running cost — it will not lend below that.</div>
+        </Section>
+      )}
 
       {/* -------------------------------------------------------- terms today */}
       <Section title="Loan terms today" note={<>
@@ -276,7 +359,7 @@ function BankFile({ l }: { l: Lender }) {
               {products.map((p) => {
                 const sheet = statedLtv(game, p, "office", "standard").ltv;
                 const bench = p.floating ? shortIndexOf(e) : e.indexRate;
-                const rate = deskRatePct(bench, p.spread, { ci: e.creditIdx ?? 1, app: failed ? 0 : l.appetite, rel: relCurve(game, l.name) });
+                const rate = bankRatePct(bench, liveSpread(px, p.spread, lossClassOf(p)), { rel: relCurve(game, l.name) });
                 const open = !failed && windowOpen(game, p);
                 const min = loanMin(game, p);
                 const max = holdMaxOf(game, p) ?? 0;

@@ -55,7 +55,7 @@
 // Everything below is the desk's pro forma, moved here so that value.ts can
 // solve it for land. There is no second copy. After: 1,095 lots on the same
 // probe, every one at hurdle 1.000; `test/residual-recon.mjs` holds it.
-import { deskRatePct } from "./pricing";
+import { bankRatePct, liveSpread } from "./pricing";
 import type { ParcelRecord } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "./types";
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
@@ -637,8 +637,14 @@ export function deskQuote(
   // developer calls them in a crunch — and charges its own thin appetite like
   // anybody else. This desk used to run a private version of the law with a
   // smaller window term and a third of the appetite charge for the fund.
+  //
+  // AND NOW THE DESK'S OWN COSTS (pricing.ts liveSpread, 2026-10-28): its
+  // funding, its loss experience on construction paper, its rationing and its
+  // pitch against the other desks, published by tickLenders on econ.deskPx so
+  // this file never imports the banks. The fund's ease is its own now: it
+  // prices off its own book like every other desk.
   void tight;
-  const ratePct = deskRatePct(e.indexRate, d.spread, { ci: e.creditIdx ?? 1, app, ease: d.fund ? 0 : 1, rel });
+  const ratePct = bankRatePct(e.indexRate, liveSpread(e.deskPx?.[d.name], d.spread, "construction"), { rel });
   const open = app >= 0.12 && ltcMax > 0.02;
   return {
     lender: d.name, ratePct, ltcMax: +Math.max(0, ltcMax).toFixed(3), points: d.points, open,

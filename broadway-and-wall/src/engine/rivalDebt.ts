@@ -37,7 +37,7 @@ import { capPremiumOn } from "./amortize";
 import { targetCapital } from "./lenders";
 import type { Lender } from "./lenders";
 import { LOC_SPREAD } from "./credit";
-import { deskRatePct } from "./pricing";
+import { bankRatePct, liveSpread } from "./pricing";
 import { shortIndexOf } from "./market";
 
 /** Deterministic 0..1 from a string. */
@@ -270,16 +270,17 @@ export interface Origination { lender: string; ratePct: number; termM: number; p
  * the desk that quotes the most writes it. If no desk has room for it, it goes
  * to whichever has the most — a syndicate, which is what `placeLoan` did.
  */
-export function pickDesk(
-  s: GameState, obligorId: string, amount: number, value: number, noiYr: number,
-  o: { klass?: string; stab?: StabView; condition?: string; opening?: boolean; seed?: string } = {},
-): Origination {
-  type C = Origination & { principal: number; room: number };
-  const cands: C[] = [];
-  // Every desk's `deskRoom` off one walk of the record, worked out the first
-  // time one is asked for: nothing below writes a loan, a line or a book.
-  let rooms: Map<Lender, number> | null = null;
-  const roomOf = (l: Lender) => (rooms ??= deskRooms(s, obligorId, o.opening ?? false)).get(l) ?? deskRoom(s, l, obligorId, o.opening);
+/**
+ * EVERY DESK'S QUOTE ON THIS BUILDING TODAY — what a borrower who is not the
+ * player gets when it rings round: each open sheet's coupon and the most it
+ * will write, cheapest first. The player's own desk shows the same quotes
+ * (debt.ts `quote`); the street and the private owners shop off this list.
+ */
+export function deskQuotes(
+  s: GameState, value: number, noiYr: number,
+  o: { klass?: string; stab?: StabView; condition?: string } = {},
+): (Origination & { principal: number })[] {
+  const out: (Origination & { principal: number })[] = [];
   for (const id of sheetsFor(noiYr)) {
     const p = productById(id);
     if (!p || !windowOpen(s, p)) continue;
@@ -287,8 +288,24 @@ export function pickDesk(
     if (!l || l.failedM !== undefined) continue;
     const q = quote(s, p, value, Math.max(0, noiYr), o.klass, true, p.bridge ? o.stab : undefined, o.condition);
     if (!(q.principal > 0)) continue;
-    cands.push({ lender: p.lender, ratePct: q.ratePct, termM: p.termM, product: p.id, principal: q.principal, room: roomOf(l) });
+    out.push({ lender: p.lender, ratePct: q.ratePct, termM: p.termM, product: p.id, principal: q.principal });
   }
+  return out.sort((a, b) => a.ratePct - b.ratePct);
+}
+
+export function pickDesk(
+  s: GameState, obligorId: string, amount: number, value: number, noiYr: number,
+  o: { klass?: string; stab?: StabView; condition?: string; opening?: boolean; seed?: string } = {},
+): Origination {
+  type C = Origination & { principal: number; room: number };
+  // Every desk's `deskRoom` off one walk of the record, worked out the first
+  // time one is asked for: nothing below writes a loan, a line or a book.
+  let rooms: Map<Lender, number> | null = null;
+  const roomOf = (l: Lender) => (rooms ??= deskRooms(s, obligorId, o.opening ?? false)).get(l) ?? deskRoom(s, l, obligorId, o.opening);
+  const cands: C[] = deskQuotes(s, value, noiYr, o).map((c) => {
+    const l = (s.lenders ?? []).find((x) => x.name === c.lender)!;
+    return { ...c, room: roomOf(l) };
+  });
   const funds = cands.filter((c) => c.principal >= amount * 0.98 && c.room >= amount)
     .sort((a, b) => a.ratePct - b.ratePct);
   if (funds.length) return funds[0];
@@ -303,7 +320,7 @@ export function pickDesk(
   const fallback = noiYr > 0 ? productById("harbor") : productById("land");
   return {
     lender: best?.name ?? fallback.lender,
-    ratePct: +deskRatePct(s.econ.indexRate, 2.2, { ci: s.econ.creditIdx ?? 1, app: best?.appetite ?? 1 }).toFixed(2),
+    ratePct: bankRatePct(s.econ.indexRate, liveSpread(best ? s.econ.deskPx?.[best.name] : undefined, 2.2, "income")),
     termM: fallback.termM, product: fallback.id,
   };
 }
@@ -402,10 +419,10 @@ export function lineBankOf(s: GameState, r: Rival): Lender | undefined {
 /** The line's coupon: the short index plus the line spread at its bank's appetite — the player's `locRate` arithmetic. */
 export function lineRatePct(s: GameState, r: Rival): number {
   const bank = lineBankOf(s, r);
-  return deskRatePct(shortIndexOf(s.econ), LOC_SPREAD, {
-    ci: s.econ.creditIdx ?? 1,
-    app: bank ? (bank.failedM !== undefined ? 0 : bank.appetite) : 1,
-  }) + fileSpreadAdj(r);
+  // The bank's own costs and appetite (pricing.ts liveSpread); a receiver
+  // holding a failed bank's line charges what the bank last did.
+  return bankRatePct(shortIndexOf(s.econ), liveSpread(bank ? s.econ.deskPx?.[bank.name] : undefined, LOC_SPREAD, "income"))
+    + fileSpreadAdj(r);
 }
 /** Draw the line: cash in, balance up, at the firm's bank. */
 export function drawLine(s: GameState, r: Rival, draw: number) {

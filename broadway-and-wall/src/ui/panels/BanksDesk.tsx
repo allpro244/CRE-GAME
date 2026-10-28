@@ -4,7 +4,8 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec } from "@/engine/value";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, cashSplit, depositApy, insuredLimit, stayingPower } from "@/engine/lenders";
-import { deskRatePct } from "@/engine/pricing";
+import { bankRatePct, liveSpread, lossClassOf } from "@/engine/pricing";
+import { shortIndexOf } from "@/engine/market";
 import { relCurve, lenderRelOf } from "@/engine/debt";
 import { sweepApy } from "@/engine/types";
 import { PRODUCTS, advanceFactor, statedLtv, underwritingStandards, standardsWord } from "@/engine/debt";
@@ -173,7 +174,7 @@ export function TheBanks() {
                           : l.appetite < 0.12
                             ? "Not quoting"
                             : l.appetite < 0.6
-                              ? `Rationing · advance ~${(100 * appetiteAdvance(l.appetite)).toFixed(0)}% of sheet · +${(Math.max(0, 1 - l.appetite) * 80).toFixed(0)}bps spread`
+                              ? `Rationing · advance ~${(100 * appetiteAdvance(l.appetite)).toFixed(0)}% of sheet · +${Math.round((game.econ.deskPx?.[l.name]?.pull ?? Math.max(0, 1 - l.appetite) * 0.8) * 100)}bps spread`
                               : "Lending at stated terms"}
                       </div>
                       {(() => {
@@ -342,7 +343,7 @@ export function LenderCards() {
       ?? PRODUCTS.find((x) => x.lender === l.name && !x.mezz);
     const sp = stayingPower(game, l);
     const open = sp.word !== "closed";
-    const rate = p ? deskRatePct(game.econ.indexRate, p.spread, { ci: game.econ.creditIdx ?? 1, app: l.appetite, rel: relCurve(game, l.name) }) : null;
+    const rate = p ? bankRatePct(p.floating ? shortIndexOf(game.econ) : game.econ.indexRate, liveSpread(game.econ.deskPx?.[l.name], p.spread, lossClassOf(p)), { rel: relCurve(game, l.name) }) : null;
     const reach = p ? statedLtv(game, p).ltv * advanceFactor(game, l.name) : null;
     return { l, p, sp, open, rate, reach };
   });

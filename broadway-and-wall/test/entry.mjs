@@ -20,6 +20,8 @@ export const MODULES = [
   "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market",
   "zoning", "landdev", "lotcode", "lotsplit", "lotsplitGeom", "products", "platdesign", "homes", "homeprice", "growth", "roads", "towngrowth", "unpack", "lenders", "proforma", "workout", "portfolio", "portfoliosale", "auction", "notes",
   "privateCredit", "broker", "loanbook", "amortize", "pricing", "ledger", "rivalDebt", "strategy", "corporate", "firmLog",
+  // streetLoans: the private owners' mortgages, loan by loan (ONE_ECONOMY_PLAN.md step 5).
+  "streetLoans",
   // absorption carries staleDiscount and leasingOdds — how an owner's ask falls
   // on space that will not let, which the harness bots have to read rather than
   // guess at. space carries the submarket roll-up.

@@ -922,7 +922,7 @@ export function discountedPayoff(s: GameState, parcels: ParcelTable, bbl: string
   if (held) held.payoff = q.px;
   next.holdings[bbl]!.loan = null;
   delete next.workouts![bbl];
-  chargeLenderLoss(next, lender, discount);
+  chargeLenderLoss(next, lender, discount, { borrower: "You", id: "player", bbl, cls: "income", how: "discounted payoff" });
   bumpLenderRel(next, lender, -18);
   markSponsor(next, "dpo", rec.address, discount);
   next.news.unshift({
@@ -986,7 +986,7 @@ function sellYourDefaultToACompetitor(s: GameState, parcels: ParcelTable) {
     const equity = Math.round(px * 0.34);
     buyer.cash -= equity;
     addToLine(s, buyer, px - equity);
-    chargeLenderLoss(s, bank, bal - px);
+    chargeLenderLoss(s, bank, bal - px, { borrower: "You", id: "player", bbl: w.bbl, cls: "income", how: "note sold at a discount" });
     h.loan.holder = buyer.name;
     h.loan.holderFirmId = buyer.id;
     w.lender = buyer.name;

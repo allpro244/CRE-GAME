@@ -567,7 +567,7 @@ function failBuilder(s: GameState, parcels: ParcelTable, b: HomeBuilder): void {
   // the desk is repaid from the sale and whatever cash is left; the rest is its loss
   const recovered = Math.min(b.debt, price + Math.max(0, b.cash));
   const loss = Math.max(0, Math.round(b.debt - recovered));
-  if (b.lender && loss > 0) chargeLenderLoss(s, b.lender, loss);
+  if (b.lender && loss > 0) chargeLenderLoss(s, b.lender, loss, { borrower: b.name, id: "hb:" + b.name, cls: "construction", how: "homebuilder failed" });
   const owed = b.debt;
   b.debt = 0; b.cash = 0; b.stressMs = 0;
   // the contracts it had with you die with it

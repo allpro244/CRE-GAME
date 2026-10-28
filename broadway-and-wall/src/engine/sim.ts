@@ -41,6 +41,7 @@ import { tickDemand, isCivicLand } from "./demand";
 import { tickCorporate } from "./corporate";
 import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose } from "./rivals";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
+import { tickStreetLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts, couponFundable } from "./workout";
@@ -729,6 +730,9 @@ function tickMonth(
   tickFund(s);
   windDownFund(s, parcels);
   tickTrustNote(s);
+  // The private owners pay their mortgages, or do not, before the desks
+  // close the month's books (streetLoans.ts).
+  tickStreetLoans(s, parcels);
   tickLenders(s);
   // Workouts run AFTER the holdings debt pass below: equity cures and this
   // month's NOI have to land before the desk decides whether to file. Running
@@ -1352,10 +1356,10 @@ function tickMonth(
             const seniorHole = Math.min(shortfall, stack.seniorBal + stack.seniorPenalty);
             const mezzHole = shortfall - seniorHole;
             if (seniorHole > 0 && pick.loan) {
-              chargeLenderLoss(s, pick.loan.holder ?? productById(pick.loan.product).lender, seniorHole);
+              chargeLenderLoss(s, pick.loan.holder ?? productById(pick.loan.product).lender, seniorHole, { borrower: "You", id: "player", bbl: pick.bbl, cls: "income", how: "forced sale" });
             }
             if (mezzHole > 0) {
-              chargeLenderLoss(s, pick.mezz?.holder ?? "Cordage Debt Partners", mezzHole);
+              chargeLenderLoss(s, pick.mezz?.holder ?? "Cordage Debt Partners", mezzHole, { borrower: "You", id: "player", bbl: pick.bbl, cls: "junior", how: "forced sale" });
             }
           }
         }
@@ -1439,7 +1443,7 @@ function tickMonth(
         const surplus = Math.max(0, net - lien), shortfall = Math.max(0, lien - net);
         s.cash += surplus;
         if (surplus > 0) logBooks(s, "sold", surplus, d.bbl);
-        if (shortfall > 0) chargeLenderLoss(s, d.lender ?? "the construction lender", shortfall);
+        if (shortfall > 0) chargeLenderLoss(s, d.lender ?? "the construction lender", shortfall, { borrower: "You", id: "player", bbl: d.bbl, cls: "construction", how: "forced sale" });
         (s.cityJobs ??= []).push({ bbl: d.bbl, use: d.use, sf: d.sf, floors: d.floors ?? 1, startM: d.startM, deliverM: d.deliverM, cost: Math.round(d.costTotal), spent: sunk, orphaned: true });
         stallSupplyProject(s, d.bbl);
         {

@@ -1332,7 +1332,7 @@ function chargeSponsorFailure(s: GameState, parcels: ParcelTable, r: Rival): { d
   let worst = { name: "", amt: 0 };
   for (const [name, exp] of Object.entries(exposure)) {
     const share = Math.round((loss * exp) / total);
-    chargeLenderLoss(s, name, share);
+    chargeLenderLoss(s, name, share, { borrower: r.name, id: r.id, cls: "income", how: "firm failed" });
     if (share > worst.amt) worst = { name, amt: share };
   }
   // Only when it is big enough to be a story. A desk taking a hole worth more
@@ -4051,7 +4051,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
     expiresM: s.month + reoWindow(s, desk), distress: true, receiverFor: desk, reason: "receiver",
     loanBasis, mark: Math.round(deedV),
   });
-  chargeLenderLoss(s, desk, Math.max(0, owed - ask));
+  chargeLenderLoss(s, desk, Math.max(0, owed - ask), { borrower: r.name, id: r.id, bbl: worst.bbl, cls: worst.rec.class === "land" ? "land" : "income", how: "foreclosure" });
   const off = Math.max(0, 1 - ask / Math.max(1, deedV));
   s.news.unshift({
     q: s.month, kind: "warn",

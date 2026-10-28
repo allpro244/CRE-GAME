@@ -64,11 +64,9 @@ export function occLabel(r: OccRead): string {
 
 /** Why the two numbers differ, for the cell's tooltip. */
 export function occTitle(r: OccRead): string {
-  if (!r.remainderSf) return "Let space over lettable space.";
-  return `${sf(r.remainderSf)} of the vacancy is under the smallest tenancy this building demises — `
-    + `nobody can lease it, so it sits in the loss factor rather than in the occupancy you can chase. `
-    + `On the feet built the building is ${(r.occ * 100).toFixed(0)}% let, which is what an appraisal counts. `
-    + `A sitting neighbour can still take it on at a renewal or an expansion.`;
+  if (!r.remainderSf) return "Leased sf / leasable sf.";
+  return `${sf(r.remainderSf)} vacant below minimum suite size; unleasable. `
+    + `Physical occupancy ${(r.occ * 100).toFixed(0)}% (appraisal basis).`;
 }
 
 /**
@@ -237,11 +235,11 @@ export function Big({ label, value, bad, title }: { label: string; value: string
 // which one moves it most, so the copy says exactly that — a marginal claim,
 // not an assertion about what the block does or doesn't have.
 export const WANTS_LABEL: Record<string, string> = {
-  office: "Per square foot, offices would lift this block further than any other use.",
-  industrial: "Per square foot, industrial would lift this block further than any other use.",
-  multifamily: "Per square foot, housing would lift this block further than any other use.",
-  retail: "Per square foot, retail would lift this block further than any other use.",
-  mixed: "Per square foot, mixed use would lift this block further than any other use.",
+  office: "Best use for block: Office",
+  industrial: "Best use for block: Industrial",
+  multifamily: "Best use for block: Housing",
+  retail: "Best use for block: Retail",
+  mixed: "Best use for block: Mixed use",
 };
 export function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
   const game = useHeldGame(bbl);
@@ -255,7 +253,7 @@ export function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
   const moved = Math.abs(r.drift) >= 0.5;
   return (
     <div className="deal" key={bbl}>
-      <div className="deal-head">The neighbourhood · within a five-minute walk</div>
+      <div className="deal-head">Neighbourhood (5-min walk)</div>
       <div className="grid">
         <Row k="Jobs" v={n(r.jobs)} />
         <Row k="Residents" v={n(r.residents)} />
@@ -268,11 +266,11 @@ export function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
         />
         <Row
           k="Hiring"
-          v={Math.abs(r.hiring) < 0.5 ? "in line with the city" : `${r.hiring > 0 ? "+" : ""}${r.hiring.toFixed(0)} demand`}
+          v={Math.abs(r.hiring) < 0.5 ? "in line with city" : `${r.hiring > 0 ? "+" : ""}${r.hiring.toFixed(0)} demand`}
           strong={r.hiring > 0.5}
           bad={r.hiring < -0.5}
         />
-        <Row k="The work here" v={r.trades.map((t) => `${Math.round(t.share * 100)}% ${t.label.toLowerCase()}`).join(", ")} />
+        <Row k="Employment mix" v={r.trades.map((t) => `${Math.round(t.share * 100)}% ${t.label.toLowerCase()}`).join(", ")} />
         {r.line ? (() => {
           // The report names the strongest work near this block and what it is
           // worth here at full price; the stage and the priced-in fraction
@@ -289,13 +287,13 @@ export function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
             : st.word === "open"
               ? `${line.name} ${kind} · open · +${line.pts} demand here`
               : `${line.name} ${kind} · ${st.word} · ${st.word === "rumoured" ? `hearing ${monthLabel(lw.annM)}` : `opens ${monthLabel(lw.openM)}`}`
-                + ` · worth +${line.pts} here at full price · ${Math.round(st.priced * 100)}% priced in`;
+                + ` · +${line.pts} at full value · ${Math.round(st.priced * 100)}% priced in`;
           return <Row k="Transit" v={v} strong />;
         })() : null}
       </div>
       <div className="deal-note">
         {r.balanced
-          ? "Jobs, housing and street life are in balance here — every added foot compounds."
+          ? "Balanced block"
           : WANTS_LABEL[r.wants]}
       </div>
     </div>
@@ -357,8 +355,8 @@ export function LocSplitHint({
   const split = locDrawFor(game, parcels, need, { allowLoc });
   if (split.draw <= 0 && split.short <= 0) return null;
   const text = split.short > 0
-    ? `${usd(split.cash)} cash · ${usd(split.draw)} on the line · short ${usd(split.short)}`
-    : `${usd(split.cash)} cash · ${usd(split.draw)} drawn on the line at ${split.rate.toFixed(2)}%`;
+    ? `${usd(split.cash)} cash · ${usd(split.draw)} line · short ${usd(split.short)}`
+    : `${usd(split.cash)} cash · ${usd(split.draw)} line draw at ${split.rate.toFixed(2)}%`;
   return <div className="hint">{text}</div>;
 }
 
@@ -371,24 +369,24 @@ export const STYLE_MAX: Record<string, number> = {
 };
 
 export const CONDITION_WORD: Record<string, string> = {
-  good: "well kept", standard: "adequate", worn: "run down", obsolete: "finished",
+  good: "good", standard: "average", worn: "worn", obsolete: "obsolete",
 };
 
 // What the street calls each kind of shop. The point of the phrasing is that
 // it tells you what they WANT, because that is what decides whether they are
 // your competition on this building or your buyer for it next year.
 export const STYLE_WORD: Record<string, string> = {
-  family: "old money",
+  family: "family office",
   core: "institutional",
   opportunistic: "opportunistic",
   developer: "developer",
   merchant: "merchant builder",
-  pe: "private equity · IRR clock",
+  pe: "private equity",
   reit: "listed REIT",
   vulture: "distressed specialist",
   owneruser: "owner-occupier",
   foreign: "offshore capital",
-  slumlord: "milking the stock",
+  slumlord: "low-capex landlord",
 };
 
 /**
@@ -401,8 +399,8 @@ export function ShortBy({ need, have, cash = false }: { need: number; have: numb
   return (
     <span className="hint short-by">
       {cash
-        ? `You have ${usd(Math.max(0, have))} in cash; this takes ${usd(need)}.`
-        : `Cash and line together come to ${usd(Math.max(0, have))} of the ${usd(need)} this takes.`}
+        ? `Cash ${usd(Math.max(0, have))} · need ${usd(need)}`
+        : `Cash + line ${usd(Math.max(0, have))} · need ${usd(need)}`}
     </span>
   );
 }

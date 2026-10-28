@@ -25,7 +25,7 @@ function buildableLine(rec: Parameters<typeof maxBuildable>[0]): string {
   const b = maxBuildable(rec);
   const env = rec.lotArea * farMaxFor(rec);
   return b.gsf < env * 0.98
-    ? `${sf(b.gsf)} · ${b.floors} floors — the lot tops out before the ${sf(env)} envelope`
+    ? `${sf(b.gsf)} · ${b.floors} floors · lot-limited (envelope ${sf(env)})`
     : `${sf(b.gsf)} · up to ${b.floors} floors`;
 }
 
@@ -151,7 +151,7 @@ export function PropertyPage() {
         {built && h && (
           <Big
             label="Expense leakage"
-            title="The share of the building's operating and tax bill that no lease reimburses — it comes out of your NOI."
+            title="Opex and tax not recovered from tenants."
             value={`${(operatingStatement(rec, game.econ, h, game.month).leakage * 100).toFixed(0)}%`}
             bad={operatingStatement(rec, game.econ, h, game.month).leakage > 0.45}
           />
@@ -159,7 +159,7 @@ export function PropertyPage() {
         {built && h && (
           <Big
             label="Roll quality"
-            title="What the rent roll adds to this building's cap rate: short terms, weak credit or empty space widen it, and a buyer prices that in. Positive is a discount to the price."
+            title="Cap rate spread from term, credit and vacancy. Positive = price discount."
             value={`${rollQualitySpread(rec, h, game.month, game.econ) >= 0 ? "+" : ""}${(rollQualitySpread(rec, h, game.month, game.econ) * 100).toFixed(0)} bps`}
             bad={rollQualitySpread(rec, h, game.month, game.econ) > 0.15}
           />
@@ -180,8 +180,8 @@ export function PropertyPage() {
           const x = value / rc;
           return (
             <Big
-              label="Value vs cost to build"
-              title="Appraisal over what it would cost to put this building up today. Under 1× nobody builds a competitor; well over it, somebody will."
+              label="Value / replacement cost"
+              title="Appraisal / replacement cost. Above 1× invites new supply."
               value={`${x.toFixed(2)}×`}
               bad={x > 1.25}
             />
@@ -190,14 +190,14 @@ export function PropertyPage() {
         {(() => {
           // A syndicated deed: the sponsor's equity is what the waterfall pays it.
           const syn = h ? syndicateView(game, parcels, bbl) : null;
-          if (syn) return <Big label="Equity · yours, through the waterfall" value={usd(syn.yours)} title={`Of ${usd(syn.equity)} at the mark — ${usd(syn.theirs)} is your investors'.`} />;
+          if (syn) return <Big label="Sponsor equity" value={usd(syn.yours)} title={`Total ${usd(syn.equity)} · LPs ${usd(syn.theirs)}`} />;
           return <Big label={h?.jv ? `Equity · yours ${Math.round((1 - h.jv.share) * 100)}%` : "Equity"} value={h ? usd((value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) * (1 - (h.jv?.share ?? 0))) : "—"} />;
         })()}
         {h && (() => {
           // The same ledger read the Portfolio's "Returns to date" prints.
           const r = returnsToDate(game, parcels).find((x) => x.bbl === bbl);
           if (!r) return null;
-          return <Big label="Your return to date" title="On your equity, before tax: cash back plus today's equity at the mark, over what you put in. Closing costs put a new deed under 1× on day one." value={`${r.multiple.toFixed(2)}×${r.irr !== null ? ` · ${pctSigned(r.irr)} IRR` : ""}`} bad={r.multiple < 1} />;
+          return <Big label="Return to date" title="Pre-tax: (distributions + marked equity) / equity invested." value={`${r.multiple.toFixed(2)}×${r.irr !== null ? ` · ${pctSigned(r.irr)} IRR` : ""}`} bad={r.multiple < 1} />;
         })()}
       </div>
       <div className="prop-head">
@@ -216,27 +216,27 @@ export function PropertyPage() {
             {!h && game.listings.some((l) => l.bbl === bbl) && (
               // under contract or mid-talks it is no longer an offer to make
               <button className="btn btn-buy" onClick={() => setTab("deal")}
-                title="The asking price, the in-place income, your offer and the money to close it">
-                {game.talks?.[bbl]?.agreed ? "Fund the closing ▸" : game.talks?.[bbl] ? "Back to the talks ▸" : "Make an offer ▸"}
+                title="Ask, in-place NOI, offer, funding">
+                {game.talks?.[bbl]?.agreed ? "Fund the closing ▸" : game.talks?.[bbl] ? "Negotiation ▸" : "Make an offer ▸"}
               </button>
             )}
             {!h && (
               <button className={"btn" + (game.watch?.includes(bbl) ? " btn-on" : "")}
                 onClick={() => useStore.getState().toggleWatch(bbl)}
-                title="Follow this building: the docket tells you the month it comes to market, and its news files under Your book.">
+                title="Alert when listed; news filed under Your book.">
                 {game.watch?.includes(bbl) ? "★ Watching" : "☆ Watch"}
               </button>
             )}
             {h && (
               <button className="btn btn-sell" onClick={() => setTab("deal")}
-                title={h.sale ? "Your listing, the bids and the offers" : "Take it to market — quietly or as a campaign"}>
+                title={h.sale ? "Listing and bids" : "List off-market or marketed"}>
                 {h.sale
-                  ? "◆ On the market — open the file"
-                  : (leasedFee ? "Sell this leased fee" : built ? "Sell this building" : "Sell this lot")}
+                  ? "◆ Listed · view bids"
+                  : (leasedFee ? "Sell leased fee" : built ? "Sell building" : "Sell lot")}
               </button>
             )}
             <button className="btn" onClick={() => useStore.getState().focus(bbl, true)}
-              title="Close this page and fly the map to the building">
+              title="Show on map">
               ⌖ Go to property
             </button>
           </div>
@@ -276,8 +276,8 @@ export function PropertyPage() {
           <div className="page-section-head">Assessment under appeal</div>
           <div className="grid">
             <Row k="Tax roll" v={usd(h.taxAppeal.assessedAtFile)} />
-            <Row k="Market evidence filed" v={usd(h.taxAppeal.target)} strong />
-            <Row k="Board sits" v={monthLabel(h.taxAppeal.decideM)} />
+            <Row k="Filed value" v={usd(h.taxAppeal.target)} strong />
+            <Row k="Decision" v={monthLabel(h.taxAppeal.decideM)} />
             <Row k="Odds as filed" v={`${(h.taxAppeal.odds * 100).toFixed(0)}%`} />
           </div>
         </div>
@@ -286,26 +286,25 @@ export function PropertyPage() {
           <div className="page-section-head">Property-tax appeal</div>
           <div className="grid">
             <Row k="Tax assessment" v={usd(taxAppeal.assessed)} bad />
-            <Row k="Current market evidence" v={usd(taxAppeal.target)} strong />
+            <Row k="Market value" v={usd(taxAppeal.target)} strong />
             <Row k="Potential annual saving" v={usd(taxAppeal.annualSavings)} />
             <Row k="Appraisal + counsel" v={usd(taxAppeal.fee)} />
-            <Row k="Board timing / odds" v={`${taxAppeal.months} months · ${(taxAppeal.odds * 100).toFixed(0)}%`} />
+            <Row k="Decision" v={`${taxAppeal.months} mo · ${(taxAppeal.odds * 100).toFixed(0)}%`} />
           </div>
           <button className="btn" style={{ marginTop: 8 }} disabled={game.cash < taxAppeal.fee}
-            title={game.cash < taxAppeal.fee ? `The filing costs ${usd(taxAppeal.fee)} — you have ${usd(game.cash)}` : undefined}
+            title={game.cash < taxAppeal.fee ? `Fee ${usd(taxAppeal.fee)} · cash ${usd(game.cash)}` : undefined}
             onClick={() => useStore.getState().appealTax(bbl)}>
             Appeal the assessment · {usd(taxAppeal.fee)}
           </button>
           <ShortBy need={taxAppeal.fee} have={game.cash} cash />
           <div className="hint">
-            The assessor follows markets up quickly and down slowly. You are paying for independent evidence;
-            losing leaves the roll unchanged, and another challenge must wait three years.
+            Fee non-refundable. If denied: assessment unchanged, 3-yr wait to refile.
           </div>
         </div>
       ) : null)}
       {active === "history" && (
         <div className="page-section">
-          <div className="page-section-head">What has happened on this deed</div>
+          <div className="page-section-head">Property history</div>
           <div className="mini-list">
             {timeline.map((event, i) => {
               const row = describePropertyEvent(event);
@@ -321,8 +320,7 @@ export function PropertyPage() {
             })}
           </div>
           <div className="hint">
-            Trades, major leases, construction, planning decisions and enforcement stay with the property,
-            whoever owns it next. Your operating charts on Money cover only your own hold period.
+            Record stays with the property across owners.
           </div>
         </div>
       )}
@@ -346,25 +344,25 @@ export function PropertyPage() {
                 in the basis the yield was underwritten against. */}
             <Row k="Budget" v={usd(dev.costTotal)} />
             <Row
-              k="All in so far"
+              k="All-in cost to date"
               v={`${usd(dev.costTotal + (dev.landBasis ?? 0) + dev.interestReserve)} · $${((dev.costTotal + (dev.landBasis ?? 0) + dev.interestReserve) / Math.max(1, dev.sf)).toFixed(0)}/sf`}
               strong
-              title="Land, construction as it stands today including every change order booked so far, and the interest reserve. Compare it to what finished buildings on this street trade for per square foot — if the budget has drifted past that, the building is worth less than it costs to finish."
+              title="Land + hard/soft cost incl. change orders + interest reserve."
             />
             {/* Financed with the job, spent on tenants rather than steel, and
                 paid across as cash the day the building opens. */}
             {(dev.leaseUpReserve ?? 0) > 0 && (
-              <Row k="Lease-up reserve" v={`${usd(dev.leaseUpReserve!)} — released at delivery`} />
+              <Row k="Lease-up reserve" v={`${usd(dev.leaseUpReserve!)} · released at delivery`} />
             )}
             <Row k="Delivers" v={monthLabel(dev.deliverM)} />
             {/* STILL TO FUND. The one number a developer mid-build checks every
                 month, and it was nowhere on this screen. */}
             <Row
-              k="Equity you have put in"
+              k="Equity funded"
               v={`${usd(dev.equitySpent)} of ${usd(dev.equityBudget)}`}
             />
             <Row
-              k="Still to come out of your account"
+              k="Equity remaining"
               v={usd(Math.max(0, dev.equityBudget - dev.equitySpent))}
               strong
               bad={dev.equityBudget - dev.equitySpent > game.cash}

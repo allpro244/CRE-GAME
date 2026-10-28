@@ -169,6 +169,13 @@ export class PostFX {
   private readonly cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly mat: THREE.ShaderMaterial;
   level: PostLevel = "full";
+  /** Ask the map for another frame (RealCity sets it): the settle and fade of the occlusion need one. */
+  repaint: (() => void) | null = null;
+  /** Max: the occlusion is redrawn every frame, moving or not. */
+  liveAO = false;
+  private movedAt = 0;
+  private shownAt = 0;
+  private distStale = true;
   /** The diorama look (owner, Oct 2026: a toy city, not a photograph): 1 on, 0 the classic grade. */
   toy = 1;
   /** ?post=off in the address turns the pass off whatever the setting (before/after review shots) */
@@ -204,16 +211,27 @@ export class PostFX {
     // repainting at ~30 fps) the last distance pass still stands, so it is
     // only redrawn when the view changes — or every half second, for the
     // cars and the odd rebuilt deed
+    // WHILE THE CAMERA MOVES, NO DISTANCE PASS. It is a second render of the
+    // whole city, and every frame of a pan or a zoom redrew it: a moving view
+    // cost twice a still one. Now the occlusion steps aside while the view
+    // changes and fades back in a quarter-second after it settles (Max keeps
+    // it live: that is what Max is for).
+    let aoK = 0;
     if (ao) {
       const e = (camera as THREE.Camera).projectionMatrix.elements;
       let same = !!this.distRT && this.lastProj.length === 16;
       for (let i = 0; same && i < 16; i++) if (Math.abs(e[i] - this.lastProj[i]) > 1e-9) same = false;
       const now = performance.now();
-      if (!same || now - this.lastDist > 500) {
+      if (!same) { this.lastProj = Array.from(e); this.movedAt = now; this.distStale = true; }
+      const settled = this.liveAO || now - this.movedAt > 120;
+      if (settled && (this.distStale || now - this.lastDist > 500)) {
         this.distPass(renderer, scene!, camera!, hide);
-        this.lastProj = Array.from(e);
         this.lastDist = now;
+        if (this.distStale) { this.distStale = false; this.shownAt = now; }
       }
+      if (!this.distStale) aoK = this.liveAO ? 1 : Math.min(1, (now - this.shownAt) / 250);
+      // keep painting until the settle and the fade are done
+      if (this.repaint && (this.distStale || aoK < 1)) setTimeout(this.repaint, this.distStale ? 130 : 16);
     }
     // the canvas as it is now, not the size the renderer was made at (it shares MapLibre's canvas)
     const gl = renderer.getContext();
@@ -245,7 +263,7 @@ export class PostFX {
     // the diorama keeps its soft model look; the classic look a crisper print
     u.uClarity.value = full ? 0.55 - 0.2 * toy : 0;
     u.uGrade.value = 1;
-    u.uAO.value = ao ? 0.65 + 0.2 * toy : 0;
+    u.uAO.value = ao ? (0.65 + 0.2 * toy) * aoK : 0;
     u.uAOView.value = this.aoView ? 1 : 0;
     const auto = renderer.autoClear;
     renderer.autoClear = false;

@@ -1732,6 +1732,7 @@ export class RealCityLayer {
     this.origin = { x: mc.x, y: mc.y, z: mc.z, s: mc.meterInMercatorCoordinateUnits() };
     this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
     this.renderer.autoClear = false;
+    this.post.repaint = () => this.map?.triggerRepaint();
     this.renderer.shadowMap.enabled = true;
     // PCF with a wide radius (setupLights): three r185 retired PCFSoftShadowMap
     // and falls back to this with a console error on every load
@@ -8862,6 +8863,7 @@ export class RealCityLayer {
     this.sun.castShadow = q !== "low" && !NO_SHADOWS;
     // the finishing pass: all of it on High, the grade alone on Medium, none on Low
     this.post.level = q === "high" ? "full" : q === "medium" ? "grade" : "off";
+    this.post.liveAO = this.maxQ;
     if (q === "high" && this.live && (!this.reflEnv || wasMax !== this.maxQ)) this.probeDue = true;
     if (this.catcher) this.catcher.visible = q !== "low" && !NO_SHADOWS;
     // the ground contact shade is transparent overdraw under every building

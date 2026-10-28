@@ -8,7 +8,9 @@ import { OFF_FLOOR_SHARE_NAT } from "./industries";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { tickStreetTenants } from "./tenantBooks";
 import { simulateHistory, driftInflTarget, shortIndexFor } from "./regime";
-import { swanClassLevel, swanTradeWave, tickSwans } from "./swans";
+import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
+import { whyTrade } from "./why";
+import { whyTown } from "./economy";
 import { settleSupplyDeliveries } from "./supply";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
@@ -3389,7 +3391,15 @@ export function tickIndustryCycle(s: GameState) {
       trend[k] = g0 + (g - g0) / 60;
       e.industryMom[k] = clamp(e.industryMom[k] + (MOM_UNITS * (g - g0) - e.industryMom[k]) / 6, -0.05, 0.05);
       const vol = INDUSTRY_VOL[k], m = e.industryMom[k];
+      const was = e.industryPhase[k];
       e.industryPhase[k] = m > 0.008 * vol ? "boom" : m < -0.0075 * vol ? "bust" : "steady";
+      // A trade the player leases to turns: say so, with the industries behind it (why.ts)
+      if (was !== e.industryPhase[k] && e.industryPhase[k] !== "steady" && exposureToTrade(s, k) > 0.10) {
+        const up = e.industryPhase[k] === "boom";
+        s.news.unshift({ q: s.month, kind: up ? "event" : "warn", why: whyTrade(s, k),
+          text: up ? `${INDUSTRY_LABEL[k]} hiring strongly; good for landlords leasing to that sector.` : `${INDUSTRY_LABEL[k]} shedding staff; check your rent roll exposure to it.` });
+        if (s.news.length > 120) s.news.length = 120;
+      }
     }
   }
   const jobs0 = e.jobsFilled0 ?? e.jobs0 ?? e.jobs ?? 1;
@@ -3464,7 +3474,9 @@ function derivePhase(s: GameState) {
       recovery: "Market recovery: declines have stopped.",
       depression: "Depression: the city has lost over 10% of jobs and losses continue.",
     };
-    pushNews(s, "event", label[e.phase]);
+    // WHY (why.ts): the town's month — its payrolls, its spending, the export industries that moved them
+    s.news.unshift({ q: s.month, kind: "event", text: label[e.phase], why: whyTown(s) });
+    if (s.news.length > 120) s.news.length = 120;
   }
 }
 

@@ -19,7 +19,9 @@
 //
 // RULE FOR EVERY MECHANIC FROM HERE ON: it is not done until the events it
 // causes are written here with their causes.
-import type { GameState } from "./types";
+import type { GameState, Sector } from "./types";
+import { industryOfFirm, whyIndustry } from "./economy";
+import { INDUSTRY_INDEX, TRADE_TO_INDUSTRY, type IndustryId } from "./industries";
 
 export type WhyActor = "tenant" | "firm" | "rival" | "bank" | "city" | "household" | "player" | "nation" | "trade";
 
@@ -138,28 +140,43 @@ export function whyNation(s: GameState): number {
   }));
 }
 
-/** A trade's month: where its orders were heading, caused by the nation's month. */
+/**
+ * A trade's month: where its orders were heading. Since ONE ECONOMY step 2 a
+ * trade is a read-out of the industries its firms are in, so it is caused by
+ * the month of the industry it mostly is (economy.ts `whyIndustry`; the
+ * heaviest in industries.ts TRADE_TO_INDUSTRY), and the nation's month.
+ */
 export function whyTrade(s: GameState, sector: string): number {
   const mom = s.econ?.industryMom?.[sector as keyof NonNullable<typeof s.econ.industryMom>] ?? 0;
   return whyOnce(s, `trade:${sector}:${s.month}`, () => ({
     k: "trade.month", a: "trade", aid: sector, name: sector,
     n: { mom },
     t: `${sector} trade · orders ${pct(mom)} a month`,
-  }), () => [whyNation(s)]);
+  }), () => {
+    let top: IndustryId | undefined, w = 0;
+    for (const fl of ["office", "retail", "industrial"] as const) for (const [k, x] of TRADE_TO_INDUSTRY[fl][sector as Sector] ?? []) if (x > w) { w = x; top = k; }
+    return [top ? whyIndustry(s, INDUSTRY_INDEX[top]) : undefined, whyNation(s)];
+  });
 }
 
 /**
  * A tenant's books as they stood when it decided: sales against where they
- * were when it signed, interest cover, months of cash. Caused by its trade's
- * month (the first cause) — the firm's own fortunes are the rest of the story,
- * and the numbers carry them.
+ * were when it signed, interest cover, months of cash. Caused by its
+ * industry's month (economy.ts `whyIndustry`, ONE ECONOMY step 2: the firm's
+ * own industry, whose demand its staff and sales follow), else its trade's
+ * month — the firm's own fortunes are the rest of the story, and the numbers
+ * carry them.
  */
-export function whyTenantBooks(s: GameState, t: { name: string; sector: string },
+export function whyTenantBooks(s: GameState, t: { name: string; sector: string; fid?: number; ind?: number },
   fin: { rev0: number; revRef?: number; cover: number; liqM: number }): number {
   const sales = fin.revRef && fin.rev0 > 0 ? fin.revRef / fin.rev0 - 1 : 0;
   return why(s, {
     k: "tenant.books", a: "tenant", name: t.name,
     n: { sales, cover: fin.cover, cashMonths: fin.liqM },
     t: `${t.name} · sales ${pct(sales)} since signing · cover ${fin.cover.toFixed(1)}x · ${fin.liqM.toFixed(1)} months of cash`,
-  }, [whyTrade(s, t.sector)]);
+  }, [firstCauseOf(s, t)]);
+}
+function firstCauseOf(s: GameState, t: { sector: string; fid?: number; ind?: number }): number {
+  const ind = industryOfFirm(s, t);
+  return (ind !== undefined ? whyIndustry(s, ind) : undefined) ?? whyTrade(s, t.sector);
 }

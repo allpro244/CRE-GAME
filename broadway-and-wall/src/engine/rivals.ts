@@ -2355,7 +2355,7 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
   // real share of the building.
   {
     const own = new Set(r.bbls);
-    let big: { bbl: string; name: string; sf: number; why?: string } | null = null;
+    let big: { bbl: string; name: string; sf: number; why?: string; whyId?: number } | null = null;
     for (let i = (s.econ.streetFailed?.length ?? 0) - 1; i >= 0; i--) {
       const f = s.econ.streetFailed![i];
       if (f.m < s.month) break;
@@ -2369,7 +2369,7 @@ function tickAssetManagement(s: GameState, parcels: ParcelTable, r: Rival) {
       if (newsChance(s, "tenant:" + r.id, 0.35)) {
         const rec = resolveRec(parcels, s, big.bbl);
         s.news.unshift({
-          q: s.month, kind: "event",
+          q: s.month, kind: "event", ...(big.whyId ? { why: big.whyId } : {}),
           text: `${big.name} ${big.why === "left" ? "is moving out of" : "has gone dark at"} ${rec?.address ?? "one of their buildings"}, handing ${r.name} back ${Math.round(big.sf / 1000)}k sf. Portfolio occupancy ${(Math.max(0, r.occ) * 100).toFixed(0)}%.`,
         });
       }

@@ -53,6 +53,7 @@ import { drawTenantSf, sizeScale } from "./plates";
 import { noteTenantMove } from "./history";
 import { INDUSTRY_IDS, N_IND, TRADE_TO_INDUSTRY, floorOf } from "./industries";
 import { demandModel } from "./demand";
+import { whyFirmDark } from "./economy";
 
 export interface StreetRoll {
   t: Tenant[];
@@ -383,21 +384,30 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       (t as Tenant & { zSeen?: number }).zSeen = zNow;
       const za = (dzAcc[t.sector] ??= [0, 0]), hw = firmHc(t);
       za[0] += hw * dz; za[1] += hw;
-      // (Half of a growing industry's new heads are new firms', so a sitting
-      // firm takes the square root of the rise; a shrinking one has no
-      // entrants to share the fall with, so its firms take all of it —
-      // step 2: the sitting firms' heads ARE the industry's on the island,
-      // and a square root both ways left them holding staff its sales no
-      // longer paid for.)
+      // ...AND WHERE THE ISLAND HOLDS MORE OF ITS INDUSTRY THAN THE
+      // INDUSTRY'S WORK SUPPORTS (step 2: its share of the industry's
+      // employment at the opening, `islandFill` last month), its firms shed
+      // the excess at the pace new firms fill a shortfall (FORM_M). Half of a
+      // swing is the sitting firms', half new firms' or closures', in both
+      // directions; without this a shrinking industry's sitting firms kept
+      // staff its sales no longer paid for, since no entrant was there to
+      // take the other half. (A first cut took the whole fall on the sitting
+      // firms and a square root of the rise, which ratcheted every firm down
+      // in an industry whose employment merely wobbled: measured, a tech
+      // tenant's sales -58% since signing with its industry -1% on its year.)
       const r = emp / Math.max(1e-6, prev);
-      t.staff = Math.max(0.05, Math.min(60, (t.staff ?? 1) * (r >= 1 ? Math.sqrt(r) : r) * catchR * Math.exp(0.7 * (dz - (e.dzBar?.[t.sector] ?? 0)))));
+      const over = ind !== undefined ? Math.max(1, e.islandFill?.[ind] ?? 1) : 1;
+      const shed = over > 1 && COMM.includes(k) ? Math.pow(over, -1 / FORM_M[k as Comm]) : 1;
+      t.staff = Math.max(0.05, Math.min(60, (t.staff ?? 1) * Math.sqrt(r) * shed * catchR * Math.exp(0.7 * (dz - (e.dzBar?.[t.sector] ?? 0)))));
       // The contractual bump on each anniversary.
       const age = m - t.startM;
       if (age > 0 && age % 12 === 0) t.rentPsf = +(t.rentPsf * (1 + bumpOf(t) / 100)).toFixed(2);
       const f = tickTenantFin(e, t, m < (t.freeUntilM ?? -1) ? 0 : t.rentPsf * t.sf, e.creditIdx ?? 1);
       if (rng(s, "leasing") < tenantFailOdds(f, t.credit)) {
         if (k in lost) lost[k] += firmHc(t);
-        (e.streetFailed ??= []).push({ m, bbl, name: t.name, sf: t.sf, use: k, why: "dark", credit: t.credit });
+        // WHY (why.ts): a firm the size of an anchor (rivals.ts reads them) writes what failed it
+        const whyId = t.sf >= 8000 ? whyFirmDark(s, t, f, bbl) : undefined;
+        (e.streetFailed ??= []).push({ m, bbl, name: t.name, sf: t.sf, use: k, why: "dark", credit: t.credit, ...(whyId ? { whyId } : {}) });
         (e.failedSf ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] += t.sf;
         seeking.delete(t.fid!);
         vacate(roll, t);
@@ -531,9 +541,11 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const gap: Record<Comm, Float64Array> = { office: new Float64Array(N_IND), retail: new Float64Array(N_IND), industrial: new Float64Array(N_IND) };
   const want: Record<Comm, number> = { office: 0, retail: 0, industrial: 0 };
   const tgt = eco?.target;
+  const fill: number[] = [];
   if (tgt) for (let i = 0; i < N_IND; i++) {
     let tot = 0;
     for (const k of COMM) tot += named[k][i];
+    fill.push(tgt[i] > 0 ? tot / tgt[i] : 1);
     for (const k of COMM) {
       const split = tot > 0 ? named[k][i] / tot : (floorOf(INDUSTRY_IDS[i]) === k ? 1 : 0);
       const t = tgt[i] * split;
@@ -541,6 +553,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       gap[k][i] = Math.max(0, t - named[k][i]);
     }
   }
+  if (tgt) e.islandFill = fill;
   // The suites on the market now, for firms sized by what is on offer.
   const suites: Record<Comm, { avail: number; sc: number }[]> = { office: [], retail: [], industrial: [] };
   for (const [bbl, roll] of Object.entries(R)) {

@@ -2286,7 +2286,7 @@ export interface Econ {
   /** Share of the street's let space whose tenants failed beyond the background this month, by class. */
   streetFailShare?: Record<string, number>;
   /** The street's recent move-outs, newest last, capped: tenants that went dark, and tenants that left at lease end. */
-  streetFailed?: { m: number; bbl: string; name: string; sf: number; use: BuiltClass; why?: "dark" | "left"; to?: string; credit?: Credit }[];
+  streetFailed?: { m: number; bbl: string; name: string; sf: number; use: BuiltClass; why?: "dark" | "left"; to?: string; credit?: Credit; /** its event in the cause ledger (why.ts) */ whyId?: number }[];
   /** The player's rolls last month, so a building sold carries its tenants to the street. */
   heldTenants?: Record<string, Tenant[]>;
   /**
@@ -2324,6 +2324,8 @@ export interface Econ {
    * filled the firms' heads and read by the engine the month after.
    */
   eco?: EcoDrive;
+  /** Each industry's heads in the island's named firms over the heads they are formed toward (streetRolls.ts): over 1, its firms shed the excess. */
+  islandFill?: number[];
   /** The first month's drivers, which the space market's indices are read against. */
   eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number };
   /** Each trade's payroll last month, for the firms' month-on-month change. */

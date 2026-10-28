@@ -84,6 +84,7 @@ import {
 } from "./market";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
 import { householdMoney, registerPayroll, registerLabour } from "./households";
+import { why, whyOnce, whyNation, whyTenantBooks } from "./why";
 
 // ---------------------------------------------------------------- the facts
 /** Off-map firms kept per industry: the sample each industry's off-map employment is shared over. [K] (precision, not a fact) */
@@ -189,6 +190,14 @@ export interface EconomyState {
   sigma?: number[];
   /** Output at the opening (the trades' sales read-out). */
   x0?: number[];
+  /**
+   * The past year, rolled (a twelve-month moving average, updated in
+   * `tickEconomy`): each industry's employment, exports, what households and
+   * other firms bought of it, the town's share of the nation's demand (log),
+   * and the town's heads and household spending — what the cause ledger's
+   * "since a year ago" reads (why.ts). Records; nothing decides on it.
+   */
+  ema?: { emp: number[]; X: number[]; hh: number[]; firms: number[]; share: number[]; heads: number; C: number };
 }
 
 function allocCols(cap: number): FirmColumns {
@@ -934,6 +943,20 @@ export function tickEconomy(s: GameState): void {
   if (cashOf(L, GOV) < 0) sellBond(L, ROW, -cashOf(L, GOV));
   if (cashOf(L, LAND) < 0) lend(L, LAND, -cashOf(L, LAND));
 
+  // the past year, rolled, for the cause ledger (whyIndustry, whyTown)
+  {
+    const cur = {
+      emp: (E.emp ?? Array.from(heads)).slice(), X: Array.from(X), hh: buy.map((b) => b[0]), firms: buy.map((b) => b[1]),
+      share: (E.lnShare ?? new Array(N_IND).fill(0)).slice(), heads: heads.reduce((a, v) => a + v, 0), C,
+    };
+    const m = E.ema;
+    if (!m) E.ema = cur;
+    else {
+      const k = 1 / 12, mv = (a: number[], b: number[]) => { for (let i = 0; i < a.length; i++) a[i] += (b[i] - a[i]) * k; };
+      mv(m.emp, cur.emp); mv(m.X, cur.X); mv(m.hh, cur.hh); mv(m.firms, cur.firms); mv(m.share, cur.share);
+      m.heads += (cur.heads - m.heads) * k; m.C += (cur.C - m.C) * k;
+    }
+  }
   E.last = {
     m: s.month, C, G, P, X: xTot, hhWagesRegister: hm.wages, hhWagesFirms: wagesCash,
     x: Array.from(x), buy, heads: Array.from(heads), namedHeads: E.cur.named.slice(),
@@ -1011,6 +1034,100 @@ export function economyToEngine(s: GameState): void {
   e.eco = d;
   if (d.floorSf && !e.eco0?.floorSf) { (e.eco0 ??= {}).floorSf = { ...d.floorSf }; e.eco0.jobs = d.jobs; }
   (e.eco0 ??= {}).renters ??= d.renters;
+}
+
+// ---------------------------------------------------------------- why (why.ts)
+// The cause ledger's upstream for step 2: what the industries and the town did
+// this month, made on demand — only when something downstream cites it — and
+// at most once a month each (whyOnce). They read the books' rolled past year
+// (`ema`); they draw nothing and decide nothing.
+const sgn = (x: number) => `${x >= 0 ? "+" : ""}${(100 * x).toFixed(0)}%`;
+const vsYear = (now: number, yr: number) => (yr > 0 ? now / yr - 1 : 0);
+
+/**
+ * WHAT THE NATION BOUGHT OF AN INDUSTRY this month against its past year:
+ * the exports, the town's share of the nation's demand for it (what the town
+ * costs an employer and its firms' fortunes), the industry's national trend.
+ * Caused by the nation's month.
+ */
+export function whyExports(s: GameState, i: number): number | undefined {
+  const E = s.economy, l = E?.last, m = E?.ema;
+  if (!E || !l || !m) return undefined;
+  const id = INDUSTRY_IDS[i];
+  return whyOnce(s, `exports:${id}:${s.month}`, () => {
+    const dx = vsYear(l.buy[i][4], m.X[i]), dShare = (E.lnShare?.[i] ?? 0) - m.share[i];
+    return {
+      k: "industry.exports", a: "trade", aid: id, name: INDUSTRIES[id].label,
+      n: { exports: dx, share: dShare, natTrend: E.natTr?.[i] ?? 0 },
+      t: `${INDUSTRIES[id].label} · sold out of town ${sgn(dx)} on its year · the town's share ${sgn(dShare)}`,
+    };
+  }, () => [whyNation(s)]);
+}
+
+/**
+ * THE TOWN'S MONTH: its firms' heads and its households' spending against the
+ * past year, and the jobless rate. Caused by the export industries whose sales
+ * out of town moved most (largest first) — the base the rest of the town lives
+ * on — and the nation.
+ */
+export function whyTown(s: GameState): number | undefined {
+  const E = s.economy, l = E?.last, m = E?.ema;
+  if (!E || !l || !m) return undefined;
+  return whyOnce(s, `town:${s.month}`, () => {
+    const heads = l.heads.reduce((a, v) => a + v, 0);
+    const dj = vsYear(heads, m.heads), dc = vsYear(l.C, m.C);
+    return {
+      k: "town.month", a: "city",
+      n: { jobs: heads, jobsYear: dj, spend: dc, unemp: s.econ.unemployment ?? 0 },
+      t: `The town · ${Math.round(heads).toLocaleString("en-US")} jobs, ${sgn(dj)} on its year · household spending ${sgn(dc)} · ${(100 * (s.econ.unemployment ?? 0)).toFixed(1)}% jobless`,
+    };
+  }, () => {
+    const moves = INDUSTRY_IDS.map((_, i) => ({ i, d: l.buy[i][4] - m.X[i] })).filter((x) => m.X[x.i] > 0)
+      .sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 3);
+    return [...moves.map((x) => whyExports(s, x.i)), whyNation(s)];
+  });
+}
+
+/**
+ * AN INDUSTRY'S MONTH: its employment against the past year, and who bought
+ * less or more of it — the nation (exports), other firms (orders through the
+ * input-output table), households. Its first cause is the channel that moved
+ * most: the nation's month (what it bought), else the town's month
+ * (`whyTown`: its payrolls and its spending, caused by the export
+ * industries that moved them).
+ */
+export function whyIndustry(s: GameState, i: number): number | undefined {
+  const E = s.economy, l = E?.last, m = E?.ema;
+  if (!E || !l || !m || !E.emp) return undefined;
+  const id = INDUSTRY_IDS[i];
+  const dX = l.buy[i][4] - m.X[i], dLocal = (l.buy[i][0] - m.hh[i]) + (l.buy[i][1] - m.firms[i]);
+  return whyOnce(s, `industry:${id}:${s.month}`, () => {
+    const de = vsYear(E.emp![i], m.emp[i]);
+    return {
+      k: "industry.month", a: "trade", aid: id, name: INDUSTRIES[id].label,
+      n: { emp: E.emp![i], empYear: de, exports: vsYear(l.buy[i][4], m.X[i]), households: vsYear(l.buy[i][0], m.hh[i]), firms: vsYear(l.buy[i][1], m.firms[i]), share: (E.lnShare?.[i] ?? 0) - m.share[i] },
+      t: `${INDUSTRIES[id].label} · ${Math.round(E.emp![i]).toLocaleString("en-US")} jobs, ${sgn(de)} on its year · households ${sgn(vsYear(l.buy[i][0], m.hh[i]))} · firms ${sgn(vsYear(l.buy[i][1], m.firms[i]))} · exports ${sgn(vsYear(l.buy[i][4], m.X[i]))}`,
+    };
+  }, () => Math.abs(dX) > Math.abs(dLocal) ? [whyNation(s), whyTown(s)] : [whyTown(s), whyNation(s)]);
+}
+
+/** A named firm's industry: the one it was formed in, else the one the books put it in. Pure. */
+export function industryOfFirm(s: GameState, t: { fid?: number; ind?: number }): number | undefined {
+  if (t.ind !== undefined) return t.ind;
+  const E = s.economy;
+  if (t.fid === undefined || !E?.f) return undefined;
+  const n = E.L.slot.n, ids = E.f.id as unknown as ArrayLike<number>;
+  for (let k = 0; k < n; k++) if (ids[k] === t.fid) return (E.f.ind as unknown as ArrayLike<number>)[k];
+  return undefined;
+}
+
+/** A street firm that went dark: its books, which cite its industry's month (why.ts `whyTenantBooks`). */
+export function whyFirmDark(s: GameState, t: Tenant, fin: { rev0: number; revRef?: number; cover: number; liqM: number }, bbl: string): number {
+  return why(s, {
+    k: "tenant.dark", a: "firm", name: t.name, bbl,
+    n: { sf: t.sf, rentYr: Math.round(t.rentPsf * t.sf) },
+    t: `${t.name} went dark · ${(t.sf / 1000).toFixed(1)}k sf`,
+  }, [whyTenantBooks(s, t, fin)]);
 }
 
 // ---------------------------------------------------------------- reading it

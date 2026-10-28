@@ -2746,6 +2746,18 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
 }
 
 /**
+ * THE LIST IS ALWAYS BEST-FIRST. Every "take the best bid" control in the game
+ * (the building file's footer, the pipeline, the inbox, the bids-are-in card,
+ * the Deals desk) takes index 0, so anything that moves a price or drops a
+ * bidder re-ranks: live bids first, highest price first. counterBid used not
+ * to, and a bidder who came up past the field on a private call sat second
+ * while "Take best" signed the old leader at their first number.
+ */
+export function rankBids(bids: Bid[]): Bid[] {
+  return bids.sort((a, b) => (a.dropped ? 1 : 0) - (b.dropped ? 1 : 0) || b.price - a.price);
+}
+
+/**
  * BEST AND FINAL.
  *
  * Go back to the top of the list and tell them there is another number they
@@ -2774,7 +2786,7 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
     if (b.price > before) lifted++;
   }
   ns.round = 1;
-  ns.bids = (ns.bids ?? []).sort((a, b) => (a.dropped ? 1 : 0) - (b.dropped ? 1 : 0) || b.price - a.price);
+  ns.bids = rankBids(ns.bids ?? []);
   const best = ns.bids.find((b) => !b.dropped);
   next.news.unshift({
     q: next.month, kind: best ? "deal" : "warn",
@@ -2794,9 +2806,18 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
  * new offer at a worse number, and you already have the machinery to accept it,
  * counter it, or tell them to go away.
  */
-export function acceptBid(s: GameState, parcels: ParcelTable, bbl: string, index: number): { s: GameState; err?: string; msg?: string } {
+export function acceptBid(
+  s: GameState, parcels: ParcelTable, bbl: string, index: number, name?: string,
+): { s: GameState; err?: string; msg?: string } {
   const h = s.holdings[bbl];
   const sale = h?.sale;
+  // A screen that names the bidder it is showing gets that bidder, even if the
+  // list re-ranked between the render and the click.
+  if (name !== undefined && sale?.bids?.[index]?.name !== name) {
+    const at = sale?.bids?.findIndex((b) => b.name === name) ?? -1;
+    if (at < 0) return { s, err: "That bid is not on the table." };
+    index = at;
+  }
   const bid = sale?.bids?.[index];
   if (!bid || bid.dropped) return { s, err: "That bid is not on the table." };
   const next = clone(s);
@@ -4160,7 +4181,8 @@ export function counterBid(
   if (px <= b0.price) return { s, err: "That is not a counter — it is an acceptance at a worse price." };
 
   const next = clone(s);
-  const bid = next.holdings[bbl]!.sale!.bids![index];
+  const nsale = next.holdings[bbl]!.sale!;
+  const bid = nsale.bids![index];
   bid.countered = true;
 
   // How far this buyer will actually stretch. Credibility is the whole read:
@@ -4173,6 +4195,7 @@ export function counterBid(
   if (px <= limit) {
     bid.price = px;
     bid.note = "Came up on a private call.";
+    rankBids(nsale.bids!);
     next.news.unshift({
       q: next.month, kind: "deal",
       text: `${b0.name} came up to ${money(px)} at ${rec.address}, from ${money(b0.price)}.`,
@@ -4183,6 +4206,7 @@ export function counterBid(
     const split = Math.round((px + limit) / 2);
     bid.price = split;
     bid.note = "Split the difference and stopped.";
+    rankBids(nsale.bids!);
     next.news.unshift({
       q: next.month, kind: "info",
       text: `${b0.name} split it at ${rec.address}: ${money(split)} and no further.`,
@@ -4191,6 +4215,7 @@ export function counterBid(
   }
   bid.dropped = true;
   bid.note = "Walked when you went back to them.";
+  rankBids(nsale.bids!);
   next.news.unshift({
     q: next.month, kind: "warn",
     text: `${b0.name} walked at ${rec.address}. You went back to them for ${money(px)} and they were done.`,
@@ -4232,6 +4257,7 @@ export function repriceListing(
       if (b.dropped) continue;
       if (b.price < px * 0.9 && rng(next) < 0.5) { b.dropped = true; b.note = "Left when the ask went up."; }
     }
+    rankBids(sale.bids);
   }
   if (!cut && sale.offer && sale.offer.price < px * 0.92 && rng(next) < 0.45) {
     delete sale.offer;

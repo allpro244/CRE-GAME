@@ -403,7 +403,8 @@ interface AppState {
   /** Standing instructions to the listing broker; null withdraws them. */
   setSaleInstructions: (bbl: string, instructions: SaleInstructions | null) => void;
   runBestAndFinal: (bbl: string) => void;
-  takeBid: (bbl: string, index: number) => void;
+  /** `name`: the bidder the screen showed — taken even if the list re-ranked under the click. */
+  takeBid: (bbl: string, index: number, name?: string) => void;
   applyVariance: (bbl: string, targetFar?: number) => void;
   /** Region map: ask the board to rezone a farm tract you own for lots of `lotSf` (engine/landdev.ts). */
   fileRezoning: (bbl: string, lotSf: number) => void;
@@ -1714,10 +1715,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  takeBid: (bbl, index) => {
+  takeBid: (bbl, index, name) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = acceptBid(game, parcels, bbl, index);
+    const r = acceptBid(game, parcels, bbl, index, name);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Under contract.", r.msg === "They retraded you." ? "err" : undefined);

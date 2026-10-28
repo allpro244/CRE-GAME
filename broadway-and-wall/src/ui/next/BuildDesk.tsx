@@ -21,7 +21,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import Slider from "@/ui/Slider";
 import SchemeViewer from "@/ui/panels/SchemeViewer";
 import { dominantOf } from "@/engine/proforma";
-import { planDevelopment, takeoutHedgeCost, takeoutHedgeRequired, maxRetailShare, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY } from "@/engine/dev";
+import { planDevelopment, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, maxRetailShare, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY } from "@/engine/dev";
 import { maxOutside, syndicateBar } from "@/engine/syndicate";
 import { raisePreview, type RaiseJob } from "@/engine/raise";
 import { committedTotal, type PitchStyle } from "@/engine/investors";
@@ -193,11 +193,17 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
             <Row k="Size">
               <Slider label="Floors" value={floors} min={1} max={Math.max(1, d.top)} step={1} onChange={setSize}
                 format={() => `${floors} fl${plan ? ` · ${sf(plan.sf)} · ${Math.round(cov * 100)}% lot` : ""}`} />
-              {/* THE ENVELOPE IS FULL (owner: "the sqft stops growing"): past the
-                  district's FAR, more floors only slim the floorplate */}
-              {plan && plan.far >= plan.farMax - 0.05 && <div className="bd-terms" style={{ paddingLeft: 0 }}>FAR max {plan.farMax.toFixed(1)} — taller only slims the floorplate</div>}
             </Row>
           )}
+          {/* THE ENVELOPE IS FULL (owner: "the sqft stops growing"): past the
+              district's FAR more floors only slim the floorplate; the way out is a FAR filing */}
+          {!d.product && plan && plan.far >= plan.farMax - 0.05 && <div className="bd-terms">
+            FAR max {plan.farMax.toFixed(1)} · more floors only slim the floorplate ·{" "}
+            <button type="button" className="bd-link" onClick={() => {
+              useStore.getState().openProperty(bbl, "summary");
+              window.setTimeout(() => useStore.setState({ pageJump: "Zoning variance" }), 120);
+            }}>File for more FAR</button>
+          </div>}
           <Row k="Tier">
             {BUILD_TIERS.map((t) => (
               <Chip key={t.key} on={tier.key === t.key} title={t.blurb} onClick={() => set({ spec: t.spec })}>{t.label}</Chip>
@@ -249,6 +255,26 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
           {plan && <div className="bd-terms mono">{plan.commitment > 0
             ? `${plan.lender} · ${pct2(plan.ratePct)} · ${Math.round(plan.ltc * 100)}% LTC · ${usd(plan.commitment)} · ${(plan.points * 100).toFixed(1)} pts`
             : plan.ltcMax > 0 ? `All equity · ${plan.lender} offers ${Math.round(plan.ltcMax * 100)}% at ${pct2(plan.ratePct)}` : (plan.lenderNote ?? "No lender quotes")}</div>}
+          {/* THE REST OF THE DEBT (owner, Oct 2026: "you should be able to add a rate cap"):
+              the takeout hedge, the fees and the loan the building inherits at delivery */}
+          {plan && plan.commitment > 0 && <>
+            <Row k="Rate">
+              {(["float", "cap", "fixed"] as const).map((k) => (
+                <Chip key={k} on={d.takeout === k} disabled={k === "float" && takeoutHedgeRequired(plan)}
+                  title={k === "float" ? (takeoutHedgeRequired(plan) ? "The lender requires a cap or a lock at this loan size" : "Float at index + spread")
+                    : k === "cap" ? "Rate cap: the index is capped 1.5 pts over today's until the mini-perm matures" : "Lock the takeout rate today"}
+                  onClick={() => set({ takeout: k })}>
+                  {k === "float" ? "Float" : k === "cap" ? "Rate cap" : "Fixed lock"}<span className="bd-sub"> {k === "float" ? "$0" : usd(takeoutHedgeCost(plan, k))}</span>
+                </Chip>))}
+            </Row>
+            {(() => {
+              const t = takeoutRead(game.econ, plan, d.takeout);
+              const x = (v: number) => (Number.isFinite(v) ? `${v.toFixed(2)}×` : "—");
+              return <div className="bd-terms mono">
+                {`Fee ${usd(plan.pointsCost)} · interest reserve ${usd(plan.interestReserve)} · at delivery ${pct2(t.ratePct)}, DSCR ${x(t.dscr)} (${x(t.dscrStress)} if rates +3)`}
+              </div>;
+            })()}
+          </>}
           {d.prospect && <div className="bd-terms">Anchor: {d.prospect.name}</div>}
           <More d={d} bbl={bbl} set={set} />
           <Details d={d} />
@@ -300,8 +326,6 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
   const outMax = plan && !synBar ? maxOutside(game, d.need.whole, landEquity) : 0;
   const outside = Math.round(outMax * share / 10_000) * 10_000;
   const pv = plan && outside > 0 ? raisePreview(game, plan, landEquity, d.need.whole, outside, pitch) : null;
-  const hedgeOn = !!plan && plan.commitment > 0;
-  const mustHedge = !!plan && takeoutHedgeRequired(plan);
   const split = d.draft.split ?? { retail: 15, office: 45, multifamily: 40 };
   const retailCap = Math.max(0, Math.floor(maxRetailShare(floors) * 100));
   const nonRetail = Math.max(1, split.office + split.multifamily);
@@ -315,14 +339,6 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
           <Chip on={contract === "gmp"} title="Guaranteed maximum price: the builder carries most overruns" onClick={() => set({ contract: "gmp" })}>GMP</Chip>
           <Chip on={contract === "costplus"} title="Cost-plus: a cheaper bid, but overruns are yours" onClick={() => set({ contract: "costplus" })}>Cost-plus</Chip>
         </Row>
-        {hedgeOn && plan && <Row k="Rate">
-          {(["float", "cap", "fixed"] as const).map((k) => (
-            <Chip key={k} on={d.takeout === k} disabled={k === "float" && mustHedge}
-              title={k === "float" && mustHedge ? "The lender requires a cap or a lock at this loan size" : undefined}
-              onClick={() => set({ takeout: k })}>
-              {k === "float" ? "Float" : k === "cap" ? "Cap" : "Fixed"}<span className="bd-sub"> {k === "float" ? "$0" : usd(takeoutHedgeCost(plan, k))}</span>
-            </Chip>))}
-        </Row>}
         {(use === "office" || use === "multifamily") && !d.product && <Row k="Shops">
           {(["auto", "on", "off"] as const).map((k) => (
             <Chip key={k} on={d.groundRetail === k} onClick={() => set({ groundRetail: k })}>{k === "auto" ? "Auto" : k === "on" ? "Ground floor" : "None"}</Chip>))}

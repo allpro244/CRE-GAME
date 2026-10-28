@@ -52,3 +52,5 @@
 .bd-cell .bd-mid.mono { font-size: 15px; }
 /* the land desk: the plat is a picture, the choices beside it */
 .land-desk .plat-map { width: 100%; height: auto; display: block; }
+
+.bd-link { background: none; border: 0; padding: 0; color: var(--bd-warn); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }

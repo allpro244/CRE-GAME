@@ -58,12 +58,12 @@ export function BooksPage() {
         <Big label="Cash" value={usd(game.cash)} bad={game.cash < 0} />
         {depositsHeld(game) > 0 && (
           <Big label="Deposits held" value={usd(depositsHeld(game))}
-            title="Tenants' money, not yours — a liability on the balance sheet, due back when they leave. It sits inside Cash." />
+            title="Liability · included in Cash" />
         )}
         <Big label="Realized gains" value={usd(realized)} bad={realized < 0} />
         <Big label="Taxes paid, lifetime" value={usd(game.taxesPaid ?? 0)} />
         {(game.taxLossCarry ?? 0) > 0 && (
-          <Big label="Tax loss banked" value={usd(game.taxLossCarry ?? 0)} />
+          <Big label="NOL carryforward" value={usd(game.taxLossCarry ?? 0)} />
         )}
         <Big label="Exits" value={String(game.exits.length)} />
       </div>
@@ -74,11 +74,11 @@ export function BooksPage() {
           Balance sheet
         </button>
         <button className={"btn" + (tab === "pnl" ? " btn-on" : "")} onClick={() => setTab("pnl")}
-          title="What the firm earned — accrual basis: interest not principal, depreciation, gains on sale">
+          title="Accrual basis · interest, depreciation, gains on sale">
           Income statement
         </button>
         <button className={"btn" + (tab === "cash" ? " btn-on" : "")} onClick={() => setTab("cash")}
-          title="What moved through the bank account — principal, purchases, sales and draws included">
+          title="Cash basis · incl. principal, purchases, sales, draws">
           Cash flow
         </button>
       </div>
@@ -103,14 +103,14 @@ export function BooksPage() {
           {appealable.length > 0 && (
             <>
               <div className="hint">
-                {appealable.length} building{appealable.length === 1 ? "" : "s"} carry assessments materially above today&apos;s market evidence.
+                {appealable.length} building{appealable.length === 1 ? "" : "s"} assessed above market
               </div>
               <div className="mini-list">
                 {appealable.slice(0, 4).map((a) => (
                   <button key={a.bbl} className="neighbor" onClick={() => goProperty(a.bbl)}>
                     <span className="neighbor-addr">{a.address}</span>
                     <span className="neighbor-meta mono">
-                      {usd(a.annualSavings)} / yr potential saving · file for {usd(a.fee)}
+                      {usd(a.annualSavings)} / yr savings · fee {usd(a.fee)}
                     </span>
                   </button>
                 ))}
@@ -134,14 +134,14 @@ export function BooksPage() {
           .slice(0, 3);
         if (!flows.length && !failed.length && !decadePrints.length && peak <= 0) return null;
         return (
-          <Fold id="books:census" title="City census" summary="who has been buying, who failed, and where your firm peaked">
+          <Fold id="books:census" title="City census" summary="buyers, failures, your peak">
             {/* Four unlabelled lists in a row read as one list of unrelated
                 rows; each gets the caption the Waterfall above uses. */}
-            {peak > 0 && <div className="wf-kicker">Your firm</div>}
+            {peak > 0 && <div className="wf-kicker">Firm</div>}
             {peak > 0 && (
               <div className="mini-list" style={{ marginBottom: 8 }}>
                 <div className="mini-row" style={{ cursor: "default" }}>
-                  <span>Firm peak net worth</span>
+                  <span>Peak net worth</span>
                   <span className="mono">{usd(peak)}{peakAt >= 0 ? ` · ${monthLabel(peakAt)}` : ""}</span>
                 </div>
                 <div className="mini-row" style={{ cursor: "default" }}>
@@ -150,7 +150,7 @@ export function BooksPage() {
                 </div>
               </div>
             )}
-            {decadePrints.length > 0 && <div className="wf-kicker">The biggest prints on the tape</div>}
+            {decadePrints.length > 0 && <div className="wf-kicker">Largest sales</div>}
             {decadePrints.length > 0 && (
               <div className="mini-list" style={{ marginBottom: 8 }}>
                 {decadePrints.map((c) => (
@@ -161,7 +161,7 @@ export function BooksPage() {
                 ))}
               </div>
             )}
-            {flows.length > 0 && <div className="wf-kicker">Who has been buying · ten years</div>}
+            {flows.length > 0 && <div className="wf-kicker">Net buyers · 10 yrs</div>}
             {flows.length > 0 && (
               <div className="mini-list" style={{ marginBottom: 8 }}>
                 {flows.map((f) => (
@@ -174,7 +174,7 @@ export function BooksPage() {
                 ))}
               </div>
             )}
-            {failed.length > 0 && <div className="wf-kicker">Who failed</div>}
+            {failed.length > 0 && <div className="wf-kicker">Failed firms</div>}
             {failed.length > 0 && (
               <div className="mini-list">
                 {failed.map((r) => (
@@ -185,7 +185,7 @@ export function BooksPage() {
                 ))}
               </div>
             )}
-            <button className="btn" onClick={() => { openViewOn("news", "prints"); setPage("news"); }}>Open the Tape for the full prints →</button>
+            <button className="btn" onClick={() => { openViewOn("news", "prints"); setPage("news"); }}>All sales →</button>
           </Fold>
         );
       })()}
@@ -195,7 +195,7 @@ export function BooksPage() {
           strip. The ledger points at them rather than repeating them. */}
       <div className="hint" style={{ marginTop: 18 }}>
         {exits.length ? `${exits.length} exit${exits.length === 1 ? "" : "s"} · ` : ""}
-        <button type="button" className="linkish" onClick={() => setPage("portfolio")}>the realized record →</button>
+        <button type="button" className="linkish" onClick={() => setPage("portfolio")}>realized record →</button>
         {" · "}{achieved.length} of {MILESTONES.length} milestones ·{" "}
         <button type="button" className="linkish" onClick={() => setPage("firm")}>The Record →</button>
       </div>
@@ -265,7 +265,7 @@ function BalanceSheet() {
             disabled={!lastYear}
             title={lastYear
               ? `Frozen marks from ${monthLabel(lastYear.m)}`
-              : "Closes every December — advance through your first year-end to unlock."}
+              : "Available after first December close"}
             onClick={() => lastYear && setView("yearEnd")}
           >
             {lastYear ? `Last year-end · ${monthLabel(lastYear.m)}` : "Last year-end"}
@@ -273,15 +273,14 @@ function BalanceSheet() {
         </div>
         <div className="hint">
           {showingHistory
-            ? `A December close — the same marks the TopBar used that month, frozen. Holdings detail below is today's book; only the summary sheet travels with the year-end stamp.`
-            : `Assets at the same values the TopBar, the lender and the desk use — not a second set of books. Engine net worth is ${usd(sheet.nwEngine)}; the equity line below is assets minus liabilities from the same marks.`}
+            ? `December marks, frozen · holdings detail shows today`
+            : `Net worth ${usd(sheet.nwEngine)}`}
         </div>
         <BalanceSheetTables sheet={sheet} />
         {sheet.propGross > 0 && (
           <div className="hint">
-            Loan-to-value on the real-estate book: {((sheet.mortgages / sheet.propGross) * 100).toFixed(0)}%
-            {sheet.locBal > 0 ? ` · Line is ${((sheet.locBal / Math.max(1, sheet.locLim)) * 100).toFixed(0)}% drawn` : ""}.
-            {!showingHistory && " Draw and repay the line on Debt."}
+            Portfolio LTV {((sheet.mortgages / sheet.propGross) * 100).toFixed(0)}%
+            {sheet.locBal > 0 ? ` · line ${((sheet.locBal / Math.max(1, sheet.locLim)) * 100).toFixed(0)}% drawn` : ""}
           </div>
         )}
       </div>
@@ -343,7 +342,7 @@ function BalanceSheet() {
                   <th className="num">Value</th>
                   <th className="num">Debt</th>
                   <th className="num">Deed equity</th>
-                  <th className="num" title="What the balance sheet counts as yours: after a JV partner's share; a fund deed counts through your interest in the fund">Your share</th>
+                  <th className="num" title="Net of JV share · fund deeds via fund interest">Your share</th>
                 </tr>
               </thead>
               <tbody>
@@ -351,7 +350,7 @@ function BalanceSheet() {
                   const liveFund = !!game.fund && !game.fund.settled;
                   const groups: { key: string; label: string; rows: typeof holdings }[] = [
                     { key: "own", label: "Balance sheet", rows: holdings.filter((h) => !(liveFund && h.fundOwned)) },
-                    { key: "fund", label: "Your fund — the LPs' vehicle", rows: liveFund ? holdings.filter((h) => h.fundOwned) : [] },
+                    { key: "fund", label: "Fund", rows: liveFund ? holdings.filter((h) => h.fundOwned) : [] },
                   ].filter((g) => g.rows.length);
                   return groups.flatMap((g) => {
                     let totEq = 0, totMine = 0;
@@ -388,16 +387,16 @@ function BalanceSheet() {
                       <tr key={`h-${g.key}`}><td colSpan={5} className="dim" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", paddingTop: 10 }}>{g.label} · {g.rows.length}</td></tr>,
                       ...rows,
                       <tr key={`t-${g.key}`} style={{ fontWeight: 600 }}>
-                        <td>{g.key === "fund" ? "Your interest in the vehicle" : "Your equity in these deeds"}</td>
+                        <td>{g.key === "fund" ? "Your fund interest" : "Your equity"}</td>
                         <td /><td />
                         <td className={"num" + (totEq < 0 ? " neg" : "")}>{usd(totEq)}</td>
-                        <td className={"num" + (fundMine < 0 ? " neg" : "")} title={g.key === "fund" ? "Co-invest and promote at NAV — what the waterfall would pay you today" : undefined}>{usd(fundMine)}</td>
+                        <td className={"num" + (fundMine < 0 ? " neg" : "")} title={g.key === "fund" ? "Co-invest + promote at NAV" : undefined}>{usd(fundMine)}</td>
                       </tr>,
                     ];
                   });
                 })()}
                 {!holdings.length && (
-                  <tr><td colSpan={5} className="dim">No deeds yet — the balance sheet is cash and whatever the line says.</td></tr>
+                  <tr><td colSpan={5} className="dim">No holdings.</td></tr>
                 )}
               </tbody>
             </table>
@@ -416,19 +415,19 @@ function BalanceSheetTables({ sheet }: { sheet: BalanceSheetView }) {
           <tr><th>Assets</th><th className="num">Amount</th></tr>
         </thead>
         <tbody>
-          <Row k="Cash" v={sheet.cash} note={sheet.cash < 0 ? "overdrawn — the line should have covered this" : "operating account"} bad={sheet.cash < 0} />
-          <Row k="Real estate — gross value" v={sheet.propGross} note={`${sheet.bldgCount} building${sheet.bldgCount === 1 ? "" : "s"}, ${sheet.landCount} land parcel${sheet.landCount === 1 ? "" : "s"}`} />
+          <Row k="Cash" v={sheet.cash} note={sheet.cash < 0 ? "overdrawn" : "operating account"} bad={sheet.cash < 0} />
+          <Row k="Real estate (gross)" v={sheet.propGross} note={`${sheet.bldgCount} building${sheet.bldgCount === 1 ? "" : "s"}, ${sheet.landCount} land parcel${sheet.landCount === 1 ? "" : "s"}`} />
           {Object.entries(sheet.byClass).sort((a, b) => b[1].gross - a[1].gross).map(([cls, x]) => (
             <Row key={cls} k={cls === "land" ? " Land / sites" : ` ${cls.charAt(0).toUpperCase()}${cls.slice(1)}`} v={x.gross} sub note={`${x.n} deed${x.n === 1 ? "" : "s"} · ${usd(x.debt)} mortgaged`} />
           ))}
           {sheet.cipN > 0 && (
-            <Row k="Construction in progress" v={sheet.cip} note={`${sheet.cipN} job${sheet.cipN === 1 ? "" : "s"} — money sunk, not the full budget`} />
+            <Row k="Construction in progress" v={sheet.cip} note={`${sheet.cipN} job${sheet.cipN === 1 ? "" : "s"} · cost to date`} />
           )}
           {sheet.noteCount > 0 && (
             <Row k="Notes receivable" v={sheet.notesVal} note={`${sheet.noteCount} note${sheet.noteCount === 1 ? "" : "s"} · lower of cost and collateral`} />
           )}
           {(sheet.fundInterest ?? 0) > 0 && (
-            <Row k="Interest in your fund" v={sheet.fundInterest!} note={`co-invest and promote at NAV · ${sheet.fundDeeds ?? 0} vehicle deed${sheet.fundDeeds === 1 ? "" : "s"}, mostly the LPs'`} />
+            <Row k="Fund interest" v={sheet.fundInterest!} note={`co-invest + promote at NAV · ${sheet.fundDeeds ?? 0} fund deed${sheet.fundDeeds === 1 ? "" : "s"}`} />
           )}
           <Row k="Total assets" v={sheet.totalAssets} strong rule />
         </tbody>
@@ -439,14 +438,14 @@ function BalanceSheetTables({ sheet }: { sheet: BalanceSheetView }) {
         </thead>
         <tbody>
           <Row k="Mortgages" v={sheet.mortgages} note="secured by individual deeds" bad={sheet.mortgages > sheet.propGross * 0.85} />
-          {(sheet.mezz ?? 0) > 0 && <Row k="Mezzanine" v={sheet.mezz!} note="junior to the mortgages" bad />}
+          {(sheet.mezz ?? 0) > 0 && <Row k="Mezzanine" v={sheet.mezz!} note="subordinate" bad />}
           {sheet.cipDebt > 0 && <Row k="Construction loans" v={sheet.cipDebt} sub />}
-          {sheet.facility > 0 && <Row k="Cross-collateral facility" v={sheet.facility} note="one loan, many deeds" bad />}
+          {sheet.facility > 0 && <Row k="Cross-collateral facility" v={sheet.facility} note="cross-collateralized" bad />}
           <Row k="Line of credit drawn" v={sheet.locBal} note={`limit ${usd(sheet.locLim)} · ${pct(sheet.rate)}`} bad={sheet.locBal > 0} />
           {sheet.deposits > 0 && (
-            <Row k="Tenant deposits held" v={sheet.deposits} note="not yours — due when they leave" />
+            <Row k="Tenant deposits held" v={sheet.deposits} note="refundable" />
           )}
-          {(sheet.partners ?? 0) !== 0 && <Row k="JV partners' share" v={sheet.partners!} note="their slice of the equity in deeds you hold together" />}
+          {(sheet.partners ?? 0) !== 0 && <Row k="JV partners' share" v={sheet.partners!} note="partner equity in JV deeds" />}
           <Row k="Total liabilities" v={sheet.totalLiab} strong rule />
           <Row k="Equity (assets − liabilities)" v={sheet.equity} strong rule bad={sheet.equity < 0} />
         </tbody>
@@ -461,7 +460,7 @@ function IncomeStatementTab() {
     <div>
       <IncomeStatement />
       <div className="page-section">
-        <div className="page-section-head">The ledger, by year — every line, side by side</div>
+        <div className="page-section-head">Ledger by year</div>
         <div>
           <table className="tbl">
             <thead>
@@ -516,7 +515,7 @@ function IncomeStatementTab() {
                   </tr>
                 );
               })}
-              {!years.length && <tr><td colSpan={6} className="dim">Nothing on the books yet — advance a month.</td></tr>}
+              {!years.length && <tr><td colSpan={6} className="dim">No data yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -548,7 +547,7 @@ export function IncomeStatement() {
     return (
       <div className="page-section">
         <div className="page-section-head">Cash flow</div>
-        <div className="hint">Nothing on the books yet — advance a month and the year opens.</div>
+        <div className="hint">No data yet.</div>
       </div>
     );
   }
@@ -574,7 +573,7 @@ export function IncomeStatement() {
   const headLabel = usingMonth && monthCur
     ? monthLabel(monthCur.m)
     : yearCur
-      ? `${START_YEAR + yearCur.yr}${partial ? ` · ${monthsIn} month${monthsIn === 1 ? "" : "s"} in, not a full year` : ""}`
+      ? `${START_YEAR + yearCur.yr}${partial ? ` · ${monthsIn} month${monthsIn === 1 ? "" : "s"} YTD` : ""}`
       : "—";
   const vsLabel = usingMonth
     ? (priorMonth ? monthLabel(priorMonth.m) : "—")
@@ -637,19 +636,13 @@ export function IncomeStatement() {
           type="button"
           className={"btn btn-sm" + (period === "month" ? " btn-on" : "")}
           disabled={!months.length}
-          title={months.length ? "Same buckets, one month at a time" : "Advance a month to open the monthly ledger"}
+          title={months.length ? "By month" : "No monthly data yet"}
           onClick={() => months.length && setPeriod("month")}
         >
           Monthly
         </button>
       </div>
-      <div className="hint">
-        The buildings and the firm are two different businesses. Everything above <em>property cash flow</em> is
-        what the portfolio produced; everything below it is what you did with the money.
-        {usingMonth
-          ? " This is one month's cash movement — not a twelfth of the year."
-          : " A year with a terrible bottom line and a strong property line is a year you spent building — which is the good kind of terrible."}
-      </div>
+      <div className="hint">Above <em>property cash flow</em>: operations · below: financing, investing, tax</div>
       <div className="btn-row">
         {period === "year"
           ? books.slice(-8).map((b) => (
@@ -668,7 +661,7 @@ export function IncomeStatement() {
           ))}
       </div>
       {!cur ? (
-        <div className="hint">Nothing on the books for this period yet.</div>
+        <div className="hint">No data for this period.</div>
       ) : (
         <>
           <table className="tbl tbl-stmt">
@@ -676,21 +669,21 @@ export function IncomeStatement() {
               <tr><th>{headLabel}</th><th className="num">Amount</th><th className="num">vs {vsLabel}</th></tr>
             </thead>
             <tbody>
-              <L k="Net operating income" v={cur.noi} note="rent collected, less operating costs and property tax" />
-              <L k="Leasing costs" v={-cur.leasing} sub note="fit-out and commissions" />
+              <L k="Net operating income" v={cur.noi} note="rent less opex and property tax" />
+              <L k="Leasing costs" v={-cur.leasing} sub note="TI and commissions" />
               <L k="Capital expenditure" v={-cur.capex} sub note="roofs, systems, make-ready" />
               <L k="Firm overhead" v={-cur.ga} sub note="asset management, accounting, legal" />
               <L k="Property cash flow" v={opCf(cur)} strong rule />
-              <L k="Debt service" v={-cur.debtSvc} sub note="interest, amortisation, fees, voluntary paydowns" />
-              <L k="Interest on cash" v={cur.interest ?? 0} sub note={`sweep at ${(sweepApy(game.econ) * 100).toFixed(1)}% — the policy rate less 0.4pt · taxable as ordinary income`} />
-              <L k="Debt drawn" v={cur.borrowed ?? 0} sub note="cash-out refinance and facility draws" />
+              <L k="Debt service" v={-cur.debtSvc} sub note="interest, amortization, fees, paydowns" />
+              <L k="Interest on cash" v={cur.interest ?? 0} sub note={`sweep ${(sweepApy(game.econ) * 100).toFixed(1)}% (policy − 0.4pt) · ordinary income`} />
+              <L k="Debt drawn" v={cur.borrowed ?? 0} sub note="cash-out refi and facility draws" />
               <L k="Cash flow after debt" v={afterDebt(cur)} strong rule />
-              <L k="Development" v={-cur.dev} sub note="equity into the ground, construction carry, overruns" />
-              <L k="Acquisitions" v={-cur.bought} sub note="equity out the door at closing" />
+              <L k="Development" v={-cur.dev} sub note="equity, construction carry, overruns" />
+              <L k="Acquisitions" v={-cur.bought} sub note="equity at closing" />
               <L k="Disposition proceeds" v={cur.sold} sub note="net of loan payoff and penalties" />
               <L k="Taxes" v={-cur.taxes} sub note={`${(INCOME_TAX_RATE * 100).toFixed(0)}% blended personal rate on income · §1250 recapture and gains on exits`} />
               {investors(cur) !== 0 && (
-                <L k="Investors and fees" v={investors(cur)} sub note="capital your investors paid in, less what was distributed to them, plus the deal fees you charge" />
+                <L k="Investors and fees" v={investors(cur)} sub note="LP capital in − distributions + sponsor fees" />
               )}
               <L k="Change in cash" v={bottom(cur)} strong rule />
             </tbody>
@@ -701,12 +694,12 @@ export function IncomeStatement() {
               const cover = cur.debtSvc > 0 ? (cur.noi / cur.debtSvc) : null;
               const span = usingMonth ? "this month" : "this year";
               const parts: string[] = [];
-              if (p <= 0) parts.push(`The portfolio did not cover its own operating costs ${span} — before a dollar of debt service. That is an occupancy problem or an expense problem, and neither is fixed by borrowing.`);
-              else if (a < 0 && p > 0) parts.push("The buildings made money and the debt took more than they made. Every month of this comes out of cash or out of the line.");
-              else if (a > 0) parts.push(`The portfolio covered its debt with ${usd(a)} to spare.`);
-              if (cover !== null) parts.push(`Portfolio coverage ran ${cover.toFixed(2)}× — NOI over debt service, across everything you own.`);
-              if (cur.dev > 0 && b < 0 && a > 0) parts.push(`Cash fell because ${usd(cur.dev)} went into construction. That is not a loss; it is a building that is not finished.`);
-              if (cur.taxes > 0 && cur.sold > 0) parts.push(`${usd(cur.taxes)} of tax against ${usd(cur.sold)} of disposals — the price of selling rather than exchanging.`);
+              if (p <= 0) parts.push(`Property cash flow negative ${span}, before debt service.`);
+              else if (a < 0 && p > 0) parts.push("Debt service exceeds property cash flow.");
+              else if (a > 0) parts.push(`${usd(a)} after debt service.`);
+              if (cover !== null) parts.push(`DSCR ${cover.toFixed(2)}×.`);
+              if (cur.dev > 0 && b < 0 && a > 0) parts.push(`Cash down on ${usd(cur.dev)} of development.`);
+              if (cur.taxes > 0 && cur.sold > 0) parts.push(`${usd(cur.taxes)} tax on ${usd(cur.sold)} of sales.`);
               // THE SHELTER, SAID OUT LOUD. Depreciation is designed to throw a
               // paper loss, and the loss carries forward with no expiry — so a
               // development year or a soft year is banked capacity, not a
@@ -715,9 +708,7 @@ export function IncomeStatement() {
               const carry = game.taxLossCarry ?? 0;
               if (carry > 0) {
                 parts.push(
-                  `${usd(carry)} of tax loss is banked. It carries forward with no expiry and covers up to `
-                  + `${(NOL_SHELTER_CAP * 100).toFixed(0)}% of a year's taxable income, so a good year still pays `
-                  + `something — but the first ${usd(carry)} of income after this comes free.`,
+                  `NOL ${usd(carry)} · no expiry · offsets up to ${(NOL_SHELTER_CAP * 100).toFixed(0)}% of taxable income per year.`,
                 );
               }
               return parts.join(" ");
@@ -751,7 +742,7 @@ function ProfitAndLoss() {
     return (
       <div className="page-section">
         <div className="page-section-head">Income statement</div>
-        <div className="hint">Nothing earned yet — advance a month and the year opens.</div>
+        <div className="hint">No data yet.</div>
       </div>
     );
   }
@@ -779,34 +770,31 @@ function ProfitAndLoss() {
     <div className="page-section">
       <div className="page-section-head">Income statement · accrual basis</div>
       <div className="hint">
-        What the firm earned, not what moved through the bank. Interest is the interest — principal is a balance-sheet
-        movement and lives on the Cash flow tab, with purchases, sales and loan draws. A sale shows its gain over the
-        depreciated basis, not its proceeds. Your fund&apos;s deeds report through the fund; a JV partner&apos;s share comes off
-        on its own line.
+        Principal, purchases and draws on Cash flow · sales at gain over depreciated basis · fund deeds report via the fund
       </div>
       <table className="tbl tbl-stmt">
         <thead>
           <tr>
             <th></th>
             {years.map((y) => (
-              <th key={y.yr} className="num" title={y.months < 12 ? `${y.months} month${y.months === 1 ? "" : "s"} so far` : "full year"}>
+              <th key={y.yr} className="num" title={y.months < 12 ? `${y.months} month${y.months === 1 ? "" : "s"} YTD` : "full year"}>
                 {y.label}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {line("Rental revenue", "rev", { sub: true, note: "rent, recoveries and other income billed" })}
+          {line("Rental revenue", "rev", { sub: true, note: "rent, recoveries, other income" })}
           {line("Interest on cash", "intInc", { sub: true })}
-          {years.some((y) => y.fees) && line("Fees from your syndicates", "fees", { sub: true, note: "development and asset management — your investors pay their share" })}
+          {years.some((y) => y.fees) && line("Syndicate fees", "fees", { sub: true, note: "development and asset management" })}
           {line("Total revenue", "totalRev", { strong: true, rule: true })}
           {line("Property operating costs", "propOpex", { sign: -1, sub: true, note: "opex, management, property tax, ground rent" })}
           {line("Leasing costs", "leasing", { sign: -1, sub: true, note: "TI and commissions, expensed as signed" })}
-          {line("Capital work", "capex", { sign: -1, sub: true, note: "make-ready, programmes, renovations" })}
+          {line("Capital work", "capex", { sign: -1, sub: true, note: "make-ready, programs, renovations" })}
           {line("Firm overhead", "ga", { sign: -1, sub: true, note: "management, accounting, legal" })}
           {line("Total operating expenses", "totalOpex", { sign: -1, strong: true, rule: true })}
           {line("Operating profit before depreciation", "ebitda", { strong: true, rule: true })}
-          {line("Depreciation", "depr", { sign: -1, sub: true, note: cur.deprFinal ? "per the tax return" : "accrued at last year's rate · trued to the return in January" })}
+          {line("Depreciation", "depr", { sign: -1, sub: true, note: cur.deprFinal ? "per tax return" : "accrued at prior-year rate · trued up in January" })}
           {line("Operating profit", "ebit", { strong: true, rule: true })}
           {line("Interest expense", "intExp", { sign: -1, sub: true, note: "mortgages, mezzanine, facility, line" })}
           {line("Gain (loss) on sales", "gains", { sub: true, note: "net proceeds over depreciated basis" })}
@@ -818,13 +806,13 @@ function ProfitAndLoss() {
       </table>
       <div className="hint">
         {[
-          margin !== null ? `Net margin ${cur.label}: ${(margin * 100).toFixed(0)}% of revenue.` : null,
-          cover !== null ? `Interest cover ${cover.toFixed(2)}× — operating profit before depreciation over interest.` : null,
+          margin !== null ? `Net margin ${cur.label}: ${(margin * 100).toFixed(0)}%.` : null,
+          cover !== null ? `Interest cover ${cover.toFixed(2)}× (EBITDA ÷ interest).` : null,
           cur.leasing + cur.capex > Math.max(0, cur.ebitda + cur.leasing + cur.capex) * 0.5
-            ? "Leasing and capital work took more than half of what the buildings made — a re-letting year shows here as the expensive year it is."
+            ? "Leasing + capex > 50% of pre-capex profit."
             : null,
           cur.net < 0 && cur.depr > -cur.net
-            ? "The loss is smaller than the depreciation: on cash, before principal, the firm still made money. That is the shelter working."
+            ? "Loss < depreciation: cash-positive before principal."
             : null,
         ].filter(Boolean).join(" ")}
       </div>

@@ -16,9 +16,9 @@ import { Row } from "@/ui/panels/shared";
 // happens when you ask for it rather than on every keystroke.
 
 const SIT_WORD = {
-  distressed: "In arrears — selling under NAV",
-  strained: "Near its limits — selling at NAV",
-  healthy: "Healthy — sells only for a premium",
+  distressed: "Distressed · below NAV",
+  strained: "Strained · at NAV",
+  healthy: "Healthy · premium to NAV",
 } as const;
 
 export function TakePrivateDesk({ firmId }: { firmId: string }) {
@@ -40,42 +40,40 @@ export function TakePrivateDesk({ firmId }: { firmId: string }) {
   return (
     <div style={{ margin: "8px 0", padding: "8px 10px", border: "1px solid rgba(43,37,26,0.15)", borderRadius: 4 }}>
       <div className="page-section" style={{ marginTop: 0, cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>
-        {open ? "▾" : "▸"} Take {q.name} private{approached ? " · their board has called you" : ""}
+        {open ? "▾" : "▸"} Take {q.name} private{approached ? " · inbound offer" : ""}
       </div>
       {!open ? (
         <div className="hint" style={{ margin: 0 }}>
           {q.available
-            ? `The board would talk about ${usd(q.ask)} for the company — ${q.deeds.length} buildings, ${usd(q.debt)} of debt repaid at the table.`
+            ? `Ask ${usd(q.ask)} · ${q.deeds.length} buildings · ${usd(q.debt)} debt repaid at close`
             : q.why}
         </div>
       ) : (
         <div onClick={(e) => e.stopPropagation()}>
           <div className="hint">
-            {q.situationWhy} Their mortgages carry due-on-sale clauses, and a change of control is a sale: the paper is repaid at par
-            at the closing and your own lenders write new loans deed by deed. Their cash comes across at par; the premium is paid on
-            the equity in the buildings only.
+            {q.situationWhy} Debt repaid at par (due-on-sale) · new loans per deed · cash at par · premium on property equity only
           </div>
           <div className="grid" style={{ margin: "6px 0" }}>
             <Row k="Situation" v={SIT_WORD[q.situation]} bad={q.situation === "distressed"} />
-            <Row k="Deeds, as they convey" v={`${q.deeds.length} · ${usd(q.gross)}`}
-              title="Each building marked on the roll and grade the closing hands over — the same valuation the tape's own asks use." />
+            <Row k="Properties" v={`${q.deeds.length} · ${usd(q.gross)}`}
+              title="Valued on each rent roll and condition" />
             {Math.abs(q.bookMark - q.gross) > q.gross * 0.01 && (
-              <Row k="The competitor table's mark" v={usd(q.bookMark)}
-                title="The league table marks their book at the firm's portfolio occupancy. Diligence reads each building's own roll, and that is what you would be buying." />
+              <Row k="League-table mark" v={usd(q.bookMark)}
+                title="At portfolio occupancy, not per-building rolls" />
             )}
-            <Row k="In-place NOI" v={`${usd(q.noi)} a year · ${q.gross > 0 ? ((q.noi / q.gross) * 100).toFixed(1) : "—"}% on the deeds`} />
-            <Row k="Their debt — repaid at close" v={usd(q.debt)} />
-            <Row k="Their cash — comes across" v={usd(q.cash)} />
+            <Row k="In-place NOI" v={`${usd(q.noi)}/yr · ${q.gross > 0 ? ((q.noi / q.gross) * 100).toFixed(1) : "—"}% yield`} />
+            <Row k="Debt (repaid at close)" v={usd(q.debt)} />
+            <Row k="Cash acquired" v={usd(q.cash)} />
             <Row k="Net asset value" v={usd(q.nav)} strong bad={q.nav <= 0} />
-            <Row k="Board's premium on property equity" v={`${((q.premium - 1) * 100).toFixed(0)}%`}
+            <Row k="Premium on property equity" v={`${((q.premium - 1) * 100).toFixed(0)}%`}
               title={q.premiumWhy.join(" · ")} />
-            <Row k="Their ask for the company" v={usd(q.ask)} strong />
+            <Row k="Ask" v={usd(q.ask)} strong />
           </div>
           {q.premiumWhy.length > 0 && <div className="hint">Premium: {q.premiumWhy.join(" · ")}.</div>}
 
           <table className="tbl" style={{ margin: "6px 0" }}>
             <thead>
-              <tr><th>Building</th><th>Use</th><th className="num">Area</th><th className="num">Let</th><th className="num">NOI</th><th className="num">Value</th></tr>
+              <tr><th>Building</th><th>Use</th><th className="num">Area</th><th className="num">Occ</th><th className="num">NOI</th><th className="num">Value</th></tr>
             </thead>
             <tbody>
               {q.deeds.slice(0, 12).map((d) => (
@@ -100,25 +98,25 @@ export function TakePrivateDesk({ firmId }: { firmId: string }) {
             <>
               <div className="btn-row" style={{ flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                 <label className="dim" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  Offer for the equity
+                  Equity offer
                   <input type="number" min={0} step={10000} value={price}
                     onChange={(e) => setOffer(Number(e.target.value))} style={{ width: 140 }} />
                 </label>
                 <label className="dim" style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <select value={financing} onChange={(e) => setFinancing(e.target.value as "cash" | "debt")}>
-                    <option value="debt">Finance each deed at its best desk</option>
+                    <option value="debt">Finance each property (best lender)</option>
                     <option value="cash">All cash (and line)</option>
                   </select>
                 </label>
                 <button className="btn" onClick={() => setTerms({ key, t: takePrivateTerms(game, parcels, q, price, financing) })}>
-                  Run the closing numbers
+                  Calculate closing
                 </button>
               </div>
               {t && <TermsSheet game={game} t={t} />}
               {t && (
                 <div className="btn-row" style={{ marginTop: 8 }}>
                   <button className="btn btn-buy" disabled={t.short > 0}
-                    title={t.short > 0 ? `Short ${usd(t.short)}` : "The board decides. Under its private floor it refuses and will not take the call for a year."}
+                    title={t.short > 0 ? `Short ${usd(t.short)}` : "Below the board's floor: refused, 1-year lockout"}
                     onClick={() => takePrivate(firmId, price, financing)}>
                     Offer {usd(price)} for {q.name}
                   </button>
@@ -138,18 +136,18 @@ function TermsSheet({ game, t }: { game: GameState; t: TakePrivateTerms }) {
   return (
     <div className="grid" style={{ margin: "8px 0" }}>
       <Row k="Real estate at" v={usd(t.realEstatePrice)}
-        title="Your price for the equity, less the cash that comes across, plus the paper repaid — allocated across the deeds by value for basis and stamps." />
-      <Row k="Advisers, lawyers, title (2%)" v={usd(t.closingCosts)} />
-      <Row k="Transfer tax on the deeds" v={usd(t.transferTax)}
-        title="A controlling-interest transfer is taxed as a conveyance of the property; the buyer pays, as on a JV buyout." />
-      <Row k="New mortgages" v={t.loans > 0 ? usd(t.loans) : "none — all cash"} />
+        title="Equity price − cash acquired + debt repaid · allocated by value" />
+      <Row k="Closing costs (2%)" v={usd(t.closingCosts)} />
+      <Row k="Transfer tax" v={usd(t.transferTax)}
+        title="Controlling-interest transfer · buyer pays" />
+      <Row k="New mortgages" v={t.loans > 0 ? usd(t.loans) : "none (all cash)"} />
       {[...desks.entries()].map(([id, amt]) => (
         <Row key={id} k={`  · ${productById(id).lender}`} v={usd(amt)} />
       ))}
       <Row k="Implied premium over property equity" v={`${((t.premium - 1) * 100).toFixed(1)}%`} />
-      <Row k="Cash and line the closing draws" v={usd(t.need)} strong bad={t.short > 0} />
-      <Row k="Tenant deposits that come across" v={usd(t.deposits)} title="Cash in, liability up — they are the tenants' money." />
-      <Row k="You can raise today" v={usd(t.purse)} bad={t.short > 0} />
+      <Row k="Cash + line required" v={usd(t.need)} strong bad={t.short > 0} />
+      <Row k="Tenant deposits acquired" v={usd(t.deposits)} title="Cash and matching liability" />
+      <Row k="Available today" v={usd(t.purse)} bad={t.short > 0} />
       {t.short > 0 && <Row k="Short" v={usd(t.short)} bad strong />}
       <Row k="Priced" v={monthLabel(game.month)} />
     </div>
@@ -163,7 +161,7 @@ export function TakenPrivateRecord() {
   if (!done.length) return null;
   return (
     <>
-      <div className="page-section">Firms you have taken private · {done.length}</div>
+      <div className="page-section">Take-privates · {done.length}</div>
       <table className="tbl" style={{ marginBottom: 10 }}>
         <thead>
           <tr>

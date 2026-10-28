@@ -39,12 +39,12 @@ export function PulsePage() {
   // THE HINGE OF THE WHOLE DEVELOPMENT CYCLE.
   const x = cityValueToReplacement(game);
   const hinge = x > 1.15
-    ? "Comfortably above replacement cost — every developer in this city can see it, which is exactly how the next glut gets started. Build now and you deliver into their supply."
+    ? "Well above replacement cost · development feasible · supply risk rising"
     : x > 1.0
-      ? "Just above replacement cost. Building pencils, barely, and it does not pencil for anyone careless."
+      ? "Slightly above replacement cost · development marginally feasible"
       : x > 0.85
-        ? "Below replacement cost. Nobody is starting anything and the pipeline is emptying — which is what eventually fixes a soft market. Buying is cheaper than building."
-        : "Far below replacement cost. Construction has stopped; buildings are worth less than the bricks in them — the best moment there is to be a buyer rather than a builder.";
+        ? "Below replacement cost · starts slowing · buying cheaper than building"
+        : "Far below replacement cost · construction stalled · buying cheaper than building";
 
   const trades = tradeRows(game);
   const moving = trades.filter((t) => t.phase !== "steady").sort((a, b) => b.mine - a.mine || Math.abs(b.mom) - Math.abs(a.mom));
@@ -65,15 +65,15 @@ export function PulsePage() {
     <div className="pulse">
       <div className="pulse-hero">
         <div className="pulse-hero-cell">
-          <div className="pulse-kicker">The cycle</div>
+          <div className="pulse-kicker">Cycle</div>
           <div className="pulse-big">{e.phase}</div>
           <div className="pulse-line">
             {PHASE_BLURB[e.phase] ?? ""}
-            {e.rumoredPhase ? <> Word on the street: <strong>{e.rumoredPhase}</strong> is coming.</> : null}
+            {e.rumoredPhase ? <> Expected next: <strong>{e.rumoredPhase}</strong>.</> : null}
           </div>
         </div>
         <div className="pulse-hero-cell">
-          <div className="pulse-kicker">Value against replacement cost</div>
+          <div className="pulse-kicker">Value / replacement cost</div>
           <div className={"pulse-big mono" + (x < 0.95 ? " neg" : "")}>{x.toFixed(2)}×</div>
           <div className="pulse-line">{hinge}</div>
         </div>
@@ -81,34 +81,34 @@ export function PulsePage() {
 
       <div className="stat-strip">
         <Big label="Base rate" value={pct(e.indexRate)}
-          title="Every loan in town prices off this benchmark: your floating coupons reprice to it monthly, a new quote is this rate plus the lender's spread, and cap rates lean on it — so it moves building values too." />
+          title="Loan benchmark · floating loans reprice monthly · quotes = base + spread" />
         {e.rateRegime !== undefined && (
           <Big label="Long-run rate" value={pct(e.rateRegime)}
-            title="The base rate without this month's market noise: where the bond market expects the central bank's rate to average over the next ten years, plus the premium it charges for holding that long — wider when the bank is not believed. The base rate wanders around it month to month."
+            title="Expected 10-yr average policy rate + term premium"
             bad={e.rateRegime > 9} />
         )}
         <Big label="Credit window" value={`${Math.round(e.creditIdx * 100)}%`} bad={e.creditIdx < 0.7} />
         <Big label="Underwriting" value={standardsWord(underwritingStandards(game))} bad={underwritingStandards(game) < -0.5}
-          title="The standards every lender in town writes to. See Markets → The banks for the sheet desk by desk." />
+          title="Citywide lending standards · details on Markets → Banks" />
         <Big label="Employment" value={(e.employIdx * 100).toFixed(0)} />
-        <Big label="Build costs" value={(e.costIdx * 100).toFixed(0)} title="Construction and operating cost index. Salaries and budgets are billed at it." />
-        <Big label="Land index" value={(e.landIdx * 100).toFixed(0)} title="Land value index. Its level is the town's own; the moves are what matter." />
+        <Big label="Build costs" value={(e.costIdx * 100).toFixed(0)} title="Construction and operating cost index" />
+        <Big label="Land index" value={(e.landIdx * 100).toFixed(0)} title="Land value index" />
       </div>
 
       <div className="pulse-head">
-        <span>The four markets</span>
+        <span>Markets</span>
         <button type="button" className="pulse-link" onClick={() => goMarkets("general")}>All markets →</button>
       </div>
       <table className="tbl pulse-markets">
         <thead>
           <tr>
             <th>Market</th>
-            <th className="num" title="Space available — empty floors plus sublet — against the rate this class settles at">Available</th>
+            <th className="num" title="Vacant + sublet / natural rate">Available</th>
             <th>Balance</th>
             <th className="num">Rent $/sf</th>
-            <th className="num" title="Effective rent after concessions, deflated, against a year ago">Real rent · 12m</th>
+            <th className="num" title="Real effective rent, year-on-year">Real rent · 12m</th>
             <th className="num">Cap rate</th>
-            <th className="num" title="Net absorption over twelve months, as a share of the standing stock">Demand · 12m</th>
+            <th className="num" title="12-mo net absorption ÷ stock">Demand · 12m</th>
             <th className="num">Under construction</th>
           </tr>
         </thead>
@@ -126,7 +126,7 @@ export function PulsePage() {
             const pipe = e.pipeline?.[k] ?? 0;
             const soft = bal.gap > 0.018;
             return (
-              <tr key={k} className="pulse-row" tabIndex={0} title={`${bal.note} Click for ${SECTOR_LABEL[k]} in depth.`}
+              <tr key={k} className="pulse-row" tabIndex={0} title={`${bal.note} · open ${SECTOR_LABEL[k]}`}
                 onClick={() => goMarkets(k)} onKeyDown={(ev) => { if (ev.key === "Enter") goMarkets(k); }}>
                 <td>{SECTOR_LABEL[k]}</td>
                 <td className={"num" + (soft ? " neg" : "")}>
@@ -151,28 +151,28 @@ export function PulsePage() {
             <button type="button" className="pulse-link" onClick={() => goMarkets("employers")}>All trades →</button>
           </div>
           {moving.length === 0
-            ? <div className="pulse-line">Every trade is steady — nobody hiring hard, nobody shedding.</div>
+            ? <div className="pulse-line">All industries steady.</div>
             : (
               <div className="pulse-list">
                 {moving.slice(0, 4).map((t) => (
                   <div key={t.k} className="pulse-item">
                     <span className={t.phase === "bust" ? "neg" : undefined}>{t.label}</span>
-                    <span className="dim"> · {t.phase === "boom" ? "hiring hard" : "contracting"}
-                      {t.mine > 0 ? ` · ${(t.mine * 100).toFixed(0)}% of your roll` : ""}</span>
+                    <span className="dim"> · {t.phase === "boom" ? "hiring" : "contracting"}
+                      {t.mine > 0 ? ` · ${(t.mine * 100).toFixed(0)}% of your rent` : ""}</span>
                   </div>
                 ))}
               </div>
             )}
           {exposed && exposed.mine > 0 && (
             <div className="pulse-line dim">
-              Your biggest tenant trade is {exposed.label.toLowerCase()} at {(exposed.mine * 100).toFixed(0)}% of the roll.
+              Largest tenant industry: {exposed.label.toLowerCase()} · {(exposed.mine * 100).toFixed(0)}% of rent
             </div>
           )}
         </div>
 
         <div className="pulse-card">
           <div className="pulse-head">
-            <span>The zoning board</span>
+            <span>Zoning</span>
             <button type="button" className="pulse-link" onClick={() => goMarkets("districts")}>Districts →</button>
           </div>
           <div className="pulse-line">{climate.text.charAt(0).toUpperCase() + climate.text.slice(1)}.</div>
@@ -180,9 +180,9 @@ export function PulsePage() {
             <div className="pulse-list">
               {hearings.slice(0, 3).map((a) => (
                 <button key={a.bbl} type="button" className="pulse-item pulse-item-btn" onClick={() => focus(a.bbl, true)}
-                  title="Put the camera on the site">
+                  title="Show on map">
                   {resolveRec(parcels, game, a.bbl)?.address ?? a.bbl}
-                  <span className="dim"> · sits {monthLabel(a.decideM)} · {oddsWord(a.odds)}</span>
+                  <span className="dim"> · hearing {monthLabel(a.decideM)} · {oddsWord(a.odds)}</span>
                 </button>
               ))}
             </div>
@@ -191,11 +191,11 @@ export function PulsePage() {
 
         <div className="pulse-card">
           <div className="pulse-head">
-            <span>On the tape</span>
-            <button type="button" className="pulse-link" onClick={() => setPage("news")}>The whole tape →</button>
+            <span>News</span>
+            <button type="button" className="pulse-link" onClick={() => setPage("news")}>All news →</button>
           </div>
           {headlines.length === 0
-            ? <div className="pulse-line">Nothing on the wire yet.</div>
+            ? <div className="pulse-line">No news yet.</div>
             : (
               <div className="pulse-list">
                 {headlines.map((n, i) => (
@@ -207,7 +207,7 @@ export function PulsePage() {
               </div>
             )}
           <button type="button" className="pulse-link pulse-foot" onClick={() => { openViewOn("news", "prints"); setPage("news"); }}>
-            {prints12} closed sale{prints12 === 1 ? "" : "s"} in the last year — the prints →
+            {prints12} sale{prints12 === 1 ? "" : "s"} in 12 months →
           </button>
         </div>
       </div>

@@ -100,12 +100,46 @@ const OWN_RATE = 0.657, HOME_SF = 1_800;
  * covered payroll, funded about three-quarters; liabilities discounted at the
  * 7.0% median assumed return; normal cost 12% of payroll of which members pay
  * 5%; benefits paid about 5.5% of the liability a year; the unfunded part
- * amortised level-dollar over thirty years at the assumed rate (8.06% a year).
+ * amortised level-dollar over thirty years at the assumed rate (8.06% a year at 7%; see amortFactor).
  * The assets earn the ten-year plus a 2.5-point premium for the equity in a
- * 60/40 book — a shape parameter, and the reason a low-rate era opens a hole
- * the 7% assumption does not see.
+ * 60/40 book — a shape parameter. The assumption follows that return on a
+ * ten-year lag (PEN_ASSUME_M), and the lag is the hole a falling-rate era opens.
  */
-const PEN = { liabPayroll: 5.5, funded0: 0.75, assumed: 0.07, ncTotal: 0.12, member: 0.05, benefits: 0.055, amort: 0.0806, erp: 0.025 };
+const PEN = { liabPayroll: 5.5, funded0: 0.75, assumed: 0.07, ncTotal: 0.12, member: 0.05, benefits: 0.055, erp: 0.025 };
+/**
+ * THE ASSUMED RETURN FOLLOWS THE MARKET, SLOWLY. A plan's actuaries do not
+ * hold 7% through any rate era: the NASRA median assumption was 8.0% in 2001
+ * on a 5% ten-year and 7.0% in 2022 on a 3% one — about the ten-year plus
+ * three to four points, revised a step at a time over years. Held fixed while
+ * the assets earned the ten-year plus their premium, a high-rate era drove
+ * every plan to 130% funded and the city off its pension bill for decades
+ * (measured: 1.07% of payroll to zero by year 20 on all three seeds), which
+ * was a fixed number pretending to be an actuary. It now chases the plan's
+ * own expected return on a ten-year memory.
+ */
+const PEN_ASSUME_M = 120;
+/**
+ * A revised assumption revalues the liability: a point higher discounts the
+ * promised benefits about 12% lower (public-plan liabilities run a duration
+ * of 11-13 years — Novy-Marx & Rauh 2011), and the amortisation payment is
+ * the level-dollar 30-year annuity at the assumption, not at a fixed 7%.
+ */
+const PEN_DURATION = 12;
+const amortFactor = (r: number) => (r > 1e-6 ? r / (1 - Math.pow(1 + r, -30)) : 1 / 30);
+/**
+ * WAGNER'S LAW, ON QUANTITY. What residents ask of their city rises with what
+ * they earn: per-capita real (chained) state-and-local consumption in the
+ * national accounts rose about 55% from 1970 to 2019 while real GDP per head
+ * rose about 150% — a quantity elasticity near 0.5 (BEA NIPA table 3.10.3 vs
+ * 7.1). That is on top of the cost of each unit of service tracking wages
+ * (Baumol, already here: services are priced at the town's wage index), and
+ * together they give the near-unit or slightly above-unit elasticity of
+ * public spending to income the cross-country literature finds (Lamartina &
+ * Zaghini 2011). A quantity elasticity of 1 ON TOP of Baumol would double
+ * count it and raise the city's share of income without limit. Read against
+ * real income per resident, smoothed over five years, against the opening.
+ */
+const WAGNER_ELAST = 0.5, WAGNER_EMA_M = 60;
 /** The funded ratio past which a surplus turns into richer benefits (see tickCityGov). */
 const PEN_SWEETEN = 1.2;
 /** AAA tax-exempt yields run at 70-90% of the Treasury ten-year (MMD/UST, 2000-2024). */
@@ -191,7 +225,11 @@ export interface CityPolicy {
 export interface CityGov {
   cash: number;
   bonds: CityBond[];
-  pension: { liab: number; assets: number };
+  pension: { liab: number; assets: number; assumed?: number };
+  /** Real income per resident against the opening, five-year memory — what residents' demand for services follows (Wagner). */
+  incEma?: number;
+  /** Real income per resident at the opening, in the town's own units. */
+  inc0?: number;
   policy: CityPolicy;
   policy0: { propRate: number; wageRate: number };
   assessed: number;
@@ -308,19 +346,22 @@ function computeLines(s: GameState, g: CityGov, capital: number, transferBase: n
   const e = s.econ, P = g.policy, w = e.wageIdx ?? 1, pop = e.population ?? 0;
   const kids = e.ages?.kids ?? pop * 0.22;
   const L = zeroLines();
-  L.spend.services = SERVICES_PC * pop * w * P.service / 12;
-  L.spend.schools = PER_PUPIL * kids * PUPILS_PER_CHILD * w * P.service / 12;
+  // What is provided: the council's service level on top of what residents at
+  // this income ask for (Wagner), each unit priced at the town's wage (Baumol).
+  const q = P.service * Math.pow(Math.max(0.2, g.incEma ?? 1), WAGNER_ELAST);
+  L.spend.services = SERVICES_PC * pop * w * q / 12;
+  L.spend.schools = PER_PUPIL * kids * PUPILS_PER_CHILD * w * q / 12;
   const payroll = LABOR_SHARE * (L.spend.services + L.spend.schools) * 12;
   // The actuarial contribution amortises a surplus as well as a hole — a plan
   // over 100% funded takes a holiday on the normal cost — and is never negative.
-  L.spend.pensions = Math.max(0, (PEN.ncTotal - PEN.member) * payroll + PEN.amort * (g.pension.liab - g.pension.assets)) / 12;
+  L.spend.pensions = Math.max(0, (PEN.ncTotal - PEN.member) * payroll + amortFactor(g.pension.assumed ?? PEN.assumed) * (g.pension.liab - g.pension.assets)) / 12;
   L.spend.interest = g.bonds.reduce((a, b) => a + b.face * b.coupon, 0) / 12;
   L.spend.capital = capital;
   L.rev.property = Math.max(0, (g.assessed - abatedValue(e, g, s.month)) * P.propRate) / 12;
   L.rev.payroll = payrollBase(e) * P.wageRate / 12;
   L.rev.sales = pop * TAXABLE_SALES_PC * w * P.salesRate / 12;
   L.rev.transfer = transferBase * P.transferRate;
-  L.rev.fees = FEES_PC * pop * w * P.service / 12;
+  L.rev.fees = FEES_PC * pop * w * q / 12;
   L.rev.aid = AID_SCHOOL * L.spend.schools + AID_GENERAL * L.spend.services;
   L.rev.interest = Math.max(0, g.cash) * Math.max(0, e.shortIndex ?? e.indexRate) / 100 / 12;
   return L;
@@ -390,6 +431,11 @@ function note(s: GameState, g: CityGov, kind: CityGov["log"][number]["kind"], te
 }
 const nextNovember = (m: number) => m + ((10 - (m % 12) + 12) % 12 || 12);
 
+/** Real income per resident: the real wage times the share of residents working. */
+function realIncome(e: Econ): number {
+  return (e.wageIdx ?? 1) / Math.max(1e-6, e.cpi ?? 1) * (e.jobs ?? 0) / Math.max(1, e.population ?? 1);
+}
+
 function rentBurden(e: Econ): number {
   return (e.effRentIdx?.multifamily ?? e.rentIdx.multifamily) * SF_PER_HOME / Math.max(1, medianIncome(e));
 }
@@ -420,6 +466,8 @@ export function openCityGov(s: GameState): CityGov {
   const payroll = cityPayroll(L);
   g.pension.liab = PEN.liabPayroll * payroll;
   g.pension.assets = PEN.funded0 * g.pension.liab;
+  g.pension.assumed = PEN.assumed;
+  g.inc0 = realIncome(e); g.incEma = 1;
   const L2 = computeLines(s, g, 0, 0);
   const op = opSpend(L2) * 12;
   g.cash = op * RESERVE_MONTHS / 12;
@@ -451,6 +499,13 @@ export function tickCityGov(s: GameState) {
   const g = e.gov, m = s.month, P = g.policy;
   ensureStream(s);
   g.mo = zeroLines();
+  // Old saves: no income memory, no moving assumption — start both where they stand.
+  if (g.inc0 === undefined) { g.inc0 = realIncome(e); g.incEma = 1; }
+  g.incEma = (g.incEma ?? 1) + (realIncome(e) / Math.max(1e-9, g.inc0) - (g.incEma ?? 1)) / WAGNER_EMA_M;
+  const expRet = e.indexRate / 100 + PEN.erp;
+  const was = g.pension.assumed ?? PEN.assumed;
+  g.pension.assumed = was + (expRet - was) / PEN_ASSUME_M;
+  g.pension.liab *= Math.exp(-PEN_DURATION * (g.pension.assumed - was));
 
   // THE ROLL: the assessor chases the market, years behind.
   const roll = marketRoll(e);
@@ -479,8 +534,8 @@ export function tickCityGov(s: GameState) {
   // The pension plan rolls forward on what the city paid in.
   const payroll = cityPayroll(L);
   const benefits = PEN.benefits * g.pension.liab / 12;
-  g.pension.liab = g.pension.liab * (1 + PEN.assumed / 12) + PEN.ncTotal * payroll / 12 - benefits;
-  g.pension.assets = g.pension.assets * (1 + (e.indexRate / 100 + PEN.erp) / 12) + L.spend.pensions + PEN.member * payroll / 12 - benefits;
+  g.pension.liab = g.pension.liab * (1 + (g.pension.assumed ?? PEN.assumed) / 12) + PEN.ncTotal * payroll / 12 - benefits;
+  g.pension.assets = g.pension.assets * (1 + expRet / 12) + L.spend.pensions + PEN.member * payroll / 12 - benefits;
   // A SURPLUS IS BARGAINED AWAY. A plan much over fully funded does not sit on
   // it: the unions and the legislature turn it into benefits (California's
   // SB 400 in 1999, New York's 2000 COLA, both on the late-1990s surplus).
@@ -587,15 +642,23 @@ function fiscalYear(s: GameState, g: CityGov) {
   const raiseProp = (x: number) => { const d = clamp(x / roll, -P.propRate * STEP_PROP, P.propRate * STEP_PROP); const to = clamp(P.propRate + d, TAX_RATE * PROP_LO, TAX_RATE * PROP_HI); const used = (to - P.propRate) * roll; P.propRate = to; return used; };
   const raiseWage = (x: number) => { const to = clamp(P.wageRate + clamp(x / payBase, -STEP_WAGE, STEP_WAGE), 0, WAGE_HI); const used = (to - P.wageRate) * payBase; P.wageRate = to; return used; };
   const moveService = (x: number) => { const to = clamp(P.service + clamp(x / svcCost, -STEP_SERVICE, STEP_SERVICE), SERVICE_LO, SERVICE_HI); const used = (to - P.service) * svcCost; P.service = to; return used; };
+  // EACH PLATFORM HAS ONE TAX MIX, AND USES IT BOTH WAYS. The first cut raised
+  // gaps on the property tax and gave surpluses back on the payroll tax, a
+  // ratchet that walked the payroll tax to zero in every seed whatever the
+  // budget did. The populist taxes property (the landlords) and relieves it
+  // the same way; the other two split. What a rail or a step will not take
+  // spills to the other tax.
+  const propShare = plat === "populist" ? 0.8 : 0.5;
+  const moveTax = (x: number) => { let left = x; left -= raiseProp(propShare * x); left -= raiseWage(left); left -= raiseProp(left); return x - left; };
 
   if (gap > 0) {
     // CLOSING THE GAP, the way each platform closes one. What is not closed
     // is borrowed on notes — the populist's habit, and the road to a crisis.
     const share = plat === "growth" ? 0.85 : plat === "populist" ? 0.6 : 1;
     const x = gap * share;
-    if (plat === "growth") { moveService(-0.8 * x); raiseProp(0.2 * x); }
-    else if (plat === "populist") { raiseProp(0.8 * x); raiseWage(0.2 * x); }
-    else { moveService(-0.5 * x); raiseProp(0.5 * x); }
+    if (plat === "growth") { const cut = -moveService(-0.8 * x); moveTax(x - cut); }
+    else if (plat === "populist") moveTax(x);
+    else { const cut = -moveService(-0.5 * x); moveTax(x - cut); }
   } else if (gap < 0 && plat !== "board") {
     // A SURPLUS IS SPENT OR GIVEN BACK — no council sits on one for long.
     // Each platform's first choice, then the next where a rail or a step stops it.
@@ -603,9 +666,8 @@ function fiscalYear(s: GameState, g: CityGov) {
     // Services cut in a bad year are the first thing a good year buys back,
     // whoever is mayor — nobody campaigns on keeping the firehouses shut.
     if (P.service < 1) x -= moveService(Math.min(x, (1 - P.service) * svcCost));
-    if (plat === "growth") { x += raiseProp(-0.6 * x); x += raiseWage(-x); x += raiseProp(-x); }
-    else if (plat === "populist") { if (P.service < 1.15) x -= moveService(Math.min(x, (1.15 - P.service) * svcCost)); x += raiseWage(-x); x += raiseProp(-x); }
-    else { x += raiseProp(-0.5 * x); x += raiseWage(-x); x += raiseProp(-x); }
+    if (plat === "populist" && P.service < 1.15) x -= moveService(Math.min(x, (1.15 - P.service) * svcCost));
+    if (x > 0) moveTax(-x);
   }
 
   // THE PLATFORM, a budget at a time.

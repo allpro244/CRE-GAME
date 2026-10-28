@@ -56,7 +56,7 @@ export interface LeaseholdQuote {
 
 function blocker(s: GameState, h: Holding | undefined, rec: ReturnType<typeof resolveRec>): string | null {
   if (!h || !rec) return "You don't own that.";
-  if (rec.class === "land" || !rec.bldgArea) return "There is no building to keep — this is dirt. Sell it, or ground-lease it out.";
+  if (rec.class === "land" || !rec.bldgArea) return "No building here; vacant land. Sell it or ground-lease it.";
   if (h.groundLeased || s.groundLeases?.[h.bbl]) return "You are the ground lessor here already.";
   if (h.groundRentOut) return "The land under it is already sold.";
   if (h.jv || h.fundOwned) return consentFor(s, h, "groundLease");
@@ -148,7 +148,7 @@ export function buyLandBack(
   const h0 = s.holdings[bbl];
   if (!h0?.groundRentOut) return { s, err: "You own the land here." };
   const cost = landBuybackCost(s, h0);
-  if (fundableNow(s, parcels) < cost) return { s, err: `The fee costs $${cost.toLocaleString()} today — you cannot raise it.` };
+  if (fundableNow(s, parcels) < cost) return { s, err: `Land buyback costs $${cost.toLocaleString()}; not enough cash or line.` };
   const next = cloneState(s);
   const paid = fundCashNeed(next, parcels, cost);
   if (paid < cost) return { s, err: `Could not raise the $${cost.toLocaleString()}.` };

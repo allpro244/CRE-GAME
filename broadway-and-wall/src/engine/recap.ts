@@ -70,7 +70,7 @@ export function recapQuote(s: GameState, parcels: ParcelTable, bbl: string): Rec
 export function recapBuyout(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string; msg?: string } {
   const q = recapQuote(s, parcels, bbl);
   if (!q.ok) return { s, err: q.why };
-  if (fundableNow(s, parcels) < q.total) return { s, err: `Buying them out costs ${money(q.total)} today — more than your cash and line.` };
+  if (fundableNow(s, parcels) < q.total) return { s, err: `Investor buyout costs ${money(q.total)}; exceeds cash and line.` };
   const next = cloneState(s);
   // Settle the open period at the real books first (a distribution or a call).
   settleSyndications(next, parcels, false, bbl);
@@ -87,5 +87,5 @@ export function recapBuyout(s: GameState, parcels: ParcelTable, bbl: string): { 
   h.costBasis = Math.round(h.costBasis * (1 - capShare) + q.price);
   (next.recaps ??= []).push({ bbl, m: next.month, value: q.appraisal });
   closeSyndication(next, parcels, w, true);
-  return { s: next, msg: `Bought your investors out for ${money(q.price)}${q.transferTax ? ` plus ${money(q.transferTax)} transfer tax` : ""}. It is all yours.` };
+  return { s: next, msg: `Bought your investors out for ${money(q.price)}${q.transferTax ? ` plus ${money(q.transferTax)} transfer tax` : ""}. 100% owned.` };
 }

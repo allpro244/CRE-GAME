@@ -129,9 +129,9 @@ export function varianceQuote(
 export function fileVariance(
   s: GameState, parcels: ParcelTable, bbl: string, targetFar?: number,
 ): { s: GameState; err?: string; msg?: string } {
-  if (!s.holdings[bbl]) return { s, err: "You have to own it to ask for anything." };
-  if (pendingVariances(s)[bbl]) return { s, err: "This site already has an application in front of the board." };
-  if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. The envelope is the envelope." };
+  if (!s.holdings[bbl]) return { s, err: "You must own it to apply." };
+  if (pendingVariances(s)[bbl]) return { s, err: "Application already pending for this site." };
+  if (s.landmarks?.[bbl] !== undefined) return { s, err: "Landmarked; the envelope cannot change." };
   const q = varianceQuote(s, parcels, bbl, targetFar);
   if (!q) {
     // "NOTHING TO APPLY FOR HERE" WAS SEVERAL ANSWERS WEARING ONE SENTENCE.
@@ -161,9 +161,9 @@ export function fileVariance(
   if (room.total < q.cost) {
     return {
       s,
-      err: `The application runs ${money(q.cost)} in fees and you can raise `
-        + `${money(room.total)} — ${money(room.cash)} of cash and `
-        + `${money(room.line)} on the line.`,
+      err: `Application fees ${money(q.cost)}; available `
+        + `${money(room.total)} (${money(room.cash)} cash, `
+        + `${money(room.line)} on the line).`,
     };
   }
   const next: GameState = cloneState(s);
@@ -215,12 +215,12 @@ function decideVariance(s: GameState, parcels: ParcelTable) {
       s.news.unshift({
         q: s.month, kind: "deal",
         text: `The board approved the variance at ${rec?.address ?? app.bbl}. `
-          + `${app.grant.toFixed(1)} FAR of extra envelope, and the dirt underneath it just repriced.`,
+          + `+${app.grant.toFixed(1)} FAR; land value reprices.`,
       });
     } else {
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `The board refused the variance at ${rec?.address ?? app.bbl}. The fees are spent and the envelope is what it always was.`,
+        text: `The board refused the variance at ${rec?.address ?? app.bbl}. Fees lost; envelope unchanged.`,
       });
     }
   }
@@ -256,8 +256,8 @@ function tickLandmarks(s: GameState, parcels: ParcelTable, bbls: string[]) {
   s.news.unshift({
     q: s.month, kind: mine ? "warn" : "info",
     text: `${rec.address} has been landmarked${mine ? " — one of yours" : ""}. `
-      + `Nobody knocks it down now, and nobody builds anything bigger there. `
-      + `It will let a little better than the market for the rest of its life, which is the whole of what you get for the site.`,
+      + `No demolition or enlargement allowed. `
+      + `Leases slightly above market from now on.`,
   });
 }
 

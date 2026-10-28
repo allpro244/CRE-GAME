@@ -855,6 +855,9 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
         // paying for the right to not compete for it. That premium is the
         // entire reason to answer the phone.
         const price = Math.round(q.indicative * rrange(s, 1.0, 1.09));
+        // Declined at the switchboard (Deals page): drawn, not sent, so the
+        // stream does not shift with the setting.
+        if (s.noUnsolicited) return;
         s.portfolioSale = {
           bbls, ask: price, listedM: s.month, sumOfParts: q.sumOfParts, unsolicited: true,
           bids: [{ name: buyer.name, price, expiresM: s.month + 4, limit: bidderLimit(s) }],

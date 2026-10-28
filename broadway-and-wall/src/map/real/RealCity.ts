@@ -11,6 +11,7 @@
  * and every panel are MapView's. Nothing here is read by the engine; nothing
  * here writes state.
  */
+import { formsFor, formTiers } from "@/citygen/forms.mjs";
 import * as THREE from "three";
 import { CLOUD, CLOUD_GLSL } from "./clouds";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
@@ -7949,6 +7950,20 @@ export class RealCityLayer {
    * among its real neighbours, at its real height — and redrawn on every
    * change. Cleared when the desk closes or the ground breaks.
    */
+  /** The forms this lot takes at this height, measured against the plain block (the Build desk's Form row in the browser). */
+  formsOn(bbl: string, floors: number, cov: number, cls: string, year: number): { key: string; name: string; blurb: string; retained: number; skin: number }[] {
+    const lot = this.siteRing(bbl, this.deeds);
+    if (!lot) return [];
+    let cx = 0, cy = 0;
+    for (const [x, y] of lot) { cx += x; cy += y; }
+    cx /= lot.length; cy /= lot.length;
+    if (this.siteKids.has(bbl)) [cx, cy] = ringCentroid(lot);
+    const B = cov > 0 ? Math.min(0.97, Math.sqrt(cov)) : 0.82;
+    const footprint = lot.map(([x, y]) => [cx + (x - cx) * B, cy + (y - cy) * B] as P2);
+    return formsFor({ bbl, footprint, lotRing: lot, hM: Math.max(3, floors * 3.55), year, klass: cls, floors })
+      .map((f: { key: string; name: string; blurb: string; retained: number; skin: number }) => ({ key: f.key, name: f.name, blurb: f.blurb, retained: f.retained, skin: f.skin }));
+  }
+
   setPreview(item: PlayerItem | null) {
     if (this.defer("setPreview", () => this.setPreview(item))) return;
     const sig = item ? JSON.stringify(item) : "";
@@ -8025,7 +8040,16 @@ export class RealCityLayer {
       this.dynHeight.set(it.bbl, h);
       return;
     }
-    if (d?.crown === "cake" && it.floors >= CROWN_MIN_FLOORS) {
+    // THE PLAYER'S FORM (citygen/forms.mjs): a setback, a court, a tower on a
+    // base — the same tiers the desk measured for the pro forma.
+    const tiers = d?.form && !named ? formTiers({ bbl: it.bbl, footprint: ring, lotRing: lot, hM: h, year: it.year && it.year > 1800 ? it.year : 2000, klass: it.cls, form: d.form }) as { ring: P2[]; base: number; top: number }[] | null : null;
+    if (tiers) {
+      tiers.forEach((tr, i) => {
+        const last = i === tiers.length - 1;
+        this.addVolume(tr.ring, tr.base, tr.top, fam, tint, it.bbl, true, last, k, tr.base < 0.5 && shop, false, tr.base < 0.5 || last ? it.cls : "", 0, ov);
+      });
+      topRing = tiers[tiers.length - 1].ring;
+    } else if (d?.crown === "cake" && it.floors >= CROWN_MIN_FLOORS) {
       // the wedding cake: a full-lot base, a terrace, a slim shaft
       const at = (f: number) => ring.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as P2);
       const h1 = h * 0.55, h2 = h * 0.82;

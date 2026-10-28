@@ -4327,6 +4327,8 @@ export interface GameState {
    * (`autoLeaseOnClose`). Built buildings already open on auto at delivery.
    */
   autoLeaseNew?: boolean;
+  /** NO UNSOLICITED OFFERS: rivals do not ring to buy your buildings (Deals page). */
+  noUnsolicited?: boolean;
   /**
    * WHAT AUTO-LEASE DID, last twelve months — the team's scorecard on the
    * Leasing page. One row per letter it settled; trimmed as it is written.

@@ -22,6 +22,7 @@ import { PRODUCTS, underwritingStandards, windowOpen } from "./debt";
 import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE, shortIndexOf } from "./market";
 import type { DeskPx, LossClass } from "./pricing";
 import { why } from "./why";
+import { lossClassOf as lossClassOfSheet } from "./pricing";
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export type LenderKind = "bank" | "life" | "conduit" | "fund";
@@ -1366,10 +1367,29 @@ export function tickLenders(s: GameState) {
           });
         } else seizeDeposits(s, l);
       }
+      // WHAT TOOK IT DOWN, for the cause ledger: the year's income statement
+      // line by line and what drained capital, so a failure can be traced to
+      // losses, margin, funding or a shock rather than read as weather.
+      const yr = l.incYr ?? { interest: 0, funding: 0, losses: 0, opex: 0, tax: 0 };
+      const pv = l.incPrevYr;
+      const nii = (yr.interest - yr.funding) + (pv ? pv.interest - pv.funding : 0);
+      const lossAll = (yr.losses ?? 0) + (pv?.losses ?? 0) + (yr.writeOffs ?? 0) + (pv?.writeOffs ?? 0);
+      const opexAll = yr.opex + (pv?.opex ?? 0);
+      const failWhy = why(s, {
+        k: "bank.failed", a: "bank", aid: l.id, name: l.name,
+        n: {
+          capVsTarget: +(cr / Math.max(0.01, target)).toFixed(3), book: Math.round(l.book), delinquent: +l.delinquent.toFixed(4),
+          margin: Math.round(nii), losses: Math.round(lossAll), opex: Math.round(opexAll),
+          nim: +((l.bookYield ?? 0) - (l.fundCost ?? 0) - (l.panicBps ?? 0)).toFixed(3), panicBps: l.panicBps ?? 0,
+          depositFlowYr: +(l.dep?.flowYr ?? 0).toFixed(3), chase: l.chase ?? 0, dividendsYr: l.divYr ?? 0,
+        },
+        t: `${l.name} closed at ${(cr / Math.max(0.01, target)).toFixed(2)}x its capital target · since last January: margin ${usdShort(nii)}, losses ${usdShort(lossAll)}, running costs ${usdShort(opexAll)}`
+          + ` · ${(l.delinquent * 100).toFixed(1)}% of its book not paying`,
+      }, [l.lossWhy, l.pitchWhy]);
       // The paper's memory of it (stories.ts) — a record, not a mechanism.
       (s.bankFails ??= []).push({
         lender: l.name, kind: l.kind, m: s.month, book: Math.round(l.book),
-        delinq: +l.delinquent.toFixed(4), yours: Math.round(l.yours ?? 0),
+        delinq: +l.delinquent.toFixed(4), yours: Math.round(l.yours ?? 0), why: failWhy,
       });
       if (s.bankFails.length > 60) s.bankFails.shift();
       // And whether or not you banked with them, their cranes stop.
@@ -1594,6 +1614,22 @@ const RISK_WEIGHT: Record<LossClass, number> = { income: 1, construction: 1.5, l
  * debt fund's LPs ~12% net. Shown on the Banks page as the capital line.
  */
 const HURDLE: Record<LenderKind, number> = { bank: 11, life: 10, conduit: 15, fund: 12 };
+/**
+ * CAPITAL HELD AGAINST ONE MORE DOLLAR OF MORTGAGE — not the desk's whole
+ * capital ratio, which for an insurer covers everything its general account
+ * insures. A bank holds its target ratio against a 100%-weighted CRE loan
+ * (Basel; well-capitalised ~10%); a life company holds risk-based capital on
+ * a commercial mortgage of ~1.75% (NAIC RBC, CM2 class) at the ~300% of
+ * minimum insurers run at, ~5%; the agency desk ~4% (the GSEs' credit-risk
+ * capital under FHFA's framework); the conduit the 5% it must retain (Reg
+ * RR, 2016). A debt fund's equity hurdle is already in its funding cost
+ * (short + 1.1: levered CLO and repo money with the LPs' return blended in),
+ * so it holds nothing on top here.
+ */
+function capitalPerDollar(l: Lender, k: { capitalRatio: number }): number {
+  if (l.name === "Keystone Agency Finance") return 0.04;
+  return l.kind === "bank" ? k.capitalRatio : l.kind === "life" ? 0.05 : l.kind === "conduit" ? 0.05 : 0;
+}
 const CLASSES: LossClass[] = ["income", "construction", "land", "junior"];
 
 /** Fold this month's losses and balances into the desk's 36-month experience. */
@@ -1675,11 +1711,16 @@ export function deskPricing(s: GameState, l: Lender): DeskPx {
   for (const c of CLASSES) {
     el[c] = +expectedLoss(l, c).toFixed(3);
     dEl[c] = +(el[c]! - PRIOR_EL[c]).toFixed(3);
-    cap[c] = +(k.capitalRatio * RISK_WEIGHT[c] * (HURDLE[l.kind] ?? 11) / (1 - tax)).toFixed(3);
+    cap[c] = +(capitalPerDollar(l, k) * RISK_WEIGHT[c] * (HURDLE[l.kind] ?? 11) / (1 - tax)).toFixed(3);
   }
   const app = l.failedM !== undefined ? 0 : l.appetite;
+  // Banks and the fund are priced off the short rate; insurers and the
+  // conduit off the long one. The same money, measured against each.
+  const offShort = l.kind === "bank" || l.kind === "fund";
+  const fundLong = offShort ? fund + short - e.indexRate : fund;
+  const fundShort = offShort ? fund : fund + e.indexRate - short;
   return {
-    fund: +fund.toFixed(3), dFund: +dFund.toFixed(3), el, dEl, cap,
+    fund: +fund.toFixed(3), fundLong: +fundLong.toFixed(3), fundShort: +fundShort.toFixed(3), dFund: +dFund.toFixed(3), el, dEl, cap,
     opex: OPEX_PCT[l.kind] ?? 0, pull: +(0.8 * Math.max(0, 1 - app)).toFixed(3), chase: +(l.chase ?? 0).toFixed(3),
   };
 }
@@ -1694,18 +1735,29 @@ export function deskPricing(s: GameState, l: Lender): DeskPx {
  *
  *   behind its share  it prices under its rivals, by up to a quarter point
  *                     the further behind it is — the 2005-07 pencil
- *                     sharpening, when every desk was behind on volume;
- *   ahead of it       it prices over them, by up to a quarter point, to slow
- *                     down before it is full;
+ *                     sharpening, when every desk was behind on volume —
+ *                     BUT ONLY FOR THE LOANS IT CAN CARRY: the undercut is
+ *                     scaled by how much of the volume it is short of its
+ *                     capital headroom would fund (capital over target, less
+ *                     the book it has). Winning uses the headroom up, so the
+ *                     undercut fades on its own as the desk fills;
+ *   ahead of it       it prices over them as its headroom runs out — a desk
+ *                     with capital to spare is happy to grow, one that is
+ *                     filling its balance sheet slows itself down;
  *   in between        it holds.
  *
- * Its own funding and loss experience come along whatever it does — a desk
- * with dear money prices dearer than one with cheap money pitching at the
- * same place — and its rationing charge (pull) is never competed away: a
- * desk short of capital or deposits pulls back whatever its rivals do. The
- * glide is a sixth a month (rate sheets are reset every few weeks) and the
- * pitch is bounded at ±0.75 points as a guard; the floor in pricing.ts stops
- * any desk pricing under its own costs. Shape parameters, stated as such.
+ * And it never pitches below its own ECONOMIC cost on its flagship paper:
+ * funding, expected loss, the return its capital needs and its running cost.
+ * A desk with dear money cannot buy share with somebody else's cheap money;
+ * its pitch stops where its own costs do. (pricing.ts's floor — cash cost
+ * without the return on capital — is the harder limit underneath, for a
+ * desk rationing its way out of trouble.)
+ *
+ * Its rationing charge (pull) is never competed away: a desk short of
+ * capital or deposits pulls back whatever its rivals do. The glide is a
+ * sixth a month (rate sheets are reset every few weeks). The quarter point
+ * and the glide are shape parameters, stated as such; the limits are the
+ * desk's own balance sheet and costs, not a band.
  */
 export function priceDesks(s: GameState) {
   const lenders = s.lenders ?? [];
@@ -1740,13 +1792,31 @@ export function priceDesks(s: GameState) {
       w += wt; r += wt * (own(o) + (o.chase ?? 0));
     }
     const rivals = w > 0 ? r / w : 0;
-    const behind = (won[l.name] ?? 0) / tot / Math.max(1e-6, usual) - 1;
+    const share = (won[l.name] ?? 0) / tot;
+    const behind = share / Math.max(1e-6, usual) - 1;
     const chase = l.chase ?? 0;
-    const want = behind < -0.15 ? rivals - own(l) - 0.25 * Math.min(1, -behind)
-      : behind > 0.25 ? rivals - own(l) + 0.25 * Math.min(1, behind - 0.25)
+    // What its capital will still carry, at its own target, against the
+    // year's volume it is short of (or over) its usual share.
+    const headroom = Math.max(0, l.capital / Math.max(0.01, targetCapital(l.name)) - Math.max(0, l.book));
+    const shortVol = Math.max(0, usual - share) * tot;
+    const canFund = shortVol > 0 ? Math.min(1, headroom / shortVol) : 1;
+    const filling = 1 - Math.min(1, headroom / Math.max(1, 0.1 * Math.max(l.book, 20_000_000 * (s.econ.priceLevel ?? 1))));
+    let want = behind < -0.15 ? rivals - own(l) - 0.25 * Math.min(1, -behind) * canFund
+      : behind > 0.25 ? rivals - own(l) + 0.25 * Math.min(1, behind - 0.25) * filling
       : chase;
-    l.chase = +Math.max(-0.75, Math.min(0.75, chase + (want - chase) / 6)).toFixed(4);
-    px.get(l)!.chase = +l.chase.toFixed(3);
+    // ...and never under its own economic cost on its flagship paper.
+    const q = px.get(l)!;
+    const flag = PRODUCTS.find((p) => p.lender === l.name && lossClassOfSheet(p) === "income");
+    if (flag) {
+      const econ = (flag.floating ? (q.fundShort ?? q.fund) : (q.fundLong ?? q.fund)) + (q.el.income ?? 0) + (q.cap.income ?? 0) + q.opex;
+      const live = flag.spread + q.dFund + (q.dEl.income ?? 0) + q.pull;
+      // a desk cutting its price stops cutting where its own economic cost
+      // is; it is not forced back up to it — that is the rationing charge's
+      // job, once the thin margin has actually reached its capital
+      if (want < chase) want = Math.max(want, Math.min(chase, econ - live));
+    }
+    l.chase = +(chase + (want - chase) / 6).toFixed(4);
+    q.chase = +l.chase.toFixed(3);
   }
   const out: Record<string, DeskPx> = {};
   for (const l of lenders) { l.px = px.get(l)!; out[l.name] = l.px; }

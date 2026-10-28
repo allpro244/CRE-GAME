@@ -39,6 +39,7 @@ import type { Lender } from "./lenders";
 import { LOC_SPREAD } from "./credit";
 import { bankRatePct, liveSpread } from "./pricing";
 import { shortIndexOf } from "./market";
+import { why } from "./why";
 
 /** Deterministic 0..1 from a string. */
 function hash01(str: string): number {
@@ -421,7 +422,7 @@ export function lineRatePct(s: GameState, r: Rival): number {
   const bank = lineBankOf(s, r);
   // The bank's own costs and appetite (pricing.ts liveSpread); a receiver
   // holding a failed bank's line charges what the bank last did.
-  return bankRatePct(shortIndexOf(s.econ), liveSpread(bank ? s.econ.deskPx?.[bank.name] : undefined, LOC_SPREAD, "income"))
+  return bankRatePct(shortIndexOf(s.econ), liveSpread(bank ? s.econ.deskPx?.[bank.name] : undefined, LOC_SPREAD, "income", 1, "short"))
     + fileSpreadAdj(r);
 }
 /** Draw the line: cash in, balance up, at the firm's bank. */
@@ -645,6 +646,18 @@ export function markPayments(
     }
   }
   for (const x of rows) {
+    // THE CAUSE LEDGER (why.ts): the month a firm first misses on a loan, and
+    // why — what the building pays against its service, and how short the
+    // firm's account came up after its line. Records only.
+    if (missed.has(x.bbl) && !(x.arrearsMs ?? 0)) {
+      const svc = byRow[x.bbl] ?? 0;
+      x.whyId = why(s, {
+        k: "loan.default", a: "rival", aid: r.id, name: r.name, bbl: x.bbl,
+        n: { owedMo: Math.round(svc), buildingNoiMo: Math.round(noiOf(x.bbl) / 12), firmShortMo: Math.round(shortfall), balance: Math.round(x.balance), lineBal: Math.round(r.lineBal ?? 0) },
+        t: `${r.name} missed its payment to ${x.lender} · the building pays $${Math.round(noiOf(x.bbl) / 12 / 1000)}k/mo against $${Math.round(svc / 1000)}k/mo owed`
+          + ` · the firm was $${Math.round(shortfall / 1000)}k short after its line`,
+      });
+    }
     if (missed.has(x.bbl)) x.arrearsMs = (x.arrearsMs ?? 0) + 1;
     else x.arrearsMs = 0;
     x.status = (x.arrearsMs ?? 0) >= 1 ? "workout"

@@ -121,7 +121,9 @@ for (let m = 0; m < 8; m++) g = tick(g);
   const loans = Object.values(s2.streetLoans).filter((x) => x.status === "current" && x.klass !== "land" && x.noiYr > 0 && x.value > 0);
   let tested = 0, right = 0;
   for (const x of loans.slice(0, 40)) {
-    const q = E.deskQuotes(s2, x.value, x.noiYr, { klass: x.klass }).find((c) => c.principal >= x.balance * 0.98);
+    // the cheapest quote for the whole balance at a desk with room to carry it
+    const q = E.deskQuotes(s2, x.value, x.noiYr, { klass: x.klass })
+      .find((c) => c.principal >= x.balance * 0.98 && E.deskHasRoom(s2, c.lender, x.holderId, x.balance, new Map(), c.lender === x.lender ? x.balance : 0));
     if (!q) continue;
     x.maturityM = s2.month + 1;
     x.expect = q.lender + "|" + q.product;
@@ -133,8 +135,7 @@ for (let m = 0; m < 8; m++) g = tick(g);
   E.tickStreetLoans(s3, parcels);
   for (const x of Object.values(s3.streetLoans)) {
     if (!x.expect) continue;
-    const want = E.deskQuotes(s3, x.value, x.noiYr, { klass: x.klass }).find((c) => c.principal >= x.balance * 0.98);
-    if (want && x.lender === want.lender && x.originM === s3.month) right++;
+    if (x.expect.startsWith(x.lender + "|") && x.originM === s3.month) right++;
   }
   check(tested >= 5 && right >= tested * 0.8, `private owners refinance their balloons at the best quote: ${right} of ${tested}`);
 }

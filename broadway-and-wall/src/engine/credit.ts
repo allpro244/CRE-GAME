@@ -146,7 +146,7 @@ export function locRate(s: GameState): number {
   // is the bank's five-year fixed sheet (LOC_FLOOR_SPREAD), priced through the
   // same law so it widens in a crunch the way the line does.
   return Math.max(
-    bankRatePct(shortIndexOf(s.econ), liveSpread(px, LOC_SPREAD, "income"), terms),
+    bankRatePct(shortIndexOf(s.econ), liveSpread(px, LOC_SPREAD, "income", 1, "short"), terms),
     bankRatePct(s.econ.indexRate, liveSpread(px, LOC_FLOOR_SPREAD, "income"), terms),
   );
 }

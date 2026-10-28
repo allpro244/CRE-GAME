@@ -4021,6 +4021,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   if (!worst) return false;
   const desk = deskFor(s, r, worst.bbl);
   noteLost(s, r, worst.bbl);
+  const loanWhy = s.cityLoans?.[worst.bbl]?.whyId;   // the default behind it, for the cause ledger
   const owed = dropDeed(s, r, worst.bbl);
   logFirm(s, r, "event", `Handed ${worst.rec.address} back to ${desk}`, worst.bbl, owed);
   milestone(s, r, surplus ? `Lost ${worst.rec.address} to foreclosure (${desk})` : `Handed ${worst.rec.address} back to ${desk}`);
@@ -4051,7 +4052,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
     expiresM: s.month + reoWindow(s, desk), distress: true, receiverFor: desk, reason: "receiver",
     loanBasis, mark: Math.round(deedV),
   });
-  chargeLenderLoss(s, desk, Math.max(0, owed - ask), { borrower: r.name, id: r.id, bbl: worst.bbl, cls: worst.rec.class === "land" ? "land" : "income", how: "foreclosure" });
+  chargeLenderLoss(s, desk, Math.max(0, owed - ask), { borrower: r.name, id: r.id, bbl: worst.bbl, cls: worst.rec.class === "land" ? "land" : "income", how: "foreclosure", why: loanWhy });
   const off = Math.max(0, 1 - ask / Math.max(1, deedV));
   s.news.unshift({
     q: s.month, kind: "warn",

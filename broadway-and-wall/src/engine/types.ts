@@ -1623,6 +1623,8 @@ export interface BankFailure {
   delinq: number;
   /** What the desk was lending the player when it went. */
   yours: number;
+  /** The cause-ledger event (why.ts) that says what took it down. */
+  why?: number;
   reopenedM?: number;
   /** Loans the receiver put on the block, their face, and the summed ask (cents on the dollar × face). */
   sold?: number;
@@ -5428,6 +5430,8 @@ export interface CityLoan {
    */
   spread?: number;
   cap?: { strike: number; expiresM: number };
+  /** The cause-ledger event of its most recent default (why.ts). */
+  whyId?: number;
 }
 
 /** A private owner's mortgage (streetLoans.ts). */

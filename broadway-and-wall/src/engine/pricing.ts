@@ -108,8 +108,11 @@ export type LossClass = "income" | "construction" | "land" | "junior";
 
 /** One desk's live pricing, in points a year (lenders.ts deskPricing). */
 export interface DeskPx {
-  /** Funding over the market rate the loan is priced off. */
+  /** Funding over the market rate the desk's own money prices off (short for banks and funds, long for insurers and the conduit). */
   fund: number;
+  /** The same funding over the ten-year and over the short index — what a fixed or a floating loan is priced against. */
+  fundLong?: number;
+  fundShort?: number;
   /** Funding against this desk's ordinary mix — what passes into the quote. */
   dFund: number;
   /** Expected annual loss by class (two-thirds own experience, a third the industry's long-run rate). */
@@ -132,15 +135,21 @@ export interface DeskPx {
  * friend slack in a crunch. With no published pricing (a save from before
  * this, the opening month) the sheet stands.
  */
-export function liveSpread(px: DeskPx | undefined, sheet: number, cls: LossClass, ease = 1): number {
+export function liveSpread(px: DeskPx | undefined, sheet: number, cls: LossClass, ease = 1, bench: "long" | "short" = "long"): number {
   if (!px) return sheet;
   const raw = sheet + px.dFund + (px.dEl[cls] ?? 0) + px.pull * ease + px.chase;
-  return Math.max(costFloor(px, cls), raw);
+  return Math.max(costFloor(px, cls, bench), raw);
 }
 
-/** Below this a desk loses money on the loan before its own equity is paid anything. */
-export function costFloor(px: DeskPx, cls: LossClass): number {
-  return px.fund + (px.el[cls] ?? 0) + px.opex;
+/**
+ * Below this a desk loses money on the loan before its own equity is paid
+ * anything: its funding measured against the benchmark the loan is priced
+ * off (a bank lending fixed off the ten-year on short deposits earns the
+ * curve, and its floor says so), its expected loss and its running cost.
+ */
+export function costFloor(px: DeskPx, cls: LossClass, bench: "long" | "short" = "long"): number {
+  const f = bench === "short" ? (px.fundShort ?? px.fund) : (px.fundLong ?? px.fund);
+  return f + (px.el[cls] ?? 0) + px.opex;
 }
 
 /** The coupon: benchmark + the desk's live spread + the borrower's own file. Never under 0.05%. */

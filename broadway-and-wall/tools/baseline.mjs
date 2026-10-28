@@ -294,9 +294,10 @@ function rails(g, acc) {
   // THE CREDIT WINDOW AND THE DESKS' PRICES (ONE_ECONOMY_PLAN.md step 5).
   // The window is the desks' capital-weighted appetite now, mapped onto its
   // old 0.4-1.25 scale and clamped to it as a guard: if it rests on either
-  // end the clamp is doing the work. A desk's competitive pitch is bounded at
-  // ±0.75 points (lenders.ts priceDesks) and its quote floored at its own
-  // costs (pricing.ts costFloor): share of desk-months at each.
+  // end the clamp is doing the work. A desk's quote is floored at its own
+  // cash cost (pricing.ts costFloor) — an economic floor, counted so it can be
+  // seen. (The competitive pitch has no band: it is limited by the desk's
+  // capital headroom and its economic cost, lenders.ts priceDesks.)
   const ci = g.econ.creditIdx;
   if (Number.isFinite(ci) && ci <= 0.4001) acc["rail.credit.lo"] = (acc["rail.credit.lo"] ?? 0) + 1;
   if (Number.isFinite(ci) && ci >= 1.2499) acc["rail.credit.hi"] = (acc["rail.credit.hi"] ?? 0) + 1;
@@ -305,7 +306,6 @@ function rails(g, acc) {
     const px = g.econ.deskPx?.[l.name];
     if (!px) continue;
     acc.__desk = (acc.__desk ?? 0) + 1;
-    if (Math.abs(px.chase) >= 0.7499) acc["rail.bank.pitch"] = (acc["rail.bank.pitch"] ?? 0) + 1;
     const sheet = E.PRODUCTS.find((p) => p.lender === l.name && E.lossClassOf(p) === "income")?.spread;
     if (sheet !== undefined && E.liveSpread(px, sheet, "income") <= E.costFloor(px, "income") + 1e-9) acc["rail.bank.floor"] = (acc["rail.bank.floor"] ?? 0) + 1;
   }
@@ -384,7 +384,6 @@ function measure() {
     row["rail.credit.lo"] = +((railAcc["rail.credit.lo"] ?? 0) / n).toFixed(4);
     row["rail.credit.hi"] = +((railAcc["rail.credit.hi"] ?? 0) / n).toFixed(4);
     const nd = railAcc.__desk || 1;
-    row["rail.bank.pitch"] = +((railAcc["rail.bank.pitch"] ?? 0) / nd).toFixed(4);
     row["rail.bank.floor"] = +((railAcc["rail.bank.floor"] ?? 0) / nd).toFixed(4);
     // DOES THE CITY GROW INTO ITS DEMAND (MDGA F1): floor area against jobs
     // over the whole run, as end/start ratios. A city whose jobs grow 60%

@@ -359,7 +359,7 @@ function BankFile({ l }: { l: Lender }) {
               {products.map((p) => {
                 const sheet = statedLtv(game, p, "office", "standard").ltv;
                 const bench = p.floating ? shortIndexOf(e) : e.indexRate;
-                const rate = bankRatePct(bench, liveSpread(px, p.spread, lossClassOf(p)), { rel: relCurve(game, l.name) });
+                const rate = bankRatePct(bench, liveSpread(px, p.spread, lossClassOf(p), 1, p.floating ? "short" : "long"), { rel: relCurve(game, l.name) });
                 const open = !failed && windowOpen(game, p);
                 const min = loanMin(game, p);
                 const max = holdMaxOf(game, p) ?? 0;

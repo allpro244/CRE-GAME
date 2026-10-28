@@ -123,7 +123,7 @@ function LenderTerms({ g, r }: { g: GameState; r: LRow }) {
   const rows: PRow[] = PRODUCTS.filter((p) => p.lender === l.name).map((p) => {
     const sheet = statedLtv(g, p, "office", "standard").ltv;
     const bench = p.floating ? shortIndexOf(e) : e.indexRate;
-    const rate = bankRatePct(bench, liveSpread(e.deskPx?.[l.name], p.spread, lossClassOf(p)), { rel: relCurve(g, l.name) });
+    const rate = bankRatePct(bench, liveSpread(e.deskPx?.[l.name], p.spread, lossClassOf(p), 1, p.floating ? "short" : "long"), { rel: relCurve(g, l.name) });
     return {
       id: p.id, paper: p.label.split(" · ").slice(1).join(" · ") || p.label, sheet, after: sheet * adv, rate, spread: rate - bench, floating: !!p.floating,
       dscr: p.uwDscr > 0 ? p.uwDscr : null, dy: p.uwDscr > 0 ? p.debtYield : null,

@@ -1134,7 +1134,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // `app` still sizes the advance (advanceFactor) below; it prices through
   // the rationing charge inside the live spread.
   void app;
-  const ratePct = bankRatePct(bench, liveSpread(s.econ.deskPx?.[product.lender], product.spread, lossClassOf(product), crunchEase), {
+  const ratePct = bankRatePct(bench, liveSpread(s.econ.deskPx?.[product.lender], product.spread, lossClassOf(product), crunchEase, product.floating ? "short" : "long"), {
     standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongName,
   });
   const adv = advanceFactor(s, product.lender);

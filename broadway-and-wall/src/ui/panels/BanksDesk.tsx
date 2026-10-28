@@ -343,7 +343,7 @@ export function LenderCards() {
       ?? PRODUCTS.find((x) => x.lender === l.name && !x.mezz);
     const sp = stayingPower(game, l);
     const open = sp.word !== "closed";
-    const rate = p ? bankRatePct(p.floating ? shortIndexOf(game.econ) : game.econ.indexRate, liveSpread(game.econ.deskPx?.[l.name], p.spread, lossClassOf(p)), { rel: relCurve(game, l.name) }) : null;
+    const rate = p ? bankRatePct(p.floating ? shortIndexOf(game.econ) : game.econ.indexRate, liveSpread(game.econ.deskPx?.[l.name], p.spread, lossClassOf(p), 1, p.floating ? "short" : "long"), { rel: relCurve(game, l.name) }) : null;
     const reach = p ? statedLtv(game, p).ltv * advanceFactor(game, l.name) : null;
     return { l, p, sp, open, rate, reach };
   });

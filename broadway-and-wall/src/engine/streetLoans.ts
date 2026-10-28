@@ -55,8 +55,8 @@ import { holderOf } from "./owners";
 import type { Holder } from "./owners";
 import { holderNoteTerms, holderCfads, HOLDER_AMORT_M } from "./ownership";
 import { deskQuotes } from "./rivalDebt";
-import { productById } from "./debt";
-import { chargeLenderLoss, reoAsk, bookShareOf } from "./lenders";
+import { productById, singleNameCap } from "./debt";
+import { chargeLenderLoss, reoAsk, bookShareOf, targetCapital } from "./lenders";
 import { cityLoanBook, deskTotals } from "./loanbook";
 import { NOTICE_M, FORECLOSE_M } from "./workout";
 import { shortIndexOf } from "./market";
@@ -95,18 +95,41 @@ export function streetDebtService(s: GameState, x: StreetLoan): { interest: numb
   return { interest, amort: Math.max(0, Math.min(x.balance, pmt - interest)) };
 }
 
+/**
+ * CAN THIS DESK CARRY ANOTHER `amount` TO THIS HOLDER — the two limits every
+ * desk lends under, the same two `rivalDebt.deskRoom` applies to the firms:
+ * one borrower's share of its book (singleNameCap) and the book its capital
+ * carries at its own target. Measured the first time, a private owner's new
+ * mortgage went to the cheapest desk whatever it held: a community bank with
+ * $0.8M of capital wrote one estate a $7.1M loan, and the estate's default
+ * closed it (seed 73303, year 21). `extra` is what the desk has already
+ * written this month, which its book does not show yet.
+ */
+export function deskHasRoom(s: GameState, lender: string, holderId: string, amount: number, extra: Map<string, number>, replacing = 0): boolean {
+  const l = (s.lenders ?? []).find((x) => x.name === lender);
+  if (!l || l.failedM !== undefined) return false;
+  const book = Math.max(0, l.book) + (extra.get(lender) ?? 0) - replacing;
+  let exposure = 0;
+  for (const x of Object.values(s.streetLoans ?? {})) if (x.lender === lender && x.holderId === holderId) exposure += x.balance;
+  exposure -= replacing;
+  const nameRoom = Math.max(book, 20_000_000 * (s.econ.priceLevel ?? 1) * 0.25) * singleNameCap(l.kind) - exposure;
+  const capRoom = l.capital / Math.max(0.01, targetCapital(l.name)) - book;
+  return Math.min(nameRoom, capRoom) >= amount;
+}
+
 type Deed = { bbl: string; h: Holder; v: number; noi: number; dirt: boolean; klass: string; condition?: string };
 
 /** Write a loan at the best quote this building can get today. Null if no desk will lend on it. */
 function writeLoan(
-  s: GameState, d: Deed, amount: number, into: number, pick?: (q: ReturnType<typeof deskQuotes>[number]) => boolean,
+  s: GameState, d: Deed, amount: number, into: number, pick?: (q: ReturnType<typeof deskQuotes>[number]) => boolean, strict = false,
 ): StreetLoan | null {
   const qs = deskQuotes(s, d.v, d.noi, { klass: d.klass, condition: d.condition });
   if (!qs.length) return null;
-  // the cheapest that will write the amount (and, at the opening, has room for it)
+  // the cheapest that will write the amount (and has room for it)
   const q = qs.find((c) => c.principal >= amount * 0.98 && (!pick || pick(c)))
     ?? qs.find((c) => !pick || pick(c))
-    ?? qs[0];
+    ?? (strict ? undefined : qs[0]);
+  if (!q) return null;
   const p = productById(q.product);
   const termM = q.termM;
   const k = into % Math.max(1, termM);
@@ -222,19 +245,30 @@ function readHolders(s: GameState, parcels: ParcelTable) {
     const shareSum = live.reduce((a, l) => a + bookShareOf(l.name, l.kind), 0) || 1;
     const all = total + live.reduce((a, l) => a + (named[l.name]?.named ?? 0), 0);
     const room = new Map<string, number>();
-    for (const l of live) room.set(l.name, all * bookShareOf(l.name, l.kind) / shareSum - (named[l.name]?.named ?? 0));
+    // ...and no single note bigger than the desk's one-borrower limit on the
+    // book it is opening with (a community bank does not hold a quarter of its
+    // book against one estate).
+    const nameCap = new Map<string, number>();
+    for (const l of live) {
+      const target = all * bookShareOf(l.name, l.kind) / shareSum;
+      room.set(l.name, target - (named[l.name]?.named ?? 0));
+      nameCap.set(l.name, target * singleNameCap(l.kind));
+    }
     fresh.sort((a, b) => hash01(a.d.bbl + ":seed") - hash01(b.d.bbl + ":seed"));
     for (const f of fresh) {
       const amt = f.d.v * f.ltv;
-      const loan = writeLoan(s, f.d, amt, f.into, (q) => (room.get(q.lender) ?? 0) >= amt);
+      const loan = writeLoan(s, f.d, amt, f.into, (q) => (room.get(q.lender) ?? 0) >= amt && amt <= (nameCap.get(q.lender) ?? 0));
       if (!loan || !(loan.balance > 0)) continue;
       room.set(loan.lender, (room.get(loan.lender) ?? 0) - loan.balance);
       L[f.d.bbl] = loan;
     }
   } else {
+    const extra = new Map<string, number>();
     for (const f of fresh) {
-      const loan = writeLoan(s, f.d, f.d.v * f.ltv, 0);
-      if (loan && loan.balance > 0) L[f.d.bbl] = loan;
+      const amt = f.d.v * f.ltv;
+      // only desks with the room to carry it; with none, the buyer pays cash
+      const loan = writeLoan(s, f.d, amt, 0, (q) => deskHasRoom(s, q.lender, f.d.h.id, amt, extra), true);
+      if (loan && loan.balance > 0) { L[f.d.bbl] = loan; extra.set(loan.lender, (extra.get(loan.lender) ?? 0) + loan.balance); }
     }
   }
 
@@ -326,7 +360,11 @@ function rollBalloon(s: GameState, x: StreetLoan) {
   // A loan in arrears on its coupon is nobody's takeout; one whose only
   // default is the balloon itself keeps ringing round every month.
   if (x.arrearsMs === 0 || x.balloonM !== undefined) {
-    const qs = deskQuotes(s, x.value, x.noiYr, { klass: x.klass });
+    // the borrower shops every desk with room for it (its own desk's room
+    // counts the loan it would be replacing)
+    const none = new Map<string, number>();
+    const qs = deskQuotes(s, x.value, x.noiYr, { klass: x.klass })
+      .filter((q) => deskHasRoom(s, q.lender, x.holderId, Math.min(q.principal, x.balance), none, q.lender === x.lender ? x.balance : 0));
     const full = qs.find((q) => q.principal >= x.balance * 0.98);
     const most = [...qs].sort((a, b) => b.principal - a.principal)[0];
     const gap = most ? x.balance - most.principal : Infinity;
@@ -347,7 +385,9 @@ function rollBalloon(s: GameState, x: StreetLoan) {
     if (x.balloonM === undefined && x.noiYr >= coupon && (x.extensions ?? 0) < 2) {
       x.extensions = (x.extensions ?? 0) + 1;
       x.maturityM = s.month + 12;
-      x.ratePct = bankRatePct(s.econ.indexRate, liveSpread(s.econ.deskPx?.[x.lender], productById(x.product)?.spread ?? 2, x.klass === "land" ? "land" : "income"));
+      const p = productById(x.product);
+      if (p?.floating) x.spread = +liveSpread(s.econ.deskPx?.[x.lender], p.spread, x.klass === "land" ? "land" : "income", 1, "short").toFixed(2);
+      else x.ratePct = bankRatePct(s.econ.indexRate, liveSpread(s.econ.deskPx?.[x.lender], p?.spread ?? 2, x.klass === "land" ? "land" : "income"));
       x.status = "watch";
       return;
     }

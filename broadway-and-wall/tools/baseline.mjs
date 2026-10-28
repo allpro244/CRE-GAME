@@ -231,6 +231,8 @@ function city(g, base) {
     "city.demolished": g.demolished ?? 0,
     "city.employed": g.econ.jobs ?? 0,
     "city.population": g.econ.population ?? 0,
+    // desks closed by their regulator over the run (a stock: failures to date)
+    "bank.failures": (g.bankFails ?? []).length,
   };
 }
 
@@ -301,7 +303,9 @@ function rails(g, acc) {
   const ci = g.econ.creditIdx;
   if (Number.isFinite(ci) && ci <= 0.4001) acc["rail.credit.lo"] = (acc["rail.credit.lo"] ?? 0) + 1;
   if (Number.isFinite(ci) && ci >= 1.2499) acc["rail.credit.hi"] = (acc["rail.credit.hi"] ?? 0) + 1;
-  for (const l of g.lenders ?? []) {
+  // (an engine from before the desks priced themselves has none of this: an
+  // ENGINE= paired run against it reads these as absent, not as a crash)
+  if (E.liveSpread) for (const l of g.lenders ?? []) {
     if (l.failedM !== undefined) continue;
     const px = g.econ.deskPx?.[l.name];
     if (!px) continue;
@@ -319,6 +323,7 @@ function rails(g, acc) {
  * charge-offs as a share of their book, a year.
  */
 function banks(g) {
+  if (!E.liveSpread) return { "credit.idx": +(g.econ.creditIdx ?? NaN).toFixed(4) };
   const live = (g.lenders ?? []).filter((l) => l.failedM === undefined && g.econ.deskPx?.[l.name]);
   let w = 0, sp = 0;
   for (const l of live) {

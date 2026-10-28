@@ -39,7 +39,15 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
   const parcels = useStore((s) => s.parcels)!;
   const focus = useStore((s) => s.focus);
   // Coming back from "show on the map", their row is open again.
-  const [open, setOpen] = useState<string | null>(() => useStore.getState().mapFilter === "firm" ? useStore.getState().mapFirm ?? null : null);
+  const [open, setOpen] = useState<string | null>(() => useStore.getState().firmFocus ?? (useStore.getState().mapFilter === "firm" ? useStore.getState().mapFirm ?? null : null));
+  // A FIRM'S NAME CLICKED ELSEWHERE (a deed's owner, the map's firm chip) opens its row here, in view
+  const firmFocus = useStore((s) => s.firmFocus);
+  useEffect(() => {
+    if (!firmFocus) return;
+    setOpen(firmFocus);
+    const t = window.setTimeout(() => document.querySelector(`[data-firm="${firmFocus}"]`)?.scrollIntoView({ block: "start" }), 80);
+    return () => window.clearTimeout(t);
+  }, [firmFocus]);
   // YOU ARE THE ROW YOU CAME FOR. The top bar's Street readout opens this
   // table, and in most of a career your row is twenty-odd firms down — below
   // the fold, under the leaders. Bring it into view when a link brought you
@@ -240,7 +248,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
             const isOpen = open === r.id;
             return (
               <Fragment key={r.id}>
-              <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }}
+              <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }} data-firm={r.id}
                 onClick={() => setOpen(isOpen ? null : r.id)}>
                 <td title={r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName}` : undefined}>
                   {isOpen ? "▾ " : "▸ "}{r.name}

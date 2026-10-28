@@ -56,17 +56,17 @@ export { DevelopSection, ReuseSection } from "@/ui/panels/DevelopDesk";
 // competition on this building or your buyer for it next year. Lifted out of
 // the ownership block above when that block stopped having three branches.
 const DOCTRINE: Record<string, string> = {
-  family: "They hold for generations and sell when a generation does — not when the market does.",
-  core: "Committee money. Stabilised income only, disciplined at the top, gone in a crunch.",
-  opportunistic: "They win the last three years of every cycle and pay for it in the next one.",
-  developer: "They buy dirt and put buildings on it. Watch which corners they are assembling.",
-  merchant: "They build to sell. Everything they own is for sale at the right number.",
-  pe: "An IRR clock is running. They must transact — patience is the one thing they cannot hold.",
-  reit: "Listed money: they buy when the stock is up and stop the day it is not.",
-  vulture: "They only appear when something is broken. If they are calling, check your covenants.",
-  owneruser: "They occupy what they own. Price is almost beside the point; the building is the business.",
-  foreign: "Offshore capital. Slow to decide, slower to sell, and they do not return calls in a crisis.",
-  slumlord: "Minimum in, maximum out. The buildings say so.",
+  family: "Long-term hold. Sells on succession, not market timing.",
+  core: "Stabilised assets only. Price-disciplined; exits in a downturn.",
+  opportunistic: "Aggressive late-cycle buyer.",
+  developer: "Buys land to build. Assembles sites.",
+  merchant: "Builds to sell. All assets for sale at a price.",
+  pe: "Fund-life driven. Must transact.",
+  reit: "Buys when share price is high; stops when it falls.",
+  vulture: "Distressed buyer.",
+  owneruser: "Owner-occupier. Less price-sensitive.",
+  foreign: "Offshore capital. Slow to buy and sell; inactive in a crisis.",
+  slumlord: "Minimal capex, maximum extraction.",
 };
 
 function ParcelPanelShell({ embedded = false, tab }: { embedded?: boolean; tab?: PropTab } = {}) {
@@ -99,10 +99,10 @@ function ReservedCard({ rec, embedded }: { rec: ReservedParcel; embedded: boolea
   const kind = rec.kind === "neighbourhood" ? "Neighbourhood" : rec.kind === "rural" ? "Rural home" : rec.kind === "civic" ? "Church and school" : rec.kind === "woodlot" ? "Woodlot" : "Farm";
   const era = rec.era === "prewar" ? "pre-war streetcar suburb" : rec.era === "postwar" ? "post-war subdivision" : rec.era === "recent" ? "1980s-and-after subdivision" : null;
   const why = rec.tenure === "homes"
-    ? "Owned house by house by the households who live in them. Not for sale to a firm in this phase: homebuilding and land development come later."
+    ? "Owner-occupied homes. Not for sale."
     : rec.tenure === "farm"
-      ? "Agricultural land, not buildable until the land-development phase, and not traded on this market."
-      : "Held by the parish and the school district, not by the market.";
+      ? "Agricultural land. Not buildable or tradeable."
+      : "Parish and school district land. Not for sale.";
   return (
     <div className={embedded ? "panel-embed" : "panel"}>
       {!embedded && (
@@ -126,7 +126,7 @@ function ReservedCard({ rec, embedded }: { rec: ReservedParcel; embedded: boolea
       {rec.avgHouseSf ? <Row k="Average house" v={sf(rec.avgHouseSf)} /> : null}
       {rec.avgLotSf ? <Row k="Average lot" v={sf(rec.avgLotSf)} /> : null}
       {rec.platLots && rec.homes ? <Row k="Platted lots" v={`${rec.platLots.toLocaleString()} (${(rec.platLots - rec.homes).toLocaleString()} not built yet)`} /> : null}
-      {rec.leapfrog && <Row k="Leapfrog" v="built out past farms still holding out" />}
+      {rec.leapfrog && <Row k="Leapfrog" v="built beyond unsold farms" />}
       <Row k="Land" v={acres >= 2 ? `${acres.toFixed(acres >= 20 ? 0 : 1)} acres` : sf(rec.lotArea)} />
       {rec.bldgArea > 0 && <Row k="Floor area" v={sf(rec.bldgArea)} />}
       {rec.crop && <Row k="This season" v={rec.crop} />}
@@ -158,11 +158,11 @@ function LandDevCard({ bbl }: { bbl: string }) {
     <div className="deal" style={{ marginTop: 6 }}>
       <div className="deal-head">Land development</div>
       <div className="hint">
-        {rec.ag === "wood" ? "Woodland" : "Farmland"}, {acres.toFixed(0)} acres, {rz ? `rezoned ${rz.zone} (FAR ${rz.far}), farmed until the streets go in` : "zoned for agriculture — priced at what it earns as a farm"}.
-        {" "}{((rec.buildableSf ?? rec.lotArea) / 43560).toFixed(0)} buildable acres{rec.buildableSf !== undefined && rec.buildableSf < rec.lotArea * 0.95 ? " (the rest is floodplain or taken)" : ""}; {(rec.tract.edgeM / 1000).toFixed(1)} km from the town's edge.
+        {rec.ag === "wood" ? "Woodland" : "Farmland"}, {acres.toFixed(0)} acres, {rz ? `rezoned ${rz.zone} (FAR ${rz.far}), farmed until site work` : "agricultural zoning, valued as farm"}.
+        {" "}{((rec.buildableSf ?? rec.lotArea) / 43560).toFixed(0)} buildable acres{rec.buildableSf !== undefined && rec.buildableSf < rec.lotArea * 0.95 ? " (rest floodplain or unavailable)" : ""}; {(rec.tract.edgeM / 1000).toFixed(1)} km from town edge.
       </div>
       <LandProForma bbl={bbl} lotSf={rz?.lotSf ?? lotSf} />
-      {!owned && <div className="hint">Buy it, apply for permits to rezone it, and cut it into lots.</div>}
+      {!owned && <div className="hint">Buy, rezone, subdivide into lots.</div>}
       {owned && !app && !rz && (() => {
         const planned = tractYield(rec, lotSf).n;
         const q = entitleQuote(game, parcels, bbl, lotSf, planned);
@@ -173,38 +173,37 @@ function LandDevCard({ bbl }: { bbl: string }) {
                 <button key={v} type="button" className={"btn-mini" + (v === lotSf ? " on" : "")} onClick={() => setLotSf(v)}>{v.toLocaleString()} sf lots</button>
               ))}
             </div>
-            <div className="btn-row" title="An industrial park: a truck-rated spine road and big lots for boxes, flex, plants or a centre.">
+            <div className="btn-row" title="Industrial park lots: warehouse, flex, plant.">
               {INDUSTRIAL_LOT_SIZES.map((v) => (
                 <button key={v} type="button" className={"btn-mini" + (v === lotSf ? " on" : "")} onClick={() => setLotSf(v)}>{Math.round(v / 43560)} ac park lots</button>
               ))}
             </div>
             {q ? (
               <>
-                <Row k="Lots on the plat" v={q.lots.toLocaleString()} />
+                <Row k="Lots" v={q.lots.toLocaleString()} />
                 <Row k="Rezoning to" v={`${q.zone}, FAR ${q.far}`} />
-                <Row k="Counsel, studies, hearings" v={usd(q.cost)} />
-                <Row k="The board decides in" v={`${q.months} months`} />
-                <Row k="Applications like it pass" v={`${Math.round(q.odds * 100)}%`} />
+                <Row k="Entitlement cost" v={usd(q.cost)} />
+                <Row k="Decision" v={`${q.months} mo · ${Math.round(q.odds * 100)}% odds`} />
                 <button type="button" className="btn btn-sm" onClick={() => fileRezoning(bbl, lotSf)}>Apply for permits · {usd(q.cost)}</button>
               </>
-            ) : <div className="hint">Too little buildable ground on this tract for a plat at that lot size.</div>}
+            ) : <div className="hint">Not enough buildable land for this lot size.</div>}
           </>
         );
       })()}
-      {app && <Row k="Permits under review" v={`board decides ${monthLabel(app.decideM)} · ${app.lots} lots · ${Math.round(app.odds * 100)}% odds`} />}
+      {app && <Row k="Permits under review" v={`decision ${monthLabel(app.decideM)} · ${app.lots} lots · ${Math.round(app.odds * 100)}% odds`} />}
       {owned && rz && !plat && (() => {
         const lots = tractYield(rec, rz.lotSf).lots;
         const q = platQuote(game, lots, rz.lotSf, parcels, bbl);
         return (
           <>
             <Row k="Rezoned" v={`${rz.zone}, FAR ${rz.far}, ${lots.length} lots of ~${rz.lotSf.toLocaleString()} sf`} />
-            <Row k="Streets, pipes and impact fees" v={`${usd(q.cost)} · ${usd(q.perLot)} a lot`} />
+            <Row k="Site work + impact fees" v={`${usd(q.cost)} · ${usd(q.perLot)} a lot`} />
             <Row k="Built in" v={`${q.months} months`} />
-            <button type="button" className="btn btn-sm" onClick={() => buildPlat(bbl)}>Build the streets</button>
+            <button type="button" className="btn btn-sm" onClick={() => buildPlat(bbl)}>Build site work</button>
           </>
         );
       })()}
-      {plat && !plat.done && <Row k="Streets going in" v={`${plat.lots.length} lots, finished ${monthLabel(plat.doneM)}`} />}
+      {plat && !plat.done && <Row k="Site work" v={`${plat.lots.length} lots, finished ${monthLabel(plat.doneM)}`} />}
       {!plat && (() => {
         // what a finished lot here would fetch from a homebuilder today (engine/homes.ts)
         const lsf = rz?.lotSf ?? lotSf;
@@ -383,7 +382,7 @@ function HouseCard({ bbl, embedded }: { bbl: string; embedded?: boolean }) {
   const rec = parcels && game ? resolveRec(parcels, game, bbl) : null;
   const u = game?.homes?.units[bbl];
   if (!game || !parcels || !rec || !u) return null;
-  const owner = u.closedM === undefined ? `${u.by} (builder)` : u.tenure === "sfr" ? "a single-family-rental investor" : "a household, living in it";
+  const owner = u.closedM === undefined ? `${u.by} (builder)` : u.tenure === "sfr" ? "SFR investor" : "owner-occupier";
   return (
     <div className={embedded ? "panel-embed" : "panel"}>
       {!embedded && (
@@ -403,8 +402,8 @@ function HouseCard({ bbl, embedded }: { bbl: string; embedded?: boolean }) {
       <Row k="House" v={`${sf(rec.bldgArea)} · ${rec.floors} fl · ${rec.yearBuilt} · lot ${sf(rec.lotArea)}`} strong />
       <Row k="Owner" v={owner} />
       {u.price ? <Row k="Sold" v={`${usd(u.price)}${u.closedM !== undefined ? ` · ${monthLabel(u.closedM)}` : " · signed"}`} /> : null}
-      <Row k="Worth today" v={usd(houseValue(game, parcels, bbl))} />
-      {u.tenure === "sfr" && <Row k="Lets for" v={`${usd(sfrRentMo(game))}/mo`} />}
+      <Row k="Value" v={usd(houseValue(game, parcels, bbl))} />
+      {u.tenure === "sfr" && <Row k="Rent" v={`${usd(sfrRentMo(game))}/mo`} />}
       <HomesCard bbl={bbl} />
     </div>
   );
@@ -503,7 +502,7 @@ function ParcelPanelInner({
             <div className="panel-bbl mono">Parcel {rec.bbl}</div>
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-            <button className="btn-mini" title="Open the property as a full desk" onClick={() => useStore.getState().setPage("property")}>full view</button>
+            <button className="btn-mini" title="Open full property page" onClick={() => useStore.getState().setPage("property")}>full view</button>
             <button className="panel-close" onClick={() => select(null)} aria-label="Close">×</button>
           </div>
         </div>
@@ -533,7 +532,7 @@ function ParcelPanelInner({
             type="button"
             className={"btn-mini" + (!omFull ? " on" : "")}
             onClick={() => setOmFull(false)}
-            title="Essentials only — price, occupancy, one risk"
+            title="Price, occupancy, key risk"
           >
             Summary
           </button>
@@ -541,7 +540,7 @@ function ParcelPanelInner({
             type="button"
             className={"btn-mini" + (omFull ? " on" : "")}
             onClick={() => setOmFull(true)}
-            title="Full offering-memorandum detail"
+            title="Full offering memorandum"
           >
             Full OM
           </button>
@@ -557,7 +556,7 @@ function ParcelPanelInner({
             ["build", isBuilt ? "Convert / Build" : "Build", true],
           ] as const).filter(([, , show]) => show).map(([t, label]) => (
             <button key={t} type="button" className="btn-mini"
-              title={`Open the property file on ${label}`}
+              title={`Open ${label}`}
               onClick={() => useStore.getState().openProperty(selectedBBL, t)}>
               {label} →
             </button>
@@ -599,9 +598,9 @@ function ParcelPanelInner({
         // what stands, and the answer names both bids so the player can read
         // which side is winning and by how much.
         const head = dirt
-          ? (pencils ? "Developable" : "Dirt — nothing pencils today")
-          : (pencils ? `Redevelopment pencils · ${(room * 100).toFixed(0)}% of the envelope unused`
-            : `Underbuilt · ${(room * 100).toFixed(0)}% of the envelope unused`);
+          ? (pencils ? "Developable" : "Vacant land · not feasible")
+          : (pencils ? `Redevelopment feasible · ${(room * 100).toFixed(0)}% of envelope unused`
+            : `Underbuilt · ${(room * 100).toFixed(0)}% of envelope unused`);
         // On a built lot the three bids are for the DIRT, and on most of the
         // city both the builder's and the holder's are zero — a rebuild does
         // not pencil at today's rents or the next peak's, and the land reads
@@ -613,19 +612,19 @@ function ParcelPanelInner({
         // Operations tab: empty it and clear the site.
         const buildReachable = rec.class !== "multifamily" || !!holding.groundLeased
           || (adjacency?.[selectedBBL] ?? []).some((n) => !!game.holdings[n]);
-        const dirtLine = `the land under it reads $${read.psf.toFixed(0)}/sf`
-          + (read.winner === "texture" ? " on its location alone" : ` on the ${read.winner === "homes" ? "homebuilder" : read.winner === "subdivider" ? "land developer" : read.winner}'s bid`);
+        const dirtLine = `land $${read.psf.toFixed(0)}/sf`
+          + (read.winner === "texture" ? " (location floor)" : ` (${read.winner === "homes" ? "homebuilder" : read.winner === "subdivider" ? "land developer" : read.winner} bid)`);
         const hint = dirt
           ? (pencils
-            ? `Builder residual $${read.builder.toFixed(0)}/sf · ${(room * 100).toFixed(0)}% of the envelope left. Open Build to break ground.`
-            : `Holder bid $${read.holder.toFixed(0)}/sf wins the auction — wait for rents, or clear the site.`)
+            ? `Residual land value $${read.builder.toFixed(0)}/sf · ${(room * 100).toFixed(0)}% of envelope unused.`
+            : `Holder bid $${read.holder.toFixed(0)}/sf sets value.`)
           : (pencils
-            ? `Cleared, this dirt is worth $${read.builder.toFixed(0)}/sf of lot to a builder; the building standing on it is worth $${standingPsf.toFixed(0)}/sf of lot today. Build prices the scheme.`
-            : `A rebuild does not pencil here today`
+            ? `Residual $${read.builder.toFixed(0)}/sf of lot vs existing building $${standingPsf.toFixed(0)}/sf of lot.`
+            : `Rebuild not feasible`
               + (read.builder > 0
-                ? ` — cleared, the dirt is worth $${read.builder.toFixed(0)}/sf of lot to a builder, and the building on it is worth $${standingPsf.toFixed(0)}/sf of lot`
-                : ` — no scheme on this lot earns its margin at today's rents` + (read.holder > 0 ? `, nor at the next peak's` : ""))
-              + `; ${dirtLine}. ${buildReachable ? "Wait for rents, or plan a bigger building on Build." : "Wait for rents, or empty and clear it on Operations to build again."}`);
+                ? ` · residual $${read.builder.toFixed(0)}/sf of lot vs existing $${standingPsf.toFixed(0)}/sf`
+                : ` · no use clears margin at current rents` + (read.holder > 0 ? ` or next peak` : ""))
+              + ` · ${dirtLine}.`);
         return (
           <div className="deal" style={{ marginTop: 0, marginBottom: 10 }}>
             <div className="deal-head">{head}</div>
@@ -635,7 +634,7 @@ function ParcelPanelInner({
               className="btn btn-sm"
               onClick={() => useStore.getState().openProperty(selectedBBL, buildReachable ? "build" : "ops")}
             >
-              {buildReachable ? "Open the Build desk →" : "Clear the site on Operations →"}
+              {buildReachable ? "Open the Build desk →" : "Demolish on Operations →"}
             </button>
           </div>
         );
@@ -661,14 +660,19 @@ function ParcelPanelInner({
         return (
           <div className="hint">
             <div style={{ cursor: "pointer" }}
-              title="Open this owner's balance sheet and income statement on the register."
-              onClick={() => { openViewOn("players", o.operator ? "street" : "owners"); useStore.getState().setPage("players"); }}>
+              title="Owner financials"
+              onClick={() => {
+                openViewOn("players", o.operator ? "street" : "owners");
+                // a firm's name opens that firm (owner, Oct 2026), not the list
+                if (o.operator) useStore.getState().openFirm(o.id);
+                else useStore.getState().setPage("players");
+              }}>
               Owned by <strong>{o.name}</strong>
               <span className="dim"> · {o.operator && o.style ? STYLE_WORD[o.style] ?? o.style : o.kind}</span>
-              {o.book.length > 1 && <span> — {o.book.length} deeds in town</span>}.
+              {o.book.length > 1 && <span> · {o.book.length} properties</span>}
               {o.failedM !== undefined
-                ? " In receivership — the book is being sold down."
-                : o.stressed ? " They are selling under pressure." : ""}
+                ? " · In receivership"
+                : o.stressed ? " · Distressed seller" : ""}
             </div>
             {/* THE THREE NUMBERS THAT DECIDE HOW THE CONVERSATION GOES: what
                 they are worth, how much of it is the bank's, and whether the
@@ -676,9 +680,9 @@ function ParcelPanelInner({
                 an owner with a reason to talk, and that was invisible on nine
                 buildings in ten. */}
             <div className="dim mono" style={{ marginTop: 3 }}>
-              {usd(o.sheet.assets)} of property ·{" "}
-              {o.sheet.debt > 0 ? `${usd(o.sheet.debt)} of debt at ${(o.sheet.ltv * 100).toFixed(0)}% LTV` : "owned free and clear"} ·{" "}
-              <span className={o.income.net < 0 ? "neg" : ""}>{usd(o.income.net)} a year after debt</span>
+              {usd(o.sheet.assets)} assets ·{" "}
+              {o.sheet.debt > 0 ? `${usd(o.sheet.debt)} debt · ${(o.sheet.ltv * 100).toFixed(0)}% LTV` : "unlevered"} ·{" "}
+              <span className={o.income.net < 0 ? "neg" : ""}>{usd(o.income.net)}/yr after debt service</span>
             </div>
             {(o.note || (o.operator && o.style && DOCTRINE[o.style])) && (
               <div style={{ marginTop: 3 }}>
@@ -819,7 +823,7 @@ function ParcelPanelInner({
           <Row
             k="Gross area"
             v={sf(rec.bldgArea) + ` · ${rec.floors} fl · ${rec.yearBuilt}`}
-            title="Zoning, construction cost and the map. You pay for the core; you do not let it."
+            title="GFA incl. core; basis for zoning and cost."
           />
         )}
         {isBuilt && rec.bldgArea > 0 && (() => {
@@ -834,10 +838,10 @@ function ParcelPanelInner({
               k="Rentable area"
               v={rem > 0 ? `${sf(letSf - rem)} of ${sf(letSf)}` : `${sf(letSf)} · ${(ratio * 100).toFixed(0)}% of gross`}
               title={split
-                ? `${split}${rem > 0 ? ` · ${sf(rem)} in demises too small to let` : ""}`
+                ? `${split}${rem > 0 ? ` · ${sf(rem)} unleasable remainder` : ""}`
                 : rem > 0
-                  ? `${sf(rem)} of it sits in demises too small to let — see Occupancy`
-                  : "BOMA rentable — core, stairs and risers out. Rent, NOI and cap rate are struck on these feet. Same function the engine uses."}
+                  ? `${sf(rem)} unleasable remainder`
+                  : "BOMA rentable (net of core). Basis for rent, NOI, cap rate."}
             />
           );
         })()}
@@ -894,7 +898,7 @@ function ParcelPanelInner({
         ))}
         {holding && isBuilt && commercial && holding.tenants.length > 0 && (
           <Row
-            k="On the rent roll"
+            k="Rent roll"
             v={`${holding.tenants.length} lease${holding.tenants.length === 1 ? "" : "s"} · ${sf(holding.tenants.reduce((a, t) => a + t.sf, 0))}`}
           />
         )}
@@ -923,10 +927,10 @@ function ParcelPanelInner({
                 <Row
                   k="Scheduled rent (abated)"
                   v={usd(os.baseRent + os.freeRent) + "/yr"}
-                  title={`${usd(os.freeRent)}/yr is free rent still burning — occupancy is up; this NOI has not caught it yet`}
+                  title={`${usd(os.freeRent)}/yr free rent; NOI excludes it`}
                 />
               )}
-              {abate > 0 && <Row k="Free rent still owed" v={usd(-abate)} bad />}
+              {abate > 0 && <Row k="Free rent owed" v={usd(-abate)} bad />}
               {omFull && ip.disclosed && stab > ip.noi * 1.02 && (
                 <Row k="Stabilised pro-forma" v={usd(stab)} />
               )}
@@ -935,7 +939,7 @@ function ParcelPanelInner({
         })()}
         {omFull && holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
         {omFull && <Row k="Lot area" v={sf(rec.lotArea)} />}
-        {omFull && isBuilt && isMixedUse(rec) && <Row k="The stack" v={mixLabel(rec)} />}
+        {omFull && isBuilt && isMixedUse(rec) && <Row k="Use mix" v={mixLabel(rec)} />}
         {!dupe && <Row k={<span><Gloss term="FAR">FAR</Gloss> built / max</span>} v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />}
         {!dupe && <Row k="Demand" v={String(Math.round(demandNow(game, rec))) + " / 100"} />}
       </div>}
@@ -955,24 +959,23 @@ function ParcelPanelInner({
         return (
           <div className="deal">
             <div className="deal-head">
-              {j.orphaned ? "A stalled building" : firm ? `${firm.name} is building here` : bld ? `${bld.name} is building here` : "Under construction"}
+              {j.orphaned ? "Stalled construction" : firm ? `${firm.name} is building here` : bld ? `${bld.name} is building here` : "Under construction"}
             </div>
             <div className="grid">
               <Row k="Programme" v={`${sf(j.sf)} of ${j.use} · ${j.floors} floors`} strong />
               <Row k="Progress" v={`${pct.toFixed(0)}%`} />
               <Row k={j.orphaned ? "Status" : "Delivers"}
-                v={j.orphaned ? "The sponsor is gone — the receiver holds it" : monthLabel(j.deliverM)}
+                v={j.orphaned ? "In receivership" : monthLabel(j.deliverM)}
                 bad={j.orphaned} />
-              {j.firmId && !j.orphaned && j.cost !== undefined && <Row k="Their budget" v={usd(j.cost)} />}
-              {bld && <Row k="Developer" v={`${bld.founder}'s firm, since ${monthLabel(bld.bornM)} · ${bld.delivered} delivered`
-                + (bld.handedBack ? ` · ${bld.handedBack} handed back to a lender` : bld.underwater ? ` · ${bld.underwater} opened under cost` : "")}
+              {j.firmId && !j.orphaned && j.cost !== undefined && <Row k="Budget" v={usd(j.cost)} />}
+              {bld && <Row k="Developer" v={`${bld.founder} · since ${monthLabel(bld.bornM)} · ${bld.delivered} delivered`
+                + (bld.handedBack ? ` · ${bld.handedBack} returned to lender` : bld.underwater ? ` · ${bld.underwater} opened under cost` : "")}
                 bad={bld.handedBack > 0} />}
               {j.merchant?.lender && !j.firmId && <Row k="Construction loan" v={`${j.merchant.lender} · ${Math.round(100 * j.merchant.loan / Math.max(1, j.merchant.basis))}% of cost`} />}
             </div>
             {j.orphaned && (
               <div className="hint">
-                Buy the site and the frame comes with it — you take over the job where they left it,
-                and you pay only for what is left to build.
+                Purchase includes the partial build; buyer funds cost to complete.
               </div>
             )}
           </div>
@@ -988,7 +991,7 @@ function ParcelPanelInner({
         if (!built?.bldgArea && !job && gl.builtM === undefined) return null;
         return (
           <div className="deal">
-            <div className="deal-head">Lessee&apos;s building on your land</div>
+            <div className="deal-head">Lessee improvement</div>
             <div className="grid">
               <Row k="Tenant" v={gl.tenant} />
               {job && !gl.builtM && (
@@ -1000,10 +1003,10 @@ function ParcelPanelInner({
                   {gl.builtM !== undefined && <Row k="Delivered" v={monthLabel(gl.builtM)} />}
                 </>
               )}
-              <Row k="Your ground rent" v={`${usd(gl.rentYr)} / yr`} />
+              <Row k="Ground rent" v={`${usd(gl.rentYr)} / yr`} />
               <Row k="Term ends" v={monthLabel(gl.endM)} />
             </div>
-            <div className="hint">You own the dirt and the coupon — they let, operate and insure the improvement.</div>
+            <div className="hint">Lessee operates and insures the building.</div>
           </div>
         );
       })()}
@@ -1063,11 +1066,11 @@ function ParcelPanelInner({
                       {sf(t.sf)} · ${t.rentPsf.toFixed(0)} {recoveryOf(t) === "gross" ? "G" : recoveryOf(t).toUpperCase()} · exp {monthLabel(t.endM)}
                       {" "}· {termLeft(t.endM, game.month)}
                       {outgrown && (noRoom
-                        ? <> · <span className="warn">growing — needs {staff.toFixed(1)}× their space · no room here — they will look elsewhere</span></>
-                        : <> · growing — needs {staff.toFixed(1)}× their space</>)}
-                      {shrinking && <> · shrinking — using {staff.toFixed(1)}× the space they pay for</>}
+                        ? <> · <span className="warn">growing · needs {staff.toFixed(1)}× space · no room, likely to relocate</span></>
+                        : <> · growing · needs {staff.toFixed(1)}× space</>)}
+                      {shrinking && <> · shrinking · using {staff.toFixed(1)}× leased space</>}
                       {strained && <> · <span className="warn">strained</span></>}
-                      {ri && <> · <span className={ri.p < 0.5 ? "warn" : ""}>{Math.round(ri.p * 100)}% renews</span> — {ri.why[0]}</>}
+                      {ri && <> · <span className={ri.p < 0.5 ? "warn" : ""}>{Math.round(ri.p * 100)}% renewal odds</span> · {ri.why[0]}</>}
                     </span>
                   </div>
                   );
@@ -1111,7 +1114,7 @@ function ParcelPanelInner({
                     <div className="roll-row roll-vacant">
                       <span className="roll-name">Unlettable remainder</span>
                       <span className="roll-meta mono">
-                        {sf(dead)} · under the minimum tenancy — a sitting neighbour can take it at a renewal or an expansion
+                        {sf(dead)} · below minimum suite; leasable only to adjacent tenant
                       </span>
                     </div>
                   )}
@@ -1162,7 +1165,7 @@ function ParcelPanelInner({
             <div className="deal-head">Cash statement · monthly</div>
             <div className="grid">
               <Row k={apt ? "Rent collections" : "Scheduled rent"} v={mo(os.baseRent + os.freeRent)} />
-              {os.freeRent > 0 && <Row k="Free rent burning off" v={"−" + mo(os.freeRent)} bad />}
+              {os.freeRent > 0 && <Row k="Free rent" v={"−" + mo(os.freeRent)} bad />}
               {!apt && <Row k="Expense recoveries" v={mo(os.recoveredOpex + os.recoveredTax)} />}
               <Row k="Revenue" v={mo(os.egi)} strong />
               <Row k="Operating expenses" v={"−" + mo(os.opex)} />
@@ -1175,7 +1178,7 @@ function ParcelPanelInner({
                 <Row k="Replacement reserve" v={"−" + mo(os.reserve)} />
               )}
               <Row k="Property tax" v={"−" + mo(os.tax)} />
-              {(os.groundRent ?? 0) > 0 && <Row k="Ground rent" v={"−" + mo(os.groundRent)} title={`To ${holding.groundRentOut?.holder ?? "the fee owner"} — you sold the land and lease it back.`} />}
+              {(os.groundRent ?? 0) > 0 && <Row k="Ground rent" v={"−" + mo(os.groundRent)} title={`Paid to ${holding.groundRentOut?.holder ?? "fee owner"} (sale-leaseback)`} />}
               <Row k="NOI / mo" v={mo(os.noi)} strong bad={os.noi < 0} />
               {pmt > 0 && <Row k="Debt service / mo" v={usd(-Math.round(pmt))} />}
               <Row k="Cash flow / mo" v={usd(Math.round(cfMo))} strong bad={cfMo < 0} />
@@ -1196,7 +1199,7 @@ function ParcelPanelInner({
             {(holding.loan.leaseUpRoom ?? 0) > 0 && !holding.fundOwned && (
               <Row
                 k="Lease-up reserve"
-                v={usd(holding.loan.leaseUpRoom!) + " undrawn — pays fit-out, commissions and any month the building cannot carry its loan"}
+                v={usd(holding.loan.leaseUpRoom!) + " undrawn · TI, LC, debt service shortfall"}
               />
             )}
             <Row k="Balloon" v={monthLabel(holding.loan.maturityM)} />
@@ -1223,12 +1226,12 @@ function ParcelPanelInner({
                   className="btn btn-buy"
                   disabled={!canPay}
                   title={jvBlock ?? (facPledged
-                    ? "Pledged to the facility — release it there first."
+                    ? "Pledged to credit facility; release first."
                     : !canPay
-                      ? `Need ${usd(due.due)} to retire this loan.`
+                      ? `Payoff ${usd(due.due)}`
                       : due.penalty > 0
-                        ? `Pay ${usd(due.balance)} + ${usd(due.penalty)} break fee. Required before a ground lease.`
-                        : `Pay ${usd(due.due)}. Deed free and clear — required before a ground lease.`)}
+                        ? `${usd(due.balance)} + ${usd(due.penalty)} prepayment penalty`
+                        : `Payoff ${usd(due.due)}`)}
                   onClick={() => useStore.getState().payOffLoan(selectedBBL)}
                 >
                   Pay off · {usd(due.due)}
@@ -1239,13 +1242,13 @@ function ParcelPanelInner({
               // A greyed button with its reason in a tooltip is a question
               // the player has to hover to ask. Say it beside the button.
               const due = payOffDue(holding.loan, game.month, game.econ);
-              if (game.facility?.bbls?.includes(selectedBBL)) return <span className="hint">Pledged to the facility — release it there first.</span>;
+              if (game.facility?.bbls?.includes(selectedBBL)) return <span className="hint">Pledged to credit facility; release first.</span>;
               return <ShortBy need={due.due} have={fundableNow(game, parcels)} />;
             })()}
             {(holding.loan.floating ?? holding.loan.product === "float") && !holding.loan.cap && (
               <button
                 className="btn"
-                title={`Base rate capped at ${capStrikeFor(game, holding.loan).toFixed(2)}% for 3 years`}
+                title={`Base rate cap ${capStrikeFor(game, holding.loan).toFixed(2)}% · 3 yrs`}
                 onClick={() => useStore.getState().rateCap(selectedBBL)}
               >
                 Buy rate cap · {usd(rateCapCost(holding.loan))}
@@ -1280,7 +1283,7 @@ function ParcelPanelInner({
                 : <>
                     <Row k="Ask" v={usd(listing.ask)} strong />
                     {listing.loanBasis !== undefined && listing.loanBasis > 0 && (
-                      <Row k="Loan basis" v={usd(listing.loanBasis)} title="Outstanding debt the lender is clearing — the ask is anchored here, not appraisal." />
+                      <Row k="Loan basis" v={usd(listing.loanBasis)} title="Outstanding debt; ask anchored to it, not appraisal." />
                     )}
                   </>}
               {contract && <Row k="Must fund by" v={monthLabel((contract.closeByM ?? game.month + 3) - 1)} bad />}
@@ -1298,7 +1301,7 @@ function ParcelPanelInner({
                     <Row k={ip.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(ip.noi)} bad={ip.noi < 0} />
                     <Row
                       k="Going-in cap"
-                      v={ip.noi > 0 ? ((ip.noi / Math.max(1, px)) * 100).toFixed(2) + "%" : "— no income to capitalise"}
+                      v={ip.noi > 0 ? ((ip.noi / Math.max(1, px)) * 100).toFixed(2) + "%" : "— no income"}
                       strong={ip.noi > 0}
                       bad={ip.noi <= 0}
                     />
@@ -1327,9 +1330,9 @@ function ParcelPanelInner({
                 const hb = listing.halfBuilt;
                 const need = takeoverEquityNeed(game, parcels, selectedBBL, hb);
                 return (
-                  <Row k="Comes with a half-built job"
-                    v={`${Math.round(hb.progress * 100)}% built · ${hb.floors} floors of ${hb.use} · ${usd(need)} of your equity to finish and open it`}
-                    bad strong title="Buying the site takes the job on. The purchase is refused unless you can fund this after paying the price." />
+                  <Row k="Partial construction"
+                    v={`${Math.round(hb.progress * 100)}% built · ${hb.floors} fl ${hb.use} · ${usd(need)} equity to complete`}
+                    bad strong title="Purchase requires funding cost to complete after price." />
                 );
               })()}
             </div>
@@ -1378,9 +1381,7 @@ function ParcelPanelInner({
                   a reason why (bidBlind spends the counter on the bid). */}
               {appr.mode === "offer" && (
                 <div className="hint">
-                  They would not name a price until you bid.
-                  {appr.lastBid ? ` Your ${usd(appr.lastBid)} got this out of them` : " This came back"} —
-                  and it is a number quoted to somebody they now know wants it.
+                  Ask named after your bid{appr.lastBid ? ` of ${usd(appr.lastBid)}` : ""}.
                 </div>
               )}
               <div className="grid">
@@ -1395,10 +1396,10 @@ function ParcelPanelInner({
               {!appr.countered && <OffMarketCounter bbl={selectedBBL} ask={appr.ask} />}
               <div className="hint" style={{ marginTop: 6 }}>
                 {appr.countered
-                  ? `Their number is ${usd(appr.ask)} and that is where it stays. Fund it or leave it.`
+                  ? `Final ask ${usd(appr.ask)}.`
                   : appr.named
-                    ? "You can counter it — but they named this figure in answer to your bid, so it is already close to their floor and they know you want the building. A few per cent is a negotiation; fifteen is an insult."
-                    : "Counter once if you want to, then place the debt against whatever number you end up with."}
+                    ? "Ask near seller's floor. Small counters only."
+                    : "One counter allowed."}
               </div>
               <BuyButtons bbl={selectedBBL} price={appr.ask} off closeLabel={`Buy at ${usd(appr.ask)}`} />
             </>
@@ -1422,30 +1423,30 @@ function ParcelPanelInner({
                the whole time; the panel simply never offered the call. */
             <>
               <div className="hint">
-                The owner turned you away in {monthLabel(appr.q)}.
+                Owner declined {monthLabel(appr.q)}.
                 {game.month < appr.q + 6
-                  ? ` They will not take another call until ${monthLabel(appr.q + 6)}.`
-                  : " Enough time has passed that it is worth another call."}
+                  ? ` Re-approach from ${monthLabel(appr.q + 6)}.`
+                  : " Re-approach available."}
               </div>
               <div className="btn-row">
                 <button
                   className="btn"
                   disabled={game.month < appr.q + 6}
                   title={game.month < appr.q + 6
-                    ? `Too soon — ${appr.q + 6 - game.month} month${appr.q + 6 - game.month === 1 ? "" : "s"} to go`
-                    : "Ring them again. They may have changed their mind; they may not."}
+                    ? `${appr.q + 6 - game.month} mo until re-approach`
+                    : undefined}
                   onClick={() => approach(selectedBBL)}
                 >
-                  Approach the owner again
+                  Approach owner again
                 </button>
               </div>
             </>
           ) : (
             <>
               <div className="hint">
-                Not listed — but everything has a price.
+                Not listed.
                 {adjacency && assemblagePressure(game, adjacency, selectedBBL) > 0.3 &&
-                  " You own neighbors: expect holdout pricing."}
+                  " Adjacent owned lots: expect holdout pricing."}
               </div>
               <div className="btn-row">
                 <button className="btn" onClick={() => approach(selectedBBL)}>Approach the owner</button>
@@ -1468,7 +1469,7 @@ function ParcelPanelInner({
               k="Pre-let"
               v={(dev.signed?.length ?? 0)
                 ? `${dev.signed!.length} deal${dev.signed!.length === 1 ? "" : "s"} · ${sf(dev.signed!.reduce((a, x) => a + x.sf, 0))} spoken for`
-                : "None yet — tenants who take delivery risk show up here"}
+                : "None"}
               strong={(dev.signed?.length ?? 0) > 0}
             />
           </div>
@@ -1477,7 +1478,7 @@ function ParcelPanelInner({
               {dev.signed!.map((sg, i) => (
                 <div key={i} className="mini-row" style={{ cursor: "default" }}>
                   <span>{(sg.use || "space")} · {sf(sg.sf)}</span>
-                  <span className="mono dim">{((1 - sg.discount) * 100).toFixed(0)}% under market for delivery risk</span>
+                  <span className="mono dim">{((1 - sg.discount) * 100).toFixed(0)}% below market (pre-lease)</span>
                 </div>
               ))}
             </div>
@@ -1527,7 +1528,7 @@ function ParcelPanelInner({
                 key={u}
                 k={usesOf(rec).length > 1 ? `Asking · ${CLASS_LABEL[u] ?? u}` : "Asking rent"}
                 v={"$" + (u === "multifamily" ? flatsMarkPsf(rec, game.econ, holding) : currentAskPsfYr(rec, game.econ, holding, u)).toFixed(2)
-                  + (u === "multifamily" ? " /sf as flats turn over" : " /sf on new leases")}
+                  + (u === "multifamily" ? " /sf on turnover" : " /sf new leases")}
               />
             ))}
           </div>
@@ -1555,8 +1556,8 @@ function ParcelPanelInner({
               className={"btn" + (holding.autoLease ? " btn-on" : "")}
               onClick={() => useStore.getState().autoLease(selectedBBL, !holding.autoLease)}
               title={holding.autoLease
-                ? "Answering every letter here by the rent posture above. Click to take the letters back."
-                : "Let this building answer its own letters by the rent posture above — no pop-ups. Same commission and tenant reactions as signing yourself."}
+                ? "Auto-responding to LOIs at the asking setting. Click to disable."
+                : "Auto-respond to LOIs at the asking setting. Same commissions."}
             >
               {holding.autoLease ? "Auto-answer ✓" : "Auto-answer"}
             </button>
@@ -1565,7 +1566,7 @@ function ParcelPanelInner({
             <>
               <LegacyTiCapRow bbl={selectedBBL} />
               <div className="hint" style={{ fontSize: 11 }}>
-                {autoLeaseRule(game, holding)} The concession limit is the firm's, on the Leasing page.
+                {autoLeaseRule(game, holding)} Concession limit: Leasing page.
               </div>
             </>
           )}
@@ -1593,12 +1594,12 @@ function ParcelPanelInner({
             <div className="btn-row">
               <button
                 className={"btn" + (holding.broker ? " btn-on" : "")}
-                title="A listing exclusive: ~45% more tenant traffic while the space is vacant, and no retainer at all while it sits. They work the phones; you still take every letter. The house is paid 6% of the base rent over the full term of every lease signed while they hold the file, due at the signing, in place of the 4% on a new lease and 2% on a renewal your own people cost. Cheap to hold, expensive when it works."
+                title="~45% more tours while vacant. No retainer. 6% of term base rent at signing (vs 4% new / 2% renewal in-house)."
                 onClick={() => useStore.getState().broker(selectedBBL, !holding.broker)}
               >
                 {holding.broker
-                  ? "✓ Listing exclusive — they work the phones, you still sign · 6%"
-                  : "Hire listing exclusive · phones only, 6% when you sign"}
+                  ? "✓ Listing broker · 6%"
+                  : "Hire listing broker · 6% at signing"}
               </button>
             </div>
           )}
@@ -1627,11 +1628,11 @@ function ParcelPanelInner({
               <div className="modal-title">{rec.address}</div>
               <div className="modal-sub">
                 {useLabel(rec)} · {sf(rec.bldgArea)} · {rec.floors} fl · built {rec.yearBuilt}.
-                The site goes back to vacant land — the building, and every lease in it, does not come back.
+                Reverts to vacant land. All leases terminate. Irreversible.
               </div>
               <div className="grid">
                 <Row k="Demolition cost" v={usd(demoCost)} bad={demoCost > fundableNow(game, parcels)} strong />
-                <Row k="Cleared site is worth" v={usd(dirt)} />
+                <Row k="Cleared land value" v={usd(dirt)} />
                 {farMax > 0 && <Row k="Buildable envelope" v={`${sf(Math.round(rec.lotArea * farMax))} at ${farMax.toFixed(1)} FAR`} />}
                 <Row k="Cash and line" v={usd(fundableNow(game, parcels))} bad={demoCost > fundableNow(game, parcels)} />
               </div>
@@ -1639,15 +1640,15 @@ function ParcelPanelInner({
                 <button
                   className="btn btn-sell"
                   disabled={demoCost > fundableNow(game, parcels)}
-                  title={demoCost > fundableNow(game, parcels) ? "The wreckers want more than your cash and line together." : undefined}
+                  title={demoCost > fundableNow(game, parcels) ? "Exceeds cash + line." : undefined}
                   onClick={() => { setRazeAsk(null); useStore.getState().raze(selectedBBL); }}
                 >
-                  Take it down · {usd(demoCost)}
+                  Demolish · {usd(demoCost)}
                 </button>
-                <button className="btn" data-esc onClick={() => setRazeAsk(null)}>Leave it</button>
+                <button className="btn" data-esc onClick={() => setRazeAsk(null)}>Cancel</button>
                 <ShortBy need={demoCost} have={fundableNow(game, parcels)} />
               </div>
-              <div className="modal-queue">Wreckers work fast — the lot is clean dirt the same month.</div>
+              <div className="modal-queue">Site cleared same month.</div>
             </div>
           </div>
         );
@@ -1666,7 +1667,7 @@ function ParcelPanelInner({
 
       {on("summary") && holding && (
         <div className="deal">
-          <div className="deal-head">Your position · since {monthLabel(holding.boughtM)}</div>
+          <div className="deal-head">Position · since {monthLabel(holding.boughtM)}</div>
           <div className="grid">
             <Row k="Basis" v={usd(holding.costBasis)} />
             {(holding.deprTaken ?? 0) > 0 && <Row k="Depreciation taken" v={usd(-holding.deprTaken!)} />}
@@ -1708,7 +1709,7 @@ function ParcelPanelInner({
               </button>
             );
           })}
-          {neighbors.length === 0 && <div className="neighbor-none">No shared lot lines on record.</div>}
+          {neighbors.length === 0 && <div className="neighbor-none">None</div>}
         </div>
       </div>}
       {!embedded && tab === undefined && !holding && listing && (
@@ -1743,7 +1744,7 @@ function BuyCta({ bbl, ask, built }: { bbl: string; ask: number; built: boolean 
   const t = game.talks?.[bbl];
   const contract = t?.agreed ? t : null;
   const ip = built ? goingIn(game, bbl, contract?.agreedPrice ?? ask) : null;
-  const yieldTxt = ip && ip.noi > 0 ? `${((ip.noi / Math.max(1, contract?.agreedPrice ?? ask)) * 100).toFixed(1)}% going-in` : built ? "no income in place" : "land";
+  const yieldTxt = ip && ip.noi > 0 ? `${((ip.noi / Math.max(1, contract?.agreedPrice ?? ask)) * 100).toFixed(1)}% going-in` : built ? "no in-place income" : "land";
   const go = () => ref.current?.closest(".panel")?.querySelector("[data-buy-desk]")?.scrollIntoView({ behavior: "smooth", block: "start" });
   return (
     <div ref={ref} className={"panel-cta" + (hidden ? " panel-cta-hidden" : "")} aria-hidden={hidden}>
@@ -1752,7 +1753,7 @@ function BuyCta({ bbl, ask, built }: { bbl: string; ask: number; built: boolean 
         <span className="panel-cta-sub">{contract ? `under contract · fund by ${monthLabel((contract.closeByM ?? game.month + 3) - 1)}` : `ask · ${yieldTxt}`}</span>
       </div>
       <button type="button" className="btn btn-buy" tabIndex={hidden ? -1 : 0} onClick={go}>
-        {contract ? "Fund the close ↓" : t ? "Back to the table ↓" : "Make an offer ↓"}
+        {contract ? "Fund the close ↓" : t ? "Negotiation ↓" : "Make an offer ↓"}
       </button>
     </div>
   );
@@ -1789,7 +1790,7 @@ function PaydownRow({ bbl }: { bbl: string }) {
         value={txt} onChange={(e) => setTxt(e.target.value)}
       />
       {cure > 0 && (
-        <button className="btn" title="The paydown that brings the note back inside its covenants" onClick={() => setTxt(String(cure))}>
+        <button className="btn" title="Paydown to restore covenant compliance" onClick={() => setTxt(String(cure))}>
           Cure · {usd(cure)}
         </button>
       )}
@@ -1797,12 +1798,12 @@ function PaydownRow({ bbl }: { bbl: string }) {
       <button className="btn" onClick={() => setTxt(String(Math.round(bal * 0.25)))}>25%</button>
       <button
         className="btn btn-buy" disabled={!valid || tooMuch || !!jvBlock}
-        title={jvBlock ? jvBlock : !valid ? "Less than the balance — Pay off retires the whole note." : tooMuch ? `Needs ${usd(amt + pen)} in cash.` : undefined}
+        title={jvBlock ? jvBlock : !valid ? "Must be below balance; use Pay off for full." : tooMuch ? `Needs ${usd(amt + pen)} cash` : undefined}
         onClick={() => { useStore.getState().paydownLoan(bbl, amt); setTxt(""); }}
       >
         Pay down{valid ? ` · ${usd(amt + pen)}` : ""}
       </button>
-      {valid && pen > 0 && <span className="hint">includes {usd(pen)} to prepay early</span>}
+      {valid && pen > 0 && <span className="hint">incl. {usd(pen)} prepayment penalty</span>}
     </div>
   );
 }
@@ -1824,16 +1825,16 @@ function LeaseholdSection({ bbl }: { bbl: string }) {
     const cost = landBuybackCost(game, h);
     return (
       <div className="deal">
-        <div className="deal-head">Leasehold · the land is {g.holder}'s</div>
+        <div className="deal-head">Leasehold · fee owner {g.holder}</div>
         <div className="grid">
-          <Row k="Ground rent" v={`${usd(g.rentYr)} a year · rising ${(g.stepPct * 100).toFixed(0)}% every ${monthLabel(g.lastStepM + 12).split(" ")[0]}`} />
+          <Row k="Ground rent" v={`${usd(g.rentYr)}/yr · +${(g.stepPct * 100).toFixed(0)}% each ${monthLabel(g.lastStepM + 12).split(" ")[0]}`} />
           <Row k="Term" v={`to ${monthLabel(g.endM)}`} />
           <Row k="Land sold for" v={usd(g.price)} />
-          <Row k="Buy it back today" v={usd(cost)} title="The ground rent at today's ground-lease yield, plus the transfer and counsel." />
+          <Row k="Buyback cost" v={usd(cost)} title="Ground rent / current yield + transfer and legal." />
         </div>
         <div className="btn-row">
           <button className="btn" disabled={fundableNow(game, parcels) < cost} onClick={() => useStore.getState().buyLandBack(bbl)}>
-            Buy the land back · {usd(cost)}
+            Buy back land · {usd(cost)}
           </button>
           <ShortBy need={cost} have={fundableNow(game, parcels)} />
         </div>
@@ -1843,27 +1844,25 @@ function LeaseholdSection({ bbl }: { bbl: string }) {
   const q = leaseholdQuote(game, parcels, bbl);
   return (
     <div className="deal">
-      <div className="deal-head">Sell the land, keep the building</div>
+      <div className="deal-head">Land sale-leaseback</div>
       <div className="hint">
-        A long-money buyer takes the dirt and leases it back to you for 99 years. You keep the building and every
-        lease in it; the rent comes off your NOI before the mortgage does, and it rises every year whatever your own
-        rents do. It is cash without a lender — no coupon to reset, no balloon, no covenant.
+        99-yr ground lease back to you. Ground rent reduces NOI and escalates annually. No maturity or covenants.
       </div>
       {q.price > 0 && (
         <div className="grid">
-          <Row k="The land sells for" v={usd(q.price)} />
-          <Row k="Ground rent" v={`${usd(q.rentYr)} a year · ${q.yieldPct.toFixed(2)}% · +${(LEASEHOLD_STEP * 100).toFixed(0)}% a year`} />
+          <Row k="Land price" v={usd(q.price)} />
+          <Row k="Ground rent" v={`${usd(q.rentYr)}/yr · ${q.yieldPct.toFixed(2)}% · +${(LEASEHOLD_STEP * 100).toFixed(0)}%/yr`} />
           <Row k="Costs" v={usd(-q.costs)} />
           {q.payoff > 0 && <Row k="Mortgage retired" v={usd(-q.payoff)} />}
-          {q.tax > 0 && <Row k="Tax on the land's gain" v={usd(-q.tax)} />}
-          <Row k="To you" v={usd(q.toOwner)} strong bad={q.toOwner < 0} />
-          <Row k="The building marks at" v={`${usd(q.valueAfter)} (was ${usd(q.valueBefore)})`} />
+          {q.tax > 0 && <Row k="Tax on gain" v={usd(-q.tax)} />}
+          <Row k="Net proceeds" v={usd(q.toOwner)} strong bad={q.toOwner < 0} />
+          <Row k="Building value after" v={`${usd(q.valueAfter)} (was ${usd(q.valueBefore)})`} />
         </div>
       )}
       {!q.ok && q.why && <div className="hint">{q.why}</div>}
       <div className="btn-row">
         <button className="btn" disabled={!q.ok} onClick={() => useStore.getState().sellLandLeaseBack(bbl)}>
-          Sell the land · {usd(Math.max(0, q.toOwner))} to you
+          Sell land · {usd(Math.max(0, q.toOwner))} net
         </button>
       </div>
     </div>
@@ -1893,23 +1892,21 @@ function StakeSection({ bbl }: { bbl: string }) {
       <div className="deal">
         <div className="deal-head">Syndicated · {syn.investor} since {monthLabel(syn.formedM)}</div>
         <div className="hint">
-          Every month the cash this deed makes, or needs, settles with them: a surplus is paid through the waterfall — their capital and a {pc(syn.pref)} pref
-          first, pari passu with yours, then {pc(syn.promote)} of what is above a {pc(syn.hurdle)} IRR to you — and a shortfall is a call, their
-          {" "}{pc(syn.lpShare)} share until their commitment is in. Overruns past it are yours. Refinancing is yours to run; changing the plan,
-          the land or the title needs them, and they will not agree.
+          Monthly waterfall: capital + {pc(syn.pref)} pref pari passu, then {pc(syn.promote)} promote above {pc(syn.hurdle)} IRR.
+          Shortfalls called at {pc(syn.lpShare)} LP share up to commitment; overruns beyond are yours. Refi allowed; plan, land or title changes blocked.
         </div>
         <div className="grid">
           <Row k="Committed · called" v={`${usd(syn.lpCommit)} · ${usd(syn.lpCalled)}`} />
-          <Row k="Paid to them so far" v={usd(syn.lpDist)} />
+          <Row k="Distributed to LPs" v={usd(syn.lpDist)} />
           {syn.flags.length > 0 && (
-            <Row k="Their report flags" bad
-              v={syn.flags.map((f) => ({ late: "behind schedule", over: "over budget", leaseup: "short of the pitched income", dist: "no distributions in a year" } as Record<string, string>)[f] ?? f).join(" · ")}
-              title="Each flag is −3 on your record with every investor until the deal's real result replaces it (at most −10 a deal)." />
+            <Row k="LP report flags" bad
+              v={syn.flags.map((f) => ({ late: "behind schedule", over: "over budget", leaseup: "below pro forma income", dist: "no distributions in 12 mo" } as Record<string, string>)[f] ?? f).join(" · ")}
+              title="−3 investor record per flag until deal resolves (max −10/deal)." />
           )}
-          <Row k="Their share of the capital" v={pc(syn.capShare)} />
-          <Row k="Owed them before any promote" v={pastPref ? "nothing — the pref is paid" : usd(syn.owedAtPref)} />
-          <Row k={`To their ${pc(syn.hurdle)} hurdle`} v={pastHurdle ? "cleared — you earn the promote" : usd(syn.owedAtHurdle)} />
-          <Row k="Equity at the mark · yours · theirs" v={`${usd(syn.equity)} · ${usd(syn.yours)} · ${usd(syn.theirs)}`} title="Liquidated through the waterfall today: what each side would take of the deal's equity at its mark." />
+          <Row k="LP capital share" v={pc(syn.capShare)} />
+          <Row k="Owed to pref" v={pastPref ? "Pref paid" : usd(syn.owedAtPref)} />
+          <Row k={`To ${pc(syn.hurdle)} hurdle`} v={pastHurdle ? "Cleared · promote earned" : usd(syn.owedAtHurdle)} />
+          <Row k="Equity · total · GP · LP" v={`${usd(syn.equity)} · ${usd(syn.yours)} · ${usd(syn.theirs)}`} title="Marked equity run through the waterfall today." />
         </div>
         {(() => {
           // REFINANCE THEM OUT AND KEEP IT (recap.ts): their waterfall take on
@@ -1920,8 +1917,8 @@ function StakeSection({ bbl }: { bbl: string }) {
           return (
             <>
               <div className="grid" style={{ marginTop: 6 }}>
-                <Row k="Buy them out today" v={`${usd(q.price)}${q.premium ? ` (incl. ${usd(q.premium)} fairness premium)` : ""}${q.transferTax ? ` + ${usd(q.transferTax)} transfer tax` : ""}`}
-                  title={`What a sale at the ${usd(q.appraisal)} appraisal would pay them through the waterfall — capital, pref and tiers — with no broker. Sell it within two years for 15% more than that and investors will say you bought them out cheap.`} />
+                <Row k="LP buyout" v={`${usd(q.price)}${q.premium ? ` (incl. ${usd(q.premium)} fairness premium)` : ""}${q.transferTax ? ` + ${usd(q.transferTax)} transfer tax` : ""}`}
+                  title={`LP waterfall share at ${usd(q.appraisal)} appraisal, no broker. Resale >15% higher within 2 yrs hurts investor record.`} />
               </div>
               <div className="btn-row">
                 <button className="btn" disabled={!can} onClick={() => useStore.getState().recapBuyout(bbl)}>Buy them out · {usd(q.total)}</button>
@@ -1939,13 +1936,11 @@ function StakeSection({ bbl }: { bbl: string }) {
       <div className="deal">
         <div className="deal-head">Partner · {h.jv.partner} owns {Math.round(h.jv.share * 100)}%</div>
         <div className="hint">
-          They take {Math.round(h.jv.share * 100)}% of every month's cash and of any sale, and fund the same share of every
-          capital call. New debt, a pay-down, a renovation, a conversion or selling the land needs their consent — which
-          means buying them out.
+          {Math.round(h.jv.share * 100)}% of cash flow, sale proceeds and capital calls. Debt, paydown, renovation, conversion or land sale require buyout.
         </div>
         <div className="grid">
-          <Row k="They paid" v={`${usd(h.jv.price)} · ${monthLabel(h.jv.sinceM)}`} />
-          <Row k="Buy them out today" v={usd(cost)} title="Their full pro-rata share of today's equity — control is what you are buying — plus counsel and transfer." />
+          <Row k="Partner paid" v={`${usd(h.jv.price)} · ${monthLabel(h.jv.sinceM)}`} />
+          <Row k="Buyout cost" v={usd(cost)} title="Pro-rata equity (no minority discount) + legal and transfer." />
         </div>
         <div className="btn-row">
           <button className="btn" disabled={fundableNow(game, parcels) < cost} onClick={() => useStore.getState().buyOutPartner(bbl)}>
@@ -1959,11 +1954,9 @@ function StakeSection({ bbl }: { bbl: string }) {
   const q = stakeQuote(game, parcels, bbl, share);
   return (
     <div className="deal">
-      <div className="deal-head">Sell a share to a partner</div>
+      <div className="deal-head">Sell JV stake</div>
       <div className="hint">
-        Equity without a lender: a passive investor buys a minority stake at {Math.round(JV_MINORITY_DISCOUNT * 100)}% under
-        its share of the equity. You keep running it; they take their share of the cash and fund their share of the calls,
-        and the big decisions need them.
+        Passive minority stake at {Math.round(JV_MINORITY_DISCOUNT * 100)}% discount to pro-rata equity. Partner shares cash and calls; major decisions need consent.
       </div>
       <div className="btn-row">
         {JV_SHARES.map((sh) => (
@@ -1972,16 +1965,16 @@ function StakeSection({ bbl }: { bbl: string }) {
       </div>
       {q.equity > 0 && (
         <div className="grid">
-          <Row k="Equity in the building" v={usd(q.equity)} />
-          <Row k={`Their ${Math.round(share * 100)}% pays`} v={usd(q.price)} />
-          {q.tax > 0 && <Row k="Tax on your gain" v={usd(-q.tax)} />}
-          <Row k="To you" v={usd(q.toOwner)} strong />
+          <Row k="Building equity" v={usd(q.equity)} />
+          <Row k={`${Math.round(share * 100)}% stake price`} v={usd(q.price)} />
+          {q.tax > 0 && <Row k="Tax on gain" v={usd(-q.tax)} />}
+          <Row k="Net proceeds" v={usd(q.toOwner)} strong />
         </div>
       )}
       {!q.ok && q.why && <div className="hint">{q.why}</div>}
       <div className="btn-row">
         <button className="btn" disabled={!q.ok} onClick={() => useStore.getState().sellStake(bbl, share)}>
-          Sell {Math.round(share * 100)}% · {usd(Math.max(0, q.toOwner))} to you
+          Sell {Math.round(share * 100)}% · {usd(Math.max(0, q.toOwner))} net
         </button>
       </div>
     </div>
@@ -2002,7 +1995,7 @@ function LegacyTiCapRow({ bbl }: { bbl: string }) {
   if (cap === undefined) return null;
   return (
     <div className="btn-row" style={{ alignItems: "center" }}>
-      <span className="hint">Building fit-out cap ${cap.toFixed(2)}/sf per lease year (on top of the firm's limit)</span>
+      <span className="hint">Building TI cap ${cap.toFixed(2)}/sf/lease yr (plus firm limit)</span>
       <button className="btn btn-mini" onClick={() => useStore.getState().autoTiCap(bbl, undefined)}>Clear</button>
     </div>
   );

@@ -54,10 +54,10 @@ function useAssembleCandidates(
       const deeds = siteDeeds(game, n).length;
       const why = !r ? "unknown parcel"
         : game.developments[n] ? "under construction"
-        : game.groundLeases?.[n] ? "ground-leased to somebody else"
-        : game.holdings[n]?.sale ? "on the market — pull the listing"
+        : game.groundLeases?.[n] ? "ground-leased"
+        : game.holdings[n]?.sale ? "listed for sale"
         : game.landmarks?.[n] !== undefined ? "landmarked"
-        : r.class !== "land" || r.bldgArea > 0 ? `${useLabel(r)} standing — clear it first`
+        : r.class !== "land" || r.bldgArea > 0 ? `${useLabel(r)} standing`
         : null;
       const loan = assemblyPayoff(game, [n]).due;
       return { bbl: n, rec: r, why, area, deeds, loan };
@@ -96,8 +96,7 @@ export function AssetHistory({ bbl }: { bbl: string }) {
       <div className="deal">
         <div className="deal-head">Track record</div>
         <div className="hint">
-          Held since {monthLabel(h.boughtM)}. The record is stamped every quarter — there is not
-          enough of it yet to draw.
+          Held since {monthLabel(h.boughtM)}. Recorded quarterly; not enough data yet.
         </div>
       </div>
     );
@@ -113,24 +112,24 @@ export function AssetHistory({ bbl }: { bbl: string }) {
   const yrs = Math.max(0.25, (rows[rows.length - 1][0] - rows[0][0]) / 12);
   return (
     <div className="deal">
-      <div className="deal-head">Track record · {yrs.toFixed(1)} years on the books</div>
+      <div className="deal-head">Track record · {yrs.toFixed(1)} yrs</div>
       <div className="grid">
-        <Row k="Occupancy" v={`${occ[occ.length - 1].toFixed(0)}% · ${dOcc >= 0 ? "+" : ""}${dOcc.toFixed(0)}pp since you bought it`} bad={dOcc < -5} />
+        <Row k="Occupancy" v={`${occ[occ.length - 1].toFixed(0)}% · ${dOcc >= 0 ? "+" : ""}${dOcc.toFixed(0)}pp since purchase`} bad={dOcc < -5} />
         <Row k="In-place rent" v={`$${rent[rent.length - 1].toFixed(2)}/sf · ${dRent >= 0 ? "+" : ""}${dRent.toFixed(0)}% · ${(Math.pow(1 + dRent / 100, 1 / yrs) - 1 >= 0 ? "+" : "")}${((Math.pow(1 + dRent / 100, 1 / yrs) - 1) * 100).toFixed(1)}%/yr`} />
         <Row k="NOI" v={`${usd(noi[noi.length - 1])}/yr`} bad={noi[noi.length - 1] < 0} strong />
       </div>
       <div className="chart-stack">
-        <div className="chart-cap">Occupancy · % of the building let</div>
+        <div className="chart-cap">Occupancy · %</div>
         <LineChart
           series={[{ label: "Occupied", color: "#2f7a72", pts: occ }]}
           xLabels={xs} height={104} yFmt={(v) => v.toFixed(0) + "%"} xAt={(i) => monthLabel(rows[i][0])}
         />
-        <div className="chart-cap">In-place rent · $/sf/yr on let space</div>
+        <div className="chart-cap">In-place rent · $/sf/yr</div>
         <LineChart
           series={[{ label: "In place", color: "#b07f1e", pts: rent }]}
           xLabels={xs} height={104} yFmt={(v) => "$" + v.toFixed(2)} xAt={(i) => monthLabel(rows[i][0])}
         />
-        <div className="chart-cap">Net operating income · $/yr</div>
+        <div className="chart-cap">NOI · $/yr</div>
         <LineChart
           series={[{ label: "NOI", color: "#3a7d46", pts: noi }]}
           xLabels={xs} height={104} zeroBase yFmt={usd} xAt={(i) => monthLabel(rows[i][0])}
@@ -206,55 +205,55 @@ export function WorkoutDesk({ bbl }: { bbl: string }) {
   return (
     <div className="page-section">
       <div className="page-section-head neg">
-        {filed ? "Foreclosure filed" : w.stage === "forbearance" ? "Forbearance — extended paper" : "In default"}
+        {filed ? "Foreclosure filed" : w.stage === "forbearance" ? "Forbearance" : "In default"}
         {" · "}{w.lender}
       </div>
       <div className="hint">
         {w.cause === "balloon"
-          ? "The loan matured and there was no refinancing and no cash to close the gap."
+          ? "Matured unrefinanced."
           : w.cause === "covenant"
-            ? "The covenant is broken and the cure period has not fixed it."
-            : "The payments stopped."}{" "}
+            ? "Covenant breach, uncured."
+            : "Payments missed."}{" "}
         {filed
-          ? `They have filed. The auction is set for ${monthLabel(w.decideM)} — ${monthsLeft} month${monthsLeft === 1 ? "" : "s"} from now — and an auction fetches less than a distress sale does, because everybody bidding knows the seller has no choice at all.`
+          ? `Auction ${monthLabel(w.decideM)} (${monthsLeft} mo). Auction prices below distress sale.`
           : couponOk
-            ? `The coupon is fundable — they will not file while you keep it current. Cure it outright, refinance, or sell before that changes.`
-            : `You have until ${monthLabel(w.decideM)}, ${monthsLeft} month${monthsLeft === 1 ? "" : "s"}, before they file.`}
+            ? `Debt service fundable: no filing while current.`
+            : `Filing ${monthLabel(w.decideM)} (${monthsLeft} mo).`}
       </div>
       <div className="grid" style={{ marginBottom: 10 }}>
         <Row k="Balance owed" v={usd(bal)} strong />
-        <Row k="What the building is worth" v={usd(value)} />
-        <Row k="Equity behind it" v={usd(equity)} bad={equity < 0} strong={equity > 0} />
-        <Row k="Paper" v={h.loan.recourse ? "recourse — a shortfall follows you" : "non-recourse — the keys are the answer"}
+        <Row k="Value" v={usd(value)} />
+        <Row k="Equity" v={usd(equity)} bad={equity < 0} strong={equity > 0} />
+        <Row k="Loan" v={h.loan.recourse ? "Recourse · shortfall is yours" : "Non-recourse"}
           bad={h.loan.recourse} />
-        <Row k="To cure it outright" v={usd(w.cure)} bad={!canCure} />
+        <Row k="Cure amount" v={usd(w.cure)} bad={!canCure} />
         <Row k={allowLoc ? "Liquidity (cash + line)" : "Cash on hand"} v={usd(liquidity)} bad={!canCure} />
       </div>
       <div className="hint" style={{ marginBottom: 8 }}>{mood.why}</div>
       <div className="btn-row">
         <button className="btn" disabled={!canCure} onClick={() => cureDefault(bbl)}
-          title={!canCure ? `You are ${usd(w.cure - liquidity)} short` : "Pay it and the file closes"}>
+          title={!canCure ? `${usd(w.cure - liquidity)} short` : "Pay cure; default closes"}>
           Cure — {usd(w.cure)}
         </button>
         {!filed && w.asks < 1 && (
           <button className="btn" onClick={() => askForbearance(bbl)}
             title={mood.willExtend
-              ? `${(mood.feePct * 100).toFixed(0)}% fee and a ${(mood.paydownPct * 100).toFixed(0)}% paydown — ${usd(fee + paydown)} — for 18 to 30 months, at ${(h.loan.ratePct + mood.bumpPct).toFixed(2)}% with cash flow swept`
-              : "They can be asked. On this balance sheet they will almost certainly say no."}>
-            Ask them to extend{mood.willExtend ? ` — ${usd(fee + paydown)}` : ""}
+              ? `${(mood.feePct * 100).toFixed(0)}% fee + ${(mood.paydownPct * 100).toFixed(0)}% paydown (${usd(fee + paydown)}) · 18-30 mo · ${(h.loan.ratePct + mood.bumpPct).toFixed(2)}% · cash sweep`
+              : "Lender very unlikely to agree."}>
+            Request forbearance{mood.willExtend ? ` · ${usd(fee + paydown)}` : ""}
           </button>
         )}
         <button className="btn btn-danger" onClick={() => handBackKeys(bbl)}
-          title="Deed in lieu: the debt is settled in full, there is no deficiency even on recourse paper, and it is a smaller mark than an auction">
-          Hand back the deed
+          title="Debt settled in full, no deficiency. Smaller mark than auction.">
+          Deed in lieu
         </button>
       </div>
       <div className="hint" style={{ marginTop: 8 }}>
         {equity > bal * 0.12
-          ? "There is real equity here. Curing it or selling it into the open market beats handing it over — a deed in lieu gives away everything above the debt."
+          ? "Equity above debt. Deed in lieu forfeits it; cure or sell."
           : h.loan.recourse
-            ? "You signed for this one. At auction the shortfall comes out of your account; a deed in lieu settles the debt in full and there is no deficiency. That difference is the whole reason to walk into their office rather than wait."
-            : "The paper is non-recourse and the debt is above the value. Handing it back costs you the building and nothing else, and it is a smaller mark than letting them take it."}
+            ? "Recourse: auction shortfall is yours. Deed in lieu: no deficiency."
+            : "Non-recourse, debt above value. Deed in lieu costs the building only."}
       </div>
     </div>
   );
@@ -307,7 +306,7 @@ export function MinDealSize({ bbl }: { bbl: string }) {
   const max = Math.max(1000, Math.round(biggest / 500) * 500);
   return (
     <div className="deal">
-      <div className="deal-head">Smallest deal you'll sign</div>
+      <div className="deal-head">Minimum lease size</div>
       <Slider
         label="Minimum new lease"
         value={v}
@@ -319,8 +318,8 @@ export function MinDealSize({ bbl }: { bbl: string }) {
         format={(x) => (x > 0 ? `${sf(x)} and up` : `any size · building minimum ${sf(floorSf)}`)}
         marks={[{ at: 0, label: "any" }, { at: max, label: sf(max) }]}
         hint={v > 0
-          ? `Prospects asking for less than ${sf(v)} are turned away. Fewer tenants want space that big, so expect longer vacancy. Renewals and expansions of tenants already here aren't affected, and a tenant taking everything still vacant always gets in. Letters already on your desk stay for you to answer.`
-          : "Any tenant down to the building's own smallest suite can lease here. Set a floor to keep the building in big blocks, at the cost of a smaller tenant pool."}
+          ? `Prospects under ${sf(v)} declined; smaller pool, longer vacancy. Renewals, expansions and full-vacancy deals exempt.`
+          : "No minimum. A floor keeps large blocks; smaller tenant pool."}
       />
     </div>
   );
@@ -338,30 +337,30 @@ export function LettingOdds({ bbl }: { bbl: string }) {
   if (!legs.length) return null;
   return (
     <div className="deal">
-      <div className="deal-head">Letting — where you stand in the market</div>
+      <div className="deal-head">Leasing odds</div>
       {legs.map((o) => (
         <div key={o.use}>
           {legs.length > 1 && (
             <div className="page-section" style={{ marginTop: 2 }}>{SECTOR_LABEL[o.use]}</div>
           )}
           <div className="grid">
-            <Row k="You are marketing" v={`${sf(Math.round(o.availSf))} · reads as ${sf(Math.round(o.marketedSf))} of usable space`} />
+            <Row k="Marketed" v={`${sf(Math.round(o.availSf))} · ${sf(Math.round(o.marketedSf))} usable`} />
             <Row
-              k="Vacancy · city / your corner"
+              k="Vacancy · city / local"
               v={`${(o.cityVac * 100).toFixed(1)}% / ${(o.localVac * 100).toFixed(1)}%`}
               bad={o.localVac > o.cityVac * 1.12}
             />
-            <Row k="Competing supply" v={`${sf(Math.round(o.competingSf))} available or coming back`} />
-            <Row k="The city is looking for" v={`${sf(Math.round(o.requirementSf))} this month`} />
-            <Row k="Your share of it" v={`${(o.shareOfMarket * 100).toFixed(2)}% · about ${sf(Math.round(o.captureSf))} a month`} />
+            <Row k="Competing supply" v={`${sf(Math.round(o.competingSf))} available or rolling`} />
+            <Row k="Tenant demand" v={`${sf(Math.round(o.requirementSf))} / mo`} />
+            <Row k="Capture" v={`${(o.shareOfMarket * 100).toFixed(2)}% · ~${sf(Math.round(o.captureSf))} / mo`} />
             <Row
-              k="Your ask vs the market"
+              k="Ask vs market"
               v={`${o.askPsf.toFixed(2)} vs ${o.marketPsf.toFixed(2)}`}
               bad={o.askPsf > o.marketPsf * 1.04}
             />
             <Row
-              k="To 85% let at this pace"
-              v={o.monthsToLet === null ? "it does not get there" : o.monthsToLet <= 0 ? "already there" : `${o.monthsToLet} months`}
+              k="Time to 85% leased"
+              v={o.monthsToLet === null ? "Not reached" : o.monthsToLet <= 0 ? "Reached" : `${o.monthsToLet} mo`}
               strong
               bad={o.monthsToLet === null || o.monthsToLet > 48}
             />
@@ -376,7 +375,7 @@ export function LettingOdds({ bbl }: { bbl: string }) {
               </div>
             ))}
             <div className="roll-row roll-group">
-              <span className="roll-name">This building against an ordinary one</span>
+              <span className="roll-name">Vs. average building</span>
               <span className="roll-meta mono">×{o.weight.toFixed(2)}</span>
             </div>
           </div>
@@ -422,17 +421,17 @@ export function LeasingDesk({ bbl }: { bbl: string }) {
         <div className="grid">
           <Row k="Pre-built space" v={`${sf(spec.sf)} of ${USE_WORD[spec.use]}`} strong />
           <Row k={game.month >= spec.readyM ? "Status" : "Ready"}
-            v={game.month >= spec.readyM ? "Turnkey and being toured" : monthLabel(spec.readyM)} />
+            v={game.month >= spec.readyM ? "Turnkey · touring" : monthLabel(spec.readyM)} />
         </div>
       )}
 
       {!spec && q && leg && (
         <>
           {/* a step inside the desk, not a second title under its title */}
-          <div className="ops-choice-k" style={{ margin: "4px 0 2px" }}>Pre-build the space</div>
+          <div className="ops-choice-k" style={{ margin: "4px 0 2px" }}>Spec suites</div>
           <div className="slider">
             <div className="slider-head">
-              <span className="slider-label">{USE_WORD[leg.u]} to fit out · of {sf(Math.round(leg.free))} open</span>
+              <span className="slider-label">{USE_WORD[leg.u]} fit-out · {sf(Math.round(leg.free))} vacant</span>
               <span className="slider-value">{sf(q.sf)}</span>
             </div>
             <input type="range" min={800} max={Math.round(leg.free)} step={100} value={want}
@@ -444,8 +443,7 @@ export function LeasingDesk({ bbl }: { bbl: string }) {
             <Row k="Ready" v={monthLabel(q.readyM)} />
           </div>
           <div className="hint">
-            Turnkey suites tour nearly twice as often, ask about 5% more rent, and need almost no fit-out allowance —
-            because you have already paid it. If the space sits anyway, so does the money.
+            Turnkey: ~2× tours, ~+5% rent, minimal TI. Cost sunk if unleased.
           </div>
           <button className="btn" onClick={() => prebuild(bbl, leg.u, q.sf)}>
             Pre-build {sf(q.sf)} for {usd(q.cost)}
@@ -455,7 +453,7 @@ export function LeasingDesk({ bbl }: { bbl: string }) {
 
       {extends_.length > 0 && (
         <>
-          <div className="page-section" style={{ marginTop: 10 }}>Go to a tenant early</div>
+          <div className="page-section" style={{ marginTop: 10 }}>Early renewal</div>
           <table className="tbl">
             <thead>
               <tr><th>Tenant</th><th className="num">Rent now</th><th className="num">Market</th><th className="num">They&apos;ll take</th><th className="num">Adds</th><th /></tr>
@@ -474,8 +472,7 @@ export function LeasingDesk({ bbl }: { bbl: string }) {
             </tbody>
           </table>
           <div className="hint">
-            Blend and extend: give up rent today, take term for it. Cheap WALT if the market is about to soften,
-            and a discount you did not need to give if it is not.
+            Blend and extend: lower rent now for added term (WALT).
           </div>
         </>
       )}
@@ -517,17 +514,17 @@ export function ResidualRead({ bbl }: { bbl: string }) {
     return (
       <div className="grid">
         <Row k="Zoned" v={`${rec.zoneDist} · houses only`} strong />
-        <Row k="Homebuilder's bid" v={`${usd(Math.round((read.homes ?? 0) * lot))} · $${(read.homes ?? 0).toFixed(2)}/sf, after the sell-out`} />
-        <Row k="What it trades at" v={`${usd(Math.round(read.psf * lot))} · $${read.psf.toFixed(2)}/sf — ${read.winner === "homes" ? "a homebuilder is the high bidder" : "no builder pays more than the farm under it"}`} />
+        <Row k="Homebuilder bid" v={`${usd(Math.round((read.homes ?? 0) * lot))} · $${(read.homes ?? 0).toFixed(2)}/sf after sell-out`} />
+        <Row k="Market land value" v={`${usd(Math.round(read.psf * lot))} · $${read.psf.toFixed(2)}/sf · ${read.winner === "homes" ? "set by homebuilder" : "set by farm value"}`} />
       </div>
     );
   }
   if (read.winner === "builder" && s) {
     return (
       <div className="grid">
-        <Row k="What pencils" v={`${USE_LABEL[s.use] ?? s.use} at ${s.floors} floors — worth $${s.valuePsf.toFixed(0)}/sf built against $${s.costPsf.toFixed(0)}/sf all-in`} strong />
-        <Row k="Residual to the dirt" v={`${usd(Math.round(read.builder * lot))} · $${read.builder.toFixed(0)}/sf of land, after the builder's margin and the wait`} />
-        <Row k="What it trades at" v={`${usd(Math.round(read.psf * lot))} · $${read.psf.toFixed(0)}/sf — a builder is the high bidder here`} />
+        <Row k="Best use" v={`${USE_LABEL[s.use] ?? s.use} · ${s.floors} fl · value $${s.valuePsf.toFixed(0)}/sf · cost $${s.costPsf.toFixed(0)}/sf`} strong />
+        <Row k="Residual land value" v={`${usd(Math.round(read.builder * lot))} · $${read.builder.toFixed(0)}/sf net of margin and carry`} />
+        <Row k="Market land value" v={`${usd(Math.round(read.psf * lot))} · $${read.psf.toFixed(0)}/sf · set by builder`} />
       </div>
     );
   }
@@ -538,10 +535,10 @@ export function ResidualRead({ bbl }: { bbl: string }) {
         // $420 against $351 — beside the words "nothing pencils". What fails is
         // the land bid: after the builder's margin and the years of carry, the
         // scheme leaves less for the dirt than a holder or the street will pay.
-        ? <Row k="Nothing pencils today" v={`the best scheme (${USE_LABEL[s.use] ?? s.use}) is worth $${s.valuePsf.toFixed(0)}/sf finished against $${s.costPsf.toFixed(0)}/sf to build — after the builder's margin and the wait that ${read.builder > 0 ? `leaves $${read.builder.toFixed(0)}/sf for the land, under the $${read.psf.toFixed(0)}/sf it trades at` : "leaves nothing for the land"}`} strong />
-        : <Row k="Nothing pencils today" v="no use covers its own construction at these rents" strong />}
-      <Row k="Held for the next cycle" v={`${usd(Math.round(read.holder * lot))} · $${read.holder.toFixed(0)}/sf — the residual at peak rents, discounted for the years of waiting`} />
-      <Row k="What it trades at" v={`${usd(Math.round(read.psf * lot))} · $${read.psf.toFixed(0)}/sf — ${read.winner === "holder" ? "a holder is the high bidder" : "the street sets it, not the income"}`} />
+        ? <Row k="Not feasible" v={`Best: ${USE_LABEL[s.use] ?? s.use} · value $${s.valuePsf.toFixed(0)}/sf · cost $${s.costPsf.toFixed(0)}/sf · residual ${read.builder > 0 ? `$${read.builder.toFixed(0)}/sf vs market $${read.psf.toFixed(0)}/sf` : "$0"}`} strong />
+        : <Row k="Not feasible" v="No use covers construction cost" strong />}
+      <Row k="Hold value" v={`${usd(Math.round(read.holder * lot))} · $${read.holder.toFixed(0)}/sf · peak residual, discounted`} />
+      <Row k="Market land value" v={`${usd(Math.round(read.psf * lot))} · $${read.psf.toFixed(0)}/sf · ${read.winner === "holder" ? "set by holder" : "location floor"}`} />
     </div>
   );
 }
@@ -573,9 +570,9 @@ export function AssembleSection({
   const vacant = rec.class === "land" && rec.bldgArea === 0;
   const children = siteDeeds(game, bbl).slice(1);
   const selfBlocked = !vacant
-    ? `${useLabel(rec)} standing — clear this site before folding anything in`
-    : game.groundLeases?.[bbl] ? "ground-leased — pull it back before folding title"
-    : h.sale ? "on the market — pull the listing first"
+    ? `${useLabel(rec)} standing; demolish first`
+    : game.groundLeases?.[bbl] ? "ground-leased; end lease first"
+    : h.sale ? "listed for sale; delist first"
     : null;
   if (!children.length && !eligible.length && !blocked.length) return null;
 
@@ -606,14 +603,12 @@ export function AssembleSection({
       {!embedded && <div className="deal-head">Assemble contiguous lots</div>}
       {selfBlocked && (eligible.length > 0 || blocked.length > 0) && (
         <div className="hint">
-          You own contiguous dirt next to this parcel, but {selfBlocked.toLowerCase()}. Assembling moves the land into
-          one site — every deed in the filing has to be clear vacant ground.
+          Cannot assemble: {selfBlocked.toLowerCase()}. All lots must be vacant.
         </div>
       )}
       {children.length > 0 && (
         <div className="hint">
-          Assembled site — {children.length + 1} deeds, {sf(rec.lotArea)} of land, {sf(Math.round(rec.lotArea * farMax))} buildable.
-          {eligible.length > 0 ? " Fold in more contiguous lots below to grow it." : ""}
+          Assembled site · {children.length + 1} deeds · {sf(rec.lotArea)} land · {sf(Math.round(rec.lotArea * farMax))} buildable
         </div>
       )}
       {(eligible.length > 0 || blocked.length > 0) && (
@@ -630,10 +625,6 @@ export function AssembleSection({
               </button>
             )}
           </div>
-          <div className="hint">
-            Own two or more lots that touch — including through a lot you already folded in — and you can turn them
-            into one site: one plate, one envelope, one address.
-          </div>
           <div className="mini-list">
             {eligible.map((x) => {
               const on = livePicked.includes(x.bbl);
@@ -643,9 +634,9 @@ export function AssembleSection({
                   onClick={() => setPicked(on ? livePicked.filter((n) => n !== x.bbl) : [...livePicked, x.bbl])}>
                   <span className="neighbor-addr">{on ? "✓ " : ""}{x.rec?.address ?? x.bbl}</span>
                   <span className="neighbor-meta">
-                    {sf(x.area)} of land
-                    {x.deeds > 1 ? ` · ${x.deeds} deeds already assembled` : " · vacant"}
-                    {x.loan > 0 ? ` · ${usd(x.loan)} loan paid off at the filing` : ""}
+                    {sf(x.area)} land
+                    {x.deeds > 1 ? ` · ${x.deeds} deeds assembled` : " · vacant"}
+                    {x.loan > 0 ? ` · ${usd(x.loan)} loan payoff` : ""}
                   </span>
                 </button>
               );
@@ -667,7 +658,7 @@ export function AssembleSection({
                   const after = plateEfficiency((rec.lotArea + addedArea) * 0.62);
                   const gain = (after / before - 1) * 100;
                   return gain > 0.5
-                    ? <Row k="Plate efficiency" v={`+${gain.toFixed(1)}% rentable on the same gross — one core, bigger floors`} />
+                    ? <Row k="Plate efficiency" v={`+${gain.toFixed(1)}% rentable on same gross`} />
                     : null;
                 })()}
                 {(() => {
@@ -675,14 +666,14 @@ export function AssembleSection({
                   const then = landPsfNow(after, game.econ);
                   const d = (then / Math.max(1, now) - 1) * 100;
                   return Math.abs(d) > 0.5
-                    ? <Row k="The dirt reprices" v={`${d > 0 ? "+" : ""}${d.toFixed(1)}% $/sf across the whole site`} />
+                    ? <Row k="Land value change" v={`${d > 0 ? "+" : ""}${d.toFixed(1)}% $/sf, whole site`} />
                     : null;
                 })()}
-                <Row k="Survey, title and lawyers" v={usd(cost)} />
+                <Row k="Survey, title, legal" v={usd(cost)} />
                 {payoff.due > 0 && (
-                  <Row k="Loans retired at the filing" v={`${usd(payoff.due)}${payoff.penalty > 0 ? ` (incl. ${usd(payoff.penalty)} to break the paper)` : ""} · ${payoff.deeds.length} deed${payoff.deeds.length === 1 ? "" : "s"}`} />
+                  <Row k="Loan payoff" v={`${usd(payoff.due)}${payoff.penalty > 0 ? ` (incl. ${usd(payoff.penalty)} prepayment)` : ""} · ${payoff.deeds.length} deed${payoff.deeds.length === 1 ? "" : "s"}`} />
                 )}
-                {payoff.due > 0 && <Row k="Cash at the filing" v={usd(cost + payoff.due)} strong />}
+                {payoff.due > 0 && <Row k="Cash at closing" v={usd(cost + payoff.due)} strong />}
               </div>
               <button
                 className="btn"
@@ -718,8 +709,8 @@ export function AssembleCard({ bbl }: { bbl: string }) {
     <div className="deal" style={{ marginTop: 8 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div>
-          <strong>You own {n} lot{n === 1 ? "" : "s"} touching this one.</strong>
-          <div className="hint">Fold them into one larger site: one plate, one envelope, one address.</div>
+          <strong>{n} adjacent owned lot{n === 1 ? "" : "s"}</strong>
+          <div className="hint">Assemble into one site.</div>
         </div>
         <button type="button" className={"btn btn-sm" + (open ? "" : " btn-on")} onClick={() => setOpen(!open)}>{open ? "Close" : "Assemble…"}</button>
       </div>
@@ -782,26 +773,23 @@ function LandDeskLive({ bbl }: { bbl: string }) {
         <div className="grid">
           <Row k="Lessee" v={gl.tenant} />
           <Row k="Gross ground rent" v={`${usd(cashFlow.grossRentYr)} / yr`} />
-          <Row k="Property tax" v="$0 to you · lessee pays" />
-          <Row k="Insurance + operating" v="$0 to you · lessee pays" />
-          <Row k="TI / building work" v="$0 to you · lessee pays" />
-          <Row k="Brokerage + legal at signing" v="$0 to you · lessee pays" />
+          <Row k="Property tax" v="$0 · lessee pays" />
+          <Row k="Insurance + operating" v="$0 · lessee pays" />
+          <Row k="TI / building work" v="$0 · lessee pays" />
+          <Row k="Leasing costs" v="$0 · lessee pays" />
           <Row k="Net cash income" v={`${usd(cashFlow.netRentYr)} / yr`} strong />
           <Row k="Review" v={`${GROUND_REVIEW_LABEL[rev]} · ${nextReview}`} />
-          <Row k="Leased-fee mark" v={usd(fee)} strong />
-          <Row k="Reverts" v={`${monthLabel(gl.endM)} · ${yrsLeft.toFixed(0)} years to run`} />
+          <Row k="Leased-fee value" v={usd(fee)} strong />
+          <Row k="Reverts" v={`${monthLabel(gl.endM)} · ${yrsLeft.toFixed(0)} yrs left`} />
           {job && !gl.builtM && (
-            <Row k="Their frame" v={`${job.floors} fl of ${job.use} · opens ${monthLabel(job.deliverM)}`} />
+            <Row k="Lessee building" v={`${job.floors} fl ${job.use} · opens ${monthLabel(job.deliverM)}`} />
           )}
           {gl.builtM !== undefined && (
-            <Row k="Standing on it" v={`${gl.floors ?? "?"} fl of ${gl.use ?? "—"} · opened ${monthLabel(gl.builtM)}`} />
+            <Row k="Improvement" v={`${gl.floors ?? "?"} fl ${gl.use ?? "—"} · opened ${monthLabel(gl.builtM)}`} />
           )}
         </div>
         <div className="hint">
-          Absolutely net: gross rent equals net rent. No tenants of yours, no roof, no vacancy and no signing
-          cheque. Selling assigns the leased fee — the buyer takes the coupon and the reversion; the lease does
-          not evaporate. The dirt and the bones come back to whoever holds the fee at expiry, or immediately
-          after an uncured tenant default.
+          Absolute net. Sale transfers the leased fee and reversion. Land and improvements revert at expiry or uncured default.
         </div>
       </div>
     );
@@ -815,8 +803,7 @@ function LandDeskLive({ bbl }: { bbl: string }) {
       <div className="deal">
         <div className="deal-head">Part of an assemblage</div>
         <div className="hint">
-          This deed has been folded into {parent?.address ?? isChild}. Its land, its envelope and its value all sit
-          with the site now — build there, not here.
+          Merged into {parent?.address ?? isChild}. Land, envelope and value held by that site.
         </div>
         <button
           className="btn"
@@ -843,13 +830,12 @@ function LandDeskLive({ bbl }: { bbl: string }) {
     <>
       {landmarked && (
         <div className="hint">
-          Landmarked. The envelope is frozen at what is already standing, nobody knocks it down, and it lets about
-          7% over the market for the rest of its life. That premium is the whole of what you get for the site.
+          Landmarked: envelope frozen, no demolition. Rents ~7% over market.
         </div>
       )}
       {app && (
         <div className="grid">
-          <Row k="Before the board" v={`${app.grant.toFixed(1)} FAR · they sit ${monthLabel(app.decideM)}`} strong />
+          <Row k="Pending application" v={`${app.grant.toFixed(1)} FAR · decision ${monthLabel(app.decideM)}`} strong />
           <Row k="Odds as filed" v={`${(app.odds * 100).toFixed(0)}%`} />
         </div>
       )}
@@ -866,8 +852,8 @@ function LandDeskLive({ bbl }: { bbl: string }) {
               bad={!v.granted}
             />
             <Row
-              k="What it cost to find out"
-              v={`${usd(v.cost)} in fees${v.granted ? "" : " — spent either way"}`}
+              k="Fees paid"
+              v={usd(v.cost)}
             />
           </div>
         );
@@ -881,23 +867,20 @@ function LandDeskLive({ bbl }: { bbl: string }) {
             max={3}
             step={0.05}
             onChange={setFarMultiple}
-            format={() => `${vq.targetFar.toFixed(1)} FAR · ${farMultiple.toFixed(2)}× current · ${sf(Math.round(rec.lotArea * vq.targetFar))} gross envelope`}
+            format={() => `${vq.targetFar.toFixed(1)} FAR · ${farMultiple.toFixed(2)}× current · ${sf(Math.round(rec.lotArea * vq.targetFar))} GFA`}
             marks={[{ at: 1.34, label: "ordinary" }, { at: 2, label: "2×" }, { at: 3, label: "3×" }]}
-            hint="You may ask for a much taller envelope. Larger requests cost more, take longer and are harder to approve; a second trip after a grant is still possible, just tougher. Engineering and the 40-FAR city ceiling still apply."
+            hint="Max 40 FAR. Larger asks: higher cost, longer, lower odds."
           />
           <div className="grid">
             <Row k="District envelope" v={`${Math.max(rec.farMaxComm, rec.farMaxRes).toFixed(1)} FAR${game.zoneAdj?.[rec.district] ? ` · rezoned to ${((game.zoneAdj[rec.district]) * 100).toFixed(0)}%` : ""}`} />
-            {(game.variance?.[bbl] ?? 0) > 0 && <Row k="Variance already won" v={`+${game.variance![bbl].toFixed(1)} FAR · next hearing is harder`} />}
-            <Row k="Ask the board for" v={`${vq.targetFar.toFixed(1)} FAR total · +${vq.grant.toFixed(1)}`} strong />
+            {(game.variance?.[bbl] ?? 0) > 0 && <Row k="Prior variance" v={`+${game.variance![bbl].toFixed(1)} FAR · lowers odds`} />}
+            <Row k="Requested FAR" v={`${vq.targetFar.toFixed(1)} FAR total · +${vq.grant.toFixed(1)}`} strong />
             <Row k="Fees" v={usd(vq.cost)} />
-            <Row k="They decide in" v={`${vq.months} months · ${(vq.odds * 100).toFixed(0)}% say yes`} bad={vq.odds < 0.3} />
+            <Row k="Decision" v={`${vq.months} mo · ${(vq.odds * 100).toFixed(0)}% odds`} bad={vq.odds < 0.3} />
           </div>
           <button className="btn" style={{ marginTop: 8 }} onClick={() => applyVariance(bbl, vq.targetFar)}>File for {vq.targetFar.toFixed(1)} FAR · {usd(vq.cost)}</button>
           <div className="hint">
-            Lawyers, an architect and a year of hearings, spent whether they say yes or not. You can come back after a
-            grant — the board will hear it — but each FAR already won makes the next ask costlier and less likely.
-            On a site you have just assembled this is the other half of the trade: the lots are worth putting together
-            because of what you are allowed to build on them.
+            Fees non-refundable. Each prior grant lowers odds.
           </div>
         </>
       )}
@@ -906,7 +889,7 @@ function LandDeskLive({ bbl }: { bbl: string }) {
 
   if (!vacant && !touch && children.length === 0) {
     return app || vq || landmarked
-      ? <div className="deal"><div className="deal-head">The planning board</div>{planning}</div>
+      ? <div className="deal"><div className="deal-head">Zoning variance</div>{planning}</div>
       : null;
   }
 
@@ -917,16 +900,16 @@ function LandDeskLive({ bbl }: { bbl: string }) {
   const oq = offer && vacant
     ? groundLeaseQuote(game, parcels, bbl, offer.years, offer.review ?? "fixed") : null;
   const glBlocked = h.loan
-    ? "Pay off the mortgage first — a land lender will not sit under a ground lease."
+    ? "Pay off the mortgage first."
     : game.facility?.bbls?.includes(bbl)
-      ? "Release it from the facility first — the line is secured by vacant dirt, not a leased fee."
+      ? "Release from the credit facility first."
       : null;
   const q = vacant && !offer && !glBlocked
     ? groundLeaseQuote(game, parcels, bbl, years, review) : null;
 
   return (
     <div className="deal">
-      <div className="deal-head">The land desk</div>
+      <div className="deal-head">Land</div>
       {planning}
       {vacant && <ResidualRead bbl={bbl} />}
       <AssembleSection bbl={bbl} embedded />
@@ -934,31 +917,29 @@ function LandDeskLive({ bbl }: { bbl: string }) {
         <>
           <div className="page-section" style={{ marginTop: 10 }}>Offered for ground lease</div>
           <div className="grid">
-            <Row k="On the book since" v={`${monthLabel(offer.sinceM)}${game.month - offer.sinceM > 0 ? ` · ${game.month - offer.sinceM} month${game.month - offer.sinceM === 1 ? "" : "s"} waiting` : ""}`} />
+            <Row k="Offered since" v={`${monthLabel(offer.sinceM)}${game.month - offer.sinceM > 0 ? ` · ${game.month - offer.sinceM} mo` : ""}`} />
             <Row k="Structure" v={GROUND_REVIEW_LABEL[offer.review ?? "fixed"]} />
-            <Row k="Terms as of today" v={oq
+            <Row k="Current terms" v={oq
               ? `${usd(oq.rentYr)} / yr · ${offer.years} years · ${oq.reviewNote}`
               : "—"} strong />
-            {oq && <Row k="Owner expenses" v="$0 tax · $0 insurance/opex · $0 TI · $0 signing costs" />}
+            {oq && <Row k="Owner expenses" v="$0 tax · $0 opex · $0 TI · $0 leasing" />}
             {oq && <Row k="Net cash income" v={`${usd(oq.cashFlow.netRentYr)} / yr`} strong />}
           </div>
           <div className="hint">
-            Ground lessees are scarce — and an FMV reset is scarcer still, because their lender has to underwrite
-            a coupon that can jump. One turns up when demand, the build climate and the structure say so.
-            The deal signs at the terms quoted the month they arrive; they break ground after that.
+            Lessees are scarce; FMV-reset lessees scarcer. Signs at terms quoted in the month one arrives.
           </div>
-          <button className="btn" onClick={() => pullGroundOffer(bbl)}>Pull the offer</button>
+          <button className="btn" onClick={() => pullGroundOffer(bbl)}>Withdraw offer</button>
         </>
       )}
       {vacant && !offer && glBlocked && (
         <>
-          <div className="page-section" style={{ marginTop: 10 }}>Or ground-lease it</div>
+          <div className="page-section" style={{ marginTop: 10 }}>Ground lease</div>
           <div className="hint">{glBlocked}</div>
         </>
       )}
       {q && (
         <>
-          <div className="page-section" style={{ marginTop: 10 }}>Or ground-lease it</div>
+          <div className="page-section" style={{ marginTop: 10 }}>Ground lease</div>
           <div className="btn-row" style={{ marginBottom: 8 }}>
             {(["fixed", "cpi", "fmv"] as GroundReview[]).map((r) => (
               <button key={r} className={"btn" + (review === r ? " btn-on" : "")} onClick={() => setReview(r)}>
@@ -977,20 +958,18 @@ function LandDeskLive({ bbl }: { bbl: string }) {
           </div>
           <div className="grid">
             <Row k="Gross ground rent" v={`${usd(q.cashFlow.grossRentYr)} / yr · ${q.capPct}% of land value`} />
-            <Row k="Property tax" v="$0 to you · lessee pays" />
-            <Row k="Insurance + operating" v="$0 to you · lessee pays" />
-            <Row k="TI / construction" v="$0 to you · lessee pays" />
-            <Row k="Brokerage + legal at signing" v="$0 to you · lessee pays" />
+            <Row k="Property tax" v="$0 · lessee pays" />
+            <Row k="Insurance + operating" v="$0 · lessee pays" />
+            <Row k="TI / construction" v="$0 · lessee pays" />
+            <Row k="Leasing costs" v="$0 · lessee pays" />
             <Row k="Net cash income" v={`${usd(q.cashFlow.netRentYr)} / yr`} strong />
             <Row k="Reviews" v={q.reviewNote} />
             <Row k="At term" v={q.padOnly
-              ? "Dirt back — bones only if you fund a leasehold buyout"
-              : `Aged vacant improvement reverts · ${monthLabel(game.month + years * 12)}`} />
+              ? "Land reverts; improvements only via leasehold buyout"
+              : `Vacant improvement reverts · ${monthLabel(game.month + years * 12)}`} />
           </div>
           <div className="hint">
-            Absolutely-net form: no owner signing cheque and no property-level expenses after closing.
-            {" "}{q.termNote} FMV opens cheaper and places slower; fixed opens dearer and places faster.
-            The dirt costs carry only while the offer is waiting.
+            Absolute net. {q.termNote} FMV: lower rent, slower to place. Fixed: higher rent, faster. Land carry until signed.
           </div>
           <button className="btn" onClick={() => groundLease(bbl, years, review)}>
             Offer a {years}-year {GROUND_REVIEW_LABEL[review].toLowerCase()} ground lease

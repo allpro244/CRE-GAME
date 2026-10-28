@@ -74,9 +74,9 @@ export function LeasingPage() {
     if (!leasedFees.length) return null;
     return (
       <div className="page-section">
-        <div className="page-section-head">Leased fees · coupon only</div>
+        <div className="page-section-head">Leased fees</div>
         <div className="hint" style={{ marginBottom: 8 }}>
-          Ground-leased lots pay you rent on the dirt. The lessee lets the building — there is no rent roll of yours to manage here.
+          Ground rent only; lessee manages the building.
         </div>
         <table className="tbl">
           <thead>
@@ -114,9 +114,9 @@ export function LeasingPage() {
         <PlanEditor />
         <PlanDigest />
         <LeasedFeeStrip />
-        <div className="hint">No buildings yet — occupancy starts when you own something with tenants in it.</div>
+        <div className="hint">No leased buildings.</div>
         <button className="btn btn-buy" onClick={() => setPage("market")}>
-          Browse buildings in Marketplace →
+          Marketplace →
         </button>
       </div>
     );
@@ -137,11 +137,11 @@ export function LeasingPage() {
     const referred = (game.lois ?? []).filter((l) => loiNeedsPrincipal(game, l)).length;
     // Two covers, one question: who holds the pen?
     const title = game.agent
-      ? "Outside agent holds the pen."
-      : "You hold the pen.";
+      ? "Leasing: outside agent"
+      : "Leasing: in-house";
     const sub = game.agent
-      ? `Vendor coverage at 6%. They work the posted plan: counter to the sheet, docket exceptions, decline junk. Scorecard below${referred ? `. ${referred} letter${referred === 1 ? "" : "s"} waiting on your desk.` : "."}`
-      : "Default. Every letter lands on you. A listing exclusive works the phones and does not sign. Hand renewals to management below, or hire outside coverage at 6% — nothing takes the pen unless you say so.";
+      ? `6% fee. Signs to plan, counters, declines weak LOIs, refers exceptions${referred ? ` · ${referred} LOI${referred === 1 ? "" : "s"} referred` : ""}.`
+      : "All LOIs come to you. Listing brokers source but do not sign. Options: renewals to management (below) or outside agent at 6%.";
     return (
       <div className="agent-bar">
         <div>
@@ -150,7 +150,7 @@ export function LeasingPage() {
         </div>
         <div className="btn-row" style={{ flexShrink: 0 }}>
           {game.agent ? (
-            <button className="btn" onClick={() => setAgent(false)}>Take the pen back</button>
+            <button className="btn" onClick={() => setAgent(false)}>Bring in-house</button>
           ) : (
             <button className="btn" onClick={() => setAgent(true)}>
               Outside coverage · 6%
@@ -175,32 +175,31 @@ export function LeasingPage() {
         <div className="agent-title">Desk this month · {monthLabel(game.month)}</div>
         {!tally ? (
           <div className="hint">
-            No letters worked yet this month. When traffic arrives they sign, counter, pass or refer —
-            you will see the counts here instead of a popup for every LOI.
-            {referred ? ` ${referred} referred letter${referred === 1 ? "" : "s"} still need you on Deals.` : ""}
+            No LOIs this month.
+            {referred ? ` ${referred} referred LOI${referred === 1 ? "" : "s"} on Deals.` : ""}
           </div>
         ) : (
           <>
             <div className="stat-strip" style={{ marginTop: 6 }}>
               <Big label="Signed" value={String(tally.signed)}
-                title="Leases the desk closed inside your mandate" />
+                title="Signed within mandate" />
               <Big label="Passed" value={String(tally.passed)}
-                title="Letters that could not reach your number — turned away on purpose" />
+                title="Below mandate; declined" />
               <Big label="Referred" value={String(tally.referred)}
-                title="Came back to you — expansions, capital calls, dead heats, failed counters" />
+                title="Expansions, capital calls, ties, failed counters" />
               <Big label="Walked" value={String(tally.walked)}
-                title="Tenants who left after the desk countered" />
+                title="Left after counter" />
               <Big label="Countered" value={String(tally.countered)}
-                title="Letters the desk countered up to your number" />
+                title="Countered to mandate" />
             </div>
             <div className="hint" style={{ marginTop: 6 }}>
               {tally.signed === 0 && tally.passed > 0 && tally.referred === 0
-                ? "They have only been passing — if the market is soft, your number may be over what the street is signing."
+                ? "Passes only: mandate may be above market."
                 : tally.signed > 0
-                  ? "They are closing. Passed letters could not reach your number, even restructured."
+                  ? "Passed LOIs were below mandate."
                   : referred
-                    ? `${referred} letter${referred === 1 ? "" : "s"} on Deals need a principal decision.`
-                    : "Desk is working the book quietly — activity shows up here as letters arrive."}
+                    ? `${referred} LOI${referred === 1 ? "" : "s"} on Deals need a decision.`
+                    : "No activity."}
             </div>
           </>
         )}
@@ -229,14 +228,14 @@ export function LeasingPage() {
       <div className="agent-bar" style={{ display: "block" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div className="agent-title">
-            Auto-lease · your team answers the letters on {on} of {book.length} building{book.length === 1 ? "" : "s"}
+            Auto-lease · your team answers {on} of {book.length} building{book.length === 1 ? "" : "s"}
           </div>
           <button
             type="button"
             className={"btn btn-mini" + (allOn ? " btn-on" : "")}
             title={allOn
-              ? "Every building is answering its own letters. Click to take them all back."
-              : "Put every building on auto-lease: each answers its letters by its own Fill / Market / Push posture and the concession limit here, and none of them pop up."}
+              ? "All buildings on auto-lease. Click to disable."
+              : "Auto-lease all buildings at their Fill / Market / Push setting and the concession limit."}
             onClick={() => {
               // the whole book on (or off) is the instruction for the next deed too
               useStore.getState().autoLease(book.map((r) => r.h.bbl), !allOn);
@@ -246,7 +245,7 @@ export function LeasingPage() {
         </div>
         <div className="lease-ctl" style={{ marginTop: 6 }}>
           <span className="lease-ctl-label">Concessions</span>
-          <span className="seg" role="group" aria-label="Most fit-out and free rent the team may give">
+          <span className="seg" role="group" aria-label="Max TI and free rent">
             {AUTO_CONCESSIONS.map((o) => (
               <button
                 key={o.key}
@@ -263,8 +262,8 @@ export function LeasingPage() {
             className={"btn btn-mini" + (game.autoRentFloor ? " btn-on" : "")}
             aria-pressed={!!game.autoRentFloor}
             title={game.autoRentFloor
-              ? "The team will not sign any lease, renewal or rent relief under the space's market rent. Click to let each building's posture decide again."
-              : "Never sign a face rent under the space's market rent: lowballs are countered up to market, and tenants who won't pay it are passed. Slower to fill, never cheap."}
+              ? "No leases, renewals or relief below market rent. Click to disable."
+              : "Floor face rent at market: counter up or pass. Slower lease-up."}
             onClick={() => useStore.getState().autoRentFloor(!game.autoRentFloor)}
           >{game.autoRentFloor ? "Never below market rent ✓" : "Never below market rent"}</button>
           <button
@@ -272,24 +271,22 @@ export function LeasingPage() {
             className={"btn btn-mini" + (autoLeaseOnClose(game) ? " btn-on" : "")}
             aria-pressed={autoLeaseOnClose(game)}
             title={autoLeaseOnClose(game)
-              ? "Every building you buy closes on auto-lease, at the house rent posture. Click to have new buildings' letters come to you instead."
-              : "Have every building you buy close on auto-lease, so its letters never reach your desk."}
+              ? "Acquisitions start on auto-lease at house setting. Click to disable."
+              : "Start acquisitions on auto-lease."}
             onClick={() => useStore.getState().autoLeaseNew(!autoLeaseOnClose(game))}
           >{autoLeaseOnClose(game) ? "New buildings join auto-lease ✓" : "New buildings join auto-lease"}</button>
         </div>
         <div className="agent-sub" style={{ marginTop: 4 }}>
-          Fit-out and free rent: {AUTO_CONCESSIONS.find((o) => o.key === conc)!.blurb}. Measured against the market's
-          package for each space, so it follows the cycle, the lease term and new shells on its own.
-          How hard to hold on rent is each building's Fill / Market / Push below. Leases of a quarter of a
-          building (10,000 sf and up) come to you.
+          TI and free rent: {AUTO_CONCESSIONS.find((o) => o.key === conc)!.blurb}, vs market package per space.
+          Rent setting per building below. Leases ≥ 25% of building (10,000 sf+) referred to you.
         </div>
         <div className="hint" style={{ marginTop: 6 }}>
           {!settled
-            ? "Nothing settled in the last twelve months yet — the team's record shows here as letters arrive."
+            ? "Nothing settled in the last twelve months."
             : <>
                 Last 12 months: <b>{yr.signed} signed</b>
-                {yr.signed > 0 && <> at <b>{pctOf(yr.deal)} of a market deal</b> on average ({pctOf(yr.ne)} of market rent after fit-out and free rent{yr.under ? `; ${yr.under} under 90% of a market deal` : ""})</>}
-                {" · "}{yr.passed} passed · {yr.walked} walked after a counter · {yr.referred} sent to you
+                {yr.signed > 0 && <> at <b>{pctOf(yr.deal)} of market deal</b> avg ({pctOf(yr.ne)} net effective vs market{yr.under ? `; ${yr.under} under 90%` : ""})</>}
+                {" · "}{yr.passed} passed · {yr.walked} walked · {yr.referred} referred
               </>}
         </div>
       </div>
@@ -319,9 +316,9 @@ export function LeasingPage() {
     return (
       <div className="page-section">
         <div className="page-section-head">
-          On your desk · {desk.length} letter{desk.length === 1 ? "" : "s"}
+          On your desk · {desk.length} LOI{desk.length === 1 ? "" : "s"}
           {renewals ? ` · ${renewals} renewal${renewals === 1 ? "" : "s"}` : ""}
-          {quiet ? " · referred by your desk" : ""}
+          {quiet ? " · referred" : ""}
         </div>
         <TrayClear />
         <div className="loi-grid">
@@ -357,12 +354,12 @@ export function LeasingPage() {
       <div className="agent-bar">
         <div>
           <div className="agent-title">
-            {on ? "Property management has your renewals." : "You are handling your own renewals."}
+            {on ? "Renewals: property management" : "Renewals: in-house"}
           </div>
           <div className="agent-sub">
             {on
-              ? "Sitting tenants get signed inside the same mandate below. The manager takes 2% of total lease value on top of the commission a renewal already pays (4% total). Soft renewals are referred; junk is passed. New leases still land on your desk."
-              : "Every renewal letter comes to you six months before expiry, and signing one costs the 2% commission it always has. Hand them over and the routine ones stop asking, for a second 2% to the manager — you keep the new leases, which are the ones worth arguing about."}
+              ? "Signed within mandate. +2% of lease value (4% total). Weak renewals referred; junk passed. New leases stay with you."
+              : "Renewal LOIs arrive 6 mo before expiry; 2% commission. Management: +2%, new leases stay with you."}
           </div>
         </div>
         <button className={"btn" + (on ? "" : " btn-on")} onClick={() => setRenewalMgmt(!on)}>
@@ -375,9 +372,9 @@ export function LeasingPage() {
   // THE DESK'S SHAPE: what the book says (the strip), what wants you (the
   // letters), what the desk did, and then who holds the pen — a mandate set
   // once and revisited rarely, so it folds to the one line that says who.
-  const penLine = game.agent ? "an outside agent holds the pen"
-    : game.renewalMgmt ? "you hold the pen · management has the renewals"
-    : "you hold the pen";
+  const penLine = game.agent ? "outside agent"
+    : game.renewalMgmt ? "in-house · renewals to management"
+    : "in-house";
   return (
     <div>
       {/* The house policy is the control on this page that gets used most —
@@ -390,16 +387,16 @@ export function LeasingPage() {
           value={totSf ? ((100 * Math.min(totLeased, totSf)) / totSf).toFixed(1) + "%" : "—"}
           bad={totSf > 0 && totLeased / totSf < 0.8}
           title={totRemainder
-            ? `Of lettable space. ${sf(totRemainder)} across the book is under the smallest tenancy those buildings demise — a loss factor, not vacancy you can work.`
-            : "Let space over lettable space."}
+            ? `Leasable basis. ${sf(totRemainder)} below minimum suite size excluded.`
+            : "Leased sf / leasable sf."}
         />
         <Big label="Leased" value={sf(totLeased) + " of " + sf(totSf)} />
         <Big label="Rent roll / yr" value={usd(totRoll)} />
         <Big label="Rolling in 12 mo" value={sf(totRolling)} bad={totRolling > totLeased * 0.25} />
         <Big
-          label="On your desk"
+          label="Pending LOIs"
           value={String(game.lois.filter((l) => loiNeedsPrincipal(game, l)).length)}
-          title="Letters that still need you — listed above, and on Deals. Desk-covered paper is quiet."
+          title="Awaiting your decision (also on Deals)"
         />
       </div>
 
@@ -420,7 +417,7 @@ export function LeasingPage() {
                 <th>Type</th>
                 <th className="num">Bldg sf</th>
                 <th className="num">Occ</th>
-                <th className="num" title="In-place rent roll over leased feet — what the building's tenants pay on average, against the market rent for the space">Avg $/sf</th>
+                <th className="num" title="In-place rent / leased sf, vs market">Avg $/sf</th>
                 <th className="num">Rent / yr</th>
                 <th className="num">WALT</th>
                 <th className="num">Rolling</th>
@@ -454,7 +451,7 @@ export function LeasingPage() {
                           key={v}
                           type="button"
                           className={"btn btn-mini" + ((r.h.stance ?? 0) === v ? " btn-on" : "")}
-                          title={v === 1 ? "Push rents: ask 8% over the market, fewer prospects" : v === -1 ? "Fill space: ask 8% under the market, faster lease-up" : "Market rents"}
+                          title={v === 1 ? "+8% asking rents, fewer LOIs" : v === -1 ? "−8% rents, faster lease-up" : "Market rents"}
                           onClick={(e) => { e.stopPropagation(); useStore.getState().stance(r.h.bbl, v); }}
                           aria-pressed={(r.h.stance ?? 0) === v}
                         >{v === 1 ? "Push +8%" : v === -1 ? "Fill −8%" : "Market"}</button>
@@ -463,7 +460,7 @@ export function LeasingPage() {
                       <button
                         type="button"
                         className={"btn btn-mini" + (r.h.autoLease ? " btn-on" : "")}
-                        title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to take the letters back.` : "Let this building answer its own letters by its rent posture and the team's concession limit — no pop-ups."}
+                        title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to disable.` : "Auto-respond to LOIs at rent setting and concession limit."}
                         onClick={(e) => { e.stopPropagation(); useStore.getState().autoLease(r.h.bbl, !r.h.autoLease); }}
                         aria-pressed={!!r.h.autoLease}
                       >{r.h.autoLease ? "Auto-answer ✓" : "Auto-answer"}</button>
@@ -471,13 +468,13 @@ export function LeasingPage() {
                         <button
                           className={"btn btn-mini" + (r.h.principalSigns ? " btn-on" : "")}
                           title={r.h.principalSigns
-                            ? "You sign every letter here, whoever holds the pen on the rest of the book. Click to hand it back to the desk."
-                            : "Keep the pen on this building: its letters come to you even when a desk works the rest of the book."}
+                            ? "All LOIs here come to you. Click to return to agent."
+                            : "Route this building's LOIs to you regardless of agent."}
                           onClick={(e) => { e.stopPropagation(); useStore.getState().setPrincipalSigns(r.h.bbl, !r.h.principalSigns); }}
                         >{r.h.principalSigns ? "I sign here ✓" : "I sign here"}</button>
                       )}
                       {r.commercial && !r.h.broker && r.rec.bldgArea - r.leased > 500 && (
-                        <button className="btn btn-mini" title="Listing exclusive — they work the phones; you still take every letter" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>Hire a broker</button>
+                        <button className="btn btn-mini" title="Listing broker: sources tenants, you sign" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>Hire a broker</button>
                       )}
                     </div>
                     {/* HOW IT IS RUN, FROM THE ROW. Service and the capital plan
@@ -522,7 +519,7 @@ export function LeasingPage() {
       </div>
       <DeskLetters />
       <DeskActivity />
-      <Fold id="leasing:mandate" title="Who works the book" summary={penLine}>
+      <Fold id="leasing:mandate" title="Leasing mandate" summary={penLine}>
         <AgentBar />
         <RenewalBar />
         <PlanEditor />
@@ -538,12 +535,12 @@ export function LeasingPage() {
       {ind.rows.length > 0 && (
         <div className="page-section">
           <div className="page-section-head">
-            Exposure by trade{ind.atRisk > 0.18 ? ` · ${(ind.atRisk * 100).toFixed(0)}% of income in trades that are contracting` : ""}
+            Exposure by industry{ind.atRisk > 0.18 ? ` · ${(ind.atRisk * 100).toFixed(0)}% of income in contracting industries` : ""}
           </div>
           <table className="tbl">
             <thead>
               <tr>
-                <th>Trade</th><th className="num">Share of income</th><th className="num">Income / yr</th>
+                <th>Industry</th><th className="num">Share of income</th><th className="num">Income / yr</th>
                 <th className="num">Space</th><th className="num">Tenants</th><th>Cycle</th>
               </tr>
             </thead>
@@ -556,7 +553,7 @@ export function LeasingPage() {
                   <td className="num">{sf(r.sf)}</td>
                   <td className="num">{r.tenants}</td>
                   <td className={r.phase === "bust" ? "neg" : "dim"}>
-                    {r.phase === "boom" ? "hiring hard" : r.phase === "bust" ? "contracting" : "steady"}
+                    {r.phase === "boom" ? "expanding" : r.phase === "bust" ? "contracting" : "steady"}
                   </td>
                 </tr>
               ))}
@@ -564,8 +561,8 @@ export function LeasingPage() {
           </table>
           <div className="hint">
             {ind.top && ind.top.share > 0.45
-              ? `${(ind.top.share * 100).toFixed(0)}% of your rent comes from ${INDUSTRY_LABEL[ind.top.sector].toLowerCase()}. That is not a rent roll, it is a position in one trade — and both the buyers and the lenders price it that way.`
-              : "A rent roll spread across trades survives a bad decade in any one of them. Lenders discount income concentrated in a single industry, and so does anyone buying the building off you."}
+              ? `${(ind.top.share * 100).toFixed(0)}% of rent from ${INDUSTRY_LABEL[ind.top.sector].toLowerCase()}. Concentration discounted by buyers and lenders.`
+              : "Diversified. Lenders and buyers discount single-industry concentration."}
           </div>
         </div>
       )}
@@ -577,7 +574,7 @@ export function LeasingPage() {
       <LeasedFeeStrip />
 
       <div className="page-section">
-        <div className="page-section-head">The rent roll</div>
+        <div className="page-section-head">Rent roll</div>
         <div style={{ maxHeight: 420, overflowY: "auto" }}>
           <table className="tbl">
             <thead>
@@ -620,8 +617,8 @@ export function LeasingPage() {
                   lease, so this table is empty while the rent is real. */}
               {!rows.some((r) => r.h.tenants.length) && (
                 <tr><td colSpan={5} className="dim">{totLeased > 0
-                  ? `No named leases — ${sf(totLeased)} is let unit by unit (flats carry no lease of their own here). Occupancy and rent are in the table above.`
-                  : "Nothing under lease yet."}</td></tr>
+                  ? `No named leases. ${sf(totLeased)} leased as apartment units (see table above).`
+                  : "No leases."}</td></tr>
               )}
             </tbody>
           </table>
@@ -660,7 +657,7 @@ function MinLeaseAll() {
   const valid = Number.isFinite(n) && n >= 0;
   const changed = valid && Math.round(n) !== house;
   return (
-    <label className="buybox-field" title="The smallest new tenancy every building will sign: prospects asking for less stop touring. Renewals and expansions of sitting tenants are untouched, and a tenant taking everything still vacant always gets in. Flats let by the unit and are not affected. New buildings you buy or deliver open on the same floor; set any building apart on its own desk.">
+    <label className="buybox-field" title="Minimum new lease size, all buildings and future acquisitions. Renewals, expansions, full-vacancy deals and apartments exempt. Override per building.">
       Min. new lease, all buildings
       <input type="number" step="500" min="0" value={v} placeholder="any"
         style={{ width: 80 }}

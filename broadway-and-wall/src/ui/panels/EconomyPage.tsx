@@ -131,6 +131,15 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
           <LineChart height={108} series={[{ label: "price level", color: "#8a5620", pts: tail.map((h) => h.cpi ?? 1) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <div className="chart-note">Cumulative inflation · deflator for real series</div>
         </div>
+        {/* THE CONSTRUCTION COST INDEX (owner, Oct 2026: "needs to be in the markets page") */}
+        <div className="chart-cell">
+          <div className="chart-title">Construction costs · index {((tail[tail.length - 1]?.costIdx ?? 1) * 100).toFixed(0)}</div>
+          <LineChart height={108} series={[
+            { label: "build costs", color: "#b07f1e", pts: rebase100(tail.map((h) => h.costIdx ?? NaN)) },
+            { label: "price level", color: "#8a5620", pts: rebase100(tail.map((h) => h.cpi ?? NaN)), dashed: true },
+          ]} yFmt={(v) => v.toFixed(0)} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
+          <div className="chart-note">100 = first month shown. Dashed: price level.</div>
+        </div>
       </div>
       <CityFigures />
       <CentralBankBox />
@@ -1364,3 +1373,9 @@ export function EconomyPage() {
  * Occupancy and value here are the same models the engine prices with, so
  * this table cannot disagree with a deal card.
  */
+
+/** A series at 100 on its first finite point, so two indices read against each other. */
+function rebase100(v: number[]): number[] {
+  const b0 = v.find((x) => Number.isFinite(x) && x > 0) ?? 1;
+  return v.map((x) => (x / b0) * 100);
+}

@@ -13,6 +13,7 @@
  */
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
+import { FirmPage } from "@/ui/panels/CompetitorCards";
 import type { BuiltClass, EconHistoryPoint, GameState, NewsItem } from "@/engine/types";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
@@ -347,6 +348,11 @@ export function MarketsOverview() {
     const base = r.rentS.find((v) => Number.isFinite(v) && v > 0) ?? 1;
     return { label: r.label, color: CLASS_COLOR[r.k], pts: r.rentS.map((v) => (v / base) * 100) };
   });
+  const hist = e.history ?? [];
+  const yrAgo = hist.length > 12 ? hist[hist.length - 13]?.costIdx : undefined;
+  const costYoy = yrAgo ? e.costIdx / yrAgo - 1 : null;
+  // both lines at 100 on the chart's first month, so they read against each other
+  const rebase = (v: number[]) => { const b0 = v.find((x) => Number.isFinite(x) && x > 0) ?? 1; return v.map((x) => (x / b0) * 100); };
   const years = ["Next 12m", "Year 2", "Year 3", "Year 4"];
   const supply = years.map((label, i) => ({ label, bars: classes.map((r) => ({ v: (r.sched[i] ?? 0) / 1000, color: CLASS_COLOR[r.k] })) }));
   return (
@@ -393,6 +399,15 @@ export function MarketsOverview() {
             { label: "10Y", color: "#2f6f7a", pts: tail.map((h) => h.indexRate) },
             { label: "Policy", color: "#a8402e", pts: tail.map((h) => h.policy ?? NaN), dashed: true },
           ]} yFmt={(v) => `${v.toFixed(1)}%`} xLabels={x} xAt={xAt} />
+        </div>
+        {/* THE CONSTRUCTION COST INDEX (owner, Oct 2026: "needs to be in the markets page"),
+            against the price level, so a real rise in building costs reads as a gap */}
+        <div className="chart-cell">
+          <div className="chart-title">Construction costs · index {(e.costIdx * 100).toFixed(0)}{costYoy !== null ? ` · ${costYoy >= 0 ? "+" : ""}${(costYoy * 100).toFixed(1)}% 12m` : ""}</div>
+          <LineChart series={[
+            { label: "Build costs", color: "#b07f1e", pts: rebase(tail.map((h) => h.costIdx ?? NaN)) },
+            { label: "Price level", color: "#665e4d", pts: rebase(tail.map((h) => h.cpi ?? NaN)), dashed: true },
+          ]} yFmt={(v) => v.toFixed(0)} xLabels={x} xAt={xAt} />
         </div>
         <div className="chart-cell">
           <div className="chart-title">Jobs — thousands</div>
@@ -579,6 +594,23 @@ type OwnerRow = { o: ReturnType<typeof allOwners>[number]; sf: number; likely: b
 type PV = "firms" | "private" | "all";
 
 export function CityPlayers() {
+  const focus = useStore((s) => s.firmFocus);
+  const focused = useStore((s) => (focus ? s.game?.rivals.find((r) => r.id === focus) : undefined));
+  // A RIVAL'S OWN PAGE (owner, Oct 2026: a firm's name should open that firm,
+  // not the list): the profile the classic street desk shows, with a way back.
+  if (focused) {
+    return (
+      <div className="nx-place">
+        <button type="button" className="nx-btn nx-sm" onClick={() => useStore.getState().openFirm(null)}>← All firms</button>
+        <h3 style={{ margin: "8px 0" }}>{focused.name}</h3>
+        <FirmPage r={focused} />
+      </div>
+    );
+  }
+  return <CityPlayersList />;
+}
+
+function CityPlayersList() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const [view, setView] = useState<PV>("firms");
@@ -645,7 +677,8 @@ export function CityPlayers() {
         set={(v) => { const nx = v.find((x) => x !== view); if (nx) setView(nx); }}
       />
       {view === "firms" ? <>
-        <DataTable id="city-firms" cols={firmCols} rows={firms} rowKey={(r) => r.id} selected="__you" initialSort={{ col: "eq", dir: -1 }} />
+        <DataTable id="city-firms" cols={firmCols} rows={firms} rowKey={(r) => r.id} selected="__you" initialSort={{ col: "eq", dir: -1 }}
+          onRow={(r) => { if (!r.you) useStore.getState().openFirm(r.id); }} />
         {head("Street moves")}
         <DataTable id="city-moves" cols={moveCols} rows={moves} rowKey={(r) => `${r.m}:${r.firmId}:${r.kind}:${r.bbl ?? r.text}`}
           initialSort={{ col: "m", dir: -1 }} onRow={(r) => sel(r.bbl)} />

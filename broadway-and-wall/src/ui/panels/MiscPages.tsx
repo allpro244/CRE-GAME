@@ -211,6 +211,8 @@ export function SettingsPage() {
   const fpsOn = useStore((s) => s.fpsOn);
   const setFpsOn = useStore((s) => s.setFpsOn);
   const graphics = useStore((s) => s.graphics);
+  const diorama = useStore((s) => s.diorama);
+  const setDiorama = useStore((s) => s.setDiorama);
   const setGraphics = useStore((s) => s.setGraphics);
   const flip = (patch: Partial<GameState>) => {
     const st = useStore.getState();
@@ -310,6 +312,13 @@ export function SettingsPage() {
         label="Frame counter"
         detail="A frames-per-second readout in the top bar. It is an instrument for looking at the renderer, not part of the game, and it is off unless you want it."
       />
+      {!UNREAL_HOST && (<>
+      <div className="page-section" style={{ marginTop: 10 }}>Look</div>
+      <div className="btn-row">
+        <button type="button" className={"btn" + (diorama ? " btn-on" : "")} title="A toy city: bright colours, soft blue shadows, a miniature blur." onClick={() => setDiorama(true)}>Diorama</button>
+        <button type="button" className={"btn" + (!diorama ? " btn-on" : "")} title="The earlier, plainer grade." onClick={() => setDiorama(false)}>Classic</button>
+      </div>
+      </>)}
       {UNREAL_HOST ? <UnrealGraphics /> : (<>
       <div className="page-section" style={{ marginTop: 10 }}>Graphics</div>
       <div className="btn-row">

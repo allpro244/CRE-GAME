@@ -2,7 +2,6 @@
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
-import { districtLabel } from "./mix";
 import type { Bid, BuiltClass, Condition, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, Rival, RivalStyle, SaleInstructions } from "./types";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger, autoLeaseOnClose } from "./types";
 import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
@@ -12,7 +11,7 @@ import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown
 import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
-import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, sellToOutsider, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
+import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
@@ -28,24 +27,6 @@ import { money } from "./money";
 import { consentFor, purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
 import { investorsTakeOfExit } from "./waterfall";
 import { heldByRaises } from "./investors";
-
-/**
- * WHO BUYS THE BUILDINGS THE PLAYER DOES NOT.
- *
- * The tape had exactly one anonymous buyer — "a buyer from out of town" — and
- * printed it for 86% of every closed sale in the city. A market in which one
- * unnamed party buys everything is not a market, it is a placeholder. These
- * are the kind of counterparty that actually clears a small city's product:
- * out-of-state capital, a family office, a 1031 buyer chasing a deadline.
- */
-const OUT_OF_TOWN = [
-  "a pension fund out of Hartford", "a family office from Providence",
-  "an insurance company out of Springfield", "a 1031 buyer on a deadline",
-  "a syndicator from the city", "an out-of-state REIT",
-  "a private buyer, name withheld", "a doctors' partnership",
-  "a foreign buyer through a nominee", "a local family trust",
-  "a bank's own real estate arm", "an owner-occupier buying their own premises",
-];
 
 const CLOSING_PCT = 0.02;
 const SALE_FRICTION = 0.012;  // legal, title, diligence — the unavoidable rest
@@ -4009,6 +3990,14 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         });
         continue;
       }
+      // ONLY THE STREET BUYS (owner, Oct 2026: "Only the 'ghost' holders can
+      // sell. That's it. Then it's only real players."). A listing nobody on
+      // the Players list will take was sold to a name from a list — "a pension
+      // fund out of Hartford", "a 1031 buyer on a deadline" — that paid with
+      // nobody's money and took the deed into no book. Now it is simply not
+      // sold this month: it stays on the tape until a firm wants it or the
+      // listing lapses.
+      if (!buyer) { survivors.push(li); continue; }
       // A BUILDING THAT SELLS STAYS SOLD. Absorption used to take the listing
       // off the tape and record nothing, so refreshListings could pick the
       // same parcel again next quarter — 68 E 10th St sold "to a buyer from
@@ -4016,7 +4005,7 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
       // twenty-nine. Stamp the trade and it is somebody's building now.
       s.lastTradeM = s.lastTradeM ?? {};
       s.lastTradeM[li.bbl] = s.month;
-      if (buyer) {
+      {
         // YOU DID NOT WATCH IT HAPPEN.
         //
         // This printed on every trade a named firm made anywhere in the city:
@@ -4034,46 +4023,6 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
             text: yours.has(rec.block)
               ? `${buyer.name} took ${rec.address} at ${money(px)} — that is your block.`
               : `${buyer.name} took ${rec.address} at ${money(px)}. You have dealt with them before.`,
-          });
-        }
-      } else {
-        // AND THE BUYER HAS A NAME. "A buyer from out of town" is what a
-        // newspaper writes when it has not made the call; it is not what a
-        // newspaper writes eight times a year. These are real counterparties
-        // with an address, and the trade goes on the comps sheet like any
-        // other, which is what makes an anonymous market legible instead of
-        // just noisy.
-        const b = OUT_OF_TOWN[Math.floor(rng(s, "sales") * OUT_OF_TOWN.length)];
-        // AND THE SELLER LOSES THE BUILDING. Recording the comp without
-        // conveying the deed left the seller owning a building they had just
-        // sold, free to list it again next quarter and print the sale a second
-        // time, and a third. See sellToOutsider.
-        sellToOutsider(s, li.bbl, px);
-        recordComp(s, rec, px, b, "a listed seller", li.distress, initialCondition(rec));
-        // THE TAPE IS NOT NEWS. Measured over 25 years, "Sold: X went to a 1031
-        // buyer at $Y" was the single most common line in the paper — 23.6 news
-        // items a year and ordinary trades were the largest bucket of them,
-        // which buries the sector turn and the bank failure that actually
-        // matter. Nothing is lost by dropping them: `recordComp` above files
-        // every one of these on the comps tape, which is where a buyer reads
-        // closed prices anyway, and it is the tape that prices the market.
-        //
-        // Two kinds of trade stay news, and they are the two a principal would
-        // actually be told about. One you have a stake in: somebody just set a
-        // price in a submarket where you own something, which is the comp your
-        // own building will be marked against. And one that is a RECORD — the
-        // biggest number the market has seen lately, which is news in any town.
-        const mine = Object.keys(s.holdings).some((b2) => {
-          const r2 = resolveRec(parcels, s, b2);
-          return r2 && r2.district === rec.district;
-        });
-        const record = !(s.comps ?? []).some((c) => c.bbl !== li.bbl && c.price > li.ask);
-        if (mine || record) {
-          s.news.unshift({
-            q: s.month, kind: "info",
-            text: record && !mine
-              ? `A record: ${rec.address} went to ${b} at ${money(li.ask)}, the largest trade on the tape.`
-              : `Sold in ${districtLabel(rec)}: ${rec.address} went to ${b} at ${money(li.ask)} — a comp your own building will be read against.`,
           });
         }
       }

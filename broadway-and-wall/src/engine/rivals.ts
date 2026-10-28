@@ -771,7 +771,8 @@ function committedEquity(s: GameState, r: Rival): number {
 }
 /** Cash the firm can put into a new job: what it holds, less what its live jobs still need. */
 export function freeCash(s: GameState, r: Rival): number {
-  return r.cash - committedEquity(s, r);
+  // ...and the equity for any closing it has signed for (contractedEquity).
+  return r.cash - committedEquity(s, r) - contractedEquity(s, r);
 }
 /** Whether the firm's balance sheet can take another frame at all. */
 export function canCarryAnother(s: GameState, r: Rival): boolean {
@@ -5217,7 +5218,26 @@ export function rivalCanClose(
   if (r.sheet && fitOf(s, parcels, r, rec, distress) <= 0) return false;
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const fin = closingFinance(s, parcels, r, price, acquisitionLoan(s, rec, price)(r, ci));
-  return r.cash + fin.draw >= fin.need;
+  return r.cash - contractedEquity(s, r, rec.bbl) + fin.draw >= fin.need;
+}
+
+/**
+ * MONEY ALREADY SPOKEN FOR. A firm that has signed a contract on one of your
+ * buildings has its equity for that closing earmarked: it does not spend it on
+ * the tape in the meantime and then find it cannot close (bid-counter caught
+ * exactly that — a signed buyer bought three offices in the month before its
+ * closing and walked). The equity and closing costs on every live contract it
+ * holds, other than the deed being asked about.
+ */
+export function contractedEquity(s: GameState, r: Rival, exceptBbl?: string): number {
+  let held = 0;
+  for (const h of Object.values(s.holdings ?? {})) {
+    const o = h.sale?.offer;
+    if (!o?.contract || o.firmId !== r.id || h.bbl === exceptBbl) continue;
+    // The firm's own leverage on the price, and the 2% closing.
+    held += Math.round(o.price * (1 - Math.max(0, Math.min(0.8, r.targetLtv ?? 0)))) + Math.round(o.price * 0.02);
+  }
+  return held;
 }
 
 /** Every firm on the street that could close on this building at this price. */
@@ -5282,7 +5302,7 @@ export function rivalBuys(
     if ((rec.class === "land" ? price / LAND_SHARE_OF_JOB : price) < minTicket(r)
       && !(rec.class === "land" && paramsOf(r).build > 0 && adjoinsOwnDirt(s, parcels, r, rec.bbl))) return false;
     const { debt, need, draw, aum } = drawFor(r);
-    if (r.cash + draw < need) return false;
+    if (r.cash - contractedEquity(s, r) + draw < need) return false;
     const aumAfter = aum + price;
     const debtAfter = r.debt + debt + draw;
     // A DISCIPLINED FIRM DOES NOT BUY TO ITS COVENANT: it keeps a cushion under

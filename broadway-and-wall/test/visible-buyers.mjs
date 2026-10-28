@@ -152,5 +152,34 @@ check(singleTested > 0, `at least one marketed sale drew bids (${singleTested})`
   check(phantom.length === 0, `none from a name off the Players list${phantom.length ? ` — ${[...new Set(phantom)].join(", ")}` : ""}`);
 }
 
+// ---- 5. the builders are on the street from day one ------------------------
+// Owner: "Every developer needs to be a visible player as well, as soon as the
+// game starts. Only the 'ghost' holders can sell." The town's builders are
+// founded before the opening frames are seeded, and every frame standing at
+// the bell is one of theirs, on their book.
+{
+  for (const seed of [4242, 1717]) {
+    const g = E.firstListings(E.newGame(seed, parcels, 5_000_000), parcels, bbls);
+    const live = new Map(E.livingRivals(g).map((r) => [r.id, r]));
+    const builders = [...live.values()].filter((r) => r.builderProf);
+    check(g.month === 0 && builders.length > 0, `seed ${seed}: ${builders.length} builder firms on the list at month 0`);
+    const jobs = g.cityJobs ?? [];
+    const named = jobs.filter((j) => j.firmId && live.has(j.firmId));
+    check(jobs.length > 0 && named.length === jobs.length,
+      `seed ${seed}: all ${jobs.length} frames standing at the opening belong to a firm on the list (${named.length})`);
+    check(named.every((j) => live.get(j.firmId).bbls.includes(j.bbl)), `seed ${seed}: each frame's site is on its builder's book`);
+  }
+  // ...and nothing opens later in nobody's name.
+  let g = E.firstListings(E.newGame(9001, parcels, 5_000_000), parcels, bbls);
+  let anon = 0, jobsSeen = 0, outsider = 0;
+  for (let m = 0; m < 36; m++) {
+    g = E.advanceMonth(g, parcels, bbls, adjacency);
+    for (const j of g.cityJobs ?? []) { if (j.groundLease) continue; jobsSeen++; if (!j.firmId) anon++; }
+    for (const c of g.comps ?? []) if (c.m === g.month && /Hartford|1031 buyer|out of town|out-of-state|nominee|family trust|doctors|name withheld/.test(c.buyer ?? "")) outsider++;
+  }
+  check(jobsSeen > 0 && anon === 0, `three years: ${jobsSeen} job-months under construction, none without a firm (${anon})`);
+  check(outsider === 0, `three years: no tape sale to a buyer off the list (${outsider})`);
+}
+
 console.log(bad ? `\nFAIL — ${bad}` : "\nPASS — every buyer is somebody you can see");
 process.exit(bad ? 1 : 0);

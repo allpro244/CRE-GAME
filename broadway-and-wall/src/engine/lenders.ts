@@ -493,8 +493,7 @@ function maybeRaiseInsurance(s: GameState, failing: Lender) {
   s.news.unshift({
     q: s.month, kind: "info",
     text: `Washington has raised the deposit insurance limit to ${usdShort(insuredLimit(s))} a depositor, per bank — `
-      + `two and a half times what it was, and for good. A bank failing into a bad year did it: the money that runs `
-      + `is business operating accounts over the limit, and this is how a government stops a run.`,
+      + `2.5x the prior limit, permanently, after a bank failure.`,
   });
 }
 
@@ -594,11 +593,11 @@ function seizeDeposits(s: GameState, l: Lender) {
   (s.receivership ??= []).push({ from: l.name, amount: eventual, payM: s.month + Math.round(rrange(s, 12, 36, "lenders")), seizedM: s.month, lost });
   s.news.unshift({
     q: s.month, kind: "warn",
-    text: `YOUR BANK HAS FAILED. ${usdShort(here)} of the firm's money was at ${l.name}. `
-      + `${usdShort(insured)} is insured and available Monday; ${usdShort(exposed)} was over the limit and you are `
-      + `an unsecured creditor of the receiver. They expect to return about ${(recovery * 100).toFixed(0)}c on the dollar — `
-      + `${usdShort(eventual)} — but not for another year or two. The ${usdShort(lost)} difference is gone. `
-      + (split.inBills > 0 ? `The ${usdShort(split.inBills)} swept into Treasury bills was never the bank's and is untouched.` : `Cash swept into Treasury bills (the Banks page) would not have been the bank's to lose.`),
+    text: `Your bank failed: ${l.name} held ${usdShort(here)}. `
+      + `${usdShort(insured)} insured, available Monday; ${usdShort(exposed)} uninsured, `
+      + `unsecured claim on the receiver. Expected recovery ~${(recovery * 100).toFixed(0)}c on the dollar `
+      + `(${usdShort(eventual)}) in one to two years; ${usdShort(lost)} lost. `
+      + (split.inBills > 0 ? `${usdShort(split.inBills)} in Treasury bills unaffected.` : `Treasury bills (Banks page) are not exposed to bank failure.`),
   });
 }
 
@@ -665,9 +664,8 @@ function repudiateCommitments(s: GameState, l: Lender) {
   if (street) {
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `${street} site${street > 1 ? "s" : ""} on the street ${street > 1 ? "were" : "was"} being funded by ${l.name}. `
-        + `The draws stopped on Friday. Whoever cannot carry their own job out of pocket is going to leave a frame `
-        + `standing, and a frame that stops is a frame that ends up on the tape.`,
+      text: `${street} market construction site${street > 1 ? "s" : ""} funded by ${l.name} `
+        + `lost their loan draws. Expect stalled projects.`,
     });
   }
 
@@ -675,13 +673,13 @@ function repudiateCommitments(s: GameState, l: Lender) {
   s.news.unshift({
     q: s.month, kind: mine > 0 ? "warn" : "info",
     text: mine > 0
-      ? `THE RECEIVER HAS STOPPED FUNDING YOUR JOB${mine > 1 ? "S" : ""}. ${l.name} had ${usdShort(exposed)} of undrawn `
+      ? `Construction funding stopped on your project${mine > 1 ? "s" : ""}. ${l.name} had ${usdShort(exposed)} of undrawn `
         + `commitment across ${jobs} site${jobs > 1 ? "s" : ""} in this town, ${mine} of them your${mine > 1 ? "s" : " s"}. `
-        + `A receiver liquidates a book; it does not advance against work in place. The balance you have already drawn `
-        + `stays outstanding and its interest now comes out of your account instead of the reserve. `
-        + `You have a season to find a desk that will take the job out, and a contractor on site the whole time.`
+        + `The receiver will not fund further draws. Drawn balance stays outstanding; interest now `
+        + `paid from your cash, not the reserve. `
+        + `Refinance the construction loan within a season.`
       : `${usdShort(exposed)} of undrawn construction commitment died with ${l.name}. `
-        + `${jobs} site${jobs > 1 ? "s" : ""} in this town stopped funding on Friday — watch which of them come back.`,
+        + `${jobs} site${jobs > 1 ? "s" : ""} lost funding.`,
   });
 }
 
@@ -721,8 +719,7 @@ export function tickReceivership(s: GameState) {
     logBooks(s, r.seizedM !== undefined ? "sold" : "interest", r.amount);
     s.news.unshift({
       q: s.month, kind: "deal",
-      text: `The receiver for ${r.from} has finished selling the book. ${usdShort(r.amount)} of your money comes back — `
-        + `later than you needed it, which was the whole cost of it.`,
+      text: `Receivership distribution · ${r.from} · ${usdShort(r.amount)} returned to you.`,
     });
   }
   s.receivership = s.receivership.filter((r) => s.month < r.payM);
@@ -958,8 +955,8 @@ export function tickLenders(s: GameState) {
     // window reopens or standards are back to ordinary (standardsWord).
     const st = underwritingStandards(s);
     const shut = e.debtShut ? windowShut && st <= -0.15 : windowShut && st <= -0.5;
-    if (shut && !e.debtShut) s.news.unshift({ q: s.month, kind: "warn", text: "The debt markets have effectively closed. The bond buyers have gone, the banks are lending only to names they already know, and term sheets are being pulled mid-deal." });
-    if (!shut && e.debtShut) s.news.unshift({ q: s.month, kind: "event", text: "The lenders are quoting again. Not cheaply, and not to everyone, but the phones are being answered." });
+    if (shut && !e.debtShut) s.news.unshift({ q: s.month, kind: "warn", text: "Debt markets closed: CMBS buyers gone, banks lending only to existing relationships, term sheets pulled." });
+    if (!shut && e.debtShut) s.news.unshift({ q: s.month, kind: "event", text: "Lenders quoting again, selectively and at higher spreads." });
     e.debtShut = shut;
   }
 
@@ -1075,9 +1072,8 @@ export function tickLenders(s: GameState) {
         delete l.failedM; delete l.reopenM;
         s.news.unshift({
           q: s.month, kind: "info",
-          text: `${l.name} is lending again. The receiver sold the franchise, the new owners put fresh capital `
-            + `behind it and the bad paper stayed behind — the name on the door is the same and the credit `
-            + `committee is not. Smaller book, tighter standards, and one more desk answering the phone.`,
+          text: `${l.name} is lending again after recapitalization by new owners. `
+            + `Bad loans stayed with the receiver; smaller book, tighter standards.`,
         });
       }
       continue;
@@ -1356,8 +1352,8 @@ export function tickLenders(s: GameState) {
         if (l.kind === "bank" && rng(s, "lenders") < 0.75) {
           s.news.unshift({
             q: s.month, kind: "info",
-            text: `${l.name} failed on Friday and was sold to an acquirer the same weekend. Every deposit moved with it, `
-              + `insured or not — the firm's account opens Monday under a new name with nothing missing.`,
+            text: `${l.name} failed and was acquired the same weekend. All deposits transferred, `
+              + `insured or not; no loss to your account.`,
           });
         } else seizeDeposits(s, l);
       }
@@ -1402,7 +1398,7 @@ export function tickLenders(s: GameState) {
     } else if (l.appetite < 0.15 && rng(s, "lenders") < 0.04) {
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `${l.name} has stopped quoting. ${(l.delinquent * 100).toFixed(1)}% of their book is not paying and their capital will not carry new loans.`,
+        text: `${l.name} stopped lending: ${(l.delinquent * 100).toFixed(1)}% of their book delinquent, capital constrained.`,
       });
     }
   }

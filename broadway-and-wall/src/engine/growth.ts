@@ -502,7 +502,7 @@ function tickLandMarket(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (!mine || !base || !(mine.bid > Math.max(base.farm, c.rd.bid, playerOffer(s, c.rd.bbl)) * (1 + LAND_CLOSING))) continue;
     const talks = s.talks?.[c.rd.bbl];
     if (!buyTract(s, parcels, g, c.rd.bbl, Math.round(ask(c.rd)), mine)) continue;
-    if (talks) voidContract(s, parcels, c.rd.bbl, `${g.held[c.rd.bbl]} bought ${parcels[c.rd.bbl]?.address ?? c.rd.bbl} out from under you while you were negotiating, at ${money(ask(c.rd))}`);
+    if (talks) voidContract(s, parcels, c.rd.bbl, `${g.held[c.rd.bbl]} bought ${parcels[c.rd.bbl]?.address ?? c.rd.bbl} at ${money(ask(c.rd))} during your negotiation`);
     bought++;
     cands = cands.filter((x) => x.rd.bbl !== c.rd.bbl);
   }

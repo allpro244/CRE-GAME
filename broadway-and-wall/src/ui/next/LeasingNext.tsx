@@ -152,7 +152,7 @@ export function LeasingVacancy() {
     const rec = resolveRec(parcels, game, h.bbl);
     if (!rec || !rec.bldgArea || h.groundLeased || game.developments[h.bbl]) return [];
     return [{ h, rec, vac: vacantSf(rec, h), occ: occupancyRead(rec, h).lettableOcc, mkt: marketRentPsfYr(rec, game.econ, h.condition ?? initialCondition(rec)) }];
-  }).sort((a, b) => b.vac - a.vac);
+  }).sort((a, b) => b.rec.bldgArea - a.rec.bldgArea);   // biggest building first (owner)
   return (
     <div className="nx-place">
       {bldgs.length === 0 && <div className="nx-none">No leasable buildings yet.</div>}

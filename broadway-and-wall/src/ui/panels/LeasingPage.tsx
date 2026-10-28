@@ -424,7 +424,8 @@ export function LeasingPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.sort((a, b) => a.occ - b.occ).map((r) => (
+              {/* biggest building first (owner, Oct 2026) */}
+              {rows.sort((a, b) => (b.rec.bldgArea ?? 0) - (a.rec.bldgArea ?? 0)).map((r) => (
                 <tr key={r.h.bbl} onClick={() => go(r.h.bbl)}>
                   <td>
                     <div>{r.rec.address}</div>

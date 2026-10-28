@@ -2003,10 +2003,23 @@ export class RealCityLayer {
     pm.dispose();
     for (const o of kids) this.scene.remove(o);
     this.renderer.resetState();
-    this.reflEnv?.dispose();
+    const was = this.reflEnv;
     this.reflEnv = rt.texture;
     GLASS_U.gProbe.value = 1;
     for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv;
+    // THE WATER SEES THE CITY TOO. The harbour, the canals, the ponds and the
+    // wet streets reflected the painted sky alone; they take the same probe,
+    // so the skyline stands upside down in the harbour. Same lookup, no cost.
+    this.scene.traverse((o) => {
+      const mm = (o as THREE.Mesh).material;
+      if (!mm) return;
+      for (const m of Array.isArray(mm) ? mm : [mm]) {
+        const ms = m as THREE.MeshStandardMaterial;
+        if (ms.envMap && (ms.envMap === this.skyEnv || ms.envMap === was)) ms.envMap = this.reflEnv;
+      }
+    });
+    if (this.wetMat && (this.wetMat.envMap === this.skyEnv || this.wetMat.envMap === was)) this.wetMat.envMap = this.reflEnv;
+    was?.dispose();
   }
   // the water's ripple maps, drifting downwind (UV units per tile differ by mesh)
   private waves: { tex: THREE.Texture; tile: number }[] = [];

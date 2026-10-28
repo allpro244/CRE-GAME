@@ -21,7 +21,7 @@
 // it cuts — every quarter, forever, until somebody does. That is the mechanism
 // by which bad debt eventually finds a clearing price instead of sitting on the
 // tape at a number nobody will pay.
-import type { GameState, PortfolioListing } from "./types";
+import type { GameState, PortfolioListing, Rival } from "./types";
 import type { ParcelRecord, ParcelTable } from "../data/types";
 import { dollarLevel, rng, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
@@ -413,6 +413,64 @@ export function acceptStreetBook(
 }
 
 // ---------------------------------------------------------------------------
+// WHO CAN CLOSE A WHOLE BOOK
+// ---------------------------------------------------------------------------
+/**
+ * A PACKAGE HAS TO SUIT THE BUYER, deed by deed: a firm whose sheet or rules
+ * would refuse any building in it does not bid for the lot. 1 for a firm with
+ * no sheet; otherwise the mean fit, 0 if any deed fails.
+ */
+export function packageFit(s: GameState, parcels: ParcelTable, r: Rival, recs: ParcelRecord[], distress = false): number {
+  if (!r.sheet) return 1;
+  let tot = 0;
+  for (const rec of recs) { const f = fitOf(s, parcels, r, rec, distress); if (!(f > 0)) return 0; tot += f; }
+  return recs.length ? tot / recs.length : 0;
+}
+
+/**
+ * THE DEBT AND EQUITY ON ONE CHEQUE FOR A WHOLE BOOK. The debt is what a desk
+ * would underwrite against the package's own in-place income at this firm's
+ * leverage, not a personality LTV — the same hole acquisitionLoan closed for
+ * single assets.
+ */
+export function packageFinance(s: GameState, parcels: ParcelTable, r: Rival, bbls: string[], price: number) {
+  const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
+  let noi = 0;
+  for (const b of bbls) {
+    const rec = resolveRec(parcels, s, b);
+    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+    noi += Math.max(0, inPlace(rec, s, b, price / Math.max(1, bbls.length)).noi);
+  }
+  const st = paramsOf(r);
+  const cap = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
+  const debt = Math.min(price, streetRefiProceeds(s, price, noi, cap).principal);
+  return { debt, equity: price - debt };
+}
+
+/**
+ * CAN THIS FIRM WRITE THE CHEQUE FOR THE WHOLE BOOK. The whole reason a
+ * portfolio trades back from the sum of its parts is that this list is short:
+ * the buyer needs the equity for the entire package at once, with a reserve
+ * left over, and its leverage after the deal inside its own limit. The same
+ * test for a street book (tickPortfolios) and for yours (portfolio.ts): every
+ * portfolio buyer is a firm on the Players list, and when none passes there is
+ * no bid.
+ */
+export function packageCanClose(
+  s: GameState, parcels: ParcelTable, r: Rival, bbls: string[], price: number, distress = false,
+): boolean {
+  if (r.failedM !== undefined || r.stressMs) return false;
+  if (bbls.some((b) => ownerOf(s, b) === r)) return false;
+  const recs = bbls.map((b) => resolveRec(parcels, s, b)).filter(Boolean) as ParcelRecord[];
+  if (!(packageFit(s, parcels, r, recs, distress) > 0)) return false;
+  const { debt, equity } = packageFinance(s, parcels, r, bbls, price);
+  if (r.cash < equity + Math.max(1_000_000 * dollarLevel(s.econ), r.cash * 0.05)) return false;
+  const aumAfter = (r.aum ?? 0) + price;
+  if (aumAfter > 0 && (r.debt + debt) / aumAfter > paramsOf(r).maxLtv) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // THE MONTHLY LIFE OF THE PACKAGE MARKET
 // ---------------------------------------------------------------------------
 export function tickPortfolios(s: GameState, parcels: ParcelTable) {
@@ -450,41 +508,10 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
     // the sum of its parts is that this list is short: the buyer needs the
     // equity for the entire package at once, and the debt has to be lendable
     // against a book that just grew by eleven buildings.
-    // Package NOI — what a desk would underwrite against the ticket, not a
-    // personality LTV. Same hole acquisitionLoan closed for single assets.
-    let packageNoi = 0;
-    for (const b of p.bbls) {
-      const rec = resolveRec(parcels, s, b);
-      if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-      const share = p.ask / Math.max(1, p.bbls.length); // price allocation for inPlace
-      packageNoi += Math.max(0, inPlace(rec, s, b, share).noi);
-    }
-    const packageDebt = (r: ReturnType<typeof livingRivals>[number]) => {
-      const st = paramsOf(r);
-      const cap = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
-      return Math.min(p.ask, streetRefiProceeds(s, p.ask, packageNoi, cap).principal);
-    };
-    // A PACKAGE HAS TO SUIT THE BUYER, deed by deed: a firm whose sheet or
-    // rules would refuse any building in it does not bid for the lot, and
-    // among the rest the one the package fits best leans in.
     const recs = p.bbls.map((b) => resolveRec(parcels, s, b)).filter(Boolean) as ParcelRecord[];
-    const fitPkg = (r: ReturnType<typeof livingRivals>[number]) => {
-      if (!r.sheet) return 1;
-      let tot = 0;
-      for (const rec of recs) { const f = fitOf(s, parcels, r, rec, !!p.reo); if (!(f > 0)) return 0; tot += f; }
-      return recs.length ? tot / recs.length : 0;
-    };
-    const buyers = livingRivals(s).filter((r) => {
-      if (r.id === p.sellerId) return false;
-      if (!(fitPkg(r) > 0)) return false;
-      const st = paramsOf(r);
-      const debt = packageDebt(r);
-      const equity = p.ask - debt;
-      if (r.cash < equity + Math.max(1_000_000 * dollarLevel(s.econ), r.cash * 0.05)) return false;
-      const aumAfter = (r.aum ?? 0) + p.ask;
-      if (aumAfter > 0 && (r.debt + debt) / aumAfter > st.maxLtv) return false;
-      return true;
-    });
+    const fitPkg = (r: Rival) => packageFit(s, parcels, r, recs, !!p.reo);
+    const packageDebt = (r: Rival) => packageFinance(s, parcels, r, p.bbls, p.ask).debt;
+    const buyers = livingRivals(s).filter((r) => r.id !== p.sellerId && packageCanClose(s, parcels, r, p.bbls, p.ask, !!p.reo));
     if (buyers.length) {
       // A rival buying a rival's book. Rare, and it is how the big get big.
       const hunger = buyers.map((r) => {
@@ -526,7 +553,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
               ...work.holdings[b],
               sale: {
                 ask: share, listedM: work.month,
-                offer: { price: share, expiresM: work.month + 1, from: winner.name },
+                offer: { price: share, expiresM: work.month + 1, from: winner.name, firmId: winner.id, pkg: true },
               },
             };
             const closed = acceptSaleOffer(work, parcels, b, false);

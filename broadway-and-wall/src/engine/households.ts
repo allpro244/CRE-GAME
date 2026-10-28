@@ -590,6 +590,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   if (!s.households) { s.households = seedHouseholdRegister(s, parcels); return; }
   const r = s.households;
   if (!r.a) unpackHouseholds(r);
+  else reviveColumns(r);
   const a = r.a!, e = s.econ, m = s.month;
   const R = stream(s);
   const F = readFirms(s);
@@ -835,6 +836,26 @@ export function packHouseholds(r: HouseholdRegister): HouseholdRegister {
 }
 
 /** Back to arrays, in place, at the register's own capacity (the tail zero, as the running register keeps it). */
+/**
+ * A STATE THAT WENT THROUGH JSON (a harness's deep copy, an old save path)
+ * comes back with each typed column as a plain {"0": v, ...} object. Put the
+ * numbers back in typed columns of the register's capacity.
+ */
+function reviveColumns(r: HouseholdRegister): void {
+  const cur = r.a as unknown as Record<string, unknown>;
+  if (FIELD_NAMES.every((k) => ArrayBuffer.isView(cur[k]))) return;
+  const a = alloc(r.cap);
+  for (const k of FIELD_NAMES) {
+    const v = cur[k];
+    if (ArrayBuffer.isView(v)) { (a[k] as Uint8Array).set((v as Uint8Array).subarray(0, r.cap)); continue; }
+    if (v && typeof v === "object") for (const [i, x] of Object.entries(v as Record<string, number>)) {
+      const j = +i;
+      if (j >= 0 && j < r.cap) (a[k] as Uint8Array)[j] = x;
+    }
+  }
+  r.a = a;
+}
+
 export function unpackHouseholds(r: HouseholdRegister): void {
   if (r.a || !r.packed) { if (!r.a) r.a = alloc(r.cap); return; }
   const a = alloc(r.cap);
